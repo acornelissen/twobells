@@ -75,6 +75,21 @@ departureboard demo --png preview.png            # sample data, no keys
 departureboard run --png preview.png --config config.toml --secrets secrets.env
 ```
 
+## Emulator
+
+A browser page that draws the pHAT at true proportions in e-paper colours, plays the slow colour refresh, and logs every tick, so you can see when the board redraws and when it leaves the panel alone.
+
+```bash
+departureboard emulate --demo                       # fake data, 1 simulated minute every 2 s
+departureboard emulate --fake-train \
+  --config config.toml --secrets secrets.env        # fake trains, live buses
+departureboard emulate --config config.toml --secrets secrets.env   # all live
+```
+
+It opens <http://127.0.0.1:8765/>. Choose realistic (20 s), quick or instant refresh, and 1× to 4× scale; 1× is the panel's real pixel count. The demo drops the bus feed from 07:30 to 07:52 simulated time, so the `! STALE` flag shows up.
+
+Live modes keep state in `state_file`, so the TransportAPI budget holds across restarts, and buses are only polled inside their windows.
+
 ## Layout
 
 | Module | Role |
@@ -85,6 +100,8 @@ departureboard run --png preview.png --config config.toml --secrets secrets.env
 | `view.py` | Departures to text rows plus a change signature |
 | `render.py` | Rows to a 250x122 paletted image |
 | `display.py` | Inky pHAT or PNG output |
+| `emulator.py`, `emulator.html`, `emulation.py` | Browser panel emulator and its demo/live wiring |
+| `fake.py` | Deterministic fake sources and simulated clock |
 | `app.py` | One tick: poll what's due, redraw only on change |
 | `cli.py`, `config.py` | `run` / `probe` / `demo`; TOML settings, env secrets |
 
