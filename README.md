@@ -6,7 +6,7 @@ Glossop train and bus departure board for a Raspberry Pi Zero W with a four-colo
 
 - **Trains:** National Rail Darwin, via the Rail Data Marketplace. Free, polled every 2 minutes.
 - **Buses:** TransportAPI. Free plan is 30 hits/day, so polling is limited to set windows, with a hard daily budget.
-- The panel takes about 20 s to refresh, so it redraws only when the content changes, plus at least every 10 minutes while active, to keep `Upd HH:MM` honest.
+- The panel takes about 20 s to refresh, so it redraws only when the content changes, never more than once every 2 minutes, plus at least every 10 minutes while active, to keep `Upd HH:MM` honest.
 - Meaning is always in text (`+7`, `CANC`, `Delayed`, `sch`, `! STALE`). Red or yellow only reinforces it, so the board works for colour-blind viewers and on a mono panel.
 
 ## 1. Get access
