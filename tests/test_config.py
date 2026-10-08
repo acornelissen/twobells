@@ -1,0 +1,67 @@
+from datetime import timedelta
+from pathlib import Path
+
+import pytest
+
+from departureboard.config import ConfigError, load_config
+from departureboard.darwin import DarwinSource
+from departureboard.transportapi import TransportApiBusSource
+
+EXAMPLE = Path(__file__).parent.parent / "config.example.toml"
+ENV = {"RDM_API_KEY": "rdm", "TAPI_APP_ID": "id", "TAPI_APP_KEY": "key"}
+
+
+def write(tmp_path, text):
+    path = tmp_path / "config.toml"
+    path.write_text(text)
+    return path
+
+
+@pytest.fixture
+def example(tmp_path):
+    """The shipped example with its bus stop placeholder filled in."""
+    return write(tmp_path, EXAMPLE.read_text().replace("CHANGE_ME", "1000TEST0001"))
+
+
+def test_example_config_loads(example):
+    settings = load_config(example, ENV)
+    names = [c.source.name for c in settings.board.sources]
+    assert names == ["train", "bus"]
+    assert isinstance(settings.board.sources[0].source, DarwinSource)
+    assert isinstance(settings.board.sources[1].source, TransportApiBusSource)
+    assert settings.board.refresh_every == timedelta(minutes=10)
+    assert settings.timezone == "Europe/London"
+    assert settings.accent == "red"
+
+
+def test_example_bus_schedule_fits_inside_its_budget(example):
+    bus = load_config(example, ENV).board.sources[1]
+    calls = 0
+    for window in bus.policy.windows:
+        span = (window.end.hour * 60 + window.end.minute) - (window.start.hour * 60 + window.start.minute)
+        calls += span // int(bus.policy.interval.total_seconds() // 60) + 1
+    assert calls <= bus.daily_budget
+
+
+def test_bus_section_is_optional(tmp_path):
+    path = write(tmp_path, '[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    settings = load_config(path, {"RDM_API_KEY": "rdm"})
+    assert [c.source.name for c in settings.board.sources] == ["train"]
+
+
+def test_missing_secret_names_the_variable(tmp_path):
+    path = write(tmp_path, '[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    with pytest.raises(ConfigError, match="RDM_API_KEY"):
+        load_config(path, {})
+
+
+def test_bad_window_is_reported(tmp_path):
+    path = write(tmp_path, '[train]\ncrs = "GLO"\nwindows = ["mornings"]\n')
+    with pytest.raises(ConfigError, match="mornings"):
+        load_config(path, ENV)
+
+
+def test_bus_left_as_placeholder_is_rejected(tmp_path):
+    path = write(tmp_path, '[bus]\natco = "CHANGE_ME"\nwindows = ["Mon-Fri 07:00-08:00"]\n')
+    with pytest.raises(ConfigError, match="atco"):
+        load_config(path, ENV)
