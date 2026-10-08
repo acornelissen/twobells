@@ -134,3 +134,8 @@ def test_source_truncates_to_requested_rows_after_filtering():
 def test_source_requires_at_least_one_stop():
     with pytest.raises(ValueError):
         source({}, {})
+
+
+def test_fetch_raw_returns_payload_for_one_stop():
+    payload = stop(bus())
+    assert source({"A": "a"}, {"a": payload}).fetch_raw("a") is payload

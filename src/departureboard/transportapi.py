@@ -90,6 +90,10 @@ class TransportApiBusSource:
     def cost(self) -> int:
         return len(self._stops)
 
+    @property
+    def stops(self) -> dict[str, str]:
+        return dict(self._stops)
+
     def _url(self, atco: str) -> str:
         # Over-fetch when filtering so the board still fills up.
         limit = self._rows * 4 if self._directions else self._rows
@@ -102,9 +106,14 @@ class TransportApiBusSource:
         }
         return f"{self._base_url}/uk/bus/stop_timetables/{atco}.json?{urlencode(params)}"
 
-    def fetch_stop(self, label: str, atco: str) -> list[Departure]:
-        payload = self._http_get(self._url(atco), {})
+    def fetch_raw(self, atco: str) -> dict:
+        return self._http_get(self._url(atco), {})
+
+    def parse(self, payload: dict, label: str) -> list[Departure]:
         return parse_stop(payload, self._directions, label)
+
+    def fetch_stop(self, label: str, atco: str) -> list[Departure]:
+        return self.parse(self.fetch_raw(atco), label)
 
     def fetch(self) -> list[Departure]:
         merged = [
