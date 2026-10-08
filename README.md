@@ -25,10 +25,10 @@ Station codes: Glossop is `GLO`, Manchester Piccadilly is `MAN`.
 
 1. Sign up at <https://developer.transportapi.com/signup> and choose the **Free** plan.
 2. Your account starts with one app. Copy its `app_id` and `app_key` into `TAPI_APP_ID` and `TAPI_APP_KEY`.
-3. Find your stop's ATCO code, either way works:
+3. Find your stops' ATCO codes, either way works:
    - <https://bustimes.org>: search for the stop. The code is the last part of the stop page URL.
    - <https://www.openstreetmap.org>: zoom in, click the bus stop and read the `naptan:AtcoCode` tag.
-4. Put it in `[bus] atco`. Use one stop per direction; add `directions = ["Manchester"]` to filter.
+4. Add them to `[bus.stops]` as `LABEL = "ATCO"`. The label is shown on the board (`A: Hyde`). Each stop costs one hit per poll, so two stops halve the polls you can make. Add `directions = ["Ashton"]` to filter.
 
 ## 2. Install on the Pi
 
@@ -41,11 +41,17 @@ sudo nano /etc/departureboard/secrets.env   # keys
 sudo nano /etc/departureboard/config.toml   # bus stop, windows
 ```
 
-Check the keys and codes with one live call each. The bus probe uses one of your 30 daily hits; the default budget of 28 leaves 2 spare for this.
+Check the keys and codes with one live call each. The bus probe uses one hit per stop from your 30 daily hits; the default schedule uses 28.
 
 ```bash
 sudo /opt/departureboard/venv/bin/departureboard probe train
 sudo /opt/departureboard/venv/bin/departureboard probe bus
+```
+
+To try stops that aren't in the config, and keep the raw responses:
+
+```bash
+departureboard probe bus --stop V=1000DGVS3332 --stop W=1000DGVS3323 --save probe-raw
 ```
 
 The bus probe output tells you whether you're getting live estimates (an expected time and status `late`/`on_time`) or only timetabled times (`unknown`, shown as `sch` on the board).
