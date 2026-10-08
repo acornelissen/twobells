@@ -61,7 +61,7 @@ def _poll(config: SourceConfig, state: dict, now: datetime) -> None:
     if config.daily_budget is not None:
         budgets = state.setdefault("budgets", {})
         budget = DailyBudget.from_dict(budgets.get(name), config.daily_budget)
-        if not budget.try_spend(now.date()):
+        if not budget.try_spend(now.date(), getattr(config.source, "cost", 1)):
             log.warning("%s: daily budget of %d spent, skipping", name, config.daily_budget)
             return
         budgets[name] = budget.to_dict()

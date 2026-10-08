@@ -111,6 +111,14 @@ def test_bus_fetch_refused_when_daily_budget_spent():
     assert buses.calls == 1
 
 
+def test_budget_is_charged_one_hit_per_stop():
+    trains, buses, board, display, state = setup(bus_budget=3)
+    buses.cost = 2
+    run_once(board, state, display, THU_0700)
+    run_once(board, state, display, THU_0700 + timedelta(minutes=5))
+    assert buses.calls == 1
+
+
 def test_failed_fetch_keeps_previous_departures():
     trains, buses, board, display, state = setup()
     trains.departures = [train("08:30")]
