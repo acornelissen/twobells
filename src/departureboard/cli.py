@@ -27,6 +27,7 @@ from .emulator import make_server
 from .model import Departure, Status
 from .render import render
 from .state import StateStore
+from .transportapi import redact_credentials
 from .view import build_view
 
 DEFAULT_CONFIG = "/etc/departureboard/config.toml"
@@ -86,7 +87,9 @@ def _probe_bus(source, save_dir: str | None) -> int:
             payload = source.fetch_raw(atco)
             if save_dir:
                 Path(save_dir).mkdir(parents=True, exist_ok=True)
-                (Path(save_dir) / f"{atco}.json").write_text(json.dumps(payload, indent=2))
+                (Path(save_dir) / f"{atco}.json").write_text(
+                    json.dumps(redact_credentials(payload), indent=2)
+                )
             departures = source.parse(payload, label)
         except Exception as error:  # noqa: BLE001 - report and try the next stop
             print(f"  error: {error}")

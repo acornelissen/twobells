@@ -40,6 +40,7 @@ A = "atco-a"
 
 PAYLOADS = {
     "atco-a": {"departures": {"all": [{
+        "id": "https://transportapi.com/v3/uk/bus/route.json?app_id=id&app_key=key",
         "line_name": "341", "direction": "Hyde", "date": "2026-10-09",
         "aimed_departure_time": "07:20", "expected_departure_time": "07:24",
         "best_departure_estimate": "07:24",
@@ -90,7 +91,10 @@ def test_probe_bus_saves_raw_responses(probe_env, tmp_path):
     args, _ = probe_env
     out_dir = tmp_path / "raw"
     main(["probe", "bus", *args, "--save", str(out_dir)])
-    assert json.loads((out_dir / "atco-a.json").read_text()) == PAYLOADS["atco-a"]
+    saved = json.loads((out_dir / "atco-a.json").read_text())
+    entry = saved["departures"]["all"][0]
+    assert entry["line_name"] == "341"
+    assert entry["id"].endswith("app_id=REDACTED&app_key=REDACTED")
 
 
 def test_probe_bus_reports_failing_stop_and_carries_on(probe_env, capsys):
