@@ -239,3 +239,13 @@ def test_minimum_redraw_gap_is_configurable():
     trains.departures = [train(expected="07:19", status=Status.LATE)]
     assert not run_once(board, state, display, THU_0700 + timedelta(minutes=4)).rendered
     assert run_once(board, state, display, THU_0700 + timedelta(minutes=5)).rendered
+
+
+def test_board_walk_times_produce_leave_text():
+    from departureboard.walk import WalkTimes
+
+    trains, buses, board, display, state = setup()
+    board = dataclasses.replace(board, walk=WalkTimes(train=7, bus={"*": 5}))
+    result = run_once(board, state, display, THU_0700)
+    assert result.view.trains.leave == "Leave 07:05 (07:12)"
+    assert result.view.buses.leave == "Leave 07:15 (341)"

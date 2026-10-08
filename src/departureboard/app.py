@@ -16,6 +16,7 @@ from .render import Palette, render
 from .schedule import PollPolicy
 from .state import departure_from_dict, departure_to_dict, from_iso, to_iso
 from .view import BoardView, build_view
+from .walk import WalkTimes
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class Board:
     sources: list[SourceConfig]
     # E-paper refreshes are slow and wear the panel: never redraw more often than this.
     min_redraw: timedelta = timedelta(minutes=2)
+    walk: WalkTimes = WalkTimes()
 
 
 @dataclass(frozen=True)
@@ -104,6 +106,7 @@ def run_once(board: Board, state: dict, display: Display, now: datetime) -> RunR
         buses=_departures(state, "bus"),
         now=now.strftime("%H:%M"),
         stale=stale,
+        walk=board.walk,
     )
 
     last = state.get("last_render", {})
