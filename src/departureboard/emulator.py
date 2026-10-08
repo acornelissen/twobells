@@ -6,6 +6,7 @@ plays the slow colour refresh, so redraw behaviour can be judged on a laptop.
 
 from __future__ import annotations
 
+import errno
 import io
 import json
 import threading
@@ -82,9 +83,26 @@ def _page() -> bytes:
     return files("departureboard").joinpath("emulator.html").read_bytes()
 
 
-def make_server(display: EmulatorDisplay, host: str = "127.0.0.1", port: int = 8765):
-    page = _page()
+def make_server(
+    display: EmulatorDisplay,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    attempts: int = 10,
+):
+    """Bind to `port`, or the next free one within `attempts` ports."""
+    handler = _handler(display, _page())
+    for candidate in range(port, port + attempts):
+        try:
+            return ThreadingHTTPServer((host, candidate), handler)
+        except OSError as error:
+            if error.errno != errno.EADDRINUSE:
+                raise
+    last = port + attempts - 1
+    span = str(port) if attempts == 1 else f"{port}-{last}"
+    raise OSError(errno.EADDRINUSE, f"Port {span} already in use")
 
+
+def _handler(display: EmulatorDisplay, page: bytes):
     class Handler(BaseHTTPRequestHandler):
         def _send(self, status: int, content_type: str, body: bytes) -> None:
             self.send_response(status)
@@ -108,4 +126,4 @@ def make_server(display: EmulatorDisplay, host: str = "127.0.0.1", port: int = 8
         def log_message(self, format, *args) -> None:  # noqa: A002 - quiet the console
             pass
 
-    return ThreadingHTTPServer((host, port), Handler)
+    return Handler

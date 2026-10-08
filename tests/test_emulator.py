@@ -115,3 +115,28 @@ def test_unknown_path_is_404(served):
     with pytest.raises(HTTPError) as error:
         urlopen(base + "/nope")
     assert error.value.code == 404
+
+
+def test_falls_back_to_next_free_port_when_taken():
+    display = EmulatorDisplay()
+    first = make_server(display, port=0)
+    taken = first.server_address[1]
+    try:
+        second = make_server(display, port=taken, attempts=5)
+        try:
+            assert second.server_address[1] != taken
+        finally:
+            second.server_close()
+    finally:
+        first.server_close()
+
+
+def test_reports_port_range_when_all_attempts_are_taken():
+    display = EmulatorDisplay()
+    first = make_server(display, port=0)
+    taken = first.server_address[1]
+    try:
+        with pytest.raises(OSError, match=f"{taken}"):
+            make_server(display, port=taken, attempts=1)
+    finally:
+        first.server_close()
