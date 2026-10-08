@@ -1,5 +1,6 @@
 from departureboard.model import Departure, Status
 from departureboard.view import Style, build_view
+from departureboard.walk import WalkTimes
 
 
 def train(scheduled="07:12", expected=None, status=Status.ON_TIME, dest="Manchester Piccadilly"):
@@ -10,13 +11,14 @@ def bus(line="341", scheduled="07:20", expected=None, status=Status.ON_TIME, des
     return Departure("bus", line, dest, scheduled, expected, status, stop=stop)
 
 
-def view(trains=(), buses=(), now="07:00", stale=frozenset()):
+def view(trains=(), buses=(), now="07:00", stale=frozenset(), walk=None):
     return build_view(
         title="GLO > MAN",
         trains=list(trains),
         buses=list(buses),
         now=now,
         stale=set(stale),
+        walk=walk,
     )
 
 
@@ -107,3 +109,33 @@ def test_signature_changes_with_content():
 
 def test_signature_changes_when_staleness_changes():
     assert view().signature() != view(stale={"train"}).signature()
+
+
+WALK = WalkTimes(train=7, bus={"A": 6})
+
+
+def test_no_leave_text_without_walk_times():
+    v = view(trains=[train()], buses=[bus(stop="A")])
+    assert v.trains.leave is None and v.buses.leave is None
+
+
+def test_train_leave_text_names_the_departure_time():
+    v = view(trains=[train("07:12"), train("07:42")], now="07:00", walk=WALK)
+    assert v.trains.leave == "Leave 07:05 (07:12)"
+
+
+def test_bus_leave_text_names_the_route():
+    v = view(buses=[bus("341", "07:20", stop="A")], now="07:00", walk=WALK)
+    assert v.buses.leave == "Leave 07:14 (341)"
+
+
+def test_leave_text_moves_on_once_a_departure_is_out_of_reach():
+    trains = [train("07:12"), train("07:42")]
+    assert view(trains=trains, now="07:06", walk=WALK).trains.leave == "Leave 07:35 (07:42)"
+
+
+def test_signature_changes_when_leave_time_changes():
+    trains = [train("07:12"), train("07:42")]
+    early = view(trains=trains, now="07:00", walk=WALK)
+    later = view(trains=trains, now="07:06", walk=WALK)
+    assert early.signature() != later.signature()

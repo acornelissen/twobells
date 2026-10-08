@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 
 from .model import Departure, Status
+from .walk import WalkTimes, leave_by
 
 
 class Style(str, Enum):
@@ -32,6 +33,7 @@ class Section:
     rows: tuple[Row, ...]
     empty_text: str
     stale: bool = False
+    leave: str | None = None
 
 
 @dataclass(frozen=True)
@@ -74,9 +76,19 @@ def _bus_row(dep: Departure) -> Row:
     return Row(dep.service, middle, right, style)
 
 
-def _section(label, departures, to_row, now, empty_text, stale) -> Section:
-    rows = tuple(to_row(d) for d in departures if not d.is_gone(now))
-    return Section(label, rows, empty_text, stale)
+def _leave_text(departures: list[Departure], walk: WalkTimes | None, now: str) -> str | None:
+    found = leave_by(departures, walk, now) if walk else None
+    if found is None:
+        return None
+    leave, dep = found
+    target = dep.scheduled if dep.mode == "train" else dep.service
+    return f"Leave {leave} ({target})"
+
+
+def _section(label, departures, to_row, now, empty_text, stale, walk) -> Section:
+    upcoming = [d for d in departures if not d.is_gone(now)]
+    rows = tuple(to_row(d) for d in upcoming)
+    return Section(label, rows, empty_text, stale, _leave_text(upcoming, walk, now))
 
 
 def build_view(
@@ -85,10 +97,11 @@ def build_view(
     buses: list[Departure],
     now: str,
     stale: set[str],
+    walk: WalkTimes | None = None,
 ) -> BoardView:
     return BoardView(
         title=title,
-        trains=_section("Trains", trains, _train_row, now, "No trains", "train" in stale),
-        buses=_section("Buses", buses, _bus_row, now, "No buses", "bus" in stale),
+        trains=_section("Trains", trains, _train_row, now, "No trains", "train" in stale, walk),
+        buses=_section("Buses", buses, _bus_row, now, "No buses", "bus" in stale, walk),
         updated=now,
     )
