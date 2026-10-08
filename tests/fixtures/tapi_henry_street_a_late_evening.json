@@ -1,0 +1,59 @@
+{
+  "_comment": "Synthetic test data, shaped like a TransportAPI stop_timetables answer. The stop, its position, the line and its operator are real; the times are made up.",
+  "id": "https://transportapi.com/v3/uk/bus/stop_timetables/1000DGHS0900.json?app_id=REDACTED&app_key=REDACTED&group=no&limit=2&live=true",
+  "request_time": "2026-10-08T23:12:10+01:00",
+  "departures": {
+    "all": [
+      {
+        "id": "https://transportapi.com/v3/uk/bus/route/BNML/237/inbound/1000DGHS0900/2026-10-08/23:41/timetable.json?app_id=REDACTED&app_key=REDACTED",
+        "mode": "bus",
+        "line": "237",
+        "line_name": "237",
+        "dir": "inbound",
+        "direction": "Ashton",
+        "operator": "BNML",
+        "operator_name": "Bee Network",
+        "date": "2026-10-08",
+        "aimed_departure_time": "23:41",
+        "aimed": {
+          "arrival": {
+            "date": null,
+            "time": null
+          },
+          "departure": {
+            "date": "2026-10-08",
+            "time": "23:41"
+          }
+        },
+        "best_departure_estimate": "23:41",
+        "source": "tnds",
+        "expected_departure_date": null,
+        "expected_departure_time": null,
+        "expected": {
+          "arrival": {
+            "date": null,
+            "time": null
+          },
+          "departure": {
+            "date": null,
+            "time": null
+          }
+        }
+      }
+    ]
+  },
+  "atcocode": "1000DGHS0900",
+  "smscode": null,
+  "name": "Henry Street (Stop A)",
+  "stop_name": "Henry Street",
+  "bearing": "E",
+  "indicator": "Stop A",
+  "locality": "Glossop",
+  "location": {
+    "type": "Point",
+    "coordinates": [
+      -1.949,
+      53.44384
+    ]
+  }
+}

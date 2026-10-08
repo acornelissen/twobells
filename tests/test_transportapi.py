@@ -156,3 +156,14 @@ def test_redact_strips_credentials_from_nested_urls():
     assert "app_id=REDACTED" in url and "app_key=REDACTED" in url and "live=true" in url
     assert redacted["departures"]["all"][0]["line"] == "237"
     assert payload["departures"]["all"][0]["id"].endswith("app_key=s3cret&live=true")
+
+
+def test_parses_real_late_evening_response():
+    import json
+    from pathlib import Path
+
+    fixture = Path(__file__).parent / "fixtures" / "tapi_henry_street_a_late_evening.json"
+    [dep] = parse_stop(json.loads(fixture.read_text()), stop_label="A")
+    assert (dep.service, dep.destination, dep.scheduled) == ("237", "Ashton", "23:35")
+    assert dep.status is Status.UNKNOWN  # timetable only (source "tnds"), no live estimate
+    assert dep.stop == "A"
