@@ -12,10 +12,10 @@ from departureboard.view import BoardView, Row, Section, Style
 PALETTE = Palette(white=0, black=1, accent=2)
 
 
-def board(train_rows=(), bus_rows=(), stale_trains=False):
+def board(train_rows=(), bus_rows=(), stale_trains=False, train_leave=None):
     return BoardView(
         title="GLO > MAN",
-        trains=Section("Trains", tuple(train_rows), "No trains", stale_trains),
+        trains=Section("Trains", tuple(train_rows), "No trains", stale_trains, train_leave),
         buses=Section("Buses", tuple(bus_rows), "No buses"),
         updated="07:03",
     )
@@ -81,3 +81,25 @@ def test_preview_palette_gives_rgb_png_colours():
     image = render(board([Row("07:12", "Manchester", "+7", Style.ALERT)]), PALETTE.with_preview("red"))
     rgb = image.convert("RGB")
     assert (255, 255, 255) in {c for _, c in rgb.getcolors()}
+
+
+def ink_in_right_half_of_train_label_row(image):
+    # Train section label sits just under the 15 px header.
+    return sum(
+        1
+        for x in range(WIDTH // 2, WIDTH)
+        for y in range(17, 28)
+        if image.getpixel((x, y)) != PALETTE.white
+    )
+
+
+def test_leave_text_is_drawn_right_of_the_section_label():
+    plain = render(board(), PALETTE)
+    with_leave = render(board(train_leave="Leave 07:05 (07:12)"), PALETTE)
+    assert ink_in_right_half_of_train_label_row(plain) == 0
+    assert ink_in_right_half_of_train_label_row(with_leave) > 30
+
+
+def test_leave_text_is_not_in_accent_colour():
+    image = render(board(train_leave="Leave 07:05 (07:12)"), PALETTE)
+    assert PALETTE.accent not in colours(image)

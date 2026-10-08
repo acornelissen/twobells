@@ -85,10 +85,17 @@ class _Painter:
         self.draw.text((stamp_x, 1), stamp, font=self.f.regular, fill=self.p.white)
 
     def section(self, section: Section, y: int) -> int:
-        self.draw.text((_PAD, y + 1), section.label.upper(), font=self.f.small, fill=self.p.black)
+        label = section.label.upper()
+        self.draw.text((_PAD, y + 1), label, font=self.f.small, fill=self.p.black)
+        label_end = _PAD + self.f.small.getlength(label)
         if section.stale:
-            x = _PAD + self.f.small.getlength(section.label.upper()) + 6
+            x = label_end + 6
             self.draw.text((x, y + 1), "! STALE", font=self.f.small, fill=self.p.accent)
+            label_end = x + self.f.small.getlength("! STALE")
+        if section.leave:
+            leave = fit_text(section.leave, self.f.small, WIDTH - _PAD - label_end - 8)
+            x = WIDTH - _PAD - self.f.small.getlength(leave)
+            self.draw.text((x, y + 1), leave, font=self.f.small, fill=self.p.black)
         y += _LABEL_H
         rows = section.rows[: _MAX_ROWS.get(section.label, 2)]
         if not rows:
