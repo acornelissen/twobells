@@ -80,3 +80,9 @@ def test_bus_stop_left_as_placeholder_is_rejected(tmp_path):
 def test_bus_stops_can_be_overridden(example):
     settings = load_config(example, ENV, bus_stops={"V": "1000DGVS3332"})
     assert settings.board.sources[1].source.cost == 1
+
+
+def test_loading_only_bus_does_not_need_the_rail_key(example):
+    env = {"TAPI_APP_ID": "id", "TAPI_APP_KEY": "key"}
+    settings = load_config(example, env, only={"bus"})
+    assert [c.source.name for c in settings.board.sources] == ["bus"]

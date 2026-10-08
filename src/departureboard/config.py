@@ -90,14 +90,17 @@ def load_config(
     path: Path | str,
     env: Mapping[str, str],
     bus_stops: dict[str, str] | None = None,
+    only: set[str] | None = None,
 ) -> Settings:
+    """Load settings. `only` limits which sources are built, so a probe needs only its own keys."""
     data = tomllib.loads(Path(path).read_text())
     if bus_stops:
         data.setdefault("bus", {})["stops"] = bus_stops
     sources = []
-    if "train" in data:
+    wanted = only or {"train", "bus"}
+    if "train" in data and "train" in wanted:
         sources.append(_train(data["train"], env))
-    if "bus" in data:
+    if "bus" in data and "bus" in wanted:
         sources.append(_bus(data["bus"], env))
     board = Board(
         title=data.get("title", "Departures"),
