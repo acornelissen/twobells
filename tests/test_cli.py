@@ -105,3 +105,11 @@ def test_probe_bus_reports_failing_stop_and_carries_on(probe_env, capsys):
 def test_probe_rejects_malformed_stop_override(probe_env, capsys):
     args, _ = probe_env
     assert main(["probe", "bus", *args, "--stop", "nolabel"]) == 2
+
+
+def test_probe_bus_works_without_rail_key(probe_env, capsys):
+    args, _ = probe_env
+    config = args[1]
+    with open(config, "a") as f:
+        f.write('\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    assert main(["probe", "bus", *args]) == 0

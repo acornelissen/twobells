@@ -59,9 +59,9 @@ def _parse_stops(specs: list[str] | None) -> dict[str, str] | None:
     return stops
 
 
-def _settings(args, bus_stops: dict[str, str] | None = None):
+def _settings(args, bus_stops: dict[str, str] | None = None, only: set[str] | None = None):
     env = {**os.environ, **load_env_file(args.secrets)}
-    return load_config(args.config, env, bus_stops)
+    return load_config(args.config, env, bus_stops, only)
 
 
 def _print_departures(departures: list[Departure], indent: str = "") -> None:
@@ -110,7 +110,7 @@ def _run(args) -> int:
 
 
 def _probe(args) -> int:
-    settings = _settings(args, _parse_stops(args.stop))
+    settings = _settings(args, _parse_stops(args.stop), only={args.source})
     for config in settings.board.sources:
         if config.source.name != args.source:
             continue
