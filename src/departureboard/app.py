@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Protocol
@@ -129,8 +130,6 @@ def run_loop(
     store=None,
 ) -> None:
     """Tick forever (or `ticks` times). A clock with `advance()` is simulated."""
-    import time
-
     sleep = sleep or time.sleep
     count = 0
     while ticks is None or count < ticks:
