@@ -6,8 +6,8 @@ def train(scheduled="07:12", expected=None, status=Status.ON_TIME, dest="Manches
     return Departure("train", "Northern", dest, scheduled, expected, status)
 
 
-def bus(line="341", scheduled="07:20", expected=None, status=Status.ON_TIME, dest="Hyde"):
-    return Departure("bus", line, dest, scheduled, expected, status)
+def bus(line="341", scheduled="07:20", expected=None, status=Status.ON_TIME, dest="Hyde", stop=None):
+    return Departure("bus", line, dest, scheduled, expected, status, stop=stop)
 
 
 def view(trains=(), buses=(), now="07:00", stale=frozenset()):
@@ -75,6 +75,11 @@ def test_bus_rows_use_clock_times_not_countdowns():
     assert (on_time.left, on_time.middle, on_time.right) == ("341", "Hyde", "07:20")
     assert (late.right, late.style) == ("07:29 +4", Style.ALERT)
     assert (timetabled.right, timetabled.style) == ("07:40 sch", Style.NORMAL)
+
+
+def test_bus_row_shows_stop_label_when_known():
+    [row] = view(buses=[bus(stop="A")]).buses.rows
+    assert row.middle == "A: Hyde"
 
 
 def test_empty_sections_say_so():

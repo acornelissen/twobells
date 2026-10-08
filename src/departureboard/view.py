@@ -70,7 +70,8 @@ def _bus_row(dep: Departure) -> Row:
         right, style = f"{dep.scheduled} sch", Style.NORMAL
     else:
         right, style = dep.scheduled, Style.NORMAL
-    return Row(dep.service, dep.destination, right, style)
+    middle = f"{dep.stop}: {dep.destination}" if dep.stop else dep.destination
+    return Row(dep.service, middle, right, style)
 
 
 def _section(label, departures, to_row, now, empty_text, stale) -> Section:
