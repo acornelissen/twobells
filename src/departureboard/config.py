@@ -14,6 +14,7 @@ from .darwin import DarwinSource
 from .schedule import PollPolicy, parse_window
 from .transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
 from .transportapi import TransportApiBusSource
+from .walk import DEFAULT_STOP, WalkTimes
 
 
 class ConfigError(Exception):
@@ -86,6 +87,14 @@ def _bus(section: dict, env: Mapping[str, str]) -> SourceConfig:
     )
 
 
+def _walk(data: dict) -> WalkTimes:
+    train = data.get("train", {}).get("walk_minutes")
+    bus = data.get("bus", {}).get("walk_minutes", {})
+    if isinstance(bus, int):
+        bus = {DEFAULT_STOP: bus}
+    return WalkTimes(train=train, bus=dict(bus))
+
+
 def load_config(
     path: Path | str,
     env: Mapping[str, str],
@@ -106,6 +115,7 @@ def load_config(
         title=data.get("title", "Departures"),
         sources=sources,
         min_redraw=timedelta(minutes=data.get("min_redraw_minutes", 2)),
+        walk=_walk(data),
     )
     return Settings(
         board=board,

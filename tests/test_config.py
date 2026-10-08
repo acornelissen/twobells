@@ -100,3 +100,34 @@ def test_old_refresh_every_setting_is_ignored(tmp_path):
     path = write(tmp_path, 'refresh_every_minutes = 10\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
     board = load_config(path, ENV).board
     assert not hasattr(board, "refresh_every")
+
+
+def test_walk_minutes_for_station_and_each_stop(tmp_path):
+    path = write(tmp_path, (
+        '[train]\ncrs = "GLO"\nwalk_minutes = 7\nwindows = ["Mon-Fri 06:30-09:30"]\n'
+        '[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n'
+        '[bus.stops]\nA = "1000DGHS0900"\nB = "100000008350"\n'
+        '[bus.walk_minutes]\nA = 7\nB = 6\n'
+    ))
+    walk = load_config(path, ENV).board.walk
+    assert walk.train == 7
+    assert dict(walk.bus) == {"A": 7, "B": 6}
+
+
+def test_single_bus_walk_time_applies_to_every_stop(tmp_path):
+    path = write(tmp_path, (
+        '[bus]\nwalk_minutes = 5\nwindows = ["Mon-Fri 07:00-08:00"]\n'
+        '[bus.stops]\nA = "1000DGHS0900"\n'
+    ))
+    assert dict(load_config(path, ENV).board.walk.bus) == {"*": 5}
+
+
+def test_walk_times_are_optional(tmp_path):
+    path = write(tmp_path, '[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    walk = load_config(path, ENV).board.walk
+    assert walk.train is None and dict(walk.bus) == {}
+
+
+def test_example_config_has_walk_times(example):
+    walk = load_config(example, ENV).board.walk
+    assert walk.train is not None and set(walk.bus) == {"A", "B"}

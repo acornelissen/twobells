@@ -18,6 +18,8 @@ rows = 3
 interval_minutes = 2
 stale_after_minutes = 6
 windows = ["Mon-Fri 06:30-09:30", "Mon-Fri 16:30-19:30"]
+# Minutes to walk to the station; the board shows when to leave for the next train.
+walk_minutes = 7
 # Copy the exact base URL from the Rail Data Marketplace product page if it differs.
 # base_url = "https://api1.raildata.org.uk/1010-live-departure-board-dep/LDBWS/api/20220120"
 
@@ -37,3 +39,8 @@ windows = ["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]
 [bus.stops]
 A = "1000DGHS0900"   # Henry Street Stop A: 219, 237, 341
 B = "100000008350"   # Henry Street Stop B: 61, 237, 390, 393, 394
+
+# Minutes to walk to each stop, by label. A single number applies to every stop.
+[bus.walk_minutes]
+A = 7
+B = 7
