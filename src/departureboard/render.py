@@ -1,0 +1,138 @@
+"""Draws a BoardView onto a 250x122 paletted image for the Inky pHAT."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
+
+from .view import BoardView, Row, Section, Style
+
+WIDTH, HEIGHT = 250, 122
+
+_HEADER_H = 15
+_LABEL_H = 12
+_ROW_H = 14
+_GAP = 2
+_PAD = 3
+_MAX_ROWS = {"Trains": 3, "Buses": 2}
+
+_FONT_DIR = Path("/usr/share/fonts/truetype/dejavu")
+_PREVIEW_ACCENTS = {"red": (200, 30, 30), "yellow": (230, 180, 0)}
+
+
+@dataclass(frozen=True)
+class Palette:
+    """Panel palette indices. `preview` adds real RGB values for PNG output."""
+
+    white: int
+    black: int
+    accent: int
+    preview: str | None = None
+
+    def with_preview(self, accent_name: str) -> "Palette":
+        return replace(self, preview=accent_name)
+
+
+@dataclass(frozen=True)
+class Fonts:
+    regular: ImageFont.FreeTypeFont
+    bold: ImageFont.FreeTypeFont
+    small: ImageFont.FreeTypeFont
+
+
+def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
+    path = _FONT_DIR / name
+    if path.exists():
+        return ImageFont.truetype(str(path), size)
+    return ImageFont.load_default(size=size)
+
+
+def load_fonts() -> Fonts:
+    return Fonts(
+        regular=_font("DejaVuSans.ttf", 11),
+        bold=_font("DejaVuSans-Bold.ttf", 11),
+        small=_font("DejaVuSans-Bold.ttf", 9),
+    )
+
+
+def left_column_width(fonts: Fonts) -> float:
+    return fonts.bold.getlength("00:00") + 5
+
+
+def fit_text(text: str, font: ImageFont.FreeTypeFont, width: float) -> str:
+    if font.getlength(text) <= width:
+        return text
+    while text and font.getlength(text + "…") > width:
+        text = text[:-1]
+    return text.rstrip() + "…"
+
+
+class _Painter:
+    def __init__(self, palette: Palette, fonts: Fonts) -> None:
+        self.p = palette
+        self.f = fonts
+        self.image = Image.new("P", (WIDTH, HEIGHT), palette.white)
+        self.draw = ImageDraw.Draw(self.image)
+
+    def header(self, view: BoardView) -> None:
+        self.draw.rectangle((0, 0, WIDTH - 1, _HEADER_H - 1), fill=self.p.black)
+        stamp = f"Upd {view.updated}"
+        stamp_x = WIDTH - _PAD - self.f.regular.getlength(stamp)
+        title = fit_text(view.title, self.f.bold, stamp_x - _PAD - 6)
+        self.draw.text((_PAD, 1), title, font=self.f.bold, fill=self.p.white)
+        self.draw.text((stamp_x, 1), stamp, font=self.f.regular, fill=self.p.white)
+
+    def section(self, section: Section, y: int) -> int:
+        self.draw.text((_PAD, y + 1), section.label.upper(), font=self.f.small, fill=self.p.black)
+        if section.stale:
+            x = _PAD + self.f.small.getlength(section.label.upper()) + 6
+            self.draw.text((x, y + 1), "! STALE", font=self.f.small, fill=self.p.accent)
+        y += _LABEL_H
+        rows = section.rows[: _MAX_ROWS.get(section.label, 2)]
+        if not rows:
+            self.draw.text((_PAD, y + 1), section.empty_text, font=self.f.regular, fill=self.p.black)
+            return y + _ROW_H
+        for row in rows:
+            self.row(row, y)
+            y += _ROW_H
+        return y
+
+    def row(self, row: Row, y: int) -> None:
+        ink, status_ink = self.p.black, self.p.black
+        if row.style is Style.INVERTED:
+            self.draw.rectangle((0, y, WIDTH - 1, y + _ROW_H - 1), fill=self.p.black)
+            ink = status_ink = self.p.white
+        elif row.style is Style.ALERT:
+            status_ink = self.p.accent
+
+        right_x = WIDTH - _PAD - self.f.bold.getlength(row.right)
+        middle_x = _PAD + left_column_width(self.f)
+        middle = fit_text(row.middle, self.f.regular, right_x - middle_x - 4)
+
+        self.draw.text((_PAD, y + 1), fit_text(row.left, self.f.bold, middle_x - _PAD - 3), font=self.f.bold, fill=ink)
+        self.draw.text((middle_x, y + 1), middle, font=self.f.regular, fill=ink)
+        self.draw.text((right_x, y + 1), row.right, font=self.f.bold, fill=status_ink)
+
+    def rule(self, y: int) -> None:
+        self.draw.line((_PAD, y, WIDTH - _PAD, y), fill=self.p.black)
+
+    def apply_preview_palette(self) -> None:
+        if not self.p.preview:
+            return
+        colours = [(0, 0, 0)] * 256
+        colours[self.p.white] = (255, 255, 255)
+        colours[self.p.black] = (0, 0, 0)
+        colours[self.p.accent] = _PREVIEW_ACCENTS[self.p.preview]
+        self.image.putpalette([v for rgb in colours for v in rgb])
+
+
+def render(view: BoardView, palette: Palette, fonts: Fonts | None = None) -> Image.Image:
+    painter = _Painter(palette, fonts or load_fonts())
+    painter.header(view)
+    y = painter.section(view.trains, _HEADER_H + _GAP)
+    painter.rule(y + 1)
+    painter.section(view.buses, y + _GAP + 1)
+    painter.apply_preview_palette()
+    return painter.image
