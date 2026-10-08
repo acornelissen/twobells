@@ -115,3 +115,32 @@ def run_once(board: Board, state: dict, display: Display, now: datetime) -> RunR
         state["last_render"] = {"signature": view.signature(), "at": to_iso(now)}
         return RunResult(view, rendered=True)
     return RunResult(view, rendered=False)
+
+
+def run_loop(
+    board: Board,
+    state: dict,
+    display: Display,
+    clock,
+    tick_seconds: float,
+    ticks: int | None = None,
+    sleep=None,
+    on_tick=None,
+    store=None,
+) -> None:
+    """Tick forever (or `ticks` times). A clock with `advance()` is simulated."""
+    import time
+
+    sleep = sleep or time.sleep
+    count = 0
+    while ticks is None or count < ticks:
+        now = clock()
+        result = run_once(board, state, display, now)
+        if store is not None:
+            store.save(state)
+        if on_tick is not None:
+            on_tick(now, result)
+        sleep(tick_seconds)
+        if hasattr(clock, "advance"):
+            clock.advance()
+        count += 1

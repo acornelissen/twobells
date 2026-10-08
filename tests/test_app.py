@@ -161,3 +161,33 @@ def test_state_survives_a_round_trip_through_disk(tmp_path):
     assert (trains.calls, buses.calls) == (1, 1)
     assert not result.rendered
     assert [r.left for r in result.view.trains.rows] == ["07:12"]
+
+
+def test_run_loop_ticks_and_advances_a_simulated_clock():
+    from departureboard.app import run_loop
+    from departureboard.fake import SimClock
+
+    trains, buses, board, display, state = setup()
+    clock = SimClock(THU_0700)
+    seen, sleeps = [], []
+    run_loop(
+        board,
+        state,
+        display,
+        clock,
+        tick_seconds=2,
+        ticks=3,
+        sleep=sleeps.append,
+        on_tick=lambda now, result: seen.append(now),
+    )
+    assert seen == [THU_0700 + timedelta(minutes=m) for m in range(3)]
+    assert sleeps == [2, 2, 2]
+
+
+def test_run_loop_saves_state_each_tick(tmp_path):
+    from departureboard.app import run_loop
+
+    trains, buses, board, display, state = setup()
+    store = StateStore(tmp_path / "state.json")
+    run_loop(board, state, display, lambda: THU_0700, 0, ticks=1, sleep=lambda s: None, store=store)
+    assert store.load()["sources"]["train"]["departures"]
