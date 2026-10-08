@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Callable, Iterable
+import re
+from typing import Any, Callable, Iterable
 from urllib.parse import urlencode
 
 from .http import get_json
@@ -11,6 +12,19 @@ from .model import Departure, Status, minutes_between
 DEFAULT_BASE_URL = "https://transportapi.com/v3"
 
 HttpGet = Callable[[str, dict], dict]
+
+_CREDENTIAL = re.compile(r"\b(app_id|app_key)=[^&\s\"']*")
+
+
+def redact_credentials(value: Any) -> Any:
+    """Copy of a response with app_id/app_key values masked in every string."""
+    if isinstance(value, dict):
+        return {k: redact_credentials(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [redact_credentials(v) for v in value]
+    if isinstance(value, str):
+        return _CREDENTIAL.sub(r"\1=REDACTED", value)
+    return value
 
 
 def _parse_bus(entry: dict, stop_label: str | None) -> Departure:
