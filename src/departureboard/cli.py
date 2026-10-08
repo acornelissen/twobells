@@ -31,7 +31,7 @@ def load_env_file(path: Path | str) -> dict[str, str]:
     values: dict[str, str] = {}
     try:
         lines = Path(path).read_text().splitlines()
-    except FileNotFoundError:
+    except OSError:
         return values
     for line in lines:
         line = line.strip()

@@ -15,6 +15,11 @@ def test_load_env_file_parses_assignments(tmp_path):
     assert load_env_file(path) == {"RDM_API_KEY": "abc", "TAPI_APP_ID": "id", "TAPI_APP_KEY": "k=1"}
 
 
+def test_unreadable_env_file_is_treated_as_empty(tmp_path):
+    # systemd reads secrets.env as root; the service user may not be able to.
+    assert load_env_file(tmp_path) == {}  # a directory cannot be read as a file
+
+
 def test_run_reports_config_errors_without_traceback(tmp_path, capsys):
     config = tmp_path / "config.toml"
     config.write_text('[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
