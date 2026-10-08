@@ -157,7 +157,11 @@ def _emulate(args) -> int:
         accent=args.accent,
         tick_seconds=args.tick,
     )
-    server = make_server(em.display, host="127.0.0.1", port=args.port)
+    try:
+        server = make_server(em.display, port=args.port, attempts=args.port_attempts)
+    except OSError as error:
+        print(f"{error.strerror or error}. Stop the other process or pass --port.", file=sys.stderr)
+        return 2
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     print(f"Emulator running at {url}  (Ctrl+C to stop)")
@@ -216,6 +220,7 @@ def _parser() -> argparse.ArgumentParser:
     emulate.add_argument("--fake-train", action="store_true", help="fake trains, live buses")
     emulate.add_argument("--accent", default="red", choices=["red", "yellow"], help="demo accent")
     emulate.add_argument("--port", type=int, default=8765)
+    emulate.add_argument("--port-attempts", type=int, default=10, help=argparse.SUPPRESS)
     emulate.add_argument("--tick", type=float, help="seconds per tick (demo 2, live 60)")
     emulate.add_argument("--ticks", type=int, help=argparse.SUPPRESS)
     emulate.add_argument("--no-browser", action="store_true")

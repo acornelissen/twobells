@@ -49,3 +49,17 @@ def test_demo_outage_covers_a_morning_window():
 def test_demo_runs_headless_for_a_few_ticks():
     code = main(["emulate", "--demo", "--no-browser", "--port", "0", "--tick", "0", "--ticks", "3"])
     assert code == 0
+
+
+def test_emulate_reports_busy_port_without_traceback(capsys):
+    from departureboard.emulator import EmulatorDisplay, make_server
+
+    blocker = make_server(EmulatorDisplay(), port=0)
+    port = blocker.server_address[1]
+    try:
+        code = main(["emulate", "--demo", "--no-browser", "--port", str(port), "--port-attempts", "1"])
+    finally:
+        blocker.server_close()
+    assert code == 2
+    err = capsys.readouterr().err
+    assert str(port) in err and "--port" in err
