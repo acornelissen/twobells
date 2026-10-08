@@ -49,16 +49,18 @@ def _rng(seed: int, key: str, now: datetime) -> random.Random:
 
 
 class _FakeSource:
-    def __init__(self, clock, seed: int = 1, rows: int = 3) -> None:
+    def __init__(self, clock, seed: int = 1, rows: int = 3, failing_when=None) -> None:
         self._clock = clock
         self._seed = seed
         self._rows = rows
+        self._failing_when = failing_when
         self.failing = False
 
     def fetch(self) -> list[Departure]:
-        if self.failing:
+        now = self._clock()
+        if self.failing or (self._failing_when and self._failing_when(now)):
             raise OSError(f"fake {self.name} source is failing")
-        return self._departures(self._clock())
+        return self._departures(now)
 
 
 class FakeTrainSource(_FakeSource):
@@ -96,8 +98,8 @@ _BUS_ROUTES = (
 class FakeBusSource(_FakeSource):
     name = "bus"
 
-    def __init__(self, clock, seed: int = 1, rows: int = 2) -> None:
-        super().__init__(clock, seed, rows)
+    def __init__(self, clock, seed: int = 1, rows: int = 2, failing_when=None) -> None:
+        super().__init__(clock, seed, rows, failing_when)
 
     def _departures(self, now: datetime) -> list[Departure]:
         departures = []

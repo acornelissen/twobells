@@ -68,3 +68,12 @@ def test_fake_source_can_be_told_to_fail():
     source.failing = True
     with pytest.raises(OSError):
         source.fetch()
+
+
+def test_fake_source_fails_while_its_outage_predicate_holds():
+    clock = SimClock(START)
+    source = FakeBusSource(clock, failing_when=lambda now: now.minute == 59)
+    source.fetch()
+    clock.advance()
+    with pytest.raises(OSError):
+        source.fetch()
