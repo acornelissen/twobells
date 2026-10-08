@@ -86,3 +86,12 @@ def test_loading_only_bus_does_not_need_the_rail_key(example):
     env = {"TAPI_APP_ID": "id", "TAPI_APP_KEY": "key"}
     settings = load_config(example, env, only={"bus"})
     assert [c.source.name for c in settings.board.sources] == ["bus"]
+
+
+def test_minimum_redraw_gap_defaults_to_two_minutes(example):
+    assert load_config(example, ENV).board.min_redraw == timedelta(minutes=2)
+
+
+def test_minimum_redraw_gap_can_be_set(tmp_path):
+    path = write(tmp_path, 'min_redraw_minutes = 3\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    assert load_config(path, ENV).board.min_redraw == timedelta(minutes=3)

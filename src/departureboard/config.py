@@ -106,6 +106,7 @@ def load_config(
         title=data.get("title", "Departures"),
         sources=sources,
         refresh_every=timedelta(minutes=data.get("refresh_every_minutes", 10)),
+        min_redraw=timedelta(minutes=data.get("min_redraw_minutes", 2)),
     )
     return Settings(
         board=board,
