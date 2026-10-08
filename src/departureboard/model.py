@@ -21,6 +21,12 @@ def _to_minutes(hhmm: str) -> int:
     return int(hours) * 60 + int(minutes)
 
 
+def shift(hhmm: str, minutes: int) -> str:
+    """Clock time moved by `minutes`, wrapping at midnight."""
+    total = (_to_minutes(hhmm) + minutes) % _DAY
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
 def minutes_between(start: str, end: str) -> int:
     """Signed minutes from start to end, assuming they are within 12 hours."""
     diff = (_to_minutes(end) - _to_minutes(start)) % _DAY
