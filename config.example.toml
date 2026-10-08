@@ -4,8 +4,6 @@
 title = "Glossop > Manchester Picc"
 timezone = "Europe/London"
 state_file = "/var/lib/departureboard/state.json"
-# Redraw at least this often while a window is active, so "Upd" stays honest.
-refresh_every_minutes = 10
 # Never redraw more often than this, even if the data changes sooner.
 min_redraw_minutes = 2
 # "red" or "yellow". Only reinforces meaning; text always carries it.

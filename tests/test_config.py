@@ -28,7 +28,6 @@ def test_example_config_loads(example):
     assert names == ["train", "bus"]
     assert isinstance(settings.board.sources[0].source, DarwinSource)
     assert isinstance(settings.board.sources[1].source, TransportApiBusSource)
-    assert settings.board.refresh_every == timedelta(minutes=10)
     assert settings.timezone == "Europe/London"
     assert settings.accent == "red"
 
@@ -95,3 +94,9 @@ def test_minimum_redraw_gap_defaults_to_two_minutes(example):
 def test_minimum_redraw_gap_can_be_set(tmp_path):
     path = write(tmp_path, 'min_redraw_minutes = 3\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
     assert load_config(path, ENV).board.min_redraw == timedelta(minutes=3)
+
+
+def test_old_refresh_every_setting_is_ignored(tmp_path):
+    path = write(tmp_path, 'refresh_every_minutes = 10\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    board = load_config(path, ENV).board
+    assert not hasattr(board, "refresh_every")

@@ -48,7 +48,6 @@ def _demo(accent: str, tick_seconds: float | None) -> Emulation:
             _fake_train(clock),
             SourceConfig(bus, PollPolicy(_ALWAYS, timedelta(minutes=6)), timedelta(minutes=12)),
         ],
-        refresh_every=timedelta(minutes=10),
     )
 
     return Emulation(

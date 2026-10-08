@@ -53,7 +53,6 @@ def make_board(trains, buses, bus_budget=28):
             SourceConfig(trains, morning(2), stale_after=timedelta(minutes=6)),
             SourceConfig(buses, morning(5), stale_after=timedelta(minutes=15), daily_budget=bus_budget),
         ],
-        refresh_every=timedelta(minutes=10),
     )
 
 
@@ -96,13 +95,14 @@ def test_changed_data_triggers_render():
     assert result.view.trains.rows[0].right == "+7"
 
 
-def test_same_data_rerenders_after_refresh_period_to_update_stamp():
+def test_unchanged_data_never_redraws_however_long_it_has_been():
     trains, buses, board, display, state = setup()
     trains.departures = [train("08:30")]
     buses.departures = [bus("08:40")]
     run_once(board, state, display, THU_0700)
-    result = run_once(board, state, display, THU_0700 + timedelta(minutes=10))
-    assert result.rendered
+    for minutes in range(1, 60):
+        assert not run_once(board, state, display, THU_0700 + timedelta(minutes=minutes)).rendered
+    assert len(display.shown) == 1
 
 
 def test_bus_fetch_refused_when_daily_budget_spent():

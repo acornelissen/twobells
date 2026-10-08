@@ -44,7 +44,6 @@ class SourceConfig:
 class Board:
     title: str
     sources: list[SourceConfig]
-    refresh_every: timedelta
     # E-paper refreshes are slow and wear the panel: never redraw more often than this.
     min_redraw: timedelta = timedelta(minutes=2)
 
@@ -109,13 +108,10 @@ def run_once(board: Board, state: dict, display: Display, now: datetime) -> RunR
 
     last = state.get("last_render", {})
     last_at = from_iso(last.get("at"))
-    active = any(c.policy.is_active(now) for c in board.sources)
-    since_last = now - last_at if last_at is not None else None
     changed = view.signature() != last.get("signature")
-    overdue = active and since_last is not None and since_last >= board.refresh_every
-    too_soon = since_last is not None and since_last < board.min_redraw
+    too_soon = last_at is not None and now - last_at < board.min_redraw
 
-    if (changed or overdue) and not too_soon:
+    if changed and not too_soon:
         display.show(render(view, display.palette))
         state["last_render"] = {"signature": view.signature(), "at": to_iso(now)}
         return RunResult(view, rendered=True)
