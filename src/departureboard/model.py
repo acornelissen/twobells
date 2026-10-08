@@ -36,6 +36,7 @@ class Departure:
     expected: str | None
     status: Status
     platform: str | None = None
+    stop: str | None = None
 
     @property
     def departs_at(self) -> str:

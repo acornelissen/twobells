@@ -22,14 +22,18 @@ windows = ["Mon-Fri 06:30-09:30", "Mon-Fri 16:30-19:30"]
 # base_url = "https://api1.raildata.org.uk/1010-live-departure-board-dep/LDBWS/api/20220120"
 
 [bus]
-# ATCO code of your stop (see README for how to find it).
-atco = "CHANGE_ME"
 rows = 2
 # Optional: only show buses whose direction contains one of these.
 directions = []
-interval_minutes = 6
-stale_after_minutes = 18
-# TransportAPI free plan is 30 hits/day; keep 2 spare for manual test calls.
-# 07:00-08:30 every 6 min = 16 calls, 17:00-18:00 every 6 min = 11 calls.
+# Every poll costs one hit per stop. TransportAPI free plan is 30 hits/day;
+# the budget keeps 2 spare for manual probes.
+# 2 stops x (07:00-08:30 every 12 min = 8 polls + 17:00-18:00 = 6 polls) = 28 hits.
+interval_minutes = 12
+stale_after_minutes = 30
 daily_budget = 28
 windows = ["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]
+
+# Short label shown on the board = ATCO code (find codes on bustimes.org).
+[bus.stops]
+A = "1000DGHS0900"   # Henry Street Stop A: 219, 237, 341
+B = "100000008350"   # Henry Street Stop B: 61, 237, 390, 393, 394

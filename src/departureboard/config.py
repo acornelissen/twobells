@@ -57,15 +57,23 @@ def _train(section: dict, env: Mapping[str, str]) -> SourceConfig:
     return SourceConfig(source, policy, timedelta(minutes=section.get("stale_after_minutes", 6)))
 
 
+def _stops(section: dict) -> dict[str, str]:
+    stops = section.get("stops") or {}
+    if not stops:
+        raise ConfigError("Add a [bus.stops] table of label = ATCO code, or remove [bus]")
+    for label, atco in stops.items():
+        if not atco or atco == "CHANGE_ME":
+            raise ConfigError(f"[bus.stops] {label} is {atco!r}; set a real ATCO code")
+    return stops
+
+
 def _bus(section: dict, env: Mapping[str, str]) -> SourceConfig:
-    atco = section.get("atco", "")
-    if not atco or atco == "CHANGE_ME":
-        raise ConfigError("Set [bus] atco to your stop's ATCO code, or remove the [bus] section")
-    policy = _policy(section, 6)
+    stops = _stops(section)
+    policy = _policy(section, 12)
     source = TransportApiBusSource(
         app_id=_secret(env, "TAPI_APP_ID"),
         app_key=_secret(env, "TAPI_APP_KEY"),
-        atco=atco,
+        stops=stops,
         rows=section.get("rows", 2),
         directions=section.get("directions") or None,
         base_url=section.get("base_url", TAPI_BASE_URL),
@@ -73,7 +81,7 @@ def _bus(section: dict, env: Mapping[str, str]) -> SourceConfig:
     return SourceConfig(
         source,
         policy,
-        timedelta(minutes=section.get("stale_after_minutes", 18)),
+        timedelta(minutes=section.get("stale_after_minutes", 30)),
         daily_budget=section.get("daily_budget", 28),
     )
 

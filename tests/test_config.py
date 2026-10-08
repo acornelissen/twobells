@@ -18,9 +18,8 @@ def write(tmp_path, text):
 
 
 @pytest.fixture
-def example(tmp_path):
-    """The shipped example with its bus stop placeholder filled in."""
-    return write(tmp_path, EXAMPLE.read_text().replace("CHANGE_ME", "1000TEST0001"))
+def example():
+    return EXAMPLE
 
 
 def test_example_config_loads(example):
@@ -40,7 +39,7 @@ def test_example_bus_schedule_fits_inside_its_budget(example):
     for window in bus.policy.windows:
         span = (window.end.hour * 60 + window.end.minute) - (window.start.hour * 60 + window.start.minute)
         calls += span // int(bus.policy.interval.total_seconds() // 60) + 1
-    assert calls <= bus.daily_budget
+    assert calls * bus.source.cost <= bus.daily_budget
 
 
 def test_bus_section_is_optional(tmp_path):
@@ -61,7 +60,18 @@ def test_bad_window_is_reported(tmp_path):
         load_config(path, ENV)
 
 
-def test_bus_left_as_placeholder_is_rejected(tmp_path):
-    path = write(tmp_path, '[bus]\natco = "CHANGE_ME"\nwindows = ["Mon-Fri 07:00-08:00"]\n')
-    with pytest.raises(ConfigError, match="atco"):
+def test_example_watches_both_henry_street_stops(example):
+    bus = load_config(example, ENV).board.sources[1]
+    assert bus.source.cost == 2
+
+
+def test_bus_without_stops_is_rejected(tmp_path):
+    path = write(tmp_path, '[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n')
+    with pytest.raises(ConfigError, match="stops"):
+        load_config(path, ENV)
+
+
+def test_bus_stop_left_as_placeholder_is_rejected(tmp_path):
+    path = write(tmp_path, '[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "CHANGE_ME"\n')
+    with pytest.raises(ConfigError, match="CHANGE_ME"):
         load_config(path, ENV)

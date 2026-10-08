@@ -1,3 +1,5 @@
+import pytest
+
 from departureboard.model import Status
 from departureboard.transportapi import TransportApiBusSource, parse_stop
 
@@ -69,30 +71,53 @@ def test_missing_departures_is_empty():
     assert parse_stop({}) == []
 
 
-def test_source_builds_live_request():
-    calls = []
+def test_parse_stop_tags_departures_with_stop_label():
+    [dep] = parse_stop(stop(bus()), stop_label="A")
+    assert dep.stop == "A"
 
+
+def source(stops, payloads, rows=2, directions=None, calls=None):
     def fake_get(url, headers):
-        calls.append((url, headers))
-        return stop(bus())
+        if calls is not None:
+            calls.append((url, headers))
+        atco = url.split("/stop_timetables/")[1].split(".json")[0]
+        return payloads[atco]
 
-    source = TransportApiBusSource(
+    return TransportApiBusSource(
         app_id="id",
         app_key="key",
-        atco="1600GLX0001",
-        rows=2,
+        stops=stops,
+        rows=rows,
+        directions=directions,
         base_url="https://example.test/v3",
         http_get=fake_get,
     )
-    deps = source.fetch()
+
+
+def test_source_builds_live_request():
+    calls = []
+    deps = source({"A": "1000DGHS0900"}, {"1000DGHS0900": stop(bus())}, calls=calls).fetch()
 
     [(url, headers)] = calls
     assert url == (
-        "https://example.test/v3/uk/bus/stop_timetables/1600GLX0001.json"
+        "https://example.test/v3/uk/bus/stop_timetables/1000DGHS0900.json"
         "?app_id=id&app_key=key&live=true&group=no&limit=2"
     )
     assert headers == {}
     assert len(deps) == 1
+
+
+def test_cost_is_one_hit_per_stop():
+    assert source({"A": "a", "B": "b"}, {}).cost == 2
+
+
+def test_departures_from_all_stops_are_merged_in_time_order():
+    payloads = {
+        "a": stop(bus(aimed_departure_time="07:40", best_departure_estimate="07:40")),
+        "b": stop(bus(line_name="61", aimed_departure_time="07:25", best_departure_estimate="07:25")),
+    }
+    deps = source({"A": "a", "B": "b"}, payloads, rows=3).fetch()
+    assert [(d.service, d.stop) for d in deps] == [("61", "B"), ("341", "A")]
 
 
 def test_source_truncates_to_requested_rows_after_filtering():
@@ -102,12 +127,10 @@ def test_source_truncates_to_requested_rows_after_filtering():
         bus(direction="Hyde", aimed_departure_time="07:50", best_departure_estimate="07:50"),
         bus(direction="Hyde", aimed_departure_time="08:10", best_departure_estimate="08:10"),
     )
-    source = TransportApiBusSource(
-        app_id="id",
-        app_key="key",
-        atco="x",
-        rows=2,
-        directions=["Hyde"],
-        http_get=lambda url, headers: payload,
-    )
-    assert [d.scheduled for d in source.fetch()] == ["07:30", "07:50"]
+    deps = source({"A": "x"}, {"x": payload}, rows=2, directions=["Hyde"]).fetch()
+    assert [d.scheduled for d in deps] == ["07:30", "07:50"]
+
+
+def test_source_requires_at_least_one_stop():
+    with pytest.raises(ValueError):
+        source({}, {})
