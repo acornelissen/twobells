@@ -63,3 +63,8 @@ def test_emulate_reports_busy_port_without_traceback(capsys):
     assert code == 2
     err = capsys.readouterr().err
     assert str(port) in err and "--port" in err
+
+
+def test_demo_board_has_walking_times():
+    walk = build_emulation(demo=True).board.walk
+    assert walk.train is not None and walk.bus

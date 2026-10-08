@@ -14,6 +14,7 @@ from .emulator import EmulatorDisplay
 from .fake import FakeBusSource, FakeTrainSource, SimClock
 from .schedule import PollPolicy, parse_window
 from .state import StateStore
+from .walk import WalkTimes
 
 DEMO_START = datetime(2026, 10, 8, 6, 58)  # a Thursday
 _ALWAYS = (parse_window("Mon-Sun 00:00-23:59"),)
@@ -48,6 +49,7 @@ def _demo(accent: str, tick_seconds: float | None) -> Emulation:
             _fake_train(clock),
             SourceConfig(bus, PollPolicy(_ALWAYS, timedelta(minutes=6)), timedelta(minutes=12)),
         ],
+        walk=WalkTimes(train=7, bus={"A": 7, "B": 7}),
     )
 
     return Emulation(
