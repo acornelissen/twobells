@@ -17,10 +17,10 @@ class DailyBudget:
     def remaining(self, today: date) -> int:
         return max(self.limit - self._used_on(today), 0)
 
-    def try_spend(self, today: date) -> bool:
-        if self.remaining(today) == 0:
+    def try_spend(self, today: date, amount: int = 1) -> bool:
+        if self.remaining(today) < amount:
             return False
-        self._used = self._used_on(today) + 1
+        self._used = self._used_on(today) + amount
         self._day = today
         return True
 

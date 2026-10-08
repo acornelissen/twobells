@@ -31,6 +31,19 @@ def test_allowance_resets_on_a_new_day():
     assert budget.try_spend(TOMORROW)
 
 
+def test_spending_several_hits_at_once():
+    budget = DailyBudget(limit=5)
+    assert budget.try_spend(TODAY, amount=2)
+    assert budget.remaining(TODAY) == 3
+
+
+def test_multi_hit_spend_refused_when_it_would_overrun():
+    budget = DailyBudget(limit=3)
+    budget.try_spend(TODAY, amount=2)
+    assert not budget.try_spend(TODAY, amount=2)
+    assert budget.remaining(TODAY) == 1
+
+
 def test_round_trips_through_dict():
     budget = DailyBudget(limit=28)
     budget.try_spend(TODAY)
