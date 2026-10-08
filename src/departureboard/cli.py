@@ -29,6 +29,7 @@ from .render import render
 from .state import StateStore
 from .transportapi import redact_credentials
 from .view import build_view
+from .walk import WalkTimes
 
 DEFAULT_CONFIG = "/etc/departureboard/config.toml"
 DEFAULT_SECRETS = "/etc/departureboard/secrets.env"
@@ -141,7 +142,8 @@ def _demo(args) -> int:
         Departure("bus", "61", "Buxton", "07:35", None, Status.UNKNOWN),
     ]
     display = PngDisplay(args.png, args.accent)
-    view = build_view("Glossop > Manchester Picc", trains, buses, "07:03", set())
+    walk = WalkTimes(train=7, bus={"*": 7})
+    view = build_view("Glossop > Manchester Picc", trains, buses, "07:03", set(), walk)
     display.show(render(view, display.palette))
     print(f"Wrote {args.png}")
     return 0
