@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inky pHAT emulator</title>
+<style>
+  :root {
+    --bg: #1d1e21;
+    --fg: #e8e6df;
+    --muted: #9b998f;
+    --line: #34363a;
+    --pcb: #111214;
+    --pcb-edge: #2b2d31;
+    --pad: #b8954a;
+    --glass: #cdcbc2;
+    --glass-dark: #b9b7ad;
+    --paper: rgb(233, 231, 222);
+    --ink: rgb(36, 36, 38);
+    --accent: rgb(176, 38, 38);
+    --k: 3;
+    --mm: calc(250px * var(--k) / 48.5);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px;
+    gap: 24px;
+  }
+  header { width: min(100%, 1040px); display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: .02em; }
+  .mode { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .stage { width: 100%; overflow-x: auto; display: flex; justify-content: center; padding: 8px 0 4px; }
+
+  /* Board at true proportions: 65 x 30 mm PCB, 48.5 x 23.8 mm active area. */
+  .pcb {
+    position: relative;
+    flex: none;
+    width: calc(65 * var(--mm));
+    height: calc(30 * var(--mm));
+    background: var(--pcb);
+    border-radius: calc(2.5 * var(--mm));
+    box-shadow: inset 0 0 0 1px var(--pcb-edge), 0 18px 40px rgba(0,0,0,.45);
+  }
+  .hole {
+    position: absolute;
+    width: calc(2.75 * var(--mm));
+    height: calc(2.75 * var(--mm));
+    margin: calc(-1.375 * var(--mm)) 0 0 calc(-1.375 * var(--mm));
+    border-radius: 50%;
+    background: var(--bg);
+    box-shadow: 0 0 0 calc(.7 * var(--mm)) var(--pad);
+    left: calc(61.5 * var(--mm));
+  }
+  .hole.top { top: calc(3.5 * var(--mm)); }
+  .hole.bottom { top: calc(26.5 * var(--mm)); }
+  .glass {
+    position: absolute;
+    left: calc(.9 * var(--mm));
+    top: calc(.4 * var(--mm));
+    width: calc(59.2 * var(--mm));
+    height: calc(29.2 * var(--mm));
+    border-radius: calc(.6 * var(--mm));
+    background: linear-gradient(90deg, var(--glass) 0 88%, var(--glass-dark) 88% 100%);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.25);
+  }
+  .active {
+    position: absolute;
+    left: calc(2.6 * var(--mm));
+    top: calc((29.2 * var(--mm) - 122px * var(--k)) / 2);
+    width: calc(250px * var(--k));
+    height: calc(122px * var(--k));
+    background: var(--paper);
+    overflow: hidden;
+  }
+  .active img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    transition-property: filter;
+    transition-timing-function: ease-out;
+  }
+  .active img.settling { filter: contrast(.3) brightness(1.3); }
+  .sheen {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(125deg, rgba(255,255,255,.10), rgba(255,255,255,0) 45%, rgba(0,0,0,.05));
+  }
+  .overlay { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+  .empty {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    color: var(--ink); opacity: .55; font-size: calc(5px * var(--k));
+  }
+
+  .panel { width: min(100%, 1040px); display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .card h2 { margin: 0 0 10px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-variant-numeric: tabular-nums; }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+  .controls { display: flex; flex-direction: column; gap: 10px; }
+  .group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .group span { color: var(--muted); min-width: 64px; }
+  button {
+    font: inherit; color: var(--fg); background: transparent;
+    border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+  }
+  button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  button:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  ol { margin: 0; padding: 0; list-style: none; font-variant-numeric: tabular-nums; max-height: 180px; overflow-y: auto; }
+  li { display: flex; gap: 12px; padding: 2px 0; border-bottom: 1px dashed var(--line); }
+  li:last-child { border-bottom: 0; }
+  li .t { color: var(--muted); min-width: 72px; }
+  .note { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Inky pHAT emulator <span class="mode" id="mode"></span></h1>
+    <div class="mode" id="refreshing" aria-live="polite">Idle</div>
+  </header>
+
+  <div class="stage">
+    <div class="pcb" aria-label="Emulated 2.13 inch e-paper display">
+      <div class="hole top"></div>
+      <div class="hole bottom"></div>
+      <div class="glass">
+        <div class="active">
+          <div class="empty" id="empty">Waiting for first frame</div>
+          <img id="frame" alt="Departure board frame" hidden>
+          <div class="overlay" id="overlay"></div>
+          <div class="sheen"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="card">
+      <h2>Board</h2>
+      <dl>
+        <dt>Board time</dt><dd id="time">–</dd>
+        <dt>Refreshes</dt><dd id="refreshes">0</dd>
+        <dt>Ticks</dt><dd id="ticks">0</dd>
+        <dt>Accent</dt><dd id="accent">–</dd>
+      </dl>
+    </div>
+    <div class="card controls">
+      <h2>View</h2>
+      <div class="group" role="group" aria-label="Refresh speed">
+        <span>Refresh</span>
+        <button data-speed="20000">Realistic 20 s</button>
+        <button data-speed="2500">Quick</button>
+        <button data-speed="0">Instant</button>
+      </div>
+      <div class="group" role="group" aria-label="Scale">
+        <span>Scale</span>
+        <button data-scale="1">1×</button>
+        <button data-scale="2">2×</button>
+        <button data-scale="3">3×</button>
+        <button data-scale="4">4×</button>
+      </div>
+      <p class="note">1× matches the panel's 250 × 122 pixels. Colours approximate a four-colour panel under room light.</p>
+    </div>
+    <div class="card">
+      <h2>Ticks</h2>
+      <ol id="log"><li><span class="t">–</span><span>No ticks yet</span></li></ol>
+    </div>
+  </section>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const img = $("frame"), overlay = $("overlay");
+  const ACCENTS = { red: "rgb(176, 38, 38)", yellow: "rgb(224, 180, 32)" };
+  const store = {
+    get(key, fallback) { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } },
+    set(key, value) { try { localStorage.setItem(key, value); } catch {} },
+  };
+
+  let speed = Number(store.get("inky.speed", "20000"));
+  let scale = store.get("inky.scale", "3");
+  let shownVersion = 0, pendingVersion = 0, refreshing = false, lastTicks = 0;
+  const log = [];
+
+  function press(attr, value) {
+    document.querySelectorAll(`[data-${attr}]`).forEach((b) =>
+      b.setAttribute("aria-pressed", String(b.dataset[attr] === String(value))));
+  }
+  function applyScale() {
+    document.documentElement.style.setProperty("--k", scale);
+    press("scale", scale);
+  }
+  document.querySelectorAll("[data-speed]").forEach((b) => b.addEventListener("click", () => {
+    speed = Number(b.dataset.speed); store.set("inky.speed", speed); press("speed", speed);
+  }));
+  document.querySelectorAll("[data-scale]").forEach((b) => b.addEventListener("click", () => {
+    scale = b.dataset.scale; store.set("inky.scale", scale); applyScale();
+  }));
+  press("speed", speed); applyScale();
+
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const flash = async (colour, ms) => {
+    overlay.style.background = colour; overlay.style.opacity = "1"; await wait(ms);
+  };
+
+  function load(version) {
+    return new Promise((resolve) => {
+      const next = new Image();
+      next.onload = () => resolve(next.src);
+      next.onerror = () => resolve(null);
+      next.src = `/frame.png?v=${version}`;
+    });
+  }
+
+  // Approximates a three/four-colour EPD waveform: black/white flicker to
+  // clear the old image, an accent particle phase, then the image settles.
+  async function refresh(version) {
+    refreshing = true;
+    const src = await load(version);
+    if (!src) { refreshing = false; return; }
+    const started = performance.now();
+    const T = speed, accent = ACCENTS[$("accent").textContent] || ACCENTS.red;
+    const timer = setInterval(() => {
+      $("refreshing").textContent = `Refreshing ${((performance.now() - started) / 1000).toFixed(0)} s`;
+    }, 250);
+    if (T > 0) {
+      for (let i = 0; i < 6; i++) await flash(i % 2 ? "rgb(233,231,222)" : "rgb(36,36,38)", T * 0.04);
+      for (let i = 0; i < 2; i++) {
+        await flash(accent, T * 0.09);
+        await flash("rgb(233,231,222)", T * 0.06);
+      }
+    }
+    img.style.transitionDuration = "0ms";
+    img.classList.toggle("settling", T > 0);
+    img.src = src; img.hidden = false; $("empty").hidden = true;
+    overlay.style.opacity = "0";
+    if (T > 0) {
+      await wait(30);
+      img.style.transitionDuration = `${T * 0.46}ms`;
+      img.classList.remove("settling");
+      await wait(T * 0.46);
+    }
+    clearInterval(timer);
+    shownVersion = version;
+    $("refreshing").textContent = "Idle";
+    refreshing = false;
+    if (pendingVersion > shownVersion) refresh(pendingVersion);
+  }
+
+  function addLog(status) {
+    const what = status.last_tick_rendered ? "Redraw" : "No change, panel untouched";
+    log.unshift([status.board_time, what]);
+    log.length = Math.min(log.length, 30);
+    $("log").replaceChildren(...log.map(([t, w]) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="t"></span><span></span>`;
+      li.children[0].textContent = t; li.children[1].textContent = w;
+      return li;
+    }));
+  }
+
+  async function poll() {
+    try {
+      const status = await (await fetch("/status.json", { cache: "no-store" })).json();
+      $("mode").textContent = status.mode === "demo" ? "· demo data, simulated clock" : "· live data";
+      $("time").textContent = status.board_time || "–";
+      $("refreshes").textContent = status.refreshes;
+      $("ticks").textContent = status.ticks;
+      $("accent").textContent = status.accent;
+      if (status.ticks > lastTicks) { lastTicks = status.ticks; addLog(status); }
+      if (status.version > shownVersion) {
+        pendingVersion = status.version;
+        if (!refreshing) refresh(pendingVersion);
+      }
+    } catch {
+      $("refreshing").textContent = "Emulator not running";
+    }
+    setTimeout(poll, 1000);
+  }
+  poll();
+})();
+</script>
+</body>
+</html>
