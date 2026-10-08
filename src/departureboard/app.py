@@ -70,8 +70,8 @@ def _poll(config: SourceConfig, state: dict, now: datetime) -> None:
     entry["last_attempt"] = to_iso(now)
     try:
         departures = config.source.fetch()
-    except Exception:  # noqa: BLE001 - keep showing last good data on any failure
-        log.exception("%s: fetch failed", name)
+    except Exception as error:  # noqa: BLE001 - keep showing last good data on any failure
+        log.warning("%s: fetch failed: %s", name, error)
         return
     entry["departures"] = [departure_to_dict(d) for d in departures]
     entry["last_success"] = to_iso(now)

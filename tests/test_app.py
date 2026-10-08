@@ -191,3 +191,13 @@ def test_run_loop_saves_state_each_tick(tmp_path):
     store = StateStore(tmp_path / "state.json")
     run_loop(board, state, display, lambda: THU_0700, 0, ticks=1, sleep=lambda s: None, store=store)
     assert store.load()["sources"]["train"]["departures"]
+
+
+def test_failed_fetch_logs_one_line_without_traceback(caplog):
+    trains, buses, board, display, state = setup()
+    trains.error = OSError("network down")
+    with caplog.at_level("WARNING"):
+        run_once(board, state, display, THU_0700)
+    [record] = [r for r in caplog.records if "train" in r.getMessage()]
+    assert "network down" in record.getMessage()
+    assert record.exc_info is None
