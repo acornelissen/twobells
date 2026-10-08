@@ -1,3 +1,4 @@
+import dataclasses
 from datetime import datetime, timedelta
 
 from departureboard.app import Board, SourceConfig, run_once
@@ -201,3 +202,40 @@ def test_failed_fetch_logs_one_line_without_traceback(caplog):
     [record] = [r for r in caplog.records if "train" in r.getMessage()]
     assert "network down" in record.getMessage()
     assert record.exc_info is None
+
+
+def minutely(**overrides):
+    """Board whose trains poll every minute, so changes land between redraws."""
+    trains, buses, board, display, state = setup()
+    sources = [SourceConfig(trains, morning(1), stale_after=timedelta(minutes=6))]
+    board = dataclasses.replace(board, sources=sources, **overrides)
+    return trains, board, display, state
+
+
+def test_changes_within_two_minutes_of_a_redraw_are_held_back():
+    trains, board, display, state = minutely()
+    run_once(board, state, display, THU_0700)
+    trains.departures = [train(expected="07:19", status=Status.LATE)]
+    held = run_once(board, state, display, THU_0700 + timedelta(minutes=1))
+    assert trains.calls == 2
+    assert held.view.trains.rows[0].right == "+7"
+    assert not held.rendered
+    assert len(display.shown) == 1
+
+
+def test_held_change_is_drawn_once_two_minutes_have_passed():
+    trains, board, display, state = minutely()
+    run_once(board, state, display, THU_0700)
+    trains.departures = [train(expected="07:19", status=Status.LATE)]
+    run_once(board, state, display, THU_0700 + timedelta(minutes=1))
+    result = run_once(board, state, display, THU_0700 + timedelta(minutes=2))
+    assert result.rendered
+    assert len(display.shown) == 2
+
+
+def test_minimum_redraw_gap_is_configurable():
+    trains, board, display, state = minutely(min_redraw=timedelta(minutes=5))
+    run_once(board, state, display, THU_0700)
+    trains.departures = [train(expected="07:19", status=Status.LATE)]
+    assert not run_once(board, state, display, THU_0700 + timedelta(minutes=4)).rendered
+    assert run_once(board, state, display, THU_0700 + timedelta(minutes=5)).rendered
