@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -46,9 +47,51 @@ def _local_now(timezone: str) -> datetime:
     return datetime.now(ZoneInfo(timezone)).replace(tzinfo=None, second=0, microsecond=0)
 
 
-def _settings(args):
+def _parse_stops(specs: list[str] | None) -> dict[str, str] | None:
+    if not specs:
+        return None
+    stops = {}
+    for spec in specs:
+        label, sep, atco = spec.partition("=")
+        if not sep or not label or not atco:
+            raise ConfigError(f"--stop expects LABEL=ATCO, got {spec!r}")
+        stops[label] = atco
+    return stops
+
+
+def _settings(args, bus_stops: dict[str, str] | None = None):
     env = {**os.environ, **load_env_file(args.secrets)}
-    return load_config(args.config, env)
+    return load_config(args.config, env, bus_stops)
+
+
+def _print_departures(departures: list[Departure], indent: str = "") -> None:
+    for dep in departures:
+        print(
+            f"{indent}{dep.scheduled}  {dep.service:<10} {dep.destination:<28} "
+            f"{dep.status.value} {dep.expected or ''}".rstrip()
+        )
+
+
+def _probe_bus(source, save_dir: str | None) -> int:
+    print(f"Note: this uses {source.cost} hit(s) of your daily TransportAPI allowance.")
+    failed = False
+    for label, atco in source.stops.items():
+        print(f"{label}  {atco}")
+        try:
+            payload = source.fetch_raw(atco)
+            if save_dir:
+                Path(save_dir).mkdir(parents=True, exist_ok=True)
+                (Path(save_dir) / f"{atco}.json").write_text(json.dumps(payload, indent=2))
+            departures = source.parse(payload, label)
+        except Exception as error:  # noqa: BLE001 - report and try the next stop
+            print(f"  error: {error}")
+            failed = True
+            continue
+        if departures:
+            _print_departures(departures, indent="  ")
+        else:
+            print("  no departures")
+    return 1 if failed else 0
 
 
 def _run(args) -> int:
@@ -67,14 +110,13 @@ def _run(args) -> int:
 
 
 def _probe(args) -> int:
-    settings = _settings(args)
+    settings = _settings(args, _parse_stops(args.stop))
     for config in settings.board.sources:
         if config.source.name != args.source:
             continue
-        if config.daily_budget is not None:
-            print("Note: this uses one hit of your daily API allowance.")
-        for dep in config.source.fetch():
-            print(f"{dep.scheduled}  {dep.service:<10} {dep.destination:<28} {dep.status.value} {dep.expected or ''}")
+        if args.source == "bus":
+            return _probe_bus(config.source, args.save)
+        _print_departures(config.source.fetch())
         return 0
     print(f"No [{args.source}] section in config", file=sys.stderr)
     return 2
@@ -112,6 +154,10 @@ def _parser() -> argparse.ArgumentParser:
 
     probe = with_config(sub.add_parser("probe", help="one live call to check keys and codes"))
     probe.add_argument("source", choices=["train", "bus"])
+    probe.add_argument(
+        "--stop", action="append", metavar="LABEL=ATCO", help="bus stop(s) to probe instead of config"
+    )
+    probe.add_argument("--save", metavar="DIR", help="save raw bus responses as JSON")
     probe.set_defaults(handler=_probe)
 
     demo = sub.add_parser("demo", help="render sample data to a PNG")
