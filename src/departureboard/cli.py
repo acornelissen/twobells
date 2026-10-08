@@ -1,8 +1,9 @@
 """Command line entry points.
 
-  departureboard run    one tick; systemd runs this every minute
-  departureboard probe  one live call to check keys and stop codes
-  departureboard demo   render sample data to a PNG, no keys needed
+  departureboard run      one tick; systemd runs this every minute
+  departureboard probe    one live call to check keys and stop codes
+  departureboard demo     render sample data to a PNG, no keys needed
+  departureboard emulate  run the board against a browser-based panel emulator
 """
 
 from __future__ import annotations
@@ -12,13 +13,17 @@ import json
 import logging
 import os
 import sys
+import threading
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .app import run_once
+from .app import run_loop, run_once
 from .config import ConfigError, load_config
 from .display import InkyDisplay, PngDisplay
+from .emulation import build_emulation
+from .emulator import make_server
 from .model import Departure, Status
 from .render import render
 from .state import StateStore
@@ -139,6 +144,44 @@ def _demo(args) -> int:
     return 0
 
 
+def _emulate(args) -> int:
+    env = None if args.demo else {**os.environ, **load_env_file(args.secrets)}
+    em = build_emulation(
+        demo=args.demo,
+        config=args.config,
+        env=env,
+        fake_train=args.fake_train,
+        accent=args.accent,
+        tick_seconds=args.tick,
+    )
+    server = make_server(em.display, host="127.0.0.1", port=args.port)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_address[1]}/"
+    print(f"Emulator running at {url}  (Ctrl+C to stop)")
+    if not args.demo and any(c.daily_budget is not None for c in em.board.sources):
+        print("Live bus polling uses your TransportAPI allowance inside its windows.")
+    if not args.no_browser:
+        webbrowser.open(url)
+    state = em.store.load() if em.store else {}
+    try:
+        run_loop(
+            em.board,
+            state,
+            em.display,
+            em.clock,
+            em.tick_seconds,
+            ticks=args.ticks,
+            store=em.store,
+            on_tick=lambda now, result: em.display.tick(now, result.rendered),
+        )
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.shutdown()
+        server.server_close()
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="departureboard")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -164,6 +207,16 @@ def _parser() -> argparse.ArgumentParser:
     demo.add_argument("--png", default="preview.png")
     demo.add_argument("--accent", default="red", choices=["red", "yellow"])
     demo.set_defaults(handler=_demo)
+
+    emulate = with_config(sub.add_parser("emulate", help="run against a browser panel emulator"))
+    emulate.add_argument("--demo", action="store_true", help="fake data on a fast simulated clock")
+    emulate.add_argument("--fake-train", action="store_true", help="fake trains, live buses")
+    emulate.add_argument("--accent", default="red", choices=["red", "yellow"], help="demo accent")
+    emulate.add_argument("--port", type=int, default=8765)
+    emulate.add_argument("--tick", type=float, help="seconds per tick (demo 2, live 60)")
+    emulate.add_argument("--ticks", type=int, help=argparse.SUPPRESS)
+    emulate.add_argument("--no-browser", action="store_true")
+    emulate.set_defaults(handler=_emulate)
     return parser
 
 
