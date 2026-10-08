@@ -86,8 +86,14 @@ def _bus(section: dict, env: Mapping[str, str]) -> SourceConfig:
     )
 
 
-def load_config(path: Path | str, env: Mapping[str, str]) -> Settings:
+def load_config(
+    path: Path | str,
+    env: Mapping[str, str],
+    bus_stops: dict[str, str] | None = None,
+) -> Settings:
     data = tomllib.loads(Path(path).read_text())
+    if bus_stops:
+        data.setdefault("bus", {})["stops"] = bus_stops
     sources = []
     if "train" in data:
         sources.append(_train(data["train"], env))

@@ -75,3 +75,8 @@ def test_bus_stop_left_as_placeholder_is_rejected(tmp_path):
     path = write(tmp_path, '[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "CHANGE_ME"\n')
     with pytest.raises(ConfigError, match="CHANGE_ME"):
         load_config(path, ENV)
+
+
+def test_bus_stops_can_be_overridden(example):
+    settings = load_config(example, ENV, bus_stops={"V": "1000DGVS3332"})
+    assert settings.board.sources[1].source.cost == 1
