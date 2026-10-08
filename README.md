@@ -30,6 +30,16 @@ Station codes: Glossop is `GLO`, Manchester Piccadilly is `MAN`.
    - <https://www.openstreetmap.org>: zoom in, click the bus stop and read the `naptan:AtcoCode` tag.
 4. Add them to `[bus.stops]` as `LABEL = "ATCO"`. The label is shown on the board (`A: Hyde`). Each stop costs one hit per poll, so two stops halve the polls you can make. Add `directions = ["Ashton"]` to filter.
 
+### Walking times
+
+Each section header shows when to leave for the next departure you can still reach, for example `Leave 07:05 (07:12)`. It's a clock time, not a countdown, so it only changes when the next reachable departure changes. Set `walk_minutes` under `[train]`, and per stop label under `[bus.walk_minutes]`. To measure a route, ask the OpenStreetMap foot router:
+
+```
+https://routing.openstreetmap.de/routed-foot/table/v1/foot/HOME_LON,HOME_LAT;STOP_LON,STOP_LAT?sources=0
+```
+
+Round up and add a minute for crossings and platforms.
+
 ## 2. Install on the Pi
 
 Raspberry Pi OS Lite (Bookworm or later) on the Zero W, with Wi-Fi and SSH set up in Raspberry Pi Imager.
