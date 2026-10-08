@@ -5,6 +5,6 @@ __pycache__/
 .pytest_cache/
 secrets.env
 state.json
-preview.png
+/preview.png
 config.toml
 probe-raw/
