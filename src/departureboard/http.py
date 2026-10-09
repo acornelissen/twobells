@@ -1,4 +1,4 @@
-"""Thin JSON-over-HTTPS adapter. Kept dependency-free for the Pi Zero."""
+"""Thin HTTPS adapter. Kept dependency-free for the Pi Zero."""
 
 from __future__ import annotations
 
@@ -17,3 +17,13 @@ def get_json(url: str, headers: dict | None = None, timeout: float = 15.0) -> di
     )
     with urlopen(request, timeout=timeout) as response:
         return json.load(response)
+
+
+def get_bytes(url: str, max_bytes: int, timeout: float = 15.0) -> bytes:
+    """A response body, refused if it is larger than `max_bytes`."""
+    request = Request(url, headers={"User-Agent": USER_AGENT})
+    with urlopen(request, timeout=timeout) as response:
+        body = response.read(max_bytes + 1)
+    if len(body) > max_bytes:
+        raise ValueError(f"Response larger than {max_bytes} bytes")
+    return body

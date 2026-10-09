@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Built for tests: BODS SIRI-VM structure (from DfT's bods repo samples), real
+     NaPTAN positions on High Street West, Glossop, and invented vehicles. -->
+<Siri xmlns="http://www.siri.org.uk/siri" version="2.0">
+  <ServiceDelivery>
+    <ResponseTimestamp>2026-10-08T07:12:40+01:00</ResponseTimestamp>
+    <ProducerRef>ItoWorld</ProducerRef>
+    <VehicleMonitoringDelivery>
+      <ResponseTimestamp>2026-10-08T07:12:40+01:00</ResponseTimestamp>
+      <VehicleActivity>
+        <RecordedAtTime>2026-10-08T07:12:31+01:00</RecordedAtTime>
+        <MonitoredVehicleJourney>
+          <LineRef>341</LineRef>
+          <DirectionRef>INBOUND</DirectionRef>
+          <PublishedLineName>341</PublishedLineName>
+          <OperatorRef>BNML</OperatorRef>
+          <DestinationName>Hyde</DestinationName>
+          <!-- Between Sunlaws Street and St Marys Road, heading east. -->
+          <VehicleLocation>
+            <Longitude>-1.957392</Longitude>
+            <Latitude>53.443502</Latitude>
+          </VehicleLocation>
+          <Bearing>90.0</Bearing>
+          <VehicleRef>BNML-1001</VehicleRef>
+        </MonitoredVehicleJourney>
+      </VehicleActivity>
+      <VehicleActivity>
+        <RecordedAtTime>2026-10-08T07:12:28+01:00</RecordedAtTime>
+        <MonitoredVehicleJourney>
+          <LineRef>341</LineRef>
+          <DirectionRef>INBOUND</DirectionRef>
+          <PublishedLineName>341</PublishedLineName>
+          <OperatorRef>BNML</OperatorRef>
+          <DestinationName>Hyde</DestinationName>
+          <!-- Well before the strip, on Dinting Vale. -->
+          <VehicleLocation>
+            <Longitude>-1.978008</Longitude>
+            <Latitude>53.449584</Latitude>
+          </VehicleLocation>
+          <Bearing>120.0</Bearing>
+          <VehicleRef>BNML-1002</VehicleRef>
+        </MonitoredVehicleJourney>
+      </VehicleActivity>
+      <VehicleActivity>
+        <RecordedAtTime>2026-10-08T07:12:35+01:00</RecordedAtTime>
+        <MonitoredVehicleJourney>
+          <LineRef>341</LineRef>
+          <DirectionRef>OUTBOUND</DirectionRef>
+          <PublishedLineName>341</PublishedLineName>
+          <OperatorRef>BNML</OperatorRef>
+          <DestinationName>Glossop</DestinationName>
+          <!-- On the strip near Arundel Street but heading west: the other direction. -->
+          <VehicleLocation>
+            <Longitude>-1.952800</Longitude>
+            <Latitude>53.443480</Latitude>
+          </VehicleLocation>
+          <Bearing>270.0</Bearing>
+          <VehicleRef>BNML-1003</VehicleRef>
+        </MonitoredVehicleJourney>
+      </VehicleActivity>
+      <VehicleActivity>
+        <RecordedAtTime>2026-10-08T07:12:30+01:00</RecordedAtTime>
+        <MonitoredVehicleJourney>
+          <LineRef>237</LineRef>
+          <DirectionRef>INBOUND</DirectionRef>
+          <PublishedLineName>237</PublishedLineName>
+          <OperatorRef>BNML</OperatorRef>
+          <DestinationName>Ashton</DestinationName>
+          <!-- Another route, at Grapes Inn. -->
+          <VehicleLocation>
+            <Longitude>-1.962774</Longitude>
+            <Latitude>53.444223</Latitude>
+          </VehicleLocation>
+          <Bearing>95.0</Bearing>
+          <VehicleRef>BNML-2001</VehicleRef>
+        </MonitoredVehicleJourney>
+      </VehicleActivity>
+      <VehicleActivity>
+        <RecordedAtTime>2026-10-08T07:12:20+01:00</RecordedAtTime>
+        <MonitoredVehicleJourney>
+          <LineRef>341</LineRef>
+          <PublishedLineName>341</PublishedLineName>
+          <DestinationName>Hyde</DestinationName>
+          <!-- No position reported. -->
+          <VehicleRef>BNML-1004</VehicleRef>
+        </MonitoredVehicleJourney>
+      </VehicleActivity>
+    </VehicleMonitoringDelivery>
+  </ServiceDelivery>
+</Siri>
