@@ -63,6 +63,7 @@ def test_parses_a_real_detailed_glossop_board():
 
     assert isinstance(board, TrainBoard)
     assert board.generated_at == "2026-10-09T07:00:00+01:00"
+    assert board.location == "Glossop"
     assert board.messages == ["The ticket office is currently closed at this station."]
     assert [(s.departure.scheduled, s.service_id, s.origin, s.departure.destination) for s in board.services] == [
         ("22:05", "9000001GLSP____", "Manchester Piccadilly", "Hadfield"),
@@ -273,6 +274,7 @@ def test_board_level_oddities():
     assert rich().services == []
     assert parse_board_rich({}).services == []
     assert parse_board_rich({"trainServices": None, "generatedAt": "yesterday"}).generated_at is None
+    assert parse_board_rich({"locationName": ["Glossop"]}).location is None
     for odd in (None, [], "board", 7):
         with pytest.raises(ValueError):
             parse_board_rich(odd)

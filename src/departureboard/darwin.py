@@ -186,6 +186,7 @@ class TrainBoard:
     services: list[TrainService]
     messages: list[str]
     generated_at: str | None  # Darwin's own ISO 8601 timestamp, as sent
+    location: str | None = None  # the station's name, like "Glossop"
 
 
 def _name(value) -> str | None:
@@ -338,6 +339,7 @@ def parse_board_rich(board) -> TrainBoard:
         services=services,
         messages=parse_messages(board),
         generated_at=_matching(_GENERATED_AT, board.get("generatedAt")),
+        location=_name(board.get("locationName")),
     )
 
 
