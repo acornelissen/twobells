@@ -196,6 +196,11 @@ def _fields(display: str, theme: str) -> list[Field]:
               options=tuple((r, f"{r}°") for r in rotations)),
         Field("min_redraw_minutes", None, "min_redraw_minutes", "Least minutes between redraws",
               _number(1, 60), "number", hint="E-paper only. Refreshes are slow and wear the panel."),
+        Field("bank_holidays", None, "bank_holidays", "Bank holidays",
+              lambda raw: _choice(("true", "false"))(raw) == "true", "select",
+              hint="Trains and buses run a Sunday service on bank holidays in England and Wales. Treated "
+                   "like Sundays, only checking times that include Sun apply then. Dates come from GOV.UK.",
+              options=(("true", "Treat bank holidays like Sundays"), ("false", "Ignore bank holidays"))),
         Field("train_crs", "train", "crs", "Station code", _crs(), hint="3 letters, like GLO for Glossop."),
         Field("train_filter_crs", "train", "filter_crs", "Only trains calling at", _crs(optional=True),
               hint="Optional station code, like MAN. Empty shows every train."),
@@ -318,6 +323,8 @@ class SettingsForm:
             value = source.get(f.key)
             if f.name == "rotate" and value is None:
                 value = 180 if data.get("rotate_180") else 0
+            if f.name == "bank_holidays":
+                value = "false" if value is False else "true"  # on unless turned off
             values[f.name] = _shown(value, f.kind)
         return values
 

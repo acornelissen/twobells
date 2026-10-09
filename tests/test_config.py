@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -352,6 +352,7 @@ BUS = '[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"
         ('display = "hdmi-1280x400"\n[bus]\nroutes = "341"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n', "routes"),
         ('display = "hdmi-1280x400"\n' + BUS + '[bus.routes.341]\nstop = "A"\nstops = "Arundel Street"\n', "341"),
         ("title = \n", "config.toml"),
+        ('bank_holidays = "yes"\n' + TRAIN, "bank_holidays"),
     ],
 )
 def test_wrong_types_and_ranges_are_config_errors(tmp_path, text, message):
@@ -374,3 +375,23 @@ def test_no_state_file_means_no_overlay_from_the_working_directory(tmp_path, mon
     path = write(tmp_path, 'title = "Base"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
     assert load_config(path, ENV).board.title == "Base"
     assert overlay_paths(path) is None
+
+
+HOLIDAY = date(2026, 8, 31)
+
+
+def test_bank_holidays_reach_every_policy_by_default(tmp_path):
+    settings = load_config(write(tmp_path, ROUTE + TRAIN), BODS_ENV, holidays=frozenset({HOLIDAY}))
+    policies = [c.policy for c in settings.board.sources] + [settings.board.tracker.policy]
+    assert [p.holidays for p in policies] == [frozenset({HOLIDAY})] * 3
+
+
+def test_bank_holidays_can_be_ignored(tmp_path):
+    path = write(tmp_path, "bank_holidays = false\n" + TRAIN + BUS)
+    settings = load_config(path, ENV, holidays=frozenset({HOLIDAY}))
+    assert [c.policy.holidays for c in settings.board.sources] == [frozenset(), frozenset()]
+
+
+def test_without_known_holidays_policies_have_none(tmp_path):
+    settings = load_config(write(tmp_path, TRAIN), ENV)
+    assert settings.board.sources[0].policy.holidays == frozenset()

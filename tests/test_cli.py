@@ -1,9 +1,24 @@
 import json
+from datetime import date
 
 import pytest
 from PIL import Image
 
+from departureboard import holidays
 from departureboard.cli import load_env_file, main
+
+
+@pytest.fixture(autouse=True)
+def gov_uk(monkeypatch):
+    """No test reaches gov.uk: bank holiday downloads fail as if offline, and are counted."""
+    calls = []
+
+    def offline(url, max_bytes, timeout=15.0):
+        calls.append(url)
+        raise OSError("offline in tests")
+
+    monkeypatch.setattr(holidays, "get_bytes", offline)
+    return calls
 
 
 def test_demo_writes_preview_without_any_keys(tmp_path):
@@ -395,3 +410,74 @@ def test_settings_page_starts_even_when_saved_settings_are_broken(tmp_path, monk
     monkeypatch.setattr(getpass, "getpass", lambda prompt="": "a long enough password")
     assert main(["web", "--config", str(config), "--set-password"]) == 0
     assert (state / "web.json").exists()
+
+
+def _holiday_run(tmp_path, monkeypatch, extra=""):
+    """A board with a Mon-Fri train window, run at 07:00 on the August bank holiday Monday."""
+    from datetime import datetime
+
+    import departureboard.cli as cli
+    from departureboard.darwin import DarwinSource
+
+    calls = []
+    monkeypatch.setattr(DarwinSource, "fetch", lambda self: calls.append(1) or [])
+    monkeypatch.setattr(cli, "_local_now", lambda tz: datetime(2026, 8, 31, 7, 0))
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "state.json").write_text('{"sources": {}}')  # not a first run, so nothing is primed
+    fresh = datetime.now().isoformat()
+    cache = {"fetched": fresh, "checked": fresh, "dates": ["2026-08-31"]}
+    (state / holidays.CACHE_NAME).write_text(json.dumps(cache))
+    config = tmp_path / "config.toml"
+    config.write_text(
+        f'state_file = "{state / "state.json"}"\n{extra}'
+        '[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n'
+    )
+    secrets = tmp_path / "secrets.env"
+    secrets.write_text("RDM_API_KEY=k\n")
+    return ["--config", str(config), "--secrets", str(secrets)], calls
+
+
+def test_run_treats_a_bank_holiday_like_a_sunday(tmp_path, monkeypatch, gov_uk):
+    args, calls = _holiday_run(tmp_path, monkeypatch)
+    assert main(["run", *args, "--png", str(tmp_path / "out.png")]) == 0
+    assert calls == []  # a Mon-Fri window is off on a bank holiday
+    assert gov_uk == []  # the cache is fresh
+
+
+def test_run_can_ignore_bank_holidays_without_asking_gov_uk(tmp_path, monkeypatch, gov_uk):
+    args, calls = _holiday_run(tmp_path, monkeypatch, "bank_holidays = false\n")
+    (tmp_path / "state" / holidays.CACHE_NAME).unlink()
+    assert main(["run", *args, "--png", str(tmp_path / "out.png")]) == 0
+    assert calls == [1]
+    assert gov_uk == []
+
+
+def test_run_without_a_holiday_cache_asks_gov_uk_once_and_carries_on(tmp_path, monkeypatch, gov_uk):
+    args, calls = _holiday_run(tmp_path, monkeypatch)
+    (tmp_path / "state" / holidays.CACHE_NAME).unlink()
+    assert main(["run", *args, "--png", str(tmp_path / "out.png")]) == 0
+    assert main(["run", *args, "--png", str(tmp_path / "out.png")]) == 0
+    assert gov_uk == [holidays.URL]
+    assert calls == [1]  # offline with no cache: an ordinary Monday
+
+
+def test_a_probe_never_asks_gov_uk(tmp_path, monkeypatch, gov_uk):
+    args, calls = _holiday_run(tmp_path, monkeypatch)
+    (tmp_path / "state" / holidays.CACHE_NAME).unlink()
+    assert main(["probe", "train", *args]) == 0
+    assert calls == [1]
+    assert gov_uk == []
+
+
+def test_reloaded_settings_keep_the_bank_holidays(tmp_path, monkeypatch):
+    import argparse
+
+    from departureboard.cli import _settings, _Watcher
+
+    args, _ = _holiday_run(tmp_path, monkeypatch)
+    namespace = argparse.Namespace(config=args[1], secrets=args[3])
+    watcher = _Watcher(namespace, _settings(namespace))
+    (tmp_path / "state" / "settings.toml").write_text('title = "After"\n')
+    board = watcher()
+    assert board.sources[0].policy.holidays == {date(2026, 8, 31)}

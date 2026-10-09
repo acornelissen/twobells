@@ -24,8 +24,9 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .app import run_loop, run_once
-from .config import ConfigError, load_config, overlay_paths
+from .config import ConfigError, load_config, overlay_paths, read_config, state_dir
 from .display import DISPLAY_PANELS, PngDisplay, open_display
+from .holidays import bank_holidays
 from .emulation import build_emulation
 from .emulator import DEFAULT_PORT, make_server
 from .http import get_bytes
@@ -83,8 +84,24 @@ def _env(config: Path | str, secrets: Path | str) -> dict[str, str]:
     return env
 
 
+def _holidays(config: Path | str) -> frozenset:
+    """Bank holidays, cached beside the state file and refreshed from gov.uk
+    weekly, unless the settings say to ignore them (then gov.uk is never asked)."""
+    try:
+        data = read_config(config)
+        folder = state_dir(data)
+    except (OSError, ConfigError):
+        return frozenset()  # load_config reports it
+    if folder is None or data.get("bank_holidays", True) is not True:
+        return frozenset()
+    # Only the cache's age depends on the time, so the Pi's own zone will do.
+    return bank_holidays(folder, datetime.now())
+
+
 def _settings(args, bus_stops: dict[str, str] | None = None, only: set[str] | None = None):
-    return load_config(args.config, _env(args.config, args.secrets), bus_stops, only)
+    # A probe makes one call whatever the day, so it needs no holidays.
+    holidays = _holidays(args.config) if only is None else frozenset()
+    return load_config(args.config, _env(args.config, args.secrets), bus_stops, only, holidays=holidays)
 
 
 def _print_departures(departures: list[Departure], indent: str = "") -> None:

@@ -372,3 +372,30 @@ def test_a_broken_settings_file_still_shows_the_page_and_saving_replaces_it(setu
     assert form.save(fields | {"title": "Fixed"}) == {}
     assert load_config(config, ENV).board.title == "Fixed"
     assert "broken" not in form.render("tok")
+
+
+def test_bank_holidays_are_treated_like_sundays_unless_turned_off(setup):
+    form, config, state, _ = setup
+    assert fields_of(form)["bank_holidays"] == "true"
+    assert form.save({**fields_of(form), "bank_holidays": "false"}) == {}
+    assert tomllib.loads((state / "settings.toml").read_text())["bank_holidays"] is False
+    assert read_config(config)["bank_holidays"] is False
+    assert fields_of(form)["bank_holidays"] == "false"
+    assert form.save({**fields_of(form), "bank_holidays": "true"}) == {}
+    assert read_config(config)["bank_holidays"] is True
+
+
+def test_bank_holidays_setting_refuses_anything_else(setup):
+    form, _, state, _ = setup
+    errors = form.save({**fields_of(form), "bank_holidays": "sometimes"})
+    assert "bank_holidays" in errors
+    assert not (state / "settings.toml").exists()
+
+
+def test_bank_holidays_setting_is_in_the_board_section_with_a_hint(setup):
+    form, *_ = setup
+    page = form.render("tok")
+    board = page[page.index("<legend>Board</legend>"):page.index("<legend>Trains</legend>")]
+    assert '<label for="bank_holidays">Bank holidays</label>' in board
+    assert 'aria-describedby="bank_holidays-hint"' in board
+    assert "Treat bank holidays like Sundays" in board and "Ignore bank holidays" in board

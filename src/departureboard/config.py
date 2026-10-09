@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import tomllib
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Mapping
 from zoneinfo import ZoneInfo
@@ -137,6 +137,13 @@ def _text(section: dict, key: str, default: str, where: str = "") -> str:
     return value
 
 
+def _flag(section: dict, key: str, default: bool, where: str = "") -> bool:
+    value = section.get(key, default)
+    if not isinstance(value, bool):
+        raise ConfigError(f"{where}{key} must be true or false, not {value!r}")
+    return value
+
+
 def _texts(section: dict, key: str, where: str) -> list[str]:
     value = section.get(key, [])
     if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
@@ -144,21 +151,21 @@ def _texts(section: dict, key: str, where: str) -> list[str]:
     return value
 
 
-def _policy(section: dict, default_interval: int, where: str) -> PollPolicy:
+def _policy(section: dict, default_interval: int, where: str, holidays: frozenset[date]) -> PollPolicy:
     try:
         windows = tuple(parse_window(w) for w in _texts(section, "windows", where))
     except ValueError as error:
         raise ConfigError(str(error)) from error
     interval = timedelta(minutes=_whole(section, "interval_minutes", default_interval, where))
-    return PollPolicy(windows, interval)
+    return PollPolicy(windows, interval, holidays)
 
 
-def _train(section: dict, env: Mapping[str, str]) -> SourceConfig:
+def _train(section: dict, env: Mapping[str, str], holidays: frozenset[date]) -> SourceConfig:
     where = "[train] "
     crs = section.get("crs")
     if not isinstance(crs, str) or not crs.strip():
         raise ConfigError('[train] needs crs, the 3-letter station code, like crs = "GLO"')
-    policy = _policy(section, 2, where)
+    policy = _policy(section, 2, where, holidays)
     source = DarwinSource(
         api_key=_secret(env, "RDM_API_KEY"),
         crs=crs,
@@ -179,10 +186,10 @@ def _stops(section: dict) -> dict[str, str]:
     return stops
 
 
-def _bus(section: dict, env: Mapping[str, str]) -> SourceConfig:
+def _bus(section: dict, env: Mapping[str, str], holidays: frozenset[date]) -> SourceConfig:
     where = "[bus] "
     stops = _stops(section)
-    policy = _policy(section, 12, where)
+    policy = _policy(section, 12, where, holidays)
     source = TransportApiBusSource(
         app_id=_secret(env, "TAPI_APP_ID"),
         app_key=_secret(env, "TAPI_APP_KEY"),
@@ -209,7 +216,7 @@ def _route_stop(line: str, entry) -> RouteStop:
     return RouteStop(name, lat, lon)
 
 
-def _tracker(section: dict, env: Mapping[str, str], windows) -> Tracker | None:
+def _tracker(section: dict, env: Mapping[str, str], bus: PollPolicy) -> Tracker | None:
     """The route strip page's bus positions, if any routes are set up."""
     routes = _table(section, "routes", "[bus.routes]")
     if not routes:
@@ -231,7 +238,8 @@ def _tracker(section: dict, env: Mapping[str, str], windows) -> Tracker | None:
     interval = timedelta(seconds=_whole(section, "position_interval_seconds", 30, "[bus] "))
     if interval < timedelta(seconds=10):
         raise ConfigError("position_interval_seconds must be at least 10; BODS refreshes every 10 s")
-    return Tracker(source, strips, PollPolicy(windows, interval))
+    # The buses' own windows and holidays: positions are only wanted while buses are.
+    return Tracker(source, strips, PollPolicy(bus.windows, interval, bus.holidays))
 
 
 def _walk(data: dict) -> WalkTimes:
@@ -266,18 +274,22 @@ def load_config(
     bus_stops: dict[str, str] | None = None,
     only: set[str] | None = None,
     display: str | None = None,
+    holidays: frozenset[date] = frozenset(),
 ) -> Settings:
     """Load settings. `only` limits which sources are built, so a probe needs only its own keys.
-    `display` overrides the configured one, as the emulator's --display does."""
+    `display` overrides the configured one, as the emulator's --display does. `holidays`
+    are bank holiday dates, used unless the settings say to ignore them."""
     data = read_config(path)
     if display:
         data["display"] = display
     if bus_stops:
         data.setdefault("bus", {})["stops"] = bus_stops
-    return settings_from(data, env, only)
+    return settings_from(data, env, only, holidays)
 
 
-def settings_from(data: dict, env: Mapping[str, str], only: set[str] | None = None) -> Settings:
+def settings_from(
+    data: dict, env: Mapping[str, str], only: set[str] | None = None, holidays: frozenset[date] = frozenset()
+) -> Settings:
     """Settings from already-read config data; the web page checks a change with this before saving."""
     try:
         theme = theme_named(_text(data, "theme", "sign"))
@@ -296,17 +308,19 @@ def settings_from(data: dict, env: Mapping[str, str], only: set[str] | None = No
     except (KeyError, ValueError):  # ZoneInfoNotFoundError is a KeyError
         raise ConfigError(f"Unknown timezone {timezone!r}; use one like Europe/London") from None
     state_file = _text(data, "state_file", "state.json")
+    # On by default: services run a Sunday timetable on bank holidays.
+    holidays = frozenset(holidays) if _flag(data, "bank_holidays", True) else frozenset()
     sources = []
     tracker = None
     wanted = only or {"train", "bus"}
     if "train" in data and "train" in wanted:
-        sources.append(_train(_table(data, "train", "[train]"), env))
+        sources.append(_train(_table(data, "train", "[train]"), env, holidays))
     if "bus" in data and "bus" in wanted:
-        bus = _bus(_table(data, "bus", "[bus]"), env)
+        bus = _bus(_table(data, "bus", "[bus]"), env, holidays)
         sources.append(bus)
         # Bus positions are only drawn on a screen; e-paper never asks for them.
         if not DISPLAY_PANELS[display].epaper:
-            tracker = _tracker(data["bus"], env, bus.policy.windows)
+            tracker = _tracker(data["bus"], env, bus.policy)
     board = Board(
         title=_text(data, "title", "Departures"),
         sources=sources,
