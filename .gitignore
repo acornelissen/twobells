@@ -15,3 +15,6 @@ probe-raw/
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+
+# Agent worktrees (short-lived)
+.claude/worktrees/
