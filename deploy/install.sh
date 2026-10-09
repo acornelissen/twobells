@@ -81,9 +81,10 @@ Installed. Next:
        sudo systemctl enable --now departureboard-timetable.timer
        sudo systemctl start departureboard-timetable.service   (the first build, now)
   5. Settings page (optional, home network only):
-       sudo -u departureboard $PREFIX/venv/bin/departureboard web --set-password
        sudo systemctl enable --now departureboard-web.service
-     then open http://$(hostname).local:8080/
+     then open http://$(hostname).local:8080/ and claim it with the code the
+     board shows, or set the password here first:
+       sudo -u departureboard $PREFIX/venv/bin/departureboard web --set-password
 
 If the display errors about chip select, add  dtoverlay=spi0-0cs
 to /boot/firmware/config.txt and reboot. The Waveshare 10.85" panel always

@@ -161,11 +161,10 @@ departureboard emulate --demo --display hdmi-1280x400
 A password-protected page on your home network for everyday settings: the look, accent and rotation, stations and stops, when to check, walking times, and API keys. Keys are write-only: the page says whether one is set but never shows it.
 
 ```bash
-sudo -u departureboard /opt/departureboard/venv/bin/departureboard web --set-password
 sudo systemctl enable --now departureboard-web.service
 ```
 
-Then open `http://<pi name>.local:8080/` from a phone or laptop on the same network.
+Then open `http://<pi name>.local:8080/` from a phone or laptop on the same network. The first visit claims the page: press **Show a code on the board**, read the 6-digit code off the board, and type it with a new password. A forgotten password works the same way, from **Forgot password?** on the sign-in page. Or set the password on the Pi with `sudo -u departureboard /opt/departureboard/venv/bin/departureboard web --set-password`, and print a code with `... web --reset-code` when the board can't show one.
 
 - Saved settings go to `/var/lib/departureboard/settings.toml`, layered over `config.toml`, which is never rewritten. Keys go to `/var/lib/departureboard/secrets.env` (0600).
 - Nothing is saved unless every field passes its check and the whole configuration loads.
@@ -180,6 +179,9 @@ Then open `http://<pi name>.local:8080/` from a phone or laptop on the same netw
   - Requests must name a local host, which stops DNS-rebinding pages.
   - A signed-in session, a form token and a same-origin check are needed to change anything.
   - Five wrong passwords lock an address out for 15 minutes.
+  - Being on the network is not enough to set a password: that needs a one-time code from the board's display (or
+    the command line). A code lasts 10 minutes and works once; five wrong tries void it; at most one is shown a minute
+    and ten a day. Setting a password this way signs every other browser out.
   - The page is plain HTTP on your LAN, so use a password you don't use anywhere else.
 
 ## 3. Develop on your laptop

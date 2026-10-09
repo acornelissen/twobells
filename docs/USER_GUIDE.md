@@ -323,11 +323,21 @@ A bus that starts its journey at your stop is followed on its way in. In Glossop
 
 ### The settings page
 
-Set a password (10 characters or more), then start the page:
+Start the page:
 
 ```bash
-sudo -u departureboard /opt/departureboard/venv/bin/departureboard web --set-password
 sudo systemctl enable --now departureboard-web.service
+```
+
+Open `http://<pi name>.local:8080/`. The first visit asks you to claim the page: press **Show a code on the board**, and the board shows a 6-digit code instead of departures (e-paper can take a minute). Type the code and a new password (10 characters or more). The code works once, for 10 minutes; the departures come back as soon as it is used or runs out.
+
+Forgot the password? Press **Forgot password?** on the sign-in page and do the same. Every browser signed in is signed out.
+
+If the board isn't running, print a code on the Pi instead, or set the password there:
+
+```bash
+sudo -u departureboard /opt/departureboard/venv/bin/departureboard web --reset-code
+sudo -u departureboard /opt/departureboard/venv/bin/departureboard web --set-password
 ```
 
 The page uses plain HTTP on your home network. Use a password you don't use anywhere else.
