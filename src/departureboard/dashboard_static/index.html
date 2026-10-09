@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en-GB" data-theme="modern">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#111315">
+<title>Departures</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<script src="/static/theme.js"></script>
+<script type="module" src="/static/main.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to departures</a>
+
+<header class="top">
+  <h1 id="title">Departures</h1>
+  <p class="clock"><span class="vh">Time now: </span><time id="clock">--:--</time></p>
+  <p class="connection" id="connection" data-state="connecting">
+    <span id="connection-glyph" class="glyph" aria-hidden="true">◌</span>
+    <span id="connection-text">Connecting…</span>
+  </p>
+  <button type="button" id="theme-toggle" class="quiet" aria-pressed="false">Board look</button>
+</header>
+
+<main id="main" tabindex="-1">
+  <section id="leave" class="leave" aria-labelledby="leave-heading">
+    <h2 id="leave-heading" class="leave-label" tabindex="-1">Next to catch</h2>
+    <p class="leave-time" id="leave-time">Waiting for departures…</p>
+    <p class="leave-what" id="leave-what"></p>
+    <p class="note" id="notify-note" hidden></p>
+  </section>
+
+  <div id="alert-banner" class="alert-banner" role="alert"></div>
+
+  <section id="messages" class="messages" aria-labelledby="messages-heading" hidden>
+    <h2 id="messages-heading"><span class="glyph" aria-hidden="true">⚠&#xFE0E;</span> Disruption</h2>
+    <ul id="message-list"></ul>
+  </section>
+
+  <div class="sections">
+    <section id="trains" class="panel" aria-labelledby="trains-heading">
+      <h2 id="trains-heading">Trains</h2>
+      <p class="section-meta"><span id="trains-walk"></span> <span id="trains-status" class="section-status"></span></p>
+      <div id="trains-board"><p class="empty">Loading…</p></div>
+    </section>
+
+    <section id="buses" class="panel" aria-labelledby="buses-heading">
+      <h2 id="buses-heading">Buses</h2>
+      <p class="section-meta"><span id="buses-walk"></span> <span id="buses-status" class="section-status"></span></p>
+      <div id="buses-board"><p class="empty">Loading…</p></div>
+    </section>
+
+    <section id="weather" class="panel weather" aria-labelledby="weather-heading">
+      <h2 id="weather-heading">Weather</h2>
+      <p class="section-meta"><span id="weather-status" class="section-status"></span></p>
+      <div id="weather-now"></div>
+      <p id="weather-rain" class="wx-rain-line" hidden></p>
+      <p id="weather-sun" class="wx-sun"></p>
+      <h3>Next 12 hours</h3>
+      <div id="weather-hours"></div>
+    </section>
+  </div>
+</main>
+
+<footer class="foot">
+  <p id="osm-credit" hidden>Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>.</p>
+  <p>Times from National Rail Enquiries, Bus Open Data and Open-Meteo.</p>
+</footer>
+
+<div id="live" class="vh" aria-live="polite" aria-atomic="true"></div>
+
+<dialog id="train-dialog" class="dialog" aria-labelledby="train-title">
+  <div class="dialog-inner">
+    <div class="dialog-head">
+      <h2 id="train-title" data-dialog-title tabindex="-1">Train</h2>
+      <button type="button" class="quiet close" data-close>Close</button>
+    </div>
+    <div id="train-body"></div>
+  </div>
+</dialog>
+
+<dialog id="bus-dialog" class="dialog dialog-wide" aria-labelledby="bus-title">
+  <div class="dialog-inner">
+    <div class="dialog-head">
+      <h2 id="bus-title" data-dialog-title tabindex="-1">Bus map</h2>
+      <button type="button" class="quiet close" data-close>Close</button>
+    </div>
+    <p id="map-status" class="map-status"></p>
+    <div class="map-tools" role="group" aria-label="Map controls">
+      <button type="button" id="map-zoom-in" class="quiet"><span aria-hidden="true">+</span> Zoom in</button>
+      <button type="button" id="map-zoom-out" class="quiet"><span aria-hidden="true">−</span> Zoom out</button>
+      <button type="button" id="map-centre" class="quiet" disabled>Centre on bus</button>
+    </div>
+    <div id="map" class="map" role="region" aria-label="Map of the bus route. The same stops are listed below."></div>
+    <p class="map-credit">Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>.</p>
+    <p id="map-where" class="map-where"></p>
+    <h3>Stops on this journey</h3>
+    <ol id="map-stops" class="calling map-stops"></ol>
+  </div>
+</dialog>
+
+<dialog id="history-dialog" class="dialog" aria-labelledby="history-title">
+  <div class="dialog-inner">
+    <div class="dialog-head">
+      <h2 id="history-title" data-dialog-title tabindex="-1">Punctuality</h2>
+      <button type="button" class="quiet close" data-close>Close</button>
+    </div>
+    <div id="history-body"></div>
+  </div>
+</dialog>
+</body>
+</html>

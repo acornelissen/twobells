@@ -8,14 +8,174 @@ way without a browser.
 import hashlib
 import json
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "departureboard" / "dashboard_static"
 VENDOR = STATIC / "vendor"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+OWN_FILES = [p for p in STATIC.rglob("*") if p.is_file() and VENDOR not in p.parents]
+OWN_JS = [p for p in OWN_FILES if p.suffix == ".js"]
+
+
+# --- index.html ---
+
+
+class _Page(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.elements = []  # (tag, attrs)
+        self.inline_script = False
+        self._in_script = False
+
+    def handle_starttag(self, tag, attrs):
+        self.elements.append((tag, dict(attrs)))
+        self._in_script = tag == "script"
+
+    def handle_startendtag(self, tag, attrs):
+        self.elements.append((tag, dict(attrs)))
+
+    def handle_endtag(self, tag):
+        if tag == "script":
+            self._in_script = False
+
+    def handle_data(self, data):
+        if self._in_script and data.strip():
+            self.inline_script = True
+
+
+def _page():
+    parser = _Page()
+    parser.feed((STATIC / "index.html").read_text(encoding="utf-8"))
+    return parser
+
+
+def test_index_has_no_inline_script_style_or_handlers():
+    page = _page()
+    assert not page.inline_script
+    tags = [tag for tag, _ in page.elements]
+    assert "style" not in tags
+    for tag, attrs in page.elements:
+        assert "style" not in attrs, f"<{tag}> has a style attribute"
+        handlers = [name for name in attrs if name.startswith("on")]
+        assert not handlers, f"<{tag}> has {handlers}"
+        if tag == "script":
+            assert attrs.get("src"), "every script must be an external file"
+
+
+def test_index_is_british_english():
+    html = [attrs for tag, attrs in _page().elements if tag == "html"]
+    assert html == [{"lang": "en-GB", "data-theme": "modern"}]
+
+
+def test_index_has_one_polite_live_region():
+    regions = [attrs for _, attrs in _page().elements if "aria-live" in attrs]
+    assert [r["aria-live"] for r in regions] == ["polite"]
+
+
+# --- References resolve to shipped files ---
+
+
+def _served(url):
+    """The file the server answers a same-origin URL with, per the contract."""
+    if url == "/manifest.webmanifest":
+        return STATIC / "manifest.webmanifest"
+    assert url.startswith("/static/"), f"unexpected path {url}"
+    return STATIC / url.removeprefix("/static/")
+
+
+def test_index_references_resolve():
+    refs = []
+    for tag, attrs in _page().elements:
+        for name in ("href", "src"):
+            value = attrs.get(name)
+            if value and not value.startswith(("#", "https://")):
+                refs.append(value)
+    assert "/static/main.js" in refs
+    for ref in refs:
+        assert _served(ref).is_file(), ref
+
+
+IMPORT = re.compile(
+    r"""(?:\bimport\s*\(\s*|\bimport\s+(?:[\w*{}\s,$]+\s+from\s+)?|\bexport\s+[\w*{}\s,$]+\s+from\s+)["']([^"']+)["']"""
+)
+
+
+def test_js_imports_resolve():
+    seen = 0
+    for path in OWN_JS:
+        for spec in IMPORT.findall(path.read_text(encoding="utf-8")):
+            assert spec.startswith("./"), f"{path.name}: bare or absolute import {spec!r}"
+            target = (path.parent / spec).resolve()
+            assert target.is_file(), f"{path.name}: {spec} does not exist"
+            seen += 1
+    assert seen > 10  # the pattern really is finding imports
+
+
+def test_leaflet_loads_only_by_dynamic_import():
+    for path in OWN_JS:
+        text = path.read_text(encoding="utf-8")
+        static = re.findall(r"""^\s*import\s+(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']""", text, re.M)
+        if path.name == "map.js":
+            assert "./dom.js" in static  # the pattern really is finding imports
+        assert not [spec for spec in static if "leaflet" in spec], f"{path.name} imports Leaflet up front"
+    assert 'import("./vendor/leaflet-1.9.4/leaflet-src.esm.js")' in (STATIC / "map.js").read_text()
+
+
+# --- No HTML injection sinks in our code ---
+
+BANNED = [
+    (re.compile(r"\binnerHTML\b"), "innerHTML"),
+    (re.compile(r"\bouterHTML\b"), "outerHTML"),
+    (re.compile(r"\binsertAdjacentHTML\b"), "insertAdjacentHTML"),
+    (re.compile(r"\bdocument\.write"), "document.write"),
+    (re.compile(r"\beval\s*\("), "eval("),
+    (re.compile(r"\bnew\s+Function\b"), "new Function"),
+    (re.compile(r"""setAttribute\(\s*["'`]style"""), "setAttribute('style'"),
+    (re.compile(r"""setTimeout\(\s*["'`]"""), "string setTimeout"),
+    (re.compile(r"""setInterval\(\s*["'`]"""), "string setInterval"),
+]
+
+
+@pytest.mark.parametrize("path", [p for p in OWN_FILES if p.suffix in {".js", ".html", ".css"}], ids=lambda p: p.name)
+def test_no_html_sinks_outside_vendor(path):
+    text = path.read_text(encoding="utf-8")
+    found = [name for pattern, name in BANNED if pattern.search(text)]
+    assert not found, f"{path.name} uses {found}"
+
+
+def test_no_dev_files_shipped():
+    assert not (STATIC / "dev").exists()
+    assert not list(STATIC.rglob("*.map"))
+
+
+# --- Manifest and icons ---
+
+
+def test_manifest_is_valid_and_its_icons_exist():
+    manifest = json.loads((STATIC / "manifest.webmanifest").read_text(encoding="utf-8"))
+    assert manifest["start_url"] == "/"
+    sizes = {}
+    for icon in manifest["icons"]:
+        path = _served(icon["src"])
+        assert path.is_file(), icon["src"]
+        if icon["type"] == "image/png":
+            with Image.open(path) as image:
+                assert image.format == "PNG"
+                assert f"{image.width}x{image.height}" == icon["sizes"]
+                sizes[icon["sizes"]] = path
+    assert set(sizes) == {"192x192", "512x512"}
+
+
+def test_apple_touch_icon_is_180():
+    with Image.open(STATIC / "icons" / "apple-touch-icon.png") as image:
+        assert (image.format, image.size) == ("PNG", (180, 180))
+        assert image.mode == "RGB"  # iOS shows transparency as black
 
 
 # --- Vendored Leaflet ---
@@ -32,6 +192,49 @@ def test_vendor_hashes_match():
         assert hashlib.sha256((leaflet / name).read_bytes()).hexdigest() == digest, name
     shipped = {p.name for p in leaflet.iterdir()}
     assert shipped == set(listed) | {"SHA256SUMS"}, "a vendored file is not pinned"
+
+
+# --- Colour contrast in every theme ---
+
+
+def _palettes():
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    palettes = {}
+    for name in ("modern-light", "modern-dark", "board"):
+        match = re.search(r"/\* theme: %s \*/[^{]*\{(?:[^{}]*\{)?([^{}]*)\}" % name, css)
+        assert match, name
+        palettes[name] = dict(re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6})\b", match.group(1)))
+    # The dark and board palettes override the light one.
+    return {name: {**palettes["modern-light"], **tokens} for name, tokens in palettes.items()}
+
+
+def _luminance(colour):
+    channels = [int(colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(a, b):
+    hi, lo = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+TEXT_PAIRS = [
+    ("fg", "bg"), ("fg", "surface"), ("muted", "surface"), ("muted", "bg"), ("accent", "surface"),
+    ("accent", "bg"), ("accent-fg", "accent"), ("ok-fg", "ok-bg"), ("late-fg", "late-bg"), ("bad-fg", "bad-bg"),
+    ("unk-fg", "unk-bg"), ("leave-fg", "leave-bg"), ("badge-fg", "badge-bg"), ("bad-fg", "surface"),
+    ("muted", "unk-bg"),
+]
+OUTLINE_PAIRS = [("focus", "bg"), ("focus", "surface"), ("edge", "surface"), ("edge", "bg")]
+
+
+@pytest.mark.parametrize("theme", ["modern-light", "modern-dark", "board"])
+def test_theme_contrast(theme):
+    tokens = _palettes()[theme]
+    for pairs, need in ((TEXT_PAIRS, 4.5), (OUTLINE_PAIRS, 3.0)):
+        for fg, bg in pairs:
+            ratio = _contrast(tokens[fg], tokens[bg])
+            assert ratio >= need, f"{theme}: --{fg} on --{bg} is {ratio:.2f}:1"
 
 
 # --- The contract fixtures (docs/dashboard-api.md), for both sides to share ---
