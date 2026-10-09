@@ -85,3 +85,21 @@ def test_short_intervals_are_not_polled_early():
     p = PollPolicy((parse_window("Mon-Sun 00:00-23:59"),), timedelta(seconds=30))
     assert not p.is_due(THU_0700, last_fetch=THU_0700 - timedelta(seconds=20))
     assert p.is_due(THU_0700, last_fetch=THU_0700 - timedelta(seconds=28))
+
+
+def test_window_can_run_past_midnight_into_the_next_morning():
+    window = parse_window("Mon-Fri 22:00-01:00")
+    friday = datetime(2026, 10, 9)
+    assert window.contains(friday.replace(hour=22))
+    assert window.contains(friday.replace(hour=23, minute=59))
+    assert window.contains(friday + timedelta(days=1, minutes=30))  # Saturday 00:30, Friday's window
+    assert not window.contains(friday + timedelta(days=1, hours=1, minutes=1))
+    assert not window.contains(friday.replace(hour=21, minute=59))
+    assert not window.contains(friday + timedelta(days=1, hours=22))  # Saturday night
+    assert not window.contains(datetime(2026, 10, 12, 0, 30))  # Monday 00:30 follows Sunday
+    assert window.contains(datetime(2026, 10, 13, 0, 30))  # Tuesday 00:30 follows Monday
+
+
+def test_day_range_can_wrap_around_the_week():
+    assert parse_window("Fri-Mon 07:00-09:00").days == frozenset({4, 5, 6, 0})
+    assert parse_window("Sun-Sun 07:00-09:00").days == frozenset({6})

@@ -18,8 +18,9 @@ def _parse_days(spec: str) -> frozenset[int]:
     days: set[int] = set()
     for part in spec.lower().split(","):
         if "-" in part:
-            first, last = part.split("-")
-            days.update(range(_DAYS.index(first), _DAYS.index(last) + 1))
+            first, last = (_DAYS.index(day) for day in part.split("-"))
+            # A range wraps round the week: Fri-Mon is Fri, Sat, Sun, Mon.
+            days.update(day % 7 for day in range(first, last + 1 if last >= first else last + 8))
         else:
             days.add(_DAYS.index(part))
     return frozenset(days)
@@ -32,11 +33,15 @@ class Window:
     end: time
 
     def contains(self, moment: datetime) -> bool:
-        return moment.weekday() in self.days and self.start <= moment.time() <= self.end
+        day, clock = moment.weekday(), moment.time()
+        if self.start <= self.end:
+            return day in self.days and self.start <= clock <= self.end
+        # Ends before it starts, so it runs past midnight into the next morning.
+        return (day in self.days and clock >= self.start) or ((day - 1) % 7 in self.days and clock <= self.end)
 
 
 def parse_window(spec: str) -> Window:
-    """Parse e.g. 'Mon-Fri 06:45-09:00' or 'Sat,Sun 10:00-12:00'."""
+    """Parse e.g. 'Mon-Fri 06:45-09:00', 'Sat,Sun 10:00-12:00' or 'Fri-Sat 22:00-01:00'."""
     match = _WINDOW.match(spec)
     if not match:
         raise ValueError(f"Unrecognised window: {spec!r}")
