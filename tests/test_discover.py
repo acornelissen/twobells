@@ -2,6 +2,7 @@ import io
 import json
 import stat
 import threading
+import tomllib
 import zipfile
 from datetime import date, datetime
 from pathlib import Path
@@ -544,3 +545,109 @@ def test_the_lock_file_is_private(bods):
     job.start()
     _finish(job)
     assert stat.S_IMODE((bods.scratch / discover.LOCK_NAME).stat().st_mode) == 0o600
+
+
+# The settings, as TOML.
+
+
+def _result(routes=None):
+    bus = {"source": "bods", "operators": ["BNML", "HIPK"]}
+    if routes:
+        bus["routes"] = routes
+    return {"fragment": {"bus": bus}, "lines": {"BNML": ["237", "341"], "HIPK": ["61"]},
+            "document_operators": {"BNML": ["BNGN"]}, "datasets_scanned": 3}
+
+
+def test_the_fragment_is_toml_for_config(bods):
+    routes = {
+        "341": {"stop": "A", "stops": [{"name": 'Market "Hall"\u007f', "lat": 53.443239, "lon": -1.949828},
+                                       {"name": "Henry Street", "lat": 53.44384, "lon": -1.948999}]},
+        "Sky 1": {"stop": "B", "stops": [{"name": "A", "lat": 53.4, "lon": -1.9},
+                                         {"name": "B", "lat": 53.5, "lon": -1.8}]},
+    }
+    text = discover.fragment_toml(_result(routes))
+    assert "# BNML: lines 237, 341 (its timetables say BNGN)\n# HIPK: line 61\n" in text
+    assert tomllib.loads(text) == {"bus": {"source": "bods", "operators": ["BNML", "HIPK"], "routes": routes}}
+
+
+def test_the_fragment_round_trips_from_a_real_job(bods):
+    job = _job(bods, routes=True)
+    job.start()
+    result = _finish(job)["result"]
+    assert tomllib.loads(discover.fragment_toml(result)) == result["fragment"]
+
+
+# The command line.
+
+
+@pytest.fixture
+def cli_config(tmp_path, monkeypatch, bods):
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    config.write_text(f'state_file = "{state / "state.json"}"\ntimezone = "Europe/London"\n'
+                      "[bus]\nwalk_minutes = 4\n")
+    secrets = tmp_path / "secrets.env"
+    secrets.write_text(f"BODS_API_KEY={KEY}\n")
+    monkeypatch.delenv("BODS_API_KEY", raising=False)
+    made = []
+    real = SetupJob
+
+    def job(folder, stops, api_key, **options):
+        made.append((folder, stops, api_key, options))
+        return real(folder, stops, api_key, find=bods.find, fetch=bods.fetch,
+                    find_datasets=_find_by_noc(bods), naptan=_naptan,
+                    **{**options, "now": lambda: SUMMER_NOW})
+
+    monkeypatch.setattr(discover, "SetupJob", job)
+    return ["--config", str(config), "--secrets", str(secrets)], state, made
+
+
+def test_cli_discover_prints_the_fragment(cli_config, capsys):
+    from departureboard.cli import main
+
+    args, state, made = cli_config
+    code = main(["setup", "discover", "--stop", f"A={STOP_A}", "--stop", f"B={STOP_B}", "--routes", *args])
+    out, err = capsys.readouterr()
+    assert code == 0, err
+    parsed = tomllib.loads(out)
+    assert parsed["bus"]["source"] == "bods"
+    assert parsed["bus"]["operators"] == ["BNML", "HIPK"]
+    assert set(parsed["bus"]["routes"]) == {"61", "237", "341"}
+    assert discover.STEP_DISCOVER in err and "Found 2 bus companies" in err
+    folder, stops, key, options = made[0]
+    assert (folder, stops, key) == (state, {"A": STOP_A, "B": STOP_B}, KEY)
+    assert options["routes"] is True and options["walk_minutes"] == {"*": 4}
+    assert KEY not in out + err
+
+
+def test_cli_discover_does_not_write_config(cli_config, capsys):
+    from departureboard.cli import main
+
+    args, state, _ = cli_config
+    config = Path(args[1])
+    before = config.read_text()
+    assert main(["setup", "discover", "--stop", f"A={STOP_A}", *args]) == 0
+    assert config.read_text() == before
+    assert not (state / "settings.toml").exists()
+
+
+def test_cli_discover_reports_failure(cli_config, capsys):
+    from departureboard.cli import main
+
+    args, _, _ = cli_config
+    assert main(["setup", "discover", "--stop", "A=1000NOWHERE1", *args]) == 1
+    assert "Setup failed: No timetabled bus calls at your stops" in capsys.readouterr().err
+
+
+def test_cli_discover_needs_a_key_and_a_state_folder(cli_config, tmp_path, capsys):
+    from departureboard.cli import main
+
+    args, _, _ = cli_config
+    assert main(["setup", "discover", "--stop", f"A={STOP_A}", "--config", args[1],
+                 "--secrets", str(tmp_path / "none.env")]) == 2
+    assert "BODS_API_KEY" in capsys.readouterr().err
+    bare = tmp_path / "bare.toml"
+    bare.write_text("")
+    assert main(["setup", "discover", "--stop", f"A={STOP_A}", "--config", str(bare), "--secrets", args[3]]) == 2
+    assert "state_file" in capsys.readouterr().err
+    assert main(["setup", "discover", "--stop", "nolabel", *args]) == 2

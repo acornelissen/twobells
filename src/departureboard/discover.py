@@ -39,6 +39,7 @@ from . import routesetup, timetable
 from .bods import DEFAULT_BASE_URL, redact_key
 from .http import get_bytes
 from .routesetup import Pattern
+from .settingsform import _toml_key, _toml_string
 from .setup import in_uk
 from .status import safe_message
 from .walk import DEFAULT_STOP
@@ -555,6 +556,29 @@ class SetupJob:
                 continue
             routes[line] = {"stop": label, "stops": stops}
         return routes
+
+
+def fragment_toml(result: dict) -> str:
+    """A finished job's [bus] settings as TOML for config.toml, with what was
+    found as comments. Operator codes and lines were checked when found, so
+    they can't break out of a comment; stop names are TOML-escaped."""
+    bus = result["fragment"]["bus"]
+    out = [f"# Found in {result['datasets_scanned']} BODS timetable data sets. Merge into config.toml's [bus]."]
+    for noc, lines in result["lines"].items():
+        inside = result["document_operators"].get(noc)
+        said = f" (its timetables say {', '.join(inside)})" if inside else ""
+        out.append(f"# {noc}: {'line' if len(lines) == 1 else 'lines'} {', '.join(lines)}{said}")
+    out += [
+        "[bus]",
+        f"source = {_toml_string(bus['source'])}",
+        f"operators = [{', '.join(_toml_string(noc) for noc in bus['operators'])}]",
+    ]
+    for line, route in bus.get("routes", {}).items():
+        out += ["", f"[bus.routes.{_toml_key(line)}]", f"stop = {_toml_string(route['stop'])}", "stops = ["]
+        out += [f"  {{ name = {_toml_string(s['name'])}, lat = {s['lat']:.6f}, lon = {s['lon']:.6f} }},"
+                for s in route["stops"]]
+        out.append("]")
+    return "\n".join(out) + "\n"
 
 
 def _strip_stop(place) -> dict | None:

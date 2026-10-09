@@ -8,6 +8,7 @@
   departureboard route    print a [bus.routes] block for the screen's bus page (run on a laptop)
   departureboard web      serve the settings page on the home network
   departureboard timetable  build the BODS bus timetable for your stops, if due
+  departureboard setup discover  find the bus operators serving your stops and print their settings
   departureboard dashboard  serve the web dashboard (Mac or NAS), opening it in the browser
 """
 
@@ -330,6 +331,61 @@ def _route(args) -> int:
     return 0
 
 
+def _setup_discover(args) -> int:
+    from . import discover
+    from .config import _walk
+
+    stops = _parse_stops(args.stop)
+    try:
+        data = read_config(args.config)
+    except OSError as error:
+        print(f"Can't read {args.config}: {error.strerror or error}", file=sys.stderr)
+        return 2
+    folder = state_dir(data)
+    if folder is None:
+        print("config.toml needs a state_file; the timetable is built beside it", file=sys.stderr)
+        return 2
+    key = _env(args.config, args.secrets).get("BODS_API_KEY", "").strip()
+    if not key:
+        print("Missing BODS_API_KEY; set it in secrets.env", file=sys.stderr)
+        return 2
+    try:
+        walk = _walk(data).bus
+    except ConfigError:
+        walk = {}  # route strips go back a few minutes without it
+    timezone = data.get("timezone") if isinstance(data.get("timezone"), str) else "Europe/London"
+    job = discover.SetupJob(folder, stops, key, routes=args.routes, walk_minutes=walk,
+                            now=lambda: _local_now(timezone))
+    try:
+        job.start()
+    except discover.SetupBusy as error:
+        print(error, file=sys.stderr)
+        return 2
+    shown = None
+    try:
+        while True:
+            status = job.status()
+            if status["state"] == "running" and (status["step"], status["done"], status["total"]) != shown:
+                shown = (status["step"], status["done"], status["total"])
+                count = f": {status['done']} of {status['total']}" if status["total"] else ""
+                print(f"{status['step']}{count}", file=sys.stderr)
+            if job.wait(0.5):
+                break
+    except KeyboardInterrupt:
+        print("Cancelling…", file=sys.stderr)
+        job.cancel()
+        job.wait()
+    status = job.status()
+    if status["state"] != "done":
+        print(f"Setup failed: {status['message']}", file=sys.stderr)
+        return 1
+    for note in status["result"]["notes"]:
+        print(f"Note: {note}", file=sys.stderr)
+    print(status["message"], file=sys.stderr)
+    print(discover.fragment_toml(status["result"]), end="")
+    return 0
+
+
 def _web(args) -> int:
     import getpass
     from importlib.resources import files
@@ -626,6 +682,15 @@ def _parser() -> argparse.ArgumentParser:
     route.add_argument("--noc", help="operator code (TransportAPI's 'operator', e.g. BNML) to find its BODS timetable")
     route.add_argument("--txc", help="a TransXChange .xml or .zip you downloaded, instead of --noc")
     route.set_defaults(handler=_route)
+
+    setup = sub.add_parser("setup", help="first-run setup steps")
+    setup_sub = setup.add_subparsers(dest="setup_command", required=True)
+    discover = with_config(setup_sub.add_parser(
+        "discover", help="find the bus operators serving your stops, build their timetable, print the settings"))
+    discover.add_argument("--stop", action="append", required=True, metavar="LABEL=ATCO",
+                          help="a stop to search for, e.g. A=1000DGHS0900; repeat for each")
+    discover.add_argument("--routes", action="store_true", help="also build a route strip for each line")
+    discover.set_defaults(handler=_setup_discover)
 
     web = with_config(sub.add_parser("web", help="serve the settings page on the home network"))
     web.add_argument("--host", default="0.0.0.0", help="address to listen on (default: all)")
