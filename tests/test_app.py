@@ -487,3 +487,28 @@ def test_run_loop_switches_to_reloaded_settings():
     run_loop(board, state, display, lambda: next(times), 0, ticks=3, sleep=lambda s: None,
              on_tick=lambda now, result: titles.append(result.view.title), reload=lambda: next(answers))
     assert titles == ["GLO > MAN", "Renamed", "Renamed"]
+
+
+# --- Departures age out (oz5.2) ---
+
+
+def test_morning_departures_do_not_come_back_in_the_evening():
+    trains, buses, board, display, state = setup()
+    trains.departures = [train("08:45")]
+    buses.departures = [bus("08:40")]
+    run_once(board, state, display, THU_0700.replace(hour=8, minute=30))
+    # 08:40 is within 12 hours of 20:41 on the clock, but it was this morning.
+    result = run_once(board, state, display, THU_0700.replace(hour=20, minute=41))
+    assert result.view.trains.rows == ()
+    assert result.view.buses.rows == ()
+    assert not result.view.buses.stale
+
+
+def test_departures_after_midnight_stay_until_they_leave():
+    trains, buses, board, display, state = setup()
+    trains.departures = []
+    buses.departures = [bus("00:20")]
+    run_once(board, state, display, THU_0700.replace(hour=23, minute=50), prime=True)
+    friday = THU_0700 + timedelta(days=1)
+    assert [r.left for r in run_once(board, state, display, friday.replace(hour=0, minute=10)).view.buses.rows] == ["341"]
+    assert run_once(board, state, display, friday.replace(hour=12, minute=30)).view.buses.rows == ()

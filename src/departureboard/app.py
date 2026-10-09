@@ -118,9 +118,15 @@ def _is_stale(config: SourceConfig, entry: dict, now: datetime) -> bool:
     return last_success is None or now - last_success > config.stale_after
 
 
-def _departures(state: dict, name: str) -> list[Departure]:
+def _departures(state: dict, name: str, now: datetime) -> list[Departure]:
+    """What was last fetched, less anything that has left since. Clock times
+    alone can't tell this morning from tonight, so each is dated by its fetch."""
     entry = state.get("sources", {}).get(name, {})
-    return [departure_from_dict(d) for d in entry.get("departures", [])]
+    fetched = from_iso(entry.get("last_success"))
+    if fetched is None:
+        return []
+    departures = [departure_from_dict(d) for d in entry.get("departures", [])]
+    return [d for d in departures if not d.has_left(now, fetched)]
 
 
 def _poll_vehicles(tracker: Tracker, state: dict, now: datetime) -> None:
@@ -143,7 +149,7 @@ def _route_view(board: Board, state: dict, view: BoardView, now: datetime, clock
     if tracker is None or not tracker.policy.is_active(now):
         return None
     hhmm = now.strftime("%H:%M")
-    upcoming = [d for d in _departures(state, "bus") if not d.is_gone(hhmm)]
+    upcoming = [d for d in _departures(state, "bus", now) if not d.is_gone(hhmm)]
 
     def catchable(dep: Departure) -> bool:
         strip = tracker.routes.get(dep.service)
@@ -189,8 +195,8 @@ def run_once(
     }
     view = build_view(
         title=board.title,
-        trains=_departures(state, "train"),
-        buses=_departures(state, "bus"),
+        trains=_departures(state, "train", now),
+        buses=_departures(state, "bus", now),
         now=now.strftime("%H:%M"),
         stale=stale,
         walk=board.walk,

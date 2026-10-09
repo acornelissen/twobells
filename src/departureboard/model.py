@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import Enum
 
 _DAY = 24 * 60
@@ -56,6 +57,17 @@ class Departure:
             return None
         return minutes_between(self.scheduled, self.expected)
 
+    @property
+    def _leaves(self) -> str:
+        # A cancelled departure goes from the board at its booked time.
+        return self.scheduled if self.status is Status.CANCELLED else self.departs_at
+
     def is_gone(self, now: str) -> bool:
-        reference = self.scheduled if self.status is Status.CANCELLED else self.departs_at
-        return minutes_between(now, reference) < 0
+        return minutes_between(now, self._leaves) < 0
+
+    def has_left(self, now: datetime, fetched: datetime) -> bool:
+        """Like is_gone, but on the calendar: the time is read as the one nearest
+        to when it was fetched, so this morning's 08:40 never comes back tonight."""
+        fetched = fetched.replace(second=0, microsecond=0)
+        leaves = fetched + timedelta(minutes=minutes_between(fetched.strftime("%H:%M"), self._leaves))
+        return leaves < now.replace(second=0, microsecond=0)

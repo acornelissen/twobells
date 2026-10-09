@@ -57,3 +57,22 @@ def test_cancelled_departure_stays_listed_until_scheduled_time():
     cancelled = make(status=Status.CANCELLED)
     assert not cancelled.is_gone(now="07:10")
     assert cancelled.is_gone(now="07:13")
+
+
+def test_has_left_reads_the_time_on_the_day_it_was_fetched():
+    from datetime import datetime
+
+    fetched = datetime(2026, 10, 8, 8, 30)
+    dep = make("08:40")
+    assert not dep.has_left(datetime(2026, 10, 8, 8, 40, 59), fetched)
+    assert dep.has_left(datetime(2026, 10, 8, 8, 41), fetched)
+    assert dep.has_left(datetime(2026, 10, 8, 20, 41), fetched)
+
+
+def test_has_left_carries_over_midnight():
+    from datetime import datetime
+
+    fetched = datetime(2026, 10, 8, 23, 50)
+    dep = make("00:20")
+    assert not dep.has_left(datetime(2026, 10, 9, 0, 10), fetched)
+    assert dep.has_left(datetime(2026, 10, 9, 12, 30), fetched)
