@@ -25,10 +25,10 @@ from .display import InkyDisplay, PngDisplay
 from .emulation import build_emulation
 from .emulator import make_server
 from .model import Departure, Status
-from .render import render
 from .state import StateStore
 from .transportapi import redact_credentials
 from .view import build_view
+from .themes import THEMES, theme_named
 from .walk import WalkTimes
 
 DEFAULT_CONFIG = "/etc/departureboard/config.toml"
@@ -138,13 +138,17 @@ def _demo(args) -> int:
         Departure("train", "Northern", "Manchester Piccadilly", "08:12", None, Status.CANCELLED),
     ]
     buses = [
-        Departure("bus", "341", "Hyde", "07:20", "07:24", Status.LATE),
-        Departure("bus", "61", "Buxton", "07:35", None, Status.UNKNOWN),
+        Departure("bus", "341", "Hyde", "07:20", "07:24", Status.LATE, stop="A"),
+        Departure("bus", "61", "Buxton", "07:35", None, Status.UNKNOWN, stop="B"),
+        Departure("bus", "237", "Ashton", "07:41", None, Status.ON_TIME, stop="A"),
     ]
-    display = PngDisplay(args.png, args.accent)
+    theme = theme_named(args.theme)
+    display = PngDisplay(args.png, args.accent or theme.accent)
     walk = WalkTimes(train=7, bus={"*": 7})
-    view = build_view("Glossop > Manchester Picc", trains, buses, "07:03", set(), walk)
-    display.show(render(view, display.palette))
+    view = build_view(
+        "Glossop > Manchester Picc", trains, buses, "07:03", set(), walk, theme.wording
+    )
+    display.show(theme.render(view, display.palette))
     print(f"Wrote {args.png}")
     return 0
 
@@ -214,13 +218,14 @@ def _parser() -> argparse.ArgumentParser:
 
     demo = sub.add_parser("demo", help="render sample data to a PNG")
     demo.add_argument("--png", default="preview.png")
-    demo.add_argument("--accent", default="red", choices=["red", "yellow"])
+    demo.add_argument("--theme", default="sign", choices=sorted(THEMES))
+    demo.add_argument("--accent", choices=["red", "yellow"], help="defaults to the theme's")
     demo.set_defaults(handler=_demo)
 
     emulate = with_config(sub.add_parser("emulate", help="run against a browser panel emulator"))
     emulate.add_argument("--demo", action="store_true", help="fake data on a fast simulated clock")
     emulate.add_argument("--fake-train", action="store_true", help="fake trains, live buses")
-    emulate.add_argument("--accent", default="red", choices=["red", "yellow"], help="demo accent")
+    emulate.add_argument("--accent", choices=["red", "yellow"], help="demo accent")
     emulate.add_argument("--port", type=int, default=8765)
     emulate.add_argument("--port-attempts", type=int, default=10, help=argparse.SUPPRESS)
     emulate.add_argument("--tick", type=float, help="seconds per tick (demo 2, live 60)")

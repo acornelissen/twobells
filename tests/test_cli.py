@@ -117,3 +117,10 @@ def test_probe_bus_works_without_rail_key(probe_env, capsys):
     with open(config, "a") as f:
         f.write('\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
     assert main(["probe", "bus", *args]) == 0
+
+
+def test_demo_png_can_use_either_theme(tmp_path):
+    for theme in ("sign", "plain"):
+        out = tmp_path / f"{theme}.png"
+        assert main(["demo", "--theme", theme, "--png", str(out)]) == 0
+        assert Image.open(out).size == (250, 122)
