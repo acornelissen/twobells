@@ -14,8 +14,10 @@ import os
 import re
 import tomllib
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
+from zoneinfo import ZoneInfo
 
 from .config import (
     ConfigError,
@@ -28,7 +30,10 @@ from .config import (
     state_dir,
 )
 from .display import DISPLAY_PANELS
+from .holidays import read_cache
 from .schedule import parse_window
+from .state import StateStore
+from .status import render_status
 from .themes import THEMES
 
 KEYS = (
@@ -297,9 +302,13 @@ def _write(path: Path, text: str, mode: int) -> None:
 
 
 class SettingsForm:
-    def __init__(self, config_path: Path | str, load_secrets: Callable[[], dict[str, str]]) -> None:
+    def __init__(self, config_path: Path | str, load_secrets: Callable[[], dict[str, str]],
+                 clock: Callable[[], datetime] | None = None) -> None:
+        """`clock` gives the board's local time, as a naive datetime; by default
+        the time now in the configured timezone."""
         self._config_path = Path(config_path)
         self._load_secrets = load_secrets
+        self._clock = clock
 
     def _paths(self, data: dict) -> tuple[Path, Path]:
         folder = state_dir(data)
@@ -315,6 +324,26 @@ class SettingsForm:
             return merge(base, read_overlay(base)), ""
         except ConfigError as error:
             return base, str(error)
+
+    def _now(self, data: dict) -> datetime:
+        if self._clock is not None:
+            return self._clock()
+        try:
+            return datetime.now(ZoneInfo(data.get("timezone", "Europe/London"))).replace(tzinfo=None)
+        except (KeyError, TypeError, ValueError):  # a bad zone: the page says so on saving
+            return datetime.now()
+
+    def _status(self, data: dict) -> str:
+        """The status panel, from the state file the board saves. Read only: the
+        board alone writes it."""
+        state_file = data.get("state_file")
+        if not isinstance(state_file, str) or not state_file:
+            return ""
+        try:
+            state = StateStore(state_file).load()
+        except OSError:
+            state = None
+        return render_status(data, state, self._now(data), read_cache(Path(state_file).parent))
 
     def _current(self, data: dict) -> dict[str, str]:
         values = {}
@@ -417,6 +446,7 @@ class SettingsForm:
                 '<div class="summary" role="alert" tabindex="-1" id="problems" autofocus>'
                 f"<h2>Not saved: fix {len(errors)} {'thing' if len(errors) == 1 else 'things'}</h2><ul>{items}</ul></div>"
             )
+        out.append(self._status(data))
         out.append('<form method="post" action="/" novalidate>')
         out.append(f'<input type="hidden" name="csrf" value="{e(csrf)}">')
         groups = (

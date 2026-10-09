@@ -254,6 +254,25 @@ def test_outlined_buttons_have_a_border_that_stands_out():
         assert (high + 0.05) / (low + 0.05) >= 3
 
 
+def test_problem_text_is_readable_in_light_and_dark():
+    from importlib.resources import files
+
+    css = files("departureboard").joinpath("web.css").read_text()
+    assert re.search(r"\.problem \{[^}]*color: var\(--error\)", css)
+
+    def luminance(hex_colour):
+        rgb = [int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        rgb = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+        return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+
+    backgrounds = re.findall(r"--bg: (#\w{6});", css)
+    errors = re.findall(r"--error: (#\w{6});", css)
+    assert len(backgrounds) == len(errors) == 2
+    for bg, error in zip(backgrounds, errors):
+        high, low = sorted((luminance(bg), luminance(error)), reverse=True)
+        assert (high + 0.05) / (low + 0.05) >= 4.5  # body text, WCAG 1.4.3
+
+
 def test_every_control_has_a_label(setup):
     form, *_ = setup
     page = form.render("tok")
@@ -390,6 +409,58 @@ def test_bank_holidays_setting_refuses_anything_else(setup):
     errors = form.save({**fields_of(form), "bank_holidays": "sometimes"})
     assert "bank_holidays" in errors
     assert not (state / "settings.toml").exists()
+
+
+def _status_form(tmp_path, state_text=None):
+    from datetime import datetime
+
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    config.write_text(CONFIG.format(state=state / "state.json"))
+    if state_text is not None:
+        state.mkdir()
+        (state / "state.json").write_text(state_text)
+    form = SettingsForm(config, lambda: dict(ENV), clock=lambda: datetime(2026, 10, 8, 8, 1))
+    return form, state
+
+
+def test_status_comes_before_the_form_under_its_own_heading(tmp_path):
+    saved = '{"sources": {"train": {"last_success": "2026-10-08T07:58:00"}}, "last_render": {"at": "2026-10-08T07:58:00"}}'
+    form, _ = _status_form(tmp_path, saved)
+    page = form.render("tok")
+    assert page.index("<h1>") < page.index('<h2 id="status-title">Status</h2>') < page.index("<form method=\"post\" action=\"/\"")
+    assert page.index("Status</h2>") < page.index("<fieldset>")
+    assert "07:58, 3 min ago" in page
+
+
+def test_status_says_plainly_when_there_is_no_state_file(tmp_path):
+    form, state = _status_form(tmp_path)
+    assert "No status yet" in form.render("tok")
+    assert not state.exists()  # the page reads the state file, never writes it
+
+
+def test_status_copes_with_an_empty_state_file(tmp_path):
+    form, state = _status_form(tmp_path, "")
+    assert "No status yet" in form.render("tok")
+    assert (state / "state.json").read_text() == ""
+
+
+def test_status_says_when_the_state_file_cannot_be_read(tmp_path):
+    form, state = _status_form(tmp_path, "{}")
+    (state / "state.json").chmod(0)
+    try:
+        page = form.render("tok")
+    finally:
+        (state / "state.json").chmod(0o600)
+    assert "Problem:" in page and "can’t be read" in page
+
+
+def test_status_shows_no_keys_from_the_state_file(tmp_path):
+    saved = ('{"sources": {"bus": {"last_error": {"at": "2026-10-08T08:00:00", '
+             '"message": "https://transportapi.com/v3/x.json?app_id=id&app_key=tapi-secret-456 refused"}}}}')
+    form, _ = _status_form(tmp_path, saved)
+    page = form.render("tok")
+    assert "tapi-secret-456" not in page and "Problem:" in page
 
 
 def test_bank_holidays_setting_is_in_the_board_section_with_a_hint(setup):
