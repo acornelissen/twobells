@@ -412,6 +412,15 @@ def _web(args) -> int:
             return 1
         print(f"Password saved to {folder / 'web.json'}")
         return 0
+    if args.reset_code:
+        # Running this on the device proves access, so no rate limit, and the
+        # code comes here rather than to the board.
+        try:
+            auth.ResetCodes(folder, show=_print_reset_code).issue(time.time(), limit=False)
+        except OSError as error:
+            print(f"Can't save a reset code in {folder}: {error.strerror or error}", file=sys.stderr)
+            return 1
+        return 0
     form = SettingsForm(args.config, lambda: _env(args.config, args.secrets))
     stylesheet = files("departureboard").joinpath("web.css").read_bytes()
     handler = web.make_handler(form, password, auth.Sessions(), auth.Lockout(), web.shell, stylesheet)
@@ -430,6 +439,14 @@ def _web(args) -> int:
     finally:
         server.server_close()
     return 0
+
+
+def _print_reset_code(code: str, expires: float) -> None:
+    from .auth import spaced
+
+    until = time.strftime("%H:%M", time.localtime(expires))
+    print(f"Settings reset code: {spaced(code)}  (valid until {until}, once)")
+    print("Enter it on the settings page with a new password.")
 
 
 def _probe(args) -> int:
@@ -695,7 +712,10 @@ def _parser() -> argparse.ArgumentParser:
     web = with_config(sub.add_parser("web", help="serve the settings page on the home network"))
     web.add_argument("--host", default="0.0.0.0", help="address to listen on (default: all)")
     web.add_argument("--port", type=int, default=8080)
-    web.add_argument("--set-password", action="store_true", help="set the page's password and exit")
+    once = web.add_mutually_exclusive_group()
+    once.add_argument("--set-password", action="store_true", help="set the page's password and exit")
+    once.add_argument("--reset-code", action="store_true",
+                      help="print a one-time code for setting a new password on the page, and exit")
     web.set_defaults(handler=_web)
 
     emulate = with_config(sub.add_parser("emulate", help="run against a browser panel emulator"))

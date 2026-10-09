@@ -482,6 +482,46 @@ def test_settings_page_starts_even_when_saved_settings_are_broken(tmp_path, monk
     assert (state / "web.json").exists()
 
 
+def _web_config(tmp_path):
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    config.write_text(f'state_file = "{state / "state.json"}"\n')
+    return config, state
+
+
+def test_reset_code_prints_a_code_the_page_will_take(tmp_path, capsys):
+    import re
+    import time
+
+    from departureboard.auth import ResetCodes
+
+    config, state = _web_config(tmp_path)
+    assert main(["web", "--config", str(config), "--reset-code"]) == 0
+    out = capsys.readouterr().out
+    code = re.search(r"Settings reset code: (\d{3}) (\d{3})", out)
+    assert code and "valid until" in out
+    assert not (state / "reset-display.json").exists()  # printed here, not shown on the board
+    assert ResetCodes(state).verify("".join(code.groups()), time.time())
+
+
+def test_reset_code_is_not_held_back_by_the_pages_limits(tmp_path, capsys):
+    import time
+
+    from departureboard.auth import ResetCodes
+
+    config, state = _web_config(tmp_path)
+    ResetCodes(state).issue(time.time())  # someone just pressed the page's button
+    assert main(["web", "--config", str(config), "--reset-code"]) == 0
+    assert main(["web", "--config", str(config), "--reset-code"]) == 0
+    assert capsys.readouterr().out.count("Settings reset code:") == 2
+
+
+def test_reset_code_and_set_password_are_one_or_the_other(tmp_path):
+    config, _ = _web_config(tmp_path)
+    with pytest.raises(SystemExit):
+        main(["web", "--config", str(config), "--reset-code", "--set-password"])
+
+
 def _holiday_run(tmp_path, monkeypatch, extra=""):
     """A board with a Mon-Fri train window, run at 07:00 on the August bank holiday Monday."""
     from datetime import datetime
