@@ -15,13 +15,14 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import threading
 import time
 from datetime import date, datetime, timedelta, timezone, tzinfo
 from typing import Callable
 
 from .bodsbus import BusBoard
-from .darwin import TrainBoard, TrainService
+from .darwin import CallingPoint, TrainBoard, TrainService
 from .history import Observed, day_type
 from .livebus import LiveDeparture, approach
 from .model import Departure, Status, minutes_between
@@ -150,14 +151,29 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
         "cancel_reason": service.cancel_reason,
         "delay_reason": service.delay_reason,
         "leave_at": iso(leave_at(dep, scheduled_at, expected_at, walk)),
-        "calling_points": [
-            {"name": p.name, "crs": p.crs, "scheduled": p.scheduled, "expected": p.expected,
-             "actual": p.actual, "cancelled": p.cancelled}
-            for p in service.calling_points
-        ],
+        "calling_points": [calling_point(p) for p in service.calling_points],
         "history": {"phrase": history["phrase"]},
     }
     return row, {"history": history}
+
+
+def _clock_or_none(value: str | None, scheduled: str) -> str | None:
+    """Darwin's time words as the contract's HH:MM: "On time" is the scheduled
+    time; "Delayed", "No report" and the like say no time."""
+    if value == "On time":
+        return scheduled
+    return value if value and re.fullmatch(r"\d\d:\d\d", value) else None
+
+
+def calling_point(point: CallingPoint) -> dict:
+    """One calling point for the train dialog, times as HH:MM or null."""
+    cancelled = point.cancelled or point.expected == "Cancelled" or point.actual == "Cancelled"
+    return {
+        "name": point.name, "crs": point.crs, "scheduled": point.scheduled,
+        "expected": None if cancelled else _clock_or_none(point.expected, point.scheduled),
+        "actual": None if cancelled else _clock_or_none(point.actual, point.scheduled),
+        "cancelled": cancelled,
+    }
 
 
 def trains_part(board: TrainBoard | None, fetched: datetime | None, status: dict, station: str,

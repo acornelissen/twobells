@@ -129,7 +129,7 @@ def test_a_real_board_becomes_rows():
     )
     assert (first["platform"], first["length"], first["minutes_late"]) == ("1", 3, None)
     assert first["calling_points"] == [
-        {"name": "Hadfield", "crs": "HDF", "scheduled": "22:11", "expected": "On time", "actual": None,
+        {"name": "Hadfield", "crs": "HDF", "scheduled": "22:11", "expected": "22:11", "actual": None,
          "cancelled": False},
     ]
     assert first["history"] == {"phrase": None}
@@ -498,3 +498,19 @@ def test_rain_already_falling_is_said_as_now_not_an_hour_gone_by():
     dry_now = [Hour(datetime(2026, 10, 9, 22), 10, 0.0), Hour(datetime(2026, 10, 9, 23), 80, 0.3)]
     assert rain_sentence(dry_now, now, now + timedelta(hours=2), 50) == "Rain from 23:00 (80%)"
     assert rain_sentence(dry_now[:1], now, now + timedelta(hours=2), 50) is None
+
+
+def test_calling_point_words_become_times_or_flags():
+    from departureboard.darwin import CallingPoint
+    from departureboard.snapshot import calling_point
+
+    on_time = calling_point(CallingPoint("Dinting", "DGT", "07:15", "On time", None, False, None))
+    assert (on_time["expected"], on_time["cancelled"]) == ("07:15", False)
+    late = calling_point(CallingPoint("Dinting", "DGT", "07:15", "07:22", None, False, None))
+    assert late["expected"] == "07:22"
+    words = calling_point(CallingPoint("Dinting", "DGT", "07:15", "Cancelled", None, False, None))
+    assert (words["expected"], words["cancelled"]) == (None, True)
+    for word in ("Delayed", "No report"):
+        assert calling_point(CallingPoint("Dinting", "DGT", "07:15", word, None, False, None))["expected"] is None
+    passed = calling_point(CallingPoint("Hadfield", "HDF", "07:05", None, "On time", False, None))
+    assert passed["actual"] == "07:05"
