@@ -9,7 +9,8 @@ from datetime import datetime, time, timedelta
 _DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 _WINDOW = re.compile(r"^\s*([A-Za-z,\-]+)\s+(\d{2}:\d{2})-(\d{2}:\d{2})\s*$")
 
-# A minutely systemd timer fires with a few seconds of jitter.
+# A minutely systemd timer fires with a few seconds of jitter. Short intervals,
+# such as bus positions polled every 30 s from a loop, get proportionally less.
 _SLACK = timedelta(seconds=15)
 
 
@@ -57,4 +58,5 @@ class PollPolicy:
     def is_due(self, now: datetime, last_fetch: datetime | None) -> bool:
         if not self.is_active(now):
             return False
-        return last_fetch is None or now - last_fetch >= self.interval - _SLACK
+        slack = min(_SLACK, self.interval / 10)
+        return last_fetch is None or now - last_fetch >= self.interval - slack

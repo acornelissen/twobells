@@ -78,3 +78,10 @@ def test_is_active_reflects_any_window():
 
 def test_parsed_window_equals_constructed_window():
     assert parse_window("Mon 01:00-02:00") == Window(frozenset({0}), time(1, 0), time(2, 0))
+
+
+def test_short_intervals_are_not_polled_early():
+    # A 30 s position feed would otherwise be polled every 15 s.
+    p = PollPolicy((parse_window("Mon-Sun 00:00-23:59"),), timedelta(seconds=30))
+    assert not p.is_due(THU_0700, last_fetch=THU_0700 - timedelta(seconds=20))
+    assert p.is_due(THU_0700, last_fetch=THU_0700 - timedelta(seconds=28))
