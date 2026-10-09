@@ -1,13 +1,18 @@
 """The dashboard's web server: the page, its static files and the read-only API
-in docs/dashboard-api.md.
+in docs/dashboard-api.md, and the password-protected settings area.
 
-Home network only, read-only, no password. Every request must come from a
-private address and name a local host (or one in allowed_hosts), which
-blocks DNS rebinding from outside websites; API calls from another site's
-page are refused too. Only GET and HEAD, only files from an allowlist read
-into memory at start, and the same strict security headers on every
-response, errors included. Connections and event streams are capped so a
-misbehaving client can't use up the threads.
+Home network only. Every request must come from a private address and name
+a local host (or one in allowed_hosts), which blocks DNS rebinding from
+outside websites; API calls from another site's page are refused too. The
+page and API are read-only and need no password: only GET and HEAD, only
+files from an allowlist read into memory at start, and the same strict
+security headers on every response, errors included. Connections and event
+streams are capped so a misbehaving client can't use up the threads.
+
+Everything under /settings goes to the settings area (dashsettings.py), if
+one is mounted: it signs the owner in, takes POSTs (same-origin, with a
+CSRF token, bodies capped) and sends its own security headers. The caps
+above apply to it too.
 """
 
 from __future__ import annotations
@@ -26,10 +31,14 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
+from . import dashsettings
 from .auth import local_host, private_address
 from .snapshot import Hub
+
+if TYPE_CHECKING:
+    from .dashsettings import SettingsArea
 
 log = logging.getLogger(__name__)
 
@@ -144,6 +153,7 @@ class DashboardApp:
     client_allowed: Callable[[str], bool] = private_address
     heartbeat: float = HEARTBEAT_S
     stream_seconds: float = STREAM_SECONDS
+    settings: "SettingsArea | None" = None  # /settings, or None: then it is not found
 
 
 def _host_name(host: str) -> str:
@@ -180,9 +190,9 @@ class _Handler(BaseHTTPRequestHandler):
     # Responses
 
     def _head(self, status: int, content_type: str | None, length: int | None, cache: str = "no-store",
-              extra: dict[str, str] | None = None) -> None:
+              extra: dict[str, str] | None = None, security: dict[str, str] = SECURITY_HEADERS) -> None:
         self.send_response(status)
-        for name, value in SECURITY_HEADERS.items():
+        for name, value in security.items():
             self.send_header(name, value)
         self.send_header("Cache-Control", cache)
         for name, value in (extra or {}).items():
@@ -194,8 +204,8 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _send(self, status: int, body: bytes, content_type: str = _TEXT, cache: str = "no-store",
-              extra: dict[str, str] | None = None) -> None:
-        self._head(status, content_type, len(body), cache, extra)
+              extra: dict[str, str] | None = None, security: dict[str, str] = SECURITY_HEADERS) -> None:
+        self._head(status, content_type, len(body), cache, extra, security)
         if self.command != "HEAD":
             self.wfile.write(body)
 
@@ -240,6 +250,10 @@ class _Handler(BaseHTTPRequestHandler):
     def _handle(self) -> None:
         if self._outsider():
             self._error(403)
+            return
+        path = self.path.split("?", 1)[0].split("#", 1)[0]
+        if self.app.settings is not None and dashsettings.owns(path):
+            self._settings(path)
             return
         if self.command not in ("GET", "HEAD"):
             self._error(405, {"Allow": "GET, HEAD"})
@@ -344,6 +358,36 @@ class _Handler(BaseHTTPRequestHandler):
             "phrase": found["phrase"],
             "days": days,
         })
+
+    # The settings area
+
+    def _settings(self, path: str) -> None:
+        security = dashsettings.headers_for(path)
+        raw = self.path
+        if len(raw) > MAX_PATH or any(bad in raw.lower() for bad in _BAD_PATH):
+            self._send(404, b"Not Found", security=security)
+            return
+        body = b""
+        if self.command == "POST":
+            body = self._body(dashsettings.max_body(path))
+            if isinstance(body, int):  # refused unread, so the connection can't carry on
+                self._send(body, HTTPStatus(body).phrase.encode(), extra={"Connection": "close"}, security=security)
+                return
+        query = raw.split("#", 1)[0].partition("?")[2]
+        reply = self.app.settings.handle(self.command, path, query, self.headers, self.client_address[0], body)
+        self._send(reply.status, reply.body, reply.content_type, extra=reply.headers, security=security)
+
+    def _body(self, limit: int) -> bytes | int:
+        """A POST's body, or the status refusing it: only a plain
+        Content-Length of at most `limit` bytes."""
+        if self.headers.get("Transfer-Encoding") is not None or len(self.headers.get_all("Content-Length") or []) > 1:
+            return 400
+        length = (self.headers.get("Content-Length") or "").strip()
+        if not length.isdigit():
+            return 411
+        if int(length) > limit:
+            return 413
+        return self.rfile.read(int(length))
 
     # Server-sent events
 
