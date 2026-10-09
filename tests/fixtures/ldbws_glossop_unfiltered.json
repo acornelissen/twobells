@@ -1,0 +1,134 @@
+{
+  "_comment": "Synthetic test data, shaped like a National Rail Darwin LDBWS GetDepartureBoard answer from the Rail Data Marketplace. Station names and CRS codes are real; times, service IDs, platforms, coach counts and messages are made up.",
+  "trainServices": [
+    {
+      "futureCancellation": false,
+      "futureDelay": false,
+      "origin": [
+        {
+          "locationName": "Hadfield",
+          "crs": "HDF",
+          "assocIsCancelled": false
+        }
+      ],
+      "destination": [
+        {
+          "locationName": "Manchester Piccadilly",
+          "crs": "MAN",
+          "assocIsCancelled": false
+        }
+      ],
+      "std": "11:55",
+      "etd": "On time",
+      "platform": "2",
+      "operator": "Northern",
+      "operatorCode": "NT",
+      "isCircularRoute": false,
+      "isCancelled": false,
+      "filterLocationCancelled": false,
+      "serviceType": "train",
+      "length": 2,
+      "detachFront": false,
+      "isReverseFormation": false
+    },
+    {
+      "futureCancellation": false,
+      "futureDelay": false,
+      "origin": [
+        {
+          "locationName": "Manchester Piccadilly",
+          "crs": "MAN",
+          "assocIsCancelled": false
+        }
+      ],
+      "destination": [
+        {
+          "locationName": "Hadfield",
+          "crs": "HDF",
+          "assocIsCancelled": false
+        }
+      ],
+      "std": "12:08",
+      "etd": "On time",
+      "platform": "2",
+      "operator": "Northern",
+      "operatorCode": "NT",
+      "isCircularRoute": false,
+      "isCancelled": false,
+      "filterLocationCancelled": false,
+      "serviceType": "train",
+      "length": 2,
+      "detachFront": false,
+      "isReverseFormation": false
+    },
+    {
+      "futureCancellation": false,
+      "futureDelay": false,
+      "origin": [
+        {
+          "locationName": "Hadfield",
+          "crs": "HDF",
+          "assocIsCancelled": false
+        }
+      ],
+      "destination": [
+        {
+          "locationName": "Manchester Piccadilly",
+          "crs": "MAN",
+          "assocIsCancelled": false
+        }
+      ],
+      "std": "12:25",
+      "etd": "On time",
+      "platform": "2",
+      "operator": "Northern",
+      "operatorCode": "NT",
+      "isCircularRoute": false,
+      "isCancelled": false,
+      "filterLocationCancelled": false,
+      "serviceType": "train",
+      "length": 2,
+      "detachFront": false,
+      "isReverseFormation": false
+    },
+    {
+      "futureCancellation": false,
+      "futureDelay": false,
+      "origin": [
+        {
+          "locationName": "Manchester Piccadilly",
+          "crs": "MAN",
+          "assocIsCancelled": false
+        }
+      ],
+      "destination": [
+        {
+          "locationName": "Hadfield",
+          "crs": "HDF",
+          "assocIsCancelled": false
+        }
+      ],
+      "std": "12:38",
+      "etd": "On time",
+      "platform": "2",
+      "operator": "Northern",
+      "operatorCode": "NT",
+      "isCircularRoute": false,
+      "isCancelled": false,
+      "filterLocationCancelled": false,
+      "serviceType": "train",
+      "length": 2,
+      "detachFront": false,
+      "isReverseFormation": false
+    }
+  ],
+  "generatedAt": "2026-10-09T11:43:44.5000000+01:00",
+  "locationName": "Glossop",
+  "crs": "GLO",
+  "filterType": "to",
+  "platformAvailable": true,
+  "areServicesAvailable": true,
+  "Xmlns": {
+    "Count": 4
+  }
+}
