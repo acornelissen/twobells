@@ -83,9 +83,10 @@ def get_json_capped(url: str, headers: dict | None, max_bytes: int, timeout: flo
         raise NotJSON("Response is not valid JSON") from None
 
 
-def get_bytes(url: str, max_bytes: int, timeout: float = 15.0) -> bytes:
-    """A response body, refused if it is larger than `max_bytes`."""
-    request = Request(url, headers={"User-Agent": USER_AGENT})
+def get_bytes(url: str, max_bytes: int, timeout: float = 15.0, headers: dict | None = None) -> bytes:
+    """A response body, refused if it is larger than `max_bytes`. `headers`
+    are added to (or replace) the default User-Agent."""
+    request = Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
     with urlopen(request, timeout=timeout) as response:
         body = response.read(max_bytes + 1)
     if len(body) > max_bytes:

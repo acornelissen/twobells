@@ -170,3 +170,11 @@ def test_capped_json_refuses_anything_but_json_with_one_clear_error(monkeypatch,
     assert str(caught.value) == "Response is not valid JSON"
     # Nothing chained either: a decoder's message can quote the body.
     assert caught.value.__cause__ is None and caught.value.__suppress_context__
+
+
+def test_get_bytes_adds_the_callers_headers_and_may_replace_the_agent(monkeypatch):
+    seen = serve(monkeypatch, b"body")
+    assert http.get_bytes("https://example.test/x", 100) == b"body"
+    assert seen["request"].get_header("User-agent") == http.USER_AGENT
+    http.get_bytes("https://example.test/x", 100, headers={"User-Agent": "inky-departures/0.1 (+contact)"})
+    assert seen["request"].get_header("User-agent") == "inky-departures/0.1 (+contact)"
