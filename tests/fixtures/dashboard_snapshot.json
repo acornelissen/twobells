@@ -1,0 +1,1439 @@
+{
+  "version": 42,
+  "generated_at": "2026-10-10T07:01:30+01:00",
+  "title": "Glossop > Man Picc",
+  "walk": {
+    "train": 12,
+    "bus": {
+      "A": 5,
+      "B": 10
+    }
+  },
+  "trains": {
+    "station": "Glossop",
+    "filter": "MAN",
+    "status": {
+      "last_success": "2026-10-10T07:01:00+01:00",
+      "stale": false,
+      "error": null,
+      "note": null
+    },
+    "messages": [
+      "Disruption between Hadfield and Glossop until 10:00. Some trains may be cancelled or delayed."
+    ],
+    "rows": [
+      {
+        "id": "bed2ef3eab14c0d9",
+        "service": "Northern",
+        "destination": "Manchester Piccadilly",
+        "origin": "Hadfield",
+        "scheduled": "07:12",
+        "scheduled_at": "2026-10-10T07:12:00+01:00",
+        "expected": "07:19",
+        "expected_at": "2026-10-10T07:19:00+01:00",
+        "status": "late",
+        "status_text": "Expected 07:19",
+        "minutes_late": 7,
+        "platform": "1",
+        "length": 3,
+        "cancel_reason": null,
+        "delay_reason": "This train has been delayed by a broken down train",
+        "leave_at": "2026-10-10T07:07:00+01:00",
+        "calling_points": [
+          {
+            "name": "Dinting",
+            "crs": "DGT",
+            "scheduled": "07:15",
+            "expected": "07:22",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Broadbottom",
+            "crs": "BDB",
+            "scheduled": "07:21",
+            "expected": "07:28",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Hattersley",
+            "crs": "HTY",
+            "scheduled": "07:25",
+            "expected": "07:32",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Godley",
+            "crs": "GDL",
+            "scheduled": "07:27",
+            "expected": "07:34",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Newton for Hyde",
+            "crs": "NWN",
+            "scheduled": "07:30",
+            "expected": "07:37",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Flowery Field",
+            "crs": "FLF",
+            "scheduled": "07:32",
+            "expected": "07:39",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Guide Bridge",
+            "crs": "GUI",
+            "scheduled": "07:36",
+            "expected": "07:43",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Gorton",
+            "crs": "GTO",
+            "scheduled": "07:40",
+            "expected": "07:47",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Ashburys",
+            "crs": "ABY",
+            "scheduled": "07:43",
+            "expected": "07:50",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Manchester Piccadilly",
+            "crs": "MAN",
+            "scheduled": "07:48",
+            "expected": "07:55",
+            "actual": null,
+            "cancelled": false
+          }
+        ],
+        "history": {
+          "phrase": "Late 4 of the last 10 weekdays (avg 6 min)"
+        }
+      },
+      {
+        "id": "a8a4e996e6838b99",
+        "service": "Northern",
+        "destination": "Manchester Piccadilly",
+        "origin": "Hadfield",
+        "scheduled": "07:42",
+        "scheduled_at": "2026-10-10T07:42:00+01:00",
+        "expected": null,
+        "expected_at": null,
+        "status": "cancelled",
+        "status_text": "Cancelled",
+        "minutes_late": null,
+        "platform": "1",
+        "length": 3,
+        "cancel_reason": "This train has been cancelled because of a shortage of train crew",
+        "delay_reason": null,
+        "leave_at": null,
+        "calling_points": [
+          {
+            "name": "Dinting",
+            "crs": "DGT",
+            "scheduled": "07:45",
+            "expected": null,
+            "actual": null,
+            "cancelled": true
+          },
+          {
+            "name": "Broadbottom",
+            "crs": "BDB",
+            "scheduled": "07:51",
+            "expected": null,
+            "actual": null,
+            "cancelled": true
+          },
+          {
+            "name": "Hattersley",
+            "crs": "HTY",
+            "scheduled": "07:55",
+            "expected": null,
+            "actual": null,
+            "cancelled": true
+          },
+          {
+            "name": "Godley",
+            "crs": "GDL",
+            "scheduled": "07:57",
+            "expected": null,
+            "actual": null,
+            "cancelled": true
+          },
+          {
+            "name": "Newton for Hyde",
+            "crs": "NWN",
+            "scheduled": "08:00",
+            "expected": null,
+            "actual": null,
+            "cancelled": true
+          },
+          {
+            "name": "Flowery Field",
+            "crs": "FLF",
+            "scheduled": "08:02",
+            "expected": null,
+            "actual": null,
+            "cancelled": true
+          },
+          {
+            "name": "Guide Bridge",
+            "crs": "GUI",
+            "scheduled": "08:06",
+            "expected": null,
+            "actual": null,
+            "cancelled": true
+          },
+          {
+            "name": "Gorton",
+            "crs": "GTO",
+            "scheduled": "08:10",
+            "expected": null,
+            "actual": null,
+            "cancelled": true
+          },
+          {
+            "name": "Ashburys",
+            "crs": "ABY",
+            "scheduled": "08:13",
+            "expected": null,
+            "actual": null,
+            "cancelled": true
+          },
+          {
+            "name": "Manchester Piccadilly",
+            "crs": "MAN",
+            "scheduled": "08:18",
+            "expected": null,
+            "actual": null,
+            "cancelled": true
+          }
+        ],
+        "history": {
+          "phrase": "Cancelled 2 of the last 10 weekdays"
+        }
+      },
+      {
+        "id": "c189752d1f2351ad",
+        "service": "Northern",
+        "destination": "Manchester Piccadilly",
+        "origin": "Hadfield",
+        "scheduled": "08:12",
+        "scheduled_at": "2026-10-10T08:12:00+01:00",
+        "expected": "08:12",
+        "expected_at": "2026-10-10T08:12:00+01:00",
+        "status": "on_time",
+        "status_text": "On time",
+        "minutes_late": null,
+        "platform": "1",
+        "length": 6,
+        "cancel_reason": null,
+        "delay_reason": null,
+        "leave_at": "2026-10-10T08:00:00+01:00",
+        "calling_points": [
+          {
+            "name": "Dinting",
+            "crs": "DGT",
+            "scheduled": "08:15",
+            "expected": "08:15",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Broadbottom",
+            "crs": "BDB",
+            "scheduled": "08:21",
+            "expected": "08:21",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Hattersley",
+            "crs": "HTY",
+            "scheduled": "08:25",
+            "expected": "08:25",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Godley",
+            "crs": "GDL",
+            "scheduled": "08:27",
+            "expected": "08:27",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Newton for Hyde",
+            "crs": "NWN",
+            "scheduled": "08:30",
+            "expected": "08:30",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Flowery Field",
+            "crs": "FLF",
+            "scheduled": "08:32",
+            "expected": "08:32",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Guide Bridge",
+            "crs": "GUI",
+            "scheduled": "08:36",
+            "expected": "08:36",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Gorton",
+            "crs": "GTO",
+            "scheduled": "08:40",
+            "expected": "08:40",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Ashburys",
+            "crs": "ABY",
+            "scheduled": "08:43",
+            "expected": "08:43",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Manchester Piccadilly",
+            "crs": "MAN",
+            "scheduled": "08:48",
+            "expected": "08:48",
+            "actual": null,
+            "cancelled": false
+          }
+        ],
+        "history": {
+          "phrase": "On time 9 of the last 10 weekdays"
+        }
+      },
+      {
+        "id": "7e6e78d89c006e86",
+        "service": "Northern",
+        "destination": "Manchester Piccadilly",
+        "origin": "Hadfield",
+        "scheduled": "08:42",
+        "scheduled_at": "2026-10-10T08:42:00+01:00",
+        "expected": null,
+        "expected_at": null,
+        "status": "late",
+        "status_text": "Delayed",
+        "minutes_late": null,
+        "platform": null,
+        "length": 3,
+        "cancel_reason": null,
+        "delay_reason": "This train has been delayed by signalling problems",
+        "leave_at": "2026-10-10T08:30:00+01:00",
+        "calling_points": [
+          {
+            "name": "Dinting",
+            "crs": "DGT",
+            "scheduled": "08:45",
+            "expected": null,
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Broadbottom",
+            "crs": "BDB",
+            "scheduled": "08:51",
+            "expected": null,
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Hattersley",
+            "crs": "HTY",
+            "scheduled": "08:55",
+            "expected": null,
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Godley",
+            "crs": "GDL",
+            "scheduled": "08:57",
+            "expected": null,
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Newton for Hyde",
+            "crs": "NWN",
+            "scheduled": "09:00",
+            "expected": null,
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Flowery Field",
+            "crs": "FLF",
+            "scheduled": "09:02",
+            "expected": null,
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Guide Bridge",
+            "crs": "GUI",
+            "scheduled": "09:06",
+            "expected": null,
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Gorton",
+            "crs": "GTO",
+            "scheduled": "09:10",
+            "expected": null,
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Ashburys",
+            "crs": "ABY",
+            "scheduled": "09:13",
+            "expected": null,
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Manchester Piccadilly",
+            "crs": "MAN",
+            "scheduled": "09:18",
+            "expected": null,
+            "actual": null,
+            "cancelled": false
+          }
+        ],
+        "history": {
+          "phrase": "Late 3 of the last 8 weekdays (avg 4 min)"
+        }
+      },
+      {
+        "id": "a4e810cf26887e46",
+        "service": "Northern",
+        "destination": "Manchester Piccadilly",
+        "origin": "Hadfield",
+        "scheduled": "09:12",
+        "scheduled_at": "2026-10-10T09:12:00+01:00",
+        "expected": "09:12",
+        "expected_at": "2026-10-10T09:12:00+01:00",
+        "status": "on_time",
+        "status_text": "On time",
+        "minutes_late": null,
+        "platform": "1",
+        "length": 3,
+        "cancel_reason": null,
+        "delay_reason": null,
+        "leave_at": "2026-10-10T09:00:00+01:00",
+        "calling_points": [
+          {
+            "name": "Dinting",
+            "crs": "DGT",
+            "scheduled": "09:15",
+            "expected": "09:15",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Broadbottom",
+            "crs": "BDB",
+            "scheduled": "09:21",
+            "expected": "09:21",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Hattersley",
+            "crs": "HTY",
+            "scheduled": "09:25",
+            "expected": "09:25",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Godley",
+            "crs": "GDL",
+            "scheduled": "09:27",
+            "expected": "09:27",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Newton for Hyde",
+            "crs": "NWN",
+            "scheduled": "09:30",
+            "expected": "09:30",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Flowery Field",
+            "crs": "FLF",
+            "scheduled": "09:32",
+            "expected": "09:32",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Guide Bridge",
+            "crs": "GUI",
+            "scheduled": "09:36",
+            "expected": "09:36",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Gorton",
+            "crs": "GTO",
+            "scheduled": "09:40",
+            "expected": "09:40",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Ashburys",
+            "crs": "ABY",
+            "scheduled": "09:43",
+            "expected": "09:43",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Manchester Piccadilly",
+            "crs": "MAN",
+            "scheduled": "09:48",
+            "expected": "09:48",
+            "actual": null,
+            "cancelled": false
+          }
+        ],
+        "history": {
+          "phrase": null
+        }
+      },
+      {
+        "id": "c3e0eea4300fc0ba",
+        "service": "Northern",
+        "destination": "Manchester Piccadilly",
+        "origin": "Hadfield",
+        "scheduled": "09:42",
+        "scheduled_at": "2026-10-10T09:42:00+01:00",
+        "expected": "09:45",
+        "expected_at": "2026-10-10T09:45:00+01:00",
+        "status": "late",
+        "status_text": "Expected 09:45",
+        "minutes_late": 3,
+        "platform": "1",
+        "length": 3,
+        "cancel_reason": null,
+        "delay_reason": null,
+        "leave_at": "2026-10-10T09:33:00+01:00",
+        "calling_points": [
+          {
+            "name": "Dinting",
+            "crs": "DGT",
+            "scheduled": "09:45",
+            "expected": "09:48",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Broadbottom",
+            "crs": "BDB",
+            "scheduled": "09:51",
+            "expected": "09:54",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Hattersley",
+            "crs": "HTY",
+            "scheduled": "09:55",
+            "expected": "09:58",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Godley",
+            "crs": "GDL",
+            "scheduled": "09:57",
+            "expected": "10:00",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Newton for Hyde",
+            "crs": "NWN",
+            "scheduled": "10:00",
+            "expected": "10:03",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Flowery Field",
+            "crs": "FLF",
+            "scheduled": "10:02",
+            "expected": "10:05",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Guide Bridge",
+            "crs": "GUI",
+            "scheduled": "10:06",
+            "expected": "10:09",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Gorton",
+            "crs": "GTO",
+            "scheduled": "10:10",
+            "expected": "10:13",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Ashburys",
+            "crs": "ABY",
+            "scheduled": "10:13",
+            "expected": "10:16",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Manchester Piccadilly",
+            "crs": "MAN",
+            "scheduled": "10:18",
+            "expected": "10:21",
+            "actual": null,
+            "cancelled": false
+          }
+        ],
+        "history": {
+          "phrase": "On time 10 of the last 10 weekdays"
+        }
+      },
+      {
+        "id": "3bbabe2c66056980",
+        "service": "Northern",
+        "destination": "Manchester Piccadilly",
+        "origin": "Hadfield",
+        "scheduled": "10:12",
+        "scheduled_at": "2026-10-10T10:12:00+01:00",
+        "expected": "10:12",
+        "expected_at": "2026-10-10T10:12:00+01:00",
+        "status": "on_time",
+        "status_text": "On time",
+        "minutes_late": null,
+        "platform": "2",
+        "length": 2,
+        "cancel_reason": null,
+        "delay_reason": null,
+        "leave_at": "2026-10-10T10:00:00+01:00",
+        "calling_points": [
+          {
+            "name": "Dinting",
+            "crs": "DGT",
+            "scheduled": "10:15",
+            "expected": "10:15",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Broadbottom",
+            "crs": "BDB",
+            "scheduled": "10:21",
+            "expected": "10:21",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Hattersley",
+            "crs": "HTY",
+            "scheduled": "10:25",
+            "expected": "10:25",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Godley",
+            "crs": "GDL",
+            "scheduled": "10:27",
+            "expected": "10:27",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Newton for Hyde",
+            "crs": "NWN",
+            "scheduled": "10:30",
+            "expected": "10:30",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Flowery Field",
+            "crs": "FLF",
+            "scheduled": "10:32",
+            "expected": "10:32",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Guide Bridge",
+            "crs": "GUI",
+            "scheduled": "10:36",
+            "expected": "10:36",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Gorton",
+            "crs": "GTO",
+            "scheduled": "10:40",
+            "expected": "10:40",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Ashburys",
+            "crs": "ABY",
+            "scheduled": "10:43",
+            "expected": "10:43",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Manchester Piccadilly",
+            "crs": "MAN",
+            "scheduled": "10:48",
+            "expected": "10:48",
+            "actual": null,
+            "cancelled": false
+          }
+        ],
+        "history": {
+          "phrase": null
+        }
+      },
+      {
+        "id": "d4b39a87e6032aaa",
+        "service": "Northern",
+        "destination": "Manchester Piccadilly",
+        "origin": "Hadfield",
+        "scheduled": "10:42",
+        "scheduled_at": "2026-10-10T10:42:00+01:00",
+        "expected": "10:42",
+        "expected_at": "2026-10-10T10:42:00+01:00",
+        "status": "on_time",
+        "status_text": "On time",
+        "minutes_late": null,
+        "platform": "1",
+        "length": 3,
+        "cancel_reason": null,
+        "delay_reason": null,
+        "leave_at": "2026-10-10T10:30:00+01:00",
+        "calling_points": [
+          {
+            "name": "Dinting",
+            "crs": "DGT",
+            "scheduled": "10:45",
+            "expected": "10:45",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Broadbottom",
+            "crs": "BDB",
+            "scheduled": "10:51",
+            "expected": "10:51",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Hattersley",
+            "crs": "HTY",
+            "scheduled": "10:55",
+            "expected": "10:55",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Godley",
+            "crs": "GDL",
+            "scheduled": "10:57",
+            "expected": "10:57",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Newton for Hyde",
+            "crs": "NWN",
+            "scheduled": "11:00",
+            "expected": "11:00",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Flowery Field",
+            "crs": "FLF",
+            "scheduled": "11:02",
+            "expected": "11:02",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Guide Bridge",
+            "crs": "GUI",
+            "scheduled": "11:06",
+            "expected": "11:06",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Gorton",
+            "crs": "GTO",
+            "scheduled": "11:10",
+            "expected": "11:10",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Ashburys",
+            "crs": "ABY",
+            "scheduled": "11:13",
+            "expected": "11:13",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Manchester Piccadilly",
+            "crs": "MAN",
+            "scheduled": "11:18",
+            "expected": "11:18",
+            "actual": null,
+            "cancelled": false
+          }
+        ],
+        "history": {
+          "phrase": "Late 1 of the last 10 weekdays (avg 3 min)"
+        }
+      },
+      {
+        "id": "07c5530eb9b6f3c5",
+        "service": "Northern",
+        "destination": "Manchester Piccadilly",
+        "origin": "Hadfield",
+        "scheduled": "11:12",
+        "scheduled_at": "2026-10-10T11:12:00+01:00",
+        "expected": null,
+        "expected_at": null,
+        "status": "unknown",
+        "status_text": "No report",
+        "minutes_late": null,
+        "platform": null,
+        "length": null,
+        "cancel_reason": null,
+        "delay_reason": null,
+        "leave_at": "2026-10-10T11:00:00+01:00",
+        "calling_points": [],
+        "history": {
+          "phrase": null
+        }
+      },
+      {
+        "id": "17f902363b225ed9",
+        "service": "Northern",
+        "destination": "Manchester Piccadilly",
+        "origin": "Hadfield",
+        "scheduled": "11:42",
+        "scheduled_at": "2026-10-10T11:42:00+01:00",
+        "expected": "11:42",
+        "expected_at": "2026-10-10T11:42:00+01:00",
+        "status": "on_time",
+        "status_text": "On time",
+        "minutes_late": null,
+        "platform": "1",
+        "length": 3,
+        "cancel_reason": null,
+        "delay_reason": null,
+        "leave_at": "2026-10-10T11:30:00+01:00",
+        "calling_points": [
+          {
+            "name": "Dinting",
+            "crs": "DGT",
+            "scheduled": "11:45",
+            "expected": "11:45",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Broadbottom",
+            "crs": "BDB",
+            "scheduled": "11:51",
+            "expected": "11:51",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Hattersley",
+            "crs": "HTY",
+            "scheduled": "11:55",
+            "expected": "11:55",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Godley",
+            "crs": "GDL",
+            "scheduled": "11:57",
+            "expected": "11:57",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Newton for Hyde",
+            "crs": "NWN",
+            "scheduled": "12:00",
+            "expected": "12:00",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Flowery Field",
+            "crs": "FLF",
+            "scheduled": "12:02",
+            "expected": "12:02",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Guide Bridge",
+            "crs": "GUI",
+            "scheduled": "12:06",
+            "expected": "12:06",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Gorton",
+            "crs": "GTO",
+            "scheduled": "12:10",
+            "expected": "12:10",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Ashburys",
+            "crs": "ABY",
+            "scheduled": "12:13",
+            "expected": "12:13",
+            "actual": null,
+            "cancelled": false
+          },
+          {
+            "name": "Manchester Piccadilly",
+            "crs": "MAN",
+            "scheduled": "12:18",
+            "expected": "12:18",
+            "actual": null,
+            "cancelled": false
+          }
+        ],
+        "history": {
+          "phrase": null
+        }
+      }
+    ]
+  },
+  "buses": {
+    "status": {
+      "last_success": "2026-10-10T07:01:00+01:00",
+      "stale": false,
+      "error": null,
+      "note": null
+    },
+    "timetable": {
+      "state": "ready",
+      "built": "2026-10-09T11:01:30+01:00",
+      "valid_until": "2031-02-23",
+      "journeys": 445
+    },
+    "stops": {
+      "A": "Henry Street (Stop A)",
+      "B": "Henry Street (Stop B)"
+    },
+    "rows": [
+      {
+        "id": "79550be8b58b532f",
+        "line": "237",
+        "destination": "Ashton Bus Station",
+        "stop": "B",
+        "scheduled": "07:05",
+        "scheduled_at": "2026-10-10T07:05:00+01:00",
+        "expected": "07:05",
+        "expected_at": "2026-10-10T07:05:00+01:00",
+        "status": "on_time",
+        "status_text": "On time",
+        "minutes_late": null,
+        "live": true,
+        "leave_at": "2026-10-10T06:55:00+01:00",
+        "vehicle": {
+          "age_s": 18,
+          "recorded_at": "2026-10-10T07:01:12+01:00",
+          "bearing": 95.0
+        },
+        "strip": {
+          "stops": [
+            "Glossop Road",
+            "The Junction",
+            "Police Station",
+            "George Street",
+            "Henry Street",
+            "Grapes Inn"
+          ],
+          "yours": 4,
+          "bus_at": 3.4,
+          "where": "Next stop is yours"
+        },
+        "history": {
+          "phrase": null
+        }
+      },
+      {
+        "id": "aff4f89451678d07",
+        "line": "341",
+        "destination": "Hyde Bus Station",
+        "stop": "A",
+        "scheduled": "07:09",
+        "scheduled_at": "2026-10-10T07:09:00+01:00",
+        "expected": "07:11",
+        "expected_at": "2026-10-10T07:11:00+01:00",
+        "status": "late",
+        "status_text": "Expected 07:11",
+        "minutes_late": 2,
+        "live": true,
+        "leave_at": "2026-10-10T07:06:00+01:00",
+        "vehicle": {
+          "age_s": 40,
+          "recorded_at": "2026-10-10T07:00:50+01:00",
+          "bearing": 250.0
+        },
+        "strip": {
+          "stops": [
+            "Market Hall",
+            "Zion Church",
+            "Arundel Street",
+            "Sunlaws Street",
+            "St Marys Road",
+            "Henry Street",
+            "Howard Arms"
+          ],
+          "yours": 5,
+          "bus_at": 2.6,
+          "where": "2 stops away"
+        },
+        "history": {
+          "phrase": "Late 3 of the last 10 weekdays (avg 4 min)"
+        }
+      },
+      {
+        "id": "26c72ed8411e9f75",
+        "line": "61",
+        "destination": "Buxton Market Place",
+        "stop": "A",
+        "scheduled": "07:20",
+        "scheduled_at": "2026-10-10T07:20:00+01:00",
+        "expected": null,
+        "expected_at": null,
+        "status": "unknown",
+        "status_text": "Timetable only",
+        "minutes_late": null,
+        "live": false,
+        "leave_at": "2026-10-10T07:15:00+01:00",
+        "vehicle": null,
+        "strip": {
+          "stops": [
+            "Hollins Lane",
+            "Primary School",
+            "Tesco Petrol",
+            "Henry Street",
+            "The Centurion"
+          ],
+          "yours": 3,
+          "bus_at": null,
+          "where": "No live position"
+        },
+        "history": {
+          "phrase": null
+        }
+      },
+      {
+        "id": "603869ee7f9755cf",
+        "line": "341",
+        "destination": "Hyde Bus Station",
+        "stop": "A",
+        "scheduled": "07:24",
+        "scheduled_at": "2026-10-10T07:24:00+01:00",
+        "expected": "07:28",
+        "expected_at": "2026-10-10T07:28:00+01:00",
+        "status": "late",
+        "status_text": "Expected 07:28",
+        "minutes_late": 4,
+        "live": true,
+        "leave_at": "2026-10-10T07:23:00+01:00",
+        "vehicle": {
+          "age_s": 75,
+          "recorded_at": "2026-10-10T07:00:15+01:00",
+          "bearing": 95.0
+        },
+        "strip": {
+          "stops": [
+            "Market Hall",
+            "Zion Church",
+            "Arundel Street",
+            "Sunlaws Street",
+            "St Marys Road",
+            "Henry Street",
+            "Howard Arms"
+          ],
+          "yours": 5,
+          "bus_at": 0.6,
+          "where": "4 stops away"
+        },
+        "history": {
+          "phrase": "Late 3 of the last 10 weekdays (avg 4 min)"
+        }
+      },
+      {
+        "id": "672b5765b44d882d",
+        "line": "237",
+        "destination": "Ashton Bus Station",
+        "stop": "B",
+        "scheduled": "07:35",
+        "scheduled_at": "2026-10-10T07:35:00+01:00",
+        "expected": null,
+        "expected_at": null,
+        "status": "unknown",
+        "status_text": "Timetable only",
+        "minutes_late": null,
+        "live": false,
+        "leave_at": "2026-10-10T07:25:00+01:00",
+        "vehicle": null,
+        "strip": null,
+        "history": {
+          "phrase": null
+        }
+      },
+      {
+        "id": "cd02480bb4441430",
+        "line": "341",
+        "destination": "Hyde Bus Station",
+        "stop": "A",
+        "scheduled": "07:39",
+        "scheduled_at": "2026-10-10T07:39:00+01:00",
+        "expected": "07:39",
+        "expected_at": "2026-10-10T07:39:00+01:00",
+        "status": "on_time",
+        "status_text": "On time",
+        "minutes_late": null,
+        "live": true,
+        "leave_at": "2026-10-10T07:34:00+01:00",
+        "vehicle": {
+          "age_s": 12,
+          "recorded_at": "2026-10-10T07:01:18+01:00",
+          "bearing": 180.0
+        },
+        "strip": {
+          "stops": [
+            "Market Hall",
+            "Zion Church",
+            "Arundel Street",
+            "Sunlaws Street",
+            "St Marys Road",
+            "Henry Street",
+            "Howard Arms"
+          ],
+          "yours": 5,
+          "bus_at": null,
+          "where": "Not on the route yet"
+        },
+        "history": {
+          "phrase": "Late 3 of the last 10 weekdays (avg 4 min)"
+        }
+      },
+      {
+        "id": "d0aaaac897c1382c",
+        "line": "61",
+        "destination": "Buxton Market Place",
+        "stop": "A",
+        "scheduled": "07:50",
+        "scheduled_at": "2026-10-10T07:50:00+01:00",
+        "expected": null,
+        "expected_at": null,
+        "status": "unknown",
+        "status_text": "Timetable only",
+        "minutes_late": null,
+        "live": false,
+        "leave_at": "2026-10-10T07:45:00+01:00",
+        "vehicle": null,
+        "strip": null,
+        "history": {
+          "phrase": null
+        }
+      },
+      {
+        "id": "349614ac48b4fcf3",
+        "line": "237",
+        "destination": "Ashton Bus Station",
+        "stop": "B",
+        "scheduled": "08:05",
+        "scheduled_at": "2026-10-10T08:05:00+01:00",
+        "expected": null,
+        "expected_at": null,
+        "status": "unknown",
+        "status_text": "Timetable only",
+        "minutes_late": null,
+        "live": false,
+        "leave_at": "2026-10-10T07:55:00+01:00",
+        "vehicle": null,
+        "strip": null,
+        "history": {
+          "phrase": null
+        }
+      },
+      {
+        "id": "7433ef25b82e840c",
+        "line": "341",
+        "destination": "Hyde Bus Station",
+        "stop": "A",
+        "scheduled": "08:09",
+        "scheduled_at": "2026-10-10T08:09:00+01:00",
+        "expected": null,
+        "expected_at": null,
+        "status": "unknown",
+        "status_text": "Timetable only",
+        "minutes_late": null,
+        "live": false,
+        "leave_at": "2026-10-10T08:04:00+01:00",
+        "vehicle": null,
+        "strip": null,
+        "history": {
+          "phrase": "Late 3 of the last 10 weekdays (avg 4 min)"
+        }
+      },
+      {
+        "id": "c6ddaeec4db145a8",
+        "line": "341",
+        "destination": "Hyde Bus Station",
+        "stop": "A",
+        "scheduled": "08:24",
+        "scheduled_at": "2026-10-10T08:24:00+01:00",
+        "expected": null,
+        "expected_at": null,
+        "status": "unknown",
+        "status_text": "Timetable only",
+        "minutes_late": null,
+        "live": false,
+        "leave_at": "2026-10-10T08:19:00+01:00",
+        "vehicle": null,
+        "strip": null,
+        "history": {
+          "phrase": "Late 3 of the last 10 weekdays (avg 4 min)"
+        }
+      }
+    ]
+  },
+  "weather": {
+    "status": {
+      "last_success": "2026-10-10T06:49:30+01:00",
+      "stale": false,
+      "error": null,
+      "note": null
+    },
+    "rain": "Rain from 08:00 (70%)",
+    "now": {
+      "temperature": 11.2,
+      "feels_like": 9.0,
+      "code": 61,
+      "text": "Light rain",
+      "wind": 12,
+      "gust": 25,
+      "direction": 250,
+      "is_day": true
+    },
+    "hours": [
+      {
+        "start": "2026-10-10T07:00:00+01:00",
+        "temperature": 11,
+        "probability": 70,
+        "precipitation": 0.4,
+        "code": 61,
+        "text": "Light rain",
+        "wind": 12,
+        "is_day": true
+      },
+      {
+        "start": "2026-10-10T08:00:00+01:00",
+        "temperature": 11,
+        "probability": 70,
+        "precipitation": 0.6,
+        "code": 61,
+        "text": "Light rain",
+        "wind": 13,
+        "is_day": true
+      },
+      {
+        "start": "2026-10-10T09:00:00+01:00",
+        "temperature": 12,
+        "probability": 85,
+        "precipitation": 1.8,
+        "code": 63,
+        "text": "Rain",
+        "wind": 15,
+        "is_day": true
+      },
+      {
+        "start": "2026-10-10T10:00:00+01:00",
+        "temperature": 12,
+        "probability": 60,
+        "precipitation": 0.9,
+        "code": 80,
+        "text": "Rain showers",
+        "wind": 16,
+        "is_day": true
+      },
+      {
+        "start": "2026-10-10T11:00:00+01:00",
+        "temperature": 13,
+        "probability": 30,
+        "precipitation": 0.1,
+        "code": 3,
+        "text": "Overcast",
+        "wind": 14,
+        "is_day": true
+      },
+      {
+        "start": "2026-10-10T12:00:00+01:00",
+        "temperature": 14,
+        "probability": 20,
+        "precipitation": 0.0,
+        "code": 3,
+        "text": "Overcast",
+        "wind": 12,
+        "is_day": true
+      },
+      {
+        "start": "2026-10-10T13:00:00+01:00",
+        "temperature": 15,
+        "probability": 10,
+        "precipitation": 0.0,
+        "code": 2,
+        "text": "Partly cloudy",
+        "wind": 10,
+        "is_day": true
+      },
+      {
+        "start": "2026-10-10T14:00:00+01:00",
+        "temperature": 15,
+        "probability": 10,
+        "precipitation": 0.0,
+        "code": 2,
+        "text": "Partly cloudy",
+        "wind": 9,
+        "is_day": true
+      },
+      {
+        "start": "2026-10-10T15:00:00+01:00",
+        "temperature": 15,
+        "probability": 5,
+        "precipitation": 0.0,
+        "code": 1,
+        "text": "Mainly clear",
+        "wind": 9,
+        "is_day": true
+      },
+      {
+        "start": "2026-10-10T16:00:00+01:00",
+        "temperature": 14,
+        "probability": 0,
+        "precipitation": 0.0,
+        "code": 0,
+        "text": "Clear sky",
+        "wind": 8,
+        "is_day": true
+      },
+      {
+        "start": "2026-10-10T17:00:00+01:00",
+        "temperature": 13,
+        "probability": 0,
+        "precipitation": 0.0,
+        "code": 0,
+        "text": "Clear sky",
+        "wind": 8,
+        "is_day": true
+      },
+      {
+        "start": "2026-10-10T18:00:00+01:00",
+        "temperature": 12,
+        "probability": 5,
+        "precipitation": 0.0,
+        "code": 2,
+        "text": "Partly cloudy",
+        "wind": 7,
+        "is_day": true
+      },
+      {
+        "start": "2026-10-10T19:00:00+01:00",
+        "temperature": 11,
+        "probability": 15,
+        "precipitation": 0.0,
+        "code": 3,
+        "text": "Overcast",
+        "wind": 7,
+        "is_day": false
+      },
+      {
+        "start": "2026-10-10T20:00:00+01:00",
+        "temperature": 10,
+        "probability": 45,
+        "precipitation": 0.2,
+        "code": 61,
+        "text": "Light rain",
+        "wind": 8,
+        "is_day": false
+      }
+    ],
+    "sun": {
+      "sunrise": "2026-10-10T07:24:00+01:00",
+      "sunset": "2026-10-10T18:29:00+01:00"
+    }
+  }
+}

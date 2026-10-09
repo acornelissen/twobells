@@ -1,0 +1,65 @@
+{
+  "id": "aff4f89451678d07",
+  "line": "341",
+  "destination": "Hyde Bus Station",
+  "stop": "A",
+  "stops": [
+    {
+      "name": "Market Hall",
+      "lat": 53.4447,
+      "lon": -1.9698,
+      "time": "06:59",
+      "yours": false
+    },
+    {
+      "name": "Zion Church",
+      "lat": 53.4443,
+      "lon": -1.9661,
+      "time": "07:01",
+      "yours": false
+    },
+    {
+      "name": "Arundel Street",
+      "lat": 53.44395,
+      "lon": -1.96205,
+      "time": "07:03",
+      "yours": false
+    },
+    {
+      "name": "Sunlaws Street",
+      "lat": 53.443494,
+      "lon": -1.959026,
+      "time": "07:05",
+      "yours": false
+    },
+    {
+      "name": "St Marys Road",
+      "lat": 53.44362,
+      "lon": -1.9541,
+      "time": "07:07",
+      "yours": false
+    },
+    {
+      "name": "Henry Street",
+      "lat": 53.44384,
+      "lon": -1.948999,
+      "time": "07:09",
+      "yours": true
+    },
+    {
+      "name": "Howard Arms",
+      "lat": 53.4442,
+      "lon": -1.9438,
+      "time": "07:11",
+      "yours": false
+    }
+  ],
+  "vehicle": {
+    "lat": 53.4438,
+    "lon": -1.9632,
+    "bearing": 250.0,
+    "recorded_at": "2026-10-10T07:00:50+01:00",
+    "age_s": 40
+  },
+  "where": "2 stops away"
+}
