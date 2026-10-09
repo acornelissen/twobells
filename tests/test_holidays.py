@@ -148,3 +148,100 @@ def test_the_cache_folder_is_made_if_missing(tmp_path):
     folder = tmp_path / "state"
     assert bank_holidays(folder, NOW, FakeFetch()) == ENGLAND_AND_WALES
     assert (folder / CACHE_NAME).exists()
+
+
+# TransXChange names for each day, for the bus timetable's calendars.
+
+def _events(*rows):
+    return {date.fromisoformat(day): holidays.Event(title, notes) for day, title, notes in rows}
+
+
+def test_parse_events_keeps_each_title_and_note():
+    events = holidays.parse_events(BODY)
+    assert set(events) == ENGLAND_AND_WALES
+    assert events[date(2026, 12, 28)] == holidays.Event("Boxing Day", "Substitute day")
+    assert events[date(2026, 5, 4)].title == "Early May bank holiday"
+
+
+@pytest.mark.parametrize("day, names", [
+    ("2026-01-01", {"NewYearsDay"}),
+    ("2026-04-03", {"GoodFriday"}),
+    ("2026-04-06", {"EasterMonday"}),
+    ("2026-05-04", {"MayDay"}),
+    ("2026-05-25", {"SpringBank"}),
+    ("2026-08-31", {"LateSummerBankHolidayNotScotland"}),
+    ("2026-12-24", {"ChristmasEve"}),
+    ("2026-12-25", {"ChristmasDay"}),
+    # Boxing Day is a Saturday in 2026: the day itself keeps its name, and
+    # the Monday is the substitute bank holiday.
+    ("2026-12-26", {"BoxingDay"}),
+    ("2026-12-28", {"BoxingDayHoliday"}),
+    ("2026-12-31", {"NewYearsEve"}),
+    ("2026-10-09", set()),
+])
+def test_holiday_names_from_govuk_titles_and_fixed_dates(day, names):
+    events = holidays.parse_events(BODY)
+    assert holidays.holiday_names(date.fromisoformat(day), events) == names
+
+
+def test_substitute_days_for_christmas_and_new_year():
+    # 2027: Christmas Day and Boxing Day fall on a weekend; 2028 New Year's Day does too.
+    events = _events(
+        ("2027-12-27", "Christmas Day", "Substitute day"),
+        ("2027-12-28", "Boxing Day", "Substitute day"),
+        ("2028-01-03", "New Year’s Day", "Substitute day"),
+    )
+    assert holidays.holiday_names(date(2027, 12, 27), events) == {"ChristmasDayHoliday"}
+    assert holidays.holiday_names(date(2027, 12, 28), events) == {"BoxingDayHoliday"}
+    assert holidays.holiday_names(date(2028, 1, 3), events) == {"NewYearsDayHoliday"}
+    assert holidays.holiday_names(date(2027, 12, 25), events) == {"ChristmasDay"}
+
+
+def test_renamed_and_one_off_holidays():
+    events = _events(
+        ("2020-05-08", "Early May bank holiday (VE day)", ""),
+        ("2023-05-08", "Bank holiday for the coronation of King Charles III", ""),
+    )
+    assert holidays.holiday_names(date(2020, 5, 8), events) == {"MayDay"}
+    # TransXChange has no name for a one-off holiday; timetables give those as dates.
+    assert holidays.holiday_names(date(2023, 5, 8), events) == set()
+
+
+def test_fixed_dates_need_no_list():
+    assert holidays.holiday_names(date(2030, 12, 24), {}) == {"ChristmasEve"}
+    assert holidays.holiday_names(date(2030, 1, 1), {}) == {"NewYearsDay"}
+
+
+def test_the_cache_keeps_titles(tmp_path):
+    bank_holidays(tmp_path, NOW, FakeFetch())
+    assert holidays.read_events(tmp_path) == holidays.parse_events(BODY)
+    assert read_cache(tmp_path) == ENGLAND_AND_WALES
+
+
+def test_a_cache_from_before_titles_still_works_and_gains_them_next_refresh(tmp_path):
+    # Older versions saved dates only. Those still count; the weekly refresh adds titles.
+    (tmp_path / CACHE_NAME).write_text(json.dumps(
+        {"fetched": NOW.isoformat(), "checked": NOW.isoformat(), "dates": ["2026-12-25"]}
+    ))
+    fetch = FakeFetch()
+    assert bank_holidays(tmp_path, NOW + timedelta(minutes=1), fetch) == {date(2026, 12, 25)}
+    assert fetch.calls == []
+    assert holidays.read_events(tmp_path) == {}
+    assert bank_holidays(tmp_path, NOW + timedelta(days=7), fetch) == ENGLAND_AND_WALES
+    assert holidays.read_events(tmp_path)[date(2026, 12, 28)].notes == "Substitute day"
+
+
+def test_bad_events_in_the_cache_are_ignored(tmp_path):
+    (tmp_path / CACHE_NAME).write_text(json.dumps({
+        "fetched": NOW.isoformat(), "checked": NOW.isoformat(), "dates": ["2026-12-25"],
+        "events": [
+            {"date": "2026-12-25", "title": "Christmas Day", "notes": ""},
+            {"date": "nonsense", "title": "Bad"},
+            {"date": "2026-12-28", "title": 7},
+            "not an event",
+        ],
+    }))
+    assert holidays.read_events(tmp_path) == {
+        date(2026, 12, 25): holidays.Event("Christmas Day", ""),
+        date(2026, 12, 28): holidays.Event("", ""),  # still a holiday, with no name
+    }
