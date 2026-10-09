@@ -13,6 +13,8 @@ from urllib.parse import urljoin
 
 import pytest
 
+from departureboard import keytest
+from departureboard.settingsform import KEYS
 from departureboard.setupapi import PAGE_HEADERS, static_files
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -170,6 +172,44 @@ def test_key_inputs_are_write_only():
     draw = text[text.index("function drawKeys"):text.index("function enterKeys")]
     assert 'autocomplete: "off"' in draw and "value:" not in draw  # never filled in from the server
     assert "keyTestButton(key.name, input)" in draw  # the hook for "Test this key" (bead 0fm.8)
+
+
+def _between(text, start, end):
+    return text[text.index(start):text.index(end)]
+
+
+def test_key_test_says_its_result_politely_in_words():
+    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    hook = _between(text, "function keyTestButton", "function signUp")
+    assert 'type: "button"' in hook and '"Test this key"' in hook
+    assert 'role: "status", "aria-live": "polite"' in hook
+    # Every state the host can answer has a glyph and words; the glyph is
+    # hidden from screen readers, which read the words.
+    found = re.findall(r'(\w+): \["([^"]+)", "([^"]+)"\]', _between(text, "const RESULTS", "const LOOKUP"))
+    results = {state: (glyph, words) for state, glyph, words in found}
+    assert set(keytest.STATES) <= set(results)
+    assert all(glyph and words for glyph, words in results.values())
+    assert '"aria-hidden": "true" }, glyph), h("strong", {}, `${words}:`)' in text
+    css = (STATIC / "wizard.css").read_text(encoding="utf-8")
+    for state in keytest.STATES:
+        assert re.search(r"\.key-result-%s\b[^{]*\{ color: var\(--(ok-fg|error|warn-fg)\); \}" % state, css), state
+
+
+def test_key_test_asks_before_spending_a_transportapi_lookup():
+    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    test = _between(text, "async function testKey", "function keyTestButton")
+    assert 'call("testkey", body)' in test
+    assert test.index("window.confirm(LOOKUP_WARNING)") < test.index('call("testkey"')
+    assert 'name === "TAPI_APP_KEY" && !window.confirm(LOOKUP_WARNING)' in test
+    assert "1 of today's 30" in _between(text, "const LOOKUP_WARNING", "function showResult")
+
+
+def test_every_key_on_the_page_says_how_to_get_it():
+    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    sign_up = _between(text, "const SIGN_UP", "const TESTED")
+    for name, _, _ in KEYS:
+        assert re.search(r"\b%s: \[\s*\"" % name, sign_up), name
+    assert "The full guide (opens in a new tab)" in text and 'rel: "noopener noreferrer"' in text
 
 
 # Accessibility.

@@ -728,12 +728,121 @@ function leaveWalk() {
 }
 
 // Step 5: keys. Never shown, only whether each is set; a pasted one is sent
-// once, when saving (and the bus key for the search, if pasted).
+// when saving (and the bus key for the search, if pasted), and to test it.
 
-// "Test this key" (bead 0fm.8) plugs in here: return a button that checks
-// the pasted key with the host, or null while there is no such check.
-function keyTestButton(name, input) { // eslint-disable-line no-unused-vars
-  return null;
+// The short way to get each key, from docs/KEYS.md; its link has the full guide.
+const SIGN_UP = {
+  RDM_API_KEY: [
+    "Register at raildata.org.uk as an individual not affiliated with a company. Approval can take up to 3 working days.",
+    "In the Data product catalogue, subscribe (free) to Live Departure Board. Not Live Fastest Departure Boards, or anything with Staff in its name.",
+    "Open Subscriptions, then Live Departure Board, then the Specification tab, and copy the Consumer key. Not the Consumer secret.",
+  ],
+  BODS_API_KEY: [
+    "Create an account at data.bus-data.dft.gov.uk. For intended use, Personal interests or other fits a home board.",
+    "If BODS emails you to confirm your address, follow its link.",
+    "Sign in, open Account settings and copy the API key.",
+  ],
+  TAPI_APP_ID: [
+    "Optional: most boards don't need TransportAPI. It stands in for bus times while there's no bus timetable.",
+    "Sign up at developer.transportapi.com and choose the Free plan, 30 lookups a day.",
+    "Open the app your account starts with, and copy its app_id here and its app_key into the next box.",
+  ],
+  TAPI_APP_KEY: [
+    "Optional, with the app ID above: both come from the same app on developer.transportapi.com.",
+    "Open the app and copy its app_key here.",
+  ],
+};
+
+// "Test this key": the host makes one harmless call to the key's service.
+// TransportAPI's app ID and key are tested together, from the key's box.
+const TESTED = ["RDM_API_KEY", "BODS_API_KEY", "TAPI_APP_KEY"];
+const RESULTS = { // state: [glyph, words]; the colour only repeats them
+  testing: ["…", "Testing"],
+  works: ["✓", "Works"],
+  wrong_key: ["✗", "Wrong key"],
+  not_subscribed: ["✗", "Not subscribed"],
+  service_down: ["!", "Service not answering"],
+  missing: ["!", "No key"],
+  unknown: ["?", "Can't tell"],
+  problem: ["!", "Not tested"],
+};
+const LOOKUP_WARNING = "Testing TransportAPI uses 1 of today's 30 free lookups, the ones the board uses for bus times. Test now?";
+
+function showResult(region, result, text) {
+  const [glyph, words] = RESULTS[result] || RESULTS.unknown;
+  region.className = `key-result key-result-${RESULTS[result] ? result : "unknown"}`;
+  fill(region, h("span", { class: "key-glyph", "aria-hidden": "true" }, glyph), h("strong", {}, `${words}:`), ` ${text}`);
+}
+
+function keySet(name) {
+  const key = state.keys.find((k) => k.name === name);
+  return Boolean(key && key.set);
+}
+
+async function testKey(name, input, button, region) {
+  const id = `key-${name}`;
+  const body = { name };
+  const value = input.value.trim();
+  setError(id, "");
+  if (value && !KEY.test(value)) return refuse(id, "Paste the key exactly; it has only letters, digits and . _ ~ + / = -");
+  if (value) body.value = value;
+  let ready = Boolean(value) || keySet(name);
+  if (name === "TAPI_APP_KEY") {
+    const other = $("key-TAPI_APP_ID");
+    const appId = other ? other.value.trim() : "";
+    setError("key-TAPI_APP_ID", "");
+    if (appId && !KEY.test(appId)) return refuse("key-TAPI_APP_ID", "Paste the app ID exactly; it has only letters, digits and . _ ~ + / = -");
+    if (appId) body.app_id = appId;
+    ready = ready && (Boolean(appId) || keySet("TAPI_APP_ID"));
+  }
+  if (!ready) {
+    showResult(region, "missing", name === "TAPI_APP_KEY"
+      ? "Paste the app ID and the app key first: they're tested together."
+      : "Paste the key first, then test it.");
+    return false;
+  }
+  if (name === "TAPI_APP_KEY" && !window.confirm(LOOKUP_WARNING)) return false;
+  await once(button, async () => {
+    showResult(region, "testing", "asking the service…");
+    try {
+      const data = await call("testkey", body);
+      showResult(region, str(data.state), str(data.message) || "No details.");
+    } catch (error) {
+      if (error.field) setError(`key-${error.field}`, error.message);
+      showResult(region, "problem", error.message);
+    }
+  });
+  return true;
+}
+
+function keyTestButton(name, input) {
+  if (!TESTED.includes(name)) return null;
+  const id = `key-${name}`;
+  const paired = name === "TAPI_APP_KEY";
+  const region = h("p", { class: "key-result", id: `${id}-result`, role: "status", "aria-live": "polite" });
+  const button = h("button", {
+    type: "button", class: "quiet", id: `${id}-test`, "aria-describedby": paired ? `${id}-test-hint` : null,
+  }, "Test this key");
+  button.addEventListener("click", () => testKey(name, input, button, region));
+  // A result is about what was in the box then; once that changes, it's gone.
+  input.addEventListener("input", () => { region.className = "key-result"; fill(region); });
+  return h("div", { class: "key-test" },
+    paired ? h("p", { class: "hint", id: `${id}-test-hint` },
+      "Tests the app ID and app key together, and uses 1 of today's 30 lookups, so it asks first.") : null,
+    button,
+    region);
+}
+
+function signUp(key) {
+  const steps = SIGN_UP[key.name];
+  const link = /^https:\/\//.test(key.doc)
+    ? h("a", { href: key.doc, target: "_blank", rel: "noopener noreferrer" }, "The full guide (opens in a new tab)")
+    : null;
+  if (!steps && !link) return null;
+  return h("details", { class: "sign-up" },
+    h("summary", {}, "How to get this key"),
+    steps ? h("ol", {}, steps.map((step) => h("li", {}, step))) : null,
+    link ? h("p", {}, link) : null);
 }
 
 function drawKeys() {
@@ -743,13 +852,11 @@ function drawKeys() {
       id, type: "text", autocomplete: "off", spellcheck: "false", class: "key-input",
       "aria-describedby": `${id}-hint ${id}-needed ${id}-error`,
     });
-    const link = /^https:\/\//.test(key.doc)
-      ? h("a", { href: key.doc, target: "_blank", rel: "noopener noreferrer" }, "How to get this key (opens in a new tab)")
-      : null;
     return h("div", { class: "field key" },
       h("label", { for: id }, key.label),
       h("p", { class: "hint", id: `${id}-hint` }, `${key.hint} `,
-        h("strong", { class: key.set ? "is-set" : "not-set" }, key.set ? "Set." : "Not set."), " ", link),
+        h("strong", { class: key.set ? "is-set" : "not-set" }, key.set ? "Set." : "Not set.")),
+      signUp(key),
       h("p", { class: "needed", id: `${id}-needed` }),
       h("p", { class: "error", id: `${id}-error`, hidden: true }),
       input,
