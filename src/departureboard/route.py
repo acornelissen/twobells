@@ -6,8 +6,10 @@ is accurate to well under a metre over the kilometre or so a strip covers.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from .bods import Vehicle
 from .model import Departure
@@ -99,3 +101,30 @@ def target(buses: list[Departure], chosen: Departure) -> int:
         for dep in buses[: buses.index(chosen)]
         if dep.service == chosen.service and dep.stop == chosen.stop
     )
+
+
+@dataclass(frozen=True)
+class RouteView:
+    """The second page: one bus and the stretch of road before your stop."""
+
+    title: str  # "341 to Hyde"
+    due: str  # as on the departures page, e.g. "07:24 +4"
+    leave: str | None  # "leave in 6 min"
+    stops: tuple[str, ...]  # the last one is yours
+    bus_at: float | None  # stops along from the first; None if not on the strip
+    where: str  # "3 stops away", "At your stop", ...
+    clock: str | None = None
+
+    def signature(self) -> str:
+        return hashlib.sha256(json.dumps(asdict(self), sort_keys=True).encode()).hexdigest()
+
+
+def where(stops: tuple[str, ...], bus_at: float | None, stale: bool) -> str:
+    if stale:
+        return "Position not updating"
+    if bus_at is None:
+        return f"Not yet past {stops[0]}"
+    away = (len(stops) - 1) - math.floor(bus_at + 0.02)
+    if away <= 0:
+        return "At your stop"
+    return "1 stop away" if away == 1 else f"{away} stops away"

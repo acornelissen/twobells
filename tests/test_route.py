@@ -4,7 +4,7 @@ import pytest
 
 from departureboard.bods import Vehicle, parse_siri_vm
 from departureboard.model import Departure, Status
-from departureboard.route import RouteStop, RouteStrip, locate, position_on, target
+from departureboard.route import RouteStop, RouteStrip, locate, position_on, target, where
 
 # Eastbound along High Street West, Glossop, to Henry Street Stop A (NaPTAN positions).
 STRIP = RouteStrip(
@@ -100,3 +100,30 @@ def test_box_surrounds_the_strip_in_bods_order():
     west, south, east, north = STRIP.box(margin_deg=0.01)
     assert west < -1.965966 < -1.948999 < east
     assert south < 53.443494 < 53.444467 < north
+
+
+NAMES = tuple(s.name for s in STRIP.stops)
+
+
+@pytest.mark.parametrize(
+    "bus_at, expected",
+    [(2.4, "3 stops away"), (3.0, "2 stops away"), (4.5, "1 stop away"), (4.99, "At your stop"), (5.0, "At your stop")],
+)
+def test_where_counts_the_stops_still_to_reach_including_yours(bus_at, expected):
+    assert where(NAMES, bus_at, stale=False) == expected
+
+
+def test_where_says_when_the_bus_is_further_back():
+    assert where(NAMES, None, stale=False) == "Not yet past The Junction"
+
+
+def test_where_says_when_positions_have_stopped():
+    assert where(NAMES, 2.4, stale=True) == "Position not updating"
+
+
+def test_route_view_signature_changes_as_the_bus_moves():
+    from departureboard.route import RouteView
+
+    a = RouteView("341 to Hyde", "07:24 +4", "leave in 6 min", NAMES, 2.4, "3 stops away")
+    b = RouteView("341 to Hyde", "07:24 +4", "leave in 6 min", NAMES, 2.6, "3 stops away")
+    assert a.signature() != b.signature()

@@ -8,6 +8,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from .panel import PHAT, Panel
+from .route import RouteView
 from .view import BoardView, Row, Section, Style
 
 # The pHAT, which every other size is scaled up from.
@@ -188,3 +189,52 @@ def render(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Image.Imag
     painter.section(view.buses, y + (_SECTION_GAP + 1) * s)
     painter.apply_preview_palette()
     return painter.image
+
+
+def render_route(view: RouteView, palette: Palette, panel: Panel = PHAT) -> Image.Image:
+    """The bus's position on the stops before yours, in the plain look."""
+    s, pad = panel.scale, _PAD * panel.scale
+    f = load_fonts(s)
+    image = Image.new("P", panel.size, palette.white)
+    draw = ImageDraw.Draw(image)
+    width, height = panel.size
+
+    draw.rectangle((0, 0, width - 1, _HEADER_H * s - 1), fill=palette.black)
+    stamp = view.clock or ""
+    stamp_x = width - pad - f.regular.getlength(stamp)
+    draw.text((pad, s), fit_text(view.title, f.bold, stamp_x - pad * 3), font=f.bold, fill=palette.white)
+    draw.text((stamp_x, s), stamp, font=f.regular, fill=palette.white)
+
+    y = (_HEADER_H + 4) * s
+    lead = f"{view.due}   {view.leave}" if view.leave else view.due
+    draw.text((pad, y), lead, font=f.bold, fill=palette.black)
+    draw.text((width - pad - f.bold.getlength(view.where), y), view.where, font=f.bold, fill=palette.black)
+
+    road = (y + _ROW_H * s + height) // 2
+    left, right = pad * 3, width - pad * 3
+    step = (right - left) / (len(view.stops) - 1)
+    xs = [left + i * step for i in range(len(view.stops))]
+    draw.line((xs[0], road, xs[-1], road), fill=palette.black, width=2 * s)
+    for i, (name, x) in enumerate(zip(view.stops, xs)):
+        yours = i == len(xs) - 1
+        r = (5 if yours else 3) * s
+        draw.ellipse((x - r, road - r, x + r, road + r), fill=palette.black if yours else palette.white,
+                     outline=palette.black, width=s)
+        font = f.bold if yours else f.regular
+        text = fit_text(name, font, step * 2 - _COL_GAP * s)
+        tx = min(max(pad, x - font.getlength(text) / 2), width - pad - font.getlength(text))
+        # Names above the road clear the bus, which sits on the line.
+        ty = road - 30 * s if i % 2 == 0 else road + 9 * s
+        draw.text((tx, ty), text, font=font, fill=palette.black)
+    if view.bus_at is not None:
+        bx = xs[0] + view.bus_at * step
+        draw.rounded_rectangle((bx - 12 * s, road - 13 * s, bx + 12 * s, road - 4 * s), radius=2 * s, fill=palette.black)
+        for wx in range(-9, 9, 5):
+            draw.rectangle((bx + wx * s, road - 11 * s, bx + (wx + 3) * s, road - 8 * s), fill=palette.white)
+    if palette.preview:
+        colours = [(0, 0, 0)] * 256
+        colours[palette.white] = (255, 255, 255)
+        colours[palette.black] = (0, 0, 0)
+        colours[palette.accent] = _PREVIEW_ACCENTS[palette.preview]
+        image.putpalette([v for rgb in colours for v in rgb])
+    return image

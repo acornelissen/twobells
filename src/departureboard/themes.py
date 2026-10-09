@@ -8,8 +8,9 @@ from typing import Callable
 from PIL.Image import Image
 
 from .panel import Panel
-from .render import Palette, render
-from .sign import render_sign
+from .render import Palette, render, render_route
+from .route import RouteView
+from .sign import render_route_sign, render_sign
 from .view import PLAIN, SIGN, BoardView, Wording
 
 
@@ -19,11 +20,12 @@ class Theme:
     wording: Wording
     render: Callable[[BoardView, Palette, Panel], Image]
     accent: str
+    render_route: Callable[[RouteView, Palette, Panel], Image]
 
 
 THEMES = {
-    "plain": Theme("plain", PLAIN, render, accent="red"),
-    "sign": Theme("sign", SIGN, render_sign, accent="yellow"),
+    "plain": Theme("plain", PLAIN, render, accent="red", render_route=render_route),
+    "sign": Theme("sign", SIGN, render_sign, accent="yellow", render_route=render_route_sign),
 }
 
 

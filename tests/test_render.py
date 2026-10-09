@@ -183,3 +183,28 @@ def test_header_shows_the_running_clock_on_a_screen():
     stamp = header_ink(render(board(), PALETTE))
     clock = header_ink(render(dataclasses.replace(board(), clock="07:03:15"), PALETTE))
     assert clock != stamp
+
+
+def test_route_page_in_the_plain_look():
+    from departureboard.render import render_route
+    from departureboard.route import RouteView
+
+    names = ("The Junction", "Grapes Inn", "Sunlaws Street", "St Marys Road", "Arundel Street", "Henry Street")
+
+    def ink(view):
+        image = render_route(view, PALETTE, HDMI_1280X400)
+        assert image.size == HDMI_1280X400.size
+        return sum(n for n, c in image.getcolors() if c == PALETTE.black)
+
+    with_bus = RouteView("341 to Hyde", "07:24 +4", "leave in 6 min", names, 2.5, "3 stops away", "07:12:40")
+    without = RouteView("341 to Hyde", "07:24 +4", "leave in 6 min", names, None, "3 stops away", "07:12:40")
+    assert ink(with_bus) > ink(without) + 500  # the bus is a solid block
+
+
+def test_themes_draw_the_route_page():
+    from departureboard.render import render_route
+    from departureboard.sign import render_route_sign
+    from departureboard.themes import THEMES
+
+    assert THEMES["plain"].render_route is render_route
+    assert THEMES["sign"].render_route is render_route_sign

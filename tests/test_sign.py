@@ -272,3 +272,67 @@ def test_buses_clear_the_clock():
     items = sign_layout(view, width, height).items
     last_bus = max(i.y for i in items if i.text in ("341", "394"))
     assert last_bus + 9 < find(items, "07:03:15").y
+
+
+from departureboard.route import RouteView  # noqa: E402
+from departureboard.sign import _route_layout, render_route_sign  # noqa: E402
+
+NAMES = ("The Junction", "Grapes Inn", "Sunlaws Street", "St Marys Road", "Arundel Street", "Henry Street")
+
+
+def route(bus_at=2.45, where="3 stops away", clock="07:12:40"):
+    return RouteView("341 to Hyde", "07:24 +4", "leave in 6 min", NAMES, bus_at, where, clock)
+
+
+def test_route_page_is_the_screen_size():
+    image = render_route_sign(route(), PALETTE, HDMI_1280X400)
+    assert image.size == HDMI_1280X400.size
+    assert PALETTE.white not in {c for _, c in image.getcolors()}
+
+
+def test_route_page_names_every_stop_and_fits():
+    width, height = dots(HDMI_1280X400)
+    layout, road, xs = _route_layout(route(), width, height)
+    for name in NAMES:
+        assert name in texts(layout.items)
+    for item in layout.items:
+        w, h = item_size(item)
+        assert 0 <= item.x and item.x + w <= width
+        assert 0 <= item.y and item.y + h <= height
+    assert xs == sorted(xs) and len(xs) == len(NAMES)
+
+
+def test_route_page_marks_your_stop():
+    width, height = dots(HDMI_1280X400)
+    layout, _, _ = _route_layout(route(), width, height)
+    assert find(layout.items, "Henry Street").inverted
+    assert not find(layout.items, "The Junction").inverted
+
+
+def test_names_alternate_above_and_below_the_road():
+    width, height = dots(HDMI_1280X400)
+    layout, road, _ = _route_layout(route(), width, height)
+    assert find(layout.items, "The Junction").y < road < find(layout.items, "Grapes Inn").y
+
+
+def _lit_columns(image, panel, rows):
+    """Panel x positions with amber in the given panel rows."""
+    return {x for x in range(panel.width) for y in rows if image.getpixel((x, y)) == PALETTE.accent}
+
+
+def test_bus_is_drawn_where_it_is_and_not_when_unknown():
+    panel = HDMI_1280X400
+    width, height = dots(panel)
+    _, road, xs = _route_layout(route(), width, height)
+    x0, y0 = _origin(panel)
+    above_road = range(y0 + (road - 6) * 3, y0 + (road - 3) * 3)  # the bus body, clear of names
+    with_bus = _lit_columns(render_route_sign(route(2.45), PALETTE, panel), panel, above_road)
+    expected = x0 + (xs[0] + 2.45 * (xs[1] - xs[0])) * 3
+    assert with_bus and min(with_bus) < expected < max(with_bus)
+    assert not _lit_columns(render_route_sign(route(None, "Not yet past The Junction"), PALETTE, panel), panel, above_road)
+
+
+def test_route_page_says_where_the_bus_is():
+    width, height = dots(HDMI_1280X400)
+    layout, _, _ = _route_layout(route(), width, height)
+    assert {"341 to Hyde", "07:24 +4", "leave in 6 min", "3 stops away", "07:12:40"} <= set(texts(layout.items))

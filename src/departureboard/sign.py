@@ -17,6 +17,7 @@ from .dotfont import HEIGHT as GLYPH_H
 from .dotfont import TINY, TINY_HEIGHT, DotFont
 from .panel import PHAT, Panel
 from .render import HEIGHT, WIDTH, Palette, fit_text
+from .route import RouteView
 from .view import BoardView, Row, Section, Style
 
 MARGIN = 3
@@ -164,6 +165,78 @@ def render_sign(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Image
         font = _SMALL if item.small else _FONT
         font.draw(draw, (item.x, item.y), item.text, fill=palette.black if item.inverted else ink)
     image = _enlarge(image, panel, palette.black, bands)
+    if palette.preview:
+        _apply_preview(image, palette)
+    return image
+
+
+# A bus side-on, drawn on the road line: windows, wheels.
+_BUS = (
+    "#####################",
+    "#...#...#...#...#..##",
+    "#...#...#...#...#..##",
+    "#####################",
+    "#####################",
+    "..###.........###....",
+)
+_LABEL_GAP = 12  # dots between the road line and a stop name
+
+
+def _route_layout(view: RouteView, width: int, height: int) -> tuple[SignLayout, int, list[float]]:
+    """Text items, the road line's row, and each stop's x."""
+    layout = SignLayout()
+    layout.add(MARGIN, _TOP, fit_text(view.title, _FONT, width - MARGIN * 2 - _w(view.due) - _COL_GAP))
+    layout.add(_right(view.due, width), _TOP, view.due)
+    second = _TOP + _LINE
+    if view.leave:
+        layout.add(MARGIN, second, view.leave)
+    layout.add(_right(view.where, width), second, view.where)
+
+    road = (second + _LINE + height - GLYPH_H - 4) // 2
+    left, right = MARGIN + 4, width - MARGIN - 4
+    step = (right - left) / (len(view.stops) - 1)
+    xs = [left + i * step for i in range(len(view.stops))]
+    room = int(step * 2) - _COL_GAP  # names alternate above and below, so each has two gaps
+    for i, (name, x) in enumerate(zip(view.stops, xs)):
+        text = fit_text(name, _FONT, room)
+        tx = min(max(MARGIN, x - _w(text) / 2), width - MARGIN - _w(text))
+        ty = road - _LABEL_GAP - GLYPH_H if i % 2 == 0 else road + _LABEL_GAP
+        # Your stop, the last one, is reversed out.
+        layout.add(round(tx), ty, text, inverted=i == len(view.stops) - 1)
+    if view.clock:
+        layout.add((width - _w(view.clock)) // 2, height - GLYPH_H - 1, view.clock)
+    return layout, road, xs
+
+
+def render_route_sign(view: RouteView, palette: Palette, panel: Panel = PHAT) -> Image.Image:
+    ink = _ink(palette)
+    width, height = panel.width // panel.scale, panel.height // panel.scale
+    image = Image.new("P", (width, height), palette.black)
+    draw = ImageDraw.Draw(image)
+    layout, road, xs = _route_layout(view, width, height)
+    bands = []
+    for item in (i for i in layout.items if i.inverted):
+        text_w, text_h = item_size(item)
+        bands.append((item.x - 2, item.y - 1, item.x + text_w + 1, item.y + text_h))
+    for band in bands:
+        draw.rectangle(band, fill=ink)
+    solid = list(bands)
+    draw.point([(x, road) for x in range(int(xs[0]), int(xs[-1]) + 1, 2)], fill=ink)
+    for i, x in enumerate(xs):
+        r = 2 if i == len(xs) - 1 else 1
+        draw.rectangle((x - r, road - r, x + r, road + r), fill=ink)
+    if view.bus_at is not None:
+        bx = xs[0] + view.bus_at * (xs[1] - xs[0])
+        x0, y0 = round(bx) - len(_BUS[0]) // 2, road - len(_BUS) - 2
+        draw.point(
+            [(x0 + dx, y0 + dy) for dy, row in enumerate(_BUS) for dx, dot in enumerate(row) if dot == "#"],
+            fill=ink,
+        )
+        # Drawn solid, without LED gaps, so it reads as one shape.
+        solid.append((x0, y0, x0 + len(_BUS[0]) - 1, y0 + len(_BUS) - 1))
+    for item in layout.items:
+        _FONT.draw(draw, (item.x, item.y), item.text, fill=palette.black if item.inverted else ink)
+    image = _enlarge(image, panel, palette.black, solid)
     if palette.preview:
         _apply_preview(image, palette)
     return image
