@@ -52,6 +52,8 @@ Where that line goes depends on what you're setting up:
 
 **The settings page** on the Pi has a box for `RDM_API_KEY`, `BODS_API_KEY`, `TAPI_APP_ID` and `TAPI_APP_KEY`. The two dashboard-only keys (`RDM_DETAILS_API_KEY` and `RDM_KB_API_KEY`) aren't on it, because the dashboard has no settings page.
 
+**The setup page** (the first-run setup wizard) has the same four boxes, each with **How to get this key** (the short version of this guide) and a **Test this key** button. Testing makes one small request to the key's service and says what it found: it works, it's the wrong key, it's for another Rail Data Marketplace product, the service isn't answering, or it can't tell. It tests the key in the box if you've pasted one, without saving it, or else the key already saved. Each key can be tested once every 10 seconds.
+
 Never put a key in `config.toml`. That file holds settings, gets copied about, and anyone on the Pi can read it.
 
 ---
@@ -103,7 +105,9 @@ base_url = "https://api1.raildata.org.uk/..."
 
 ### Check it works
 
-On the Pi:
+On the setup page, press **Test this key**. "Not subscribed" means the key is for another RDM product: subscribe to Live Departure Board and copy its own Consumer key.
+
+Or on the Pi:
 
 ```bash
 sudo /opt/departureboard/venv/bin/departureboard probe train
@@ -231,7 +235,9 @@ Buses also need your stops and bus companies in `config.toml`; see [Bus times](U
 
 ### Check it works
 
-Build the bus timetable. On the Pi:
+On the setup page, press **Test this key**. It asks BODS for the buses in a small patch of map, so it works whether or not any are running.
+
+Or build the bus timetable. On the Pi:
 
 ```bash
 sudo systemctl start departureboard-timetable.service
@@ -266,6 +272,8 @@ Your account starts with one app. Open it to see its credentials: an **app_id** 
 `TAPI_APP_ID` and `TAPI_APP_KEY` in `/etc/departureboard/secrets.env`, or the **TransportAPI app ID** and **TransportAPI app key** boxes on the settings page.
 
 ### Check it works
+
+On the setup page, paste both, then press **Test this key** under the app key. It tests the two together, and uses one of today's 30 lookups, so it asks first. The board doesn't count that lookup in its own daily budget, which leaves 2 spare by default.
 
 The settings page's **Status** section shows how many of today's TransportAPI lookups are used, and a "Problem: …" line if a lookup failed. While the BODS timetable is working, TransportAPI isn't used at all, so there's nothing to see.
 
