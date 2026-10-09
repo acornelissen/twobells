@@ -138,6 +138,59 @@ def _run(args) -> int:
     return 0
 
 
+# Exit code asking systemd (Restart=on-failure) to start the board again.
+RESTART = 75
+
+
+class _Restart(Exception):
+    """A change the running display can't take on: start again."""
+
+
+class _Watcher:
+    """Notices when config, secrets or saved settings change, and reloads them.
+    Changes to the display itself need a fresh start."""
+
+    def __init__(self, args, settings) -> None:
+        self._args = args
+        self._settings = settings
+        paths = [Path(args.config), Path(args.secrets)]
+        overlays = overlay_paths(args.config)
+        if overlays:
+            paths.extend(overlays)
+        self._paths = paths
+        self._stamp = self._stamps()
+
+    def _stamps(self):
+        stamps = []
+        for path in self._paths:
+            try:
+                info = path.stat()
+                stamps.append((info.st_mtime_ns, info.st_size))
+            except OSError:
+                stamps.append(None)
+        return stamps
+
+    @staticmethod
+    def _hardware(settings):
+        return (settings.display, settings.rotate, settings.accent, settings.timezone)
+
+    def __call__(self):
+        stamp = self._stamps()
+        if stamp == self._stamp:
+            return None
+        self._stamp = stamp
+        try:
+            new = _settings(self._args)
+        except ConfigError as error:
+            logging.warning("Settings changed but don't load (%s); keeping the current ones", error)
+            return None
+        if self._hardware(new) != self._hardware(self._settings):
+            raise _Restart
+        logging.info("Settings changed; reloaded")
+        self._settings = new
+        return new.board
+
+
 def _sleep_to_the_tick(seconds: float) -> None:
     """Sleep to the next whole multiple of `seconds`, so a running clock never skips."""
     if seconds > 0:
@@ -162,9 +215,14 @@ def _run_loop(settings, display, store, state, args) -> int:
             sleep=_sleep_to_the_tick,
             store=store,
             prime=not state,  # as for a single run: only a fresh install fetches outside windows
+            reload=_Watcher(args, settings),
         )
     except KeyboardInterrupt:
         pass
+    except _Restart:
+        logging.info("Display settings changed; exiting so the service starts again")
+        store.save(state)
+        return RESTART
     return 0
 
 

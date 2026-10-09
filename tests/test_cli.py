@@ -275,3 +275,40 @@ def test_keys_saved_from_the_web_page_win_over_secrets_env(tmp_path):
     env = _env(config, secrets)
     assert env["RDM_API_KEY"] == "new"
     assert env["TAPI_APP_ID"] == "id"
+
+
+def _watched(tmp_path, extra=""):
+    import argparse
+
+    from departureboard.cli import _settings, _Watcher
+
+    state = tmp_path / "state"
+    state.mkdir()
+    config = tmp_path / "config.toml"
+    config.write_text(f'state_file = "{state / "state.json"}"\ntitle = "Before"\n{extra}')
+    args = argparse.Namespace(config=str(config), secrets=str(tmp_path / "none.env"))
+    return _Watcher(args, _settings(args)), state
+
+
+def test_watcher_reloads_when_saved_settings_change(tmp_path):
+    watcher, state = _watched(tmp_path)
+    assert watcher() is None  # nothing changed
+    (state / "settings.toml").write_text('title = "After"\n')
+    board = watcher()
+    assert board.title == "After"
+    assert watcher() is None
+
+
+def test_watcher_asks_for_a_restart_when_the_display_changes(tmp_path):
+    from departureboard.cli import _Restart
+
+    watcher, state = _watched(tmp_path, 'display = "hdmi-1280x400"\n')
+    (state / "settings.toml").write_text("rotate = 90\n")
+    with pytest.raises(_Restart):
+        watcher()
+
+
+def test_watcher_keeps_running_settings_when_new_ones_are_broken(tmp_path):
+    watcher, state = _watched(tmp_path)
+    (state / "settings.toml").write_text('theme = "neon"\n')
+    assert watcher() is None

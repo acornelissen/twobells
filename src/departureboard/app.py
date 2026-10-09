@@ -7,7 +7,7 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Protocol
+from typing import Callable, Protocol
 
 from PIL.Image import Image
 
@@ -233,15 +233,19 @@ def run_loop(
     on_tick=None,
     store=None,
     prime: bool = False,
+    reload: Callable[[], Board | None] | None = None,
 ) -> None:
     """Tick forever (or `ticks` times). A clock with `advance()` is simulated.
     With `prime`, the first tick fetches every source so the board starts filled.
     State is written only when what was fetched changes: a screen redraws every
-    second, and writing the SD card that often would wear it out."""
+    second, and writing the SD card that often would wear it out. `reload`, if
+    given, is asked each tick for a new Board when the settings have changed."""
     sleep = sleep or time.sleep
     count = 0
     saved = None
     while ticks is None or count < ticks:
+        if reload is not None:
+            board = reload() or board
         now = clock()
         result = run_once(board, state, display, now, prime=prime and count == 0)
         if store is not None:

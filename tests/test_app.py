@@ -474,3 +474,16 @@ def test_positions_are_not_written_to_disk():
     run_once(board, state, FakeScreen(), THU_0700)
     assert "vehicles" in state
     assert "vehicles" not in _fetched(state)
+
+
+def test_run_loop_switches_to_reloaded_settings():
+    from departureboard.app import run_loop
+
+    trains, buses, board, display, state = setup()
+    renamed = dataclasses.replace(board, title="Renamed")
+    answers = iter([None, renamed, None])
+    titles = []
+    times = iter(THU_0700 + timedelta(minutes=m) for m in range(0, 30, 3))
+    run_loop(board, state, display, lambda: next(times), 0, ticks=3, sleep=lambda s: None,
+             on_tick=lambda now, result: titles.append(result.view.title), reload=lambda: next(answers))
+    assert titles == ["GLO > MAN", "Renamed", "Renamed"]
