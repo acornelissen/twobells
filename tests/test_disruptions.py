@@ -327,7 +327,7 @@ def test_the_bus_source_asks_siri_sx_with_the_key_and_never_repeats_it():
 # Rail incidents (synthetic Knowledgebase fixture)
 
 
-STATIONS = {"GLO": "Glossop", "MAN": "Manchester Piccadilly", "DGT": "Dinting", "HDF": "Hadfield",
+STATIONS = {"GLO": "Glossop", "MAN": "Manchester Piccadilly", "DTG": "Dinting", "HDF": "Hadfield",
             "GUI": "Guide Bridge", "BDB": "Broadbottom"}
 RAIL = RailArea(frozenset({"NT"}), STATIONS)
 TONIGHT = datetime(2026, 10, 9, 22, 0, tzinfo=LONDON)
@@ -358,7 +358,7 @@ def test_only_our_operators_at_our_stations_soon_are_kept():
 
 
 def test_a_station_code_counts_as_a_mention():
-    found = train_disruptions(parse_kb_incidents(KB.read_bytes()), RailArea(frozenset({"NT"}), {"DGT": ""}), TONIGHT)
+    found = train_disruptions(parse_kb_incidents(KB.read_bytes()), RailArea(frozenset({"NT"}), {"DTG": ""}), TONIGHT)
     assert keys(found) == ["A1B2C3D4E5F60002"]
 
 

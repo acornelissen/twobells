@@ -11,8 +11,13 @@ browser has used the dashboard in the last ten minutes.
 With a Service Details key, each train poll also asks where the first few
 trains are (see _refresh_details); a refused key turns that off for a while.
 
+Disruptions (see disruptions.py) are polled on their own threads: bus
+situations every 10 minutes, rail incidents every 30. Which are ours
+depends on the bus timetable and the train board, so when either changes
+the disruptions are filtered again; that state is shared, under its lock.
+
 Threads: each feed's state below is only touched by its own poller's
-thread. The bus poller and the upkeep thread each have their own
+thread, except the disruptions' (see _disruptions_lock). The bus poller and the upkeep thread each have their own
 BodsBusSource (see DashboardSettings.bus_upkeep), as one remembers the
 timetable it last read; they share only the timetable file, which is
 replaced whole, and the poller reads it again when it changes.
@@ -32,6 +37,7 @@ from zoneinfo import ZoneInfo
 from . import holidays as _holidays
 from .dashconfig import DashboardSettings
 from .darwin import DetailsUnavailable, ServiceDetails, ServiceGone, TrainBoard
+from .disruptions import BusArea, RailArea, bus_disruptions, disruptions_part, train_disruptions
 from .history import History, day_type, no_show_phrase, phrase
 from .model import Status
 from .snapshot import (
@@ -57,6 +63,8 @@ HEALTHY_AGE = 180.0  # /healthz wants a snapshot rebuilt this recently
 DETAILS_TRAINS = 3  # trains placed on their route each poll: the first ones not cancelled
 DETAILS_TTL = 60.0  # seconds before a train's details are asked for again
 DETAILS_OFF = 6 * 3600.0  # seconds without details after the key is refused
+BUS_DISRUPTIONS_SECONDS = 600.0
+TRAIN_INCIDENTS_SECONDS = 1800.0
 _JITTER = 0.1  # intervals vary by this fraction either way, so jobs drift apart
 
 
@@ -185,6 +193,13 @@ class Collector:
         self._details_off_until: float | None = None
         self._timetable_tried = False  # has upkeep tried to build the bus timetable yet
         self._building = False  # is it building one now, with none usable
+        # Disruptions: the feeds, and what counts as ours, shared between the
+        # disruption, bus and train pollers under this lock.
+        self._disruptions_lock = threading.Lock()
+        self._situations, self._incidents = _Feed(), _Feed()
+        self._bus_area: BusArea | None = None
+        self._area_schedule = None  # the schedule _bus_area came from; the bus poller's alone
+        self._rail_area: RailArea | None = None
         self._pollers: dict[str, Poller] = {}
         self._publish_all()
 
@@ -242,6 +257,33 @@ class Collector:
         part = weather_part(self._weather.data, self._clock(), self._weather.status(), self._settings.rain_threshold)
         self._hub.publish("weather", part)
 
+    def _has_disruptions(self) -> bool:
+        settings = self._settings
+        return (settings.bus_disruptions is not None or settings.train_incidents is not None
+                or settings.train_incidents_note is not None)
+
+    def _publish_disruptions(self) -> None:
+        """Filter the disruptions again and publish them; call with
+        _disruptions_lock held."""
+        settings = self._settings
+        if not self._has_disruptions():
+            return
+        now = self._clock()
+        bus, train, bus_status, train_status = [], [], None, None
+        if settings.bus_disruptions is not None:
+            bus_status = self._situations.status()
+            if self._bus_area is None:
+                bus_status["note"] = "Waiting for the bus timetable"
+            bus = bus_disruptions(self._situations.data or [], self._bus_area, now)
+        if settings.train_incidents is not None:
+            train_status = self._incidents.status()
+            if self._rail_area is None:
+                train_status["note"] = "Waiting for the train board"
+            train = train_disruptions(self._incidents.data or [], self._rail_area, now)
+        elif settings.train_incidents_note is not None:
+            train_status = status_block(note=settings.train_incidents_note)
+        self._hub.publish("disruptions", disruptions_part(bus, bus_status, train, train_status, self._tz))
+
     def _publish_all(self) -> None:
         if self._settings.train is not None:
             self._publish_trains()
@@ -249,6 +291,8 @@ class Collector:
             self._publish_buses()
         if self._settings.weather is not None:
             self._publish_weather()
+        with self._disruptions_lock:
+            self._publish_disruptions()
 
     def _observe(self, mode: str, rows: list, now: datetime) -> None:
         if self._history is None:
@@ -275,6 +319,30 @@ class Collector:
             # After the board is out, so slow details never hold it up.
             self._refresh_details(board)
             self._publish_trains()
+        self._note_stations(board)
+
+    def _note_stations(self, board: TrainBoard) -> None:
+        """Our train operators and stations, for the rail incidents: this
+        station, the filter station, and every station our trains call at.
+        An empty board (late at night) says nothing, so the last is kept."""
+        if self._settings.train_incidents is None:
+            return
+        operators = frozenset(s.operator_code for s in board.services if s.operator_code)
+        if not operators:
+            return
+        stations = {self._settings.train_crs: board.location or ""}
+        if self._settings.train_filter:
+            stations.setdefault(self._settings.train_filter, "")
+        points = [p for s in board.services for p in s.calling_points]
+        points += [p for _, found in self._details.values() for p in found.previous]
+        for point in points:
+            if point.crs:
+                stations[point.crs] = point.name
+        found = RailArea(operators, stations)
+        if found != self._rail_area:
+            with self._disruptions_lock:
+                self._rail_area = found
+                self._publish_disruptions()
 
     def _refresh_details(self, board: TrainBoard) -> None:
         """Service details for the first few trains that aren't cancelled,
@@ -329,6 +397,17 @@ class Collector:
             self._observe("bus", bus_observations(board), now)
         self._buses.worked(board, now, board.note)
         self._publish_buses()
+        self._note_schedule(board)
+
+    def _note_schedule(self, board) -> None:
+        """Our bus lines and stops, for the bus disruptions, whenever the
+        timetable is read again."""
+        if self._settings.bus_disruptions is None or board.schedule is self._area_schedule:
+            return
+        self._area_schedule = board.schedule
+        with self._disruptions_lock:
+            self._bus_area = BusArea.from_schedule(board.schedule)
+            self._publish_disruptions()
 
     def poll_weather(self) -> None:
         now = self._clock()
@@ -340,6 +419,25 @@ class Collector:
             raise
         self._weather.worked(conditions, now)
         self._publish_weather()
+
+    def _poll_disruptions(self, feed: _Feed, source) -> None:
+        now = self._clock()
+        try:
+            found = source.fetch()
+        except Exception as error:
+            with self._disruptions_lock:
+                feed.failed(error)
+                self._publish_disruptions()
+            raise
+        with self._disruptions_lock:
+            feed.worked(found, now)
+            self._publish_disruptions()
+
+    def poll_bus_disruptions(self) -> None:
+        self._poll_disruptions(self._situations, self._settings.bus_disruptions)
+
+    def poll_train_incidents(self) -> None:
+        self._poll_disruptions(self._incidents, self._settings.train_incidents)
 
     def upkeep(self) -> None:
         """Hourly: bank holidays (refreshed weekly), the bus timetable (rebuilt
@@ -396,6 +494,10 @@ class Collector:
             add("buses", self.poll_buses, options.bus_interval_seconds)
         if self._settings.weather is not None:
             add("weather", self.poll_weather, options.weather_interval_minutes * 60)
+        if self._settings.bus_disruptions is not None:
+            add("bus-disruptions", self.poll_bus_disruptions, BUS_DISRUPTIONS_SECONDS)
+        if self._settings.train_incidents is not None:
+            add("train-incidents", self.poll_train_incidents, TRAIN_INCIDENTS_SECONDS)
         add("upkeep", self.upkeep, UPKEEP_SECONDS, quiet=False)
         add("heartbeat", self._hub.refresh, HEARTBEAT_SECONDS, quiet=False)
         return found

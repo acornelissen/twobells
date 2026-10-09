@@ -6,7 +6,10 @@ punctuality history) in its own state folder, never the board's. It uses only
 the free feeds: Darwin, the BODS timetable with live positions, and
 Open-Meteo. TransportAPI keys are dropped so no fallback is ever built.
 Darwin's Service Details, which places each train on its route, is used
-only when its own key, RDM_DETAILS_API_KEY, is set.
+only when its own key, RDM_DETAILS_API_KEY, is set. Bus disruptions come
+from BODS SIRI-SX with the buses' own key; rail engineering works from the
+National Rail Knowledgebase only when RDM_KB_API_KEY is set, at the address
+in [dashboard] kb_incidents_url.
 
 One dashboard per state folder: a lock held for the life of the process stops
 a second one sharing (and fighting over) the same files.
@@ -22,11 +25,13 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Mapping, Protocol
+from urllib.parse import urlsplit
 
 from .bodsbus import BusBoard
 from .config import ConfigError, _flag, _table, _texts, _whole, read_config, settings_from
 from .config import state_dir as board_state_dir
 from .darwin import DarwinSource, ServiceDetails, ServiceDetailsClient, TrainBoard
+from .disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource, kb_url_is_placeholder
 from .schedule import Window, parse_window
 from .walk import WalkTimes
 from .weather import Conditions
@@ -49,6 +54,7 @@ _KEYS = {
     "late_minutes_bus",
     "history_days",
     "allowed_hosts",
+    "kb_incidents_url",
 }
 _MAX_ROWS = 20
 _MAX_LATE = 60
@@ -72,6 +78,9 @@ class DashboardOptions:
     late_minutes_bus: int = 2
     history_days: int = 90
     allowed_hosts: frozenset[str] = frozenset()
+    # The Knowledgebase Incidents address from the RDM product page; until it
+    # is set, rail engineering works are off even with RDM_KB_API_KEY.
+    kb_incidents_url: str = KB_URL_PLACEHOLDER
 
 
 def _ranged(section: dict, key: str, default: int, low: int, high: int) -> int:
@@ -91,6 +100,23 @@ def _host(name: str) -> str:
             "(no wildcards, ports or schemes)"
         )
     return host
+
+
+def _feed_url(section: dict, key: str, default: str) -> str:
+    """An https address for a feed that will be sent a key; ConfigError otherwise."""
+    value = section.get(key, default)
+    if not isinstance(value, str):
+        raise ConfigError(f"{_WHERE}{key} must be an https address in quotes, not {value!r}")
+    url = value.strip()
+    try:
+        parts = urlsplit(url)
+        parts.port  # noqa: B018 - raises ValueError for a port that isn't a number
+    except ValueError:
+        parts = None
+    if (parts is None or parts.scheme != "https" or not parts.hostname or parts.username or parts.password
+            or any(c.isspace() or not c.isprintable() for c in url)):
+        raise ConfigError(f"{_WHERE}{key} must be an https address like https://example.com/path, not {value!r}")
+    return url
 
 
 def dashboard_options(data: dict) -> DashboardOptions:
@@ -120,6 +146,7 @@ def dashboard_options(data: dict) -> DashboardOptions:
         late_minutes_bus=_ranged(section, "late_minutes_bus", 2, 1, _MAX_LATE),
         history_days=_ranged(section, "history_days", 90, 1, _MAX_HISTORY_DAYS),
         allowed_hosts=frozenset(_host(h) for h in _texts(section, "allowed_hosts", _WHERE)),
+        kb_incidents_url=_feed_url(section, "kb_incidents_url", KB_URL_PLACEHOLDER),
     )
 
 
@@ -156,6 +183,10 @@ class ConditionsSource(Protocol):
     def fetch_conditions(self) -> Conditions: ...
 
 
+class DisruptionFeed(Protocol):
+    def fetch(self) -> list: ...
+
+
 @dataclass
 class DashboardSettings:
     """Everything the dashboard runs on. Sources are None when not configured."""
@@ -177,6 +208,12 @@ class DashboardSettings:
     bus_upkeep: BusSource | None = None
     bus_stops: dict[str, str] = field(default_factory=dict)
     weather: ConditionsSource | None = None
+    # BODS SIRI-SX, with the buses; None without buses.
+    bus_disruptions: DisruptionFeed | None = None
+    # The Knowledgebase's incidents; None without RDM_KB_API_KEY or its address,
+    # with train_incidents_note saying which when the key is there.
+    train_incidents: DisruptionFeed | None = None
+    train_incidents_note: str | None = None
     rain_threshold: int = 50
     bank_holidays: bool = True
     lock: IO | None = None
@@ -234,6 +271,15 @@ def _lock(folder: Path) -> IO:
     return handle
 
 
+def _header_key(env: Mapping[str, str], name: str) -> str:
+    """An optional key from the environment, "" if unset. It goes in a header:
+    anything that could split one is refused, without repeating the key."""
+    key = env.get(name, "").strip()
+    if key and (not key.isprintable() or any(c.isspace() for c in key)):
+        raise ConfigError(f"{name} has spaces or control characters in it")
+    return key
+
+
 def load_dashboard(config_path: Path | str, env: Mapping[str, str],
                    state_dir_override: Path | str | None = None) -> DashboardSettings:
     """The dashboard's settings from config.toml (with the settings page's
@@ -265,12 +311,16 @@ def load_dashboard(config_path: Path | str, env: Mapping[str, str],
         elif config.source.name == "bus":
             bus = config.source
     train_section = data.get("train", {})
-    details_key = env.get("RDM_DETAILS_API_KEY", "").strip()
-    # The key goes in a header: anything that could split one is refused,
-    # without repeating the key.
-    if details_key and (not details_key.isprintable() or any(c.isspace() for c in details_key)):
-        raise ConfigError("RDM_DETAILS_API_KEY has spaces or control characters in it")
+    details_key = _header_key(env, "RDM_DETAILS_API_KEY")
     weather = settings.board.weather
+    kb_key = _header_key(env, "RDM_KB_API_KEY")
+    incidents = incidents_note = None
+    if train is not None and kb_key:
+        if kb_url_is_placeholder(options.kb_incidents_url):
+            incidents_note = "Engineering works are off: set [dashboard] kb_incidents_url from the RDM product page"
+        else:
+            incidents = TrainIncidentSource(kb_key, options.kb_incidents_url)
+    bus_key = env.get("BODS_API_KEY", "").strip()
 
     _make_folder(folder)
     lock = _lock(folder)
@@ -288,6 +338,9 @@ def load_dashboard(config_path: Path | str, env: Mapping[str, str],
         bus_upkeep=copy.copy(bus) if bus is not None else None,
         bus_stops=dict(data["bus"]["stops"]) if bus is not None else {},
         weather=weather.source if weather is not None else None,
+        bus_disruptions=BusDisruptionSource(bus_key) if bus is not None and bus_key else None,
+        train_incidents=incidents,
+        train_incidents_note=incidents_note,
         rain_threshold=weather.threshold if weather is not None else 50,
         bank_holidays=_flag(data, "bank_holidays", True),
         lock=lock,

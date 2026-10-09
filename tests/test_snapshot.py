@@ -522,10 +522,10 @@ def snapshot(h):
 def test_the_first_snapshot_has_every_section_empty():
     h = hub()
     body = snapshot(h)
-    assert list(body) == ["version", "generated_at", "title", "walk", "trains", "buses", "weather"]
+    assert list(body) == ["version", "generated_at", "title", "walk", "trains", "buses", "weather", "disruptions"]
     assert body["version"] == 1 and body["title"] == "Glossop"
     assert body["walk"] == {"train": 12, "bus": {"A": 5, "B": 10}}
-    assert body["trains"] is body["buses"] is body["weather"] is None
+    assert body["trains"] is body["buses"] is body["weather"] is body["disruptions"] is None
 
 
 def test_the_version_goes_up_only_when_the_content_changes():
@@ -645,6 +645,19 @@ def test_calling_point_words_become_times_or_flags():
     assert passed["actual"] == "07:05"
 
 
+def real_disruptions():
+    """The disruptions section from the trimmed SIRI-SX capture and the
+    synthetic Knowledgebase fixture, as the collector makes it."""
+    from test_disruptions import KB, RAIL, area, situations
+
+    from departureboard.disruptions import bus_disruptions, disruptions_part, parse_kb_incidents, train_disruptions
+
+    captured = datetime(2026, 10, 9, 23, 14, tzinfo=LONDON)
+    bus = bus_disruptions(situations(), area(), captured)
+    train = train_disruptions(parse_kb_incidents(KB.read_bytes()), RAIL, captured)
+    return disruptions_part(bus, status_block(), train, None, LONDON)
+
+
 def test_what_the_server_sends_is_what_the_page_was_built_for():
     """The server and the page were built apart against docs/dashboard-api.md:
     run the server's real output through the page's own contract checker."""
@@ -658,6 +671,7 @@ def test_what_the_server_sends_is_what_the_page_was_built_for():
     bparts, lookups = extras_part(at(10, 14), lambda route, scheduled, day: "No tracker on 3 of the last 10 weekdays")
     h.publish("buses", bparts)
     h.publish("weather", weather_part(conditions(), datetime(2026, 10, 9, 8, 20, tzinfo=LONDON), status_block(), 50))
+    h.publish("disruptions", real_disruptions())
     sent = snapshot(h)
     assert sent["trains"]["rows"] and sent["buses"]["rows"] and sent["weather"]["now"]
     positions = [r["position"] for r in sent["trains"]["rows"] if r["position"]]
@@ -667,6 +681,7 @@ def test_what_the_server_sends_is_what_the_page_was_built_for():
     sent_buses = sent["buses"]["rows"]
     assert any(r["inbound"] for r in sent_buses) and any(r["ghost"] for r in sent_buses)
     assert all(r["arrives"] and r["history"]["no_show_phrase"] for r in sent_buses)
+    assert {i["mode"] for i in sent["disruptions"]["items"]} == {"bus", "train"}
     check(sent, SNAPSHOT)
     live_row = by(bparts["rows"], line="341", stop="A")
     check(lookups[live_row["id"]]["bus"], BUS_DETAIL)

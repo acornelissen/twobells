@@ -599,3 +599,97 @@ def test_start_stop_and_health(tmp_path):
         assert collector.stop(timeout=3)
         assert time.monotonic() - started < 3
     assert not collector.healthy()
+
+
+# Disruptions
+
+
+class Feed:
+    """A disruption feed: the real fixture, parsed, or an error."""
+
+    def __init__(self, parse, path):
+        self.parse, self.path = parse, path
+        self.calls = 0
+        self.error = None
+
+    def fetch(self):
+        self.calls += 1
+        if self.error:
+            raise self.error
+        return self.parse(self.path.read_bytes())
+
+
+def disrupted(tmp_path, now=datetime(2026, 10, 9, 23, 14, tzinfo=LONDON), bus=True, train=True, note=None):
+    from departureboard.disruptions import parse_kb_incidents, parse_siri_sx
+
+    setup = Setup(tmp_path, now=now)
+    setup.situations = Feed(parse_siri_sx, FIXTURES / "bods_siri_sx_glossop.xml")
+    setup.incidents = Feed(parse_kb_incidents, FIXTURES / "kb_incidents_synthetic.xml")
+    setup.settings.bus_disruptions = setup.situations if bus else None
+    setup.settings.train_incidents = setup.incidents if train else None
+    setup.settings.train_incidents_note = note
+    setup.collector = Collector(setup.settings, setup.hub, setup.history, clock=setup.clock,
+                                fetch_holidays=setup._holidays, random=lambda: 0.5, monotonic=setup.monotonic)
+    return setup
+
+
+def titles(setup, mode=None):
+    items = setup.snapshot()["disruptions"]["items"]
+    return [i["title"] for i in items if mode is None or i["mode"] == mode]
+
+
+def test_without_disruption_feeds_there_is_no_section(tmp_path):
+    setup = Setup(tmp_path)
+    assert "bus-disruptions" not in setup.collector.pollers()
+    assert setup.snapshot()["disruptions"] is None
+
+
+def test_disruption_feeds_are_polled_every_ten_and_thirty_minutes(tmp_path):
+    pollers = disrupted(tmp_path).collector.pollers()
+    assert pollers["bus-disruptions"].step() == 600 and pollers["train-incidents"].step() == 1800
+
+
+def test_bus_disruptions_wait_for_the_timetable_to_know_what_is_ours(tmp_path):
+    setup = disrupted(tmp_path)
+    setup.collector.poll_bus_disruptions()
+    part = setup.snapshot()["disruptions"]
+    assert part["status"]["bus"]["note"] == "Waiting for the bus timetable" and part["items"] == []
+    assert part["status"]["bus"]["last_success"] == "2026-10-09T23:14:00+01:00"
+    setup.collector.poll_buses()  # the timetable: 341 and 237, both BNML's
+    assert titles(setup, "bus") == ["Station Road, Hadfield - Roadworks"]
+    assert setup.snapshot()["disruptions"]["status"]["bus"]["note"] is None
+    assert setup.situations.calls == 1  # filtered again without asking again
+
+
+def test_a_failed_disruption_poll_keeps_what_was_known_without_the_key(tmp_path):
+    setup = disrupted(tmp_path)
+    setup.collector.poll_buses()
+    setup.collector.poll_bus_disruptions()
+    setup.situations.error = RuntimeError("HTTP 500 for https://data.bus-data.dft.gov.uk/x?api_key=sekrit")
+    with pytest.raises(RuntimeError):
+        setup.collector.poll_bus_disruptions()
+    part = setup.snapshot()["disruptions"]
+    assert titles(setup, "bus") == ["Station Road, Hadfield - Roadworks"]
+    assert part["status"]["bus"]["stale"] is True and "sekrit" not in json.dumps(part)
+
+
+def test_rail_incidents_are_filtered_by_the_train_board(tmp_path):
+    setup = disrupted(tmp_path, now=datetime(2026, 10, 9, 22, 3, tzinfo=LONDON))
+    setup.collector.poll_train_incidents()
+    assert titles(setup, "train") == []
+    assert setup.snapshot()["disruptions"]["status"]["train"]["note"] == "Waiting for the train board"
+    setup.collector.poll_trains()  # Northern trains via Dinting and Guide Bridge
+    assert titles(setup, "train") == [
+        "Disruption at Dinting", "Engineering works between Manchester Piccadilly and Glossop / Hadfield",
+    ]
+    # An empty board late at night keeps what is ours.
+    setup.trains.payload = {"locationName": "Glossop", "trainServices": []}
+    setup.collector.poll_trains()
+    assert len(titles(setup, "train")) == 2
+
+
+def test_the_knowledgebase_note_shows_when_its_address_is_missing(tmp_path):
+    setup = disrupted(tmp_path, train=False, note="Engineering works are off: set [dashboard] kb_incidents_url")
+    assert "train-incidents" not in setup.collector.pollers()
+    status = setup.snapshot()["disruptions"]["status"]
+    assert status["train"]["note"].startswith("Engineering works are off") and status["train"]["error"] is None

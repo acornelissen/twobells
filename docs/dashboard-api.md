@@ -218,3 +218,47 @@ Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
 ```
 
 `img-src data:` is there for Leaflet's inline marker images. No inline scripts or styles: style changes are made from JS through the CSSOM (`el.style.x = …`), which CSP allows.
+
+## Snapshot: `disruptions`
+
+A top-level key of `/api/snapshot`, after `weather`. It is `null` when neither source is set up (no buses, and no `RDM_KB_API_KEY`).
+
+```json
+"disruptions": {
+  "status": {
+    "bus": {"last_success": "…", "stale": false, "error": null, "note": null},
+    "train": null
+  },
+  "items": [{
+    "id": "5d0e…",
+    "mode": "bus",
+    "title": "Station Road, Hadfield - Roadworks",
+    "summary": "Due to roadworks on Station Road, service 237 will divert…",
+    "reason": "Roadworks",
+    "from_at": "2026-10-12T08:00:00+01:00", "to_at": "2026-10-30T16:00:00+00:00",
+    "periods": [{"from_at": "2026-10-12T08:00:00+01:00", "to_at": "2026-10-30T16:00:00+00:00"}],
+    "planned": true,
+    "lines": ["237"],
+    "stops": [],
+    "places": ["Station Road"],
+    "severity": "normal",
+    "link": null
+  }]
+}
+```
+
+- **Sources:**
+  - `bus`: BODS SIRI-SX (the buses' `BODS_API_KEY`), polled every 10 minutes. `null` without buses. `note` is "Waiting for the bus timetable" until the timetable says which lines and stops are ours.
+  - `train`: the National Rail Knowledgebase's incidents through the Rail Data Marketplace (`RDM_KB_API_KEY`, at `[dashboard] kb_incidents_url`), polled every 30 minutes. `null` without the key. With the key but no address, `note` says so and nothing is fetched. `note` is "Waiting for the train board" until a board names our operators.
+- **Which are kept** (see `disruptions.py`): valid now or in the next 7 days, and:
+  - buses: on our line *with* the operator our timetable has for it; at one of our own stops; at a positioned stop our journeys use, if that part of the notice names no lines; or "all lines" of one of our operators with an affected stop inside our area (about 1 km around the positioned stops). Nothing else.
+  - trains: names one of the operators running our trains, and mentions one of our stations (ours, the filter station, or any our trains call at) by name or three-letter code.
+- **Items:** buses first, then trains, each soonest first; at most 30 of each.
+  - `id` is 16 hex characters, stable for the same notice; the feed's own number stays on the server.
+  - `title`, `summary` (at most 500 characters) and `reason` are plain text, with any HTML in the feed dropped.
+  - `periods` are the notice's validity periods that touch now to 7 days ahead, in order (at most 14). `from_at` and `to_at` repeat the first. `to_at` is `null` when open-ended.
+  - `planned` is the feed's own word: engineering works and booked roadworks are planned.
+  - `lines` are our lines it affects (bus only); `stops` our stop labels it names, as in `buses.stops` (bus only); `places` stop or station names, in words.
+  - `severity` is `slight`, `normal`, `severe` or `unknown`; always shown in words.
+  - `link` is `null` unless the feed gave an https link on a known operator's site (`disruptions.LINK_HOSTS`).
+- **On the page:** a panel lists them, in force first, then coming up, in words. A bus row whose line or stop an item names, during one of its periods, gets a "Disruption" link to it. Rail `messages` stay in their own panel.

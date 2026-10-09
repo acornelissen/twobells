@@ -11,6 +11,7 @@ from departureboard.dashconfig import (
     load_dashboard,
 )
 from departureboard.darwin import DETAILS_BASE_URL, DarwinSource, ServiceDetailsClient
+from departureboard.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource
 from departureboard.bodsbus import BodsBusSource
 from departureboard.weather import OpenMeteoSource
 
@@ -274,3 +275,47 @@ def test_a_details_key_that_could_split_a_header_is_refused_without_repeating_it
         load_dashboard(config, {**ENV, "RDM_DETAILS_API_KEY": key}, tmp_path / "dash")
     assert "abc" not in str(raised.value)
     assert not (tmp_path / "dash" / "dashboard.lock").exists()
+
+
+# Disruptions
+
+
+def test_bus_disruptions_use_the_buses_key(config, tmp_path, opened):
+    dash = load(config, tmp_path / "dash", opened=opened)
+    assert isinstance(dash.bus_disruptions, BusDisruptionSource)
+    assert dash.bus_disruptions._api_key == "bods-key"
+
+
+def test_without_the_knowledgebase_key_nothing_changes(config, tmp_path, opened):
+    dash = load(config, tmp_path / "dash", opened=opened)
+    assert dash.train_incidents is None and dash.train_incidents_note is None
+    assert dashboard_options({}).kb_incidents_url == KB_URL_PLACEHOLDER
+
+
+def test_the_knowledgebase_key_without_its_address_says_so(config, tmp_path, opened):
+    dash = load(config, tmp_path / "dash", env={**ENV, "RDM_KB_API_KEY": "kb-key"}, opened=opened)
+    assert dash.train_incidents is None
+    assert "kb_incidents_url" in dash.train_incidents_note
+
+
+def test_the_knowledgebase_key_and_address_build_the_source(config, tmp_path, opened):
+    config.write_text(config.read_text() + '[dashboard]\nkb_incidents_url = "https://api.example.test/kb/incidents"\n')
+    dash = load(config, tmp_path / "dash", env={**ENV, "RDM_KB_API_KEY": " kb-key "}, opened=opened)
+    assert isinstance(dash.train_incidents, TrainIncidentSource)
+    assert (dash.train_incidents._api_key, dash.train_incidents._url) == (
+        "kb-key", "https://api.example.test/kb/incidents",
+    )
+    assert dash.train_incidents_note is None
+
+
+@pytest.mark.parametrize("url", ["http://api.example.test/kb", "https://user:pw@api.example.test/kb", "ftp://x",
+                                 "https://", "https://api.example.test/a b", 42, "https://api.example.test:port/kb"])
+def test_the_knowledgebase_address_must_be_plain_https(url):
+    with pytest.raises(ConfigError, match="kb_incidents_url"):
+        dashboard_options({"dashboard": {"kb_incidents_url": url}})
+
+
+def test_a_knowledgebase_key_that_could_split_a_header_is_refused(config, tmp_path):
+    with pytest.raises(ConfigError, match="RDM_KB_API_KEY") as raised:
+        load_dashboard(config, {**ENV, "RDM_KB_API_KEY": "abc\r\nX-Evil: 1"}, tmp_path / "dash")
+    assert "abc" not in str(raised.value)

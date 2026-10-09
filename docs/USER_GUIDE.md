@@ -429,4 +429,17 @@ All optional, under `[dashboard]` in `config.toml`:
 | `history_days` | 90 | How long history is kept |
 | `allowed_hosts` | `[]` | Extra names the page answers to |
 | `state_dir` | see above | Where its files live |
+| `kb_incidents_url` | a placeholder | The Knowledgebase Incidents address from the RDM product page (see below) |
+
+### Disruptions and engineering works
+
+- **Buses:** roadworks, diversions and stop closures come from Bus Open Data (the same `BODS_API_KEY`), checked every 10 minutes. Only those on your lines (run by the same operator), at your stops, or at the stops your buses use nearby are shown, for now and the next 7 days. A bus row with one in force gets a **Disruption** link to it.
+- **Trains** (optional): engineering works come from the National Rail Knowledgebase through the Rail Data Marketplace. Subscribe to its **Knowledgebase Incidents** product, put its key in `RDM_KB_API_KEY`, and copy the address the product page gives into `config.toml`:
+
+  ```toml
+  [dashboard]
+  kb_incidents_url = "https://…"
+  ```
+
+  It's checked every 30 minutes. Only incidents for the companies running your trains that name one of your stations are shown. With the key but no address, the page says so; without the key, nothing changes. National Rail's own messages on the train board stay where they are.
 

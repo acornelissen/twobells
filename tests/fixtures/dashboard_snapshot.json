@@ -1632,5 +1632,100 @@
       "sunrise": "2026-10-10T07:24:00+01:00",
       "sunset": "2026-10-10T18:29:00+01:00"
     }
+  },
+  "disruptions": {
+    "status": {
+      "bus": {
+        "last_success": "2026-10-10T07:00:00+01:00",
+        "stale": false,
+        "error": null,
+        "note": null
+      },
+      "train": {
+        "last_success": "2026-10-10T07:00:00+01:00",
+        "stale": false,
+        "error": null,
+        "note": null
+      }
+    },
+    "items": [
+      {
+        "id": "372c555cca5388f0",
+        "mode": "bus",
+        "title": "Henry Street, Glossop - Bus Stop Closure",
+        "summary": "The stop on Henry Street (Stop A) is closed for kerb works. Please use the temporary stop outside the Howard Arms.",
+        "reason": "Maintenance work",
+        "from_at": "2026-10-10T06:00:00+01:00",
+        "to_at": "2026-10-10T18:00:00+01:00",
+        "periods": [
+          {
+            "from_at": "2026-10-10T06:00:00+01:00",
+            "to_at": "2026-10-10T18:00:00+01:00"
+          }
+        ],
+        "planned": true,
+        "lines": [
+          "341",
+          "61"
+        ],
+        "stops": [
+          "A"
+        ],
+        "places": [
+          "Henry Street"
+        ],
+        "severity": "normal",
+        "link": "https://tfgm.com/travel-updates"
+      },
+      {
+        "id": "55ce209470d0eb6b",
+        "mode": "bus",
+        "title": "Station Road, Hadfield - Roadworks",
+        "summary": "Due to roadworks on Station Road, service 237 will divert via Woolley Bridge in both directions.",
+        "reason": "Roadworks",
+        "from_at": "2026-10-12T08:00:00+01:00",
+        "to_at": "2026-10-30T16:00:00+00:00",
+        "periods": [
+          {
+            "from_at": "2026-10-12T08:00:00+01:00",
+            "to_at": "2026-10-30T16:00:00+00:00"
+          }
+        ],
+        "planned": true,
+        "lines": [
+          "237"
+        ],
+        "stops": [],
+        "places": [],
+        "severity": "normal",
+        "link": null
+      },
+      {
+        "id": "424e0a2ce2d843be",
+        "mode": "train",
+        "title": "Engineering works between Manchester Piccadilly and Glossop / Hadfield",
+        "summary": "Buses replace trains between Guide Bridge and Hadfield. Allow an extra 30 minutes.",
+        "reason": null,
+        "from_at": "2026-10-14T23:30:00+01:00",
+        "to_at": "2026-10-15T23:59:00+01:00",
+        "periods": [
+          {
+            "from_at": "2026-10-14T23:30:00+01:00",
+            "to_at": "2026-10-15T23:59:00+01:00"
+          }
+        ],
+        "planned": true,
+        "lines": [],
+        "stops": [],
+        "places": [
+          "Glossop",
+          "Guide Bridge",
+          "Hadfield",
+          "Manchester Piccadilly"
+        ],
+        "severity": "normal",
+        "link": "https://www.nationalrail.co.uk/service-disruptions/glossop-20261015/"
+      }
+    ]
   }
 }

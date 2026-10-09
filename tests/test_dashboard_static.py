@@ -358,6 +358,15 @@ WEATHER = {
     }],
     "sun": Opt({"sunrise": at, "sunset": at}),
 }
+PERIOD = {"from_at": at, "to_at": Opt(at)}
+DISRUPTION = {
+    "id": row_id, "mode": one_of("bus", "train"), "title": str, "summary": str, "reason": Opt(str),
+    "from_at": at, "to_at": Opt(at), "periods": [PERIOD], "planned": bool,
+    "lines": [str], "stops": [str], "places": [str],
+    "severity": one_of("slight", "normal", "severe", "unknown"),
+    "link": Opt(lambda v: isinstance(v, str) and v.startswith("https://")),
+}
+DISRUPTIONS = {"status": {"bus": Opt(STATUS), "train": Opt(STATUS)}, "items": [DISRUPTION]}
 SNAPSHOT = {
     "version": integer,
     "generated_at": at,
@@ -376,6 +385,7 @@ SNAPSHOT = {
         "rows": [BUS_ROW],
     }),
     "weather": Opt(WEATHER),
+    "disruptions": Opt(DISRUPTIONS),
 }
 BUS_DETAIL = {
     "id": row_id, "line": str, "destination": str, "stop": str,
@@ -439,6 +449,20 @@ def test_snapshot_fixture_follows_the_contract():
             assert 0 <= strip["yours"] < len(strip["stops"])
             if strip["train_at"] is not None:
                 assert 0 <= strip["train_at"] <= len(strip["stops"]) - 1
+
+
+def test_disruptions_in_the_fixture_cover_what_the_page_draws():
+    snapshot = _fixture("dashboard_snapshot.json")
+    items = snapshot["disruptions"]["items"]
+    assert {i["mode"] for i in items} == {"bus", "train"}
+    for item in items:
+        assert item["periods"][0] == {"from_at": item["from_at"], "to_at": item["to_at"]}
+    generated = snapshot["generated_at"]
+    assert any(i["from_at"] <= generated for i in items) and any(i["from_at"] > generated for i in items)
+    # A bus row the page marks: its line and stop are named by one in force at its time.
+    rows = snapshot["buses"]["rows"]
+    assert any(r["line"] in i["lines"] and r["stop"] in i["stops"] for i in items for r in rows)
+    assert len({i["id"] for i in items}) == len(items)
 
 
 def test_bus_fixture_follows_the_contract():

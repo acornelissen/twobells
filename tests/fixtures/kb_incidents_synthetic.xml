@@ -46,7 +46,7 @@
     </ValidityPeriod>
     <Planned>false</Planned>
     <Summary>Disruption at Dinting</Summary>
-    <Description><![CDATA[<p>A fault with the signalling system at DGT means trains may be delayed.</p><script>alert("no")</script>]]></Description>
+    <Description><![CDATA[<p>A fault with the signalling system at DTG means trains may be delayed.</p><script>alert("no")</script>]]></Description>
     <InfoLinks>
       <InfoLink>
         <Uri>http://www.nationalrail.co.uk/plain-http-link/</Uri>

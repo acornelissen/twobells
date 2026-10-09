@@ -32,7 +32,7 @@ from .schedule_model import Schedule, StopPosition
 from .walk import WalkTimes
 from .weather import Conditions, Hour, rain_line
 
-PARTS = ("trains", "buses", "weather")
+PARTS = ("trains", "buses", "weather", "disruptions")
 TIMETABLE_STATES = ("ready", "building", "missing")
 # Positioned stops shown on a bus's map before yours.
 MAP_STOPS_BEFORE = 20
@@ -551,8 +551,8 @@ class Hub:
         self._rebuilt = self._monotonic()
 
     def publish(self, part: str, data: dict | None, lookups: dict[str, dict] | None = None) -> int:
-        """Replace one section (trains, buses or weather) and its lookups by
-        row id. Returns the version, which only goes up if anything changed."""
+        """Replace one section (trains, buses, weather or disruptions) and its
+        lookups by row id. Returns the version, which only goes up if anything changed."""
         if part not in PARTS:
             raise ValueError(f"Unknown part {part!r}")
         with self._lock:
