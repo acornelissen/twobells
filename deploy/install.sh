@@ -48,10 +48,12 @@ trap 'rm -rf "$build"' EXIT
 cp -a "$REPO/." "$build/"
 rm -rf "$build/build" "$build"/src/*.egg-info
 # From PyPI only inky and its helper, at exact versions with their hashes; their
-# dependencies are the Debian packages above, which pip check confirms.
+# dependencies are the Debian packages above. (Not pip check: with system site
+# packages it also judges Debian's own, some of which it reports as broken.)
 "$PREFIX/venv/bin/pip" install --require-hashes --no-deps -r "$REPO/deploy/requirements-pi.txt"
 "$PREFIX/venv/bin/pip" install --no-deps "$build"
-"$PREFIX/venv/bin/pip" check
+"$PREFIX/venv/bin/python" -c "import departureboard.cli, inky, PIL, numpy, smbus2, spidev, gpiod" \
+  || { echo "A dependency is missing; see the error above" >&2; exit 1; }
 
 install -d -m 755 "$CONF"
 [[ -f "$CONF/config.toml" ]] || install -m 644 "$REPO/config.example.toml" "$CONF/config.toml"
