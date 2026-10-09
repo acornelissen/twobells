@@ -8,3 +8,10 @@ state.json
 /preview.png
 config.toml
 probe-raw/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+*.gate.lock*
