@@ -1,4 +1,7 @@
+import pytest
+
 from departureboard.dotfont import DotFont
+from departureboard.panel import HDMI_1280X400, WAVESHARE_10IN85G
 from departureboard.render import HEIGHT, WIDTH, Palette
 from departureboard.sign import MARGIN, item_size, render_sign, sign_layout
 from departureboard.view import BoardView, Row, Section, Style
@@ -180,3 +183,70 @@ def test_cancelled_first_train_band_keeps_the_top_padding():
     rows = [Row("07:12", "Manchester Piccadilly", "Cancelled", Style.INVERTED)]
     image = render_sign(board(rows), PALETTE)
     assert all(image.getpixel((x, y)) == PALETTE.black for x in range(WIDTH) for y in range(4))
+
+
+BIG_PANELS = [WAVESHARE_10IN85G, HDMI_1280X400]
+
+
+def dots(panel):
+    return panel.width // panel.scale, panel.height // panel.scale
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_bigger_panels_get_an_image_their_size(panel):
+    image = render_sign(board(TRAINS, BUSES), PALETTE, panel)
+    assert image.size == panel.size
+    assert image.mode == "P"
+    assert PALETTE.accent in {c for _, c in image.getcolors()}
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_everything_fits_on_a_bigger_board(panel):
+    width, height = dots(panel)
+    items = sign_layout(board(TRAINS, BUSES, leave="Leave by 07:05", stale_buses=True), width, height).items
+    for item in items:
+        w, h = item_size(item)
+        assert 0 <= item.x and item.x + w <= width
+        assert 0 <= item.y and item.y + h <= height
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_status_is_right_aligned_on_a_bigger_board(panel):
+    width, height = dots(panel)
+    status = find(sign_layout(board(TRAINS), width, height).items, "On time")
+    assert status.x + FONT.getlength("On time") == width - MARGIN
+
+
+def test_wider_board_shows_a_long_destination_whole():
+    long = "Stepping Hill Hospital via Marple and Romiley"
+    phat = sign_layout(board(buses=BUSES)).items
+    assert any(i.text.startswith("Stepping") and i.text.endswith("…") for i in phat)
+    assert long in texts(sign_layout(board(buses=BUSES), *dots(HDMI_1280X400)).items)
+
+
+def _origin(panel):
+    """Panel pixel of the top-left dot; the dot grid is centred on the panel."""
+    width, height = dots(panel)
+    return (panel.width - width * panel.scale) // 2, (panel.height - height * panel.scale) // 2
+
+
+def test_big_dots_have_a_dark_gap_between_leds():
+    panel = HDMI_1280X400  # 3 pixels per dot
+    image = render_sign(board(), PALETTE, panel)
+    x0, y0 = _origin(panel)
+    # The divider is every other dot from the margin.
+    [rule] = sign_layout(board(), *dots(panel)).rules
+    x, y = x0 + MARGIN * 3, y0 + rule * 3
+    assert image.getpixel((x, y)) == image.getpixel((x + 1, y + 1)) == PALETTE.accent
+    assert image.getpixel((x + 2, y)) == PALETTE.black  # gap column
+    assert image.getpixel((x, y + 2)) == PALETTE.black  # gap row
+
+
+def test_reversed_out_band_stays_solid_so_its_text_reads():
+    panel = HDMI_1280X400
+    rows = [Row("07:12", "Manchester Piccadilly", "Cancelled", Style.INVERTED)]
+    image = render_sign(board(rows), PALETTE, panel)
+    x0, y0 = _origin(panel)
+    band_top = find(sign_layout(board(rows), *dots(panel)).items, "1st").y - 1
+    y = y0 + band_top * 3
+    assert all(image.getpixel((x, y + dy)) == PALETTE.accent for x in range(x0, x0 + 6) for dy in range(3))

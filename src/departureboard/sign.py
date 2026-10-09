@@ -2,6 +2,9 @@
 
 On the four-colour panel the amber is the panel's yellow. Meaning stays in
 the words (Exp, Cancelled, Delayed, Not updating), so nothing relies on colour.
+
+The layout works in LED dots. On the pHAT a dot is one pixel; a bigger panel
+draws each dot as a block of pixels, with a dark gap between LEDs once there is room.
 """
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ from PIL import Image, ImageDraw
 
 from .dotfont import HEIGHT as GLYPH_H
 from .dotfont import TINY, TINY_HEIGHT, DotFont
+from .panel import PHAT, Panel
 from .render import HEIGHT, WIDTH, Palette, fit_text
 from .view import BoardView, Row, Section, Style
 
@@ -56,11 +60,11 @@ def _w(text: str) -> int:
     return _FONT.getlength(text)
 
 
-def _right(text: str) -> float:
-    return WIDTH - MARGIN - _w(text)
+def _right(text: str, width: int) -> float:
+    return width - MARGIN - _w(text)
 
 
-def _trains(layout: SignLayout, section: Section, y: int) -> int:
+def _trains(layout: SignLayout, section: Section, y: int, width: int) -> int:
     time_x = MARGIN + _w(_ORDINALS[-1]) + _COL_GAP
     dest_x = time_x + _w("00:00") + _COL_GAP
     rows = section.rows[:_MAX_TRAINS]
@@ -69,7 +73,7 @@ def _trains(layout: SignLayout, section: Section, y: int) -> int:
         return y + _LINE
     for index, row in enumerate(rows):
         inverted = row.style is Style.INVERTED
-        status_x = _right(row.right)
+        status_x = _right(row.right, width)
         layout.add(MARGIN, y, _ORDINALS[index], inverted)
         layout.add(time_x, y, row.left, inverted)
         layout.add(dest_x, y, fit_text(row.middle, _FONT, status_x - _COL_GAP - dest_x), inverted)
@@ -77,12 +81,12 @@ def _trains(layout: SignLayout, section: Section, y: int) -> int:
         y += _LINE
         if section.leave and index == (section.leave_for or 0):
             # Where the real board scrolls "Calling at", say when to set off.
-            layout.add(time_x, y, fit_text(section.leave, _FONT, WIDTH - MARGIN - time_x))
+            layout.add(time_x, y, fit_text(section.leave, _FONT, width - MARGIN - time_x))
             y += _LINE
     return y
 
 
-def _buses(layout: SignLayout, section: Section, y: int, bottom: int) -> int:
+def _buses(layout: SignLayout, section: Section, y: int, bottom: int, width: int) -> int:
     rows = list(section.rows)
     if not rows:
         layout.add(MARGIN, y, section.empty_text)
@@ -92,12 +96,12 @@ def _buses(layout: SignLayout, section: Section, y: int, bottom: int) -> int:
     dest_x = stop_x + (_w("W") + _COL_GAP - 1 if has_stops else 0)
     right_w = max(_w(r.right) for r in rows)
     leaves = [r.leave for r in rows if r.leave]
-    leave_x = WIDTH - MARGIN - right_w - _COL_GAP - max(map(_w, leaves)) if leaves else None
+    leave_x = width - MARGIN - right_w - _COL_GAP - max(map(_w, leaves)) if leaves else None
     for row in rows:
         if y + GLYPH_H > bottom:
             break
         inverted = row.style is Style.INVERTED
-        status_x = _right(row.right)
+        status_x = _right(row.right, width)
         dest_end = (leave_x if leave_x is not None else status_x) - _COL_GAP
         layout.add(MARGIN, y, fit_text(row.left, _FONT, stop_x - MARGIN - 2), inverted)
         if row.stop:
@@ -110,24 +114,25 @@ def _buses(layout: SignLayout, section: Section, y: int, bottom: int) -> int:
     return y
 
 
-def _footer(layout: SignLayout, view: BoardView) -> None:
-    y = HEIGHT - TINY_HEIGHT - 1
+def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> None:
+    y = height - TINY_HEIGHT - 1
     layout.add(MARGIN, y, f"Updated {view.updated}", small=True)
     stale = [name for name, s in (("trains", view.trains), ("buses", view.buses)) if s.stale]
     if stale:
         message = "Not updating: " + ", ".join(stale)
         # Small, but reversed out so a stalled feed still catches the eye.
-        layout.add(WIDTH - MARGIN - _SMALL.getlength(message), y, message, inverted=True, small=True)
+        layout.add(width - MARGIN - _SMALL.getlength(message), y, message, inverted=True, small=True)
 
 
-def sign_layout(view: BoardView) -> SignLayout:
+def sign_layout(view: BoardView, width: int = WIDTH, height: int = HEIGHT) -> SignLayout:
+    """Places the text on a board `width` x `height` dots."""
     layout = SignLayout()
-    y = _trains(layout, view.trains, _TOP)
+    y = _trains(layout, view.trains, _TOP, width)
     rule = y + _ABOVE_RULE - 2  # each line already carries 2 dots of leading
     layout.rules.append(rule)
-    footer_top = HEIGHT - TINY_HEIGHT - 3
-    _buses(layout, view.buses, rule + _BELOW_RULE, footer_top)
-    _footer(layout, view)
+    footer_top = height - TINY_HEIGHT - 3
+    _buses(layout, view.buses, rule + _BELOW_RULE, footer_top, width)
+    _footer(layout, view, width, height)
     return layout
 
 
@@ -136,24 +141,53 @@ def _ink(palette: Palette) -> int:
     return palette.white if palette.accent == palette.black else palette.accent
 
 
-def render_sign(view: BoardView, palette: Palette) -> Image.Image:
+def render_sign(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Image.Image:
     ink = _ink(palette)
-    image = Image.new("P", (WIDTH, HEIGHT), palette.black)
+    width, height = panel.width // panel.scale, panel.height // panel.scale
+    image = Image.new("P", (width, height), palette.black)
     draw = ImageDraw.Draw(image)
-    layout = sign_layout(view)
-    for y in sorted({i.y for i in layout.items if i.inverted and not i.small}):
-        draw.rectangle((0, y - 1, WIDTH - 1, y + GLYPH_H), fill=ink)
+    layout = sign_layout(view, width, height)
+    band_rows = sorted({i.y for i in layout.items if i.inverted and not i.small})
+    bands = [(0, y - 1, width - 1, y + GLYPH_H) for y in band_rows]
     for item in (i for i in layout.items if i.inverted and i.small):
-        width, height = item_size(item)
-        draw.rectangle((item.x - 2, item.y - 1, item.x + width + 1, item.y + height), fill=ink)
+        text_w, text_h = item_size(item)
+        bands.append((item.x - 2, item.y - 1, item.x + text_w + 1, item.y + text_h))
+    for band in bands:
+        draw.rectangle(band, fill=ink)
     for y in layout.rules:
-        draw.point([(x, y) for x in range(MARGIN, WIDTH - MARGIN, 2)], fill=ink)
+        draw.point([(x, y) for x in range(MARGIN, width - MARGIN, 2)], fill=ink)
     for item in layout.items:
         font = _SMALL if item.small else _FONT
         font.draw(draw, (item.x, item.y), item.text, fill=palette.black if item.inverted else ink)
+    image = _enlarge(image, panel, palette.black, bands)
     if palette.preview:
         _apply_preview(image, palette)
     return image
+
+
+def _enlarge(image: Image.Image, panel: Panel, background: int, bands) -> Image.Image:
+    """Draws each dot as a block of panel pixels, centred on the panel.
+
+    From 3 pixels a dot there is a dark gap between LEDs, as on a real matrix
+    board, except in reversed-out bands: gaps there would break up the dark text.
+    """
+    scale = panel.scale
+    if scale == 1:
+        return image
+    solid = image.resize((image.width * scale, image.height * scale), Image.Resampling.NEAREST)
+    big = solid.copy()
+    if scale >= 3:
+        draw = ImageDraw.Draw(big)
+        for x in range(scale - 1, big.width, scale):
+            draw.line((x, 0, x, big.height - 1), fill=background)
+        for y in range(scale - 1, big.height, scale):
+            draw.line((0, y, big.width - 1, y), fill=background)
+        for x0, y0, x1, y1 in bands:
+            box = tuple(int(v * scale) for v in (x0, y0, x1 + 1, y1 + 1))
+            big.paste(solid.crop(box), box[:2])
+    canvas = Image.new("P", panel.size, background)
+    canvas.paste(big, ((panel.width - big.width) // 2, (panel.height - big.height) // 2))
+    return canvas
 
 
 def _apply_preview(image: Image.Image, palette: Palette) -> None:

@@ -7,6 +7,7 @@ from typing import Callable
 
 from PIL.Image import Image
 
+from .panel import Panel
 from .render import Palette, render
 from .sign import render_sign
 from .view import PLAIN, SIGN, BoardView, Wording
@@ -16,7 +17,7 @@ from .view import PLAIN, SIGN, BoardView, Wording
 class Theme:
     name: str
     wording: Wording
-    render: Callable[[BoardView, Palette], Image]
+    render: Callable[[BoardView, Palette, Panel], Image]
     accent: str
 
 

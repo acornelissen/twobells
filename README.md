@@ -85,6 +85,7 @@ python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 pytest
 departureboard demo --png preview.png            # sample data, no keys
+departureboard demo --png big.png --panel waveshare-10in85g   # or hdmi-1280x400
 departureboard run --png preview.png --config config.toml --secrets secrets.env
 ```
 
@@ -113,6 +114,7 @@ Live modes keep state in `state_file`, so the TransportAPI budget holds across r
 | `darwin.py`, `transportapi.py` | Sources; HTTP injected, so parsing is tested with fixtures |
 | `schedule.py`, `budget.py` | When to poll, and the daily hit cap |
 | `view.py` | Departures to text rows plus a change signature |
+| `panel.py` | Panel sizes; bigger panels draw each sign dot as a block of pixels |
 | `themes.py` | `sign` and `plain`: wording plus renderer |
 | `sign.py`, `dotfont.py` | Station board renderer and its dot-matrix font |
 | `render.py` | Plain renderer |

@@ -12,6 +12,7 @@ from PIL.Image import Image
 
 from .budget import DailyBudget
 from .model import Departure
+from .panel import Panel
 from .render import Palette
 from .schedule import PollPolicy
 from .state import departure_from_dict, departure_to_dict, from_iso, to_iso
@@ -30,6 +31,7 @@ class DepartureSource(Protocol):
 
 class Display(Protocol):
     palette: Palette
+    panel: Panel
 
     def show(self, image: Image) -> None: ...
 
@@ -121,7 +123,7 @@ def run_once(
     too_soon = last_at is not None and now - last_at < board.min_redraw
 
     if changed and not too_soon:
-        display.show(board.theme.render(view, display.palette))
+        display.show(board.theme.render(view, display.palette, display.panel))
         state["last_render"] = {"signature": view.signature(), "at": to_iso(now)}
         return RunResult(view, rendered=True)
     return RunResult(view, rendered=False)

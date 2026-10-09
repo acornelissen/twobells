@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 from departureboard.app import Board, SourceConfig, run_once
 from departureboard.model import Departure, Status
+from departureboard.panel import PHAT
 from departureboard.render import Palette
 from departureboard.schedule import PollPolicy, parse_window
 from departureboard.state import StateStore
@@ -26,6 +27,7 @@ class FakeSource:
 
 class FakeDisplay:
     palette = Palette(white=0, black=1, accent=2)
+    panel = PHAT
 
     def __init__(self):
         self.shown = []

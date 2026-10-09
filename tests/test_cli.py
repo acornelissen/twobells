@@ -12,6 +12,13 @@ def test_demo_writes_preview_without_any_keys(tmp_path):
     assert Image.open(out).size == (250, 122)
 
 
+@pytest.mark.parametrize("panel, size", [("waveshare-10in85g", (1360, 480)), ("hdmi-1280x400", (1280, 400))])
+def test_demo_previews_bigger_panels(tmp_path, panel, size):
+    out = tmp_path / "demo.png"
+    assert main(["demo", "--png", str(out), "--panel", panel]) == 0
+    assert Image.open(out).size == size
+
+
 def test_load_env_file_parses_assignments(tmp_path):
     path = tmp_path / "secrets.env"
     path.write_text('# comment\nRDM_API_KEY=abc\n\nTAPI_APP_ID = "id"\nTAPI_APP_KEY=\'k=1\'\n')

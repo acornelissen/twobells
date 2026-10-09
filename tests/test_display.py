@@ -61,3 +61,23 @@ def test_png_display_writes_preview(tmp_path):
     display = PngDisplay(path, accent="red")
     display.show(Image.new("P", (250, 122), display.palette.white))
     assert Image.open(path).size == (250, 122)
+
+
+def test_inky_phat_is_the_default_panel():
+    from departureboard.panel import PHAT
+
+    assert InkyDisplay(device=FakeInky()).panel == PHAT
+
+
+def test_other_inky_sizes_are_drawn_at_their_own_size():
+    device = FakeInky()
+    device.resolution = (400, 300)  # Inky wHAT
+    panel = InkyDisplay(device=device).panel
+    assert (panel.size, panel.scale, panel.epaper) == ((400, 300), 2, True)
+
+
+def test_png_display_can_preview_another_panel(tmp_path):
+    from departureboard.panel import WAVESHARE_10IN85G
+
+    display = PngDisplay(tmp_path / "big.png", panel=WAVESHARE_10IN85G)
+    assert display.panel == WAVESHARE_10IN85G

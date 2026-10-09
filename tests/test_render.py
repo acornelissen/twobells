@@ -1,3 +1,6 @@
+import pytest
+
+from departureboard.panel import HDMI_1280X400, WAVESHARE_10IN85G
 from departureboard.render import (
     HEIGHT,
     WIDTH,
@@ -139,3 +142,33 @@ def test_row_with_leave_draws_more_ink():
 def test_plain_layout_prefixes_destination_with_stop_label():
     layout = row_layout(Row("341", "Hyde", "07:20", stop="A"), load_fonts())
     assert layout.middle == "A: Hyde"
+
+
+BIG_PANELS = [WAVESHARE_10IN85G, HDMI_1280X400]
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_bigger_panels_get_an_image_their_size(panel):
+    image = render(board([Row("07:12", "Manchester", "+7", Style.ALERT)]), PALETTE, panel)
+    assert image.size == panel.size
+    assert image.mode == "P"
+    assert PALETTE.accent in colours(image)
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_type_grows_with_the_panel(panel):
+    def ink(image):
+        return sum(n for n, c in image.getcolors() if c != PALETTE.white)
+
+    rows = [Row("07:12", "Manchester", "On time")]
+    small = ink(render(board(rows), PALETTE))
+    big = ink(render(board(rows), PALETTE, panel))
+    assert big > small * panel.scale  # area grows with the square of the scale
+
+
+def test_wider_panel_keeps_a_destination_whole_that_the_phat_truncates():
+    row = Row("394", "B: Stepping Hill Hospital", "07:35 sch", leave="leave 07:28")
+    assert row_layout(row, load_fonts()).middle.endswith("…")
+    panel = HDMI_1280X400
+    wide = row_layout(row, load_fonts(panel.scale), panel.width, panel.scale)
+    assert wide.middle == "B: Stepping Hill Hospital"

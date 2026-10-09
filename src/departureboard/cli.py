@@ -25,6 +25,7 @@ from .display import InkyDisplay, PngDisplay
 from .emulation import build_emulation
 from .emulator import DEFAULT_PORT, make_server
 from .model import Departure, Status
+from .panel import PANELS
 from .state import StateStore
 from .transportapi import redact_credentials
 from .view import build_view
@@ -150,12 +151,12 @@ def _demo(args) -> int:
         Departure("bus", "237", "Ashton", "07:41", None, Status.ON_TIME, stop="A"),
     ]
     theme = theme_named(args.theme)
-    display = PngDisplay(args.png, args.accent or theme.accent)
+    display = PngDisplay(args.png, args.accent or theme.accent, PANELS[args.panel])
     walk = WalkTimes(train=7, bus={"*": 7})
     view = build_view(
         "Glossop > Manchester Picc", trains, buses, "07:03", set(), walk, theme.wording
     )
-    display.show(theme.render(view, display.palette))
+    display.show(theme.render(view, display.palette, display.panel))
     print(f"Wrote {args.png}")
     return 0
 
@@ -228,6 +229,7 @@ def _parser() -> argparse.ArgumentParser:
     demo.add_argument("--png", default="preview.png")
     demo.add_argument("--theme", default="sign", choices=sorted(THEMES))
     demo.add_argument("--accent", choices=["red", "yellow"], help="defaults to the theme's")
+    demo.add_argument("--panel", default="inky-phat", choices=sorted(PANELS), help="size to draw at")
     demo.set_defaults(handler=_demo)
 
     emulate = with_config(sub.add_parser("emulate", help="run against a browser panel emulator"))

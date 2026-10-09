@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 
 from PIL.Image import Image
 
+from .panel import PHAT, Panel
 from .render import Palette
 
 # Clear of ClaudeCodeBrowserX, which listens on 8765 and 8766.
@@ -32,8 +33,9 @@ EPAPER = {
 
 
 class EmulatorDisplay:
-    def __init__(self, accent: str = "red", mode: str = "live") -> None:
+    def __init__(self, accent: str = "red", mode: str = "live", panel: Panel = PHAT) -> None:
         self.palette = Palette(white=0, black=1, accent=2)
+        self.panel = panel
         self._accent = accent
         self._mode = mode
         self._lock = threading.Lock()

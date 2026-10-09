@@ -1,4 +1,4 @@
-"""Output targets: the real Inky pHAT, or a PNG for development."""
+"""Output targets: a Pimoroni Inky panel, or a PNG for development."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PIL.Image import Image
 
+from .panel import PHAT, Panel
 from .render import Palette
 
 
@@ -17,6 +18,12 @@ class InkyDisplay:
             device = auto()
         self._device = device
         self._rotate = rotate_180
+        # The pHAT, or any other Inky the library detects, at its own size.
+        width, height = getattr(device, "resolution", PHAT.size)
+        if (width, height) == PHAT.size:
+            self.panel = PHAT
+        else:
+            self.panel = Panel.sized(f"inky-{width}x{height}", width, height)
         black = device.BLACK
         self.palette = Palette(
             white=device.WHITE,
@@ -33,8 +40,9 @@ class InkyDisplay:
 
 
 class PngDisplay:
-    def __init__(self, path: Path | str, accent: str = "red") -> None:
+    def __init__(self, path: Path | str, accent: str = "red", panel: Panel = PHAT) -> None:
         self._path = Path(path)
+        self.panel = panel
         self.palette = Palette(white=0, black=1, accent=2).with_preview(accent)
 
     def show(self, image: Image) -> None:
