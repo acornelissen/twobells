@@ -40,7 +40,7 @@ KEYS = (
     ("RDM_API_KEY", "Rail Data Marketplace key", "Trains: the consumer key for Live Departure Board."),
     ("TAPI_APP_ID", "TransportAPI app ID", "Buses."),
     ("TAPI_APP_KEY", "TransportAPI app key", "Buses."),
-    ("BODS_API_KEY", "Bus Open Data Service key", "Only for the bus position page on a screen."),
+    ("BODS_API_KEY", "Bus Open Data Service key", "For bus times with source = \"bods\", and the bus position page on a screen."),
 )
 _KEY_VALUE = re.compile(r"^[A-Za-z0-9._~+/=-]{1,200}$")
 _CRS = re.compile(r"^[A-Za-z]{3}$")
