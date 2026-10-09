@@ -16,8 +16,8 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Callable, Iterable, Iterator
 from urllib.parse import urlencode
-from xml.etree import ElementTree
 
+from . import safexml
 from .bods import DEFAULT_BASE_URL, redact_key
 from .http import get_bytes
 
@@ -58,9 +58,10 @@ def _seconds(duration: str | None) -> int:
 
 
 def _parse(xml: bytes):
-    if b"<!DOCTYPE" in xml[:4096].upper():
-        raise RouteSetupError("Timetable file has a DOCTYPE; refusing to parse it")
-    return ElementTree.fromstring(xml)
+    try:
+        return safexml.fromstring(xml)
+    except safexml.DoctypeError:
+        raise RouteSetupError("Timetable file has a DOCTYPE; refusing to parse it") from None
 
 
 def patterns(xml: bytes, line: str) -> list[Pattern]:

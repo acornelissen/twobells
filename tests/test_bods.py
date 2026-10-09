@@ -30,6 +30,23 @@ def test_refuses_a_document_type_declaration():
         parse_siri_vm(evil)
 
 
+def test_refuses_a_document_type_declaration_after_a_long_comment():
+    evil = b"<!--" + b" " * 5000 + b'--><!DOCTYPE lol [<!ENTITY a "aaaa">]><Siri/>'
+    with pytest.raises(ValueError, match="DOCTYPE"):
+        parse_siri_vm(evil)
+
+
+def test_refuses_a_document_type_declaration_in_utf16():
+    evil = '<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE lol [<!ENTITY a "aaaa">]><Siri/>'
+    with pytest.raises(ValueError, match="DOCTYPE"):
+        parse_siri_vm(evil.encode("utf-16"))
+
+
+def test_reads_a_utf16_document():
+    body = '<?xml version="1.0" encoding="UTF-16"?><Siri xmlns="http://www.siri.org.uk/siri"><ServiceDelivery/></Siri>'
+    assert parse_siri_vm(body.encode("utf-16")) == []
+
+
 def test_empty_delivery_has_no_vehicles():
     assert parse_siri_vm(b'<Siri xmlns="http://www.siri.org.uk/siri"><ServiceDelivery/></Siri>') == []
 

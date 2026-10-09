@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 from urllib.parse import urlencode
-from xml.etree import ElementTree
 
+from . import safexml
 from .http import get_bytes
 
 DEFAULT_BASE_URL = "https://data.bus-data.dft.gov.uk/api/v1"
@@ -51,10 +51,7 @@ def _text(node, path: str) -> str:
 
 def parse_siri_vm(body: bytes) -> list[Vehicle]:
     """Vehicles from a SIRI-VM document. Activities missing a position are skipped."""
-    # BODS never sends a document type; refusing one rules out entity tricks.
-    if b"<!DOCTYPE" in body[:2048].upper():
-        raise ValueError("SIRI-VM response has a DOCTYPE; refusing to parse it")
-    root = ElementTree.fromstring(body)
+    root = safexml.fromstring(body)  # refuses a DOCTYPE, so no entity tricks
     vehicles = []
     for activity in root.iterfind(".//siri:VehicleActivity", _NS):
         journey = activity.find("siri:MonitoredVehicleJourney", _NS)

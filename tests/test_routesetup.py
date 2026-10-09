@@ -139,6 +139,18 @@ def test_doctype_is_refused():
         patterns(b'<!DOCTYPE x [<!ENTITY a "b">]><TransXChange/>', "341")
 
 
+def test_doctype_after_a_long_comment_is_refused():
+    evil = b"<!--" + b" " * 5000 + b'--><!DOCTYPE x [<!ENTITY a "b">]><TransXChange/>'
+    with pytest.raises(RouteSetupError, match="DOCTYPE"):
+        patterns(evil, "341")
+
+
+def test_doctype_in_utf16_is_refused():
+    evil = '<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE x [<!ENTITY a "b">]><TransXChange/>'
+    with pytest.raises(RouteSetupError, match="DOCTYPE"):
+        patterns(evil.encode("utf-16"), "341")
+
+
 def test_dataset_search_lists_download_urls_and_hides_the_key():
     calls = []
 
