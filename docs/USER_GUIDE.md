@@ -62,6 +62,12 @@ Each line reads: *route*, *stop*, *destination*, *when to leave*, *when it goes*
 |---|---|
 | `UPDATED 07:03` | When the board last changed. The e-paper only redraws when something changes, so this can be a few minutes ago. |
 | `NOT UPDATING: BUSES`, highlighted | No new bus information has arrived for a while. What's shown is the last known, and may be out of date. The same applies to trains. |
+| `RAIN FROM 07:00 (70%)` | Rain is likely (here a 70% chance) before you'd reach your next train or bus. Only shown when rain is likely; nothing on dry days. |
+| `! DISRUPTION …` | A National Rail incident notice for the station. It takes the whole line while it lasts, and goes when the notice is withdrawn. On the small display it's cut short with `…`. |
+
+![A rain warning at the bottom](guide/phat-rain.png)
+
+![A disruption notice at the bottom](guide/phat-notice.png)
 
 ### The plain look
 
@@ -78,12 +84,13 @@ The differences:
 | `+7` in the accent colour: 7 minutes late | `Exp 07:49` |
 | `Cancelled` on a black bar | `Cancelled` on a highlighted bar |
 | `! NOT UPDATING` in the accent colour, next to TRAINS or BUSES | `NOT UPDATING: …` at the bottom |
+| A rain warning or disruption notice in the top bar, in place of the title | At the bottom |
 
 The plain look shows 3 trains and 2 buses.
 
 ### The bigger e-paper display
 
-The 10.85" display shows the same board with bigger dots and more room, so long destinations fit.
+The 10.85" display shows the same board with bigger dots and more room, so long destinations fit, and each train's platform shows (`Plat 1`). Platforms aren't shown on the small display, where there isn't room.
 
 ![The station board look on the 10.85 inch e-paper](guide/epaper-10in85.png)
 
@@ -96,6 +103,8 @@ The screen can redraw every second, so it shows a bit more:
 - **A running clock** at the bottom, in place of "Updated".
 - **Countdowns** in place of clock times: `Leave in 3 min`, then `Leave now` in the last minute. They round down, so `Leave in 3 min` means you have at least 3 minutes, never less.
 - On the screen, a bus you can no longer reach on foot loses its leave time, rather than saying "leave now".
+- **Platforms**, as on the bigger e-paper display.
+- A rain warning or disruption notice sits at the bottom left and the clock moves to the right. A notice too long for one line is shown a part at a time, changing every 5 seconds; each part starts with `!` and all but the last end with `…`.
 
 #### Where the next bus is
 
@@ -119,7 +128,9 @@ The page only appears when the board is checking buses (see *When it checks* bel
 
 ### When it checks
 
-To stay within free limits, the board only fetches new times during set windows, for example weekday mornings and early evenings. Outside them it keeps showing what it last knew, and doesn't say "not updating", because it isn't trying to. The windows are on the settings page.
+To stay within free limits, the board only fetches new times during set windows, for example weekday mornings and early evenings. Outside them it keeps showing what it last knew, and doesn't say "not updating", because it isn't trying to. Departures drop off once their time has passed, so the evening never shows the morning's buses. The windows are on the settings page.
+
+On bank holidays trains and buses run a Sunday service, so the board treats them like Sundays: weekday-only windows are off, and windows that include Sundays apply.
 
 ---
 
@@ -164,9 +175,29 @@ What you save replaces what's in `config.toml`, including emptying a box: cleari
 - **When to check:** as for trains.
 - **Walk to each stop:** one per line (`A = 7`), or one number for every stop. Empty means no leave times.
 
+- **Bank holidays:** treat them like Sundays (the usual choice), or ignore them.
+
+**Rain warning**
+
+Shown when `config.toml` gives a location (see [Rain warning set-up](#rain-warning-set-up)).
+
+- **Rain warning:** on or off.
+- **Warn from (chance of rain, %):** 50 means warn when rain is more likely than not.
+
 **Keys**
 
 Keys are never shown, only whether each one is set. To replace a key, paste the new one; leave a box empty to keep the current one. The key boxes are ordinary text boxes, so you can check what you pasted before saving.
+
+### Status
+
+Above the form, a **Status** section shows how the board is doing, without changing anything:
+
+- when trains, buses and bus positions were last fetched, and whether it's checking now;
+- the last error, if one happened since the last good fetch, written out as "Problem: …" (keys are never shown);
+- how many of today's bus lookups are used;
+- when the display last redrew.
+
+It's the first place to look when the board seems wrong.
 
 ### When changes take effect
 
@@ -220,6 +251,23 @@ TransportAPI's free plan allows 30 lookups a day, and each check costs one per s
 
 Bus positions for the screen's second page come from a different service (BODS) with no daily allowance to manage. They're checked every 30 seconds, only during the bus windows.
 
+### Rain warning set-up
+
+The forecast comes from [Open-Meteo](https://open-meteo.com) (free, no key). Give the board your location in `config.toml`, rounded to two decimal places (about 1 km); the board rounds it again before sending it:
+
+```toml
+[weather]
+lat = 53.44
+lon = -1.95
+threshold_percent = 50
+```
+
+The forecast is checked every 30 minutes, only while the board is checking trains or buses. If it can't be fetched, the last forecast is used for up to 3 hours.
+
+### Bank holidays
+
+Dates for England and Wales come from GOV.UK and are kept for a week in `/var/lib/departureboard/`. If GOV.UK can't be reached, the board keeps the dates it has and tries again in 6 hours. To ignore bank holidays, choose that on the settings page, or set `bank_holidays = false` in `config.toml`.
+
 ### The bus position page
 
 Screen only. It needs `BODS_API_KEY` and a stop list for each route you want to follow. Build the list on a laptop:
@@ -259,6 +307,8 @@ Settings saved on the page go to `/var/lib/departureboard/settings.toml` and ove
 | No bus position page | Not a screen, outside the bus windows, no `BODS_API_KEY`, or no route set up for the next bus | Check those in that order |
 | Bus page always says `Not yet past …` | The strip is short (in town 8 stops is about 7 minutes) | Normal; the bus appears when it's close |
 | Settings page won't open | Service stopped, or you're not on the home network | `systemctl status departureboard-web.service` |
+| No rain line on a rainy day | The chance is below the threshold, it's outside the checking windows, no `[weather]` location, or the forecast couldn't be fetched for over 3 hours | Check the Status section and `[weather]` in `config.toml` |
+| Board quiet on a bank holiday | Weekday windows are off on bank holidays | Add a window including Sun, or choose "Ignore bank holidays" |
 | Settings page says Forbidden | Opened from outside the home network, or through an unusual address | Use `http://<board name>.local:8080/` from home Wi-Fi |
 
 ### Useful commands

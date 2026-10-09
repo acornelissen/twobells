@@ -12,6 +12,7 @@ New here? The [user guide](docs/USER_GUIDE.md) explains what everything on the b
 - Two looks, set with `theme`:
   - `sign` (default): an old-school station departure board, amber dot-matrix on black, using the panel's yellow. `1st`/`2nd`/`3rd` trains, `Exp 07:49`, `Cancelled`, and a `Leave by` line under the train you can still catch. The dot-matrix font is drawn for this project at one pixel per LED.
   - `plain`: white board, bold type, red accent. Same words, except the leave time sits in the header (`Leave 07:05 (07:12)`) and late trains show `+7`.
+- Wide displays show train platforms. A National Rail disruption notice replaces the bottom line while it lasts, and a rain warning (Open-Meteo, free, no key) appears when rain is likely before you'd reach your train or bus. Bank holidays count as Sundays.
 - Meaning is always in text (`Exp 07:49`, `Cancelled`, `No info`, `+4`, `sch`, `Not updating`). Colour only reinforces it, so the board works for colour-blind viewers and on a mono panel (the sign look falls back to white on black).
 
 ## 1. Get access
@@ -188,6 +189,10 @@ Live modes keep state in `state_file`, so the TransportAPI budget holds across r
 | `emulator.py`, `emulator.html`, `emulation.py` | Browser panel emulator and its demo/live wiring |
 | `bods.py`, `route.py` | Live bus positions from BODS; placing the next bus on its route strip |
 | `routesetup.py` | Builds a route strip from a BODS timetable and NaPTAN (`route` command) |
+| `weather.py` | Open-Meteo hourly forecast and the rain-warning rule |
+| `holidays.py` | England and Wales bank holidays from GOV.UK, cached weekly |
+| `status.py` | The settings page's Status section; short, key-free error messages |
+| `safexml.py` | XML parsing that refuses a DOCTYPE |
 | `fake.py` | Deterministic fake sources and simulated clock |
 | `app.py` | One tick: poll what's due, redraw only on change |
 | `web.py`, `settingsform.py`, `web.css` | Settings page: sign-in and request checks; the form, its checks and saving |

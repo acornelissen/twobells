@@ -15,6 +15,9 @@ theme = "sign"
 # "waveshare-10in85g": Waveshare 10.85" e-Paper (G), 1360x480. Needs dtoverlay=spi0-0cs.
 # "hdmi-1280x400": Waveshare 7.9" HDMI screen on its side. Runs as a service, not a timer.
 display = "inky"
+# Trains and buses run a Sunday service on bank holidays (England and Wales,
+# from GOV.UK): treat them like Sundays, so only windows including Sun apply.
+bank_holidays = true
 # Degrees to turn the board clockwise to suit how it is mounted.
 # E-paper: 0 or 180. The 7.9" screen is portrait out of the box: 90 or 270.
 rotate = 0
