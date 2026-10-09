@@ -1,7 +1,8 @@
 // The page's one polite live region. It speaks only real changes, at most
 // once every 30 s: a departure newly cancelled, an expected time moving by
-// 2 min or more, and a new disruption message. Countdowns and clocks never
-// go through it.
+// 2 min or more, a bus newly flagged as having no tracker (once per
+// departure, however often the flag comes and goes), and a new disruption
+// message. Countdowns and clocks never go through it.
 
 import { $, list, obj, str } from "./dom.js";
 import { parseAt } from "./time.js";
@@ -16,6 +17,7 @@ let pending = new Map(); // one entry per departure or message; the latest wins
 let timer = 0;
 let previous = null; // id -> { status, expectedMs (as last spoken, or first seen) }
 let previousMessages = null;
+let ghostsSeen = new Set(); // ids already flagged as ghosts: each is spoken once at most
 
 const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 
@@ -54,8 +56,13 @@ export function noteSnapshot(snapshot, rowsById) {
     const now = { status: row.status, expectedMs: expectedMs(row) };
     next.set(id, now);
     const before = previous && previous.get(id);
-    if (!before) continue;
     const what = capital(describe(row, mode, false));
+    if (row.ghost === true && !ghostsSeen.has(id)) {
+      ghostsSeen.add(id);
+      // Not on the first snapshot, nor for a row that is new to the board.
+      if (before) queue(`ghost:${id}`, `${what} has no tracker yet and may not be running.`);
+    }
+    if (!before) continue;
     if (now.status === "cancelled" && before.status !== "cancelled") {
       queue(id, `${what} is now cancelled.`);
     } else if (now.status !== "cancelled" && now.expectedMs !== null && before.expectedMs !== null
@@ -72,4 +79,5 @@ export function noteSnapshot(snapshot, rowsById) {
   }
   previous = next;
   previousMessages = messages;
+  ghostsSeen = new Set([...ghostsSeen].filter((id) => rowsById.has(id)));
 }

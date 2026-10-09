@@ -3,9 +3,10 @@
 // (Leaflet would parse a string as HTML). The ordered list beside the map
 // says the same things in words.
 
-import { $, h, s as svg, setText, str, num, list, obj, validId, openDialog, setUpDialog } from "./dom.js";
+import { $, h, s as svg, fill, setText, str, num, list, obj, validId, openDialog, setUpDialog } from "./dom.js";
 import { getJSON } from "./api.js";
 import { age, now, parseAt } from "./time.js";
+import { busDialogExtras } from "./extras.js";
 
 const LEAFLET = "./vendor/leaflet-1.9.4/";
 const TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -17,6 +18,7 @@ let layers = null;
 let busMarker = null;
 let busPosition = null;
 let openId = null;
+let openRow = null; // the snapshot's row for the open bus, for its extras
 let request = 0;
 
 const dialog = () => $("bus-dialog");
@@ -40,6 +42,7 @@ function loadLeaflet() {
 export function setUpMap() {
   setUpDialog(dialog(), () => {
     openId = null;
+    openRow = null;
     request++;
     $("osm-credit").hidden = true;
   });
@@ -144,13 +147,20 @@ function show(data, fit) {
   }
 }
 
-export async function openMap(id, opener) {
+// The arrival, inbound bus and ghost warning, from the snapshot's row.
+function drawExtras() {
+  fill($("bus-extras"), busDialogExtras(openRow));
+}
+
+export async function openMap(id, opener, row = null) {
   if (!validId(id)) return;
   openId = id;
+  openRow = obj(row);
   const mine = ++request;
   setText($("bus-title"), "Bus map");
   setText($("map-status"), "Loading the map…");
   setText($("map-where"), "");
+  drawExtras();
   $("map-stops").replaceChildren();
   $("map-centre").disabled = true;
   $("osm-credit").hidden = false;
@@ -164,9 +174,16 @@ export async function openMap(id, opener) {
 }
 
 // Called with each new snapshot while the dialog is open: moves the bus
-// without refitting, so a map you have panned stays put.
-export async function refreshMap() {
-  if (!openId || !dialog().open || !L) return;
+// without refitting, so a map you have panned stays put. rowsById maps id
+// to { row, mode }; a bus gone from the board keeps its last extras.
+export async function refreshMap(rowsById = new Map()) {
+  if (!openId || !dialog().open) return;
+  const entry = rowsById.get(openId);
+  if (entry) {
+    openRow = entry.row;
+    drawExtras();
+  }
+  if (!L) return;
   const id = openId;
   const mine = request;
   try {

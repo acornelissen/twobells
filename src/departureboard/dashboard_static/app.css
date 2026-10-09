@@ -304,6 +304,23 @@ tr.row-cancelled .c-time .time { text-decoration: line-through; text-decoration-
 .badge.st-cancelled { color: var(--bad-fg); background: var(--bad-bg); }
 .badge.st-unknown { color: var(--unk-fg); background: var(--unk-bg); }
 
+/* --- Row extras: arrival, inbound bus, ghost warning (extras.js) --- */
+
+/* Calm, not alarming: the "unknown" palette, set apart by a dashed edge and
+   its own line. The words say it; the look only reinforces them. */
+.badge.ghost {
+  display: flex;
+  width: fit-content;
+  margin-top: 0.375rem;
+  color: var(--unk-fg);
+  background: var(--unk-bg);
+  border: 1px dashed var(--edge);
+  white-space: normal;
+}
+.inbound .glyph { min-width: 0; }
+#bus-extras .facts { margin-top: 0.5rem; }
+:root[data-theme="board"] .badge.ghost { padding: 0.125rem 0.375rem; border-color: var(--edge); }
+
 /* --- Bus and train strips --- */
 
 .strip-wrap { display: inline-flex; flex-direction: column; gap: 0.125rem; width: 100%; max-width: 13rem; }

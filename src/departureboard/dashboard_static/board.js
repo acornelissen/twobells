@@ -6,6 +6,7 @@
 import { h, vh, setText, str, num, list, obj, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
 import { renderStrip, renderTrainStrip } from "./strip.js";
+import { arrivesLine, busStatusExtras } from "./extras.js";
 
 const MAX_ROWS = 10;
 
@@ -98,7 +99,8 @@ function trainRow(row, alerts) {
   return h("tr", rowAttrs(row, id),
     h("th", { scope: "row", role: "rowheader", class: "c-time" }, cellLabel("Due"), h("span", { class: "time" }, scheduled)),
     td("c-dest", "To", h("span", { class: "dest" }, destination),
-      str(row.origin) ? h("span", { class: "sub" }, `from ${str(row.origin)}`) : null),
+      str(row.origin) ? h("span", { class: "sub" }, `from ${str(row.origin)}`) : null,
+      arrivesLine(row)),
     td("c-plat", "Platform", platform || h("span", { class: "muted" }, "Not yet")),
     td("c-status", "Status", statusBadge(row.status, row.status_text), reasons(row)),
     td("c-where", "Where", renderTrainStrip(row)),
@@ -119,9 +121,10 @@ function busRow(row, alerts, stops, generatedMs) {
   const context = `the ${scheduled} ${line} to ${destination}`;
   return h("tr", rowAttrs(row, id),
     h("th", { scope: "row", role: "rowheader", class: "c-time" }, cellLabel("Due"), h("span", { class: "time" }, scheduled)),
-    td("c-dest", "Bus", h("span", { class: "line" }, line), " ", h("span", { class: "dest" }, destination)),
+    td("c-dest", "Bus", h("span", { class: "line" }, line), " ", h("span", { class: "dest" }, destination),
+      arrivesLine(row)),
     td("c-plat", "Stop", stop ? `Stop ${stop}` : "–", stops[stop] ? vh(`, ${stops[stop]}`) : null),
-    td("c-status", "Status", statusBadge(row.status, row.status_text), reasons(row)),
+    td("c-status", "Status", statusBadge(row.status, row.status_text), reasons(row), busStatusExtras(row)),
     td("c-where", "Where", renderStrip(row, generatedMs)),
     leaveCell(row),
     recordCell(row, id, context),

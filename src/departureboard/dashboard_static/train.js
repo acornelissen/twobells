@@ -6,6 +6,7 @@
 import { $, h, fill, setText, str, num, list, obj, openDialog, setUpDialog } from "./dom.js";
 import { hhmm } from "./time.js";
 import { statusBadge } from "./board.js";
+import { arrivesFact } from "./extras.js";
 
 const dialog = () => $("train-dialog");
 let openId = null;
@@ -72,6 +73,7 @@ function render(row) {
       fact("Platform", str(row.platform) || "Not yet known"),
       fact("Coaches", length ? `${length} ${length === 1 ? "coach" : "coaches"}` : ""),
       fact("Leave by", hhmm(row.leave_at)),
+      fact("Arrives", arrivesFact(row)),
     ),
     h("h3", {}, "Where it is now"),
     h("p", { class: where ? null : "muted" }, where || "No live position"),

@@ -83,7 +83,7 @@ function render(data) {
   refocus(key);
   attempt("announcements", () => noteSnapshot(data, rowsById));
   attempt("train dialog", () => refreshTrain(rowsById, station()));
-  refreshMap();
+  refreshMap(rowsById);
   tick();
 }
 
@@ -114,7 +114,7 @@ $("main").addEventListener("click", (event) => {
       openHistory(id, button);
       break;
     case "map":
-      openMap(id, button);
+      openMap(id, button, entry ? entry.row : null);
       break;
     case "alert":
       if (entry) {
