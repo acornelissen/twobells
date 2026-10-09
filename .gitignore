@@ -4,6 +4,7 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 secrets.env
+dashboard.env
 state.json
 # Kept beside state.json by the board
 bank-holidays.json

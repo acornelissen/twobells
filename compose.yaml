@@ -1,0 +1,32 @@
+# The departures dashboard on a NAS. On Synology: Container Manager > Project >
+# Create, pick this folder, and it builds the image here. See docs/USER_GUIDE.md.
+services:
+  dashboard:
+    build: .
+    image: departureboard-dashboard:local
+    container_name: departureboard-dashboard
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    env_file:
+      - dashboard.env            # RDM_API_KEY and BODS_API_KEY; keep it readable by you only
+    volumes:
+      - ./config.toml:/config/config.toml:ro
+      - dashboard-data:/data     # bus timetable, history, bank holidays
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "3"
+
+volumes:
+  dashboard-data:

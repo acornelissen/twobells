@@ -1,0 +1,6 @@
+# Only what the image needs; keeps keys, state and the git history out.
+*
+!src/
+!deploy/requirements-docker.txt
+**/__pycache__
+**/*.pyc
