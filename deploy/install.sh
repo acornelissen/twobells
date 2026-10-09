@@ -20,9 +20,9 @@ grep -Eq '^[[:space:]]*display[[:space:]]*=[[:space:]]*"hdmi-' "$CONF/config.tom
 
 apt-get update
 # spidev, gpiozero and lgpio drive the Waveshare panel; the venv sees them via system site packages.
-# Pillow, numpy and smbus2 come from Debian rather than pip: built for the Pi, patched through
-# apt, and seen by the venv through system site packages.
-apt-get install -y python3-venv python3-dev fonts-dejavu-core python3-spidev python3-gpiozero python3-lgpio python3-numpy python3-smbus2 python3-pil
+# Pillow, numpy, smbus2 and gpiod (for inky) come from Debian rather than pip: built for the
+# Pi, patched through apt, and seen by the venv through system site packages.
+apt-get install -y python3-venv python3-dev fonts-dejavu-core python3-spidev python3-gpiozero python3-lgpio python3-libgpiod python3-numpy python3-smbus2 python3-pil
 # pygame, only for the HDMI screen: it pulls in graphics libraries (LLVM, Mesa) and a
 # MIDI soundfont, slow to install on a Pi Zero and unused by e-paper.
 if $screen; then
@@ -47,7 +47,11 @@ build="$(mktemp -d)"
 trap 'rm -rf "$build"' EXIT
 cp -a "$REPO/." "$build/"
 rm -rf "$build/build" "$build"/src/*.egg-info
-"$PREFIX/venv/bin/pip" install --constraint "$REPO/deploy/constraints.txt" "$build[pi]"
+# From PyPI only inky and its helper, at exact versions with their hashes; their
+# dependencies are the Debian packages above, which pip check confirms.
+"$PREFIX/venv/bin/pip" install --require-hashes --no-deps -r "$REPO/deploy/requirements-pi.txt"
+"$PREFIX/venv/bin/pip" install --no-deps "$build"
+"$PREFIX/venv/bin/pip" check
 
 install -d -m 755 "$CONF"
 [[ -f "$CONF/config.toml" ]] || install -m 644 "$REPO/config.example.toml" "$CONF/config.toml"
