@@ -96,23 +96,76 @@ GLYPHS: dict[str, list[str]] = {
 }
 
 
-def _glyph(char: str) -> list[str]:
-    return GLYPHS.get(char, GLYPHS["?"])
+# 3x5 capitals for small print; lowercase is drawn as capitals.
+TINY_HEIGHT = 5
+TINY: dict[str, list[str]] = {
+    " ": [".."] * 5,
+    "0": _g("### #.# #.# #.# ###"),
+    "1": _g(".#. ##. .#. .#. ###"),
+    "2": _g("### ..# ### #.. ###"),
+    "3": _g("### ..# .## ..# ###"),
+    "4": _g("#.# #.# ### ..# ..#"),
+    "5": _g("### #.. ### ..# ###"),
+    "6": _g("### #.. ### #.# ###"),
+    "7": _g("### ..# ..# .#. .#."),
+    "8": _g("### #.# ### #.# ###"),
+    "9": _g("### #.# ### ..# ###"),
+    "A": _g(".#. #.# ### #.# #.#"),
+    "B": _g("##. #.# ##. #.# ##."),
+    "C": _g(".## #.. #.. #.. .##"),
+    "D": _g("##. #.# #.# #.# ##."),
+    "E": _g("### #.. ##. #.. ###"),
+    "F": _g("### #.. ##. #.. #.."),
+    "G": _g(".## #.. #.# #.# .##"),
+    "H": _g("#.# #.# ### #.# #.#"),
+    "I": _g("### .#. .#. .#. ###"),
+    "J": _g("..# ..# ..# #.# .#."),
+    "K": _g("#.# #.# ##. #.# #.#"),
+    "L": _g("#.. #.. #.. #.. ###"),
+    "M": _g("#...# ##.## #.#.# #...# #...#"),
+    "N": _g("#..# ##.# #.## #..# #..#"),
+    "O": _g(".#. #.# #.# #.# .#."),
+    "P": _g("##. #.# ##. #.. #.."),
+    "Q": _g(".#. #.# #.# ##. .##"),
+    "R": _g("##. #.# ##. #.# #.#"),
+    "S": _g(".## #.. .#. ..# ##."),
+    "T": _g("### .#. .#. .#. .#."),
+    "U": _g("#.# #.# #.# #.# ###"),
+    "V": _g("#.# #.# #.# #.# .#."),
+    "W": _g("#...# #...# #.#.# ##.## #...#"),
+    "X": _g("#.# #.# .#. #.# #.#"),
+    "Y": _g("#.# #.# .#. .#. .#."),
+    "Z": _g("### ..# .#. #.. ###"),
+    ":": _g(". # . # ."),
+    ",": _g(".. .. .. .# #."),
+    ".": _g(". . . . #"),
+    "-": _g("... ... ### ... ..."),
+    "?": _g("### ..# .#. ... .#."),
+}
 
 
 class DotFont:
     """Duck-types the bit of FreeTypeFont that fit_text needs (`getlength`)."""
 
+    def __init__(self, glyphs: dict[str, list[str]] | None = None) -> None:
+        self._glyphs = glyphs if glyphs is not None else GLYPHS
+        self._capitals_only = "a" not in self._glyphs
+
+    def _glyph(self, char: str) -> list[str]:
+        if self._capitals_only:
+            char = char.upper()
+        return self._glyphs.get(char, self._glyphs["?"])
+
     def getlength(self, text: str) -> int:
         if not text:
             return 0
-        return sum(len(_glyph(c)[0]) for c in text) + _GAP * (len(text) - 1)
+        return sum(len(self._glyph(c)[0]) for c in text) + _GAP * (len(text) - 1)
 
     def draw(self, draw, xy: tuple[float, float], text: str, fill: int) -> None:
         x0, y0 = int(xy[0]), int(xy[1])
         points = []
         for char in text:
-            rows = _glyph(char)
+            rows = self._glyph(char)
             for dy, row in enumerate(rows):
                 points.extend((x0 + dx, y0 + dy) for dx, dot in enumerate(row) if dot == "#")
             x0 += len(rows[0]) + _GAP

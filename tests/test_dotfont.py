@@ -54,3 +54,27 @@ def test_works_with_fit_text():
 
     fitted = fit_text("Manchester Piccadilly", FONT, 60)
     assert fitted.endswith("…") and FONT.getlength(fitted) <= 60
+
+
+def test_tiny_font_covers_the_footer_text():
+    from departureboard.dotfont import TINY, TINY_HEIGHT
+
+    tiny = DotFont(TINY)
+    for text in ("Updated 07:03", "Not updating: trains, buses"):
+        assert tiny.getlength(text) < FONT.getlength(text)
+    assert all(len(rows) == TINY_HEIGHT for rows in TINY.values())
+
+
+def test_tiny_font_draws_lowercase_as_small_capitals():
+    from departureboard.dotfont import TINY
+
+    tiny = DotFont(TINY)
+    assert tiny.getlength("updated") == tiny.getlength("UPDATED")
+
+
+def test_tiny_glyphs_are_rectangular():
+    from departureboard.dotfont import TINY
+
+    for char, rows in TINY.items():
+        assert len({len(r) for r in rows}) == 1, char
+        assert set("".join(rows)) <= {"#", "."}, char
