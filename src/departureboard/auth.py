@@ -94,7 +94,7 @@ class PasswordStore:
                 r=record["r"],
                 p=record["p"],
             )
-            return hmac.compare_digest(digest.hex(), record["hash"])
+            return hmac.compare_digest(digest.hex().encode(), str(record["hash"]).encode())
         except (OSError, ValueError, KeyError):
             return False
 
@@ -176,7 +176,8 @@ class Sessions:
 def csrf_matches(session: Session | None, submitted: str) -> bool:
     """Whether a form's token is the session's own, compared in constant time.
     False without a session."""
-    return session is not None and hmac.compare_digest(submitted, session.csrf)
+    # As bytes: compare_digest raises on non-ASCII str, and a form can send anything.
+    return session is not None and hmac.compare_digest(submitted.encode(), session.csrf.encode())
 
 
 @dataclass

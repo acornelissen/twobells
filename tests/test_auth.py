@@ -184,7 +184,7 @@ def test_the_form_token_is_compared_in_constant_time(monkeypatch):
     real = hmac.compare_digest
     monkeypatch.setattr(hmac, "compare_digest", lambda a, b: compared.append((a, b)) or real(a, b))
     csrf_matches(Session(0, "token"), "guess")
-    assert compared == [("guess", "token")]
+    assert compared == [(b"guess", b"token")]  # as bytes, so any text compares safely
 
 
 # --- Lockout ---
@@ -363,3 +363,13 @@ def test_form_pages_carry_strict_headers():
     assert FORM_PAGE_HEADERS["X-Frame-Options"] == "DENY"
     assert FORM_PAGE_HEADERS["Cache-Control"] == "no-store"
     assert FORM_PAGE_HEADERS["Referrer-Policy"] == "same-origin"
+
+
+def test_a_non_ascii_csrf_token_is_a_mismatch_not_a_crash():
+    # hmac.compare_digest raises TypeError on non-ASCII str; a form can send anything.
+    from departureboard.auth import Session, csrf_matches
+
+    session = Session(expires=0.0, csrf="abc123")
+    assert csrf_matches(session, "abc12é") is False
+    assert csrf_matches(session, "ünïcode") is False
+    assert csrf_matches(session, "abc123") is True
