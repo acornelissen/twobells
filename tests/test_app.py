@@ -249,3 +249,15 @@ def test_board_walk_times_produce_leave_text():
     result = run_once(board, state, display, THU_0700)
     assert result.view.trains.leave == "Leave 07:05 (07:12)"
     assert result.view.buses.rows[0].leave == "leave 07:15"
+
+
+def test_board_theme_picks_wording_and_renderer():
+    from departureboard.themes import theme_named
+
+    trains, buses, board, display, state = setup()
+    trains.departures = [train(status=Status.CANCELLED)]
+    board = dataclasses.replace(board, theme=theme_named("sign"))
+    result = run_once(board, state, display, THU_0700)
+    assert result.view.trains.rows[0].right == "Cancelled"
+    counts = {c: n for n, c in display.shown[0].getcolors()}
+    assert counts[display.palette.black] > counts.get(display.palette.white, 0)

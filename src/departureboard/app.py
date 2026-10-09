@@ -12,10 +12,11 @@ from PIL.Image import Image
 
 from .budget import DailyBudget
 from .model import Departure
-from .render import Palette, render
+from .render import Palette
 from .schedule import PollPolicy
 from .state import departure_from_dict, departure_to_dict, from_iso, to_iso
 from .view import BoardView, build_view
+from .themes import THEMES, Theme
 from .walk import WalkTimes
 
 log = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ class Board:
     # E-paper refreshes are slow and wear the panel: never redraw more often than this.
     min_redraw: timedelta = timedelta(minutes=2)
     walk: WalkTimes = WalkTimes()
+    theme: Theme = THEMES["plain"]
 
 
 @dataclass(frozen=True)
@@ -107,6 +109,7 @@ def run_once(board: Board, state: dict, display: Display, now: datetime) -> RunR
         now=now.strftime("%H:%M"),
         stale=stale,
         walk=board.walk,
+        wording=board.theme.wording,
     )
 
     last = state.get("last_render", {})
@@ -115,7 +118,7 @@ def run_once(board: Board, state: dict, display: Display, now: datetime) -> RunR
     too_soon = last_at is not None and now - last_at < board.min_redraw
 
     if changed and not too_soon:
-        display.show(render(view, display.palette))
+        display.show(board.theme.render(view, display.palette))
         state["last_render"] = {"signature": view.signature(), "at": to_iso(now)}
         return RunResult(view, rendered=True)
     return RunResult(view, rendered=False)
