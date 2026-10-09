@@ -21,6 +21,8 @@ _ROW_H = 14
 _SECTION_GAP = 6
 _PAD = 3
 _MAX_ROWS = {"Trains": 3, "Buses": 2}
+# Beside a section's label when its feed has stopped, in the sign look's words.
+_NOT_UPDATING = "! NOT UPDATING"
 
 _FONT_DIR = Path("/usr/share/fonts/truetype/dejavu")
 _PREVIEW_ACCENTS = {"red": (200, 30, 30), "yellow": (230, 180, 0)}
@@ -133,8 +135,8 @@ class _Painter:
         label_end = pad + self.f.small.getlength(label)
         if section.stale:
             x = label_end + 6 * s
-            self.draw.text((x, y + s), "! STALE", font=self.f.small, fill=self.p.accent)
-            label_end = x + self.f.small.getlength("! STALE")
+            self.draw.text((x, y + s), _NOT_UPDATING, font=self.f.small, fill=self.p.accent)
+            label_end = x + self.f.small.getlength(_NOT_UPDATING)
         rows = section.rows[: _MAX_ROWS.get(section.label, 2)]
         # As on the sign, a leave time for a row that doesn't fit is left out.
         if section.leave and (section.leave_for is None or section.leave_for < len(rows)):

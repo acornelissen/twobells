@@ -54,7 +54,7 @@ def test_stale_section_uses_accent_colour():
 
 def test_inverted_row_is_mostly_black():
     plain = render(board([Row("07:12", "Manchester", "On time")]), PALETTE)
-    inverted = render(board([Row("07:12", "Manchester", "CANC", Style.INVERTED)]), PALETTE)
+    inverted = render(board([Row("07:12", "Manchester", "Cancelled", Style.INVERTED)]), PALETTE)
     black = lambda img: dict((c, n) for n, c in img.getcolors())[PALETTE.black]
     assert black(inverted) > black(plain) + WIDTH * 8
 
@@ -220,3 +220,32 @@ def test_no_leave_text_for_a_train_that_is_not_drawn():
     for_third = dataclasses.replace(for_fourth, trains=dataclasses.replace(for_fourth.trains, leave_for=2))
     assert ink_in_right_half_of_train_label_row(render(for_fourth, PALETTE)) == 0
     assert ink_in_right_half_of_train_label_row(render(for_third, PALETTE)) > 30
+
+
+def label_row_inks(image, y0=17, y1=28):
+    """x positions of accent and of black ink along the train section's label row."""
+    accent, black = [], []
+    for x in range(WIDTH):
+        column = {image.getpixel((x, y)) for y in range(y0, y1)}
+        if PALETTE.accent in column:
+            accent.append(x)
+        if PALETTE.black in column:
+            black.append(x)
+    return accent, black
+
+
+def test_not_updating_and_leave_text_share_the_label_row_without_touching():
+    rows = [Row("07:12", "Manchester Piccadilly", "On time")]
+    image = render(board(rows, stale_trains=True, train_leave="Leave 07:05 (07:12)"), PALETTE)
+    accent, black = label_row_inks(image)
+    leave = [x for x in black if x > max(accent)]
+    assert leave, "leave text drawn"
+    assert min(leave) - max(accent) >= 6
+
+
+def test_cancelled_row_keeps_its_status_whole_on_the_phat():
+    fonts = load_fonts()
+    row = Row("07:12", "Manchester Piccadilly", "Cancelled", Style.INVERTED)
+    layout = row_layout(row, fonts)
+    assert layout.middle_x + fonts.regular.getlength(layout.middle) < layout.right_x
+    assert layout.right_x + fonts.bold.getlength("Cancelled") <= WIDTH

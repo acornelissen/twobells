@@ -39,13 +39,13 @@ def _target(dep: Departure) -> str:
 
 
 PLAIN = Wording(
-    "On time", "CANC", "Delayed", "?",
+    "On time", "Cancelled", "Delayed", "No info",
     late=lambda dep: f"+{dep.minutes_late}",
     leave=lambda leave, target: f"Leave {leave} ({target})",
     leave_soon=lambda when, target: f"Leave {when} ({target})",
 )
 SIGN = Wording(
-    "On time", "Cancelled", "Delayed", "-",
+    "On time", "Cancelled", "Delayed", "No info",
     late=lambda dep: f"Exp {dep.expected}",
     # Drawn under the train it refers to, so the time alone is enough.
     leave=lambda leave, target: f"Leave by {leave}",

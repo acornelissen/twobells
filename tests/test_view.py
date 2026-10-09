@@ -53,13 +53,18 @@ def test_delayed_train_without_estimate():
 
 def test_cancelled_train_is_inverted_and_labelled():
     [row] = view(trains=[train(status=Status.CANCELLED)]).trains.rows
-    assert row.right == "CANC"
+    assert row.right == "Cancelled"
     assert row.style is Style.INVERTED
 
 
 def test_unknown_train_status():
     [row] = view(trains=[train(status=Status.UNKNOWN)]).trains.rows
-    assert row.right == "?"
+    assert row.right == "No info"
+
+
+def test_sign_wording_for_unknown_train_status():
+    [row] = view(trains=[train(status=Status.UNKNOWN)], wording=SIGN).trains.rows
+    assert row.right == "No info"
 
 
 def test_departed_services_are_dropped():
