@@ -66,13 +66,20 @@ def _entries(payload: dict, directions: Iterable[str] | None) -> list[dict]:
     return [e for group in groups for e in group if _matches(e, directions)]
 
 
+def _dated(
+    payload: dict, directions: Iterable[str] | None, stop_label: str | None
+) -> list[tuple[tuple[str, str], Departure]]:
+    """Departures in order, each with its (date, time), which orders them across midnight."""
+    entries = sorted(_entries(payload, directions), key=_sort_key)
+    return [(_sort_key(e), _parse_bus(e, stop_label)) for e in entries]
+
+
 def parse_stop(
     payload: dict,
     directions: Iterable[str] | None = None,
     stop_label: str | None = None,
 ) -> list[Departure]:
-    entries = sorted(_entries(payload, directions), key=_sort_key)
-    return [_parse_bus(e, stop_label) for e in entries]
+    return [dep for _, dep in _dated(payload, directions, stop_label)]
 
 
 class TransportApiBusSource:
@@ -130,7 +137,11 @@ class TransportApiBusSource:
         return self.parse(self.fetch_raw(atco), label)
 
     def fetch(self) -> list[Departure]:
+        # Merged on date and time: by time alone, 00:05 at one stop would beat 23:55 at another.
         merged = [
-            dep for label, atco in self._stops.items() for dep in self.fetch_stop(label, atco)
+            pair
+            for label, atco in self._stops.items()
+            for pair in _dated(self.fetch_raw(atco), self._directions, label)
         ]
-        return sorted(merged, key=lambda d: d.departs_at)[: self._rows]
+        merged.sort(key=lambda pair: pair[0])
+        return [dep for _, dep in merged[: self._rows]]

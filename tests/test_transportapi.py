@@ -120,6 +120,19 @@ def test_departures_from_all_stops_are_merged_in_time_order():
     assert [(d.service, d.stop) for d in deps] == [("61", "B"), ("341", "A")]
 
 
+def test_merged_stops_keep_their_order_across_midnight():
+    def at(time, date):
+        return bus(aimed_departure_time=time, best_departure_estimate=time, date=date)
+
+    # At 23:50: stop A has the 23:55 and 00:20, stop B the 00:05.
+    payloads = {
+        "a": stop(at("23:55", "2026-10-09"), at("00:20", "2026-10-10")),
+        "b": stop(at("00:05", "2026-10-10")),
+    }
+    deps = source({"A": "a", "B": "b"}, payloads, rows=2).fetch()
+    assert [(d.scheduled, d.stop) for d in deps] == [("23:55", "A"), ("00:05", "B")]
+
+
 def test_source_truncates_to_requested_rows_after_filtering():
     payload = stop(
         bus(direction="Hayfield"),
