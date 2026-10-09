@@ -59,21 +59,31 @@ def merge(base: dict, over: dict) -> dict:
     return merged
 
 
-def read_config(path: Path | str) -> dict:
-    """config.toml with the web page's settings layered over it."""
-    data = tomllib.loads(Path(path).read_text())
+def read_base(path: Path | str) -> dict:
+    """config.toml alone, without the web page's settings."""
+    return tomllib.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def read_overlay(data: dict) -> dict:
+    """The web page's saved settings for already-read config.toml data; empty if none."""
     folder = state_dir(data)
     if folder is None:
-        return data
+        return {}
     overlay = folder / OVERLAY_NAME
     try:
-        saved = tomllib.loads(overlay.read_text())
+        saved = tomllib.loads(overlay.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return data
-    except tomllib.TOMLDecodeError as error:
+        return {}
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as error:
         raise ConfigError(f"{overlay}: {error}") from error
     saved.pop("state_file", None)  # it decides where the overlay is; only config.toml sets it
-    return merge(data, saved)
+    return saved
+
+
+def read_config(path: Path | str) -> dict:
+    """config.toml with the web page's settings layered over it."""
+    data = read_base(path)
+    return merge(data, read_overlay(data))
 
 
 @dataclass(frozen=True)

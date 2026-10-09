@@ -12,6 +12,7 @@ import html
 import json
 import os
 import re
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -21,7 +22,8 @@ from .config import (
     OVERLAY_NAME,
     SECRETS_OVERLAY_NAME,
     merge,
-    read_config,
+    read_base,
+    read_overlay,
     settings_from,
     state_dir,
 )
@@ -207,8 +209,17 @@ def _shown(value, kind: str) -> str:
     return str(value)
 
 
+def _toml_string(value: str) -> str:
+    """A TOML basic string. JSON's escapes are TOML's too, except that JSON
+    writes characters beyond the BMP as surrogate pairs, which TOML rejects,
+    and leaves DEL raw, which TOML forbids."""
+    if any("\ud800" <= c <= "\udfff" for c in value):
+        raise ValueError("Text has a broken character")
+    return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
 def _toml_key(key: str) -> str:
-    return key if re.match(r"^[A-Za-z0-9_-]+$", key) else json.dumps(key)
+    return key if re.match(r"^[A-Za-z0-9_-]+$", key) else _toml_string(key)
 
 
 def _toml_value(value) -> str:
@@ -217,7 +228,7 @@ def _toml_value(value) -> str:
     if isinstance(value, int):
         return str(value)
     if isinstance(value, str):
-        return json.dumps(value)  # a valid TOML basic string
+        return _toml_string(value)
     if isinstance(value, list):
         return "[" + ", ".join(_toml_value(v) for v in value) + "]"
     raise TypeError(f"Can't write {type(value).__name__} to TOML")
@@ -246,7 +257,7 @@ def _write(path: Path, text: str, mode: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
-    with os.fdopen(fd, "w") as handle:
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(text)
     os.chmod(tmp, mode)
     os.replace(tmp, path)
@@ -263,6 +274,15 @@ class SettingsForm:
             raise ConfigError("config.toml needs a state_file before settings can be saved")
         return folder / OVERLAY_NAME, folder / SECRETS_OVERLAY_NAME
 
+    def _read(self) -> tuple[dict, str]:
+        """The settings in force, and a problem with the saved settings file if
+        it can't be read: then config.toml's alone, so the page can replace it."""
+        base = read_base(self._config_path)
+        try:
+            return merge(base, read_overlay(base)), ""
+        except ConfigError as error:
+            return base, str(error)
+
     def _current(self, data: dict) -> dict[str, str]:
         values = {}
         for f in _fields(data.get("display", "inky")):
@@ -274,7 +294,7 @@ class SettingsForm:
         return values
 
     def save(self, fields: dict[str, str]) -> dict[str, str]:
-        data = read_config(self._config_path)
+        data, _ = self._read()
         display = data.get("display", "inky")
         errors: dict[str, str] = {}
         overlay: dict = {}
@@ -306,8 +326,15 @@ class SettingsForm:
             settings_from(merge(data, overlay), env)
         except (ConfigError, KeyError, TypeError, ValueError) as error:
             return {"_form": f"Not saved: {error}"}
+        try:
+            text = to_toml(overlay)
+            readable = tomllib.loads(text) == overlay
+        except (ValueError, TypeError):
+            readable = False
+        if not readable:
+            return {"_form": "Not saved: some text can't be stored. Remove any unusual characters and try again."}
         settings_path, secrets_path = self._paths(data)
-        _write(settings_path, to_toml(overlay), 0o640)
+        _write(settings_path, text, 0o640)
         if keys:
             saved = {}
             if secrets_path.exists():
@@ -322,7 +349,7 @@ class SettingsForm:
     def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,
                values: dict[str, str] | None = None) -> str:
         errors = errors or {}
-        data = read_config(self._config_path)
+        data, broken = self._read()
         display = data.get("display", "inky")
         current = self._current(data)
         shown = {**current, **(values or {})}
@@ -337,6 +364,11 @@ class SettingsForm:
         )
         if message:
             out.append(f'<p class="saved" role="status">{e(message)}</p>')
+        if broken:
+            out.append(
+                '<div class="summary" role="alert"><h2>The saved settings file is broken</h2>'
+                f"<p>{e(broken)}</p><p>The page shows config.toml's settings. Saving replaces the broken file.</p></div>"
+            )
         if errors:
             items = "".join(
                 f'<li><a href="#{e(name)}">{e(text)}</a></li>' if name != "_form" else f"<li>{e(text)}</li>"

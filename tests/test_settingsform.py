@@ -185,3 +185,34 @@ def test_a_screen_can_turn_a_quarter(tmp_path):
 def test_toml_writer_round_trips():
     data = {"title": 'Say "hi" \\ there', "rotate": 90, "train": {"windows": ["Mon-Fri 06:30-09:30"]}, "bus": {"stops": {"A": "1000DGHS0900"}, "rows": 3}}
     assert tomllib.loads(to_toml(data)) == data
+
+
+def test_toml_writer_round_trips_characters_toml_is_fussy_about():
+    data = {"title": "Bus 🚌 café\x7f\x01\ttab", "train": {"directions": ["Hyde ➜ 🚏"]}}
+    assert tomllib.loads(to_toml(data)) == data
+
+
+def test_an_emoji_title_saves_and_loads(setup):
+    form, config, state, _ = setup
+    assert form.save(fields_of(form) | {"title": "Bus 🚌"}) == {}
+    assert load_config(config, ENV).board.title == "Bus 🚌"
+    assert "🚌" in (state / "settings.toml").read_text(encoding="utf-8")
+
+
+def test_text_toml_cannot_hold_is_refused_not_written(setup):
+    form, config, state, _ = setup
+    errors = form.save(fields_of(form) | {"bus_directions": "Hyde\ud800"})  # a lone surrogate
+    assert errors and not (state / "settings.toml").exists()
+
+
+def test_a_broken_settings_file_still_shows_the_page_and_saving_replaces_it(setup):
+    form, config, state, _ = setup
+    state.mkdir()
+    (state / "settings.toml").write_text("title = \n")
+    page = form.render("tok")
+    assert "saved settings file is broken" in page and 'role="alert"' in page
+    fields = fields_of(form)
+    assert fields["title"] == "Glossop > Manchester Picc"  # config.toml's
+    assert form.save(fields | {"title": "Fixed"}) == {}
+    assert load_config(config, ENV).board.title == "Fixed"
+    assert "broken" not in form.render("tok")
