@@ -611,3 +611,84 @@ def test_probe_bus_with_bods_says_why_it_cannot_use_the_timetable(bods_env, caps
     captured = capsys.readouterr()
     assert "there is no bus timetable yet" in captured.out
     assert "departureboard timetable" in captured.out
+
+
+# The web dashboard
+
+
+def test_dashboard_options_parse_with_their_defaults():
+    from departureboard.cli import _parser
+
+    args = _parser().parse_args(["dashboard"])
+    assert (args.state_dir, args.host, args.port, args.lan, args.no_browser) == (None, "127.0.0.1", None, False, False)
+    assert args.config == "/etc/departureboard/config.toml"
+    args = _parser().parse_args([
+        "dashboard", "--config", "c.toml", "--secrets", "/nonexistent", "--state-dir", "/data",
+        "--host", "0.0.0.0", "--port", "8090", "--lan", "--no-browser",
+    ])
+    assert (args.config, args.secrets, args.state_dir, args.host, args.port, args.lan, args.no_browser) == (
+        "c.toml", "/nonexistent", "/data", "0.0.0.0", 8090, True, True,
+    )
+
+
+@pytest.mark.parametrize("port", ["-1", "65536", "http", ""])
+def test_dashboard_refuses_a_port_that_is_not_one(port, capsys):
+    with pytest.raises(SystemExit):
+        main(["dashboard", "--port", port])
+    assert "port number" in capsys.readouterr().err
+
+
+@pytest.fixture
+def dashboard_config(tmp_path, monkeypatch):
+    """A trains-only config whose key comes from the environment, as in Docker."""
+    monkeypatch.setenv("RDM_API_KEY", "from-the-environment")
+    config = tmp_path / "config.toml"
+    config.write_text('title = "Glossop"\n[train]\ncrs = "GLO"\n')
+    return config
+
+
+def test_dashboard_never_moves_off_a_port_it_was_given(dashboard_config, tmp_path, capsys):
+    import socket
+
+    with socket.socket() as blocker:
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen()
+        port = blocker.getsockname()[1]
+        code = main(["dashboard", "--config", str(dashboard_config), "--secrets", str(tmp_path / "nonexistent"),
+                     "--state-dir", str(tmp_path / "dash"), "--port", str(port), "--no-browser"])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert f"127.0.0.1:{port}" in err and "--port" in err
+
+
+def test_dashboard_runs_until_interrupted_and_lets_go_of_its_folder(dashboard_config, tmp_path, monkeypatch, capsys):
+    from departureboard import dashserver, http
+    from departureboard.dashconfig import load_dashboard
+
+    def offline(request, timeout):
+        raise OSError("offline in tests")
+
+    def interrupted(self, poll_interval=0.5):
+        raise KeyboardInterrupt
+
+    opened = []
+    monkeypatch.setattr(http, "urlopen", offline)
+    monkeypatch.setattr(dashserver.DashboardServer, "serve_forever", interrupted)
+    monkeypatch.setattr("webbrowser.open", opened.append)
+    folder = tmp_path / "dash"
+    code = main(["dashboard", "--config", str(dashboard_config), "--secrets", str(tmp_path / "nonexistent"),
+                 "--state-dir", str(folder), "--port", "0", "--lan"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert opened and opened[0].startswith("http://localhost:") and opened[0] in out
+    assert "On your home network: http://" in out
+    assert (folder / "history.sqlite3").exists()
+    load_dashboard(dashboard_config, {"RDM_API_KEY": "k"}, folder).close()  # the lock was let go
+
+
+def test_dashboard_reports_config_errors_without_traceback(tmp_path, capsys):
+    config = tmp_path / "config.toml"
+    config.write_text("[dashboard]\ntrain_rows = 50\n")
+    code = main(["dashboard", "--config", str(config), "--state-dir", str(tmp_path / "dash")])
+    assert code == 2
+    assert "train_rows must be a whole number from 1 to 20" in capsys.readouterr().err

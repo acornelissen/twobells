@@ -8,6 +8,7 @@
   departureboard route    print a [bus.routes] block for the screen's bus page (run on a laptop)
   departureboard web      serve the settings page on the home network
   departureboard timetable  build the BODS bus timetable for your stops, if due
+  departureboard dashboard  serve the web dashboard (Mac or NAS), opening it in the browser
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ import argparse
 import json
 import logging
 import os
+import signal
+import socket
 import sys
 import threading
 import time
@@ -491,6 +494,87 @@ def _emulate(args) -> int:
     return 0
 
 
+def _dashboard(args) -> int:
+    import sqlite3
+
+    from . import dashserver
+    from .collector import Collector
+    from .dashconfig import load_dashboard
+    from .history import History
+    from .snapshot import Hub
+
+    dash = load_dashboard(args.config, _env(args.config, args.secrets), args.state_dir)
+    history = None
+    try:
+        try:
+            history = History(dash.state_dir)
+        except sqlite3.Error as error:
+            print(f"Can't open the punctuality history in {dash.state_dir}: {error}", file=sys.stderr)
+            return 2
+        hub = Hub(dash.title, dash.walk)
+        collector = Collector(dash, hub, history)
+        app = dashserver.DashboardApp(
+            hub,
+            dashserver.StaticFiles.load(dashserver.default_static_dir()),
+            collector.healthy,
+            recent=history.recent,
+            history_days=dash.options.history_days,
+            allowed_hosts=dash.options.allowed_hosts,
+        )
+        host = "0.0.0.0" if args.lan else args.host
+        # A port asked for is that port or nothing (Docker's health check expects
+        # it); without one, the next free port after the default will do.
+        port, attempts = (dashserver.DEFAULT_PORT, 10) if args.port is None else (args.port, 1)
+        try:
+            server = dashserver.make_server(app, host, port, attempts)
+        except OSError as error:
+            hint = " Stop the other process or pass another --port." if args.port is not None else ""
+            print(f"Can't listen on {host}:{port}: {error.strerror or error}.{hint}", file=sys.stderr)
+            return 2
+        port = server.server_address[1]
+        collector.start()
+        url = f"http://localhost:{port}/"
+        print(f"Dashboard at {url}  (Ctrl+C to stop)")
+        if args.lan:
+            name = socket.gethostname().split(".")[0]
+            print(f"On your home network: http://{name}.local:{port}/ or this computer's IP address and port {port}")
+        if not args.no_browser:
+            webbrowser.open(url)
+        # docker stop sends SIGTERM: shut down as for Ctrl+C (signals reach the main thread only).
+        on_main = threading.current_thread() is threading.main_thread()
+        previous = signal.signal(signal.SIGTERM, _interrupt) if on_main else None
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            if on_main:
+                signal.signal(signal.SIGTERM, previous)
+            hub.close()
+            if not collector.stop(timeout=5):
+                logging.info("A dashboard poller was still fetching; it ends with the process")
+            server.server_close()
+    finally:
+        if history is not None:
+            history.close()
+        dash.close()
+    return 0
+
+
+def _interrupt(signum, frame) -> None:
+    raise KeyboardInterrupt
+
+
+def _port(text: str) -> int:
+    try:
+        port = int(text)
+    except ValueError:
+        port = -1
+    if not 0 <= port <= 65535:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a port number from 0 to 65535")
+    return port
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="departureboard")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -555,6 +639,14 @@ def _parser() -> argparse.ArgumentParser:
     emulate.add_argument("--ticks", type=int, help=argparse.SUPPRESS)
     emulate.add_argument("--no-browser", action="store_true")
     emulate.set_defaults(handler=_emulate)
+
+    dashboard = with_config(sub.add_parser("dashboard", help="serve the web dashboard and open it in the browser"))
+    dashboard.add_argument("--state-dir", help="the dashboard's own folder for its timetable and history")
+    dashboard.add_argument("--host", default="127.0.0.1", help="address to listen on (default: this computer only)")
+    dashboard.add_argument("--port", type=_port, help="port to listen on (default: 8090, or the next free one)")
+    dashboard.add_argument("--lan", action="store_true", help="listen on all addresses, for phones at home")
+    dashboard.add_argument("--no-browser", action="store_true", help="don't open the browser")
+    dashboard.set_defaults(handler=_dashboard)
     return parser
 
 
