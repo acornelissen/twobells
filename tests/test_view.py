@@ -183,3 +183,8 @@ def test_sign_wording_for_train_statuses():
 def test_sign_wording_for_cancelled_bus():
     [row] = view(buses=[bus(status=Status.CANCELLED)], wording=SIGN).buses.rows
     assert row.right == "Cancelled"
+
+
+def test_sign_wording_for_leave_line():
+    v = view(trains=[train("07:12")], now="07:00", walk=WALK, wording=SIGN)
+    assert v.trains.leave == "Leave by 07:05 for the 07:12"

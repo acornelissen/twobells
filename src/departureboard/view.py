@@ -29,10 +29,23 @@ class Wording:
     delayed: str
     unknown: str
     late: Callable[[Departure], str]
+    leave: Callable[[str, str], str]  # (leave time, departure it is for)
 
 
-PLAIN = Wording("On time", "CANC", "Delayed", "?", lambda dep: f"+{dep.minutes_late}")
-SIGN = Wording("On time", "Cancelled", "Delayed", "-", lambda dep: f"Exp {dep.expected}")
+def _target(dep: Departure) -> str:
+    return dep.scheduled if dep.mode == "train" else dep.service
+
+
+PLAIN = Wording(
+    "On time", "CANC", "Delayed", "?",
+    late=lambda dep: f"+{dep.minutes_late}",
+    leave=lambda leave, target: f"Leave {leave} ({target})",
+)
+SIGN = Wording(
+    "On time", "Cancelled", "Delayed", "-",
+    late=lambda dep: f"Exp {dep.expected}",
+    leave=lambda leave, target: f"Leave by {leave} for the {target}",
+)
 
 
 @dataclass(frozen=True)
@@ -93,20 +106,19 @@ def _bus_row(dep: Departure, walk: WalkTimes | None, words: Wording) -> Row:
     return Row(dep.service, dep.destination, right, style, f"leave {leave}" if leave else None, dep.stop)
 
 
-def _leave_text(departures: list[Departure], walk: WalkTimes | None, now: str) -> str | None:
+def _leave_text(departures, walk: WalkTimes | None, now: str, words: Wording) -> str | None:
     found = leave_by(departures, walk, now) if walk else None
     if found is None:
         return None
     leave, dep = found
-    target = dep.scheduled if dep.mode == "train" else dep.service
-    return f"Leave {leave} ({target})"
+    return words.leave(leave, _target(dep))
 
 
 def _section(label, departures, to_row, now, empty_text, stale, walk, words) -> Section:
     upcoming = [d for d in departures if not d.is_gone(now)]
     rows = tuple(to_row(d, walk, words) for d in upcoming)
     # Rows that carry their own leave time make a header summary redundant.
-    header = None if any(r.leave for r in rows) else _leave_text(upcoming, walk, now)
+    header = None if any(r.leave for r in rows) else _leave_text(upcoming, walk, now, words)
     return Section(label, rows, empty_text, stale, header)
 
 
