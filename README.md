@@ -99,9 +99,11 @@ departureboard emulate --fake-train \
 departureboard emulate --config config.toml --secrets secrets.env   # all live
 ```
 
-It opens <http://127.0.0.1:8780/>. Choose realistic (20 s), quick or instant refresh, and 1× to 4× scale; 1× is the panel's real pixel count. The demo drops the bus feed from 07:30 to 07:52 simulated time, so the `! STALE` flag shows up.
+It opens <http://127.0.0.1:8780/>. Choose realistic (20 s), quick or instant refresh, and 1× to 4× scale; 1× is the panel's real pixel count. The demo drops the bus feed from 07:30 to 07:52 simulated time, so the "Not updating" badge shows up.
 
-Live modes keep state in `state_file`, so the TransportAPI budget holds across restarts, and buses are only polled inside their windows.
+On start the emulator fetches every source once, even outside its windows, so the board fills straight away; after that it polls only inside the windows. A live start therefore costs one TransportAPI hit per bus stop. The daily budget still applies, and when it is spent the first fetch is skipped too. `departureboard run` does the same on its very first run, when there is no saved state yet.
+
+Live modes keep state in `state_file`, so the TransportAPI budget holds across restarts.
 
 ## Layout
 

@@ -146,3 +146,45 @@ def test_probe_train_reports_http_errors_on_one_line(tmp_path, monkeypatch, caps
     assert code == 1
     assert "403" in out and "Forbidden" in out
     assert "Traceback" not in out
+
+
+def test_emulate_primes_the_first_tick(monkeypatch):
+    import departureboard.cli as cli
+
+    seen = {}
+    monkeypatch.setattr(cli, "run_loop", lambda *a, **kw: seen.update(kw))
+    assert main(["emulate", "--demo", "--no-browser", "--port", "0"]) == 0
+    assert seen.get("prime") is True
+
+
+def _run_setup(tmp_path, monkeypatch):
+    from datetime import datetime
+
+    import departureboard.cli as cli
+    from departureboard.darwin import DarwinSource
+
+    calls = []
+    monkeypatch.setattr(DarwinSource, "fetch", lambda self: calls.append(1) or [])
+    monkeypatch.setattr(cli, "_local_now", lambda tz: datetime(2026, 10, 10, 12, 0))  # Saturday
+    config = tmp_path / "config.toml"
+    config.write_text(
+        f'state_file = "{tmp_path / "state.json"}"\n'
+        '[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n'
+    )
+    secrets = tmp_path / "secrets.env"
+    secrets.write_text("RDM_API_KEY=k\n")
+    args = ["run", "--config", str(config), "--secrets", str(secrets), "--png", str(tmp_path / "out.png")]
+    return args, calls
+
+
+def test_first_ever_run_primes_outside_windows(tmp_path, monkeypatch):
+    args, calls = _run_setup(tmp_path, monkeypatch)
+    assert main(args) == 0
+    assert calls == [1]
+
+
+def test_later_runs_respect_windows(tmp_path, monkeypatch):
+    args, calls = _run_setup(tmp_path, monkeypatch)
+    main(args)
+    main(args)
+    assert calls == [1]

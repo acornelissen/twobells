@@ -112,7 +112,9 @@ def _run(args) -> int:
     )
     store = StateStore(settings.state_file)
     state = store.load()
-    result = run_once(settings.board, state, display, _local_now(settings.timezone))
+    # A fresh install (no saved state) fetches everything once, so the panel
+    # isn't blank until the next poll window opens.
+    result = run_once(settings.board, state, display, _local_now(settings.timezone), prime=not state)
     store.save(state)
     logging.info("rendered=%s", result.rendered)
     return 0
@@ -191,6 +193,7 @@ def _emulate(args) -> int:
             ticks=args.ticks,
             store=em.store,
             on_tick=lambda now, result: em.display.tick(now, result.rendered),
+            prime=True,  # fill the board straight away rather than waiting for a window
         )
     except KeyboardInterrupt:
         pass
