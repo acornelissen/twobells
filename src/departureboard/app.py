@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -180,6 +181,15 @@ def _route_view(board: Board, state: dict, view: BoardView, now: datetime, clock
     )
 
 
+def _render_key(shown: BoardView | RouteView, theme: Theme, display: Display) -> str:
+    """What is on the panel: the words, and how they are drawn. A new look, accent
+    or rotation has to reach e-paper even when the words have not changed."""
+    # The display classes keep their rotation private; a public `rotate` wins if there is one.
+    rotate = getattr(display, "rotate", getattr(display, "_rotate", 0))
+    parts = [shown.signature(), theme.name, repr(display.panel), repr(display.palette), rotate]
+    return hashlib.sha256(json.dumps(parts, default=str).encode()).hexdigest()
+
+
 def run_once(
     board: Board, state: dict, display: Display, now: datetime, prime: bool = False
 ) -> RunResult:
@@ -211,13 +221,14 @@ def run_once(
 
     last = state.get("last_render", {})
     last_at = from_iso(last.get("at"))
-    changed = shown.signature() != last.get("signature")
+    key = _render_key(shown, board.theme, display)
+    changed = key != last.get("signature")
     too_soon = not live and last_at is not None and now - last_at < board.min_redraw
 
     if changed and not too_soon:
         draw = board.theme.render_route if page == "route" else board.theme.render
         display.show(draw(shown, display.palette, display.panel))
-        state["last_render"] = {"signature": shown.signature(), "at": to_iso(now)}
+        state["last_render"] = {"signature": key, "at": to_iso(now)}
         return RunResult(view, rendered=True, route=route, page=page)
     return RunResult(view, rendered=False, route=route, page=page)
 

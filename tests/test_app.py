@@ -547,3 +547,47 @@ def test_malformed_saved_departures_are_skipped():
     state["sources"]["train"]["departures"].append({"mode": "train", "unexpected": True})
     result = run_once(board, state, display, THU_0700 + timedelta(minutes=1))
     assert [r.left for r in result.view.trains.rows] == ["07:12"]
+
+
+# --- How the board is drawn counts as a change (oz5.12) ---
+
+
+def test_new_look_alone_redraws_epaper_once_the_gap_has_passed():
+    from departureboard.themes import theme_named
+
+    trains, buses, board, display, state = setup()
+    run_once(board, state, display, THU_0700)
+    signed = dataclasses.replace(board, theme=theme_named("sign"))
+    assert not run_once(signed, state, display, THU_0700 + timedelta(minutes=1)).rendered
+    assert run_once(signed, state, display, THU_0700 + timedelta(minutes=2)).rendered
+    assert not run_once(signed, state, display, THU_0700 + timedelta(minutes=4)).rendered
+
+
+def test_new_accent_or_rotation_redraws_epaper():
+    trains, buses, board, display, state = setup()
+    run_once(board, state, display, THU_0700)
+    yellow = FakeDisplay()
+    yellow.palette = Palette(white=0, black=1, accent=3)
+    assert run_once(board, state, yellow, THU_0700 + timedelta(minutes=2)).rendered
+    turned = FakeDisplay()
+    turned.palette = yellow.palette
+    turned.rotate = 180
+    assert run_once(board, state, turned, THU_0700 + timedelta(minutes=4)).rendered
+
+
+def test_turning_a_real_inky_round_redraws_it():
+    from departureboard.display import InkyDisplay
+
+    class Inky:
+        WHITE, BLACK, RED = 0, 1, 2
+
+        def set_image(self, image):
+            pass
+
+        def show(self):
+            pass
+
+    trains, buses, board, display, state = setup()
+    run_once(board, state, InkyDisplay(device=Inky()), THU_0700)
+    assert not run_once(board, state, InkyDisplay(device=Inky()), THU_0700 + timedelta(minutes=2)).rendered
+    assert run_once(board, state, InkyDisplay(device=Inky(), rotate_180=True), THU_0700 + timedelta(minutes=4)).rendered
