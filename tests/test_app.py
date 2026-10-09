@@ -539,3 +539,11 @@ def test_run_loop_saves_state_before_a_draw_failure_escapes():
     with pytest.raises(OSError):
         run_loop(board, state, BrokenDisplay(), lambda: THU_0700, 0, ticks=1, sleep=lambda s: None, store=store)
     assert store.saves == 1
+
+
+def test_malformed_saved_departures_are_skipped():
+    trains, buses, board, display, state = setup()
+    run_once(board, state, display, THU_0700)
+    state["sources"]["train"]["departures"].append({"mode": "train", "unexpected": True})
+    result = run_once(board, state, display, THU_0700 + timedelta(minutes=1))
+    assert [r.left for r in result.view.trains.rows] == ["07:12"]

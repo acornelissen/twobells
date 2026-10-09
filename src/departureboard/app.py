@@ -18,7 +18,7 @@ from .panel import Panel
 from .render import Palette
 from .route import RouteStrip, RouteView, locate, target, where
 from .schedule import PollPolicy
-from .state import departure_from_dict, departure_to_dict, from_iso, to_iso
+from .state import departure_to_dict, departures_from_dicts, from_iso, to_iso
 from .view import BoardView, build_view
 from .themes import THEMES, Theme
 from .walk import WalkTimes, leave_time
@@ -125,7 +125,7 @@ def _departures(state: dict, name: str, now: datetime) -> list[Departure]:
     fetched = from_iso(entry.get("last_success"))
     if fetched is None:
         return []
-    departures = [departure_from_dict(d) for d in entry.get("departures", [])]
+    departures = departures_from_dicts(entry.get("departures", []))
     return [d for d in departures if not d.has_left(now, fetched)]
 
 

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
 from .model import Departure, Status
+
+log = logging.getLogger(__name__)
 
 
 def departure_to_dict(dep: Departure) -> dict:
@@ -19,6 +22,17 @@ def departure_to_dict(dep: Departure) -> dict:
 
 def departure_from_dict(data: dict) -> Departure:
     return Departure(**{**data, "status": Status(data["status"])})
+
+
+def departures_from_dicts(items: list) -> list[Departure]:
+    """Saved departures, skipping any that don't read back (hand-edited, or from another version)."""
+    departures = []
+    for item in items:
+        try:
+            departures.append(departure_from_dict(item))
+        except (TypeError, ValueError, KeyError) as error:
+            log.warning("Skipping a saved departure that doesn't read back: %r (%s)", item, error)
+    return departures
 
 
 def to_iso(moment: datetime | None) -> str | None:
@@ -34,13 +48,26 @@ class StateStore:
         self._path = Path(path)
 
     def load(self) -> dict:
+        """The saved state, or {} if there is none or it can't be read: a bad file
+        must not stop the board, which refills it on the next fetch."""
         try:
-            return json.loads(self._path.read_text())
-        except (FileNotFoundError, json.JSONDecodeError):
+            state = json.loads(self._path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
             return {}
+        except ValueError as error:  # bad JSON or bad UTF-8
+            log.warning("Ignoring unreadable state file %s: %s", self._path, error)
+            return {}
+        if not isinstance(state, dict):
+            log.warning("Ignoring state file %s: not a JSON object", self._path)
+            return {}
+        return state
 
     def save(self, state: dict) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(state, indent=2))
+        with open(tmp, "w", encoding="utf-8") as file:
+            file.write(json.dumps(state, indent=2))
+            file.flush()
+            # On disk before it replaces the old file, so a power cut can't leave it empty.
+            os.fsync(file.fileno())
         os.replace(tmp, self._path)
