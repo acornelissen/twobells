@@ -417,6 +417,18 @@ def _sun(conditions: Conditions, today: date, tz: tzinfo) -> dict | None:
     return {"sunrise": iso(rise.replace(tzinfo=tz)), "sunset": iso(set_.replace(tzinfo=tz))}
 
 
+def rain_sentence(hours: list[Hour], now: datetime, until: datetime, threshold: int) -> str | None:
+    """The rain sentence, worded so it only changes when the weather does:
+    "Rain now (92%)" through an hour of rain already under way, otherwise the
+    board's "Rain from 23:00 (80%)" at the start of the hour it is due."""
+    line = rain_line(hours, now, until, threshold, live=False)
+    if line is None:
+        return None
+    first = next(h for h in hours if h.start + timedelta(hours=1) > now and h.probability is not None
+                 and h.probability >= threshold)
+    return f"Rain now ({first.probability}%)" if first.start <= now else line
+
+
 def weather_part(conditions: Conditions | None, now: datetime, status: dict, threshold: int) -> dict:
     """The weather section. `now` is aware, in the zone the forecast was asked for."""
     if conditions is None:
@@ -427,8 +439,7 @@ def weather_part(conditions: Conditions | None, now: datetime, status: dict, thr
     hours = [Hour(h.start, h.probability, h.precipitation) for h in conditions.hours]
     return {
         "status": status,
-        # The hour's start, not "now": the snapshot only changes when the weather does.
-        "rain": rain_line(hours, local, local + RAIN_LOOKAHEAD, threshold, live=False),
+        "rain": rain_sentence(hours, local, local + RAIN_LOOKAHEAD, threshold),
         "now": _current(conditions),
         "hours": [
             {"start": iso(h.start.replace(tzinfo=tz)), "temperature": _round(h.temperature),

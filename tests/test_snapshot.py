@@ -357,8 +357,10 @@ def test_the_rain_sentence_uses_the_threshold():
     hours = conditions().hours
     first_wet = next(h for h in hours if h.start + timedelta(hours=1) > now.replace(tzinfo=None)
                      and h.probability is not None and h.probability >= 1)
+    under_way = first_wet.start <= now.replace(tzinfo=None)
     assert weather_part(conditions(), now, status_block(), 1)["rain"] == (
-        f"Rain from {first_wet.start:%H:%M} ({first_wet.probability}%)"
+        f"Rain now ({first_wet.probability}%)" if under_way
+        else f"Rain from {first_wet.start:%H:%M} ({first_wet.probability}%)"
     )
     assert weather_part(conditions(), now, status_block(), 100)["rain"] is None
 
@@ -483,3 +485,16 @@ def test_touch_and_age_follow_the_clock():
     assert not h.active(600)
     h.publish("weather", {})
     assert h.age() == 0
+
+
+def test_rain_already_falling_is_said_as_now_not_an_hour_gone_by():
+    from datetime import datetime
+    from departureboard.snapshot import rain_sentence
+    from departureboard.weather import Hour
+
+    hours = [Hour(datetime(2026, 10, 9, 22), 92, 0.4), Hour(datetime(2026, 10, 9, 23), 80, 0.3)]
+    now = datetime(2026, 10, 9, 22, 39)
+    assert rain_sentence(hours, now, now + timedelta(hours=2), 50) == "Rain now (92%)"
+    dry_now = [Hour(datetime(2026, 10, 9, 22), 10, 0.0), Hour(datetime(2026, 10, 9, 23), 80, 0.3)]
+    assert rain_sentence(dry_now, now, now + timedelta(hours=2), 50) == "Rain from 23:00 (80%)"
+    assert rain_sentence(dry_now[:1], now, now + timedelta(hours=2), 50) is None
