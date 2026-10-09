@@ -22,13 +22,18 @@ class WalkTimes:
         return self.bus.get(dep.stop or DEFAULT_STOP, self.bus.get(DEFAULT_STOP))
 
 
+def leave_time(dep: Departure, walk: WalkTimes) -> str | None:
+    """When to set off to catch `dep`, or None if cancelled or the walk is unknown."""
+    minutes = walk.minutes(dep)
+    if minutes is None or dep.status is Status.CANCELLED:
+        return None
+    return shift(dep.departs_at, -minutes)
+
+
 def leave_by(departures: list[Departure], walk: WalkTimes, now: str) -> tuple[str, Departure] | None:
     """Leave time for the first departure that can still be reached on foot."""
     for dep in departures:
-        minutes = walk.minutes(dep)
-        if minutes is None or dep.status is Status.CANCELLED:
-            continue
-        leave = shift(dep.departs_at, -minutes)
-        if minutes_between(now, leave) >= 0:
+        leave = leave_time(dep, walk)
+        if leave is not None and minutes_between(now, leave) >= 0:
             return leave, dep
     return None

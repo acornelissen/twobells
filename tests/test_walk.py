@@ -1,5 +1,5 @@
 from departureboard.model import Departure, Status, shift
-from departureboard.walk import WalkTimes, leave_by
+from departureboard.walk import WalkTimes, leave_by, leave_time
 
 
 def train(scheduled, expected=None, status=Status.ON_TIME):
@@ -70,3 +70,16 @@ def test_leave_by_none_without_walk_time():
 def test_buses_use_their_own_stop_walk_time():
     deps = [bus("341", "07:10", stop="A"), bus("61", "07:10", stop="B")]
     assert leave_by(deps, WALK, now="07:05") == ("07:05", deps[1])
+
+
+def test_leave_time_for_one_departure():
+    assert leave_time(bus("341", "07:20", stop="A"), WALK) == "07:14"
+
+
+def test_leave_time_uses_expected_time_when_late():
+    assert leave_time(bus("341", "07:20", expected="07:24", status=Status.LATE), WALK) == "07:18"
+
+
+def test_no_leave_time_for_cancelled_or_unknown_walk():
+    assert leave_time(bus("341", "07:20", status=Status.CANCELLED), WALK) is None
+    assert leave_time(bus("341", "07:20", stop="Z"), WALK) is None
