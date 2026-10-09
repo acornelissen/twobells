@@ -30,7 +30,7 @@ from importlib.resources import files
 from typing import Callable, Mapping, Protocol, Sequence
 from urllib.parse import quote, urlencode
 
-from .holidays import REGION as ENGLAND_AND_WALES
+from .holidays import ENGLAND_AND_WALES
 from .http import get_bytes
 from .osgb import distance_m, grid_to_latlon
 from .routesetup import NAPTAN_URL
