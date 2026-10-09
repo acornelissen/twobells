@@ -195,3 +195,12 @@ def test_later_runs_respect_windows(tmp_path, monkeypatch):
     main(args)
     main(args)
     assert calls == [1]
+
+
+def test_run_png_draws_at_the_configured_display_size(tmp_path):
+    config = tmp_path / "config.toml"
+    state = tmp_path / "state.json"
+    config.write_text(f'display = "waveshare-10in85g"\nstate_file = "{state}"\n')
+    out = tmp_path / "board.png"
+    assert main(["run", "--config", str(config), "--secrets", str(tmp_path / "none.env"), "--png", str(out)]) == 0
+    assert Image.open(out).size == (1360, 480)

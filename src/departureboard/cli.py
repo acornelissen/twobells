@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 
 from .app import run_loop, run_once
 from .config import ConfigError, load_config
-from .display import InkyDisplay, PngDisplay
+from .display import DISPLAY_PANELS, PngDisplay, open_display
 from .emulation import build_emulation
 from .emulator import DEFAULT_PORT, make_server
 from .model import Departure, Status
@@ -107,9 +107,9 @@ def _probe_bus(source, save_dir: str | None) -> int:
 def _run(args) -> int:
     settings = _settings(args)
     display = (
-        PngDisplay(args.png, settings.accent)
+        PngDisplay(args.png, settings.accent, DISPLAY_PANELS[settings.display])
         if args.png
-        else InkyDisplay(settings.accent, rotate_180=settings.rotate_180)
+        else open_display(settings.display, settings.accent, settings.rotate_180)
     )
     store = StateStore(settings.state_file)
     state = store.load()

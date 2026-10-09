@@ -13,9 +13,10 @@ PREFIX=/opt/departureboard
 CONF=/etc/departureboard
 
 apt-get update
-apt-get install -y python3-venv python3-dev fonts-dejavu-core
+# spidev, gpiozero and lgpio drive the Waveshare panel; the venv sees them via system site packages.
+apt-get install -y python3-venv python3-dev fonts-dejavu-core python3-spidev python3-gpiozero python3-lgpio
 
-# Inky pHAT needs SPI and I2C (the I2C bus holds the board's EEPROM for auto-detect).
+# The panels need SPI; the Inky also needs I2C (the I2C bus holds the board's EEPROM for auto-detect).
 raspi-config nonint do_spi 0
 raspi-config nonint do_i2c 0
 
@@ -43,5 +44,6 @@ Installed. Next:
   4. Watch it:         journalctl -u departureboard -f
 
 If the display errors about chip select, add  dtoverlay=spi0-0cs
-to /boot/firmware/config.txt and reboot.
+to /boot/firmware/config.txt and reboot. The Waveshare 10.85" panel always
+needs it: the board drives its two chip selects itself.
 EOF

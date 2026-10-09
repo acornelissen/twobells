@@ -81,3 +81,19 @@ def test_png_display_can_preview_another_panel(tmp_path):
 
     display = PngDisplay(tmp_path / "big.png", panel=WAVESHARE_10IN85G)
     assert display.panel == WAVESHARE_10IN85G
+
+
+def test_open_display_refuses_an_unknown_name():
+    import pytest
+
+    from departureboard.display import open_display
+
+    with pytest.raises(ValueError, match="inky"):
+        open_display("crt", "red")
+
+
+def test_every_display_setting_has_a_panel():
+    from departureboard.display import DISPLAY_PANELS
+    from departureboard.panel import PHAT, WAVESHARE_10IN85G
+
+    assert DISPLAY_PANELS == {"inky": PHAT, "waveshare-10in85g": WAVESHARE_10IN85G}

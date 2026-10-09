@@ -11,6 +11,7 @@ from typing import Mapping
 from .app import Board, SourceConfig
 from .darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL
 from .darwin import DarwinSource
+from .display import DISPLAY_PANELS
 from .schedule import PollPolicy, parse_window
 from .transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
 from .themes import theme_named
@@ -29,6 +30,7 @@ class Settings:
     state_file: Path
     accent: str
     rotate_180: bool
+    display: str = "inky"
 
 
 def _secret(env: Mapping[str, str], name: str) -> str:
@@ -110,6 +112,9 @@ def load_config(
         theme = theme_named(data.get("theme", "sign"))
     except ValueError as error:
         raise ConfigError(str(error)) from error
+    display = data.get("display", "inky")
+    if display not in DISPLAY_PANELS:
+        raise ConfigError(f"Unknown display {display!r}; choose from {', '.join(sorted(DISPLAY_PANELS))}")
     sources = []
     wanted = only or {"train", "bus"}
     if "train" in data and "train" in wanted:
@@ -129,4 +134,5 @@ def load_config(
         state_file=Path(data.get("state_file", "state.json")),
         accent=data.get("accent", theme.accent),
         rotate_180=bool(data.get("rotate_180", False)),
+        display=display,
     )

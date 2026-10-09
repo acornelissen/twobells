@@ -155,3 +155,18 @@ def test_unknown_theme_is_a_config_error(tmp_path):
     path = write(tmp_path, 'theme = "neon"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
     with pytest.raises(ConfigError, match="neon"):
         load_config(path, ENV)
+
+
+def test_display_defaults_to_the_inky(example):
+    assert load_config(example, ENV).display == "inky"
+
+
+def test_waveshare_display_can_be_chosen(tmp_path):
+    path = write(tmp_path, 'display = "waveshare-10in85g"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    assert load_config(path, ENV).display == "waveshare-10in85g"
+
+
+def test_unknown_display_is_a_config_error(tmp_path):
+    path = write(tmp_path, 'display = "crt"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    with pytest.raises(ConfigError, match="crt.*inky"):
+        load_config(path, ENV)

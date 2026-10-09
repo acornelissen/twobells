@@ -1,6 +1,6 @@
 # inky-departures
 
-Glossop train and bus departure board for a Raspberry Pi Zero W with a four-colour Inky pHAT (250x122).
+Glossop train and bus departure board for a Raspberry Pi with a four-colour Inky pHAT (250x122) or a Waveshare 10.85" e-Paper (G) (1360x480).
 
 ![Board preview](docs/preview.png)
 
@@ -78,6 +78,12 @@ journalctl -u departureboard -f
 
 If the display errors about chip select, add `dtoverlay=spi0-0cs` to `/boot/firmware/config.txt` and reboot.
 
+### Waveshare 10.85" e-Paper (G)
+
+Set `display = "waveshare-10in85g"` in `config.toml` and add `dtoverlay=spi0-0cs` to `/boot/firmware/config.txt`: the panel is two controllers side by side, and the board drives both chip selects itself. Waveshare lists the Pi Zero 2 W, 3B, 4B and 5; the original Zero W isn't on the list.
+
+The driver follows Waveshare's `epd10in85g.py` command sequence over `spidev` and `gpiozero`. It doesn't load Waveshare's prebuilt `DEV_Config` shared library. Each sign dot is 4x4 panel pixels.
+
 ## 3. Develop on your laptop
 
 ```bash
@@ -118,7 +124,8 @@ Live modes keep state in `state_file`, so the TransportAPI budget holds across r
 | `themes.py` | `sign` and `plain`: wording plus renderer |
 | `sign.py`, `dotfont.py` | Station board renderer and its dot-matrix font |
 | `render.py` | Plain renderer |
-| `display.py` | Inky pHAT or PNG output |
+| `display.py` | Inky or PNG output; picks the display named in config |
+| `waveshare.py` | Waveshare 10.85" e-Paper (G) driver |
 | `emulator.py`, `emulator.html`, `emulation.py` | Browser panel emulator and its demo/live wiring |
 | `fake.py` | Deterministic fake sources and simulated clock |
 | `app.py` | One tick: poll what's due, redraw only on change |

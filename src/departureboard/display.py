@@ -1,4 +1,4 @@
-"""Output targets: a Pimoroni Inky panel, or a PNG for development."""
+"""Output targets: a Pimoroni Inky, a Waveshare e-paper panel, or a PNG for development."""
 
 from __future__ import annotations
 
@@ -6,8 +6,12 @@ from pathlib import Path
 
 from PIL.Image import Image
 
-from .panel import PHAT, Panel
+from .panel import PHAT, WAVESHARE_10IN85G, Panel
 from .render import Palette
+
+
+# What each `display` setting draws on. An Inky reports its own size once opened.
+DISPLAY_PANELS = {"inky": PHAT, "waveshare-10in85g": WAVESHARE_10IN85G}
 
 
 class InkyDisplay:
@@ -37,6 +41,17 @@ class InkyDisplay:
             image = image.rotate(180)
         self._device.set_image(image)
         self._device.show()
+
+
+def open_display(name: str, accent: str, rotate_180: bool = False):
+    """The display a `display` setting names. Hardware libraries load only when used."""
+    if name == "inky":
+        return InkyDisplay(accent, rotate_180=rotate_180)
+    if name == "waveshare-10in85g":
+        from .waveshare import WaveshareDisplay
+
+        return WaveshareDisplay(accent, rotate_180)
+    raise ValueError(f"Unknown display {name!r}; choose from {', '.join(sorted(DISPLAY_PANELS))}")
 
 
 class PngDisplay:

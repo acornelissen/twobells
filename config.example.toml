@@ -11,6 +11,9 @@ min_redraw_minutes = 2
 theme = "sign"
 # Defaults to the theme's colour. Only reinforces meaning; text always carries it.
 # accent = "yellow"
+# "inky": Pimoroni Inky pHAT (or any Inky the library detects).
+# "waveshare-10in85g": Waveshare 10.85" e-Paper (G), 1360x480. Needs dtoverlay=spi0-0cs.
+display = "inky"
 # Set true if the Pi is mounted with the display upside down.
 rotate_180 = false
 
