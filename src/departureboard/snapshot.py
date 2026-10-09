@@ -532,6 +532,7 @@ class Hub:
         self._rebuilt: float | None = None
         self._touched: float | None = None
         self._closed = False
+        self._resources: dict[str, object] = {}  # served on their own, not in the snapshot
         with self._lock:
             self._rebuild()
 
@@ -588,6 +589,20 @@ class Hub:
         """What the server keeps about a row of the current or previous snapshot."""
         with self._lock:
             return self._lookups.get(row_id) or self._previous.get(row_id)
+
+    def put(self, name: str, value) -> None:
+        """Keep a resource the server answers with on its own (the area map's
+        "area"), outside the snapshot and its version. None removes it."""
+        with self._lock:
+            if value is None:
+                self._resources.pop(name, None)
+            else:
+                self._resources[name] = value
+
+    def get(self, name: str):
+        """A resource kept by put(), or None."""
+        with self._lock:
+            return self._resources.get(name)
 
     def touch(self) -> None:
         """Note that a browser is using the dashboard."""

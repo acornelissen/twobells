@@ -262,3 +262,27 @@ A top-level key of `/api/snapshot`, after `weather`. It is `null` when neither s
   - `severity` is `slight`, `normal`, `severe` or `unknown`; always shown in words.
   - `link` is `null` unless the feed gave an https link on a known operator's site (`disruptions.LINK_HOSTS`).
 - **On the page:** a panel lists them, in force first, then coming up, in words. A bus row whose line or stop an item names, during one of its periods, gets a "Disruption" link to it. Rail `messages` stay in their own panel.
+
+## `GET /api/area`
+
+The area map: every live bus on our lines around our stops, from the bus poller's last BODS fetch (no extra calls). 404 until the buses have been checked with a usable timetable, and again while there is none. Not part of the snapshot and not versioned: the page asks again with each snapshot while the map is open, and every 25 s or so for its summary. Same Host, client and cross-site rules and headers as the rest of the API.
+
+```json
+{
+  "fetched_at": "2026-10-09T10:14:30+01:00",
+  "box": [-1.975966, 53.433239, -1.938157, 53.454467],
+  "vehicles": [
+    {"line": "341", "destination": "Hadfield", "lat": 53.443503, "lon": -1.957393, "bearing": 90.0,
+     "recorded_at": "2026-10-09T10:14:00+01:00", "age_s": 30, "next_stop": "St Marys Road"}
+  ],
+  "stops": [{"label": "A", "name": "Henry Street", "lat": 53.44384, "lon": -1.948999}],
+  "routes": [{"line": "341", "destination": "Hadfield", "points": [[53.444467, -1.965966], [53.444223, -1.962774]]}]
+}
+```
+
+- `fetched_at` is when the buses were last checked; `age_s` is a report's age then, so the page works ages out from `recorded_at`.
+- `box` is west, south, east, north around the timetable's positioned stops (about 1 km wider), or `null`. Only buses inside it, on lines our timetable has, reported in the last 5 minutes, are sent; at most 80.
+- `destination` is the timetabled journey's when the bus was matched to one, else the bus's own. `next_stop` is the next positioned stop on that journey, or `null` when it wasn't matched or the stop isn't positioned. `bearing` and `recorded_at` can be `null`.
+- `stops` are our stops that have a position, by label.
+- `routes`: for each line and destination, the positioned stops of its longest journey, in order, as `[lat, lon]` pairs (at least two); at most 40.
+- **On the page:** "Around here" has an **Area map** button opening a dialog with the map (line numbers on the bus markers, words in the popups), real zoom and "Show the whole area" buttons, the OpenStreetMap credit, and the same buses listed in words, each with a "Show on map" button. It also lists the stations on the train line in order, from the rows' calling points (and `previous_points`), with each train that has a `position` placed at or between stations, in words.

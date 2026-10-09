@@ -1,0 +1,65 @@
+import json
+from dataclasses import replace
+
+from departureboard.area import area_view
+from departureboard.bodsbus import BusBoard
+from departureboard.livebus import live_board
+
+from test_livebus import EAST, HALFWAY, HENRY_A, ST_MARYS_W, at, bus, schedule
+
+NOW = at(10, 14, 30)
+
+
+def board(vehicles):
+    found, placed = live_board(schedule(), NOW, vehicles, lambda journey, day: True, 10)
+    return BusBoard(found, schedule(), True, None, placed, list(vehicles))
+
+
+def test_live_buses_on_our_lines_around_our_stops():
+    placed = bus(*HALFWAY, at(10, 14))  # on the 09:00 from Ashton, between Sunlaws Street and St Marys Road
+    unmatched = bus(53.4440, -1.9600, at(10, 13, 50), origin="", aimed=None, bearing=float("nan"))
+    other_line = bus(*HALFWAY, at(10, 14), line="999")
+    far_away = bus(53.4800, -2.2400, at(10, 14))  # Manchester: outside the timetable's area
+    view = area_view(board([placed, unmatched, other_line, far_away]), NOW)
+    assert [v["line"] for v in view["vehicles"]] == ["341", "341"]
+    first, second = view["vehicles"]
+    assert first == {
+        "line": "341", "destination": "Hadfield", "lat": 53.443503, "lon": -1.957393, "bearing": 90.0,
+        "recorded_at": "2026-10-09T10:14:00+01:00", "age_s": 30, "next_stop": "St Marys Road",
+    }
+    assert second["next_stop"] is None and second["bearing"] is None and second["age_s"] == 40
+    assert view["fetched_at"] == "2026-10-09T10:14:30+01:00"
+
+
+def test_our_stops_and_the_routes_are_drawn_from_the_timetable():
+    view = area_view(board([]), NOW)
+    assert view["vehicles"] == []
+    assert view["stops"] == [
+        {"label": "A", "name": "Henry Street", "lat": 53.44384, "lon": -1.948999},
+        {"label": "B", "name": "St Marys Road", "lat": 53.44343, "lon": -1.955353},
+    ]
+    routes = {(r["line"], r["destination"]): r["points"] for r in view["routes"]}
+    assert list(routes) == [("237", "Ashton"), ("341", "Hadfield")]
+    assert len(routes[("341", "Hadfield")]) == 7  # The Junction to Howard Arms; Ashton and Hadfield aren't placed
+    assert routes[("237", "Ashton")][0] == [53.44384, -1.948999]
+    west, south, east, north = view["box"]
+    assert west < -1.965966 and east > -1.948157 and south < 53.443239 and north > 53.444467
+
+
+def test_the_longest_journey_stands_for_its_line_and_destination():
+    short = replace(EAST, calls=EAST.calls[3:6], journey_code="short")
+    view = area_view(BusBoard([], schedule(short, EAST), True, None, [], []), NOW)
+    assert len(view["routes"][0]["points"]) == 7
+
+
+def test_no_stop_codes_or_vehicle_references_reach_the_page():
+    text = json.dumps(area_view(board([replace(bus(*HALFWAY, at(10, 14)), vehicle_ref="SECRET-REF")]), NOW))
+    assert HENRY_A not in text and ST_MARYS_W not in text and "SECRET-REF" not in text
+
+
+def test_what_the_server_sends_is_what_the_page_was_built_for():
+    from test_dashboard_static import AREA, check
+
+    placed = bus(*HALFWAY, at(10, 14))
+    unmatched = bus(53.4440, -1.9600, at(10, 13, 50), origin="", aimed=None, bearing=None)
+    check(area_view(board([placed, unmatched]), NOW), AREA)

@@ -67,6 +67,8 @@ class BusBoard:
     note: str | None  # why it fell short, as BodsBusSource.note says it; None if it didn't
     # Every journey a live bus was placed on, rows or not (see livebus.live_board).
     journeys: list[LiveJourney] = field(default_factory=list)
+    # Every live bus on your lines around your stops, placed or not, for the area map.
+    vehicles: list[Vehicle] = field(default_factory=list)
 
 
 class BodsBusSource:
@@ -172,7 +174,7 @@ class BodsBusSource:
 
         vehicles, note = self._vehicles(schedule)
         found, placed = livebus.live_board(schedule, now, vehicles, runs_on, rows, self._directions)
-        return BusBoard(found, schedule, note is None, note, placed)
+        return BusBoard(found, schedule, note is None, note, placed, list(vehicles))
 
     def fetch(self) -> list[Departure]:
         now = self._clock()

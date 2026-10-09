@@ -9,7 +9,7 @@ import { age, now, parseAt } from "./time.js";
 import { busDialogExtras } from "./extras.js";
 
 const LEAFLET = "./vendor/leaflet-1.9.4/";
-const TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+export const TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
 let L = null;
 let leafletLoading = null;
@@ -24,7 +24,8 @@ let request = 0;
 const dialog = () => $("bus-dialog");
 const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-function loadLeaflet() {
+// Loads Leaflet once, for this map and the area map; resolves to the module.
+export function loadLeaflet() {
   if (!leafletLoading) {
     const css = new Promise((resolve, reject) => {
       const link = h("link", { rel: "stylesheet", href: new URL(`${LEAFLET}leaflet.css`, import.meta.url).href });
@@ -33,7 +34,7 @@ function loadLeaflet() {
       document.head.append(link);
     });
     leafletLoading = Promise.all([import("./vendor/leaflet-1.9.4/leaflet-src.esm.js"), css])
-      .then(([module]) => { L = module; })
+      .then(([module]) => { L = module; return module; })
       .catch((error) => { leafletLoading = null; throw error; });
   }
   return leafletLoading;

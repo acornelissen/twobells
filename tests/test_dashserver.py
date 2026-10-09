@@ -518,3 +518,43 @@ def test_a_busy_port_is_an_error_unless_retrying(static_dir):
         moved.server_close()
     finally:
         blocker.server_close()
+
+
+# The area map
+
+
+AREA = {"fetched_at": "2026-10-09T10:14:30+01:00", "box": [-1.97, 53.43, -1.94, 53.45],
+        "vehicles": [], "stops": [], "routes": []}
+
+
+def test_the_area_map_is_not_found_until_the_buses_have_one(server):
+    response, _ = server.request("/api/area")
+    assert response.status == 404
+    assert_secure(response)
+
+
+def test_the_area_map_follows_the_same_rules_as_the_rest_of_the_api(server):
+    server.app.hub.put("area", AREA)
+    response, body = server.request("/api/area")
+    assert response.status == 200 and json.loads(body) == AREA
+    assert response.getheader("Content-Type") == "application/json"
+    assert response.getheader("Cache-Control") == "no-store"
+    assert_secure(response)
+    assert server.request("/api/area", host="evil.example")[0].status == 403
+    assert server.request("/api/area", headers={"Sec-Fetch-Site": "cross-site"})[0].status == 403
+    assert server.request("/api/area", method="POST")[0].status == 405
+    assert server.request("/api/area/x")[0].status == 404
+    head, body = server.request("/api/area", method="HEAD")
+    assert head.status == 200 and body == b""
+    server.app.hub.put("area", None)
+    assert server.request("/api/area")[0].status == 404
+
+
+def test_the_area_map_does_not_change_the_snapshot(static_dir):
+    running = start(static_dir)
+    try:
+        before = running.app.hub.current()
+        running.app.hub.put("area", AREA)
+        assert running.app.hub.current()[0] == before[0]
+    finally:
+        running.close()

@@ -13,6 +13,7 @@ import { openTrain, refreshTrain, setUpTrain } from "./train.js";
 import { openHistory, setUpHistory } from "./history.js";
 import { openMap, refreshMap, setUpMap } from "./map.js";
 import { markBusRows, renderDisruptions } from "./disruptions.js";
+import { renderArea, setUpArea } from "./area.js";
 
 let snapshot = null;
 let rowsById = new Map(); // id -> { row, mode }
@@ -86,6 +87,7 @@ function render(data) {
   attempt("announcements", () => noteSnapshot(data, rowsById));
   attempt("train dialog", () => refreshTrain(rowsById, station()));
   refreshMap(rowsById);
+  renderArea(data).catch((error) => console.error("Couldn't render the area:", error));
   tick();
 }
 
@@ -132,6 +134,7 @@ $("main").addEventListener("click", (event) => {
 setUpTrain();
 setUpHistory();
 setUpMap();
+setUpArea();
 
 connection = connect({
   onSnapshot: (data) => render(data),

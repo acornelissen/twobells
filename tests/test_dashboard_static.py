@@ -393,6 +393,19 @@ BUS_DETAIL = {
     "vehicle": Opt({"lat": number, "lon": number, "bearing": Opt(number), "recorded_at": at, "age_s": integer}),
     "where": Opt(str),
 }
+AREA = {
+    "fetched_at": at,
+    "box": Opt(lambda v: isinstance(v, list) and len(v) == 4 and all(number(x) for x in v)),
+    "vehicles": [{
+        "line": str, "destination": str, "lat": number, "lon": number, "bearing": Opt(number),
+        "recorded_at": Opt(at), "age_s": Opt(integer), "next_stop": Opt(str),
+    }],
+    "stops": [{"label": str, "name": str, "lat": number, "lon": number}],
+    "routes": [{
+        "line": str, "destination": str,
+        "points": [lambda p: isinstance(p, list) and len(p) == 2 and all(number(x) for x in p)],
+    }],
+}
 HISTORY_DETAIL = {
     "id": row_id, "mode": one_of("train", "bus"), "label": str,
     "day_type": one_of("weekday", "saturday", "sunday"), "phrase": Opt(str),
@@ -472,6 +485,16 @@ def test_bus_fixture_follows_the_contract():
     assert bus["id"] in {r["id"] for r in _fixture("dashboard_snapshot.json")["buses"]["rows"]}
 
 
+def test_area_fixture_follows_the_contract():
+    area = _fixture("dashboard_area.json")
+    check(area, AREA)
+    vehicles = area["vehicles"]
+    assert any(v["next_stop"] for v in vehicles) and any(v["next_stop"] is None for v in vehicles)
+    assert any(v["bearing"] is None for v in vehicles)
+    assert {s["label"] for s in area["stops"]} == set(_fixture("dashboard_snapshot.json")["buses"]["stops"])
+    assert all(len(r["points"]) >= 2 for r in area["routes"])
+
+
 def test_history_fixture_follows_the_contract():
     history = _fixture("dashboard_history.json")
     check(history, HISTORY_DETAIL)
@@ -508,3 +531,27 @@ def test_feed_links_leave_without_a_referrer_or_an_opener():
 def test_the_disruptions_panel_is_on_the_page():
     ids = {attrs.get("id") for _, attrs in _page().elements}
     assert {"disruptions", "disruptions-heading", "disruptions-status", "disruptions-body"} <= ids
+
+
+# --- Around here: the line and the area map ---
+
+
+def test_the_area_map_has_real_buttons_a_credit_and_a_text_list():
+    page = _page().elements
+    ids = {attrs.get("id"): (tag, attrs) for tag, attrs in page}
+    for button in ("area-open", "area-zoom-in", "area-zoom-out", "area-fit"):
+        assert ids[button][0] == "button" and ids[button][1].get("type") == "button"
+    assert ids["area-dialog"][0] == "dialog" and ids["area-map"][1].get("role") == "region"
+    assert ids["area-vehicles"][0] == "ul" and ids["line-diagram"][0] == "ol"
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    dialog = html[html.index('id="area-dialog"'):]
+    assert "OpenStreetMap contributors" in dialog[:dialog.index("</dialog>")]
+
+
+def test_the_area_map_gives_leaflet_nodes_never_strings():
+    text = (STATIC / "area.js").read_text(encoding="utf-8")
+    # Leaflet parses a string as HTML: popups, tooltips and icons get DOM nodes from h().
+    for call in re.findall(r"\.bind(?:Popup|Tooltip)\(\s*([^,)]+)", text):
+        assert call.strip().startswith("h("), call
+    assert re.search(r"divIcon\(\{\s*html: h\(", text)
+    assert "attributionControl: false" in text  # the credit is our own text under the map

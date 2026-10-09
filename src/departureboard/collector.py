@@ -35,6 +35,7 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from . import holidays as _holidays
+from .area import area_view
 from .dashconfig import DashboardSettings
 from .darwin import DetailsUnavailable, ServiceDetails, ServiceGone, TrainBoard
 from .disruptions import BusArea, RailArea, bus_disruptions, disruptions_part, train_disruptions
@@ -386,6 +387,7 @@ class Collector:
                 "Building the bus timetable; this takes a few minutes" if state == "building" else _sentence(reason)
             )
             self._publish_buses(state)
+            self._hub.put("area", None)
             return
         try:
             board = source.fetch_live()
@@ -397,6 +399,7 @@ class Collector:
             self._observe("bus", bus_observations(board), now)
         self._buses.worked(board, now, board.note)
         self._publish_buses()
+        self._hub.put("area", area_view(board, now))
         self._note_schedule(board)
 
     def _note_schedule(self, board) -> None:

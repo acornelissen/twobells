@@ -11,6 +11,7 @@ from departureboard.collector import Collector, Poller
 from departureboard.dashconfig import DashboardOptions, DashboardSettings
 from departureboard.darwin import DetailsError, DetailsUnavailable, ServiceGone, parse_board_rich, parse_service_details
 from departureboard.history import Stats
+from departureboard.livebus import live_board
 from departureboard.snapshot import Hub
 from departureboard.walk import WalkTimes
 from departureboard.weather import parse_conditions
@@ -90,7 +91,8 @@ class Buses:
             raise self.error
         vehicles = [bus(*HALFWAY, at(10, 14))] if self.vehicles_ok else []
         note = None if self.vehicles_ok else "Timetabled times only; live positions failed: down"
-        return BusBoard(live(self.clock(), vehicles), schedule(), self.vehicles_ok, note)
+        found, placed = live_board(schedule(), self.clock(), vehicles, lambda journey, day: True, 10)
+        return BusBoard(found, schedule(), self.vehicles_ok, note, placed, vehicles)
 
     def refresh_timetable(self, force=False):
         self.refreshes.append(force)
@@ -693,3 +695,22 @@ def test_the_knowledgebase_note_shows_when_its_address_is_missing(tmp_path):
     assert "train-incidents" not in setup.collector.pollers()
     status = setup.snapshot()["disruptions"]["status"]
     assert status["train"]["note"].startswith("Engineering works are off") and status["train"]["error"] is None
+
+
+# The area map
+
+
+def test_each_bus_poll_keeps_the_area_map_without_asking_again(tmp_path):
+    setup = Setup(tmp_path)
+    assert setup.hub.get("area") is None
+    setup.collector.poll_buses()
+    area = setup.hub.get("area")
+    assert [(v["line"], v["next_stop"]) for v in area["vehicles"]] == [("341", "St Marys Road")]
+    assert [s["label"] for s in area["stops"]] == ["A", "B"]
+    setup.buses.error = RuntimeError("down")
+    with pytest.raises(RuntimeError):
+        setup.collector.poll_buses()
+    assert setup.hub.get("area") == area  # the last one stays, its reports ageing
+    setup.buses.reason = "the bus timetable has run out"
+    setup.collector.poll_buses()
+    assert setup.hub.get("area") is None

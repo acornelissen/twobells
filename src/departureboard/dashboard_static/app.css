@@ -532,6 +532,69 @@ table.history thead th { border-top: 0; color: var(--muted); }
 }
 .bus-arrow { width: 22px; height: 22px; fill: #ffb000; }
 
+/* --- Around here: the line of stations, and the area map --- */
+
+.area h3 { margin-top: 0.75rem; }
+.line-diagram { margin: 0.5rem 0; padding: 0; list-style: none; }
+.line-diagram > li { position: relative; margin: 0; padding: 0.25rem 0 0.25rem 1.75rem; }
+/* The track: a line down the left, a dot per station. Drawing only; the list says it all. */
+.line-diagram > li::before {
+  content: "";
+  position: absolute;
+  left: 0.55rem;
+  top: 0;
+  bottom: 0;
+  border-left: 3px solid var(--edge);
+}
+.line-diagram > li:first-child::before { top: 0.9rem; }
+.line-diagram > li:last-child::before { bottom: calc(100% - 0.9rem); }
+.line-station::after {
+  content: "";
+  position: absolute;
+  left: 0.25rem;
+  top: 0.5rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--edge);
+  border-radius: 50%;
+  background: var(--surface);
+}
+.line-station.yours::after { background: var(--accent); border-color: var(--fg); }
+.line-station.yours .line-name { font-weight: 700; }
+.line-trains { margin: 0.125rem 0 0; padding: 0; list-style: none; }
+.line-train {
+  width: fit-content;
+  margin: 0.125rem 0;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.375rem;
+  color: var(--badge-fg);
+  background: var(--badge-bg);
+  font-size: 0.9375rem;
+}
+.line-between { padding-top: 0; padding-bottom: 0; }
+.area-list { margin: 0 0 0.5rem; padding-left: 1.25rem; }
+.area-list li { padding: 0.25rem 0; }
+.area-list .link { margin-left: 0.25rem; }
+/* The tiles are always light, so these colours don't follow the theme. */
+.leaflet-container .area-route { stroke: #1d4ed8; stroke-width: 3; stroke-opacity: 0.6; }
+.area-marker { background: none; border: 0; }
+.area-pin {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  color: #ffffff;
+  background: #14161a;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
+  font: 700 0.8125rem/1 system-ui, sans-serif;
+}
+.area-arrow { position: absolute; top: -10px; left: -10px; width: calc(100% + 20px); height: calc(100% + 20px); overflow: visible; fill: #ffb000; stroke: #14161a; stroke-width: 0.6; }
+.area-pin-line { position: relative; }
+
 /* --- Board theme flourishes: an LED-matrix texture behind the rows --- */
 
 :root[data-theme="board"] .panel,

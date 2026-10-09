@@ -271,6 +271,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._bus(path[len("/api/bus/"):])
         elif path.startswith("/api/history/"):
             self._history(path[len("/api/history/"):])
+        elif path == "/api/area":
+            self._area()
         elif path == "/healthz":
             if self.app.healthy():
                 self._send(200, b"ok")
@@ -308,6 +310,14 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _bus(self, row_id: str) -> None:
         found = self._lookup(row_id, "bus")
+        if found is None:
+            self._error(404)
+        else:
+            self._json(found)
+
+    def _area(self) -> None:
+        """The area map: live buses around our stops, from the last bus poll."""
+        found = self.app.hub.get("area")
         if found is None:
             self._error(404)
         else:
