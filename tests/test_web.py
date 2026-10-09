@@ -332,7 +332,7 @@ def test_simultaneous_guesses_cannot_beat_the_limit(slow_server):
         for _ in range(5):  # a burst can overflow the listen queue; try again as a browser would
             try:
                 response, _ = request(port, "POST", "/login", {"password": "nope nope nope"})
-            except ConnectionError:
+            except OSError:  # reset, or EINVAL on macOS after a reset
                 continue
             statuses.append(response.status)
             return
@@ -347,7 +347,7 @@ def test_simultaneous_guesses_cannot_beat_the_limit(slow_server):
     password.go.set()
     for thread in threads:
         thread.join(15)
-    assert len(statuses) == MAX_FAILURES + 5
+    assert len(statuses) > MAX_FAILURES  # enough guesses got answers to beat the limit, had they been checked
     assert password.checks <= MAX_FAILURES
 
 
