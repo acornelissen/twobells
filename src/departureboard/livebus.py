@@ -157,10 +157,10 @@ def _live(
     running: dict[date, list[Journey]],
     positions: dict[str, StopPosition],
     tz: tzinfo,
-) -> dict[tuple[date, int], Progress]:
+) -> dict[tuple[date, int], tuple[Progress, Vehicle]]:
     """Where the bus is on each journey a vehicle could be matched to and placed
-    on, keyed by (service day, id of the journey)."""
-    live: dict[tuple[date, int], tuple[datetime, Progress]] = {}
+    on, and the bus itself, keyed by (service day, id of the journey)."""
+    live: dict[tuple[date, int], tuple[datetime, Progress, Vehicle]] = {}
     for vehicle in vehicles:
         hits = [(day, j) for day, journeys in running.items() if (j := match(vehicle, journeys, day, tz))]
         if len(hits) != 1:
@@ -173,8 +173,41 @@ def _live(
         recorded = _recorded(vehicle)  # readable, or progress would have been None
         if key in live and live[key][0] >= recorded:
             continue  # two buses on one journey: keep the latest report
-        live[key] = (recorded, placed)
-    return {key: placed for key, (_, placed) in live.items()}
+        live[key] = (recorded, placed, vehicle)
+    return {key: (placed, vehicle) for key, (_, placed, vehicle) in live.items()}
+
+
+@dataclass(frozen=True)
+class LiveDeparture:
+    """A board row with what it was worked out from: the journey, the stop on
+    it, and the bus running it if one was matched and placed."""
+
+    departure: Departure
+    journey: Journey
+    service_day: date
+    call_index: int  # your stop's place in journey.calls
+    leaves: datetime  # timetabled, board-local without a zone
+    expected: datetime  # leaves plus any lateness, board-local without a zone
+    progress: Progress | None  # None when no bus was placed on the journey
+    vehicle: Vehicle | None  # the bus behind progress
+
+    @property
+    def key(self) -> str:
+        """Names this departure the same way every fetch, even after the
+        timetable is read again: service day, operator, line, first stop and
+        time, your stop and its label."""
+        origin = self.journey.origin
+        return "|".join(
+            (
+                self.service_day.isoformat(),
+                self.journey.operator,
+                self.journey.line,
+                origin.atco,
+                str(origin.minute),
+                self.journey.calls[self.call_index].atco,
+                self.departure.stop or "",
+            )
+        )
 
 
 def departures(
@@ -185,7 +218,20 @@ def departures(
     rows: int,
     directions: Iterable[str] | None = None,
 ) -> list[Departure]:
-    """The next `rows` buses from your stops, soonest first.
+    """The next `rows` buses from your stops, soonest first. See live_departures."""
+    return [live.departure for live in live_departures(schedule, now, vehicles, runs_on, rows, directions)]
+
+
+def live_departures(
+    schedule: Schedule,
+    now: datetime,
+    vehicles: Iterable[Vehicle],
+    runs_on: RunsOn,
+    rows: int,
+    directions: Iterable[str] | None = None,
+) -> list[LiveDeparture]:
+    """The next `rows` buses from your stops, soonest first, each with its
+    journey and the bus running it.
 
     `now` must be timezone-aware in the board's zone, e.g.
     datetime.now(ZoneInfo("Europe/London")); its zone is used to read BODS times.
@@ -213,7 +259,7 @@ def departures(
         for journey in journeys:
             if not _heading_to(journey.destination, directions):
                 continue
-            placed = live.get((day, id(journey)))
+            placed, vehicle = live.get((day, id(journey)), (None, None))
             for k, call in enumerate(journey.calls[:-1]):  # the last call is where it terminates
                 leaves = midnight + timedelta(minutes=call.minute)
                 if placed is not None and placed.at > k + PASSED_MARGIN:
@@ -223,15 +269,21 @@ def departures(
                 if leaves > local_now + HORIZON:
                     continue
                 for label in labels.get(call.atco, ()):
-                    found.append(_departure(journey, leaves, placed, label))
-    found.sort(key=lambda pair: pair[0])
-    return [departure for _, departure in found[:rows]]
+                    found.append(_departure(journey, day, k, leaves, placed, vehicle, label))
+    found.sort(key=lambda live: (live.expected, live.leaves, live.departure.stop, live.journey.line))
+    return found[:rows]
 
 
 def _departure(
-    journey: Journey, leaves: datetime, placed: Progress | None, label: str
-) -> tuple[tuple, Departure]:
-    """A board row, with the key that orders it: when it is expected to leave."""
+    journey: Journey,
+    day: date,
+    k: int,
+    leaves: datetime,
+    placed: Progress | None,
+    vehicle: Vehicle | None,
+    label: str,
+) -> LiveDeparture:
+    """A board row for the k-th call of a journey, and what it came from."""
     late = _late_minutes(placed.delay) if placed is not None else 0
     expected = leaves + timedelta(minutes=late)
     if placed is None:
@@ -247,4 +299,4 @@ def _departure(
         status=status,
         stop=label,
     )
-    return (expected, leaves, label, journey.line), departure
+    return LiveDeparture(departure, journey, day, k, leaves, expected, placed, vehicle)

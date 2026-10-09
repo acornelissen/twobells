@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from departureboard.bods import Vehicle, parse_siri_vm
-from departureboard.livebus import departures, match, progress
+from departureboard.livebus import departures, live_departures, match, progress
 from departureboard.model import Status
 from departureboard.schedule_model import Calendar, Call, Journey, Schedule, StopPosition
 
@@ -358,3 +358,82 @@ def test_now_must_carry_its_time_zone():
 def test_board_in_winter_time():
     winter_bus = bus(*HALFWAY, at(10, 8, day=WINTER), aimed=datetime(2026, 11, 10, 9, 0, tzinfo=UTC))
     assert board(at(10, 8, day=WINTER), [winter_bus])[0] == ("A", "341", "10:10", "10:13", Status.LATE)
+
+
+# Live departures: the rows with what they came from
+
+
+def live(now, vehicles=(), rows=10, plan=None, runs_on=every_day, directions=None):
+    return live_departures(plan or schedule(), now, list(vehicles), runs_on, rows, directions)
+
+
+@pytest.mark.parametrize(
+    "now, vehicles, rows, plan, runs_on",
+    [
+        (at(10, 0), [], 10, None, every_day),
+        (at(10, 0), [], 2, None, every_day),
+        (at(10, 14), [bus(*HALFWAY, at(10, 14))], 10, None, every_day),
+        (at(10, 9), [stop_at(HOWARD, at(10, 9), bearing=135.0)], 10, None, every_day),
+        (at(10, 15), [bus(*HALFWAY, at(10, 14)), stop_at(ARUNDEL, at(10, 14, 30))], 10, None, every_day),
+        (at(0, 13, day=SATURDAY),
+         [stop_at(ARUNDEL, at(0, 13, day=SATURDAY), aimed=datetime(2026, 10, 9, 22, 30, tzinfo=UTC))],
+         10, schedule(NIGHT), fridays),
+    ],
+)
+def test_departures_are_the_live_departures_rows(now, vehicles, rows, plan, runs_on):
+    found = live(now, vehicles, rows, plan, runs_on)
+    assert departures(plan or schedule(), now, vehicles, runs_on, rows) == [l.departure for l in found]
+    assert found  # each scenario has rows to compare
+
+
+def test_the_placed_bus_is_kept_with_its_row_and_timetable_rows_have_none():
+    late = bus(*HALFWAY, at(10, 14))
+    rows = {(l.departure.stop, l.departure.service): l for l in live(at(10, 14), [late])}
+    east_row, west_row = rows["A", "341"], rows["A", "237"]
+    assert east_row.vehicle is late
+    assert east_row.progress.at == pytest.approx(3.5, abs=0.02)
+    assert east_row.journey is EAST and east_row.service_day == DAY
+    assert EAST.calls[east_row.call_index].atco == HENRY_A
+    assert east_row.leaves == datetime(2026, 10, 9, 10, 10)
+    assert east_row.expected == datetime(2026, 10, 9, 10, 19)
+    assert (west_row.vehicle, west_row.progress) == (None, None)
+    assert west_row.expected == west_row.leaves == datetime(2026, 10, 9, 10, 15)
+
+
+def test_a_matched_bus_that_cannot_be_placed_is_not_attached():
+    far_away = bus(53.445897, -1.970527, at(10, 0), bearing=120.0)
+    first = live(at(10, 0), [far_away])[0]
+    assert first.journey is EAST and (first.vehicle, first.progress) == (None, None)
+
+
+def test_the_newest_of_two_buses_on_one_journey_is_attached():
+    old = bus(*HALFWAY, at(10, 14))
+    new = stop_at(ARUNDEL, at(10, 14, 30))
+    for vehicles in ([new, old], [old, new]):
+        row = next(l for l in live(at(10, 15), vehicles) if l.journey is EAST)
+        assert row.vehicle is new
+        assert row.progress.at == pytest.approx(5, abs=0.02)
+
+
+def test_yesterday_s_journey_keeps_its_own_service_day():
+    row = live(at(0, 5, day=SATURDAY), plan=schedule(NIGHT), runs_on=fridays)[0]
+    assert row.service_day == DAY
+    assert row.leaves == datetime(2026, 10, 10, 0, 10)
+
+
+def test_key_names_the_departure_without_object_identity():
+    rows = live(at(10, 0))
+    assert [l.key for l in rows] == [
+        f"2026-10-09|BNML|341|{ASHTON}|540|{HENRY_A}|A",
+        f"2026-10-09|BNML|237|{HENRY_A}|615|{HENRY_A}|A",
+        f"2026-10-09|BNML|237|{HENRY_A}|615|{ST_MARYS_W}|B",
+    ]
+    assert len({l.key for l in rows}) == len(rows)
+
+
+def test_key_is_the_same_after_the_timetable_is_saved_and_read_again():
+    plan = schedule()
+    reloaded = Schedule.from_json(plan.to_json())
+    before = [l.key for l in live(at(10, 0), plan=plan)]
+    after = [l.key for l in live(at(10, 0), plan=reloaded)]
+    assert before == after and before
