@@ -244,7 +244,7 @@ The Waveshare panel also needs `dtoverlay=spi0-0cs` in `/boot/firmware/config.tx
 
 ### Keys
 
-All are free. Put them in `/etc/departureboard/secrets.env`, or paste them into the settings page.
+All are free. Put them in `/etc/departureboard/secrets.env`, or paste them into the settings page. [Getting your keys](KEYS.md) walks through signing up for each one, step by step.
 
 | Key | For | Where to get it |
 |---|---|---|

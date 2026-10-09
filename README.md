@@ -17,6 +17,8 @@ New here? The [user guide](docs/USER_GUIDE.md) explains what everything on the b
 
 ## 1. Get access
 
+Step-by-step sign-up for every key, which features need which, and how to check each one works: [Getting your keys](docs/KEYS.md). The short version follows.
+
 ### Rail Data Marketplace (trains)
 
 1. Register at <https://raildata.org.uk> and confirm your email.
