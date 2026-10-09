@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Installs the board on Raspberry Pi OS (Bookworm or later). Run from the repo root:
-#   sudo ./deploy/install.sh
+#   sudo ./deploy/install.sh [--screen]
+# --screen also installs pygame for the HDMI screen; that happens anyway when
+# /etc/departureboard/config.toml already says display = "hdmi-...".
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -12,11 +14,20 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 PREFIX=/opt/departureboard
 CONF=/etc/departureboard
 
+screen=false
+[[ "${1:-}" == "--screen" ]] && screen=true
+grep -Eq '^[[:space:]]*display[[:space:]]*=[[:space:]]*"hdmi-' "$CONF/config.toml" 2>/dev/null && screen=true
+
 apt-get update
 # spidev, gpiozero and lgpio drive the Waveshare panel; the venv sees them via system site packages.
-# pygame draws on an HDMI screen. Pillow, numpy and smbus2 come from Debian rather than pip:
-# built for the Pi, patched through apt, and seen by the venv through system site packages.
-apt-get install -y python3-venv python3-dev fonts-dejavu-core python3-spidev python3-gpiozero python3-lgpio python3-pygame python3-numpy python3-smbus2 python3-pil
+# Pillow, numpy and smbus2 come from Debian rather than pip: built for the Pi, patched through
+# apt, and seen by the venv through system site packages.
+apt-get install -y python3-venv python3-dev fonts-dejavu-core python3-spidev python3-gpiozero python3-lgpio python3-numpy python3-smbus2 python3-pil
+# pygame, only for the HDMI screen: it pulls in graphics libraries (LLVM, Mesa) and a
+# MIDI soundfont, slow to install on a Pi Zero and unused by e-paper.
+if $screen; then
+  apt-get install -y python3-pygame
+fi
 
 # The panels need SPI; the Inky also needs I2C (the I2C bus holds the board's EEPROM for auto-detect).
 raspi-config nonint do_spi 0

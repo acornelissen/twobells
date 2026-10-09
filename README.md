@@ -101,6 +101,8 @@ A screen can redraw every second, so it shows more than the e-paper boards do:
 - Leave times count down: `Leave in 3 min`, then `Leave now`. They round down, so they never give you more time than you have.
 - No 2-minute redraw limit. Feeds are still polled on the same schedule, so the TransportAPI budget is unchanged.
 
+pygame is only installed for the screen: run `sudo ./deploy/install.sh --screen`, or set `display` in `/etc/departureboard/config.toml` first. `update.sh` installs it if you switch to the screen later.
+
 It runs as a long-lived service instead of the timer, drawing full screen with pygame (no desktop needed):
 
 ```bash

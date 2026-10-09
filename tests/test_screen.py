@@ -76,3 +76,20 @@ def test_pygame_screen_shows_a_frame_headless(monkeypatch):
         assert tuple(surface.get_at((width // 2, height // 2)))[:3] == SCREEN_RGB["yellow"]
     finally:
         pygame.display.quit()
+
+
+def test_without_pygame_the_error_says_how_to_install_it(monkeypatch):
+    import builtins
+
+    from departureboard.screen import PygameScreen
+
+    real_import = builtins.__import__
+
+    def no_pygame(name, *args, **kwargs):
+        if name == "pygame":
+            raise ModuleNotFoundError("No module named 'pygame'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_pygame)
+    with pytest.raises(RuntimeError, match="python3-pygame"):
+        PygameScreen()

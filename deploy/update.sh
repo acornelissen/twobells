@@ -38,6 +38,12 @@ build="$(mktemp -d)"
 trap 'rm -rf "$build"' EXIT
 cp -a "$REPO/." "$build/"
 rm -rf "$build/build" "$build"/src/*.egg-info
+# Switched to the HDMI screen since installing? It needs pygame.
+if grep -Eq '^[[:space:]]*display[[:space:]]*=[[:space:]]*"hdmi-' "$CONF/config.toml" \
+    && ! dpkg -s python3-pygame &>/dev/null; then
+  apt-get install -y python3-pygame
+fi
+
 # The code only: its dependencies are already in the venv.
 "$PREFIX/venv/bin/pip" install --quiet --no-deps --force-reinstall "$build"
 

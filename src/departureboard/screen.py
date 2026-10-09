@@ -31,7 +31,12 @@ class PygameScreen:
     """Full screen at the display's own resolution, the frame centred on it."""
 
     def __init__(self) -> None:
-        import pygame  # imported lazily: only needed on a board with a screen
+        try:
+            import pygame  # imported lazily: only needed on a board with a screen
+        except ImportError:
+            raise RuntimeError(
+                "pygame isn't installed; the HDMI screen needs it: sudo apt-get install python3-pygame"
+            ) from None
 
         pygame.display.init()
         pygame.mouse.set_visible(False)
