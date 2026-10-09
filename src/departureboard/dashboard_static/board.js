@@ -190,7 +190,8 @@ export function renderBuses(snapshot, alerts) {
   const walks = obj(obj(snapshot.walk)?.bus) || {};
   const walkText = Object.keys(stops).sort()
     .filter((k) => num(walks[k]) !== null)
-    .map((k) => `${num(walks[k])} min to ${str(stops[k]) || `Stop ${k}`}`);
+    // Stops often share a street name ("Henry Street"), so the label leads.
+    .map((k) => `${num(walks[k])} min to Stop ${k}${str(stops[k]) ? ` (${str(stops[k])})` : ""}`);
   setText(document.getElementById("buses-walk"), walkText.length ? `Walk: ${walkText.join(", ")}.` : "");
   const generatedMs = parseAt(snapshot.generated_at);
   const board = document.getElementById("buses-board");
