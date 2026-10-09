@@ -151,7 +151,7 @@
 <body>
   <header>
     <h1><span id="device">Board</span> emulator <span class="mode" id="mode"></span></h1>
-    <div class="mode" id="refreshing" aria-live="polite">Idle</div>
+    <div class="mode"><span id="state" aria-live="polite">Idle</span> <span id="elapsed"></span></div>
   </header>
 
   <div class="stage">
@@ -298,6 +298,12 @@ function waveform(T, reduce) {
     applyScale();
   }
 
+  // Screen readers hear only changes of state; the seconds counter is outside
+  // the live region, and rewriting the same text would announce it again.
+  function setState(text) {
+    if ($("state").textContent !== text) $("state").textContent = text;
+  }
+
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const flash = async (colour, ms) => {
     overlay.style.background = colour; overlay.style.opacity = "1"; await wait(ms);
@@ -321,8 +327,9 @@ function waveform(T, reduce) {
     const T = panel && !panel.epaper ? 0 : speed;
     const colours = { black: "rgb(36,36,38)", white: "rgb(233,231,222)",
       accent: ACCENTS[$("accent").textContent] || ACCENTS.red };
-    const timer = setInterval(() => {
-      $("refreshing").textContent = `Refreshing ${((performance.now() - started) / 1000).toFixed(0)} s`;
+    if (T > 0) setState("Refreshing");
+    const timer = T > 0 && setInterval(() => {
+      $("elapsed").textContent = `${((performance.now() - started) / 1000).toFixed(0)} s`;
     }, 250);
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
     for (const [colour, ms] of waveform(T, reduce)) await flash(colours[colour], ms);
@@ -338,7 +345,8 @@ function waveform(T, reduce) {
     }
     clearInterval(timer);
     shownVersion = version;
-    $("refreshing").textContent = "Idle";
+    $("elapsed").textContent = "";
+    setState("Idle");
     refreshing = false;
     if (pendingVersion > shownVersion) refresh(pendingVersion);
   }
@@ -370,8 +378,9 @@ function waveform(T, reduce) {
         pendingVersion = status.version;
         if (!refreshing) refresh(pendingVersion);
       }
+      if (!refreshing) setState("Idle");
     } catch {
-      $("refreshing").textContent = "Emulator not running";
+      setState("Emulator not running");
     }
     setTimeout(poll, 1000);
   }
