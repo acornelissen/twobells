@@ -172,3 +172,14 @@ def test_wider_panel_keeps_a_destination_whole_that_the_phat_truncates():
     panel = HDMI_1280X400
     wide = row_layout(row, load_fonts(panel.scale), panel.width, panel.scale)
     assert wide.middle == "B: Stepping Hill Hospital"
+
+
+def test_header_shows_the_running_clock_on_a_screen():
+    import dataclasses
+
+    def header_ink(image):
+        return sum(1 for x in range(WIDTH // 2, WIDTH) for y in range(15) if image.getpixel((x, y)) == PALETTE.white)
+
+    stamp = header_ink(render(board(), PALETTE))
+    clock = header_ink(render(dataclasses.replace(board(), clock="07:03:15"), PALETTE))
+    assert clock != stamp

@@ -1,3 +1,5 @@
+import dataclasses
+
 import pytest
 
 from departureboard.dotfont import DotFont
@@ -250,3 +252,23 @@ def test_reversed_out_band_stays_solid_so_its_text_reads():
     band_top = find(sign_layout(board(rows), *dots(panel)).items, "1st").y - 1
     y = y0 + band_top * 3
     assert all(image.getpixel((x, y + dy)) == PALETTE.accent for x in range(x0, x0 + 6) for dy in range(3))
+
+
+def test_screen_board_shows_a_running_clock_centred_at_the_bottom():
+    width, height = dots(HDMI_1280X400)
+    view = dataclasses.replace(board(TRAINS, BUSES), clock="07:03:15")
+    items = sign_layout(view, width, height).items
+    clock = find(items, "07:03:15")
+    assert not clock.small
+    assert abs((clock.x + FONT.getlength("07:03:15") / 2) - width / 2) <= 1
+    assert clock.y + item_size(clock)[1] <= height
+    assert "Updated 07:03" not in texts(items)
+
+
+def test_buses_clear_the_clock():
+    width, height = dots(HDMI_1280X400)
+    rows = BUSES * 4
+    view = dataclasses.replace(board(TRAINS, rows, leave="Leave in 2 min"), clock="07:03:15")
+    items = sign_layout(view, width, height).items
+    last_bus = max(i.y for i in items if i.text in ("341", "394"))
+    assert last_bus + 9 < find(items, "07:03:15").y

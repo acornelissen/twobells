@@ -297,3 +297,53 @@ def test_run_loop_primes_only_the_first_tick():
     trains, buses, board, display, state = setup()
     run_loop(board, state, display, SimClock(SATURDAY), 0, ticks=3, sleep=lambda s: None, prime=True)
     assert (trains.calls, buses.calls) == (1, 1)
+
+
+class FakeScreen(FakeDisplay):
+    from departureboard.panel import HDMI_1280X400 as panel
+
+
+def test_screen_gets_a_running_clock():
+    trains, buses, board, display, state = setup()
+    result = run_once(board, state, FakeScreen(), THU_0700 + timedelta(seconds=15))
+    assert result.view.clock == "07:00:15"
+
+
+def test_epaper_gets_no_clock():
+    trains, buses, board, display, state = setup()
+    assert run_once(board, state, display, THU_0700).view.clock is None
+
+
+def test_screen_redraws_every_second_without_a_minimum_gap():
+    trains, buses, board, display, state = setup()
+    screen = FakeScreen()
+    for second in range(3):
+        assert run_once(board, state, screen, THU_0700 + timedelta(seconds=second)).rendered
+    assert len(screen.shown) == 3
+    assert screen.shown[0].size == (1280, 400)
+
+
+def test_screen_does_not_redraw_when_nothing_changed():
+    trains, buses, board, display, state = setup()
+    screen = FakeScreen()
+    run_once(board, state, screen, THU_0700)
+    assert not run_once(board, state, screen, THU_0700).rendered
+
+
+class CountingStore:
+    def __init__(self):
+        self.saves = 0
+
+    def save(self, state):
+        self.saves += 1
+
+
+def test_loop_writes_state_only_when_fetched_data_changes():
+    from departureboard.app import run_loop
+
+    trains, buses, board, display, state = setup()
+    store = CountingStore()
+    times = iter(THU_0700 + timedelta(seconds=s) for s in range(30))
+    run_loop(board, state, FakeScreen(), lambda: next(times), 0, ticks=30, sleep=lambda s: None, store=store)
+    # Redrawn 30 times, but both sources were fetched only on the first tick.
+    assert store.saves == 1

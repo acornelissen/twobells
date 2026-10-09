@@ -14,7 +14,8 @@ CONF=/etc/departureboard
 
 apt-get update
 # spidev, gpiozero and lgpio drive the Waveshare panel; the venv sees them via system site packages.
-apt-get install -y python3-venv python3-dev fonts-dejavu-core python3-spidev python3-gpiozero python3-lgpio
+# pygame draws on an HDMI screen.
+apt-get install -y python3-venv python3-dev fonts-dejavu-core python3-spidev python3-gpiozero python3-lgpio python3-pygame
 
 # The panels need SPI; the Inky also needs I2C (the I2C bus holds the board's EEPROM for auto-detect).
 raspi-config nonint do_spi 0
@@ -32,6 +33,7 @@ install -d -m 755 "$CONF"
 
 install -m 644 "$REPO/deploy/departureboard.service" /etc/systemd/system/
 install -m 644 "$REPO/deploy/departureboard.timer" /etc/systemd/system/
+install -m 644 "$REPO/deploy/departureboard-screen.service" /etc/systemd/system/
 systemctl daemon-reload
 
 cat <<EOF
@@ -40,7 +42,8 @@ Installed. Next:
   1. Edit $CONF/secrets.env (keys) and $CONF/config.toml (bus stop ATCO code).
   2. Check the keys:   sudo $PREFIX/venv/bin/departureboard probe train
                        sudo $PREFIX/venv/bin/departureboard probe bus
-  3. Start the board:  sudo systemctl enable --now departureboard.timer
+  3. Start the board:  sudo systemctl enable --now departureboard.timer          (e-paper)
+                  or:  sudo systemctl enable --now departureboard-screen.service (HDMI screen)
   4. Watch it:         journalctl -u departureboard -f
 
 If the display errors about chip select, add  dtoverlay=spi0-0cs

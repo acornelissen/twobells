@@ -84,6 +84,25 @@ Set `display = "waveshare-10in85g"` in `config.toml` and add `dtoverlay=spi0-0cs
 
 The driver follows Waveshare's `epd10in85g.py` command sequence over `spidev` and `gpiozero`. It doesn't load Waveshare's prebuilt `DEV_Config` shared library. Each sign dot is 4x4 panel pixels.
 
+### Waveshare 7.9" HDMI screen (400x1280)
+
+Set `display = "hdmi-1280x400"` and `rotate = 90` (or `270`, depending on which way up it's mounted). A Pi Zero needs a mini HDMI adapter; a Zero 2 W or better is recommended.
+
+A screen can redraw every second, so it shows more than the e-paper boards do:
+
+- A running clock (`07:03:15`) in place of `Updated`.
+- Leave times count down: `Leave in 3 min`, then `Leave now`. They round down, so they never give you more time than you have.
+- No 2-minute redraw limit. Feeds are still polled on the same schedule, so the TransportAPI budget is unchanged.
+
+It runs as a long-lived service instead of the timer, drawing full screen with pygame (no desktop needed):
+
+```bash
+sudo systemctl disable --now departureboard.timer
+sudo systemctl enable --now departureboard-screen.service
+```
+
+State is written only when new data arrives, not on every redraw, to spare the SD card. Touch isn't used yet, and the backlight stays on.
+
 ## 3. Develop on your laptop
 
 ```bash

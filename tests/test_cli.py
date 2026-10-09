@@ -204,3 +204,26 @@ def test_run_png_draws_at_the_configured_display_size(tmp_path):
     out = tmp_path / "board.png"
     assert main(["run", "--config", str(config), "--secrets", str(tmp_path / "none.env"), "--png", str(out)]) == 0
     assert Image.open(out).size == (1360, 480)
+
+
+def test_run_loop_on_a_screen_draws_a_running_clock(tmp_path, monkeypatch):
+    config = tmp_path / "config.toml"
+    state = tmp_path / "state.json"
+    config.write_text(f'display = "hdmi-1280x400"\nrotate = 90\nstate_file = "{state}"\n')
+    out = tmp_path / "board.png"
+    args = ["run", "--loop", "--ticks", "2", "--tick", "0", "--png", str(out)]
+    assert main(args + ["--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
+    assert Image.open(out).size == (1280, 400)
+    assert state.exists()
+
+
+def test_sleeping_to_the_tick_lands_on_a_whole_second(monkeypatch):
+    from departureboard import cli
+
+    slept = []
+    monkeypatch.setattr(cli.time, "time", lambda: 1000.25)
+    monkeypatch.setattr(cli.time, "sleep", slept.append)
+    cli._sleep_to_the_tick(1)
+    cli._sleep_to_the_tick(60)
+    cli._sleep_to_the_tick(0)
+    assert slept == [0.75, 19.75]  # 1000.25 s is 40.25 s past a minute

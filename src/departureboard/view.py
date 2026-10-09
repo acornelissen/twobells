@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Callable
 
-from .model import Departure, Status
+from .model import Departure, Status, minutes_between
 from .walk import WalkTimes, leave_by, leave_time
 
 
@@ -30,6 +30,7 @@ class Wording:
     unknown: str
     late: Callable[[Departure], str]
     leave: Callable[[str, str], str]  # (leave time, departure it is for)
+    leave_soon: Callable[[str, str], str]  # ("now" or "in N min", departure it is for)
 
 
 def _target(dep: Departure) -> str:
@@ -41,12 +42,14 @@ PLAIN = Wording(
     "On time", "CANC", "Delayed", "?",
     late=lambda dep: f"+{dep.minutes_late}",
     leave=lambda leave, target: f"Leave {leave} ({target})",
+    leave_soon=lambda when, target: f"Leave {when} ({target})",
 )
 SIGN = Wording(
     "On time", "Cancelled", "Delayed", "-",
     late=lambda dep: f"Exp {dep.expected}",
     # Drawn under the train it refers to, so the time alone is enough.
     leave=lambda leave, target: f"Leave by {leave}",
+    leave_soon=lambda when, target: f"Leave {when}",
 )
 
 
@@ -76,6 +79,8 @@ class BoardView:
     trains: Section
     buses: Section
     updated: str = field(compare=False)
+    # A running HH:MM:SS clock, for screens that can redraw every second.
+    clock: str | None = None
 
     def signature(self) -> str:
         content = asdict(self)
@@ -84,7 +89,14 @@ class BoardView:
         return hashlib.sha256(encoded.encode()).hexdigest()
 
 
-def _train_row(dep: Departure, walk: WalkTimes | None, words: Wording) -> Row:
+def _until(clock: str, leave: str) -> str:
+    """'now' or 'in N min' to a leave time, rounded down so it never promises more time than there is."""
+    seconds = minutes_between(clock[:5], leave) * 60 - int(clock[6:8])
+    minutes = max(0, seconds // 60)
+    return "now" if minutes == 0 else f"in {minutes} min"
+
+
+def _train_row(dep: Departure, walk: WalkTimes | None, words: Wording, clock: str | None) -> Row:
     if dep.status is Status.CANCELLED:
         right, style = words.cancelled, Style.INVERTED
     elif dep.status is Status.LATE:
@@ -96,7 +108,7 @@ def _train_row(dep: Departure, walk: WalkTimes | None, words: Wording) -> Row:
     return Row(dep.scheduled, dep.destination, right, style)
 
 
-def _bus_row(dep: Departure, walk: WalkTimes | None, words: Wording) -> Row:
+def _bus_row(dep: Departure, walk: WalkTimes | None, words: Wording, clock: str | None) -> Row:
     if dep.status is Status.CANCELLED:
         right, style = words.cancelled, Style.INVERTED
     elif dep.status is Status.LATE:
@@ -106,26 +118,30 @@ def _bus_row(dep: Departure, walk: WalkTimes | None, words: Wording) -> Row:
     else:
         right, style = dep.scheduled, Style.NORMAL
     leave = leave_time(dep, walk) if walk else None
+    if leave and clock:
+        leave = _until(clock, leave)
     return Row(dep.service, dep.destination, right, style, f"leave {leave}" if leave else None, dep.stop)
 
 
-def _leave(departures, walk: WalkTimes | None, now: str, words: Wording):
+def _leave(departures, walk: WalkTimes | None, now: str, words: Wording, clock: str | None):
     """(text, row index) for the next departure in reach, or (None, None)."""
     found = leave_by(departures, walk, now) if walk else None
     if found is None:
         return None, None
     leave, dep = found
+    if clock:
+        return words.leave_soon(_until(clock, leave), _target(dep)), departures.index(dep)
     return words.leave(leave, _target(dep)), departures.index(dep)
 
 
-def _section(label, departures, to_row, now, empty_text, stale, walk, words) -> Section:
+def _section(label, departures, to_row, now, empty_text, stale, walk, words, clock) -> Section:
     upcoming = [d for d in departures if not d.is_gone(now)]
-    rows = tuple(to_row(d, walk, words) for d in upcoming)
+    rows = tuple(to_row(d, walk, words, clock) for d in upcoming)
     # Rows that carry their own leave time make a header summary redundant.
     if any(r.leave for r in rows):
         text, index = None, None
     else:
-        text, index = _leave(upcoming, walk, now, words)
+        text, index = _leave(upcoming, walk, now, words, clock)
     return Section(label, rows, empty_text, stale, text, index)
 
 
@@ -137,10 +153,14 @@ def build_view(
     stale: set[str],
     walk: WalkTimes | None = None,
     wording: Wording = PLAIN,
+    clock: str | None = None,
 ) -> BoardView:
+    """`clock` (HH:MM:SS, matching `now`) is for screens: it is shown, and
+    leave times count down instead of giving a clock time."""
     return BoardView(
         title=title,
-        trains=_section("Trains", trains, _train_row, now, "No trains", "train" in stale, walk, wording),
-        buses=_section("Buses", buses, _bus_row, now, "No buses", "bus" in stale, walk, wording),
+        trains=_section("Trains", trains, _train_row, now, "No trains", "train" in stale, walk, wording, clock),
+        buses=_section("Buses", buses, _bus_row, now, "No buses", "bus" in stale, walk, wording, clock),
         updated=now,
+        clock=clock,
     )

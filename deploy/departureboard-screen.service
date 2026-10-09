@@ -1,0 +1,24 @@
+[Unit]
+Description=Departure board on an HDMI screen
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=departureboard
+Group=departureboard
+# video and render for the screen (KMS/DRM), input for its touch panel.
+SupplementaryGroups=video render input
+StateDirectory=departureboard
+EnvironmentFile=/etc/departureboard/secrets.env
+Environment=SDL_VIDEODRIVER=kmsdrm
+ExecStart=/opt/departureboard/venv/bin/departureboard run --loop --config /etc/departureboard/config.toml
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

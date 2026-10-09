@@ -1,6 +1,7 @@
 """Command line entry points.
 
   departureboard run      one tick; systemd runs this every minute
+  departureboard run --loop   keep ticking; a screen redraws every second
   departureboard probe    one live call to check keys and stop codes
   departureboard demo     render sample data to a PNG, no keys needed
   departureboard emulate  run the board against a browser-based panel emulator
@@ -14,6 +15,7 @@ import logging
 import os
 import sys
 import threading
+import time
 import webbrowser
 from datetime import datetime
 from pathlib import Path
@@ -113,11 +115,43 @@ def _run(args) -> int:
     )
     store = StateStore(settings.state_file)
     state = store.load()
+    if args.loop:
+        return _run_loop(settings, display, store, state, args)
     # A fresh install (no saved state) fetches everything once, so the panel
     # isn't blank until the next poll window opens.
     result = run_once(settings.board, state, display, _local_now(settings.timezone), prime=not state)
     store.save(state)
     logging.info("rendered=%s", result.rendered)
+    return 0
+
+
+def _sleep_to_the_tick(seconds: float) -> None:
+    """Sleep to the next whole multiple of `seconds`, so a running clock never skips."""
+    if seconds > 0:
+        time.sleep(seconds - time.time() % seconds)
+
+
+def _run_loop(settings, display, store, state, args) -> int:
+    zone = ZoneInfo(settings.timezone)
+
+    def clock() -> datetime:
+        return datetime.now(zone).replace(tzinfo=None, microsecond=0)
+
+    tick = args.tick if args.tick is not None else (60 if display.panel.epaper else 1)
+    try:
+        run_loop(
+            settings.board,
+            state,
+            display,
+            clock,
+            tick,
+            ticks=args.ticks,
+            sleep=_sleep_to_the_tick,
+            store=store,
+            prime=not state,  # as for a single run: only a fresh install fetches outside windows
+        )
+    except KeyboardInterrupt:
+        pass
     return 0
 
 
@@ -153,8 +187,10 @@ def _demo(args) -> int:
     theme = theme_named(args.theme)
     display = PngDisplay(args.png, args.accent or theme.accent, PANELS[args.panel])
     walk = WalkTimes(train=7, bus={"*": 7})
+    # A screen preview shows what a screen adds: a running clock and countdowns.
+    clock = None if display.panel.epaper else "07:03:15"
     view = build_view(
-        "Glossop > Manchester Picc", trains, buses, "07:03", set(), walk, theme.wording
+        "Glossop > Manchester Picc", trains, buses, "07:03", set(), walk, theme.wording, clock
     )
     display.show(theme.render(view, display.palette, display.panel))
     print(f"Wrote {args.png}")
@@ -214,7 +250,10 @@ def _parser() -> argparse.ArgumentParser:
         return p
 
     run = with_config(sub.add_parser("run", help="one tick of the board"))
-    run.add_argument("--png", help="write a PNG instead of driving the Inky pHAT")
+    run.add_argument("--png", help="write a PNG instead of driving the display")
+    run.add_argument("--loop", action="store_true", help="keep running; needed for a screen")
+    run.add_argument("--tick", type=float, help="seconds per tick with --loop (screen 1, e-paper 60)")
+    run.add_argument("--ticks", type=int, help=argparse.SUPPRESS)
     run.set_defaults(handler=_run)
 
     probe = with_config(sub.add_parser("probe", help="one live call to check keys and codes"))

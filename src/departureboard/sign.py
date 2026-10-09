@@ -116,7 +116,11 @@ def _buses(layout: SignLayout, section: Section, y: int, bottom: int, width: int
 
 def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> None:
     y = height - TINY_HEIGHT - 1
-    layout.add(MARGIN, y, f"Updated {view.updated}", small=True)
+    if view.clock:
+        # A screen shows the time centred along the bottom, like a station clock.
+        layout.add((width - _w(view.clock)) // 2, height - GLYPH_H - 1, view.clock)
+    else:
+        layout.add(MARGIN, y, f"Updated {view.updated}", small=True)
     stale = [name for name, s in (("trains", view.trains), ("buses", view.buses)) if s.stale]
     if stale:
         message = "Not updating: " + ", ".join(stale)
@@ -130,7 +134,7 @@ def sign_layout(view: BoardView, width: int = WIDTH, height: int = HEIGHT) -> Si
     y = _trains(layout, view.trains, _TOP, width)
     rule = y + _ABOVE_RULE - 2  # each line already carries 2 dots of leading
     layout.rules.append(rule)
-    footer_top = height - TINY_HEIGHT - 3
+    footer_top = height - (GLYPH_H if view.clock else TINY_HEIGHT) - 3
     _buses(layout, view.buses, rule + _BELOW_RULE, footer_top, width)
     _footer(layout, view, width, height)
     return layout

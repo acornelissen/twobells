@@ -200,3 +200,54 @@ def test_section_records_which_row_the_leave_time_is_for():
     assert view(trains=trains, now="07:00", walk=WALK).trains.leave_for == 0
     assert view(trains=trains, now="07:06", walk=WALK).trains.leave_for == 1
     assert view(trains=trains, now="07:00").trains.leave_for is None
+
+
+def test_no_clock_by_default_so_epaper_is_not_redrawn_every_minute():
+    v = view(now="07:03")
+    assert v.clock is None
+    assert v.signature() == view(now="07:04").signature()
+
+
+def test_running_clock_changes_the_signature_so_a_screen_redraws():
+    a = view(now="07:03", clock="07:03:15")
+    b = view(now="07:03", clock="07:03:16")
+    assert a.clock == "07:03:15"
+    assert a.signature() != b.signature()
+
+
+def test_with_a_clock_train_leave_time_counts_down():
+    walk = WalkTimes(train=7)
+    v = view(trains=[train("07:12")], now="07:03", clock="07:03:00", walk=walk, wording=SIGN)
+    assert v.trains.leave == "Leave in 2 min"
+
+
+def test_countdown_rounds_down_so_it_never_promises_more_time():
+    walk = WalkTimes(train=7)  # leave by 07:05
+    v = view(trains=[train("07:12")], now="07:03", clock="07:03:40", walk=walk, wording=SIGN)
+    assert v.trains.leave == "Leave in 1 min"
+
+
+def test_countdown_says_now_in_the_last_minute():
+    walk = WalkTimes(train=7)
+    for clock in ("07:04:01", "07:05:00", "07:05:59"):
+        v = view(trains=[train("07:12")], now=clock[:5], clock=clock, walk=walk, wording=SIGN)
+        assert v.trains.leave == "Leave now", clock
+
+
+def test_plain_countdown_names_the_train():
+    walk = WalkTimes(train=7)
+    v = view(trains=[train("07:12")], now="07:00", clock="07:00:00", walk=walk)
+    assert v.trains.leave == "Leave in 5 min (07:12)"
+
+
+def test_with_a_clock_bus_leave_times_count_down():
+    walk = WalkTimes(bus={"*": 7})
+    [row] = view(buses=[bus(scheduled="07:20")], now="07:03", clock="07:03:30", walk=walk).buses.rows
+    assert row.leave == "leave in 9 min"
+
+
+def test_without_a_clock_leave_times_stay_clock_times():
+    walk = WalkTimes(train=7, bus={"*": 7})
+    v = view(trains=[train("07:12")], buses=[bus(scheduled="07:20")], now="07:03", walk=walk, wording=SIGN)
+    assert v.trains.leave == "Leave by 07:05"
+    assert v.buses.rows[0].leave == "leave 07:13"

@@ -119,7 +119,7 @@ class _Painter:
     def header(self, view: BoardView) -> None:
         s, pad = self.s, _PAD * self.s
         self.draw.rectangle((0, 0, self.width - 1, _HEADER_H * s - 1), fill=self.p.black)
-        stamp = f"Upd {view.updated}"
+        stamp = view.clock or f"Upd {view.updated}"
         stamp_x = self.width - pad - self.f.regular.getlength(stamp)
         title = fit_text(view.title, self.f.bold, stamp_x - pad - 6 * s)
         self.draw.text((pad, s), title, font=self.f.bold, fill=self.p.white)

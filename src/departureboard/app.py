@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -49,6 +50,7 @@ class Board:
     title: str
     sources: list[SourceConfig]
     # E-paper refreshes are slow and wear the panel: never redraw more often than this.
+    # A screen has no such limit.
     min_redraw: timedelta = timedelta(minutes=2)
     walk: WalkTimes = WalkTimes()
     theme: Theme = THEMES["plain"]
@@ -103,6 +105,8 @@ def run_once(
     for config in board.sources:
         _poll(config, state, now, prime)
 
+    # A screen can redraw every second, so it gets a running clock and countdowns.
+    live = not display.panel.epaper
     entries = state.get("sources", {})
     stale = {
         c.source.name for c in board.sources if _is_stale(c, entries.get(c.source.name, {}), now)
@@ -115,18 +119,24 @@ def run_once(
         stale=stale,
         walk=board.walk,
         wording=board.theme.wording,
+        clock=now.strftime("%H:%M:%S") if live else None,
     )
 
     last = state.get("last_render", {})
     last_at = from_iso(last.get("at"))
     changed = view.signature() != last.get("signature")
-    too_soon = last_at is not None and now - last_at < board.min_redraw
+    too_soon = not live and last_at is not None and now - last_at < board.min_redraw
 
     if changed and not too_soon:
         display.show(board.theme.render(view, display.palette, display.panel))
         state["last_render"] = {"signature": view.signature(), "at": to_iso(now)}
         return RunResult(view, rendered=True)
     return RunResult(view, rendered=False)
+
+
+def _fetched(state: dict) -> str:
+    """The part of the state worth keeping: everything except the last redraw."""
+    return json.dumps({k: v for k, v in state.items() if k != "last_render"}, sort_keys=True)
 
 
 def run_loop(
@@ -142,14 +152,20 @@ def run_loop(
     prime: bool = False,
 ) -> None:
     """Tick forever (or `ticks` times). A clock with `advance()` is simulated.
-    With `prime`, the first tick fetches every source so the board starts filled."""
+    With `prime`, the first tick fetches every source so the board starts filled.
+    State is written only when what was fetched changes: a screen redraws every
+    second, and writing the SD card that often would wear it out."""
     sleep = sleep or time.sleep
     count = 0
+    saved = None
     while ticks is None or count < ticks:
         now = clock()
         result = run_once(board, state, display, now, prime=prime and count == 0)
         if store is not None:
-            store.save(state)
+            fetched = _fetched(state)
+            if fetched != saved:
+                store.save(state)
+                saved = fetched
         if on_tick is not None:
             on_tick(now, result)
         sleep(tick_seconds)
