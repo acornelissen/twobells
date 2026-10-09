@@ -515,8 +515,9 @@ class Hub:
     server's threads (which read and wait). Safe to share between threads."""
 
     def __init__(self, title: str, walk: WalkTimes, clock: Callable[[], datetime] | None = None,
-                 monotonic: Callable[[], float] = time.monotonic) -> None:
-        self._clock = clock or (lambda: datetime.now().astimezone())
+                 monotonic: Callable[[], float] = time.monotonic, tz: tzinfo | None = None) -> None:
+        # The board's zone, not the host's: a container's clock is in UTC.
+        self._clock = clock or (lambda: datetime.now(tz) if tz else datetime.now().astimezone())
         self._monotonic = monotonic
         self._lock = threading.Lock()
         self._changed = threading.Condition(self._lock)

@@ -511,7 +511,7 @@ def _dashboard(args) -> int:
         except sqlite3.Error as error:
             print(f"Can't open the punctuality history in {dash.state_dir}: {error}", file=sys.stderr)
             return 2
-        hub = Hub(dash.title, dash.walk)
+        hub = Hub(dash.title, dash.walk, tz=ZoneInfo(dash.timezone))
         collector = Collector(dash, hub, history)
         app = dashserver.DashboardApp(
             hub,

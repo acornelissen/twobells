@@ -670,3 +670,9 @@ def test_what_the_server_sends_is_what_the_page_was_built_for():
     check(sent, SNAPSHOT)
     live_row = by(bparts["rows"], line="341", stop="A")
     check(lookups[live_row["id"]]["bus"], BUS_DETAIL)
+
+
+def test_the_snapshot_is_stamped_in_the_board_s_zone_not_the_host_s():
+    # A container's clock zone is UTC; the board's times are in its own zone.
+    tokyo = Hub("Glossop", WALK, tz=ZoneInfo("Asia/Tokyo"))
+    assert json.loads(tokyo.current()[1])["generated_at"].endswith("+09:00")
