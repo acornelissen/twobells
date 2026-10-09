@@ -11,6 +11,11 @@ days, when D is a day a journey of any line starts or the day after one
 ends, and the line's journeys that run on D (by their stops and times)
 differ from those that ran on the same weekday a week before. Each line
 is named once, at its first change. Bank holidays are not counted.
+
+Only journeys calling at your stops count, on the map and for changes:
+inbound-only journeys (ending at a stand nearby) give no departures, so a
+change to them changes nothing you see, and their routes would draw roads
+your buses don't take from your stops. Their buses still show on the map.
 """
 
 from __future__ import annotations
@@ -118,7 +123,7 @@ def area_view(board: BusBoard, now: datetime) -> dict:
         "box": [round(v, 6) for v in box] if box else None,
         "vehicles": vehicles[:MAX_VEHICLES],
         "stops": stops,
-        "routes": _routes(schedule.journeys, schedule),
+        "routes": _routes(schedule.departure_journeys, schedule),
     }
 
 
@@ -133,15 +138,16 @@ def timetable_changes(schedule: Schedule, today: date, days: int = CHANGE_DAYS) 
     """Lines whose journeys change in the next `days` days, each at its first
     change, soonest first. See the module's notes for the rule."""
     last = today + timedelta(days=days)
+    journeys = schedule.departure_journeys
     candidates = set()
-    for journey in schedule.journeys:
+    for journey in journeys:
         start, end = journey.calendar.start, journey.calendar.end
         if start and today < start <= last:
             candidates.add(start)
         if end and today <= end < last:
             candidates.add(end + timedelta(days=1))
     by_line: dict[tuple[str, str], list[Journey]] = {}
-    for journey in schedule.journeys:
+    for journey in journeys:
         by_line.setdefault((journey.line, journey.operator), []).append(journey)
     found: dict[tuple[str, str], date] = {}
     for day in sorted(candidates):

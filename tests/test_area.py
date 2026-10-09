@@ -54,6 +54,13 @@ def test_the_longest_journey_stands_for_its_line_and_destination():
     assert len(view["routes"][0]["points"]) == 7
 
 
+def test_inbound_only_journeys_draw_no_route():
+    # Ending at a stand near stop A, it gives no departures: its road isn't drawn.
+    to_stand = replace(EAST, destination="Glossop", inbound_only=True)
+    view = area_view(BusBoard([], schedule(EAST, WEST, to_stand), True, None, [], []), NOW)
+    assert [(r["line"], r["destination"]) for r in view["routes"]] == [("237", "Ashton"), ("341", "Hadfield")]
+
+
 def test_no_stop_codes_or_vehicle_references_reach_the_page():
     text = json.dumps(area_view(board([replace(bus(*HALFWAY, at(10, 14)), vehicle_ref="SECRET-REF")]), NOW))
     assert HENRY_A not in text and ST_MARYS_W not in text and "SECRET-REF" not in text
@@ -116,3 +123,10 @@ def test_a_weekday_only_change_is_seen_on_its_own_weekday():
     assert timetable_changes(schedule(weekdays, saturdays, new_saturdays), TODAY) == [
         {"line": "341", "operator": "BNML", "from": "2026-10-17"},
     ]
+
+
+def test_inbound_only_journeys_are_no_change():
+    # They give no departures, so a new timetable for them changes nothing you see.
+    old = replace(running(EAST, end=date(2026, 10, 24)), inbound_only=True)
+    new = replace(running(EAST, start=date(2026, 10, 25), shift=5), inbound_only=True)
+    assert timetable_changes(schedule(old, new, running(WEST)), TODAY) == []

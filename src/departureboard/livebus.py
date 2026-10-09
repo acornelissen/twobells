@@ -227,9 +227,9 @@ def departures(
 @dataclass(frozen=True)
 class LiveJourney:
     """A timetabled journey with a live bus placed on it, whatever stop it
-    ends at. Journeys that end at your stops never give a departure row, but
-    their buses often go on to work the next journey from there (see
-    enrich.inbound)."""
+    ends at. Journeys that end at your stops (or inbound-only ones, at a
+    stand near them) never give a departure row, but their buses often go on
+    to work the next journey from there (see enrich.inbound)."""
 
     journey: Journey
     service_day: date
@@ -260,7 +260,8 @@ def live_board(
     """The next `rows` buses from your stops, soonest first, each with its
     journey and the bus running it; and every journey (today's or
     yesterday's) a live bus was placed on, including ones that end at your
-    stops, which give no departure row. `directions` filters only the rows.
+    stops and inbound-only ones, which give no departure row. `directions`
+    filters only the rows.
 
     `now` must be timezone-aware in the board's zone, e.g.
     datetime.now(ZoneInfo("Europe/London")); its zone is used to read BODS times.
@@ -286,8 +287,8 @@ def live_board(
     for day, journeys in running.items():
         midnight = datetime.combine(day, time())
         for journey in journeys:
-            if not _heading_to(journey.destination, directions):
-                continue
+            if journey.inbound_only or not _heading_to(journey.destination, directions):
+                continue  # inbound-only journeys are there for enrich.inbound, never as rows
             placed, vehicle = live.get((day, id(journey)), (None, None))
             for k, call in enumerate(journey.calls[:-1]):  # the last call is where it terminates
                 leaves = midnight + timedelta(minutes=call.minute)

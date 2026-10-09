@@ -381,7 +381,8 @@ def timetable_block(state: str, schedule: Schedule | None, tz: tzinfo) -> dict:
         "state": state,
         "built": iso(schedule.built.replace(tzinfo=tz)) if schedule is not None else None,
         "valid_until": schedule.valid_until.isoformat() if schedule and schedule.valid_until else None,
-        "journeys": len(schedule.journeys) if schedule is not None else None,
+        # Journeys calling at your stops; inbound-only ones give no departures.
+        "journeys": len(schedule.departure_journeys) if schedule is not None else None,
     }
 
 

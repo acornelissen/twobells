@@ -477,6 +477,16 @@ def test_live_board_keeps_placed_journeys_whatever_the_directions_or_rows():
     assert rows == [] and [p.journey for p in placed] == [INTO_A]
 
 
+def test_an_inbound_only_journey_never_gives_a_row_but_its_bus_is_placed():
+    # Marked inbound-only, EAST is there only for its bus (see enrich.inbound).
+    only = replace(EAST, inbound_only=True)
+    vehicle = bus(*HALFWAY, at(10, 5))
+    rows, placed = live_board(schedule(only, WEST), at(10, 5), [vehicle], every_day, 10)
+    assert [(l.departure.stop, l.departure.service) for l in rows] == [("A", "237"), ("B", "237")]
+    assert [(p.journey, p.vehicle) for p in placed] == [(only, vehicle)]
+    assert departures(schedule(only, WEST), at(10, 5), [vehicle], every_day, 10) == [l.departure for l in rows]
+
+
 def test_live_board_places_nothing_without_buses():
     assert live_board(schedule(EAST, WEST, INTO_A), at(10, 9), [], every_day, 10)[1] == []
 

@@ -713,3 +713,18 @@ def test_the_snapshot_is_stamped_in_the_board_s_zone_not_the_host_s():
     # A container's clock zone is UTC; the board's times are in its own zone.
     tokyo = Hub("Glossop", WALK, tz=ZoneInfo("Asia/Tokyo"))
     assert json.loads(tokyo.current()[1])["generated_at"].endswith("+09:00")
+
+
+def test_inbound_only_journeys_are_not_counted_nor_observed():
+    from dataclasses import replace
+
+    from departureboard.livebus import live_board
+    from test_livebus import every_day
+
+    only = replace(EAST, inbound_only=True)
+    plan = schedule(only, WEST)
+    assert timetable_block("ready", plan, LONDON)["journeys"] == 1
+    rows, placed = live_board(plan, at(10, 14), [bus(*HALFWAY, at(10, 14))], every_day, 10)
+    assert placed  # its bus is placed, for the inbound line
+    seen = bus_observations(BusBoard(rows, plan, True, None, placed))
+    assert {o.route for o in seen} == {"A|237|Ashton", "B|237|Ashton"}

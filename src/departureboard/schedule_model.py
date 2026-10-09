@@ -49,6 +49,10 @@ class Journey:
     journey_code: str  # TicketMachine JourneyCode; BODS sends it as DatedVehicleJourneyRef
     calls: tuple[Call, ...]  # every stop, in order; the first is the origin
     calendar: Calendar
+    # Kept only to find the bus that will work a departure from your stop: it
+    # ends at a stand near one of your stops without calling at any of them,
+    # so it never gives a departure of its own. False in older files.
+    inbound_only: bool = False
 
     @property
     def origin(self) -> Call:
@@ -67,12 +71,18 @@ class Schedule:
     built: datetime  # when it was made, board-local time
     valid_until: date | None  # the earliest OperatingPeriod end among its journeys, if any
     stops: dict[str, str]  # your stop labels to ATCO codes, as configured when built
-    journeys: tuple[Journey, ...]  # only journeys calling at one of your stops
+    # Journeys calling at one of your stops, and inbound-only ones (see Journey).
+    journeys: tuple[Journey, ...]
     # Positions of the stops journeys call at on the way to yours, for placing buses.
     positions: dict[str, StopPosition] = field(default_factory=dict)
     # The national operator codes whose timetables it was built from, sorted;
     # empty in a file saved before they were recorded.
     operators: tuple[str, ...] = ()
+
+    @property
+    def departure_journeys(self) -> tuple[Journey, ...]:
+        """The journeys calling at your stops: those departures come from."""
+        return tuple(journey for journey in self.journeys if not journey.inbound_only)
 
     def to_json(self) -> str:
         return json.dumps(_plain(asdict(self)), separators=(",", ":"), sort_keys=True)
@@ -129,4 +139,11 @@ def _journey(data: dict) -> Journey:
         journey_code=data["journey_code"],
         calls=tuple(Call(c["atco"], c["minute"]) for c in data["calls"]),
         calendar=_calendar(data["calendar"]),
+        inbound_only=_flag(data.get("inbound_only", False)),
     )
+
+
+def _flag(value) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError(f"Expected true or false, not {value!r}")
+    return value

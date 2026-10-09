@@ -417,7 +417,10 @@ def _timetable(args) -> int:
         print(f"No usable bus timetable: {reason}", file=sys.stderr)
         return 1
     until = f", until {schedule.valid_until:%d %b %Y}" if schedule.valid_until else ""
-    print(f"Bus timetable: {len(schedule.journeys)} journeys at your stops, built {schedule.built:%a %d %b %H:%M}{until}")
+    calling = len(schedule.departure_journeys)
+    inbound = len(schedule.journeys) - calling
+    near = f" (and {inbound} ending near them)" if inbound else ""
+    print(f"Bus timetable: {calling} journeys at your stops{near}, built {schedule.built:%a %d %b %H:%M}{until}")
     return 0
 
 

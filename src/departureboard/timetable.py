@@ -693,5 +693,7 @@ def refresh(
     except Exception as error:  # noqa: BLE001 - any failure keeps the last good schedule
         log.warning("Bus timetable not rebuilt (%s), keeping the saved one: %s", reason, safe_message(error))
         return current
-    log.info("Bus timetable rebuilt (%s): %d journeys", reason, len(fresh.journeys))
+    calling = len(fresh.departure_journeys)
+    log.info("Bus timetable rebuilt (%s): %d journeys at your stops, %d ending near them", reason, calling,
+             len(fresh.journeys) - calling)
     return fresh

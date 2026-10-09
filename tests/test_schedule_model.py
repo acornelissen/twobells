@@ -1,6 +1,8 @@
 import json
 from datetime import date, datetime
 
+import pytest
+
 from departureboard.schedule_model import Calendar, Call, Journey, Schedule, StopPosition
 
 
@@ -29,3 +31,26 @@ def test_a_schedule_saved_before_operators_were_recorded_has_none():
     old = json.dumps({"built": "2026-10-09T03:00:00", "valid_until": None, "stops": {"A": "1000DGHS0900"},
                       "journeys": [], "positions": {}})
     assert Schedule.from_json(old).operators == ()
+
+
+def test_an_inbound_only_journey_round_trips_and_older_files_have_none():
+    calendar = Calendar(days=frozenset({5}))
+    journey = Journey("341", "BNML", "Glossop", "1", (Call("1800ANIN0K1", 600), Call("1000DGHSW936", 640)),
+                      calendar, inbound_only=True)
+    schedule = Schedule(datetime(2026, 10, 9, 3, 0), None, {"A": "1000DGHS0900"}, (journey,))
+    back = Schedule.from_json(schedule.to_json())
+    assert back == schedule and back.journeys[0].inbound_only is True
+    assert back.departure_journeys == ()
+    old = json.loads(schedule.to_json())
+    del old["journeys"][0]["inbound_only"]  # saved before inbound-only journeys were kept
+    loaded = Schedule.from_json(json.dumps(old))
+    assert loaded.journeys[0].inbound_only is False
+    assert loaded.departure_journeys == loaded.journeys
+
+
+def test_inbound_only_must_be_true_or_false():
+    journey = Journey("341", "BNML", "Glossop", "1", (Call("x", 600),), Calendar(days=frozenset()))
+    data = json.loads(Schedule(datetime(2026, 10, 9, 3, 0), None, {}, (journey,)).to_json())
+    data["journeys"][0]["inbound_only"] = "false"
+    with pytest.raises(TypeError):
+        Schedule.from_json(json.dumps(data))

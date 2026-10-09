@@ -590,14 +590,16 @@ def test_timetable_builds_and_reports_the_bus_timetable(bods_env, monkeypatch, c
         seen.update(stops=stops, operators=operators, key=api_key, force=force)
         journey = Journey("341", "BNGN", "Hyde", "1", (Call("1000DGHS0900", 600), Call("x", 610)),
                           Calendar(frozenset(range(7))))
-        made = Schedule(now, None, dict(stops), (journey,), {})
+        to_stand = Journey("341", "BNGN", "Glossop", "2", (Call("y", 600), Call("1000DGHSW936", 610)),
+                           Calendar(frozenset(range(7))), inbound_only=True)
+        made = Schedule(now, None, dict(stops), (journey, to_stand), {})
         timetable.save(folder, made)
         return made
 
     monkeypatch.setattr(timetable, "refresh", fake_refresh)
     assert main(["timetable", *args, "--force"]) == 0
     assert seen == {"stops": {"A": "1000DGHS0900"}, "operators": ["BNML"], "key": "bods", "force": True}
-    assert "Bus timetable: 1 journeys at your stops" in capsys.readouterr().out
+    assert "Bus timetable: 1 journeys at your stops (and 1 ending near them)" in capsys.readouterr().out
     assert (folder / "bank-holidays.json").exists()  # its holiday names come from here
 
 

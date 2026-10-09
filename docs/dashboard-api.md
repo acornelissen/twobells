@@ -126,6 +126,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `ready`;
   - `building` (first build in progress);
   - `missing` (no timetable, with `status.note` saying why).
+- **`timetable.journeys`** counts the timetabled journeys calling at your stops. The journeys kept only to find an inbound bus (ending at a stand near your stop without calling at it; see `inbound`) aren't counted.
 - **`strip`:**
   - `stops` are the stop names before yours, then yours, then possibly the next one.
   - `yours` is the index of your stop.
@@ -271,7 +272,7 @@ A top-level key of `/api/snapshot`, after `disruptions`: the bus lines whose tim
 "timetable_changes": [{"line": "341", "operator": "BNML", "from": "2026-10-25"}]
 ```
 
-- **The rule** (`area.timetable_changes`): the bus timetable keeps journeys whose calendar starts in the future (they never run before their start). A day D in the next 28 days is looked at if a journey starts on D or ended the day before. A line (with its operator) changes on D when the set of its journeys running on D, by their stops and times, differs from the set that ran on the same weekday a week before: new journeys, ended ones, or new times. Each line is listed once, at its first change, soonest first; at most 20. Bank holidays aren't counted.
+- **The rule** (`area.timetable_changes`): the bus timetable keeps journeys whose calendar starts in the future (they never run before their start). A day D in the next 28 days is looked at if a journey starts on D or ended the day before. A line (with its operator) changes on D when the set of its journeys running on D, by their stops and times, differs from the set that ran on the same weekday a week before: new journeys, ended ones, or new times. Each line is listed once, at its first change, soonest first; at most 20. Bank holidays aren't counted. Journeys kept only to find an inbound bus give no departures, so they don't count either.
 - It is worked out again only when the timetable is read again or the day changes.
 - `from` is `YYYY-MM-DD`, the first day of the new timetable.
 - **On the page:** a notice above the bus table, such as "New 341 timetable from Sun 25 Oct."
@@ -297,5 +298,5 @@ The area map: every live bus on our lines around our stops, from the bus poller'
 - `box` is west, south, east, north around the timetable's positioned stops (about 1 km wider), or `null`. Only buses inside it, on lines our timetable has, reported in the last 5 minutes, are sent; at most 80.
 - `destination` is the timetabled journey's when the bus was matched to one, else the bus's own. `next_stop` is the next positioned stop on that journey, or `null` when it wasn't matched or the stop isn't positioned. `bearing` and `recorded_at` can be `null`.
 - `stops` are our stops that have a position, by label.
-- `routes`: for each line and destination, the positioned stops of its longest journey, in order, as `[lat, lon]` pairs (at least two); at most 40.
+- `routes`: for each line and destination, the positioned stops of its longest journey, in order, as `[lat, lon]` pairs (at least two); at most 40. Only journeys calling at your stops are drawn, not those kept only to find an inbound bus.
 - **On the page:** "Around here" has an **Area map** button opening a dialog with the map (line numbers on the bus markers, words in the popups), real zoom and "Show the whole area" buttons, the OpenStreetMap credit, and the same buses listed in words, each with a "Show on map" button. It also lists the stations on the train line in order, from the rows' calling points (and `previous_points`), with each train that has a `position` placed at or between stations, in words.
