@@ -70,8 +70,13 @@ def _ago(gap: timedelta) -> str:
 
 
 def _when(moment: datetime, now: datetime) -> str:
-    """Like '07:58, 3 min ago', with the day too if it wasn't today."""
-    clock = f"{moment:%H:%M}" if moment.date() == now.date() else f"{moment:%a} {moment.day} {moment:%b %H:%M}"
+    """Like '07:58, 3 min ago', with the day too if it wasn't today, and the year if not this one."""
+    if moment.date() == now.date():
+        clock = f"{moment:%H:%M}"
+    elif moment.year == now.year:
+        clock = f"{moment:%a} {moment.day} {moment:%b %H:%M}"
+    else:
+        clock = f"{moment:%a} {moment.day} {moment:%b %Y %H:%M}"
     if moment > now:
         return clock  # the clock went back since; "ago" would be nonsense
     return f"{clock}, {_ago(now - moment)}"

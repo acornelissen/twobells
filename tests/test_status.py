@@ -142,6 +142,8 @@ def test_the_last_redraw_is_shown():
 def test_older_times_name_the_day():
     later = datetime(2026, 10, 10, 9, 0)
     assert "Last redrawn Thu 8 Oct 07:58, 2 days ago" in text_of(render_status(DATA, STATE, later))
+    next_year = datetime(2027, 1, 2, 9, 0)
+    assert "Last redrawn Thu 8 Oct 2026 07:58, 86 days ago" in text_of(render_status(DATA, STATE, next_year))
 
 
 def test_bus_positions_are_shown_when_the_board_tracks_them():
