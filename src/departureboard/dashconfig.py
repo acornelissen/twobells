@@ -188,7 +188,9 @@ def _check_folder(folder: Path, data: dict) -> None:
     """Refuse the board's own state folder: the dashboard would overwrite its
     timetable and holidays with ones built for other rows and stops."""
     board = board_state_dir(data)
-    if board is not None and _same_folder(folder, board):
+    # Only an absolute state_file names a folder on this machine; a relative one
+    # is relative to wherever the board runs (in a container, that's not here).
+    if board is not None and board.is_absolute() and _same_folder(folder, board):
         raise ConfigError(f"{folder} is the board's state folder; give the dashboard its own --state-dir")
     if (folder / BOARD_STATE).exists():
         raise ConfigError(f"{folder} holds a board's {BOARD_STATE}; give the dashboard its own --state-dir")

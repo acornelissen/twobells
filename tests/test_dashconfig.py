@@ -230,3 +230,16 @@ def test_one_dashboard_per_folder(config, tmp_path, opened):
         load_dashboard(config, ENV, folder)
     first.close()
     load(config, folder, opened=opened)  # free again once the first lets go
+
+
+def test_a_relative_board_state_file_says_nothing_about_this_machine(tmp_path, monkeypatch, opened):
+    # A config copied from a laptop has state_file = "state.json": relative to
+    # wherever that board runs. In a container the working directory is the
+    # dashboard's own /data, which must not then be mistaken for the board's.
+    path = tmp_path / "config.toml"
+    path.write_text(CONFIG.format(board="x").replace('state_file = "x/state.json"', 'state_file = "state.json"'))
+    data = tmp_path / "data"
+    data.mkdir()
+    monkeypatch.chdir(data)
+    dash = load(path, data, opened=opened)
+    assert dash.state_dir == data
