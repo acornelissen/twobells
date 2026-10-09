@@ -261,3 +261,37 @@ def test_board_theme_picks_wording_and_renderer():
     assert result.view.trains.rows[0].right == "Cancelled"
     counts = {c: n for n, c in display.shown[0].getcolors()}
     assert counts[display.palette.black] > counts.get(display.palette.white, 0)
+
+
+SATURDAY = datetime(2026, 10, 10, 12, 0)
+
+
+def test_prime_fetches_every_source_outside_its_windows():
+    trains, buses, board, display, state = setup()
+    trains.departures = [train("12:30")]
+    result = run_once(board, state, display, SATURDAY, prime=True)
+    assert (trains.calls, buses.calls) == (1, 1)
+    assert result.view.trains.rows
+
+
+def test_prime_still_respects_the_daily_bus_budget():
+    trains, buses, board, display, state = setup(bus_budget=1)
+    buses.cost = 2
+    run_once(board, state, display, SATURDAY, prime=True)
+    assert buses.calls == 0
+    assert trains.calls == 1
+
+
+def test_without_prime_nothing_is_fetched_outside_windows():
+    trains, buses, board, display, state = setup()
+    run_once(board, state, display, SATURDAY)
+    assert (trains.calls, buses.calls) == (0, 0)
+
+
+def test_run_loop_primes_only_the_first_tick():
+    from departureboard.app import run_loop
+    from departureboard.fake import SimClock
+
+    trains, buses, board, display, state = setup()
+    run_loop(board, state, display, SimClock(SATURDAY), 0, ticks=3, sleep=lambda s: None, prime=True)
+    assert (trains.calls, buses.calls) == (1, 1)

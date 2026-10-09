@@ -58,10 +58,11 @@ class RunResult:
     rendered: bool
 
 
-def _poll(config: SourceConfig, state: dict, now: datetime) -> None:
+def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False) -> None:
+    """Fetch if due. `prime` fetches regardless of windows; the budget still applies."""
     name = config.source.name
     entry = state.setdefault("sources", {}).setdefault(name, {})
-    if not config.policy.is_due(now, from_iso(entry.get("last_attempt"))):
+    if not prime and not config.policy.is_due(now, from_iso(entry.get("last_attempt"))):
         return
 
     if config.daily_budget is not None:
@@ -94,9 +95,11 @@ def _departures(state: dict, name: str) -> list[Departure]:
     return [departure_from_dict(d) for d in entry.get("departures", [])]
 
 
-def run_once(board: Board, state: dict, display: Display, now: datetime) -> RunResult:
+def run_once(
+    board: Board, state: dict, display: Display, now: datetime, prime: bool = False
+) -> RunResult:
     for config in board.sources:
-        _poll(config, state, now)
+        _poll(config, state, now, prime)
 
     entries = state.get("sources", {})
     stale = {
@@ -134,13 +137,15 @@ def run_loop(
     sleep=None,
     on_tick=None,
     store=None,
+    prime: bool = False,
 ) -> None:
-    """Tick forever (or `ticks` times). A clock with `advance()` is simulated."""
+    """Tick forever (or `ticks` times). A clock with `advance()` is simulated.
+    With `prime`, the first tick fetches every source so the board starts filled."""
     sleep = sleep or time.sleep
     count = 0
     while ticks is None or count < ticks:
         now = clock()
-        result = run_once(board, state, display, now)
+        result = run_once(board, state, display, now, prime=prime and count == 0)
         if store is not None:
             store.save(state)
         if on_tick is not None:
