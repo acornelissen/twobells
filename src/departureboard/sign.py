@@ -64,7 +64,7 @@ def _trains(layout: SignLayout, section: Section, y: int) -> int:
         layout.add(dest_x, y, fit_text(row.middle, _FONT, status_x - _COL_GAP - dest_x), inverted)
         layout.add(status_x, y, row.right, inverted)
         y += _LINE
-        if index == 0 and section.leave:
+        if section.leave and index == (section.leave_for or 0):
             # Where the real board scrolls "Calling at", say when to set off.
             layout.add(time_x, y, fit_text(section.leave, _FONT, WIDTH - MARGIN - time_x))
             y += _LINE

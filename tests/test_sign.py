@@ -7,10 +7,10 @@ PALETTE = Palette(white=0, black=1, accent=2)
 FONT = DotFont()
 
 
-def board(trains=(), buses=(), leave=None, stale_trains=False, stale_buses=False):
+def board(trains=(), buses=(), leave=None, leave_for=0, stale_trains=False, stale_buses=False):
     return BoardView(
         title="Glossop > Manchester Picc",
-        trains=Section("Trains", tuple(trains), "No trains", stale_trains, leave),
+        trains=Section("Trains", tuple(trains), "No trains", stale_trains, leave, leave_for if leave else None),
         buses=Section("Buses", tuple(buses), "No buses", stale_buses),
         updated="07:03",
     )
@@ -59,11 +59,17 @@ def test_train_times_line_up():
     assert len({find(items, t).x for t in ("07:12", "07:42", "08:12")}) == 1
 
 
-def test_leave_line_sits_under_the_first_train_aligned_with_the_times():
-    items = sign_layout(board(TRAINS, leave="Leave by 07:05 for the 07:12")).items
-    leave = find(items, "Leave by 07:05 for the 07:12")
+def test_leave_line_sits_under_its_train_aligned_with_the_times():
+    items = sign_layout(board(TRAINS, leave="Leave by 07:05")).items
+    leave = find(items, "Leave by 07:05")
     assert find(items, "1st").y < leave.y < find(items, "2nd").y
     assert leave.x == find(items, "07:12").x
+
+
+def test_leave_line_follows_a_later_train_when_the_first_is_out_of_reach():
+    items = sign_layout(board(TRAINS, leave="Leave by 07:35", leave_for=1)).items
+    leave = find(items, "Leave by 07:35")
+    assert find(items, "2nd").y < leave.y < find(items, "3rd").y
 
 
 def test_cancelled_row_is_inverted():
@@ -103,7 +109,7 @@ def test_footer_names_feeds_that_have_stopped():
 
 
 def test_everything_fits_on_the_panel():
-    items = sign_layout(board(TRAINS, BUSES, leave="Leave by 07:05 for the 07:12", stale_buses=True)).items
+    items = sign_layout(board(TRAINS, BUSES, leave="Leave by 07:05", stale_buses=True)).items
     for item in items:
         assert 0 <= item.x and item.x + FONT.getlength(item.text) <= WIDTH
         assert 0 <= item.y and item.y + 9 <= HEIGHT
