@@ -245,3 +245,74 @@ def test_bad_events_in_the_cache_are_ignored(tmp_path):
         date(2026, 12, 25): holidays.Event("Christmas Day", ""),
         date(2026, 12, 28): holidays.Event("", ""),  # still a holiday, with no name
     }
+
+
+# Divisions: England and Wales, Scotland, Northern Ireland.
+
+SCOTLAND = frozenset(date.fromisoformat(d) for d in ("2026-01-01", "2026-01-02", "2026-08-03", "2026-11-30"))
+NORTHERN_IRELAND = frozenset({date(2026, 3, 17), date(2026, 7, 13)})
+
+
+@pytest.mark.parametrize("division, dates", [
+    ("england-and-wales", ENGLAND_AND_WALES),
+    ("scotland", SCOTLAND),
+    ("northern-ireland", NORTHERN_IRELAND),
+])
+def test_parse_picks_the_division(division, dates):
+    assert parse(BODY, division) == dates
+
+
+def test_parse_refuses_an_unknown_division():
+    with pytest.raises(ValueError, match="wales"):
+        parse(BODY, "wales")
+
+
+@pytest.mark.parametrize("division, dates", [("scotland", SCOTLAND), ("northern-ireland", NORTHERN_IRELAND)])
+def test_one_download_caches_every_division(tmp_path, division, dates):
+    fetch = FakeFetch()
+    assert bank_holidays(tmp_path, NOW, fetch, division=division) == dates
+    assert read_cache(tmp_path, division) == dates
+    assert bank_holidays(tmp_path, NOW + timedelta(minutes=1), fetch) == ENGLAND_AND_WALES
+    assert len(fetch.calls) == 1
+
+
+def test_bus_timetable_names_stay_england_and_wales_whatever_the_division(tmp_path):
+    bank_holidays(tmp_path, NOW, FakeFetch(), division="scotland")
+    assert holidays.read_events(tmp_path) == holidays.parse_events(BODY)
+
+
+def test_a_cache_from_before_divisions_still_works_and_fetches_another_division(tmp_path):
+    # Older versions saved England and Wales only, under "dates".
+    (tmp_path / CACHE_NAME).write_text(json.dumps(
+        {"fetched": NOW.isoformat(), "checked": NOW.isoformat(), "dates": ["2026-12-25"]}
+    ))
+    fetch = FakeFetch()
+    assert bank_holidays(tmp_path, NOW + timedelta(minutes=1), fetch) == {date(2026, 12, 25)}
+    assert fetch.calls == []
+    assert read_cache(tmp_path, "scotland") == frozenset()
+    assert bank_holidays(tmp_path, NOW + timedelta(minutes=2), fetch, division="scotland") == SCOTLAND
+    assert len(fetch.calls) == 1
+    assert read_cache(tmp_path) == ENGLAND_AND_WALES
+
+
+def test_the_cache_keeps_england_and_wales_where_older_versions_read_it(tmp_path):
+    bank_holidays(tmp_path, NOW, FakeFetch(), division="northern-ireland")
+    saved = json.loads((tmp_path / CACHE_NAME).read_text())
+    assert saved["dates"] == sorted(day.isoformat() for day in ENGLAND_AND_WALES)
+
+
+def test_a_download_without_the_division_keeps_the_cache_and_waits_to_retry(tmp_path):
+    fetch = FakeFetch()
+    bank_holidays(tmp_path, NOW, fetch, division="scotland")
+    fetch.body = json.dumps({"england-and-wales": {"events": [{"date": "2027-01-01"}]}}).encode()
+    later = NOW + timedelta(days=8)
+    assert bank_holidays(tmp_path, later, fetch, division="scotland") == SCOTLAND
+    assert bank_holidays(tmp_path, later + timedelta(minutes=1), fetch, division="scotland") == SCOTLAND
+    assert len(fetch.calls) == 2
+
+
+def test_an_unknown_division_is_refused(tmp_path):
+    with pytest.raises(ValueError):
+        bank_holidays(tmp_path, NOW, FakeFetch(), division="wales")
+    with pytest.raises(ValueError):
+        read_cache(tmp_path, "wales")

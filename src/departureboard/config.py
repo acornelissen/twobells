@@ -22,6 +22,7 @@ from .bodsbus import BodsBusSource
 from .darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL
 from .darwin import DarwinSource
 from .display import DISPLAY_PANELS
+from .holidays import DIVISIONS, ENGLAND_AND_WALES
 from .schedule import PollPolicy, parse_window
 from .transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
 from .themes import theme_named, with_text_size
@@ -108,6 +109,8 @@ class Settings:
     # The original pHAT can't be detected, so its colour is set here; it is
     # separate from the accent, which the look draws its highlights in.
     panel_colour: str = "red"
+    # Which of gov.uk's bank holiday lists the checking times follow.
+    bank_holiday_division: str = ENGLAND_AND_WALES
 
 
 def _secret(env: Mapping[str, str], name: str) -> str:
@@ -345,6 +348,15 @@ def _walk(data: dict) -> WalkTimes:
     return WalkTimes(train=train, bus=dict(bus))
 
 
+def holiday_division(data: dict) -> str:
+    """Which of gov.uk's bank holiday lists applies: England and Wales unless set."""
+    division = data.get("bank_holiday_division", ENGLAND_AND_WALES)
+    if division not in DIVISIONS:
+        choices = ", ".join(f'"{d}"' for d in DIVISIONS)
+        raise ConfigError(f"bank_holiday_division must be one of {choices}, not {division!r}")
+    return division
+
+
 def _rotate(data: dict, epaper: bool) -> int:
     # rotate_180 = true is the older spelling of rotate = 180.
     rotate = data.get("rotate", 180 if data.get("rotate_180") else 0)
@@ -403,6 +415,7 @@ def settings_from(
     state_file = _text(data, "state_file", "state.json")
     # On by default: services run a Sunday timetable on bank holidays.
     holidays = frozenset(holidays) if _flag(data, "bank_holidays", True) else frozenset()
+    division = holiday_division(data)
     sources = []
     tracker = None
     wanted = only or {"train", "bus"}
@@ -432,4 +445,5 @@ def settings_from(
         rotate=rotate,
         display=display,
         panel_colour=panel_colour,
+        bank_holiday_division=division,
     )

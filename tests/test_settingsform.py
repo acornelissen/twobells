@@ -411,6 +411,21 @@ def test_bank_holidays_setting_refuses_anything_else(setup):
     assert not (state / "settings.toml").exists()
 
 
+def test_bank_holiday_division_defaults_to_england_and_wales_and_can_be_changed(setup):
+    form, config, _, _ = setup
+    assert fields_of(form)["bank_holiday_division"] == "england-and-wales"
+    assert form.save({**fields_of(form), "bank_holiday_division": "scotland"}) == {}
+    assert read_config(config)["bank_holiday_division"] == "scotland"
+    assert fields_of(form)["bank_holiday_division"] == "scotland"
+
+
+def test_bank_holiday_division_refuses_anything_else(setup):
+    form, _, state, _ = setup
+    errors = form.save({**fields_of(form), "bank_holiday_division": "wales"})
+    assert "bank_holiday_division" in errors
+    assert not (state / "settings.toml").exists()
+
+
 def _status_form(tmp_path, state_text=None):
     from datetime import datetime
 

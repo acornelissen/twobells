@@ -30,7 +30,7 @@ from .config import (
     state_dir,
 )
 from .display import DISPLAY_PANELS
-from .holidays import read_cache
+from .holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
 from .schedule import parse_window
 from .state import StateStore
 from .status import render_status
@@ -206,9 +206,14 @@ def _fields(display: str, theme: str) -> list[Field]:
               options=(("11", "Standard"), ("12", "Slightly bigger"), ("13", "Bigger"), ("14", "Biggest"))),
         Field("bank_holidays", None, "bank_holidays", "Bank holidays",
               lambda raw: _choice(("true", "false"))(raw) == "true", "select",
-              hint="Trains and buses run a Sunday service on bank holidays in England and Wales. Treated "
-                   "like Sundays, only checking times that include Sun apply then. Dates come from GOV.UK.",
+              hint="Trains and buses run a Sunday service on bank holidays. Treated like Sundays, only "
+                   "checking times that include Sun apply then. Dates come from GOV.UK.",
               options=(("true", "Treat bank holidays like Sundays"), ("false", "Ignore bank holidays"))),
+        Field("bank_holiday_division", None, "bank_holiday_division", "Bank holidays for",
+              _choice(DIVISIONS), "select",
+              hint="The part of the UK the board is in; each has its own bank holidays.",
+              options=(("england-and-wales", "England and Wales"), ("scotland", "Scotland"),
+                       ("northern-ireland", "Northern Ireland"))),
         Field("weather_enabled", "weather", "enabled", "Rain warning",
               lambda raw: _choice(("true", "false"))(raw) == "true", "select",
               hint="A line on the board when rain is likely between now and when you'd reach your "
@@ -353,7 +358,10 @@ class SettingsForm:
             state = StateStore(state_file).load()
         except OSError:
             state = None
-        return render_status(data, state, self._now(data), read_cache(Path(state_file).parent))
+        division = data.get("bank_holiday_division", ENGLAND_AND_WALES)
+        if division not in DIVISIONS:  # the page says so on saving
+            division = ENGLAND_AND_WALES
+        return render_status(data, state, self._now(data), read_cache(Path(state_file).parent, division))
 
     def _current(self, data: dict) -> dict[str, str]:
         values = {}
@@ -368,6 +376,8 @@ class SettingsForm:
                 value = 50
             if f.name == "text_size" and value is None:
                 value = 11
+            if f.name == "bank_holiday_division" and value is None:
+                value = ENGLAND_AND_WALES
             values[f.name] = _shown(value, f.kind)
         return values
 

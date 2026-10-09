@@ -141,7 +141,7 @@ class Setup:
     """A collector over fake sources, with its clock, hub and history."""
 
     def __init__(self, tmp_path, now=None, train=True, buses=True, weather=True, reason=None, options=None,
-                 details=False):
+                 details=False, division="england-and-wales"):
         self.clock = Clock(now or at(10, 14))
         self.monotonic = Monotonic()
         self.trains = Trains() if train else None
@@ -153,7 +153,7 @@ class Setup:
             title="Glossop", timezone="Europe/London", state_dir=tmp_path, walk=WalkTimes(train=12, bus={"A": 5}),
             options=options or DashboardOptions(), train=self.trains, train_crs="GLO", train_filter="MAN",
             bus=self.buses, bus_upkeep=self.upkeep_buses, bus_stops={"A": HENRY_A}, weather=self.weather,
-            train_details=self.details,
+            train_details=self.details, bank_holiday_division=division,
         )
         self.hub = Hub("Glossop", self.settings.walk, clock=self.clock, monotonic=self.monotonic)
         self.history = FakeHistory()
@@ -161,8 +161,8 @@ class Setup:
         self.collector = Collector(self.settings, self.hub, self.history, clock=self.clock,
                                    fetch_holidays=self._holidays, random=lambda: 0.5, monotonic=self.monotonic)
 
-    def _holidays(self, folder, now):
-        self.holiday_calls.append((folder, now))
+    def _holidays(self, folder, now, division):
+        self.holiday_calls.append((folder, now, division))
         return frozenset()
 
     def snapshot(self):
@@ -527,10 +527,16 @@ def test_sections_not_configured_stay_null(tmp_path):
 def test_upkeep_refreshes_holidays_timetable_and_history(tmp_path):
     setup = Setup(tmp_path, options=DashboardOptions(history_days=30))
     setup.collector.upkeep()
-    assert setup.holiday_calls == [(tmp_path, datetime(2026, 10, 9, 10, 14))]
+    assert setup.holiday_calls == [(tmp_path, datetime(2026, 10, 9, 10, 14), "england-and-wales")]
     assert setup.upkeep_buses.refreshes == [False]  # never forced: rebuilt only when due
     assert setup.history.swept == [datetime(2026, 10, 9, 10, 14)]
     assert setup.history.purged == [(datetime(2026, 10, 9, 10, 14), 30)]
+
+
+def test_upkeep_asks_for_the_configured_bank_holiday_division(tmp_path):
+    setup = Setup(tmp_path, division="scotland")
+    setup.collector.upkeep()
+    assert [call[2] for call in setup.holiday_calls] == ["scotland"]
 
 
 def test_upkeep_runs_at_start_then_hourly_even_when_quiet(tmp_path):

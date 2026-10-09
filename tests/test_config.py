@@ -397,6 +397,23 @@ def test_without_known_holidays_policies_have_none(tmp_path):
     assert settings.board.sources[0].policy.holidays == frozenset()
 
 
+def test_bank_holiday_division_defaults_to_england_and_wales(tmp_path):
+    assert load_config(write(tmp_path, TRAIN), ENV).bank_holiday_division == "england-and-wales"
+
+
+@pytest.mark.parametrize("division", ["england-and-wales", "scotland", "northern-ireland"])
+def test_bank_holiday_division_can_be_set(tmp_path, division):
+    path = write(tmp_path, f'bank_holiday_division = "{division}"\n' + TRAIN)
+    assert load_config(path, ENV).bank_holiday_division == division
+
+
+@pytest.mark.parametrize("value", ['"wales"', '"Scotland"', '""', "1", '["scotland"]'])
+def test_bank_holiday_division_must_be_one_of_gov_uks(tmp_path, value):
+    path = write(tmp_path, f"bank_holiday_division = {value}\n" + TRAIN)
+    with pytest.raises(ConfigError, match="bank_holiday_division"):
+        load_config(path, ENV)
+
+
 TRAIN_AND_BUS = """
 [train]
 crs = "GLO"

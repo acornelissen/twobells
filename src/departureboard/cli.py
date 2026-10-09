@@ -29,7 +29,7 @@ from zoneinfo import ZoneInfo
 
 from .app import run_loop, run_once
 from .bodsbus import BodsBusSource
-from .config import ConfigError, load_config, overlay_paths, read_config, state_dir
+from .config import ConfigError, holiday_division, load_config, overlay_paths, read_config, state_dir
 from .darwin import DarwinSource, TrainBoard
 from .display import DISPLAY_PANELS, PngDisplay, open_display
 from .holidays import bank_holidays
@@ -98,12 +98,13 @@ def _holidays(config: Path | str) -> frozenset:
     try:
         data = read_config(config)
         folder = state_dir(data)
+        division = holiday_division(data)
     except (OSError, ConfigError):
         return frozenset()  # load_config reports it
     if folder is None or data.get("bank_holidays", True) is not True:
         return frozenset()
     # Only the cache's age depends on the time, so the Pi's own zone will do.
-    return bank_holidays(folder, datetime.now())
+    return bank_holidays(folder, datetime.now(), division=division)
 
 
 def _settings(args, bus_stops: dict[str, str] | None = None, only: set[str] | None = None):
@@ -407,7 +408,8 @@ def _timetable(args) -> int:
         print('Bus times come from TransportAPI; set source = "bods" under [bus] first', file=sys.stderr)
         return 2
     # The timetable's bank holiday names come from this list, so keep it fresh
-    # whatever bank_holidays says about checking times.
+    # whatever bank_holidays says about checking times. Always England and
+    # Wales: BODS timetables are England's.
     bank_holidays(settings.state_file.parent, datetime.now())
     schedule = source.refresh_timetable(force=args.force)
     reason = source.unusable()

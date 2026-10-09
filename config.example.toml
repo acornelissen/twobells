@@ -17,9 +17,11 @@ theme = "sign"
 # "waveshare-10in85g": Waveshare 10.85" e-Paper (G), 1360x480. Needs dtoverlay=spi0-0cs.
 # "hdmi-1280x400": Waveshare 7.9" HDMI screen on its side. Runs as a service, not a timer.
 display = "inky"
-# Trains and buses run a Sunday service on bank holidays (England and Wales,
-# from GOV.UK): treat them like Sundays, so only windows including Sun apply.
+# Trains and buses run a Sunday service on bank holidays (from GOV.UK): treat
+# them like Sundays, so only windows including Sun apply.
 bank_holidays = true
+# Whose bank holidays: "england-and-wales", "scotland" or "northern-ireland".
+bank_holiday_division = "england-and-wales"
 # The plain look's text size, 9-16 (11 is standard); bigger shows fewer departures on a small display.
 # text_size = 12
 # Degrees to turn the board clockwise to suit how it is mounted.

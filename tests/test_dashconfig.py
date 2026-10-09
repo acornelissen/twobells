@@ -156,6 +156,13 @@ def test_loads_the_free_sources_with_the_dashboard_s_rows(config, tmp_path, open
     assert isinstance(dash.weather, OpenMeteoSource)
     assert dash.rain_threshold == 60
     assert dash.walk.train == 12 and dash.walk.bus == {"A": 5}
+    assert dash.bank_holiday_division == "england-and-wales"
+
+
+def test_follows_the_board_s_bank_holiday_division(tmp_path, opened):
+    path = tmp_path / "config.toml"
+    path.write_text('bank_holiday_division = "northern-ireland"\n' + CONFIG.format(board=tmp_path / "board"))
+    assert load(path, tmp_path / "dash", opened=opened).bank_holiday_division == "northern-ireland"
 
 
 def test_the_bus_timetable_lives_in_the_dashboard_s_folder(config, tmp_path, opened):

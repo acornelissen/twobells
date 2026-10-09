@@ -515,6 +515,17 @@ def test_run_treats_a_bank_holiday_like_a_sunday(tmp_path, monkeypatch, gov_uk):
     assert gov_uk == []  # the cache is fresh
 
 
+def test_run_follows_the_configured_bank_holiday_division(tmp_path, monkeypatch, gov_uk):
+    # 31 August is a bank holiday in England and Wales but not in Scotland.
+    args, calls = _holiday_run(tmp_path, monkeypatch, 'bank_holiday_division = "scotland"\n')
+    fresh = json.loads((tmp_path / "state" / holidays.CACHE_NAME).read_text())
+    fresh["divisions"] = {"england-and-wales": ["2026-08-31"], "scotland": ["2026-08-03"]}
+    (tmp_path / "state" / holidays.CACHE_NAME).write_text(json.dumps(fresh))
+    assert main(["run", *args, "--png", str(tmp_path / "out.png")]) == 0
+    assert calls == [1]  # an ordinary Monday in Scotland
+    assert gov_uk == []  # the cache is fresh and has Scotland's dates
+
+
 def test_run_can_ignore_bank_holidays_without_asking_gov_uk(tmp_path, monkeypatch, gov_uk):
     args, calls = _holiday_run(tmp_path, monkeypatch, "bank_holidays = false\n")
     (tmp_path / "state" / holidays.CACHE_NAME).unlink()

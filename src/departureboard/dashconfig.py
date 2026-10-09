@@ -32,6 +32,7 @@ from .config import ConfigError, _flag, _table, _texts, _whole, read_config, set
 from .config import state_dir as board_state_dir
 from .darwin import DarwinSource, ServiceDetails, ServiceDetailsClient, TrainBoard
 from .disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource, kb_url_is_placeholder
+from .holidays import ENGLAND_AND_WALES
 from .schedule import Window, parse_window
 from .walk import WalkTimes
 from .weather import Conditions
@@ -216,6 +217,7 @@ class DashboardSettings:
     train_incidents_note: str | None = None
     rain_threshold: int = 50
     bank_holidays: bool = True
+    bank_holiday_division: str = ENGLAND_AND_WALES
     lock: IO | None = None
 
     def close(self) -> None:
@@ -343,5 +345,6 @@ def load_dashboard(config_path: Path | str, env: Mapping[str, str],
         train_incidents_note=incidents_note,
         rain_threshold=weather.threshold if weather is not None else 50,
         bank_holidays=_flag(data, "bank_holidays", True),
+        bank_holiday_division=settings.bank_holiday_division,
         lock=lock,
     )

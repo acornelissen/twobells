@@ -1,13 +1,21 @@
-"""Bank holidays in England and Wales, from gov.uk, cached beside the state file.
+"""Bank holidays from gov.uk, cached beside the state file.
 
-Trains and buses run a Sunday service on bank holidays. The list is fetched
-at most once a week (the board runs every minute, so the cache's age is
-checked first), and after a failure not again for a few hours. Whatever goes
-wrong, the last good list is kept; with none at all, there are no holidays.
+Trains and buses run a Sunday service on bank holidays. gov.uk lists them for
+three divisions: England and Wales, Scotland, and Northern Ireland. The board
+uses the one its settings name, England and Wales unless told otherwise. One
+download has all three, and all three are cached.
 
-Each holiday's title is kept too, so bus timetables can name it the way
-TransXChange does ("SpringBank", "BoxingDayHoliday"). Caches from before
-titles were kept still work, and gain titles at their next weekly refresh.
+The list is fetched at most once a week (the board runs every minute, so the
+cache's age is checked first), and after a failure not again for a few hours.
+Whatever goes wrong, the last good list is kept; with none at all, there are
+no holidays. Caches from before divisions were kept hold England and Wales
+only; another division is fetched the first time it is asked for.
+
+Each England and Wales holiday's title is kept too, so bus timetables can name
+it the way TransXChange does ("SpringBank", "BoxingDayHoliday"). The bus
+timetables come from BODS, which covers England only, so they always use that
+division. Caches from before titles were kept still work, and gain titles at
+their next weekly refresh.
 """
 
 from __future__ import annotations
@@ -26,7 +34,10 @@ from .status import safe_message
 log = logging.getLogger(__name__)
 
 URL = "https://www.gov.uk/bank-holidays.json"
-REGION = "england-and-wales"
+# gov.uk's divisions, as its JSON names them. England and Wales is the
+# default, and the one bus timetables' holiday names come from.
+ENGLAND_AND_WALES = "england-and-wales"
+DIVISIONS = (ENGLAND_AND_WALES, "scotland", "northern-ireland")
 CACHE_NAME = "bank-holidays.json"
 # The real list is about 20 kB; anything far bigger isn't it.
 MAX_BYTES = 1_000_000
@@ -74,24 +85,39 @@ def _events(items) -> dict[date, Event]:
     return events
 
 
-def parse_events(body: bytes) -> dict[date, Event]:
-    """England and Wales bank holidays from gov.uk's JSON, with their titles,
-    skipping bad entries. ValueError if it isn't that list or has no usable dates."""
+def _parse_divisions(body: bytes) -> dict[str, dict[date, Event]]:
+    """Each division in gov.uk's JSON with usable dates, skipping bad entries.
+    ValueError if it isn't JSON."""
     data = json.loads(body)
-    region = data.get(REGION) if isinstance(data, dict) else None
-    events = region.get("events") if isinstance(region, dict) else None
-    if not isinstance(events, list):
-        raise ValueError("Not gov.uk's list of bank holidays")
-    found = _events(events)
-    if not found:
-        raise ValueError("No bank holidays in gov.uk's list")
+    found = {}
+    for division in DIVISIONS:
+        section = data.get(division) if isinstance(data, dict) else None
+        events = section.get("events") if isinstance(section, dict) else None
+        usable = _events(events) if isinstance(events, list) else {}
+        if usable:
+            found[division] = usable
     return found
 
 
-def parse(body: bytes) -> frozenset[date]:
-    """England and Wales bank holidays from gov.uk's JSON, skipping bad entries.
+def _check(division: str) -> None:
+    if division not in DIVISIONS:
+        raise ValueError(f"Unknown bank holiday division {division!r}; choose from {', '.join(DIVISIONS)}")
+
+
+def parse_events(body: bytes, division: str = ENGLAND_AND_WALES) -> dict[date, Event]:
+    """One division's bank holidays from gov.uk's JSON, with their titles,
+    skipping bad entries. ValueError if it isn't that list or has no usable dates."""
+    _check(division)
+    found = _parse_divisions(body).get(division)
+    if not found:
+        raise ValueError(f"No {division} bank holidays in gov.uk's list")
+    return found
+
+
+def parse(body: bytes, division: str = ENGLAND_AND_WALES) -> frozenset[date]:
+    """One division's bank holidays from gov.uk's JSON, skipping bad entries.
     ValueError if it isn't that list or has no usable dates."""
-    return frozenset(parse_events(body))
+    return frozenset(parse_events(body, division))
 
 
 def _moment(value) -> datetime | None:
@@ -104,11 +130,22 @@ def _moment(value) -> datetime | None:
 class _Cache(NamedTuple):
     fetched: datetime | None
     checked: datetime | None
-    dates: frozenset[date]
-    events: dict[date, Event]  # empty in caches from before titles were kept
+    # Dates by division. Caches from before divisions were kept have
+    # England and Wales only, under "dates".
+    divisions: dict[str, frozenset[date]]
+    events: dict[date, Event]  # England and Wales; empty in caches from before titles were kept
 
 
-_EMPTY = _Cache(None, None, frozenset(), {})
+_EMPTY = _Cache(None, None, {}, {})
+
+
+def _divisions(saved, dates) -> dict[str, frozenset[date]]:
+    found = {ENGLAND_AND_WALES: _dates(dates)}
+    if isinstance(saved, dict):
+        for division in DIVISIONS:
+            if isinstance(saved.get(division), list):
+                found[division] = _dates(saved[division])
+    return found
 
 
 def _load(path: Path) -> _Cache:
@@ -127,16 +164,23 @@ def _load(path: Path) -> _Cache:
     return _Cache(
         _moment(cache.get("fetched")),
         _moment(cache.get("checked")),
-        _dates(cache["dates"]),
+        _divisions(cache.get("divisions"), cache["dates"]),
         _events(events) if isinstance(events, list) else {},
     )
 
 
-def _save(path: Path, fetched: datetime | None, checked: datetime, dates: frozenset[date], events: dict) -> None:
+def _days(dates: frozenset[date]) -> list[str]:
+    return sorted(day.isoformat() for day in dates)
+
+
+def _save(path: Path, fetched: datetime | None, checked: datetime,
+          divisions: dict[str, frozenset[date]], events: dict) -> None:
     record = {
         "fetched": fetched.isoformat() if fetched else None,
         "checked": checked.isoformat(),
-        "dates": sorted(day.isoformat() for day in dates),
+        # England and Wales stays under "dates", where older versions look for it.
+        "dates": _days(divisions.get(ENGLAND_AND_WALES, frozenset())),
+        "divisions": {division: _days(dates) for division, dates in sorted(divisions.items())},
         "events": [
             {"date": day.isoformat(), "title": event.title, "notes": event.notes}
             for day, event in sorted(events.items())
@@ -155,32 +199,45 @@ def _older(moment: datetime | None, now: datetime, age: timedelta) -> bool:
     return moment is None or now - moment >= age or moment - now > _SKEW
 
 
-def read_cache(folder: Path | str) -> frozenset[date]:
-    """The cached bank holidays, without fetching or writing anything."""
-    return _load(Path(folder) / CACHE_NAME).dates
+def read_cache(folder: Path | str, division: str = ENGLAND_AND_WALES) -> frozenset[date]:
+    """One division's cached bank holidays, without fetching or writing anything."""
+    _check(division)
+    return _load(Path(folder) / CACHE_NAME).divisions.get(division, frozenset())
 
 
 def read_events(folder: Path | str) -> dict[date, Event]:
-    """The cached bank holidays with their titles, without fetching or writing anything."""
+    """The cached England and Wales bank holidays with their titles, for bus
+    timetables, without fetching or writing anything."""
     return _load(Path(folder) / CACHE_NAME).events
 
 
-def bank_holidays(folder: Path | str, now: datetime, fetch: Fetch | None = None) -> frozenset[date]:
-    """England and Wales bank holidays, refreshed from gov.uk if the cache in
-    `folder` is a week old. `now` is local time, as everywhere on the board."""
+def bank_holidays(folder: Path | str, now: datetime, fetch: Fetch | None = None,
+                  division: str = ENGLAND_AND_WALES) -> frozenset[date]:
+    """One division's bank holidays, refreshed from gov.uk if the cache in
+    `folder` is a week old or lacks that division. `now` is local time, as
+    everywhere on the board."""
+    _check(division)
     path = Path(folder) / CACHE_NAME
     cache = _load(path)
-    if not _older(cache.fetched, now, REFRESH) or not _older(cache.checked, now, RETRY):
-        return cache.dates
+    cached = cache.divisions.get(division)
+    if cached is not None and not _older(cache.fetched, now, REFRESH):
+        return cached
+    # After a failed check (checked moves on, fetched doesn't), wait before the next.
+    if cache.checked != cache.fetched and not _older(cache.checked, now, RETRY):
+        return cached or frozenset()
     try:
-        events = parse_events((fetch or get_bytes)(URL, MAX_BYTES))
+        found = _parse_divisions((fetch or get_bytes)(URL, MAX_BYTES))
+        if division not in found:
+            raise ValueError(f"No {division} bank holidays in gov.uk's list")
     except Exception as error:  # noqa: BLE001 - any failure keeps the last good list
-        log.warning("Bank holidays not refreshed, keeping %d cached: %s", len(cache.dates), safe_message(error))
-        _save(path, cache.fetched, now, cache.dates, cache.events)
-        return cache.dates
-    fresh = frozenset(events)
-    _save(path, now, now, fresh, events)
-    return fresh
+        kept = cached or frozenset()
+        log.warning("Bank holidays not refreshed, keeping %d cached: %s", len(kept), safe_message(error))
+        _save(path, cache.fetched, now, cache.divisions, cache.events)
+        return kept
+    # A division missing from this download keeps its last good list.
+    divisions = {**cache.divisions, **{name: frozenset(events) for name, events in found.items()}}
+    _save(path, now, now, divisions, found.get(ENGLAND_AND_WALES, cache.events))
+    return divisions[division]
 
 
 # TransXChange's names for England and Wales bank holidays. A substitute day

@@ -185,7 +185,8 @@ class Collector:
         self._fetch_holidays = fetch_holidays
         self._random = random
         self._monotonic = monotonic
-        self._holidays = _holidays.read_cache(settings.state_dir) if settings.bank_holidays else frozenset()
+        self._holidays = (_holidays.read_cache(settings.state_dir, settings.bank_holiday_division)
+                          if settings.bank_holidays else frozenset())
         crs, filter_crs = settings.train_crs, settings.train_filter
         self._route_prefix = f"{crs}>{filter_crs}" if filter_crs else crs
         self._trains, self._buses, self._weather = _Feed(), _Feed(), _Feed()
@@ -461,7 +462,8 @@ class Collector:
         local = self._clock().replace(tzinfo=None)
         errors: list[Exception] = []
         try:
-            found = self._fetch_holidays(self._settings.state_dir, local)
+            found = self._fetch_holidays(self._settings.state_dir, local,
+                                         division=self._settings.bank_holiday_division)
             if self._settings.bank_holidays:
                 self._holidays = frozenset(found)
         except Exception as error:  # noqa: BLE001 - bank_holidays keeps the last list
