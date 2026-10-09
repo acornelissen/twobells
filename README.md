@@ -236,6 +236,7 @@ Live modes keep state in `state_file`, so the TransportAPI budget holds across r
 | `emulator.py`, `emulator.html`, `emulation.py` | Browser panel emulator and its demo/live wiring |
 | `bods.py`, `route.py` | Live bus positions from BODS; placing the next bus on its route strip |
 | `routesetup.py` | Builds a route strip from a BODS timetable and NaPTAN (`route` command) |
+| `setup.py`, `osgb.py`, `data/` | First-run setup core: home from a postcode or address, nearby stations and stops, walk times, a config fragment |
 | `weather.py` | Open-Meteo hourly forecast and the rain-warning rule |
 | `holidays.py` | Bank holidays from GOV.UK (England and Wales, Scotland, Northern Ireland), cached weekly |
 | `status.py` | The settings page's Status section; short, key-free error messages |
@@ -249,3 +250,8 @@ Live modes keep state in `state_file`, so the TransportAPI budget holds across r
 | `cli.py`, `config.py` | `run` / `probe` / `demo` / `timetable`; TOML settings, env secrets |
 
 To add a page or provider, implement `fetch() -> list[Departure]` with a `name` and add it to `config.py`.
+
+## Data credits
+
+- `src/departureboard/data/gb_stations.csv` (stations and CRS codes) and `naptan_area_grid.csv` (which NaPTAN areas have bus stops where) are built from the Department for Transport's [NaPTAN](https://naptan.api.dft.gov.uk/) by `tools/build_setup_data.py`. Contains public sector information licensed under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/). Rebuild them now and then; stations open and stops move.
+- Setup looks up postcodes with [postcodes.io](https://postcodes.io) (Office for National Statistics data under the Open Government Licence; contains OS data © Crown copyright and database right, and Royal Mail data © Royal Mail copyright and database right), addresses with OpenStreetMap's [Nominatim](https://nominatim.openstreetmap.org) and walk times with the OpenStreetMap [foot router](https://routing.openstreetmap.de). OpenStreetMap data © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/copyright).
