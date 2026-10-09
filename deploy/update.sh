@@ -31,8 +31,15 @@ if [[ -n "$secrets" ]]; then
   shred -u "$secrets"
 fi
 
+# Build from a clean copy: pip builds in the source tree, and as root that
+# leaves root-owned build/ and *.egg-info behind (and a stale build/ can leak
+# old files into the next install).
+build="$(mktemp -d)"
+trap 'rm -rf "$build"' EXIT
+cp -a "$REPO/." "$build/"
+rm -rf "$build/build" "$build"/src/*.egg-info
 # The code only: its dependencies are already in the venv.
-"$PREFIX/venv/bin/pip" install --quiet --no-deps --force-reinstall "$REPO"
+"$PREFIX/venv/bin/pip" install --quiet --no-deps --force-reinstall "$build"
 
 for unit in departureboard.service departureboard.timer departureboard-screen.service departureboard-web.service; do
   install -m 644 "$REPO/deploy/$unit" /etc/systemd/system/

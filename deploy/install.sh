@@ -29,7 +29,14 @@ install -d -o departureboard -g departureboard -m 750 /var/lib/departureboard
 python3 -m venv --system-site-packages "$PREFIX/venv"
 # Pinned versions, not the newest of each that day. Debian's own pip is used as
 # is: upgrading it would fetch and run an unpinned package as root.
-"$PREFIX/venv/bin/pip" install --constraint "$REPO/deploy/constraints.txt" "$REPO[pi]"
+# Build from a clean copy: pip builds in the source tree, and as root that
+# leaves root-owned build/ and *.egg-info behind (and a stale build/ can leak
+# old files into the next install).
+build="$(mktemp -d)"
+trap 'rm -rf "$build"' EXIT
+cp -a "$REPO/." "$build/"
+rm -rf "$build/build" "$build"/src/*.egg-info
+"$PREFIX/venv/bin/pip" install --constraint "$REPO/deploy/constraints.txt" "$build[pi]"
 
 install -d -m 755 "$CONF"
 [[ -f "$CONF/config.toml" ]] || install -m 644 "$REPO/config.example.toml" "$CONF/config.toml"
