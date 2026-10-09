@@ -2,11 +2,12 @@
 
 The board shows the next trains from Glossop to Manchester and the next buses from the Henry Street stops, and tells you when to set off so you catch them.
 
-This guide has three parts:
+This guide has four parts:
 
 1. [Reading the board](#1-reading-the-board): for everyone in the house.
 2. [Changing settings](#2-changing-settings): using the settings page from a phone or laptop.
 3. [Setting up and looking after it](#3-setting-up-and-looking-after-it): for whoever installs and maintains it.
+4. [The dashboard](#4-the-dashboard): the full version in a web browser, on a Mac or a NAS.
 
 Developer details (code layout, tests, the emulator) are in the [README](../README.md).
 
@@ -359,3 +360,72 @@ sudo systemctl start departureboard-timetable.service   # build the bus timetabl
 departureboard demo --png preview.png           # draw a sample board without any keys
 departureboard emulate --demo --display hdmi-1280x400   # try the screen on a laptop
 ```
+
+---
+
+## 4. The dashboard
+
+The dashboard is the board's big sibling: a web page with the next 10 trains and 10 buses, delays and reasons, cancellations and disruption notices, a small strip showing where each bus is, a map for each bus, the weather, and how often each regular departure has run late. It works on a phone too.
+
+### What's on it
+
+- **Next to catch:** the next train or bus you can still reach on foot, and how long until you need to leave.
+- **Trains:** time, destination, platform, status in words, when to leave, and **Details** with every stop after Glossop, coach count, and the reason for a delay or cancellation.
+- **Buses:** the same, plus a strip of the stops before yours with the bus drawn where it is, and **Map** for the full route on a street map. "Timetable only" means there's no live position for that bus.
+- **History:** how that departure ran on recent days of the same kind (weekdays, Saturdays, Sundays), such as "Late 4 of the last 10 weekdays (avg 6 min)". Late means 3 minutes or more for trains and 2 for buses. It needs a few days of running before it says anything.
+- **Alert me:** a reminder a minute before you need to leave. On the Mac (the address starts `http://localhost`) the browser can show a notification; on a phone the reminder shows on the page while it's open.
+- **Board look:** switches to the station-board style, amber on black. It's remembered per browser.
+- **Weather:** now, the next 12 hours, rain warning, sunrise and sunset.
+
+Nothing on the page can change anything: it only shows. It checks for new times every minute (trains) and 30 seconds (buses), and stops from 01:00 to 05:00 unless someone has it open.
+
+### On a Mac
+
+With the project installed (see the README), and the same `config.toml` and `secrets.env` as the board:
+
+```bash
+departureboard dashboard --config config.toml --secrets secrets.env
+```
+
+It opens in your browser. The first start takes a minute or so to build the bus timetable. Add `--lan` to let phones on the home Wi-Fi open it at the address it prints. Ctrl-C stops it.
+
+It keeps its own folder (`~/Library/Application Support/departureboard-dashboard`): the bus timetable, the history, and bank holidays. It needs `[bus] source = "bods"`.
+
+### On a Synology NAS
+
+1. Copy the project folder to the NAS, for example to `docker/departureboard` (File Station, or `scp`).
+2. In that folder, add:
+   - `config.toml`, the same as the board's;
+   - `dashboard.env`, from `deploy/dashboard.env.example`, with `RDM_API_KEY` and `BODS_API_KEY`. Keep it private: in File Station, give only your own account access.
+3. In **Container Manager**, go to **Project**, then **Create**. Pick the folder; it uses the `docker-compose.yml` there. Create the project. It builds the image on the NAS and starts it.
+4. Open `http://<NAS name>:8090/` or `http://<NAS IP address>:8090/` from the home network.
+
+The container runs as an unprivileged user with a read-only system, keeps its data in a Docker volume, and restarts by itself. Its health shows in Container Manager.
+
+It only answers to local addresses: the NAS's IP address, a name without dots (`nas`), or a `.local` name. To use another name, such as `ds.home`, add it to `config.toml`:
+
+```toml
+[dashboard]
+allowed_hosts = ["ds.home"]
+```
+
+Don't publish port 8090 on your router or through QuickConnect or DSM's reverse proxy: the page has no password, by design, for the home network only. For extra safety, add a DSM firewall rule that allows 8090 only from your home network's addresses.
+
+**Updating:** copy the new project files over the old ones, then in Container Manager choose the project, then **Action**, then **Build**. Your history and timetable stay in the volume.
+
+### Dashboard settings
+
+All optional, under `[dashboard]` in `config.toml`:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `train_rows`, `bus_rows` | 10 | How many of each to show (1 to 20) |
+| `train_interval_seconds` | 60 | How often to check trains (at least 30) |
+| `bus_interval_seconds` | 30 | How often to check buses (at least 15) |
+| `weather_interval_minutes` | 30 | How often to check the forecast |
+| `quiet_windows` | `["Mon-Sun 01:00-05:00"]` | When not to check, unless the page is open |
+| `late_minutes_train`, `late_minutes_bus` | 3, 2 | How late counts as late in the history |
+| `history_days` | 90 | How long history is kept |
+| `allowed_hosts` | `[]` | Extra names the page answers to |
+| `state_dir` | see above | Where its files live |
+

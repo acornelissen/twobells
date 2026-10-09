@@ -204,6 +204,10 @@ On start the emulator fetches every source once, even outside its windows, so th
 
 Live modes keep state in `state_file`, so the TransportAPI budget holds across restarts.
 
+## Dashboard
+
+`departureboard dashboard` serves a full departures page on your Mac (or, with `docker-compose.yml`, on a Synology NAS): 10 trains and 10 buses, calling points, bus strips and a Leaflet map, weather, leave alerts and punctuality history. See the [user guide](docs/USER_GUIDE.md#4-the-dashboard). The server and page talk through a read-only JSON and SSE API, specified in [docs/dashboard-api.md](docs/dashboard-api.md); the page is vanilla JS modules with no build step, under a strict CSP.
+
 ## Layout
 
 | Module | Role |
@@ -232,6 +236,9 @@ Live modes keep state in `state_file`, so the TransportAPI budget holds across r
 | `fake.py` | Deterministic fake sources and simulated clock |
 | `app.py` | One tick: poll what's due, redraw only on change |
 | `web.py`, `settingsform.py`, `web.css` | Settings page: sign-in and request checks; the form, its checks and saving |
+| `history.py` | Punctuality history in SQLite (dashboard) |
+| `dashconfig.py`, `collector.py`, `snapshot.py`, `dashserver.py` | Dashboard: settings, pollers, the versioned snapshot, the HTTP/SSE server |
+| `dashboard_static/` | Dashboard page: HTML, CSS, JS modules, vendored Leaflet 1.9.4 |
 | `cli.py`, `config.py` | `run` / `probe` / `demo` / `timetable`; TOML settings, env secrets |
 
 To add a page or provider, implement `fetch() -> list[Departure]` with a `name` and add it to `config.py`.

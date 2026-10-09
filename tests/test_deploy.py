@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 DOCKERFILE = (ROOT / "Dockerfile").read_text()
-COMPOSE = (ROOT / "compose.yaml").read_text()
+COMPOSE = (ROOT / "docker-compose.yml").read_text()
 DOCKERIGNORE = (ROOT / ".dockerignore").read_text()
 REQUIREMENTS = (ROOT / "deploy" / "requirements-docker.txt").read_text()
 
