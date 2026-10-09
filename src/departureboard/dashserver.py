@@ -28,8 +28,8 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Callable
 
+from .auth import local_host, private_address
 from .snapshot import Hub
-from .web import local_host, private_address
 
 log = logging.getLogger(__name__)
 
