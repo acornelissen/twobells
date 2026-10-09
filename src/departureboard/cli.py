@@ -333,7 +333,7 @@ def _web(args) -> int:
     import getpass
     from importlib.resources import files
 
-    from . import web
+    from . import auth, web
     from .config import read_base, state_dir
     from .settingsform import SettingsForm
 
@@ -342,7 +342,7 @@ def _web(args) -> int:
     if folder is None:
         print("config.toml needs a state_file; the settings page saves beside it", file=sys.stderr)
         return 2
-    password = web.Password(folder / "web.json")
+    password = auth.PasswordStore(folder / "web.json")
     if args.set_password:
         first = getpass.getpass("New settings page password: ")
         if first != getpass.getpass("Again: "):
@@ -357,7 +357,7 @@ def _web(args) -> int:
         return 0
     form = SettingsForm(args.config, lambda: _env(args.config, args.secrets))
     stylesheet = files("departureboard").joinpath("web.css").read_bytes()
-    handler = web.make_handler(form, password, web.Sessions(), web.SignInLimiter(), web.shell, stylesheet)
+    handler = web.make_handler(form, password, auth.Sessions(), auth.Lockout(), web.shell, stylesheet)
     try:
         server = web.make_server(handler, args.host, args.port)
     except OSError as error:

@@ -1,202 +1,46 @@
-"""The configuration web page's server: sign-in, sessions and request checks.
+"""The configuration web page's server: its pages, forms and responses.
 
 Home network only. Every request must come from a private address and name a
 local host (which blocks DNS rebinding from outside websites); every change
 needs a signed-in session and a matching form token; sign-in attempts are
 rate limited. The password is set on the Pi itself (`web --set-password`),
 never through the page, so nobody on the network can claim it first. No
-JavaScript, and a strict Content-Security-Policy.
+JavaScript, and a strict Content-Security-Policy. The sign-in machinery and
+the request checks live in auth.py, shared with the dashboard server.
 """
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import html
-import ipaddress
-import json
 import logging
-import os
-import secrets
 import sys
-import threading
-import time
-from dataclasses import dataclass, field
-from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from typing import Callable, Protocol
 from urllib.parse import parse_qs, urlparse
+
+from .auth import (
+    FORM_PAGE_HEADERS,
+    Lockout,
+    PasswordCheck,
+    PasswordStore,
+    Sessions,
+    SignInResult,
+    csrf_matches,
+    outsider,
+    same_origin,
+)
+
+# Their home before auth.py; the old names still work.
+from .auth import FAILURE_WINDOW_S, MAX_FAILURES, SESSION_SECONDS, local_host, private_address  # noqa: F401
+from .auth import Lockout as SignInLimiter  # noqa: F401
+from .auth import FORM_PAGE_HEADERS as HEADERS  # noqa: F401
+from .auth import PasswordStore as Password  # noqa: F401
 
 log = logging.getLogger(__name__)
 
 DEFAULT_PORT = 8080
-MIN_PASSWORD = 10
-SESSION_SECONDS = 12 * 3600
-MAX_SESSIONS = 20
 MAX_BODY = 64 * 1024
-# Sign-in: this many failures from one address in the window locks it out for the window.
-MAX_FAILURES = 5
-FAILURE_WINDOW_S = 15 * 60
-# Each check is a scrypt run of 16 MiB and up to a second; more at once could exhaust a Pi.
-MAX_CHECKS = 2
 REQUEST_TIMEOUT_S = 10
-_SCRYPT = {"n": 2**14, "r": 8, "p": 1}
-
-HEADERS = {
-    "Content-Security-Policy": (
-        "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; "
-        "frame-ancestors 'none'; base-uri 'none'"
-    ),
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
-    "Referrer-Policy": "same-origin",  # no-referrer makes browsers post `Origin: null`
-    "Cache-Control": "no-store",
-    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-}
-
-
-class Password:
-    """A scrypt hash in a file only the service user can read."""
-
-    def __init__(self, path: Path | str) -> None:
-        self._path = Path(path)
-
-    def is_set(self) -> bool:
-        return self._path.exists()
-
-    def set(self, password: str) -> None:
-        if len(password) < MIN_PASSWORD:
-            raise ValueError(f"Use at least {MIN_PASSWORD} characters")
-        salt = secrets.token_bytes(16)
-        digest = hashlib.scrypt(password.encode(), salt=salt, dklen=32, **_SCRYPT)
-        record = {"salt": salt.hex(), "hash": digest.hex(), **_SCRYPT}
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_suffix(".tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as handle:
-            json.dump(record, handle)
-        os.replace(tmp, self._path)
-
-    def check(self, password: str) -> bool:
-        try:
-            record = json.loads(self._path.read_text())
-            digest = hashlib.scrypt(
-                password.encode(),
-                salt=bytes.fromhex(record["salt"]),
-                dklen=32,
-                n=record["n"],
-                r=record["r"],
-                p=record["p"],
-            )
-            return hmac.compare_digest(digest.hex(), record["hash"])
-        except (OSError, ValueError, KeyError):
-            return False
-
-
-@dataclass
-class Session:
-    expires: float
-    csrf: str
-
-
-@dataclass
-class Sessions:
-    """Server-side sessions: the cookie holds only a random token."""
-
-    clock: Callable[[], float] = time.time
-    _live: dict[str, Session] = field(default_factory=dict)
-    _lock: threading.Lock = field(default_factory=threading.Lock)
-
-    def create(self) -> tuple[str, Session]:
-        with self._lock:
-            return self._create()
-
-    def _create(self) -> tuple[str, Session]:
-        now = self.clock()
-        self._live = {t: s for t, s in self._live.items() if s.expires > now}
-        while len(self._live) >= MAX_SESSIONS:
-            self._live.pop(min(self._live, key=lambda t: self._live[t].expires))
-        token = secrets.token_urlsafe(32)
-        session = Session(now + SESSION_SECONDS, secrets.token_urlsafe(32))
-        self._live[token] = session
-        return token, session
-
-    def get(self, token: str | None) -> Session | None:
-        with self._lock:
-            session = self._live.get(token or "")
-            if session is None or session.expires <= self.clock():
-                self._live.pop(token or "", None)
-                return None
-            return session
-
-    def end(self, token: str | None) -> None:
-        with self._lock:
-            self._live.pop(token or "", None)
-
-
-@dataclass
-class SignInLimiter:
-    clock: Callable[[], float] = time.time
-    _failures: dict[str, list[float]] = field(default_factory=dict)
-    _lock: threading.Lock = field(default_factory=threading.Lock)
-
-    def _recent(self, address: str) -> list[float]:
-        cutoff = self.clock() - FAILURE_WINDOW_S
-        recent = [t for t in self._failures.get(address, []) if t > cutoff]
-        self._failures[address] = recent
-        return recent
-
-    def attempt(self, address: str) -> bool:
-        """Whether this address may try a password now. The try counts as a
-        failure until `succeeded`, so simultaneous guesses can't slip past the limit."""
-        with self._lock:
-            recent = self._recent(address)
-            if len(recent) >= MAX_FAILURES:
-                return False
-            recent.append(self.clock())
-            return True
-
-    def succeeded(self, address: str) -> None:
-        with self._lock:
-            self._failures.pop(address, None)
-
-
-def private_address(address: str) -> bool:
-    """Loopback, link-local or a private range: the home network, not the internet."""
-    try:
-        ip = ipaddress.ip_address(address.split("%")[0])
-    except ValueError:
-        return False
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
-        ip = ip.ipv4_mapped
-    return ip.is_private or ip.is_loopback or ip.is_link_local
-
-
-def local_host(host: str | None) -> bool:
-    """A Host header naming this machine on the home network: a private IP, or a
-    name with no dots or ending .local, .lan or .home.arpa. Anything else is how
-    a DNS-rebinding page would reach us."""
-    if not host:
-        return False
-    name = host.strip().lower()
-    if name.startswith("["):  # [IPv6]:port
-        name = name[1 : name.find("]")] if "]" in name else ""
-    elif name.count(":") == 1:
-        name = name.split(":")[0]
-    if not name:
-        return False
-    try:
-        ipaddress.ip_address(name.split("%")[0])
-    except ValueError:
-        pass
-    else:
-        return private_address(name)
-    if "." not in name:
-        return name.replace("-", "").isalnum()
-    return name.endswith((".local", ".lan", ".home.arpa")) and all(
-        part and part.replace("-", "").isalnum() for part in name.split(".")
-    )
 
 
 class SettingsPage(Protocol):
@@ -208,10 +52,10 @@ class SettingsPage(Protocol):
     def save(self, fields: dict[str, str]) -> dict[str, str]: ...  # field -> error; empty when saved
 
 
-def make_handler(page: SettingsPage, password: Password, sessions: Sessions, limiter: SignInLimiter,
+def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions, lockout: Lockout,
                  shell: Callable[[str, str], str], stylesheet: bytes):
     """`shell(title, body)` wraps page content in the HTML document."""
-    checking = threading.BoundedSemaphore(MAX_CHECKS)
+    checker = PasswordCheck(password, lockout)
 
     class Handler(BaseHTTPRequestHandler):
         timeout = REQUEST_TIMEOUT_S  # a client that stalls mid-request lets go of its thread
@@ -222,7 +66,7 @@ def make_handler(page: SettingsPage, password: Password, sessions: Sessions, lim
         def _send(self, status: int, body: bytes = b"", content_type: str = "text/html; charset=utf-8",
                   extra: dict[str, str] | None = None) -> None:
             self.send_response(status)
-            for name, value in {**HEADERS, **(extra or {})}.items():
+            for name, value in {**FORM_PAGE_HEADERS, **(extra or {})}.items():
                 self.send_header(name, value)
             if body:
                 self.send_header("Content-Type", content_type)
@@ -238,26 +82,13 @@ def make_handler(page: SettingsPage, password: Password, sessions: Sessions, lim
             self._send(303, extra={"Location": where, **(extra or {})})
 
         def _token(self) -> str | None:
-            cookie = SimpleCookie()
-            try:
-                cookie.load(self.headers.get("Cookie", ""))
-            except Exception:  # noqa: BLE001 - a malformed cookie is no cookie
-                return None
-            morsel = cookie.get("session")
-            return morsel.value if morsel else None
+            return sessions.token_from(self.headers.get("Cookie"))
 
         def _refuse_outsiders(self) -> bool:
-            if not private_address(self.client_address[0]) or not local_host(self.headers.get("Host")):
+            if outsider(self.client_address[0], self.headers.get("Host")):
                 self._send(403, b"Forbidden", "text/plain; charset=utf-8")
                 return True
             return False
-
-        def _same_origin(self) -> bool:
-            origin = self.headers.get("Origin") or self.headers.get("Referer")
-            if not origin:
-                return False
-            parsed = urlparse(origin)
-            return parsed.scheme in ("http", "https") and parsed.netloc == self.headers.get("Host")
 
         def _form(self) -> dict[str, str] | None:
             if self.headers.get_content_type() != "application/x-www-form-urlencoded":
@@ -316,7 +147,7 @@ def make_handler(page: SettingsPage, password: Password, sessions: Sessions, lim
         def do_POST(self) -> None:  # noqa: N802 - http.server API
             if self._refuse_outsiders():
                 return
-            if not self._same_origin():
+            if not same_origin(self.headers):
                 self._send(403, b"Forbidden: cross-site request", "text/plain; charset=utf-8")
                 return
             fields = self._form()
@@ -327,45 +158,37 @@ def make_handler(page: SettingsPage, password: Password, sessions: Sessions, lim
             if path == "/login":
                 self._sign_in(fields)
             elif path == "/logout":
-                session = sessions.get(self._token())
-                if session and hmac.compare_digest(fields.get("csrf", ""), session.csrf):
+                if csrf_matches(sessions.get(self._token()), fields.get("csrf", "")):
                     sessions.end(self._token())
-                self._redirect("/login", {"Set-Cookie": "session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"})
+                self._redirect("/login", {"Set-Cookie": sessions.expired_cookie()})
             elif path == "/":
                 self._save(fields)
             else:
                 self._send(404, b"Not found", "text/plain; charset=utf-8")
 
         def _sign_in(self, fields: dict[str, str]) -> None:
-            address = self.client_address[0]
             if not password.is_set():
                 self._login_page(403)
                 return
-            if not checking.acquire(blocking=False):
+            result = checker.sign_in(self.client_address[0], fields.get("password", ""))
+            if result is SignInResult.BUSY:
                 self._login_page(429, "Busy, try again in a moment.")
                 return
-            try:
-                allowed = limiter.attempt(address)
-                right = allowed and password.check(fields.get("password", ""))
-            finally:
-                checking.release()
-            if not allowed:
+            if result is SignInResult.LOCKED:
                 self._login_page(429, "Too many attempts. Try again in 15 minutes.")
                 return
-            if not right:
+            if result is SignInResult.WRONG:
                 self._login_page(401, "That password isn't right.")
                 return
-            limiter.succeeded(address)
             token, _ = sessions.create()
-            cookie = f"session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_SECONDS}"
-            self._redirect("/", {"Set-Cookie": cookie})
+            self._redirect("/", {"Set-Cookie": sessions.cookie(token)})
 
         def _save(self, fields: dict[str, str]) -> None:
             session = sessions.get(self._token())
             if session is None:
                 self._redirect("/login")
                 return
-            if not hmac.compare_digest(fields.get("csrf", ""), session.csrf):
+            if not csrf_matches(session, fields.get("csrf", "")):
                 self._send(403, b"Forbidden: form expired, reload the page", "text/plain; charset=utf-8")
                 return
             fields.pop("csrf", None)
