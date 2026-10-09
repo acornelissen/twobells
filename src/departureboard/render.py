@@ -63,6 +63,13 @@ def load_fonts(scale: int = 1) -> Fonts:
     )
 
 
+def drawn_length(font: ImageFont.FreeTypeFont, text: str) -> float:
+    """How far `text` reaches when drawn. The panels' images are paletted, so
+    glyphs are hinted for one-bit output and can come out a few pixels wider
+    than getlength() says; right-aligned text measured that way runs into the edge."""
+    return font.getbbox(text, mode="1")[2] if text else 0
+
+
 def left_column_width(fonts: Fonts, scale: int = 1) -> float:
     return fonts.bold.getlength("00:00") + 5 * scale
 
@@ -86,12 +93,12 @@ def _with_stop(row: Row) -> str:
 def row_layout(row: Row, fonts: Fonts, width: int = WIDTH, scale: int = 1) -> RowLayout:
     """Column positions for a row. The destination gives way so times stay whole."""
     pad, gap = _PAD * scale, _COL_GAP * scale
-    right_x = width - pad - fonts.bold.getlength(row.right)
+    right_x = width - pad - drawn_length(fonts.bold, row.right)
     middle_x = pad + left_column_width(fonts, scale)
     leave_x = None
     middle_end = right_x - 4 * scale
     if row.leave:
-        leave_x = right_x - gap - fonts.small.getlength(row.leave)
+        leave_x = right_x - gap - drawn_length(fonts.small, row.leave)
         middle_end = leave_x - gap
     return RowLayout(
         left=fit_text(row.left, fonts.bold, middle_x - pad - 3 * scale),
@@ -129,7 +136,7 @@ class _Painter:
         s, pad = self.s, _PAD * self.s
         self.draw.rectangle((0, 0, self.width - 1, _HEADER_H * s - 1), fill=self.p.black)
         stamp = view.clock or f"Upd {view.updated}"
-        stamp_x = self.width - pad - self.f.regular.getlength(stamp)
+        stamp_x = self.width - pad - drawn_length(self.f.regular, stamp)
         title = fit_text(view.title, self.f.bold, stamp_x - pad - 6 * s)
         self.draw.text((pad, s), title, font=self.f.bold, fill=self.p.white)
         self.draw.text((stamp_x, s), stamp, font=self.f.regular, fill=self.p.white)
@@ -147,7 +154,7 @@ class _Painter:
         # As on the sign, a leave time for a row that doesn't fit is left out.
         if section.leave and (section.leave_for is None or section.leave_for < len(rows)):
             leave = fit_text(section.leave, self.f.small, self.width - pad - label_end - 8 * s)
-            x = self.width - pad - self.f.small.getlength(leave)
+            x = self.width - pad - drawn_length(self.f.small, leave)
             self.draw.text((x, y + s), leave, font=self.f.small, fill=self.p.black)
         y += _LABEL_H * s
         if not rows:
@@ -211,14 +218,14 @@ def render_route(view: RouteView, palette: Palette, panel: Panel = PHAT) -> Imag
 
     draw.rectangle((0, 0, width - 1, _HEADER_H * s - 1), fill=palette.black)
     stamp = view.clock or ""
-    stamp_x = width - pad - f.regular.getlength(stamp)
+    stamp_x = width - pad - drawn_length(f.regular, stamp)
     draw.text((pad, s), fit_text(view.title, f.bold, stamp_x - pad * 3), font=f.bold, fill=palette.white)
     draw.text((stamp_x, s), stamp, font=f.regular, fill=palette.white)
 
     y = (_HEADER_H + 4) * s
     lead = f"{view.due}   {view.leave}" if view.leave else view.due
     draw.text((pad, y), lead, font=f.bold, fill=palette.black)
-    draw.text((width - pad - f.bold.getlength(view.where), y), view.where, font=f.bold, fill=palette.black)
+    draw.text((width - pad - drawn_length(f.bold, view.where), y), view.where, font=f.bold, fill=palette.black)
 
     road = (y + _ROW_H * s + height) // 2
     left, right = pad * 3, width - pad * 3
@@ -232,7 +239,7 @@ def render_route(view: RouteView, palette: Palette, panel: Panel = PHAT) -> Imag
                      outline=palette.black, width=s)
         font = f.bold if yours else f.regular
         text = fit_text(name, font, step * 2 - _COL_GAP * s)
-        tx = min(max(pad, x - font.getlength(text) / 2), width - pad - font.getlength(text))
+        tx = min(max(pad, x - font.getlength(text) / 2), width - pad - drawn_length(font, text))
         # Names above the road clear the bus, which sits on the line.
         ty = road - 30 * s if i % 2 == 0 else road + 9 * s
         draw.text((tx, ty), text, font=font, fill=palette.black)

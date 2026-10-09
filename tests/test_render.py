@@ -2,7 +2,7 @@ import dataclasses
 
 import pytest
 
-from departureboard.panel import HDMI_1280X400, WAVESHARE_10IN85G
+from departureboard.panel import HDMI_1280X400, PHAT, WAVESHARE_10IN85G
 from departureboard.render import (
     HEIGHT,
     WIDTH,
@@ -10,6 +10,7 @@ from departureboard.render import (
     fit_text,
     left_column_width,
     load_fonts,
+    plain_scale,
     render,
     row_layout,
 )
@@ -258,3 +259,40 @@ def test_plain_look_fits_the_waveshare_panel_height():
     image = render(board(trains, rows, train_leave="Leave 07:05 (07:12)"), PALETTE, WAVESHARE_10IN85G)
     bottom = [image.getpixel((x, y)) for x in range(WAVESHARE_10IN85G.width) for y in range(476, 480)]
     assert PALETTE.black not in bottom
+
+
+ALL_PANELS = [PHAT, WAVESHARE_10IN85G, HDMI_1280X400]
+
+
+def ink_columns(image, top, bottom, background):
+    """x positions with anything but `background` between rows top and bottom."""
+    return {x for x in range(image.width) for y in range(top, bottom) if image.getpixel((x, y)) != background}
+
+
+@pytest.mark.parametrize("panel", ALL_PANELS, ids=lambda p: p.name)
+@pytest.mark.parametrize("status", ["Cancelled", "On time", "Exp 07:49", "+7"])
+def test_right_aligned_status_keeps_the_right_margin(panel, status):
+    # Drawn on a paletted image, glyphs are hinted for one-bit output and can come
+    # out a few pixels wider than getlength says: measure what is drawn.
+    s = plain_scale(panel)
+    image = render(board([Row("07:12", "Manchester Piccadilly", status, Style.ALERT)]), PALETTE, panel)
+    top = (15 + 6 + 12) * s  # header, gap, section label
+    ink = ink_columns(image, top, top + 14 * s, PALETTE.white)
+    assert ink and max(ink) < panel.width - 3 * s
+
+
+@pytest.mark.parametrize("panel", ALL_PANELS, ids=lambda p: p.name)
+def test_reversed_out_cancelled_keeps_the_right_margin(panel):
+    s = plain_scale(panel)
+    image = render(board([Row("07:12", "Manchester Piccadilly", "Cancelled", Style.INVERTED)]), PALETTE, panel)
+    top = (15 + 6 + 12) * s
+    ink = ink_columns(image, top + s, top + 13 * s, PALETTE.black)
+    assert ink and max(ink) < panel.width - 3 * s
+
+
+@pytest.mark.parametrize("panel", ALL_PANELS, ids=lambda p: p.name)
+def test_header_stamp_keeps_the_right_margin(panel):
+    s = plain_scale(panel)
+    for view in (board(), dataclasses.replace(board(), clock="07:03:15")):
+        ink = ink_columns(render(view, PALETTE, panel), 0, 15 * s, PALETTE.black)
+        assert max(ink) < panel.width - 3 * s
