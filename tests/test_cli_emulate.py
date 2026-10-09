@@ -68,3 +68,13 @@ def test_emulate_reports_busy_port_without_traceback(capsys):
 def test_demo_board_has_walking_times():
     walk = build_emulation(demo=True).board.walk
     assert walk.train is not None and walk.bus
+
+
+def test_demo_uses_the_station_board_look_in_yellow():
+    em = build_emulation(demo=True)
+    assert em.board.theme.name == "sign"
+    assert em.display.status()["accent"] == "yellow"
+
+
+def test_demo_accent_can_be_overridden():
+    assert build_emulation(demo=True, accent="red").display.status()["accent"] == "red"

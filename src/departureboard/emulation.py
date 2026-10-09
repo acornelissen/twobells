@@ -14,6 +14,7 @@ from .emulator import EmulatorDisplay
 from .fake import FakeBusSource, FakeTrainSource, SimClock
 from .schedule import PollPolicy, parse_window
 from .state import StateStore
+from .themes import THEMES
 from .walk import WalkTimes
 
 DEMO_START = datetime(2026, 10, 8, 6, 58)  # a Thursday
@@ -40,9 +41,10 @@ def _fake_train(clock, interval_minutes: int = 2) -> SourceConfig:
     return SourceConfig(FakeTrainSource(clock), policy, stale_after=timedelta(minutes=6))
 
 
-def _demo(accent: str, tick_seconds: float | None) -> Emulation:
+def _demo(accent: str | None, tick_seconds: float | None) -> Emulation:
+    theme = THEMES["sign"]
     clock = SimClock(DEMO_START)
-    bus = FakeBusSource(clock, failing_when=demo_outage)
+    bus = FakeBusSource(clock, rows=3, failing_when=demo_outage)
     board = Board(
         title="Glossop > Manchester Picc",
         sources=[
@@ -50,12 +52,13 @@ def _demo(accent: str, tick_seconds: float | None) -> Emulation:
             SourceConfig(bus, PollPolicy(_ALWAYS, timedelta(minutes=6)), timedelta(minutes=12)),
         ],
         walk=WalkTimes(train=7, bus={"A": 7, "B": 7}),
+        theme=theme,
     )
 
     return Emulation(
         board,
         clock,
-        EmulatorDisplay(accent, mode="demo"),
+        EmulatorDisplay(accent or theme.accent, mode="demo"),
         store=None,
         tick_seconds=2 if tick_seconds is None else tick_seconds,
     )
@@ -92,7 +95,7 @@ def build_emulation(
     config: Path | str | None = None,
     env: Mapping[str, str] | None = None,
     fake_train: bool = False,
-    accent: str = "red",
+    accent: str | None = None,
     tick_seconds: float | None = None,
 ) -> Emulation:
     if demo:
