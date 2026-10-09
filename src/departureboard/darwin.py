@@ -6,12 +6,17 @@ import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Callable
-from urllib.parse import urlencode
+from datetime import datetime
+from urllib.error import HTTPError
+from urllib.parse import quote, urlencode
 
-from .http import get_json, get_json_capped
-from .model import Departure, Status
+from .http import NotJSON, get_json, get_json_capped
+from .model import Departure, Status, minutes_between
+from .status import safe_message
 
 DEFAULT_BASE_URL = "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
+# The Rail Data Marketplace's "Service Details" product: one train's whole journey.
+DETAILS_BASE_URL = "https://api1.raildata.org.uk/1010-service-details1_2/LDBWS/api/20220120"
 
 _HHMM = re.compile(r"^\d{2}:\d{2}$")
 # Platform labels are short: "1", "10", "2A".
@@ -270,19 +275,26 @@ def _calling_point(point) -> CallingPoint | None:
     )
 
 
-def _calling_points(service: dict, destinations: list[dict]) -> tuple[CallingPoint, ...]:
-    """The stops after this station. A train that divides has one list per
-    part; we keep the one that ends at a destination on the board (the first
-    such, by crs or else by name), and otherwise the first list, which is the
-    main train in Darwin's order."""
+def _point_lists(value) -> list[tuple[CallingPoint, ...]]:
+    """Darwin's calling point lists, one per part of a train that divides or
+    joins, each checked and capped; empty lists are left out."""
     lists = []
-    for part in _as_list(service.get("subsequentCallingPoints"))[:_MAX_CALLING_LISTS]:
+    for part in _as_list(value)[:_MAX_CALLING_LISTS]:
         if not isinstance(part, dict):
             continue
         raw = _as_list(part.get("callingPoint"))[:_MAX_CALLING_POINTS]
         points = tuple(p for p in map(_calling_point, raw) if p is not None)
         if points:
             lists.append(points)
+    return lists
+
+
+def _calling_points(service: dict, destinations: list[dict]) -> tuple[CallingPoint, ...]:
+    """The stops after this station. A train that divides has one list per
+    part; we keep the one that ends at a destination on the board (the first
+    such, by crs or else by name), and otherwise the first list, which is the
+    main train in Darwin's order."""
+    lists = _point_lists(service.get("subsequentCallingPoints"))
     if not lists:
         return ()
     crs_codes = {d["crs"] for d in destinations if d["crs"]}
@@ -400,3 +412,218 @@ class DarwinSource:
         departures = parse_board(board)
         self.messages = parse_messages(board)
         return departures
+
+
+# One train's whole journey, from GetServiceDetails (the Rail Data
+# Marketplace's "Service Details" product, with its own key). It is read with
+# the same checks as the rich board, and the service ID only ever goes into
+# the URL's path, quoted.
+
+
+class DetailsError(Exception):
+    """Service details couldn't be had. The text never carries the key or a URL query."""
+
+
+class DetailsUnavailable(DetailsError):
+    """The key isn't allowed to ask for service details (HTTP 401 or 403)."""
+
+
+class ServiceGone(DetailsError):
+    """Darwin no longer knows the train (HTTP 404, or an empty answer)."""
+
+
+@dataclass(frozen=True)
+class StationCall(CallingPoint):
+    """The train at this station: a calling point whose scheduled, expected
+    and actual times are the departure's (the arrival's where it ends here),
+    with Darwin's arrival and departure times too: HH:MM, a word, or None."""
+
+    sta: str | None = None
+    eta: str | None = None
+    ata: str | None = None
+    std: str | None = None
+    etd: str | None = None
+    atd: str | None = None
+
+
+@dataclass(frozen=True)
+class ServiceDetails:
+    previous: tuple[CallingPoint, ...]  # the stops before this station, in order
+    subsequent: tuple[CallingPoint, ...]  # and after it
+    here: StationCall
+    cancel_reason: str | None
+    delay_reason: str | None
+    length: int | None  # coaches
+    generated_at: str | None  # Darwin's own ISO 8601 timestamp, as sent
+
+
+def _station_call(raw: dict) -> StationCall | None:
+    name = _name(raw.get("locationName"))
+    sta, std = _matching(_CLOCK, raw.get("sta")), _matching(_CLOCK, raw.get("std"))
+    if name is None or (sta is None and std is None):
+        return None
+    eta, ata, etd, atd = (_time(raw.get(key)) for key in ("eta", "ata", "etd", "atd"))
+    return StationCall(
+        name=name,
+        crs=_matching(_CRS, raw.get("crs")),
+        scheduled=std or sta,
+        expected=etd if std else eta,
+        actual=atd if std else ata,
+        cancelled=raw.get("isCancelled") is True or "Cancelled" in (eta, etd),
+        length=_coaches(raw.get("length")),
+        sta=sta, eta=eta, ata=ata, std=std, etd=etd, atd=atd,
+    )
+
+
+def parse_service_details(raw) -> ServiceDetails:
+    """The answer from GetServiceDetails. Raises ServiceGone if it isn't a
+    service with a time at this station; anything else odd is left out."""
+    if not isinstance(raw, dict):
+        raise ServiceGone("Darwin sent no service")
+    here = _station_call(raw)
+    if here is None:
+        raise ServiceGone("Darwin sent no times for this station")
+    # A train that joins another has a list per part; the first is the main
+    # train in Darwin's order.
+    previous = _point_lists(raw.get("previousCallingPoints"))
+    return ServiceDetails(
+        previous=previous[0] if previous else (),
+        subsequent=_calling_points(raw, []),
+        here=here,
+        cancel_reason=_reason(raw.get("cancelReason")),
+        delay_reason=_reason(raw.get("delayReason")),
+        length=_coaches(raw.get("length")),
+        generated_at=_matching(_GENERATED_AT, raw.get("generatedAt")),
+    )
+
+
+class ServiceDetailsClient:
+    """Asks GetServiceDetails about one train at a time."""
+
+    def __init__(self, api_key: str, base_url: str = DETAILS_BASE_URL, http_get: HttpGet | None = None) -> None:
+        self._api_key = api_key
+        self._base_url = base_url.rstrip("/")
+        self._http_get = http_get or _get_details
+
+    def _safe(self, error: BaseException) -> str:
+        text = str(error) or type(error).__name__
+        if self._api_key:
+            text = text.replace(self._api_key, "REDACTED")
+        return safe_message(text)
+
+    def details(self, service_id: str) -> ServiceDetails:
+        """The train's journey. Raises ValueError for an ID that isn't one,
+        DetailsUnavailable, ServiceGone, or DetailsError for anything else."""
+        if _matching(_SERVICE_ID, service_id) is None:
+            raise ValueError("Not a Darwin service ID")
+        url = f"{self._base_url}/GetServiceDetails/{quote(service_id, safe='')}"
+        try:
+            raw = self._http_get(url, {"x-apikey": self._api_key})
+        except HTTPError as error:
+            if error.code in (401, 403):
+                raise DetailsUnavailable(f"Service details refused the key (HTTP {error.code})") from None
+            if error.code == 404:
+                raise ServiceGone("Darwin no longer knows this train") from None
+            raise DetailsError(self._safe(error)) from None
+        except NotJSON:
+            raise ServiceGone("Darwin sent an empty or unreadable answer") from None
+        except Exception as error:  # noqa: BLE001 - raised again without the key or the URL
+            raise DetailsError(self._safe(error)) from None
+        return parse_service_details(raw)
+
+
+# Where the train is, for the dashboard's strip: worked out from the stops
+# Darwin says it has been to, and the times between them.
+
+STRIP_BEFORE = 5  # stops shown before this station
+_MOST_OF_THE_WAY = 0.9  # never drawn at a stop before Darwin says it got there
+
+
+@dataclass(frozen=True)
+class TrainPosition:
+    where: str  # a plain sentence, like "Left Hadfield 22:44, on time"
+    strip_stops: tuple[str, ...]  # up to 5 stops before this station, it, and the next
+    yours: int  # this station's index in strip_stops
+    train_at: float | None  # the train in stop units along strip_stops; None if not on it
+
+
+def _clock(value: str | None, scheduled: str) -> str:
+    """A time as HH:MM: Darwin's clock time if it gave one, else the booked
+    time ("On time", "No report", "Delayed" and nothing all fall back to it)."""
+    return value if value and _CLOCK.fullmatch(value) else scheduled
+
+
+def _minutes_to(hhmm: str, now: datetime) -> float:
+    """Minutes from now until hhmm, the nearest such time (within 12 hours)."""
+    return minutes_between(f"{now:%H:%M}", hhmm) - now.second / 60 - now.microsecond / 60_000_000
+
+
+def _along(left: str, due: str, now: datetime) -> float:
+    """How far the train has come from a stop it left at `left` towards one
+    it is due at `due`: a fraction from 0 to most of the way."""
+    start, end = _minutes_to(left, now), _minutes_to(due, now)
+    if end <= start:
+        return 0.0
+    return min(max(-start / (end - start), 0.0), _MOST_OF_THE_WAY)
+
+
+def _passed(point: CallingPoint) -> bool:
+    return point.actual is not None and point.actual != "Cancelled"
+
+
+def _left(point: CallingPoint) -> str:
+    """"Left Hadfield 22:44, on time", "Left Guide Bridge, 3 min late", or
+    just "Left Flowery Field" when no time was reported."""
+    actual = point.actual
+    if actual == "On time":
+        return f"Left {point.name} {point.scheduled}, on time"
+    if actual and _CLOCK.fullmatch(actual):
+        late = minutes_between(point.scheduled, actual)
+        if late > 0:
+            return f"Left {point.name}, {late} min late"
+        return f"Left {point.name} {actual}, on time"
+    return f"Left {point.name}"
+
+
+def train_position(details: ServiceDetails | None, now: datetime) -> TrainPosition | None:
+    """Where the train is now, in words and along the strip; None without
+    details, or when it is cancelled here. `now` is local time."""
+    if details is None or details.here.cancelled:
+        return None
+    here, previous, after = details.here, details.previous, details.subsequent
+    before = previous[-STRIP_BEFORE:]
+    stops = tuple(p.name for p in before) + (here.name,) + ((after[0].name,) if after else ())
+    yours = len(before)
+    arrives = _clock(here.eta, here.sta) if here.sta else _clock(here.etd, here.std)
+
+    if here.atd is not None:
+        if not after:
+            train_at = yours
+        elif _passed(after[0]):
+            train_at = yours + 1
+        else:
+            left_here = _clock(here.atd, here.std or here.scheduled)
+            train_at = yours + _along(left_here, _clock(after[0].expected, after[0].scheduled), now)
+        return TrainPosition(f"Departed {here.name}", stops, yours, round(train_at, 3))
+    if here.ata is not None:
+        return TrainPosition(f"At {here.name} now", stops, yours, yours)
+
+    last = max((i for i, p in enumerate(previous) if _passed(p)), default=None)
+    if last is None:
+        if previous:
+            first = previous[0]
+            starts = _clock(first.expected, first.scheduled)
+            return TrainPosition(f"Not started yet: leaves {first.name} at {starts}", stops, yours, None)
+        starts = _clock(here.etd, here.std or here.scheduled)
+        return TrainPosition(f"Not started yet: leaves {here.name} at {starts}", stops, yours, None)
+
+    left = previous[last]
+    if last + 1 < len(previous):
+        due = _clock(previous[last + 1].expected, previous[last + 1].scheduled)
+    else:
+        due = arrives
+    index = last - (len(previous) - len(before))  # its place on the strip
+    if index < 0:
+        return TrainPosition(_left(left), stops, yours, None)  # further back than the strip shows
+    train_at = index + _along(_clock(left.actual, left.scheduled), due, now)
+    return TrainPosition(_left(left), stops, yours, round(train_at, 3))

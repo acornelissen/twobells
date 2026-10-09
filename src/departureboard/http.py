@@ -55,10 +55,19 @@ def get_json(url: str, headers: dict | None = None, timeout: float = 15.0) -> di
         return json.load(response)
 
 
+class TooLarge(ValueError):
+    """The response was bigger than the caller allowed."""
+
+
+class NotJSON(ValueError):
+    """The response was empty, or not UTF-8 JSON."""
+
+
 def get_json_capped(url: str, headers: dict | None, max_bytes: int, timeout: float = 15.0):
     """Like get_json, but the body is refused if it is larger than `max_bytes`,
     and a body that isn't UTF-8 JSON (or nests too deeply to read) gives one
-    plain ValueError. The error text never repeats the URL or the headers."""
+    plain ValueError (NotJSON; TooLarge for the size). The error text never
+    repeats the URL or the headers."""
     request = Request(
         url,
         headers={"Accept": "application/json", "User-Agent": USER_AGENT, **(headers or {})},
@@ -66,12 +75,12 @@ def get_json_capped(url: str, headers: dict | None, max_bytes: int, timeout: flo
     with urlopen(request, timeout=timeout) as response:
         body = response.read(max_bytes + 1)
     if len(body) > max_bytes:
-        raise ValueError(f"Response larger than {max_bytes} bytes")
+        raise TooLarge(f"Response larger than {max_bytes} bytes")
     try:
         return json.loads(body.decode("utf-8"))
     except (ValueError, RecursionError):  # UnicodeDecodeError is a ValueError too
         # `from None`: the decoder's own message can quote part of the body.
-        raise ValueError("Response is not valid JSON") from None
+        raise NotJSON("Response is not valid JSON") from None
 
 
 def get_bytes(url: str, max_bytes: int, timeout: float = 15.0) -> bytes:
