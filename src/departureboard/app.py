@@ -341,6 +341,9 @@ def run_once(
     return RunResult(view, rendered=False, route=route, page=page)
 
 
+_SAVE_EVERY = timedelta(minutes=5)
+
+
 def _fetched(state: dict) -> str:
     """The part of the state worth keeping: not the last redraw, nor bus positions,
     which change every poll and are useless a few minutes later."""
@@ -367,7 +370,7 @@ def run_loop(
     given, is asked each tick for a new Board when the settings have changed."""
     sleep = sleep or time.sleep
     count = 0
-    saved = None
+    saved, saved_at = None, None
     while ticks is None or count < ticks:
         if reload is not None:
             board = reload() or board
@@ -381,9 +384,12 @@ def run_loop(
             raise
         if store is not None:
             fetched = _fetched(state)
-            if fetched != saved:
+            # Also every few minutes, so the settings page's status (last redraw,
+            # bus positions) doesn't go stale while nothing new is fetched.
+            overdue = saved_at is None or not timedelta(0) <= now - saved_at < _SAVE_EVERY
+            if fetched != saved or overdue:
                 store.save(state)
-                saved = fetched
+                saved, saved_at = fetched, now
         if on_tick is not None:
             on_tick(now, result)
         sleep(tick_seconds)

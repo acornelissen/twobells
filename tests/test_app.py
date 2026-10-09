@@ -861,3 +861,15 @@ def test_rain_line_redraws_the_board():
     run_once(board, state, display, at("06:45"))  # 07:00-08:00 is 30%: dry enough
     result = run_once(board, state, display, at("07:05"))
     assert result.view.rain and result.rendered
+
+
+def test_loop_also_saves_every_few_minutes_so_the_status_panel_keeps_up():
+    from departureboard.app import run_loop
+
+    trains, buses, board, display, state = setup()
+    store = CountingStore()
+    # Saturday: outside every window, so nothing is fetched, but the screen keeps
+    # redrawing; the saved redraw time must not go stale for the status panel.
+    times = iter(SATURDAY + timedelta(seconds=s) for s in range(0, 11 * 60, 10))
+    run_loop(board, state, FakeScreen(), lambda: next(times), 0, ticks=66, sleep=lambda s: None, store=store)
+    assert store.saves >= 3  # at the start, then at least every 5 minutes
