@@ -246,16 +246,23 @@ def _bus(
         directions=_texts(section, "directions", where) or None,
         fallback=_transportapi(section, env, stops) if has_tapi else None,
     )
-    # The timetable costs nothing to read, so it is checked often; TransportAPI,
-    # if it has to stand in, at its own slower pace to spare the daily allowance.
+    # The timetable costs nothing to read, so it is checked often and all day;
+    # TransportAPI, if it has to stand in, at its own slower pace and in its own
+    # windows (the commute, say), so the daily allowance lasts.
     policy = _policy(section, 2, where, holidays)
+    fallback_windows = policy.windows
+    if "fallback_windows" in section:
+        try:
+            fallback_windows = tuple(parse_window(w) for w in _texts(section, "fallback_windows", where))
+        except ValueError as error:
+            raise ConfigError(str(error)) from error
     fallback_every = timedelta(minutes=_whole(section, "fallback_interval_minutes", 12, where))
     return SourceConfig(
         source,
         policy,
         stale_after,
         daily_budget=daily_budget,
-        fallback_policy=PollPolicy(policy.windows, fallback_every, policy.holidays),
+        fallback_policy=PollPolicy(fallback_windows, fallback_every, policy.holidays),
     )
 
 

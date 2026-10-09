@@ -573,3 +573,20 @@ def test_bus_source_defaults_to_transportapi(tmp_path):
     assert isinstance(config.source, TransportApiBusSource)
     assert config.fallback_policy is None
     assert config.policy.interval == timedelta(minutes=12)
+
+
+def test_bods_bus_fallback_has_its_own_windows(tmp_path):
+    from departureboard.schedule import parse_window
+
+    path = write(tmp_path, BODS_BUS.format(state=tmp_path / "s.json").replace(
+        'source = "bods"', 'source = "bods"\nfallback_windows = ["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]'))
+    config = load_config(path, {"BODS_API_KEY": "bods"}).board.sources[0]
+    assert config.policy.windows == (parse_window("Mon-Sun 06:00-23:00"),)
+    assert config.fallback_policy.windows == (parse_window("Mon-Fri 07:00-08:30"), parse_window("Mon-Fri 17:00-18:00"))
+
+
+def test_bods_bus_fallback_windows_are_checked(tmp_path):
+    path = write(tmp_path, BODS_BUS.format(state=tmp_path / "s.json").replace(
+        'source = "bods"', 'source = "bods"\nfallback_windows = ["evenings"]'))
+    with pytest.raises(ConfigError, match="evenings"):
+        load_config(path, {"BODS_API_KEY": "bods"})

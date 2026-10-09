@@ -42,9 +42,9 @@ Station codes: Glossop is `GLO`, Manchester Piccadilly is `MAN`.
 2. Under `[bus]` set `source = "bods"` and `operators`, the national operator codes of the companies serving your stops (Glossop: `["BNML", "HIPK"]`). bustimes.org shows them on each operator's page; TransportAPI's `operator` field has them too.
 3. Checks cost nothing, so check all day: `interval_minutes = 2`, `windows = ["Mon-Sun 06:00-23:00"]`.
 
-`departureboard timetable` downloads the operators' timetables, keeps the journeys that call at your stops, and saves them beside the state file (about 1 MB). `departureboard-timetable.timer` checks hourly and rebuilds weekly, when a timetable in it ends, or when your stops change. It doesn't notice a change of `operators`: rebuild then (see below). Each check, the board takes the journeys running today (by the timetable's own days, school terms and bank holiday rules), asks BODS where those lines' buses are, matches each bus to its journey by its first stop and timetabled start, and shows it as late by however far behind it is. A bus that's early is shown on time; one without a live position shows its timetabled time (`sch`).
+`departureboard timetable` downloads the operators' timetables, keeps the journeys that call at your stops, and saves them beside the state file (about 1 MB). `departureboard-timetable.timer` checks hourly and rebuilds weekly, when a timetable in it ends, or when your stops or `operators` change. Each check, the board takes the journeys running today (by the timetable's own days, school terms and bank holiday rules), asks BODS where those lines' buses are, matches each bus to its journey by its first stop and timetabled start, and shows it as late by however far behind it is. A bus that's early is shown on time; one without a live position shows its timetabled time (`sch`).
 
-Until there is a usable timetable (none yet, built for other stops, run out, or not rebuilt for four weeks), TransportAPI stands in if its keys are set, every `fallback_interval_minutes` (default 12) and within `daily_budget`. The settings page's status says when it does, and when live positions are failing.
+Until there is a usable timetable (none yet, built for other stops, run out, or not rebuilt for four weeks), TransportAPI stands in if its keys are set: every `fallback_interval_minutes` (default 12), within `daily_budget`, and only inside `fallback_windows` (default: the bus windows). Keep those to the commute, as the free allowance won't stretch across a whole day. The settings page's status says when it does, and when live positions are failing.
 
 ### Walking times
 
@@ -74,7 +74,7 @@ sudo systemctl start departureboard-timetable.service   # takes a few minutes on
 journalctl -u departureboard-timetable -n 5
 ```
 
-Run it through the service rather than by hand: the service reads the keys and writes the timetable as the board's user. To rebuild now, as after changing `operators`, delete `/var/lib/departureboard/bus-timetable.json` and start the service again.
+Run it through the service rather than by hand: the service reads the keys and writes the timetable as the board's user. To rebuild straight away rather than within the hour, delete `/var/lib/departureboard/bus-timetable.json` and start the service again.
 
 ```bash
 sudo /opt/departureboard/venv/bin/departureboard probe train

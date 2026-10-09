@@ -263,9 +263,9 @@ interval_minutes = 2
 windows = ["Mon-Sun 06:00-23:00"]
 ```
 
-- **The timetable** is built on the Pi by `departureboard-timetable.timer`. It checks every hour and rebuilds weekly, when a timetable in it ends, or when your stops change. It downloads the operators' timetables from BODS and keeps only the journeys calling at your stops, with the days each runs: school-term-only journeys run only in the terms the timetable gives, and bank holidays follow the operator's own rules.
+- **The timetable** is built on the Pi by `departureboard-timetable.timer`. It checks every hour and rebuilds weekly, when a timetable in it ends, or when your stops or operators change. It downloads the operators' timetables from BODS and keeps only the journeys calling at your stops, with the days each runs: school-term-only journeys run only in the terms the timetable gives, and bank holidays follow the operator's own rules.
 - **Each check**, the board asks BODS where those lines' buses are, matches each bus to its timetabled journey, and shows how late it is. A bus running early is shown on time, since buses wait at timing points. A bus without a live position shows its timetable time with `sch`.
-- **Building it the first time**, or again after changing `operators` (which it doesn't notice by itself):
+- **Building it now**, rather than waiting up to an hour:
 
   ```bash
   sudo rm -f /var/lib/departureboard/bus-timetable.json     # only to rebuild
@@ -273,7 +273,7 @@ windows = ["Mon-Sun 06:00-23:00"]
   journalctl -u departureboard-timetable -n 5
   ```
 
-Until there's a usable timetable (none yet, built for other stops, run out, or not rebuilt for four weeks), TransportAPI stands in if its keys are set, checked every `fallback_interval_minutes` (default 12) within the daily budget. Without TransportAPI keys the board says it isn't updating buses.
+Until there's a usable timetable (none yet, built for other stops, run out, or not rebuilt for four weeks), TransportAPI stands in if its keys are set, checked every `fallback_interval_minutes` (default 12), within the daily budget, and only inside `fallback_windows`. Set those to the commute (`["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]` fits 28 lookups with two stops); without them it uses the bus windows, and the allowance runs out by mid-morning. Without TransportAPI keys the board says it isn't updating buses.
 
 ### The bus budget
 
@@ -333,6 +333,7 @@ Settings saved on the page go to `/var/lib/departureboard/settings.toml` and ove
 | Every bus says `sch` | No live positions for those buses right now, or live positions failing (the Status section says so) | Usually nothing; times are from the timetable |
 | Status says `From TransportAPI: there is no bus timetable yet` | The timetable hasn't been built, or the build failed | `journalctl -u departureboard-timetable -n 20`; start it as in [Bus times](#bus-times) |
 | Status says `From TransportAPI: the bus timetable is for other stops` | You changed the stops; it rebuilds within the hour | Wait, or start the timetable service |
+| Buses not updating while Status says `From TransportAPI` | Outside `fallback_windows`, or the daily budget is spent | Fix the timetable (see the row above); TransportAPI is only a stand-in |
 | E-paper errors about chip select | SPI chip selects in use | Add `dtoverlay=spi0-0cs` to `/boot/firmware/config.txt` and reboot |
 | Screen black | Screen service not running | `systemctl status departureboard-screen.service` |
 | Screen upside down or sideways | Rotation | Change Rotation on the settings page |

@@ -934,3 +934,25 @@ def test_a_source_s_note_is_saved_with_its_departures_and_cleared_after():
     buses.note = None
     run_once(board, state, display, THU_0700 + timedelta(minutes=2))
     assert "note" not in state["sources"]["bus"]
+
+
+def test_a_source_falling_back_is_only_polled_in_the_fallback_windows():
+    buses = FakeSource("bus", [bus()])
+    buses.falling_back = True
+    trains = FakeSource("train", [train()])
+    board = Board(
+        title="GLO > MAN",
+        sources=[
+            SourceConfig(trains, morning(2), stale_after=timedelta(minutes=6)),
+            SourceConfig(buses, PollPolicy((parse_window("Mon-Sun 06:00-23:00"),), timedelta(minutes=2)),
+                         stale_after=timedelta(minutes=30), daily_budget=28,
+                         fallback_policy=PollPolicy((parse_window("Mon-Fri 17:00-18:00"),), timedelta(minutes=12))),
+        ],
+    )
+    display, state = FakeDisplay(), {}
+    run_once(board, state, display, THU_0700, prime=False)
+    for minutes in range(1, 60):
+        run_once(board, state, display, THU_0700 + timedelta(minutes=minutes))
+    assert buses.calls == 0
+    run_once(board, state, display, THU_0700.replace(hour=17))
+    assert buses.calls == 1
