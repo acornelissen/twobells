@@ -17,7 +17,7 @@ from .view import BoardView, Row, Section, Style
 
 MARGIN = 3
 _LINE = 11
-_TOP = 2
+_TOP = 6
 # Space either side of the dotted divider between trains and buses.
 _ABOVE_RULE = 8
 _BELOW_RULE = 11

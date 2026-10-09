@@ -169,3 +169,14 @@ def test_reversed_small_print_only_highlights_its_own_text():
     # Just left of the warning text, inside its badge, is amber.
     warning = find(sign_layout(board(stale_buses=True)).items, "Not updating: buses")
     assert image.getpixel((int(warning.x) - 1, warning.y + 2)) == PALETTE.accent
+
+
+def test_board_has_padding_at_the_top():
+    items = sign_layout(board(TRAINS)).items
+    assert find(items, "1st").y >= 6
+
+
+def test_cancelled_first_train_band_keeps_the_top_padding():
+    rows = [Row("07:12", "Manchester Piccadilly", "Cancelled", Style.INVERTED)]
+    image = render_sign(board(rows), PALETTE)
+    assert all(image.getpixel((x, y)) == PALETTE.black for x in range(WIDTH) for y in range(4))
