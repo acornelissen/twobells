@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -131,10 +132,26 @@ def test_journey_code_is_not_used_when_the_origin_does_not_fit():
     assert match(vehicle, [EAST], DAY, LONDON) is None
 
 
-def test_another_operator_or_line_does_not_match():
-    assert match(bus(*HALFWAY, at(10, 5), operator="HIPK"), [EAST], DAY, LONDON) is None
+def test_another_line_does_not_match():
     assert match(bus(*HALFWAY, at(10, 5), line="342"), [EAST], DAY, LONDON) is None
-    assert match(bus(*HALFWAY, at(10, 5), operator="", ref="1175"), [EAST], DAY, LONDON) is None
+
+
+def test_another_operator_code_still_matches_on_line_first_stop_and_time():
+    # Bee Network timetables and live feeds can use different codes for one
+    # operator (the 341 timetable says BNGN inside BNML's dataset).
+    assert match(bus(*HALFWAY, at(10, 5), operator="BNGN"), [EAST], DAY, LONDON) is EAST
+
+
+def test_operator_breaks_a_tie_between_journeys_that_otherwise_fit():
+    other = replace(EAST, operator="HIPK", journey_code="9")
+    assert match(bus(*HALFWAY, at(10, 5)), [EAST, other], DAY, LONDON) is EAST
+    assert match(bus(*HALFWAY, at(10, 5), operator="SCMN"), [EAST, other], DAY, LONDON) is None
+
+
+def test_journey_code_needs_the_operator_too():
+    # Ticket machine codes are only unique within one operator.
+    assert match(bus(*HALFWAY, at(10, 5), origin="", operator="HIPK", ref="1175"), [EAST], DAY, LONDON) is None
+    assert match(bus(*HALFWAY, at(10, 5), origin="", operator="", ref="1175"), [EAST], DAY, LONDON) is None
 
 
 def test_ambiguous_matches_are_ignored():

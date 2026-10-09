@@ -46,18 +46,22 @@ def _same(a: str, b: str) -> bool:
 def match(vehicle: Vehicle, journeys: Iterable[Journey], service_day: date, tz: tzinfo) -> Journey | None:
     """The journey a vehicle is running, out of those running on service_day.
 
-    Matched on operator, line, first stop and timetabled time from it. Without
-    those, on the ticket machine's journey code. None when nothing or more than
-    one journey fits, as a wrong match is worse than none.
+    Matched on line, first stop and timetabled time from it, with the operator
+    only breaking ties: Bee Network timetables and live feeds can give one
+    operator different codes. Without those, on the ticket machine's journey
+    code and operator. None when nothing or more than one journey fits, as a
+    wrong match is worse than none.
     """
-    candidates = [
-        j for j in journeys if j.calls and _same(j.operator, vehicle.operator) and _same(j.line, vehicle.line)
-    ]
+    candidates = [j for j in journeys if j.calls and _same(j.line, vehicle.line)]
     if vehicle.origin_ref and vehicle.origin_aimed is not None:
         minute = service_minute(vehicle.origin_aimed, service_day, tz)
         found = [j for j in candidates if j.origin.atco == vehicle.origin_ref and j.origin.minute == minute]
+        if len(found) > 1:
+            found = [j for j in found if _same(j.operator, vehicle.operator)]
     elif vehicle.journey_ref:
-        found = [j for j in candidates if j.journey_code == vehicle.journey_ref]
+        found = [
+            j for j in candidates if _same(j.operator, vehicle.operator) and j.journey_code == vehicle.journey_ref
+        ]
     else:
         return None
     return found[0] if len(found) == 1 else None
