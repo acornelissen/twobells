@@ -1,4 +1,10 @@
-"""Loads config.toml (settings) and the environment (secrets) into a Board."""
+"""Loads config.toml (settings) and the environment (secrets) into a Board.
+
+Settings saved from the web page live in settings.toml next to the state
+file and are layered over config.toml, so the service never writes to /etc
+and comments in a hand-edited config.toml survive. Keys saved there go in a
+secrets.env beside it, layered over the main one.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +29,51 @@ from .walk import DEFAULT_STOP, WalkTimes
 
 class ConfigError(Exception):
     pass
+
+
+OVERLAY_NAME = "settings.toml"
+SECRETS_OVERLAY_NAME = "secrets.env"
+
+
+def state_dir(data: dict) -> Path | None:
+    """Where the web page saves settings: beside an explicitly set state_file.
+    Without one there is no overlay, rather than whatever is in the working directory."""
+    state_file = data.get("state_file")
+    return Path(state_file).parent if state_file else None
+
+
+def overlay_paths(config_path: Path | str) -> tuple[Path, Path] | None:
+    """(settings overlay, secrets overlay) for a config file, if it has a state_file."""
+    folder = state_dir(tomllib.loads(Path(config_path).read_text()))
+    return (folder / OVERLAY_NAME, folder / SECRETS_OVERLAY_NAME) if folder else None
+
+
+def merge(base: dict, over: dict) -> dict:
+    """Tables merge key by key; anything else in `over` replaces what's in `base`."""
+    merged = dict(base)
+    for key, value in over.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def read_config(path: Path | str) -> dict:
+    """config.toml with the web page's settings layered over it."""
+    data = tomllib.loads(Path(path).read_text())
+    folder = state_dir(data)
+    if folder is None:
+        return data
+    overlay = folder / OVERLAY_NAME
+    try:
+        saved = tomllib.loads(overlay.read_text())
+    except FileNotFoundError:
+        return data
+    except tomllib.TOMLDecodeError as error:
+        raise ConfigError(f"{overlay}: {error}") from error
+    saved.pop("state_file", None)  # it decides where the overlay is; only config.toml sets it
+    return merge(data, saved)
 
 
 @dataclass(frozen=True)
@@ -151,7 +202,7 @@ def load_config(
 ) -> Settings:
     """Load settings. `only` limits which sources are built, so a probe needs only its own keys.
     `display` overrides the configured one, as the emulator's --display does."""
-    data = tomllib.loads(Path(path).read_text())
+    data = read_config(path)
     if display:
         data["display"] = display
     if bus_stops:

@@ -261,3 +261,17 @@ def test_route_needs_a_timetable_source(tmp_path, capsys):
 def test_route_needs_a_known_stop(tmp_path, capsys):
     assert main(["route", "341", "--stop", "Z", "--txc", "x.xml", "--config", str(_route_config(tmp_path))]) == 2
     assert "'Z'" in capsys.readouterr().err
+
+
+def test_keys_saved_from_the_web_page_win_over_secrets_env(tmp_path):
+    from departureboard.cli import _env
+
+    config = tmp_path / "config.toml"
+    config.write_text(f'state_file = "{tmp_path / "state" / "state.json"}"\n')
+    secrets = tmp_path / "secrets.env"
+    secrets.write_text("RDM_API_KEY=old\nTAPI_APP_ID=id\n")
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "secrets.env").write_text("RDM_API_KEY=new\n")
+    env = _env(config, secrets)
+    assert env["RDM_API_KEY"] == "new"
+    assert env["TAPI_APP_ID"] == "id"

@@ -257,3 +257,52 @@ def test_positions_cannot_be_polled_faster_than_bods_updates(tmp_path):
     fast = ROUTE.replace('[bus.stops]', 'position_interval_seconds = 5\n[bus.stops]')
     with pytest.raises(ConfigError, match="at least 10"):
         load_config(write(tmp_path, fast), BODS_ENV)
+
+
+def _with_state(tmp_path, body):
+    return write(tmp_path, f'state_file = "{tmp_path / "state" / "state.json"}"\n' + body)
+
+
+def test_saved_settings_are_layered_over_config(tmp_path):
+    path = _with_state(tmp_path, 'title = "Base"\n[train]\ncrs = "GLO"\nrows = 3\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "settings.toml").write_text('title = "Saved"\n[train]\nrows = 2\n')
+    settings = load_config(path, ENV)
+    assert settings.board.title == "Saved"
+    train = settings.board.sources[0]
+    assert train.source.name == "train"
+    assert train.policy.windows  # untouched keys of a table survive
+
+
+def test_overlay_cannot_move_the_state_file(tmp_path):
+    from departureboard.config import read_config
+
+    path = _with_state(tmp_path, "")
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "settings.toml").write_text('state_file = "/etc/evil.json"\n')
+    assert read_config(path)["state_file"] == str(tmp_path / "state" / "state.json")
+
+
+def test_broken_overlay_is_a_config_error(tmp_path):
+    path = _with_state(tmp_path, "")
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "settings.toml").write_text("title = \n")
+    with pytest.raises(ConfigError, match="settings.toml"):
+        load_config(path, ENV)
+
+
+def test_merge_replaces_lists_and_merges_tables():
+    from departureboard.config import merge
+
+    base = {"a": 1, "t": {"x": 1, "y": [1, 2]}, "l": [1]}
+    assert merge(base, {"t": {"y": [3]}, "l": [2]}) == {"a": 1, "t": {"x": 1, "y": [3]}, "l": [2]}
+
+
+def test_no_state_file_means_no_overlay_from_the_working_directory(tmp_path, monkeypatch):
+    from departureboard.config import overlay_paths
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "settings.toml").write_text('title = "From cwd"\n')
+    path = write(tmp_path, 'title = "Base"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    assert load_config(path, ENV).board.title == "Base"
+    assert overlay_paths(path) is None

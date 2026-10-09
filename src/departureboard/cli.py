@@ -23,7 +23,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .app import run_loop, run_once
-from .config import ConfigError, load_config
+from .config import ConfigError, load_config, overlay_paths
 from .display import DISPLAY_PANELS, PngDisplay, open_display
 from .emulation import build_emulation
 from .emulator import DEFAULT_PORT, make_server
@@ -70,9 +70,20 @@ def _parse_stops(specs: list[str] | None) -> dict[str, str] | None:
     return stops
 
 
+def _env(config: Path | str, secrets: Path | str) -> dict[str, str]:
+    """The environment, then secrets.env, then keys saved from the web page."""
+    env = {**os.environ, **load_env_file(secrets)}
+    try:
+        paths = overlay_paths(config)
+    except OSError:
+        return env  # no config file: load_config reports that
+    if paths:
+        env.update(load_env_file(paths[1]))
+    return env
+
+
 def _settings(args, bus_stops: dict[str, str] | None = None, only: set[str] | None = None):
-    env = {**os.environ, **load_env_file(args.secrets)}
-    return load_config(args.config, env, bus_stops, only)
+    return load_config(args.config, _env(args.config, args.secrets), bus_stops, only)
 
 
 def _print_departures(departures: list[Departure], indent: str = "") -> None:
@@ -157,13 +168,11 @@ def _run_loop(settings, display, store, state, args) -> int:
 
 
 def _route(args) -> int:
-    import tomllib
-
     from . import routesetup
-    from .config import _walk
+    from .config import _walk, read_config
     from .walk import DEFAULT_STOP
 
-    data = tomllib.loads(Path(args.config).read_text())
+    data = read_config(args.config)
     bus = data.get("bus", {})
     atco = (bus.get("stops") or {}).get(args.stop)
     if not atco:
@@ -178,8 +187,7 @@ def _route(args) -> int:
             if not args.noc:
                 print("Give --noc (the operator code, e.g. BNML) or --txc FILE", file=sys.stderr)
                 return 2
-            env = {**os.environ, **load_env_file(args.secrets)}
-            key = env.get("BODS_API_KEY", "").strip()
+            key = _env(args.config, args.secrets).get("BODS_API_KEY", "").strip()
             if not key:
                 print("Missing BODS_API_KEY; set it in secrets.env", file=sys.stderr)
                 return 2
@@ -249,7 +257,7 @@ def _demo(args) -> int:
 
 
 def _emulate(args) -> int:
-    env = None if args.demo else {**os.environ, **load_env_file(args.secrets)}
+    env = None if args.demo else _env(args.config, args.secrets)
     em = build_emulation(
         demo=args.demo,
         config=args.config,
