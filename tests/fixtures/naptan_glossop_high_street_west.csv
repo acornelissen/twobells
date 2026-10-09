@@ -1,0 +1,13 @@
+ATCOCode,CommonName,Indicator,Street,Bearing,Longitude,Latitude,Status
+1000DDDV3414,Primary School,Adj,Dinting Vale,SE,-1.970527,53.445897,active
+1000DDDV3835,Glossop Road,Opp,Dinting Vale,SE,-1.97301,53.447084,active
+1000DDHS3412,The Junction,Opp,High Street West,NE,-1.965966,53.444467,active
+1000DGHS0900,Henry Street,Stop A,Henry Street,E,-1.948999,53.44384,active
+1000DGHS1150,Howard Arms,Adj,High Street East,E,-1.948157,53.443301,active
+1000DGHS3403,George Street,adj,High Street West,W,-1.951905,53.443347,active
+1000DGHS3404,Arundel Street,adj,High Street West,E,-1.95326,53.443519,active
+1000DGHS3405,St Marys Road,adj,High Street West,W,-1.955353,53.44343,active
+1000DGHS3406,St Marys Road,Opp,High Street West,E,-1.955759,53.443511,active
+1000DGHS3408,Sunlaws Street,Opp,High Street West,E,-1.959026,53.443494,active
+1000DGHS3410,Grapes Inn,Opp,High Street West,SE,-1.962774,53.444223,active
+1000DGHSW936,Market Hall,Adj,High Street West,W,-1.949828,53.443239,active

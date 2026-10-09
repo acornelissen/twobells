@@ -105,7 +105,13 @@ State is written only when new data arrives, not on every redraw, to spare the S
 
 #### Where the next bus is
 
-On a screen the board can alternate with a second page: 15 s of departures, then 10 s showing the stops before yours with the next bus you can still catch drawn on the road between them, and how many stops away it is. Positions come from the DfT's [Bus Open Data Service](https://data.bus-data.dft.gov.uk/) (free; register and copy the API key from your account settings into `BODS_API_KEY`). They're polled every 30 s inside your bus windows, never written to the SD card, and the page says "Position not updating" if they stop arriving. Set the stops up under `[bus.routes.<line>]` in `config.toml` (see the example there). The emulator's screen demo shows it with a fake bus:
+On a screen the board can alternate with a second page: 15 s of departures, then 10 s showing the stops before yours with the next bus you can still catch drawn on the road between them, and how many stops away it is. Positions come from the DfT's [Bus Open Data Service](https://data.bus-data.dft.gov.uk/) (free; register and copy the API key from your account settings into `BODS_API_KEY`). They're polled every 30 s inside your bus windows, never written to the SD card, and the page says "Position not updating" if they stop arriving. Set the stops up under `[bus.routes.<line>]` in `config.toml`. On your laptop, the `route` command builds the block for you from the operator's BODS timetable and NaPTAN: it picks enough stops before yours to cover your walk plus 5 minutes of travel (at most 8), so the bus is on the strip before you need to leave.
+
+```bash
+departureboard route 341 --stop A --noc BNML --config config.toml --secrets secrets.env >> config.toml
+```
+
+`--noc` is the operator code: TransportAPI's `operator` field, which `probe bus --save DIR` writes out. Timetable downloads for a large operator can be hundreds of MB; `--txc FILE` uses one you've already downloaded instead. The emulator's screen demo shows it with a fake bus:
 
 ```bash
 departureboard emulate --demo --display hdmi-1280x400
@@ -157,6 +163,7 @@ Live modes keep state in `state_file`, so the TransportAPI budget holds across r
 | `screen.py` | HDMI screen output with pygame |
 | `emulator.py`, `emulator.html`, `emulation.py` | Browser panel emulator and its demo/live wiring |
 | `bods.py`, `route.py` | Live bus positions from BODS; placing the next bus on its route strip |
+| `routesetup.py` | Builds a route strip from a BODS timetable and NaPTAN (`route` command) |
 | `fake.py` | Deterministic fake sources and simulated clock |
 | `app.py` | One tick: poll what's due, redraw only on change |
 | `cli.py`, `config.py` | `run` / `probe` / `demo`; TOML settings, env secrets |

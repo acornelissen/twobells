@@ -227,3 +227,37 @@ def test_sleeping_to_the_tick_lands_on_a_whole_second(monkeypatch):
     cli._sleep_to_the_tick(60)
     cli._sleep_to_the_tick(0)
     assert slept == [0.75, 19.75]  # 1000.25 s is 40.25 s past a minute
+
+
+def _route_config(tmp_path):
+    config = tmp_path / "config.toml"
+    config.write_text('[bus]\nwindows = ["Mon-Fri 07:00-08:30"]\nwalk_minutes = 2\n[bus.stops]\nA = "1000DGHS0900"\n')
+    return config
+
+
+def test_route_prints_a_config_block_from_a_timetable_file(tmp_path, capsys, monkeypatch):
+    import tomllib
+    from pathlib import Path
+
+    from departureboard import routesetup
+
+    fixtures = Path(__file__).parent / "fixtures"
+    naptan = (fixtures / "naptan_glossop_high_street_west.csv").read_bytes()
+    monkeypatch.setattr(routesetup, "naptan_stops", lambda atcos: routesetup.parse_naptan(naptan.decode(), set(atcos)))
+    code = main(["route", "341", "--stop", "A", "--txc", str(fixtures / "txc_glossop_synthetic.xml"), "--config", str(_route_config(tmp_path))])
+    assert code == 0
+    printed = capsys.readouterr().out
+    route = tomllib.loads(printed)["bus"]["routes"]["341"]
+    assert [s["name"] for s in route["stops"]] == [
+        "The Junction", "Grapes Inn", "Sunlaws Street", "St Marys Road", "Arundel Street", "Henry Street",
+    ]
+
+
+def test_route_needs_a_timetable_source(tmp_path, capsys):
+    assert main(["route", "341", "--stop", "A", "--config", str(_route_config(tmp_path))]) == 2
+    assert "--noc" in capsys.readouterr().err
+
+
+def test_route_needs_a_known_stop(tmp_path, capsys):
+    assert main(["route", "341", "--stop", "Z", "--txc", "x.xml", "--config", str(_route_config(tmp_path))]) == 2
+    assert "'Z'" in capsys.readouterr().err

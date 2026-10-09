@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Built for tests: TransXChange structure (from DfT's bods repo samples), real
+     NaPTAN stop codes on High Street West, Glossop, invented patterns and times. -->
+<TransXChange xmlns="http://www.transxchange.org.uk/" SchemaVersion="2.4">
+  <StopPoints/>
+  <JourneyPatternSections>
+    <JourneyPatternSection id="JPS_E1">
+      <JourneyPatternTimingLink id="LJPS_E1_0">
+        <From><StopPointRef>1000DDDV3835</StopPointRef></From>
+        <To><StopPointRef>1000DDDV3414</StopPointRef></To>
+        <RunTime>PT2M</RunTime>
+      </JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="LJPS_E1_1">
+        <From><StopPointRef>1000DDDV3414</StopPointRef></From>
+        <To><StopPointRef>1000DDHS3412</StopPointRef></To>
+        <RunTime>PT1M30S</RunTime>
+      </JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="LJPS_E1_2">
+        <From><StopPointRef>1000DDHS3412</StopPointRef></From>
+        <To><StopPointRef>1000DGHS3410</StopPointRef></To>
+        <RunTime>PT2M</RunTime>
+      </JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="LJPS_E1_3">
+        <From><StopPointRef>1000DGHS3410</StopPointRef></From>
+        <To><StopPointRef>1000DGHS3408</StopPointRef></To>
+        <RunTime>PT1M30S</RunTime>
+      </JourneyPatternTimingLink>
+    </JourneyPatternSection>
+    <JourneyPatternSection id="JPS_E2">
+      <JourneyPatternTimingLink id="LJPS_E2_0">
+        <From><StopPointRef>1000DGHS3408</StopPointRef></From>
+        <To><StopPointRef>1000DGHS3406</StopPointRef></To>
+        <RunTime>PT1M</RunTime>
+      </JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="LJPS_E2_1">
+        <From><StopPointRef>1000DGHS3406</StopPointRef></From>
+        <To><StopPointRef>1000DGHS3404</StopPointRef></To>
+        <RunTime>PT1M</RunTime>
+      </JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="LJPS_E2_2">
+        <From><StopPointRef>1000DGHS3404</StopPointRef></From>
+        <To><StopPointRef>1000DGHS0900</StopPointRef></To>
+        <RunTime>PT2M</RunTime>
+      </JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="LJPS_E2_3">
+        <From><StopPointRef>1000DGHS0900</StopPointRef></From>
+        <To><StopPointRef>1000DGHS1150</StopPointRef></To>
+        <RunTime>PT1M</RunTime>
+      </JourneyPatternTimingLink>
+    </JourneyPatternSection>
+    <JourneyPatternSection id="JPS_W">
+      <JourneyPatternTimingLink id="LJPS_W_0">
+        <From><StopPointRef>1000DGHSW936</StopPointRef></From>
+        <To><StopPointRef>1000DGHS3403</StopPointRef></To>
+        <RunTime>PT1M</RunTime>
+      </JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="LJPS_W_1">
+        <From><StopPointRef>1000DGHS3403</StopPointRef></From>
+        <To><StopPointRef>1000DGHS3405</StopPointRef></To>
+        <RunTime>PT1M</RunTime>
+      </JourneyPatternTimingLink>
+    </JourneyPatternSection>
+    <JourneyPatternSection id="JPS_S">
+      <JourneyPatternTimingLink id="LJPS_S_0">
+        <From><StopPointRef>1000DGHS3404</StopPointRef></From>
+        <To><StopPointRef>1000DGHS0900</StopPointRef></To>
+        <RunTime>PT2M</RunTime>
+      </JourneyPatternTimingLink>
+      <JourneyPatternTimingLink id="LJPS_S_1">
+        <From><StopPointRef>1000DGHS0900</StopPointRef></From>
+        <To><StopPointRef>1000DGHS1150</StopPointRef></To>
+        <RunTime>PT1M</RunTime>
+      </JourneyPatternTimingLink>
+    </JourneyPatternSection>
+  </JourneyPatternSections>
+  <Services>
+    <Service>
+      <Lines><Line id="L341"><LineName>341</LineName></Line></Lines>
+      <StandardService>
+        <JourneyPattern id="JP_EAST"><Direction>outbound</Direction>
+          <JourneyPatternSectionRefs>JPS_E1</JourneyPatternSectionRefs>
+          <JourneyPatternSectionRefs>JPS_E2</JourneyPatternSectionRefs>
+        </JourneyPattern>
+        <JourneyPattern id="JP_WEST"><Direction>inbound</Direction>
+          <JourneyPatternSectionRefs>JPS_W</JourneyPatternSectionRefs>
+        </JourneyPattern>
+        <JourneyPattern id="JP_SHORT"><Direction>outbound</Direction>
+          <JourneyPatternSectionRefs>JPS_S</JourneyPatternSectionRefs>
+        </JourneyPattern>
+      </StandardService>
+    </Service>
+    <Service>
+      <Lines><Line id="L237"><LineName>237</LineName></Line></Lines>
+      <StandardService>
+        <JourneyPattern id="JP_237"><Direction>outbound</Direction>
+          <JourneyPatternSectionRefs>JPS_S</JourneyPatternSectionRefs>
+        </JourneyPattern>
+      </StandardService>
+    </Service>
+  </Services>
+  <VehicleJourneys>
+    <VehicleJourney><LineRef>L341</LineRef><JourneyPatternRef>JP_EAST</JourneyPatternRef></VehicleJourney>
+    <VehicleJourney><LineRef>L341</LineRef><JourneyPatternRef>JP_EAST</JourneyPatternRef></VehicleJourney>
+    <VehicleJourney><LineRef>L341</LineRef><JourneyPatternRef>JP_EAST</JourneyPatternRef></VehicleJourney>
+    <VehicleJourney><LineRef>L341</LineRef><JourneyPatternRef>JP_WEST</JourneyPatternRef></VehicleJourney>
+    <VehicleJourney><LineRef>L341</LineRef><JourneyPatternRef>JP_WEST</JourneyPatternRef></VehicleJourney>
+    <VehicleJourney><LineRef>L341</LineRef><JourneyPatternRef>JP_WEST</JourneyPatternRef></VehicleJourney>
+    <VehicleJourney><LineRef>L341</LineRef><JourneyPatternRef>JP_SHORT</JourneyPatternRef></VehicleJourney>
+    <VehicleJourney><LineRef>L237</LineRef><JourneyPatternRef>JP_237</JourneyPatternRef></VehicleJourney>
+    <VehicleJourney><LineRef>L237</LineRef><JourneyPatternRef>JP_237</JourneyPatternRef></VehicleJourney>
+    <VehicleJourney><LineRef>L237</LineRef><JourneyPatternRef>JP_237</JourneyPatternRef></VehicleJourney>
+    <VehicleJourney><LineRef>L237</LineRef><JourneyPatternRef>JP_237</JourneyPatternRef></VehicleJourney>
+    <VehicleJourney><LineRef>L237</LineRef><JourneyPatternRef>JP_237</JourneyPatternRef></VehicleJourney>
+  </VehicleJourneys>
+</TransXChange>

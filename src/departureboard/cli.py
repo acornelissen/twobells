@@ -5,6 +5,7 @@
   departureboard probe    one live call to check keys and stop codes
   departureboard demo     render sample data to a PNG, no keys needed
   departureboard emulate  run the board against a browser-based panel emulator
+  departureboard route    print a [bus.routes] block for the screen's bus page (run on a laptop)
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from .config import ConfigError, load_config
 from .display import DISPLAY_PANELS, PngDisplay, open_display
 from .emulation import build_emulation
 from .emulator import DEFAULT_PORT, make_server
+from .http import get_bytes
 from .model import Departure, Status
 from .state import StateStore
 from .transportapi import redact_credentials
@@ -154,6 +156,56 @@ def _run_loop(settings, display, store, state, args) -> int:
     return 0
 
 
+def _route(args) -> int:
+    import tomllib
+
+    from . import routesetup
+    from .config import _walk
+    from .walk import DEFAULT_STOP
+
+    data = tomllib.loads(Path(args.config).read_text())
+    bus = data.get("bus", {})
+    atco = (bus.get("stops") or {}).get(args.stop)
+    if not atco:
+        print(f"No stop {args.stop!r} in [bus.stops]", file=sys.stderr)
+        return 2
+    walk = _walk(data).bus
+    walk_minutes = walk.get(args.stop, walk.get(DEFAULT_STOP, 0))
+    try:
+        if args.txc:
+            documents = list(routesetup.timetable_documents(Path(args.txc).read_bytes()))
+        else:
+            if not args.noc:
+                print("Give --noc (the operator code, e.g. BNML) or --txc FILE", file=sys.stderr)
+                return 2
+            env = {**os.environ, **load_env_file(args.secrets)}
+            key = env.get("BODS_API_KEY", "").strip()
+            if not key:
+                print("Missing BODS_API_KEY; set it in secrets.env", file=sys.stderr)
+                return 2
+            documents = []
+            for url in routesetup.dataset_urls(key, args.noc):
+                print(f"Downloading {url}", file=sys.stderr)
+                blob = get_bytes(url, routesetup.MAX_DOWNLOAD_BYTES, timeout=300)
+                documents.extend(routesetup.timetable_documents(blob))
+        found = routesetup.find_patterns(documents, args.line)
+        if not found:
+            print(f"No timetable for line {args.line} found", file=sys.stderr)
+            return 1
+        atcos, covered, journeys = routesetup.strip_before(found, atco, walk_minutes)
+        stops = routesetup.naptan_stops(atcos)
+        note = (
+            f"Line {args.line} to stop {args.stop}: {len(atcos)} stops, about {round(covered / 60)} min "
+            f"of travel (walk {walk_minutes} min + {routesetup.EXTRA_MINUTES}); pattern used by {journeys} "
+            "timetabled journeys. Check the stops, then paste into config.toml."
+        )
+        print(routesetup.route_toml(args.line, args.stop, atcos, stops, note))
+    except routesetup.RouteSetupError as error:
+        print(f"Route setup failed: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _probe(args) -> int:
     settings = _settings(args, _parse_stops(args.stop), only={args.source})
     for config in settings.board.sources:
@@ -272,6 +324,13 @@ def _parser() -> argparse.ArgumentParser:
     demo.add_argument("--accent", choices=["red", "yellow"], help="defaults to the theme's")
     demo.add_argument("--display", default="inky", choices=sorted(DISPLAY_PANELS), help="panel to draw for")
     demo.set_defaults(handler=_demo)
+
+    route = with_config(sub.add_parser("route", help="print a [bus.routes] block for the screen's bus page"))
+    route.add_argument("line", help="bus line as on the board, e.g. 341")
+    route.add_argument("--stop", required=True, help="your stop's label from [bus.stops], e.g. A")
+    route.add_argument("--noc", help="operator code (TransportAPI's 'operator', e.g. BNML) to find its BODS timetable")
+    route.add_argument("--txc", help="a TransXChange .xml or .zip you downloaded, instead of --noc")
+    route.set_defaults(handler=_route)
 
     emulate = with_config(sub.add_parser("emulate", help="run against a browser panel emulator"))
     emulate.add_argument("--demo", action="store_true", help="fake data on a fast simulated clock")
