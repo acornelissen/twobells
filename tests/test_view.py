@@ -187,4 +187,16 @@ def test_sign_wording_for_cancelled_bus():
 
 def test_sign_wording_for_leave_line():
     v = view(trains=[train("07:12")], now="07:00", walk=WALK, wording=SIGN)
-    assert v.trains.leave == "Leave by 07:05 for the 07:12"
+    assert v.trains.leave == "Leave by 07:05"
+
+
+def test_plain_leave_text_names_the_actual_departure_time_when_late():
+    v = view(trains=[train("07:12", "07:20", Status.LATE)], now="07:00", walk=WALK)
+    assert v.trains.leave == "Leave 07:13 (07:20)"
+
+
+def test_section_records_which_row_the_leave_time_is_for():
+    trains = [train("07:12"), train("07:42")]
+    assert view(trains=trains, now="07:00", walk=WALK).trains.leave_for == 0
+    assert view(trains=trains, now="07:06", walk=WALK).trains.leave_for == 1
+    assert view(trains=trains, now="07:00").trains.leave_for is None

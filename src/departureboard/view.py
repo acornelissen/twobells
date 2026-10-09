@@ -33,7 +33,8 @@ class Wording:
 
 
 def _target(dep: Departure) -> str:
-    return dep.scheduled if dep.mode == "train" else dep.service
+    # The time it actually leaves, so a late train never reads as leaving before you do.
+    return dep.departs_at if dep.mode == "train" else dep.service
 
 
 PLAIN = Wording(
@@ -44,7 +45,8 @@ PLAIN = Wording(
 SIGN = Wording(
     "On time", "Cancelled", "Delayed", "-",
     late=lambda dep: f"Exp {dep.expected}",
-    leave=lambda leave, target: f"Leave by {leave} for the {target}",
+    # Drawn under the train it refers to, so the time alone is enough.
+    leave=lambda leave, target: f"Leave by {leave}",
 )
 
 
@@ -65,6 +67,7 @@ class Section:
     empty_text: str
     stale: bool = False
     leave: str | None = None
+    leave_for: int | None = None  # index of the row the leave time is for
 
 
 @dataclass(frozen=True)
@@ -106,20 +109,24 @@ def _bus_row(dep: Departure, walk: WalkTimes | None, words: Wording) -> Row:
     return Row(dep.service, dep.destination, right, style, f"leave {leave}" if leave else None, dep.stop)
 
 
-def _leave_text(departures, walk: WalkTimes | None, now: str, words: Wording) -> str | None:
+def _leave(departures, walk: WalkTimes | None, now: str, words: Wording):
+    """(text, row index) for the next departure in reach, or (None, None)."""
     found = leave_by(departures, walk, now) if walk else None
     if found is None:
-        return None
+        return None, None
     leave, dep = found
-    return words.leave(leave, _target(dep))
+    return words.leave(leave, _target(dep)), departures.index(dep)
 
 
 def _section(label, departures, to_row, now, empty_text, stale, walk, words) -> Section:
     upcoming = [d for d in departures if not d.is_gone(now)]
     rows = tuple(to_row(d, walk, words) for d in upcoming)
     # Rows that carry their own leave time make a header summary redundant.
-    header = None if any(r.leave for r in rows) else _leave_text(upcoming, walk, now, words)
-    return Section(label, rows, empty_text, stale, header)
+    if any(r.leave for r in rows):
+        text, index = None, None
+    else:
+        text, index = _leave(upcoming, walk, now, words)
+    return Section(label, rows, empty_text, stale, text, index)
 
 
 def build_view(
