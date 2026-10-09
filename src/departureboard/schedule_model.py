@@ -9,10 +9,17 @@ started the evening before is 1460.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 
 DateRange = tuple[date, date]  # first and last day, inclusive
+
+# A journey ending this close to one of your stops counts as ending at it
+# (stands and stops across the road): timetable.py keeps such journeys and
+# enrich.py pairs them with departures from your stop.
+NEAR_M = 150
+_EARTH_M_PER_DEG = 111_320
 
 
 @dataclass(frozen=True)
@@ -64,6 +71,13 @@ class StopPosition:
     name: str
     lat: float
     lon: float
+
+
+def metres(a: StopPosition, b: StopPosition) -> float:
+    """Distance between two stops on a flat local grid; fine over a few hundred metres."""
+    x = (b.lon - a.lon) * _EARTH_M_PER_DEG * math.cos(math.radians(a.lat))
+    y = (b.lat - a.lat) * _EARTH_M_PER_DEG
+    return math.hypot(x, y)
 
 
 @dataclass(frozen=True)

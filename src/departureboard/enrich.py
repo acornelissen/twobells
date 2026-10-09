@@ -44,11 +44,8 @@ from .bodsbus import BusBoard
 from .darwin import CallingPoint, TrainService
 from .livebus import LiveDeparture, LiveJourney
 from .model import Status
-from .schedule_model import StopPosition
+from .schedule_model import NEAR_M, StopPosition, metres
 
-# A journey ending this close to your stop counts as ending at it (stands
-# and stops across the road).
-NEAR_M = 150
 # An inbound bus arrives at most this long before the departure it works.
 INBOUND_WINDOW = timedelta(minutes=30)
 # A bus due this soon with no tracker gets the warning.
@@ -57,7 +54,6 @@ GHOST_WITHIN = timedelta(minutes=5)
 _LONGEST = 12 * 60
 _DAY = 24 * 60
 _NAME_LIMIT = 80
-_EARTH_M_PER_DEG = 111_320
 _CLOCK = re.compile(r"([01][0-9]|2[0-3]):[0-5][0-9]")
 
 
@@ -140,19 +136,12 @@ def _same(a: str, b: str) -> bool:
     return a.strip().casefold() == b.strip().casefold()
 
 
-def _metres(a: StopPosition, b: StopPosition) -> float:
-    """Distance between two stops on a flat local grid; fine over a few hundred metres."""
-    x = (b.lon - a.lon) * _EARTH_M_PER_DEG * math.cos(math.radians(a.lat))
-    y = (b.lat - a.lat) * _EARTH_M_PER_DEG
-    return math.hypot(x, y)
-
-
 def _ends_at(journey_end: str, stop: str, positions: dict[str, StopPosition]) -> bool:
     """Whether a journey ending at `journey_end` ends at `stop`, or within NEAR_M of it."""
     if journey_end == stop:
         return True
     a, b = positions.get(journey_end), positions.get(stop)
-    return a is not None and b is not None and _metres(a, b) <= NEAR_M
+    return a is not None and b is not None and metres(a, b) <= NEAR_M
 
 
 def _arrives(placed: LiveJourney) -> datetime:
