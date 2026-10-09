@@ -34,8 +34,10 @@ class Panel:
 
 
 PHAT = Panel.sized("inky-phat", 250, 122)
+# The original Inky pHAT (before 2019): smaller, and no EEPROM to detect it by.
+PHAT_V1 = Panel.sized("inky-phat-v1", 212, 104)
 WAVESHARE_10IN85G = Panel.sized("waveshare-10in85g", 1360, 480)
 # The 7.9" HDMI screen is 400x1280 portrait; the board runs it on its side.
 HDMI_1280X400 = Panel.sized("hdmi-1280x400", 1280, 400, epaper=False)
 
-PANELS = {p.name: p for p in (PHAT, WAVESHARE_10IN85G, HDMI_1280X400)}
+PANELS = {p.name: p for p in (PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400)}

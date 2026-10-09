@@ -6,26 +6,49 @@ from pathlib import Path
 
 from PIL.Image import Image
 
-from .panel import HDMI_1280X400, PHAT, WAVESHARE_10IN85G, Panel
+from .panel import HDMI_1280X400, PHAT, PHAT_V1, WAVESHARE_10IN85G, Panel
 from .render import Palette
 
 
 # What each `display` setting draws on. An Inky reports its own size once opened.
-DISPLAY_PANELS = {"inky": PHAT, "waveshare-10in85g": WAVESHARE_10IN85G, "hdmi-1280x400": HDMI_1280X400}
+DISPLAY_PANELS = {
+    "inky": PHAT,
+    "inky-phat-v1": PHAT_V1,
+    "waveshare-10in85g": WAVESHARE_10IN85G,
+    "hdmi-1280x400": HDMI_1280X400,
+}
+
+
+def _detect():
+    from inky.auto import auto  # imported lazily: only present on the Pi
+
+    return auto()
+
+
+def _original_phat(colour: str):
+    """The original pHAT can't be detected; the library is told its colour."""
+    from inky import InkyPHAT  # imported lazily: only present on the Pi
+
+    return InkyPHAT(colour if colour in ("red", "yellow") else "black")
 
 
 class InkyDisplay:
-    def __init__(self, accent: str = "red", device=None, rotate_180: bool = False) -> None:
+    def __init__(self, accent: str = "red", device=None, rotate_180: bool = False, detect=_detect) -> None:
         if device is None:
-            from inky.auto import auto  # imported lazily: only present on the Pi
-
-            device = auto()
+            try:
+                device = detect()
+            except RuntimeError as error:
+                raise RuntimeError(
+                    f"{error} An original Inky pHAT (before 2019) has no EEPROM: "
+                    'set display = "inky-phat-v1" in config.toml.'
+                ) from error
         self._device = device
         self._rotate = rotate_180
         # The pHAT, or any other Inky the library detects, at its own size.
         width, height = getattr(device, "resolution", PHAT.size)
-        if (width, height) == PHAT.size:
-            self.panel = PHAT
+        known = {panel.size: panel for panel in (PHAT, PHAT_V1)}
+        if (width, height) in known:
+            self.panel = known[(width, height)]
         else:
             self.panel = Panel.sized(f"inky-{width}x{height}", width, height)
         black = device.BLACK
@@ -48,6 +71,8 @@ def open_display(name: str, accent: str, rotate: int = 0):
     E-paper panels turn 0 or 180 degrees; a screen turns any quarter."""
     if name == "inky":
         return InkyDisplay(accent, rotate_180=rotate == 180)
+    if name == "inky-phat-v1":
+        return InkyDisplay(accent, device=_original_phat(accent), rotate_180=rotate == 180)
     if name == "waveshare-10in85g":
         from .waveshare import WaveshareDisplay
 

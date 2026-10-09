@@ -18,4 +18,4 @@ def test_the_lcd_is_not_epaper():
 
 def test_registry_names_match():
     assert all(panel.name == name for name, panel in PANELS.items())
-    assert set(PANELS) == {"inky-phat", "waveshare-10in85g", "hdmi-1280x400"}
+    assert set(PANELS) == {"inky-phat", "inky-phat-v1", "waveshare-10in85g", "hdmi-1280x400"}

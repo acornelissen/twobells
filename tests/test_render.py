@@ -428,3 +428,14 @@ def test_in_turns_follows_the_board_clock():
     first, second = in_turns(text, 12, len, "07:00:00", "! "), in_turns(text, 12, len, "07:00:05", "! ")
     assert first == "! one two …" and second == "! three …"
     assert all(len(in_turns(text, 12, len, f"07:00:{s:02d}", "! ")) <= 12 for s in range(60))
+
+
+def test_plain_look_shows_fewer_rows_rather_than_cut_them_off_on_the_original_phat():
+    from departureboard.panel import PHAT_V1
+
+    trains = [Row(f"07:{m}", "Manchester Piccadilly", "On time") for m in (12, 42, 52)]
+    buses = [Row("341", "A: Hyde", "07:20"), Row("61", "B: Buxton", "07:35 sch")]
+    image = render(board(trains, buses), PALETTE, PHAT_V1)
+    assert image.size == PHAT_V1.size
+    bottom = [image.getpixel((x, y)) for x in range(PHAT_V1.width) for y in range(PHAT_V1.height - 2, PHAT_V1.height)]
+    assert PALETTE.black not in bottom  # nothing drawn into the last rows, so nothing cut off

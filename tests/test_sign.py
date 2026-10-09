@@ -571,3 +571,14 @@ def test_everything_fits_with_a_notice(panel, clock):
         w, h = item_size(item)
         assert 0 <= item.x and item.x + w <= width
         assert 0 <= item.y and item.y + h <= height
+
+
+def test_everything_fits_on_the_original_phat():
+    from departureboard.panel import PHAT_V1
+
+    items = sign_layout(board(TRAINS, BUSES, leave="Leave by 07:05", stale_buses=True), *PHAT_V1.size).items
+    for item in items:
+        w, h = item_size(item)
+        assert 0 <= item.x and item.x + w <= PHAT_V1.width
+        assert 0 <= item.y and item.y + h <= PHAT_V1.height
+    assert {"1st", "2nd", "3rd"} <= set(texts(items))

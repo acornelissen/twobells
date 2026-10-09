@@ -96,4 +96,53 @@ def test_every_display_setting_has_a_panel():
     from departureboard.display import DISPLAY_PANELS
     from departureboard.panel import HDMI_1280X400, PHAT, WAVESHARE_10IN85G
 
-    assert DISPLAY_PANELS == {"inky": PHAT, "waveshare-10in85g": WAVESHARE_10IN85G, "hdmi-1280x400": HDMI_1280X400}
+    from departureboard.panel import PHAT_V1
+
+    assert DISPLAY_PANELS == {
+        "inky": PHAT,
+        "inky-phat-v1": PHAT_V1,
+        "waveshare-10in85g": WAVESHARE_10IN85G,
+        "hdmi-1280x400": HDMI_1280X400,
+    }
+
+
+class FakeOldPHAT:
+    """The original Inky pHAT: no EEPROM, 212x104, set up by colour."""
+
+    WHITE, BLACK, YELLOW = 0, 1, 2
+    resolution = (212, 104)
+
+    def __init__(self, colour):
+        self.colour = colour
+
+    def set_image(self, image):
+        self.image = image
+
+    def show(self):
+        pass
+
+
+def test_the_original_phat_is_its_own_display_setting(monkeypatch):
+    from departureboard import display as display_module
+    from departureboard.display import DISPLAY_PANELS, open_display
+    from departureboard.panel import PHAT_V1
+
+    made = []
+    monkeypatch.setattr(display_module, "_original_phat", lambda colour: made.append(colour) or FakeOldPHAT(colour))
+    shown = open_display("inky-phat-v1", "yellow")
+    assert made == ["yellow"]
+    assert shown.panel == PHAT_V1 == DISPLAY_PANELS["inky-phat-v1"]
+    assert PHAT_V1.size == (212, 104)
+    assert shown.palette.accent == FakeOldPHAT.YELLOW
+
+
+def test_a_board_without_an_eeprom_gets_a_helpful_error():
+    from departureboard.display import InkyDisplay
+
+    def no_eeprom():
+        raise RuntimeError("No EEPROM detected! You must manually initialise your Inky board.")
+
+    import pytest
+
+    with pytest.raises(RuntimeError, match="inky-phat-v1"):
+        InkyDisplay(accent="yellow", detect=no_eeprom)

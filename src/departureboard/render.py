@@ -202,6 +202,16 @@ def plain_scale(panel: Panel) -> int:
     return max(1, min(panel.scale, panel.height // HEIGHT))
 
 
+def row_limits(panel: Panel) -> dict[str, int]:
+    """Rows each section shows: 3 trains and 2 buses on the pHAT's 122 rows,
+    fewer on a shorter panel (the original pHAT has 104) rather than cut off."""
+    s = plain_scale(panel)
+    fixed = _HEADER_H + _SECTION_GAP + _LABEL_H + 1 + _SECTION_GAP + _LABEL_H
+    rows = max(2, (panel.height // s - fixed) // _ROW_H)
+    buses = max(1, min(_MAX_ROWS["Buses"], rows - _MAX_ROWS["Trains"]))
+    return {"Trains": min(_MAX_ROWS["Trains"], rows - buses), "Buses": buses}
+
+
 def header_text(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[str, str, float]:
     """(left text, stamp, stamp x) for the header bar. The plain look has no
     footer, so a disruption notice, or else a rain warning, takes the title's
@@ -219,6 +229,7 @@ class _Painter:
         self.p = palette
         self.f = fonts
         self.s = plain_scale(panel)
+        self.limits = row_limits(panel)
         self.width = panel.width
         self.image = Image.new("P", panel.size, palette.white)
         self.draw = ImageDraw.Draw(self.image)
@@ -239,7 +250,7 @@ class _Painter:
             x = label_end + 6 * s
             self.draw.text((x, y + s), _NOT_UPDATING, font=self.f.small, fill=self.p.accent)
             label_end = x + self.f.small.getlength(_NOT_UPDATING)
-        rows = section.rows[: _MAX_ROWS.get(section.label, 2)]
+        rows = section.rows[: self.limits.get(section.label, 2)]
         # As on the sign, a leave time for a row that doesn't fit is left out.
         if section.leave and (section.leave_for is None or section.leave_for < len(rows)):
             leave = fit_text(section.leave, self.f.small, self.width - pad - label_end - 8 * s)
