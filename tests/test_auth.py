@@ -11,11 +11,18 @@ from departureboard.auth import (
     MAX_FAILURES,
     MAX_SESSIONS,
     MIN_PASSWORD,
+    RESET_CODE_SECONDS,
+    RESET_ISSUE_GAP_S,
+    RESET_ISSUES_PER_DAY,
+    RESET_MAX_TRIES,
     SCRYPT,
     SESSION_SECONDS,
     Lockout,
     PasswordCheck,
     PasswordStore,
+    PendingCode,
+    ResetCodes,
+    ResetLimited,
     Session,
     Sessions,
     SignInResult,
@@ -24,6 +31,7 @@ from departureboard.auth import (
     outsider,
     private_address,
     same_origin,
+    show_in_log,
 )
 
 PASSWORD = "correct horse battery"
@@ -373,3 +381,233 @@ def test_a_non_ascii_csrf_token_is_a_mismatch_not_a_crash():
     assert csrf_matches(session, "abc12é") is False
     assert csrf_matches(session, "ünïcode") is False
     assert csrf_matches(session, "abc123") is True
+
+
+# --- Reset codes ---
+
+T0 = 1_800_000_000.0
+
+
+def displayed(folder):
+    return json.loads((folder / "reset-display.json").read_text())
+
+
+def wrong(code):
+    return f"{(int(code) + 1) % 10**6:06d}"
+
+
+def test_a_code_is_six_digits_and_checks_once(tmp_path):
+    codes = ResetCodes(tmp_path)
+    code = codes.issue(T0)
+    assert len(code) == 6 and code.isdigit()
+    assert codes.verify(code, T0 + 1)
+    assert not codes.verify(code, T0 + 2)  # single use
+
+
+def test_a_code_typed_as_shown_with_a_space_checks(tmp_path):
+    codes = ResetCodes(tmp_path)
+    code = codes.issue(T0)
+    assert codes.verify(f" {code[:3]} {code[3:]} ", T0 + 1)
+
+
+def test_a_code_runs_out_after_ten_minutes(tmp_path):
+    codes = ResetCodes(tmp_path)
+    code = codes.issue(T0)
+    assert RESET_CODE_SECONDS == 600
+    assert not codes.verify(code, T0 + RESET_CODE_SECONDS)
+    later = T0 + RESET_CODE_SECONDS
+    code = codes.issue(later)
+    assert codes.verify(code, later + RESET_CODE_SECONDS - 1)
+
+
+def test_wrong_tries_void_the_code(tmp_path):
+    codes = ResetCodes(tmp_path)
+    code = codes.issue(T0)
+    assert RESET_MAX_TRIES == 5
+    for _ in range(RESET_MAX_TRIES - 1):
+        assert not codes.verify(wrong(code), T0 + 1)
+    assert codes.verify(code, T0 + 1)  # four wrong, then right: still fine
+    later = T0 + RESET_ISSUE_GAP_S
+    code = codes.issue(later)
+    for _ in range(RESET_MAX_TRIES):
+        assert not codes.verify(wrong(code), later + 1)
+    assert not codes.verify(code, later + 2)
+    assert not (tmp_path / "reset-display.json").exists()
+
+
+@pytest.mark.parametrize("typed", ["", "12345", "abcdef", "1234567", "١٢٣٤٥٦", "x" * 10_000])
+def test_odd_input_never_matches_and_counts_as_a_try(tmp_path, typed):
+    codes = ResetCodes(tmp_path)
+    code = codes.issue(T0)
+    for _ in range(RESET_MAX_TRIES):
+        assert not codes.verify(typed, T0 + 1)
+    assert not codes.verify(code, T0 + 1)
+
+
+def test_without_a_code_nothing_matches(tmp_path):
+    codes = ResetCodes(tmp_path)
+    assert not codes.verify("000000", T0)
+    (tmp_path / "reset.json").write_text("{nope")
+    assert not codes.verify("000000", T0)
+    (tmp_path / "reset.json").write_text('{"code": {"salt": "zz"}}')
+    assert not codes.verify("000000", T0)
+
+
+def test_a_new_code_replaces_the_old(tmp_path, monkeypatch):
+    import departureboard.auth as auth
+
+    draws = iter([111111, 222222])
+    monkeypatch.setattr(auth.secrets, "randbelow", lambda n: next(draws))
+    codes = ResetCodes(tmp_path)
+    assert codes.issue(T0) == "111111"
+    later = T0 + RESET_ISSUE_GAP_S
+    assert codes.issue(later) == "222222"
+    assert displayed(tmp_path)["code"] == "222222"
+    assert not codes.verify("111111", later + 1)
+    assert codes.verify("222222", later + 1)
+
+
+def test_codes_come_from_the_secrets_module(tmp_path, monkeypatch):
+    import departureboard.auth as auth
+
+    asked = []
+    monkeypatch.setattr(auth.secrets, "randbelow", lambda n: asked.append(n) or 42)
+    assert ResetCodes(tmp_path).issue(T0) == "000042"
+    assert asked == [10**6]
+
+
+def test_issuing_waits_a_minute_between_codes(tmp_path):
+    codes = ResetCodes(tmp_path)
+    codes.issue(T0)
+    with pytest.raises(ResetLimited):
+        codes.issue(T0 + RESET_ISSUE_GAP_S - 1)
+    codes.issue(T0 + RESET_ISSUE_GAP_S)
+
+
+def test_no_more_than_ten_codes_a_day(tmp_path):
+    codes = ResetCodes(tmp_path)
+    for i in range(RESET_ISSUES_PER_DAY):
+        codes.issue(T0 + i * RESET_ISSUE_GAP_S)
+    later = T0 + RESET_ISSUES_PER_DAY * RESET_ISSUE_GAP_S
+    with pytest.raises(ResetLimited):
+        codes.issue(later)
+    with pytest.raises(ResetLimited):
+        ResetCodes(tmp_path).issue(later + 3600)  # kept on disk, so every process sees it
+    codes.issue(T0 + 24 * 3600)  # the first has left the day
+
+
+def test_the_command_line_can_skip_the_limits(tmp_path):
+    codes = ResetCodes(tmp_path)
+    codes.issue(T0)
+    assert codes.verify(codes.issue(T0 + 1, limit=False), T0 + 2)
+
+
+def test_a_limited_issue_leaves_the_current_code_alone(tmp_path):
+    codes = ResetCodes(tmp_path)
+    code = codes.issue(T0)
+    with pytest.raises(ResetLimited):
+        codes.issue(T0 + 1)
+    assert displayed(tmp_path)["code"] == code
+    assert codes.verify(code, T0 + 2)
+
+
+def test_the_files_are_private_and_only_the_handover_holds_the_code(tmp_path):
+    folder = tmp_path / "state"
+    codes = ResetCodes(folder)
+    code = codes.issue(T0)
+    for name in ("reset.json", "reset-display.json", "reset.lock"):
+        assert (folder / name).stat().st_mode & 0o777 == 0o600, name
+    assert sorted(p.name for p in folder.iterdir()) == ["reset-display.json", "reset.json", "reset.lock"]
+    assert code not in (folder / "reset.json").read_text()
+    record = json.loads((folder / "reset.json").read_text())
+    salt = bytes.fromhex(record["code"]["salt"])
+    assert len(salt) == 16
+    assert record["code"]["hash"] == hashlib.sha256(salt + code.encode()).hexdigest() != code
+    assert displayed(folder) == {"code": code, "expires": T0 + RESET_CODE_SECONDS}
+
+
+def test_each_code_gets_a_fresh_salt(tmp_path, monkeypatch):
+    import departureboard.auth as auth
+
+    monkeypatch.setattr(auth.secrets, "randbelow", lambda n: 123456)
+    codes = ResetCodes(tmp_path)
+    codes.issue(T0)
+    first = json.loads((tmp_path / "reset.json").read_text())["code"]
+    codes.issue(T0 + RESET_ISSUE_GAP_S)
+    second = json.loads((tmp_path / "reset.json").read_text())["code"]
+    assert first["salt"] != second["salt"] and first["hash"] != second["hash"]
+
+
+def test_the_board_sees_the_code_until_it_is_used(tmp_path):
+    codes = ResetCodes(tmp_path)
+    assert codes.pending(T0) is None
+    code = codes.issue(T0)
+    assert codes.pending(T0 + 60) == PendingCode(code, RESET_CODE_SECONDS - 60)
+    codes.verify(code, T0 + 61)
+    assert codes.pending(T0 + 62) is None
+    assert not (tmp_path / "reset-display.json").exists()
+
+
+def test_the_board_removes_an_expired_code(tmp_path):
+    codes = ResetCodes(tmp_path)
+    codes.issue(T0)
+    assert codes.pending(T0 + RESET_CODE_SECONDS) is None
+    assert not (tmp_path / "reset-display.json").exists()
+
+
+@pytest.mark.parametrize("content", ["{nope", "[]", '{"code": "12345", "expires": 9e12}',
+                                     '{"code": "<b>12</b>", "expires": 9e12}', '{"code": "123456"}'])
+def test_the_board_removes_a_handover_it_cannot_show(tmp_path, content):
+    (tmp_path / "reset-display.json").write_text(content)
+    assert ResetCodes(tmp_path).pending(T0) is None
+    assert not (tmp_path / "reset-display.json").exists()
+
+
+def test_a_code_shown_elsewhere_never_reaches_the_board(tmp_path):
+    shown = []
+    codes = ResetCodes(tmp_path)
+    codes.issue(T0)
+    elsewhere = ResetCodes(tmp_path, show=lambda code, expires: shown.append((code, expires)))
+    later = T0 + RESET_ISSUE_GAP_S
+    code = elsewhere.issue(later)
+    assert shown == [(code, later + RESET_CODE_SECONDS)]
+    assert codes.pending(later) is None  # and the old code has left the board
+    assert codes.verify(code, later + 1)
+
+
+def test_only_the_log_hook_ever_logs_a_code(tmp_path, caplog):
+    caplog.set_level("DEBUG")
+    codes = ResetCodes(tmp_path)
+    code = codes.issue(T0)
+    for _ in range(RESET_MAX_TRIES):
+        codes.verify(wrong(code), T0 + 1)
+    codes.pending(T0 + 2)
+    messages = [r.getMessage() for r in caplog.records]
+    assert messages and not any(code in m or f"{code[:3]} {code[3:]}" in m for m in messages)
+    caplog.clear()
+    code = ResetCodes(tmp_path, show=show_in_log).issue(T0 + RESET_ISSUE_GAP_S)
+    assert any(f"{code[:3]} {code[3:]}" in r.getMessage() for r in caplog.records)
+    assert not (tmp_path / "reset-display.json").exists()
+
+
+def test_only_one_of_many_simultaneous_checks_uses_a_code(tmp_path):
+    code = ResetCodes(tmp_path).issue(T0)
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(ResetCodes(tmp_path).verify(code, T0 + 1)))
+               for _ in range(20)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert results.count(True) == 1
+
+
+def test_simultaneous_wrong_guesses_cannot_beat_the_try_limit(tmp_path):
+    code = ResetCodes(tmp_path).issue(T0)
+    guess = wrong(code)
+    threads = [threading.Thread(target=lambda: ResetCodes(tmp_path).verify(guess, T0 + 1)) for _ in range(20)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert not ResetCodes(tmp_path).verify(code, T0 + 2)

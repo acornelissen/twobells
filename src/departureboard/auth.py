@@ -12,10 +12,12 @@ whose Origin (or Referer) is this same host.
 from __future__ import annotations
 
 import enum
+import fcntl
 import hashlib
 import hmac
 import ipaddress
 import json
+import logging
 import os
 import re
 import secrets
@@ -26,6 +28,8 @@ from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Callable
 from urllib.parse import urlparse
+
+log = logging.getLogger(__name__)
 
 MIN_PASSWORD = 10
 SESSION_SECONDS = 12 * 3600
@@ -295,3 +299,199 @@ def outsider(address: str, host: str | None) -> bool:
     """Whether to refuse a request: it comes from outside the home network, or
     its Host header names somewhere other than this machine."""
     return not private_address(address) or not local_host(host)
+
+
+# --- Reset codes ---
+#
+# A forgotten password, or the first claim on a board with none, is proven by
+# a one-time code shown on the board's own display: whoever can read the
+# board is in the home, which being on the network doesn't prove.
+#
+# Two processes share the state folder as the same user: the settings page
+# (`web`) issues and checks codes; the board (`run`, each minute or in a
+# loop) only shows them. So there are three files:
+#
+#   reset.json          what `verify` needs: a salted sha256 of the code, its
+#                       expiry and wrong tries, and when codes were issued (for
+#                       the rate limits). Never the code itself.
+#   reset-display.json  the plain code and its expiry, for the board to draw.
+#                       Written only when the code is meant for the board, and
+#                       read only by it. Removed when the code is used or
+#                       voided (by `verify`), replaced (by `issue`), or found
+#                       expired (by the board).
+#   reset.lock          an flock held around every change to the other two, so
+#                       the board can't delete a code `issue` has just written,
+#                       and two checks at once can't both use one code.
+#
+# All are 0600 and replaced whole: written aside, then renamed.
+#
+# The trade-off: the plain code sits on disk for up to 10 minutes, and a
+# 6-digit hash is no secret from anyone who can read reset.json. Both are
+# readable only by the service user, who can already write web.json and so
+# set any password it likes; the hash keeps the code out of a stray glance or
+# a copied folder, not from that user. In return the board, a separate
+# process that may not even be running when the code is issued, needs no
+# channel to the page beyond the folder they already share.
+#
+# Guessing: 5 wrong tries void a code and at most 10 are issued a day, so a
+# guesser on the network gets 50 tries in a million a day, and every code it
+# asks for shows on the board for the owner to see.
+
+RESET_CODE_SECONDS = 10 * 60
+RESET_MAX_TRIES = 5
+RESET_ISSUE_GAP_S = 60
+RESET_ISSUES_PER_DAY = 10
+_DAY_S = 24 * 3600
+_CODE = re.compile(r"^[0-9]{6}$")
+
+
+class ResetLimited(Exception):
+    """A code was issued too recently, or too many today."""
+
+
+@dataclass(frozen=True)
+class PendingCode:
+    """A code for the board to show, and how long it has left."""
+
+    code: str
+    seconds_left: float
+
+
+def spaced(code: str) -> str:
+    """`123456` as `123 456`, easier to read off a board and type."""
+    return f"{code[:3]} {code[3:]}"
+
+
+def show_in_log(code: str, expires: float) -> None:
+    """A `show` for where there is no board (the dashboard's container): the
+    log, which only the owner can read. The one place a code is logged on purpose."""
+    until = time.strftime("%H:%M", time.localtime(expires))
+    log.warning("Settings reset code: %s, valid until %s", spaced(code), until)
+
+
+def _code_hash(salt: bytes, code: str) -> str:
+    return hashlib.sha256(salt + code.encode()).hexdigest()
+
+
+class ResetCodes:
+    """One-time codes that prove someone can see the board (or the log, or the
+    command line). See the notes above for the files and why.
+
+    `show(code, expires)` is where a new code goes; without one it is handed
+    to the board through reset-display.json.
+    """
+
+    def __init__(self, folder: Path | str, show: Callable[[str, float], None] | None = None) -> None:
+        self._folder = Path(folder)
+        self._record = self._folder / "reset.json"
+        self._display = self._folder / "reset-display.json"
+        self._lock_path = self._folder / "reset.lock"
+        self._show = show or self._hand_to_board
+
+    def issue(self, now: float, limit: bool = True) -> str:
+        """A new code, valid for RESET_CODE_SECONDS, replacing any before it,
+        and passed to `show`. With `limit` (the page; not the command line,
+        which proves access by running at all) raises ResetLimited within
+        RESET_ISSUE_GAP_S of the last code, or after RESET_ISSUES_PER_DAY in a day."""
+        with self._locked():
+            record = self._load()
+            # Times ahead of now are from before the clock went back: not counted.
+            recent = [t for t in record["issued"] if 0 <= now - t < _DAY_S]
+            too_soon = any(now - t < RESET_ISSUE_GAP_S for t in recent)
+            if limit and (too_soon or len(recent) >= RESET_ISSUES_PER_DAY):
+                raise ResetLimited
+            code = f"{secrets.randbelow(10**6):06d}"
+            salt = secrets.token_bytes(16)
+            expires = now + RESET_CODE_SECONDS
+            self._write(self._record, {
+                "issued": recent + [now],
+                "code": {"salt": salt.hex(), "hash": _code_hash(salt, code), "expires": expires, "tries": 0},
+            })
+            self._display.unlink(missing_ok=True)  # it showed the old code, void now
+            self._show(code, expires)
+        log.info("Settings reset code issued, valid for %d minutes", RESET_CODE_SECONDS // 60)
+        return code
+
+    def verify(self, typed: str, now: float) -> bool:
+        """Whether `typed` is the current code, compared in constant time. A
+        right code is used up; RESET_MAX_TRIES wrong ones void it."""
+        typed = "".join(typed.split())  # "123 456" as shown
+        with self._locked():
+            record = self._load()
+            current = record["code"]
+            try:
+                salt = bytes.fromhex(current["salt"])
+                stored, expires, tries = str(current["hash"]), float(current["expires"]), int(current["tries"])
+            except (TypeError, KeyError, ValueError):
+                current, salt, stored, expires, tries = None, b"", "", 0.0, 0
+            # Hashed and compared with or without a code, so the time taken doesn't say which.
+            right = hmac.compare_digest(_code_hash(salt, typed).encode(), stored.encode())
+            if current is None:
+                return False
+            live = now < expires and tries < RESET_MAX_TRIES
+            if live and not right:
+                current["tries"] = tries + 1
+                if current["tries"] >= RESET_MAX_TRIES:
+                    log.warning("Settings reset code voided after %d wrong tries", RESET_MAX_TRIES)
+            if right or not live or current["tries"] >= RESET_MAX_TRIES:
+                record["code"] = None  # used, expired or voided
+                self._display.unlink(missing_ok=True)
+            self._write(self._record, record)
+            return right and live
+
+    def pending(self, now: float) -> PendingCode | None:
+        """For the board: the code it should be showing, if any. An expired or
+        unreadable handover is removed, so the plain code doesn't linger."""
+        if not self._display.exists():
+            return None  # the usual case, every tick: no lock taken, nothing written
+        try:
+            with self._locked():
+                data = self._read(self._display)
+                code, expires = data.get("code"), data.get("expires")
+                if (isinstance(code, str) and _CODE.match(code) and isinstance(expires, (int, float))
+                        and now < expires):
+                    return PendingCode(code, expires - now)
+                self._display.unlink(missing_ok=True)
+        except OSError as error:
+            log.warning("Can't read the settings reset code handover: %s", type(error).__name__)
+        return None
+
+    def _locked(self):
+        """The lock, held until the returned file is closed."""
+        self._folder.mkdir(parents=True, exist_ok=True)
+        handle = os.fdopen(os.open(self._lock_path, os.O_RDWR | os.O_CREAT, 0o600), "r+")
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        except OSError:
+            handle.close()
+            raise
+        return handle
+
+    @staticmethod
+    def _write(path: Path, data: dict) -> None:
+        tmp = path.with_suffix(".tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            json.dump(data, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+
+    @staticmethod
+    def _read(path: Path) -> dict:
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _load(self) -> dict:
+        record = self._read(self._record)
+        issued, code = record.get("issued"), record.get("code")
+        return {
+            "issued": [t for t in issued if isinstance(t, (int, float))] if isinstance(issued, list) else [],
+            "code": code if isinstance(code, dict) else None,
+        }
+
+    def _hand_to_board(self, code: str, expires: float) -> None:
+        self._write(self._display, {"code": code, "expires": expires})
