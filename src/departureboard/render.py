@@ -135,12 +135,13 @@ class _Painter:
             x = label_end + 6 * s
             self.draw.text((x, y + s), "! STALE", font=self.f.small, fill=self.p.accent)
             label_end = x + self.f.small.getlength("! STALE")
-        if section.leave:
+        rows = section.rows[: _MAX_ROWS.get(section.label, 2)]
+        # As on the sign, a leave time for a row that doesn't fit is left out.
+        if section.leave and (section.leave_for is None or section.leave_for < len(rows)):
             leave = fit_text(section.leave, self.f.small, self.width - pad - label_end - 8 * s)
             x = self.width - pad - self.f.small.getlength(leave)
             self.draw.text((x, y + s), leave, font=self.f.small, fill=self.p.black)
         y += _LABEL_H * s
-        rows = section.rows[: _MAX_ROWS.get(section.label, 2)]
         if not rows:
             self.draw.text((pad, y + s), section.empty_text, font=self.f.regular, fill=self.p.black)
             return y + _ROW_H * s

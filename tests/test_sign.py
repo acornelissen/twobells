@@ -336,3 +336,9 @@ def test_route_page_says_where_the_bus_is():
     width, height = dots(HDMI_1280X400)
     layout, _, _ = _route_layout(route(), width, height)
     assert {"341 to Hyde", "07:24 +4", "leave in 6 min", "3 stops away", "07:12:40"} <= set(texts(layout.items))
+
+
+def test_no_leave_line_for_a_train_that_is_not_drawn():
+    fourth = TRAINS + [Row("08:42", "Manchester Piccadilly", "On time")]
+    items = sign_layout(board(fourth, leave="Leave by 08:35", leave_for=3)).items
+    assert "Leave by 08:35" not in texts(items)

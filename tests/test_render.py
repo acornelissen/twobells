@@ -1,3 +1,5 @@
+import dataclasses
+
 import pytest
 
 from departureboard.panel import HDMI_1280X400, WAVESHARE_10IN85G
@@ -208,3 +210,13 @@ def test_themes_draw_the_route_page():
 
     assert THEMES["plain"].render_route is render_route
     assert THEMES["sign"].render_route is render_route_sign
+
+
+def test_no_leave_text_for_a_train_that_is_not_drawn():
+    # Only three trains fit; a leave time for the fourth would point at nothing.
+    rows = [Row(f"07:{m}", "Manchester", "On time") for m in (12, 20, 31, 42)]
+    view = board(rows)
+    for_fourth = dataclasses.replace(view, trains=dataclasses.replace(view.trains, leave="Leave 07:35 (07:42)", leave_for=3))
+    for_third = dataclasses.replace(for_fourth, trains=dataclasses.replace(for_fourth.trains, leave_for=2))
+    assert ink_in_right_half_of_train_label_row(render(for_fourth, PALETTE)) == 0
+    assert ink_in_right_half_of_train_label_row(render(for_third, PALETTE)) > 30
