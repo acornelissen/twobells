@@ -80,12 +80,19 @@ def test_sign_in_is_locked_after_repeated_failures_then_released():
     clock = Clock()
     limiter = SignInLimiter(clock)
     for _ in range(MAX_FAILURES):
-        assert limiter.allowed("10.0.0.5")
-        limiter.failed("10.0.0.5")
-    assert not limiter.allowed("10.0.0.5")
-    assert limiter.allowed("10.0.0.6")  # per address
+        assert limiter.attempt("10.0.0.5")
+    assert not limiter.attempt("10.0.0.5")
+    assert limiter.attempt("10.0.0.6")  # per address
     clock.now += FAILURE_WINDOW_S + 1
-    assert limiter.allowed("10.0.0.5")
+    assert limiter.attempt("10.0.0.5")
+
+
+def test_a_right_password_clears_the_attempts():
+    limiter = SignInLimiter(Clock())
+    for _ in range(MAX_FAILURES - 1):
+        limiter.attempt("10.0.0.5")
+    limiter.succeeded("10.0.0.5")
+    assert all(limiter.attempt("10.0.0.5") for _ in range(MAX_FAILURES))
 
 
 # --- Address and host checks ---
@@ -282,6 +289,100 @@ def test_oversized_or_wrong_type_bodies_are_refused(server):
     conn.request("POST", "/login", "a=1", {"Host": f"localhost:{port}", "Origin": f"http://localhost:{port}", "Content-Type": "application/x-www-form-urlencoded", "Content-Length": str(10**7)})
     assert conn.getresponse().status == 400
     conn.close()
+
+
+class SlowPassword(Password):
+    """Counts checks, and holds each one until `go` is set."""
+
+    def __init__(self, path):
+        super().__init__(path)
+        self.checks = 0
+        self.inside = threading.Semaphore(0)
+        self.go = threading.Event()
+        self._lock = threading.Lock()
+
+    def check(self, password):
+        with self._lock:
+            self.checks += 1
+        self.inside.release()
+        self.go.wait(10)
+        return False
+
+
+@pytest.fixture
+def slow_server(tmp_path):
+    password = SlowPassword(tmp_path / "web.json")
+    password.set(PASSWORD)
+    handler = make_handler(FakePage(), password, Sessions(), SignInLimiter(), lambda t, b: b, b"")
+    httpd = make_server(handler, "127.0.0.1", 0)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield httpd.server_address[1], password
+    password.go.set()
+    httpd.shutdown()
+    httpd.server_close()
+
+
+def test_simultaneous_guesses_cannot_beat_the_limit(slow_server):
+    port, password = slow_server
+    statuses = []
+
+    def guess():
+        for _ in range(5):  # a burst can overflow the listen queue; try again as a browser would
+            try:
+                response, _ = request(port, "POST", "/login", {"password": "nope nope nope"})
+            except ConnectionError:
+                continue
+            statuses.append(response.status)
+            return
+
+    threads = [threading.Thread(target=guess) for _ in range(MAX_FAILURES + 5)]
+    for thread in threads:
+        thread.start()
+    # Hold every check that gets in until as many as the limit could be in at once.
+    for _ in range(MAX_FAILURES + 1):
+        if not password.inside.acquire(timeout=1):
+            break
+    password.go.set()
+    for thread in threads:
+        thread.join(15)
+    assert len(statuses) == MAX_FAILURES + 5
+    assert password.checks <= MAX_FAILURES
+
+
+def test_simultaneous_attempts_are_counted_exactly():
+    limiter = SignInLimiter()
+    allowed = []
+    threads = [threading.Thread(target=lambda: allowed.append(limiter.attempt("10.0.0.5"))) for _ in range(50)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert allowed.count(True) == MAX_FAILURES
+
+
+def test_only_two_passwords_are_checked_at_once(slow_server):
+    port, password = slow_server
+    results = []
+
+    def guess():
+        results.append(request(port, "POST", "/login", {"password": "nope nope nope"}))
+
+    first = [threading.Thread(target=guess) for _ in range(2)]
+    for thread in first:
+        thread.start()
+    assert password.inside.acquire(timeout=5) and password.inside.acquire(timeout=5)
+    response, text = request(port, "POST", "/login", {"password": "nope nope nope"})
+    assert response.status == 429 and "Busy" in text
+    password.go.set()
+    for thread in first:
+        thread.join(15)
+    assert [r.status for r, _ in results] == [401, 401]
+    assert password.checks == 2
+
+
+def test_slow_clients_are_dropped():
+    handler = make_handler(FakePage(), Password("none.json"), Sessions(), SignInLimiter(), lambda t, b: b, b"")
+    assert handler.timeout and handler.timeout <= 10
 
 
 def test_without_a_password_the_page_says_how_to_set_one(tmp_path):

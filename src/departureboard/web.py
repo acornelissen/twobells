@@ -38,6 +38,9 @@ MAX_BODY = 64 * 1024
 # Sign-in: this many failures from one address in the window locks it out for the window.
 MAX_FAILURES = 5
 FAILURE_WINDOW_S = 15 * 60
+# Each check is a scrypt run of 16 MiB and up to a second; more at once could exhaust a Pi.
+MAX_CHECKS = 2
+REQUEST_TIMEOUT_S = 10
 _SCRYPT = {"n": 2**14, "r": 8, "p": 1}
 
 HEADERS = {
@@ -144,13 +147,15 @@ class SignInLimiter:
         self._failures[address] = recent
         return recent
 
-    def allowed(self, address: str) -> bool:
+    def attempt(self, address: str) -> bool:
+        """Whether this address may try a password now. The try counts as a
+        failure until `succeeded`, so simultaneous guesses can't slip past the limit."""
         with self._lock:
-            return len(self._recent(address)) < MAX_FAILURES
-
-    def failed(self, address: str) -> None:
-        with self._lock:
-            self._recent(address).append(self.clock())
+            recent = self._recent(address)
+            if len(recent) >= MAX_FAILURES:
+                return False
+            recent.append(self.clock())
+            return True
 
     def succeeded(self, address: str) -> None:
         with self._lock:
@@ -206,8 +211,11 @@ class SettingsPage(Protocol):
 def make_handler(page: SettingsPage, password: Password, sessions: Sessions, limiter: SignInLimiter,
                  shell: Callable[[str, str], str], stylesheet: bytes):
     """`shell(title, body)` wraps page content in the HTML document."""
+    checking = threading.BoundedSemaphore(MAX_CHECKS)
 
     class Handler(BaseHTTPRequestHandler):
+        timeout = REQUEST_TIMEOUT_S  # a client that stalls mid-request lets go of its thread
+
         def version_string(self) -> str:
             return "departureboard"  # no Python or OS version for anyone probing
 
@@ -333,11 +341,18 @@ def make_handler(page: SettingsPage, password: Password, sessions: Sessions, lim
             if not password.is_set():
                 self._login_page(403)
                 return
-            if not limiter.allowed(address):
+            if not checking.acquire(blocking=False):
+                self._login_page(429, "Busy, try again in a moment.")
+                return
+            try:
+                allowed = limiter.attempt(address)
+                right = allowed and password.check(fields.get("password", ""))
+            finally:
+                checking.release()
+            if not allowed:
                 self._login_page(429, "Too many attempts. Try again in 15 minutes.")
                 return
-            if not password.check(fields.get("password", "")):
-                limiter.failed(address)
+            if not right:
                 self._login_page(401, "That password isn't right.")
                 return
             limiter.succeeded(address)
