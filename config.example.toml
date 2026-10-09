@@ -6,8 +6,11 @@ timezone = "Europe/London"
 state_file = "/var/lib/departureboard/state.json"
 # Never redraw more often than this, even if the data changes sooner.
 min_redraw_minutes = 2
-# "red" or "yellow". Only reinforces meaning; text always carries it.
-accent = "red"
+# "sign": amber dot-matrix station board (needs the yellow accent).
+# "plain": white board with bold type and a red accent.
+theme = "sign"
+# Defaults to the theme's colour. Only reinforces meaning; text always carries it.
+# accent = "yellow"
 # Set true if the Pi is mounted with the display upside down.
 rotate_180 = false
 
@@ -24,7 +27,8 @@ walk_minutes = 7
 # base_url = "https://api1.raildata.org.uk/1010-live-departure-board-dep/LDBWS/api/20220120"
 
 [bus]
-rows = 2
+# Rows shown. Each stop call returns several buses, so more rows cost no extra hits.
+rows = 3
 # Optional: only show buses whose direction contains one of these.
 directions = []
 # Every poll costs one hit per stop. TransportAPI free plan is 30 hits/day;

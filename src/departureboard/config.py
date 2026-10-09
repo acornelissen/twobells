@@ -13,6 +13,7 @@ from .darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL
 from .darwin import DarwinSource
 from .schedule import PollPolicy, parse_window
 from .transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
+from .themes import theme_named
 from .transportapi import TransportApiBusSource
 from .walk import DEFAULT_STOP, WalkTimes
 
@@ -105,6 +106,10 @@ def load_config(
     data = tomllib.loads(Path(path).read_text())
     if bus_stops:
         data.setdefault("bus", {})["stops"] = bus_stops
+    try:
+        theme = theme_named(data.get("theme", "sign"))
+    except ValueError as error:
+        raise ConfigError(str(error)) from error
     sources = []
     wanted = only or {"train", "bus"}
     if "train" in data and "train" in wanted:
@@ -116,11 +121,12 @@ def load_config(
         sources=sources,
         min_redraw=timedelta(minutes=data.get("min_redraw_minutes", 2)),
         walk=_walk(data),
+        theme=theme,
     )
     return Settings(
         board=board,
         timezone=data.get("timezone", "Europe/London"),
         state_file=Path(data.get("state_file", "state.json")),
-        accent=data.get("accent", "red"),
+        accent=data.get("accent", theme.accent),
         rotate_180=bool(data.get("rotate_180", False)),
     )

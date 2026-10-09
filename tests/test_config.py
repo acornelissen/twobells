@@ -29,7 +29,7 @@ def test_example_config_loads(example):
     assert isinstance(settings.board.sources[0].source, DarwinSource)
     assert isinstance(settings.board.sources[1].source, TransportApiBusSource)
     assert settings.timezone == "Europe/London"
-    assert settings.accent == "red"
+    assert (settings.board.theme.name, settings.accent) == ("sign", "yellow")
 
 
 def test_example_bus_schedule_fits_inside_its_budget(example):
@@ -131,3 +131,27 @@ def test_walk_times_are_optional(tmp_path):
 def test_example_config_has_walk_times(example):
     walk = load_config(example, ENV).board.walk
     assert walk.train is not None and set(walk.bus) == {"A", "B"}
+
+
+def test_theme_defaults_to_the_departure_board_look_in_yellow(tmp_path):
+    path = write(tmp_path, '[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    settings = load_config(path, ENV)
+    assert settings.board.theme.name == "sign"
+    assert settings.accent == "yellow"
+
+
+def test_plain_theme_defaults_to_red(tmp_path):
+    path = write(tmp_path, 'theme = "plain"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    settings = load_config(path, ENV)
+    assert (settings.board.theme.name, settings.accent) == ("plain", "red")
+
+
+def test_explicit_accent_wins(tmp_path):
+    path = write(tmp_path, 'accent = "red"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    assert load_config(path, ENV).accent == "red"
+
+
+def test_unknown_theme_is_a_config_error(tmp_path):
+    path = write(tmp_path, 'theme = "neon"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    with pytest.raises(ConfigError, match="neon"):
+        load_config(path, ENV)
