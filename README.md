@@ -1,11 +1,12 @@
 # inky-departures
 
-Glossop train and bus departure board for a Raspberry Pi with a four-colour Inky pHAT (250x122), a Waveshare 10.85" e-Paper (G) (1360x480), or a Waveshare 7.9" HDMI screen (1280x400).
+A train and bus departure board for your station and stops, for a Raspberry Pi with a four-colour Inky pHAT (250x122), a Waveshare 10.85" e-Paper (G) (1360x480), or a Waveshare 7.9" HDMI screen (1280x400). The examples use a board in Glossop, showing trains to Manchester and buses from two nearby stops (`examples/glossop.toml`).
 
 ![Board preview](docs/preview.png)
 
 New here? The [user guide](docs/USER_GUIDE.md) explains what everything on the board means, how to use the settings page, and how to set it up and troubleshoot it.
 
+- **Where it works:** trains anywhere in Great Britain (National Rail Darwin). Bus times and positions from BODS cover England only. The rain warning works anywhere. Bank holidays follow England and Wales, Scotland or Northern Ireland (`bank_holiday_division`).
 - **Trains:** National Rail Darwin, via the Rail Data Marketplace. Free, polled every 2 minutes.
 - **Buses:** either worked out the way [bustimes.org](https://bustimes.org) does, from the DfT's Bus Open Data Service (BODS) timetable for your stops plus live bus positions, free and checked all day; or TransportAPI, whose free plan is 30 hits/day, so polling is limited to set windows with a hard daily budget. With BODS, TransportAPI can stand in while there is no usable timetable.
 - An e-paper panel takes about 20 s to refresh, so it redraws only when what it shows changes, and never more than once every 2 minutes. `Updated HH:MM` (`Upd HH:MM` in the plain look) is when the board last changed; if a feed stops arriving, the board says `Not updating`. Departures from an earlier fetch drop off once their time has passed, even outside the polling windows.
@@ -27,7 +28,7 @@ Step-by-step sign-up for every key, which features need which, and how to check 
 4. Open the subscription and copy the **consumer key** into `RDM_API_KEY`.
 5. Check the endpoint URL shown on the product page. If its base differs from the default in `config.example.toml`, set `[train] base_url`.
 
-Station codes: Glossop is `GLO`, Manchester Piccadilly is `MAN`.
+Station codes are 3 letters; National Rail's station pages show them. For example, Glossop is `GLO` and Manchester Piccadilly is `MAN`.
 
 ### TransportAPI (buses)
 
@@ -39,6 +40,8 @@ Station codes: Glossop is `GLO`, Manchester Piccadilly is `MAN`.
 4. Add them to `[bus.stops]` as `LABEL = "ATCO"`. The label is shown on the board (`A: Hyde`). Each stop costs one hit per poll, so two stops halve the polls you can make. Add `directions = ["Ashton"]` to filter.
 
 ### BODS (buses, the bustimes.org way)
+
+BODS covers buses in England only.
 
 1. Register at <https://data.bus-data.dft.gov.uk/> and copy the API key from your account settings into `BODS_API_KEY`.
 2. Under `[bus]` set `source = "bods"` and `operators`, the national operator codes of the companies serving your stops (Glossop: `["BNML", "HIPK"]`). bustimes.org shows them on each operator's page; TransportAPI's `operator` field has them too.
@@ -66,8 +69,10 @@ Raspberry Pi OS Lite (Bookworm or later) on the Zero W, with Wi-Fi and SSH set u
 git clone <this repo> inky-departures && cd inky-departures
 sudo ./deploy/install.sh
 sudo nano /etc/departureboard/secrets.env   # keys
-sudo nano /etc/departureboard/config.toml   # bus stop, windows
+sudo nano /etc/departureboard/config.toml   # replace each CHANGE_ME: station, bus stops
 ```
+
+`config.toml` starts as a copy of `config.example.toml`, which won't run until its `CHANGE_ME` placeholders are filled. `examples/glossop.toml` is a filled-in board to compare against.
 
 Check the keys and codes with one live call each. With TransportAPI, the bus probe uses one hit per stop from your 30 daily hits; the default schedule uses 28. With BODS, build the timetable first, then probe:
 
@@ -232,10 +237,10 @@ Live modes keep state in `state_file`, so the TransportAPI budget holds across r
 | `bods.py`, `route.py` | Live bus positions from BODS; placing the next bus on its route strip |
 | `routesetup.py` | Builds a route strip from a BODS timetable and NaPTAN (`route` command) |
 | `weather.py` | Open-Meteo hourly forecast and the rain-warning rule |
-| `holidays.py` | England and Wales bank holidays from GOV.UK, cached weekly |
+| `holidays.py` | Bank holidays from GOV.UK (England and Wales, Scotland, Northern Ireland), cached weekly |
 | `status.py` | The settings page's Status section; short, key-free error messages |
 | `safexml.py` | XML parsing that refuses a DOCTYPE |
-| `fake.py` | Deterministic fake sources and simulated clock |
+| `fake.py` | Deterministic fake sources (sample Glossop data) and simulated clock |
 | `app.py` | One tick: poll what's due, redraw only on change |
 | `web.py`, `settingsform.py`, `web.css` | Settings page: sign-in and request checks; the form, its checks and saving |
 | `history.py` | Punctuality history in SQLite (dashboard) |

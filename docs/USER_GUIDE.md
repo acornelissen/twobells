@@ -1,6 +1,6 @@
 # Departure board user guide
 
-The board shows the next trains from Glossop to Manchester and the next buses from the Henry Street stops, and tells you when to set off so you catch them.
+The board shows the next trains from your station and the next buses from your stops, and tells you when to set off so you catch them. The examples in this guide come from a board in Glossop, showing trains to Manchester and buses from the Henry Street stops.
 
 This guide has four parts:
 
@@ -162,7 +162,7 @@ What you save replaces what's in `config.toml`, including emptying a box: cleari
 
 **Trains**
 
-- **Station code:** 3 letters, `GLO` for Glossop.
+- **Station code:** 3 letters, like `GLO` for Glossop. National Rail's station pages show it.
 - **Only trains calling at:** for example `MAN`, so only trains to Manchester show. Empty shows every train.
 - **Trains shown**, **Check every (minutes)**, and **Say "not updating" after (minutes)**.
 - **When to check:** one window per line, written like `Mon-Fri 06:30-09:30`. Days can be `Mon-Sun`, `Sat,Sun`, `Mon-Fri`, or wrap round the week like `Fri-Mon`. A window can run past midnight: `Fri 22:00-01:00` runs from Friday night into Saturday morning.
@@ -178,6 +178,7 @@ What you save replaces what's in `config.toml`, including emptying a box: cleari
 - **Walk to each stop:** one per line (`A = 7`), or one number for every stop. Empty means no leave times.
 
 - **Bank holidays:** treat them like Sundays (the usual choice), or ignore them.
+- **Bank holidays for:** England and Wales, Scotland, or Northern Ireland, wherever the board is. Each has its own bank holidays.
 
 **Rain warning**
 
@@ -223,6 +224,15 @@ A few things aren't on the page and are changed in `config.toml` on the Pi: the 
 
 Step-by-step install commands are in the [README](../README.md#2-install-on-the-pi). This part covers the choices and day-to-day care.
 
+`config.toml` starts as a blank template: replace each `CHANGE_ME` with your station code and bus stop codes, and the board starts once they're filled. `examples/glossop.toml` in the repo is a filled-in board to compare against.
+
+**Where it works:**
+
+- **Trains:** anywhere in Great Britain. Times come from National Rail (Darwin).
+- **Buses:** England only. The timetable and live positions come from the Bus Open Data Service (BODS), which covers England's buses.
+- **Rain warning:** anywhere. The forecast comes from Open-Meteo.
+- **Bank holidays:** England and Wales, Scotland, or Northern Ireland, from GOV.UK.
+
 ### Choosing a display
 
 | | Inky pHAT | Waveshare 10.85" e-Paper (G) | 7.9" HDMI screen |
@@ -254,12 +264,12 @@ All are free. Put them in `/etc/departureboard/secrets.env`, or paste them into 
 
 ### Bus times
 
-Bus times are worked out the way [bustimes.org](https://bustimes.org) does it, from the Bus Open Data Service (BODS): the timetable for your stops, plus where the buses are right now. In `config.toml`:
+Bus times are worked out the way [bustimes.org](https://bustimes.org) does it, from the Bus Open Data Service (BODS): the timetable for your stops, plus where the buses are right now. BODS covers England only. In `config.toml`:
 
 ```toml
 [bus]
 source = "bods"
-operators = ["BNML", "HIPK"]    # the bus companies serving your stops
+operators = ["BNML", "HIPK"]    # the bus companies serving your stops (these are Glossop's)
 interval_minutes = 2
 windows = ["Mon-Sun 06:00-23:00"]
 ```
@@ -284,11 +294,11 @@ Bus positions for the screen's second page come from a different service (BODS) 
 
 ### Rain warning set-up
 
-The forecast comes from [Open-Meteo](https://open-meteo.com) (free, no key). Give the board your location in `config.toml`, rounded to two decimal places (about 1 km); the board rounds it again before sending it:
+The forecast comes from [Open-Meteo](https://open-meteo.com) (free, no key), and works anywhere. Give the board your location in `config.toml`, rounded to two decimal places (about 1 km); the board rounds it again before sending it:
 
 ```toml
 [weather]
-lat = 53.44
+lat = 53.44    # Glossop's; use your own
 lon = -1.95
 threshold_percent = 50
 ```
@@ -297,7 +307,7 @@ The forecast is checked every 30 minutes, only while the board is checking train
 
 ### Bank holidays
 
-Dates for England and Wales come from GOV.UK and are kept for a week in `/var/lib/departureboard/`. If GOV.UK can't be reached, the board keeps the dates it has and tries again in 6 hours. To ignore bank holidays for the checking windows, choose that on the settings page, or set `bank_holidays = false` in `config.toml`. Bus times from the timetable always follow the operators' own bank holiday rules.
+Dates come from GOV.UK, which lists England and Wales, Scotland, and Northern Ireland separately. The board uses England and Wales unless told otherwise: choose another on the settings page (**Bank holidays for**), or set `bank_holiday_division = "scotland"` or `"northern-ireland"` in `config.toml`. All three lists are kept for a week in `/var/lib/departureboard/`. If GOV.UK can't be reached, the board keeps the dates it has and tries again in 6 hours. To ignore bank holidays for the checking windows, choose that on the settings page, or set `bank_holidays = false` in `config.toml`. Bus times from the timetable always follow the operators' own bank holiday rules.
 
 ### The bus position page
 
@@ -309,7 +319,7 @@ departureboard route 341 --stop A --noc BNML --config config.toml --secrets secr
 
 Paste the printed block into `config.toml`. It picks enough stops before yours to cover your walk plus 5 minutes of bus travel, at most 8. `BNML` is the operator code for Bee Network. For other operators, `probe bus --save DIR` writes TransportAPI's raw answers, which include an `operator` field.
 
-Most 341s to Hyde start at Henry Street Stop A, so the page follows the 341 arriving into Glossop, which then turns round as your bus.
+A bus that starts its journey at your stop is followed on its way in. In Glossop, for example, most 341s to Hyde start at Henry Street Stop A, so the page follows the 341 arriving into Glossop, which then turns round as your bus.
 
 ### The settings page
 
