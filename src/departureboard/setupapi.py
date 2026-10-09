@@ -16,7 +16,9 @@ to 2 places (about a kilometre), the station, the stops and walk times, the
 bank holiday list, and [bus] source, operators and routes from the search.
 
 Keys are write-only: the API says which are set, never their values, and
-no error repeats one.
+no error repeats one. `testkey` tries one key, saved or pasted, with one
+harmless call to its service (keytest.py), at most once per key every
+KEY_TEST_EVERY seconds across the whole process.
 
 Serving the page. The host serves, under one prefix ending in a slash (say
 /setup/), the files `static_files()` lists by their path under that prefix:
@@ -36,11 +38,12 @@ import math
 import re
 import string
 import threading
+import time
 from importlib.resources import files
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
-from . import discover, setup
+from . import discover, keytest, setup
 from .config import ConfigError, read_config
 from .overlay import OverlayError, save_changes
 from .settingsform import _KEY_VALUE, KEYS
@@ -59,6 +62,7 @@ MAX_BOARD_STOPS = setup.MAX_BOARD_STOPS
 MAX_WALK_MINUTES = 60
 _CACHED_STOPS = 200
 MIN_SCRUBBED = 6
+KEY_TEST_EVERY = 10.0  # seconds between tests of one key
 
 PAGE_HEADERS = {
     "Content-Security-Policy": (
@@ -100,6 +104,35 @@ class Invalid(Exception):
 
 class Conflict(Exception):
     """A request that can't be done now, like a second search while one runs."""
+
+
+class TooSoon(Exception):
+    """A request made again too soon after the last, like testing one key twice in a row."""
+
+
+class RateLimit:
+    """At most one go per `every` seconds for each name. Thread-safe; the
+    names are a fixed few, so it never grows."""
+
+    def __init__(self, every: float, clock: Callable[[], float] = time.monotonic) -> None:
+        self._every = every
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._last: dict[str, float] = {}
+
+    def take(self, name: str) -> float:
+        """0 if `name` may go now, and that go is counted; else the seconds to wait."""
+        with self._lock:
+            now = self._clock()
+            last = self._last.get(name)
+            if last is not None and now - last < self._every:
+                return self._every - (now - last)
+            self._last[name] = now
+            return 0.0
+
+
+# Shared by every SetupApi in the process, so two hosts can't double the rate.
+KEY_TESTS = RateLimit(KEY_TEST_EVERY)
 
 
 Reply = tuple[int, dict]
@@ -219,6 +252,16 @@ def _stops(value, field: str = "stops", least: int = 0) -> dict[str, str]:
     return stops
 
 
+def _key(value, field: str) -> str:
+    """A pasted key in the shape of one, or "" for none."""
+    if not isinstance(value, str):
+        raise Invalid("Paste the key as text", field)
+    key = value.strip()
+    if key and not _KEY_VALUE.match(key):
+        raise Invalid("Paste the key exactly; it has only letters, digits and . _ ~ + / = -", field)
+    return key
+
+
 def _keys(value) -> dict[str, str]:
     """Keys to save: only the board's, each in the shape of a key; empty ones skipped."""
     if not isinstance(value, dict):
@@ -227,14 +270,9 @@ def _keys(value) -> dict[str, str]:
     for name, key in value.items():
         if name not in _KEY_NAMES:
             raise Invalid("That isn't one of the board's keys", "keys")
-        if not isinstance(key, str):
-            raise Invalid("Paste the key as text", name)
-        key = key.strip()
-        if not key:
-            continue
-        if not _KEY_VALUE.match(key):
-            raise Invalid("Paste the key exactly; it has only letters, digits and . _ ~ + / = -", name)
-        keys[name] = key
+        key = _key(key, name)
+        if key:
+            keys[name] = key
     return keys
 
 
@@ -275,6 +313,8 @@ class SetupApi:
         walk_minutes: Callable[..., dict[str, tuple[int, str]]] = setup.walk_minutes,
         stations: Callable[[], Sequence[tuple[str, str, float, float]]] = setup.bundled_stations,
         make_job: MakeJob = discover.SetupJob,
+        test_key: Callable[..., keytest.KeyResult] = keytest.test_key,
+        key_tests: RateLimit = KEY_TESTS,
     ) -> None:
         """`load_secrets` gives the environment with every saved key, as the
         settings page's does; `job_folder` is where the search builds the bus
@@ -294,6 +334,8 @@ class SetupApi:
         self._walk_minutes = walk_minutes
         self._stations = stations
         self._make_job = make_job
+        self._test_key = test_key
+        self._key_tests = key_tests
         self._lock = threading.Lock()
         self._found_stops: dict[str, Stop] = {}
         self._job = None
@@ -312,6 +354,7 @@ class SetupApi:
             "job": self.job,
             "cancel": self.cancel,
             "finish": self.finish,
+            "testkey": self.testkey,
         }
 
     @property
@@ -321,7 +364,8 @@ class SetupApi:
     def handle(self, name: str, payload: object) -> Reply:
         """(status, body) for one request. 200 done; 400 bad input; 404 no
         such handler; 409 not now; 422 setup couldn't (a lookup failed, the
-        settings wouldn't load); 500 a fault, said plainly."""
+        settings wouldn't load); 429 too soon after the last; 500 a fault,
+        said plainly."""
         handler = self._handlers.get(name)
         if handler is None:
             return 404, {"error": "No such setup step"}
@@ -332,6 +376,8 @@ class SetupApi:
             status, reply = 400, _error(error, secrets, error.field)
         except Conflict as error:
             status, reply = 409, _error(error, secrets)
+        except TooSoon as error:
+            status, reply = 429, _error(error, secrets)
         except (SetupError, OverlayError, discover.DiscoveryError) as error:
             status, reply = 422, _error(error, secrets)
         except Exception as error:  # noqa: BLE001 - a fault, shown without detail
@@ -348,9 +394,12 @@ class SetupApi:
             values = []
         with self._lock:
             values.append(self._job_key)  # pasted for the search, perhaps never saved
-        pasted = payload.get("keys") if isinstance(payload, dict) else None
-        if isinstance(pasted, dict):
-            values += [v.strip() for v in pasted.values() if isinstance(v, str)]
+        if isinstance(payload, dict):
+            pasted = payload.get("keys")
+            if isinstance(pasted, dict):
+                values += [v.strip() for v in pasted.values() if isinstance(v, str)]
+            # A key pasted to test it, and an app ID pasted to test with it.
+            values += [payload[f].strip() for f in ("value", "app_id") if isinstance(payload.get(f), str)]
         # A value this short can't be told from ordinary text, and isn't a usable key.
         return sorted({v for v in values if len(v) >= MIN_SCRUBBED}, key=len, reverse=True)
 
@@ -495,6 +544,41 @@ class SetupApi:
         if job is not None:
             job.cancel()
         return {"job": self._job_status()}
+
+    # Testing a key.
+
+    def testkey(self, payload) -> dict:
+        """Try one key with one harmless call: `value` if pasted (not saved),
+        else the saved one. TransportAPI's app ID and key go together: with
+        `app_id`, a pasted app ID, the app key is tested with it. That test
+        spends one of TransportAPI's 30 lookups a day, so the page asks
+        first. {state, message}, as keytest.KeyResult; 429 within
+        KEY_TEST_EVERY seconds of the last test of that key."""
+        fields = _fields(payload, ("name",), ("value", "app_id"))
+        name = fields["name"]
+        if not isinstance(name, str) or name not in keytest.KEY_NAMES:
+            raise Invalid("That isn't one of the board's keys", "name")
+        value = _key(fields.get("value", ""), name) or None
+        env = dict(self._load_secrets())
+        if "app_id" in fields:
+            if name != "TAPI_APP_KEY":
+                raise Invalid("Only the TransportAPI app key is tested with an app ID", "app_id")
+            app_id = _key(fields["app_id"], "TAPI_APP_ID")
+            if app_id:
+                env["TAPI_APP_ID"] = app_id
+        # TransportAPI's two keys are one test, so share one limit.
+        wait = self._key_tests.take("TAPI" if name in keytest.COSTS_A_LOOKUP else name)
+        if wait:
+            raise TooSoon(f"Wait {math.ceil(wait)} s before testing this key again")
+        result = self._test_key(name, value, self._settings(), env)
+        return {"state": result.state, "message": result.message}
+
+    def _settings(self) -> dict:
+        """The board's settings, for what a key test asks about; empty if they don't read."""
+        try:
+            return read_config(self._config_path)
+        except (OSError, ConfigError):
+            return {}
 
     # Saving.
 

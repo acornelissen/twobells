@@ -5,10 +5,11 @@ import tomllib
 
 import pytest
 
-from departureboard import discover
+from departureboard import discover, setupapi
 from departureboard.config import read_config
+from departureboard.keytest import KeyResult
 from departureboard.setup import Place, SetupError, Station, Stop
-from departureboard.setupapi import Invalid, SetupApi, decode, suggested_labels
+from departureboard.setupapi import Invalid, RateLimit, SetupApi, decode, suggested_labels
 
 # Home, to more places than anything written may show.
 HOME = {"lat": 53.461964, "lon": -1.965633}
@@ -93,6 +94,12 @@ def board(tmp_path):
         calls.append(("walk", home, dict(places)))
         return {key: (5 if key == "GLO" else 2, "route" if key == "GLO" else "estimate") for key in places}
 
+    def test_key(name, value, config_data, env):
+        calls.append(("testkey", name, value, config_data, dict(env)))
+        return KeyResult("works", "It works.")
+
+    clock = [1000.0]
+
     api = SetupApi(
         config, lambda: dict(secrets), state,
         links=[("The board", "/"), ("Dashboard", "http://pi.local:8090/")],
@@ -103,8 +110,10 @@ def board(tmp_path):
         walk_minutes=walk,
         stations=lambda: STATIONS,
         make_job=FakeJob,
+        test_key=test_key,
+        key_tests=RateLimit(10.0, clock=lambda: clock[0]),
     )
-    api.calls, api.secrets, api.state, api.config = calls, secrets, state, config
+    api.calls, api.secrets, api.state, api.config, api.clock = calls, secrets, state, config, clock
     return api
 
 
@@ -153,6 +162,15 @@ def saved_with_a_search(api, routes=True, **finish):
     ("finish", {"home": HOME, "station_crs": "GLO", "stops": {}, "walk": {"GLO": 61}}, "walk"),
     ("finish", {"home": HOME, "station_crs": "GLO", "stops": {}, "walk": {"MAN": 5}}, "walk"),
     ("finish", {"home": HOME, "filter_crs": "MAN", "stops": {"A": "1800SB12341"}, "walk": {}}, "filter_crs"),
+    ("testkey", {}, "name"),
+    ("testkey", {"name": "PATH"}, "name"),
+    ("testkey", {"name": ["RDM_API_KEY"]}, "name"),
+    ("testkey", {"name": "RDM_API_KEY", "value": 12345}, "RDM_API_KEY"),
+    ("testkey", {"name": "RDM_API_KEY", "value": "has spaces 12345"}, "RDM_API_KEY"),
+    ("testkey", {"name": "RDM_API_KEY", "value": "x" * 201}, "RDM_API_KEY"),
+    ("testkey", {"name": "RDM_API_KEY", "app_id": "an-app-id-1"}, "app_id"),
+    ("testkey", {"name": "TAPI_APP_KEY", "app_id": "bad\nid"}, "TAPI_APP_ID"),
+    ("testkey", {"name": "RDM_API_KEY", "keys": {}}, "keys"),
 ])
 def test_input_is_checked_strictly(board, name, payload, field):
     status, body = board.handle(name, payload)
@@ -345,6 +363,77 @@ def test_begin_says_which_keys_are_set_never_their_values(board):
     assert keys["BODS_API_KEY"]["doc"].endswith("docs/KEYS.md#bus-open-data-service")
     assert RDM_KEY not in json.dumps(body) and BODS_KEY not in json.dumps(body)
     assert body["job"] == {"state": "idle"}
+
+
+# Testing a key.
+
+
+def test_testing_a_saved_key(board):
+    assert ok(board, "testkey", {"name": "RDM_API_KEY"}) == {"state": "works", "message": "It works."}
+    _, name, value, config_data, env = board.calls[-1]
+    assert (name, value) == ("RDM_API_KEY", None)  # None: the saved one
+    assert env["RDM_API_KEY"] == RDM_KEY
+    assert config_data["dashboard"] == {"title": "Our house"}  # the settings, with the page's saved over them
+
+
+def test_testing_a_pasted_key_does_not_save_it(board):
+    before = sorted(p.name for p in board.state.iterdir())
+    ok(board, "testkey", {"name": "BODS_API_KEY", "value": " pasted-bods-555 "})
+    assert board.calls[-1][1:3] == ("BODS_API_KEY", "pasted-bods-555")
+    ok(board, "testkey", {"name": "RDM_API_KEY", "value": ""})  # empty: the saved one
+    assert board.calls[-1][2] is None
+    assert sorted(p.name for p in board.state.iterdir()) == before and "secrets.env" not in before
+
+
+def test_testing_transportapi_with_a_pasted_app_id(board):
+    ok(board, "testkey", {"name": "TAPI_APP_KEY", "value": "pasted-tapi-key", "app_id": "pasted-tapi-id"})
+    _, name, value, _, env = board.calls[-1]
+    assert (name, value, env["TAPI_APP_ID"]) == ("TAPI_APP_KEY", "pasted-tapi-key", "pasted-tapi-id")
+
+
+def test_each_key_is_tested_at_most_once_every_ten_seconds(board):
+    ok(board, "testkey", {"name": "RDM_API_KEY"})
+    status, body = board.handle("testkey", {"name": "RDM_API_KEY", "value": "another-key-1"})
+    assert status == 429 and body == {"error": "Wait 10 s before testing this key again"}
+    ok(board, "testkey", {"name": "BODS_API_KEY"})  # another key has its own limit
+    board.clock[0] += 9.5
+    status, body = board.handle("testkey", {"name": "RDM_API_KEY"})
+    assert status == 429 and "Wait 1 s" in body["error"]
+    board.clock[0] += 0.5
+    ok(board, "testkey", {"name": "RDM_API_KEY"})
+    assert [c[1] for c in board.calls if c[0] == "testkey"] == ["RDM_API_KEY", "BODS_API_KEY", "RDM_API_KEY"]
+
+
+def test_transportapis_two_keys_share_one_limit(board):
+    ok(board, "testkey", {"name": "TAPI_APP_KEY"})
+    assert board.handle("testkey", {"name": "TAPI_APP_ID"})[0] == 429
+
+
+def test_a_refused_request_does_not_use_up_the_limit(board):
+    assert board.handle("testkey", {"name": "RDM_API_KEY", "value": "has spaces"})[0] == 400
+    ok(board, "testkey", {"name": "RDM_API_KEY"})
+
+
+def test_the_limit_is_shared_by_every_host_in_the_process(board):
+    first = SetupApi(board.config, dict, board.state)
+    second = SetupApi(board.config, dict, board.state)
+    assert first._key_tests is second._key_tests is setupapi.KEY_TESTS
+    now = [0.0]
+    limit = RateLimit(10.0, clock=lambda: now[0])
+    assert limit.take("A") == 0 and limit.take("A") == 10.0 and limit.take("B") == 0
+    now[0] = 10.0
+    assert limit.take("A") == 0
+
+
+def test_a_key_test_never_answers_with_the_key(board):
+    board._test_key = lambda name, value, config_data, env: KeyResult(
+        "wrong_key", f"refused {value} and {env['RDM_API_KEY']} and {env['TAPI_APP_ID']}")
+    status, body = board.handle("testkey", {"name": "TAPI_APP_KEY", "value": "pasted-tapi-key",
+                                            "app_id": "pasted-tapi-id"})
+    text = json.dumps(body)
+    assert status == 200 and body["state"] == "wrong_key"
+    for secret in ("pasted-tapi-key", "pasted-tapi-id", RDM_KEY):
+        assert secret not in text
 
 
 def test_links_must_be_plain(board):
