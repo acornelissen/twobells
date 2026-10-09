@@ -141,6 +141,10 @@ Then open `http://<pi name>.local:8080/` from a phone or laptop on the same netw
 - Changing between e-paper and the screen means switching services, so the display type stays in `config.toml`.
 - Security:
   - Only private and link-local addresses get in, checked by the page and by the service's systemd IP firewall.
+  - On a Pi Zero (W) kernel, systemd can't enforce the unit's IP firewall or memory cap: Raspberry Pi OS turns memory
+    accounting off there, and the BPF firewall can't be set up (it logs "Preparation of BPF allow maps failed").
+    The page's own address and host checks, sign-in, lockout, task limit and two-at-a-time password checks still apply,
+    so keep it behind your router with no port forwarded to 8080.
   - Requests must name a local host, which stops DNS-rebinding pages.
   - A signed-in session, a form token and a same-origin check are needed to change anything.
   - Five wrong passwords lock an address out for 15 minutes.
