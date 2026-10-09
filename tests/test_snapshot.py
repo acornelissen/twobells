@@ -514,3 +514,21 @@ def test_calling_point_words_become_times_or_flags():
         assert calling_point(CallingPoint("Dinting", "DGT", "07:15", word, None, False, None))["expected"] is None
     passed = calling_point(CallingPoint("Hadfield", "HDF", "07:05", None, "On time", False, None))
     assert passed["actual"] == "07:05"
+
+
+def test_what_the_server_sends_is_what_the_page_was_built_for():
+    """The server and the page were built apart against docs/dashboard-api.md:
+    run the server's real output through the page's own contract checker."""
+    from test_dashboard_static import BUS_DETAIL, SNAPSHOT, check
+
+    h = hub()
+    tparts, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO")
+    h.publish("trains", tparts)
+    bparts, lookups, _ = bus_part(at(10, 14), [bus(*HALFWAY, at(10, 14))])
+    h.publish("buses", bparts)
+    h.publish("weather", weather_part(conditions(), datetime(2026, 10, 9, 8, 20, tzinfo=LONDON), status_block(), 50))
+    sent = snapshot(h)
+    assert sent["trains"]["rows"] and sent["buses"]["rows"] and sent["weather"]["now"]
+    check(sent, SNAPSHOT)
+    live_row = by(bparts["rows"], line="341", stop="A")
+    check(lookups[live_row["id"]]["bus"], BUS_DETAIL)
