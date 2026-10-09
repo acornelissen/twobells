@@ -313,16 +313,19 @@ STATUS = {"last_success": Opt(at), "stale": bool, "error": Opt(str), "note": Opt
 ROW_STATUS = one_of("on_time", "late", "cancelled", "unknown")
 HISTORY = {"phrase": Opt(str)}
 
+CALLING_POINT = {
+    "name": str, "crs": Opt(str), "scheduled": Opt(hhmm), "expected": Opt(hhmm),
+    "actual": Opt(hhmm), "cancelled": bool,
+}
 TRAIN_ROW = {
     "id": row_id, "service": str, "destination": str, "origin": Opt(str),
     "scheduled": hhmm, "scheduled_at": at, "expected": Opt(hhmm), "expected_at": Opt(at),
     "status": ROW_STATUS, "status_text": str, "minutes_late": Opt(integer),
     "platform": Opt(str), "length": Opt(integer),
     "cancel_reason": Opt(str), "delay_reason": Opt(str), "leave_at": Opt(at),
-    "calling_points": [{
-        "name": str, "crs": Opt(str), "scheduled": Opt(hhmm), "expected": Opt(hhmm),
-        "actual": Opt(hhmm), "cancelled": bool,
-    }],
+    "calling_points": [CALLING_POINT],
+    "previous_points": [CALLING_POINT],
+    "position": Opt({"where": str, "strip": {"stops": [str], "yours": integer, "train_at": Opt(number)}}),
     "history": HISTORY,
 }
 BUS_ROW = {
@@ -404,6 +407,16 @@ def test_snapshot_fixture_follows_the_contract():
     for row in buses:
         if row["strip"]:
             assert 0 <= row["strip"]["yours"] < len(row["strip"]["stops"])
+    # Trains: the first few have a position; the rest don't.
+    assert [bool(r["position"]) for r in trains[:3]] == [True, False, True]  # the second is cancelled
+    assert any(r["position"]["strip"]["train_at"] is not None for r in trains if r["position"])
+    assert any(r["previous_points"] for r in trains) and not any(r["previous_points"] for r in trains[3:])
+    for row in trains:
+        if row["position"]:
+            strip = row["position"]["strip"]
+            assert 0 <= strip["yours"] < len(strip["stops"])
+            if strip["train_at"] is not None:
+                assert 0 <= strip["train_at"] <= len(strip["stops"]) - 1
 
 
 def test_bus_fixture_follows_the_contract():

@@ -19,10 +19,10 @@ import re
 import threading
 import time
 from datetime import date, datetime, timedelta, timezone, tzinfo
-from typing import Callable
+from typing import Callable, Mapping
 
 from .bodsbus import BusBoard
-from .darwin import CallingPoint, TrainBoard, TrainService
+from .darwin import CallingPoint, ServiceDetails, TrainBoard, TrainService, train_position
 from .history import Observed, day_type
 from .livebus import LiveDeparture, approach
 from .model import Departure, Status, minutes_between
@@ -127,9 +127,21 @@ def _minutes_late(departure: Departure) -> int | None:
     return None
 
 
+def position_block(details: ServiceDetails | None, now: datetime) -> dict | None:
+    """Where the train is, for the row's strip; None without its details."""
+    found = train_position(details, now)
+    if found is None:
+        return None
+    return {"where": found.where,
+            "strip": {"stops": list(found.strip_stops), "yours": found.yours, "train_at": found.train_at}}
+
+
 def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_prefix: str,
-              phrases: Phrases = no_history) -> tuple[dict, dict]:
-    """A train's row and its server-side lookup (the history key)."""
+              phrases: Phrases = no_history, details: ServiceDetails | None = None,
+              now: datetime | None = None) -> tuple[dict, dict]:
+    """A train's row and its server-side lookup (the history key). With the
+    train's service details, the row says where it is at `now` (else when
+    the board was fetched) and the stops it calls at before this station."""
     dep = service.departure
     scheduled_at, expected_at = _train_times(service, fetched)
     history = _history_entry("train", train_route(route_prefix, dep.destination), dep.scheduled,
@@ -152,6 +164,8 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
         "delay_reason": service.delay_reason,
         "leave_at": iso(leave_at(dep, scheduled_at, expected_at, walk)),
         "calling_points": [calling_point(p) for p in service.calling_points],
+        "previous_points": [calling_point(p) for p in details.previous] if details else [],
+        "position": position_block(details, now or fetched),
         "history": {"phrase": history["phrase"]},
     }
     return row, {"history": history}
@@ -178,13 +192,18 @@ def calling_point(point: CallingPoint) -> dict:
 
 def trains_part(board: TrainBoard | None, fetched: datetime | None, status: dict, station: str,
                 filter_crs: str | None, walk: WalkTimes, route_prefix: str,
-                phrases: Phrases = no_history) -> tuple[dict, dict[str, dict]]:
+                phrases: Phrases = no_history, details: Mapping[str, ServiceDetails] | None = None,
+                now: datetime | None = None) -> tuple[dict, dict[str, dict]]:
     """The trains section and its lookups by row id. `fetched` is when the
-    board was fetched (aware), which its HH:MM times are read against."""
+    board was fetched (aware), which its HH:MM times are read against.
+    `details` are the service details known, by Darwin service ID; `now` is
+    when to place the trains (else `fetched`)."""
     rows, lookups = [], {}
+    details = details or {}
     if board is not None and fetched is not None:
         for service in board.services:
-            row, lookup = train_row(service, fetched, walk, route_prefix, phrases)
+            found = details.get(service.service_id) if service.service_id else None
+            row, lookup = train_row(service, fetched, walk, route_prefix, phrases, found, now)
             rows.append(row)
             lookups[row["id"]] = lookup
     return {

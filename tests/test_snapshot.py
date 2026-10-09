@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from departureboard.bodsbus import BusBoard
-from departureboard.darwin import parse_board_rich
+from departureboard.darwin import parse_board_rich, parse_service_details
 from departureboard.model import Departure, Status
 from departureboard.snapshot import (
     Hub,
@@ -45,6 +45,20 @@ def glossop():
 
 
 FETCHED = datetime(2026, 10, 9, 22, 2, 38, tzinfo=LONDON)
+# The 22:52 to Manchester and the 23:07 to Hadfield on that board, and their
+# service details as captured at 22:52.
+TO_MANCHESTER, TO_HADFIELD = "9000001GLSP____", "9000001GLSP____"
+DETAILS_AT = datetime(2026, 10, 9, 22, 52, 19, tzinfo=LONDON)
+
+
+def service_details(name, **changes):
+    raw = fixture(f"ldbws_service_details_from_{name}.json")
+    raw.update(changes)
+    return parse_service_details({k: v for k, v in raw.items() if v is not None})
+
+
+def known_details():
+    return {TO_MANCHESTER: service_details("hadfield"), TO_HADFIELD: service_details("manchester")}
 
 
 def train(std="07:12", etd="On time", **extra):
@@ -58,10 +72,10 @@ def train(std="07:12", etd="On time", **extra):
     return service
 
 
-def trains(*services, fetched=datetime(2026, 10, 10, 7, 0, tzinfo=LONDON), walk=WALK, phrases=None):
+def trains(*services, fetched=datetime(2026, 10, 10, 7, 0, tzinfo=LONDON), walk=WALK, phrases=None, details=None):
     board = parse_board_rich({"trainServices": list(services), "locationName": "Glossop"})
     kwargs = {"phrases": phrases} if phrases else {}
-    return trains_part(board, fetched, status_block(), "GLO", "MAN", walk, "GLO>MAN", **kwargs)
+    return trains_part(board, fetched, status_block(), "GLO", "MAN", walk, "GLO>MAN", details=details, **kwargs)
 
 
 def bus_part(now, vehicles=(), walk=WALK):
@@ -108,6 +122,10 @@ def test_no_service_id_or_bus_key_reaches_the_json():
     part, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO")
     text = json.dumps(part)
     assert "GLSP" not in text and "serviceID" not in text
+    part, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO",
+                          details=known_details(), now=DETAILS_AT)
+    text = json.dumps(part)
+    assert "GLSP" not in text and "serviceID" not in text and "At Glossop now" in text
     buses, lookups, found = bus_part(at(10, 14), [bus(*HALFWAY, at(10, 14))])
     text = json.dumps(buses)
     assert HENRY_A not in text and all(l.key not in text for l in found)
@@ -134,6 +152,46 @@ def test_a_real_board_becomes_rows():
     ]
     assert first["history"] == {"phrase": None}
     assert lookups[first["id"]]["history"]["route"] == "GLO|Hadfield"
+
+
+def test_a_train_with_details_says_where_it_is_and_where_it_has_been():
+    part, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO",
+                          details=known_details(), now=DETAILS_AT)
+    to_manchester, to_hadfield = by(part["rows"], scheduled="22:52"), by(part["rows"], scheduled="23:07")
+    assert to_manchester["position"] == {
+        "where": "At Glossop now", "strip": {"stops": ["Hadfield", "Glossop", "Dinting"], "yours": 1, "train_at": 1},
+    }
+    assert to_manchester["previous_points"] == [
+        {"name": "Hadfield", "crs": "HDF", "scheduled": "22:44", "expected": None, "actual": "22:44",
+         "cancelled": False},
+    ]
+    assert to_hadfield["position"]["where"] == "Left Flowery Field"
+    assert to_hadfield["position"]["strip"]["train_at"] is None
+    previous = to_hadfield["previous_points"]
+    assert [p["name"] for p in previous][:2] == ["Manchester Piccadilly", "Ashburys"]
+    # Darwin's words become times or nothing, as for the stops after.
+    assert by(previous, name="Gorton")["actual"] == "22:39"
+    assert by(previous, name="Flowery Field")["actual"] is None
+    assert by(previous, name="Godley")["expected"] == "22:51"
+    for row in part["rows"]:
+        if row not in (to_manchester, to_hadfield):
+            assert row["position"] is None and row["previous_points"] == []
+
+
+def test_a_train_is_placed_at_the_time_given_else_when_the_board_was_fetched():
+    on_the_way = {TO_MANCHESTER: service_details("hadfield", ata=None)}  # left Hadfield 22:44, due 22:49
+    at = datetime(2026, 10, 9, 22, 46, 30, tzinfo=LONDON)
+    part, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO", details=on_the_way, now=at)
+    assert by(part["rows"], scheduled="22:52")["position"]["strip"]["train_at"] == 0.5
+    part, _ = trains_part(glossop(), at, status_block(), "GLO", None, WALK, "GLO", details=on_the_way)
+    assert by(part["rows"], scheduled="22:52")["position"]["strip"]["train_at"] == 0.5
+
+
+def test_without_details_a_train_has_no_position():
+    part, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO")
+    assert all(r["position"] is None and r["previous_points"] == [] for r in part["rows"])
+    unnamed, _ = trains(train(serviceID=None), details={"07:12+Manchester Piccadilly": service_details("hadfield")})
+    assert unnamed["rows"][0]["position"] is None
 
 
 def test_a_late_train_is_expected_later_and_left_for_later():
@@ -522,13 +580,18 @@ def test_what_the_server_sends_is_what_the_page_was_built_for():
     from test_dashboard_static import BUS_DETAIL, SNAPSHOT, check
 
     h = hub()
-    tparts, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO")
+    details = {**known_details(), "9000001GLSP____": service_details("hadfield", ata=None)}
+    tparts, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO",
+                            details=details, now=DETAILS_AT.replace(minute=46))
     h.publish("trains", tparts)
     bparts, lookups, _ = bus_part(at(10, 14), [bus(*HALFWAY, at(10, 14))])
     h.publish("buses", bparts)
     h.publish("weather", weather_part(conditions(), datetime(2026, 10, 9, 8, 20, tzinfo=LONDON), status_block(), 50))
     sent = snapshot(h)
     assert sent["trains"]["rows"] and sent["buses"]["rows"] and sent["weather"]["now"]
+    positions = [r["position"] for r in sent["trains"]["rows"] if r["position"]]
+    assert len(positions) == 3 and any(isinstance(p["strip"]["train_at"], float) for p in positions)
+    assert any(r["previous_points"] for r in sent["trains"]["rows"])
     check(sent, SNAPSHOT)
     live_row = by(bparts["rows"], line="341", stop="A")
     check(lookups[live_row["id"]]["bus"], BUS_DETAIL)

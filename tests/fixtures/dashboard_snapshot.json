@@ -121,6 +121,28 @@
             "cancelled": false
           }
         ],
+        "previous_points": [
+          {
+            "name": "Hadfield",
+            "crs": "HDF",
+            "scheduled": "07:04",
+            "expected": "07:11",
+            "actual": null,
+            "cancelled": false
+          }
+        ],
+        "position": {
+          "where": "Not started yet: leaves Hadfield at 07:11",
+          "strip": {
+            "stops": [
+              "Hadfield",
+              "Glossop",
+              "Dinting"
+            ],
+            "yours": 1,
+            "train_at": null
+          }
+        },
         "history": {
           "phrase": "Late 4 of the last 10 weekdays (avg 6 min)"
         }
@@ -224,6 +246,8 @@
             "cancelled": true
           }
         ],
+        "previous_points": [],
+        "position": null,
         "history": {
           "phrase": "Cancelled 2 of the last 10 weekdays"
         }
@@ -327,6 +351,28 @@
             "cancelled": false
           }
         ],
+        "previous_points": [
+          {
+            "name": "Hadfield",
+            "crs": "HDF",
+            "scheduled": "08:04",
+            "expected": null,
+            "actual": "08:04",
+            "cancelled": false
+          }
+        ],
+        "position": {
+          "where": "Left Hadfield 08:04, on time",
+          "strip": {
+            "stops": [
+              "Hadfield",
+              "Glossop",
+              "Dinting"
+            ],
+            "yours": 1,
+            "train_at": 0.4
+          }
+        },
         "history": {
           "phrase": "On time 9 of the last 10 weekdays"
         }
@@ -430,6 +476,8 @@
             "cancelled": false
           }
         ],
+        "previous_points": [],
+        "position": null,
         "history": {
           "phrase": "Late 3 of the last 8 weekdays (avg 4 min)"
         }
@@ -533,6 +581,8 @@
             "cancelled": false
           }
         ],
+        "previous_points": [],
+        "position": null,
         "history": {
           "phrase": null
         }
@@ -636,6 +686,8 @@
             "cancelled": false
           }
         ],
+        "previous_points": [],
+        "position": null,
         "history": {
           "phrase": "On time 10 of the last 10 weekdays"
         }
@@ -739,6 +791,8 @@
             "cancelled": false
           }
         ],
+        "previous_points": [],
+        "position": null,
         "history": {
           "phrase": null
         }
@@ -842,6 +896,8 @@
             "cancelled": false
           }
         ],
+        "previous_points": [],
+        "position": null,
         "history": {
           "phrase": "Late 1 of the last 10 weekdays (avg 3 min)"
         }
@@ -864,6 +920,8 @@
         "delay_reason": null,
         "leave_at": "2026-10-10T11:00:00+01:00",
         "calling_points": [],
+        "previous_points": [],
+        "position": null,
         "history": {
           "phrase": null
         }
@@ -967,6 +1025,8 @@
             "cancelled": false
           }
         ],
+        "previous_points": [],
+        "position": null,
         "history": {
           "phrase": null
         }

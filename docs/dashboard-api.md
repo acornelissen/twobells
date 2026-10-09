@@ -40,6 +40,13 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "calling_points": [
         {"name": "Dinting", "crs": "DGT", "scheduled": "07:15", "expected": "07:22", "actual": null, "cancelled": false}
       ],
+      "previous_points": [
+        {"name": "Hadfield", "crs": "HDF", "scheduled": "07:04", "expected": null, "actual": "07:11", "cancelled": false}
+      ],
+      "position": {
+        "where": "Left Hadfield, 7 min late",
+        "strip": {"stops": ["Hadfield", "Glossop", "Dinting"], "yours": 1, "train_at": 0.4}
+      },
       "history": {"phrase": "Late 4 of the last 10 weekdays (avg 6 min)"}
     }]
   },
@@ -83,8 +90,15 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
 - **`leave_at`:** when to set off on foot (`expected_at` or else `scheduled_at`, minus the walk minutes for that mode or stop). It is null when cancelled or no walk time is set.
 - **Missing data:**
   - A section can be `null` when it isn't configured (`trains`, `buses`, `weather`).
-  - `now`, `sun`, `rain`, `strip` and `vehicle` can each be null.
-  - `calling_points` can be `[]`.
+  - `now`, `sun`, `rain`, `strip`, `vehicle` and `position` can each be null.
+  - `calling_points` and `previous_points` can be `[]`.
+- **Calling points:** `calling_points` are the stops after this station, `previous_points` the ones before it, both in journey order. Times are `HH:MM` or null; `actual` is set once the train has been there. A cancelled stop has `cancelled: true` and null times.
+- **Train `position`** (from Darwin's Service Details, which needs its own key, `RDM_DETAILS_API_KEY`):
+  - It is known for the first 3 trains on the board that aren't cancelled, refreshed at most once a minute. Other rows have `position: null` and `previous_points: []`, unless the server still holds their details from earlier.
+  - Without the key, or while the key is refused (the server stops asking for 6 hours), every row has `position: null` and `previous_points: []`.
+  - `where` is a sentence for the row and screen readers, like "Left Hadfield 22:44, on time", "Left Guide Bridge, 3 min late", "At Glossop now", "Departed Glossop" or "Not started yet: leaves Hadfield at 22:44".
+  - `strip.stops` are up to 5 stops before this station, this station, then the next stop if there is one; `strip.yours` is this station's index.
+  - `strip.train_at` is the train's place in stop units along `stops` (0 is the first), worked out from the stops it has been to and the times between them. It is null when the train hasn't started or is further back than the strip shows.
 - **`timetable.state`** is one of:
   - `ready`;
   - `building` (first build in progress);
