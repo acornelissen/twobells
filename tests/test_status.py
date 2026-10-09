@@ -208,3 +208,10 @@ def test_a_source_s_note_is_shown_as_a_problem():
     page = render_status(DATA, state, NOW)
     assert "Note Problem: From TransportAPI: &lt;the&gt; bus timetable has run out" in section(page, "Buses")
     assert "<the>" not in page
+
+
+def test_a_note_shows_even_before_anything_was_fetched():
+    state = {"sources": {"bus": {"note": "There is no bus timetable yet; TransportAPI stands in only at its own checking times"}}}
+    page = section(render_status(DATA, state, NOW), "Buses")
+    assert "Last update Never" in page
+    assert "Note Problem: There is no bus timetable yet" in page

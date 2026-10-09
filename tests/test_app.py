@@ -956,3 +956,36 @@ def test_a_source_falling_back_is_only_polled_in_the_fallback_windows():
     assert buses.calls == 0
     run_once(board, state, display, THU_0700.replace(hour=17))
     assert buses.calls == 1
+
+
+class WaitingBuses(FakeSource):
+    """A bus source with no timetable, whose fallback isn't due."""
+
+    falling_back = True
+
+    def __init__(self):
+        super().__init__("bus", [bus()])
+        self.waiting = "There is no bus timetable yet; TransportAPI stands in only at its own checking times"
+
+    def idle_note(self):
+        return self.waiting
+
+
+def test_a_source_not_polled_while_falling_back_saves_why():
+    buses = WaitingBuses()
+    trains = FakeSource("train", [train()])
+    board = Board(
+        title="GLO > MAN",
+        sources=[
+            SourceConfig(trains, morning(2), stale_after=timedelta(minutes=6)),
+            SourceConfig(buses, morning(2), stale_after=timedelta(minutes=30), daily_budget=28,
+                         fallback_policy=PollPolicy((parse_window("Mon-Fri 17:00-18:00"),), timedelta(minutes=12))),
+        ],
+    )
+    state = {}
+    run_once(board, state, FakeDisplay(), THU_0700)
+    assert buses.calls == 0
+    assert state["sources"]["bus"]["note"] == buses.waiting
+    buses.waiting = None  # the timetable arrived: the note stays until a fetch says otherwise
+    run_once(board, state, FakeDisplay(), THU_0700 + timedelta(minutes=1))
+    assert state["sources"]["bus"]["note"].startswith("There is no bus timetable yet")

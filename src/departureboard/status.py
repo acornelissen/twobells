@@ -129,7 +129,7 @@ def _source(heading: str, entry: dict, policy: PollPolicy | None, stale_after: i
         message = safe_message(str(error.get("message") or "")) or "no details"
         items.append(_item("Last error", _problem(f"{_when(failed, now)}: {message}")))
     note = entry.get("note")
-    if isinstance(note, str) and note and success is not None:
+    if isinstance(note, str) and note:
         items.append(_item("Note", _problem(safe_message(note))))
     items.extend(extra)
     return f"<h3>{e(heading)}</h3><dl>{''.join(items)}</dl>"

@@ -211,3 +211,15 @@ def test_the_note_says_how_a_fetch_fell_short(tmp_path):
     failing = source(tmp_path, at(10, 0), body=OSError("network down"))
     failing.fetch()
     assert failing.note == "Timetabled times only; live positions failed: network down"
+
+
+def test_while_waiting_for_the_fallback_the_idle_note_says_why(tmp_path):
+    bus = source(tmp_path, at(21, 40), fallback=Fallback())
+    assert bus.idle_note() == "There is no bus timetable yet; TransportAPI stands in only at its own checking times"
+    timetable.save(tmp_path, schedule())
+    assert bus.idle_note() is None
+
+
+def test_without_a_fallback_there_is_no_idle_note(tmp_path):
+    # The fetch fails instead, and the error says what to run.
+    assert source(tmp_path, at(21, 40)).idle_note() is None

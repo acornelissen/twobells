@@ -117,6 +117,14 @@ class BodsBusSource:
         """Why the timetable can't be used right now, or None."""
         return unusable(self._schedule(), self._stops, self._clock().replace(tzinfo=None))
 
+    def idle_note(self) -> str | None:
+        """Why buses aren't being checked while the fallback waits for its own
+        windows, for the settings page; None when that isn't the reason."""
+        reason = self.unusable() if self._fallback is not None else None
+        if reason is None:
+            return None
+        return f"{reason[0].upper()}{reason[1:]}; TransportAPI stands in only at its own checking times"
+
     @property
     def falling_back(self) -> bool:
         """True while departures come from the fallback instead of the timetable."""

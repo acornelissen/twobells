@@ -122,6 +122,12 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False)
     name = config.source.name
     entry = state.setdefault("sources", {}).setdefault(name, {})
     if not prime and not config.current_policy().is_due(now, from_iso(entry.get("last_attempt"))):
+        # Not checked because the fallback is waiting for its own windows: say why.
+        if config.fallback_policy is not None and getattr(config.source, "falling_back", False):
+            idle = getattr(config.source, "idle_note", None)
+            note = idle() if idle else None
+            if note:
+                entry["note"] = safe_message(note)
         return
 
     if config.daily_budget is not None:
