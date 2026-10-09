@@ -81,7 +81,7 @@ def test_bus_rows_use_clock_times_not_countdowns():
 
 def test_bus_row_shows_stop_label_when_known():
     [row] = view(buses=[bus(stop="A")]).buses.rows
-    assert row.middle == "A: Hyde"
+    assert (row.stop, row.middle) == ("A", "Hyde")
 
 
 def test_empty_sections_say_so():

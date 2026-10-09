@@ -134,3 +134,8 @@ def test_row_with_leave_draws_more_ink():
     plain = render(board(bus_rows=[Row("341", "A: Hyde", "07:20")]), PALETTE)
     with_leave = render(board(bus_rows=[Row("341", "A: Hyde", "07:20", leave="leave 07:14")]), PALETTE)
     assert ink(with_leave) > ink(plain)
+
+
+def test_plain_layout_prefixes_destination_with_stop_label():
+    layout = row_layout(Row("341", "Hyde", "07:20", stop="A"), load_fonts())
+    assert layout.middle == "A: Hyde"

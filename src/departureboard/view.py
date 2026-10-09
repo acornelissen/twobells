@@ -26,6 +26,7 @@ class Row:
     right: str
     style: Style = Style.NORMAL
     leave: str | None = None
+    stop: str | None = None
 
 
 @dataclass(frozen=True)
@@ -73,9 +74,8 @@ def _bus_row(dep: Departure, walk: WalkTimes | None) -> Row:
         right, style = f"{dep.scheduled} sch", Style.NORMAL
     else:
         right, style = dep.scheduled, Style.NORMAL
-    middle = f"{dep.stop}: {dep.destination}" if dep.stop else dep.destination
     leave = leave_time(dep, walk) if walk else None
-    return Row(dep.service, middle, right, style, f"leave {leave}" if leave else None)
+    return Row(dep.service, dep.destination, right, style, f"leave {leave}" if leave else None, dep.stop)
 
 
 def _leave_text(departures: list[Departure], walk: WalkTimes | None, now: str) -> str | None:

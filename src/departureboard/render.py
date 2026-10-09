@@ -73,6 +73,10 @@ class RowLayout:
 _GAP = 6
 
 
+def _with_stop(row: Row) -> str:
+    return f"{row.stop}: {row.middle}" if row.stop else row.middle
+
+
 def row_layout(row: Row, fonts: Fonts) -> RowLayout:
     """Column positions for a row. The destination gives way so times stay whole."""
     right_x = WIDTH - _PAD - fonts.bold.getlength(row.right)
@@ -84,7 +88,7 @@ def row_layout(row: Row, fonts: Fonts) -> RowLayout:
         middle_end = leave_x - _GAP
     return RowLayout(
         left=fit_text(row.left, fonts.bold, middle_x - _PAD - 3),
-        middle=fit_text(row.middle, fonts.regular, middle_end - middle_x),
+        middle=fit_text(_with_stop(row), fonts.regular, middle_end - middle_x),
         middle_x=middle_x,
         leave_x=leave_x,
         right_x=right_x,
