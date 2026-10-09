@@ -60,6 +60,10 @@ class StateStore:
         if not isinstance(state, dict):
             log.warning("Ignoring state file %s: not a JSON object", self._path)
             return {}
+        for key in ("sources", "budgets", "last_render", "vehicles"):
+            if key in state and not isinstance(state[key], dict):
+                log.warning("Ignoring malformed %r in state file %s", key, self._path)
+                del state[key]
         return state
 
     def save(self, state: dict) -> None:

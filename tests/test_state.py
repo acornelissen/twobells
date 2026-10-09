@@ -64,3 +64,15 @@ def test_save_flushes_to_disk_before_replacing(tmp_path, monkeypatch):
     StateStore(tmp_path / "state.json").save({"a": 1})
     assert calls == ["fsync", "replace"]
     assert StateStore(tmp_path / "state.json").load() == {"a": 1}
+
+
+def test_state_with_a_malformed_table_is_cleaned_not_fatal(tmp_path):
+    import json
+
+    from departureboard.state import StateStore
+
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps({"sources": [1, 2], "budgets": "x", "last_render": {"at": None}, "sources_ok": 1}))
+    state = StateStore(path).load()
+    assert "sources" not in state and "budgets" not in state
+    assert state["last_render"] == {"at": None}
