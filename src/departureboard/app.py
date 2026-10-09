@@ -135,6 +135,32 @@ def _departures(state: dict, name: str, now: datetime) -> list[Departure]:
     return [d for d in departures if not d.has_left(now, fetched)]
 
 
+def _keep_messages(config: SourceConfig, state: dict, before: str | None) -> None:
+    """A source with messages (Darwin's disruption notices) has them saved beside
+    the departures from the same fetch, once that fetch has succeeded."""
+    messages = getattr(config.source, "messages", None)
+    entry = state.get("sources", {}).get(config.source.name, {})
+    if messages is None or entry.get("last_success") in (None, before):
+        return
+    entry["messages"] = [m for m in messages if isinstance(m, str)]
+
+
+def _notices(board: Board, state: dict, now: datetime) -> list[str]:
+    """Messages from fetches that are still fresh. They age out with the feed:
+    once its data is older than stale_after, a notice may no longer be true,
+    and a morning's disruption must not still be showing in the evening."""
+    notices = []
+    for config in board.sources:
+        entry = state.get("sources", {}).get(config.source.name, {})
+        fetched = from_iso(entry.get("last_success"))
+        if fetched is None or now - fetched > config.stale_after:
+            continue
+        messages = entry.get("messages")
+        if isinstance(messages, list):
+            notices.extend(m for m in messages if isinstance(m, str) and m)
+    return notices
+
+
 def _poll_vehicles(tracker: Tracker, state: dict, now: datetime) -> None:
     entry = state.setdefault("vehicles", {})
     if not tracker.policy.is_due(now, from_iso(entry.get("last_attempt"))):
@@ -204,7 +230,9 @@ def run_once(
     # A screen can redraw every second, so it gets a running clock and countdowns.
     live = not display.panel.epaper
     for config in board.sources:
+        before = state.get("sources", {}).get(config.source.name, {}).get("last_success")
         _poll(config, state, now, prime)
+        _keep_messages(config, state, before)
     if live and board.tracker is not None:
         _poll_vehicles(board.tracker, state, now)
     entries = state.get("sources", {})
@@ -220,6 +248,7 @@ def run_once(
         walk=board.walk,
         wording=board.theme.wording,
         clock=now.strftime("%H:%M:%S") if live else None,
+        notices=_notices(board, state, now),
     )
 
     route = _route_view(board, state, view, now, view.clock) if live else None

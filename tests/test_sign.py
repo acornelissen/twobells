@@ -409,3 +409,113 @@ def test_platforms_fit_on_a_bigger_board(panel):
     for item in items:
         w, h = item_size(item)
         assert 0 <= item.x and item.x + w <= width
+
+
+NOTICE = (
+    "Disruption between Glossop and Manchester Piccadilly until the end of the day. "
+    "Trains may be cancelled or delayed by up to 20 minutes."
+)
+def noticed(view, notice=NOTICE, clock=None):
+    return dataclasses.replace(view, notice=notice, clock=clock)
+
+
+def test_notice_replaces_updated_on_the_phat_cut_to_fit():
+    items = sign_layout(noticed(board(TRAINS, BUSES))).items
+    assert "Updated 07:03" not in texts(items)
+    [notice] = [i for i in items if i.text.startswith("! ")]
+    assert notice.small and notice.x == MARGIN
+    assert notice.text.endswith("…")
+    assert notice.x + item_size(notice)[0] <= WIDTH - MARGIN
+    assert NOTICE.startswith(notice.text[2:-1].rstrip())
+
+
+def test_short_notice_is_shown_whole():
+    items = sign_layout(noticed(board(), "Lifts out of use")).items
+    assert "! Lifts out of use" in texts(items)
+
+
+def test_notice_stops_short_of_the_not_updating_badge():
+    items = sign_layout(noticed(board(stale_buses=True))).items
+    [notice] = [i for i in items if i.text.startswith("! ")]
+    badge = find(items, "Not updating: buses")
+    assert notice.x + item_size(notice)[0] + 5 <= badge.x - 2
+
+
+def test_wide_epaper_gives_the_notice_the_full_width():
+    width, height = dots(WAVESHARE_10IN85G)
+    items = sign_layout(noticed(board()), width, height).items
+    [notice] = [i for i in items if i.text.startswith("! ")]
+    [phat] = [i for i in sign_layout(noticed(board())).items if i.text.startswith("! ")]
+    assert len(notice.text) > len(phat.text)
+    assert notice.x + item_size(notice)[0] <= width - MARGIN
+
+
+def screen_footer(view):
+    width, height = dots(HDMI_1280X400)
+    items = sign_layout(view, width, height).items
+    return [i for i in items if i.text.startswith("! ")], find(items, view.clock), width, height
+
+
+def test_screen_keeps_its_clock_on_the_bottom_line_beside_the_notice():
+    [notice], clock, width, height = screen_footer(noticed(board(TRAINS, BUSES), clock="07:03:15"))
+    assert clock.y == notice.y == height - 10
+    assert not notice.small and not clock.small
+    assert clock.x + FONT.getlength(clock.text) == width - MARGIN
+    assert notice.x == MARGIN and notice.x + FONT.getlength(notice.text) + 5 <= clock.x
+
+
+def test_screen_clock_and_notice_clear_the_not_updating_badge():
+    view = noticed(board(stale_trains=True, stale_buses=True), clock="07:03:15")
+    width, height = dots(HDMI_1280X400)
+    items = sign_layout(view, width, height).items
+    badge = find(items, "Not updating: trains, buses")
+    assert find(items, "07:03:15").x + FONT.getlength("07:03:15") + 5 <= badge.x - 2
+
+
+def test_screen_shows_a_long_notice_in_parts_every_five_seconds():
+    def shown(clock):
+        [notice], _, _, _ = screen_footer(noticed(board(), clock=clock))
+        return notice.text
+
+    parts = []
+    for second in range(0, 60, 5):
+        text = shown(f"07:03:{second:02d}")
+        assert shown(f"07:03:{second + 4:02d}") == text  # steady within its five seconds
+        if text not in parts:
+            parts.append(text)
+    assert len(parts) > 1
+    assert all(p.startswith("! ") for p in parts)
+    assert sum(p.endswith(" …") for p in parts) == len(parts) - 1
+    words = " ".join(p[2:].removesuffix(" …") for p in parts).split()
+    assert sorted(words) == sorted(NOTICE.split())
+
+
+def test_screen_shows_a_short_notice_whole_and_steady():
+    [notice], _, _, _ = screen_footer(noticed(board(), "Lifts out of use", clock="07:03:15"))
+    assert notice.text == "! Lifts out of use"
+
+
+def test_without_a_notice_the_phat_footer_is_unchanged():
+    assert render_sign(board(TRAINS, BUSES), PALETTE).tobytes() == render_sign(
+        noticed(board(TRAINS, BUSES), None), PALETTE
+    ).tobytes()
+
+
+def test_footer_glyphs_cover_notices_and_the_rain_line():
+    from departureboard.dotfont import GLYPHS, TINY
+
+    for char in "!()%/'&+;…":
+        assert char in TINY, char
+    for char in "!()%;…":
+        assert char in GLYPHS, char
+
+
+@pytest.mark.parametrize("panel", [None, *BIG_PANELS], ids=lambda p: p.name if p else "inky-phat")
+@pytest.mark.parametrize("clock", [None, "07:03:15"])
+def test_everything_fits_with_a_notice(panel, clock):
+    width, height = dots(panel) if panel else (WIDTH, HEIGHT)
+    view = noticed(board(TRAINS, BUSES, leave="Leave by 07:05", stale_buses=True), clock=clock)
+    for item in sign_layout(view, width, height).items:
+        w, h = item_size(item)
+        assert 0 <= item.x and item.x + w <= width
+        assert 0 <= item.y and item.y + h <= height

@@ -282,3 +282,26 @@ def test_signature_changes_when_the_platform_changes():
     one = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, "1")
     two = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, "2")
     assert view(trains=[one]).signature() != view(trains=[two]).signature()
+
+
+def test_no_notice_without_messages():
+    assert view().notice is None
+    assert view(notices=[]).notice is None
+
+
+def test_messages_become_one_notice():
+    assert view(notices=["Lifts out of use."]).notice == "Lifts out of use."
+    assert view(notices=["Lifts out of use.", "Buses replace trains."]).notice == (
+        "Lifts out of use. / Buses replace trains."
+    )
+
+
+def test_notice_is_capped():
+    from departureboard.view import NOTICE_LIMIT
+
+    notice = view(notices=["x" * 300, "y" * 300]).notice
+    assert len(notice) == NOTICE_LIMIT and notice.endswith("…")
+
+
+def test_signature_changes_with_the_notice():
+    assert view().signature() != view(notices=["Lifts out of use."]).signature()

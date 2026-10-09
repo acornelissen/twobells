@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -126,18 +127,86 @@ def platform_column(rows, fonts: Fonts, width: int, scale: int) -> float | None:
     return width - _PAD * scale - right_w - _COL_GAP * scale - platform_w
 
 
-def fit_text(text: str, font: ImageFont.FreeTypeFont, width: float) -> str:
-    if font.getlength(text) <= width:
+def fit_text(text: str, font: ImageFont.FreeTypeFont, width: float, measure=None) -> str:
+    """`text`, cut short with an ellipsis if it is wider than `width`.
+    `measure` overrides font.getlength, e.g. with drawn_length."""
+    measure = measure or font.getlength
+    if measure(text) <= width:
         return text
-    while text and font.getlength(text + "…") > width:
+    while text and measure(text + "…") > width:
         text = text[:-1]
     return text.rstrip() + "…"
+
+
+def wrap_text(text: str, width: float, measure) -> list[str]:
+    """Lines of whole words no wider than `width`; a word too long for a line is split."""
+    lines: list[str] = []
+    line = ""
+    for word in text.split():
+        candidate = f"{line} {word}" if line else word
+        if measure(candidate) <= width:
+            line = candidate
+            continue
+        if line:
+            lines.append(line)
+        while len(word) > 1 and measure(word) > width:
+            cut = len(word) - 1
+            while cut > 1 and measure(word[:cut]) > width:
+                cut -= 1
+            lines.append(word[:cut])
+            word = word[cut:]
+        line = word
+    if line:
+        lines.append(line)
+    return lines
+
+
+# A message too long for a screen's line is shown a part at a time, each for this long.
+TURN_SECONDS = 5
+
+
+def in_turns(text: str, width: float, measure, clock: str, lead: str = "") -> str:
+    """The part of `lead + text` to show at `clock` (HH:MM:SS). It changes every
+    TURN_SECONDS of the board's own clock, so what is shown is predictable.
+    Every part starts with `lead`, so each reads as what it is, and a part
+    with more to come ends in an ellipsis."""
+    if measure(lead + text) <= width:
+        return lead + text
+    parts = wrap_text(text, width - measure(lead) - measure(" …"), measure)
+    hours, minutes, seconds = (int(v) for v in clock.split(":"))
+    index = ((hours * 60 + minutes) * 60 + seconds) // TURN_SECONDS % len(parts)
+    return lead + parts[index] + (" …" if index < len(parts) - 1 else "")
+
+
+NOTICE_LEAD = "! "
+
+
+def fitted_notice(view: BoardView, width: float, measure, font) -> str | None:
+    """The disruption notice as it fits in `width`: in turns on a screen,
+    cut short on e-paper, which can't change it every few seconds."""
+    if not view.notice:
+        return None
+    if view.clock:
+        return in_turns(view.notice, width, measure, view.clock, NOTICE_LEAD)
+    return fit_text(NOTICE_LEAD + view.notice, font, width, measure)
 
 
 def plain_scale(panel: Panel) -> int:
     """Whole steps up from the pHAT design that still fit the panel's height:
     the 10.85" panel's dot scale of 4 would need 488 of its 480 rows."""
     return max(1, min(panel.scale, panel.height // HEIGHT))
+
+
+def header_text(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[str, str, float]:
+    """(left text, stamp, stamp x) for the header bar. The plain look has no
+    footer, so a disruption notice takes the title's place while there is one:
+    cut short on e-paper, shown a part at a time on a screen."""
+    pad = _PAD * scale
+    stamp = view.clock or f"Upd {view.updated}"
+    stamp_x = width - pad - drawn_length(fonts.regular, stamp)
+    room = stamp_x - pad - 6 * scale
+    notice = fitted_notice(view, room, partial(drawn_length, fonts.bold), fonts.bold)
+    return notice or fit_text(view.title, fonts.bold, room), stamp, stamp_x
 
 
 class _Painter:
@@ -152,9 +221,7 @@ class _Painter:
     def header(self, view: BoardView) -> None:
         s, pad = self.s, _PAD * self.s
         self.draw.rectangle((0, 0, self.width - 1, _HEADER_H * s - 1), fill=self.p.black)
-        stamp = view.clock or f"Upd {view.updated}"
-        stamp_x = self.width - pad - drawn_length(self.f.regular, stamp)
-        title = fit_text(view.title, self.f.bold, stamp_x - pad - 6 * s)
+        title, stamp, stamp_x = header_text(view, self.f, self.width, s)
         self.draw.text((pad, s), title, font=self.f.bold, fill=self.p.white)
         self.draw.text((stamp_x, s), stamp, font=self.f.regular, fill=self.p.white)
 

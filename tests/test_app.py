@@ -640,3 +640,86 @@ def test_a_failed_position_fetch_records_an_error_and_success_clears_it():
     positions.error = None
     run_once(board, state, FakeScreen(), THU_0700 + timedelta(seconds=30))
     assert "last_error" not in state["vehicles"]
+
+
+class NoticeSource(FakeSource):
+    """Like DarwinSource: messages from the last successful fetch."""
+
+    def __init__(self, name, departures=(), messages=()):
+        super().__init__(name, departures)
+        self.next_messages = list(messages)
+        self.messages = []
+
+    def fetch(self):
+        departures = super().fetch()
+        self.messages = list(self.next_messages)
+        return departures
+
+
+def notice_setup(messages=("Lifts out of use.",)):
+    trains = NoticeSource("train", [train()], messages)
+    buses = FakeSource("bus", [bus()])
+    return trains, make_board(trains, buses), FakeDisplay(), {}
+
+
+def test_disruption_messages_are_kept_with_the_train_data_and_shown():
+    trains, board, display, state = notice_setup()
+    result = run_once(board, state, display, THU_0700)
+    assert state["sources"]["train"]["messages"] == ["Lifts out of use."]
+    assert result.view.notice == "Lifts out of use."
+
+
+def test_a_cleared_message_goes_from_the_board():
+    trains, board, display, state = notice_setup()
+    run_once(board, state, display, THU_0700)
+    trains.next_messages = []
+    result = run_once(board, state, display, THU_0700 + timedelta(minutes=2))
+    assert result.view.notice is None
+    assert result.rendered
+
+
+def test_a_failed_fetch_keeps_the_last_messages_until_the_data_ages_out():
+    trains, board, display, state = notice_setup()
+    run_once(board, state, display, THU_0700)
+    trains.error = OSError("down")
+    trains.next_messages = []
+    assert run_once(board, state, display, THU_0700 + timedelta(minutes=2)).view.notice == "Lifts out of use."
+    assert run_once(board, state, display, THU_0700 + timedelta(minutes=6)).view.notice == "Lifts out of use."
+    # Older than the train feed's stale_after (6 min): it may no longer be true.
+    assert run_once(board, state, display, THU_0700 + timedelta(minutes=7)).view.notice is None
+
+
+def test_messages_age_out_after_the_polling_window_too():
+    trains, board, display, state = notice_setup()
+    run_once(board, state, display, THU_0700.replace(hour=8, minute=58))
+    assert run_once(board, state, display, THU_0700.replace(hour=9, minute=10)).view.notice is None
+
+
+def test_sources_without_messages_store_none():
+    trains, buses, board, display, state = setup()
+    result = run_once(board, state, display, THU_0700)
+    assert "messages" not in state["sources"]["train"]
+    assert result.view.notice is None
+
+
+def test_saved_messages_that_are_not_text_are_ignored():
+    trains, board, display, state = notice_setup(messages=())
+    run_once(board, state, display, THU_0700)
+    state["sources"]["train"]["messages"] = [3, None, "Lifts out of use."]
+    assert run_once(board, state, display, THU_0700 + timedelta(minutes=1)).view.notice == "Lifts out of use."
+    state["sources"]["train"]["messages"] = "not a list"
+    assert run_once(board, state, display, THU_0700 + timedelta(minutes=1)).view.notice is None
+
+
+def test_darwin_messages_reach_the_board():
+    import json
+    from pathlib import Path
+
+    from departureboard.darwin import DarwinSource
+
+    payload = json.loads((Path(__file__).parent / "fixtures" / "ldbws_glossop_nrcc.json").read_text())
+    source = DarwinSource(api_key="k", crs="GLO", http_get=lambda url, headers: payload)
+    board = make_board(source, FakeSource("bus", [bus()]))
+    result = run_once(board, {}, FakeDisplay(), THU_0700.replace(hour=11, minute=45), prime=True)
+    assert result.view.notice.startswith("Disruption between Glossop and Manchester Piccadilly")
+    assert " / Lifts at Glossop & Hadfield are out of use." in result.view.notice

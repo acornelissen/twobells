@@ -141,3 +141,75 @@ def test_platform_is_kept_only_when_it_looks_like_one():
     assert platform(" 3 ") == "3"
     for odd in ("", None, 7, "<b>1</b>", "Platform one"):
         assert platform(odd) is None
+
+
+from departureboard.darwin import MESSAGE_LIMIT, parse_messages, plain_text  # noqa: E402
+
+
+def load_fixture(name):
+    import json
+    from pathlib import Path
+
+    return json.loads((Path(__file__).parent / "fixtures" / name).read_text())
+
+
+def test_reads_incident_messages_from_a_board():
+    messages = parse_messages(load_fixture("ldbws_glossop_nrcc.json"))
+    assert messages == [
+        "Disruption between Glossop and Manchester Piccadilly until the end of the day. "
+        "Trains may be cancelled or delayed by up to 20 minutes. "
+        "More details can be found in Latest Travel News.",
+        "Lifts at Glossop & Hadfield are out of use. Step-free access is not available.",
+    ]
+
+
+def test_a_board_without_messages_has_none():
+    assert parse_messages(load_fixture("ldbws_glossop_unfiltered.json")) == []
+
+
+def test_html_tags_and_entities_become_plain_text():
+    assert plain_text("<p>Lifts&nbsp;at <b>Glossop</b> &amp; Hadfield&#39;s</p><br/>closed") == (
+        "Lifts at Glossop & Hadfield's closed"
+    )
+    assert plain_text('<a href="https://example.test/x">news</a>') == "news"
+    assert plain_text("<p>tab\tand\nnew\x00line</p>") == "tab and newline"
+
+
+def test_long_messages_are_cut_on_a_word_with_an_ellipsis():
+    text = plain_text("<p>" + "Buses replace trains. " * 40 + "</p>")
+    assert len(text) <= MESSAGE_LIMIT
+    assert text.endswith("…") and text[-2] != " "
+    assert text[:-1] in "Buses replace trains. " * 40
+    unbroken = plain_text("x" * 1000)
+    assert unbroken.endswith("…") and len(unbroken) == MESSAGE_LIMIT
+
+
+def test_messages_are_read_whatever_their_shape():
+    shapes = [
+        ["<p>One</p>", "Two"],
+        [{"value": "One"}, {"xhtmlMessage": "Two"}],
+        {"message": ["One", {"Value": "Two"}]},
+        [{"message": "One"}, {"Value": "Two"}, {"Value": "One"}],  # repeats are dropped
+    ]
+    for shape in shapes:
+        assert parse_messages({"nrccMessages": shape}) == ["One", "Two"], shape
+
+
+def test_odd_message_shapes_are_ignored():
+    deep = {"Value": {"Value": {"Value": {"Value": {"Value": "too deep"}}}}}
+    for odd in (None, 7, True, [None, 3, {"category": "Train"}], deep, [" ", "<p></p>"]):
+        assert parse_messages({"nrccMessages": odd}) == [], odd
+
+
+def test_only_a_few_messages_are_kept():
+    assert len(parse_messages({"nrccMessages": [f"Message {i}" for i in range(20)]})) == 3
+
+
+def test_source_keeps_the_messages_from_its_last_fetch():
+    boards = [load_fixture("ldbws_glossop_nrcc.json"), load_fixture("ldbws_glossop_unfiltered.json")]
+    source = DarwinSource(api_key="k", crs="GLO", http_get=lambda url, headers: boards.pop(0))
+    assert source.messages == []
+    assert len(source.fetch()) == 4
+    assert source.messages[1].startswith("Lifts at Glossop")
+    source.fetch()
+    assert source.messages == []

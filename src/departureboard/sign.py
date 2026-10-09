@@ -16,7 +16,7 @@ from PIL import Image, ImageDraw
 from .dotfont import HEIGHT as GLYPH_H
 from .dotfont import TINY, TINY_HEIGHT, DotFont
 from .panel import PHAT, PLATFORM_COLUMN_MIN_WIDTH, Panel
-from .render import HEIGHT, WIDTH, Palette, fit_text
+from .render import HEIGHT, WIDTH, Palette, fit_text, fitted_notice
 from .route import RouteView
 from .view import BoardView, Row, Section, Style
 
@@ -126,16 +126,30 @@ def _buses(layout: SignLayout, section: Section, y: int, bottom: int, width: int
 
 def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> None:
     y = height - TINY_HEIGHT - 1
-    if view.clock:
+    stale = [name for name, s in (("trains", view.trains), ("buses", view.buses)) if s.stale]
+    badge = "Not updating: " + ", ".join(stale) if stale else None
+    # Where the free part of the bottom line ends: before the badge, if there is one.
+    free_end = width - MARGIN
+    if badge:
+        free_end -= _SMALL.getlength(badge) + 2 + _COL_GAP  # the badge's band reaches 2 dots left
+    if view.clock and view.notice:
+        # A screen keeps its clock on the bottom line, moved to the right, and
+        # shows the notice a part at a time in the room left of it.
+        clock_x = free_end - _w(view.clock)
+        layout.add(clock_x, height - GLYPH_H - 1, view.clock)
+        notice = fitted_notice(view, clock_x - _COL_GAP - MARGIN, _w, _FONT)
+        layout.add(MARGIN, height - GLYPH_H - 1, notice)
+    elif view.clock:
         # A screen shows the time centred along the bottom, like a station clock.
         layout.add((width - _w(view.clock)) // 2, height - GLYPH_H - 1, view.clock)
+    elif view.notice:
+        # As much as fits, in place of "Updated", in the footer's small print.
+        layout.add(MARGIN, y, fitted_notice(view, free_end - MARGIN, _SMALL.getlength, _SMALL), small=True)
     else:
         layout.add(MARGIN, y, f"Updated {view.updated}", small=True)
-    stale = [name for name, s in (("trains", view.trains), ("buses", view.buses)) if s.stale]
-    if stale:
-        message = "Not updating: " + ", ".join(stale)
+    if badge:
         # Small, but reversed out so a stalled feed still catches the eye.
-        layout.add(width - MARGIN - _SMALL.getlength(message), y, message, inverted=True, small=True)
+        layout.add(width - MARGIN - _SMALL.getlength(badge), y, badge, inverted=True, small=True)
 
 
 def sign_layout(view: BoardView, width: int = WIDTH, height: int = HEIGHT) -> SignLayout:

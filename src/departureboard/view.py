@@ -83,6 +83,8 @@ class BoardView:
     updated: str = field(compare=False)
     # A running HH:MM:SS clock, for screens that can redraw every second.
     clock: str | None = None
+    # A disruption message for the station, in plain text, while there is one.
+    notice: str | None = None
 
     def signature(self) -> str:
         content = asdict(self)
@@ -158,13 +160,27 @@ def build_view(
     walk: WalkTimes | None = None,
     wording: Wording = PLAIN,
     clock: str | None = None,
+    notices: list[str] | None = None,
 ) -> BoardView:
     """`clock` (HH:MM:SS, matching `now`) is for screens: it is shown, and
-    leave times count down instead of giving a clock time."""
+    leave times count down instead of giving a clock time. `notices` are the
+    station's disruption messages, shown one after another as one notice."""
     return BoardView(
         title=title,
         trains=_section("Trains", trains, _train_row, now, "No trains", "train" in stale, walk, wording, clock),
         buses=_section("Buses", buses, _bus_row, now, "No buses", "bus" in stale, walk, wording, clock),
         updated=now,
         clock=clock,
+        notice=_notice(notices or []),
     )
+
+
+# Long enough for a message or two; a screen shows it in turns, e-paper cuts it short.
+NOTICE_LIMIT = 300
+
+
+def _notice(messages: list[str]) -> str | None:
+    text = " / ".join(m for m in messages if m)
+    if len(text) <= NOTICE_LIMIT:
+        return text or None
+    return text[: NOTICE_LIMIT - 1].rstrip() + "…"

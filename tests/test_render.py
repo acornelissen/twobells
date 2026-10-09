@@ -7,14 +7,17 @@ from departureboard.render import (
     HEIGHT,
     WIDTH,
     Palette,
-    fit_text,
-    left_column_width,
     drawn_length,
+    fit_text,
+    header_text,
+    in_turns,
+    left_column_width,
     load_fonts,
     platform_column,
     plain_scale,
     render,
     row_layout,
+    wrap_text,
 )
 from departureboard.view import BoardView, Row, Section, Style
 
@@ -347,3 +350,69 @@ def test_destination_gives_way_to_the_platform_on_wide_panels(panel):
     layout = row_layout(rows[0], fonts, panel.width, s, platform_x)
     assert layout.middle.endswith("…")
     assert layout.middle_x + fonts.regular.getlength(layout.middle) < platform_x
+
+
+NOTICE = (
+    "Disruption between Glossop and Manchester Piccadilly until the end of the day. "
+    "Trains may be cancelled or delayed by up to 20 minutes."
+)
+
+
+def header(view, panel=PHAT):
+    s = plain_scale(panel)
+    fonts = load_fonts(s)
+    title, stamp, stamp_x = header_text(view, fonts, panel.width, s)
+    return title, stamp, stamp_x, fonts, s
+
+
+@pytest.mark.parametrize("panel", ALL_PANELS, ids=lambda p: p.name)
+def test_notice_takes_the_titles_place_on_epaper_cut_to_fit(panel):
+    title, stamp, stamp_x, fonts, s = header(dataclasses.replace(board(), notice=NOTICE), panel)
+    assert title.startswith("! Disruption") and title.endswith("…")
+    assert stamp == "Upd 07:03"
+    assert 3 * s + drawn_length(fonts.bold, title) <= stamp_x - 6 * s
+
+
+def test_without_a_notice_the_header_shows_the_title():
+    assert header(board())[0] == "GLO > MAN"
+
+
+def test_short_notice_is_shown_whole_in_the_header():
+    assert header(dataclasses.replace(board(), notice="Lifts out of use"))[0] == "! Lifts out of use"
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_on_a_screen_a_long_notice_takes_turns_in_the_header(panel):
+    def shown(clock):
+        view = dataclasses.replace(board(), notice=NOTICE * 2, clock=clock)
+        title, stamp, stamp_x, fonts, s = header(view, panel)
+        assert stamp == clock
+        assert 3 * s + drawn_length(fonts.bold, title) <= stamp_x - 6 * s
+        return title
+
+    parts = {shown(f"07:03:{second:02d}") for second in range(0, 60, 5)}
+    assert len(parts) > 1
+    assert all(p.startswith("! ") for p in parts)
+    assert shown("07:03:20") == shown("07:03:24") != shown("07:03:25")
+
+
+def test_notice_changes_what_the_header_draws():
+    plain = render(board(), PALETTE)
+    noticed = render(dataclasses.replace(board(), notice="Lifts out of use"), PALETTE)
+    assert plain.crop((0, 0, WIDTH, 15)).tobytes() != noticed.crop((0, 0, WIDTH, 15)).tobytes()
+    assert plain.crop((0, 15, WIDTH, HEIGHT)).tobytes() == noticed.crop((0, 15, WIDTH, HEIGHT)).tobytes()
+
+
+def test_wrap_text_keeps_words_whole_and_splits_only_overlong_ones():
+    measure = len
+    assert wrap_text("one two three four", 9, measure) == ["one two", "three", "four"]
+    assert wrap_text("abcdefghijkl xy", 5, measure) == ["abcde", "fghij", "kl xy"]
+    assert wrap_text("", 5, measure) == []
+
+
+def test_in_turns_follows_the_board_clock():
+    text = "one two three four five six"
+    assert in_turns(text, 100, len, "07:00:00") == text
+    first, second = in_turns(text, 12, len, "07:00:00", "! "), in_turns(text, 12, len, "07:00:05", "! ")
+    assert first == "! one two …" and second == "! three …"
+    assert all(len(in_turns(text, 12, len, f"07:00:{s:02d}", "! ")) <= 12 for s in range(60))
