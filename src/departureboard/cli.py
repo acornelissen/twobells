@@ -132,8 +132,11 @@ def _run(args) -> int:
         return _run_loop(settings, display, store, state, args)
     # A fresh install (no saved state) fetches everything once, so the panel
     # isn't blank until the next poll window opens.
-    result = run_once(settings.board, state, display, _local_now(settings.timezone), prime=not state)
-    store.save(state)
+    try:
+        result = run_once(settings.board, state, display, _local_now(settings.timezone), prime=not state)
+    finally:
+        # Even if drawing failed: what was fetched, and the bus budget spent on it, must not be lost.
+        store.save(state)
     logging.info("rendered=%s", result.rendered)
     return 0
 

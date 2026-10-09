@@ -253,7 +253,13 @@ def run_loop(
         if reload is not None:
             board = reload() or board
         now = clock()
-        result = run_once(board, state, display, now, prime=prime and count == 0)
+        try:
+            result = run_once(board, state, display, now, prime=prime and count == 0)
+        except Exception:
+            # Keep what was fetched, so a display fault doesn't cost a refetch on restart.
+            if store is not None:
+                store.save(state)
+            raise
         if store is not None:
             fetched = _fetched(state)
             if fetched != saved:

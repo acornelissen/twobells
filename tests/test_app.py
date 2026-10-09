@@ -512,3 +512,30 @@ def test_departures_after_midnight_stay_until_they_leave():
     friday = THU_0700 + timedelta(days=1)
     assert [r.left for r in run_once(board, state, display, friday.replace(hour=0, minute=10)).view.buses.rows] == ["341"]
     assert run_once(board, state, display, friday.replace(hour=12, minute=30)).view.buses.rows == ()
+
+
+# --- A failed draw keeps what was fetched (oz5.3) ---
+
+
+class BrokenDisplay(FakeDisplay):
+    def show(self, image):
+        raise OSError("GPIO busy")
+
+
+def test_failed_draw_is_not_recorded_so_the_next_run_draws_again():
+    trains, buses, board, display, state = setup()
+    with pytest.raises(OSError):
+        run_once(board, state, BrokenDisplay(), THU_0700)
+    assert "last_render" not in state
+    assert state["sources"]["bus"]["last_attempt"]
+    assert run_once(board, state, display, THU_0700 + timedelta(minutes=1)).rendered
+
+
+def test_run_loop_saves_state_before_a_draw_failure_escapes():
+    from departureboard.app import run_loop
+
+    trains, buses, board, display, state = setup()
+    store = CountingStore()
+    with pytest.raises(OSError):
+        run_loop(board, state, BrokenDisplay(), lambda: THU_0700, 0, ticks=1, sleep=lambda s: None, store=store)
+    assert store.saves == 1

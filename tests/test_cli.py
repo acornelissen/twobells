@@ -344,3 +344,19 @@ def test_watcher_keeps_running_settings_when_new_ones_are_broken(tmp_path):
     watcher, state = _watched(tmp_path)
     (state / "settings.toml").write_text('theme = "neon"\n')
     assert watcher() is None
+
+
+def test_run_saves_state_even_when_drawing_fails(tmp_path, monkeypatch):
+    from departureboard.display import PngDisplay
+
+    args, calls = _run_setup(tmp_path, monkeypatch)
+
+    def broken(self, image):
+        raise OSError("GPIO busy")
+
+    monkeypatch.setattr(PngDisplay, "show", broken)
+    with pytest.raises(OSError):
+        main(args)
+    state = json.loads((tmp_path / "state.json").read_text())
+    assert state["sources"]["train"]["last_attempt"]
+    assert "last_render" not in state
