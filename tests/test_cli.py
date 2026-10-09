@@ -124,3 +124,25 @@ def test_demo_png_can_use_either_theme(tmp_path):
         out = tmp_path / f"{theme}.png"
         assert main(["demo", "--theme", theme, "--png", str(out)]) == 0
         assert Image.open(out).size == (250, 122)
+
+
+def test_probe_train_reports_http_errors_on_one_line(tmp_path, monkeypatch, capsys):
+    from urllib.error import HTTPError
+
+    from departureboard.darwin import DarwinSource
+
+    def refuse(self):
+        raise HTTPError("https://example.test", 403, "Forbidden", None, None)
+
+    monkeypatch.setattr(DarwinSource, "fetch", refuse)
+    config = tmp_path / "config.toml"
+    config.write_text('[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    secrets = tmp_path / "secrets.env"
+    secrets.write_text("RDM_API_KEY=k\n")
+
+    code = main(["probe", "train", "--config", str(config), "--secrets", str(secrets)])
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "403" in out and "Forbidden" in out
+    assert "Traceback" not in out

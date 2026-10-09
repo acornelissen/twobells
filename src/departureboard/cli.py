@@ -125,7 +125,12 @@ def _probe(args) -> int:
             continue
         if args.source == "bus":
             return _probe_bus(config.source, args.save)
-        _print_departures(config.source.fetch())
+        try:
+            departures = config.source.fetch()
+        except Exception as error:  # noqa: BLE001 - one readable line, not a traceback
+            print(f"error: {error}")
+            return 1
+        _print_departures(departures)
         return 0
     print(f"No [{args.source}] section in config", file=sys.stderr)
     return 2
