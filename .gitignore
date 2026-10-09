@@ -5,6 +5,11 @@ __pycache__/
 .pytest_cache/
 secrets.env
 state.json
+# Kept beside state.json by the board
+bank-holidays.json
+bus-timetable.json
+bus-timetable.tmp
+settings.toml
 /preview.png
 config.toml
 probe-raw/

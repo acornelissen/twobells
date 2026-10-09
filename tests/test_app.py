@@ -883,3 +883,54 @@ def test_changing_the_text_size_redraws_the_epaper():
     run_once(board, state, display, THU_0700)
     bigger = dataclasses.replace(board, theme=with_text_size(theme_named("plain"), 12))
     assert run_once(bigger, state, display, THU_0700 + timedelta(minutes=3)).rendered
+
+
+def fallback_board(buses):
+    trains = FakeSource("train", [train()])
+    return Board(
+        title="GLO > MAN",
+        sources=[
+            SourceConfig(trains, morning(2), stale_after=timedelta(minutes=6)),
+            SourceConfig(buses, morning(2), stale_after=timedelta(minutes=30), daily_budget=28,
+                         fallback_policy=morning(12)),
+        ],
+    )
+
+
+def test_a_source_falling_back_is_polled_at_the_fallback_pace():
+    buses = FakeSource("bus", [bus()])
+    buses.falling_back = True
+    board, display, state = fallback_board(buses), FakeDisplay(), {}
+    for minutes in range(0, 13):
+        run_once(board, state, display, THU_0700 + timedelta(minutes=minutes))
+    assert buses.calls == 2  # 07:00 and 07:12
+
+
+def test_a_source_not_falling_back_is_polled_at_its_own_pace():
+    buses = FakeSource("bus", [bus()])
+    buses.falling_back = False
+    board, display, state = fallback_board(buses), FakeDisplay(), {}
+    for minutes in range(0, 13):
+        run_once(board, state, display, THU_0700 + timedelta(minutes=minutes))
+    assert buses.calls == 7  # every 2 minutes
+
+
+def test_a_source_that_costs_nothing_never_spends_the_budget():
+    buses = FakeSource("bus", [bus()])
+    buses.cost = 0
+    board, display, state = fallback_board(buses), FakeDisplay(), {}
+    for minutes in range(0, 120, 2):
+        run_once(board, state, display, THU_0700 + timedelta(minutes=minutes))
+    assert buses.calls == 60
+    assert state["budgets"]["bus"]["used"] == 0
+
+
+def test_a_source_s_note_is_saved_with_its_departures_and_cleared_after():
+    buses = FakeSource("bus", [bus()])
+    buses.note = "From TransportAPI: there is no bus timetable yet, key=abc"
+    board, display, state = fallback_board(buses), FakeDisplay(), {}
+    run_once(board, state, display, THU_0700)
+    assert state["sources"]["bus"]["note"] == "From TransportAPI: there is no bus timetable yet, key=REDACTED"
+    buses.note = None
+    run_once(board, state, display, THU_0700 + timedelta(minutes=2))
+    assert "note" not in state["sources"]["bus"]

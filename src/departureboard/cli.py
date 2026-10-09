@@ -7,6 +7,7 @@
   departureboard emulate  run the board against a browser-based panel emulator
   departureboard route    print a [bus.routes] block for the screen's bus page (run on a laptop)
   departureboard web      serve the settings page on the home network
+  departureboard timetable  build the BODS bus timetable for your stops, if due
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .app import run_loop, run_once
+from .bodsbus import BodsBusSource
 from .config import ConfigError, load_config, overlay_paths, read_config, state_dir
 from .display import DISPLAY_PANELS, PngDisplay, open_display
 from .holidays import bank_holidays
@@ -33,7 +35,7 @@ from .fake import DEMO_NOTICE, FakeWeatherSource
 from .http import get_bytes
 from .model import Departure, Status
 from .state import StateStore
-from .transportapi import redact_credentials
+from .transportapi import TransportApiBusSource, redact_credentials
 from .view import build_view
 from .themes import THEMES, theme_named
 from .walk import WalkTimes
@@ -347,8 +349,10 @@ def _probe(args) -> int:
     for config in settings.board.sources:
         if config.source.name != args.source:
             continue
-        if args.source == "bus":
+        if isinstance(config.source, TransportApiBusSource):
             return _probe_bus(config.source, args.save)
+        if isinstance(config.source, BodsBusSource):
+            print(config.source.unusable() or "Using the BODS timetable and live bus positions")
         try:
             departures = config.source.fetch()
         except Exception as error:  # noqa: BLE001 - one readable line, not a traceback
@@ -358,6 +362,25 @@ def _probe(args) -> int:
         return 0
     print(f"No [{args.source}] section in config", file=sys.stderr)
     return 2
+
+
+def _timetable(args) -> int:
+    settings = _settings(args, only={"bus"})
+    source = next((c.source for c in settings.board.sources if c.source.name == "bus"), None)
+    if not isinstance(source, BodsBusSource):
+        print('Bus times come from TransportAPI; set source = "bods" under [bus] first', file=sys.stderr)
+        return 2
+    # The timetable's bank holiday names come from this list, so keep it fresh
+    # whatever bank_holidays says about checking times.
+    bank_holidays(settings.state_file.parent, datetime.now())
+    schedule = source.refresh_timetable(force=args.force)
+    reason = source.unusable()
+    if schedule is None or reason:
+        print(f"No usable bus timetable: {reason}", file=sys.stderr)
+        return 1
+    until = f", until {schedule.valid_until:%d %b %Y}" if schedule.valid_until else ""
+    print(f"Bus timetable: {len(schedule.journeys)} journeys at your stops, built {schedule.built:%a %d %b %H:%M}{until}")
+    return 0
 
 
 def _demo(args) -> int:
@@ -458,6 +481,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     probe.add_argument("--save", metavar="DIR", help="save raw bus responses as JSON")
     probe.set_defaults(handler=_probe)
+
+    tt = with_config(sub.add_parser("timetable", help="build the BODS bus timetable for your stops, if due"))
+    tt.add_argument("--force", action="store_true", help="build it now, as after changing operators")
+    tt.set_defaults(handler=_timetable)
 
     demo = sub.add_parser("demo", help="render sample data to a PNG")
     demo.add_argument("--png", default="preview.png")

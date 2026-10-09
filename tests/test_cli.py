@@ -1,5 +1,6 @@
 import json
 from datetime import date
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -507,3 +508,63 @@ def test_reloaded_settings_keep_the_bank_holidays(tmp_path, monkeypatch):
     (tmp_path / "state" / "settings.toml").write_text('title = "After"\n')
     board = watcher()
     assert board.sources[0].policy.holidays == {date(2026, 8, 31)}
+
+
+@pytest.fixture
+def bods_env(tmp_path, monkeypatch):
+    config = tmp_path / "config.toml"
+    config.write_text(
+        f'state_file = "{tmp_path / "state" / "state.json"}"\n'
+        '[bus]\nsource = "bods"\noperators = ["BNML"]\nwindows = ["Mon-Sun 06:00-23:00"]\n'
+        '[bus.stops]\nA = "1000DGHS0900"\n'
+    )
+    secrets = tmp_path / "secrets.env"
+    secrets.write_text("BODS_API_KEY=bods\n")
+    gov_uk = (Path(__file__).parent / "fixtures" / "govuk_bank_holidays.json").read_bytes()
+    monkeypatch.setattr(holidays, "get_bytes", lambda url, most: gov_uk)
+    return ["--config", str(config), "--secrets", str(secrets)], tmp_path / "state"
+
+
+def test_timetable_builds_and_reports_the_bus_timetable(bods_env, monkeypatch, capsys):
+    from departureboard import timetable
+    from departureboard.schedule_model import Call, Calendar, Journey, Schedule
+
+    args, folder = bods_env
+    seen = {}
+
+    def fake_refresh(folder, stops, operators, now, api_key, *, force=False, **kwargs):
+        seen.update(stops=stops, operators=operators, key=api_key, force=force)
+        journey = Journey("341", "BNGN", "Hyde", "1", (Call("1000DGHS0900", 600), Call("x", 610)),
+                          Calendar(frozenset(range(7))))
+        made = Schedule(now, None, dict(stops), (journey,), {})
+        timetable.save(folder, made)
+        return made
+
+    monkeypatch.setattr(timetable, "refresh", fake_refresh)
+    assert main(["timetable", *args, "--force"]) == 0
+    assert seen == {"stops": {"A": "1000DGHS0900"}, "operators": ["BNML"], "key": "bods", "force": True}
+    assert "Bus timetable: 1 journeys at your stops" in capsys.readouterr().out
+    assert (folder / "bank-holidays.json").exists()  # its holiday names come from here
+
+
+def test_timetable_fails_when_no_timetable_could_be_built(bods_env, monkeypatch, capsys):
+    from departureboard import timetable
+
+    args, _ = bods_env
+    monkeypatch.setattr(timetable, "refresh", lambda *a, **k: None)
+    assert main(["timetable", *args]) == 1
+    assert "No usable bus timetable: there is no bus timetable yet" in capsys.readouterr().err
+
+
+def test_timetable_needs_the_bods_bus_source(probe_env, capsys):
+    args, _ = probe_env
+    assert main(["timetable", *args]) == 2
+    assert 'source = "bods"' in capsys.readouterr().err
+
+
+def test_probe_bus_with_bods_says_why_it_cannot_use_the_timetable(bods_env, capsys):
+    args, _ = bods_env
+    assert main(["probe", "bus", *args]) == 1
+    captured = capsys.readouterr()
+    assert "there is no bus timetable yet" in captured.out
+    assert "departureboard timetable" in captured.out

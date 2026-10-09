@@ -48,6 +48,14 @@ class SourceConfig:
     policy: PollPolicy
     stale_after: timedelta
     daily_budget: int | None = None
+    # While the source says it is `falling_back` to a costlier one (the bus
+    # timetable to TransportAPI), it is polled at this pace instead.
+    fallback_policy: PollPolicy | None = None
+
+    def current_policy(self) -> PollPolicy:
+        if self.fallback_policy is not None and getattr(self.source, "falling_back", False):
+            return self.fallback_policy
+        return self.policy
 
 
 class VehicleSource(Protocol):
@@ -113,7 +121,7 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False)
     """Fetch if due. `prime` fetches regardless of windows; the budget still applies."""
     name = config.source.name
     entry = state.setdefault("sources", {}).setdefault(name, {})
-    if not prime and not config.policy.is_due(now, from_iso(entry.get("last_attempt"))):
+    if not prime and not config.current_policy().is_due(now, from_iso(entry.get("last_attempt"))):
         return
 
     if config.daily_budget is not None:
@@ -136,6 +144,13 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False)
     entry["departures"] = [departure_to_dict(d) for d in departures]
     entry["last_success"] = to_iso(now)
     entry.pop("last_error", None)
+    # A source that got there the long way round (the bus timetable's fallback)
+    # says so, for the settings page.
+    note = getattr(config.source, "note", None)
+    if note:
+        entry["note"] = safe_message(note)
+    else:
+        entry.pop("note", None)
 
 
 def _is_stale(config: SourceConfig, entry: dict, now: datetime) -> bool:

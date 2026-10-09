@@ -495,3 +495,81 @@ def test_panel_colour_is_separate_from_the_accent(tmp_path):
     assert load_config(write(tmp_path, base), ENV).panel_colour == "red"  # defaults to the accent
     with pytest.raises(ConfigError, match="panel_colour"):
         load_config(write(tmp_path, 'panel_colour = "blue"\n' + base), ENV)
+
+
+BODS_BUS = """
+state_file = "{state}"
+[bus]
+source = "bods"
+operators = ["BNML", "HIPK"]
+windows = ["Mon-Sun 06:00-23:00"]
+[bus.stops]
+A = "1000DGHS0900"
+"""
+
+
+def bods_bus(tmp_path, env, extra=""):
+    from departureboard.bodsbus import BodsBusSource
+
+    path = write(tmp_path, BODS_BUS.format(state=tmp_path / "state" / "state.json") + extra)
+    config = load_config(path, env).board.sources[0]
+    assert isinstance(config.source, BodsBusSource)
+    return config
+
+
+def test_bods_bus_falls_back_to_transportapi_when_its_keys_are_set(tmp_path):
+    config = bods_bus(tmp_path, {**ENV, "BODS_API_KEY": "bods"})
+    assert config.source._fallback is not None
+    assert config.source._folder == tmp_path / "state"
+    assert config.source._operators == ["BNML", "HIPK"]
+    # The timetable is checked every 2 minutes; TransportAPI, standing in, every 12.
+    assert config.policy.interval == timedelta(minutes=2)
+    assert config.fallback_policy.interval == timedelta(minutes=12)
+    assert config.fallback_policy.windows == config.policy.windows
+    assert config.daily_budget == 28
+
+
+def test_bods_bus_needs_no_transportapi_keys(tmp_path):
+    config = bods_bus(tmp_path, {"BODS_API_KEY": "bods"})
+    assert config.source._fallback is None and not config.source.falling_back
+
+
+def test_bods_bus_needs_the_bods_key(tmp_path):
+    with pytest.raises(ConfigError, match="BODS_API_KEY"):
+        bods_bus(tmp_path, ENV)
+
+
+def test_bods_bus_intervals_can_be_set(tmp_path):
+    path = write(tmp_path, BODS_BUS.format(state=tmp_path / "s.json").replace(
+        'source = "bods"', 'source = "bods"\ninterval_minutes = 1\nfallback_interval_minutes = 20'))
+    config = load_config(path, {"BODS_API_KEY": "bods"}).board.sources[0]
+    assert (config.policy.interval, config.fallback_policy.interval) == (timedelta(minutes=1), timedelta(minutes=20))
+
+
+@pytest.mark.parametrize(
+    "operators, message",
+    [
+        ("[]", "needs operators"),
+        ('["BN ML"]', "not an operator code"),
+        ('["BNML&api_key=x"]', "not an operator code"),
+        ('"BNML"', "must be a list"),
+    ],
+)
+def test_bods_bus_operators_are_checked(tmp_path, operators, message):
+    path = write(tmp_path, BODS_BUS.format(state=tmp_path / "s.json").replace('["BNML", "HIPK"]', operators))
+    with pytest.raises(ConfigError, match=message):
+        load_config(path, {"BODS_API_KEY": "bods"})
+
+
+def test_unknown_bus_source_is_reported(tmp_path):
+    path = write(tmp_path, BODS_BUS.format(state=tmp_path / "s.json").replace('"bods"', '"nextbuses"'))
+    with pytest.raises(ConfigError, match='source must be "transportapi" or "bods"'):
+        load_config(path, {"BODS_API_KEY": "bods"})
+
+
+def test_bus_source_defaults_to_transportapi(tmp_path):
+    path = write(tmp_path, '[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n')
+    config = load_config(path, ENV).board.sources[0]
+    assert isinstance(config.source, TransportApiBusSource)
+    assert config.fallback_policy is None
+    assert config.policy.interval == timedelta(minutes=12)

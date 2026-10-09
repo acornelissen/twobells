@@ -200,3 +200,11 @@ def test_hand_edited_nonsense_in_the_state_does_not_break_the_panel(state):
 def test_unreadable_checking_times_are_said_plainly():
     data = {**DATA, "train": {"windows": ["mornings"]}}
     assert "Can’t tell" in section(render_status(data, STATE, NOW), "Trains")
+
+
+def test_a_source_s_note_is_shown_as_a_problem():
+    state = {**STATE, "sources": {**STATE["sources"], "bus": {
+        **STATE["sources"]["bus"], "note": "From TransportAPI: <the> bus timetable has run out"}}}
+    page = render_status(DATA, state, NOW)
+    assert "Note Problem: From TransportAPI: &lt;the&gt; bus timetable has run out" in section(page, "Buses")
+    assert "<the>" not in page

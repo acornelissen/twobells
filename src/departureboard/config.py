@@ -8,6 +8,7 @@ secrets.env beside it, layered over the main one.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -17,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 from .app import Board, SourceConfig, Tracker, Weather
 from .bods import BodsVehicleSource
+from .bodsbus import BodsBusSource
 from .darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL
 from .darwin import DarwinSource
 from .display import DISPLAY_PANELS
@@ -190,23 +192,70 @@ def _stops(section: dict) -> dict[str, str]:
     return stops
 
 
-def _bus(section: dict, env: Mapping[str, str], holidays: frozenset[date]) -> SourceConfig:
-    where = "[bus] "
-    stops = _stops(section)
-    policy = _policy(section, 12, where, holidays)
-    source = TransportApiBusSource(
+# National operator codes: a few letters or digits, like BNML.
+_NOC = re.compile(r"[A-Za-z0-9]{2,8}")
+
+
+def _transportapi(section: dict, env: Mapping[str, str], stops: dict[str, str]) -> TransportApiBusSource:
+    return TransportApiBusSource(
         app_id=_secret(env, "TAPI_APP_ID"),
         app_key=_secret(env, "TAPI_APP_KEY"),
         stops=stops,
+        rows=_whole(section, "rows", 2, "[bus] "),
+        directions=_texts(section, "directions", "[bus] ") or None,
+        base_url=_text(section, "base_url", TAPI_BASE_URL, "[bus] "),
+    )
+
+
+def _operators(section: dict) -> list[str]:
+    operators = _texts(section, "operators", "[bus] ")
+    if not operators:
+        raise ConfigError(
+            '[bus] source = "bods" needs operators, the codes of the bus companies whose '
+            'timetables to read, like operators = ["BNML", "HIPK"]'
+        )
+    for code in operators:
+        if not _NOC.fullmatch(code):
+            raise ConfigError(f"[bus] operators: {code!r} is not an operator code, like BNML")
+    return operators
+
+
+def _bus(
+    section: dict, env: Mapping[str, str], holidays: frozenset[date], folder: Path, timezone: str
+) -> SourceConfig:
+    """TransportAPI's departures, or with source = "bods" the BODS timetable
+    and live positions, falling back to TransportAPI if its keys are set."""
+    where = "[bus] "
+    stops = _stops(section)
+    kind = _text(section, "source", "transportapi", where)
+    if kind not in ("transportapi", "bods"):
+        raise ConfigError(f'[bus] source must be "transportapi" or "bods", not {kind!r}')
+    stale_after = timedelta(minutes=_whole(section, "stale_after_minutes", 30, where))
+    daily_budget = _whole(section, "daily_budget", 28, where)
+    if kind == "transportapi":
+        return SourceConfig(_transportapi(section, env, stops), _policy(section, 12, where, holidays),
+                            stale_after, daily_budget=daily_budget)
+    has_tapi = env.get("TAPI_APP_ID", "").strip() and env.get("TAPI_APP_KEY", "").strip()
+    source = BodsBusSource(
+        folder,
+        stops,
+        _secret(env, "BODS_API_KEY"),
+        ZoneInfo(timezone),
+        operators=_operators(section),
         rows=_whole(section, "rows", 2, where),
         directions=_texts(section, "directions", where) or None,
-        base_url=_text(section, "base_url", TAPI_BASE_URL, where),
+        fallback=_transportapi(section, env, stops) if has_tapi else None,
     )
+    # The timetable costs nothing to read, so it is checked often; TransportAPI,
+    # if it has to stand in, at its own slower pace to spare the daily allowance.
+    policy = _policy(section, 2, where, holidays)
+    fallback_every = timedelta(minutes=_whole(section, "fallback_interval_minutes", 12, where))
     return SourceConfig(
         source,
         policy,
-        timedelta(minutes=_whole(section, "stale_after_minutes", 30, where)),
-        daily_budget=_whole(section, "daily_budget", 28, where),
+        stale_after,
+        daily_budget=daily_budget,
+        fallback_policy=PollPolicy(policy.windows, fallback_every, policy.holidays),
     )
 
 
@@ -353,7 +402,7 @@ def settings_from(
     if "train" in data and "train" in wanted:
         sources.append(_train(_table(data, "train", "[train]"), env, holidays))
     if "bus" in data and "bus" in wanted:
-        bus = _bus(_table(data, "bus", "[bus]"), env, holidays)
+        bus = _bus(_table(data, "bus", "[bus]"), env, holidays, Path(state_file).parent, timezone)
         sources.append(bus)
         # Bus positions are only drawn on a screen; e-paper never asks for them.
         if not DISPLAY_PANELS[display].epaper:
