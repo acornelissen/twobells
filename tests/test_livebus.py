@@ -424,11 +424,17 @@ def test_yesterday_s_journey_keeps_its_own_service_day():
 def test_key_names_the_departure_without_object_identity():
     rows = live(at(10, 0))
     assert [l.key for l in rows] == [
-        f"2026-10-09|BNML|341|{ASHTON}|540|{HENRY_A}|A",
-        f"2026-10-09|BNML|237|{HENRY_A}|615|{HENRY_A}|A",
-        f"2026-10-09|BNML|237|{HENRY_A}|615|{ST_MARYS_W}|B",
+        f"2026-10-09|BNML|341|{ASHTON}|540|{HENRY_A}|610|A",
+        f"2026-10-09|BNML|237|{HENRY_A}|615|{HENRY_A}|615|A",
+        f"2026-10-09|BNML|237|{HENRY_A}|615|{ST_MARYS_W}|618|B",
     ]
     assert len({l.key for l in rows}) == len(rows)
+
+
+def test_a_loop_calling_at_your_stop_twice_gives_two_keys():
+    loop = journey("399", [(HENRY_A, 600), (GEORGE, 605), (HENRY_A, 610), (HOWARD, 615)], "Circular", "7")
+    rows = live(at(9, 55), plan=schedule(loop))
+    assert len(rows) == 2 and rows[0].key != rows[1].key
 
 
 def test_key_is_the_same_after_the_timetable_is_saved_and_read_again():

@@ -195,8 +195,9 @@ class LiveDeparture:
     def key(self) -> str:
         """Names this departure the same way every fetch, even after the
         timetable is read again: service day, operator, line, first stop and
-        time, your stop and its label."""
+        time, your stop, its time (a loop can call there twice) and its label."""
         origin = self.journey.origin
+        call = self.journey.calls[self.call_index]
         return "|".join(
             (
                 self.service_day.isoformat(),
@@ -204,7 +205,8 @@ class LiveDeparture:
                 self.journey.line,
                 origin.atco,
                 str(origin.minute),
-                self.journey.calls[self.call_index].atco,
+                call.atco,
+                str(call.minute),
                 self.departure.stop or "",
             )
         )
