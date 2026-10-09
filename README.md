@@ -253,5 +253,4 @@ To add a page or provider, implement `fetch() -> list[Departure]` with a `name` 
 
 ## Data credits
 
-- `src/departureboard/data/gb_stations.csv` (stations and CRS codes) and `naptan_area_grid.csv` (which NaPTAN areas have bus stops where) are built from the Department for Transport's [NaPTAN](https://naptan.api.dft.gov.uk/) by `tools/build_setup_data.py`. Contains public sector information licensed under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/). Rebuild them now and then; stations open and stops move.
-- Setup looks up postcodes with [postcodes.io](https://postcodes.io) (Office for National Statistics data under the Open Government Licence; contains OS data © Crown copyright and database right, and Royal Mail data © Royal Mail copyright and database right), addresses with OpenStreetMap's [Nominatim](https://nominatim.openstreetmap.org) and walk times with the OpenStreetMap [foot router](https://routing.openstreetmap.de). OpenStreetMap data © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/copyright).
+See [NOTICE.md](NOTICE.md) for every data source and licence.

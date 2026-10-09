@@ -16,6 +16,12 @@ Contains public sector information licensed under the Open Government Licence v3
 
 Train times come from National Rail's Darwin via the [Rail Data Marketplace](https://raildata.org.uk), under that product's licence. Bus times can also come from [TransportAPI](https://www.transportapi.com) under its terms.
 
+## Setup data and lookups
+
+- `src/departureboard/data/gb_stations.csv` (stations and CRS codes) and `naptan_area_grid.csv` (which NaPTAN areas have bus stops where) are built from the Department for Transport's [NaPTAN](https://naptan.api.dft.gov.uk/) by `tools/build_setup_data.py`, under the Open Government Licence v3.0. Rebuild them now and then: stations open and stops move.
+- Setup looks up postcodes with [postcodes.io](https://postcodes.io): Office for National Statistics data under the Open Government Licence; contains OS data © Crown copyright and database right, and Royal Mail data © Royal Mail copyright and database right.
+- Addresses come from OpenStreetMap's [Nominatim](https://nominatim.openstreetmap.org) and walk times from the OpenStreetMap [foot router](https://routing.openstreetmap.de). OpenStreetMap data © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/copyright).
+
 ## Code
 
 - [Leaflet](https://leafletjs.com) 1.9.4, BSD 2-Clause: `src/departureboard/dashboard_static/vendor/leaflet-1.9.4/LICENSE`.
