@@ -7,7 +7,10 @@ Glossop train and bus departure board for a Raspberry Pi Zero W with a four-colo
 - **Trains:** National Rail Darwin, via the Rail Data Marketplace. Free, polled every 2 minutes.
 - **Buses:** TransportAPI. Free plan is 30 hits/day, so polling is limited to set windows, with a hard daily budget.
 - The panel takes about 20 s to refresh, so it redraws only when what it shows changes, and never more than once every 2 minutes. `Upd HH:MM` is when the board last changed; if a feed stops arriving, its section shows `! STALE`.
-- Meaning is always in text (`+7`, `CANC`, `Delayed`, `sch`, `! STALE`). Red or yellow only reinforces it, so the board works for colour-blind viewers and on a mono panel.
+- Two looks, set with `theme`:
+  - `sign` (default): an old-school station departure board, amber dot-matrix on black, using the panel's yellow. `1st`/`2nd`/`3rd` trains, `Exp 07:49`, `Cancelled`, and a `Leave by` line under the train you can still catch. The dot-matrix font is drawn for this project at one pixel per LED.
+  - `plain`: white board, bold type, red accent.
+- Meaning is always in text (`Exp 07:49`, `Cancelled`, `+4`, `sch`, `Not updating`). Colour only reinforces it, so the board works for colour-blind viewers and on a mono panel (the sign look falls back to white on black).
 
 ## 1. Get access
 
@@ -32,7 +35,7 @@ Station codes: Glossop is `GLO`, Manchester Piccadilly is `MAN`.
 
 ### Walking times
 
-Each section header shows when to leave for the next departure you can still reach, for example `Leave 07:05 (07:12)`. It's a clock time, not a countdown, so it only changes when the next reachable departure changes. Set `walk_minutes` under `[train]`, and per stop label under `[bus.walk_minutes]`. To measure a route, ask the OpenStreetMap foot router:
+Trains show when to leave for the next one you can still reach (`Leave by 07:05` under that train on the sign look, `Leave 07:05 (07:12)` in the plain header). Each bus row has its own `leave 07:17`. It's a clock time, not a countdown, so it only changes when the next reachable departure changes. Set `walk_minutes` under `[train]`, and per stop label under `[bus.walk_minutes]`. To measure a route, ask the OpenStreetMap foot router:
 
 ```
 https://routing.openstreetmap.de/routed-foot/table/v1/foot/HOME_LON,HOME_LAT;STOP_LON,STOP_LAT?sources=0
@@ -108,7 +111,9 @@ Live modes keep state in `state_file`, so the TransportAPI budget holds across r
 | `darwin.py`, `transportapi.py` | Sources; HTTP injected, so parsing is tested with fixtures |
 | `schedule.py`, `budget.py` | When to poll, and the daily hit cap |
 | `view.py` | Departures to text rows plus a change signature |
-| `render.py` | Rows to a 250x122 paletted image |
+| `themes.py` | `sign` and `plain`: wording plus renderer |
+| `sign.py`, `dotfont.py` | Station board renderer and its dot-matrix font |
+| `render.py` | Plain renderer |
 | `display.py` | Inky pHAT or PNG output |
 | `emulator.py`, `emulator.html`, `emulation.py` | Browser panel emulator and its demo/live wiring |
 | `fake.py` | Deterministic fake sources and simulated clock |
