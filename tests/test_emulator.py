@@ -1,5 +1,9 @@
 import io
 import json
+import math
+import re
+import shutil
+import subprocess
 import threading
 from datetime import datetime
 from urllib.error import HTTPError
@@ -199,3 +203,54 @@ def test_page_lays_itself_out_from_the_status_panel(served):
         body = response.read().decode()
     for name in ("inky-phat", "waveshare-10in85g", "hdmi-1280x400"):
         assert name in body
+
+
+def waveform(speed, reduce=False):
+    """The page's simulated e-paper refresh, run in node: [colour, ms] states."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("needs node to run the page's script")
+    from departureboard.emulator import _page
+
+    found = re.search(r'<script id="waveform">(.*?)</script>', _page().decode(), re.S)
+    assert found, "page has no waveform script"
+    call = f"\nconsole.log(JSON.stringify(waveform({speed}, {json.dumps(reduce)})));"
+    result = subprocess.run([node, "-e", found.group(1) + call], capture_output=True, text=True, check=True)
+    return json.loads(result.stdout)
+
+
+def changes(steps):
+    """When the panel changes: entering each state, then the new image appearing."""
+    times, elapsed = [], 0.0
+    for _, ms in steps:
+        times.append(elapsed)
+        elapsed += ms
+    return times + [elapsed]
+
+
+@pytest.mark.parametrize("speed", [20000, 2500, 0])
+@pytest.mark.parametrize("reduce", [False, True])
+def test_refresh_never_flashes_more_than_three_times_a_second(speed, reduce):
+    # WCAG 2.3.1: a flash is a pair of opposing changes; three a second is the limit.
+    times = changes(waveform(speed, reduce))
+    for start in times:
+        in_one_second = [t for t in times if start <= t < start + 1000]
+        assert math.ceil(len(in_one_second) / 2) <= 3, (speed, times)
+
+
+def test_realistic_refresh_still_flickers_like_e_paper():
+    colours = [colour for colour, _ in waveform(20000)]
+    assert colours == ["black", "white"] * 3 + ["accent", "white"] * 2
+
+
+def test_reduced_motion_refresh_does_not_flicker():
+    for speed in (20000, 2500):
+        assert [colour for colour, _ in waveform(speed, reduce=True)] == ["white"]
+
+
+def test_page_asks_the_browser_about_reduced_motion():
+    from departureboard.emulator import _page
+
+    page = _page().decode()
+    assert 'matchMedia("(prefers-reduced-motion: reduce)")' in page
+    assert "@media (prefers-reduced-motion: reduce)" in page

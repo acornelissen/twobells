@@ -117,6 +117,10 @@
     background: linear-gradient(125deg, rgba(255,255,255,.10), rgba(255,255,255,0) 45%, rgba(0,0,0,.05));
   }
   .overlay { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+  /* No flicker for reduced motion (see waveform), and the paper fades in and out. */
+  @media (prefers-reduced-motion: reduce) {
+    .overlay { transition: opacity 400ms ease-out; }
+  }
   .empty {
     position: absolute; inset: 0; display: grid; place-items: center;
     color: var(--ink); opacity: .55; font-size: clamp(12px, calc(5px * var(--k)), 20px);
@@ -195,6 +199,30 @@
     </div>
   </section>
 
+<script id="waveform">
+// Every state of the simulated refresh lasts at least this long, so any one
+// second holds at most four changes: two flashes, inside WCAG 2.3.1's three.
+const MIN_STATE_MS = 250;
+
+// Approximates a three/four-colour EPD waveform over a refresh of T ms:
+// black/white flicker to clear the old image, then accent particle pulses.
+// Returns the overlay's [colour, ms] states; the image then settles over the
+// rest of T. A short refresh gets fewer states, never faster ones. Reduced
+// motion gets no flicker, just plain paper while the panel would be clearing.
+function waveform(T, reduce) {
+  if (T <= 0) return [];
+  const clear = T * 0.24, particles = T * 0.30;
+  if (reduce) return [["white", clear + particles]];
+  const steps = [];
+  const flickers = Math.min(6, 2 * Math.floor(clear / (2 * MIN_STATE_MS)));
+  for (let i = 0; i < flickers; i++) steps.push([i % 2 ? "white" : "black", clear / flickers]);
+  const pulses = Math.min(2, Math.floor((particles * 0.4) / MIN_STATE_MS));
+  for (let i = 0; i < pulses; i++) {
+    steps.push(["accent", (particles * 0.6) / pulses], ["white", (particles * 0.4) / pulses]);
+  }
+  return steps;
+}
+</script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -284,26 +312,20 @@
     });
   }
 
-  // Approximates a three/four-colour EPD waveform: black/white flicker to
-  // clear the old image, an accent particle phase, then the image settles.
-  // A screen just swaps the frame.
+  // Plays the e-paper waveform, then the image settles. A screen just swaps the frame.
   async function refresh(version) {
     refreshing = true;
     const src = await load(version);
     if (!src) { refreshing = false; return; }
     const started = performance.now();
     const T = panel && !panel.epaper ? 0 : speed;
-    const accent = ACCENTS[$("accent").textContent] || ACCENTS.red;
+    const colours = { black: "rgb(36,36,38)", white: "rgb(233,231,222)",
+      accent: ACCENTS[$("accent").textContent] || ACCENTS.red };
     const timer = setInterval(() => {
       $("refreshing").textContent = `Refreshing ${((performance.now() - started) / 1000).toFixed(0)} s`;
     }, 250);
-    if (T > 0) {
-      for (let i = 0; i < 6; i++) await flash(i % 2 ? "rgb(233,231,222)" : "rgb(36,36,38)", T * 0.04);
-      for (let i = 0; i < 2; i++) {
-        await flash(accent, T * 0.09);
-        await flash("rgb(233,231,222)", T * 0.06);
-      }
-    }
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    for (const [colour, ms] of waveform(T, reduce)) await flash(colours[colour], ms);
     img.style.transitionDuration = "0ms";
     img.classList.toggle("settling", T > 0);
     img.src = src; img.hidden = false; $("empty").hidden = true;
