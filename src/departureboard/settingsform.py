@@ -1,9 +1,11 @@
 """The settings form: what it edits, how each field is checked, and saving.
 
 Saved values go to settings.toml beside the state file (layered over
-config.toml) and keys to the secrets.env beside it. Nothing is written unless
-every field passes its own check and the whole configuration then loads.
-Keys are write-only: the page shows whether one is set, never its value.
+config.toml) and keys to the secrets.env beside it, merged into what is
+there (overlay.save_changes), so settings the page doesn't show survive.
+Nothing is written unless every field passes its own check and the whole
+configuration then loads. Keys are write-only: the page shows whether one is
+set, never its value.
 """
 
 from __future__ import annotations
@@ -12,23 +14,13 @@ import html
 import json
 import os
 import re
-import tomllib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 from zoneinfo import ZoneInfo
 
-from .config import (
-    ConfigError,
-    OVERLAY_NAME,
-    SECRETS_OVERLAY_NAME,
-    merge,
-    read_base,
-    read_overlay,
-    settings_from,
-    state_dir,
-)
+from .config import ConfigError, merge, read_base, read_overlay
 from .display import DISPLAY_PANELS
 from .holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
 from .schedule import parse_window
@@ -325,12 +317,6 @@ class SettingsForm:
         self._load_secrets = load_secrets
         self._clock = clock
 
-    def _paths(self, data: dict) -> tuple[Path, Path]:
-        folder = state_dir(data)
-        if folder is None:
-            raise ConfigError("config.toml needs a state_file before settings can be saved")
-        return folder / OVERLAY_NAME, folder / SECRETS_OVERLAY_NAME
-
     def _read(self) -> tuple[dict, str]:
         """The settings in force, and a problem with the saved settings file if
         it can't be read: then config.toml's alone, so the page can replace it."""
@@ -382,7 +368,10 @@ class SettingsForm:
         return values
 
     def save(self, fields: dict[str, str]) -> dict[str, str]:
-        data, _ = self._read()
+        # Imported here: overlay.py builds on this module's TOML helpers.
+        from .overlay import OverlayError, save_changes
+
+        data, broken = self._read()
         display = data.get("display", "inky")
         errors: dict[str, str] = {}
         overlay: dict = {}
@@ -409,29 +398,13 @@ class SettingsForm:
                 keys[name] = raw
         if errors:
             return errors
-        env = {**self._load_secrets(), **keys}
+        # Merged into what is saved, so settings this page doesn't show (setup's
+        # bus operators and routes, the weather position) survive; a broken file
+        # can't be merged into, so it is replaced.
         try:
-            settings_from(merge(data, overlay), env)
-        except (ConfigError, KeyError, TypeError, ValueError) as error:
-            return {"_form": f"Not saved: {error}"}
-        try:
-            text = to_toml(overlay)
-            readable = tomllib.loads(text) == overlay
-        except (ValueError, TypeError):
-            readable = False
-        if not readable:
-            return {"_form": "Not saved: some text can't be stored. Remove any unusual characters and try again."}
-        settings_path, secrets_path = self._paths(data)
-        _write(settings_path, text, 0o640)
-        if keys:
-            saved = {}
-            if secrets_path.exists():
-                for line in secrets_path.read_text().splitlines():
-                    name, sep, value = line.partition("=")
-                    if sep and name.strip() in {k for k, _, _ in KEYS}:
-                        saved[name.strip()] = value.strip()
-            saved.update(keys)
-            _write(secrets_path, "".join(f"{k}={v}\n" for k, v in saved.items()), 0o600)
+            save_changes(self._config_path, overlay, keys, self._load_secrets(), replace=bool(broken))
+        except OverlayError as error:
+            return {"_form": str(error)}
         return {}
 
     def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,

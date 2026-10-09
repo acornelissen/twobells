@@ -1,16 +1,18 @@
 """Saving changes into the web page's settings overlay without losing the rest.
 
-The settings page (settingsform.py) writes the overlay whole from its own
-fields. The setup wizard changes only some settings, so it reads the saved
-overlay, merges its changes in as config.merge layers the overlay over
-config.toml (top-level tables key by key, anything deeper replaced) and
-writes the result back, keeping everything it doesn't manage: the display,
-the look, rotation, text size, [dashboard] and so on.
+The settings page (settingsform.py) and the setup wizard each change only
+some settings, so both save through here: it reads the saved overlay, merges
+the changes in as config.merge layers the overlay over config.toml
+(top-level tables key by key, anything deeper replaced) and writes the
+result back, keeping everything the caller doesn't manage. The wizard keeps
+the display, the look, rotation, text size, [dashboard] and so on; the page
+keeps the wizard's [bus] source, operators and routes and [weather] lat and
+lon.
 
 Nothing is written unless the merged settings then load, and keys go to the
 secrets overlay only, never into settings.toml. Settings carry floats (the
 weather position) and route strips (arrays of inline tables), which the
-settings page's writer doesn't, so this module has its own.
+settings page's own TOML writer doesn't, so this module has its own.
 
 The board's overlay sits beside its state file. Another host, like the
 dashboard, names its own with a Target: the settings under it, its folder,
@@ -133,17 +135,20 @@ def _scrub(text: str, secrets: Mapping[str, str]) -> str:
 
 
 def save_changes(config_path: Path | str, changes: dict, keys: Mapping[str, str],
-                 env: Mapping[str, str]) -> dict:
+                 env: Mapping[str, str], replace: bool = False) -> dict:
     """Merge `changes` into the board's saved settings overlay and `keys` into
     its secrets overlay; see save_to."""
-    return save_to(board_target(config_path), changes, keys, env)
+    return save_to(board_target(config_path), changes, keys, env, replace=replace)
 
 
-def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping[str, str]) -> dict:
+def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping[str, str],
+            replace: bool = False) -> dict:
     """Merge `changes` into the target's saved settings overlay and `keys` into
     its secrets overlay, if the settings then load with `env` (the
     environment and keys already saved) plus `keys`. Returns the overlay as
-    written. OverlayError, with text that never holds a key, if not saved."""
+    written. OverlayError, with text that never holds a key, if not saved.
+    With `replace`, `changes` take the saved overlay's place instead: for
+    the settings page replacing one it can't read."""
     for name, value in keys.items():
         if not _ENV_NAME.match(name) or not isinstance(value, str) or not _KEY_VALUE.match(value):
             raise OverlayError(f"{name if _ENV_NAME.match(name) else 'A key'} isn't a key the board can store")
@@ -153,7 +158,7 @@ def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping
         if folder is None:
             raise OverlayError("config.toml needs a state_file before settings can be saved")
         settings_path, secrets_path = folder / OVERLAY_NAME, folder / SECRETS_OVERLAY_NAME
-        saved = read_overlay_in(folder)
+        saved = {} if replace else read_overlay_in(folder)
     except (OSError, ConfigError) as error:
         raise OverlayError(f"Not saved: the settings can't be read ({_scrub(str(error), keys)})") from None
     overlay = merge(saved, changes)

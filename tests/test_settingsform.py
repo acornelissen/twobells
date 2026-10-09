@@ -136,11 +136,12 @@ def test_keys_are_write_only(setup):
 def test_a_pasted_key_is_saved_privately_and_merged(setup):
     form, config, state, _ = setup
     (state).mkdir(parents=True, exist_ok=True)
-    (state / "secrets.env").write_text("TAPI_APP_ID=kept\nSOMETHING_ELSE=dropped\n")
+    (state / "secrets.env").write_text("TAPI_APP_ID=kept\nRDM_DETAILS_API_KEY=kept-too\n")
     assert form.save(fields_of(form) | {"BODS_API_KEY": "abc123DEF"}) == {}
     saved = (state / "secrets.env").read_text()
     assert "BODS_API_KEY=abc123DEF" in saved and "TAPI_APP_ID=kept" in saved
-    assert "SOMETHING_ELSE" not in saved
+    # A key this page doesn't list is kept too, as the setup wizard keeps it.
+    assert "RDM_DETAILS_API_KEY=kept-too" in saved
     assert (state / "secrets.env").stat().st_mode & 0o777 == 0o600
 
 
@@ -523,3 +524,76 @@ def test_text_size_can_be_set_on_the_page(setup):
     assert 'id="text_size"' in form.render("tok")
     assert form.save(fields_of(form) | {"theme": "plain", "accent": "", "text_size": "12"}) == {}
     assert load_config(config, ENV).board.theme.text_size == 12
+
+
+# --- Saving keeps what the setup wizard wrote ---
+
+
+class FoundJob:
+    """The wizard's bus search, done as soon as it starts."""
+
+    def __init__(self, folder, stops, api_key, *, routes=False, walk_minutes=None):
+        pass
+
+    def start(self):
+        pass
+
+    def cancel(self):
+        pass
+
+    def status(self):
+        route = {"stop": "A", "stops": [{"name": "Hadfield", "lat": 53.46, "lon": -1.965},
+                                        {"name": "Norfolk Street", "lat": 53.4452, "lon": -1.9512}]}
+        bus = {"source": "bods", "operators": ["BNML"], "routes": {"341": route}}
+        return {"state": "done", "step": "", "done": 1, "total": 1, "message": "Found 1",
+                "result": {"fragment": {"bus": bus}, "lines": {}, "stop_lines": {}, "notes": []}}
+
+
+def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
+    # Regression: the page wrote settings.toml whole from its own fields, so
+    # the first save after setup dropped [bus] source, operators and routes,
+    # [weather] lat and lon, and anything else it doesn't show.
+    from departureboard.setup import Stop
+    from departureboard.setupapi import SetupApi
+
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    config.write_text(CONFIG.format(state=state / "state.json").replace('theme = "sign"', 'theme = "sign"\ndisplay = "hdmi-1280x400"'))
+    env = {**ENV, "BODS_API_KEY": "bods-secret-key-123"}
+    home = {"lat": 53.461964, "lon": -1.965633}
+    stop = Stop("1800SB12341", "Norfolk Street", "Stop A", "N", 53.4440, -1.9500, 60)
+    wizard = SetupApi(config, lambda: dict(env), state, nearby_stops=lambda lat, lon, **kw: [stop],
+                      stations=lambda: (("Glossop", "GLO", 53.4446, -1.9656),), make_job=FoundJob)
+    assert wizard.handle("stops", home)[0] == 200
+    assert wizard.handle("start", {"stops": {"A": "1800SB12341"}, "routes": True})[0] == 200
+    status, body = wizard.handle("finish", {"home": {**home, "country": "Scotland"}, "station_crs": "GLO",
+                                            "stops": {"A": "1800SB12341"}, "walk": {"GLO": 6}})
+    assert status == 200, body
+    with (state / "settings.toml").open("a", encoding="utf-8") as saved:
+        saved.write('\n[dashboard]\ntitle = "Our house"\n')  # a table this page knows nothing of
+
+    form = SettingsForm(config, lambda: dict(env))
+    assert form.save(fields_of(form) | {"title": "Home", "train_rows": "2"}) == {}
+
+    data = read_config(config)
+    assert (data["title"], data["train"]["rows"]) == ("Home", 2)
+    assert data["bus"]["source"] == "bods" and data["bus"]["operators"] == ["BNML"]
+    assert set(data["bus"]["routes"]) == {"341"}
+    assert (data["weather"]["lat"], data["weather"]["lon"]) == (53.44, -1.95)
+    assert data["bank_holiday_division"] == "scotland"
+    assert data["dashboard"] == {"title": "Our house"}
+    settings = load_config(config, env)
+    assert settings.board.weather is not None and set(settings.board.tracker.routes) == {"341"}
+
+
+def test_the_page_can_still_clear_a_field_setup_filled(tmp_path):
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    config.write_text(CONFIG.format(state=state / "state.json"))
+    state.mkdir()
+    (state / "settings.toml").write_text('[train]\nwalk_minutes = 6\nfilter_crs = "MAN"\n')
+    form = SettingsForm(config, lambda: dict(ENV))
+    assert form.save(fields_of(form) | {"train_walk_minutes": "", "train_filter_crs": ""}) == {}
+    data = read_config(config)
+    assert data["train"]["walk_minutes"] == "" and data["train"]["filter_crs"] == ""
+    assert load_config(config, ENV).board.walk.train is None
