@@ -1,0 +1,463 @@
+"""The bus timetable for your stops, built from BODS TransXChange.
+
+The way bustimes.org does it: every timetabled journey that calls at one of
+your stops, with the time it leaves each stop on its way, and the days it
+runs. livebus.py then adjusts it with live positions.
+
+Built about once a week by a timer or the command line, never from the
+minutely board run: an operator's timetables can run to hundreds of
+megabytes. Each download waits on disk and its documents are parsed one at a
+time, so a Pi Zero holds one document in memory, never the lot.
+
+Times. A journey's DepartureTime is when it leaves its first stop. Each
+timing link's RunTime takes it to the next stop, where it may wait before
+leaving: a WaitTime on the From of the link leaving a stop, or else one on
+the To of the link arriving there (the From wins if both are given; they
+describe the same wait, as bustimes.org reads them). A WaitTime on the From
+of the first link is ignored, since DepartureTime is already the departure.
+A call's minute is when the bus leaves that stop, or reaches it for the
+last stop. Times are worked out in seconds and each call's seconds dropped
+(rounded down), as printed timetables do, so a bus is never shown later
+than timetabled and half-minutes don't add up along the route. Minutes run
+past 1440 after midnight.
+
+Calendars. runs_on() decides, in this order:
+  1. outside the service's OperatingPeriod: no;
+  2. a SpecialDaysOperation day of non-operation: no; a day of operation: yes;
+  3. a bank holiday the journey doesn't run on: no; one it does run on: yes.
+     A bank holiday listed in neither follows the regular days, as
+     TransXChange says;
+  4. school days (ServicedOrganisation working days or holidays): outside the
+     days it runs only on, or inside the days it never runs on: no;
+  5. otherwise the regular days of the week.
+"""
+
+from __future__ import annotations
+
+import math
+import re
+from dataclasses import dataclass, field
+from datetime import date
+from typing import AbstractSet, Collection, Iterable, Mapping, NamedTuple
+
+from . import safexml
+from .schedule_model import Calendar, Call, DateRange, Journey, Schedule, StopPosition
+
+_TEXT_LIMIT = 80  # line names, destinations, codes
+_LATEST = 2 * 24 * 3600  # a journey still running two days after its service day is nonsense
+
+_NS = {"t": "http://www.transxchange.org.uk/"}
+_DURATION = re.compile(r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)(?:\.\d+)?S)?)?$")
+_TIME = re.compile(r"^(\d{2}):(\d{2})(?::(\d{2}))?$")
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+_EVERY_DAY = frozenset(range(7))
+_DAYS = {
+    "Monday": {0},
+    "Tuesday": {1},
+    "Wednesday": {2},
+    "Thursday": {3},
+    "Friday": {4},
+    "Saturday": {5},
+    "Sunday": {6},
+    "MondayToThursday": {0, 1, 2, 3},
+    "MondayToFriday": {0, 1, 2, 3, 4},
+    "MondayToSaturday": {0, 1, 2, 3, 4, 5},
+    "MondayToSunday": set(_EVERY_DAY),
+    "Weekend": {5, 6},
+    **{f"Not{name}": set(_EVERY_DAY) - {day} for day, name in enumerate(
+        ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))},
+}
+
+# TransXChange's groups of bank holidays, by the names holidays.holiday_names gives.
+_HOLIDAY_MONDAYS = {"EasterMonday", "MayDay", "SpringBank", "LateSummerBankHolidayNotScotland",
+                    "AugustBankHolidayScotland"}
+_DISPLACEMENT = {"ChristmasDayHoliday", "BoxingDayHoliday", "NewYearsDayHoliday",
+                 "Jan2ndScotlandHoliday", "StAndrewsDayHoliday"}
+_ALL_BANK_HOLIDAYS = {"ChristmasDay", "BoxingDay", "GoodFriday", "NewYearsDay", "Jan2ndScotland",
+                      "StAndrewsDay"} | _HOLIDAY_MONDAYS | _DISPLACEMENT
+_HOLIDAY_GROUPS = {
+    "AllBankHolidays": _ALL_BANK_HOLIDAYS,
+    "AllHolidaysExceptChristmas": _ALL_BANK_HOLIDAYS
+    - {"ChristmasDay", "BoxingDay", "ChristmasDayHoliday", "BoxingDayHoliday"},
+    "Christmas": {"ChristmasDay", "BoxingDay"},
+    "EarlyRunOff": {"ChristmasEve", "NewYearsEve"},
+    "HolidayMondays": _HOLIDAY_MONDAYS,
+    "DisplacementHolidays": _DISPLACEMENT,
+}
+
+class TimetableError(Exception):
+    pass
+
+
+# Reading TransXChange.
+
+
+def _tag(node) -> str:
+    return node.tag.rpartition("}")[2]
+
+
+def _text(node, path: str) -> str:
+    return (node.findtext(path, "", _NS) or "").strip()[:_TEXT_LIMIT]
+
+
+def _seconds(text: str | None) -> int | None:
+    """Seconds in an ISO 8601 duration such as PT1M30S; None if it isn't one."""
+    match = _DURATION.match((text or "").strip())
+    if not match or not any(match.groups()):
+        return None
+    days, hours, minutes, seconds = (int(g or 0) for g in match.groups())
+    return ((days * 24 + hours) * 60 + minutes) * 60 + seconds
+
+
+def _time(text: str) -> int | None:
+    """Seconds after midnight in a time such as 06:20:00."""
+    match = _TIME.match(text)
+    if not match:
+        return None
+    hours, minutes, seconds = (int(g or 0) for g in match.groups())
+    if hours > 23 or minutes > 59 or seconds > 59:
+        return None
+    return (hours * 60 + minutes) * 60 + seconds
+
+
+def _date(text: str) -> date | None:
+    if not _DATE.match(text):
+        return None
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _ranges(parent) -> tuple[DateRange, ...]:
+    """The DateRanges in an element; one without an end is a single day."""
+    found = []
+    for node in parent.iterfind("t:DateRange", _NS) if parent is not None else ():
+        start = _date(_text(node, "t:StartDate"))
+        end = _date(_text(node, "t:EndDate")) or start
+        if start and end and start <= end:
+            found.append((start, end))
+    return tuple(found)
+
+
+class _Link(NamedTuple):
+    id: str
+    origin: str
+    destination: str
+    run: int
+    origin_wait: int | None  # None when the From gives no WaitTime
+    destination_wait: int
+
+
+def _link(node, base: _Link | None = None) -> _Link:
+    """A timing link; a VehicleJourneyTimingLink overrides only what it gives."""
+    run = _seconds(node.findtext("t:RunTime", None, _NS))
+    origin_wait = _seconds(node.findtext("t:From/t:WaitTime", None, _NS))
+    destination_wait = _seconds(node.findtext("t:To/t:WaitTime", None, _NS))
+    if base is not None:
+        return base._replace(
+            run=base.run if run is None else run,
+            origin_wait=base.origin_wait if origin_wait is None else origin_wait,
+            destination_wait=base.destination_wait if destination_wait is None else destination_wait,
+        )
+    return _Link(
+        node.get("id", ""),
+        _text(node, "t:From/t:StopPointRef"),
+        _text(node, "t:To/t:StopPointRef"),
+        run or 0,
+        origin_wait,
+        destination_wait or 0,
+    )
+
+
+def _calls(links: list[_Link], departure: int) -> tuple[Call, ...] | None:
+    """Each stop with the minute the bus leaves it (reaches it, for the last);
+    None if the times are nonsense."""
+    calls = []
+    time = departure
+    arriving_wait = 0
+    for index, link in enumerate(links):
+        if index:
+            time += arriving_wait if link.origin_wait is None else link.origin_wait
+        calls.append(Call(link.origin, time // 60))
+        time += link.run
+        arriving_wait = link.destination_wait
+    calls.append(Call(links[-1].destination, time // 60))
+    return tuple(calls) if time < _LATEST else None
+
+
+@dataclass
+class _Service:
+    lines: dict[str, str]  # Line id -> LineName
+    start: date | None
+    end: date | None
+    profile: object  # its OperatingProfile element, or None
+    operator_ref: str
+    calendar: Calendar | None = None  # worked out when first needed
+
+
+@dataclass
+class _Pattern:
+    service: _Service
+    sections: list[str]
+    destination: str
+    operator_ref: str
+    links: list[_Link] | None = None
+
+
+@dataclass
+class _Document:
+    names: dict[str, str] = field(default_factory=dict)  # atco -> CommonName
+    positions: dict[str, StopPosition] = field(default_factory=dict)
+    operators: dict[str, str] = field(default_factory=dict)  # Operator id -> national operator code
+    schools: dict[str, tuple[tuple[DateRange, ...], tuple[DateRange, ...]]] = field(default_factory=dict)
+    sections: dict[str, list[_Link]] = field(default_factory=dict)
+    patterns: dict[str, _Pattern] = field(default_factory=dict)
+    services: dict[str, _Service] = field(default_factory=dict)
+
+
+def _position(name: str, lat: str, lon: str) -> StopPosition | None:
+    try:
+        lat_value, lon_value = float(lat), float(lon)
+    except ValueError:
+        return None
+    if not (math.isfinite(lat_value) and math.isfinite(lon_value)):
+        return None
+    if not (-90 <= lat_value <= 90 and -180 <= lon_value <= 180):
+        return None
+    return StopPosition(name, lat_value, lon_value)
+
+
+def _read_stops(root, doc: _Document) -> None:
+    for node in root.iterfind("t:StopPoints/t:AnnotatedStopPointRef", _NS):
+        atco, name = _text(node, "t:StopPointRef"), _text(node, "t:CommonName")
+        doc.names[atco] = name
+        position = _position(name, _text(node, "t:Location/t:Latitude"), _text(node, "t:Location/t:Longitude"))
+        if position is not None:
+            doc.positions[atco] = position
+    for node in root.iterfind("t:StopPoints/t:StopPoint", _NS):
+        doc.names[_text(node, "t:AtcoCode")] = _text(node, "t:Descriptor/t:CommonName")
+
+
+def _read_operators(root, doc: _Document) -> None:
+    for node in root.iterfind("t:Operators/*", _NS):
+        code = _text(node, "t:NationalOperatorCode") or _text(node, "t:OperatorCode")
+        if code:
+            doc.operators[node.get("id", "")] = code
+
+
+def _read_schools(root, doc: _Document) -> None:
+    for node in root.iterfind("t:ServicedOrganisations/t:ServicedOrganisation", _NS):
+        doc.schools[_text(node, "t:OrganisationCode")] = (
+            _ranges(node.find("t:WorkingDays", _NS)),
+            _ranges(node.find("t:Holidays", _NS)),
+        )
+
+
+def _read_services(root, doc: _Document) -> None:
+    for section in root.iterfind("t:JourneyPatternSections/t:JourneyPatternSection", _NS):
+        doc.sections[section.get("id", "")] = [
+            _link(node) for node in section.iterfind("t:JourneyPatternTimingLink", _NS)
+        ]
+    for node in root.iterfind("t:Services/t:Service", _NS):
+        service = _Service(
+            lines={line.get("id", ""): _text(line, "t:LineName") for line in node.iterfind("t:Lines/t:Line", _NS)},
+            start=_date(_text(node, "t:OperatingPeriod/t:StartDate")),
+            end=_date(_text(node, "t:OperatingPeriod/t:EndDate")),
+            profile=node.find("t:OperatingProfile", _NS),
+            operator_ref=_text(node, "t:RegisteredOperatorRef"),
+        )
+        doc.services[_text(node, "t:ServiceCode")] = service
+        for pattern in node.iterfind("t:StandardService/t:JourneyPattern", _NS):
+            doc.patterns[pattern.get("id", "")] = _Pattern(
+                service,
+                [(ref.text or "").strip() for ref in pattern.iterfind("t:JourneyPatternSectionRefs", _NS)],
+                _text(pattern, "t:DestinationDisplay"),
+                _text(pattern, "t:OperatorRef"),
+            )
+
+
+def _school_rules(profile, doc: _Document) -> tuple[tuple[DateRange, ...], tuple[DateRange, ...], bool]:
+    """(only on, never on, nothing known) from a ServicedOrganisationDayType.
+
+    Each organisation gives its WorkingDays (school days) and may give its
+    Holidays. Running on working days means only within them; not running on
+    them means never within them; holidays the same way round. When only the
+    other list is given, it is used inverted: not running in the holidays
+    means only on the working days, and so on."""
+    only, never, unknown = [], [], False
+    node = profile.find("t:ServicedOrganisationDayType", _NS)
+    if node is None:
+        return (), (), False
+    for kind, runs in (("DaysOfOperation", True), ("DaysOfNonOperation", False)):
+        for group, working in (("WorkingDays", True), ("Holidays", False)):
+            refs = node.findall(f"t:{kind}/t:{group}/t:ServicedOrganisationRef", _NS)
+            for ref in refs:
+                days, holidays = doc.schools.get((ref.text or "").strip(), ((), ()))
+                same, other = (days, holidays) if working else (holidays, days)
+                if same:
+                    (only if runs else never).extend(same)
+                elif other:
+                    (never if runs else only).extend(other)
+                elif runs:
+                    unknown = True
+    return tuple(only), tuple(never), unknown
+
+
+def _holiday_names(parent) -> tuple[set[str], tuple[DateRange, ...]]:
+    """Bank holiday names in a DaysOfOperation or DaysOfNonOperation, with
+    groups expanded, and any OtherPublicHoliday dates."""
+    names, dates = set(), []
+    for node in parent if parent is not None else ():
+        name = _tag(node)
+        if name == "OtherPublicHoliday":
+            day = _date(_text(node, "t:Date"))
+            if day:
+                dates.append((day, day))
+        else:
+            names |= _HOLIDAY_GROUPS.get(name, {name})
+    return names, tuple(dates)
+
+
+def _calendar(profile, service: _Service, doc: _Document) -> Calendar:
+    """When a journey runs. With no OperatingProfile at all it runs every day;
+    a profile without regular days runs only on the days it lists."""
+    if profile is None:
+        return Calendar(days=_EVERY_DAY, start=service.start, end=service.end)
+    days = set()
+    for node in profile.iterfind("t:RegularDayType/t:DaysOfWeek/*", _NS):
+        days |= _DAYS.get(_tag(node), set())
+    special = profile.find("t:SpecialDaysOperation", _NS)
+    dates_on = _ranges(special.find("t:DaysOfOperation", _NS)) if special is not None else ()
+    dates_off = _ranges(special.find("t:DaysOfNonOperation", _NS)) if special is not None else ()
+    bank = profile.find("t:BankHolidayOperation", _NS)
+    on, other_on = _holiday_names(bank.find("t:DaysOfOperation", _NS) if bank is not None else None)
+    off, other_off = _holiday_names(bank.find("t:DaysOfNonOperation", _NS) if bank is not None else None)
+    only, never, unknown = _school_rules(profile, doc)
+    if unknown:
+        days = set()  # school days only, but the timetable doesn't say which: none
+    return Calendar(
+        days=frozenset(days),
+        start=service.start,
+        end=service.end,
+        bank_holidays_on=frozenset(on),
+        bank_holidays_off=frozenset(off),
+        dates_on=dates_on + other_on,
+        dates_off=dates_off + other_off,
+        school_days_only=only,
+        not_on_school_days=never,
+    )
+
+
+def _pattern_links(pattern: _Pattern, doc: _Document) -> list[_Link]:
+    if pattern.links is None:
+        pattern.links = [link for ref in pattern.sections for link in doc.sections.get(ref, [])]
+    return pattern.links
+
+
+def _journey(node, doc: _Document, atcos: Collection[str], noc: str, pattern_refs: dict) -> Journey | None:
+    """The journey a VehicleJourney describes, if it calls at one of `atcos`."""
+    ref = _text(node, "t:JourneyPatternRef") or pattern_refs.get(_text(node, "t:VehicleJourneyRef"), "")
+    pattern = doc.patterns.get(ref)
+    if pattern is None:
+        return None
+    links = _pattern_links(pattern, doc)
+    if not links or not any(link.origin in atcos or link.destination in atcos for link in links):
+        return None
+    departure = _time(_text(node, "t:DepartureTime"))
+    if departure is None:
+        return None
+    shift = _text(node, "t:DepartureDayShift")
+    departure += 24 * 3600 * (int(shift) if shift.isdigit() else 0)
+    overrides = {
+        _text(timing, "t:JourneyPatternTimingLinkRef"): timing
+        for timing in node.iterfind("t:VehicleJourneyTimingLink", _NS)
+    }
+    if overrides:
+        links = [_link(overrides[link.id], link) if link.id in overrides else link for link in links]
+    calls = _calls(links, departure)
+    if calls is None:
+        return None
+    service = doc.services.get(_text(node, "t:ServiceRef"), pattern.service)
+    profile = node.find("t:OperatingProfile", _NS)
+    if profile is not None:
+        calendar = _calendar(profile, service, doc)
+    else:
+        if service.calendar is None:
+            service.calendar = _calendar(service.profile, service, doc)
+        calendar = service.calendar
+    line = service.lines.get(_text(node, "t:LineRef")) or next(iter(service.lines.values()), "")
+    operator = (
+        doc.operators.get(_text(node, "t:OperatorRef"))
+        or doc.operators.get(pattern.operator_ref)
+        or doc.operators.get(service.operator_ref)
+        or noc
+    )
+    last = calls[-1].atco
+    destination = _text(node, "t:DestinationDisplay") or pattern.destination or doc.names.get(last) or last
+    code = _text(node, "t:Operational/t:TicketMachine/t:JourneyCode") or _text(node, "t:VehicleJourneyCode")
+    return Journey(line, operator, destination, code, calls, calendar)
+
+
+def _parse_document(xml: bytes, atcos: Collection[str], noc: str) -> tuple[list[Journey], dict[str, StopPosition]]:
+    try:
+        root = safexml.fromstring(xml)
+    except safexml.DoctypeError:
+        raise TimetableError("Timetable file has a DOCTYPE; refusing to parse it") from None
+    except SyntaxError as error:  # ElementTree.ParseError
+        raise TimetableError(f"Timetable file is not XML: {error}") from None
+    doc = _Document()
+    _read_stops(root, doc)
+    _read_operators(root, doc)
+    _read_schools(root, doc)
+    _read_services(root, doc)
+    vehicle_journeys = root.findall("t:VehicleJourneys/t:VehicleJourney", _NS)
+    pattern_refs = {_text(node, "t:VehicleJourneyCode"): _text(node, "t:JourneyPatternRef") for node in vehicle_journeys}
+    journeys = []
+    for node in vehicle_journeys:
+        journey = _journey(node, doc, atcos, noc, pattern_refs)
+        if journey is not None and any(call.atco in atcos for call in journey.calls):
+            journeys.append(journey)
+    return journeys, doc.positions
+
+
+def parse_journeys(xml: bytes, atcos: Collection[str], noc: str = "") -> list[Journey]:
+    """Every journey in one TransXChange document that calls at one of `atcos`,
+    whether it starts, passes or ends there. `noc` is the operator code to use
+    when the document doesn't give one."""
+    return _parse_document(xml, set(atcos), noc)[0]
+
+
+# When journeys run.
+
+
+def _within(day: date, ranges: Iterable[DateRange]) -> bool:
+    return any(start <= day <= end for start, end in ranges)
+
+
+def runs_on(calendar: Calendar, day: date, holiday_names: Mapping[date, AbstractSet[str]] = {}) -> bool:
+    """Whether a journey with this calendar runs on `day`, its service day (the
+    day it starts). `holiday_names` gives each day's TransXChange bank holiday
+    names, from holidays.holiday_names. See the module's notes for the order."""
+    if (calendar.start and day < calendar.start) or (calendar.end and day > calendar.end):
+        return False
+    if _within(day, calendar.dates_off):
+        return False
+    if _within(day, calendar.dates_on):
+        return True
+    names = holiday_names.get(day, ())
+    if calendar.bank_holidays_off.intersection(names):
+        return False
+    if calendar.bank_holidays_on.intersection(names):
+        return True
+    if calendar.school_days_only and not _within(day, calendar.school_days_only):
+        return False
+    if _within(day, calendar.not_on_school_days):
+        return False
+    return day.weekday() in calendar.days
+
+
+def journeys_on(schedule: Schedule, day: date, holiday_names: Mapping[date, AbstractSet[str]] = {}) -> list[Journey]:
+    """The schedule's journeys that run on `day`, their service day."""
+    return [journey for journey in schedule.journeys if runs_on(journey.calendar, day, holiday_names)]
