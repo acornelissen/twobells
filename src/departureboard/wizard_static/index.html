@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Set up your board</title>
+<link rel="stylesheet" href="wizard_static/wizard.css">
+<script type="module" src="wizard_static/wizard.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the setup step</a>
+
+<header class="top">
+  <h1>Set up your board</h1>
+  <nav aria-label="Setup steps">
+    <ol id="progress" class="progress">
+      <li data-step="home">Home</li>
+      <li data-step="station">Station</li>
+      <li data-step="stops">Bus stops</li>
+      <li data-step="walk">Walk times</li>
+      <li data-step="keys">Keys</li>
+      <li data-step="finish">Finish</li>
+    </ol>
+  </nav>
+</header>
+
+<main id="main" tabindex="-1">
+  <p id="loading" class="note">Loading…</p>
+  <noscript><p class="note">This setup page needs JavaScript. You can set the board up by hand in config.toml instead.</p></noscript>
+
+  <!-- 1. Home -->
+  <section id="step-home" class="step" aria-labelledby="home-heading" hidden>
+    <h2 id="home-heading" tabindex="-1">Step 1 of 6: Where is home?</h2>
+    <p class="hint">Used to find the stations and bus stops near you and how long the walk is. The board keeps only a rough position, to about a kilometre, for the rain warning.</p>
+
+    <form id="postcode-form" class="row-form" novalidate>
+      <div class="field">
+        <label for="postcode">Postcode</label>
+        <p class="error" id="postcode-error" hidden></p>
+        <input id="postcode" name="postcode" type="text" autocomplete="postal-code" spellcheck="false" maxlength="16" aria-describedby="postcode-error">
+      </div>
+      <button type="submit">Find postcode</button>
+    </form>
+
+    <form id="address-form" class="row-form" novalidate>
+      <div class="field">
+        <label for="address">Or search for an address</label>
+        <p class="hint" id="address-hint">A street and town, like 1 High Street, Glossop.</p>
+        <p class="error" id="address-error" hidden></p>
+        <input id="address" name="address" type="text" autocomplete="street-address" maxlength="120" aria-describedby="address-hint address-error">
+      </div>
+      <button type="submit">Search</button>
+    </form>
+    <div id="address-results-box" hidden>
+      <h3 id="address-results-heading">Pick your address</h3>
+      <ul id="address-results" class="choices" aria-labelledby="address-results-heading"></ul>
+    </div>
+
+    <div class="map-part">
+      <button type="button" id="home-map-toggle" class="quiet" aria-expanded="false" aria-controls="home-map-box">Pick on a map instead</button>
+      <div id="home-map-box" hidden>
+        <p class="hint">Click or tap where home is. Map pictures come from OpenStreetMap, which sees roughly where you are looking.</p>
+        <p class="map-status" id="home-map-status"></p>
+        <div id="home-map" class="map" role="region" aria-label="Map to pick home on. The postcode and address boxes above do the same."></div>
+        <p class="map-credit">Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>.</p>
+        <button type="button" id="home-map-centre" class="quiet">Put home at the middle of the map</button>
+      </div>
+    </div>
+
+    <p id="home-chosen" class="chosen" hidden></p>
+    <p class="error" id="home-error" hidden></p>
+    <div class="actions">
+      <button type="button" id="home-next" data-next="station">Next: station</button>
+    </div>
+  </section>
+
+  <!-- 2. Station -->
+  <section id="step-station" class="step" aria-labelledby="station-heading" hidden>
+    <h2 id="station-heading" tabindex="-1">Step 2 of 6: Your railway station</h2>
+    <p id="station-status" class="note" hidden></p>
+    <fieldset id="station-set" aria-describedby="station-error">
+      <legend>Which station do you leave from?</legend>
+      <p class="error" id="station-error" hidden></p>
+      <div id="station-list" class="options"></div>
+      <div class="option">
+        <input type="radio" name="station" id="station-other" value="other">
+        <label for="station-other">Another station</label>
+      </div>
+      <div class="field nested" id="station-code-box" hidden>
+        <label for="station-code">Its 3-letter code</label>
+        <p class="hint" id="station-code-hint">Like GLO for Glossop. National Rail's website shows each station's code.</p>
+        <p class="error" id="station-code-error" hidden></p>
+        <input id="station-code" type="text" maxlength="3" autocomplete="off" spellcheck="false" class="short" aria-describedby="station-code-hint station-code-error">
+      </div>
+      <div class="option">
+        <input type="radio" name="station" id="station-none" value="none">
+        <label for="station-none">No trains on this board</label>
+      </div>
+    </fieldset>
+
+    <div class="field" id="filter-box">
+      <label for="filter">Where do you usually go? (optional)</label>
+      <p class="hint" id="filter-hint">A station's 3-letter code, like MAN, to show only trains that call there. Leave it empty to show every train.</p>
+      <p class="error" id="filter-error" hidden></p>
+      <input id="filter" type="text" maxlength="3" autocomplete="off" spellcheck="false" class="short" aria-describedby="filter-hint filter-error">
+    </div>
+
+    <div class="map-part">
+      <button type="button" id="station-map-toggle" class="quiet" aria-expanded="false" aria-controls="station-map-box">Show the stations on a map</button>
+      <div id="station-map-box" hidden>
+        <p class="hint">The numbers match the list. Choosing a station on the map picks it in the list.</p>
+        <p class="map-status" id="station-map-status"></p>
+        <div id="station-map" class="map" role="region" aria-label="Map of the stations near home. They are listed above."></div>
+        <p class="map-credit">Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>.</p>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="quiet" data-back="home">Back</button>
+      <button type="button" id="station-next" data-next="stops">Next: bus stops</button>
+    </div>
+  </section>
+
+  <!-- 3. Bus stops -->
+  <section id="step-stops" class="step" aria-labelledby="stops-heading" hidden>
+    <h2 id="stops-heading" tabindex="-1">Step 3 of 6: Your bus stops</h2>
+    <p class="hint">Tick the stops you use, up to 10. Each gets a short label on the board, like A; the letter on the stop's sign is suggested when it has one. Tick none for no buses.</p>
+    <p id="stops-status" class="note" hidden></p>
+    <fieldset id="stops-set" aria-describedby="stops-error">
+      <legend>Bus stops near home</legend>
+      <p class="error" id="stops-error" hidden></p>
+      <ol id="stops-list" class="stop-list"></ol>
+    </fieldset>
+
+    <div class="map-part">
+      <button type="button" id="stops-map-toggle" class="quiet" aria-expanded="false" aria-controls="stops-map-box">Show the stops on a map</button>
+      <div id="stops-map-box" hidden>
+        <p class="hint">The numbers match the list. Choosing a stop on the map ticks or unticks it.</p>
+        <p class="map-status" id="stops-map-status"></p>
+        <div id="stops-map" class="map" role="region" aria-label="Map of the bus stops near home. They are listed above."></div>
+        <p class="map-credit">Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>.</p>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="quiet" data-back="station">Back</button>
+      <button type="button" id="stops-next" data-next="walk">Next: walk times</button>
+    </div>
+  </section>
+
+  <!-- 4. Walk times -->
+  <section id="step-walk" class="step" aria-labelledby="walk-heading" hidden>
+    <h2 id="walk-heading" tabindex="-1">Step 4 of 6: How long is the walk?</h2>
+    <p class="hint">The board uses these to say when to leave. Change any that are wrong; leave one empty for none.</p>
+    <p id="walk-status" class="note" hidden></p>
+    <div id="walk-list"></div>
+    <div class="actions">
+      <button type="button" class="quiet" data-back="stops">Back</button>
+      <button type="button" id="walk-next" data-next="keys">Next: keys</button>
+    </div>
+  </section>
+
+  <!-- 5. Keys -->
+  <section id="step-keys" class="step" aria-labelledby="keys-heading" hidden>
+    <h2 id="keys-heading" tabindex="-1">Step 5 of 6: Keys</h2>
+    <p class="hint">Train and bus times come from free services that give you a key. Keys are never shown here: paste one to save it, or leave a box empty to keep the key you have.</p>
+    <div id="keys-list"></div>
+    <div class="actions">
+      <button type="button" class="quiet" data-back="walk">Back</button>
+      <button type="button" id="keys-next" data-next="finish">Next: check and save</button>
+    </div>
+  </section>
+
+  <!-- 6. Finish -->
+  <section id="step-finish" class="step" aria-labelledby="finish-heading" hidden>
+    <h2 id="finish-heading" tabindex="-1">Step 6 of 6: Check and save</h2>
+    <dl id="summary" class="summary-list"></dl>
+    <div class="option" id="routes-box">
+      <input type="checkbox" id="routes">
+      <label for="routes">Also draw each bus line's route on the screen's map (slower to set up)</label>
+    </div>
+    <p class="hint" id="search-hint">Saving first looks up which bus companies serve your stops and builds their timetable. That can take a few minutes; you can leave this page open while it runs.</p>
+    <p class="error" id="finish-error" hidden></p>
+
+    <div id="job-box" class="job" hidden>
+      <p id="job-status" class="job-status" role="status" aria-live="polite"></p>
+      <label for="job-progress" class="vh">Progress</label>
+      <progress id="job-progress"></progress>
+      <p id="job-count" class="hint"></p>
+      <button type="button" id="job-cancel" class="quiet">Cancel the search</button>
+    </div>
+
+    <div class="actions" id="finish-actions">
+      <button type="button" class="quiet" data-back="keys">Back</button>
+      <button type="button" id="save">Save</button>
+    </div>
+  </section>
+
+  <!-- Done -->
+  <section id="step-done" class="step" aria-labelledby="done-heading" hidden>
+    <h2 id="done-heading" tabindex="-1">Done</h2>
+    <p id="done-message"></p>
+    <ul id="done-found" class="found"></ul>
+    <ul id="done-links" class="links"></ul>
+  </section>
+</main>
+
+<div id="live" class="vh" aria-live="polite" aria-atomic="true"></div>
+<div id="alert" class="vh" role="alert" aria-atomic="true"></div>
+</body>
+</html>

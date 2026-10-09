@@ -21,7 +21,7 @@ departureboard = "departureboard.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-departureboard = ["*.html", "*.css", "data/*.csv", "dashboard_static/*", "dashboard_static/**/*"]
+departureboard = ["*.html", "*.css", "data/*.csv", "dashboard_static/*", "dashboard_static/**/*", "wizard_static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
