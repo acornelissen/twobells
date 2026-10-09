@@ -3,7 +3,7 @@
   departureboard run      one tick; systemd runs this every minute
   departureboard run --loop   keep ticking; a screen redraws every second
   departureboard probe    one live call to check keys and stop codes
-  departureboard demo     render sample data to a PNG, no keys needed
+  departureboard demo     render sample data (a Glossop morning) to a PNG, no keys needed
   departureboard emulate  run the board against a browser-based panel emulator
   departureboard route    print a [bus.routes] block for the screen's bus page (run on a laptop)
   departureboard web      serve the settings page on the home network
@@ -35,7 +35,7 @@ from .display import DISPLAY_PANELS, PngDisplay, open_display
 from .holidays import bank_holidays
 from .emulation import build_emulation
 from .emulator import DEFAULT_PORT, make_server
-from .fake import DEMO_NOTICE, FakeWeatherSource
+from .fake import DEMO_NOTICE, DEMO_TITLE, FakeWeatherSource
 from .http import get_bytes
 from .model import Departure, Status
 from .state import StateStore
@@ -441,7 +441,7 @@ def _demo(args) -> int:
     # Rain likely through the 07:00 hour, before you'd reach the 07:12; a notice takes its place.
     rain = rain_line(FakeWeatherSource(lambda: now).fetch(), now, now.replace(minute=12), 50, live=bool(clock))
     view = build_view(
-        "Glossop > Manchester Picc", trains, buses, "07:03", set(), walk, theme.wording, clock,
+        DEMO_TITLE, trains, buses, "07:03", set(), walk, theme.wording, clock,
         notices=[DEMO_NOTICE] if args.notice else None,
         rain=rain if args.rain else None,
     )
@@ -608,7 +608,7 @@ def _parser() -> argparse.ArgumentParser:
     tt.add_argument("--force", action="store_true", help="build it now, as after changing operators")
     tt.set_defaults(handler=_timetable)
 
-    demo = sub.add_parser("demo", help="render sample data to a PNG")
+    demo = sub.add_parser("demo", help="render sample data (a Glossop morning) to a PNG")
     demo.add_argument("--png", default="preview.png")
     demo.add_argument("--theme", default="sign", choices=sorted(THEMES))
     demo.add_argument("--accent", choices=["red", "yellow"], help="defaults to the theme's")
@@ -631,7 +631,7 @@ def _parser() -> argparse.ArgumentParser:
     web.set_defaults(handler=_web)
 
     emulate = with_config(sub.add_parser("emulate", help="run against a browser panel emulator"))
-    emulate.add_argument("--demo", action="store_true", help="fake data on a fast simulated clock")
+    emulate.add_argument("--demo", action="store_true", help="sample Glossop data on a fast simulated clock")
     emulate.add_argument("--fake-train", action="store_true", help="fake trains, live buses")
     emulate.add_argument("--accent", choices=["red", "yellow"], help="demo accent")
     emulate.add_argument("--display", choices=sorted(DISPLAY_PANELS), help="panel to emulate (default: config's)")

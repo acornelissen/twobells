@@ -1,4 +1,5 @@
-"""Wires a board to the emulator: demo (all fake, simulated clock) or live."""
+"""Wires a board to the emulator: demo (sample Glossop data from fake.py,
+simulated clock) or live."""
 
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from .app import Board, SourceConfig, Tracker, Weather
 from .config import load_config
 from .display import DISPLAY_PANELS
 from .emulator import EmulatorDisplay
-from .fake import DEMO_STRIP, FakeBusSource, FakeTrainSource, FakeVehicleSource, FakeWeatherSource, SimClock
+from .fake import DEMO_STRIP, DEMO_TITLE, FakeBusSource, FakeTrainSource, FakeVehicleSource, FakeWeatherSource, SimClock
 from .schedule import PollPolicy, parse_window
 from .state import StateStore
 from .themes import THEMES
@@ -63,7 +64,7 @@ def _demo(accent: str | None, tick_seconds: float | None, display: str) -> Emula
     if not panel.epaper:
         tracker = Tracker(FakeVehicleSource(clock), {"341": DEMO_STRIP}, PollPolicy(_ALWAYS, timedelta(seconds=30)))
     board = Board(
-        title="Glossop > Manchester Picc",
+        title=DEMO_TITLE,
         sources=[
             _fake_train(clock, notice_when=demo_disruption),
             SourceConfig(bus, PollPolicy(_ALWAYS, timedelta(minutes=6)), timedelta(minutes=12)),

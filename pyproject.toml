@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "departureboard"
 version = "0.1.0"
-description = "Glossop train and bus departure board for a Raspberry Pi Zero W with an Inky pHAT"
+description = "Train and bus departure board for a Raspberry Pi with an e-paper or HDMI display, for Great Britain"
 requires-python = ">=3.11"
 dependencies = ["Pillow>=10.1"]
 

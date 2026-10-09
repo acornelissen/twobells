@@ -3,6 +3,10 @@
 Statuses are drawn from a seeded RNG keyed on the service and a six-minute
 time bucket, so they evolve over a simulated morning but repeat exactly for
 the same seed.
+
+The sample data is a real place, so the demo looks like a real board: trains
+from Glossop to Manchester Piccadilly and buses from Glossop's Henry Street
+stops. It is only sample data; nothing outside the demo and emulator uses it.
 """
 
 from __future__ import annotations
@@ -66,6 +70,9 @@ class _FakeSource:
             raise OSError(f"fake {self.name} source is failing")
         return self._departures(now)
 
+
+# The sample board's heading (Glossop's own board, as examples/glossop.toml has it).
+DEMO_TITLE = "Glossop > Manchester Picc"
 
 DEMO_NOTICE = (
     "Disruption between Glossop and Manchester Piccadilly: trains may be cancelled "
