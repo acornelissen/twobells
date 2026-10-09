@@ -1,0 +1,485 @@
+import hashlib
+import json
+import re
+import threading
+import time
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+import pytest
+
+from departureboard.bodsbus import BusBoard
+from departureboard.darwin import parse_board_rich
+from departureboard.model import Departure, Status
+from departureboard.snapshot import (
+    Hub,
+    bus_observations,
+    buses_part,
+    clock_at,
+    row_id,
+    status_block,
+    status_text,
+    timetable_block,
+    train_observations,
+    trains_part,
+    weather_part,
+)
+from departureboard.walk import WalkTimes
+from departureboard.weather import parse_conditions
+
+from test_livebus import HALFWAY, HENRY_A, POSITIONS, at, bus, live, schedule
+
+LONDON = ZoneInfo("Europe/London")
+FIXTURES = Path(__file__).parent / "fixtures"
+HEX16 = re.compile(r"[0-9a-f]{16}")
+WALK = WalkTimes(train=12, bus={"A": 5, "B": 10})
+
+
+def fixture(name):
+    return json.loads((FIXTURES / name).read_text())
+
+
+def glossop():
+    return parse_board_rich(fixture("ldbws_glossop_details.json"))
+
+
+FETCHED = datetime(2026, 10, 9, 22, 2, 38, tzinfo=LONDON)
+
+
+def train(std="07:12", etd="On time", **extra):
+    service = {
+        "std": std, "etd": etd, "platform": "1", "operator": "Northern", "operatorCode": "NT",
+        "serviceID": f"{std.replace(':', '')}GLSP____", "length": 3,
+        "origin": [{"locationName": "Hadfield", "crs": "HDF"}],
+        "destination": [{"locationName": "Manchester Piccadilly", "crs": "MAN"}],
+    }
+    service.update(extra)
+    return service
+
+
+def trains(*services, fetched=datetime(2026, 10, 10, 7, 0, tzinfo=LONDON), walk=WALK, phrases=None):
+    board = parse_board_rich({"trainServices": list(services), "locationName": "Glossop"})
+    kwargs = {"phrases": phrases} if phrases else {}
+    return trains_part(board, fetched, status_block(), "GLO", "MAN", walk, "GLO>MAN", **kwargs)
+
+
+def bus_part(now, vehicles=(), walk=WALK):
+    found = live(now, vehicles)
+    board = BusBoard(found, schedule(), True, None)
+    part, lookups = buses_part(board, now, status_block(), timetable_block("ready", board.schedule, LONDON),
+                               {"A": HENRY_A}, walk)
+    return part, lookups, found
+
+
+def by(rows, **match):
+    return next(r for r in rows if all(r[k] == v for k, v in match.items()))
+
+
+# Ids
+
+
+def test_ids_are_sixteen_hex_characters_of_a_hash_of_what_the_row_is():
+    part, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO")
+    first = part["rows"][0]
+    assert first["id"] == hashlib.sha256(b"train|9000001GLSP____").hexdigest()[:16]
+    assert all(HEX16.fullmatch(r["id"]) for r in part["rows"])
+    assert row_id("bus", "x") != row_id("train", "x")
+
+
+def test_ids_are_stable_from_one_snapshot_to_the_next():
+    first, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO")
+    later, _ = trains_part(glossop(), FETCHED + timedelta(minutes=1), status_block(), "GLO", None, WALK, "GLO")
+    assert [r["id"] for r in first["rows"]] == [r["id"] for r in later["rows"]]
+
+
+def test_a_train_without_a_service_id_is_named_by_time_and_destination():
+    part, _ = trains(train(serviceID=None))
+    assert part["rows"][0]["id"] == row_id("train", "07:12+Manchester Piccadilly")
+
+
+def test_bus_ids_hash_the_departure_key():
+    part, lookups, found = bus_part(at(10, 0))
+    assert [r["id"] for r in part["rows"]] == [row_id("bus", l.key) for l in found]
+    assert set(lookups) == {r["id"] for r in part["rows"]}
+
+
+def test_no_service_id_or_bus_key_reaches_the_json():
+    part, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO")
+    text = json.dumps(part)
+    assert "GLSP" not in text and "serviceID" not in text
+    buses, lookups, found = bus_part(at(10, 14), [bus(*HALFWAY, at(10, 14))])
+    text = json.dumps(buses)
+    assert HENRY_A not in text and all(l.key not in text for l in found)
+    assert all(HENRY_A not in json.dumps(lookup["bus"]) for lookup in lookups.values())
+
+
+# Trains
+
+
+def test_a_real_board_becomes_rows():
+    part, lookups = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO")
+    assert part["station"] == "Glossop" and part["filter"] is None
+    assert part["messages"] == ["The ticket office is currently closed at this station."]
+    first = part["rows"][0]
+    assert first["scheduled"] == "22:05" and first["scheduled_at"] == "2026-10-09T22:05:00+01:00"
+    assert first["expected"] == "22:05" and first["status"] == "on_time" and first["status_text"] == "On time"
+    assert (first["service"], first["origin"], first["destination"]) == (
+        "Northern", "Manchester Piccadilly", "Hadfield",
+    )
+    assert (first["platform"], first["length"], first["minutes_late"]) == ("1", 3, None)
+    assert first["calling_points"] == [
+        {"name": "Hadfield", "crs": "HDF", "scheduled": "22:11", "expected": "On time", "actual": None,
+         "cancelled": False},
+    ]
+    assert first["history"] == {"phrase": None}
+    assert lookups[first["id"]]["history"]["route"] == "GLO|Hadfield"
+
+
+def test_a_late_train_is_expected_later_and_left_for_later():
+    part, _ = trains(train("07:12", "07:19", delayReason="This train has been delayed by a broken down train"))
+    row = part["rows"][0]
+    assert (row["status"], row["status_text"], row["minutes_late"]) == ("late", "Expected 07:19", 7)
+    assert row["expected_at"] == "2026-10-10T07:19:00+01:00"
+    assert row["leave_at"] == "2026-10-10T07:07:00+01:00"  # 12 min walk
+    assert row["delay_reason"] == "This train has been delayed by a broken down train"
+
+
+def test_delayed_without_a_time_has_no_minutes_late():
+    row = trains(train(etd="Delayed"))[0]["rows"][0]
+    assert (row["status"], row["status_text"], row["minutes_late"], row["expected_at"]) == (
+        "late", "Delayed", None, None,
+    )
+    assert row["leave_at"] == "2026-10-10T07:00:00+01:00"  # from the timetabled time
+
+
+def test_a_cancelled_train_has_no_leave_time():
+    row = trains(train(etd="Cancelled", isCancelled=True, cancelReason="A fault"))[0]["rows"][0]
+    assert (row["status"], row["status_text"], row["leave_at"], row["cancel_reason"]) == (
+        "cancelled", "Cancelled", None, "A fault",
+    )
+
+
+def test_no_walk_time_no_leave_time():
+    row = trains(train(), walk=WalkTimes())[0]["rows"][0]
+    assert row["leave_at"] is None
+
+
+def test_no_report_is_said_in_words():
+    row = trains(train(etd="No report"))[0]["rows"][0]
+    assert (row["status"], row["status_text"]) == ("unknown", "No report")
+
+
+def test_times_are_read_as_the_nearest_to_when_the_board_was_fetched():
+    late_evening = datetime(2026, 10, 9, 23, 50, tzinfo=LONDON)
+    row = trains(train("00:05", "00:12"), fetched=late_evening)[0]["rows"][0]
+    assert row["scheduled_at"] == "2026-10-10T00:05:00+01:00"
+    assert row["expected_at"] == "2026-10-10T00:12:00+01:00"
+    assert clock_at("23:58", datetime(2026, 10, 10, 0, 3, tzinfo=LONDON)).isoformat() == "2026-10-09T23:58:00+01:00"
+
+
+def test_times_carry_the_offset_of_their_own_day():
+    winter = datetime(2026, 10, 25, 23, 0, tzinfo=LONDON)  # clocks went back that morning
+    row = trains(train("23:10"), fetched=winter)[0]["rows"][0]
+    assert row["scheduled_at"] == "2026-10-25T23:10:00+00:00"
+
+
+def test_history_phrases_come_from_the_history():
+    asked = []
+
+    def phrases(mode, route, scheduled, day):
+        asked.append((mode, route, scheduled, day))
+        return "saturday", "Late 4 of the last 10 Saturdays (avg 6 min)"
+
+    part, lookups = trains(train(), phrases=phrases)
+    row = part["rows"][0]
+    assert row["history"] == {"phrase": "Late 4 of the last 10 Saturdays (avg 6 min)"}
+    assert asked == [("train", "GLO>MAN|Manchester Piccadilly", "07:12", date(2026, 10, 10))]
+    assert lookups[row["id"]]["history"] == {
+        "mode": "train", "route": "GLO>MAN|Manchester Piccadilly", "scheduled": "07:12",
+        "label": "07:12 to Manchester Piccadilly", "day_type": "saturday",
+        "phrase": "Late 4 of the last 10 Saturdays (avg 6 min)",
+    }
+
+
+def test_no_board_yet_is_an_empty_section():
+    part, lookups = trains_part(None, None, status_block(), "GLO", "MAN", WALK, "GLO>MAN")
+    assert part == {"station": "GLO", "filter": "MAN", "status": status_block(), "messages": [], "rows": []}
+    assert lookups == {}
+
+
+def test_train_observations_for_the_history():
+    board = parse_board_rich({"trainServices": [
+        train("07:12", "07:19", delayReason="Signals"), train("07:42", "Cancelled", isCancelled=True),
+        train("08:12"), train("08:42", "Delayed"),
+    ]})
+    fetched = datetime(2026, 10, 10, 7, 0, tzinfo=LONDON)
+    seen = train_observations(board, fetched, "GLO>MAN")
+    assert [(o.scheduled, o.status, o.delay_min, o.departs_at, o.reason) for o in seen] == [
+        ("07:12", "late", 7, datetime(2026, 10, 10, 7, 19), "Signals"),
+        ("07:42", "cancelled", None, datetime(2026, 10, 10, 7, 42), None),
+        ("08:12", "on_time", 0, datetime(2026, 10, 10, 8, 12), None),
+        ("08:42", "late", None, datetime(2026, 10, 10, 8, 42), None),
+    ]
+    assert seen[0].route == "GLO>MAN|Manchester Piccadilly" and seen[0].day == date(2026, 10, 10)
+    assert seen[0].identity == "0712GLSP____" and seen[0].live
+
+
+# Status words
+
+
+@pytest.mark.parametrize("mode, status, expected, words", [
+    ("train", Status.ON_TIME, None, "On time"),
+    ("train", Status.LATE, "07:19", "Expected 07:19"),
+    ("train", Status.LATE, None, "Delayed"),
+    ("train", Status.CANCELLED, None, "Cancelled"),
+    ("train", Status.UNKNOWN, None, "No report"),
+    ("bus", Status.ON_TIME, None, "On time"),
+    ("bus", Status.LATE, "10:19", "Expected 10:19"),
+    ("bus", Status.UNKNOWN, None, "Timetable only"),
+])
+def test_status_text_is_always_words(mode, status, expected, words):
+    assert status_text(Departure(mode, "x", "y", "07:12", expected, status)) == words
+
+
+def test_every_row_has_words_for_its_status():
+    rows = trains(train(), train("07:30", "07:41"), train("07:50", "Delayed"), train("08:00", "Cancelled"),
+                  train("08:10", "No report"))[0]["rows"]
+    rows += bus_part(at(10, 14), [bus(*HALFWAY, at(10, 14))])[0]["rows"]
+    for row in rows:
+        assert re.fullmatch(r"[A-Z][a-z]+( [a-z]+)*( \d\d:\d\d)?", row["status_text"]), row["status_text"]
+
+
+# Buses
+
+
+def test_a_live_late_bus():
+    part, lookups, _ = bus_part(at(10, 14), [bus(*HALFWAY, at(10, 14))])
+    row = by(part["rows"], line="341", stop="A")
+    assert row["scheduled_at"] == "2026-10-09T10:10:00+01:00" and row["expected_at"] == "2026-10-09T10:19:00+01:00"
+    assert (row["status"], row["status_text"], row["minutes_late"], row["live"]) == (
+        "late", "Expected 10:19", 9, True,
+    )
+    assert row["vehicle"] == {"age_s": 0, "recorded_at": "2026-10-09T10:14:00+01:00", "bearing": 90.0}
+    strip = row["strip"]
+    assert strip["stops"][strip["yours"]] == "Henry Street"
+    assert strip["bus_at"] == pytest.approx(2.5, abs=0.05)  # halfway Sunlaws Street to St Marys Road
+    assert strip["where"] == "3 stops away"
+    assert row["history"] == {"phrase": None}
+    history = lookups[row["id"]]["history"]
+    assert (history["mode"], history["route"], history["label"]) == ("bus", "A|341|Hadfield", "10:10 341 to Hadfield")
+
+
+def test_leave_at_follows_each_stop_s_walk():
+    part, _, _ = bus_part(at(10, 14), [bus(*HALFWAY, at(10, 14))])
+    a = by(part["rows"], line="341", stop="A")
+    b = by(part["rows"], line="237", stop="B")
+    assert a["leave_at"] == "2026-10-09T10:14:00+01:00"  # expected 10:19, 5 min walk to A
+    assert b["leave_at"] == "2026-10-09T10:08:00+01:00"  # timetabled 10:18, 10 min walk to B
+    star = bus_part(at(10, 14), walk=WalkTimes(bus={"*": 3}))[0]
+    assert by(star["rows"], line="237", stop="B")["leave_at"] == "2026-10-09T10:15:00+01:00"
+    none = bus_part(at(10, 14), walk=WalkTimes(train=5))[0]
+    assert all(r["leave_at"] is None for r in none["rows"])
+
+
+def test_a_timetable_only_bus():
+    part, lookups, _ = bus_part(at(10, 0))
+    row = by(part["rows"], line="237", stop="B")
+    assert (row["status"], row["status_text"], row["live"], row["expected"], row["expected_at"]) == (
+        "unknown", "Timetable only", False, None, None,
+    )
+    assert row["vehicle"] is None and row["minutes_late"] is None
+    assert row["strip"]["bus_at"] is None and row["strip"]["where"] == "No live position"
+    assert lookups[row["id"]]["bus"]["vehicle"] is None
+
+
+def test_the_bus_map_has_the_positioned_stops_and_the_bus():
+    part, lookups, _ = bus_part(at(10, 14), [bus(*HALFWAY, at(10, 14))])
+    row = by(part["rows"], line="341", stop="A")
+    found = lookups[row["id"]]["bus"]
+    assert (found["id"], found["line"], found["destination"], found["stop"]) == (row["id"], "341", "Hadfield", "A")
+    assert [(s["name"], s["time"], s["yours"]) for s in found["stops"]] == [
+        ("The Junction", "10:00", False), ("Grapes Inn", "10:02", False), ("Sunlaws Street", "10:04", False),
+        ("St Marys Road", "10:06", False), ("Arundel Street", "10:08", False), ("Henry Street", "10:10", True),
+        ("Howard Arms", "10:11", False),
+    ]
+    assert found["stops"][5]["lat"] == POSITIONS[HENRY_A].lat
+    assert found["vehicle"]["lat"] == HALFWAY[0] and found["vehicle"]["age_s"] == 0
+    assert found["where"] == "3 stops away"
+
+
+def test_stop_names_and_the_timetable():
+    part, _, _ = bus_part(at(10, 0))
+    assert part["stops"] == {"A": "Henry Street"}
+    assert part["timetable"] == {"state": "ready", "built": "2026-10-09T03:00:00+01:00", "valid_until": None,
+                                 "journeys": 2}
+    missing = buses_part(None, at(10, 0), status_block(note="Building"), timetable_block("building", None, LONDON),
+                         {"A": HENRY_A}, WALK)[0]
+    assert missing["stops"] == {"A": "Stop A"} and missing["rows"] == []
+    assert missing["timetable"] == {"state": "building", "built": None, "valid_until": None, "journeys": None}
+    with pytest.raises(ValueError):
+        timetable_block("lost", None, LONDON)
+
+
+def test_bus_observations_for_the_history():
+    found = live(at(10, 14), [bus(*HALFWAY, at(10, 14))])
+    seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, schedule(), True, None))}
+    late = seen["A|341|Hadfield", "10:10"]
+    assert (late.status, late.delay_min, late.live, late.departs_at, late.day) == (
+        "late", 9, True, datetime(2026, 10, 9, 10, 19), date(2026, 10, 9),
+    )
+    timetabled = seen["B|237|Ashton", "10:18"]
+    assert (timetabled.status, timetabled.delay_min, timetabled.live) == ("unknown", None, False)
+
+
+# Weather
+
+
+def conditions():
+    return parse_conditions(fixture("openmeteo_conditions.json"))
+
+
+def test_weather_now_hours_and_sun():
+    now = datetime(2026, 10, 9, 8, 20, tzinfo=LONDON)
+    part = weather_part(conditions(), now, status_block(), 50)
+    assert part["now"] == {"temperature": 9.7, "feels_like": 6.4, "code": 61, "text": "Light rain", "wind": 15,
+                           "gust": 31, "direction": 236, "is_day": True}
+    assert part["hours"][0]["start"] == "2026-10-09T08:00:00+01:00"  # the hour under way
+    assert len(part["hours"]) == 24
+    assert set(part["hours"][0]) == {"start", "temperature", "probability", "precipitation", "code", "text", "wind",
+                                     "is_day"}
+    assert part["sun"]["sunrise"].startswith("2026-10-09T07:")
+    assert part["sun"]["sunset"].startswith("2026-10-09T18:")
+
+
+def test_the_rain_sentence_uses_the_threshold():
+    now = datetime(2026, 10, 9, 8, 20, tzinfo=LONDON)
+    hours = conditions().hours
+    first_wet = next(h for h in hours if h.start + timedelta(hours=1) > now.replace(tzinfo=None)
+                     and h.probability is not None and h.probability >= 1)
+    assert weather_part(conditions(), now, status_block(), 1)["rain"] == (
+        f"Rain from {first_wet.start:%H:%M} ({first_wet.probability}%)"
+    )
+    assert weather_part(conditions(), now, status_block(), 100)["rain"] is None
+
+
+def test_no_weather_yet():
+    part = weather_part(None, datetime(2026, 10, 9, 8, 20, tzinfo=LONDON), status_block(), 50)
+    assert part == {"status": status_block(), "rain": None, "now": None, "hours": [], "sun": None}
+
+
+# The hub
+
+
+class Clock:
+    def __init__(self):
+        self.mono = 1000.0
+
+    def __call__(self):
+        return self.mono
+
+
+def hub(**kwargs):
+    stamps = iter(datetime(2026, 10, 9, 7, 0, tzinfo=LONDON) + timedelta(seconds=n) for n in range(10_000))
+    return Hub("Glossop", WALK, clock=lambda: next(stamps), **kwargs)
+
+
+def snapshot(h):
+    return json.loads(h.current()[1])
+
+
+def test_the_first_snapshot_has_every_section_empty():
+    h = hub()
+    body = snapshot(h)
+    assert list(body) == ["version", "generated_at", "title", "walk", "trains", "buses", "weather"]
+    assert body["version"] == 1 and body["title"] == "Glossop"
+    assert body["walk"] == {"train": 12, "bus": {"A": 5, "B": 10}}
+    assert body["trains"] is body["buses"] is body["weather"] is None
+
+
+def test_the_version_goes_up_only_when_the_content_changes():
+    h = hub()
+    assert h.publish("trains", {"rows": [1]}) == 2
+    first = snapshot(h)
+    assert h.publish("trains", {"rows": [1]}) == 2  # same content: same version
+    again = snapshot(h)
+    assert again["generated_at"] != first["generated_at"]  # but rebuilt, with the time
+    assert h.publish("buses", {"rows": []}) == 3
+    assert h.version == 3
+    with pytest.raises(ValueError):
+        h.publish("ferries", {})
+
+
+def test_the_snapshot_is_one_line_of_ascii_json():
+    h = hub()
+    h.publish("trains", {"messages": ["Café closed\nall day"]})
+    body = h.current()[1]
+    assert b"\n" not in body and body.isascii()
+    assert json.loads(body)["trains"]["messages"] == ["Café closed\nall day"]
+
+
+def test_wait_times_out_with_the_same_version():
+    h = hub()
+    started = time.monotonic()
+    assert h.wait(1, 0.05) == 1
+    assert time.monotonic() - started < 1
+
+
+def test_wait_returns_at_once_for_an_older_version():
+    h = hub()
+    h.publish("trains", {"rows": [1]})
+    assert h.wait(1, 5) == 2
+
+
+def test_wait_wakes_on_a_publish():
+    h = hub()
+    timer = threading.Timer(0.05, lambda: h.publish("weather", {"rain": None}))
+    timer.start()
+    started = time.monotonic()
+    assert h.wait(1, 5) == 2
+    assert time.monotonic() - started < 2
+    timer.join()
+
+
+def test_close_wakes_waiters():
+    h = hub()
+    threading.Timer(0.05, h.close).start()
+    started = time.monotonic()
+    assert h.wait(1, 5) == 1
+    assert time.monotonic() - started < 2 and h.closed
+
+
+def test_lookups_last_for_the_current_and_previous_snapshot_only():
+    h = hub()
+    h.publish("buses", {"rows": ["a"]}, {"aaaa": {"bus": 1}})
+    h.publish("trains", {"rows": ["t"]}, {"tttt": {"history": 2}})
+    h.publish("buses", {"rows": ["b"]}, {"bbbb": {"bus": 3}})
+    assert h.lookup("bbbb") == {"bus": 3}
+    assert h.lookup("aaaa") == {"bus": 1}  # gone from the board, but in the previous snapshot
+    assert h.lookup("tttt") == {"history": 2}
+    h.publish("buses", {"rows": ["c"]}, {"cccc": {"bus": 4}})
+    assert h.lookup("aaaa") is None
+    assert h.lookup("tttt") == {"history": 2}  # still on the board
+    assert h.lookup("nope") is None
+
+
+def test_an_unchanged_publish_keeps_the_previous_lookups():
+    h = hub()
+    h.publish("buses", {"rows": ["a"]}, {"aaaa": {"bus": 1}})
+    h.publish("buses", {"rows": ["b"]}, {"bbbb": {"bus": 2}})
+    h.publish("buses", {"rows": ["b"]}, {"bbbb": {"bus": 3}})
+    assert h.lookup("aaaa") == {"bus": 1}
+    assert h.lookup("bbbb") == {"bus": 3}  # the latest data for a row still on the board
+
+
+def test_touch_and_age_follow_the_clock():
+    mono = Clock()
+    h = hub(monotonic=mono)
+    assert not h.active(600)
+    h.touch()
+    mono.mono += 599
+    assert h.active(600) and h.age() == 599
+    mono.mono += 2
+    assert not h.active(600)
+    h.publish("weather", {})
+    assert h.age() == 0
