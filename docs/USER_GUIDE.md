@@ -40,7 +40,7 @@ Each line reads: *which train*, *scheduled time*, *destination*, *status*.
 | `Exp 07:49` | Running late; expected to leave at 07:49. |
 | `Delayed` | Late, but no expected time yet. |
 | `Cancelled`, on a highlighted bar | It isn't running. |
-| `-` | No information about this train yet. |
+| `No info` | No information about this train yet. |
 | `Leave by 07:05` | Set off at 07:05 to walk to the station and catch the train above it. It sits under the first train you can still reach, so if the 1st is too soon, it moves down to the 2nd. |
 
 **Buses (bottom half)**
@@ -65,7 +65,7 @@ Each line reads: *route*, *stop*, *destination*, *when to leave*, *when it goes*
 
 ### The plain look
 
-The same information in black on white, with red highlights. Someone may have switched to it on the settings page.
+The same information in black on white, with red highlights. The words are the same as the station board look; only where some of them sit differs. Someone may have switched to it on the settings page.
 
 ![The plain look on the Inky pHAT](guide/phat-plain.png)
 
@@ -75,10 +75,9 @@ The differences:
 |---|---|
 | `Upd 07:03` in the top bar | `UPDATED 07:03` at the bottom |
 | `Leave 07:05 (07:12)` next to TRAINS: leave at 07:05 for the 07:12 | `Leave by 07:05` under the train |
-| `+7` in red: 7 minutes late | `Exp 07:49` |
-| `CANC` on a black bar | `Cancelled` |
-| `?` | `-` |
-| `! STALE` in red next to TRAINS or BUSES | `NOT UPDATING: …` |
+| `+7` in the accent colour: 7 minutes late | `Exp 07:49` |
+| `Cancelled` on a black bar | `Cancelled` on a highlighted bar |
+| `! NOT UPDATING` in the accent colour, next to TRAINS or BUSES | `NOT UPDATING: …` at the bottom |
 
 The plain look shows 3 trains and 2 buses.
 
@@ -134,7 +133,9 @@ The settings page works from any phone or laptop on the home network.
 
 ![The settings page](guide/settings-page.png)
 
-If something isn't right, nothing is saved. A box at the top lists the problems; click one to jump to its field, where the error is shown in words.
+If something isn't right, nothing is saved. A box at the top lists the problems, each named by section and field (for example *Trains – Station code*); click one to jump to it, where the error is shown in words.
+
+What you save replaces what's in `config.toml`, including emptying a box: clearing *Only trains calling at* really does show every train again.
 
 ### What you can change
 
@@ -142,41 +143,42 @@ If something isn't right, nothing is saved. A box at the top lists the problems;
 
 - **Title:** shown in the plain look's top bar.
 - **Look:** station board or plain.
-- **Accent colour:** the look's own, yellow/amber, or red.
+- **Accent colour:** the look's own (amber for the station board, red for plain), or another that stays readable on the look's background. A colour too faint on the background isn't offered.
 - **Rotation:** if the display is mounted upside down (or, for the screen, on its side).
 - **Least minutes between redraws:** e-paper only. Lower means fresher but more wear and flicker; 2 is a good balance.
 
 **Trains**
 
 - **Station code:** 3 letters, `GLO` for Glossop.
-- **Only trains calling at:** for example `MAN`, so only trains to Manchester show.
+- **Only trains calling at:** for example `MAN`, so only trains to Manchester show. Empty shows every train.
 - **Trains shown**, **Check every (minutes)**, and **Say "not updating" after (minutes)**.
-- **When to check:** one window per line, written like `Mon-Fri 06:30-09:30`. Days can be `Mon-Sun`, `Sat,Sun`, `Mon-Fri` and so on.
-- **Walk to the station (minutes):** used for the leave time.
+- **When to check:** one window per line, written like `Mon-Fri 06:30-09:30`. Days can be `Mon-Sun`, `Sat,Sun`, `Mon-Fri`, or wrap round the week like `Fri-Mon`. A window can run past midnight: `Fri 22:00-01:00` runs from Friday night into Saturday morning.
+- **Walk to the station (minutes):** used for the leave time. Empty means no leave time.
 
 **Buses**
 
 - **Stops:** one per line, written `LABEL = ATCO code`, for example `A = 1000DGHS0900`. The label is the letter shown on the board. Find stop codes on [bustimes.org](https://bustimes.org): the code is the last part of a stop page's address.
-- **Only buses heading to:** optional, comma-separated, for example `Ashton, Hyde`.
+- **Only buses heading to:** optional, comma-separated, for example `Ashton, Hyde`. Empty shows every bus.
 - **Buses shown**, **Check every (minutes)**, **Say "not updating" after (minutes)**.
 - **Most hits a day:** a hard limit on bus lookups. The free TransportAPI plan allows 30 a day, and each check costs one per stop.
 - **When to check:** as for trains.
-- **Walk to each stop:** one per line (`A = 7`), or one number for every stop.
+- **Walk to each stop:** one per line (`A = 7`), or one number for every stop. Empty means no leave times.
 
 **Keys**
 
-Keys are never shown, only whether each one is set. To replace a key, paste the new one; leave a box empty to keep the current one.
+Keys are never shown, only whether each one is set. To replace a key, paste the new one; leave a box empty to keep the current one. The key boxes are ordinary text boxes, so you can check what you pasted before saving.
 
 ### When changes take effect
 
-- **E-paper:** within a minute or two (it never redraws more often than every 2 minutes).
+- **E-paper:** within a few minutes (it never redraws more often than every 2 minutes). Changing the look, accent colour or rotation redraws it too.
 - **HDMI screen:** within a second. If you change the rotation or accent colour, the screen restarts itself, which takes about 10 seconds.
 
 Two things aren't on the page and are changed in `config.toml` on the Pi: the type of display, and the stop list for the bus position page.
 
 ### If you can't sign in
 
-- **"That password isn't right":** after 5 wrong tries, that device is locked out for 15 minutes.
+- **"That password isn't right":** after 5 wrong tries, that device is locked out for 15 minutes and sees "Too many attempts. Try again in 15 minutes."
+- **"Busy, try again in a moment":** a few sign-ins were being checked at once; try again.
 - **"Set a password first":** no password has been set yet; see [Setting up the settings page](#the-settings-page).
 - **Forgotten password:** set a new one on the Pi (same command as when setting it up).
 - **"Forbidden":** the page only answers devices on the home network, using its local name or address. It won't work over mobile data or a VPN to elsewhere.
