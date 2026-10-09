@@ -812,9 +812,12 @@ COMING_IN = [JUNCTION, GRAPES, SUNLAWS, ST_MARYS_E, ARUNDEL]  # 10:00 to 10:08
 LEFT_JUNCTION = datetime(2026, 10, 9, 9, 0, tzinfo=timezone.utc)  # 10:00 BST
 
 
-def _doc(journeys, places=PLACES):
+def _doc(journeys, places=PLACES, ends=None):
     """A TransXChange document of (code, line, departure, stops) journeys, two
-    minutes between stops, placing the stops it has in `places`."""
+    minutes between stops, placing the stops it has in `places`. Each journey
+    is a service of its own, running every day from 1 January 2026 until its
+    date in `ends` (by code), if any."""
+    ends = ends or {}
     atcos = sorted({atco for *_, calls in journeys for atco in calls})
     stops = "".join(
         f"<AnnotatedStopPointRef><StopPointRef>{atco}</StopPointRef>"
@@ -834,13 +837,17 @@ def _doc(journeys, places=PLACES):
         + "</JourneyPatternSection>"
         for i, (*_, calls) in enumerate(journeys)
     )
-    lines = "".join(f'<Line id="L{line}"><LineName>{line}</LineName></Line>' for line in sorted({j[1] for j in journeys}))
-    patterns = "".join(
+    services = "".join(
+        f'<Service><ServiceCode>S{i}</ServiceCode><Lines><Line id="L{line}"><LineName>{line}</LineName></Line></Lines>'
+        f"<OperatingPeriod><StartDate>2026-01-01</StartDate>"
+        f"{f'<EndDate>{ends[code]}</EndDate>' if code in ends else ''}</OperatingPeriod>"
+        f"<RegisteredOperatorRef>o1</RegisteredOperatorRef><StandardService>"
         f'<JourneyPattern id="p{i}"><JourneyPatternSectionRefs>s{i}</JourneyPatternSectionRefs></JourneyPattern>'
-        for i in range(len(journeys))
+        f"</StandardService></Service>"
+        for i, (code, line, *_) in enumerate(journeys)
     )
     vehicle_journeys = "".join(
-        f"<VehicleJourney><VehicleJourneyCode>{code}</VehicleJourneyCode><ServiceRef>S1</ServiceRef>"
+        f"<VehicleJourney><VehicleJourneyCode>{code}</VehicleJourneyCode><ServiceRef>S{i}</ServiceRef>"
         f"<LineRef>L{line}</LineRef><JourneyPatternRef>p{i}</JourneyPatternRef>"
         f"<DepartureTime>{departure}</DepartureTime></VehicleJourney>"
         for i, (code, line, departure, _) in enumerate(journeys)
@@ -850,11 +857,7 @@ def _doc(journeys, places=PLACES):
  <StopPoints>{stops}</StopPoints>
  <JourneyPatternSections>{sections}</JourneyPatternSections>
  <Operators><Operator id="o1"><NationalOperatorCode>BNML</NationalOperatorCode></Operator></Operators>
- <Services><Service><ServiceCode>S1</ServiceCode><Lines>{lines}</Lines>
-  <OperatingPeriod><StartDate>2026-01-01</StartDate></OperatingPeriod>
-  <RegisteredOperatorRef>o1</RegisteredOperatorRef>
-  <StandardService>{patterns}</StandardService>
- </Service></Services>
+ <Services>{services}</Services>
  <VehicleJourneys>{vehicle_journeys}</VehicleJourneys>
 </TransXChange>""".encode()
 
@@ -920,6 +923,17 @@ def test_the_bus_coming_in_to_the_stand_is_the_inbound_bus_and_never_a_departure
     }
     observed = bus_observations(BusBoard(rows, schedule, True, None, placed))
     assert [o.identity for o in observed] == [rows[0].key]
+
+
+def test_inbound_only_journeys_never_set_valid_until():
+    # Their timetable ending can't make the board's run out.
+    document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD]), ("in", "237", "10:00:00", COMING_IN + [MARKET_HALL])],
+                    ends={"in": "2026-10-20"})
+    schedule, _ = _build(document, naptan=PLACES)
+    assert _codes(schedule) == [("out", False), ("in", True)]
+    assert schedule.valid_until is None
+    ending, _ = _build(_doc([("out", "237", "10:15:00", [STOP_A, HOWARD])], ends={"out": "2026-10-20"}), naptan=PLACES)
+    assert ending.valid_until == date(2026, 10, 20)
 
 
 def test_a_stand_400_m_away_is_not_kept():
