@@ -156,6 +156,7 @@ What you save replaces what's in `config.toml`, including emptying a box: cleari
 - **Look:** station board or plain.
 - **Accent colour:** the look's own (amber for the station board, red for plain), or another that stays readable on the look's background. A colour too faint on the background isn't offered.
 - **Rotation:** if the display is mounted upside down (or, for the screen, on its side).
+- **Text size:** the plain look only. *Slightly bigger* and up show fewer departures on a small display.
 - **Least minutes between redraws:** e-paper only. Lower means fresher but more wear and flicker; 2 is a good balance.
 
 **Trains**
@@ -234,6 +235,10 @@ Step-by-step install commands are in the [README](../README.md#2-install-on-the-
 | Runs as | `departureboard.timer` | `departureboard.timer` | `departureboard-screen.service` |
 
 The Waveshare panel also needs `dtoverlay=spi0-0cs` in `/boot/firmware/config.txt`.
+
+**An original Inky pHAT** (before 2019) is smaller, 212×104, and has no chip the board can detect it by: set `display = "inky-phat-v1"` and `panel_colour = "red"`, `"yellow"` or `"black"`. It also needs `dtoverlay=spi0-0cs`. On a display that small the plain look (`theme = "plain"`), black on white, is the easiest to read; `text_size = 12` makes it a little bigger and still shows 2 trains and 1 bus.
+
+**Updating** an installed board: copy the repo to the Pi and run `sudo ./deploy/update.sh` from it (add `--config FILE` to replace the config too). It installs the new code and redraws straight away.
 
 ### Keys
 
