@@ -18,6 +18,9 @@ from .view import BoardView, Row, Section, Style
 MARGIN = 3
 _LINE = 11
 _TOP = 2
+# Space either side of the dotted divider between trains and buses.
+_ABOVE_RULE = 4
+_BELOW_RULE = 7
 _COL_GAP = 5
 _ORDINALS = ("1st", "2nd", "3rd", "4th")
 _MAX_TRAINS = 3
@@ -111,10 +114,10 @@ def _footer(layout: SignLayout, view: BoardView) -> None:
 def sign_layout(view: BoardView) -> SignLayout:
     layout = SignLayout()
     y = _trains(layout, view.trains, _TOP)
-    rule = y
+    rule = y + _ABOVE_RULE - 2  # each line already carries 2 dots of leading
     layout.rules.append(rule)
     footer_top = HEIGHT - GLYPH_H - 3
-    _buses(layout, view.buses, rule + 4, footer_top)
+    _buses(layout, view.buses, rule + _BELOW_RULE, footer_top)
     _footer(layout, view)
     return layout
 

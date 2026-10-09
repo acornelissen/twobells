@@ -128,3 +128,19 @@ def test_mono_panel_falls_back_to_white_text():
     mono = Palette(white=0, black=1, accent=1)
     counts = {c: n for n, c in render_sign(board(TRAINS), mono).getcolors()}
     assert mono.white in counts
+
+
+def test_trains_and_buses_have_breathing_room_around_the_divider():
+    layout = sign_layout(board(TRAINS, BUSES, leave="Leave by 07:05"))
+    last_train_bottom = find(layout.items, "3rd").y + 9
+    first_bus_top = find(layout.items, "341").y
+    [rule] = layout.rules
+    assert rule - last_train_bottom >= 4
+    assert first_bus_top - rule >= 6
+
+
+def test_buses_still_clear_the_footer_with_a_full_board():
+    rows = BUSES + [Row("237", "Ashton", "07:41", leave="leave 07:34", stop="A")]
+    items = sign_layout(board(TRAINS, rows, leave="Leave by 07:05")).items
+    last_bus_bottom = find(items, "237").y + 9
+    assert last_bus_bottom < find(items, "Updated 07:03").y - 2
