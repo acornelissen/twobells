@@ -1,0 +1,232 @@
+import stat
+from pathlib import Path
+
+import pytest
+
+from departureboard.config import ConfigError
+from departureboard.dashconfig import (
+    DashboardOptions,
+    dashboard_options,
+    default_state_dir,
+    load_dashboard,
+)
+from departureboard.darwin import DarwinSource
+from departureboard.bodsbus import BodsBusSource
+from departureboard.weather import OpenMeteoSource
+
+ENV = {"RDM_API_KEY": "rail-key", "BODS_API_KEY": "bods-key", "TAPI_APP_ID": "id", "TAPI_APP_KEY": "tapi-key"}
+
+CONFIG = """
+title = "Glossop"
+state_file = "{board}/state.json"
+[train]
+crs = "GLO"
+filter_crs = "man"
+rows = 3
+walk_minutes = 12
+[bus]
+source = "bods"
+operators = ["BNML"]
+rows = 2
+walk_minutes = {{ A = 5 }}
+[bus.stops]
+A = "1000DGHS0900"
+[weather]
+lat = 53.44
+lon = -1.95
+threshold_percent = 60
+"""
+
+
+@pytest.fixture
+def config(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(CONFIG.format(board=tmp_path / "board"))
+    return path
+
+
+@pytest.fixture
+def opened():
+    loaded = []
+    yield loaded
+    for dash in loaded:
+        dash.close()
+
+
+def load(config, folder, env=ENV, opened=None):
+    dash = load_dashboard(config, env, folder)
+    if opened is not None:
+        opened.append(dash)
+    return dash
+
+
+# The [dashboard] table
+
+
+def test_defaults_without_a_dashboard_table():
+    options = dashboard_options({})
+    assert options == DashboardOptions()
+    assert (options.train_rows, options.bus_rows) == (10, 10)
+    assert (options.train_interval_seconds, options.bus_interval_seconds, options.weather_interval_minutes) == (
+        60, 30, 30,
+    )
+    assert (options.late_minutes_train, options.late_minutes_bus, options.history_days) == (3, 2, 90)
+    assert options.allowed_hosts == frozenset()
+    [window] = options.quiet_windows
+    assert window.days == frozenset(range(7))
+    assert (str(window.start), str(window.end)) == ("01:00:00", "05:00:00")
+
+
+def test_reads_every_setting():
+    options = dashboard_options({"dashboard": {
+        "state_dir": "/data", "train_rows": 20, "bus_rows": 1, "train_interval_seconds": 30,
+        "bus_interval_seconds": 15, "weather_interval_minutes": 10, "quiet_windows": ["Mon-Fri 00:30-05:30"],
+        "late_minutes_train": 5, "late_minutes_bus": 1, "history_days": 30,
+        "allowed_hosts": ["Departures.Example.com", "nas"],
+    }})
+    assert options.state_dir == "/data"
+    assert (options.train_rows, options.bus_rows) == (20, 1)
+    assert options.quiet_windows[0].days == frozenset(range(5))
+    assert options.allowed_hosts == frozenset({"departures.example.com", "nas"})
+
+
+@pytest.mark.parametrize("key, value, words", [
+    ("train_rows", 0, "train_rows must be a whole number from 1 to 20"),
+    ("bus_rows", 21, "bus_rows must be a whole number from 1 to 20"),
+    ("train_rows", True, "train_rows"),
+    ("train_interval_seconds", 29, "train_interval_seconds must be a whole number from 30"),
+    ("bus_interval_seconds", 14, "bus_interval_seconds must be a whole number from 15"),
+    ("weather_interval_minutes", 9, "weather_interval_minutes must be a whole number from 10"),
+    ("weather_interval_minutes", "30", "weather_interval_minutes"),
+    ("quiet_windows", "Mon-Sun 01:00-05:00", "quiet_windows must be a list of text"),
+    ("quiet_windows", ["nightly"], "Unrecognised window"),
+    ("late_minutes_train", 0, "late_minutes_train"),
+    ("late_minutes_bus", 61, "late_minutes_bus"),
+    ("history_days", 0, "history_days"),
+    ("state_dir", "", "state_dir must be a folder path"),
+    ("state_dir", 7, "state_dir must be a folder path"),
+    ("allowed_hosts", "nas", "allowed_hosts must be a list of text"),
+    ("allowed_hosts", ["*.example.com"], "not a host name"),
+    ("allowed_hosts", ["nas:8090"], "not a host name"),
+    ("allowed_hosts", ["http://nas"], "not a host name"),
+    ("allowed_hosts", ["nas..local"], "not a host name"),
+    ("allowed_hosts", ["-nas"], "not a host name"),
+    ("allowed_hosts", [""], "not a host name"),
+    ("train_details", "auto", "unknown settings: train_details"),
+])
+def test_bad_settings_are_named(key, value, words):
+    with pytest.raises(ConfigError, match="dashboard") as error:
+        dashboard_options({"dashboard": {key: value}})
+    assert words in str(error.value)
+
+
+def test_dashboard_must_be_a_table():
+    with pytest.raises(ConfigError, match=r"\[dashboard\] must be a table"):
+        dashboard_options({"dashboard": 3})
+
+
+def test_default_state_folder_on_a_mac_and_elsewhere(tmp_path):
+    home = Path("/home/me")
+    mac = default_state_dir("darwin", {}, home)
+    assert mac == home / "Library" / "Application Support" / "departureboard-dashboard"
+    assert default_state_dir("linux", {}, home) == home / ".local" / "state" / "departureboard-dashboard"
+    xdg = default_state_dir("linux", {"XDG_STATE_HOME": "/var/state"}, home)
+    assert xdg == Path("/var/state/departureboard-dashboard")
+    # A relative XDG_STATE_HOME is ignored, as the spec says.
+    assert default_state_dir("linux", {"XDG_STATE_HOME": "state"}, home) == home / ".local/state/departureboard-dashboard"
+
+
+# Loading
+
+
+def test_loads_the_free_sources_with_the_dashboard_s_rows(config, tmp_path, opened):
+    folder = tmp_path / "dash"
+    dash = load(config, folder, opened=opened)
+
+    assert dash.title == "Glossop"
+    assert dash.state_dir == folder
+    assert isinstance(dash.train, DarwinSource)
+    assert dash.train.with_details
+    assert "GetDepBoardWithDetails/GLO?numRows=10&filterCrs=man" in dash.train._url()
+    assert (dash.train_crs, dash.train_filter) == ("GLO", "MAN")
+    assert isinstance(dash.bus, BodsBusSource)
+    assert dash.bus._rows == 10
+    assert dash.bus_stops == {"A": "1000DGHS0900"}
+    assert isinstance(dash.weather, OpenMeteoSource)
+    assert dash.rain_threshold == 60
+    assert dash.walk.train == 12 and dash.walk.bus == {"A": 5}
+
+
+def test_the_bus_timetable_lives_in_the_dashboard_s_folder(config, tmp_path, opened):
+    folder = tmp_path / "dash"
+    dash = load(config, folder, opened=opened)
+    assert dash.bus._folder == folder
+    assert dash.bus_upkeep is not dash.bus and dash.bus_upkeep._folder == folder
+
+
+def test_transportapi_keys_are_dropped_so_there_is_no_fallback(config, tmp_path, opened):
+    dash = load(config, tmp_path / "dash", opened=opened)
+    assert dash.bus._fallback is None
+    assert dash.bus_upkeep._fallback is None
+
+
+def test_the_bus_must_come_from_bods(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[bus]\nrows = 2\n[bus.stops]\nA = "1000DGHS0900"\n')
+    with pytest.raises(ConfigError, match='source = "bods"'):
+        load_dashboard(path, ENV, tmp_path / "dash")
+
+
+def test_sections_left_out_are_none(tmp_path, opened):
+    path = tmp_path / "config.toml"
+    path.write_text('title = "Weather only"\n[weather]\nlat = 53.4\nlon = -1.9\n')
+    dash = load(path, tmp_path / "dash", env={}, opened=opened)
+    assert dash.train is None and dash.bus is None and dash.bus_upkeep is None
+    assert dash.weather is not None
+
+
+def test_missing_keys_are_a_config_error(config, tmp_path):
+    with pytest.raises(ConfigError, match="RDM_API_KEY"):
+        load_dashboard(config, {"BODS_API_KEY": "k"}, tmp_path / "dash")
+
+
+def test_state_dir_comes_from_the_table_unless_overridden(tmp_path, opened):
+    path = tmp_path / "config.toml"
+    path.write_text(f'[dashboard]\nstate_dir = "{tmp_path / "from-config"}"\n')
+    assert load(path, None, env={}, opened=opened).state_dir == tmp_path / "from-config"
+    opened.pop().close()
+    assert load(path, tmp_path / "flag", env={}, opened=opened).state_dir == tmp_path / "flag"
+
+
+def test_creates_the_folder_for_its_owner_only(config, tmp_path, opened):
+    folder = tmp_path / "new" / "dash"
+    load(config, folder, opened=opened)
+    assert stat.S_IMODE(folder.stat().st_mode) == 0o700
+
+
+def test_refuses_the_board_s_state_folder(config, tmp_path):
+    with pytest.raises(ConfigError, match="board's state folder"):
+        load_dashboard(config, ENV, tmp_path / "board")
+
+
+def test_refuses_any_folder_holding_a_board_state_file(config, tmp_path):
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "state.json").write_text("{}")
+    with pytest.raises(ConfigError, match="state.json"):
+        load_dashboard(config, ENV, other)
+
+
+def test_refuses_a_file_as_the_folder(config, tmp_path):
+    (tmp_path / "file").write_text("")
+    with pytest.raises(ConfigError, match="not a folder"):
+        load_dashboard(config, ENV, tmp_path / "file")
+
+
+def test_one_dashboard_per_folder(config, tmp_path, opened):
+    folder = tmp_path / "dash"
+    first = load(config, folder, opened=opened)
+    with pytest.raises(ConfigError, match="Another dashboard"):
+        load_dashboard(config, ENV, folder)
+    first.close()
+    load(config, folder, opened=opened)  # free again once the first lets go
