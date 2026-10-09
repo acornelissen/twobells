@@ -223,7 +223,8 @@ def run_once(
     last_at = from_iso(last.get("at"))
     key = _render_key(shown, board.theme, display)
     changed = key != last.get("signature")
-    too_soon = not live and last_at is not None and now - last_at < board.min_redraw
+    # A last redraw in the future means the clock went back (summer time ending): not too soon.
+    too_soon = not live and last_at is not None and timedelta(0) <= now - last_at < board.min_redraw
 
     if changed and not too_soon:
         draw = board.theme.render_route if page == "route" else board.theme.render

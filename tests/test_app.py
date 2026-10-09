@@ -591,3 +591,13 @@ def test_turning_a_real_inky_round_redraws_it():
     run_once(board, state, InkyDisplay(device=Inky()), THU_0700)
     assert not run_once(board, state, InkyDisplay(device=Inky()), THU_0700 + timedelta(minutes=2)).rendered
     assert run_once(board, state, InkyDisplay(device=Inky(), rotate_180=True), THU_0700 + timedelta(minutes=4)).rendered
+
+
+def test_clock_going_back_an_hour_does_not_pause_the_board():
+    # At the end of summer time the local clock goes from 01:59 back to 01:00.
+    trains, board, display, state = minutely()
+    run_once(board, state, display, THU_0700.replace(hour=7, minute=59))
+    trains.departures = [train("08:30", expected="08:37", status=Status.LATE)]
+    result = run_once(board, state, display, THU_0700)
+    assert trains.calls == 2
+    assert result.rendered

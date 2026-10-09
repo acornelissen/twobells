@@ -63,5 +63,9 @@ class PollPolicy:
     def is_due(self, now: datetime, last_fetch: datetime | None) -> bool:
         if not self.is_active(now):
             return False
+        if last_fetch is None or last_fetch > now:
+            # Never fetched, or the clock went back (summer time ending): fetch now
+            # rather than wait an hour for the clock to catch up.
+            return True
         slack = min(_SLACK, self.interval / 10)
-        return last_fetch is None or now - last_fetch >= self.interval - slack
+        return now - last_fetch >= self.interval - slack

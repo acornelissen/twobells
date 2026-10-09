@@ -103,3 +103,8 @@ def test_window_can_run_past_midnight_into_the_next_morning():
 def test_day_range_can_wrap_around_the_week():
     assert parse_window("Fri-Mon 07:00-09:00").days == frozenset({4, 5, 6, 0})
     assert parse_window("Sun-Sun 07:00-09:00").days == frozenset({6})
+
+
+def test_due_when_the_clock_has_gone_back():
+    # At the end of summer time 01:59 BST is followed by 01:00 GMT.
+    assert policy().is_due(THU_0700, last_fetch=THU_0700 + timedelta(minutes=59))
