@@ -249,3 +249,12 @@ def test_cancelled_row_keeps_its_status_whole_on_the_phat():
     layout = row_layout(row, fonts)
     assert layout.middle_x + fonts.regular.getlength(layout.middle) < layout.right_x
     assert layout.right_x + fonts.bold.getlength("Cancelled") <= WIDTH
+
+
+def test_plain_look_fits_the_waveshare_panel_height():
+    # 122 design pixels at 4x is 488, taller than the 480 panel: the last bus row was cut off.
+    trains = [Row(f"07:{m}", "Manchester Piccadilly", "On time") for m in (12, 42, 52)]
+    rows = [Row("341", "A: Hyde", "07:20"), Row("61", "B: Buxton", "07:35 sch")]
+    image = render(board(trains, rows, train_leave="Leave 07:05 (07:12)"), PALETTE, WAVESHARE_10IN85G)
+    bottom = [image.getpixel((x, y)) for x in range(WAVESHARE_10IN85G.width) for y in range(476, 480)]
+    assert PALETTE.black not in bottom

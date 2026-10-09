@@ -110,11 +110,17 @@ def fit_text(text: str, font: ImageFont.FreeTypeFont, width: float) -> str:
     return text.rstrip() + "…"
 
 
+def plain_scale(panel: Panel) -> int:
+    """Whole steps up from the pHAT design that still fit the panel's height:
+    the 10.85" panel's dot scale of 4 would need 488 of its 480 rows."""
+    return max(1, min(panel.scale, panel.height // HEIGHT))
+
+
 class _Painter:
     def __init__(self, palette: Palette, fonts: Fonts, panel: Panel) -> None:
         self.p = palette
         self.f = fonts
-        self.s = panel.scale
+        self.s = plain_scale(panel)
         self.width = panel.width
         self.image = Image.new("P", panel.size, palette.white)
         self.draw = ImageDraw.Draw(self.image)
@@ -184,7 +190,7 @@ class _Painter:
 
 
 def render(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Image.Image:
-    s = panel.scale
+    s = plain_scale(panel)
     painter = _Painter(palette, load_fonts(s), panel)
     painter.header(view)
     y = painter.section(view.trains, (_HEADER_H + _SECTION_GAP) * s)
@@ -196,7 +202,8 @@ def render(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Image.Imag
 
 def render_route(view: RouteView, palette: Palette, panel: Panel = PHAT) -> Image.Image:
     """The bus's position on the stops before yours, in the plain look."""
-    s, pad = panel.scale, _PAD * panel.scale
+    s = plain_scale(panel)
+    pad = _PAD * s
     f = load_fonts(s)
     image = Image.new("P", panel.size, palette.white)
     draw = ImageDraw.Draw(image)
