@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 import pytest
 
@@ -108,3 +108,37 @@ def test_day_range_can_wrap_around_the_week():
 def test_due_when_the_clock_has_gone_back():
     # At the end of summer time 01:59 BST is followed by 01:00 GMT.
     assert policy().is_due(THU_0700, last_fetch=THU_0700 + timedelta(minutes=59))
+
+
+# Monday 31 August 2026 is the summer bank holiday in England and Wales.
+BANK_HOLIDAY = date(2026, 8, 31)
+HOLIDAY_MONDAY_0700 = datetime(2026, 8, 31, 7, 0)
+
+
+def test_a_bank_holiday_is_treated_like_a_sunday():
+    weekdays = PollPolicy((parse_window("Mon-Fri 06:45-09:00"),), timedelta(minutes=2), frozenset({BANK_HOLIDAY}))
+    sundays = PollPolicy((parse_window("Sun 06:45-09:00"),), timedelta(minutes=2), frozenset({BANK_HOLIDAY}))
+    assert not weekdays.is_active(HOLIDAY_MONDAY_0700)
+    assert not weekdays.is_due(HOLIDAY_MONDAY_0700, last_fetch=None)
+    assert sundays.is_active(HOLIDAY_MONDAY_0700)
+    # The day after is an ordinary Tuesday.
+    assert weekdays.is_active(HOLIDAY_MONDAY_0700 + timedelta(days=1))
+    assert not sundays.is_active(HOLIDAY_MONDAY_0700 + timedelta(days=1))
+
+
+def test_without_bank_holidays_a_holiday_monday_is_a_monday():
+    weekdays = PollPolicy((parse_window("Mon-Fri 06:45-09:00"),), timedelta(minutes=2))
+    assert weekdays.is_active(HOLIDAY_MONDAY_0700)
+
+
+def test_a_window_past_midnight_follows_the_bank_holiday_it_started_on():
+    holidays = frozenset({BANK_HOLIDAY})
+    weekdays = PollPolicy((parse_window("Mon-Fri 22:00-01:00"),), timedelta(minutes=2), holidays)
+    sundays = PollPolicy((parse_window("Sun 22:00-01:00"),), timedelta(minutes=2), holidays)
+    tuesday_0030 = datetime(2026, 9, 1, 0, 30)
+    assert not weekdays.is_active(HOLIDAY_MONDAY_0700.replace(hour=23))
+    assert not weekdays.is_active(tuesday_0030)
+    assert sundays.is_active(HOLIDAY_MONDAY_0700.replace(hour=23))
+    assert sundays.is_active(tuesday_0030)
+    # Sunday night itself still runs into the holiday morning.
+    assert sundays.is_active(datetime(2026, 8, 31, 0, 30))
