@@ -197,6 +197,49 @@ def test_probe_train_reports_http_errors_on_one_line(tmp_path, monkeypatch, caps
     assert "Traceback" not in out
 
 
+@pytest.fixture
+def train_probe(tmp_path, monkeypatch):
+    """A train config, and a fake Darwin that answers with the real detailed
+    Glossop board and records the URLs asked for."""
+    from departureboard import darwin
+
+    board = json.loads((Path(__file__).parent / "fixtures" / "ldbws_glossop_details.json").read_text())
+    urls = []
+    monkeypatch.setattr(darwin, "get_json", lambda url, headers: urls.append(url) or board)
+    monkeypatch.setattr(darwin, "get_json_capped", lambda url, headers, max_bytes: urls.append(url) or board)
+    config = tmp_path / "config.toml"
+    config.write_text('[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    secrets = tmp_path / "secrets.env"
+    secrets.write_text("RDM_API_KEY=k\n")
+    return ["--config", str(config), "--secrets", str(secrets)], urls
+
+
+def test_probe_train_details_prints_coaches_and_calling_points(train_probe, capsys):
+    args, urls = train_probe
+    assert main(["probe", "train", "--details", *args]) == 0
+    out = capsys.readouterr().out
+    assert ["/GetDepBoardWithDetails/GLO" in url for url in urls] == [True]
+    assert "22:22  Manchester Piccadilly" in out
+    assert "Northern from Hadfield, 3 coaches" in out
+    assert "    22:36  Newton for Hyde" in out and "On time" in out
+
+
+def test_probe_train_without_details_is_unchanged(train_probe, capsys):
+    args, urls = train_probe
+    assert main(["probe", "train", *args]) == 0
+    out = capsys.readouterr().out
+    assert ["/GetDepartureBoard/GLO" in url for url in urls] == [True]
+    assert "22:22  Northern   Manchester Piccadilly" in out
+    assert "coaches" not in out and "Newton for Hyde" not in out
+
+
+def test_probe_details_is_for_trains_only(probe_env, capsys):
+    args, calls = probe_env
+    assert main(["probe", "bus", *args, "--details"]) == 2
+    assert "trains only" in capsys.readouterr().err
+    assert calls == []
+
+
 def test_emulate_primes_the_first_tick(monkeypatch):
     import departureboard.cli as cli
 

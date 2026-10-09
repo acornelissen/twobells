@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo
 from .app import run_loop, run_once
 from .bodsbus import BodsBusSource
 from .config import ConfigError, load_config, overlay_paths, read_config, state_dir
+from .darwin import DarwinSource, TrainBoard
 from .display import DISPLAY_PANELS, PngDisplay, open_display
 from .holidays import bank_holidays
 from .emulation import build_emulation
@@ -114,6 +115,33 @@ def _print_departures(departures: list[Departure], indent: str = "") -> None:
             f"{indent}{dep.scheduled}  {dep.service:<10} {dep.destination:<28} "
             f"{dep.status.value} {dep.expected or ''}".rstrip()
         )
+
+
+def _print_trains(board: TrainBoard) -> None:
+    """Each train from the detailed board, then the stops it calls at after
+    this one. Darwin's text was cleaned when parsed, so it is safe to print."""
+    for train in board.services:
+        dep = train.departure
+        coaches = f"{train.length} coaches" if train.length else "coaches not known"
+        print(f"{dep.scheduled}  {dep.destination:<28} {dep.status.value} {dep.expected or ''}".rstrip())
+        print(f"  {dep.service} from {train.origin or 'origin not known'}, {coaches}")
+        for reason in (train.cancel_reason, train.delay_reason):
+            if reason:
+                print(f"  {reason}")
+        for stop in train.calling_points:
+            state = "cancelled" if stop.cancelled else (stop.actual or stop.expected or "")
+            print(f"    {stop.scheduled}  {stop.name:<28} {state}".rstrip())
+
+
+def _probe_train_details(source: DarwinSource) -> int:
+    source.with_details = True
+    try:
+        board = source.fetch_board()
+    except Exception as error:  # noqa: BLE001 - one readable line, not a traceback
+        print(f"error: {error}")
+        return 1
+    _print_trains(board)
+    return 0
 
 
 def _probe_bus(source, save_dir: str | None) -> int:
@@ -345,10 +373,15 @@ def _web(args) -> int:
 
 
 def _probe(args) -> int:
+    if args.details and args.source != "train":
+        print("--details is for trains only", file=sys.stderr)
+        return 2
     settings = _settings(args, _parse_stops(args.stop), only={args.source})
     for config in settings.board.sources:
         if config.source.name != args.source:
             continue
+        if args.details and isinstance(config.source, DarwinSource):
+            return _probe_train_details(config.source)
         if isinstance(config.source, TransportApiBusSource):
             return _probe_bus(config.source, args.save)
         if isinstance(config.source, BodsBusSource):
@@ -480,6 +513,9 @@ def _parser() -> argparse.ArgumentParser:
         "--stop", action="append", metavar="LABEL=ATCO", help="bus stop(s) to probe instead of config"
     )
     probe.add_argument("--save", metavar="DIR", help="save raw bus responses as JSON")
+    probe.add_argument(
+        "--details", action="store_true", help="trains with coaches and calling points (GetDepBoardWithDetails)"
+    )
     probe.set_defaults(handler=_probe)
 
     tt = with_config(sub.add_parser("timetable", help="build the BODS bus timetable for your stops, if due"))
