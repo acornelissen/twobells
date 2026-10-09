@@ -381,3 +381,17 @@ def test_watcher_keeps_running_settings_through_a_broken_hand_edit(tmp_path, bro
     assert watcher() is None
     config.write_text(good.replace("Before", "Mended"))
     assert watcher().title == "Mended"
+
+
+def test_settings_page_starts_even_when_saved_settings_are_broken(tmp_path, monkeypatch):
+    # The page is how the owner fixes a broken settings.toml, so it must still start.
+    import getpass
+
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "settings.toml").write_text("title = \n")
+    config = tmp_path / "config.toml"
+    config.write_text(f'state_file = "{state / "state.json"}"\n')
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": "a long enough password")
+    assert main(["web", "--config", str(config), "--set-password"]) == 0
+    assert (state / "web.json").exists()

@@ -282,10 +282,11 @@ def _web(args) -> int:
     from importlib.resources import files
 
     from . import web
-    from .config import read_config, state_dir
+    from .config import read_base, state_dir
     from .settingsform import SettingsForm
 
-    folder = state_dir(read_config(args.config))
+    # config.toml alone: a broken settings.toml must not stop the page that fixes it.
+    folder = state_dir(read_base(args.config))
     if folder is None:
         print("config.toml needs a state_file; the settings page saves beside it", file=sys.stderr)
         return 2
