@@ -10,6 +10,13 @@ state.json
 bank-holidays.json
 bus-timetable.json
 bus-timetable.tmp
+# Settings page password hash, atomic-write leftovers, dashboard state (dev runs keep state here)
+web.json
+*.tmp
+*.sqlite3
+*.sqlite3-*
+dashboard-state.json
+dashboard.lock
 settings.toml
 /preview.png
 config.toml
