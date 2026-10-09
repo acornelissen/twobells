@@ -501,6 +501,58 @@ def test_without_a_notice_the_phat_footer_is_unchanged():
     ).tobytes()
 
 
+RAIN = "Rain from 07:10 (70%)"
+
+
+def test_rain_line_shares_the_footer_with_updated():
+    items = sign_layout(dataclasses.replace(board(TRAINS, BUSES), rain=RAIN)).items
+    rain, updated = find(items, RAIN), find(items, "Updated 07:03")
+    assert rain.small and updated.small and rain.y == updated.y
+    assert rain.x == MARGIN
+    assert updated.x + item_size(updated)[0] == WIDTH - MARGIN
+    assert rain.x + item_size(rain)[0] + 5 <= updated.x
+
+
+def test_rain_line_keeps_updated_beside_the_badge_on_the_phat():
+    items = sign_layout(dataclasses.replace(board(stale_trains=True, stale_buses=True), rain=RAIN)).items
+    updated, badge = find(items, "Updated 07:03"), find(items, "Not updating: trains, buses")
+    assert find(items, RAIN).x + item_size(find(items, RAIN))[0] + 5 <= updated.x
+    assert updated.x + item_size(updated)[0] + 5 <= badge.x - 2
+
+
+def test_rain_line_drops_updated_when_both_do_not_fit():
+    view = dataclasses.replace(board(stale_trains=True, stale_buses=True), rain=RAIN)
+    items = sign_layout(view, 200, HEIGHT).items  # a narrower board than any panel
+    assert "Updated 07:03" not in texts(items)
+    [rain] = [i for i in items if i.text.startswith("Rain")]
+    badge = find(items, "Not updating: trains, buses")
+    assert rain.x + item_size(rain)[0] + 5 <= badge.x - 2
+
+
+def test_rain_line_keeps_updated_beside_a_badge_when_there_is_room():
+    width, height = dots(WAVESHARE_10IN85G)
+    items = sign_layout(dataclasses.replace(board(stale_buses=True), rain=RAIN), width, height).items
+    rain, updated, badge = find(items, RAIN), find(items, "Updated 07:03"), find(items, "Not updating: buses")
+    assert rain.x + item_size(rain)[0] < updated.x
+    assert updated.x + item_size(updated)[0] + 5 <= badge.x - 2
+
+
+def test_a_disruption_notice_beats_the_rain_line():
+    items = texts(sign_layout(dataclasses.replace(board(), rain=RAIN, notice="Lifts out of use")).items)
+    assert "! Lifts out of use" in items
+    assert RAIN not in items
+
+
+def test_screen_shows_the_rain_line_left_of_the_clock():
+    width, height = dots(HDMI_1280X400)
+    view = dataclasses.replace(board(TRAINS, BUSES), rain=RAIN, clock="07:10:15")
+    items = sign_layout(view, width, height).items
+    rain, clock = find(items, RAIN), find(items, "07:10:15")
+    assert not rain.small and rain.y == clock.y
+    assert clock.x + FONT.getlength("07:10:15") == width - MARGIN
+    assert rain.x + FONT.getlength(RAIN) + 5 <= clock.x
+
+
 def test_footer_glyphs_cover_notices_and_the_rain_line():
     from departureboard.dotfont import GLYPHS, TINY
 

@@ -16,7 +16,7 @@ from PIL import Image, ImageDraw
 from .dotfont import HEIGHT as GLYPH_H
 from .dotfont import TINY, TINY_HEIGHT, DotFont
 from .panel import PHAT, PLATFORM_COLUMN_MIN_WIDTH, Panel
-from .render import HEIGHT, WIDTH, Palette, fit_text, fitted_notice
+from .render import HEIGHT, WIDTH, Palette, fit_text, fitted_note
 from .route import RouteView
 from .view import BoardView, Row, Section, Style
 
@@ -132,21 +132,27 @@ def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> Non
     free_end = width - MARGIN
     if badge:
         free_end -= _SMALL.getlength(badge) + 2 + _COL_GAP  # the badge's band reaches 2 dots left
-    if view.clock and view.notice:
+    stamp = f"Updated {view.updated}"
+    if view.clock and (view.notice or view.rain):
         # A screen keeps its clock on the bottom line, moved to the right, and
-        # shows the notice a part at a time in the room left of it.
+        # shows the notice (or rain warning) a part at a time in the room left of it.
         clock_x = free_end - _w(view.clock)
         layout.add(clock_x, height - GLYPH_H - 1, view.clock)
-        notice = fitted_notice(view, clock_x - _COL_GAP - MARGIN, _w, _FONT)
-        layout.add(MARGIN, height - GLYPH_H - 1, notice)
+        layout.add(MARGIN, height - GLYPH_H - 1, fitted_note(view, clock_x - _COL_GAP - MARGIN, _w, _FONT))
     elif view.clock:
         # A screen shows the time centred along the bottom, like a station clock.
         layout.add((width - _w(view.clock)) // 2, height - GLYPH_H - 1, view.clock)
     elif view.notice:
         # As much as fits, in place of "Updated", in the footer's small print.
-        layout.add(MARGIN, y, fitted_notice(view, free_end - MARGIN, _SMALL.getlength, _SMALL), small=True)
+        layout.add(MARGIN, y, fitted_note(view, free_end - MARGIN, _SMALL.getlength, _SMALL), small=True)
+    elif view.rain and _SMALL.getlength(view.rain) + _COL_GAP + _SMALL.getlength(stamp) <= free_end - MARGIN:
+        # The rain warning on the left, keeping "Updated" on the right.
+        layout.add(MARGIN, y, view.rain, small=True)
+        layout.add(free_end - _SMALL.getlength(stamp), y, stamp, small=True)
+    elif view.rain:
+        layout.add(MARGIN, y, fitted_note(view, free_end - MARGIN, _SMALL.getlength, _SMALL), small=True)
     else:
-        layout.add(MARGIN, y, f"Updated {view.updated}", small=True)
+        layout.add(MARGIN, y, stamp, small=True)
     if badge:
         # Small, but reversed out so a stalled feed still catches the eye.
         layout.add(width - MARGIN - _SMALL.getlength(badge), y, badge, inverted=True, small=True)

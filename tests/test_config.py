@@ -395,3 +395,77 @@ def test_bank_holidays_can_be_ignored(tmp_path):
 def test_without_known_holidays_policies_have_none(tmp_path):
     settings = load_config(write(tmp_path, TRAIN), ENV)
     assert settings.board.sources[0].policy.holidays == frozenset()
+
+
+TRAIN_AND_BUS = """
+[train]
+crs = "GLO"
+windows = ["Mon-Fri 06:30-09:30"]
+[bus]
+windows = ["Mon-Fri 17:00-18:00"]
+[bus.stops]
+A = "1000DGHS0900"
+"""
+
+
+def test_weather_is_off_without_a_section(example):
+    assert load_config(example, ENV).board.weather is None
+
+
+def test_example_weather_section_loads_when_uncommented(tmp_path):
+    lines = EXAMPLE.read_text().splitlines()
+    start = lines.index("# [weather]")
+    lines[start:] = [line.removeprefix("# ") for line in lines[start:]]
+    weather = load_config(write(tmp_path, "\n".join(lines)), ENV).board.weather
+    assert weather is not None and weather.threshold == 50
+    assert "latitude=53.44" in weather.source.url() and "longitude=-1.95" in weather.source.url()
+
+
+def test_weather_polls_every_30_minutes_in_the_train_and_bus_windows(tmp_path):
+    path = write(tmp_path, TRAIN_AND_BUS + "[weather]\nlat = 53.44\nlon = -1.95\nthreshold_percent = 70\n")
+    settings = load_config(path, ENV)
+    weather = settings.board.weather
+    assert weather.threshold == 70
+    assert weather.policy.interval == timedelta(minutes=30)
+    windows = [w for c in settings.board.sources for w in c.policy.windows]
+    assert list(weather.policy.windows) == windows and len(windows) == 2
+    assert "timezone=Europe%2FLondon" in weather.source.url()
+
+
+def test_weather_follows_the_boards_timezone(tmp_path):
+    path = write(tmp_path, 'timezone = "Europe/Dublin"\n' + TRAIN_AND_BUS + "[weather]\nlat = 53.3\nlon = -6.3\n")
+    assert "timezone=Europe%2FDublin" in load_config(path, ENV).board.weather.source.url()
+
+
+def test_a_cleared_weather_position_turns_it_off(tmp_path):
+    path = write(tmp_path, TRAIN_AND_BUS + '[weather]\nlat = ""\nlon = ""\nthreshold_percent = 50\n')
+    assert load_config(path, ENV).board.weather is None
+
+
+@pytest.mark.parametrize(
+    "weather",
+    [
+        "lat = 53.44",  # lon missing
+        "lon = -1.95",
+        'lat = "53.44"\nlon = -1.95',
+        "lat = 91\nlon = -1.95",
+        "lat = 53.44\nlon = -181",
+        "lat = true\nlon = -1.95",
+        "lat = 53.44\nlon = -1.95\nthreshold_percent = 0",
+        "lat = 53.44\nlon = -1.95\nthreshold_percent = 101",
+        "lat = 53.44\nlon = -1.95\nthreshold_percent = 50.5",
+    ],
+)
+def test_bad_weather_settings_are_config_errors(tmp_path, weather):
+    with pytest.raises(ConfigError, match=r"\[weather\]"):
+        load_config(write(tmp_path, TRAIN_AND_BUS + "[weather]\n" + weather + "\n"), ENV)
+
+
+def test_weather_must_be_a_table(tmp_path):
+    with pytest.raises(ConfigError, match=r"\[weather\]"):
+        load_config(write(tmp_path, 'weather = "rain"\n' + TRAIN_AND_BUS), ENV)
+
+
+def test_a_probe_of_one_source_builds_no_forecast(tmp_path):
+    path = write(tmp_path, TRAIN_AND_BUS + "[weather]\nlat = 53.44\nlon = -1.95\n")
+    assert load_config(path, ENV, only={"train"}).board.weather is None

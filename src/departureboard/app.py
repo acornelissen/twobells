@@ -24,6 +24,7 @@ from .status import safe_message
 from .view import BoardView, build_view
 from .themes import THEMES, Theme
 from .walk import WalkTimes, leave_time
+from .weather import Hour, hours_from_dicts, hours_to_dicts, rain_line
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +64,25 @@ class Tracker:
     stale_after: timedelta = timedelta(minutes=2)
 
 
+class WeatherSource(Protocol):
+    def fetch(self) -> list[Hour]: ...
+
+
+@dataclass(frozen=True)
+class Weather:
+    """The rain warning: an hourly forecast, polled while any source's window is open."""
+
+    source: WeatherSource
+    policy: PollPolicy
+    threshold: int = 50  # per cent chance of rain worth a warning
+    # A forecast this old is no longer shown; it should be renewed every 30 minutes.
+    max_age: timedelta = timedelta(hours=3)
+
+
+# Without walk times, how far ahead the rain warning looks.
+_RAIN_LOOKAHEAD = timedelta(minutes=60)
+
+
 # A screen with a route page shows departures for 15 s, then the bus for 10 s.
 _PAGE_CYCLE_S = 25
 _DEPARTURES_S = 15
@@ -78,6 +98,7 @@ class Board:
     walk: WalkTimes = WalkTimes()
     theme: Theme = THEMES["plain"]
     tracker: Tracker | None = None
+    weather: Weather | None = None
 
 
 @dataclass(frozen=True)
@@ -161,6 +182,51 @@ def _notices(board: Board, state: dict, now: datetime) -> list[str]:
     return notices
 
 
+def _poll_weather(weather: Weather, state: dict, now: datetime) -> None:
+    entry = state.get("weather")
+    if not isinstance(entry, dict):
+        entry = state["weather"] = {}
+    if not weather.policy.is_due(now, from_iso(entry.get("last_attempt"))):
+        return
+    entry["last_attempt"] = to_iso(now)
+    try:
+        hours = weather.source.fetch()
+    except Exception as error:  # noqa: BLE001 - keep the last forecast until it is too old
+        log.warning("weather: fetch failed: %s", error)
+        return
+    entry["hours"] = hours_to_dicts(hours)
+    entry["last_success"] = to_iso(now)
+
+
+def _rain_until(board: Board, departures: list[Departure], now: datetime) -> datetime:
+    """When you would reach the next train or bus you can still catch: its
+    leave time plus the walk, which is when it goes. Without walk times, or
+    with nothing to catch, the next hour."""
+    hhmm = now.strftime("%H:%M")
+    reachable = []
+    for dep in departures:
+        leave = leave_time(dep, board.walk)
+        if leave is not None and minutes_between(hhmm, leave) >= 0:
+            reachable.append((minutes_between(hhmm, leave), dep))
+    if not reachable:
+        return now + _RAIN_LOOKAHEAD
+    _, dep = min(reachable, key=lambda pair: pair[0])
+    return now.replace(second=0, microsecond=0) + timedelta(minutes=minutes_between(hhmm, dep.departs_at))
+
+
+def _rain(board: Board, state: dict, departures: list[Departure], now: datetime, live: bool) -> str | None:
+    weather = board.weather
+    entry = state.get("weather")
+    if weather is None or not isinstance(entry, dict):
+        return None
+    fetched = from_iso(entry.get("last_success"))
+    if fetched is None or now - fetched > weather.max_age:
+        return None
+    upcoming = [d for d in departures if not d.is_gone(now.strftime("%H:%M"))]
+    until = _rain_until(board, upcoming, now)
+    return rain_line(hours_from_dicts(entry.get("hours")), now, until, weather.threshold, live)
+
+
 def _poll_vehicles(tracker: Tracker, state: dict, now: datetime) -> None:
     entry = state.setdefault("vehicles", {})
     if not tracker.policy.is_due(now, from_iso(entry.get("last_attempt"))):
@@ -235,20 +301,24 @@ def run_once(
         _keep_messages(config, state, before)
     if live and board.tracker is not None:
         _poll_vehicles(board.tracker, state, now)
+    if board.weather is not None:
+        _poll_weather(board.weather, state, now)
     entries = state.get("sources", {})
     stale = {
         c.source.name for c in board.sources if _is_stale(c, entries.get(c.source.name, {}), now)
     }
+    trains, buses = _departures(state, "train", now), _departures(state, "bus", now)
     view = build_view(
         title=board.title,
-        trains=_departures(state, "train", now),
-        buses=_departures(state, "bus", now),
+        trains=trains,
+        buses=buses,
         now=now.strftime("%H:%M"),
         stale=stale,
         walk=board.walk,
         wording=board.theme.wording,
         clock=now.strftime("%H:%M:%S") if live else None,
         notices=_notices(board, state, now),
+        rain=_rain(board, state, trains + buses, now, live),
     )
 
     route = _route_view(board, state, view, now, view.clock) if live else None

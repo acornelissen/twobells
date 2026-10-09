@@ -85,6 +85,8 @@ class BoardView:
     clock: str | None = None
     # A disruption message for the station, in plain text, while there is one.
     notice: str | None = None
+    # "Rain from 07:10 (70%)" when rain is likely before you would reach your train or bus.
+    rain: str | None = None
 
     def signature(self) -> str:
         content = asdict(self)
@@ -161,10 +163,12 @@ def build_view(
     wording: Wording = PLAIN,
     clock: str | None = None,
     notices: list[str] | None = None,
+    rain: str | None = None,
 ) -> BoardView:
     """`clock` (HH:MM:SS, matching `now`) is for screens: it is shown, and
     leave times count down instead of giving a clock time. `notices` are the
-    station's disruption messages, shown one after another as one notice."""
+    station's disruption messages, shown one after another as one notice;
+    `rain` is the rain warning, if there is one."""
     return BoardView(
         title=title,
         trains=_section("Trains", trains, _train_row, now, "No trains", "train" in stale, walk, wording, clock),
@@ -172,6 +176,7 @@ def build_view(
         updated=now,
         clock=clock,
         notice=_notice(notices or []),
+        rain=rain,
     )
 
 

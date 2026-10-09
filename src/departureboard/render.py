@@ -181,14 +181,19 @@ def in_turns(text: str, width: float, measure, clock: str, lead: str = "") -> st
 NOTICE_LEAD = "! "
 
 
-def fitted_notice(view: BoardView, width: float, measure, font) -> str | None:
-    """The disruption notice as it fits in `width`: in turns on a screen,
-    cut short on e-paper, which can't change it every few seconds."""
-    if not view.notice:
+def fitted_note(view: BoardView, width: float, measure, font) -> str | None:
+    """The disruption notice, or failing one the rain warning, as it fits in
+    `width`: in turns on a screen, cut short on e-paper, which can't change
+    it every few seconds."""
+    if view.notice:
+        lead, text = NOTICE_LEAD, view.notice
+    elif view.rain:
+        lead, text = "", view.rain
+    else:
         return None
     if view.clock:
-        return in_turns(view.notice, width, measure, view.clock, NOTICE_LEAD)
-    return fit_text(NOTICE_LEAD + view.notice, font, width, measure)
+        return in_turns(text, width, measure, view.clock, lead)
+    return fit_text(lead + text, font, width, measure)
 
 
 def plain_scale(panel: Panel) -> int:
@@ -199,14 +204,14 @@ def plain_scale(panel: Panel) -> int:
 
 def header_text(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[str, str, float]:
     """(left text, stamp, stamp x) for the header bar. The plain look has no
-    footer, so a disruption notice takes the title's place while there is one:
-    cut short on e-paper, shown a part at a time on a screen."""
+    footer, so a disruption notice, or else a rain warning, takes the title's
+    place while there is one: cut short on e-paper, in turns on a screen."""
     pad = _PAD * scale
     stamp = view.clock or f"Upd {view.updated}"
     stamp_x = width - pad - drawn_length(fonts.regular, stamp)
     room = stamp_x - pad - 6 * scale
-    notice = fitted_notice(view, room, partial(drawn_length, fonts.bold), fonts.bold)
-    return notice or fit_text(view.title, fonts.bold, room), stamp, stamp_x
+    note = fitted_note(view, room, partial(drawn_length, fonts.bold), fonts.bold)
+    return note or fit_text(view.title, fonts.bold, room), stamp, stamp_x
 
 
 class _Painter:

@@ -64,3 +64,13 @@ B = 7
 #   { name = "St Marys Road",  lat = 53.443511, lon = -1.955759 },
 #   { name = "Henry Street",   lat = 53.44384,  lon = -1.948999 },
 # ]
+
+# Optional: a rain warning from Open-Meteo's forecast (free, no key). The board
+# says "Rain from 07:10 (70%)" when rain is likely before you would reach the
+# next train or bus you can still catch (or within the hour, without walk
+# times). Polled every 30 minutes, only inside the train and bus windows.
+# Two decimal places is plenty; that is all that is sent.
+# [weather]
+# lat = 53.44
+# lon = -1.95
+# threshold_percent = 50   # chance of rain, 1-100, worth a warning

@@ -403,6 +403,18 @@ def test_notice_changes_what_the_header_draws():
     assert plain.crop((0, 15, WIDTH, HEIGHT)).tobytes() == noticed.crop((0, 15, WIDTH, HEIGHT)).tobytes()
 
 
+@pytest.mark.parametrize("panel", ALL_PANELS, ids=lambda p: p.name)
+@pytest.mark.parametrize("clock", [None, "07:10:15"])
+def test_rain_line_takes_the_titles_place(panel, clock):
+    view = dataclasses.replace(board(), rain="Rain from 07:10 (70%)", clock=clock)
+    assert header(view, panel)[0] == "Rain from 07:10 (70%)"
+
+
+def test_a_disruption_notice_beats_the_rain_line_in_the_header():
+    view = dataclasses.replace(board(), rain="Rain from 07:10 (70%)", notice="Lifts out of use")
+    assert header(view)[0] == "! Lifts out of use"
+
+
 def test_wrap_text_keeps_words_whole_and_splits_only_overlong_ones():
     measure = len
     assert wrap_text("one two three four", 9, measure) == ["one two", "three", "four"]

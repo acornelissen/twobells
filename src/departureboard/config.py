@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Mapping
 from zoneinfo import ZoneInfo
 
-from .app import Board, SourceConfig, Tracker
+from .app import Board, SourceConfig, Tracker, Weather
 from .bods import BodsVehicleSource
 from .darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL
 from .darwin import DarwinSource
@@ -26,6 +26,7 @@ from .themes import theme_named
 from .transportapi import TransportApiBusSource
 from .route import RouteStop, RouteStrip
 from .walk import DEFAULT_STOP, WalkTimes
+from .weather import OpenMeteoSource
 
 
 class ConfigError(Exception):
@@ -242,6 +243,27 @@ def _tracker(section: dict, env: Mapping[str, str], bus: PollPolicy) -> Tracker 
     return Tracker(source, strips, PollPolicy(bus.windows, interval, bus.holidays))
 
 
+def _coordinate(section: dict, key: str, limit: int) -> float:
+    value = section.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not -limit <= value <= limit:
+        raise ConfigError(f"[weather] {key} must be a number from -{limit} to {limit}, not {value!r}")
+    return float(value)
+
+
+def _weather(data: dict, sources: list[SourceConfig], timezone: str) -> Weather | None:
+    """The rain warning, if [weather] gives a position. It is polled every 30
+    minutes, only while a train or bus window is open."""
+    section = _table(data, "weather", "[weather]")
+    if section.get("lat", "") == "" and section.get("lon", "") == "":  # "" is a cleared field
+        return None
+    lat, lon = _coordinate(section, "lat", 90), _coordinate(section, "lon", 180)
+    threshold = section.get("threshold_percent", 50)
+    if isinstance(threshold, bool) or not isinstance(threshold, int) or not 1 <= threshold <= 100:
+        raise ConfigError(f"[weather] threshold_percent must be a whole number from 1 to 100, not {threshold!r}")
+    windows = tuple(window for config in sources for window in config.policy.windows)
+    return Weather(OpenMeteoSource(lat, lon, timezone), PollPolicy(windows, timedelta(minutes=30)), threshold)
+
+
 def _walk(data: dict) -> WalkTimes:
     train_section = _table(data, "train", "[train]")
     train = None
@@ -328,6 +350,8 @@ def settings_from(
         walk=_walk(data),
         theme=theme,
         tracker=tracker,
+        # A probe of one source needs no forecast.
+        weather=_weather(data, sources, timezone) if only is None else None,
     )
     return Settings(
         board=board,

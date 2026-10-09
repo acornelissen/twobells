@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from departureboard.app import Board, SourceConfig, run_once
 from departureboard.model import Departure, Status
-from departureboard.panel import PHAT
+from departureboard.panel import HDMI_1280X400, PHAT
 from departureboard.render import Palette
 from departureboard.schedule import PollPolicy, parse_window
 from departureboard.state import StateStore
@@ -723,3 +723,141 @@ def test_darwin_messages_reach_the_board():
     result = run_once(board, {}, FakeDisplay(), THU_0700.replace(hour=11, minute=45), prime=True)
     assert result.view.notice.startswith("Disruption between Glossop and Manchester Piccadilly")
     assert " / Lifts at Glossop & Hadfield are out of use." in result.view.notice
+
+
+from departureboard.app import Weather  # noqa: E402
+from departureboard.walk import WalkTimes  # noqa: E402
+from departureboard.weather import Hour  # noqa: E402
+
+
+class FakeWeather:
+    """Dry until 07:00, 30% from 07:00, 70% from 08:00, on THU_0700's day."""
+
+    def __init__(self):
+        self.calls = 0
+        self.error = None
+
+    def fetch(self):
+        self.calls += 1
+        if self.error:
+            raise self.error
+        chances = {7: 30, 8: 70, 9: 85}
+        return [Hour(THU_0700.replace(hour=h), chances.get(h, 5), 0.0) for h in range(24)]
+
+
+def weather_setup(trains=(), buses=(), walk=WalkTimes(train=7, bus={"*": 5}), threshold=50):
+    weather = FakeWeather()
+    board = dataclasses.replace(
+        make_board(FakeSource("train", trains), FakeSource("bus", buses)),
+        walk=walk,
+        weather=Weather(weather, morning(30), threshold),
+    )
+    return weather, board, FakeDisplay(), {}
+
+
+def at(hhmm):
+    hour, minute = map(int, hhmm.split(":"))
+    return THU_0700.replace(hour=hour, minute=minute)
+
+
+def test_without_weather_settings_there_is_no_forecast_and_no_rain_line():
+    trains, buses, board, display, state = setup()
+    result = run_once(board, state, display, THU_0700)
+    assert "weather" not in state
+    assert result.view.rain is None
+
+
+def test_weather_is_polled_every_30_minutes_inside_the_windows_only():
+    weather, board, display, state = weather_setup()
+    run_once(board, state, display, at("06:40"))  # before any window opens
+    assert weather.calls == 0
+    for minute in range(45, 60):
+        run_once(board, state, display, at(f"06:{minute}"))
+    assert weather.calls == 1
+    run_once(board, state, display, at("07:14"))
+    assert weather.calls == 1
+    run_once(board, state, display, at("07:15"))
+    assert weather.calls == 2
+    run_once(board, state, display, at("09:30"))  # windows closed
+    assert weather.calls == 2
+
+
+def test_rain_before_you_reach_the_train_is_shown():
+    weather, board, display, state = weather_setup(trains=[train("08:12")])
+    # Leave 08:05, at the station 08:12: rain is likely from 08:00.
+    assert run_once(board, state, display, at("07:50")).view.rain == "Rain from 08:00 (70%)"
+
+
+def test_rain_after_you_reach_the_train_is_not():
+    weather, board, display, state = weather_setup(trains=[train("07:42")])
+    # At the station 07:42; 07:00-08:00 is only 30%.
+    assert run_once(board, state, display, at("07:20")).view.rain is None
+
+
+def test_the_next_departure_you_can_catch_sets_the_window():
+    # The 07:42 is out of reach at 07:40 with a 7 minute walk; the 08:12 is next.
+    weather, board, display, state = weather_setup(trains=[train("07:42"), train("08:12")])
+    assert run_once(board, state, display, at("07:40")).view.rain == "Rain from 08:00 (70%)"
+
+
+def test_a_bus_you_can_catch_sooner_sets_the_window():
+    # The bus at 07:55 (5 min walk) comes before the 08:12 train: at the stop before the rain.
+    weather, board, display, state = weather_setup(trains=[train("08:12")], buses=[bus("07:55")])
+    assert run_once(board, state, display, at("07:40")).view.rain is None
+
+
+def test_without_walk_times_the_next_hour_counts():
+    weather, board, display, state = weather_setup(trains=[train("09:12")], walk=WalkTimes())
+    assert run_once(board, state, display, at("07:05")).view.rain == "Rain from 08:00 (70%)"
+    weather, board, display, state = weather_setup(walk=WalkTimes())
+    assert run_once(board, state, display, at("06:55")).view.rain is None  # 08:00 is over an hour away
+
+
+def test_with_nothing_left_to_catch_the_next_hour_counts():
+    weather, board, display, state = weather_setup(trains=[])
+    assert run_once(board, state, display, at("07:05")).view.rain == "Rain from 08:00 (70%)"
+
+
+def test_already_raining_says_from_now_on_a_screen():
+    weather, board, display, state = weather_setup(trains=[train("08:42")])
+    screen = FakeDisplay()
+    screen.panel = HDMI_1280X400
+    assert run_once(board, state, screen, at("08:10")).view.rain == "Rain from 08:10 (70%)"
+
+
+def test_already_raining_on_epaper_gives_the_hours_start_so_it_need_not_redraw():
+    weather, board, display, state = weather_setup(trains=[train("08:42")])
+    assert run_once(board, state, display, at("08:10")).view.rain == "Rain from 08:00 (70%)"
+    assert run_once(board, state, display, at("08:11")).view.rain == "Rain from 08:00 (70%)"
+
+
+def test_threshold_comes_from_the_settings():
+    weather, board, display, state = weather_setup(trains=[train("07:42")], threshold=30)
+    assert run_once(board, state, display, at("07:20")).view.rain == "Rain from 07:00 (30%)"
+
+
+def test_a_failed_forecast_keeps_the_last_one_until_it_is_too_old():
+    weather, board, display, state = weather_setup(walk=WalkTimes())
+    run_once(board, state, display, at("07:05"))
+    weather.error = OSError("down")
+    assert run_once(board, state, display, at("07:40")).view.rain == "Rain from 08:00 (70%)"
+    assert weather.calls == 2
+    # Older than max_age (3 hours; 30 minutes here), it isn't trusted, though it covers the time.
+    later = dataclasses.replace(board, weather=dataclasses.replace(board.weather, max_age=timedelta(minutes=30)))
+    assert run_once(later, state, display, at("07:40")).view.rain is None
+
+
+def test_a_malformed_saved_forecast_is_replaced():
+    weather, board, display, state = weather_setup(walk=WalkTimes())
+    state["weather"] = "nonsense"
+    assert run_once(board, state, display, at("07:05")).view.rain == "Rain from 08:00 (70%)"
+    state["weather"]["hours"] = [{"start": 3}]
+    weather.error = OSError("down")
+    assert run_once(board, state, display, at("07:40")).view.rain is None
+
+
+def test_rain_line_redraws_the_board():
+    weather, board, display, state = weather_setup(walk=WalkTimes())
+    run_once(board, state, display, at("06:45"))  # 07:00-08:00 is 30%: dry enough
+    result = run_once(board, state, display, at("07:05"))
+    assert result.view.rain and result.rendered
