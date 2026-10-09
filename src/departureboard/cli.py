@@ -30,7 +30,15 @@ from zoneinfo import ZoneInfo
 
 from .app import run_loop, run_once
 from .bodsbus import BodsBusSource
-from .config import ConfigError, holiday_division, load_config, overlay_paths, read_config, state_dir
+from .config import (
+    ConfigError,
+    holiday_division,
+    load_config,
+    load_env_file,
+    overlay_paths,
+    read_config,
+    state_dir,
+)
 from .darwin import DarwinSource, TrainBoard
 from .display import DISPLAY_PANELS, PngDisplay, open_display
 from .holidays import bank_holidays
@@ -48,21 +56,6 @@ from .weather import rain_line
 
 DEFAULT_CONFIG = "/etc/departureboard/config.toml"
 DEFAULT_SECRETS = "/etc/departureboard/secrets.env"
-
-
-def load_env_file(path: Path | str) -> dict[str, str]:
-    values: dict[str, str] = {}
-    try:
-        lines = Path(path).read_text().splitlines()
-    except OSError:
-        return values
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip("'\"")
-    return values
 
 
 def _local_now(timezone: str) -> datetime:

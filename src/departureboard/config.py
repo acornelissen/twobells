@@ -96,6 +96,22 @@ def read_overlay_in(folder: Path | None) -> dict:
     return saved
 
 
+def load_env_file(path: Path | str) -> dict[str, str]:
+    """NAME=value lines from a secrets file; empty if it can't be read."""
+    values: dict[str, str] = {}
+    try:
+        lines = Path(path).read_text().splitlines()
+    except OSError:
+        return values
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip("'\"")
+    return values
+
+
 def read_config(path: Path | str) -> dict:
     """config.toml with the web page's settings layered over it."""
     data = read_base(path)

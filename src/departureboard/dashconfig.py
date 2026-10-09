@@ -13,6 +13,13 @@ in [dashboard] kb_incidents_url.
 
 One dashboard per state folder: a lock held for the life of the process stops
 a second one sharing (and fighting over) the same files.
+
+Settings saved from the dashboard's own settings page (and its setup wizard)
+go in that folder too, never beside config.toml, which is read-only in
+Docker: settings.toml layered over config.toml as config.read_config layers
+the board's, and secrets.env over the environment and --secrets. The
+dashboard watches every file its settings come from and, when one changes
+and the result still loads, starts afresh to use them (see cli._dashboard).
 """
 
 from __future__ import annotations
@@ -24,15 +31,30 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, Mapping, Protocol
+from typing import IO, Mapping, Protocol, Sequence
 from urllib.parse import urlsplit
 
 from .bodsbus import BusBoard
-from .config import ConfigError, _flag, _table, _texts, _whole, read_config, settings_from
+from .config import (
+    OVERLAY_NAME,
+    SECRETS_OVERLAY_NAME,
+    ConfigError,
+    _flag,
+    _table,
+    _texts,
+    _whole,
+    load_env_file,
+    merge,
+    overlay_paths,
+    read_config,
+    read_overlay_in,
+    settings_from,
+)
 from .config import state_dir as board_state_dir
 from .darwin import DarwinSource, ServiceDetails, ServiceDetailsClient, TrainBoard
 from .disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource, kb_url_is_placeholder
 from .holidays import ENGLAND_AND_WALES
+from .overlay import Target
 from .schedule import Window, parse_window
 from .walk import WalkTimes
 from .weather import Conditions
@@ -282,16 +304,95 @@ def _header_key(env: Mapping[str, str], name: str) -> str:
     return key
 
 
+def saved_settings(folder: Path) -> dict:
+    """The settings saved in the dashboard's folder; empty if none. They can't
+    move the folder they live in, so any state_dir or state_file is dropped."""
+    if folder.exists() and not folder.is_dir():
+        raise ConfigError(f"{folder} is not a folder")
+    try:
+        saved = read_overlay_in(folder)
+    except OSError as error:
+        raise ConfigError(f"Can't read {folder / OVERLAY_NAME}: {error.strerror or error}") from None
+    section = saved.get("dashboard")
+    if isinstance(section, dict):
+        section.pop("state_dir", None)
+    return saved
+
+
+def dashboard_env(env: Mapping[str, str], folder: Path) -> dict[str, str]:
+    """`env` with the keys saved in the dashboard's folder over it."""
+    return {**env, **load_env_file(folder / SECRETS_OVERLAY_NAME)}
+
+
+def overlay_target(config_path: Path | str, folder: Path) -> Target:
+    """Where the settings page and the setup wizard save: the dashboard's
+    folder, over config.toml, and only what the dashboard would load."""
+
+    def check(data: dict, env: Mapping[str, str]) -> None:
+        _build(data, env, folder)
+
+    return Target(lambda: read_config(config_path), lambda base: folder, check)
+
+
+def settings_files(config_path: Path | str, secrets_path: Path | str, folder: Path) -> list[Path]:
+    """Every file the dashboard's settings come from, to watch for changes."""
+    paths = [Path(config_path), Path(secrets_path), folder / OVERLAY_NAME, folder / SECRETS_OVERLAY_NAME]
+    try:
+        board = overlay_paths(config_path)
+    except (OSError, ConfigError):
+        board = None
+    return paths + list(board or ())
+
+
+class FileWatch:
+    """Notices when any of some files is changed, added or removed."""
+
+    def __init__(self, paths: Sequence[Path]) -> None:
+        self._paths = list(paths)
+        self._stamp = self._stamps()
+
+    def _stamps(self) -> list:
+        stamps = []
+        for path in self._paths:
+            try:
+                info = path.stat()
+                stamps.append((info.st_mtime_ns, info.st_size, info.st_ino))
+            except OSError:
+                stamps.append(None)
+        return stamps
+
+    def changed(self) -> bool:
+        """Whether anything changed since the last call (or since made)."""
+        stamp = self._stamps()
+        if stamp == self._stamp:
+            return False
+        self._stamp = stamp
+        return True
+
+
 def load_dashboard(config_path: Path | str, env: Mapping[str, str],
-                   state_dir_override: Path | str | None = None) -> DashboardSettings:
-    """The dashboard's settings from config.toml (with the settings page's
-    overlay), the environment and secrets in `env`, and an optional state
-    folder that wins over [dashboard] state_dir. Takes the folder's lock;
-    call close() on the result to let it go."""
-    data = copy.deepcopy(read_config(config_path))
-    options = dashboard_options(data)
+                   state_dir_override: Path | str | None = None, lock: bool = True) -> DashboardSettings:
+    """The dashboard's settings from config.toml (with the board's settings
+    page's overlay, then the dashboard's own), the environment and secrets in
+    `env` (then the keys saved in the dashboard's folder), and an optional
+    state folder that wins over [dashboard] state_dir. Takes the folder's
+    lock; call close() on the result to let it go. With lock=False it only
+    checks that the settings load: no folder is made and no lock taken."""
+    base = read_config(config_path)
+    options = dashboard_options(base)
     folder = Path(state_dir_override or options.state_dir or default_state_dir(env=env)).expanduser()
-    _check_folder(folder, data)
+    _check_folder(folder, base)
+    settings = _build(merge(base, saved_settings(folder)), dashboard_env(env, folder), folder)
+    if lock:
+        _make_folder(folder)
+        settings.lock = _lock(folder)
+    return settings
+
+
+def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSettings:
+    """The settings from already-read, already-layered data, without the lock."""
+    data = copy.deepcopy(data)
+    options = dashboard_options(data)
 
     if "train" in data:
         _table(data, "train", "[train]")["rows"] = options.train_rows
@@ -324,8 +425,6 @@ def load_dashboard(config_path: Path | str, env: Mapping[str, str],
             incidents = TrainIncidentSource(kb_key, options.kb_incidents_url)
     bus_key = env.get("BODS_API_KEY", "").strip()
 
-    _make_folder(folder)
-    lock = _lock(folder)
     return DashboardSettings(
         title=settings.board.title,
         timezone=settings.timezone,
@@ -346,5 +445,4 @@ def load_dashboard(config_path: Path | str, env: Mapping[str, str],
         rain_threshold=weather.threshold if weather is not None else 50,
         bank_holidays=_flag(data, "bank_holidays", True),
         bank_holiday_division=settings.bank_holiday_division,
-        lock=lock,
     )

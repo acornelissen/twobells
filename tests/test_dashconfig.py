@@ -6,10 +6,14 @@ import pytest
 from departureboard.config import ConfigError
 from departureboard.dashconfig import (
     DashboardOptions,
+    FileWatch,
     dashboard_options,
     default_state_dir,
     load_dashboard,
+    overlay_target,
+    settings_files,
 )
+from departureboard.overlay import OverlayError, save_to
 from departureboard.darwin import DETAILS_BASE_URL, DarwinSource, ServiceDetailsClient
 from departureboard.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource
 from departureboard.bodsbus import BodsBusSource
@@ -326,3 +330,84 @@ def test_a_knowledgebase_key_that_could_split_a_header_is_refused(config, tmp_pa
     with pytest.raises(ConfigError, match="RDM_KB_API_KEY") as raised:
         load_dashboard(config, {**ENV, "RDM_KB_API_KEY": "abc\r\nX-Evil: 1"}, tmp_path / "dash")
     assert "abc" not in str(raised.value)
+
+
+# Settings saved from the dashboard's own settings page
+
+
+def test_settings_saved_in_the_dashboard_s_folder_are_layered_over_config_toml(config, tmp_path, opened):
+    folder = tmp_path / "dash"
+    folder.mkdir()
+    (folder / "settings.toml").write_text(
+        'title = "Our house"\n[train]\ncrs = "MAN"\n[dashboard]\ntrain_rows = 4\n'
+    )
+    (folder / "secrets.env").write_text("BODS_API_KEY=saved-bods-key\nRDM_DETAILS_API_KEY=saved-details\n")
+    dash = load(config, folder, opened=opened)
+    assert dash.title == "Our house" and dash.train_crs == "MAN"
+    assert dash.train_filter == "MAN"  # the rest of [train] is still config.toml's
+    assert dash.options.train_rows == 4 and dash.options.bus_rows == 10
+    assert dash.bus._api_key == "saved-bods-key"  # saved keys win over the environment
+    assert isinstance(dash.train_details, ServiceDetailsClient)
+    assert not (tmp_path / "board").exists()  # nothing written beside config.toml or the board
+
+
+def test_saved_settings_cannot_move_the_folder_they_live_in(config, tmp_path, opened):
+    folder = tmp_path / "dash"
+    folder.mkdir()
+    (folder / "settings.toml").write_text(
+        f'state_file = "{tmp_path}/elsewhere/state.json"\n[dashboard]\nstate_dir = "{tmp_path}/elsewhere"\n'
+    )
+    dash = load(config, folder, opened=opened)
+    assert dash.state_dir == folder and dash.bus._folder == folder
+
+
+def test_a_broken_saved_settings_file_is_a_config_error_naming_it(config, tmp_path):
+    folder = tmp_path / "dash"
+    folder.mkdir()
+    (folder / "settings.toml").write_text("this is [not toml")
+    with pytest.raises(ConfigError, match="settings.toml"):
+        load_dashboard(config, ENV, folder)
+
+
+def test_checking_settings_takes_no_lock_and_makes_no_folder(config, tmp_path, opened):
+    folder = tmp_path / "dash"
+    load_dashboard(config, ENV, folder, lock=False)
+    assert not folder.exists()
+    running = load(config, folder, opened=opened)
+    assert load_dashboard(config, ENV, folder, lock=False).lock is None  # beside a running one
+    assert running.lock is not None
+
+
+def test_the_overlay_target_saves_only_what_the_dashboard_loads(config, tmp_path):
+    folder = tmp_path / "dash"
+    folder.mkdir()
+    target = overlay_target(config, folder)
+    save_to(target, {"dashboard": {"bus_rows": 3}, "train": {"crs": "MAN"}}, {"BODS_API_KEY": "new-key"}, ENV)
+    assert (folder / "settings.toml").exists() and "new-key" in (folder / "secrets.env").read_text()
+    assert not (tmp_path / "board").exists()
+    with pytest.raises(OverlayError, match='source = "bods"'):
+        save_to(target, {"bus": {"source": "transportapi"}}, {}, ENV)
+    with pytest.raises(OverlayError, match="train_rows"):
+        save_to(target, {"dashboard": {"train_rows": 50}}, {}, ENV)
+    assert target.current()["dashboard"] == {"bus_rows": 3}
+
+
+def test_the_files_to_watch_include_the_board_s_overlay_and_the_dashboard_s(config, tmp_path):
+    folder = tmp_path / "dash"
+    files = settings_files(config, tmp_path / "secrets.env", folder)
+    assert files[:4] == [config, tmp_path / "secrets.env", folder / "settings.toml", folder / "secrets.env"]
+    assert tmp_path / "board" / "settings.toml" in files
+
+
+def test_a_file_watch_notices_changes_additions_and_removals(tmp_path):
+    path = tmp_path / "settings.toml"
+    watch = FileWatch([path])
+    assert not watch.changed()
+    path.write_text("a = 1\n")
+    assert watch.changed() and not watch.changed()
+    replacement = tmp_path / "new.toml"
+    replacement.write_text("a = 2\n")
+    replacement.replace(path)  # as the overlay is saved: written aside, then renamed
+    assert watch.changed()
+    path.unlink()
+    assert watch.changed()
