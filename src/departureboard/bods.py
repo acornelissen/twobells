@@ -42,11 +42,27 @@ class Vehicle:
     recorded_at: str  # ISO 8601, as sent
     bearing: float | None = None
     vehicle_ref: str = ""
+    # Which timetabled journey it says it is running, for livebus to match.
+    operator: str = ""  # national operator code, e.g. "BNML"
+    origin_ref: str = ""  # ATCO code of the journey's first stop
+    origin_aimed: datetime | None = None  # timetabled departure from there, with its offset
+    journey_ref: str = ""  # DatedVehicleJourneyRef, the ticket machine's journey code
+    block: str = ""
 
 
 def _text(node, path: str) -> str:
     found = node.find(path, _NS)
     return (found.text or "").strip() if found is not None else ""
+
+
+def _aware_time(text: str) -> datetime | None:
+    """An ISO 8601 time with its UTC offset; None if missing, unreadable or without
+    an offset, since a bare time could be either UTC or local."""
+    try:
+        when = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return when if when.tzinfo is not None else None
 
 
 def parse_siri_vm(body: bytes) -> list[Vehicle]:
@@ -73,6 +89,11 @@ def parse_siri_vm(body: bytes) -> list[Vehicle]:
                 recorded_at=_text(activity, "siri:RecordedAtTime"),
                 bearing=float(bearing) if bearing else None,
                 vehicle_ref=_text(journey, "siri:VehicleRef"),
+                operator=_text(journey, "siri:OperatorRef"),
+                origin_ref=_text(journey, "siri:OriginRef"),
+                origin_aimed=_aware_time(_text(journey, "siri:OriginAimedDepartureTime")),
+                journey_ref=_text(journey, "siri:FramedVehicleJourneyRef/siri:DatedVehicleJourneyRef"),
+                block=_text(journey, "siri:BlockRef"),
             )
         )
     return vehicles

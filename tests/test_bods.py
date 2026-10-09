@@ -127,3 +127,31 @@ def test_positions_with_an_unreadable_time_are_dropped():
     now = datetime(2026, 10, 8, 6, 13, tzinfo=timezone.utc)
     source = BodsVehicleSource("k", BOX, {"341"}, http_get=lambda u, m: body, now=lambda: now)
     assert "BNML-1001" not in {v.vehicle_ref for v in source.fetch()}
+
+
+LIVE = (Path(__file__).parent / "fixtures" / "bods_glossop_live.xml").read_bytes()
+
+
+def test_reads_the_journey_fields_for_matching_a_timetable():
+    from datetime import datetime, timezone
+
+    first = parse_siri_vm(LIVE)[0]
+    assert (first.operator, first.line, first.direction) == ("BNML", "237", "outbound")
+    assert first.origin_ref == "1800ANIN0K1"
+    assert first.origin_aimed == datetime(2026, 10, 9, 16, 35, tzinfo=timezone.utc)
+    assert first.journey_ref == "1175"  # DatedVehicleJourneyRef, not the extension's JourneyCode
+    assert first.block == "T145"
+    assert first.bearing is None
+
+
+def test_journey_fields_are_empty_when_not_sent():
+    first = parse_siri_vm(FIXTURE)[0]  # the synthetic feed has no origin or journey refs
+    assert (first.origin_ref, first.origin_aimed, first.journey_ref, first.block) == ("", None, "", "")
+    assert first.operator == "BNML"
+
+
+def test_an_unreadable_or_zoneless_origin_time_is_dropped():
+    garbled = LIVE.replace(b"2026-10-09T16:35:00+00:00", b"soon")
+    assert parse_siri_vm(garbled)[0].origin_aimed is None
+    zoneless = LIVE.replace(b"2026-10-09T16:35:00+00:00", b"2026-10-09T16:35:00")
+    assert parse_siri_vm(zoneless)[0].origin_aimed is None  # local or UTC? Can't tell, so not used
