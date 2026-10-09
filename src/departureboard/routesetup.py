@@ -176,16 +176,28 @@ def find_patterns(documents: Iterable[bytes], line: str) -> list[Pattern]:
     return [p for doc in documents if tag in doc for p in patterns(doc, line)]
 
 
+# BODS lists data sets 100 at a time; a big operator has more, but not endlessly many.
+_DATASET_PAGE = 100
+_DATASET_PAGES = 5
+
+
 def dataset_urls(api_key: str, noc: str, line: str | None = None, http_get: HttpGetBytes = get_bytes) -> list[str]:
     """Download links for an operator's published timetable data sets; with
     `line`, only those that list it (BODS gives lines as "341" or "341|...")."""
-    query = urlencode({"noc": noc, "status": "published", "limit": 100, "api_key": api_key})
-    try:
-        body = http_get(f"{DEFAULT_BASE_URL}/dataset/?{query}", 5_000_000)
-    except Exception as error:  # noqa: BLE001 - re-raised without the key
-        raise RouteSetupError(redact_key(str(error))) from None
-    payload = json.loads(body)
-    results = payload.get("results", [payload]) if isinstance(payload, dict) else payload
+    results = []
+    for page in range(_DATASET_PAGES):
+        query = urlencode({"noc": noc, "status": "published", "limit": _DATASET_PAGE,
+                           "offset": page * _DATASET_PAGE, "api_key": api_key})
+        try:
+            body = http_get(f"{DEFAULT_BASE_URL}/dataset/?{query}", 5_000_000)
+        except Exception as error:  # noqa: BLE001 - re-raised without the key
+            raise RouteSetupError(redact_key(str(error))) from None
+        payload = json.loads(body)
+        found = payload.get("results", [payload]) if isinstance(payload, dict) else payload
+        results.extend(found)
+        if len(found) < _DATASET_PAGE:
+            break
+
     def has_line(result: dict) -> bool:
         listed = result.get("lines")
         return line is None or not listed or any(str(entry).split("|")[0] == line for entry in listed)

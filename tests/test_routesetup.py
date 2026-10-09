@@ -217,3 +217,27 @@ def test_dataset_search_lists_download_urls_and_hides_the_key():
     with pytest.raises(RouteSetupError) as error:
         dataset_urls("secret", "BNML", http_get=failing)
     assert "secret" not in str(error.value)
+
+
+def test_dataset_search_pages_past_the_first_hundred_but_not_forever():
+    from urllib.parse import parse_qs, urlsplit
+
+    calls = []
+
+    def paged(url, limit):
+        offset = int(parse_qs(urlsplit(url).query).get("offset", ["0"])[0])
+        calls.append(offset)
+        size = 100 if offset < 100 else 1
+        return json.dumps({"results": [{"url": f"https://bods/{offset + n}.zip"} for n in range(size)]}).encode()
+
+    urls = dataset_urls("k", "BNML", http_get=paged)
+    assert len(urls) == 101 and calls == [0, 100]
+
+    def endless(url, limit):
+        offset = int(parse_qs(urlsplit(url).query).get("offset", ["0"])[0])
+        calls.append(offset)
+        return json.dumps({"results": [{"url": f"https://bods/{offset + n}.zip"} for n in range(100)]}).encode()
+
+    calls.clear()
+    assert len(dataset_urls("k", "BNML", http_get=endless)) == 500
+    assert calls == [0, 100, 200, 300, 400]
