@@ -24,7 +24,7 @@ windows = ["Mon-Fri 06:30-09:30", "Mon-Fri 16:30-19:30"]
 # Minutes to walk to the station; the board shows when to leave for the next train.
 walk_minutes = 7
 # Copy the exact base URL from the Rail Data Marketplace product page if it differs.
-# base_url = "https://api1.raildata.org.uk/1010-live-departure-board-dep/LDBWS/api/20220120"
+# base_url = "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
 
 [bus]
 # Rows shown. Each stop call returns several buses, so more rows cost no extra hits.

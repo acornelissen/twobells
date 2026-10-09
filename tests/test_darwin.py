@@ -122,3 +122,11 @@ def test_parses_a_real_glossop_board():
     assert all(d.status is Status.ON_TIME and d.platform == "1" for d in deps)
     assert {d.service for d in deps} == {"Northern"}
 
+
+
+def test_default_base_url_matches_the_marketplace_subscription():
+    from departureboard.darwin import DEFAULT_BASE_URL
+
+    assert DEFAULT_BASE_URL == (
+        "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
+    )

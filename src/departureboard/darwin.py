@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 from .http import get_json
 from .model import Departure, Status
 
-DEFAULT_BASE_URL = "https://api1.raildata.org.uk/1010-live-departure-board-dep/LDBWS/api/20220120"
+DEFAULT_BASE_URL = "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
 
 _HHMM = re.compile(r"^\d{2}:\d{2}$")
 
