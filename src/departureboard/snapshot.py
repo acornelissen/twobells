@@ -498,6 +498,12 @@ class Hub:
             self._rebuild()
             return self._version
 
+    def refresh(self) -> None:
+        """Rebuild with the time now and nothing else changed, so
+        generated_at stays close to the server's clock when the feeds are quiet."""
+        with self._lock:
+            self._rebuild()
+
     def current(self) -> tuple[int, bytes]:
         """(version, the snapshot as JSON bytes)."""
         with self._lock:
