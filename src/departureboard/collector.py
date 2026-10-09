@@ -8,6 +8,9 @@ again later and later (up to five minutes apart) until it works.
 In the quiet windows (01:00-05:00 by default) nothing is fetched unless a
 browser has used the dashboard in the last ten minutes.
 
+With a Service Details key, each train poll also asks where the first few
+trains are (see _refresh_details); a refused key turns that off for a while.
+
 Threads: each feed's state below is only touched by its own poller's
 thread. The bus poller and the upkeep thread each have their own
 BodsBusSource (see DashboardSettings.bus_upkeep), as one remembers the
@@ -28,7 +31,9 @@ from zoneinfo import ZoneInfo
 
 from . import holidays as _holidays
 from .dashconfig import DashboardSettings
+from .darwin import DetailsUnavailable, ServiceDetails, ServiceGone, TrainBoard
 from .history import History, day_type, phrase
+from .model import Status
 from .snapshot import (
     Hub,
     bus_observations,
@@ -49,6 +54,9 @@ CLIENT_GRACE = 600.0  # a browser seen this recently keeps the quiet windows bus
 UPKEEP_SECONDS = 3600.0
 HEARTBEAT_SECONDS = 60.0
 HEALTHY_AGE = 180.0  # /healthz wants a snapshot rebuilt this recently
+DETAILS_TRAINS = 3  # trains placed on their route each poll: the first ones not cancelled
+DETAILS_TTL = 60.0  # seconds before a train's details are asked for again
+DETAILS_OFF = 6 * 3600.0  # seconds without details after the key is refused
 _JITTER = 0.1  # intervals vary by this fraction either way, so jobs drift apart
 
 
@@ -157,6 +165,7 @@ class Collector:
         clock: Callable[[], datetime] | None = None,
         fetch_holidays: Callable[..., frozenset[date]] = _holidays.bank_holidays,
         random: Callable[[], float] = _random.random,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._settings = settings
         self._options = settings.options
@@ -166,10 +175,14 @@ class Collector:
         self._clock = clock or (lambda: datetime.now(self._tz))
         self._fetch_holidays = fetch_holidays
         self._random = random
+        self._monotonic = monotonic
         self._holidays = _holidays.read_cache(settings.state_dir) if settings.bank_holidays else frozenset()
         crs, filter_crs = settings.train_crs, settings.train_filter
         self._route_prefix = f"{crs}>{filter_crs}" if filter_crs else crs
         self._trains, self._buses, self._weather = _Feed(), _Feed(), _Feed()
+        # Service details by Darwin service ID, with when they came (monotonic).
+        self._details: dict[str, tuple[float, ServiceDetails]] = {}
+        self._details_off_until: float | None = None
         self._timetable_tried = False  # has upkeep tried to build the bus timetable yet
         self._building = False  # is it building one now, with none usable
         self._pollers: dict[str, Poller] = {}
@@ -191,9 +204,11 @@ class Collector:
 
     def _publish_trains(self) -> None:
         settings = self._settings
+        details = {service_id: found for service_id, (_, found) in self._details.items()}
         part, lookups = trains_part(
             self._trains.data, self._trains.fetched, self._trains.status(), settings.train_crs,
             settings.train_filter, settings.walk, self._route_prefix, self._phrases,
+            details=details, now=self._clock(),
         )
         self._hub.publish("trains", part, lookups)
 
@@ -243,6 +258,40 @@ class Collector:
         self._observe("train", train_observations(board, now, self._route_prefix), now)
         self._trains.worked(board, now)
         self._publish_trains()
+        if self._settings.train_details is not None:
+            # After the board is out, so slow details never hold it up.
+            self._refresh_details(board)
+            self._publish_trains()
+
+    def _refresh_details(self, board: TrainBoard) -> None:
+        """Service details for the first few trains that aren't cancelled,
+        each asked for at most once a minute. Details of trains that have
+        left the board, or been cancelled, are forgotten. A refused key turns
+        details off for six hours; any other failure skips that train until
+        the next poll, keeping what was known."""
+        running = {s.service_id for s in board.services
+                   if s.service_id and s.departure.status is not Status.CANCELLED}
+        self._details = {sid: entry for sid, entry in self._details.items() if sid in running}
+        if self._details_off_until is not None and self._monotonic() < self._details_off_until:
+            return
+        wanted = [s.service_id for s in board.services if s.service_id in running][:DETAILS_TRAINS]
+        for service_id in wanted:
+            entry = self._details.get(service_id)
+            if entry is not None and self._monotonic() - entry[0] < DETAILS_TTL:
+                continue
+            try:
+                found = self._settings.train_details.details(service_id)
+            except DetailsUnavailable as error:
+                self._details_off_until = self._monotonic() + DETAILS_OFF
+                self._details = {}
+                log.warning("dashboard train positions off for 6 hours: %s", safe_message(error))
+                return
+            except ServiceGone:
+                self._details.pop(service_id, None)
+            except Exception as error:  # noqa: BLE001 - the board matters more than one train's position
+                log.warning("dashboard train position skipped: %s", safe_message(error))
+            else:
+                self._details[service_id] = (self._monotonic(), found)
 
     def poll_buses(self) -> None:
         source = self._settings.bus

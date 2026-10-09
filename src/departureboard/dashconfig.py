@@ -5,6 +5,8 @@ table, but keeps everything it writes (the bus timetable, bank holidays,
 punctuality history) in its own state folder, never the board's. It uses only
 the free feeds: Darwin, the BODS timetable with live positions, and
 Open-Meteo. TransportAPI keys are dropped so no fallback is ever built.
+Darwin's Service Details, which places each train on its route, is used
+only when its own key, RDM_DETAILS_API_KEY, is set.
 
 One dashboard per state folder: a lock held for the life of the process stops
 a second one sharing (and fighting over) the same files.
@@ -24,7 +26,7 @@ from typing import IO, Mapping, Protocol
 from .bodsbus import BusBoard
 from .config import ConfigError, _flag, _table, _texts, _whole, read_config, settings_from
 from .config import state_dir as board_state_dir
-from .darwin import DarwinSource, TrainBoard
+from .darwin import DarwinSource, ServiceDetails, ServiceDetailsClient, TrainBoard
 from .schedule import Window, parse_window
 from .walk import WalkTimes
 from .weather import Conditions
@@ -138,6 +140,10 @@ class TrainSource(Protocol):
     def fetch_board(self) -> TrainBoard: ...
 
 
+class DetailsSource(Protocol):
+    def details(self, service_id: str) -> ServiceDetails: ...
+
+
 class BusSource(Protocol):
     def unusable(self) -> str | None: ...
 
@@ -162,6 +168,8 @@ class DashboardSettings:
     train: TrainSource | None = None
     train_crs: str = ""
     train_filter: str | None = None
+    # Service details for the trains' positions; None without RDM_DETAILS_API_KEY.
+    train_details: DetailsSource | None = None
     bus: BusSource | None = None
     # A second bus source for rebuilding the timetable from the upkeep thread:
     # BodsBusSource remembers the timetable it last read, so each thread gets
@@ -257,6 +265,11 @@ def load_dashboard(config_path: Path | str, env: Mapping[str, str],
         elif config.source.name == "bus":
             bus = config.source
     train_section = data.get("train", {})
+    details_key = env.get("RDM_DETAILS_API_KEY", "").strip()
+    # The key goes in a header: anything that could split one is refused,
+    # without repeating the key.
+    if details_key and (not details_key.isprintable() or any(c.isspace() for c in details_key)):
+        raise ConfigError("RDM_DETAILS_API_KEY has spaces or control characters in it")
     weather = settings.board.weather
 
     _make_folder(folder)
@@ -270,6 +283,7 @@ def load_dashboard(config_path: Path | str, env: Mapping[str, str],
         train=train,
         train_crs=str(train_section.get("crs", "")).strip().upper() if train else "",
         train_filter=(str(train_section.get("filter_crs") or "").strip().upper() or None) if train else None,
+        train_details=ServiceDetailsClient(details_key) if train is not None and details_key else None,
         bus=bus,
         bus_upkeep=copy.copy(bus) if bus is not None else None,
         bus_stops=dict(data["bus"]["stops"]) if bus is not None else {},

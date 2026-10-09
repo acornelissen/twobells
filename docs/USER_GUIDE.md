@@ -371,6 +371,7 @@ The dashboard is the board's big sibling: a web page with the next 10 trains and
 
 - **Next to catch:** the next train or bus you can still reach on foot, and how long until you need to leave.
 - **Trains:** time, destination, platform, status in words, when to leave, and **Details** with every stop after Glossop, coach count, and the reason for a delay or cancellation.
+- **Where the train is** (optional): with a key for the Rail Data Marketplace's **Service Details** product in `RDM_DETAILS_API_KEY`, the next three trains get a strip like the buses' ("Left Hadfield 22:44, on time", "At Glossop now"), and **Details** lists the stops before Glossop too. Without it, everything else works as before.
 - **Buses:** the same, plus a strip of the stops before yours with the bus drawn where it is, and **Map** for the full route on a street map. "Timetable only" means there's no live position for that bus.
 - **History:** how that departure ran on recent days of the same kind (weekdays, Saturdays, Sundays), such as "Late 4 of the last 10 weekdays (avg 6 min)". Late means 3 minutes or more for trains and 2 for buses. It needs a few days of running before it says anything.
 - **Alert me:** a reminder a minute before you need to leave. On the Mac (the address starts `http://localhost`) the browser can show a notification; on a phone the reminder shows on the page while it's open.

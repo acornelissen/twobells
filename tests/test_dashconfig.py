@@ -10,7 +10,7 @@ from departureboard.dashconfig import (
     default_state_dir,
     load_dashboard,
 )
-from departureboard.darwin import DarwinSource
+from departureboard.darwin import DETAILS_BASE_URL, DarwinSource, ServiceDetailsClient
 from departureboard.bodsbus import BodsBusSource
 from departureboard.weather import OpenMeteoSource
 
@@ -243,3 +243,34 @@ def test_a_relative_board_state_file_says_nothing_about_this_machine(tmp_path, m
     monkeypatch.chdir(data)
     dash = load(path, data, opened=opened)
     assert dash.state_dir == data
+
+
+# Service details, for the trains' positions
+
+
+def test_no_details_client_without_its_key(config, tmp_path, opened):
+    assert load(config, tmp_path / "dash", opened=opened).train_details is None
+    blank = load(config, tmp_path / "dash2", env={**ENV, "RDM_DETAILS_API_KEY": "  "}, opened=opened)
+    assert blank.train_details is None
+
+
+def test_a_details_key_builds_the_client(config, tmp_path, opened):
+    dash = load(config, tmp_path / "dash", env={**ENV, "RDM_DETAILS_API_KEY": " details-key "}, opened=opened)
+    assert isinstance(dash.train_details, ServiceDetailsClient)
+    assert dash.train_details._api_key == "details-key"
+    assert dash.train_details._base_url == DETAILS_BASE_URL
+
+
+def test_no_details_client_without_trains(tmp_path, opened):
+    path = tmp_path / "config.toml"
+    path.write_text('title = "Weather only"\n[weather]\nlat = 53.4\nlon = -1.9\n')
+    dash = load(path, tmp_path / "dash", env={"RDM_DETAILS_API_KEY": "details-key"}, opened=opened)
+    assert dash.train_details is None
+
+
+@pytest.mark.parametrize("key", ["abc\r\nX-Evil: 1", "abc def", "abc\x00def", "abc def"])
+def test_a_details_key_that_could_split_a_header_is_refused_without_repeating_it(config, tmp_path, key):
+    with pytest.raises(ConfigError, match="RDM_DETAILS_API_KEY") as raised:
+        load_dashboard(config, {**ENV, "RDM_DETAILS_API_KEY": key}, tmp_path / "dash")
+    assert "abc" not in str(raised.value)
+    assert not (tmp_path / "dash" / "dashboard.lock").exists()

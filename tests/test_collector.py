@@ -9,7 +9,7 @@ import pytest
 from departureboard.bodsbus import BusBoard
 from departureboard.collector import Collector, Poller
 from departureboard.dashconfig import DashboardOptions, DashboardSettings
-from departureboard.darwin import parse_board_rich
+from departureboard.darwin import DetailsError, DetailsUnavailable, ServiceGone, parse_board_rich, parse_service_details
 from departureboard.history import Stats
 from departureboard.snapshot import Hub
 from departureboard.walk import WalkTimes
@@ -37,16 +37,40 @@ class Monotonic:
         return self.now
 
 
+def glossop_board():
+    return json.loads((FIXTURES / "ldbws_glossop_details.json").read_text())
+
+
 class Trains:
     def __init__(self):
         self.error = None
         self.calls = 0
+        self.payload = glossop_board()
 
     def fetch_board(self):
         self.calls += 1
         if self.error:
             raise self.error
-        return parse_board_rich(json.loads((FIXTURES / "ldbws_glossop_details.json").read_text()))
+        return parse_board_rich(self.payload)
+
+
+# The board's trains, in order: 22:05, 22:22, 22:35, 22:52, 23:07.
+IDS = ["9000001GLSP____", "9000001GLSP____", "9000001GLSP____", "9000001GLSP____", "9000001GLSP____"]
+
+
+class Details:
+    """Service details for any train, from the real capture of the 22:52."""
+
+    def __init__(self):
+        self.asked = []
+        self.errors = {}  # service ID -> exception, or "*" for every train
+
+    def details(self, service_id):
+        self.asked.append(service_id)
+        error = self.errors.get(service_id) or self.errors.get("*")
+        if error:
+            raise error
+        return parse_service_details(json.loads((FIXTURES / "ldbws_service_details_from_hadfield.json").read_text()))
 
 
 class Buses:
@@ -107,23 +131,26 @@ class FakeHistory:
 class Setup:
     """A collector over fake sources, with its clock, hub and history."""
 
-    def __init__(self, tmp_path, now=None, train=True, buses=True, weather=True, reason=None, options=None):
+    def __init__(self, tmp_path, now=None, train=True, buses=True, weather=True, reason=None, options=None,
+                 details=False):
         self.clock = Clock(now or at(10, 14))
         self.monotonic = Monotonic()
         self.trains = Trains() if train else None
         self.buses = Buses(self.clock, reason) if buses else None
         self.upkeep_buses = self.buses  # the same fake stands for both instances
         self.weather = Weather() if weather else None
+        self.details = Details() if details else None
         self.settings = DashboardSettings(
             title="Glossop", timezone="Europe/London", state_dir=tmp_path, walk=WalkTimes(train=12, bus={"A": 5}),
             options=options or DashboardOptions(), train=self.trains, train_crs="GLO", train_filter="MAN",
             bus=self.buses, bus_upkeep=self.upkeep_buses, bus_stops={"A": HENRY_A}, weather=self.weather,
+            train_details=self.details,
         )
         self.hub = Hub("Glossop", self.settings.walk, clock=self.clock, monotonic=self.monotonic)
         self.history = FakeHistory()
         self.holiday_calls = []
         self.collector = Collector(self.settings, self.hub, self.history, clock=self.clock,
-                                   fetch_holidays=self._holidays, random=lambda: 0.5)
+                                   fetch_holidays=self._holidays, random=lambda: 0.5, monotonic=self.monotonic)
 
     def _holidays(self, folder, now):
         self.holiday_calls.append((folder, now))
@@ -227,6 +254,140 @@ def test_an_error_before_any_data_is_stale_with_no_rows(tmp_path):
         setup.collector.poll_trains()
     trains = setup.snapshot()["trains"]
     assert trains["rows"] == [] and trains["status"]["stale"] and trains["status"]["error"] == "down"
+
+
+# Train positions
+
+TONIGHT = datetime(2026, 10, 9, 22, 3, tzinfo=LONDON)
+
+
+def positions(setup):
+    return [row["position"] for row in setup.snapshot()["trains"]["rows"]]
+
+
+def test_without_a_details_client_trains_have_no_position(tmp_path):
+    setup = Setup(tmp_path, now=TONIGHT)
+    setup.collector.poll_trains()
+    rows = setup.snapshot()["trains"]["rows"]
+    assert rows and all(r["position"] is None and r["previous_points"] == [] for r in rows)
+
+
+def test_the_first_three_trains_are_placed(tmp_path):
+    setup = Setup(tmp_path, now=TONIGHT, details=True)
+    setup.collector.poll_trains()
+    assert setup.details.asked == IDS[:3]
+    found = positions(setup)
+    assert [p is not None for p in found] == [True, True, True, False, False]
+    assert found[0]["where"] == "At Glossop now"
+    rows = setup.snapshot()["trains"]["rows"]
+    assert rows[0]["previous_points"][0]["name"] == "Hadfield" and rows[3]["previous_points"] == []
+
+
+def test_cancelled_trains_are_not_counted_in_the_three(tmp_path):
+    setup = Setup(tmp_path, now=TONIGHT, details=True)
+    setup.trains.payload["trainServices"][1].update(etd="Cancelled", isCancelled=True)
+    setup.collector.poll_trains()
+    assert setup.details.asked == [IDS[0], IDS[2], IDS[3]]
+    assert [p is not None for p in positions(setup)] == [True, False, True, True, False]
+
+
+def test_details_are_kept_for_a_minute(tmp_path):
+    setup = Setup(tmp_path, now=TONIGHT, details=True)
+    setup.collector.poll_trains()
+    setup.monotonic.now += 59
+    setup.collector.poll_trains()
+    assert setup.details.asked == IDS[:3]
+    setup.monotonic.now += 2
+    setup.collector.poll_trains()
+    assert setup.details.asked == IDS[:3] * 2
+
+
+def test_details_are_forgotten_when_a_train_leaves_the_board(tmp_path):
+    setup = Setup(tmp_path, now=TONIGHT, details=True)
+    setup.collector.poll_trains()
+    first = setup.trains.payload["trainServices"].pop(0)
+    setup.collector.poll_trains()
+    assert setup.details.asked == IDS[:3] + [IDS[3]]  # the new third train
+    # Back again within the minute (a board that flickered): asked for afresh.
+    setup.trains.payload["trainServices"].insert(0, first)
+    setup.collector.poll_trains()
+    assert setup.details.asked == IDS[:3] + [IDS[3], IDS[0]]
+
+
+def test_a_train_that_becomes_cancelled_loses_its_position(tmp_path):
+    setup = Setup(tmp_path, now=TONIGHT, details=True)
+    setup.collector.poll_trains()
+    setup.trains.payload["trainServices"][0].update(etd="Cancelled", isCancelled=True)
+    setup.collector.poll_trains()
+    assert positions(setup)[0] is None
+    assert setup.snapshot()["trains"]["rows"][0]["previous_points"] == []
+
+
+def test_a_refused_key_turns_details_off_for_six_hours(tmp_path, caplog):
+    setup = Setup(tmp_path, now=TONIGHT, details=True)
+    setup.collector.poll_trains()
+    assert positions(setup)[0] is not None
+    setup.monotonic.now += 61
+    setup.details.errors["*"] = DetailsUnavailable("Service details refused the key (HTTP 403)")
+    setup.details.asked.clear()
+    with caplog.at_level("WARNING", logger="departureboard.collector"):
+        setup.collector.poll_trains()  # the board itself still works
+        setup.monotonic.now += 3600
+        setup.collector.poll_trains()
+    assert setup.details.asked == [IDS[0]]  # one try, then no more
+    assert all(p is None for p in positions(setup))
+    assert setup.snapshot()["trains"]["status"]["error"] is None
+    warnings = [r.getMessage() for r in caplog.records if "positions" in r.getMessage()]
+    assert warnings == ["dashboard train positions off for 6 hours: Service details refused the key (HTTP 403)"]
+
+    setup.monotonic.now += 5 * 3600 + 1  # six hours on
+    setup.details.errors.clear()
+    setup.collector.poll_trains()
+    assert setup.details.asked == [IDS[0]] + IDS[:3]
+    assert positions(setup)[0] is not None
+
+
+def test_other_failures_skip_that_train_this_round(tmp_path, caplog):
+    setup = Setup(tmp_path, now=TONIGHT, details=True)
+    setup.details.errors[IDS[1]] = DetailsError("HTTP Error 500: Internal Server Error")
+    with caplog.at_level("WARNING", logger="departureboard.collector"):
+        setup.collector.poll_trains()
+    assert setup.details.asked == IDS[:3]
+    assert [p is not None for p in positions(setup)[:3]] == [True, False, True]
+    assert any("skipped: HTTP Error 500" in r.getMessage() for r in caplog.records)
+    # Asked again on the next poll, not switched off.
+    setup.details.errors.clear()
+    setup.collector.poll_trains()
+    assert setup.details.asked == IDS[:3] + [IDS[1]]
+    assert positions(setup)[1] is not None
+
+
+def test_a_failure_keeps_what_was_known_and_never_logs_a_key(tmp_path, caplog):
+    setup = Setup(tmp_path, now=TONIGHT, details=True)
+    setup.collector.poll_trains()
+    setup.monotonic.now += 61
+    setup.details.errors["*"] = RuntimeError("timed out: x-apikey=SECRET123")
+    with caplog.at_level("WARNING", logger="departureboard.collector"):
+        setup.collector.poll_trains()
+    assert positions(setup)[0] is not None
+    assert "SECRET123" not in caplog.text and "SECRET123" not in setup.hub.current()[1].decode()
+
+
+def test_a_train_darwin_no_longer_knows_loses_its_details(tmp_path):
+    setup = Setup(tmp_path, now=TONIGHT, details=True)
+    setup.collector.poll_trains()
+    setup.monotonic.now += 61
+    setup.details.errors[IDS[0]] = ServiceGone("Darwin no longer knows this train")
+    setup.collector.poll_trains()
+    assert positions(setup)[0] is None and positions(setup)[1] is not None
+
+
+def test_no_details_are_asked_for_when_the_board_fails(tmp_path):
+    setup = Setup(tmp_path, now=TONIGHT, details=True)
+    setup.trains.error = RuntimeError("down")
+    with pytest.raises(RuntimeError):
+        setup.collector.poll_trains()
+    assert setup.details.asked == []
 
 
 # Buses
