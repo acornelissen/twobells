@@ -1,0 +1,8 @@
+# Exact versions install.sh installs, so a Pi gets what was tested rather than
+# whatever is newest on PyPI or piwheels that day. Pillow is the version the
+# test suite runs against; inky is the oldest the project accepts.
+# Their own dependencies (numpy, smbus2, gpiod, ...) are not pinned yet: list
+# them here from `pip freeze` on a working Pi. Hashes would need every wheel's
+# hash for the Pi's platform from piwheels, so they are left for later.
+Pillow==12.3.0
+inky==2.0.0
