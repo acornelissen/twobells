@@ -19,8 +19,8 @@ MARGIN = 3
 _LINE = 11
 _TOP = 2
 # Space either side of the dotted divider between trains and buses.
-_ABOVE_RULE = 4
-_BELOW_RULE = 7
+_ABOVE_RULE = 8
+_BELOW_RULE = 11
 _COL_GAP = 5
 _ORDINALS = ("1st", "2nd", "3rd", "4th")
 _MAX_TRAINS = 3

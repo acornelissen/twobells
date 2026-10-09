@@ -144,8 +144,8 @@ def test_trains_and_buses_have_breathing_room_around_the_divider():
     last_train_bottom = find(layout.items, "3rd").y + 9
     first_bus_top = find(layout.items, "341").y
     [rule] = layout.rules
-    assert rule - last_train_bottom >= 4
-    assert first_bus_top - rule >= 6
+    assert rule - last_train_bottom >= 8
+    assert first_bus_top - rule >= 10
 
 
 def test_buses_still_clear_the_footer_with_a_full_board():
