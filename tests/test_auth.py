@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import json
 import threading
 
@@ -7,7 +8,9 @@ import pytest
 from departureboard.auth import (
     FAILURE_WINDOW_S,
     FORM_PAGE_HEADERS,
+    FORM_TOKEN_SECONDS,
     MAX_CHECKS,
+    FormTokens,
     MAX_FAILURES,
     MAX_SESSIONS,
     MIN_PASSWORD,
@@ -611,3 +614,86 @@ def test_simultaneous_wrong_guesses_cannot_beat_the_try_limit(tmp_path):
     for thread in threads:
         thread.join()
     assert not ResetCodes(tmp_path).verify(code, T0 + 2)
+
+
+# --- Ending every session ---
+
+
+def test_ending_all_sessions_signs_everyone_out():
+    sessions = Sessions(Clock())
+    tokens = [sessions.create()[0] for _ in range(3)]
+    sessions.end_all()
+    assert all(sessions.get(t) is None for t in tokens)
+    assert sessions.get(sessions.create()[0]) is not None
+
+
+# --- Form tokens before a session ---
+
+
+def browser(tokens):
+    """A new browser's Cookie header and the form value made for it."""
+    nonce = tokens.nonce(None)
+    return tokens.cookie(nonce).split(";")[0], tokens.form_value(nonce)
+
+
+def test_a_form_value_checks_only_with_its_own_cookie():
+    tokens = FormTokens(Clock())
+    cookie, value = browser(tokens)
+    other_cookie, other_value = browser(tokens)
+    assert tokens.check(cookie, value)
+    assert tokens.check(f"session=x; {cookie}", value)
+    assert not tokens.check(cookie, other_value)
+    assert not tokens.check(other_cookie, value)
+    assert not tokens.check(None, value)
+    assert not tokens.check(cookie, "")
+
+
+def test_a_form_value_runs_out():
+    clock = Clock()
+    tokens = FormTokens(clock)
+    cookie, value = browser(tokens)
+    clock.now += FORM_TOKEN_SECONDS - 1
+    assert tokens.check(cookie, value)
+    clock.now += 1
+    assert not tokens.check(cookie, value)
+
+
+def test_a_form_value_cannot_be_made_or_stretched_without_the_key():
+    clock = Clock()
+    tokens = FormTokens(clock)
+    cookie, value = browser(tokens)
+    expires, mac = value.split(".")
+    assert not tokens.check(cookie, f"{int(expires) + 3600}.{mac}")
+    assert not FormTokens(clock).check(cookie, value)  # another process (or after a restart)
+    nonce = cookie.split("=", 1)[1]
+    forged = hmac.new(b"guess", f"{nonce}.{expires}".encode(), hashlib.sha256).hexdigest()
+    assert not tokens.check(cookie, f"{expires}.{forged}")
+
+
+@pytest.mark.parametrize("value", ["", ".", "abc.def", "-1.00", "1e9.00", "١٢٣.00", "9" * 40 + ".00", "é" * 10])
+def test_odd_form_values_are_refused_not_crashed_on(value):
+    tokens = FormTokens(Clock())
+    cookie, _ = browser(tokens)
+    assert not tokens.check(cookie, value)
+
+
+@pytest.mark.parametrize("cookie", ["form=short", "form=" + "a" * 42 + "!", 'form="unterminated', "form="])
+def test_a_planted_odd_cookie_gets_a_fresh_value(cookie):
+    tokens = FormTokens(Clock())
+    nonce = tokens.nonce(cookie)
+    assert len(nonce) == 43 and nonce != cookie.split("=", 1)[1]
+
+
+def test_the_browser_keeps_its_value_across_pages():
+    tokens = FormTokens(Clock())
+    cookie, _ = browser(tokens)
+    assert tokens.nonce(cookie) == cookie.split("=", 1)[1]
+
+
+def test_the_form_cookie_is_strict_http_only_and_scoped():
+    tokens = FormTokens(cookie_name="dash_form", cookie_path="/settings")
+    assert tokens.cookie("n" * 43) == (
+        f"dash_form={'n' * 43}; HttpOnly; SameSite=Strict; Path=/settings; Max-Age={FORM_TOKEN_SECONDS}"
+    )
+    with pytest.raises(ValueError):
+        FormTokens(cookie_name="a;b")

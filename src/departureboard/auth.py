@@ -2,8 +2,9 @@
 tokens, the lockout after wrong guesses, and the checks every request passes.
 
 Shared by the settings page (web.py) and the dashboard server. The password
-lives in a file only the service user can read, set on the Pi itself, so
-nobody on the network can claim it first. A session is a random token in an
+lives in a file only the service user can read. It is set on the Pi itself,
+or on the page with a one-time code shown on the board (see ResetCodes), so
+being on the network is not enough to claim it. A session is a random token in an
 HttpOnly, SameSite=Strict cookie; the server keeps the rest. Every change
 needs that session's form token, compared in constant time, and a request
 whose Origin (or Referer) is this same host.
@@ -67,6 +68,10 @@ class PasswordStore:
 
     def __init__(self, path: Path | str) -> None:
         self._path = Path(path)
+
+    @property
+    def path(self) -> Path:
+        return self._path
 
     def is_set(self) -> bool:
         return self._path.exists()
@@ -157,15 +162,14 @@ class Sessions:
         with self._lock:
             self._live.pop(token or "", None)
 
+    def end_all(self) -> None:
+        """Signs every browser out, as after the password is reset."""
+        with self._lock:
+            self._live.clear()
+
     def token_from(self, cookie_header: str | None) -> str | None:
         """This store's session token from a request's Cookie header, if it has one."""
-        cookie = SimpleCookie()
-        try:
-            cookie.load(cookie_header or "")
-        except Exception:  # noqa: BLE001 - a malformed cookie is no cookie
-            return None
-        morsel = cookie.get(self.cookie_name)
-        return morsel.value if morsel else None
+        return _cookie_value(cookie_header, self.cookie_name)
 
     def cookie(self, token: str) -> str:
         """The Set-Cookie value that signs a browser in for SESSION_SECONDS."""
@@ -177,11 +181,80 @@ class Sessions:
         return f"{self.cookie_name}=; HttpOnly; SameSite=Strict; Path={self.cookie_path}; Max-Age=0"
 
 
+def _cookie_value(cookie_header: str | None, name: str) -> str | None:
+    cookie = SimpleCookie()
+    try:
+        cookie.load(cookie_header or "")
+    except Exception:  # noqa: BLE001 - a malformed cookie is no cookie
+        return None
+    morsel = cookie.get(name)
+    return morsel.value if morsel else None
+
+
 def csrf_matches(session: Session | None, submitted: str) -> bool:
     """Whether a form's token is the session's own, compared in constant time.
     False without a session."""
     # As bytes: compare_digest raises on non-ASCII str, and a form can send anything.
     return session is not None and hmac.compare_digest(submitted.encode(), session.csrf.encode())
+
+
+FORM_TOKEN_SECONDS = 30 * 60
+_NONCE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+_EXPIRES = re.compile(r"^[0-9]{1,12}$")
+
+
+@dataclass
+class FormTokens:
+    """Form tokens for the forms posted before there is a session to hold
+    one: the forgotten password and the first claim.
+
+    A signed double-submit cookie: the browser keeps a random value in an
+    HttpOnly, SameSite=Strict cookie, and the form carries an expiry and an
+    HMAC of that value and expiry under a key only this process knows. A page
+    on another site can neither read the cookie nor make the matching form
+    value, and a cookie planted by a neighbouring host is no use without the
+    key. A token lasts FORM_TOKEN_SECONDS, and every one dies with a restart.
+    This is on top of the Origin check every POST passes.
+    """
+
+    clock: Callable[[], float] = time.time
+    cookie_name: str = "form"
+    cookie_path: str = "/"
+    _key: bytes = field(default_factory=lambda: secrets.token_bytes(32))
+
+    def __post_init__(self) -> None:
+        if not _COOKIE_NAME.match(self.cookie_name):
+            raise ValueError("A cookie name is 1 to 64 letters, digits, _ or -")
+        if not _COOKIE_PATH.match(self.cookie_path):
+            raise ValueError("A cookie path starts with / and has only letters, digits, _, - and /")
+
+    def nonce(self, cookie_header: str | None) -> str:
+        """The browser's value from its cookie, or a new one if it has none, so
+        two open tabs don't spoil each other's forms."""
+        value = _cookie_value(cookie_header, self.cookie_name)
+        return value if value and _NONCE.match(value) else secrets.token_urlsafe(32)
+
+    def cookie(self, nonce: str) -> str:
+        return (f"{self.cookie_name}={nonce}; HttpOnly; SameSite=Strict; "
+                f"Path={self.cookie_path}; Max-Age={FORM_TOKEN_SECONDS}")
+
+    def form_value(self, nonce: str) -> str:
+        """The value for the form's hidden field, for the browser holding `nonce`."""
+        expires = int(self.clock()) + FORM_TOKEN_SECONDS
+        return f"{expires}.{self._mac(nonce, expires)}"
+
+    def check(self, cookie_header: str | None, submitted: str) -> bool:
+        """Whether a posted form's value was made for this browser's cookie, by
+        this process, and hasn't run out."""
+        nonce = _cookie_value(cookie_header, self.cookie_name)
+        expires, _, mac = submitted.partition(".")
+        if not nonce or not _NONCE.match(nonce) or not _EXPIRES.match(expires):
+            return False
+        right = hmac.compare_digest(mac.encode(), self._mac(nonce, int(expires)).encode())
+        return right and self.clock() < int(expires)
+
+    def _mac(self, nonce: str, expires: int) -> str:
+        return hmac.new(self._key, f"{nonce}.{expires}".encode(), hashlib.sha256).hexdigest()
 
 
 @dataclass

@@ -423,14 +423,17 @@ def _web(args) -> int:
         return 0
     form = SettingsForm(args.config, lambda: _env(args.config, args.secrets))
     stylesheet = files("departureboard").joinpath("web.css").read_bytes()
-    handler = web.make_handler(form, password, auth.Sessions(), auth.Lockout(), web.shell, stylesheet)
+    # Codes for a forgotten password, or the first claim, show on the board.
+    codes = auth.ResetCodes(folder)
+    handler = web.make_handler(form, password, auth.Sessions(), auth.Lockout(), web.shell, stylesheet, codes)
     try:
         server = web.make_server(handler, args.host, args.port)
     except OSError as error:
         print(f"Can't listen on {args.host}:{args.port}: {error.strerror or error}", file=sys.stderr)
         return 2
     if not password.is_set():
-        print("No password yet: run `departureboard web --set-password` as the service user", file=sys.stderr)
+        print("No password yet: claim the page with a code from the board, or run "
+              "`departureboard web --set-password` as the service user", file=sys.stderr)
     print(f"Settings page on http://{args.host}:{server.server_address[1]}/  (home network only)")
     try:
         server.serve_forever()

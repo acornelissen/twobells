@@ -1,6 +1,8 @@
 import http.client
+import json
 import re
 import threading
+import time
 from urllib.parse import urlencode
 
 import pytest
@@ -9,6 +11,7 @@ from departureboard.web import (
     FAILURE_WINDOW_S,
     MAX_FAILURES,
     SESSION_SECONDS,
+    WRONG_CODE,
     Password,
     Sessions,
     SignInLimiter,
@@ -205,7 +208,8 @@ def test_wrong_password_is_refused_without_saying_why(server):
     port, _, _ = server
     response, text = request(port, "POST", "/login", {"password": "nope nope nope"})
     assert response.status == 401
-    assert "isn't right" in text and response.getheader("Set-Cookie") is None
+    # The page may set its form-token cookie, but never a session.
+    assert "isn't right" in text and not (response.getheader("Set-Cookie") or "").startswith("session=")
 
 
 def test_repeated_wrong_passwords_lock_sign_in(server):
@@ -411,3 +415,209 @@ def test_a_client_hanging_up_early_is_not_reported(capsys):
     except BrokenPipeError:
         server.handle_error(None, ("127.0.0.1", 1))
     assert capsys.readouterr().err == ""
+
+
+# --- Forgotten password and first claim, with a code from the board ---
+
+NEW_PASSWORD = "a brand new password"
+
+
+class Recorder:
+    """Every response seen, so a test can show no code was ever in one."""
+
+    def __init__(self, port):
+        self.port = port
+        self.seen = []
+
+    def __call__(self, method, path, body=None, cookie=None, origin="same"):
+        response, text = request(self.port, method, path, body, origin=origin, cookie=cookie)
+        self.seen.append(text + "".join(f"{k}: {v}\n" for k, v in response.getheaders()))
+        return response, text
+
+    def form(self, path="/login", cookie=None):
+        """(Cookie header, hidden form value) from a pre-session page."""
+        response, text = self("GET", path, cookie=cookie)
+        token = re.search(r'name="form" value="([^"]+)"', text).group(1)
+        return response.getheader("Set-Cookie").split(";")[0], token
+
+
+def board_code(folder):
+    return json.loads((folder / "reset-display.json").read_text())["code"]
+
+
+@pytest.fixture
+def reset_server(tmp_path, caplog):
+    caplog.set_level("DEBUG")
+    clock = Clock()
+    clock.now = time.time()
+    password = Password(tmp_path / "web.json")
+    sessions = Sessions()
+    handler = make_handler(FakePage(), password, sessions, SignInLimiter(), lambda t, b: f"<title>{t}</title>{b}", b"",
+                           clock=clock)
+    httpd = make_server(handler, "127.0.0.1", 0)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield Recorder(httpd.server_address[1]), password, tmp_path, clock
+    httpd.shutdown()
+    httpd.server_close()
+
+
+def ask_for_code(http, cookie=None):
+    form_cookie, token = http.form(cookie=cookie)
+    response, _ = http("POST", "/forgot", {"form": token}, cookie=form_cookie)
+    assert response.status == 303 and response.getheader("Location") == "/reset?asked"
+    return form_cookie
+
+
+def reset(http, form_cookie, code, new=NEW_PASSWORD, again=None):
+    _, token = http.form("/reset?asked", cookie=form_cookie)
+    return http("POST", "/reset", {"form": token, "code": code, "password": new, "again": again or new},
+                cookie=form_cookie)
+
+
+def assert_never_shown(code, http, caplog):
+    # Random tokens first, which could hold any six digits by chance.
+    tokens = re.compile(r'(name="form" value=|form=|session=)[^";\s]+')
+    for text in http.seen:
+        text = tokens.sub(r"\1(token)", text)
+        assert code not in text and f"{code[:3]} {code[3:]}" not in text
+    for record in caplog.records:
+        assert code not in record.getMessage() and f"{code[:3]} {code[3:]}" not in record.getMessage()
+
+
+def test_a_forgotten_password_is_reset_with_the_code_from_the_board(reset_server, caplog):
+    http, password, folder, _ = reset_server
+    password.set(PASSWORD)
+    _, sign_in_page = http("GET", "/login")
+    assert 'action="/forgot"' in sign_in_page and "Forgot password?" in sign_in_page
+    old = http("POST", "/login", {"password": PASSWORD})[0].getheader("Set-Cookie").split(";")[0]
+
+    form_cookie = ask_for_code(http)
+    _, page = http("GET", "/reset?asked", cookie=form_cookie)
+    assert "Look at the board" in page and 'name="code"' in page and 'autocomplete="new-password"' in page
+    code = board_code(folder)
+    response, _ = reset(http, form_cookie, f"{code[:3]} {code[3:]}")
+
+    assert response.status == 303 and response.getheader("Location") == "/"
+    new = response.getheader("Set-Cookie")
+    assert new.startswith("session=") and "HttpOnly" in new and "SameSite=Strict" in new
+    assert http("GET", "/", cookie=new.split(";")[0])[0].status == 200
+    assert http("GET", "/", cookie=old)[0].getheader("Location") == "/login"  # every old session ended
+    assert password.check(NEW_PASSWORD) and not password.check(PASSWORD)
+    assert not (folder / "reset-display.json").exists()  # used, so off the board
+    assert reset(http, form_cookie, code, "yet another password")[0].status == 401  # and once only
+    assert_never_shown(code, http, caplog)
+
+
+def test_a_wrong_code_changes_nothing_and_says_no_more_than_that(reset_server, caplog):
+    http, password, folder, _ = reset_server
+    password.set(PASSWORD)
+    form_cookie, _ = http.form()
+    # No code asked for yet: the same answer as for a wrong one.
+    response, without = reset(http, form_cookie, "123456")
+    assert response.status == 401 and WRONG_CODE in without
+    ask_for_code(http, form_cookie)
+    code = board_code(folder)
+    wrong = f"{(int(code) + 1) % 10**6:06d}"
+    error = re.compile(r'<p class="error"[^>]*>(.*?)</p>')
+    answers = set()
+    for _ in range(5):
+        response, text = reset(http, form_cookie, wrong)
+        assert response.status == 401 and not response.getheader("Set-Cookie", "").startswith("session=")
+        answers.add(error.search(text).group(1))
+    response, text = reset(http, form_cookie, code)  # voided after five wrong
+    assert response.status == 401
+    answers.add(error.search(text).group(1))
+    answers.add(error.search(without).group(1))
+    assert len(answers) == 1
+    assert 'id="code"' in text and 'aria-invalid="true"' in text
+    assert password.check(PASSWORD)
+    assert_never_shown(code, http, caplog)
+
+
+def test_a_typo_in_the_new_password_does_not_use_up_the_code(reset_server, caplog):
+    http, password, folder, _ = reset_server
+    password.set(PASSWORD)
+    form_cookie = ask_for_code(http)
+    code = board_code(folder)
+    response, text = reset(http, form_cookie, code, NEW_PASSWORD, NEW_PASSWORD + "!")
+    assert response.status == 422 and "don't match" in text
+    response, text = reset(http, form_cookie, code, "short")
+    assert response.status == 422 and "at least 10" in text
+    assert reset(http, form_cookie, code)[0].status == 303
+    assert_never_shown(code, http, caplog)
+
+
+def test_the_first_claim_needs_a_code_from_the_board(reset_server, caplog):
+    http, password, folder, _ = reset_server
+    _, page = http("GET", "/login")
+    assert "Claim this board" in page and 'action="/forgot"' in page and 'action="/reset"' in page
+    assert "--set-password" in page and "--reset-code" in page
+    form_cookie, _ = http.form()
+    assert reset(http, form_cookie, "000000")[0].status == 401
+    assert not password.is_set()
+    assert http("POST", "/login", {"password": NEW_PASSWORD})[0].status == 403
+    ask_for_code(http, form_cookie)
+    code = board_code(folder)
+    response, _ = reset(http, form_cookie, code)
+    assert response.status == 303 and response.getheader("Set-Cookie").startswith("session=")
+    assert password.check(NEW_PASSWORD)
+    _, page = http("GET", "/login")
+    assert "Claim this board" not in page  # claimed: an ordinary sign-in now
+    assert_never_shown(code, http, caplog)
+
+
+def test_asking_for_a_code_needs_this_browsers_form_token(reset_server):
+    http, password, folder, clock = reset_server
+    password.set(PASSWORD)
+    form_cookie, token = http.form()
+    other_cookie, other_token = http.form()
+    attempts = [
+        ({"form": token}, None, "same"),  # no cookie: posted from a page that never set it
+        ({}, form_cookie, "same"),  # no token
+        ({"form": other_token}, form_cookie, "same"),  # another browser's token
+        ({"form": token.replace(token[-1], "0" if token[-1] != "0" else "1")}, form_cookie, "same"),
+        ({"form": "9999999999." + token.split(".")[1]}, form_cookie, "same"),  # expiry stretched
+        ({"form": token}, form_cookie, "http://evil.example.com"),  # cross-site
+        ({"form": token}, form_cookie, None),  # no Origin at all
+    ]
+    for body, cookie, origin in attempts:
+        response, _ = http("POST", "/forgot", body, cookie=cookie, origin=origin)
+        assert response.status == 403, (body, cookie, origin)
+    assert not (folder / "reset-display.json").exists()
+    clock.now += 31 * 60  # the token has run out
+    assert http("POST", "/forgot", {"form": token}, cookie=form_cookie)[0].status == 403
+    assert not (folder / "reset-display.json").exists()
+    form_cookie, token = http.form()
+    assert http("POST", "/forgot", {"form": token}, cookie=form_cookie)[0].status == 303
+    assert (folder / "reset-display.json").exists()
+
+
+def test_a_reset_needs_the_form_token_too(reset_server):
+    http, password, folder, _ = reset_server
+    password.set(PASSWORD)
+    form_cookie = ask_for_code(http)
+    code = board_code(folder)
+    response, _ = http("POST", "/reset", {"form": "1.bad", "code": code, "password": NEW_PASSWORD,
+                                          "again": NEW_PASSWORD}, cookie=form_cookie)
+    assert response.status == 403 and password.check(PASSWORD)
+    assert reset(http, form_cookie, code)[0].status == 303  # the code wasn't spent on it
+
+
+def test_asking_again_too_soon_looks_the_same_and_keeps_the_code(reset_server):
+    http, password, folder, _ = reset_server
+    password.set(PASSWORD)
+    form_cookie = ask_for_code(http)
+    code = board_code(folder)
+    ask_for_code(http, form_cookie)  # within the minute: limited, but answered the same
+    assert board_code(folder) == code
+
+
+def test_the_form_cookie_is_strict_http_only_and_short_lived(reset_server):
+    http, password, _, _ = reset_server
+    response, _ = http("GET", "/login")
+    cookie = response.getheader("Set-Cookie")
+    assert cookie.startswith("form=") and "HttpOnly" in cookie and "SameSite=Strict" in cookie
+    assert "Max-Age=1800" in cookie
+    # A second page in the same browser keeps its value, so two tabs both work.
+    again = http("GET", "/reset", cookie=cookie.split(";")[0])[0].getheader("Set-Cookie")
+    assert again.split(";")[0] == cookie.split(";")[0]

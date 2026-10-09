@@ -84,6 +84,11 @@ button.quiet { color: var(--fg); background: transparent; border: 1px solid var(
 .notice { background: var(--field); border: 1px solid var(--line); border-radius: 0.5rem; padding: 1rem; }
 .signin { max-width: 22rem; margin-top: 1rem; }
 .signin button { margin-top: 1rem; }
+.signin label { margin-top: 0.75rem; }
+.forgot { margin-top: 1rem; }
+.after { margin-top: 1.5rem; }
+/* The browser's own link blue is too dark on the dark background. */
+a { color: var(--accent); }
 code { font-family: ui-monospace, "SF Mono", Menlo, monospace; overflow-wrap: anywhere; }
 .actions { position: sticky; bottom: 0; padding: 0.75rem 0; background: var(--bg); }
 .status { border: 1px solid var(--line); border-radius: 0.5rem; padding: 1rem; margin: 0 0 1.5rem; }
