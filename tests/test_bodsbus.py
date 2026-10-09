@@ -223,3 +223,56 @@ def test_while_waiting_for_the_fallback_the_idle_note_says_why(tmp_path):
 def test_without_a_fallback_there_is_no_idle_note(tmp_path):
     # The fetch fails instead, and the error says what to run.
     assert source(tmp_path, at(21, 40)).idle_note() is None
+
+
+# The dashboard's view: rows with the journeys and buses behind them
+
+
+def test_fetch_live_gives_the_rows_with_their_journeys_and_buses(tmp_path):
+    timetable.save(tmp_path, schedule())
+    bus = source(tmp_path, at(10, 4, 30))
+    board = bus.fetch_live()
+    assert [l.departure for l in board.departures] == [
+        Departure("bus", "341", "Hadfield", "10:02", "10:05", Status.LATE, stop="A")
+    ]
+    row = board.departures[0]
+    assert row.journey == EAST and row.vehicle.vehicle_ref == "BNML-1"
+    assert row.progress.at == pytest.approx(0.5, abs=0.02)
+    assert board.schedule == schedule()
+    assert board.vehicles_ok and board.note is None
+    assert bus.fetch() == [l.departure for l in board.departures]
+
+
+def test_fetch_live_takes_its_own_number_of_rows(tmp_path):
+    later = replace(EAST, journey_code="4174", calls=(Call(ARUNDEL, 610), Call(HENRY_A, 612), Call(HOWARD, 613)))
+    timetable.save(tmp_path, schedule(journeys=(EAST, later)))
+    bus = source(tmp_path, at(10, 0), body=OSError("offline"))
+    assert len(bus.fetch_live().departures) == 2
+    assert len(bus.fetch_live(rows=1).departures) == 1
+
+
+def test_fetch_live_says_when_live_positions_failed(tmp_path):
+    timetable.save(tmp_path, schedule())
+    bus = source(tmp_path, at(10, 0), body=OSError("network down"))
+    board = bus.fetch_live()
+    assert not board.vehicles_ok
+    assert board.note == "Timetabled times only; live positions failed: network down"
+    assert [l.departure.scheduled for l in board.departures] == ["10:02"]
+    assert board.departures[0].vehicle is None
+    assert bus.note is None  # the source's note is fetch's alone
+
+
+def test_fetch_live_never_falls_back(tmp_path):
+    fallback = Fallback()
+    bus = source(tmp_path, at(10, 0), fallback=fallback)
+    with pytest.raises(RuntimeError) as raised:
+        bus.fetch_live()
+    assert str(raised.value) == "there is no bus timetable yet"
+    assert fallback.calls == 0 and bus.asked == []
+
+
+def test_fetch_live_raises_for_a_timetable_it_can_t_use(tmp_path):
+    timetable.save(tmp_path, schedule())
+    bus = source(tmp_path, at(10, 0), stops={"A": HENRY_A, "B": "100000008350"})
+    with pytest.raises(RuntimeError, match="for other stops"):
+        bus.fetch_live()

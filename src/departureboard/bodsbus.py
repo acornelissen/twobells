@@ -10,6 +10,7 @@ only costs the delays: the timetabled times are still shown.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Callable, Mapping
@@ -17,6 +18,7 @@ from typing import Callable, Mapping
 from . import holidays, livebus, timetable
 from .bods import DEFAULT_BASE_URL, BodsVehicleSource, HttpGetBytes, Vehicle
 from .http import get_bytes
+from .livebus import LiveDeparture
 from .model import Departure
 from .schedule_model import Journey, Schedule
 from .status import safe_message
@@ -53,6 +55,16 @@ def _box(schedule: Schedule) -> tuple[float, float, float, float] | None:
     lats = [p.lat for p in positions]
     lons = [p.lon for p in positions]
     return (min(lons) - _MARGIN, min(lats) - _MARGIN, max(lons) + _MARGIN, max(lats) + _MARGIN)
+
+
+@dataclass(frozen=True)
+class BusBoard:
+    """Bus departures with what they came from, for the dashboard."""
+
+    departures: list[LiveDeparture]
+    schedule: Schedule
+    vehicles_ok: bool  # False when live positions failed and only timetabled times show
+    note: str | None  # why it fell short, as BodsBusSource.note says it; None if it didn't
 
 
 class BodsBusSource:
@@ -135,20 +147,30 @@ class BodsBusSource:
         """Hits of the fallback's daily allowance the next fetch will use."""
         return self._fallback.cost if self.falling_back else 0
 
-    def _vehicles(self, schedule: Schedule) -> list[Vehicle]:
+    def _vehicles(self, schedule: Schedule) -> tuple[list[Vehicle], str | None]:
+        """Live buses around the timetable's stops, and a note if asking failed."""
         box = _box(schedule)
         if box is None:
-            return []
+            return [], None
         lines = {journey.line for journey in schedule.journeys}
         source = BodsVehicleSource(
             self._api_key, box, lines, self._base_url, self._http_get, now=self._clock
         )
         try:
-            return source.fetch()
+            return source.fetch(), None
         except Exception as error:  # noqa: BLE001 - without positions, timetabled times still show
-            self.note = f"Timetabled times only; live positions failed: {safe_message(error)}"
             log.warning("bus: live positions failed, showing timetabled times: %s", safe_message(error))
-            return []
+            return [], f"Timetabled times only; live positions failed: {safe_message(error)}"
+
+    def _board(self, schedule: Schedule, now: datetime, rows: int) -> BusBoard:
+        names = _holiday_names(self._folder, now.date())
+
+        def runs_on(journey: Journey, day: date) -> bool:
+            return timetable.runs_on(journey.calendar, day, names)
+
+        vehicles, note = self._vehicles(schedule)
+        found = livebus.live_departures(schedule, now, vehicles, runs_on, rows, self._directions)
+        return BusBoard(found, schedule, note is None, note)
 
     def fetch(self) -> list[Departure]:
         now = self._clock()
@@ -161,14 +183,21 @@ class BodsBusSource:
             log.warning("bus: %s, using TransportAPI", reason)
             self.note = f"From TransportAPI: {reason}"
             return self._fallback.fetch()
-        names = _holiday_names(self._folder, now.date())
+        board = self._board(schedule, now, self._rows)
+        self.note = board.note
+        return [live.departure for live in board.departures]
 
-        def runs_on(journey: Journey, day: date) -> bool:
-            return timetable.runs_on(journey.calendar, day, names)
-
-        return livebus.departures(
-            schedule, now, self._vehicles(schedule), runs_on, self._rows, self._directions
-        )
+    def fetch_live(self, rows: int | None = None) -> BusBoard:
+        """The next `rows` buses (the board's number if not given) with their
+        journeys and live buses, from the timetable only: there is no fallback,
+        and this leaves `note` to fetch. Raises RuntimeError saying why if the
+        timetable can't be used."""
+        now = self._clock()
+        schedule = self._schedule()
+        reason = unusable(schedule, self._stops, now.replace(tzinfo=None))
+        if reason is not None:
+            raise RuntimeError(reason)
+        return self._board(schedule, now, self._rows if rows is None else rows)
 
 
 def _holiday_names(folder: Path, today: date) -> dict[date, frozenset[str]]:
