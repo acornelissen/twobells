@@ -47,7 +47,8 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
         "where": "Left Hadfield, 7 min late",
         "strip": {"stops": ["Hadfield", "Glossop", "Dinting"], "yours": 1, "train_at": 0.4}
       },
-      "history": {"phrase": "Late 4 of the last 10 weekdays (avg 6 min)"}
+      "history": {"phrase": "Late 4 of the last 10 weekdays (avg 6 min)"},
+      "arrives": {"name": "Manchester Piccadilly", "at": "07:55", "at_iso": "…", "minutes": 36}
     }]
   },
   "buses": {
@@ -68,7 +69,29 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "leave_at": "…",
       "vehicle": {"age_s": 40, "recorded_at": "…", "bearing": 95.0},
       "strip": {"stops": ["Sunlaws Street", "St Marys Road", "Henry Street", "Howard Arms"], "yours": 2, "bus_at": 0.6, "where": "2 stops away"},
-      "history": {"phrase": null}
+      "history": {"phrase": null, "no_show_phrase": null},
+      "arrives": {"name": "Hyde Bus Station", "at": "08:02", "at_iso": "…", "minutes": 38},
+      "inbound": null,
+      "ghost": false
+    }, {
+      "id": "c03d…",
+      "line": "237",
+      "destination": "Ashton",
+      "stop": "A",
+      "scheduled": "07:25", "scheduled_at": "…",
+      "expected": null, "expected_at": null,
+      "status": "unknown",
+      "status_text": "Timetable only",
+      "minutes_late": null,
+      "live": false,
+      "leave_at": "…",
+      "vehicle": null,
+      "strip": {"stops": ["Henry Street", "Market Hall"], "yours": 0, "bus_at": null, "where": "No live position"},
+      "history": {"phrase": null, "no_show_phrase": "No tracker on 3 of the last 10 weekdays"},
+      "arrives": {"name": "Ashton", "at": "08:10", "at_iso": "…", "minutes": 45},
+      "inbound": {"from": "The Junction", "due": "07:29", "late_min": 4, "where": "4 stops away",
+                  "text": "Bus arriving from The Junction, 4 min late (due 07:29)"},
+      "ghost": false
     }]
   },
   "weather": {
@@ -109,6 +132,23 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `bus_at` is the bus's position in stop units along `stops` (0 is the first). It is null when the bus isn't on the strip yet, and when there's no live bus.
   - `where` is a sentence for screen readers and the row.
 - **`status.stale`** is true when nothing new has arrived for longer than expected. `error` is a short message with any keys removed.
+
+### Row extras
+
+Best guesses added on top of a row (worked out in `enrich.py`). They never change the row's own times, `status` or `status_text`.
+
+- **`arrives`** (trains and buses; null when not known): where and when it gets there.
+  - `name` is the place, `at` the time (`HH:MM`), `at_iso` the same with the board's offset, and `minutes` the journey time from this station or stop, counted from the expected departure (else the scheduled one). It crosses midnight correctly.
+  - **Trains:** the arrival at the filter station (`trains.filter`) if the train calls there, else at its last calling point. Darwin's expected time is used when it is a time, otherwise the booked time ("On time", "No report"). It is null when the train or that stop is cancelled, when the stop says "Delayed", or when the train shows "Delayed" here: the booked time is known to be wrong and the right one isn't known.
+  - **Buses:** the journey's last call (`name` is the bus's destination), at the timetabled time plus the delay the bus has now (`expected_at - scheduled_at`, 0 without a live bus).
+- **`inbound`** (buses; otherwise null): the bus probably coming to work a departure that starts at your stop. BODS sends no block numbers, so it is inferred the way bustimes.org does:
+  - only for a journey that starts at your stop;
+  - from a journey of the same line that ends at your stop, or at a stop within 150 m of it, arriving 0–30 min before this one leaves;
+  - only when exactly one such journey has a live bus placed on it (two or more is too much of a guess), and not when that bus would sooner work an earlier departure of the same line from the same stop.
+  - `from` is where that journey started (null if no name is known), `due` its expected arrival at your stop (`HH:MM`), `late_min` how late it is now (0 if on time or early), `where` where it is ("4 stops away", "At your stop"), and `text` all of it as one line for the row, like "Bus arriving from Ashton, 4 min late (due 23:29)".
+  - When the inbound bus is due after the departure's time, the departure still shows its timetabled time and its own status words. The pairing is a guess and buses often make up time on a layover, so the page states the inbound bus's facts and leaves the conclusion to the reader. It never shows a later departure time it can't back up.
+- **`ghost`** (buses; always a boolean): true when the bus is due within 5 minutes (or just past its time) with no live bus placed on its journey (`live` false). `status_text` stays "Timetable only". It is false while live positions are failing (`status.note` says so) and when `inbound` is set, since a tracked bus is on its way to work it.
+- **`history.no_show_phrase`** (buses only; null when there's nothing to say): how often this departure had no tracker before it left, like "No tracker on 3 of the last 10 weekdays", over the same days as `phrase`. It is null with fewer than 3 days recorded or when every day had a tracker. Train rows' `history` has `phrase` only.
 
 ## `GET /api/events`
 

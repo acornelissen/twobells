@@ -145,6 +145,12 @@
         },
         "history": {
           "phrase": "Late 4 of the last 10 weekdays (avg 6 min)"
+        },
+        "arrives": {
+          "name": "Manchester Piccadilly",
+          "at": "07:55",
+          "at_iso": "2026-10-10T07:55:00+01:00",
+          "minutes": 36
         }
       },
       {
@@ -250,7 +256,8 @@
         "position": null,
         "history": {
           "phrase": "Cancelled 2 of the last 10 weekdays"
-        }
+        },
+        "arrives": null
       },
       {
         "id": "c189752d1f2351ad",
@@ -375,6 +382,12 @@
         },
         "history": {
           "phrase": "On time 9 of the last 10 weekdays"
+        },
+        "arrives": {
+          "name": "Manchester Piccadilly",
+          "at": "08:48",
+          "at_iso": "2026-10-10T08:48:00+01:00",
+          "minutes": 36
         }
       },
       {
@@ -480,7 +493,8 @@
         "position": null,
         "history": {
           "phrase": "Late 3 of the last 8 weekdays (avg 4 min)"
-        }
+        },
+        "arrives": null
       },
       {
         "id": "a4e810cf26887e46",
@@ -585,6 +599,12 @@
         "position": null,
         "history": {
           "phrase": null
+        },
+        "arrives": {
+          "name": "Manchester Piccadilly",
+          "at": "09:48",
+          "at_iso": "2026-10-10T09:48:00+01:00",
+          "minutes": 36
         }
       },
       {
@@ -690,6 +710,12 @@
         "position": null,
         "history": {
           "phrase": "On time 10 of the last 10 weekdays"
+        },
+        "arrives": {
+          "name": "Manchester Piccadilly",
+          "at": "10:21",
+          "at_iso": "2026-10-10T10:21:00+01:00",
+          "minutes": 36
         }
       },
       {
@@ -795,6 +821,12 @@
         "position": null,
         "history": {
           "phrase": null
+        },
+        "arrives": {
+          "name": "Manchester Piccadilly",
+          "at": "10:48",
+          "at_iso": "2026-10-10T10:48:00+01:00",
+          "minutes": 36
         }
       },
       {
@@ -900,6 +932,12 @@
         "position": null,
         "history": {
           "phrase": "Late 1 of the last 10 weekdays (avg 3 min)"
+        },
+        "arrives": {
+          "name": "Manchester Piccadilly",
+          "at": "11:18",
+          "at_iso": "2026-10-10T11:18:00+01:00",
+          "minutes": 36
         }
       },
       {
@@ -924,7 +962,8 @@
         "position": null,
         "history": {
           "phrase": null
-        }
+        },
+        "arrives": null
       },
       {
         "id": "17f902363b225ed9",
@@ -1029,6 +1068,12 @@
         "position": null,
         "history": {
           "phrase": null
+        },
+        "arrives": {
+          "name": "Manchester Piccadilly",
+          "at": "12:18",
+          "at_iso": "2026-10-10T12:18:00+01:00",
+          "minutes": 36
         }
       }
     ]
@@ -1058,18 +1103,14 @@
         "stop": "B",
         "scheduled": "07:05",
         "scheduled_at": "2026-10-10T07:05:00+01:00",
-        "expected": "07:05",
-        "expected_at": "2026-10-10T07:05:00+01:00",
-        "status": "on_time",
-        "status_text": "On time",
+        "expected": null,
+        "expected_at": null,
+        "status": "unknown",
+        "status_text": "Timetable only",
         "minutes_late": null,
-        "live": true,
+        "live": false,
         "leave_at": "2026-10-10T06:55:00+01:00",
-        "vehicle": {
-          "age_s": 18,
-          "recorded_at": "2026-10-10T07:01:12+01:00",
-          "bearing": 95.0
-        },
+        "vehicle": null,
         "strip": {
           "stops": [
             "Glossop Road",
@@ -1080,12 +1121,21 @@
             "Grapes Inn"
           ],
           "yours": 4,
-          "bus_at": 3.4,
-          "where": "Next stop is yours"
+          "bus_at": null,
+          "where": "No live position"
         },
         "history": {
-          "phrase": null
-        }
+          "phrase": null,
+          "no_show_phrase": "No tracker on 3 of the last 10 weekdays"
+        },
+        "arrives": {
+          "name": "Ashton Bus Station",
+          "at": "07:50",
+          "at_iso": "2026-10-10T07:50:00+01:00",
+          "minutes": 45
+        },
+        "inbound": null,
+        "ghost": true
       },
       {
         "id": "aff4f89451678d07",
@@ -1121,8 +1171,17 @@
           "where": "2 stops away"
         },
         "history": {
-          "phrase": "Late 3 of the last 10 weekdays (avg 4 min)"
-        }
+          "phrase": "Late 3 of the last 10 weekdays (avg 4 min)",
+          "no_show_phrase": null
+        },
+        "arrives": {
+          "name": "Hyde Bus Station",
+          "at": "07:49",
+          "at_iso": "2026-10-10T07:49:00+01:00",
+          "minutes": 38
+        },
+        "inbound": null,
+        "ghost": false
       },
       {
         "id": "26c72ed8411e9f75",
@@ -1152,8 +1211,23 @@
           "where": "No live position"
         },
         "history": {
-          "phrase": null
-        }
+          "phrase": null,
+          "no_show_phrase": null
+        },
+        "arrives": {
+          "name": "Buxton Market Place",
+          "at": "08:15",
+          "at_iso": "2026-10-10T08:15:00+01:00",
+          "minutes": 55
+        },
+        "inbound": {
+          "from": "Buxton Market Place",
+          "due": "07:16",
+          "late_min": 4,
+          "where": "4 stops away",
+          "text": "Bus arriving from Buxton Market Place, 4 min late (due 07:16)"
+        },
+        "ghost": false
       },
       {
         "id": "603869ee7f9755cf",
@@ -1189,8 +1263,17 @@
           "where": "4 stops away"
         },
         "history": {
-          "phrase": "Late 3 of the last 10 weekdays (avg 4 min)"
-        }
+          "phrase": "Late 3 of the last 10 weekdays (avg 4 min)",
+          "no_show_phrase": null
+        },
+        "arrives": {
+          "name": "Hyde Bus Station",
+          "at": "08:06",
+          "at_iso": "2026-10-10T08:06:00+01:00",
+          "minutes": 38
+        },
+        "inbound": null,
+        "ghost": false
       },
       {
         "id": "672b5765b44d882d",
@@ -1209,8 +1292,17 @@
         "vehicle": null,
         "strip": null,
         "history": {
-          "phrase": null
-        }
+          "phrase": null,
+          "no_show_phrase": null
+        },
+        "arrives": {
+          "name": "Ashton Bus Station",
+          "at": "08:20",
+          "at_iso": "2026-10-10T08:20:00+01:00",
+          "minutes": 45
+        },
+        "inbound": null,
+        "ghost": false
       },
       {
         "id": "cd02480bb4441430",
@@ -1246,8 +1338,17 @@
           "where": "Not on the route yet"
         },
         "history": {
-          "phrase": "Late 3 of the last 10 weekdays (avg 4 min)"
-        }
+          "phrase": "Late 3 of the last 10 weekdays (avg 4 min)",
+          "no_show_phrase": null
+        },
+        "arrives": {
+          "name": "Hyde Bus Station",
+          "at": "08:17",
+          "at_iso": "2026-10-10T08:17:00+01:00",
+          "minutes": 38
+        },
+        "inbound": null,
+        "ghost": false
       },
       {
         "id": "d0aaaac897c1382c",
@@ -1266,8 +1367,17 @@
         "vehicle": null,
         "strip": null,
         "history": {
-          "phrase": null
-        }
+          "phrase": null,
+          "no_show_phrase": null
+        },
+        "arrives": {
+          "name": "Buxton Market Place",
+          "at": "08:45",
+          "at_iso": "2026-10-10T08:45:00+01:00",
+          "minutes": 55
+        },
+        "inbound": null,
+        "ghost": false
       },
       {
         "id": "349614ac48b4fcf3",
@@ -1286,8 +1396,17 @@
         "vehicle": null,
         "strip": null,
         "history": {
-          "phrase": null
-        }
+          "phrase": null,
+          "no_show_phrase": null
+        },
+        "arrives": {
+          "name": "Ashton Bus Station",
+          "at": "08:50",
+          "at_iso": "2026-10-10T08:50:00+01:00",
+          "minutes": 45
+        },
+        "inbound": null,
+        "ghost": false
       },
       {
         "id": "7433ef25b82e840c",
@@ -1306,8 +1425,17 @@
         "vehicle": null,
         "strip": null,
         "history": {
-          "phrase": "Late 3 of the last 10 weekdays (avg 4 min)"
-        }
+          "phrase": "Late 3 of the last 10 weekdays (avg 4 min)",
+          "no_show_phrase": null
+        },
+        "arrives": {
+          "name": "Hyde Bus Station",
+          "at": "08:47",
+          "at_iso": "2026-10-10T08:47:00+01:00",
+          "minutes": 38
+        },
+        "inbound": null,
+        "ghost": false
       },
       {
         "id": "c6ddaeec4db145a8",
@@ -1326,8 +1454,17 @@
         "vehicle": null,
         "strip": null,
         "history": {
-          "phrase": "Late 3 of the last 10 weekdays (avg 4 min)"
-        }
+          "phrase": "Late 3 of the last 10 weekdays (avg 4 min)",
+          "no_show_phrase": null
+        },
+        "arrives": {
+          "name": "Hyde Bus Station",
+          "at": "09:02",
+          "at_iso": "2026-10-10T09:02:00+01:00",
+          "minutes": 38
+        },
+        "inbound": null,
+        "ghost": false
       }
     ]
   },

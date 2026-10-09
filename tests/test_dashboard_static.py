@@ -312,6 +312,10 @@ def check(value, spec, path="$"):
 STATUS = {"last_success": Opt(at), "stale": bool, "error": Opt(str), "note": Opt(str)}
 ROW_STATUS = one_of("on_time", "late", "cancelled", "unknown")
 HISTORY = {"phrase": Opt(str)}
+BUS_HISTORY = {"phrase": Opt(str), "no_show_phrase": Opt(str)}
+# Row extras (enrich.py): when it gets there, and the bus coming to work a departure.
+ARRIVES = {"name": str, "at": hhmm, "at_iso": at, "minutes": integer}
+INBOUND = {"from": Opt(str), "due": hhmm, "late_min": integer, "where": str, "text": str}
 
 CALLING_POINT = {
     "name": str, "crs": Opt(str), "scheduled": Opt(hhmm), "expected": Opt(hhmm),
@@ -327,6 +331,7 @@ TRAIN_ROW = {
     "previous_points": [CALLING_POINT],
     "position": Opt({"where": str, "strip": {"stops": [str], "yours": integer, "train_at": Opt(number)}}),
     "history": HISTORY,
+    "arrives": Opt(ARRIVES),
 }
 BUS_ROW = {
     "id": row_id, "line": str, "destination": str, "stop": str,
@@ -335,7 +340,10 @@ BUS_ROW = {
     "live": bool, "leave_at": Opt(at),
     "vehicle": Opt({"age_s": integer, "recorded_at": at, "bearing": Opt(number)}),
     "strip": Opt({"stops": [str], "yours": integer, "bus_at": Opt(number), "where": str}),
-    "history": HISTORY,
+    "history": BUS_HISTORY,
+    "arrives": Opt(ARRIVES),
+    "inbound": Opt(INBOUND),
+    "ghost": bool,
 }
 WEATHER = {
     "status": STATUS,
@@ -407,6 +415,20 @@ def test_snapshot_fixture_follows_the_contract():
     for row in buses:
         if row["strip"]:
             assert 0 <= row["strip"]["yours"] < len(row["strip"]["stops"])
+    # Row extras: arrivals, an inbound bus, and a ghost with its history.
+    assert any(r["arrives"] is None for r in trains) and any(r["arrives"] for r in trains)
+    for row in trains:
+        if row["status"] == "cancelled":
+            assert row["arrives"] is None
+    for row in trains + buses:
+        if row["arrives"]:
+            assert row["arrives"]["minutes"] > 0
+            assert row["arrives"]["at_iso"][11:16] == row["arrives"]["at"]
+    assert any(r["inbound"] for r in buses)
+    assert any(r["ghost"] and r["history"]["no_show_phrase"] for r in buses)
+    for row in buses:
+        if row["ghost"]:
+            assert not row["live"] and row["status_text"] == "Timetable only"
     # Trains: the first few have a position; the rest don't.
     assert [bool(r["position"]) for r in trains[:3]] == [True, False, True]  # the second is cancelled
     assert any(r["position"]["strip"]["train_at"] is not None for r in trains if r["position"])

@@ -121,6 +121,13 @@ class FakeHistory:
         self.late_minutes = late_minutes
         return Stats(days=10, late=4, cancelled=0, unknown=0, on_time=6, avg_late=6.2, worst=9)
 
+    no_shows_error = None
+
+    def no_shows(self, mode, route, scheduled, day_type, n=10, *, holidays=frozenset()):
+        if self.no_shows_error:
+            raise self.no_shows_error
+        return (3, 10) if (mode, route) == ("bus", "A|237|Ashton") else (0, 10)
+
     def sweep(self, now):
         self.swept.append(now)
 
@@ -405,6 +412,28 @@ def test_buses_are_published_and_observed(tmp_path):
     assert setup.history.late_minutes == 2
     lookup = setup.hub.lookup(row["id"])
     assert lookup["bus"]["vehicle"]["lat"] == HALFWAY[0]
+
+
+def test_bus_rows_say_how_often_they_had_no_tracker(tmp_path):
+    setup = Setup(tmp_path)
+    setup.collector.poll_buses()
+    rows = setup.snapshot()["buses"]["rows"]
+    assert by_line(rows, "237")["history"]["no_show_phrase"] == "No tracker on 3 of the last 10 weekdays"
+    assert by_line(rows, "341")["history"]["no_show_phrase"] is None  # always tracked: nothing to say
+    assert all("ghost" in r and "arrives" in r and "inbound" in r for r in rows)
+
+
+def test_an_unreadable_history_costs_only_the_no_show_phrase(tmp_path, caplog):
+    setup = Setup(tmp_path)
+    setup.history.no_shows_error = OSError("disk I/O error")
+    setup.collector.poll_buses()
+    rows = setup.snapshot()["buses"]["rows"]
+    assert rows and all(r["history"]["no_show_phrase"] is None for r in rows)
+    assert "history unreadable" in caplog.text
+
+
+def by_line(rows, line):
+    return next(r for r in rows if r["line"] == line)
 
 
 def test_buses_without_live_positions_show_but_are_not_observed(tmp_path):

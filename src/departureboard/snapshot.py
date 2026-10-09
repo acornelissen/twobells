@@ -23,6 +23,7 @@ from typing import Callable, Mapping
 
 from .bodsbus import BusBoard
 from .darwin import CallingPoint, ServiceDetails, TrainBoard, TrainService, train_position
+from .enrich import bus_extras, train_arrival
 from .history import Observed, day_type
 from .livebus import LiveDeparture, approach
 from .model import Departure, Status, minutes_between
@@ -45,9 +46,18 @@ _DAY_MINUTES = 24 * 60
 Phrases = Callable[[str, str, str, date], "tuple[str, str | None]"]
 
 
+# (route, scheduled "HH:MM", day) -> "No tracker on 3 of the last 10 weekdays" or None, for buses.
+NoShows = Callable[[str, str, date], "str | None"]
+
+
 def no_history(mode: str, route: str, scheduled: str, day: date) -> tuple[str, str | None]:
     """Phrases when there is no history to ask."""
     return day_type(day), None
+
+
+def no_no_shows(route: str, scheduled: str, day: date) -> str | None:
+    """No-show phrases when there is no history to ask."""
+    return None
 
 
 def row_id(kind: str, identity: str) -> str:
@@ -204,6 +214,7 @@ def trains_part(board: TrainBoard | None, fetched: datetime | None, status: dict
         for service in board.services:
             found = details.get(service.service_id) if service.service_id else None
             row, lookup = train_row(service, fetched, walk, route_prefix, phrases, found, now)
+            row["arrives"] = train_arrival(service, filter_crs, *_train_times(service, fetched))
             rows.append(row)
             lookups[row["id"]] = lookup
     return {
@@ -328,9 +339,10 @@ def bus_map(row: dict, live: LiveDeparture, positions: dict[str, StopPosition], 
 
 
 def bus_row(live: LiveDeparture, positions: dict[str, StopPosition], now: datetime, walk: WalkTimes,
-            phrases: Phrases = no_history) -> tuple[dict, dict]:
+            phrases: Phrases = no_history, no_shows: NoShows = no_no_shows) -> tuple[dict, dict]:
     """A bus's row and its server-side lookup (the map and the history key).
-    `now` is aware, in the board's zone."""
+    `now` is aware, in the board's zone. The extras that need the whole
+    board (enrich.bus_extras) are added by buses_part."""
     dep = live.departure
     tz = now.tzinfo
     scheduled_at = live.leaves.replace(tzinfo=tz)
@@ -354,7 +366,10 @@ def bus_row(live: LiveDeparture, positions: dict[str, StopPosition], now: dateti
         "leave_at": iso(leave_at(dep, scheduled_at, expected_at, walk)),
         "vehicle": _vehicle(live, now, with_position=False),
         "strip": _strip(live, positions),
-        "history": {"phrase": history["phrase"]},
+        "history": {
+            "phrase": history["phrase"],
+            "no_show_phrase": no_shows(history["route"], dep.scheduled, live.leaves.date()),
+        },
     }
     return row, {"bus": bus_map(row, live, positions, now), "history": history}
 
@@ -379,13 +394,14 @@ def stop_names(stops: dict[str, str], schedule: Schedule | None) -> dict[str, st
 
 def buses_part(board: BusBoard | None, now: datetime, status: dict, timetable: dict,
                stops: dict[str, str], walk: WalkTimes,
-               phrases: Phrases = no_history) -> tuple[dict, dict[str, dict]]:
+               phrases: Phrases = no_history, no_shows: NoShows = no_no_shows) -> tuple[dict, dict[str, dict]]:
     """The buses section and its lookups by row id. `stops` are labels to ATCO codes."""
     rows, lookups = [], {}
     schedule = board.schedule if board is not None else None
     if board is not None:
         for live in board.departures:
-            row, lookup = bus_row(live, board.schedule.positions, now, walk, phrases)
+            row, lookup = bus_row(live, board.schedule.positions, now, walk, phrases, no_shows)
+            row.update(bus_extras(live, board, now))
             rows.append(row)
             lookups[row["id"]] = lookup
     return {

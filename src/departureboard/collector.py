@@ -32,7 +32,7 @@ from zoneinfo import ZoneInfo
 from . import holidays as _holidays
 from .dashconfig import DashboardSettings
 from .darwin import DetailsUnavailable, ServiceDetails, ServiceGone, TrainBoard
-from .history import History, day_type, phrase
+from .history import History, day_type, no_show_phrase, phrase
 from .model import Status
 from .snapshot import (
     Hub,
@@ -202,6 +202,18 @@ class Collector:
             return kind, None
         return kind, phrase(stats, kind)
 
+    def _bus_no_shows(self, route: str, scheduled: str, day: date) -> str | None:
+        """"No tracker on 3 of the last 10 weekdays" for a bus, or None."""
+        if self._history is None:
+            return None
+        kind = day_type(day, self._holidays)
+        try:
+            without, days = self._history.no_shows("bus", route, scheduled, kind, holidays=self._holidays)
+        except Exception as error:  # noqa: BLE001 - the departures matter more than the history
+            log.warning("dashboard history unreadable: %s", safe_message(error))
+            return None
+        return no_show_phrase(without, days, kind)
+
     def _publish_trains(self) -> None:
         settings = self._settings
         details = {service_id: found for service_id, (_, found) in self._details.items()}
@@ -222,7 +234,8 @@ class Collector:
         else:
             timetable = timetable_block("ready", board.schedule, self._tz)
         part, lookups = buses_part(board, self._clock(), self._buses.status(), timetable,
-                                   self._settings.bus_stops, self._settings.walk, self._phrases)
+                                   self._settings.bus_stops, self._settings.walk, self._phrases,
+                                   self._bus_no_shows)
         self._hub.publish("buses", part, lookups)
 
     def _publish_weather(self) -> None:

@@ -28,7 +28,7 @@ from departureboard.snapshot import (
 from departureboard.walk import WalkTimes
 from departureboard.weather import parse_conditions
 
-from test_livebus import HALFWAY, HENRY_A, POSITIONS, at, bus, live, schedule
+from test_livebus import EAST, HALFWAY, HENRY_A, JUNCTION, POSITIONS, ST_MARYS_W, WEST, at, bus, live, schedule
 
 LONDON = ZoneInfo("Europe/London")
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -84,6 +84,21 @@ def bus_part(now, vehicles=(), walk=WALK):
     part, lookups = buses_part(board, now, status_block(), timetable_block("ready", board.schedule, LONDON),
                                {"A": HENRY_A}, walk)
     return part, lookups, found
+
+
+def extras_part(now, no_shows=None, vehicles_ok=True):
+    """Buses at 10:14 with WEST's bus coming in on INTO_A, 9 min late, and EAST's bus live."""
+    from departureboard.livebus import live_board
+    from test_enrich import INTO_A, LEFT_JUNCTION
+    from test_livebus import every_day
+
+    plan = schedule(EAST, WEST, INTO_A)
+    vehicles = [bus(*HALFWAY, now), bus(*HALFWAY, now, line="237", origin=JUNCTION, aimed=LEFT_JUNCTION)]
+    rows, placed = live_board(plan, now, vehicles if vehicles_ok else [], every_day, 10)
+    board = BusBoard(rows, plan, vehicles_ok, None, placed)
+    kwargs = {"no_shows": no_shows} if no_shows else {}
+    return buses_part(board, now, status_block(), timetable_block("ready", plan, LONDON),
+                      {"A": HENRY_A, "B": ST_MARYS_W}, WALK, **kwargs)
 
 
 def by(rows, **match):
@@ -323,7 +338,7 @@ def test_a_live_late_bus():
     assert strip["stops"][strip["yours"]] == "Henry Street"
     assert strip["bus_at"] == pytest.approx(2.5, abs=0.05)  # halfway Sunlaws Street to St Marys Road
     assert strip["where"] == "3 stops away"
-    assert row["history"] == {"phrase": None}
+    assert row["history"] == {"phrase": None, "no_show_phrase": None}
     history = lookups[row["id"]]["history"]
     assert (history["mode"], history["route"], history["label"]) == ("bus", "A|341|Hadfield", "10:10 341 to Hadfield")
 
@@ -377,6 +392,62 @@ def test_stop_names_and_the_timetable():
     assert missing["timetable"] == {"state": "building", "built": None, "valid_until": None, "journeys": None}
     with pytest.raises(ValueError):
         timetable_block("lost", None, LONDON)
+
+
+def test_bus_rows_carry_arrivals_the_inbound_bus_and_ghosts():
+    part, _ = extras_part(at(10, 14))
+    east = by(part["rows"], line="341", stop="A")
+    assert east["arrives"] == {"name": "Hadfield", "at": "10:34", "at_iso": "2026-10-09T10:34:00+01:00", "minutes": 15}
+    assert east["inbound"] is None and east["ghost"] is False
+    west_a = by(part["rows"], line="237", stop="A")
+    assert west_a["inbound"] == {
+        "from": "The Junction", "due": "10:19", "late_min": 9, "where": "3 stops away",
+        "text": "Bus arriving from The Junction, 9 min late (due 10:19)",
+    }
+    # The inbound bus is due after this one leaves, yet the departure keeps its timetabled time and words.
+    assert (west_a["status_text"], west_a["expected"], west_a["live"]) == ("Timetable only", None, False)
+    assert west_a["ghost"] is False  # a tracked bus is on its way to work it
+    west_b = by(part["rows"], line="237", stop="B")
+    assert west_b["inbound"] is None and west_b["ghost"] is True  # due 10:18, nothing tracked
+    assert west_b["arrives"]["at"] == "11:00"
+    assert west_b["history"] == {"phrase": None, "no_show_phrase": None}
+
+
+def test_no_ghosts_when_live_positions_failed():
+    part, _ = extras_part(at(10, 14), vehicles_ok=False)
+    assert part["rows"] and not any(r["ghost"] or r["inbound"] for r in part["rows"])
+
+
+def test_no_show_phrases_come_from_the_history():
+    asked = []
+
+    def no_shows(route, scheduled, day):
+        asked.append((route, scheduled, day))
+        return "No tracker on 3 of the last 10 weekdays" if route == "B|237|Ashton" else None
+
+    part, lookups = extras_part(at(10, 14), no_shows)
+    west_b = by(part["rows"], line="237", stop="B")
+    assert west_b["history"]["no_show_phrase"] == "No tracker on 3 of the last 10 weekdays"
+    assert ("B|237|Ashton", "10:18", date(2026, 10, 9)) in asked
+    assert by(part["rows"], line="341", stop="A")["history"]["no_show_phrase"] is None
+
+
+def test_train_rows_carry_their_arrival():
+    part, _ = trains(train("07:12", "07:19", subsequentCallingPoints=[{"callingPoint": [
+        {"locationName": "Dinting", "crs": "DGT", "st": "07:15", "et": "07:22"},
+        {"locationName": "Manchester Piccadilly", "crs": "MAN", "st": "07:48", "et": "07:55"},
+    ]}]), train("07:42", "Cancelled", isCancelled=True), train("08:12"))
+    late, cancelled, no_points = part["rows"]
+    assert late["arrives"] == {
+        "name": "Manchester Piccadilly", "at": "07:55", "at_iso": "2026-10-10T07:55:00+01:00", "minutes": 36,
+    }
+    assert cancelled["arrives"] is None and no_points["arrives"] is None
+
+
+def test_a_real_board_s_trains_arrive_at_their_last_stop_without_a_filter():
+    part, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO")
+    first = part["rows"][0]
+    assert first["arrives"] == {"name": "Hadfield", "at": "22:11", "at_iso": "2026-10-09T22:11:00+01:00", "minutes": 6}
 
 
 def test_bus_observations_for_the_history():
@@ -584,7 +655,7 @@ def test_what_the_server_sends_is_what_the_page_was_built_for():
     tparts, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO",
                             details=details, now=DETAILS_AT.replace(minute=46))
     h.publish("trains", tparts)
-    bparts, lookups, _ = bus_part(at(10, 14), [bus(*HALFWAY, at(10, 14))])
+    bparts, lookups = extras_part(at(10, 14), lambda route, scheduled, day: "No tracker on 3 of the last 10 weekdays")
     h.publish("buses", bparts)
     h.publish("weather", weather_part(conditions(), datetime(2026, 10, 9, 8, 20, tzinfo=LONDON), status_block(), 50))
     sent = snapshot(h)
@@ -592,6 +663,10 @@ def test_what_the_server_sends_is_what_the_page_was_built_for():
     positions = [r["position"] for r in sent["trains"]["rows"] if r["position"]]
     assert len(positions) == 3 and any(isinstance(p["strip"]["train_at"], float) for p in positions)
     assert any(r["previous_points"] for r in sent["trains"]["rows"])
+    assert any(r["arrives"] for r in sent["trains"]["rows"])
+    sent_buses = sent["buses"]["rows"]
+    assert any(r["inbound"] for r in sent_buses) and any(r["ghost"] for r in sent_buses)
+    assert all(r["arrives"] and r["history"]["no_show_phrase"] for r in sent_buses)
     check(sent, SNAPSHOT)
     live_row = by(bparts["rows"], line="341", stop="A")
     check(lookups[live_row["id"]]["bus"], BUS_DETAIL)
