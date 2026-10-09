@@ -17,7 +17,9 @@ at the timetabled time plus the delay it has now.
 Inbound buses. BODS sends no block numbers here (its BlockRef is just the
 line), so, as bustimes.org does, a departure whose journey starts at your
 stop is paired with a journey of the same line that ends at your stop (or
-at a stop within NEAR_M of it) up to INBOUND_WINDOW before it leaves. Only
+at a stop within NEAR_M of it) up to INBOUND_WINDOW before it leaves. The
+timetable keeps journeys that end at such a stop without calling at yours
+(inbound-only ones) for this alone. Only
 journeys with a live bus placed on them count, and only when exactly one
 fits: two is a guess too far. A bus that would sooner work an earlier
 departure of the same line from the same stop is left to that one.

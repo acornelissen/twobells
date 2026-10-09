@@ -4,6 +4,20 @@ The way bustimes.org does it: every timetabled journey that calls at one of
 your stops, with the time it leaves each stop on its way, and the days it
 runs. livebus.py then adjusts it with live positions.
 
+Inbound-only journeys. A bus often comes in to a stand near your stop
+without calling at it, then works a departure from your stop. To find that
+bus (enrich.inbound), journeys of the lines departing from your stops that
+end within NEAR_M of one of them, without calling at any, are kept too,
+marked inbound_only: they never give departures. They are looked for only in
+documents that mention your stops (a document holds a whole service, both
+ways), among the lines calling at your stops in that document. Distances
+are by NaPTAN's positions, or the timetables' own where NaPTAN has none.
+To hold fewer journeys while reading, a journey is dropped as it is read
+when the timetables place its last stop further than NEAR_M from all of
+your stops; when they can't tell, it is held for NaPTAN to measure only if
+its last stop is in the same ATCO area (the first three characters) as one
+of yours.
+
 Built about once a week by a timer or the command line, never from the
 minutely board run: an operator's timetables can run to hundreds of
 megabytes. Each download waits on disk and its documents are parsed one at a
@@ -47,7 +61,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request
 
 from . import http, routesetup, safexml
-from .schedule_model import Calendar, Call, DateRange, Journey, Schedule, StopPosition
+from .schedule_model import NEAR_M, Calendar, Call, DateRange, Journey, Schedule, StopPosition, metres
 from .status import safe_message
 
 log = logging.getLogger(__name__)
@@ -59,6 +73,10 @@ MAX_AGE = timedelta(days=7)
 CALLS_BEFORE = 20
 CALLS_AFTER = 1
 MAX_JOURNEYS = 20_000  # far more than any town's stops see
+# Inbound-only journeys kept, at most; beyond it the rest are left out. Most
+# are dropped once NaPTAN has placed their last stop, so this counts them
+# before that, while they are all held at once (a Pi Zero builds this too).
+MAX_INBOUND_JOURNEYS = 10_000
 MAX_FILE_BYTES = 50_000_000
 DOWNLOAD_TIMEOUT = 60.0  # seconds without data before a download is given up
 _TEXT_LIMIT = 80  # line names, destinations, codes
@@ -381,14 +399,20 @@ def _pattern_links(pattern: _Pattern, doc: _Document) -> list[_Link]:
     return pattern.links
 
 
-def _journey(node, doc: _Document, atcos: Collection[str], noc: str, pattern_refs: dict) -> Journey | None:
-    """The journey a VehicleJourney describes, if it calls at one of `atcos`."""
+def _journey(
+    node, doc: _Document, atcos: Collection[str], noc: str, pattern_refs: dict, stands: Collection[str] = ()
+) -> Journey | None:
+    """The journey a VehicleJourney describes, if it calls at one of `atcos`,
+    or, marked inbound_only, if it doesn't but ends at one of `stands`."""
     ref = _text(node, "t:JourneyPatternRef") or pattern_refs.get(_text(node, "t:VehicleJourneyRef"), "")
     pattern = doc.patterns.get(ref)
     if pattern is None:
         return None
     links = _pattern_links(pattern, doc)
-    if not links or not any(link.origin in atcos or link.destination in atcos for link in links):
+    if not links:
+        return None
+    calling = any(link.origin in atcos or link.destination in atcos for link in links)
+    if not calling and links[-1].destination not in stands:
         return None
     departure = _time(_text(node, "t:DepartureTime"))
     if departure is None:
@@ -422,10 +446,35 @@ def _journey(node, doc: _Document, atcos: Collection[str], noc: str, pattern_ref
     last = calls[-1].atco
     destination = _text(node, "t:DestinationDisplay") or pattern.destination or doc.names.get(last) or last
     code = _text(node, "t:Operational/t:TicketMachine/t:JourneyCode") or _text(node, "t:VehicleJourneyCode")
-    return Journey(line, operator, destination, code, calls, calendar)
+    return Journey(line, operator, destination, code, calls, calendar, inbound_only=not calling)
 
 
-def _parse_document(xml: bytes, atcos: Collection[str], noc: str) -> tuple[list[Journey], dict[str, StopPosition]]:
+def _stands(doc: _Document, atcos: Collection[str], yours: Mapping[str, StopPosition]) -> set[str]:
+    """The stops in a document where a journey that doesn't call at your
+    stops may end near one: within NEAR_M of one by the timetables' positions
+    (`yours` are those known from earlier documents), or, while that can't be
+    told, in the same ATCO area as one, to be measured once NaPTAN has placed
+    it (see the module's notes)."""
+    placed = {**yours, **{atco: doc.positions[atco] for atco in atcos if atco in doc.positions}}
+    areas = {atco[:3] for atco in atcos}
+    found = set()
+    for atco in doc.names:
+        if atco in atcos:
+            continue
+        here = doc.positions.get(atco)
+        if here is not None and any(metres(here, there) <= NEAR_M for there in placed.values()):
+            found.add(atco)
+        elif (here is None or len(placed) < len(atcos)) and atco[:3] in areas:
+            found.add(atco)
+    return found
+
+
+def _parse_document(
+    xml: bytes, atcos: Collection[str], noc: str, yours: Mapping[str, StopPosition] | None = None
+) -> tuple[list[Journey], dict[str, StopPosition]]:
+    """The journeys in a document calling at your stops, and its stop
+    positions. With `yours` (your stops' positions known so far), also its
+    inbound-only journeys of the lines calling there (see the module's notes)."""
     try:
         root = safexml.fromstring(xml)
     except safexml.DoctypeError:
@@ -439,12 +488,14 @@ def _parse_document(xml: bytes, atcos: Collection[str], noc: str) -> tuple[list[
     _read_services(root, doc)
     vehicle_journeys = root.findall("t:VehicleJourneys/t:VehicleJourney", _NS)
     pattern_refs = {_text(node, "t:VehicleJourneyCode"): _text(node, "t:JourneyPatternRef") for node in vehicle_journeys}
+    stands = _stands(doc, atcos, yours) if yours is not None else set()
     journeys = []
     for node in vehicle_journeys:
-        journey = _journey(node, doc, atcos, noc, pattern_refs)
-        if journey is not None and any(call.atco in atcos for call in journey.calls):
+        journey = _journey(node, doc, atcos, noc, pattern_refs, stands)
+        if journey is not None and (journey.inbound_only or any(call.atco in atcos for call in journey.calls)):
             journeys.append(journey)
-    return journeys, doc.positions
+    lines = {(journey.line.casefold(), journey.operator) for journey in journeys if not journey.inbound_only}
+    return [j for j in journeys if not j.inbound_only or (j.line.casefold(), j.operator) in lines], doc.positions
 
 
 def parse_journeys(xml: bytes, atcos: Collection[str], noc: str = "") -> list[Journey]:
@@ -539,6 +590,17 @@ def _nearby(journey: Journey, atcos: Collection[str]) -> set[str]:
     return found
 
 
+def _approach(journey: Journey) -> set[str]:
+    """The stop an inbound-only journey ends at and the ones it calls at on its way."""
+    return {call.atco for call in journey.calls[-(CALLS_BEFORE + 1) :]}
+
+
+def _ends_near(journey: Journey, atcos: Collection[str], positions: Mapping[str, StopPosition]) -> bool:
+    """Whether a journey ends within NEAR_M of one of `atcos`, by `positions`."""
+    end = positions.get(journey.calls[-1].atco)
+    return end is not None and any(atco in positions and metres(end, positions[atco]) <= NEAR_M for atco in atcos)
+
+
 def _positions(atcos: set[str], known: dict[str, StopPosition], naptan: Naptan) -> dict[str, StopPosition]:
     """NaPTAN's name and position for each stop, or the timetables' own where
     NaPTAN has none or can't be reached."""
@@ -571,43 +633,62 @@ def build_schedule(
 ) -> Schedule:
     """A schedule of every timetabled journey calling at your `stops` (labels
     to ATCO codes), from the BODS timetables of `operators` (national operator
-    codes). Downloads wait in `scratch` (the state folder: /tmp may be memory).
+    codes), and the inbound-only journeys of their lines (see the module's
+    notes). Downloads wait in `scratch` (the state folder: /tmp may be memory).
 
     Journeys whose timetable ended before today are left out (BODS keeps an
     old timetable beside its replacement for a while), and so are duplicates
     (same line, operator, calls and calendar), which live times couldn't tell
-    apart. valid_until is the earliest end among the rest. TimetableError or
-    RouteSetupError if anything fails, or no journey calls at your stops."""
+    apart. valid_until is the earliest end among the rest that call at your
+    stops. TimetableError or RouteSetupError if anything fails, or no journey
+    calls at your stops."""
     atcos = set(stops.values())
     wanted = [atco.encode() for atco in atcos]
     today = now.date()
     journeys: dict[tuple, Journey] = {}
+    inbound: dict[tuple, Journey] = {}  # inbound-only, not yet measured
     nearby: set[str] = set()
+    approaches: set[str] = set()
     known: dict[str, StopPosition] = {}
+    yours: dict[str, StopPosition] = {}
+    left_out = 0
     links = _dataset_links(operators, api_key, lines, find_datasets)
     for noc, document in _documents(links, fetch, scratch):
         # Skip, unparsed, the many documents of a big operator that never mention your stops.
         if not any(code in document for code in wanted):
             continue
-        found, positions = _parse_document(document, atcos, noc)
+        found, positions = _parse_document(document, atcos, noc, yours)
+        yours.update((atco, positions[atco]) for atco in atcos if atco in positions)
         for journey in found:
             if journey.calendar.end and journey.calendar.end < today:
                 continue
-            journeys.setdefault((journey.line, journey.operator, journey.calls, journey.calendar), journey)
-            nearby |= _nearby(journey, atcos)
-        known.update((atco, position) for atco, position in positions.items() if atco in nearby)
+            key = (journey.line, journey.operator, journey.calls, journey.calendar)
+            if not journey.inbound_only:
+                journeys.setdefault(key, journey)
+                nearby |= _nearby(journey, atcos)
+            elif key in inbound or len(inbound) < MAX_INBOUND_JOURNEYS:
+                inbound.setdefault(key, journey)
+                approaches |= _approach(journey)
+            else:
+                left_out += 1
+        known.update((atco, position) for atco, position in positions.items() if atco in nearby or atco in approaches)
         if len(journeys) > MAX_JOURNEYS:
             raise TimetableError(f"More than {MAX_JOURNEYS} journeys call at your stops; refusing")
     if not journeys:
         raise TimetableError("No timetabled journeys call at your stops")
+    if left_out:
+        log.warning("Left out %d journeys ending near your stops: more than %d", left_out, MAX_INBOUND_JOURNEYS)
+    placed = _positions(nearby | approaches, known, naptan)
+    near = tuple(journey for journey in inbound.values() if _ends_near(journey, atcos, placed))
+    needed = nearby.union(*(_approach(journey) for journey in near))
     kept = tuple(journeys.values())
     ends = [journey.calendar.end for journey in kept if journey.calendar.end]
     return Schedule(
         built=now,
         valid_until=min(ends, default=None),
         stops=dict(stops),
-        journeys=kept,
-        positions=_positions(nearby, known, naptan),
+        journeys=kept + near,
+        positions={atco: position for atco, position in placed.items() if atco in needed},
         operators=tuple(sorted(set(operators))),
     )
 

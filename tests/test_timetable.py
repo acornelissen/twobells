@@ -1,13 +1,13 @@
 import io
 import stat
 import zipfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from departureboard.holidays import Event, holiday_names
-from departureboard.schedule_model import Calendar, Call, Schedule, StopPosition
+from departureboard.schedule_model import Calendar, Call, Schedule, StopPosition, metres
 from departureboard.timetable import (
     FILE_NAME,
     TimetableError,
@@ -20,6 +20,10 @@ from departureboard.timetable import (
     refresh,
     runs_on,
     save,
+)
+
+from test_livebus import (
+    ARUNDEL, GRAPES, HALFWAY, HOWARD, JUNCTION, MARKET_HALL, POSITIONS, ST_MARYS_E, SUNLAWS, at, bus,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -797,3 +801,177 @@ def test_a_timetable_that_starts_later_is_kept_but_never_runs_before_it_starts()
     from departureboard.area import timetable_changes
 
     assert {"line": "341", "operator": "BNGN", "from": "2026-02-17"} in timetable_changes(early, date(2026, 2, 1))
+
+
+# Inbound-only journeys: buses coming in to a stand near your stop.
+
+FAR_STAND = "1000DGHSFAR1"
+FAR = StopPosition("Far Stand", 53.44384, -1.942968)  # about 400 m east of Stop A
+PLACES = {**POSITIONS, FAR_STAND: FAR}
+COMING_IN = [JUNCTION, GRAPES, SUNLAWS, ST_MARYS_E, ARUNDEL]  # 10:00 to 10:08
+LEFT_JUNCTION = datetime(2026, 10, 9, 9, 0, tzinfo=timezone.utc)  # 10:00 BST
+
+
+def _doc(journeys, places=PLACES):
+    """A TransXChange document of (code, line, departure, stops) journeys, two
+    minutes between stops, placing the stops it has in `places`."""
+    atcos = sorted({atco for *_, calls in journeys for atco in calls})
+    stops = "".join(
+        f"<AnnotatedStopPointRef><StopPointRef>{atco}</StopPointRef>"
+        f"<CommonName>{places[atco].name if atco in places else atco}</CommonName>"
+        + (f"<Location><Longitude>{places[atco].lon}</Longitude><Latitude>{places[atco].lat}</Latitude></Location>"
+           if atco in places else "")
+        + "</AnnotatedStopPointRef>"
+        for atco in atcos
+    )
+    sections = "".join(
+        f'<JourneyPatternSection id="s{i}">'
+        + "".join(
+            f'<JourneyPatternTimingLink id="l{i}-{k}"><From><StopPointRef>{a}</StopPointRef></From>'
+            f"<To><StopPointRef>{b}</StopPointRef></To><RunTime>PT2M</RunTime></JourneyPatternTimingLink>"
+            for k, (a, b) in enumerate(zip(calls, calls[1:]))
+        )
+        + "</JourneyPatternSection>"
+        for i, (*_, calls) in enumerate(journeys)
+    )
+    lines = "".join(f'<Line id="L{line}"><LineName>{line}</LineName></Line>' for line in sorted({j[1] for j in journeys}))
+    patterns = "".join(
+        f'<JourneyPattern id="p{i}"><JourneyPatternSectionRefs>s{i}</JourneyPatternSectionRefs></JourneyPattern>'
+        for i in range(len(journeys))
+    )
+    vehicle_journeys = "".join(
+        f"<VehicleJourney><VehicleJourneyCode>{code}</VehicleJourneyCode><ServiceRef>S1</ServiceRef>"
+        f"<LineRef>L{line}</LineRef><JourneyPatternRef>p{i}</JourneyPatternRef>"
+        f"<DepartureTime>{departure}</DepartureTime></VehicleJourney>"
+        for i, (code, line, departure, _) in enumerate(journeys)
+    )
+    return f"""<?xml version="1.0" encoding="utf-8"?>
+<TransXChange xmlns="http://www.transxchange.org.uk/">
+ <StopPoints>{stops}</StopPoints>
+ <JourneyPatternSections>{sections}</JourneyPatternSections>
+ <Operators><Operator id="o1"><NationalOperatorCode>BNML</NationalOperatorCode></Operator></Operators>
+ <Services><Service><ServiceCode>S1</ServiceCode><Lines>{lines}</Lines>
+  <OperatingPeriod><StartDate>2026-01-01</StartDate></OperatingPeriod>
+  <RegisteredOperatorRef>o1</RegisteredOperatorRef>
+  <StandardService>{patterns}</StandardService>
+ </Service></Services>
+ <VehicleJourneys>{vehicle_journeys}</VehicleJourneys>
+</TransXChange>""".encode()
+
+
+def _stand_doc(stand=MARKET_HALL, line="237", places=PLACES):
+    """The 237 leaves Stop A at 10:15. A bus of `line` comes in from The
+    Junction at 10:00 to `stand` at 10:10, without calling at Stop A."""
+    return _doc([("out", "237", "10:15:00", [STOP_A, HOWARD, "1000DHAD0001"]),
+                 ("in", line, "10:00:00", COMING_IN + [stand])], places)
+
+
+def _build(document, naptan=None):
+    """The schedule for Stop A alone from one document, and the stops NaPTAN
+    was asked for. `naptan` is what NaPTAN knows; None if it can't be reached."""
+    asked = set()
+
+    def lookup(atcos):
+        asked.update(atcos)
+        if naptan is None:
+            raise OSError("naptan down")
+        return {atco: (place.name, place.lat, place.lon) for atco, place in naptan.items() if atco in asked}
+
+    schedule = build_schedule({"A": STOP_A}, ["BNML"], "k", NOW, find_datasets=lambda key, noc, line: [BNML_LINK],
+                              fetch=lambda url, file: file.write(document), naptan=lookup)
+    return schedule, asked
+
+
+def _codes(schedule):
+    return [(journey.journey_code, journey.inbound_only) for journey in schedule.journeys]
+
+
+def test_a_journey_ending_at_a_stand_near_your_stop_is_kept_inbound_only():
+    assert 80 <= metres(POSITIONS[MARKET_HALL], POSITIONS[STOP_A]) <= 90
+    schedule, _ = _build(_stand_doc(), naptan=PLACES)
+    assert _codes(schedule) == [("out", False), ("in", True)]
+    coming = _by_code(schedule.journeys)["in"]
+    assert coming.calls[0] == Call(JUNCTION, 600) and coming.calls[-1] == Call(MARKET_HALL, 610)
+    assert schedule.departure_journeys == (_by_code(schedule.journeys)["out"],)
+    assert {*COMING_IN, MARKET_HALL} <= set(schedule.positions)  # to place its bus on the way in
+    # Asked only for journeys calling at your stops, there are none.
+    assert [j.journey_code for j in parse_journeys(_stand_doc(), {STOP_A})] == ["out"]
+
+
+def test_the_bus_coming_in_to_the_stand_is_the_inbound_bus_and_never_a_departure(tmp_path):
+    from departureboard.bodsbus import BusBoard
+    from departureboard.enrich import inbound
+    from departureboard.livebus import live_board
+    from departureboard.snapshot import bus_observations
+
+    schedule, _ = _build(_stand_doc(), naptan=PLACES)
+    save(tmp_path, schedule)
+    schedule = load(tmp_path)
+    assert _codes(schedule) == [("out", False), ("in", True)]
+    vehicle = bus(*HALFWAY, at(10, 9), line="237", origin=JUNCTION, aimed=LEFT_JUNCTION)  # 4 min late
+    rows, placed = live_board(schedule, at(10, 9), [vehicle], lambda journey, day: True, 10)
+    assert [(row.departure.stop, row.journey.journey_code, row.departure.scheduled) for row in rows] == [
+        ("A", "out", "10:15")
+    ]
+    assert [(p.journey.journey_code, p.vehicle) for p in placed] == [("in", vehicle)]
+    assert inbound(rows[0], rows, placed, schedule.positions) == {
+        "from": "The Junction", "due": "10:14", "late_min": 4, "where": "3 stops away",
+        "text": "Bus arriving from The Junction, 4 min late (due 10:14)",
+    }
+    observed = bus_observations(BusBoard(rows, schedule, True, None, placed))
+    assert [o.identity for o in observed] == [rows[0].key]
+
+
+def test_a_stand_400_m_away_is_not_kept():
+    assert 395 <= metres(FAR, POSITIONS[STOP_A]) <= 405
+    for naptan in (PLACES, None):  # placed by NaPTAN, or by the timetable alone
+        schedule, _ = _build(_stand_doc(FAR_STAND), naptan=naptan)
+        assert _codes(schedule) == [("out", False)]
+        assert not {FAR_STAND, *COMING_IN} & set(schedule.positions)
+
+
+def test_a_stand_the_timetable_does_not_place_is_measured_by_naptan():
+    near, _ = _build(_stand_doc(places={}), naptan=PLACES)
+    assert _codes(near) == [("out", False), ("in", True)]
+    far, asked = _build(_stand_doc(FAR_STAND, places={}), naptan=PLACES)
+    assert FAR_STAND in asked
+    assert _codes(far) == [("out", False)]
+    assert not {FAR_STAND, *COMING_IN} & set(far.positions)
+    # Placed by neither, it can't be measured.
+    unknown, _ = _build(_stand_doc(places={}), naptan=None)
+    assert _codes(unknown) == [("out", False)]
+
+
+def test_a_stand_the_timetable_does_not_place_must_be_in_your_stops_area():
+    elsewhere = "2500DGHS0001"  # NaPTAN would put it beside Stop A, but it is never looked at
+    schedule, asked = _build(_stand_doc(elsewhere, places={}), naptan={**PLACES, elsewhere: POSITIONS[MARKET_HALL]})
+    assert _codes(schedule) == [("out", False)]
+    assert elsewhere not in asked
+
+
+def test_only_lines_leaving_your_stops_count():
+    schedule, _ = _build(_stand_doc(line="236"), naptan=PLACES)
+    assert _codes(schedule) == [("out", False)]
+
+
+def test_positions_cover_the_stretch_before_the_stand():
+    way_in = [f"1000DGXX{n:04d}" for n in range(24)]
+    places = {**PLACES, **{atco: StopPosition(atco, 53.40 + n / 1000, -1.95) for n, atco in enumerate(way_in)}}
+    document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD]),
+                     ("in", "237", "09:00:00", way_in + [MARKET_HALL])], places={})
+    schedule, asked = _build(document, naptan=places)
+    assert _codes(schedule) == [("out", False), ("in", True)]
+    assert set(way_in[-20:]) | {MARKET_HALL} <= set(schedule.positions)  # the stand and the 20 before it
+    assert not set(way_in[:-20]) & asked
+
+
+def test_inbound_only_journeys_are_capped(monkeypatch, caplog):
+    from departureboard import timetable
+
+    monkeypatch.setattr(timetable, "MAX_INBOUND_JOURNEYS", 1)
+    document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD]),
+                     ("in", "237", "10:00:00", COMING_IN + [MARKET_HALL]),
+                     ("earlier", "237", "09:30:00", COMING_IN + [MARKET_HALL])])
+    schedule, _ = _build(document, naptan=PLACES)
+    assert _codes(schedule) == [("out", False), ("in", True)]
+    assert "Left out 1 journeys ending near your stops" in caplog.text

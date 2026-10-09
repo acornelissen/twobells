@@ -144,7 +144,7 @@ Best guesses added on top of a row (worked out in `enrich.py`). They never chang
   - **Buses:** the journey's last call (`name` is the bus's destination), at the timetabled time plus the delay the bus has now (`expected_at - scheduled_at`, 0 without a live bus).
 - **`inbound`** (buses; otherwise null): the bus probably coming to work a departure that starts at your stop. BODS sends no block numbers, so it is inferred the way bustimes.org does:
   - only for a journey that starts at your stop;
-  - from a journey of the same line that ends at your stop, or at a stop within 150 m of it, arriving 0–30 min before this one leaves;
+  - from a journey of the same line that ends at your stop, or at a stop within 150 m of it, arriving 0–30 min before this one leaves. The timetable keeps journeys that end at such a stop without calling at yours for this alone;
   - only when exactly one such journey has a live bus placed on it (two or more is too much of a guess), and not when that bus would sooner work an earlier departure of the same line from the same stop.
   - `from` is where that journey started (null if no name is known), `due` its expected arrival at your stop (`HH:MM`), `late_min` how late it is now (0 if on time or early), `where` where it is ("4 stops away", "At your stop"), and `text` all of it as one line for the row, like "Bus arriving from Ashton, 4 min late (due 23:29)".
   - When the inbound bus is due after the departure's time, the departure still shows its timetabled time and its own status words. The pairing is a guess and buses often make up time on a layover, so the page states the inbound bus's facts and leaves the conclusion to the reader. It never shows a later departure time it can't back up.

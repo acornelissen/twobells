@@ -29,7 +29,8 @@ log = logging.getLogger(__name__)
 # weeks, and operators may have changed times since.
 MAX_AGE = timedelta(days=28)
 # Live positions are asked for in a box around the stops the schedule places
-# buses by, this much (in degrees, about a kilometre) wider on each side.
+# buses by, this much (in degrees, about a kilometre) wider on each side. They
+# include the way into stands near your stops, so inbound buses are seen.
 _MARGIN = 0.01
 
 

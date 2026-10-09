@@ -337,7 +337,9 @@ def parse_siri_sx(chunks: Iterable[bytes]) -> list[Situation]:
 
 @dataclass(frozen=True)
 class BusArea:
-    """Our lines and stops, from the bus timetable."""
+    """Our lines and stops, from the bus timetable. Its positioned stops
+    include the way into a stand near one of ours (inbound-only journeys):
+    trouble there holds up the bus that will work a departure from our stop."""
 
     lines: Mapping[tuple[str, str], str]  # (line, operator), case-folded -> the line as shown
     stops: Mapping[str, str]  # our stop labels -> ATCO codes
