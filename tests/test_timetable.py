@@ -784,3 +784,16 @@ def test_the_build_records_its_operators(tmp_path):
     assert schedule.operators == ("BNML", "HIPK")
     save(tmp_path, schedule)
     assert load(tmp_path).operators == ("BNML", "HIPK")
+
+
+def test_a_timetable_that_starts_later_is_kept_but_never_runs_before_it_starts():
+    # The 341's timetable starts on 17 February: built on the 1st, it is kept
+    # for the timetable change notice, and runs from the 17th only.
+    early = FakeBods().build(now=datetime(2026, 2, 1, 3, 0))
+    route = [j for j in early.journeys if j.line == "341"]
+    assert route and all(j.calendar.start == date(2026, 2, 17) for j in route)
+    assert not [j for j in journeys_on(early, date(2026, 2, 16)) if j.line == "341"]
+    assert [j for j in journeys_on(early, date(2026, 2, 17)) if j.line == "341"]
+    from departureboard.area import timetable_changes
+
+    assert {"line": "341", "operator": "BNGN", "from": "2026-02-17"} in timetable_changes(early, date(2026, 2, 1))

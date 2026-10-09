@@ -32,7 +32,7 @@ from .schedule_model import Schedule, StopPosition
 from .walk import WalkTimes
 from .weather import Conditions, Hour, rain_line
 
-PARTS = ("trains", "buses", "weather", "disruptions")
+PARTS = ("trains", "buses", "weather", "disruptions", "timetable_changes")
 TIMETABLE_STATES = ("ready", "building", "missing")
 # Positioned stops shown on a bus's map before yours.
 MAP_STOPS_BEFORE = 20

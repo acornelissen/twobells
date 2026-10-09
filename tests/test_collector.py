@@ -714,3 +714,26 @@ def test_each_bus_poll_keeps_the_area_map_without_asking_again(tmp_path):
     setup.buses.reason = "the bus timetable has run out"
     setup.collector.poll_buses()
     assert setup.hub.get("area") is None
+
+
+def test_timetable_changes_are_worked_out_once_per_timetable_and_day(tmp_path, monkeypatch):
+    from departureboard import collector as module
+
+    calls = []
+    monkeypatch.setattr(module, "timetable_changes",
+                        lambda schedule, day: calls.append(day) or [{"line": "341", "operator": "BNML",
+                                                                    "from": "2026-10-25"}])
+    plan = schedule()
+    monkeypatch.setitem(globals(), "schedule", lambda: plan)  # the fake reads the same timetable each poll
+    setup = Setup(tmp_path)
+    assert setup.snapshot()["timetable_changes"] is None
+    setup.collector.poll_buses()
+    setup.collector.poll_buses()
+    assert setup.snapshot()["timetable_changes"] == [{"line": "341", "operator": "BNML", "from": "2026-10-25"}]
+    assert len(calls) == 1
+    setup.clock.now += timedelta(days=1)
+    setup.collector.poll_buses()
+    assert len(calls) == 2
+    setup.buses.reason = "the bus timetable has run out"
+    setup.collector.poll_buses()
+    assert setup.snapshot()["timetable_changes"] is None

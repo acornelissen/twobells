@@ -35,7 +35,7 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from . import holidays as _holidays
-from .area import area_view
+from .area import area_view, timetable_changes
 from .dashconfig import DashboardSettings
 from .darwin import DetailsUnavailable, ServiceDetails, ServiceGone, TrainBoard
 from .disruptions import BusArea, RailArea, bus_disruptions, disruptions_part, train_disruptions
@@ -200,6 +200,7 @@ class Collector:
         self._situations, self._incidents = _Feed(), _Feed()
         self._bus_area: BusArea | None = None
         self._area_schedule = None  # the schedule _bus_area came from; the bus poller's alone
+        self._changes_for: tuple | None = None  # (schedule, day) the timetable changes were worked out for
         self._rail_area: RailArea | None = None
         self._pollers: dict[str, Poller] = {}
         self._publish_all()
@@ -388,6 +389,9 @@ class Collector:
             )
             self._publish_buses(state)
             self._hub.put("area", None)
+            if self._changes_for is not None:
+                self._changes_for = None
+                self._hub.publish("timetable_changes", None)
             return
         try:
             board = source.fetch_live()
@@ -401,6 +405,15 @@ class Collector:
         self._publish_buses()
         self._hub.put("area", area_view(board, now))
         self._note_schedule(board)
+        self._publish_changes(board.schedule, now.date())
+
+    def _publish_changes(self, schedule, day) -> None:
+        """The timetable changes coming up, worked out again only when the
+        timetable or the day changes (it reads every journey for each day)."""
+        if self._changes_for is not None and self._changes_for[0] is schedule and self._changes_for[1] == day:
+            return
+        self._changes_for = (schedule, day)
+        self._hub.publish("timetable_changes", timetable_changes(schedule, day))
 
     def _note_schedule(self, board) -> None:
         """Our bus lines and stops, for the bus disruptions, whenever the

@@ -532,6 +532,18 @@ table.history thead th { border-top: 0; color: var(--muted); }
 }
 .bus-arrow { width: 22px; height: 22px; fill: #ffb000; }
 
+/* --- Timetable change notices, above the bus table --- */
+
+.tt-changes { margin: 0 0 0.75rem; padding: 0; list-style: none; }
+.tt-changes li {
+  width: fit-content;
+  margin: 0.25rem 0;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--edge);
+  border-radius: 0.5rem;
+  font-weight: 600;
+}
+
 /* --- Around here: the line of stations, and the area map --- */
 
 .area h3 { margin-top: 0.75rem; }

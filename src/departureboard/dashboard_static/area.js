@@ -272,9 +272,35 @@ async function openArea(opener) {
   }
 }
 
+// --- Timetable changes: "New 341 timetable from Sun 25 Oct".
+
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// "Sun 25 Oct", with "tomorrow" when it is; "" for anything but YYYY-MM-DD.
+export function dayText(day, today) {
+  const m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(str(day));
+  if (!m) return "";
+  const at = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  const words = `${DAYS[at.getUTCDay()]} ${at.getUTCDate()} ${MONTHS[at.getUTCMonth()]}`;
+  const t = /^(\d{4})-(\d\d)-(\d\d)/.exec(str(today));
+  const tomorrow = t && new Date(Date.UTC(Number(t[1]), Number(t[2]) - 1, Number(t[3]) + 1)).getTime() === at.getTime();
+  return tomorrow ? `tomorrow, ${words}` : words;
+}
+
+export function renderChanges(snapshot) {
+  const el = $("timetable-changes");
+  const changes = list(snapshot.timetable_changes).filter(obj)
+    .map((c) => [str(c.line), dayText(c.from, snapshot.generated_at)]).filter(([line, day]) => line && day);
+  el.hidden = !changes.length;
+  fill(el, changes.map(([line, day]) => h("li", {},
+    h("span", { class: "glyph", "aria-hidden": "true" }, "ⓘ"), " ", `New ${line} timetable from ${day}.`)));
+}
+
 // Called with each snapshot: the line, the summary, and the open map.
 export async function renderArea(snapshot) {
   renderLine(snapshot);
+  renderChanges(snapshot);
   const section = $("area");
   section.hidden = !obj(snapshot.trains) && !obj(snapshot.buses);
   const buses = !!obj(snapshot.buses);

@@ -386,6 +386,7 @@ SNAPSHOT = {
     }),
     "weather": Opt(WEATHER),
     "disruptions": Opt(DISRUPTIONS),
+    "timetable_changes": Opt([{"line": str, "operator": str, "from": lambda v: isinstance(v, str) and bool(DAY.match(v))}]),  # noqa: E501
 }
 BUS_DETAIL = {
     "id": row_id, "line": str, "destination": str, "stop": str,

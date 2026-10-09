@@ -1727,5 +1727,17 @@
         "link": "https://www.nationalrail.co.uk/service-disruptions/glossop-20261015/"
       }
     ]
-  }
+  },
+  "timetable_changes": [
+    {
+      "line": "341",
+      "operator": "BNML",
+      "from": "2026-10-25"
+    },
+    {
+      "line": "61",
+      "operator": "HIPK",
+      "from": "2026-11-02"
+    }
+  ]
 }

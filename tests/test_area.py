@@ -1,11 +1,13 @@
 import json
 from dataclasses import replace
+from datetime import date
 
-from departureboard.area import area_view
+from departureboard.area import area_view, timetable_changes
 from departureboard.bodsbus import BusBoard
 from departureboard.livebus import live_board
+from departureboard.schedule_model import Calendar, Call
 
-from test_livebus import EAST, HALFWAY, HENRY_A, ST_MARYS_W, at, bus, schedule
+from test_livebus import EAST, HALFWAY, HENRY_A, ST_MARYS_W, WEST, at, bus, schedule
 
 NOW = at(10, 14, 30)
 
@@ -63,3 +65,54 @@ def test_what_the_server_sends_is_what_the_page_was_built_for():
     placed = bus(*HALFWAY, at(10, 14))
     unmatched = bus(53.4440, -1.9600, at(10, 13, 50), origin="", aimed=None, bearing=None)
     check(area_view(board([placed, unmatched]), NOW), AREA)
+
+
+# Timetable changes
+
+TODAY = date(2026, 10, 9)  # a Friday
+EVERY_DAY = frozenset(range(7))
+
+
+def running(journey, start=None, end=None, days=EVERY_DAY, shift=0):
+    calls = tuple(Call(c.atco, c.minute + shift) for c in journey.calls)
+    return replace(journey, calls=calls, calendar=Calendar(days=days, start=start, end=end))
+
+
+def test_a_new_timetable_with_other_times_is_a_change_from_its_first_day():
+    old = running(EAST, end=date(2026, 10, 24))
+    new = running(EAST, start=date(2026, 10, 25), shift=5)  # five minutes later from Sunday 25th
+    assert timetable_changes(schedule(old, new, running(WEST)), TODAY) == [
+        {"line": "341", "operator": "BNML", "from": "2026-10-25"},
+    ]
+
+
+def test_journeys_that_end_with_nothing_new_are_a_change_too():
+    ends = running(WEST, end=date(2026, 10, 15))
+    assert timetable_changes(schedule(running(EAST), ends), TODAY) == [
+        {"line": "237", "operator": "BNML", "from": "2026-10-16"},
+    ]
+
+
+def test_the_same_times_under_a_new_calendar_are_no_change():
+    old = running(EAST, end=date(2026, 10, 24))
+    same = running(EAST, start=date(2026, 10, 25))
+    assert timetable_changes(schedule(old, same), TODAY) == []
+
+
+def test_only_the_next_28_days_count_and_each_line_once():
+    later = [running(EAST, end=date(2026, 11, 30)), running(EAST, start=date(2026, 12, 1), shift=3)]
+    assert timetable_changes(schedule(*later), TODAY) == []
+    twice = [running(EAST, end=date(2026, 10, 14)), running(EAST, start=date(2026, 10, 15), end=date(2026, 10, 20),
+                                                              shift=2),
+             running(EAST, start=date(2026, 10, 21), shift=4)]
+    assert timetable_changes(schedule(*twice), TODAY) == [{"line": "341", "operator": "BNML", "from": "2026-10-15"}]
+
+
+def test_a_weekday_only_change_is_seen_on_its_own_weekday():
+    # Saturdays change from the 17th; weekdays stay as they are.
+    weekdays = running(EAST, days=frozenset(range(5)))
+    saturdays = running(EAST, end=date(2026, 10, 16), days=frozenset({5}))
+    new_saturdays = running(EAST, start=date(2026, 10, 17), days=frozenset({5}), shift=10)
+    assert timetable_changes(schedule(weekdays, saturdays, new_saturdays), TODAY) == [
+        {"line": "341", "operator": "BNML", "from": "2026-10-17"},
+    ]

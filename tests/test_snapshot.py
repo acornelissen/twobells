@@ -522,10 +522,12 @@ def snapshot(h):
 def test_the_first_snapshot_has_every_section_empty():
     h = hub()
     body = snapshot(h)
-    assert list(body) == ["version", "generated_at", "title", "walk", "trains", "buses", "weather", "disruptions"]
+    assert list(body) == ["version", "generated_at", "title", "walk", "trains", "buses", "weather", "disruptions",
+                          "timetable_changes"]
     assert body["version"] == 1 and body["title"] == "Glossop"
     assert body["walk"] == {"train": 12, "bus": {"A": 5, "B": 10}}
     assert body["trains"] is body["buses"] is body["weather"] is body["disruptions"] is None
+    assert body["timetable_changes"] is None
 
 
 def test_the_version_goes_up_only_when_the_content_changes():
@@ -658,6 +660,25 @@ def real_disruptions():
     return disruptions_part(bus, status_block(), train, None, LONDON)
 
 
+def real_timetable_changes():
+    """A timetable change as the collector works it out: the 341 five minutes
+    later from Sunday 25 October."""
+    from dataclasses import replace as changed
+
+    from test_livebus import EAST, WEST
+    from test_livebus import schedule as plan
+
+    from departureboard.area import timetable_changes
+    from departureboard.schedule_model import Calendar, Call
+
+    old = changed(EAST, calendar=Calendar(days=frozenset(range(7)), end=date(2026, 10, 24)))
+    new = changed(EAST, calls=tuple(Call(c.atco, c.minute + 5) for c in EAST.calls),
+                  calendar=Calendar(days=frozenset(range(7)), start=date(2026, 10, 25)))
+    found = timetable_changes(plan(old, new, WEST), date(2026, 10, 9))
+    assert found
+    return found
+
+
 def test_what_the_server_sends_is_what_the_page_was_built_for():
     """The server and the page were built apart against docs/dashboard-api.md:
     run the server's real output through the page's own contract checker."""
@@ -672,6 +693,7 @@ def test_what_the_server_sends_is_what_the_page_was_built_for():
     h.publish("buses", bparts)
     h.publish("weather", weather_part(conditions(), datetime(2026, 10, 9, 8, 20, tzinfo=LONDON), status_block(), 50))
     h.publish("disruptions", real_disruptions())
+    h.publish("timetable_changes", real_timetable_changes())
     sent = snapshot(h)
     assert sent["trains"]["rows"] and sent["buses"]["rows"] and sent["weather"]["now"]
     positions = [r["position"] for r in sent["trains"]["rows"] if r["position"]]

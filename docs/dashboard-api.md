@@ -263,6 +263,19 @@ A top-level key of `/api/snapshot`, after `weather`. It is `null` when neither s
   - `link` is `null` unless the feed gave an https link on a known operator's site (`disruptions.LINK_HOSTS`).
 - **On the page:** a panel lists them, in force first, then coming up, in words. A bus row whose line or stop an item names, during one of its periods, gets a "Disruption" link to it. Rail `messages` stay in their own panel.
 
+## Snapshot: `timetable_changes`
+
+A top-level key of `/api/snapshot`, after `disruptions`: the bus lines whose timetable changes in the next 28 days. `null` without buses or a usable timetable; `[]` when nothing changes.
+
+```json
+"timetable_changes": [{"line": "341", "operator": "BNML", "from": "2026-10-25"}]
+```
+
+- **The rule** (`area.timetable_changes`): the bus timetable keeps journeys whose calendar starts in the future (they never run before their start). A day D in the next 28 days is looked at if a journey starts on D or ended the day before. A line (with its operator) changes on D when the set of its journeys running on D, by their stops and times, differs from the set that ran on the same weekday a week before: new journeys, ended ones, or new times. Each line is listed once, at its first change, soonest first; at most 20. Bank holidays aren't counted.
+- It is worked out again only when the timetable is read again or the day changes.
+- `from` is `YYYY-MM-DD`, the first day of the new timetable.
+- **On the page:** a notice above the bus table, such as "New 341 timetable from Sun 25 Oct."
+
 ## `GET /api/area`
 
 The area map: every live bus on our lines around our stops, from the bus poller's last BODS fetch (no extra calls). 404 until the buses have been checked with a usable timetable, and again while there is none. Not part of the snapshot and not versioned: the page asks again with each snapshot while the map is open, and every 25 s or so for its summary. Same Host, client and cross-site rules and headers as the rest of the API.
