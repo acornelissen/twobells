@@ -254,6 +254,11 @@ def _weather(data: dict, sources: list[SourceConfig], timezone: str) -> Weather 
     """The rain warning, if [weather] gives a position. It is polled every 30
     minutes, only while a train or bus window is open."""
     section = _table(data, "weather", "[weather]")
+    enabled = section.get("enabled", True)
+    if not isinstance(enabled, bool):
+        raise ConfigError(f"[weather] enabled must be true or false, not {enabled!r}")
+    if not enabled:  # switched off on the settings page; the location stays in config.toml
+        return None
     if section.get("lat", "") == "" and section.get("lon", "") == "":  # "" is a cleared field
         return None
     lat, lon = _coordinate(section, "lat", 90), _coordinate(section, "lon", 180)

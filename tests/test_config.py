@@ -469,3 +469,11 @@ def test_weather_must_be_a_table(tmp_path):
 def test_a_probe_of_one_source_builds_no_forecast(tmp_path):
     path = write(tmp_path, TRAIN_AND_BUS + "[weather]\nlat = 53.44\nlon = -1.95\n")
     assert load_config(path, ENV, only={"train"}).board.weather is None
+
+
+def test_rain_warning_can_be_turned_off_without_losing_the_location(tmp_path):
+    base = '[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n[weather]\nlat = 53.44\nlon = -1.95\n'
+    assert load_config(write(tmp_path, base), ENV).board.weather is not None
+    assert load_config(write(tmp_path, base + "enabled = false\n"), ENV).board.weather is None
+    with pytest.raises(ConfigError, match="enabled"):
+        load_config(write(tmp_path, base + 'enabled = "no"\n'), ENV)

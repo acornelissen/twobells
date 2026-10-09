@@ -470,3 +470,34 @@ def test_bank_holidays_setting_is_in_the_board_section_with_a_hint(setup):
     assert '<label for="bank_holidays">Bank holidays</label>' in board
     assert 'aria-describedby="bank_holidays-hint"' in board
     assert "Treat bank holidays like Sundays" in board and "Ignore bank holidays" in board
+
+
+def _weather_form(tmp_path):
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    config.write_text(CONFIG.format(state=state / "state.json") + "\n[weather]\nlat = 53.44\nlon = -1.95\n")
+    return SettingsForm(config, lambda: dict(ENV)), config
+
+
+def test_rain_warning_controls_are_on_the_page(tmp_path):
+    form, _ = _weather_form(tmp_path)
+    page = form.render("tok")
+    assert "Rain warning" in page and 'id="weather_enabled"' in page and 'id="weather_threshold_percent"' in page
+    assert "53.44" in page  # the location is shown, not editable
+    assert 'name="weather_lat"' not in page
+
+
+def test_rain_warning_can_be_switched_off_and_its_threshold_changed(tmp_path):
+    form, config = _weather_form(tmp_path)
+    assert form.save(fields_of(form) | {"weather_enabled": "false"}) == {}
+    assert load_config(config, ENV).board.weather is None
+    assert form.save(fields_of(form) | {"weather_enabled": "true", "weather_threshold_percent": "70"}) == {}
+    weather = load_config(config, ENV).board.weather
+    assert weather is not None and weather.threshold == 70
+
+
+def test_without_a_location_the_page_says_where_to_set_it(setup):
+    form, *_ = setup
+    page = form.render("tok")
+    assert "Rain warning" in page and "[weather]" in page
+    assert 'id="weather_enabled"' not in page

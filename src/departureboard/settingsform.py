@@ -47,7 +47,7 @@ _CRS = re.compile(r"^[A-Za-z]{3}$")
 _LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")
 _ATCO = re.compile(r"^[A-Za-z0-9]{6,12}$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
-_SECTIONS = {None: "Board", "train": "Trains", "bus": "Buses"}
+_SECTIONS = {None: "Board", "train": "Trains", "bus": "Buses", "weather": "Rain warning"}
 
 
 class Invalid(ValueError):
@@ -206,6 +206,13 @@ def _fields(display: str, theme: str) -> list[Field]:
               hint="Trains and buses run a Sunday service on bank holidays in England and Wales. Treated "
                    "like Sundays, only checking times that include Sun apply then. Dates come from GOV.UK.",
               options=(("true", "Treat bank holidays like Sundays"), ("false", "Ignore bank holidays"))),
+        Field("weather_enabled", "weather", "enabled", "Rain warning",
+              lambda raw: _choice(("true", "false"))(raw) == "true", "select",
+              hint="A line on the board when rain is likely between now and when you'd reach your "
+                   "next train or bus. Nothing is shown on dry days.",
+              options=(("true", "On"), ("false", "Off"))),
+        Field("weather_threshold_percent", "weather", "threshold_percent", "Warn from (chance of rain, %)",
+              _number(1, 100), "number", hint="50 means warn when rain is more likely than not."),
         Field("train_crs", "train", "crs", "Station code", _crs(), hint="3 letters, like GLO for Glossop."),
         Field("train_filter_crs", "train", "filter_crs", "Only trains calling at", _crs(optional=True),
               hint="Optional station code, like MAN. Empty shows every train."),
@@ -352,8 +359,10 @@ class SettingsForm:
             value = source.get(f.key)
             if f.name == "rotate" and value is None:
                 value = 180 if data.get("rotate_180") else 0
-            if f.name == "bank_holidays":
+            if f.name in ("bank_holidays", "weather_enabled"):
                 value = "false" if value is False else "true"  # on unless turned off
+            if f.name == "weather_threshold_percent" and value is None:
+                value = 50
             values[f.name] = _shown(value, f.kind)
         return values
 
@@ -453,6 +462,8 @@ class SettingsForm:
             (None, "Board", ""),
             ("train", "Trains", "Trains aren't set up. Add a [train] section to config.toml."),
             ("bus", "Buses", "Buses aren't set up. Add a [bus] section to config.toml."),
+            ("weather", "Rain warning",
+             "No location set. Add a [weather] section with lat and lon to config.toml to use the rain warning."),
         )
         panel = DISPLAY_PANELS[display]
         for section, legend, missing in groups:
@@ -466,6 +477,13 @@ class SettingsForm:
             if section and section not in data:
                 out.append(f'<p class="hint">{e(missing)}</p></fieldset>')
                 continue
+            if section == "weather":
+                where = data["weather"]
+                out.append(
+                    f'<p class="hint">Location: <strong>{e(str(where.get("lat", "")))}, '
+                    f'{e(str(where.get("lon", "")))}</strong>, rounded to about 1 km before it is sent to '
+                    "Open-Meteo. It's set in config.toml.</p>"
+                )
             for f in fields:
                 if f.section != section:
                     continue
