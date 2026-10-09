@@ -6,12 +6,12 @@ from pathlib import Path
 
 from PIL.Image import Image
 
-from .panel import PHAT, WAVESHARE_10IN85G, Panel
+from .panel import HDMI_1280X400, PHAT, WAVESHARE_10IN85G, Panel
 from .render import Palette
 
 
 # What each `display` setting draws on. An Inky reports its own size once opened.
-DISPLAY_PANELS = {"inky": PHAT, "waveshare-10in85g": WAVESHARE_10IN85G}
+DISPLAY_PANELS = {"inky": PHAT, "waveshare-10in85g": WAVESHARE_10IN85G, "hdmi-1280x400": HDMI_1280X400}
 
 
 class InkyDisplay:
@@ -43,14 +43,19 @@ class InkyDisplay:
         self._device.show()
 
 
-def open_display(name: str, accent: str, rotate_180: bool = False):
-    """The display a `display` setting names. Hardware libraries load only when used."""
+def open_display(name: str, accent: str, rotate: int = 0):
+    """The display a `display` setting names. Hardware libraries load only when used.
+    E-paper panels turn 0 or 180 degrees; a screen turns any quarter."""
     if name == "inky":
-        return InkyDisplay(accent, rotate_180=rotate_180)
+        return InkyDisplay(accent, rotate_180=rotate == 180)
     if name == "waveshare-10in85g":
         from .waveshare import WaveshareDisplay
 
-        return WaveshareDisplay(accent, rotate_180)
+        return WaveshareDisplay(accent, rotate == 180)
+    if name == "hdmi-1280x400":
+        from .screen import ScreenDisplay
+
+        return ScreenDisplay(accent, rotate)
     raise ValueError(f"Unknown display {name!r}; choose from {', '.join(sorted(DISPLAY_PANELS))}")
 
 

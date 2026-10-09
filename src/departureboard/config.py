@@ -29,7 +29,7 @@ class Settings:
     timezone: str
     state_file: Path
     accent: str
-    rotate_180: bool
+    rotate: int
     display: str = "inky"
 
 
@@ -98,6 +98,15 @@ def _walk(data: dict) -> WalkTimes:
     return WalkTimes(train=train, bus=dict(bus))
 
 
+def _rotate(data: dict, epaper: bool) -> int:
+    # rotate_180 = true is the older spelling of rotate = 180.
+    rotate = data.get("rotate", 180 if data.get("rotate_180") else 0)
+    allowed = (0, 180) if epaper else (0, 90, 180, 270)
+    if rotate not in allowed:
+        raise ConfigError(f"rotate must be one of {', '.join(map(str, allowed))} for this display, not {rotate!r}")
+    return rotate
+
+
 def load_config(
     path: Path | str,
     env: Mapping[str, str],
@@ -115,6 +124,7 @@ def load_config(
     display = data.get("display", "inky")
     if display not in DISPLAY_PANELS:
         raise ConfigError(f"Unknown display {display!r}; choose from {', '.join(sorted(DISPLAY_PANELS))}")
+    rotate = _rotate(data, DISPLAY_PANELS[display].epaper)
     sources = []
     wanted = only or {"train", "bus"}
     if "train" in data and "train" in wanted:
@@ -133,6 +143,6 @@ def load_config(
         timezone=data.get("timezone", "Europe/London"),
         state_file=Path(data.get("state_file", "state.json")),
         accent=data.get("accent", theme.accent),
-        rotate_180=bool(data.get("rotate_180", False)),
+        rotate=rotate,
         display=display,
     )

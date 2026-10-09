@@ -11,7 +11,8 @@ dependencies = ["Pillow>=10.1"]
 
 [project.optional-dependencies]
 pi = ["inky>=2.0"]
-dev = ["pytest>=8"]
+screen = ["pygame>=2.5"]
+dev = ["pytest>=8", "pygame>=2.5"]
 
 [project.scripts]
 departureboard = "departureboard.cli:main"

@@ -94,6 +94,6 @@ def test_open_display_refuses_an_unknown_name():
 
 def test_every_display_setting_has_a_panel():
     from departureboard.display import DISPLAY_PANELS
-    from departureboard.panel import PHAT, WAVESHARE_10IN85G
+    from departureboard.panel import HDMI_1280X400, PHAT, WAVESHARE_10IN85G
 
-    assert DISPLAY_PANELS == {"inky": PHAT, "waveshare-10in85g": WAVESHARE_10IN85G}
+    assert DISPLAY_PANELS == {"inky": PHAT, "waveshare-10in85g": WAVESHARE_10IN85G, "hdmi-1280x400": HDMI_1280X400}

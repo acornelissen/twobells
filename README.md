@@ -126,6 +126,7 @@ Live modes keep state in `state_file`, so the TransportAPI budget holds across r
 | `render.py` | Plain renderer |
 | `display.py` | Inky or PNG output; picks the display named in config |
 | `waveshare.py` | Waveshare 10.85" e-Paper (G) driver |
+| `screen.py` | HDMI screen output with pygame |
 | `emulator.py`, `emulator.html`, `emulation.py` | Browser panel emulator and its demo/live wiring |
 | `fake.py` | Deterministic fake sources and simulated clock |
 | `app.py` | One tick: poll what's due, redraw only on change |

@@ -170,3 +170,26 @@ def test_unknown_display_is_a_config_error(tmp_path):
     path = write(tmp_path, 'display = "crt"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
     with pytest.raises(ConfigError, match="crt.*inky"):
         load_config(path, ENV)
+
+
+def _rotate_config(tmp_path, lines):
+    return write(tmp_path, lines + '\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+
+
+def test_rotate_defaults_to_upright(example):
+    assert load_config(example, ENV).rotate == 0
+
+
+def test_old_rotate_180_setting_still_turns_the_board(tmp_path):
+    assert load_config(_rotate_config(tmp_path, "rotate_180 = true"), ENV).rotate == 180
+
+
+def test_screen_can_turn_a_quarter(tmp_path):
+    path = _rotate_config(tmp_path, 'display = "hdmi-1280x400"\nrotate = 90')
+    settings = load_config(path, ENV)
+    assert (settings.display, settings.rotate) == ("hdmi-1280x400", 90)
+
+
+def test_epaper_cannot_turn_a_quarter(tmp_path):
+    with pytest.raises(ConfigError, match="0, 180"):
+        load_config(_rotate_config(tmp_path, "rotate = 90"), ENV)

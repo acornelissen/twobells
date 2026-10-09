@@ -109,7 +109,7 @@ def _run(args) -> int:
     display = (
         PngDisplay(args.png, settings.accent, DISPLAY_PANELS[settings.display])
         if args.png
-        else open_display(settings.display, settings.accent, settings.rotate_180)
+        else open_display(settings.display, settings.accent, settings.rotate)
     )
     store = StateStore(settings.state_file)
     state = store.load()
