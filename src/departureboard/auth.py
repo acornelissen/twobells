@@ -497,11 +497,10 @@ class ResetCodes:
                 stored, expires, tries = str(current["hash"]), float(current["expires"]), int(current["tries"])
             except (TypeError, KeyError, ValueError):
                 current, salt, stored, expires, tries = None, b"", "", 0.0, 0
-            # Hashed and compared with or without a code, so the time taken doesn't say which.
+            # Hashed, compared and saved with or without a code, so the time
+            # taken doesn't say whether there is one.
             right = hmac.compare_digest(_code_hash(salt, typed).encode(), stored.encode())
-            if current is None:
-                return False
-            live = now < expires and tries < RESET_MAX_TRIES
+            live = current is not None and now < expires and tries < RESET_MAX_TRIES
             if live and not right:
                 current["tries"] = tries + 1
                 if current["tries"] >= RESET_MAX_TRIES:
