@@ -169,11 +169,17 @@ def _policy(section: dict, default_interval: int, where: str, holidays: frozense
     return PollPolicy(windows, interval, holidays)
 
 
+# Station codes (CRS) are three letters, like GLO.
+_CRS = re.compile(r"[A-Za-z]{3}")
+
+
 def _train(section: dict, env: Mapping[str, str], holidays: frozenset[date]) -> SourceConfig:
     where = "[train] "
     crs = section.get("crs")
     if not isinstance(crs, str) or not crs.strip():
         raise ConfigError('[train] needs crs, the 3-letter station code, like crs = "GLO"')
+    if not _CRS.fullmatch(crs.strip()):
+        raise ConfigError(f'[train] crs is {crs!r}; set your station\'s 3-letter code, like crs = "GLO"')
     policy = _policy(section, 2, where, holidays)
     source = DarwinSource(
         api_key=_secret(env, "RDM_API_KEY"),

@@ -70,7 +70,8 @@ systemctl daemon-reload
 cat <<EOF
 
 Installed. Next:
-  1. Edit $CONF/secrets.env (keys) and $CONF/config.toml (bus stop ATCO code).
+  1. Edit $CONF/secrets.env (keys) and $CONF/config.toml (replace each CHANGE_ME:
+     your station code and bus stop codes; $REPO/examples/glossop.toml is a filled-in one).
   2. Check the keys:   sudo $PREFIX/venv/bin/departureboard probe train
                        sudo $PREFIX/venv/bin/departureboard probe bus
   3. Start the board:  sudo systemctl enable --now departureboard.timer          (e-paper)

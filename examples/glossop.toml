@@ -1,0 +1,102 @@
+# Worked example: a board in Glossop, Derbyshire, showing trains to
+# Manchester Piccadilly and buses from the two Henry Street stops.
+# config.example.toml is the blank template to start from; this file shows
+# what a filled-in one looks like. Every code and position here is Glossop's.
+
+title = "Glossop > Manchester Picc"
+timezone = "Europe/London"
+state_file = "/var/lib/departureboard/state.json"
+# Never redraw more often than this, even if the data changes sooner.
+min_redraw_minutes = 2
+# "sign": amber dot-matrix station board (needs the yellow accent).
+# "plain": white board with bold type and a red accent.
+theme = "sign"
+# Defaults to the theme's colour. Only reinforces meaning; text always carries it.
+# accent = "yellow"
+# "inky": Pimoroni Inky pHAT (or any Inky the library detects).
+# "inky-phat-v1": the original Inky pHAT (before 2019, 212x104), which has no EEPROM.
+#   It can't be detected, so say its colour: panel_colour = "red", "yellow" or "black".
+# "waveshare-10in85g": Waveshare 10.85" e-Paper (G), 1360x480. Needs dtoverlay=spi0-0cs.
+# "hdmi-1280x400": Waveshare 7.9" HDMI screen on its side. Runs as a service, not a timer.
+display = "inky"
+# Trains and buses run a Sunday service on bank holidays (from GOV.UK): treat
+# them like Sundays, so only windows including Sun apply.
+bank_holidays = true
+# Whose bank holidays: "england-and-wales", "scotland" or "northern-ireland".
+bank_holiday_division = "england-and-wales"
+# The plain look's text size, 9-16 (11 is standard); bigger shows fewer departures on a small display.
+# text_size = 12
+# Degrees to turn the board clockwise to suit how it is mounted.
+# E-paper: 0 or 180. The 7.9" screen is portrait out of the box: 90 or 270.
+rotate = 0
+
+[train]
+crs = "GLO"
+filter_crs = "MAN"
+rows = 3
+interval_minutes = 2
+stale_after_minutes = 6
+windows = ["Mon-Fri 06:30-09:30", "Mon-Fri 16:30-19:30"]
+# Minutes to walk to the station; the board shows when to leave for the next train.
+walk_minutes = 7
+# Copy the exact base URL from the Rail Data Marketplace product page if it differs.
+# base_url = "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
+
+[bus]
+# Rows shown. Each stop call returns several buses, so more rows cost no extra hits.
+rows = 3
+# Optional: only show buses whose direction contains one of these.
+directions = []
+# Every poll costs one hit per stop. TransportAPI free plan is 30 hits/day;
+# the budget keeps 2 spare for manual probes.
+# 2 stops x (07:00-08:30 every 12 min = 8 polls + 17:00-18:00 = 6 polls) = 28 hits.
+interval_minutes = 12
+stale_after_minutes = 30
+daily_budget = 28
+windows = ["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]
+
+# Or work bus times out the way bustimes.org does: from the BODS timetable for
+# your stops plus live BODS bus positions. Free (needs BODS_API_KEY), so buses
+# can be checked all day. `departureboard timetable` builds the timetable, and
+# departureboard-timetable.timer keeps it fresh (rebuilt weekly, or when your
+# stops or operators change). Until there is one, TransportAPI stands in if
+# its keys are set: every fallback_interval_minutes (default 12), within
+# daily_budget, and only inside fallback_windows (default: the bus windows).
+# operators are the bus companies' national operator codes; find them on
+# bustimes.org, or in TransportAPI's "operator" (`departureboard probe bus --save`).
+# source = "bods"
+# operators = ["BNML", "HIPK"]
+# interval_minutes = 2
+# windows = ["Mon-Sun 06:00-23:00"]
+# fallback_windows = ["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]
+
+# Short label shown on the board = ATCO code (find codes on bustimes.org).
+[bus.stops]
+A = "1000DGHS0900"   # Henry Street Stop A: 219, 237, 341
+B = "100000008350"   # Henry Street Stop B: 61, 237, 390, 393, 394
+
+# Minutes to walk to each stop, by label. A single number applies to every stop.
+[bus.walk_minutes]
+A = 7
+B = 7
+
+# HDMI screen only: a second page showing where the next bus you can catch is,
+# on the stops before yours. Needs BODS_API_KEY in secrets.env. Positions are
+# polled every position_interval_seconds (default 30) inside the bus windows.
+# [bus.routes.341]
+# stop = "A"            # your stop's label from [bus.stops]
+# stops = [             # in the order the bus calls; yours last
+#   { name = "Sunlaws Street", lat = 53.443494, lon = -1.959026 },
+#   { name = "St Marys Road",  lat = 53.443511, lon = -1.955759 },
+#   { name = "Henry Street",   lat = 53.44384,  lon = -1.948999 },
+# ]
+
+# Optional: a rain warning from Open-Meteo's forecast (free, no key). The board
+# says "Rain from 07:10 (70%)" when rain is likely before you would reach the
+# next train or bus you can still catch (or within the hour, without walk
+# times). Polled every 30 minutes, only inside the train and bus windows.
+# Two decimal places is plenty; that is all that is sent.
+# [weather]
+# lat = 53.44
+# lon = -1.95
+# threshold_percent = 50   # chance of rain, 1-100, worth a warning

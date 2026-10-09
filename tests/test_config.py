@@ -7,7 +7,9 @@ from departureboard.config import ConfigError, load_config
 from departureboard.darwin import DarwinSource
 from departureboard.transportapi import TransportApiBusSource
 
-EXAMPLE = Path(__file__).parent.parent / "config.example.toml"
+ROOT = Path(__file__).parent.parent
+TEMPLATE = ROOT / "config.example.toml"  # the blank template, with CHANGE_ME placeholders
+GLOSSOP = ROOT / "examples" / "glossop.toml"  # the worked example, filled in
 ENV = {"RDM_API_KEY": "rdm", "TAPI_APP_ID": "id", "TAPI_APP_KEY": "key"}
 
 
@@ -19,21 +21,79 @@ def write(tmp_path, text):
 
 @pytest.fixture
 def example():
-    return EXAMPLE
+    """The worked example: a whole, real board (Glossop's)."""
+    return GLOSSOP
 
 
-def test_example_config_loads(example):
-    settings = load_config(example, ENV)
+def filled_template(tmp_path):
+    """The template with its placeholders filled in, as a new user would."""
+    text = TEMPLATE.read_text()
+    text = text.replace('crs = "CHANGE_ME"', 'crs = "ABC"').replace('A = "CHANGE_ME"', 'A = "1000ABCD0001"')
+    return write(tmp_path, text)
+
+
+@pytest.fixture(params=["template", "glossop"])
+def any_example(request, tmp_path):
+    return filled_template(tmp_path) if request.param == "template" else GLOSSOP
+
+
+def test_example_config_loads(any_example):
+    settings = load_config(any_example, ENV)
     names = [c.source.name for c in settings.board.sources]
     assert names == ["train", "bus"]
     assert isinstance(settings.board.sources[0].source, DarwinSource)
     assert isinstance(settings.board.sources[1].source, TransportApiBusSource)
     assert settings.timezone == "Europe/London"
     assert (settings.board.theme.name, settings.accent) == ("sign", "yellow")
+    assert settings.bank_holiday_division == "england-and-wales"
 
 
-def test_example_bus_schedule_fits_inside_its_budget(example):
-    bus = load_config(example, ENV).board.sources[1]
+def test_template_refuses_to_run_until_its_placeholders_are_filled():
+    with pytest.raises(ConfigError, match="CHANGE_ME"):
+        load_config(TEMPLATE, ENV)
+
+
+def test_template_without_a_bus_stop_names_the_placeholder(tmp_path):
+    text = TEMPLATE.read_text().replace('crs = "CHANGE_ME"', 'crs = "ABC"')
+    with pytest.raises(ConfigError, match="CHANGE_ME"):
+        load_config(write(tmp_path, text), ENV)
+
+
+def _values(data):
+    for value in data.values() if isinstance(data, dict) else data:
+        if isinstance(value, (dict, list)):
+            yield from _values(value)
+        else:
+            yield value
+
+
+def test_template_assumes_no_place(tmp_path):
+    import tomllib
+
+    settings = load_config(filled_template(tmp_path), ENV)
+    assert settings.board.title == "Departures"
+    assert settings.board.weather is None  # no position until one is given
+    # Nothing it sets (comments aside) is Glossop's.
+    glossop = {"GLO", "MAN", "BNML", "HIPK", "1000DGHS0900", "100000008350", 53.44, -1.95}
+    values = set(_values(tomllib.loads(TEMPLATE.read_text())))
+    assert not values & glossop
+    assert not any("Glossop" in str(v) or "Manchester" in str(v) for v in values)
+
+
+def test_title_defaults_to_departures(tmp_path):
+    path = write(tmp_path, '[train]\ncrs = "ABC"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    assert load_config(path, ENV).board.title == "Departures"
+
+
+@pytest.mark.parametrize("crs", ["CHANGE_ME", "GL", "GLOS", "G1O"])
+def test_station_code_must_be_three_letters(tmp_path, crs):
+    path = write(tmp_path, f'[train]\ncrs = "{crs}"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    with pytest.raises(ConfigError, match="3-letter"):
+        load_config(path, ENV)
+
+
+def test_example_bus_schedule_fits_inside_its_budget(any_example):
+    bus = load_config(any_example, ENV).board.sources[1]
     calls = 0
     for window in bus.policy.windows:
         span = (window.end.hour * 60 + window.end.minute) - (window.start.hour * 60 + window.start.minute)
@@ -430,12 +490,21 @@ def test_weather_is_off_without_a_section(example):
 
 
 def test_example_weather_section_loads_when_uncommented(tmp_path):
-    lines = EXAMPLE.read_text().splitlines()
+    lines = GLOSSOP.read_text().splitlines()
     start = lines.index("# [weather]")
     lines[start:] = [line.removeprefix("# ") for line in lines[start:]]
     weather = load_config(write(tmp_path, "\n".join(lines)), ENV).board.weather
     assert weather is not None and weather.threshold == 50
     assert "latitude=53.44" in weather.source.url() and "longitude=-1.95" in weather.source.url()
+
+
+def test_template_weather_section_loads_when_uncommented_and_filled(tmp_path):
+    lines = filled_template(tmp_path).read_text().splitlines()
+    start = lines.index("# [weather]")
+    lines[start:] = [line.removeprefix("# ").replace("CHANGE_ME", "51.5") for line in lines[start:]]
+    weather = load_config(write(tmp_path, "\n".join(lines)), ENV).board.weather
+    assert weather is not None and weather.threshold == 50
+    assert "latitude=51.5" in weather.source.url()
 
 
 def test_weather_polls_every_30_minutes_in_the_train_and_bus_windows(tmp_path):
