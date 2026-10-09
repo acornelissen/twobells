@@ -11,6 +11,10 @@ Nothing is written unless the merged settings then load, and keys go to the
 secrets overlay only, never into settings.toml. Settings carry floats (the
 weather position) and route strips (arrays of inline tables), which the
 settings page's writer doesn't, so this module has its own.
+
+The board's overlay sits beside its state file. Another host, like the
+dashboard, names its own with a Target: the settings under it, its folder,
+and the loader the merged settings must pass.
 """
 
 from __future__ import annotations
@@ -19,8 +23,9 @@ import datetime as dt
 import math
 import re
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
+from typing import Callable, Mapping
 
 from .config import (
     OVERLAY_NAME,
@@ -28,7 +33,7 @@ from .config import (
     ConfigError,
     merge,
     read_base,
-    read_overlay,
+    read_overlay_in,
     settings_from,
     state_dir,
 )
@@ -94,6 +99,32 @@ def overlay_paths(base: dict) -> tuple[Path, Path]:
     return folder / OVERLAY_NAME, folder / SECRETS_OVERLAY_NAME
 
 
+def _board_loads(data: dict, env: Mapping[str, str]) -> None:
+    settings_from(data, env)
+
+
+@dataclass(frozen=True)
+class Target:
+    """An overlay to save into. `base` reads the settings it is layered over;
+    `folder` is where its settings.toml and secrets.env live (None: nowhere
+    yet, so nothing can be saved); `check` raises ConfigError (or KeyError,
+    TypeError, ValueError) unless merged settings and an environment load."""
+
+    base: Callable[[], dict]
+    folder: Callable[[dict], Path | None]
+    check: Callable[[dict, Mapping[str, str]], object] = _board_loads
+
+    def current(self) -> dict:
+        """The settings in force: the base with the saved overlay over it."""
+        base = self.base()
+        return merge(base, read_overlay_in(self.folder(base)))
+
+
+def board_target(config_path: Path | str) -> Target:
+    """The board's overlay, beside the state file config.toml names."""
+    return Target(lambda: read_base(config_path), state_dir)
+
+
 def _scrub(text: str, secrets: Mapping[str, str]) -> str:
     for value in secrets.values():
         if value:
@@ -103,22 +134,31 @@ def _scrub(text: str, secrets: Mapping[str, str]) -> str:
 
 def save_changes(config_path: Path | str, changes: dict, keys: Mapping[str, str],
                  env: Mapping[str, str]) -> dict:
-    """Merge `changes` into the saved settings overlay and `keys` into the
-    secrets overlay, if the board's settings then load with `env` (the
+    """Merge `changes` into the board's saved settings overlay and `keys` into
+    its secrets overlay; see save_to."""
+    return save_to(board_target(config_path), changes, keys, env)
+
+
+def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping[str, str]) -> dict:
+    """Merge `changes` into the target's saved settings overlay and `keys` into
+    its secrets overlay, if the settings then load with `env` (the
     environment and keys already saved) plus `keys`. Returns the overlay as
     written. OverlayError, with text that never holds a key, if not saved."""
     for name, value in keys.items():
         if not _ENV_NAME.match(name) or not isinstance(value, str) or not _KEY_VALUE.match(value):
             raise OverlayError(f"{name if _ENV_NAME.match(name) else 'A key'} isn't a key the board can store")
     try:
-        base = read_base(config_path)
-        settings_path, secrets_path = overlay_paths(base)
-        saved = read_overlay(base)
+        base = target.base()
+        folder = target.folder(base)
+        if folder is None:
+            raise OverlayError("config.toml needs a state_file before settings can be saved")
+        settings_path, secrets_path = folder / OVERLAY_NAME, folder / SECRETS_OVERLAY_NAME
+        saved = read_overlay_in(folder)
     except (OSError, ConfigError) as error:
         raise OverlayError(f"Not saved: the settings can't be read ({_scrub(str(error), keys)})") from None
     overlay = merge(saved, changes)
     try:
-        settings_from(merge(base, overlay), {**env, **keys})
+        target.check(merge(base, overlay), {**env, **keys})
     except (ConfigError, KeyError, TypeError, ValueError) as error:
         raise OverlayError(f"Not saved: {_scrub(str(error), keys)}") from None
     try:

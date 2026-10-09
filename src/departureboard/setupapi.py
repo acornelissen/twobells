@@ -45,7 +45,7 @@ from typing import Callable, Mapping, Sequence
 
 from . import discover, keytest, setup
 from .config import ConfigError, read_config
-from .overlay import OverlayError, save_changes
+from .overlay import OverlayError, Target, board_target, save_to
 from .settingsform import _KEY_VALUE, KEYS
 from .setup import Place, SetupError, Station, Stop
 from .status import safe_message
@@ -315,15 +315,18 @@ class SetupApi:
         make_job: MakeJob = discover.SetupJob,
         test_key: Callable[..., keytest.KeyResult] = keytest.test_key,
         key_tests: RateLimit = KEY_TESTS,
+        target: Target | None = None,
+        saved_message: str = "Saved. The board shows the new settings within a few minutes.",
     ) -> None:
         """`load_secrets` gives the environment with every saved key, as the
         settings page's does; `job_folder` is where the search builds the bus
         timetable (the board's state folder, or the dashboard's); `links` are
-        (label, href) pairs the finished page offers, like ("The board", "/")."""
+        (label, href) pairs the finished page offers, like ("The board", "/").
+        `target` is the overlay finishing saves into, by default the board's
+        beside config.toml's state file; `saved_message` says what happens next."""
         for label, href in links:
             if not label or len(label) > 40 or not _LINK.match(href):
                 raise ValueError("A link is a short label and a plain path or http(s) address")
-        self._config_path = Path(config_path)
         self._load_secrets = load_secrets
         self._job_folder = Path(job_folder)
         self._links = [{"label": label, "href": href} for label, href in links]
@@ -336,6 +339,8 @@ class SetupApi:
         self._make_job = make_job
         self._test_key = test_key
         self._key_tests = key_tests
+        self._target = target or board_target(config_path)
+        self._saved_message = saved_message
         self._lock = threading.Lock()
         self._found_stops: dict[str, Stop] = {}
         self._job = None
@@ -619,11 +624,10 @@ class SetupApi:
         if division:
             changes["bank_holiday_division"] = division
         env = dict(self._load_secrets())
-        save_changes(self._config_path, changes, keys, env)
+        save_to(self._target, changes, keys, env)
         with self._lock:
             self._found_stops.clear()
-        return {"saved": True, "message": "Saved. The board shows the new settings within a few minutes.",
-                "links": list(self._links)}
+        return {"saved": True, "message": self._saved_message, "links": list(self._links)}
 
     def _stop(self, atco: str) -> Stop:
         with self._lock:
@@ -651,7 +655,7 @@ class SetupApi:
 
     def _current_routes(self) -> dict:
         try:
-            routes = read_config(self._config_path).get("bus", {}).get("routes", {})
+            routes = self._target.current().get("bus", {}).get("routes", {})
         except (OSError, ConfigError, AttributeError):
             return {}
         return routes if isinstance(routes, dict) else {}

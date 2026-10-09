@@ -4,7 +4,8 @@ import tomllib
 import pytest
 
 from departureboard.config import read_config
-from departureboard.overlay import OverlayError, save_changes, to_toml
+from departureboard.config import ConfigError, read_base
+from departureboard.overlay import OverlayError, Target, save_changes, save_to, to_toml
 
 ENV = {"RDM_API_KEY": "rdm-secret-123", "BODS_API_KEY": "bods-secret-456"}
 
@@ -137,6 +138,36 @@ def test_a_key_is_checked_and_never_repeated(board):
         save_changes(config, {"train": {"crs": "TOOLONG"}}, {"RDM_API_KEY": "TOOLONG"}, {})
     assert "TOOLONG" not in str(caught.value)
     assert not (state / "secrets.env").exists()
+
+
+def test_a_target_saves_into_its_own_folder_checked_its_own_way(board, tmp_path):
+    # As the dashboard does: its own folder, not the board's, and its own loader.
+    config, state = board
+    own = tmp_path / "own"
+    own.mkdir()
+    checked = []
+
+    def check(data, env):
+        checked.append((data["train"]["crs"], env.get("BODS_API_KEY")))
+        if data["train"]["crs"] == "BAD":
+            raise ConfigError("not for this host")
+
+    target = Target(lambda: read_base(config), lambda base: own, check)
+    save_to(target, {"train": {"crs": "MAN"}}, {"BODS_API_KEY": "pasted-key"}, ENV)
+    assert tomllib.loads((own / "settings.toml").read_text()) == {"train": {"crs": "MAN"}}
+    assert (own / "secrets.env").read_text() == "BODS_API_KEY=pasted-key\n"
+    assert (state / "settings.toml").read_text() == SAVED  # the board's is untouched
+    assert checked == [("MAN", "pasted-key")]
+    assert target.current()["train"] == {"crs": "MAN", "windows": ["Mon-Fri 06:30-09:30"]}
+    with pytest.raises(OverlayError, match="not for this host"):
+        save_to(target, {"train": {"crs": "BAD"}}, {}, ENV)
+    assert tomllib.loads((own / "settings.toml").read_text()) == {"train": {"crs": "MAN"}}
+
+
+def test_a_target_with_no_folder_saves_nothing(board):
+    config, _ = board
+    with pytest.raises(OverlayError, match="state_file"):
+        save_to(Target(lambda: read_base(config), lambda base: None), CHANGES, {}, ENV)
 
 
 def test_to_toml_round_trips_every_kind_of_value():

@@ -6,8 +6,9 @@ import tomllib
 import pytest
 
 from departureboard import discover, setupapi
-from departureboard.config import read_config
+from departureboard.config import read_base, read_config
 from departureboard.keytest import KeyResult
+from departureboard.overlay import Target
 from departureboard.setup import Place, SetupError, Station, Stop
 from departureboard.setupapi import Invalid, RateLimit, SetupApi, decode, suggested_labels
 
@@ -300,6 +301,18 @@ def test_no_exact_home_position_is_written_anywhere(board):
         assert exact not in written
     assert "SK13" not in written
     assert ok(board, "walk", {"home": HOME, "stop_atcos": ["1800SB12341"]})["walk"] == {}  # found stops forgotten
+
+
+def test_a_host_can_save_into_its_own_overlay(board, tmp_path):
+    own = tmp_path / "own"
+    own.mkdir()
+    api = SetupApi(board.config, lambda: dict(board.secrets), own, stations=lambda: STATIONS, make_job=FakeJob,
+                   target=Target(lambda: read_base(board.config), lambda base: own),
+                   saved_message="Saved. The dashboard restarts to use them.")
+    status, body = api.handle("finish", {"home": HOME, "station_crs": "GLO", "stops": {}, "walk": {}})
+    assert status == 200 and body["message"] == "Saved. The dashboard restarts to use them."
+    assert tomllib.loads((own / "settings.toml").read_text())["train"]["crs"] == "GLO"
+    assert tomllib.loads((board.state / "settings.toml").read_text()) == tomllib.loads(SAVED)
 
 
 def test_trains_only_needs_no_search(board):

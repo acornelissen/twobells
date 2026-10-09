@@ -78,7 +78,11 @@ def read_base(path: Path | str) -> dict:
 
 def read_overlay(data: dict) -> dict:
     """The web page's saved settings for already-read config.toml data; empty if none."""
-    folder = state_dir(data)
+    return read_overlay_in(state_dir(data))
+
+
+def read_overlay_in(folder: Path | None) -> dict:
+    """The saved settings in `folder`'s settings.toml; empty if there are none."""
     if folder is None:
         return {}
     overlay = folder / OVERLAY_NAME
