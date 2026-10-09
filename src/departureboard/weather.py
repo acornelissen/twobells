@@ -5,6 +5,7 @@ dashboard."""
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Callable
@@ -72,7 +73,8 @@ class Hour:
 def _number(value, low: float, high: float | None, what: str) -> float | None:
     if value is None:
         return None  # Open-Meteo leaves gaps as null
-    wrong = isinstance(value, bool) or not isinstance(value, (int, float))
+    # NaN and Infinity parse as JSON and NaN passes any range check, so finite first.
+    wrong = isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
     if wrong or value < low or (high is not None and value > high):
         raise ValueError(f"Unexpected {what} in the forecast: {value!r}")
     return value

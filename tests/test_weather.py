@@ -159,3 +159,16 @@ def test_past_hours_are_ignored():
 def test_gaps_in_the_forecast_are_not_rain():
     gappy = [Hour(at("08:00"), None, None)]
     assert rain_line(gappy, at("07:40"), at("08:30"), 50) is None
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_a_reading_that_is_not_a_real_number_is_refused(bad):
+    # json.loads accepts NaN and Infinity, and NaN slips past range checks.
+    data = payload()
+    data["hourly"]["precipitation_probability"][0] = bad
+    with pytest.raises(ValueError, match="chance of rain"):
+        parse_forecast(data)
+    data = payload()
+    data["hourly"]["precipitation"][0] = bad
+    with pytest.raises(ValueError, match="rainfall"):
+        parse_forecast(data)
