@@ -114,3 +114,59 @@ def test_https_redirect_to_another_port_counts_as_another_host():
 def test_https_redirect_to_the_same_host_keeps_the_key():
     followed = redirect("https://api.example/x", "https://API.example:443/y", {"x-apikey": "k"})
     assert followed.get_header("X-apikey") == "k"
+
+
+def serve(monkeypatch, body: bytes):
+    seen = {}
+
+    def fake_urlopen(request, timeout):
+        seen["request"] = request
+        return FakeResponse(body)
+
+    monkeypatch.setattr(http, "urlopen", fake_urlopen)
+    return seen
+
+
+SECRET_URL = "https://example.test/board/GLO?key=hunter2&numRows=10"
+
+
+def test_capped_json_reads_a_small_body_with_the_callers_headers(monkeypatch):
+    seen = serve(monkeypatch, b'{"ok": true}')
+    assert http.get_json_capped(SECRET_URL, {"x-apikey": "k"}, max_bytes=100) == {"ok": True}
+    request = seen["request"]
+    assert request.get_header("X-apikey") == "k"
+    assert request.get_header("Accept") == "application/json"
+    assert request.get_header("User-agent").startswith("inky-departures/")
+
+
+def test_capped_json_refuses_a_body_over_the_cap(monkeypatch):
+    serve(monkeypatch, b'{"pad": "' + b"x" * 200 + b'"}')
+    with pytest.raises(ValueError, match="larger than 100 bytes") as caught:
+        http.get_json_capped(SECRET_URL, {"x-apikey": "k"}, max_bytes=100)
+    assert "hunter2" not in str(caught.value) and "example.test" not in str(caught.value)
+
+
+def test_capped_json_takes_a_body_exactly_at_the_cap(monkeypatch):
+    body = b'{"pad": "' + b"x" * 50 + b'"}'
+    serve(monkeypatch, body)
+    assert http.get_json_capped(SECRET_URL, None, max_bytes=len(body)) == {"pad": "x" * 50}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"[" * 10_000 + b"]" * 10_000,  # deep enough to blow the decoder's stack
+        b"<html>Service Unavailable</html>",
+        b"",
+        b'{"name": "Gl\xffssop"}',  # not UTF-8
+        '{"a": 1}'.encode("utf-16"),
+        b'{"a": 1',
+    ],
+)
+def test_capped_json_refuses_anything_but_json_with_one_clear_error(monkeypatch, body):
+    serve(monkeypatch, body)
+    with pytest.raises(ValueError) as caught:
+        http.get_json_capped(SECRET_URL, {"x-apikey": "k"}, max_bytes=1_000_000)
+    assert str(caught.value) == "Response is not valid JSON"
+    # Nothing chained either: a decoder's message can quote the body.
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__
