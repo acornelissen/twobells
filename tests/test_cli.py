@@ -253,6 +253,38 @@ def test_route_prints_a_config_block_from_a_timetable_file(tmp_path, capsys, mon
     ]
 
 
+def test_route_searches_each_download_before_fetching_the_next(tmp_path, capsys, monkeypatch):
+    # Holding every unzipped timetable at once could run to gigabytes.
+    import io
+    import zipfile
+    from pathlib import Path
+
+    from departureboard import cli, routesetup
+
+    txc = (Path(__file__).parent / "fixtures" / "txc_glossop_synthetic.xml").read_bytes()
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("a.xml", txc)
+        archive.writestr("b.xml", txc)
+    events = []
+
+    def fake_get(url, limit, timeout):
+        events.append(f"download {url}")
+        return buffer.getvalue()
+
+    real_patterns = routesetup.patterns
+    monkeypatch.setattr(cli, "get_bytes", fake_get)
+    monkeypatch.setattr(routesetup, "dataset_urls", lambda key, noc, line: ["one", "two"])
+    monkeypatch.setattr(routesetup, "patterns", lambda doc, line: events.append("search") or real_patterns(doc, line))
+    monkeypatch.setattr(routesetup, "naptan_stops", lambda atcos: {a: (a, 53.4, -1.9) for a in atcos})
+    monkeypatch.setenv("BODS_API_KEY", "k")
+    secrets = tmp_path / "secrets.env"
+    secrets.write_text("")
+    args = ["route", "341", "--stop", "A", "--noc", "BNML", "--secrets", str(secrets), "--config", str(_route_config(tmp_path))]
+    assert main(args) == 0
+    assert events == ["download one", "search", "search", "download two", "search", "search"]
+
+
 def test_route_needs_a_timetable_source(tmp_path, capsys):
     assert main(["route", "341", "--stop", "A", "--config", str(_route_config(tmp_path))]) == 2
     assert "--noc" in capsys.readouterr().err

@@ -241,7 +241,7 @@ def _route(args) -> int:
     walk_minutes = walk.get(args.stop, walk.get(DEFAULT_STOP, 0))
     try:
         if args.txc:
-            documents = list(routesetup.timetable_documents(Path(args.txc).read_bytes()))
+            documents = routesetup.timetable_documents(Path(args.txc).read_bytes())
         else:
             if not args.noc:
                 print("Give --noc (the operator code, e.g. BNML) or --txc FILE", file=sys.stderr)
@@ -250,11 +250,12 @@ def _route(args) -> int:
             if not key:
                 print("Missing BODS_API_KEY; set it in secrets.env", file=sys.stderr)
                 return 2
-            documents = []
-            for url in routesetup.dataset_urls(key, args.noc, args.line):
-                print(f"Downloading {url}", file=sys.stderr)
-                blob = get_bytes(url, routesetup.MAX_DOWNLOAD_BYTES, timeout=300)
-                documents.extend(routesetup.timetable_documents(blob))
+            # A generator: each download is searched before the next is fetched.
+            documents = routesetup.downloaded_documents(
+                routesetup.dataset_urls(key, args.noc, args.line),
+                lambda url, limit: get_bytes(url, limit, timeout=300),
+                lambda url: print(f"Downloading {url}", file=sys.stderr),
+            )
         found = routesetup.find_patterns(documents, args.line)
         if not found:
             print(f"No timetable for line {args.line} found", file=sys.stderr)

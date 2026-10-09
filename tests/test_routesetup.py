@@ -134,6 +134,26 @@ def test_oversized_file_in_a_zip_is_refused(monkeypatch):
         list(timetable_documents(_zip({"big.xml": b"<x>" + b"a" * 100 + b"</x>"})))
 
 
+def test_a_zip_unpacking_to_too_much_in_total_is_refused(monkeypatch):
+    from departureboard import routesetup
+
+    monkeypatch.setattr(routesetup, "MAX_UNZIPPED_BYTES", 150)
+    files = {f"{i}.xml": b"<x>" + b"a" * 50 + b"</x>" for i in range(3)}  # 57 bytes each
+    documents = timetable_documents(_zip(files))
+    assert len(next(documents)) == 57
+    assert len(next(documents)) == 57
+    with pytest.raises(RouteSetupError, match="refusing"):
+        next(documents)
+
+
+def test_a_zip_within_the_total_is_read_whole(monkeypatch):
+    from departureboard import routesetup
+
+    monkeypatch.setattr(routesetup, "MAX_UNZIPPED_BYTES", 171)
+    files = {f"{i}.xml": b"<x>" + b"a" * 50 + b"</x>" for i in range(3)}
+    assert len(list(timetable_documents(_zip(files)))) == 3
+
+
 def test_doctype_is_refused():
     with pytest.raises(RouteSetupError, match="DOCTYPE"):
         patterns(b'<!DOCTYPE x [<!ENTITY a "b">]><TransXChange/>', "341")

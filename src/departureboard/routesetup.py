@@ -24,6 +24,7 @@ from .http import get_bytes
 NAPTAN_URL = "https://naptan.api.dft.gov.uk/v1/access-nodes"
 MAX_DOWNLOAD_BYTES = 300_000_000
 MAX_XML_BYTES = 200_000_000  # one TransXChange file, uncompressed
+MAX_UNZIPPED_BYTES = 1_000_000_000  # every file in one download, uncompressed
 MAX_ZIP_MEMBERS = 2_000
 MAX_STOPS = 8  # including yours; more and the names get unreadable
 EXTRA_MINUTES = 5  # beyond your walk, so the bus shows up before you need to leave
@@ -127,7 +128,8 @@ def strip_before(found: Iterable[Pattern], atco: str, walk_minutes: int) -> tupl
 
 
 def timetable_documents(blob: bytes) -> Iterator[bytes]:
-    """The TransXChange XML in a download: one file, or every .xml in a zip."""
+    """The TransXChange XML in a download: one file, or every .xml in a zip,
+    unpacked one at a time."""
     if not zipfile.is_zipfile(io.BytesIO(blob)):
         yield blob
         return
@@ -135,6 +137,7 @@ def timetable_documents(blob: bytes) -> Iterator[bytes]:
         members = [m for m in archive.infolist() if m.filename.lower().endswith(".xml")]
         if len(members) > MAX_ZIP_MEMBERS:
             raise RouteSetupError(f"Timetable zip has {len(members)} files; refusing more than {MAX_ZIP_MEMBERS}")
+        total = 0
         for member in members:
             if member.file_size > MAX_XML_BYTES:
                 raise RouteSetupError(f"{member.filename} unpacks to {member.file_size} bytes; refusing")
@@ -142,7 +145,20 @@ def timetable_documents(blob: bytes) -> Iterator[bytes]:
                 data = handle.read(MAX_XML_BYTES + 1)
             if len(data) > MAX_XML_BYTES:
                 raise RouteSetupError(f"{member.filename} is larger than it claims; refusing")
+            total += len(data)
+            if total > MAX_UNZIPPED_BYTES:
+                raise RouteSetupError(f"Timetable zip unpacks to more than {MAX_UNZIPPED_BYTES} bytes; refusing")
             yield data
+
+
+def downloaded_documents(
+    urls: Iterable[str], http_get: HttpGetBytes = get_bytes, announce: Callable[[str], None] = lambda url: None
+) -> Iterator[bytes]:
+    """The timetable documents behind each download link, fetched only when the
+    previous download's documents have been used, so one is held at a time."""
+    for url in urls:
+        announce(url)
+        yield from timetable_documents(http_get(url, MAX_DOWNLOAD_BYTES))
 
 
 def find_patterns(documents: Iterable[bytes], line: str) -> list[Pattern]:
