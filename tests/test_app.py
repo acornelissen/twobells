@@ -248,4 +248,4 @@ def test_board_walk_times_produce_leave_text():
     board = dataclasses.replace(board, walk=WalkTimes(train=7, bus={"*": 5}))
     result = run_once(board, state, display, THU_0700)
     assert result.view.trains.leave == "Leave 07:05 (07:12)"
-    assert result.view.buses.leave == "Leave 07:15 (341)"
+    assert result.view.buses.rows[0].leave == "leave 07:15"

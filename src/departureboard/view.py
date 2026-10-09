@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 
 from .model import Departure, Status
-from .walk import WalkTimes, leave_by
+from .walk import WalkTimes, leave_by, leave_time
 
 
 class Style(str, Enum):
@@ -25,6 +25,7 @@ class Row:
     middle: str
     right: str
     style: Style = Style.NORMAL
+    leave: str | None = None
 
 
 @dataclass(frozen=True)
@@ -50,7 +51,7 @@ class BoardView:
         return hashlib.sha256(encoded.encode()).hexdigest()
 
 
-def _train_row(dep: Departure) -> Row:
+def _train_row(dep: Departure, walk: WalkTimes | None) -> Row:
     if dep.status is Status.CANCELLED:
         right, style = "CANC", Style.INVERTED
     elif dep.status is Status.LATE:
@@ -63,7 +64,7 @@ def _train_row(dep: Departure) -> Row:
     return Row(dep.scheduled, dep.destination, right, style)
 
 
-def _bus_row(dep: Departure) -> Row:
+def _bus_row(dep: Departure, walk: WalkTimes | None) -> Row:
     if dep.status is Status.CANCELLED:
         right, style = "CANC", Style.INVERTED
     elif dep.status is Status.LATE:
@@ -73,7 +74,8 @@ def _bus_row(dep: Departure) -> Row:
     else:
         right, style = dep.scheduled, Style.NORMAL
     middle = f"{dep.stop}: {dep.destination}" if dep.stop else dep.destination
-    return Row(dep.service, middle, right, style)
+    leave = leave_time(dep, walk) if walk else None
+    return Row(dep.service, middle, right, style, f"leave {leave}" if leave else None)
 
 
 def _leave_text(departures: list[Departure], walk: WalkTimes | None, now: str) -> str | None:
@@ -87,8 +89,10 @@ def _leave_text(departures: list[Departure], walk: WalkTimes | None, now: str) -
 
 def _section(label, departures, to_row, now, empty_text, stale, walk) -> Section:
     upcoming = [d for d in departures if not d.is_gone(now)]
-    rows = tuple(to_row(d) for d in upcoming)
-    return Section(label, rows, empty_text, stale, _leave_text(upcoming, walk, now))
+    rows = tuple(to_row(d, walk) for d in upcoming)
+    # Rows that carry their own leave time make a header summary redundant.
+    header = None if any(r.leave for r in rows) else _leave_text(upcoming, walk, now)
+    return Section(label, rows, empty_text, stale, header)
 
 
 def build_view(

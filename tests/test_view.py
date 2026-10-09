@@ -124,11 +124,6 @@ def test_train_leave_text_names_the_departure_time():
     assert v.trains.leave == "Leave 07:05 (07:12)"
 
 
-def test_bus_leave_text_names_the_route():
-    v = view(buses=[bus("341", "07:20", stop="A")], now="07:00", walk=WALK)
-    assert v.buses.leave == "Leave 07:14 (341)"
-
-
 def test_leave_text_moves_on_once_a_departure_is_out_of_reach():
     trains = [train("07:12"), train("07:42")]
     assert view(trains=trains, now="07:06", walk=WALK).trains.leave == "Leave 07:35 (07:42)"
@@ -139,3 +134,33 @@ def test_signature_changes_when_leave_time_changes():
     early = view(trains=trains, now="07:00", walk=WALK)
     later = view(trains=trains, now="07:06", walk=WALK)
     assert early.signature() != later.signature()
+
+
+def test_each_bus_row_has_its_own_leave_time():
+    rows = view(
+        buses=[bus("341", "07:20", stop="A"), bus("61", "07:35", "07:38", Status.LATE, stop="A")],
+        now="07:00",
+        walk=WALK,
+    ).buses.rows
+    assert [r.leave for r in rows] == ["leave 07:14", "leave 07:32"]
+
+
+def test_bus_row_leave_time_stays_after_it_has_passed():
+    [row] = view(buses=[bus("341", "07:20", stop="A")], now="07:16", walk=WALK).buses.rows
+    assert row.leave == "leave 07:14"
+
+
+def test_cancelled_bus_row_has_no_leave_time():
+    [row] = view(buses=[bus("341", "07:20", status=Status.CANCELLED, stop="A")], walk=WALK).buses.rows
+    assert row.leave is None
+
+
+def test_bus_header_drops_leave_text_when_rows_carry_it():
+    v = view(trains=[train("07:12")], buses=[bus("341", "07:20", stop="A")], now="07:00", walk=WALK)
+    assert v.buses.leave is None
+    assert v.trains.leave == "Leave 07:05 (07:12)"
+
+
+def test_train_rows_have_no_per_row_leave_time():
+    [row] = view(trains=[train("07:12")], now="07:00", walk=WALK).trains.rows
+    assert row.leave is None
