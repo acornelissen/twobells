@@ -77,3 +77,28 @@ def test_fake_source_fails_while_its_outage_predicate_holds():
     clock.advance()
     with pytest.raises(OSError):
         source.fetch()
+
+
+def test_fake_bus_reaches_your_stop_when_it_is_due():
+    from datetime import datetime
+
+    import pytest
+
+    from departureboard.fake import DEMO_STRIP, FakeVehicleSource, SimClock
+    from departureboard.route import position_on
+
+    # 341s are due at :05, :25, :45; at 07:21 the 07:25 is 4 min (2 stops) out.
+    [bus] = FakeVehicleSource(SimClock(datetime(2026, 10, 8, 7, 21))).fetch()
+    assert bus.line == "341"
+    assert position_on(DEMO_STRIP, bus) == pytest.approx(3, abs=0.01)
+    [at_stop] = FakeVehicleSource(SimClock(datetime(2026, 10, 8, 7, 25))).fetch()
+    assert position_on(DEMO_STRIP, at_stop) == pytest.approx(5, abs=0.01)
+
+
+def test_fake_bus_is_off_the_strip_when_far_away():
+    from datetime import datetime
+
+    from departureboard.fake import FakeVehicleSource, SimClock
+
+    # At 07:06 the next 341 is 19 min away, beyond the 10 min strip.
+    assert FakeVehicleSource(SimClock(datetime(2026, 10, 8, 7, 6))).fetch() == []

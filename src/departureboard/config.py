@@ -8,7 +8,8 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Mapping
 
-from .app import Board, SourceConfig
+from .app import Board, SourceConfig, Tracker
+from .bods import BodsVehicleSource
 from .darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL
 from .darwin import DarwinSource
 from .display import DISPLAY_PANELS
@@ -16,6 +17,7 @@ from .schedule import PollPolicy, parse_window
 from .transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
 from .themes import theme_named
 from .transportapi import TransportApiBusSource
+from .route import RouteStop, RouteStrip
 from .walk import DEFAULT_STOP, WalkTimes
 
 
@@ -90,6 +92,39 @@ def _bus(section: dict, env: Mapping[str, str]) -> SourceConfig:
     )
 
 
+def _route_stop(line: str, entry) -> RouteStop:
+    try:
+        name, lat, lon = str(entry["name"]).strip(), float(entry["lat"]), float(entry["lon"])
+    except (KeyError, TypeError, ValueError):
+        raise ConfigError(f"[bus.routes.{line}] each stop needs name, lat and lon") from None
+    if not name or not -90 <= lat <= 90 or not -180 <= lon <= 180:
+        raise ConfigError(f"[bus.routes.{line}] stop {entry!r} has no name or an impossible position")
+    return RouteStop(name, lat, lon)
+
+
+def _tracker(section: dict, env: Mapping[str, str], windows) -> Tracker | None:
+    """The route strip page's bus positions, if any routes are set up."""
+    routes = section.get("routes") or {}
+    if not routes:
+        return None
+    strips = {}
+    for line, route in routes.items():
+        stops = route.get("stops") or []
+        if len(stops) < 2:
+            raise ConfigError(f"[bus.routes.{line}] needs at least two stops, yours last")
+        label = route.get("stop")
+        if label not in (section.get("stops") or {}):
+            raise ConfigError(f"[bus.routes.{line}] stop = {label!r} is not one of [bus.stops]")
+        strips[str(line)] = RouteStrip(str(line), label, tuple(_route_stop(line, e) for e in stops))
+    boxes = [strip.box() for strip in strips.values()]
+    box = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
+    source = BodsVehicleSource(_secret(env, "BODS_API_KEY"), box, set(strips))
+    interval = timedelta(seconds=section.get("position_interval_seconds", 30))
+    if interval < timedelta(seconds=10):
+        raise ConfigError("position_interval_seconds must be at least 10; BODS refreshes every 10 s")
+    return Tracker(source, strips, PollPolicy(windows, interval))
+
+
 def _walk(data: dict) -> WalkTimes:
     train = data.get("train", {}).get("walk_minutes")
     bus = data.get("bus", {}).get("walk_minutes", {})
@@ -112,9 +147,13 @@ def load_config(
     env: Mapping[str, str],
     bus_stops: dict[str, str] | None = None,
     only: set[str] | None = None,
+    display: str | None = None,
 ) -> Settings:
-    """Load settings. `only` limits which sources are built, so a probe needs only its own keys."""
+    """Load settings. `only` limits which sources are built, so a probe needs only its own keys.
+    `display` overrides the configured one, as the emulator's --display does."""
     data = tomllib.loads(Path(path).read_text())
+    if display:
+        data["display"] = display
     if bus_stops:
         data.setdefault("bus", {})["stops"] = bus_stops
     try:
@@ -126,17 +165,23 @@ def load_config(
         raise ConfigError(f"Unknown display {display!r}; choose from {', '.join(sorted(DISPLAY_PANELS))}")
     rotate = _rotate(data, DISPLAY_PANELS[display].epaper)
     sources = []
+    tracker = None
     wanted = only or {"train", "bus"}
     if "train" in data and "train" in wanted:
         sources.append(_train(data["train"], env))
     if "bus" in data and "bus" in wanted:
-        sources.append(_bus(data["bus"], env))
+        bus = _bus(data["bus"], env)
+        sources.append(bus)
+        # Bus positions are only drawn on a screen; e-paper never asks for them.
+        if not DISPLAY_PANELS[display].epaper:
+            tracker = _tracker(data["bus"], env, bus.policy.windows)
     board = Board(
         title=data.get("title", "Departures"),
         sources=sources,
         min_redraw=timedelta(minutes=data.get("min_redraw_minutes", 2)),
         walk=_walk(data),
         theme=theme,
+        tracker=tracker,
     )
     return Settings(
         board=board,

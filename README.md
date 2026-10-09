@@ -103,6 +103,14 @@ sudo systemctl enable --now departureboard-screen.service
 
 State is written only when new data arrives, not on every redraw, to spare the SD card. Touch isn't used yet, and the backlight stays on.
 
+#### Where the next bus is
+
+On a screen the board can alternate with a second page: 15 s of departures, then 10 s showing the stops before yours with the next bus you can still catch drawn on the road between them, and how many stops away it is. Positions come from the DfT's [Bus Open Data Service](https://data.bus-data.dft.gov.uk/) (free; register and copy the API key from your account settings into `BODS_API_KEY`). They're polled every 30 s inside your bus windows, never written to the SD card, and the page says "Position not updating" if they stop arriving. Set the stops up under `[bus.routes.<line>]` in `config.toml` (see the example there). The emulator's screen demo shows it with a fake bus:
+
+```bash
+departureboard emulate --demo --display hdmi-1280x400
+```
+
 ## 3. Develop on your laptop
 
 ```bash
@@ -148,6 +156,7 @@ Live modes keep state in `state_file`, so the TransportAPI budget holds across r
 | `waveshare.py` | Waveshare 10.85" e-Paper (G) driver |
 | `screen.py` | HDMI screen output with pygame |
 | `emulator.py`, `emulator.html`, `emulation.py` | Browser panel emulator and its demo/live wiring |
+| `bods.py`, `route.py` | Live bus positions from BODS; placing the next bus on its route strip |
 | `fake.py` | Deterministic fake sources and simulated clock |
 | `app.py` | One tick: poll what's due, redraw only on change |
 | `cli.py`, `config.py` | `run` / `probe` / `demo`; TOML settings, env secrets |

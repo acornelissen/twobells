@@ -116,3 +116,27 @@ def test_display_flag_overrides_the_config(tmp_path):
 def test_demo_screen_runs_headless_for_a_few_ticks():
     code = main(["emulate", "--demo", "--display", "hdmi-1280x400", "--no-browser", "--port", "0", "--tick", "0", "--ticks", "3"])
     assert code == 0
+
+
+def test_screen_demo_shows_the_bus_page_with_a_moving_bus():
+    from departureboard.app import run_once
+
+    em = build_emulation(demo=True, display="hdmi-1280x400")
+    assert em.tick_seconds == 1
+    state, pages, positions = {}, set(), []
+    for _ in range(12 * 60 * 25):  # 25 simulated minutes at 5 s a tick
+        now = em.clock()
+        result = run_once(em.board, state, em.display, now, prime=not state)
+        pages.add(result.page)
+        if result.route and result.route.bus_at is not None:
+            positions.append(result.route.bus_at)
+        em.clock.advance()
+        if len(positions) > 20:
+            break
+    assert pages == {"departures", "route"}
+    assert positions and positions[-1] > positions[0]  # the bus moves toward your stop
+
+
+def test_epaper_demo_has_no_bus_page():
+    em = build_emulation(demo=True)
+    assert em.board.tracker is None

@@ -53,3 +53,14 @@ B = "100000008350"   # Henry Street Stop B: 61, 237, 390, 393, 394
 [bus.walk_minutes]
 A = 7
 B = 7
+
+# HDMI screen only: a second page showing where the next bus you can catch is,
+# on the stops before yours. Needs BODS_API_KEY in secrets.env. Positions are
+# polled every position_interval_seconds (default 30) inside the bus windows.
+# [bus.routes.341]
+# stop = "A"            # your stop's label from [bus.stops]
+# stops = [             # in the order the bus calls; yours last
+#   { name = "Sunlaws Street", lat = 53.443494, lon = -1.959026 },
+#   { name = "St Marys Road",  lat = 53.443511, lon = -1.955759 },
+#   { name = "Henry Street",   lat = 53.44384,  lon = -1.948999 },
+# ]

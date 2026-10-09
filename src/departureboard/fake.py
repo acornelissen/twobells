@@ -7,10 +7,13 @@ the same seed.
 
 from __future__ import annotations
 
+import math
 import random
 from datetime import datetime, timedelta
 
+from .bods import Vehicle
 from .model import Departure, Status
+from .route import RouteStop, RouteStrip
 
 _BUCKET_MINUTES = 6
 
@@ -119,3 +122,58 @@ class FakeBusSource(_FakeSource):
                 )
         departures.sort(key=lambda d: d.departs_at)
         return departures[: self._rows]
+
+
+# Eastbound along High Street West, Glossop, to Henry Street Stop A (NaPTAN positions).
+DEMO_STRIP = RouteStrip(
+    "341",
+    "A",
+    (
+        RouteStop("The Junction", 53.444467, -1.965966),
+        RouteStop("Grapes Inn", 53.444223, -1.962774),
+        RouteStop("Sunlaws Street", 53.443494, -1.959026),
+        RouteStop("St Marys Road", 53.443511, -1.955759),
+        RouteStop("Arundel Street", 53.443519, -1.95326),
+        RouteStop("Henry Street", 53.44384, -1.948999),
+    ),
+)
+
+
+class FakeVehicleSource:
+    """Each 341 drives along the demo strip and reaches your stop when it is due."""
+
+    name = "vehicles"
+
+    def __init__(self, clock, strip: RouteStrip = DEMO_STRIP, minutes_per_stop: float = 2.0) -> None:
+        self._clock = clock
+        self._strip = strip
+        self._minutes_per_stop = minutes_per_stop
+
+    def fetch(self) -> list[Vehicle]:
+        now = self._clock()
+        stops = self._strip.stops
+        line, destination, _, headway, offset = _BUS_ROUTES[0]
+        vehicles = []
+        for due in _upcoming(now, headway, offset, count=3):
+            position = (len(stops) - 1) - (due - now).total_seconds() / 60 / self._minutes_per_stop
+            if position < 0:
+                continue
+            i = min(int(position), len(stops) - 2)
+            t = position - i
+            a, b = stops[i], stops[i + 1]
+            bearing = math.degrees(
+                math.atan2((b.lon - a.lon) * math.cos(math.radians(a.lat)), b.lat - a.lat)
+            ) % 360
+            vehicles.append(
+                Vehicle(
+                    line,
+                    destination,
+                    "inbound",
+                    a.lat + (b.lat - a.lat) * t,
+                    a.lon + (b.lon - a.lon) * t,
+                    now.isoformat(),
+                    bearing,
+                    f"FAKE-{_hhmm(due)}",
+                )
+            )
+        return vehicles

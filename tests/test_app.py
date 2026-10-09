@@ -1,4 +1,6 @@
 import dataclasses
+
+import pytest
 from datetime import datetime, timedelta
 
 from departureboard.app import Board, SourceConfig, run_once
@@ -347,3 +349,128 @@ def test_loop_writes_state_only_when_fetched_data_changes():
     run_loop(board, state, FakeScreen(), lambda: next(times), 0, ticks=30, sleep=lambda s: None, store=store)
     # Redrawn 30 times, but both sources were fetched only on the first tick.
     assert store.saves == 1
+
+
+# --- Route strip page (screens only) ---
+
+from departureboard.app import Tracker  # noqa: E402
+from departureboard.bods import Vehicle  # noqa: E402
+from departureboard.route import RouteStop, RouteStrip  # noqa: E402
+
+STRIP = RouteStrip(
+    "341",
+    "A",
+    (
+        RouteStop("The Junction", 53.444467, -1.965966),
+        RouteStop("Grapes Inn", 53.444223, -1.962774),
+        RouteStop("Sunlaws Street", 53.443494, -1.959026),
+        RouteStop("St Marys Road", 53.443511, -1.955759),
+        RouteStop("Arundel Street", 53.443519, -1.95326),
+        RouteStop("Henry Street", 53.44384, -1.948999),
+    ),
+)
+
+
+class FakeVehicles:
+    def __init__(self, vehicles=()):
+        self.vehicles = list(vehicles)
+        self.calls = 0
+        self.error = None
+
+    def fetch(self):
+        self.calls += 1
+        if self.error:
+            raise self.error
+        return list(self.vehicles)
+
+
+def vehicle_at(index, line="341"):
+    stop = STRIP.stops[index]
+    return Vehicle(line, "Hyde", "inbound", stop.lat, stop.lon, "2026-10-08T07:00:00+01:00", 90.0)
+
+
+def bus_on(line, scheduled, stop="A"):
+    return Departure("bus", line, "Hyde", scheduled, None, Status.ON_TIME, stop=stop)
+
+
+def tracked_setup(buses_due, vehicles=()):
+    trains, buses, board, display, state = setup()
+    buses.departures = list(buses_due)
+    positions = FakeVehicles(vehicles)
+    tracker = Tracker(positions, {"341": STRIP}, morning(0.5))
+    board = dataclasses.replace(board, tracker=tracker)
+    return board, positions, state
+
+
+# 07:00:05 is in the departures part of the 25 s cycle; 07:00:20 in the bus part.
+DEPARTURES_TIME = THU_0700 + timedelta(seconds=5)
+ROUTE_TIME = THU_0700 + timedelta(seconds=20)
+
+
+def test_screen_alternates_between_departures_and_the_bus():
+    board, _, state = tracked_setup([bus_on("341", "07:20")], [vehicle_at(2)])
+    screen = FakeScreen()
+    first = run_once(board, state, screen, DEPARTURES_TIME)
+    second = run_once(board, state, screen, ROUTE_TIME)
+    assert (first.page, second.page) == ("departures", "route")
+    assert second.rendered
+    assert second.route.title == "341 to Hyde"
+    assert second.route.bus_at == pytest.approx(2, abs=0.01)
+    assert second.route.where == "3 stops away"
+
+
+def test_epaper_never_shows_the_bus_page_or_polls_positions():
+    board, positions, state = tracked_setup([bus_on("341", "07:20")], [vehicle_at(2)])
+    result = run_once(board, state, FakeDisplay(), ROUTE_TIME)
+    assert (result.page, result.route) == ("departures", None)
+    assert positions.calls == 0
+
+
+def test_no_bus_page_without_a_tracked_bus_to_catch():
+    board, _, state = tracked_setup([bus_on("237", "07:20")])
+    result = run_once(board, state, FakeScreen(), ROUTE_TIME)
+    assert (result.page, result.route) == ("departures", None)
+
+
+def test_bus_page_follows_the_next_bus_you_can_still_reach():
+    from departureboard.walk import WalkTimes
+
+    # Walk 7 min: the 07:05 has gone by the time you'd get there, the 07:25 has not.
+    board, _, state = tracked_setup([bus_on("341", "07:05"), bus_on("341", "07:25")], [vehicle_at(4), vehicle_at(1)])
+    board = dataclasses.replace(board, walk=WalkTimes(bus={"*": 7}))
+    route = run_once(board, state, FakeScreen(), ROUTE_TIME).route
+    assert route.due == "07:25"
+    # The nearer bus is the 07:05; the one wanted is the one behind it.
+    assert route.bus_at == pytest.approx(1, abs=0.01)
+
+
+def test_bus_page_says_when_positions_stop_arriving():
+    board, positions, state = tracked_setup([bus_on("341", "07:20")], [vehicle_at(2)])
+    run_once(board, state, FakeScreen(), THU_0700)
+    positions.error = OSError("down")
+    route = run_once(board, state, FakeScreen(), THU_0700 + timedelta(minutes=3, seconds=20)).route
+    assert route.bus_at is None
+    assert route.where == "Position not updating"
+
+
+def test_no_bus_page_outside_the_bus_windows():
+    board, positions, state = tracked_setup([bus_on("341", "12:20")], [vehicle_at(2)])
+    result = run_once(board, state, FakeScreen(), SATURDAY + timedelta(seconds=20), prime=True)
+    assert result.route is None
+    assert positions.calls == 0
+
+
+def test_positions_are_polled_on_their_own_interval():
+    board, positions, state = tracked_setup([bus_on("341", "07:20")])
+    for second in range(0, 61, 5):
+        run_once(board, state, FakeScreen(), THU_0700 + timedelta(seconds=second))
+    assert positions.calls == 3  # at 0, 30 and 60 s
+
+
+def test_positions_are_not_written_to_disk():
+    from departureboard.app import _fetched
+
+    board, _, state = tracked_setup([bus_on("341", "07:20")], [vehicle_at(2)])
+    run_once(board, state, FakeScreen(), THU_0700)
+    assert "vehicles" in state
+    assert "vehicles" not in _fetched(state)

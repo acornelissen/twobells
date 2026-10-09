@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import Callable, Mapping
 from zoneinfo import ZoneInfo
 
-from .app import Board, SourceConfig
+from .app import Board, SourceConfig, Tracker
 from .config import load_config
 from .display import DISPLAY_PANELS
 from .emulator import EmulatorDisplay
-from .fake import FakeBusSource, FakeTrainSource, SimClock
+from .fake import DEMO_STRIP, FakeBusSource, FakeTrainSource, FakeVehicleSource, SimClock
 from .schedule import PollPolicy, parse_window
 from .state import StateStore
 from .themes import THEMES
@@ -44,8 +44,14 @@ def _fake_train(clock, interval_minutes: int = 2) -> SourceConfig:
 
 def _demo(accent: str | None, tick_seconds: float | None, display: str) -> Emulation:
     theme = THEMES["sign"]
-    clock = SimClock(DEMO_START)
-    bus = FakeBusSource(clock, rows=3, failing_when=demo_outage)
+    panel = DISPLAY_PANELS[display]
+    # E-paper: a simulated minute per tick. A screen: 5 s per tick, so its
+    # running clock, page changes and the moving bus can be followed.
+    clock = SimClock(DEMO_START) if panel.epaper else SimClock(DEMO_START, timedelta(seconds=5))
+    bus = FakeBusSource(clock, rows=3 if panel.epaper else 5, failing_when=demo_outage)
+    tracker = None
+    if not panel.epaper:
+        tracker = Tracker(FakeVehicleSource(clock), {"341": DEMO_STRIP}, PollPolicy(_ALWAYS, timedelta(seconds=30)))
     board = Board(
         title="Glossop > Manchester Picc",
         sources=[
@@ -54,14 +60,15 @@ def _demo(accent: str | None, tick_seconds: float | None, display: str) -> Emula
         ],
         walk=WalkTimes(train=7, bus={"A": 7, "B": 7}),
         theme=theme,
+        tracker=tracker,
     )
 
     return Emulation(
         board,
         clock,
-        EmulatorDisplay(accent or theme.accent, mode="demo", panel=DISPLAY_PANELS[display]),
+        EmulatorDisplay(accent or theme.accent, mode="demo", panel=panel),
         store=None,
-        tick_seconds=2 if tick_seconds is None else tick_seconds,
+        tick_seconds=tick_seconds if tick_seconds is not None else (2 if panel.epaper else 1),
     )
 
 
@@ -73,9 +80,9 @@ def _live(
     display: str | None,
 ) -> Emulation:
     only = {"bus"} if fake_train else None
-    settings = load_config(config, env, only=only)
+    settings = load_config(config, env, only=only, display=display)
     zone = ZoneInfo(settings.timezone)
-    panel = DISPLAY_PANELS[display or settings.display]
+    panel = DISPLAY_PANELS[settings.display]
 
     def clock() -> datetime:
         now = datetime.now(zone).replace(tzinfo=None, microsecond=0)

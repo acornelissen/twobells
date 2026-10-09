@@ -193,3 +193,67 @@ def test_screen_can_turn_a_quarter(tmp_path):
 def test_epaper_cannot_turn_a_quarter(tmp_path):
     with pytest.raises(ConfigError, match="0, 180"):
         load_config(_rotate_config(tmp_path, "rotate = 90"), ENV)
+
+
+ROUTE = '''
+display = "hdmi-1280x400"
+rotate = 90
+[bus]
+windows = ["Mon-Fri 07:00-08:30"]
+[bus.stops]
+A = "1000DGHS0900"
+[bus.routes.341]
+stop = "A"
+stops = [
+  { name = "Arundel Street", lat = 53.443519, lon = -1.95326 },
+  { name = "Henry Street", lat = 53.44384, lon = -1.948999 },
+]
+'''
+BODS_ENV = {**ENV, "BODS_API_KEY": "bods"}
+
+
+def test_route_strip_is_loaded_for_a_screen(tmp_path):
+    tracker = load_config(write(tmp_path, ROUTE), BODS_ENV).board.tracker
+    strip = tracker.routes["341"]
+    assert strip.stop == "A"
+    assert [s.name for s in strip.stops] == ["Arundel Street", "Henry Street"]
+    assert tracker.policy.interval == timedelta(seconds=30)
+    assert tracker.policy.windows == load_config(write(tmp_path, ROUTE), BODS_ENV).board.sources[0].policy.windows
+
+
+def test_route_strip_needs_the_bods_key(tmp_path):
+    with pytest.raises(ConfigError, match="BODS_API_KEY"):
+        load_config(write(tmp_path, ROUTE), ENV)
+
+
+def test_epaper_ignores_routes_and_needs_no_bods_key(tmp_path):
+    path = write(tmp_path, ROUTE.replace('display = "hdmi-1280x400"\nrotate = 90', 'display = "inky"'))
+    assert load_config(path, ENV).board.tracker is None
+
+
+def test_display_override_turns_the_route_page_on(tmp_path):
+    path = write(tmp_path, ROUTE.replace('display = "hdmi-1280x400"\nrotate = 90', 'display = "inky"'))
+    assert load_config(path, BODS_ENV, display="hdmi-1280x400").board.tracker is not None
+
+
+def test_route_stop_must_be_a_configured_stop(tmp_path):
+    with pytest.raises(ConfigError, match="not one of"):
+        load_config(write(tmp_path, ROUTE.replace('stop = "A"', 'stop = "Z"')), BODS_ENV)
+
+
+def test_route_needs_two_stops(tmp_path):
+    one = ROUTE.replace('  { name = "Arundel Street", lat = 53.443519, lon = -1.95326 },\n', "")
+    with pytest.raises(ConfigError, match="two stops"):
+        load_config(write(tmp_path, one), BODS_ENV)
+
+
+def test_route_stop_needs_a_real_position(tmp_path):
+    bad = ROUTE.replace("lat = 53.443519", "lat = 153.4")
+    with pytest.raises(ConfigError, match="impossible"):
+        load_config(write(tmp_path, bad), BODS_ENV)
+
+
+def test_positions_cannot_be_polled_faster_than_bods_updates(tmp_path):
+    fast = ROUTE.replace('[bus.stops]', 'position_interval_seconds = 5\n[bus.stops]')
+    with pytest.raises(ConfigError, match="at least 10"):
+        load_config(write(tmp_path, fast), BODS_ENV)
