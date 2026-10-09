@@ -1,5 +1,5 @@
 from departureboard.model import Departure, Status
-from departureboard.view import Style, build_view
+from departureboard.view import SIGN, Style, build_view
 from departureboard.walk import WalkTimes
 
 
@@ -11,7 +11,7 @@ def bus(line="341", scheduled="07:20", expected=None, status=Status.ON_TIME, des
     return Departure("bus", line, dest, scheduled, expected, status, stop=stop)
 
 
-def view(trains=(), buses=(), now="07:00", stale=frozenset(), walk=None):
+def view(trains=(), buses=(), now="07:00", stale=frozenset(), walk=None, **kwargs):
     return build_view(
         title="GLO > MAN",
         trains=list(trains),
@@ -19,6 +19,7 @@ def view(trains=(), buses=(), now="07:00", stale=frozenset(), walk=None):
         now=now,
         stale=set(stale),
         walk=walk,
+        **kwargs,
     )
 
 
@@ -164,3 +165,21 @@ def test_bus_header_drops_leave_text_when_rows_carry_it():
 def test_train_rows_have_no_per_row_leave_time():
     [row] = view(trains=[train("07:12")], now="07:00", walk=WALK).trains.rows
     assert row.leave is None
+
+
+def test_sign_wording_for_train_statuses():
+    rows = view(
+        trains=[
+            train("07:12"),
+            train("07:42", "07:49", Status.LATE),
+            train("08:12", status=Status.LATE),
+            train("08:42", status=Status.CANCELLED),
+        ],
+        wording=SIGN,
+    ).trains.rows
+    assert [r.right for r in rows] == ["On time", "Exp 07:49", "Delayed", "Cancelled"]
+
+
+def test_sign_wording_for_cancelled_bus():
+    [row] = view(buses=[bus(status=Status.CANCELLED)], wording=SIGN).buses.rows
+    assert row.right == "Cancelled"

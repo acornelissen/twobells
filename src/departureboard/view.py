@@ -8,6 +8,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass, field
 from enum import Enum
+from typing import Callable
 
 from .model import Departure, Status
 from .walk import WalkTimes, leave_by, leave_time
@@ -17,6 +18,21 @@ class Style(str, Enum):
     NORMAL = "normal"
     ALERT = "alert"
     INVERTED = "inverted"
+
+
+@dataclass(frozen=True)
+class Wording:
+    """Status words for a theme."""
+
+    on_time: str
+    cancelled: str
+    delayed: str
+    unknown: str
+    late: Callable[[Departure], str]
+
+
+PLAIN = Wording("On time", "CANC", "Delayed", "?", lambda dep: f"+{dep.minutes_late}")
+SIGN = Wording("On time", "Cancelled", "Delayed", "-", lambda dep: f"Exp {dep.expected}")
 
 
 @dataclass(frozen=True)
@@ -52,22 +68,21 @@ class BoardView:
         return hashlib.sha256(encoded.encode()).hexdigest()
 
 
-def _train_row(dep: Departure, walk: WalkTimes | None) -> Row:
+def _train_row(dep: Departure, walk: WalkTimes | None, words: Wording) -> Row:
     if dep.status is Status.CANCELLED:
-        right, style = "CANC", Style.INVERTED
+        right, style = words.cancelled, Style.INVERTED
     elif dep.status is Status.LATE:
-        late = dep.minutes_late
-        right, style = (f"+{late}" if late else "Delayed"), Style.ALERT
+        right, style = (words.late(dep) if dep.expected else words.delayed), Style.ALERT
     elif dep.status is Status.ON_TIME:
-        right, style = "On time", Style.NORMAL
+        right, style = words.on_time, Style.NORMAL
     else:
-        right, style = "?", Style.NORMAL
+        right, style = words.unknown, Style.NORMAL
     return Row(dep.scheduled, dep.destination, right, style)
 
 
-def _bus_row(dep: Departure, walk: WalkTimes | None) -> Row:
+def _bus_row(dep: Departure, walk: WalkTimes | None, words: Wording) -> Row:
     if dep.status is Status.CANCELLED:
-        right, style = "CANC", Style.INVERTED
+        right, style = words.cancelled, Style.INVERTED
     elif dep.status is Status.LATE:
         right, style = f"{dep.departs_at} +{dep.minutes_late}", Style.ALERT
     elif dep.status is Status.UNKNOWN:
@@ -87,9 +102,9 @@ def _leave_text(departures: list[Departure], walk: WalkTimes | None, now: str) -
     return f"Leave {leave} ({target})"
 
 
-def _section(label, departures, to_row, now, empty_text, stale, walk) -> Section:
+def _section(label, departures, to_row, now, empty_text, stale, walk, words) -> Section:
     upcoming = [d for d in departures if not d.is_gone(now)]
-    rows = tuple(to_row(d, walk) for d in upcoming)
+    rows = tuple(to_row(d, walk, words) for d in upcoming)
     # Rows that carry their own leave time make a header summary redundant.
     header = None if any(r.leave for r in rows) else _leave_text(upcoming, walk, now)
     return Section(label, rows, empty_text, stale, header)
@@ -102,10 +117,11 @@ def build_view(
     now: str,
     stale: set[str],
     walk: WalkTimes | None = None,
+    wording: Wording = PLAIN,
 ) -> BoardView:
     return BoardView(
         title=title,
-        trains=_section("Trains", trains, _train_row, now, "No trains", "train" in stale, walk),
-        buses=_section("Buses", buses, _bus_row, now, "No buses", "bus" in stale, walk),
+        trains=_section("Trains", trains, _train_row, now, "No trains", "train" in stale, walk, wording),
+        buses=_section("Buses", buses, _bus_row, now, "No buses", "bus" in stale, walk, wording),
         updated=now,
     )
