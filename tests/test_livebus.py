@@ -6,7 +6,9 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from departureboard.bods import Vehicle, parse_siri_vm
-from departureboard.livebus import Progress, approach, departures, live_departures, match, progress
+from departureboard.livebus import (
+    Progress, approach, departures, live_board, live_departures, match, progress,
+)
 from departureboard.model import Status
 from departureboard.schedule_model import Calendar, Call, Journey, Schedule, StopPosition
 
@@ -443,6 +445,40 @@ def test_key_is_the_same_after_the_timetable_is_saved_and_read_again():
     before = [l.key for l in live(at(10, 0), plan=plan)]
     after = [l.key for l in live(at(10, 0), plan=reloaded)]
     assert before == after and before
+
+
+# Live board: the rows, and every journey a bus was placed on
+
+# Ends at stop A at 10:10, so it gives no departure row; its bus may go on to work WEST.
+INTO_A = journey(
+    "237",
+    [(JUNCTION, 600), (GRAPES, 602), (SUNLAWS, 604), (ST_MARYS_E, 606), (ARUNDEL, 608), (HENRY_A, 610)],
+    "Glossop",
+    "1177",
+)
+LEFT_JUNCTION = datetime(2026, 10, 9, 9, 0, tzinfo=UTC)  # 10:00 BST
+
+
+def test_live_board_places_buses_on_journeys_that_end_at_your_stop():
+    inbound = bus(*HALFWAY, at(10, 9), line="237", origin=JUNCTION, aimed=LEFT_JUNCTION)
+    plan = schedule(EAST, WEST, INTO_A)
+    rows, placed = live_board(plan, at(10, 9), [inbound], every_day, 10)
+    assert rows == live_departures(plan, at(10, 9), [inbound], every_day, 10)
+    assert all(row.journey is not INTO_A for row in rows)  # no row for where it terminates
+    [found] = placed
+    assert (found.journey, found.service_day, found.vehicle) == (INTO_A, DAY, inbound)
+    assert found.progress.at == pytest.approx(2.5, abs=0.02)
+    assert found.progress.delay == pytest.approx(240, abs=5)  # due there 10:05, seen 10:09
+
+
+def test_live_board_keeps_placed_journeys_whatever_the_directions_or_rows():
+    inbound = bus(*HALFWAY, at(10, 9), line="237", origin=JUNCTION, aimed=LEFT_JUNCTION)
+    rows, placed = live_board(schedule(EAST, WEST, INTO_A), at(10, 9), [inbound], every_day, 1, ["Nowhere"])
+    assert rows == [] and [p.journey for p in placed] == [INTO_A]
+
+
+def test_live_board_places_nothing_without_buses():
+    assert live_board(schedule(EAST, WEST, INTO_A), at(10, 9), [], every_day, 10)[1] == []
 
 
 # Approach: the strip of stops up to yours

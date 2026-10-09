@@ -10,7 +10,7 @@ only costs the delays: the timetabled times are still shown.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Callable, Mapping
@@ -18,7 +18,7 @@ from typing import Callable, Mapping
 from . import holidays, livebus, timetable
 from .bods import DEFAULT_BASE_URL, BodsVehicleSource, HttpGetBytes, Vehicle
 from .http import get_bytes
-from .livebus import LiveDeparture
+from .livebus import LiveDeparture, LiveJourney
 from .model import Departure
 from .schedule_model import Journey, Schedule
 from .status import safe_message
@@ -65,6 +65,8 @@ class BusBoard:
     schedule: Schedule
     vehicles_ok: bool  # False when live positions failed and only timetabled times show
     note: str | None  # why it fell short, as BodsBusSource.note says it; None if it didn't
+    # Every journey a live bus was placed on, rows or not (see livebus.live_board).
+    journeys: list[LiveJourney] = field(default_factory=list)
 
 
 class BodsBusSource:
@@ -169,8 +171,8 @@ class BodsBusSource:
             return timetable.runs_on(journey.calendar, day, names)
 
         vehicles, note = self._vehicles(schedule)
-        found = livebus.live_departures(schedule, now, vehicles, runs_on, rows, self._directions)
-        return BusBoard(found, schedule, note is None, note)
+        found, placed = livebus.live_board(schedule, now, vehicles, runs_on, rows, self._directions)
+        return BusBoard(found, schedule, note is None, note, placed)
 
     def fetch(self) -> list[Departure]:
         now = self._clock()

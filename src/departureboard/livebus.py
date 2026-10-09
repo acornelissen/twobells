@@ -224,6 +224,19 @@ def departures(
     return [live.departure for live in live_departures(schedule, now, vehicles, runs_on, rows, directions)]
 
 
+@dataclass(frozen=True)
+class LiveJourney:
+    """A timetabled journey with a live bus placed on it, whatever stop it
+    ends at. Journeys that end at your stops never give a departure row, but
+    their buses often go on to work the next journey from there (see
+    enrich.inbound)."""
+
+    journey: Journey
+    service_day: date
+    progress: Progress
+    vehicle: Vehicle
+
+
 def live_departures(
     schedule: Schedule,
     now: datetime,
@@ -232,8 +245,22 @@ def live_departures(
     rows: int,
     directions: Iterable[str] | None = None,
 ) -> list[LiveDeparture]:
+    """The next `rows` buses from your stops, soonest first. See live_board."""
+    return live_board(schedule, now, vehicles, runs_on, rows, directions)[0]
+
+
+def live_board(
+    schedule: Schedule,
+    now: datetime,
+    vehicles: Iterable[Vehicle],
+    runs_on: RunsOn,
+    rows: int,
+    directions: Iterable[str] | None = None,
+) -> tuple[list[LiveDeparture], list[LiveJourney]]:
     """The next `rows` buses from your stops, soonest first, each with its
-    journey and the bus running it.
+    journey and the bus running it; and every journey (today's or
+    yesterday's) a live bus was placed on, including ones that end at your
+    stops, which give no departure row. `directions` filters only the rows.
 
     `now` must be timezone-aware in the board's zone, e.g.
     datetime.now(ZoneInfo("Europe/London")); its zone is used to read BODS times.
@@ -273,7 +300,12 @@ def live_departures(
                 for label in labels.get(call.atco, ()):
                     found.append(_departure(journey, day, k, leaves, placed, vehicle, label))
     found.sort(key=lambda live: (live.expected, live.leaves, live.departure.stop, live.journey.line))
-    return found[:rows]
+    journeys = {id(j): j for js in running.values() for j in js}
+    placed = [
+        LiveJourney(journeys[journey_id], day, progress, vehicle)
+        for (day, journey_id), (progress, vehicle) in live.items()
+    ]
+    return found[:rows], placed
 
 
 def _departure(

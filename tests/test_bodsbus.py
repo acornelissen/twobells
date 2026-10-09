@@ -240,6 +240,7 @@ def test_fetch_live_gives_the_rows_with_their_journeys_and_buses(tmp_path):
     assert row.progress.at == pytest.approx(0.5, abs=0.02)
     assert board.schedule == schedule()
     assert board.vehicles_ok and board.note is None
+    assert [(j.journey, j.vehicle) for j in board.journeys] == [(EAST, row.vehicle)]  # every placed journey
     assert bus.fetch() == [l.departure for l in board.departures]
 
 
@@ -258,7 +259,7 @@ def test_fetch_live_says_when_live_positions_failed(tmp_path):
     assert not board.vehicles_ok
     assert board.note == "Timetabled times only; live positions failed: network down"
     assert [l.departure.scheduled for l in board.departures] == ["10:02"]
-    assert board.departures[0].vehicle is None
+    assert board.departures[0].vehicle is None and board.journeys == []
     assert bus.note is None  # the source's note is fetch's alone
 
 

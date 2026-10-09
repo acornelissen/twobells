@@ -48,6 +48,7 @@ class Vehicle:
     origin_aimed: datetime | None = None  # timetabled departure from there, with its offset
     journey_ref: str = ""  # DatedVehicleJourneyRef, the ticket machine's journey code
     block: str = ""
+    origin_name: str = ""  # OriginName, as sent: often with underscores for spaces
 
 
 def _text(node, path: str) -> str:
@@ -94,6 +95,7 @@ def parse_siri_vm(body: bytes) -> list[Vehicle]:
                 origin_aimed=_aware_time(_text(journey, "siri:OriginAimedDepartureTime")),
                 journey_ref=_text(journey, "siri:FramedVehicleJourneyRef/siri:DatedVehicleJourneyRef"),
                 block=_text(journey, "siri:BlockRef"),
+                origin_name=_text(journey, "siri:OriginName"),
             )
         )
     return vehicles

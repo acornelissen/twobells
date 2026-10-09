@@ -142,11 +142,13 @@ def test_reads_the_journey_fields_for_matching_a_timetable():
     assert first.journey_ref == "1175"  # DatedVehicleJourneyRef, not the extension's JourneyCode
     assert first.block == "T145"
     assert first.bearing is None
+    assert first.origin_name == "Ashton_under_Lyne_Interchange"  # as sent; enrich tidies it
 
 
 def test_journey_fields_are_empty_when_not_sent():
     first = parse_siri_vm(FIXTURE)[0]  # the synthetic feed has no origin or journey refs
     assert (first.origin_ref, first.origin_aimed, first.journey_ref, first.block) == ("", None, "", "")
+    assert first.origin_name == ""
     assert first.operator == "BNML"
 
 
