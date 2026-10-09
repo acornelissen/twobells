@@ -360,3 +360,24 @@ def test_run_saves_state_even_when_drawing_fails(tmp_path, monkeypatch):
     state = json.loads((tmp_path / "state.json").read_text())
     assert state["sources"]["train"]["last_attempt"]
     assert "last_render" not in state
+
+
+def test_env_without_a_readable_config_is_just_the_environment(tmp_path):
+    from departureboard.cli import _env
+
+    config = tmp_path / "config.toml"
+    config.write_text("title = \n")
+    secrets = tmp_path / "secrets.env"
+    secrets.write_text("RDM_API_KEY=old\n")
+    assert _env(config, secrets)["RDM_API_KEY"] == "old"
+
+
+@pytest.mark.parametrize("broken", ["title = \n", 'title = "Bad"\naccent = "blue"\n', 'title = "Bad"\nmin_redraw_minutes = "2"\n'])
+def test_watcher_keeps_running_settings_through_a_broken_hand_edit(tmp_path, broken):
+    watcher, state = _watched(tmp_path)
+    config = tmp_path / "config.toml"
+    good = config.read_text()
+    config.write_text(f'state_file = "{state / "state.json"}"\n{broken}')
+    assert watcher() is None
+    config.write_text(good.replace("Before", "Mended"))
+    assert watcher().title == "Mended"

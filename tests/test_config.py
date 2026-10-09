@@ -318,6 +318,54 @@ def test_empty_values_saved_by_the_page_mean_none(tmp_path):
     assert "filterCrs" not in settings.board.sources[0].source._url()
 
 
+TRAIN = '[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n'
+BUS = '[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n'
+
+
+@pytest.mark.parametrize(
+    "text, message",
+    [
+        ('[train]\nwindows = ["Mon-Fri 06:30-09:30"]\n', "crs"),
+        ('[train]\ncrs = 5\nwindows = ["Mon-Fri 06:30-09:30"]\n', "crs"),
+        ('train = "GLO"\n', r"\[train\]"),
+        (TRAIN + 'interval_minutes = "5"\n', "interval_minutes"),
+        (TRAIN + "interval_minutes = 0\n", "interval_minutes"),
+        (TRAIN + "rows = 0\n", "rows"),
+        (TRAIN + 'stale_after_minutes = "6"\n', "stale_after_minutes"),
+        (TRAIN + 'walk_minutes = "5"\n', "walk_minutes"),
+        (TRAIN + 'filter_crs = ["MAN"]\n', "filter_crs"),
+        ('[train]\ncrs = "GLO"\nwindows = "Mon-Fri 06:30-09:30"\n', "windows"),
+        ('min_redraw_minutes = "2"\n' + TRAIN, "min_redraw_minutes"),
+        ("min_redraw_minutes = 0\n" + TRAIN, "min_redraw_minutes"),
+        ('accent = "blue"\n' + TRAIN, "accent"),
+        ('title = 5\n' + TRAIN, "title"),
+        ('timezone = "Mars/Olympus"\n' + TRAIN, "timezone"),
+        ('display = ["inky"]\n' + TRAIN, "display"),
+        ("state_file = 5\n" + TRAIN, "state_file"),
+        ('[bus]\nstops = ["1000DGHS0900"]\nwindows = ["Mon-Fri 07:00-08:00"]\n', "stops"),
+        ('[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = 1000\n', "A"),
+        ('[bus]\nwalk_minutes = "5"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n', "walk_minutes"),
+        (BUS + '[bus.walk_minutes]\nA = "7"\n', "walk_minutes"),
+        ('[bus]\ndaily_budget = "28"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n', "daily_budget"),
+        ('[bus]\ndirections = "Ashton"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n', "directions"),
+        ('display = "hdmi-1280x400"\n' + BUS + '[bus.routes]\n341 = "Glossop"\n', "341"),
+        ('display = "hdmi-1280x400"\n[bus]\nroutes = "341"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n', "routes"),
+        ('display = "hdmi-1280x400"\n' + BUS + '[bus.routes.341]\nstop = "A"\nstops = "Arundel Street"\n', "341"),
+        ("title = \n", "config.toml"),
+    ],
+)
+def test_wrong_types_and_ranges_are_config_errors(tmp_path, text, message):
+    with pytest.raises(ConfigError, match=message):
+        load_config(write(tmp_path, text), BODS_ENV)
+
+
+def test_broken_config_toml_is_a_config_error_when_finding_the_overlay(tmp_path):
+    from departureboard.config import overlay_paths
+
+    with pytest.raises(ConfigError, match="config.toml"):
+        overlay_paths(write(tmp_path, "title = \n"))
+
+
 def test_no_state_file_means_no_overlay_from_the_working_directory(tmp_path, monkeypatch):
     from departureboard.config import overlay_paths
 

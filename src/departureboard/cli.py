@@ -76,8 +76,8 @@ def _env(config: Path | str, secrets: Path | str) -> dict[str, str]:
     env = {**os.environ, **load_env_file(secrets)}
     try:
         paths = overlay_paths(config)
-    except OSError:
-        return env  # no config file: load_config reports that
+    except (OSError, ConfigError):
+        return env  # no config file, or a broken one: load_config reports that
     if paths:
         env.update(load_env_file(paths[1]))
     return env

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import Mapping
+from zoneinfo import ZoneInfo
 
 from .app import Board, SourceConfig, Tracker
 from .bods import BodsVehicleSource
@@ -39,12 +40,14 @@ def state_dir(data: dict) -> Path | None:
     """Where the web page saves settings: beside an explicitly set state_file.
     Without one there is no overlay, rather than whatever is in the working directory."""
     state_file = data.get("state_file")
+    if state_file is not None and not isinstance(state_file, str):
+        raise ConfigError(f"state_file must be a path in quotes, not {state_file!r}")
     return Path(state_file).parent if state_file else None
 
 
 def overlay_paths(config_path: Path | str) -> tuple[Path, Path] | None:
     """(settings overlay, secrets overlay) for a config file, if it has a state_file."""
-    folder = state_dir(tomllib.loads(Path(config_path).read_text()))
+    folder = state_dir(read_base(config_path))
     return (folder / OVERLAY_NAME, folder / SECRETS_OVERLAY_NAME) if folder else None
 
 
@@ -63,7 +66,10 @@ def merge(base: dict, over: dict) -> dict:
 
 def read_base(path: Path | str) -> dict:
     """config.toml alone, without the web page's settings."""
-    return tomllib.loads(Path(path).read_text(encoding="utf-8"))
+    try:
+        return tomllib.loads(Path(path).read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as error:
+        raise ConfigError(f"{path}: {error}") from error
 
 
 def read_overlay(data: dict) -> dict:
@@ -105,53 +111,91 @@ def _secret(env: Mapping[str, str], name: str) -> str:
     return value
 
 
-def _policy(section: dict, default_interval: int) -> PollPolicy:
+# Hand edits can put anything anywhere; these turn a wrong type into a ConfigError
+# naming the setting, rather than a crash now or on some later tick.
+_MOST = 100_000  # far above any sensible value, far below what timedelta overflows on
+
+
+def _table(parent: dict, key: str, where: str) -> dict:
+    value = parent.get(key, {})
+    if not isinstance(value, dict):
+        raise ConfigError(f"{where} must be a table, not {value!r}")
+    return value
+
+
+def _whole(section: dict, key: str, default: int, where: str = "", least: int = 1) -> int:
+    value = section.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int) or not least <= value <= _MOST:
+        raise ConfigError(f"{where}{key} must be a whole number from {least} to {_MOST}, not {value!r}")
+    return value
+
+
+def _text(section: dict, key: str, default: str, where: str = "") -> str:
+    value = section.get(key, default)
+    if not isinstance(value, str):
+        raise ConfigError(f"{where}{key} must be text in quotes, not {value!r}")
+    return value
+
+
+def _texts(section: dict, key: str, where: str) -> list[str]:
+    value = section.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise ConfigError(f'{where}{key} must be a list of text, like ["a", "b"], not {value!r}')
+    return value
+
+
+def _policy(section: dict, default_interval: int, where: str) -> PollPolicy:
     try:
-        windows = tuple(parse_window(w) for w in section.get("windows", []))
+        windows = tuple(parse_window(w) for w in _texts(section, "windows", where))
     except ValueError as error:
         raise ConfigError(str(error)) from error
-    interval = timedelta(minutes=section.get("interval_minutes", default_interval))
+    interval = timedelta(minutes=_whole(section, "interval_minutes", default_interval, where))
     return PollPolicy(windows, interval)
 
 
 def _train(section: dict, env: Mapping[str, str]) -> SourceConfig:
-    policy = _policy(section, 2)
+    where = "[train] "
+    crs = section.get("crs")
+    if not isinstance(crs, str) or not crs.strip():
+        raise ConfigError('[train] needs crs, the 3-letter station code, like crs = "GLO"')
+    policy = _policy(section, 2, where)
     source = DarwinSource(
         api_key=_secret(env, "RDM_API_KEY"),
-        crs=section["crs"],
-        filter_crs=section.get("filter_crs") or None,  # "" is the page's "no filter"
-        rows=section.get("rows", 3),
-        base_url=section.get("base_url", DARWIN_BASE_URL),
+        crs=crs,
+        filter_crs=_text(section, "filter_crs", "", where) or None,  # "" is the page's "no filter"
+        rows=_whole(section, "rows", 3, where),
+        base_url=_text(section, "base_url", DARWIN_BASE_URL, where),
     )
-    return SourceConfig(source, policy, timedelta(minutes=section.get("stale_after_minutes", 6)))
+    return SourceConfig(source, policy, timedelta(minutes=_whole(section, "stale_after_minutes", 6, where)))
 
 
 def _stops(section: dict) -> dict[str, str]:
-    stops = section.get("stops") or {}
+    stops = _table(section, "stops", "[bus.stops]")
     if not stops:
         raise ConfigError("Add a [bus.stops] table of label = ATCO code, or remove [bus]")
     for label, atco in stops.items():
-        if not atco or atco == "CHANGE_ME":
-            raise ConfigError(f"[bus.stops] {label} is {atco!r}; set a real ATCO code")
+        if not isinstance(atco, str) or not atco or atco == "CHANGE_ME":
+            raise ConfigError(f"[bus.stops] {label} is {atco!r}; set a real ATCO code in quotes")
     return stops
 
 
 def _bus(section: dict, env: Mapping[str, str]) -> SourceConfig:
+    where = "[bus] "
     stops = _stops(section)
-    policy = _policy(section, 12)
+    policy = _policy(section, 12, where)
     source = TransportApiBusSource(
         app_id=_secret(env, "TAPI_APP_ID"),
         app_key=_secret(env, "TAPI_APP_KEY"),
         stops=stops,
-        rows=section.get("rows", 2),
-        directions=section.get("directions") or None,
-        base_url=section.get("base_url", TAPI_BASE_URL),
+        rows=_whole(section, "rows", 2, where),
+        directions=_texts(section, "directions", where) or None,
+        base_url=_text(section, "base_url", TAPI_BASE_URL, where),
     )
     return SourceConfig(
         source,
         policy,
-        timedelta(minutes=section.get("stale_after_minutes", 30)),
-        daily_budget=section.get("daily_budget", 28),
+        timedelta(minutes=_whole(section, "stale_after_minutes", 30, where)),
+        daily_budget=_whole(section, "daily_budget", 28, where),
     )
 
 
@@ -167,34 +211,43 @@ def _route_stop(line: str, entry) -> RouteStop:
 
 def _tracker(section: dict, env: Mapping[str, str], windows) -> Tracker | None:
     """The route strip page's bus positions, if any routes are set up."""
-    routes = section.get("routes") or {}
+    routes = _table(section, "routes", "[bus.routes]")
     if not routes:
         return None
     strips = {}
     for line, route in routes.items():
+        if not isinstance(route, dict):
+            raise ConfigError(f"[bus.routes.{line}] must be a table of stop and stops, not {route!r}")
         stops = route.get("stops") or []
-        if len(stops) < 2:
-            raise ConfigError(f"[bus.routes.{line}] needs at least two stops, yours last")
+        if not isinstance(stops, list) or len(stops) < 2:
+            raise ConfigError(f"[bus.routes.{line}] needs a list of at least two stops, yours last")
         label = route.get("stop")
-        if label not in (section.get("stops") or {}):
+        if not isinstance(label, str) or label not in _stops(section):
             raise ConfigError(f"[bus.routes.{line}] stop = {label!r} is not one of [bus.stops]")
         strips[str(line)] = RouteStrip(str(line), label, tuple(_route_stop(line, e) for e in stops))
     boxes = [strip.box() for strip in strips.values()]
     box = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
     source = BodsVehicleSource(_secret(env, "BODS_API_KEY"), box, set(strips))
-    interval = timedelta(seconds=section.get("position_interval_seconds", 30))
+    interval = timedelta(seconds=_whole(section, "position_interval_seconds", 30, "[bus] "))
     if interval < timedelta(seconds=10):
         raise ConfigError("position_interval_seconds must be at least 10; BODS refreshes every 10 s")
     return Tracker(source, strips, PollPolicy(windows, interval))
 
 
 def _walk(data: dict) -> WalkTimes:
-    train = data.get("train", {}).get("walk_minutes")
-    if train == "":
-        train = None  # the page's "no walk time"
-    bus = data.get("bus", {}).get("walk_minutes", {})
-    if isinstance(bus, int):
-        bus = {DEFAULT_STOP: bus}
+    train_section = _table(data, "train", "[train]")
+    train = None
+    if train_section.get("walk_minutes", "") != "":  # "" is the page's "no walk time"
+        train = _whole(train_section, "walk_minutes", 0, "[train] ", least=0)
+    bus_section = _table(data, "bus", "[bus]")
+    bus = bus_section.get("walk_minutes", {})
+    if isinstance(bus, int) and not isinstance(bus, bool):
+        bus = {DEFAULT_STOP: _whole(bus_section, "walk_minutes", 0, "[bus] ", least=0)}
+    elif isinstance(bus, dict):
+        for label in bus:
+            _whole(bus, label, 0, "[bus.walk_minutes] ", least=0)
+    else:
+        raise ConfigError(f"[bus] walk_minutes must be a number or a table of label = minutes, not {bus!r}")
     return WalkTimes(train=train, bus=dict(bus))
 
 
@@ -227,37 +280,46 @@ def load_config(
 def settings_from(data: dict, env: Mapping[str, str], only: set[str] | None = None) -> Settings:
     """Settings from already-read config data; the web page checks a change with this before saving."""
     try:
-        theme = theme_named(data.get("theme", "sign"))
+        theme = theme_named(_text(data, "theme", "sign"))
     except ValueError as error:
         raise ConfigError(str(error)) from error
-    display = data.get("display", "inky")
+    display = _text(data, "display", "inky")
     if display not in DISPLAY_PANELS:
         raise ConfigError(f"Unknown display {display!r}; choose from {', '.join(sorted(DISPLAY_PANELS))}")
     rotate = _rotate(data, DISPLAY_PANELS[display].epaper)
+    accent = data.get("accent") or theme.accent  # "" is the page's "the look's own"
+    if accent not in ("red", "yellow"):
+        raise ConfigError(f'accent must be "red" or "yellow", not {accent!r}')
+    timezone = _text(data, "timezone", "Europe/London")
+    try:
+        ZoneInfo(timezone)
+    except (KeyError, ValueError):  # ZoneInfoNotFoundError is a KeyError
+        raise ConfigError(f"Unknown timezone {timezone!r}; use one like Europe/London") from None
+    state_file = _text(data, "state_file", "state.json")
     sources = []
     tracker = None
     wanted = only or {"train", "bus"}
     if "train" in data and "train" in wanted:
-        sources.append(_train(data["train"], env))
+        sources.append(_train(_table(data, "train", "[train]"), env))
     if "bus" in data and "bus" in wanted:
-        bus = _bus(data["bus"], env)
+        bus = _bus(_table(data, "bus", "[bus]"), env)
         sources.append(bus)
         # Bus positions are only drawn on a screen; e-paper never asks for them.
         if not DISPLAY_PANELS[display].epaper:
             tracker = _tracker(data["bus"], env, bus.policy.windows)
     board = Board(
-        title=data.get("title", "Departures"),
+        title=_text(data, "title", "Departures"),
         sources=sources,
-        min_redraw=timedelta(minutes=data.get("min_redraw_minutes", 2)),
+        min_redraw=timedelta(minutes=_whole(data, "min_redraw_minutes", 2)),
         walk=_walk(data),
         theme=theme,
         tracker=tracker,
     )
     return Settings(
         board=board,
-        timezone=data.get("timezone", "Europe/London"),
-        state_file=Path(data.get("state_file", "state.json")),
-        accent=data.get("accent") or theme.accent,  # "" is the page's "the look's own"
+        timezone=timezone,
+        state_file=Path(state_file),
+        accent=accent,
         rotate=rotate,
         display=display,
     )
