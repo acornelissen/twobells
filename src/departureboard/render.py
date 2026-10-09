@@ -15,9 +15,6 @@ from .view import BoardView, Row, Section, Style
 # The pHAT, which every other size is scaled up from.
 WIDTH, HEIGHT = PHAT.size
 
-_HEADER_H = 15
-_LABEL_H = 12
-_ROW_H = 14
 # Below the header, and either side of the rule between sections.
 _SECTION_GAP = 6
 _PAD = 3
@@ -56,12 +53,22 @@ def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default(size=size)
 
 
-def load_fonts(scale: int = 1) -> Fonts:
+# Body text in pHAT pixels; a text_size setting can make the plain look bigger.
+TEXT_SIZE = 11
+
+
+def load_fonts(scale: int = 1, text_size: int = TEXT_SIZE) -> Fonts:
     return Fonts(
-        regular=_font("DejaVuSans.ttf", 11 * scale),
-        bold=_font("DejaVuSans-Bold.ttf", 11 * scale),
-        small=_font("DejaVuSans-Bold.ttf", 9 * scale),
+        regular=_font("DejaVuSans.ttf", text_size * scale),
+        bold=_font("DejaVuSans-Bold.ttf", text_size * scale),
+        small=_font("DejaVuSans-Bold.ttf", (text_size - 2) * scale),
     )
+
+
+def heights(text_size: int = TEXT_SIZE) -> tuple[int, int, int]:
+    """(header, section label, row) heights for the plain look's text size;
+    at the standard 11 they are the pHAT design's 15, 12 and 14."""
+    return text_size + 4, text_size + 1, text_size + 3
 
 
 def drawn_length(font: ImageFont.FreeTypeFont, text: str) -> float:
@@ -108,8 +115,10 @@ def row_layout(
     if platform_x is not None:
         middle_end = platform_x - gap
     return RowLayout(
-        left=fit_text(row.left, fonts.bold, middle_x - pad - 3 * scale),
-        middle=fit_text(_with_stop(row), fonts.regular, middle_end - middle_x),
+        # Measured as drawn, like the right-aligned text, so a cut destination
+        # doesn't run into the status.
+        left=fit_text(row.left, fonts.bold, middle_x - pad - 3 * scale, partial(drawn_length, fonts.bold)),
+        middle=fit_text(_with_stop(row), fonts.regular, middle_end - middle_x, partial(drawn_length, fonts.regular)),
         middle_x=middle_x,
         leave_x=leave_x,
         right_x=right_x,
@@ -202,12 +211,14 @@ def plain_scale(panel: Panel) -> int:
     return max(1, min(panel.scale, panel.height // HEIGHT))
 
 
-def row_limits(panel: Panel) -> dict[str, int]:
+def row_limits(panel: Panel, text_size: int = TEXT_SIZE) -> dict[str, int]:
     """Rows each section shows: 3 trains and 2 buses on the pHAT's 122 rows,
-    fewer on a shorter panel (the original pHAT has 104) rather than cut off."""
+    fewer on a shorter panel (the original pHAT has 104) or with bigger text,
+    rather than cut off."""
     s = plain_scale(panel)
-    fixed = _HEADER_H + _SECTION_GAP + _LABEL_H + 1 + _SECTION_GAP + _LABEL_H
-    rows = max(2, (panel.height // s - fixed) // _ROW_H)
+    header_h, label_h, row_h = heights(text_size)
+    fixed = header_h + _SECTION_GAP + label_h + 1 + _SECTION_GAP + label_h
+    rows = max(2, (panel.height // s - fixed) // row_h)
     buses = max(1, min(_MAX_ROWS["Buses"], rows - _MAX_ROWS["Trains"]))
     return {"Trains": min(_MAX_ROWS["Trains"], rows - buses), "Buses": buses}
 
@@ -225,18 +236,21 @@ def header_text(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[
 
 
 class _Painter:
-    def __init__(self, palette: Palette, fonts: Fonts, panel: Panel) -> None:
+    def __init__(self, palette: Palette, fonts: Fonts, panel: Panel, text_size: int = TEXT_SIZE) -> None:
         self.p = palette
         self.f = fonts
         self.s = plain_scale(panel)
-        self.limits = row_limits(panel)
+        self.limits = row_limits(panel, text_size)
+        self.header_h, self.label_h, self.row_h = heights(text_size)
+        # Smaller type sits on the same baseline as the row text.
+        self.small_drop = 3
         self.width = panel.width
         self.image = Image.new("P", panel.size, palette.white)
         self.draw = ImageDraw.Draw(self.image)
 
     def header(self, view: BoardView) -> None:
         s, pad = self.s, _PAD * self.s
-        self.draw.rectangle((0, 0, self.width - 1, _HEADER_H * s - 1), fill=self.p.black)
+        self.draw.rectangle((0, 0, self.width - 1, self.header_h * s - 1), fill=self.p.black)
         title, stamp, stamp_x = header_text(view, self.f, self.width, s)
         self.draw.text((pad, s), title, font=self.f.bold, fill=self.p.white)
         self.draw.text((stamp_x, s), stamp, font=self.f.regular, fill=self.p.white)
@@ -256,21 +270,21 @@ class _Painter:
             leave = fit_text(section.leave, self.f.small, self.width - pad - label_end - 8 * s)
             x = self.width - pad - drawn_length(self.f.small, leave)
             self.draw.text((x, y + s), leave, font=self.f.small, fill=self.p.black)
-        y += _LABEL_H * s
+        y += self.label_h * s
         if not rows:
             self.draw.text((pad, y + s), section.empty_text, font=self.f.regular, fill=self.p.black)
-            return y + _ROW_H * s
+            return y + self.row_h * s
         platform_x = platform_column(rows, self.f, self.width, s)
         for row in rows:
             self.row(row, y, platform_x)
-            y += _ROW_H * s
+            y += self.row_h * s
         return y
 
     def row(self, row: Row, y: int, platform_x: float | None = None) -> None:
         s = self.s
         ink, status_ink = self.p.black, self.p.black
         if row.style is Style.INVERTED:
-            self.draw.rectangle((0, y, self.width - 1, y + _ROW_H * s - 1), fill=self.p.black)
+            self.draw.rectangle((0, y, self.width - 1, y + self.row_h * s - 1), fill=self.p.black)
             ink = status_ink = self.p.white
         elif row.style is Style.ALERT:
             status_ink = self.p.accent
@@ -281,8 +295,7 @@ class _Painter:
         if layout.platform_x is not None:
             self.draw.text((layout.platform_x, y + s), row.platform, font=self.f.regular, fill=ink)
         if layout.leave_x is not None:
-            # Smaller type sits on the same baseline as the row text.
-            self.draw.text((layout.leave_x, y + 3 * s), row.leave, font=self.f.small, fill=ink)
+            self.draw.text((layout.leave_x, y + self.small_drop * s), row.leave, font=self.f.small, fill=ink)
         self.draw.text((layout.right_x, y + s), row.right, font=self.f.bold, fill=status_ink)
 
     def rule(self, y: int) -> None:
@@ -299,38 +312,39 @@ class _Painter:
         self.image.putpalette([v for rgb in colours for v in rgb])
 
 
-def render(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Image.Image:
+def render(view: BoardView, palette: Palette, panel: Panel = PHAT, text_size: int = TEXT_SIZE) -> Image.Image:
     s = plain_scale(panel)
-    painter = _Painter(palette, load_fonts(s), panel)
+    painter = _Painter(palette, load_fonts(s, text_size), panel, text_size)
     painter.header(view)
-    y = painter.section(view.trains, (_HEADER_H + _SECTION_GAP) * s)
+    y = painter.section(view.trains, (painter.header_h + _SECTION_GAP) * s)
     painter.rule(y + s)
     painter.section(view.buses, y + (_SECTION_GAP + 1) * s)
     painter.apply_preview_palette()
     return painter.image
 
 
-def render_route(view: RouteView, palette: Palette, panel: Panel = PHAT) -> Image.Image:
+def render_route(view: RouteView, palette: Palette, panel: Panel = PHAT, text_size: int = TEXT_SIZE) -> Image.Image:
     """The bus's position on the stops before yours, in the plain look."""
     s = plain_scale(panel)
     pad = _PAD * s
-    f = load_fonts(s)
+    f = load_fonts(s, text_size)
+    header_h, _, row_h = heights(text_size)
     image = Image.new("P", panel.size, palette.white)
     draw = ImageDraw.Draw(image)
     width, height = panel.size
 
-    draw.rectangle((0, 0, width - 1, _HEADER_H * s - 1), fill=palette.black)
+    draw.rectangle((0, 0, width - 1, header_h * s - 1), fill=palette.black)
     stamp = view.clock or ""
     stamp_x = width - pad - drawn_length(f.regular, stamp)
     draw.text((pad, s), fit_text(view.title, f.bold, stamp_x - pad * 3), font=f.bold, fill=palette.white)
     draw.text((stamp_x, s), stamp, font=f.regular, fill=palette.white)
 
-    y = (_HEADER_H + 4) * s
+    y = (header_h + 4) * s
     lead = f"{view.due}   {view.leave}" if view.leave else view.due
     draw.text((pad, y), lead, font=f.bold, fill=palette.black)
     draw.text((width - pad - drawn_length(f.bold, view.where), y), view.where, font=f.bold, fill=palette.black)
 
-    road = (y + _ROW_H * s + height) // 2
+    road = (y + row_h * s + height) // 2
     left, right = pad * 3, width - pad * 3
     step = (right - left) / (len(view.stops) - 1)
     xs = [left + i * step for i in range(len(view.stops))]

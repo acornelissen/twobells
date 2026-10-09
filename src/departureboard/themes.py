@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from functools import partial
 from typing import Callable
 
 from PIL.Image import Image
 
 from .panel import Panel
-from .render import Palette, render, render_route
+from .render import TEXT_SIZE, Palette, render, render_route
 from .route import RouteView
 from .sign import render_route_sign, render_sign
 from .view import PLAIN, SIGN, BoardView, Wording
@@ -21,12 +22,25 @@ class Theme:
     render: Callable[[BoardView, Palette, Panel], Image]
     accent: str
     render_route: Callable[[RouteView, Palette, Panel], Image]
+    text_size: int = TEXT_SIZE  # the plain look's body text; the sign's dots are fixed
 
 
 THEMES = {
     "plain": Theme("plain", PLAIN, render, accent="red", render_route=render_route),
     "sign": Theme("sign", SIGN, render_sign, accent="yellow", render_route=render_route_sign),
 }
+
+
+def with_text_size(theme: Theme, text_size: int) -> Theme:
+    """The plain look drawn with bigger or smaller text; the sign look as it is."""
+    if theme.name != "plain" or text_size == TEXT_SIZE:
+        return theme
+    return replace(
+        theme,
+        render=partial(render, text_size=text_size),
+        render_route=partial(render_route, text_size=text_size),
+        text_size=text_size,
+    )
 
 
 def theme_named(name: str) -> Theme:

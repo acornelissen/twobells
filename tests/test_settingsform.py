@@ -501,3 +501,10 @@ def test_without_a_location_the_page_says_where_to_set_it(setup):
     page = form.render("tok")
     assert "Rain warning" in page and "[weather]" in page
     assert 'id="weather_enabled"' not in page
+
+
+def test_text_size_can_be_set_on_the_page(setup):
+    form, config, *_ = setup
+    assert 'id="text_size"' in form.render("tok")
+    assert form.save(fields_of(form) | {"theme": "plain", "accent": "", "text_size": "12"}) == {}
+    assert load_config(config, ENV).board.theme.text_size == 12

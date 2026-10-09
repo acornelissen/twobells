@@ -477,3 +477,21 @@ def test_rain_warning_can_be_turned_off_without_losing_the_location(tmp_path):
     assert load_config(write(tmp_path, base + "enabled = false\n"), ENV).board.weather is None
     with pytest.raises(ConfigError, match="enabled"):
         load_config(write(tmp_path, base + 'enabled = "no"\n'), ENV)
+
+
+def test_text_size_sets_the_plain_look_and_is_checked(tmp_path):
+    base = 'theme = "plain"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n'
+    assert load_config(write(tmp_path, base), ENV).board.theme.text_size == 11
+    assert load_config(write(tmp_path, "text_size = 12\n" + base), ENV).board.theme.text_size == 12
+    for bad in ("text_size = 30\n", 'text_size = "big"\n'):
+        with pytest.raises(ConfigError, match="text_size"):
+            load_config(write(tmp_path, bad + base), ENV)
+
+
+def test_panel_colour_is_separate_from_the_accent(tmp_path):
+    base = 'display = "inky-phat-v1"\ntheme = "plain"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n'
+    settings = load_config(write(tmp_path, 'panel_colour = "yellow"\n' + base), ENV)
+    assert (settings.panel_colour, settings.accent) == ("yellow", "red")
+    assert load_config(write(tmp_path, base), ENV).panel_colour == "red"  # defaults to the accent
+    with pytest.raises(ConfigError, match="panel_colour"):
+        load_config(write(tmp_path, 'panel_colour = "blue"\n' + base), ENV)

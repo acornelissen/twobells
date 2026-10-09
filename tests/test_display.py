@@ -146,3 +146,13 @@ def test_a_board_without_an_eeprom_gets_a_helpful_error():
 
     with pytest.raises(RuntimeError, match="inky-phat-v1"):
         InkyDisplay(accent="yellow", detect=no_eeprom)
+
+
+def test_the_original_phat_is_set_up_with_its_panel_colour(monkeypatch):
+    from departureboard import display as display_module
+    from departureboard.display import open_display
+
+    made = []
+    monkeypatch.setattr(display_module, "_original_phat", lambda colour: made.append(colour) or FakeOldPHAT(colour))
+    open_display("inky-phat-v1", "red", panel_colour="yellow")
+    assert made == ["yellow"]

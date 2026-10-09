@@ -201,6 +201,9 @@ def _fields(display: str, theme: str) -> list[Field]:
               options=tuple((r, f"{r}°") for r in rotations)),
         Field("min_redraw_minutes", None, "min_redraw_minutes", "Least minutes between redraws",
               _number(1, 60), "number", hint="E-paper only. Refreshes are slow and wear the panel."),
+        Field("text_size", None, "text_size", "Text size", lambda raw: int(_choice(("11", "12", "13", "14"))(raw)),
+              "select", hint="The plain look only. Bigger text shows fewer departures on a small display.",
+              options=(("11", "Standard"), ("12", "Slightly bigger"), ("13", "Bigger"), ("14", "Biggest"))),
         Field("bank_holidays", None, "bank_holidays", "Bank holidays",
               lambda raw: _choice(("true", "false"))(raw) == "true", "select",
               hint="Trains and buses run a Sunday service on bank holidays in England and Wales. Treated "
@@ -363,6 +366,8 @@ class SettingsForm:
                 value = "false" if value is False else "true"  # on unless turned off
             if f.name == "weather_threshold_percent" and value is None:
                 value = 50
+            if f.name == "text_size" and value is None:
+                value = 11
             values[f.name] = _shown(value, f.kind)
         return values
 

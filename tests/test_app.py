@@ -873,3 +873,13 @@ def test_loop_also_saves_every_few_minutes_so_the_status_panel_keeps_up():
     times = iter(SATURDAY + timedelta(seconds=s) for s in range(0, 11 * 60, 10))
     run_loop(board, state, FakeScreen(), lambda: next(times), 0, ticks=66, sleep=lambda s: None, store=store)
     assert store.saves >= 3  # at the start, then at least every 5 minutes
+
+
+def test_changing_the_text_size_redraws_the_epaper():
+    from departureboard.themes import theme_named, with_text_size
+
+    trains, buses, board, display, state = setup()
+    board = dataclasses.replace(board, theme=theme_named("plain"))
+    run_once(board, state, display, THU_0700)
+    bigger = dataclasses.replace(board, theme=with_text_size(theme_named("plain"), 12))
+    assert run_once(bigger, state, display, THU_0700 + timedelta(minutes=3)).rendered

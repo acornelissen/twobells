@@ -286,7 +286,7 @@ def _render_key(shown: BoardView | RouteView, theme: Theme, display: Display) ->
     or rotation has to reach e-paper even when the words have not changed."""
     # The display classes keep their rotation private; a public `rotate` wins if there is one.
     rotate = getattr(display, "rotate", getattr(display, "_rotate", 0))
-    parts = [shown.signature(), theme.name, repr(display.panel), repr(display.palette), rotate]
+    parts = [shown.signature(), theme.name, str(theme.text_size), repr(display.panel), repr(display.palette), rotate]
     return hashlib.sha256(json.dumps(parts, default=str).encode()).hexdigest()
 
 

@@ -66,13 +66,13 @@ class InkyDisplay:
         self._device.show()
 
 
-def open_display(name: str, accent: str, rotate: int = 0):
+def open_display(name: str, accent: str, rotate: int = 0, panel_colour: str | None = None):
     """The display a `display` setting names. Hardware libraries load only when used.
     E-paper panels turn 0 or 180 degrees; a screen turns any quarter."""
     if name == "inky":
         return InkyDisplay(accent, rotate_180=rotate == 180)
     if name == "inky-phat-v1":
-        return InkyDisplay(accent, device=_original_phat(accent), rotate_180=rotate == 180)
+        return InkyDisplay(accent, device=_original_phat(panel_colour or accent), rotate_180=rotate == 180)
     if name == "waveshare-10in85g":
         from .waveshare import WaveshareDisplay
 

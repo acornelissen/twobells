@@ -439,3 +439,44 @@ def test_plain_look_shows_fewer_rows_rather_than_cut_them_off_on_the_original_ph
     assert image.size == PHAT_V1.size
     bottom = [image.getpixel((x, y)) for x in range(PHAT_V1.width) for y in range(PHAT_V1.height - 2, PHAT_V1.height)]
     assert PALETTE.black not in bottom  # nothing drawn into the last rows, so nothing cut off
+
+
+def _full_board():
+    trains = [Row(f"07:{m}", "Manchester Piccadilly", "On time") for m in (12, 42, 52)]
+    buses = [Row("341", "A: Hyde", "07:20"), Row("61", "B: Buxton", "07:35 sch")]
+    return board(trains, buses, train_leave="Leave 07:05 (07:12)")
+
+
+def test_default_text_size_draws_exactly_as_before():
+    assert render(_full_board(), PALETTE).tobytes() == render(_full_board(), PALETTE, text_size=11).tobytes()
+
+
+def test_slightly_bigger_text_still_fits_the_original_phat():
+    from departureboard.panel import PHAT_V1
+    from departureboard.render import row_limits
+
+    assert row_limits(PHAT_V1, text_size=12) == {"Trains": 2, "Buses": 1}
+    image = render(_full_board(), PALETTE, PHAT_V1, text_size=12)
+    bottom = [image.getpixel((x, y)) for x in range(PHAT_V1.width) for y in range(PHAT_V1.height - 2, PHAT_V1.height)]
+    assert PALETTE.black not in bottom
+
+
+def test_bigger_text_draws_more_ink():
+    from departureboard.panel import PHAT_V1
+
+    def ink(size):
+        image = render(_full_board(), PALETTE, PHAT_V1, text_size=size)
+        return sum(n for n, c in image.getcolors() if c == PALETTE.black)
+
+    assert ink(12) > ink(11)
+
+
+@pytest.mark.parametrize("text_size", [11, 12, 13])
+def test_a_shortened_destination_leaves_a_gap_before_the_status(text_size):
+    from departureboard.panel import PHAT_V1
+    from departureboard.render import drawn_length
+
+    fonts = load_fonts(1, text_size)
+    layout = row_layout(Row("20:22", "Manchester Piccadilly", "On time"), fonts, PHAT_V1.width, 1)
+    # Whole or cut short, the destination ends clear of the status.
+    assert layout.middle_x + drawn_length(fonts.regular, layout.middle) <= layout.right_x - 3

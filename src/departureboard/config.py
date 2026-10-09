@@ -22,7 +22,7 @@ from .darwin import DarwinSource
 from .display import DISPLAY_PANELS
 from .schedule import PollPolicy, parse_window
 from .transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
-from .themes import theme_named
+from .themes import theme_named, with_text_size
 from .transportapi import TransportApiBusSource
 from .route import RouteStop, RouteStrip
 from .walk import DEFAULT_STOP, WalkTimes
@@ -103,6 +103,9 @@ class Settings:
     accent: str
     rotate: int
     display: str = "inky"
+    # The original pHAT can't be detected, so its colour is set here; it is
+    # separate from the accent, which the look draws its highlights in.
+    panel_colour: str = "red"
 
 
 def _secret(env: Mapping[str, str], name: str) -> str:
@@ -322,6 +325,10 @@ def settings_from(
         theme = theme_named(_text(data, "theme", "sign"))
     except ValueError as error:
         raise ConfigError(str(error)) from error
+    text_size = data.get("text_size", 11)
+    if isinstance(text_size, bool) or not isinstance(text_size, int) or not 9 <= text_size <= 16:
+        raise ConfigError(f"text_size must be a whole number from 9 to 16, not {text_size!r}")
+    theme = with_text_size(theme, text_size)
     display = _text(data, "display", "inky")
     if display not in DISPLAY_PANELS:
         raise ConfigError(f"Unknown display {display!r}; choose from {', '.join(sorted(DISPLAY_PANELS))}")
@@ -329,6 +336,9 @@ def settings_from(
     accent = data.get("accent") or theme.accent  # "" is the page's "the look's own"
     if accent not in ("red", "yellow"):
         raise ConfigError(f'accent must be "red" or "yellow", not {accent!r}')
+    panel_colour = data.get("panel_colour", accent)
+    if panel_colour not in ("red", "yellow", "black"):
+        raise ConfigError(f"panel_colour must be red, yellow or black, not {panel_colour!r}")
     timezone = _text(data, "timezone", "Europe/London")
     try:
         ZoneInfo(timezone)
@@ -365,4 +375,5 @@ def settings_from(
         accent=accent,
         rotate=rotate,
         display=display,
+        panel_colour=panel_colour,
     )
