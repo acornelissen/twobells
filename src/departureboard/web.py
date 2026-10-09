@@ -14,18 +14,32 @@ for that come before any session, so they carry a signed double-submit form
 token (auth.FormTokens) instead of a session's. No response or log line
 ever holds a code; the board's display (or `web --reset-code`) is the only
 place one is shown.
+
+The setup wizard (setupapi.py) is mounted under /setup/, behind the same
+sign-in. It is the one part with JavaScript, so only its responses carry
+setupapi.PAGE_HEADERS, whose policy allows the page's own scripts; every
+other page keeps the script-free policy. Its files are a fixed list read at
+start, each with its content type set here; its API takes JSON, only from a
+signed-in session, with the session's form token in an X-CSRF-Token header,
+from this same origin, and no bigger than setupapi.MAX_BODY. Until the board
+is set up, claiming the page or signing in opens the wizard.
 """
 
 from __future__ import annotations
 
 import html
+import json
 import logging
+import re
 import sys
 import time
+from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Callable, Protocol
+from pathlib import Path
+from typing import Callable, Mapping, Protocol
 from urllib.parse import parse_qs, urlparse
 
+from . import setupapi
 from .auth import (
     FORM_PAGE_HEADERS,
     MIN_PASSWORD,
@@ -61,6 +75,19 @@ SET_PASSWORD_COMMAND = "sudo -u departureboard /opt/departureboard/venv/bin/depa
 WRONG_CODE = "That code isn't right, or it has run out. Ask for a new code and try again."
 
 
+SETUP = "/setup/"
+SETUP_API = SETUP + "api/"
+_SETUP_STEP = re.compile(r"^[a-z]{1,20}$")
+# The only kinds of file the wizard serves, each with its type said outright.
+SETUP_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+}
+JSON = "application/json; charset=utf-8"
+TEXT = "text/plain; charset=utf-8"
+
+
 class SettingsPage(Protocol):
     """The form: drawn for a signed-in visitor, and saved from their fields."""
 
@@ -70,11 +97,42 @@ class SettingsPage(Protocol):
     def save(self, fields: dict[str, str]) -> dict[str, str]: ...  # field -> error; empty when saved
 
 
+class SetupSteps(Protocol):
+    """setupapi.SetupApi: a step's (status, JSON-ready reply) for its decoded body."""
+
+    def handle(self, name: str, payload: object) -> tuple[int, dict]: ...
+
+
+@dataclass(frozen=True)
+class Wizard:
+    """The setup wizard as this server mounts it: its API, its files (bytes
+    and content type, by path under SETUP; "" is the page), and whether the
+    board still needs setting up, which sends a new sign-in there."""
+
+    api: SetupSteps
+    files: Mapping[str, tuple[bytes, str]]
+    needed: Callable[[], bool] = field(default=lambda: False)
+
+    @classmethod
+    def load(cls, api: SetupSteps, needed: Callable[[], bool] = lambda: False,
+             paths: Mapping[str, Path] | None = None) -> "Wizard":
+        """Reads setupapi.static_files() (or `paths`) once. A file of a kind
+        not in SETUP_TYPES is refused, so nothing goes out with a guessed type."""
+        files = {}
+        for relative, path in (setupapi.static_files() if paths is None else paths).items():
+            content_type = SETUP_TYPES.get(Path(path).suffix.lower())
+            if content_type is None:
+                raise ValueError(f"No content type for the setup page's file {relative!r}")
+            files[relative] = (Path(path).read_bytes(), content_type)
+        return cls(api, files, needed)
+
+
 def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions, lockout: Lockout,
                  shell: Callable[[str, str], str], stylesheet: bytes, codes: ResetCodes | None = None,
-                 clock: Callable[[], float] = time.time):
+                 clock: Callable[[], float] = time.time, wizard: Wizard | None = None):
     """`shell(title, body)` wraps page content in the HTML document. `codes`
-    are the reset codes, by default beside the password file, shown on the board."""
+    are the reset codes, by default beside the password file, shown on the
+    board. `wizard`, if given, is mounted under SETUP."""
     checker = PasswordCheck(password, lockout)
     codes = codes or ResetCodes(password.path.parent)
     forms = FormTokens(clock)
@@ -86,9 +144,9 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
             return "departureboard"  # no Python or OS version for anyone probing
 
         def _send(self, status: int, body: bytes = b"", content_type: str = "text/html; charset=utf-8",
-                  extra: dict[str, str] | None = None) -> None:
+                  extra: dict[str, str] | None = None, headers: Mapping[str, str] = FORM_PAGE_HEADERS) -> None:
             self.send_response(status)
-            for name, value in {**FORM_PAGE_HEADERS, **(extra or {})}.items():
+            for name, value in {**headers, **(extra or {})}.items():
                 self.send_header(name, value)
             if body:
                 self.send_header("Content-Type", content_type)
@@ -108,7 +166,7 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
 
         def _refuse_outsiders(self) -> bool:
             if outsider(self.client_address[0], self.headers.get("Host")):
-                self._send(403, b"Forbidden", "text/plain; charset=utf-8")
+                self._send(403, b"Forbidden", TEXT)
                 return True
             return False
 
@@ -142,10 +200,84 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
                     self._redirect("/login")
                 else:
                     self._page(200, "Board settings", page.render(session.csrf))
+            elif wizard is not None and path == SETUP.rstrip("/"):
+                self._redirect(SETUP)
+            elif wizard is not None and path.startswith(SETUP):
+                self._setup_file(path.removeprefix(SETUP))
             else:
-                self._send(404, b"Not found", "text/plain; charset=utf-8")
+                self._send(404, b"Not found", TEXT)
 
         do_HEAD = do_GET
+
+        # The setup wizard.
+
+        def _setup_send(self, status: int, body: bytes, content_type: str) -> None:
+            self._send(status, body, content_type, headers=setupapi.PAGE_HEADERS)
+
+        def _json(self, status: int, reply: dict) -> None:
+            self._setup_send(status, json.dumps(reply).encode(), JSON)
+
+        def _setup_file(self, relative: str) -> None:
+            """The wizard's page, a file on its list, or its session's form token."""
+            session = sessions.get(self._token())
+            if relative == "api/session":
+                if session is None:
+                    self._json(401, {"error": "Sign in first"})
+                else:
+                    self._json(200, {"csrf": session.csrf})
+                return
+            if session is None:
+                if relative == "":
+                    self._redirect("/login")
+                else:
+                    self._setup_send(401, b"Sign in first", TEXT)
+                return
+            found = wizard.files.get(relative)
+            if found is None:
+                self._setup_send(404, b"Not found", TEXT)
+            else:
+                self._setup_send(200, *found)
+
+        def _setup_step(self, name: str) -> None:
+            """One wizard step: signed in, with the session's token in the
+            header, JSON of a sensible size. Same-origin is checked before this."""
+            session = sessions.get(self._token())
+            if session is None:
+                self._json(401, {"error": "You've been signed out. Reload the page and sign in again."})
+                return
+            if not csrf_matches(session, self.headers.get("X-CSRF-Token", "")):
+                self._json(403, {"error": "This page has run out. Reload it and try again."})
+                return
+            if self.headers.get_content_type() != "application/json":
+                self._json(415, {"error": "Send JSON"})
+                return
+            try:
+                length = int(self.headers.get("Content-Length", ""))
+            except ValueError:
+                self._json(411, {"error": "Say how long the request is"})
+                return
+            if not 0 <= length <= setupapi.MAX_BODY:
+                self._json(413, {"error": "That request is too big"})
+                return
+            if not _SETUP_STEP.match(name):
+                self._json(404, {"error": "No such setup step"})
+                return
+            try:
+                payload = setupapi.decode(self.rfile.read(length))
+            except setupapi.Invalid as error:
+                self._json(400, {"error": str(error)})
+                return
+            self._json(*wizard.api.handle(name, payload))
+
+        def _home(self) -> str:
+            """Where a new session starts: the wizard while the board isn't set up."""
+            if wizard is None:
+                return "/"
+            try:
+                return SETUP if wizard.needed() else "/"
+            except Exception as error:  # noqa: BLE001 - the settings page will say what is wrong
+                log.warning("Can't tell whether the board is set up: %s", type(error).__name__)
+                return "/"
 
         def _form_token(self) -> tuple[str, dict[str, str]]:
             """A pre-session form's hidden field, and the header that sets its cookie."""
@@ -234,13 +366,16 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
             if self._refuse_outsiders():
                 return
             if not same_origin(self.headers):
-                self._send(403, b"Forbidden: cross-site request", "text/plain; charset=utf-8")
+                self._send(403, b"Forbidden: cross-site request", TEXT)
+                return
+            path = urlparse(self.path).path
+            if wizard is not None and path.startswith(SETUP_API):
+                self._setup_step(path.removeprefix(SETUP_API))
                 return
             fields = self._form()
             if fields is None:
-                self._send(400, b"Bad request", "text/plain; charset=utf-8")
+                self._send(400, b"Bad request", TEXT)
                 return
-            path = urlparse(self.path).path
             if path == "/login":
                 self._sign_in(fields)
             elif path == "/forgot":
@@ -254,7 +389,7 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
             elif path == "/":
                 self._save(fields)
             else:
-                self._send(404, b"Not found", "text/plain; charset=utf-8")
+                self._send(404, b"Not found", TEXT)
 
         def _sign_in(self, fields: dict[str, str]) -> None:
             if not password.is_set():
@@ -271,7 +406,7 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
                 self._login_page(401, "That password isn't right.")
                 return
             token, _ = sessions.create()
-            self._redirect("/", {"Set-Cookie": sessions.cookie(token)})
+            self._redirect(self._home(), {"Set-Cookie": sessions.cookie(token)})
 
         def _ask_for_code(self, fields: dict[str, str]) -> None:
             if not self._form_token_ok(fields):
@@ -311,7 +446,7 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
             sessions.end_all()
             lockout.succeeded(self.client_address[0])
             token, _ = sessions.create()
-            self._redirect("/", {"Set-Cookie": sessions.cookie(token)})
+            self._redirect(self._home(), {"Set-Cookie": sessions.cookie(token)})
 
         def _save(self, fields: dict[str, str]) -> None:
             session = sessions.get(self._token())
@@ -319,7 +454,7 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
                 self._redirect("/login")
                 return
             if not csrf_matches(session, fields.get("csrf", "")):
-                self._send(403, b"Forbidden: form expired, reload the page", "text/plain; charset=utf-8")
+                self._send(403, b"Forbidden: form expired, reload the page", TEXT)
                 return
             fields.pop("csrf", None)
             errors = page.save(fields)

@@ -422,6 +422,8 @@ class SettingsForm:
             '<form method="post" action="/logout">'
             f'<input type="hidden" name="csrf" value="{e(csrf)}">'
             '<button type="submit" class="quiet">Sign out</button></form></header>'
+            '<div class="setup-link"><p><a href="/setup/">Set up home, station and stops</a></p>'
+            '<p class="hint">Finds them near home step by step, with walk times and the bus companies.</p></div>'
         )
         if message:
             out.append(f'<p class="saved" role="status">{e(message)}</p>')
@@ -448,10 +450,13 @@ class SettingsForm:
         out.append(f'<input type="hidden" name="csrf" value="{e(csrf)}">')
         groups = (
             (None, "Board", ""),
-            ("train", "Trains", "Trains aren't set up. Add a [train] section to config.toml."),
-            ("bus", "Buses", "Buses aren't set up. Add a [bus] section to config.toml."),
+            ("train", "Trains", "Trains aren't set up. Set up home, station and stops above, "
+                                "or add a [train] section to config.toml."),
+            ("bus", "Buses", "Buses aren't set up. Set up home, station and stops above, "
+                             "or add a [bus] section to config.toml."),
             ("weather", "Rain warning",
-             "No location set. Add a [weather] section with lat and lon to config.toml to use the rain warning."),
+             "No location set. Set up home, station and stops above, or add a [weather] section with lat "
+             "and lon to config.toml, to use the rain warning."),
         )
         panel = DISPLAY_PANELS[display]
         for section, legend, missing in groups:
@@ -470,7 +475,7 @@ class SettingsForm:
                 out.append(
                     f'<p class="hint">Location: <strong>{e(str(where.get("lat", "")))}, '
                     f'{e(str(where.get("lon", "")))}</strong>, rounded to about 1 km before it is sent to '
-                    "Open-Meteo. It's set in config.toml.</p>"
+                    "Open-Meteo. Setup sets it from home, or set it in config.toml.</p>"
                 )
             for f in fields:
                 if f.section != section:

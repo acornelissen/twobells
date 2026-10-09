@@ -621,3 +621,280 @@ def test_the_form_cookie_is_strict_http_only_and_short_lived(reset_server):
     # A second page in the same browser keeps its value, so two tabs both work.
     again = http("GET", "/reset", cookie=cookie.split(";")[0])[0].getheader("Set-Cookie")
     assert again.split(";")[0] == cookie.split(";")[0]
+
+
+# --- The setup wizard, mounted under /setup/ ---
+
+
+class FakeSteps:
+    """setupapi.SetupApi's handle(), recording what reached it."""
+
+    def __init__(self):
+        self.calls = []
+
+    def handle(self, name, payload):
+        self.calls.append((name, payload))
+        if name != "begin":
+            return 404, {"error": "No such setup step"}
+        return 200, {"keys": [], "links": [], "job": {"state": "idle"}}
+
+
+@pytest.fixture
+def wizard_server(tmp_path):
+    from departureboard.web import Wizard
+
+    password = Password(tmp_path / "web.json")
+    password.set(PASSWORD)
+    steps = FakeSteps()
+    needed = {"now": False}
+    sessions = Sessions()
+    wizard = Wizard.load(steps, lambda: needed["now"])
+    handler = make_handler(FakePage(), password, sessions, SignInLimiter(), lambda t, b: f"<title>{t}</title>{b}",
+                           b"body{}", wizard=wizard)
+    httpd = make_server(handler, "127.0.0.1", 0)
+    threading.Thread(target=httpd.serve_forever, args=(0.05,), daemon=True).start()  # quick to shut down
+    yield httpd.server_address[1], steps, needed, password, tmp_path, sessions
+    httpd.shutdown()
+    httpd.server_close()
+
+
+def step(port, name, body=b"{}", cookie=None, csrf=None, origin="same", content_type="application/json",
+         length=None):
+    """POST a wizard step as the page does: JSON, with the form token in a header."""
+    host = f"localhost:{port}"
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn.putrequest("POST", f"/setup/api/{name}", skip_host=True)
+    conn.putheader("Host", host)
+    if origin == "same":
+        conn.putheader("Origin", f"http://{host}")
+    elif origin:
+        conn.putheader("Origin", origin)
+    if cookie:
+        conn.putheader("Cookie", cookie)
+    if csrf is not None:
+        conn.putheader("X-CSRF-Token", csrf)
+    if content_type:
+        conn.putheader("Content-Type", content_type)
+    if length != "none":
+        conn.putheader("Content-Length", str(len(body) if length is None else length))
+    conn.endheaders()
+    conn.send(body)
+    response = conn.getresponse()
+    text = response.read().decode()
+    conn.close()
+    return response, text
+
+
+def signed_in(wizard_server):
+    """A session cookie, made directly: the sign-in itself is tested above, and is slow on purpose."""
+    token, _ = wizard_server[-1].create()
+    return f"session={token}"
+
+
+def session_token(port, cookie):
+    response, text = request(port, "GET", "/setup/api/session", cookie=cookie)
+    assert response.status == 200 and response.getheader("Content-Type").startswith("application/json")
+    return json.loads(text)["csrf"]
+
+
+def test_the_wizard_needs_signing_in(wizard_server):
+    port, steps, *_ = wizard_server
+    response, _ = request(port, "GET", "/setup/")
+    assert response.status == 303 and response.getheader("Location") == "/login"
+    assert request(port, "GET", "/setup/wizard_static/wizard.js")[0].status == 401
+    response, text = request(port, "GET", "/setup/api/session")
+    assert response.status == 401 and "csrf" not in json.loads(text)
+    response, _ = step(port, "begin", csrf="anything")
+    assert response.status == 401 and steps.calls == []
+    response, _ = step(port, "begin", cookie="session=guessed", csrf="anything")
+    assert response.status == 401 and steps.calls == []
+
+
+def test_setup_without_the_slash_goes_to_the_wizard(wizard_server):
+    port, *_ = wizard_server
+    response, _ = request(port, "GET", "/setup")
+    assert response.status == 303 and response.getheader("Location") == "/setup/"
+
+
+def test_signed_in_the_wizards_files_come_with_their_own_types(wizard_server):
+    from departureboard.setupapi import static_files
+
+    port, *_ = wizard_server
+    cookie = signed_in(wizard_server)
+    types = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+             ".css": "text/css; charset=utf-8"}
+    for relative, path in static_files().items():
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        conn.request("GET", f"/setup/{relative}", headers={"Host": f"localhost:{port}", "Cookie": cookie})
+        response = conn.getresponse()
+        body = response.read()
+        conn.close()
+        assert response.status == 200, relative
+        assert response.getheader("Content-Type") == types[path.suffix], relative
+        assert body == path.read_bytes(), relative
+        assert response.getheader("X-Content-Type-Options") == "nosniff"
+
+
+@pytest.mark.parametrize("path", [
+    "/setup/index.html",  # the page is served at the prefix only
+    "/setup/wizard_static/index.html",
+    "/setup/wizard_static/../web.py",
+    "/setup/wizard_static/%2e%2e/web.py",
+    "/setup/dashboard_static/app.js",  # the dashboard's own, not the wizard's
+    "/setup/dashboard_static/vendor/leaflet-1.9.4/images/marker-icon.png",
+    "/setup/setupapi.py",
+    "/setup/api/begin",  # steps are POST only
+    "/setup/wizard_static/wizard.js/",
+])
+def test_only_the_wizards_own_files_are_served(wizard_server, path):
+    port, *_ = wizard_server
+    cookie = signed_in(wizard_server)
+    assert request(port, "GET", path, cookie=cookie)[0].status == 404
+
+
+def test_only_the_wizard_may_run_scripts(wizard_server):
+    from departureboard.setupapi import PAGE_HEADERS
+
+    port, *_ = wizard_server
+    cookie = signed_in(wizard_server)
+    for path in ("/", "/login", "/reset", "/style.css"):
+        policy = request(port, "GET", path, cookie=cookie)[0].getheader("Content-Security-Policy")
+        assert "default-src 'none'" in policy and "script-src" not in policy, path
+    for path in ("/setup/", "/setup/wizard_static/wizard.js", "/setup/api/session"):
+        response, _ = request(port, "GET", path, cookie=cookie)
+        for name, value in PAGE_HEADERS.items():
+            assert response.getheader(name) == value, (path, name)
+        assert "script-src 'self'" in response.getheader("Content-Security-Policy")
+    response, _ = step(port, "begin", cookie=cookie, csrf=session_token(port, cookie))
+    assert response.getheader("Content-Security-Policy") == PAGE_HEADERS["Content-Security-Policy"]
+
+
+def test_a_step_runs_with_the_sessions_token_in_its_header(wizard_server):
+    port, steps, *_ = wizard_server
+    cookie = signed_in(wizard_server)
+    csrf = session_token(port, cookie)
+    response, text = step(port, "begin", b'{"x": [1, 2]}', cookie=cookie, csrf=csrf)
+    assert response.status == 200 and response.getheader("Content-Type") == "application/json; charset=utf-8"
+    assert json.loads(text)["job"] == {"state": "idle"}
+    assert steps.calls == [("begin", {"x": [1, 2]})]
+
+
+def test_a_step_without_the_right_token_is_refused(wizard_server):
+    port, steps, *_ = wizard_server
+    cookie = signed_in(wizard_server)
+    other = signed_in(wizard_server)
+    for csrf in (None, "", "forged", session_token(port, other), session_token(port, cookie) + "x"):
+        response, text = step(port, "begin", cookie=cookie, csrf=csrf)
+        assert response.status == 403 and "error" in json.loads(text), csrf
+    assert steps.calls == []
+
+
+def test_a_step_from_another_site_is_refused(wizard_server):
+    port, steps, *_ = wizard_server
+    cookie = signed_in(wizard_server)
+    csrf = session_token(port, cookie)
+    for origin in ("http://evil.example.com", "null", None):
+        assert step(port, "begin", cookie=cookie, csrf=csrf, origin=origin)[0].status == 403, origin
+    assert steps.calls == []
+
+
+def test_a_step_from_outside_the_home_network_is_refused(wizard_server):
+    port, steps, *_ = wizard_server
+    response, _ = request(port, "GET", "/setup/", host="evil.example.com")
+    assert response.status == 403
+    response, _ = request(port, "GET", "/setup/api/session", host="evil.example.com")
+    assert response.status == 403
+
+
+@pytest.mark.parametrize("change, status", [
+    ({"content_type": "application/x-www-form-urlencoded", "body": b"a=1"}, 415),
+    ({"content_type": "text/plain"}, 415),
+    ({"content_type": None}, 415),
+    ({"body": b"{" + b" " * 20000 + b"}"}, 413),
+    ({"length": 10**7}, 413),
+    ({"length": -1}, 413),
+    ({"length": "none"}, 411),
+    ({"body": b"not json"}, 400),
+    ({"body": b"[" * 50 + b"]" * 50}, 400),  # nested too deep
+    ({"body": b'{"n": NaN}'}, 400),
+])
+def test_a_step_must_be_json_of_a_sensible_size(wizard_server, change, status):
+    port, steps, *_ = wizard_server
+    cookie = signed_in(wizard_server)
+    csrf = session_token(port, cookie)
+    response, text = step(port, "begin", cookie=cookie, csrf=csrf, **change)
+    assert response.status == status and "error" in json.loads(text)
+    assert steps.calls == []
+
+
+@pytest.mark.parametrize("name", ["Begin", "be-gin", "begin/x", "a" * 21, ""])
+def test_a_step_name_is_plain_lowercase(wizard_server, name):
+    port, steps, *_ = wizard_server
+    cookie = signed_in(wizard_server)
+    response, _ = step(port, name, cookie=cookie, csrf=session_token(port, cookie))
+    assert response.status == 404 and steps.calls == []
+
+
+def test_an_unknown_step_is_the_apis_to_refuse(wizard_server):
+    port, steps, *_ = wizard_server
+    cookie = signed_in(wizard_server)
+    response, _ = step(port, "nosuch", cookie=cookie, csrf=session_token(port, cookie))
+    assert response.status == 404 and steps.calls == [("nosuch", {})]
+
+
+def test_without_a_wizard_nothing_is_under_setup(server):
+    port, *_ = server
+    cookie, csrf = sign_in(port)
+    assert request(port, "GET", "/setup/", cookie=cookie)[0].status == 404
+    assert step(port, "begin", cookie=cookie, csrf=csrf)[0].status == 400  # not a form post, and no wizard
+
+
+def test_a_file_of_an_unknown_kind_is_refused_at_start(tmp_path):
+    from departureboard.web import Wizard
+
+    (tmp_path / "picture.svg").write_text("<svg/>")
+    with pytest.raises(ValueError, match="content type"):
+        Wizard.load(FakeSteps(), paths={"picture.svg": tmp_path / "picture.svg"})
+
+
+def test_until_the_board_is_set_up_signing_in_opens_the_wizard(wizard_server):
+    port, _, needed, *_ = wizard_server
+    response, _ = request(port, "POST", "/login", {"password": PASSWORD})
+    assert response.getheader("Location") == "/"
+    needed["now"] = True
+    response, _ = request(port, "POST", "/login", {"password": PASSWORD})
+    assert response.status == 303 and response.getheader("Location") == "/setup/"
+    # The settings page itself is still there, for the wizard's link back.
+    cookie = response.getheader("Set-Cookie").split(";")[0]
+    assert request(port, "GET", "/", cookie=cookie)[0].status == 200
+
+
+def test_claiming_a_board_not_yet_set_up_opens_the_wizard(wizard_server):
+    port, _, needed, password, folder, _ = wizard_server
+    password.path.unlink()  # no password yet: the first claim
+    needed["now"] = True
+    http = Recorder(port)
+    form_cookie = ask_for_code(http)
+    response, _ = reset(http, form_cookie, board_code(folder))
+    assert response.status == 303 and response.getheader("Location") == "/setup/"
+    assert response.getheader("Set-Cookie").startswith("session=")
+
+
+def test_a_fault_telling_whether_the_board_is_set_up_opens_the_settings(tmp_path):
+    from departureboard.web import Wizard
+
+    def broken():
+        raise PermissionError("config.toml")
+
+    password = Password(tmp_path / "web.json")
+    password.set(PASSWORD)
+    handler = make_handler(FakePage(), password, Sessions(), SignInLimiter(), lambda t, b: b, b"",
+                           wizard=Wizard.load(FakeSteps(), broken))
+    httpd = make_server(handler, "127.0.0.1", 0)
+    threading.Thread(target=httpd.serve_forever, args=(0.05,), daemon=True).start()
+    try:
+        response, _ = request(httpd.server_address[1], "POST", "/login", {"password": PASSWORD})
+        assert response.status == 303 and response.getheader("Location") == "/"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()

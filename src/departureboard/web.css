@@ -89,6 +89,9 @@ button.quiet { color: var(--fg); background: transparent; border: 1px solid var(
 .after { margin-top: 1.5rem; }
 /* The browser's own link blue is too dark on the dark background. */
 a { color: var(--accent); }
+.setup-link { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.75rem 1rem; margin: 0 0 1.5rem; }
+.setup-link p { margin: 0; }
+.setup-link a { font-weight: 600; }
 code { font-family: ui-monospace, "SF Mono", Menlo, monospace; overflow-wrap: anywhere; }
 .actions { position: sticky; bottom: 0; padding: 0.75rem 0; background: var(--bg); }
 .status { border: 1px solid var(--line); border-radius: 0.5rem; padding: 1rem; margin: 0 0 1.5rem; }

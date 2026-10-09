@@ -126,6 +126,13 @@ def test_the_whole_configuration_must_still_load(setup):
     assert not (state / "settings.toml").exists()
 
 
+def test_the_page_links_to_the_setup_wizard(setup):
+    form, *_ = setup
+    page = form.render("tok")
+    assert '<a href="/setup/">Set up home, station and stops</a>' in page
+    assert page.index('href="/setup/"') < page.index('<form method="post" action="/" ')
+
+
 def test_keys_are_write_only(setup):
     form, *_ = setup
     page = form.render("tok")

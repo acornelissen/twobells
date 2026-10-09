@@ -386,6 +386,7 @@ def _web(args) -> int:
     from . import auth, web
     from .config import read_base, state_dir
     from .settingsform import SettingsForm
+    from .setupapi import SetupApi
 
     # config.toml alone: a broken settings.toml must not stop the page that fixes it.
     folder = state_dir(read_base(args.config))
@@ -418,7 +419,11 @@ def _web(args) -> int:
     stylesheet = files("departureboard").joinpath("web.css").read_bytes()
     # Codes for a forgotten password, or the first claim, show on the board.
     codes = auth.ResetCodes(folder)
-    handler = web.make_handler(form, password, auth.Sessions(password=password), auth.Lockout(), web.shell, stylesheet, codes)
+    # The search builds the bus timetable in the board's own folder, where the board reads it.
+    steps = SetupApi(args.config, lambda: _env(args.config, args.secrets), folder, links=[("Board settings", "/")])
+    wizard = web.Wizard.load(steps)
+    handler = web.make_handler(form, password, auth.Sessions(password=password), auth.Lockout(), web.shell, stylesheet,
+                               codes, wizard=wizard)
     try:
         server = web.make_server(handler, args.host, args.port)
     except OSError as error:
