@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw
 
 from .dotfont import HEIGHT as GLYPH_H
 from .dotfont import TINY, TINY_HEIGHT, DotFont
-from .panel import PHAT, Panel
+from .panel import PHAT, PLATFORM_COLUMN_MIN_WIDTH, Panel
 from .render import HEIGHT, WIDTH, Palette, fit_text
 from .route import RouteView
 from .view import BoardView, Row, Section, Style
@@ -72,12 +72,20 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int) -> int:
     if not rows:
         layout.add(MARGIN, y, section.empty_text)
         return y + _LINE
+    platform_x = None
+    if width >= PLATFORM_COLUMN_MIN_WIDTH and any(r.platform for r in rows):
+        # Left-aligned, clear of the widest status, so the column lines up.
+        right_w = max(_w(r.right) for r in rows)
+        platform_x = width - MARGIN - right_w - _COL_GAP - max(_w(r.platform) for r in rows if r.platform)
     for index, row in enumerate(rows):
         inverted = row.style is Style.INVERTED
         status_x = _right(row.right, width)
+        dest_end = (platform_x if platform_x is not None else status_x) - _COL_GAP
         layout.add(MARGIN, y, _ORDINALS[index], inverted)
         layout.add(time_x, y, row.left, inverted)
-        layout.add(dest_x, y, fit_text(row.middle, _FONT, status_x - _COL_GAP - dest_x), inverted)
+        layout.add(dest_x, y, fit_text(row.middle, _FONT, dest_end - dest_x), inverted)
+        if platform_x is not None and row.platform:
+            layout.add(platform_x, y, row.platform, inverted)
         layout.add(status_x, y, row.right, inverted)
         y += _LINE
         if section.leave and index == (section.leave_for or 0):

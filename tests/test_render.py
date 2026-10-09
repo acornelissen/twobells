@@ -9,7 +9,9 @@ from departureboard.render import (
     Palette,
     fit_text,
     left_column_width,
+    drawn_length,
     load_fonts,
+    platform_column,
     plain_scale,
     render,
     row_layout,
@@ -296,3 +298,52 @@ def test_header_stamp_keeps_the_right_margin(panel):
     for view in (board(), dataclasses.replace(board(), clock="07:03:15")):
         ink = ink_columns(render(view, PALETTE, panel), 0, 15 * s, PALETTE.black)
         assert max(ink) < panel.width - 3 * s
+
+
+TRAINS_WITH_PLATFORMS = [
+    Row("07:12", "Manchester Piccadilly", "On time", platform="Plat 1"),
+    Row("07:42", "Manchester Piccadilly", "+7", Style.ALERT),
+    Row("08:12", "Manchester Piccadilly", "Cancelled", Style.INVERTED, platform="Plat 2"),
+]
+
+
+def test_the_phat_has_no_platform_column_and_is_unchanged():
+    assert platform_column(TRAINS_WITH_PLATFORMS, load_fonts(), WIDTH, 1) is None
+    plain = [dataclasses.replace(r, platform=None) for r in TRAINS_WITH_PLATFORMS]
+    assert render(board(TRAINS_WITH_PLATFORMS), PALETTE).tobytes() == render(board(plain), PALETTE).tobytes()
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_wide_panels_put_the_platform_between_destination_and_status(panel):
+    s = plain_scale(panel)
+    fonts = load_fonts(s)
+    platform_x = platform_column(TRAINS_WITH_PLATFORMS, fonts, panel.width, s)
+    assert platform_x is not None
+    for row in TRAINS_WITH_PLATFORMS:
+        layout = row_layout(row, fonts, panel.width, s, platform_x)
+        assert layout.middle_x + fonts.regular.getlength(layout.middle) < platform_x
+        if row.platform:
+            assert layout.platform_x == platform_x
+            assert platform_x + drawn_length(fonts.regular, row.platform) < layout.right_x
+        else:
+            assert layout.platform_x is None  # left blank
+    plain = [dataclasses.replace(r, platform=None) for r in TRAINS_WITH_PLATFORMS]
+    assert platform_column(plain, fonts, panel.width, s) is None
+
+    def ink(image):
+        return sum(n for n, c in image.getcolors() if c != PALETTE.white)
+
+    # The first row only: the cancelled row's text is reversed out, so it lowers the count.
+    assert ink(render(board(TRAINS_WITH_PLATFORMS[:1]), PALETTE, panel)) > ink(render(board(plain[:1]), PALETTE, panel))
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_destination_gives_way_to_the_platform_on_wide_panels(panel):
+    s = plain_scale(panel)
+    fonts = load_fonts(s)
+    long = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom and Guide Bridge"
+    rows = [Row("07:12", long, "On time", platform="Plat 1")]
+    platform_x = platform_column(rows, fonts, panel.width, s)
+    layout = row_layout(rows[0], fonts, panel.width, s, platform_x)
+    assert layout.middle.endswith("…")
+    assert layout.middle_x + fonts.regular.getlength(layout.middle) < platform_x

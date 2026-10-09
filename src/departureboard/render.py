@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from .panel import PHAT, Panel
+from .panel import PHAT, PLATFORM_COLUMN_MIN_WIDTH, Panel
 from .route import RouteView
 from .view import BoardView, Row, Section, Style
 
@@ -81,6 +81,7 @@ class RowLayout:
     middle_x: float
     leave_x: float | None
     right_x: float
+    platform_x: float | None = None
 
 
 _COL_GAP = 6
@@ -90,8 +91,11 @@ def _with_stop(row: Row) -> str:
     return f"{row.stop}: {row.middle}" if row.stop else row.middle
 
 
-def row_layout(row: Row, fonts: Fonts, width: int = WIDTH, scale: int = 1) -> RowLayout:
-    """Column positions for a row. The destination gives way so times stay whole."""
+def row_layout(
+    row: Row, fonts: Fonts, width: int = WIDTH, scale: int = 1, platform_x: float | None = None
+) -> RowLayout:
+    """Column positions for a row. The destination gives way so times stay whole.
+    `platform_x` is where a section's platform column starts, if it has one."""
     pad, gap = _PAD * scale, _COL_GAP * scale
     right_x = width - pad - drawn_length(fonts.bold, row.right)
     middle_x = pad + left_column_width(fonts, scale)
@@ -100,13 +104,26 @@ def row_layout(row: Row, fonts: Fonts, width: int = WIDTH, scale: int = 1) -> Ro
     if row.leave:
         leave_x = right_x - gap - drawn_length(fonts.small, row.leave)
         middle_end = leave_x - gap
+    if platform_x is not None:
+        middle_end = platform_x - gap
     return RowLayout(
         left=fit_text(row.left, fonts.bold, middle_x - pad - 3 * scale),
         middle=fit_text(_with_stop(row), fonts.regular, middle_end - middle_x),
         middle_x=middle_x,
         leave_x=leave_x,
         right_x=right_x,
+        platform_x=platform_x if row.platform else None,
     )
+
+
+def platform_column(rows, fonts: Fonts, width: int, scale: int) -> float | None:
+    """Where a section's platform column starts: only on a board wide enough
+    for one, and only if some row has a platform."""
+    if width / scale < PLATFORM_COLUMN_MIN_WIDTH or not any(r.platform for r in rows):
+        return None
+    right_w = max(drawn_length(fonts.bold, r.right) for r in rows)
+    platform_w = max(drawn_length(fonts.regular, r.platform) for r in rows if r.platform)
+    return width - _PAD * scale - right_w - _COL_GAP * scale - platform_w
 
 
 def fit_text(text: str, font: ImageFont.FreeTypeFont, width: float) -> str:
@@ -160,12 +177,13 @@ class _Painter:
         if not rows:
             self.draw.text((pad, y + s), section.empty_text, font=self.f.regular, fill=self.p.black)
             return y + _ROW_H * s
+        platform_x = platform_column(rows, self.f, self.width, s)
         for row in rows:
-            self.row(row, y)
+            self.row(row, y, platform_x)
             y += _ROW_H * s
         return y
 
-    def row(self, row: Row, y: int) -> None:
+    def row(self, row: Row, y: int, platform_x: float | None = None) -> None:
         s = self.s
         ink, status_ink = self.p.black, self.p.black
         if row.style is Style.INVERTED:
@@ -174,9 +192,11 @@ class _Painter:
         elif row.style is Style.ALERT:
             status_ink = self.p.accent
 
-        layout = row_layout(row, self.f, self.width, s)
+        layout = row_layout(row, self.f, self.width, s, platform_x)
         self.draw.text((_PAD * s, y + s), layout.left, font=self.f.bold, fill=ink)
         self.draw.text((layout.middle_x, y + s), layout.middle, font=self.f.regular, fill=ink)
+        if layout.platform_x is not None:
+            self.draw.text((layout.platform_x, y + s), row.platform, font=self.f.regular, fill=ink)
         if layout.leave_x is not None:
             # Smaller type sits on the same baseline as the row text.
             self.draw.text((layout.leave_x, y + 3 * s), row.leave, font=self.f.small, fill=ink)

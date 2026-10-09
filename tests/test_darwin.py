@@ -130,3 +130,14 @@ def test_default_base_url_matches_the_marketplace_subscription():
     assert DEFAULT_BASE_URL == (
         "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
     )
+
+
+def test_platform_is_kept_only_when_it_looks_like_one():
+    def platform(value):
+        [dep] = parse_board(board(service(platform=value)))
+        return dep.platform
+
+    assert platform("2A") == "2A"
+    assert platform(" 3 ") == "3"
+    for odd in ("", None, 7, "<b>1</b>", "Platform one"):
+        assert platform(odd) is None

@@ -7,6 +7,11 @@ from dataclasses import dataclass
 # The board was designed on the pHAT: 122 pixels tall at one pixel per LED dot.
 _DESIGN_HEIGHT = 120
 
+# A board at least this wide, in design units (sign dots, or the plain look's
+# pHAT pixels), has room for a platform column. The pHAT is 250 across; the
+# 10.85" panel and the HDMI screen are 340 or more in either look.
+PLATFORM_COLUMN_MIN_WIDTH = 300
+
 
 @dataclass(frozen=True)
 class Panel:

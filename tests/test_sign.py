@@ -351,3 +351,61 @@ def test_longer_stop_labels_push_the_destinations_along():
     for dest in ("Hyde", "Marple"):
         assert find(items, dest).x > label.x + FONT.getlength("NB2")
     assert find(items, "Hyde").x == find(items, "Marple").x
+
+
+WITH_PLATFORMS = [
+    dataclasses.replace(TRAINS[0], platform="Plat 1"),
+    TRAINS[1],  # Darwin doesn't always know the platform
+    dataclasses.replace(TRAINS[2], platform="Plat 2"),
+]
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_wide_boards_show_the_platform_between_destination_and_status(panel):
+    width, height = dots(panel)
+    items = sign_layout(board(WITH_PLATFORMS), width, height).items
+    first = find(items, "1st")
+    assert texts([i for i in items if i.y == first.y]) == ["1st", "07:12", "Manchester Piccadilly", "Plat 1", "On time"]
+    assert find(items, "Plat 1").x == find(items, "Plat 2").x
+    second = find(items, "2nd")
+    assert not any(i.text.startswith("Plat") for i in items if i.y == second.y)
+    for status in ("On time", "Exp 07:49", "Cancelled"):
+        assert find(items, "Plat 1").x + FONT.getlength("Plat 1") + 5 <= find(items, status).x
+    assert find(items, "Plat 2").inverted  # part of the cancelled row's band
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_destination_gives_way_to_the_platform_column(panel):
+    width, height = dots(panel)
+    long = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom and Guide Bridge"
+    rows = [Row("07:12", long, "On time", platform="Plat 1")]
+    items = sign_layout(board(rows), width, height).items
+    dest = next(i for i in items if i.text.startswith("Manchester"))
+    assert dest.text.endswith("…")
+    assert dest.x + FONT.getlength(dest.text) + 5 <= find(items, "Plat 1").x
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_no_platform_column_when_no_train_has_one(panel):
+    width, height = dots(panel)
+    long = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom and Guide Bridge"
+    with_column = sign_layout(board([Row("07:12", long, "On time", platform="Plat 1")]), width, height).items
+    without = sign_layout(board([Row("07:12", long, "On time")]), width, height).items
+    dest = lambda items: next(i.text for i in items if i.text.startswith("Manchester"))
+    assert len(dest(without)) > len(dest(with_column))
+
+
+def test_the_phat_has_no_room_for_platforms_and_is_unchanged():
+    assert not any(i.text.startswith("Plat") for i in sign_layout(board(WITH_PLATFORMS)).items)
+    with_platforms = render_sign(board(WITH_PLATFORMS, BUSES), PALETTE)
+    without = render_sign(board(TRAINS, BUSES), PALETTE)
+    assert with_platforms.tobytes() == without.tobytes()
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_platforms_fit_on_a_bigger_board(panel):
+    width, height = dots(panel)
+    items = sign_layout(board(WITH_PLATFORMS, BUSES, leave="Leave by 07:05"), width, height).items
+    for item in items:
+        w, h = item_size(item)
+        assert 0 <= item.x and item.x + w <= width

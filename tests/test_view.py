@@ -268,3 +268,17 @@ def test_countdown_still_says_now_during_the_leave_minute():
     walk = WalkTimes(bus={"*": 7})
     [row] = view(buses=[bus(scheduled="07:08")], now="07:01", clock="07:01:40", walk=walk).buses.rows
     assert row.leave == "leave now"
+
+
+def test_train_row_names_its_platform():
+    with_platform = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, "2A")
+    [row] = view(trains=[with_platform]).trains.rows
+    assert row.platform == "Plat 2A"
+    [row] = view(trains=[train()]).trains.rows
+    assert row.platform is None
+
+
+def test_signature_changes_when_the_platform_changes():
+    one = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, "1")
+    two = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, "2")
+    assert view(trains=[one]).signature() != view(trains=[two]).signature()

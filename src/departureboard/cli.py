@@ -360,9 +360,9 @@ def _probe(args) -> int:
 
 def _demo(args) -> int:
     trains = [
-        Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME),
-        Departure("train", "Northern", "Manchester Piccadilly", "07:42", "07:49", Status.LATE),
-        Departure("train", "Northern", "Manchester Piccadilly", "08:12", None, Status.CANCELLED),
+        Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, "1"),
+        Departure("train", "Northern", "Manchester Piccadilly", "07:42", "07:49", Status.LATE, "1"),
+        Departure("train", "Northern", "Manchester Piccadilly", "08:12", None, Status.CANCELLED, "2"),
     ]
     buses = [
         Departure("bus", "341", "Hyde", "07:20", "07:24", Status.LATE, stop="A"),

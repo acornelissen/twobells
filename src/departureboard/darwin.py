@@ -12,6 +12,8 @@ from .model import Departure, Status
 DEFAULT_BASE_URL = "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
 
 _HHMM = re.compile(r"^\d{2}:\d{2}$")
+# Platform labels are short: "1", "10", "2A".
+_PLATFORM = re.compile(r"^[0-9A-Za-z]{1,4}$")
 
 HttpGet = Callable[[str, dict], dict]
 
@@ -29,6 +31,13 @@ def _status_and_expected(service: dict) -> tuple[Status, str | None]:
     return Status.UNKNOWN, None
 
 
+def _platform(value) -> str | None:
+    """The platform if it looks like one; anything else is left off the board."""
+    if isinstance(value, str) and _PLATFORM.match(value.strip()):
+        return value.strip()
+    return None
+
+
 def _parse_service(service: dict) -> Departure:
     status, expected = _status_and_expected(service)
     destinations = service.get("destination") or []
@@ -39,7 +48,7 @@ def _parse_service(service: dict) -> Departure:
         scheduled=service["std"],
         expected=expected,
         status=status,
-        platform=service.get("platform"),
+        platform=_platform(service.get("platform")),
     )
 
 

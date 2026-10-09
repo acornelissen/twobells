@@ -61,6 +61,8 @@ class Row:
     style: Style = Style.NORMAL
     leave: str | None = None
     stop: str | None = None
+    # "Plat 1"; only boards wide enough for a platform column draw it.
+    platform: str | None = None
 
 
 @dataclass(frozen=True)
@@ -105,7 +107,8 @@ def _train_row(dep: Departure, walk: WalkTimes | None, words: Wording, clock: st
         right, style = words.on_time, Style.NORMAL
     else:
         right, style = words.unknown, Style.NORMAL
-    return Row(dep.scheduled, dep.destination, right, style)
+    platform = f"Plat {dep.platform}" if dep.platform else None
+    return Row(dep.scheduled, dep.destination, right, style, platform=platform)
 
 
 def _bus_row(dep: Departure, walk: WalkTimes | None, words: Wording, clock: str | None) -> Row:
