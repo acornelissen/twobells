@@ -140,3 +140,18 @@ def test_reports_port_range_when_all_attempts_are_taken():
             make_server(display, port=taken, attempts=1)
     finally:
         first.server_close()
+
+
+def test_default_port_avoids_claudecodebrowserx():
+    # ClaudeCodeBrowserX listens on 8765 (HTTP) and 8766 (WebSocket).
+    from departureboard.emulator import DEFAULT_PORT
+
+    attempts = 10
+    assert not {8765, 8766} & set(range(DEFAULT_PORT, DEFAULT_PORT + attempts))
+
+
+def test_emulate_command_uses_the_shared_default_port():
+    from departureboard.cli import _parser
+    from departureboard.emulator import DEFAULT_PORT
+
+    assert _parser().parse_args(["emulate", "--demo"]).port == DEFAULT_PORT

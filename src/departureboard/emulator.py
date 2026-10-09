@@ -19,6 +19,9 @@ from PIL.Image import Image
 
 from .render import Palette
 
+# Clear of ClaudeCodeBrowserX, which listens on 8765 and 8766.
+DEFAULT_PORT = 8780
+
 # Approximate reflectance colours of a four-colour e-paper panel under room light.
 EPAPER = {
     "white": (233, 231, 222),
@@ -86,7 +89,7 @@ def _page() -> bytes:
 def make_server(
     display: EmulatorDisplay,
     host: str = "127.0.0.1",
-    port: int = 8765,
+    port: int = DEFAULT_PORT,
     attempts: int = 10,
 ):
     """Bind to `port`, or the next free one within `attempts` ports."""

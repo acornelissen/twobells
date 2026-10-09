@@ -23,7 +23,7 @@ from .app import run_loop, run_once
 from .config import ConfigError, load_config
 from .display import InkyDisplay, PngDisplay
 from .emulation import build_emulation
-from .emulator import make_server
+from .emulator import DEFAULT_PORT, make_server
 from .model import Departure, Status
 from .state import StateStore
 from .transportapi import redact_credentials
@@ -226,7 +226,7 @@ def _parser() -> argparse.ArgumentParser:
     emulate.add_argument("--demo", action="store_true", help="fake data on a fast simulated clock")
     emulate.add_argument("--fake-train", action="store_true", help="fake trains, live buses")
     emulate.add_argument("--accent", choices=["red", "yellow"], help="demo accent")
-    emulate.add_argument("--port", type=int, default=8765)
+    emulate.add_argument("--port", type=int, default=DEFAULT_PORT)
     emulate.add_argument("--port-attempts", type=int, default=10, help=argparse.SUPPRESS)
     emulate.add_argument("--tick", type=float, help="seconds per tick (demo 2, live 60)")
     emulate.add_argument("--ticks", type=int, help=argparse.SUPPRESS)
