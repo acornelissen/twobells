@@ -63,6 +63,8 @@ install -m 644 "$REPO/deploy/departureboard.service" /etc/systemd/system/
 install -m 644 "$REPO/deploy/departureboard.timer" /etc/systemd/system/
 install -m 644 "$REPO/deploy/departureboard-screen.service" /etc/systemd/system/
 install -m 644 "$REPO/deploy/departureboard-web.service" /etc/systemd/system/
+install -m 644 "$REPO/deploy/departureboard-timetable.service" /etc/systemd/system/
+install -m 644 "$REPO/deploy/departureboard-timetable.timer" /etc/systemd/system/
 systemctl daemon-reload
 
 cat <<EOF
@@ -74,6 +76,9 @@ Installed. Next:
   3. Start the board:  sudo systemctl enable --now departureboard.timer          (e-paper)
                   or:  sudo systemctl enable --now departureboard-screen.service (HDMI screen)
   4. Watch it:         journalctl -u departureboard -f
+     With source = "bods" under [bus], build the bus timetable and keep it fresh:
+       sudo systemctl enable --now departureboard-timetable.timer
+       sudo systemctl start departureboard-timetable.service   (the first build, now)
   5. Settings page (optional, home network only):
        sudo -u departureboard $PREFIX/venv/bin/departureboard web --set-password
        sudo systemctl enable --now departureboard-web.service

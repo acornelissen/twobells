@@ -53,7 +53,7 @@ Each line reads: *route*, *stop*, *destination*, *when to leave*, *when it goes*
 | `leave 07:17` | Set off at 07:17 to walk to that stop in time. |
 | `07:41` | Live tracking says it's on time. |
 | `07:24 +4` | Live tracking says it's 4 minutes late and will leave at 07:24. |
-| `07:35 sch` | Timetable time only ("scheduled"): there's no live tracking for this bus, so it could be early or late. |
+| `07:35 sch` | Timetable time only ("scheduled"): there's no live position for this bus yet, so it could be late. |
 | `Cancelled`, on a highlighted bar | It isn't running. |
 
 **Bottom line**
@@ -128,7 +128,7 @@ The page only appears when the board is checking buses (see *When it checks* bel
 
 ### When it checks
 
-To stay within free limits, the board only fetches new times during set windows, for example weekday mornings and early evenings. Outside them it keeps showing what it last knew, and doesn't say "not updating", because it isn't trying to. Departures drop off once their time has passed, so the evening never shows the morning's buses. The windows are on the settings page.
+The board only fetches new times during set windows. Train times and the bus timetable cost nothing, so their windows can cover the whole day; if bus times come from TransportAPI instead (see [Bus times](#bus-times)), its free limit means short windows, such as weekday mornings and early evenings. Outside the windows it keeps showing what it last knew, and doesn't say "not updating", because it isn't trying to. Departures drop off once their time has passed, so the evening never shows the morning's buses. The windows are on the settings page.
 
 On bank holidays trains and buses run a Sunday service, so the board treats them like Sundays: weekday-only windows are off, and windows that include Sundays apply.
 
@@ -172,7 +172,7 @@ What you save replaces what's in `config.toml`, including emptying a box: cleari
 - **Stops:** one per line, written `LABEL = ATCO code`, for example `A = 1000DGHS0900`. The label is the letter shown on the board. Find stop codes on [bustimes.org](https://bustimes.org): the code is the last part of a stop page's address.
 - **Only buses heading to:** optional, comma-separated, for example `Ashton, Hyde`. Empty shows every bus.
 - **Buses shown**, **Check every (minutes)**, **Say "not updating" after (minutes)**.
-- **Most hits a day:** a hard limit on bus lookups. The free TransportAPI plan allows 30 a day, and each check costs one per stop.
+- **Most hits a day:** a hard limit on TransportAPI lookups, used only while it stands in for the bus timetable. The free plan allows 30 a day, and each check costs one per stop.
 - **When to check:** as for trains.
 - **Walk to each stop:** one per line (`A = 7`), or one number for every stop. Empty means no leave times.
 
@@ -195,7 +195,8 @@ Above the form, a **Status** section shows how the board is doing, without chang
 
 - when trains, buses and bus positions were last fetched, and whether it's checking now;
 - the last error, if one happened since the last good fetch, written out as "Problem: …" (keys are never shown);
-- how many of today's bus lookups are used;
+- a note when bus times aren't coming from the timetable and live positions as they should: `From TransportAPI: …` or `Timetabled times only; live positions failed: …`;
+- how many of today's TransportAPI lookups are used;
 - when the display last redrew.
 
 It's the first place to look when the board seems wrong.
@@ -205,7 +206,7 @@ It's the first place to look when the board seems wrong.
 - **E-paper:** within a few minutes (it never redraws more often than every 2 minutes). Changing the look, accent colour or rotation redraws it too.
 - **HDMI screen:** within a second. If you change the rotation or accent colour, the screen restarts itself, which takes about 10 seconds.
 
-Two things aren't on the page and are changed in `config.toml` on the Pi: the type of display, and the stop list for the bus position page.
+A few things aren't on the page and are changed in `config.toml` on the Pi: the type of display, where bus times come from (`source` and `operators`, see [Bus times](#bus-times)), and the stop list for the bus position page.
 
 ### If you can't sign in
 
@@ -242,17 +243,41 @@ The Waveshare panel also needs `dtoverlay=spi0-0cs` in `/boot/firmware/config.tx
 
 ### Keys
 
-All three are free. Put them in `/etc/departureboard/secrets.env`, or paste them into the settings page.
+All are free. Put them in `/etc/departureboard/secrets.env`, or paste them into the settings page.
 
 | Key | For | Where to get it |
 |---|---|---|
 | `RDM_API_KEY` | trains | Rail Data Marketplace, Live Departure Board product |
-| `TAPI_APP_ID`, `TAPI_APP_KEY` | bus times | TransportAPI, free plan |
-| `BODS_API_KEY` | bus positions (screen only) | Bus Open Data Service, account settings |
+| `BODS_API_KEY` | bus times and positions | Bus Open Data Service, account settings |
+| `TAPI_APP_ID`, `TAPI_APP_KEY` | bus times without the timetable (optional with `source = "bods"`) | TransportAPI, free plan |
+
+### Bus times
+
+Bus times are worked out the way [bustimes.org](https://bustimes.org) does it, from the Bus Open Data Service (BODS): the timetable for your stops, plus where the buses are right now. In `config.toml`:
+
+```toml
+[bus]
+source = "bods"
+operators = ["BNML", "HIPK"]    # the bus companies serving your stops
+interval_minutes = 2
+windows = ["Mon-Sun 06:00-23:00"]
+```
+
+- **The timetable** is built on the Pi by `departureboard-timetable.timer`. It checks every hour and rebuilds weekly, when a timetable in it ends, or when your stops change. It downloads the operators' timetables from BODS and keeps only the journeys calling at your stops, with the days each runs: school-term-only journeys run only in the terms the timetable gives, and bank holidays follow the operator's own rules.
+- **Each check**, the board asks BODS where those lines' buses are, matches each bus to its timetabled journey, and shows how late it is. A bus running early is shown on time, since buses wait at timing points. A bus without a live position shows its timetable time with `sch`.
+- **Building it the first time**, or again after changing `operators` (which it doesn't notice by itself):
+
+  ```bash
+  sudo rm -f /var/lib/departureboard/bus-timetable.json     # only to rebuild
+  sudo systemctl start departureboard-timetable.service      # a few minutes on a Zero W
+  journalctl -u departureboard-timetable -n 5
+  ```
+
+Until there's a usable timetable (none yet, built for other stops, run out, or not rebuilt for four weeks), TransportAPI stands in if its keys are set, checked every `fallback_interval_minutes` (default 12) within the daily budget. Without TransportAPI keys the board says it isn't updating buses.
 
 ### The bus budget
 
-TransportAPI's free plan allows 30 lookups a day, and each check costs one per stop. With two stops, checking every 12 minutes from 07:00 to 08:30 and 17:00 to 18:00 uses 28 a day. The board keeps 2 spare for test lookups. It never goes over **Most hits a day**: once the budget is spent, bus times stop updating until midnight, and after the "not updating" time passes the board says so.
+This applies only to TransportAPI: with `source = "bods"`, only while it stands in for the timetable. Its free plan allows 30 lookups a day, and each check costs one per stop. With two stops, checking every 12 minutes from 07:00 to 08:30 and 17:00 to 18:00 uses 28 a day. The board keeps 2 spare for test lookups. It never goes over **Most hits a day**: once the budget is spent, bus times stop updating until midnight, and after the "not updating" time passes the board says so.
 
 Bus positions for the screen's second page come from a different service (BODS) with no daily allowance to manage. They're checked every 30 seconds, only during the bus windows.
 
@@ -271,7 +296,7 @@ The forecast is checked every 30 minutes, only while the board is checking train
 
 ### Bank holidays
 
-Dates for England and Wales come from GOV.UK and are kept for a week in `/var/lib/departureboard/`. If GOV.UK can't be reached, the board keeps the dates it has and tries again in 6 hours. To ignore bank holidays, choose that on the settings page, or set `bank_holidays = false` in `config.toml`.
+Dates for England and Wales come from GOV.UK and are kept for a week in `/var/lib/departureboard/`. If GOV.UK can't be reached, the board keeps the dates it has and tries again in 6 hours. To ignore bank holidays for the checking windows, choose that on the settings page, or set `bank_holidays = false` in `config.toml`. Bus times from the timetable always follow the operators' own bank holiday rules.
 
 ### The bus position page
 
@@ -304,8 +329,10 @@ Settings saved on the page go to `/var/lib/departureboard/settings.toml` and ove
 |---|---|---|
 | E-paper blank after install | No data fetched yet | Wait a minute; check `journalctl -u departureboard -f` |
 | `NOT UPDATING: TRAINS` | Rail key wrong, or the feed is down | `departureboard probe train` |
-| `NOT UPDATING: BUSES` | Daily bus budget spent, key wrong, or the feed is down | `departureboard probe bus` (uses one lookup per stop) |
-| Every bus says `sch` | No live tracking for those buses right now | Nothing to fix; times are from the timetable |
+| `NOT UPDATING: BUSES` | No bus timetable yet and no TransportAPI keys; or TransportAPI's daily budget spent, its key wrong, or its feed down | Status section on the settings page; `departureboard probe bus` |
+| Every bus says `sch` | No live positions for those buses right now, or live positions failing (the Status section says so) | Usually nothing; times are from the timetable |
+| Status says `From TransportAPI: there is no bus timetable yet` | The timetable hasn't been built, or the build failed | `journalctl -u departureboard-timetable -n 20`; start it as in [Bus times](#bus-times) |
+| Status says `From TransportAPI: the bus timetable is for other stops` | You changed the stops; it rebuilds within the hour | Wait, or start the timetable service |
 | E-paper errors about chip select | SPI chip selects in use | Add `dtoverlay=spi0-0cs` to `/boot/firmware/config.txt` and reboot |
 | Screen black | Screen service not running | `systemctl status departureboard-screen.service` |
 | Screen upside down or sideways | Rotation | Change Rotation on the settings page |
@@ -325,7 +352,9 @@ journalctl -u departureboard -f                 # e-paper board log
 journalctl -u departureboard-screen -f          # screen board log
 journalctl -u departureboard-web -f             # settings page log
 departureboard probe train                      # check the rail key and station
-departureboard probe bus                        # check the bus keys and stops (costs lookups)
+departureboard probe bus                        # check the bus keys and stops (TransportAPI: costs lookups)
+journalctl -u departureboard-timetable -n 20    # bus timetable builds
+sudo systemctl start departureboard-timetable.service   # build the bus timetable now, if due
 departureboard demo --png preview.png           # draw a sample board without any keys
 departureboard emulate --demo --display hdmi-1280x400   # try the screen on a laptop
 ```

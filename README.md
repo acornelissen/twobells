@@ -7,7 +7,7 @@ Glossop train and bus departure board for a Raspberry Pi with a four-colour Inky
 New here? The [user guide](docs/USER_GUIDE.md) explains what everything on the board means, how to use the settings page, and how to set it up and troubleshoot it.
 
 - **Trains:** National Rail Darwin, via the Rail Data Marketplace. Free, polled every 2 minutes.
-- **Buses:** TransportAPI. Free plan is 30 hits/day, so polling is limited to set windows, with a hard daily budget.
+- **Buses:** either worked out the way [bustimes.org](https://bustimes.org) does, from the DfT's Bus Open Data Service (BODS) timetable for your stops plus live bus positions, free and checked all day; or TransportAPI, whose free plan is 30 hits/day, so polling is limited to set windows with a hard daily budget. With BODS, TransportAPI can stand in while there is no usable timetable.
 - An e-paper panel takes about 20 s to refresh, so it redraws only when what it shows changes, and never more than once every 2 minutes. `Updated HH:MM` (`Upd HH:MM` in the plain look) is when the board last changed; if a feed stops arriving, the board says `Not updating`. Departures from an earlier fetch drop off once their time has passed, even outside the polling windows.
 - Two looks, set with `theme`:
   - `sign` (default): an old-school station departure board, amber dot-matrix on black, using the panel's yellow. `1st`/`2nd`/`3rd` trains, `Exp 07:49`, `Cancelled`, and a `Leave by` line under the train you can still catch. The dot-matrix font is drawn for this project at one pixel per LED.
@@ -36,6 +36,16 @@ Station codes: Glossop is `GLO`, Manchester Piccadilly is `MAN`.
    - <https://www.openstreetmap.org>: zoom in, click the bus stop and read the `naptan:AtcoCode` tag.
 4. Add them to `[bus.stops]` as `LABEL = "ATCO"`. The label is shown on the board (`A: Hyde`). Each stop costs one hit per poll, so two stops halve the polls you can make. Add `directions = ["Ashton"]` to filter.
 
+### BODS (buses, the bustimes.org way)
+
+1. Register at <https://data.bus-data.dft.gov.uk/> and copy the API key from your account settings into `BODS_API_KEY`.
+2. Under `[bus]` set `source = "bods"` and `operators`, the national operator codes of the companies serving your stops (Glossop: `["BNML", "HIPK"]`). bustimes.org shows them on each operator's page; TransportAPI's `operator` field has them too.
+3. Checks cost nothing, so check all day: `interval_minutes = 2`, `windows = ["Mon-Sun 06:00-23:00"]`.
+
+`departureboard timetable` downloads the operators' timetables, keeps the journeys that call at your stops, and saves them beside the state file (about 1 MB). `departureboard-timetable.timer` checks hourly and rebuilds weekly, when a timetable in it ends, or when your stops change. It doesn't notice a change of `operators`: rebuild then (see below). Each check, the board takes the journeys running today (by the timetable's own days, school terms and bank holiday rules), asks BODS where those lines' buses are, matches each bus to its journey by its first stop and timetabled start, and shows it as late by however far behind it is. A bus that's early is shown on time; one without a live position shows its timetabled time (`sch`).
+
+Until there is a usable timetable (none yet, built for other stops, run out, or not rebuilt for four weeks), TransportAPI stands in if its keys are set, every `fallback_interval_minutes` (default 12) and within `daily_budget`. The settings page's status says when it does, and when live positions are failing.
+
 ### Walking times
 
 Trains show when to leave for the next one you can still reach (`Leave by 07:05` under that train on the sign look, `Leave 07:05 (07:12)` in the plain header). Each bus row has its own `leave 07:17`. On e-paper it's a clock time, not a countdown, so it only changes when the next reachable departure changes; the HDMI screen counts down instead (`Leave in 3 min`). Set `walk_minutes` under `[train]`, and per stop label under `[bus.walk_minutes]`. To measure a route, ask the OpenStreetMap foot router:
@@ -57,7 +67,14 @@ sudo nano /etc/departureboard/secrets.env   # keys
 sudo nano /etc/departureboard/config.toml   # bus stop, windows
 ```
 
-Check the keys and codes with one live call each. The bus probe uses one hit per stop from your 30 daily hits; the default schedule uses 28.
+Check the keys and codes with one live call each. With TransportAPI, the bus probe uses one hit per stop from your 30 daily hits; the default schedule uses 28. With BODS, build the timetable first, then probe:
+
+```bash
+sudo systemctl start departureboard-timetable.service   # takes a few minutes on a Zero W
+journalctl -u departureboard-timetable -n 5
+```
+
+Run it through the service rather than by hand: the service reads the keys and writes the timetable as the board's user. To rebuild now, as after changing `operators`, delete `/var/lib/departureboard/bus-timetable.json` and start the service again.
 
 ```bash
 sudo /opt/departureboard/venv/bin/departureboard probe train
@@ -77,6 +94,12 @@ Start it:
 ```bash
 sudo systemctl enable --now departureboard.timer
 journalctl -u departureboard -f
+```
+
+With BODS, keep the timetable fresh too:
+
+```bash
+sudo systemctl enable --now departureboard-timetable.timer
 ```
 
 To update an installed board later, copy the repo to the Pi and run `sudo ./deploy/update.sh` from it (add `--config FILE` or `--secrets FILE` to replace those too). It installs the new code, refreshes the systemd units and runs the board once.
@@ -187,6 +210,9 @@ Live modes keep state in `state_file`, so the TransportAPI budget holds across r
 |---|---|
 | `model.py` | Provider-neutral `Departure` and lateness maths |
 | `darwin.py`, `transportapi.py` | Sources; HTTP injected, so parsing is tested with fixtures |
+| `timetable.py`, `schedule_model.py` | BODS TransXChange to the journeys calling at your stops, and when each runs (`timetable` command) |
+| `livebus.py` | Pure: matches live buses to timetabled journeys and works out departures and delays |
+| `bodsbus.py` | The `source = "bods"` bus source: timetable plus live positions, TransportAPI fallback |
 | `schedule.py`, `budget.py` | When to poll, and the daily hit cap |
 | `view.py` | Departures to text rows plus a change signature |
 | `panel.py` | Panel sizes; bigger panels draw each sign dot as a block of pixels |
@@ -206,6 +232,6 @@ Live modes keep state in `state_file`, so the TransportAPI budget holds across r
 | `fake.py` | Deterministic fake sources and simulated clock |
 | `app.py` | One tick: poll what's due, redraw only on change |
 | `web.py`, `settingsform.py`, `web.css` | Settings page: sign-in and request checks; the form, its checks and saving |
-| `cli.py`, `config.py` | `run` / `probe` / `demo`; TOML settings, env secrets |
+| `cli.py`, `config.py` | `run` / `probe` / `demo` / `timetable`; TOML settings, env secrets |
 
 To add a page or provider, implement `fetch() -> list[Departure]` with a `name` and add it to `config.py`.

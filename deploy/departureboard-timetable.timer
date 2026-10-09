@@ -1,0 +1,11 @@
+[Unit]
+Description=Check hourly whether the bus timetable needs building (weekly, or when your stops change)
+
+[Timer]
+OnBootSec=3min
+OnCalendar=hourly
+RandomizedDelaySec=10min
+Unit=departureboard-timetable.service
+
+[Install]
+WantedBy=timers.target

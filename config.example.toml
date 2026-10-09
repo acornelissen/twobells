@@ -51,6 +51,19 @@ stale_after_minutes = 30
 daily_budget = 28
 windows = ["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]
 
+# Or work bus times out the way bustimes.org does: from the BODS timetable for
+# your stops plus live BODS bus positions. Free (needs BODS_API_KEY), so buses
+# can be checked all day. `departureboard timetable` builds the timetable, and
+# departureboard-timetable.timer keeps it fresh (rebuilt weekly, or when your
+# stops change). Until there is one, TransportAPI stands in if its keys are
+# set, every fallback_interval_minutes (default 12), within daily_budget.
+# operators are the bus companies' national operator codes; find them on
+# bustimes.org, or in TransportAPI's "operator" (`departureboard probe bus --save`).
+# source = "bods"
+# operators = ["BNML", "HIPK"]
+# interval_minutes = 2
+# windows = ["Mon-Sun 06:00-23:00"]
+
 # Short label shown on the board = ATCO code (find codes on bustimes.org).
 [bus.stops]
 A = "1000DGHS0900"   # Henry Street Stop A: 219, 237, 341

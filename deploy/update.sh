@@ -47,10 +47,19 @@ fi
 # The code only: its dependencies are already in the venv.
 "$PREFIX/venv/bin/pip" install --quiet --no-deps --force-reinstall "$build"
 
-for unit in departureboard.service departureboard.timer departureboard-screen.service departureboard-web.service; do
+for unit in departureboard.service departureboard.timer departureboard-screen.service departureboard-web.service \
+    departureboard-timetable.service departureboard-timetable.timer; do
   install -m 644 "$REPO/deploy/$unit" /etc/systemd/system/
 done
 systemctl daemon-reload
+
+# Bus times from the BODS timetable need it built and kept fresh. The first
+# build takes minutes, so it carries on in the background.
+if grep -Eq '^[[:space:]]*source[[:space:]]*=[[:space:]]*"bods"' "$CONF/config.toml"; then
+  systemctl enable --now departureboard-timetable.timer
+  systemctl start --no-block departureboard-timetable.service
+  echo "Building the bus timetable; follow it with: journalctl -u departureboard-timetable -f"
+fi
 
 # One run now, rather than waiting for the timer (a oneshot: this waits for it).
 if systemctl is-enabled --quiet departureboard.timer; then
