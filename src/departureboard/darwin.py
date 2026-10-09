@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Callable
 from urllib.parse import urlencode
 
-from .http import get_json
+from .http import get_json, get_json_capped
 from .model import Departure, Status
 
 DEFAULT_BASE_URL = "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
@@ -132,6 +133,223 @@ def parse_messages(board: dict) -> list[str]:
     return messages
 
 
+# The rich board, from GetDepBoardWithDetails: each train's coaches, origin,
+# reasons and the stops it calls at after this station. All of it comes from
+# outside, so every field is checked as it is read: a value of the wrong type
+# or shape is left out (None, "" or skipped), never raised.
+
+NAME_LIMIT = 80
+REASON_LIMIT = 200
+_MAX_CALLING_POINTS = 150
+_MAX_CALLING_LISTS = 10  # one per part of a train that divides
+_MAX_ENDS = 4  # origins or destinations of one train; two when it divides
+_MAX_COACHES = 30
+
+_CLOCK = re.compile(r"[01][0-9]:[0-5][0-9]|2[0-3]:[0-5][0-9]")
+_TIME_WORDS = {"On time", "Delayed", "Cancelled", "No report"}
+_CRS = re.compile(r"[A-Z]{3}")
+_SERVICE_ID = re.compile(r"[A-Za-z0-9_+/=-]{6,64}")
+_OPERATOR_CODE = re.compile(r"[A-Z0-9]{2,3}")
+# Like 2026-10-09T07:00:00+01:00
+_GENERATED_AT = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})?"
+)
+
+
+@dataclass(frozen=True)
+class CallingPoint:
+    """A stop the train calls at after this station."""
+
+    name: str
+    crs: str | None
+    scheduled: str  # HH:MM
+    expected: str | None  # HH:MM or one of Darwin's words, like "On time"
+    actual: str | None  # the same, once the train has been there
+    cancelled: bool
+    length: int | None  # coaches from here, when Darwin knows
+
+
+@dataclass(frozen=True)
+class TrainService:
+    departure: Departure
+    service_id: str | None
+    origin: str
+    operator_code: str
+    length: int | None  # coaches
+    cancel_reason: str | None
+    delay_reason: str | None
+    calling_points: tuple[CallingPoint, ...]
+
+
+@dataclass(frozen=True)
+class TrainBoard:
+    services: list[TrainService]
+    messages: list[str]
+    generated_at: str | None  # Darwin's own ISO 8601 timestamp, as sent
+
+
+def _name(value) -> str | None:
+    """A place or operator name: printable, on one line, cut to NAME_LIMIT."""
+    if not isinstance(value, str):
+        return None
+    # Whitespace first, so a non-breaking space still parts two words.
+    text = "".join(c for c in " ".join(value.split()) if c.isprintable())
+    return text[:NAME_LIMIT].rstrip() or None
+
+
+def _matching(pattern: re.Pattern, value) -> str | None:
+    if isinstance(value, str) and pattern.fullmatch(value):
+        return value
+    return None
+
+
+def _time(value) -> str | None:
+    """HH:MM or one of the words Darwin uses in place of a time."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if value in _TIME_WORDS:
+        return value
+    return _matching(_CLOCK, value)
+
+
+def _coaches(value) -> int | None:
+    # bool is an int in Python, and True coaches is not a train.
+    if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= _MAX_COACHES:
+        return value
+    return None
+
+
+def _reason(value) -> str | None:
+    """A cancellation or delay reason. LDBWS sends a string; a newer shape
+    wraps it as {"value": "..."}, so both are read."""
+    if isinstance(value, dict):
+        value = value.get("value", value.get("Value"))
+    if not isinstance(value, str):
+        return None
+    return plain_text(value, REASON_LIMIT) or None
+
+
+def _locations(value) -> list[dict]:
+    """[{"locationName": ..., "crs": ...}] with each name checked; others dropped."""
+    if not isinstance(value, list):
+        return []
+    places = []
+    for item in value[:_MAX_ENDS]:
+        name = _name(item.get("locationName")) if isinstance(item, dict) else None
+        if name:
+            places.append({"locationName": name, "crs": _matching(_CRS, item.get("crs"))})
+    return places
+
+
+def _as_list(value) -> list:
+    """Darwin's lists sometimes arrive as a single object; anything else is empty."""
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return [value]
+    return []
+
+
+def _calling_point(point) -> CallingPoint | None:
+    if not isinstance(point, dict):
+        return None
+    name = _name(point.get("locationName"))
+    scheduled = _matching(_CLOCK, point.get("st"))
+    if name is None or scheduled is None:
+        return None
+    return CallingPoint(
+        name=name,
+        crs=_matching(_CRS, point.get("crs")),
+        scheduled=scheduled,
+        expected=_time(point.get("et")),
+        actual=_time(point.get("at")),
+        cancelled=point.get("isCancelled") is True,
+        length=_coaches(point.get("length")),
+    )
+
+
+def _calling_points(service: dict, destinations: list[dict]) -> tuple[CallingPoint, ...]:
+    """The stops after this station. A train that divides has one list per
+    part; we keep the one that ends at a destination on the board (the first
+    such, by crs or else by name), and otherwise the first list, which is the
+    main train in Darwin's order."""
+    lists = []
+    for part in _as_list(service.get("subsequentCallingPoints"))[:_MAX_CALLING_LISTS]:
+        if not isinstance(part, dict):
+            continue
+        raw = _as_list(part.get("callingPoint"))[:_MAX_CALLING_POINTS]
+        points = tuple(p for p in map(_calling_point, raw) if p is not None)
+        if points:
+            lists.append(points)
+    if not lists:
+        return ()
+    crs_codes = {d["crs"] for d in destinations if d["crs"]}
+    names = {d["locationName"] for d in destinations}
+    for points in lists:
+        last = points[-1]
+        if (last.crs and last.crs in crs_codes) or last.name in names:
+            return points
+    return lists[0]
+
+
+def _rich_service(service) -> TrainService | None:
+    """One train from the rich board, or None if it lacks a departure time.
+    The Departure is built by _parse_service from checked values only, so the
+    plain board's rules (status, platform) apply unchanged."""
+    if not isinstance(service, dict):
+        return None
+    std = _matching(_CLOCK, service.get("std"))
+    if std is None:
+        return None
+    destinations = _locations(service.get("destination"))
+    checked = {
+        "std": std,
+        # An estimate that is neither a time nor a known word reads as unknown.
+        "etd": _time(service.get("etd")) or "",
+        "isCancelled": service.get("isCancelled") is True,
+        "operator": _name(service.get("operator")) or "",
+        "destination": destinations,
+        "platform": service.get("platform"),
+    }
+    return TrainService(
+        departure=_parse_service(checked),
+        service_id=_matching(_SERVICE_ID, service.get("serviceID")),
+        origin=" & ".join(o["locationName"] for o in _locations(service.get("origin"))),
+        operator_code=_matching(_OPERATOR_CODE, service.get("operatorCode")) or "",
+        length=_coaches(service.get("length")),
+        cancel_reason=_reason(service.get("cancelReason")),
+        delay_reason=_reason(service.get("delayReason")),
+        calling_points=_calling_points(service, destinations),
+    )
+
+
+def parse_board_rich(board) -> TrainBoard:
+    """The board from GetDepBoardWithDetails (or GetDepartureBoard, which
+    just has no calling points). Raises ValueError only if it isn't a board."""
+    if not isinstance(board, dict):
+        raise ValueError("Darwin sent something other than a departure board")
+    services = []
+    for raw in _as_list(board.get("trainServices")):
+        service = _rich_service(raw)
+        if service is not None:
+            services.append(service)
+    return TrainBoard(
+        services=services,
+        messages=parse_messages(board),
+        generated_at=_matching(_GENERATED_AT, board.get("generatedAt")),
+    )
+
+
+# The detailed board is a few KB per train; this leaves plenty of room for a
+# long board and still stops a runaway response.
+DETAILS_MAX_BYTES = 512 * 1024
+
+
+def _get_details(url: str, headers: dict) -> dict:
+    return get_json_capped(url, headers, DETAILS_MAX_BYTES)
+
+
 class DarwinSource:
     name = "train"
 
@@ -142,7 +360,8 @@ class DarwinSource:
         filter_crs: str | None = None,
         rows: int = 3,
         base_url: str = DEFAULT_BASE_URL,
-        http_get: HttpGet = get_json,
+        http_get: HttpGet | None = None,
+        with_details: bool = False,
     ) -> None:
         self._api_key = api_key
         self._crs = crs
@@ -150,6 +369,8 @@ class DarwinSource:
         self._rows = rows
         self._base_url = base_url.rstrip("/")
         self._http_get = http_get
+        # Ask for GetDepBoardWithDetails, the board with calling points.
+        self.with_details = with_details
         # From the last successful fetch; the app keeps them with the departures.
         self.messages: list[str] = []
 
@@ -157,10 +378,23 @@ class DarwinSource:
         params = {"numRows": self._rows}
         if self._filter_crs:
             params.update(filterCrs=self._filter_crs, filterType="to")
-        return f"{self._base_url}/GetDepartureBoard/{self._crs}?{urlencode(params)}"
+        method = "GetDepBoardWithDetails" if self.with_details else "GetDepartureBoard"
+        return f"{self._base_url}/{method}/{self._crs}?{urlencode(params)}"
+
+    def _get(self) -> dict:
+        http_get = self._http_get or (_get_details if self.with_details else get_json)
+        return http_get(self._url(), {"x-apikey": self._api_key})
+
+    def fetch_board(self) -> TrainBoard:
+        """The rich board: calling points too when with_details is set."""
+        board = parse_board_rich(self._get())
+        self.messages = board.messages
+        return board
 
     def fetch(self) -> list[Departure]:
-        board = self._http_get(self._url(), {"x-apikey": self._api_key})
+        if self.with_details:
+            return [s.departure for s in self.fetch_board().services]
+        board = self._get()
         departures = parse_board(board)
         self.messages = parse_messages(board)
         return departures
