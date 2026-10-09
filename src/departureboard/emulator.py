@@ -25,6 +25,10 @@ from .screen import SCREEN_RGB
 # Clear of ClaudeCodeBrowserX, which listens on 8765 and 8766.
 DEFAULT_PORT = 8780
 
+# The emulator only listens on loopback, but a DNS-rebinding page can still
+# reach it under its own name; any other Host header is refused.
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
+
 # Approximate reflectance colours of a four-colour e-paper panel under room light.
 EPAPER = {
     "white": (233, 231, 222),
@@ -102,6 +106,14 @@ class EmulatorDisplay:
             }
 
 
+def _host_name(host: str) -> str:
+    """The name in a Host header, without its port."""
+    host = host.strip().lower()
+    if host.startswith("["):
+        return host[: host.find("]") + 1]
+    return host.split(":", 1)[0]
+
+
 def _page() -> bytes:
     return files("departureboard").joinpath("emulator.html").read_bytes()
 
@@ -137,7 +149,9 @@ def _handler(display: EmulatorDisplay, page: bytes):
 
         def do_GET(self) -> None:  # noqa: N802 - http.server API
             path = urlparse(self.path).path
-            if path in ("/", "/index.html"):
+            if _host_name(self.headers.get("Host", "")) not in LOOPBACK_HOSTS:
+                self._send(403, "text/plain", b"forbidden")
+            elif path in ("/", "/index.html"):
                 self._send(200, "text/html; charset=utf-8", page)
             elif path == "/status.json":
                 self._send(200, "application/json", json.dumps(display.status()).encode())

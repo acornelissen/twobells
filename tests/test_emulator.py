@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import threading
 from datetime import datetime
+from http.client import HTTPConnection
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
@@ -119,6 +120,45 @@ def test_unknown_path_is_404(served):
     with pytest.raises(HTTPError) as error:
         urlopen(base + "/nope")
     assert error.value.code == 404
+
+
+def get_with_host(base, path, host):
+    connection = HTTPConnection(base.removeprefix("http://"), timeout=5)
+    try:
+        connection.request("GET", path, headers={"Host": host})
+        response = connection.getresponse()
+        return response.status, response.read()
+    finally:
+        connection.close()
+
+
+@pytest.mark.parametrize("host", ["evil.example", "evil.example:8780", "127.0.0.1.evil.example", "10.0.0.5:8780"])
+@pytest.mark.parametrize("path", ["/", "/status.json", "/frame.png"])
+def test_refuses_other_host_names(served, path, host):
+    # A DNS-rebinding page reaches 127.0.0.1 under its own name; refuse it.
+    display, base = served
+    display.show(frame(display))
+    status, body = get_with_host(base, path, host)
+    assert status == 403
+    assert b"version" not in body and not body.startswith(b"\x89PNG")
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "127.0.0.1:8780", "localhost", "LOCALHOST:8780", "[::1]", "[::1]:8780"])
+def test_serves_loopback_host_names(served, host):
+    _, base = served
+    status, _ = get_with_host(base, "/status.json", host)
+    assert status == 200
+
+
+def test_refuses_a_request_without_a_host(served):
+    _, base = served
+    connection = HTTPConnection(base.removeprefix("http://"), timeout=5)
+    try:
+        connection.putrequest("GET", "/status.json", skip_host=True)
+        connection.endheaders()
+        assert connection.getresponse().status == 403
+    finally:
+        connection.close()
 
 
 def test_falls_back_to_next_free_port_when_taken():
