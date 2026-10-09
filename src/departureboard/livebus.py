@@ -300,3 +300,47 @@ def _departure(
         stop=label,
     )
     return LiveDeparture(departure, journey, day, k, leaves, expected, placed, vehicle)
+
+
+@dataclass(frozen=True)
+class Approach:
+    """The road up to your stop for one departure, for a small route strip."""
+
+    stops: tuple[StopPosition, ...]  # in calling order
+    yours: int  # your stop's index in stops
+    bus_at: float | None  # stops along from the first; None if not on the strip yet
+
+
+def approach(live: LiveDeparture, positions: dict[str, StopPosition], before: int = 6) -> Approach | None:
+    """Your stop, the positioned stops the bus calls at before it (at most
+    `before` of them) and the next stop after it if positioned, with where the
+    bus is along them.
+
+    Calls without a position are left out, so the strip joins the stops either
+    side of them; a bus among them is placed in proportion to the calls it has
+    passed. bus_at is None without a placed bus or when the bus has not reached
+    the first stop. Past the last stop it counts on in calls, so more than
+    len(stops) - 1 means it has gone beyond the strip. None if your stop has no
+    position.
+    """
+    calls = live.journey.calls
+    yours = live.call_index
+    if not 0 <= yours < len(calls) or calls[yours].atco not in positions:
+        return None
+    earlier = [i for i in range(yours) if calls[i].atco in positions]
+    picked = earlier[max(len(earlier) - before, 0) :] + [yours]
+    if yours + 1 < len(calls) and calls[yours + 1].atco in positions:
+        picked.append(yours + 1)
+    stops = tuple(positions[calls[i].atco] for i in picked)
+    bus_at = _along(picked, live.progress.at) if live.progress is not None else None
+    return Approach(stops, picked.index(yours), bus_at)
+
+
+def _along(picked: list[int], at: float) -> float | None:
+    """A point along a journey's calls as stops along the picked calls."""
+    if at < picked[0]:
+        return None
+    for n, (a, b) in enumerate(zip(picked, picked[1:])):
+        if at <= b:
+            return n + (at - a) / (b - a)
+    return len(picked) - 1 + (at - picked[-1])

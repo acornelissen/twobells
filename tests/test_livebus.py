@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from departureboard.bods import Vehicle, parse_siri_vm
-from departureboard.livebus import departures, live_departures, match, progress
+from departureboard.livebus import Progress, approach, departures, live_departures, match, progress
 from departureboard.model import Status
 from departureboard.schedule_model import Calendar, Call, Journey, Schedule, StopPosition
 
@@ -437,3 +437,82 @@ def test_key_is_the_same_after_the_timetable_is_saved_and_read_again():
     before = [l.key for l in live(at(10, 0), plan=plan)]
     after = [l.key for l in live(at(10, 0), plan=reloaded)]
     assert before == after and before
+
+
+# Approach: the strip of stops up to yours
+
+
+def row(rows, stop, service):
+    return next(l for l in rows if (l.departure.stop, l.departure.service) == (stop, service))
+
+
+def names(found):
+    return [s.name for s in found.stops]
+
+
+def without(*atcos):
+    return {atco: where for atco, where in POSITIONS.items() if atco not in atcos}
+
+
+def test_approach_shows_the_stops_before_yours_and_the_next_one():
+    found = approach(row(live(at(10, 0)), "A", "341"), POSITIONS)
+    assert names(found) == [
+        "The Junction", "Grapes Inn", "Sunlaws Street", "St Marys Road", "Arundel Street",
+        "Henry Street", "Howard Arms",
+    ]
+    assert found.yours == 5 and found.bus_at is None  # Ashton has no position
+
+
+def test_approach_keeps_at_most_before_stops_ahead_of_yours():
+    found = approach(row(live(at(10, 0)), "A", "341"), POSITIONS, before=2)
+    assert names(found) == ["St Marys Road", "Arundel Street", "Henry Street", "Howard Arms"]
+    assert found.yours == 2
+    assert approach(row(live(at(10, 0)), "A", "341"), POSITIONS, before=0).yours == 0
+
+
+def test_approach_near_the_start_of_the_journey():
+    first = approach(row(live(at(10, 0)), "A", "237"), POSITIONS)
+    assert names(first) == ["Henry Street", "Market Hall"] and first.yours == 0
+    # Stop B is the last positioned call: nothing is shown after it.
+    second = approach(row(live(at(10, 0)), "B", "237"), POSITIONS)
+    assert names(second) == ["Henry Street", "Market Hall", "George Street", "St Marys Road"]
+    assert second.yours == 3
+
+
+def test_approach_places_the_bus_on_the_strip():
+    late = row(live(at(10, 14), [bus(*HALFWAY, at(10, 14))]), "A", "341")
+    assert approach(late, POSITIONS).bus_at == pytest.approx(2.5, abs=0.02)  # Sunlaws to St Marys
+    assert approach(late, POSITIONS, before=2).bus_at is None  # not yet at St Marys Road
+
+
+def test_approach_at_the_first_stop_of_the_strip_is_zero():
+    left = datetime(2026, 10, 9, 9, 15, tzinfo=UTC)  # 10:15 BST
+    waiting = stop_at(HENRY_A, at(10, 10), line="237", origin=HENRY_A, aimed=left, bearing=240.0)
+    found = approach(row(live(at(10, 10), [waiting]), "B", "237"), POSITIONS)
+    assert found.bus_at == 0
+
+
+def test_approach_skips_stops_without_positions():
+    at_arundel = row(live(at(10, 9), [stop_at(ARUNDEL, at(10, 9))]), "A", "341")
+    found = approach(at_arundel, without(GRAPES, ARUNDEL))
+    assert names(found) == ["The Junction", "Sunlaws Street", "St Marys Road", "Henry Street", "Howard Arms"]
+    assert found.yours == 3
+    # Arundel Street is halfway, in calls, from St Marys Road to Henry Street.
+    assert found.bus_at == pytest.approx(2.5, abs=0.02)
+
+
+def test_approach_needs_your_stop_s_position():
+    assert approach(row(live(at(10, 0)), "A", "341"), without(HENRY_A)) is None
+
+
+def test_approach_with_the_bus_just_past_your_stop():
+    passing = replace(row(live(at(10, 10)), "A", "341"), progress=Progress(6.05, 0.0))
+    assert approach(passing, POSITIONS).bus_at == pytest.approx(5.05)
+    # With no next stop on the strip it counts on past yours, the last one.
+    beyond = approach(replace(passing, progress=Progress(6.5, 0.0)), without(HOWARD))
+    assert beyond.yours == 5 and beyond.bus_at == pytest.approx(5.5)
+
+
+def test_approach_without_a_bus():
+    found = approach(row(live(at(10, 0)), "A", "341"), POSITIONS)
+    assert found.bus_at is None and len(found.stops) == 7
