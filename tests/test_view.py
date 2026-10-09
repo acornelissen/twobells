@@ -251,3 +251,15 @@ def test_without_a_clock_leave_times_stay_clock_times():
     v = view(trains=[train("07:12")], buses=[bus(scheduled="07:20")], now="07:03", walk=walk, wording=SIGN)
     assert v.trains.leave == "Leave by 07:05"
     assert v.buses.rows[0].leave == "leave 07:13"
+
+
+def test_countdown_drops_the_leave_hint_once_a_bus_is_out_of_reach():
+    walk = WalkTimes(bus={"*": 7})  # 07:08 bus: leave by 07:01
+    [row] = view(buses=[bus(scheduled="07:08")], now="07:02", clock="07:02:00", walk=walk).buses.rows
+    assert row.leave is None
+
+
+def test_countdown_still_says_now_during_the_leave_minute():
+    walk = WalkTimes(bus={"*": 7})
+    [row] = view(buses=[bus(scheduled="07:08")], now="07:01", clock="07:01:40", walk=walk).buses.rows
+    assert row.leave == "leave now"

@@ -119,7 +119,8 @@ def _bus_row(dep: Departure, walk: WalkTimes | None, words: Wording, clock: str 
         right, style = dep.scheduled, Style.NORMAL
     leave = leave_time(dep, walk) if walk else None
     if leave and clock:
-        leave = _until(clock, leave)
+        # Past its leave minute the bus can't be reached on foot: say nothing rather than "now".
+        leave = _until(clock, leave) if minutes_between(clock[:5], leave) >= 0 else None
     return Row(dep.service, dep.destination, right, style, f"leave {leave}" if leave else None, dep.stop)
 
 
