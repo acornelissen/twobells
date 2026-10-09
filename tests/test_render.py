@@ -6,6 +6,7 @@ from departureboard.render import (
     left_column_width,
     load_fonts,
     render,
+    row_layout,
 )
 from departureboard.view import BoardView, Row, Section, Style
 
@@ -103,3 +104,33 @@ def test_leave_text_is_drawn_right_of_the_section_label():
 def test_leave_text_is_not_in_accent_colour():
     image = render(board(train_leave="Leave 07:05 (07:12)"), PALETTE)
     assert PALETTE.accent not in colours(image)
+
+
+def test_row_layout_without_leave_has_no_leave_column():
+    layout = row_layout(Row("341", "A: Hyde", "07:20"), load_fonts())
+    assert layout.leave_x is None
+
+
+def test_row_layout_places_leave_between_destination_and_time():
+    fonts = load_fonts()
+    row = Row("341", "A: Hyde", "07:24 +4", Style.ALERT, "leave 07:17")
+    layout = row_layout(row, fonts)
+    assert layout.middle_x + fonts.regular.getlength(layout.middle) < layout.leave_x
+    assert layout.leave_x + fonts.small.getlength("leave 07:17") < layout.right_x
+
+
+def test_long_destination_is_truncated_to_keep_leave_time_whole():
+    fonts = load_fonts()
+    row = Row("394", "B: Stepping Hill Hospital", "07:35 sch", leave="leave 07:28")
+    layout = row_layout(row, fonts)
+    assert layout.middle.endswith("…")
+    assert layout.middle_x + fonts.regular.getlength(layout.middle) < layout.leave_x
+
+
+def test_row_with_leave_draws_more_ink():
+    def ink(image):
+        return sum(n for n, c in image.getcolors() if c != PALETTE.white)
+
+    plain = render(board(bus_rows=[Row("341", "A: Hyde", "07:20")]), PALETTE)
+    with_leave = render(board(bus_rows=[Row("341", "A: Hyde", "07:20", leave="leave 07:14")]), PALETTE)
+    assert ink(with_leave) > ink(plain)

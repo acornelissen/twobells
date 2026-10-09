@@ -61,6 +61,36 @@ def left_column_width(fonts: Fonts) -> float:
     return fonts.bold.getlength("00:00") + 5
 
 
+@dataclass(frozen=True)
+class RowLayout:
+    left: str
+    middle: str
+    middle_x: float
+    leave_x: float | None
+    right_x: float
+
+
+_GAP = 6
+
+
+def row_layout(row: Row, fonts: Fonts) -> RowLayout:
+    """Column positions for a row. The destination gives way so times stay whole."""
+    right_x = WIDTH - _PAD - fonts.bold.getlength(row.right)
+    middle_x = _PAD + left_column_width(fonts)
+    leave_x = None
+    middle_end = right_x - 4
+    if row.leave:
+        leave_x = right_x - _GAP - fonts.small.getlength(row.leave)
+        middle_end = leave_x - _GAP
+    return RowLayout(
+        left=fit_text(row.left, fonts.bold, middle_x - _PAD - 3),
+        middle=fit_text(row.middle, fonts.regular, middle_end - middle_x),
+        middle_x=middle_x,
+        leave_x=leave_x,
+        right_x=right_x,
+    )
+
+
 def fit_text(text: str, font: ImageFont.FreeTypeFont, width: float) -> str:
     if font.getlength(text) <= width:
         return text
@@ -114,13 +144,13 @@ class _Painter:
         elif row.style is Style.ALERT:
             status_ink = self.p.accent
 
-        right_x = WIDTH - _PAD - self.f.bold.getlength(row.right)
-        middle_x = _PAD + left_column_width(self.f)
-        middle = fit_text(row.middle, self.f.regular, right_x - middle_x - 4)
-
-        self.draw.text((_PAD, y + 1), fit_text(row.left, self.f.bold, middle_x - _PAD - 3), font=self.f.bold, fill=ink)
-        self.draw.text((middle_x, y + 1), middle, font=self.f.regular, fill=ink)
-        self.draw.text((right_x, y + 1), row.right, font=self.f.bold, fill=status_ink)
+        layout = row_layout(row, self.f)
+        self.draw.text((_PAD, y + 1), layout.left, font=self.f.bold, fill=ink)
+        self.draw.text((layout.middle_x, y + 1), layout.middle, font=self.f.regular, fill=ink)
+        if layout.leave_x is not None:
+            # Smaller type sits on the same baseline as the row text.
+            self.draw.text((layout.leave_x, y + 3), row.leave, font=self.f.small, fill=ink)
+        self.draw.text((layout.right_x, y + 1), row.right, font=self.f.bold, fill=status_ink)
 
     def rule(self, y: int) -> None:
         self.draw.line((_PAD, y, WIDTH - _PAD, y), fill=self.p.black)
