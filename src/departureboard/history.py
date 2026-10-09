@@ -269,21 +269,8 @@ class History:
         """Outcomes of `route` at `scheduled` over its last `n` final days of
         `day_type`. Late is at least `late_minutes` late and not cancelled; late
         or unknown with no delay known counts as unknown."""
-        _mode(mode)
-        if day_type not in DAY_TYPES:
-            raise ValueError(f"Unknown day type {day_type!r}")
-        outcomes = []
-        with self._lock:
-            cursor = self._db.execute(
-                "SELECT day, status, delay_min FROM outcome"
-                " WHERE mode = ? AND route = ? AND scheduled = ? AND final = 1 ORDER BY day DESC",
-                (mode, route, scheduled),
-            )
-            for day, status, delay_min in cursor:
-                if len(outcomes) >= n:
-                    break
-                if _day_type(date.fromisoformat(day), holidays) == day_type:
-                    outcomes.append((status, delay_min))
+        outcomes = [(status, delay_min) for status, delay_min, _ in
+                    self._last_days(mode, route, scheduled, day_type, n, holidays)]
         late, cancelled, unknown, on_time = [], 0, 0, 0
         for status, delay_min in outcomes:
             if status == "cancelled":
@@ -306,6 +293,43 @@ class History:
             avg_late=sum(late) / len(late) if late else None,
             worst=max(late) if late else None,
         )
+
+    def no_shows(
+        self,
+        mode: str,
+        route: str,
+        scheduled: str,
+        day_type: str,
+        n: int = 10,
+        *,
+        holidays: frozenset[date] = frozenset(),
+    ) -> tuple[int, int]:
+        """(days without a live tracker, days) for `route` at `scheduled` over
+        its last `n` final days of `day_type`. "Without a live tracker" means
+        the last sighting before it left had no live position: for a bus, no
+        vehicle was placed on its journey. It doesn't prove the bus didn't run."""
+        found = self._last_days(mode, route, scheduled, day_type, n, holidays)
+        return sum(1 for _, _, live in found if not live), len(found)
+
+    def _last_days(self, mode: str, route: str, scheduled: str, day_type: str, n: int,
+                   holidays: frozenset[date]) -> list[tuple[str, int | None, bool]]:
+        """(status, delay_min, live) of the last `n` final days of `day_type`, newest first."""
+        _mode(mode)
+        if day_type not in DAY_TYPES:
+            raise ValueError(f"Unknown day type {day_type!r}")
+        found = []
+        with self._lock:
+            cursor = self._db.execute(
+                "SELECT day, status, delay_min, live FROM outcome"
+                " WHERE mode = ? AND route = ? AND scheduled = ? AND final = 1 ORDER BY day DESC",
+                (mode, route, scheduled),
+            )
+            for day, status, delay_min, live in cursor:
+                if len(found) >= n:
+                    break
+                if _day_type(date.fromisoformat(day), holidays) == day_type:
+                    found.append((status, delay_min, bool(live)))
+        return found
 
     def recent(self, mode: str, route: str, scheduled: str, days: int = 90) -> list[dict]:
         """The outcomes of `route` at `scheduled` on its last `days` final days,
@@ -350,3 +374,16 @@ def phrase(stats: Stats, day_type: str) -> str | None:
     if stats.on_time:
         return f"On time {stats.on_time} of {last}"
     return None  # nothing known about any of them
+
+
+def no_show_phrase(without: int, days: int, day_type: str) -> str | None:
+    """A short line for a bus with no tracker yet, e.g. "No tracker on 3 of
+    the last 10 weekdays", or None with fewer than three days to go on or
+    when every one of them had a tracker. Worded as what was seen (no
+    tracker), not as a claim that the bus didn't run."""
+    if days < _ENOUGH or without <= 0:
+        return None
+    last = f"the last {days} {_NOUNS[day_type]}"
+    if without == days:
+        return f"No tracker on any of {last}"
+    return f"No tracker on {without} of {last}"

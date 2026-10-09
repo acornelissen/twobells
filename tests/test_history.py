@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from departureboard.history import FILE_NAME, History, Observed, Stats, day_type, phrase
+from departureboard.history import FILE_NAME, History, Observed, Stats, day_type, no_show_phrase, phrase
 
 FRIDAY = date(2026, 10, 9)
 TRAIN = "train|GLO>MAN|Manchester Piccadilly"
@@ -23,9 +23,9 @@ def _train(scheduled="07:42", day=FRIDAY, status="on_time", delay=0, expected=No
                     "Manchester Piccadilly", "1", reason, "C12345")
 
 
-def _bus(scheduled="07:20", day=FRIDAY, status="on_time", delay=0, expected=None):
+def _bus(scheduled="07:20", day=FRIDAY, status="on_time", delay=0, expected=None, live=True):
     departs_at = expected or _at(scheduled, day)
-    return Observed(BUS, scheduled, day, departs_at, status, delay, True, "341", "Hyde", None, None, "vj-1")
+    return Observed(BUS, scheduled, day, departs_at, status, delay, live, "341", "Hyde", None, None, "vj-1")
 
 
 def _rows(folder):
@@ -325,3 +325,51 @@ def test_recent_is_newest_first_and_limited(history):
     assert [outcome["day"] for outcome in history.recent("train", TRAIN, "07:42", days=3)] == [
         "2026-10-09", "2026-10-08", "2026-10-07",
     ]
+
+
+# Days without a live tracker, for the ghost bus warning.
+
+
+def _record_bus(history, day, live, scheduled="07:20"):
+    """A bus seen a minute before its time, with or without a tracker, then gone."""
+    status, delay = ("on_time", 0) if live else ("unknown", None)
+    history.observe("bus", [_bus(scheduled, day, status, delay, live=live)], _at(scheduled, day) - timedelta(minutes=1))
+    history.observe("bus", [], _at(scheduled, day) + timedelta(minutes=1))
+
+
+def test_no_shows_count_final_days_without_a_live_tracker(history):
+    days = [FRIDAY - timedelta(days=back) for back in range(28)]
+    for day in days:
+        _record_bus(history, day, live=day.weekday() not in (0, 2))  # no tracker Mondays and Wednesdays
+    # The last 10 weekdays hold two Mondays and two Wednesdays.
+    assert history.no_shows("bus", BUS, "07:20", "weekday") == (4, 10)
+    assert history.no_shows("bus", BUS, "07:20", "weekday", n=3) == (1, 3)  # Fri, Thu, Wed
+    assert history.no_shows("bus", BUS, "07:20", "saturday") == (0, 4)
+    assert history.no_shows("bus", BUS, "08:20", "weekday") == (0, 0)
+    assert history.no_shows("train", BUS, "07:20", "weekday") == (0, 0)  # the other mode
+
+
+def test_no_shows_ignore_undecided_days_and_follow_bank_holidays(history):
+    _record_bus(history, FRIDAY, live=False)
+    history.observe("bus", [_bus(day=FRIDAY + timedelta(days=3), status="unknown", delay=None, live=False)],
+                    _at("07:00", FRIDAY + timedelta(days=3)))  # Monday, still on the board
+    assert history.no_shows("bus", BUS, "07:20", "weekday") == (1, 1)
+    _record_bus(history, date(2026, 8, 31), live=False)  # Summer bank holiday
+    holidays = frozenset({date(2026, 8, 31)})
+    assert history.no_shows("bus", BUS, "07:20", "sunday", holidays=holidays) == (1, 1)
+    assert history.no_shows("bus", BUS, "07:20", "weekday", holidays=holidays) == (1, 1)
+    with pytest.raises(ValueError):
+        history.no_shows("bus", BUS, "07:20", "holiday")
+    with pytest.raises(ValueError):
+        history.no_shows("tram", BUS, "07:20", "weekday")
+
+
+@pytest.mark.parametrize("without, days, kind, words", [
+    (3, 10, "weekday", "No tracker on 3 of the last 10 weekdays"),
+    (1, 4, "saturday", "No tracker on 1 of the last 4 Saturdays"),
+    (5, 5, "sunday", "No tracker on any of the last 5 Sundays"),
+    (0, 10, "weekday", None),  # always tracked: nothing to say
+    (2, 2, "weekday", None),  # too few days to say anything
+])
+def test_no_show_phrase(without, days, kind, words):
+    assert no_show_phrase(without, days, kind) == words
