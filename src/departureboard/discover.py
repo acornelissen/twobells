@@ -201,7 +201,7 @@ class _MeteredFile:
         return self._file.write(data)
 
 
-def metered(fetch: timetable.Download, limits: _Limits) -> timetable.Download:
+def _metered(fetch: timetable.Download, limits: _Limits) -> timetable.Download:
     return lambda url, file: fetch(url, _MeteredFile(file, limits))
 
 
@@ -253,7 +253,7 @@ def discover_operators(
     wanted = [atco.encode() for atco in atcos]
     today = today or date.today()
     limits = _Limits(max_total_bytes, max_download_bytes, time_budget, clock, cancelled)
-    fetch = metered(fetch, limits)
+    fetch = _metered(fetch, limits)
     Path(scratch_dir).mkdir(parents=True, exist_ok=True)
 
     datasets: dict[str, Dataset] = {}
@@ -502,7 +502,7 @@ class SetupJob:
         def build(*args, **options):
             try:
                 return timetable.build_schedule(*args, find_datasets=self._find_datasets,
-                                                fetch=metered(self._fetch, limits), naptan=self._naptan, **options)
+                                                fetch=_metered(self._fetch, limits), naptan=self._naptan, **options)
             except Exception as error:  # noqa: BLE001 - refresh keeps the old one; the job says why
                 failures.append(error)
                 raise
