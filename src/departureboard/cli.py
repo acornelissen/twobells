@@ -251,7 +251,7 @@ def _route(args) -> int:
                 print("Missing BODS_API_KEY; set it in secrets.env", file=sys.stderr)
                 return 2
             documents = []
-            for url in routesetup.dataset_urls(key, args.noc):
+            for url in routesetup.dataset_urls(key, args.noc, args.line):
                 print(f"Downloading {url}", file=sys.stderr)
                 blob = get_bytes(url, routesetup.MAX_DOWNLOAD_BYTES, timeout=300)
                 documents.extend(routesetup.timetable_documents(blob))

@@ -150,8 +150,9 @@ def find_patterns(documents: Iterable[bytes], line: str) -> list[Pattern]:
     return [p for doc in documents if tag in doc for p in patterns(doc, line)]
 
 
-def dataset_urls(api_key: str, noc: str, http_get: HttpGetBytes = get_bytes) -> list[str]:
-    """Download links for an operator's published timetable data sets."""
+def dataset_urls(api_key: str, noc: str, line: str | None = None, http_get: HttpGetBytes = get_bytes) -> list[str]:
+    """Download links for an operator's published timetable data sets; with
+    `line`, only those that list it (BODS gives lines as "341" or "341|...")."""
     query = urlencode({"noc": noc, "status": "published", "limit": 100, "api_key": api_key})
     try:
         body = http_get(f"{DEFAULT_BASE_URL}/dataset/?{query}", 5_000_000)
@@ -159,7 +160,11 @@ def dataset_urls(api_key: str, noc: str, http_get: HttpGetBytes = get_bytes) -> 
         raise RouteSetupError(redact_key(str(error))) from None
     payload = json.loads(body)
     results = payload.get("results", [payload]) if isinstance(payload, dict) else payload
-    return [r["url"] for r in results if r.get("url")]
+    def has_line(result: dict) -> bool:
+        listed = result.get("lines")
+        return line is None or not listed or any(str(entry).split("|")[0] == line for entry in listed)
+
+    return [r["url"] for r in results if r.get("url") and has_line(r)]
 
 
 def naptan_stops(atcos: Iterable[str], http_get: HttpGetBytes = get_bytes) -> dict[str, tuple[str, float, float]]:

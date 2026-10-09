@@ -147,6 +147,15 @@ def test_dataset_search_lists_download_urls_and_hides_the_key():
         return json.dumps({"results": [{"url": "https://bods/one.zip"}, {"url": ""}]}).encode()
 
     assert dataset_urls("secret", "BNML", http_get=fake_get) == ["https://bods/one.zip"]
+
+    def listing(url, limit):
+        return json.dumps({"results": [
+            {"url": "https://bods/a.zip", "lines": ["237", "350"]},
+            {"url": "https://bods/b.zip", "lines": ["341|Glossop - Hyde", "343"]},
+            {"url": "https://bods/c.zip"},  # no line list: can't tell, so keep it
+        ]}).encode()
+
+    assert dataset_urls("k", "BNML", "341", http_get=listing) == ["https://bods/b.zip", "https://bods/c.zip"]
     assert "noc=BNML" in calls[0] and "status=published" in calls[0]
 
     def failing(url, limit):
