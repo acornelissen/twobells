@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SYNTHETIC: written by hand for the tests, not captured from a live feed.
+  Shaped after National Rail's Knowledgebase Incidents XML (version 5) as
+  documented: PtIncident elements with IncidentNumber, ValidityPeriod,
+  Planned, Summary, Description (HTML), InfoLinks, Affects (Operators,
+  RoutesAffected), ClearedIncident and IncidentPriority. The names, numbers
+  and times are made up; check against a real capture once the RDM feed is
+  subscribed.
+-->
+<Incidents xmlns="http://nationalrail.co.uk/xml/incident" xmlns:com="http://nationalrail.co.uk/xml/common" version="5.0">
+  <PtIncident>
+    <CreationTime>2026-09-20T10:00:00+01:00</CreationTime>
+    <IncidentNumber>A1B2C3D4E5F60001</IncidentNumber>
+    <Version>20260920100000</Version>
+    <ValidityPeriod>
+      <com:StartTime>2026-10-14T23:30:00+01:00</com:StartTime>
+      <com:EndTime>2026-10-15T23:59:00+01:00</com:EndTime>
+    </ValidityPeriod>
+    <Planned>true</Planned>
+    <Summary>Engineering works between Manchester Piccadilly and Glossop / Hadfield</Summary>
+    <Description><![CDATA[<p>Buses replace trains between <strong>Guide Bridge</strong> and Hadfield.</p><p>Allow an extra 30 minutes.</p>]]></Description>
+    <InfoLinks>
+      <InfoLink>
+        <Uri>https://www.nationalrail.co.uk/service-disruptions/glossop-20261015/</Uri>
+        <Label>Incident detail page</Label>
+      </InfoLink>
+    </InfoLinks>
+    <Affects>
+      <Operators>
+        <AffectedOperator>
+          <OperatorRef>NT</OperatorRef>
+          <OperatorName>Northern</OperatorName>
+        </AffectedOperator>
+      </Operators>
+      <RoutesAffected><![CDATA[<p>between Guide Bridge and Glossop / Hadfield</p>]]></RoutesAffected>
+    </Affects>
+    <ClearedIncident>false</ClearedIncident>
+    <IncidentPriority>2</IncidentPriority>
+  </PtIncident>
+  <PtIncident>
+    <CreationTime>2026-10-09T21:40:00+01:00</CreationTime>
+    <IncidentNumber>A1B2C3D4E5F60002</IncidentNumber>
+    <ValidityPeriod>
+      <com:StartTime>2026-10-09T21:40:00+01:00</com:StartTime>
+    </ValidityPeriod>
+    <Planned>false</Planned>
+    <Summary>Disruption at Dinting</Summary>
+    <Description><![CDATA[<p>A fault with the signalling system at DGT means trains may be delayed.</p><script>alert("no")</script>]]></Description>
+    <InfoLinks>
+      <InfoLink>
+        <Uri>http://www.nationalrail.co.uk/plain-http-link/</Uri>
+      </InfoLink>
+    </InfoLinks>
+    <Affects>
+      <Operators>
+        <AffectedOperator>
+          <OperatorRef>NT</OperatorRef>
+          <OperatorName>Northern</OperatorName>
+        </AffectedOperator>
+      </Operators>
+      <RoutesAffected><![CDATA[<p>through Dinting</p>]]></RoutesAffected>
+    </Affects>
+    <ClearedIncident>false</ClearedIncident>
+    <IncidentPriority>1</IncidentPriority>
+  </PtIncident>
+  <PtIncident>
+    <IncidentNumber>A1B2C3D4E5F60003</IncidentNumber>
+    <ValidityPeriod>
+      <com:StartTime>2026-10-10T00:00:00+01:00</com:StartTime>
+      <com:EndTime>2026-10-11T23:59:00+01:00</com:EndTime>
+    </ValidityPeriod>
+    <Planned>true</Planned>
+    <Summary>Engineering works at Manchester Piccadilly</Summary>
+    <Description>TransPennine Express trains will not call at Manchester Piccadilly.</Description>
+    <Affects>
+      <Operators>
+        <AffectedOperator>
+          <OperatorRef>TP</OperatorRef>
+          <OperatorName>TransPennine Express</OperatorName>
+        </AffectedOperator>
+      </Operators>
+      <RoutesAffected>between Manchester Piccadilly and Huddersfield</RoutesAffected>
+    </Affects>
+    <ClearedIncident>false</ClearedIncident>
+    <IncidentPriority>2</IncidentPriority>
+  </PtIncident>
+  <PtIncident>
+    <IncidentNumber>A1B2C3D4E5F60004</IncidentNumber>
+    <ValidityPeriod>
+      <com:StartTime>2026-10-10T00:00:00+01:00</com:StartTime>
+      <com:EndTime>2026-10-11T23:59:00+01:00</com:EndTime>
+    </ValidityPeriod>
+    <Planned>true</Planned>
+    <Summary>Engineering works between Leeds and York</Summary>
+    <Description>Buses replace trains.</Description>
+    <Affects>
+      <Operators>
+        <AffectedOperator>
+          <OperatorRef>NT</OperatorRef>
+          <OperatorName>Northern</OperatorName>
+        </AffectedOperator>
+      </Operators>
+      <RoutesAffected>between Leeds and York</RoutesAffected>
+    </Affects>
+    <ClearedIncident>false</ClearedIncident>
+    <IncidentPriority>3</IncidentPriority>
+  </PtIncident>
+  <PtIncident>
+    <IncidentNumber>A1B2C3D4E5F60005</IncidentNumber>
+    <ValidityPeriod>
+      <com:StartTime>2026-10-09T06:00:00+01:00</com:StartTime>
+      <com:EndTime>2026-10-09T20:00:00+01:00</com:EndTime>
+    </ValidityPeriod>
+    <Planned>false</Planned>
+    <Summary>Earlier disruption at Glossop</Summary>
+    <Description>All lines are now open.</Description>
+    <Affects>
+      <Operators>
+        <AffectedOperator>
+          <OperatorRef>NT</OperatorRef>
+        </AffectedOperator>
+      </Operators>
+      <RoutesAffected>at Glossop</RoutesAffected>
+    </Affects>
+    <ClearedIncident>true</ClearedIncident>
+    <IncidentPriority>2</IncidentPriority>
+  </PtIncident>
+  <PtIncident>
+    <IncidentNumber>A1B2C3D4E5F60006</IncidentNumber>
+    <ValidityPeriod>
+      <com:StartTime>2026-11-07T23:30:00+00:00</com:StartTime>
+      <com:EndTime>2026-11-08T23:59:00+00:00</com:EndTime>
+    </ValidityPeriod>
+    <Planned>true</Planned>
+    <Summary>Engineering works between Manchester Piccadilly and Glossop</Summary>
+    <Description>Buses replace trains in November.</Description>
+    <Affects>
+      <Operators>
+        <AffectedOperator>
+          <OperatorRef>NT</OperatorRef>
+        </AffectedOperator>
+      </Operators>
+      <RoutesAffected>between Manchester Piccadilly and Glossop</RoutesAffected>
+    </Affects>
+    <ClearedIncident>false</ClearedIncident>
+    <IncidentPriority>2</IncidentPriority>
+  </PtIncident>
+</Incidents>
