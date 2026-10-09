@@ -79,6 +79,10 @@ sudo systemctl enable --now departureboard.timer
 journalctl -u departureboard -f
 ```
 
+To update an installed board later, copy the repo to the Pi and run `sudo ./deploy/update.sh` from it (add `--config FILE` or `--secrets FILE` to replace those too). It installs the new code, refreshes the systemd units and runs the board once.
+
+An original Inky pHAT (before 2019, 212x104) has no EEPROM to detect it by: set `display = "inky-phat-v1"` in `config.toml`.
+
 If the display errors about chip select, add `dtoverlay=spi0-0cs` to `/boot/firmware/config.txt` and reboot.
 
 ### Waveshare 10.85" e-Paper (G)

@@ -12,6 +12,7 @@ theme = "sign"
 # Defaults to the theme's colour. Only reinforces meaning; text always carries it.
 # accent = "yellow"
 # "inky": Pimoroni Inky pHAT (or any Inky the library detects).
+# "inky-phat-v1": the original Inky pHAT (before 2019, 212x104), which has no EEPROM.
 # "waveshare-10in85g": Waveshare 10.85" e-Paper (G), 1360x480. Needs dtoverlay=spi0-0cs.
 # "hdmi-1280x400": Waveshare 7.9" HDMI screen on its side. Runs as a service, not a timer.
 display = "inky"
