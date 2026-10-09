@@ -492,3 +492,19 @@ def test_shape_checker_rejects_wrong_shapes():
     snapshot["version"] = True
     with pytest.raises(AssertionError, match="version"):
         check(snapshot, SNAPSHOT)
+
+
+# --- Disruptions panel ---
+
+
+def test_feed_links_leave_without_a_referrer_or_an_opener():
+    text = (STATIC / "disruptions.js").read_text(encoding="utf-8")
+    assert 'rel: "noopener noreferrer"' in text
+    assert "target:" not in text  # links open in the same tab, as links do
+    # Only links the server already vetted are used, and only https ones.
+    assert 'link.startsWith("https://")' in text
+
+
+def test_the_disruptions_panel_is_on_the_page():
+    ids = {attrs.get("id") for _, attrs in _page().elements}
+    assert {"disruptions", "disruptions-heading", "disruptions-status", "disruptions-body"} <= ids

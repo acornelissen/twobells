@@ -239,6 +239,43 @@ main:focus { outline: none; }
 .messages h2 { color: var(--bad-fg); font-size: 1.125rem; }
 .messages ul { margin: 0; padding-left: 1.25rem; }
 
+/* --- Disruptions: roadworks and engineering works --- */
+
+.disruptions {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 0.375rem solid var(--late-fg);
+  border-radius: var(--radius);
+}
+.disruptions h2 { font-size: 1.125rem; }
+.disruptions h3 { margin: 0.75rem 0 0.25rem; font-size: 1rem; color: var(--muted); }
+.dis-list { margin: 0; padding: 0; list-style: none; }
+.dis-item { padding: 0.5rem 0; border-top: 1px solid var(--line); }
+.dis-item:first-child { border-top: 0; }
+.dis-item:focus { outline: 3px solid var(--focus); outline-offset: 2px; }
+.dis-title { margin: 0 0 0.25rem; font-size: 1rem; }
+.dis-mode { font-weight: 800; }
+.dis-when { margin: 0.25rem 0; font-weight: 600; }
+.dis-facts { margin: 0.25rem 0; color: var(--muted); font-size: 0.9375rem; }
+.dis-summary, .dis-link { margin: 0.25rem 0; }
+.dis-mark {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  width: fit-content;
+  min-height: 1.75rem;
+  margin-top: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--late-fg);
+  background: var(--late-bg);
+  text-underline-offset: 0.15em;
+}
+
 /* --- Sections --- */
 
 .sections { display: grid; gap: 1rem; }

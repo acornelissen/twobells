@@ -12,6 +12,7 @@ import { isOn, renderLeave, tickAlerts, toggle } from "./alerts.js";
 import { openTrain, refreshTrain, setUpTrain } from "./train.js";
 import { openHistory, setUpHistory } from "./history.js";
 import { openMap, refreshMap, setUpMap } from "./map.js";
+import { markBusRows, renderDisruptions } from "./disruptions.js";
 
 let snapshot = null;
 let rowsById = new Map(); // id -> { row, mode }
@@ -80,6 +81,7 @@ function render(data) {
   const buses = attempt("buses", () => renderBuses(data, alerts), []);
   attempt("weather", () => renderWeather(data));
   rowsById = indexRows(trains, buses);
+  attempt("disruptions", () => { renderDisruptions(data); markBusRows(data, rowsById); });
   refocus(key);
   attempt("announcements", () => noteSnapshot(data, rowsById));
   attempt("train dialog", () => refreshTrain(rowsById, station()));
