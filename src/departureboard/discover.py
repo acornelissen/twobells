@@ -17,14 +17,20 @@ documents' own codes are kept beside them, to show.
 
 from __future__ import annotations
 
+import copy
+import fcntl
 import json
 import logging
+import math
+import os
 import re
+import sys
+import threading
 import time
 from collections import defaultdict
 from contextlib import closing
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import BinaryIO, Callable, Iterable, Mapping
 from urllib.parse import urlencode, urlsplit
@@ -33,7 +39,9 @@ from . import routesetup, timetable
 from .bods import DEFAULT_BASE_URL, redact_key
 from .http import get_bytes
 from .routesetup import Pattern
+from .setup import in_uk
 from .status import safe_message
+from .walk import DEFAULT_STOP
 
 log = logging.getLogger(__name__)
 
@@ -321,3 +329,242 @@ def discover_operators(
         notes=notes,
         patterns=dict(patterns),
     )
+
+
+# The setup job: the search, then the timetable, then route strips, in a
+# thread, so a web page can start it and ask how it is going.
+
+LOCK_NAME = "setup-job.lock"  # in the state folder; held while a job runs
+STEP_DISCOVER = "Finding the bus companies that serve your stops"
+STEP_TIMETABLE = "Building the bus timetable"
+STEP_ROUTES = "Building route strips"
+_NAME_LIMIT = 80
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+class SetupBusy(Exception):
+    """Another setup job is running for this state folder."""
+
+
+def _local_now() -> datetime:
+    return datetime.now().replace(microsecond=0)
+
+
+class SetupJob:
+    """Finds the operators serving `stops`, builds their timetable into the
+    state `folder` (so the board can use it as soon as the settings are
+    saved) and, with `routes`, a route strip for each line at your stops.
+
+    start() runs it in a thread; status() says how it is going; cancel()
+    stops it at the next chunk of a download. One job at a time per state
+    folder: a lock file there, held while the job runs and let go by the
+    system if the process dies. It writes no settings: its result holds the
+    [bus] settings to add, for the caller to show and save."""
+
+    def __init__(
+        self,
+        folder: Path | str,
+        stops: Mapping[str, str],
+        api_key: str,
+        *,
+        routes: bool = False,
+        walk_minutes: Mapping[str, int] | None = None,
+        now: Callable[[], datetime] = _local_now,
+        find: FindDatasets = list_datasets,
+        find_datasets: timetable.FindDatasets = routesetup.dataset_urls,
+        fetch: timetable.Download = timetable.download,
+        naptan: timetable.Naptan = routesetup.naptan_stops,
+        discover_options: Mapping | None = None,
+    ) -> None:
+        self._folder = Path(folder)
+        self._stops = dict(stops)
+        self._api_key = api_key
+        self._routes = routes
+        self._walk = dict(walk_minutes or {})
+        self._now = now
+        self._find = find
+        self._find_datasets = find_datasets
+        self._fetch = fetch
+        self._naptan = naptan
+        self._options = dict(discover_options or {})
+        self._cancel = threading.Event()
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self._lock_fd: int | None = None
+        self._status = {"state": "queued", "step": "", "done": 0, "total": 0, "message": "", "result": None}
+
+    # Asking and telling.
+
+    def status(self) -> dict:
+        """{state: queued, running, done or failed; step; done; total;
+        message; result}, a copy safe to keep."""
+        with self._lock:
+            return copy.deepcopy(self._status)
+
+    def _set(self, **changes) -> None:
+        with self._lock:
+            self._status.update(changes)
+
+    def cancel(self) -> None:
+        self._cancel.set()
+        with self._lock:
+            if self._status["state"] == "queued":
+                self._status.update(state="failed", message="Cancelled")
+
+    def wait(self, timeout: float | None = None) -> bool:
+        """Whether the job has finished, waiting up to `timeout` seconds."""
+        thread = self._thread
+        if thread is None:
+            return self.status()["state"] != "queued"
+        thread.join(timeout)
+        return not thread.is_alive()
+
+    def start(self) -> None:
+        """Run the job in a thread. SetupBusy if another holds the folder."""
+        with self._lock:
+            if self._thread is not None or self._status["state"] != "queued":
+                raise RuntimeError("This setup job has already been started")
+            self._take_lock()
+            self._status.update(state="running", step=STEP_DISCOVER)
+            self._thread = threading.Thread(target=self._run, name="setup-job", daemon=True)
+        self._thread.start()
+
+    def _take_lock(self) -> None:
+        self._folder.mkdir(parents=True, exist_ok=True)
+        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(self._folder / LOCK_NAME, flags, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(fd)
+            raise SetupBusy("A setup search is already running for this board") from None
+        self._lock_fd = fd
+
+    def _let_go(self) -> None:
+        if self._lock_fd is not None:
+            fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
+            os.close(self._lock_fd)
+            self._lock_fd = None
+
+    # Doing.
+
+    def _run(self) -> None:
+        try:
+            result, message = self._steps()
+        except Cancelled:
+            self._set(state="failed", message="Cancelled")
+        except DiscoveryError as error:
+            self._set(state="failed", message=safe_message(error))
+        except Exception as error:  # noqa: BLE001 - shown on the page, not a traceback
+            log.warning("Setup job failed: %s", safe_message(error))
+            self._set(state="failed", message=safe_message(error))
+        else:
+            self._set(state="done", message=message, result=result)
+        finally:
+            self._let_go()
+
+    def _steps(self) -> tuple[dict, str]:
+        found = discover_operators(
+            self._stops, self._api_key, self._folder, find=self._find, fetch=self._fetch,
+            progress=lambda done, total: self._set(done=done, total=total),
+            cancelled=self._cancel.is_set, with_patterns=self._routes, today=self._now().date(), **self._options,
+        )
+        self._set(step=STEP_TIMETABLE, done=0, total=1)
+        schedule = self._timetable(found.operators)
+        self._set(done=1)
+        notes = list(found.notes)
+        bus: dict = {"source": "bods", "operators": list(found.operators)}
+        if self._routes:
+            routes = self._strips(found, notes)
+            if routes:
+                bus["routes"] = routes
+        result = {
+            "fragment": {"bus": bus},
+            "lines": found.lines,
+            "document_operators": found.document_operators,
+            "stop_lines": found.stop_lines,
+            "datasets_scanned": found.datasets_scanned,
+            "journeys_found": found.journeys_found,
+            "timetable_journeys": len(schedule.journeys),
+            "notes": notes,
+        }
+        companies = "bus company" if len(found.operators) == 1 else "bus companies"
+        message = (f"Found {len(found.operators)} {companies} ({', '.join(found.operators)}) and built a "
+                   f"timetable of {len(schedule.journeys)} journeys")
+        return result, message
+
+    def _timetable(self, operators: list[str]):
+        """Build the timetable now, as `departureboard timetable --force` does."""
+        failures: list[Exception] = []
+        limits = _Limits(sys.maxsize, routesetup.MAX_DOWNLOAD_BYTES, math.inf, time.monotonic, self._cancel.is_set)
+
+        def build(*args, **options):
+            try:
+                return timetable.build_schedule(*args, find_datasets=self._find_datasets,
+                                                fetch=metered(self._fetch, limits), naptan=self._naptan, **options)
+            except Exception as error:  # noqa: BLE001 - refresh keeps the old one; the job says why
+                failures.append(error)
+                raise
+
+        now = self._now()
+        schedule = timetable.refresh(self._folder, self._stops, operators, now, self._api_key,
+                                     force=True, build=build)
+        if failures:
+            if isinstance(failures[0], Cancelled):
+                raise failures[0]
+            raise DiscoveryError(f"The bus timetable couldn't be built: {safe_message(failures[0])}")
+        if schedule is None or timetable.due(schedule, self._stops, now, operators):
+            raise DiscoveryError("The bus timetable was built but couldn't be saved")  # refresh logged why
+        return schedule
+
+    def _strips(self, found: Discovery, notes: list[str]) -> dict:
+        """[bus.routes] for each line at your stops: the stops before yours on
+        its busiest pattern, back far enough for your walk and a few minutes."""
+        lines = sorted({line for found_lines in found.stop_lines.values() for line in found_lines}, key=line_order)
+        self._set(step=STEP_ROUTES, done=0, total=len(lines))
+        chosen: dict[str, tuple[str, list[str]]] = {}
+        for done, line in enumerate(lines, 1):
+            if self._cancel.is_set():
+                raise Cancelled("Cancelled")
+            for label, atco in self._stops.items():
+                if line not in found.stop_lines.get(label, ()):
+                    continue
+                minutes = self._walk.get(label, self._walk.get(DEFAULT_STOP, 0))
+                try:
+                    atcos, _, _ = routesetup.strip_before(found.patterns.get(line, []), atco, minutes)
+                except routesetup.RouteSetupError:
+                    continue  # it only starts here; try your next stop
+                if len(atcos) >= 2:
+                    chosen[line] = (label, atcos)
+                    break
+            else:
+                notes.append(f"No route strip for line {line}: no bus reaches your stops from an earlier one")
+            self._set(done=done)
+        if not chosen:
+            return {}
+        try:
+            places = self._naptan(sorted({atco for _, atcos in chosen.values() for atco in atcos}))
+        except Exception as error:  # noqa: BLE001 - route strips are optional
+            notes.append(f"No route strips: NaPTAN failed: {safe_message(error)}")
+            return {}
+        routes = {}
+        for line, (label, atcos) in chosen.items():
+            stops = [_strip_stop(places.get(atco)) for atco in atcos]
+            if None in stops:
+                notes.append(f"No route strip for line {line}: NaPTAN has no position for some of its stops")
+                continue
+            routes[line] = {"stop": label, "stops": stops}
+        return routes
+
+
+def _strip_stop(place) -> dict | None:
+    """A route strip stop from NaPTAN's (name, lat, lon), if it is usable."""
+    try:
+        name, lat, lon = place
+        lat, lon = float(lat), float(lon)
+    except (TypeError, ValueError):
+        return None
+    name = " ".join(_CONTROL.sub(" ", str(name)).split())[:_NAME_LIMIT]
+    if not name or not (math.isfinite(lat) and math.isfinite(lon)) or not in_uk(lat, lon):
+        return None
+    return {"name": name, "lat": round(lat, 6), "lon": round(lon, 6)}

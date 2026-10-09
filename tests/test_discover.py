@@ -1,5 +1,7 @@
 import io
 import json
+import stat
+import threading
 import zipfile
 from datetime import date, datetime
 from pathlib import Path
@@ -12,6 +14,8 @@ from departureboard.discover import (
     Cancelled,
     Dataset,
     DiscoveryError,
+    SetupBusy,
+    SetupJob,
     discover_operators,
     list_datasets,
 )
@@ -333,3 +337,210 @@ def test_list_refuses_answers_that_are_not_a_list_of_data_sets(body):
 def test_list_refuses_an_area_that_is_not_a_code():
     with pytest.raises(DiscoveryError, match="admin area"):
         list_datasets(KEY, "10&x=1", http_get=lambda url, limit: b"{}")
+
+
+# The setup job.
+
+SUMMER_NOW = datetime(2026, 8, 1, 3, 0)
+
+
+def _naptan(atcos):
+    return {atco: (f"Stop {atco}", 53.44, -1.95) for atco in atcos}
+
+
+class Gate:
+    """Holds a download until the test lets it go."""
+
+    def __init__(self, fetch):
+        self._fetch = fetch
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def __call__(self, url, file):
+        self.entered.set()
+        assert self.release.wait(5)
+        self._fetch(url, file)
+
+
+def _find_by_noc(bods):
+    def find(api_key, noc, line=None):
+        # As BODS's ?noc= search: the data sets filed under that code.
+        pages = [bods.lists["100"], bods.lists["180"]]
+        return sorted({r["url"] for page in pages for r in page["results"] if noc in r["noc"]})
+
+    return find
+
+
+def _job(bods, folder=None, **options):
+    options.setdefault("fetch", bods.fetch)
+    options.setdefault("find_datasets", _find_by_noc(bods))
+    options.setdefault("naptan", _naptan)
+    return SetupJob(folder or bods.scratch, STOPS, KEY, now=lambda: SUMMER_NOW, find=bods.find, **options)
+
+
+def _finish(job):
+    assert job.wait(5)
+    return job.status()
+
+
+def test_the_job_finds_operators_builds_the_timetable_and_returns_the_settings(bods):
+    job = _job(bods)
+    assert job.status() == {"state": "queued", "step": "", "done": 0, "total": 0, "message": "", "result": None}
+    job.start()
+    status = _finish(job)
+    assert status["state"] == "done", status["message"]
+    journeys = status["result"]["timetable_journeys"]
+    assert status["message"] == f"Found 2 bus companies (BNML, HIPK) and built a timetable of {journeys} journeys"
+    result = status["result"]
+    assert result["fragment"] == {"bus": {"source": "bods", "operators": ["BNML", "HIPK"]}}
+    assert result["lines"] == {"BNML": ["237", "341"], "HIPK": ["61"]}
+    assert result["document_operators"] == {"BNML": ["BNGN"]}
+    assert result["stop_lines"] == {"A": ["237", "341"], "B": ["61", "237"]}
+    # The timetable is saved for exactly these stops and operators, so the board
+    # uses it as soon as the settings are saved.
+    saved = timetable.load(bods.scratch)
+    assert len(saved.journeys) == journeys > 0
+    assert saved.operators == ("BNML", "HIPK") and saved.stops == STOPS
+    assert timetable.due(saved, STOPS, SUMMER_NOW, ["BNML", "HIPK"]) is None
+    assert sorted(p.name for p in bods.scratch.iterdir()) == sorted([discover.LOCK_NAME, timetable.FILE_NAME])
+
+
+def test_the_job_reports_its_progress(bods):
+    gate = Gate(bods.fetch)
+    job = _job(bods, fetch=gate)
+    job.start()
+    assert gate.entered.wait(5)
+    status = job.status()
+    assert (status["state"], status["step"], status["done"], status["total"]) == (
+        "running", discover.STEP_DISCOVER, 0, 3)
+    gate.release.set()
+    assert _finish(job)["state"] == "done"
+
+
+def test_the_job_builds_route_strips_when_asked(bods):
+    job = _job(bods, routes=True, walk_minutes={"A": 3, "*": 2})
+    job.start()
+    status = _finish(job)
+    assert status["state"] == "done", status["message"]
+    routes = status["result"]["fragment"]["bus"]["routes"]
+    assert set(routes) == {"61", "237", "341"}
+    for route in routes.values():
+        stop = STOPS[route["stop"]]
+        assert 2 <= len(route["stops"]) <= 8
+        assert route["stops"][-1] == {"name": f"Stop {stop}", "lat": 53.44, "lon": -1.95}  # yours last
+    assert routes["61"]["stop"] == "B" and routes["341"]["stop"] == "A"
+
+
+def test_route_strips_are_skipped_if_naptan_fails(bods):
+    def failing(atcos):
+        raise OSError(f"https://naptan.example/?api_key={KEY} down")
+
+    job = _job(bods, routes=True, naptan=failing)
+    job.start()
+    status = _finish(job)
+    assert status["state"] == "done"
+    assert "routes" not in status["result"]["fragment"]["bus"]
+    assert any("NaPTAN failed" in note for note in status["result"]["notes"])
+    assert KEY not in json.dumps(status)
+
+
+@pytest.mark.parametrize("place", [None, ("", 53.4, -1.9), ("X", float("nan"), -1.9), ("X", 40.0, -1.9),
+                                   ("X", "north", -1.9), ("X", 53.4)])
+def test_a_route_strip_stop_needs_a_name_and_a_uk_position(place):
+    assert discover._strip_stop(place) is None
+
+
+def test_a_route_strip_stop_name_is_cleaned():
+    assert discover._strip_stop(("Henry\nStreet\x7f  (A)", "53.4438412", -1.949)) == {
+        "name": "Henry Street (A)", "lat": 53.443841, "lon": -1.949}
+
+
+def test_a_failed_search_fails_the_job_and_lets_go_of_the_folder(bods):
+    def failing(api_key, area, at_most):
+        raise DiscoveryError("BODS data set list failed: HTTP Error 403: Forbidden")
+
+    job = SetupJob(bods.scratch, STOPS, KEY, find=failing)
+    job.start()
+    status = _finish(job)
+    assert status["state"] == "failed"
+    assert status["message"] == "BODS data set list failed: HTTP Error 403: Forbidden"
+    assert status["result"] is None
+    again = _job(bods)
+    again.start()
+    assert _finish(again)["state"] == "done"
+
+
+def test_a_failed_timetable_fails_the_job_without_showing_the_key(bods):
+    def failing(api_key, noc, line=None):
+        raise OSError(f"failed https://data.bus-data.dft.gov.uk/api/v1/dataset/?api_key={api_key}")
+
+    job = _job(bods, find_datasets=failing)
+    job.start()
+    status = _finish(job)
+    assert status["state"] == "failed"
+    assert status["message"].startswith("The bus timetable couldn't be built")
+    assert KEY not in json.dumps(status)
+    assert timetable.load(bods.scratch) is None
+
+
+def test_cancelling_a_running_job(bods):
+    gate = Gate(bods.fetch)
+    job = _job(bods, fetch=gate)
+    job.start()
+    assert gate.entered.wait(5)
+    job.cancel()
+    gate.release.set()
+    status = _finish(job)
+    assert (status["state"], status["message"]) == ("failed", "Cancelled")
+    assert [p.name for p in bods.scratch.iterdir()] == [discover.LOCK_NAME]  # no download left behind
+
+
+def test_cancelling_while_the_timetable_builds(bods):
+    calls = []
+
+    def fetch(url, file):
+        calls.append(url)
+        if len(calls) == 4:  # the timetable's first download, after the search's three
+            job.cancel()
+        bods.fetch(url, file)
+
+    job = _job(bods, fetch=fetch)
+    job.start()
+    assert _finish(job)["message"] == "Cancelled"
+    assert timetable.load(bods.scratch) is None
+
+
+def test_cancelling_before_starting(bods):
+    job = _job(bods)
+    job.cancel()
+    assert job.status()["state"] == "failed"
+    assert job.wait(0)
+    with pytest.raises(RuntimeError):
+        job.start()
+
+
+def test_one_job_at_a_time_per_state_folder(bods, tmp_path):
+    gate = Gate(bods.fetch)
+    first = _job(bods, fetch=gate)
+    first.start()
+    assert gate.entered.wait(5)
+    second = _job(bods)
+    with pytest.raises(SetupBusy):
+        second.start()
+    assert second.status()["state"] == "queued"
+    elsewhere = _job(bods, folder=tmp_path / "other")
+    elsewhere.start()  # another board's folder is its own
+    assert _finish(elsewhere)["state"] == "done"
+    gate.release.set()
+    assert _finish(first)["state"] == "done"
+    second.start()  # free again once the first is done
+    assert _finish(second)["state"] == "done"
+    with pytest.raises(RuntimeError):
+        second.start()
+
+
+def test_the_lock_file_is_private(bods):
+    job = _job(bods)
+    job.start()
+    _finish(job)
+    assert stat.S_IMODE((bods.scratch / discover.LOCK_NAME).stat().st_mode) == 0o600
