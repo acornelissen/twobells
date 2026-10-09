@@ -90,6 +90,15 @@ class PasswordStore:
             json.dump(record, handle)
         os.replace(tmp, self._path)
 
+    def stamp(self) -> str | None:
+        """What identifies the saved password: its salt, new with every change.
+        None when there is none or it can't be read."""
+        try:
+            salt = json.loads(self._path.read_text()).get("salt")
+        except (OSError, ValueError, AttributeError):
+            return None
+        return salt if isinstance(salt, str) else None
+
     def check(self, password: str) -> bool:
         """Whether `password` is the saved one. False when none is saved or the
         file is unreadable."""
@@ -112,6 +121,7 @@ class PasswordStore:
 class Session:
     expires: float
     csrf: str  # the form token: every change made in this session must carry it
+    password: str | None = None  # PasswordStore.stamp() when it was created
 
 
 @dataclass
@@ -126,6 +136,9 @@ class Sessions:
     clock: Callable[[], float] = time.time
     cookie_name: str = "session"
     cookie_path: str = "/"
+    # With the password store, a password set elsewhere (the command line runs
+    # in its own process) ends every session made under the old one.
+    password: "PasswordStore | None" = None
     _live: dict[str, Session] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -145,7 +158,8 @@ class Sessions:
             while len(self._live) >= MAX_SESSIONS:
                 self._live.pop(min(self._live, key=lambda t: self._live[t].expires))
             token = secrets.token_urlsafe(32)
-            session = Session(now + SESSION_SECONDS, secrets.token_urlsafe(32))
+            stamp = self.password.stamp() if self.password is not None else None
+            session = Session(now + SESSION_SECONDS, secrets.token_urlsafe(32), stamp)
             self._live[token] = session
             return token, session
 
@@ -153,7 +167,10 @@ class Sessions:
         """The live session for `token`, or None if there isn't one or it has expired."""
         with self._lock:
             session = self._live.get(token or "")
-            if session is None or session.expires <= self.clock():
+            changed = (
+                session is not None and self.password is not None and session.password != self.password.stamp()
+            )
+            if session is None or changed or session.expires <= self.clock():
                 self._live.pop(token or "", None)
                 return None
             return session

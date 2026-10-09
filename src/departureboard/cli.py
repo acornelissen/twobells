@@ -425,7 +425,7 @@ def _web(args) -> int:
     stylesheet = files("departureboard").joinpath("web.css").read_bytes()
     # Codes for a forgotten password, or the first claim, show on the board.
     codes = auth.ResetCodes(folder)
-    handler = web.make_handler(form, password, auth.Sessions(), auth.Lockout(), web.shell, stylesheet, codes)
+    handler = web.make_handler(form, password, auth.Sessions(password=password), auth.Lockout(), web.shell, stylesheet, codes)
     try:
         server = web.make_server(handler, args.host, args.port)
     except OSError as error:

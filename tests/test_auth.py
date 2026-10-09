@@ -697,3 +697,27 @@ def test_the_form_cookie_is_strict_http_only_and_scoped():
     )
     with pytest.raises(ValueError):
         FormTokens(cookie_name="a;b")
+
+
+def test_a_password_changed_elsewhere_signs_everyone_out(tmp_path):
+    # `departureboard web --set-password` runs in its own process: the page's
+    # sessions must notice the new password through the file, not memory.
+    from departureboard.auth import PasswordStore, Sessions
+
+    store = PasswordStore(tmp_path / "web.json")
+    store.set("first password here")
+    sessions = Sessions(password=store)
+    token, _ = sessions.create()
+    assert sessions.get(token) is not None
+    PasswordStore(tmp_path / "web.json").set("second password here")  # another process
+    assert sessions.get(token) is None
+    fresh, _ = sessions.create()
+    assert sessions.get(fresh) is not None
+
+
+def test_sessions_without_a_password_store_work_as_before():
+    from departureboard.auth import Sessions
+
+    sessions = Sessions()
+    token, _ = sessions.create()
+    assert sessions.get(token) is not None
