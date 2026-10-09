@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from PIL import Image, ImageDraw
 
 from .dotfont import HEIGHT as GLYPH_H
-from .dotfont import DotFont
+from .dotfont import TINY, TINY_HEIGHT, DotFont
 from .render import HEIGHT, WIDTH, Palette, fit_text
 from .view import BoardView, Row, Section, Style
 
@@ -25,6 +25,7 @@ _COL_GAP = 5
 _ORDINALS = ("1st", "2nd", "3rd", "4th")
 _MAX_TRAINS = 3
 _FONT = DotFont()
+_SMALL = DotFont(TINY)
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,13 @@ class Item:
     y: int
     text: str
     inverted: bool = False
+    small: bool = False
+
+
+def item_size(item: Item) -> tuple[int, int]:
+    if item.small:
+        return _SMALL.getlength(item.text), TINY_HEIGHT
+    return _FONT.getlength(item.text), GLYPH_H
 
 
 @dataclass
@@ -40,8 +48,8 @@ class SignLayout:
     items: list[Item] = field(default_factory=list)
     rules: list[int] = field(default_factory=list)
 
-    def add(self, x: float, y: int, text: str, inverted: bool = False) -> None:
-        self.items.append(Item(x, y, text, inverted))
+    def add(self, x: float, y: int, text: str, inverted: bool = False, small: bool = False) -> None:
+        self.items.append(Item(x, y, text, inverted, small))
 
 
 def _w(text: str) -> int:
@@ -103,12 +111,13 @@ def _buses(layout: SignLayout, section: Section, y: int, bottom: int) -> int:
 
 
 def _footer(layout: SignLayout, view: BoardView) -> None:
-    y = HEIGHT - GLYPH_H - 1
-    layout.add(MARGIN, y, f"Updated {view.updated}")
+    y = HEIGHT - TINY_HEIGHT - 1
+    layout.add(MARGIN, y, f"Updated {view.updated}", small=True)
     stale = [name for name, s in (("trains", view.trains), ("buses", view.buses)) if s.stale]
     if stale:
         message = "Not updating: " + ", ".join(stale)
-        layout.add(_right(message), y, message)
+        # Small, but reversed out so a stalled feed still catches the eye.
+        layout.add(WIDTH - MARGIN - _SMALL.getlength(message), y, message, inverted=True, small=True)
 
 
 def sign_layout(view: BoardView) -> SignLayout:
@@ -116,7 +125,7 @@ def sign_layout(view: BoardView) -> SignLayout:
     y = _trains(layout, view.trains, _TOP)
     rule = y + _ABOVE_RULE - 2  # each line already carries 2 dots of leading
     layout.rules.append(rule)
-    footer_top = HEIGHT - GLYPH_H - 3
+    footer_top = HEIGHT - TINY_HEIGHT - 3
     _buses(layout, view.buses, rule + _BELOW_RULE, footer_top)
     _footer(layout, view)
     return layout
@@ -132,12 +141,16 @@ def render_sign(view: BoardView, palette: Palette) -> Image.Image:
     image = Image.new("P", (WIDTH, HEIGHT), palette.black)
     draw = ImageDraw.Draw(image)
     layout = sign_layout(view)
-    for y in sorted({i.y for i in layout.items if i.inverted}):
+    for y in sorted({i.y for i in layout.items if i.inverted and not i.small}):
         draw.rectangle((0, y - 1, WIDTH - 1, y + GLYPH_H), fill=ink)
+    for item in (i for i in layout.items if i.inverted and i.small):
+        width, height = item_size(item)
+        draw.rectangle((item.x - 2, item.y - 1, item.x + width + 1, item.y + height), fill=ink)
     for y in layout.rules:
         draw.point([(x, y) for x in range(MARGIN, WIDTH - MARGIN, 2)], fill=ink)
     for item in layout.items:
-        _FONT.draw(draw, (item.x, item.y), item.text, fill=palette.black if item.inverted else ink)
+        font = _SMALL if item.small else _FONT
+        font.draw(draw, (item.x, item.y), item.text, fill=palette.black if item.inverted else ink)
     if palette.preview:
         _apply_preview(image, palette)
     return image

@@ -1,6 +1,6 @@
 from departureboard.dotfont import DotFont
 from departureboard.render import HEIGHT, WIDTH, Palette
-from departureboard.sign import MARGIN, render_sign, sign_layout
+from departureboard.sign import MARGIN, item_size, render_sign, sign_layout
 from departureboard.view import BoardView, Row, Section, Style
 
 PALETTE = Palette(white=0, black=1, accent=2)
@@ -99,7 +99,15 @@ def test_empty_sections_say_so():
 
 def test_footer_shows_last_update_not_a_ticking_clock():
     footer = find(sign_layout(board()).items, "Updated 07:03")
-    assert footer.y + 9 <= HEIGHT
+    assert footer.y + item_size(footer)[1] <= HEIGHT
+
+
+def test_footer_is_small_print():
+    items = sign_layout(board(stale_buses=True)).items
+    for text in ("Updated 07:03", "Not updating: buses"):
+        footer = find(items, text)
+        assert footer.small
+        assert item_size(footer)[1] == 5
 
 
 def test_footer_names_feeds_that_have_stopped():
@@ -111,8 +119,9 @@ def test_footer_names_feeds_that_have_stopped():
 def test_everything_fits_on_the_panel():
     items = sign_layout(board(TRAINS, BUSES, leave="Leave by 07:05", stale_buses=True)).items
     for item in items:
-        assert 0 <= item.x and item.x + FONT.getlength(item.text) <= WIDTH
-        assert 0 <= item.y and item.y + 9 <= HEIGHT
+        width, height = item_size(item)
+        assert 0 <= item.x and item.x + width <= WIDTH
+        assert 0 <= item.y and item.y + height <= HEIGHT
 
 
 def test_rendered_board_is_amber_on_black():
@@ -144,3 +153,19 @@ def test_buses_still_clear_the_footer_with_a_full_board():
     items = sign_layout(board(TRAINS, rows, leave="Leave by 07:05")).items
     last_bus_bottom = find(items, "237").y + 9
     assert last_bus_bottom < find(items, "Updated 07:03").y - 2
+
+
+def test_not_updating_warning_is_small_but_reversed_out():
+    layout = sign_layout(board(stale_buses=True))
+    warning = find(layout.items, "Not updating: buses")
+    assert warning.small and warning.inverted
+    assert not find(layout.items, "Updated 07:03").inverted
+
+
+def test_reversed_small_print_only_highlights_its_own_text():
+    image = render_sign(board(stale_buses=True), PALETTE)
+    # The far left of the footer line stays black: no full-width band.
+    assert image.getpixel((0, HEIGHT - 3)) == PALETTE.black
+    # Just left of the warning text, inside its badge, is amber.
+    warning = find(sign_layout(board(stale_buses=True)).items, "Not updating: buses")
+    assert image.getpixel((int(warning.x) - 1, warning.y + 2)) == PALETTE.accent
