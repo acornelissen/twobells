@@ -233,6 +233,23 @@ def test_save_from_another_site_is_refused(server):
     assert response.status == 403 and page.saved == []
 
 
+def test_pages_let_the_browser_send_their_own_origin(server):
+    # With no-referrer, browsers send `Origin: null` on form posts and every
+    # real sign-in would look cross-site.
+    port, _, _ = server
+    response, _ = request(port, "GET", "/login")
+    assert response.getheader("Referrer-Policy") == "same-origin"
+
+
+def test_a_null_origin_without_a_referer_is_refused(server):
+    port, page, _ = server
+    cookie, csrf = sign_in(port)
+    response, _ = request(port, "POST", "/", {"csrf": csrf, "title": "x"}, cookie=cookie, origin="null")
+    assert response.status == 403 and page.saved == []
+    response, _ = request(port, "POST", "/login", {"password": PASSWORD}, origin="null")
+    assert response.status == 403
+
+
 def test_requests_naming_an_outside_host_are_refused(server):
     port, _, _ = server
     response, _ = request(port, "GET", "/login", host="evil.example.com")

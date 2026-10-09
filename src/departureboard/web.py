@@ -47,7 +47,7 @@ HEADERS = {
     ),
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
-    "Referrer-Policy": "no-referrer",
+    "Referrer-Policy": "same-origin",  # no-referrer makes browsers post `Origin: null`
     "Cache-Control": "no-store",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
 }
