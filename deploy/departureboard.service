@@ -13,3 +13,7 @@ EnvironmentFile=/etc/departureboard/secrets.env
 ExecStart=/opt/departureboard/venv/bin/departureboard run --config /etc/departureboard/config.toml
 # A colour refresh takes about 20 s on the Zero W.
 TimeoutStartSec=120
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
