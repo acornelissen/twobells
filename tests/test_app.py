@@ -601,3 +601,42 @@ def test_clock_going_back_an_hour_does_not_pause_the_board():
     result = run_once(board, state, display, THU_0700)
     assert trains.calls == 2
     assert result.rendered
+
+
+def test_a_failed_fetch_records_a_short_error_without_keys():
+    trains, buses, board, display, state = setup()
+    trains.error = OSError("GET https://api.example/board?x=1 failed: x-apikey: secret-rdm-key")
+    run_once(board, state, display, THU_0700)
+    error = state["sources"]["train"]["last_error"]
+    assert error["at"] == "2026-10-08T07:00:00"
+    assert "secret-rdm-key" not in error["message"] and "x=1" not in error["message"]
+    assert error["message"].startswith("GET https://api.example/board?…")
+
+
+def test_a_failed_fetch_logs_no_keys(caplog):
+    trains, buses, board, display, state = setup()
+    buses.error = OSError("https://transportapi.com/v3/x.json?app_id=myid&app_key=tapi-secret refused")
+    with caplog.at_level("WARNING"):
+        run_once(board, state, display, THU_0700)
+    assert "tapi-secret" not in caplog.text and "myid" not in caplog.text
+
+
+def test_a_successful_fetch_clears_the_last_error():
+    trains, buses, board, display, state = setup()
+    trains.error = OSError("network down")
+    run_once(board, state, display, THU_0700)
+    trains.error = None
+    run_once(board, state, display, THU_0700 + timedelta(minutes=2))
+    assert "last_error" not in state["sources"]["train"]
+    assert state["sources"]["train"]["last_success"] == "2026-10-08T07:02:00"
+
+
+def test_a_failed_position_fetch_records_an_error_and_success_clears_it():
+    board, positions, state = tracked_setup([bus_on("341", "07:20")])
+    positions.error = RuntimeError("https://data.bus-data.dft.gov.uk/api/v1/datafeed/?api_key=bods-secret timed out")
+    run_once(board, state, FakeScreen(), THU_0700)
+    error = state["vehicles"]["last_error"]
+    assert error["at"] == "2026-10-08T07:00:00" and "bods-secret" not in error["message"]
+    positions.error = None
+    run_once(board, state, FakeScreen(), THU_0700 + timedelta(seconds=30))
+    assert "last_error" not in state["vehicles"]

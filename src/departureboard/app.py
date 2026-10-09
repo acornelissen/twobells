@@ -20,6 +20,7 @@ from .render import Palette
 from .route import RouteStrip, RouteView, locate, target, where
 from .schedule import PollPolicy
 from .state import departure_to_dict, departures_from_dicts, from_iso, to_iso
+from .status import safe_message
 from .view import BoardView, build_view
 from .themes import THEMES, Theme
 from .walk import WalkTimes, leave_time
@@ -106,10 +107,14 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False)
     try:
         departures = config.source.fetch()
     except Exception as error:  # noqa: BLE001 - keep showing last good data on any failure
-        log.warning("%s: fetch failed: %s", name, error)
+        # The settings page shows the last error; neither it nor the log may carry a key.
+        message = safe_message(error)
+        log.warning("%s: fetch failed: %s", name, message)
+        entry["last_error"] = {"at": to_iso(now), "message": message}
         return
     entry["departures"] = [departure_to_dict(d) for d in departures]
     entry["last_success"] = to_iso(now)
+    entry.pop("last_error", None)
 
 
 def _is_stale(config: SourceConfig, entry: dict, now: datetime) -> bool:
@@ -138,10 +143,13 @@ def _poll_vehicles(tracker: Tracker, state: dict, now: datetime) -> None:
     try:
         vehicles = tracker.source.fetch()
     except Exception as error:  # noqa: BLE001 - the page says positions have stopped
-        log.warning("vehicles: fetch failed: %s", error)
+        message = safe_message(error)
+        log.warning("vehicles: fetch failed: %s", message)
+        entry["last_error"] = {"at": to_iso(now), "message": message}
         return
     entry["items"] = [vars(v) for v in vehicles]
     entry["last_success"] = to_iso(now)
+    entry.pop("last_error", None)
 
 
 def _route_view(board: Board, state: dict, view: BoardView, now: datetime, clock: str) -> RouteView | None:
