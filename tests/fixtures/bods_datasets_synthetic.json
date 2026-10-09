@@ -1,0 +1,83 @@
+{
+  "_comment": "Synthetic pages of BODS's data set list (GET /api/v1/dataset/?adminArea=...), one per admin area, trimmed to the fields discovery reads plus a few it ignores. Data set 1 is filed under BNML though its 341 document says BNGN inside.",
+  "100": {
+    "count": 3,
+    "next": null,
+    "previous": null,
+    "results": [
+      {
+        "id": 1,
+        "operatorName": "Bee Network",
+        "noc": ["BNML"],
+        "name": "Bee Network Glossop",
+        "status": "published",
+        "url": "https://data.bus-data.dft.gov.uk/timetable/dataset/1/download/",
+        "extension": "zip",
+        "lines": ["237", "341"],
+        "adminAreas": [{"atco_code": "100", "name": "Derbyshire"}, {"atco_code": "180", "name": "Greater Manchester"}]
+      },
+      {
+        "id": 2,
+        "operatorName": "High Peak",
+        "noc": ["HIPK"],
+        "name": "High Peak 61",
+        "status": "published",
+        "url": "https://data.bus-data.dft.gov.uk/timetable/dataset/2/download/",
+        "extension": "xml",
+        "lines": ["61"],
+        "adminAreas": [{"atco_code": "100", "name": "Derbyshire"}]
+      },
+      {
+        "id": 3,
+        "operatorName": "Trent Barton",
+        "noc": ["TBTN"],
+        "name": "Trent Barton Derbyshire",
+        "status": "published",
+        "url": "https://data.bus-data.dft.gov.uk/timetable/dataset/3/download/",
+        "extension": "zip",
+        "lines": ["Skylink"],
+        "adminAreas": [{"atco_code": "100", "name": "Derbyshire"}]
+      }
+    ]
+  },
+  "180": {
+    "count": 3,
+    "next": null,
+    "previous": null,
+    "results": [
+      {
+        "id": 1,
+        "operatorName": "Bee Network",
+        "noc": ["BNML"],
+        "name": "Bee Network Glossop",
+        "status": "published",
+        "url": "https://data.bus-data.dft.gov.uk/timetable/dataset/1/download/",
+        "extension": "zip",
+        "lines": ["237", "341"],
+        "adminAreas": [{"atco_code": "100", "name": "Derbyshire"}, {"atco_code": "180", "name": "Greater Manchester"}]
+      },
+      {
+        "id": 4,
+        "operatorName": "Stagecoach Manchester",
+        "noc": ["SCMN"],
+        "name": "Stagecoach Manchester",
+        "status": "published",
+        "url": "https://data.bus-data.dft.gov.uk/timetable/dataset/4/download/",
+        "extension": "zip",
+        "lines": ["201", "203"],
+        "adminAreas": [{"atco_code": "180", "name": "Greater Manchester"}]
+      },
+      {
+        "id": 5,
+        "operatorName": "Not BODS",
+        "noc": ["EVIL"],
+        "name": "A link that isn't BODS's",
+        "status": "published",
+        "url": "https://evil.example/timetable/5.zip",
+        "extension": "zip",
+        "lines": ["1"],
+        "adminAreas": [{"atco_code": "180", "name": "Greater Manchester"}]
+      }
+    ]
+  }
+}
