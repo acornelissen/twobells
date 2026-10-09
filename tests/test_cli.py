@@ -12,10 +12,10 @@ def test_demo_writes_preview_without_any_keys(tmp_path):
     assert Image.open(out).size == (250, 122)
 
 
-@pytest.mark.parametrize("panel, size", [("waveshare-10in85g", (1360, 480)), ("hdmi-1280x400", (1280, 400))])
-def test_demo_previews_bigger_panels(tmp_path, panel, size):
+@pytest.mark.parametrize("display, size", [("waveshare-10in85g", (1360, 480)), ("hdmi-1280x400", (1280, 400))])
+def test_demo_previews_bigger_panels(tmp_path, display, size):
     out = tmp_path / "demo.png"
-    assert main(["demo", "--png", str(out), "--panel", panel]) == 0
+    assert main(["demo", "--png", str(out), "--display", display]) == 0
     assert Image.open(out).size == size
 
 

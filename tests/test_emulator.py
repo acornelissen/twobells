@@ -155,3 +155,47 @@ def test_emulate_command_uses_the_shared_default_port():
     from departureboard.emulator import DEFAULT_PORT
 
     assert _parser().parse_args(["emulate", "--demo"]).port == DEFAULT_PORT
+
+
+def test_status_describes_the_phat_by_default():
+    panel = EmulatorDisplay().status()["panel"]
+    assert panel == {"name": "inky-phat", "width": 250, "height": 122, "epaper": True, "frame_mm": None}
+
+
+def test_status_gives_bigger_panels_their_physical_size():
+    from departureboard.panel import WAVESHARE_10IN85G
+
+    panel = EmulatorDisplay(panel=WAVESHARE_10IN85G).status()["panel"]
+    assert (panel["width"], panel["height"]) == (1360, 480)
+    outline_w, outline_h, active_w, active_h = panel["frame_mm"]
+    assert outline_w > active_w and outline_h > active_h
+    assert abs(active_w / active_h - 1360 / 480) < 0.01  # square pixels
+
+
+def test_screen_frames_use_screen_colours():
+    from departureboard.panel import HDMI_1280X400
+    from departureboard.screen import SCREEN_RGB
+
+    display = EmulatorDisplay(accent="yellow", panel=HDMI_1280X400)
+    image = Image.new("P", HDMI_1280X400.size, display.palette.black)
+    image.putpixel((0, 0), display.palette.accent)
+    display.show(image)
+    shown = Image.open(io.BytesIO(display.frame_png())).convert("RGB")
+    assert shown.getpixel((0, 0)) == SCREEN_RGB["yellow"]
+    assert shown.getpixel((1, 0)) == SCREEN_RGB["black"]
+
+
+def test_screen_board_time_has_seconds():
+    from departureboard.panel import HDMI_1280X400
+
+    display = EmulatorDisplay(panel=HDMI_1280X400)
+    display.tick(NOW.replace(second=15), rendered=True)
+    assert display.status()["board_time"] == "Thu 07:03:15"
+
+
+def test_page_lays_itself_out_from_the_status_panel(served):
+    _, base = served
+    with urlopen(base + "/") as response:
+        body = response.read().decode()
+    for name in ("inky-phat", "waveshare-10in85g", "hdmi-1280x400"):
+        assert name in body

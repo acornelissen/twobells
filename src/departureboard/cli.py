@@ -27,7 +27,6 @@ from .display import DISPLAY_PANELS, PngDisplay, open_display
 from .emulation import build_emulation
 from .emulator import DEFAULT_PORT, make_server
 from .model import Departure, Status
-from .panel import PANELS
 from .state import StateStore
 from .transportapi import redact_credentials
 from .view import build_view
@@ -185,7 +184,7 @@ def _demo(args) -> int:
         Departure("bus", "237", "Ashton", "07:41", None, Status.ON_TIME, stop="A"),
     ]
     theme = theme_named(args.theme)
-    display = PngDisplay(args.png, args.accent or theme.accent, PANELS[args.panel])
+    display = PngDisplay(args.png, args.accent or theme.accent, DISPLAY_PANELS[args.display])
     walk = WalkTimes(train=7, bus={"*": 7})
     # A screen preview shows what a screen adds: a running clock and countdowns.
     clock = None if display.panel.epaper else "07:03:15"
@@ -206,6 +205,7 @@ def _emulate(args) -> int:
         fake_train=args.fake_train,
         accent=args.accent,
         tick_seconds=args.tick,
+        display=args.display,
     )
     try:
         server = make_server(em.display, port=args.port, attempts=args.port_attempts)
@@ -228,6 +228,8 @@ def _emulate(args) -> int:
             em.clock,
             em.tick_seconds,
             ticks=args.ticks,
+            # A live clock stays on whole seconds; the demo's simulated clock needs no lining up.
+            sleep=None if args.demo else _sleep_to_the_tick,
             store=em.store,
             on_tick=lambda now, result: em.display.tick(now, result.rendered),
             prime=True,  # fill the board straight away rather than waiting for a window
@@ -268,16 +270,17 @@ def _parser() -> argparse.ArgumentParser:
     demo.add_argument("--png", default="preview.png")
     demo.add_argument("--theme", default="sign", choices=sorted(THEMES))
     demo.add_argument("--accent", choices=["red", "yellow"], help="defaults to the theme's")
-    demo.add_argument("--panel", default="inky-phat", choices=sorted(PANELS), help="size to draw at")
+    demo.add_argument("--display", default="inky", choices=sorted(DISPLAY_PANELS), help="panel to draw for")
     demo.set_defaults(handler=_demo)
 
     emulate = with_config(sub.add_parser("emulate", help="run against a browser panel emulator"))
     emulate.add_argument("--demo", action="store_true", help="fake data on a fast simulated clock")
     emulate.add_argument("--fake-train", action="store_true", help="fake trains, live buses")
     emulate.add_argument("--accent", choices=["red", "yellow"], help="demo accent")
+    emulate.add_argument("--display", choices=sorted(DISPLAY_PANELS), help="panel to emulate (default: config's)")
     emulate.add_argument("--port", type=int, default=DEFAULT_PORT)
     emulate.add_argument("--port-attempts", type=int, default=10, help=argparse.SUPPRESS)
-    emulate.add_argument("--tick", type=float, help="seconds per tick (demo 2, live 60)")
+    emulate.add_argument("--tick", type=float, help="seconds per tick (demo 2; live 60, or 1 for a screen)")
     emulate.add_argument("--ticks", type=int, help=argparse.SUPPRESS)
     emulate.add_argument("--no-browser", action="store_true")
     emulate.set_defaults(handler=_emulate)

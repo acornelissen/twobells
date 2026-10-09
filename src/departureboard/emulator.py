@@ -1,7 +1,8 @@
-"""Inky pHAT emulator: a Display that serves frames to a browser page.
+"""Panel emulator: a Display that serves frames to a browser page.
 
-The page draws the board at true physical proportions in e-paper colours and
-plays the slow colour refresh, so redraw behaviour can be judged on a laptop.
+The page draws the board at true physical proportions. E-paper panels show in
+e-paper colours and play the slow colour refresh, so redraw behaviour can be
+judged on a laptop; a screen shows in screen colours and swaps frames at once.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from PIL.Image import Image
 
 from .panel import PHAT, Panel
 from .render import Palette
+from .screen import SCREEN_RGB
 
 # Clear of ClaudeCodeBrowserX, which listens on 8765 and 8766.
 DEFAULT_PORT = 8780
@@ -29,6 +31,14 @@ EPAPER = {
     "black": (36, 36, 38),
     "red": (176, 38, 38),
     "yellow": (224, 180, 32),
+}
+
+
+# Millimetres for the page: (outline width, height, active area width, height).
+# The pHAT's board is drawn in detail by the page itself.
+FRAMES_MM = {
+    "waveshare-10in85g": (270.56, 105.92, 259.76, 91.68),  # Waveshare's drawing
+    "hdmi-1280x400": (207.78, 69.80, 191.5, 59.8),  # active area from the 7.9" diagonal
 }
 
 
@@ -45,16 +55,17 @@ class EmulatorDisplay:
         self._board_time: str | None = None
         self._last_tick_rendered: bool | None = None
 
-    def _epaper_palette(self) -> list[int]:
+    def _palette(self) -> list[int]:
+        rgb = EPAPER if self.panel.epaper else SCREEN_RGB
         colours = [(0, 0, 0)] * 256
-        colours[self.palette.white] = EPAPER["white"]
-        colours[self.palette.black] = EPAPER["black"]
-        colours[self.palette.accent] = EPAPER[self._accent]
+        colours[self.palette.white] = rgb["white"]
+        colours[self.palette.black] = rgb["black"]
+        colours[self.palette.accent] = rgb[self._accent]
         return [value for rgb in colours for value in rgb]
 
     def show(self, image: Image) -> None:
         frame = image.copy()
-        frame.putpalette(self._epaper_palette())
+        frame.putpalette(self._palette())
         buffer = io.BytesIO()
         frame.convert("RGB").save(buffer, format="PNG")
         with self._lock:
@@ -64,7 +75,7 @@ class EmulatorDisplay:
     def tick(self, now: datetime, rendered: bool) -> None:
         with self._lock:
             self._ticks += 1
-            self._board_time = now.strftime("%a %H:%M")
+            self._board_time = now.strftime("%a %H:%M" if self.panel.epaper else "%a %H:%M:%S")
             self._last_tick_rendered = rendered
 
     def frame_png(self) -> bytes | None:
@@ -81,6 +92,13 @@ class EmulatorDisplay:
                 "last_tick_rendered": self._last_tick_rendered,
                 "accent": self._accent,
                 "mode": self._mode,
+                "panel": {
+                    "name": self.panel.name,
+                    "width": self.panel.width,
+                    "height": self.panel.height,
+                    "epaper": self.panel.epaper,
+                    "frame_mm": FRAMES_MM.get(self.panel.name),
+                },
             }
 
 

@@ -110,22 +110,23 @@ python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 pytest
 departureboard demo --png preview.png            # sample data, no keys
-departureboard demo --png big.png --panel waveshare-10in85g   # or hdmi-1280x400
+departureboard demo --png big.png --display waveshare-10in85g   # or hdmi-1280x400
 departureboard run --png preview.png --config config.toml --secrets secrets.env
 ```
 
 ## Emulator
 
-A browser page that draws the pHAT at true proportions in e-paper colours, plays the slow colour refresh, and logs every tick, so you can see when the board redraws and when it leaves the panel alone.
+A browser page that draws the panel at true proportions and logs every tick, so you can see when the board redraws and when it leaves the panel alone. E-paper panels show in e-paper colours and play the slow colour refresh; the HDMI screen swaps frames at once and ticks every second.
 
 ```bash
 departureboard emulate --demo                       # fake data, 1 simulated minute every 2 s
 departureboard emulate --fake-train \
   --config config.toml --secrets secrets.env        # fake trains, live buses
 departureboard emulate --config config.toml --secrets secrets.env   # all live
+departureboard emulate --demo --display hdmi-1280x400                # another panel
 ```
 
-It opens <http://127.0.0.1:8780/>. Choose realistic (20 s), quick or instant refresh, and 1× to 4× scale; 1× is the panel's real pixel count. The demo drops the bus feed from 07:30 to 07:52 simulated time, so the "Not updating" badge shows up.
+It opens <http://127.0.0.1:8780/>. Live modes emulate the `display` in your config; `--display` overrides it. Choose realistic (20 s), quick or instant refresh, and the scale (1× to 4× for the pHAT, ½× or 1× for the bigger panels); 1× is the panel's real pixel count. The demo drops the bus feed from 07:30 to 07:52 simulated time, so the "Not updating" badge shows up.
 
 On start the emulator fetches every source once, even outside its windows, so the board fills straight away; after that it polls only inside the windows. A live start therefore costs one TransportAPI hit per bus stop. The daily budget still applies, and when it is spent the first fetch is skipped too. `departureboard run` does the same on its very first run, when there is no saved state yet.
 

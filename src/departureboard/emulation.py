@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from .app import Board, SourceConfig
 from .config import load_config
+from .display import DISPLAY_PANELS
 from .emulator import EmulatorDisplay
 from .fake import FakeBusSource, FakeTrainSource, SimClock
 from .schedule import PollPolicy, parse_window
@@ -41,7 +42,7 @@ def _fake_train(clock, interval_minutes: int = 2) -> SourceConfig:
     return SourceConfig(FakeTrainSource(clock), policy, stale_after=timedelta(minutes=6))
 
 
-def _demo(accent: str | None, tick_seconds: float | None) -> Emulation:
+def _demo(accent: str | None, tick_seconds: float | None, display: str) -> Emulation:
     theme = THEMES["sign"]
     clock = SimClock(DEMO_START)
     bus = FakeBusSource(clock, rows=3, failing_when=demo_outage)
@@ -58,7 +59,7 @@ def _demo(accent: str | None, tick_seconds: float | None) -> Emulation:
     return Emulation(
         board,
         clock,
-        EmulatorDisplay(accent or theme.accent, mode="demo"),
+        EmulatorDisplay(accent or theme.accent, mode="demo", panel=DISPLAY_PANELS[display]),
         store=None,
         tick_seconds=2 if tick_seconds is None else tick_seconds,
     )
@@ -69,13 +70,16 @@ def _live(
     env: Mapping[str, str],
     fake_train: bool,
     tick_seconds: float | None,
+    display: str | None,
 ) -> Emulation:
     only = {"bus"} if fake_train else None
     settings = load_config(config, env, only=only)
     zone = ZoneInfo(settings.timezone)
+    panel = DISPLAY_PANELS[display or settings.display]
 
     def clock() -> datetime:
-        return datetime.now(zone).replace(tzinfo=None, second=0, microsecond=0)
+        now = datetime.now(zone).replace(tzinfo=None, microsecond=0)
+        return now.replace(second=0) if panel.epaper else now
 
     sources = list(settings.board.sources)
     if fake_train:
@@ -84,9 +88,9 @@ def _live(
     return Emulation(
         board,
         clock,
-        EmulatorDisplay(settings.accent, mode="live"),
+        EmulatorDisplay(settings.accent, mode="live", panel=panel),
         store=StateStore(settings.state_file),
-        tick_seconds=60 if tick_seconds is None else tick_seconds,
+        tick_seconds=tick_seconds if tick_seconds is not None else (60 if panel.epaper else 1),
     )
 
 
@@ -97,7 +101,9 @@ def build_emulation(
     fake_train: bool = False,
     accent: str | None = None,
     tick_seconds: float | None = None,
+    display: str | None = None,
 ) -> Emulation:
+    """`display` names the panel to emulate; live mode defaults to the configured one."""
     if demo:
-        return _demo(accent, tick_seconds)
-    return _live(config, env or {}, fake_train, tick_seconds)
+        return _demo(accent, tick_seconds, display or "inky")
+    return _live(config, env or {}, fake_train, tick_seconds, display)

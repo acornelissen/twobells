@@ -78,3 +78,41 @@ def test_demo_uses_the_station_board_look_in_yellow():
 
 def test_demo_accent_can_be_overridden():
     assert build_emulation(demo=True, accent="red").display.status()["accent"] == "red"
+
+
+def test_demo_can_emulate_another_display():
+    em = build_emulation(demo=True, display="hdmi-1280x400")
+    assert em.display.status()["panel"]["name"] == "hdmi-1280x400"
+
+
+def _live_config(tmp_path, display):
+    config = tmp_path / "config.toml"
+    config.write_text(
+        f'display = "{display}"\nstate_file = "{tmp_path / "state.json"}"\n'
+        '[bus]\nwindows = ["Mon-Fri 07:00-08:30"]\n[bus.stops]\nA = "1000DGHS0900"\n'
+    )
+    return config
+
+
+def test_live_mode_emulates_the_configured_display(tmp_path):
+    em = build_emulation(config=_live_config(tmp_path, "waveshare-10in85g"), env={"TAPI_APP_ID": "i", "TAPI_APP_KEY": "k"})
+    assert em.display.status()["panel"]["name"] == "waveshare-10in85g"
+    assert em.tick_seconds == 60
+
+
+def test_live_screen_ticks_every_second_with_a_seconds_clock(tmp_path):
+    em = build_emulation(config=_live_config(tmp_path, "hdmi-1280x400"), env={"TAPI_APP_ID": "i", "TAPI_APP_KEY": "k"})
+    assert em.tick_seconds == 1
+    assert em.display.panel.epaper is False
+
+
+def test_display_flag_overrides_the_config(tmp_path):
+    em = build_emulation(
+        config=_live_config(tmp_path, "inky"), env={"TAPI_APP_ID": "i", "TAPI_APP_KEY": "k"}, display="hdmi-1280x400"
+    )
+    assert em.display.status()["panel"]["name"] == "hdmi-1280x400"
+
+
+def test_demo_screen_runs_headless_for_a_few_ticks():
+    code = main(["emulate", "--demo", "--display", "hdmi-1280x400", "--no-browser", "--port", "0", "--tick", "0", "--ticks", "3"])
+    assert code == 0
