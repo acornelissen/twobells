@@ -14,7 +14,7 @@ import re
 import zipfile
 from collections import Counter
 from dataclasses import dataclass
-from typing import Callable, Iterable, Iterator
+from typing import BinaryIO, Callable, Iterable, Iterator
 from urllib.parse import urlencode
 
 from . import safexml
@@ -127,13 +127,22 @@ def strip_before(found: Iterable[Pattern], atco: str, walk_minutes: int) -> tupl
     return list(best.stops[start : index + 1]), covered, best.journeys
 
 
-def timetable_documents(blob: bytes) -> Iterator[bytes]:
+def timetable_documents(blob: bytes | BinaryIO) -> Iterator[bytes]:
     """The TransXChange XML in a download: one file, or every .xml in a zip,
-    unpacked one at a time."""
-    if not zipfile.is_zipfile(io.BytesIO(blob)):
-        yield blob
+    unpacked one at a time. The download can be bytes or an open file, so a
+    big one can wait on disk rather than in memory."""
+    source = io.BytesIO(blob) if isinstance(blob, (bytes, bytearray)) else blob
+    if not zipfile.is_zipfile(source):
+        if isinstance(blob, (bytes, bytearray)):
+            yield blob
+            return
+        source.seek(0)
+        data = source.read(MAX_XML_BYTES + 1)
+        if len(data) > MAX_XML_BYTES:
+            raise RouteSetupError(f"Timetable file is larger than {MAX_XML_BYTES} bytes; refusing")
+        yield data
         return
-    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+    with zipfile.ZipFile(source) as archive:
         members = [m for m in archive.infolist() if m.filename.lower().endswith(".xml")]
         if len(members) > MAX_ZIP_MEMBERS:
             raise RouteSetupError(f"Timetable zip has {len(members)} files; refusing more than {MAX_ZIP_MEMBERS}")

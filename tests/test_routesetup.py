@@ -118,6 +118,27 @@ def test_plain_xml_download_is_one_document():
     assert list(timetable_documents(TXC)) == [TXC]
 
 
+def test_a_download_can_be_read_from_a_file(tmp_path):
+    zipped = tmp_path / "zipped"
+    zipped.write_bytes(_zip({"a.xml": TXC, "b.xml": b"<x/>"}))
+    plain = tmp_path / "plain"
+    plain.write_bytes(TXC)
+    with open(zipped, "rb") as file:
+        assert list(timetable_documents(file)) == [TXC, b"<x/>"]
+    with open(plain, "rb") as file:
+        assert list(timetable_documents(file)) == [TXC]
+
+
+def test_an_oversized_plain_file_is_refused(tmp_path, monkeypatch):
+    from departureboard import routesetup
+
+    monkeypatch.setattr(routesetup, "MAX_XML_BYTES", 10)
+    plain = tmp_path / "plain"
+    plain.write_bytes(TXC)
+    with open(plain, "rb") as file, pytest.raises(RouteSetupError, match="refusing"):
+        list(timetable_documents(file))
+
+
 def test_too_many_files_in_a_zip_is_refused(monkeypatch):
     from departureboard import routesetup
 
