@@ -1,0 +1,87 @@
+:root {
+  --bg: #f7f7f5;
+  --fg: #1b1c1e;
+  --muted: #55575c;
+  --line: #c9cac6;
+  --field: #ffffff;
+  --accent: #1d4ed8;
+  --error: #b42318;
+  --ok-bg: #e7f4ea;
+  --ok-fg: #185c2b;
+  --focus: #1d4ed8;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181a;
+    --fg: #ecebe6;
+    --muted: #b3b1aa;
+    --line: #45474c;
+    --field: #202124;
+    --accent: #8ab4ff;
+    --error: #ff8a80;
+    --ok-bg: #173323;
+    --ok-fg: #9be3b0;
+    --focus: #8ab4ff;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+/* Keep a focused field clear of the sticky Save bar (WCAG 2.4.11), and when an
+   error link jumps to a field, keep its label and error message in view. */
+html { scroll-padding-bottom: 5.5rem; }
+input, select, textarea { scroll-margin-top: 7rem; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 1rem/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 42rem; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+h1 { font-size: 1.5rem; margin: 0; }
+h2 { font-size: 1.125rem; margin: 0 0 0.5rem; }
+.bar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+fieldset { border: 1px solid var(--line); border-radius: 0.5rem; padding: 1rem 1rem 0.25rem; margin: 0 0 1.5rem; }
+legend { font-weight: 600; font-size: 1.125rem; padding: 0 0.25rem; }
+.field { margin-bottom: 1.25rem; }
+label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
+.hint { color: var(--muted); margin: 0 0 0.375rem; font-size: 0.9375rem; }
+input, select, textarea {
+  display: block;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.625rem;
+  font: inherit;
+  color: var(--fg);
+  background: var(--field);
+  border: 1px solid var(--muted);
+  border-radius: 0.375rem;
+}
+textarea { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.9375rem; resize: vertical; }
+.has-error input, .has-error select, .has-error textarea { border: 2px solid var(--error); }
+.error { color: var(--error); font-weight: 600; margin: 0 0 0.375rem; }
+.tag { font-weight: 700; }
+button {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0.5rem 1.25rem;
+  font: inherit;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+@media (prefers-color-scheme: dark) { button { color: #0b1020; } }
+button.quiet { color: var(--fg); background: transparent; border: 1px solid var(--line); }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.summary { border: 2px solid var(--error); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1.5rem; }
+.summary ul { margin: 0; padding-left: 1.25rem; }
+.summary a { color: var(--error); font-weight: 600; }
+.saved { background: var(--ok-bg); color: var(--ok-fg); border-radius: 0.5rem; padding: 0.75rem 1rem; font-weight: 600; }
+.notice { background: var(--field); border: 1px solid var(--line); border-radius: 0.5rem; padding: 1rem; }
+.signin { max-width: 22rem; margin-top: 1rem; }
+.signin button { margin-top: 1rem; }
+code { font-family: ui-monospace, "SF Mono", Menlo, monospace; overflow-wrap: anywhere; }
+.actions { position: sticky; bottom: 0; padding: 0.75rem 0; background: var(--bg); }

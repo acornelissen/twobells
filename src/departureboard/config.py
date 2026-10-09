@@ -207,6 +207,11 @@ def load_config(
         data["display"] = display
     if bus_stops:
         data.setdefault("bus", {})["stops"] = bus_stops
+    return settings_from(data, env, only)
+
+
+def settings_from(data: dict, env: Mapping[str, str], only: set[str] | None = None) -> Settings:
+    """Settings from already-read config data; the web page checks a change with this before saving."""
     try:
         theme = theme_named(data.get("theme", "sign"))
     except ValueError as error:

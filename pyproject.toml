@@ -21,7 +21,7 @@ departureboard = "departureboard.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-departureboard = ["*.html"]
+departureboard = ["*.html", "*.css"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

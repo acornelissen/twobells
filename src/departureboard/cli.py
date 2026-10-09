@@ -6,6 +6,7 @@
   departureboard demo     render sample data to a PNG, no keys needed
   departureboard emulate  run the board against a browser-based panel emulator
   departureboard route    print a [bus.routes] block for the screen's bus page (run on a laptop)
+  departureboard web      serve the settings page on the home network
 """
 
 from __future__ import annotations
@@ -214,6 +215,51 @@ def _route(args) -> int:
     return 0
 
 
+def _web(args) -> int:
+    import getpass
+    from importlib.resources import files
+
+    from . import web
+    from .config import read_config, state_dir
+    from .settingsform import SettingsForm
+
+    folder = state_dir(read_config(args.config))
+    if folder is None:
+        print("config.toml needs a state_file; the settings page saves beside it", file=sys.stderr)
+        return 2
+    password = web.Password(folder / "web.json")
+    if args.set_password:
+        first = getpass.getpass("New settings page password: ")
+        if first != getpass.getpass("Again: "):
+            print("Those didn't match", file=sys.stderr)
+            return 1
+        try:
+            password.set(first)
+        except ValueError as error:
+            print(error, file=sys.stderr)
+            return 1
+        print(f"Password saved to {folder / 'web.json'}")
+        return 0
+    form = SettingsForm(args.config, lambda: _env(args.config, args.secrets))
+    stylesheet = files("departureboard").joinpath("web.css").read_bytes()
+    handler = web.make_handler(form, password, web.Sessions(), web.SignInLimiter(), web.shell, stylesheet)
+    try:
+        server = web.make_server(handler, args.host, args.port)
+    except OSError as error:
+        print(f"Can't listen on {args.host}:{args.port}: {error.strerror or error}", file=sys.stderr)
+        return 2
+    if not password.is_set():
+        print("No password yet: run `departureboard web --set-password` as the service user", file=sys.stderr)
+    print(f"Settings page on http://{args.host}:{server.server_address[1]}/  (home network only)")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
+
+
 def _probe(args) -> int:
     settings = _settings(args, _parse_stops(args.stop), only={args.source})
     for config in settings.board.sources:
@@ -339,6 +385,12 @@ def _parser() -> argparse.ArgumentParser:
     route.add_argument("--noc", help="operator code (TransportAPI's 'operator', e.g. BNML) to find its BODS timetable")
     route.add_argument("--txc", help="a TransXChange .xml or .zip you downloaded, instead of --noc")
     route.set_defaults(handler=_route)
+
+    web = with_config(sub.add_parser("web", help="serve the settings page on the home network"))
+    web.add_argument("--host", default="0.0.0.0", help="address to listen on (default: all)")
+    web.add_argument("--port", type=int, default=8080)
+    web.add_argument("--set-password", action="store_true", help="set the page's password and exit")
+    web.set_defaults(handler=_web)
 
     emulate = with_config(sub.add_parser("emulate", help="run against a browser panel emulator"))
     emulate.add_argument("--demo", action="store_true", help="fake data on a fast simulated clock")

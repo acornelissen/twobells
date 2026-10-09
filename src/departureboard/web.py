@@ -363,5 +363,16 @@ def make_handler(page: SettingsPage, password: Password, sessions: Sessions, lim
     return Handler
 
 
+def shell(title: str, body: str) -> str:
+    """The HTML document around a page's content."""
+    return (
+        '<!doctype html><html lang="en-GB"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f"<title>{html.escape(title)}</title>"
+        '<link rel="stylesheet" href="/style.css"></head>'
+        f"<body><main>{body}</main></body></html>"
+    )
+
+
 def make_server(handler, host: str = "0.0.0.0", port: int = DEFAULT_PORT) -> ThreadingHTTPServer:
     return ThreadingHTTPServer((host, port), handler)
