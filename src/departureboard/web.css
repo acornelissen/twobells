@@ -74,7 +74,8 @@ button {
   cursor: pointer;
 }
 @media (prefers-color-scheme: dark) { button { color: #0b1020; } }
-button.quiet { color: var(--fg); background: transparent; border: 1px solid var(--line); }
+/* --muted, not --line: an outlined button's edge needs 3:1 against the page (WCAG 1.4.11). */
+button.quiet { color: var(--fg); background: transparent; border: 1px solid var(--muted); }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .summary { border: 2px solid var(--error); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1.5rem; }
 .summary ul { margin: 0; padding-left: 1.25rem; }

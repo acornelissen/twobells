@@ -222,6 +222,8 @@ def test_signed_in_save_with_the_form_token_works(server):
     response, text = request(port, "POST", "/", {"csrf": csrf, "title": "Glossop"}, cookie=cookie)
     assert response.status == 200 and "Saved" in text
     assert page.saved == [{"title": "Glossop"}]
+    assert "<title>Saved – Board settings</title>" in text
+    assert "Saved. The board shows it within a few minutes; the screen within seconds." in text
 
 
 def test_save_without_the_form_token_is_refused(server):

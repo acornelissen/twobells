@@ -374,7 +374,8 @@ def make_handler(page: SettingsPage, password: Password, sessions: Sessions, lim
                 body = page.render(session.csrf, errors=errors, values=fields)
                 self._page(422, "Board settings: fix the errors", body)
             else:
-                self._page(200, "Board settings", page.render(session.csrf, message="Saved. The board picks this up within a minute."))
+                message = "Saved. The board shows it within a few minutes; the screen within seconds."
+                self._page(200, "Saved – Board settings", page.render(session.csrf, message=message))
 
         def log_message(self, format, *args) -> None:  # noqa: A002 - no request lines, no secrets in logs
             pass

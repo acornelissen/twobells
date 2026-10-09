@@ -42,6 +42,7 @@ _CRS = re.compile(r"^[A-Za-z]{3}$")
 _LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")
 _ATCO = re.compile(r"^[A-Za-z0-9]{6,12}$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+_SECTIONS = {None: "Board", "train": "Trains", "bus": "Buses"}
 
 
 class Invalid(ValueError):
@@ -108,8 +109,11 @@ def _pairs(raw: str, value_check: Callable[[str], object], what: str) -> dict[st
             continue
         label, sep, value = (part.strip() for part in line.partition("="))
         if not sep or not _LABEL.match(label):
-            raise Invalid(f"Write each line as LABEL = {what}, with a label of 1 to 3 letters or digits")
-        pairs[label] = value_check(value)
+            raise Invalid(f"“{line[:40]}” isn't LABEL = {what}; use a label of 1 to 3 letters or digits")
+        try:
+            pairs[label] = value_check(value)
+        except Invalid as error:
+            raise Invalid(f"“{line[:40]}”: {error}") from None
     return pairs
 
 
@@ -142,6 +146,27 @@ def _directions(raw: str) -> list[str]:
     return parts
 
 
+def _accents(display: str, theme: str) -> tuple[str, ...]:
+    """Accents that stand out on the look's background: yellow is too faint on
+    the plain look's white (1.9:1), red too dim on the sign's black on a screen
+    (about 3.6:1)."""
+    if theme == "plain":
+        return ("red",)
+    if theme == "sign" and not DISPLAY_PANELS[display].epaper:
+        return ("yellow",)
+    return ("yellow", "red")
+
+
+def _accent(allowed: tuple[str, ...]) -> Callable[[str], str]:
+    def check(raw: str) -> str:
+        if raw == "" or raw in allowed:
+            return raw
+        if raw in ("red", "yellow"):
+            raise Invalid("That colour is too faint on this look; pick another or the look's own")
+        raise Invalid("Pick one of the options")
+    return check
+
+
 @dataclass(frozen=True)
 class Field:
     name: str  # form field name and element id
@@ -154,15 +179,18 @@ class Field:
     options: tuple[tuple[str, str], ...] = ()
 
 
-def _fields(display: str) -> list[Field]:
+def _fields(display: str, theme: str) -> list[Field]:
     rotations = ("0", "180") if DISPLAY_PANELS[display].epaper else ("0", "90", "180", "270")
+    accents = _accents(display, theme)
     return [
         Field("title", None, "title", "Title", _text(60), hint="Shown on the plain look's header."),
         Field("theme", None, "theme", "Look", _choice(tuple(THEMES)), "select",
               options=(("sign", "Station board (amber dot matrix)"), ("plain", "Plain (black on white)"))),
-        Field("accent", None, "accent", "Accent colour", _choice(("", "red", "yellow")), "select",
-              hint="Only reinforces meaning; the words always carry it.",
-              options=(("", "The look's own"), ("yellow", "Yellow / amber"), ("red", "Red"))),
+        Field("accent", None, "accent", "Accent colour", _accent(accents), "select",
+              hint="Only reinforces meaning; the words always carry it. The station board look uses amber "
+                   "and the plain look uses red; a colour too faint on the look's background isn't offered.",
+              options=(("", "The look's own"),)
+              + tuple((v, t) for v, t in (("yellow", "Yellow / amber"), ("red", "Red")) if v in accents)),
         Field("rotate", None, "rotate", "Rotation", lambda raw: int(_choice(rotations)(raw)), "select",
               hint="Degrees clockwise, to suit how the display is mounted.",
               options=tuple((r, f"{r}°") for r in rotations)),
@@ -285,7 +313,7 @@ class SettingsForm:
 
     def _current(self, data: dict) -> dict[str, str]:
         values = {}
-        for f in _fields(data.get("display", "inky")):
+        for f in _fields(data.get("display", "inky"), data.get("theme", "sign")):
             source = data if f.section is None else data.get(f.section, {})
             value = source.get(f.key)
             if f.name == "rotate" and value is None:
@@ -298,7 +326,7 @@ class SettingsForm:
         display = data.get("display", "inky")
         errors: dict[str, str] = {}
         overlay: dict = {}
-        for f in _fields(display):
+        for f in _fields(display, fields.get("theme", "")):
             if f.section and f.section not in data:
                 continue  # trains or buses aren't set up in config.toml
             try:
@@ -369,13 +397,17 @@ class SettingsForm:
                 '<div class="summary" role="alert"><h2>The saved settings file is broken</h2>'
                 f"<p>{e(broken)}</p><p>The page shows config.toml's settings. Saving replaces the broken file.</p></div>"
             )
+        fields = _fields(display, shown.get("theme", ""))
         if errors:
+            names = {f.name: f"{_SECTIONS[f.section]} – {f.label}" for f in fields}
+            names |= {name: f"Keys – {label}" for name, label, _ in KEYS}
             items = "".join(
-                f'<li><a href="#{e(name)}">{e(text)}</a></li>' if name != "_form" else f"<li>{e(text)}</li>"
+                f'<li><a href="#{e(name)}">{e(names.get(name, name))}: {e(text)}</a></li>'
+                if name != "_form" else f"<li>{e(text)}</li>"
                 for name, text in errors.items()
             )
             out.append(
-                '<div class="summary" role="alert" tabindex="-1" id="problems">'
+                '<div class="summary" role="alert" tabindex="-1" id="problems" autofocus>'
                 f"<h2>Not saved: fix {len(errors)} {'thing' if len(errors) == 1 else 'things'}</h2><ul>{items}</ul></div>"
             )
         out.append('<form method="post" action="/" novalidate>')
@@ -397,7 +429,7 @@ class SettingsForm:
             if section and section not in data:
                 out.append(f'<p class="hint">{e(missing)}</p></fieldset>')
                 continue
-            for f in _fields(display):
+            for f in fields:
                 if f.section != section:
                     continue
                 out.append(self._field(f, shown.get(f.name, ""), errors.get(f.name)))
@@ -448,5 +480,7 @@ class SettingsForm:
         attrs, notes = self._described(name, hint, error)
         return (
             f'<div class="field{" has-error" if error else ""}"><label for="{name}">{e(label)}</label>{notes}'
-            f'<input id="{name}" name="{name}" type="password" autocomplete="off" spellcheck="false"{attrs}></div>'
+            # Plain text: password managers ignore autocomplete="off" on password
+            # boxes and could fill in the board's own password here.
+            f'<input id="{name}" name="{name}" type="text" autocomplete="off" spellcheck="false"{attrs}></div>'
         )

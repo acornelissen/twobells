@@ -165,6 +165,95 @@ def test_errors_are_linked_from_a_summary_and_tied_to_their_fields(setup):
     assert re.search(r'id="train_crs"[^>]*aria-describedby="train_crs-hint train_crs-error"[^>]*aria-invalid="true"', page)
 
 
+def test_summary_items_name_their_section_and_field(setup):
+    form, *_ = setup
+    page = form.render("tok", errors={
+        "train_crs": "Enter a 3-letter station code, like GLO",
+        "title": "Enter some text",
+        "TAPI_APP_KEY": "Paste the key exactly",
+        "_form": "Not saved: something",
+    })
+    assert '<a href="#train_crs">Trains – Station code: Enter a 3-letter station code, like GLO</a>' in page
+    assert '<a href="#title">Board – Title: Enter some text</a>' in page
+    assert '<a href="#TAPI_APP_KEY">Keys – TransportAPI app key: Paste the key exactly</a>' in page
+    assert "<li>Not saved: something</li>" in page
+
+
+def test_the_error_summary_takes_focus(setup):
+    form, *_ = setup
+    page = form.render("tok", errors={"title": "Enter some text"})
+    assert re.search(r'<div class="summary"[^>]*tabindex="-1"[^>]*autofocus', page)
+
+
+@pytest.mark.parametrize("name, value, quoted", [
+    ("bus_stops", "A = 1000DGHS0900\nB = bad!", "“B = bad!”"),
+    ("bus_stops", "A = 1000DGHS0900\nStop B = 100000008350", "“Stop B = 100000008350”"),
+    ("bus_walk_minutes", "A = 7\nB = soon", "“B = soon”"),
+])
+def test_errors_in_a_many_line_field_quote_the_line(setup, name, value, quoted):
+    form, *_ = setup
+    errors = form.save(fields_of(form) | {name: value})
+    assert quoted in errors[name]
+
+
+def test_key_boxes_are_plain_text_so_password_managers_leave_them_alone(setup):
+    form, *_ = setup
+    page = form.render("tok")
+    assert 'type="password"' not in page
+    for name in ("RDM_API_KEY", "TAPI_APP_ID", "TAPI_APP_KEY", "BODS_API_KEY"):
+        assert f'<input id="{name}" name="{name}" type="text" autocomplete="off" spellcheck="false"' in page
+
+
+def _accents(page):
+    select = re.search(r'<select id="accent"[^>]*>(.*?)</select>', page).group(1)
+    return re.findall(r'value="([^"]*)"', select)
+
+
+def _form_for(tmp_path, extra):
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    config.write_text(CONFIG.format(state=state / "state.json").replace('theme = "sign"', extra))
+    return SettingsForm(config, lambda: dict(ENV))
+
+
+def test_the_plain_look_does_not_offer_yellow_on_white(tmp_path):
+    form = _form_for(tmp_path, 'theme = "plain"')
+    assert _accents(form.render("tok")) == ["", "red"]
+    errors = form.save(fields_of(form) | {"accent": "yellow"})
+    assert "accent" in errors
+    errors = form.save(fields_of(form) | {"theme": "sign", "accent": "yellow"})  # switching look and accent together
+    assert errors == {}
+
+
+def test_the_sign_look_on_a_screen_does_not_offer_red_on_black(tmp_path):
+    form = _form_for(tmp_path, 'theme = "sign"\ndisplay = "hdmi-1280x400"')
+    assert _accents(form.render("tok")) == ["", "yellow"]
+    assert "accent" in form.save(fields_of(form) | {"accent": "red"})
+
+
+def test_the_sign_look_on_e_paper_offers_both_accents(setup):
+    form, *_ = setup
+    assert _accents(form.render("tok")) == ["", "yellow", "red"]
+    assert "amber" in form.render("tok") and "plain look uses red" in form.render("tok")
+
+
+def test_outlined_buttons_have_a_border_that_stands_out():
+    from importlib.resources import files
+
+    css = files("departureboard").joinpath("web.css").read_text()
+    assert re.search(r"button\.quiet \{[^}]*border: 1px solid var\(--muted\)", css)
+
+    def luminance(hex_colour):
+        rgb = [int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        rgb = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+        return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+
+    light, dark = re.findall(r"--bg: (#\w{6});\s*--fg: #\w{6};\s*--muted: (#\w{6});", css)
+    for bg, muted in (light, dark):
+        high, low = sorted((luminance(bg), luminance(muted)), reverse=True)
+        assert (high + 0.05) / (low + 0.05) >= 3
+
+
 def test_every_control_has_a_label(setup):
     form, *_ = setup
     page = form.render("tok")
