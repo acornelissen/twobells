@@ -34,17 +34,42 @@ Calendars. runs_on() decides, in this order:
 
 from __future__ import annotations
 
+import logging
 import math
+import os
 import re
+import tempfile
 from dataclasses import dataclass, field
-from datetime import date
-from typing import AbstractSet, Collection, Iterable, Mapping, NamedTuple
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import AbstractSet, BinaryIO, Callable, Collection, Iterable, Iterator, Mapping, NamedTuple
+from urllib.parse import urlsplit
+from urllib.request import Request
 
-from . import safexml
+from . import http, routesetup, safexml
 from .schedule_model import Calendar, Call, DateRange, Journey, Schedule, StopPosition
+from .status import safe_message
 
+log = logging.getLogger(__name__)
+
+FILE_NAME = "bus-timetable.json"  # beside state.json
+MAX_AGE = timedelta(days=7)
+# Positions are kept for this many calls before each of your stops, and the one
+# after: livebus places buses along that stretch and sees them pass your stop.
+CALLS_BEFORE = 20
+CALLS_AFTER = 1
+MAX_JOURNEYS = 20_000  # far more than any town's stops see
+MAX_FILE_BYTES = 50_000_000
+DOWNLOAD_TIMEOUT = 60.0  # seconds without data before a download is given up
 _TEXT_LIMIT = 80  # line names, destinations, codes
 _LATEST = 2 * 24 * 3600  # a journey still running two days after its service day is nonsense
+# A clock this far behind a timetable's build time was wrong when it was built
+# (a Pi has no clock battery), so its age can't be trusted: build again.
+_SKEW = timedelta(days=1)
+
+FindDatasets = Callable[[str, str, "str | None"], list]  # (api_key, noc, line) -> links, as routesetup.dataset_urls
+Download = Callable[[str, BinaryIO], None]  # (link, file to write it to)
+Naptan = Callable[[Iterable[str]], dict]  # atcos -> {atco: (name, lat, lon)}, as routesetup.naptan_stops
 
 _NS = {"t": "http://www.transxchange.org.uk/"}
 _DURATION = re.compile(r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)(?:\.\d+)?S)?)?$")
@@ -461,3 +486,205 @@ def runs_on(calendar: Calendar, day: date, holiday_names: Mapping[date, Abstract
 def journeys_on(schedule: Schedule, day: date, holiday_names: Mapping[date, AbstractSet[str]] = {}) -> list[Journey]:
     """The schedule's journeys that run on `day`, their service day."""
     return [journey for journey in schedule.journeys if runs_on(journey.calendar, day, holiday_names)]
+
+
+# Building the schedule.
+
+
+def download(url: str, file: BinaryIO, max_bytes: int = routesetup.MAX_DOWNLOAD_BYTES) -> None:
+    """Write a timetable download into `file` as it arrives, refusing anything
+    but https, and more than `max_bytes`."""
+    if urlsplit(url).scheme != "https":
+        raise TimetableError("Refusing a timetable link that isn't https")
+    request = Request(url, headers={"User-Agent": http.USER_AGENT})
+    total = 0
+    with http.urlopen(request, timeout=DOWNLOAD_TIMEOUT) as response:
+        while chunk := response.read(1 << 16):
+            total += len(chunk)
+            if total > max_bytes:
+                raise TimetableError(f"Timetable download larger than {max_bytes} bytes; refusing")
+            file.write(chunk)
+
+
+def _dataset_links(operators: Iterable[str], api_key: str, lines, find_datasets: FindDatasets) -> list[tuple[str, str]]:
+    """(operator code, link) for each data set to fetch, each link once. With
+    `lines`, only the data sets BODS says carry one of them."""
+    links: dict[str, str] = {}
+    wanted_lines = sorted(set(lines or ())) or [None]
+    for noc in operators:
+        for line in wanted_lines:
+            for url in find_datasets(api_key, noc, line):
+                links.setdefault(url, noc)
+    return [(noc, url) for url, noc in links.items()]
+
+
+def _documents(links: list[tuple[str, str]], fetch: Download, scratch) -> Iterator[tuple[str, bytes]]:
+    """(operator code, document) for every TransXChange document behind the
+    links. Each download waits in a temporary file, gone once its documents
+    have been used; each document is unpacked only when wanted."""
+    for noc, url in links:
+        with tempfile.TemporaryFile(dir=scratch) as file:
+            fetch(url, file)
+            file.seek(0)
+            for document in routesetup.timetable_documents(file):
+                yield noc, document
+
+
+def _nearby(journey: Journey, atcos: Collection[str]) -> set[str]:
+    """The stops a journey calls at on its way to each of `atcos`, and the one after."""
+    found = set()
+    for index, call in enumerate(journey.calls):
+        if call.atco in atcos:
+            found.update(c.atco for c in journey.calls[max(0, index - CALLS_BEFORE) : index + CALLS_AFTER + 1])
+    return found
+
+
+def _positions(atcos: set[str], known: dict[str, StopPosition], naptan: Naptan) -> dict[str, StopPosition]:
+    """NaPTAN's name and position for each stop, or the timetables' own where
+    NaPTAN has none or can't be reached."""
+    try:
+        found = naptan(sorted(atcos))
+    except Exception as error:  # noqa: BLE001 - the timetables' own positions will do
+        log.warning("NaPTAN not reached, using the timetables' stop positions: %s", safe_message(error))
+        found = {}
+    positions = {}
+    for atco in sorted(atcos):
+        row = found.get(atco)
+        position = _position(str(row[0]).strip()[:_TEXT_LIMIT], str(row[1]), str(row[2])) if row else None
+        position = position or known.get(atco)
+        if position is not None:
+            positions[atco] = position
+    return positions
+
+
+def build_schedule(
+    stops: Mapping[str, str],
+    operators: Iterable[str],
+    api_key: str,
+    now: datetime,
+    *,
+    lines: Iterable[str] | None = None,
+    scratch: Path | str | None = None,
+    find_datasets: FindDatasets = routesetup.dataset_urls,
+    fetch: Download = download,
+    naptan: Naptan = routesetup.naptan_stops,
+) -> Schedule:
+    """A schedule of every timetabled journey calling at your `stops` (labels
+    to ATCO codes), from the BODS timetables of `operators` (national operator
+    codes). Downloads wait in `scratch` (the state folder: /tmp may be memory).
+
+    Journeys whose timetable ended before today are left out (BODS keeps an
+    old timetable beside its replacement for a while), and so are duplicates
+    (same line, operator, calls and calendar), which live times couldn't tell
+    apart. valid_until is the earliest end among the rest. TimetableError or
+    RouteSetupError if anything fails, or no journey calls at your stops."""
+    atcos = set(stops.values())
+    wanted = [atco.encode() for atco in atcos]
+    today = now.date()
+    journeys: dict[tuple, Journey] = {}
+    nearby: set[str] = set()
+    known: dict[str, StopPosition] = {}
+    links = _dataset_links(operators, api_key, lines, find_datasets)
+    for noc, document in _documents(links, fetch, scratch):
+        # Skip, unparsed, the many documents of a big operator that never mention your stops.
+        if not any(code in document for code in wanted):
+            continue
+        found, positions = _parse_document(document, atcos, noc)
+        for journey in found:
+            if journey.calendar.end and journey.calendar.end < today:
+                continue
+            journeys.setdefault((journey.line, journey.operator, journey.calls, journey.calendar), journey)
+            nearby |= _nearby(journey, atcos)
+        known.update((atco, position) for atco, position in positions.items() if atco in nearby)
+        if len(journeys) > MAX_JOURNEYS:
+            raise TimetableError(f"More than {MAX_JOURNEYS} journeys call at your stops; refusing")
+    if not journeys:
+        raise TimetableError("No timetabled journeys call at your stops")
+    kept = tuple(journeys.values())
+    ends = [journey.calendar.end for journey in kept if journey.calendar.end]
+    return Schedule(
+        built=now,
+        valid_until=min(ends, default=None),
+        stops=dict(stops),
+        journeys=kept,
+        positions=_positions(nearby, known, naptan),
+    )
+
+
+# Keeping it.
+
+
+def save(folder: Path | str, schedule: Schedule) -> None:
+    """Save the schedule beside the state file, whole or not at all, readable
+    by its owner and group only."""
+    path = Path(folder) / FILE_NAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    with os.fdopen(os.open(tmp, flags, 0o640), "w", encoding="utf-8") as file:
+        os.fchmod(file.fileno(), 0o640)  # whatever the umask, or a leftover file's mode
+        file.write(schedule.to_json())
+        file.flush()
+        # On disk before it replaces the old file, so a power cut can't leave it empty.
+        os.fsync(file.fileno())
+    os.replace(tmp, path)
+
+
+def load(folder: Path | str) -> Schedule | None:
+    """The saved schedule, or None if there is none or it can't be read."""
+    path = Path(folder) / FILE_NAME
+    try:
+        if path.stat().st_size > MAX_FILE_BYTES:
+            log.warning("Ignoring bus timetable %s: larger than %d bytes", path, MAX_FILE_BYTES)
+            return None
+        return Schedule.from_json(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+        log.warning("Ignoring unreadable bus timetable %s: %s", path, safe_message(error))
+        return None
+
+
+def due(schedule: Schedule | None, stops: Mapping[str, str], now: datetime) -> str | None:
+    """Why the schedule should be built again, or None if it shouldn't."""
+    if schedule is None:
+        return "there is none"
+    if dict(schedule.stops) != dict(stops):
+        return "your stops changed"
+    if now - schedule.built >= MAX_AGE:
+        return "it is a week old"
+    if schedule.built - now > _SKEW:
+        return "it was built in the future"
+    if schedule.valid_until and now.date() > schedule.valid_until:
+        return "a timetable in it has ended"
+    return None
+
+
+def refresh(
+    folder: Path | str,
+    stops: Mapping[str, str],
+    operators: Iterable[str],
+    now: datetime,
+    api_key: str,
+    *,
+    lines: Iterable[str] | None = None,
+    force: bool = False,
+    build: Callable[..., Schedule] = build_schedule,
+) -> Schedule | None:
+    """The schedule to use, from `folder` (the state folder). It is built
+    again first if it is due (see due) or `force`d, as when the operators
+    change, which the schedule doesn't record. A failed build keeps the saved
+    one. With nothing due this only reads the saved file."""
+    current = load(folder)
+    reason = "asked to" if force else due(current, stops, now)
+    if reason is None:
+        return current
+    try:
+        Path(folder).mkdir(parents=True, exist_ok=True)
+        fresh = build(stops, operators, api_key, now, lines=lines, scratch=folder)
+        save(folder, fresh)
+    except Exception as error:  # noqa: BLE001 - any failure keeps the last good schedule
+        log.warning("Bus timetable not rebuilt (%s), keeping the saved one: %s", reason, safe_message(error))
+        return current
+    log.info("Bus timetable rebuilt (%s): %d journeys", reason, len(fresh.journeys))
+    return fresh

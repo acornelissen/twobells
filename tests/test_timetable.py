@@ -1,11 +1,25 @@
+import io
+import stat
+import zipfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from departureboard.holidays import Event, holiday_names
-from departureboard.schedule_model import Calendar, Call, Schedule
-from departureboard.timetable import TimetableError, journeys_on, parse_journeys, runs_on
+from departureboard.schedule_model import Calendar, Call, Schedule, StopPosition
+from departureboard.timetable import (
+    FILE_NAME,
+    TimetableError,
+    build_schedule,
+    download,
+    journeys_on,
+    load,
+    parse_journeys,
+    refresh,
+    runs_on,
+    save,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 TXC_341 = (FIXTURES / "txc_bnml_341.xml").read_bytes()
@@ -487,3 +501,267 @@ def test_school_days_only_with_no_known_school_days_runs_on_none():
     assert not any(runs_on(calendar, date(2026, 10, 5) + timedelta(days=n)) for n in range(7))
     # Not running on unknown school days restricts nothing.
     assert _calendar(_school("DaysOfNonOperation", "WorkingDays", "MISSING"), extra=SCHOOLS).days == set(range(5))
+
+
+# Building a schedule, with BODS and NaPTAN faked.
+
+NOW = datetime(2026, 10, 9, 3, 0)
+STOPS = {"A": STOP_A, "B": STOP_B}
+BNML_LINK = "https://data.bus-data.dft.gov.uk/timetable/dataset/1/download/"
+HIPK_LINK = "https://data.bus-data.dft.gov.uk/timetable/dataset/2/download/"
+ELSEWHERE = b'<?xml version="1.0"?><TransXChange xmlns="http://www.transxchange.org.uk/"><broken'
+
+
+def _zip(files):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, data in files.items():
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+class FakeBods:
+    def __init__(self):
+        self.datasets = {"BNML": [BNML_LINK], "HIPK": [HIPK_LINK]}
+        # A document that names neither stop is never parsed: this one would fail if it were.
+        self.blobs = {BNML_LINK: _zip({"341.xml": TXC_341, "237.xml": TXC_237, "201.xml": ELSEWHERE}), HIPK_LINK: TXC_61}
+        self.asked = []
+        self.fetched = []
+        self.naptan_asked = None
+        self.naptan_error = None
+
+    def find(self, api_key, noc, line=None):
+        self.asked.append((api_key, noc, line))
+        return self.datasets.get(noc, [])
+
+    def fetch(self, url, file):
+        self.fetched.append((url, file))
+        file.write(self.blobs[url])
+
+    def naptan(self, atcos):
+        self.naptan_asked = set(atcos)
+        if self.naptan_error:
+            raise self.naptan_error
+        return {STOP_A: ("Henry Street", 53.44384, -1.948999), "1000DGHSW936": ("Market Hall", 53.443239, -1.949828)}
+
+    def build(self, now=NOW, operators=("BNML", "HIPK"), **options):
+        return build_schedule(STOPS, operators, "secret-key", now, find_datasets=self.find, fetch=self.fetch,
+                              naptan=self.naptan, **options)
+
+
+def test_build_collects_journeys_at_your_stops_from_every_operator(tmp_path):
+    bods = FakeBods()
+    schedule = bods.build(scratch=tmp_path)
+    assert schedule.built == NOW
+    assert schedule.stops == STOPS
+    assert {(j.line, j.operator) for j in schedule.journeys} == {("341", "BNGN"), ("61", "HIPK")}
+    assert len(schedule.journeys) == 9
+    assert bods.asked == [("secret-key", "BNML", None), ("secret-key", "HIPK", None)]
+    assert [url for url, _ in bods.fetched] == [BNML_LINK, HIPK_LINK]
+    assert list(tmp_path.iterdir()) == []  # downloads are gone once used
+
+
+def test_a_timetable_that_has_ended_is_left_out_and_sets_valid_until():
+    # The 237 summer timetable ended on 29 August; in October it is left out.
+    assert FakeBods().build().valid_until == date(2031, 2, 23)  # the 341's end; the 61 has none
+    summer = FakeBods().build(now=datetime(2026, 8, 1, 3, 0))
+    assert "237" in {j.line for j in summer.journeys}
+    assert summer.valid_until == date(2026, 8, 29)
+
+
+def test_positions_cover_the_stretch_before_your_stops_and_the_stop_after():
+    bods = FakeBods()
+    schedule = bods.build()
+    into = next(j for j in schedule.journeys if j.journey_code == "1007")  # 23 calls, ending at Stop A
+    out = next(j for j in schedule.journeys if j.journey_code == "1012")  # starting at Stop A
+    assert {c.atco for c in into.calls[-21:]} <= bods.naptan_asked  # Stop A and the 20 before it
+    assert into.calls[0].atco not in bods.naptan_asked and into.calls[1].atco not in bods.naptan_asked
+    assert out.calls[1].atco in bods.naptan_asked  # the stop after yours
+    assert out.calls[2].atco not in bods.naptan_asked
+    assert set(schedule.positions) == bods.naptan_asked
+    # NaPTAN's position where it has one, else the timetable's own.
+    assert schedule.positions[STOP_A] == StopPosition("Henry Street", 53.44384, -1.948999)
+    assert schedule.positions[STOP_B] == StopPosition("Glossop, Henry Street (Stop B)", 53.443841, -1.94921)
+
+
+def test_without_naptan_the_timetables_positions_are_used(caplog):
+    bods = FakeBods()
+    bods.naptan_error = OSError("naptan down")
+    schedule = bods.build()
+    assert set(schedule.positions) == bods.naptan_asked
+    assert schedule.positions[STOP_A] == StopPosition("Henry Street", 53.44384, -1.948999)
+    assert schedule.positions["1000DGHSW936"].name == "Market Hall"
+    assert "naptan down" in caplog.text
+
+
+def test_duplicate_journeys_are_kept_once():
+    bods = FakeBods()
+    bods.blobs[BNML_LINK] = _zip({"341.xml": TXC_341, "341-again.xml": TXC_341})
+    bods.datasets["HIPK"] = []
+    assert len(bods.build().journeys) == 5
+
+
+def test_lines_narrow_the_data_sets_and_each_link_is_fetched_once():
+    bods = FakeBods()
+    bods.datasets["HIPK"] = [HIPK_LINK, BNML_LINK]
+    bods.build(lines=["61", "341"])
+    assert ("secret-key", "BNML", "341") in bods.asked and ("secret-key", "HIPK", "61") in bods.asked
+    assert [url for url, _ in bods.fetched] == [BNML_LINK, HIPK_LINK]
+
+
+def test_one_download_at_a_time():
+    bods = FakeBods()
+    held = []
+    original = bods.fetch
+
+    def fetch(url, file):
+        held.append(file)
+        assert all(earlier.closed for earlier in held[:-1])  # the last one's file is already gone
+        original(url, file)
+
+    bods.fetch = fetch
+    bods.build()
+    assert len(held) == 2
+
+
+def test_documents_are_unpacked_one_at_a_time(tmp_path):
+    from departureboard.timetable import _documents
+
+    blob = _zip({"a.xml": b"<a/>", "b.xml": b"<b/>"})
+    documents = _documents([("X", "https://x/1")], lambda url, file: file.write(blob), tmp_path)
+    assert next(documents) == ("X", b"<a/>")
+    assert next(documents) == ("X", b"<b/>")
+
+
+def test_no_journeys_at_your_stops_is_an_error():
+    bods = FakeBods()
+    bods.datasets = {"BNML": [HIPK_LINK]}
+    with pytest.raises(TimetableError, match="No timetabled journeys"):
+        build_schedule({"A": "NOWHERE"}, ["BNML"], "k", NOW, find_datasets=bods.find, fetch=bods.fetch,
+                       naptan=bods.naptan)
+
+
+@pytest.mark.parametrize("url", ["http://example.com/x", "file:///etc/passwd", "ftp://example.com/x"])
+def test_download_refuses_anything_but_https(url):
+    with pytest.raises(TimetableError, match="https"):
+        download(url, io.BytesIO())
+
+
+def test_download_is_capped(monkeypatch):
+    from departureboard import http
+
+    class Response(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(http, "urlopen", lambda request, timeout: Response(b"x" * 300_000))
+    file = io.BytesIO()
+    download("https://example.com/ok", file, max_bytes=300_000)
+    assert len(file.getvalue()) == 300_000
+    with pytest.raises(TimetableError, match="larger"):
+        download("https://example.com/big", io.BytesIO(), max_bytes=299_999)
+
+
+# Keeping it.
+
+def _schedule(built=NOW, stops=STOPS, valid_until=None):
+    journeys = tuple(parse_journeys(TXC_61, OURS))
+    return Schedule(built, valid_until, dict(stops), journeys, {STOP_B: StopPosition("Henry Street", 53.4, -1.9)})
+
+
+def test_save_and_load_round_trip(tmp_path):
+    schedule = _schedule()
+    save(tmp_path / "state", schedule)
+    path = tmp_path / "state" / FILE_NAME
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+    assert load(tmp_path / "state") == schedule
+    assert not (tmp_path / "state" / "bus-timetable.tmp").exists()
+
+
+def test_load_without_a_file_or_with_a_bad_one(tmp_path):
+    assert load(tmp_path) is None
+    (tmp_path / FILE_NAME).write_text("{ not json")
+    assert load(tmp_path) is None
+    (tmp_path / FILE_NAME).write_text("[]")
+    assert load(tmp_path) is None
+    (tmp_path / FILE_NAME).write_text('{"built": "2026-10-09T03:00:00"}')
+    assert load(tmp_path) is None
+
+
+class FakeBuild:
+    def __init__(self, result=None, error=None):
+        self.result = result
+        self.error = error
+        self.calls = []
+
+    def __call__(self, stops, operators, api_key, now, **options):
+        self.calls.append((dict(stops), list(operators), api_key, now, options))
+        if self.error:
+            raise self.error
+        return self.result or _schedule(built=now, stops=stops)
+
+
+def test_refresh_builds_when_there_is_none(tmp_path):
+    build = FakeBuild()
+    schedule = refresh(tmp_path, STOPS, ["BNML"], NOW, "k", lines=["341"], build=build)
+    assert schedule == load(tmp_path)
+    assert build.calls == [(STOPS, ["BNML"], "k", NOW, {"lines": ["341"], "scratch": tmp_path})]
+
+
+def test_refresh_keeps_a_fresh_schedule_without_building(tmp_path):
+    save(tmp_path, _schedule(built=NOW))
+    build = FakeBuild()
+    for days in range(7):
+        assert refresh(tmp_path, STOPS, ["BNML"], NOW + timedelta(days=days, hours=23), "k", build=build) == _schedule()
+    assert build.calls == []
+
+
+@pytest.mark.parametrize("saved, now, stops", [
+    (_schedule(built=NOW), NOW + timedelta(days=7), STOPS),  # a week old
+    (_schedule(built=NOW), NOW, {"A": STOP_A}),  # stops changed
+    (_schedule(built=NOW, valid_until=date(2026, 10, 9)), NOW + timedelta(days=1), STOPS),  # a timetable ended
+    (_schedule(built=NOW + timedelta(days=30)), NOW, STOPS),  # built when the clock was wrong
+])
+def test_refresh_rebuilds_when_due(tmp_path, saved, now, stops):
+    save(tmp_path, saved)
+    build = FakeBuild()
+    schedule = refresh(tmp_path, stops, ["BNML"], now, "k", build=build)
+    assert len(build.calls) == 1
+    assert schedule.built == now and load(tmp_path).built == now
+
+
+def test_refresh_can_be_forced(tmp_path):
+    save(tmp_path, _schedule())
+    build = FakeBuild()
+    refresh(tmp_path, STOPS, ["BNML", "HIPK"], NOW, "k", force=True, build=build)
+    assert len(build.calls) == 1
+
+
+def test_a_failed_refresh_keeps_the_old_schedule_and_never_logs_the_key(tmp_path, caplog):
+    old = _schedule(built=NOW - timedelta(days=8))
+    save(tmp_path, old)
+    build = FakeBuild(error=OSError("GET https://data.bus-data.dft.gov.uk/api/v1/dataset/?api_key=SECRET failed"))
+    assert refresh(tmp_path, STOPS, ["BNML"], NOW, "SECRET", build=build) == old
+    assert load(tmp_path) == old
+    assert "not rebuilt" in caplog.text
+    assert "SECRET" not in caplog.text
+
+
+def test_a_failed_first_build_leaves_nothing(tmp_path):
+    assert refresh(tmp_path, STOPS, ["BNML"], NOW, "k", build=FakeBuild(error=TimetableError("no"))) is None
+    assert not (tmp_path / FILE_NAME).exists()
+
+
+def test_refresh_end_to_end_with_fakes(tmp_path):
+    bods = FakeBods()
+
+    def build(*args, **options):
+        return build_schedule(*args, find_datasets=bods.find, fetch=bods.fetch, naptan=bods.naptan, **options)
+
+    schedule = refresh(tmp_path / "state", STOPS, ["BNML", "HIPK"], NOW, "k", build=build)
+    assert len(schedule.journeys) == 9
+    assert load(tmp_path / "state") == schedule
+    assert [p.name for p in (tmp_path / "state").iterdir()] == [FILE_NAME]
