@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 from urllib.parse import urlencode
 from xml.etree import ElementTree
@@ -17,6 +18,9 @@ from .http import get_bytes
 DEFAULT_BASE_URL = "https://data.bus-data.dft.gov.uk/api/v1"
 # A busy town's worth of vehicles is well under this; anything bigger is refused.
 MAX_RESPONSE_BYTES = 2_000_000
+# BODS keeps sending a vehicle's last position long after it stops reporting
+# (parked overnight, tracker off), so anything older than this is ignored.
+MAX_AGE = timedelta(minutes=5)
 
 _NS = {"siri": "http://www.siri.org.uk/siri"}
 _API_KEY = re.compile(r"\bapi_key=[^&\s\"']*")
@@ -89,12 +93,14 @@ class BodsVehicleSource:
         lines: set[str],
         base_url: str = DEFAULT_BASE_URL,
         http_get: HttpGetBytes = get_bytes,
+        now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         self._api_key = api_key
         self._box = box
         self._lines = set(lines)
         self._base_url = base_url.rstrip("/")
         self._http_get = http_get
+        self._now = now
 
     def _url(self) -> str:
         params = {
@@ -108,4 +114,15 @@ class BodsVehicleSource:
             body = self._http_get(self._url(), MAX_RESPONSE_BYTES)
         except Exception as error:  # noqa: BLE001 - re-raised without the key
             raise RuntimeError(redact_key(str(error))) from None
-        return [v for v in parse_siri_vm(body) if v.line in self._lines]
+        now = self._now()
+        return [v for v in parse_siri_vm(body) if v.line in self._lines and _fresh(v, now)]
+
+
+def _fresh(vehicle: Vehicle, now: datetime) -> bool:
+    try:
+        recorded = datetime.fromisoformat(vehicle.recorded_at)
+    except ValueError:
+        return False
+    if recorded.tzinfo is None:
+        recorded = recorded.replace(tzinfo=timezone.utc)
+    return now - recorded <= MAX_AGE

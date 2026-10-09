@@ -41,7 +41,10 @@ def test_source_asks_for_the_box_in_bods_order_and_keeps_only_its_lines():
         calls.append((url, max_bytes))
         return FIXTURE
 
-    source = BodsVehicleSource("secret", BOX, {"341"}, http_get=fake_get)
+    from datetime import datetime, timezone
+
+    fixture_time = datetime(2026, 10, 8, 6, 13, tzinfo=timezone.utc)
+    source = BodsVehicleSource("secret", BOX, {"341"}, http_get=fake_get, now=lambda: fixture_time)
     vehicles = source.fetch()
     assert {v.line for v in vehicles} == {"341"}
     url, max_bytes = calls[0]
@@ -86,3 +89,24 @@ def test_get_bytes_refuses_an_oversized_body(monkeypatch):
         http.get_bytes("https://example.invalid/", max_bytes=10)
     monkeypatch.setattr(http, "urlopen", lambda request, timeout: FakeResponse(b"x" * 10))
     assert http.get_bytes("https://example.invalid/", max_bytes=10) == b"x" * 10
+
+
+def test_positions_not_updated_for_five_minutes_are_dropped():
+    from datetime import datetime, timezone
+
+    # The fixture's vehicles report between 07:12:20 and 07:12:35 BST (06:12 UTC).
+    fresh = datetime(2026, 10, 8, 6, 15, 0, tzinfo=timezone.utc)
+    later = datetime(2026, 10, 8, 6, 17, 32, tzinfo=timezone.utc)
+    source = BodsVehicleSource("k", BOX, {"341", "237"}, http_get=lambda u, m: FIXTURE, now=lambda: fresh)
+    assert len(source.fetch()) == 4
+    source = BodsVehicleSource("k", BOX, {"341", "237"}, http_get=lambda u, m: FIXTURE, now=lambda: later)
+    assert [v.vehicle_ref for v in source.fetch()] == ["BNML-1003"]  # 07:12:35, the only one under 5 min old
+
+
+def test_positions_with_an_unreadable_time_are_dropped():
+    body = FIXTURE.replace(b"2026-10-08T07:12:31+01:00", b"yesterday-ish")
+    from datetime import datetime, timezone
+
+    now = datetime(2026, 10, 8, 6, 13, tzinfo=timezone.utc)
+    source = BodsVehicleSource("k", BOX, {"341"}, http_get=lambda u, m: body, now=lambda: now)
+    assert "BNML-1001" not in {v.vehicle_ref for v in source.fetch()}
