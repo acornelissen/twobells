@@ -608,6 +608,7 @@ def build_schedule(
         stops=dict(stops),
         journeys=kept,
         positions=_positions(nearby, known, naptan),
+        operators=tuple(sorted(set(operators))),
     )
 
 
@@ -645,12 +646,17 @@ def load(folder: Path | str) -> Schedule | None:
         return None
 
 
-def due(schedule: Schedule | None, stops: Mapping[str, str], now: datetime) -> str | None:
-    """Why the schedule should be built again, or None if it shouldn't."""
+def due(
+    schedule: Schedule | None, stops: Mapping[str, str], now: datetime, operators: Iterable[str] | None = None
+) -> str | None:
+    """Why the schedule should be built again, or None if it shouldn't. With
+    `operators`, a schedule built from others is due too."""
     if schedule is None:
         return "there is none"
     if dict(schedule.stops) != dict(stops):
         return "your stops changed"
+    if operators is not None and schedule.operators != tuple(sorted(set(operators))):
+        return "your operators changed"
     if now - schedule.built >= MAX_AGE:
         return "it is a week old"
     if schedule.built - now > _SKEW:
@@ -672,11 +678,12 @@ def refresh(
     build: Callable[..., Schedule] = build_schedule,
 ) -> Schedule | None:
     """The schedule to use, from `folder` (the state folder). It is built
-    again first if it is due (see due) or `force`d, as when the operators
-    change, which the schedule doesn't record. A failed build keeps the saved
-    one. With nothing due this only reads the saved file."""
+    again first if it is due (see due: weekly, or when the stops or operators
+    change) or `force`d. A failed build keeps the saved one. With nothing due
+    this only reads the saved file."""
     current = load(folder)
-    reason = "asked to" if force else due(current, stops, now)
+    operators = list(operators)
+    reason = "asked to" if force else due(current, stops, now, operators)
     if reason is None:
         return current
     try:

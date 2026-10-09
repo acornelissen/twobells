@@ -70,6 +70,9 @@ class Schedule:
     journeys: tuple[Journey, ...]  # only journeys calling at one of your stops
     # Positions of the stops journeys call at on the way to yours, for placing buses.
     positions: dict[str, StopPosition] = field(default_factory=dict)
+    # The national operator codes whose timetables it was built from, sorted;
+    # empty in a file saved before they were recorded.
+    operators: tuple[str, ...] = ()
 
     def to_json(self) -> str:
         return json.dumps(_plain(asdict(self)), separators=(",", ":"), sort_keys=True)
@@ -83,6 +86,7 @@ class Schedule:
             stops=dict(data["stops"]),
             journeys=tuple(_journey(j) for j in data["journeys"]),
             positions={k: StopPosition(**v) for k, v in data.get("positions", {}).items()},
+            operators=tuple(data.get("operators", ())),
         )
 
 

@@ -13,6 +13,7 @@ from departureboard.timetable import (
     TimetableError,
     build_schedule,
     download,
+    due,
     journeys_on,
     load,
     parse_journeys,
@@ -667,9 +668,10 @@ def test_download_is_capped(monkeypatch):
 
 # Keeping it.
 
-def _schedule(built=NOW, stops=STOPS, valid_until=None):
+def _schedule(built=NOW, stops=STOPS, valid_until=None, operators=("BNML",)):
     journeys = tuple(parse_journeys(TXC_61, OURS))
-    return Schedule(built, valid_until, dict(stops), journeys, {STOP_B: StopPosition("Henry Street", 53.4, -1.9)})
+    return Schedule(built, valid_until, dict(stops), journeys, {STOP_B: StopPosition("Henry Street", 53.4, -1.9)},
+                    operators=operators)
 
 
 def test_save_and_load_round_trip(tmp_path):
@@ -724,6 +726,8 @@ def test_refresh_keeps_a_fresh_schedule_without_building(tmp_path):
     (_schedule(built=NOW), NOW, {"A": STOP_A}),  # stops changed
     (_schedule(built=NOW, valid_until=date(2026, 10, 9)), NOW + timedelta(days=1), STOPS),  # a timetable ended
     (_schedule(built=NOW + timedelta(days=30)), NOW, STOPS),  # built when the clock was wrong
+    (_schedule(operators=("BNML", "HIPK")), NOW, STOPS),  # operators changed
+    (_schedule(operators=()), NOW, STOPS),  # saved before operators were recorded
 ])
 def test_refresh_rebuilds_when_due(tmp_path, saved, now, stops):
     save(tmp_path, saved)
@@ -765,3 +769,18 @@ def test_refresh_end_to_end_with_fakes(tmp_path):
     assert len(schedule.journeys) == 9
     assert load(tmp_path / "state") == schedule
     assert [p.name for p in (tmp_path / "state").iterdir()] == [FILE_NAME]
+
+
+def test_operators_are_compared_as_a_set():
+    assert due(_schedule(operators=("BNML", "HIPK")), STOPS, NOW, ["HIPK", "BNML", "HIPK"]) is None
+    assert due(_schedule(operators=("BNML",)), STOPS, NOW, ["BNML", "HIPK"]) == "your operators changed"
+    assert due(_schedule(operators=("BNML",)), STOPS, NOW) is None  # not asked about operators
+
+
+def test_the_build_records_its_operators(tmp_path):
+    bods = FakeBods()
+    schedule = build_schedule(STOPS, ["HIPK", "BNML"], "k", NOW, find_datasets=bods.find, fetch=bods.fetch,
+                              naptan=bods.naptan, scratch=tmp_path)
+    assert schedule.operators == ("BNML", "HIPK")
+    save(tmp_path, schedule)
+    assert load(tmp_path).operators == ("BNML", "HIPK")

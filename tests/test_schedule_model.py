@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime
 
 from departureboard.schedule_model import Calendar, Call, Journey, Schedule, StopPosition
@@ -17,7 +18,14 @@ def test_schedule_round_trips_through_json():
         stops={"A": "1000DGHS0900"},
         journeys=(journey,),
         positions={"1000DGHS0900": StopPosition("Henry Street", 53.44384, -1.948999)},
+        operators=("BNML", "HIPK"),
     )
     back = Schedule.from_json(schedule.to_json())
     assert back == schedule
     assert back.journeys[0].origin == Call("1000DGHS0900", 380)
+
+
+def test_a_schedule_saved_before_operators_were_recorded_has_none():
+    old = json.dumps({"built": "2026-10-09T03:00:00", "valid_until": None, "stops": {"A": "1000DGHS0900"},
+                      "journeys": [], "positions": {}})
+    assert Schedule.from_json(old).operators == ()
