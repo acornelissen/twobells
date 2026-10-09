@@ -280,3 +280,14 @@ def test_without_a_password_the_page_says_how_to_set_one(tmp_path):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_a_client_hanging_up_early_is_not_reported(capsys):
+    from departureboard.web import _Server
+
+    server = _Server.__new__(_Server)
+    try:
+        raise BrokenPipeError(32, "Broken pipe")
+    except BrokenPipeError:
+        server.handle_error(None, ("127.0.0.1", 1))
+    assert capsys.readouterr().err == ""

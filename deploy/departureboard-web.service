@@ -1,0 +1,37 @@
+[Unit]
+Description=Departure board settings page (home network only)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=departureboard
+Group=departureboard
+StateDirectory=departureboard
+StateDirectoryMode=0750
+# Keys, so the page can say which are set and check settings before saving.
+EnvironmentFile=/etc/departureboard/secrets.env
+ExecStart=/opt/departureboard/venv/bin/departureboard web --config /etc/departureboard/config.toml --port 8080
+Restart=on-failure
+RestartSec=5
+UMask=0027
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+# Home network only, enforced by the kernel as well as by the page.
+IPAddressDeny=any
+IPAddressAllow=localhost link-local 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7
+
+[Install]
+WantedBy=multi-user.target

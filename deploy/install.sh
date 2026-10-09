@@ -22,6 +22,8 @@ raspi-config nonint do_spi 0
 raspi-config nonint do_i2c 0
 
 id departureboard &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin departureboard
+# State, saved settings and the settings page password live here.
+install -d -o departureboard -g departureboard -m 750 /var/lib/departureboard
 
 python3 -m venv --system-site-packages "$PREFIX/venv"
 "$PREFIX/venv/bin/pip" install --upgrade pip
@@ -34,6 +36,7 @@ install -d -m 755 "$CONF"
 install -m 644 "$REPO/deploy/departureboard.service" /etc/systemd/system/
 install -m 644 "$REPO/deploy/departureboard.timer" /etc/systemd/system/
 install -m 644 "$REPO/deploy/departureboard-screen.service" /etc/systemd/system/
+install -m 644 "$REPO/deploy/departureboard-web.service" /etc/systemd/system/
 systemctl daemon-reload
 
 cat <<EOF
@@ -45,6 +48,10 @@ Installed. Next:
   3. Start the board:  sudo systemctl enable --now departureboard.timer          (e-paper)
                   or:  sudo systemctl enable --now departureboard-screen.service (HDMI screen)
   4. Watch it:         journalctl -u departureboard -f
+  5. Settings page (optional, home network only):
+       sudo -u departureboard $PREFIX/venv/bin/departureboard web --set-password
+       sudo systemctl enable --now departureboard-web.service
+     then open http://$(hostname).local:8080/
 
 If the display errors about chip select, add  dtoverlay=spi0-0cs
 to /boot/firmware/config.txt and reboot. The Waveshare 10.85" panel always

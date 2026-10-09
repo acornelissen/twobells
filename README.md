@@ -117,6 +117,28 @@ departureboard route 341 --stop A --noc BNML --config config.toml --secrets secr
 departureboard emulate --demo --display hdmi-1280x400
 ```
 
+### Settings page
+
+A password-protected page on your home network for everyday settings: the look, accent and rotation, stations and stops, when to check, walking times, and API keys. Keys are write-only: the page says whether one is set but never shows it.
+
+```bash
+sudo -u departureboard /opt/departureboard/venv/bin/departureboard web --set-password
+sudo systemctl enable --now departureboard-web.service
+```
+
+Then open `http://<pi name>.local:8080/` from a phone or laptop on the same network.
+
+- Saved settings go to `/var/lib/departureboard/settings.toml`, layered over `config.toml`, which is never rewritten. Keys go to `/var/lib/departureboard/secrets.env` (0600).
+- Nothing is saved unless every field passes its check and the whole configuration loads.
+- The e-paper board picks changes up on its next minute. The screen reloads within a second, and restarts itself if the display settings changed.
+- Changing between e-paper and the screen means switching services, so the display type stays in `config.toml`.
+- Security:
+  - Only private and link-local addresses get in, checked by the page and by the service's systemd IP firewall.
+  - Requests must name a local host, which stops DNS-rebinding pages.
+  - A signed-in session, a form token and a same-origin check are needed to change anything.
+  - Five wrong passwords lock an address out for 15 minutes.
+  - The page is plain HTTP on your LAN, so use a password you don't use anywhere else.
+
 ## 3. Develop on your laptop
 
 ```bash
@@ -166,6 +188,7 @@ Live modes keep state in `state_file`, so the TransportAPI budget holds across r
 | `routesetup.py` | Builds a route strip from a BODS timetable and NaPTAN (`route` command) |
 | `fake.py` | Deterministic fake sources and simulated clock |
 | `app.py` | One tick: poll what's due, redraw only on change |
+| `web.py`, `settingsform.py`, `web.css` | Settings page: sign-in and request checks; the form, its checks and saving |
 | `cli.py`, `config.py` | `run` / `probe` / `demo`; TOML settings, env secrets |
 
 To add a page or provider, implement `fetch() -> list[Departure]` with a `name` and add it to `config.py`.

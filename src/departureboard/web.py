@@ -15,8 +15,10 @@ import hmac
 import html
 import ipaddress
 import json
+import logging
 import os
 import secrets
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -25,6 +27,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable, Protocol
 from urllib.parse import parse_qs, urlparse
+
+log = logging.getLogger(__name__)
 
 DEFAULT_PORT = 8080
 MIN_PASSWORD = 10
@@ -374,5 +378,15 @@ def shell(title: str, body: str) -> str:
     )
 
 
+class _Server(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address) -> None:
+        error = sys.exc_info()[1]
+        if isinstance(error, ConnectionError):
+            return  # the browser went away mid-reply; nothing to report
+        log.warning("Settings page request failed: %s", type(error).__name__)
+
+
 def make_server(handler, host: str = "0.0.0.0", port: int = DEFAULT_PORT) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer((host, port), handler)
+    return _Server((host, port), handler)
