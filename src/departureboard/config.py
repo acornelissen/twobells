@@ -49,11 +49,13 @@ def overlay_paths(config_path: Path | str) -> tuple[Path, Path] | None:
 
 
 def merge(base: dict, over: dict) -> dict:
-    """Tables merge key by key; anything else in `over` replaces what's in `base`."""
+    """Top-level tables like [bus] merge key by key, so keys the page doesn't
+    manage (like bus.routes) survive; anything else in `over`, tables below the
+    top level included, replaces what's in `base`, so the page can remove a stop."""
     merged = dict(base)
     for key, value in over.items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = merge(merged[key], value)
+            merged[key] = {**merged[key], **value}
         else:
             merged[key] = value
     return merged
@@ -117,7 +119,7 @@ def _train(section: dict, env: Mapping[str, str]) -> SourceConfig:
     source = DarwinSource(
         api_key=_secret(env, "RDM_API_KEY"),
         crs=section["crs"],
-        filter_crs=section.get("filter_crs"),
+        filter_crs=section.get("filter_crs") or None,  # "" is the page's "no filter"
         rows=section.get("rows", 3),
         base_url=section.get("base_url", DARWIN_BASE_URL),
     )
@@ -188,6 +190,8 @@ def _tracker(section: dict, env: Mapping[str, str], windows) -> Tracker | None:
 
 def _walk(data: dict) -> WalkTimes:
     train = data.get("train", {}).get("walk_minutes")
+    if train == "":
+        train = None  # the page's "no walk time"
     bus = data.get("bus", {}).get("walk_minutes", {})
     if isinstance(bus, int):
         bus = {DEFAULT_STOP: bus}
@@ -253,7 +257,7 @@ def settings_from(data: dict, env: Mapping[str, str], only: set[str] | None = No
         board=board,
         timezone=data.get("timezone", "Europe/London"),
         state_file=Path(data.get("state_file", "state.json")),
-        accent=data.get("accent", theme.accent),
+        accent=data.get("accent") or theme.accent,  # "" is the page's "the look's own"
         rotate=rotate,
         display=display,
     )

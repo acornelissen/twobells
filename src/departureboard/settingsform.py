@@ -126,9 +126,9 @@ def _stops(raw: str) -> dict[str, object]:
     return stops
 
 
-def _walk_per_stop(raw: str) -> dict[str, object] | int | None:
+def _walk_per_stop(raw: str) -> dict[str, object] | int:
     if not raw.strip():
-        return None
+        return {}
     if raw.strip().isdigit():
         return _number(0, 60)(raw)
     return _pairs(raw, lambda v: _number(0, 60)(v), "minutes")
@@ -170,7 +170,7 @@ def _fields(display: str) -> list[Field]:
               _number(1, 60), "number", hint="E-paper only. Refreshes are slow and wear the panel."),
         Field("train_crs", "train", "crs", "Station code", _crs(), hint="3 letters, like GLO for Glossop."),
         Field("train_filter_crs", "train", "filter_crs", "Only trains calling at", _crs(optional=True),
-              hint="Optional station code, like MAN."),
+              hint="Optional station code, like MAN. Empty shows every train."),
         Field("train_rows", "train", "rows", "Trains shown", _number(1, 6), "number"),
         Field("train_interval_minutes", "train", "interval_minutes", "Check every (minutes)", _number(1, 60), "number"),
         Field("train_stale_after_minutes", "train", "stale_after_minutes", "Say “not updating” after (minutes)",
@@ -178,11 +178,11 @@ def _fields(display: str) -> list[Field]:
         Field("train_windows", "train", "windows", "When to check", _windows, "area",
               hint="One per line, like Mon-Fri 06:30-09:30."),
         Field("train_walk_minutes", "train", "walk_minutes", "Walk to the station (minutes)",
-              _number(0, 60, optional=True), "number", hint="Shows when to leave. Empty keeps config.toml's."),
+              _number(0, 60, optional=True), "number", hint="Shows when to leave. Empty for none."),
         Field("bus_stops", "bus", "stops", "Stops", _stops, "area",
               hint="One per line, LABEL = ATCO code, like A = 1000DGHS0900. Find codes on bustimes.org."),
         Field("bus_directions", "bus", "directions", "Only buses heading to", _directions,
-              hint="Optional, comma-separated, like Ashton, Hyde."),
+              hint="Optional, comma-separated, like Ashton, Hyde. Empty shows every bus."),
         Field("bus_rows", "bus", "rows", "Buses shown", _number(1, 6), "number"),
         Field("bus_interval_minutes", "bus", "interval_minutes", "Check every (minutes)", _number(1, 120), "number",
               hint="Each check costs one TransportAPI hit per stop."),
@@ -193,7 +193,7 @@ def _fields(display: str) -> list[Field]:
         Field("bus_windows", "bus", "windows", "When to check", _windows, "area",
               hint="One per line, like Mon-Fri 07:00-08:30."),
         Field("bus_walk_minutes", "bus", "walk_minutes", "Walk to each stop (minutes)", _walk_per_stop, "area",
-              hint="One per line, LABEL = minutes, or one number for every stop."),
+              hint="One per line, LABEL = minutes, or one number for every stop. Empty for none."),
     ]
 
 
@@ -307,9 +307,9 @@ class SettingsForm:
                 errors[f.name] = str(error)
                 continue
             target = overlay if f.section is None else overlay.setdefault(f.section, {})
-            if value in (None, "", [], {}):
-                continue  # left empty: config.toml's value (or none) stands
-            target[f.key] = value
+            # Every key is written, empty ones too, so clearing a field clears
+            # config.toml's value rather than letting it show through.
+            target[f.key] = "" if value is None else value
         keys = {}
         for name, label, _ in KEYS:
             raw = fields.get(name, "").strip()

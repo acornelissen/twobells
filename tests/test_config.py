@@ -298,6 +298,26 @@ def test_merge_replaces_lists_and_merges_tables():
     assert merge(base, {"t": {"y": [3]}, "l": [2]}) == {"a": 1, "t": {"x": 1, "y": [3]}, "l": [2]}
 
 
+def test_merge_replaces_tables_below_the_top_level():
+    from departureboard.config import merge
+
+    base = {"bus": {"rows": 2, "stops": {"A": "x", "B": "y"}, "routes": {"341": {}}}}
+    merged = merge(base, {"bus": {"stops": {"A": "x"}, "walk_minutes": {}}})
+    assert merged == {"bus": {"rows": 2, "stops": {"A": "x"}, "walk_minutes": {}, "routes": {"341": {}}}}
+
+
+def test_empty_values_saved_by_the_page_mean_none(tmp_path):
+    path = write(tmp_path, (
+        'accent = ""\n'
+        '[train]\ncrs = "GLO"\nfilter_crs = ""\nwalk_minutes = ""\nwindows = ["Mon-Fri 06:30-09:30"]\n'
+        '[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n[bus.walk_minutes]\n'
+    ))
+    settings = load_config(path, ENV)
+    assert settings.accent == "yellow"
+    assert settings.board.walk.train is None and dict(settings.board.walk.bus) == {}
+    assert "filterCrs" not in settings.board.sources[0].source._url()
+
+
 def test_no_state_file_means_no_overlay_from_the_working_directory(tmp_path, monkeypatch):
     from departureboard.config import overlay_paths
 

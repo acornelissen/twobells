@@ -3,7 +3,7 @@ import tomllib
 
 import pytest
 
-from departureboard.config import load_config
+from departureboard.config import load_config, read_config
 from departureboard.settingsform import SettingsForm, to_toml
 
 ENV = {"RDM_API_KEY": "rdm-secret-123", "TAPI_APP_ID": "id", "TAPI_APP_KEY": "tapi-secret-456"}
@@ -180,6 +180,73 @@ def test_a_screen_can_turn_a_quarter(tmp_path):
     form = SettingsForm(config, lambda: dict(ENV))
     assert form.save(fields_of(form) | {"rotate": "270"}) == {}
     assert load_config(config, ENV).rotate == 270
+
+
+def test_removing_a_stop_takes_effect(setup):
+    form, config, *_ = setup
+    assert form.save(fields_of(form) | {"bus_stops": "A = 1000DGHS0900", "bus_walk_minutes": "A = 7"}) == {}
+    settings = load_config(config, ENV)
+    assert settings.board.sources[1].source.stops == {"A": "1000DGHS0900"}
+    assert dict(settings.board.walk.bus) == {"A": 7}
+    assert fields_of(form)["bus_stops"] == "A = 1000DGHS0900"
+
+
+def test_clearing_the_station_filter_takes_effect(setup):
+    form, config, *_ = setup
+    assert form.save(fields_of(form) | {"train_filter_crs": ""}) == {}
+    assert not read_config(config)["train"].get("filter_crs")
+    assert fields_of(form)["train_filter_crs"] == ""
+
+
+def test_clearing_directions_takes_effect(tmp_path):
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    config.write_text(CONFIG.format(state=state / "state.json").replace("directions = []", 'directions = ["Ashton"]'))
+    form = SettingsForm(config, lambda: dict(ENV))
+    assert fields_of(form)["bus_directions"] == "Ashton"
+    assert form.save(fields_of(form) | {"bus_directions": ""}) == {}
+    assert read_config(config)["bus"]["directions"] == []
+    assert fields_of(form)["bus_directions"] == ""
+
+
+def test_clearing_walk_times_takes_effect(setup):
+    form, config, *_ = setup
+    assert form.save(fields_of(form) | {"train_walk_minutes": "", "bus_walk_minutes": ""}) == {}
+    walk = load_config(config, ENV).board.walk
+    assert walk.train is None and dict(walk.bus) == {}
+    fields = fields_of(form)
+    assert fields["train_walk_minutes"] == "" and fields["bus_walk_minutes"] == ""
+
+
+def test_choosing_the_looks_own_accent_clears_one_set_in_config(tmp_path):
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    config.write_text(CONFIG.format(state=state / "state.json").replace('theme = "sign"', 'theme = "sign"\naccent = "red"'))
+    form = SettingsForm(config, lambda: dict(ENV))
+    assert form.save(fields_of(form) | {"accent": ""}) == {}
+    assert load_config(config, ENV).accent == "yellow"
+
+
+ROUTES = """
+[bus.routes.341]
+stop = "A"
+stops = [
+  { name = "Arundel Street", lat = 53.443519, lon = -1.95326 },
+  { name = "Henry Street", lat = 53.44384, lon = -1.948999 },
+]
+"""
+
+
+def test_routes_set_in_config_survive_a_save(tmp_path):
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    text = CONFIG.format(state=state / "state.json").replace('theme = "sign"', 'theme = "sign"\ndisplay = "hdmi-1280x400"')
+    config.write_text(text + ROUTES)
+    env = {**ENV, "BODS_API_KEY": "bods"}
+    form = SettingsForm(config, lambda: dict(env))
+    assert form.save(fields_of(form) | {"bus_stops": "A = 1000DGHS0900", "bus_walk_minutes": "5"}) == {}
+    assert "routes" not in (state / "settings.toml").read_text()
+    assert set(load_config(config, env).board.tracker.routes) == {"341"}
 
 
 def test_toml_writer_round_trips():
