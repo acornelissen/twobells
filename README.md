@@ -4,6 +4,8 @@ Glossop train and bus departure board for a Raspberry Pi with a four-colour Inky
 
 ![Board preview](docs/preview.png)
 
+New here? The [user guide](docs/USER_GUIDE.md) explains what everything on the board means, how to use the settings page, and how to set it up and troubleshoot it.
+
 - **Trains:** National Rail Darwin, via the Rail Data Marketplace. Free, polled every 2 minutes.
 - **Buses:** TransportAPI. Free plan is 30 hits/day, so polling is limited to set windows, with a hard daily budget.
 - The panel takes about 20 s to refresh, so it redraws only when what it shows changes, and never more than once every 2 minutes. `Upd HH:MM` is when the board last changed; if a feed stops arriving, its section shows `! STALE`.
