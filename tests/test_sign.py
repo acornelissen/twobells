@@ -342,3 +342,12 @@ def test_no_leave_line_for_a_train_that_is_not_drawn():
     fourth = TRAINS + [Row("08:42", "Manchester Piccadilly", "On time")]
     items = sign_layout(board(fourth, leave="Leave by 08:35", leave_for=3)).items
     assert "Leave by 08:35" not in texts(items)
+
+
+def test_longer_stop_labels_push_the_destinations_along():
+    rows = [Row("341", "Hyde", "07:24", stop="NB2"), Row("394", "Marple", "07:35", stop="A")]
+    items = sign_layout(board(buses=rows)).items
+    label = find(items, "NB2")
+    for dest in ("Hyde", "Marple"):
+        assert find(items, dest).x > label.x + FONT.getlength("NB2")
+    assert find(items, "Hyde").x == find(items, "Marple").x
