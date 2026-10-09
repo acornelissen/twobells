@@ -1,7 +1,7 @@
 // Wires the page together: the connection, each snapshot's render, the
 // one-second tick, the theme toggle, and the row buttons.
 
-import { $, setText, store, str, focusKey, refocus } from "./dom.js";
+import { $, setText, store, str, obj, focusKey, refocus } from "./dom.js";
 import { connect, STATE } from "./api.js";
 import { age, clockText, parseAt } from "./time.js";
 import { renderBuses, renderTrains, tickBoards } from "./board.js";
@@ -17,6 +17,9 @@ let snapshot = null;
 let rowsById = new Map(); // id -> { row, mode }
 let connection = null;
 let connectionState = STATE.connecting;
+
+// The board's station, named in the train dialog's journey.
+const station = () => str(obj(snapshot?.trains)?.station);
 
 // --- Theme: "modern" (default) or "board"; theme.js applied it before paint.
 
@@ -79,7 +82,7 @@ function render(data) {
   rowsById = indexRows(trains, buses);
   refocus(key);
   attempt("announcements", () => noteSnapshot(data, rowsById));
-  attempt("train dialog", () => refreshTrain(rowsById));
+  attempt("train dialog", () => refreshTrain(rowsById, station()));
   refreshMap();
   tick();
 }
@@ -105,7 +108,7 @@ $("main").addEventListener("click", (event) => {
   const entry = rowsById.get(id);
   switch (button.dataset.action) {
     case "details":
-      if (entry) openTrain(entry.row, button);
+      if (entry) openTrain(entry.row, button, station());
       break;
     case "history":
       openHistory(id, button);

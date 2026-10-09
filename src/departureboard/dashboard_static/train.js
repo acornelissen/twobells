@@ -1,6 +1,7 @@
-// The train dialog: everything the board knows about one train, with its
-// calling points as an ordered list. It reads the current snapshot, and
-// refreshes when a new one arrives while it is open.
+// The train dialog: everything the board knows about one train, with where
+// it is now and its journey (the stops before this station, this station,
+// and the stops after) as one ordered list. It reads the current snapshot,
+// and refreshes when a new one arrives while it is open.
 
 import { $, h, fill, setText, str, num, list, obj, openDialog, setUpDialog } from "./dom.js";
 import { hhmm } from "./time.js";
@@ -8,6 +9,7 @@ import { statusBadge } from "./board.js";
 
 const dialog = () => $("train-dialog");
 let openId = null;
+let openStation = "";
 
 export function setUpTrain() {
   setUpDialog(dialog(), () => { openId = null; });
@@ -32,6 +34,21 @@ function callingPoint(point) {
     h("span", { class: "cp-name" }, name), state ? " " : null, state);
 }
 
+// This station in the journey, marked in words, not just by weight.
+function thisStation(row, station) {
+  return h("li", { class: ["cp", "yours"] },
+    h("span", { class: "cp-time" }, str(row.scheduled)), " ",
+    h("span", { class: "cp-name" }, station || "This station"),
+    station ? h("span", { class: "cp-state" }, " (this station)") : null);
+}
+
+function journey(row, station) {
+  const before = list(row.previous_points).map(callingPoint).filter(Boolean);
+  const after = list(row.calling_points).map(callingPoint).filter(Boolean);
+  if (!before.length && !after.length) return h("p", {}, "Calling points aren't available for this train.");
+  return h("ol", { class: "calling" }, before, thisStation(row, station), after);
+}
+
 function render(row) {
   const title = $("train-title");
   const body = $("train-body");
@@ -41,8 +58,8 @@ function render(row) {
   }
   setText(title, `${str(row.scheduled)} to ${str(row.destination)}`);
   const length = num(row.length);
-  const points = list(row.calling_points).map(callingPoint).filter(Boolean);
   const expected = str(row.expected);
+  const where = str(obj(row.position)?.where);
   fill(body,
     h("p", { class: "dialog-status" }, statusBadge(row.status, row.status_text)),
     str(row.cancel_reason) ? h("p", { class: "reason" }, str(row.cancel_reason)) : null,
@@ -56,22 +73,25 @@ function render(row) {
       fact("Coaches", length ? `${length} ${length === 1 ? "coach" : "coaches"}` : ""),
       fact("Leave by", hhmm(row.leave_at)),
     ),
-    h("h3", {}, "Calling at"),
-    points.length
-      ? h("ol", { class: "calling" }, points)
-      : h("p", {}, "Calling points aren't available for this train."),
+    h("h3", {}, "Where it is now"),
+    h("p", { class: where ? null : "muted" }, where || "No live position"),
+    h("h3", {}, "Journey"),
+    journey(row, openStation),
   );
 }
 
-export function openTrain(row, opener) {
+// `station` is the board's station, named in the journey.
+export function openTrain(row, opener, station = "") {
   openId = row.id;
+  openStation = station;
   render(row);
   openDialog(dialog(), opener);
 }
 
 // Called with each new snapshot: redraws the open dialog from its row.
-export function refreshTrain(rowsById) {
+export function refreshTrain(rowsById, station = "") {
   if (!openId || !dialog().open) return;
+  openStation = station;
   const entry = rowsById.get(openId);
   render(entry ? entry.row : null);
 }

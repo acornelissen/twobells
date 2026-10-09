@@ -304,7 +304,7 @@ tr.row-cancelled .c-time .time { text-decoration: line-through; text-decoration-
 .badge.st-cancelled { color: var(--bad-fg); background: var(--bad-bg); }
 .badge.st-unknown { color: var(--unk-fg); background: var(--unk-bg); }
 
-/* --- Bus strip --- */
+/* --- Bus and train strips --- */
 
 .strip-wrap { display: inline-flex; flex-direction: column; gap: 0.125rem; width: 100%; max-width: 13rem; }
 .strip { display: block; width: 100%; height: auto; overflow: visible; }
@@ -313,7 +313,8 @@ tr.row-cancelled .c-time .time { text-decoration: line-through; text-decoration-
 .strip-stop { fill: var(--surface); stroke: var(--muted); stroke-width: 1.5; }
 .strip-after { fill: var(--surface); stroke: var(--edge); stroke-width: 1.5; stroke-dasharray: 2 2; }
 .strip-yours { fill: var(--accent); stroke: var(--fg); stroke-width: 1.5; }
-.strip-bus { fill: var(--fg); }
+.strip-bus, .strip-train { fill: var(--fg); }
+.strip-train .strip-window { fill: var(--surface); }
 .strip-where, .strip-none { font-size: 0.875rem; color: var(--muted); }
 
 /* --- Narrow screens: each row becomes a card. The roles set in board.js keep

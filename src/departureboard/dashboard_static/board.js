@@ -5,7 +5,7 @@
 
 import { h, vh, setText, str, num, list, obj, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
-import { renderStrip } from "./strip.js";
+import { renderStrip, renderTrainStrip } from "./strip.js";
 
 const MAX_ROWS = 10;
 
@@ -101,6 +101,7 @@ function trainRow(row, alerts) {
       str(row.origin) ? h("span", { class: "sub" }, `from ${str(row.origin)}`) : null),
     td("c-plat", "Platform", platform || h("span", { class: "muted" }, "Not yet")),
     td("c-status", "Status", statusBadge(row.status, row.status_text), reasons(row)),
+    td("c-where", "Where", renderTrainStrip(row)),
     leaveCell(row),
     recordCell(row, id, context),
     td("c-actions", null,
@@ -168,7 +169,7 @@ export function renderTrains(snapshot, alerts) {
     board.replaceChildren(h("p", { class: "empty" }, "No trains are listed right now."));
   } else {
     board.replaceChildren(table(caption, [
-      ["Due", "c-time"], ["To", "c-dest"], ["Platform", "c-plat"], ["Status", "c-status"],
+      ["Due", "c-time"], ["To", "c-dest"], ["Platform", "c-plat"], ["Status", "c-status"], ["Where", "c-where"],
       ["Leave", "c-leave"], ["Record", "c-record"], ["Actions", "c-actions", true],
     ], rows.map((row) => trainRow(row, alerts))));
   }
