@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Mapping
 from zoneinfo import ZoneInfo
 
-from .app import Board, SourceConfig, Tracker, Weather
+from .app import Board, SourceConfig, Tracker, Weather, reset_code_page
 from .bods import BodsVehicleSource
 from .bodsbus import BodsBusSource
 from .darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL
@@ -433,6 +433,8 @@ def settings_from(
         # Bus positions are only drawn on a screen; e-paper never asks for them.
         if not DISPLAY_PANELS[display].epaper:
             tracker = _tracker(data["bus"], env, bus.policy)
+    # Where the settings page leaves a reset code: beside an explicit state_file only, as it does.
+    folder = state_dir(data)
     board = Board(
         title=_text(data, "title", "Departures"),
         sources=sources,
@@ -442,6 +444,7 @@ def settings_from(
         tracker=tracker,
         # A probe of one source needs no forecast.
         weather=_weather(data, sources, timezone) if only is None else None,
+        reset_code=reset_code_page(folder, timezone) if folder and only is None else None,
     )
     return Settings(
         board=board,

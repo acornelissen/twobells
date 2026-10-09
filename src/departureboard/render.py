@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .panel import PHAT, PLATFORM_COLUMN_MIN_WIDTH, Panel
 from .route import RouteView
-from .view import BoardView, Row, Section, Style
+from .view import BoardView, CodeView, Row, Section, Style
 
 # The pHAT, which every other size is scaled up from.
 WIDTH, HEIGHT = PHAT.size
@@ -235,6 +235,17 @@ def header_text(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[
     return note or fit_text(view.title, fonts.bold, room), stamp, stamp_x
 
 
+def apply_preview(image: Image.Image, palette: Palette) -> None:
+    """Real colours for a PNG preview; a panel's own image keeps its indices."""
+    if not palette.preview:
+        return
+    colours = [(0, 0, 0)] * 256
+    colours[palette.white] = (255, 255, 255)
+    colours[palette.black] = (0, 0, 0)
+    colours[palette.accent] = _PREVIEW_ACCENTS[palette.preview]
+    image.putpalette([v for rgb in colours for v in rgb])
+
+
 class _Painter:
     def __init__(self, palette: Palette, fonts: Fonts, panel: Panel, text_size: int = TEXT_SIZE) -> None:
         self.p = palette
@@ -303,13 +314,7 @@ class _Painter:
         self.draw.line((pad, y, self.width - pad, y), fill=self.p.black, width=self.s)
 
     def apply_preview_palette(self) -> None:
-        if not self.p.preview:
-            return
-        colours = [(0, 0, 0)] * 256
-        colours[self.p.white] = (255, 255, 255)
-        colours[self.p.black] = (0, 0, 0)
-        colours[self.p.accent] = _PREVIEW_ACCENTS[self.p.preview]
-        self.image.putpalette([v for rgb in colours for v in rgb])
+        apply_preview(self.image, self.p)
 
 
 def render(view: BoardView, palette: Palette, panel: Panel = PHAT, text_size: int = TEXT_SIZE) -> Image.Image:
@@ -365,10 +370,52 @@ def render_route(view: RouteView, palette: Palette, panel: Panel = PHAT, text_si
         draw.rounded_rectangle((bx - 12 * s, road - 13 * s, bx + 12 * s, road - 4 * s), radius=2 * s, fill=palette.black)
         for wx in range(-9, 9, 5):
             draw.rectangle((bx + wx * s, road - 11 * s, bx + (wx + 3) * s, road - 8 * s), fill=palette.white)
-    if palette.preview:
-        colours = [(0, 0, 0)] * 256
-        colours[palette.white] = (255, 255, 255)
-        colours[palette.black] = (0, 0, 0)
-        colours[palette.accent] = _PREVIEW_ACCENTS[palette.preview]
-        image.putpalette([v for rgb in colours for v in rgb])
+    apply_preview(image, palette)
+    return image
+
+
+def _biggest_bold(text: str, width: float, height: float) -> ImageFont.FreeTypeFont:
+    """The largest bold type `text` fits in `width` x `height` at, as drawn."""
+    low, high = 6, max(6, int(height) * 2)
+    while low < high:
+        size = (low + high + 1) // 2
+        left, top, right, bottom = _font("DejaVuSans-Bold.ttf", size).getbbox(text, mode="1")
+        if right - left <= width and bottom - top <= height:
+            low = size
+        else:
+            high = size - 1
+    return _font("DejaVuSans-Bold.ttf", low)
+
+
+def render_code(view: CodeView, palette: Palette, panel: Panel = PHAT, dark: bool = False) -> Image.Image:
+    """The settings reset code, as big as the panel allows, with what it is and
+    until when above and below it. `dark` draws it light on black, as the sign
+    look does; on a mono panel that is white."""
+    s = plain_scale(panel)
+    pad = _PAD * s
+    width, height = panel.size
+    if dark:
+        background = palette.black
+        ink = palette.white if palette.accent == palette.black else palette.accent
+    else:
+        background, ink = palette.white, palette.black
+    image = Image.new("P", panel.size, background)
+    draw = ImageDraw.Draw(image)
+    small = _font("DejaVuSans-Bold.ttf", TEXT_SIZE * s)
+    label = fit_text("Settings reset code", small, width - 2 * pad, partial(drawn_length, small))
+    until = fit_text(f"Valid until {view.until}", small, width - 2 * pad, partial(drawn_length, small))
+    line_h = heights()[2] * s
+    room = height - 2 * line_h - 4 * pad
+    big = _biggest_bold(view.code, width * 0.9, room)
+    left, top, right, bottom = big.getbbox(view.code, mode="1")
+
+    def centred(text: str, font, y: float) -> None:
+        draw.text(((width - drawn_length(font, text)) / 2, y), text, font=font, fill=ink)
+
+    centred(label, small, pad)
+    # The code in the middle of the space between the two lines, by its drawn box.
+    middle = line_h + pad + (height - 2 * line_h - 2 * pad) / 2
+    draw.text(((width - (right - left)) / 2 - left, middle - (bottom - top) / 2 - top), view.code, font=big, fill=ink)
+    centred(until, small, height - line_h - pad)
+    apply_preview(image, palette)
     return image

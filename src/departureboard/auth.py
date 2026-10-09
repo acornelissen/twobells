@@ -351,10 +351,10 @@ class ResetLimited(Exception):
 
 @dataclass(frozen=True)
 class PendingCode:
-    """A code for the board to show, and how long it has left."""
+    """A code for the board to show, and when it runs out."""
 
     code: str
-    seconds_left: float
+    expires: float  # a Unix time
 
 
 def spaced(code: str) -> str:
@@ -450,7 +450,7 @@ class ResetCodes:
                 code, expires = data.get("code"), data.get("expires")
                 if (isinstance(code, str) and _CODE.match(code) and isinstance(expires, (int, float))
                         and now < expires):
-                    return PendingCode(code, expires - now)
+                    return PendingCode(code, float(expires))
                 self._display.unlink(missing_ok=True)
         except OSError as error:
             log.warning("Can't read the settings reset code handover: %s", type(error).__name__)

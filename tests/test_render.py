@@ -2,7 +2,7 @@ import dataclasses
 
 import pytest
 
-from departureboard.panel import HDMI_1280X400, PHAT, WAVESHARE_10IN85G
+from departureboard.panel import HDMI_1280X400, PHAT, PHAT_V1, WAVESHARE_10IN85G
 from departureboard.render import (
     HEIGHT,
     WIDTH,
@@ -16,10 +16,11 @@ from departureboard.render import (
     platform_column,
     plain_scale,
     render,
+    render_code,
     row_layout,
     wrap_text,
 )
-from departureboard.view import BoardView, Row, Section, Style
+from departureboard.view import BoardView, CodeView, Row, Section, Style
 
 PALETTE = Palette(white=0, black=1, accent=2)
 
@@ -480,3 +481,54 @@ def test_a_shortened_destination_leaves_a_gap_before_the_status(text_size):
     layout = row_layout(Row("20:22", "Manchester Piccadilly", "On time"), fonts, PHAT_V1.width, 1)
     # Whole or cut short, the destination ends clear of the status.
     assert layout.middle_x + drawn_length(fonts.regular, layout.middle) <= layout.right_x - 3
+
+
+# --- The settings reset code page ---
+
+CODE_PAGE = CodeView("123 456", "23:52", 1.0)
+
+
+def ink_box(image, background):
+    """The bounding box of everything not in the background colour."""
+    return image.point(lambda v: 0 if v == background else 255, mode="L").getbbox()
+
+
+@pytest.mark.parametrize("panel", [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400])
+@pytest.mark.parametrize("dark", [False, True])
+def test_the_code_page_fits_every_panel(panel, dark):
+    image = render_code(CODE_PAGE, PALETTE, panel, dark=dark)
+    assert image.size == panel.size and image.mode == "P"
+    left, top, right, bottom = ink_box(image, PALETTE.black if dark else PALETTE.white)
+    assert left > 0 and top > 0 and right < panel.width and bottom < panel.height  # nothing cut off
+
+
+@pytest.mark.parametrize("panel", [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400])
+def test_the_code_is_drawn_big(panel):
+    # The middle band, between the two lines of small print, is mostly code.
+    image = render_code(CODE_PAGE, PALETTE, panel)
+    band = image.crop((0, panel.height // 3, panel.width, 2 * panel.height // 3))
+    left, _, right, _ = ink_box(band, PALETTE.white)
+    assert right - left > panel.width * 0.6
+
+
+def test_different_codes_draw_differently_and_the_same_code_alike():
+    page = render_code(CODE_PAGE, PALETTE, PHAT).tobytes()
+    assert page == render_code(CODE_PAGE, PALETTE, PHAT).tobytes()
+    assert page != render_code(dataclasses.replace(CODE_PAGE, code="654 321"), PALETTE, PHAT).tobytes()
+    assert page != render_code(dataclasses.replace(CODE_PAGE, until="23:53"), PALETTE, PHAT).tobytes()
+
+
+def test_the_code_page_is_ink_on_paper_or_light_on_black():
+    assert colours(render_code(CODE_PAGE, PALETTE, PHAT)) == {PALETTE.white, PALETTE.black}
+    assert colours(render_code(CODE_PAGE, PALETTE, PHAT, dark=True)) == {PALETTE.black, PALETTE.accent}
+    mono = Palette(white=0, black=1, accent=1)
+    assert colours(render_code(CODE_PAGE, mono, PHAT, dark=True)) == {0, 1}
+
+
+def test_the_code_page_signature_never_carries_the_code():
+    import hashlib
+
+    signature = CODE_PAGE.signature()
+    assert signature != hashlib.sha256(b"123 456").hexdigest()
+    assert signature == dataclasses.replace(CODE_PAGE, code="654 321").signature()
+    assert signature != dataclasses.replace(CODE_PAGE, expires=61.0).signature()

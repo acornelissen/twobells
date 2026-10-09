@@ -16,7 +16,7 @@ from PIL import Image, ImageDraw
 from .dotfont import HEIGHT as GLYPH_H
 from .dotfont import TINY, TINY_HEIGHT, DotFont
 from .panel import PHAT, PLATFORM_COLUMN_MIN_WIDTH, Panel
-from .render import HEIGHT, WIDTH, Palette, fit_text, fitted_note
+from .render import HEIGHT, WIDTH, Palette, apply_preview, fit_text, fitted_note
 from .route import RouteView
 from .view import BoardView, Row, Section, Style
 
@@ -194,8 +194,7 @@ def render_sign(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Image
         font = _SMALL if item.small else _FONT
         font.draw(draw, (item.x, item.y), item.text, fill=palette.black if item.inverted else ink)
     image = _enlarge(image, panel, palette.black, bands)
-    if palette.preview:
-        _apply_preview(image, palette)
+    apply_preview(image, palette)
     return image
 
 
@@ -266,8 +265,7 @@ def render_route_sign(view: RouteView, palette: Palette, panel: Panel = PHAT) ->
     for item in layout.items:
         _FONT.draw(draw, (item.x, item.y), item.text, fill=palette.black if item.inverted else ink)
     image = _enlarge(image, panel, palette.black, solid)
-    if palette.preview:
-        _apply_preview(image, palette)
+    apply_preview(image, palette)
     return image
 
 
@@ -295,12 +293,3 @@ def _enlarge(image: Image.Image, panel: Panel, background: int, bands) -> Image.
     canvas.paste(big, ((panel.width - big.width) // 2, (panel.height - big.height) // 2))
     return canvas
 
-
-def _apply_preview(image: Image.Image, palette: Palette) -> None:
-    from .render import _PREVIEW_ACCENTS
-
-    colours = [(0, 0, 0)] * 256
-    colours[palette.white] = (255, 255, 255)
-    colours[palette.black] = (0, 0, 0)
-    colours[palette.accent] = _PREVIEW_ACCENTS[palette.preview]
-    image.putpalette([v for rgb in colours for v in rgb])

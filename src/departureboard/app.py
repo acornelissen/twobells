@@ -8,10 +8,13 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Callable, Protocol
+from zoneinfo import ZoneInfo
 
 from PIL.Image import Image
 
+from .auth import ResetCodes, spaced
 from .bods import Vehicle
 from .budget import DailyBudget
 from .model import Departure, minutes_between
@@ -21,7 +24,7 @@ from .route import RouteStrip, RouteView, locate, target, where
 from .schedule import PollPolicy
 from .state import departure_to_dict, departures_from_dicts, from_iso, to_iso
 from .status import safe_message
-from .view import BoardView, build_view
+from .view import BoardView, CodeView, build_view
 from .themes import THEMES, Theme
 from .walk import WalkTimes, leave_time
 from .weather import Hour, hours_from_dicts, hours_to_dicts, rain_line
@@ -107,6 +110,23 @@ class Board:
     theme: Theme = THEMES["plain"]
     tracker: Tracker | None = None
     weather: Weather | None = None
+    # The settings page's reset code, while one is waiting to be read off the board.
+    reset_code: Callable[[], CodeView | None] | None = None
+
+
+def reset_code_page(folder: Path, timezone: str) -> Callable[[], CodeView | None]:
+    """Asks the settings page's handover in `folder` for a code to show,
+    giving its expiry in the board's own time zone."""
+    codes, zone = ResetCodes(folder), ZoneInfo(timezone)
+
+    def page() -> CodeView | None:
+        pending = codes.pending(time.time())
+        if pending is None:
+            return None
+        until = datetime.fromtimestamp(pending.expires, zone)
+        return CodeView(spaced(pending.code), until.strftime("%H:%M"), pending.expires)
+
+    return page
 
 
 @dataclass(frozen=True)
@@ -342,24 +362,45 @@ def run_once(
         rain=_rain(board, state, trains + buses, now, live),
     )
 
-    route = _route_view(board, state, view, now, view.clock) if live else None
+    code = _reset_code(board)
+    route = _route_view(board, state, view, now, view.clock) if live and code is None else None
     seconds = now.minute * 60 + now.second
-    page = "route" if route and seconds % _PAGE_CYCLE_S >= _DEPARTURES_S else "departures"
-    shown = route if page == "route" else view
+    if code is not None:
+        page, shown = "code", code
+    elif route and seconds % _PAGE_CYCLE_S >= _DEPARTURES_S:
+        page, shown = "route", route
+    else:
+        page, shown = "departures", view
 
     last = state.get("last_render", {})
     last_at = from_iso(last.get("at"))
     key = _render_key(shown, board.theme, display)
     changed = key != last.get("signature")
+    # Someone is waiting at the settings page for the code, or has just used
+    # it: on and off the panel straight away, whatever min_redraw says.
+    urgent = page == "code" or last.get("page") == "code"
     # A last redraw in the future means the clock went back (summer time ending): not too soon.
-    too_soon = not live and last_at is not None and timedelta(0) <= now - last_at < board.min_redraw
+    too_soon = (not live and not urgent and last_at is not None
+                and timedelta(0) <= now - last_at < board.min_redraw)
 
     if changed and not too_soon:
-        draw = board.theme.render_route if page == "route" else board.theme.render
+        draw = {"code": board.theme.render_code, "route": board.theme.render_route}.get(page, board.theme.render)
         display.show(draw(shown, display.palette, display.panel))
-        state["last_render"] = {"signature": key, "at": to_iso(now)}
+        state["last_render"] = {"signature": key, "at": to_iso(now), "page": page}
         return RunResult(view, rendered=True, route=route, page=page)
     return RunResult(view, rendered=False, route=route, page=page)
+
+
+def _reset_code(board: Board) -> CodeView | None:
+    """The reset code page, if a code is waiting. A fault reading it must not
+    stop the departures."""
+    if board.reset_code is None:
+        return None
+    try:
+        return board.reset_code()
+    except Exception as error:  # noqa: BLE001 - the board goes on without the code
+        log.warning("Can't check for a settings reset code: %s", type(error).__name__)
+        return None
 
 
 _SAVE_EVERY = timedelta(minutes=5)

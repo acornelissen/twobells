@@ -676,3 +676,16 @@ def test_bods_bus_fallback_windows_are_checked(tmp_path):
         'source = "bods"', 'source = "bods"\nfallback_windows = ["evenings"]'))
     with pytest.raises(ConfigError, match="evenings"):
         load_config(path, {"BODS_API_KEY": "bods"})
+
+
+def test_the_board_looks_for_a_reset_code_beside_an_explicit_state_file(tmp_path):
+    import time
+
+    from departureboard.auth import ResetCodes
+
+    assert load_config(write(tmp_path, TRAIN), ENV).board.reset_code is None
+    board = load_config(_with_state(tmp_path, TRAIN), ENV).board
+    assert board.reset_code() is None
+    code = ResetCodes(tmp_path / "state").issue(time.time())
+    assert board.reset_code().code == f"{code[:3]} {code[3:]}"
+    assert load_config(_with_state(tmp_path, TRAIN), ENV, only={"train"}).board.reset_code is None

@@ -542,7 +542,7 @@ def test_the_board_sees_the_code_until_it_is_used(tmp_path):
     codes = ResetCodes(tmp_path)
     assert codes.pending(T0) is None
     code = codes.issue(T0)
-    assert codes.pending(T0 + 60) == PendingCode(code, RESET_CODE_SECONDS - 60)
+    assert codes.pending(T0 + 60) == PendingCode(code, T0 + RESET_CODE_SECONDS)
     codes.verify(code, T0 + 61)
     assert codes.pending(T0 + 62) is None
     assert not (tmp_path / "reset-display.json").exists()

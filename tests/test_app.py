@@ -2,6 +2,7 @@ import dataclasses
 
 import pytest
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from departureboard.app import Board, SourceConfig, run_once
 from departureboard.model import Departure, Status
@@ -9,6 +10,7 @@ from departureboard.panel import HDMI_1280X400, PHAT
 from departureboard.render import Palette
 from departureboard.schedule import PollPolicy, parse_window
 from departureboard.state import StateStore
+from departureboard.view import CodeView
 
 THU_0700 = datetime(2026, 10, 8, 7, 0)
 
@@ -989,3 +991,150 @@ def test_a_source_not_polled_while_falling_back_saves_why():
     buses.waiting = None  # the timetable arrived: the note stays until a fetch says otherwise
     run_once(board, state, FakeDisplay(), THU_0700 + timedelta(minutes=1))
     assert state["sources"]["bus"]["note"].startswith("There is no bus timetable yet")
+
+
+# --- The settings reset code page ---
+
+
+class Waiting:
+    """A reset_code hook: the code page while `code` is set."""
+
+    def __init__(self, code=None):
+        self.code = code
+        self.fail = False
+
+    def __call__(self):
+        if self.fail:
+            raise PermissionError("reset.lock")
+        return self.code
+
+
+CODE = CodeView("123 456", "07:10", 1_800_000_600.0)
+
+
+def pixels(image):
+    return image.tobytes()
+
+
+def test_a_waiting_code_takes_the_panel_straight_away():
+    trains, board, display, state = minutely(reset_code=Waiting())
+    first = run_once(board, state, display, THU_0700)
+    assert first.page == "departures"
+    board.reset_code.code = CODE
+    # A minute later, inside min_redraw: drawn anyway, someone is waiting for it.
+    result = run_once(board, state, display, THU_0700 + timedelta(minutes=1))
+    assert result.rendered and result.page == "code"
+    assert pixels(display.shown[-1]) == pixels(board.theme.render_code(CODE, display.palette, display.panel))
+    assert pixels(display.shown[-1]) != pixels(display.shown[0])
+
+
+def test_the_code_page_is_drawn_once_and_departures_come_back_when_it_goes():
+    trains, board, display, state = minutely(reset_code=Waiting(CODE))
+    assert run_once(board, state, display, THU_0700).page == "code"
+    assert not run_once(board, state, display, THU_0700 + timedelta(minutes=1)).rendered
+    board.reset_code.code = None
+    back = run_once(board, state, display, THU_0700 + timedelta(minutes=2, seconds=-59))
+    assert back.rendered and back.page == "departures"
+    assert pixels(display.shown[-1]) == pixels(board.theme.render(back.view, display.palette, display.panel))
+    assert len(display.shown) == 2
+
+
+def test_a_new_code_replaces_the_one_on_the_panel():
+    trains, board, display, state = minutely(reset_code=Waiting(CODE))
+    run_once(board, state, display, THU_0700)
+    board.reset_code.code = CodeView("654 321", "07:11", CODE.expires + 60)
+    assert run_once(board, state, display, THU_0700 + timedelta(minutes=1)).rendered
+
+
+def test_departures_are_still_fetched_while_the_code_shows():
+    trains, board, display, state = minutely(reset_code=Waiting(CODE))
+    run_once(board, state, display, THU_0700)
+    run_once(board, state, display, THU_0700 + timedelta(minutes=1))
+    assert trains.calls == 2
+    assert state["sources"]["train"]["departures"]
+
+
+def test_the_code_never_reaches_the_saved_state():
+    trains, board, display, state = minutely(reset_code=Waiting(CODE))
+    run_once(board, state, display, THU_0700)
+    import hashlib
+    import json
+
+    saved = json.dumps(state)
+    assert "123" not in saved.replace(str(CODE.expires), "")
+    assert hashlib.sha256(b"123 456").hexdigest() not in saved
+
+
+def test_a_fault_checking_for_a_code_leaves_the_departures_showing():
+    trains, board, display, state = minutely(reset_code=Waiting(CODE))
+    board.reset_code.fail = True
+    result = run_once(board, state, display, THU_0700)
+    assert result.rendered and result.page == "departures"
+
+
+def test_the_code_page_beats_the_bus_page_on_a_screen():
+    trains, buses, board, display, state = setup()
+    board = dataclasses.replace(board, reset_code=Waiting(CODE))
+    screen = FakeScreen()
+    result = run_once(board, state, screen, THU_0700 + timedelta(seconds=20))
+    assert result.page == "code" and result.route is None
+    assert screen.shown[-1].size == (1280, 400)
+
+
+@pytest.mark.parametrize("panel", ["inky-phat", "inky-phat-v1", "waveshare-10in85g", "hdmi-1280x400"])
+@pytest.mark.parametrize("look", ["plain", "sign"])
+def test_every_panel_and_look_draws_the_code_page(panel, look):
+    from departureboard.panel import PANELS
+    from departureboard.themes import THEMES
+
+    trains, buses, board, _, state = setup()
+    board = dataclasses.replace(board, theme=THEMES[look], reset_code=Waiting())
+
+    class Display(FakeDisplay):
+        pass
+
+    Display.panel = PANELS[panel]
+    display = Display()
+    departures = run_once(board, state, display, THU_0700)
+    board.reset_code.code = CODE
+    code = run_once(board, state, display, THU_0700 + timedelta(minutes=1))
+    assert departures.rendered and code.rendered
+    image = display.shown[-1]
+    assert image.size == PANELS[panel].size and image.mode == "P"
+    assert pixels(image) != pixels(display.shown[0])
+    assert len(image.getcolors()) >= 2  # something drawn, not a blank panel
+
+
+def test_the_board_reads_the_code_the_settings_page_left(tmp_path):
+    import time
+
+    from departureboard.app import reset_code_page
+    from departureboard.auth import ResetCodes
+
+    page = reset_code_page(tmp_path, "Europe/London")
+    assert page() is None
+    codes = ResetCodes(tmp_path)
+    now = time.time()
+    code = codes.issue(now)
+    shown = page()
+    expected = datetime.fromtimestamp(now + 600, ZoneInfo("Europe/London")).strftime("%H:%M")
+    assert shown == CodeView(f"{code[:3]} {code[3:]}", expected, now + 600)
+    codes.verify(code, now + 1)
+    assert page() is None
+
+
+@pytest.mark.parametrize("panel", ["inky-phat-v1", "hdmi-1280x400"])
+def test_the_emulator_shows_the_code_page(panel):
+    import io
+
+    from PIL import Image
+
+    from departureboard.emulator import EmulatorDisplay
+    from departureboard.panel import PANELS
+
+    trains, buses, board, _, state = setup()
+    board = dataclasses.replace(board, reset_code=Waiting(CODE))
+    display = EmulatorDisplay(panel=PANELS[panel])
+    assert run_once(board, state, display, THU_0700).page == "code"
+    frame = Image.open(io.BytesIO(display.frame_png()))
+    assert frame.size == PANELS[panel].size

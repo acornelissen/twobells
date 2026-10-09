@@ -95,6 +95,21 @@ class BoardView:
         return hashlib.sha256(encoded.encode()).hexdigest()
 
 
+@dataclass(frozen=True)
+class CodeView:
+    """The page shown instead of departures while a settings reset code waits
+    to be read off the board."""
+
+    code: str  # "123 456"
+    until: str  # "23:52", local time
+    expires: float  # when, as a Unix time: tells one code from the next
+
+    def signature(self) -> str:
+        # Not the code: the signature is saved in the state file, and a hash of
+        # six digits would give it away. Each code has its own expiry.
+        return hashlib.sha256(json.dumps(["code page", self.until, self.expires]).encode()).hexdigest()
+
+
 def _until(clock: str, leave: str) -> str:
     """'now' or 'in N min' to a leave time, rounded down so it never promises more time than there is."""
     seconds = minutes_between(clock[:5], leave) * 60 - int(clock[6:8])
