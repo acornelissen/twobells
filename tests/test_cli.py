@@ -34,6 +34,32 @@ def test_demo_previews_bigger_panels(tmp_path, display, size):
     assert Image.open(out).size == size
 
 
+@pytest.mark.parametrize("display", ["inky", "waveshare-10in85g", "hdmi-1280x400"])
+@pytest.mark.parametrize("theme", ["sign", "plain"])
+def test_demo_can_show_a_notice_and_a_rain_line(tmp_path, display, theme):
+    def demo(*flags):
+        out = tmp_path / f"{'-'.join(flags) or 'plain'}.png"
+        assert main(["demo", "--png", str(out), "--display", display, "--theme", theme, *flags]) == 0
+        return Image.open(out).tobytes()
+
+    plain, notice, rain, both = demo(), demo("--notice"), demo("--rain"), demo("--notice", "--rain")
+    assert len({plain, notice, rain}) == 3
+    assert both == notice  # a disruption notice takes the rain line's place
+
+
+def test_demo_rain_line_follows_the_rain_rule(monkeypatch, tmp_path):
+    from departureboard import cli
+
+    views = []
+    real = cli.build_view
+    monkeypatch.setattr(cli, "build_view", lambda *a, **k: views.append(real(*a, **k)) or views[-1])
+    main(["demo", "--png", str(tmp_path / "a.png"), "--rain"])
+    main(["demo", "--png", str(tmp_path / "b.png"), "--rain", "--display", "hdmi-1280x400"])
+    main(["demo", "--png", str(tmp_path / "c.png"), "--notice"])
+    assert [v.rain for v in views] == ["Rain from 07:00 (70%)", "Rain from 07:03 (70%)", None]
+    assert views[2].notice.startswith("Disruption between Glossop")
+
+
 def test_load_env_file_parses_assignments(tmp_path):
     path = tmp_path / "secrets.env"
     path.write_text('# comment\nRDM_API_KEY=abc\n\nTAPI_APP_ID = "id"\nTAPI_APP_KEY=\'k=1\'\n')

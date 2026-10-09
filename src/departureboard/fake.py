@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from .bods import Vehicle
 from .model import Departure, Status
 from .route import RouteStop, RouteStrip
+from .weather import Hour
 
 _BUCKET_MINUTES = 6
 
@@ -66,8 +67,27 @@ class _FakeSource:
         return self._departures(now)
 
 
+DEMO_NOTICE = (
+    "Disruption between Glossop and Manchester Piccadilly: trains may be cancelled "
+    "or delayed by up to 20 minutes. Check before you travel."
+)
+
+
 class FakeTrainSource(_FakeSource):
+    """Trains, and like Darwin, the station's disruption messages while
+    `notice_when(now)` holds."""
+
     name = "train"
+
+    def __init__(self, clock, seed: int = 1, rows: int = 3, failing_when=None, notice_when=None) -> None:
+        super().__init__(clock, seed, rows, failing_when)
+        self._notice_when = notice_when
+        self.messages: list[str] = []
+
+    def fetch(self) -> list[Departure]:
+        departures = super().fetch()
+        self.messages = [DEMO_NOTICE] if self._notice_when and self._notice_when(self._clock()) else []
+        return departures
 
     def _departures(self, now: datetime) -> list[Departure]:
         departures = []
@@ -122,6 +142,29 @@ class FakeBusSource(_FakeSource):
                 )
         departures.sort(key=lambda d: d.departs_at)
         return departures[: self._rows]
+
+
+# Chance of rain by hour of the day: a wet hour from 07:00, dry otherwise.
+_DEMO_RAIN = {7: 70, 8: 30}
+
+
+class FakeWeatherSource:
+    """An hourly forecast for the clock's day and the next, the same every day."""
+
+    name = "weather"
+
+    def __init__(self, clock, chances: dict[int, int] | None = None) -> None:
+        self._clock = clock
+        self._chances = _DEMO_RAIN if chances is None else chances
+
+    def fetch(self) -> list[Hour]:
+        midnight = self._clock().replace(hour=0, minute=0, second=0, microsecond=0)
+        hours = []
+        for offset in range(48):
+            start = midnight + timedelta(hours=offset)
+            chance = self._chances.get(start.hour, 5)
+            hours.append(Hour(start, chance, 0.8 if chance >= 50 else 0.0))
+        return hours
 
 
 # Eastbound along High Street West, Glossop, to Henry Street Stop A (NaPTAN positions).

@@ -29,6 +29,7 @@ from .display import DISPLAY_PANELS, PngDisplay, open_display
 from .holidays import bank_holidays
 from .emulation import build_emulation
 from .emulator import DEFAULT_PORT, make_server
+from .fake import DEMO_NOTICE, FakeWeatherSource
 from .http import get_bytes
 from .model import Departure, Status
 from .state import StateStore
@@ -36,6 +37,7 @@ from .transportapi import redact_credentials
 from .view import build_view
 from .themes import THEMES, theme_named
 from .walk import WalkTimes
+from .weather import rain_line
 
 DEFAULT_CONFIG = "/etc/departureboard/config.toml"
 DEFAULT_SECRETS = "/etc/departureboard/secrets.env"
@@ -374,8 +376,13 @@ def _demo(args) -> int:
     walk = WalkTimes(train=7, bus={"*": 7})
     # A screen preview shows what a screen adds: a running clock and countdowns.
     clock = None if display.panel.epaper else "07:03:15"
+    now = datetime(2026, 10, 8, 7, 3, 15)
+    # Rain likely through the 07:00 hour, before you'd reach the 07:12; a notice takes its place.
+    rain = rain_line(FakeWeatherSource(lambda: now).fetch(), now, now.replace(minute=12), 50, live=bool(clock))
     view = build_view(
-        "Glossop > Manchester Picc", trains, buses, "07:03", set(), walk, theme.wording, clock
+        "Glossop > Manchester Picc", trains, buses, "07:03", set(), walk, theme.wording, clock,
+        notices=[DEMO_NOTICE] if args.notice else None,
+        rain=rain if args.rain else None,
     )
     display.show(theme.render(view, display.palette, display.panel))
     print(f"Wrote {args.png}")
@@ -457,6 +464,8 @@ def _parser() -> argparse.ArgumentParser:
     demo.add_argument("--theme", default="sign", choices=sorted(THEMES))
     demo.add_argument("--accent", choices=["red", "yellow"], help="defaults to the theme's")
     demo.add_argument("--display", default="inky", choices=sorted(DISPLAY_PANELS), help="panel to draw for")
+    demo.add_argument("--notice", action="store_true", help="show a sample disruption notice")
+    demo.add_argument("--rain", action="store_true", help="show a sample rain warning (a notice takes its place)")
     demo.set_defaults(handler=_demo)
 
     route = with_config(sub.add_parser("route", help="print a [bus.routes] block for the screen's bus page"))

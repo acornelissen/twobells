@@ -102,3 +102,31 @@ def test_fake_bus_is_off_the_strip_when_far_away():
 
     # At 07:06 the next 341 is 19 min away, beyond the 10 min strip.
     assert FakeVehicleSource(SimClock(datetime(2026, 10, 8, 7, 6))).fetch() == []
+
+
+def test_fake_trains_carry_a_disruption_message_while_told_to():
+    from departureboard.fake import DEMO_NOTICE
+
+    clock = SimClock(START)
+    source = FakeTrainSource(clock, notice_when=lambda now: now.minute >= 59)
+    source.fetch()
+    assert source.messages == []
+    clock.advance()
+    source.fetch()
+    assert source.messages == [DEMO_NOTICE]
+
+
+def test_fake_trains_have_no_messages_by_default():
+    source = FakeTrainSource(SimClock(START))
+    source.fetch()
+    assert source.messages == []
+
+
+def test_fake_forecast_covers_two_days_with_a_wet_morning_hour():
+    from departureboard.fake import FakeWeatherSource
+
+    hours = FakeWeatherSource(SimClock(START)).fetch()
+    assert len(hours) == 48
+    assert hours[0].start == START.replace(hour=0, minute=0)
+    assert [h.start.hour for h in hours if h.probability >= 50] == [7, 7]
+    assert hours == FakeWeatherSource(SimClock(START + timedelta(hours=3))).fetch()

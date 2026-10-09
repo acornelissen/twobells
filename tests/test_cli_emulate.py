@@ -140,3 +140,33 @@ def test_screen_demo_shows_the_bus_page_with_a_moving_bus():
 def test_epaper_demo_has_no_bus_page():
     em = build_emulation(demo=True)
     assert em.board.tracker is None
+
+
+def test_demo_shows_rain_then_a_disruption_then_neither():
+    from departureboard.app import run_once
+
+    em = build_emulation(demo=True)
+    state, seen = {}, {}
+    for _ in range(75):  # 06:58 to 08:12, a simulated minute a tick
+        now = em.clock()
+        view = run_once(em.board, state, em.display, now, prime=not state).view
+        seen[now.strftime("%H:%M")] = (bool(view.notice), view.rain)
+        em.clock.advance()
+    assert seen["07:00"] == (False, "Rain from 07:00 (70%)")
+    assert seen["07:15"][0]  # the disruption notice, which takes the rain line's place
+    assert seen["07:30"] == (False, "Rain from 07:00 (70%)")
+    assert seen["08:10"] == (False, None)
+
+
+def test_demo_is_the_same_every_run():
+    from departureboard.app import run_once
+
+    def run():
+        em = build_emulation(demo=True)
+        state, views = {}, []
+        for _ in range(40):
+            views.append(run_once(em.board, state, em.display, em.clock(), prime=not state).view.signature())
+            em.clock.advance()
+        return views
+
+    assert run() == run()

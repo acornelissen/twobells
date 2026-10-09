@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import Callable, Mapping
 from zoneinfo import ZoneInfo
 
-from .app import Board, SourceConfig, Tracker
+from .app import Board, SourceConfig, Tracker, Weather
 from .config import load_config
 from .display import DISPLAY_PANELS
 from .emulator import EmulatorDisplay
-from .fake import DEMO_STRIP, FakeBusSource, FakeTrainSource, FakeVehicleSource, SimClock
+from .fake import DEMO_STRIP, FakeBusSource, FakeTrainSource, FakeVehicleSource, FakeWeatherSource, SimClock
 from .schedule import PollPolicy, parse_window
 from .state import StateStore
 from .themes import THEMES
@@ -28,6 +28,15 @@ def demo_outage(now: datetime) -> bool:
     return _OUTAGE[0] <= now.time() < _OUTAGE[1]
 
 
+# Rain is likely through the 07:00 hour, so the rain line shows from the start;
+# a disruption notice takes its place for part of that time.
+_DISRUPTION = (time(7, 10), time(7, 25))
+
+
+def demo_disruption(now: datetime) -> bool:
+    return _DISRUPTION[0] <= now.time() < _DISRUPTION[1]
+
+
 @dataclass(frozen=True)
 class Emulation:
     board: Board
@@ -37,9 +46,10 @@ class Emulation:
     tick_seconds: float
 
 
-def _fake_train(clock, interval_minutes: int = 2) -> SourceConfig:
+def _fake_train(clock, interval_minutes: int = 2, notice_when=None) -> SourceConfig:
     policy = PollPolicy(_ALWAYS, timedelta(minutes=interval_minutes))
-    return SourceConfig(FakeTrainSource(clock), policy, stale_after=timedelta(minutes=6))
+    source = FakeTrainSource(clock, notice_when=notice_when)
+    return SourceConfig(source, policy, stale_after=timedelta(minutes=6))
 
 
 def _demo(accent: str | None, tick_seconds: float | None, display: str) -> Emulation:
@@ -55,12 +65,13 @@ def _demo(accent: str | None, tick_seconds: float | None, display: str) -> Emula
     board = Board(
         title="Glossop > Manchester Picc",
         sources=[
-            _fake_train(clock),
+            _fake_train(clock, notice_when=demo_disruption),
             SourceConfig(bus, PollPolicy(_ALWAYS, timedelta(minutes=6)), timedelta(minutes=12)),
         ],
         walk=WalkTimes(train=7, bus={"A": 7, "B": 7}),
         theme=theme,
         tracker=tracker,
+        weather=Weather(FakeWeatherSource(clock), PollPolicy(_ALWAYS, timedelta(minutes=30))),
     )
 
     return Emulation(
