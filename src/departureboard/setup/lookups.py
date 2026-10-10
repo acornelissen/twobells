@@ -79,7 +79,7 @@ _POSTCODE = re.compile(r"^[A-Z]{1,2}[0-9][A-Z0-9]?[0-9][A-Z]{2}$")
 _CRS = re.compile(r"^[A-Z]{3}$")
 _ATCO = re.compile(r"^[0-9]{3}[0-9A-Za-z]{1,9}$")
 _AREA = re.compile(r"^[0-8][0-9]{2}$")
-_LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")  # as the settings page allows
+_LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")  # as the settings site allows
 # "Stop A", "Stand 12", "Bay C3" or a bare "B": a letter the street sign shows.
 _INDICATOR_CODE = re.compile(r"^(?:(?i:stop|stand|stance|bay)\s+)?([A-Z]{1,2}[0-9]?|[0-9]{1,2})$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
@@ -507,7 +507,7 @@ def nearby_stops(lat: float, lon: float, within_m: float = 800, limit: int = 15,
 # Walk times, from the OpenStreetMap foot router (OSRM). It is FOSSGIS's
 # server, as for roadshape's bus map roads, under the same policy
 # (https://routing.openstreetmap.de/about.html): at most one request a second,
-# from a valid user agent. One limit covers both, as the setup service can
+# from a valid user agent. One limit covers both, as the fetch service can
 # look up walk times while a search asks for roads.
 
 ROUTER_USER_AGENT = "inky-departures/0.1 (departure board; https://github.com/acornelissen/inky-departures)"

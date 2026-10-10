@@ -47,7 +47,7 @@ from .schema import KEY_VALUE, saved_keys
 
 # A saved settings file that couldn't be read, kept beside it when the page replaces it.
 BROKEN_NAME = OVERLAY_NAME + ".broken"
-HEADER = ("# Saved from the settings page and setup. Layered over config.toml, which sets everything else:\n"
+HEADER = ("# Saved from the settings site and setup. Layered over config.toml, which sets everything else:\n"
           "# anything here that the page and setup don't save is ignored.")
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
@@ -184,7 +184,7 @@ def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping
     environment and keys already saved) plus `keys`. Returns the overlay as
     written. OverlayError, with text that never holds a key, if not saved.
     With `replace`, `changes` take the saved overlay's place instead: for
-    the settings page replacing one it can't read, which is kept as
+    the settings site replacing one it can't read, which is kept as
     settings.toml.broken."""
     for name, value in keys.items():
         if not _ENV_NAME.match(name) or not isinstance(value, str) or not KEY_VALUE.match(value):

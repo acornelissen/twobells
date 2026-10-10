@@ -274,7 +274,7 @@ def _flag(section: dict, key: str, default: bool, where: str = "") -> bool:
     return value
 
 
-# Sections that enabled = false switches off. The settings page and setup do
+# Sections that enabled = false switches off. The settings site and setup do
 # that, rather than remove one, as a saved overlay can't remove what
 # config.toml has; and what's in it is kept for switching it back on.
 SWITCHABLE = ("train", "bus", "weather")
@@ -578,7 +578,7 @@ def settings_from(
         # Bus positions are only drawn on a screen; e-paper never asks for them.
         if not DISPLAY_PANELS[display].epaper:
             tracker = _tracker(data["bus"], env, bus.policy)
-    # Where the settings page leaves a reset code: beside the state file, in the store.
+    # Where the settings site leaves a reset code: beside the state file, in the store.
     folder = state_dir(data)
     board = Board(
         title=_text(data, "title", BOARD_DEFAULTS["title"]),

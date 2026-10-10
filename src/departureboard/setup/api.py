@@ -13,7 +13,7 @@ goes to postcodes.io or Nominatim to find it and to the foot router for
 walk times, as setup/lookups.py describes, and is never logged or saved. With a
 spool runner it passes through a request file in the private spool folder,
 held in memory on the Pi, never on the SD card, and deleted as soon as the
-setup service reads it (setup/spool/). Finishing
+fetch service reads it (setup/spool/). Finishing
 writes only what setup.config_fragment allows: the weather position rounded
 to 2 places (about a kilometre), the station, the stops and walk times, the
 bank holiday list, and [bus] source, operators and routes from the search.
@@ -28,7 +28,7 @@ Where the internet work runs. By default the lookups, the key tests and the
 search run here, in this process (the dashboard; a laptop). A host that
 mustn't reach the internet itself passes a `runner` (see Runner) that does
 them elsewhere: on the Pi, spool.runner.SpoolRunner hands them to a separate
-setup service, as the settings page's own service is kept off the internet.
+fetch service, as the settings site's own service is kept off the internet.
 A runner is given only what was typed or pasted, never a saved key or the
 saved settings; it reads those itself.
 
@@ -311,7 +311,7 @@ def _minutes(value, field: str) -> int:
 
 
 def _stops(value, field: str = "stops", least: int = 0) -> dict[str, str]:
-    """{label: ATCO code}: labels as the settings page allows, each stop once."""
+    """{label: ATCO code}: labels as the settings site allows, each stop once."""
     if not isinstance(value, dict) or not least <= len(value) <= MAX_BOARD_STOPS:
         raise Invalid(f"Pick {least} to {MAX_BOARD_STOPS} stops", field)
     stops = {}
@@ -433,7 +433,7 @@ class SetupApi:
     ) -> None:
         """`target` is the overlay finishing saves into (store.Store.target),
         checked as each view on loads its settings. `load_secrets` gives
-        the environment with every saved key, as the settings page's does;
+        the environment with every saved key, as the settings site's does;
         `job_folder` is where the search builds the bus timetable (the
         store). `install` says which views can be turned on (its offered,
         and its default views while none are saved), what shows the
@@ -814,7 +814,7 @@ class SetupApi:
         # can't do: config.toml's [train] or [bus] (the template's placeholders,
         # say) would otherwise stay in force. Choosing it again switches it on.
         if station is not None:
-            changes["train"].setdefault("walk_minutes", "")  # "" clears an old one, as the settings page does
+            changes["train"].setdefault("walk_minutes", "")  # "" clears an old one, as the settings site does
             changes["train"]["filter_crs"] = filter_crs
             changes["train"]["enabled"] = True
         else:

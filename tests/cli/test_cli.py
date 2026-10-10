@@ -767,7 +767,7 @@ def test_timetable_with_buses_switched_off_has_nothing_to_do(bods_env, monkeypat
 
 
 def test_timetable_builds_from_bods_set_only_in_the_saved_settings(bods_env, monkeypatch, capsys):
-    # The settings page or the wizard saved source = "bods" and the operators; config.toml says neither.
+    # The settings site or the wizard saved source = "bods" and the operators; config.toml says neither.
     from departureboard.timetable import build as timetable
 
     args, folder = bods_env
@@ -1434,7 +1434,7 @@ def test_query_display_prints_the_display_config_toml_sets(tmp_path, capsys, con
 
 @pytest.mark.parametrize("config, saved, wanted", [
     ('[bus]\nsource = "bods"\n', "", True),
-    ("[bus]\n", '[bus]\nsource = "bods"\n', True),  # chosen on the settings page or in the wizard
+    ("[bus]\n", '[bus]\nsource = "bods"\n', True),  # chosen on the settings site or in the wizard
     ('[bus]\nsource = "bods"\n', "[bus]\nenabled = false\n", False),  # buses switched off since
     ("[bus]\n", "", False),  # TransportAPI
     ('[train]\ncrs = "GLO"\n', "", False),  # no buses at all
@@ -2110,7 +2110,7 @@ def test_the_fetch_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypat
         try:
             assert main(["fetch", "--config", str(config), "--secrets", str(secrets)]) == 0
         except Unhandled:
-            pytest.fail("the setup service didn't handle SIGTERM")
+            pytest.fail("the fetch service didn't handle SIGTERM")
         thread.join(5)
         assert signal.getsignal(signal.SIGTERM) is unhandled  # put back as it was
     finally:

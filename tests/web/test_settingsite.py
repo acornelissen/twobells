@@ -793,7 +793,7 @@ def test_a_tab_tests_only_its_own_keys(signed, path, name):
 
 @pytest.mark.parametrize("failure, said", [
     (TooSoon("Wait 7 s before testing this key again"), "Wait 7 s before testing this key again"),
-    (SetupError("The setup service didn't answer in time"), "The setup service didn't answer in time"),
+    (SetupError("The fetch service didn't answer in time"), "The fetch service didn't answer in time"),
     (RuntimeError("typed-kb-key-1 went wrong"), "Something went wrong while testing the key. Try again."),
 ])
 def test_a_test_that_cant_run_says_why_plainly(signed, caplog, failure, said):
@@ -804,7 +804,7 @@ def test_a_test_that_cant_run_says_why_plainly(signed, caplog, failure, said):
 
 
 class KeyRunner:
-    """A setupapi.Runner that only tests keys, as the Pi's setup service does them."""
+    """A setupapi.Runner that only tests keys, as the Pi's fetch service does them."""
 
     def __init__(self):
         self.tests = []

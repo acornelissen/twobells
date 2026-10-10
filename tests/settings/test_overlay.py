@@ -26,7 +26,7 @@ windows = ["Mon-Fri 07:00-08:30"]
 A = "1000DGHS0900"
 """
 
-# What the settings page leaves in the overlay; setup manages none of it.
+# What the settings site leaves in the overlay; setup manages none of it.
 SAVED = """
 theme = "plain"
 rotate = 90

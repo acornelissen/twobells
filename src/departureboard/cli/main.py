@@ -68,8 +68,8 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     def with_config(p):
-        p.add_argument("--config", default=DEFAULT_CONFIG)
-        p.add_argument("--secrets", default=DEFAULT_SECRETS)
+        p.add_argument("--config", default=DEFAULT_CONFIG, help="settings file, optional (default: %(default)s)")
+        p.add_argument("--secrets", default=DEFAULT_SECRETS, help="keys file, optional (default: %(default)s)")
         return p
 
     run = with_config(sub.add_parser("run", help="one tick of the board"))
@@ -84,7 +84,7 @@ def _parser() -> argparse.ArgumentParser:
     probe.add_argument(
         "--stop", action="append", metavar="LABEL=ATCO", help="bus stop(s) to probe instead of config"
     )
-    probe.add_argument("--save", metavar="DIR", help="save raw bus responses as JSON")
+    probe.add_argument("--save", metavar="DIR", help="save TransportAPI's raw bus responses as JSON")
     probe.add_argument(
         "--details", action="store_true", help="trains with coaches and calling points (GetDepBoardWithDetails)"
     )
@@ -103,8 +103,8 @@ def _parser() -> argparse.ArgumentParser:
     query.set_defaults(handler=query_command)
 
     demo = sub.add_parser("demo", help="render sample data (a Glossop morning) to a PNG")
-    demo.add_argument("--png", default="preview.png")
-    demo.add_argument("--theme", default="sign", choices=sorted(THEMES))
+    demo.add_argument("--png", default="preview.png", help="picture to write (default: %(default)s)")
+    demo.add_argument("--theme", default="sign", choices=sorted(THEMES), help="the look (default: %(default)s)")
     demo.add_argument("--accent", choices=["red", "yellow"], help="defaults to the theme's")
     demo.add_argument("--display", default="inky", choices=sorted(DISPLAY_PANELS), help="panel to draw for")
     demo.add_argument("--notice", action="store_true", help="show a sample disruption notice")
@@ -114,7 +114,7 @@ def _parser() -> argparse.ArgumentParser:
     route = with_config(sub.add_parser("route", help="print a [bus.routes] block for the screen's bus page"))
     route.add_argument("line", help="bus line as on the board, e.g. 341")
     route.add_argument("--stop", required=True, help="your stop's label from [bus.stops], e.g. A")
-    route.add_argument("--noc", help="operator code (TransportAPI's 'operator', e.g. BNML) to find its BODS timetable")
+    route.add_argument("--noc", help="national operator code, e.g. BNML, to find its BODS timetable")
     route.add_argument("--txc", help="a TransXChange .xml or .zip you downloaded, instead of --noc")
     route.set_defaults(handler=route_command)
 
@@ -142,11 +142,11 @@ def _parser() -> argparse.ArgumentParser:
     emulate.add_argument("--fake-train", action="store_true", help="fake trains, live buses")
     emulate.add_argument("--accent", choices=["red", "yellow"], help="demo accent")
     emulate.add_argument("--display", choices=sorted(DISPLAY_PANELS), help="panel to emulate (default: config's)")
-    emulate.add_argument("--port", type=int, default=DEFAULT_PORT)
+    emulate.add_argument("--port", type=int, default=DEFAULT_PORT, help="port to serve on (default: %(default)s)")
     emulate.add_argument("--port-attempts", type=int, default=10, help=argparse.SUPPRESS)
     emulate.add_argument("--tick", type=float, help="seconds per tick (e-paper: demo 2, live 60; a screen: 1)")
     emulate.add_argument("--ticks", type=int, help=argparse.SUPPRESS)
-    emulate.add_argument("--no-browser", action="store_true")
+    emulate.add_argument("--no-browser", action="store_true", help="don't open a browser")
     emulate.set_defaults(handler=emulate_command)
 
     serve = with_config(sub.add_parser(

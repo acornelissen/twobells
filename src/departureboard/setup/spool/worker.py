@@ -66,7 +66,7 @@ def _failed(message: str) -> dict:
 
 
 class Worker:
-    """The setup service: takes requests from the spool, does them, writes
+    """The fetch service: takes requests from the spool, does them, writes
     the replies, and runs at most one search at a time (discover.SetupJob's
     lock in the board's state folder also keeps it to one with the command
     line's). run() keeps going until it has had nothing to do for `idle`

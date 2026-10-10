@@ -408,7 +408,7 @@ def _password(args, store: Store, install: Install) -> int:
     store.make()
     if args.set_password:
         return _set_password(PasswordStore(store.password_file), f"New {install.noun} settings password: ")
-    return _reset_code(store.folder, f"Enter it on the settings page, {PREFIX}/reset, with a new password.")
+    return _reset_code(store.folder, f"Enter it on the settings site, {PREFIX}/reset, with a new password.")
 
 
 def _interrupt(signum, frame) -> None:

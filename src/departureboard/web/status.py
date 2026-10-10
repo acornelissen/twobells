@@ -1,4 +1,4 @@
-"""What the board has been doing, for the settings page's status panel."""
+"""What the board has been doing, for the settings site's status panel."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from ..core.errors import safe_message
 from ..core.polling import PollPolicy, parse_window
 
-# The settings page's status panel. It reads only the state file the board
+# The settings site's status panel. It reads only the state file the board
 # saves (never writes it) and config data, so it is quick and needs no network.
 # Hand edits and older versions can leave anything in either, so every value
 # is checked as it is read, and everything shown is escaped.

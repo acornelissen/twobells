@@ -40,7 +40,7 @@ timetable. Until its roads are found the saved timetable says so
 (roads_pending), so if they are stopped part way (the wizard's search
 cancelled, the process stopped or started again) the next build finds the
 rest, due or not. While they are being found, how far they have got is kept
-in ROADS_FILE for the settings page (roads_progress).
+in ROADS_FILE for the settings site (roads_progress).
 
 Times. A journey's DepartureTime is when it leaves its first stop. Each
 timing link's RunTime takes it to the next stop, where it may wait before
@@ -818,7 +818,7 @@ def load(folder: Path | str) -> Schedule | None:
 
 class RoadsProgress:
     """How far finding the roads has got, kept in ROADS_FILE beside the
-    timetable for the settings page (roads_progress), which may be another
+    timetable for the settings site (roads_progress), which may be another
     process's. Call it as roadshape.segment_shapes's `progress`; clear() once
     the roads are found. Written whole, at most every ROADS_EVERY_S seconds
     and the last; it never fails, as it only says how things are going."""

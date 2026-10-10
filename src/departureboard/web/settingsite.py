@@ -125,7 +125,7 @@ WIZARD_HEADERS = {**{k: v for k, v in setupapi.PAGE_HEADERS.items() if k != "Cac
 
 
 def moved(path: str) -> str | None:
-    """Where an old address of the board's settings page is now, or None."""
+    """Where an old address of the board's settings site is now, or None."""
     if path.startswith("/setup/"):
         return SETUP
     return _MOVED.get(path)
@@ -295,7 +295,7 @@ class SettingsSite:
         """Where a new session starts: the wizard until there is something to show."""
         try:
             return SETUP if needs_setup(self.store) else PREFIX
-        except Exception as error:  # noqa: BLE001 - the settings page will say what is wrong
+        except Exception as error:  # noqa: BLE001 - the settings site will say what is wrong
             log.warning("Can't tell whether the settings are set up: %s", type(error).__name__)
             return PREFIX
 

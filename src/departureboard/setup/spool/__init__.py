@@ -1,6 +1,6 @@
 """The setup wizard's internet work, done by a separate service on the Pi.
 
-Why. The settings page's service (departureboard-web.service) reaches only
+Why. The settings site's service (departureboard-web.service) reaches only
 the home network: its kernel IP filter denies everything else, so the page
 can't open a connection to the internet itself. That narrows what a flaw
 in the page could do; it isn't a wall. Both units run as the same user and
@@ -39,7 +39,7 @@ card if the Pi swaps to it (dphys-swapfile, say), as with anything else.
 Every file is written new in tmp/ (0600, never through a link) and renamed
 into place whole, so neither side ever reads half of one. A systemd path
 unit, departureboard-fetch.path, starts the service whenever requests/ isn't
-empty: the settings page needs no sudo, polkit rule or access to systemd,
+empty: the settings site needs no sudo, polkit rule or access to systemd,
 only a file in a folder it already owns, and it can't choose what the
 service runs or with what settings. The service takes each request,
 deleting it as it reads it (so a pasted key is kept as briefly as it

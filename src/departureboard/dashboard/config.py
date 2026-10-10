@@ -16,7 +16,7 @@ in [dashboard] kb_incidents_url.
 One dashboard per store: a lock held for the life of the process stops a
 second one sharing (and fighting over) the same files.
 
-Settings saved from the dashboard's settings page (and its setup wizard) go
+Settings saved from the dashboard's settings site (and its setup wizard) go
 in the store too, never beside config.toml, which is read-only in Docker:
 the one settings.toml and secrets.env the board's page saves into. The
 dashboard watches every file its settings come from and, when one changes
@@ -260,7 +260,7 @@ def _header_key(env: Mapping[str, str], name: str) -> str:
 
 
 def dashboard_target(store: Store) -> Target:
-    """Where the dashboard's settings page and setup wizard save: the store,
+    """Where the dashboard's settings site and setup wizard save: the store,
     over config.toml, and only what the dashboard would load."""
     return store.target(lambda data, env: _build(data, env, store.folder))
 

@@ -88,7 +88,7 @@ def sleep_to_the_tick(seconds: float) -> None:
 
 
 def setup_url(hostname: str | None = None, port: int = WEB_PORT) -> str:
-    """The settings page's address on the home network, by this Pi's name."""
+    """The settings site's address on the home network, by this Pi's name."""
     name = (socket.gethostname() if hostname is None else hostname).split(".")[0]
     if not re.fullmatch(r"[A-Za-z0-9-]{1,63}", name):
         name = "raspberrypi"  # Raspberry Pi OS's own; a real name never gets here

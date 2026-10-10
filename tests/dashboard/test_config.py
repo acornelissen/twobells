@@ -351,7 +351,7 @@ def test_a_knowledgebase_key_that_could_split_a_header_is_refused(config, tmp_pa
     assert "abc" not in str(raised.value)
 
 
-# Settings saved from the dashboard's own settings page
+# Settings saved from the dashboard's own settings site
 
 
 def test_settings_saved_in_the_dashboard_s_folder_are_layered_over_config_toml(config, tmp_path, opened):
@@ -392,7 +392,7 @@ def test_saved_settings_hold_only_what_the_settings_page_and_setup_save(config, 
     caplog.set_level("WARNING")
     dash = load(config, folder, env={**ENV, "RDM_KB_API_KEY": "kb-key"}, opened=opened)
     assert dash.train_crs == "MAN" and dash.train._base_url == DEFAULT_BASE_URL
-    # The settings page manages the Knowledgebase address, at raildata.org.uk.
+    # The settings site manages the Knowledgebase address, at raildata.org.uk.
     assert dash.train_incidents._url == "https://api1.raildata.org.uk/kb/incidents"
     logged = " ".join(r.getMessage() for r in caplog.records)
     assert "[train] base_url" in logged and "example.invalid" not in logged

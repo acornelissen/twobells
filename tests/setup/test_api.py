@@ -801,7 +801,7 @@ def test_links_must_be_plain(board):
             SetupApi(board_target(board.config), dict, board.state, links=[("Board", href)])
 
 
-# A runner: the internet work done elsewhere (the Pi's setup service).
+# A runner: the internet work done elsewhere (the Pi's fetch service).
 
 
 class FakeRunner:

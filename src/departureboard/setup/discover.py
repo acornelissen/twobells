@@ -400,7 +400,7 @@ class SetupJob:
     in the folder, and the roads of an earlier job. It writes no settings:
     its result holds the [bus] settings to add, for the caller to show and
     save. With `nice`, its thread runs that much nicer on Linux, so it gives
-    way to the caller's other work (the Pi's setup service answering the
+    way to the caller's other work (the Pi's fetch service answering the
     wizard's lookups)."""
 
     def __init__(

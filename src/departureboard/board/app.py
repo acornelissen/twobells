@@ -111,15 +111,15 @@ class Board:
     theme: Theme = THEMES["plain"]
     tracker: Tracker | None = None
     weather: Weather | None = None
-    # The settings page's reset code, while one is waiting to be read off the board.
+    # The settings site's reset code, while one is waiting to be read off the board.
     reset_code: Callable[[], CodeView | None] | None = None
     # Until the board is set up: where to do it, shown instead of departures
-    # (a waiting reset code still comes first, for claiming the settings page).
+    # (a waiting reset code still comes first, for claiming the settings site).
     setup: SetupView | None = None
 
 
 def reset_code_page(folder: Path, timezone: str) -> Callable[[], CodeView | None]:
-    """Asks the settings page's handover in `folder` for a code to show,
+    """Asks the settings site's handover in `folder` for a code to show,
     giving its expiry in the board's own time zone."""
     codes, zone = ResetCodes(folder), ZoneInfo(timezone)
 
@@ -166,7 +166,7 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False)
     try:
         departures = config.source.fetch()
     except Exception as error:  # noqa: BLE001 - keep showing last good data on any failure
-        # The settings page shows the last error; neither it nor the log may carry a key.
+        # The settings site shows the last error; neither it nor the log may carry a key.
         message = safe_message(error)
         log.warning("%s: fetch failed: %s", name, message)
         entry["last_error"] = {"at": to_iso(now), "message": message}
@@ -175,7 +175,7 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False)
     entry["last_success"] = to_iso(now)
     entry.pop("last_error", None)
     # A source that got there the long way round (the bus timetable's fallback)
-    # says so, for the settings page.
+    # says so, for the settings site.
     note = getattr(config.source, "note", None)
     if note:
         entry["note"] = safe_message(note)
@@ -383,7 +383,7 @@ def run_once(
     last_at = from_iso(last.get("at"))
     key = _render_key(shown, board.theme, display)
     changed = key != last.get("signature")
-    # Someone is waiting at the settings page for the code, or has just used
+    # Someone is waiting at the settings site for the code, or has just used
     # it, or has just set the board up: on and off the panel straight away,
     # whatever min_redraw says.
     urgent = page == "code" or last.get("page") in ("code", "setup")
@@ -455,7 +455,7 @@ def run_loop(
             raise
         if store is not None:
             fetched = _fetched(state)
-            # Also every few minutes, so the settings page's status (last redraw,
+            # Also every few minutes, so the settings site's status (last redraw,
             # bus positions) doesn't go stale while nothing new is fetched.
             overdue = saved_at is None or not timedelta(0) <= now - saved_at < _SAVE_EVERY
             if fetched != saved or overdue:

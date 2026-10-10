@@ -179,7 +179,7 @@ class _ViewOn(_SetUpYet):
 def _run_first(args) -> int:
     """Not set up yet (config.toml missing, or still the template): show
     where to set the board up, and a reset code when one is asked for to
-    claim the settings page, rather than fail every minute.
+    claim the settings site, rather than fail every minute.
 
     A single run (the e-paper timer's) draws the page, only when it isn't
     already showing, and exits 0. A running screen keeps it up and, once the

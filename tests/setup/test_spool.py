@@ -1,4 +1,4 @@
-"""The setup service and the page talking through the spool, end to end in
+"""The fetch service and the page talking through the spool, end to end in
 threads (no systemd), with setup's lookups faked: no network."""
 
 import json

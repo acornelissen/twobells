@@ -453,7 +453,7 @@ def render_code(view: CodeView, palette: Palette, panel: Panel = PHAT, dark: boo
 def render_setup(view: SetupView, palette: Palette, panel: Panel = PHAT, dark: bool = False) -> Image.Image:
     """Where to set the board up, as the code page draws its code: the
     heading ("Set me up") big, then the note saying what to do, then the
-    settings page's address as big as it fits. `dark` as for render_code."""
+    settings site's address as big as it fits. `dark` as for render_code."""
     s = plain_scale(panel)
     pad = _PAD * s
     width, height = panel.size

@@ -1,4 +1,4 @@
-"""The page's side: a setup.api.Runner that asks the setup service, and the dashboard's Poster."""
+"""The page's side: a setup.api.Runner that asks the fetch service, and the dashboard's Poster."""
 
 from __future__ import annotations
 
@@ -35,10 +35,10 @@ START_WAIT_S = 90.0  # for the search's first status
 SILENT_S = 60.0  # a search unheard from for this long has stopped
 ACTIVE_EVERY_S = 60.0  # the page says a browser is using the dashboard at most this often
 
-NO_ANSWER = ("The setup service didn't answer in time. Try again; if it keeps happening, "
+NO_ANSWER = ("The fetch service didn't answer in time. Try again; if it keeps happening, "
              "check departureboard-fetch.path is enabled on the Pi.")
-STOPPED = "The setup service stopped before the search finished. Try again."
-UNFIT = "The setup service sent an answer that doesn't fit. Try again."
+STOPPED = "The fetch service stopped before the search finished. Try again."
+UNFIT = "The fetch service sent an answer that doesn't fit. Try again."
 GONE = "The search's answer was left unread too long and has gone. Search again."
 
 
@@ -51,7 +51,7 @@ def _place_args(place) -> dict:
 
 
 class SpoolRunner:
-    """Asks the setup service, through the spool, to do setup's internet
+    """Asks the fetch service, through the spool, to do setup's internet
     work, and waits for its answers. For api.SetupApi(runner=...)."""
 
     def __init__(self, folder: Path | str, *, waits: Mapping[str, float] = WAITS,
@@ -85,7 +85,7 @@ class SpoolRunner:
             body = Spool.read((where or self.spool.replies) / f"{request_id}.json", MAX_REPLY_BYTES, delete)
             return None if body is None else check_reply(parse(body), request_id)
         except Refused as why:
-            log.warning("Refused the setup service's reply: %s", why)
+            log.warning("Refused the fetch service's reply: %s", why)
             raise SetupError(UNFIT) from None
 
     def _ask(self, kind: str, args: dict):
@@ -95,7 +95,7 @@ class SpoolRunner:
         try:
             while (reply := self.reply(request_id, delete=True)) is None:
                 if self.monotonic() >= deadline:
-                    log.warning("The setup service didn't answer a %s request in time", kind)
+                    log.warning("The fetch service didn't answer a %s request in time", kind)
                     raise SetupError(NO_ANSWER)
                 self.sleep(self._poll)
         finally:
@@ -103,14 +103,14 @@ class SpoolRunner:
         if not reply["ok"]:
             if reply["why"] == "setup":
                 raise SetupError(safe_message(reply["error"]))
-            raise RuntimeError("The setup service failed")  # api.SetupApi answers a plain 500
+            raise RuntimeError("The fetch service failed")  # api.SetupApi answers a plain 500
         return reply["value"]
 
     def _check(self, value, check):
         try:
             return check(value)
         except Refused as why:
-            log.warning("Refused the setup service's reply: %s", why)
+            log.warning("Refused the fetch service's reply: %s", why)
             raise SetupError(UNFIT) from None
 
     # api.Runner.
@@ -143,7 +143,7 @@ class SpoolRunner:
 
 
 class SpoolJob:
-    """The search, run by the setup service: a discover.SetupJob's start,
+    """The search, run by the fetch service: a discover.SetupJob's start,
     status and cancel, read from the status the service keeps writing."""
 
     def __init__(self, runner: SpoolRunner, args: dict, start_wait: float, silent: float) -> None:
@@ -195,7 +195,7 @@ class SpoolJob:
             if self._beat is not None:  # swept away after going unread for long
                 self._end(GONE)
             elif now - started > self._start_wait:
-                log.warning("The setup service didn't start the search in time")
+                log.warning("The fetch service didn't start the search in time")
                 self._end(NO_ANSWER)
             return
         if not reply["ok"]:
@@ -204,7 +204,7 @@ class SpoolJob:
         try:
             status = check_status(reply["value"])
         except Refused as why:
-            log.warning("Refused the setup service's search status: %s", why)
+            log.warning("Refused the fetch service's search status: %s", why)
             self._end(UNFIT)
             return
         beat = reply.get("beat", 0)
@@ -215,7 +215,7 @@ class SpoolJob:
             self._finished = True  # kept here from now on; the file has done its job
             (self._runner.spool.status / f"{self.id}.json").unlink(missing_ok=True)
         elif now - self._beat[1] > self._silent:
-            log.warning("The setup service stopped mid-search")
+            log.warning("The fetch service stopped mid-search")
             self._end(STOPPED)
 
 

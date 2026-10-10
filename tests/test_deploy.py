@@ -331,7 +331,7 @@ def test_install_and_update_ask_the_app_not_config_toml(name):
 @pytest.mark.parametrize("name", SCRIPTS)
 @pytest.mark.parametrize("config, saved, wanted", [
     ('[bus]\nsource = "bods"\n', "", True),
-    ("[bus]\n", '[bus]\nsource = "bods"\n', True),  # chosen on the settings page or in the wizard
+    ("[bus]\n", '[bus]\nsource = "bods"\n', True),  # chosen on the settings site or in the wizard
     ('[bus]\nsource = "bods"\n', "[bus]\nenabled = false\n", False),  # buses switched off since
     ("[bus]\n", "", False),  # TransportAPI
     ('[train]\ncrs = "GLO"\n', "", False),  # no buses at all
@@ -428,7 +428,7 @@ def test_install_and_update_give_the_settings_new_address():
     assert "The settings site moved to :8090/settings" in update
     for text in (install, update):
         assert ":8080" not in text and "departureboard web " not in text
-    # The command the settings page gives for the password, as install.sh gives it.
+    # The command the settings site gives for the password, as install.sh gives it.
     assert install_named("pi").password_command.replace("/opt/departureboard", "$PREFIX") in install
 
 

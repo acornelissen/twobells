@@ -323,7 +323,7 @@ def test_the_default_asks_the_router_politely_through_the_capped_getter(monkeypa
 
 
 def test_roads_and_walk_times_share_one_limit_on_the_router():
-    # Both ask FOSSGIS's server; the setup service can look up walk times while
+    # Both ask FOSSGIS's server; the fetch service can look up walk times while
     # a search asks for roads, and the policy is one request a second in all.
     assert segment_shapes.__kwdefaults__["limiter"] is lookups.ROUTER_LIMIT
     assert lookups.walk_minutes.__defaults__[1] is lookups.ROUTER_LIMIT

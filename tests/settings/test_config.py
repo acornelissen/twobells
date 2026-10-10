@@ -372,7 +372,7 @@ def test_saved_settings_cannot_send_the_keys_to_another_address(tmp_path, caplog
     settings = load_config(path, ENV)
     train, bus = (config.source for config in settings.board.sources)
     assert train._base_url == DARWIN_URL and bus._base_url == TAPI_URL
-    assert train._rows == 2  # what the settings page saves still counts
+    assert train._rows == 2  # what the settings site saves still counts
     assert settings.display == "inky"  # set in config.toml only, as the page says
     logged = " ".join(r.getMessage() for r in caplog.records)
     for name in ("[train] base_url", "[bus] base_url", "display", "[dashboard] state_dir"):
@@ -862,7 +862,7 @@ def test_first_run_settings_use_the_templates_display_and_state_folder(tmp_path)
     assert (settings.display, settings.board.theme.name) == ("inky", "sign")
     assert settings.board.reset_code() is None
     code = ResetCodes(tmp_path / "state").issue(time.time())
-    assert settings.board.reset_code().code == f"{code[:3]} {code[3:]}"  # to claim the settings page
+    assert settings.board.reset_code().code == f"{code[:3]} {code[3:]}"  # to claim the settings site
 
 
 def test_first_run_settings_keep_the_screen_and_its_turn(tmp_path):

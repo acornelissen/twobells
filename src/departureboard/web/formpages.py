@@ -109,7 +109,7 @@ class Wording:
     """What a host calls itself, and how it tells the owner where reset codes
     go. Each is trusted text, HTML where it says so."""
 
-    title: str  # "Board settings": the settings page's title, and the sign-in page's heading
+    title: str  # "Board settings": the settings site's title, and the sign-in page's heading
     claim_title: str  # "Claim this board"
     claim_intro: str  # the first claim's opening paragraph
     reset_intro: str  # a forgotten password's opening paragraph

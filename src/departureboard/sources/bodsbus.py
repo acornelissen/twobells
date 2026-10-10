@@ -107,7 +107,7 @@ class BodsBusSource:
         self._http_get = http_get
         self._clock = clock or (lambda: datetime.now(tz))
         self._loaded: tuple[tuple[int, int] | None, Schedule | None] = (None, None)
-        # How the last fetch fell short, for the settings page; None if it didn't.
+        # How the last fetch fell short, for the settings site; None if it didn't.
         self.note: str | None = None
 
     def _schedule(self) -> Schedule | None:
@@ -139,7 +139,7 @@ class BodsBusSource:
 
     def idle_note(self) -> str | None:
         """Why buses aren't being checked while the fallback waits for its own
-        windows, for the settings page; None when that isn't the reason."""
+        windows, for the settings site; None when that isn't the reason."""
         reason = self.unusable() if self._fallback is not None else None
         if reason is None:
             return None

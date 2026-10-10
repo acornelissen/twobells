@@ -117,7 +117,7 @@ SETUP_NOTE = "On your home network, open"
 @dataclass(frozen=True)
 class SetupView:
     """The page shown instead of departures until the board is set up: the
-    settings page's address, where the setup wizard is. With another
+    settings site's address, where the setup wizard is. With another
     heading and note, the same page says the board view is off."""
 
     url: str  # "http://raspberrypi.local:8090/settings"
