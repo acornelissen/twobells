@@ -42,7 +42,7 @@ screen = ["pygame>=2.5"]
 [dependency-groups]
 # The tools for working on the board (uv sync installs them; uv.lock pins them).
 # pygame is here for the screen's tests; fonttools builds the vendored fonts
-# (tools/build_fonts.py).
+# (tools/build_fonts.py) and the Board look's dot-matrix face (tools/build_dotfont.py).
 dev = [
     "pytest>=8",
     "pygame>=2.5",
