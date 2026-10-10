@@ -288,9 +288,9 @@ The wizard's steps:
 6. **Views** (a Pi only): the board, the dashboard, or both. The board is ticked at first. Docker and a desktop have only the dashboard, so they skip this step.
 7. **Check and save:** with bus stops, saving first finds the bus companies serving them and builds their timetable, which can take a few minutes; leave the page open, or cancel. You can also ask for each line's route strip, for the screen's bus page (slower). Once the timetable is built, the roads for the dashboard's bus maps are found, for up to 5 minutes more, with a progress bar: press **Wait for the roads** to save once they are found, or **Carry on** to save now and let them finish on their own. Until then the maps draw straight lines between stops, and **Your place** on the settings' Overview says how far they have got. If they are stopped part way (the dashboard starting again with the new settings, say), the next timetable build, within the hour, finds the rest.
 
-Saving keeps your other settings: the look, rotation, text size and so on. Change anything else on the [settings pages](#5-the-settings) afterwards. Choosing no trains, or no bus stops, switches them off (shown as **Off** on the Trains and buses page); running setup again and picking a station or stops switches them back on. **Change with setup**, under **Your place** on the Overview, opens the wizard again at any time.
+Saving keeps your other settings: the look, rotation, text size and so on. Change anything else on the [settings pages](#5-the-settings) afterwards. Choosing no trains, or no bus stops, switches them off (shown as **Off** on the Trains and buses page); running setup again and picking a station or stops switches them back on. **Change home, station or stops**, under **Shortcuts** on the Overview, opens the wizard again at any time.
 
-**Changing only the stops, or only the station:** `/settings/setup/?step=stops` (change stops only) and `/settings/setup/?step=station` (change station only) open the wizard at that step, with today's choices ticked. Then come the walk times, starting from the ones you have, the keys only if the one it needs isn't set, and **Check and save**, which saves only that part: home, the views and everything else stay as they are. Stops are found near roughly where home is, the position kept for the weather (to about 1 km), and your stops are listed even if they aren't near it; for a search from home exactly, run the whole wizard. Keeping the same stops with the same labels needs no new bus company search. **Back to settings**, on the first step, returns to the settings.
+**Changing only the stops, or only the station:** **Change stops only** and **Change station only** on the Overview (`/settings/setup/?step=stops` and `/settings/setup/?step=station`) open the wizard at that step, with today's choices ticked. Then come the walk times, starting from the ones you have, the keys only if the one it needs isn't set, and **Check and save**, which saves only that part: home, the views and everything else stay as they are. Stops are found near roughly where home is, the position kept for the weather (to about 1 km), and your stops are listed even if they aren't near it; for a search from home exactly, run the whole wizard. Keeping the same stops with the same labels needs no new bus company search. **Back to settings**, on the first step, returns to the settings.
 
 Where home goes: your postcode to postcodes.io (or the address you type to OpenStreetMap's Nominatim), then its position once to the OpenStreetMap foot router for walk times. The maps, only if you open them, load pictures from OpenStreetMap, which then sees roughly where home is. The app keeps only a rough position, to about 1 km, for the weather.
 
@@ -310,7 +310,7 @@ The settings are at `/settings` on the install's address, port 8090, from any ph
 
 They are in pages by task, one tab each:
 
-- **Overview** (`/settings`): where your departures are for, with **Change with setup**. It only shows; nothing is changed here.
+- **Overview** (`/settings`): whether everything is working, where your departures are for, the keys' state, and shortcuts. It only shows; nothing is changed here.
 - **Trains and buses** (`/settings/trains-and-buses`): the title, your station, stops and the weather, which both views use.
 - **Board** (`/settings/board`): the board's own settings. Only while the board view is on.
 - **Dashboard** (`/settings/dashboard`): the dashboard's own. Only while the dashboard view is on.
@@ -325,8 +325,11 @@ What you save replaces what's in `config.toml`, including emptying a box: cleari
 
 ### Overview
 
-- **Your place:** the station, bus stops, the bus timetable (when it was saved, and how finding the bus maps' roads is getting on) and whether home is set, with **Change with setup**, which opens the [setup wizard](#4-first-run-and-the-setup-wizard).
 - If the dashboard can't start, why, at the top.
+- **Health:** one line, **All working** or how many problems there are, as of the time the page was drawn, with **Reload** to look again. Then each feed, under **On the board** and **On the dashboard** when both views are on: trains, where each train is (with its key), the bus times from the timetable and the live bus positions (or the board's buses with TransportAPI's lookups used today, when the board uses it), the weather, engineering works and bus disruptions (with their keys), and on a Pi the board's display and when it last redrew. For each: when it last updated, whether it is being checked now (or resting outside its checking times, or in the dashboard's quiet hours), the last error in words, and, when something is wrong, what that means for you, like *The dashboard's train times may be out of date.* A feed not heard from yet says **Waiting**, which isn't a problem.
+- **Your place**, in names: the station, its walk, and the one trains must call at, like *Glossop (GLO), 12 min walk; only trains calling at Manchester Piccadilly (MAN)*; each bus stop with its name from the bus timetable and its walk, like *A: Henry Street, 5 min walk* (its stop code until the timetable has it); the bus timetable, saying **Out of date** and why only when it is due to be built again (a week old, your stops changed, or a timetable in it ended), and how finding the bus maps' roads is getting on; whether home is set (to about 1 km, for the weather); and whether the weather is on. Names come from the station list in the app and the bus timetable, so this page never asks the internet.
+- **Keys:** each key the views on use, in one line: **Set**, **Not set**, or **Needed for** what uses it (trains, buses, the board's buses). Keys are never shown. **Change or test keys** opens the Keys page.
+- **Shortcuts:** **Change home, station or stops** runs the whole [setup wizard](#4-first-run-and-the-setup-wizard); **Change stops only** and **Change station only** start it at that step. **Open the dashboard**, while it runs. **Wall tablet:** the address for a [tablet on the wall](#wall-tablet-kiosk), made from the address you opened the settings with, like `http://glossop.local:8090/?kiosk`. Opened on the computer itself (`localhost`), the page says to use its address on the home network instead, as a tablet can't reach `localhost`.
 
 The version running is at the foot of every page.
 
@@ -340,8 +343,8 @@ The version running is at the foot of every page.
   - **Walk to the station:** in minutes, for the leave time. Empty means no leave time.
 - **Buses**
   - **Show buses:** on or off, as for trains.
-  - **Stops:** the stops setup found, by their label (the letter shown on the board) and stop code.
-  - **Walk to each stop (minutes):** one per line (`A = 7`), or one number for every stop. Empty means no leave times.
+  - **Stops:** the stops setup found, by their label (the letter shown on the board), name and stop code, with **Change them with setup**, which starts the wizard at its stops.
+  - **Walk to each stop:** a box for each stop, named by the stop and its label, like *Henry Street (A)*, in minutes. An empty box means no leave time for that stop.
   - **Only buses heading to:** optional, separated by commas, for example `Ashton, Hyde`. Empty shows every bus.
   - Advanced: **Stop codes**, one per line, written `LABEL = stop code`, for example `A = 1000DGHS0900`. Find stop codes on [bustimes.org](https://bustimes.org): the code is the last part of a stop page's address.
 - **Weather** (once setup or `config.toml` gives a location; see [Rain warning set-up](#rain-warning-set-up))

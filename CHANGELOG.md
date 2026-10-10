@@ -32,6 +32,8 @@ The first release.
   - Bank holidays are one choice: Sunday times for England and Wales, Scotland or Northern Ireland, or ignore them. `settings.toml` keeps `bank_holidays` and `bank_holiday_division` as before.
   - Checking times and quiet hours are rows of day checkboxes with From and To times, instead of lines like `Mon-Fri 06:30-09:30` to type. `settings.toml` keeps the same lines.
   - The keys and the engineering works address are on the Keys page, with their tests.
+  - The Overview says whether everything is working (each feed's last update, checking times, last error and what it means), your place in names (*Glossop (GLO), 12 min walk*; *A: Henry Street, 5 min walk*) with the bus timetable flagged only when out of date, each key's state, and shortcuts: change stops only, change station only, the dashboard and the wall tablet's address.
+  - The walks to the stops are a box for each stop, named by the stop, instead of `LABEL = minutes` lines.
 - The board and the dashboard use the same status words: "On time", "Exp 17:54", "Delayed", "Cancelled", "No report". The plain e-paper look said "+7" for a late train; it now says "Exp 07:49". Its bus section says "Leave by" once, over the column of times.
 - The plain e-paper look draws in Inter, which ships with the package. The Pi no longer installs DejaVu fonts.
 - The dashboard API (`/api/snapshot`) changed shape. Anything reading it needs updating; `docs/dashboard-api.md` has the details.
@@ -39,6 +41,7 @@ The first release.
   - Every train and bus row gains `walk_min` and `status_spoken` (the status in full words). `status_text` uses the words above.
   - Disruption items gain `relevance` (`your_stop`, `nearby` or `line`) and come in order of it.
   - `trains.messages` holds `{text, category, severity, kind}` objects instead of strings, with `kind` `station` or `service`.
+  - `trains.positions` and `buses.positions` say how asking where the trains and buses are is going, for the settings' Overview.
   - A top-level `quiet` says whether a quiet window is on.
 
 - The package is organised by app area (`core`, `settings`, `sources`, `timetable`, `board`, `dashboard`, `web`, `setup`, `fetch`, `emulator`, `cli`), with the tests mirroring it.
