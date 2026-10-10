@@ -18,6 +18,7 @@ from departureboard.dashboard.snapshot import (
     clock_at,
     row_id,
     status_block,
+    status_spoken,
     status_text,
     timetable_block,
     train_observations,
@@ -223,7 +224,8 @@ def test_without_details_a_train_has_no_position():
 def test_a_late_train_is_expected_later_and_left_for_later():
     part, _ = trains(train("07:12", "07:19", delayReason="This train has been delayed by a broken down train"))
     row = part["rows"][0]
-    assert (row["status"], row["status_text"], row["minutes_late"]) == ("late", "Expected 07:19", 7)
+    assert (row["status"], row["status_text"], row["minutes_late"]) == ("late", "Exp 07:19", 7)
+    assert row["status_spoken"] == "Expected 07:19"
     assert row["expected_at"] == "2026-10-10T07:19:00+01:00"
     assert row["leave_at"] == "2026-10-10T07:09:00+01:00"  # 10 min walk
     assert row["delay_reason"] == "This train has been delayed by a broken down train"
@@ -312,18 +314,19 @@ def test_train_observations_for_the_history():
 # Status words
 
 
-@pytest.mark.parametrize("mode, status, expected, words", [
-    ("train", Status.ON_TIME, None, "On time"),
-    ("train", Status.LATE, "07:19", "Expected 07:19"),
-    ("train", Status.LATE, None, "Delayed"),
-    ("train", Status.CANCELLED, None, "Cancelled"),
-    ("train", Status.UNKNOWN, None, "No report"),
-    ("bus", Status.ON_TIME, None, "On time"),
-    ("bus", Status.LATE, "10:19", "Expected 10:19"),
-    ("bus", Status.UNKNOWN, None, "Timetable only"),
+@pytest.mark.parametrize("mode, status, expected, words, spoken", [
+    ("train", Status.ON_TIME, None, "On time", "On time"),
+    ("train", Status.LATE, "07:19", "Exp 07:19", "Expected 07:19"),
+    ("train", Status.LATE, None, "Delayed", "Delayed"),
+    ("train", Status.CANCELLED, None, "Cancelled", "Cancelled"),
+    ("train", Status.UNKNOWN, None, "No report", "No report"),
+    ("bus", Status.ON_TIME, None, "On time", "On time"),
+    ("bus", Status.LATE, "10:19", "Exp 10:19", "Expected 10:19"),
+    ("bus", Status.UNKNOWN, None, "Timetable only", "Timetable only"),
 ])
-def test_status_text_is_always_words(mode, status, expected, words):
-    assert status_text(Departure(mode, "x", "y", "07:12", expected, status)) == words
+def test_status_text_is_always_words(mode, status, expected, words, spoken):
+    departure = Departure(mode, "x", "y", "07:12", expected, status)
+    assert (status_text(departure), status_spoken(departure)) == (words, spoken)
 
 
 def test_every_row_has_words_for_its_status():
@@ -332,6 +335,7 @@ def test_every_row_has_words_for_its_status():
     rows += bus_part(at(10, 14), [bus(*HALFWAY, at(10, 14))])[0]["rows"]
     for row in rows:
         assert re.fullmatch(r"[A-Z][a-z]+( [a-z]+)*( \d\d:\d\d)?", row["status_text"]), row["status_text"]
+        assert re.fullmatch(r"[A-Z][a-z]+( [a-z]+)*( \d\d:\d\d)?", row["status_spoken"]), row["status_spoken"]
 
 
 # Buses
@@ -342,8 +346,9 @@ def test_a_live_late_bus():
     row = by(part["rows"], line="341", stop="A")
     assert row["scheduled_at"] == "2026-10-09T10:10:00+01:00" and row["expected_at"] == "2026-10-09T10:19:00+01:00"
     assert (row["status"], row["status_text"], row["minutes_late"], row["live"]) == (
-        "late", "Expected 10:19", 9, True,
+        "late", "Exp 10:19", 9, True,
     )
+    assert row["status_spoken"] == "Expected 10:19"
     assert row["vehicle"] == {"age_s": 0, "recorded_at": "2026-10-09T10:14:00+01:00", "bearing": 90.0}
     strip = row["strip"]
     assert strip["stops"][strip["yours"]] == "Henry Street"

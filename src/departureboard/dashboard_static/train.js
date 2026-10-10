@@ -143,7 +143,7 @@ function render(row) {
   // Updated in place, so a screen reader's place in it stays put. The
   // reasons keep their places when empty, so nothing after them moves.
   patch(body,
-    h("p", { class: "dialog-status" }, statusBadge(row.status, row.status_text)),
+    h("p", { class: "dialog-status" }, statusBadge(row.status, row.status_text, row.status_spoken)),
     h("p", { class: "reason", hidden: !str(row.cancel_reason) }, str(row.cancel_reason)),
     h("p", { class: "reason", hidden: !str(row.delay_reason) }, str(row.delay_reason)),
     h("dl", { class: "facts" },

@@ -24,6 +24,7 @@ from datetime import UTC, date, datetime, timedelta, tzinfo
 from typing import Protocol
 
 from ..board.route import where
+from ..core import words
 from ..core.model import Departure, Status, iso, minutes_between
 from ..core.walk import WalkTimes
 from ..sources.bodsbus import BusBoard
@@ -81,14 +82,18 @@ def clock_at(hhmm: str, near: datetime) -> datetime:
 
 
 def status_text(departure: Departure) -> str:
-    """The status in words, so colour is never the only clue."""
-    if departure.status is Status.CANCELLED:
-        return "Cancelled"
-    if departure.status is Status.ON_TIME:
-        return "On time"
-    if departure.status is Status.LATE:
-        return f"Expected {departure.expected}" if departure.expected else "Delayed"
-    return "Timetable only" if departure.mode == "bus" else "No report"
+    """The status in words, so colour is never the only clue: the board's
+    words (core.words), so "Exp 07:19" reads the same on both."""
+    if departure.mode == "bus" and departure.status is Status.UNKNOWN:
+        return words.TIMETABLE_ONLY
+    return words.status(departure)
+
+
+def status_spoken(departure: Departure) -> str:
+    """status_text with nothing abbreviated, for screen readers: "Expected 07:19"."""
+    if departure.status is Status.LATE and departure.expected:
+        return words.expected_spoken(departure.expected)
+    return status_text(departure)
 
 
 def leave_at(departure: Departure, scheduled_at: datetime, expected_at: datetime | None,
@@ -166,6 +171,7 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
         "expected_at": iso(expected_at),
         "status": dep.status.value,
         "status_text": status_text(dep),
+        "status_spoken": status_spoken(dep),
         "minutes_late": _minutes_late(dep),
         "platform": dep.platform,
         "length": service.length,
@@ -368,6 +374,7 @@ def bus_row(live: LiveDeparture, positions: dict[str, StopPosition], now: dateti
         "expected_at": iso(expected_at),
         "status": dep.status.value,
         "status_text": status_text(dep),
+        "status_spoken": status_spoken(dep),
         "minutes_late": round((live.expected - live.leaves).total_seconds() / 60) if late else None,
         "live": live.progress is not None,
         "walk_min": walk.minutes(dep),

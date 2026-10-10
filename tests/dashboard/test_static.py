@@ -295,6 +295,22 @@ def test_icons_are_hidden_svg_drawn_in_the_text_colour():
     assert "sun" in found["weather"] and "moon" in found["weather"] and "cloud-rain" in found["weather"]
 
 
+@needs_node
+def test_a_status_shown_short_is_said_in_full():
+    found = run_js("""
+        import { statusBadge } from "./board.js";
+        const shown = (node) => byClass(node, "badge-text").map((el) => el.childNodes.map((c) => c.nodeValue).join(""));
+        const badges = [statusBadge("late", "Exp 07:19", "Expected 07:19"), statusBadge("on_time", "On time", "On time"),
+                        statusBadge("late", "Delayed")];
+        console.log(JSON.stringify(badges.map((b) => [shown(b), spoken(b)])));
+    """)
+    assert found == [
+        [["Exp 07:19"], "Expected 07:19"],
+        [["On time"], "On time"],
+        [["Delayed"], "Delayed"],
+    ]
+
+
 def test_every_icon_the_page_asks_for_is_in_the_set():
     names = set(re.findall(r'^  "([a-z-]+)": \[', (STATIC / "icons.js").read_text(encoding="utf-8"), re.M))
     asked = set()
@@ -457,7 +473,7 @@ CALLING_POINT = {
 TRAIN_ROW = {
     "id": row_id, "service": str, "destination": str, "origin": Opt(str),
     "scheduled": hhmm, "scheduled_at": at, "expected": Opt(hhmm), "expected_at": Opt(at),
-    "status": ROW_STATUS, "status_text": str, "minutes_late": Opt(integer),
+    "status": ROW_STATUS, "status_text": str, "status_spoken": str, "minutes_late": Opt(integer),
     "platform": Opt(str), "length": Opt(integer),
     "cancel_reason": Opt(str), "delay_reason": Opt(str), "walk_min": Opt(integer), "leave_at": Opt(at),
     "calling_points": [CALLING_POINT],
@@ -471,7 +487,7 @@ BUS_STOP = {"name": Opt(str), "letter": Opt(str), "towards": Opt(str), "walk_min
 BUS_ROW = {
     "id": row_id, "line": str, "destination": str, "stop": str, "stop_name": str,
     "scheduled": hhmm, "scheduled_at": at, "expected": Opt(hhmm), "expected_at": Opt(at),
-    "status": ROW_STATUS, "status_text": str, "minutes_late": Opt(integer),
+    "status": ROW_STATUS, "status_text": str, "status_spoken": str, "minutes_late": Opt(integer),
     "live": bool, "walk_min": Opt(integer), "leave_at": Opt(at),
     "vehicle": Opt({"age_s": integer, "recorded_at": at, "bearing": Opt(number)}),
     "strip": Opt({"stops": [str], "yours": integer, "bus_at": Opt(number), "where": str}),

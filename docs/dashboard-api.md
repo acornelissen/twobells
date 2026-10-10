@@ -34,7 +34,8 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "scheduled": "07:12", "scheduled_at": "…",
       "expected": "07:19", "expected_at": "…",
       "status": "late",
-      "status_text": "Expected 07:19",
+      "status_text": "Exp 07:19",
+      "status_spoken": "Expected 07:19",
       "minutes_late": 7,
       "platform": "1",
       "length": 3,
@@ -72,7 +73,8 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "scheduled": "07:20", "scheduled_at": "…",
       "expected": "07:24", "expected_at": "…",
       "status": "late",
-      "status_text": "Expected 07:24",
+      "status_text": "Exp 07:24",
+      "status_spoken": "Expected 07:24",
       "minutes_late": 4,
       "live": true,
       "walk_min": 10,
@@ -92,6 +94,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "expected": null, "expected_at": null,
       "status": "unknown",
       "status_text": "Timetable only",
+      "status_spoken": "Timetable only",
       "minutes_late": null,
       "live": false,
       "walk_min": 10,
@@ -119,7 +122,8 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
 
 - **Status:**
   - `status` is one of `on_time`, `late`, `cancelled`, `unknown`.
-  - `status_text` is always words, for example "On time", "Expected 07:19", "Cancelled", "Delayed", "Timetable only" (a bus with no live position), "No report". Colour only reinforces it.
+  - `status_text` is always words, the same words the board uses: "On time", "Exp 07:19" (late, expected at 07:19), "Delayed" (late, no expected time yet), "Cancelled", "No report" (a train with no live report), "Timetable only" (a bus with no live position). Colour only reinforces it.
+  - `status_spoken` is `status_text` with nothing shortened ("Expected 07:19"), for screen readers. It is the same as `status_text` unless that is abbreviated.
   - `minutes_late` is null unless the status is late with a known time.
 - **`walk_min`:** the walk to the station or to the row's stop, in whole minutes, as set for the board (`walk.train`, or `walk.bus` for the stop, else its `*`). It is null when no walk time is set. A cancelled row still has it.
 - **`leave_at`:** when to set off on foot (`expected_at` or else `scheduled_at`, minus `walk_min`). It is null when cancelled or no walk time is set.

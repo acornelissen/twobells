@@ -17,12 +17,17 @@ const WORDS = { on_time: "On time", late: "Late", cancelled: "Cancelled", unknow
 export const statusKey = (status) => (ICON[status] ? status : "unknown");
 
 // Status as an icon plus words; the colour comes from the class and only
-// reinforces the words.
-export function statusBadge(status, text) {
+// reinforces the words. `spoken` is the words in full ("Expected 07:19")
+// where the shown ones are short ("Exp 07:19"): screen readers get that instead.
+export function statusBadge(status, text, spoken) {
   const key = statusKey(status);
+  const shown = str(text) || WORDS[key];
+  const said = str(spoken);
   return h("span", { class: ["badge", `st-${key}`] },
     h("span", { class: "glyph", "aria-hidden": "true" }, icon(ICON[key])),
-    h("span", { class: "badge-text" }, str(text) || WORDS[key]));
+    said && said !== shown
+      ? [h("span", { class: "badge-text", "aria-hidden": "true" }, shown), vh(said)]
+      : h("span", { class: "badge-text" }, shown));
 }
 
 // A label shown above a cell's value only in the narrow card layout, where
@@ -103,7 +108,7 @@ function trainRow(row, alerts) {
       str(row.origin) ? h("span", { class: "sub" }, `from ${str(row.origin)}`) : null,
       arrivesLine(row)),
     td("c-plat", "Platform", platform || h("span", { class: "muted" }, "Not yet")),
-    td("c-status", "Status", statusBadge(row.status, row.status_text), reasons(row)),
+    td("c-status", "Status", statusBadge(row.status, row.status_text, row.status_spoken), reasons(row)),
     td("c-where", "Where", renderTrainStrip(row)),
     leaveCell(row),
     recordCell(row, id, context),
@@ -125,7 +130,7 @@ function busRow(row, alerts, generatedMs) {
     td("c-dest", "Bus", h("span", { class: "line" }, line), " ", h("span", { class: "dest" }, destination),
       arrivesLine(row)),
     td("c-plat", "Stop", str(row.stop_name) || (stop ? `Stop ${stop}` : "–")),
-    td("c-status", "Status", statusBadge(row.status, row.status_text), reasons(row), busStatusExtras(row)),
+    td("c-status", "Status", statusBadge(row.status, row.status_text, row.status_spoken), reasons(row), busStatusExtras(row)),
     td("c-where", "Where", renderStrip(row, generatedMs)),
     leaveCell(row),
     recordCell(row, id, context),
