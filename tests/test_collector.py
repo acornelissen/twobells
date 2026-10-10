@@ -55,12 +55,12 @@ class Trains:
         return parse_board_rich(self.payload)
 
 
-# The board's trains, in order: 22:05, 22:22, 22:35, 22:52, 23:07.
-IDS = ["9000001GLSP____", "9000001GLSP____", "9000001GLSP____", "9000001GLSP____", "9000001GLSP____"]
+# The board's trains, in order: 22:08, 22:25, 22:38, 22:55, 23:10.
+IDS = ["9000001GLSP____", "9000002GLSP____", "9000003GLSP____", "9000004GLSP____", "9000005GLSP____"]
 
 
 class Details:
-    """Service details for any train, from the real capture of the 22:52."""
+    """Service details for any train, from the synthetic answer for the 22:55."""
 
     def __init__(self):
         self.asked = []

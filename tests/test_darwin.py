@@ -107,19 +107,19 @@ def test_source_without_filter_omits_filter_params():
     assert calls == ["https://example.test/GetDepartureBoard/GLO?numRows=3"]
 
 
-def test_parses_a_real_glossop_board():
+def test_parses_a_glossop_board():
     import json
     from pathlib import Path
 
     fixture = Path(__file__).parent / "fixtures" / "ldbws_glossop_unfiltered.json"
     deps = parse_board(json.loads(fixture.read_text()))
     assert [(d.scheduled, d.destination) for d in deps] == [
-        ("11:52", "Manchester Piccadilly"),
-        ("12:05", "Hadfield"),
-        ("12:22", "Manchester Piccadilly"),
-        ("12:35", "Hadfield"),
+        ("11:55", "Manchester Piccadilly"),
+        ("12:08", "Hadfield"),
+        ("12:25", "Manchester Piccadilly"),
+        ("12:38", "Hadfield"),
     ]
-    assert all(d.status is Status.ON_TIME and d.platform == "1" for d in deps)
+    assert all(d.status is Status.ON_TIME and d.platform == "2" for d in deps)
     assert {d.service for d in deps} == {"Northern"}
 
 
@@ -156,10 +156,9 @@ def load_fixture(name):
 def test_reads_incident_messages_from_a_board():
     messages = parse_messages(load_fixture("ldbws_glossop_nrcc.json"))
     assert messages == [
-        "Disruption between Glossop and Manchester Piccadilly until the end of the day. "
-        "Trains may be cancelled or delayed by up to 20 minutes. "
-        "More details can be found in Latest Travel News.",
-        "Lifts at Glossop & Hadfield are out of use. Step-free access is not available.",
+        "Engineering work between Dinting and Guide Bridge means trains may be delayed "
+        "by up to 15 minutes today. See travel news for details.",
+        "Ticket machines at Glossop & Dinting take cards only. Cash is not accepted.",
     ]
 
 
@@ -210,6 +209,6 @@ def test_source_keeps_the_messages_from_its_last_fetch():
     source = DarwinSource(api_key="k", crs="GLO", http_get=lambda url, headers: boards.pop(0))
     assert source.messages == []
     assert len(source.fetch()) == 4
-    assert source.messages[1].startswith("Lifts at Glossop")
+    assert source.messages[1].startswith("Ticket machines at Glossop")
     source.fetch()
     assert source.messages == []

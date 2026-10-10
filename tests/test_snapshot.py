@@ -45,11 +45,11 @@ def glossop():
     return parse_board_rich(fixture("ldbws_glossop_details.json"))
 
 
-FETCHED = datetime(2026, 10, 9, 22, 2, 38, tzinfo=LONDON)
-# The 22:52 to Manchester and the 23:07 to Hadfield on that board, and their
-# service details as captured at 22:52.
-TO_MANCHESTER, TO_HADFIELD = "9000001GLSP____", "9000001GLSP____"
-DETAILS_AT = datetime(2026, 10, 9, 22, 52, 19, tzinfo=LONDON)
+FETCHED = datetime(2026, 10, 9, 22, 5, 38, tzinfo=LONDON)
+# The 22:55 to Manchester and the 23:10 to Hadfield on that board, and their
+# service details as at 22:55.
+TO_MANCHESTER, TO_HADFIELD = "9000004GLSP____", "9000005GLSP____"
+DETAILS_AT = datetime(2026, 10, 9, 22, 55, 19, tzinfo=LONDON)
 
 
 def service_details(name, **changes):
@@ -151,19 +151,19 @@ def test_no_service_id_or_bus_key_reaches_the_json():
 # Trains
 
 
-def test_a_real_board_becomes_rows():
+def test_a_darwin_board_becomes_rows():
     part, lookups = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO")
     assert part["station"] == "Glossop" and part["filter"] is None
-    assert part["messages"] == ["The ticket office is currently closed at this station."]
+    assert part["messages"] == ["Help points at this station are out of use."]
     first = part["rows"][0]
-    assert first["scheduled"] == "22:05" and first["scheduled_at"] == "2026-10-09T22:05:00+01:00"
-    assert first["expected"] == "22:05" and first["status"] == "on_time" and first["status_text"] == "On time"
+    assert first["scheduled"] == "22:08" and first["scheduled_at"] == "2026-10-09T22:08:00+01:00"
+    assert first["expected"] == "22:08" and first["status"] == "on_time" and first["status_text"] == "On time"
     assert (first["service"], first["origin"], first["destination"]) == (
         "Northern", "Manchester Piccadilly", "Hadfield",
     )
-    assert (first["platform"], first["length"], first["minutes_late"]) == ("1", 3, None)
+    assert (first["platform"], first["length"], first["minutes_late"]) == ("2", 2, None)
     assert first["calling_points"] == [
-        {"name": "Hadfield", "crs": "HDF", "scheduled": "22:11", "expected": "22:11", "actual": None,
+        {"name": "Hadfield", "crs": "HDF", "scheduled": "22:14", "expected": "22:14", "actual": None,
          "cancelled": False},
     ]
     assert first["history"] == {"phrase": None}
@@ -173,12 +173,12 @@ def test_a_real_board_becomes_rows():
 def test_a_train_with_details_says_where_it_is_and_where_it_has_been():
     part, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO",
                           details=known_details(), now=DETAILS_AT)
-    to_manchester, to_hadfield = by(part["rows"], scheduled="22:52"), by(part["rows"], scheduled="23:07")
+    to_manchester, to_hadfield = by(part["rows"], scheduled="22:55"), by(part["rows"], scheduled="23:10")
     assert to_manchester["position"] == {
         "where": "At Glossop now", "strip": {"stops": ["Hadfield", "Glossop", "Dinting"], "yours": 1, "train_at": 1},
     }
     assert to_manchester["previous_points"] == [
-        {"name": "Hadfield", "crs": "HDF", "scheduled": "22:44", "expected": None, "actual": "22:44",
+        {"name": "Hadfield", "crs": "HDF", "scheduled": "22:47", "expected": None, "actual": "22:47",
          "cancelled": False},
     ]
     assert to_hadfield["position"]["where"] == "Left Flowery Field"
@@ -186,21 +186,21 @@ def test_a_train_with_details_says_where_it_is_and_where_it_has_been():
     previous = to_hadfield["previous_points"]
     assert [p["name"] for p in previous][:2] == ["Manchester Piccadilly", "Ashburys"]
     # Darwin's words become times or nothing, as for the stops after.
-    assert by(previous, name="Gorton")["actual"] == "22:39"
+    assert by(previous, name="Gorton")["actual"] == "22:42"
     assert by(previous, name="Flowery Field")["actual"] is None
-    assert by(previous, name="Godley")["expected"] == "22:51"
+    assert by(previous, name="Godley")["expected"] == "22:54"
     for row in part["rows"]:
         if row not in (to_manchester, to_hadfield):
             assert row["position"] is None and row["previous_points"] == []
 
 
 def test_a_train_is_placed_at_the_time_given_else_when_the_board_was_fetched():
-    on_the_way = {TO_MANCHESTER: service_details("hadfield", ata=None)}  # left Hadfield 22:44, due 22:49
-    at = datetime(2026, 10, 9, 22, 46, 30, tzinfo=LONDON)
+    on_the_way = {TO_MANCHESTER: service_details("hadfield", ata=None)}  # left Hadfield 22:47, due 22:52
+    at = datetime(2026, 10, 9, 22, 49, 30, tzinfo=LONDON)
     part, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO", details=on_the_way, now=at)
-    assert by(part["rows"], scheduled="22:52")["position"]["strip"]["train_at"] == 0.5
+    assert by(part["rows"], scheduled="22:55")["position"]["strip"]["train_at"] == 0.5
     part, _ = trains_part(glossop(), at, status_block(), "GLO", None, WALK, "GLO", details=on_the_way)
-    assert by(part["rows"], scheduled="22:52")["position"]["strip"]["train_at"] == 0.5
+    assert by(part["rows"], scheduled="22:55")["position"]["strip"]["train_at"] == 0.5
 
 
 def test_without_details_a_train_has_no_position():
@@ -445,10 +445,10 @@ def test_train_rows_carry_their_arrival():
     assert cancelled["arrives"] is None and no_points["arrives"] is None
 
 
-def test_a_real_board_s_trains_arrive_at_their_last_stop_without_a_filter():
+def test_a_board_s_trains_arrive_at_their_last_stop_without_a_filter():
     part, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO")
     first = part["rows"][0]
-    assert first["arrives"] == {"name": "Hadfield", "at": "22:11", "at_iso": "2026-10-09T22:11:00+01:00", "minutes": 6}
+    assert first["arrives"] == {"name": "Hadfield", "at": "22:14", "at_iso": "2026-10-09T22:14:00+01:00", "minutes": 6}
 
 
 def test_bus_observations_for_the_history():
@@ -686,9 +686,9 @@ def test_what_the_server_sends_is_what_the_page_was_built_for():
     from test_dashboard_static import BUS_DETAIL, SNAPSHOT, check
 
     h = hub()
-    details = {**known_details(), "9000001GLSP____": service_details("hadfield", ata=None)}
+    details = {**known_details(), "9000002GLSP____": service_details("hadfield", ata=None)}
     tparts, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO",
-                            details=details, now=DETAILS_AT.replace(minute=46))
+                            details=details, now=DETAILS_AT.replace(minute=49))
     h.publish("trains", tparts)
     bparts, lookups = extras_part(at(10, 14), lambda route, scheduled, day: "No tracker on 3 of the last 10 weekdays")
     h.publish("buses", bparts)

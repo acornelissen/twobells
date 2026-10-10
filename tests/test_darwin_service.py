@@ -49,49 +49,49 @@ def details(*args, **kwargs):
     return parse_service_details(raw_service(*args, **kwargs))
 
 
-# The real answers, captured at Glossop one Friday night at 22:52.
+# Synthetic answers, shaped like GetServiceDetails at Glossop one Friday night at 22:55.
 
 
 def test_reads_a_train_that_started_at_hadfield():
     found = parse_service_details(load_fixture("ldbws_service_details_from_hadfield.json"))
 
     assert isinstance(found, ServiceDetails)
-    assert found.previous == (CallingPoint("Hadfield", "HDF", "22:44", None, "On time", False, 3),)
+    assert found.previous == (CallingPoint("Hadfield", "HDF", "22:47", None, "On time", False, 2),)
     assert found.here == StationCall(
-        "Glossop", "GLO", "22:52", "On time", None, False, 3,
-        sta="22:49", eta=None, ata="On time", std="22:52", etd="On time", atd=None,
+        "Glossop", "GLO", "22:55", "On time", None, False, 2,
+        sta="22:52", eta=None, ata="On time", std="22:55", etd="On time", atd=None,
     )
     assert [p.name for p in found.subsequent] == [
         "Dinting", "Broadbottom", "Hattersley", "Godley", "Newton for Hyde", "Flowery Field",
         "Guide Bridge", "Gorton", "Ashburys", "Manchester Piccadilly",
     ]
     assert all(p.expected == "On time" and p.actual is None for p in found.subsequent)
-    assert (found.length, found.cancel_reason, found.delay_reason) == (3, None, None)
-    assert found.generated_at == "2026-10-09T07:00:00+01:00"
+    assert (found.length, found.cancel_reason, found.delay_reason) == (2, None, None)
+    assert found.generated_at == "2026-10-09T22:55:19.125+01:00"
 
 
 def test_reads_a_train_from_manchester_part_way_along():
     found = parse_service_details(load_fixture("ldbws_service_details_from_manchester.json"))
 
     assert [(p.name, p.scheduled, p.expected, p.actual) for p in found.previous] == [
-        ("Manchester Piccadilly", "22:33", None, "On time"),
-        ("Ashburys", "22:37", None, "On time"),
-        ("Gorton", "22:39", None, "On time"),
-        ("Guide Bridge", "22:43", None, "On time"),
-        ("Flowery Field", "22:47", None, "No report"),
-        ("Newton for Hyde", "22:49", "On time", None),
-        ("Godley", "22:51", "On time", None),
-        ("Hattersley", "22:53", "On time", None),
-        ("Broadbottom", "22:56", "On time", None),
-        ("Dinting", "23:01", "On time", None),
+        ("Manchester Piccadilly", "22:36", None, "On time"),
+        ("Ashburys", "22:40", None, "On time"),
+        ("Gorton", "22:42", None, "On time"),
+        ("Guide Bridge", "22:46", None, "On time"),
+        ("Flowery Field", "22:50", None, "No report"),
+        ("Newton for Hyde", "22:52", "On time", None),
+        ("Godley", "22:54", "On time", None),
+        ("Hattersley", "22:56", "On time", None),
+        ("Broadbottom", "22:59", "On time", None),
+        ("Dinting", "23:04", "On time", None),
     ]
-    assert (found.here.sta, found.here.eta, found.here.std, found.here.etd) == ("23:05", "On time", "23:07", "On time")
+    assert (found.here.sta, found.here.eta, found.here.std, found.here.etd) == ("23:08", "On time", "23:10", "On time")
     assert found.here.ata is None and found.here.atd is None
     assert [p.name for p in found.subsequent] == ["Hadfield"]
 
 
-def test_where_the_real_trains_were():
-    now = datetime(2026, 10, 9, 22, 52, 19)
+def test_where_the_trains_were():
+    now = datetime(2026, 10, 9, 22, 55, 19)
     hadfield = parse_service_details(load_fixture("ldbws_service_details_from_hadfield.json"))
     assert train_position(hadfield, now) == TrainPosition("At Glossop now", ("Hadfield", "Glossop", "Dinting"), 1, 1)
 
@@ -255,8 +255,8 @@ def client(answer):
 
 def test_asks_for_the_service_by_its_quoted_id_with_the_key_in_a_header():
     calls, details_client = client(load_fixture("ldbws_service_details_from_hadfield.json"))
-    found = details_client.details("9000001GLSP____")
-    assert calls == [("https://example.test/GetServiceDetails/9000001GLSP____", {"x-apikey": KEY})]
+    found = details_client.details("9000004GLSP____")
+    assert calls == [("https://example.test/GetServiceDetails/9000004GLSP____", {"x-apikey": KEY})]
     assert found.here.name == "Glossop"
     calls, details_client = client(load_fixture("ldbws_service_details_from_hadfield.json"))
     details_client.details("ab+c/d=e_-")
@@ -266,12 +266,12 @@ def test_asks_for_the_service_by_its_quoted_id_with_the_key_in_a_header():
 def test_the_default_address_is_the_service_details_product():
     assert darwin.DETAILS_BASE_URL.startswith("https://api1.raildata.org.uk/1010-service-details1_2/")
     calls, fake_get = recording(raw_service())
-    ServiceDetailsClient(KEY, http_get=fake_get).details("9000001GLSP____")
-    assert calls[0][0] == darwin.DETAILS_BASE_URL + "/GetServiceDetails/9000001GLSP____"
+    ServiceDetailsClient(KEY, http_get=fake_get).details("9000004GLSP____")
+    assert calls[0][0] == darwin.DETAILS_BASE_URL + "/GetServiceDetails/9000004GLSP____"
 
 
-@pytest.mark.parametrize("bad", ["../x", "a?b", "%2e", "x" * 65, "short", "9000001GLSP\n___", "a b c d e f",
-                                 9000001, None, ["9000001GLSP____"]])
+@pytest.mark.parametrize("bad", ["../x", "a?b", "%2e", "x" * 65, "short", "9000002GLSP\n___", "a b c d e f",
+                                 9000002, None, ["9000002GLSP____"]])
 def test_odd_service_ids_are_refused_before_any_request(bad):
     calls, details_client = client(raw_service())
     with pytest.raises(ValueError):
@@ -283,14 +283,14 @@ def test_odd_service_ids_are_refused_before_any_request(bad):
 def test_a_refused_key_means_details_are_unavailable(code):
     _, details_client = client(HTTPError(f"https://example.test/x?key={KEY}", code, "Forbidden", {}, None))
     with pytest.raises(DetailsUnavailable) as raised:
-        details_client.details("9000001GLSP____")
+        details_client.details("9000004GLSP____")
     assert KEY not in str(raised.value) and str(code) in str(raised.value)
 
 
 def test_not_found_means_the_service_has_gone():
     _, details_client = client(HTTPError("https://example.test/x", 404, "Not Found", {}, None))
     with pytest.raises(ServiceGone):
-        details_client.details("9000001GLSP____")
+        details_client.details("9000004GLSP____")
 
 
 @pytest.mark.parametrize("error", [
@@ -302,7 +302,7 @@ def test_not_found_means_the_service_has_gone():
 def test_other_failures_never_carry_the_key_or_a_query(error):
     _, details_client = client(error)
     with pytest.raises(DetailsError) as raised:
-        details_client.details("9000001GLSP____")
+        details_client.details("9000004GLSP____")
     assert type(raised.value) is DetailsError
     text = str(raised.value)
     assert KEY not in text and "apikey=" not in text and text
@@ -332,13 +332,13 @@ def serve(monkeypatch, body):
 def test_an_empty_or_unreadable_answer_means_the_service_has_gone(monkeypatch, body):
     serve(monkeypatch, body)
     with pytest.raises(ServiceGone):
-        ServiceDetailsClient(KEY).details("9000001GLSP____")
+        ServiceDetailsClient(KEY).details("9000004GLSP____")
 
 
 def test_an_oversized_answer_is_refused_without_the_key(monkeypatch):
     seen = serve(monkeypatch, b" " * (darwin.DETAILS_MAX_BYTES + 1))
     with pytest.raises(DetailsError) as raised:
-        ServiceDetailsClient(KEY).details("9000001GLSP____")
+        ServiceDetailsClient(KEY).details("9000004GLSP____")
     assert type(raised.value) is DetailsError and "larger than" in str(raised.value)
     assert KEY not in str(raised.value)
     assert seen[0].get_header("X-apikey") == KEY
@@ -346,5 +346,5 @@ def test_an_oversized_answer_is_refused_without_the_key(monkeypatch):
 
 def test_a_real_sized_answer_is_read_through_the_capped_request(monkeypatch):
     serve(monkeypatch, (FIXTURES / "ldbws_service_details_from_manchester.json").read_bytes())
-    found = ServiceDetailsClient(KEY).details("9000001GLSP____")
+    found = ServiceDetailsClient(KEY).details("9000005GLSP____")
     assert len(found.previous) == 10

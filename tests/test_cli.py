@@ -203,8 +203,8 @@ def test_probe_train_reports_http_errors_on_one_line(tmp_path, monkeypatch, caps
 
 @pytest.fixture
 def train_probe(tmp_path, monkeypatch):
-    """A train config, and a fake Darwin that answers with the real detailed
-    Glossop board and records the URLs asked for."""
+    """A train config, and a fake Darwin that answers with the synthetic
+    detailed Glossop board and records the URLs asked for."""
     from departureboard import darwin
 
     board = json.loads((Path(__file__).parent / "fixtures" / "ldbws_glossop_details.json").read_text())
@@ -223,9 +223,9 @@ def test_probe_train_details_prints_coaches_and_calling_points(train_probe, caps
     assert main(["probe", "train", "--details", *args]) == 0
     out = capsys.readouterr().out
     assert ["/GetDepBoardWithDetails/GLO" in url for url in urls] == [True]
-    assert "22:22  Manchester Piccadilly" in out
-    assert "Northern from Hadfield, 3 coaches" in out
-    assert "    22:36  Newton for Hyde" in out and "On time" in out
+    assert "22:25  Manchester Piccadilly" in out
+    assert "Northern from Hadfield, 2 coaches" in out
+    assert "    22:39  Newton for Hyde" in out and "On time" in out
 
 
 def test_probe_train_without_details_is_unchanged(train_probe, capsys):
@@ -233,7 +233,7 @@ def test_probe_train_without_details_is_unchanged(train_probe, capsys):
     assert main(["probe", "train", *args]) == 0
     out = capsys.readouterr().out
     assert ["/GetDepartureBoard/GLO" in url for url in urls] == [True]
-    assert "22:22  Northern   Manchester Piccadilly" in out
+    assert "22:25  Northern   Manchester Piccadilly" in out
     assert "coaches" not in out and "Newton for Hyde" not in out
 
 

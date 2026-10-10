@@ -35,7 +35,7 @@ def service(**overrides):
         "operatorCode": "NT",
         "isCancelled": False,
         "length": 3,
-        "serviceID": "9000001GLSP____",
+        "serviceID": "9000002GLSP____",
         "origin": [{"locationName": "Hadfield", "crs": "HDF"}],
         "destination": [{"locationName": "Manchester Piccadilly", "crs": "MAN"}],
         "subsequentCallingPoints": [
@@ -55,53 +55,53 @@ def one(**overrides):
     return train
 
 
-# The real board, captured from GetDepBoardWithDetails at Glossop one Friday night.
+# A synthetic board, shaped like GetDepBoardWithDetails at Glossop one Friday night.
 
 
-def test_parses_a_real_detailed_glossop_board():
+def test_parses_a_detailed_glossop_board():
     board = parse_board_rich(load_fixture("ldbws_glossop_details.json"))
 
     assert isinstance(board, TrainBoard)
-    assert board.generated_at == "2026-10-09T07:00:00+01:00"
+    assert board.generated_at == "2026-10-09T22:05:38.2500000+01:00"
     assert board.location == "Glossop"
-    assert board.messages == ["The ticket office is currently closed at this station."]
+    assert board.messages == ["Help points at this station are out of use."]
     assert [(s.departure.scheduled, s.service_id, s.origin, s.departure.destination) for s in board.services] == [
-        ("22:05", "9000001GLSP____", "Manchester Piccadilly", "Hadfield"),
-        ("22:22", "9000001GLSP____", "Hadfield", "Manchester Piccadilly"),
-        ("22:35", "9000001GLSP____", "Manchester Piccadilly", "Hadfield"),
-        ("22:52", "9000001GLSP____", "Hadfield", "Manchester Piccadilly"),
-        ("23:07", "9000001GLSP____", "Manchester Piccadilly", "Hadfield"),
+        ("22:08", "9000001GLSP____", "Manchester Piccadilly", "Hadfield"),
+        ("22:25", "9000002GLSP____", "Hadfield", "Manchester Piccadilly"),
+        ("22:38", "9000003GLSP____", "Manchester Piccadilly", "Hadfield"),
+        ("22:55", "9000004GLSP____", "Hadfield", "Manchester Piccadilly"),
+        ("23:10", "9000005GLSP____", "Manchester Piccadilly", "Hadfield"),
     ]
     for train in board.services:
-        assert train.length == 3
+        assert train.length == 2
         assert train.operator_code == "NT"
         assert train.departure.service == "Northern"
         assert train.departure.status is Status.ON_TIME
-        assert train.departure.platform == "1"
+        assert train.departure.platform == "2"
         assert train.cancel_reason is None and train.delay_reason is None
 
 
-def test_real_board_has_the_stops_after_glossop_with_times():
+def test_the_board_has_the_stops_after_glossop_with_times():
     board = parse_board_rich(load_fixture("ldbws_glossop_details.json"))
     to_hadfield, to_manchester = board.services[0], board.services[1]
 
     assert to_hadfield.calling_points == (
-        CallingPoint("Hadfield", "HDF", "22:11", "On time", None, False, 3),
+        CallingPoint("Hadfield", "HDF", "22:14", "On time", None, False, 2),
     )
     assert [(p.name, p.crs, p.scheduled) for p in to_manchester.calling_points] == [
-        ("Dinting", "DTG", "22:25"),
-        ("Broadbottom", "BDB", "22:29"),
-        ("Hattersley", "HTY", "22:32"),
-        ("Godley", "GDL", "22:34"),
-        ("Newton for Hyde", "NWN", "22:36"),
-        ("Flowery Field", "FLF", "22:38"),
-        ("Guide Bridge", "GUI", "22:41"),
-        ("Ashburys", "ABY", "22:48"),
-        ("Manchester Piccadilly", "MAN", "22:54"),
+        ("Dinting", "DTG", "22:28"),
+        ("Broadbottom", "BDB", "22:32"),
+        ("Hattersley", "HTY", "22:35"),
+        ("Godley", "GDL", "22:37"),
+        ("Newton for Hyde", "NWN", "22:39"),
+        ("Flowery Field", "FLF", "22:41"),
+        ("Guide Bridge", "GUI", "22:44"),
+        ("Ashburys", "ABY", "22:51"),
+        ("Manchester Piccadilly", "MAN", "22:57"),
     ]
     assert all(p.expected == "On time" and p.actual is None for p in to_manchester.calling_points)
-    assert all(not p.cancelled and p.length == 3 for p in to_manchester.calling_points)
-    # The 22:52 also calls at Gorton.
+    assert all(not p.cancelled and p.length == 2 for p in to_manchester.calling_points)
+    # The 22:55 also calls at Gorton.
     assert "Gorton" in [p.name for p in board.services[3].calling_points]
 
 
@@ -110,7 +110,7 @@ def test_rich_departures_match_the_plain_parse_of_the_same_board():
     assert [s.departure for s in parse_board_rich(payload).services] == parse_board(payload)
 
 
-# Synthetic services: the cases tonight's board didn't have.
+# Services built here: the cases the board above doesn't have.
 
 
 def test_cancelled_train_with_its_reason():
@@ -170,14 +170,14 @@ def test_unknown_time_words_become_none():
 
 @pytest.mark.parametrize(
     "bad",
-    ["../x", "a?b", "%2e", "x" * 65, "short", "9000001GLSP\n___", 9000001, None, ["9000001GLSP____"]],
+    ["../x", "a?b", "%2e", "x" * 65, "short", "9000002GLSP\n___", 9000002, None, ["9000002GLSP____"]],
 )
 def test_odd_service_ids_are_dropped(bad):
     assert one(serviceID=bad).service_id is None
 
 
 def test_service_ids_in_darwins_alphabet_are_kept():
-    for good in ("9000001GLSP____", "abc+/=-_09", "x" * 64):
+    for good in ("9000002GLSP____", "abc+/=-_09", "x" * 64):
         assert one(serviceID=good).service_id == good
 
 
@@ -323,7 +323,7 @@ def test_detailed_fetch_gives_the_departures_of_the_rich_board():
     _, fake_get = recording(payload)
     source = DarwinSource(api_key="k", crs="GLO", http_get=fake_get, with_details=True)
     assert source.fetch() == [s.departure for s in parse_board_rich(payload).services]
-    assert source.messages == ["The ticket office is currently closed at this station."]
+    assert source.messages == ["Help points at this station are out of use."]
 
 
 def test_detailed_source_uses_a_size_capped_request_by_default(monkeypatch):

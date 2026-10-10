@@ -723,8 +723,8 @@ def test_darwin_messages_reach_the_board():
     source = DarwinSource(api_key="k", crs="GLO", http_get=lambda url, headers: payload)
     board = make_board(source, FakeSource("bus", [bus()]))
     result = run_once(board, {}, FakeDisplay(), THU_0700.replace(hour=11, minute=45), prime=True)
-    assert result.view.notice.startswith("Disruption between Glossop and Manchester Piccadilly")
-    assert " / Lifts at Glossop & Hadfield are out of use." in result.view.notice
+    assert result.view.notice.startswith("Engineering work between Dinting and Guide Bridge")
+    assert " / Ticket machines at Glossop & Dinting take cards only." in result.view.notice
 
 
 from departureboard.app import Weather  # noqa: E402
