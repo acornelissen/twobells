@@ -35,9 +35,12 @@ from departureboard.setup import (
 FIXTURES = Path(__file__).parent / "fixtures"
 NAPTAN = (FIXTURES / "naptan_setup_glossop.csv").read_bytes()
 
-# Glossop town centre, standing in for a home.
+# Hadfield station's postcode, a public place, standing in for a home.
 HOME = Place(53.4620, -1.9656, "SK13 1AH", "England", "High Peak")
 HOME_TEXT = ("53.4620", "-1.9656", "53.46200", "-1.96560")
+# Glossop station: the stop searches look around it, as the NaPTAN fixture
+# holds the town centre's stops.
+TOWN = Place(53.44447, -1.94907, "Glossop station")
 
 # Shaped like postcodes.io's answer for one postcode (trimmed: the real one
 # has thirty-odd fields, every one of them ignored here but these).
@@ -46,17 +49,17 @@ POSTCODE_ANSWER = {
     "result": {
         "postcode": "SK13 1AH",
         "quality": 1,
-        "eastings": 401740,
-        "northings": 396204,
+        "eastings": 402379,
+        "northings": 396134,
         "country": "England",
         "longitude": -1.9656,
         "latitude": 53.4620,
         "region": "East Midlands",
         "outcode": "SK13",
-        "incode": "8AA",
+        "incode": "1AH",
         "admin_district": "High Peak",
         "admin_county": "Derbyshire",
-        "parish": "Glossop",
+        "parish": "High Peak, unparished area",
         "codes": {"admin_district": "E07000037", "admin_county": "E10000007"},
     },
 }
@@ -64,36 +67,38 @@ POSTCODE_ANSWER = {
 # Shaped like Nominatim's /search?format=jsonv2&addressdetails=1 answer.
 NOMINATIM_ANSWER = [
     {
-        "place_id": 123456,
+        "place_id": 277274911,
         "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
-        "osm_type": "way",
-        "osm_id": 23456789,
-        "lat": "53.4619640",
-        "lon": "-1.9656330",
+        "osm_type": "node",
+        "osm_id": 464752337,
+        "lat": "53.4614990",
+        "lon": "-1.9663028",
         "category": "highway",
-        "type": "residential",
-        "place_rank": 26,
-        "importance": 0.0533,
-        "addresstype": "road",
-        "name": "Henry Street",
-        "display_name": "Henry Street, Glossop, High Peak, Derbyshire, England, SK13 1AH, United Kingdom",
+        "type": "bus_stop",
+        "place_rank": 30,
+        "importance": 0.0000522,
+        "addresstype": "highway",
+        "name": "Hadfield Station",
+        "display_name": "Hadfield Station, Station Road, Hadfield, High Peak, Derbyshire, England, SK13 1DL, United Kingdom",
         "address": {
-            "road": "Henry Street",
-            "town": "Glossop",
+            "highway": "Hadfield Station",
+            "road": "Station Road",
+            "town": "Hadfield",
+            "city": "High Peak",
             "county": "Derbyshire",
             "state_district": "East Midlands",
             "state": "England",
-            "postcode": "SK13 1AH",
+            "postcode": "SK13 1DL",
             "country": "United Kingdom",
             "country_code": "gb",
         },
-        "boundingbox": ["53.4431", "53.4441", "-1.9495", "-1.9481"],
+        "boundingbox": ["53.4614490", "53.4615490", "-1.9663528", "-1.9662528"],
     },
     {
         "place_id": 223456,
         "lat": "55.8609",
         "lon": "-4.2514",
-        "display_name": "Henry Street, Glasgow, Glasgow City, Scotland, G1 1AA, United Kingdom",
+        "display_name": "Station Road, Glasgow, Glasgow City, Scotland, G1 1AA, United Kingdom",
         "address": {"city": "Glasgow", "state": "Scotland", "country_code": "gb"},
     },
 ]
@@ -102,7 +107,7 @@ NOMINATIM_ANSWER = [
 OSRM_ANSWER = {
     "code": "Ok",
     "durations": [[0, 61.2, 600, None]],
-    "sources": [{"hint": "abc", "distance": 3.1, "name": "Henry Street", "location": [-1.965633, 53.461964]}],
+    "sources": [{"hint": "abc", "distance": 3.1, "name": "Station Road", "location": [-1.965612, 53.461988]}],
     "destinations": [{"hint": "def", "distance": 1.0, "name": "", "location": [-1.9656, 53.4620]}] * 4,
 }
 
@@ -154,7 +159,7 @@ def no_home_in(text: str) -> None:
 
 @pytest.mark.parametrize(
     "typed, normal",
-    [("SK13 1AH", "SK13 1AH"), (" SK13 1AH ", "SK13 1AH"), ("m1 1ae", "M1 1AE"), ("SW1A1AA", "SW1A 1AA"),
+    [("sk131ah", "SK13 1AH"), (" SK13  1AH ", "SK13 1AH"), ("m1 1ae", "M1 1AE"), ("SW1A1AA", "SW1A 1AA"),
      ("ec1a 1bb", "EC1A 1BB"), ("W1A 0AX", "W1A 0AX")],
 )
 def test_postcodes_are_normalised(typed, normal):
@@ -163,7 +168,7 @@ def test_postcodes_are_normalised(typed, normal):
 
 @pytest.mark.parametrize(
     "typed",
-    ["", "SK13", "12345", "SK13 1AHA", "SK13 1AH", "../../admin", "SK13 1AH; DROP", "SK13 1AH", "S" * 5000,
+    ["", "SK13", "12345", "SK13 1AHA", "SK13 1A/", "../../admin", "SK13 1AH; DROP", "SK13%201AH", "S" * 5000,
      None, 1338],
 )
 def test_anything_but_a_postcode_is_refused_before_any_request(typed):
@@ -173,8 +178,8 @@ def test_anything_but_a_postcode_is_refused_before_any_request(typed):
 
 def test_postcode_lookup_asks_postcodes_io_with_the_postcode_quoted():
     getter = Getter(POSTCODE_ANSWER)
-    place = lookup_postcode("SK13 1AH", http_get=getter)
-    assert getter.urls == ["https://api.postcodes.io/postcodes/SK13 1AH"]
+    place = lookup_postcode("sk13 1ah", http_get=getter)
+    assert getter.urls == ["https://api.postcodes.io/postcodes/SK13%201AH"]
     assert getter.caps == [setup.MAX_POSTCODE_BYTES]
     assert place == Place(53.4620, -1.9656, "SK13 1AH", "England", "High Peak")
 
@@ -229,16 +234,16 @@ def test_unknown_postcode_says_so():
 
 
 def test_postcode_failure_message_has_neither_the_url_nor_the_postcode():
-    url = "https://api.postcodes.io/postcodes/SK13 1AH"
+    url = "https://api.postcodes.io/postcodes/SK13%201AH"
     with pytest.raises(SetupError) as caught:
         lookup_postcode("SK13 1AH", http_get=Getter(error=URLError(f"timed out fetching {url} for SK13 1AH")))
-    assert "postcodes.io/postcodes" not in str(caught.value) and "8AA" not in str(caught.value)
+    assert "postcodes.io/postcodes" not in str(caught.value) and "1AH" not in str(caught.value)
 
 
 def test_address_failure_message_leaves_out_the_address():
     with pytest.raises(SetupError, match="Address search failed") as caught:
-        search("Henry Street, Glossop", Getter(error=URLError("no answer for Henry Street, Glossop")))
-    assert "Henry" not in str(caught.value)
+        search("Station Road, Hadfield", Getter(error=URLError("no answer for Station Road, Hadfield")))
+    assert "Station" not in str(caught.value)
 
 
 @pytest.mark.parametrize(
@@ -262,14 +267,14 @@ def search(text, getter, clock=None, cache=None):
 
 def test_address_search_asks_nominatim_for_gb_places():
     getter = Getter(NOMINATIM_ANSWER)
-    places = search("  Henry  Street, Glossop ", getter)
+    places = search("  Station  Road, Hadfield ", getter)
     parts = urlsplit(getter.urls[0])
     assert f"{parts.scheme}://{parts.netloc}{parts.path}" == "https://nominatim.openstreetmap.org/search"
     query = parse_qs(parts.query)
     assert query["format"] == ["jsonv2"] and query["countrycodes"] == ["gb"] and query["limit"] == ["5"]
-    assert query["q"] == ["Henry Street, Glossop"]
+    assert query["q"] == ["Station Road, Hadfield"]
     assert getter.caps == [setup.MAX_NOMINATIM_BYTES]
-    assert places[0] == Place(53.4619640, -1.9656330, NOMINATIM_ANSWER[0]["display_name"], "England", "Glossop")
+    assert places[0] == Place(53.461499, -1.9663028, NOMINATIM_ANSWER[0]["display_name"], "England", "High Peak")
     assert places[1].country == "Scotland" and places[1].admin_district == "Glasgow"
 
 
@@ -304,19 +309,19 @@ def test_bad_nominatim_entries_are_skipped_and_at_most_five_kept():
 @pytest.mark.parametrize("body", [b'{"error": "Bad request"}', b"<html>", b'"text"'])
 def test_nominatim_answer_that_isnt_a_list_is_refused(body):
     with pytest.raises(SetupError):
-        search("Henry Street", Getter(body))
+        search("Station Road", Getter(body))
 
 
 def test_oversized_nominatim_answer_is_refused():
     body = json.dumps([{"display_name": "x" * setup.MAX_NOMINATIM_BYTES}]).encode()
     with pytest.raises(SetupError, match="larger than"):
-        search("Henry Street", Getter(body))
+        search("Station Road", Getter(body))
 
 
 def test_nominatim_is_asked_at_most_once_a_second_without_real_sleeping():
     clock, getter = FakeClock(), Getter(NOMINATIM_ANSWER)
     limiter, cache = RateLimiter(1.0, clock, clock.sleep), AnswerCache(clock=clock)
-    search_address("Henry Street", http_get=getter, limiter=limiter, cache=cache)
+    search_address("Station Road", http_get=getter, limiter=limiter, cache=cache)
     clock.now += 0.25
     search_address("Norfolk Street", http_get=getter, limiter=limiter, cache=cache)
     assert clock.slept == [pytest.approx(0.75)]
@@ -332,8 +337,8 @@ def test_the_rate_limit_is_shared_by_default():
 def test_repeated_search_comes_from_the_cache_without_waiting():
     clock, getter = FakeClock(), Getter(NOMINATIM_ANSWER)
     limiter, cache = RateLimiter(1.0, clock, clock.sleep), AnswerCache(clock=clock)
-    first = search_address("Henry Street", http_get=getter, limiter=limiter, cache=cache)
-    again = search_address("henry   street", http_get=getter, limiter=limiter, cache=cache)
+    first = search_address("Station Road", http_get=getter, limiter=limiter, cache=cache)
+    again = search_address("station   road", http_get=getter, limiter=limiter, cache=cache)
     assert again == first and len(getter.urls) == 1 and clock.slept == []
 
 
@@ -354,8 +359,8 @@ def test_failed_search_is_not_cached():
     clock = FakeClock()
     cache = AnswerCache(clock=clock)
     with pytest.raises(SetupError):
-        search("Henry Street", Getter(error=TimeoutError("timed out")), clock, cache)
-    assert search("Henry Street", Getter(NOMINATIM_ANSWER), clock, cache)
+        search("Station Road", Getter(error=TimeoutError("timed out")), clock, cache)
+    assert search("Station Road", Getter(NOMINATIM_ANSWER), clock, cache)
 
 
 def test_nominatim_getter_names_the_project(monkeypatch):
@@ -392,18 +397,18 @@ def test_station_list_skips_bad_rows():
 def test_nearby_stations_are_sorted_by_distance_and_limited():
     stations = parse_stations(STATIONS_CSV)
     found = nearby_stations(HOME.lat, HOME.lon, limit=2, stations=stations)
-    assert [s.crs for s in found] == ["GLO", "DTG"]
-    assert found[0] == Station("Glossop", "GLO", 53.44447, -1.94907, round(distance_m(
-        HOME.lat, HOME.lon, 53.44447, -1.94907)))
-    assert [s.crs for s in nearby_stations(HOME.lat, HOME.lon, stations=stations)] == ["GLO", "DTG", "HDF"]
+    assert [s.crs for s in found] == ["HDF", "DTG"]
+    assert found[0] == Station("Hadfield", "HDF", 53.46074, -1.96532, round(distance_m(
+        HOME.lat, HOME.lon, 53.46074, -1.96532)))
+    assert [s.crs for s in nearby_stations(HOME.lat, HOME.lon, stations=stations)] == ["HDF", "DTG", "GLO"]
     everything = nearby_stations(HOME.lat, HOME.lon, within_km=50, stations=stations)
-    assert [s.crs for s in everything] == ["GLO", "DTG", "HDF", "MAN"]
+    assert [s.crs for s in everything] == ["HDF", "DTG", "GLO", "MAN"]
     assert [s.distance_m for s in everything] == sorted(s.distance_m for s in everything)
 
 
-def test_bundled_station_list_finds_glossop_first():
+def test_bundled_station_list_finds_hadfield_first():
     found = nearby_stations(HOME.lat, HOME.lon, limit=3)
-    assert [s.crs for s in found[:2]] == ["GLO", "DTG"]
+    assert [s.crs for s in found[:2]] == ["HDF", "DTG"]
     assert all(re.fullmatch("[A-Z]{3}", s.crs) for s in found)
 
 
@@ -435,54 +440,54 @@ GRID = {(534, -20): ("100", "180"), (534, -19): ("100",), (535, -20): ("180", "2
 
 
 def test_areas_come_from_every_cell_the_circle_touches():
-    assert areas_near(53.4620, -1.9656, 800, GRID) == ["100", "180"]
+    assert areas_near(HOME.lat, HOME.lon, 800, GRID) == ["100", "180"]
     assert areas_near(53.495, -1.95, 800, GRID) == ["100", "180", "250"]  # near the cell's north edge
     assert areas_near(51.5, -0.12, 800, GRID) == []
 
 
-def test_bundled_grid_puts_glossop_in_derbyshire_and_greater_manchester():
+def test_bundled_grid_puts_hadfield_in_derbyshire_and_greater_manchester():
     assert areas_near(HOME.lat, HOME.lon, 800) == ["100", "180"]
 
 
 def test_nearby_stops_downloads_only_the_areas_and_sorts_by_distance():
     getter = Getter(NAPTAN)
-    stops = nearby_stops(HOME.lat, HOME.lon, http_get=getter, grid=GRID)
+    stops = nearby_stops(TOWN.lat, TOWN.lon, http_get=getter, grid=GRID)
     assert len(getter.urls) == 1
     parts = urlsplit(getter.urls[0])
     assert f"{parts.scheme}://{parts.netloc}{parts.path}" == "https://naptan.api.dft.gov.uk/v1/access-nodes"
     assert parse_qs(parts.query) == {"dataFormat": ["csv"], "atcoAreaCodes": ["100,180"]}
-    no_home_in(getter.urls[0])
+    assert "53.44" not in getter.urls[0] and "-1.94" not in getter.urls[0]
     assert [s.atco for s in stops] == [
-        "1000DGHS9999", "1000DGHS0900", "1000DGHS0901", "1000DGHS1150", "1000DGHSW936", "1000DGHS3403",
+        "1000DGHS9999", "1000DGHS0901", "1000DGHS0900", "1000DGHS1150", "1000DGHSW936", "1000DGHS3403",
     ]
     assert [s.distance_m for s in stops] == sorted(s.distance_m for s in stops)
-    henry = stops[1]
-    assert henry == Stop("1000DGHS0900", "Henry Street", "Stop A", "E", 53.44384, -1.948999, 17)
+    henry = stops[2]
+    assert henry == Stop("1000DGHS0900", "Henry Street", "Stop A", "E", 53.44384, -1.948999, 70)
 
 
 def test_stop_fields_are_cleaned():
-    stops = {s.atco: s for s in nearby_stops(HOME.lat, HOME.lon, http_get=Getter(NAPTAN), grid=GRID)}
+    stops = {s.atco: s for s in nearby_stops(TOWN.lat, TOWN.lon, http_get=Getter(NAPTAN), grid=GRID)}
     odd = stops["1000DGHS9999"]
     assert odd.name == "Odd Bearing Stop" and odd.bearing == "" and odd.indicator == "opp"
 
 
 def test_stops_given_only_a_grid_reference_get_a_gps_position():
-    market = next(s for s in nearby_stops(HOME.lat, HOME.lon, http_get=Getter(NAPTAN), grid=GRID)
+    market = next(s for s in nearby_stops(TOWN.lat, TOWN.lon, http_get=Getter(NAPTAN), grid=GRID)
                   if s.atco == "1000DGHSW936")
     assert distance_m(market.lat, market.lon, 53.443239, -1.949828) < 10  # NaPTAN's own GPS for it
 
 
 def test_inactive_tram_far_bad_and_unplaced_stops_are_left_out():
-    atcos = {s.atco for s in nearby_stops(HOME.lat, HOME.lon, http_get=Getter(NAPTAN), grid=GRID)}
+    atcos = {s.atco for s in nearby_stops(TOWN.lat, TOWN.lon, http_get=Getter(NAPTAN), grid=GRID)}
     assert not atcos & {"1000DGHS3404", "1000DGHSTRM1", "../../etc", "1800EH48511", "1000DGNOWHER"}
     # Woolley Close is left out only for being 3.1 km away.
-    wide = {s.atco for s in setup.stops_near(NAPTAN.decode(), HOME.lat, HOME.lon, 5000, 50)}
+    wide = {s.atco for s in setup.stops_near(NAPTAN.decode(), TOWN.lat, TOWN.lon, 5000, 50)}
     assert "1800EH48511" in wide and not wide & {"1000DGHS3404", "1000DGHSTRM1", "../../etc", "1000DGNOWHER"}
 
 
 def test_stop_limit_keeps_the_closest():
-    stops = nearby_stops(HOME.lat, HOME.lon, limit=2, http_get=Getter(NAPTAN), grid=GRID)
-    assert [s.atco for s in stops] == ["1000DGHS9999", "1000DGHS0900"]
+    stops = nearby_stops(TOWN.lat, TOWN.lon, limit=2, http_get=Getter(NAPTAN), grid=GRID)
+    assert [s.atco for s in stops] == ["1000DGHS9999", "1000DGHS0901"]
 
 
 def test_no_areas_nearby_means_no_request():
@@ -509,11 +514,11 @@ def test_naptan_failure_is_a_plain_message():
 
 # Walk times.
 
-STATION = Station("Glossop", "GLO", 53.44447, -1.94907, 84)
-STOP_A = Stop("1000DGHS0900", "Henry Street", "Stop A", "E", 53.44384, -1.948999, 17)
-STOP_B = Stop("1000DGHS0901", "Henry Street", "Stop B", "W", 53.4439, -1.94905, 24)
-FAR = Stop("1800EH48511", "Woolley Close", "nr", "E", 53.458888, -1.989039, 3100)
-PLACES = {"GLO": STATION, "1000DGHS0900": STOP_A, "1800EH48511": FAR}
+STATION = Station("Hadfield", "HDF", 53.46074, -1.96532, 141)
+STOP_A = Stop("1000DGHS0900", "Henry Street", "Stop A", "E", 53.44384, -1.948999, 2299)
+STOP_B = Stop("1000DGHS0901", "Henry Street", "Stop B", "W", 53.4439, -1.94905, 2292)
+FAR = Stop("1800EH48511", "Woolley Close", "nr", "E", 53.458888, -1.989039, 1590)
+PLACES = {"HDF": STATION, "1000DGHS0900": STOP_A, "1800EH48511": FAR}
 
 
 def test_walk_times_come_from_one_router_request_rounded_up():
@@ -522,9 +527,9 @@ def test_walk_times_come_from_one_router_request_rounded_up():
     assert len(getter.urls) == 1
     assert getter.urls[0] == (
         "https://routing.openstreetmap.de/routed-foot/table/v1/foot/"
-        "-1.965600,53.462000;-1.949070,53.444470;-1.948999,53.443840;-1.989039,53.458888?sources=0"
+        "-1.965600,53.462000;-1.965320,53.460740;-1.948999,53.443840;-1.989039,53.458888?sources=0"
     )
-    assert walk["GLO"] == (2, "route")  # 61.2 s
+    assert walk["HDF"] == (2, "route")  # 61.2 s
     assert walk["1000DGHS0900"] == (10, "route")  # 600 s exactly
     assert walk["1800EH48511"] == (estimate_minutes(HOME, FAR), "estimate")  # no route found
 
@@ -564,7 +569,7 @@ def test_router_answers_of_the_wrong_shape_fall_back_to_estimates(answer):
 def test_router_failure_falls_back_to_estimates(getter):
     walk = walk_minutes(HOME, PLACES, http_get=getter)
     assert all(kind == "estimate" for _, kind in walk.values())
-    assert walk["GLO"] == (estimate_minutes(HOME, STATION), "estimate")
+    assert walk["HDF"] == (estimate_minutes(HOME, STATION), "estimate")
 
 
 def test_a_walk_longer_than_six_hours_is_the_router_lost():
@@ -593,34 +598,34 @@ def test_a_destination_outside_the_uk_is_refused():
 def test_logs_never_contain_coordinates_postcodes_or_addresses(caplog):
     caplog.set_level(logging.DEBUG)
     url_error = URLError("failed for https://routing.openstreetmap.de/routed-foot/table/v1/foot/"
-                         "-1.965600,53.462000;-1.949070,53.444470?sources=0 near 53.4620, -1.9656")
+                         "-1.965600,53.462000;-1.965320,53.460740?sources=0 near 53.4620, -1.9656")
     walk_minutes(HOME, PLACES, http_get=Getter(error=url_error))
     walk_minutes(HOME, PLACES, http_get=Getter(b"not json"))
     lookup_postcode("SK13 1AH", http_get=Getter(POSTCODE_ANSWER))
     with pytest.raises(SetupError):
         lookup_postcode("SK13 1AH", http_get=Getter(error=URLError("SK13 1AH at 53.4620,-1.9656")))
-    search("Henry Street, Glossop", Getter(NOMINATIM_ANSWER))
+    search("Station Road, Hadfield", Getter(NOMINATIM_ANSWER))
     nearby_stops(HOME.lat, HOME.lon, http_get=Getter(NAPTAN), grid=GRID)
     nearby_stations(HOME.lat, HOME.lon)
     assert "Walk router failed" in caplog.text  # the fallback is logged
     no_home_in(caplog.text)
-    assert "-1.94" not in caplog.text and "53.44" not in caplog.text
-    assert "SK13" not in caplog.text and "Henry Street" not in caplog.text
+    assert not any(number in caplog.text for number in ("53.46", "-1.96", "53.44", "-1.94"))
+    assert not any(text in caplog.text for text in ("SK13", "Station Road", "Henry Street"))
 
 
 # The config fragment.
 
 
 def test_config_fragment_holds_codes_labels_walks_and_a_rounded_position():
-    walk = {"GLO": (2, "route"), "1000DGHS0900": (1, "route"), "1000DGHS0901": (3, "estimate")}
+    walk = {"HDF": (2, "route"), "1000DGHS0900": (1, "route"), "1000DGHS0901": (3, "estimate")}
     fragment = config_fragment(HOME, STATION, [(None, STOP_A), (None, STOP_B)], walk)
     assert fragment == {
-        "train": {"crs": "GLO", "walk_minutes": 2},
+        "train": {"crs": "HDF", "walk_minutes": 2},
         "bus": {
             "stops": {"A": "1000DGHS0900", "B": "1000DGHS0901"},
             "walk_minutes": {"A": 1, "B": 3},
         },
-        "weather": {"lat": 53.44, "lon": -1.95},
+        "weather": {"lat": 53.46, "lon": -1.97},
     }
 
 
@@ -636,14 +641,14 @@ def test_config_fragment_has_no_exact_home_coordinates():
             numbers.append(value)
 
     walk_values(fragment)
-    assert numbers == [53.44, -1.95]
+    assert numbers == [53.46, -1.97]
     no_home_in(repr(fragment))
 
 
 def test_config_fragment_leaves_out_what_wasnt_chosen():
-    assert config_fragment(HOME, None, [], {}) == {"weather": {"lat": 53.44, "lon": -1.95}}
+    assert config_fragment(HOME, None, [], {}) == {"weather": {"lat": 53.46, "lon": -1.97}}
     fragment = config_fragment(HOME, STATION, [(None, STOP_A)], {})
-    assert fragment["train"] == {"crs": "GLO"} and "walk_minutes" not in fragment["bus"]
+    assert fragment["train"] == {"crs": "HDF"} and "walk_minutes" not in fragment["bus"]
 
 
 def stop(atco, indicator):

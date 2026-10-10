@@ -17,9 +17,9 @@ from departureboard.setupspool import Refused, Spool, SpoolRunner, Worker
 
 HOME = {"lat": 53.461964, "lon": -1.965633}
 HOME_PLACE = Place(HOME["lat"], HOME["lon"], "SK13 1AH", "England", "High Peak")
-STOPS = [Stop("1800SB12341", "Norfolk Street", "Stop A", "N", 53.4440, -1.9500, 60),
-         Stop("1800SB12342", "Norfolk Street", "Stop B", "S", 53.4442, -1.9502, 75)]
-STATIONS = (("Glossop", "GLO", 53.4446, -1.9656),)
+STOPS = [Stop("1800SB12341", "Station Road", "Stop A", "N", 53.4615, -1.9662, 64),
+         Stop("1800SB12342", "Station Road", "Stop B", "S", 53.4614, -1.9665, 85)]
+STATIONS = (("Glossop", "GLO", 53.4445, -1.9491),)
 SAVED_BODS = "saved-bods-key-111"
 SAVED_RDM = "saved-rdm-key-222"
 PASTED = "pasted-key-333333"
@@ -152,7 +152,7 @@ def test_the_wizard_round_trips_through_the_setup_service(serving, caplog):
 
     # Nothing in the spool afterwards, and nothing private in the log.
     assert spool_text(serving.state) == ""
-    for private in (PASTED, SAVED_BODS, SAVED_RDM, "SK13", "High Street", "53.44", "-1.94"):
+    for private in (PASTED, SAVED_BODS, SAVED_RDM, "SK13", "High Street", "53.46", "-1.96"):
         assert private not in caplog.text, private
     assert "Setup request: postcode" in caplog.text
 

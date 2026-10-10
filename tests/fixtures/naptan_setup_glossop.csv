@@ -7,6 +7,6 @@ ATCOCode,NaptanCode,PlateCode,CleardownCode,CommonName,CommonNameLang,ShortCommo
 1000DGHS3404,dbsgtgwt,,,Arundel Street,,,,Arundel Street,,High Street West,,,,adj,,E,E0007081,Glossop,,,,,,,0,UKOS,403202,394082,-1.95326,53.443519,BCT,MKD,TIP,,,,075,2006-06-26T00:00:00.000,2008-02-25T00:00:00.000,1,revise,inactive
 1000DGHSTRM1,,,,Glossop Tram Halt,,,,,,Henry Street,,,,Platform 1,,N,E0007081,Glossop,,,,,,,1,UKOS,403485,394118,-1.948999,53.44384,TMU,,,,,,075,2006-06-26T00:00:00.000,2025-11-17T11:48:52.095,1,new,active
 ../../etc,,,,"Bad <script>Stop",,,,,,Henry Street,,,,Stop C,,XX,E0007081,Glossop,,,,,,,1,UKOS,403485,394118,-1.948999,53.44384,BCT,MKD,TIP,,,,075,2006-06-26T00:00:00.000,2025-11-17T11:48:52.095,1,new,active
-1000DGHS9999,,,,"Odd	Bearing  Stop",,,,,,Henry Street,,,,opp,,up,E0007081,Glossop,,,,,,,1,UKOS,403485,394118,-1.94915,53.44435,BCS,,,,,,075,2006-06-26T00:00:00.000,2025-11-17T11:48:52.095,1,new,active
+1000DGHS9999,,,,"Odd	Bearing  Stop",,,,,,Norfolk Street,,,,opp,,up,E0007081,Glossop,,,,,,,1,UKOS,403485,394118,-1.94915,53.44435,BCS,,,,,,075,2006-06-26T00:00:00.000,2025-11-17T11:48:52.095,1,new,active
 1800EH48511,MANDJDPG,EH4851,,Woolley Close,,Woolley Close,,,,Woolley Lane,,,,nr,,E,E0029589,Woolley Bridge,Hollingworth,,,,,,0,UKOS,400825,395791,-1.989039,53.458888,BCT,MKD,OTH,,,,083,2007-11-01T00:00:00.000,2026-05-29T14:22:45.877,8,revise,active
 1000DGNOWHER,,,,No Position,,,,,,Nowhere,,,,adj,,E,E0007081,Glossop,,,,,,,1,UKOS,,,,,BCT,MKD,TIP,,,,075,2006-06-26T00:00:00.000,2025-11-17T11:48:52.095,1,new,active

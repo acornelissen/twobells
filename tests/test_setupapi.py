@@ -13,16 +13,16 @@ from departureboard.overlay import Target
 from departureboard.setup import Place, SetupError, Station, Stop
 from departureboard.setupapi import Invalid, RateLimit, SetupApi, decode, suggested_labels
 
-# Home, to more places than anything written may show.
+# Home, near Hadfield station, to more places than anything written may show.
 HOME = {"lat": 53.461964, "lon": -1.965633}
 HOME_PLACE = Place(HOME["lat"], HOME["lon"], "SK13 1AH", "Scotland", "High Peak")
 BODS_KEY = "bods-secret-key-123"
 RDM_KEY = "rdm-secret-key-456"
-STATIONS = (("Glossop", "GLO", 53.4446, -1.9656), ("Manchester Piccadilly", "MAN", 53.4774, -2.2309))
+STATIONS = (("Glossop", "GLO", 53.4445, -1.9491), ("Manchester Piccadilly", "MAN", 53.4774, -2.2309))
 STOPS = [
-    Stop("1800SB12341", "Norfolk Street", "Stop A", "N", 53.4440, -1.9500, 60),
-    Stop("1800SB12342", "Norfolk Street", "Stop B", "S", 53.4442, -1.9502, 75),
-    Stop("1800SB12343", "High Street West", "opp", "", 53.4450, -1.9530, 140),
+    Stop("1800SB12341", "Station Road", "Stop A", "N", 53.4615, -1.9662, 64),
+    Stop("1800SB12342", "Station Road", "Stop B", "S", 53.4614, -1.9665, 85),
+    Stop("1800SB12343", "Woolley Bridge", "opp", "", 53.4625, -1.9690, 231),
 ]
 CONFIG = """
 state_file = "{state}"
@@ -196,8 +196,8 @@ def test_decode_refuses_big_odd_or_deep_bodies():
 
 
 def test_finding_home_by_postcode_or_address(board):
-    assert ok(board, "postcode", {"postcode": " SK13 1AH "})["place"]["label"] == "SK13 1AH"
-    assert board.calls[-1] == ("postcode", "SK13 1AH")
+    assert ok(board, "postcode", {"postcode": " sk13 1ah "})["place"]["label"] == "SK13 1AH"
+    assert board.calls[-1] == ("postcode", "sk13 1ah")
     places = ok(board, "address", {"q": "1 High Street, Glossop"})["places"]
     assert places[0]["country"] == "Scotland" and places[0]["lat"] == HOME["lat"]
 
@@ -290,7 +290,7 @@ def test_finishing_writes_what_setup_found_into_the_overlay(board):
     assert saved["bus"]["stops"] == {"A": "1800SB12341"} and saved["bus"]["walk_minutes"] == {"A": 3}
     assert saved["bus"]["source"] == "bods" and saved["bus"]["operators"] == ["BNML"]
     assert saved["bus"]["routes"]["341"]["stop"] == "A"
-    assert saved["weather"] == {"lat": 53.44, "lon": -1.95}
+    assert saved["weather"] == {"lat": 53.46, "lon": -1.97}
     assert saved["bank_holiday_division"] == "scotland"
     assert read_config(board.config)["bus"]["routes"]["341"]["stops"][0]["name"] == "Hadfield"
 
@@ -305,7 +305,7 @@ def test_finishing_keeps_the_settings_setup_does_not_manage(board):
 def test_no_exact_home_position_is_written_anywhere(board):
     saved_with_a_search(board, keys={"BODS_API_KEY": "new-bods-key-000"})
     written = "".join(p.read_text(errors="replace") for p in board.state.rglob("*") if p.is_file())
-    for exact in ("53.461964", "-1.965633", "53.4620", "-1.9656", "53.444", "-1.949"):
+    for exact in ("53.461964", "-1.965633", "53.4620", "-1.9656", "53.462", "-1.966"):
         assert exact not in written
     assert "SK13" not in written
     assert ok(board, "walk", {"home": HOME, "stop_atcos": ["1800SB12341"]})["walk"] == {}  # found stops forgotten

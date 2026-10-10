@@ -611,9 +611,9 @@ def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
     config.write_text(CONFIG.format(state=state / "state.json").replace('theme = "sign"', 'theme = "sign"\ndisplay = "hdmi-1280x400"'))
     env = {**ENV, "BODS_API_KEY": "bods-secret-key-123"}
     home = {"lat": 53.461964, "lon": -1.965633}
-    stop = Stop("1800SB12341", "Norfolk Street", "Stop A", "N", 53.4440, -1.9500, 60)
+    stop = Stop("1800SB12341", "Station Road", "Stop A", "N", 53.4615, -1.9662, 64)
     wizard = SetupApi(config, lambda: dict(env), state, nearby_stops=lambda lat, lon, **kw: [stop],
-                      stations=lambda: (("Glossop", "GLO", 53.4446, -1.9656),), make_job=FoundJob)
+                      stations=lambda: (("Glossop", "GLO", 53.4445, -1.9491),), make_job=FoundJob)
     assert wizard.handle("stops", home)[0] == 200
     assert wizard.handle("start", {"stops": {"A": "1800SB12341"}, "routes": True})[0] == 200
     status, body = wizard.handle("finish", {"home": {**home, "country": "Scotland"}, "station_crs": "GLO",
@@ -629,7 +629,7 @@ def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
     assert (data["title"], data["train"]["rows"]) == ("Home", 2)
     assert data["bus"]["source"] == "bods" and data["bus"]["operators"] == ["BNML"]
     assert set(data["bus"]["routes"]) == {"341"}
-    assert (data["weather"]["lat"], data["weather"]["lon"]) == (53.44, -1.95)
+    assert (data["weather"]["lat"], data["weather"]["lon"]) == (53.46, -1.97)
     assert data["bank_holiday_division"] == "scotland"
     assert data["dashboard"] == {"title": "Our house"}
     settings = load_config(config, env)
