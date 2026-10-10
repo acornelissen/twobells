@@ -1,6 +1,6 @@
 # inky-departures
 
-A train and bus departure board for your station and stops, for a Raspberry Pi with a four-colour Inky pHAT (250x122), a Waveshare 10.85" e-Paper (G) (1360x480), or a Waveshare 7.9" HDMI screen (1280x400). The examples use a board in Glossop, showing trains to Manchester and buses from two nearby stops (`examples/glossop.toml`).
+A train and bus departure board for your station and stops, for a Raspberry Pi with a four-colour Inky pHAT (250x122), a Waveshare 10.85" e-Paper (G) (1360x480), or a Waveshare 7.9" HDMI screen (1280x400, on its side). The examples use a board in Glossop, showing trains to Manchester and buses from two nearby stops (`examples/glossop.toml`).
 
 ![Board preview](docs/preview.png)
 
@@ -82,7 +82,7 @@ sudo systemctl start departureboard-timetable.service   # takes a few minutes on
 journalctl -u departureboard-timetable -n 5
 ```
 
-Run it through the service rather than by hand: the service reads the keys and writes the timetable as the board's user. To rebuild straight away rather than within the hour, delete `/var/lib/departureboard/bus-timetable.json` and start the service again.
+Run it through the service rather than by hand: the service reads the keys in `/etc/departureboard/secrets.env`, which only root can read, and writes the timetable as the board's user. It builds only when one is due. To rebuild straight away rather than within the hour, delete `/var/lib/departureboard/bus-timetable.json` and start the service again. Run by hand, with your own config and keys (on a laptop, say), `departureboard timetable --force` builds it now.
 
 ```bash
 sudo /opt/departureboard/venv/bin/departureboard probe train
@@ -122,9 +122,9 @@ Set `display = "waveshare-10in85g"` in `config.toml` and add `dtoverlay=spi0-0cs
 
 The driver follows Waveshare's `epd10in85g.py` command sequence over `spidev` and `gpiozero`. It doesn't load Waveshare's prebuilt `DEV_Config` shared library. Each sign dot is 4x4 panel pixels.
 
-### Waveshare 7.9" HDMI screen (400x1280)
+### Waveshare 7.9" HDMI screen (1280x400)
 
-Set `display = "hdmi-1280x400"` and `rotate = 90` (or `270`, depending on which way up it's mounted). A Pi Zero needs a mini HDMI adapter; a Zero 2 W or better is recommended.
+The screen is 400x1280 portrait out of the box; the board runs it on its side, as 1280x400. Set `display = "hdmi-1280x400"` and `rotate = 90` (or `270`, depending on which way up it's mounted). A Pi Zero needs a mini HDMI adapter; a Zero 2 W or better is recommended.
 
 A screen can redraw every second, so it shows more than the e-paper boards do:
 
@@ -169,7 +169,7 @@ Then open `http://<pi name>.local:8080/` from a phone or laptop on the same netw
 
 **Set up home, station and stops** (`/setup/`) is the setup wizard: postcode or address, the nearest stations and stops, walk times, keys, then a search for the bus companies serving your stops, which builds their timetable. Until the board is set up it opens straight after claiming or signing in. The [user guide](docs/USER_GUIDE.md#setting-up-home-station-and-stops) says what it sends where.
 
-- Saved settings go to `/var/lib/departureboard/settings.toml`, layered over `config.toml`, which is never rewritten. Keys go to `/var/lib/departureboard/secrets.env` (0600). The form and the wizard both merge what they change into those files, so neither loses what the other saved.
+- Saved settings go to `/var/lib/departureboard/settings.toml`, layered over `config.toml`, which is never rewritten. It holds only the settings the page and the wizard manage; anything else put there is ignored, and the log names it. Addresses (`[train]` and `[bus]` `base_url`), `state_file`, `display`, `timezone` and the other hand-edited settings belong in `config.toml`. Keys go to `/var/lib/departureboard/secrets.env` (0600). The form and the wizard both merge what they change into those files, so neither loses what the other saved.
 - Nothing is saved unless every field passes its check and the whole configuration loads.
 - The e-paper board picks changes up on its next minute. The screen reloads within a second, and restarts itself if the display settings changed.
 - Changing between e-paper and the screen means switching services, so the display type stays in `config.toml`.
@@ -184,7 +184,9 @@ Then open `http://<pi name>.local:8080/` from a phone or laptop on the same netw
   - The wizard under `/setup/` is the only part with JavaScript, and the only part whose Content-Security-Policy
     allows it (`script-src 'self'`). It serves a fixed list of files with set content types, and its JSON API needs
     the session, its form token in an `X-CSRF-Token` header, a same-origin request and a body under 16 kB.
-  - The page's own service can't reach the internet (its unit's IP filter), so a flaw in it can't be used to. The
+  - The page's own service can't open a connection to the internet itself (its unit's IP filter, where the kernel
+    can enforce it; see above). That narrows what a flaw in the page could do, but it isn't a wall: the page runs as
+    the same user as the setup service, shares the board's folder with it, and still tells it what to look up. The
     wizard's lookups (postcodes, stops, walk times, key tests, bus timetables) run in a separate
     `departureboard-setup.service` with outbound access only, started by `departureboard-setup.path` when the page
     leaves a request in `/run/departureboard-setup/` and stopped a minute after the last. It reads the saved keys
@@ -219,7 +221,7 @@ departureboard emulate --config config.toml --secrets secrets.env   # all live
 departureboard emulate --demo --display hdmi-1280x400                # another panel
 ```
 
-It opens <http://127.0.0.1:8780/>. Live modes emulate the `display` in your config; `--display` overrides it. Choose realistic (20 s), quick or instant refresh, and the scale (1× to 4× for the pHAT, ½× or 1× for the bigger panels); 1× is the panel's real pixel count. The demo drops the bus feed from 07:30 to 07:52 simulated time, so the "Not updating" badge shows up.
+It opens <http://127.0.0.1:8780/>, or the next free port (`--port` picks another; `--no-browser` leaves the browser alone). Live modes emulate the `display` in your config; `--display` overrides it. Choose realistic (20 s), quick or instant refresh, and the scale (1× to 4× for the pHAT, ½× or 1× for the bigger panels); 1× is the panel's real pixel count. `--tick SECONDS` sets the tick (e-paper: 2 in the demo, 60 live; the screen: 1), and `--accent red` or `yellow` the demo's colour. The demo drops the bus feed from 07:30 to 07:52 simulated time, so the "Not updating" badge shows up.
 
 On start the emulator fetches every source once, even outside its windows, so the board fills straight away; after that it polls only inside the windows. A live start therefore costs one TransportAPI hit per bus stop. The daily budget still applies, and when it is spent the first fetch is skipped too. `departureboard run` does the same on its very first run, when there is no saved state yet.
 
@@ -229,12 +231,16 @@ Live modes keep state in `state_file`, so the TransportAPI budget holds across r
 
 `departureboard dashboard` serves a full departures page on your Mac (or, with `docker-compose.yml`, on a Synology NAS): 10 trains and 10 buses, calling points, bus strips and a Leaflet map, weather, leave alerts and punctuality history. See the [user guide](docs/USER_GUIDE.md#4-the-dashboard).
 
+It listens on <http://localhost:8090/> (or the next free port) and opens it in your browser. `--lan` listens on every address, for phones at home; `--host` and `--port` pick others (a port you name is that port or nothing); `--no-browser` leaves the browser alone.
+
 Its **Settings** need a password, claimed with a code from the dashboard's log. Or set it from the command line, while the dashboard runs, with `departureboard dashboard --set-password` (it uses the same folder as the dashboard, or the one given with `--state-dir`), and print a code with `--reset-code`. In Docker:
 
 ```bash
 docker exec -it departureboard-dashboard python -m departureboard.cli dashboard --set-password --state-dir /data
 docker exec -it departureboard-dashboard python -m departureboard.cli dashboard --reset-code --state-dir /data
-``` The server and page talk through a read-only JSON and SSE API, specified in [docs/dashboard-api.md](docs/dashboard-api.md); the page is vanilla JS modules with no build step, under a strict CSP.
+```
+
+The server and page talk through a read-only JSON and SSE API, specified in [docs/dashboard-api.md](docs/dashboard-api.md); the page is vanilla JS modules with no build step, under a strict CSP.
 
 ## Layout
 
@@ -259,17 +265,31 @@ docker exec -it departureboard-dashboard python -m departureboard.cli dashboard 
 | `bods.py`, `route.py` | Live bus positions from BODS; placing the next bus on its route strip |
 | `routesetup.py` | Builds a route strip from a BODS timetable and NaPTAN (`route` command) |
 | `setup.py`, `osgb.py`, `data/` | First-run setup core: home from a postcode or address, nearby stations and stops, walk times, a config fragment |
+| `discover.py` | Finds the bus companies and lines serving your stops and builds their timetable (`setup discover`, and the wizard's search) |
+| `keytest.py` | Tests a key with one harmless call to its service (the wizard's **Test this key**) |
+| `setupapi.py`, `wizard_static/` | The setup wizard: its JSON API, and its page (HTML, CSS, JS) |
+| `setupspool.py` | Hands the wizard's internet work from the Pi's settings page to `departureboard-setup.service` (`setup serve`) |
 | `weather.py` | Open-Meteo hourly forecast and the rain-warning rule |
 | `holidays.py` | Bank holidays from GOV.UK (England and Wales, Scotland, Northern Ireland), cached weekly |
 | `status.py` | The settings page's Status section; short, key-free error messages |
 | `safexml.py` | XML parsing that refuses a DOCTYPE |
 | `fake.py` | Deterministic fake sources (sample Glossop data) and simulated clock |
 | `app.py` | One tick: poll what's due, redraw only on change |
+| `state.py` | JSON state kept between runs |
+| `walk.py` | Walking times, and when to leave for the next departure |
+| `http.py` | Small HTTPS helper, standard library only |
 | `web.py`, `settingsform.py`, `web.css` | Settings page: sign-in and request checks; the form, its checks and saving |
+| `auth.py` | Passwords, sessions, form tokens, lockout, reset codes and the home-network request checks, for both settings pages |
+| `formpages.py` | What both settings pages share: the sign-in, claim and reset pages, and saving the form |
+| `overlay.py` | Merges what a form or the wizard changes into `settings.toml` and the saved `secrets.env` |
 | `history.py` | Punctuality history in SQLite (dashboard) |
 | `dashconfig.py`, `collector.py`, `snapshot.py`, `dashserver.py` | Dashboard: settings, pollers, the versioned snapshot, the HTTP/SSE server |
+| `dashsettings.py`, `dashform.py` | Dashboard: the password-protected `/settings` area and its form |
+| `enrich.py` | Dashboard row extras: arrival times, the inbound bus, a bus due with no tracker |
+| `area.py` | Dashboard: the area map's live buses, and timetable changes coming up |
+| `disruptions.py` | Dashboard: bus disruptions from BODS SIRI-SX, rail incidents from the Knowledgebase |
 | `dashboard_static/` | Dashboard page: HTML, CSS, JS modules, vendored Leaflet 1.9.4 |
-| `cli.py`, `config.py` | `run` / `probe` / `demo` / `timetable`; TOML settings, env secrets |
+| `cli.py`, `config.py` | The commands (see the [user guide](docs/USER_GUIDE.md#commands-and-options)); TOML settings, env secrets |
 
 To add a page or provider, implement `fetch() -> list[Departure]` with a `name` and add it to `config.py`.
 
