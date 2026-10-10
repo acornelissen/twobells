@@ -322,7 +322,7 @@ def test_every_icon_the_page_asks_for_is_in_the_set():
     js = {path.name: path.read_text(encoding="utf-8") for path in OWN_JS}
     tables = [
         ("board.js", "ICON", r': "([a-z-]+)"'),  # status -> icon
-        ("main.js", "CONNECTION", r'\["([a-z-]+)", "'),  # [icon, words]
+        ("header.js", "CONNECTION", r'\["([a-z-]+)", "'),  # [icon, words]
         ("disruptions.js", "SEVERITY", r', "([a-z-]+)"\],'),  # [words, class, icon]
     ]
     for name, table, entry in tables:
@@ -378,6 +378,8 @@ TEXT_PAIRS = [
     ("late-fg", "surface"), ("ok-fg", "surface"), ("fg", "surface-2"), ("muted", "surface-2"),
     # The hero: its quiet lines, confidence words and a pressed Remind me.
     ("muted", "leave-bg"), ("ok-fg", "leave-bg"), ("late-fg", "leave-bg"), ("accent", "leave-bg"),
+    # Sections sit straight on the page, not on cards: the same on its background.
+    ("late-fg", "bg"), ("ok-fg", "bg"), ("bad-fg", "bg"),
 ]
 OUTLINE_PAIRS = [("focus", "bg"), ("focus", "surface"), ("edge", "surface"), ("edge", "bg")]
 
@@ -703,7 +705,7 @@ def test_shape_checker_rejects_wrong_shapes():
             check(bus, BUS_DETAIL)
 
 
-# --- Disruptions panel ---
+# --- The disruption summary under the hero ---
 
 
 def test_feed_links_leave_without_a_referrer_or_an_opener():
@@ -714,34 +716,243 @@ def test_feed_links_leave_without_a_referrer_or_an_opener():
     assert 'link.startsWith("https://")' in text
 
 
-def test_the_disruptions_panel_is_on_the_page():
-    ids = {attrs.get("id") for _, attrs in _page().elements}
-    assert {"disruptions", "disruptions-heading", "disruptions-status", "disruptions-body"} <= ids
+def _inside(parent_id, child_id):
+    """Whether index.html has the element child_id inside parent_id."""
+    stack, inside = [], False
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+
+    class Walk(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            nonlocal inside
+            if tag in {"meta", "link", "br", "img", "input", "path", "circle"}:
+                return
+            stack.append(dict(attrs).get("id"))
+            if dict(attrs).get("id") == child_id and parent_id in stack[:-1]:
+                inside = True
+
+        def handle_endtag(self, tag):
+            if tag not in {"meta", "link", "br", "img", "input", "path", "circle"} and stack:
+                stack.pop()
+
+    Walk().feed(html)
+    return inside
+
+
+def test_the_disruption_summary_is_one_disclosure_under_the_hero():
+    elements = _page().elements
+    ids = {attrs.get("id"): (tag, attrs) for tag, attrs in elements}
+    assert {"disruptions", "disruptions-heading", "disruptions-status", "disruptions-body"} <= set(ids)
+    assert ids["disruptions-details"][0] == "details"
+    # The line is the <details>' own summary; "Coming up this week" folds inside it.
+    assert _inside("disruptions-details", "disruptions-summary")
+    assert ids["disruptions-coming"][0] == "details" and _inside("disruptions-details", "disruptions-coming")
+    assert _inside("disruptions-details", "disruptions-now")
+    # The old panels are gone: rail messages join the summary.
+    assert "messages" not in ids and "message-list" not in ids
+
+
+def test_departures_come_straight_after_the_hero_and_summary():
+    ids = [attrs.get("id") for _, attrs in _page().elements]
+    order = ["leave", "disruptions", "trains", "buses", "area", "weather"]
+    assert [ids.index(i) for i in order] == sorted(ids.index(i) for i in order)
+
+
+# The summary's markup as index.html has it, on a fake page.
+DISRUPTION_PAGE = """
+import { h } from "./dom.js";
+import { renderDisruptions, markBusRows } from "./disruptions.js";
+document.body.append(
+  h("section", { id: "disruptions" },
+    h("p", { id: "disruptions-none" }, "No disruption on your journeys"),
+    h("details", { id: "disruptions-details" },
+      h("summary", {}, h("span", { id: "disruptions-glyph" }), " ", h("span", { id: "disruptions-summary" })),
+      h("div", { id: "disruptions-body" },
+        h("div", { id: "disruptions-now-part" }, h("h3", {}, "In force now"), h("ul", { id: "disruptions-now" })),
+        h("details", { id: "disruptions-coming" },
+          h("summary", {}, "Coming up this week (", h("span", { id: "disruptions-coming-count" }), ")"),
+          h("ul", { id: "disruptions-later" })))),
+    h("p", { id: "disruptions-status" })));
+const $ = (id) => document.getElementById(id);
+const words = (el) => spoken(el).replace(/\\s+/g, " ").trim();
+const ids = (el) => elements(el).filter((li) => li.nodeName === "LI").map((li) => li.id || words(li.childNodes[0]));
+// What the summary shows, or null when the whole section is hidden.
+const summary = () => ($("disruptions").hidden ? null : {
+  line: $("disruptions-details").hidden ? words($("disruptions-none")) : words($("disruptions-summary")),
+  shown: $("disruptions-details").hidden ? null : $("disruptions-summary").childNodes[0].textContent,
+  tone: ["late", "bad", "quiet"].filter((c) => $("disruptions-details").classList.contains(c)),
+  now: $("disruptions-now-part").hidden ? [] : ids($("disruptions-now")),
+  later: $("disruptions-coming").hidden ? [] : ids($("disruptions-later")),
+});
+const item = (id, relevance, extra = {}) => ({
+  id, mode: "bus", title: `Notice ${id.slice(0, 1)}`, summary: "", reason: "Roadworks", planned: true, lines: [],
+  stops: [], places: ["Station Road"], severity: "normal", relevance, link: null,
+  periods: [{ from_at: "2026-01-01T00:00:00+00:00", to_at: null }], ...extra,
+});
+const at = (snapshot) => ({ generated_at: "2026-10-10T07:00:00+01:00", ...snapshot });
+"""
 
 
 @needs_node
 def test_disruptions_are_listed_most_relevant_first():
-    found = run_js("""
-        import { renderDisruptions } from "./disruptions.js";
-        for (const id of ["disruptions", "disruptions-status", "disruptions-body"]) {
-          const el = document.createElement("div");
-          el.setAttribute("id", id);
-          document.body.append(el);
-        }
-        const item = (id, relevance, from) => ({
-          id, mode: "bus", title: id, summary: "", reason: null, planned: true, lines: [], stops: [], places: [],
-          severity: "normal", relevance, link: null, periods: [{ from_at: from, to_at: null }],
-        });
-        renderDisruptions({ generated_at: "2026-10-10T07:00:00+01:00", disruptions: { status: {}, items: [
-          item("aaaaaaaaaaaaaaaa", "line", "2026-01-01T00:00:00+00:00"),
-          item("bbbbbbbbbbbbbbbb", "nearby", "2026-02-01T00:00:00+00:00"),
-          item("cccccccccccccccc", "your_stop", "2026-03-01T00:00:00+00:00"),
-          item("dddddddddddddddd", "line", "2025-12-01T00:00:00+00:00"),
-        ] } });
+    found = run_js(DISRUPTION_PAGE + """
+        const from = (iso) => ({ periods: [{ from_at: iso, to_at: null }] });
+        renderDisruptions(at({ disruptions: { status: {}, items: [
+          item("aaaaaaaaaaaaaaaa", "line", from("2026-01-01T00:00:00+00:00")),
+          item("bbbbbbbbbbbbbbbb", "nearby", from("2026-02-01T00:00:00+00:00")),
+          item("cccccccccccccccc", "your_stop", from("2026-03-01T00:00:00+00:00")),
+          item("dddddddddddddddd", "line", from("2025-12-01T00:00:00+00:00")),
+        ] } }));
         console.log(JSON.stringify(elements(document.body).filter((el) => el.nodeName === "LI").map((el) => el.id)));
     """)
     assert found == ["disruption-cccccccccccccccc", "disruption-bbbbbbbbbbbbbbbb",
                      "disruption-dddddddddddddddd", "disruption-aaaaaaaaaaaaaaaa"]
+
+
+@needs_node
+def test_the_summary_leads_with_what_is_in_force_on_your_journeys():
+    found = run_js(DISRUPTION_PAGE + """
+        import { readFileSync } from "node:fs";
+        import { observeSnapshot } from "./time.js";
+        const snapshot = JSON.parse(readFileSync(%r, "utf-8"));
+        observeSnapshot(snapshot.generated_at);
+        renderDisruptions(snapshot);
+        console.log(JSON.stringify(summary()));
+    """ % str(FIXTURES / "dashboard_snapshot.json"))
+    # The stop closure at Henry Street A, by its cause and our stop's name,
+    # then the rail message, the roadworks next week and the engineering works.
+    assert found["shown"] == "Maintenance work at Henry Street A (your stop) until 18:00 today · 3 more this week"
+    assert found["line"] == "Maintenance work at Henry Street A (your stop) until 18:00 today. 3 more this week."
+    assert found["tone"] == ["late"]
+    assert found["now"] == [
+        "Train: Disruption between Hadfield and Glossop until 10:00. Some trains may be cancelled or delayed.",
+        "disruption-372c555cca5388f0",
+    ]
+    assert found["later"] == ["disruption-424e0a2ce2d843be", "disruption-55ce209470d0eb6b"]
+
+
+@needs_node
+def test_the_summary_is_quiet_with_nothing_on_your_journeys():
+    found = run_js(DISRUPTION_PAGE + """
+        const shown = [];
+        // On your line, in force: listed, but not on your journeys.
+        renderDisruptions(at({ disruptions: { status: {}, items: [item("aaaaaaaaaaaaaaaa", "line")] } }));
+        shown.push(summary());
+        // At your stop, but only next week: coming up, folded away.
+        renderDisruptions(at({ disruptions: { status: {}, items: [item("bbbbbbbbbbbbbbbb", "your_stop", {
+          periods: [{ from_at: "2099-01-01T00:00:00+00:00", to_at: null }] })] } }));
+        shown.push(summary());
+        // Nothing at all: one quiet line, nothing to open.
+        renderDisruptions(at({ disruptions: { status: {}, items: [] } }));
+        shown.push(summary());
+        // No disruption data and no rail messages: nothing.
+        renderDisruptions(at({ disruptions: null, trains: { messages: [] } }));
+        shown.push(summary());
+        console.log(JSON.stringify(shown));
+    """)
+    line, coming, empty, none = found
+    assert line["line"] == "No disruption on your journeys. 1 notice this week."
+    assert line["tone"] == ["quiet"] and line["now"] == ["disruption-aaaaaaaaaaaaaaaa"]
+    assert coming["line"] == "No disruption on your journeys. 1 notice this week."
+    assert coming["now"] == [] and coming["later"] == ["disruption-bbbbbbbbbbbbbbbb"]
+    assert empty["line"] == "No disruption on your journeys" and empty["shown"] is None
+    assert none is None
+
+
+@needs_node
+def test_rail_messages_join_the_summary_and_severe_is_red():
+    found = run_js(DISRUPTION_PAGE + """
+        const message = (text, severity) => ({ text, category: "train", severity, kind: "service" });
+        const shown = [];
+        // A rail message alone, with no disruption feed, still shows.
+        renderDisruptions(at({ disruptions: null, trains: { messages: [message("Lifts out of use at Dinting.", "minor")] } }));
+        shown.push(summary());
+        // Severe comes first and turns the line red.
+        renderDisruptions(at({
+          disruptions: { status: {}, items: [item("aaaaaaaaaaaaaaaa", "nearby")] },
+          trains: { messages: [message("No trains between Glossop and Manchester.", "severe")] },
+        }));
+        shown.push(summary());
+        console.log(JSON.stringify(shown));
+    """)
+    alone, severe = found
+    assert alone["line"] == "Lifts out of use at Dinting" and alone["tone"] == ["late"]
+    assert severe["shown"] == "No trains between Glossop and Manchester · 1 more this week"
+    assert severe["tone"] == ["bad"]
+
+
+@needs_node
+def test_a_long_summary_shows_two_lines_until_more():
+    found = run_js(DISRUPTION_PAGE + """
+        const long = "Due to roadworks on Station Road, service 237 will divert via Woolley Bridge in both directions "
+          + "until further notice.";
+        const snapshot = at({ disruptions: { status: {}, items: [
+          item("aaaaaaaaaaaaaaaa", "your_stop", { summary: long }), item("bbbbbbbbbbbbbbbb", "line", { summary: "Short." }),
+        ] } });
+        renderDisruptions(snapshot);
+        const state = () => elements($("disruptions-now")).filter((el) => el.nodeName === "LI").map((li) => [
+          byClass(li, "dis-summary")[0].getAttribute("class"),
+          byClass(li, "dis-more").map((b) => [b.getAttribute("aria-expanded"), b.textContent]),
+        ]);
+        const before = state();
+        const button = byClass($("disruptions-now"), "dis-more")[0];
+        button.listeners.find(([type]) => type === "click")[1]({ currentTarget: button });
+        const opened = state();
+        renderDisruptions(snapshot); // a new snapshot keeps it open
+        console.log(JSON.stringify([before, opened, state()]));
+    """)
+    before, opened, again = found
+    assert before == [["dis-summary clamp", [["false", "More"]]], ["dis-summary", []]]
+    assert opened[0] == ["dis-summary", [["true", "Less"]]]
+    assert again == opened
+
+
+@needs_node
+def test_a_row_link_opens_the_summary_at_its_item():
+    found = run_js(_boards() + DISRUPTION_PAGE.replace('import { h } from "./dom.js";\n', "") + """
+        renderDisruptions(snapshot);
+        const rowsById = new Map(snapshot.buses.rows.map((row) => [row.id, { row, mode: "bus" }]));
+        markBusRows(snapshot, rowsById);
+        const link = byClass(board("buses-board"), "dis-mark")[0];
+        let prevented = false;
+        link.listeners.find(([type]) => type === "click")[1]({ currentTarget: link, preventDefault: () => { prevented = true; } });
+        console.log(JSON.stringify([link.getAttribute("href"), $("disruptions-details").open === true,
+                                    document.activeElement.id, prevented]));
+    """)
+    assert found == ["#disruption-372c555cca5388f0", True, "disruption-372c555cca5388f0", True]
+
+
+@needs_node
+def test_new_disruption_on_your_journeys_is_announced_once():
+    found = run_js("""
+        import { noteSnapshot } from "./live.js";
+        const live = document.createElement("div");
+        live.setAttribute("id", "live");
+        document.body.append(live);
+        globalThis.requestAnimationFrame = (fn) => fn();
+        const item = (id, relevance) => ({
+          id, mode: "bus", title: id, summary: "", reason: "Roadworks", planned: true, lines: [], stops: [],
+          places: [`Road ${id.slice(0, 1)}`], severity: "normal", relevance, link: null,
+          periods: [{ from_at: "2026-01-01T00:00:00+00:00", to_at: null }],
+        });
+        const snapshot = (...items) => ({ generated_at: "2026-10-10T07:00:00+01:00", disruptions: { status: {}, items } });
+        const wait = () => new Promise((resolve) => setTimeout(resolve, 20));
+        // What is in force when the page opens, and on your line only, is never spoken.
+        noteSnapshot(snapshot(item("aaaaaaaaaaaaaaaa", "your_stop")), new Map());
+        noteSnapshot(snapshot(item("aaaaaaaaaaaaaaaa", "your_stop"), item("bbbbbbbbbbbbbbbb", "line")), new Map());
+        await wait();
+        const quiet = live.textContent;
+        const both = snapshot(item("aaaaaaaaaaaaaaaa", "your_stop"), item("cccccccccccccccc", "nearby"));
+        noteSnapshot(both, new Map());
+        await wait();
+        const spokenOnce = live.textContent;
+        // The same again, snapshot after snapshot: nothing more is queued.
+        let queued = 0;
+        globalThis.setTimeout = () => { queued += 1; return 1; };
+        noteSnapshot(both, new Map());
+        noteSnapshot(both, new Map());
+        console.log(JSON.stringify([quiet, spokenOnce, queued]));
+    """)
+    assert found == ["", "New disruption: Roadworks at Road c (nearby).", 0]
 
 
 # --- Station messages: disruption, or station information ---
@@ -755,47 +966,40 @@ def test_station_information_has_its_own_quiet_place_in_the_trains_section():
     assert "hidden" in info
 
 
-MESSAGES_PAGE = """
-import { renderMessages } from "./board.js";
-for (const [tag, id] of [["section", "messages"], ["ul", "message-list"], ["div", "station-info"]]) {
-  const el = document.createElement(tag);
-  el.setAttribute("id", id);
-  document.body.append(el);
-}
-const $ = (id) => document.getElementById(id);
-const shown = () => ({
-  disruption: $("messages").hidden ? [] : $("message-list").childNodes.map((li) => spoken(li)),
-  info: $("station-info").hidden ? [] : $("station-info").childNodes.map((p) => spoken(p)),
-  icons: byClass($("station-info"), "icon-info").length,
-});
-"""
-
-
 @needs_node
 def test_a_closed_ticket_office_is_station_information_not_disruption():
-    found = run_js(MESSAGES_PAGE + """
-        renderMessages({ messages: [
+    found = run_js(DISRUPTION_PAGE + """
+        import { renderMessages } from "./board.js";
+        document.body.append(h("div", { id: "station-info" }));
+        const shown = (trains) => {
+          renderMessages(trains);
+          renderDisruptions({ trains });
+          return {
+            disruption: summary() ? summary().now : [],
+            info: $("station-info").hidden ? [] : $("station-info").childNodes.map((p) => spoken(p)),
+            icons: byClass($("station-info"), "icon-info").length,
+          };
+        };
+        const both = shown({ messages: [
           { text: "Trains may be delayed between Dinting and Guide Bridge.", category: "train", severity: "minor",
             kind: "service" },
           { text: "The ticket office is currently closed at this station.", category: null, severity: null,
             kind: "station" },
         ] });
-        const both = shown();
-        renderMessages({ messages: [{ text: "The ticket office is currently closed at this station.", kind: "station" }] });
-        const stationOnly = shown();
+        const stationOnly = shown({ messages: [{ text: "The ticket office is currently closed at this station.", kind: "station" }] });
         // An older server's plain strings are disruption, as they always were.
-        renderMessages({ messages: ["Lifts out of use.", 7, { kind: "station" }] });
-        console.log(JSON.stringify([both, stationOnly, shown()]));
+        const old = shown({ messages: ["Lifts out of use.", 7, { kind: "station" }] });
+        console.log(JSON.stringify([both, stationOnly, old]));
     """)
     both, station_only, old = found
     assert both == {
-        "disruption": ["Trains may be delayed between Dinting and Guide Bridge."],
+        "disruption": ["Train: Trains may be delayed between Dinting and Guide Bridge."],
         "info": ["Station information: The ticket office is currently closed at this station."],
         "icons": 1,
     }
-    # With only a station notice, the "Disruption" panel stays hidden.
+    # With only a station notice, there is no disruption to show.
     assert station_only["disruption"] == [] and len(station_only["info"]) == 1
-    assert old == {"disruption": ["Lifts out of use."], "info": [], "icons": 0}
+    assert old == {"disruption": ["Train: Lifts out of use."], "info": [], "icons": 0}
 
 
 @needs_node
@@ -823,6 +1027,105 @@ def test_station_information_is_never_announced():
         console.log(JSON.stringify([quiet, live.textContent]));
     """)
     assert found == ["", "New disruption: Trains may be cancelled between Glossop and Hadfield."]
+
+
+# --- The header and the page's layout ---
+
+
+@needs_node
+def test_the_heading_is_the_place_never_cut():
+    cases = [
+        ["Glossop > Manchester Picc", "Glossop"],  # the trains' caption says where to
+        ["Glossop>Hadfield", "Glossop"],
+        ["Departures", "Glossop"],  # the default title gives way to the station
+        ["", "Glossop"],
+        ["Departures", ""],
+        ["Our house", "Glossop"],
+        ["Old Glossop, Shepley Street and the long way round to Manchester", "Glossop"],
+    ]
+    found = run_js(f"""
+        import {{ placeName }} from "./header.js";
+        console.log(JSON.stringify({json.dumps(cases)}.map(([title, station]) => placeName(title, station))));
+    """)
+    assert found == ["Glossop", "Glossop", "Glossop", "Glossop", "Departures", "Our house",
+                     "Old Glossop, Shepley Street and the long way round to Manchester"]
+
+
+@needs_node
+def test_the_status_pill_rolls_up_parts_that_fall_behind():
+    found = run_js("""
+        import { pill } from "./header.js";
+        const ok = (last) => ({ last_success: last, stale: false, error: null, note: null });
+        const at = (hm) => `2026-10-10T${hm}:00+01:00`;
+        const snapshot = (parts) => ({
+          trains: { status: ok(at("07:01")) }, buses: { status: ok(at("07:01")) }, weather: { status: ok(at("06:49")) },
+          disruptions: { status: { bus: ok(at("07:00")), train: null } }, ...parts,
+        });
+        const t = Date.parse(at("07:05"));
+        console.log(JSON.stringify([
+          pill("live", snapshot({}), t, t),
+          // Buses stale since 06:40 and the weather failing since 06:49: the older one.
+          pill("live", snapshot({ buses: { status: { ...ok(at("06:40")), stale: true } },
+                                 weather: { status: { ...ok(at("06:49")), error: "timed out" } } }), t, t),
+          pill("polling", snapshot({ disruptions: { status: { bus: { ...ok(at("06:30")), stale: true } } } }), t, t),
+          pill("live", snapshot({ trains: { status: { ...ok(null), error: "no key" } } }), t, t),
+          // Losing the server comes first, with how long ago it last answered.
+          pill("reconnecting", snapshot({ buses: { status: { ...ok(at("06:40")), stale: true } } }), t - 120000, t),
+          pill("connecting", null, 0, t),
+        ]));
+    """)
+    assert found == [
+        ["live", "circle", "Live"],
+        ["stale", "triangle-alert", "Not updated since 06:40"],
+        ["stale", "triangle-alert", "Not updated since 06:30"],
+        ["stale", "triangle-alert", "Not updated yet"],
+        ["reconnecting", "circle-dashed", "Reconnecting…, last update 2 min ago"],
+        ["connecting", "circle-dashed", "Connecting…"],
+    ]
+
+
+@needs_node
+def test_a_section_has_its_own_status_line_only_when_it_is_behind():
+    found = run_js(_boards() + """
+        import { renderWeather } from "./weather.js";
+        document.body.append(h("section", { id: "weather" }, h("p", { id: "weather-status" }), h("div", { id: "weather-now" }),
+          h("p", { id: "weather-rain" }), h("div", { id: "weather-hours" })));
+        const line = (id) => { const el = document.getElementById(id); return el.hidden ? null : said(el); };
+        renderWeather(snapshot);
+        const fresh = ["trains-status", "buses-status", "weather-status"].map(line);
+        const behind = structuredClone(snapshot);
+        behind.buses.status = { ...behind.buses.status, stale: true };
+        behind.weather.status = { ...behind.weather.status, error: "timed out" };
+        behind.trains.status = { ...behind.trains.status, note: "Showing trains to Manchester only." };
+        renderTrains(behind, alerts);
+        renderBuses(behind, alerts);
+        renderWeather(behind);
+        console.log(JSON.stringify([fresh, ["trains-status", "buses-status", "weather-status"].map(line)]));
+    """)
+    fresh, behind = found
+    # All current: the header's pill says so for every section.
+    assert fresh == [None, None, None]
+    assert behind == ["Showing trains to Manchester only.", "Not updated since 07:01.",
+                      "Problem: timed out. Showing the forecast from 06:49."]
+
+
+def test_trains_and_buses_sit_side_by_side_from_75rem():
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    assert "100rem" not in css
+    wide = _css_block("@media (min-width: 75rem)")
+    assert "display: flex" in wide[".boards"] and "display: flex" in wide[".extras"]
+    # The weather is the wider of the two below the boards.
+    assert "flex: 3 1 0" in wide[".extras > .weather"] and "flex: 2 1 0" in wide[".extras > .area"]
+    ids = [attrs.get("id") for _, attrs in _page().elements]
+    assert _inside("main", "trains") and ids.index("buses") < ids.index("area")
+
+
+def test_sections_are_plain_only_the_hero_and_dialogs_are_raised():
+    for body in _css_rules(".panel"):
+        assert "border" not in body and "background" not in body
+    for body in _css_rules(".disruptions"):
+        assert "border" not in body and "background" not in body and "shadow" not in body
+    assert any("box-shadow: var(--shadow)" in body for body in _css_rules("dialog.dialog"))
 
 
 # --- The train dialog's journey line ---
@@ -950,7 +1253,6 @@ import { observeSnapshot } from "./time.js";
 import { renderBuses, renderTrains, toggleMore } from "./board.js";
 const status = (id) => h("span", { id });
 document.body.append(
-  h("section", { id: "messages" }, h("ul", { id: "message-list" })),
   h("section", { id: "trains" }, h("span", { id: "trains-walk" }), status("trains-status"), h("div", { id: "station-info" }),
     h("div", { id: "trains-board" })),
   h("section", { id: "buses" }, status("buses-status"), h("div", { id: "buses-board" })));
@@ -993,9 +1295,12 @@ def test_the_train_board_reads_like_a_station_screen():
           onTime: [said(cell(rows[2], "c-status")), byClass(rows[2], "glyph").length],
           platform: [said(cell(rows[2], "c-plat")), said(cell(rows[3], "c-plat")), shown(cell(rows[3], "c-plat"))],
           walk: said(board("trains-walk")),
+          caption: said(elements(board("trains-board")).find((el) => el.nodeName === "CAPTION")),
         }));
     """)
     assert found["head"] == ["Time", "Destination", "Platform", "Expected", "Leave"]
+    # Where they go, in full: the filter station's name, not its code (MAN).
+    assert found["caption"] == "Next trains from Glossop to Manchester Piccadilly"
     first = found["first"]
     assert first["time"] == "07:12"
     # Row 1 alone says where it calls and where it is.

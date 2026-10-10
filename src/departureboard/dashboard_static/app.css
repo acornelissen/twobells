@@ -231,7 +231,8 @@ button.link:hover:not(:disabled) { background: none; text-decoration-thickness: 
   margin: 0 auto;
   padding: var(--s-4);
 }
-.top h1 { flex: 1 1 12rem; margin: 0; font-size: var(--t-lg); }
+/* The place: it wraps onto a second line rather than lose a word. */
+.top h1 { flex: 1 1 12rem; margin: 0; font-size: var(--t-xl); text-wrap: balance; }
 .clock { margin: 0; font-size: var(--t-xl); font-weight: 600; }
 .connection {
   display: inline-flex;
@@ -249,7 +250,8 @@ button.link:hover:not(:disabled) { background: none; text-decoration-thickness: 
 .connection[data-state="live"] { color: var(--ok-fg); background: var(--ok-bg); }
 .connection[data-state="live"] .icon { fill: currentColor; }
 .connection[data-state="reconnecting"],
-.connection[data-state="polling"] { color: var(--late-fg); background: var(--late-bg); }
+.connection[data-state="polling"],
+.connection[data-state="stale"] { color: var(--late-fg); background: var(--late-bg); }
 .connection[data-state="offline"] { color: var(--bad-fg); background: var(--bad-bg); }
 #theme-toggle[aria-pressed="true"] { color: var(--accent-fg); background: var(--accent); border-color: var(--accent); }
 /* Looks like the quiet buttons beside it, with their target size. */
@@ -323,45 +325,52 @@ main:focus { outline: none; }
 .alert-item p { margin: 0; }
 .alert-item button { color: var(--bad-fg); border-color: var(--bad-fg); }
 
-.messages {
-  margin: 0 0 var(--s-4);
-  padding: var(--s-3) var(--s-4);
-  color: var(--fg);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 0.25rem solid var(--late-fg);
-  border-radius: var(--r-lg);
-}
-.messages h2 { display: flex; align-items: center; gap: var(--s-2); font-size: var(--t-md); }
-.messages h2 .glyph { color: var(--late-fg); }
-.messages ul { margin: 0; padding-left: 1.25rem; }
-
 /* Station notices (ticket office, lifts): information, not disruption. */
 .station-info { margin: 0 0 var(--s-2); color: var(--muted); font-size: var(--t-sm); }
 .station-info p { margin: 0; }
 .station-info .glyph { margin-right: var(--s-1); }
 
-/* --- Disruptions: roadworks and engineering works --- */
+/* --- Disruption: one line under the hero, the items behind it --- */
 
-.disruptions {
-  margin: 0 0 var(--s-4);
-  padding: var(--s-3) var(--s-4);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 0.25rem solid var(--late-fg);
-  border-radius: var(--r-lg);
+.disruptions { margin: 0 0 var(--s-5); }
+.dis-none { margin: 0; color: var(--muted); }
+.dis-line {
+  width: fit-content;
+  max-width: 100%;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-md);
+  font-weight: 500;
+  cursor: pointer;
 }
-.disruptions h2 { font-size: var(--t-md); }
-.disruptions h3 { margin: var(--s-3) 0 var(--s-1); font-size: var(--t-sm); font-weight: 500; color: var(--muted); }
+.dis-line .glyph { margin-right: var(--s-1); }
+/* Tinted only while something is in force on your journeys: amber, or red
+   when it is severe. Otherwise a quiet line. */
+.dis-details.late > .dis-line { color: var(--late-fg); background: var(--late-bg); }
+.dis-details.bad > .dis-line { color: var(--bad-fg); background: var(--bad-bg); }
+.dis-details.quiet > .dis-line { padding-inline: 0; color: var(--muted); font-weight: 400; }
+.dis-details > .dis-line:focus-visible { outline-color: currentColor; }
+.dis-body { max-width: 48rem; }
+.dis-body h3 { margin: var(--s-4) 0 var(--s-1); font-size: var(--t-sm); font-weight: 500; color: var(--muted); }
+.dis-coming { margin-top: var(--s-3); }
+.dis-coming > summary { width: fit-content; padding: var(--s-2) 0; color: var(--accent); cursor: pointer; }
 .dis-list { margin: 0; padding: 0; list-style: none; }
-.dis-item { padding: var(--s-2) 0; border-top: 1px solid var(--line); }
+.dis-item { padding: var(--s-3) 0; border-top: 1px solid var(--line); }
 .dis-item:first-child { border-top: 0; }
 .dis-item:focus { outline: 2px solid var(--focus); outline-offset: 2px; }
 .dis-title { margin: 0 0 var(--s-1); font-size: var(--t-md); font-weight: 600; }
 .dis-mode { font-weight: 600; }
 .dis-when { margin: var(--s-1) 0; font-weight: 500; }
 .dis-facts { margin: var(--s-1) 0; color: var(--muted); font-size: var(--t-sm); }
-.dis-summary, .dis-link { margin: 0.25rem 0; }
+.dis-summary, .dis-link { margin: var(--s-1) 0; }
+/* A long summary shows two lines until "More". */
+.dis-summary.clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.dis-more { font-size: var(--t-sm); }
 .dis-mark {
   display: flex;
   align-items: center;
@@ -377,23 +386,24 @@ main:focus { outline: none; }
   background: var(--late-bg);
   text-underline-offset: 0.15em;
 }
-
-/* --- Sections --- */
-
-.sections { display: grid; gap: var(--s-5); }
-.panel {
-  min-width: 0;
-  padding: var(--s-4) var(--s-5);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+@media (pointer: coarse) {
+  .dis-line, .dis-coming > summary { min-height: 2.75rem; padding-block: var(--s-3); }
 }
+
+/* --- Sections: plain on the page, no boxes. Trains and buses side by side
+   from 75rem, around here and the weather (the wider) under them. --- */
+
+.sections { display: grid; gap: var(--s-7); }
+.boards, .extras { display: grid; gap: var(--s-7); }
+.panel { min-width: 0; }
 .section-meta { margin: 0 0 var(--s-2); color: var(--muted); font-size: var(--t-sm); }
 .section-status.problem { color: var(--bad-fg); font-weight: 500; }
 .empty { margin: var(--s-2) 0; color: var(--muted); }
-@media (min-width: 100rem) {
-  .sections { grid-template-columns: 1fr 1fr; }
-  .weather { grid-column: 1 / -1; }
+@media (min-width: 75rem) {
+  .boards, .extras { display: flex; gap: var(--s-7); align-items: flex-start; }
+  .boards > * { flex: 1 1 0; }
+  .extras > .area { flex: 2 1 0; }
+  .extras > .weather { flex: 3 1 0; }
 }
 
 /* --- Boards, wide layout: trains like a station's departure screen, buses
@@ -844,7 +854,7 @@ table.history thead th { border-top: 0; color: var(--muted); }
   height: 0.75rem;
   border: 2px solid var(--edge);
   border-radius: 50%;
-  background: var(--surface);
+  background: var(--bg);
 }
 .line-station.yours::after { background: var(--accent); border-color: var(--fg); }
 .line-station.yours .line-name { font-weight: 600; }
@@ -909,7 +919,6 @@ table.history thead th { border-top: 0; color: var(--muted); }
 }
 :root[data-theme="board"] .badge { padding-left: 0; padding-right: 0; background: transparent; }
 :root[data-theme="board"] .badge.st-cancelled { padding-left: var(--s-2); padding-right: var(--s-2); background: var(--bad-fg); }
-:root[data-theme="board"] .panel { border-color: var(--edge); }
 
 /* --- Motion --- */
 

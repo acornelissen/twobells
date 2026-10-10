@@ -1,15 +1,17 @@
 // The page's one polite live region. It speaks only real changes, at most
 // once every 30 s: a departure newly cancelled, an expected time moving by
 // 2 min or more, a bus newly flagged as having no tracker (once per
-// departure, however often the flag comes and goes), and a new disruption
-// message. Station notices (a closed ticket office, lifts out of use) are not
+// departure, however often the flag comes and goes), and disruption newly in
+// force on your journeys (a train board message, or roadworks at or near
+// your stops), once. The disruption summary line itself is never spoken.
+// Station notices (a closed ticket office, lifts out of use) are not
 // disruption and are never spoken. The hero says when the departure to catch
 // changes (announce()). Countdowns and clocks never go through it.
 
 import { $, str } from "./dom.js";
-import { parseAt } from "./time.js";
+import { now as clockNow, parseAt } from "./time.js";
 import { describe } from "./alerts.js";
-import { trainMessages } from "./board.js";
+import { inForceNow } from "./disruptions.js";
 
 const GAP_MS = 30_000;
 const MOVE_MS = 2 * 60_000;
@@ -19,7 +21,7 @@ let lastSpoken = -Infinity;
 let pending = new Map(); // one entry per departure or message; the latest wins
 let timer = 0;
 let previous = null; // id -> { status, expectedMs (as last spoken, or first seen) }
-let previousMessages = null;
+let previousDisruption = null; // keys of what was in force on your journeys
 let ghostsSeen = new Set(); // ids already flagged as ghosts: each is spoken once at most
 
 const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);
@@ -59,7 +61,7 @@ export function announce(key, text) {
 // Compares a new snapshot's rows with the last one's. rowsById maps id to
 // { row, mode }. The first snapshot only sets the baseline.
 export function noteSnapshot(snapshot, rowsById) {
-  const messages = new Set(trainMessages(snapshot.trains).filter((m) => m.kind === "service").map((m) => m.text));
+  const disruption = new Map(inForceNow(snapshot, clockNow()).map((d) => [d.key, d.text]));
   const next = new Map();
   for (const [id, { row, mode }] of rowsById) {
     const now = { status: row.status, expectedMs: expectedMs(row) };
@@ -83,10 +85,12 @@ export function noteSnapshot(snapshot, rowsById) {
       now.expectedMs = before.expectedMs;
     }
   }
-  if (previousMessages) {
-    for (const message of messages) if (!previousMessages.has(message)) queue(`message:${message}`, `New disruption: ${message}`);
+  if (previousDisruption) {
+    for (const [key, text] of disruption) {
+      if (!previousDisruption.has(key)) queue(key, `New disruption: ${text}${text.endsWith(".") ? "" : "."}`);
+    }
   }
   previous = next;
-  previousMessages = messages;
+  previousDisruption = new Set(disruption.keys());
   ghostsSeen = new Set([...ghostsSeen].filter((id) => rowsById.has(id)));
 }

@@ -43,54 +43,67 @@
 
   <div id="alert-banner" class="alert-banner" role="alert"></div>
 
-  <section id="messages" class="messages" aria-labelledby="messages-heading" hidden>
-    <h2 id="messages-heading"><span class="glyph" aria-hidden="true"><svg class="icon icon-triangle-alert" viewBox="0 0 24 24" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span> Disruption</h2>
-    <ul id="message-list"></ul>
-  </section>
-
   <section id="disruptions" class="disruptions" aria-labelledby="disruptions-heading" hidden>
-    <h2 id="disruptions-heading">Roadworks and engineering works</h2>
+    <h2 id="disruptions-heading" class="vh">Disruption</h2>
+    <p id="disruptions-none" class="dis-none" hidden>No disruption on your journeys</p>
+    <details id="disruptions-details" class="dis-details" hidden>
+      <summary class="dis-line"><span id="disruptions-glyph" class="glyph" aria-hidden="true"></span> <span id="disruptions-summary"></span></summary>
+      <div id="disruptions-body" class="dis-body">
+        <div id="disruptions-now-part" hidden>
+          <h3>In force now</h3>
+          <ul id="disruptions-now" class="dis-list"></ul>
+        </div>
+        <details id="disruptions-coming" class="dis-coming" hidden>
+          <summary>Coming up this week (<span id="disruptions-coming-count">0</span>)</summary>
+          <ul id="disruptions-later" class="dis-list"></ul>
+        </details>
+      </div>
+    </details>
     <p id="disruptions-status" class="section-meta section-status" hidden></p>
-    <div id="disruptions-body"></div>
   </section>
 
   <div class="sections">
-    <section id="trains" class="panel" aria-labelledby="trains-heading">
-      <h2 id="trains-heading">Trains</h2>
-      <p class="section-meta"><span id="trains-walk"></span> <span id="trains-status" class="section-status"></span></p>
-      <div id="station-info" class="station-info" hidden></div>
-      <div id="trains-board"><p class="empty">Loading…</p></div>
-    </section>
+    <div class="boards">
+      <section id="trains" class="panel" aria-labelledby="trains-heading">
+        <h2 id="trains-heading">Trains</h2>
+        <p id="trains-walk" class="section-meta" hidden></p>
+        <p id="trains-status" class="section-meta section-status" hidden></p>
+        <div id="station-info" class="station-info" hidden></div>
+        <div id="trains-board"><p class="empty">Loading…</p></div>
+      </section>
 
-    <section id="buses" class="panel" aria-labelledby="buses-heading">
-      <h2 id="buses-heading">Buses</h2>
-      <p class="section-meta"><span id="buses-status" class="section-status"></span></p>
-      <ul id="timetable-changes" class="tt-changes" aria-label="Timetable changes" hidden></ul>
-      <div id="buses-board"><p class="empty">Loading…</p></div>
-    </section>
+      <section id="buses" class="panel" aria-labelledby="buses-heading">
+        <h2 id="buses-heading">Buses</h2>
+        <p id="buses-status" class="section-meta section-status" hidden></p>
+        <ul id="timetable-changes" class="tt-changes" aria-label="Timetable changes" hidden></ul>
+        <div id="buses-board"><p class="empty">Loading…</p></div>
+      </section>
+    </div>
 
-    <section id="area" class="panel area" aria-labelledby="area-heading" hidden>
-      <h2 id="area-heading">Around here</h2>
-      <div id="line-part">
-        <h3 id="line-heading">Trains on the line</h3>
-        <p id="line-summary" class="section-meta"></p>
-        <ol id="line-diagram" class="line-diagram" aria-labelledby="line-heading"></ol>
-      </div>
-      <div id="area-buses">
-        <h3>Buses nearby</h3>
-        <p id="area-summary" class="section-meta"></p>
-        <button type="button" id="area-open" class="quiet" data-focus-key="area-open">Area map</button>
-      </div>
-    </section>
+    <div class="extras">
+      <section id="area" class="panel area" aria-labelledby="area-heading" hidden>
+        <h2 id="area-heading">Around here</h2>
+        <div id="line-part">
+          <h3 id="line-heading">Trains on the line</h3>
+          <p id="line-summary" class="section-meta"></p>
+          <ol id="line-diagram" class="line-diagram" aria-labelledby="line-heading"></ol>
+        </div>
+        <div id="area-buses">
+          <h3>Buses nearby</h3>
+          <p id="area-summary" class="section-meta"></p>
+          <button type="button" id="area-open" class="quiet" data-focus-key="area-open">Area map</button>
+        </div>
+      </section>
 
-    <section id="weather" class="panel weather" aria-labelledby="weather-heading">
-      <h2 id="weather-heading">Weather</h2>
-      <p class="section-meta"><span id="weather-status" class="section-status"></span></p>
-      <div id="weather-now"></div>
-      <p id="weather-rain" class="wx-rain-line" hidden></p>
-      <h3 id="weather-hours-heading">Next hours</h3>
-      <div id="weather-hours"></div>
-    </section>
+      <section id="weather" class="panel weather" aria-labelledby="weather-heading">
+        <h2 id="weather-heading">Weather</h2>
+        <p id="weather-status" class="section-meta section-status" hidden></p>
+        <div id="weather-now"></div>
+        <p id="weather-rain" class="wx-rain-line" hidden></p>
+        <h3 id="weather-hours-heading">Next hours</h3>
+        <div id="weather-hours"></div>
+      </section>
+    </div>
   </div>
 </main>
 

@@ -143,11 +143,13 @@ export function renderWeather(snapshot) {
   const status = obj(weather.status) || {};
   const last = hhmm(status.last_success);
   const statusEl = $("weather-status");
+  // Only a problem gets a line here; the header's status pill says the rest.
   const problem = !!(str(status.error) || status.stale);
   setText(statusEl, problem
     ? `Problem: ${str(status.error) || "not updated lately"}.${last ? ` Showing the forecast from ${last}.` : ""}`
-    : last ? `Updated ${last}.` : "");
+    : "");
   statusEl.classList.toggle("problem", problem);
+  statusEl.hidden = !problem;
   renderNow(obj(weather.now), obj(weather.sun));
   setText($("weather-rain"), str(weather.rain));
   $("weather-rain").hidden = !str(weather.rain);

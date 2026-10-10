@@ -3,7 +3,7 @@
 
 import { $, setText, store, str, obj, focusKey, refocus } from "./dom.js";
 import { connect, STATE } from "./api.js";
-import { age, clockText, parseAt } from "./time.js";
+import { clockText, parseAt } from "./time.js";
 import { renderBuses, renderTrains, stopNames, tickBoards, toggleMore } from "./board.js";
 import { tickStrips } from "./strip.js";
 import { renderWeather } from "./weather.js";
@@ -15,6 +15,7 @@ import { setUpMap } from "./map.js";
 import { markBusRows, renderDisruptions } from "./disruptions.js";
 import { renderArea, setUpArea } from "./area.js";
 import { icon } from "./icons.js";
+import { pill, placeName } from "./header.js";
 
 let snapshot = null;
 let rowsById = new Map(); // id -> { row, mode }
@@ -49,24 +50,14 @@ $("theme-toggle").addEventListener("click", () => {
 });
 applyTheme(document.documentElement.dataset.theme === "board" ? "board" : "modern");
 
-// --- Connection state, as an icon plus words.
-
-const CONNECTION = {
-  [STATE.connecting]: ["circle-dashed", "Connecting…"],
-  [STATE.live]: ["circle", "Live"],
-  [STATE.reconnecting]: ["circle-dashed", "Reconnecting…"],
-  [STATE.polling]: ["refresh-cw", "Updating every 30 s"],
-  [STATE.offline]: ["x", "Offline"],
-};
+// --- The status pill: live or not, and whether every part is current.
 
 function renderConnection() {
-  const [name, words] = CONNECTION[connectionState] || CONNECTION[STATE.offline];
   const last = connection ? connection.lastOk() : 0;
-  const since = connectionState !== STATE.live && last ? `, last update ${age((Date.now() - last) / 1000)}` : "";
-  const el = $("connection");
-  el.dataset.state = connectionState;
+  const [state, name, words] = pill(connectionState, snapshot, last, Date.now());
+  $("connection").dataset.state = state;
   $("connection-glyph").replaceChildren(icon(name));
-  setText($("connection-text"), words + since);
+  setText($("connection-text"), words);
 }
 
 // --- Snapshots.
@@ -105,7 +96,7 @@ function render(data) {
   snapshot = data;
   const key = focusKey();
   const title = str(data.title) || "Departures";
-  setText($("title"), title);
+  setText($("title"), placeName(title, obj(data.trains)?.station));
   document.title = title;
   drawBoards();
   attempt("weather", () => renderWeather(data));

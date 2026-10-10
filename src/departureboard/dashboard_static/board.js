@@ -234,7 +234,9 @@ function trainRow(row, first, later, alerts) {
   );
 }
 
-// The "Updated 07:01" / "Not updated since…" line under a section heading.
+// A section's own line under its heading, only when it has something to say:
+// a problem ("Not updated since 07:01"), the feed's note, or `extra`. When
+// all is well the header's status pill speaks for every section.
 function statusLine(el, status, extra = []) {
   const st = obj(status) || {};
   const parts = [];
@@ -246,14 +248,23 @@ function statusLine(el, status, extra = []) {
   } else if (st.stale) {
     problem = true;
     parts.push(last ? `Not updated since ${last}.` : "Waiting for the first update.");
-  } else if (last) {
-    parts.push(`Updated ${last}.`);
   }
   if (str(st.note)) parts.push(str(st.note));
   parts.push(...extra);
   el.replaceChildren(problem ? h("span", { class: "glyph", "aria-hidden": "true" }, icon("triangle-alert")) : "",
     problem ? " " : "", parts.join(" "));
   el.classList.toggle("problem", problem);
+  el.hidden = parts.length === 0;
+}
+
+// The full name of the station the trains are shown calling at, from their
+// calling points ("Manchester Piccadilly" for "MAN"), else the code itself.
+function filterName(crs, rows) {
+  for (const row of rows) {
+    const point = list(row.calling_points).find((p) => obj(p) && str(p.crs) === crs && str(p.name));
+    if (point) return str(point.name);
+  }
+  return crs;
 }
 
 // Draws the trains; returns every row, shown or not, for the rest of the page.
@@ -269,9 +280,11 @@ export function renderTrains(snapshot, alerts) {
   statusLine(document.getElementById("trains-status"), trains.status);
   const walk = num(obj(snapshot.walk)?.train);
   const station = str(trains.station);
-  setText(document.getElementById("trains-walk"),
-    walk !== null ? `${walk} min walk to ${station || "the station"}.` : "");
-  const caption = `Next trains from ${station || "the station"}${str(trains.filter) ? ` calling at ${str(trains.filter)}` : ""}`;
+  const walkEl = document.getElementById("trains-walk");
+  setText(walkEl, walk !== null ? `${walk} min walk to ${station || "the station"}.` : "");
+  walkEl.hidden = walk === null;
+  const filter = str(trains.filter);
+  const caption = `Next trains from ${station || "the station"}${filter ? ` to ${filterName(filter, rows)}` : ""}`;
   drawBoard("train", document.getElementById("trains-board"), {
     caption, cls: "trains", empty: "No trains are listed right now.",
     columns: [["Time", "c-time"], ["Destination", "c-dest"], ["Plat", "c-plat", "Platform"], ["Expected", "c-status"],
@@ -385,23 +398,20 @@ export function renderBuses(snapshot, alerts) {
   return rows;
 }
 
-// The station's messages as { text, kind }: "station" ones are about its
-// facilities (ticket office, lifts), "service" ones are disruption. A plain
-// string, as an older server sends, is taken as disruption.
+// The station's messages as { text, kind, severity }: "station" ones are
+// about its facilities (ticket office, lifts), "service" ones are disruption.
+// A plain string, as an older server sends, is taken as disruption.
 export function trainMessages(trains) {
-  return list(obj(trains)?.messages).map((m) => (typeof m === "string" ? { text: m, kind: "service" }
-    : { text: str(obj(m)?.text), kind: obj(m)?.kind === "station" ? "station" : "service" }))
+  return list(obj(trains)?.messages).map((m) => (typeof m === "string" ? { text: m, kind: "service", severity: "" }
+    : { text: str(obj(m)?.text), kind: obj(m)?.kind === "station" ? "station" : "service", severity: str(obj(m)?.severity) }))
     .filter((m) => m.text);
 }
 
-// Disruption messages go in their own panel; station notices are a quiet
-// "Station information" line in the trains section, never called disruption.
+// Station notices are a quiet "Station information" line in the trains
+// section, never called disruption. Disruption messages join the disruption
+// summary under the hero (disruptions.js).
 export function renderMessages(trains) {
-  const messages = trainMessages(trains);
-  const service = messages.filter((m) => m.kind === "service");
-  const station = messages.filter((m) => m.kind === "station");
-  document.getElementById("messages").hidden = service.length === 0;
-  document.getElementById("message-list").replaceChildren(...service.map((m) => h("li", {}, m.text)));
+  const station = trainMessages(trains).filter((m) => m.kind === "station");
   const info = document.getElementById("station-info");
   info.hidden = station.length === 0;
   info.replaceChildren(...station.map((m) => h("p", {},

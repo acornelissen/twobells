@@ -1,17 +1,27 @@
-// The disruptions panel: bus roadworks, diversions and stop closures, and
-// rail engineering works, in words, those in force first, each part most
-// relevant first. Bus rows that one touches get a "Disruption" link to it.
-// Rail messages from the train board stay in their own panel (board.js).
+// The disruption summary under the hero: one line for what affects your
+// journeys now, with every item behind it in a <details>. Items are bus
+// roadworks, diversions and stop closures, rail engineering works, and the
+// train board's disruption messages, in words, those in force first, each
+// part most relevant first; "Coming up this week" stays folded inside. Bus
+// rows that one touches get a "Disruption" link to it.
 
 import { $, h, vh, fill, setText, str, list, obj, validId } from "./dom.js";
 import { now, parseAt } from "./time.js";
 import { icon } from "./icons.js";
+import { stopNames, trainMessages } from "./board.js";
 
 const MODE = { bus: "Bus", train: "Train" };
 // The server's relevance tiers, most relevant first: at one of our stops, at a
 // stop on our routes nearby, or on our line inside our area.
 const RELEVANCE = { your_stop: 0, nearby: 1, line: 2 };
 const rank = (item) => RELEVANCE[item.relevance] ?? 2;
+// The tiers the summary line speaks of: those on your journeys.
+const ON_YOUR_JOURNEYS = new Set(["your_stop", "nearby"]);
+const WHERE = { your_stop: " (your stop)", nearby: " (nearby)" };
+// Darwin's message severities in the items' terms.
+const RAIL_SEVERITY = { minor: "slight", normal: "normal", major: "normal", severe: "severe" };
+// A summary longer than this is cut to two lines, with "More" to show it all.
+const LONG = 100;
 // Severity in words, and the badge colours that reinforce them.
 const SEVERITY = {
   slight: ["Minor disruption", "st-unknown", "info"],
@@ -99,6 +109,34 @@ function facts(item) {
   return out.join(". ") + ".";
 }
 
+// The items whose whole summary is showing, by id, kept across snapshots.
+const opened = new Set();
+
+function toggleSummary(event) {
+  const button = event.currentTarget;
+  const id = button.dataset.item;
+  const open = !opened.has(id);
+  if (open) opened.add(id);
+  else opened.delete(id);
+  button.setAttribute("aria-expanded", String(open));
+  setText(button, open ? "Less" : "More");
+  button.parentNode.querySelector(".dis-summary").classList.toggle("clamp", !open);
+}
+
+// The item's summary: a long one is cut to two lines on screen, with "More"
+// to show the rest. Screen readers get it all either way.
+function summaryPart(item) {
+  const text = str(item.summary);
+  if (!text) return null;
+  if (text.length <= LONG) return h("p", { class: "dis-summary" }, text);
+  const open = opened.has(item.id);
+  return [h("p", { class: ["dis-summary", open ? null : "clamp"] }, text),
+    h("button", {
+      type: "button", class: "link dis-more", "aria-expanded": String(open),
+      dataset: { item: item.id, focusKey: `dis-more:${item.id}` }, on: { click: toggleSummary },
+    }, open ? "Less" : "More")];
+}
+
 function entry(arranged, today) {
   const { item } = arranged;
   const title = str(item.title);
@@ -110,17 +148,65 @@ function entry(arranged, today) {
     h("h4", { class: "dis-title" }, h("span", { class: "dis-mode" }, `${MODE[item.mode] || "Bus"}:`), " ", title),
     h("p", { class: "dis-when" }, severityBadge(item.severity), " ", whenLine(arranged, today)),
     h("p", { class: "dis-facts" }, facts(item)),
-    str(item.summary) ? h("p", { class: "dis-summary" }, str(item.summary)) : null,
+    summaryPart(item),
     host ? h("p", { class: "dis-link" }, h("a", { href: link, rel: "noopener noreferrer" },
       `More from ${host}`, vh(` about ${title}`))) : null);
 }
 
-function group(heading, found, today) {
-  if (!found.length) return null;
-  return [h("h3", {}, heading), h("ul", { class: "dis-list" }, found.map((f) => entry(f, today)))];
+// One of the train board's disruption messages, as a row like the items'.
+function messageEntry(message) {
+  return h("li", { class: "dis-item" },
+    h("h4", { class: "dis-title" }, h("span", { class: "dis-mode" }, "Train:"), " ", message.text),
+    h("p", { class: "dis-when" }, severityBadge(message.severity), " In force now."));
 }
 
-// The panel's status line ("Bus disruptions: problem: …" and any notes),
+// The train board's disruption messages, with the items' severities.
+function serviceMessages(snapshot) {
+  return trainMessages(snapshot.trains).filter((m) => m.kind === "service")
+    .map((m) => ({ text: m.text, severity: RAIL_SEVERITY[m.severity] || "unknown" }));
+}
+
+// "Roadworks at Henry Street A (your stop) until 18:00 today": a bus item by
+// its cause and the first of our stops (else places) it names; a rail one by
+// its title.
+function headline({ item, period }, names, today) {
+  const where = list(item.stops).map((label) => str(names[str(label)])).find(Boolean)
+    || list(item.places).map(str).find(Boolean);
+  const what = item.mode === "bus" && where
+    ? `${str(item.reason) || "Disruption"} at ${where}${WHERE[item.relevance] || ""}` : str(item.title);
+  return period[3] ? `${what} until ${whenText(period[3], today)}` : what;
+}
+
+// What affects your journeys at `t` (ms): the items in force at or near your
+// stops, and the train board's disruption messages, as { key, text, severe },
+// the severe ones first. The summary line leads with the first; the live
+// region announces each new one once.
+export function inForceNow(snapshot, t) {
+  const today = dayOf(snapshot.generated_at);
+  const names = stopNames(obj(snapshot.buses)?.stops);
+  const found = [
+    ...arranged(items(snapshot), t).current.filter((f) => ON_YOUR_JOURNEYS.has(f.item.relevance)).map((f) => ({
+      key: `item:${f.item.id}`, text: headline(f, names, today), severe: f.item.severity === "severe",
+    })),
+    ...serviceMessages(snapshot).map((m) => ({ key: `message:${m.text}`, text: m.text, severe: m.severity === "severe" })),
+  ];
+  return found.sort((a, b) => Number(b.severe) - Number(a.severe));
+}
+
+// The summary line as [shown, said]: the first thing in force on your
+// journeys and how many more are listed, or that there is none.
+function summaryLine(relevant, listed) {
+  if (relevant.length) {
+    const lead = relevant[0].text.replace(/\.$/, "");
+    const more = listed - 1;
+    return more > 0 ? [`${lead} · ${more} more this week`, `${lead}. ${more} more this week.`] : [lead, lead];
+  }
+  const none = "No disruption on your journeys";
+  const notices = `${listed} ${listed === 1 ? "notice" : "notices"} this week`;
+  return listed ? [`${none} · ${notices}`, `${none}. ${notices}.`] : [none, none];
+}
+
+// The section's status line ("Bus disruptions: problem: …" and any notes),
 // and whether it reports a problem.
 function statusText(status) {
   const parts = [];
@@ -142,31 +228,57 @@ function items(snapshot) {
   return part ? list(part.items).filter((i) => obj(i) && validId(i.id) && MODE[i.mode]) : [];
 }
 
+// Draws the summary line and the items behind it. Nothing at all shows
+// without disruption data; the <details> elements stay put, so what is open
+// stays open across snapshots.
 export function renderDisruptions(snapshot) {
   const section = $("disruptions");
   const part = obj(snapshot.disruptions);
-  section.hidden = !part;
-  if (!part) return;
+  const messages = serviceMessages(snapshot);
+  section.hidden = !part && !messages.length;
+  if (section.hidden) return;
+  const t = now();
   const today = dayOf(snapshot.generated_at);
-  const { current, coming } = arranged(items(snapshot), now());
-  const [status, problem] = statusText(part.status);
+  const { current, coming } = arranged(items(snapshot), t);
+  const relevant = inForceNow(snapshot, t);
+  const severe = relevant.some((r) => r.severe);
+  const listed = messages.length + current.length + coming.length;
+  const [status, problem] = statusText(part?.status);
   const statusEl = $("disruptions-status");
   setText(statusEl, status);
   statusEl.hidden = !status;
   statusEl.classList.toggle("problem", problem);
-  fill($("disruptions-body"),
-    current.length || coming.length ? null
-      : h("p", { class: "empty" }, "No roadworks, diversions or engineering works on your lines this week."),
-    group("In force now", current, today),
-    group("Coming up this week", coming, today));
+
+  const details = $("disruptions-details");
+  details.hidden = listed === 0;
+  $("disruptions-none").hidden = listed > 0;
+  details.classList.toggle("bad", severe);
+  details.classList.toggle("late", relevant.length > 0 && !severe);
+  details.classList.toggle("quiet", relevant.length === 0);
+  const [shown, said] = summaryLine(relevant, listed);
+  fill($("disruptions-summary"), h("span", { "aria-hidden": "true" }, shown), vh(said));
+  const glyph = severe ? "octagon-x" : relevant.length ? "triangle-alert" : "info";
+  const glyphEl = $("disruptions-glyph");
+  if (glyphEl.dataset.icon !== glyph) {
+    glyphEl.dataset.icon = glyph;
+    glyphEl.replaceChildren(icon(glyph));
+  }
+
+  $("disruptions-now-part").hidden = messages.length + current.length === 0;
+  fill($("disruptions-now"), messages.map(messageEntry), current.map((f) => entry(f, today)));
+  $("disruptions-coming").hidden = coming.length === 0;
+  setText($("disruptions-coming-count"), String(coming.length));
+  fill($("disruptions-later"), coming.map((f) => entry(f, today)));
 }
 
-// Moves focus to an item when its row link is followed, so keyboard and
-// screen reader users land on it, not just the scroll position.
+// Opens the item when its row link is followed (and "Coming up this week",
+// if it is there), and moves focus to it, so keyboard and screen reader users
+// land on it, not just the scroll position.
 function follow(event) {
   const target = document.getElementById(event.currentTarget.getAttribute("href").slice(1));
   if (!target) return;
   event.preventDefault();
+  for (let el = target.parentNode; el; el = el.parentNode) if (el.nodeName === "DETAILS") el.open = true;
   target.focus();
 }
 

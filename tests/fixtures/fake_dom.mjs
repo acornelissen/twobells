@@ -86,6 +86,7 @@ class FakeElement extends FakeNode {
   get attributes() { return [...this.attrs].map(([name, value]) => ({ name, value })); }
   get id() { return this.getAttribute("id") || ""; }
   addEventListener(type, fn) { this.listeners.push([type, fn]); }
+  focus() { document.activeElement = this; }
   get classList() {
     const names = () => (this.getAttribute("class") || "").split(" ").filter(Boolean);
     const set = (list) => this.setAttribute("class", list.join(" "));
