@@ -12,6 +12,7 @@ ENV = {"RDM_API_KEY": "rdm-secret-123", "BODS_API_KEY": "bods-secret-456"}
 CONFIG = """
 title = "Home"
 state_file = "{state}"
+display = "hdmi-1280x400"
 
 [train]
 crs = "GLO"
@@ -26,9 +27,8 @@ windows = ["Mon-Fri 07:00-08:30"]
 A = "1000DGHS0900"
 """
 
-# What the settings page and hand edits leave in the overlay; setup manages none of it.
+# What the settings page leaves in the overlay; setup manages none of it.
 SAVED = """
-display = "hdmi-1280x400"
 theme = "plain"
 rotate = 90
 text_size = 13
@@ -44,9 +44,6 @@ directions = ["Ashton"]
 [weather]
 enabled = false
 threshold_percent = 70
-
-[dashboard]
-title = "Our house"
 """
 
 CHANGES = {
@@ -75,7 +72,7 @@ def test_changes_merge_into_the_overlay_keeping_everything_else(board):
     config, state = board
     save_changes(config, CHANGES, {}, ENV)
     saved = tomllib.loads((state / "settings.toml").read_text())
-    for key in ("display", "theme", "rotate", "text_size", "accent", "dashboard"):
+    for key in ("theme", "rotate", "text_size", "accent"):
         assert saved[key] == tomllib.loads(SAVED)[key]
     assert saved["train"] == {"rows": 4, "crs": "MAN", "walk_minutes": 9}
     assert saved["bus"]["rows"] == 5 and saved["bus"]["directions"] == ["Ashton"]
@@ -84,6 +81,17 @@ def test_changes_merge_into_the_overlay_keeping_everything_else(board):
     merged = read_config(config)
     assert merged["bus"]["stops"] == {"B": "1800SB12341"}  # replaced, not added to config.toml's A
     assert merged["bus"]["routes"]["341"]["stops"][1]["name"] == 'Glossop "Square"'
+
+
+def test_a_save_drops_what_the_overlay_may_not_hold(board, caplog):
+    config, state = board
+    (state / "settings.toml").write_text(SAVED.replace("[train]\n", '[train]\nbase_url = "https://example.invalid"\n')
+                                         + '\n[dashboard]\nkb_incidents_url = "https://example.invalid/kb"\n')
+    save_changes(config, CHANGES, {}, ENV)
+    saved = tomllib.loads((state / "settings.toml").read_text())
+    assert "base_url" not in saved["train"] and "dashboard" not in saved
+    assert saved["theme"] == "plain"
+    assert "example.invalid" not in caplog.text
 
 
 def test_without_a_saved_overlay_the_changes_are_the_overlay(board):

@@ -2,12 +2,15 @@
 
 Settings saved from the web page live in settings.toml next to the state
 file and are layered over config.toml, so the service never writes to /etc
-and comments in a hand-edited config.toml survive. Keys saved there go in a
-secrets.env beside it, layered over the main one.
+and comments in a hand-edited config.toml survive. Only the settings the
+page and setup save are read from it (SAVED_KEYS); anything else, like the
+addresses the keys are sent to, is set in config.toml. Keys saved there go
+in a secrets.env beside it, layered over the main one.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 import tomllib
 from dataclasses import dataclass
@@ -30,6 +33,8 @@ from .transportapi import TransportApiBusSource
 from .route import RouteStop, RouteStrip
 from .walk import DEFAULT_STOP, WalkTimes
 from .weather import OpenMeteoSource
+
+log = logging.getLogger(__name__)
 
 
 class ConfigError(Exception):
@@ -81,8 +86,51 @@ def read_overlay(data: dict) -> dict:
     return read_overlay_in(state_dir(data))
 
 
-def read_overlay_in(folder: Path | None) -> dict:
-    """The saved settings in `folder`'s settings.toml; empty if there are none."""
+# What the board's settings.toml may hold, by table (None is the top level):
+# the keys its settings page (settingsform) and setup (setupapi) save.
+# Anything else in it is ignored, so whatever can write that file can't send
+# the keys to another server: addresses like [train] base_url, and state_file,
+# which decides where the file is, are set in config.toml only.
+SAVED_KEYS: dict[str | None, frozenset[str]] = {
+    None: frozenset({"title", "theme", "accent", "rotate", "min_redraw_minutes", "text_size", "bank_holidays",
+                     "bank_holiday_division"}),
+    "train": frozenset({"enabled", "crs", "filter_crs", "rows", "interval_minutes", "stale_after_minutes",
+                        "windows", "walk_minutes"}),
+    "bus": frozenset({"enabled", "stops", "directions", "rows", "interval_minutes", "stale_after_minutes",
+                      "daily_budget", "windows", "walk_minutes", "source", "operators", "routes"}),
+    "weather": frozenset({"enabled", "threshold_percent", "lat", "lon"}),
+}
+_PLAIN_KEY = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+def _key_name(key: str) -> str:
+    """A key as a log line names it: as it is if plain, else quoted and cut short."""
+    return key if _PLAIN_KEY.fullmatch(key) else repr(key[:64])
+
+
+def saved_only(saved: dict, allowed: Mapping[str | None, frozenset[str]], where: Path) -> dict:
+    """`saved` with only the keys in `allowed`. Each other is logged by its
+    name, never its value."""
+    kept: dict = {}
+    for key, value in saved.items():
+        ignored = []
+        if key in allowed and isinstance(value, dict):
+            table = {k: v for k, v in value.items() if k in allowed[key]}
+            ignored = [f"[{_key_name(key)}] {_key_name(k)}" for k in value if k not in table]
+            if table or not value:  # a table left empty only by this is dropped, as if never there
+                kept[key] = table
+        elif key in allowed[None]:
+            kept[key] = value
+        else:
+            ignored = [f"[{_key_name(key)}]" if isinstance(value, dict) else _key_name(key)]
+        for name in ignored:
+            log.warning("%s: %s is ignored; only config.toml can set it", where, name)
+    return kept
+
+
+def read_overlay_in(folder: Path | None, allowed: Mapping[str | None, frozenset[str]] = SAVED_KEYS) -> dict:
+    """The saved settings in `folder`'s settings.toml, only the keys in
+    `allowed`; empty if there are none."""
     if folder is None:
         return {}
     overlay = folder / OVERLAY_NAME
@@ -92,8 +140,7 @@ def read_overlay_in(folder: Path | None) -> dict:
         return {}
     except (tomllib.TOMLDecodeError, UnicodeDecodeError) as error:
         raise ConfigError(f"{overlay}: {error}") from error
-    saved.pop("state_file", None)  # it decides where the overlay is; only config.toml sets it
-    return saved
+    return saved_only(saved, allowed, overlay)
 
 
 def load_env_file(path: Path | str) -> dict[str, str]:

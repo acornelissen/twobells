@@ -80,6 +80,19 @@ _KEYS = {
     "allowed_hosts",
     "kb_incidents_url",
 }
+# What the dashboard's settings.toml may hold, by table (None is the top
+# level): the keys its settings page (dashform) and setup (setupapi) save.
+# Anything else is ignored, as config.SAVED_KEYS says for the board's. The
+# Knowledgebase address is one the page sets, so it is checked as https.
+SAVED_KEYS: dict[str | None, frozenset[str]] = {
+    None: frozenset({"title", "bank_holidays", "bank_holiday_division"}),
+    "dashboard": frozenset({"quiet_windows", "history_days", "train_rows", "train_interval_seconds",
+                            "late_minutes_train", "kb_incidents_url", "bus_rows", "bus_interval_seconds",
+                            "late_minutes_bus", "weather_interval_minutes"}),
+    "train": frozenset({"enabled", "crs", "filter_crs", "walk_minutes"}),
+    "bus": frozenset({"enabled", "stops", "directions", "walk_minutes", "source", "operators", "routes"}),
+    "weather": frozenset({"enabled", "threshold_percent", "lat", "lon"}),
+}
 _MAX_ROWS = 20
 _MAX_LATE = 60
 _MAX_HISTORY_DAYS = 3650
@@ -306,18 +319,15 @@ def _header_key(env: Mapping[str, str], name: str) -> str:
 
 
 def saved_settings(folder: Path) -> dict:
-    """The settings saved in the dashboard's folder; empty if none. They can't
-    move the folder they live in, so any state_dir or state_file is dropped."""
+    """The settings saved in the dashboard's folder; empty if none. Only
+    SAVED_KEYS are read from it, so they can't move the folder they live in
+    (state_dir, state_file) or send a key to another address (base_url)."""
     if folder.exists() and not folder.is_dir():
         raise ConfigError(f"{folder} is not a folder")
     try:
-        saved = read_overlay_in(folder)
+        return read_overlay_in(folder, SAVED_KEYS)
     except OSError as error:
         raise ConfigError(f"Can't read {folder / OVERLAY_NAME}: {error.strerror or error}") from None
-    section = saved.get("dashboard")
-    if isinstance(section, dict):
-        section.pop("state_dir", None)
-    return saved
 
 
 def dashboard_env(env: Mapping[str, str], folder: Path) -> dict[str, str]:
@@ -332,7 +342,7 @@ def overlay_target(config_path: Path | str, folder: Path) -> Target:
     def check(data: dict, env: Mapping[str, str]) -> None:
         _build(data, env, folder)
 
-    return Target(lambda: read_config(config_path), lambda base: folder, check)
+    return Target(lambda: read_config(config_path), lambda base: folder, check, SAVED_KEYS)
 
 
 def settings_files(config_path: Path | str, secrets_path: Path | str, folder: Path) -> list[Path]:

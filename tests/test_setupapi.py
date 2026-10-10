@@ -32,12 +32,10 @@ SAVED = """
 theme = "plain"
 rotate = 180
 text_size = 13
+title = "Our house"
 
 [bus]
 rows = 4
-
-[dashboard]
-title = "Our house"
 """
 RESULT = {
     "fragment": {"bus": {"source": "bods", "operators": ["BNML"], "routes": {"341": {"stop": "A", "stops": [
@@ -299,7 +297,7 @@ def test_finishing_keeps_the_settings_setup_does_not_manage(board):
     saved_with_a_search(board)
     saved = tomllib.loads((board.state / "settings.toml").read_text())
     assert (saved["theme"], saved["rotate"], saved["text_size"]) == ("plain", 180, 13)
-    assert saved["dashboard"] == {"title": "Our house"} and saved["bus"]["rows"] == 4
+    assert saved["title"] == "Our house" and saved["bus"]["rows"] == 4
 
 
 def test_no_exact_home_position_is_written_anywhere(board):
@@ -532,7 +530,7 @@ def test_testing_a_saved_key(board):
     _, name, value, config_data, env = board.calls[-1]
     assert (name, value) == ("RDM_API_KEY", None)  # None: the saved one
     assert env["RDM_API_KEY"] == RDM_KEY
-    assert config_data["dashboard"] == {"title": "Our house"}  # the settings, with the page's saved over them
+    assert config_data["title"] == "Our house"  # the settings, with the page's saved over them
 
 
 def test_testing_a_pasted_key_does_not_save_it(board):

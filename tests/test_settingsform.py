@@ -3,7 +3,7 @@ import tomllib
 
 import pytest
 
-from departureboard.config import load_config, read_config
+from departureboard.config import SAVED_KEYS, load_config, read_config, read_overlay_in
 from departureboard.settingsform import SettingsForm, to_toml
 
 ENV = {"RDM_API_KEY": "rdm-secret-123", "TAPI_APP_ID": "id", "TAPI_APP_KEY": "tapi-secret-456"}
@@ -620,10 +620,13 @@ def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
                                             "stops": {"A": "1800SB12341"}, "walk": {"GLO": 6}})
     assert status == 200, body
     with (state / "settings.toml").open("a", encoding="utf-8") as saved:
-        saved.write('\n[dashboard]\ntitle = "Our house"\n')  # a table this page knows nothing of
+        saved.write('\n[dashboard]\ntitle = "Our house"\n')  # a table neither manages: not read, so dropped
 
     form = SettingsForm(config, lambda: dict(env))
     assert form.save(fields_of(form) | {"title": "Home", "train_rows": "2"}) == {}
+    # Everything setup and the page wrote is read back: none of it is outside config.SAVED_KEYS.
+    written = tomllib.loads((state / "settings.toml").read_text())
+    assert read_overlay_in(state) == written and "dashboard" not in written
 
     data = read_config(config)
     assert (data["title"], data["train"]["rows"]) == ("Home", 2)
@@ -631,9 +634,19 @@ def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
     assert set(data["bus"]["routes"]) == {"341"}
     assert (data["weather"]["lat"], data["weather"]["lon"]) == (53.46, -1.97)
     assert data["bank_holiday_division"] == "scotland"
-    assert data["dashboard"] == {"title": "Our house"}
     settings = load_config(config, env)
     assert settings.board.weather is not None and set(settings.board.tracker.routes) == {"341"}
+
+
+def test_every_field_the_page_saves_is_read_back():
+    from departureboard.display import DISPLAY_PANELS
+    from departureboard.settingsform import _fields
+    from departureboard.themes import THEMES
+
+    for display in DISPLAY_PANELS:
+        for theme in THEMES:
+            for f in _fields(display, theme):
+                assert f.key in SAVED_KEYS[f.section], f.name
 
 
 def test_the_page_can_still_clear_a_field_setup_filled(tmp_path):

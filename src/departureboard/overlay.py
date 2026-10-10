@@ -10,7 +10,9 @@ keeps the wizard's [bus] source, operators and routes and [weather] lat and
 lon.
 
 Nothing is written unless the merged settings then load, and keys go to the
-secrets overlay only, never into settings.toml. Settings carry floats (the
+secrets overlay only, never into settings.toml. Only the settings a
+Target allows are read from the overlay (config.SAVED_KEYS for the board),
+so a save drops anything else found in it. Settings carry floats (the
 weather position) and route strips (arrays of inline tables), which the
 settings page's own TOML writer doesn't, so this module has its own.
 
@@ -25,12 +27,13 @@ import datetime as dt
 import math
 import re
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping
 
 from .config import (
     OVERLAY_NAME,
+    SAVED_KEYS,
     SECRETS_OVERLAY_NAME,
     ConfigError,
     merge,
@@ -41,7 +44,8 @@ from .config import (
 )
 from .settingsform import _KEY_VALUE, _toml_key, _toml_string, _write
 
-HEADER = "# Saved from the settings page and setup. Layered over config.toml; edit there or here."
+HEADER = ("# Saved from the settings page and setup. Layered over config.toml, which sets everything else:\n"
+          "# anything here that the page and setup don't save is ignored.")
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
 
@@ -110,16 +114,18 @@ class Target:
     """An overlay to save into. `base` reads the settings it is layered over;
     `folder` is where its settings.toml and secrets.env live (None: nowhere
     yet, so nothing can be saved); `check` raises ConfigError (or KeyError,
-    TypeError, ValueError) unless merged settings and an environment load."""
+    TypeError, ValueError) unless merged settings and an environment load;
+    `allowed` is what the saved settings may hold (see config.SAVED_KEYS)."""
 
     base: Callable[[], dict]
     folder: Callable[[dict], Path | None]
     check: Callable[[dict, Mapping[str, str]], object] = _board_loads
+    allowed: Mapping[str | None, frozenset[str]] = field(default_factory=lambda: SAVED_KEYS)
 
     def current(self) -> dict:
         """The settings in force: the base with the saved overlay over it."""
         base = self.base()
-        return merge(base, read_overlay_in(self.folder(base)))
+        return merge(base, read_overlay_in(self.folder(base), self.allowed))
 
 
 def board_target(config_path: Path | str) -> Target:
@@ -158,7 +164,7 @@ def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping
         if folder is None:
             raise OverlayError("config.toml needs a state_file before settings can be saved")
         settings_path, secrets_path = folder / OVERLAY_NAME, folder / SECRETS_OVERLAY_NAME
-        saved = {} if replace else read_overlay_in(folder)
+        saved = {} if replace else read_overlay_in(folder, target.allowed)
     except (OSError, ConfigError) as error:
         raise OverlayError(f"Not saved: the settings can't be read ({_scrub(str(error), keys)})") from None
     overlay = merge(saved, changes)

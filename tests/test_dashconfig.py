@@ -379,6 +379,32 @@ def test_saved_settings_cannot_move_the_folder_they_live_in(config, tmp_path, op
     assert dash.state_dir == folder and dash.bus._folder == folder
 
 
+def test_saved_settings_hold_only_what_the_settings_page_and_setup_save(config, tmp_path, opened, caplog):
+    from departureboard.darwin import DEFAULT_BASE_URL
+
+    folder = tmp_path / "dash"
+    folder.mkdir()
+    (folder / "settings.toml").write_text(
+        '[train]\ncrs = "MAN"\nbase_url = "https://example.invalid/rail"\n'
+        '[dashboard]\nkb_incidents_url = "https://api.example.test/kb/incidents"\n'
+    )
+    caplog.set_level("WARNING")
+    dash = load(config, folder, env={**ENV, "RDM_KB_API_KEY": "kb-key"}, opened=opened)
+    assert dash.train_crs == "MAN" and dash.train._base_url == DEFAULT_BASE_URL
+    # The settings page manages the Knowledgebase address, checked as https.
+    assert dash.train_incidents._url == "https://api.example.test/kb/incidents"
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert "[train] base_url" in logged and "example.invalid" not in logged
+
+
+def test_the_board_s_saved_settings_cannot_set_the_dashboard_s(config, tmp_path, opened):
+    board = tmp_path / "board"
+    board.mkdir()
+    (board / "settings.toml").write_text('[dashboard]\nkb_incidents_url = "https://elsewhere.example.test/kb"\n')
+    dash = load(config, tmp_path / "dash", env={**ENV, "RDM_KB_API_KEY": "kb-key"}, opened=opened)
+    assert dash.train_incidents is None and "kb_incidents_url" in dash.train_incidents_note
+
+
 def test_a_broken_saved_settings_file_is_a_config_error_naming_it(config, tmp_path):
     folder = tmp_path / "dash"
     folder.mkdir()

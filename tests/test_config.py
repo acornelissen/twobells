@@ -343,6 +343,35 @@ def test_overlay_cannot_move_the_state_file(tmp_path):
     assert read_config(path)["state_file"] == str(tmp_path / "state" / "state.json")
 
 
+def test_saved_settings_cannot_send_the_keys_to_another_address(tmp_path, caplog):
+    from departureboard.darwin import DEFAULT_BASE_URL as DARWIN_URL
+    from departureboard.transportapi import DEFAULT_BASE_URL as TAPI_URL
+
+    path = _with_state(tmp_path, TRAIN + BUS)
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "settings.toml").write_text(
+        'display = "hdmi-1280x400"\n'
+        '[train]\nrows = 2\nbase_url = "https://example.invalid/rail"\n'
+        '[bus]\nbase_url = "https://example.invalid/bus"\n'
+        '[dashboard]\nkb_incidents_url = "https://example.invalid/kb"\n'
+    )
+    caplog.set_level("WARNING")
+    settings = load_config(path, ENV)
+    train, bus = (config.source for config in settings.board.sources)
+    assert train._base_url == DARWIN_URL and bus._base_url == TAPI_URL
+    assert train._rows == 2  # what the settings page saves still counts
+    assert settings.display == "inky"  # set in config.toml only, as the page says
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    for name in ("[train] base_url", "[bus] base_url", "display", "[dashboard]"):
+        assert name in logged
+    assert "example.invalid" not in logged  # the key is named, never its value
+
+
+def test_addresses_can_still_be_set_in_config_toml(tmp_path):
+    path = write(tmp_path, TRAIN + 'base_url = "https://example.test/rail"\n')
+    assert load_config(path, ENV).board.sources[0].source._base_url == "https://example.test/rail"
+
+
 def test_broken_overlay_is_a_config_error(tmp_path):
     path = _with_state(tmp_path, "")
     (tmp_path / "state").mkdir()

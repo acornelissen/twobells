@@ -87,3 +87,52 @@ def test_the_on_off_choice_is_labelled_and_described(form):
     page = form.render("tok")
     assert '<label for="train_enabled">Trains</label>' in page
     assert 'id="bus_enabled" name="bus_enabled" aria-describedby="bus_enabled-hint"' in page
+
+
+# What is saved is read back
+
+
+class FoundJob:
+    """The wizard's bus search, done as soon as it starts."""
+
+    def __init__(self, folder, stops, api_key, *, routes=False, walk_minutes=None):
+        pass
+
+    def start(self):
+        pass
+
+    def status(self):
+        route = {"stop": "A", "stops": [{"name": "Hadfield", "lat": 53.46, "lon": -1.965},
+                                        {"name": "Norfolk Street", "lat": 53.4452, "lon": -1.9512}]}
+        bus = {"source": "bods", "operators": ["BNML"], "routes": {"341": route}}
+        return {"state": "done", "step": "", "done": 1, "total": 1, "message": "Found 1",
+                "result": {"fragment": {"bus": bus}, "lines": {}, "stop_lines": {}, "notes": []}}
+
+
+def test_every_field_the_page_saves_is_read_back():
+    from departureboard.dashconfig import SAVED_KEYS
+    from departureboard.dashform import FIELDS
+
+    for f in FIELDS.values():
+        assert f.key in SAVED_KEYS[f.section], f.name
+
+
+def test_everything_setup_and_the_page_save_is_read_back(form):
+    from departureboard.config import read_overlay_in
+    from departureboard.dashconfig import SAVED_KEYS
+    from departureboard.dashform import KEYS
+    from departureboard.setupapi import SetupApi
+
+    stations = (("Glossop", "GLO", 53.4445, -1.9491), ("Manchester Piccadilly", "MAN", 53.4774, -2.2309))
+    wizard = SetupApi(form.config, lambda: dashboard_env(ENV, form.folder), form.folder, stations=lambda: stations,
+                      make_job=FoundJob, target=overlay_target(form.config, form.folder), keys=KEYS)
+    assert wizard.handle("start", {"stops": {"A": "1800SB12341"}, "routes": True})[0] == 200
+    status, body = wizard.handle("finish", {
+        "home": {"lat": 53.46, "lon": -1.96, "country": "Scotland"}, "station_crs": "GLO", "filter_crs": "MAN",
+        "stops": {"A": "1800SB12341"}, "walk": {"GLO": 6, "1800SB12341": 3}})
+    assert status == 200, body
+    changed = {"bus_directions": "Ashton", "kb_incidents_url": "https://api.example.test/kb"}
+    assert form.save(fields_of(form) | changed) == {}
+    written = tomllib.loads((form.folder / "settings.toml").read_text())
+    assert read_overlay_in(form.folder, SAVED_KEYS) == written
+    assert written["bus"]["routes"] and written["weather"]["lat"] and written["dashboard"]["kb_incidents_url"]
