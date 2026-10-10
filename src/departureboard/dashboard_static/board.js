@@ -412,7 +412,9 @@ function busRow(row, later, names, alerts) {
   const line = str(row.line);
   const destination = str(row.destination);
   const strip = obj(row.strip);
-  const where = obj(row.vehicle) ? str(strip?.where) : "";
+  // Every bus with stops to draw shows them, live or not: a timetable-only
+  // one has no bus on its strip and says "No live position".
+  const where = str(strip?.where);
   const walk = num(row.walk_min);
   // The row header is said with every cell, so it is the line and where it
   // goes, nothing more: "237 to Ashton-under-Lyne Interchange". The rest is

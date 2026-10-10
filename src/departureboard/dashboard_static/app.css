@@ -603,7 +603,7 @@ table.board .badge.ghost { margin-top: var(--s-1); font-size: var(--t-sm); }
    train or bus is. It sits on the page, not a sheet, so its hollow parts
    take the page's colour. */
 .where.has-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--s-2); }
-.strip.row-strip { flex: none; width: 9rem; }
+.strip.row-strip { flex: none; width: 11rem; }
 .row-strip .strip-ahead { stroke: var(--bg); }
 .row-strip .strip-stop, .row-strip .strip-after { fill: var(--bg); }
 

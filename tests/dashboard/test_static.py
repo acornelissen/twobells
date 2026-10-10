@@ -1502,9 +1502,11 @@ def test_a_row_with_a_position_draws_its_strip_small_beside_its_words():
     # drawn), the 08:12 on its way. One drawing each, hidden: the words say it.
     assert found["trains"] == [[1, "true", 0, "Not started yet: leaves Hadfield at 07:11"], None,
                                [1, "true", 1, "Left Hadfield 08:04, on time"]] + [None] * 7
-    # Buses with a live vehicle and a strip; the timetable-only ones keep
-    # their "sched." alone. The 07:05 has gone (just missed).
-    assert found["buses"] == [[1, "true", 1, "2 stops away"], None, [1, "true", 1, "4 stops away"], None,
+    # Every bus with stops to draw, live or not, as before the rows were
+    # redesigned: a timetable-only bus shows its stops and yours with no bus
+    # on them, and says so. The 07:05 has gone (just missed).
+    assert found["buses"] == [[1, "true", 1, "2 stops away"], [1, "true", 0, "No live position"],
+                              [1, "true", 1, "4 stops away"], None,
                               [1, "true", 0, "Not on the route yet"], None, None, None, None]
 
 
