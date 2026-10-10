@@ -1,22 +1,14 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(bd search *)",
-      "Bash(bd memories *)",
-      "Bash(git grep *)",
-      "Read(//Users/albert/.ssh/**)"
-    ]
-  },
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "",
         "hooks": [
           {
-            "type": "command",
-            "command": "bd prime --hook-json"
+            "command": "bd prime --hook-json",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": ""
       }
     ]
   }
