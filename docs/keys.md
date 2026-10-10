@@ -46,7 +46,13 @@ The easiest way is to paste them in the settings, at `/settings` on your install
 
 Keys pasted there are saved in `secrets.env` in the install's store (`/var/lib/departureboard` on a Pi, the `/data` volume in Docker; see [Where things are kept](user-guide.md#where-things-are-kept)), readable only by the app. They win over keys in a file of your own, and need no restart.
 
-**Testing a key.** The wizard has **How to get this key** (the short version of this guide) and a **Test this key** button by each key. The settings' **Keys** page has a **Test a key** section after **Save changes**, with a button for each key. Testing makes one small request to the key's service and says what it found: it works, it's the wrong key, it's for another Rail Data Marketplace product, the service isn't answering, or it can't tell. It tests the key in the box if you've pasted one, without saving it, or else the key already saved. Each key can be tested once every 10 seconds.
+**The Keys page** has a small form for each key, headed by what it unlocks (**Trains**, **Buses**, **Where each train is** and so on), with a label saying how the key stands: **Not set**, **Needed for trains** (or whatever is switched on without it), **Saved, not tested**, **Works, tested 10 Oct 10:42**, or **Refused, tested …**. Each form has its own buttons, and saves its own key only:
+
+- **Save key** saves the key you pasted. Pressing Enter in the box does the same.
+- **Save and test** saves it, then tests it straight away, so you don't paste it twice.
+- **Test saved key**, while the box is empty, tests the key already saved.
+
+**Testing a key** makes one small request to the key's service and says what it found, by the key's box: it works, it's the wrong key, it's for another Rail Data Marketplace product, the service isn't answering, or it can't tell. The wizard has **How to get this key** (the short version of this guide) and a **Test this key** button by each key, which tests the key in the box without saving it. Each key can be tested once every 10 seconds. The settings remember whether a key's last test worked or was refused, and when, but never the key itself; pasting a new key forgets it.
 
 **Or in a file of your own.** Each key goes on its own line, as `NAME=key`, with no spaces and no quotes:
 
@@ -113,7 +119,7 @@ The **Rail Data Marketplace key** box in the setup wizard or on the settings' **
 
 ### Check it works
 
-In the wizard, press **Test this key**; on the **Keys** page, **Test the Rail Data Marketplace key**. "Not subscribed" means the key is for another RDM product: subscribe to Live Departure Board and copy its own Consumer key.
+In the wizard, press **Test this key**; on the **Keys** page, **Save and test** as you paste it, or **Test saved key** in the **Trains** form. "Not subscribed" means the key is for another RDM product: subscribe to Live Departure Board and copy its own Consumer key.
 
 Or on the Pi:
 
@@ -155,7 +161,7 @@ The **Rail Data Marketplace key for where each train is** box on the settings' *
 
 ### Check it works
 
-On the **Keys** page, press **Test the Rail Data Marketplace key for where each train is**. Then open the dashboard: within a minute or two, the first train's row says where it is, and the next three trains' sheets draw them on their journeys.
+On the **Keys** page, press **Save and test** as you paste it, or **Test saved key** in the **Where each train is** form. Then open the dashboard: within a minute or two, the first train's row says where it is, and the next three trains' sheets draw them on their journeys.
 
 If they don't, look at the log (on a Pi `journalctl -u departureboard-fetch`; in Docker `docker logs departureboard`; on a desktop, the Terminal window running it) for "train positions off for 6 hours". That means the key was refused: check you copied the Service Details key, not the Live Departure Board one. Saving the right key on the Keys page starts the dashboard's feeds again; a key changed in a file of your own needs a restart (see [Replacing a key](#replacing-a-key)), or the dashboard waits the full 6 hours before trying again.
 
@@ -198,7 +204,7 @@ You need the [RDM account](#make-an-rdm-account) from above.
 
 ### Check it works
 
-Save the address first, then press **Test the Rail Data Marketplace key for engineering works** on the **Keys** page: the test asks the saved address. If the address is missing, the dashboard says engineering works are off and asks you to set `kb_incidents_url`. Otherwise, any works affecting your trains appear with the other disruption notices. There often aren't any, so an empty list doesn't mean the key failed; look in the dashboard's log for an error about incidents if you're unsure.
+The key and the address share the **Engineering works** form on the **Keys** page: press **Save and test** there, which saves both, then tests the key against the saved address. Changing the address forgets the key's last test. If the address is missing, the dashboard says engineering works are off and asks you to set `kb_incidents_url`. Otherwise, any works affecting your trains appear with the other disruption notices. There often aren't any, so an empty list doesn't mean the key failed; look in the dashboard's log for an error about incidents if you're unsure.
 
 ---
 
@@ -243,7 +249,7 @@ Buses also need your stops and their bus companies, which the setup wizard finds
 
 ### Check it works
 
-In the wizard, press **Test this key**; on the **Keys** page, **Test the Bus data key**. It asks BODS for the buses in a small patch of map, so it works whether or not any are running.
+In the wizard, press **Test this key**; on the **Keys** page, **Save and test** as you paste it, or **Test saved key** in the **Buses** form. It asks BODS for the buses in a small patch of map, so it works whether or not any are running.
 
 Or build the bus timetable. On the Pi:
 
@@ -281,7 +287,7 @@ The **TransportAPI app ID** and **TransportAPI app key** boxes on the settings' 
 
 ### Check it works
 
-On the **Keys** page, paste both (or leave them empty to test the saved ones), then press **Test the TransportAPI app ID and key**. It tests the two together, and uses one of today's 30 lookups, as the note by the button says. The board doesn't count that lookup in its own daily budget, which leaves 2 spare by default.
+The app ID and app key share the **Buses from TransportAPI** form on the **Keys** page. Paste both, then press **Save and test** (or, with both boxes empty, **Test saved key**). It tests the two together, and uses one of today's 30 lookups, as the note by the buttons says. The board doesn't count that lookup in its own daily budget, which leaves 2 spare by default.
 
 **Status** on the settings' **Board** page shows how many of today's TransportAPI lookups are used, and a "Problem: …" line if a lookup failed. While the BODS timetable is working, TransportAPI isn't used at all, so there's nothing to see.
 
@@ -313,7 +319,7 @@ A key is like a password for your account with that service. Anyone who has it c
   - On a desktop: `chmod 600 secrets.env`.
   - On a NAS: in File Station, give only your own account access to `secrets.env`.
 - **Keys stay off GitHub.** `secrets.env` and `dashboard.env` (its old name in Docker) are already left out of the project's git repository and its Docker image. Don't rename them to something that isn't.
-- **The settings never show a key.** Their key boxes only say whether each key is set. You can paste a new key in, but nobody can read one out, even with the settings password.
+- **The settings never show a key.** Each key's form only says whether it is set and how its last test went. You can paste a new key in, but nobody can read one out, even with the settings password.
 - **The settings use plain HTTP**, so paste keys into them only from your home network.
 - **You only need the Consumer key** from the Rail Data Marketplace. Leave the **Consumer secret** where it is.
 
@@ -325,7 +331,7 @@ Replace a key when it stops working, when you've made a new one, or if it might 
    - TransportAPI: make a new app, use its keys, and delete the old app.
    - Rail Data Marketplace and BODS: look in your account for a way to make a new key, or contact them through the site's help or contact page.
 2. **Put the new key in** where the old one was:
-   - **The settings:** paste the new key into its box, on the wizard's **Keys** step or the settings' **Keys** page, and press **Save changes**. Leaving a box empty keeps the key you have. A key saved in the settings wins over one in a file of your own, so if you've ever pasted that key there, replace it there. Nothing needs restarting.
+   - **The settings:** paste the new key into its box on the settings' **Keys** page and press **Save key** (or **Save and test**) in that key's form, or paste it on the wizard's **Keys** step. Each form saves its own key only, so the others stay as they are. A key saved in the settings wins over one in a file of your own, so if you've ever pasted that key there, replace it there. Nothing needs restarting.
    - **A `secrets.env` of your own:** change the text after `NAME=` and save the file. Keep it to one line, with no spaces or quotes.
 3. **Restart what uses it**, only after changing a file of your own:
    - On a Pi: the e-paper board and the timetable timer pick it up on their next run. Restart the rest: `sudo systemctl restart departureboard-web.service departureboard-fetch.service departureboard-screen.service` (leave out the screen if you don't use it).

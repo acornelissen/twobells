@@ -314,12 +314,12 @@ They are in pages by task, one tab each:
 - **Trains and buses** (`/settings/trains-and-buses`): the title, your station, stops and the weather, which both views use.
 - **Board** (`/settings/board`): the board's own settings. Only while the board view is on.
 - **Dashboard** (`/settings/dashboard`): the dashboard's own. Only while the dashboard view is on.
-- **Keys** (`/settings/keys`): the keys, each with a test.
+- **Keys** (`/settings/keys`): the keys, each in a small form of its own, saved and tested on its own.
 - **General** (`/settings/general`): the views and bank holidays, and the time zone.
 
 A setting is on one page only. Each page's settings are in sections; a page with more than three lists them at the top, to jump to. The settings most people never change wait under **Advanced** at the end of their section: open it to see them. A section that is switched off says **Off** by its heading, and keeps its settings for turning it back on; one that isn't set up yet says **Not set up**, with a link to the [setup wizard](#4-first-run-and-the-setup-wizard). Numbers have their unit beside the box; something set in `config.toml` only, like the display, is shown with **Set in config.toml** and can't be changed here.
 
-Change what you need on a page, then press **Save changes** in the bar at the foot of the window, which also says when the changes take effect. The page then says what you changed, for example *Saved 2 changes: Title; Trains shown, 3 to 2* (never a key). If something isn't right, nothing is saved. A box under the tabs lists the problems, each named by section and field (for example *Trains – Station code*); click one to jump to it, where the error is shown in words. Keys you pasted aren't kept when that happens: paste them again. Nothing is saved either unless the settings then load in every view that is on, so a change for one view can't break the other.
+Change what you need on a page, then press **Save changes** in the bar at the foot of the window, which also says when the changes take effect. The page then says what you changed, for example *Saved 2 changes: Title; Trains shown, 3 to 2* (never a key). If something isn't right, nothing is saved. A box under the tabs lists the problems, each named by section and field (for example *Trains – Station code*); click one to jump to it, where the error is shown in words. Nothing is saved either unless the settings then load in every view that is on, so a change for one view can't break the other.
 
 What you save replaces what's in `config.toml`, including emptying a box: clearing *Only trains calling at* really does show every train again. Settings a page doesn't show are kept, like the bus companies and route strips setup found, the weather's location, and the other pages'.
 
@@ -401,17 +401,19 @@ The same settings can go under `[dashboard]` in `config.toml`. All are optional:
 
 ### Keys
 
-Keys are never shown: each box says whether its key is set. Paste one to replace it; leave a box empty to keep it.
+Keys are never shown, not even here. Each key has a small form of its own, headed by what it unlocks:
 
-- **Rail Data Marketplace key** (trains) and **Bus data key** (the Bus Open Data Service, the government's free bus data): always.
-- **TransportAPI app ID** and **app key:** while the board view is on.
-- **Rail Data Marketplace key for where each train is** (RDM calls it Service Details) and **for engineering works** (Knowledgebase Incidents), with the **Engineering works address** below it: while the dashboard view is on.
+- **Trains** (the Rail Data Marketplace key) and **Buses** (the bus data key, from the Bus Open Data Service, the government's free bus data): always.
+- **Buses from TransportAPI** (its app ID and app key, in one form): while the board view is on.
+- **Where each train is** (RDM calls it Service Details) and **Engineering works** (Knowledgebase Incidents, with the **Engineering works address** in the same form): while the dashboard view is on.
+
+A label by each heading says how the key stands: **Not set**, **Needed for trains** (or whatever is switched on without it), **Saved, not tested**, **Works, tested 10 Oct 10:42**, or **Refused, tested …**. Paste a key and press **Save key** (or Enter) to replace the saved one. Each form saves its own key only: every other key and setting stays as it is. The page then names the key it saved, never the key itself. If the key isn't pasted right, nothing is saved and a box at the top says so: paste it again.
 
 See [Keys](#7-keys) for where to get each.
 
 ### Testing a key
 
-The Keys page has a **Test a key** section, after **Save changes**, with a button for each key. A test takes the key typed in its box, or the saved one if the box is empty, and makes one small request to the key's service. It says what it found by the key's box: it works, it's the wrong key, it's for another Rail Data Marketplace product, the service isn't answering, or it can't tell. Nothing is saved, and the key boxes are emptied: paste a key again to save it. Each key can be tested once every 10 seconds. Testing the TransportAPI app ID and key together uses one of today's 30 TransportAPI lookups.
+**Save and test** saves the key you pasted, then tests it, so there's no need to paste it again. With the box empty, **Test saved key** tests the key already saved. A test makes one small request to the key's service and says what it found by the key's box: it works, it's the wrong key, it's for another Rail Data Marketplace product, the service isn't answering, or it can't tell. Whether the last test worked or was refused, and when, is kept for the label (in `keytests.json`, never the key or what the service said); pasting a new key forgets it. Each key can be tested once every 10 seconds. Testing the TransportAPI app ID and key together uses one of today's 30 TransportAPI lookups.
 
 ### General
 
@@ -447,6 +449,7 @@ Each install keeps everything it saves in one folder, its store:
 - `settings.toml`: what the settings pages and the wizard save, layered over `config.toml`, which is never rewritten. It holds only the settings they manage; anything else put in it is ignored, and the log names it. Addresses (`[train]` and `[bus]` `base_url`), `state_file`, `display` and the other hand-edited settings belong in `config.toml`. A `settings.toml` that can't be read is replaced on the next save, with a copy kept as `settings.toml.broken`.
 - `secrets.env`: keys pasted in the settings or the wizard, readable by the app's user only. They win over the keys you give it in a `secrets.env` of your own.
 - `web.json`: the settings password, as a hash.
+- `keytests.json`: whether each key's last test on the Keys page worked or was refused, and when; never the key. Readable by the app's user only.
 - `sessions.json`: who is signed in to the settings, kept as a hash of each browser's session so a restart doesn't sign anyone out, and `form.key`, which the sign-in forms are signed with. Like `web.json` and `secrets.env`, readable by the app's user only. A new password ends every session.
 - The bus timetable, the punctuality history, bank holidays, the board's state, and lock files.
 
