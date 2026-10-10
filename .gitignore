@@ -21,6 +21,9 @@ bus-timetable.json
 bus-timetable.tmp
 # Settings page password hash, atomic-write leftovers, dashboard state (dev runs keep state here)
 web.json
+sessions.json
+form.key
+keytests.json
 *.tmp
 *.sqlite3
 *.sqlite3-*
