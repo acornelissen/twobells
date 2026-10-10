@@ -57,19 +57,14 @@ class FakeText extends FakeNode {
   }
 }
 
-// el.style: custom properties and plain ones, by name, with cssText.
+// el.style through the CSSOM calls only, listing its property names as the
+// real one does when iterated.
 class FakeStyle {
   constructor() { this.props = new Map(); }
   setProperty(name, value) { this.props.set(name, String(value)); }
+  removeProperty(name) { this.props.delete(name); }
   getPropertyValue(name) { return this.props.get(name) || ""; }
-  get cssText() { return [...this.props].map(([name, value]) => `${name}: ${value};`).join(" "); }
-  set cssText(text) {
-    this.props = new Map();
-    for (const part of text.split(";")) {
-      const at = part.indexOf(":");
-      if (at > 0) this.props.set(part.slice(0, at).trim(), part.slice(at + 1).trim());
-    }
-  }
+  [Symbol.iterator]() { return this.props.keys(); }
 }
 
 class FakeElement extends FakeNode {

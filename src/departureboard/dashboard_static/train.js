@@ -1,9 +1,9 @@
 // The train dialog: everything the board knows about one train, with where
 // it is now and its journey (the stops before this station, this station,
 // and the stops after) as one ordered list. It reads the current snapshot,
-// and refreshes when a new one arrives while it is open.
+// and updates in place when a new one arrives while it is open.
 
-import { $, h, s, vh, fill, setText, str, num, list, obj, openDialog, setUpDialog } from "./dom.js";
+import { $, h, s, vh, patch, setText, str, num, list, obj, openDialog, setUpDialog } from "./dom.js";
 import { hhmm } from "./time.js";
 import { statusBadge } from "./board.js";
 import { arrivesFact } from "./extras.js";
@@ -133,17 +133,19 @@ function render(row) {
   const title = $("train-title");
   const body = $("train-body");
   if (!row) {
-    body.replaceChildren(h("p", {}, "This train has left the board."));
+    patch(body, h("p", {}, "This train has left the board."));
     return;
   }
   setText(title, `${str(row.scheduled)} to ${str(row.destination)}`);
   const length = num(row.length);
   const expected = str(row.expected);
   const where = str(obj(row.position)?.where);
-  fill(body,
+  // Updated in place, so a screen reader's place in it stays put. The
+  // reasons keep their places when empty, so nothing after them moves.
+  patch(body,
     h("p", { class: "dialog-status" }, statusBadge(row.status, row.status_text)),
-    str(row.cancel_reason) ? h("p", { class: "reason" }, str(row.cancel_reason)) : null,
-    str(row.delay_reason) ? h("p", { class: "reason" }, str(row.delay_reason)) : null,
+    h("p", { class: "reason", hidden: !str(row.cancel_reason) }, str(row.cancel_reason)),
+    h("p", { class: "reason", hidden: !str(row.delay_reason) }, str(row.delay_reason)),
     h("dl", { class: "facts" },
       fact("Operator", str(row.service)),
       fact("From", str(row.origin)),
@@ -169,7 +171,7 @@ export function openTrain(row, opener, station = "") {
   openDialog(dialog(), opener);
 }
 
-// Called with each new snapshot: redraws the open dialog from its row.
+// Called with each new snapshot: updates the open dialog from its row.
 export function refreshTrain(rowsById, station = "") {
   if (!openId || !dialog().open) return;
   openStation = station;

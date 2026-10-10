@@ -701,6 +701,68 @@ def test_the_journey_says_where_the_train_is_once():
     assert between[2] == "07:20 Glossop (this station) next stop on time"
 
 
+@needs_node
+def test_a_new_snapshot_updates_the_open_dialog_in_place():
+    # Rebuilding it would move a screen reader's place: what's there stays,
+    # and only what changed is changed.
+    found = run_js(TRAIN_DIALOG + """
+        openTrain(train(0.5), null, "Glossop");
+        const parts = [...body.childNodes];
+        const items = [...journey().childNodes];
+        const first = elements(items[0]);
+        const was = { part: items[1].style.getPropertyValue("--part"), said: said() };
+        const moved = { ...train(1), delay_reason: "A late crew" };
+        refreshTrain(new Map([[moved.id, { row: moved }]]), "Glossop");
+        console.log(JSON.stringify({
+          was,
+          now: said(),
+          part: items[1].style.getPropertyValue("--part"),
+          sameParts: parts.filter((node) => body.childNodes.includes(node)).length,
+          parts: parts.length,
+          partsNow: body.childNodes.length,
+          sameItems: journey().childNodes.every((li, i) => li === items[i]),
+          firstKept: elements(journey().childNodes[0]).every((el, i) => el === first[i]),
+          reasons: byClass(body, "reason").map((p) => [p.hasAttribute("hidden"), spoken(p)]),
+        }));
+    """)
+    assert found["was"]["part"] == "0.500" and found["part"] == ""
+    assert found["was"]["said"][1].startswith("07:17 Dinting passed. Train is between")
+    assert found["now"][1:3] == ["07:17 Dinting passed", "07:20 Glossop (this station) train here on time"]
+    assert found["sameItems"] and found["firstKept"]
+    # The delay reason has its place kept for it, so nothing after it moves.
+    assert found["sameParts"] == found["parts"] == found["partsNow"]
+    assert found["reasons"] == [[True, ""], [False, "A late crew"]]
+
+
+@needs_node
+def test_patch_keeps_matching_nodes_and_replaces_the_rest():
+    found = run_js("""
+        import { h, patch } from "./dom.js";
+        const el = h("div", {}, h("p", { class: "a", title: "old" }, "one"), h("span", {}, "two"), h("em", {}, "three"));
+        const [p, span] = el.childNodes;
+        const text = p.firstChild;
+        patch(el, h("p", { class: "b" }, "uno"), h("ul", {}, "dos"));
+        console.log(JSON.stringify([
+          el.childNodes[0] === p, p.firstChild === text, text.nodeValue,
+          p.getAttribute("class"), p.hasAttribute("title"),
+          el.childNodes[1] !== span, el.childNodes[1].nodeName, el.childNodes.length,
+        ]));
+    """)
+    assert found == [True, True, "uno", "b", False, True, "UL", 2]
+
+
+@needs_node
+def test_the_open_dialog_says_when_its_train_has_gone():
+    found = run_js(TRAIN_DIALOG + """
+        openTrain(train(1), null, "Glossop");
+        refreshTrain(new Map(), "Glossop");
+        const gone = spoken(body);
+        openTrain(train(1), null, "Glossop");
+        console.log(JSON.stringify([gone, said().length]));
+    """)
+    assert found == ["This train has left the board.", 5]
+
+
 # --- Around here: the line and the area map ---
 
 

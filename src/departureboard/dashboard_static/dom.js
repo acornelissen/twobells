@@ -51,6 +51,53 @@ export function fill(el, ...children) {
   return el;
 }
 
+// Like fill(), but keeps the nodes already there wherever the new ones line
+// up with them (the same kind of node, the same tag, in the same place),
+// changing only the text, attributes and inline style that differ. A
+// screen reader's place and the focus stay put when little has changed.
+// Event listeners are not carried over: use it for content without them.
+export function patch(el, ...children) {
+  const fresh = document.createElement("div");
+  append(fresh, children);
+  patchChildren(el, [...fresh.childNodes]);
+  return el;
+}
+
+function patchChildren(el, wanted) {
+  wanted.forEach((node, i) => {
+    const old = el.childNodes[i];
+    if (!old) {
+      el.append(node);
+    } else if (old.nodeType !== node.nodeType || old.nodeName !== node.nodeName) {
+      old.replaceWith(node);
+    } else if (node.nodeType !== Node.ELEMENT_NODE) {
+      if (old.nodeValue !== node.nodeValue) old.nodeValue = node.nodeValue;
+    } else {
+      patchAttributes(old, node);
+      patchChildren(old, [...node.childNodes]);
+    }
+  });
+  while (el.childNodes.length > wanted.length) el.lastChild.remove();
+}
+
+function patchAttributes(old, node) {
+  for (const { name } of [...old.attributes]) {
+    if (name !== "style" && !node.hasAttribute(name)) old.removeAttribute(name);
+  }
+  for (const { name, value } of [...node.attributes]) {
+    if (name !== "style" && old.getAttribute(name) !== value) old.setAttribute(name, value);
+  }
+  // The inline style, one property at a time through the CSSOM, as the CSP
+  // forbids style attributes.
+  for (const name of Array.from(old.style)) {
+    if (!node.style.getPropertyValue(name)) old.style.removeProperty(name);
+  }
+  for (const name of Array.from(node.style)) {
+    const value = node.style.getPropertyValue(name);
+    if (old.style.getPropertyValue(name) !== value) old.style.setProperty(name, value);
+  }
+}
+
 // Visually hidden text for screen readers, such as the row a button acts on.
 export const vh = (text) => h("span", { class: "vh" }, text);
 
