@@ -4,8 +4,10 @@
 # The settings page's setup wizard can set the board up for you, saving its
 # answers beside the state file over this one: until it is set up, the board
 # shows "Set me up" and the page's address. To do it by hand instead, replace
-# every CHANGE_ME; the board shows no departures until you do. Leave out [train] or [bus] if you don't want them. examples/glossop.toml
-# is a filled-in board (trains from Glossop to Manchester, buses from two stops).
+# every CHANGE_ME; the board shows no departures until you do. If you don't
+# want trains or buses, put enabled = false in [train] or [bus] (its CHANGE_MEs
+# can stay), or leave the section out. examples/glossop.toml is a filled-in
+# board (trains from Glossop to Manchester, buses from two stops).
 #
 # Where it works: trains anywhere in Great Britain (National Rail Darwin).
 # Bus times and positions from BODS cover England only. The rain warning
@@ -40,6 +42,7 @@ bank_holiday_division = "england-and-wales"
 rotate = 0
 
 [train]
+# enabled = false   # switches trains off; the rest of [train] is kept, unread
 # Your station's 3-letter code (CRS), like "GLO" for Glossop. National Rail's
 # station pages show it.
 crs = "CHANGE_ME"
@@ -56,6 +59,7 @@ windows = ["Mon-Fri 06:30-09:30", "Mon-Fri 16:30-19:30"]
 
 # Buses. The BODS timetable and positions (source = "bods") cover England only.
 [bus]
+# enabled = false   # switches buses off; the rest of [bus] is kept, unread
 # Rows shown. Each stop call returns several buses, so more rows cost no extra hits.
 rows = 3
 # Optional: only show buses whose direction contains one of these, like ["Hyde"].

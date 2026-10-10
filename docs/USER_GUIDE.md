@@ -160,7 +160,7 @@ Near the top of the settings page, **Set up home, station and stops** opens the 
 5. **Keys:** paste the keys the board needs for what you picked. See [Getting your keys](KEYS.md).
 6. **Check and save:** with bus stops, saving first finds the bus companies serving them and builds their timetable, which can take a few minutes; leave the page open, or cancel. On a screen you can also ask for each line's route strip (slower).
 
-Saving keeps your other settings: the look, rotation, text size and so on. Change anything else on the settings page afterwards.
+Saving keeps your other settings: the look, rotation, text size and so on. Change anything else on the settings page afterwards. Choosing no trains, or no bus stops, switches them off (`enabled = false`, shown as **Off** on the settings page); running setup again and picking a station or stops switches them back on.
 
 Where home goes: your postcode to postcodes.io (or the address you type to OpenStreetMap's Nominatim), then its position once to the OpenStreetMap foot router for walk times. The maps, only if you open them, load pictures from OpenStreetMap, which then sees roughly where home is. The board keeps only a rough position, to about 1 km, for the rain warning.
 
@@ -179,6 +179,7 @@ The wizard is the one part of the settings page that needs JavaScript. The rest 
 
 **Trains**
 
+- **Trains:** on or off. Off, the board shows no trains and doesn't check for them; the rest of this section is kept, unchecked, for turning them back on.
 - **Station code:** 3 letters, like `GLO` for Glossop. National Rail's station pages show it.
 - **Only trains calling at:** for example `MAN`, so only trains to Manchester show. Empty shows every train.
 - **Trains shown**, **Check every (minutes)**, and **Say "not updating" after (minutes)**.
@@ -187,6 +188,7 @@ The wizard is the one part of the settings page that needs JavaScript. The rest 
 
 **Buses**
 
+- **Buses:** on or off, as for trains.
 - **Stops:** one per line, written `LABEL = ATCO code`, for example `A = 1000DGHS0900`. The label is the letter shown on the board. Find stop codes on [bustimes.org](https://bustimes.org): the code is the last part of a stop page's address.
 - **Only buses heading to:** optional, comma-separated, for example `Ashton, Hyde`. Empty shows every bus.
 - **Buses shown**, **Check every (minutes)**, **Say "not updating" after (minutes)**.
@@ -243,7 +245,7 @@ Step-by-step install commands are in the [README](../README.md#2-install-on-the-
 
 `config.toml` starts as a blank template. Until the board is set up, it shows **Set me up** and the settings page's address, `http://<pi name>.local:8080/`, instead of departures. Start the settings page (see [The settings page](#the-settings-page)), open that address on a phone or laptop at home, claim the page with the code the board shows, and the [setup wizard](#setting-up-home-station-and-stops) opens. It saves your station, stops, walk times, bus companies and keys; `config.toml` itself is never changed.
 
-To set up by hand instead, replace each `CHANGE_ME` in `config.toml` with your station code and bus stop codes. `examples/glossop.toml` in the repo is a filled-in board to compare against. Either way, the board shows departures within a minute of being set up (a screen restarts itself first, which takes about 10 seconds).
+To set up by hand instead, replace each `CHANGE_ME` in `config.toml` with your station code and bus stop codes. If you don't want trains or buses, put `enabled = false` in `[train]` or `[bus]` (or remove the section); its `CHANGE_ME`s can stay. `examples/glossop.toml` in the repo is a filled-in board to compare against. Either way, the board shows departures within a minute of being set up (a screen restarts itself first, which takes about 10 seconds).
 
 The type of display is the one thing to set in `config.toml` before anything else: it starts as `"inky"` (see [Choosing a display](#choosing-a-display)).
 
@@ -326,7 +328,7 @@ lon = -1.95
 threshold_percent = 50
 ```
 
-The forecast is checked every 30 minutes, only while the board is checking trains or buses. If it can't be fetched, the last forecast is used for up to 3 hours.
+`enabled = false` in `[weather]` switches the warning off and keeps the location, as **Rain warning: Off** on the settings page does. The forecast is checked every 30 minutes, only while the board is checking trains or buses. If it can't be fetched, the last forecast is used for up to 3 hours.
 
 ### Bank holidays
 
@@ -435,7 +437,7 @@ departureboard dashboard --config config.toml --secrets secrets.env
 
 It opens in your browser. The first start takes a minute or so to build the bus timetable. Add `--lan` to let phones on the home Wi-Fi open it at the address it prints. Ctrl-C stops it.
 
-It keeps its own folder (`~/Library/Application Support/departureboard-dashboard`): the bus timetable, the history, bank holidays, and anything saved from **Settings**. It needs `[bus] source = "bods"`.
+It keeps its own folder (`~/Library/Application Support/departureboard-dashboard`): the bus timetable, the history, bank holidays, and anything saved from **Settings**. It needs `[bus] source = "bods"`, unless buses are off (`[bus] enabled = false`).
 
 ### On a Synology NAS
 
