@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 import threading
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, replace
@@ -25,6 +26,10 @@ DateRange = tuple[date, date]  # first and last day, inclusive
 # dashboard/enrich.py pairs them with departures from your stop.
 NEAR_M = 150
 _EARTH_M_PER_DEG = 111_320
+# "Stop A", "Stand 12", "Bay C3" or a bare "B": a letter the street sign shows.
+_SIGN_LETTER = re.compile(r"^(?:(?i:stop|stand|stance|bay)\s+)?([A-Z]{1,2}[0-9]?|[0-9]{1,2})$")
+# Short words NaPTAN gives as an indicator that say where, not which stop.
+_NOT_LETTERS = frozenset({"AT", "BY", "IN", "NR", "ON", "OP", "OS"})
 
 
 @dataclass(frozen=True)
@@ -79,6 +84,15 @@ class StopPosition:
     # The letter or word on the stop's sign ("Stop A"); "" for none, None when
     # not known (a file from before it was kept, or a timetable's own position).
     indicator: str | None = None
+
+
+def sign_letter(indicator: str | None) -> str | None:
+    """The letter or number on a stop's sign from NaPTAN's indicator ("Stop A"
+    is A, "Stand 12" is 12), or None for a word like "opp" or none at all."""
+    match = _SIGN_LETTER.match((indicator or "").strip())
+    if match is None or match.group(1) in _NOT_LETTERS:
+        return None
+    return match.group(1)
 
 
 def metres(a: StopPosition, b: StopPosition) -> float:

@@ -35,6 +35,7 @@ from ..core.errors import safe_message
 from ..core.net import get_bytes
 from ..core.osgb import distance_m, grid_to_latlon
 from ..sources.holidays import ENGLAND_AND_WALES
+from ..timetable.model import sign_letter
 from ..timetable.routesetup import NAPTAN_URL
 
 log = logging.getLogger(__name__)
@@ -80,8 +81,6 @@ _CRS = re.compile(r"^[A-Z]{3}$")
 _ATCO = re.compile(r"^[0-9]{3}[0-9A-Za-z]{1,9}$")
 _AREA = re.compile(r"^[0-8][0-9]{2}$")
 _LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")  # as the settings site allows
-# "Stop A", "Stand 12", "Bay C3" or a bare "B": a letter the street sign shows.
-_INDICATOR_CODE = re.compile(r"^(?:(?i:stop|stand|stance|bay)\s+)?([A-Z]{1,2}[0-9]?|[0-9]{1,2})$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _DECIMAL = re.compile(r"-?\d+\.\d+")
 
@@ -581,8 +580,7 @@ def walk_minutes(home: Located, destinations: Mapping[str, Located],
 
 
 def _indicator_code(indicator: str) -> str | None:
-    match = _INDICATOR_CODE.match(indicator.strip())
-    return match.group(1) if match else None
+    return sign_letter(indicator)
 
 
 def stop_labels(stops: Sequence[tuple[str | None, Stop]]) -> list[str]:

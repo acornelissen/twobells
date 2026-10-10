@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 import pytest
 
-from departureboard.timetable.model import Calendar, Call, Journey, Schedule, StopPosition
+from departureboard.timetable.model import Calendar, Call, Journey, Schedule, StopPosition, sign_letter
 
 
 def test_schedule_round_trips_through_json():
@@ -25,6 +25,19 @@ def test_schedule_round_trips_through_json():
     back = Schedule.from_json(schedule.to_json())
     assert back == schedule
     assert back.journeys[0].origin == Call("1000DGHS0900", 380)
+
+
+@pytest.mark.parametrize(
+    "indicator, letter",
+    [
+        ("Stop A", "A"), ("stop D", "D"), ("Stand 12", "12"), ("Bay C3", "C3"), ("B", "B"), (" Stop E ", "E"),
+        # Words saying where, not which stop.
+        ("opp", None), ("Opp", None), ("adj", None), ("NR", None), ("OS", None), ("NE-bound", None),
+        ("", None), (None, None),
+    ],
+)
+def test_the_letter_on_a_stop_s_sign(indicator, letter):
+    assert sign_letter(indicator) == letter
 
 
 def test_a_schedule_saved_before_operators_were_recorded_has_none():
