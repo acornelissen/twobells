@@ -19,6 +19,10 @@ can open (0700):
   requests/  the page's requests, one file each: <id>.json
   replies/   the service's answers to lookups: <id>.json
   status/    the search's status: <id>.json
+  snapshots/ the dashboard's newest snapshot: dashboard.json (see handoff.py)
+
+One more request needs no reply: `active`, which the page sends at most
+once a minute while a browser uses the dashboard (Poster).
 
 Where. In memory, never written as a file to the SD card: a request can
 hold home's exact position or a pasted key, and flash can keep what was
@@ -119,6 +123,7 @@ START_WAIT_S = 90.0  # for the search's first status
 SILENT_S = 60.0  # a search unheard from for this long has stopped
 HEARTBEAT_S = 5.0
 IDLE_S = 60.0  # the service stops after this long with nothing to do
+ACTIVE_EVERY_S = 60.0  # the page says a browser is using the dashboard at most this often
 POLL_S = 0.2
 MAX_NOTES = 30
 WORKER_LOCK = "worker.lock"
@@ -226,13 +231,13 @@ def _depth(value, level: int = 1) -> int:
     return level
 
 
-def parse(body: bytes):
-    """Strict JSON: UTF-8, no NaN or Infinity, not too deep."""
+def parse(body: bytes, max_depth: int = MAX_DEPTH):
+    """Strict JSON: UTF-8, no NaN or Infinity, no deeper than `max_depth`."""
     try:
         value = json.loads(body.decode("utf-8"), parse_constant=_no_constant)
     except (ValueError, RecursionError):
         raise Refused("not JSON") from None
-    if _depth(value) > MAX_DEPTH:
+    if _depth(value) > max_depth:
         raise Refused("nested too deeply")
     return value
 
@@ -301,6 +306,10 @@ def _cancel_args(args) -> dict:
     return {"job": _str(fields["job"], "job", 32, 32, _ID)}
 
 
+def _active_args(args) -> dict:
+    return _obj(args, ())  # nothing: it says only that a browser is using the dashboard
+
+
 _REQUESTS: dict[str, Callable[[object], dict]] = {
     "postcode": _postcode_args,
     "address": _address_args,
@@ -309,6 +318,7 @@ _REQUESTS: dict[str, Callable[[object], dict]] = {
     "testkey": _testkey_args,
     "search": _search_args,
     "cancel": _cancel_args,
+    "active": _active_args,
 }
 
 
@@ -477,10 +487,11 @@ class Spool:
         self.requests = self.folder / "requests"
         self.replies = self.folder / "replies"
         self.status = self.folder / "status"
+        self.snapshots = self.folder / "snapshots"
 
     def make(self) -> None:
         """Make the folders (0700) if need be, and check each is a real folder of ours."""
-        for path in (self.folder, self.tmp, self.requests, self.replies, self.status):
+        for path in (self.folder, self.tmp, self.requests, self.replies, self.status, self.snapshots):
             try:
                 path.mkdir(mode=0o700, exist_ok=True)
                 info = os.lstat(path)
@@ -739,6 +750,43 @@ class SpoolJob:
             self._end(STOPPED)
 
 
+class Poster:
+    """Tells the service, through the spool, that a browser is using the
+    dashboard: an `active` request, which gets no reply and starts the
+    service if it has stopped. At most one every `every` seconds, however
+    often it is asked. For the dashboard's mirror (handoff.SnapshotMirror)."""
+
+    def __init__(self, folder: Path | str, *, every: float = ACTIVE_EVERY_S, clock: Callable[[], float] = time.time,
+                 monotonic: Callable[[], float] = time.monotonic) -> None:
+        self.spool = Spool(folder)
+        self.spool.make()
+        self._every = every
+        self._clock = clock
+        self._monotonic = monotonic
+        self._lock = threading.Lock()
+        self._posted: float | None = None
+
+    def active(self) -> bool:
+        """Post an `active` request, unless one went in the last `every`
+        seconds. Whether one went now. Never raises: a browser's request
+        mustn't fail for it."""
+        with self._lock:
+            now = self._monotonic()
+            if self._posted is not None and now - self._posted < self._every:
+                return False
+            self._posted = now
+        request_id = new_id()
+        try:
+            self.spool.sweep(self._clock())
+            self.spool.write(self.spool.requests, request_id,
+                             {"v": VERSION, "id": request_id, "made": self._clock(), "kind": "active", "args": {}},
+                             MAX_REQUEST_BYTES)
+        except (OSError, ValueError) as error:
+            log.warning("Can't tell the fetch service a browser is using the dashboard: %s", type(error).__name__)
+            return False
+        return True
+
+
 # The service's side.
 
 
@@ -800,15 +848,19 @@ class Worker:
         monotonic: Callable[[], float] = time.monotonic,
         stop: threading.Event | None = None,
         unavailable: str = "",
+        on_active: Callable[[], None] | None = None,
     ) -> None:
         """`folder` is the spool; `job_folder` the board's state folder, where
         the search builds the timetable. `load_secrets` gives the saved keys,
         as the other units' environment does, and `settings` the board's
         settings, for what a key test asks about. Setting `stop` ends run(),
-        and a search running is cancelled and said to be."""
+        and a search running is cancelled and said to be. `on_active` is
+        called for each `active` request (a browser is using the dashboard),
+        which gets no reply."""
         self.spool = Spool(folder)
         self._job_folder = None if job_folder is None else Path(job_folder)
         self._unavailable = unavailable
+        self._on_active = on_active
         self._load_secrets = load_secrets
         self._settings = settings
         self._lookup_postcode = lookup_postcode
@@ -833,7 +885,11 @@ class Worker:
         self._written = 0.0
         self._cancelled: list[str] = []  # cancels that came before their search
 
-    def run(self) -> int:
+    def run(self, tend: Callable[[], bool] | None = None) -> int:
+        """Answer requests until stopped, or idle for `idle` seconds with no
+        search running and no request waiting. `tend`, if given, is called
+        each time round once the lock is held; while it says True the
+        service stays up, however idle."""
         self.spool.make()
         fd = os.open(self.spool.folder / WORKER_LOCK, os.O_RDWR | os.O_CREAT | _O_NOFOLLOW | _O_CLOEXEC, 0o600)
         try:
@@ -850,10 +906,11 @@ class Worker:
             try:
                 last = self._monotonic()
                 while not self._stop.is_set():
-                    if self.step() or self._job is not None:
+                    busy = tend() if tend is not None else False
+                    if self.step() or self._job is not None or busy:
                         last = self._monotonic()
-                    elif self._monotonic() - last >= self._idle:
-                        break
+                    elif self._monotonic() - last >= self._idle and not self._waiting():
+                        break  # never with a request waiting: one may have come since the step
                     self._stop.wait(self._poll)
             finally:
                 finished.set()
@@ -920,6 +977,10 @@ class Worker:
             kind, args = check_request(parse(body), request_id, self._clock())
         except Refused as why:
             log.warning("Refused a setup request: %s", why)
+            return
+        if kind == "active":  # each minute a browser is open: not worth a line in the log each time
+            if self._on_active is not None:
+                self._on_active()
             return
         log.info("Setup request: %s", kind)
         if self._unavailable:

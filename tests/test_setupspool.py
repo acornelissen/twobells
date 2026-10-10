@@ -359,6 +359,8 @@ def put(board, data, name=None, raw=None):
     {"kind": "search", "args": {"stops": {"A": "1800SB12341"}, "routes": "yes", "walk": {}, "key": ""}},
     {"kind": "search", "args": {"stops": {"A": "1800SB12341"}, "routes": False, "walk": {"A": 61}, "key": ""}},
     {"kind": "cancel", "args": {"job": "../x"}},
+    {"kind": "active", "args": {"browser": "x"}},  # active takes nothing
+    {"kind": "active", "args": []},
 ])
 def test_the_service_deletes_requests_that_dont_fit_unanswered(board, change, caplog):
     path = put(board, request(board, **change), name="a" * 32 + ".json")
@@ -537,7 +539,8 @@ def test_a_finished_search_waits_longer_for_the_page(board):
 def test_the_spool_is_private_and_never_a_link(tmp_path):
     spool = Spool(tmp_path / "spool")
     spool.make()
-    for path in (spool.folder, spool.tmp, spool.requests, spool.replies, spool.status):
+    assert sorted(os.listdir(spool.folder)) == ["replies", "requests", "snapshots", "status", "tmp"]
+    for path in (spool.folder, spool.tmp, spool.requests, spool.replies, spool.status, spool.snapshots):
         assert oct(path.stat().st_mode & 0o777) == "0o700"
     (tmp_path / "linked").symlink_to(tmp_path / "spool")
     with pytest.raises(setupspool.SpoolError):
@@ -566,6 +569,69 @@ def test_the_service_stops_when_idle_and_runs_once(board):
     started = time.monotonic()
     assert board.worker.run() == 0
     assert time.monotonic() - started < 2
+
+
+def test_the_service_stays_up_while_told_to_and_never_leaves_a_request_waiting(board):
+    board.worker._idle = 0  # idle the moment it isn't busy
+    asked = []
+
+    def tend():
+        asked.append(time.monotonic())
+        if len(asked) == 20:  # one comes in after the step, just as it would have stopped
+            board.runner.post("e" * 32, "postcode", {"postcode": "SK13 1AH"})
+        return len(asked) < 20  # busy (the dashboard is on) until then
+
+    real_step = board.worker.step
+    board.worker.step = lambda: False if len(asked) == 20 else real_step()
+    assert board.worker.run(tend) == 0
+    assert len(asked) > 20  # kept going past the idle time while busy, and once more for the late request
+    assert os.listdir(board.runner.spool.requests) == []
+    assert board.runner.reply("e" * 32, delete=True)["ok"] is True
+
+
+def test_an_active_request_is_handed_on_and_gets_no_reply(board, caplog):
+    seen = []
+    board.worker._on_active = lambda: seen.append(True)
+    poster = setupspool.Poster(board.runner.spool.folder)
+    assert poster.active() is True
+    [name] = os.listdir(board.runner.spool.requests)
+    sent = json.loads((board.runner.spool.requests / name).read_text())
+    assert (sent["kind"], sent["args"]) == ("active", {})
+    assert oct((board.runner.spool.requests / name).stat().st_mode & 0o777) == "0o600"
+    with caplog.at_level(logging.INFO):
+        assert board.worker.step() is True  # a request, so not idle
+    assert seen == [True] and os.listdir(board.runner.spool.requests) == []
+    assert os.listdir(board.runner.spool.replies) == [] and os.listdir(board.runner.spool.status) == []
+    assert "Setup request" not in caplog.text  # each minute a browser is open: not in the log
+
+
+def test_an_active_request_needs_no_settings_either(board):
+    worker = Worker(board.runner.spool.folder, job_folder=None, load_secrets=dict, idle=0, poll=0.01,
+                    unavailable=setupspool.NO_SETTINGS)
+    setupspool.Poster(board.runner.spool.folder).active()
+    assert worker.run() == 0
+    assert os.listdir(board.runner.spool.requests) == [] and os.listdir(board.runner.spool.replies) == []
+
+
+def test_the_poster_posts_at_most_one_active_a_minute(tmp_path):
+    now = [1000.0]
+    poster = setupspool.Poster(tmp_path / "spool", monotonic=lambda: now[0])
+    assert [poster.active(), poster.active()] == [True, False]
+    now[0] += setupspool.ACTIVE_EVERY_S - 1
+    assert poster.active() is False
+    now[0] += 1
+    assert poster.active() is True
+    assert len(os.listdir(poster.spool.requests)) == 2
+
+
+def test_the_poster_never_fails_the_browsers_request(tmp_path, caplog):
+    poster = setupspool.Poster(tmp_path / "spool")
+    os.chmod(poster.spool.requests, 0o500)  # can't write there
+    try:
+        assert poster.active() is False
+    finally:
+        os.chmod(poster.spool.requests, 0o700)
+    assert "Can't tell the fetch service" in caplog.text
 
 
 def test_only_one_service_answers_at_a_time(board):
