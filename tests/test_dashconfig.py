@@ -197,6 +197,24 @@ def test_sections_left_out_are_none(tmp_path, opened):
     assert dash.weather is not None
 
 
+def test_sections_switched_off_are_none_whatever_is_in_them(tmp_path, opened):
+    path = tmp_path / "config.toml"
+    text = CONFIG.format(board=tmp_path / "board")
+    # Off, a [bus] that isn't from BODS and a [train] with no station don't stop the dashboard loading.
+    text = text.replace('[train]\ncrs = "GLO"', '[train]\nenabled = false\ncrs = "CHANGE_ME"')
+    text = text.replace('[bus]\nsource = "bods"', '[bus]\nenabled = false\nsource = "transportapi"')
+    path.write_text(text.replace("[weather]\n", "[weather]\nenabled = false\n"))
+    dash = load(path, tmp_path / "dash", env={}, opened=opened)
+    assert dash.train is None and dash.bus is None and dash.bus_stops == {} and dash.weather is None
+    assert dash.walk.train is None and dash.walk.bus == {}
+
+
+def test_enabled_must_be_true_or_false(config, tmp_path):
+    config.write_text(config.read_text().replace("[bus]\n", '[bus]\nenabled = "off"\n'))
+    with pytest.raises(ConfigError, match=r"\[bus\] enabled must be true or false"):
+        load_dashboard(config, ENV, tmp_path / "dash", lock=False)
+
+
 def test_missing_keys_are_a_config_error(config, tmp_path):
     with pytest.raises(ConfigError, match="RDM_API_KEY"):
         load_dashboard(config, {"BODS_API_KEY": "k"}, tmp_path / "dash")

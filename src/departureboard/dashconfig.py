@@ -49,6 +49,7 @@ from .config import (
     read_config,
     read_overlay_in,
     settings_from,
+    switched_on,
 )
 from .config import state_dir as board_state_dir
 from .darwin import DarwinSource, ServiceDetails, ServiceDetailsClient, TrainBoard
@@ -418,7 +419,7 @@ def password_folder(config_path: Path | str, env: Mapping[str, str],
 
 def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSettings:
     """The settings from already-read, already-layered data, without the lock."""
-    data = copy.deepcopy(data)
+    data = switched_on(copy.deepcopy(data))  # [train] or [bus] with enabled = false is ignored, as the board does
     options = dashboard_options(data)
 
     if "train" in data:

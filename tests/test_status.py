@@ -157,6 +157,20 @@ def test_bus_positions_are_shown_when_the_board_tracks_them():
     assert "<h3>Bus positions</h3>" not in render_status(DATA, STATE, NOW)
 
 
+def test_a_source_switched_off_is_left_out_whatever_it_saved_before():
+    state = {**STATE, "vehicles": {"last_success": "2026-10-08T08:00:30"}}
+    bus_off = {**DATA, "bus": {**DATA["bus"], "enabled": False}}
+    page = render_status(bus_off, state, NOW)
+    assert "<h3>Trains</h3>" in page
+    assert "<h3>Buses</h3>" not in page and "<h3>Bus positions</h3>" not in page and "TransportAPI" not in page
+    train_off = {**DATA, "train": {**DATA["train"], "enabled": False}}
+    page = render_status(train_off, state, NOW)
+    assert "<h3>Trains</h3>" not in page and "<h3>Buses</h3>" in page and "<h3>Bus positions</h3>" in page
+    # Anything but false is for saving to report; the panel shows the source.
+    odd = {**DATA, "train": {**DATA["train"], "enabled": "no"}}
+    assert "<h3>Trains</h3>" in render_status(odd, state, NOW)
+
+
 def test_keys_left_in_saved_messages_are_never_shown():
     state = {"sources": {"bus": {"last_error": {
         "at": "2026-10-08T08:00:00", "message": "GET /x.json?app_id=myid&app_key=tapi-secret-456 refused",

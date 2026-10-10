@@ -92,6 +92,11 @@ def _policy(section: dict, holidays: frozenset[date]) -> PollPolicy | None:
         return None
 
 
+def _switched_off(data: dict, name: str) -> bool:
+    """Whether the section says enabled = false; anything else, saving reports."""
+    return _dict(data.get(name)).get("enabled") is False
+
+
 def _positive(section: dict, key: str, default: int) -> int:
     value = section.get(key, default)
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else default
@@ -170,11 +175,13 @@ def render_status(data: dict, state: dict | None, now: datetime,
         section = _dict(data.get(section_name))
         if section_name not in data and name not in entries:
             continue
+        if _switched_off(data, section_name):
+            continue  # not checked at all, so whatever it last saved is old news
         stale_after = _positive(section, "stale_after_minutes", stale_default)
         extra = _budget(data, state, now) if name == "bus" else []
         out.append(_source(heading, _dict(entries.get(name)), _policy(section, holidays), stale_after, now, extra))
     vehicles = _dict(state.get("vehicles"))
-    if vehicles:
+    if vehicles and not _switched_off(data, "bus"):
         # Saved only alongside fetched departures, so too old to judge "not updating" by.
         out.append(_source("Bus positions", vehicles, _policy(_dict(data.get("bus")), holidays), None, now, []))
     drawn = _moment(_dict(state.get("last_render")).get("at"))
