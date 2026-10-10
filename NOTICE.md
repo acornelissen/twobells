@@ -6,15 +6,20 @@ The board and dashboard use, and the tests include recorded samples of, these op
 
 | Source | Licence | Used for | Recorded in |
 |---|---|---|---|
-| [Bus Open Data Service](https://data.bus-data.dft.gov.uk/) (Department for Transport) | [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) | Bus timetables, live positions, disruptions | `tests/fixtures/bods_*.xml`, `tests/fixtures/txc_*.xml` |
+| [Bus Open Data Service](https://data.bus-data.dft.gov.uk/) (Department for Transport) | [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) | Bus timetables, live positions, disruptions | `tests/fixtures/bods_glossop_live.xml`, `tests/fixtures/bods_siri_sx_glossop.xml`, `tests/fixtures/txc_bnml_*.xml`, `tests/fixtures/txc_hipk_61.xml` |
 | [NaPTAN](https://beta-naptan.dft.gov.uk/) (Department for Transport) | Open Government Licence v3.0 | Stop names and positions | `tests/fixtures/naptan_*.csv` |
 | [GOV.UK bank holidays](https://www.gov.uk/bank-holidays.json) | Open Government Licence v3.0 | Bank holiday dates | `tests/fixtures/govuk_bank_holidays.json` |
 | [Open-Meteo](https://open-meteo.com/) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Weather forecasts | `tests/fixtures/openmeteo_*.json` |
-| [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors | [ODbL](https://opendatacommons.org/licenses/odbl/); tiles under their [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) | Map tiles on the dashboard | none |
+| [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors | [ODbL](https://opendatacommons.org/licenses/odbl/); tiles under their [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) | Map tiles on the dashboard | none recorded; `tests/fixtures/osrm_route_*.json` are car router answers made by hand, along a real street in Glossop |
 
 Contains public sector information licensed under the Open Government Licence v3.0. Weather data by Open-Meteo.com. Map data © OpenStreetMap contributors.
 
-Train times come from National Rail's Darwin via the [Rail Data Marketplace](https://raildata.org.uk), under that product's licence. Bus times can also come from [TransportAPI](https://www.transportapi.com) under its terms. The tests' Darwin and TransportAPI answers (`tests/fixtures/ldbws_*.json`, `tests/fixtures/tapi_*.json`) are synthetic: made up in the shape those services send, with real station and stop names.
+Train times come from National Rail's Darwin via the [Rail Data Marketplace](https://raildata.org.uk), under that product's licence. Bus times can also come from [TransportAPI](https://www.transportapi.com) under its terms. The tests' Darwin and TransportAPI answers (`tests/fixtures/ldbws_*.json`, `tests/fixtures/tapi_*.json`) are synthetic: made up in the shape those services send, with real station and stop names. So are these:
+
+- `tests/fixtures/kb_incidents_synthetic.xml`: National Rail Knowledgebase incidents, written by hand; the names, numbers and times are made up.
+- `tests/fixtures/bods_datasets_synthetic.json`: pages of BODS's data set list, trimmed and made up.
+- `tests/fixtures/bods_glossop_synthetic.xml` and `tests/fixtures/txc_glossop_synthetic.xml`: BODS live positions and a TransXChange timetable built for the tests, with real NaPTAN stop codes and positions in Glossop and invented vehicles, journeys and times.
+- `tests/fixtures/dashboard_*.json`: the dashboard API's answers ([docs/dashboard-api.md](docs/dashboard-api.md)), made up for both sides of it to test against, with real place names.
 
 ## Setup data and lookups
 
