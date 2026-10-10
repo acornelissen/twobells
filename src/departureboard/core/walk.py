@@ -19,7 +19,11 @@ class WalkTimes:
     def minutes(self, dep: Departure) -> int | None:
         if dep.mode == "train":
             return self.train
-        return self.bus.get(dep.stop or DEFAULT_STOP, self.bus.get(DEFAULT_STOP))
+        return self.stop(dep.stop)
+
+    def stop(self, label: str | None) -> int | None:
+        """Minutes to the bus stop with this label, or None if no walk is set."""
+        return self.bus.get(label or DEFAULT_STOP, self.bus.get(DEFAULT_STOP))
 
 
 def leave_time(dep: Departure, walk: WalkTimes) -> str | None:

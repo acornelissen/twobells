@@ -38,6 +38,7 @@
         "length": 3,
         "cancel_reason": null,
         "delay_reason": "This train has been delayed by a broken down train",
+        "walk_min": 10,
         "leave_at": "2026-10-10T07:09:00+01:00",
         "calling_points": [
           {
@@ -169,6 +170,7 @@
         "length": 3,
         "cancel_reason": "This train has been cancelled because of a shortage of train crew",
         "delay_reason": null,
+        "walk_min": 10,
         "leave_at": null,
         "calling_points": [
           {
@@ -275,6 +277,7 @@
         "length": 6,
         "cancel_reason": null,
         "delay_reason": null,
+        "walk_min": 10,
         "leave_at": "2026-10-10T08:02:00+01:00",
         "calling_points": [
           {
@@ -406,6 +409,7 @@
         "length": 3,
         "cancel_reason": null,
         "delay_reason": "This train has been delayed by signalling problems",
+        "walk_min": 10,
         "leave_at": "2026-10-10T08:32:00+01:00",
         "calling_points": [
           {
@@ -512,6 +516,7 @@
         "length": 3,
         "cancel_reason": null,
         "delay_reason": null,
+        "walk_min": 10,
         "leave_at": "2026-10-10T09:02:00+01:00",
         "calling_points": [
           {
@@ -623,6 +628,7 @@
         "length": 3,
         "cancel_reason": null,
         "delay_reason": null,
+        "walk_min": 10,
         "leave_at": "2026-10-10T09:35:00+01:00",
         "calling_points": [
           {
@@ -734,6 +740,7 @@
         "length": 2,
         "cancel_reason": null,
         "delay_reason": null,
+        "walk_min": 10,
         "leave_at": "2026-10-10T10:02:00+01:00",
         "calling_points": [
           {
@@ -845,6 +852,7 @@
         "length": 3,
         "cancel_reason": null,
         "delay_reason": null,
+        "walk_min": 10,
         "leave_at": "2026-10-10T10:32:00+01:00",
         "calling_points": [
           {
@@ -956,6 +964,7 @@
         "length": null,
         "cancel_reason": null,
         "delay_reason": null,
+        "walk_min": 10,
         "leave_at": "2026-10-10T11:02:00+01:00",
         "calling_points": [],
         "previous_points": [],
@@ -981,6 +990,7 @@
         "length": 3,
         "cancel_reason": null,
         "delay_reason": null,
+        "walk_min": 10,
         "leave_at": "2026-10-10T11:32:00+01:00",
         "calling_points": [
           {
@@ -1092,8 +1102,18 @@
       "journeys": 445
     },
     "stops": {
-      "A": "Henry Street (Stop A)",
-      "B": "Henry Street (Stop B)"
+      "A": {
+        "name": "Henry Street",
+        "letter": "A",
+        "towards": "Howard Arms",
+        "walk_min": 8
+      },
+      "B": {
+        "name": "Henry Street",
+        "letter": "B",
+        "towards": "Market Hall",
+        "walk_min": 6
+      }
     },
     "rows": [
       {
@@ -1109,6 +1129,7 @@
         "status_text": "Timetable only",
         "minutes_late": null,
         "live": false,
+        "walk_min": 6,
         "leave_at": "2026-10-10T06:59:00+01:00",
         "vehicle": null,
         "strip": {
@@ -1151,6 +1172,7 @@
         "status_text": "Expected 07:11",
         "minutes_late": 2,
         "live": true,
+        "walk_min": 8,
         "leave_at": "2026-10-10T07:03:00+01:00",
         "vehicle": {
           "age_s": 40,
@@ -1198,6 +1220,7 @@
         "status_text": "Timetable only",
         "minutes_late": null,
         "live": false,
+        "walk_min": 8,
         "leave_at": "2026-10-10T07:12:00+01:00",
         "vehicle": null,
         "strip": {
@@ -1245,6 +1268,7 @@
         "status_text": "Expected 07:28",
         "minutes_late": 4,
         "live": true,
+        "walk_min": 8,
         "leave_at": "2026-10-10T07:20:00+01:00",
         "vehicle": {
           "age_s": 75,
@@ -1292,6 +1316,7 @@
         "status_text": "Timetable only",
         "minutes_late": null,
         "live": false,
+        "walk_min": 6,
         "leave_at": "2026-10-10T07:29:00+01:00",
         "vehicle": null,
         "strip": null,
@@ -1322,6 +1347,7 @@
         "status_text": "On time",
         "minutes_late": null,
         "live": true,
+        "walk_min": 8,
         "leave_at": "2026-10-10T07:31:00+01:00",
         "vehicle": {
           "age_s": 12,
@@ -1369,6 +1395,7 @@
         "status_text": "Timetable only",
         "minutes_late": null,
         "live": false,
+        "walk_min": 8,
         "leave_at": "2026-10-10T07:42:00+01:00",
         "vehicle": null,
         "strip": null,
@@ -1399,6 +1426,7 @@
         "status_text": "Timetable only",
         "minutes_late": null,
         "live": false,
+        "walk_min": 6,
         "leave_at": "2026-10-10T07:59:00+01:00",
         "vehicle": null,
         "strip": null,
@@ -1429,6 +1457,7 @@
         "status_text": "Timetable only",
         "minutes_late": null,
         "live": false,
+        "walk_min": 8,
         "leave_at": "2026-10-10T08:01:00+01:00",
         "vehicle": null,
         "strip": null,
@@ -1459,6 +1488,7 @@
         "status_text": "Timetable only",
         "minutes_late": null,
         "live": false,
+        "walk_min": 8,
         "leave_at": "2026-10-10T08:16:00+01:00",
         "vehicle": null,
         "strip": null,

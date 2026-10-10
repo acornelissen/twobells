@@ -366,6 +366,19 @@ def test_leave_at_follows_each_stop_s_walk():
     assert all(r["leave_at"] is None for r in none["rows"])
 
 
+def test_every_row_carries_its_walk_in_whole_minutes():
+    part, _, _ = bus_part(at(10, 14), [bus(*HALFWAY, at(10, 14))])
+    assert by(part["rows"], line="341", stop="A")["walk_min"] == 8
+    assert by(part["rows"], line="237", stop="B")["walk_min"] == 6
+    star = bus_part(at(10, 14), walk=WalkTimes(bus={"*": 3}))[0]
+    assert {r["walk_min"] for r in star["rows"]} == {3}
+    none = bus_part(at(10, 14), walk=WalkTimes(train=5))[0]
+    assert {r["walk_min"] for r in none["rows"]} == {None}
+    rows = trains(train(), train("07:30", "Cancelled"))[0]["rows"]
+    assert [r["walk_min"] for r in rows] == [10, 10]  # a cancelled train is still 10 min away
+    assert trains(train(), walk=WalkTimes())[0]["rows"][0]["walk_min"] is None
+
+
 def test_a_timetable_only_bus():
     part, lookups, _ = bus_part(at(10, 0))
     row = by(part["rows"], line="237", stop="B")
@@ -412,12 +425,15 @@ def test_the_bus_map_path_follows_the_timetable_s_roads():
 
 def test_stop_names_and_the_timetable():
     part, _, _ = bus_part(at(10, 0))
-    assert part["stops"] == {"A": "Henry Street"}  # no sign letter known: the name alone
+    # No sign letter known; Howard Arms and Market Hall are both next, once each: by name.
+    assert part["stops"] == {"A": {"name": "Henry Street", "letter": None, "towards": "Howard Arms", "walk_min": 8}}
     assert part["timetable"] == {"state": "ready", "built": "2026-10-09T03:00:00+01:00", "valid_until": None,
                                  "journeys": 2}
     missing = buses_part(None, at(10, 0), status_block(note="Building"), timetable_block("building", None, LONDON),
                          {"A": HENRY_A}, WALK)[0]
-    assert missing["stops"] == {"A": "Stop A"} and missing["rows"] == []
+    # No timetable, no stop data: nothing is made up.
+    assert missing["stops"] == {"A": {"name": None, "letter": None, "towards": None, "walk_min": 8}}
+    assert missing["rows"] == []
     assert missing["timetable"] == {"state": "building", "built": None, "valid_until": None, "journeys": None}
     with pytest.raises(ValueError):
         timetable_block("lost", None, LONDON)
@@ -787,14 +803,50 @@ def test_inbound_only_journeys_are_not_counted_nor_observed():
 
 
 
-def test_a_stop_is_named_with_the_letter_on_its_sign():
+def test_a_stop_has_the_letter_on_its_sign():
     from dataclasses import replace as swap
 
-    from departureboard.dashboard.snapshot import stop_names
+    from departureboard.dashboard.snapshot import stop_details
 
     lettered = swap(schedule(), positions={**POSITIONS, HENRY_A: swap(POSITIONS[HENRY_A], indicator="Stop A")})
-    assert stop_names({"A": HENRY_A}, lettered) == {"A": "Henry Street (Stop A)"}
-    assert stop_names({"A": HENRY_A, "Z": "nowhere"}, lettered)["Z"] == "Stop Z"
+    found = stop_details({"A": HENRY_A, "Z": "nowhere"}, lettered, WALK)
+    assert (found["A"]["name"], found["A"]["letter"]) == ("Henry Street", "A")
+    assert found["Z"] == {"name": None, "letter": None, "towards": None, "walk_min": None}
+    opposite = swap(schedule(), positions={**POSITIONS, HENRY_A: swap(POSITIONS[HENRY_A], indicator="opp")})
+    assert stop_details({"A": HENRY_A}, opposite, WALK)["A"]["letter"] is None  # a word, not a letter
+
+
+def test_two_stops_that_share_a_name_are_told_apart_by_the_stop_after():
+    from dataclasses import replace as swap
+
+    from departureboard.dashboard.snapshot import stop_details
+    from tests.sources.test_livebus import ASHTON_INT, GEORGE, ST_MARYS_E, journey
+
+    # St Marys Road both ways, no letters: east goes on to Arundel Street,
+    # west to Ashton Interchange (positioned here), twice to once over George Street.
+    west = journey("237", [(ST_MARYS_W, 600), (ASHTON_INT, 640)], "Ashton", "2")
+    other = journey("61", [(ST_MARYS_W, 610), (GEORGE, 612)], "Glossop", "3")
+    plan = swap(schedule(EAST, WEST, west, other),
+                positions={**POSITIONS, ASHTON_INT: swap(POSITIONS[GEORGE], name="Ashton Interchange")})
+    found = stop_details({"E": ST_MARYS_E, "W": ST_MARYS_W}, plan, WalkTimes(bus={"E": 4}))
+    assert found == {
+        "E": {"name": "St Marys Road", "letter": None, "towards": "Arundel Street", "walk_min": 4},
+        "W": {"name": "St Marys Road", "letter": None, "towards": "Ashton Interchange", "walk_min": None},
+    }
+
+
+def test_the_stop_after_never_has_the_stop_s_own_name_and_inbound_journeys_do_not_count():
+    from dataclasses import replace as swap
+
+    from departureboard.dashboard.snapshot import stop_details
+    from tests.sources.test_livebus import GEORGE, HOWARD, MARKET_HALL, journey
+
+    # Two poles of one stop in a row, and a journey kept only for the inbound bus.
+    twin = journey("61", [(HENRY_A, 600), (MARKET_HALL, 601), (GEORGE, 602)], "Glossop", "4")
+    inbound = swap(journey("62", [(HENRY_A, 600), (HOWARD, 601)], "Hadfield", "5"), inbound_only=True)
+    plan = swap(schedule(twin, inbound),
+                positions={**POSITIONS, MARKET_HALL: swap(POSITIONS[MARKET_HALL], name="Henry Street")})
+    assert stop_details({"A": HENRY_A}, plan, WALK)["A"]["towards"] is None
 
 
 def test_bus_rows_and_maps_name_the_stop_with_its_sign_letter():

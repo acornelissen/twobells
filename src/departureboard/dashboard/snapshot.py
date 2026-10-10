@@ -18,6 +18,7 @@ import math
 import re
 import threading
 import time
+from collections import Counter
 from collections.abc import Callable, Mapping
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from typing import Protocol
@@ -29,7 +30,7 @@ from ..sources.bodsbus import BusBoard
 from ..sources.darwin import CallingPoint, ServiceDetails, TrainBoard, TrainService, train_position
 from ..sources.livebus import LiveDeparture, approach
 from ..sources.weather import Conditions, Hour, rain_line
-from ..timetable.model import Schedule, StopPosition
+from ..timetable.model import Schedule, StopPosition, sign_letter
 from ..timetable.roads import path
 from .enrich import bus_extras, train_arrival
 from .history import Observed, day_type
@@ -170,6 +171,7 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
         "length": service.length,
         "cancel_reason": service.cancel_reason,
         "delay_reason": service.delay_reason,
+        "walk_min": walk.minutes(dep),
         "leave_at": iso(leave_at(dep, scheduled_at, expected_at, walk)),
         "calling_points": [calling_point(p) for p in service.calling_points],
         "previous_points": [calling_point(p) for p in details.previous] if details else [],
@@ -368,6 +370,7 @@ def bus_row(live: LiveDeparture, positions: dict[str, StopPosition], now: dateti
         "status_text": status_text(dep),
         "minutes_late": round((live.expected - live.leaves).total_seconds() / 60) if late else None,
         "live": live.progress is not None,
+        "walk_min": walk.minutes(dep),
         "leave_at": iso(leave_at(dep, scheduled_at, expected_at, walk)),
         "vehicle": _vehicle(live, now, with_position=False),
         "strip": _strip(live, positions),
@@ -391,12 +394,42 @@ def timetable_block(state: str, schedule: Schedule | None, tz: tzinfo) -> dict:
     }
 
 
-def stop_names(stops: dict[str, str], schedule: Schedule | None) -> dict[str, str]:
-    """Each stop label's name from the stop data, with the letter on its sign
-    when known ("Henry Street (Stop A)": two stops often share a name), else
-    "Stop A" from the label."""
+def next_stops(atcos: set[str], schedule: Schedule) -> dict[str, str]:
+    """The stop buses call at next after each of `atcos`, by name: the one
+    most timetabled journeys go on to (ties by name); a next stop with the
+    stop's own name doesn't count. Two stops across a road from each other
+    share a name, but not the stop after. Left out where no next stop has one."""
+    counts: dict[str, Counter[str]] = {atco: Counter() for atco in atcos}
+    positions = schedule.positions
+    for journey in schedule.departure_journeys:
+        calls = journey.calls
+        for index in range(len(calls) - 1):
+            atco = calls[index].atco
+            if atco not in counts:
+                continue
+            after = positions.get(calls[index + 1].atco)
+            here = positions.get(atco)
+            if after is not None and (here is None or after.name != here.name):
+                counts[atco][after.name] += 1
+    return {atco: min(found, key=lambda name: (-found[name], name)) for atco, found in counts.items() if found}
+
+
+def stop_details(stops: dict[str, str], schedule: Schedule | None, walk: WalkTimes) -> dict[str, dict]:
+    """Each stop label's name and walk, with what tells it from a stop of the
+    same name: the letter on its sign, and the stop buses go on to. Nothing is
+    made up: a stop the stop data doesn't have is all nulls but its walk."""
     positions = schedule.positions if schedule is not None else {}
-    return {label: stop_name(positions.get(atco), label) for label, atco in stops.items()}
+    towards = next_stops(set(stops.values()), schedule) if schedule is not None else {}
+    found = {}
+    for label, atco in stops.items():
+        place = positions.get(atco)
+        found[label] = {
+            "name": place.name if place is not None else None,
+            "letter": sign_letter(place.indicator) if place is not None else None,
+            "towards": towards.get(atco),
+            "walk_min": walk.stop(label),
+        }
+    return found
 
 
 def stop_name(place: StopPosition | None, label: str | None) -> str:
@@ -422,7 +455,7 @@ def buses_part(board: BusBoard | None, now: datetime, status: dict, timetable: d
     return {
         "status": status,
         "timetable": timetable,
-        "stops": stop_names(stops, schedule),
+        "stops": stop_details(stops, schedule, walk),
         "rows": rows,
     }, lookups
 

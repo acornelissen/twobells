@@ -182,6 +182,32 @@ export function renderTrains(snapshot, alerts) {
   return rows;
 }
 
+// The walk to each stop in one line, each name said once: "Walk: Henry Street
+// A 5 min, B 10 min; Market Hall 3 min." Stops that share a name are told
+// apart by the letter on the sign, else by the stop buses go on to, else by
+// the board's label.
+export function walkLine(stops) {
+  const byName = new Map();
+  for (const label of Object.keys(stops).sort()) {
+    const stop = obj(stops[label]);
+    if (!stop) continue;
+    const name = str(stop.name) || `Stop ${label}`;
+    if (!byName.has(name)) byName.set(name, []);
+    byName.get(name).push({ label, letter: str(stop.letter), towards: str(stop.towards), walk: num(stop.walk_min) });
+  }
+  const parts = [];
+  for (const [name, group] of byName) {
+    const shared = group.length > 1;
+    const marks = group.map((s) => s.letter || (shared && s.towards ? `towards ${s.towards}` : ""));
+    const said = marks.map((mark, i) =>
+      shared && (!mark || marks.indexOf(mark) !== marks.lastIndexOf(mark)) ? `(${group[i].label})` : mark);
+    const walks = group.map((s, i) => (s.walk === null ? null : `${said[i] ? `${said[i]} ` : ""}${s.walk} min`))
+      .filter((text) => text !== null);
+    if (walks.length) parts.push(`${name} ${walks.join(", ")}`);
+  }
+  return parts.length ? `Walk: ${parts.join("; ")}.` : "";
+}
+
 export function renderBuses(snapshot, alerts) {
   const section = document.getElementById("buses");
   const buses = obj(snapshot.buses);
@@ -192,14 +218,7 @@ export function renderBuses(snapshot, alerts) {
   const extra = tt.state === "building" ? ["Building the bus timetable…"]
     : tt.state === "missing" ? ["There is no bus timetable yet."] : [];
   statusLine(document.getElementById("buses-status"), buses.status, extra);
-  const stops = obj(buses.stops) || {};
-  const walks = obj(obj(snapshot.walk)?.bus) || {};
-  const walkText = Object.keys(stops).sort()
-    .filter((k) => num(walks[k]) !== null)
-    // The name carries the letter on the sign ("Henry Street (Stop A)"), as
-    // stops often share a street name.
-    .map((k) => `${num(walks[k])} min to ${str(stops[k]) || `Stop ${k}`}`);
-  setText(document.getElementById("buses-walk"), walkText.length ? `Walk: ${walkText.join(", ")}.` : "");
+  setText(document.getElementById("buses-walk"), walkLine(obj(buses.stops) || {}));
   const generatedMs = parseAt(snapshot.generated_at);
   const board = document.getElementById("buses-board");
   if (!rows.length) {

@@ -40,6 +40,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "length": 3,
       "cancel_reason": null,
       "delay_reason": "This train has been delayed by a broken down train",
+      "walk_min": 10,
       "leave_at": "…",
       "calling_points": [
         {"name": "Dinting", "crs": "DGT", "scheduled": "07:15", "expected": "07:22", "actual": null, "cancelled": false}
@@ -58,7 +59,10 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   "buses": {
     "status": {"last_success": "…", "stale": false, "error": null, "note": null},
     "timetable": {"state": "ready", "built": "…", "valid_until": "2031-02-23", "journeys": 445},
-    "stops": {"A": "Church Street (Stop A)", "B": "Church Street (Stop B)"},
+    "stops": {
+      "A": {"name": "Church Street", "letter": "A", "towards": "Market Place", "walk_min": 10},
+      "B": {"name": "Church Street", "letter": "B", "towards": "Park Road", "walk_min": 10}
+    },
     "rows": [{
       "id": "4b7e…",
       "line": "341",
@@ -71,6 +75,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "status_text": "Expected 07:24",
       "minutes_late": 4,
       "live": true,
+      "walk_min": 10,
       "leave_at": "…",
       "vehicle": {"age_s": 40, "recorded_at": "…", "bearing": 95.0},
       "strip": {"stops": ["Mill Lane", "Park Road", "Church Street", "Market Place"], "yours": 2, "bus_at": 0.6, "where": "2 stops away"},
@@ -89,6 +94,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "status_text": "Timetable only",
       "minutes_late": null,
       "live": false,
+      "walk_min": 10,
       "leave_at": "…",
       "vehicle": null,
       "strip": {"stops": ["Church Street", "Market Place"], "yours": 0, "bus_at": null, "where": "No live position"},
@@ -115,7 +121,8 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `status` is one of `on_time`, `late`, `cancelled`, `unknown`.
   - `status_text` is always words, for example "On time", "Expected 07:19", "Cancelled", "Delayed", "Timetable only" (a bus with no live position), "No report". Colour only reinforces it.
   - `minutes_late` is null unless the status is late with a known time.
-- **`leave_at`:** when to set off on foot (`expected_at` or else `scheduled_at`, minus the walk minutes for that mode or stop). It is null when cancelled or no walk time is set.
+- **`walk_min`:** the walk to the station or to the row's stop, in whole minutes, as set for the board (`walk.train`, or `walk.bus` for the stop, else its `*`). It is null when no walk time is set. A cancelled row still has it.
+- **`leave_at`:** when to set off on foot (`expected_at` or else `scheduled_at`, minus `walk_min`). It is null when cancelled or no walk time is set.
 - **Missing data:**
   - A section can be `null` when it isn't configured (`trains`, `buses`, `weather`).
   - `now`, `sun`, `rain`, `strip`, `vehicle` and `position` can each be null.
@@ -132,6 +139,13 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `building` (first build in progress);
   - `missing` (no timetable, with `status.note` saying why).
 - **`timetable.journeys`** counts the timetabled journeys calling at your stops. The journeys kept only to find an inbound bus (ending at a stand near your stop without calling at it; see `inbound`) aren't counted.
+- **`buses.stops`:** each of your stops by its board label, with what tells it from another stop of the same name (two stops across a road from each other usually share one). Nothing is made up: a stop the stop data doesn't have has every field null but `walk_min`.
+  - `name`: NaPTAN's name for the stop, like "Church Street", or null.
+  - `letter`: the letter or number on its sign from NaPTAN's indicator ("Stop A" is `A`, "Stand 12" is `12`), or null where the indicator is a word like "opp" or there is none.
+  - `towards`: the name of the stop buses call at next, the one most timetabled journeys from this stop go on to (a next stop with this stop's own name doesn't count), or null.
+  - `walk_min`: the walk to it in whole minutes, as on its rows, or null.
+  - The page says each name once and tells stops apart by `letter`, else `towards`, else the label: "Walk: Church Street A 10 min, B 10 min."
+- **`walk`:** the walk times as set, by mode and stop label (`*` for any stop). The page reads `walk.train` for the trains' walk line; `walk_min` on rows and stops supersedes the rest.
 - **`stop_name`:** the stop's name from the stop data with the letter on its sign when known ("Church Street (Stop A)"); "Stop A" from the board's label when the stop has no data. Show this rather than the label.
 - **`strip`:**
   - `stops` are the stop names before yours, then yours, then possibly the next one.

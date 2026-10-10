@@ -459,18 +459,20 @@ TRAIN_ROW = {
     "scheduled": hhmm, "scheduled_at": at, "expected": Opt(hhmm), "expected_at": Opt(at),
     "status": ROW_STATUS, "status_text": str, "minutes_late": Opt(integer),
     "platform": Opt(str), "length": Opt(integer),
-    "cancel_reason": Opt(str), "delay_reason": Opt(str), "leave_at": Opt(at),
+    "cancel_reason": Opt(str), "delay_reason": Opt(str), "walk_min": Opt(integer), "leave_at": Opt(at),
     "calling_points": [CALLING_POINT],
     "previous_points": [CALLING_POINT],
     "position": Opt({"where": str, "strip": {"stops": [str], "yours": integer, "train_at": Opt(number)}}),
     "history": HISTORY,
     "arrives": Opt(ARRIVES),
 }
+# One of your stops, by label: what tells it from another of the same name, and its walk.
+BUS_STOP = {"name": Opt(str), "letter": Opt(str), "towards": Opt(str), "walk_min": Opt(integer)}
 BUS_ROW = {
     "id": row_id, "line": str, "destination": str, "stop": str, "stop_name": str,
     "scheduled": hhmm, "scheduled_at": at, "expected": Opt(hhmm), "expected_at": Opt(at),
     "status": ROW_STATUS, "status_text": str, "minutes_late": Opt(integer),
-    "live": bool, "leave_at": Opt(at),
+    "live": bool, "walk_min": Opt(integer), "leave_at": Opt(at),
     "vehicle": Opt({"age_s": integer, "recorded_at": at, "bearing": Opt(number)}),
     "strip": Opt({"stops": [str], "yours": integer, "bus_at": Opt(number), "where": str}),
     "history": BUS_HISTORY,
@@ -514,7 +516,7 @@ SNAPSHOT = {
             "state": one_of("ready", "building", "missing"), "built": Opt(at),
             "valid_until": Opt(lambda v: isinstance(v, str) and bool(DAY.match(v))), "journeys": Opt(integer),
         },
-        "stops": MapOf(str),
+        "stops": MapOf(BUS_STOP),
         "rows": [BUS_ROW],
     }),
     "weather": Opt(WEATHER),
@@ -588,6 +590,11 @@ def test_snapshot_fixture_follows_the_contract():
     for row in buses:
         if row["ghost"]:
             assert not row["live"] and row["status_text"] == "Timetable only"
+    # Every row has its walk; the two Henry Street stops are told apart.
+    stops = snapshot["buses"]["stops"]
+    assert all(r["walk_min"] == snapshot["walk"]["train"] for r in trains)
+    assert all(r["walk_min"] == stops[r["stop"]]["walk_min"] for r in buses)
+    assert stops["A"]["name"] == stops["B"]["name"] and stops["A"]["letter"] != stops["B"]["letter"]
     # Trains: the first few have a position; the rest don't.
     assert [bool(r["position"]) for r in trains[:3]] == [True, False, True]  # the second is cancelled
     assert any(r["position"]["strip"]["train_at"] is not None for r in trains if r["position"])
@@ -744,6 +751,54 @@ def test_the_journey_dots_follow_the_line_height():
     # Text spacing (WCAG 1.4.12) can widen the lines: a dot sits half a line
     # down wherever the browser knows the lh unit.
     assert "0.5lh" in _css_block("@supports (top: 1lh)")[".calling.journey"]
+
+
+def _stop(name, walk, letter=None, towards=None):
+    return {"name": name, "letter": letter, "towards": towards, "walk_min": walk}
+
+
+@needs_node
+@pytest.mark.parametrize(
+    "stops, line",
+    [
+        # Two stops on one street, lettered on the sign: the name once.
+        ({"A": _stop("Henry Street", 5, "A"), "B": _stop("Henry Street", 10, "B")},
+         "Walk: Henry Street A 5 min, B 10 min."),
+        # No letters: the stop buses go on to tells them apart. In label order.
+        ({"A": _stop("Victoria Street", 5, towards="Howard Arms"), "C": _stop("Victoria Street", 5, towards="Market Hall"),
+          "B": _stop("Henry Street", 10, "B")},
+         "Walk: Victoria Street towards Howard Arms 5 min, towards Market Hall 5 min; Henry Street B 10 min."),
+        # Nothing tells them apart: the board's labels do.
+        ({"A": _stop("Victoria Street", 5), "B": _stop("Victoria Street", 6)},
+         "Walk: Victoria Street (A) 5 min, (B) 6 min."),
+        ({"A": _stop("Victoria Street", 5, towards="Glossop"), "B": _stop("Victoria Street", 6, towards="Glossop")},
+         "Walk: Victoria Street (A) 5 min, (B) 6 min."),
+        # A name of its own needs nothing more; no stop data says the label.
+        ({"A": _stop("Market Hall", 3, towards="Howard Arms"), "B": _stop(None, 4)},
+         "Walk: Market Hall 3 min; Stop B 4 min."),
+        # A stop without a walk is left out, but still counts as sharing the name.
+        ({"A": _stop("Henry Street", 5, towards="Howard Arms"), "B": _stop("Henry Street", None, towards="Market Hall")},
+         "Walk: Henry Street towards Howard Arms 5 min."),
+        ({"A": _stop("Henry Street", None)}, ""),
+        ({}, ""),
+    ],
+)
+def test_the_walk_line_says_each_stop_once_and_tells_namesakes_apart(stops, line):
+    found = run_js(f"""
+        import {{ walkLine }} from "./board.js";
+        console.log(JSON.stringify(walkLine({json.dumps(stops)})));
+    """)
+    assert found == line
+
+
+@needs_node
+def test_the_walk_line_never_repeats_a_stop_from_the_fixture():
+    stops = _fixture("dashboard_snapshot.json")["buses"]["stops"]
+    found = run_js(f"""
+        import {{ walkLine }} from "./board.js";
+        console.log(JSON.stringify(walkLine({json.dumps(stops)})));
+    """)
+    assert found == "Walk: Henry Street A 8 min, B 6 min."
 
 
 # Where the train is along its journey: the stops before this station (0, 1),

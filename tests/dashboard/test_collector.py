@@ -410,9 +410,11 @@ def test_buses_are_published_and_observed(tmp_path):
     setup = Setup(tmp_path)
     setup.collector.poll_buses()
     buses = setup.snapshot()["buses"]
-    assert buses["timetable"]["state"] == "ready" and buses["stops"] == {"A": "Henry Street"}
+    assert buses["timetable"]["state"] == "ready"
+    assert buses["stops"] == {"A": {"name": "Henry Street", "letter": None, "towards": "Howard Arms", "walk_min": 8}}
     row = next(r for r in buses["rows"] if r["line"] == "341")
     assert row["live"] and row["expected"] == "10:19" and row["leave_at"] == "2026-10-09T10:11:00+01:00"
+    assert row["walk_min"] == 8
     mode, rows, _ = setup.history.observed[0]
     assert mode == "bus" and {o.route for o in rows} >= {"A|341|Hadfield"}
     assert setup.history.late_minutes == 2
