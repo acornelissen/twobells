@@ -2247,7 +2247,7 @@ def _kiosk_hidden():
     return hidden
 
 
-def _matches(selector, tag, attrs):
+def _compound(selector, tag, attrs):
     """Whether a compound selector of a tag, an #id and .classes matches."""
     parts = re.findall(r"^[a-z0-9]+|#[\w-]+|\.[\w-]+", selector)
     assert "".join(parts) == selector, f"can't read {selector}"
@@ -2259,6 +2259,18 @@ def _matches(selector, tag, attrs):
         return part[1:] in classes if part[0] == "." else part == tag
 
     return all(one(part) for part in parts)
+
+
+def _matches(selector, path):
+    """Whether a selector of compounds joined by spaces (descendants) matches
+    the last of path, a list of (tag, attrs) from the root down."""
+    *outer, last = selector.split()
+    if not _compound(last, *path[-1]):
+        return False
+    for tag, attrs in reversed(path[:-1]):
+        if outer and _compound(outer[-1], tag, attrs):
+            outer.pop()
+    return not outer
 
 
 def test_a_wall_tablet_page_has_nothing_to_focus_or_press():
@@ -2275,12 +2287,33 @@ def test_a_wall_tablet_page_has_nothing_to_focus_or_press():
                      or attrs.get("tabindex", "-1") != "-1")
         if not focusable or any(t == "dialog" for t, _ in ancestors):
             continue
-        if not any(_matches(s, t, a) for s in hidden for t, a in [(tag, attrs), *ancestors]):
+        path = [*ancestors, (tag, attrs)]
+        if not any(_matches(s, path[:i + 1]) for s in hidden for i in range(len(path))):
             left.append(attrs.get("id") or attrs.get("class") or tag)
     assert left == ["dis-line"]
     # And a click on a row opens nothing on a wall tablet.
     main = (STATIC / "main.js").read_text(encoding="utf-8")
     assert "if (kiosk) return; // nothing on a wall tablet opens" in main
+
+
+def _kiosk_rule(selector):
+    """The declarations app.css gives exactly this :root[data-kiosk] selector, wherever they are."""
+    css = re.sub(r"/\*.*?\*/", "", (STATIC / "app.css").read_text(encoding="utf-8"), flags=re.S)
+    return " ".join(body for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+                    if f":root[data-kiosk] {selector}" in [s.strip() for s in selectors.split(",")])
+
+
+def test_a_wall_tablet_header_and_rows_keep_to_their_lines():
+    # The header is one line: the place gives way (cut short), never the clock or the status.
+    assert "flex-wrap: nowrap" in _kiosk_rule(".top") and "width: 100%" in _kiosk_rule(".top")
+    assert "white-space: nowrap" in _kiosk_rule(".top h1") and "min-width: 0" in _kiosk_rule(".top h1")
+    assert "flex: none" in _kiosk_rule(".top .connection") and "flex: none" in _kiosk_rule(".top .clock")
+    # Rows: the stop never wraps, so the destination does; the leave time's
+    # second line goes, and the captions are for screen readers only.
+    assert "white-space: nowrap" in _kiosk_rule("table.board .c-stop")
+    assert "display: none" in _kiosk_rule("table.board .leave-at")
+    caption = _kiosk_rule("table.board caption")
+    assert "clip-path: inset(50%)" in caption and "display: none" not in caption
 
 
 @needs_node

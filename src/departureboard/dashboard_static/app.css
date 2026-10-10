@@ -1033,9 +1033,17 @@ table.history thead th { border-top: 0; color: var(--muted); }
 :root[data-kiosk] .calling-at,
 :root[data-kiosk] .record,
 :root[data-kiosk] .inbound,
-:root[data-kiosk] #weather-hours-heading { display: none; }
+:root[data-kiosk] #weather-hours-heading,
+/* The countdown says when to leave, as on a narrow screen. */
+:root[data-kiosk] table.board .leave-at { display: none; }
 
-:root[data-kiosk] .top { flex: none; padding: var(--s-3) var(--s-4); }
+/* One line: the place at the left, the clock and the status at the right.
+   The width: the body is a flex column, where the header's auto margins
+   would otherwise shrink it to its content and wrap it. */
+:root[data-kiosk] .top { flex: none; flex-wrap: nowrap; width: 100%; padding: var(--s-3) var(--s-4); }
+:root[data-kiosk] .top h1 { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-kiosk] .top .clock,
+:root[data-kiosk] .top .connection { flex: none; white-space: nowrap; }
 :root[data-kiosk] main {
   display: grid;
   flex: 1 1 auto;
@@ -1065,11 +1073,29 @@ table.history thead th { border-top: 0; color: var(--muted); }
   :root[data-kiosk] .boards { display: flex; gap: var(--s-6); align-items: flex-start; }
   :root[data-kiosk] .boards > * { flex: 1 1 0; }
 }
-/* Rows a little tighter, and nothing that looks as if it could be pressed. */
+/* Four rows of each, two lines a row where the destination fits on one:
+   tighter rows, the section's heading for a caption (still there for
+   screen readers), and the stop on one line, so the destination is the
+   column that wraps. Wide, the stop's walk goes (Next to catch says it);
+   narrow, it shares the stop's line, as on any narrow screen. */
+:root[data-kiosk] table.board caption {
+  position: absolute;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+:root[data-kiosk] table.board .c-stop { white-space: nowrap; }
 @media (min-width: 64.0625rem) {
   :root[data-kiosk] table.board th,
-  :root[data-kiosk] table.board td { padding-block: var(--s-2); }
+  :root[data-kiosk] table.board td { padding-block: var(--s-1); }
+  :root[data-kiosk] table.board .c-stop .walk { display: none; }
 }
+@media (max-width: 64rem) {
+  :root[data-kiosk] table.board tr { padding-block: var(--s-1); }
+}
+/* Nothing that looks as if it could be pressed. */
 :root[data-kiosk] table.board tbody tr[data-id] { cursor: auto; }
 :root[data-kiosk] table.board tbody tr[data-id]:hover,
 :root[data-kiosk] table.board tbody tr[data-id]:hover > * { background: transparent; }
