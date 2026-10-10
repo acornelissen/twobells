@@ -751,6 +751,8 @@ class FakeSteps:
 
     def handle(self, name, payload):
         self.calls.append((name, payload))
+        if name == "nan":
+            return 200, {"distance": float("nan")}
         if name != "begin":
             return 404, {"error": "No such setup step"}
         return 200, {"keys": [], "links": [], "job": {"state": "idle"}}
@@ -1000,6 +1002,16 @@ def test_an_unknown_step_is_the_apis_to_refuse(wizard_server):
     cookie = signed_in(wizard_server)
     response, _ = step(port, "nosuch", cookie=cookie, csrf=session_token(port, cookie))
     assert response.status == 404 and steps.calls == [("nosuch", {})]
+
+
+def test_a_reply_that_is_not_strict_json_is_never_sent(wizard_server, caplog):
+    port, steps, *_ = wizard_server
+    cookie = signed_in(wizard_server)
+    csrf = session_token(port, cookie)
+    with pytest.raises(ConnectionError):  # dropped unanswered, rather than send NaN
+        step(port, "nan", cookie=cookie, csrf=csrf)
+    assert steps.calls == [("nan", {})]
+    assert "Settings page request failed: ValueError" in caplog.text
 
 
 def test_without_a_wizard_nothing_is_under_setup(server):

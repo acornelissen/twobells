@@ -122,7 +122,7 @@ _STEP_BODY_REFUSED = {
 
 
 def _json_reply(status: int, value: dict) -> Reply:
-    return Reply(status, json.dumps(value).encode(), JSON)
+    return Reply(status, json.dumps(value, allow_nan=False).encode(), JSON)
 
 
 @dataclass(frozen=True)
