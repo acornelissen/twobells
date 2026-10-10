@@ -292,7 +292,8 @@ def test_history_phrases_come_from_the_history():
 
 def test_no_board_yet_is_an_empty_section():
     part, lookups = trains_part(None, None, status_block(), "GLO", "MAN", WALK, "GLO>MAN")
-    assert part == {"station": "GLO", "filter": "MAN", "status": status_block(), "messages": [], "rows": []}
+    assert part == {"station": "GLO", "filter": "MAN", "status": status_block(), "positions": None, "messages": [],
+                    "rows": []}
     assert lookups == {}
 
 

@@ -283,6 +283,15 @@ def test_without_a_details_client_trains_have_no_position(tmp_path):
     setup.collector.poll_trains()
     rows = setup.snapshot()["trains"]["rows"]
     assert rows and all(r["position"] is None and r["previous_points"] == [] for r in rows)
+    assert setup.snapshot()["trains"]["positions"] is None  # nothing asked, so nothing to say
+
+
+def test_the_trains_say_how_asking_where_they_are_is_going(tmp_path):
+    setup = Setup(tmp_path, now=TONIGHT, details=True)
+    assert setup.snapshot()["trains"]["positions"]["last_success"] is None
+    setup.collector.poll_trains()
+    said = setup.snapshot()["trains"]["positions"]
+    assert said["last_success"] is not None and said["error"] is None and said["note"] is None
 
 
 def test_the_first_three_trains_are_placed(tmp_path):
@@ -352,6 +361,10 @@ def test_a_refused_key_turns_details_off_for_six_hours(tmp_path, caplog):
     assert setup.snapshot()["trains"]["status"]["error"] is None
     warnings = [r.getMessage() for r in caplog.records if "positions" in r.getMessage()]
     assert warnings == ["dashboard train positions off for 6 hours: Service details refused the key (HTTP 403)"]
+
+    said = setup.snapshot()["trains"]["positions"]
+    assert said["error"] == "Service details refused the key (HTTP 403)" and said["stale"] is True
+    assert said["note"] == "Not asked again for 6 hours" and said["last_success"] is not None
 
     setup.monotonic.now += 5 * 3600 + 1  # six hours on
     setup.details.errors.clear()
@@ -452,6 +465,23 @@ def test_buses_without_live_positions_show_but_are_not_observed(tmp_path):
     assert buses["status"]["note"].startswith("Timetabled times only")
     assert buses["status"]["stale"] is False and buses["rows"]
     assert setup.history.observed == []
+
+
+def test_the_buses_say_how_asking_where_they_are_is_going(tmp_path):
+    setup = Setup(tmp_path)
+    assert setup.snapshot()["buses"]["positions"]["last_success"] is None
+    setup.collector.poll_buses()
+    first = setup.snapshot()["buses"]["positions"]
+    assert first["last_success"] is not None and first["error"] is None and first["stale"] is False
+    setup.buses.vehicles_ok = False
+    setup.clock.now += timedelta(minutes=1)
+    setup.collector.poll_buses()
+    failing = setup.snapshot()["buses"]["positions"]
+    assert failing["last_success"] == first["last_success"] and failing["stale"] is True
+    assert failing["error"] == "Timetabled times only; live positions failed: down"
+    setup.buses.vehicles_ok = True
+    setup.collector.poll_buses()
+    assert setup.snapshot()["buses"]["positions"]["error"] is None
 
 
 def test_an_error_keeps_the_last_buses(tmp_path):

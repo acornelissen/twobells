@@ -199,6 +199,8 @@ class Collector:
         crs, filter_crs = settings.train_crs, settings.train_filter
         self._route_prefix = f"{crs}>{filter_crs}" if filter_crs else crs
         self._trains, self._buses, self._weather = _Feed(), _Feed(), _Feed()
+        # How asking where the trains and the buses are is going, for the settings' Overview.
+        self._train_positions, self._bus_positions = _Feed(), _Feed()
         # Service details by Darwin service ID, with when they came (monotonic).
         self._details: dict[str, tuple[float, ServiceDetails]] = {}
         self._details_off_until: float | None = None
@@ -250,6 +252,7 @@ class Collector:
             self._trains.data, self._trains.fetched, self._trains.status(), settings.train_crs,
             settings.train_filter, settings.walk, self._route_prefix, self._phrases,
             details=details, now=self._clock(),
+            positions=self._train_positions.status() if settings.train_details is not None else None,
         )
         self._hub.publish("trains", part, lookups)
 
@@ -264,7 +267,7 @@ class Collector:
             timetable = timetable_block("ready", board.schedule, self._tz)
         part, lookups = buses_part(board, self._clock(), self._buses.status(), timetable,
                                    self._settings.bus_stops, self._settings.walk, self._phrases,
-                                   self._bus_no_shows)
+                                   self._bus_no_shows, self._bus_positions.status())
         self._hub.publish("buses", part, lookups)
 
     def _publish_bus_note(self) -> None:
@@ -393,14 +396,18 @@ class Collector:
             except DetailsUnavailable as error:
                 self._details_off_until = self._monotonic() + DETAILS_OFF
                 self._details = {}
+                self._train_positions.failed(error)
+                self._train_positions.note = "Not asked again for 6 hours"
                 log.warning("dashboard train positions off for 6 hours: %s", safe_message(error))
                 return
             except ServiceGone:
                 self._details.pop(service_id, None)
             except Exception as error:  # noqa: BLE001 - the board matters more than one train's position
+                self._train_positions.failed(error)
                 log.warning("dashboard train position skipped: %s", safe_message(error))
             else:
                 self._details[service_id] = (self._monotonic(), found)
+                self._train_positions.worked(None, self._clock())
 
     def poll_buses(self) -> None:
         source = self._settings.bus
@@ -429,6 +436,9 @@ class Collector:
             raise
         if board.vehicles_ok:  # timetabled times alone say nothing about punctuality
             self._observe("bus", bus_observations(board), now)
+            self._bus_positions.worked(None, now)
+        else:
+            self._bus_positions.error = board.note or "Live positions failed"
         self._buses.worked(board, now, board.note)
         self._publish_buses()
         self._hub.put("area", area_view(board, now))

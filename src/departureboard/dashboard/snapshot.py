@@ -216,11 +216,12 @@ def calling_point(point: CallingPoint) -> dict:
 def trains_part(board: TrainBoard | None, fetched: datetime | None, status: dict, station: str,
                 filter_crs: str | None, walk: WalkTimes, route_prefix: str,
                 phrases: Phrases = no_history, details: Mapping[str, ServiceDetails] | None = None,
-                now: datetime | None = None) -> tuple[dict, dict[str, dict]]:
+                now: datetime | None = None, positions: dict | None = None) -> tuple[dict, dict[str, dict]]:
     """The trains section and its lookups by row id. `fetched` is when the
     board was fetched (aware), which its HH:MM times are read against.
     `details` are the service details known, by Darwin service ID; `now` is
-    when to place the trains (else `fetched`)."""
+    when to place the trains (else `fetched`). `positions` is how asking
+    where the trains are is going (a status block), None without its key."""
     rows, lookups = [], {}
     details = details or {}
     if board is not None and fetched is not None:
@@ -234,6 +235,7 @@ def trains_part(board: TrainBoard | None, fetched: datetime | None, status: dict
         "station": (board.location if board is not None and board.location else None) or station,
         "filter": filter_crs,
         "status": status,
+        "positions": positions,
         "messages": [message(m) for m in board.messages] if board is not None else [],
         "rows": rows,
     }, lookups
@@ -456,8 +458,11 @@ def stop_name(place: StopPosition | None, label: str | None) -> str:
 
 def buses_part(board: BusBoard | None, now: datetime, status: dict, timetable: dict,
                stops: dict[str, str], walk: WalkTimes,
-               phrases: Phrases = no_history, no_shows: NoShows = no_no_shows) -> tuple[dict, dict[str, dict]]:
-    """The buses section and its lookups by row id. `stops` are labels to ATCO codes."""
+               phrases: Phrases = no_history, no_shows: NoShows = no_no_shows,
+               positions: dict | None = None) -> tuple[dict, dict[str, dict]]:
+    """The buses section and its lookups by row id. `stops` are labels to ATCO
+    codes. `positions` is how asking where the buses are is going (a status
+    block), None where none are asked for."""
     rows, lookups = [], {}
     schedule = board.schedule if board is not None else None
     if board is not None:
@@ -468,6 +473,7 @@ def buses_part(board: BusBoard | None, now: datetime, status: dict, timetable: d
             lookups[row["id"]] = lookup
     return {
         "status": status,
+        "positions": positions,
         "timetable": timetable,
         "stops": stop_details(stops, schedule, walk),
         "rows": rows,

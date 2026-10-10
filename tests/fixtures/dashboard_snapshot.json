@@ -20,6 +20,12 @@
       "error": null,
       "note": null
     },
+    "positions": {
+      "last_success": "2026-10-10T07:01:00+01:00",
+      "stale": false,
+      "error": null,
+      "note": null
+    },
     "messages": [
       {
         "text": "Disruption between Hadfield and Glossop until 10:00. Some trains may be cancelled or delayed.",
@@ -1113,6 +1119,12 @@
   },
   "buses": {
     "status": {
+      "last_success": "2026-10-10T07:01:00+01:00",
+      "stale": false,
+      "error": null,
+      "note": null
+    },
+    "positions": {
       "last_success": "2026-10-10T07:01:00+01:00",
       "stale": false,
       "error": null,

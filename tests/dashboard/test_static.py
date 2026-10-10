@@ -561,10 +561,12 @@ SNAPSHOT = {
     "quiet": bool,
     "row_strips": bool,
     "trains": Opt({
-        "station": str, "filter": Opt(str), "status": STATUS, "messages": [MESSAGE], "rows": [TRAIN_ROW],
+        "station": str, "filter": Opt(str), "status": STATUS, "positions": Opt(STATUS), "messages": [MESSAGE],
+        "rows": [TRAIN_ROW],
     }),
     "buses": Opt({
         "status": STATUS,
+        "positions": Opt(STATUS),
         "timetable": {
             "state": one_of("ready", "building", "missing"), "built": Opt(at),
             "valid_until": Opt(lambda v: isinstance(v, str) and bool(DAY.match(v))), "journeys": Opt(integer),

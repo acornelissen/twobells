@@ -27,6 +27,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
     "station": "Glossop",
     "filter": "MAN",
     "status": {"last_success": "…", "stale": false, "error": null, "note": null},
+    "positions": {"last_success": "…", "stale": false, "error": null, "note": null},
     "messages": [
       {"text": "Disruption between Hadfield and Glossop until 10:00.", "category": "train", "severity": "minor", "kind": "service"},
       {"text": "The ticket office is currently closed at this station.", "category": null, "severity": null, "kind": "station"}
@@ -64,6 +65,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   },
   "buses": {
     "status": {"last_success": "…", "stale": false, "error": null, "note": null},
+    "positions": {"last_success": "…", "stale": false, "error": null, "note": null},
     "timetable": {"state": "ready", "built": "…", "valid_until": "2031-02-23", "journeys": 445},
     "stops": {
       "A": {"name": "Church Street", "letter": "A", "towards": "Market Place", "walk_min": 10},
@@ -168,6 +170,9 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `bus_at` is the bus's position in stop units along `stops` (0 is the first). It is null when the bus isn't on the strip yet, and when there's no live bus.
   - `where` is a sentence for screen readers and the row.
 - **`status.stale`** is true when nothing new has arrived for longer than expected. `error` is a short message with any keys removed.
+- **`positions`** says how asking where the vehicles are is going, in the same shape as `status`; the settings site's Overview shows it, and the page doesn't use it.
+  - `trains.positions` is for Darwin's Service Details (`RDM_DETAILS_API_KEY`): `last_success` is when a train's details last came, `error` the last failure, and `note` is "Not asked again for 6 hours" while a refused key has turned them off. It is null without the key.
+  - `buses.positions` is for the live bus positions: `last_success` is when they last came, and `error` says why the last try failed (the rows then show timetabled times, as `status.note` says). It is null when the buses come from TransportAPI, which the dashboard doesn't show.
 
 ### Row extras
 
