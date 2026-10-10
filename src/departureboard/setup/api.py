@@ -13,7 +13,7 @@ goes to postcodes.io or Nominatim to find it and to the foot router for
 walk times, as setup/lookups.py describes, and is never logged or saved. With a
 spool runner it passes through a request file in the private spool folder,
 held in memory on the Pi, never on the SD card, and deleted as soon as the
-setup service reads it (setup/spool.py). Finishing
+setup service reads it (setup/spool/). Finishing
 writes only what setup.config_fragment allows: the weather position rounded
 to 2 places (about a kilometre), the station, the stops and walk times, the
 bank holiday list, and [bus] source, operators and routes from the search.
@@ -27,7 +27,7 @@ the other keys through SetupApi.test_key, under the same limit and runner.
 Where the internet work runs. By default the lookups, the key tests and the
 search run here, in this process (the dashboard; a laptop). A host that
 mustn't reach the internet itself passes a `runner` (see Runner) that does
-them elsewhere: on the Pi, setupspool.SpoolRunner hands them to a separate
+them elsewhere: on the Pi, spool.runner.SpoolRunner hands them to a separate
 setup service, as the settings page's own service is kept off the internet.
 A runner is given only what was typed or pasted, never a saved key or the
 saved settings; it reads those itself.

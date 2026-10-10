@@ -37,9 +37,10 @@ def _adopt(args, store: Store, install: str = "desktop") -> None:
 def fetch_command(args) -> int:
     """The fetch service on a Pi: the internet work of the web server, which
     can't reach the internet itself: the wizard's lookups and the dashboard's
-    pollers (see fetch/service.py and setup/spool.py)."""
+    pollers (see fetch/service.py and setup/spool/)."""
     from ..fetch.service import FetchService
-    from ..setup import spool as setupspool
+    from ..setup.spool.folder import SpoolError, spool_folder
+    from ..setup.spool.worker import NO_SETTINGS, Worker
 
     install = install_named(args.install)
     store, problem = None, ""
@@ -50,22 +51,21 @@ def fetch_command(args) -> int:
     if problem:
         print(problem, file=sys.stderr)
     try:
-        spool = setupspool.spool_folder()
-    except setupspool.SpoolError as error:
+        spool = spool_folder()
+    except SpoolError as error:
         print(error, file=sys.stderr)
         return 2
     stop = threading.Event()
     if problem:
         # Say so to the page, rather than stop with its requests waiting and be started again and again.
-        service = setupspool.Worker(spool, job_folder=None, load_secrets=dict, unavailable=setupspool.NO_SETTINGS,
-                                    stop=stop)
+        service = Worker(spool, job_folder=None, load_secrets=dict, unavailable=NO_SETTINGS, stop=stop)
     else:
         service = FetchService(store, install, spool, stop=stop)
     # systemctl stop, a timeout or update.sh: end cleanly, telling the page a running search was cancelled.
     previous = signal.signal(signal.SIGTERM, lambda signum, frame: stop.set())
     try:
         return service.run()
-    except (OSError, setupspool.SpoolError) as error:
+    except (OSError, SpoolError) as error:
         print(f"Can't use the spool: {error}", file=sys.stderr)
         return 2
     finally:
@@ -238,7 +238,8 @@ def serve_command(args) -> int:
     runner = None
     if install.fetch == "files":
         # This service can't reach the internet; departureboard-fetch.service does that work.
-        from ..setup.spool import SpoolError, SpoolRunner, spool_folder
+        from ..setup.spool.folder import SpoolError, spool_folder
+        from ..setup.spool.runner import SpoolRunner
 
         try:
             runner = SpoolRunner(spool_folder())
@@ -278,7 +279,7 @@ def _mirror(store: Store, install: Install, runner, dash):
     from ..core.walk import WalkTimes
     from ..fetch.handoff import SnapshotMirror
     from ..settings.schema import BOARD_DEFAULTS
-    from ..setup.spool import Poster
+    from ..setup.spool.runner import Poster
 
     folder = runner.spool.folder
     return SnapshotMirror(

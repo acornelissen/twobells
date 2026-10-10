@@ -12,11 +12,30 @@ import pytest
 
 from departureboard.settings.overlay import board_target
 from departureboard.setup import discover
-from departureboard.setup import spool as setupspool
 from departureboard.setup.api import RateLimit, SetupApi
 from departureboard.setup.keytest import KeyResult
 from departureboard.setup.lookups import Place, SetupError, Stop
-from departureboard.setup.spool import Refused, Spool, SpoolRunner, Worker
+from departureboard.setup.spool.checks import REQUEST_MAX_AGE_S, Refused, check_status
+from departureboard.setup.spool.folder import (
+    MAX_REPLY_BYTES,
+    MAX_REQUEST_BYTES,
+    RUNTIME,
+    WAITS,
+    Spool,
+    SpoolError,
+    spool_folder,
+)
+from departureboard.setup.spool.runner import (
+    ACTIVE_EVERY_S,
+    NO_ANSWER,
+    SILENT_S,
+    STOPPED,
+    UNFIT,
+    Poster,
+    SpoolRunner,
+    new_id,
+)
+from departureboard.setup.spool.worker import HEARTBEAT_S, NO_SETTINGS, SEARCH_NICE, WORKER_LOCK, Worker
 
 HOME = {"lat": 53.461964, "lon": -1.965633}
 HOME_PLACE = Place(HOME["lat"], HOME["lon"], "SK13 1AH", "England", "High Peak")
@@ -98,7 +117,7 @@ def board(tmp_path):
         walk_minutes=lambda home, places: calls.append(("walk", home, places)) or dict.fromkeys(places, (4, "route")),
         make_job=FakeJob, test_key=test_key, idle=60, poll=0.01, stop=threading.Event(),
     )
-    runner = SpoolRunner(state / "spool", poll=0.01, waits=dict.fromkeys(setupspool.WAITS, 5.0),
+    runner = SpoolRunner(state / "spool", poll=0.01, waits=dict.fromkeys(WAITS, 5.0),
                          start_wait=5.0)
     api = SetupApi(board_target(config), lambda: dict(secrets), state, runner=runner, stations=lambda: STATIONS,
                    key_tests=RateLimit(10.0))
@@ -127,7 +146,7 @@ def spool_text(state) -> str:
     out = []
     for folder, _, names in os.walk(state / "spool"):
         for name in names:
-            if name != setupspool.WORKER_LOCK:
+            if name != WORKER_LOCK:
                 with open(os.path.join(folder, name), encoding="utf-8", errors="replace") as file:
                     out.append(file.read())
     return "\n".join(out)
@@ -174,7 +193,7 @@ def test_the_search_round_trips_with_its_progress(serving, caplog):
     job = FakeJob.made[-1]
     assert (job.stops, job.api_key, job.routes, job.walk, job.folder) == (
         {"A": "1800SB12341"}, PASTED, True, {"A": 3}, serving.state)
-    assert job.nice == setupspool.SEARCH_NICE == 10  # it gives way to the lookups
+    assert job.nice == SEARCH_NICE == 10  # it gives way to the lookups
     wait_for(lambda: ok(serving, "job")["job"]["state"] == "running")
     assert ok(serving, "job")["job"]["total"] == 3
     job.finish()
@@ -242,9 +261,9 @@ def test_the_service_limits_key_tests_too(board):
 
 
 def test_no_answer_is_said_plainly_and_the_request_withdrawn(board):
-    board.runner._waits = dict.fromkeys(setupspool.WAITS, 0.05)
+    board.runner._waits = dict.fromkeys(WAITS, 0.05)
     status, body = board.handle("testkey", {"name": "BODS_API_KEY", "value": PASTED})
-    assert status == 422 and body["error"] == setupspool.NO_ANSWER
+    assert status == 422 and body["error"] == NO_ANSWER
     assert spool_text(board.state) == ""  # the pasted key didn't stay waiting
 
 
@@ -253,7 +272,7 @@ def test_a_search_never_started_fails(board):
     job = board.runner.make_job({"A": "1800SB12341"}, PASTED, routes=False, walk_minutes={})
     job.start()
     time.sleep(0.01)
-    assert job.status()["message"] == setupspool.NO_ANSWER
+    assert job.status()["message"] == NO_ANSWER
     assert spool_text(board.state) == ""
 
 
@@ -264,15 +283,15 @@ def test_a_search_that_goes_quiet_has_stopped(board):
     job.start()
     board.worker.step()
     assert job.status()["state"] == "running"
-    now[0] = setupspool.SILENT_S + 1
+    now[0] = SILENT_S + 1
     status = job.status()
-    assert status["state"] == "failed" and status["message"] == setupspool.STOPPED
+    assert status["state"] == "failed" and status["message"] == STOPPED
 
 
 def test_a_search_stays_alive_while_a_long_lookup_runs(board):
     # A stops lookup may take up to its wait (longer than SILENT_S) in the
     # service's main thread; the search's heartbeat must keep going meanwhile.
-    assert setupspool.WAITS["stops"] > setupspool.SILENT_S
+    assert WAITS["stops"] > SILENT_S
     now = [0.0]
     board.runner.monotonic = board.worker._monotonic = lambda: now[0]
     entered, release = threading.Event(), threading.Event()
@@ -289,12 +308,12 @@ def test_a_search_stays_alive_while_a_long_lookup_runs(board):
         job = board.runner.make_job({"A": "1800SB12341"}, "", routes=False, walk_minutes={})
         job.start()
         wait_for(lambda: job.status()["state"] == "running")
-        board.runner.post(setupspool.new_id(), "stops", {"home": HOME, "within_m": 1000, "limit": 15})
+        board.runner.post(new_id(), "stops", {"home": HOME, "within_m": 1000, "limit": 15})
         assert entered.wait(5)
         status = board.runner.spool.status / f"{job.id}.json"
-        while now[0] <= setupspool.SILENT_S + setupspool.HEARTBEAT_S:
+        while now[0] <= SILENT_S + HEARTBEAT_S:
             beat = json.loads(status.read_text())["beat"]
-            now[0] += setupspool.HEARTBEAT_S + 1
+            now[0] += HEARTBEAT_S + 1
             wait_for(lambda before=beat: json.loads(status.read_text())["beat"] > before)
             assert job.status()["state"] == "running"
     finally:
@@ -320,7 +339,7 @@ def test_a_service_told_to_stop_says_the_search_was_cancelled_at_once(board):
         job = board.runner.make_job({"A": "1800SB12341"}, "", routes=False, walk_minutes={})
         job.start()
         wait_for(lambda: job.status()["state"] == "running")
-        board.runner.post(setupspool.new_id(), "stops", {"home": HOME, "within_m": 1000, "limit": 15})
+        board.runner.post(new_id(), "stops", {"home": HOME, "within_m": 1000, "limit": 15})
         assert entered.wait(5)
         board.worker._stop.set()
         wait_for(lambda: job.status()["state"] == "failed")
@@ -394,10 +413,10 @@ def test_a_new_search_stops_the_last_one_s_roads_there(serving):
 def test_check_status_takes_the_roads_of_a_search_that_is_done():
     status = {"state": "done", "step": "", "done": 0, "total": 0, "message": "Found 1", "result": RESULT,
               "roads": {"state": "running", "done": 12, "total": 140}}
-    assert setupspool.check_status(status)["roads"] == {"state": "running", "done": 12, "total": 140}
-    assert "roads" not in setupspool.check_status({**status, "roads": None})
+    assert check_status(status)["roads"] == {"state": "running", "done": 12, "total": 140}
+    assert "roads" not in check_status({**status, "roads": None})
     del status["roads"]
-    assert "roads" not in setupspool.check_status(status)
+    assert "roads" not in check_status(status)
 
 
 @pytest.mark.parametrize("roads", [
@@ -411,12 +430,12 @@ def test_check_status_takes_the_roads_of_a_search_that_is_done():
 def test_check_status_refuses_roads_that_dont_fit(roads):
     status = {"state": "done", "step": "", "done": 0, "total": 0, "message": "", "result": RESULT, "roads": roads}
     with pytest.raises(Refused):
-        setupspool.check_status(status)
+        check_status(status)
 
 
 def test_check_status_refuses_roads_before_the_search_is_done():
     with pytest.raises(Refused):
-        setupspool.check_status({"state": "running", "step": "", "done": 0, "total": 0, "message": "",
+        check_status({"state": "running", "step": "", "done": 0, "total": 0, "message": "",
                                  "result": None, "roads": {"state": "running", "done": 0, "total": 2}})
 
 
@@ -436,7 +455,7 @@ def put(board, data, name=None, raw=None):
 
 
 @pytest.mark.parametrize("change", [
-    {"made_offset": -setupspool.REQUEST_MAX_AGE_S - 10},  # stale
+    {"made_offset": -REQUEST_MAX_AGE_S - 10},  # stale
     {"made_offset": 60},  # from the future
     {"made": "now"},
     {"v": 2},
@@ -466,7 +485,7 @@ def test_the_service_deletes_requests_that_dont_fit_unanswered(board, change, ca
 
 
 @pytest.mark.parametrize("raw", [
-    b"x" * (setupspool.MAX_REQUEST_BYTES + 1),  # oversized
+    b"x" * (MAX_REQUEST_BYTES + 1),  # oversized
     b'{"v": 1, "id": "' + b"a" * 32 + b'", "made": NaN, "kind": "postcode", "args": {}}',
     b"\xff\xfe not utf-8",
     b"[" * 50 + b"]" * 50,
@@ -501,7 +520,7 @@ def test_the_page_refuses_replies_that_dont_fit(board):
         (replies / f"{rid}.json").write_text(json.dumps(reply))
         with pytest.raises(SetupError, match="doesn't fit"):
             board.runner.reply(rid, delete=True)
-    (replies / f"{rid}.json").write_bytes(b" " * (setupspool.MAX_REPLY_BYTES + 1))
+    (replies / f"{rid}.json").write_bytes(b" " * (MAX_REPLY_BYTES + 1))
     with pytest.raises(SetupError, match="doesn't fit"):
         board.runner.reply(rid, delete=True)
     assert os.listdir(replies) == []
@@ -522,7 +541,7 @@ def test_the_page_checks_each_answers_shape(board, kind, value):
         [name] = os.listdir(board.state / "spool" / "requests")
         rid = name.removesuffix(".json")
         board.runner.spool.write(board.runner.spool.replies, rid, {"v": 1, "id": rid, "ok": True, "value": value},
-                                 setupspool.MAX_REPLY_BYTES)
+                                 MAX_REPLY_BYTES)
 
     thread = threading.Thread(target=answer)
     thread.start()
@@ -545,16 +564,16 @@ def test_a_search_status_that_doesnt_fit_ends_it(board):
     bad["fragment"]["bus"]["operators"] = ["x; rm"]
     board.runner.spool.write(board.runner.spool.status, job.id, {"v": 1, "id": job.id, "ok": True, "beat": 1,
                              "value": {"state": "done", "step": "", "done": 1, "total": 1, "message": "",
-                                       "result": bad}}, setupspool.MAX_REPLY_BYTES)
-    assert job.status()["message"] == setupspool.UNFIT
+                                       "result": bad}}, MAX_REPLY_BYTES)
+    assert job.status()["message"] == UNFIT
 
 
 def test_check_status_takes_a_real_jobs_result():
     status = {"state": "done", "step": discover.STEP_TIMETABLE, "done": 1, "total": 1, "message": "Found 1",
               "result": RESULT}
-    assert setupspool.check_status(status)["result"] == RESULT
+    assert check_status(status)["result"] == RESULT
     with pytest.raises(Refused):
-        setupspool.check_status({**status, "state": "running"})  # a result before it's done
+        check_status({**status, "state": "running"})  # a result before it's done
 
 
 # Priority.
@@ -610,7 +629,7 @@ def test_a_lookups_answer_the_page_gave_up_on_goes_once_its_wait_is_over(board):
     board.worker.step()
     reply = board.runner.spool.replies / f"{rid}.json"
     assert reply.exists()  # and the page, having given up, never reads it
-    late = time.time() - max(setupspool.WAITS.values()) - 1
+    late = time.time() - max(WAITS.values()) - 1
     os.utime(reply, (late, late))
     board.worker.step()  # the service's next look round, with nothing new asked
     assert not reply.exists()
@@ -624,7 +643,7 @@ def test_a_finished_search_waits_longer_for_the_page(board):
     FakeJob.made[-1].finish()
     board.worker.step()
     [status] = os.listdir(board.runner.spool.status)
-    late = time.time() - max(setupspool.WAITS.values()) - 1
+    late = time.time() - max(WAITS.values()) - 1
     os.utime(board.runner.spool.status / status, (late, late))
     board.worker.step()
     board.runner.post("b" * 32, "cancel", {"job": "c" * 32})  # the page's sweep too
@@ -639,33 +658,33 @@ def test_the_spool_is_private_and_never_a_link(tmp_path):
     for path in (spool.folder, spool.tmp, spool.requests, spool.replies, spool.status, spool.snapshots):
         assert oct(path.stat().st_mode & 0o777) == "0o700"
     (tmp_path / "linked").symlink_to(tmp_path / "spool")
-    with pytest.raises(setupspool.SpoolError):
+    with pytest.raises(SpoolError):
         Spool(tmp_path / "linked").make()
 
 
 def test_the_spool_is_systemds_folder_in_memory_and_never_on_disk(tmp_path, monkeypatch):
     run = tmp_path / "run"
-    monkeypatch.setattr(setupspool, "RUNTIME", tmp_path / "no-run")
-    assert setupspool.spool_folder({"RUNTIME_DIRECTORY": str(run)}) == run
+    monkeypatch.setattr("departureboard.setup.spool.folder.RUNTIME", tmp_path / "no-run")
+    assert spool_folder({"RUNTIME_DIRECTORY": str(run)}) == run
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
-    assert setupspool.spool_folder() == run
+    assert spool_folder() == run
     for odd in ("relative/run", f"{run}:{tmp_path / 'other'}"):
-        with pytest.raises(setupspool.SpoolError):
-            setupspool.spool_folder({"RUNTIME_DIRECTORY": odd})
+        with pytest.raises(SpoolError):
+            spool_folder({"RUNTIME_DIRECTORY": odd})
     # Run by hand: the units' folder if it's there, and never one on the SD card instead.
-    with pytest.raises(setupspool.SpoolError, match="RUNTIME_DIRECTORY"):
-        setupspool.spool_folder({})
-    monkeypatch.setattr(setupspool, "RUNTIME", run)
+    with pytest.raises(SpoolError, match="RUNTIME_DIRECTORY"):
+        spool_folder({})
+    monkeypatch.setattr("departureboard.setup.spool.folder.RUNTIME", run)
     run.mkdir()
-    assert setupspool.spool_folder({}) == run
+    assert spool_folder({}) == run
 
 
 def test_the_spool_is_the_fetch_services_and_the_messages_name_it():
     from pathlib import Path
 
-    assert Path("/run/departureboard-fetch") == setupspool.RUNTIME
-    assert "departureboard-fetch.path" in setupspool.NO_ANSWER
-    assert "journalctl -u departureboard-fetch " in setupspool.NO_SETTINGS
+    assert Path("/run/departureboard-fetch") == RUNTIME
+    assert "departureboard-fetch.path" in NO_ANSWER
+    assert "journalctl -u departureboard-fetch " in NO_SETTINGS
 
 
 def test_the_service_stops_when_idle_and_runs_once(board):
@@ -696,7 +715,7 @@ def test_the_service_stays_up_while_told_to_and_never_leaves_a_request_waiting(b
 def test_an_active_request_is_handed_on_and_gets_no_reply(board, caplog):
     seen = []
     board.worker._on_active = lambda: seen.append(True)
-    poster = setupspool.Poster(board.runner.spool.folder)
+    poster = Poster(board.runner.spool.folder)
     assert poster.active() is True
     [name] = os.listdir(board.runner.spool.requests)
     sent = json.loads((board.runner.spool.requests / name).read_text())
@@ -711,17 +730,17 @@ def test_an_active_request_is_handed_on_and_gets_no_reply(board, caplog):
 
 def test_an_active_request_needs_no_settings_either(board):
     worker = Worker(board.runner.spool.folder, job_folder=None, load_secrets=dict, idle=0, poll=0.01,
-                    unavailable=setupspool.NO_SETTINGS)
-    setupspool.Poster(board.runner.spool.folder).active()
+                    unavailable=NO_SETTINGS)
+    Poster(board.runner.spool.folder).active()
     assert worker.run() == 0
     assert os.listdir(board.runner.spool.requests) == [] and os.listdir(board.runner.spool.replies) == []
 
 
 def test_the_poster_posts_at_most_one_active_a_minute(tmp_path):
     now = [1000.0]
-    poster = setupspool.Poster(tmp_path / "spool", monotonic=lambda: now[0])
+    poster = Poster(tmp_path / "spool", monotonic=lambda: now[0])
     assert [poster.active(), poster.active()] == [True, False]
-    now[0] += setupspool.ACTIVE_EVERY_S - 1
+    now[0] += ACTIVE_EVERY_S - 1
     assert poster.active() is False
     now[0] += 1
     assert poster.active() is True
@@ -729,7 +748,7 @@ def test_the_poster_posts_at_most_one_active_a_minute(tmp_path):
 
 
 def test_the_poster_never_fails_the_browsers_request(tmp_path, caplog):
-    poster = setupspool.Poster(tmp_path / "spool")
+    poster = Poster(tmp_path / "spool")
     os.chmod(poster.spool.requests, 0o500)  # can't write there
     try:
         assert poster.active() is False
@@ -742,7 +761,7 @@ def test_only_one_service_answers_at_a_time(board):
     import fcntl
 
     board.runner.spool.make()
-    with open(board.runner.spool.folder / setupspool.WORKER_LOCK, "w") as held:
+    with open(board.runner.spool.folder / WORKER_LOCK, "w") as held:
         fcntl.flock(held, fcntl.LOCK_EX)
         path = put(board, request(board))
         old = time.time() - 3600  # one a sweep would delete
@@ -759,7 +778,7 @@ def test_only_one_service_answers_at_a_time(board):
 
 def test_a_service_that_cant_read_its_config_says_so_to_each_request(board, tmp_path):
     worker = Worker(board.runner.spool.folder, job_folder=None, load_secrets=dict, idle=0, poll=0.01,
-                    unavailable=setupspool.NO_SETTINGS)
+                    unavailable=NO_SETTINGS)
     board.runner.post("a" * 32, "postcode", {"postcode": "SK13 1AH"})
     board.runner.post("b" * 32, "testkey", {"name": "RDM_API_KEY", "value": PASTED, "app_id": ""})
     job = board.runner.make_job({"A": "1800SB12341"}, PASTED, routes=False, walk_minutes={})
@@ -769,19 +788,19 @@ def test_a_service_that_cant_read_its_config_says_so_to_each_request(board, tmp_
     assert os.listdir(board.runner.spool.requests) == []  # none left to start it again
     for rid in ("a" * 32, "b" * 32):
         assert board.runner.reply(rid, delete=True) == {
-            "v": 1, "id": rid, "ok": False, "why": "setup", "error": setupspool.NO_SETTINGS}
-    assert job.status()["state"] == "failed" and job.status()["message"] == setupspool.NO_SETTINGS
+            "v": 1, "id": rid, "ok": False, "why": "setup", "error": NO_SETTINGS}
+    assert job.status()["state"] == "failed" and job.status()["message"] == NO_SETTINGS
     assert board.runner.reply("c" * 32, delete=True) is None  # a cancel needs no answer
     assert board.calls == [] and FakeJob.made == [] and PASTED not in spool_text(board.state)
 
 
 def test_the_page_shows_why_the_service_cant_help(board):
     board.worker = Worker(board.runner.spool.folder, job_folder=None, load_secrets=dict, poll=0.01,
-                          unavailable=setupspool.NO_SETTINGS, stop=threading.Event())
+                          unavailable=NO_SETTINGS, stop=threading.Event())
     thread = threading.Thread(target=board.worker.run, daemon=True)
     thread.start()
     try:
-        assert board.handle("postcode", {"postcode": "SK13 1AH"}) == (422, {"error": setupspool.NO_SETTINGS})
+        assert board.handle("postcode", {"postcode": "SK13 1AH"}) == (422, {"error": NO_SETTINGS})
     finally:
         board.worker._stop.set()
         thread.join(5)

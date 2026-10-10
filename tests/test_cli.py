@@ -1092,7 +1092,7 @@ def test_serve_listens_and_opens_the_browser_as_its_install_does(tmp_path, serve
 
 def test_serve_on_a_pi_not_set_up_shows_no_dashboard_and_hands_setup_to_the_fetch_service(tmp_path, served,
                                                                                          monkeypatch):
-    from departureboard.setup import spool as setupspool
+    from departureboard.setup.spool.runner import SpoolRunner
 
     run = tmp_path / "run"
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
@@ -1103,7 +1103,7 @@ def test_serve_on_a_pi_not_set_up_shows_no_dashboard_and_hands_setup_to_the_fetc
     app = served["app"]
     assert not app.dashboard_on() and app.settings.install.name == "pi" and not served.get("opened")
     assert ask(app, "/") == (303, "/settings", b"")
-    assert isinstance(app.settings.setup._runner, setupspool.SpoolRunner)
+    assert isinstance(app.settings.setup._runner, SpoolRunner)
     assert app.settings.store.folder == tmp_path / "state"
 
 
@@ -1131,7 +1131,7 @@ def test_serve_on_a_pi_shows_the_dashboard_the_fetch_service_hands_over(tmp_path
     from departureboard.dashboard.history import History
     from departureboard.dashboard.snapshot import Hub
     from departureboard.fetch import handoff
-    from departureboard.setup.spool import Spool
+    from departureboard.setup.spool.folder import Spool
 
     args, folder, run = pi_with_the_dashboard
     assert main(args) == 0
@@ -1970,16 +1970,15 @@ def test_the_settings_open_the_wizard_until_the_board_is_set_up(tmp_path, monkey
 @pytest.fixture
 def no_runtime_folder(tmp_path, monkeypatch):
     """No systemd RuntimeDirectory, and none left in /run: no folder in memory for the setup spool."""
-    from departureboard.setup import spool as setupspool
 
     monkeypatch.delenv("RUNTIME_DIRECTORY", raising=False)
-    monkeypatch.setattr(setupspool, "RUNTIME", tmp_path / "no-run")
+    monkeypatch.setattr("departureboard.setup.spool.folder.RUNTIME", tmp_path / "no-run")
 
 
 @pytest.mark.parametrize("flag", [[], ["--setup-via-spool"]])
 def test_the_pis_settings_hand_setup_to_the_fetch_service(tmp_path, monkeypatch, flag, no_runtime_folder, served):
     # Always, now: the flag the unit still passes is taken and changes nothing.
-    from departureboard.setup import spool as setupspool
+    from departureboard.setup.spool.runner import SpoolRunner
 
     config = installed_template(tmp_path)
     (tmp_path / "state").mkdir()  # as install.sh and systemd's StateDirectory make it
@@ -1990,17 +1989,17 @@ def test_the_pis_settings_hand_setup_to_the_fetch_service(tmp_path, monkeypatch,
     site = served["app"].settings
     assert site.install.name == "pi" and not served["app"].dashboard_on()
     runner = site.setup._runner
-    assert isinstance(runner, setupspool.SpoolRunner)
+    assert isinstance(runner, SpoolRunner)
     assert runner.spool.folder == run and runner.spool.requests.is_dir()
     assert sorted(os.listdir(tmp_path / "state")) == []  # nothing of setup's on the SD card
 
 
 @pytest.mark.parametrize("command", [["fetch"], ["setup", "serve"]])  # and by its old name, hidden
 def test_the_fetch_service_searches_in_the_boards_state_folder(tmp_path, monkeypatch, no_runtime_folder, command):
-    from departureboard.setup import spool as setupspool
+    from departureboard.setup.spool.worker import Worker
 
     ran = []
-    monkeypatch.setattr(setupspool.Worker, "run", lambda self, tend=None: ran.append(self) or 0)
+    monkeypatch.setattr(Worker, "run", lambda self, tend=None: ran.append(self) or 0)
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
     config = installed_template(tmp_path)
     secrets = tmp_path / "secrets.env"
@@ -2016,11 +2015,11 @@ def test_the_fetch_service_searches_in_the_boards_state_folder(tmp_path, monkeyp
 def test_without_a_folder_in_memory_the_setup_spool_is_refused(tmp_path, monkeypatch, capsys, no_runtime_folder,
                                                                flag):
     # Never on the SD card, where flash can keep what was deleted: a request can hold home's position or a key.
-    from departureboard.setup import spool as setupspool
+    from departureboard.setup.spool.worker import Worker
     from departureboard.web import server as dashserver
 
     monkeypatch.setattr(dashserver, "make_server", lambda *args, **kwargs: pytest.fail("served"))
-    monkeypatch.setattr(setupspool.Worker, "run", lambda self: pytest.fail("ran"))
+    monkeypatch.setattr(Worker, "run", lambda self: pytest.fail("ran"))
     config = installed_template(tmp_path)
     (tmp_path / "state").mkdir()
     none = str(tmp_path / "none.env")
@@ -2036,13 +2035,13 @@ def test_without_a_folder_in_memory_the_setup_spool_is_refused(tmp_path, monkeyp
 
 
 def test_the_page_and_the_fetch_service_share_systemds_folder_in_memory(tmp_path, monkeypatch, served):
-    from departureboard.setup import spool as setupspool
+    from departureboard.setup.spool.worker import Worker
 
     run = tmp_path / "run"
     run.mkdir(mode=0o700)  # as systemd makes RuntimeDirectory=
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
     ran = []
-    monkeypatch.setattr(setupspool.Worker, "run", lambda self, tend=None: ran.append(self) or 0)
+    monkeypatch.setattr(Worker, "run", lambda self, tend=None: ran.append(self) or 0)
     config = installed_template(tmp_path)
     (tmp_path / "state").mkdir()
     none = str(tmp_path / "none.env")
@@ -2056,7 +2055,8 @@ def test_the_fetch_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypat
     # systemctl stop, a timeout or update.sh: SIGTERM mid-search. The page is told at once, not after a silence.
     import signal
 
-    from departureboard.setup import spool as setupspool
+    from departureboard.setup.spool.runner import SpoolRunner
+    from departureboard.setup.spool.worker import Worker
 
     class StuckJob:
         """A discover.SetupJob that runs until cancelled."""
@@ -2083,8 +2083,9 @@ def test_the_fetch_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypat
     def unhandled(signum, frame):
         raise Unhandled  # SIGTERM reached the test's own handler: the service didn't take it
 
-    real = setupspool.Worker
-    monkeypatch.setattr(setupspool, "Worker", lambda *a, **kw: real(*a, make_job=StuckJob, **kw))
+    # The fetch service makes its Worker by the name it imported.
+    monkeypatch.setattr("departureboard.fetch.service.Worker",
+                        lambda *a, **kw: Worker(*a, make_job=StuckJob, **kw))
     run = tmp_path / "run"
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
     config = installed_template(tmp_path)
@@ -2094,7 +2095,7 @@ def test_the_fetch_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypat
     asked = {}
 
     def page():
-        runner = setupspool.SpoolRunner(run, poll=0.01)
+        runner = SpoolRunner(run, poll=0.01)
         asked["job"] = job = runner.make_job({"A": "1800SB12341"}, "", routes=False, walk_minutes={})
         job.start()
         deadline = time.monotonic() + 5
@@ -2120,10 +2121,10 @@ def test_the_fetch_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypat
 
 
 def test_the_fetch_service_without_a_config_searches_in_systemds_folder(tmp_path, monkeypatch, no_runtime_folder):
-    from departureboard.setup import spool as setupspool
+    from departureboard.setup.spool.worker import Worker
 
     ran = []
-    monkeypatch.setattr(setupspool.Worker, "run", lambda self, tend=None: ran.append(self) or 0)
+    monkeypatch.setattr(Worker, "run", lambda self, tend=None: ran.append(self) or 0)
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
     monkeypatch.setenv("STATE_DIRECTORY", str(tmp_path / "lib"))
     assert main(["fetch", "--config", str(tmp_path / "missing.toml"),
@@ -2135,12 +2136,12 @@ def test_the_fetch_service_without_a_config_searches_in_systemds_folder(tmp_path
 
 @pytest.mark.parametrize("config", ["not toml", "a folder"])
 def test_the_fetch_service_answers_with_why_when_it_cant_read_its_config(tmp_path, monkeypatch, capsys, config):
-    from departureboard.setup import spool as setupspool
+    from departureboard.setup.spool.worker import NO_SETTINGS, Worker
 
     run = tmp_path / "run"
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
     ran = []
-    monkeypatch.setattr(setupspool.Worker, "run", lambda self: ran.append(self) or 0)
+    monkeypatch.setattr(Worker, "run", lambda self: ran.append(self) or 0)
     path = tmp_path / "config.toml"
     if config == "not toml":
         path.write_text("display = [\n")
@@ -2149,7 +2150,7 @@ def test_the_fetch_service_answers_with_why_when_it_cant_read_its_config(tmp_pat
     # A clean stop once each request has its answer, so systemd doesn't start it again and again.
     assert main(["setup", "serve", "--config", str(path), "--secrets", str(tmp_path / "none.env")]) == 0
     [worker] = ran
-    assert worker.spool.folder == run and worker._unavailable == setupspool.NO_SETTINGS
+    assert worker.spool.folder == run and worker._unavailable == NO_SETTINGS
     assert "Traceback" not in capsys.readouterr().err
 
 

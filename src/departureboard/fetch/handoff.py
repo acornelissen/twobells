@@ -4,7 +4,7 @@ Why. On a Pi the web server (departureboard-web.service) reaches only the
 home network: its kernel IP filter denies everything else. The dashboard's
 feeds are on the internet, so its pollers (collector.Collector) run in the
 fetch service instead, which goes out and listens on nothing. The two share
-the spool folder in memory (setup/spool.py), and the snapshot goes from one
+the spool folder in memory (setup/spool/), and the snapshot goes from one
 to the other as a file there:
 
   snapshots/dashboard.json
@@ -51,19 +51,9 @@ from zoneinfo import ZoneInfo
 from ..core.walk import WalkTimes
 from ..dashboard.collector import HEALTHY_AGE
 from ..dashboard.snapshot import PARTS, Hub, _encode
-from ..setup.spool import (
-    ACTIVE_EVERY_S,
-    CLOCK_SKEW_S,
-    Poster,
-    Refused,
-    Spool,
-    _dict,
-    _int,
-    _num,
-    _obj,
-    _str,
-    parse,
-)
+from ..setup.spool.checks import CLOCK_SKEW_S, Refused, check_dict, check_int, check_num, check_obj, check_str, parse
+from ..setup.spool.folder import Spool
+from ..setup.spool.runner import ACTIVE_EVERY_S, Poster
 
 log = logging.getLogger(__name__)
 
@@ -94,11 +84,11 @@ def remove(folder: Path | str) -> None:
 def _lookup(value, name: str) -> None:
     """A row's lookup: its bus map (sent as it is) and its history key,
     which the web server asks the history with (snapshot.bus_row, train_row)."""
-    entry = _obj(value, (), ("bus", "history"))
+    entry = check_obj(value, (), ("bus", "history"))
     if "bus" in entry and not isinstance(entry["bus"], dict):
         raise Refused(f"{name} has a bus map that isn't an object")
     if "history" in entry:
-        history = _obj(entry["history"], _HISTORY_FIELDS)
+        history = check_obj(entry["history"], _HISTORY_FIELDS)
         for field in _HISTORY_FIELDS:
             if not isinstance(history[field], str) and not (field == "phrase" and history[field] is None):
                 raise Refused(f"{name} has a history {field} that isn't text")
@@ -106,18 +96,18 @@ def _lookup(value, name: str) -> None:
 
 def check(data, now: float) -> dict:
     """The snapshot file's contents, checked; Refused, naming the field, if they don't fit."""
-    top = _obj(data, _FIELDS)
+    top = check_obj(data, _FIELDS)
     if type(top["v"]) is not int or top["v"] != VERSION:
         raise Refused("v isn't this version")
-    _str(top["run"], "run", 16, 16)
+    check_str(top["run"], "run", 16, 16)
     if not _HEX16.fullmatch(top["run"]):
         raise Refused("run isn't in the right form")
-    if _num(top["made"], "made") > now + CLOCK_SKEW_S:
+    if check_num(top["made"], "made") > now + CLOCK_SKEW_S:
         raise Refused("made is in the future")
-    _int(top["version"], "version", 0, 2**53)
-    _obj(top["snapshot"], _SNAPSHOT_FIELDS)
+    check_int(top["version"], "version", 0, 2**53)
+    check_obj(top["snapshot"], _SNAPSHOT_FIELDS)
     for name in ("lookups", "previous"):
-        for key, value in _dict(top[name], name, MAX_LOOKUPS).items():
+        for key, value in check_dict(top[name], name, MAX_LOOKUPS).items():
             if not _HEX16.fullmatch(key):
                 raise Refused(f"{name} has a row id in the wrong form")
             _lookup(value, name)

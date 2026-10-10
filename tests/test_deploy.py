@@ -209,7 +209,7 @@ def test_the_settings_service_has_room_for_every_connection_the_server_takes():
 
 
 def test_the_fetch_service_goes_out_and_listens_on_nothing():
-    from departureboard.setup import spool as setupspool
+    from departureboard.setup.spool.folder import RUNTIME
 
     unit = _unit("departureboard-fetch.service")
     assert "IPAddressDeny" not in unit and "IPAddressAllow" not in unit
@@ -230,7 +230,7 @@ def test_the_fetch_service_goes_out_and_listens_on_nothing():
     for setting in hardening:
         assert unit[setting] == timetable[setting], setting
     path = _unit("departureboard-fetch.path")
-    assert path["DirectoryNotEmpty"] == [f"{setupspool.RUNTIME}/requests"]
+    assert path["DirectoryNotEmpty"] == [f"{RUNTIME}/requests"]
     assert path["Unit"] == ["departureboard-fetch.service"]
 
 
@@ -240,7 +240,7 @@ def test_the_setup_units_are_gone():
 
 
 def test_the_spool_is_in_memory_and_shared_by_both_units():
-    from departureboard.setup import spool as setupspool
+    from departureboard.setup.spool.folder import RUNTIME
 
     spool = {"RuntimeDirectory": ["departureboard-fetch"], "RuntimeDirectoryMode": ["0700"],
              "RuntimeDirectoryPreserve": ["yes"]}  # kept when either stops
@@ -248,7 +248,7 @@ def test_the_spool_is_in_memory_and_shared_by_both_units():
     for unit in (web, fetch):
         assert {key: unit.get(key) for key in spool} == spool
     assert web["User"] == fetch["User"] == ["departureboard"]  # so both can open the 0700 folder
-    assert Path("/run") / spool["RuntimeDirectory"][0] == setupspool.RUNTIME
+    assert Path("/run") / spool["RuntimeDirectory"][0] == RUNTIME
     watched = _unit("departureboard-fetch.path")["DirectoryNotEmpty"][0]
     assert watched.startswith("/run/departureboard-fetch/") and "/var/lib" not in watched
 

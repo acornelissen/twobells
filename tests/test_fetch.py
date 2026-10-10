@@ -18,8 +18,10 @@ from departureboard.fetch import service as fetch
 from departureboard.fetch.service import FetchService
 from departureboard.settings.installs import install_named
 from departureboard.settings.store import Store
-from departureboard.setup import spool as setupspool
 from departureboard.setup.lookups import Place
+from departureboard.setup.spool.folder import Spool
+from departureboard.setup.spool.runner import Poster, SpoolRunner
+from departureboard.setup.spool.worker import WORKER_LOCK
 
 PI = install_named("pi")
 ON = '[app]\nviews = ["board", "dashboard"]\n'
@@ -60,7 +62,7 @@ def pi(tmp_path, monkeypatch):
     folder = tmp_path / "state"
     folder.mkdir()
     store = Store.open(config, tmp_path / "none.env", state_dir=folder, install="pi")
-    spool = setupspool.Spool(tmp_path / "run")
+    spool = Spool(tmp_path / "run")
     spool.make()
     return store, spool
 
@@ -222,7 +224,7 @@ def test_an_active_request_keeps_the_pollers_going_through_the_quiet_hours(pi):
     try:
         wait_for(lambda: running.service.hub is not None)
         assert not running.service.hub.active(600)
-        assert setupspool.Poster(spool.folder).active()
+        assert Poster(spool.folder).active()
         wait_for(lambda: running.service.hub.active(600))
         assert os.listdir(spool.requests) == [] and os.listdir(spool.replies) == []  # taken, no reply
     finally:
@@ -232,7 +234,7 @@ def test_an_active_request_keeps_the_pollers_going_through_the_quiet_hours(pi):
 def test_an_active_request_with_the_dashboard_off_is_taken_and_forgotten(pi):
     _, spool = pi
     save(pi, OFF)
-    setupspool.Poster(spool.folder).active()
+    Poster(spool.folder).active()
     assert service(pi, idle=0).run() == 0
     assert os.listdir(spool.requests) == [] and os.listdir(spool.replies) == []
 
@@ -262,7 +264,7 @@ def test_it_answers_a_waiting_request_before_stopping(pi):
     _, spool = pi
     save(pi, OFF)
     home = Place(53.461964, -1.965633, "SK13 1AH", "England", "High Peak")
-    runner = setupspool.SpoolRunner(spool.folder)
+    runner = SpoolRunner(spool.folder)
     runner.post("a" * 32, "postcode", {"postcode": "SK13 1AH"})
     assert service(pi, idle=0, lookup_postcode=lambda postcode: home).run() == 0
     assert runner.reply("a" * 32, delete=True)["value"]["label"] == "SK13 1AH"
@@ -271,7 +273,7 @@ def test_it_answers_a_waiting_request_before_stopping(pi):
 def test_a_second_service_stops_at_once_and_runs_no_dashboard(pi):
     _, spool = pi
     save(pi, ON)
-    with open(spool.folder / setupspool.WORKER_LOCK, "w") as held:
+    with open(spool.folder / WORKER_LOCK, "w") as held:
         fcntl.flock(held, fcntl.LOCK_EX)
         started = time.monotonic()
         assert service(pi).run() == 0  # a clean stop, so systemd counts no failure

@@ -3,10 +3,10 @@
 On a Pi the web server (departureboard-web.service) reaches only the home
 network. This service, departureboard-fetch.service, does its internet work
 instead: it goes out, and listens on nothing. The two talk through the
-spool folder in memory (setup/spool.py):
+spool folder in memory (setup/spool/):
 
 - the setup wizard's lookups, key tests and search, asked for and answered
-  in files (setupspool.Worker);
+  in files (setup/spool/worker.py);
 - while the dashboard view is on, the dashboard's pollers
   (collector.Collector, which never builds the bus timetable here: the
   timetable timer and the wizard's search do), their snapshot handed over as
@@ -42,7 +42,8 @@ from ..settings.config import ConfigError, needs_setup
 from ..settings.installs import Install
 from ..settings.schema import views
 from ..settings.store import Store
-from ..setup import spool as setupspool
+from ..setup.spool.folder import Spool
+from ..setup.spool.worker import Worker
 from . import handoff
 
 log = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ class FetchService:
         self._install = install
         self._folder = Path(folder)
         self._make_collector = collector
-        self._spool = setupspool.Spool(folder)
+        self._spool = Spool(folder)
         self.stop = stop or threading.Event()
         target = store.target()
 
@@ -81,8 +82,8 @@ class FetchService:
             except (OSError, ConfigError, ValueError, TypeError):
                 return {}  # a key test then asks about Glossop
 
-        self.worker = setupspool.Worker(folder, job_folder=store.folder, load_secrets=store.env, settings=settings,
-                                        stop=self.stop, on_active=self._active, **worker_options)
+        self.worker = Worker(folder, job_folder=store.folder, load_secrets=store.env, settings=settings,
+                             stop=self.stop, on_active=self._active, **worker_options)
         self._watch: FileWatch | None = None
         self._history: History | None = None
         self._dash: DashboardSettings | None = None

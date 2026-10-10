@@ -29,7 +29,7 @@ class Install:
     # Where `serve` listens unless told: every address, or this computer only.
     host: str = "127.0.0.1"
     # "files": the internet work (the setup wizard's lookups) is another
-    # service's, asked through files (setup/spool.py); "process": serve's own.
+    # service's, asked through files (setup/spool/); "process": serve's own.
     fetch: str = "process"
     # Open the browser at start; and, with no --port, take the next free port
     # after the default if it is busy.
