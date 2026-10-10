@@ -27,6 +27,7 @@ from .enrich import bus_extras, train_arrival
 from .history import Observed, day_type
 from .livebus import LiveDeparture, approach
 from .model import Departure, Status, minutes_between
+from .roadshape import path
 from .route import where
 from .schedule_model import Schedule, StopPosition
 from .walk import WalkTimes
@@ -314,9 +315,11 @@ def _call_time(minute: int) -> str:
     return f"{minute // 60:02d}:{minute % 60:02d}"
 
 
-def bus_map(row: dict, live: LiveDeparture, positions: dict[str, StopPosition], now: datetime) -> dict:
+def bus_map(row: dict, live: LiveDeparture, positions: dict[str, StopPosition], now: datetime,
+            shapes: Mapping[str, tuple] = {}) -> dict:
     """The /api/bus/<id> answer: the journey's positioned stops up to yours
-    and one after, and the bus."""
+    and one after, the road through them (from the timetable's `shapes`;
+    straight between stops it has none for), and the bus."""
     calls = live.journey.calls
     yours = live.call_index
     picked = [i for i in range(yours) if calls[i].atco in positions][-MAP_STOPS_BEFORE:]
@@ -334,16 +337,19 @@ def bus_map(row: dict, live: LiveDeparture, positions: dict[str, StopPosition], 
         "stop": row["stop"],
         "stop_name": row["stop_name"],
         "stops": stops,
+        "path": path([calls[i].atco for i in picked], positions, shapes),
         "vehicle": _vehicle(live, now, with_position=True),
         "where": strip["where"] if strip else _where(live, None, 0, None),
     }
 
 
 def bus_row(live: LiveDeparture, positions: dict[str, StopPosition], now: datetime, walk: WalkTimes,
-            phrases: Phrases = no_history, no_shows: NoShows = no_no_shows) -> tuple[dict, dict]:
+            phrases: Phrases = no_history, no_shows: NoShows = no_no_shows,
+            shapes: Mapping[str, tuple] = {}) -> tuple[dict, dict]:
     """A bus's row and its server-side lookup (the map and the history key).
-    `now` is aware, in the board's zone. The extras that need the whole
-    board (enrich.bus_extras) are added by buses_part."""
+    `now` is aware, in the board's zone; `shapes` are the timetable's roads.
+    The extras that need the whole board (enrich.bus_extras) are added by
+    buses_part."""
     dep = live.departure
     tz = now.tzinfo
     scheduled_at = live.leaves.replace(tzinfo=tz)
@@ -373,7 +379,7 @@ def bus_row(live: LiveDeparture, positions: dict[str, StopPosition], now: dateti
             "no_show_phrase": no_shows(history["route"], dep.scheduled, live.leaves.date()),
         },
     }
-    return row, {"bus": bus_map(row, live, positions, now), "history": history}
+    return row, {"bus": bus_map(row, live, positions, now, shapes), "history": history}
 
 
 def timetable_block(state: str, schedule: Schedule | None, tz: tzinfo) -> dict:
@@ -412,7 +418,7 @@ def buses_part(board: BusBoard | None, now: datetime, status: dict, timetable: d
     schedule = board.schedule if board is not None else None
     if board is not None:
         for live in board.departures:
-            row, lookup = bus_row(live, board.schedule.positions, now, walk, phrases, no_shows)
+            row, lookup = bus_row(live, board.schedule.positions, now, walk, phrases, no_shows, board.schedule.shapes)
             row.update(bus_extras(live, board, now))
             rows.append(row)
             lookups[row["id"]] = lookup

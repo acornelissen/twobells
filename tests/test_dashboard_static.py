@@ -397,9 +397,14 @@ SNAPSHOT = {
     "disruptions": Opt(DISRUPTIONS),
     "timetable_changes": Opt([{"line": str, "operator": str, "from": lambda v: isinstance(v, str) and bool(DAY.match(v))}]),  # noqa: E501
 }
+def lat_lon(value):
+    return isinstance(value, list) and len(value) == 2 and all(number(x) for x in value)
+
+
 BUS_DETAIL = {
     "id": row_id, "line": str, "destination": str, "stop": str, "stop_name": str,
     "stops": [{"name": str, "lat": number, "lon": number, "time": Opt(hhmm), "yours": bool}],
+    "path": [lat_lon],
     "vehicle": Opt({"lat": number, "lon": number, "bearing": Opt(number), "recorded_at": at, "age_s": integer}),
     "where": Opt(str),
 }
@@ -492,6 +497,11 @@ def test_bus_fixture_follows_the_contract():
     bus = _fixture("dashboard_bus.json")
     check(bus, BUS_DETAIL)
     assert sum(stop["yours"] for stop in bus["stops"]) == 1
+    # The road runs from the first stop to the last, through each in turn.
+    stops = [[stop["lat"], stop["lon"]] for stop in bus["stops"]]
+    assert bus["path"][0] == stops[0] and bus["path"][-1] == stops[-1]
+    assert [point for point in bus["path"] if point in stops] == stops
+    assert len(bus["path"]) > len(stops)  # and bends between them
     assert bus["id"] in {r["id"] for r in _fixture("dashboard_snapshot.json")["buses"]["rows"]}
 
 
@@ -525,6 +535,11 @@ def test_shape_checker_rejects_wrong_shapes():
     snapshot["version"] = True
     with pytest.raises(AssertionError, match="version"):
         check(snapshot, SNAPSHOT)
+    for point in ([53.4, "-1.9"], [53.4, -1.9, 0], [53.4], {"lat": 53.4, "lon": -1.9}):
+        bus = _fixture("dashboard_bus.json")
+        bus["path"][1] = point
+        with pytest.raises(AssertionError, match=r"path\[1\]"):
+            check(bus, BUS_DETAIL)
 
 
 # --- Disruptions panel ---

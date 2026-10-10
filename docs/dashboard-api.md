@@ -177,12 +177,14 @@ The map for one bus row; 404 if the id is unknown (as when it's gone from the bo
     {"name": "Park Road", "lat": 53.4433, "lon": -1.9550, "time": "07:16", "yours": false},
     {"name": "Church Street", "lat": 53.4436, "lon": -1.9500, "time": "07:20", "yours": true}
   ],
+  "path": [[53.443494, -1.959026], [53.44352, -1.9558], [53.44386, -1.95069], [53.44384, -1.948999]],
   "vehicle": {"lat": 53.4435, "lon": -1.9573, "bearing": 95.0, "recorded_at": "…", "age_s": 40},
   "where": "2 stops away"
 }
 ```
 
 - `stops` are the journey's positioned calls: up to 20 before yours, yours, and one after, in order. `time` is the timetabled time.
+- `path` is the road through those stops, first to last, as `[lat, lon]` pairs: each stop, then the road to the next. The roads come from the OpenStreetMap car router when the timetable is built (`roadshape.py`), never when the map is asked for; where it had none, the path goes straight from one stop to the next. It has as many points as `stops` at least, so `[]` when `stops` is empty.
 - `vehicle` is null when the bus has no live position.
 
 ## `GET /api/history/<id>`

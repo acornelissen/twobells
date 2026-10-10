@@ -115,7 +115,10 @@ function drawMap(data, fit) {
   const stops = list(data.stops).filter((s) => obj(s) && num(s.lat) !== null && num(s.lon) !== null);
   layers.clearLayers();
   const points = stops.map((s) => [s.lat, s.lon]);
-  if (points.length > 1) L.polyline(points, { className: "route-line", interactive: false }).addTo(layers);
+  // Along the roads when the server sends them, else straight from stop to stop.
+  const road = list(data.path).filter((p) => Array.isArray(p) && num(p[0]) !== null && num(p[1]) !== null);
+  const line = road.length > 1 ? road : points;
+  if (line.length > 1) L.polyline(line, { className: "route-line", interactive: false }).addTo(layers);
   for (const stop of stops) {
     const yours = stop.yours === true;
     L.circleMarker([stop.lat, stop.lon], {

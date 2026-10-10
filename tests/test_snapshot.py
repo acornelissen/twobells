@@ -380,6 +380,24 @@ def test_the_bus_map_has_the_positioned_stops_and_the_bus():
     assert found["stops"][5]["lat"] == POSITIONS[HENRY_A].lat
     assert found["vehicle"]["lat"] == HALFWAY[0] and found["vehicle"]["age_s"] == 0
     assert found["where"] == "3 stops away"
+    # Without roads in the timetable, the path is straight from stop to stop.
+    assert found["path"] == [[s["lat"], s["lon"]] for s in found["stops"]]
+
+
+def test_the_bus_map_path_follows_the_timetable_s_roads():
+    from dataclasses import replace as swap
+
+    from test_livebus import GRAPES, SUNLAWS
+
+    roads = {f"{JUNCTION}>{GRAPES}": ((53.4446, -1.9645), (53.4444, -1.9635)), f"{SUNLAWS}>NOWHERE": ((1.0, 1.0),)}
+    now = at(10, 14)
+    board = BusBoard(live(now, [bus(*HALFWAY, now)]), swap(schedule(), shapes=roads), True, None)
+    part, lookups = buses_part(board, now, status_block(), timetable_block("ready", board.schedule, LONDON),
+                               {"A": HENRY_A}, WALK)
+    found = lookups[by(part["rows"], line="341", stop="A")["id"]]["bus"]
+    stops = [[s["lat"], s["lon"]] for s in found["stops"]]
+    # The Junction, the road to Grapes Inn, then straight on from stop to stop.
+    assert found["path"] == [stops[0], [53.4446, -1.9645], [53.4444, -1.9635], *stops[1:]]
 
 
 def test_stop_names_and_the_timetable():
