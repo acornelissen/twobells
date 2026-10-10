@@ -65,7 +65,12 @@ install -m 644 "$REPO/deploy/departureboard-screen.service" /etc/systemd/system/
 install -m 644 "$REPO/deploy/departureboard-web.service" /etc/systemd/system/
 install -m 644 "$REPO/deploy/departureboard-timetable.service" /etc/systemd/system/
 install -m 644 "$REPO/deploy/departureboard-timetable.timer" /etc/systemd/system/
+install -m 644 "$REPO/deploy/departureboard-setup.service" /etc/systemd/system/
+install -m 644 "$REPO/deploy/departureboard-setup.path" /etc/systemd/system/
 systemctl daemon-reload
+# The settings page can't reach the internet; this starts the setup service
+# that does the wizard's lookups whenever the page leaves it a request.
+systemctl enable --now departureboard-setup.path
 
 cat <<EOF
 

@@ -2,6 +2,8 @@
 Description=Departure board settings page (home network only)
 Wants=network-online.target
 After=network-online.target
+# The setup wizard's internet lookups run there: this service can't reach the internet.
+Wants=departureboard-setup.path
 
 [Service]
 Type=simple
@@ -11,7 +13,7 @@ StateDirectory=departureboard
 StateDirectoryMode=0750
 # Keys, so the page can say which are set and check settings before saving.
 EnvironmentFile=/etc/departureboard/secrets.env
-ExecStart=/opt/departureboard/venv/bin/departureboard web --config /etc/departureboard/config.toml --port 8080
+ExecStart=/opt/departureboard/venv/bin/departureboard web --config /etc/departureboard/config.toml --port 8080 --setup-via-spool
 Restart=on-failure
 RestartSec=5
 UMask=0027
@@ -35,7 +37,8 @@ ProtectProc=invisible
 # Room for Python and two password checks (16 MiB each) at once, no more.
 MemoryMax=128M
 TasksMax=32
-# Home network only, enforced by the kernel as well as by the page.
+# Home network only, enforced by the kernel as well as by the page. The setup
+# wizard's lookups go out from departureboard-setup.service instead.
 IPAddressDeny=any
 IPAddressAllow=localhost link-local 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7
 

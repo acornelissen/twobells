@@ -1,0 +1,42 @@
+[Unit]
+Description=Departure board: the setup wizard's internet lookups (started by departureboard-setup.path)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+# The settings page can't reach the internet (its unit's IP filter), so it
+# leaves its requests in /var/lib/departureboard/setup-spool and this answers
+# them: postcodes and addresses, nearby stops, walk times, key tests and the
+# search for bus companies. It stops a minute after the last request.
+Type=oneshot
+User=departureboard
+Group=departureboard
+StateDirectory=departureboard
+StateDirectoryMode=0750
+# Keys are read here, so the page never sends a saved one.
+EnvironmentFile=/etc/departureboard/secrets.env
+ExecStart=/opt/departureboard/venv/bin/departureboard setup serve --config /etc/departureboard/config.toml
+# The bus company search gives up after an hour, then builds the timetable;
+# the page says so if this is stopped first.
+TimeoutStartSec=90min
+UMask=0027
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+ProtectProc=invisible
+MemoryMax=256M
+TasksMax=16
+# Outbound only: no IPAddressDeny, unlike the settings page, and nothing here listens.

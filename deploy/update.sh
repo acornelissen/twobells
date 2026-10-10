@@ -48,10 +48,16 @@ fi
 "$PREFIX/venv/bin/pip" install --quiet --no-deps --force-reinstall "$build"
 
 for unit in departureboard.service departureboard.timer departureboard-screen.service departureboard-web.service \
-    departureboard-timetable.service departureboard-timetable.timer; do
+    departureboard-timetable.service departureboard-timetable.timer \
+    departureboard-setup.service departureboard-setup.path; do
   install -m 644 "$REPO/deploy/$unit" /etc/systemd/system/
 done
 systemctl daemon-reload
+# The settings page hands the setup wizard's internet lookups to the setup
+# service; this starts it when asked. A running page restarts onto the new
+# code and unit (signing browsers out).
+systemctl enable --now departureboard-setup.path
+systemctl try-restart departureboard-web.service
 
 # Bus times from the BODS timetable need it built and kept fresh. The first
 # build takes minutes, so it carries on in the background.

@@ -1,0 +1,13 @@
+[Unit]
+Description=Departure board: start the setup service when the settings page asks
+
+[Path]
+# The settings page writes each setup request here. systemd watches the folder
+# and starts the service, so the page needs no sudo or access to systemd, and
+# can't choose what runs: only leave data for it. Started again whenever a
+# request is waiting after the service stops.
+DirectoryNotEmpty=/var/lib/departureboard/setup-spool/requests
+Unit=departureboard-setup.service
+
+[Install]
+WantedBy=paths.target

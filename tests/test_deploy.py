@@ -1,4 +1,4 @@
-"""The dashboard container's security settings, so a later edit can't quietly drop one."""
+"""Deployment security settings (the dashboard container, the Pi's units), so an edit can't quietly drop one."""
 
 import re
 from pathlib import Path
@@ -57,3 +57,51 @@ def test_the_documented_password_commands_fit_the_container():
 
 def test_keys_file_is_git_ignored():
     assert "dashboard.env" in (ROOT / ".gitignore").read_text().splitlines()
+
+
+# The Pi's units: the settings page stays off the internet; the setup service goes out for it.
+
+
+def _unit(name: str) -> dict[str, list[str]]:
+    settings: dict[str, list[str]] = {}
+    for line in (ROOT / "deploy" / name).read_text().splitlines():
+        if "=" in line and not line.startswith("#"):
+            key, _, value = line.partition("=")
+            settings.setdefault(key, []).append(value)
+    return settings
+
+
+def test_the_settings_page_stays_on_the_home_network_and_hands_setup_on():
+    web = _unit("departureboard-web.service")
+    assert web["IPAddressDeny"] == ["any"]
+    assert web["ExecStart"][0].endswith(" --setup-via-spool")
+    assert "departureboard-setup.path" in web["Wants"]
+
+
+def test_the_setup_service_goes_out_and_nothing_more():
+    from departureboard import setupspool
+
+    unit = _unit("departureboard-setup.service")
+    assert "IPAddressDeny" not in unit and "IPAddressAllow" not in unit
+    assert unit["ExecStart"] == [
+        "/opt/departureboard/venv/bin/departureboard setup serve --config /etc/departureboard/config.toml"]
+    assert unit["Type"] == ["oneshot"] and unit["User"] == ["departureboard"] and "TimeoutStartSec" in unit
+    assert unit["StateDirectory"] == ["departureboard"]
+    assert unit["EnvironmentFile"] == ["/etc/departureboard/secrets.env"]
+    timetable = _unit("departureboard-timetable.service")
+    hardening = ("NoNewPrivileges", "CapabilityBoundingSet", "ProtectSystem", "ProtectHome", "PrivateTmp",
+                 "PrivateDevices", "ProtectKernelTunables", "ProtectKernelModules", "ProtectControlGroups",
+                 "RestrictAddressFamilies", "RestrictNamespaces", "RestrictSUIDSGID", "LockPersonality",
+                 "MemoryDenyWriteExecute", "SystemCallFilter", "MemoryMax", "UMask")
+    for setting in hardening:
+        assert unit[setting] == timetable[setting], setting
+    path = _unit("departureboard-setup.path")
+    assert path["DirectoryNotEmpty"] == [f"/var/lib/departureboard/{setupspool.SPOOL}/requests"]
+    assert path["Unit"] == ["departureboard-setup.service"]
+
+
+def test_install_and_update_set_up_the_setup_service():
+    for script in ("install.sh", "update.sh"):
+        text = (ROOT / "deploy" / script).read_text()
+        assert "departureboard-setup.service" in text and "departureboard-setup.path" in text, script
+        assert "systemctl enable --now departureboard-setup.path" in text, script
