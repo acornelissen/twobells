@@ -14,7 +14,7 @@ The board and dashboard use, and the tests include recorded samples of, these op
 
 Contains public sector information licensed under the Open Government Licence v3.0. Weather data by Open-Meteo.com. Map data © OpenStreetMap contributors.
 
-Train times come from National Rail's Darwin via the [Rail Data Marketplace](https://raildata.org.uk), under that product's licence. Bus times can also come from [TransportAPI](https://www.transportapi.com) under its terms.
+Train times come from National Rail's Darwin via the [Rail Data Marketplace](https://raildata.org.uk), under that product's licence. Bus times can also come from [TransportAPI](https://www.transportapi.com) under its terms. The tests' Darwin and TransportAPI answers (`tests/fixtures/ldbws_*.json`, `tests/fixtures/tapi_*.json`) are synthetic: made up in the shape those services send, with real station and stop names.
 
 ## Setup data and lookups
 
