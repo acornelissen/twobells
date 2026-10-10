@@ -45,7 +45,9 @@ ROUTER_URL = "https://routing.openstreetmap.de/routed-car/route/v1/driving"
 TIMEOUT = 15.0  # seconds
 REQUEST_INTERVAL = 0.5  # seconds: at most two requests a second
 MAX_PAIRS = 400  # requests per build; the rest are drawn straight
-MAX_SECONDS = 10 * 60  # per build
+# Per build: MAX_PAIRS takes 200 s at two a second, and the timetable service
+# has 30 minutes for the downloads as well.
+MAX_SECONDS = 5 * 60
 MAX_FAILURES = 5  # in a row, before the router is taken to be down
 # A real answer for two stops a few km apart is a few kB.
 MAX_ROUTE_BYTES = 300_000
