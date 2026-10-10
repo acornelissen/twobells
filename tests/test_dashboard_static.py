@@ -600,6 +600,44 @@ def test_the_train_dialog_draws_the_journey_as_a_route_line():
         assert "animation" not in body and "transition" not in body
 
 
+def _css_block(at_rule):
+    """The rules inside an at-rule of app.css, as {selector: declarations}."""
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    start = css.index("{", css.index(at_rule)) + 1
+    depth, end = 1, start
+    while depth:
+        depth += {"{": 1, "}": -1}.get(css[end], 0)
+        end += 1
+    rules = {}
+    for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css[start:end - 1]):
+        for selector in selectors.split(","):
+            rules[selector.strip()] = rules.get(selector.strip(), "") + body
+    return rules
+
+
+def test_the_journey_line_keeps_its_shapes_in_forced_colours():
+    # Forced colours (Windows High Contrast) drop backgrounds, which draw the
+    # filled dots, the solid rail and the train; system colours draw them then.
+    rules = _css_block("@media (forced-colors: active)")
+    for selector in (".journey li::before", ".cp-rail", ".cp-train"):
+        assert "forced-color-adjust: none" in rules[selector], selector
+    hollow = rules[".journey li::before"]
+    assert "background: Canvas;" in hollow and "border-color: CanvasText" in hollow
+    for filled in (".journey li.cp-passed::before", ".journey li.cp-here::before"):
+        assert "background: CanvasText" in rules[filled] and "border-color: CanvasText" in rules[filled]
+    assert "background: Highlight" in rules[".journey li.yours::before"]  # this station
+    assert "background: CanvasText" in rules[".cp-rail::before"]  # solid, against the dashed rest
+    assert "border-left-color: CanvasText" in rules[".cp-rail"]
+    assert "background: CanvasText" in rules[".cp-train"]
+    assert "background: Highlight" in rules[".line-station.yours::after"]  # the line's own station dot
+
+
+def test_the_journey_dots_follow_the_line_height():
+    # Text spacing (WCAG 1.4.12) can widen the lines: a dot sits half a line
+    # down wherever the browser knows the lh unit.
+    assert "0.5lh" in _css_block("@supports (top: 1lh)")[".calling.journey"]
+
+
 # Where the train is along its journey: the stops before this station (0, 1),
 # this station (2), and the stops after (3, 4).
 BEFORE = '[{ name: "Hadfield" }, { name: "Dinting" }]'

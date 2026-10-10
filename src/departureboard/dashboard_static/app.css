@@ -571,6 +571,11 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 }
 .cp-next .cp-tag, .cp-here .cp-tag { color: var(--badge-fg); background: var(--badge-bg); border-color: var(--badge-bg); }
 .cp-passed .cp-name { color: var(--muted); }
+/* Where the browser knows the lh unit, a dot sits half the real line height
+   down, so it stays with its text when a reader widens the line spacing. */
+@supports (top: 1lh) {
+  .calling.journey { --dot-y: calc(0.625rem + 0.5lh); }
+}
 .phrase { font-size: 1.125rem; font-weight: 600; }
 .scroll { overflow-x: auto; }
 table.history { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
@@ -700,6 +705,24 @@ table.history thead th { border-top: 0; color: var(--muted); }
   font-size: 0.9375rem;
 }
 .line-between { padding-top: 0; padding-bottom: 0; }
+/* Forced colours (Windows High Contrast) drop backgrounds, which draw the
+   journey's filled dots, its solid rail and the train, and this station's
+   dot on the line. They are drawn in the reader's system colours instead,
+   so filled still differs from hollow and solid from dashed. */
+@media (forced-colors: active) {
+  .journey li::before, .cp-rail, .cp-train, .line-station::after { forced-color-adjust: none; }
+  .journey li::before { border-color: CanvasText; background: Canvas; }
+  .journey li.cp-passed::before, .journey li.cp-here::before { border-color: CanvasText; background: CanvasText; }
+  .journey li.yours::before { border-color: CanvasText; background: Highlight; }
+  .cp-rail { border-left-color: CanvasText; }
+  .cp-rail::before { background: CanvasText; }
+  .cp-train { border-color: Canvas; background: CanvasText; }
+  .cp-train-glyph { fill: Canvas; }
+  .cp-train-window { fill: CanvasText; }
+  .cp-train-wheels { stroke: Canvas; }
+  .line-station::after { border-color: CanvasText; background: Canvas; }
+  .line-station.yours::after { background: Highlight; }
+}
 .area-list { margin: 0 0 0.5rem; padding-left: 1.25rem; }
 .area-list li { padding: 0.25rem 0; }
 .area-list .link { margin-left: 0.25rem; }
