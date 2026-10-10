@@ -34,8 +34,9 @@ deleting it as it reads it (so a pasted key is kept as briefly as it
 can), checks it, does it, and writes the reply. The page waits for the
 reply, up to a limit per kind, deletes it once read, and deletes its own
 request if it is still there when it gives up. The search's reply is its
-status, rewritten as it goes and every few seconds besides, so the page can
-tell a stopped service from a slow search.
+status, rewritten as it goes and every few seconds besides (from a thread of
+its own, so a slow lookup doesn't hold it up), so the page can tell a stopped
+service from a slow search.
 
 Never a restart loop. systemd starts the service again whenever it stops
 with a request still waiting, so it never stops early and leaves one: a
@@ -806,6 +807,8 @@ class Worker:
         self._clock = clock
         self._monotonic = monotonic
         self._stop = stop or threading.Event()
+        # The search's status is written from two threads (see _keep_reporting); this keeps them apart.
+        self._lock = threading.RLock()
         self._job = None
         self._job_id = ""
         self._job_secrets: list[str] = []
@@ -824,16 +827,25 @@ class Worker:
                 log.info("Another setup service is already answering")
                 return 0
             self.spool.sweep(self._clock())
-            last = self._monotonic()
-            while not self._stop.is_set():
-                if self.step() or self._job is not None:
-                    last = self._monotonic()
-                elif self._monotonic() - last >= self._idle:
-                    break
-                self._stop.wait(self._poll)
-            if self._job is not None:  # stopped mid-search: say so rather than go quiet
-                self._job.cancel()
-                self._write_status(_failed("Cancelled"), force=True)
+            finished = threading.Event()
+            heartbeat = threading.Thread(target=self._keep_reporting, args=(finished,), name="setup-heartbeat",
+                                         daemon=True)
+            heartbeat.start()
+            try:
+                last = self._monotonic()
+                while not self._stop.is_set():
+                    if self.step() or self._job is not None:
+                        last = self._monotonic()
+                    elif self._monotonic() - last >= self._idle:
+                        break
+                    self._stop.wait(self._poll)
+            finally:
+                finished.set()
+                heartbeat.join()
+            with self._lock:
+                if self._job is not None:  # stopped mid-search: say so rather than go quiet
+                    self._job.cancel()
+                    self._write_status(_failed("Cancelled"), force=True)
             return 0
         finally:
             os.close(fd)
@@ -844,9 +856,15 @@ class Worker:
         for path in self._waiting():
             handled = True
             self._take(path)
-        if self._job is not None:
-            self._report()
+        self._report()
         return handled
+
+    def _keep_reporting(self, finished: threading.Event) -> None:
+        """The search's heartbeat, in a thread of its own until `finished`. A
+        lookup holds the main thread for up to its wait (NaPTAN's, longer than
+        the page's SILENT_S), and the page must not take that for a stop."""
+        while not finished.wait(self._poll):
+            self._report()
 
     def _waiting(self) -> list[Path]:
         try:
@@ -951,10 +969,11 @@ class Worker:
     # The search.
 
     def _cancel(self, job_id: str) -> None:
-        if self._job is not None and self._job_id == job_id:
-            self._job.cancel()
-        else:
-            self._cancelled = [*self._cancelled[-31:], job_id]
+        with self._lock:
+            if self._job is not None and self._job_id == job_id:
+                self._job.cancel()
+            else:
+                self._cancelled = [*self._cancelled[-31:], job_id]
 
     def _search(self, request_id: str, args: dict) -> None:
         if request_id in self._cancelled:
@@ -986,15 +1005,21 @@ class Worker:
             log.warning("Setup search failed to start: %s", type(error).__name__)
             self._reply(request_id, {"ok": True, "beat": 0, "value": _failed("Something went wrong; try again")})
             return
-        self._job, self._job_id, self._shown = job, request_id, None
-        self._job_secrets = self._secrets([args["key"]])
+        job_secrets = self._secrets([args["key"]])
+        with self._lock:
+            self._job, self._job_id, self._shown, self._job_secrets = job, request_id, None, job_secrets
         self._report()
 
     def _report(self) -> None:
-        status = self._job.status()
-        self._write_status(_status_out(status))
-        if status.get("state") in _FINISHED:
-            self._job, self._job_secrets = None, []
+        """Write the search's status, if one is running: when it changes, and
+        every HEARTBEAT_S besides."""
+        with self._lock:
+            if self._job is None:
+                return
+            status = self._job.status()
+            self._write_status(_status_out(status))
+            if status.get("state") in _FINISHED:
+                self._job, self._job_secrets = None, []
 
     def _write_status(self, shown: dict, force: bool = False) -> None:
         now = self._monotonic()

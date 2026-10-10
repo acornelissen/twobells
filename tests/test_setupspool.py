@@ -262,6 +262,41 @@ def test_a_search_that_goes_quiet_has_stopped(board):
     assert status["state"] == "failed" and status["message"] == setupspool.STOPPED
 
 
+def test_a_search_stays_alive_while_a_long_lookup_runs(board):
+    # A stops lookup may take up to its wait (longer than SILENT_S) in the
+    # service's main thread; the search's heartbeat must keep going meanwhile.
+    assert setupspool.WAITS["stops"] > setupspool.SILENT_S
+    now = [0.0]
+    board.runner.monotonic = board.worker._monotonic = lambda: now[0]
+    entered, release = threading.Event(), threading.Event()
+
+    def slow_stops(lat, lon, within_m, limit):
+        entered.set()
+        release.wait(10)
+        return STOPS
+
+    board.worker._nearby_stops = slow_stops
+    thread = threading.Thread(target=board.worker.run, daemon=True)
+    thread.start()
+    try:
+        job = board.runner.make_job({"A": "1800SB12341"}, "", routes=False, walk_minutes={})
+        job.start()
+        wait_for(lambda: job.status()["state"] == "running")
+        board.runner.post(setupspool.new_id(), "stops", {"home": HOME, "within_m": 1000, "limit": 15})
+        assert entered.wait(5)
+        replies = board.state / setupspool.SPOOL / "replies"
+        while now[0] <= setupspool.SILENT_S + setupspool.HEARTBEAT_S:
+            beat = json.loads((replies / f"{job.id}.json").read_text())["beat"]
+            now[0] += setupspool.HEARTBEAT_S + 1
+            wait_for(lambda: json.loads((replies / f"{job.id}.json").read_text())["beat"] > beat)
+            assert job.status()["state"] == "running"
+    finally:
+        release.set()
+        board.worker._stop.set()
+        thread.join(5)
+    assert not thread.is_alive()
+
+
 # Refused files, both ways.
 
 
