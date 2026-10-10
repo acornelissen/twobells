@@ -1,8 +1,10 @@
 # Dashboard API
 
-The contract between the dashboard's server (`departureboard dashboard`) and its browser front end. Everything is read-only: GET and HEAD only.
+The contract between the dashboard's server (`departureboard serve`, on every install) and its browser front end. Everything is read-only: GET and HEAD only.
 
-The password-protected settings area under `/settings` is not part of this API: it has its own pages, cookies (`dash_session`, `dash_form`, both `Path=/settings`) and headers (`form-action 'self'` and no scripts, except `script-src 'self'` for the setup wizard under `/settings/setup/`). Nothing here changes because of it.
+Everything under `/settings` is the settings site, not part of this API: it has its own pages, cookies (`settings_session`, `settings_form`, both `Path=/settings`) and headers (`form-action 'self'` and no scripts, except `script-src 'self'` for the setup wizard under `/settings/setup/`). The board's old settings addresses `/login`, `/reset` and `/setup/` redirect there. Nothing here changes because of it.
+
+The API is there only while the dashboard is on: its view is on (`[app] views`), the app is set up, and its settings load. While it is off, `/` redirects (303) to `/settings`, `/healthz` answers 200 `ok` so a container's health check still hears the server, and everything else here (`/api/…`, `/static/…`, `/manifest.webmanifest`) is 404. Responses then carry the settings site's security headers rather than those below.
 
 Rules for every response:
 - **Times:** `*_at` fields are ISO 8601 with the board's UTC offset (`2026-10-10T07:12:00+01:00`). `HH:MM` fields are for display only. The browser counts down from `*_at` against the server clock (`generated_at` plus its own offset), so the server never pushes every second.
@@ -205,7 +207,7 @@ The punctuality history of a train or bus row (same ids as the snapshot); 404 if
 
 ## `GET /healthz`
 
-200 `ok` when the pollers are alive and the snapshot was rebuilt in the last 3 minutes; otherwise 503.
+While the dashboard is on: 200 `ok` when the pollers are alive and the snapshot was rebuilt in the last 3 minutes; otherwise 503. On a Pi the pollers run in the fetch service, which hands the snapshot to the web server with its own health; it counts only while that snapshot is under 3 minutes old. While the dashboard is off: always 200 `ok`.
 
 ## Static files
 
@@ -218,12 +220,13 @@ The punctuality history of a train or bus row (same ids as the snapshot); 404 if
 Checked in this order, before anything else. Each refusal has a plain-text body and the security headers below.
 
 - **403** unless the client's address is private, loopback or link-local, the request has exactly one `Host` header, and that host is local or in `[dashboard] allowed_hosts`. Local means a private IP address, a name without dots, or a name ending `.local`, `.lan` or `.home.arpa`. This stops DNS rebinding.
-- Then everything under `/settings` goes to the settings area, which has its own rules (see the top of this page).
+- Then everything under `/settings`, and the old `/login`, `/reset` and `/setup/`, goes to the settings site, which has its own rules (see the top of this page).
 - **405** with `Allow: GET, HEAD` for any other method.
 - **404** when the request target is over 512 characters, doesn't start with `/`, or holds `..`, a backslash, or an encoded dot, slash, backslash or NUL (`%2e`, `%2f`, `%5c`, `%00`, in any case).
+- While the dashboard is off, the rest is answered as at the top of this page.
 - **403** for `/api/` when `Sec-Fetch-Site` is `cross-site`: another site's page can't read the API through the browser.
 
-## Security headers (every response)
+## Security headers (every response while the dashboard is on)
 
 ```
 Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
