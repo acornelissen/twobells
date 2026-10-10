@@ -1,7 +1,8 @@
 # Worked example: a board in Glossop, Derbyshire, showing trains to
-# Manchester Piccadilly and buses from the two Henry Street stops.
+# Manchester Piccadilly and buses from two stops in the town centre.
 # config.example.toml is the blank template to start from; this file shows
-# what a filled-in one looks like. Every code and position here is Glossop's.
+# what a filled-in one looks like. The station, stop and operator codes are
+# Glossop's; the walk times and the route's stops are made up for illustration.
 
 title = "Glossop > Manchester Picc"
 timezone = "Europe/London"
@@ -38,7 +39,7 @@ interval_minutes = 2
 stale_after_minutes = 6
 windows = ["Mon-Fri 06:30-09:30", "Mon-Fri 16:30-19:30"]
 # Minutes to walk to the station; the board shows when to leave for the next train.
-walk_minutes = 7
+walk_minutes = 10
 # Copy the exact base URL from the Rail Data Marketplace product page if it differs.
 # base_url = "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
 
@@ -77,18 +78,20 @@ B = "100000008350"   # Henry Street Stop B: 61, 237, 390, 393, 394
 
 # Minutes to walk to each stop, by label. A single number applies to every stop.
 [bus.walk_minutes]
-A = 7
-B = 7
+A = 10
+B = 10
 
 # HDMI screen only: a second page showing where the next bus you can catch is,
 # on the stops before yours. Needs BODS_API_KEY in secrets.env. Positions are
 # polled every position_interval_seconds (default 30) inside the bus windows.
+# `departureboard route 341 --stop A --noc BNML` prints this block with the
+# real stops and positions; the ones below only show its shape.
 # [bus.routes.341]
 # stop = "A"            # your stop's label from [bus.stops]
 # stops = [             # in the order the bus calls; yours last
-#   { name = "Sunlaws Street", lat = 53.443494, lon = -1.959026 },
-#   { name = "St Marys Road",  lat = 53.443511, lon = -1.955759 },
-#   { name = "Henry Street",   lat = 53.44384,  lon = -1.948999 },
+#   { name = "Two stops back", lat = 53.4430, lon = -1.9600 },
+#   { name = "One stop back",  lat = 53.4433, lon = -1.9550 },
+#   { name = "Your stop",      lat = 53.4436, lon = -1.9500 },
 # ]
 
 # Optional: a rain warning from Open-Meteo's forecast (free, no key). The board

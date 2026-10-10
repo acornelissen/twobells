@@ -18,7 +18,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   "version": 42,
   "generated_at": "2026-10-10T07:01:30+01:00",
   "title": "Glossop > Man Picc",
-  "walk": {"train": 12, "bus": {"A": 5, "B": 10}},
+  "walk": {"train": 10, "bus": {"A": 10, "B": 10}},
   "trains": {
     "station": "Glossop",
     "filter": "MAN",
@@ -56,7 +56,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   "buses": {
     "status": {"last_success": "…", "stale": false, "error": null, "note": null},
     "timetable": {"state": "ready", "built": "…", "valid_until": "2031-02-23", "journeys": 445},
-    "stops": {"A": "Henry Street (Stop A)", "B": "Henry Street (Stop B)"},
+    "stops": {"A": "Church Street (Stop A)", "B": "Church Street (Stop B)"},
     "rows": [{
       "id": "4b7e…",
       "line": "341",
@@ -71,7 +71,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "live": true,
       "leave_at": "…",
       "vehicle": {"age_s": 40, "recorded_at": "…", "bearing": 95.0},
-      "strip": {"stops": ["Sunlaws Street", "St Marys Road", "Henry Street", "Howard Arms"], "yours": 2, "bus_at": 0.6, "where": "2 stops away"},
+      "strip": {"stops": ["Mill Lane", "Park Road", "Church Street", "Market Place"], "yours": 2, "bus_at": 0.6, "where": "2 stops away"},
       "history": {"phrase": null, "no_show_phrase": null},
       "arrives": {"name": "Hyde Bus Station", "at": "08:02", "at_iso": "…", "minutes": 38},
       "inbound": null,
@@ -89,7 +89,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "live": false,
       "leave_at": "…",
       "vehicle": null,
-      "strip": {"stops": ["Henry Street", "Market Hall"], "yours": 0, "bus_at": null, "where": "No live position"},
+      "strip": {"stops": ["Church Street", "Market Place"], "yours": 0, "bus_at": null, "where": "No live position"},
       "history": {"phrase": null, "no_show_phrase": "No tracker on 3 of the last 10 weekdays"},
       "arrives": {"name": "Ashton", "at": "08:10", "at_iso": "…", "minutes": 45},
       "inbound": {"from": "The Junction", "due": "07:29", "late_min": 4, "where": "4 stops away",
@@ -174,8 +174,8 @@ The map for one bus row; 404 if the id is unknown (as when it's gone from the bo
   "id": "4b7e…",
   "line": "341", "destination": "Hyde Bus Station", "stop": "A", "stop_name": "Henry Street (Stop A)",
   "stops": [
-    {"name": "Sunlaws Street", "lat": 53.443494, "lon": -1.959026, "time": "07:16", "yours": false},
-    {"name": "Henry Street", "lat": 53.44384, "lon": -1.948999, "time": "07:20", "yours": true}
+    {"name": "Park Road", "lat": 53.4433, "lon": -1.9550, "time": "07:16", "yours": false},
+    {"name": "Church Street", "lat": 53.4436, "lon": -1.9500, "time": "07:20", "yours": true}
   ],
   "vehicle": {"lat": 53.4435, "lon": -1.9573, "bearing": 95.0, "recorded_at": "…", "age_s": 40},
   "where": "2 stops away"
@@ -291,9 +291,9 @@ The area map: every live bus on our lines around our stops, from the bus poller'
   "box": [-1.975966, 53.433239, -1.938157, 53.454467],
   "vehicles": [
     {"line": "341", "destination": "Hadfield", "lat": 53.443503, "lon": -1.957393, "bearing": 90.0,
-     "recorded_at": "2026-10-09T10:14:00+01:00", "age_s": 30, "next_stop": "St Marys Road"}
+     "recorded_at": "2026-10-09T10:14:00+01:00", "age_s": 30, "next_stop": "Park Road"}
   ],
-  "stops": [{"label": "A", "name": "Henry Street", "lat": 53.44384, "lon": -1.948999}],
+  "stops": [{"label": "A", "name": "Church Street", "lat": 53.4436, "lon": -1.9500}],
   "routes": [{"line": "341", "destination": "Hadfield", "points": [[53.444467, -1.965966], [53.444223, -1.962774]]}]
 }
 ```

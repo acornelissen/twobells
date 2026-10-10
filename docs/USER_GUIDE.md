@@ -1,6 +1,6 @@
 # Departure board user guide
 
-The board shows the next trains from your station and the next buses from your stops, and tells you when to set off so you catch them. The examples in this guide come from a board in Glossop, showing trains to Manchester and buses from the Henry Street stops.
+The board shows the next trains from your station and the next buses from your stops, and tells you when to set off so you catch them. The examples in this guide come from a board in Glossop, showing trains to Manchester and buses from two stops in the town centre.
 
 This guide has four parts:
 
@@ -50,7 +50,7 @@ Each line reads: *route*, *stop*, *destination*, *when to leave*, *when it goes*
 
 | You see | It means |
 |---|---|
-| `341 A Hyde` | Route 341 from Henry Street Stop A, going to Hyde. |
+| `341 A Hyde` | Route 341 from stop A, going to Hyde. |
 | `leave 07:17` | Set off at 07:17 to walk to that stop in time. |
 | `07:41` | Live tracking says it's on time. |
 | `07:24 +4` | Live tracking says it's 4 minutes late and will leave at 07:24. |
@@ -344,7 +344,7 @@ departureboard route 341 --stop A --noc BNML --config config.toml --secrets secr
 
 Paste the printed block into `config.toml`. It picks enough stops before yours to cover your walk plus 5 minutes of bus travel, at most 8. `BNML` is the operator code for Bee Network. For other operators, `probe bus --save DIR` writes TransportAPI's raw answers, which include an `operator` field.
 
-A bus that starts its journey at your stop is followed on its way in. In Glossop, for example, most 341s to Hyde start at Henry Street Stop A, so the page follows the 341 arriving into Glossop, which then turns round as your bus.
+A bus that starts its journey at your stop is followed on its way in. If, say, most 341s to Hyde start at your stop, the page follows the 341 arriving from the other direction, which then turns round as your bus.
 
 ### The settings page
 

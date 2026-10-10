@@ -53,7 +53,7 @@ interval_minutes = 2
 stale_after_minutes = 6
 windows = ["Mon-Fri 06:30-09:30", "Mon-Fri 16:30-19:30"]
 # Minutes to walk to the station; the board shows when to leave for the next train.
-# walk_minutes = 7
+# walk_minutes = 10
 # Copy the exact base URL from the Rail Data Marketplace product page if it differs.
 # base_url = "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
 
@@ -95,7 +95,7 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 
 # Minutes to walk to each stop, by label. A single number applies to every stop.
 # [bus.walk_minutes]
-# A = 7
+# A = 10
 
 # HDMI screen only: a second page showing where the next bus you can catch is,
 # on the stops before yours. Needs BODS_API_KEY in secrets.env. Positions are
