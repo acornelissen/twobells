@@ -243,6 +243,7 @@ docker exec -it departureboard-dashboard python -m departureboard.cli dashboard 
 | `model.py` | Provider-neutral `Departure` and lateness maths |
 | `darwin.py`, `transportapi.py` | Sources; HTTP injected, so parsing is tested with fixtures |
 | `timetable.py`, `schedule_model.py` | BODS TransXChange to the journeys calling at your stops, and when each runs (`timetable` command) |
+| `roadshape.py` | The roads between stops for the dashboard's bus maps, from the OpenStreetMap car router, once per timetable build |
 | `livebus.py` | Pure: matches live buses to timetabled journeys and works out departures and delays |
 | `bodsbus.py` | The `source = "bods"` bus source: timetable plus live positions, TransportAPI fallback |
 | `schedule.py`, `budget.py` | When to poll, and the daily hit cap |

@@ -289,6 +289,7 @@ These are free and need no sign-up, so there's nothing to look for. Each one is 
 - **GOV.UK bank holidays:** nothing about you; the board just downloads the list of dates, about once a week.
 - **postcodes.io** and **OpenStreetMap Nominatim** (searching for your home or stops during setup): the postcode or place name you type.
 - **The OpenStreetMap foot router** (walk times): the positions of your home and your stop or station.
+- **The OpenStreetMap car router** (the roads on the dashboard's bus maps): the positions of the bus stops on your routes, two at a time, each pair once when the bus timetable is built, about once a week. Never your home.
 - **OpenStreetMap map tiles** (the dashboard's bus maps): your browser fetches the squares of map for the area on screen, so OpenStreetMap sees roughly where you're looking.
 - **NaPTAN** (bus stop names and positions, for the bus position page): the codes of the stops on your route.
 

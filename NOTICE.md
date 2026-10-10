@@ -21,6 +21,7 @@ Train times come from National Rail's Darwin via the [Rail Data Marketplace](htt
 - `src/departureboard/data/gb_stations.csv` (stations and CRS codes) and `naptan_area_grid.csv` (which NaPTAN areas have bus stops where) are built from the Department for Transport's [NaPTAN](https://naptan.api.dft.gov.uk/) by `tools/build_setup_data.py`, under the Open Government Licence v3.0. Rebuild them now and then: stations open and stops move.
 - Setup looks up postcodes with [postcodes.io](https://postcodes.io): Office for National Statistics data under the Open Government Licence; contains OS data © Crown copyright and database right, and Royal Mail data © Royal Mail copyright and database right.
 - Addresses come from OpenStreetMap's [Nominatim](https://nominatim.openstreetmap.org) and walk times from the OpenStreetMap [foot router](https://routing.openstreetmap.de). OpenStreetMap data © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/copyright).
+- The roads drawn on the dashboard's bus maps come from the OpenStreetMap [car router](https://routing.openstreetmap.de) when the bus timetable is built, and are kept in `bus-timetable.json`. OpenStreetMap data © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/copyright).
 
 ## Code
 
