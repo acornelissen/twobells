@@ -816,6 +816,20 @@ def test_the_area_map_has_real_buttons_a_credit_and_a_text_list():
     assert "OpenStreetMap contributors" in dialog[:dialog.index("</dialog>")]
 
 
+def test_every_map_credit_links_to_fix_the_map():
+    # The road router's policy (routing.openstreetmap.de/about.html) asks for the
+    # OpenStreetMap credit and a link to "fix the map" wherever its roads are drawn.
+    # Both are plain links that open in the same tab.
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    credits = re.findall(r"<p[^>]*>Map data ©.*?</p>", html)
+    assert len(credits) == 3  # the page footer, the bus map and the area map
+    for credit in credits:
+        assert re.findall(r"<a ([^>]*)>([^<]*)</a>", credit) == [
+            ('href="https://www.openstreetmap.org/copyright"', "OpenStreetMap contributors"),
+            ('href="https://www.openstreetmap.org/fixthemap"', "Fix the map"),
+        ]
+
+
 @needs_node
 def test_maps_draw_along_the_roads_or_else_straight_between_stops():
     found = run_js("""
