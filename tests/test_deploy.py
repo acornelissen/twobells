@@ -129,6 +129,17 @@ def test_the_documented_password_commands_fit_the_container():
     assert "docker logs departureboard<" in docker.log_help and "Container, departureboard, Log" in docker.log_help
 
 
+def test_a_desktop_says_where_its_log_is_however_it_runs():
+    from departureboard.installs import install_named
+
+    desktop = install_named("desktop").log_help
+    # In a terminal, or started at login by the files in deploy/desktop.
+    plist = (ROOT / "deploy" / "desktop" / "uk.departureboard.serve.plist").read_text()
+    assert "Terminal" in desktop and "~/Library/Logs/departureboard.log" in desktop
+    assert "/Library/Logs/departureboard.log" in plist
+    assert "journalctl --user -u departureboard" in desktop
+
+
 def test_keys_files_are_git_ignored():
     ignored = (ROOT / ".gitignore").read_text().splitlines()
     assert "secrets.env" in ignored  # anywhere: the Pi's copy, Docker's next to docker-compose.yml

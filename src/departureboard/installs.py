@@ -56,7 +56,9 @@ INSTALLS = {
                 password_command=_DOCKER_COMMAND.format("--set-password"),
                 reset_command=_DOCKER_COMMAND.format("--reset-code")),
         Install("desktop", ("dashboard",), ("dashboard",), None, browser=True,
-                log_help="In the Terminal window running departureboard.",
+                log_help=("In the Terminal window running departureboard; started at login, in "
+                          "<code>~/Library/Logs/departureboard.log</code> on a Mac, or "
+                          "<code>journalctl --user -u departureboard</code> on Linux."),
                 password_command="departureboard serve --set-password",
                 reset_command="departureboard serve --reset-code"),
     )
