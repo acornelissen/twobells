@@ -13,8 +13,27 @@ The first release.
 - One settings site per install, at `/settings` on port 8090, with one password and a setup wizard that works from your postcode.
 - Three installs: a Raspberry Pi, Docker, and a desktop (macOS or Linux).
 - Signed releases: the package on PyPI, a signed container image on GHCR, and a signed source tarball for the Pi.
+- A wall-tablet mode for the dashboard at `/?kiosk`: one screen with no controls, the station-board look by default, a shift of a pixel or two every few minutes against burn-in, dimmed in quiet hours, a large banner when the times stop updating, and a reload at 03:30.
 
 ### Changed
+
+- The dashboard is redesigned so departures come first. Under the place name and clock sit **Next to catch** (the countdown, how sure it is, and the next train and bus if you miss it), one line for disruption, then trains and buses side by side.
+  - Trains read like a station board (Time, Destination, Plat, Expected, Leave) and buses like a bus-stop countdown sign (line, destination, stop, due, leave).
+  - A departure you can no longer walk to in time leaves the list. Each row opens one sheet with its details, map or journey, punctuality and **Remind me**.
+  - Disruption is limited to your stops, nearby stops and your lines. Station facility notices, such as a closed ticket office, show as station information.
+  - The weather shows now and the next four hours, with the rest under **More hours**.
+  - One type (Inter, served by the install itself), one icon set and one colour scheme, with colour kept for what is late, cancelled or disrupted.
+  - On a wide screen the weather sits beside Next to catch. A train or bus with a live position draws a small strip of its stops in its row.
+  - The **Board look** uses the e-paper sign's own dot-matrix lettering.
+- The settings site and the setup wizard share the dashboard's type, colours and icons.
+- The board and the dashboard use the same status words: "On time", "Exp 17:54", "Delayed", "Cancelled", "No report". The plain e-paper look said "+7" for a late train; it now says "Exp 07:49". Its bus section says "Leave by" once, over the column of times.
+- The plain e-paper look draws in Inter, which ships with the package. The Pi no longer installs DejaVu fonts.
+- The dashboard API (`/api/snapshot`) changed shape. Anything reading it needs updating; `docs/dashboard-api.md` has the details.
+  - `buses.stops` maps each stop label to `{name, letter, towards, walk_min}` instead of a display string.
+  - Every train and bus row gains `walk_min` and `status_spoken` (the status in full words). `status_text` uses the words above.
+  - Disruption items gain `relevance` (`your_stop`, `nearby` or `line`) and come in order of it.
+  - `trains.messages` holds `{text, category, severity, kind}` objects instead of strings, with `kind` `station` or `service`.
+  - A top-level `quiet` says whether a quiet window is on.
 
 - The package is organised by app area (`core`, `settings`, `sources`, `timetable`, `board`, `dashboard`, `web`, `setup`, `fetch`, `emulator`, `cli`), with the tests mirroring it.
 - The repo keeps deploy files in `deploy/`, docs in `docs/` and example settings in `examples/`.
