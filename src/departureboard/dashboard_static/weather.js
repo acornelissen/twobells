@@ -112,13 +112,25 @@ function hourItem(hr) {
     vh(said));
 }
 
-// A row of hours that scrolls sideways when it doesn't fit, so it is a named
-// region keyboard users can reach and scroll. A wall tablet's four hours fit,
-// and it has no keyboard: a plain list there.
-const strip = (hours, name) => (isKiosk()
+// A row of hours that scrolls sideways when it doesn't fit: a named region,
+// and a tab stop while it overflows, so keyboard users can reach and scroll
+// it (fitStrips). `old` is the strip drawn before, whose tab stop it keeps
+// until fitStrips looks again, so a focused strip keeps the focus. A wall
+// tablet's four hours fit, and it has no keyboard: a plain list there.
+const strip = (hours, name, old) => (isKiosk()
   ? h("div", { class: "wx-strip" }, h("ol", { class: "wx-hours", ...name }, hours.map(hourItem)))
-  : h("div", { class: "wx-strip", role: "region", tabindex: "0", ...name },
+  : h("div", { class: "wx-strip", role: "region", tabindex: old ? old.getAttribute("tabindex") : null, ...name },
     h("ol", { class: "wx-hours" }, hours.map(hourItem))));
+
+// Makes each strip a tab stop only while its hours overflow it.
+function fitStrips() {
+  if (isKiosk()) return;
+  for (const el of document.querySelectorAll(".wx-strip")) {
+    if (el.scrollWidth > el.clientWidth) el.setAttribute("tabindex", "0");
+    else el.removeAttribute("tabindex");
+  }
+}
+globalThis.addEventListener?.("resize", fitStrips);
 
 function renderHours(hours) {
   const t = now();
@@ -131,13 +143,15 @@ function renderHours(hours) {
   // No "More hours" on a wall tablet: nothing there opens.
   const later = isKiosk() ? [] : upcoming.slice(SHOWN);
   const more = $("weather-more");
+  const [first, rest] = el.querySelectorAll(".wx-strip");
   // patch() keeps the nodes, so an open "More hours" stays open and a
   // scrolled or focused strip stays put when a new snapshot comes in.
   patch(el,
-    strip(upcoming.slice(0, SHOWN), { "aria-labelledby": "weather-hours-heading" }),
-    later.length ? h("details", { id: "weather-more", class: "wx-more", open: !!(more && more.open) },
-      h("summary", {}, "More hours"),
-      strip(later, { "aria-label": "Later hours" })) : null);
+    strip(upcoming.slice(0, SHOWN), { "aria-labelledby": "weather-hours-heading" }, first),
+    later.length ? h("details", {
+      id: "weather-more", class: "wx-more", open: !!(more && more.open), on: { toggle: fitStrips },
+    }, h("summary", {}, "More hours"), strip(later, { "aria-label": "Later hours" }, rest)) : null);
+  fitStrips();
 }
 
 export function renderWeather(snapshot) {

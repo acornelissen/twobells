@@ -914,6 +914,26 @@ def test_a_long_summary_shows_two_lines_until_more():
 
 
 @needs_node
+def test_a_disruption_link_keeps_the_focus_across_snapshots():
+    found = run_js(DISRUPTION_PAGE + """
+        import { focusKey, refocus } from "./dom.js";
+        globalThis.CSS = { escape: (text) => text };
+        const snapshot = at({ disruptions: { status: {}, items: [
+          item("aaaaaaaaaaaaaaaa", "your_stop", { link: "https://www.tfgm.com/travel-updates/aaa" }),
+        ] } });
+        renderDisruptions(snapshot);
+        const link = () => elements($("disruptions-now")).find((el) => el.nodeName === "A");
+        link().focus();
+        const key = focusKey();
+        renderDisruptions(snapshot);
+        const fresh = link();
+        refocus(key);
+        console.log(JSON.stringify([key, document.activeElement === fresh]));
+    """)
+    assert found == ["dis-link:aaaaaaaaaaaaaaaa", True]
+
+
+@needs_node
 def test_a_row_link_opens_the_summary_at_its_item():
     found = run_js(_boards() + DISRUPTION_PAGE.replace('import { h } from "./dom.js";\n', "") + """
         renderDisruptions(snapshot);
@@ -1707,6 +1727,17 @@ def test_the_open_sheet_says_when_its_train_has_gone():
 
 
 @needs_node
+def test_the_focus_stays_in_the_sheet_when_its_departure_leaves_the_board():
+    found = run_js(_sheet() + """
+        openTrain({ ...train(1), leave_at: "2026-10-10T07:10:00+01:00" });
+        remind.focus();
+        refreshTrain(new Map());
+        console.log(JSON.stringify([remind.hidden, document.activeElement === title]));
+    """)
+    assert found == [True, True]
+
+
+@needs_node
 def test_the_sheet_holds_the_history_and_remind_me():
     # One sheet, not three dialogs: the punctuality loads into it on opening,
     # and Remind me is in it, saying honestly that on the LAN's plain http the
@@ -2001,9 +2032,11 @@ def test_the_hero_has_its_own_remind_me_and_the_rain():
         draw(map);
         console.log(JSON.stringify({ before, on, off, changed, rain, dry: $("leave-rain").hidden }));
     """)
-    assert found["before"] == ["false", "Remind me", True, ""]
+    # It says which departure it is for, as the sheet's title does there.
+    assert found["before"] == ["false", "Remind me for the 07:20 237 bus to Ashton-under-Lyne Interchange", True, ""]
     # The same honest words as the sheet's: on plain http it shows only on the page.
-    assert found["on"] == ["true", "Remind me", False, "The reminder shows only on this page, while it is open."]
+    assert found["on"] == ["true", "Remind me for the 07:20 237 bus to Ashton-under-Lyne Interchange", False,
+                           "The reminder shows only on this page, while it is open."]
     assert found["off"] == found["before"]
     assert found["changed"] == 2
     assert found["rain"] == [False, "Rain from 08:00 (70%)"]
@@ -2235,11 +2268,31 @@ def test_the_weather_shows_four_hours_and_the_rest_behind_more_hours():
     ]
     assert found["summary"] == "More hours"
     assert [s[:5] for s in found["later"]] == ["11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"]
-    # Both strips can scroll sideways, so keyboard users can reach them by name.
-    assert found["regions"] == [["region", "0", "weather-hours-heading"], ["region", "0", "Later hours"]]
+    # Named regions; a tab stop only while they overflow (see below), which a
+    # page without layout never does.
+    assert found["regions"] == [["region", None, "weather-hours-heading"], ["region", None, "Later hours"]]
     # The fixture's 07:01 is before sunrise, so sunrise is the one shown.
     assert found["now"] == ("11° Light rain"
                             "Feels like 9 degrees. Wind 12 mph from the west-south-west, gusts 25 mph. Sunrise 07:24.")
+
+
+@needs_node
+def test_a_weather_strip_is_a_tab_stop_only_while_it_overflows():
+    # Keyboard users need to reach a strip to scroll it, and only then.
+    found = run_js(_weather_panel() + """
+        renderWeather(snapshot);
+        const [first] = byClass(hours, "wx-strip");
+        const stop = () => first.getAttribute("tabindex");
+        const fits = stop();
+        first.scrollWidth = 480;
+        first.clientWidth = 320;
+        renderWeather(snapshot);  // a new snapshot, or the window resized
+        const overflows = [byClass(hours, "wx-strip")[0] === first, stop()];
+        first.clientWidth = 480;
+        renderWeather(snapshot);
+        console.log(JSON.stringify([fits, overflows, stop()]));
+    """)
+    assert found == [None, [True, "0"], None]
 
 
 @needs_node

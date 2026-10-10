@@ -123,7 +123,8 @@ function drawRemind() {
   button.hidden = !id;
   const on = !!id && isOn(id);
   button.setAttribute("aria-pressed", String(on));
-  patch(button, h("span", { class: "glyph", "aria-hidden": "true" }, icon(on ? "bell-ring" : "bell")), "Remind me");
+  patch(button, h("span", { class: "glyph", "aria-hidden": "true" }, icon(on ? "bell-ring" : "bell")), "Remind me",
+    id ? vh(` for ${describe(shown.row, shown.mode, false)}`) : null);
   // The same honest words as the sheet's, shown once the reminder is set.
   setText(note, on ? remindNote() : "");
   note.hidden = !on;

@@ -150,8 +150,9 @@ function entry(arranged, today) {
     h("p", { class: "dis-when" }, severityBadge(item.severity), " ", whenLine(arranged, today)),
     h("p", { class: "dis-facts" }, facts(item)),
     summaryPart(item),
-    host ? h("p", { class: "dis-link" }, h("a", { href: link, rel: "noopener noreferrer" },
-      `More from ${host}`, vh(` about ${title}`))) : null);
+    host ? h("p", { class: "dis-link" }, h("a", {
+      href: link, rel: "noopener noreferrer", dataset: { focusKey: `dis-link:${item.id}` },
+    }, `More from ${host}`, vh(` about ${title}`))) : null);
 }
 
 // One of the train board's disruption messages, as a row like the items'.

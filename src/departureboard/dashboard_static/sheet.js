@@ -76,6 +76,8 @@ function drawRemind(row) {
   const button = $("sheet-remind");
   const can = !!row && parseAt(row.leave_at) !== null;
   const on = can && isOn(openId);
+  // Hiding the focused button would drop the focus out of the dialog.
+  if (!can && document.activeElement === button) $("sheet-title").focus();
   button.hidden = !can;
   button.setAttribute("aria-pressed", String(on));
   fill(button, h("span", { class: "glyph", "aria-hidden": "true" }, icon(on ? "bell-ring" : "bell")), "Remind me");
