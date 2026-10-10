@@ -2,6 +2,7 @@
 
   departureboard run      one tick; systemd runs this every minute
   departureboard run --loop   keep ticking; a screen redraws every second
+                          (until the board is set up, both show where to set it up)
   departureboard probe    one live call to check keys and stop codes
   departureboard demo     render sample data (a Glossop morning) to a PNG, no keys needed
   departureboard emulate  run the board against a browser-based panel emulator
@@ -15,9 +16,11 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import logging
 import os
+import re
 import signal
 import socket
 import sys
@@ -32,9 +35,11 @@ from .app import run_loop, run_once
 from .bodsbus import BodsBusSource
 from .config import (
     ConfigError,
+    first_run_settings,
     holiday_division,
     load_config,
     load_env_file,
+    needs_setup,
     overlay_paths,
     read_config,
     state_dir,
@@ -49,7 +54,7 @@ from .http import get_bytes
 from .model import Departure, Status
 from .state import StateStore
 from .transportapi import TransportApiBusSource, redact_credentials
-from .view import build_view
+from .view import SetupView, build_view
 from .themes import THEMES, theme_named
 from .walk import WalkTimes
 from .weather import rain_line
@@ -166,21 +171,27 @@ def _probe_bus(source, save_dir: str | None) -> int:
     return 1 if failed else 0
 
 
+def _open_display(args, settings):
+    if args.png:
+        return PngDisplay(args.png, settings.accent, DISPLAY_PANELS[settings.display])
+    return open_display(settings.display, settings.accent, settings.rotate, settings.panel_colour)
+
+
 def _run(args) -> int:
+    if needs_setup(args.config):
+        return _run_first(args)
     settings = _settings(args)
-    display = (
-        PngDisplay(args.png, settings.accent, DISPLAY_PANELS[settings.display])
-        if args.png
-        else open_display(settings.display, settings.accent, settings.rotate, settings.panel_colour)
-    )
+    display = _open_display(args, settings)
     store = StateStore(settings.state_file)
     state = store.load()
     if args.loop:
         return _run_loop(settings, display, store, state, args)
-    # A fresh install (no saved state) fetches everything once, so the panel
-    # isn't blank until the next poll window opens.
+    # A fresh install (nothing fetched yet, though the set-me-up page may have
+    # been drawn) fetches everything once, so the panel isn't blank until the
+    # next poll window opens.
     try:
-        result = run_once(settings.board, state, display, _local_now(settings.timezone), prime=not state)
+        result = run_once(settings.board, state, display, _local_now(settings.timezone),
+                          prime="sources" not in state)
     finally:
         # Even if drawing failed: what was fetched, and the bus budget spent on it, must not be lost.
         store.save(state)
@@ -264,13 +275,93 @@ def _run_loop(settings, display, store, state, args) -> int:
             ticks=args.ticks,
             sleep=_sleep_to_the_tick,
             store=store,
-            prime=not state,  # as for a single run: only a fresh install fetches outside windows
+            # As for a single run: only a fresh install fetches outside windows.
+            prime="sources" not in state,
             reload=_Watcher(args, settings),
         )
     except KeyboardInterrupt:
         pass
     except _Restart:
         logging.info("Display settings changed; exiting so the service starts again")
+        store.save(state)
+        return RESTART
+    return 0
+
+
+# The settings page's port, as departureboard-web.service runs it.
+WEB_PORT = 8080
+# Until the board is set up, how often a running screen checks whether it has been.
+SETUP_CHECK_S = 5
+
+
+def setup_url(hostname: str | None = None, port: int = WEB_PORT) -> str:
+    """The settings page's address on the home network, by this Pi's name."""
+    name = (socket.gethostname() if hostname is None else hostname).split(".")[0]
+    if not re.fullmatch(r"[A-Za-z0-9-]{1,63}", name):
+        name = "raspberrypi"  # Raspberry Pi OS's own; a real name never gets here
+    return f"http://{name.lower()}.local:{port}/"
+
+
+class _SetUpYet:
+    """A running board's reload hook until it is set up: every SETUP_CHECK_S
+    asks whether it is now, and if so starts the board again to load it."""
+
+    def __init__(self, config, clock=time.monotonic) -> None:
+        self._config = config
+        self._clock = clock
+        self._checked: float | None = None
+
+    def __call__(self):
+        now = self._clock()
+        if self._checked is not None and 0 <= now - self._checked < SETUP_CHECK_S:
+            return None
+        self._checked = now
+        if not needs_setup(self._config):
+            raise _Restart
+        return None
+
+
+def _run_first(args) -> int:
+    """Not set up yet (config.toml missing, or still the template): show
+    where to set the board up, and a reset code when one is asked for to
+    claim the settings page, rather than fail every minute.
+
+    A single run (the e-paper timer's) draws the page, only when it isn't
+    already showing, and exits 0. A running screen keeps it up and, once the
+    board is set up, exits RESTART so systemd starts it with its settings."""
+    # systemd's StateDirectory, for when there is no config.toml to name one.
+    folder = os.environ.get("STATE_DIRECTORY", "").split(":")[0]
+    settings = first_run_settings(args.config, Path(folder) / "state.json" if folder else None)
+    board = dataclasses.replace(settings.board, setup=SetupView(setup_url()))
+    display = _open_display(args, settings)
+    store = StateStore(settings.state_file)
+    state = store.load()
+    zone = ZoneInfo(settings.timezone)
+    logging.info("Not set up yet: showing %s on the board", board.setup.url)
+    if not args.loop:
+        try:
+            result = run_once(board, state, display, _local_now(settings.timezone))
+        finally:
+            store.save(state)
+        logging.info("rendered=%s", result.rendered)
+        return 0
+    tick = args.tick if args.tick is not None else (60 if display.panel.epaper else 1)
+    try:
+        run_loop(
+            board,
+            state,
+            display,
+            lambda: datetime.now(zone).replace(tzinfo=None, microsecond=0),
+            tick,
+            ticks=args.ticks,
+            sleep=_sleep_to_the_tick,
+            store=store,
+            reload=_SetUpYet(args.config),
+        )
+    except KeyboardInterrupt:
+        pass
+    except _Restart:
+        logging.info("Set up; exiting so the service starts the board with its settings")
         store.save(state)
         return RESTART
     return 0
@@ -803,7 +894,7 @@ def _parser() -> argparse.ArgumentParser:
 
     web = with_config(sub.add_parser("web", help="serve the settings page on the home network"))
     web.add_argument("--host", default="0.0.0.0", help="address to listen on (default: all)")
-    web.add_argument("--port", type=int, default=8080)
+    web.add_argument("--port", type=int, default=WEB_PORT)
     once = web.add_mutually_exclusive_group()
     once.add_argument("--set-password", action="store_true", help="set the page's password and exit")
     once.add_argument("--reset-code", action="store_true",

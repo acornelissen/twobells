@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .panel import PHAT, PLATFORM_COLUMN_MIN_WIDTH, Panel
 from .route import RouteView
-from .view import BoardView, CodeView, Row, Section, Style
+from .view import BoardView, CodeView, Row, Section, SetupView, Style
 
 # The pHAT, which every other size is scaled up from.
 WIDTH, HEIGHT = PHAT.size
@@ -417,5 +417,45 @@ def render_code(view: CodeView, palette: Palette, panel: Panel = PHAT, dark: boo
     middle = line_h + pad + (height - 2 * line_h - 2 * pad) / 2
     draw.text(((width - (right - left)) / 2 - left, middle - (bottom - top) / 2 - top), view.code, font=big, fill=ink)
     centred(until, small, height - line_h - pad)
+    apply_preview(image, palette)
+    return image
+
+
+SETUP_HEADING = "Set me up"
+SETUP_NOTE = "On your home network, open"
+
+
+def render_setup(view: SetupView, palette: Palette, panel: Panel = PHAT, dark: bool = False) -> Image.Image:
+    """Where to set the board up, as the code page draws its code: "Set me
+    up" big, then what to do, then the settings page's address as big as it
+    fits. `dark` as for render_code."""
+    s = plain_scale(panel)
+    pad = _PAD * s
+    width, height = panel.size
+    if dark:
+        background = palette.black
+        ink = palette.white if palette.accent == palette.black else palette.accent
+    else:
+        background, ink = palette.white, palette.black
+    image = Image.new("P", panel.size, background)
+    draw = ImageDraw.Draw(image)
+    small = _font("DejaVuSans-Bold.ttf", TEXT_SIZE * s)
+    note = fit_text(SETUP_NOTE, small, width - 2 * pad, partial(drawn_length, small))
+    line_h = heights()[2] * s
+    # The heading over the top half of what the note leaves; the address below.
+    room = height - line_h - 4 * pad
+    heading_h, address_h = room * 0.55, room * 0.45
+
+    def boxed(text: str, top: float, band: float, limit: float) -> None:
+        """`text` as big as fits `limit` wide and the band high, centred in the band by its drawn box."""
+        font = _biggest_bold(text, limit, band)
+        left, box_top, right, bottom = font.getbbox(text, mode="1")
+        x = (width - (right - left)) / 2 - left
+        draw.text((x, top + (band - (bottom - box_top)) / 2 - box_top), text, font=font, fill=ink)
+
+    boxed(SETUP_HEADING, pad, heading_h, width * 0.9)
+    note_y = pad + heading_h + pad
+    draw.text(((width - drawn_length(small, note)) / 2, note_y), note, font=small, fill=ink)
+    boxed(view.url, note_y + line_h + pad, address_h, width - 2 * pad - 2 * s)
     apply_preview(image, palette)
     return image

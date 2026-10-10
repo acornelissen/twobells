@@ -110,6 +110,17 @@ class CodeView:
         return hashlib.sha256(json.dumps(["code page", self.until, self.expires]).encode()).hexdigest()
 
 
+@dataclass(frozen=True)
+class SetupView:
+    """The page shown instead of departures until the board is set up: the
+    settings page's address, where the setup wizard is."""
+
+    url: str  # "http://raspberrypi.local:8080/"
+
+    def signature(self) -> str:
+        return hashlib.sha256(json.dumps(["setup page", self.url]).encode()).hexdigest()
+
+
 def _until(clock: str, leave: str) -> str:
     """'now' or 'in N min' to a leave time, rounded down so it never promises more time than there is."""
     seconds = minutes_between(clock[:5], leave) * 60 - int(clock[6:8])

@@ -10,7 +10,7 @@ from departureboard.panel import HDMI_1280X400, PHAT
 from departureboard.render import Palette
 from departureboard.schedule import PollPolicy, parse_window
 from departureboard.state import StateStore
-from departureboard.view import CodeView
+from departureboard.view import CodeView, SetupView
 
 THU_0700 = datetime(2026, 10, 8, 7, 0)
 
@@ -1138,3 +1138,68 @@ def test_the_emulator_shows_the_code_page(panel):
     assert run_once(board, state, display, THU_0700).page == "code"
     frame = Image.open(io.BytesIO(display.frame_png()))
     assert frame.size == PANELS[panel].size
+
+
+# --- The set-me-up page, until the board is set up ---
+
+SETUP_PAGE = SetupView("http://raspberrypi.local:8080/")
+
+
+def first_run(**overrides):
+    """A board not yet set up: nothing to fetch, and where to set it up."""
+    return Board(title="Departures", sources=[], setup=SETUP_PAGE, **overrides), FakeDisplay(), {}
+
+
+def test_a_board_not_yet_set_up_shows_where_to_do_it_once():
+    board, display, state = first_run()
+    result = run_once(board, state, display, THU_0700)
+    assert result.rendered and result.page == "setup"
+    assert pixels(display.shown[-1]) == pixels(board.theme.render_setup(SETUP_PAGE, display.palette, display.panel))
+    for minutes in (1, 5, 60):  # e-paper wears: drawn once, not every tick
+        assert not run_once(board, state, display, THU_0700 + timedelta(minutes=minutes)).rendered
+    assert len(display.shown) == 1
+
+
+def test_a_code_asked_for_to_claim_the_page_comes_before_the_setup_page():
+    board, display, state = first_run(reset_code=Waiting())
+    assert run_once(board, state, display, THU_0700).page == "setup"
+    board.reset_code.code = CODE
+    code = run_once(board, state, display, THU_0700 + timedelta(seconds=30))
+    assert code.rendered and code.page == "code"
+    board.reset_code.code = None
+    back = run_once(board, state, display, THU_0700 + timedelta(minutes=1))
+    assert back.rendered and back.page == "setup"  # straight back, whatever min_redraw says
+
+
+def test_departures_take_over_straight_away_once_set_up():
+    board, display, state = first_run()
+    run_once(board, state, display, THU_0700)
+    trains, set_up, _, _ = minutely()
+    result = run_once(set_up, state, display, THU_0700 + timedelta(seconds=30))
+    assert result.rendered and result.page == "departures"
+
+
+def test_a_screen_not_yet_set_up_shows_no_bus_page():
+    trains, buses, board, display, state = setup()
+    board = dataclasses.replace(board, setup=SETUP_PAGE)
+    result = run_once(board, state, FakeScreen(), THU_0700 + timedelta(seconds=20))
+    assert result.page == "setup" and result.route is None
+
+
+@pytest.mark.parametrize("panel", ["inky-phat", "inky-phat-v1", "waveshare-10in85g", "hdmi-1280x400"])
+@pytest.mark.parametrize("look", ["plain", "sign"])
+def test_every_panel_and_look_draws_the_setup_page(panel, look):
+    from departureboard.panel import PANELS
+    from departureboard.themes import THEMES
+
+    class Display(FakeDisplay):
+        pass
+
+    Display.panel = PANELS[panel]
+    board, _, state = first_run(theme=THEMES[look])
+    display = Display()
+    assert run_once(board, state, display, THU_0700).rendered
+    image = display.shown[-1]
+    assert image.size == PANELS[panel].size and image.mode == "P"
+    assert len(image.getcolors()) >= 2  # something drawn, not a blank panel
+    assert pixels(image) == pixels(THEMES[look].render_setup(SETUP_PAGE, display.palette, display.panel))

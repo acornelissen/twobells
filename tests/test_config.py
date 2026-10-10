@@ -689,3 +689,83 @@ def test_the_board_looks_for_a_reset_code_beside_an_explicit_state_file(tmp_path
     code = ResetCodes(tmp_path / "state").issue(time.time())
     assert board.reset_code().code == f"{code[:3]} {code[3:]}"
     assert load_config(_with_state(tmp_path, TRAIN), ENV, only={"train"}).board.reset_code is None
+
+
+# --- A first run: no config.toml, or the template as installed ---
+
+
+def installed_template(tmp_path):
+    """config.example.toml as install.sh copies it, its state folder under tmp_path."""
+    text = TEMPLATE.read_text().replace("/var/lib/departureboard/state.json", str(tmp_path / "state" / "state.json"))
+    return write(tmp_path, text)
+
+
+def test_no_config_or_the_template_as_installed_needs_setting_up(tmp_path):
+    from departureboard.config import needs_setup
+
+    assert needs_setup(tmp_path / "missing.toml")
+    assert needs_setup(installed_template(tmp_path))
+    assert needs_setup(TEMPLATE)
+
+
+def test_a_filled_in_board_needs_no_setting_up(tmp_path, example):
+    from departureboard.config import needs_setup
+
+    assert not needs_setup(example)
+    assert not needs_setup(filled_template(tmp_path))
+    assert not needs_setup(write(tmp_path, 'title = "Departures"\n'))  # nothing to set up, but no placeholder
+
+
+def test_setting_up_from_the_page_counts_once_every_placeholder_is_covered(tmp_path):
+    from departureboard.config import needs_setup
+
+    config = installed_template(tmp_path)
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n')
+    assert needs_setup(config)  # the bus stop is still CHANGE_ME
+    (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n[bus.stops]\nA = "1800SB12341"\n')
+    assert not needs_setup(config)
+
+
+@pytest.mark.parametrize("text", ["title = \n", "[train\n"])
+def test_a_broken_config_is_a_fault_to_report_not_a_first_run(tmp_path, text):
+    from departureboard.config import needs_setup
+
+    assert not needs_setup(write(tmp_path, text))
+
+
+def test_first_run_settings_use_the_templates_display_and_state_folder(tmp_path):
+    import time
+
+    from departureboard.auth import ResetCodes
+    from departureboard.config import first_run_settings
+
+    settings = first_run_settings(installed_template(tmp_path))
+    assert settings.board.sources == [] and settings.board.weather is None
+    assert settings.state_file == tmp_path / "state" / "state.json"
+    assert (settings.display, settings.board.theme.name) == ("inky", "sign")
+    assert settings.board.reset_code() is None
+    code = ResetCodes(tmp_path / "state").issue(time.time())
+    assert settings.board.reset_code().code == f"{code[:3]} {code[3:]}"  # to claim the settings page
+
+
+def test_first_run_settings_keep_the_screen_and_its_turn(tmp_path):
+    from departureboard.config import first_run_settings
+
+    text = TEMPLATE.read_text().replace('display = "inky"', 'display = "hdmi-1280x400"').replace("rotate = 0", "rotate = 90")
+    settings = first_run_settings(write(tmp_path, text))
+    assert (settings.display, settings.rotate) == ("hdmi-1280x400", 90)
+
+
+def test_first_run_settings_fall_back_to_the_defaults(tmp_path):
+    from departureboard.config import first_run_settings
+
+    missing = first_run_settings(tmp_path / "missing.toml")
+    assert (missing.display, missing.rotate, missing.board.reset_code) == ("inky", 0, None)
+    given = first_run_settings(tmp_path / "missing.toml", default_state=tmp_path / "state" / "state.json")
+    assert given.state_file == tmp_path / "state" / "state.json" and given.board.reset_code is not None
+    text = TEMPLATE.read_text().replace('display = "inky"', 'display = "hdmi-1280x400"\npanel_colour = "purple"')
+    text = text.replace("/var/lib/departureboard/state.json", str(tmp_path / "state" / "state.json"))
+    broken = first_run_settings(write(tmp_path, text))
+    assert broken.display == "inky" and broken.state_file == tmp_path / "state" / "state.json"

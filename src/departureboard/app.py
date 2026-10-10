@@ -24,7 +24,7 @@ from .route import RouteStrip, RouteView, locate, target, where
 from .schedule import PollPolicy
 from .state import departure_to_dict, departures_from_dicts, from_iso, to_iso
 from .status import safe_message
-from .view import BoardView, CodeView, build_view
+from .view import BoardView, CodeView, SetupView, build_view
 from .themes import THEMES, Theme
 from .walk import WalkTimes, leave_time
 from .weather import Hour, hours_from_dicts, hours_to_dicts, rain_line
@@ -112,6 +112,9 @@ class Board:
     weather: Weather | None = None
     # The settings page's reset code, while one is waiting to be read off the board.
     reset_code: Callable[[], CodeView | None] | None = None
+    # Until the board is set up: where to do it, shown instead of departures
+    # (a waiting reset code still comes first, for claiming the settings page).
+    setup: SetupView | None = None
 
 
 def reset_code_page(folder: Path, timezone: str) -> Callable[[], CodeView | None]:
@@ -363,10 +366,13 @@ def run_once(
     )
 
     code = _reset_code(board)
-    route = _route_view(board, state, view, now, view.clock) if live and code is None else None
+    departures_page = code is None and board.setup is None
+    route = _route_view(board, state, view, now, view.clock) if live and departures_page else None
     seconds = now.minute * 60 + now.second
     if code is not None:
         page, shown = "code", code
+    elif board.setup is not None:
+        page, shown = "setup", board.setup
     elif route and seconds % _PAGE_CYCLE_S >= _DEPARTURES_S:
         page, shown = "route", route
     else:
@@ -377,14 +383,16 @@ def run_once(
     key = _render_key(shown, board.theme, display)
     changed = key != last.get("signature")
     # Someone is waiting at the settings page for the code, or has just used
-    # it: on and off the panel straight away, whatever min_redraw says.
-    urgent = page == "code" or last.get("page") == "code"
+    # it, or has just set the board up: on and off the panel straight away,
+    # whatever min_redraw says.
+    urgent = page == "code" or last.get("page") in ("code", "setup")
     # A last redraw in the future means the clock went back (summer time ending): not too soon.
     too_soon = (not live and not urgent and last_at is not None
                 and timedelta(0) <= now - last_at < board.min_redraw)
 
     if changed and not too_soon:
-        draw = {"code": board.theme.render_code, "route": board.theme.render_route}.get(page, board.theme.render)
+        draw = {"code": board.theme.render_code, "route": board.theme.render_route,
+                "setup": board.theme.render_setup}.get(page, board.theme.render)
         display.show(draw(shown, display.palette, display.panel))
         state["last_render"] = {"signature": key, "at": to_iso(now), "page": page}
         return RunResult(view, rendered=True, route=route, page=page)

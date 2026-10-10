@@ -9,10 +9,10 @@ from typing import Callable
 from PIL.Image import Image
 
 from .panel import Panel
-from .render import TEXT_SIZE, Palette, render, render_code, render_route
+from .render import TEXT_SIZE, Palette, render, render_code, render_route, render_setup
 from .route import RouteView
 from .sign import render_route_sign, render_sign
-from .view import PLAIN, SIGN, BoardView, CodeView, Wording
+from .view import PLAIN, SIGN, BoardView, CodeView, SetupView, Wording
 
 
 @dataclass(frozen=True)
@@ -25,12 +25,14 @@ class Theme:
     text_size: int = TEXT_SIZE  # the plain look's body text; the sign's dots are fixed
     # The settings reset code page: big plain type in either look, for reading off.
     render_code: Callable[[CodeView, Palette, Panel], Image] = render_code
+    # Until the board is set up: where to do it, drawn as the code page is.
+    render_setup: Callable[[SetupView, Palette, Panel], Image] = render_setup
 
 
 THEMES = {
     "plain": Theme("plain", PLAIN, render, accent="red", render_route=render_route),
     "sign": Theme("sign", SIGN, render_sign, accent="yellow", render_route=render_route_sign,
-                  render_code=partial(render_code, dark=True)),
+                  render_code=partial(render_code, dark=True), render_setup=partial(render_setup, dark=True)),
 }
 
 

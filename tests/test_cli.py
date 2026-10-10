@@ -818,3 +818,127 @@ def test_dashboard_reports_config_errors_without_traceback(tmp_path, capsys):
     code = main(["dashboard", "--config", str(config), "--state-dir", str(tmp_path / "dash")])
     assert code == 2
     assert "train_rows must be a whole number from 1 to 20" in capsys.readouterr().err
+
+
+# --- A first run: the board shows where to set it up, rather than failing ---
+
+TEMPLATE = Path(__file__).parent.parent / "config.example.toml"
+
+
+def installed_template(tmp_path, display=None):
+    text = TEMPLATE.read_text().replace("/var/lib/departureboard/state.json", str(tmp_path / "state" / "state.json"))
+    if display:
+        text = text.replace('display = "inky"', f'display = "{display}"')
+    config = tmp_path / "config.toml"
+    config.write_text(text)
+    return config
+
+
+def first_run_args(tmp_path, config, *extra):
+    return ["run", "--config", str(config), "--secrets", str(tmp_path / "none.env"),
+            "--png", str(tmp_path / "board.png"), *extra]
+
+
+def saved_page(folder):
+    return json.loads((folder / "state.json").read_text())["last_render"]["page"]
+
+
+def test_a_template_config_shows_the_setup_page_instead_of_failing(tmp_path, monkeypatch, caplog):
+    import departureboard.cli as cli
+
+    caplog.set_level("INFO")
+    monkeypatch.setattr(cli.socket, "gethostname", lambda: "kitchen-board")
+    config = installed_template(tmp_path)
+    for _ in range(3):  # the timer, minute after minute: never a failure
+        assert main(first_run_args(tmp_path, config)) == 0
+    assert Image.open(tmp_path / "board.png").size == (250, 122)
+    state = json.loads((tmp_path / "state" / "state.json").read_text())
+    assert state["last_render"]["page"] == "setup" and "sources" not in state
+    assert "http://kitchen-board.local:8080/" in caplog.text
+    # Drawn once: e-paper wears, and the page doesn't change.
+    rendered = [r.getMessage() for r in caplog.records if r.getMessage().startswith("rendered=")]
+    assert rendered == ["rendered=True", "rendered=False", "rendered=False"]
+
+
+@pytest.mark.parametrize("display, size", [("waveshare-10in85g", (1360, 480)), ("hdmi-1280x400", (1280, 400))])
+def test_the_setup_page_is_drawn_for_the_configured_display(tmp_path, display, size):
+    config = installed_template(tmp_path, display)
+    assert main(first_run_args(tmp_path, config)) == 0
+    assert Image.open(tmp_path / "board.png").size == size
+
+
+def test_without_a_config_the_setup_page_keeps_its_state_in_systemds_folder(tmp_path, monkeypatch):
+    folder = tmp_path / "lib"
+    folder.mkdir()
+    monkeypatch.setenv("STATE_DIRECTORY", str(folder))
+    assert main(first_run_args(tmp_path, tmp_path / "missing.toml")) == 0
+    assert Image.open(tmp_path / "board.png").size == (250, 122)
+    assert saved_page(folder) == "setup"
+
+
+def test_a_code_asked_for_shows_on_a_board_not_yet_set_up(tmp_path):
+    import time
+
+    from departureboard.auth import ResetCodes
+
+    config = installed_template(tmp_path)
+    assert main(first_run_args(tmp_path, config)) == 0
+    ResetCodes(tmp_path / "state").issue(time.time())
+    assert main(first_run_args(tmp_path, config)) == 0
+    assert saved_page(tmp_path / "state") == "code"
+
+
+def test_a_screen_not_yet_set_up_keeps_running(tmp_path):
+    config = installed_template(tmp_path, "hdmi-1280x400")
+    assert main(first_run_args(tmp_path, config, "--loop", "--ticks", "3", "--tick", "0")) == 0
+    assert Image.open(tmp_path / "board.png").size == (1280, 400)
+    assert saved_page(tmp_path / "state") == "setup"
+
+
+def test_a_screen_starts_again_once_set_up(tmp_path, monkeypatch):
+    import departureboard.cli as cli
+
+    answers = iter([True, True, False])  # set up between the first tick and the second
+    monkeypatch.setattr(cli, "needs_setup", lambda config: next(answers))
+    monkeypatch.setattr(cli, "SETUP_CHECK_S", 0)
+    config = installed_template(tmp_path, "hdmi-1280x400")
+    # Once, for systemd's Restart=on-failure to start the board with its settings.
+    assert main(first_run_args(tmp_path, config, "--loop", "--ticks", "10", "--tick", "0")) == cli.RESTART
+    assert saved_page(tmp_path / "state") == "setup"
+
+
+def test_a_running_board_asks_whether_it_is_set_up_every_few_seconds(monkeypatch):
+    import departureboard.cli as cli
+
+    asked = []
+    monkeypatch.setattr(cli, "needs_setup", lambda config: asked.append(config) or True)
+    now = [100.0]
+    check = cli._SetUpYet("config.toml", clock=lambda: now[0])
+    for step in (0, 1, 1, 1, 1, 1, 1):
+        now[0] += step
+        assert check() is None
+    assert len(asked) == 2  # at 100 and 105
+    monkeypatch.setattr(cli, "needs_setup", lambda config: False)
+    now[0] += cli.SETUP_CHECK_S
+    with pytest.raises(cli._Restart):
+        check()
+
+
+def test_the_first_run_after_setting_up_fetches_everything(tmp_path, monkeypatch):
+    args, calls = _run_setup(tmp_path, monkeypatch)
+    # Only the set-me-up page was ever drawn: nothing fetched yet, so this is a fresh start.
+    (tmp_path / "state.json").write_text(json.dumps({"last_render": {"signature": "x", "page": "setup"}}))
+    assert main(args) == 0
+    assert calls == [1]
+
+
+@pytest.mark.parametrize("name, url", [
+    ("kitchen-board", "http://kitchen-board.local:8080/"),
+    ("Board.lan", "http://board.local:8080/"),
+    ("bad name\n", "http://raspberrypi.local:8080/"),
+    ("", "http://raspberrypi.local:8080/"),
+])
+def test_the_setup_address_is_this_pis_name(name, url):
+    from departureboard.cli import setup_url
+
+    assert setup_url(name) == url

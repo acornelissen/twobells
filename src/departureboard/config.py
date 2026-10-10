@@ -118,6 +118,57 @@ def read_config(path: Path | str) -> dict:
     return merge(data, read_overlay(data))
 
 
+# What config.example.toml has where your station and stops go.
+PLACEHOLDER = "CHANGE_ME"
+
+
+def _has_placeholder(value) -> bool:
+    if isinstance(value, str):
+        return value.strip() == PLACEHOLDER
+    if isinstance(value, dict):
+        return any(_has_placeholder(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_has_placeholder(v) for v in value)
+    return False
+
+
+def needs_setup(path: Path | str) -> bool:
+    """Whether the board is still to be set up: there is no config.toml, or
+    it (with the settings saved from the web page over it) still has one of
+    the template's CHANGE_ME placeholders. A config.toml that can't be read
+    or parsed is not a first run but a fault, for load_config to report."""
+    try:
+        data = read_config(path)
+    except FileNotFoundError:
+        return True
+    except (OSError, ConfigError):
+        return False
+    return _has_placeholder(data)
+
+
+# What the set-me-up page is drawn with, from config.toml where they load.
+_LOOK = ("display", "rotate", "rotate_180", "theme", "accent", "panel_colour", "text_size", "timezone")
+
+
+def first_run_settings(path: Path | str, default_state: Path | str | None = None) -> Settings:
+    """Settings for a board not yet set up: no departures, the display and
+    look config.toml gives (or the defaults, if they don't load), and the
+    reset code page if config.toml, or else `default_state`, says where the
+    state file is."""
+    try:
+        data = read_config(path)
+    except (OSError, ConfigError):
+        data = {}
+    state = data.get("state_file")
+    if not (isinstance(state, str) and state):
+        state = str(default_state) if default_state else None
+    known = {"state_file": state} if state else {}
+    try:
+        return settings_from({**known, **{key: data[key] for key in _LOOK if key in data}}, {})
+    except ConfigError:
+        return settings_from(known, {})
+
+
 @dataclass(frozen=True)
 class Settings:
     board: Board

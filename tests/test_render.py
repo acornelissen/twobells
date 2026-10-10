@@ -17,10 +17,11 @@ from departureboard.render import (
     plain_scale,
     render,
     render_code,
+    render_setup,
     row_layout,
     wrap_text,
 )
-from departureboard.view import BoardView, CodeView, Row, Section, Style
+from departureboard.view import BoardView, CodeView, Row, Section, SetupView, Style
 
 PALETTE = Palette(white=0, black=1, accent=2)
 
@@ -532,3 +533,48 @@ def test_the_code_page_signature_never_carries_the_code():
     assert signature != hashlib.sha256(b"123 456").hexdigest()
     assert signature == dataclasses.replace(CODE_PAGE, code="654 321").signature()
     assert signature != dataclasses.replace(CODE_PAGE, expires=61.0).signature()
+
+
+# --- The set-me-up page, until the board is set up ---
+
+SETUP_PAGE = SetupView("http://raspberrypi.local:8080/")
+PANELS = [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400]
+
+
+@pytest.mark.parametrize("panel", PANELS)
+@pytest.mark.parametrize("dark", [False, True])
+def test_the_setup_page_fits_every_panel(panel, dark):
+    image = render_setup(SETUP_PAGE, PALETTE, panel, dark=dark)
+    assert image.size == panel.size and image.mode == "P"
+    left, top, right, bottom = ink_box(image, PALETTE.black if dark else PALETTE.white)
+    assert left > 0 and top > 0 and right < panel.width and bottom < panel.height  # nothing cut off
+
+
+@pytest.mark.parametrize("panel", PANELS)
+def test_the_address_is_drawn_across_the_panel(panel):
+    # The bottom band is the address, nearly as wide as the panel.
+    image = render_setup(SETUP_PAGE, PALETTE, panel)
+    band = image.crop((0, panel.height * 3 // 4, panel.width, panel.height))
+    left, _, right, _ = ink_box(band, PALETTE.white)
+    assert right - left > panel.width * 0.8
+
+
+@pytest.mark.parametrize("panel", PANELS)
+def test_a_long_name_still_fits(panel):
+    image = render_setup(SetupView("http://my-very-long-departure-board-name.local:8080/"), PALETTE, panel)
+    left, top, right, bottom = ink_box(image, PALETTE.white)
+    assert left > 0 and right < panel.width
+
+
+def test_the_setup_page_shows_its_address_and_is_ink_on_paper_or_light_on_black():
+    page = render_setup(SETUP_PAGE, PALETTE, PHAT)
+    assert page.tobytes() != render_setup(SetupView("http://pi.local:8080/"), PALETTE, PHAT).tobytes()
+    assert colours(page) == {PALETTE.white, PALETTE.black}
+    assert colours(render_setup(SETUP_PAGE, PALETTE, PHAT, dark=True)) == {PALETTE.black, PALETTE.accent}
+    mono = Palette(white=0, black=1, accent=1)
+    assert colours(render_setup(SETUP_PAGE, mono, PHAT, dark=True)) == {0, 1}
+
+
+def test_the_setup_page_signature_follows_its_address():
+    assert SETUP_PAGE.signature() == SetupView(SETUP_PAGE.url).signature()
+    assert SETUP_PAGE.signature() != SetupView("http://pi.local:8080/").signature()
