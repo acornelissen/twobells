@@ -37,6 +37,7 @@ from .settingsform import (
     _stops,
     _text,
     _walk_per_stop,
+    neither_on,
 )
 
 KEYS = (
@@ -219,6 +220,7 @@ class DashboardForm:
                 # Every key is written, empty ones too, so clearing a field clears
                 # config.toml's value rather than letting it show through.
                 target[f.key] = "" if value is None else value
+        errors |= neither_on(data, fields, "dashboard")
         keys = {}
         for name, _, _ in KEYS:
             raw = fields.get(name, "").strip()

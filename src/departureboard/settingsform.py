@@ -148,6 +148,17 @@ def _on_off(raw: str) -> bool:
     return _choice(("true", "false"))(raw) == "true"
 
 
+def neither_on(data: dict, fields: dict[str, str], noun: str) -> dict[str, str]:
+    """An error on the first switch if the save would leave neither trains nor
+    buses on, as the {noun} would then show nothing (setup refuses it too);
+    else none. `data` is the settings in force: a section not in it isn't set up."""
+    present = [section for section in ("train", "bus") if section in data]
+    if present and all(fields.get(f"{section}_enabled") == "false" for section in present):
+        return {f"{present[0]}_enabled": f"Trains and buses can't both be off, or the {noun} would show nothing. "
+                                         "Turn one on."}
+    return {}
+
+
 def _accents(display: str, theme: str) -> tuple[str, ...]:
     """Accents that stand out on the look's background: yellow is too faint on
     the plain look's white (1.9:1), red too dim on the sign's black on a screen
@@ -404,6 +415,7 @@ class SettingsForm:
             # Every key is written, empty ones too, so clearing a field clears
             # config.toml's value rather than letting it show through.
             target[f.key] = "" if value is None else value
+        errors |= neither_on(data, fields, "board")
         keys = {}
         for name, label, _ in KEYS:
             raw = fields.get(name, "").strip()

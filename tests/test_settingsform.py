@@ -549,6 +549,25 @@ def test_switching_a_section_back_on_checks_its_fields(setup):
     assert [c.source.name for c in load_config(config, ENV).board.sources] == ["bus"]  # not saved
 
 
+def test_trains_and_buses_cannot_both_be_switched_off(setup):
+    form, config, state, _ = setup
+    fields = fields_of(form) | {"train_enabled": "false", "bus_enabled": "false"}
+    errors = form.save(fields)
+    assert set(errors) == {"train_enabled"} and "board would show nothing" in errors["train_enabled"]
+    assert not (state / "settings.toml").exists()  # not saved
+    page = form.render("tok", errors=errors, values=fields)
+    assert '<a href="#train_enabled">Trains – Trains: Trains and buses can' in page
+    assert re.search(r'id="train_enabled"[^>]*aria-describedby="train_enabled-hint train_enabled-error"', page)
+
+
+def test_the_only_section_set_up_cannot_be_switched_off(tmp_path):
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    config.write_text(CONFIG.format(state=state / "state.json").split("[bus]")[0])
+    form = SettingsForm(config, lambda: dict(ENV))
+    assert set(form.save(fields_of(form) | {"train_enabled": "false"})) == {"train_enabled"}
+
+
 def test_a_section_off_with_the_templates_placeholders_saves(tmp_path):
     state = tmp_path / "state"
     config = tmp_path / "config.toml"

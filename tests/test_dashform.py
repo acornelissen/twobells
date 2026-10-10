@@ -75,6 +75,16 @@ def test_switching_a_section_back_on_checks_its_fields(form):
     assert loaded(form) == (False, True, True)  # not saved
 
 
+def test_trains_and_buses_cannot_both_be_switched_off(form):
+    fields = fields_of(form) | {"train_enabled": "false", "bus_enabled": "false"}
+    errors = form.save(fields)
+    assert set(errors) == {"train_enabled"} and "dashboard would show nothing" in errors["train_enabled"]
+    assert not (form.folder / "settings.toml").exists()  # not saved
+    page = form.render("tok", errors=errors, values=fields)
+    assert '<a href="#train_enabled">Trains – Trains: Trains and buses can' in page
+    assert re.search(r'id="train_enabled"[^>]*aria-describedby="train_enabled-hint train_enabled-error"', page)
+
+
 def test_a_section_off_with_the_templates_placeholders_saves(form):
     form.config.write_text(CONFIG.replace('[bus]\nsource = "bods"', '[bus]\nenabled = false\nsource = "transportapi"')
                            .replace('A = "1000DGHS0900"', 'A = "CHANGE_ME"'))
