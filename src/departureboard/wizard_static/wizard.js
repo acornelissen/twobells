@@ -39,7 +39,8 @@ const NEEDED = {
 
 const state = {
   csrf: "",
-  keys: [], // [{name, label, hint, set, doc}], from begin
+  title: "Setup", // the host's, like "Set up your board", from begin
+  keys: [], // [{name, label, hint, set, doc}]: the host's own, from begin
   links: [],
   home: null, // {lat, lon, label, country}; exact, so it stays in this page and the server's memory
   stations: [],
@@ -172,7 +173,7 @@ function go(step, { focus = true } = {}) {
     else item.removeAttribute("aria-current");
     item.classList.toggle("done", index < at);
   }
-  document.title = `${TITLES[step]}: Set up your board`;
+  document.title = `${TITLES[step]}: ${state.title}`;
   state.step = step;
   if (focus) $(`${step}-heading`).focus();
 }
@@ -742,6 +743,15 @@ const SIGN_UP = {
     "If BODS emails you to confirm your address, follow its link.",
     "Sign in, open Account settings and copy the API key.",
   ],
+  RDM_DETAILS_API_KEY: [
+    "Optional. With the Rail Data Marketplace account above, find Service Details in the Data product catalogue and subscribe (free).",
+    "Open Subscriptions, then Service Details, then the Specification tab, and copy its own Consumer key. It isn't the Live Departure Board one.",
+  ],
+  RDM_KB_API_KEY: [
+    "Optional. With the Rail Data Marketplace account above, find Knowledgebase Incidents in the Data product catalogue and subscribe (free).",
+    "Open Subscriptions, then the incidents product, then the Specification tab, and copy its own Consumer key.",
+    "Copy the URL at the top of that tab too, into Knowledgebase Incidents address on the settings page, under Trains.",
+  ],
   TAPI_APP_ID: [
     "Optional: most boards don't need TransportAPI. It stands in for bus times while there's no bus timetable.",
     "Sign up at developer.transportapi.com and choose the Free plan, 30 lookups a day.",
@@ -755,7 +765,8 @@ const SIGN_UP = {
 
 // "Test this key": the host makes one harmless call to the key's service.
 // TransportAPI's app ID and key are tested together, from the key's box.
-const TESTED = ["RDM_API_KEY", "BODS_API_KEY", "TAPI_APP_KEY"];
+// Only the keys the host offers are drawn, so each host gets its own buttons.
+const TESTED = ["RDM_API_KEY", "RDM_DETAILS_API_KEY", "RDM_KB_API_KEY", "BODS_API_KEY", "TAPI_APP_KEY"];
 const RESULTS = { // state: [glyph, words]; the colour only repeats them
   testing: ["…", "Testing"],
   works: ["✓", "Works"],
@@ -1064,6 +1075,8 @@ async function begin() {
   try {
     await signIn();
     const data = await call("begin");
+    state.title = str(data.title).slice(0, 60) || state.title;
+    fill($("title"), state.title);
     state.keys = list(data.keys).map(obj).filter((k) => k && /^[A-Z_]{1,64}$/.test(str(k.name)))
       .map((k) => ({ name: k.name, label: str(k.label) || k.name, hint: str(k.hint), set: k.set === true, doc: str(k.doc) }));
     state.links = list(data.links);

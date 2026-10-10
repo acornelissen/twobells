@@ -736,7 +736,7 @@ def _settings_area(args, dash):
     """The password-protected /settings area: the form and the setup wizard,
     both saving into the dashboard's own folder."""
     from .dashconfig import dashboard_env, overlay_target
-    from .dashform import DashboardForm
+    from .dashform import KEYS, DashboardForm
     from .dashsettings import SettingsArea
     from .setupapi import SetupApi
 
@@ -750,6 +750,8 @@ def _settings_area(args, dash):
         links=(("The dashboard", "/"), ("Settings", "/settings")),
         target=target,
         saved_message="Saved. The dashboard starts again in a few seconds to use the new settings.",
+        title="Set up your dashboard",
+        keys=KEYS,
     )
     area = SettingsArea(dash.state_dir, DashboardForm(target, load_secrets), setup)
     if not area.password.is_set():

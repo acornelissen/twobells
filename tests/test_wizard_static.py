@@ -14,6 +14,7 @@ from urllib.parse import urljoin
 import pytest
 
 from departureboard import keytest
+from departureboard.dashform import KEYS as DASHBOARD_KEYS
 from departureboard.settingsform import KEYS
 from departureboard.setupapi import PAGE_HEADERS, static_files
 
@@ -207,9 +208,18 @@ def test_key_test_asks_before_spending_a_transportapi_lookup():
 def test_every_key_on_the_page_says_how_to_get_it():
     text = (STATIC / "wizard.js").read_text(encoding="utf-8")
     sign_up = _between(text, "const SIGN_UP", "const TESTED")
-    for name, _, _ in KEYS:
+    for name, _, _ in (*KEYS, *DASHBOARD_KEYS):  # the Pi's and the dashboard's
         assert re.search(r"\b%s: \[\s*\"" % name, sign_up), name
     assert "The full guide (opens in a new tab)" in text and 'rel: "noopener noreferrer"' in text
+
+
+def test_every_key_either_host_offers_has_a_test_button():
+    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    tested = set(re.findall(r'"([A-Z_]+)"', _between(text, "const TESTED", "const RESULTS")))
+    offered = {name for name, _, _ in (*KEYS, *DASHBOARD_KEYS)}
+    # TransportAPI's app ID is tested with its app key, from the key's box.
+    assert tested == offered - {"TAPI_APP_ID"}
+    assert tested <= set(keytest.KEY_NAMES)
 
 
 # Accessibility.
@@ -218,8 +228,16 @@ def test_every_key_on_the_page_says_how_to_get_it():
 def test_page_is_british_english_and_says_what_it_is():
     page = _page()
     assert [attrs for tag, attrs in page.elements if tag == "html"] == [{"lang": "en-GB"}]
+    # The page is the Pi's and the dashboard's: each host names it in begin's
+    # answer, set as text, so until then it says only what it is for.
     html = (STATIC / "index.html").read_text(encoding="utf-8")
-    assert "<title>Set up your board</title>" in html
+    assert "<title>Setup</title>" in html and '<h1 id="title">Setup</h1>' in html
+    assert "board" not in _between(html, "<title>", "<main")
+    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    begin = _between(text, "async function begin", "begin();")
+    assert 'state.title = str(data.title).slice(0, 60) || state.title;' in begin
+    assert 'fill($("title"), state.title);' in begin
+    assert "document.title = `${TITLES[step]}: ${state.title}`;" in text
 
 
 def test_each_step_is_a_section_with_a_focusable_heading():
