@@ -932,6 +932,43 @@ def test_the_first_run_after_setting_up_fetches_everything(tmp_path, monkeypatch
     assert calls == [1]
 
 
+def test_the_settings_page_opens_the_wizard_until_the_board_is_set_up(tmp_path, monkeypatch, capsys):
+    from departureboard import web
+
+    made = {}
+    real = web.make_handler
+
+    def make_handler(*args, **kwargs):
+        made.update(kwargs)
+        return real(*args, **kwargs)
+
+    class Server:
+        server_address = ("127.0.0.1", 8080)
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr(web, "make_handler", make_handler)
+    monkeypatch.setattr(web, "make_server", lambda handler, host, port: Server())
+    config = installed_template(tmp_path)
+    assert main(["web", "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
+    assert "opens the setup wizard" in capsys.readouterr().err
+    wizard = made["wizard"]
+    assert "" in wizard.files and wizard.needed()
+    config.write_text(config.read_text().replace('crs = "CHANGE_ME"', 'crs = "GLO"')
+                      .replace('A = "CHANGE_ME"', 'A = "1800SB12341"'))
+    assert not wizard.needed()
+
+
+def test_the_settings_page_says_plainly_when_there_is_no_config(tmp_path, capsys):
+    assert main(["web", "--config", str(tmp_path / "missing.toml")]) == 2
+    err = capsys.readouterr().err
+    assert "missing.toml" in err and "config.example.toml" in err and "Traceback" not in err
+
+
 @pytest.mark.parametrize("name, url", [
     ("kitchen-board", "http://kitchen-board.local:8080/"),
     ("Board.lan", "http://board.local:8080/"),

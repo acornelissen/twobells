@@ -1,9 +1,11 @@
 # Copy to /etc/departureboard/config.toml and edit.
 # Secrets live in /etc/departureboard/secrets.env, not here.
 #
-# Replace every CHANGE_ME; the board refuses to start until you do. Leave out
-# [train] or [bus] if you don't want them. examples/glossop.toml is a
-# filled-in board (trains from Glossop to Manchester, buses from two stops).
+# The settings page's setup wizard can set the board up for you, saving its
+# answers beside the state file over this one: until it is set up, the board
+# shows "Set me up" and the page's address. To do it by hand instead, replace
+# every CHANGE_ME; the board shows no departures until you do. Leave out [train] or [bus] if you don't want them. examples/glossop.toml
+# is a filled-in board (trains from Glossop to Manchester, buses from two stops).
 #
 # Where it works: trains anywhere in Great Britain (National Rail Darwin).
 # Bus times and positions from BODS cover England only. The rain warning

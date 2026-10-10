@@ -480,7 +480,13 @@ def _web(args) -> int:
     from .setupapi import SetupApi
 
     # config.toml alone: a broken settings.toml must not stop the page that fixes it.
-    folder = state_dir(read_base(args.config))
+    try:
+        folder = state_dir(read_base(args.config))
+    except OSError as error:
+        # The page saves beside config.toml's state_file, and can't write to /etc itself.
+        print(f"Can't read {args.config}: {error.strerror or error}. Copy config.example.toml there "
+              "(install.sh does), then start the settings page again.", file=sys.stderr)
+        return 2
     if folder is None:
         print("config.toml needs a state_file; the settings page saves beside it", file=sys.stderr)
         return 2
@@ -512,7 +518,8 @@ def _web(args) -> int:
     codes = auth.ResetCodes(folder)
     # The search builds the bus timetable in the board's own folder, where the board reads it.
     steps = SetupApi(args.config, lambda: _env(args.config, args.secrets), folder, links=[("Board settings", "/")])
-    wizard = web.Wizard.load(steps)
+    # Until the board is set up, claiming the page or signing in opens the wizard.
+    wizard = web.Wizard.load(steps, lambda: needs_setup(args.config))
     handler = web.make_handler(form, password, auth.Sessions(password=password), auth.Lockout(), web.shell, stylesheet,
                                codes, wizard=wizard)
     try:
@@ -523,6 +530,8 @@ def _web(args) -> int:
     if not password.is_set():
         print("No password yet: claim the page with a code from the board, or run "
               "`departureboard web --set-password` as the service user", file=sys.stderr)
+    if needs_setup(args.config):
+        print("Not set up yet: sign in and the page opens the setup wizard", file=sys.stderr)
     print(f"Settings page on http://{args.host}:{server.server_address[1]}/  (home network only)")
     try:
         server.serve_forever()

@@ -70,21 +70,27 @@ systemctl daemon-reload
 cat <<EOF
 
 Installed. Next:
-  1. Edit $CONF/secrets.env (keys) and $CONF/config.toml (replace each CHANGE_ME:
-     your station code and bus stop codes; $REPO/examples/glossop.toml is a filled-in one).
-  2. Check the keys:   sudo $PREFIX/venv/bin/departureboard probe train
-                       sudo $PREFIX/venv/bin/departureboard probe bus
-  3. Start the board:  sudo systemctl enable --now departureboard.timer          (e-paper)
-                  or:  sudo systemctl enable --now departureboard-screen.service (HDMI screen)
-  4. Watch it:         journalctl -u departureboard -f
-     With source = "bods" under [bus], build the bus timetable and keep it fresh:
-       sudo systemctl enable --now departureboard-timetable.timer
-       sudo systemctl start departureboard-timetable.service   (the first build, now)
-  5. Settings page (optional, home network only):
+  1. Start the settings page and the board:
        sudo systemctl enable --now departureboard-web.service
-     then open http://$(hostname).local:8080/ and claim it with the code the
-     board shows, or set the password here first:
-       sudo -u departureboard $PREFIX/venv/bin/departureboard web --set-password
+       sudo systemctl enable --now departureboard.timer          (e-paper)
+   or: sudo systemctl enable --now departureboard-screen.service (HDMI screen; first set
+       display = "hdmi-1280x400" in $CONF/config.toml)
+     Until it is set up, the board shows "Set me up" and the settings page's address.
+  2. Open the settings page: http://$(hostname).local:8080/ on a phone or computer
+     on your home network. Claim it with the code the board shows (or set the
+     password here first:
+       sudo -u departureboard $PREFIX/venv/bin/departureboard web --set-password )
+     and it opens the setup wizard: home, station, bus stops, walk times and
+     keys, saved for you. No need to edit config.toml by hand.
+  3. Keep the bus timetable fresh (the wizard builds the first one):
+       sudo systemctl enable --now departureboard-timetable.timer
+  4. Watch it:         journalctl -u departureboard -f
+     Check the keys:   sudo $PREFIX/venv/bin/departureboard probe train
+                       sudo $PREFIX/venv/bin/departureboard probe bus
+
+To set it up by hand instead, edit $CONF/secrets.env (keys) and
+$CONF/config.toml (replace each CHANGE_ME; $REPO/examples/glossop.toml is a
+filled-in one).
 
 If the display errors about chip select, add  dtoverlay=spi0-0cs
 to /boot/firmware/config.txt and reboot. The Waveshare 10.85" panel always
