@@ -7,6 +7,7 @@ from typing import ClassVar
 
 import pytest
 
+from departureboard.settings import keyresults
 from departureboard.settings.config import load_config, needs_setup, read_base, read_config
 from departureboard.settings.installs import INSTALLS, Install
 from departureboard.settings.overlay import Target, board_target
@@ -353,6 +354,13 @@ def test_finishing_keeps_the_settings_setup_does_not_manage(board):
     saved = tomllib.loads((board.state / "settings.toml").read_text())
     assert (saved["theme"], saved["rotate"], saved["text_size"]) == ("plain", 180, 13)
     assert saved["title"] == "Our house" and saved["bus"]["rows"] == 4
+
+
+def test_a_key_pasted_in_the_wizard_forgets_its_last_test(board):
+    keyresults.record(board.state, "BODS_API_KEY", "works", 1_791_000_000)
+    keyresults.record(board.state, "RDM_API_KEY", "works", 1_791_000_000)
+    saved_with_a_search(board, keys={"BODS_API_KEY": "new-bods-key-000"})
+    assert set(keyresults.load(board.state)) == {"RDM_API_KEY"}  # the one not replaced
 
 
 def test_no_exact_home_position_is_written_anywhere(board):

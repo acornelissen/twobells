@@ -75,7 +75,7 @@ from pathlib import Path
 from typing import Protocol, overload
 
 from ..core.errors import safe_message
-from ..settings import schema
+from ..settings import keyresults, schema
 from ..settings.config import ConfigError
 from ..settings.installs import INSTALLS, Install
 from ..settings.overlay import OverlayError, Target, save_to
@@ -458,7 +458,7 @@ class SetupApi:
         checked as each view on loads its settings. `load_secrets` gives
         the environment with every saved key, as the settings site's does;
         `job_folder` is where the search builds the bus timetable (the
-        store). `install` says which views can be turned on (its offered,
+        store, where a key pasted forgets its last test). `install` says which views can be turned on (its offered,
         and its default views while none are saved), what shows the
         departures (its noun, unless `noun` says) and how a save takes
         effect. The finished page offers `links`, (label, href) pairs like
@@ -921,6 +921,7 @@ class SetupApi:
             changes["app"] = {"views": views}
         env = dict(self._load_secrets())
         save_to(self._target, changes, keys, env)
+        keyresults.forget(self._job_folder, keys)  # a test of the old key says nothing of the new
         with self._lock:
             self._found_stops.clear()
         on = tuple(views) if views is not None else self._views_now()

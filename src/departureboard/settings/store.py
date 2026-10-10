@@ -3,7 +3,8 @@
 The board and the dashboard share it. It holds the settings the settings
 pages and setup save (settings.toml), the keys saved there (secrets.env),
 the settings password (web.json), its sign-ins (sessions.json, form.key;
-all three 0600) and everything kept between runs: the
+all three 0600), the keys' last tests (keytests.json, 0600; never a key)
+and everything kept between runs: the
 board's state, the bus timetable, bank holidays and the dashboard's
 history. find_folder says which folder it is, by one rule for every
 command, so whichever view saves a setting, the other reads it.
