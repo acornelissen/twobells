@@ -1,6 +1,7 @@
 import io
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError
 from urllib.request import Request
@@ -178,3 +179,67 @@ def test_get_bytes_adds_the_callers_headers_and_may_replace_the_agent(monkeypatc
     assert seen["request"].get_header("User-agent") == http.USER_AGENT
     http.get_bytes("https://example.test/x", 100, headers={"User-Agent": "inky-departures/0.1 (+contact)"})
     assert seen["request"].get_header("User-agent") == "inky-departures/0.1 (+contact)"
+
+
+# A deadline for the whole request.
+
+
+@pytest.fixture
+def dripping():
+    """A local server that sends very slowly: /body sends its headers, then a
+    byte every 50 ms; /headers sends a header line every 50 ms; /quick
+    answers at once; /moved redirects to /body. Each gives up after 5 s."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 - http.server API
+            try:
+                if self.path == "/quick":
+                    self.send_response(200)
+                    self.send_header("Content-Length", "2")
+                    self.end_headers()
+                    self.wfile.write(b"ok")
+                elif self.path == "/moved":
+                    self.send_response(302)
+                    self.send_header("Location", "/body")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                elif self.path == "/body":
+                    self.send_response(200)
+                    self.send_header("Content-Length", "100")
+                    self.end_headers()
+                    self.wfile.flush()
+                    self.drip(b"x")
+                else:
+                    self.wfile.write(b"HTTP/1.1 200 OK\r\n")
+                    self.drip(b"X-Pad: x\r\n")
+            except OSError:
+                pass  # the client gave up
+
+        def drip(self, piece):
+            for _ in range(100):
+                self.wfile.write(piece)
+                self.wfile.flush()
+                threading.Event().wait(0.05)
+
+        def log_message(self, format, *args):  # noqa: A002
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+    server.server_close()
+
+
+@pytest.mark.parametrize("path", ["/body", "/headers", "/moved"])
+def test_a_deadline_stops_a_server_that_sends_slowly(dripping, path):
+    # Each read gets a byte well within its 1 s timeout, so only the deadline stops it.
+    start = time.monotonic()
+    with pytest.raises(OSError):
+        http.get_bytes(dripping + path, 1_000, timeout=1.0, deadline=0.3)
+    assert time.monotonic() - start < 1.0
+
+
+def test_a_request_within_its_deadline_is_answered(dripping):
+    assert http.get_bytes(dripping + "/quick", 100, timeout=1.0, deadline=5.0) == b"ok"
+
