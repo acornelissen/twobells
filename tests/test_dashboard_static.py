@@ -591,7 +591,7 @@ def test_the_train_dialog_draws_the_journey_as_a_route_line():
     # The drawing is hidden from screen readers; the words carry it.
     assert '{ class: "cp-rail", "aria-hidden": "true" }' in js
     assert '{ class: "cp-train", "aria-hidden": "true" }' in js
-    assert "Train is between" in js and "Train is at" in js and "vh(" in js
+    assert "Train is between" in js and "vh(" in js  # and at a stop, its tag (see the test below)
     assert 'passed: "passed", next: "next stop"' in js
     # The train's place along a gap goes through the CSSOM, never a style attribute.
     assert 'style.setProperty("--part"' in js
@@ -651,6 +651,54 @@ def test_actual_times_place_the_train_when_the_strip_cannot_or_lags():
         ]));
     """)
     assert found == [{"gap": 1, "part": 0.5}, {"gap": 3, "part": 0.5}, {"at": 3}, {"at": 3}, None]
+
+
+# The train dialog on a fake page, and a train for it: `train(at)` is the
+# 07:20 from Glossop with its strip's train_at (null: not placed).
+TRAIN_DIALOG = """
+import { openTrain, refreshTrain } from "./train.js";
+const dialog = document.createElement("dialog");
+dialog.setAttribute("id", "train-dialog");
+dialog.showModal = () => { dialog.open = true; };
+dialog.querySelector = () => ({ focus() {} });
+const title = document.createElement("h2");
+title.setAttribute("id", "train-title");
+const body = document.createElement("div");
+body.setAttribute("id", "train-body");
+dialog.append(title, body);
+document.body.append(dialog);
+const train = (at) => ({
+  id: "0123456789abcdef", service: "Northern", scheduled: "07:20", destination: "Manchester Piccadilly",
+  origin: "Hadfield", status: "on_time", status_text: "On time",
+  previous_points: [{ name: "Hadfield", scheduled: "07:14", actual: "07:14" }, { name: "Dinting", scheduled: "07:17" }],
+  calling_points: [{ name: "Broadbottom", scheduled: "07:24" }, { name: "Manchester Piccadilly", scheduled: "07:50" }],
+  position: { where: "Left Hadfield 07:14, on time", strip: { stops: ["Dinting", "Glossop", "Broadbottom"], yours: 1, train_at: at } },
+});
+const journey = () => elements(body).find((el) => el.nodeName === "OL");
+const said = () => journey().childNodes.map((li) => spoken(li).replace(/\\s+/g, " ").trim());
+"""
+
+
+@needs_node
+def test_the_journey_says_where_the_train_is_once():
+    found = run_js(TRAIN_DIALOG + """
+        openTrain(train(1), null, "Glossop");
+        const atGlossop = said();
+        openTrain(train(0.5), null, "Glossop");
+        console.log(JSON.stringify([atGlossop, said()]));
+    """)
+    at_glossop, between = found
+    assert at_glossop == [
+        "07:14 Hadfield passed actual 07:14",
+        "07:17 Dinting passed",
+        "07:20 Glossop (this station) train here on time",
+        "07:24 Broadbottom",
+        "07:50 Manchester Piccadilly",
+    ]
+    # Between stops no tag says so, so a sentence does, with where it is.
+    assert between[1] == ("07:17 Dinting passed. Train is between Dinting and Glossop "
+                          "(Left Hadfield 07:14, on time).")
+    assert between[2] == "07:20 Glossop (this station) next stop on time"
 
 
 # --- Around here: the line and the area map ---

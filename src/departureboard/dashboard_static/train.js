@@ -70,8 +70,9 @@ const trainGlyph = () => s("svg", { class: "cp-train-glyph", viewBox: "0 0 16 16
   s("path", { class: "cp-train-wheels", d: "M5.5 12 L4 15 M10.5 12 L12 15" }));
 
 // One stop in the journey. The line, dot and train are drawing only
-// (aria-hidden or CSS); the time, name and words say it all, including a
-// hidden sentence for where the train is.
+// (aria-hidden or CSS); the time, name and words say it all. At a stop, its
+// "train here" tag says where the train is; between two, a hidden sentence
+// does, as no tag can.
 function stopItem(stop, i, names, place, where) {
   const done = progress(place, i);
   const item = h("li", { class: ["cp", done ? `cp-${done}` : null, stop.yours ? "yours" : null, stop.cancelled ? "cp-cancelled" : null] },
@@ -82,11 +83,12 @@ function stopItem(stop, i, names, place, where) {
     done ? [" ", h("span", { class: "cp-tag" }, TAGS[done])] : null,
     stop.state ? " " : null, stop.state);
   if (place && (place.at === i || place.gap === i)) {
-    const text = place.at === i ? `Train is at ${stop.name}` : `Train is between ${stop.name} and ${names[i + 1]}`;
-    item.append(h("span", { class: "cp-train", "aria-hidden": "true" }, trainGlyph()),
-      vh(`. ${text}${where ? ` (${where})` : ""}.`));
+    item.append(h("span", { class: "cp-train", "aria-hidden": "true" }, trainGlyph()));
+  }
+  if (place && place.gap === i) {
+    item.append(vh(`. Train is between ${stop.name} and ${names[i + 1]}${where ? ` (${where})` : ""}.`));
     // How far along the gap, for the CSS; the CSP allows the CSSOM.
-    if (place.gap === i) item.style.setProperty("--part", place.part.toFixed(3));
+    item.style.setProperty("--part", place.part.toFixed(3));
   }
   return item;
 }
