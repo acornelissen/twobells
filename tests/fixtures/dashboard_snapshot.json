@@ -9,6 +9,7 @@
       "B": 6
     }
   },
+  "quiet": false,
   "trains": {
     "station": "Glossop",
     "filter": "MAN",

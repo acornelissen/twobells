@@ -608,7 +608,8 @@ class Hub:
         self._monotonic = monotonic
         self._lock = threading.Lock()
         self._changed = threading.Condition(self._lock)
-        self._static = {"title": title, "walk": {"train": walk.train, "bus": dict(walk.bus)}}
+        # `quiet` says whether a quiet window is on; the collector's heartbeat sets it.
+        self._static = {"title": title, "walk": {"train": walk.train, "bus": dict(walk.bus)}, "quiet": False}
         self._parts: dict[str, dict | list | None] = dict.fromkeys(PARTS)
         self._part_lookups: dict[str, dict[str, dict]] = {part: {} for part in PARTS}
         self._lookups: dict[str, dict] = {}
@@ -649,10 +650,13 @@ class Hub:
             self._rebuild()
             return self._version
 
-    def refresh(self) -> None:
-        """Rebuild with the time now and nothing else changed, so
-        generated_at stays close to the server's clock when the feeds are quiet."""
+    def refresh(self, quiet: bool | None = None) -> None:
+        """Rebuild with the time now, so generated_at stays close to the
+        server's clock when the feeds are quiet. With `quiet`, say too whether
+        a quiet window is on: the wall-tablet page dims in one."""
         with self._lock:
+            if quiet is not None:
+                self._static["quiet"] = quiet
             self._rebuild()
 
     def current(self) -> tuple[int, bytes]:

@@ -105,7 +105,10 @@ def check(data, now: float) -> dict:
     if check_num(top["made"], "made") > now + CLOCK_SKEW_S:
         raise Refused("made is in the future")
     check_int(top["version"], "version", 0, 2**53)
-    check_obj(top["snapshot"], _SNAPSHOT_FIELDS)
+    # An older fetch service, mid-upgrade, sends no `quiet`.
+    snapshot = check_obj(top["snapshot"], _SNAPSHOT_FIELDS, ("quiet",))
+    if "quiet" in snapshot and not isinstance(snapshot["quiet"], bool):
+        raise Refused("quiet isn't true or false")
     for name in ("lookups", "previous"):
         for key, value in check_dict(top[name], name, MAX_LOOKUPS).items():
             if not _HEX16.fullmatch(key):

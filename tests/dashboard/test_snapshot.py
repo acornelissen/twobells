@@ -574,10 +574,11 @@ def snapshot(h):
 def test_the_first_snapshot_has_every_section_empty():
     h = hub()
     body = snapshot(h)
-    assert list(body) == ["version", "generated_at", "title", "walk", "trains", "buses", "weather", "disruptions",
-                          "timetable_changes"]
+    assert list(body) == ["version", "generated_at", "title", "walk", "quiet", "trains", "buses", "weather",
+                          "disruptions", "timetable_changes"]
     assert body["version"] == 1 and body["title"] == "Glossop"
     assert body["walk"] == {"train": 10, "bus": {"A": 8, "B": 6}}
+    assert body["quiet"] is False
     assert body["trains"] is body["buses"] is body["weather"] is body["disruptions"] is None
     assert body["timetable_changes"] is None
 
@@ -593,6 +594,17 @@ def test_the_version_goes_up_only_when_the_content_changes():
     assert h.version == 3
     with pytest.raises(ValueError):
         h.publish("ferries", {})
+
+
+def test_a_refresh_says_whether_a_quiet_window_is_on_and_only_a_change_is_new():
+    h = hub()
+    h.refresh(quiet=True)
+    assert snapshot(h)["quiet"] is True and h.version == 2
+    h.refresh(quiet=True)
+    h.refresh()  # without quiet, it stays as it was
+    assert snapshot(h)["quiet"] is True and h.version == 2
+    h.refresh(quiet=False)
+    assert snapshot(h)["quiet"] is False and h.version == 3
 
 
 def test_the_snapshot_is_one_line_of_ascii_json():

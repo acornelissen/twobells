@@ -168,6 +168,19 @@ def test_before_the_first_file_an_empty_snapshot_shows(spool):
     assert mirror.age() == float("inf") and not mirror.healthy()
 
 
+def test_quiet_comes_through_and_an_older_fetch_service_may_leave_it_out(spool):
+    hub = published_hub()
+    hub.refresh(quiet=True)
+    SnapshotWriter(hub, spool, lambda: True).write()
+    mirror = mirror_of(spool)
+    assert mirror.check() is True and json.loads(mirror.current()[1])["quiet"] is True
+    older = json.loads(handoff.snapshot_path(spool.folder).read_bytes())
+    del older["snapshot"]["quiet"]
+    older["made"] += 1
+    put(spool, older)
+    assert mirror.check() is True and "quiet" not in json.loads(mirror.current()[1])
+
+
 def test_lookups_previous_and_the_area_come_through(spool):
     good_file(spool)
     mirror = mirror_of(spool)
@@ -273,6 +286,7 @@ REFUSED = {
     "version not whole": lambda d: _with(d, version=1.5),
     "snapshot not an object": lambda d: _with(d, snapshot=[]),
     "snapshot with more": lambda d: _with(d, snapshot={**d["snapshot"], "script": "x"}),
+    "quiet not true or false": lambda d: _with(d, snapshot={**d["snapshot"], "quiet": "yes"}),
     "lookup id in the wrong form": lambda d: _with(d, lookups={"../../etc/passwd": {}}),
     "lookup id in capitals": lambda d: _with(d, lookups={BUS_ID.upper(): {}}),
     "previous id too long": lambda d: _with(d, previous={BUS_ID + "0": {}}),

@@ -1,7 +1,7 @@
 """The dashboard's pollers: fetch each feed on its own interval and publish it to the Hub.
 
 One thread per job (trains, buses, weather, upkeep, and a heartbeat that
-keeps the snapshot's clock fresh). A job that fails keeps the last good data
+keeps the snapshot's clock fresh and says whether a quiet window is on). A job that fails keeps the last good data
 on show, marked stale with a short error that never carries a key, and tries
 again later and later (up to five minutes apart) until it works.
 
@@ -526,12 +526,19 @@ class Collector:
 
     # Running
 
+    def in_quiet_window(self) -> bool:
+        """Whether one of the quiet windows is on now, bank holidays counted."""
+        local = self._clock().replace(tzinfo=None)
+        return any(window.contains(local, self._holidays) for window in self._options.quiet_windows)
+
     def quiet(self) -> bool:
         """In a quiet window with no browser seen lately: don't fetch."""
-        local = self._clock().replace(tzinfo=None)
-        if not any(window.contains(local, self._holidays) for window in self._options.quiet_windows):
-            return False
-        return not self._hub.active(CLIENT_GRACE)
+        return self.in_quiet_window() and not self._hub.active(CLIENT_GRACE)
+
+    def heartbeat(self) -> None:
+        """Every minute: the snapshot again with the time now, and whether a
+        quiet window is on, for the wall-tablet page to dim in."""
+        self._hub.refresh(quiet=self.in_quiet_window())
 
     def pollers(self) -> dict[str, Poller]:
         """The pollers for the configured feeds, not yet started."""
@@ -552,7 +559,7 @@ class Collector:
         if self._settings.train_incidents is not None:
             add("train-incidents", self.poll_train_incidents, TRAIN_INCIDENTS_SECONDS)
         add("upkeep", self.upkeep, UPKEEP_SECONDS, quiet=False)
-        add("heartbeat", self._hub.refresh, HEARTBEAT_SECONDS, quiet=False)
+        add("heartbeat", self.heartbeat, HEARTBEAT_SECONDS, quiet=False)
         return found
 
     def start(self) -> None:

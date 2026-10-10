@@ -651,6 +651,18 @@ def test_outside_the_quiet_windows_polling_goes_on(tmp_path):
     assert not setup.collector.quiet()
 
 
+def test_the_heartbeat_says_whether_a_quiet_window_is_on_browser_or_not(tmp_path):
+    # The wall-tablet page dims in a quiet window, though it keeps the feeds going.
+    setup = Setup(tmp_path, now=at(4, 59))
+    assert setup.snapshot()["quiet"] is False  # until the first heartbeat
+    setup.hub.touch()
+    setup.collector.pollers()["heartbeat"].step()
+    assert setup.snapshot()["quiet"] is True and not setup.collector.quiet()
+    setup.clock.now = at(5, 1)
+    setup.collector.heartbeat()
+    assert setup.snapshot()["quiet"] is False
+
+
 def test_quiet_windows_come_from_the_options(tmp_path):
     from departureboard.core.polling import parse_window
 

@@ -21,6 +21,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   "generated_at": "2026-10-10T07:01:30+01:00",
   "title": "Glossop > Man Picc",
   "walk": {"train": 10, "bus": {"A": 10, "B": 10}},
+  "quiet": false,
   "trains": {
     "station": "Glossop",
     "filter": "MAN",
@@ -157,6 +158,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `walk_min`: the walk to it in whole minutes, as on its rows, or null.
   - The page names each row's stop in its Stop column with its walk, telling stops of the same name apart by `letter`, else `towards`, else the label: "Church Street A · 10 min walk", "Victoria Street towards Market Hall".
 - **`walk`:** the walk times as set, by mode and stop label (`*` for any stop). The page reads `walk.train` for the trains' walk line; `walk_min` on rows and stops supersedes the rest.
+- **`quiet`:** true while one of the dashboard's quiet windows (`quiet_windows`, bank holidays counted as Sundays) is on, else false. It is worked out once a minute, so it can be up to a minute behind the window. The wall-tablet page (`/?kiosk`) dims while it is true.
 - **`stop_name`:** the stop's name from the stop data with the letter on its sign when known ("Church Street (Stop A)"); "Stop A" from the board's label when the stop has no data. Show this rather than the label.
 - **`strip`:**
   - `stops` are the stop names before yours, then yours, then possibly the next one.

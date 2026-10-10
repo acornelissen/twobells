@@ -275,6 +275,13 @@ def test_a_query_string_is_ignored(server):
     assert server.request("/api/snapshot?x=1")[0].status == 200
 
 
+def test_the_wall_tablet_address_serves_the_same_page(server):
+    # Kiosk mode is the page's own doing, from its address: the server sends the same page.
+    response, body = server.request("/?kiosk")
+    assert response.status == 200 and body == server.request("/")[1]
+    assert response.getheader("Content-Security-Policy") == server.request("/")[0].getheader("Content-Security-Policy")
+
+
 # Static files
 
 

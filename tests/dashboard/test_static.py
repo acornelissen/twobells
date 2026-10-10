@@ -537,6 +537,7 @@ SNAPSHOT = {
     "generated_at": at,
     "title": str,
     "walk": {"train": Opt(integer), "bus": MapOf(integer)},
+    "quiet": bool,
     "trains": Opt({
         "station": str, "filter": Opt(str), "status": STATUS, "messages": [MESSAGE], "rows": [TRAIN_ROW],
     }),
