@@ -1241,6 +1241,30 @@ def test_the_fixture_stops_are_named_by_their_letters():
     assert found == {"A": "Henry Street A", "B": "Henry Street B"}
 
 
+@needs_node
+def test_a_stop_letter_never_wraps_away_from_its_name():
+    # "Henry Street" then "A" alone on the next line reads as two things.
+    found = run_js("""
+        import { stopLabel } from "./board.js";
+        const parts = (text) => {
+          const label = stopLabel(text);
+          return (Array.isArray(label) ? label : [label]).map((part) =>
+            typeof part === "string" ? ["text", part] : [part.getAttribute("class"), part.textContent]);
+        };
+        console.log(JSON.stringify([parts("Henry Street A"), parts("Henry Street (B)"), parts("Stand 12"),
+          parts("Victoria Street towards Market Hall"), parts("Glossop")]));
+    """)
+    assert found == [
+        [["text", "Henry "], ["nobreak", "Street A"]],
+        [["text", "Henry "], ["nobreak", "Street (B)"]],
+        [["text", ""], ["nobreak", "Stand 12"]],
+        [["text", "Victoria Street towards Market Hall"]],
+        [["text", "Glossop"]],
+    ]
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    assert re.search(r"\.nobreak\s*\{\s*white-space:\s*nowrap;", css)
+
+
 # --- The boards ---
 
 # Both boards on a fake page, drawn from the contract fixture at its own time

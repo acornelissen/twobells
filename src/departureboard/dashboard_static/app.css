@@ -183,6 +183,7 @@ h3 { font-size: var(--t-md); margin: var(--s-4) 0 var(--s-2); }
 .glyph { display: inline-flex; align-items: center; justify-content: center; min-width: 1em; vertical-align: -0.125em; }
 .icon { display: block; flex: none; width: 1em; height: 1em; }
 .muted { color: var(--muted); }
+.nobreak { white-space: nowrap; }
 
 /* A button is quiet unless it is the one thing to do: .primary fills it. */
 button {

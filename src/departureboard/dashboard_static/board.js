@@ -320,6 +320,14 @@ export function stopNames(stops) {
   return names;
 }
 
+// A stop's name for display, its short sign letter or number kept on the
+// line with the word before it, so "Henry Street A" never wraps to leave the
+// "A" alone. The text is unchanged; only where it may wrap.
+export function stopLabel(text) {
+  const match = /^(.*?)(\S+ \S{1,3})$/.exec(text);
+  return match ? [match[1], h("span", { class: "nobreak" }, match[2])] : text;
+}
+
 // The stop's name for a row: from `names` (stopNames), else the row's own.
 export function stopText(row, names) {
   const stop = str(row.stop);
@@ -368,7 +376,7 @@ function busRow(row, later, names, alerts) {
       where ? h("span", { class: "sub where" }, where) : null,
       busStatusExtras(row),
       recordChip(row)),
-    td("c-stop", null, h("span", { class: "stop" }, stopText(row, names)),
+    td("c-stop", null, h("span", { class: "stop" }, stopLabel(stopText(row, names))),
       walk !== null ? h("span", { class: "sub walk" }, `${walk} min walk`) : null),
     dueCell(row),
     leaveCell(row, id, alerts),
