@@ -12,6 +12,7 @@ import { describe, isOn, remindNote, toggle } from "./alerts.js";
 import { stopText } from "./board.js";
 import { announce } from "./live.js";
 import { icon } from "./icons.js";
+import { isKiosk } from "./kiosk.js";
 
 const NOW_MS = 60_000; // "Leave now" in the last minute
 const SECONDS_MS = 2 * 60_000; // seconds shown below this
@@ -113,7 +114,8 @@ function thenLine(options) {
 function drawRemind() {
   const button = $("leave-remind");
   const note = $("notify-note");
-  const id = shown && validId(shown.row.id) ? shown.row.id : "";
+  // A wall tablet has no controls: no Remind me.
+  const id = shown && validId(shown.row.id) && !isKiosk() ? shown.row.id : "";
   button.hidden = !id;
   const on = !!id && isOn(id);
   button.setAttribute("aria-pressed", String(on));

@@ -196,6 +196,18 @@ The dashboard shows buses only from the BODS timetable (see [Bus times](#bus-tim
 
   It's checked every 30 minutes. Only incidents for the companies running your trains that name one of your stations are shown. With the key but no address, the page says so; without the key, nothing changes. National Rail's own messages on the train board join the disruption line; those about the station itself, like a closed ticket office or lifts out of use, are a quiet "Station information" line rather than a disruption, and aren't announced.
 
+### Wall tablet (kiosk)
+
+For a tablet on the wall, open the dashboard's address with `?kiosk` on the end: `http://<pi name>.local:8090/?kiosk`. The page then fits one screen, in larger type, with nothing to press:
+
+- **What it shows:** the place, the time and the status word; Next to catch (the countdown, which departure, how sure it is, and **Then:**); the disruption line, without the notices behind it; the next 4 trains and 4 buses; and the weather now with the next 4 hours. On a landscape screen the weather sits beside Next to catch and the trains and buses side by side; on a portrait one they're stacked. Around here, reminders, the sheets and **Show later departures** are left out.
+- **Look:** the Board look, unless that tablet has had the Board look turned off. To change it, open the address without `?kiosk`, choose with **Board look**, then go back.
+- **When it's behind:** a wide amber banner across the top says "Not updated since 17:42", or "Offline" when the tablet can't reach the dashboard, big enough to read across the room.
+- **At night:** during the dashboard's quiet windows (**When not to check** on the Dashboard tab, 01:00 to 05:00 unless you change it), the page dims to dark grey or dim amber on black. Every few minutes the whole page moves a pixel or two, so nothing is burnt into the screen.
+- **New versions:** the page reloads itself once a day at 03:30, the tablet's time, once the dashboard answers.
+
+The page can't keep the screen on by itself: browsers allow that only on `https://` pages, and the dashboard is plain `http://` on your home network. Set the tablet's own screen timeout (auto-lock, sleep) to never, ideally with it plugged in. To keep it on the page, use Guided Access on an iPad (Settings > Accessibility), screen pinning on Android, or a kiosk browser app.
+
 ---
 
 ## 3. Installing

@@ -346,15 +346,21 @@ def test_no_text_glyphs_stand_in_for_icons():
 # --- Colour contrast in every theme ---
 
 
+# The looks, and a wall tablet's dimmed ones for its quiet windows.
+THEMES = ["modern-light", "modern-dark", "board", "kiosk-dim", "kiosk-dim-board"]
+
+
 def _palettes():
     css = (STATIC / "app.css").read_text(encoding="utf-8")
     palettes = {}
-    for name in ("modern-light", "modern-dark", "board"):
+    for name in THEMES:
         match = re.search(r"/\* theme: %s \*/[^{]*\{(?:[^{}]*\{)?([^{}]*)\}" % name, css)
         assert match, name
         palettes[name] = dict(re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6})\b", match.group(1)))
-    # The dark and board palettes override the light one.
-    return {name: {**palettes["modern-light"], **tokens} for name, tokens in palettes.items()}
+    # The dark and board palettes override the light one; a wall tablet's
+    # dimmed Board look overrides the Board look.
+    base = {"kiosk-dim-board": {**palettes["modern-light"], **palettes["board"]}}
+    return {name: {**base.get(name, palettes["modern-light"]), **tokens} for name, tokens in palettes.items()}
 
 
 def _luminance(colour):
@@ -384,7 +390,7 @@ TEXT_PAIRS = [
 OUTLINE_PAIRS = [("focus", "bg"), ("focus", "surface"), ("edge", "surface"), ("edge", "bg")]
 
 
-@pytest.mark.parametrize("theme", ["modern-light", "modern-dark", "board"])
+@pytest.mark.parametrize("theme", THEMES)
 def test_theme_contrast(theme):
     tokens = _palettes()[theme]
     for pairs, need in ((TEXT_PAIRS, 4.5), (OUTLINE_PAIRS, 3.0)):
@@ -2159,3 +2165,309 @@ def test_the_weather_hours_are_one_row_not_a_wrapping_grid():
     assert "overflow-x: auto" in strip and "scroll-snap-type: x" in strip
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     assert '<h3 id="weather-hours-heading">Next hours</h3>' in html
+
+
+# --- Kiosk mode: a wall tablet at /?kiosk ---
+
+# Every test page below is a wall tablet's: theme.js has marked <html>.
+KIOSK = 'document.documentElement = { dataset: { kiosk: "on" } };\n'
+
+
+@needs_node
+def test_kiosk_mode_and_its_board_look_are_set_before_the_first_paint_from_the_address():
+    found = run_js("""
+        import { readFileSync } from "node:fs";
+        const source = readFileSync("theme.js", "utf-8");
+        const run = (search, saved) => {
+          const root = { dataset: { theme: "modern" } };
+          document.documentElement = root;
+          const storage = { getItem: () => { if (saved === "blocked") throw new Error("blocked"); return saved; } };
+          for (const [name, value] of [["location", { search }], ["localStorage", storage]]) {
+            Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
+          }
+          new Function(source)();
+          return [root.dataset.kiosk ?? null, root.dataset.theme];
+        };
+        console.log(JSON.stringify([
+          run("", null), run("", "board"), run("?kiosk", null), run("?kiosk", "modern"), run("?kiosk", "board"),
+          run("?kiosk", "blocked"), run("?from=home&kiosk=1", null), run("?kiosks", null),
+        ]));
+    """)
+    assert found == [
+        [None, "modern"],  # the page as ever
+        [None, "board"],
+        ["on", "board"],  # a wall tablet takes the Board look...
+        ["on", "modern"],  # ...unless this browser chose a look
+        ["on", "board"],
+        ["on", "board"],  # storage blocked: still a wall tablet
+        ["on", "board"],
+        [None, "modern"],
+    ]
+    # theme.js is a classic script in <head>, so it runs before the page is
+    # drawn; the modules run after parsing.
+    tags = [tag for tag, _ in _page().elements]
+    scripts = [attrs for tag, attrs in _page().elements if tag == "script"]
+    assert scripts[0] == {"src": "/static/theme.js"}
+    assert tags.index("script") < tags.index("body")
+
+
+class _Tree(HTMLParser):
+    """index.html's elements, each with the (tag, attrs) of its ancestors."""
+
+    VOID = frozenset({"meta", "link", "br", "img", "input", "hr", "source"})
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack = []
+        self.found = []  # (tag, attrs, ancestors)
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        self.found.append((tag, attrs, list(self.stack)))
+        if tag not in self.VOID:
+            self.stack.append((tag, attrs))
+
+    def handle_endtag(self, tag):
+        while self.stack:
+            if self.stack.pop()[0] == tag:
+                break
+
+
+def _kiosk_hidden():
+    """The selectors app.css hides on a wall tablet, without their :root[data-kiosk] part."""
+    css = re.sub(r"/\*.*?\*/", "", (STATIC / "app.css").read_text(encoding="utf-8"), flags=re.S)
+    hidden = []
+    for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        if re.search(r"(?:^|;)\s*display:\s*none\s*(?:;|$)", body.strip()):
+            for selector in selectors.split(","):
+                selector = selector.strip()
+                # Elements only: a hidden ::marker hides no control.
+                if selector.startswith(":root[data-kiosk] ") and "::" not in selector:
+                    hidden.append(selector.removeprefix(":root[data-kiosk] "))
+    return hidden
+
+
+def _matches(selector, tag, attrs):
+    """Whether a compound selector of a tag, an #id and .classes matches."""
+    parts = re.findall(r"^[a-z0-9]+|#[\w-]+|\.[\w-]+", selector)
+    assert "".join(parts) == selector, f"can't read {selector}"
+    classes = attrs.get("class", "").split()
+
+    def one(part):
+        if part[0] == "#":
+            return attrs.get("id") == part[1:]
+        return part[1:] in classes if part[0] == "." else part == tag
+
+    return all(one(part) for part in parts)
+
+
+def test_a_wall_tablet_page_has_nothing_to_focus_or_press():
+    # Everything in index.html that takes a click or the focus is hidden by
+    # app.css on a wall tablet, itself or by a part it is in. The one left is
+    # the disruption line's <summary>, which disruptions.js takes out of the
+    # tab order (tested below). Dialogs are closed, and nothing opens them.
+    tree = _Tree()
+    tree.feed((STATIC / "index.html").read_text(encoding="utf-8"))
+    hidden = _kiosk_hidden()
+    left = []
+    for tag, attrs, ancestors in tree.found:
+        focusable = (tag in ("button", "summary", "input", "select", "textarea") or (tag == "a" and "href" in attrs)
+                     or attrs.get("tabindex", "-1") != "-1")
+        if not focusable or any(t == "dialog" for t, _ in ancestors):
+            continue
+        if not any(_matches(s, t, a) for s in hidden for t, a in [(tag, attrs), *ancestors]):
+            left.append(attrs.get("id") or attrs.get("class") or tag)
+    assert left == ["dis-line"]
+    # And a click on a row opens nothing on a wall tablet.
+    main = (STATIC / "main.js").read_text(encoding="utf-8")
+    assert "if (kiosk) return; // nothing on a wall tablet opens" in main
+
+
+@needs_node
+def test_a_wall_tablet_board_has_four_rows_and_no_controls():
+    found = run_js(KIOSK + _boards() + """
+        import { markBusRows } from "./disruptions.js";
+        const rowsById = new Map(snapshot.buses.rows.map((row) => [row.id, { row, mode: "bus" }]));
+        markBusRows(snapshot, rowsById);
+        const controls = ["BUTTON", "A", "INPUT", "SELECT", "TEXTAREA", "SUMMARY"];
+        const focusable = (el) => elements(el).filter((e) => controls.includes(e.nodeName)
+          || (e.hasAttribute("tabindex") && e.getAttribute("tabindex") !== "-1"));
+        const rows = [...bodyRows("trains-board"), ...bodyRows("buses-board")];
+        console.log(JSON.stringify({
+          rows: [bodyRows("trains-board").length, bodyRows("buses-board").length],
+          hidden: rows.filter((tr) => tr.hasAttribute("hidden")).length,
+          focusable: [...focusable(board("trains-board")), ...focusable(board("buses-board"))].map((e) => e.nodeName),
+          dest: said(byClass(bodyRows("trains-board")[0], "dest")[0]),
+        }));
+    """)
+    # The fixture has 10 trains and 9 buses still to catch: 4 of each, no "Show later departures".
+    assert found["rows"] == [4, 4] and found["hidden"] == 0
+    # No open buttons, no disruption links: the destination is plain text.
+    assert found["focusable"] == []
+    assert found["dest"] == "Manchester Piccadilly"
+
+
+@needs_node
+def test_a_wall_tablet_hero_has_no_remind_me():
+    found = run_js(HERO + KIOSK + """
+        draw(rows(bus(1, "07:20", "07:10")));
+        console.log(JSON.stringify([$("leave-remind").hidden, shown($("leave-time"))]));
+    """)
+    assert found == [True, "Leave in 10 min"]
+
+
+@needs_node
+def test_a_wall_tablet_disruption_line_is_its_summary_only():
+    found = run_js(DISRUPTION_PAGE + KIOSK + """
+        $("disruptions-details").open = true;
+        renderDisruptions(at({ disruptions: { status: {}, items: [item("a000000000000001", "your_stop")] } }));
+        const line = $("disruptions-details").childNodes[0];
+        console.log(JSON.stringify([words($("disruptions-summary")), $("disruptions-details").open,
+                                    line.nodeName, line.getAttribute("tabindex")]));
+    """)
+    assert found == ["Roadworks at Station Road (your stop)", False, "SUMMARY", "-1"]
+    # What would open it is hidden too.
+    assert ".dis-body" in _kiosk_hidden()
+
+
+@needs_node
+def test_a_wall_tablet_weather_is_now_and_four_hours_with_nothing_to_focus():
+    found = run_js(KIOSK + _weather_panel() + """
+        renderWeather(snapshot);
+        console.log(JSON.stringify({
+          parts: hours.childNodes.map((el) => el.nodeName),
+          hours: items(hours).length,
+          focus: elements(hours).filter((el) => el.hasAttribute("tabindex") || el.hasAttribute("role")).length,
+          more: document.getElementById("weather-more"),
+        }));
+    """)
+    assert found == {"parts": ["DIV"], "hours": 4, "focus": 0, "more": None}
+
+
+@needs_node
+def test_the_wall_tablet_shifts_a_pixel_or_two_and_never_far():
+    found = run_js("""
+        import { h } from "./dom.js";
+        import { SHIFTS, SHIFT_MS, applyShift, shiftAt } from "./kiosk.js";
+        const root = h("html", {});
+        const applied = [0, 1, 2, SHIFTS.length, SHIFTS.length + 1].map((step) => {
+          applyShift(root, step);
+          return [root.style.getPropertyValue("--shift-x"), root.style.getPropertyValue("--shift-y")];
+        });
+        console.log(JSON.stringify({ shifts: SHIFTS, every: SHIFT_MS, applied, wraps: shiftAt(SHIFTS.length) === SHIFTS[0] }));
+    """)
+    shifts = found["shifts"]
+    assert shifts[0] == [0, 0] and len({tuple(s) for s in shifts}) == len(shifts) > 4
+    assert all(abs(x) <= 2 and abs(y) <= 2 for x, y in shifts)
+    # Each step, the last back to the first included, moves the page 1 or 2 px.
+    for (x1, y1), (x2, y2) in zip(shifts, shifts[1:] + shifts[:1], strict=True):
+        assert 1 <= max(abs(x2 - x1), abs(y2 - y1)) <= 2
+    assert 60_000 <= found["every"] <= 10 * 60_000  # every few minutes
+    assert found["wraps"] is True
+    assert found["applied"] == [[f"{x}px", f"{y}px"] for x, y in (shifts[0], shifts[1], shifts[2], shifts[0], shifts[1])]
+    # The page moves by the property; a jump, so there is no transition to reduce.
+    body = " ".join(_css_rules(":root[data-kiosk] body"))
+    assert "translate(var(--shift-x, 0px), var(--shift-y, 0px))" in body and "transition" not in body
+
+
+@needs_node
+def test_a_wall_tablet_dims_while_the_snapshot_says_a_quiet_window_is_on():
+    found = run_js("""
+        import { applyDim } from "./kiosk.js";
+        const root = { dataset: { kiosk: "on" } };
+        const states = [{ quiet: true }, { quiet: false }, { quiet: true }, {}, { quiet: "yes" }].map((snapshot) => {
+          applyDim(root, snapshot);
+          return root.dataset.dim ?? null;
+        });
+        console.log(JSON.stringify(states));
+    """)
+    assert found == ["on", None, "on", None, None]
+    # Dimmed is darker: black, with the words at most 60% of the light they
+    # have in the look's own dark palette. test_theme_contrast keeps them legible.
+    palettes = _palettes()
+    for dim, look in (("kiosk-dim", "modern-dark"), ("kiosk-dim-board", "board")):
+        assert _luminance(palettes[dim]["fg"]) <= 0.6 * _luminance(palettes[look]["fg"])
+        assert palettes[dim]["bg"] == "#000000"
+    # Only on a wall tablet, in a quiet window.
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    assert ':root[data-kiosk][data-dim]:not([data-theme="board"]) {' in css
+    assert ':root[data-kiosk][data-dim][data-theme="board"] {' in css
+
+
+STALE_BANNER = """
+import { h } from "./dom.js";
+import { STATE } from "./api.js";
+import { pill } from "./header.js";
+import { drawBanner } from "./kiosk.js";
+const banner = h("p", { id: "stale-banner", hidden: true });
+document.body.append(banner);
+const status = (extra) => ({ last_success: "2026-10-10T17:42:00+01:00", stale: false, error: null, note: null, ...extra });
+const snapshot = (trains) => ({ trains: { status: status(trains) }, buses: { status: status() } });
+const show = (state, data) => {
+  const [kind, , words] = pill(state, data, 0, Date.now());
+  drawBanner(kind, words);
+  return banner.hidden ? null : spoken(banner).trim();
+};
+"""
+
+
+@needs_node
+def test_a_wall_tablet_says_across_the_room_when_it_is_behind():
+    found = run_js(STALE_BANNER + """
+        console.log(JSON.stringify([
+          show(STATE.live, snapshot({})),
+          show(STATE.live, snapshot({ stale: true })),
+          show(STATE.polling, snapshot({ error: "timed out" })),
+          show(STATE.live, snapshot({})),
+          show(STATE.offline, snapshot({})),
+          show(STATE.reconnecting, snapshot({})),
+        ]));
+    """)
+    assert found == [
+        None,
+        "Not updated since 17:42",
+        "Not updated since 17:42",
+        None,  # and gone again once it catches up
+        "Offline",  # the server can't be reached
+        None,  # a moment's reconnecting is only the pill's
+    ]
+    # Full width, outside the page's parts, and large: to be seen from 2 m.
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert re.search(r'</header>\s*<p id="stale-banner" class="stale-banner" hidden></p>\s*<main', html)
+    rule = " ".join(_css_rules(".stale-banner"))
+    assert "font-size: var(--t-xl);" in rule and "background: var(--late-fg);" in rule
+
+
+@needs_node
+def test_a_wall_tablet_reloads_once_a_day_at_half_three_when_the_server_answers():
+    found = run_js("""
+        import { RELOAD_AT, RETRY_MS, msUntil, scheduleReload } from "./kiosk.js";
+        const local = (d, h, m) => new Date(2026, 9, d, h, m).getTime();
+        const timers = [];
+        let reloads = 0;
+        const answers = [false, "throws", true];
+        const reachable = async () => {
+          const next = answers.shift();
+          if (next === "throws") throw new Error("down");
+          return next;
+        };
+        scheduleReload({ now: () => local(10, 14, 0), setTimer: (fn, ms) => timers.push([fn, ms]), reachable,
+                         reload: () => { reloads += 1; } });
+        const delays = [timers[0][1]];
+        for (let i = 0; i < 3; i++) {
+          await timers[i][0]();
+          delays.push(timers[i + 1] ? timers[i + 1][1] : null);
+        }
+        console.log(JSON.stringify({
+          at: RELOAD_AT, retry: RETRY_MS, delays, reloads,
+          until: [msUntil(RELOAD_AT, local(10, 2, 0)), msUntil(RELOAD_AT, local(10, 3, 30)),
+                  msUntil(RELOAD_AT, local(10, 3, 31))],
+        }));
+    """)
+    assert found["at"] == [3, 30]
+    hour = 3_600_000
+    assert found["until"] == [1.5 * hour, 24 * hour, 24 * hour - 60_000]
+    # At 14:00 the first try is 13.5 h off; the server down twice, it tries
+    # again every 5 min, then reloads, once.
+    assert found["delays"] == [13.5 * hour, found["retry"], found["retry"], None]
+    assert found["retry"] == 5 * 60_000 and found["reloads"] == 1

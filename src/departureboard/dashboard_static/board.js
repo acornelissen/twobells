@@ -8,14 +8,17 @@
 // A row has one control, its destination: a button that opens the departure
 // sheet (sheet.js). A row drops out once its leaving time is more than 2
 // minutes gone, leaving one dimmed "Just missed" line until it departs. The
-// first 5 rows show; the rest wait behind "Show later departures".
+// first 5 rows show; the rest wait behind "Show later departures". On a wall
+// tablet (kiosk.js) there are no controls: 4 rows, the destination as text.
 
 import { h, vh, setText, str, num, list, obj, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
 import { arrivesLine, busStatusExtras } from "./extras.js";
 import { icon } from "./icons.js";
+import { isKiosk } from "./kiosk.js";
 
 export const SHOWN = 5; // rows before "Show later departures"
+export const KIOSK_ROWS = 4; // rows on a wall tablet, which has no "Show later departures"
 const MAX_ROWS = 20; // the most the settings allow
 const GO_MS = 2 * 60_000; // "Go now" lasts this long past the leaving time
 
@@ -117,10 +120,10 @@ function leaveCell(row, id, alerts) {
 // The row's one control: its destination, as a button that opens the
 // departure sheet. Its name says which departure, ending with the words it
 // shows: `lead` "the 07:12 to " makes "More about the 07:12 to Manchester
-// Piccadilly".
+// Piccadilly". On a wall tablet it is plain text.
 function openButton(id, lead, destination) {
   const dest = h("span", { class: "dest" }, destination);
-  if (!id) return dest;
+  if (!id || isKiosk()) return dest;
   return h("button", {
     type: "button", class: "open", dataset: { action: "open", id, focusKey: `open:${id}` },
   }, vh(`More about ${lead}`), dest);
@@ -174,13 +177,15 @@ function drawBoard(mode, el, { caption, columns, cls, empty }, rows, drawRow) {
     el.replaceChildren(...[missedLine, h("p", { class: "empty" }, empty)].filter(Boolean));
     return;
   }
-  const later = shown.length - SHOWN;
+  const kiosk = isKiosk();
+  const drawn = kiosk ? shown.slice(0, KIOSK_ROWS) : shown;
+  const later = kiosk ? 0 : shown.length - SHOWN;
   el.replaceChildren(...[
     missedLine,
     h("table", { role: "table", class: ["board", cls], id: board.table },
       h("caption", {}, caption),
       headRow(columns),
-      h("tbody", { role: "rowgroup" }, shown.map((row, i) => drawRow(row, i, i >= SHOWN ? mode : null)))),
+      h("tbody", { role: "rowgroup" }, drawn.map((row, i) => drawRow(row, i, i >= SHOWN ? mode : null)))),
     later > 0 ? h("button", {
       type: "button", class: "more", "aria-expanded": String(board.more), "aria-controls": board.table,
       dataset: { action: "more", mode, focusKey: `more:${mode}` },

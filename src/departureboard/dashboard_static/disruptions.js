@@ -9,6 +9,7 @@ import { $, h, vh, fill, setText, str, list, obj, validId } from "./dom.js";
 import { now, parseAt } from "./time.js";
 import { icon } from "./icons.js";
 import { stopNames, trainMessages } from "./board.js";
+import { isKiosk } from "./kiosk.js";
 
 const MODE = { bus: "Bus", train: "Train" };
 // The server's relevance tiers, most relevant first: at one of our stops, at a
@@ -251,6 +252,11 @@ export function renderDisruptions(snapshot) {
 
   const details = $("disruptions-details");
   details.hidden = listed === 0;
+  if (isKiosk()) {
+    // A wall tablet shows the summary line only: it never opens, nor takes focus.
+    details.open = false;
+    details.querySelector("summary").setAttribute("tabindex", "-1");
+  }
   $("disruptions-none").hidden = listed > 0;
   details.classList.toggle("bad", severe);
   details.classList.toggle("late", relevant.length > 0 && !severe);
@@ -283,10 +289,11 @@ function follow(event) {
 }
 
 // Adds a "Disruption" link to each bus row whose line or stop an item in
-// force at the bus's time names. rowsById maps id to { row, mode }.
+// force at the bus's time names. rowsById maps id to { row, mode }. A wall
+// tablet has nowhere to go, so no links.
 export function markBusRows(snapshot, rowsById) {
   const found = items(snapshot).filter((i) => i.mode === "bus");
-  if (!found.length) return;
+  if (!found.length || isKiosk()) return;
   for (const tr of document.querySelectorAll("#buses-board tr[data-id]")) {
     const entryFor = rowsById.get(tr.dataset.id);
     if (!entryFor || entryFor.mode !== "bus") continue;

@@ -5,6 +5,7 @@
 import { $, h, fill, patch, setText, vh, str, num, list, obj } from "./dom.js";
 import { hhmm, now, parseAt } from "./time.js";
 import { icon } from "./icons.js";
+import { isKiosk } from "./kiosk.js";
 
 const HOURS = 12;
 const SHOWN = 4; // hours in the strip before "More hours"
@@ -112,9 +113,12 @@ function hourItem(hr) {
 }
 
 // A row of hours that scrolls sideways when it doesn't fit, so it is a named
-// region keyboard users can reach and scroll.
-const strip = (hours, name) => h("div", { class: "wx-strip", role: "region", tabindex: "0", ...name },
-  h("ol", { class: "wx-hours" }, hours.map(hourItem)));
+// region keyboard users can reach and scroll. A wall tablet's four hours fit,
+// and it has no keyboard: a plain list there.
+const strip = (hours, name) => (isKiosk()
+  ? h("div", { class: "wx-strip" }, h("ol", { class: "wx-hours", ...name }, hours.map(hourItem)))
+  : h("div", { class: "wx-strip", role: "region", tabindex: "0", ...name },
+    h("ol", { class: "wx-hours" }, hours.map(hourItem))));
 
 function renderHours(hours) {
   const t = now();
@@ -124,7 +128,8 @@ function renderHours(hours) {
   }).slice(0, HOURS);
   const el = $("weather-hours");
   if (!upcoming.length) { el.replaceChildren(); return; }
-  const later = upcoming.slice(SHOWN);
+  // No "More hours" on a wall tablet: nothing there opens.
+  const later = isKiosk() ? [] : upcoming.slice(SHOWN);
   const more = $("weather-more");
   // patch() keeps the nodes, so an open "More hours" stays open and a
   // scrolled or focused strip stays put when a new snapshot comes in.

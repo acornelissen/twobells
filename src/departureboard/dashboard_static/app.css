@@ -133,6 +133,62 @@
   color-scheme: dark;
 }
 
+/* A wall tablet (/?kiosk) dims in the quiet windows (kiosk.js): black, with
+   the words at about half their light and still 4.5:1. One palette for the
+   modern look, light or dark, and one for the Board look. */
+/* theme: kiosk-dim */
+:root[data-kiosk][data-dim]:not([data-theme="board"]) {
+  --bg: #000000;
+  --surface: #000000;
+  --surface-2: #111317;
+  --fg: #a4a6a8;
+  --muted: #7a808a;
+  --line: #171a1e;
+  --edge: #565c66;
+  --accent: #5b7cb3;
+  --accent-fg: #060a12;
+  --focus: #5b7cb3;
+  --ok-fg: #4a8e67;
+  --ok-bg: #0a170f;
+  --late-fg: #a47b32;
+  --late-bg: #1c1507;
+  --bad-fg: #ba6861;
+  --bad-bg: #200d0b;
+  --unk-fg: #7a808a;
+  --unk-bg: #111317;
+  --leave-fg: #a4a6a8;
+  --leave-bg: #000000;
+  --badge-fg: #08090b;
+  --badge-bg: #a4a6a8;
+  color-scheme: dark;
+}
+
+/* theme: kiosk-dim-board */
+:root[data-kiosk][data-dim][data-theme="board"] {
+  --bg: #000000;
+  --surface: #000000;
+  --surface-2: #0b0800;
+  --fg: #b37b00;
+  --muted: #a07220;
+  --line: #201700;
+  --edge: #7b5500;
+  --accent: #997a2e;
+  --accent-fg: #000000;
+  --focus: #999999;
+  --ok-fg: #b37b00;
+  --ok-bg: #000000;
+  --late-fg: #998849;
+  --late-bg: #0f0c00;
+  --bad-fg: #b86349;
+  --bad-bg: #110600;
+  --unk-fg: #a07220;
+  --unk-bg: #000000;
+  --leave-fg: #b37b00;
+  --leave-bg: #000000;
+  --badge-fg: #000000;
+  --badge-bg: #b37b00;
+}
+
 /* --- Base --- */
 
 * { box-sizing: border-box; }
@@ -920,6 +976,105 @@ table.history thead th { border-top: 0; color: var(--muted); }
 }
 :root[data-theme="board"] .badge { padding-left: 0; padding-right: 0; background: transparent; }
 :root[data-theme="board"] .badge.st-cancelled { padding-left: var(--s-2); padding-right: var(--s-2); background: var(--bad-fg); }
+
+/* --- The stale banner: a wall tablet's (kiosk.js), when the page is behind
+   or can't reach the server. Full width and reversed out, to be seen across
+   a room. --- */
+
+.stale-banner {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  margin: 0;
+  padding: var(--s-2) var(--s-4);
+  font-size: var(--t-xl);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--late-bg);
+  background: var(--late-fg);
+}
+
+/* --- Kiosk: a wall tablet at /?kiosk (theme.js, kiosk.js). No controls,
+   larger type, and the page on one screen with no scrolling: lines and
+   sections that don't fit are left out, never scrolled to. Landscape puts
+   the weather beside the hero and the boards side by side; portrait stacks
+   them. kiosk.js moves the page a pixel or two every few minutes (--shift-x,
+   --shift-y) against burn-in: a jump, not an animation. --- */
+
+:root[data-kiosk] { font-size: 112.5%; overflow: hidden; }
+:root[data-kiosk] body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  transform: translate(var(--shift-x, 0px), var(--shift-y, 0px));
+}
+/* Every control, and what only a control would show. */
+:root[data-kiosk] .skip,
+:root[data-kiosk] #theme-toggle,
+:root[data-kiosk] .top-link,
+:root[data-kiosk] .leave-remind,
+:root[data-kiosk] .alert-banner,
+:root[data-kiosk] .dis-body,
+:root[data-kiosk] button.more,
+:root[data-kiosk] .dis-mark,
+:root[data-kiosk] .wx-more,
+:root[data-kiosk] .area,
+:root[data-kiosk] .foot,
+/* And what doesn't earn its room on one screen. */
+:root[data-kiosk] .leave-rain,
+:root[data-kiosk] #trains-walk,
+:root[data-kiosk] .station-info,
+:root[data-kiosk] .tt-changes,
+:root[data-kiosk] .calling-at,
+:root[data-kiosk] .record,
+:root[data-kiosk] .inbound,
+:root[data-kiosk] #weather-hours-heading { display: none; }
+
+:root[data-kiosk] .top { flex: none; padding: var(--s-3) var(--s-4); }
+:root[data-kiosk] main {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  padding: 0 var(--s-4) var(--s-3);
+  gap: var(--s-3) var(--s-6);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-areas: "hero" "dis" "boards" "weather";
+  overflow: hidden;
+}
+:root[data-kiosk] .sections,
+:root[data-kiosk] .extras { display: contents; }
+:root[data-kiosk] .leave { grid-area: hero; margin: 0; padding: var(--s-3) var(--s-4); }
+:root[data-kiosk] .disruptions { grid-area: dis; margin: 0; }
+:root[data-kiosk] .boards { display: grid; grid-area: boards; gap: var(--s-4); align-content: start; min-height: 0; overflow: hidden; }
+:root[data-kiosk] .weather { grid-area: weather; }
+:root[data-kiosk] .wx-now { margin: 0; }
+:root[data-kiosk] .wx-strip { overflow: hidden; }
+@media (orientation: landscape) {
+  :root[data-kiosk] main {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-areas: "hero weather" "dis dis" "boards boards";
+  }
+  :root[data-kiosk] .boards { display: flex; gap: var(--s-6); align-items: flex-start; }
+  :root[data-kiosk] .boards > * { flex: 1 1 0; }
+}
+/* Rows a little tighter, and nothing that looks as if it could be pressed. */
+@media (min-width: 64.0625rem) {
+  :root[data-kiosk] table.board th,
+  :root[data-kiosk] table.board td { padding-block: var(--s-2); }
+}
+:root[data-kiosk] table.board tbody tr[data-id] { cursor: auto; }
+:root[data-kiosk] table.board tbody tr[data-id]:hover,
+:root[data-kiosk] table.board tbody tr[data-id]:hover > * { background: transparent; }
+:root[data-kiosk] .dis-line { list-style: none; cursor: auto; pointer-events: none; }
+:root[data-kiosk] .dis-line::-webkit-details-marker { display: none; }
 
 /* --- Motion --- */
 

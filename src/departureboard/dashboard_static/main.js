@@ -1,5 +1,7 @@
 // Wires the page together: the connection, each snapshot's render, the
-// one-second tick, the theme toggle, and the row buttons.
+// one-second tick, the theme toggle, and the row buttons. On a wall tablet
+// (kiosk.js) there are no buttons, reminders or area map, and the page dims,
+// shifts, warns and reloads by itself.
 
 import { $, setText, store, str, obj, focusKey, refocus } from "./dom.js";
 import { connect, STATE } from "./api.js";
@@ -16,6 +18,9 @@ import { markBusRows, renderDisruptions } from "./disruptions.js";
 import { renderArea, setUpArea } from "./area.js";
 import { icon } from "./icons.js";
 import { pill, placeName } from "./header.js";
+import { applyDim, drawBanner, isKiosk, startKiosk } from "./kiosk.js";
+
+const kiosk = isKiosk();
 
 let snapshot = null;
 let rowsById = new Map(); // id -> { row, mode }
@@ -58,6 +63,7 @@ function renderConnection() {
   $("connection").dataset.state = state;
   $("connection-glyph").replaceChildren(icon(name));
   setText($("connection-text"), words);
+  if (kiosk) drawBanner(state, words);
 }
 
 // --- Snapshots.
@@ -98,13 +104,14 @@ function render(data) {
   const title = str(data.title) || "Departures";
   setText($("title"), placeName(title, obj(data.trains)?.station));
   document.title = title;
+  if (kiosk) applyDim(document.documentElement, data);
   drawBoards();
   attempt("weather", () => renderWeather(data));
   attempt("disruptions", () => { renderDisruptions(data); markBusRows(data, rowsById); });
   refocus(key);
   attempt("announcements", () => noteSnapshot(data, rowsById));
   attempt("departure sheet", () => refreshSheet(rowsById, sheetContext()));
-  renderArea(data).catch((error) => console.error("Couldn't render the area:", error));
+  if (!kiosk) renderArea(data).catch((error) => console.error("Couldn't render the area:", error));
   tick();
 }
 
@@ -117,7 +124,7 @@ function tick() {
   if (tickBoards()) redrawBoards();
   tickStrips(new Map([...rowsById].map(([id, e]) => [id, e.row])), parseAt(snapshot.generated_at));
   attempt("next to catch", () => renderHero(rowsById, heroContext()));
-  tickAlerts(rowsById);
+  if (!kiosk) tickAlerts(rowsById);
 }
 
 // --- Row buttons, by delegation so re-rendered rows need no rewiring.
@@ -128,6 +135,7 @@ function open(button) {
 }
 
 $("main").addEventListener("click", (event) => {
+  if (kiosk) return; // nothing on a wall tablet opens
   const button = event.target.closest("button[data-action]");
   if (button) {
     if (button.dataset.action === "open") open(button);
@@ -160,3 +168,4 @@ connection = connect({
 
 tick();
 setInterval(tick, 1000);
+if (kiosk) startKiosk();
