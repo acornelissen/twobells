@@ -394,7 +394,7 @@ class SettingsArea:
         if errors:
             return self._html(422, "Dashboard settings: fix the errors",
                               self._page.render(session.csrf, errors=errors, values=fields))
-        message = ("Saved. The dashboard restarts in a few seconds to use the new settings; "
+        message = ("Saved. The dashboard starts again in a few seconds to use the new settings; "
                    "sign in again to change anything else.")
         return self._html(200, "Saved – Dashboard settings", self._page.render(session.csrf, message=message))
 

@@ -1,4 +1,8 @@
 import json
+import os
+import sys
+import threading
+import time
 from datetime import date
 from pathlib import Path
 
@@ -737,6 +741,75 @@ def test_dashboard_runs_until_interrupted_and_lets_go_of_its_folder(dashboard_co
     assert "On your home network: http://" in out
     assert (folder / "history.sqlite3").exists()
     load_dashboard(dashboard_config, {"RDM_API_KEY": "k"}, folder).close()  # the lock was let go
+
+
+def free_port():
+    import socket
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def answering(port, deadline=10.0):
+    """Whether the dashboard on `port` answers within `deadline` seconds."""
+    import http.client
+
+    stop = time.monotonic() + deadline
+    while time.monotonic() < stop:
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
+            conn.request("GET", "/healthz", headers={"Host": "localhost"})
+            conn.getresponse().read()
+            conn.close()
+            return True
+        except OSError:
+            time.sleep(0.05)
+    return False
+
+
+def test_dashboard_starts_again_when_its_saved_settings_change(dashboard_config, tmp_path, monkeypatch, caplog):
+    from departureboard import cli, http
+    from departureboard.dashconfig import load_dashboard
+
+    def offline(request, timeout):
+        raise OSError("offline in tests")
+
+    started_again = []
+    monkeypatch.setattr(http, "urlopen", offline)
+    monkeypatch.setattr(cli, "SETTINGS_CHECK_S", 0.05)
+    monkeypatch.setattr(cli, "_start_again", started_again.append)
+    caplog.set_level("INFO")
+    folder, port = tmp_path / "dash", free_port()
+
+    def owner():
+        assert answering(port)
+        (folder / "settings.toml").write_text("[train]\ncrs = 12\n")  # saved by hand, and wrong
+        stop = time.monotonic() + 5
+        while time.monotonic() < stop and "don't load" not in caplog.text:
+            time.sleep(0.02)
+        (folder / "settings.toml").write_text('title = "Our house"\n')
+
+    helper = threading.Thread(target=owner, daemon=True)
+    helper.start()
+    code = main(["dashboard", "--config", str(dashboard_config), "--secrets", str(tmp_path / "nonexistent"),
+                 "--state-dir", str(folder), "--port", str(port), "--no-browser"])
+    helper.join(timeout=5)
+    assert code == 0 and started_again == [port]
+    assert "Settings changed but don't load" in caplog.text  # the broken one kept the old settings
+    assert "starting the dashboard again" in caplog.text
+    assert load_dashboard(dashboard_config, {"RDM_API_KEY": "k"}, folder).title == "Our house"  # lock let go
+
+
+def test_starting_again_runs_the_same_command_on_the_same_port_without_the_browser(monkeypatch):
+    from departureboard import cli
+
+    ran = []
+    monkeypatch.setattr(sys, "orig_argv", ["python3", "-m", "departureboard.cli", "dashboard", "--lan"])
+    monkeypatch.setattr(os, "execv", lambda path, argv: ran.append((path, argv)))
+    cli._start_again(8091)
+    assert ran == [(sys.executable, [sys.executable, "-m", "departureboard.cli", "dashboard", "--lan",
+                                     "--no-browser", "--port", "8091"])]
 
 
 def test_dashboard_reports_config_errors_without_traceback(tmp_path, capsys):

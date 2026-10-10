@@ -221,7 +221,7 @@ def test_sign_out_ends_the_session(signed):
 def test_a_signed_in_save_with_the_form_token_works(signed):
     cookie, csrf = signed.sign_in()
     response, text = signed("POST", "/settings", {"csrf": csrf, "title": "Glossop"}, cookie=cookie)
-    assert response.status == 200 and "Saved. The dashboard restarts" in text
+    assert response.status == 200 and "Saved. The dashboard starts again" in text
     assert signed.page.saved == [{"title": "Glossop"}]
 
 

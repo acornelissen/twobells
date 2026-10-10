@@ -568,6 +568,90 @@ def _emulate(args) -> int:
     return 0
 
 
+# How often the dashboard looks for changed settings files.
+SETTINGS_CHECK_S = 2.0
+
+
+class _SettingsWatch(threading.Thread):
+    """Looks every SETTINGS_CHECK_S for a change to any file the dashboard's
+    settings come from: the overlay its settings page saved, config.toml or
+    the secrets. When one has changed and the settings still load, it stops
+    the server, so the dashboard can start afresh with them; when they don't
+    load, it says so and keeps the ones running."""
+
+    def __init__(self, args, folder: Path, server) -> None:
+        from .dashconfig import FileWatch, settings_files
+
+        super().__init__(name="settings-watch", daemon=True)
+        self._args = args
+        self._server = server
+        self._watch = FileWatch(settings_files(args.config, args.secrets, folder))
+        self._stopping = threading.Event()
+        self.restart = False
+
+    def run(self) -> None:
+        from .dashconfig import load_dashboard
+
+        while not self._stopping.wait(SETTINGS_CHECK_S):
+            if not self._watch.changed():
+                continue
+            try:
+                load_dashboard(self._args.config, _env(self._args.config, self._args.secrets),
+                               self._args.state_dir, lock=False)
+            except ConfigError as error:
+                logging.warning("Settings changed but don't load (%s); keeping the current ones", error)
+                continue
+            except Exception as error:  # noqa: BLE001 - the running dashboard carries on
+                logging.warning("Settings changed but can't be checked (%s); keeping the current ones",
+                                type(error).__name__)
+                continue
+            logging.info("Settings changed; starting the dashboard again to use them")
+            self.restart = True
+            self._server.shutdown()
+            return
+
+    def stop(self) -> None:
+        self._stopping.set()
+        if self.is_alive() and threading.current_thread() is not self:
+            self.join(timeout=10)
+
+
+def _start_again(port: int) -> None:
+    """Replace this process with a fresh dashboard, started the same way, on
+    the same port and without opening the browser again. Nothing of the old
+    one is left: every thread, the lock and the listening socket go with it.
+    Inside Docker the process stays the container's main one throughout."""
+    argv = [sys.executable, *sys.orig_argv[1:], "--no-browser", "--port", str(port)]
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os.execv(sys.executable, argv)
+
+
+def _settings_area(args, dash):
+    """The password-protected /settings area: the form and the setup wizard,
+    both saving into the dashboard's own folder."""
+    from .dashconfig import dashboard_env, overlay_target
+    from .dashform import DashboardForm
+    from .dashsettings import SettingsArea
+    from .setupapi import SetupApi
+
+    target = overlay_target(args.config, dash.state_dir)
+
+    def load_secrets() -> dict[str, str]:
+        return dashboard_env(_env(args.config, args.secrets), dash.state_dir)
+
+    setup = SetupApi(
+        args.config, load_secrets, dash.state_dir,
+        links=(("The dashboard", "/"), ("Settings", "/settings")),
+        target=target,
+        saved_message="Saved. The dashboard starts again in a few seconds to use the new settings.",
+    )
+    area = SettingsArea(dash.state_dir, DashboardForm(target, load_secrets), setup)
+    if not area.password.is_set():
+        print("Settings: no password yet. Open /settings and claim it with a code from this log.", file=sys.stderr)
+    return area
+
+
 def _dashboard(args) -> int:
     import sqlite3
 
@@ -578,7 +662,7 @@ def _dashboard(args) -> int:
     from .snapshot import Hub
 
     dash = load_dashboard(args.config, _env(args.config, args.secrets), args.state_dir)
-    history = None
+    history = watch = None
     try:
         try:
             history = History(dash.state_dir)
@@ -594,6 +678,7 @@ def _dashboard(args) -> int:
             recent=history.recent,
             history_days=dash.options.history_days,
             allowed_hosts=dash.options.allowed_hosts,
+            settings=_settings_area(args, dash),
         )
         host = "0.0.0.0" if args.lan else args.host
         # A port asked for is that port or nothing (Docker's health check expects
@@ -618,10 +703,14 @@ def _dashboard(args) -> int:
         on_main = threading.current_thread() is threading.main_thread()
         previous = signal.signal(signal.SIGTERM, _interrupt) if on_main else None
         try:
+            watch = _SettingsWatch(args, dash.state_dir, server)
+            watch.start()
             server.serve_forever()
         except KeyboardInterrupt:
             pass
         finally:
+            if watch is not None:
+                watch.stop()
             if on_main:
                 signal.signal(signal.SIGTERM, previous)
             hub.close()
@@ -632,6 +721,8 @@ def _dashboard(args) -> int:
         if history is not None:
             history.close()
         dash.close()
+    if watch is not None and watch.restart:
+        _start_again(port)
     return 0
 
 
