@@ -94,7 +94,7 @@ def parse_forecast(payload) -> list[Hour]:
     if not len(times) == len(chances) == len(amounts):
         raise ValueError("Forecast hourly series differ in length")
     hours = []
-    for time, chance, amount in list(zip(times, chances, amounts))[:_MAX_HOURS]:
+    for time, chance, amount in list(zip(times, chances, amounts, strict=True))[:_MAX_HOURS]:
         if not isinstance(time, str) or len(time) > 32:
             raise ValueError(f"Unexpected time in the forecast: {time!r}")
         try:
@@ -110,7 +110,8 @@ def parse_forecast(payload) -> list[Hour]:
 
 
 def hours_to_dicts(hours: list[Hour]) -> list[dict]:
-    return [{"start": h.start.isoformat(), "probability": h.probability, "precipitation": h.precipitation} for h in hours]
+    return [{"start": h.start.isoformat(), "probability": h.probability, "precipitation": h.precipitation}
+            for h in hours]
 
 
 def hours_from_dicts(items) -> list[Hour]:
@@ -232,7 +233,7 @@ def _series(section, keys: tuple[str, ...], what: str) -> list[tuple]:
         raise ValueError(f"Forecast {what} data is not a set of lists")
     if len({len(column) for column in columns}) > 1:
         raise ValueError(f"Forecast {what} series differ in length")
-    return list(zip(*columns))
+    return list(zip(*columns, strict=True))
 
 
 def _current(section) -> Current | None:
@@ -256,7 +257,8 @@ def _current(section) -> Current | None:
 
 
 def _hours(section) -> list[HourDetail]:
-    keys = ("time", "temperature_2m", "precipitation_probability", "precipitation", "weather_code", "wind_speed_10m", "is_day")
+    keys = ("time", "temperature_2m", "precipitation_probability", "precipitation", "weather_code", "wind_speed_10m",
+            "is_day")
     hours = []
     for time, temperature, chance, amount, code, wind, is_day in _series(section, keys, "hourly"):
         start = _local_time(time)

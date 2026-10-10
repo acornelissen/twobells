@@ -98,7 +98,7 @@ def segment_pairs(journeys: Iterable[Journey],
     counts: Counter[Pair] = Counter()
     for journey in journeys:
         placed = [call.atco for call in journey.calls if call.atco in positions]
-        counts.update((a, b) for a, b in zip(placed, placed[1:]) if a != b)
+        counts.update((a, b) for a, b in zip(placed, placed[1:], strict=False) if a != b)
     return {
         (a, b): ((positions[a].lat, positions[a].lon), (positions[b].lat, positions[b].lon))
         for (a, b), _ in counts.most_common()
@@ -166,7 +166,7 @@ def simplify(points: list[Point], tolerance_m: float) -> list[Point]:
         if furthest > tolerance_m:
             keep[index] = True
             stack += [(first, index), (index, last)]
-    return [point for point, kept in zip(points, keep) if kept]
+    return [point for point, kept in zip(points, keep, strict=True) if kept]
 
 
 def parse_route(body: bytes, start: Point, end: Point) -> list[Point]:
@@ -193,7 +193,7 @@ def parse_route(body: bytes, start: Point, end: Point) -> list[Point]:
     if _metres(start, road[0]) > SNAP_M or _metres(road[-1], end) > SNAP_M:
         raise ValueError("Router's road doesn't reach the stops")
     line = [start, *road, end]
-    length = sum(_metres(a, b) for a, b in zip(line, line[1:]))
+    length = sum(_metres(a, b) for a, b in zip(line, line[1:], strict=False))
     if length > DETOUR * _metres(start, end) + DETOUR_EXTRA_M:
         raise ValueError("Router's road is implausibly long")
     tolerance = TOLERANCE_M

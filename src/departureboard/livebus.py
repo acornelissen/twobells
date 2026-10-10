@@ -375,7 +375,7 @@ def _along(picked: list[int], at: float) -> float | None:
     """A point along a journey's calls as stops along the picked calls."""
     if at < picked[0]:
         return None
-    for n, (a, b) in enumerate(zip(picked, picked[1:])):
+    for n, (a, b) in enumerate(zip(picked, picked[1:], strict=False)):
         if at <= b:
             return n + (at - a) / (b - a)
     return len(picked) - 1 + (at - picked[-1])

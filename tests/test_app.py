@@ -304,7 +304,7 @@ def test_run_loop_primes_only_the_first_tick():
 
 
 class FakeScreen(FakeDisplay):
-    from departureboard.panel import HDMI_1280X400 as panel
+    from departureboard.panel import HDMI_1280X400 as panel  # noqa: N811 - the display's panel attribute
 
 
 def test_screen_gets_a_running_clock():
@@ -747,7 +747,10 @@ class FakeWeather:
         return [Hour(THU_0700.replace(hour=h), chances.get(h, 5), 0.0) for h in range(24)]
 
 
-def weather_setup(trains=(), buses=(), walk=WalkTimes(train=7, bus={"*": 5}), threshold=50):
+WEATHER_WALK = WalkTimes(train=7, bus={"*": 5})
+
+
+def weather_setup(trains=(), buses=(), walk=WEATHER_WALK, threshold=50):
     weather = FakeWeather()
     board = dataclasses.replace(
         make_board(FakeSource("train", trains), FakeSource("bus", buses)),

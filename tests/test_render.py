@@ -63,7 +63,10 @@ def test_stale_section_uses_accent_colour():
 def test_inverted_row_is_mostly_black():
     plain = render(board([Row("07:12", "Manchester", "On time")]), PALETTE)
     inverted = render(board([Row("07:12", "Manchester", "Cancelled", Style.INVERTED)]), PALETTE)
-    black = lambda img: dict((c, n) for n, c in img.getcolors())[PALETTE.black]
+
+    def black(img):
+        return dict((c, n) for n, c in img.getcolors())[PALETTE.black]
+
     assert black(inverted) > black(plain) + WIDTH * 8
 
 

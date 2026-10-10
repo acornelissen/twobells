@@ -571,7 +571,7 @@ def walk_minutes(home: Located, destinations: Mapping[str, Located],
         return estimates
     return {
         key: (math.ceil(s / 60), "route") if s is not None else estimates[key]
-        for key, s in zip(keys, seconds)
+        for key, s in zip(keys, seconds, strict=True)
     }
 
 
@@ -624,8 +624,9 @@ def config_fragment(home: Located, station: Station | None, stops: Sequence[tupl
         if any(not _ATCO.match(a) for a in atcos) or len(set(atcos)) != len(atcos):
             raise SetupError("Each stop must be a different NaPTAN stop")
         labels = stop_labels(stops)
-        bus: dict = {"stops": {label: stop.atco for label, (_, stop) in zip(labels, stops)}}
-        minutes = {label: int(walk[stop.atco][0]) for label, (_, stop) in zip(labels, stops) if stop.atco in walk}
+        bus: dict = {"stops": {label: stop.atco for label, (_, stop) in zip(labels, stops, strict=True)}}
+        minutes = {label: int(walk[stop.atco][0])
+                   for label, (_, stop) in zip(labels, stops, strict=True) if stop.atco in walk}
         if minutes:
             bus["walk_minutes"] = minutes
         fragment["bus"] = bus

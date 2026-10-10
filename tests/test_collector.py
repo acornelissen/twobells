@@ -16,7 +16,7 @@ from departureboard.snapshot import Hub
 from departureboard.walk import WalkTimes
 from departureboard.weather import parse_conditions
 
-from test_livebus import HALFWAY, HENRY_A, at, bus, live, schedule
+from test_livebus import HALFWAY, HENRY_A, at, bus, schedule
 
 LONDON = ZoneInfo("Europe/London")
 FIXTURES = Path(__file__).parent / "fixtures"

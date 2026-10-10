@@ -18,7 +18,7 @@ from .dotfont import TINY, TINY_HEIGHT, DotFont
 from .panel import PHAT, PLATFORM_COLUMN_MIN_WIDTH, Panel
 from .render import HEIGHT, WIDTH, Palette, apply_preview, fit_text, fitted_note
 from .route import RouteView
-from .view import BoardView, Row, Section, Style
+from .view import BoardView, Section, Style
 
 MARGIN = 3
 _LINE = 11
@@ -225,7 +225,7 @@ def _route_layout(view: RouteView, width: int, height: int) -> tuple[SignLayout,
     step = (right - left) / (len(view.stops) - 1)
     xs = [left + i * step for i in range(len(view.stops))]
     room = int(step * 2) - _COL_GAP  # names alternate above and below, so each has two gaps
-    for i, (name, x) in enumerate(zip(view.stops, xs)):
+    for i, (name, x) in enumerate(zip(view.stops, xs, strict=True)):
         text = fit_text(name, _FONT, room)
         tx = min(max(MARGIN, x - _w(text) / 2), width - MARGIN - _w(text))
         ty = road - _LABEL_GAP - GLYPH_H if i % 2 == 0 else road + _LABEL_GAP

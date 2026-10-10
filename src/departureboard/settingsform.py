@@ -33,7 +33,8 @@ KEYS = (
     ("RDM_API_KEY", "Rail Data Marketplace key", "Trains: the consumer key for Live Departure Board."),
     ("TAPI_APP_ID", "TransportAPI app ID", "Buses."),
     ("TAPI_APP_KEY", "TransportAPI app key", "Buses."),
-    ("BODS_API_KEY", "Bus Open Data Service key", "For bus times with source = \"bods\", and the bus position page on a screen."),
+    ("BODS_API_KEY", "Bus Open Data Service key",
+     "For bus times with source = \"bods\", and the bus position page on a screen."),
 )
 _KEY_VALUE = re.compile(r"^[A-Za-z0-9._~+/=-]{1,200}$")
 _CRS = re.compile(r"^[A-Za-z]{3}$")
@@ -397,7 +398,7 @@ class SettingsForm:
             target[f.key] = "" if value is None else value
         errors |= neither_on(data, fields, "board")
         keys = {}
-        for name, label, _ in KEYS:
+        for name, _label, _ in KEYS:
             raw = fields.get(name, "").strip()
             if not raw:
                 continue
@@ -439,7 +440,8 @@ class SettingsForm:
         if broken:
             out.append(
                 '<div class="summary" role="alert"><h2>The saved settings file is broken</h2>'
-                f"<p>{e(broken)}</p><p>The page shows config.toml's settings. Saving replaces the broken file.</p></div>"
+                f"<p>{e(broken)}</p>"
+                "<p>The page shows config.toml's settings. Saving replaces the broken file.</p></div>"
             )
         fields = _fields(display, shown.get("theme", ""))
         if errors:
@@ -452,7 +454,8 @@ class SettingsForm:
             )
             out.append(
                 '<div class="summary" role="alert" tabindex="-1" id="problems" autofocus>'
-                f"<h2>Not saved: fix {len(errors)} {'thing' if len(errors) == 1 else 'things'}</h2><ul>{items}</ul></div>"
+                f"<h2>Not saved: fix {len(errors)} {'thing' if len(errors) == 1 else 'things'}</h2>"
+                f"<ul>{items}</ul></div>"
             )
         out.append(self._status(data))
         out.append('<form method="post" action="/" novalidate>')
@@ -526,7 +529,8 @@ class SettingsForm:
             control = f'<select id="{f.name}" name="{f.name}"{attrs}>{options}</select>'
         elif f.kind == "area":
             rows = max(2, value.count("\n") + 2)
-            control = f'<textarea id="{f.name}" name="{f.name}" rows="{rows}" spellcheck="false"{attrs}>{e(value)}</textarea>'
+            control = (f'<textarea id="{f.name}" name="{f.name}" rows="{rows}" spellcheck="false"{attrs}>'
+                       f"{e(value)}</textarea>")
         else:
             mode = ' inputmode="numeric"' if f.kind == "number" else ""
             control = f'<input id="{f.name}" name="{f.name}" type="text" value="{e(value)}"{mode}{attrs}>'

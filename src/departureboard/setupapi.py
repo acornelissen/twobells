@@ -533,7 +533,7 @@ class SetupApi:
         return {"stops": [
             {"atco": s.atco, "name": s.name, "indicator": s.indicator, "bearing": s.bearing, "lat": s.lat,
              "lon": s.lon, "distance_m": s.distance_m, "label": label}
-            for s, label in zip(found, labels)
+            for s, label in zip(found, labels, strict=True)
         ]}
 
     def walk(self, payload) -> dict:

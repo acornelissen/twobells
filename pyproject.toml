@@ -14,7 +14,7 @@ dependencies = ["Pillow>=10.1"]
 [project.optional-dependencies]
 pi = ["inky>=2.0"]
 screen = ["pygame>=2.5"]
-dev = ["pytest>=8", "pygame>=2.5"]
+dev = ["pytest>=8", "pygame>=2.5", "ruff==0.16.10"]
 
 [project.scripts]
 departureboard = "departureboard.cli:main"
@@ -28,3 +28,18 @@ departureboard = ["*.html", "*.css", "data/*.csv", "dashboard_static/*", "dashbo
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "A", "N", "BLE"]
+ignore = [
+    "N818",  # exception names without an Error suffix are public API; renaming them is churn
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests keep long fixture strings and asserts on one line, and use `l` for a
+# live row in short comprehensions.
+"tests/**" = ["E501", "E741"]

@@ -1,7 +1,6 @@
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -26,7 +25,7 @@ from departureboard.safexml import DoctypeError
 from departureboard.schedule_model import StopPosition
 from departureboard.snapshot import row_id
 
-from test_livebus import EAST, POSITIONS, WEST, schedule
+from test_livebus import EAST, WEST, schedule
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SX = FIXTURES / "bods_siri_sx_glossop.xml"

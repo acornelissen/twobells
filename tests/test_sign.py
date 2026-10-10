@@ -391,7 +391,10 @@ def test_no_platform_column_when_no_train_has_one(panel):
     long = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom and Guide Bridge"
     with_column = sign_layout(board([Row("07:12", long, "On time", platform="Plat 1")]), width, height).items
     without = sign_layout(board([Row("07:12", long, "On time")]), width, height).items
-    dest = lambda items: next(i.text for i in items if i.text.startswith("Manchester"))
+
+    def dest(items):
+        return next(i.text for i in items if i.text.startswith("Manchester"))
+
     assert len(dest(without)) > len(dest(with_column))
 
 

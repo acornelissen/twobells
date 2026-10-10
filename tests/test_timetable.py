@@ -848,7 +848,7 @@ def _doc(journeys, places=PLACES, ends=None):
         + "".join(
             f'<JourneyPatternTimingLink id="l{i}-{k}"><From><StopPointRef>{a}</StopPointRef></From>'
             f"<To><StopPointRef>{b}</StopPointRef></To><RunTime>PT2M</RunTime></JourneyPatternTimingLink>"
-            for k, (a, b) in enumerate(zip(calls, calls[1:]))
+            for k, (a, b) in enumerate(zip(calls, calls[1:], strict=False))
         )
         + "</JourneyPatternSection>"
         for i, (*_, calls) in enumerate(journeys)

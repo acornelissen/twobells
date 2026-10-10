@@ -288,7 +288,7 @@ def test_a_search_stays_alive_while_a_long_lookup_runs(board):
         while now[0] <= setupspool.SILENT_S + setupspool.HEARTBEAT_S:
             beat = json.loads(status.read_text())["beat"]
             now[0] += setupspool.HEARTBEAT_S + 1
-            wait_for(lambda: json.loads(status.read_text())["beat"] > beat)
+            wait_for(lambda before=beat: json.loads(status.read_text())["beat"] > before)
             assert job.status()["state"] == "running"
     finally:
         release.set()

@@ -276,7 +276,7 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
             else:
                 self._send(404, b"Not found", TEXT)
 
-        do_HEAD = do_GET
+        do_HEAD = do_GET  # noqa: N815 - http.server API
 
         # The setup wizard.
 

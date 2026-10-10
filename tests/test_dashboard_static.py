@@ -107,7 +107,7 @@ def _served(url):
 
 def test_index_references_resolve():
     refs = []
-    for tag, attrs in _page().elements:
+    for _tag, attrs in _page().elements:
         for name in ("href", "src"):
             value = attrs.get(name)
             # /settings is the server's own settings area, not a file.

@@ -278,7 +278,7 @@ def test_problem_text_is_readable_in_light_and_dark():
     backgrounds = re.findall(r"--bg: (#\w{6});", css)
     errors = re.findall(r"--error: (#\w{6});", css)
     assert len(backgrounds) == len(errors) == 2
-    for bg, error in zip(backgrounds, errors):
+    for bg, error in zip(backgrounds, errors, strict=True):
         high, low = sorted((luminance(bg), luminance(error)), reverse=True)
         assert (high + 0.05) / (low + 0.05) >= 4.5  # body text, WCAG 1.4.3
 

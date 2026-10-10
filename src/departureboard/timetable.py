@@ -509,7 +509,8 @@ def _parse_document(
     _read_schools(root, doc)
     _read_services(root, doc)
     vehicle_journeys = root.findall("t:VehicleJourneys/t:VehicleJourney", _NS)
-    pattern_refs = {_text(node, "t:VehicleJourneyCode"): _text(node, "t:JourneyPatternRef") for node in vehicle_journeys}
+    pattern_refs = {_text(node, "t:VehicleJourneyCode"): _text(node, "t:JourneyPatternRef")
+                    for node in vehicle_journeys}
     stands = _stands(doc, atcos, yours) if yours is not None else set()
     journeys = []
     for node in vehicle_journeys:

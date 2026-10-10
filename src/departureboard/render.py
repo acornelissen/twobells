@@ -354,7 +354,7 @@ def render_route(view: RouteView, palette: Palette, panel: Panel = PHAT, text_si
     step = (right - left) / (len(view.stops) - 1)
     xs = [left + i * step for i in range(len(view.stops))]
     draw.line((xs[0], road, xs[-1], road), fill=palette.black, width=2 * s)
-    for i, (name, x) in enumerate(zip(view.stops, xs)):
+    for i, (name, x) in enumerate(zip(view.stops, xs, strict=True)):
         yours = i == len(xs) - 1
         r = (5 if yours else 3) * s
         draw.ellipse((x - r, road - r, x + r, road + r), fill=palette.black if yours else palette.white,
@@ -367,7 +367,8 @@ def render_route(view: RouteView, palette: Palette, panel: Panel = PHAT, text_si
         draw.text((tx, ty), text, font=font, fill=palette.black)
     if view.bus_at is not None:
         bx = xs[0] + view.bus_at * step
-        draw.rounded_rectangle((bx - 12 * s, road - 13 * s, bx + 12 * s, road - 4 * s), radius=2 * s, fill=palette.black)
+        draw.rounded_rectangle((bx - 12 * s, road - 13 * s, bx + 12 * s, road - 4 * s),
+                               radius=2 * s, fill=palette.black)
         for wx in range(-9, 9, 5):
             draw.rectangle((bx + wx * s, road - 11 * s, bx + (wx + 3) * s, road - 8 * s), fill=palette.white)
     apply_preview(image, palette)
