@@ -1198,7 +1198,7 @@ def _parser() -> argparse.ArgumentParser:
 
     # The board's old settings page, which departureboard-web.service runs: serve
     # on a Pi, on the page's old port. Its setup always goes through
-    # departureboard-setup.service, so --setup-via-spool is taken and changes nothing.
+    # departureboard-fetch.service, so --setup-via-spool is taken and changes nothing.
     web = with_config(sub.add_parser("web"))
     web.add_argument("--host", default="0.0.0.0")
     web.add_argument("--port", type=_port, default=WEB_PORT)

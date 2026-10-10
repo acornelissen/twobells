@@ -65,12 +65,13 @@ install -m 644 "$REPO/deploy/departureboard-screen.service" /etc/systemd/system/
 install -m 644 "$REPO/deploy/departureboard-web.service" /etc/systemd/system/
 install -m 644 "$REPO/deploy/departureboard-timetable.service" /etc/systemd/system/
 install -m 644 "$REPO/deploy/departureboard-timetable.timer" /etc/systemd/system/
-install -m 644 "$REPO/deploy/departureboard-setup.service" /etc/systemd/system/
-install -m 644 "$REPO/deploy/departureboard-setup.path" /etc/systemd/system/
+install -m 644 "$REPO/deploy/departureboard-fetch.service" /etc/systemd/system/
+install -m 644 "$REPO/deploy/departureboard-fetch.path" /etc/systemd/system/
 systemctl daemon-reload
-# The settings page can't reach the internet; this starts the setup service
-# that does the wizard's lookups whenever the page leaves it a request.
-systemctl enable --now departureboard-setup.path
+# The settings page can't reach the internet; the fetch service does its
+# internet work (the wizard's lookups, the dashboard's feeds). It starts at
+# boot, and the .path unit starts it whenever the page leaves it a request.
+systemctl enable --now departureboard-fetch.path departureboard-fetch.service
 
 cat <<EOF
 

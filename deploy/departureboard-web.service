@@ -2,8 +2,9 @@
 Description=Departure board settings page (home network only)
 Wants=network-online.target
 After=network-online.target
-# The setup wizard's internet lookups run there: this service can't reach the internet.
-Wants=departureboard-setup.path
+# The setup wizard's lookups and the dashboard's feeds are fetched there:
+# this service can't reach the internet.
+Wants=departureboard-fetch.path
 
 [Service]
 Type=simple
@@ -11,9 +12,9 @@ User=departureboard
 Group=departureboard
 StateDirectory=departureboard
 StateDirectoryMode=0750
-# The setup spool, shared with departureboard-setup.service: in memory, never
-# on the SD card, and kept when either stops, until the Pi restarts.
-RuntimeDirectory=departureboard-setup
+# The spool, shared with departureboard-fetch.service: in memory, never on
+# the SD card, and kept when either stops, until the Pi restarts.
+RuntimeDirectory=departureboard-fetch
 RuntimeDirectoryMode=0700
 RuntimeDirectoryPreserve=yes
 # Keys, so the page can say which are set and check settings before saving.
@@ -53,7 +54,8 @@ MemoryMax=128M
 # and a few of its own.
 TasksMax=64
 # Home network only, enforced by the kernel as well as by the page. The setup
-# wizard's lookups go out from departureboard-setup.service instead.
+# wizard's lookups and the dashboard's feeds go out from
+# departureboard-fetch.service instead.
 IPAddressDeny=any
 IPAddressAllow=localhost link-local 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7
 

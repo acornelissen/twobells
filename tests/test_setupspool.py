@@ -565,6 +565,14 @@ def test_the_spool_is_systemds_folder_in_memory_and_never_on_disk(tmp_path, monk
     assert setupspool.spool_folder({}) == run
 
 
+def test_the_spool_is_the_fetch_services_and_the_messages_name_it():
+    from pathlib import Path
+
+    assert setupspool.RUNTIME == Path("/run/departureboard-fetch")
+    assert "departureboard-fetch.path" in setupspool.NO_ANSWER
+    assert "journalctl -u departureboard-fetch " in setupspool.NO_SETTINGS
+
+
 def test_the_service_stops_when_idle_and_runs_once(board):
     board.worker._idle = 0.05
     started = time.monotonic()

@@ -1,4 +1,4 @@
-"""The setup wizard's internet work, done by a separate setup service on the Pi.
+"""The setup wizard's internet work, done by a separate service on the Pi.
 
 Why. The settings page's service (departureboard-web.service) reaches only
 the home network: its kernel IP filter denies everything else, so the page
@@ -8,9 +8,11 @@ share the board's state folder, and the page still says what the setup
 service looks up, within the checks below (Trust). But the wizard's lookups
 (postcodes.io, Nominatim, NaPTAN, the OpenStreetMap foot router), its key
 tests and its search for bus companies need the internet. On the Pi they
-run in departureboard-setup.service instead: outbound only, started when
-setup is used, and gone a minute after it was last asked anything. The
-dashboard (Docker, a laptop) has no such filter and does them in-process.
+run in the fetch service, departureboard-fetch.service (fetch.py), instead:
+outbound only, started when setup is used, and gone a minute after it was
+last asked anything unless the dashboard view is on (it runs the
+dashboard's feeds as well). Docker and a desktop have no such filter and
+do them in-process.
 
 How the two talk. Through files in a spool folder only the service user
 can open (0700):
@@ -27,7 +29,7 @@ once a minute while a browser uses the dashboard (Poster).
 Where. In memory, never written as a file to the SD card: a request can
 hold home's exact position or a pasted key, and flash can keep what was
 deleted. On the Pi both units name the same systemd RuntimeDirectory,
-/run/departureboard-setup (a tmpfs, kept while either runs and until the Pi
+/run/departureboard-fetch (a tmpfs, kept while either runs and until the Pi
 restarts), and find it in $RUNTIME_DIRECTORY. Run by hand, they use that
 folder if it is there; with neither they refuse, rather than fall back to a
 folder on the card. A run on a Mac, or a test, names a folder with
@@ -36,7 +38,7 @@ card if the Pi swaps to it (dphys-swapfile, say), as with anything else.
 
 Every file is written new in tmp/ (0600, never through a link) and renamed
 into place whole, so neither side ever reads half of one. A systemd path
-unit, departureboard-setup.path, starts the service whenever requests/ isn't
+unit, departureboard-fetch.path, starts the service whenever requests/ isn't
 empty: the settings page needs no sudo, polkit rule or access to systemd,
 only a file in a folder it already owns, and it can't choose what the
 service runs or with what settings. The service takes each request,
@@ -104,7 +106,7 @@ from .status import safe_message
 log = logging.getLogger(__name__)
 
 SPOOL = "setup-spool"  # where the spool once was, in the board's state folder; update.sh deletes it
-RUNTIME = Path("/run/departureboard-setup")  # the units' RuntimeDirectory
+RUNTIME = Path("/run/departureboard-fetch")  # the units' RuntimeDirectory
 VERSION = 1
 MAX_REQUEST_BYTES = 16 * 1024  # the biggest, a walk to 25 places, is about 2 kB
 MAX_REPLY_BYTES = 512 * 1024  # the biggest, a search with route strips, is tens of kB
@@ -130,12 +132,12 @@ WORKER_LOCK = "worker.lock"
 SEARCH_NICE = 10  # the search's thread gives way to the wizard's lookups (and the board)
 
 NO_ANSWER = ("The setup service didn't answer in time. Try again; if it keeps happening, "
-             "check departureboard-setup.path is enabled on the Pi.")
+             "check departureboard-fetch.path is enabled on the Pi.")
 STOPPED = "The setup service stopped before the search finished. Try again."
 UNFIT = "The setup service sent an answer that doesn't fit. Try again."
 GONE = "The search's answer was left unread too long and has gone. Search again."
 NO_SETTINGS = ("The board's settings can't be read, so setup can't look anything up. "
-               "On the Pi, journalctl -u departureboard-setup says why.")
+               "On the Pi, journalctl -u departureboard-fetch says why.")
 
 _ID = re.compile(r"^[0-9a-f]{32}$")
 _FILE = re.compile(r"^([0-9a-f]{32})\.json$")
@@ -903,7 +905,7 @@ class Worker:
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError:  # it answers what's waiting; this stops cleanly, so systemd doesn't count a failure
-                log.info("Another setup service is already answering")
+                log.info("Another fetch service is already answering")
                 return 0
             self.spool.sweep(self._clock())
             finished = threading.Event()

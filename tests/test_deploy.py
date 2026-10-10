@@ -89,7 +89,7 @@ def test_keys_file_is_git_ignored():
     assert "dashboard.env" in (ROOT / ".gitignore").read_text().splitlines()
 
 
-# The Pi's units: the settings page stays off the internet; the setup service goes out for it.
+# The Pi's units: the web server stays off the internet; the fetch service goes out for it.
 
 
 def _unit(name: str) -> dict[str, list[str]]:
@@ -101,11 +101,12 @@ def _unit(name: str) -> dict[str, list[str]]:
     return settings
 
 
-def test_the_settings_page_stays_on_the_home_network_and_hands_setup_on():
+def test_the_settings_page_stays_on_the_home_network_and_hands_its_internet_work_on():
     web = _unit("departureboard-web.service")
-    assert web["IPAddressDeny"] == ["any"]
+    assert web["IPAddressDeny"] == ["any"]  # with the dashboard view on too: its feeds come from the fetch service
+    assert web["IPAddressAllow"] == ["localhost link-local 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7"]
     assert web["ExecStart"][0].endswith(" --setup-via-spool")
-    assert "departureboard-setup.path" in web["Wants"]
+    assert "departureboard-fetch.path" in web["Wants"]
 
 
 def test_the_settings_service_has_room_for_every_connection_the_server_takes():
@@ -118,16 +119,20 @@ def test_the_settings_service_has_room_for_every_connection_the_server_takes():
     assert web["ExecStart"][0].split()[1] == "web"  # serve on a Pi, through the old command, until it moves
 
 
-def test_the_setup_service_goes_out_and_nothing_more():
+def test_the_fetch_service_goes_out_and_listens_on_nothing():
     from departureboard import setupspool
 
-    unit = _unit("departureboard-setup.service")
+    unit = _unit("departureboard-fetch.service")
     assert "IPAddressDeny" not in unit and "IPAddressAllow" not in unit
+    assert unit["SocketBindDeny"] == ["any"]
     assert unit["ExecStart"] == [
-        "/opt/departureboard/venv/bin/departureboard setup serve --config /etc/departureboard/config.toml"]
-    assert unit["Type"] == ["oneshot"] and unit["User"] == ["departureboard"] and "TimeoutStartSec" in unit
+        "/opt/departureboard/venv/bin/departureboard fetch --config /etc/departureboard/config.toml"]
+    assert unit["Type"] == ["simple"] and unit["User"] == ["departureboard"]
+    assert unit["Restart"] == ["on-failure"] and unit["RestartSec"] == ["10"]
     assert unit["StateDirectory"] == ["departureboard"]
     assert unit["EnvironmentFile"] == ["/etc/departureboard/secrets.env"]
+    assert unit["WantedBy"] == ["multi-user.target"]  # at boot, so the dashboard's feeds start with the Pi
+    assert int(unit["TasksMax"][0]) >= 32
     timetable = _unit("departureboard-timetable.service")
     hardening = ("NoNewPrivileges", "CapabilityBoundingSet", "ProtectSystem", "ProtectHome", "PrivateTmp",
                  "PrivateDevices", "ProtectKernelTunables", "ProtectKernelModules", "ProtectControlGroups",
@@ -135,43 +140,59 @@ def test_the_setup_service_goes_out_and_nothing_more():
                  "MemoryDenyWriteExecute", "SystemCallFilter", "MemoryMax", "UMask")
     for setting in hardening:
         assert unit[setting] == timetable[setting], setting
-    path = _unit("departureboard-setup.path")
+    path = _unit("departureboard-fetch.path")
     assert path["DirectoryNotEmpty"] == [f"{setupspool.RUNTIME}/requests"]
-    assert path["Unit"] == ["departureboard-setup.service"]
+    assert path["Unit"] == ["departureboard-fetch.service"]
 
 
-def test_the_setup_spool_is_in_memory_and_shared_by_both_units():
+def test_the_setup_units_are_gone():
+    for name in ("departureboard-setup.service", "departureboard-setup.path"):
+        assert not (ROOT / "deploy" / name).exists(), name
+
+
+def test_the_spool_is_in_memory_and_shared_by_both_units():
     from departureboard import setupspool
 
-    spool = {"RuntimeDirectory": ["departureboard-setup"], "RuntimeDirectoryMode": ["0700"],
+    spool = {"RuntimeDirectory": ["departureboard-fetch"], "RuntimeDirectoryMode": ["0700"],
              "RuntimeDirectoryPreserve": ["yes"]}  # kept when either stops
-    web, setup = _unit("departureboard-web.service"), _unit("departureboard-setup.service")
-    for unit in (web, setup):
+    web, fetch = _unit("departureboard-web.service"), _unit("departureboard-fetch.service")
+    for unit in (web, fetch):
         assert {key: unit.get(key) for key in spool} == spool
-    assert web["User"] == setup["User"] == ["departureboard"]  # so both can open the 0700 folder
+    assert web["User"] == fetch["User"] == ["departureboard"]  # so both can open the 0700 folder
     assert setupspool.RUNTIME == Path("/run") / spool["RuntimeDirectory"][0]
-    watched = _unit("departureboard-setup.path")["DirectoryNotEmpty"][0]
-    assert watched.startswith("/run/departureboard-setup/") and "/var/lib" not in watched
+    watched = _unit("departureboard-fetch.path")["DirectoryNotEmpty"][0]
+    assert watched.startswith("/run/departureboard-fetch/") and "/var/lib" not in watched
 
 
-def test_a_setup_service_that_keeps_stopping_at_once_is_given_up_on_not_looped():
-    # Each run waits a minute for more, so ten starts in two minutes is a loop.
-    for name in ("departureboard-setup.service", "departureboard-setup.path"):
+def test_a_fetch_service_that_keeps_stopping_at_once_is_given_up_on_not_looped():
+    # With the dashboard off, each run waits a minute for more, so ten starts in two minutes is a loop.
+    for name in ("departureboard-fetch.service", "departureboard-fetch.path"):
         unit = _unit(name)
         assert unit["StartLimitIntervalSec"] == ["2min"] and unit["StartLimitBurst"] == ["10"], name
     guide = (ROOT / "docs" / "USER_GUIDE.md").read_text()
-    assert "systemctl reset-failed departureboard-setup.service departureboard-setup.path" in guide
+    assert "systemctl reset-failed departureboard-fetch.service departureboard-fetch.path" in guide
 
 
-def test_install_and_update_set_up_the_setup_service():
-    for script in ("install.sh", "update.sh"):
-        text = (ROOT / "deploy" / script).read_text()
-        assert "departureboard-setup.service" in text and "departureboard-setup.path" in text, script
-    assert "systemctl enable --now departureboard-setup.path" in (ROOT / "deploy" / "install.sh").read_text()
+def test_install_and_update_set_up_the_fetch_service():
+    install = (ROOT / "deploy" / "install.sh").read_text()
     update = (ROOT / "deploy" / "update.sh").read_text()
-    # Onto the folder in memory, and the old spool on the SD card removed.
-    assert "systemctl enable departureboard-setup.path\nsystemctl restart departureboard-setup.path" in update
-    assert "rm -rf /var/lib/departureboard/setup-spool\n" in update
+    for text in (install, update):
+        assert "departureboard-fetch.service" in text and "departureboard-fetch.path" in text
+    assert '"$REPO/deploy/departureboard-setup' not in install
+    assert "systemctl enable --now departureboard-fetch.path departureboard-fetch.service" in install
+    # The setup units go, the fetch units come in their place, then the old spools go.
+    order = [
+        "systemctl disable --now departureboard-setup.path departureboard-setup.service",
+        "rm -f /etc/systemd/system/departureboard-setup.service /etc/systemd/system/departureboard-setup.path\n",
+        "systemctl enable departureboard-fetch.path departureboard-fetch.service\n",
+        "systemctl restart departureboard-fetch.path departureboard-fetch.service\n",
+        "systemctl try-restart departureboard-web.service\n",
+        "rm -rf /run/departureboard-setup /var/lib/departureboard/setup-spool\n",
+    ]
+    places = [update.index(step) for step in order]
+    assert places == sorted(places)
+    units = re.search(r"for unit in (.*?); do", update, re.S).group(1)
+    assert "departureboard-fetch.service" in units and "departureboard-setup" not in units
 
 
 def _timetable_question(conf: Path) -> list[str]:
@@ -207,7 +228,7 @@ def test_update_builds_the_bus_timetable_only_when_the_settings_want_it(tmp_path
 
 
 SERVICES = ("departureboard.service", "departureboard-screen.service", "departureboard-web.service",
-            "departureboard-timetable.service", "departureboard-setup.service")
+            "departureboard-timetable.service", "departureboard-fetch.service")
 
 
 @pytest.mark.parametrize("name", SERVICES)

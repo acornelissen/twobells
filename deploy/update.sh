@@ -47,21 +47,24 @@ fi
 # The code only: its dependencies are already in the venv.
 "$PREFIX/venv/bin/pip" install --quiet --no-deps --force-reinstall "$build"
 
+# The setup service is now the fetch service, which also runs the
+# dashboard's feeds: the old units go.
+systemctl disable --now departureboard-setup.path departureboard-setup.service 2>/dev/null || true
+rm -f /etc/systemd/system/departureboard-setup.service /etc/systemd/system/departureboard-setup.path
 for unit in departureboard.service departureboard.timer departureboard-screen.service departureboard-web.service \
     departureboard-timetable.service departureboard-timetable.timer \
-    departureboard-setup.service departureboard-setup.path; do
+    departureboard-fetch.service departureboard-fetch.path; do
   install -m 644 "$REPO/deploy/$unit" /etc/systemd/system/
 done
 systemctl daemon-reload
-# The settings page hands the setup wizard's internet lookups to the setup
-# service; the .path unit starts it when asked. Both restart onto the spool
-# folder in memory, and the old one on the SD card goes. A running page
-# restarts onto the new code and unit (signing browsers out).
-systemctl stop departureboard-setup.service
-rm -rf /var/lib/departureboard/setup-spool
-systemctl enable departureboard-setup.path
-systemctl restart departureboard-setup.path
+# The settings page hands its internet work to the fetch service, started at
+# boot and by the .path unit when asked. Both restart onto the new code and
+# the spool folder in memory (a running page signs browsers out); then the
+# old spool folders, in memory and on the SD card, go.
+systemctl enable departureboard-fetch.path departureboard-fetch.service
+systemctl restart departureboard-fetch.path departureboard-fetch.service
 systemctl try-restart departureboard-web.service
+rm -rf /run/departureboard-setup /var/lib/departureboard/setup-spool
 
 # Bus times from the BODS timetable need it built and kept fresh. The board
 # says whether its buses are on and use it, from config.toml with the

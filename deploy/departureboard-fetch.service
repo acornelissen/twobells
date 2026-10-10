@@ -1,0 +1,75 @@
+[Unit]
+Description=Departure board: the web server's internet work (the setup wizard's lookups, the dashboard's feeds)
+Wants=network-online.target
+After=network-online.target
+# Started at boot, and by departureboard-fetch.path whenever the web server
+# leaves a request. With the dashboard view off, each run lasts at least the
+# minute it waits for more, so ten starts in two minutes means it keeps
+# stopping at once with a request waiting. systemd then stops starting it,
+# and the .path unit fails, rather than loop; see the user guide's
+# troubleshooting (systemctl reset-failed).
+StartLimitIntervalSec=2min
+StartLimitBurst=10
+
+[Service]
+# The web server can't reach the internet (its unit's IP filter), so it
+# leaves its requests in /run/departureboard-fetch and this answers them:
+# postcodes and addresses, nearby stops, walk times, key tests and the
+# search for bus companies. While the dashboard view is on it also runs the
+# dashboard's pollers and hands their snapshot over in the same folder;
+# while it is off, it stops a minute after the last request.
+Type=simple
+User=departureboard
+Group=departureboard
+StateDirectory=departureboard
+StateDirectoryMode=0750
+# The spool: in memory, never on the SD card, as a request can hold home's
+# exact position or a pasted key. The same as the web server's, and kept
+# when either stops, until the Pi restarts.
+RuntimeDirectory=departureboard-fetch
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+# Keys are read here, so the web server never sends a saved one.
+EnvironmentFile=/etc/departureboard/secrets.env
+ExecStart=/opt/departureboard/venv/bin/departureboard fetch --config /etc/departureboard/config.toml
+Restart=on-failure
+RestartSec=10
+UMask=0027
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# Not ~@resources as well: the bus company search lowers its own priority.
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+ProtectHostname=yes
+ProtectKernelLogs=yes
+RestrictRealtime=yes
+PrivateIPC=yes
+ProtectClock=yes
+ProcSubset=pid
+ProtectProc=invisible
+# The dashboard's pollers and the bus timetable they read, beside the board's
+# own; to be measured on a Pi Zero with both views on.
+MemoryMax=256M
+# A thread for each of the dashboard's pollers, the snapshot's writer, the
+# search and its heartbeat, and a few of Python's own.
+TasksMax=32
+# Outbound only: no IPAddressDeny, unlike the web server, and it listens on
+# nothing, so it may bind no socket.
+SocketBindDeny=any
+
+[Install]
+WantedBy=multi-user.target
