@@ -682,6 +682,42 @@ def test_cli_discover_prints_the_fragment(cli_config, capsys):
     assert KEY not in out + err
 
 
+def test_cli_discover_shows_the_roads_every_25_and_the_last(cli_config, capsys, monkeypatch):
+    from departureboard.cli import main
+
+    class Job:
+        """Moves one step on each poll: two data sets, then 60 roads, then fails (no timetable needed)."""
+
+        def __init__(self, *args, **options):
+            self.steps = [(discover.STEP_DISCOVER, done, 2) for done in range(3)]
+            self.steps += [(discover.STEP_ROADS, done, 60) for done in range(61)]
+            self.at = 0
+
+        def start(self):
+            pass
+
+        def status(self):
+            if self.at < len(self.steps):
+                step, done, total = self.steps[self.at]
+                return {"state": "running", "step": step, "done": done, "total": total, "message": "", "result": None}
+            return {"state": "failed", "step": "", "done": 0, "total": 0, "message": "Stopped", "result": None}
+
+        def wait(self, timeout=None):
+            self.at += 1
+            return self.at >= len(self.steps)
+
+    monkeypatch.setattr(discover, "SetupJob", Job)
+    args, _, _ = cli_config
+    assert main(["setup", "discover", "--stop", f"A={STOP_A}", *args]) == 1
+    shown = capsys.readouterr().err.splitlines()
+    # A road a second, up to 300 of them: a line for each would bury the rest.
+    assert shown == [
+        *(f"{discover.STEP_DISCOVER}: {done} of 2" for done in range(3)),
+        *(f"{discover.STEP_ROADS}: {done} of 60" for done in (0, 25, 50, 60)),
+        "Setup failed: Stopped",
+    ]
+
+
 def test_cli_discover_does_not_write_config(cli_config, capsys):
     from departureboard.cli import main
 
