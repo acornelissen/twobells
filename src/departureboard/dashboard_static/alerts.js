@@ -1,4 +1,5 @@
-// The "Leave now" banner and the per-row "Alert me" toggles.
+// The "Leave now" banner and the reminders set with "Remind me" in the
+// departure sheet.
 
 import { $, h, setText, store, str, num, obj } from "./dom.js";
 import { countdown, now, parseAt } from "./time.js";
@@ -27,13 +28,25 @@ load();
 
 export const isOn = (id) => Object.hasOwn(alerts, id);
 
-const notifySupported = () => "Notification" in window;
-const canNotify = () => window.isSecureContext && notifySupported();
+const notifySupported = () => "Notification" in globalThis;
+const canNotify = () => globalThis.isSecureContext === true && notifySupported();
 
 function showNote(text) {
   const note = $("notify-note");
   setText(note, text);
   note.hidden = !text;
+}
+
+// What a reminder can do in this browser, said before it is set. Notifications
+// need a secure context: on the LAN's plain http they can't be had at all.
+export function remindNote() {
+  if (!canNotify()) {
+    return globalThis.isSecureContext === true
+      ? "The reminder shows only on this page, while it is open: this browser can't show notifications."
+      : "The reminder shows only on this page, while it is open.";
+  }
+  if (Notification.permission === "denied") return "Notifications are blocked, so the reminder shows only on this page.";
+  return "A minute before you need to leave, the page shows a reminder, and a notification if you allow them.";
 }
 
 // What a row is called in an alert: "the 07:12 train to Manchester Piccadilly",
@@ -49,9 +62,9 @@ export function describe(row, mode, where = true) {
   return `the ${scheduled} train to ${dest}${where && platform ? `, platform ${platform}` : ""}`;
 }
 
-// Turns a row's alert on or off. Runs inside the click, so the browser lets
-// it ask for notification permission.
-export function toggle(id, row) {
+// Turns a row's reminder on or off. Runs inside the click, so the browser lets
+// it ask for notification permission; `note` is told what the reminder can do.
+export function toggle(id, row, note = showNote) {
   if (isOn(id)) {
     delete alerts[id];
     save();
@@ -60,16 +73,10 @@ export function toggle(id, row) {
   const latest = Math.max(...["leave_at", "expected_at", "scheduled_at"].map((k) => parseAt(row[k]) ?? 0));
   alerts[id] = { expires: Date.now() + Math.max(0, latest - now()) + 60 * 60_000, fired: false, cancelled: false };
   save();
-  if (!canNotify()) {
-    showNote(window.isSecureContext
-      ? "Alerts show on this page while it is open. This browser can't show notifications."
-      : "Alerts show on this page while it is open. For notifications, open the dashboard in the Mac app at localhost.");
-  } else if (Notification.permission === "default") {
-    Notification.requestPermission().then((p) => {
-      if (p === "denied") showNote("Notifications are blocked, so alerts show on this page only.");
-    }).catch(() => {});
-  } else if (Notification.permission === "denied") {
-    showNote("Notifications are blocked, so alerts show on this page only.");
+  if (canNotify() && Notification.permission === "default") {
+    Notification.requestPermission().then(() => note(remindNote())).catch(() => {});
+  } else {
+    note(remindNote());
   }
   return true;
 }

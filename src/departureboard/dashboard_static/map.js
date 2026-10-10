@@ -1,12 +1,11 @@
-// The bus map dialog. Leaflet is loaded only when a map first opens. Stop
-// names come from BODS, so tooltips and popups get DOM nodes, never strings
-// (Leaflet would parse a string as HTML). The ordered list beside the map
-// says the same things in words.
+// The bus map in the departure sheet (sheet.js). Leaflet is loaded only when
+// a map first opens. Stop names come from BODS, so tooltips and popups get
+// DOM nodes, never strings (Leaflet would parse a string as HTML). The
+// ordered list under the map says the same things in words.
 
-import { $, h, s as svg, fill, setText, str, num, list, obj, validId, openDialog, setUpDialog } from "./dom.js";
+import { $, h, s as svg, setText, str, num, list, obj, validId } from "./dom.js";
 import { getJSON } from "./api.js";
 import { age, now, parseAt } from "./time.js";
-import { busDialogExtras } from "./extras.js";
 
 const LEAFLET = "./vendor/leaflet-1.9.4/";
 export const TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -18,10 +17,8 @@ let layers = null;
 let busMarker = null;
 let busPosition = null;
 let openId = null;
-let openRow = null; // the snapshot's row for the open bus, for its extras
 let request = 0;
 
-const dialog = () => $("bus-dialog");
 const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 // Loads Leaflet once, for this map and the area map; resolves to the module.
@@ -41,12 +38,6 @@ export function loadLeaflet() {
 }
 
 export function setUpMap() {
-  setUpDialog(dialog(), () => {
-    openId = null;
-    openRow = null;
-    request++;
-    $("osm-credit").hidden = true;
-  });
   $("map-zoom-in").addEventListener("click", () => map && map.zoomIn(1, { animate: !reduceMotion() }));
   $("map-zoom-out").addEventListener("click", () => map && map.zoomOut(1, { animate: !reduceMotion() }));
   $("map-centre").addEventListener("click", () => {
@@ -165,8 +156,6 @@ function show(data, fit) {
     $("map-centre").disabled = true;
     return;
   }
-  const stop = str(data.stop_name) || (str(data.stop) ? `Stop ${str(data.stop)}` : "");
-  setText($("bus-title"), `${str(data.line)} to ${str(data.destination)}${stop ? `, ${stop}` : ""}`);
   setText($("map-status"), "");
   drawText(data);
   if (L) {
@@ -176,24 +165,16 @@ function show(data, fit) {
   }
 }
 
-// The arrival, inbound bus and ghost warning, from the snapshot's row.
-function drawExtras() {
-  fill($("bus-extras"), busDialogExtras(openRow));
-}
-
-export async function openMap(id, opener, row = null) {
+// Loads the map of bus `id` into the open sheet.
+export async function showBus(id) {
   if (!validId(id)) return;
   openId = id;
-  openRow = obj(row);
   const mine = ++request;
-  setText($("bus-title"), "Bus map");
   setText($("map-status"), "Loading the map…");
   setText($("map-where"), "");
-  drawExtras();
   $("map-stops").replaceChildren();
   $("map-centre").disabled = true;
   $("osm-credit").hidden = false;
-  openDialog(dialog(), opener);
   try {
     const [data] = await Promise.all([getJSON(`/api/bus/${encodeURIComponent(id)}`), loadLeaflet()]);
     if (mine === request) show(obj(data), true);
@@ -202,16 +183,17 @@ export async function openMap(id, opener, row = null) {
   }
 }
 
-// Called with each new snapshot while the dialog is open: moves the bus
-// without refitting, so a map you have panned stays put. rowsById maps id
-// to { row, mode }; a bus gone from the board keeps its last extras.
-export async function refreshMap(rowsById = new Map()) {
-  if (!openId || !dialog().open) return;
-  const entry = rowsById.get(openId);
-  if (entry) {
-    openRow = entry.row;
-    drawExtras();
-  }
+// When the sheet closes: a load still on its way is dropped.
+export function closeMap() {
+  openId = null;
+  request++;
+  $("osm-credit").hidden = true;
+}
+
+// Called with each new snapshot while a bus's sheet is open: moves the bus
+// without refitting, so a map you have panned stays put.
+export async function refreshMap() {
+  if (!openId) return;
   if (!L) return;
   const id = openId;
   const mine = request;

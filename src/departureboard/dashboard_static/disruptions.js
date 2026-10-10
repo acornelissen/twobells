@@ -183,7 +183,7 @@ export function markBusRows(snapshot, rowsById) {
     if (at === null) continue;
     const hit = found.find((i) => (list(i.lines).includes(str(row.line)) || list(i.stops).includes(str(row.stop)))
       && inForce(i, at));
-    const cell = tr.querySelector(".c-status");
+    const cell = tr.querySelector(".c-dest");
     if (!hit || !cell) continue;
     cell.append(h("a", { class: "dis-mark", href: `#disruption-${hit.id}`, on: { click: follow } },
       h("span", { class: "glyph", "aria-hidden": "true" }, icon("triangle-alert")), "Disruption",

@@ -1,6 +1,7 @@
-// The punctuality history dialog: the phrase, then a table of days.
+// The departure sheet's punctuality part (sheet.js): the phrase, then a table
+// of days, loaded when the sheet opens.
 
-import { $, h, vh, fill, setText, str, num, list, obj, validId, openDialog, setUpDialog } from "./dom.js";
+import { $, h, vh, fill, str, num, list, obj, validId } from "./dom.js";
 import { getJSON } from "./api.js";
 import { statusBadge } from "./board.js";
 
@@ -8,11 +9,11 @@ const WORDS = { on_time: "On time", late: "Late", cancelled: "Cancelled", unknow
 const DAY_TYPES = { weekday: "weekdays", saturday: "Saturdays", sunday: "Sundays and bank holidays" };
 const dateFormat = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 
-const dialog = () => $("history-dialog");
 let request = 0;
 
-export function setUpHistory() {
-  setUpDialog(dialog(), () => { request++; });
+// Stops a load still on its way from filling in a sheet that has moved on.
+export function closeHistory() {
+  request++;
 }
 
 function dayText(day) {
@@ -33,10 +34,9 @@ function dayRow(d) {
 function render(data) {
   const body = $("history-body");
   if (!data) {
-    body.replaceChildren(h("p", {}, "There's no history for this departure."));
+    fill(body, h("p", {}, "There's no history for this departure."));
     return;
   }
-  setText($("history-title"), str(data.label) || "Punctuality");
   const days = list(data.days).filter(obj).slice(0, 90);
   const dayType = DAY_TYPES[data.day_type] || "days";
   fill(body,
@@ -51,16 +51,19 @@ function render(data) {
   );
 }
 
-export async function openHistory(id, opener) {
-  if (!validId(id)) return;
+// Loads the punctuality of row `id` into the sheet.
+export async function loadHistory(id) {
   const mine = ++request;
-  setText($("history-title"), "Punctuality");
-  $("history-body").replaceChildren(h("p", {}, "Loading…"));
-  openDialog(dialog(), opener);
+  const body = $("history-body");
+  if (!validId(id)) {
+    render(null);
+    return;
+  }
+  fill(body, h("p", {}, "Loading…"));
   try {
     const data = await getJSON(`/api/history/${encodeURIComponent(id)}`);
     if (mine === request) render(obj(data));
   } catch {
-    if (mine === request) $("history-body").replaceChildren(h("p", {}, "The history couldn't be loaded. Try again in a moment."));
+    if (mine === request) fill(body, h("p", {}, "The history couldn't be loaded. Try again in a moment."));
   }
 }

@@ -129,7 +129,7 @@ It lists the next trains from your station. An error mentioning 401 or 403 means
 
 ## Rail Data Marketplace: Service Details
 
-**What it unlocks:** on the dashboard, where each of the next three trains is ("Left Hadfield 22:44, on time", "At Glossop now"), and the stops before your station in **Details**. It doesn't change the board.
+**What it unlocks:** on the dashboard, where each of the next three trains is ("Left Hadfield 22:44, on time", "At Glossop now"), and the stops before your station in each train's sheet. It doesn't change the board.
 
 **Needed?** No. Without it, the dashboard works as before, just without train positions.
 
@@ -155,7 +155,7 @@ The **Rail Data Marketplace Service Details key** box on the **Dashboard** tab. 
 
 ### Check it works
 
-On the **Dashboard** tab, press **Test the Rail Data Marketplace Service Details key**. Then open the dashboard: within a minute or two, the next three trains get a strip showing where they are.
+On the **Dashboard** tab, press **Test the Rail Data Marketplace Service Details key**. Then open the dashboard: within a minute or two, the first train's row says where it is, and the next three trains' sheets draw them on their journeys.
 
 If they don't, look at the log (on a Pi `journalctl -u departureboard-fetch`; in Docker `docker logs departureboard`; on a desktop, the Terminal window running it) for "train positions off for 6 hours". That means the key was refused: check you copied the Service Details key, not the Live Departure Board one. Saving the right key on the tab starts the dashboard's feeds again; a key changed in a file of your own needs a restart (see [Replacing a key](#replacing-a-key)), or the dashboard waits the full 6 hours before trying again.
 
@@ -208,7 +208,7 @@ Save the address first, then press **Test the Rail Data Marketplace Knowledgebas
 
 - Bus times on the board and the dashboard, worked out from each bus company's timetable plus where the buses are right now (`source = "bods"` under `[bus]`, which the setup wizard sets; see [Bus times](user-guide.md#bus-times)).
 - The bus position page on the HDMI screen.
-- On the dashboard: the strip of stops showing where each bus is, the bus map, and bus disruption notices.
+- On the dashboard: where each bus is, its strip of stops and map, and bus disruption notices.
 
 **Needed?** Yes, for buses on the dashboard, and for buses on the board unless you use TransportAPI instead.
 

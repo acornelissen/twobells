@@ -1,142 +1,236 @@
-// The train and bus tables. Each is a real <table> with a caption and scoped
-// headers; on narrow screens CSS lays the rows out as cards, and the explicit
-// ARIA roles keep the table semantics that some browsers drop when a table's
-// display changes.
+// The train and bus boards, laid out like the signs: trains like a station's
+// departure screen (Time, Destination, Plat, Expected, Leave), buses like a
+// stop's countdown sign (Bus, Stop, Due, Leave). Each is a real <table> with
+// a caption and scoped headers; on narrow screens CSS folds each row into two
+// lines, and the explicit ARIA roles keep the table semantics that some
+// browsers drop when a table's display changes.
+//
+// A row has one control, its destination: a button that opens the departure
+// sheet (sheet.js). A row drops out once its leaving time is more than 2
+// minutes gone, leaving one dimmed "Just missed" line until it departs. The
+// first 5 rows show; the rest wait behind "Show later departures".
 
 import { h, vh, setText, str, num, list, obj, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
-import { renderStrip, renderTrainStrip } from "./strip.js";
 import { arrivesLine, busStatusExtras } from "./extras.js";
 import { icon } from "./icons.js";
 
-const MAX_ROWS = 10;
+export const SHOWN = 5; // rows before "Show later departures"
+const MAX_ROWS = 20; // the most the settings allow
+const GO_MS = 2 * 60_000; // "Go now" lasts this long past the leaving time
 
-const ICON = { on_time: "check", late: "triangle-alert", cancelled: "x", unknown: "clock" };
+// On time is plain words; only the exceptions get an icon.
+const ICON = { late: "triangle-alert", cancelled: "x", unknown: "clock" };
 const WORDS = { on_time: "On time", late: "Late", cancelled: "Cancelled", unknown: "No report" };
 
-export const statusKey = (status) => (ICON[status] ? status : "unknown");
+export const statusKey = (status) => (WORDS[status] ? status : "unknown");
 
-// Status as an icon plus words; the colour comes from the class and only
-// reinforces the words. `spoken` is the words in full ("Expected 07:19")
-// where the shown ones are short ("Exp 07:19"): screen readers get that instead.
+const lowerFirst = (text) => text.charAt(0).toLowerCase() + text.slice(1);
+
+// Status as words, with an icon for the exceptions; the colour comes from the
+// class and only reinforces the words. `spoken` is the words in full
+// ("Expected 07:19") where the shown ones are short ("Exp 07:19"): screen
+// readers get that instead.
 export function statusBadge(status, text, spoken) {
   const key = statusKey(status);
   const shown = str(text) || WORDS[key];
   const said = str(spoken);
   return h("span", { class: ["badge", `st-${key}`] },
-    h("span", { class: "glyph", "aria-hidden": "true" }, icon(ICON[key])),
+    ICON[key] ? h("span", { class: "glyph", "aria-hidden": "true" }, icon(ICON[key])) : null,
     said && said !== shown
       ? [h("span", { class: "badge-text", "aria-hidden": "true" }, shown), vh(said)]
       : h("span", { class: "badge-text" }, shown));
 }
 
-// A label shown above a cell's value only in the narrow card layout, where
-// the column headers are hidden. Screen readers get the real headers instead.
+// A label shown beside a cell's value only in the narrow layout, where the
+// column headers are hidden. Screen readers get the real headers instead.
 const cellLabel = (text) => h("span", { class: "cell-label", "aria-hidden": "true" }, text);
 
 const td = (cls, label, ...children) => h("td", { role: "cell", class: cls }, label ? cellLabel(label) : null, ...children);
 
+// [shown, class, said]: `said` is the header in full where `shown` is short.
 function headRow(columns) {
   return h("thead", { role: "rowgroup" },
-    h("tr", { role: "row" }, columns.map(([text, cls, hidden]) =>
-      h("th", { scope: "col", role: "columnheader", class: cls }, hidden ? vh(text) : text))));
+    h("tr", { role: "row" }, columns.map(([text, cls, said]) =>
+      h("th", { scope: "col", role: "columnheader", class: cls },
+        said ? [h("span", { "aria-hidden": "true" }, text), vh(said)] : text))));
 }
 
-function table(caption, columns, rows) {
-  return h("table", { role: "table", class: "board" },
-    h("caption", {}, caption),
-    headRow(columns),
-    h("tbody", { role: "rowgroup" }, rows));
+// --- Which rows show ---
+
+// The rows to show at time `t` (ms): all but those whose leaving time is more
+// than 2 minutes gone. Cancelled rows, and rows with no walk time, stay. Of
+// the rows dropped, the latest that hasn't left yet is `missed`, for the
+// "Just missed" line.
+export function arrange(rows, t) {
+  const shown = [];
+  let missed = null;
+  for (const row of rows) {
+    const leave = parseAt(row.leave_at);
+    if (leave === null || t <= leave + GO_MS) {
+      shown.push(row);
+      continue;
+    }
+    const leaves = parseAt(row.expected_at) ?? parseAt(row.scheduled_at);
+    if (leaves !== null && leaves > t && (!missed || leave > missed.leave)) missed = { row, leave };
+  }
+  return { shown, missed: missed ? missed.row : null };
 }
 
-// When to leave: the time, and a countdown that tick() keeps current.
-function leaveCell(row) {
+// What a board looks like at `t`, as a string: when it changes, the board is
+// drawn again.
+function arrangement(rows, t) {
+  const { shown, missed } = arrange(rows, t);
+  return `${shown.map((row) => str(row.id)).join(" ")}|${missed ? str(missed.id) : ""}`;
+}
+
+// Per board: the rows last drawn, how they were arranged, and whether the
+// later departures are open.
+const boards = {
+  train: { rows: [], drawn: "", more: false, table: "trains-table" },
+  bus: { rows: [], drawn: "", more: false, table: "buses-table" },
+};
+
+// --- Cells shared by both boards ---
+
+// "in 26 min", then "Go now" from the last minute before the leaving time to
+// 2 minutes after it (the row has gone by then).
+export const leaveText = (ms) => (ms >= 60_000 ? relative(ms) : "Go now");
+
+// When to leave: a countdown that tickBoards() keeps current, the clock time
+// under it, and a bell when a reminder is set.
+function leaveCell(row, id, alerts) {
   const at = parseAt(row.leave_at);
   if (at === null) {
     const why = row.status === "cancelled" ? "No need to leave" : "No walk time set";
-    return td("c-leave", "Leave", h("span", { "aria-hidden": "true" }, "–"), vh(why));
+    return td("c-leave", null, h("span", { "aria-hidden": "true" }, "–"), vh(why));
   }
+  const ms = at - now();
   return td("c-leave", "Leave",
-    h("span", { class: "leave-at" }, hhmm(row.leave_at)), " ",
-    h("span", { class: "countdown", dataset: { leaveAt: row.leave_at } }, relative(at - now())));
+    h("span", { class: ["countdown", ms < 60_000 ? "go" : null], dataset: { leaveAt: row.leave_at } }, leaveText(ms)),
+    id && alerts.isOn(id)
+      ? h("span", { class: "reminder" }, h("span", { class: "glyph", "aria-hidden": "true" }, icon("bell-ring")), vh(", reminder set"))
+      : null,
+    " ", h("span", { class: "leave-at" }, vh("at "), hhmm(row.leave_at)));
 }
 
-function recordCell(row, id, context) {
-  const phrase = str(obj(row.history)?.phrase);
-  if (!id) return td("c-record", "Record", phrase || "–");
-  return td("c-record", "Record", h("button", {
-    type: "button", class: "link", dataset: { action: "history", id, focusKey: `history:${id}` },
-  }, phrase || "History", vh(` for ${context}`)));
-}
-
-function actionButton(action, id, text, context, extra = {}) {
+// The row's one control: its destination, as a button that opens the
+// departure sheet. Its name says which departure, ending with the words it
+// shows: `lead` "the 07:12 to " makes "More about the 07:12 to Manchester
+// Piccadilly".
+function openButton(id, lead, destination) {
+  const dest = h("span", { class: "dest" }, destination);
+  if (!id) return dest;
   return h("button", {
-    type: "button", class: ["act", extra.class], dataset: { action, id, focusKey: `${action}:${id}` },
-    "aria-pressed": extra.pressed === undefined ? null : String(extra.pressed),
-  }, extra.icon ? h("span", { class: "glyph", "aria-hidden": "true" }, icon(extra.icon)) : null, text, vh(` for ${context}`));
+    type: "button", class: "open", dataset: { action: "open", id, focusKey: `open:${id}` },
+  }, vh(`More about ${lead}`), dest);
 }
 
-function alertButton(row, id, context, alerts) {
-  // An alert needs a time to leave; a cancelled train has none.
-  if (!id || parseAt(row.leave_at) === null) return null;
-  const on = alerts.isOn(id);
-  return actionButton("alert", id, "Alert me", context, { class: "toggle", pressed: on, icon: on ? "bell-ring" : "bell" });
+// "Often late: 4 of 10" from the punctuality phrase ("Late 4 of the last 10
+// weekdays (avg 6 min)", dashboard/history.py), only when at least 3 days and
+// a third of them went wrong. Otherwise "", as most rows have nothing to say.
+export function recordNote(phrase) {
+  const m = /^(?:Cancelled (\d+)(?: and late (\d+))?|Late (\d+)) of the last (\d+) /.exec(str(phrase));
+  if (!m) return "";
+  const cancelled = Number(m[1] || 0);
+  const late = Number(m[2] || m[3] || 0);
+  const days = Number(m[4]);
+  const bad = cancelled + late;
+  if (bad < 3 || bad * 3 < days) return "";
+  const what = cancelled && late ? "late or cancelled" : cancelled ? "cancelled" : "late";
+  return `Often ${what}: ${bad} of ${days}`;
 }
 
-function rowAttrs(row, id) {
-  const key = statusKey(row.status);
-  return { role: "row", class: ["row", `row-${key}`], dataset: id ? { id } : {} };
+// The short note in the row; screen readers get the whole phrase.
+function recordChip(row) {
+  const phrase = str(obj(row.history)?.phrase);
+  const note = recordNote(phrase);
+  if (!note) return null;
+  return h("span", { class: "record" }, h("span", { "aria-hidden": "true" }, note), vh(`${phrase}.`));
 }
 
-function reasons(row) {
-  const out = [];
-  for (const reason of [str(row.cancel_reason), str(row.delay_reason)]) {
-    if (reason) out.push(h("span", { class: "reason" }, reason));
+function rowAttrs(row, id, later) {
+  return {
+    role: "row", class: ["row", `row-${statusKey(row.status)}`, later ? "later" : null], dataset: id ? { id } : {},
+    hidden: later && !boards[later].more,
+  };
+}
+
+// Notes the rows a board is drawn with, so tickBoards() knows when they change.
+function remember(mode, rows, t) {
+  boards[mode].rows = rows;
+  boards[mode].drawn = arrangement(rows, t);
+}
+
+// The board itself: the "Just missed" line, the table, and the button for the
+// later departures.
+function drawBoard(mode, el, { caption, columns, cls, empty }, rows, drawRow) {
+  const board = boards[mode];
+  const t = now();
+  const { shown, missed } = arrange(rows, t);
+  remember(mode, rows, t);
+  const missedLine = missed ? h("p", { class: "just-missed" }, justMissed(missed, mode)) : null;
+  if (!shown.length) {
+    el.replaceChildren(...[missedLine, h("p", { class: "empty" }, empty)].filter(Boolean));
+    return;
   }
-  return out;
+  const later = shown.length - SHOWN;
+  el.replaceChildren(...[
+    missedLine,
+    h("table", { role: "table", class: ["board", cls], id: board.table },
+      h("caption", {}, caption),
+      headRow(columns),
+      h("tbody", { role: "rowgroup" }, shown.map((row, i) => drawRow(row, i, i >= SHOWN ? mode : null)))),
+    later > 0 ? h("button", {
+      type: "button", class: "more", "aria-expanded": String(board.more), "aria-controls": board.table,
+      dataset: { action: "more", mode, focusKey: `more:${mode}` },
+    }, h("span", { class: "glyph", "aria-hidden": "true" }, icon("chevron-down")), "Show later departures") : null,
+  ].filter(Boolean));
 }
 
-function trainRow(row, alerts) {
+// "Just missed 07:40 to Manchester Piccadilly"; a bus says its line too.
+function justMissed(row, mode) {
+  const line = mode === "bus" && str(row.line) ? ` ${str(row.line)}` : "";
+  return `Just missed ${str(row.scheduled)}${line} to ${str(row.destination)}`;
+}
+
+// Opens or closes a board's later departures. No redraw: the rows are there.
+export function toggleMore(button) {
+  const board = boards[button.dataset.mode];
+  if (!board) return;
+  board.more = !board.more;
+  button.setAttribute("aria-expanded", String(board.more));
+  for (const tr of document.querySelectorAll(`#${board.table} tr.later`)) tr.hidden = !board.more;
+}
+
+// --- Trains ---
+
+// The first row's stops, as on a station's screen: "Calling at Dinting,
+// Hattersley, Manchester Piccadilly". Cancelled stops are left out.
+function callingAt(row) {
+  const names = list(row.calling_points).filter((p) => obj(p) && p.cancelled !== true).map((p) => str(p.name)).filter(Boolean);
+  return names.length ? h("span", { class: "sub calling-at" }, `Calling at ${names.join(", ")}`) : null;
+}
+
+function trainRow(row, first, later, alerts) {
   const id = validId(row.id) ? row.id : null;
   const scheduled = str(row.scheduled);
   const destination = str(row.destination);
-  const context = `the ${scheduled} to ${destination}`;
   const platform = str(row.platform);
-  return h("tr", rowAttrs(row, id),
-    h("th", { scope: "row", role: "rowheader", class: "c-time" }, cellLabel("Due"), h("span", { class: "time" }, scheduled)),
-    td("c-dest", "To", h("span", { class: "dest" }, destination),
-      str(row.origin) ? h("span", { class: "sub" }, `from ${str(row.origin)}`) : null,
-      arrivesLine(row)),
-    td("c-plat", "Platform", platform || h("span", { class: "muted" }, "Not yet")),
-    td("c-status", "Status", statusBadge(row.status, row.status_text, row.status_spoken), reasons(row)),
-    td("c-where", "Where", renderTrainStrip(row)),
-    leaveCell(row),
-    recordCell(row, id, context),
-    td("c-actions", null,
-      id ? actionButton("details", id, "Details", context) : null,
-      alertButton(row, id, context, alerts)),
-  );
-}
-
-function busRow(row, alerts, generatedMs) {
-  const id = validId(row.id) ? row.id : null;
-  const scheduled = str(row.scheduled);
-  const line = str(row.line);
-  const destination = str(row.destination);
-  const stop = str(row.stop);
-  const context = `the ${scheduled} ${line} to ${destination}`;
-  return h("tr", rowAttrs(row, id),
-    h("th", { scope: "row", role: "rowheader", class: "c-time" }, cellLabel("Due"), h("span", { class: "time" }, scheduled)),
-    td("c-dest", "Bus", h("span", { class: "line" }, line), " ", h("span", { class: "dest" }, destination),
-      arrivesLine(row)),
-    td("c-plat", "Stop", str(row.stop_name) || (stop ? `Stop ${stop}` : "–")),
-    td("c-status", "Status", statusBadge(row.status, row.status_text, row.status_spoken), reasons(row), busStatusExtras(row)),
-    td("c-where", "Where", renderStrip(row, generatedMs)),
-    leaveCell(row),
-    recordCell(row, id, context),
-    td("c-actions", null,
-      id ? actionButton("map", id, "Map", context) : null,
-      alertButton(row, id, context, alerts)),
+  const cancelled = row.status === "cancelled";
+  const where = str(obj(row.position)?.where);
+  return h("tr", rowAttrs(row, id, later),
+    h("th", { scope: "row", role: "rowheader", class: "c-time" }, h("span", { class: "time" }, scheduled)),
+    td("c-dest", null,
+      openButton(id, `the ${scheduled} to `, destination),
+      arrivesLine(row),
+      first && !cancelled ? callingAt(row) : null,
+      first && where ? h("span", { class: "sub where" }, where) : null,
+      cancelled && str(row.cancel_reason) ? h("span", { class: "reason" }, str(row.cancel_reason)) : null,
+      recordChip(row)),
+    td("c-plat", "Plat", platform || [h("span", { "aria-hidden": "true" }, "–"), vh("not yet known")]),
+    td("c-status", null, statusBadge(row.status, row.status_text, row.status_spoken)),
+    leaveCell(row, id, alerts),
   );
 }
 
@@ -162,11 +256,15 @@ function statusLine(el, status, extra = []) {
   el.classList.toggle("problem", problem);
 }
 
+// Draws the trains; returns every row, shown or not, for the rest of the page.
 export function renderTrains(snapshot, alerts) {
   const section = document.getElementById("trains");
   const trains = obj(snapshot.trains);
   section.hidden = !trains;
-  if (!trains) return [];
+  if (!trains) {
+    remember("train", [], now());
+    return [];
+  }
   const rows = list(trains.rows).filter(obj).slice(0, MAX_ROWS);
   statusLine(document.getElementById("trains-status"), trains.status);
   const walk = num(obj(snapshot.walk)?.train);
@@ -174,67 +272,116 @@ export function renderTrains(snapshot, alerts) {
   setText(document.getElementById("trains-walk"),
     walk !== null ? `${walk} min walk to ${station || "the station"}.` : "");
   const caption = `Next trains from ${station || "the station"}${str(trains.filter) ? ` calling at ${str(trains.filter)}` : ""}`;
-  const board = document.getElementById("trains-board");
-  if (!rows.length) {
-    board.replaceChildren(h("p", { class: "empty" }, "No trains are listed right now."));
-  } else {
-    board.replaceChildren(table(caption, [
-      ["Due", "c-time"], ["To", "c-dest"], ["Platform", "c-plat"], ["Status", "c-status"], ["Where", "c-where"],
-      ["Leave", "c-leave"], ["Record", "c-record"], ["Actions", "c-actions", true],
-    ], rows.map((row) => trainRow(row, alerts))));
-  }
+  drawBoard("train", document.getElementById("trains-board"), {
+    caption, cls: "trains", empty: "No trains are listed right now.",
+    columns: [["Time", "c-time"], ["Destination", "c-dest"], ["Plat", "c-plat", "Platform"], ["Expected", "c-status"],
+      ["Leave", "c-leave"]],
+  }, rows, (row, i, later) => trainRow(row, i === 0, later, alerts));
   renderMessages(trains);
   return rows;
 }
 
-// The walk to each stop in one line, each name said once: "Walk: Henry Street
-// A 5 min, B 10 min; Market Hall 3 min." Stops that share a name are told
-// apart by the letter on the sign, else by the stop buses go on to, else by
-// the board's label.
-export function walkLine(stops) {
+// --- Buses ---
+
+// What each of your stops is called on the page, by board label: its name and
+// the letter on its sign ("Henry Street A"). Stops that share a name and have
+// no letter are told apart by the stop buses go on to, else by the label.
+export function stopNames(stops) {
   const byName = new Map();
-  for (const label of Object.keys(stops).sort()) {
+  for (const label of Object.keys(obj(stops) || {}).sort()) {
     const stop = obj(stops[label]);
     if (!stop) continue;
     const name = str(stop.name) || `Stop ${label}`;
     if (!byName.has(name)) byName.set(name, []);
-    byName.get(name).push({ label, letter: str(stop.letter), towards: str(stop.towards), walk: num(stop.walk_min) });
+    byName.get(name).push({ label, letter: str(stop.letter), towards: str(stop.towards) });
   }
-  const parts = [];
+  const names = {};
   for (const [name, group] of byName) {
     const shared = group.length > 1;
     const marks = group.map((s) => s.letter || (shared && s.towards ? `towards ${s.towards}` : ""));
-    const said = marks.map((mark, i) =>
-      shared && (!mark || marks.indexOf(mark) !== marks.lastIndexOf(mark)) ? `(${group[i].label})` : mark);
-    const walks = group.map((s, i) => (s.walk === null ? null : `${said[i] ? `${said[i]} ` : ""}${s.walk} min`))
-      .filter((text) => text !== null);
-    if (walks.length) parts.push(`${name} ${walks.join(", ")}`);
+    group.forEach((s, i) => {
+      const mark = shared && (!marks[i] || marks.indexOf(marks[i]) !== marks.lastIndexOf(marks[i])) ? `(${s.label})` : marks[i];
+      names[s.label] = mark ? `${name} ${mark}` : name;
+    });
   }
-  return parts.length ? `Walk: ${parts.join("; ")}.` : "";
+  return names;
 }
 
+// The stop's name for a row: from `names` (stopNames), else the row's own.
+export function stopText(row, names) {
+  const stop = str(row.stop);
+  return str(names[stop]) || str(row.stop_name) || (stop ? `Stop ${stop}` : "");
+}
+
+// "4 min" on a live countdown, "Due" in the last minute.
+export function dueText(ms) {
+  const mins = Math.trunc(ms / 60_000);
+  return mins < 1 ? "Due" : `${mins} min`;
+}
+
+// When the bus comes. A live bus counts down in minutes, with a quiet live
+// mark; a bus known only from the timetable shows its clock time and
+// "sched.", never minutes that would look live. Cancelled is reversed out,
+// with the time struck through.
+function dueCell(row) {
+  const scheduled = str(row.scheduled);
+  if (row.status === "cancelled") {
+    return td("c-due", null, h("span", { class: "time" }, scheduled), " ",
+      statusBadge(row.status, row.status_text, row.status_spoken));
+  }
+  const iso = str(row.expected_at) || str(row.scheduled_at);
+  const at = parseAt(iso);
+  if (row.live === true && at !== null) {
+    return td("c-due", null,
+      h("span", { class: "due", dataset: { dueAt: iso } }, dueText(at - now())),
+      h("span", { class: "live-mark", "aria-hidden": "true" }, icon("circle")),
+      vh(`, live, ${lowerFirst(str(row.status_spoken) || str(row.status_text) || "on time")}`));
+  }
+  return td("c-due", null, h("span", { class: "time" }, scheduled),
+    h("span", { class: "sched", "aria-hidden": "true" }, "sched."), vh(", timetable only"));
+}
+
+function busRow(row, later, names, alerts) {
+  const id = validId(row.id) ? row.id : null;
+  const scheduled = str(row.scheduled);
+  const line = str(row.line);
+  const destination = str(row.destination);
+  const where = obj(row.vehicle) ? str(obj(row.strip)?.where) : "";
+  const walk = num(row.walk_min);
+  return h("tr", rowAttrs(row, id, later),
+    h("th", { scope: "row", role: "rowheader", class: "c-dest" },
+      h("span", { class: "line" }, line), " ",
+      openButton(id, `the ${scheduled} ${line} to `, destination),
+      where ? h("span", { class: "sub where" }, where) : null,
+      busStatusExtras(row),
+      recordChip(row)),
+    td("c-stop", null, h("span", { class: "stop" }, stopText(row, names)),
+      walk !== null ? h("span", { class: "sub walk" }, `${walk} min walk`) : null),
+    dueCell(row),
+    leaveCell(row, id, alerts),
+  );
+}
+
+// Draws the buses; returns every row, shown or not, for the rest of the page.
 export function renderBuses(snapshot, alerts) {
   const section = document.getElementById("buses");
   const buses = obj(snapshot.buses);
   section.hidden = !buses;
-  if (!buses) return [];
+  if (!buses) {
+    remember("bus", [], now());
+    return [];
+  }
   const rows = list(buses.rows).filter(obj).slice(0, MAX_ROWS);
   const tt = obj(buses.timetable) || {};
   const extra = tt.state === "building" ? ["Building the bus timetable…"]
     : tt.state === "missing" ? ["There is no bus timetable yet."] : [];
   statusLine(document.getElementById("buses-status"), buses.status, extra);
-  setText(document.getElementById("buses-walk"), walkLine(obj(buses.stops) || {}));
-  const generatedMs = parseAt(snapshot.generated_at);
-  const board = document.getElementById("buses-board");
-  if (!rows.length) {
-    board.replaceChildren(h("p", { class: "empty" },
-      tt.state === "building" ? "Bus times will show once the timetable is built." : "No buses are listed right now."));
-  } else {
-    board.replaceChildren(table("Next buses", [
-      ["Due", "c-time"], ["Bus", "c-dest"], ["Stop", "c-plat"], ["Status", "c-status"], ["Where", "c-where"],
-      ["Leave", "c-leave"], ["Record", "c-record"], ["Actions", "c-actions", true],
-    ], rows.map((row) => busRow(row, alerts, generatedMs))));
-  }
+  const names = stopNames(buses.stops);
+  drawBoard("bus", document.getElementById("buses-board"), {
+    caption: "Next buses", cls: "buses",
+    empty: tt.state === "building" ? "Bus times will show once the timetable is built." : "No buses are listed right now.",
+    columns: [["Bus", "c-dest"], ["Stop", "c-stop"], ["Due", "c-due"], ["Leave", "c-leave"]],
+  }, rows, (row, i, later) => busRow(row, later, names, alerts));
   return rows;
 }
 
@@ -261,13 +408,20 @@ export function renderMessages(trains) {
     h("span", { class: "glyph", "aria-hidden": "true" }, icon("info")), "Station information: ", m.text)));
 }
 
-// Keeps the countdowns current; runs every second, touches only changed text.
+// Keeps the countdowns current; runs every second and touches only changed
+// text. Returns true when a row has dropped out (or a "Just missed" line has
+// gone), so the boards need drawing again.
 export function tickBoards() {
   const t = now();
   for (const el of document.querySelectorAll(".countdown[data-leave-at]")) {
     const at = parseAt(el.dataset.leaveAt);
     if (at === null) continue;
-    setText(el, relative(at - t));
-    el.closest("tr")?.classList.toggle("missed", at - t < -30_000);
+    setText(el, leaveText(at - t));
+    el.classList.toggle("go", at - t < 60_000);
   }
+  for (const el of document.querySelectorAll(".due[data-due-at]")) {
+    const at = parseAt(el.dataset.dueAt);
+    if (at !== null) setText(el, dueText(at - t));
+  }
+  return Object.values(boards).some((board) => board.drawn !== arrangement(board.rows, t));
 }

@@ -155,7 +155,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `letter`: the letter or number on its sign from NaPTAN's indicator ("Stop A" is `A`, "Stand 12" is `12`), or null where the indicator is a word like "opp" or there is none.
   - `towards`: the name of the stop buses call at next, the one most timetabled journeys from this stop go on to (a next stop with this stop's own name doesn't count), or null.
   - `walk_min`: the walk to it in whole minutes, as on its rows, or null.
-  - The page says each name once and tells stops apart by `letter`, else `towards`, else the label: "Walk: Church Street A 10 min, B 10 min."
+  - The page names each row's stop in its Stop column with its walk, telling stops of the same name apart by `letter`, else `towards`, else the label: "Church Street A · 10 min walk", "Victoria Street towards Market Hall".
 - **`walk`:** the walk times as set, by mode and stop label (`*` for any stop). The page reads `walk.train` for the trains' walk line; `walk_min` on rows and stops supersedes the rest.
 - **`stop_name`:** the stop's name from the stop data with the letter on its sign when known ("Church Street (Stop A)"); "Stop A" from the board's label when the stop has no data. Show this rather than the label.
 - **`strip`:**
@@ -180,6 +180,7 @@ Best guesses added on top of a row (worked out in `enrich.py`). They never chang
   - `from` is where that journey started (null if no name is known), `due` its expected arrival at your stop (`HH:MM`), `late_min` how late it is now (0 if on time or early), `where` where it is ("4 stops away", "At your stop"), and `text` all of it as one line for the row, like "Bus arriving from Ashton, 4 min late (due 23:29)".
   - When the inbound bus is due after the departure's time, the departure still shows its timetabled time and its own status words. The pairing is a guess and buses often make up time on a layover, so the page states the inbound bus's facts and leaves the conclusion to the reader. It never shows a later departure time it can't back up.
 - **`ghost`** (buses; always a boolean): true when the bus is due within 5 minutes (or just past its time) with no live bus placed on its journey (`live` false). `status_text` stays "Timetable only". It is false while live positions are failing (`status.note` says so) and when `inbound` is set, since a tracked bus is on its way to work it.
+- **`history.phrase`** (null when there's nothing to say): how this departure ran on recent days of the same kind, like "Late 4 of the last 10 weekdays (avg 6 min)", the same words as `/api/history/<id>`. The page shows it in the row only when it is notable, as "Often late: 4 of 10" (at least 3 days, and at least a third of them, late or cancelled). It reads those counts from the words, so a change to their wording in `history.py` needs `recordNote` in `board.js` to follow; `tests/dashboard/test_static.py` checks the two agree.
 - **`history.no_show_phrase`** (buses only; null when there's nothing to say): how often this departure had no tracker before it left, like "No tracker on 3 of the last 10 weekdays", over the same days as `phrase`. It is null with fewer than 3 days recorded or when every day had a tracker. Train rows' `history` has `phrase` only.
 
 ## `GET /api/events`

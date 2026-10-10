@@ -1,24 +1,11 @@
-// The train dialog: everything the board knows about one train, with where
-// it is now and its journey (the stops before this station, this station,
-// and the stops after) as one ordered list. It reads the current snapshot,
-// and updates in place when a new one arrives while it is open.
+// A train's parts of the departure sheet (sheet.js): everything the board
+// knows about it, then where it is now and its journey (the stops before this
+// station, this station, and the stops after) as one ordered list.
 
-import { $, h, s, vh, patch, setText, str, num, list, obj, openDialog, setUpDialog } from "./dom.js";
+import { h, s, vh, str, num, list, obj } from "./dom.js";
 import { hhmm } from "./time.js";
 import { statusBadge } from "./board.js";
-import { arrivesFact } from "./extras.js";
-
-const dialog = () => $("train-dialog");
-let openId = null;
-let openStation = "";
-
-export function setUpTrain() {
-  setUpDialog(dialog(), () => { openId = null; });
-}
-
-function fact(term, value) {
-  return value ? [h("dt", {}, term), h("dd", {}, value)] : [];
-}
+import { arrivesFact, fact } from "./extras.js";
 
 // Where the train is along the journey (previous points, this station,
 // calling points, numbered from 0): { at } at a stop, { gap, part } on the
@@ -129,20 +116,13 @@ function journey(row, station) {
     stops.map((stop, i) => stopItem(stop, i, names, place, where)));
 }
 
-function render(row) {
-  const title = $("train-title");
-  const body = $("train-body");
-  if (!row) {
-    patch(body, h("p", {}, "This train has left the board."));
-    return;
-  }
-  setText(title, `${str(row.scheduled)} to ${str(row.destination)}`);
+// The status, its reasons and the facts. The reasons keep their places when
+// empty, so when the sheet is updated in place nothing after them moves.
+export function trainSummary(row) {
   const length = num(row.length);
   const expected = str(row.expected);
-  const where = str(obj(row.position)?.where);
-  // Updated in place, so a screen reader's place in it stays put. The
-  // reasons keep their places when empty, so nothing after them moves.
-  patch(body,
+  const walk = num(row.walk_min);
+  return [
     h("p", { class: "dialog-status" }, statusBadge(row.status, row.status_text, row.status_spoken)),
     h("p", { class: "reason", hidden: !str(row.cancel_reason) }, str(row.cancel_reason)),
     h("p", { class: "reason", hidden: !str(row.delay_reason) }, str(row.delay_reason)),
@@ -153,28 +133,21 @@ function render(row) {
       fact("Expected", expected && expected !== str(row.scheduled) ? expected : ""),
       fact("Platform", str(row.platform) || "Not yet known"),
       fact("Coaches", length ? `${length} ${length === 1 ? "coach" : "coaches"}` : ""),
+      fact("Walk", walk !== null ? `${walk} min to the station` : ""),
       fact("Leave by", hhmm(row.leave_at)),
       fact("Arrives", arrivesFact(row)),
     ),
+  ];
+}
+
+// Where it is now, and the journey. `station` is the board's station, named
+// in the journey.
+export function trainJourney(row, station = "") {
+  const where = str(obj(row.position)?.where);
+  return [
     h("h3", {}, "Where it is now"),
     h("p", { class: where ? null : "muted" }, where || "No live position"),
     h("h3", {}, "Journey"),
-    journey(row, openStation),
-  );
-}
-
-// `station` is the board's station, named in the journey.
-export function openTrain(row, opener, station = "") {
-  openId = row.id;
-  openStation = station;
-  render(row);
-  openDialog(dialog(), opener);
-}
-
-// Called with each new snapshot: updates the open dialog from its row.
-export function refreshTrain(rowsById, station = "") {
-  if (!openId || !dialog().open) return;
-  openStation = station;
-  const entry = rowsById.get(openId);
-  render(entry ? entry.row : null);
+    journey(row, station),
+  ];
 }

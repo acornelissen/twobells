@@ -4,14 +4,13 @@
 import { $, setText, store, str, obj, focusKey, refocus } from "./dom.js";
 import { connect, STATE } from "./api.js";
 import { age, clockText, parseAt } from "./time.js";
-import { renderBuses, renderTrains, tickBoards } from "./board.js";
+import { renderBuses, renderTrains, stopNames, tickBoards, toggleMore } from "./board.js";
 import { tickStrips } from "./strip.js";
 import { renderWeather } from "./weather.js";
 import { noteSnapshot } from "./live.js";
-import { isOn, renderLeave, tickAlerts, toggle } from "./alerts.js";
-import { openTrain, refreshTrain, setUpTrain } from "./train.js";
-import { openHistory, setUpHistory } from "./history.js";
-import { openMap, refreshMap, setUpMap } from "./map.js";
+import { isOn, renderLeave, tickAlerts } from "./alerts.js";
+import { openSheet, refreshSheet, setUpSheet } from "./sheet.js";
+import { setUpMap } from "./map.js";
 import { markBusRows, renderDisruptions } from "./disruptions.js";
 import { renderArea, setUpArea } from "./area.js";
 import { icon } from "./icons.js";
@@ -21,8 +20,13 @@ let rowsById = new Map(); // id -> { row, mode }
 let connection = null;
 let connectionState = STATE.connecting;
 
-// The board's station, named in the train dialog's journey.
-const station = () => str(obj(snapshot?.trains)?.station);
+// What the departure sheet needs beyond a row: the board's station, named in
+// a train's journey, the names of your stops, and when the snapshot was made.
+const sheetContext = () => ({
+  station: str(obj(snapshot?.trains)?.station),
+  stops: stopNames(obj(snapshot?.buses)?.stops),
+  generatedMs: parseAt(snapshot?.generated_at),
+});
 
 // --- Theme: "modern" (default) or "board"; theme.js applied it before paint.
 
@@ -72,22 +76,36 @@ function attempt(what, fn, fallback) {
   try { return fn(); } catch (error) { console.error(`Couldn't render ${what}:`, error); return fallback; }
 }
 
+// The train and bus boards, and the disruption links on bus rows. Every row
+// is indexed, shown or not, for the sheet, the announcer and the alerts.
+function drawBoards() {
+  const alerts = { isOn };
+  const trains = attempt("trains", () => renderTrains(snapshot, alerts), []);
+  const buses = attempt("buses", () => renderBuses(snapshot, alerts), []);
+  rowsById = indexRows(trains, buses);
+}
+
+// Draws the boards again between snapshots (a row dropped out, a reminder
+// set), keeping the focus where it was.
+function redrawBoards() {
+  const key = focusKey();
+  drawBoards();
+  attempt("disruption links", () => markBusRows(snapshot, rowsById));
+  refocus(key);
+}
+
 function render(data) {
   snapshot = data;
   const key = focusKey();
   const title = str(data.title) || "Departures";
   setText($("title"), title);
   document.title = title;
-  const alerts = { isOn };
-  const trains = attempt("trains", () => renderTrains(data, alerts), []);
-  const buses = attempt("buses", () => renderBuses(data, alerts), []);
+  drawBoards();
   attempt("weather", () => renderWeather(data));
-  rowsById = indexRows(trains, buses);
   attempt("disruptions", () => { renderDisruptions(data); markBusRows(data, rowsById); });
   refocus(key);
   attempt("announcements", () => noteSnapshot(data, rowsById));
-  attempt("train dialog", () => refreshTrain(rowsById, station()));
-  refreshMap(rowsById);
+  attempt("departure sheet", () => refreshSheet(rowsById, sheetContext()));
   renderArea(data).catch((error) => console.error("Couldn't render the area:", error));
   tick();
 }
@@ -98,7 +116,7 @@ function tick() {
   setText($("clock"), clockText());
   renderConnection();
   if (!snapshot) return;
-  tickBoards();
+  if (tickBoards()) redrawBoards();
   tickStrips(new Map([...rowsById].map(([id, e]) => [id, e.row])), parseAt(snapshot.generated_at));
   renderLeave(rowsById);
   tickAlerts(rowsById);
@@ -106,34 +124,30 @@ function tick() {
 
 // --- Row buttons, by delegation so re-rendered rows need no rewiring.
 
+function open(button) {
+  const entry = rowsById.get(button.dataset.id);
+  if (entry) openSheet(entry, button, sheetContext());
+}
+
 $("main").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-action]");
-  if (!button) return;
-  const id = button.dataset.id;
-  const entry = rowsById.get(id);
-  switch (button.dataset.action) {
-    case "details":
-      if (entry) openTrain(entry.row, button, station());
-      break;
-    case "history":
-      openHistory(id, button);
-      break;
-    case "map":
-      openMap(id, button, entry ? entry.row : null);
-      break;
-    case "alert":
-      if (entry) {
-        const on = toggle(id, entry.row);
-        button.setAttribute("aria-pressed", String(on));
-        button.querySelector(".glyph").replaceChildren(icon(on ? "bell-ring" : "bell"));
-        tickAlerts(rowsById);
-      }
-      break;
+  if (button) {
+    if (button.dataset.action === "open") open(button);
+    else if (button.dataset.action === "more") toggleMore(button);
+    return;
   }
+  // A click anywhere else on a row opens its sheet too, unless it lands on a
+  // link or ends a text selection. Keyboards have the destination button.
+  const row = event.target.closest("tr[data-id]");
+  if (!row || event.target.closest("a") || String(window.getSelection())) return;
+  const opener = row.querySelector('button[data-action="open"]');
+  if (opener) open(opener);
 });
 
-setUpTrain();
-setUpHistory();
+setUpSheet(() => {
+  tickAlerts(rowsById);
+  redrawBoards();
+});
 setUpMap();
 setUpArea();
 

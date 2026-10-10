@@ -159,18 +159,21 @@ On bank holidays trains and buses run a Sunday service, so the board treats them
 
 ## 2. The dashboard
 
-The dashboard is the board's big sibling: a web page with the next 10 trains and 10 buses, delays and reasons, cancellations and disruption notices, a small strip showing where each bus is, a map for each bus, the weather, and how often each regular departure has run late. It works on a phone too.
+The dashboard is the board's big sibling: a web page with the next trains and buses laid out like a station screen and a stop's countdown sign, delays and reasons, cancellations and disruption notices, where each bus and train is, a map for each bus, the weather, and how often each regular departure has run late. It works on a phone too.
 
 It is at the install's address, port 8090: `http://<pi name>.local:8090/` on a Pi, `http://<NAS name>:8090/` in Docker, `http://localhost:8090/` on a desktop. While the dashboard view is off, or before the app is set up, that address opens the settings instead.
 
 ### What's on it
 
 - **Next to catch:** the next train or bus you can still reach on foot, and how long until you need to leave.
-- **Trains:** time, destination, platform, status in words, when to leave, and **Details** with every stop after Glossop, coach count, and the reason for a delay or cancellation.
-- **Where the train is** (optional): with a key for the Rail Data Marketplace's **Service Details** product in `RDM_DETAILS_API_KEY`, the next three trains get a strip like the buses' ("Left Hadfield 22:44, on time", "At Glossop now"), and **Details** lists the stops before Glossop too. Without it, everything else works as before.
-- **Buses:** the same, plus a strip of the stops before yours with the bus drawn where it is, and **Map** for the full route on a street map. "Timetable only" means there's no live position for that bus.
-- **History:** how that departure ran on recent days of the same kind (weekdays, Saturdays, Sundays), such as "Late 4 of the last 10 weekdays (avg 6 min)". Late means 3 minutes or more for trains and 2 for buses. It needs a few days of running before it says anything.
-- **Alert me:** a reminder a minute before you need to leave. On a desktop (the address starts `http://localhost`) the browser can show a notification; on a phone the reminder shows on the page while it's open.
+- **Trains:** time, destination (with when it gets there, "arr 18:25 · 33 min"), platform ("–" until it's known), expected ("On time", "Exp 18:56", "Delayed", or "Cancelled" with the reason), and when to leave. The first train also lists where it calls and, with the Service Details key below, where it is now.
+- **Buses:** the line and destination, the stop ("Henry Street A") and its walk, when it's due, and when to leave. A bus with a live position counts down in minutes ("4 min", "Due") with a small live mark and says where it is ("2 stops away"); a bus known only from the timetable shows its time with "sched.", and never minutes.
+- **When to leave:** "in 26 min" with the time, then **Go now** from a minute before until 2 minutes after. After that the departure leaves the list, and one dimmed line says "Just missed 17:40 …" until it has gone. Cancelled departures stay.
+- **5 of each:** the next 5 trains and 5 buses; **Show later departures** shows the rest, up to the number set in the settings.
+- **More about a departure:** select its destination (or anywhere on its row) to open its sheet: the status and reasons, the facts (operator, coaches, platform, the stop and its walk, when to leave, when it arrives), and **Remind me**. A train's sheet shows its whole journey with the stops it has passed and where it is; a bus's shows the stops before yours with the bus drawn where it is, the full route on a street map, and its stops.
+- **Where the train is** (optional): with a key for the Rail Data Marketplace's **Service Details** product in `RDM_DETAILS_API_KEY`, the next three trains are placed on their journeys ("Left Hadfield 22:44, on time", "At Glossop now"), and their sheets list the stops before Glossop too. Without it, everything else works as before.
+- **Punctuality:** each sheet ends with how that departure ran on recent days of the same kind (weekdays, Saturdays, Sundays), such as "Late 4 of the last 10 weekdays (avg 6 min)", day by day. Late means 3 minutes or more for trains and 2 for buses. It needs a few days of running before it says anything. When at least a third of the days (and at least 3) went wrong, the row says so too, as "Often late: 4 of 10".
+- **Remind me:** a reminder a minute before you need to leave. On a desktop (the address starts `http://localhost`) the browser can show a notification as well. Anywhere else on plain `http://`, such as a phone on your home network, the reminder shows only on the page, while it's open; the sheet says which.
 - **Board look:** switches to the station-board style, amber on black, with the times, destinations and status in the same dot-matrix lettering as the e-paper board. The rest stays in plain type so it's easy to read. It's remembered per browser.
 - **Weather:** now (temperature, feels like, wind, and the next sunrise or sunset), the rain warning, and the next 4 hours in a row, each with a bar for the chance of rain (written out from 30%). **More hours** shows the rest of the next 12.
 - **Disruptions:** see [Disruptions and engineering works](#disruptions-and-engineering-works).

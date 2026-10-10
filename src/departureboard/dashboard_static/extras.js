@@ -82,20 +82,8 @@ export function busStatusExtras(row) {
   ];
 }
 
-function fact(term, value) {
+// One term and value for the departure sheet's facts list, or nothing when
+// there's no value.
+export function fact(term, value) {
   return value ? [h("dt", {}, term), h("dd", {}, value)] : [];
-}
-
-// The bus dialog's part: the same facts, in a list.
-export function busDialogExtras(row) {
-  if (!row) return [];
-  const facts = [
-    ...fact("Arrives", arrivesFact(row)),
-    ...fact("Bus coming in", inboundText(row)),
-    ...fact("Tracker", noShowPhrase(row)),
-  ];
-  return [
-    row.ghost === true ? h("p", { class: "dialog-status" }, ghostBadge(row)) : null,
-    facts.length ? h("dl", { class: "facts" }, facts) : null,
-  ];
 }

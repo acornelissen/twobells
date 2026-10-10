@@ -373,6 +373,9 @@ TEXT_PAIRS = [
     ("accent", "bg"), ("accent-fg", "accent"), ("ok-fg", "ok-bg"), ("late-fg", "late-bg"), ("bad-fg", "bad-bg"),
     ("unk-fg", "unk-bg"), ("leave-fg", "leave-bg"), ("badge-fg", "badge-bg"), ("bad-fg", "surface"),
     ("muted", "unk-bg"),
+    # The boards: late words and the live mark straight on the surface, and
+    # a row's text on its hover tint.
+    ("late-fg", "surface"), ("ok-fg", "surface"), ("fg", "surface-2"), ("muted", "surface-2"),
 ]
 OUTLINE_PAIRS = [("focus", "bg"), ("focus", "surface"), ("edge", "surface"), ("edge", "bg")]
 
@@ -890,46 +893,290 @@ def _stop(name, walk, letter=None, towards=None):
 
 @needs_node
 @pytest.mark.parametrize(
-    "stops, line",
+    "stops, names",
     [
-        # Two stops on one street, lettered on the sign: the name once.
+        # Two stops on one street, lettered on the sign: the letter tells them apart.
         ({"A": _stop("Henry Street", 5, "A"), "B": _stop("Henry Street", 10, "B")},
-         "Walk: Henry Street A 5 min, B 10 min."),
-        # No letters: the stop buses go on to tells them apart. In label order.
+         {"A": "Henry Street A", "B": "Henry Street B"}),
+        # No letters: the stop buses go on to tells them apart.
         ({"A": _stop("Victoria Street", 5, towards="Howard Arms"), "C": _stop("Victoria Street", 5, towards="Market Hall"),
           "B": _stop("Henry Street", 10, "B")},
-         "Walk: Victoria Street towards Howard Arms 5 min, towards Market Hall 5 min; Henry Street B 10 min."),
+         {"A": "Victoria Street towards Howard Arms", "C": "Victoria Street towards Market Hall", "B": "Henry Street B"}),
         # Nothing tells them apart: the board's labels do.
         ({"A": _stop("Victoria Street", 5), "B": _stop("Victoria Street", 6)},
-         "Walk: Victoria Street (A) 5 min, (B) 6 min."),
+         {"A": "Victoria Street (A)", "B": "Victoria Street (B)"}),
         ({"A": _stop("Victoria Street", 5, towards="Glossop"), "B": _stop("Victoria Street", 6, towards="Glossop")},
-         "Walk: Victoria Street (A) 5 min, (B) 6 min."),
+         {"A": "Victoria Street (A)", "B": "Victoria Street (B)"}),
         # A name of its own needs nothing more; no stop data says the label.
         ({"A": _stop("Market Hall", 3, towards="Howard Arms"), "B": _stop(None, 4)},
-         "Walk: Market Hall 3 min; Stop B 4 min."),
-        # A stop without a walk is left out, but still counts as sharing the name.
+         {"A": "Market Hall", "B": "Stop B"}),
+        # A stop without a walk is still named, and still shares the name.
         ({"A": _stop("Henry Street", 5, towards="Howard Arms"), "B": _stop("Henry Street", None, towards="Market Hall")},
-         "Walk: Henry Street towards Howard Arms 5 min."),
-        ({"A": _stop("Henry Street", None)}, ""),
-        ({}, ""),
+         {"A": "Henry Street towards Howard Arms", "B": "Henry Street towards Market Hall"}),
+        ({"A": _stop("Henry Street", None)}, {"A": "Henry Street"}),
+        ({}, {}),
     ],
 )
-def test_the_walk_line_says_each_stop_once_and_tells_namesakes_apart(stops, line):
+def test_each_stop_is_named_and_namesakes_told_apart(stops, names):
+    # The bus board's Stop column (the walk sentence it replaces said them all in one line).
     found = run_js(f"""
-        import {{ walkLine }} from "./board.js";
-        console.log(JSON.stringify(walkLine({json.dumps(stops)})));
+        import {{ stopNames }} from "./board.js";
+        console.log(JSON.stringify(stopNames({json.dumps(stops)})));
     """)
-    assert found == line
+    assert found == names
 
 
 @needs_node
-def test_the_walk_line_never_repeats_a_stop_from_the_fixture():
+def test_the_fixture_stops_are_named_by_their_letters():
     stops = _fixture("dashboard_snapshot.json")["buses"]["stops"]
     found = run_js(f"""
-        import {{ walkLine }} from "./board.js";
-        console.log(JSON.stringify(walkLine({json.dumps(stops)})));
+        import {{ stopNames }} from "./board.js";
+        console.log(JSON.stringify(stopNames({json.dumps(stops)})));
     """)
-    assert found == "Walk: Henry Street A 8 min, B 6 min."
+    assert found == {"A": "Henry Street A", "B": "Henry Street B"}
+
+
+# --- The boards ---
+
+# Both boards on a fake page, drawn from the contract fixture at its own time
+# (07:01:30). `bodyRows(id)` are a board's departure rows, `said(el)` what a
+# screen reader says for an element, `cell(tr, cls)` one cell of a row.
+BOARDS = """
+import { readFileSync } from "node:fs";
+import { h } from "./dom.js";
+import { observeSnapshot } from "./time.js";
+import { renderBuses, renderTrains, toggleMore } from "./board.js";
+const status = (id) => h("span", { id });
+document.body.append(
+  h("section", { id: "messages" }, h("ul", { id: "message-list" })),
+  h("section", { id: "trains" }, h("span", { id: "trains-walk" }), status("trains-status"), h("div", { id: "station-info" }),
+    h("div", { id: "trains-board" })),
+  h("section", { id: "buses" }, status("buses-status"), h("div", { id: "buses-board" })));
+const snapshot = JSON.parse(readFileSync(%r, "utf-8"));
+observeSnapshot(snapshot.generated_at);
+const alerts = { isOn: () => false };
+renderTrains(snapshot, alerts);
+renderBuses(snapshot, alerts);
+const board = (id) => document.getElementById(id);
+const bodyRows = (id) => elements(board(id)).filter((el) => el.nodeName === "TR" && el.parentNode.nodeName === "TBODY");
+const said = (el) => spoken(el).replace(/\\s+/g, " ").trim();
+// What shows on screen: the text, skipping what only screen readers get.
+const shown = (el) => (el.nodeType === 3 ? el.nodeValue
+  : (el.getAttribute("class") || "").split(" ").includes("vh") ? "" : el.childNodes.map(shown).join(""));
+const cell = (tr, cls) => byClass(tr, cls)[0];
+"""
+
+
+def _boards():
+    return BOARDS % str(FIXTURES / "dashboard_snapshot.json")
+
+
+@needs_node
+def test_the_train_board_reads_like_a_station_screen():
+    found = run_js(_boards() + """
+        const rows = bodyRows("trains-board");
+        const head = elements(board("trains-board")).filter((el) => el.nodeName === "TH" && el.getAttribute("scope") === "col");
+        console.log(JSON.stringify({
+          head: head.map(said),
+          first: {
+            time: said(rows[0].childNodes[0]),
+            calling: byClass(rows[0], "calling-at").map(said),
+            where: byClass(rows[0], "where").map(said),
+            status: [said(cell(rows[0], "c-status")), cell(rows[0], "badge-text").textContent],
+            record: byClass(rows[0], "record").map((el) => el.childNodes[0].textContent),
+          },
+          calling: rows.slice(1).map((tr) => byClass(tr, "calling-at").length + byClass(tr, "where").length),
+          cancelled: [rows[1].getAttribute("class"), byClass(rows[1], "reason").map(said), said(cell(rows[1], "c-status")),
+                      said(cell(rows[1], "c-leave"))],
+          onTime: [said(cell(rows[2], "c-status")), byClass(rows[2], "glyph").length],
+          platform: [said(cell(rows[2], "c-plat")), said(cell(rows[3], "c-plat")), shown(cell(rows[3], "c-plat"))],
+          walk: said(board("trains-walk")),
+        }));
+    """)
+    assert found["head"] == ["Time", "Destination", "Platform", "Expected", "Leave"]
+    first = found["first"]
+    assert first["time"] == "07:12"
+    # Row 1 alone says where it calls and where it is.
+    assert first["calling"][0].startswith("Calling at Dinting, Broadbottom, Hattersley")
+    assert first["calling"][0].endswith("Manchester Piccadilly")
+    assert first["where"] == ["Not started yet: leaves Hadfield at 07:11"]
+    assert found["calling"] == [0] * 9
+    assert first["status"] == ["Expected 07:19", "Exp 07:19"]
+    assert first["record"] == ["Often late: 4 of 10"]
+    # Cancelled: struck through by its class, reversed out, with its reason.
+    assert "row-cancelled" in found["cancelled"][0].split()
+    assert found["cancelled"][1:] == [["This train has been cancelled because of a shortage of train crew"],
+                                      "Cancelled", "No need to leave"]
+    # On time is plain words, with no icon.
+    assert found["onTime"] == ["On time", 0]
+    # "Plat" labels the cell on narrow screens, where the header is hidden; a
+    # screen reader has the header.
+    assert found["platform"] == ["1", "not yet known", "Plat–"]
+    assert found["walk"] == "10 min walk to Glossop."
+
+
+@needs_node
+def test_a_row_drops_once_its_leaving_time_is_two_minutes_gone():
+    found = run_js(_boards() + """
+        import { arrange, leaveText } from "./board.js";
+        const at = (hm) => `2026-10-10T${hm}:00+01:00`;
+        const ms = (hms) => Date.parse(`2026-10-10T${hms}+01:00`);
+        const rows = [
+          { id: "a", leave_at: at("07:00"), scheduled_at: at("07:10") },
+          { id: "b", leave_at: null, status: "cancelled", scheduled_at: at("07:05") },
+          { id: "c", leave_at: at("07:01"), scheduled_at: at("07:09") },
+          { id: "d", leave_at: at("07:20"), scheduled_at: at("07:30") },
+        ];
+        const ids = (hms) => {
+          const { shown, missed } = arrange(rows, ms(hms));
+          return [shown.map((r) => r.id).join(""), missed && missed.id];
+        };
+        console.log(JSON.stringify({
+          arranged: ["07:01:59", "07:02:01", "07:03:01", "07:09:01", "07:10:01"].map(ids),
+          words: [leaveText(26 * 60_000 + 5_000), leaveText(60_000), leaveText(59_000), leaveText(-119_000)],
+          // The fixture's 07:05 bus left its walk at 06:59: at 07:01:30 it is gone, just missed.
+          buses: bodyRows("buses-board").map((tr) => /the (\\d\\d:\\d\\d)/.exec(said(tr.childNodes[0]))[1]),
+          missed: byClass(board("buses-board"), "just-missed").map(said),
+          trainsMissed: byClass(board("trains-board"), "just-missed").length,
+        }));
+    """)
+    assert found["arranged"] == [
+        ["abcd", None],  # Go now still
+        ["bcd", "a"],  # dropped, just missed
+        ["bd", "c"],  # the latest one missed
+        ["bd", "a"],  # the 07:09 has gone; the 07:10 hasn't
+        ["bd", None],  # both gone; the cancelled row stays
+    ]
+    assert found["words"] == ["in 26 min", "in 1 min", "Go now", "Go now"]
+    assert "07:05" not in found["buses"] and found["buses"][0] == "07:09"
+    assert found["missed"] == ["Just missed 07:05 237 to Ashton Bus Station"]
+    assert found["trainsMissed"] == 0
+
+
+@needs_node
+def test_the_tick_says_go_now_then_asks_for_the_row_to_drop():
+    # Between snapshots: the 07:09 bus's walk starts at 07:03.
+    found = run_js(_boards() + """
+        import { observe } from "./time.js";
+        import { tickBoards } from "./board.js";
+        const generated = Date.parse(snapshot.generated_at);
+        const countdown = () => byClass(bodyRows("buses-board")[0], "countdown")[0];
+        const at = (minutes) => {
+          observe(generated + minutes * 60_000);  // the server's clock, moved on
+          const redraw = tickBoards();
+          return [shown(countdown()), countdown().classList.contains("go"), redraw];
+        };
+        const ticks = [at(0), at(1), at(3), at(4)];
+        // Drawn again, it has gone; and a board whose section goes away asks for nothing more.
+        renderBuses(snapshot, alerts);
+        const redrawn = [/the (\\d\\d:\\d\\d)/.exec(said(bodyRows("buses-board")[0].childNodes[0]))[1], tickBoards()];
+        renderBuses({ ...snapshot, buses: null }, alerts);
+        renderTrains({ ...snapshot, trains: null }, alerts);
+        observe(generated + 60 * 60_000);
+        console.log(JSON.stringify({ ticks, redrawn, gone: tickBoards() }));
+    """)
+    assert found["ticks"] == [
+        ["in 1 min", False, False],  # 07:01:30
+        ["Go now", True, False],  # 07:02:30
+        ["Go now", True, False],  # 07:04:30, still within 2 min of 07:03
+        ["Go now", True, True],  # 07:05:30: it has to go
+    ]
+    assert found["redrawn"] == ["07:20", False]
+    assert found["gone"] is False
+
+
+@needs_node
+def test_five_rows_show_then_show_later_departures():
+    found = run_js(_boards() + """
+        const state = (id) => bodyRows(id).map((tr) => tr.hasAttribute("hidden"));
+        const more = (id) => byClass(board(id), "more")[0];
+        const button = (id) => [said(more(id)), more(id).getAttribute("aria-expanded"), more(id).getAttribute("aria-controls")];
+        const before = { trains: state("trains-board"), buses: state("buses-board"), button: button("trains-board"),
+                         table: elements(board("trains-board")).find((el) => el.nodeName === "TABLE").id };
+        toggleMore(more("trains-board"));
+        const opened = [bodyRows("trains-board").map((tr) => tr.hidden !== false && tr.hasAttribute("hidden")),
+                        more("trains-board").getAttribute("aria-expanded")];
+        renderTrains(snapshot, alerts);  // a new snapshot keeps them open
+        console.log(JSON.stringify({ before, opened, redrawn: [state("trains-board"), button("trains-board")[1]] }));
+    """)
+    before = found["before"]
+    assert before["trains"] == [False] * 5 + [True] * 5
+    assert before["buses"] == [False] * 5 + [True] * 4  # one has dropped out
+    assert before["button"] == ["Show later departures", "false", "trains-table"] and before["table"] == "trains-table"
+    assert found["opened"] == [[False] * 10, "true"]
+    assert found["redrawn"] == [[False] * 10, "true"]
+
+
+@needs_node
+def test_each_row_is_one_tab_stop_that_names_its_departure():
+    found = run_js(_boards() + """
+        const focusable = (tr) => elements(tr).filter((el) => ["BUTTON", "A", "INPUT", "SELECT", "TEXTAREA"].includes(el.nodeName)
+          || (el.hasAttribute("tabindex") && el.getAttribute("tabindex") !== "-1"));
+        const rows = [...bodyRows("trains-board"), ...bodyRows("buses-board")];
+        console.log(JSON.stringify({
+          stops: rows.map((tr) => focusable(tr).map((el) => [el.nodeName, el.dataset.action, el.dataset.focusKey === `open:${tr.dataset.id}`])),
+          names: [bodyRows("trains-board")[0], bodyRows("buses-board")[0]].map((tr) => said(focusable(tr)[0])),
+        }));
+    """)
+    assert found["stops"] == [[["BUTTON", "open", True]]] * 19
+    assert found["names"] == ["More about the 07:12 to Manchester Piccadilly", "More about the 07:09 341 to Hyde Bus Station"]
+
+
+@needs_node
+def test_a_bus_row_with_a_disruption_in_force_links_to_it():
+    found = run_js(_boards() + """
+        import { markBusRows } from "./disruptions.js";
+        const rowsById = new Map(snapshot.buses.rows.map((row) => [row.id, { row, mode: "bus" }]));
+        markBusRows(snapshot, rowsById);
+        console.log(JSON.stringify(bodyRows("buses-board").flatMap((tr) => byClass(tr, "dis-mark").map((a) =>
+          [a.parentNode.getAttribute("class"), a.getAttribute("href").startsWith("#disruption-"), shown(a)]))));
+    """)
+    # Under the destination, where the narrow layout has room for it.
+    assert found and all(mark == ["c-dest", True, "Disruption"] for mark in found)
+
+
+@needs_node
+def test_a_timetable_only_bus_shows_its_clock_time_never_minutes():
+    found = run_js(_boards() + """
+        import { dueText } from "./board.js";
+        const byId = new Map(snapshot.buses.rows.map((row) => [row.id, row]));
+        console.log(JSON.stringify({
+          rows: bodyRows("buses-board").map((tr) => {
+            const due = cell(tr, "c-due");
+            return [byId.get(tr.dataset.id).live, byId.get(tr.dataset.id).scheduled, shown(due), said(due),
+                    byClass(due, "due").length, said(cell(tr, "c-stop"))];
+          }),
+          words: [dueText(30_000), dueText(-5_000), dueText(4 * 60_000 + 59_000)],
+        }));
+    """)
+    rows = found["rows"]
+    # The 07:09 is live and 2 min late: it counts down from 07:11, the time the
+    # tracker gives, with a quiet mark (an icon) that screen readers hear as "live".
+    assert rows[0][2:] == ["9 min", "9 min, live, expected 07:11", 1, "Henry Street A8 min walk"]
+    for live, scheduled, shown, spoken, minutes, _ in rows:
+        if live:
+            assert minutes == 1 and "sched." not in shown and ", live, " in spoken
+        else:
+            assert minutes == 0 and shown == f"{scheduled}sched." and spoken == f"{scheduled}, timetable only"
+    assert any(not r[0] for r in rows) and any(r[0] for r in rows)
+    assert found["words"] == ["Due", "Due", "4 min"]
+
+
+@needs_node
+def test_a_record_shows_in_the_row_only_when_it_is_notable():
+    from departureboard.dashboard.history import Stats, phrase
+
+    def said(late, cancelled, days, day_type="weekday"):
+        return phrase(Stats(days, late, cancelled, 0, days - late - cancelled, 5.0 if late else None, 9), day_type)
+
+    phrases = [said(4, 0, 10), said(3, 0, 10), said(3, 0, 8), said(0, 2, 10), said(0, 3, 9, "saturday"),
+               said(3, 1, 10, "sunday"), said(0, 0, 10), said(2, 0, 3), None]
+    found = run_js(f"""
+        import {{ recordNote }} from "./board.js";
+        console.log(JSON.stringify({json.dumps(phrases)}.map(recordNote)));
+    """)
+    assert found == ["Often late: 4 of 10", "", "Often late: 3 of 8", "", "Often cancelled: 3 of 9",
+                     "Often late or cancelled: 4 of 10", "", "", ""]
 
 
 # Where the train is along its journey: the stops before this station (0, 1),
@@ -985,20 +1232,34 @@ def test_actual_times_place_the_train_when_the_strip_cannot_or_lags():
     assert found == [{"gap": 1, "part": 0.5}, {"gap": 3, "part": 0.5}, {"at": 3}, {"at": 3}, None]
 
 
-# The train dialog on a fake page, and a train for it: `train(at)` is the
-# 07:20 from Glossop with its strip's train_at (null: not placed).
-TRAIN_DIALOG = """
-import { openTrain, refreshTrain } from "./train.js";
-const dialog = document.createElement("dialog");
-dialog.setAttribute("id", "train-dialog");
+# The departure sheet on a fake page, as index.html has it, with the history
+# API answering from its fixture; and a train for it: `train(at)` is the 07:20
+# from Glossop with its strip's train_at (null: not placed). `body` is the
+# train's journey part, `summary` its status and facts.
+SHEET = """
+import { readFileSync } from "node:fs";
+import { h } from "./dom.js";
+import { openSheet, refreshSheet, setUpSheet } from "./sheet.js";
+const HISTORY = JSON.parse(readFileSync(%r, "utf-8"));
+globalThis.fetch = async () => ({
+  status: 200, ok: true, json: async () => HISTORY,
+  headers: { get: (name) => (name === "Content-Type" ? "application/json" : null) },
+});
+const dialog = h("dialog", { id: "sheet" });
 dialog.showModal = () => { dialog.open = true; };
-dialog.querySelector = () => ({ focus() {} });
-const title = document.createElement("h2");
-title.setAttribute("id", "train-title");
-const body = document.createElement("div");
-body.setAttribute("id", "train-body");
-dialog.append(title, body);
+dialog.querySelector = () => ({ focus() {}, addEventListener() {} });
+dialog.addEventListener = () => {};
+const title = h("h2", { id: "sheet-title" });
+const summary = h("div", { id: "sheet-summary" });
+const remind = h("button", { id: "sheet-remind" });
+const note = h("p", { id: "remind-note" });
+const body = h("div", { id: "sheet-train" });
+const history = h("div", { id: "history-body" });
+dialog.append(title, summary, remind, note, body, h("div", { id: "sheet-bus" }), history);
 document.body.append(dialog);
+const ctx = { station: "Glossop", stops: {}, generatedMs: null };
+const openTrain = (row) => openSheet({ row, mode: "train" }, null, ctx);
+const refreshTrain = (rows) => refreshSheet(rows, ctx);
 const train = (at) => ({
   id: "0123456789abcdef", service: "Northern", scheduled: "07:20", destination: "Manchester Piccadilly",
   origin: "Hadfield", status: "on_time", status_text: "On time",
@@ -1011,12 +1272,16 @@ const said = () => journey().childNodes.map((li) => spoken(li).replace(/\\s+/g, 
 """
 
 
+def _sheet():
+    return SHEET % str(FIXTURES / "dashboard_history.json")
+
+
 @needs_node
 def test_the_journey_says_where_the_train_is_once():
-    found = run_js(TRAIN_DIALOG + """
-        openTrain(train(1), null, "Glossop");
+    found = run_js(_sheet() + """
+        openTrain(train(1));
         const atGlossop = said();
-        openTrain(train(0.5), null, "Glossop");
+        openTrain(train(0.5));
         console.log(JSON.stringify([atGlossop, said()]));
     """)
     at_glossop, between = found
@@ -1034,27 +1299,28 @@ def test_the_journey_says_where_the_train_is_once():
 
 
 @needs_node
-def test_a_new_snapshot_updates_the_open_dialog_in_place():
+def test_a_new_snapshot_updates_the_open_sheet_in_place():
     # Rebuilding it would move a screen reader's place: what's there stays,
     # and only what changed is changed.
-    found = run_js(TRAIN_DIALOG + """
-        openTrain(train(0.5), null, "Glossop");
-        const parts = [...body.childNodes];
+    found = run_js(_sheet() + """
+        openTrain(train(0.5));
+        const now = () => [...summary.childNodes, ...body.childNodes];
+        const parts = now();
         const items = [...journey().childNodes];
         const first = elements(items[0]);
         const was = { part: items[1].style.getPropertyValue("--part"), said: said() };
         const moved = { ...train(1), delay_reason: "A late crew" };
-        refreshTrain(new Map([[moved.id, { row: moved }]]), "Glossop");
+        refreshTrain(new Map([[moved.id, { row: moved, mode: "train" }]]));
         console.log(JSON.stringify({
           was,
           now: said(),
           part: items[1].style.getPropertyValue("--part"),
-          sameParts: parts.filter((node) => body.childNodes.includes(node)).length,
+          sameParts: parts.filter((node) => now().includes(node)).length,
           parts: parts.length,
-          partsNow: body.childNodes.length,
+          partsNow: now().length,
           sameItems: journey().childNodes.every((li, i) => li === items[i]),
           firstKept: elements(journey().childNodes[0]).every((el, i) => el === first[i]),
-          reasons: byClass(body, "reason").map((p) => [p.hasAttribute("hidden"), spoken(p)]),
+          reasons: byClass(summary, "reason").map((p) => [p.hasAttribute("hidden"), spoken(p)]),
         }));
     """)
     assert found["was"]["part"] == "0.500" and found["part"] == ""
@@ -1084,15 +1350,48 @@ def test_patch_keeps_matching_nodes_and_replaces_the_rest():
 
 
 @needs_node
-def test_the_open_dialog_says_when_its_train_has_gone():
-    found = run_js(TRAIN_DIALOG + """
-        openTrain(train(1), null, "Glossop");
-        refreshTrain(new Map(), "Glossop");
-        const gone = spoken(body);
-        openTrain(train(1), null, "Glossop");
+def test_the_open_sheet_says_when_its_train_has_gone():
+    found = run_js(_sheet() + """
+        openTrain(train(1));
+        refreshTrain(new Map());
+        const gone = [spoken(summary), body.childNodes.length, remind.hidden];
+        openTrain(train(1));
         console.log(JSON.stringify([gone, said().length]));
     """)
-    assert found == ["This train has left the board.", 5]
+    assert found == [["This train has left the board.", 0, True], 5]
+
+
+@needs_node
+def test_the_sheet_holds_the_history_and_remind_me():
+    # One sheet, not three dialogs: the punctuality loads into it on opening,
+    # and Remind me is in it, saying honestly that on the LAN's plain http the
+    # reminder can only show on the page.
+    found = run_js(_sheet() + """
+        setUpSheet(() => {});
+        const row = { ...train(1), leave_at: "2026-10-10T07:10:00+01:00", scheduled_at: "2026-10-10T07:20:00+01:00" };
+        openTrain(row);
+        const before = [remind.hidden, remind.getAttribute("aria-pressed"), spoken(remind), spoken(note)];
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const phrase = byClass(history, "phrase").map(spoken);
+        const days = elements(history).filter((el) => el.nodeName === "TR").length;
+        const click = remind.listeners.find(([type]) => type === "click")[1];
+        click();
+        const on = remind.getAttribute("aria-pressed");
+        click();
+        const off = remind.getAttribute("aria-pressed");
+        openTrain({ ...row, status: "cancelled", leave_at: null });
+        console.log(JSON.stringify({
+          title: spoken(title), before, on, off, phrase, days, cancelled: [remind.hidden, spoken(note)],
+        }));
+    """)
+    assert found["title"] == "07:20 to Manchester Piccadilly"
+    assert found["before"] == [False, "false", "Remind me", "The reminder shows only on this page, while it is open."]
+    assert (found["on"], found["off"]) == ("true", "false")
+    history = _fixture("dashboard_history.json")
+    assert found["phrase"] == [history["phrase"]]
+    assert found["days"] == len(history["days"]) + 1  # and the header row
+    # A cancelled train has nothing to leave for, so no reminder.
+    assert found["cancelled"] == [True, ""]
 
 
 # --- Around here: the line and the area map ---
