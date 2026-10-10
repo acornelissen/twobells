@@ -21,7 +21,8 @@ bank holiday list, and [bus] source, operators and routes from the search.
 Keys are write-only: the API says which are set, never their values, and
 no error repeats one. `testkey` tries one key, saved or pasted, with one
 harmless call to its service (keytest.py), at most once per key every
-KEY_TEST_EVERY seconds across the whole process.
+KEY_TEST_EVERY seconds across the whole process. The settings tabs test
+the other keys through SetupApi.test_key, under the same limit and runner.
 
 Where the internet work runs. By default the lookups, the key tests and the
 search run here, in this process (the dashboard; a laptop). A host that
@@ -714,19 +715,29 @@ class SetupApi:
             if name != "TAPI_APP_KEY":
                 raise Invalid("Only the TransportAPI app key is tested with an app ID", "app_id")
             app_id = _key(fields["app_id"], "TAPI_APP_ID") or None
+        result = self.test_key(name, value, app_id)
+        return {"state": result.state, "message": result.message}
+
+    def test_key(self, name: str, value: str | None = None, app_id: str | None = None) -> keytest.KeyResult:
+        """Try key `name`, any keytest.KEY_NAMES, as testkey does: `value`
+        if pasted, else the saved one, and `app_id` with TransportAPI's app
+        key. The settings tabs test their own keys through here, so each
+        key has one limit and, given a runner, the test runs there. TooSoon
+        within KEY_TEST_EVERY seconds of the last test of that key; the
+        runner's SetupError if it can't. The caller checks the values' shape."""
+        if name not in keytest.KEY_NAMES:
+            raise Invalid("That isn't a key this can test", "name")
         # TransportAPI's two keys are one test, so share one limit.
         wait = self._key_tests.take("TAPI" if name in keytest.COSTS_A_LOOKUP else name)
         if wait:
             raise TooSoon(f"Wait {math.ceil(wait)} s before testing this key again")
         if self._runner is not None:
             # The runner reads the saved keys and settings itself; only what was pasted goes to it.
-            result = self._runner.test_key(name, value, app_id)
-        else:
-            env = dict(self._load_secrets())
-            if app_id:
-                env["TAPI_APP_ID"] = app_id
-            result = self._test_key(name, value, self._settings(), env)
-        return {"state": result.state, "message": result.message}
+            return self._runner.test_key(name, value, app_id)
+        env = dict(self._load_secrets())
+        if app_id:
+            env["TAPI_APP_ID"] = app_id
+        return self._test_key(name, value, self._settings(), env)
 
     def _settings(self) -> dict:
         """The settings in force for this host (its saved overlay included),

@@ -16,8 +16,10 @@ from departureboard import settingsite
 from departureboard.auth import FAILURE_WINDOW_S, MAX_FAILURES, PasswordStore, Sessions
 from departureboard.dashserver import DashboardApp, StaticFiles, make_server
 from departureboard.installs import install_named
+from departureboard.keytest import KeyResult
 from departureboard.settingsite import SettingsSite
-from departureboard.setupapi import PAGE_HEADERS, static_files
+from departureboard.setup import SetupError
+from departureboard.setupapi import PAGE_HEADERS, RateLimit, SetupApi, TooSoon, static_files
 from departureboard.snapshot import Hub
 from departureboard.store import Store
 from departureboard.walk import WalkTimes
@@ -47,10 +49,12 @@ DASHBOARD_CSP = (
 
 
 class FakeSetup:
-    """setupapi.SetupApi's handle(), recording what reached it."""
+    """setupapi.SetupApi's handle() and test_key(), recording what reached them."""
 
     def __init__(self):
         self.calls = []
+        self.tests = []
+        self.result = KeyResult("works", "It works: the service answered.")
 
     def handle(self, name, payload):
         self.calls.append((name, payload))
@@ -59,6 +63,12 @@ class FakeSetup:
         if name != "begin":
             return 404, {"error": "No such setup step"}
         return 200, {"step": name}
+
+    def test_key(self, name, value=None, app_id=None):
+        self.tests.append((name, value, app_id))
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
 
 
 class Clock:
@@ -73,7 +83,8 @@ class Running:
     """The server with a settings site for one install and its store, and
     every response it gave. With `dashboard`, the dashboard runs as well."""
 
-    def __init__(self, folder, install="docker", config=CONFIG, dashboard=False, hosts=frozenset(), clock=None):
+    def __init__(self, folder, install="docker", config=CONFIG, dashboard=False, hosts=frozenset(), clock=None,
+                 setup=None):
         folder.mkdir(parents=True)
         self.config = folder / "config.toml"
         if config is not None:
@@ -83,7 +94,8 @@ class Running:
         self.folder = folder / "store"
         self.store = Store.open(self.config, self.secrets, state_dir=self.folder, install=install, environ={})
         self.store.make()
-        self.setup = FakeSetup()
+        # `setup(store)` makes the wizard's API, when a test needs a real one.
+        self.setup = FakeSetup() if setup is None else setup(self.store)
         self.clock = clock or Clock()
         self.on = {"now": dashboard}
         self.site = SettingsSite(self.store, install_named(install), self.setup, stylesheet=b"body{}",
@@ -575,6 +587,208 @@ def test_bodies_must_be_plain_small_forms(signed):
 def test_a_form_with_too_many_fields_is_refused_not_dropped(dash):
     response, _ = dash("POST", "/settings/login", {f"f{n}": "1" for n in range(301)})
     assert response.status == 413
+
+
+# Testing a key, on its tab
+
+
+def press_test(running, path, name, typed=None):
+    """Press a tab's test button for key `name`, with `typed` in its boxes."""
+    cookie = running.session()
+    fields = fields_from(running("GET", path, cookie=cookie)[1])
+    return running("POST", path, fields | (typed or {}) | {"csrf": running.csrf(cookie), "test": name}, cookie=cookie)
+
+
+def test_each_tab_has_a_test_button_for_each_of_its_keys(make):
+    pi, docker = make(install="pi"), make(install="docker")
+    expected = {
+        (pi, "/settings"): ["RDM_API_KEY", "BODS_API_KEY"],
+        (pi, "/settings/board"): ["TAPI_APP_KEY"],  # the app ID is tested with it
+        (docker, "/settings"): ["RDM_API_KEY", "BODS_API_KEY"],
+        (docker, "/settings/dashboard"): ["RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"],
+    }
+    for (running, path), names in expected.items():
+        page = running("GET", path, cookie=running.session())[1]
+        assert re.findall(r'<button type="submit" name="test" value="(\w+)"', page) == names, path
+        # Save comes first, so Enter in any box saves rather than tests.
+        assert page.index(">Save settings</button>") < page.index('name="test"'), path
+        assert '<fieldset class="key-tests"><legend>Test a key</legend>' in page
+    board = pi("GET", "/settings/board", cookie=pi.session())[1]
+    assert ">Test the TransportAPI app ID and key</button>" in board
+    assert re.search(r'<p class="hint" id="TAPI_APP_KEY-cost">Uses 1 of today\'s 30 TransportAPI lookups', board)
+    assert 'value="TAPI_APP_KEY" class="quiet" aria-describedby="key-tests-hint TAPI_APP_KEY-cost"' in board
+
+
+def test_testing_a_key_needs_signing_in(signed):
+    response, _ = signed("POST", "/settings/dashboard", {"csrf": "x", "test": "RDM_KB_API_KEY"})
+    assert response.status == 303 and response.getheader("Location") == "/settings/login"
+    assert signed.setup.tests == []
+
+
+@pytest.mark.parametrize("csrf, origin", [
+    ("forged", "same"),
+    (None, "same"),
+    ("right", "http://evil.example.com"),
+    ("right", "null"),
+    ("right", None),
+])
+def test_testing_a_key_needs_the_same_origin_and_the_form_token(signed, csrf, origin):
+    cookie = signed.session()
+    right = signed.csrf(cookie)
+    body = {"test": "RDM_KB_API_KEY", "RDM_KB_API_KEY": "typed-kb-key-1"}
+    if csrf is not None:
+        body["csrf"] = right if csrf == "right" else csrf
+    response, _ = signed("POST", "/settings/dashboard", body, cookie=cookie, origin=origin)
+    assert response.status == 403 and signed.setup.tests == []
+
+
+def test_a_key_test_is_a_plain_small_form_like_a_save(signed):
+    cookie = signed.session()
+    csrf = signed.csrf(cookie)
+    response, _ = signed("POST", "/settings", cookie=cookie, json_body={"csrf": csrf, "test": "RDM_API_KEY"})
+    assert response.status == 400
+    response, _ = signed("POST", "/settings", {"csrf": csrf, "test": "RDM_API_KEY", "title": "x" * 70_000},
+                         cookie=cookie)
+    assert response.status == 413 and signed.setup.tests == []
+
+
+def test_a_key_is_tested_as_typed_else_as_saved_and_nothing_is_saved(signed):
+    press_test(signed, "/settings/dashboard", "RDM_DETAILS_API_KEY", {"RDM_DETAILS_API_KEY": " typed-details-key-1 "})
+    press_test(signed, "/settings/dashboard", "RDM_KB_API_KEY")  # its box empty: the saved one
+    press_test(signed, "/settings", "RDM_API_KEY", {"title": "Not saved"})
+    assert signed.setup.tests == [
+        ("RDM_DETAILS_API_KEY", "typed-details-key-1", None),
+        ("RDM_KB_API_KEY", None, None),
+        ("RDM_API_KEY", None, None),
+    ]
+    assert not (signed.folder / "settings.toml").exists() and not signed.store.secrets_file.exists()
+
+
+def test_transportapis_app_id_and_key_are_tested_together(pi_signed):
+    press_test(pi_signed, "/settings/board", "TAPI_APP_KEY",
+               {"TAPI_APP_ID": "typed-app-id", "TAPI_APP_KEY": "typed-app-key"})
+    response, page = press_test(pi_signed, "/settings/board", "TAPI_APP_KEY", {"TAPI_APP_ID": "typed-app-id"})
+    assert pi_signed.setup.tests == [("TAPI_APP_KEY", "typed-app-key", "typed-app-id"),
+                                     ("TAPI_APP_KEY", None, "typed-app-id")]
+    # The one result is by the app key's box, and both boxes point to it.
+    assert page.count('id="TAPI_APP_KEY-test"') == 1
+    for box in ("TAPI_APP_ID", "TAPI_APP_KEY"):
+        assert re.search(r'<input id="%s"[^>]*aria-describedby="[^"]*TAPI_APP_KEY-test"' % box, page), box
+
+
+def test_the_result_is_shown_by_its_keys_box_and_unsaved_changes_stay(signed):
+    response, page = press_test(signed, "/settings/dashboard", "RDM_KB_API_KEY",
+                                {"RDM_KB_API_KEY": "typed-kb-key-1", "history_days": "45"})
+    assert response.status == 200 and "<title>Key tested – Dashboard settings</title>" in page
+    box = re.search(r'<input id="RDM_KB_API_KEY"[^>]*>', page).group(0)
+    assert 'aria-describedby="RDM_KB_API_KEY-hint RDM_KB_API_KEY-test"' in box and "value=" not in box
+    result = ('<p class="key-result key-result-works" id="RDM_KB_API_KEY-test" role="status" tabindex="-1" '
+              'autofocus><span aria-hidden="true">✓</span> <strong>Works:</strong> It works: the service answered.</p>')
+    assert page[page.index(box) + len(box):].startswith(result)
+    assert fields_from(page)["history_days"] == "45"
+    assert not (signed.folder / "settings.toml").exists()
+
+
+@pytest.mark.parametrize("state, words", [
+    ("works", "Works"),
+    ("wrong_key", "Wrong key"),
+    ("not_subscribed", "Not subscribed"),
+    ("service_down", "Service not answering"),
+    ("missing", "No key"),
+    ("unknown", "Can't tell"),
+])
+def test_every_result_is_said_in_words_not_colour_alone(signed, state, words):
+    signed.setup.result = KeyResult(state, "Said plainly.")
+    _, page = press_test(signed, "/settings", "BODS_API_KEY")
+    assert f'class="key-result key-result-{state}" id="BODS_API_KEY-test"' in page
+    assert f"<strong>{words}:</strong> Said plainly.</p>" in page
+
+
+def test_a_key_is_never_shown_or_logged(signed, caplog):
+    typed = "typed-details-key-1"
+    signed.setup.result = KeyResult("wrong_key", f"Refused {typed} and rail-key-1234567.")
+    response, page = press_test(signed, "/settings/dashboard", "RDM_DETAILS_API_KEY", {"RDM_DETAILS_API_KEY": typed})
+    assert response.status == 200 and "Refused … and …." in page
+    for secret in (typed, "rail-key-1234567", "bods-key-7654321"):
+        assert secret not in "".join(signed.seen) and secret not in caplog.text
+
+
+def test_a_key_typed_wrongly_is_not_tested(signed):
+    _, page = press_test(signed, "/settings/dashboard", "RDM_KB_API_KEY", {"RDM_KB_API_KEY": "has spaces in it"})
+    assert signed.setup.tests == [] and "has spaces in it" not in page
+    assert "<strong>Not tested:</strong> Paste the key exactly" in page
+
+
+@pytest.mark.parametrize("path, name", [
+    ("/settings/dashboard", "RDM_API_KEY"),
+    ("/settings", "RDM_KB_API_KEY"),
+    ("/settings/dashboard", "TAPI_APP_KEY"),
+    ("/settings", "PASSWORD"),
+    ("/settings", ""),
+])
+def test_a_tab_tests_only_its_own_keys(signed, path, name):
+    response, _ = press_test(signed, path, name)
+    assert response.status == 400 and signed.setup.tests == []
+
+
+@pytest.mark.parametrize("failure, said", [
+    (TooSoon("Wait 7 s before testing this key again"), "Wait 7 s before testing this key again"),
+    (SetupError("The setup service didn't answer in time"), "The setup service didn't answer in time"),
+    (RuntimeError("typed-kb-key-1 went wrong"), "Something went wrong while testing the key. Try again."),
+])
+def test_a_test_that_cant_run_says_why_plainly(signed, caplog, failure, said):
+    signed.setup.result = failure
+    response, page = press_test(signed, "/settings/dashboard", "RDM_KB_API_KEY", {"RDM_KB_API_KEY": "typed-kb-key-1"})
+    assert response.status == 200 and f"<strong>Not tested:</strong> {said}" in page
+    assert "typed-kb-key-1" not in page and "typed-kb-key-1" not in caplog.text
+
+
+class KeyRunner:
+    """A setupapi.Runner that only tests keys, as the Pi's setup service does them."""
+
+    def __init__(self):
+        self.tests = []
+
+    def test_key(self, name, value, app_id):
+        self.tests.append((name, value, app_id))
+        return KeyResult("works", "It works.")
+
+    def lookup_postcode(self, postcode):
+        raise AssertionError("not a lookup")
+
+    search_address = nearby_stops = walk_minutes = make_job = lookup_postcode
+
+
+@pytest.fixture
+def on_a_pi(make):
+    """A Pi whose wizard's API is the real one, with its runner: no key is tested in this process."""
+    runner, here, now = KeyRunner(), [], [100.0]
+
+    def wizard(store):
+        return SetupApi(store.target(), store.env, store.folder, install=install_named("pi"), runner=runner,
+                        test_key=lambda *args: here.append(args), key_tests=RateLimit(10.0, clock=lambda: now[0]))
+
+    running = make(install="pi", setup=wizard)
+    running.runner, running.here, running.now = runner, here, now
+    return running
+
+
+def test_on_a_pi_the_test_runs_in_the_setup_service_never_here(on_a_pi):
+    _, page = press_test(on_a_pi, "/settings/board", "TAPI_APP_KEY",
+                         {"TAPI_APP_ID": "typed-app-id", "TAPI_APP_KEY": "typed-app-key"})
+    assert "<strong>Works:</strong> It works." in page
+    assert on_a_pi.runner.tests == [("TAPI_APP_KEY", "typed-app-key", "typed-app-id")] and on_a_pi.here == []
+
+
+def test_each_key_is_tested_at_most_once_every_ten_seconds_as_in_the_wizard(on_a_pi):
+    press_test(on_a_pi, "/settings", "RDM_API_KEY")
+    _, page = press_test(on_a_pi, "/settings", "RDM_API_KEY")
+    assert "<strong>Not tested:</strong> Wait 10 s before testing this key again" in page
+    press_test(on_a_pi, "/settings", "BODS_API_KEY")  # another key has its own limit
+    assert on_a_pi.setup.handle("testkey", {"name": "BODS_API_KEY"})[0] == 429  # one limit with the wizard
+    on_a_pi.now[0] += 10
+    press_test(on_a_pi, "/settings", "RDM_API_KEY")
+    assert [name for name, _, _ in on_a_pi.runner.tests] == ["RDM_API_KEY", "BODS_API_KEY", "RDM_API_KEY"]
 
 
 def framed_post(running, path, pairs, body=b"", origin="same"):

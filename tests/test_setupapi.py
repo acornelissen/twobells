@@ -836,3 +836,33 @@ def test_a_runners_key_test_is_limited_and_scrubbed(ran):
     assert "pasted-tapi" not in json.dumps(body)
     assert ran.handle("testkey", {"name": "TAPI_APP_ID"})[0] == 429
     assert len(ran.runner.calls) == 1
+
+
+# The settings tabs test their own keys through test_key: any key keytest knows,
+# under the wizard's limit, and with its runner.
+
+
+def test_test_key_tries_any_key_keytest_knows_typed_or_saved(board):
+    assert board.test_key("RDM_KB_API_KEY") == KeyResult("works", "It works.")
+    assert board.test_key("RDM_DETAILS_API_KEY", "typed-details-1") == KeyResult("works", "It works.")
+    assert [c[1:3] for c in board.calls] == [("RDM_KB_API_KEY", None), ("RDM_DETAILS_API_KEY", "typed-details-1")]
+    with pytest.raises(Invalid):
+        board.test_key("PASSWORD")
+    # The wizard's own API still tests only the keys it offers.
+    assert board.handle("testkey", {"name": "RDM_KB_API_KEY"})[0] == 400
+
+
+def test_test_key_shares_the_wizards_limit(board):
+    board.test_key("RDM_API_KEY")
+    assert board.handle("testkey", {"name": "RDM_API_KEY"})[0] == 429
+    ok(board, "testkey", {"name": "TAPI_APP_ID"})
+    with pytest.raises(setupapi.TooSoon):
+        board.test_key("TAPI_APP_KEY", "typed-tapi-key", "typed-tapi-id")
+
+
+def test_test_key_goes_to_the_runner_when_there_is_one(ran):
+    assert ran.test_key("TAPI_APP_KEY", "typed-tapi-key", "typed-tapi-id").state == "wrong_key"
+    ran.test_key("RDM_KB_API_KEY")
+    assert ran.runner.calls == [("testkey", "TAPI_APP_KEY", "typed-tapi-key", "typed-tapi-id"),
+                                ("testkey", "RDM_KB_API_KEY", None, None)]
+    assert ran.board.calls == []  # nothing in this process

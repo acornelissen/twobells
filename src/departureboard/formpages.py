@@ -72,15 +72,20 @@ class SettingsPage(Protocol):
     visitor, and saved from their fields."""
 
     def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,
-               values: dict[str, str] | None = None) -> str: ...
+               values: dict[str, str] | None = None, tested: object = None) -> str: ...
 
     def save(self, fields: dict[str, str]) -> dict[str, str]: ...  # field -> error; empty when saved
 
+    def test_key(self, fields: dict[str, str]) -> object: ...  # the result to render, or None: no such test
+
 
 class SetupSteps(Protocol):
-    """setupapi.SetupApi: a step's (status, JSON-ready reply) for its decoded body."""
+    """setupapi.SetupApi: a step's (status, JSON-ready reply) for its decoded
+    body, and a key test under the wizard's limit and runner."""
 
     def handle(self, name: str, payload: object) -> tuple[int, dict]: ...
+
+    def test_key(self, name: str, value: str | None = None, app_id: str | None = None) -> object: ...
 
 
 class Headers(Protocol):
@@ -374,6 +379,25 @@ class FormPages:
             body = page.render(session.csrf, errors=errors, values=fields)
             return self._html(422, f"{title}: fix the errors", body)
         return self._html(200, f"Saved – {title}", page.render(session.csrf, message=wording.saved))
+
+    def test_key(self, fields: dict[str, str], headers: Headers, page: SettingsPage | None = None,
+                 title: str | None = None) -> Reply:
+        """A settings form's key test (its `test` button), from a signed-in
+        session with its token, as save is: the form drawn again with the
+        result and what was typed (the form never shows a key), and nothing saved."""
+        session = self._sessions.get(self._token(headers))
+        if session is None:
+            return redirect(self._prefix + "/login")
+        if not csrf_matches(session, fields.get("csrf", "")):
+            return Reply(403, b"Forbidden: form expired, reload the page")
+        fields.pop("csrf", None)
+        page = page or self._page
+        tested = page.test_key(fields)
+        if tested is None:
+            return Reply(400, b"Bad request: no such key to test")
+        fields.pop("test", None)
+        title = title or self._wording().title
+        return self._html(200, f"Key tested – {title}", page.render(session.csrf, values=fields, tested=tested))
 
     # The setup wizard
 

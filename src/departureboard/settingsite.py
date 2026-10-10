@@ -23,7 +23,10 @@ the pages and forms formpages.py's:
   carry the session's (or the form's) token.
 - The settings are in tabs, each a groupform.GroupForm of one group:
   General at /settings, and Board and Dashboard while their view is on (a
-  tab whose view is off is not found). Pages are drawn on the server with
+  tab whose view is off is not found). Each tab tests its own keys: a
+  button posting the tab's form with test=<key>, checked as a save is,
+  and run by the wizard's API (SetupApi.test_key), so the wizard's limit
+  and, on a Pi, its runner apply. Pages are drawn on the server with
   no JavaScript, under a CSP allowing form-action 'self'. The setup wizard
   under /settings/setup/ is the one place with scripts: its own files
   only, from an allowlist read at start and served without a session, its
@@ -71,6 +74,8 @@ from .formpages import (
 )
 from .formpages import WIZARD_TYPES as _CONTENT_TYPES
 from .groupform import GroupForm
+from .keytest import KeyResult
+from .setup import SetupError
 
 if TYPE_CHECKING:
     from .installs import Install
@@ -223,7 +228,8 @@ class SettingsSite:
         self.lockout = Lockout(clock)
         self._forms = {
             tab: GroupForm(store, (tab,), TAB_PATHS[tab], store.env, install=install, noun=install.noun,
-                           header=lambda csrf, tab=tab: self._header(tab, csrf), legends=_LEGENDS[tab])
+                           header=lambda csrf, tab=tab: self._header(tab, csrf), legends=_LEGENDS[tab],
+                           test_key=self._test_key)
             for tab in TABS
         }
         self._pages = FormPages(
@@ -260,6 +266,20 @@ class SettingsSite:
         except Exception as error:  # noqa: BLE001 - the settings matter more than a link
             log.warning("Can't tell whether the dashboard is running: %s", type(error).__name__)
             return False
+
+    def _test_key(self, name: str, value: str | None, app_id: str | None) -> KeyResult:
+        """A tab's key test, through the wizard's API: one limit per key with
+        the wizard's, and on a Pi its runner, so this process never connects.
+        A test that can't run says why, never with a key."""
+        try:
+            return self.setup.test_key(name, value, app_id)
+        except setupapi.TooSoon as error:
+            return KeyResult("not_tested", str(error))
+        except SetupError as error:  # from the runner, already plain words
+            return KeyResult("not_tested", str(error))
+        except Exception as error:  # noqa: BLE001 - a fault, said plainly, never with its text
+            log.warning("Testing %s from the settings failed: %s", name, type(error).__name__)
+            return KeyResult("not_tested", "Something went wrong while testing the key. Try again.")
 
     def _home(self) -> str:
         """Where a new session starts: the wizard until there is something to show."""
@@ -320,6 +340,8 @@ class SettingsSite:
         if path == PREFIX + "/logout":
             return self._pages.sign_out(fields, headers)
         tab = self._tab(path)
+        if tab is not None and "test" in fields:  # a key's test button, not Save
+            return self._pages.test_key(fields, headers, self._forms[tab], self._title(tab))
         if tab is not None:
             return self._pages.save(fields, headers, self._forms[tab], self._title(tab))
         return Reply(404, b"Not Found")
