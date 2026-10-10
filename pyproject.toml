@@ -5,11 +5,35 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "departureboard"
 version = "0.1.0"
-description = "Train and bus departure board for a Raspberry Pi with an e-paper or HDMI display, for Great Britain"
+description = "Train and bus departures for Great Britain, on an e-paper or HDMI board on a Raspberry Pi and on a web dashboard, installed on a Pi, in Docker or on a desktop"
+readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
+authors = [{ name = "Albert Cornelissen" }]
+keywords = ["departures", "trains", "buses", "national-rail", "bods", "e-paper", "raspberry-pi", "dashboard"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Intended Audience :: End Users/Desktop",
+    "Natural Language :: English",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Home Automation",
+    "Topic :: Utilities",
+]
 dependencies = ["Pillow>=10.1"]
+
+[project.urls]
+Homepage = "https://github.com/acornelissen/inky-departures"
+Source = "https://github.com/acornelissen/inky-departures"
+Issues = "https://github.com/acornelissen/inky-departures/issues"
+Documentation = "https://github.com/acornelissen/inky-departures/blob/main/docs/user-guide.md"
 
 [project.optional-dependencies]
 pi = ["inky>=2.0"]
