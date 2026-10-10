@@ -21,8 +21,12 @@ RUN pip install --require-hashes --only-binary=:all: --no-deps -r /tmp/requireme
  && chmod 700 /data
 
 # The code runs from source: nothing to build, nothing more to download.
+# pyproject.toml beside src/ is where `departureboard --version` (and the
+# dashboard and settings) read the version, as nothing is installed.
+COPY pyproject.toml /app/pyproject.toml
 COPY src /app/src
-RUN python -c "import departureboard.cli"
+RUN python -c "import departureboard.cli; from departureboard.version import package_version as v; \
+assert v() != 'unknown', 'no version in /app/pyproject.toml'"
 
 USER 10001:10001
 WORKDIR /data

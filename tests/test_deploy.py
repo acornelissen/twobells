@@ -36,7 +36,7 @@ def test_it_runs_as_a_non_root_user_and_checks_its_health():
 def test_the_image_never_carries_keys_or_state():
     assert DOCKERIGNORE.splitlines()[1] == "*"  # everything out, then only what's needed back in
     allowed = [line for line in DOCKERIGNORE.splitlines() if line.startswith("!")]
-    assert allowed == ["!src/", "!deploy/requirements-docker.txt"]
+    assert allowed == ["!src/", "!pyproject.toml", "!deploy/requirements-docker.txt"]
     assert "secrets" not in DOCKERFILE.replace("--secrets", "")
 
 
@@ -61,6 +61,13 @@ def test_compose_runs_departureboard_on_the_dashboards_old_volume():
     assert "services:\n  departureboard:\n    volumes:\n      - ./config.toml:/config/config.toml:ro\n" in override
     assert "docker-compose.override.yml" in (ROOT / ".gitignore").read_text().splitlines()
     assert "/config/config.toml" in _entrypoint()  # where the override puts it
+
+
+def test_the_image_knows_its_version_without_installing_the_package():
+    # Nothing is installed, so version.py reads pyproject.toml beside src/; the build fails without it.
+    assert "PYTHONPATH=/app/src" in DOCKERFILE
+    assert re.search(r"^COPY pyproject\.toml /app/pyproject\.toml$", DOCKERFILE, re.M)
+    assert "assert v() != 'unknown'" in DOCKERFILE
 
 
 def test_the_image_runs_as_departureboard_with_the_volumes_uid():
