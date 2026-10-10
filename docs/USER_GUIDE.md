@@ -627,6 +627,8 @@ Don't publish port 8090 on your router or through QuickConnect or DSM's reverse 
 
 **Updating:** copy the new project files over the old ones, then in Container Manager choose the project, then **Action**, then **Build** (or `docker compose up -d --build`). Your history, timetable, saved settings, keys and password stay in the volume. After editing `secrets.env`, build again too: just restarting the container doesn't read it again.
 
+**The published image.** From the first release, each release also publishes a signed image, `ghcr.io/acornelissen/inky-departures`, so there is nothing to build. `docker-compose.ghcr.yml` runs it with the same settings, pinned by version and digest. [Docker on other NASes and on Linux](DOCKER.md) says how to check the image, and how to run it on QNAP, Unraid, TrueNAS SCALE, and Docker or Podman on Linux.
+
 ---
 
 ## 10. Desktop

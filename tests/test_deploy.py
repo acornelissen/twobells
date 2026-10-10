@@ -408,6 +408,8 @@ RELEASE = (ROOT / ".github" / "workflows" / "release.yml").read_text()
 IMAGE = re.search(r"^  IMAGE: (\S+)$", RELEASE, re.M).group(1)
 REPO = IMAGE.removeprefix("ghcr.io/")
 GUIDE = (ROOT / "docs" / "USER_GUIDE.md").read_text()
+DOCKER_DOCS = (ROOT / "docs" / "DOCKER.md").read_text()
+GHCR_COMPOSE = (ROOT / "docker-compose.ghcr.yml").read_text()
 
 
 def _identity(tag: str) -> str:
@@ -583,6 +585,85 @@ def test_the_guide_installs_a_pi_from_a_checked_release():
     assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in GUIDE
     assert "sudo ./deploy/upgrade.sh 0.2.0" in GUIDE
     assert "| sudo bash" not in GUIDE
+
+
+# The published image: the same lock-down as docker-compose.yml, wherever it runs.
+
+
+def _live(text: str) -> list[str]:
+    return [line.split("#")[0].rstrip() for line in text.splitlines() if line.split("#")[0].strip()]
+
+
+def test_the_published_image_compose_file_is_pinned_and_locked_down_as_the_built_one():
+    built, published = _live(COMPOSE), _live(GHCR_COMPOSE)
+    hardening = built[built.index("    read_only: true"):built.index("volumes:")]
+    assert len(hardening) > 10
+    for line in hardening:
+        assert line in published, line
+    for line in ("    container_name: departureboard", "    restart: unless-stopped", '      - "8090:8090"',
+                 "      - dashboard-data:/data", "volumes:", "  dashboard-data:"):
+        assert line in published, line
+    # Pinned by version and digest: the placeholder fails until both are filled in.
+    assert f"    image: {IMAGE}:X.Y.Z@sha256:DIGEST" in published
+    assert not any("build:" in line or "env_file" in line for line in published)
+    for risky in ("privileged", "network_mode", "docker.sock", "cap_add"):
+        assert risky not in GHCR_COMPOSE, risky
+    assert f"--certificate-identity {_identity('vX.Y.Z')}" in GHCR_COMPOSE
+
+
+def _docker_run_flags(words: list[str]) -> dict[str, str]:
+    """docker run's flags as {flag: value}, the last value of each."""
+    flags, i = {}, 0
+    while i < len(words):
+        if words[i] == "--read-only":
+            flags[words[i]], i = "", i + 1
+        else:
+            flags[words[i]], i = words[i + 1], i + 2
+    return flags
+
+
+HARDENING_FLAGS = {"--read-only": "", "--tmpfs": "/tmp:size=64m", "--cap-drop": "ALL",
+                   "--security-opt": "no-new-privileges:true", "--memory": "512m", "--pids-limit": "128",
+                   "--log-opt": "max-file=3"}
+
+
+def test_unraids_template_runs_the_published_image_locked_down():
+    import xml.etree.ElementTree as ET
+
+    root = ET.parse(ROOT / "deploy" / "unraid" / "departureboard.xml").getroot()
+    assert (root.tag, root.get("version")) == ("Container", "2")
+    assert root.findtext("Name") == "departureboard"
+    assert root.findtext("Repository") == f"{IMAGE}:X.Y.Z"
+    assert (root.findtext("Network"), root.findtext("Privileged")) == ("bridge", "false")
+    extra = shlex.split(root.findtext("ExtraParams"))
+    assert extra.count("--log-opt") == 2 and "max-size=1m" in extra
+    assert _docker_run_flags(extra) == HARDENING_FLAGS
+    # Compose's numbers, as docker run flags.
+    assert "mem_limit: 512m" in COMPOSE and "pids_limit: 128" in COMPOSE and "- /tmp:size=64m" in COMPOSE
+    configs = {config.get("Target"): config for config in root.findall("Config")}
+    assert set(configs) == {"8090", "/data"}
+    assert (configs["8090"].get("Type"), configs["8090"].get("Mode")) == ("Port", "tcp")
+    data = configs["/data"]
+    assert (data.get("Type"), data.get("Mode"), data.text) == ("Path", "rw", "/mnt/user/appdata/departureboard")
+    # A folder, not a volume: the guide gives it to the image's user first.
+    assert "chown 10001:10001 /mnt/user/appdata/departureboard" in DOCKER_DOCS
+    assert re.search(r"^USER 10001:10001$", DOCKERFILE, re.M)
+    assert 's/X\\.Y\\.Z/$VERSION/' in DOCKER_DOCS and "templates-user/my-departureboard.xml" in DOCKER_DOCS
+
+
+def test_the_documented_docker_run_is_locked_down_as_compose():
+    command = re.search(r"```bash\n(docker run .*?)\n```", DOCKER_DOCS, re.S).group(1)
+    words = shlex.split(command.replace("\\\n", " "))
+    assert words[:5] == ["docker", "run", "-d", "--name", "departureboard"]
+    assert words[-1] == f"{IMAGE}:$VERSION@$DIGEST"
+    rest = _docker_run_flags(words[5:-1])
+    assert {key: rest.pop(key) for key in ("--restart", "-p", "-v")} == {
+        "--restart": "unless-stopped", "-p": "8090:8090", "-v": "departureboard-data:/data"}
+    assert rest == HARDENING_FLAGS
+    assert f'--certificate-identity "{_identity("v$VERSION")}"' in DOCKER_DOCS
+    assert f'cosign verify "{IMAGE}@$DIGEST"' in DOCKER_DOCS
+
+
 # The desktop: started at login, on this computer only.
 
 
