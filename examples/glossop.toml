@@ -9,7 +9,7 @@ timezone = "Europe/London"
 state_file = "/var/lib/departureboard/state.json"
 # Never redraw more often than this, even if the data changes sooner.
 min_redraw_minutes = 2
-# "sign": amber dot-matrix station board (needs the yellow accent).
+# "sign": amber dot-matrix station board, with a yellow accent (or red, on e-paper).
 # "plain": white board with bold type and a red accent.
 theme = "sign"
 # Defaults to the theme's colour. Only reinforces meaning; text always carries it.
@@ -43,33 +43,38 @@ walk_minutes = 10
 # Copy the exact base URL from the Rail Data Marketplace product page if it differs.
 # base_url = "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
 
+# Buses, worked out the way bustimes.org does: from the BODS timetable for
+# these stops plus live BODS bus positions. Free (needs BODS_API_KEY), so buses
+# can be checked all day. `departureboard timetable` builds the timetable, and
+# departureboard-timetable.timer keeps it fresh (rebuilt weekly, or when the
+# stops or operators change).
 [bus]
-# Rows shown. Each stop call returns several buses, so more rows cost no extra hits.
+source = "bods"
+# The bus companies serving these stops, by national operator code. The
+# setup wizard and `departureboard setup discover` find them.
+operators = ["BNML", "HIPK"]
 rows = 3
 # Optional: only show buses whose direction contains one of these.
 directions = []
-# Every poll costs one hit per stop. TransportAPI free plan is 30 hits/day;
-# the budget keeps 2 spare for manual probes.
-# 2 stops x (07:00-08:30 every 12 min = 8 polls + 17:00-18:00 = 6 polls) = 28 hits.
-interval_minutes = 12
+interval_minutes = 2
 stale_after_minutes = 30
-daily_budget = 28
-windows = ["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]
-
-# Or work bus times out the way bustimes.org does: from the BODS timetable for
-# your stops plus live BODS bus positions. Free (needs BODS_API_KEY), so buses
-# can be checked all day. `departureboard timetable` builds the timetable, and
-# departureboard-timetable.timer keeps it fresh (rebuilt weekly, or when your
-# stops or operators change). Until there is one, TransportAPI stands in if
-# its keys are set: every fallback_interval_minutes (default 12), within
-# daily_budget, and only inside fallback_windows (default: the bus windows).
-# operators are the bus companies' national operator codes; find them on
-# bustimes.org, or in TransportAPI's "operator" (`departureboard probe bus --save`).
-# source = "bods"
-# operators = ["BNML", "HIPK"]
-# interval_minutes = 2
+# Default: every day, 06:00-23:00. Set here, they are TransportAPI's windows
+# too, unless fallback_windows says otherwise.
 # windows = ["Mon-Sun 06:00-23:00"]
+# The HDMI screen's bus page ([bus.routes], below): how often to check where
+# the buses are, at least 10 (BODS refreshes every 10 s).
+# position_interval_seconds = 30
+
+# Until there is a usable timetable, TransportAPI stands in if its keys
+# (TAPI_APP_ID, TAPI_APP_KEY) are set. Its free plan is 30 hits a day, and
+# every check costs one hit per stop, so it checks every
+# fallback_interval_minutes, within daily_budget (2 spare for manual probes),
+# and only inside fallback_windows. Without fallback_windows it uses [bus]
+# windows if they are set, else the ones below.
+# 2 stops x (07:00-08:30 every 12 min = 8 checks + 17:00-18:00 = 6 checks) = 28 hits.
+# fallback_interval_minutes = 12
 # fallback_windows = ["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]
+# daily_budget = 28
 
 # Short label shown on the board = ATCO code (find codes on bustimes.org).
 [bus.stops]
@@ -83,7 +88,7 @@ B = 10
 
 # HDMI screen only: a second page showing where the next bus you can catch is,
 # on the stops before yours. Needs BODS_API_KEY in secrets.env. Positions are
-# polled every position_interval_seconds (default 30) inside the bus windows.
+# checked every position_interval_seconds ([bus], above) inside the bus windows.
 # `departureboard route 341 --stop A --noc BNML` prints this block with the
 # real stops and positions; the ones below only show its shape.
 # [bus.routes.341]

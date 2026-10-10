@@ -1962,7 +1962,8 @@ def test_the_settings_open_the_wizard_until_the_board_is_set_up(tmp_path, monkey
     site = served["app"].settings
     assert "" in site._files and site._home() == SETUP
     config.write_text(config.read_text().replace('crs = "CHANGE_ME"', 'crs = "GLO"')
-                      .replace('A = "CHANGE_ME"', 'A = "1800SB12341"'))
+                      .replace('A = "CHANGE_ME"', 'A = "1800SB12341"')
+                      .replace('operators = ["CHANGE_ME"]', 'operators = ["SBUS"]'))
     assert site._home() == PREFIX
 
 

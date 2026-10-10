@@ -3,6 +3,7 @@ from datetime import date, timedelta
 import pytest
 
 from departureboard.settings.config import ConfigError, load_config
+from departureboard.sources.bodsbus import BodsBusSource
 from departureboard.sources.darwin import DarwinSource
 from departureboard.sources.transportapi import TransportApiBusSource
 from tests.paths import ROOT
@@ -10,6 +11,8 @@ from tests.paths import ROOT
 TEMPLATE = ROOT / "examples/config.example.toml"  # the blank template, with CHANGE_ME placeholders
 GLOSSOP = ROOT / "examples" / "glossop.toml"  # the worked example, filled in
 ENV = {"RDM_API_KEY": "rdm", "TAPI_APP_ID": "id", "TAPI_APP_KEY": "key"}
+# The examples' buses come from the BODS timetable, with TransportAPI standing in.
+BODS_ENV = {**ENV, "BODS_API_KEY": "bods"}
 
 
 def write(tmp_path, text):
@@ -27,7 +30,14 @@ def example():
 def filled_template(tmp_path):
     """The template with its placeholders filled in, as a new user would."""
     text = TEMPLATE.read_text()
-    text = text.replace('crs = "CHANGE_ME"', 'crs = "ABC"').replace('A = "CHANGE_ME"', 'A = "1000ABCD0001"')
+    text = (text.replace('crs = "CHANGE_ME"', 'crs = "ABC"').replace('A = "CHANGE_ME"', 'A = "1000ABCD0001"')
+            .replace('operators = ["CHANGE_ME"]', 'operators = ["ABCD"]'))
+    return write(tmp_path, text)
+
+
+def in_tmp(tmp_path, example):
+    """`example` with its store in tmp_path: no bus timetable there yet."""
+    text = example.read_text().replace("/var/lib/departureboard/state.json", str(tmp_path / "state.json"))
     return write(tmp_path, text)
 
 
@@ -37,11 +47,11 @@ def any_example(request, tmp_path):
 
 
 def test_example_config_loads(any_example):
-    settings = load_config(any_example, ENV)
+    settings = load_config(any_example, BODS_ENV)
     names = [c.source.name for c in settings.board.sources]
     assert names == ["train", "bus"]
     assert isinstance(settings.board.sources[0].source, DarwinSource)
-    assert isinstance(settings.board.sources[1].source, TransportApiBusSource)
+    assert isinstance(settings.board.sources[1].source, BodsBusSource)  # the examples lead with BODS
     assert settings.timezone == "Europe/London"
     assert (settings.board.theme.name, settings.accent) == ("sign", "yellow")
     assert settings.bank_holiday_division == "england-and-wales"
@@ -69,7 +79,7 @@ def _values(data):
 def test_template_assumes_no_place(tmp_path):
     import tomllib
 
-    settings = load_config(filled_template(tmp_path), ENV)
+    settings = load_config(filled_template(tmp_path), BODS_ENV)
     assert settings.board.title == "Departures"
     assert settings.board.weather is None  # no position until one is given
     # Nothing it sets (comments aside) is Glossop's.
@@ -91,13 +101,18 @@ def test_station_code_must_be_three_letters(tmp_path, crs):
         load_config(path, ENV)
 
 
-def test_example_bus_schedule_fits_inside_its_budget(any_example):
-    bus = load_config(any_example, ENV).board.sources[1]
+def test_example_transportapi_stand_in_fits_inside_its_budget(any_example):
+    # Until there is a timetable TransportAPI stands in, at a hit per stop each check.
+    import tomllib
+
+    bus = load_config(any_example, BODS_ENV).board.sources[1]
+    stops = len(tomllib.loads(any_example.read_text())["bus"]["stops"])
+    policy = bus.fallback_policy
     calls = 0
-    for window in bus.policy.windows:
+    for window in policy.windows:
         span = (window.end.hour * 60 + window.end.minute) - (window.start.hour * 60 + window.start.minute)
-        calls += span // int(bus.policy.interval.total_seconds() // 60) + 1
-    assert calls * bus.source.cost <= bus.daily_budget
+        calls += span // int(policy.interval.total_seconds() // 60) + 1
+    assert calls * stops <= bus.daily_budget
 
 
 def test_bus_section_is_optional(tmp_path):
@@ -118,9 +133,9 @@ def test_bad_window_is_reported(tmp_path):
         load_config(path, ENV)
 
 
-def test_example_watches_both_henry_street_stops(example):
-    bus = load_config(example, ENV).board.sources[1]
-    assert bus.source.cost == 2
+def test_example_watches_both_henry_street_stops(tmp_path, example):
+    bus = load_config(in_tmp(tmp_path, example), BODS_ENV).board.sources[1]
+    assert bus.source.falling_back and bus.source.cost == 2  # TransportAPI asks both, with no timetable yet
 
 
 def test_bus_without_stops_is_rejected(tmp_path):
@@ -135,19 +150,19 @@ def test_bus_stop_left_as_placeholder_is_rejected(tmp_path):
         load_config(path, ENV)
 
 
-def test_bus_stops_can_be_overridden(example):
-    settings = load_config(example, ENV, bus_stops={"V": "1000DGVS3332"})
+def test_bus_stops_can_be_overridden(tmp_path, example):
+    settings = load_config(in_tmp(tmp_path, example), BODS_ENV, bus_stops={"V": "1000DGVS3332"})
     assert settings.board.sources[1].source.cost == 1
 
 
 def test_loading_only_bus_does_not_need_the_rail_key(example):
-    env = {"TAPI_APP_ID": "id", "TAPI_APP_KEY": "key"}
+    env = {"BODS_API_KEY": "bods"}
     settings = load_config(example, env, only={"bus"})
     assert [c.source.name for c in settings.board.sources] == ["bus"]
 
 
 def test_minimum_redraw_gap_defaults_to_two_minutes(example):
-    assert load_config(example, ENV).board.min_redraw == timedelta(minutes=2)
+    assert load_config(example, BODS_ENV).board.min_redraw == timedelta(minutes=2)
 
 
 def test_minimum_redraw_gap_can_be_set(tmp_path):
@@ -188,7 +203,7 @@ def test_walk_times_are_optional(tmp_path):
 
 
 def test_example_config_has_walk_times(example):
-    walk = load_config(example, ENV).board.walk
+    walk = load_config(example, BODS_ENV).board.walk
     assert walk.train is not None and set(walk.bus) == {"A", "B"}
 
 
@@ -217,7 +232,7 @@ def test_unknown_theme_is_a_config_error(tmp_path):
 
 
 def test_display_defaults_to_the_inky(example):
-    assert load_config(example, ENV).display == "inky"
+    assert load_config(example, BODS_ENV).display == "inky"
 
 
 def test_waveshare_display_can_be_chosen(tmp_path):
@@ -236,7 +251,7 @@ def _rotate_config(tmp_path, lines):
 
 
 def test_rotate_defaults_to_upright(example):
-    assert load_config(example, ENV).rotate == 0
+    assert load_config(example, BODS_ENV).rotate == 0
 
 
 def test_old_rotate_180_setting_still_turns_the_board(tmp_path):
@@ -268,7 +283,6 @@ stops = [
   { name = "Henry Street", lat = 53.44384, lon = -1.948999 },
 ]
 '''
-BODS_ENV = {**ENV, "BODS_API_KEY": "bods"}
 
 
 def test_route_strip_is_loaded_for_a_screen(tmp_path):
@@ -515,14 +529,14 @@ A = "1000DGHS0900"
 
 
 def test_weather_is_off_without_a_section(example):
-    assert load_config(example, ENV).board.weather is None
+    assert load_config(example, BODS_ENV).board.weather is None
 
 
 def test_example_weather_section_loads_when_uncommented(tmp_path):
     lines = GLOSSOP.read_text().splitlines()
     start = lines.index("# [weather]")
     lines[start:] = [line.removeprefix("# ") for line in lines[start:]]
-    weather = load_config(write(tmp_path, "\n".join(lines)), ENV).board.weather
+    weather = load_config(write(tmp_path, "\n".join(lines)), BODS_ENV).board.weather
     assert weather is not None and weather.threshold == 50
     assert "latitude=53.44" in weather.source.url() and "longitude=-1.95" in weather.source.url()
 
@@ -531,7 +545,7 @@ def test_template_weather_section_loads_when_uncommented_and_filled(tmp_path):
     lines = filled_template(tmp_path).read_text().splitlines()
     start = lines.index("# [weather]")
     lines[start:] = [line.removeprefix("# ").replace("CHANGE_ME", "51.5") for line in lines[start:]]
-    weather = load_config(write(tmp_path, "\n".join(lines)), ENV).board.weather
+    weather = load_config(write(tmp_path, "\n".join(lines)), BODS_ENV).board.weather
     assert weather is not None and weather.threshold == 50
     assert "latitude=51.5" in weather.source.url()
 
@@ -806,6 +820,9 @@ def test_setting_up_from_the_page_counts_once_every_placeholder_is_covered(tmp_p
     (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n')
     assert needs_setup(config)  # the bus stop is still CHANGE_ME
     (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n[bus.stops]\nA = "1800SB12341"\n')
+    assert needs_setup(config)  # the operators are still CHANGE_ME
+    (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n[bus]\noperators = ["SBUS"]\n'
+                                         '[bus.stops]\nA = "1800SB12341"\n')
     assert not needs_setup(config)
 
 
@@ -817,7 +834,8 @@ def test_placeholders_in_a_section_switched_off_need_no_setting_up(tmp_path):
     state.mkdir()
     (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n[bus]\nenabled = false\n')
     assert not needs_setup(config)  # the bus stop is still CHANGE_ME, but buses are off
-    (state / "settings.toml").write_text('[train]\nenabled = false\n[bus.stops]\nA = "1800SB12341"\n')
+    (state / "settings.toml").write_text('[train]\nenabled = false\n[bus]\noperators = ["SBUS"]\n'
+                                         '[bus.stops]\nA = "1800SB12341"\n')
     assert not needs_setup(config)
     (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n[bus]\nenabled = true\n')
     assert needs_setup(config)
