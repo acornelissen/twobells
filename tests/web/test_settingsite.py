@@ -542,8 +542,10 @@ def test_each_page_shows_its_own_settings(make):
     # A setting is on one page only.
     for name in ("title", "train_crs", "theme", "RDM_API_KEY", "bank_holidays"):
         assert sum(f'id="{name}"' in page for page in pages.values()) == 1, name
-    assert '<h2 id="status-title">Status</h2>' in board and "status-title" not in trains
-    assert board.index("<h1>") < board.index("Status</h2>") < board.index("<fieldset")
+    # How the board is doing is the Overview's, linked from the Board page.
+    assert '<a href="/settings">See how the board is doing</a>' in board and "See how the board" not in trains
+    assert board.index("<h1>") < board.index("See how the board") < board.index("<fieldset")
+    assert "status-title" not in board
     assert 'action="/settings/board"' in board and 'action="/settings/trains-and-buses"' in trains
 
 
@@ -653,6 +655,31 @@ def test_on_a_pi_the_overview_says_how_the_board_is_doing(pi):
     health = _health(pi("GET", "/settings", cookie=pi.session())[1])
     assert "<strong>Display</strong>" in health and "<dt>Last redrawn</dt>" in health
     assert "On the dashboard" not in health  # its view is off
+
+
+@pytest.mark.parametrize("saved, said", [
+    (None, "Board Waiting"),  # no state file yet
+    ("", "Board Waiting"),  # an empty one
+    ('{"sources": {"bus": {"last_error": {"at": "2026-10-08T08:00:00", '
+     '"message": "https://transportapi.com/v3/x.json?app_id=id&app_key=tapi-secret-456 refused"}}}}', "Last error"),
+])
+def test_the_overview_reads_the_boards_state_never_writing_it_or_showing_a_key(pi, saved, said):
+    if saved is not None:
+        pi.store.state_file.write_text(saved)
+    health = re.sub(r"<[^>]+>", " ", _health(pi("GET", "/settings", cookie=pi.session())[1]))
+    assert said in re.sub(r"\s+", " ", health) and "tapi-secret-456" not in health
+    assert pi.store.state_file.exists() is (saved is not None)
+    if saved is not None:
+        assert pi.store.state_file.read_text() == saved
+
+
+def test_on_a_bank_holiday_the_overview_says_the_board_keeps_sunday_times(pi):
+    today = datetime.now(ZoneInfo("Europe/London")).date()
+    pi.site._holidays = lambda data: frozenset({today})
+    health = _health(pi("GET", "/settings", cookie=pi.session())[1])
+    assert '<p class="hint">Today is a bank holiday, so the board checks at its Sunday times.</p>' in health
+    pi.site._holidays = lambda data: frozenset()
+    assert "bank holiday" not in _health(pi("GET", "/settings", cookie=pi.session())[1])
 
 
 def test_the_overview_gives_the_wall_tablets_address_on_the_host_used(dash):

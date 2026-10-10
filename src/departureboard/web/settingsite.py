@@ -281,7 +281,7 @@ class SettingsSite:
         self._forms: dict[str, SettingsPage] = {
             tab: GroupForm(store, (tab,), TAB_PATHS[tab], store.env, install=install, noun=install.noun,
                            header=lambda csrf, tab=tab: self._header(tab, csrf), footer=self._footer,
-                           applies=applies(install), setup=SETUP)
+                           applies=applies(install), setup=SETUP, overview=PREFIX)
             for tab in TABS[1:] if tab != "keys"
         }
         self._forms["overview"] = Overview(self)
@@ -501,11 +501,15 @@ class SettingsSite:
                 "<p>Fix the settings here, or config.toml; it starts once they load.</p></div>"
             )
         groups = []
+        note = ""
         if "board" in views and "board" in self.install.offered:
-            groups.append(("On the board", view.board_feeds(data, self._board_state(), now, self._holidays(data))))
+            holidays = self._holidays(data)
+            groups.append(("On the board", view.board_feeds(data, self._board_state(), now, holidays)))
+            if data.get("bank_holidays", True) is True and now.date() in holidays:
+                note = "Today is a bank holiday, so the board checks at its Sunday times."
         if running:
             groups.append(("On the dashboard", view.dashboard_feeds(self._snapshot(), now, zone, self._updating())))
-        out.append(view.render_health(groups, now, PREFIX, problems=1 if self.problem else 0))
+        out.append(view.render_health(groups, now, PREFIX, problems=1 if self.problem else 0, note=note))
         out.append(view.render_place(data, self.store.folder, now, zone))
         out.append(view.render_keys(data, views, self._secrets(), TAB_PATHS["keys"], self._key_tests(zone)))
         out.append(view.render_actions(data, SETUP, running, host))

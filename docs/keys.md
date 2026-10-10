@@ -260,7 +260,7 @@ journalctl -u departureboard-timetable -n 5
 
 On a desktop: `departureboard timetable`, with the same `--config` and `--secrets` as you start it with, if any.
 
-Either way, it ends with `Bus timetable: … journeys at your stops`. If it builds a timetable, the key works. Then `departureboard probe bus` (with `sudo /opt/departureboard/venv/bin/` in front on the Pi) lists the next buses. If every bus shows `sch` for a long time, **Status** on the settings' **Board** page says whether live positions are failing.
+Either way, it ends with `Bus timetable: … journeys at your stops`. If it builds a timetable, the key works. Then `departureboard probe bus` (with `sudo /opt/departureboard/venv/bin/` in front on the Pi) lists the next buses. If every bus shows `sch` for a long time, **On the board** on the settings' **Overview** says whether live positions are failing.
 
 ---
 
@@ -289,7 +289,7 @@ The **TransportAPI app ID** and **TransportAPI app key** boxes on the settings' 
 
 The app ID and app key share the **Buses from TransportAPI** form on the **Keys** page. Paste both, then press **Save and test** (or, with both boxes empty, **Test saved key**). It tests the two together, and uses one of today's 30 lookups, as the note by the buttons says. The board doesn't count that lookup in its own daily budget, which leaves 2 spare by default.
 
-**Status** on the settings' **Board** page shows how many of today's TransportAPI lookups are used, and a "Problem: …" line if a lookup failed. While the BODS timetable is working, TransportAPI isn't used at all, so there's nothing to see.
+**On the board** on the settings' **Overview** shows how many of today's TransportAPI lookups are used, and the last error if a lookup failed. While the BODS timetable is working, TransportAPI isn't used at all, so there's nothing to see.
 
 With `source = "transportapi"` under `[bus]`, `departureboard probe bus` checks it directly. That uses one lookup per stop from today's 30.
 

@@ -296,10 +296,13 @@ def _feed(feed: Feed) -> str:
             f'{_pill(*STATES[feed.state])}</p><dl class="readonly">{"".join(rows)}</dl></li>')
 
 
-def render_health(groups: Sequence[tuple[str, list[Feed]]], now: datetime, reload: str, problems: int = 0) -> str:
+def render_health(groups: Sequence[tuple[str, list[Feed]]], now: datetime, reload: str, problems: int = 0,
+                  note: str = "") -> str:
     """The health card: one line saying whether all is working, as of when,
-    with a link to reload; then each group's feeds, under the group's name
-    when there is more than one. `problems` counts any found elsewhere."""
+    with a link to reload, and `note` (words) under it; then each group's
+    feeds, under the group's name when there is more than one. While all is
+    working the feeds wait behind Show each feed, so the rest of the page
+    comes up; with a problem they show. `problems` counts any found elsewhere."""
     feeds = [feed for _, group in groups for feed in group]
     problems += sum(feed.state == "problem" for feed in feeds)
     if problems:
@@ -311,11 +314,18 @@ def render_health(groups: Sequence[tuple[str, list[Feed]]], now: datetime, reloa
     out = ['<section class="health card" aria-labelledby="health-title"><h2 id="health-title">Health</h2>',
            f'<p class="health-line">{line} <span>As of {now:%H:%M}.</span> '
            f'<a href="{html.escape(reload)}">Reload</a></p>']
+    if note:
+        out.append(f'<p class="hint">{html.escape(note)}</p>')
     shown = [(name, group) for name, group in groups if group]
+    folded = bool(shown) and not problems
+    if folded:
+        out.append('<details class="feeds-more"><summary>Show each feed</summary>')
     for name, group in shown:
         if len(shown) > 1:
             out.append(f"<h3>{html.escape(name)}</h3>")
         out.append(f'<ul class="feeds">{"".join(_feed(feed) for feed in group)}</ul>')
+    if folded:
+        out.append("</details>")
     if not shown:
         out.append("<p>Nothing has been checked yet. This page shows how each feed is doing once there is "
                    "something to show.</p>")

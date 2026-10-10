@@ -326,7 +326,7 @@ What you save replaces what's in `config.toml`, including emptying a box: cleari
 ### Overview
 
 - If the dashboard can't start, why, at the top.
-- **Health:** one line, **All working** or how many problems there are, as of the time the page was drawn, with **Reload** to look again. Then each feed, under **On the board** and **On the dashboard** when both views are on: trains, where each train is (with its key), the bus times from the timetable and the live bus positions (or the board's buses with TransportAPI's lookups used today, when the board uses it), the weather, engineering works and bus disruptions (with their keys), and on a Pi the board's display and when it last redrew. For each: when it last updated, whether it is being checked now (or resting outside its checking times, or in the dashboard's quiet hours), the last error in words, and, when something is wrong, what that means for you, like *The dashboard's train times may be out of date.* A feed not heard from yet says **Waiting**, which isn't a problem.
+- **Health:** one line, **All working** or how many problems there are, as of the time the page was drawn, with **Reload** to look again; on a bank holiday, that the board checks at its Sunday times. While all is working the feeds wait behind **Show each feed**, so the rest of the page comes up; with a problem they show at once. Each feed, under **On the board** and **On the dashboard** when both views are on: trains, where each train is (with its key), the bus times from the timetable and the live bus positions (or the board's buses with TransportAPI's lookups used today, when the board uses it), the weather, engineering works and bus disruptions (with their keys), and on a Pi the board's display and when it last redrew. For each: when it last updated, whether it is being checked now (or resting outside its checking times, or in the dashboard's quiet hours), the last error in words, and, when something is wrong, what that means for you, like *The dashboard's train times may be out of date.* A feed not heard from yet says **Waiting**, which isn't a problem.
 - **Your place**, in names: the station, its walk, and the one trains must call at, like *Glossop (GLO), 12 min walk; only trains calling at Manchester Piccadilly (MAN)*; each bus stop with its name from the bus timetable and its walk, like *A: Henry Street, 5 min walk* (its stop code until the timetable has it); the bus timetable, saying **Out of date** and why only when it is due to be built again (a week old, your stops changed, or a timetable in it ended), and how finding the bus maps' roads is getting on; whether home is set (to about 1 km, for the weather); and whether the weather is on. Names come from the station list in the app and the bus timetable, so this page never asks the internet.
 - **Keys:** each key the views on use, in one line: **Set**, **Not set**, or **Needed for** what uses it (trains, buses, the board's buses). Keys are never shown. **Change or test keys** opens the Keys page.
 - **Shortcuts:** **Change home, station or stops** runs the whole [setup wizard](#4-first-run-and-the-setup-wizard); **Change stops only** and **Change station only** start it at that step. **Open the dashboard**, while it runs. **Wall tablet:** the address for a [tablet on the wall](#wall-tablet-kiosk), made from the address you opened the settings with, like `http://glossop.local:8090/?kiosk`. Opened on the computer itself (`localhost`), the page says to use its address on the home network instead, as a tablet can't reach `localhost`.
@@ -356,14 +356,8 @@ Trains and buses can't both be off, or there would be nothing to show.
 
 ### Board
 
-- **Status:** how the board is doing, without changing anything:
-  - when trains, buses and bus positions were last fetched, and whether it's checking now;
-  - the last error, if one happened since the last good fetch, written out as "Problem: …" (keys are never shown);
-  - a note when bus times aren't coming from the timetable and live positions as they should: `From TransportAPI: …` or `Timetabled times only; live positions failed: …`;
-  - how many of today's TransportAPI lookups are used;
-  - when the display last redrew.
+How the board is doing is on the [Overview](#overview), under **On the board**: when trains, buses and bus positions were last fetched and whether it's checking now, the last error in words (keys are never shown), a note when bus times aren't coming from the timetable and live positions as they should (`From TransportAPI: …` or `Timetabled times only; live positions failed: …`), how many of today's TransportAPI lookups are used, and when the display last redrew. **See how the board is doing**, at the top of the Board page, opens it. It's the first place to look when the board seems wrong.
 
-  It's the first place to look when the board seems wrong.
 - **Display**
   - **Look:** station board or plain.
   - **Rotation:** if the display is mounted upside down (or, for the screen, on its side).
@@ -778,17 +772,17 @@ sudo systemctl start departureboard-timetable.service   # build the bus timetabl
 | A command says `Run this as the service's user: sudo -u departureboard …` | It was run as root, on the services' store | Run it as `sudo -u departureboard /opt/departureboard/venv/bin/departureboard …` |
 | E-paper blank after install | The board isn't started, or nothing fetched yet | `sudo systemctl enable --now departureboard.timer`; wait a minute; `journalctl -u departureboard -f` |
 | `NOT UPDATING: TRAINS` | Rail key wrong, or the feed is down | Test the key on the Keys page of the settings; `departureboard probe train` |
-| `NOT UPDATING: BUSES` | No bus timetable yet and no TransportAPI keys; or TransportAPI's daily budget spent, its key wrong, or its feed down | Status on the Board page of the settings; `departureboard probe bus` |
-| Every bus says `sch` | No live positions for those buses right now, or live positions failing (Status says so) | Usually nothing; times are from the timetable |
-| Status says `From TransportAPI: there is no bus timetable yet` | The timetable hasn't been built, or the build failed | `journalctl -u departureboard-timetable -n 20`; start it as in [Bus times](#bus-times) |
-| Status says `From TransportAPI: the bus timetable is for other stops` | You changed the stops; it rebuilds within the hour | Wait, or start the timetable service |
-| Buses not updating while Status says `From TransportAPI` | Outside `fallback_windows`, or the daily budget is spent | Fix the timetable (see the row above); TransportAPI is only a stand-in |
+| `NOT UPDATING: BUSES` | No bus timetable yet and no TransportAPI keys; or TransportAPI's daily budget spent, its key wrong, or its feed down | **On the board** in the settings' Overview; `departureboard probe bus` |
+| Every bus says `sch` | No live positions for those buses right now, or live positions failing (the Overview says so) | Usually nothing; times are from the timetable |
+| The Overview says `From TransportAPI: there is no bus timetable yet` | The timetable hasn't been built, or the build failed | `journalctl -u departureboard-timetable -n 20`; start it as in [Bus times](#bus-times) |
+| The Overview says `From TransportAPI: the bus timetable is for other stops` | You changed the stops; it rebuilds within the hour | Wait, or start the timetable service |
+| Buses not updating while the Overview says `From TransportAPI` | Outside `fallback_windows`, or the daily budget is spent | Fix the timetable (see the row above); TransportAPI is only a stand-in |
 | E-paper errors about chip select | SPI chip selects in use | Add `dtoverlay=spi0-0cs` to `/boot/firmware/config.txt` and reboot |
 | Screen black | Screen service not running | `systemctl status departureboard-screen.service` |
 | Screen upside down or sideways | Rotation | Change **Rotation** on the Board page of the settings |
 | No bus position page | Not a screen, outside the bus windows, no `BODS_API_KEY`, or no route set up for the next bus | Check those in that order |
 | Bus page always says `Not yet past …` | The strip is short (in town 8 stops is about 7 minutes) | Normal; the bus appears when it's close |
-| No rain line on a rainy day | The chance is below the threshold, it's outside the checking windows, no location, or the forecast couldn't be fetched for over 3 hours | Check Status on the Board page of the settings, and **Weather** on the Trains and buses page |
+| No rain line on a rainy day | The chance is below the threshold, it's outside the checking windows, no location, or the forecast couldn't be fetched for over 3 hours | Check the Overview of the settings, and **Weather** on the Trains and buses page |
 | Board quiet on a bank holiday | Weekday windows are off on bank holidays | Add a window including Sun, or choose "Ignore bank holidays" |
 | No code on the board when claiming the settings | The board isn't running | Start it, or print a code on the Pi with `--reset-code` (see [Password and reset codes](#6-password-and-reset-codes)) |
 | The dashboard's address opens the settings | The dashboard view is off, the app isn't set up, or the dashboard's settings don't load | The settings' Overview says why when it can't start; tick **The dashboard** under **Views** on the General page on a Pi |

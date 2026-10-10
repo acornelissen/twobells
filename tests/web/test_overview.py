@@ -68,6 +68,31 @@ def test_all_working_says_so_as_of_now_with_a_way_to_reload():
     assert "What it means" not in page and "<h3>" not in page  # one group needs no heading
 
 
+def test_while_all_is_working_each_feed_waits_behind_a_disclosure():
+    page = health(overview.dashboard_feeds(snapshot(), NOW, LONDON))
+    folded = re.search(r'<details class="feeds-more"><summary>Show each feed</summary>(.*?)</details>', page, re.S)
+    assert folded and '<ul class="feeds">' in folded.group(1)
+    assert page.index('class="health-line"') < page.index("<details")
+    assert "<details open" not in page
+
+
+@pytest.mark.parametrize("problems, changes", [
+    (0, {"weather": {"status": block(error="HTTP Error 503")}}),  # a feed's own problem
+    (1, {}),  # a problem found elsewhere: the dashboard isn't running, say
+])
+def test_with_a_problem_each_feed_shows_at_once(problems, changes):
+    page = health(overview.dashboard_feeds(snapshot(**changes), NOW, LONDON), problems)
+    assert "problem" in text_of(re.search(r'<p class="health-line">(.*?)</p>', page).group(1))
+    assert "<details" not in page and "Show each feed" not in page
+    assert '<ul class="feeds">' in page
+
+
+def test_a_note_goes_under_the_health_line_as_words():
+    page = overview.render_health([("On the board", [])], NOW, "/settings", note="Today is <a> bank holiday.")
+    assert '<p class="hint">Today is &lt;a&gt; bank holiday.</p>' in page
+    assert "<p class=\"hint\">" not in overview.render_health([], NOW, "/settings")
+
+
 def test_a_stale_feed_is_a_problem_saying_what_it_means():
     page = health(overview.dashboard_feeds(snapshot(weather={"status": block(stale=True)}), NOW, LONDON))
     assert "1 problem" in text_of(re.search(r'<p class="health-line">(.*?)</p>', page).group(1))
@@ -217,6 +242,66 @@ def test_every_transportapi_lookup_used_is_a_problem():
 def test_a_board_state_that_cant_be_read_or_isnt_there_yet():
     assert "The board's state file can't be read" in feed(board(state=None), "Board")
     assert "Board Waiting" in feed(board(state={}), "Board")
+
+
+def test_a_bank_holiday_uses_sunday_times_unless_they_are_ignored():
+    holiday_morning = datetime(2026, 8, 31, 8, 1)  # a Monday
+    holidays = frozenset({holiday_morning.date()})
+    state = {"sources": {"train": {"last_success": "2026-08-31T07:58:00"}}}
+    trains = overview.board_feeds(DATA, state, holiday_morning, holidays)[0]
+    assert trains.checking == "No, outside its checking times"
+    ignored = overview.board_feeds({**DATA, "bank_holidays": False}, state, holiday_morning, holidays)[0]
+    assert ignored.checking == "Yes"
+
+
+def test_the_boards_bus_positions_are_a_feed_of_their_own():
+    state = {**STATE, "vehicles": {"last_success": "2026-10-08T08:00:30",
+                                   "last_error": {"at": "2026-10-08T08:01:00", "message": "RuntimeError: timed out"}}}
+    positions = feed(board(state=state), "Live bus positions")
+    assert "Last update 08:00, just now" in positions
+    assert "Last error 08:01, just now: RuntimeError: timed out" in positions
+    assert "Live bus positions" not in board()
+
+
+def test_a_board_source_switched_off_is_left_out_whatever_it_saved_before():
+    state = {**STATE, "vehicles": {"last_success": "2026-10-08T08:00:30"}}
+    names = lambda data: [f.name for f in overview.board_feeds(data, state, NOW)]  # noqa: E731
+    assert names({**DATA, "bus": {**DATA["bus"], "enabled": False}}) == ["Trains", "Display"]
+    assert names({**DATA, "train": {**DATA["train"], "enabled": False}}) == ["Buses", "Live bus positions", "Display"]
+    # Anything but false is for saving to report; the feed shows.
+    assert "Trains" in names({**DATA, "train": {**DATA["train"], "enabled": "no"}})
+
+
+def test_keys_left_in_the_boards_saved_messages_are_never_shown():
+    state = {"sources": {"bus": {"last_error": {
+        "at": "2026-10-08T08:00:00", "message": "GET /x.json?app_id=myid&app_key=tapi-secret-456 refused",
+    }}}}
+    page = board(state=state)
+    assert "tapi-secret-456" not in page and "myid" not in page
+    assert "Last error" in feed(page, "Buses")
+
+
+@pytest.mark.parametrize("state", [
+    {"sources": {"train": "nonsense", "bus": {"last_success": 5, "last_error": "x"}}},
+    {"sources": {"train": {"last_success": "yesterday", "last_error": {"at": [], "message": {}}}}},
+    {"budgets": {"bus": {"day": "2026-10-08", "used": "lots"}}, "last_render": {"at": None}},
+    {"vehicles": {"last_success": "2026-13-45T99:00"}},
+])
+def test_hand_edited_nonsense_in_the_boards_state_does_not_break_the_feeds(state):
+    page = board(state=state)
+    assert "Never" in page and "<strong>Display</strong>" in page
+
+
+def test_the_boards_unreadable_checking_times_are_said_plainly():
+    data = {**DATA, "train": {"windows": ["mornings"]}}
+    assert "Can’t tell" in feed(board(data=data), "Trains")
+
+
+def test_a_board_sources_note_is_shown_as_words():
+    state = {"sources": {"bus": {"note": "From TransportAPI: <the> bus timetable has run out"}}}
+    page = board(state=state)
+    assert "Note From TransportAPI: <the> bus timetable has run out" in feed(page, "Buses")
+    assert "<the>" not in page
 
 
 def test_both_views_are_grouped_under_their_names():

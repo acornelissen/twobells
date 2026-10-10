@@ -28,22 +28,17 @@ from __future__ import annotations
 import html
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
-from datetime import datetime
 from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 from ..board.displays.display import DISPLAY_PANELS
-from ..board.state import StateStore
 from ..settings import schema
 from ..settings.config import ConfigError, merge, settings_from
 from ..settings.overlay import BROKEN_NAME, OverlayError, save_to
 from ..settings.schema import Field, Invalid
-from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
 from . import places, windowrows
 from .icons import icon
-from .status import render_status
 
 if TYPE_CHECKING:
     from ..settings.installs import Install
@@ -186,14 +181,13 @@ class GroupForm:
     buses are both off; `header` draws what goes before the form, given the
     form token, and `footer` what goes after it; `applies` says when saved
     changes take effect, in the save bar; `setup` is the setup wizard's
-    address, for the sections with nothing set up; `clock` gives the local
-    time as a naive datetime, by default the time now in the configured
-    timezone."""
+    address, for the sections with nothing set up; `overview` is the
+    Overview's, which the Board page points to for how the board is doing."""
 
     def __init__(self, store: Store, pages: Sequence[str], action: str,
                  load_secrets: Callable[[], Mapping[str, str]], *, install: Install, noun: str,
                  header: Callable[[str], str] = lambda csrf: "", footer: Callable[[], str] = lambda: "",
-                 applies: str = "", setup: str = "", clock: Callable[[], datetime] | None = None) -> None:
+                 applies: str = "", setup: str = "", overview: str = "") -> None:
         # Not the overview, nor the keys page: it is a keyspage.KeysPage.
         unknown = set(pages) - {page for page in schema.PAGES[1:] if page != "keys"}
         if unknown:
@@ -208,7 +202,7 @@ class GroupForm:
         self._footer = footer
         self._applies = applies
         self._setup = setup
-        self._clock = clock
+        self._overview = overview
 
     # Reading
 
@@ -465,26 +459,6 @@ class GroupForm:
 
     # Drawing
 
-    def _now(self, data: dict) -> datetime:
-        if self._clock is not None:
-            return self._clock()
-        try:
-            return datetime.now(ZoneInfo(data.get("timezone", "Europe/London"))).replace(tzinfo=None)
-        except (KeyError, TypeError, ValueError):  # a bad zone: the form says so on saving
-            return datetime.now()
-
-    def _status(self, data: dict) -> str:
-        """The board's status panel, from the state file it saves. Read only:
-        the board alone writes it."""
-        try:
-            state = StateStore(self._store.state_file).load()
-        except OSError:
-            state = None
-        division = data.get("bank_holiday_division", ENGLAND_AND_WALES)
-        if division not in DIVISIONS:  # the form says so on saving
-            division = ENGLAND_AND_WALES
-        return render_status(data, state, self._now(data), read_cache(self._store.folder, division))
-
     def _sections(self, fields: list[Field], data: dict) -> list[tuple[str, str, list[Field]]]:
         """The form's sections in order: each one's page and heading, and its fields."""
         found: dict[tuple[str, str], list[Field]] = {}
@@ -522,8 +496,9 @@ class GroupForm:
                 "<p>The page shows config.toml's settings. Saving replaces the broken file, "
                 f"keeping a copy of it as {BROKEN_NAME}.</p></div>"
             )
-        if "board" in self._pages:
-            out.append(self._status(data))
+        if "board" in self._pages and self._overview:  # each feed and the last redraw are the Overview's
+            out.append(f'<p class="lead"><a href="{e(self._overview)}">See how the board is doing</a> on the '
+                       "Overview.</p>")
         if len(sections) > 3:
             links = "".join(f'<li><a href="#{section_id(heading)}">{e(heading)}</a></li>'
                             for _, heading, _ in sections)
