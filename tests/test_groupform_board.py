@@ -1,11 +1,17 @@
+"""A GroupForm of the general and board groups together, as the board's
+old settings page had them: the board's settings, saved and shown. The
+settings site's tabs (test_settingsite.py) are each one of these groups."""
+
 import re
 import tomllib
 
 import pytest
 
 from departureboard.config import load_config, read_config, read_overlay_in
+from departureboard.groupform import GroupForm
+from departureboard.installs import install_named
 from departureboard.schema import saved_keys
-from departureboard.settingsform import SettingsForm
+from departureboard.store import Store
 
 ENV = {"RDM_API_KEY": "rdm-secret-123", "TAPI_APP_ID": "id", "TAPI_APP_KEY": "tapi-secret-456"}
 
@@ -42,13 +48,20 @@ B = 6
 """
 
 
+def board_form(store_or_config, load_secrets, clock=None):
+    """The general and board groups' form, on a Pi."""
+    return GroupForm(Store.of(store_or_config), ("general", "board"), "/settings/board", load_secrets,
+                     install=install_named("pi"), noun="board", legends={None: "Board", "weather": "Rain warning"},
+                     clock=clock)
+
+
 @pytest.fixture
 def setup(tmp_path):
     state = tmp_path / "state"
     config = tmp_path / "config.toml"
     config.write_text(CONFIG.format(state=state / "state.json"))
     secrets = dict(ENV)
-    form = SettingsForm(config, lambda: dict(secrets))
+    form = board_form(config, lambda: dict(secrets))
     return form, config, state, secrets
 
 
@@ -127,13 +140,6 @@ def test_the_whole_configuration_must_still_load(setup):
     errors = form.save(fields_of(form))
     assert "RDM_API_KEY" in errors["_form"]
     assert not (state / "settings.toml").exists()
-
-
-def test_the_page_links_to_the_setup_wizard(setup):
-    form, *_ = setup
-    page = form.render("tok")
-    assert '<a href="/setup/">Set up home, station and stops</a>' in page
-    assert page.index('href="/setup/"') < page.index('<form method="post" action="/" ')
 
 
 def test_keys_are_write_only(setup):
@@ -224,7 +230,7 @@ def _form_for(tmp_path, extra):
     state = tmp_path / "state"
     config = tmp_path / "config.toml"
     config.write_text(CONFIG.format(state=state / "state.json").replace('theme = "sign"', extra))
-    return SettingsForm(config, lambda: dict(ENV))
+    return board_form(config, lambda: dict(ENV))
 
 
 def test_the_plain_look_does_not_offer_yellow_on_white(tmp_path):
@@ -296,7 +302,7 @@ def test_a_screen_can_turn_a_quarter(tmp_path):
     state = tmp_path / "state"
     config = tmp_path / "config.toml"
     config.write_text(CONFIG.format(state=state / "state.json").replace('theme = "sign"', 'theme = "sign"\ndisplay = "hdmi-1280x400"\nrotate = 90'))
-    form = SettingsForm(config, lambda: dict(ENV))
+    form = board_form(config, lambda: dict(ENV))
     assert form.save(fields_of(form) | {"rotate": "270"}) == {}
     assert load_config(config, ENV).rotate == 270
 
@@ -321,7 +327,7 @@ def test_clearing_directions_takes_effect(tmp_path):
     state = tmp_path / "state"
     config = tmp_path / "config.toml"
     config.write_text(CONFIG.format(state=state / "state.json").replace("directions = []", 'directions = ["Ashton"]'))
-    form = SettingsForm(config, lambda: dict(ENV))
+    form = board_form(config, lambda: dict(ENV))
     assert fields_of(form)["bus_directions"] == "Ashton"
     assert form.save(fields_of(form) | {"bus_directions": ""}) == {}
     assert read_config(config)["bus"]["directions"] == []
@@ -341,7 +347,7 @@ def test_choosing_the_looks_own_accent_clears_one_set_in_config(tmp_path):
     state = tmp_path / "state"
     config = tmp_path / "config.toml"
     config.write_text(CONFIG.format(state=state / "state.json").replace('theme = "sign"', 'theme = "sign"\naccent = "red"'))
-    form = SettingsForm(config, lambda: dict(ENV))
+    form = board_form(config, lambda: dict(ENV))
     assert form.save(fields_of(form) | {"accent": ""}) == {}
     assert load_config(config, ENV).accent == "yellow"
 
@@ -362,7 +368,7 @@ def test_routes_set_in_config_survive_a_save(tmp_path):
     text = CONFIG.format(state=state / "state.json").replace('theme = "sign"', 'theme = "sign"\ndisplay = "hdmi-1280x400"')
     config.write_text(text + ROUTES)
     env = {**ENV, "BODS_API_KEY": "bods"}
-    form = SettingsForm(config, lambda: dict(env))
+    form = board_form(config, lambda: dict(env))
     assert form.save(fields_of(form) | {"bus_stops": "A = 1000DGHS0900", "bus_walk_minutes": "5"}) == {}
     assert "routes" not in (state / "settings.toml").read_text()
     assert set(load_config(config, env).board.tracker.routes) == {"341"}
@@ -436,7 +442,7 @@ def _status_form(tmp_path, state_text=None):
     if state_text is not None:
         state.mkdir()
         (state / "state.json").write_text(state_text)
-    form = SettingsForm(config, lambda: dict(ENV), clock=lambda: datetime(2026, 10, 8, 8, 1))
+    form = board_form(config, lambda: dict(ENV), clock=lambda: datetime(2026, 10, 8, 8, 1))
     return form, state
 
 
@@ -444,7 +450,7 @@ def test_status_comes_before_the_form_under_its_own_heading(tmp_path):
     saved = '{"sources": {"train": {"last_success": "2026-10-08T07:58:00"}}, "last_render": {"at": "2026-10-08T07:58:00"}}'
     form, _ = _status_form(tmp_path, saved)
     page = form.render("tok")
-    assert page.index("<h1>") < page.index('<h2 id="status-title">Status</h2>') < page.index("<form method=\"post\" action=\"/\"")
+    assert page.index('<h2 id="status-title">Status</h2>') < page.index('<form method="post" action="/settings/board"')
     assert page.index("Status</h2>") < page.index("<fieldset>")
     assert "07:58, 3 min ago" in page
 
@@ -492,7 +498,7 @@ def _weather_form(tmp_path):
     state = tmp_path / "state"
     config = tmp_path / "config.toml"
     config.write_text(CONFIG.format(state=state / "state.json") + "\n[weather]\nlat = 53.44\nlon = -1.95\n")
-    return SettingsForm(config, lambda: dict(ENV)), config
+    return board_form(config, lambda: dict(ENV)), config
 
 
 def test_rain_warning_controls_are_on_the_page(tmp_path):
@@ -578,7 +584,7 @@ def test_the_only_section_set_up_cannot_be_switched_off(tmp_path):
     state = tmp_path / "state"
     config = tmp_path / "config.toml"
     config.write_text(CONFIG.format(state=state / "state.json").split("[bus]")[0])
-    form = SettingsForm(config, lambda: dict(ENV))
+    form = board_form(config, lambda: dict(ENV))
     assert set(form.save(fields_of(form) | {"train_enabled": "false"})) == {"train_enabled"}
 
 
@@ -587,7 +593,7 @@ def test_a_section_off_with_the_templates_placeholders_saves(tmp_path):
     config = tmp_path / "config.toml"
     off = CONFIG.replace('[bus]\n', '[bus]\nenabled = false\n').replace('B = "100000008350"', 'B = "CHANGE_ME"')
     config.write_text(off.format(state=state / "state.json"))
-    form = SettingsForm(config, lambda: dict(ENV))
+    form = board_form(config, lambda: dict(ENV))
     assert fields_of(form)["bus_enabled"] == "false"
     assert form.save(fields_of(form)) == {}
     assert [c.source.name for c in load_config(config, ENV).board.sources] == ["train"]
@@ -656,7 +662,7 @@ def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
     with (state / "settings.toml").open("a", encoding="utf-8") as saved:
         saved.write('\n[dashboard]\ntitle = "Our house"\n')  # a table neither manages: not read, so dropped
 
-    form = SettingsForm(config, lambda: dict(env))
+    form = board_form(config, lambda: dict(env))
     assert form.save(fields_of(form) | {"title": "Home", "board_train_rows": "2"}) == {}
     # Everything setup and the page wrote is read back: none of it is outside schema.saved_keys.
     written = tomllib.loads((state / "settings.toml").read_text())
@@ -690,7 +696,7 @@ def test_the_page_can_still_clear_a_field_setup_filled(tmp_path):
     config.write_text(CONFIG.format(state=state / "state.json"))
     state.mkdir()
     (state / "settings.toml").write_text('[train]\nwalk_minutes = 6\nfilter_crs = "MAN"\n')
-    form = SettingsForm(config, lambda: dict(ENV))
+    form = board_form(config, lambda: dict(ENV))
     assert form.save(fields_of(form) | {"train_walk_minutes": "", "train_filter_crs": ""}) == {}
     data = read_config(config)
     assert data["train"]["walk_minutes"] == "" and data["train"]["filter_crs"] == ""

@@ -14,9 +14,11 @@ from urllib.parse import urljoin
 import pytest
 
 from departureboard import keytest
-from departureboard.dashform import KEYS as DASHBOARD_KEYS
-from departureboard.settingsform import KEYS
+from departureboard.schema import keys
 from departureboard.setupapi import PAGE_HEADERS, static_files
+
+# The Pi's keys and the dashboard's: the general group's and each view's own.
+KEYS, DASHBOARD_KEYS = keys("general", "board"), keys("general", "dashboard")
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "departureboard" / "wizard_static"

@@ -120,7 +120,7 @@ class SetupView:
     settings page's address, where the setup wizard is. With another
     heading and note, the same page says the board view is off."""
 
-    url: str  # "http://raspberrypi.local:8080/"
+    url: str  # "http://raspberrypi.local:8080/settings"
     heading: str = SETUP_HEADING
     note: str = SETUP_NOTE
 

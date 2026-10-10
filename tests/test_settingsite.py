@@ -1259,6 +1259,23 @@ def test_outsiders_are_refused_before_the_settings(make):
     assert running("GET", "/settings/login", host="raspberrypi.local:8080")[0].status == 200
 
 
+def test_slow_clients_are_dropped():
+    from departureboard.dashserver import _Handler
+
+    assert _Handler.timeout and _Handler.timeout <= 10  # a client that stalls lets go of its thread
+
+
+def test_a_client_hanging_up_early_is_not_reported(capsys, caplog):
+    from departureboard.dashserver import DashboardServer
+
+    server = DashboardServer.__new__(DashboardServer)
+    try:
+        raise BrokenPipeError(32, "Broken pipe")
+    except BrokenPipeError:
+        server.handle_error(None, ("127.0.0.1", 1))
+    assert capsys.readouterr().err == "" and "Broken" not in caplog.text
+
+
 def test_one_host_header_only(pi):
     conn = http.client.HTTPConnection("127.0.0.1", pi.port, timeout=5)
     conn.putrequest("GET", "/settings/login", skip_host=True)

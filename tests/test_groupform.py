@@ -1,5 +1,6 @@
-"""One form for any groups of settings: what the board's and the dashboard's
-pages share (their own tests are in test_settingsform and test_dashform)."""
+"""One form for any groups of settings: what every tab of the settings site
+shares (the general and board groups together are tested in
+test_groupform_board, the general and dashboard in test_groupform_dashboard)."""
 
 import re
 import stat
@@ -9,10 +10,8 @@ import pytest
 
 from departureboard.config import load_config
 from departureboard.dashconfig import load_dashboard
-from departureboard.dashform import DashboardForm
 from departureboard.groupform import GroupForm
-from departureboard.installs import Install
-from departureboard.settingsform import SettingsForm
+from departureboard.installs import Install, install_named
 from departureboard.store import Store
 
 ENV = {"RDM_API_KEY": "rail-key-1234567", "BODS_API_KEY": "bods-key-7654321"}
@@ -47,6 +46,18 @@ def saved(store):
     return tomllib.loads(store.settings_file.read_text())
 
 
+def board_form(store, load_secrets):
+    """The general and board groups' form, on a Pi."""
+    return GroupForm(store, ("general", "board"), "/settings/board", load_secrets, install=install_named("pi"),
+                     noun="board", legends={None: "Board", "weather": "Rain warning"})
+
+
+def dashboard_form(store, load_secrets):
+    """The general and dashboard groups' form, on a desktop."""
+    return GroupForm(store, ("general", "dashboard"), "/settings", load_secrets, install=install_named("desktop"),
+                     noun="dashboard", legends={None: "Dashboard"})
+
+
 def form_for(store, groups, install=BOTH, env=ENV):
     return GroupForm(store, groups, "/settings", lambda: dict(env), install=install, noun="board")
 
@@ -68,7 +79,7 @@ def fields_of(page_or_form):
 def test_saving_the_board_s_settings_keeps_the_dashboard_s(store):
     store.make()
     store.settings_file.write_text('[dashboard]\ntrain_rows = 4\nhistory_days = 30\n')
-    form = SettingsForm(store, lambda: dict(ENV))
+    form = board_form(store, lambda: dict(ENV))
     assert form.save(fields_of(form) | {"theme": "plain", "accent": ""}) == {}
     written = saved(store)
     assert written["dashboard"] == {"train_rows": 4, "history_days": 30}
@@ -78,7 +89,7 @@ def test_saving_the_board_s_settings_keeps_the_dashboard_s(store):
 def test_saving_the_dashboard_s_settings_keeps_the_board_s(store):
     store.make()
     store.settings_file.write_text('theme = "plain"\ntext_size = 14\n[train]\nrows = 2\nwindows = ["Mon-Fri 07:00-08:00"]\n')
-    form = DashboardForm(store, lambda: dict(ENV))
+    form = dashboard_form(store, lambda: dict(ENV))
     assert form.save(fields_of(form) | {"dashboard_train_rows": "12"}) == {}
     written = saved(store)
     assert (written["theme"], written["text_size"]) == ("plain", 14)
@@ -87,8 +98,8 @@ def test_saving_the_dashboard_s_settings_keeps_the_board_s(store):
 
 
 def test_a_form_shows_only_its_own_groups(store):
-    board = SettingsForm(store, lambda: dict(ENV)).render("tok")
-    dashboard = DashboardForm(store, lambda: dict(ENV)).render("tok")
+    board = board_form(store, lambda: dict(ENV)).render("tok")
+    dashboard = dashboard_form(store, lambda: dict(ENV)).render("tok")
     assert 'id="board_train_rows"' in board and 'id="dashboard_train_rows"' not in board
     assert 'id="dashboard_train_rows"' in dashboard and 'id="board_train_rows"' not in dashboard
     assert 'id="TAPI_APP_ID"' in board and 'id="TAPI_APP_ID"' not in dashboard
@@ -142,7 +153,7 @@ def test_a_view_box_sending_anything_but_on_is_refused(store):
 
 
 def test_with_one_view_offered_there_is_no_choice_and_none_is_saved(store):
-    for form in (SettingsForm(store, lambda: dict(ENV)), DashboardForm(store, lambda: dict(ENV))):
+    for form in (board_form(store, lambda: dict(ENV)), dashboard_form(store, lambda: dict(ENV))):
         page = form.render("tok")
         assert "<legend>Views</legend>" not in page and 'type="checkbox"' not in page
         assert form.save(fields_of(page)) == {}
@@ -180,17 +191,17 @@ def test_turning_a_view_on_checks_that_it_loads(store):
 
 def test_the_dashboard_s_form_says_when_its_buses_can_t_be_shown(store):
     store.config_path.write_text(CONFIG.replace('source = "bods"', 'source = "transportapi"'))
-    page = DashboardForm(store, lambda: dict(ENV)).render("tok")
+    page = dashboard_form(store, lambda: dict(ENV)).render("tok")
     buses = page[page.index("<legend>Buses</legend>"):]
     assert "only from the free BODS timetable" in buses[:buses.index("</fieldset>")]
-    assert "only from the free BODS timetable" not in SettingsForm(store, lambda: dict(ENV)).render("tok")
+    assert "only from the free BODS timetable" not in board_form(store, lambda: dict(ENV)).render("tok")
 
 
 # Every setting a field shows round-trips
 
 
 def test_text_sizes_from_9_to_16_are_offered_and_kept(store):
-    form = SettingsForm(store, lambda: dict(ENV))
+    form = board_form(store, lambda: dict(ENV))
     page = form.render("tok")
     select = re.search(r'<select id="text_size"[^>]*>(.*?)</select>', page).group(1)
     assert re.findall(r'value="(\d+)"', select) == [str(size) for size in range(9, 17)]
@@ -204,7 +215,7 @@ def test_text_sizes_from_9_to_16_are_offered_and_kept(store):
 
 
 def test_a_time_zone_is_saved_and_used(store):
-    form = DashboardForm(store, lambda: dict(ENV))
+    form = dashboard_form(store, lambda: dict(ENV))
     assert fields_of(form)["timezone"] == "Europe/London"  # the default, shown
     assert set(form.save(fields_of(form) | {"timezone": "Mars/Olympus"})) == {"timezone"}
     assert form.save(fields_of(form) | {"timezone": "Europe/Dublin"}) == {}
@@ -213,16 +224,16 @@ def test_a_time_zone_is_saved_and_used(store):
 
 
 def test_defaults_are_shown_where_the_settings_say_nothing(store):
-    board = fields_of(SettingsForm(store, lambda: dict(ENV)))
+    board = fields_of(board_form(store, lambda: dict(ENV)))
     assert board["train_windows"] == "Mon-Fri 06:30-09:30\nMon-Fri 16:30-19:30"
     assert (board["board_bus_rows"], board["bus_interval_minutes"]) == ("3", "2")  # bods: checked often
     assert board["bus_windows"] == "Mon-Sun 06:00-23:00"
-    dashboard = fields_of(DashboardForm(store, lambda: dict(ENV)))
+    dashboard = fields_of(dashboard_form(store, lambda: dict(ENV)))
     assert (dashboard["dashboard_train_rows"], dashboard["quiet_windows"]) == ("10", "Mon-Sun 01:00-05:00")
 
 
 def test_the_knowledgebase_address_must_be_at_raildata(store):
-    form = DashboardForm(store, lambda: dict(ENV))
+    form = dashboard_form(store, lambda: dict(ENV))
     errors = form.save(fields_of(form) | {"kb_incidents_url": "https://api.example.test/kb"})
     assert set(errors) == {"kb_incidents_url"} and "raildata.org.uk" in errors["kb_incidents_url"]
     url = "https://api1.raildata.org.uk/1010-knowledgebase-incidents/incidents"
@@ -235,8 +246,8 @@ def test_the_knowledgebase_address_must_be_at_raildata(store):
 
 
 @pytest.mark.parametrize("make", [
-    lambda store: SettingsForm(store, lambda: dict(ENV)),
-    lambda store: DashboardForm(store, lambda: dict(ENV)),
+    lambda store: board_form(store, lambda: dict(ENV)),
+    lambda store: dashboard_form(store, lambda: dict(ENV)),
 ])
 def test_a_broken_settings_file_is_replaced_and_kept_aside(store, make):
     store.make()
@@ -255,7 +266,7 @@ def test_a_broken_settings_file_is_replaced_and_kept_aside(store, make):
 def test_a_broken_file_is_not_replaced_when_the_save_is_refused(store):
     store.make()
     store.settings_file.write_text("title = \n")
-    form = SettingsForm(store, lambda: {})  # no keys: the board won't load
+    form = board_form(store, lambda: {})  # no keys: the board won't load
     assert "_form" in form.save(fields_of(form))
     assert store.settings_file.read_text() == "title = \n"
     assert not (store.folder / "settings.toml.broken").exists()
@@ -263,7 +274,7 @@ def test_a_broken_file_is_not_replaced_when_the_save_is_refused(store):
 
 def test_a_config_toml_that_can_t_be_read_is_said_and_nothing_saved(store):
     store.config_path.write_text("this is [not toml")
-    form = DashboardForm(store, lambda: dict(ENV))
+    form = dashboard_form(store, lambda: dict(ENV))
     page = form.render("tok")
     assert "The settings can't be read" in page and "config.toml" in page
     assert "_form" in form.save({"title": "Home"})

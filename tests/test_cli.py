@@ -1511,35 +1511,18 @@ def test_the_first_run_after_setting_up_fetches_everything(tmp_path, monkeypatch
     assert calls == [1]
 
 
-def test_the_settings_page_opens_the_wizard_until_the_board_is_set_up(tmp_path, monkeypatch, capsys):
-    from departureboard import web
+def test_the_settings_open_the_wizard_until_the_board_is_set_up(tmp_path, monkeypatch, capsys, served):
+    from departureboard.settingsite import PREFIX, SETUP
 
-    made = {}
-    real = web.make_handler
-
-    def make_handler(*args, **kwargs):
-        made.update(kwargs)
-        return real(*args, **kwargs)
-
-    class Server:
-        server_address = ("127.0.0.1", 8080)
-
-        def serve_forever(self):
-            raise KeyboardInterrupt
-
-        def server_close(self):
-            pass
-
-    monkeypatch.setattr(web, "make_handler", make_handler)
-    monkeypatch.setattr(web, "make_server", lambda handler, host, port: Server())
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
     config = installed_template(tmp_path)
     assert main(["web", "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
     assert "opens the setup wizard" in capsys.readouterr().err
-    wizard = made["wizard"]
-    assert "" in wizard.files and wizard.needed()
+    site = served["app"].settings
+    assert "" in site._files and site._home() == SETUP
     config.write_text(config.read_text().replace('crs = "CHANGE_ME"', 'crs = "GLO"')
                       .replace('A = "CHANGE_ME"', 'A = "1800SB12341"'))
-    assert not wizard.needed()
+    assert site._home() == PREFIX
 
 
 @pytest.fixture
@@ -1552,39 +1535,22 @@ def no_runtime_folder(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("flag", [[], ["--setup-via-spool"]])
-def test_the_pis_settings_page_hands_setup_to_the_setup_service(tmp_path, monkeypatch, flag, no_runtime_folder):
-    from departureboard import setupspool, web
+def test_the_pis_settings_hand_setup_to_the_setup_service(tmp_path, monkeypatch, flag, no_runtime_folder, served):
+    # Always, now: the flag the unit still passes is taken and changes nothing.
+    from departureboard import setupspool
 
-    made = {}
-    real = web.make_handler
-
-    def make_handler(*args, **kwargs):
-        made.update(kwargs)
-        return real(*args, **kwargs)
-
-    class Server:
-        server_address = ("127.0.0.1", 8080)
-
-        def serve_forever(self):
-            raise KeyboardInterrupt
-
-        def server_close(self):
-            pass
-
-    monkeypatch.setattr(web, "make_handler", make_handler)
-    monkeypatch.setattr(web, "make_server", lambda handler, host, port: Server())
     config = installed_template(tmp_path)
     (tmp_path / "state").mkdir()  # as install.sh and systemd's StateDirectory make it
     run = tmp_path / "run"
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))  # as systemd gives it
     assert main(["web", "--config", str(config), "--secrets", str(tmp_path / "none.env"), *flag]) == 0
-    runner = made["wizard"].api._runner
-    if flag:
-        assert isinstance(runner, setupspool.SpoolRunner)
-        assert runner.spool.folder == run and runner.spool.requests.is_dir()
-    else:
-        assert runner is None and not run.exists()
-    assert os.listdir(tmp_path / "state") == []  # nothing of setup's on the SD card
+    assert (served["host"], served["port"], served["attempts"]) == ("0.0.0.0", 8080, 1)
+    site = served["app"].settings
+    assert site.install.name == "pi" and served["app"].hub is None
+    runner = site.setup._runner
+    assert isinstance(runner, setupspool.SpoolRunner)
+    assert runner.spool.folder == run and runner.spool.requests.is_dir()
+    assert sorted(os.listdir(tmp_path / "state")) == []  # nothing of setup's on the SD card
 
 
 def test_the_setup_service_searches_in_the_boards_state_folder(tmp_path, monkeypatch, no_runtime_folder):
@@ -1603,49 +1569,40 @@ def test_the_setup_service_searches_in_the_boards_state_folder(tmp_path, monkeyp
     assert isinstance(worker._settings(), dict)
 
 
-def test_without_a_folder_in_memory_the_setup_spool_is_refused(tmp_path, monkeypatch, capsys, no_runtime_folder):
+@pytest.mark.parametrize("flag", [[], ["--setup-via-spool"]])
+def test_without_a_folder_in_memory_the_setup_spool_is_refused(tmp_path, monkeypatch, capsys, no_runtime_folder,
+                                                               flag):
     # Never on the SD card, where flash can keep what was deleted: a request can hold home's position or a key.
-    from departureboard import setupspool, web
+    from departureboard import dashserver, setupspool
 
-    monkeypatch.setattr(web, "make_server", lambda handler, host, port: pytest.fail("served"))
+    monkeypatch.setattr(dashserver, "make_server", lambda *args, **kwargs: pytest.fail("served"))
     monkeypatch.setattr(setupspool.Worker, "run", lambda self: pytest.fail("ran"))
     config = installed_template(tmp_path)
     (tmp_path / "state").mkdir()
     none = str(tmp_path / "none.env")
-    assert main(["web", "--config", str(config), "--secrets", none, "--setup-via-spool"]) == 2
+    assert main(["web", "--config", str(config), "--secrets", none, *flag]) == 2
+    assert "RUNTIME_DIRECTORY" in capsys.readouterr().err
+    assert main(["serve", "--install", "pi", "--config", str(config), "--secrets", none]) == 2
     assert "RUNTIME_DIRECTORY" in capsys.readouterr().err
     assert main(["setup", "serve", "--config", str(config), "--secrets", none]) == 2
     assert "RUNTIME_DIRECTORY" in capsys.readouterr().err
     assert os.listdir(tmp_path / "state") == []
 
 
-def test_the_page_and_the_setup_service_share_systemds_folder_in_memory(tmp_path, monkeypatch):
-    from departureboard import setupspool, web
+def test_the_page_and_the_setup_service_share_systemds_folder_in_memory(tmp_path, monkeypatch, served):
+    from departureboard import setupspool
 
     run = tmp_path / "run"
     run.mkdir(mode=0o700)  # as systemd makes RuntimeDirectory=
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
-    made, ran = {}, []
-    real = web.make_handler
-
-    class Server:
-        server_address = ("127.0.0.1", 8080)
-
-        def serve_forever(self):
-            raise KeyboardInterrupt
-
-        def server_close(self):
-            pass
-
-    monkeypatch.setattr(web, "make_handler", lambda *a, **kw: made.update(kw) or real(*a, **kw))
-    monkeypatch.setattr(web, "make_server", lambda handler, host, port: Server())
+    ran = []
     monkeypatch.setattr(setupspool.Worker, "run", lambda self: ran.append(self) or 0)
     config = installed_template(tmp_path)
     (tmp_path / "state").mkdir()
     none = str(tmp_path / "none.env")
     assert main(["web", "--config", str(config), "--secrets", none, "--setup-via-spool"]) == 0
     assert main(["setup", "serve", "--config", str(config), "--secrets", none]) == 0
-    assert made["wizard"].api._runner.spool.folder == run and ran[0].spool.folder == run
+    assert served["app"].settings.setup._runner.spool.folder == run and ran[0].spool.folder == run
     assert (run / "requests").is_dir() and not (tmp_path / "state" / setupspool.SPOOL).exists()
 
 
@@ -1750,37 +1707,24 @@ def test_the_setup_service_answers_with_why_when_it_cant_read_its_config(tmp_pat
     assert "Traceback" not in capsys.readouterr().err
 
 
-def test_without_a_config_the_settings_page_starts_in_systemds_folder(tmp_path, monkeypatch, capsys):
-    from departureboard import web
-
-    made = {}
-    real = web.make_handler
-
-    class Server:
-        server_address = ("127.0.0.1", 8080)
-
-        def serve_forever(self):
-            raise KeyboardInterrupt
-
-        def server_close(self):
-            pass
+def test_without_a_config_the_settings_start_in_systemds_folder(tmp_path, monkeypatch, capsys, served):
+    from departureboard.settingsite import SETUP
 
     folder = tmp_path / "lib"
     folder.mkdir()
     monkeypatch.setenv("STATE_DIRECTORY", str(folder))
-    monkeypatch.setattr(web, "make_handler", lambda *a, **kw: made.update(kw) or real(*a, **kw))
-    monkeypatch.setattr(web, "make_server", lambda handler, host, port: Server())
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
     assert main(["web", "--config", str(tmp_path / "missing.toml"), "--secrets", str(tmp_path / "none.env")]) == 0
     assert "opens the setup wizard" in capsys.readouterr().err
-    wizard = made["wizard"]
-    assert wizard.needed() and wizard.api._job_folder == folder
+    site = served["app"].settings
+    assert site._home() == SETUP and site.setup._job_folder == folder and site.store.folder == folder
 
 
 @pytest.mark.parametrize("name, url", [
-    ("kitchen-board", "http://kitchen-board.local:8080/"),
-    ("Board.lan", "http://board.local:8080/"),
-    ("bad name\n", "http://raspberrypi.local:8080/"),
-    ("", "http://raspberrypi.local:8080/"),
+    ("kitchen-board", "http://kitchen-board.local:8080/settings"),
+    ("Board.lan", "http://board.local:8080/settings"),
+    ("bad name\n", "http://raspberrypi.local:8080/settings"),
+    ("", "http://raspberrypi.local:8080/settings"),
 ])
 def test_the_setup_address_is_this_pis_name(name, url):
     from departureboard.cli import setup_url

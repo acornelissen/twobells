@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from departureboard import dashform, discover, settingsform, setupapi
+from departureboard import discover, setupapi
+from departureboard.schema import keys as schema_keys
 from departureboard.config import load_config, needs_setup, read_base, read_config
 from departureboard.keytest import KeyResult
 from departureboard.overlay import Target, board_target
@@ -434,7 +435,7 @@ def test_begin_says_which_keys_are_set_never_their_values(board):
 def test_begin_names_the_pis_page_and_its_keys_by_default(board):
     body = ok(board, "begin")
     assert body["title"] == "Set up your board" and body["noun"] == "board"
-    assert [k["name"] for k in body["keys"]] == [name for name, _, _ in settingsform.KEYS]
+    assert [k["name"] for k in body["keys"]] == [name for name, _, _ in schema_keys("general", "board")]
 
 
 # A host with keys of its own, as the dashboard has.
@@ -449,7 +450,7 @@ def dashboard(board):
     board.secrets["RDM_DETAILS_API_KEY"] = DETAILS_KEY
     api = SetupApi(board_target(board.config), lambda: dict(board.secrets), board.state, stations=lambda: STATIONS,
                    make_job=FakeJob, test_key=board._test_key, key_tests=RateLimit(10.0, clock=lambda: 0.0),
-                   title="Set up your dashboard", noun="dashboard", keys=dashform.KEYS)
+                   title="Set up your dashboard", noun="dashboard", keys=schema_keys("general", "dashboard"))
     api.calls, api.secrets, api.state = board.calls, board.secrets, board.state
     return api
 
@@ -505,9 +506,9 @@ def test_the_dashboards_saved_keys_never_leave_in_an_answer(dashboard):
 
 
 @pytest.mark.parametrize("title, keys", [
-    ("", settingsform.KEYS),
-    ("x" * 61, settingsform.KEYS),
-    ("Set up\nyour board", settingsform.KEYS),
+    ("", schema_keys("general", "board")),
+    ("x" * 61, schema_keys("general", "board")),
+    ("Set up\nyour board", schema_keys("general", "board")),
     ("Set up", ()),
     ("Set up", (("lower_case", "Key", "Hint."),)),
 ])

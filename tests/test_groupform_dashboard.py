@@ -1,4 +1,7 @@
-"""The dashboard's settings form, saving into its own overlay, without the web server."""
+"""A GroupForm of the general and dashboard groups together, as the
+dashboard's old settings page had them: the dashboard's settings, saved
+into the store, without the web server. The settings site's tabs
+(test_settingsite.py) are each one of these groups."""
 
 import re
 import tomllib
@@ -6,7 +9,8 @@ import tomllib
 import pytest
 
 from departureboard.dashconfig import dashboard_target, load_dashboard
-from departureboard.dashform import DashboardForm
+from departureboard.groupform import GroupForm
+from departureboard.installs import install_named
 from departureboard.store import Store
 
 CONFIG = """
@@ -25,6 +29,12 @@ lon = -1.95
 ENV = {"RDM_API_KEY": "rail-key-1234567", "BODS_API_KEY": "bods-key-7654321"}
 
 
+def dashboard_form(store, load_secrets):
+    """The general and dashboard groups' form, on a desktop."""
+    return GroupForm(store, ("general", "dashboard"), "/settings", load_secrets, install=install_named("desktop"),
+                     noun="dashboard", legends={None: "Dashboard"})
+
+
 @pytest.fixture
 def form(tmp_path):
     config = tmp_path / "config.toml"
@@ -32,7 +42,7 @@ def form(tmp_path):
     folder = tmp_path / "dash"
     folder.mkdir()
     store = Store.open(config, state_dir=folder)
-    page = DashboardForm(store, lambda: store.env(ENV))
+    page = dashboard_form(store, lambda: store.env(ENV))
     page.config, page.folder = config, folder
     return page
 
@@ -147,13 +157,13 @@ def test_every_field_the_page_saves_is_read_back():
 
 def test_everything_setup_and_the_page_save_is_read_back(form):
     from departureboard.config import read_overlay_in
-    from departureboard.dashform import KEYS
+    from departureboard.schema import keys
     from departureboard.setupapi import SetupApi
 
     stations = (("Glossop", "GLO", 53.4445, -1.9491), ("Manchester Piccadilly", "MAN", 53.4774, -2.2309))
     store = Store.open(form.config, state_dir=form.folder)
     wizard = SetupApi(dashboard_target(store), lambda: store.env(ENV), form.folder, stations=lambda: stations,
-                      make_job=FoundJob, keys=KEYS)
+                      make_job=FoundJob, keys=keys("general", "dashboard"))
     assert wizard.handle("start", {"stops": {"A": "1800SB12341"}, "routes": True})[0] == 200
     status, body = wizard.handle("finish", {
         "home": {"lat": 53.46, "lon": -1.96, "country": "Scotland"}, "station_crs": "GLO", "filter_crs": "MAN",

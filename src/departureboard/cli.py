@@ -7,7 +7,6 @@
   departureboard demo     render sample data (a Glossop morning) to a PNG, no keys needed
   departureboard emulate  run the board against a browser-based panel emulator
   departureboard route    print a [bus.routes] block for the screen's bus page (run on a laptop)
-  departureboard web      serve the settings page on the home network
   departureboard timetable  build the BODS bus timetable for your stops, if due
   departureboard setup discover  find the bus operators serving your stops and print their settings
   departureboard setup serve  answer the settings page's setup requests (departureboard-setup.service)
@@ -16,8 +15,9 @@
   departureboard serve --set-password | --reset-code
                           set the settings password, or print a code for a new one, and exit
 
-`dashboard` is the dashboard's old command, serve on a desktop with its
-old flags; it still works, unlisted, until the first public release.
+`web` (the board's old settings page: serve on a Pi, on port 8080) and
+`dashboard` (serve on a desktop) are the old commands, with their old
+flags. They still work, unlisted, until the first public release.
 """
 
 from __future__ import annotations
@@ -318,7 +318,7 @@ def _run_loop(settings, display, store, state, args) -> int:
     return 0
 
 
-# The settings page's port, as departureboard-web.service runs it.
+# The settings' port, as departureboard-web.service runs them (`web`).
 WEB_PORT = 8080
 # Until the board is set up (or while its view is off), how often a running
 # screen checks whether it has been (or is back on).
@@ -334,7 +334,7 @@ def setup_url(hostname: str | None = None, port: int = WEB_PORT) -> str:
     name = (socket.gethostname() if hostname is None else hostname).split(".")[0]
     if not re.fullmatch(r"[A-Za-z0-9-]{1,63}", name):
         name = "raspberrypi"  # Raspberry Pi OS's own; a real name never gets here
-    return f"http://{name.lower()}.local:{port}/"
+    return f"http://{name.lower()}.local:{port}/settings"
 
 
 class _SetUpYet:
@@ -618,63 +618,6 @@ def _reset_code(folder: Path, where: str) -> int:
     except OSError as error:
         print(f"Can't save a reset code in {folder}: {error.strerror or error}", file=sys.stderr)
         return 1
-    return 0
-
-
-def _web(args) -> int:
-    from importlib.resources import files
-
-    from . import auth, web
-    from .settingsform import SettingsForm
-    from .setupapi import SetupApi
-
-    # Only config.toml is read to find the store: a broken settings.toml must
-    # not stop the page that fixes it.
-    store = _store(args)
-    store.make()
-    _adopt(args, store)
-    password = auth.PasswordStore(store.password_file)
-    if args.set_password:
-        return _set_password(password, "New settings page password: ")
-    if args.reset_code:
-        return _reset_code(store.folder, "Enter it on the settings page with a new password.")
-    form = SettingsForm(store, store.env)
-    stylesheet = files("departureboard").joinpath("web.css").read_bytes()
-    # Codes for a forgotten password, or the first claim, show on the board.
-    codes = auth.ResetCodes(store.folder)
-    runner = None
-    if args.setup_via_spool:
-        # This service can't reach the internet; departureboard-setup.service does that work.
-        from .setupspool import SpoolError, SpoolRunner, spool_folder
-
-        try:
-            runner = SpoolRunner(spool_folder())
-        except SpoolError as error:
-            print(error, file=sys.stderr)
-            return 2
-    # The search builds the bus timetable in the store, where the board reads it.
-    steps = SetupApi(store.target(), store.env, store.folder, links=[("Board settings", "/")], runner=runner)
-    # Until the board is set up, claiming the page or signing in opens the wizard.
-    wizard = web.Wizard.load(steps, lambda: needs_setup(store))
-    handler = web.make_handler(form, password, auth.Sessions(password=password), auth.Lockout(), web.shell, stylesheet,
-                               codes, wizard=wizard)
-    try:
-        server = web.make_server(handler, args.host, args.port)
-    except OSError as error:
-        print(f"Can't listen on {args.host}:{args.port}: {error.strerror or error}", file=sys.stderr)
-        return 2
-    if not password.is_set():
-        print("No password yet: claim the page with a code from the board, or run "
-              "`departureboard web --set-password` as the service user", file=sys.stderr)
-    if needs_setup(store):
-        print("Not set up yet: sign in and the page opens the setup wizard", file=sys.stderr)
-    print(f"Settings page on http://{args.host}:{server.server_address[1]}/  (home network only)")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.server_close()
     return 0
 
 
@@ -1103,7 +1046,7 @@ def _port(text: str) -> int:
 
 
 # Old commands kept working, unlisted, until the first public release.
-HIDDEN_COMMANDS = ("dashboard",)
+HIDDEN_COMMANDS = ("web", "dashboard")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -1167,17 +1110,6 @@ def _parser() -> argparse.ArgumentParser:
         "serve", help="answer the settings page's setup requests; departureboard-setup.service runs this"))
     serve.set_defaults(handler=_setup_serve)
 
-    web = with_config(sub.add_parser("web", help="serve the settings page on the home network"))
-    web.add_argument("--host", default="0.0.0.0", help="address to listen on (default: all)")
-    web.add_argument("--port", type=int, default=WEB_PORT)
-    web.add_argument("--setup-via-spool", action="store_true",
-                     help="hand the setup wizard's internet lookups to departureboard-setup.service")
-    once = web.add_mutually_exclusive_group()
-    once.add_argument("--set-password", action="store_true", help="set the page's password and exit")
-    once.add_argument("--reset-code", action="store_true",
-                      help="print a one-time code for setting a new password on the page, and exit")
-    web.set_defaults(handler=_web)
-
     emulate = with_config(sub.add_parser("emulate", help="run against a browser panel emulator"))
     emulate.add_argument("--demo", action="store_true", help="sample Glossop data on a fast simulated clock")
     emulate.add_argument("--fake-train", action="store_true", help="fake trains, live buses")
@@ -1215,6 +1147,16 @@ def _parser() -> argparse.ArgumentParser:
     dashboard.add_argument("--no-browser", action="store_true")
     _password_flags(dashboard)
     dashboard.set_defaults(handler=_serve, install="desktop")
+
+    # The board's old settings page, which departureboard-web.service runs: serve
+    # on a Pi, on the page's old port. Its setup always goes through
+    # departureboard-setup.service, so --setup-via-spool is taken and changes nothing.
+    web = with_config(sub.add_parser("web"))
+    web.add_argument("--host", default="0.0.0.0")
+    web.add_argument("--port", type=_port, default=WEB_PORT)
+    web.add_argument("--setup-via-spool", action="store_true")
+    _password_flags(web)
+    web.set_defaults(handler=_serve, install="pi", state_dir=None, lan=False, no_browser=True)
     sub.metavar = "{" + ",".join(name for name in sub.choices if name not in HIDDEN_COMMANDS) + "}"
     return parser
 

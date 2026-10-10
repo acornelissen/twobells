@@ -108,6 +108,16 @@ def test_the_settings_page_stays_on_the_home_network_and_hands_setup_on():
     assert "departureboard-setup.path" in web["Wants"]
 
 
+def test_the_settings_service_has_room_for_every_connection_the_server_takes():
+    # A thread per connection, and a few of the server's own; past TasksMax a
+    # connection can't be answered at all.
+    from departureboard import dashserver
+
+    web = _unit("departureboard-web.service")
+    assert int(web["TasksMax"][0]) >= max(64, dashserver.MAX_CONNECTIONS + 8)
+    assert web["ExecStart"][0].split()[1] == "web"  # serve on a Pi, through the old command, until it moves
+
+
 def test_the_setup_service_goes_out_and_nothing_more():
     from departureboard import setupspool
 

@@ -33,7 +33,7 @@ saved settings; it reads those itself.
 
 Each host names its own page: `begin` answers with the host's title, the
 word for itself ("board" on the Pi, "dashboard" on the dashboard) and the
-keys it uses (the Pi's settingsform.KEYS, the dashboard's dashform.KEYS),
+keys it uses (schema.keys of the general group and its views' groups),
 and only those keys can be saved or tested through it.
 
 Serving the page. The host serves, under one prefix ending in a slash (say
@@ -375,7 +375,7 @@ class SetupApi:
         like ("The board", "/"). `saved_message` says what happens next.
         `title` heads the page, `noun` is what its text calls the host
         ("board": "No trains on this board"), and `keys`, (name, label,
-        hint) like settingsform.KEYS, are the keys the host uses: offered,
+        hint) like schema.keys(), are the keys the host uses: offered,
         saved and tested in that order, and no others. `runner`, if given,
         does the lookups that need the internet, the key tests and the
         search instead of this process (and the functions passed for them)."""
