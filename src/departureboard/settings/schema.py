@@ -125,7 +125,7 @@ def crs(optional: bool = False) -> Callable[[str], str | None]:
 def windows(raw: str) -> list[str]:
     lines = [line.strip() for line in raw.splitlines() if line.strip()]
     if not lines:
-        raise Invalid("Add at least one window, like Mon-Fri 06:30-09:30")
+        raise Invalid("Add at least one checking time: tick its days and give it a From and To")
     for line in lines:
         try:
             parse_window(line)
@@ -317,7 +317,9 @@ class Field:
     key: str
     label: str
     check: Callable[[str], object]
-    kind: str = "text"  # text, number, radios (2 to 4 choices), select (more), area, check
+    # text, number, radios (2 to 4 choices), select (more), area, check, or windows: time windows as rows
+    # of days and times (web/windowrows.py), each row called `item`
+    kind: str = "text"
     hint: str = ""
     options: tuple[tuple[str, str], ...] = ()  # a choice's (value, words); a text box's suggestions
     default: object = None  # shown when the settings don't say
@@ -331,6 +333,7 @@ class Field:
     unit: str = ""  # said after the box, like "minutes"
     keyboard: str = ""  # "code": capitals, no corrections (station codes); "plain": no capitals or corrections
     also: tuple[str, ...] = ()  # other keys it saves, in the same table (bank holidays: the division)
+    item: str = ""  # what each of a windows field's rows is called, numbered: "Checking time" 1, 2...
 
 
 @dataclass(frozen=True)
@@ -385,6 +388,8 @@ _TEXT_SIZES = tuple(str(size) for size in range(9, 17))
 _TEXT_SIZE_NAMES = {"9": "smallest", "11": "standard", "16": "biggest"}
 _KEPT = "The settings below are kept for turning them back on."
 _LISTED = "The first 5 show; the rest are behind Show later departures. A wall tablet shows 4."
+_CHECKING = ("Outside these times the board shows what it last knew, without saying “not updating”. Bank holidays "
+             "count as Sundays, unless the General page says to ignore them.")
 
 
 def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
@@ -457,9 +462,9 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               default=board["text_size"], page="board", heading="Display", tier="advanced"),
         Field("board_train_rows", "board", "train", "rows", "Trains shown", number(1, 6), "number",
               default=train["rows"], needs="train", page="board", heading="Trains", width="2"),
-        Field("train_windows", "board", "train", "windows", "When to check", windows, "area",
-              hint="One per line, like Mon-Fri 06:30-09:30.", default=train["windows"], needs="train",
-              page="board", heading="Trains"),
+        Field("train_windows", "board", "train", "windows", "When to check", windows, "windows",
+              hint=_CHECKING, default=train["windows"], needs="train", page="board", heading="Trains",
+              item="Checking time"),
         Field("train_interval_minutes", "board", "train", "interval_minutes", "Check every",
               number(1, 60), "number", default=train["interval_minutes"], needs="train",
               page="board", heading="Trains", tier="advanced", width="3", unit="minutes"),
@@ -469,9 +474,9 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               tier="advanced", width="3", unit="minutes"),
         Field("board_bus_rows", "board", "bus", "rows", "Buses shown", number(1, 6), "number",
               default=bus["rows"], needs="bus", page="board", heading="Buses", width="2"),
-        Field("bus_windows", "board", "bus", "windows", "When to check", windows, "area",
-              hint="One per line, like Mon-Fri 07:00-08:30.", default=bus["windows"], needs="bus",
-              page="board", heading="Buses"),
+        Field("bus_windows", "board", "bus", "windows", "When to check", windows, "windows",
+              hint=_CHECKING, default=bus["windows"], needs="bus", page="board", heading="Buses",
+              item="Checking time"),
         Field("bus_interval_minutes", "board", "bus", "interval_minutes", "Check every",
               number(1, 120), "number", hint="With TransportAPI, each check costs one lookup per stop.",
               default=bus["interval_minutes"], needs="bus", page="board", heading="Buses", tier="advanced",
@@ -515,9 +520,10 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               number(1, 3650), "number", default=90, page="dashboard", heading="Departures", tier="advanced",
               width="4", unit="days"),
         Field("quiet_windows", "dashboard", "dashboard", "quiet_windows", "When to stop checking", quiet_windows,
-              "area", hint="One per line, like Mon-Sun 01:00-05:00. The dashboard still checks while someone "
-                           "has it open, and a wall tablet dims then. Leave it empty to check all the time.",
-              default=("Mon-Sun 01:00-05:00",), page="dashboard", heading="Quiet hours"),
+              "windows", hint="The dashboard stops checking for departures and the weather then, unless a browser "
+                              "has it open. A wall tablet keeps it checking, and dims. Leave every row empty to "
+                              "check all the time.",
+              default=("Mon-Sun 01:00-05:00",), page="dashboard", heading="Quiet hours", item="Quiet hours"),
         # Keys: each key's box is the page's own (KEYS); the engineering works
         # address sits with its key.
         Field("kb_incidents_url", "dashboard", "dashboard", "kb_incidents_url", "Engineering works address",

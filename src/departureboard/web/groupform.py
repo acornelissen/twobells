@@ -50,6 +50,7 @@ from ..settings.schema import KEY_VALUE, Field, Invalid
 from ..setup import keytest
 from ..sources.disruptions import kb_url_is_placeholder
 from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
+from . import windowrows
 from .icons import icon
 from .status import render_status
 
@@ -169,12 +170,12 @@ def _station(code: str) -> str:
 
 
 def _shown(value, kind: str) -> str:
-    """A config value as the form shows it: lists one per line in a text area,
-    comma-separated in a one-line box."""
+    """A config value as the form shows it: lists one per line in a text area
+    or as time windows, comma-separated in a one-line box."""
     if value is None:
         return ""
     if isinstance(value, (list, tuple)):
-        return ("\n" if kind == "area" else ", ").join(str(v) for v in value)
+        return ("\n" if kind in ("area", "windows") else ", ").join(str(v) for v in value)
     if isinstance(value, dict):
         return "\n".join(f"{k} = {v}" for k, v in value.items())
     return str(value)
@@ -332,6 +333,13 @@ class GroupForm:
         # placeholder), and one changed is checked and saved, as with it on.
         off = {f.needs for f in form if f.key == "enabled" and fields.get(f.name) == "false"}
         shown = self._current(data)
+        # Time windows come as rows: made into one window a line, as a text area sent them, and each
+        # row's mistakes, which count as a change.
+        fields = dict(fields)
+        rows: dict[str, dict[str, str]] = {}
+        for f in form:
+            if f.kind == "windows":
+                fields[f.name], rows[f.name] = windowrows.read(f.name, fields, shown.get(f.name, ""))
         errors: dict[str, str] = {}
         changes: dict = {}
         for f in form:
@@ -339,7 +347,11 @@ class GroupForm:
                 continue  # the views, below
             if f.needs is not None and f.needs not in data:
                 continue  # not set up: setup or config.toml adds it
-            if f.needs in off and f.key != "enabled" and not edited(fields.get(f.name, ""), shown[f.name]):
+            if (f.needs in off and f.key != "enabled" and not rows.get(f.name)
+                    and not edited(fields.get(f.name, ""), shown[f.name])):
+                continue
+            if rows.get(f.name):
+                errors |= rows[f.name]
                 continue
             try:
                 value = f.check(fields.get(f.name, ""))
@@ -389,10 +401,10 @@ class GroupForm:
         said = []
         for f in form:
             old, new = before.get(f.name, ""), after.get(f.name, "")
-            same = not edited(old, new) if f.kind in ("text", "area") else old == new
+            same = not edited(old, new) if f.kind in ("text", "area", "windows") else old == new
             if same:
                 continue
-            if f.kind in ("text", "area"):
+            if f.kind in ("text", "area", "windows"):
                 said.append(f.label)
             else:
                 said.append(f"{f.label}, {_words(f, old)} to {_words(f, new)}")
@@ -565,14 +577,14 @@ class GroupForm:
         common = [f for f in here if f.tier == "common"]
         advanced = [f for f in here if f.tier == "advanced"]
         for f in common:
-            out.append(self._field(f, data, shown.get(f.name, ""), errors.get(f.name)))
+            out.append(self._draw(f, data, shown, errors))
             if f.name == "bus_enabled":
                 out.append(self._stops(data))
         out.append(self._readonly(page, heading, data))
         if advanced:
             opened = " open" if any(f.name in errors for f in advanced) else ""
             out.append(f'<details class="advanced"{opened}><summary>Advanced</summary>')
-            out.extend(self._field(f, data, shown.get(f.name, ""), errors.get(f.name)) for f in advanced)
+            out.extend(self._draw(f, data, shown, errors) for f in advanced)
             out.append("</details>")
         out.append("</fieldset>")
         return "".join(out)
@@ -586,6 +598,12 @@ class GroupForm:
             return shown.get(switch) == "false"
         section = data.get(needs)
         return isinstance(section, dict) and section.get("enabled") is False
+
+    def _draw(self, f: Field, data: dict, shown: dict[str, str], errors: dict[str, str]) -> str:
+        """A field with what it shows and its errors: time windows as rows, with each row's."""
+        if f.kind == "windows":
+            return windowrows.render(f, shown, errors)
+        return self._field(f, data, shown.get(f.name, ""), errors.get(f.name))
 
     def _field(self, f: Field, data: dict, value: str, error: str | None) -> str:
         if f.kind == "check":
@@ -677,8 +695,13 @@ class GroupForm:
         names = {f.name: f.label if f.heading == f.label else f"{f.heading} – {f.label}" for f in fields}
         keys = self._keys(data)
         names |= {name: f"{KEYS_HEADING} – {label}" for name, label, _ in keys}
+        anchors = {}
+        for f in fields:
+            for name in errors:
+                if f.kind == "windows" and (name == f.name or name.startswith(f.name + "-")):
+                    anchors[name], names[name] = windowrows.anchor(f.name, name), windowrows.said(f, name)
         items = "".join(
-            f'<li><a href="#{e(name)}">{e(names.get(name, name))}: {e(text)}</a></li>'
+            f'<li><a href="#{e(anchors.get(name, name))}">{e(names.get(name, name))}: {e(text)}</a></li>'
             if name != "_form" else f"<li>{e(text)}</li>"
             for name, text in errors.items()
         )
@@ -712,9 +735,11 @@ def _described(name: str, hint: str, error: str | None, also: str = "") -> tuple
 
 
 def _label(f: Field) -> str:
-    """A field's label, its unit said too for screen readers (the suffix shown after the box is hidden from them)."""
+    """A field's label, its unit said too for screen readers (the suffix shown after the box is hidden from them).
+    A label its section's heading already shows, like Title's, is said but not shown again."""
     unit = f'<span class="vh"> ({html.escape(_SPOKEN.get(f.unit, f.unit))})</span>' if f.unit else ""
-    return f'<label for="{f.name}">{html.escape(f.label)}{unit}</label>'
+    hidden = ' class="vh"' if f.label == f.heading else ""
+    return f'<label for="{f.name}"{hidden}>{html.escape(f.label)}{unit}</label>'
 
 
 def _field(f: Field, value: str, error: str | None, hint: str | None = None) -> str:
@@ -747,7 +772,8 @@ def _field(f: Field, value: str, error: str | None, hint: str | None = None) -> 
 def _radios(f: Field, value: str, error: str | None) -> str:
     """A short choice: a radio button each, in a fieldset of its own whose
     legend is the field's label. The first button's id is the field's name,
-    for the links to it; the hint and error describe the group."""
+    for the links to it; the hint and error describe the group. Two choices,
+    or a few short ones, sit side by side."""
     e = html.escape
     attrs, notes = _described(f.name, f.hint, error)
     # The error says it of the group: a fieldset takes no aria-invalid.
@@ -758,8 +784,9 @@ def _radios(f: Field, value: str, error: str | None) -> str:
         checked = " checked" if v == value else ""
         options.append(f'<div class="option"><input type="radio" id="{box}" name="{f.name}" value="{e(v)}"{checked}>'
                        f'<label for="{box}">{e(text)}</label></div>')
+    inline = " inline" if len(f.options) <= 2 or all(len(text) <= 4 for _, text in f.options) else ""
     return (f'<fieldset class="field radios{" has-error" if error else ""}"{attrs}><legend>{e(f.label)}</legend>'
-            f'{notes}{"".join(options)}</fieldset>')
+            f'{notes}<div class="options{inline}">{"".join(options)}</div></fieldset>')
 
 
 def _checkbox(f: Field, value: str, error: str | None) -> str:

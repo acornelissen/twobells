@@ -49,11 +49,13 @@ def form(tmp_path):
 def fields_of(form):
     """What a browser would submit for the form as rendered."""
     page = form.render("tok")
-    values = dict(re.findall(r'<input id="([a-z_]+)" name="[a-z_]+" type="text" value="([^"]*)"', page))
+    values = dict(re.findall(r'<input id="([\w-]+)" name="[\w-]+" type="text" value="([^"]*)"', page))
     values |= dict(re.findall(r'<textarea id="([a-z_]+)"[^>]*>([^<]*)</textarea>', page))
     for name, options in re.findall(r'<select id="([a-z_]+)"[^>]*>(.*?)</select>', page):
         values[name] = re.search(r'<option value="([^"]*)" selected', options).group(1)
     values |= dict(re.findall(r'<input type="radio" id="[\w-]+" name="(\w+)" value="([^"]*)" checked', page))
+    values |= dict.fromkeys(re.findall(r'<input id="([\w-]+)" name="[\w-]+" type="checkbox" value="on" checked', page),
+                            "on")
     return values
 
 
@@ -190,3 +192,16 @@ def test_everything_setup_and_the_page_save_is_read_back(form):
     written = tomllib.loads((form.folder / "settings.toml").read_text())
     assert read_overlay_in(form.folder) == written
     assert written["bus"]["routes"] and written["weather"]["lat"] and written["dashboard"]["kb_incidents_url"]
+
+
+def test_quiet_hours_are_rows_and_may_all_be_removed(form):
+    fields = fields_of(form)
+    assert (fields["quiet_windows-1-from"], fields["quiet_windows-1-to"]) == ("01:00", "05:00")
+    assert all(fields[f"quiet_windows-1-{day}"] == "on" for day in ("mon", "tue", "wed", "thu", "fri", "sat", "sun"))
+    page = form.render("tok")
+    assert "<legend>Quiet hours 1</legend>" in page and "A wall tablet keeps it checking, and dims." in page
+    emptied = {name: value for name, value in fields.items() if not name.startswith("quiet_windows-1-")}
+    emptied |= {"quiet_windows-1-from": "", "quiet_windows-1-to": ""}
+    assert form.save(emptied) == {}
+    assert tomllib.loads((form.folder / "settings.toml").read_text())["dashboard"]["quiet_windows"] == []
+    assert load_dashboard(form.config, ENV, form.folder, lock=False).options.quiet_windows == ()

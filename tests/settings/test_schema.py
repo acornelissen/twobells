@@ -79,6 +79,12 @@ def test_short_choices_are_radios_and_long_ones_selects():
                 assert len(f.options) > 4, f.name
 
 
+def test_time_windows_are_rows_each_with_a_name():
+    assert {f.name for f in schema.FIELDS if f.kind == "windows"} == {"train_windows", "bus_windows", "quiet_windows"}
+    for f in schema.FIELDS:
+        assert bool(f.item) == (f.kind == "windows"), f.name
+
+
 def test_a_unit_is_for_a_number_in_a_narrow_box():
     for f in schema.FIELDS:
         if f.unit:

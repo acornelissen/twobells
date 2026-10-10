@@ -67,12 +67,12 @@ def form_for(store, pages, install=BOTH, env=ENV):
 def fields_of(page_or_form):
     """What a browser would submit for the form as rendered: unticked boxes aren't sent."""
     page = page_or_form if isinstance(page_or_form, str) else page_or_form.render("tok")
-    values = dict(re.findall(r'<input id="(\w+)" name="\w+" type="text" value="([^"]*)"', page))
+    values = dict(re.findall(r'<input id="([\w-]+)" name="[\w-]+" type="text" value="([^"]*)"', page))
     values |= dict(re.findall(r'<textarea id="(\w+)"[^>]*>([^<]*)</textarea>', page))
     for name, options in re.findall(r'<select id="(\w+)"[^>]*>(.*?)</select>', page):
         values[name] = re.search(r'<option value="([^"]*)" selected', options).group(1)
     values |= dict(re.findall(r'<input type="radio" id="[\w-]+" name="(\w+)" value="([^"]*)" checked', page))
-    values |= dict.fromkeys(re.findall(r'<input id="(\w+)" name="\w+" type="checkbox" value="on" checked', page), "on")
+    values |= dict.fromkeys(re.findall(r'<input id="([\w-]+)" name="[\w-]+" type="checkbox" value="on" checked', page), "on")
     return values
 
 
@@ -159,7 +159,7 @@ def test_with_one_view_offered_there_is_no_choice_and_none_is_saved(store):
     board_only = Install("board only", ("board",), ("board",), None)
     for form in (form_for(store, ("general",), board_only), dashboard_form(store, lambda: dict(ENV))):
         page = form.render("tok")
-        assert 'id="section-views"' not in page and 'type="checkbox"' not in page
+        assert 'id="section-views"' not in page and 'name="view_' not in page
         assert form.save(fields_of(page)) == {}
         assert "app" not in saved(store)
 
@@ -227,13 +227,28 @@ def test_a_time_zone_is_saved_and_used(store):
     assert load_config(store, ENV).timezone == "Europe/Dublin"
 
 
+def window_rows(fields, name):
+    """A windows field's rows as sent, the empty ones left out: (days ticked, from, to)."""
+    found, row = [], 1
+    while f"{name}-{row}-from" in fields:
+        days = " ".join(day for day in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+                        if fields.get(f"{name}-{row}-{day}") == "on")
+        times = fields[f"{name}-{row}-from"], fields[f"{name}-{row}-to"]
+        if days or any(times):
+            found.append((days, *times))
+        row += 1
+    return found
+
+
 def test_defaults_are_shown_where_the_settings_say_nothing(store):
     board = fields_of(board_form(store, lambda: dict(ENV)))
-    assert board["train_windows"] == "Mon-Fri 06:30-09:30\nMon-Fri 16:30-19:30"
+    weekdays = "mon tue wed thu fri"
+    assert window_rows(board, "train_windows") == [(weekdays, "06:30", "09:30"), (weekdays, "16:30", "19:30")]
     assert (board["board_bus_rows"], board["bus_interval_minutes"]) == ("3", "2")  # bods: checked often
-    assert board["bus_windows"] == "Mon-Sun 06:00-23:00"
+    assert window_rows(board, "bus_windows") == [(f"{weekdays} sat sun", "06:00", "23:00")]
     dashboard = fields_of(dashboard_form(store, lambda: dict(ENV)))
-    assert (dashboard["dashboard_train_rows"], dashboard["quiet_windows"]) == ("10", "Mon-Sun 01:00-05:00")
+    assert dashboard["dashboard_train_rows"] == "10"
+    assert window_rows(dashboard, "quiet_windows") == [(f"{weekdays} sat sun", "01:00", "05:00")]
 
 
 def test_the_knowledgebase_address_must_be_at_raildata(store):
@@ -290,9 +305,35 @@ def test_every_control_has_a_label_and_every_group_a_legend(store):
     store.settings_file.write_text('[app]\nviews = ["board", "dashboard"]\n')
     page = form_for(store, ("trains_buses", "board", "dashboard", "keys", "general")).render("tok")
     ids = set(re.findall(r'<(?:input|select|textarea)[^>]* id="([\w-]+)"', page))
-    assert {"theme", "theme-1", "text_size", "title", "RDM_KB_API_KEY"} <= ids
+    assert {"theme", "theme-1", "text_size", "title", "RDM_KB_API_KEY", "train_windows-1-mon", "quiet_windows-3-to"} <= ids
     assert ids <= set(re.findall(r'<label for="([\w-]+)"', page))
     assert page.count("<fieldset") == page.count("<legend>") == page.count("</fieldset>")
+
+
+def test_a_label_its_section_heading_already_shows_is_said_but_not_shown_again(store):
+    page = form_for(store, ("trains_buses",)).render("tok")
+    assert '<h2 id="section-title">Title</h2>' in page
+    assert '<label for="title" class="vh">Title</label>' in page  # still the box's name
+    assert '<label for="train_crs">Station code</label>' in page
+
+
+def test_two_choices_or_a_few_short_ones_sit_side_by_side(store):
+    from importlib.resources import files
+
+    page = form_for(store, ("trains_buses", "board", "general")).render("tok")
+
+    def options(name):
+        return re.search(rf'<div class="([\w ]+)"><div class="option"><input type="radio" id="{name}" ', page).group(1)
+
+    for name in ("train_enabled", "theme", "rotate"):  # On and Off; two looks; 0° and 180° on e-paper
+        assert options(name) == "options inline", name
+    for name in ("accent", "bank_holidays"):  # three or four long choices stay one to a line
+        assert options(name) == "options", name
+    css = files("departureboard.web").joinpath("web.css").read_text()
+    assert re.search(r"\.options\.inline \{[^}]*display: flex;[^}]*flex-wrap: wrap", css)
+    # Each choice is a 44px target on a touch screen.
+    coarse = css[css.index("@media (pointer: coarse)"):]
+    assert re.search(r"\.option \{ min-height: 2\.75rem;", coarse)
 
 
 @pytest.mark.parametrize("pages", [("general", "screen"), ("overview",)])

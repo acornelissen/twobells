@@ -225,12 +225,12 @@ def pi_signed(pi):
 
 def fields_from(page):
     """What a browser would submit for the form as drawn."""
-    values = dict(re.findall(r'<input id="(\w+)" name="\w+" type="text" value="([^"]*)"', page))
+    values = dict(re.findall(r'<input id="([\w-]+)" name="[\w-]+" type="text" value="([^"]*)"', page))
     values |= dict(re.findall(r'<textarea id="(\w+)"[^>]*>([^<]*)</textarea>', page))
     for name, options in re.findall(r'<select id="(\w+)"[^>]*>(.*?)</select>', page):
         values[name] = re.search(r'<option value="([^"]*)" selected', options).group(1)
     values |= dict(re.findall(r'<input type="radio" id="[\w-]+" name="(\w+)" value="([^"]*)" checked', page))
-    values |= dict.fromkeys(re.findall(r'<input id="(\w+)" name="\w+" type="checkbox" value="on" checked', page), "on")
+    values |= dict.fromkeys(re.findall(r'<input id="([\w-]+)" name="[\w-]+" type="checkbox" value="on" checked', page), "on")
     return values
 
 

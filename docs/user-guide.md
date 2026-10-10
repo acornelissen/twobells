@@ -368,7 +368,7 @@ Trains and buses can't both be off, or there would be nothing to show.
   - Advanced: **Accent colour**, the look's own (amber for the station board, red for plain) or another that stays readable on the look's background (a colour too faint on the background isn't offered); **Redraw at most every** so many minutes, e-paper only (lower means fresher but more wear and flicker; 2 is a good balance); **Text size**, the plain look only, 9 to 16 (11 is standard; bigger shows fewer departures on a small display).
 - **Trains** and **Buses**, each:
   - **Trains shown** or **Buses shown**.
-  - **When to check:** one window per line, written like `Mon-Fri 06:30-09:30`. Days can be `Mon-Sun`, `Sat,Sun`, `Mon-Fri`, or wrap round the week like `Fri-Mon`. A window can run past midnight: `Fri 22:00-01:00` runs from Friday night into Saturday morning.
+  - **When to check:** each checking time is a row of its own: tick its days, and give it a **From** and a **To** time, 24-hour like `06:30`. A To earlier than its From runs past midnight: Friday from 22:00 to 01:00 runs from Friday night into Saturday morning. Two empty rows follow the saved ones for new times; leave a row empty to remove it. Outside these times the board shows what it last knew, without saying "not updating". In `config.toml` the same times are written like `Mon-Fri 06:30-09:30`: days can be `Mon-Sun`, `Sat,Sun`, `Mon-Fri`, or wrap round the week like `Fri-Mon`, and `Fri 22:00-01:00` runs past midnight. A saved time the page can't show as days and times is shown as it is, and has to be removed before the page saves.
   - Advanced: **Check every** so many minutes, and **Say "not updating" after** so many minutes. For buses, while TransportAPI is used (its source, or its keys saved for it to stand in for the bus timetable), **Most TransportAPI lookups a day** too: a hard limit, used only while it stands in for the timetable. The free plan allows 30 a day, and each check costs one per stop.
 
 ### Dashboard
@@ -378,7 +378,7 @@ Trains and buses can't both be off, or there would be nothing to show.
   - **Position strips in each row:** on or off. On, each departure row has a small drawing of its stops with the train or bus where it is; off, the rows keep their words without it. A wall tablet never shows them.
   - Advanced: **Check for trains every** and **Check for buses every** so many seconds; **Check the forecast every** so many minutes; **Count trains as late from** and **Count buses as late from** so many minutes, for the punctuality history; **Keep punctuality history for** so many days (1 to 3650).
 - **Quiet hours**
-  - **When to stop checking:** one window per line, like `Mon-Sun 01:00-05:00`. The dashboard still checks while someone has it open, and a wall tablet dims then. Empty checks all the time.
+  - **When to stop checking:** rows of days and times, as for the board's checking times; 01:00 to 05:00 every day unless you change it. The dashboard stops checking for departures and the weather then, unless a browser has it open: a wall tablet keeps it checking, and dims. Leave every row empty to check all the time.
 
 The same settings can go under `[dashboard]` in `config.toml`. All are optional:
 

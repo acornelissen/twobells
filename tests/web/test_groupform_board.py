@@ -69,7 +69,7 @@ def fields_of(form):
     """What a browser would submit for the form as rendered."""
     page = form.render("tok")
     fields = {}
-    for name, value in re.findall(r'<input id="(\w+)" name="\w+" type="text" value="([^"]*)"', page):
+    for name, value in re.findall(r'<input id="([\w-]+)" name="[\w-]+" type="text" value="([^"]*)"', page):
         fields[name] = value.replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", '"')
     for name, value in re.findall(r'<textarea id="(\w+)" name="\w+"[^>]*>([^<]*)</textarea>', page):
         fields[name] = value
@@ -79,7 +79,7 @@ def fields_of(form):
     for name, value in re.findall(r'<input type="radio" id="[\w-]+" name="(\w+)" value="([^"]*)" checked', page):
         fields[name] = value
     # A ticked box is sent as "on"; an unticked one isn't sent (the views, on a Pi that offers two).
-    fields |= dict.fromkeys(re.findall(r'<input id="(\w+)" name="\w+" type="checkbox" value="on" checked', page), "on")
+    fields |= dict.fromkeys(re.findall(r'<input id="([\w-]+)" name="[\w-]+" type="checkbox" value="on" checked', page), "on")
     return fields
 
 
@@ -88,7 +88,10 @@ def test_form_shows_the_current_settings(setup):
     fields = fields_of(form)
     assert fields["title"] == "Glossop > Manchester Picc"
     assert fields["train_crs"] == "GLO"
-    assert fields["train_windows"] == "Mon-Fri 06:30-09:30\nMon-Fri 16:30-19:30"
+    weekdays = {f"train_windows-{row}-{day}" for row in (1, 2) for day in ("mon", "tue", "wed", "thu", "fri")}
+    assert {name for name in fields if name.startswith("train_windows-") and fields[name] == "on"} == weekdays
+    assert [fields[f"train_windows-{row}-{box}"] for row in (1, 2, 3, 4) for box in ("from", "to")] == [
+        "06:30", "09:30", "16:30", "19:30", "", "", "", ""]  # and two spare rows
     assert fields["bus_stops"] == "A = 1000DGHS0900\nB = 100000008350"
     assert fields["bus_walk_minutes"] == "A = 7\nB = 6"
     assert fields["theme"] == "sign" and fields["rotate"] == "0"
@@ -120,7 +123,7 @@ def test_a_change_is_saved_to_the_overlay_not_config_toml(setup):
     [
         ("train_crs", "GLOSSOP", "3-letter"),
         ("board_train_rows", "99", "1 to 6"),
-        ("train_windows", "weekdays", "isn't a window"),
+        ("train_windows-1-from", "weekdays", "24-hour time"),
         ("bus_stops", "A = not a code!", "starts with 3 digits"),
         ("bus_stops", "A = DGHS09001000", "starts with 3 digits"),  # an ATCO code starts with its area's number
         ("bus_stops", "A = 1000DGHS09001", "starts with 3 digits"),  # 13 characters, one too many
@@ -573,11 +576,52 @@ def test_edits_to_a_section_switched_off_are_kept_for_switching_it_back_on(setup
     assert bus._stops == {"A": "1800SB12341", "B": "100000008350"} and bus._rows == 5
 
 
+def test_checking_times_are_rows_saved_as_the_windows_the_board_reads(setup):
+    form, config, state, _ = setup
+    # The second row emptied, and a weekend window in a spare row.
+    fields = {name: value for name, value in fields_of(form).items() if not name.startswith("train_windows-2-")}
+    fields |= {"train_windows-2-from": "", "train_windows-2-to": "", "train_windows-3-sat": "on",
+               "train_windows-3-sun": "on", "train_windows-3-from": "9:00", "train_windows-3-to": "12:00"}
+    changed = []
+    assert form.save(fields, changed) == {}
+    saved = tomllib.loads((state / "settings.toml").read_text())
+    assert saved["train"]["windows"] == ["Mon-Fri 06:30-09:30", "Sat,Sun 09:00-12:00"]
+    assert saved["bus"]["windows"] == ["Mon-Fri 07:00-08:30"]
+    assert changed == ["When to check"]
+    train = load_config(config, ENV).board.sources[0]
+    assert len(train.policy.windows) == 2
+    again = []
+    assert form.save(fields_of(form), again) == {} and again == []
+
+
+def test_a_row_s_mistake_is_linked_from_the_summary_to_its_box(setup):
+    form, _, state, _ = setup
+    fields = fields_of(form) | {"train_windows-1-from": "6.3", "bus_windows-2-from": "07:00", "bus_windows-2-to": "08:00"}
+    errors = form.save(fields)
+    assert set(errors) == {"train_windows-1-from", "bus_windows-2-days"}
+    assert not (state / "settings.toml").exists()
+    page = form.render("tok", errors=errors, values=fields)
+    assert ('<a href="#train_windows-1-from">Trains – Checking time 1, From: Enter a 24-hour time, like 06:30</a>'
+            in page)
+    assert '<a href="#bus_windows-2-mon">Buses – Checking time 2, Days: Tick at least one day</a>' in page
+    assert 'id="train_windows-1-from" name="train_windows-1-from" type="text" value="6.3"' in page  # as typed
+
+
+def test_the_board_needs_at_least_one_checking_time(setup):
+    form, _, state, _ = setup
+    fields = {name: value for name, value in fields_of(form).items() if not name.startswith("bus_windows-")}
+    fields |= {f"bus_windows-{row}-{box}": "" for row in (1, 2, 3) for box in ("from", "to")}
+    errors = form.save(fields)
+    assert set(errors) == {"bus_windows"} and not (state / "settings.toml").exists()
+    page = form.render("tok", errors=errors, values=fields)
+    assert '<a href="#bus_windows-1-mon">Buses – When to check: Add at least one checking time' in page
+
+
 def test_a_mistake_in_a_section_switched_off_is_still_reported(setup):
     form, *_ = setup
     # Unchanged fields are left as saved, unchecked; a field changed is checked, as it is kept.
     fields = fields_of(form)
-    unchanged = {"bus_windows": fields["bus_windows"].replace("\n", "\r\n") + "\r\n"}  # as a browser sends it
+    unchanged = {"bus_windows-1-from": "7:00"}  # the time saved, put another way
     errors = form.save(fields | unchanged | {"bus_enabled": "false", "board_bus_rows": "many"})
     assert set(errors) == {"board_bus_rows"}
 

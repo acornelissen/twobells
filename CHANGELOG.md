@@ -30,6 +30,7 @@ The first release.
 - Saving the settings, or restarting the server, no longer signs you out: the store keeps a hash of each session (`sessions.json`, readable by the app's user only). A new password still ends every session.
 - The settings are in pages by task, each setting on one page: Overview, Trains and buses, Board, Dashboard, Keys and General. Short choices are radio buttons, numbers show their unit, rarely changed settings wait under **Advanced**, and a save bar says when changes take effect. A save says what it changed, and reloading the page after it can't post the form again.
   - Bank holidays are one choice: Sunday times for England and Wales, Scotland or Northern Ireland, or ignore them. `settings.toml` keeps `bank_holidays` and `bank_holiday_division` as before.
+  - Checking times and quiet hours are rows of day checkboxes with From and To times, instead of lines like `Mon-Fri 06:30-09:30` to type. `settings.toml` keeps the same lines.
   - The keys and the engineering works address are on the Keys page, with their tests.
 - The board and the dashboard use the same status words: "On time", "Exp 17:54", "Delayed", "Cancelled", "No report". The plain e-paper look said "+7" for a late train; it now says "Exp 07:49". Its bus section says "Leave by" once, over the column of times.
 - The plain e-paper look draws in Inter, which ships with the package. The Pi no longer installs DejaVu fonts.

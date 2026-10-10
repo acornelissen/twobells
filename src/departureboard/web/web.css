@@ -182,10 +182,29 @@ input.w-20 { width: 22em; max-width: 100%; }
 .has-error input:not([type="radio"]), .has-error select, .has-error textarea { border: 2px solid var(--bad-fg); }
 /* A field that only matters with the one above it. */
 .field.nested { margin-left: var(--s-2); padding-left: var(--s-4); border-left: 2px solid var(--line); }
-/* A short choice: a radio button each, the whole row its target. */
-.option { display: flex; align-items: center; gap: var(--s-3); min-height: 2.75rem; }
+/* A short choice: a radio button each, the whole row its target; taller on a touch screen. Two choices, or a
+   few short ones, side by side. */
+.option { display: flex; align-items: center; gap: var(--s-3); min-height: 2rem; }
 .option input { flex: none; width: 1.5rem; height: 1.5rem; min-height: 0; margin: 0; padding: 0; }
-.option label { flex: 1; margin: 0; padding: var(--s-2) 0; font-weight: 400; cursor: pointer; }
+.option label { flex: 1; margin: 0; padding: var(--s-1) 0; font-weight: 400; cursor: pointer; }
+.options.inline { display: flex; flex-wrap: wrap; gap: 0 var(--s-5); }
+/* Time windows as rows: each row a box of its own, its days side by side, then From and To. */
+.windows > h3 { margin: 0 0 var(--s-1); font-size: var(--t-md); font-weight: 500; }
+.window { margin: 0 0 var(--s-3); padding: var(--s-3) var(--s-3) var(--s-1); border: 1px solid var(--line);
+  border-radius: var(--r-md); }
+.window > legend, .days > legend { float: left; width: 100%; padding: 0; }
+.window > legend { margin: 0 0 var(--s-2); font-weight: 600; }
+.days > legend { margin: 0 0 var(--s-1); font-weight: 500; font-size: var(--t-sm); }
+.window > legend + *, .days > legend + * { clear: both; }
+.days.has-error { padding-left: var(--s-3); border-left: 0.25rem solid var(--bad-fg); }
+.day-boxes { display: flex; flex-wrap: wrap; gap: 0 var(--s-3); }
+.day { display: flex; align-items: center; gap: var(--s-2); min-height: 2rem; }
+.day input { flex: none; width: 1.5rem; height: 1.5rem; min-height: 0; margin: 0; padding: 0; }
+.day label { margin: 0; padding: var(--s-1) var(--s-1) var(--s-1) 0; font-weight: 400; cursor: pointer; }
+.times { display: flex; flex-wrap: wrap; gap: 0 var(--s-5); margin-top: var(--s-2); }
+.times .field { margin-bottom: var(--s-3); }
+/* No window at all marks the field, not every box in it. */
+.windows.has-error .time:not(.has-error) input { border: 1px solid var(--edge); }
 /* A checkbox with its label beside it, and its hint and error below the label. */
 .check { display: grid; grid-template-columns: auto 1fr; column-gap: var(--s-3); align-items: start; }
 .check input { grid-row: 1 / span 3; width: 1.5rem; height: 1.5rem; min-height: 0; margin: 0.125rem 0 0; }
@@ -323,6 +342,10 @@ code { font-family: var(--mono); font-size: 0.9375em; overflow-wrap: anywhere; }
 }
 @media (pointer: coarse) {
   .index a { min-height: 2.75rem; padding: var(--s-2) 0; }
+  .option { min-height: 2.75rem; }
+  .option label { padding: var(--s-2) 0; }
+  .day { min-height: 2.75rem; }
+  .day label { padding: var(--s-2) var(--s-2) var(--s-2) 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
