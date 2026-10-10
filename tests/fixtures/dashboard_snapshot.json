@@ -19,7 +19,18 @@
       "note": null
     },
     "messages": [
-      "Disruption between Hadfield and Glossop until 10:00. Some trains may be cancelled or delayed."
+      {
+        "text": "Disruption between Hadfield and Glossop until 10:00. Some trains may be cancelled or delayed.",
+        "category": "train",
+        "severity": "minor",
+        "kind": "service"
+      },
+      {
+        "text": "The ticket office is currently closed at this station.",
+        "category": null,
+        "severity": null,
+        "kind": "station"
+      }
     ],
     "rows": [
       {

@@ -7,6 +7,7 @@ from departureboard.sources import darwin
 from departureboard.sources.darwin import (
     CallingPoint,
     DarwinSource,
+    Message,
     TrainBoard,
     parse_board,
     parse_board_rich,
@@ -62,7 +63,8 @@ def test_parses_a_detailed_glossop_board():
     assert isinstance(board, TrainBoard)
     assert board.generated_at == "2026-10-09T22:05:38.2500000+01:00"
     assert board.location == "Glossop"
-    assert board.messages == ["Help points at this station are out of use."]
+    # No category in this one: its words make it station information.
+    assert board.messages == [Message("Help points at this station are out of use.", None, None, "station")]
     assert [(s.departure.scheduled, s.service_id, s.origin, s.departure.destination) for s in board.services] == [
         ("22:08", "9000001GLSP____", "Manchester Piccadilly", "Hadfield"),
         ("22:25", "9000002GLSP____", "Hadfield", "Manchester Piccadilly"),
@@ -313,7 +315,7 @@ def test_detailed_source_asks_for_the_board_with_details():
         {"x-apikey": "k"},
     )]
     assert len(board.services) == 5 and board.services[1].calling_points
-    assert source.messages == board.messages
+    assert source.messages == [m.text for m in board.messages]  # the e-paper board's notice takes the text
 
 
 def test_detailed_fetch_gives_the_departures_of_the_rich_board():

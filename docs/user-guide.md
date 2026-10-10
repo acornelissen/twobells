@@ -188,7 +188,7 @@ The dashboard shows buses only from the BODS timetable (see [Bus times](#bus-tim
   kb_incidents_url = "https://…"
   ```
 
-  It's checked every 30 minutes. Only incidents for the companies running your trains that name one of your stations are shown. With the key but no address, the page says so; without the key, nothing changes. National Rail's own messages on the train board stay where they are.
+  It's checked every 30 minutes. Only incidents for the companies running your trains that name one of your stations are shown. With the key but no address, the page says so; without the key, nothing changes. National Rail's own messages on the train board stay where they are; those about the station itself, like a closed ticket office or lifts out of use, are a quiet "Station information" line rather than a disruption, and aren't announced.
 
 ---
 

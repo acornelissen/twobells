@@ -1,3 +1,5 @@
+import pytest
+
 from departureboard.core.model import Status
 from departureboard.sources.darwin import DarwinSource, parse_board
 from tests.paths import FIXTURES
@@ -143,7 +145,7 @@ def test_platform_is_kept_only_when_it_looks_like_one():
         assert platform(odd) is None
 
 
-from departureboard.sources.darwin import MESSAGE_LIMIT, parse_messages, plain_text  # noqa: E402
+from departureboard.sources.darwin import MESSAGE_LIMIT, Message, message_kind, parse_messages, plain_text  # noqa: E402
 
 
 def load_fixture(name):
@@ -152,13 +154,64 @@ def load_fixture(name):
     return json.loads((FIXTURES / name).read_text())
 
 
+def texts(board):
+    return [m.text for m in parse_messages(board)]
+
+
 def test_reads_incident_messages_from_a_board():
     messages = parse_messages(load_fixture("ldbws_glossop_nrcc.json"))
     assert messages == [
-        "Engineering work between Dinting and Guide Bridge means trains may be delayed "
-        "by up to 15 minutes today. See travel news for details.",
-        "Ticket machines at Glossop & Dinting take cards only. Cash is not accepted.",
+        Message("Engineering work between Dinting and Guide Bridge means trains may be delayed "
+                "by up to 15 minutes today. See travel news for details.", "train", "minor", "service"),
+        Message("Ticket machines at Glossop & Dinting take cards only. Cash is not accepted.",
+                "station", "normal", "station"),
     ]
+
+
+def test_a_closed_ticket_office_is_station_information_not_disruption():
+    # As seen live at Glossop, with no category to go by.
+    found = parse_messages({"nrccMessages": [{"Value": "The ticket office is currently closed at this station."}]})
+    assert found == [Message("The ticket office is currently closed at this station.", None, None, "station")]
+
+
+@pytest.mark.parametrize("text, kind", [
+    ("Lifts at Glossop are out of use.", "station"),
+    ("The toilets on platform 1 are closed.", "station"),
+    ("The waiting room is locked this evening.", "station"),
+    ("The car park is full.", "station"),
+    ("Step-free access is not available at this station.", "station"),
+    ("Help points at this station are out of use.", "station"),
+    ("Disruption between Hadfield and Glossop until 10:00.", "service"),
+    ("Trains may be cancelled or delayed.", "service"),
+    ("No trains between Glossop and Hadfield today.", "service"),
+    ("Glossop station is closed because of a fire alarm.", "service"),
+    ("Replacement buses run between Glossop and Guide Bridge.", "service"),
+    ("Engineering works this weekend.", "service"),  # not a facility: shown as disruption
+])
+def test_without_a_category_the_words_say_which_kind(text, kind):
+    assert message_kind(text, None) == kind
+
+
+def test_a_category_says_which_kind_unless_the_words_are_about_trains():
+    assert message_kind("Engineering works this weekend.", "station") == "station"
+    assert message_kind("The lifts are out of use.", "train") == "service"
+    assert message_kind("The lifts are out of use.", "misc") == "service"
+    # A station message that says trains won't stop is still disruption.
+    assert message_kind("The station is closed: trains will not call here.", "station") == "service"
+
+
+def test_category_and_severity_are_read_in_either_spelling_or_left_out():
+    shapes = [
+        ({"Value": "One", "category": "Station", "severity": "Major"}, ("station", "major")),
+        ({"Value": "One", "Category": "PriorTrains", "Severity": 3}, ("prior_trains", "severe")),
+        ({"Value": "One", "category": "station ", "severity": "0"}, ("station", "normal")),
+        ({"Value": "One", "category": "<b>Train</b>", "severity": "dreadful"}, (None, None)),
+        ({"Value": "One", "category": ["Train"], "severity": True}, (None, None)),
+        ({"Value": "One", "category": 1, "severity": 9}, (None, None)),
+    ]
+    for shape, expected in shapes:
+        found = parse_messages({"nrccMessages": [shape]})
+        assert (found[0].category, found[0].severity) == expected, shape
 
 
 def test_a_board_without_messages_has_none():
@@ -190,7 +243,7 @@ def test_messages_are_read_whatever_their_shape():
         [{"message": "One"}, {"Value": "Two"}, {"Value": "One"}],  # repeats are dropped
     ]
     for shape in shapes:
-        assert parse_messages({"nrccMessages": shape}) == ["One", "Two"], shape
+        assert texts({"nrccMessages": shape}) == ["One", "Two"], shape
 
 
 def test_odd_message_shapes_are_ignored():

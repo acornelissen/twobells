@@ -323,6 +323,11 @@ main:focus { outline: none; }
 .messages h2 .glyph { color: var(--late-fg); }
 .messages ul { margin: 0; padding-left: 1.25rem; }
 
+/* Station notices (ticket office, lifts): information, not disruption. */
+.station-info { margin: 0 0 var(--s-2); color: var(--muted); font-size: var(--t-sm); }
+.station-info p { margin: 0; }
+.station-info .glyph { margin-right: var(--s-1); }
+
 /* --- Disruptions: roadworks and engineering works --- */
 
 .disruptions {

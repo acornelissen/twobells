@@ -28,7 +28,7 @@ from ..core import words
 from ..core.model import Departure, Status, iso, minutes_between
 from ..core.walk import WalkTimes
 from ..sources.bodsbus import BusBoard
-from ..sources.darwin import CallingPoint, ServiceDetails, TrainBoard, TrainService, train_position
+from ..sources.darwin import CallingPoint, Message, ServiceDetails, TrainBoard, TrainService, train_position
 from ..sources.livebus import LiveDeparture, approach
 from ..sources.weather import Conditions, Hour, rain_line
 from ..timetable.model import Schedule, StopPosition, sign_letter
@@ -195,6 +195,13 @@ def _clock_or_none(value: str | None, scheduled: str) -> str | None:
     return value if value and re.fullmatch(r"\d\d:\d\d", value) else None
 
 
+def message(found: Message) -> dict:
+    """One of the station's messages: "station" ones are about its
+    facilities, shown quietly and never announced; "service" ones are
+    disruption."""
+    return {"text": found.text, "category": found.category, "severity": found.severity, "kind": found.kind}
+
+
 def calling_point(point: CallingPoint) -> dict:
     """One calling point for the train dialog, times as HH:MM or null."""
     cancelled = point.cancelled or point.expected == "Cancelled" or point.actual == "Cancelled"
@@ -227,7 +234,7 @@ def trains_part(board: TrainBoard | None, fetched: datetime | None, status: dict
         "station": (board.location if board is not None and board.location else None) or station,
         "filter": filter_crs,
         "status": status,
-        "messages": list(board.messages) if board is not None else [],
+        "messages": [message(m) for m in board.messages] if board is not None else [],
         "rows": rows,
     }, lookups
 

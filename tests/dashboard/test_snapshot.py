@@ -165,7 +165,9 @@ def test_no_service_id_or_bus_key_reaches_the_json():
 def test_a_darwin_board_becomes_rows():
     part, lookups = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO")
     assert part["station"] == "Glossop" and part["filter"] is None
-    assert part["messages"] == ["Help points at this station are out of use."]
+    assert part["messages"] == [
+        {"text": "Help points at this station are out of use.", "category": None, "severity": None, "kind": "station"},
+    ]
     first = part["rows"][0]
     assert first["scheduled"] == "22:08" and first["scheduled_at"] == "2026-10-09T22:08:00+01:00"
     assert first["expected"] == "22:08" and first["status"] == "on_time" and first["status_text"] == "On time"

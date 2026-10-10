@@ -25,7 +25,10 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
     "station": "Glossop",
     "filter": "MAN",
     "status": {"last_success": "…", "stale": false, "error": null, "note": null},
-    "messages": ["Disruption between Hadfield and Glossop until 10:00."],
+    "messages": [
+      {"text": "Disruption between Hadfield and Glossop until 10:00.", "category": "train", "severity": "minor", "kind": "service"},
+      {"text": "The ticket office is currently closed at this station.", "category": null, "severity": null, "kind": "station"}
+    ],
     "rows": [{
       "id": "9f1c2a7b5e3d4c10",
       "service": "Northern",
@@ -131,6 +134,10 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - A section can be `null` when it isn't configured (`trains`, `buses`, `weather`).
   - `now`, `sun`, `rain`, `strip`, `vehicle` and `position` can each be null.
   - `calling_points` and `previous_points` can be `[]`.
+- **Train `messages`** (National Rail's own messages for the station, at most 3, plain text):
+  - `category` is Darwin's, when it sends one: `train`, `station`, `connections`, `system`, `misc`, `prior_trains` or `prior_other`; else null. `severity` likewise: `normal`, `minor`, `major` or `severe`, or null.
+  - `kind` is `station` for a notice about the station's facilities (ticket office, ticket machines, lifts, toilets, waiting rooms, car park, help points, step-free access), else `service`. Darwin's category decides when it is sent (`station` is a station notice); without one, the words do (`darwin.message_kind`). Words about the trains (delays, cancellations, no trains, replacement buses, a closed station) always make it `service`, so a station notice never hides disruption.
+  - **On the page:** `service` messages are the "Disruption" panel and are announced once in the live region; `station` ones are a quiet "Station information" line in the trains section and are never announced. An older server's plain strings are taken as `service`.
 - **Calling points:** `calling_points` are the stops after this station, `previous_points` the ones before it, both in journey order. Times are `HH:MM` or null; `actual` is set once the train has been there. A cancelled stop has `cancelled: true` and null times.
 - **Train `position`** (from Darwin's Service Details, which needs its own key, `RDM_DETAILS_API_KEY`):
   - It is known for the first 3 trains on the board that aren't cancelled, refreshed at most once a minute. Other rows have `position: null` and `previous_points: []`, unless the server still holds their details from earlier.

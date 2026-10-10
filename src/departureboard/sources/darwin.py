@@ -110,29 +110,86 @@ def plain_text(markup: str, limit: int = MESSAGE_LIMIT) -> str:
     return cut.rstrip(" ,.;:-") + "…"
 
 
-def _markups(value, depth: int = 0):
-    """The HTML strings in nrccMessages, whichever shape it comes in: a list of
-    {"Value": html}, a single one, plain strings, or the other key spellings."""
+# LDBWS (2021 on) gives each message a category and a severity, as Darwin's
+# station messages have them. Both are read if sent, in either spelling, and
+# anything else is left as None.
+_CATEGORIES = {"train": "train", "station": "station", "connections": "connections", "system": "system",
+               "misc": "misc", "priortrains": "prior_trains", "priorother": "prior_other"}
+_SEVERITIES = {"normal": "normal", "minor": "minor", "major": "major", "severe": "severe",
+               "0": "normal", "1": "minor", "2": "major", "3": "severe"}
+# Words that make a message about the trains, whatever its category: a
+# station notice must never hide one.
+_SERVICE_WORDS = re.compile(
+    r"\b(disrupt\w*|cancel\w*|delay\w*|no trains?|trains? (will|may|are|is|do) not|"
+    r"replacement (bus|coach)\w*|station (is )?closed)\b", re.IGNORECASE)
+# The station's facilities, for a message that comes without a category.
+_FACILITY_WORDS = re.compile(
+    r"\b(ticket (offices?|machines?|vending|barriers?)|booking offices?|lifts?|escalators?|toilets?|"
+    r"waiting (rooms?|areas?)|car parks?|help points?|step[- ]free|customer information (screens?|systems?)|"
+    r"caf[eé]s?|shops?|cycle (hire|storage|parking)|wi-?fi|payphones?)\b", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class Message:
+    """One of the station's NRCC messages."""
+
+    text: str  # plain text, cut to MESSAGE_LIMIT
+    category: str | None  # train, station, connections, system, misc, prior_trains or prior_other
+    severity: str | None  # normal, minor, major or severe
+    kind: str  # "station" for a notice about the station's facilities, else "service"
+
+
+def _markups(value, depth: int = 0, meta: dict | None = None):
+    """(HTML, the object it came in or None) for each message in
+    nrccMessages, whichever shape it comes in: a list of {"Value": html},
+    a single one, plain strings, or the other key spellings."""
     if depth > 3:
         return
     if isinstance(value, str):
-        yield value
+        yield value, meta
     elif isinstance(value, list):
         for item in value:
-            yield from _markups(item, depth + 1)
+            yield from _markups(item, depth + 1, meta)
     elif isinstance(value, dict):
         key = next((k for k in _MESSAGE_KEYS if k in value), None)
         if key is not None:
-            yield from _markups(value[key], depth + 1)
+            yield from _markups(value[key], depth + 1, value)
 
 
-def parse_messages(board: dict) -> list[str]:
-    """The station's incident messages as plain text, at most a few."""
-    messages: list[str] = []
-    for markup in _markups(board.get("nrccMessages")):
+def _field(meta: dict | None, names: tuple[str, ...], known: dict[str, str]) -> str | None:
+    """A category or severity from the message's object, if it is one we know."""
+    for name in names:
+        value = meta.get(name) if meta is not None else None
+        if isinstance(value, int) and not isinstance(value, bool):
+            value = str(value)
+        if isinstance(value, str) and value.strip().lower() in known:
+            return known[value.strip().lower()]
+    return None
+
+
+def message_kind(text: str, category: str | None) -> str:
+    """Whether a message is a "station" notice about the station's facilities
+    (ticket office, lifts and the like) or a "service" one. Darwin's
+    category decides when it is sent; without one, the words do. Words about
+    the trains (delays, cancellations, a closed station) always make it a
+    service message."""
+    if _SERVICE_WORDS.search(text):
+        return "service"
+    if category is not None:
+        return "station" if category == "station" else "service"
+    return "station" if _FACILITY_WORDS.search(text) else "service"
+
+
+def parse_messages(board: dict) -> list[Message]:
+    """The station's incident messages, at most a few, each once."""
+    messages: list[Message] = []
+    for markup, meta in _markups(board.get("nrccMessages")):
         text = plain_text(markup)
-        if text and text not in messages:
-            messages.append(text)
+        if not text or any(m.text == text for m in messages):
+            continue
+        category = _field(meta, ("category", "Category"), _CATEGORIES)
+        severity = _field(meta, ("severity", "Severity"), _SEVERITIES)
+        messages.append(Message(text, category, severity, message_kind(text, category)))
         if len(messages) == _MAX_MESSAGES:
             break
     return messages
@@ -189,7 +246,7 @@ class TrainService:
 @dataclass(frozen=True)
 class TrainBoard:
     services: list[TrainService]
-    messages: list[str]
+    messages: list[Message]
     generated_at: str | None  # Darwin's own ISO 8601 timestamp, as sent
     location: str | None = None  # the station's name, like "Glossop"
 
@@ -385,7 +442,8 @@ class DarwinSource:
         self._http_get = http_get
         # Ask for GetDepBoardWithDetails, the board with calling points.
         self.with_details = with_details
-        # From the last successful fetch; the app keeps them with the departures.
+        # The messages' text from the last successful fetch; the app keeps
+        # them with the departures, for the e-paper board's notice.
         self.messages: list[str] = []
 
     def _url(self) -> str:
@@ -402,7 +460,7 @@ class DarwinSource:
     def fetch_board(self) -> TrainBoard:
         """The rich board: calling points too when with_details is set."""
         board = parse_board_rich(self._get())
-        self.messages = board.messages
+        self.messages = [m.text for m in board.messages]
         return board
 
     def fetch(self) -> list[Departure]:
@@ -410,7 +468,7 @@ class DarwinSource:
             return [s.departure for s in self.fetch_board().services]
         board = self._get()
         departures = parse_board(board)
-        self.messages = parse_messages(board)
+        self.messages = [m.text for m in parse_messages(board)]
         return departures
 
 

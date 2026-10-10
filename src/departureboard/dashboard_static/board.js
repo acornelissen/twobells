@@ -183,7 +183,7 @@ export function renderTrains(snapshot, alerts) {
       ["Leave", "c-leave"], ["Record", "c-record"], ["Actions", "c-actions", true],
     ], rows.map((row) => trainRow(row, alerts))));
   }
-  renderMessages(list(trains.messages).map(str).filter(Boolean));
+  renderMessages(trains);
   return rows;
 }
 
@@ -238,10 +238,27 @@ export function renderBuses(snapshot, alerts) {
   return rows;
 }
 
-function renderMessages(messages) {
-  const section = document.getElementById("messages");
-  section.hidden = messages.length === 0;
-  document.getElementById("message-list").replaceChildren(...messages.map((m) => h("li", {}, m)));
+// The station's messages as { text, kind }: "station" ones are about its
+// facilities (ticket office, lifts), "service" ones are disruption. A plain
+// string, as an older server sends, is taken as disruption.
+export function trainMessages(trains) {
+  return list(obj(trains)?.messages).map((m) => (typeof m === "string" ? { text: m, kind: "service" }
+    : { text: str(obj(m)?.text), kind: obj(m)?.kind === "station" ? "station" : "service" }))
+    .filter((m) => m.text);
+}
+
+// Disruption messages go in their own panel; station notices are a quiet
+// "Station information" line in the trains section, never called disruption.
+export function renderMessages(trains) {
+  const messages = trainMessages(trains);
+  const service = messages.filter((m) => m.kind === "service");
+  const station = messages.filter((m) => m.kind === "station");
+  document.getElementById("messages").hidden = service.length === 0;
+  document.getElementById("message-list").replaceChildren(...service.map((m) => h("li", {}, m.text)));
+  const info = document.getElementById("station-info");
+  info.hidden = station.length === 0;
+  info.replaceChildren(...station.map((m) => h("p", {},
+    h("span", { class: "glyph", "aria-hidden": "true" }, icon("info")), "Station information: ", m.text)));
 }
 
 // Keeps the countdowns current; runs every second, touches only changed text.

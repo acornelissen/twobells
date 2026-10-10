@@ -2,11 +2,13 @@
 // once every 30 s: a departure newly cancelled, an expected time moving by
 // 2 min or more, a bus newly flagged as having no tracker (once per
 // departure, however often the flag comes and goes), and a new disruption
-// message. Countdowns and clocks never go through it.
+// message. Station notices (a closed ticket office, lifts out of use) are not
+// disruption and are never spoken. Countdowns and clocks never go through it.
 
-import { $, list, obj, str } from "./dom.js";
+import { $, str } from "./dom.js";
 import { parseAt } from "./time.js";
 import { describe } from "./alerts.js";
+import { trainMessages } from "./board.js";
 
 const GAP_MS = 30_000;
 const MOVE_MS = 2 * 60_000;
@@ -50,7 +52,7 @@ function queue(key, text) {
 // Compares a new snapshot's rows with the last one's. rowsById maps id to
 // { row, mode }. The first snapshot only sets the baseline.
 export function noteSnapshot(snapshot, rowsById) {
-  const messages = new Set(list(obj(snapshot.trains)?.messages).map(str).filter(Boolean));
+  const messages = new Set(trainMessages(snapshot.trains).filter((m) => m.kind === "service").map((m) => m.text));
   const next = new Map();
   for (const [id, { row, mode }] of rowsById) {
     const now = { status: row.status, expectedMs: expectedMs(row) };

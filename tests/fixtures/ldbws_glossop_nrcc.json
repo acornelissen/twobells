@@ -124,9 +124,13 @@
   ],
   "nrccMessages": [
     {
+      "category": "Train",
+      "severity": "Minor",
       "Value": "<p>Engineering work between Dinting and Guide Bridge means trains may be delayed by up to 15 minutes today.</p><p>See <a href=\"https://example.com/travel-news/\">travel news</a> for details.</p>"
     },
     {
+      "category": "Station",
+      "severity": "Normal",
       "Value": "Ticket machines at Glossop &amp; Dinting take cards only.\n\n Cash is not accepted."
     }
   ],

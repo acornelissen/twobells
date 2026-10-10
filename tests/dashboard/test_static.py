@@ -510,6 +510,12 @@ WEATHER = {
     "sun": Opt({"sunrise": at, "sunset": at}),
 }
 PERIOD = {"from_at": at, "to_at": Opt(at)}
+MESSAGE = {
+    "text": str,
+    "category": Opt(one_of("train", "station", "connections", "system", "misc", "prior_trains", "prior_other")),
+    "severity": Opt(one_of("normal", "minor", "major", "severe")),
+    "kind": one_of("station", "service"),
+}
 DISRUPTION = {
     "id": row_id, "mode": one_of("bus", "train"), "title": str, "summary": str, "reason": Opt(str),
     "from_at": at, "to_at": Opt(at), "periods": [PERIOD], "planned": bool,
@@ -525,7 +531,7 @@ SNAPSHOT = {
     "title": str,
     "walk": {"train": Opt(integer), "bus": MapOf(integer)},
     "trains": Opt({
-        "station": str, "filter": Opt(str), "status": STATUS, "messages": [str], "rows": [TRAIN_ROW],
+        "station": str, "filter": Opt(str), "status": STATUS, "messages": [MESSAGE], "rows": [TRAIN_ROW],
     }),
     "buses": Opt({
         "status": STATUS,
@@ -583,7 +589,8 @@ def test_snapshot_fixture_follows_the_contract():
     # The cases the page has to draw are all here.
     assert any(r["status"] == "cancelled" and r["cancel_reason"] and r["leave_at"] is None for r in trains)
     assert any(r["status"] == "late" and r["delay_reason"] for r in trains)
-    assert snapshot["trains"]["messages"]
+    # A disruption message and a station notice, which the page shows differently.
+    assert {m["kind"] for m in snapshot["trains"]["messages"]} == {"service", "station"}
     assert any(r["live"] and r["strip"] and r["strip"]["bus_at"] is not None for r in buses)
     assert any(not r["live"] and r["vehicle"] is None and r["status_text"] == "Timetable only" for r in buses)
     assert len({r["id"] for r in trains + buses}) == 20
@@ -731,6 +738,87 @@ def test_disruptions_are_listed_most_relevant_first():
     """)
     assert found == ["disruption-cccccccccccccccc", "disruption-bbbbbbbbbbbbbbbb",
                      "disruption-dddddddddddddddd", "disruption-aaaaaaaaaaaaaaaa"]
+
+
+# --- Station messages: disruption, or station information ---
+
+
+def test_station_information_has_its_own_quiet_place_in_the_trains_section():
+    elements = _page().elements
+    ids = [attrs.get("id") for _, attrs in elements]
+    assert ids.index("trains") < ids.index("station-info") < ids.index("buses")
+    info = next(attrs for _, attrs in elements if attrs.get("id") == "station-info")
+    assert "hidden" in info
+
+
+MESSAGES_PAGE = """
+import { renderMessages } from "./board.js";
+for (const [tag, id] of [["section", "messages"], ["ul", "message-list"], ["div", "station-info"]]) {
+  const el = document.createElement(tag);
+  el.setAttribute("id", id);
+  document.body.append(el);
+}
+const $ = (id) => document.getElementById(id);
+const shown = () => ({
+  disruption: $("messages").hidden ? [] : $("message-list").childNodes.map((li) => spoken(li)),
+  info: $("station-info").hidden ? [] : $("station-info").childNodes.map((p) => spoken(p)),
+  icons: byClass($("station-info"), "icon-info").length,
+});
+"""
+
+
+@needs_node
+def test_a_closed_ticket_office_is_station_information_not_disruption():
+    found = run_js(MESSAGES_PAGE + """
+        renderMessages({ messages: [
+          { text: "Trains may be delayed between Dinting and Guide Bridge.", category: "train", severity: "minor",
+            kind: "service" },
+          { text: "The ticket office is currently closed at this station.", category: null, severity: null,
+            kind: "station" },
+        ] });
+        const both = shown();
+        renderMessages({ messages: [{ text: "The ticket office is currently closed at this station.", kind: "station" }] });
+        const stationOnly = shown();
+        // An older server's plain strings are disruption, as they always were.
+        renderMessages({ messages: ["Lifts out of use.", 7, { kind: "station" }] });
+        console.log(JSON.stringify([both, stationOnly, shown()]));
+    """)
+    both, station_only, old = found
+    assert both == {
+        "disruption": ["Trains may be delayed between Dinting and Guide Bridge."],
+        "info": ["Station information: The ticket office is currently closed at this station."],
+        "icons": 1,
+    }
+    # With only a station notice, the "Disruption" panel stays hidden.
+    assert station_only["disruption"] == [] and len(station_only["info"]) == 1
+    assert old == {"disruption": ["Lifts out of use."], "info": [], "icons": 0}
+
+
+@needs_node
+def test_station_information_is_never_announced():
+    found = run_js("""
+        import { noteSnapshot } from "./live.js";
+        const live = document.createElement("div");
+        live.setAttribute("id", "live");
+        document.body.append(live);
+        globalThis.requestAnimationFrame = (fn) => fn();
+        const snapshot = (messages) => ({ trains: { messages } });
+        noteSnapshot(snapshot([]), new Map());
+        noteSnapshot(snapshot([
+          { text: "The ticket office is currently closed at this station.", category: null, severity: null,
+            kind: "station" },
+        ]), new Map());
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        const quiet = live.textContent;
+        noteSnapshot(snapshot([
+          { text: "The ticket office is currently closed at this station.", kind: "station" },
+          { text: "Trains may be cancelled between Glossop and Hadfield.", category: "train", severity: "major",
+            kind: "service" },
+        ]), new Map());
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        console.log(JSON.stringify([quiet, live.textContent]));
+    """)
+    assert found == ["", "New disruption: Trains may be cancelled between Glossop and Hadfield."]
 
 
 # --- The train dialog's journey line ---
