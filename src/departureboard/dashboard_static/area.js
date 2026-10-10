@@ -8,6 +8,7 @@ import { $, h, fill, setText, str, num, list, obj, openDialog, setUpDialog } fro
 import { getJSON } from "./api.js";
 import { age, now, parseAt } from "./time.js";
 import { busPin, loadLeaflet, roadLine, TILES } from "./map.js";
+import { icon } from "./icons.js";
 
 const AREA_EVERY_MS = 25_000; // the summary asks for the area at most this often
 const MAX_VEHICLES = 80;
@@ -78,7 +79,7 @@ function trainItem(row, line, index) {
   const destination = str(row.destination);
   const towards = line.indexOf(destination);
   const where = str(obj(row.position)?.where);
-  const arrow = towards < 0 ? "" : towards < index ? "▲" : "▼";
+  const arrow = towards < 0 ? null : icon(towards < index ? "arrow-up" : "arrow-down");
   return h("li", { class: "line-train" },
     h("span", { class: "glyph", "aria-hidden": "true" }, arrow), " ",
     h("strong", {}, `${str(row.scheduled)} to ${destination}`), where ? `: ${where}` : "");
@@ -292,7 +293,7 @@ export function renderChanges(snapshot) {
     .map((c) => [str(c.line), dayText(c.from, snapshot.generated_at)]).filter(([line, day]) => line && day);
   el.hidden = !changes.length;
   fill(el, changes.map(([line, day]) => h("li", {},
-    h("span", { class: "glyph", "aria-hidden": "true" }, "ⓘ"), " ", `New ${line} timetable from ${day}.`)));
+    h("span", { class: "glyph", "aria-hidden": "true" }, icon("info")), " ", `New ${line} timetable from ${day}.`)));
 }
 
 // Called with each snapshot: the line, the summary, and the open map.

@@ -5,14 +5,15 @@
 
 import { $, h, vh, fill, setText, str, list, obj, validId } from "./dom.js";
 import { now, parseAt } from "./time.js";
+import { icon } from "./icons.js";
 
 const MODE = { bus: "Bus", train: "Train" };
 // Severity in words, and the badge colours that reinforce them.
 const SEVERITY = {
-  slight: ["Minor disruption", "st-unknown", "·"],
-  normal: ["Disruption", "st-late", "!"],
-  severe: ["Severe disruption", "st-cancelled", "!!"],
-  unknown: ["Disruption", "st-late", "!"],
+  slight: ["Minor disruption", "st-unknown", "info"],
+  normal: ["Disruption", "st-late", "triangle-alert"],
+  severe: ["Severe disruption", "st-cancelled", "octagon-x"],
+  unknown: ["Disruption", "st-late", "triangle-alert"],
 };
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -72,8 +73,8 @@ function whenLine({ period, current, more }, today) {
 }
 
 function severityBadge(severity) {
-  const [words, cls, glyph] = SEVERITY[severity] || SEVERITY.unknown;
-  return h("span", { class: ["badge", cls] }, h("span", { class: "glyph", "aria-hidden": "true" }, glyph),
+  const [words, cls, name] = SEVERITY[severity] || SEVERITY.unknown;
+  return h("span", { class: ["badge", cls] }, h("span", { class: "glyph", "aria-hidden": "true" }, icon(name)),
     h("span", { class: "badge-text" }, words));
 }
 
@@ -181,7 +182,7 @@ export function markBusRows(snapshot, rowsById) {
     const cell = tr.querySelector(".c-status");
     if (!hit || !cell) continue;
     cell.append(h("a", { class: "dis-mark", href: `#disruption-${hit.id}`, on: { click: follow } },
-      h("span", { class: "glyph", "aria-hidden": "true" }, "⚠︎"), "Disruption",
+      h("span", { class: "glyph", "aria-hidden": "true" }, icon("triangle-alert")), "Disruption",
       vh(` for the ${str(row.scheduled)} ${str(row.line)}: ${str(hit.title)}`)));
   }
 }

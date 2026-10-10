@@ -1,27 +1,31 @@
-// The weather panel: now, the next 12 hours, rain and daylight. Every glyph
+// The weather panel: now, the next 12 hours, rain and daylight. Every icon
 // is decoration beside words that say the same thing.
 
 import { $, h, fill, setText, str, num, list, obj } from "./dom.js";
 import { hhmm, now, parseAt } from "./time.js";
+import { icon } from "./icons.js";
 
 const HOURS = 12;
 const COMPASS = ["north", "north-north-east", "north-east", "east-north-east", "east", "east-south-east",
   "south-east", "south-south-east", "south", "south-south-west", "south-west", "west-south-west", "west",
   "west-north-west", "north-west", "north-north-west"];
 
-// A text glyph for a WMO weather code. ︎ asks for text, not emoji, style.
-function glyph(code, isDay) {
-  if (code === null) return "";
-  if (code === 0 || code === 1) return isDay === false ? "☾" : "☀︎";
-  if (code === 2 || code === 3) return "☁︎";
-  if (code === 45 || code === 48) return "≋";
-  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "❄︎";
-  if (code >= 95) return "⚡︎";
-  if (code >= 51) return "☂︎";
-  return "";
+// The icon for a WMO weather code, or null for one with no picture.
+export function weatherIcon(code, isDay) {
+  const night = isDay === false;
+  if (code === null) return null;
+  if (code === 0 || code === 1) return night ? "moon" : "sun";
+  if (code === 2) return night ? "cloud-moon" : "cloud-sun";
+  if (code === 3) return "cloud";
+  if (code === 45 || code === 48) return "cloud-fog";
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "cloud-snow";
+  if (code >= 95) return "cloud-lightning";
+  if (code >= 51 && code <= 57) return "cloud-drizzle";
+  if (code >= 61) return "cloud-rain";
+  return null;
 }
 
-const icon = (code, isDay) => h("span", { class: "wx-glyph", "aria-hidden": "true" }, glyph(code, isDay));
+const wxIcon = (code, isDay) => h("span", { class: "wx-glyph", "aria-hidden": "true" }, icon(weatherIcon(code, isDay)));
 const degrees = (t) => `${Math.round(t)} °C`;
 
 function windText(now) {
@@ -40,7 +44,7 @@ function renderNow(current) {
   const feels = num(current.feels_like);
   fill(el,
     h("p", { class: "wx-now" },
-      icon(num(current.code), current.is_day),
+      wxIcon(num(current.code), current.is_day),
       h("span", { class: "wx-temp" }, temp !== null ? degrees(temp) : ""),
       " ",
       h("span", { class: "wx-text" }, str(current.text))),
@@ -62,7 +66,7 @@ function renderHours(hours) {
     const wind = num(hr.wind);
     return h("li", {},
       h("span", { class: "wx-hour" }, hhmm(hr.start)),
-      icon(num(hr.code), hr.is_day),
+      wxIcon(num(hr.code), hr.is_day),
       h("span", { class: "wx-text" }, str(hr.text)),
       h("span", { class: "wx-temp" }, temp !== null ? degrees(temp) : ""),
       prob !== null ? h("span", { class: "wx-rain" }, `${Math.round(prob)}% rain`) : null,

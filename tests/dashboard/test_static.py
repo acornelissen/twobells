@@ -219,6 +219,84 @@ def test_vendor_hashes_match():
     assert shipped == set(listed) | {"SHA256SUMS"}, "a vendored file is not pinned"
 
 
+def test_vendored_inter_is_pinned_and_licensed():
+    inter = VENDOR / "inter-4.1"
+    listed = {}
+    for line in (inter / "SHA256SUMS").read_text().splitlines():
+        digest, name = line.split(maxsplit=1)
+        listed[name] = digest
+    assert set(listed) == {"InterVariable.woff2", "LICENSE"}
+    for name, digest in listed.items():
+        assert hashlib.sha256((inter / name).read_bytes()).hexdigest() == digest, name
+    assert {p.name for p in inter.iterdir()} == set(listed) | {"SHA256SUMS"}, "a vendored file is not pinned"
+    assert "SIL Open Font License, Version 1.1" in (inter / "LICENSE").read_text()
+
+
+def test_the_page_uses_the_vendored_inter_with_tabular_times():
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    face = re.search(r"@font-face\s*\{([^}]*)\}", css)
+    assert face, "no @font-face"
+    assert 'font-family: "Inter"' in face.group(1) and "font-display: swap" in face.group(1)
+    assert 'url("/static/vendor/inter-4.1/InterVariable.woff2") format("woff2")' in face.group(1)
+    assert _served("/static/vendor/inter-4.1/InterVariable.woff2").is_file()
+    assert re.search(r'--font:\s*"Inter"', css)
+    assert re.search(r"--tnum:\s*tabular-nums", css) or "font-variant-numeric: tabular-nums" in css
+
+
+# --- Icons ---
+
+
+@needs_node
+def test_icons_are_hidden_svg_drawn_in_the_text_colour():
+    found = run_js("""
+        import { icon, ICONS } from "./icons.js";
+        import { weatherIcon } from "./weather.js";
+        const drawn = ICONS.map((name) => {
+          const el = icon(name);
+          return [el.nodeName, el.getAttribute("aria-hidden"), el.getAttribute("stroke"), el.childNodes.length];
+        });
+        const weather = [];
+        for (let code = 0; code < 100; code++) for (const day of [true, false]) weather.push(weatherIcon(code, day));
+        console.log(JSON.stringify({ names: ICONS, drawn, weather, missing: icon("no-such-icon") }));
+    """)
+    assert len(found["names"]) >= 20 and found["missing"] is None
+    assert all(d[:3] == ["svg", "true", "currentColor"] and d[3] > 0 for d in found["drawn"])
+    assert {w for w in found["weather"] if w is not None} <= set(found["names"])
+    assert "sun" in found["weather"] and "moon" in found["weather"] and "cloud-rain" in found["weather"]
+
+
+def test_every_icon_the_page_asks_for_is_in_the_set():
+    names = set(re.findall(r'^  "([a-z-]+)": \[', (STATIC / "icons.js").read_text(encoding="utf-8"), re.M))
+    asked = set()
+    for path in OWN_JS:
+        text = path.read_text(encoding="utf-8")
+        for call in re.findall(r"\bicon\(([^()]*)\)", text):
+            asked.update(re.findall(r'"([a-z-]+)"', call))
+    # The status, connection and severity tables name their icons too.
+    js = {path.name: path.read_text(encoding="utf-8") for path in OWN_JS}
+    tables = [
+        ("board.js", "ICON", r': "([a-z-]+)"'),  # status -> icon
+        ("main.js", "CONNECTION", r'\["([a-z-]+)", "'),  # [icon, words]
+        ("disruptions.js", "SEVERITY", r', "([a-z-]+)"\],'),  # [words, class, icon]
+    ]
+    for name, table, entry in tables:
+        body = re.search(r"const %s = \{(.*?)\};" % table, js[name], re.S).group(1)
+        found = re.findall(entry, body)
+        assert found, table
+        asked.update(found)
+    assert asked and asked <= names, asked - names
+
+
+PICTOGRAPHS = re.compile("[←-⇿⌀-⏿①-⓿■-➿⬀-⯿︎️]")
+
+
+def test_no_text_glyphs_stand_in_for_icons():
+    # They fall back to whatever font has them, so they come out at odd sizes.
+    for path in [*OWN_JS, STATIC / "index.html"]:
+        found = PICTOGRAPHS.findall(path.read_text(encoding="utf-8"))
+        assert not found, f"{path.name}: {found}"
+
+
 # --- Colour contrast in every theme ---
 
 

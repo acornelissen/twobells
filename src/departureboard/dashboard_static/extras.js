@@ -4,6 +4,7 @@
 // words carry the meaning and colour only reinforces them.
 
 import { h, vh, str, num, obj } from "./dom.js";
+import { icon } from "./icons.js";
 
 const lowerFirst = (text) => text.charAt(0).toLowerCase() + text.slice(1);
 
@@ -57,14 +58,14 @@ export function inboundText(row) {
 export function inboundLine(row) {
   const text = inboundText(row);
   if (!text) return null;
-  return h("span", { class: "reason inbound" }, h("span", { class: "glyph", "aria-hidden": "true" }, "↳"), " ", text);
+  return h("span", { class: "reason inbound" }, h("span", { class: "glyph", "aria-hidden": "true" }, icon("corner-down-right")), " ", text);
 }
 
-// The ghost warning: words plus a glyph, calm rather than alarming.
+// The ghost warning: words plus an icon, calm rather than alarming.
 export function ghostBadge(row) {
   if (row.ghost !== true) return null;
   return h("span", { class: ["badge", "ghost"] },
-    h("span", { class: "glyph", "aria-hidden": "true" }, "◌"),
+    h("span", { class: "glyph", "aria-hidden": "true" }, icon("circle-dashed")),
     h("span", { class: "badge-text" }, "May not be running: no tracker yet"));
 }
 

@@ -19,7 +19,7 @@ from departureboard.web.settingsite import SettingsSite
 # The contract's headers, copied from docs/dashboard-api.md rather than imported.
 SECURITY = {
     "Content-Security-Policy": (
-        "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: "
+        "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: "
         "https://tile.openstreetmap.org; connect-src 'self'; manifest-src 'self'; base-uri 'none'; "
         "form-action 'none'; frame-ancestors 'none'"
     ),
@@ -43,6 +43,7 @@ STATIC = {
     "data.json": b"{}",
     "LICENSE.txt": b"MIT",
     "vendor/leaflet-1.9.4/leaflet.js": b"// leaflet",
+    "vendor/inter-4.1/InterVariable.woff2": b"wOF2",
 }
 
 
@@ -288,6 +289,7 @@ def test_a_query_string_is_ignored(server):
     ("data.json", "application/json"),
     ("LICENSE.txt", "text/plain; charset=utf-8"),
     ("vendor/leaflet-1.9.4/leaflet.js", "text/javascript; charset=utf-8"),
+    ("vendor/inter-4.1/InterVariable.woff2", "font/woff2"),
 ])
 def test_static_files_have_their_own_types(server, name, content_type):
     response, body = server.request(f"/static/{name}")

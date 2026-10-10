@@ -7,20 +7,21 @@ import { h, vh, setText, str, num, list, obj, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
 import { renderStrip, renderTrainStrip } from "./strip.js";
 import { arrivesLine, busStatusExtras } from "./extras.js";
+import { icon } from "./icons.js";
 
 const MAX_ROWS = 10;
 
-const GLYPH = { on_time: "✓", late: "!", cancelled: "✕", unknown: "◷" };
+const ICON = { on_time: "check", late: "triangle-alert", cancelled: "x", unknown: "clock" };
 const WORDS = { on_time: "On time", late: "Late", cancelled: "Cancelled", unknown: "No report" };
 
-export const statusKey = (status) => (GLYPH[status] ? status : "unknown");
+export const statusKey = (status) => (ICON[status] ? status : "unknown");
 
-// Status as a glyph plus words; the colour comes from the class and only
+// Status as an icon plus words; the colour comes from the class and only
 // reinforces the words.
 export function statusBadge(status, text) {
   const key = statusKey(status);
   return h("span", { class: ["badge", `st-${key}`] },
-    h("span", { class: "glyph", "aria-hidden": "true" }, GLYPH[key]),
+    h("span", { class: "glyph", "aria-hidden": "true" }, icon(ICON[key])),
     h("span", { class: "badge-text" }, str(text) || WORDS[key]));
 }
 
@@ -67,14 +68,14 @@ function actionButton(action, id, text, context, extra = {}) {
   return h("button", {
     type: "button", class: ["act", extra.class], dataset: { action, id, focusKey: `${action}:${id}` },
     "aria-pressed": extra.pressed === undefined ? null : String(extra.pressed),
-  }, extra.glyph ? h("span", { class: "glyph", "aria-hidden": "true" }, extra.glyph) : null, text, vh(` for ${context}`));
+  }, extra.icon ? h("span", { class: "glyph", "aria-hidden": "true" }, icon(extra.icon)) : null, text, vh(` for ${context}`));
 }
 
 function alertButton(row, id, context, alerts) {
   // An alert needs a time to leave; a cancelled train has none.
   if (!id || parseAt(row.leave_at) === null) return null;
   const on = alerts.isOn(id);
-  return actionButton("alert", id, "Alert me", context, { class: "toggle", pressed: on, glyph: on ? "✓" : "+" });
+  return actionButton("alert", id, "Alert me", context, { class: "toggle", pressed: on, icon: on ? "bell-ring" : "bell" });
 }
 
 function rowAttrs(row, id) {
@@ -151,7 +152,8 @@ function statusLine(el, status, extra = []) {
   }
   if (str(st.note)) parts.push(str(st.note));
   parts.push(...extra);
-  el.replaceChildren(problem ? h("span", { class: "glyph", "aria-hidden": "true" }, "⚠︎ ") : "", parts.join(" "));
+  el.replaceChildren(problem ? h("span", { class: "glyph", "aria-hidden": "true" }, icon("triangle-alert")) : "",
+    problem ? " " : "", parts.join(" "));
   el.classList.toggle("problem", problem);
 }
 

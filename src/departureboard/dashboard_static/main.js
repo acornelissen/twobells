@@ -14,6 +14,7 @@ import { openHistory, setUpHistory } from "./history.js";
 import { openMap, refreshMap, setUpMap } from "./map.js";
 import { markBusRows, renderDisruptions } from "./disruptions.js";
 import { renderArea, setUpArea } from "./area.js";
+import { icon } from "./icons.js";
 
 let snapshot = null;
 let rowsById = new Map(); // id -> { row, mode }
@@ -37,23 +38,23 @@ $("theme-toggle").addEventListener("click", () => {
 });
 applyTheme(document.documentElement.dataset.theme === "board" ? "board" : "modern");
 
-// --- Connection state, as a glyph plus words.
+// --- Connection state, as an icon plus words.
 
 const CONNECTION = {
-  [STATE.connecting]: ["◌", "Connecting…"],
-  [STATE.live]: ["●", "Live"],
-  [STATE.reconnecting]: ["◌", "Reconnecting…"],
-  [STATE.polling]: ["↻", "Updating every 30 s"],
-  [STATE.offline]: ["✕", "Offline"],
+  [STATE.connecting]: ["circle-dashed", "Connecting…"],
+  [STATE.live]: ["circle", "Live"],
+  [STATE.reconnecting]: ["circle-dashed", "Reconnecting…"],
+  [STATE.polling]: ["refresh-cw", "Updating every 30 s"],
+  [STATE.offline]: ["x", "Offline"],
 };
 
 function renderConnection() {
-  const [glyph, words] = CONNECTION[connectionState] || CONNECTION[STATE.offline];
+  const [name, words] = CONNECTION[connectionState] || CONNECTION[STATE.offline];
   const last = connection ? connection.lastOk() : 0;
   const since = connectionState !== STATE.live && last ? `, last update ${age((Date.now() - last) / 1000)}` : "";
   const el = $("connection");
   el.dataset.state = connectionState;
-  setText($("connection-glyph"), glyph);
+  $("connection-glyph").replaceChildren(icon(name));
   setText($("connection-text"), words + since);
 }
 
@@ -124,7 +125,7 @@ $("main").addEventListener("click", (event) => {
       if (entry) {
         const on = toggle(id, entry.row);
         button.setAttribute("aria-pressed", String(on));
-        setText(button.querySelector(".glyph"), on ? "✓" : "+");
+        button.querySelector(".glyph").replaceChildren(icon(on ? "bell-ring" : "bell"));
         tickAlerts(rowsById);
       }
       break;

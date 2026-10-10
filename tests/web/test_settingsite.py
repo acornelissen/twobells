@@ -43,7 +43,7 @@ KEYS = "RDM_API_KEY=rail-key-1234567\nBODS_API_KEY=bods-key-7654321\n"
 
 # The read-only dashboard's headers, as docs/dashboard-api.md has them.
 DASHBOARD_CSP = (
-    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: "
+    "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: "
     "https://tile.openstreetmap.org; connect-src 'self'; manifest-src 'self'; base-uri 'none'; "
     "form-action 'none'; frame-ancestors 'none'"
 )
