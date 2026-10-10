@@ -604,14 +604,16 @@ def stop_labels(stops: Sequence[tuple[str | None, Stop]]) -> list[str]:
     return [label or next(defaults) for label, _ in stops]
 
 
-def config_fragment(home: Located, station: Station | None, stops: Sequence[tuple[str | None, Stop]],
+def config_fragment(home: Located | None, station: Station | None, stops: Sequence[tuple[str | None, Stop]],
                     walk: Mapping[str, tuple[int, str]]) -> dict:
     """The settings setup found, as config.toml tables: [train] crs and
     walk_minutes, [bus.stops] and [bus.walk_minutes] by label, and [weather]
     lat and lon. `walk` is walk_minutes' answer, keyed by CRS and ATCO code.
     Home's position appears only in [weather], rounded to 2 places (about a
-    kilometre), which is all a forecast needs."""
-    _check_point(home.lat, home.lon)
+    kilometre), which is all a forecast needs; with no home (a shortcut
+    changing only the station or the stops), there is no [weather]."""
+    if home is not None:
+        _check_point(home.lat, home.lon)
     fragment: dict = {}
     if station is not None:
         if not _CRS.match(station.crs):
@@ -631,5 +633,6 @@ def config_fragment(home: Located, station: Station | None, stops: Sequence[tupl
         if minutes:
             bus["walk_minutes"] = minutes
         fragment["bus"] = bus
-    fragment["weather"] = {"lat": round(home.lat, 2), "lon": round(home.lon, 2)}
+    if home is not None:
+        fragment["weather"] = {"lat": round(home.lat, 2), "lon": round(home.lon, 2)}
     return fragment

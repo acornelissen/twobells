@@ -199,6 +199,7 @@ def _settings_site(store: Store, install: Install, running: bool, runner=None):
         links=[("Settings", PREFIX)],
         view_links=view_links,
         runner=runner,
+        back=PREFIX,  # the settings' Overview, for Back on a shortcut's first step
     )
     site = SettingsSite(store, install, setup, dashboard_on=lambda: running and "dashboard" in site.views())
     if not site.password.is_set():

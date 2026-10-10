@@ -1402,6 +1402,24 @@ def test_the_wizard_api_needs_the_session_and_its_csrf_token(pi):
     assert pi.setup.calls == [("begin", {"x": [1, 2]})]
 
 
+def test_todays_choices_for_the_wizards_shortcuts_need_the_session_and_its_token_too(pi):
+    cookie = pi.session()
+    csrf = pi.csrf(cookie)
+    for sent_cookie, headers, origin, status in [
+        (None, {"X-CSRF-Token": csrf}, "same", 401),
+        (cookie, {}, "same", 403),
+        (cookie, {"X-CSRF-Token": pi.csrf(pi.session())}, "same", 403),
+        (cookie, {"X-CSRF-Token": csrf}, "http://evil.example.com", 403),
+    ]:
+        response, _ = pi("POST", "/settings/setup/api/saved", cookie=sent_cookie, origin=origin, headers=headers,
+                         json_body={})
+        assert response.status == status, (sent_cookie, headers, origin)
+    assert pi("GET", "/settings/setup/api/saved", cookie=cookie)[0].status != 200  # steps are POST only
+    assert pi.setup.calls == []
+    pi("POST", "/settings/setup/api/saved", cookie=cookie, headers={"X-CSRF-Token": csrf}, json_body={})
+    assert pi.setup.calls == [("saved", {})]
+
+
 def test_the_wizard_api_refuses_another_sites_page_outright(pi):
     cookie = pi.session()
     csrf = pi.csrf(cookie)

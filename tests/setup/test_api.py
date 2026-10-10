@@ -2,6 +2,7 @@
 
 import json
 import tomllib
+from datetime import datetime
 from typing import ClassVar
 
 import pytest
@@ -16,6 +17,8 @@ from departureboard.setup import discover
 from departureboard.setup.api import Invalid, RateLimit, SetupApi, decode, suggested_labels
 from departureboard.setup.keytest import KeyResult
 from departureboard.setup.lookups import Place, SetupError, Station, Stop
+from departureboard.timetable import build as timetable
+from departureboard.timetable.model import Schedule, StopPosition
 from departureboard.web.groupform import check_views
 from tests.paths import ROOT
 
@@ -908,3 +911,131 @@ def test_test_key_goes_to_the_runner_when_there_is_one(ran):
     assert ran.runner.calls == [("testkey", "TAPI_APP_KEY", "typed-tapi-key", "typed-tapi-id"),
                                 ("testkey", "RDM_KB_API_KEY", None, None)]
     assert ran.board.calls == []  # nothing in this process
+
+
+# Shortcuts: "Change station only" and "Change stops only" start from
+# today's choices and save only their part.
+
+
+def with_a_timetable(api, positions):
+    """A bus timetable in the store, knowing these stops' names."""
+    timetable.save(api.state, Schedule(datetime(2026, 10, 10, 8, 0), None, {}, (), positions))
+
+
+def test_saved_answers_todays_choices_with_names_and_walks_never_keys(board):
+    saved_with_a_search(board)
+    with_a_timetable(board, {"1800SB12341": StopPosition("Station Road", 53.4615, -1.9662, "Stop A")})
+    body = ok(board, "saved")
+    assert body == {
+        "home": {"lat": 53.46, "lon": -1.97},  # the weather's, to about a kilometre
+        "station": {"crs": "GLO", "name": "Glossop", "walk": 6},
+        "filter": {"crs": "MAN", "name": "Manchester Piccadilly"},
+        "stops": [{"label": "A", "atco": "1800SB12341", "name": "Station Road", "indicator": "Stop A", "walk": 3}],
+    }
+    assert RDM_KEY not in json.dumps(body) and BODS_KEY not in json.dumps(body)
+
+
+def test_saved_leaves_out_what_is_off_or_not_set_up(board):
+    (board.state / "settings.toml").write_text(
+        '[train]\nenabled = false\ncrs = "GLO"\n\n[bus]\nstops = { A = "1800SB12341", B = "CHANGE_ME" }\n')
+    assert ok(board, "saved") == {
+        "home": None, "station": None, "filter": None,
+        # No timetable, so no names; a stop not shaped as one is left out.
+        "stops": [{"label": "A", "atco": "1800SB12341", "name": "", "indicator": "", "walk": None}],
+    }
+
+
+def test_saved_reads_the_template_as_nothing_chosen(template):
+    assert ok(template, "saved") == {"home": None, "station": None, "filter": None, "stops": []}
+
+
+def test_saved_takes_nothing_and_asks_no_runner(ran):
+    assert ran.handle("saved", {"lat": 53.4})[0] == 400
+    saved_with_a_search(ran.board)
+    assert ok(ran, "saved")["station"]["crs"] == "GLO"
+    assert ran.runner.calls == []  # local files only: nothing goes out
+
+
+def test_begin_says_where_back_from_a_shortcut_goes(board):
+    assert ok(board, "begin")["back"] == ""
+    api = SetupApi(board_target(board.config), lambda: dict(board.secrets), board.state, back="/settings")
+    assert ok(api, "begin")["back"] == "/settings"
+
+
+@pytest.mark.parametrize("back", ["", "settings", "//evil.example.com/", "https://evil.example.com/", "/a b"])
+def test_back_is_a_plain_path_on_this_site(board, back):
+    with pytest.raises(ValueError):
+        SetupApi(board_target(board.config), dict, board.state, back=back)
+
+
+def test_changing_the_station_only_keeps_everything_else(board):
+    saved_with_a_search(board)
+    before = tomllib.loads((board.state / "settings.toml").read_text())
+    ok(board, "finish", {"only": "station", "station_crs": "MAN", "filter_crs": None, "walk": {"MAN": 9}})
+    after = tomllib.loads((board.state / "settings.toml").read_text())
+    assert after["train"] == {"crs": "MAN", "walk_minutes": 9, "filter_crs": "", "enabled": True}
+    assert {k: v for k, v in after.items() if k != "train"} == {k: v for k, v in before.items() if k != "train"}
+    assert len(FakeJob.made) == 1  # no search for a station
+
+
+def test_no_trains_from_the_station_shortcut_switches_them_off(board):
+    saved_with_a_search(board)
+    ok(board, "finish", {"only": "station", "walk": {}})
+    after = tomllib.loads((board.state / "settings.toml").read_text())
+    assert after["train"]["enabled"] is False and after["bus"]["stops"] == {"A": "1800SB12341"}
+    assert ok(board, "saved")["station"] is None
+
+
+def test_changing_the_stops_only_keeps_everything_else(board):
+    saved_with_a_search(board)
+    before = tomllib.loads((board.state / "settings.toml").read_text())
+    status, body = board.handle("finish", {"only": "stops", "stops": {"B": "1800SB12342"}, "walk": {}})
+    assert status == 409 and "Find the bus companies" in body["error"]  # new stops need their search
+    ok(board, "start", {"stops": {"B": "1800SB12342"}, "routes": False})
+    FakeJob.made[-1].finish(False)
+    ok(board, "finish", {"only": "stops", "stops": {"B": "1800SB12342"}, "walk": {"1800SB12342": 4}})
+    after = tomllib.loads((board.state / "settings.toml").read_text())
+    assert after["bus"]["stops"] == {"B": "1800SB12342"} and after["bus"]["walk_minutes"] == {"B": 4}
+    assert after["bus"]["operators"] == ["BNML"] and after["bus"]["routes"] == {}  # A's strip went with A
+    assert {k: v for k, v in after.items() if k != "bus"} == {k: v for k, v in before.items() if k != "bus"}
+
+
+def test_the_same_stops_again_need_no_search(board):
+    (board.state / "settings.toml").write_text(
+        SAVED + 'source = "bods"\noperators = ["BNML"]\nstops = { A = "1800SB12341" }\nwalk_minutes = { A = 3 }\n')
+    ok(board, "finish", {"only": "stops", "stops": {"A": "1800SB12341"}, "walk": {"1800SB12341": 7}})
+    bus = tomllib.loads((board.state / "settings.toml").read_text())["bus"]
+    assert bus == {"rows": 4, "source": "bods", "operators": ["BNML"], "stops": {"A": "1800SB12341"},
+                   "walk_minutes": {"A": 7}, "enabled": True}
+    assert not FakeJob.made
+    # Relabelled isn't the same: lines and route strips go by label.
+    status, _ = board.handle("finish", {"only": "stops", "stops": {"B": "1800SB12341"}, "walk": {}})
+    assert status == 409
+
+
+@pytest.mark.parametrize("payload, field", [
+    ({"only": "home", "walk": {}}, "only"),
+    ({"only": ["stops"], "stops": {}, "walk": {}}, "only"),
+    ({"only": "station", "home": HOME, "station_crs": "GLO", "walk": {}}, "home"),
+    ({"only": "station", "station_crs": "GLO", "stops": {}, "walk": {}}, "stops"),
+    ({"only": "station", "station_crs": "GLO", "walk": {"1800SB12341": 3}}, "walk"),
+    ({"only": "station", "station_crs": "GLO", "walk": {}, "views": ["board"]}, "views"),
+    ({"only": "stops", "stops": {"A": "1800SB12341"}, "station_crs": "GLO", "walk": {}}, "station_crs"),
+    ({"only": "stops", "stops": {"A": "1800SB12341"}, "walk": {"GLO": 3}}, "walk"),
+    ({"only": "stops", "walk": {}}, "stops"),
+])
+def test_a_shortcuts_save_takes_only_its_part(board, payload, field):
+    saved_with_a_search(board)
+    before = (board.state / "settings.toml").read_text()
+    status, body = board.handle("finish", payload)
+    assert status == 400 and body["field"] == field, body
+    assert (board.state / "settings.toml").read_text() == before
+
+
+def test_a_shortcut_cannot_leave_nothing_to_show(board):
+    ok(board, "finish", {"home": HOME, "station_crs": "GLO", "stops": {}, "walk": {}})  # trains only
+    status, body = board.handle("finish", {"only": "station", "walk": {}})
+    assert status == 400 and body["field"] == "station_crs"
+    ok(board, "finish", {"only": "stops", "stops": {}, "walk": {}})  # the station is still there
+    status, body = board.handle("finish", {"only": "station", "walk": {}})
+    assert status == 400 and body["field"] == "station_crs"

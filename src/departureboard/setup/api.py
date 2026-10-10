@@ -41,6 +41,15 @@ or tested through it. `finish` takes the views to turn on, at least one
 and only those offered, saves them as [app] views, and the settings are
 checked as each of those views loads them before anything is saved.
 
+Shortcuts. The page can start at the station or the stops step instead of
+home ("Change station only", "Change stops only"), filled in with today's
+choices: `saved` answers them from the settings in force and local files
+only (roughly where home is, from [weather]; the station and the stops,
+with names from the bundled station list and the bus timetable; the walk
+times), never a key. `finish` with `only` then saves that part alone,
+keeping everything else as saved. `back`, if the host gives one, is where
+Back on a shortcut's first step goes.
+
 Serving the page. The host serves, under one prefix ending in a slash (say
 /setup/), the files `static_files()` lists by their path under that prefix:
 the page itself at the prefix, wizard_static/* beside it and the dashboard's
@@ -74,6 +83,7 @@ from ..settings.schema import ATCO as _ATCO
 from ..settings.schema import CRS as _CRS
 from ..settings.schema import KEY_VALUE as _KEY_VALUE
 from ..settings.schema import LABEL as _LABEL
+from ..timetable import build as timetable
 from . import discover, keytest
 from . import lookups as setup
 from .lookups import Place, SetupError, Station, Stop
@@ -124,6 +134,15 @@ _KEY_ANCHORS = {
     "TAPI_APP_KEY": "#transportapi",
 }
 _COUNTRIES = ("England", "Wales", "Scotland", "Northern Ireland")
+_NAME_LENGTH = 100  # a stop's name from the timetable, as the page shows it
+# What finish takes, (required, optional): for the whole wizard (no `only`),
+# or for one part of it, the rest kept as saved.
+PARTS = ("station", "stops")
+_FINISH_FIELDS = {
+    None: (("home", "stops", "walk"), ("station_crs", "filter_crs", "keys", "views")),
+    "station": (("only", "walk"), ("station_crs", "filter_crs", "keys")),
+    "stops": (("only", "stops", "walk"), ("keys",)),
+}
 
 
 class Invalid(Exception):
@@ -433,6 +452,7 @@ class SetupApi:
         noun: str | None = None,
         keys: Sequence[tuple[str, str, str]] = GENERAL_KEYS,
         runner: Runner | None = None,
+        back: str | None = None,
     ) -> None:
         """`target` is the overlay finishing saves into (store.Store.target),
         checked as each view on loads its settings. `load_secrets` gives
@@ -450,7 +470,9 @@ class SetupApi:
         (name, label, hint) like schema.keys(), are the keys offered, saved
         and tested in that order, and no others. `runner`, if given, does
         the lookups that need the internet, the key tests and the search
-        instead of this process (and the functions passed for them)."""
+        instead of this process (and the functions passed for them).
+        `back`, a plain path like /settings, is where Back on a shortcut's
+        first step goes; without it, that step has no Back."""
         noun = install.noun if noun is None else noun
         view_links = dict(view_links or {})
         for label, href in [*links, *view_links.values()]:
@@ -466,6 +488,9 @@ class SetupApi:
             raise ValueError("Keys are named like environment variables")
         if not install.offered or set(install.offered) - set(schema.VIEWS):
             raise ValueError("An install offers at least one view, and only views")
+        if back is not None and not (back.startswith("/") and _LINK.match(back)):
+            raise ValueError("Back is a plain path on this site")
+        self._back = back or ""
         self._title = title
         self._noun = noun
         self._install = install
@@ -499,6 +524,7 @@ class SetupApi:
         self._job_key = ""
         self._handlers: dict[str, Callable[[object], dict]] = {
             "begin": self.begin,
+            "saved": self.saved,
             "postcode": self.postcode,
             "address": self.address,
             "stations": self.stations,
@@ -573,7 +599,49 @@ class SetupApi:
         on = self._views_now()
         return {"title": self._title, "noun": self._noun, "keys": keys,
                 "views": {"offered": view_choices(self._install.offered), "on": list(on)},
-                "links": self._links_for(on), "job": self._job_status()}
+                "links": self._links_for(on), "back": self._back, "job": self._job_status()}
+
+    def saved(self, payload) -> dict:
+        """Today's choices, for the page to start from: roughly where home
+        is (the weather's position, to about a kilometre), the station and
+        the one trains must call at, by code and name, and the bus stops by
+        label, with names where the bus timetable has them; each with its
+        walk time, or None. A part switched off, or not set up, is None (or
+        no stops). Only what the wizard asks about, never a key, and from
+        local files only: the settings in force, the bundled station list
+        and the timetable."""
+        _fields(payload)
+        data = self._settings()
+        train, bus, weather = (_table(data, name) for name in ("train", "bus", "weather"))
+        names = {code: name for name, code, _, _ in self._stations()}
+        out: dict = {"home": None, "station": None, "filter": None, "stops": []}
+        lat, lon = _saved_number(weather.get("lat")), _saved_number(weather.get("lon"))
+        if lat is not None and lon is not None and setup.in_uk(lat, lon):
+            out["home"] = {"lat": round(lat, 2), "lon": round(lon, 2)}
+        station = _saved_station(train)
+        if station in names:
+            out["station"] = {"crs": station, "name": names[station], "walk": _saved_minutes(train.get("walk_minutes"))}
+            towards = train.get("filter_crs")
+            if isinstance(towards, str) and towards.upper() in names:
+                out["filter"] = {"crs": towards.upper(), "name": names[towards.upper()]}
+        stops = _saved_stops(bus)
+        if stops:
+            walks = _table(bus, "walk_minutes")
+            known = self._stop_names()
+            for label, atco in stops.items():
+                name, indicator = known.get(atco, ("", ""))
+                out["stops"].append({"label": label, "atco": atco, "name": name, "indicator": indicator,
+                                     "walk": _saved_minutes(walks.get(label))})
+        return out
+
+    def _stop_names(self) -> dict[str, tuple[str, str]]:
+        """{ATCO code: (name, the word on its sign)} from the bus timetable in
+        the store; empty if there is none."""
+        schedule = timetable.load(self._job_folder)
+        if schedule is None:
+            return {}
+        return {atco: (str(place.name)[:_NAME_LENGTH], str(place.indicator or "")[:_NAME_LENGTH])
+                for atco, place in schedule.positions.items()}
 
     def _views_now(self) -> tuple[str, ...]:
         """The views on in the settings in force; the install's defaults if they don't read."""
@@ -787,9 +855,15 @@ class SetupApi:
 
     def finish(self, payload) -> dict:
         """Save what setup found into the settings overlay, merged with what is
-        there, and any pasted keys into the secrets overlay."""
-        fields = _fields(payload, ("home", "stops", "walk"), ("station_crs", "filter_crs", "keys", "views"))
-        home = _point(fields["home"])
+        there, and any pasted keys into the secrets overlay. With `only`,
+        "station" or "stops", save that part alone (a shortcut's): the
+        station, where trains must call and its walk, or the stops and their
+        walks; home, the views and the other part stay as saved."""
+        only = payload.get("only") if isinstance(payload, dict) else None
+        if only is not None and only not in PARTS:
+            raise Invalid("Save the station or the stops", "only")
+        fields = _fields(payload, *_FINISH_FIELDS[only])
+        home = _point(fields["home"]) if only is None else None
         station = None
         if fields.get("station_crs") is not None:
             station = self._known_station(fields["station_crs"], "station_crs")
@@ -798,8 +872,13 @@ class SetupApi:
             filter_crs = self._known_station(fields["filter_crs"], "filter_crs").crs
             if station is None:
                 raise Invalid("Pick a station before saying where you go from it", "filter_crs")
-        stops = _stops(fields["stops"])
-        if station is None and not stops:
+        stops = _stops(fields["stops"]) if only != "station" else {}
+        current = self._settings() if only is not None else {}
+        if only == "station" and station is None and not _saved_stops(_table(current, "bus")):
+            raise Invalid("Pick a station: with no bus stops either, there is nothing to show", "station_crs")
+        if only == "stops" and not stops and not _saved_station(_table(current, "train")):
+            raise Invalid("Pick at least one stop: with no station either, there is nothing to show", "stops")
+        if only is None and station is None and not stops:
             raise Invalid("Pick a station or at least one bus stop", "stops")
         walk = fields["walk"]
         if not isinstance(walk, dict):
@@ -816,21 +895,27 @@ class SetupApi:
         # What isn't chosen is switched off rather than removed, which an overlay
         # can't do: config.toml's [train] or [bus] (the template's placeholders,
         # say) would otherwise stay in force. Choosing it again switches it on.
-        if station is not None:
-            changes["train"].setdefault("walk_minutes", "")  # "" clears an old one, as the settings site does
-            changes["train"]["filter_crs"] = filter_crs
-            changes["train"]["enabled"] = True
-        else:
-            changes["train"] = {"enabled": False}
-        if stops:
-            changes["bus"].setdefault("walk_minutes", {})
-            changes["bus"].update(self._found_bus(stops))
-            changes["bus"]["enabled"] = True
-        else:
-            changes["bus"] = {"enabled": False}
-        division = setup.bank_holiday_division(home.country)
-        if division:
-            changes["bank_holiday_division"] = division
+        if only != "stops":
+            if station is not None:
+                changes["train"].setdefault("walk_minutes", "")  # "" clears an old one, as the settings site does
+                changes["train"]["filter_crs"] = filter_crs
+                changes["train"]["enabled"] = True
+            else:
+                changes["train"] = {"enabled": False}
+        if only != "station":
+            if stops:
+                changes["bus"].setdefault("walk_minutes", {})
+                # A shortcut keeping the stops as saved, by the same labels, needs no
+                # new search: their bus companies and route strips stay as they are.
+                if only is None or stops != _saved_stops(_table(current, "bus")):
+                    changes["bus"].update(self._found_bus(stops))
+                changes["bus"]["enabled"] = True
+            else:
+                changes["bus"] = {"enabled": False}
+        if home is not None:
+            division = setup.bank_holiday_division(home.country)
+            if division:
+                changes["bank_holiday_division"] = division
         if views is not None:
             # The target checks the settings as each of these views loads them.
             changes["app"] = {"views": views}
@@ -872,6 +957,46 @@ class SetupApi:
         except (OSError, ConfigError, AttributeError):
             return {}
         return routes if isinstance(routes, dict) else {}
+
+
+def _table(data: Mapping, name: str) -> dict:
+    """A table of the settings, or empty if it isn't one."""
+    table = data.get(name)
+    return table if isinstance(table, dict) else {}
+
+
+def _saved_number(value) -> float | None:
+    """A saved number as a float, or None if it isn't a finite one."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return float(value)
+
+
+def _saved_station(train: Mapping) -> str:
+    """[train] crs, upper case, if trains are on and it is a station code;
+    else "" (the template's CHANGE_ME, say)."""
+    crs = train.get("crs")
+    if train.get("enabled") is False or not isinstance(crs, str) or not _CRS.match(crs):
+        return ""
+    return crs.upper()
+
+
+def _saved_stops(bus: Mapping) -> dict[str, str]:
+    """[bus] stops, {label: ATCO code}, if buses are on: only those shaped as
+    the wizard saves them, at most MAX_BOARD_STOPS."""
+    stops = bus.get("stops")
+    if bus.get("enabled") is False or not isinstance(stops, dict):
+        return {}
+    found = [(label, atco) for label, atco in stops.items()
+             if isinstance(label, str) and _LABEL.match(label) and isinstance(atco, str) and _ATCO.match(atco)]
+    return dict(found[:MAX_BOARD_STOPS])
+
+
+def _saved_minutes(value) -> int | None:
+    """A saved walk time the page can show, or None."""
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= MAX_WALK_MINUTES:
+        return None
+    return value
 
 
 def _roads(roads: Mapping) -> dict:
