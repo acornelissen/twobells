@@ -456,6 +456,34 @@ def test_a_post_without_a_length_is_refused_unread(signed):
     conn.close()
 
 
+def post_framed(dash, path, pairs, origin="same"):
+    """POST with exactly these extra (name, value) header pairs and no body."""
+    conn = http.client.HTTPConnection("127.0.0.1", dash.port, timeout=10)
+    conn.putrequest("POST", path, skip_host=True, skip_accept_encoding=True)
+    host = f"localhost:{dash.port}"
+    conn.putheader("Host", host)
+    if origin == "same":
+        conn.putheader("Origin", f"http://{host}")
+    elif origin:
+        conn.putheader("Origin", origin)
+    for name, value in pairs:
+        conn.putheader(name, value)
+    conn.endheaders()
+    response = conn.getresponse()
+    text = response.read().decode()
+    conn.close()
+    return response, text
+
+
+@pytest.mark.parametrize("path", ["/settings/login", "/settings", "/settings/setup/api/begin"])
+@pytest.mark.parametrize("pairs", [[], [("Content-Length", "99999999")], [("Transfer-Encoding", "chunked")]])
+def test_the_origin_is_checked_before_the_body_is_read(signed, path, pairs):
+    for origin in ("http://evil.example.com", "null", None):
+        response, _ = post_framed(signed, path, pairs, origin=origin)
+        assert response.status == 403, (path, pairs, origin)
+    assert signed.setup.calls == [] and signed.page.saved == []
+
+
 # Headers
 
 

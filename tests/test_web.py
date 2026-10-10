@@ -873,6 +873,16 @@ def test_a_step_must_be_json_of_a_sensible_size(wizard_server, change, status):
     assert steps.calls == []
 
 
+@pytest.mark.parametrize("path", ["/login", "/", "/setup/api/begin"])
+@pytest.mark.parametrize("pairs", [[], [("Content-Length", "99999999")], [("Transfer-Encoding", "chunked")]])
+def test_the_origin_is_checked_before_the_body_is_read(wizard_server, path, pairs):
+    port, steps, *_ = wizard_server
+    for origin in ("http://evil.example.com", "null", None):
+        response, _ = framed_post(port, path, pairs, origin=origin)
+        assert response.status == 403, (path, pairs, origin)
+    assert steps.calls == []
+
+
 @pytest.mark.parametrize("pairs, status", BAD_FRAMING)
 def test_a_step_framed_any_way_but_one_plain_length_is_refused_unread(wizard_server, pairs, status):
     port, steps, *_ = wizard_server

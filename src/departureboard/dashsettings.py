@@ -23,18 +23,20 @@ cookie on one host:
   under setupapi.PAGE_HEADERS, its API needing the session and its CSRF
   token in X-CSRF-Token.
 
-Framework-free: the dashboard server reads the request (its body capped by
-max_body) and hands it to SettingsArea.handle, which returns a Reply; the
-server adds headers_for(path) and its own limits, the same as for the rest.
+Framework-free: the dashboard server hands the request, its body unread, to
+SettingsArea.handle, which checks the origin before reading the body (one
+plain length, capped by max_body) and returns a Reply; the server adds
+headers_for(path) and its own limits, the same as for the rest.
 """
 
 from __future__ import annotations
 
 import logging
 import time
+from http import HTTPStatus
 from importlib.resources import files
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import BinaryIO, Callable, Mapping
 
 from . import setupapi
 from .auth import (
@@ -58,6 +60,7 @@ from .formpages import (
     compact_json,
     document,
     parse_form,
+    read_body,
     redirect,
 )
 from .formpages import WIZARD_TYPES as _CONTENT_TYPES
@@ -161,9 +164,10 @@ class SettingsArea:
         self._stylesheet = _default_stylesheet() if stylesheet is None else stylesheet
         self._files = wizard_files() if files is None else files
 
-    def handle(self, method: str, path: str, query: str, headers: Headers, client: str, body: bytes) -> Reply:
+    def handle(self, method: str, path: str, query: str, headers: Headers, client: str, stream: BinaryIO) -> Reply:
         """The reply to one request the server has already let in: from the home
-        network, naming a local host, with a path under /settings."""
+        network, naming a local host, with a path under /settings. A POST's
+        body is read from `stream` only once its origin is known to be ours."""
         if path.startswith(SETUP_API) and (headers.get("Sec-Fetch-Site") or "").strip().lower() == "cross-site":
             return compact_json(403, {"error": "Not from another site"})
         if method in ("GET", "HEAD"):
@@ -172,6 +176,9 @@ class SettingsArea:
             return Reply(405, b"Method Not Allowed", headers={"Allow": "GET, HEAD, POST"})
         if not same_origin(headers):
             return Reply(403, b"Forbidden: cross-site request")
+        body = read_body(headers, stream, max_body(path))
+        if isinstance(body, int):  # refused unread, so the connection can't carry on
+            return Reply(body, HTTPStatus(body).phrase.encode(), headers={"Connection": "close"})
         if path.startswith(SETUP_API):
             refused = self._pages.wizard_refusal(headers)
             if refused is not None:

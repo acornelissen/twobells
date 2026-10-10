@@ -35,7 +35,6 @@ from typing import TYPE_CHECKING, Callable
 
 from . import dashsettings
 from .auth import local_host, private_address
-from .formpages import read_body
 from .snapshot import Hub
 
 if TYPE_CHECKING:
@@ -368,14 +367,8 @@ class _Handler(BaseHTTPRequestHandler):
         if len(raw) > MAX_PATH or any(bad in raw.lower() for bad in _BAD_PATH):
             self._send(404, b"Not Found", security=security)
             return
-        body = b""
-        if self.command == "POST":
-            body = read_body(self.headers, self.rfile, dashsettings.max_body(path))
-            if isinstance(body, int):  # refused unread, so the connection can't carry on
-                self._send(body, HTTPStatus(body).phrase.encode(), extra={"Connection": "close"}, security=security)
-                return
         query = raw.split("#", 1)[0].partition("?")[2]
-        reply = self.app.settings.handle(self.command, path, query, self.headers, self.client_address[0], body)
+        reply = self.app.settings.handle(self.command, path, query, self.headers, self.client_address[0], self.rfile)
         self._send(reply.status, reply.body, reply.content_type, extra=reply.headers, security=security)
 
     # Server-sent events
