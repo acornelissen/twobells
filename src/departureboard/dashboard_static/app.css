@@ -1094,7 +1094,8 @@ table.history thead th { border-top: 0; color: var(--muted); }
 @media (min-width: 64.0625rem) {
   :root[data-kiosk] table.board th,
   :root[data-kiosk] table.board td { padding-block: var(--s-1); }
-  :root[data-kiosk] table.board .c-stop .walk { display: none; }
+  :root[data-kiosk] table.board .c-stop .walk,
+  :root[data-kiosk] table.board .c-stop .more-sep { display: none; }
 }
 @media (max-width: 64rem) {
   :root[data-kiosk] table.board tr { padding-block: var(--s-1); }

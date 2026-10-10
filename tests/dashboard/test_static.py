@@ -1578,6 +1578,29 @@ def test_a_bus_row_is_headed_by_its_line_and_destination_only():
 
 
 @needs_node
+def test_a_stop_without_a_letter_keeps_its_way_on_the_quiet_line(tmp_path):
+    # With no letters on the signs, two Henry Streets are told apart by where
+    # they go next. The name stays one line and "towards ..." joins the walk
+    # on the quiet line, so a row isn't four lines tall.
+    snapshot = _fixture("dashboard_snapshot.json")
+    for label, towards in (("A", "Market Hall"), ("B", "Victoria Street")):
+        snapshot["buses"]["stops"][label].update(letter=None, towards=towards)
+    path = tmp_path / "snapshot.json"
+    path.write_text(json.dumps(snapshot))
+    found = run_js(BOARDS % str(path) + """
+        const stop = cell(bodyRows("buses-board")[0], "c-stop");
+        console.log(JSON.stringify({
+          name: byClass(stop, "stop").map((el) => el.textContent),
+          quiet: byClass(stop, "sub").map(shown),
+          said: said(stop),
+        }));
+    """)
+    assert found["name"] == ["Henry Street"]
+    assert found["quiet"] == ["towards Market Hall · 8 min walk"]
+    assert found["said"] == "Henry Street, towards Market Hall, 8 min walk"
+
+
+@needs_node
 def test_a_stop_and_its_walk_are_kept_apart():
     found = run_js(_boards() + """
         const stop = cell(bodyRows("buses-board")[0], "c-stop");

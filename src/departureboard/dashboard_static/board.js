@@ -338,6 +338,24 @@ export function stopLabel(text) {
   return match ? [match[1], h("span", { class: "nobreak" }, match[2])] : text;
 }
 
+// A bus row's stop: the name on its own line, then a quiet line with the
+// way it faces, when that is what tells it apart, and the walk:
+// "Henry Street" / "towards Market Hall · 8 min walk". In the narrow layout
+// it all runs on one line, where the first dot shows. Said with commas.
+function stopCell(text, walk) {
+  const split = /^(.*) (towards .+)$/.exec(text);
+  const [name, towards] = split ? [split[1], split[2]] : [text, ""];
+  const more = [
+    towards ? h("span", { class: "towards" }, towards) : null,
+    towards && walk !== null ? [h("span", { class: "more-sep", "aria-hidden": "true" }, " · "), vh(", ")] : null,
+    walk !== null ? h("span", { class: "walk" }, `${walk} min walk`) : null,
+  ];
+  return td("c-stop", null, h("span", { class: "stop" }, stopLabel(name)),
+    towards || walk !== null
+      ? [h("span", { class: "walk-sep", "aria-hidden": "true" }, " · "), vh(", "), h("span", { class: "sub" }, more)]
+      : null);
+}
+
 // The stop's name for a row: from `names` (stopNames), else the row's own.
 export function stopText(row, names) {
   const stop = str(row.stop);
@@ -389,12 +407,7 @@ function busRow(row, later, names, alerts) {
       where ? h("span", { class: "sub where" }, where) : null,
       busStatusExtras(row),
       recordChip(row)),
-    // "Henry Street A · 8 min walk" on one line in the narrow layout, two in
-    // the wide one, where the dot is hidden; either way said with a comma.
-    td("c-stop", null, h("span", { class: "stop" }, stopLabel(stopText(row, names))),
-      walk !== null
-        ? [h("span", { class: "walk-sep", "aria-hidden": "true" }, " · "), vh(", "), h("span", { class: "sub walk" }, `${walk} min walk`)]
-        : null),
+    stopCell(stopText(row, names), walk),
     dueCell(row),
     leaveCell(row, id, alerts),
   );
