@@ -171,7 +171,7 @@ It is at the install's address, port 8090: `http://<pi name>.local:8090/` on a P
 - **Buses:** the same, plus a strip of the stops before yours with the bus drawn where it is, and **Map** for the full route on a street map. "Timetable only" means there's no live position for that bus.
 - **History:** how that departure ran on recent days of the same kind (weekdays, Saturdays, Sundays), such as "Late 4 of the last 10 weekdays (avg 6 min)". Late means 3 minutes or more for trains and 2 for buses. It needs a few days of running before it says anything.
 - **Alert me:** a reminder a minute before you need to leave. On a desktop (the address starts `http://localhost`) the browser can show a notification; on a phone the reminder shows on the page while it's open.
-- **Board look:** switches to the station-board style, amber on black. It's remembered per browser.
+- **Board look:** switches to the station-board style, amber on black, with the times, destinations and status in the same dot-matrix lettering as the e-paper board. The rest stays in plain type so it's easy to read. It's remembered per browser.
 - **Weather:** now, the next 12 hours, rain warning, sunrise and sunset.
 - **Disruptions:** see [Disruptions and engineering works](#disruptions-and-engineering-works).
 

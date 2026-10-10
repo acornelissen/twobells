@@ -15,6 +15,15 @@
   font-style: normal;
   font-display: swap;
 }
+/* The Board look's dot-matrix face: the e-paper sign's own glyphs, built by
+   tools/build_dotfont.py from board/dotfont.py. */
+@font-face {
+  font-family: "Departureboard Dots";
+  src: url("/static/fonts/DepartureboardDots.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 
 /* theme: modern-light */
 :root {
@@ -115,7 +124,8 @@
   --badge-fg: #000000;
   --badge-bg: #ffb000;
   --surface-2: #140f00;
-  --font: ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", Consolas, "Liberation Mono", monospace;
+  /* Characters the sign has no glyph for fall back to Inter. */
+  --dots: "Departureboard Dots", "Inter", system-ui, sans-serif;
   --r-sm: 0.25rem;
   --r-md: 0.25rem;
   --r-lg: 0.25rem;
@@ -790,17 +800,26 @@ table.history thead th { border-top: 0; color: var(--muted); }
 /* The tiles are always light, so these colours don't follow the theme. */
 .leaflet-container .area-route { stroke: #1d4ed8; stroke-width: 3; stroke-opacity: 0.6; }
 
-/* --- Board theme flourishes: an LED-matrix texture behind the rows --- */
+/* --- Board theme flourishes: the sign's dot-matrix face on times,
+   destinations and status, never below 20px (--t-lg), as it isn't legible
+   smaller. Everything else stays in Inter. The face has one weight and its
+   own spacing: no faux bold, no letter-spacing. --- */
 
-:root[data-theme="board"] .panel,
-:root[data-theme="board"] table.board tr {
-  background-color: var(--surface);
-  background-image: radial-gradient(circle, #141000 0.8px, transparent 1px);
-  background-size: 3px 3px;
+:root[data-theme="board"] .clock { font-family: var(--dots); font-size: var(--t-xl); }
+:root[data-theme="board"] .leave-time { font-family: var(--dots); font-size: var(--t-hero); }
+:root[data-theme="board"] table.board .time,
+:root[data-theme="board"] table.board .dest,
+:root[data-theme="board"] table.board .c-status .badge-text { font-family: var(--dots); font-size: var(--t-lg); }
+:root[data-theme="board"] .clock,
+:root[data-theme="board"] .leave-time,
+:root[data-theme="board"] table.board .time,
+:root[data-theme="board"] table.board .dest,
+:root[data-theme="board"] table.board .c-status .badge-text {
+  font-weight: 400;
+  font-synthesis: none;
+  letter-spacing: normal;
 }
 :root[data-theme="board"] .badge { padding-left: 0; padding-right: 0; background: transparent; }
-:root[data-theme="board"] h1,
-:root[data-theme="board"] h2 { letter-spacing: 0.06em; }
 :root[data-theme="board"] .wx-hours li,
 :root[data-theme="board"] .panel { border-color: var(--edge); }
 

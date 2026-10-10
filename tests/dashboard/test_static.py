@@ -243,6 +243,36 @@ def test_the_page_uses_the_vendored_inter_with_tabular_times():
     assert re.search(r"--tnum:\s*tabular-nums", css) or "font-variant-numeric: tabular-nums" in css
 
 
+# The type scale's sizes of 20px and up: --t-lg is 1.25rem, the others larger.
+LARGE_SIZES = {"var(--t-lg)", "var(--t-xl)", "var(--t-hero)"}
+
+
+def test_the_board_look_uses_the_dot_face_only_at_20px_and_up():
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    faces = re.findall(r"@font-face\s*\{([^}]*)\}", css)
+    dots = [face for face in faces if 'font-family: "Departureboard Dots"' in face]
+    assert len(dots) == 1 and "font-display: swap" in dots[0]
+    assert 'url("/static/fonts/DepartureboardDots.woff2") format("woff2")' in dots[0]
+    assert _served("/static/fonts/DepartureboardDots.woff2").is_file()
+    assert re.search(r'--dots:\s*"Departureboard Dots", "Inter"', css)
+    bare = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    rules = re.findall(r"([^{}]+)\{([^{}]*var\(--dots\)[^{}]*)\}", bare)
+    assert len(rules) >= 3
+    for selectors, body in rules:
+        assert all(s.strip().startswith(':root[data-theme="board"]') for s in selectors.split(",")), selectors
+        size = re.search(r"font-size:\s*([^;]+);", body)
+        assert size and size.group(1).strip() in LARGE_SIZES, selectors
+    assert re.search(r"--font:\s*\"Inter\"", css) and "monospace" not in css
+
+
+def test_the_board_look_has_no_fake_led_effects():
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    board = "".join(re.findall(r':root\[data-theme="board"\][^{]*\{[^}]*\}', css))
+    assert board
+    for effect in ("radial-gradient", "letter-spacing: 0", "text-shadow", "animation", "repeating-linear-gradient"):
+        assert effect not in board, effect
+
+
 # --- Icons ---
 
 
