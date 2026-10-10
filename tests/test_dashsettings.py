@@ -614,3 +614,8 @@ def test_the_form_says_what_is_wrong_and_saves_nothing(real):
     assert response.status == 422 and "Not saved: fix 3 things" in text
     assert 'href="#train_rows"' in text and 'aria-invalid="true"' in text
     assert not (real.folder / "settings.toml").exists()
+
+
+def test_a_settings_form_with_too_many_fields_is_refused_not_dropped(dash):
+    response, _ = dash("POST", "/settings/login", {f"f{n}": "1" for n in range(301)})
+    assert response.status == 413

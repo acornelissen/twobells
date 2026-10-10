@@ -478,5 +478,5 @@ def test_a_host_answers_the_wizard_in_its_own_json(tmp_path):
 def test_compact_json_is_ascii_and_refuses_nan():
     reply = compact_json(200, {"name": "Café", "n": [1, 2]})
     assert reply.body == b'{"name":"Caf\\u00e9","n":[1,2]}' and reply.content_type == "application/json"
-    with pytest.raises(ValueError):
-        compact_json(200, {"n": float("nan")})
+    refused = compact_json(200, {"n": float("nan")})  # a plain 500, never NaN on the wire
+    assert refused.status == 500 and b"nan" not in refused.body.lower()

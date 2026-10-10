@@ -1005,13 +1005,19 @@ def test_an_unknown_step_is_the_apis_to_refuse(wizard_server):
 
 
 def test_a_reply_that_is_not_strict_json_is_never_sent(wizard_server, caplog):
+    # A plain 500 rather than NaN on the wire (or a dropped connection).
     port, steps, *_ = wizard_server
     cookie = signed_in(wizard_server)
     csrf = session_token(port, cookie)
-    with pytest.raises(ConnectionError):  # dropped unanswered, rather than send NaN
-        step(port, "nan", cookie=cookie, csrf=csrf)
+    response, body = step(port, "nan", cookie=cookie, csrf=csrf)
+    assert response.status == 500 and "nan" not in body.lower()
     assert steps.calls == [("nan", {})]
-    assert "Settings page request failed: ValueError" in caplog.text
+
+
+def test_a_form_with_too_many_fields_is_refused_not_dropped(server):
+    port = server[0] if isinstance(server, tuple) else server
+    response, _ = request(port, "POST", "/login", {f"f{n}": "1" for n in range(301)})
+    assert response.status == 413
 
 
 def test_without_a_wizard_nothing_is_under_setup(server):

@@ -57,6 +57,7 @@ from .auth import (
     same_origin,
 )
 from .formpages import (
+    JSON_FAILED,
     MAX_FORM_BODY,
     WIZARD_TYPES,
     WRONG_CODE,  # noqa: F401 - its old home
@@ -122,7 +123,10 @@ _STEP_BODY_REFUSED = {
 
 
 def _json_reply(status: int, value: dict) -> Reply:
-    return Reply(status, json.dumps(value, allow_nan=False).encode(), JSON)
+    try:
+        return Reply(status, json.dumps(value, allow_nan=False).encode(), JSON)
+    except ValueError:  # a NaN: never sent, nor the connection dropped
+        return Reply(500, json.dumps(JSON_FAILED).encode(), JSON)
 
 
 @dataclass(frozen=True)
@@ -236,7 +240,11 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
             if self.headers.get_content_type() != "application/x-www-form-urlencoded":
                 self._send(400, b"Bad request", TEXT)
                 return None
-            return parse_form(body)
+            try:
+                return parse_form(body)
+            except ValueError:  # more fields than any of our forms has
+                self._send(413, b"Too many fields", TEXT)
+                return None
 
         def _refuse_cross_site(self, path: str) -> bool:
             """Another site's page gets nothing from the wizard's API, whatever it sends."""

@@ -128,10 +128,14 @@ def document(title: str, body: str, stylesheet: str) -> str:
     )
 
 
+MAX_FORM_FIELDS = 300
+
+
 def parse_form(body: bytes) -> dict[str, str]:
     """An urlencoded form's fields, the last value of each. Bytes that aren't
-    UTF-8 become U+FFFD; past 300 fields it is refused (ValueError)."""
-    parsed = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True, max_num_fields=300)
+    UTF-8 become U+FFFD; past MAX_FORM_FIELDS fields it is refused (ValueError),
+    which the hosts answer with 413."""
+    parsed = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True, max_num_fields=MAX_FORM_FIELDS)
     return {key: values[-1] for key, values in parsed.items()}
 
 
@@ -156,10 +160,18 @@ def redirect(where: str, extra: dict[str, str] | None = None) -> Reply:
     return Reply(303, b"", TEXT, {"Location": where, **(extra or {})})
 
 
+# What a reply that isn't strict JSON (a NaN, say) becomes, rather than a
+# dropped connection or NaN on the wire.
+JSON_FAILED = {"error": "Something went wrong; try again"}
+
+
 def compact_json(status: int, value: dict) -> Reply:
     """Compact ASCII JSON: the dashboard's way. The Pi's page sends its own."""
-    return Reply(status, json.dumps(value, separators=(",", ":"), allow_nan=False).encode("ascii"),
-                 "application/json")
+    try:
+        body = json.dumps(value, separators=(",", ":"), allow_nan=False)
+    except ValueError:
+        status, body = 500, json.dumps(JSON_FAILED)
+    return Reply(status, body.encode("ascii"), "application/json")
 
 
 class FormPages:

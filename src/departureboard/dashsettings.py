@@ -191,7 +191,10 @@ class SettingsArea:
             return self._pages.wizard_step(path[len(SETUP_API):], body)
         if headers.get_content_type() != "application/x-www-form-urlencoded":
             return Reply(400, b"Bad request")
-        fields = parse_form(body)
+        try:
+            fields = parse_form(body)
+        except ValueError:  # more fields than any of our forms has
+            return Reply(413, b"Too many fields")
         if path == PREFIX + "/login":
             return self._pages.sign_in(fields, headers, client)
         if path == PREFIX + "/forgot":
