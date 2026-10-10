@@ -5,7 +5,8 @@ table, and keeps everything it writes (the bus timetable, bank holidays,
 punctuality history) in the install's store (store.py), which it shares
 with the board. It uses only the free feeds: Darwin, the BODS timetable
 with live positions, and Open-Meteo. TransportAPI keys are dropped so no
-fallback is ever built.
+fallback is ever built, and buses from TransportAPI aren't shown: the
+dashboard says so (BUS_NOTE) rather than refusing to start.
 Darwin's Service Details, which places each train on its route, is used
 only when its own key, RDM_DETAILS_API_KEY, is set. Bus disruptions come
 from BODS SIRI-SX with the buses' own key; rail engineering works from the
@@ -64,6 +65,9 @@ _KEYS = {
     "kb_incidents_url",
 }
 _MAX_ROWS = 20
+# Why there are no buses on the dashboard when the board's come from TransportAPI.
+BUS_NOTE = ('The dashboard shows buses only from the free BODS timetable. Use setup to find your stops\' '
+            'bus companies, or set [bus] source = "bods" with their operators in config.toml.')
 _MAX_LATE = 60
 _MAX_HISTORY_DAYS = 3650
 # A host name: dot-separated labels of letters, digits and inner hyphens.
@@ -196,6 +200,8 @@ class DashboardSettings:
     # Service details for the trains' positions; None without RDM_DETAILS_API_KEY.
     train_details: DetailsSource | None = None
     bus: BusSource | None = None
+    # Why there are no buses, when [bus] is set up but can't be shown here.
+    bus_note: str | None = None
     # A second bus source for rebuilding the timetable from the upkeep thread:
     # BodsBusSource remembers the timetable it last read, so each thread gets
     # its own and they only share the file, which is replaced whole.
@@ -307,11 +313,14 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
 
     if "train" in data:
         _table(data, "train", "[train]")["rows"] = options.train_rows
+    bus_note = None
     if "bus" in data:
         bus = _table(data, "bus", "[bus]")
-        if bus.get("source") != "bods":
-            raise ConfigError('The dashboard needs [bus] source = "bods" (the free BODS timetable and positions)')
-        bus["rows"] = options.bus_rows
+        if bus.get("source") == "bods":
+            bus["rows"] = options.bus_rows
+        else:
+            del data["bus"]  # the board's TransportAPI buses: none here, and a note saying why
+            bus_note = BUS_NOTE
     # In the store, whatever the data says: the bus timetable and holidays live there.
     data["state_file"] = str(folder / "state.json")
     free_env = {key: value for key, value in env.items() if not key.startswith("TAPI_")}
@@ -347,6 +356,7 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
         train_filter=(str(train_section.get("filter_crs") or "").strip().upper() or None) if train else None,
         train_details=ServiceDetailsClient(details_key) if train is not None and details_key else None,
         bus=bus,
+        bus_note=bus_note,
         bus_upkeep=copy.copy(bus) if bus is not None else None,
         bus_stops=dict(data["bus"]["stops"]) if bus is not None else {},
         weather=weather.source if weather is not None else None,

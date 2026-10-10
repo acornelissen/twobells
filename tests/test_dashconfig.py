@@ -169,11 +169,19 @@ def test_transportapi_keys_are_dropped_so_there_is_no_fallback(config, tmp_path,
     assert dash.bus_upkeep._fallback is None
 
 
-def test_the_bus_must_come_from_bods(tmp_path):
+def test_buses_not_from_bods_are_left_out_with_a_note(tmp_path, opened):
+    # The board's TransportAPI buses: the dashboard starts without them and says why.
     path = tmp_path / "config.toml"
-    path.write_text('[bus]\nrows = 2\n[bus.stops]\nA = "1000DGHS0900"\n')
-    with pytest.raises(ConfigError, match='source = "bods"'):
-        load_dashboard(path, ENV, tmp_path / "dash")
+    path.write_text('[train]\ncrs = "GLO"\n[bus]\nrows = 2\n[bus.stops]\nA = "1000DGHS0900"\n')
+    dash = load(path, tmp_path / "dash", opened=opened)
+    assert dash.bus is None and dash.bus_upkeep is None and dash.bus_disruptions is None and dash.bus_stops == {}
+    assert "BODS" in dash.bus_note and 'source = "bods"' in dash.bus_note
+    assert dash.train is not None
+
+
+def test_buses_from_bods_have_no_note(config, tmp_path, opened):
+    dash = load(config, tmp_path / "dash", opened=opened)
+    assert dash.bus is not None and dash.bus_note is None
 
 
 def test_sections_left_out_are_none(tmp_path, opened):
@@ -437,8 +445,6 @@ def test_the_dashboard_target_saves_only_what_the_dashboard_loads(config, tmp_pa
     save_to(target, {"dashboard": {"bus_rows": 3}, "train": {"crs": "MAN"}}, {"BODS_API_KEY": "new-key"}, ENV)
     assert (folder / "settings.toml").exists() and "new-key" in (folder / "secrets.env").read_text()
     assert not (tmp_path / "board").exists()
-    with pytest.raises(OverlayError, match='source = "bods"'):
-        save_to(target, {"bus": {"source": "transportapi"}}, {}, ENV)
     with pytest.raises(OverlayError, match="train_rows"):
         save_to(target, {"dashboard": {"train_rows": 50}}, {}, ENV)
     assert target.current()["dashboard"] == {"bus_rows": 3}
