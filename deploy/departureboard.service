@@ -29,4 +29,13 @@ RestrictNamespaces=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
 SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+ProtectHostname=yes
+ProtectKernelLogs=yes
+RestrictRealtime=yes
+PrivateIPC=yes
+# No ProtectClock: it allows only the clock's devices, not SPI, GPIO and I2C.
+# No ProcSubset=pid: the panels' drivers read /proc/cpuinfo and /proc/device-tree
+# to tell which Pi this is.
 MemoryMax=256M

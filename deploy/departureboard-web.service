@@ -37,6 +37,14 @@ LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+ProtectHostname=yes
+ProtectKernelLogs=yes
+RestrictRealtime=yes
+PrivateIPC=yes
+ProtectClock=yes
+ProcSubset=pid
 RestrictSUIDSGID=yes
 ProtectProc=invisible
 # Room for Python and two password checks (16 MiB each) at once, no more.

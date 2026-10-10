@@ -48,6 +48,15 @@ LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
+# Not ~@resources as well: the bus company search lowers its own priority.
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+ProtectHostname=yes
+ProtectKernelLogs=yes
+RestrictRealtime=yes
+PrivateIPC=yes
+ProtectClock=yes
+ProcSubset=pid
 ProtectProc=invisible
 MemoryMax=256M
 TasksMax=16

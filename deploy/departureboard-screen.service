@@ -35,6 +35,14 @@ RestrictNamespaces=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
 SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+ProtectHostname=yes
+ProtectKernelLogs=yes
+RestrictRealtime=yes
+PrivateIPC=yes
+# No ProtectClock: it allows only the clock's devices, and the screen needs /dev/dri.
+ProcSubset=pid
 MemoryMax=256M
 
 [Install]

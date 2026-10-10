@@ -167,3 +167,22 @@ def test_update_builds_the_bus_timetable_only_when_the_settings_want_it(tmp_path
     update = (ROOT / "deploy" / "update.sh").read_text()
     assert 'source[[:space:]]*=' not in update  # not by reading config.toml alone
     assert (main(_timetable_question(tmp_path)) == 0) == wanted
+
+
+SERVICES = ("departureboard.service", "departureboard-screen.service", "departureboard-web.service",
+            "departureboard-timetable.service", "departureboard-setup.service")
+
+
+@pytest.mark.parametrize("name", SERVICES)
+def test_every_service_is_locked_down_as_far_as_its_work_allows(name):
+    unit = _unit(name)
+    for setting, value in (("ProtectHostname", "yes"), ("ProtectKernelLogs", "yes"), ("RestrictRealtime", "yes"),
+                           ("PrivateIPC", "yes"), ("SystemCallErrorNumber", "EPERM")):
+        assert unit.get(setting) == [value], setting
+    # Not ~@resources as well: the bus company search lowers its own priority (setpriority).
+    assert unit["SystemCallFilter"] == ["@system-service", "~@privileged"]
+    devices = unit.get("PrivateDevices") == ["yes"]
+    # ProtectClock allows the clock's devices only, so not where the panel's or screen's are needed.
+    assert unit.get("ProtectClock") == (["yes"] if devices else None)
+    # The e-paper drivers learn which Pi this is from /proc/cpuinfo and /proc/device-tree.
+    assert unit.get("ProcSubset") == (None if name == "departureboard.service" else ["pid"])
