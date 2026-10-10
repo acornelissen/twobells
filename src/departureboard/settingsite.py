@@ -43,12 +43,14 @@ from __future__ import annotations
 import html
 import logging
 import time
+from datetime import datetime
 from http import HTTPStatus
 from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, BinaryIO, Callable, Mapping
+from zoneinfo import ZoneInfo
 
-from . import schema, setupapi
+from . import schema, setupapi, timetable
 from .auth import (
     FORM_PAGE_HEADERS,
     FormTokens,
@@ -76,6 +78,7 @@ from .formpages import WIZARD_TYPES as _CONTENT_TYPES
 from .groupform import GroupForm
 from .keytest import KeyResult
 from .setup import SetupError
+from .status import _when
 from .version import about, package_version
 
 if TYPE_CHECKING:
@@ -436,6 +439,7 @@ class SettingsSite:
         rows = [
             ("Station", e(station) + off(train) if station else "Not set up"),
             ("Bus stops", e(stops) + off(bus) if stops else "Not set up"),
+            *(self._timetable(data) if stops and not off(bus) and bus.get("source") == "bods" else []),
             ("Home", "Set, for the weather" if home else "Not set"),
         ]
         listed = "".join(f"<dt>{name}</dt><dd>{value}</dd>" for name, value in rows)
@@ -446,6 +450,25 @@ class SettingsSite:
             '<p class="hint">Setup finds home, your station and stops step by step, '
             "with walk times and the bus companies.</p></section>"
         )
+
+    def _timetable(self, data: dict) -> list[tuple[str, str]]:
+        """When the bus timetable was last saved, and while the roads for the
+        bus maps are being found (after setup's search, or the next build),
+        how far they have got. Only the file's time is read, not the file."""
+        try:
+            zone = ZoneInfo(data.get("timezone", "Europe/London"))
+        except (KeyError, TypeError, ValueError):  # a bad zone: the form says so on saving
+            zone = ZoneInfo("Europe/London")
+        now = datetime.now(zone).replace(tzinfo=None)
+        try:
+            saved = datetime.fromtimestamp((self.store.folder / timetable.FILE_NAME).stat().st_mtime, zone)
+            rows = [("Bus timetable", html.escape(f"Saved {_when(saved.replace(tzinfo=None), now)}"))]
+        except OSError:
+            rows = [("Bus timetable", "Not built yet")]
+        found = timetable.roads_progress(self.store.folder)
+        if found is not None:
+            rows.append(("Bus map roads", f"Finding them ({found[0]} of {found[1]})"))
+        return rows
 
 
 def _default_stylesheet() -> bytes:

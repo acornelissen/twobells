@@ -453,6 +453,48 @@ def test_the_general_tab_sums_up_the_place_and_links_to_setup(pi):
     assert page.index("Your place") < page.index('<form method="post" action="/settings"')
 
 
+def _place(page):
+    return re.search(r'<section class="place"[^>]*>(.*?)</section>', page).group(1)
+
+
+def test_the_general_tab_says_when_the_bus_timetable_was_saved_and_how_its_roads_are_getting_on(make):
+    import os
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from departureboard import timetable
+
+    docker = make(install="docker")  # whose dashboard starts again on saving: this page says how far they got
+    cookie = docker.session()
+    place = _place(docker("GET", "/settings", cookie=cookie)[1])
+    assert "<dt>Bus timetable</dt><dd>Not built yet</dd>" in place and "Bus map roads" not in place
+    saved = docker.folder / timetable.FILE_NAME
+    saved.write_text("{}")  # only when it was saved is read
+    when = time.time() - 180
+    os.utime(saved, (when, when))
+    clock = datetime.fromtimestamp(when, ZoneInfo("Europe/London"))
+    place = _place(docker("GET", "/settings", cookie=cookie)[1])
+    assert f"<dt>Bus timetable</dt><dd>Saved {clock:%H:%M}, 3 min ago</dd>" in place
+    assert place.index("Bus stops") < place.index("Bus timetable") < place.index("Home")
+    progress = timetable.RoadsProgress(docker.folder)
+    progress(12, 140)
+    place = _place(docker("GET", "/settings", cookie=cookie)[1])
+    assert "<dt>Bus map roads</dt><dd>Finding them (12 of 140)</dd>" in place
+    assert place.index("Bus timetable") < place.index("Bus map roads")
+    progress.clear()  # found: the timetable's line alone again
+    assert "Bus map roads" not in _place(docker("GET", "/settings", cookie=cookie)[1])
+
+
+@pytest.mark.parametrize("config", [
+    CONFIG.replace('source = "bods"', 'source = "transportapi"'),  # no timetable to build
+    CONFIG.replace('operators = ["BNML"]', 'operators = ["BNML"]\nenabled = false'),
+    'title = "Glossop"\n[train]\ncrs = "GLO"\n',
+])
+def test_the_general_tab_says_nothing_of_a_bus_timetable_it_doesnt_use(make, config):
+    docker = make(install="docker", config=config)
+    assert "Bus timetable" not in docker("GET", "/settings", cookie=docker.session())[1]
+
+
 def test_the_general_tab_says_which_version_is_running(pi):
     cookie = pi.session()
     general = pi("GET", "/settings", cookie=cookie)[1]
