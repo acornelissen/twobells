@@ -50,6 +50,9 @@ class Row:
     stop: str | None = None
     # "Plat 1"; only boards wide enough for a platform column draw it.
     platform: str | None = None
+    # The leave time alone ("07:16") when `leave` is a clock time, for a look
+    # that says words.LEAVE_BY once, over the column, rather than on every row.
+    leave_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -157,7 +160,9 @@ def _bus_row(dep: Departure, walk: WalkTimes | None, clock: str | None) -> Row:
     if leave and clock and minutes_between(clock[:5], leave) < 0:
         leave = None
     leave_text = _leave_words(leave, clock) if leave else None
-    return Row(dep.service, dep.destination, right, _style(dep), leave_text, dep.stop)
+    # A countdown ("Leave in 4 min", "Leave now") only reads whole, so a screen has no leave_at.
+    leave_at = leave if leave and not clock else None
+    return Row(dep.service, dep.destination, right, _style(dep), leave_text, dep.stop, leave_at=leave_at)
 
 
 def _leave(departures, walk: WalkTimes | None, now: str, wording: Wording, clock: str | None):

@@ -168,6 +168,20 @@ def test_each_bus_row_has_its_own_leave_time():
     assert [r.leave for r in rows] == ["Leave by 07:14", "Leave by 07:32"]
 
 
+def test_e_paper_bus_rows_also_give_the_leave_time_alone():
+    # For the plain look, which says "Leave by" once, over the column.
+    rows = view(buses=[bus("341", "07:20", stop="A")], now="07:00", walk=WALK).buses.rows
+    assert [r.leave_at for r in rows] == ["07:14"]
+
+
+def test_screen_bus_rows_have_no_leave_time_alone():
+    # A countdown only reads whole, so each row keeps its own words.
+    walk = WalkTimes(bus={"*": 7})
+    [row] = view(buses=[bus(scheduled="07:20")], now="07:03", clock="07:03:30", walk=walk).buses.rows
+    assert row.leave == "Leave in 9 min"
+    assert row.leave_at is None
+
+
 def test_bus_row_leave_time_stays_after_it_has_passed():
     [row] = view(buses=[bus("341", "07:20", stop="A")], now="07:16", walk=WALK).buses.rows
     assert row.leave == "Leave by 07:14"
@@ -175,7 +189,7 @@ def test_bus_row_leave_time_stays_after_it_has_passed():
 
 def test_cancelled_bus_row_has_no_leave_time():
     [row] = view(buses=[bus("341", "07:20", status=Status.CANCELLED, stop="A")], walk=WALK).buses.rows
-    assert row.leave is None
+    assert row.leave is None and row.leave_at is None
 
 
 def test_bus_header_drops_leave_text_when_rows_carry_it():

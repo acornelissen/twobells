@@ -16,6 +16,8 @@ from departureboard.board.render import (
     header_text,
     heights,
     in_turns,
+    leave_column,
+    leave_heading,
     left_column_width,
     load_fonts,
     plain_scale,
@@ -27,6 +29,7 @@ from departureboard.board.render import (
     wrap_text,
 )
 from departureboard.board.view import BoardView, CodeView, Row, Section, SetupView, Style
+from departureboard.core import words
 from tests.paths import ROOT
 
 PALETTE = Palette(white=0, black=1, accent=2)
@@ -213,6 +216,96 @@ def test_row_with_leave_draws_more_ink():
 def test_plain_layout_prefixes_destination_with_stop_label():
     layout = row_layout(Row("341", "Hyde", "07:20", stop="A"), load_fonts())
     assert layout.middle == "A: Hyde"
+
+
+EVERY_PANEL = [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400]
+
+
+def e_paper_bus_rows(destination="Hyde"):
+    """Bus rows as build_view gives them on e-paper: the leave words, and the time alone."""
+    return (
+        Row("341", destination, "Exp 07:24", Style.ALERT, "Leave by 07:16", "A", leave_at="07:16"),
+        Row("61", "Buxton", "07:35 sch", leave="Leave by 07:27", stop="B", leave_at="07:27"),
+    )
+
+
+def test_leave_by_is_said_once_over_the_bus_leave_column():
+    fonts = load_fonts()
+    rows = e_paper_bus_rows()
+    leave_x = leave_column(rows, fonts, WIDTH, 1)
+    assert leave_heading(rows) == words.LEAVE_BY == "Leave by"
+    layouts = [row_layout(row, fonts, leave_x=leave_x) for row in rows]
+    assert [layout.leave for layout in layouts] == ["07:16", "07:27"]
+    assert {layout.leave_x for layout in layouts} == {leave_x}  # one column, under the heading
+
+
+def test_countdown_rows_keep_their_own_words_and_have_no_heading():
+    rows = (Row("341", "Hyde", "Exp 07:24", Style.ALERT, "Leave in 12 min", "A"),)
+    assert leave_heading(rows) is None
+    assert row_layout(rows[0], load_fonts()).leave == "Leave in 12 min"
+
+
+@pytest.mark.parametrize("panel", EVERY_PANEL, ids=lambda p: p.name)
+@pytest.mark.parametrize("destination", ["Hyde", "Buxton", "Stepping Hill Hospital"])
+def test_bus_destinations_keep_at_least_the_room_they_had_before_leave_by(panel, destination):
+    # Before the board said "Leave by" on every row, each said "leave 07:16",
+    # just left of its own status. The destination keeps at least that many letters.
+    s = plain_scale(panel)
+    fonts = load_fonts(s)
+    rows = e_paper_bus_rows(destination)
+    shown = row_layout(rows[0], fonts, panel.width, s, leave_x=leave_column(rows, fonts, panel.width, s)).middle
+    before = dataclasses.replace(rows[0], leave="leave 07:16", leave_at=None)
+    earlier = row_layout(before, fonts, panel.width, s).middle
+    assert len(shown.removesuffix("…")) >= len(earlier.removesuffix("…"))
+
+
+def test_short_bus_destinations_are_whole_on_every_e_paper_panel():
+    for panel in (PHAT, PHAT_V1, WAVESHARE_10IN85G):
+        s = plain_scale(panel)
+        fonts = load_fonts(s)
+        for destination in ("Hyde", "Buxton"):
+            rows = e_paper_bus_rows(destination)
+            layout = row_layout(rows[0], fonts, panel.width, s, leave_x=leave_column(rows, fonts, panel.width, s))
+            assert layout.middle == f"A: {destination}", panel.name
+
+
+def buses_only(stale=False):
+    rows = tuple(dataclasses.replace(r, style=Style.NORMAL, right="07:20") for r in e_paper_bus_rows())
+    return BoardView("GLO > MAN", Section("Trains", (), "No trains"), Section("Buses", rows, "No buses", stale), "07:03")
+
+
+def bus_label_band(image):
+    """(top, bottom, right) of the accent "! NOT UPDATING" beside BUSES."""
+    accent = [(x, y) for x in range(image.width) for y in range(image.height) if image.getpixel((x, y)) == PALETTE.accent]
+    ys = [y for _, y in accent]
+    return min(ys), max(ys), max(x for x, _ in accent)
+
+
+def black_right_of(image, top, bottom, x0):
+    return [x for x in range(x0 + 1, image.width) for y in range(top, bottom + 1) if image.getpixel((x, y)) == PALETTE.black]
+
+
+@pytest.mark.parametrize("panel", EVERY_PANEL, ids=lambda p: p.name)
+@pytest.mark.parametrize("text_size", range(9, 17))
+def test_the_leave_heading_never_touches_not_updating(panel, text_size):
+    stale = render(buses_only(stale=True), PALETTE, panel, text_size)
+    top, bottom, right = bus_label_band(stale)
+    heading = black_right_of(stale, top, bottom, right)
+    if heading:
+        assert min(heading) - right >= 6 * plain_scale(panel)
+    else:
+        # No room for it: each row says "Leave by" itself, so a time is never left unexplained.
+        plain = render(buses_only(), PALETTE, panel, text_size)
+        rows = bottom + 1, panel.height - 1
+        assert len(black_right_of(stale, *rows, -1)) > len(black_right_of(plain, *rows, -1))
+
+
+@pytest.mark.parametrize("panel", EVERY_PANEL, ids=lambda p: p.name)
+def test_the_leave_heading_is_drawn_beside_buses(panel):
+    top, bottom, _ = bus_label_band(render(buses_only(stale=True), PALETTE, panel))
+    s = plain_scale(panel)
+    leave_x = leave_column(buses_only().buses.rows, load_fonts(s), panel.width, s)
+    assert black_right_of(render(buses_only(), PALETTE, panel), top, bottom, int(leave_x) - 1)
 
 
 BIG_PANELS = [WAVESHARE_10IN85G, HDMI_1280X400]

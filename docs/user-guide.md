@@ -98,6 +98,7 @@ The differences:
 |---|---|
 | `Upd 07:03` in the top bar | `UPDATED 07:03` at the bottom |
 | `Leave by 07:07 (07:12)` next to TRAINS: leave by 07:07 for the 07:12 | `Leave by 07:07` under the train |
+| `Leave by` once, next to BUSES, over a column of leave times (`07:16`), so the destinations have more room | `Leave by 07:16` on each bus line |
 | `Cancelled` on a black bar | `Cancelled` on a highlighted bar |
 | `! NOT UPDATING` in the accent colour, next to TRAINS or BUSES | `NOT UPDATING: …` at the bottom |
 | A rain warning or disruption notice in the top bar, in place of the title | At the bottom |
@@ -117,7 +118,7 @@ The screen can redraw every second, so it shows a bit more:
 ![Departures on the HDMI screen](images/screen-departures.png)
 
 - **A running clock** at the bottom, in place of "Updated".
-- **Countdowns** in place of clock times: `Leave in 3 min` instead of `Leave by 07:07`, then `Leave now` in the last minute. They round down, so `Leave in 3 min` means you have at least 3 minutes, never less.
+- **Countdowns** in place of clock times: `Leave in 3 min` instead of `Leave by 07:07`, then `Leave now` in the last minute. They round down, so `Leave in 3 min` means you have at least 3 minutes, never less. In the plain look each bus line says its own countdown, with no `Leave by` next to BUSES.
 - On the screen, a bus you can no longer reach on foot loses its leave time, rather than saying "Leave now".
 - **Platforms**, as on the bigger e-paper display.
 - A rain warning or disruption notice sits at the bottom left and the clock moves to the right. A notice too long for one line is shown a part at a time, changing every 5 seconds; each part starts with `!` and all but the last end with `…`.

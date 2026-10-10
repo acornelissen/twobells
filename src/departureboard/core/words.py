@@ -40,9 +40,13 @@ def status(dep: Departure) -> str:
     return NO_REPORT
 
 
+# Before a clock time to set off; on its own, the plain look's heading over its bus leave times.
+LEAVE_BY = "Leave by"
+
+
 def leave_by(time: str) -> str:
     """When to set off, as a clock time: "Leave by 17:40"."""
-    return f"Leave by {time}"
+    return f"{LEAVE_BY} {time}"
 
 
 def leave_in(minutes: int) -> str:

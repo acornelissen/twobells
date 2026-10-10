@@ -9,6 +9,7 @@ from typing import Protocol
 
 from PIL import Image, ImageDraw, ImageFont
 
+from ..core import words
 from .panel import PHAT, PLATFORM_COLUMN_MIN_WIDTH, Panel
 from .route import RouteView
 from .view import BoardView, CodeView, Row, Section, SetupView, Style
@@ -93,6 +94,8 @@ class RowLayout:
     leave_x: float | None
     right_x: float
     platform_x: float | None = None
+    # The leave text as drawn: the time alone under a words.LEAVE_BY heading.
+    leave: str | None = None
 
 
 _COL_GAP = 6
@@ -102,19 +105,38 @@ def _with_stop(row: Row) -> str:
     return f"{row.stop}: {row.middle}" if row.stop else row.middle
 
 
+def _leave_text(row: Row) -> str | None:
+    return row.leave_at or row.leave
+
+
+def leave_heading(rows) -> str | None:
+    """The words over a section's leave column, when its rows give the time alone."""
+    return words.LEAVE_BY if any(r.leave_at for r in rows) else None
+
+
 def row_layout(
-    row: Row, fonts: Fonts, width: int = WIDTH, scale: int = 1, platform_x: float | None = None
+    row: Row,
+    fonts: Fonts,
+    width: int = WIDTH,
+    scale: int = 1,
+    platform_x: float | None = None,
+    leave_x: float | None = None,
 ) -> RowLayout:
     """Column positions for a row. The destination gives way so times stay whole.
-    `platform_x` is where a section's platform column starts, if it has one."""
+    `platform_x` and `leave_x` are where a section's platform and leave
+    columns start, if it has them; without `leave_x` a leave time sits just
+    left of the row's own status."""
     pad, gap = _PAD * scale, _COL_GAP * scale
     right_x = width - pad - drawn_length(fonts.bold, row.right)
     middle_x = pad + left_column_width(fonts, scale)
-    leave_x = None
+    leave = _leave_text(row)
     middle_end = right_x - 4 * scale
-    if row.leave:
-        leave_x = right_x - gap - drawn_length(fonts.small, row.leave)
+    if leave:
+        if leave_x is None:
+            leave_x = right_x - gap - drawn_length(fonts.small, leave)
         middle_end = leave_x - gap
+    else:
+        leave_x = None
     if platform_x is not None:
         middle_end = platform_x - gap
     return RowLayout(
@@ -126,6 +148,7 @@ def row_layout(
         leave_x=leave_x,
         right_x=right_x,
         platform_x=platform_x if row.platform else None,
+        leave=leave,
     )
 
 
@@ -137,6 +160,17 @@ def platform_column(rows, fonts: Fonts, width: int, scale: int) -> float | None:
     right_w = max(drawn_length(fonts.bold, r.right) for r in rows)
     platform_w = max(drawn_length(fonts.regular, r.platform) for r in rows if r.platform)
     return width - _PAD * scale - right_w - _COL_GAP * scale - platform_w
+
+
+def leave_column(rows, fonts: Fonts, width: int, scale: int) -> float | None:
+    """Where a section's leave times start: one column, clear of the widest
+    status, so the times line up under the heading. None if no row has one."""
+    leaves = [text for text in map(_leave_text, rows) if text]
+    if not leaves:
+        return None
+    right_w = max(drawn_length(fonts.bold, r.right) for r in rows)
+    leave_w = max(drawn_length(fonts.small, text) for text in leaves)
+    return width - _PAD * scale - right_w - _COL_GAP * scale - leave_w
 
 
 class Measurable(Protocol):
@@ -290,17 +324,27 @@ class _Painter:
             leave = fit_text(section.leave, self.f.small, self.width - pad - label_end - 8 * s)
             x = self.width - pad - drawn_length(self.f.small, leave)
             self.draw.text((x, y + s), leave, font=self.f.small, fill=self.p.black)
+        leave_x = leave_column(rows, self.f, self.width, s)
+        heading = leave_heading(rows)
+        if heading and leave_x is not None:
+            if leave_x - label_end >= 6 * s and leave_x + drawn_length(self.f.small, heading) <= self.width - pad:
+                # Said once, over the column, as station boards label theirs.
+                self.draw.text((leave_x, y + s), heading, font=self.f.small, fill=self.p.black)
+            else:
+                # No room beside the label (a "! NOT UPDATING" on a small panel): each row says it in full.
+                rows = tuple(replace(r, leave_at=None) for r in rows)
+                leave_x = leave_column(rows, self.f, self.width, s)
         y += self.label_h * s
         if not rows:
             self.draw.text((pad, y + s), section.empty_text, font=self.f.regular, fill=self.p.black)
             return y + self.row_h * s
         platform_x = platform_column(rows, self.f, self.width, s)
         for row in rows:
-            self.row(row, y, platform_x)
+            self.row(row, y, platform_x, leave_x)
             y += self.row_h * s
         return y
 
-    def row(self, row: Row, y: int, platform_x: float | None = None) -> None:
+    def row(self, row: Row, y: int, platform_x: float | None = None, leave_x: float | None = None) -> None:
         s = self.s
         ink, status_ink = self.p.black, self.p.black
         if row.style is Style.INVERTED:
@@ -309,14 +353,14 @@ class _Painter:
         elif row.style is Style.ALERT:
             status_ink = self.p.accent
 
-        layout = row_layout(row, self.f, self.width, s, platform_x)
+        layout = row_layout(row, self.f, self.width, s, platform_x, leave_x)
         self.draw.text((_PAD * s, y + s), layout.left, font=self.f.bold, fill=ink)
         self.draw.text((layout.middle_x, y + s), layout.middle, font=self.f.regular, fill=ink)
         # row_layout only places a platform or leave time the row has.
         if layout.platform_x is not None and row.platform:
             self.draw.text((layout.platform_x, y + s), row.platform, font=self.f.regular, fill=ink)
-        if layout.leave_x is not None and row.leave:
-            self.draw.text((layout.leave_x, y + self.small_drop * s), row.leave, font=self.f.small, fill=ink)
+        if layout.leave_x is not None and layout.leave:
+            self.draw.text((layout.leave_x, y + self.small_drop * s), layout.leave, font=self.f.small, fill=ink)
         self.draw.text((layout.right_x, y + s), row.right, font=self.f.bold, fill=status_ink)
 
     def rule(self, y: int) -> None:
