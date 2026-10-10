@@ -100,7 +100,7 @@ from .schema import KEY_VALUE as _KEY_VALUE
 from .schema import LABEL as _LABEL
 from .schema import NOC as _NOC
 from .setup import Place, SetupError, Station, Stop
-from .setupapi import KEY_TEST_EVERY, MAX_WALK_MINUTES, MIN_SCRUBBED, Invalid, RateLimit, _scrub, _stops
+from .setupapi import KEY_TEST_EVERY, MAX_WALK_MINUTES, MIN_SCRUBBED, Invalid, RateLimit, _scrub, _stops, too_deep
 from .status import safe_message
 
 log = logging.getLogger(__name__)
@@ -225,28 +225,13 @@ def _no_constant(name: str):
     raise ValueError(f"{name} is not a number")
 
 
-def _too_deep(value, limit: int) -> bool:
-    """Whether anything in `value` is nested more than `limit` deep. Without
-    recursion: json reads deeper than Python can recurse."""
-    waiting = [(value, 1)]
-    while waiting:
-        item, level = waiting.pop()
-        if level > limit:
-            return True
-        if isinstance(item, dict):
-            waiting.extend((v, level + 1) for v in item.values())
-        elif isinstance(item, list):
-            waiting.extend((v, level + 1) for v in item)
-    return False
-
-
 def parse(body: bytes, max_depth: int = MAX_DEPTH):
     """Strict JSON: UTF-8, no NaN or Infinity, no deeper than `max_depth`."""
     try:
         value = json.loads(body.decode("utf-8"), parse_constant=_no_constant)
     except (ValueError, RecursionError):
         raise Refused("not JSON") from None
-    if _too_deep(value, max_depth):
+    if too_deep(value, max_depth):
         raise Refused("nested too deeply")
     return value
 

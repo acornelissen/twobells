@@ -198,7 +198,7 @@ def decode(body: bytes) -> object:
         value = json.loads(body.decode("utf-8"), parse_constant=_no_constant)
     except (ValueError, RecursionError):
         raise Invalid("That request isn't JSON") from None
-    if _depth(value) > MAX_DEPTH:
+    if too_deep(value, MAX_DEPTH):
         raise Invalid("That request is nested too deeply")
     return value
 
@@ -207,12 +207,19 @@ def _no_constant(name: str):
     raise ValueError(f"{name} is not a number")
 
 
-def _depth(value, level: int = 1) -> int:
-    if isinstance(value, dict):
-        return max((_depth(v, level + 1) for v in value.values()), default=level)
-    if isinstance(value, list):
-        return max((_depth(v, level + 1) for v in value), default=level)
-    return level
+def too_deep(value, limit: int) -> bool:
+    """Whether anything in `value` is nested more than `limit` deep. Without
+    recursion: json reads deeper than Python can recurse."""
+    waiting = [(value, 1)]
+    while waiting:
+        item, level = waiting.pop()
+        if level > limit:
+            return True
+        if isinstance(item, dict):
+            waiting.extend((v, level + 1) for v in item.values())
+        elif isinstance(item, list):
+            waiting.extend((v, level + 1) for v in item)
+    return False
 
 
 def static_files() -> dict[str, Path]:

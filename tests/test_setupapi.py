@@ -195,7 +195,10 @@ def test_a_request_must_be_an_object(board):
 
 def test_decode_refuses_big_odd_or_deep_bodies():
     assert decode(b'{"q": "Glossop"}') == {"q": "Glossop"}
-    for body in (b"x" * 20_000, b"{", b'{"lat": NaN}', b"\xff", b'{"a":' * 10 + b"1" + b"}" * 10):
+    # Nested 3000 deep fits in the size cap and parses, but is deeper than
+    # Python can recurse: refused all the same, not a crash.
+    for body in (b"x" * 20_000, b"{", b'{"lat": NaN}', b"\xff", b'{"a":' * 10 + b"1" + b"}" * 10,
+                 b"[" * 3000 + b"]" * 3000):
         with pytest.raises(Invalid):
             decode(body)
 
