@@ -52,7 +52,7 @@ mise run demo                # sample board to preview.png, no keys
 mise run emulate             # the browser panel emulator on sample data
 ```
 
-Without mise: `python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]" && .venv/bin/pytest`.
+Without mise: `uv sync && uv run pytest`.
 
 Then, with the venv active (`. .venv/bin/activate`, or any shell where mise is activated):
 

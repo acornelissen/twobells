@@ -64,7 +64,7 @@ Python 3.12 package, tools pinned in `mise.toml` (python, ruff, node).
 
 ```bash
 mise install          # pinned tools
-mise run setup        # .venv with the package and dev extras (pip install -e ".[dev]")
+mise run setup        # .venv with the package and dev tools, as uv.lock pins them (uv sync --locked)
 mise run test         # pytest -q
 mise run lint         # ruff check src tests tools (config in pyproject.toml)
 mise run demo         # departureboard demo --png preview.png, no keys needed

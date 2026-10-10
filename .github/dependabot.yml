@@ -4,9 +4,9 @@
 # after an upstream release, so a hijacked release has time to be pulled.
 #
 # Not covered here, so bump them by hand:
-#   - mise.toml tools (python, ruff, node) and the mise version in the
+#   - mise.toml tools (python, ruff, node, uv) and the mise version in the
 #     workflows; pyproject's dev pin of ruff must match mise.toml, so
-#     pyproject.toml is left out on purpose.
+#     pyproject.toml and uv.lock are left out on purpose (uv lock --upgrade).
 #   - The binfmt and buildkit image digests in ci.yml and release.yml.
 #   - Debian packages that deploy/install.sh takes from apt.
 version: 2

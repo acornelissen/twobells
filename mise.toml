@@ -2,8 +2,9 @@
 # `mise run setup` once; `mise tasks` lists the rest.
 [tools]
 python = "3.12.14"  # the Dockerfile's python:3.12-slim
-ruff = "0.16.10"    # for editors and the shell; keep in step with ruff in pyproject's dev extras
+ruff = "0.16.10"    # for editors and the shell; keep in step with ruff in pyproject's dev group
 node = "22.22.3"    # only for the JS behaviour tests, which skip without node
+uv = "0.12.24"      # installs the package and dev tools from uv.lock
 
 [env]
 # The project's venv, made with the python above on first use and active in
@@ -12,8 +13,8 @@ node = "22.22.3"    # only for the JS behaviour tests, which skip without node
 _.python.venv = { path = ".venv", create = true }
 
 [tasks.setup]
-description = "Install the package and its dev tools into .venv"
-run = '.venv/bin/python -m pip install -e ".[dev]"'
+description = "Install the package and its dev tools into .venv, as uv.lock pins them"
+run = "uv sync --locked"
 
 [tasks.test]
 description = "Run the test suite"
