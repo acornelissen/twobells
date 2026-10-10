@@ -240,6 +240,33 @@ def test_page_is_british_english_and_says_what_it_is():
     assert "document.title = `${TITLES[step]}: ${state.title}`;" in text
 
 
+BOARD = re.compile(r"\bboards?\b", re.IGNORECASE)
+PRODUCTS = re.compile(r"Live (Fastest )?Departure Boards?")  # Rail Data Marketplace's names, not the host
+
+
+def test_the_script_says_the_hosts_noun_never_board():
+    # The dashboard's wizard says "dashboard": every "board" the person reads
+    # comes from begin's noun, and "board" is only the default until then.
+    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    code = re.sub(r"(^\s*|\s)//.*$", "", text, flags=re.MULTILINE)  # comments aren't read by anyone
+    lines = [line.strip() for line in PRODUCTS.sub("", code).splitlines() if BOARD.search(line)]
+    assert lines == ['noun: "board",']
+    for words in ("Label on the ${state.noun}", "The ${state.noun} didn't answer",
+                  "the ${state.noun} has nothing to show"):
+        assert words in text, words
+
+
+def test_the_page_says_the_hosts_noun_never_board():
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    nouns = re.findall(r"<span data-noun>board</span>", html)
+    assert len(nouns) == 4
+    assert not BOARD.search(html.replace("<span data-noun>board</span>", "")), "a board not set from begin's noun"
+    begin = _between((STATIC / "wizard.js").read_text(encoding="utf-8"), "async function begin", "begin();")
+    # Only a plain word, and set as text.
+    assert "if (NOUN.test(str(data.noun))) state.noun = data.noun;" in begin
+    assert 'for (const el of document.querySelectorAll("[data-noun]")) el.textContent = state.noun;' in begin
+
+
 def test_each_step_is_a_section_with_a_focusable_heading():
     ids = _ids()
     for step in STEPS:

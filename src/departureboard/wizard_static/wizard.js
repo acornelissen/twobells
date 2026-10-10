@@ -24,6 +24,7 @@ const CRS = /^[A-Za-z]{3}$/;
 const LABEL = /^[A-Za-z0-9]{1,3}$/;
 const KEY = /^[A-Za-z0-9._~+/=-]{1,200}$/;
 const LINK = /^(\/(?!\/)|https?:\/\/)/;
+const NOUN = /^[a-z]{1,20}$/;
 const MAX_STOPS = 10;
 const MAX_WALK = 60;
 const UK = { lat: [49.0, 61.0], lon: [-8.7, 2.0] }; // as setup.py's LAT_RANGE and LON_RANGE
@@ -40,6 +41,7 @@ const NEEDED = {
 const state = {
   csrf: "",
   title: "Setup", // the host's, like "Set up your board", from begin
+  noun: "board", // what the text calls the host, like "dashboard", from begin
   keys: [], // [{name, label, hint, set, doc}]: the host's own, from begin
   links: [],
   home: null, // {lat, lon, label, country}; exact, so it stays in this page and the server's memory
@@ -80,7 +82,7 @@ function failure(res, data) {
   if (res.status === 401 || res.status === 403) {
     return new ApiError("You've been signed out. Reload the page and sign in again.", res.status, null);
   }
-  return new ApiError(`The board couldn't do that (error ${res.status}). Try again.`, res.status, null);
+  return new ApiError(`The ${state.noun} couldn't do that (error ${res.status}). Try again.`, res.status, null);
 }
 
 async function call(name, body = {}) {
@@ -94,7 +96,7 @@ async function call(name, body = {}) {
       body: JSON.stringify(body),
     });
   } catch {
-    throw new ApiError("The board didn't answer. Check it is on and connected, then try again.", 0, null);
+    throw new ApiError(`The ${state.noun} didn't answer. Check it is on and connected, then try again.`, 0, null);
   }
   const data = await readJSON(res);
   if (!res.ok) throw failure(res, data);
@@ -106,7 +108,8 @@ async function signIn() {
   try {
     res = await fetch("api/session", { cache: "no-store", credentials: "same-origin" });
   } catch {
-    throw new ApiError("The board didn't answer. Check it is on and connected, then reload.", 0, null);
+    // Before begin, so the host's noun isn't known yet.
+    throw new ApiError("Nothing answered. Check you're connected, then reload.", 0, null);
   }
   const data = await readJSON(res);
   if (!res.ok || !data || !str(data.csrf)) throw failure(res, data);
@@ -555,7 +558,7 @@ function drawStops() {
         h("label", { for: id }, h("span", { class: "num" }, `${i + 1}.`), ` ${stopName(stop)}`)),
       h("p", { class: "hint about", id: `${id}-about` }, `${about.join(", ")}.`),
       h("div", { class: "field nested", id: `${id}-label-box`, hidden: !ticked },
-        h("label", { for: `${id}-label` }, "Label on the board"),
+        h("label", { for: `${id}-label` }, `Label on the ${state.noun}`),
         h("p", { class: "hint", id: `${id}-label-hint` }, "1 to 3 letters or digits."),
         h("p", { class: "error", id: `${id}-label-error`, hidden: true }),
         label));
@@ -602,7 +605,7 @@ async function enterStops() {
         lat: s.lat, lon: s.lon, distance_m: num(s.distance_m), label: LABEL.test(str(s.label)) ? s.label : "",
       }));
     state.stopsFor = homeKey();
-    note("stops-status", state.stops.length ? "" : "No bus stops within a kilometre. Carry on for a board with trains only.");
+    note("stops-status", state.stops.length ? "" : `No bus stops within a kilometre. Carry on for a ${state.noun} with trains only.`);
     say(state.stops.length ? `${state.stops.length} bus stops found.` : "No bus stops found nearby.");
   } catch (error) {
     note("stops-status", `${error.message} Go back and forward to try again, or carry on without buses.`);
@@ -628,7 +631,7 @@ function leaveStops() {
   if (chosen.length > MAX_STOPS) return refuse("stops", `Pick at most ${MAX_STOPS} stops.`, $("stops-list").querySelector("input"));
   if (!chosen.length && !state.station) {
     const first = $("stops-list").querySelector("input");
-    return refuse("stops", "Pick at least one stop: with no station and no stops, the board has nothing to show.",
+    return refuse("stops", `Pick at least one stop: with no station and no stops, the ${state.noun} has nothing to show.`,
       first || $("stops-heading"));
   }
   state.chosen = chosen;
@@ -739,7 +742,7 @@ const SIGN_UP = {
     "Open Subscriptions, then Live Departure Board, then the Specification tab, and copy the Consumer key. Not the Consumer secret.",
   ],
   BODS_API_KEY: [
-    "Create an account at data.bus-data.dft.gov.uk. For intended use, Personal interests or other fits a home board.",
+    "Create an account at data.bus-data.dft.gov.uk. For intended use, pick Personal interests or other.",
     "If BODS emails you to confirm your address, follow its link.",
     "Sign in, open Account settings and copy the API key.",
   ],
@@ -753,7 +756,7 @@ const SIGN_UP = {
     "Copy the URL at the top of that tab too, into Knowledgebase Incidents address on the settings page, under Trains.",
   ],
   TAPI_APP_ID: [
-    "Optional: most boards don't need TransportAPI. It stands in for bus times while there's no bus timetable.",
+    "Optional: most setups don't need TransportAPI. It stands in for bus times while there's no bus timetable.",
     "Sign up at developer.transportapi.com and choose the Free plan, 30 lookups a day.",
     "Open the app your account starts with, and copy its app_id here and its app_key into the next box.",
   ],
@@ -777,7 +780,7 @@ const RESULTS = { // state: [glyph, words]; the colour only repeats them
   unknown: ["?", "Can't tell"],
   problem: ["!", "Not tested"],
 };
-const LOOKUP_WARNING = "Testing TransportAPI uses 1 of today's 30 free lookups, the ones the board uses for bus times. Test now?";
+const LOOKUP_WARNING = "Testing TransportAPI uses 1 of today's 30 free lookups, the same ones bus times use. Test now?";
 
 function showResult(region, result, text) {
   const [glyph, words] = RESULTS[result] || RESULTS.unknown;
@@ -1077,6 +1080,8 @@ async function begin() {
     const data = await call("begin");
     state.title = str(data.title).slice(0, 60) || state.title;
     fill($("title"), state.title);
+    if (NOUN.test(str(data.noun))) state.noun = data.noun;
+    for (const el of document.querySelectorAll("[data-noun]")) el.textContent = state.noun;
     state.keys = list(data.keys).map(obj).filter((k) => k && /^[A-Z_]{1,64}$/.test(str(k.name)))
       .map((k) => ({ name: k.name, label: str(k.label) || k.name, hint: str(k.hint), set: k.set === true, doc: str(k.doc) }));
     state.links = list(data.links);
