@@ -58,7 +58,8 @@ from .state import StateStore
 from .store import Store
 from .timetable import TimetableBusy, TimetableError
 from .transportapi import TransportApiBusSource, redact_credentials
-from .schema import views
+from .installs import Install, install_named
+from .schema import keys, views
 from .version import package_version
 from .view import SetupView, build_view
 from .themes import THEMES, theme_named
@@ -883,29 +884,35 @@ def _start_again(port: int) -> None:
     os.execv(sys.executable, argv)
 
 
-def _settings_area(store: Store):
-    """The password-protected /settings area: the form and the setup wizard,
-    both saving into the store."""
-    from .dashconfig import dashboard_target
-    from .dashform import KEYS, DashboardForm
-    from .dashsettings import SettingsArea
+def _settings_site(store: Store, install: Install, running: bool, runner=None):
+    """The password-protected settings site: its tabs and the setup wizard,
+    both saving into the store, checked as each view that is on loads.
+    `running`: whether the dashboard runs, for the links to it. `runner`
+    does the wizard's internet work, if another service does it."""
+    from .groupform import check_views
+    from .settingsite import PREFIX, SettingsSite
     from .setupapi import SetupApi
 
-    target = dashboard_target(store)
+    target = store.target(lambda data, env: check_views(data, env, store.folder, install))
+    links = [("The dashboard", "/")] if running else []
+    extra = {}
+    if install.fetch == "process":  # a save starts serve again (_SettingsWatch)
+        extra["saved_message"] = "Saved. The dashboard starts again in a few seconds to use the new settings."
     setup = SetupApi(
         target, store.env, store.folder,
-        links=(("The dashboard", "/"), ("Settings", "/settings")),
-        saved_message="Saved. The dashboard starts again in a few seconds to use the new settings.",
-        title="Set up your dashboard",
-        noun="dashboard",
-        keys=KEYS,
+        links=[*links, ("Settings", PREFIX)],
+        title=f"Set up your {install.noun}",
+        noun=install.noun,
+        keys=keys("general", *install.offered),
+        runner=runner,
+        **extra,
     )
-    area = SettingsArea(store.folder, DashboardForm(store, store.env), setup)
-    if not area.password.is_set():
-        print("Settings: no password yet. Open /settings and claim it with a code from this log, "
-              "or set one with `departureboard dashboard --set-password` (see the user guide for Docker).",
-              file=sys.stderr)
-    return area
+    site = SettingsSite(store, install, setup, dashboard_on=lambda: running)
+    if not site.password.is_set():
+        where = "on the board" if site.to_board() else "in this log"
+        print(f"Settings: no password yet. Open {PREFIX} and claim it with a code shown {where}, "
+              f"or set one with `{install.password_command}`.", file=sys.stderr)
+    return site
 
 
 def _dashboard(args) -> int:
@@ -938,7 +945,7 @@ def _dashboard(args) -> int:
             recent=history.recent,
             history_days=dash.options.history_days,
             allowed_hosts=dash.options.allowed_hosts,
-            settings=_settings_area(store),
+            settings=_settings_site(store, install_named("desktop"), True),
         )
         host = "0.0.0.0" if args.lan else args.host
         # A port asked for is that port or nothing (Docker's health check expects
@@ -992,7 +999,7 @@ def _dashboard_password(args, store: Store) -> int:
     end when the password changes; see auth.Sessions). Nothing else is
     loaded, so broken settings can't keep their owner out."""
     from .auth import PasswordStore
-    from .dashsettings import PREFIX
+    from .settingsite import PREFIX
 
     store.make()
     if args.set_password:

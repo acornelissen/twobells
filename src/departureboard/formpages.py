@@ -1,20 +1,19 @@
-"""What the two settings pages share: the Pi's (web.py, at /) and the
-dashboard's (dashsettings.py, under /settings).
+"""The settings site's pages and forms (settingsite.py, under /settings).
 
 FormPages draws the sign-in and reset pages and answers their forms: sign
 in, ask for a reset code, reset the password with it (which is also the
-first claim, when no password is set), sign out, and save the settings
-form. It also checks a setup wizard step (the session, its token in
-X-CSRF-Token, JSON) and runs it. Each host routes its own requests, refuses
+first claim, when no password is set), sign out, and save a settings form.
+It also checks a setup wizard step (the session, its token in
+X-CSRF-Token, JSON) and runs it. The host routes its own requests, refuses
 outsiders, checks the origin, reads bodies (with read_body, under its own
 limits), serves the wizard's files and sends its own security headers; it
 hands the parsed form (or the step's body) here and sends back the Reply.
 
-What differs between the hosts is passed in: the path prefix ("" or
-"/settings"), the sessions and form tokens (each with its own cookie name
-and path), the reset codes (shown on the board, or put in the log), the
-wording, the settings form, the wizard's API and its JSON, and where a new
-session lands.
+What the host decides is passed in: the path prefix, the sessions and form
+tokens (each with its own cookie name and path), the reset codes (shown on
+the board, or put in the log), the wording (asked for afresh on every page,
+as where codes go can change while it runs), the settings forms, the
+wizard's API and its JSON, and where a new session lands.
 """
 
 from __future__ import annotations
@@ -69,8 +68,8 @@ class Reply:
 
 
 class SettingsPage(Protocol):
-    """The everyday form (settingsform.SettingsForm, dashform.DashboardForm):
-    drawn for a signed-in visitor, and saved from their fields."""
+    """An everyday form (a groupform.GroupForm): drawn for a signed-in
+    visitor, and saved from their fields."""
 
     def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,
                values: dict[str, str] | None = None) -> str: ...
@@ -166,7 +165,7 @@ JSON_FAILED = {"error": "Something went wrong; try again"}
 
 
 def compact_json(status: int, value: dict) -> Reply:
-    """Compact ASCII JSON: the dashboard's way. The Pi's page sends its own."""
+    """Compact ASCII JSON, as the dashboard's API sends it."""
     try:
         body = json.dumps(value, separators=(",", ":"), allow_nan=False)
     except ValueError:
@@ -178,14 +177,16 @@ class FormPages:
     """The sign-in, reset and settings pages and forms, under `prefix`, and
     the setup wizard's session and step checks.
 
-    `home()` is where a new session lands. `resume_setup`, if set, is the
-    wizard's page: a sign-in started there (`?next=setup`) goes back to it.
-    `shell(title, body)` wraps a page in the HTML document. Log lines go to
-    `log`, so each host's keep their own name. `setup` runs the wizard's
-    steps, answered with `json_reply`."""
+    `page` is the settings form drawn and saved when no other is named.
+    `wording()` gives the words for each page. `home()` is where a new
+    session lands. `resume_setup`, if set, is the wizard's page: a sign-in
+    started there (`?next=setup`) goes back to it. `shell(title, body)`
+    wraps a page in the HTML document. Log lines go to `log`, so each
+    host's keep their own name. `setup` runs the wizard's steps, answered
+    with `json_reply`."""
 
     def __init__(self, page: SettingsPage, password: PasswordStore, sessions: Sessions, lockout: Lockout,
-                 codes: ResetCodes, forms: FormTokens, wording: Wording, *, prefix: str,
+                 codes: ResetCodes, forms: FormTokens, wording: Callable[[], Wording], *, prefix: str,
                  shell: Callable[[str, str], str], home: Callable[[], str], log: logging.Logger,
                  resume_setup: str = "", setup: SetupSteps | None = None,
                  json_reply: Callable[[int, dict], Reply] = compact_json,
@@ -209,24 +210,28 @@ class FormPages:
 
     # Pages
 
-    def settings_page(self, headers: Headers) -> Reply:
-        """The settings form for a signed-in visitor; sign-in for anyone else."""
+    def settings_page(self, headers: Headers, page: SettingsPage | None = None, title: str | None = None) -> Reply:
+        """A settings form (`page`, or the one given at the start) for a
+        signed-in visitor, under `title` (or the wording's); sign-in for
+        anyone else."""
         session = self._sessions.get(self._token(headers))
         if session is None:
             return redirect(self._prefix + "/login")
-        return self._html(200, self._wording.title, self._page.render(session.csrf))
+        page = page or self._page
+        return self._html(200, title or self._wording().title, page.render(session.csrf))
 
     def login_page(self, status: int, headers: Headers, message: str = "", to_setup: bool = False) -> Reply:
         """Sign in, or the first claim while no password is set."""
         if not self._password.is_set():
             return self.reset_page(status, headers, message)  # the first claim
+        wording = self._wording()
         token, cookie = self._form_token(headers)
         error = (f'<p class="error" role="alert" id="login-error">{html.escape(message, quote=False)}</p>'
                  if message else "")
         described = ' aria-describedby="login-error" aria-invalid="true"' if message else ""
         then = '<input type="hidden" name="next" value="setup">' if to_setup else ""
         body = (
-            f"<h1>{self._wording.title}</h1>"
+            f"<h1>{wording.title}</h1>"
             f"{error}"
             f'<form method="post" action="{self._prefix}/login" class="signin">{then}'
             '<label for="password">Password</label>'
@@ -236,7 +241,7 @@ class FormPages:
             f'<form method="post" action="{self._prefix}/forgot" class="forgot">'
             f'<input type="hidden" name="form" value="{token}">'
             '<button type="submit" class="quiet">Forgot password?</button></form>'
-            f"{self._wording.back}"
+            f"{wording.back}"
         )
         return self._html(status, "Sign in", body, cookie)
 
@@ -245,7 +250,7 @@ class FormPages:
         """Ask for a code, then type it with a new password: for a forgotten
         password, and for the first claim when there is none. `invalid` names
         the field `message` is about."""
-        wording = self._wording
+        wording = self._wording()
         claim = not self._password.is_set()
         token, cookie = self._form_token(headers)
         title = wording.claim_title if claim else "Set a new password"
@@ -310,7 +315,7 @@ class FormPages:
         """Issue a reset code, if this browser's form token is good. The reply
         is the same whether a code was issued, limited or failed."""
         if not self._form_token_ok(fields, headers):
-            return self.reset_page(403, headers, self._wording.no_code_made)
+            return self.reset_page(403, headers, self._wording().no_code_made)
         try:
             self._codes.issue(self._clock())
         except ResetLimited:
@@ -335,11 +340,11 @@ class FormPages:
             right = self._codes.verify(fields.get("code", ""), self._clock())
         except OSError as error:
             self._log.warning("Can't check a settings reset code: %s", type(error).__name__)
-            return self.reset_page(503, headers, self._wording.cant_check)
+            return self.reset_page(503, headers, self._wording().cant_check)
         if not right:
             return self.reset_page(401, headers, WRONG_CODE, "code")
         self._password.set(new)
-        self._log.info(self._wording.reset_logged)
+        self._log.info(self._wording().reset_logged)
         self._sessions.end_all()
         self._lockout.succeeded(client)
         return self._signed_in()
@@ -351,20 +356,24 @@ class FormPages:
             self._sessions.end(token)
         return redirect(self._prefix + "/login", {"Set-Cookie": self._sessions.expired_cookie()})
 
-    def save(self, fields: dict[str, str], headers: Headers) -> Reply:
-        """The settings form, from a signed-in session with its token."""
+    def save(self, fields: dict[str, str], headers: Headers, page: SettingsPage | None = None,
+             title: str | None = None) -> Reply:
+        """A settings form (`page`, or the one given at the start), from a
+        signed-in session with its token, answered under `title` (or the wording's)."""
         session = self._sessions.get(self._token(headers))
         if session is None:
             return redirect(self._prefix + "/login")
         if not csrf_matches(session, fields.get("csrf", "")):
             return Reply(403, b"Forbidden: form expired, reload the page")
         fields.pop("csrf", None)
-        errors = self._page.save(fields)
-        title = self._wording.title
+        page = page or self._page
+        wording = self._wording()
+        title = title or wording.title
+        errors = page.save(fields)
         if errors:
-            body = self._page.render(session.csrf, errors=errors, values=fields)
+            body = page.render(session.csrf, errors=errors, values=fields)
             return self._html(422, f"{title}: fix the errors", body)
-        return self._html(200, f"Saved – {title}", self._page.render(session.csrf, message=self._wording.saved))
+        return self._html(200, f"Saved – {title}", page.render(session.csrf, message=wording.saved))
 
     # The setup wizard
 
@@ -399,7 +408,7 @@ class FormPages:
         if session is None:
             return self._json(401, {"error": "You've been signed out. Reload the page and sign in again."})
         if not csrf_matches(session, headers.get("X-CSRF-Token") or ""):
-            return self._json(403, {"error": self._wording.wrong_step_token})
+            return self._json(403, {"error": self._wording().wrong_step_token})
         if headers.get_content_type() != "application/json":
             return self._json(415, {"error": "Send JSON"})
         return None

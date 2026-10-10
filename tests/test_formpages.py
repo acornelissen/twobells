@@ -1,6 +1,7 @@
-"""The pieces both settings pages share, tested on their own. The hosts'
-own tests (test_web.py, test_dashsettings.py) cover them end to end."""
+"""The settings site's pages and forms, tested on their own. The site's
+own tests (test_settingsite.py) cover them end to end."""
 
+import dataclasses
 import html
 import json
 import logging
@@ -179,6 +180,7 @@ class Host:
 
     def __init__(self, folder, resume_setup="", json_reply=compact_json):
         folder.mkdir(exist_ok=True)
+        self.wording = WIDGET
         self.clock = Clock()
         self.page = FakePage()
         self.password = PasswordStore(folder / "web.json")
@@ -189,7 +191,8 @@ class Host:
         self.codes = ResetCodes(folder, show=lambda code, expires: self.shown.append(code))
         forms = FormTokens(self.clock, cookie_name="widget_form", cookie_path="/area")
         self.steps = FakeSteps()
-        self.pages = FormPages(self.page, self.password, self.sessions, self.lockout, self.codes, forms, WIDGET,
+        self.pages = FormPages(self.page, self.password, self.sessions, self.lockout, self.codes, forms,
+                               lambda: self.wording,
                                prefix="/area", shell=lambda title, body: f"<title>{title}</title>{body}",
                                home=lambda: "/area", log=logging.getLogger("tests.widget"),
                                resume_setup=resume_setup, setup=self.steps, json_reply=json_reply,
@@ -405,6 +408,27 @@ def test_a_save_says_what_happened_in_the_hosts_words(host):
     reply = host.pages.save({"csrf": csrf, "title": "bad"}, headers(cookie))
     assert reply.status == 422 and "<title>Widget settings: fix the errors</title>" in reply.body.decode()
     assert "Too bad" in reply.body.decode() and "'title': 'bad'" in reply.body.decode()
+
+
+def test_one_host_can_draw_and_save_several_forms_each_under_its_own_title(host):
+    other = FakePage()
+    cookie, csrf = host.signed_in()
+    reply = host.pages.settings_page(headers(cookie), other, "Gadget settings")
+    assert reply.status == 200 and "<title>Gadget settings</title>" in reply.body.decode()
+    reply = host.pages.save({"csrf": csrf, "title": "Glossop"}, headers(cookie), other, "Gadget settings")
+    assert "<title>Saved – Gadget settings</title>" in reply.body.decode()
+    assert other.saved == [{"title": "Glossop"}] and host.page.saved == []
+    reply = host.pages.save({"csrf": csrf, "title": "bad"}, headers(cookie), other, "Gadget settings")
+    assert reply.status == 422 and "<title>Gadget settings: fix the errors</title>" in reply.body.decode()
+    assert host.pages.settings_page(headers(), other, "Gadget settings").status == 303  # still needs a session
+
+
+def test_the_words_are_asked_for_afresh_on_every_page(host):
+    # Where a code goes (the board, or the log) can change while the host runs.
+    assert "Look at the widget." in host.pages.reset_page(200, headers(), asked=True).body.decode()
+    host.wording = dataclasses.replace(WIDGET, asked="Look in the log.", code_label="Code from the log")
+    page = host.pages.reset_page(200, headers(), asked=True).body.decode()
+    assert "Look in the log." in page and "Code from the log" in page and "Look at the widget." not in page
 
 
 # --- The setup wizard's checks ---

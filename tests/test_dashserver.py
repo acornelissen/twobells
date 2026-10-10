@@ -9,7 +9,10 @@ import time
 import pytest
 
 from departureboard.dashserver import DashboardApp, StaticFiles, make_server
+from departureboard.installs import install_named
+from departureboard.settingsite import SettingsSite
 from departureboard.snapshot import Hub
+from departureboard.store import Store
 from departureboard.walk import WalkTimes
 
 # The contract's headers, copied from docs/dashboard-api.md rather than imported.
@@ -98,9 +101,21 @@ class Running:
         return conn, conn.getresponse()
 
     def close(self):
-        self.app.hub.close()
+        if self.app.hub is not None:
+            self.app.hub.close()
         self.server.shutdown()
         self.server.server_close()
+
+
+class NoSetup:
+    def handle(self, name, payload):
+        return 404, {"error": "No such setup step"}
+
+
+def site_beside(folder):
+    """A settings site, required by the server, with a store of its own beside `folder`."""
+    store = Store.open(folder.parent / "config.toml", state_dir=folder.parent / "store", environ={})
+    return SettingsSite(store, install_named("docker"), NoSetup(), stylesheet=b"", files={})
 
 
 def make_app(static_dir, **overrides):
@@ -127,6 +142,7 @@ def make_app(static_dir, **overrides):
         "allowed_hosts": frozenset({"departures.example.com"}),
         "heartbeat": 0.2,
         "stream_seconds": 30.0,
+        "settings": site_beside(static_dir),
     }
     settings.update(overrides)
     return DashboardApp(**settings)
@@ -397,6 +413,78 @@ def test_healthz(static_dir):
         assert running.request("/healthz")[0].status == 503
     finally:
         running.close()
+
+
+# The dashboard off: its view off, not set up, or its settings don't load
+
+
+SETTINGS_CSP = ("default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; "
+                "frame-ancestors 'none'; base-uri 'none'")
+
+
+@pytest.mark.parametrize("off", ["no hub", "view off"])
+def test_with_the_dashboard_off_only_the_settings_and_the_health_check_answer(static_dir, off):
+    overrides = {"hub": None} if off == "no hub" else {"dashboard_on": lambda: False}
+    running = start(static_dir, healthy=lambda: False, **overrides)
+    try:
+        response, _ = running.request("/")
+        assert response.status == 303 and response.getheader("Location") == "/settings"
+        for path in ("/api/snapshot", "/api/events", "/api/area", f"/api/bus/{BUS_ID}", f"/api/history/{TRAIN_ID}",
+                     "/static/app.css", "/manifest.webmanifest", "/nowhere"):
+            response, body = running.request(path)
+            assert response.status == 404 and b"Glossop" not in body, path
+        response, body = running.request("/healthz")
+        assert (response.status, body) == (200, b"ok")  # up, with nothing to fetch
+        assert running.request("/settings/login")[0].status == 200
+        assert running.request("/api/snapshot", "POST")[0].status == 405
+    finally:
+        running.close()
+
+
+def test_with_the_dashboard_off_no_response_lets_a_script_run(static_dir):
+    running = start(static_dir, dashboard_on=lambda: False)
+    try:
+        for path, method, host in [("/", "GET", "localhost"), ("/api/snapshot", "GET", "localhost"),
+                                   ("/healthz", "GET", "localhost"), ("/", "GET", "evil.com"),
+                                   ("/", "PUT", "localhost")]:
+            response, _ = running.request(path, method, host)
+            assert response.getheader("Content-Security-Policy") == SETTINGS_CSP, (path, method, host)
+            assert response.getheader("X-Frame-Options") == "DENY"
+            assert response.getheader("Cache-Control") == "no-store"
+        with socket.create_connection(("127.0.0.1", running.port), timeout=5) as raw:
+            raw.sendall(b"GET\r\n\r\n")
+            reply = b""
+            while chunk := raw.recv(4096):
+                reply += chunk
+        assert f"Content-Security-Policy: {SETTINGS_CSP}" in reply.decode("latin-1")
+    finally:
+        running.close()
+
+
+def test_the_dashboard_follows_its_view_as_it_changes(static_dir):
+    on = {"now": True}
+    running = start(static_dir, dashboard_on=lambda: on["now"])
+    try:
+        assert running.request("/api/snapshot")[0].status == 200
+        on["now"] = False
+        assert running.request("/api/snapshot")[0].status == 404
+        on["now"] = True
+        assert running.request("/")[0].status == 200
+    finally:
+        running.close()
+
+
+def test_a_fault_telling_whether_the_dashboard_is_on_keeps_it_off(static_dir, caplog):
+    def broken():
+        raise PermissionError("settings.toml")
+
+    running = start(static_dir, dashboard_on=broken)
+    try:
+        assert running.request("/api/snapshot")[0].status == 404
+        assert running.request("/")[0].getheader("Location") == "/settings"
+    finally:
+        running.close()
+    assert "PermissionError" in caplog.text and "settings.toml" not in caplog.text
 
 
 # Server-sent events

@@ -171,7 +171,7 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
             return "/"
 
     pages = FormPages(page, password, sessions, lockout, codes or ResetCodes(password.path.parent),
-                      FormTokens(clock), BOARD, prefix="", shell=shell, home=home, log=log,
+                      FormTokens(clock), lambda: BOARD, prefix="", shell=shell, home=home, log=log,
                       setup=wizard.api if wizard is not None else None, json_reply=_json_reply, clock=clock)
 
     class Handler(BaseHTTPRequestHandler):

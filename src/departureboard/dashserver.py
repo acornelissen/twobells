@@ -1,18 +1,24 @@
-"""The dashboard's web server: the page, its static files and the read-only API
-in docs/dashboard-api.md, and the password-protected settings area.
+"""The one web server on every install: the settings site, and the dashboard's
+page, its static files and the read-only API in docs/dashboard-api.md.
 
 Home network only. Every request must come from a private address and name
-a local host (or one in allowed_hosts), which blocks DNS rebinding from
-outside websites; API calls from another site's page are refused too. The
-page and API are read-only and need no password: only GET and HEAD, only
-files from an allowlist read into memory at start, and the same strict
-security headers on every response, errors included. Connections and event
-streams are capped so a misbehaving client can't use up the threads.
+a local host (or one in allowed_hosts), in one Host header, which blocks
+DNS rebinding from outside websites; API calls from another site's page
+are refused too. Connections and event streams are capped so a
+misbehaving client can't use up the threads.
 
-Everything under /settings goes to the settings area (dashsettings.py), if
-one is mounted: it signs the owner in, takes POSTs (same-origin, with a
-CSRF token, bodies capped) and sends its own security headers. The caps
-above apply to it too.
+Everything under /settings (and the board's old settings addresses) goes
+to the settings site (settingsite.py): it signs the owner in, takes POSTs
+(same-origin, with a CSRF token, bodies capped) and has its own security
+headers, with scripts only on the setup wizard's pages.
+
+The dashboard is the rest, while it is on (DashboardApp.dashboard_on): read
+only, with no password: only GET and HEAD, only files from an allowlist read
+into memory at start. While it is off (its view is off, the settings aren't
+set up or don't load), / goes to the settings, /healthz is still answered,
+and its page, files and API are not found. Every response, errors
+included, carries the security headers: the dashboard's while it is on,
+else the settings site's.
 """
 
 from __future__ import annotations
@@ -33,12 +39,12 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from . import dashsettings
+from . import settingsite
 from .auth import local_host, private_address
 from .snapshot import Hub
 
 if TYPE_CHECKING:
-    from .dashsettings import SettingsArea
+    from .settingsite import SettingsSite
 
 log = logging.getLogger(__name__)
 
@@ -142,18 +148,20 @@ Recent = Callable[[str, str, str, int], list]  # (mode, route, scheduled, days) 
 
 @dataclass
 class DashboardApp:
-    """What the handlers serve, and the limits they keep to."""
+    """What the handlers serve, and the limits they keep to. Without a hub
+    the dashboard isn't running; with one, it is on while dashboard_on()."""
 
-    hub: Hub
+    hub: Hub | None
     static: StaticFiles
     healthy: Callable[[], bool]
+    settings: SettingsSite
+    dashboard_on: Callable[[], bool] = lambda: True
     recent: Recent | None = None  # History.recent, or None without a history
     history_days: int = 90
     allowed_hosts: frozenset[str] = frozenset()
     client_allowed: Callable[[str], bool] = private_address
     heartbeat: float = HEARTBEAT_S
     stream_seconds: float = STREAM_SECONDS
-    settings: "SettingsArea | None" = None  # /settings, or None: then it is not found
 
 
 def _host_name(host: str) -> str:
@@ -176,6 +184,7 @@ def _matches(header: str | None, etag: str) -> bool:
 class _Handler(BaseHTTPRequestHandler):
     timeout = REQUEST_TIMEOUT_S  # a client that stalls lets go of its thread
     server: "DashboardServer"
+    _security: dict[str, str] | None = None  # this request's security headers, once its path is known
 
     def version_string(self) -> str:
         return "departureboard"  # no Python or OS version for anyone probing
@@ -189,8 +198,28 @@ class _Handler(BaseHTTPRequestHandler):
 
     # Responses
 
+    def _on(self) -> bool:
+        """Whether the dashboard is on: running, and its view on now. Off if that can't be told."""
+        if self.app.hub is None:
+            return False
+        try:
+            return bool(self.app.dashboard_on())
+        except Exception as error:  # noqa: BLE001 - the settings still answer
+            log.warning("Can't tell whether the dashboard is on: %s", type(error).__name__)
+            return False
+
+    def _security_for(self, path: str | None) -> dict[str, str]:
+        """The security headers for `path` (None: not known): the settings
+        site's for its own paths and while the dashboard is off, so scripts
+        run only on the wizard's pages then; else the dashboard's."""
+        if path is not None and settingsite.owns(path):
+            return settingsite.headers_for(path)
+        return SECURITY_HEADERS if self._on() else settingsite.SETTINGS_HEADERS
+
     def _head(self, status: int, content_type: str | None, length: int | None, cache: str = "no-store",
-              extra: dict[str, str] | None = None, security: dict[str, str] = SECURITY_HEADERS) -> None:
+              extra: dict[str, str] | None = None, security: dict[str, str] | None = None) -> None:
+        if security is None:
+            security = self._security if self._security is not None else self._security_for(None)
         self.send_response(status)
         for name, value in security.items():
             self.send_header(name, value)
@@ -204,7 +233,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _send(self, status: int, body: bytes, content_type: str = _TEXT, cache: str = "no-store",
-              extra: dict[str, str] | None = None, security: dict[str, str] = SECURITY_HEADERS) -> None:
+              extra: dict[str, str] | None = None, security: dict[str, str] | None = None) -> None:
         self._head(status, content_type, len(body), cache, extra, security)
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -229,7 +258,8 @@ class _Handler(BaseHTTPRequestHandler):
             phrase = HTTPStatus(code).phrase
         except ValueError:
             phrase = "Error"
-        self._send(code, phrase.encode())
+        # The request's path, if it got that far, may be a previous request's.
+        self._send(code, phrase.encode(), security=self._security_for(None))
 
     # Requests
 
@@ -252,11 +282,12 @@ class _Handler(BaseHTTPRequestHandler):
         return not (local_host(hosts[0]) or _host_name(hosts[0]) in self.app.allowed_hosts)
 
     def _handle(self) -> None:
+        path = self.path.split("?", 1)[0].split("#", 1)[0]
+        self._security = self._security_for(path)
         if self._outsider():
             self._error(403)
             return
-        path = self.path.split("?", 1)[0].split("#", 1)[0]
-        if self.app.settings is not None and dashsettings.owns(path):
+        if settingsite.owns(path):
             self._settings(path)
             return
         if self.command not in ("GET", "HEAD"):
@@ -266,7 +297,9 @@ class _Handler(BaseHTTPRequestHandler):
         if len(raw) > MAX_PATH or not raw.startswith("/") or any(bad in raw.lower() for bad in _BAD_PATH):
             self._error(404)
             return
-        path = raw.split("?", 1)[0].split("#", 1)[0]
+        if not self._on():
+            self._off(path)
+            return
         if path.startswith("/api/"):
             if self.headers.get("Sec-Fetch-Site", "").strip().lower() == "cross-site":
                 self._error(403)
@@ -296,6 +329,16 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(200, b"ok")
             else:
                 self._send(503, b"unavailable")
+        else:
+            self._error(404)
+
+    def _off(self, path: str) -> None:
+        """While the dashboard is off: its page goes to the settings, and the
+        container's health check still hears that the server is up."""
+        if path == "/":
+            self._send(303, b"", extra={"Location": settingsite.PREFIX})
+        elif path == "/healthz":
+            self._send(200, b"ok")
         else:
             self._error(404)
 
@@ -363,17 +406,16 @@ class _Handler(BaseHTTPRequestHandler):
             "days": days,
         })
 
-    # The settings area
+    # The settings site
 
     def _settings(self, path: str) -> None:
-        security = dashsettings.headers_for(path)
         raw = self.path
         if len(raw) > MAX_PATH or any(bad in raw.lower() for bad in _BAD_PATH):
-            self._send(404, b"Not Found", security=security)
+            self._send(404, b"Not Found")
             return
         query = raw.split("#", 1)[0].partition("?")[2]
         reply = self.app.settings.handle(self.command, path, query, self.headers, self.client_address[0], self.rfile)
-        self._send(reply.status, reply.body, reply.content_type, extra=reply.headers, security=security)
+        self._send(reply.status, reply.body, reply.content_type, extra=reply.headers)
 
     # Server-sent events
 

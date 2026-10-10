@@ -1,7 +1,7 @@
 """Signing in to a page on the home network: the password, sessions, form
 tokens, the lockout after wrong guesses, and the checks every request passes.
 
-Shared by the settings page (web.py) and the dashboard server. The password
+Used by the settings site (settingsite.py) under the one server. The password
 lives in a file only the service user can read. It is set on the Pi itself,
 or on the page with a one-time code shown on the board (see ResetCodes), so
 being on the network is not enough to claim it. A session is a random token in an
@@ -397,8 +397,8 @@ def outsider(address: str, host: str | None) -> bool:
 # a one-time code shown on the board's own display: whoever can read the
 # board is in the home, which being on the network doesn't prove.
 #
-# Two processes share the state folder as the same user: the settings page
-# (`web`) issues and checks codes; the board (`run`, each minute or in a
+# Two processes share the state folder as the same user: the settings site
+# (`serve`) issues and checks codes; the board (`run`, each minute or in a
 # loop) only shows them. So there are three files:
 #
 #   reset.json          what `verify` needs: a salted sha256 of the code, its
@@ -453,7 +453,7 @@ def spaced(code: str) -> str:
 
 
 def show_in_log(code: str, expires: float) -> None:
-    """A `show` for where there is no board (the dashboard's container): the
+    """Where a code goes when there is no board to show it (or its view is off): the
     log, which only the owner can read. The one place a code is logged on purpose."""
     until = time.strftime("%H:%M", time.localtime(expires))
     log.warning("Settings reset code: %s, valid until %s", spaced(code), until)
@@ -467,16 +467,20 @@ class ResetCodes:
     """One-time codes that prove someone can see the board (or the log, or the
     command line). See the notes above for the files and why.
 
-    `show(code, expires)` is where a new code goes; without one it is handed
-    to the board through reset-display.json.
+    `show(code, expires)` is where a new code goes. Without one, each code
+    asks `to_board()`: true hands it to the board through
+    reset-display.json, false puts it in the log (show_in_log), so turning
+    the board view on or off changes where the next code goes.
     """
 
-    def __init__(self, folder: Path | str, show: Callable[[str, float], None] | None = None) -> None:
+    def __init__(self, folder: Path | str, show: Callable[[str, float], None] | None = None,
+                 to_board: Callable[[], bool] = lambda: True) -> None:
         self._folder = Path(folder)
         self._record = self._folder / "reset.json"
         self._display = self._folder / "reset-display.json"
         self._lock_path = self._folder / "reset.lock"
-        self._show = show or self._hand_to_board
+        self._show = show
+        self._to_board = to_board
 
     def issue(self, now: float, limit: bool = True) -> str:
         """A new code, valid for RESET_CODE_SECONDS, replacing any before it,
@@ -498,7 +502,12 @@ class ResetCodes:
                 "code": {"salt": salt.hex(), "hash": _code_hash(salt, code), "expires": expires, "tries": 0},
             })
             self._display.unlink(missing_ok=True)  # it showed the old code, void now
-            self._show(code, expires)
+            if self._show is not None:
+                self._show(code, expires)
+            elif self._to_board():
+                self._hand_to_board(code, expires)
+            else:
+                show_in_log(code, expires)
         log.info("Settings reset code issued, valid for %d minutes", RESET_CODE_SECONDS // 60)
         return code
 

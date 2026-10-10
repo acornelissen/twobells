@@ -1068,16 +1068,18 @@ def test_dashboard_reset_code_prints_one_code_the_settings_will_take(tmp_path, n
 
 
 def test_the_dashboards_setup_wizard_is_named_for_it_and_offers_its_keys(dashboard_config, tmp_path):
-    from departureboard import cli, dashform
-
+    from departureboard import cli
+    from departureboard.installs import install_named
+    from departureboard.schema import keys
     from departureboard.store import Store
 
     folder = tmp_path / "dash"
     folder.mkdir()
-    area = cli._settings_area(Store.open(dashboard_config, tmp_path / "nonexistent", state_dir=folder))
-    status, body = area._setup.handle("begin", {})
+    store = Store.open(dashboard_config, tmp_path / "nonexistent", state_dir=folder)
+    site = cli._settings_site(store, install_named("desktop"), True)
+    status, body = site.setup.handle("begin", {})
     assert status == 200 and body["title"] == "Set up your dashboard" and body["noun"] == "dashboard"
-    assert [k["name"] for k in body["keys"]] == [name for name, _, _ in dashform.KEYS]
+    assert [k["name"] for k in body["keys"]] == [name for name, _, _ in keys("general", "dashboard")]
     assert {"RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"} <= {k["name"] for k in body["keys"]}
     assert not [k for k in body["keys"] if k["name"].startswith("TAPI_")]
 

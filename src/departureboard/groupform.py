@@ -1,9 +1,8 @@
 """One settings form for any of the groups of settings in schema.FIELDS.
 
-The Pi's settings page shows the general and board groups
-(settingsform.SettingsForm), the dashboard's the general and dashboard
-groups (dashform.DashboardForm); each wraps a GroupForm. What a host
-puts around the form (its heading, signing out, its links) comes from it.
+Each tab of the settings site (settingsite.py) is a GroupForm of one
+group: General, Board or Dashboard. What the site puts around the form
+(its heading, signing out, the tabs) comes from it.
 
 Saved values go to settings.toml in the store (layered over config.toml)
 and keys to the secrets.env beside it, merged into what is there
@@ -19,6 +18,7 @@ from __future__ import annotations
 
 import html
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
@@ -57,6 +57,19 @@ def neither_on(data: dict, fields: dict[str, str], noun: str) -> dict[str, str]:
         return {f"{present[0]}_enabled": f"Trains and buses can't both be off, or the {noun} would show nothing. "
                                          "Turn one on."}
     return {}
+
+
+def check_views(data: dict, env: Mapping[str, str], folder: Path, install: Install) -> None:
+    """Raise (ConfigError) unless merged settings `data` load in every view
+    that would be on (or, with none on, every view `install` offers), with
+    the store in `folder`. What the forms and setup check before saving."""
+    from .dashconfig import _build
+
+    on = schema.views(data, install) or install.offered
+    if "board" in on:
+        settings_from(data, env)
+    if "dashboard" in on:
+        _build(data, env, folder)
 
 
 def edited(raw: str, shown: str) -> bool:
@@ -169,15 +182,7 @@ class GroupForm:
     # Saving
 
     def _loads(self, data: dict, env: Mapping[str, str]) -> None:
-        """Raise unless merged settings load in every view that would be on
-        (or, with none on, every view this install offers)."""
-        from .dashconfig import _build
-
-        on = schema.views(data, self._install) or self._install.offered
-        if "board" in on:
-            settings_from(data, env)
-        if "dashboard" in on:
-            _build(data, env, self._store.folder)
+        check_views(data, env, self._store.folder, self._install)
 
     def save(self, fields: dict[str, str]) -> dict[str, str]:
         """Save the fields; field name -> error, or empty when saved."""

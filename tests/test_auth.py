@@ -593,6 +593,20 @@ def test_only_the_log_hook_ever_logs_a_code(tmp_path, caplog):
     assert not (tmp_path / "reset-display.json").exists()
 
 
+def test_each_code_goes_to_the_board_or_the_log_as_the_board_view_is_now(tmp_path, caplog):
+    caplog.set_level("DEBUG")
+    board = {"on": True}
+    codes = ResetCodes(tmp_path, to_board=lambda: board["on"])
+    code = codes.issue(T0)
+    assert displayed(tmp_path)["code"] == code
+    assert not any(code[:3] in r.getMessage() and code[3:] in r.getMessage() for r in caplog.records)
+    board["on"] = False  # the board view turned off: the next code goes to the log
+    code = codes.issue(T0 + RESET_ISSUE_GAP_S)
+    assert not (tmp_path / "reset-display.json").exists()  # and the old one is off the board
+    assert any(r.getMessage().startswith(f"Settings reset code: {code[:3]} {code[3:]}") for r in caplog.records)
+    assert codes.verify(code, T0 + RESET_ISSUE_GAP_S + 1)
+
+
 def test_only_one_of_many_simultaneous_checks_uses_a_code(tmp_path):
     code = ResetCodes(tmp_path).issue(T0)
     results = []
