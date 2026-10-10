@@ -571,7 +571,9 @@ def test_root_is_refused_a_store_that_belongs_to_the_services_user(root_on_their
 
 
 @pytest.mark.parametrize("command", [
-    ["timetable", "--needed"],  # update.sh asks this; it only reads
+    ["timetable", "--needed"],  # query needs-timetable's old name; it only reads
+    ["query", "views"],  # install.sh and update.sh ask these
+    ["query", "needs-timetable"],
     ["probe", "train"],
     ["route", "341", "--stop", "A", "--noc", "BNML"],
 ])
@@ -1359,6 +1361,77 @@ def test_the_fetch_service_is_listed_and_its_old_name_hidden_but_works():
         assert (args.handler, args.install, args.state_dir) == (_fetch, "pi", None)
     with pytest.raises(SystemExit):
         parser.parse_args(["fetch", "--install", "docker"])  # Docker and a desktop fetch in-process
+
+
+def _query(tmp_path, what, config="", saved=""):
+    """`departureboard query` as the Pi's scripts ask it, with the board's store at tmp_path/state."""
+    state = tmp_path / "state"
+    state.mkdir(exist_ok=True)
+    (tmp_path / "config.toml").write_text(f'state_file = "{state / "state.json"}"\n{config}')
+    if saved:
+        (state / "settings.toml").write_text(saved)
+    return main(["query", what, "--install", "pi", "--config", str(tmp_path / "config.toml")])
+
+
+@pytest.mark.parametrize("config, saved, out", [
+    ("", "", "board\n"),  # a Pi's view unless [app] views says
+    ("", '[app]\nviews = ["board", "dashboard"]\n', "board\ndashboard\n"),  # switched on in the settings
+    ('[app]\nviews = ["dashboard"]\n', "", "dashboard\n"),
+    ('[app]\nviews = ["board"]\n', "[app]\nviews = []\n", ""),  # none: the settings site only
+])
+def test_query_views_prints_each_view_on_one_line(tmp_path, capsys, config, saved, out):
+    assert _query(tmp_path, "views", config, saved) == 0
+    assert capsys.readouterr().out == out
+
+
+@pytest.mark.parametrize("config, saved, out", [
+    ("", "", "inky\n"),
+    ('display = "hdmi-1280x400"\n', "", "hdmi-1280x400\n"),
+    ('display = "waveshare-10in85g"\n', 'display = "hdmi-1280x400"\n', "waveshare-10in85g\n"),  # config.toml's alone
+])
+def test_query_display_prints_the_display_config_toml_sets(tmp_path, capsys, config, saved, out):
+    assert _query(tmp_path, "display", config, saved) == 0
+    assert capsys.readouterr().out == out
+
+
+@pytest.mark.parametrize("config, saved, wanted", [
+    ('[bus]\nsource = "bods"\n', "", True),
+    ("[bus]\n", '[bus]\nsource = "bods"\n', True),  # chosen on the settings page or in the wizard
+    ('[bus]\nsource = "bods"\n', "[bus]\nenabled = false\n", False),  # buses switched off since
+    ("[bus]\n", "", False),  # TransportAPI
+    ('[train]\ncrs = "GLO"\n', "", False),  # no buses at all
+])
+def test_query_needs_timetable_says_yes_or_no_and_exits_so(tmp_path, capsys, config, saved, wanted):
+    assert _query(tmp_path, "needs-timetable", config, saved) == (0 if wanted else 1)
+    assert capsys.readouterr().out == ("yes\n" if wanted else "no\n")
+
+
+@pytest.mark.parametrize("what, config, said", [
+    ("views", '[app]\nviews = "board"\n', "[app] views must be a list of views"),
+    ("display", 'display = "hdmi"\n', "Unknown display 'hdmi'"),
+    ("needs-timetable", "[bus\n", "Expected ']' at the end of a table declaration"),
+])
+def test_query_says_why_when_the_settings_cant_be_read(tmp_path, capsys, what, config, said):
+    (tmp_path / "config.toml").write_text(config)
+    assert main(["query", what, "--install", "pi", "--config", str(tmp_path / "config.toml"),
+                 "--state-dir", str(tmp_path / "state")]) == 2
+    out = capsys.readouterr()
+    assert said in out.err and out.out == ""
+
+
+def test_query_needs_no_keys_and_is_hidden(tmp_path, monkeypatch, capsys):
+    import re
+
+    from departureboard.cli import _parser
+
+    for name in ("RDM_API_KEY", "BODS_API_KEY", "TAPI_APP_ID", "TAPI_APP_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    assert _query(tmp_path, "views") == 0 and capsys.readouterr().out == "board\n"
+    assert not (tmp_path / "state" / "settings.toml").exists()  # nothing written
+    listed = re.search(r"\{([a-z,]+)\}", _parser().format_help()).group(1).split(",")
+    assert "query" not in listed
+    with pytest.raises(SystemExit):
+        _parser().parse_args(["query", "keys"])
 
 
 class FakeServer:

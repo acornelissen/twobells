@@ -67,7 +67,7 @@ from .timetable import TimetableBusy, TimetableError
 from .transportapi import TransportApiBusSource, redact_credentials
 from .installs import DEFAULT as DEFAULT_INSTALL
 from .installs import INSTALLS, Install, install_named
-from .schema import views
+from .schema import BOARD_DEFAULTS, views
 from .version import package_version
 from .view import SetupView, build_view
 from .themes import THEMES, theme_named
@@ -658,6 +658,41 @@ def _wants_timetable(store: Store) -> bool:
     return isinstance(bus, dict) and is_enabled(data, "bus") and bus.get("source") == "bods"
 
 
+QUERIES = ("views", "display", "needs-timetable")
+
+
+def _query(args) -> int:
+    """For install.sh and update.sh: one thing about the settings in force
+    (config.toml with the saved settings over it), one value per line. No
+    keys are read and nothing is written.
+      views            each view switched on (none: no lines)
+      display          the display config.toml sets (it alone may)
+      needs-timetable  yes or no: whether buses come from the BODS timetable;
+                       exits 0 for yes and 1 for no, for `if`
+    Settings that can't be read exit 2, saying why."""
+    install = install_named(args.install)
+    try:
+        store = Store.open(args.config, None, state_dir=args.state_dir, install=install.name)
+        if args.what == "needs-timetable":
+            wanted = _wants_timetable(store)
+            print("yes" if wanted else "no")
+            return 0 if wanted else 1
+        data = store.data()
+    except OSError as error:
+        print(f"Can't read the settings: {error.strerror or error}", file=sys.stderr)
+        return 2
+    if args.what == "views":
+        values = list(views(data, install))
+    else:
+        display = data.get("display", BOARD_DEFAULTS["display"])
+        if not isinstance(display, str) or display not in DISPLAY_PANELS:
+            raise ConfigError(f"Unknown display {display!r}; choose from {', '.join(sorted(DISPLAY_PANELS))}")
+        values = [display]
+    for value in values:
+        print(value)
+    return 0
+
+
 def _timetable(args) -> int:
     if args.needed:  # for update.sh: exit 0 if the timetable is wanted, 1 if not; no keys needed
         try:
@@ -1101,8 +1136,9 @@ def _port(text: str) -> int:
     return port
 
 
-# Old commands kept working, unlisted, until the first public release.
-HIDDEN_COMMANDS = ("web", "dashboard")
+# Old commands kept working, unlisted, until the first public release; and
+# query, for the Pi's scripts.
+HIDDEN_COMMANDS = ("web", "dashboard", "query")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -1135,8 +1171,16 @@ def _parser() -> argparse.ArgumentParser:
 
     tt = with_config(sub.add_parser("timetable", help="build the BODS bus timetable for your stops, if due"))
     tt.add_argument("--force", action="store_true", help="build it now, as after changing operators")
-    tt.add_argument("--needed", action="store_true", help=argparse.SUPPRESS)  # update.sh asks this
+    tt.add_argument("--needed", action="store_true", help=argparse.SUPPRESS)  # query needs-timetable's old name
     tt.set_defaults(handler=_timetable)
+
+    # For install.sh and update.sh, so they ask the app rather than read config.toml. Hidden.
+    query = sub.add_parser("query")
+    query.add_argument("what", choices=QUERIES)
+    query.add_argument("--install", choices=list(INSTALLS), default="pi")
+    query.add_argument("--config", default=DEFAULT_CONFIG)
+    query.add_argument("--state-dir")
+    query.set_defaults(handler=_query)
 
     demo = sub.add_parser("demo", help="render sample data (a Glossop morning) to a PNG")
     demo.add_argument("--png", default="preview.png")
