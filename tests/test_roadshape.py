@@ -180,8 +180,8 @@ class Router:
             raise self.error
         return self.answers.pop(0) if self.answers else ROAD
 
-    def shapes(self, pairs):
-        return segment_shapes(pairs, self.get, clock=self.clock, sleep=self.sleep)
+    def shapes(self, pairs, **options):
+        return segment_shapes(pairs, self.get, clock=self.clock, sleep=self.sleep, **options)
 
 
 def pairs_along(count):
@@ -189,7 +189,7 @@ def pairs_along(count):
     return {(f"A{i}", f"B{i}"): (START, END) for i in range(count)}
 
 
-def test_one_request_per_pair_at_most_two_a_second():
+def test_one_request_per_pair_at_most_one_a_second():
     router = Router()
     pairs = {(SUNLAWS, ST_MARYS_E): (START, END), (ST_MARYS_E, SUNLAWS): (END, START)}
     shapes = router.shapes(pairs)
@@ -200,7 +200,7 @@ def test_one_request_per_pair_at_most_two_a_second():
         "-1.955759,53.443511;-1.959026,53.443494?overview=full&geometries=geojson",
     ]
     assert shapes[(SUNLAWS, ST_MARYS_E)] == parse_route(ROAD, START, END)
-    assert router.slept == [pytest.approx(0.4)]  # half a second between requests, less the 0.1 s the first took
+    assert router.slept == [pytest.approx(0.9)]  # a second between requests, less the 0.1 s the first took
 
 
 def test_stops_next_to_each_other_or_outside_the_uk_are_not_asked_about():
@@ -258,7 +258,7 @@ def test_asking_stops_when_the_time_is_up(monkeypatch):
     router = Router()
     monkeypatch.setattr(roadshape, "MAX_SECONDS", 1.2)
     router.shapes(pairs_along(10))
-    assert len(router.urls) == 3  # at 0, 0.5 and 1.0 s
+    assert len(router.urls) == 2  # at 0 and 1 s
 
 
 def test_the_log_never_repeats_the_url_or_a_key(caplog):
@@ -269,16 +269,45 @@ def test_the_log_never_repeats_the_url_or_a_key(caplog):
     assert "the router isn't answering" in caplog.text
 
 
-def test_the_default_asks_the_router_through_the_capped_getter(monkeypatch):
+def test_cancelling_stops_the_asking_within_a_few_seconds(caplog):
+    router = Router()
+    start = router.now
+    # Cancelled once the first request has been sent.
+    shapes = router.shapes(pairs_along(10), cancelled=lambda: len(router.urls) > 0)
+    assert len(router.urls) == 1 and len(shapes) == 1  # the road already found is kept
+    assert router.now - start < 3
+    assert "stopped asking: cancelled" in caplog.text
+
+
+def test_progress_follows_the_pairs_asked_about():
+    seen = []
+    pairs = pairs_along(3) | {("A", "B"): (START, (START[0] + 0.0001, START[1]))}  # too close to ask about
+    Router().shapes(pairs, progress=lambda done, total: seen.append((done, total)))
+    assert seen == [(0, 3), (1, 3), (2, 3), (3, 3)]
+
+
+def test_progress_counts_no_more_than_max_pairs(monkeypatch):
+    monkeypatch.setattr(roadshape, "MAX_PAIRS", 2)
+    seen = []
+    Router().shapes(pairs_along(5), progress=lambda done, total: seen.append((done, total)))
+    assert seen == [(0, 2), (1, 2), (2, 2)]
+
+
+def test_the_default_asks_the_router_politely_through_the_capped_getter(monkeypatch):
     asked = []
 
-    def get_bytes(url, max_bytes, timeout):
-        asked.append((url, max_bytes, timeout))
+    def get_bytes(url, max_bytes, timeout, headers, deadline):
+        asked.append((url, max_bytes, timeout, headers, deadline))
         return ROAD
 
     monkeypatch.setattr(roadshape.http, "get_bytes", get_bytes)
     assert roadshape.router_get("https://x", 10) == ROAD
-    assert asked == [("https://x", 10, roadshape.TIMEOUT)]
+    assert asked == [("https://x", 10, roadshape.TIMEOUT, {"User-Agent": roadshape.USER_AGENT},
+                      roadshape.REQUEST_DEADLINE)]
+    # FOSSGIS's policy: a valid user agent, saying who is asking and how to reach them.
+    assert roadshape.USER_AGENT.startswith("inky-departures/")
+    assert "https://github.com/acornelissen/inky-departures" in roadshape.USER_AGENT
+    assert roadshape.REQUEST_DEADLINE < 30 and roadshape.REQUEST_INTERVAL >= 1.0
 
 
 def test_shapes_are_far_smaller_than_the_answer():

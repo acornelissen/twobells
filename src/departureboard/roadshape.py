@@ -18,9 +18,18 @@ to at most MAX_POINTS points between the stops, rounded to about a metre.
 
 Anything else leaves that pair straight, and so does running out: asking
 stops after MAX_PAIRS pairs, after MAX_SECONDS, after MAX_FAILURES failures
-in a row, and at once when the router can't be reached or says to slow down.
-At most one request every REQUEST_INTERVAL seconds, as a polite client of a
-free service. Pairs used by the most journeys are asked first.
+in a row, when cancelled, and at once when the router can't be reached or
+says to slow down. Pairs used by the most journeys are asked first.
+
+FOSSGIS's usage policy for the router (https://routing.openstreetmap.de/about.html)
+asks for at most one request a second from a valid user agent, and no heavy
+use: so one request every REQUEST_INTERVAL seconds, naming the project and
+how to reach it (USER_AGENT), each given up after REQUEST_DEADLINE however
+slowly the router answers.
+
+The car router doesn't know a bus may use bus gates and bus lanes, so where a
+bus takes one it sends the car the long way round. The length check usually
+refuses such a road, and that pair is drawn straight.
 """
 
 from __future__ import annotations
@@ -42,12 +51,14 @@ from .status import safe_message
 log = logging.getLogger(__name__)
 
 ROUTER_URL = "https://routing.openstreetmap.de/routed-car/route/v1/driving"
-TIMEOUT = 15.0  # seconds
-REQUEST_INTERVAL = 0.5  # seconds: at most two requests a second
-MAX_PAIRS = 400  # requests per build; the rest are drawn straight
-# Per build: MAX_PAIRS takes 200 s at two a second, and the timetable service
-# has 30 minutes for the downloads as well.
-MAX_SECONDS = 5 * 60
+# FOSSGIS's policy (https://routing.openstreetmap.de/about.html): at most one
+# request a second, from a valid user agent; no scraping, no heavy use.
+USER_AGENT = "inky-departures/0.1 (e-paper departure board bus maps; https://github.com/acornelissen/inky-departures)"
+REQUEST_INTERVAL = 1.0  # seconds between requests, at least
+TIMEOUT = 10.0  # seconds for each step of a request
+REQUEST_DEADLINE = 15.0  # seconds for a whole request, however slowly the router sends
+MAX_PAIRS = 300  # requests per build; the rest are drawn straight
+MAX_SECONDS = 5 * 60  # per build: MAX_PAIRS at one a second
 MAX_FAILURES = 5  # in a row, before the router is taken to be down
 # A real answer for two stops a few km apart is a few kB.
 MAX_ROUTE_BYTES = 300_000
@@ -68,7 +79,8 @@ _M_PER_DEG = 111_320
 
 
 def router_get(url: str, max_bytes: int) -> bytes:
-    return http.get_bytes(url, max_bytes, timeout=TIMEOUT)
+    return http.get_bytes(url, max_bytes, timeout=TIMEOUT, headers={"User-Agent": USER_AGENT},
+                          deadline=REQUEST_DEADLINE)
 
 
 def shape_key(pair: Pair) -> str:
@@ -189,6 +201,12 @@ def parse_route(body: bytes, start: Point, end: Point) -> list[Point]:
     return [(round(lat, DIGITS), round(lon, DIGITS)) for lat, lon in kept[1:-1]]
 
 
+def _worth_asking(start: Point, end: Point) -> bool:
+    """Whether to ask the router about two stops: both in the UK, and far
+    enough apart for the road between them to matter."""
+    return in_uk(*start) and in_uk(*end) and _metres(start, end) >= SHORTEST_M
+
+
 def _unreachable(error: Exception) -> bool:
     """Whether asking again would be no use, or rude: the router can't be
     reached, is failing, or says to slow down."""
@@ -203,24 +221,31 @@ def segment_shapes(
     *,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
+    cancelled: Callable[[], bool] = lambda: False,
+    progress: Callable[[int, int], None] = lambda done, total: None,
 ) -> dict[Pair, list[Point]]:
     """The road between each pair of stops (ATCO codes, with their (lat, lon)
     positions), from the car router, one request per pair. A pair left out
     is drawn straight: the router failed, its answer wasn't plausible, the
-    road is straight anyway, or asking had stopped (see the module's notes).
-    Never raises for the router's sake."""
+    road is straight anyway, or asking had stopped (see the module's notes,
+    and `cancelled()`, asked before each request). `progress(done, total)`
+    follows the requests. Never raises for the router's sake."""
     limiter = RateLimiter(REQUEST_INTERVAL, clock, sleep)
     deadline = clock() + MAX_SECONDS
     shapes: dict[Pair, list[Point]] = {}
     asked = failed = in_a_row = 0
     first_error = stopped = None
-    for pair, (start, end) in pairs.items():
+    wanted = {pair: ends for pair, ends in pairs.items() if _worth_asking(*ends)}
+    total = min(len(wanted), MAX_PAIRS)
+    progress(0, total)
+    for pair, (start, end) in wanted.items():
         if asked >= MAX_PAIRS:
             stopped = f"asked about {MAX_PAIRS} stop pairs"
             break
-        if not (in_uk(*start) and in_uk(*end)) or _metres(start, end) < SHORTEST_M:
-            continue
         limiter.wait()
+        if cancelled():
+            stopped = "cancelled"
+            break
         if clock() >= deadline:
             stopped = f"took {MAX_SECONDS} s"
             break
@@ -236,6 +261,8 @@ def segment_shapes(
                 stopped = "the router isn't answering"
                 break
             continue
+        finally:
+            progress(asked, total)
         in_a_row = 0
         if road:
             shapes[pair] = road
