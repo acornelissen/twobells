@@ -7,7 +7,7 @@ markup: the stations and stops, walk times, how many rows and how often to
 check ([dashboard]), the weather, and the dashboard's keys.
 
 Saving merges the fields into the dashboard's own overlay (see
-dashconfig.overlay_target): nothing is written unless every field passes
+dashconfig.dashboard_target): nothing is written unless every field passes
 its check and the dashboard's settings then load. Keys are write-only: the
 page says whether one is set, never its value.
 """

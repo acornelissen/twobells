@@ -1,11 +1,11 @@
 """Loads config.toml (settings) and the environment (secrets) into a Board.
 
-Settings saved from the web page live in settings.toml next to the state
-file and are layered over config.toml, so the service never writes to /etc
-and comments in a hand-edited config.toml survive. Only the settings the
-page and setup save are read from it (SAVED_KEYS); anything else, like the
-addresses the keys are sent to, is set in config.toml. Keys saved there go
-in a secrets.env beside it, layered over the main one.
+Settings saved from the web page live in settings.toml in the store (see
+store.py) and are layered over config.toml, so the service never writes to
+/etc and comments in a hand-edited config.toml survive. Only the settings
+the page and setup save are read from it (SAVED_KEYS); anything else, like
+the addresses the keys are sent to, is set in config.toml. Keys saved there
+go in a secrets.env beside it, layered over the main one.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import tomllib
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
 from zoneinfo import ZoneInfo
 
 from .app import Board, SourceConfig, Tracker, Weather, reset_code_page
@@ -34,6 +34,9 @@ from .route import RouteStop, RouteStrip
 from .walk import DEFAULT_STOP, WalkTimes
 from .weather import OpenMeteoSource
 
+if TYPE_CHECKING:
+    from .store import Store
+
 log = logging.getLogger(__name__)
 
 
@@ -46,18 +49,19 @@ SECRETS_OVERLAY_NAME = "secrets.env"
 
 
 def state_dir(data: dict) -> Path | None:
-    """Where the web page saves settings: beside an explicitly set state_file.
-    Without one there is no overlay, rather than whatever is in the working directory."""
+    """The folder of already-read settings' state_file, if they name one."""
     state_file = data.get("state_file")
     if state_file is not None and not isinstance(state_file, str):
         raise ConfigError(f"state_file must be a path in quotes, not {state_file!r}")
     return Path(state_file).parent if state_file else None
 
 
-def overlay_paths(config_path: Path | str) -> tuple[Path, Path] | None:
-    """(settings overlay, secrets overlay) for a config file, if it has a state_file."""
-    folder = state_dir(read_base(config_path))
-    return (folder / OVERLAY_NAME, folder / SECRETS_OVERLAY_NAME) if folder else None
+def overlay_paths(config_path: Path | str) -> tuple[Path, Path]:
+    """(settings overlay, secrets overlay) in the store for a config file."""
+    from .store import Store
+
+    store = Store.open(config_path)
+    return store.settings_file, store.secrets_file
 
 
 def merge(base: dict, over: dict) -> dict:
@@ -79,11 +83,6 @@ def read_base(path: Path | str) -> dict:
         return tomllib.loads(Path(path).read_text(encoding="utf-8"))
     except (tomllib.TOMLDecodeError, UnicodeDecodeError) as error:
         raise ConfigError(f"{path}: {error}") from error
-
-
-def read_overlay(data: dict) -> dict:
-    """The web page's saved settings for already-read config.toml data; empty if none."""
-    return read_overlay_in(state_dir(data))
 
 
 # What the board's settings.toml may hold, by table (None is the top level):
@@ -160,9 +159,10 @@ def load_env_file(path: Path | str) -> dict[str, str]:
 
 
 def read_config(path: Path | str) -> dict:
-    """config.toml with the web page's settings layered over it."""
-    data = read_base(path)
-    return merge(data, read_overlay(data))
+    """config.toml with the settings saved in its store layered over it."""
+    from .store import Store
+
+    return Store.open(path).data()
 
 
 # What config.example.toml has where your station and stops go.
@@ -179,16 +179,18 @@ def _has_placeholder(value) -> bool:
     return False
 
 
-def needs_setup(path: Path | str) -> bool:
-    """Whether the board is still to be set up: there is no config.toml, or
-    it (with the settings saved from the web page over it) still has one of
-    the template's CHANGE_ME placeholders outside a section switched off. A
-    config.toml that can't be read or parsed is not a first run but a fault,
-    for load_config to report."""
+def needs_setup(store: Store | Path | str) -> bool:
+    """Whether the board is still to be set up: there is neither config.toml
+    nor saved settings, or they still have one of the template's CHANGE_ME
+    placeholders outside a section switched off. A config.toml that can't be
+    read or parsed is not a first run but a fault, for load_config to report."""
+    from .store import Store
+
     try:
-        data = switched_on(read_config(path))
-    except FileNotFoundError:
-        return True
+        store = Store.of(store)
+        if not (store.config_path.exists() or store.settings_file.exists()):
+            return True
+        data = switched_on(store.data())
     except (OSError, ConfigError):
         return False
     return _has_placeholder(data)
@@ -198,19 +200,18 @@ def needs_setup(path: Path | str) -> bool:
 _LOOK = ("display", "rotate", "rotate_180", "theme", "accent", "panel_colour", "text_size", "timezone")
 
 
-def first_run_settings(path: Path | str, default_state: Path | str | None = None) -> Settings:
+def first_run_settings(store: Store | Path | str) -> Settings:
     """Settings for a board not yet set up: no departures, the display and
-    look config.toml gives (or the defaults, if they don't load), and the
-    reset code page if config.toml, or else `default_state`, says where the
-    state file is."""
+    look the settings give (or the defaults, if they don't load), and the
+    reset code page, with the state file in the store."""
+    from .store import Store
+
+    store = Store.of(store)
     try:
-        data = read_config(path)
+        data = store.data()
     except (OSError, ConfigError):
         data = {}
-    state = data.get("state_file")
-    if not (isinstance(state, str) and state):
-        state = str(default_state) if default_state else None
-    known = {"state_file": state} if state else {}
+    known = {"state_file": str(store.state_file)}
     try:
         return settings_from({**known, **{key: data[key] for key in _LOOK if key in data}}, {})
     except ConfigError:
@@ -508,17 +509,20 @@ def _rotate(data: dict, epaper: bool) -> int:
 
 
 def load_config(
-    path: Path | str,
+    store: Store | Path | str,
     env: Mapping[str, str],
     bus_stops: dict[str, str] | None = None,
     only: set[str] | None = None,
     display: str | None = None,
     holidays: frozenset[date] = frozenset(),
 ) -> Settings:
-    """Load settings. `only` limits which sources are built, so a probe needs only its own keys.
+    """Load settings from a store (or the store of a config.toml path). `only`
+    limits which sources are built, so a probe needs only its own keys.
     `display` overrides the configured one, as the emulator's --display does. `holidays`
     are bank holiday dates, used unless the settings say to ignore them."""
-    data = read_config(path)
+    from .store import Store
+
+    data = Store.of(store).data()
     if display:
         data["display"] = display
     if bus_stops:
@@ -569,7 +573,7 @@ def settings_from(
         # Bus positions are only drawn on a screen; e-paper never asks for them.
         if not DISPLAY_PANELS[display].epaper:
             tracker = _tracker(data["bus"], env, bus.policy)
-    # Where the settings page leaves a reset code: beside an explicit state_file only, as it does.
+    # Where the settings page leaves a reset code: beside the state file, in the store.
     folder = state_dir(data)
     board = Board(
         title=_text(data, "title", "Departures"),

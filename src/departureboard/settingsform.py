@@ -1,8 +1,8 @@
 """The settings form: what it edits, how each field is checked, and saving.
 
-Saved values go to settings.toml beside the state file (layered over
-config.toml) and keys to the secrets.env beside it, merged into what is
-there (overlay.save_changes), so settings the page doesn't show survive.
+Saved values go to settings.toml in the store (layered over config.toml)
+and keys to the secrets.env beside it, merged into what is there
+(overlay.save_to), so settings the page doesn't show survive.
 Nothing is written unless every field passes its own check and the whole
 configuration then loads. Keys are write-only: the page shows whether one is
 set, never its value.
@@ -17,10 +17,10 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 from zoneinfo import ZoneInfo
 
-from .config import ConfigError, merge, read_base, read_overlay
+from .config import ConfigError, merge
 from .display import DISPLAY_PANELS
 from .holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
 from .schedule import parse_window
@@ -28,6 +28,9 @@ from .setup import _ATCO
 from .state import StateStore
 from .status import render_status
 from .themes import THEMES
+
+if TYPE_CHECKING:
+    from .store import Store
 
 KEYS = (
     ("RDM_API_KEY", "Rail Data Marketplace key", "Trains: the consumer key for Live Departure Board."),
@@ -310,20 +313,23 @@ def _write(path: Path, text: str, mode: int) -> None:
 
 
 class SettingsForm:
-    def __init__(self, config_path: Path | str, load_secrets: Callable[[], dict[str, str]],
+    def __init__(self, store: Store | Path | str, load_secrets: Callable[[], dict[str, str]],
                  clock: Callable[[], datetime] | None = None) -> None:
-        """`clock` gives the board's local time, as a naive datetime; by default
-        the time now in the configured timezone."""
-        self._config_path = Path(config_path)
+        """`store` is where settings are saved (or the store of a config.toml
+        path). `clock` gives the board's local time, as a naive datetime; by
+        default the time now in the configured timezone."""
+        from .store import Store
+
+        self._store = Store.of(store)
         self._load_secrets = load_secrets
         self._clock = clock
 
     def _read(self) -> tuple[dict, str]:
         """The settings in force, and a problem with the saved settings file if
         it can't be read: then config.toml's alone, so the page can replace it."""
-        base = read_base(self._config_path)
+        base = self._store.base()
         try:
-            return merge(base, read_overlay(base)), ""
+            return merge(base, self._store.saved()), ""
         except ConfigError as error:
             return base, str(error)
 
@@ -338,17 +344,14 @@ class SettingsForm:
     def _status(self, data: dict) -> str:
         """The status panel, from the state file the board saves. Read only: the
         board alone writes it."""
-        state_file = data.get("state_file")
-        if not isinstance(state_file, str) or not state_file:
-            return ""
         try:
-            state = StateStore(state_file).load()
+            state = StateStore(self._store.state_file).load()
         except OSError:
             state = None
         division = data.get("bank_holiday_division", ENGLAND_AND_WALES)
         if division not in DIVISIONS:  # the page says so on saving
             division = ENGLAND_AND_WALES
-        return render_status(data, state, self._now(data), read_cache(Path(state_file).parent, division))
+        return render_status(data, state, self._now(data), read_cache(self._store.folder, division))
 
     def _current(self, data: dict) -> dict[str, str]:
         values = {}
@@ -370,7 +373,7 @@ class SettingsForm:
 
     def save(self, fields: dict[str, str]) -> dict[str, str]:
         # Imported here: overlay.py builds on this module's TOML helpers.
-        from .overlay import OverlayError, save_changes
+        from .overlay import OverlayError, save_to
 
         data, broken = self._read()
         display = data.get("display", "inky")
@@ -412,7 +415,7 @@ class SettingsForm:
         # bus operators and routes, the weather position) survive; a broken file
         # can't be merged into, so it is replaced.
         try:
-            save_changes(self._config_path, overlay, keys, self._load_secrets(), replace=bool(broken))
+            save_to(self._store.target(), overlay, keys, self._load_secrets(), replace=bool(broken))
         except OverlayError as error:
             return {"_form": str(error)}
         return {}

@@ -10,8 +10,9 @@ from urllib.parse import urlencode
 import pytest
 
 from departureboard.auth import MAX_FAILURES, Sessions
-from departureboard.dashconfig import dashboard_env, overlay_target
+from departureboard.dashconfig import dashboard_target
 from departureboard.dashform import DashboardForm
+from departureboard.store import Store
 from departureboard.dashserver import DashboardApp, StaticFiles, make_server
 from departureboard.dashsettings import SettingsArea
 from departureboard.snapshot import Hub
@@ -574,7 +575,8 @@ def real(tmp_path, caplog):
     config.write_text(CONFIG)
     folder = tmp_path / "dash"
     folder.mkdir()
-    page = DashboardForm(overlay_target(config, folder), lambda: dashboard_env(ENV, folder))
+    store = Store.open(config, state_dir=folder)
+    page = DashboardForm(dashboard_target(store), lambda: store.env(ENV))
     running = Running(folder, page=page)
     running.area.password.set(PASSWORD)
     running.config = config

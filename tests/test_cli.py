@@ -891,8 +891,8 @@ def test_dashboard_set_password_needs_only_its_folder_as_in_docker(tmp_path, typ
 
 def test_dashboard_set_password_finds_the_folder_as_the_dashboard_does(tmp_path, typed, no_dashboard,
                                                                         monkeypatch):
+    from departureboard import store
     from departureboard.auth import PasswordStore
-    from departureboard.dashconfig import default_state_dir
 
     answers, _ = typed
     config = tmp_path / "config.toml"
@@ -904,27 +904,39 @@ def test_dashboard_set_password_finds_the_folder_as_the_dashboard_does(tmp_path,
     answers += [DASH_PASSWORD] * 2
     assert main(["dashboard", "--config", str(config), "--set-password", "--state-dir", str(tmp_path / "given")]) == 0
     assert (tmp_path / "given" / "web.json").exists()
-    # Neither: the dashboard's default folder.
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    # Neither: this computer's own folder.
+    monkeypatch.setattr(store, "_home", lambda: tmp_path / "home")
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
     config.write_text('[train]\ncrs = "GLO"\n')
     answers += [DASH_PASSWORD] * 2
     assert main(["dashboard", "--config", str(config), "--set-password"]) == 0
-    assert PasswordStore(default_state_dir() / "web.json").check(DASH_PASSWORD)
-    assert str(default_state_dir()).startswith(str(tmp_path))
+    assert PasswordStore(store.platform_folder() / "web.json").check(DASH_PASSWORD)
+    assert store.platform_folder().name == "departureboard"
+    assert str(store.platform_folder()).startswith(str(tmp_path))
 
 
-def test_dashboard_set_password_without_a_folder_or_config_says_how_to_give_one(tmp_path, typed, capsys):
-    code = main(["dashboard", "--config", str(tmp_path / "missing.toml"), "--set-password"])
-    assert code == 2 and "--state-dir" in capsys.readouterr().err
-    assert not typed[1]  # never asked for a password
+def test_dashboard_set_password_without_a_folder_or_config_uses_this_computer_s_folder(tmp_path, typed,
+                                                                                      no_dashboard):
+    from departureboard.auth import PasswordStore
+    from departureboard.store import platform_folder
+
+    typed[0].extend([DASH_PASSWORD] * 2)
+    assert main(["dashboard", "--config", str(tmp_path / "missing.toml"), "--set-password"]) == 0
+    assert PasswordStore(platform_folder() / "web.json").check(DASH_PASSWORD)
 
 
-def test_dashboard_set_password_refuses_the_boards_own_folder(tmp_path, typed, capsys):
-    (tmp_path / "board").mkdir()
-    (tmp_path / "board" / "state.json").write_text("{}")
-    assert main(["dashboard", "--set-password", "--state-dir", str(tmp_path / "board")]) == 2
-    assert "board" in capsys.readouterr().err and not (tmp_path / "board" / "web.json").exists()
+def test_dashboard_set_password_uses_the_same_password_as_the_boards_page(tmp_path, typed, no_dashboard, capsys):
+    import re
+
+    from departureboard.auth import PasswordStore, ResetCodes, show_in_log
+
+    config, state = _web_config(tmp_path)
+    typed[0].extend([DASH_PASSWORD] * 2)
+    assert main(["dashboard", "--config", str(config), "--set-password"]) == 0
+    assert PasswordStore(state / "web.json").check(DASH_PASSWORD)  # what `web` checks
+    assert main(["web", "--config", str(config), "--reset-code"]) == 0
+    code = "".join(re.search(r"Settings reset code: (\d{3}) (\d{3})", capsys.readouterr().out).groups())
+    assert ResetCodes(state, show=show_in_log).verify(code, time.time())  # and the dashboard's codes
 
 
 @pytest.mark.parametrize("first, again, says", [
@@ -1003,14 +1015,13 @@ def test_dashboard_reset_code_prints_one_code_the_settings_will_take(tmp_path, n
 
 
 def test_the_dashboards_setup_wizard_is_named_for_it_and_offers_its_keys(dashboard_config, tmp_path):
-    from types import SimpleNamespace
-
     from departureboard import cli, dashform
+
+    from departureboard.store import Store
 
     folder = tmp_path / "dash"
     folder.mkdir()
-    args = SimpleNamespace(config=str(dashboard_config), secrets=str(tmp_path / "nonexistent"))
-    area = cli._settings_area(args, SimpleNamespace(state_dir=folder))
+    area = cli._settings_area(Store.open(dashboard_config, tmp_path / "nonexistent", state_dir=folder))
     status, body = area._setup.handle("begin", {})
     assert status == 200 and body["title"] == "Set up your dashboard" and body["noun"] == "dashboard"
     assert [k["name"] for k in body["keys"]] == [name for name, _, _ in dashform.KEYS]
@@ -1335,12 +1346,21 @@ def test_the_setup_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypat
     assert [job.state for job in StuckJob.made] == ["failed"]
 
 
-def test_the_setup_service_says_plainly_when_there_is_no_config(tmp_path, capsys, no_runtime_folder):
-    assert main(["setup", "serve", "--config", str(tmp_path / "missing.toml")]) == 2  # and nowhere to answer
-    assert "missing.toml" in capsys.readouterr().err
+def test_the_setup_service_without_a_config_searches_in_systemds_folder(tmp_path, monkeypatch, no_runtime_folder):
+    from departureboard import setupspool
+
+    ran = []
+    monkeypatch.setattr(setupspool.Worker, "run", lambda self: ran.append(self) or 0)
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
+    monkeypatch.setenv("STATE_DIRECTORY", str(tmp_path / "lib"))
+    assert main(["setup", "serve", "--config", str(tmp_path / "missing.toml"),
+                 "--secrets", str(tmp_path / "none.env")]) == 0
+    [worker] = ran
+    assert worker._job_folder == tmp_path / "lib"
+    assert worker._settings() == {"state_file": str(tmp_path / "lib" / "state.json")}
 
 
-@pytest.mark.parametrize("config", ["missing", "not toml", "no state_file"])
+@pytest.mark.parametrize("config", ["not toml", "a folder"])
 def test_the_setup_service_answers_with_why_when_it_cant_read_its_config(tmp_path, monkeypatch, capsys, config):
     from departureboard import setupspool
 
@@ -1351,8 +1371,8 @@ def test_the_setup_service_answers_with_why_when_it_cant_read_its_config(tmp_pat
     path = tmp_path / "config.toml"
     if config == "not toml":
         path.write_text("display = [\n")
-    elif config == "no state_file":
-        path.write_text('display = "hdmi-1280x400"\n')
+    else:
+        path.mkdir()  # as Docker makes one for a file to mount that isn't there
     # A clean stop once each request has its answer, so systemd doesn't start it again and again.
     assert main(["setup", "serve", "--config", str(path), "--secrets", str(tmp_path / "none.env")]) == 0
     [worker] = ran
@@ -1360,10 +1380,30 @@ def test_the_setup_service_answers_with_why_when_it_cant_read_its_config(tmp_pat
     assert "Traceback" not in capsys.readouterr().err
 
 
-def test_the_settings_page_says_plainly_when_there_is_no_config(tmp_path, capsys):
-    assert main(["web", "--config", str(tmp_path / "missing.toml")]) == 2
-    err = capsys.readouterr().err
-    assert "missing.toml" in err and "config.example.toml" in err and "Traceback" not in err
+def test_without_a_config_the_settings_page_starts_in_systemds_folder(tmp_path, monkeypatch, capsys):
+    from departureboard import web
+
+    made = {}
+    real = web.make_handler
+
+    class Server:
+        server_address = ("127.0.0.1", 8080)
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            pass
+
+    folder = tmp_path / "lib"
+    folder.mkdir()
+    monkeypatch.setenv("STATE_DIRECTORY", str(folder))
+    monkeypatch.setattr(web, "make_handler", lambda *a, **kw: made.update(kw) or real(*a, **kw))
+    monkeypatch.setattr(web, "make_server", lambda handler, host, port: Server())
+    assert main(["web", "--config", str(tmp_path / "missing.toml"), "--secrets", str(tmp_path / "none.env")]) == 0
+    assert "opens the setup wizard" in capsys.readouterr().err
+    wizard = made["wizard"]
+    assert wizard.needed() and wizard.api._job_folder == folder
 
 
 @pytest.mark.parametrize("name, url", [

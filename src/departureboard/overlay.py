@@ -16,9 +16,10 @@ so a save drops anything else found in it. to_toml writes every kind of
 value settings carry, floats (the weather position) and route strips
 (arrays of inline tables) included.
 
-The board's overlay sits beside its state file. Another host, like the
-dashboard, names its own with a Target: the settings under it, its folder,
-and the loader the merged settings must pass.
+Every install has one overlay, in its store (store.Store.target), which
+the board and the dashboard share. A Target names the settings under it,
+its folder, the loader the merged settings must pass and what the saved
+settings may hold.
 """
 
 from __future__ import annotations
@@ -37,10 +38,8 @@ from .config import (
     SECRETS_OVERLAY_NAME,
     ConfigError,
     merge,
-    read_base,
     read_overlay_in,
     settings_from,
-    state_dir,
 )
 from .settingsform import _KEY_VALUE, _toml_key, _toml_string, _write
 
@@ -98,13 +97,6 @@ def to_toml(data: dict, header: str = HEADER) -> str:
     return "\n".join(lines) + "\n"
 
 
-def overlay_paths(base: dict) -> tuple[Path, Path]:
-    folder = state_dir(base)
-    if folder is None:
-        raise OverlayError("config.toml needs a state_file before settings can be saved")
-    return folder / OVERLAY_NAME, folder / SECRETS_OVERLAY_NAME
-
-
 def _board_loads(data: dict, env: Mapping[str, str]) -> None:
     settings_from(data, env)
 
@@ -129,8 +121,11 @@ class Target:
 
 
 def board_target(config_path: Path | str) -> Target:
-    """The board's overlay, beside the state file config.toml names."""
-    return Target(lambda: read_base(config_path), state_dir)
+    """The overlay in the store of a config.toml path, checked as the board
+    loads it: for callers and tests that still name config.toml alone."""
+    from .store import Store
+
+    return Store.open(config_path).target()
 
 
 def _scrub(text: str, secrets: Mapping[str, str]) -> str:
@@ -142,8 +137,8 @@ def _scrub(text: str, secrets: Mapping[str, str]) -> str:
 
 def save_changes(config_path: Path | str, changes: dict, keys: Mapping[str, str],
                  env: Mapping[str, str], replace: bool = False) -> dict:
-    """Merge `changes` into the board's saved settings overlay and `keys` into
-    its secrets overlay; see save_to."""
+    """Merge `changes` into the saved settings overlay in the store of a
+    config.toml path and `keys` into its secrets overlay; see save_to."""
     return save_to(board_target(config_path), changes, keys, env, replace=replace)
 
 

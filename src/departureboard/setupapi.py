@@ -61,7 +61,7 @@ from typing import Callable, Mapping, Protocol, Sequence
 
 from . import discover, keytest, setup
 from .config import ConfigError
-from .overlay import OverlayError, Target, board_target, save_to
+from .overlay import OverlayError, Target, save_to
 from .settingsform import _KEY_VALUE, KEYS
 from .setup import Place, SetupError, Station, Stop
 from .status import safe_message
@@ -344,7 +344,7 @@ class SetupApi:
 
     def __init__(
         self,
-        config_path: Path | str,
+        target: Target,
         load_secrets: Callable[[], Mapping[str, str]],
         job_folder: Path | str,
         *,
@@ -358,19 +358,18 @@ class SetupApi:
         make_job: MakeJob = discover.SetupJob,
         test_key: Callable[..., keytest.KeyResult] = keytest.test_key,
         key_tests: RateLimit = KEY_TESTS,
-        target: Target | None = None,
         saved_message: str = "Saved. The board shows the new settings within a few minutes.",
         title: str = TITLE,
         noun: str = NOUN,
         keys: Sequence[tuple[str, str, str]] = KEYS,
         runner: Runner | None = None,
     ) -> None:
-        """`load_secrets` gives the environment with every saved key, as the
-        settings page's does; `job_folder` is where the search builds the bus
-        timetable (the board's state folder, or the dashboard's); `links` are
-        (label, href) pairs the finished page offers, like ("The board", "/").
-        `target` is the overlay finishing saves into, by default the board's
-        beside config.toml's state file; `saved_message` says what happens next.
+        """`target` is the overlay finishing saves into (store.Store.target),
+        checked as the host loads its settings. `load_secrets` gives the
+        environment with every saved key, as the settings page's does;
+        `job_folder` is where the search builds the bus timetable (the
+        store); `links` are (label, href) pairs the finished page offers,
+        like ("The board", "/"). `saved_message` says what happens next.
         `title` heads the page, `noun` is what its text calls the host
         ("board": "No trains on this board"), and `keys`, (name, label,
         hint) like settingsform.KEYS, are the keys the host uses: offered,
@@ -407,7 +406,7 @@ class SetupApi:
         self._make_job = make_job
         self._test_key = test_key
         self._key_tests = key_tests
-        self._target = target or board_target(config_path)
+        self._target = target
         self._saved_message = saved_message
         self._lock = threading.Lock()
         self._found_stops: dict[str, Stop] = {}

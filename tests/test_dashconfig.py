@@ -1,5 +1,4 @@
 import stat
-from pathlib import Path
 
 import pytest
 
@@ -8,12 +7,11 @@ from departureboard.dashconfig import (
     DashboardOptions,
     FileWatch,
     dashboard_options,
-    default_state_dir,
+    dashboard_target,
     load_dashboard,
-    overlay_target,
-    settings_files,
 )
 from departureboard.overlay import OverlayError, save_to
+from departureboard.store import Store
 from departureboard.darwin import DETAILS_BASE_URL, DarwinSource, ServiceDetailsClient
 from departureboard.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource
 from departureboard.bodsbus import BodsBusSource
@@ -130,17 +128,6 @@ def test_dashboard_must_be_a_table():
         dashboard_options({"dashboard": 3})
 
 
-def test_default_state_folder_on_a_mac_and_elsewhere(tmp_path):
-    home = Path("/home/me")
-    mac = default_state_dir("darwin", {}, home)
-    assert mac == home / "Library" / "Application Support" / "departureboard-dashboard"
-    assert default_state_dir("linux", {}, home) == home / ".local" / "state" / "departureboard-dashboard"
-    xdg = default_state_dir("linux", {"XDG_STATE_HOME": "/var/state"}, home)
-    assert xdg == Path("/var/state/departureboard-dashboard")
-    # A relative XDG_STATE_HOME is ignored, as the spec says.
-    assert default_state_dir("linux", {"XDG_STATE_HOME": "state"}, home) == home / ".local/state/departureboard-dashboard"
-
-
 # Loading
 
 
@@ -234,17 +221,23 @@ def test_creates_the_folder_for_its_owner_only(config, tmp_path, opened):
     assert stat.S_IMODE(folder.stat().st_mode) == 0o700
 
 
-def test_refuses_the_board_s_state_folder(config, tmp_path):
-    with pytest.raises(ConfigError, match="board's state folder"):
-        load_dashboard(config, ENV, tmp_path / "board")
+def test_shares_the_store_with_the_board(config, tmp_path, opened):
+    # No --state-dir: the folder of config.toml's state_file, the board's.
+    board = tmp_path / "board"
+    board.mkdir()
+    (board / "state.json").write_text("{}")
+    (board / "settings.toml").write_text('title = "Saved on the board"\n')
+    dash = load(config, None, opened=opened)
+    assert dash.state_dir == board and dash.bus._folder == board
+    assert dash.title == "Saved on the board"
+    assert (board / "state.json").read_text() == "{}"  # the board's state is left alone
 
 
-def test_refuses_any_folder_holding_a_board_state_file(config, tmp_path):
+def test_a_folder_holding_a_board_state_file_is_a_store_like_any_other(config, tmp_path, opened):
     other = tmp_path / "other"
     other.mkdir()
     (other / "state.json").write_text("{}")
-    with pytest.raises(ConfigError, match="state.json"):
-        load_dashboard(config, ENV, other)
+    assert load(config, other, opened=opened).state_dir == other
 
 
 def test_refuses_a_file_as_the_folder(config, tmp_path):
@@ -262,17 +255,17 @@ def test_one_dashboard_per_folder(config, tmp_path, opened):
     load(config, folder, opened=opened)  # free again once the first lets go
 
 
-def test_a_relative_board_state_file_says_nothing_about_this_machine(tmp_path, monkeypatch, opened):
-    # A config copied from a laptop has state_file = "state.json": relative to
-    # wherever that board runs. In a container the working directory is the
-    # dashboard's own /data, which must not then be mistaken for the board's.
+def test_a_relative_board_state_file_is_in_the_working_folder(tmp_path, monkeypatch, opened):
+    # A config copied from a laptop has state_file = "state.json": the store
+    # is then the folder the dashboard runs in, as it is for a board.
     path = tmp_path / "config.toml"
     path.write_text(CONFIG.format(board="x").replace('state_file = "x/state.json"', 'state_file = "state.json"'))
     data = tmp_path / "data"
     data.mkdir()
     monkeypatch.chdir(data)
-    dash = load(path, data, opened=opened)
-    assert dash.state_dir == data
+    assert load(path, None, opened=opened).state_dir == data
+    opened.pop().close()
+    assert load(path, tmp_path / "given", opened=opened).state_dir == tmp_path / "given"  # --state-dir wins
 
 
 # Service details, for the trains' positions
@@ -422,10 +415,10 @@ def test_checking_settings_takes_no_lock_and_makes_no_folder(config, tmp_path, o
     assert running.lock is not None
 
 
-def test_the_overlay_target_saves_only_what_the_dashboard_loads(config, tmp_path):
+def test_the_dashboard_target_saves_only_what_the_dashboard_loads(config, tmp_path):
     folder = tmp_path / "dash"
     folder.mkdir()
-    target = overlay_target(config, folder)
+    target = dashboard_target(Store.open(config, state_dir=folder))
     save_to(target, {"dashboard": {"bus_rows": 3}, "train": {"crs": "MAN"}}, {"BODS_API_KEY": "new-key"}, ENV)
     assert (folder / "settings.toml").exists() and "new-key" in (folder / "secrets.env").read_text()
     assert not (tmp_path / "board").exists()
@@ -436,11 +429,10 @@ def test_the_overlay_target_saves_only_what_the_dashboard_loads(config, tmp_path
     assert target.current()["dashboard"] == {"bus_rows": 3}
 
 
-def test_the_files_to_watch_include_the_board_s_overlay_and_the_dashboard_s(config, tmp_path):
-    folder = tmp_path / "dash"
-    files = settings_files(config, tmp_path / "secrets.env", folder)
-    assert files[:4] == [config, tmp_path / "secrets.env", folder / "settings.toml", folder / "secrets.env"]
-    assert tmp_path / "board" / "settings.toml" in files
+def test_the_files_to_watch_are_the_store_s(config, tmp_path):
+    files = Store.open(config, tmp_path / "secrets.env").watched()
+    board = tmp_path / "board"
+    assert files == [config, tmp_path / "secrets.env", board / "settings.toml", board / "secrets.env"]
 
 
 def test_a_file_watch_notices_changes_additions_and_removals(tmp_path):

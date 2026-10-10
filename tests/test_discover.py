@@ -737,7 +737,7 @@ def test_cli_discover_reports_failure(cli_config, capsys):
     assert "Setup failed: No timetabled bus calls at your stops" in capsys.readouterr().err
 
 
-def test_cli_discover_needs_a_key_and_a_state_folder(cli_config, tmp_path, capsys):
+def test_cli_discover_needs_a_key(cli_config, tmp_path, capsys):
     from departureboard.cli import main
 
     args, _, _ = cli_config
@@ -745,7 +745,8 @@ def test_cli_discover_needs_a_key_and_a_state_folder(cli_config, tmp_path, capsy
                  "--secrets", str(tmp_path / "none.env")]) == 2
     assert "BODS_API_KEY" in capsys.readouterr().err
     bare = tmp_path / "bare.toml"
-    bare.write_text("")
-    assert main(["setup", "discover", "--stop", f"A={STOP_A}", "--config", str(bare), "--secrets", args[3]]) == 2
-    assert "state_file" in capsys.readouterr().err
+    bare.write_text("")  # no state_file: the timetable is built in the store, wherever that is
+    assert main(["setup", "discover", "--stop", f"A={STOP_A}", "--config", str(bare),
+                 "--secrets", str(tmp_path / "none.env")]) == 2
+    assert "BODS_API_KEY" in capsys.readouterr().err
     assert main(["setup", "discover", "--stop", "nolabel", *args]) == 2

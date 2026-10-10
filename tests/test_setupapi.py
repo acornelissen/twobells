@@ -9,7 +9,7 @@ import pytest
 from departureboard import dashform, discover, settingsform, setupapi
 from departureboard.config import load_config, needs_setup, read_base, read_config
 from departureboard.keytest import KeyResult
-from departureboard.overlay import Target
+from departureboard.overlay import Target, board_target
 from departureboard.setup import Place, SetupError, Station, Stop
 from departureboard.setupapi import Invalid, RateLimit, SetupApi, decode, suggested_labels
 
@@ -101,7 +101,7 @@ def board(tmp_path):
     clock = [1000.0]
 
     api = SetupApi(
-        config, lambda: dict(secrets), state,
+        board_target(config), lambda: dict(secrets), state,
         links=[("The board", "/"), ("Dashboard", "http://pi.local:8090/")],
         lookup_postcode=lambda postcode: calls.append(("postcode", postcode)) or HOME_PLACE,
         search_address=lambda q: calls.append(("address", q)) or [HOME_PLACE],
@@ -312,8 +312,8 @@ def test_no_exact_home_position_is_written_anywhere(board):
 def test_a_host_can_save_into_its_own_overlay(board, tmp_path):
     own = tmp_path / "own"
     own.mkdir()
-    api = SetupApi(board.config, lambda: dict(board.secrets), own, stations=lambda: STATIONS, make_job=FakeJob,
-                   target=Target(lambda: read_base(board.config), lambda base: own),
+    api = SetupApi(Target(lambda: read_base(board.config), lambda base: own), lambda: dict(board.secrets), own,
+                   stations=lambda: STATIONS, make_job=FakeJob,
                    saved_message="Saved. The dashboard restarts to use them.")
     status, body = api.handle("finish", {"home": HOME, "station_crs": "GLO", "stops": {}, "walk": {}})
     assert status == 200 and body["message"] == "Saved. The dashboard restarts to use them."
@@ -447,7 +447,7 @@ KB_KEY = "kb-secret-key-012"
 def dashboard(board):
     """The board's fixture, set up as the dashboard sets its wizard up."""
     board.secrets["RDM_DETAILS_API_KEY"] = DETAILS_KEY
-    api = SetupApi(board.config, lambda: dict(board.secrets), board.state, stations=lambda: STATIONS,
+    api = SetupApi(board_target(board.config), lambda: dict(board.secrets), board.state, stations=lambda: STATIONS,
                    make_job=FakeJob, test_key=board._test_key, key_tests=RateLimit(10.0, clock=lambda: 0.0),
                    title="Set up your dashboard", noun="dashboard", keys=dashform.KEYS)
     api.calls, api.secrets, api.state = board.calls, board.secrets, board.state
@@ -513,13 +513,13 @@ def test_the_dashboards_saved_keys_never_leave_in_an_answer(dashboard):
 ])
 def test_a_host_names_its_page_and_keys_plainly(board, title, keys):
     with pytest.raises(ValueError):
-        SetupApi(board.config, dict, board.state, title=title, keys=keys)
+        SetupApi(board_target(board.config), dict, board.state, title=title, keys=keys)
 
 
 @pytest.mark.parametrize("noun", ["", "Board", "the board", "board\n", "<b>", "x" * 21])
 def test_a_host_calls_itself_one_plain_word(board, noun):
     with pytest.raises(ValueError):
-        SetupApi(board.config, dict, board.state, noun=noun)
+        SetupApi(board_target(board.config), dict, board.state, noun=noun)
 
 
 # Testing a key.
@@ -572,8 +572,8 @@ def test_a_refused_request_does_not_use_up_the_limit(board):
 
 
 def test_the_limit_is_shared_by_every_host_in_the_process(board):
-    first = SetupApi(board.config, dict, board.state)
-    second = SetupApi(board.config, dict, board.state)
+    first = SetupApi(board_target(board.config), dict, board.state)
+    second = SetupApi(board_target(board.config), dict, board.state)
     assert first._key_tests is second._key_tests is setupapi.KEY_TESTS
     now = [0.0]
     limit = RateLimit(10.0, clock=lambda: now[0])
@@ -596,7 +596,7 @@ def test_a_key_test_never_answers_with_the_key(board):
 def test_links_must_be_plain(board):
     for href in ("javascript:alert(1)", "//evil.example/", "/a b"):
         with pytest.raises(ValueError):
-            SetupApi(board.config, dict, board.state, links=[("Board", href)])
+            SetupApi(board_target(board.config), dict, board.state, links=[("Board", href)])
 
 
 # A runner: the internet work done elsewhere (the Pi's setup service).
@@ -634,7 +634,7 @@ class FakeRunner:
 @pytest.fixture
 def ran(board):
     runner = FakeRunner()
-    api = SetupApi(board.config, lambda: dict(board.secrets), board.state, runner=runner,
+    api = SetupApi(board_target(board.config), lambda: dict(board.secrets), board.state, runner=runner,
                    stations=lambda: STATIONS, nearby_stations=board._nearby_stations,
                    key_tests=RateLimit(10.0, clock=lambda: board.clock[0]))
     api.runner, api.board = runner, board

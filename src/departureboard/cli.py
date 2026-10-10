@@ -44,9 +44,6 @@ from .config import (
     load_config,
     load_env_file,
     needs_setup,
-    overlay_paths,
-    read_config,
-    state_dir,
 )
 from .darwin import DarwinSource, TrainBoard
 from .display import DISPLAY_PANELS, PngDisplay, open_display
@@ -57,6 +54,7 @@ from .fake import DEMO_NOTICE, DEMO_TITLE, FakeWeatherSource
 from .http import get_bytes
 from .model import Departure, Status
 from .state import StateStore
+from .store import Store
 from .transportapi import TransportApiBusSource, redact_credentials
 from .version import package_version
 from .view import SetupView, build_view
@@ -84,37 +82,39 @@ def _parse_stops(specs: list[str] | None) -> dict[str, str] | None:
     return stops
 
 
+def _store(args) -> Store:
+    """The store for a command's --config, --secrets and --state-dir (if it has one)."""
+    return Store.open(args.config, args.secrets, state_dir=getattr(args, "state_dir", None))
+
+
 def _env(config: Path | str, secrets: Path | str) -> dict[str, str]:
     """The environment, then secrets.env, then keys saved from the web page."""
-    env = {**os.environ, **load_env_file(secrets)}
     try:
-        paths = overlay_paths(config)
-    except (OSError, ConfigError):
-        return env  # no config file, or a broken one: load_config reports that
-    if paths:
-        env.update(load_env_file(paths[1]))
-    return env
+        return Store.open(config, secrets).env()
+    except ConfigError:
+        # A broken config.toml, needed to find the store: load_config reports that.
+        return {**os.environ, **load_env_file(secrets)}
 
 
-def _holidays(config: Path | str) -> frozenset:
-    """Bank holidays, cached beside the state file and refreshed from gov.uk
-    weekly, unless the settings say to ignore them (then gov.uk is never asked)."""
+def _holidays(store: Store) -> frozenset:
+    """Bank holidays, cached in the store and refreshed from gov.uk weekly,
+    unless the settings say to ignore them (then gov.uk is never asked)."""
     try:
-        data = read_config(config)
-        folder = state_dir(data)
+        data = store.data()
         division = holiday_division(data)
     except (OSError, ConfigError):
         return frozenset()  # load_config reports it
-    if folder is None or data.get("bank_holidays", True) is not True:
+    if data.get("bank_holidays", True) is not True:
         return frozenset()
     # Only the cache's age depends on the time, so the Pi's own zone will do.
-    return bank_holidays(folder, datetime.now(), division=division)
+    return bank_holidays(store.folder, datetime.now(), division=division)
 
 
 def _settings(args, bus_stops: dict[str, str] | None = None, only: set[str] | None = None):
+    store = _store(args)
     # A probe makes one call whatever the day, so it needs no holidays.
-    holidays = _holidays(args.config) if only is None else frozenset()
-    return load_config(args.config, _env(args.config, args.secrets), bus_stops, only, holidays=holidays)
+    holidays = _holidays(store) if only is None else frozenset()
+    return load_config(store, store.env(), bus_stops, only, holidays=holidays)
 
 
 def _print_departures(departures: list[Departure], indent: str = "") -> None:
@@ -183,7 +183,7 @@ def _open_display(args, settings):
 
 
 def _run(args) -> int:
-    if needs_setup(args.config):
+    if needs_setup(_store(args)):
         return _run_first(args)
     settings = _settings(args)
     display = _open_display(args, settings)
@@ -219,11 +219,7 @@ class _Watcher:
     def __init__(self, args, settings) -> None:
         self._args = args
         self._settings = settings
-        paths = [Path(args.config), Path(args.secrets)]
-        overlays = overlay_paths(args.config)
-        if overlays:
-            paths.extend(overlays)
-        self._paths = paths
+        self._paths = _store(args).watched()
         self._stamp = self._stamps()
 
     def _stamps(self):
@@ -311,8 +307,8 @@ class _SetUpYet:
     """A running board's reload hook until it is set up: every SETUP_CHECK_S
     asks whether it is now, and if so starts the board again to load it."""
 
-    def __init__(self, config, clock=time.monotonic) -> None:
-        self._config = config
+    def __init__(self, store, clock=time.monotonic) -> None:
+        self._store = store
         self._clock = clock
         self._checked: float | None = None
 
@@ -321,7 +317,7 @@ class _SetUpYet:
         if self._checked is not None and 0 <= now - self._checked < SETUP_CHECK_S:
             return None
         self._checked = now
-        if not needs_setup(self._config):
+        if not needs_setup(self._store):
             raise _Restart
         return None
 
@@ -334,9 +330,8 @@ def _run_first(args) -> int:
     A single run (the e-paper timer's) draws the page, only when it isn't
     already showing, and exits 0. A running screen keeps it up and, once the
     board is set up, exits RESTART so systemd starts it with its settings."""
-    # systemd's StateDirectory, for when there is no config.toml to name one.
-    folder = os.environ.get("STATE_DIRECTORY", "").split(":")[0]
-    settings = first_run_settings(args.config, Path(folder) / "state.json" if folder else None)
+    found = _store(args)
+    settings = first_run_settings(found)
     board = dataclasses.replace(settings.board, setup=SetupView(setup_url()))
     display = _open_display(args, settings)
     store = StateStore(settings.state_file)
@@ -361,7 +356,7 @@ def _run_first(args) -> int:
             ticks=args.ticks,
             sleep=_sleep_to_the_tick,
             store=store,
-            reload=_SetUpYet(args.config),
+            reload=_SetUpYet(found),
         )
     except KeyboardInterrupt:
         pass
@@ -374,10 +369,11 @@ def _run_first(args) -> int:
 
 def _route(args) -> int:
     from . import routesetup
-    from .config import _walk, read_config
+    from .config import _walk
     from .walk import DEFAULT_STOP
 
-    data = read_config(args.config)
+    store = _store(args)
+    data = store.data()
     bus = data.get("bus", {})
     atco = (bus.get("stops") or {}).get(args.stop)
     if not atco:
@@ -392,7 +388,7 @@ def _route(args) -> int:
             if not args.noc:
                 print("Give --noc (the operator code, e.g. BNML) or --txc FILE", file=sys.stderr)
                 return 2
-            key = _env(args.config, args.secrets).get("BODS_API_KEY", "").strip()
+            key = store.env().get("BODS_API_KEY", "").strip()
             if not key:
                 print("Missing BODS_API_KEY; set it in secrets.env", file=sys.stderr)
                 return 2
@@ -425,16 +421,10 @@ def _setup_discover(args) -> int:
     from .config import _walk
 
     stops = _parse_stops(args.stop)
-    try:
-        data = read_config(args.config)
-    except OSError as error:
-        print(f"Can't read {args.config}: {error.strerror or error}", file=sys.stderr)
-        return 2
-    folder = state_dir(data)
-    if folder is None:
-        print("config.toml needs a state_file; the timetable is built beside it", file=sys.stderr)
-        return 2
-    key = _env(args.config, args.secrets).get("BODS_API_KEY", "").strip()
+    store = _store(args)
+    data = store.data()
+    folder = store.folder
+    key = store.env().get("BODS_API_KEY", "").strip()
     if not key:
         print("Missing BODS_API_KEY; set it in secrets.env", file=sys.stderr)
         return 2
@@ -482,19 +472,12 @@ def _setup_serve(args) -> int:
     """The setup service: the wizard's internet work, for a settings page
     started with --setup-via-spool (see setupspool.py)."""
     from . import setupspool
-    from .config import read_base
-    from .overlay import board_target
 
-    folder, problem = None, ""
+    store, problem = None, ""
     try:
-        folder = state_dir(read_base(args.config))
-    except OSError as error:
-        problem = f"Can't read {args.config}: {error.strerror or error}"
+        store = _store(args)
     except ConfigError as error:
         problem = str(error)
-    else:
-        if folder is None:
-            problem = "config.toml needs a state_file; setup searches build the timetable there"
     if problem:
         print(problem, file=sys.stderr)
     try:
@@ -508,7 +491,7 @@ def _setup_serve(args) -> int:
         worker = setupspool.Worker(spool, job_folder=None, load_secrets=dict, unavailable=setupspool.NO_SETTINGS,
                                    stop=stop)
     else:
-        target = board_target(args.config)
+        target = store.target()
 
         def settings() -> dict:
             try:
@@ -516,8 +499,8 @@ def _setup_serve(args) -> int:
             except (OSError, ConfigError, ValueError, TypeError):
                 return {}  # a key test then asks about Glossop
 
-        worker = setupspool.Worker(spool, job_folder=folder,
-                                   load_secrets=lambda: _env(args.config, args.secrets), settings=settings, stop=stop)
+        worker = setupspool.Worker(spool, job_folder=store.folder, load_secrets=store.env, settings=settings,
+                                   stop=stop)
     # systemctl stop, a timeout or update.sh: end cleanly, telling the page a running search was cancelled.
     previous = signal.signal(signal.SIGTERM, lambda signum, frame: stop.set())
     try:
@@ -572,30 +555,22 @@ def _web(args) -> int:
     from importlib.resources import files
 
     from . import auth, web
-    from .config import read_base, state_dir
     from .settingsform import SettingsForm
     from .setupapi import SetupApi
 
-    # config.toml alone: a broken settings.toml must not stop the page that fixes it.
-    try:
-        folder = state_dir(read_base(args.config))
-    except OSError as error:
-        # The page saves beside config.toml's state_file, and can't write to /etc itself.
-        print(f"Can't read {args.config}: {error.strerror or error}. Copy config.example.toml there "
-              "(install.sh does), then start the settings page again.", file=sys.stderr)
-        return 2
-    if folder is None:
-        print("config.toml needs a state_file; the settings page saves beside it", file=sys.stderr)
-        return 2
-    password = auth.PasswordStore(folder / "web.json")
+    # Only config.toml is read to find the store: a broken settings.toml must
+    # not stop the page that fixes it.
+    store = _store(args)
+    store.make()
+    password = auth.PasswordStore(store.password_file)
     if args.set_password:
         return _set_password(password, "New settings page password: ")
     if args.reset_code:
-        return _reset_code(folder, "Enter it on the settings page with a new password.")
-    form = SettingsForm(args.config, lambda: _env(args.config, args.secrets))
+        return _reset_code(store.folder, "Enter it on the settings page with a new password.")
+    form = SettingsForm(store, store.env)
     stylesheet = files("departureboard").joinpath("web.css").read_bytes()
     # Codes for a forgotten password, or the first claim, show on the board.
-    codes = auth.ResetCodes(folder)
+    codes = auth.ResetCodes(store.folder)
     runner = None
     if args.setup_via_spool:
         # This service can't reach the internet; departureboard-setup.service does that work.
@@ -606,11 +581,10 @@ def _web(args) -> int:
         except SpoolError as error:
             print(error, file=sys.stderr)
             return 2
-    # The search builds the bus timetable in the board's own folder, where the board reads it.
-    steps = SetupApi(args.config, lambda: _env(args.config, args.secrets), folder, links=[("Board settings", "/")],
-                     runner=runner)
+    # The search builds the bus timetable in the store, where the board reads it.
+    steps = SetupApi(store.target(), store.env, store.folder, links=[("Board settings", "/")], runner=runner)
     # Until the board is set up, claiming the page or signing in opens the wizard.
-    wizard = web.Wizard.load(steps, lambda: needs_setup(args.config))
+    wizard = web.Wizard.load(steps, lambda: needs_setup(store))
     handler = web.make_handler(form, password, auth.Sessions(password=password), auth.Lockout(), web.shell, stylesheet,
                                codes, wizard=wizard)
     try:
@@ -621,7 +595,7 @@ def _web(args) -> int:
     if not password.is_set():
         print("No password yet: claim the page with a code from the board, or run "
               "`departureboard web --set-password` as the service user", file=sys.stderr)
-    if needs_setup(args.config):
+    if needs_setup(store):
         print("Not set up yet: sign in and the page opens the setup wizard", file=sys.stderr)
     print(f"Settings page on http://{args.host}:{server.server_address[1]}/  (home network only)")
     try:
@@ -658,10 +632,10 @@ def _probe(args) -> int:
     return 2
 
 
-def _wants_timetable(config: Path | str) -> bool:
+def _wants_timetable(store: Store) -> bool:
     """Whether the board's buses are on and come from the BODS timetable,
     in config.toml with the settings saved from the page over it."""
-    data = read_config(config)
+    data = store.data()
     bus = data.get("bus")
     return isinstance(bus, dict) and is_enabled(data, "bus") and bus.get("source") == "bods"
 
@@ -669,7 +643,7 @@ def _wants_timetable(config: Path | str) -> bool:
 def _timetable(args) -> int:
     if args.needed:  # for update.sh: exit 0 if the timetable is wanted, 1 if not; no keys needed
         try:
-            return 0 if _wants_timetable(args.config) else 1
+            return 0 if _wants_timetable(_store(args)) else 1
         except OSError as error:
             print(f"Can't read {args.config}: {error.strerror or error}", file=sys.stderr)
             return 2
@@ -677,7 +651,7 @@ def _timetable(args) -> int:
     source = next((c.source for c in settings.board.sources if c.source.name == "bus"), None)
     if not isinstance(source, BodsBusSource):
         # Not a fault with buses off (the wizard does that for trains alone): the weekly timer runs anyway.
-        data = read_config(args.config)
+        data = _store(args).data()
         if "bus" not in data:
             print("There are no buses on this board, so there's no bus timetable to build")
             return 0
@@ -789,13 +763,13 @@ class _SettingsWatch(threading.Thread):
     the server, so the dashboard can start afresh with them; when they don't
     load, it says so and keeps the ones running."""
 
-    def __init__(self, args, folder: Path, server) -> None:
-        from .dashconfig import FileWatch, settings_files
+    def __init__(self, store: Store, server) -> None:
+        from .dashconfig import FileWatch
 
         super().__init__(name="settings-watch", daemon=True)
-        self._args = args
+        self._store = store
         self._server = server
-        self._watch = FileWatch(settings_files(args.config, args.secrets, folder))
+        self._watch = FileWatch(store.watched())
         self._stopping = threading.Event()
         self.restart = False
 
@@ -806,8 +780,7 @@ class _SettingsWatch(threading.Thread):
             if not self._watch.changed():
                 continue
             try:
-                load_dashboard(self._args.config, _env(self._args.config, self._args.secrets),
-                               self._args.state_dir, lock=False)
+                load_dashboard(self._store, self._store.env(), lock=False)
             except ConfigError as error:
                 logging.warning("Settings changed but don't load (%s); keeping the current ones", error)
                 continue
@@ -837,29 +810,24 @@ def _start_again(port: int) -> None:
     os.execv(sys.executable, argv)
 
 
-def _settings_area(args, dash):
+def _settings_area(store: Store):
     """The password-protected /settings area: the form and the setup wizard,
-    both saving into the dashboard's own folder."""
-    from .dashconfig import dashboard_env, overlay_target
+    both saving into the store."""
+    from .dashconfig import dashboard_target
     from .dashform import KEYS, DashboardForm
     from .dashsettings import SettingsArea
     from .setupapi import SetupApi
 
-    target = overlay_target(args.config, dash.state_dir)
-
-    def load_secrets() -> dict[str, str]:
-        return dashboard_env(_env(args.config, args.secrets), dash.state_dir)
-
+    target = dashboard_target(store)
     setup = SetupApi(
-        args.config, load_secrets, dash.state_dir,
+        target, store.env, store.folder,
         links=(("The dashboard", "/"), ("Settings", "/settings")),
-        target=target,
         saved_message="Saved. The dashboard starts again in a few seconds to use the new settings.",
         title="Set up your dashboard",
         noun="dashboard",
         keys=KEYS,
     )
-    area = SettingsArea(dash.state_dir, DashboardForm(target, load_secrets), setup)
+    area = SettingsArea(store.folder, DashboardForm(target, store.env), setup)
     if not area.password.is_set():
         print("Settings: no password yet. Open /settings and claim it with a code from this log, "
               "or set one with `departureboard dashboard --set-password` (see the user guide for Docker).",
@@ -876,9 +844,10 @@ def _dashboard(args) -> int:
     from .history import History
     from .snapshot import Hub
 
+    store = _store(args)
     if args.set_password or args.reset_code:
-        return _dashboard_password(args)
-    dash = load_dashboard(args.config, _env(args.config, args.secrets), args.state_dir)
+        return _dashboard_password(args, store)
+    dash = load_dashboard(store, store.env())
     history = watch = None
     try:
         try:
@@ -895,7 +864,7 @@ def _dashboard(args) -> int:
             recent=history.recent,
             history_days=dash.options.history_days,
             allowed_hosts=dash.options.allowed_hosts,
-            settings=_settings_area(args, dash),
+            settings=_settings_area(store),
         )
         host = "0.0.0.0" if args.lan else args.host
         # A port asked for is that port or nothing (Docker's health check expects
@@ -920,7 +889,7 @@ def _dashboard(args) -> int:
         on_main = threading.current_thread() is threading.main_thread()
         previous = signal.signal(signal.SIGTERM, _interrupt) if on_main else None
         try:
-            watch = _SettingsWatch(args, dash.state_dir, server)
+            watch = _SettingsWatch(store, server)
             watch.start()
             server.serve_forever()
         except KeyboardInterrupt:
@@ -943,23 +912,18 @@ def _dashboard(args) -> int:
     return 0
 
 
-def _dashboard_password(args) -> int:
-    """--set-password or --reset-code for the dashboard's settings: in its
-    state folder, found as the dashboard finds it, alongside a running one
-    (whose sessions end when the password changes; see auth.Sessions)."""
+def _dashboard_password(args, store: Store) -> int:
+    """--set-password or --reset-code for the settings: in the store, the
+    same password as `web`'s, alongside a running dashboard (whose sessions
+    end when the password changes; see auth.Sessions). Nothing else is
+    loaded, so broken settings can't keep their owner out."""
     from .auth import PasswordStore
-    from .dashconfig import password_folder
-    from .dashsettings import PASSWORD_FILE, PREFIX
+    from .dashsettings import PREFIX
 
-    try:
-        folder = password_folder(args.config, _env(args.config, args.secrets), args.state_dir)
-    except OSError as error:
-        print(f"Can't read {args.config}: {error.strerror or error}. Give the dashboard's folder with "
-              "--state-dir (in Docker, /data), or its config.toml with --config.", file=sys.stderr)
-        return 2
+    store.make()
     if args.set_password:
-        return _set_password(PasswordStore(folder / PASSWORD_FILE), "New dashboard settings password: ")
-    return _reset_code(folder, f"Enter it on the dashboard's {PREFIX}/reset page with a new password.")
+        return _set_password(PasswordStore(store.password_file), "New dashboard settings password: ")
+    return _reset_code(store.folder, f"Enter it on the dashboard's {PREFIX}/reset page with a new password.")
 
 
 def _interrupt(signum, frame) -> None:

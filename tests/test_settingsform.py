@@ -636,6 +636,7 @@ def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
     # the first save after setup dropped [bus] source, operators and routes,
     # [weather] lat and lon, and anything else it doesn't show.
     from departureboard.setup import Stop
+    from departureboard.overlay import board_target
     from departureboard.setupapi import SetupApi
 
     state = tmp_path / "state"
@@ -644,7 +645,7 @@ def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
     env = {**ENV, "BODS_API_KEY": "bods-secret-key-123"}
     home = {"lat": 53.461964, "lon": -1.965633}
     stop = Stop("1800SB12341", "Station Road", "Stop A", "N", 53.4615, -1.9662, 64)
-    wizard = SetupApi(config, lambda: dict(env), state, nearby_stops=lambda lat, lon, **kw: [stop],
+    wizard = SetupApi(board_target(config), lambda: dict(env), state, nearby_stops=lambda lat, lon, **kw: [stop],
                       stations=lambda: (("Glossop", "GLO", 53.4445, -1.9491),), make_job=FoundJob)
     assert wizard.handle("stops", home)[0] == 200
     assert wizard.handle("start", {"stops": {"A": "1800SB12341"}, "routes": True})[0] == 200

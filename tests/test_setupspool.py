@@ -12,6 +12,7 @@ import pytest
 from departureboard import discover, setupspool
 from departureboard.keytest import KeyResult
 from departureboard.setup import Place, SetupError, Stop
+from departureboard.overlay import board_target
 from departureboard.setupapi import RateLimit, SetupApi
 from departureboard.setupspool import Refused, Spool, SpoolRunner, Worker
 
@@ -94,7 +95,7 @@ def board(tmp_path):
     )
     runner = SpoolRunner(state / setupspool.SPOOL, poll=0.01, waits=dict.fromkeys(setupspool.WAITS, 5.0),
                          start_wait=5.0)
-    api = SetupApi(config, lambda: dict(secrets), state, runner=runner, stations=lambda: STATIONS,
+    api = SetupApi(board_target(config), lambda: dict(secrets), state, runner=runner, stations=lambda: STATIONS,
                    key_tests=RateLimit(10.0))
     api.worker, api.runner, api.calls, api.state, api.secrets = worker, runner, calls, state, secrets
     return api

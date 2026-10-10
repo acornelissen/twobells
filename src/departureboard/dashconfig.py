@@ -1,23 +1,23 @@
 """Settings for the web dashboard (`departureboard dashboard`).
 
 The dashboard reads the board's config.toml, plus an optional [dashboard]
-table, but keeps everything it writes (the bus timetable, bank holidays,
-punctuality history) in its own state folder, never the board's. It uses only
-the free feeds: Darwin, the BODS timetable with live positions, and
-Open-Meteo. TransportAPI keys are dropped so no fallback is ever built.
+table, and keeps everything it writes (the bus timetable, bank holidays,
+punctuality history) in the install's store (store.py), which it shares
+with the board. It uses only the free feeds: Darwin, the BODS timetable
+with live positions, and Open-Meteo. TransportAPI keys are dropped so no
+fallback is ever built.
 Darwin's Service Details, which places each train on its route, is used
 only when its own key, RDM_DETAILS_API_KEY, is set. Bus disruptions come
 from BODS SIRI-SX with the buses' own key; rail engineering works from the
 National Rail Knowledgebase only when RDM_KB_API_KEY is set, at the address
 in [dashboard] kb_incidents_url.
 
-One dashboard per state folder: a lock held for the life of the process stops
-a second one sharing (and fighting over) the same files.
+One dashboard per store: a lock held for the life of the process stops a
+second one sharing (and fighting over) the same files.
 
-Settings saved from the dashboard's own settings page (and its setup wizard)
-go in that folder too, never beside config.toml, which is read-only in
-Docker: settings.toml layered over config.toml as config.read_config layers
-the board's, and secrets.env over the environment and --secrets. The
+Settings saved from the dashboard's settings page (and its setup wizard) go
+in the store too, never beside config.toml, which is read-only in Docker:
+the one settings.toml and secrets.env the board's page saves into. The
 dashboard watches every file its settings come from and, when one changes
 and the result still loads, starts afresh to use them (see cli._dashboard).
 """
@@ -28,42 +28,25 @@ import copy
 import fcntl
 import os
 import re
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, Mapping, Protocol, Sequence
+from typing import IO, TYPE_CHECKING, Mapping, Protocol, Sequence
 from urllib.parse import urlsplit
 
 from .bodsbus import BusBoard
-from .config import (
-    OVERLAY_NAME,
-    SECRETS_OVERLAY_NAME,
-    ConfigError,
-    _flag,
-    _table,
-    _texts,
-    _whole,
-    load_env_file,
-    merge,
-    overlay_paths,
-    read_config,
-    read_overlay_in,
-    settings_from,
-    switched_on,
-)
-from .config import state_dir as board_state_dir
+from .config import ConfigError, _flag, _table, _texts, _whole, settings_from, switched_on
 from .darwin import DarwinSource, ServiceDetails, ServiceDetailsClient, TrainBoard
 from .disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource, kb_url_is_placeholder
 from .holidays import ENGLAND_AND_WALES
-from .overlay import Target
 from .schedule import Window, parse_window
 from .walk import WalkTimes
 from .weather import Conditions
 
-FOLDER_NAME = "departureboard-dashboard"
-STATE_FILE = "dashboard-state.json"
+if TYPE_CHECKING:
+    from .overlay import Target
+    from .store import Store
+
 LOCK_FILE = "dashboard.lock"
-BOARD_STATE = "state.json"
 
 _WHERE = "[dashboard] "
 _KEYS = {
@@ -80,9 +63,9 @@ _KEYS = {
     "allowed_hosts",
     "kb_incidents_url",
 }
-# What the dashboard's settings.toml may hold, by table (None is the top
-# level): the keys its settings page (dashform) and setup (setupapi) save.
-# Anything else is ignored, as config.SAVED_KEYS says for the board's. The
+# What the dashboard's settings page (dashform) and setup (setupapi) save,
+# by table (None is the top level). The store's settings.toml may hold these
+# and config.SAVED_KEYS (see store.SAVED_KEYS); anything else is ignored. The
 # Knowledgebase address is one the page sets, so it is checked as https.
 SAVED_KEYS: dict[str | None, frozenset[str]] = {
     None: frozenset({"title", "bank_holidays", "bank_holiday_division"}),
@@ -187,19 +170,6 @@ def dashboard_options(data: dict) -> DashboardOptions:
     )
 
 
-def default_state_dir(platform: str = sys.platform, env: Mapping[str, str] | None = None,
-                      home: Path | None = None) -> Path:
-    """Where the dashboard keeps its files when nothing says: Application
-    Support on a Mac, else $XDG_STATE_HOME or ~/.local/state."""
-    env = os.environ if env is None else env
-    home = Path.home() if home is None else home
-    if platform == "darwin":
-        return home / "Library" / "Application Support" / FOLDER_NAME
-    xdg = env.get("XDG_STATE_HOME", "")
-    base = Path(xdg) if xdg and Path(xdg).is_absolute() else home / ".local" / "state"
-    return base / FOLDER_NAME
-
-
 class TrainSource(Protocol):
     def fetch_board(self) -> TrainBoard: ...
 
@@ -263,36 +233,6 @@ class DashboardSettings:
             self.lock = None
 
 
-def _same_folder(a: Path, b: Path) -> bool:
-    return a.expanduser().resolve() == b.expanduser().resolve()
-
-
-def _check_folder(folder: Path, data: dict) -> None:
-    """Refuse the board's own state folder: the dashboard would overwrite its
-    timetable and holidays with ones built for other rows and stops."""
-    board = board_state_dir(data)
-    # Only an absolute state_file names a folder on this machine; a relative one
-    # is relative to wherever the board runs (in a container, that's not here).
-    if board is not None and board.is_absolute() and _same_folder(folder, board):
-        raise ConfigError(f"{folder} is the board's state folder; give the dashboard its own --state-dir")
-    if (folder / BOARD_STATE).exists():
-        raise ConfigError(f"{folder} holds a board's {BOARD_STATE}; give the dashboard its own --state-dir")
-
-
-def _make_folder(folder: Path) -> None:
-    """Create the state folder readable by its owner only. An existing one is
-    left as it is (a Docker volume may belong to the container's user)."""
-    if folder.exists():
-        if not folder.is_dir():
-            raise ConfigError(f"{folder} is not a folder")
-        return
-    try:
-        folder.mkdir(parents=True, mode=0o700)
-        os.chmod(folder, 0o700)  # whatever the umask
-    except OSError as error:
-        raise ConfigError(f"Can't create the state folder {folder}: {error.strerror or error}") from None
-
-
 def _lock(folder: Path) -> IO:
     """An exclusive lock on the folder, held until the file is closed."""
     flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
@@ -318,41 +258,10 @@ def _header_key(env: Mapping[str, str], name: str) -> str:
     return key
 
 
-def saved_settings(folder: Path) -> dict:
-    """The settings saved in the dashboard's folder; empty if none. Only
-    SAVED_KEYS are read from it, so they can't move the folder they live in
-    (state_dir, state_file) or send a key to another address (base_url)."""
-    if folder.exists() and not folder.is_dir():
-        raise ConfigError(f"{folder} is not a folder")
-    try:
-        return read_overlay_in(folder, SAVED_KEYS)
-    except OSError as error:
-        raise ConfigError(f"Can't read {folder / OVERLAY_NAME}: {error.strerror or error}") from None
-
-
-def dashboard_env(env: Mapping[str, str], folder: Path) -> dict[str, str]:
-    """`env` with the keys saved in the dashboard's folder over it."""
-    return {**env, **load_env_file(folder / SECRETS_OVERLAY_NAME)}
-
-
-def overlay_target(config_path: Path | str, folder: Path) -> Target:
-    """Where the settings page and the setup wizard save: the dashboard's
-    folder, over config.toml, and only what the dashboard would load."""
-
-    def check(data: dict, env: Mapping[str, str]) -> None:
-        _build(data, env, folder)
-
-    return Target(lambda: read_config(config_path), lambda base: folder, check, SAVED_KEYS)
-
-
-def settings_files(config_path: Path | str, secrets_path: Path | str, folder: Path) -> list[Path]:
-    """Every file the dashboard's settings come from, to watch for changes."""
-    paths = [Path(config_path), Path(secrets_path), folder / OVERLAY_NAME, folder / SECRETS_OVERLAY_NAME]
-    try:
-        board = overlay_paths(config_path)
-    except (OSError, ConfigError):
-        board = None
-    return paths + list(board or ())
+def dashboard_target(store: Store) -> Target:
+    """Where the dashboard's settings page and setup wizard save: the store,
+    over config.toml, and only what the dashboard would load."""
+    return store.target(lambda data, env: _build(data, env, store.folder))
 
 
 class FileWatch:
@@ -381,50 +290,27 @@ class FileWatch:
         return True
 
 
-def load_dashboard(config_path: Path | str, env: Mapping[str, str],
+def load_dashboard(store: Store | Path | str, env: Mapping[str, str],
                    state_dir_override: Path | str | None = None, lock: bool = True) -> DashboardSettings:
-    """The dashboard's settings from config.toml (with the board's settings
-    page's overlay, then the dashboard's own), the environment and secrets in
-    `env` (then the keys saved in the dashboard's folder), and an optional
-    state folder that wins over [dashboard] state_dir. Takes the folder's
-    lock; call close() on the result to let it go. With lock=False it only
-    checks that the settings load: no folder is made and no lock taken."""
-    base = read_config(config_path)
-    folder = _folder(base, env, state_dir_override)
-    _check_folder(folder, base)
-    settings = _build(merge(base, saved_settings(folder)), dashboard_env(env, folder), folder)
+    """The dashboard's settings from the store (config.toml with the saved
+    settings over it) and `env`, the environment with every saved key. Takes
+    the store's lock; call close() on the result to let it go. With
+    lock=False it only checks that the settings load: no folder is made and
+    no lock taken.
+
+    Given a config.toml path rather than a store (as tests still do), it opens
+    that path's store, in `state_dir_override` if given, and layers the keys
+    saved there over `env`."""
+    from .store import Store
+
+    if not isinstance(store, Store):
+        store = Store.open(store, state_dir=state_dir_override)
+        env = store.env(env)
+    settings = _build(store.data(), env, store.folder)
     if lock:
-        _make_folder(folder)
-        settings.lock = _lock(folder)
+        store.make()
+        settings.lock = _lock(store.folder)
     return settings
-
-
-def _folder(base: dict, env: Mapping[str, str], state_dir_override: Path | str | None) -> Path:
-    """The state folder: the one given, else [dashboard] state_dir, else the default."""
-    options = dashboard_options(base)
-    return Path(state_dir_override or options.state_dir or default_state_dir(env=env)).expanduser()
-
-
-def password_folder(config_path: Path | str, env: Mapping[str, str],
-                    state_dir_override: Path | str | None = None) -> Path:
-    """The state folder load_dashboard would use, made if need be, for setting
-    the settings password or a reset code from the command line. No lock is
-    taken (the dashboard may be running) and nothing else is loaded, so broken
-    settings can't keep their owner out. With a folder given, config.toml is
-    read only to refuse the board's folder, and need not exist: in Docker the
-    command runs with --state-dir /data and no --config."""
-    if state_dir_override:
-        try:
-            base = read_config(config_path)
-        except (OSError, ConfigError):
-            base = {}
-        folder = Path(state_dir_override).expanduser()
-    else:
-        base = read_config(config_path)  # OSError: the caller says where the folder could be given
-        folder = _folder(base, env, None)
-    _check_folder(folder, base)
-    _make_folder(folder)
-    return folder
 
 
 def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSettings:
@@ -439,8 +325,8 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
         if bus.get("source") != "bods":
             raise ConfigError('The dashboard needs [bus] source = "bods" (the free BODS timetable and positions)')
         bus["rows"] = options.bus_rows
-    # Only the dashboard's own folder: the bus timetable and holidays live beside this.
-    data["state_file"] = str(folder / STATE_FILE)
+    # In the store, whatever the data says: the bus timetable and holidays live there.
+    data["state_file"] = str(folder / "state.json")
     free_env = {key: value for key, value in env.items() if not key.startswith("TAPI_")}
     settings = settings_from(data, free_env)
 

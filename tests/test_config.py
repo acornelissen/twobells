@@ -353,7 +353,7 @@ def test_saved_settings_cannot_send_the_keys_to_another_address(tmp_path, caplog
         'display = "hdmi-1280x400"\n'
         '[train]\nrows = 2\nbase_url = "https://example.invalid/rail"\n'
         '[bus]\nbase_url = "https://example.invalid/bus"\n'
-        '[dashboard]\nkb_incidents_url = "https://example.invalid/kb"\n'
+        '[dashboard]\nstate_dir = "/example.invalid"\n'
     )
     caplog.set_level("WARNING")
     settings = load_config(path, ENV)
@@ -362,7 +362,7 @@ def test_saved_settings_cannot_send_the_keys_to_another_address(tmp_path, caplog
     assert train._rows == 2  # what the settings page saves still counts
     assert settings.display == "inky"  # set in config.toml only, as the page says
     logged = " ".join(r.getMessage() for r in caplog.records)
-    for name in ("[train] base_url", "[bus] base_url", "display", "[dashboard]"):
+    for name in ("[train] base_url", "[bus] base_url", "display", "[dashboard] state_dir"):
         assert name in logged
     assert "example.invalid" not in logged  # the key is named, never its value
 
@@ -456,14 +456,15 @@ def test_broken_config_toml_is_a_config_error_when_finding_the_overlay(tmp_path)
         overlay_paths(write(tmp_path, "title = \n"))
 
 
-def test_no_state_file_means_no_overlay_from_the_working_directory(tmp_path, monkeypatch):
+def test_no_state_file_means_the_store_s_overlay_not_the_working_directory_s(tmp_path, monkeypatch):
     from departureboard.config import overlay_paths
+    from departureboard.store import platform_folder
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / "settings.toml").write_text('title = "From cwd"\n')
     path = write(tmp_path, 'title = "Base"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
     assert load_config(path, ENV).board.title == "Base"
-    assert overlay_paths(path) is None
+    assert overlay_paths(path)[0] == platform_folder() / "settings.toml"
 
 
 HOLIDAY = date(2026, 8, 31)
@@ -728,12 +729,15 @@ def test_bods_bus_fallback_windows_are_checked(tmp_path):
         load_config(path, {"BODS_API_KEY": "bods"})
 
 
-def test_the_board_looks_for_a_reset_code_beside_an_explicit_state_file(tmp_path):
+def test_the_board_looks_for_a_reset_code_in_the_store(tmp_path):
     import time
 
     from departureboard.auth import ResetCodes
+    from departureboard.store import platform_folder
 
-    assert load_config(write(tmp_path, TRAIN), ENV).board.reset_code is None
+    elsewhere = load_config(write(tmp_path, TRAIN), ENV).board
+    code = ResetCodes(platform_folder()).issue(time.time())  # no state_file: the platform's folder
+    assert elsewhere.reset_code().code == f"{code[:3]} {code[3:]}"
     board = load_config(_with_state(tmp_path, TRAIN), ENV).board
     assert board.reset_code() is None
     code = ResetCodes(tmp_path / "state").issue(time.time())
@@ -827,9 +831,11 @@ def test_first_run_settings_keep_the_screen_and_its_turn(tmp_path):
 def test_first_run_settings_fall_back_to_the_defaults(tmp_path):
     from departureboard.config import first_run_settings
 
+    from departureboard.store import Store
+
     missing = first_run_settings(tmp_path / "missing.toml")
-    assert (missing.display, missing.rotate, missing.board.reset_code) == ("inky", 0, None)
-    given = first_run_settings(tmp_path / "missing.toml", default_state=tmp_path / "state" / "state.json")
+    assert (missing.display, missing.rotate) == ("inky", 0) and missing.board.reset_code is not None
+    given = first_run_settings(Store.open(tmp_path / "missing.toml", state_dir=tmp_path / "state"))
     assert given.state_file == tmp_path / "state" / "state.json" and given.board.reset_code is not None
     text = TEMPLATE.read_text().replace('display = "inky"', 'display = "hdmi-1280x400"\npanel_colour = "purple"')
     text = text.replace("/var/lib/departureboard/state.json", str(tmp_path / "state" / "state.json"))

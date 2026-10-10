@@ -86,7 +86,7 @@ def test_changes_merge_into_the_overlay_keeping_everything_else(board):
 def test_a_save_drops_what_the_overlay_may_not_hold(board, caplog):
     config, state = board
     (state / "settings.toml").write_text(SAVED.replace("[train]\n", '[train]\nbase_url = "https://example.invalid"\n')
-                                         + '\n[dashboard]\nkb_incidents_url = "https://example.invalid/kb"\n')
+                                         + '\n[dashboard]\nstate_dir = "/example.invalid"\n')
     save_changes(config, CHANGES, {}, ENV)
     saved = tomllib.loads((state / "settings.toml").read_text())
     assert "base_url" not in saved["train"] and "dashboard" not in saved
@@ -120,11 +120,14 @@ def test_a_broken_overlay_is_left_alone(board):
     assert (state / "settings.toml").read_text() == "this is [not toml"
 
 
-def test_a_state_file_is_needed(tmp_path):
+def test_without_a_state_file_the_changes_go_in_the_store(tmp_path):
+    from departureboard.store import Store
+
     config = tmp_path / "config.toml"
     config.write_text('[train]\ncrs = "GLO"\n')
-    with pytest.raises(OverlayError, match="state_file"):
-        save_changes(config, CHANGES, {}, ENV)
+    save_changes(config, {"train": {"rows": 2}}, {}, ENV)
+    assert tomllib.loads(Store.open(config).settings_file.read_text()) == {"train": {"rows": 2}}
+    assert not (tmp_path / "settings.toml").exists()
 
 
 def test_keys_go_only_to_the_private_secrets_overlay(board):

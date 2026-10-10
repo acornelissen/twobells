@@ -5,8 +5,9 @@ import tomllib
 
 import pytest
 
-from departureboard.dashconfig import dashboard_env, load_dashboard, overlay_target
+from departureboard.dashconfig import dashboard_target, load_dashboard
 from departureboard.dashform import DashboardForm
+from departureboard.store import Store
 
 CONFIG = """
 title = "Glossop"
@@ -30,7 +31,8 @@ def form(tmp_path):
     config.write_text(CONFIG)
     folder = tmp_path / "dash"
     folder.mkdir()
-    page = DashboardForm(overlay_target(config, folder), lambda: dashboard_env(ENV, folder))
+    store = Store.open(config, state_dir=folder)
+    page = DashboardForm(dashboard_target(store), lambda: store.env(ENV))
     page.config, page.folder = config, folder
     return page
 
@@ -150,8 +152,9 @@ def test_everything_setup_and_the_page_save_is_read_back(form):
     from departureboard.setupapi import SetupApi
 
     stations = (("Glossop", "GLO", 53.4445, -1.9491), ("Manchester Piccadilly", "MAN", 53.4774, -2.2309))
-    wizard = SetupApi(form.config, lambda: dashboard_env(ENV, form.folder), form.folder, stations=lambda: stations,
-                      make_job=FoundJob, target=overlay_target(form.config, form.folder), keys=KEYS)
+    store = Store.open(form.config, state_dir=form.folder)
+    wizard = SetupApi(dashboard_target(store), lambda: store.env(ENV), form.folder, stations=lambda: stations,
+                      make_job=FoundJob, keys=KEYS)
     assert wizard.handle("start", {"stops": {"A": "1800SB12341"}, "routes": True})[0] == 200
     status, body = wizard.handle("finish", {
         "home": {"lat": 53.46, "lon": -1.96, "country": "Scotland"}, "station_crs": "GLO", "filter_crs": "MAN",
