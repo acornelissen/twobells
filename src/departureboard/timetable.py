@@ -882,9 +882,9 @@ def _lock(folder: Path, wait: bool, cancelled: Callable[[], bool], waiting: Call
     another holds it; with it, look again every LOCK_WAIT_S seconds, calling
     `waiting()` once, until it is free or `cancelled()` (TimetableBusy too).
     The file is private, and a link put in its place is refused."""
-    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = folder / LOCK_NAME
     try:
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
         fd = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
     except OSError as error:
         raise TimetableError(f"Can't open {path}: {error.strerror or error}") from None

@@ -1313,3 +1313,11 @@ def test_the_lock_file_is_private_and_a_link_in_its_place_is_refused(tmp_path):
     with pytest.raises(TimetableError, match="Can't open"):
         build(planted, STOPS, ["BNML"], NOW, "k", build=fake)
     assert fake.calls == [] and not elsewhere.exists()
+
+
+def test_a_store_that_is_not_a_folder_is_a_timetable_error(tmp_path):
+    (tmp_path / "store").write_text("")
+    fake = FakeBuild()
+    with pytest.raises(TimetableError, match="Can't open"):
+        build(tmp_path / "store", STOPS, ["BNML"], NOW, "k", build=fake)
+    assert fake.calls == []
