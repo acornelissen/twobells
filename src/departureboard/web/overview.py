@@ -60,9 +60,10 @@ MEANINGS = {
 _HOST = re.compile(r"(?:\[[0-9A-Fa-f:.]{2,45}\]|[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)(?::[0-9]{1,5})?")
 # Optional keys, by what they add.
 _OPTIONAL = {"RDM_DETAILS_API_KEY": "where each train is", "RDM_KB_API_KEY": "engineering works"}
-# A saved key test's result, in words (30l.6's Keys page saves them).
-_TESTED = {"works": ("pill-ok", "check", "Works"), "wrong_key": ("pill-bad", "x", "Refused"),
-           "not_subscribed": ("pill-bad", "x", "Refused")}
+# A saved key test's result, in words: the Keys page keeps works or refused
+# (settings/keyresults.py); a keytest state says the same.
+_TESTED = {"works": ("pill-ok", "check", "Works"), "refused": ("pill-bad", "x", "Refused"),
+           "wrong_key": ("pill-bad", "x", "Refused"), "not_subscribed": ("pill-bad", "x", "Refused")}
 
 
 @dataclass(frozen=True)
@@ -83,7 +84,7 @@ class Feed:
 
 @dataclass(frozen=True)
 class KeyTest:
-    """A key's last test, as the Keys page saved it: a keytest state and when."""
+    """A key's last test, as the Keys page saved it: works or refused (or a keytest state) and when."""
 
     state: str
     at: datetime

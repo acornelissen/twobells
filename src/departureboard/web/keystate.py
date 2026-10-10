@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo
 from ..settings import keyresults, schema
 from ..settings.config import ConfigError
 from .icons import icon
+from .overview import needed_for
 
 if TYPE_CHECKING:
     from ..settings.installs import Install
@@ -105,24 +106,6 @@ def forms_for(views: tuple[str, ...]) -> tuple[KeyForm, ...]:
     return tuple(form for form in FORMS if set(form.boxes) <= names)
 
 
-def _on(data: Mapping, section: str) -> bool:
-    """Whether a [train] or [bus] section is set up and switched on."""
-    table = data.get(section)
-    return isinstance(table, dict) and table.get("enabled", True) is not False
-
-
-def _needed_for(form: KeyForm, data: Mapping, views: tuple[str, ...]) -> str:
-    """What is on and doesn't work without the form's key; "" if nothing."""
-    if form.name == "RDM_API_KEY" and _on(data, "train"):
-        return "trains"
-    if form.name == "BODS_API_KEY" and _on(data, "bus") and schema.bus_source(data.get("bus")) == "bods":
-        return "buses"
-    if (form.name == "TAPI_APP_KEY" and "board" in views and _on(data, "bus")
-            and schema.bus_source(data.get("bus")) == "transportapi"):
-        return "the board's buses"
-    return ""
-
-
 def _zone(data: Mapping) -> ZoneInfo:
     try:
         return ZoneInfo(str(data.get("timezone", "Europe/London")))
@@ -136,7 +119,7 @@ def states(forms: tuple[KeyForm, ...], data: Mapping, env: Mapping[str, str], vi
     out = []
     for form in forms:
         if not all(str(env.get(box, "")).strip() for box in form.boxes):
-            needed = _needed_for(form, data, views)
+            needed = needed_for(form.name, dict(data), views)
             out.append(KeyState(form, "needed" if needed else "not_set", needed))
             continue
         last = results.get(form.name)

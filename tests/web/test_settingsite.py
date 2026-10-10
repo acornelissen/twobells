@@ -1095,6 +1095,24 @@ def test_a_result_is_said_only_on_the_keys_page(signed):
     assert "<strong>Works:</strong>" in after(signed, response, cookie)
 
 
+def test_the_overview_says_how_each_keys_last_test_went(pi_signed):
+    pi_signed.secrets.write_text(KEYS + "TAPI_APP_ID=app-id-0001\nTAPI_APP_KEY=app-key-0001\n")
+    press(pi_signed, "RDM_API_KEY", "test")
+    pi_signed.setup.result = KeyResult("not_subscribed", "For another product.")
+    press(pi_signed, "BODS_API_KEY", "test")
+    pi_signed.setup.result = KeyResult("wrong_key", "Refused.")
+    press(pi_signed, "TAPI_APP_KEY", "test")
+    page = pi_signed("GET", "/settings", cookie=pi_signed.session())[1]
+    keys = page[page.index('<h2 id="keys-title">'):]
+    rows = dict(re.findall(r"<dt>([^<]+)</dt><dd>(.*?)</dd>", keys[:keys.index("</section>")]))
+    when = pill_time(pi_signed)
+    assert rows["Rail Data Marketplace key"].endswith(f"Works</span> Tested {when}")
+    assert rows["Bus data key"].endswith(f"Refused</span> Tested {when}")
+    # TransportAPI's pair is tested as one: both say so.
+    assert rows["TransportAPI app ID"].endswith(f"Refused</span> Tested {when}")
+    assert rows["TransportAPI app key"].endswith(f"Refused</span> Tested {when}")
+
+
 def test_test_saved_key_never_saves_what_is_typed(signed):
     response, cookie = press(signed, "RDM_DETAILS_API_KEY", "test", {"RDM_DETAILS_API_KEY": "typed-details-key-1"})
     assert response.getheader("Location") == "/settings/keys?tested"

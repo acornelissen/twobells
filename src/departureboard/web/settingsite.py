@@ -59,7 +59,7 @@ from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo
 
 from ..board.state import StateStore
-from ..settings import schema
+from ..settings import keyresults, schema
 from ..settings.config import ConfigError, needs_setup
 from ..settings.schema import BOARD_DEFAULTS
 from ..setup import api as setupapi
@@ -67,6 +67,7 @@ from ..setup.keytest import KeyResult
 from ..setup.lookups import SetupError
 from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
 from ..version import about, package_version
+from . import keystate
 from . import overview as view
 from .auth import (
     FORM_PAGE_HEADERS,
@@ -506,7 +507,7 @@ class SettingsSite:
             groups.append(("On the dashboard", view.dashboard_feeds(self._snapshot(), now, zone, self._updating())))
         out.append(view.render_health(groups, now, PREFIX, problems=1 if self.problem else 0))
         out.append(view.render_place(data, self.store.folder, now, zone))
-        out.append(view.render_keys(data, views, self._secrets(), TAB_PATHS["keys"]))
+        out.append(view.render_keys(data, views, self._secrets(), TAB_PATHS["keys"], self._key_tests(zone)))
         out.append(view.render_actions(data, SETUP, running, host))
         out.append(self._footer())
         return "".join(out)
@@ -549,6 +550,16 @@ class SettingsSite:
             return dict(self.store.env())
         except (OSError, ConfigError):
             return {}
+
+    def _key_tests(self, zone: ZoneInfo) -> dict[str, view.KeyTest]:
+        """Each key's last test the Keys page kept, by key, when in `zone`:
+        TransportAPI's app ID and key share theirs."""
+        boxes = {form.name: form.boxes for form in keystate.FORMS}
+        found = {}
+        for name, last in keyresults.load(self.store.folder).items():
+            test = view.KeyTest(last.state, datetime.fromtimestamp(last.time, zone).replace(tzinfo=None))
+            found |= dict.fromkeys(boxes.get(name, (name,)), test)
+        return found
 
 
 def _query(query: str) -> dict[str, str]:
