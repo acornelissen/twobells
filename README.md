@@ -12,7 +12,7 @@ New here? The [user guide](docs/USER_GUIDE.md) explains what everything on the b
 - An e-paper panel takes about 20 s to refresh, so it redraws only when what it shows changes, and never more than once every 2 minutes. `Updated HH:MM` (`Upd HH:MM` in the plain look) is when the board last changed; if a feed stops arriving, the board says `Not updating`. Departures from an earlier fetch drop off once their time has passed, even outside the polling windows.
 - Two looks, set with `theme`:
   - `sign` (default): an old-school station departure board, amber dot-matrix on black, using the panel's yellow. `1st`/`2nd`/`3rd` trains, `Exp 07:49`, `Cancelled`, and a `Leave by` line under the train you can still catch. The dot-matrix font is drawn for this project at one pixel per LED.
-  - `plain`: white board, bold type, red accent. Same words, except the leave time sits in the header (`Leave 07:05 (07:12)`) and late trains show `+7`.
+  - `plain`: white board, bold type, red accent. Same words, except the leave time sits in the header (`Leave 07:07 (07:12)`) and late trains show `+7`.
 - Wide displays show train platforms. A National Rail disruption notice replaces the bottom line while it lasts, and a rain warning (Open-Meteo, free, no key) appears when rain is likely before you'd reach your train or bus. Bank holidays count as Sundays.
 - Meaning is always in text (`Exp 07:49`, `Cancelled`, `No info`, `+4`, `sch`, `Not updating`). Colour only reinforces it, so the board works for colour-blind viewers and on a mono panel (the sign look falls back to white on black).
 
@@ -53,7 +53,7 @@ Until there is a usable timetable (none yet, built for other stops, run out, or 
 
 ### Walking times
 
-Trains show when to leave for the next one you can still reach (`Leave by 07:05` under that train on the sign look, `Leave 07:05 (07:12)` in the plain header). Each bus row has its own `leave 07:17`. On e-paper it's a clock time, not a countdown, so it only changes when the next reachable departure changes; the HDMI screen counts down instead (`Leave in 3 min`). Set `walk_minutes` under `[train]`, and per stop label under `[bus.walk_minutes]`. To measure a route, ask the OpenStreetMap foot router:
+Trains show when to leave for the next one you can still reach (`Leave by 07:07` under that train on the sign look, `Leave 07:07 (07:12)` in the plain header). Each bus row has its own `leave 07:16`. On e-paper it's a clock time, not a countdown, so it only changes when the next reachable departure changes; the HDMI screen counts down instead (`Leave in 3 min`). Set `walk_minutes` under `[train]`, and per stop label under `[bus.walk_minutes]`. To measure a route, ask the OpenStreetMap foot router:
 
 ```
 https://routing.openstreetmap.de/routed-foot/table/v1/foot/HOME_LON,HOME_LAT;STOP_LON,STOP_LAT?sources=0

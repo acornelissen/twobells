@@ -684,7 +684,7 @@ def _demo(args) -> int:
     ]
     theme = theme_named(args.theme)
     display = PngDisplay(args.png, args.accent or theme.accent, DISPLAY_PANELS[args.display])
-    walk = WalkTimes(train=7, bus={"*": 7})
+    walk = WalkTimes(train=5, bus={"*": 8})
     # A screen preview shows what a screen adds: a running clock and countdowns.
     clock = None if display.panel.epaper else "07:03:15"
     now = datetime(2026, 10, 8, 7, 3, 15)

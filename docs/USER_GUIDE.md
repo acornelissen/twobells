@@ -42,7 +42,7 @@ Each line reads: *which train*, *scheduled time*, *destination*, *status*.
 | `Delayed` | Late, but no expected time yet. |
 | `Cancelled`, on a highlighted bar | It isn't running. |
 | `No info` | No information about this train yet. |
-| `Leave by 07:05` | Set off at 07:05 to walk to the station and catch the train above it. It sits under the first train you can still reach, so if the 1st is too soon, it moves down to the 2nd. |
+| `Leave by 07:07` | Set off at 07:07 to walk to the station and catch the train above it. It sits under the first train you can still reach, so if the 1st is too soon, it moves down to the 2nd. |
 
 **Buses (bottom half)**
 
@@ -51,7 +51,7 @@ Each line reads: *route*, *stop*, *destination*, *when to leave*, *when it goes*
 | You see | It means |
 |---|---|
 | `341 A Hyde` | Route 341 from stop A, going to Hyde. |
-| `leave 07:17` | Set off at 07:17 to walk to that stop in time. |
+| `leave 07:16` | Set off at 07:16 to walk to that stop in time. |
 | `07:41` | Live tracking says it's on time. |
 | `07:24 +4` | Live tracking says it's 4 minutes late and will leave at 07:24. |
 | `07:35 sch` | Timetable time only ("scheduled"): there's no live position for this bus yet, so it could be late. |
@@ -81,7 +81,7 @@ The differences:
 | Plain look | Station board look |
 |---|---|
 | `Upd 07:03` in the top bar | `UPDATED 07:03` at the bottom |
-| `Leave 07:05 (07:12)` next to TRAINS: leave at 07:05 for the 07:12 | `Leave by 07:05` under the train |
+| `Leave 07:07 (07:12)` next to TRAINS: leave at 07:07 for the 07:12 | `Leave by 07:07` under the train |
 | `+7` in the accent colour: 7 minutes late | `Exp 07:49` |
 | `Cancelled` on a black bar | `Cancelled` on a highlighted bar |
 | `! NOT UPDATING` in the accent colour, next to TRAINS or BUSES | `NOT UPDATING: …` at the bottom |

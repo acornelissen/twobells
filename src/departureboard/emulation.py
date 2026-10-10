@@ -69,7 +69,7 @@ def _demo(accent: str | None, tick_seconds: float | None, display: str) -> Emula
             _fake_train(clock, notice_when=demo_disruption),
             SourceConfig(bus, PollPolicy(_ALWAYS, timedelta(minutes=6)), timedelta(minutes=12)),
         ],
-        walk=WalkTimes(train=7, bus={"A": 7, "B": 7}),
+        walk=WalkTimes(train=5, bus={"A": 8, "B": 8}),
         theme=theme,
         tracker=tracker,
         weather=Weather(FakeWeatherSource(clock), PollPolicy(_ALWAYS, timedelta(minutes=30))),
