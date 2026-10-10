@@ -77,7 +77,7 @@ Check the new version as above, then replace the version and digest in the image
 Container Station 3 runs a compose file as an application.
 
 1. In **Container Station**, choose **Create**, then **Create Application**.
-2. Name it `departureboard`. Paste `docker-compose.ghcr.yml`, with the version and digest filled in.
+2. Name it `departureboard`. Paste `deploy/docker/docker-compose.ghcr.yml`, with the version and digest filled in.
 3. Choose **Validate YAML**, then finish the wizard.
 4. Open `http://<NAS IP address>:8090/` from the home network.
 
@@ -104,6 +104,8 @@ chown 10001:10001 /mnt/user/appdata/departureboard
 chmod 700 /mnt/user/appdata/departureboard
 ```
 
+The `sed` puts the version in the template's image tag (its **Repository**).
+
 Then:
 
 1. Check the image's tag with `cosign verify`, as in [Pick a release and check it](#pick-a-release-and-check-it).
@@ -126,7 +128,7 @@ Unraid's own autostart switch, in the Docker tab, takes the place of a restart p
 On TrueNAS SCALE 24.10 or later, apps run in Docker, and a compose file can be installed as a custom app.
 
 1. In **Apps**, choose **Discover Apps**, then **Install via YAML** from the ⋮ menu.
-2. Name it `departureboard`. Paste `docker-compose.ghcr.yml`, with the version and digest filled in, and save.
+2. Name it `departureboard`. Paste `deploy/docker/docker-compose.ghcr.yml`, with the version and digest filled in, and save.
 3. Open `http://<NAS IP address>:8090/` from the home network. Apps installed from YAML have no Web UI button.
 
 Use YAML rather than the guided **Custom App** form: the form, as TrueNAS documents it, has no setting for a read-only system.
@@ -141,16 +143,16 @@ With the version and digest checked as above:
 
 ```bash
 docker run -d --name departureboard --restart unless-stopped \
-  -p 8090:8090 -v departureboard-data:/data \
+  -p 8090:8090 -v dashboard-data:/data \
   --read-only --tmpfs /tmp:size=64m --cap-drop ALL \
   --security-opt no-new-privileges:true --memory 512m --pids-limit 128 \
   --log-opt max-size=1m --log-opt max-file=3 \
   "ghcr.io/acornelissen/inky-departures:$VERSION@$DIGEST"
 ```
 
-Or, in a folder with `docker-compose.ghcr.yml` filled in: `docker compose -f docker-compose.ghcr.yml up -d`.
+Or copy `deploy/docker/docker-compose.ghcr.yml` to a folder, fill it in, and run `docker compose -f docker-compose.ghcr.yml up -d` there.
 
-To update with `docker run`: check the new version, then `docker rm -f departureboard` and run the command again with the new version and digest. The `departureboard-data` volume keeps everything.
+To update with `docker run`: check the new version, then `docker rm -f departureboard` and run the command again with the new version and digest. The `dashboard-data` volume keeps everything.
 
 **Podman** takes the same command, with `podman` in place of `docker`. Without root (rootless):
 

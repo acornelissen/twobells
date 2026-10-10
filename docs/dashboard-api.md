@@ -186,7 +186,7 @@ The map for one bus row; 404 if the id is unknown (as when it's gone from the bo
 ```
 
 - `stops` are the journey's positioned calls: up to 20 before yours, yours, and one after, in order. `time` is the timetabled time.
-- `path` is the road through those stops, first to last, as `[lat, lon]` pairs: each stop, then the road to the next. The roads come from the OpenStreetMap car router when the timetable is built (`roadshape.py`), never when the map is asked for; where it had none, the path goes straight from one stop to the next. It has as many points as `stops` at least, so `[]` when `stops` is empty.
+- `path` is the road through those stops, first to last, as `[lat, lon]` pairs: each stop, then the road to the next. The roads come from the OpenStreetMap car router when the timetable is built (`timetable/roads.py`), never when the map is asked for; where it had none, the path goes straight from one stop to the next. It has as many points as `stops` at least, so `[]` when `stops` is empty.
 - `vehicle` is null when the bus has no live position.
 
 ## `GET /api/history/<id>`

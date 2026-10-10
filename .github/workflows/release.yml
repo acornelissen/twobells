@@ -216,9 +216,9 @@ jobs:
           name: dist
           path: out/
       - name: Archive the tagged source
-        # What deploy/pi/install.sh needs (pyproject.toml, src/, deploy/,
-        # examples/config.example.toml, examples/) plus the docs; not the tests or
-        # the repo's CI, issue tracker and agent files.
+        # What the Pi's scripts in deploy/pi/ need (pyproject.toml, LICENSE, src/,
+        # deploy/ and examples/) plus the docs; not the tests, the CI, or the
+        # local issue tracker and agent files.
         run: |
           git archive --format=tar.gz --prefix="inky-departures-$VERSION/" \
             -o "out/inky-departures-$VERSION.tar.gz" "$GITHUB_SHA" -- . \

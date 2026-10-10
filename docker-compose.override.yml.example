@@ -1,7 +1,7 @@
-# Optional: only for a config.toml kept by hand. The settings page sets
+# Optional: only for a config.toml kept by hand. The settings site sets
 # everything else up without one. Copy this to docker-compose.override.yml
 # (git-ignored) next to config.toml, and compose merges it into
-# docker-compose.yml. config.toml is mounted read-only; the settings page
+# docker-compose.yml. config.toml is mounted read-only; the settings site
 # saves over it in the data volume, never into it.
 services:
   departureboard:

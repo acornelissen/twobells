@@ -46,7 +46,7 @@ rm -rf "$build/build" "$build"/src/*.egg-info
 "$PREFIX/venv/bin/pip" install --quiet --no-deps --no-build-isolation --force-reinstall "$build"
 
 # Ask the new code, as the services' user, about the settings in force:
-# config.toml with those saved from the settings page over it. No keys are read.
+# config.toml with those saved from the settings site over it. No keys are read.
 query() {
   runuser -u departureboard -- "$PREFIX/venv/bin/departureboard" query "$1" --install pi --config "$CONF/config.toml"
 }
@@ -67,9 +67,9 @@ for unit in departureboard.service departureboard.timer departureboard-screen.se
   install -m 644 "$REPO/deploy/pi/$unit" /etc/systemd/system/
 done
 systemctl daemon-reload
-# The settings page hands its internet work to the fetch service, started at
+# The web server hands its internet work to the fetch service, started at
 # boot and by the .path unit when asked. Both restart onto the new code and
-# the spool folder in memory (a running page signs browsers out); then the
+# the spool folder in memory (a running server signs browsers out); then the
 # old spool folders, in memory and on the SD card, go.
 systemctl enable departureboard-fetch.path departureboard-fetch.service
 systemctl restart departureboard-fetch.path departureboard-fetch.service
@@ -98,4 +98,4 @@ fi
 # The web server moved from 8080 in this version, and nothing listens there
 # now: say so, last, where it is seen.
 echo
-echo "The settings page moved to :8090/settings: http://$(hostname).local:8090/settings"
+echo "The settings site moved to :8090/settings: http://$(hostname).local:8090/settings"

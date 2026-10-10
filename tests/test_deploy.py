@@ -425,7 +425,7 @@ def test_install_and_update_give_the_settings_new_address():
     install = (PI / "install.sh").read_text()
     update = (PI / "update.sh").read_text()
     assert "http://$(hostname).local:8090/settings" in install
-    assert "The settings page moved to :8090/settings" in update
+    assert "The settings site moved to :8090/settings" in update
     for text in (install, update):
         assert ":8080" not in text and "departureboard web " not in text
     # The command the settings page gives for the password, as install.sh gives it.
@@ -688,7 +688,7 @@ def test_the_documented_docker_run_is_locked_down_as_compose():
     assert words[-1] == f"{IMAGE}:$VERSION@$DIGEST"
     rest = _docker_run_flags(words[5:-1])
     assert {key: rest.pop(key) for key in ("--restart", "-p", "-v")} == {
-        "--restart": "unless-stopped", "-p": "8090:8090", "-v": "departureboard-data:/data"}
+        "--restart": "unless-stopped", "-p": "8090:8090", "-v": "dashboard-data:/data"}  # the compose file's volume
     assert rest == HARDENING_FLAGS
     assert f'--certificate-identity "{_identity("v$VERSION")}"' in DOCKER_DOCS
     assert f'cosign verify "{IMAGE}@$DIGEST"' in DOCKER_DOCS

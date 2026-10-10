@@ -5,7 +5,7 @@
   <Network>bridge</Network>
   <Privileged>false</Privileged>
   <Shell>sh</Shell>
-  <Overview>The departures dashboard for your station and bus stops in Great Britain, with its settings at /settings. For the home network only: never forward its port. Replace X.Y.Z in Repository with a release's version. Before the first start, give the appdata folder to the container's user: chown 10001:10001 /mnt/user/appdata/departureboard and chmod 700 it. Keys go in the settings.</Overview>
+  <Overview>The departures dashboard for your station and bus stops in Great Britain, with its settings site at /settings. For the home network only: never forward its port. Repository must name a release's version: the one you checked with cosign. Before the first start, give the appdata folder to the container's user: chown 10001:10001 /mnt/user/appdata/departureboard and chmod 700 it. Keys go in the settings.</Overview>
   <WebUI>http://[IP]:[PORT:8090]/settings</WebUI>
   <TemplateURL/>
   <Icon/>

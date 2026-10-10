@@ -31,4 +31,4 @@ Train times come from National Rail's Darwin via the [Rail Data Marketplace](htt
 ## Code
 
 - [Leaflet](https://leafletjs.com) 1.9.4, BSD 2-Clause: `src/departureboard/dashboard_static/vendor/leaflet-1.9.4/LICENSE`.
-- The Waveshare 10.85" e-Paper (G) start-up sequence in `src/departureboard/waveshare.py` follows Waveshare's MIT-licensed `epd10in85g.py` driver.
+- The Waveshare 10.85" e-Paper (G) start-up sequence in `src/departureboard/board/displays/waveshare.py` follows Waveshare's MIT-licensed `epd10in85g.py` driver.

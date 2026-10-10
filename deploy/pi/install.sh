@@ -4,8 +4,8 @@
 #   sudo ./deploy/pi/install.sh [--screen]
 # --screen also installs pygame for the HDMI screen; that happens anyway when
 # /etc/departureboard/config.toml already says display = "hdmi-...".
-# It starts the settings page and the fetch service, and says how to start
-# the board itself.
+# It starts the web server (the settings site, and the dashboard when that
+# view is on) and the fetch service, and says how to start the board itself.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -31,7 +31,7 @@ raspi-config nonint do_spi 0
 raspi-config nonint do_i2c 0
 
 id departureboard &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin departureboard
-# State, saved settings and the settings page password live here.
+# State, saved settings and the settings password live here.
 install -d -o departureboard -g departureboard -m 750 /var/lib/departureboard
 
 python3 -m venv --system-site-packages "$PREFIX/venv"
@@ -59,7 +59,7 @@ install -d -m 755 "$CONF"
 [[ -f "$CONF/secrets.env" ]] || install -m 600 "$REPO/deploy/secrets.env.example" "$CONF/secrets.env"
 
 # Ask the app, as the services' user, about the settings in force: config.toml
-# with those saved from the settings page over it. No keys are read.
+# with those saved from the settings site over it. No keys are read.
 query() {
   runuser -u departureboard -- "$PREFIX/venv/bin/departureboard" query "$1" --install pi --config "$CONF/config.toml"
 }
@@ -80,9 +80,9 @@ for unit in departureboard.service departureboard.timer departureboard-screen.se
   install -m 644 "$REPO/deploy/pi/$unit" /etc/systemd/system/
 done
 systemctl daemon-reload
-# The settings page can't reach the internet; the fetch service does its
+# The web server can't reach the internet; the fetch service does its
 # internet work (the wizard's lookups, the dashboard's feeds). It starts at
-# boot, and the .path unit starts it whenever the page leaves it a request.
+# boot, and the .path unit starts it whenever the server leaves it a request.
 systemctl enable --now departureboard-fetch.path departureboard-fetch.service
 systemctl enable --now departureboard-web.service
 # Bus times from the BODS timetable need it built and kept fresh.
@@ -101,12 +101,12 @@ else
 fi
 
 echo
-echo "Installed. The settings page and the fetch service are running. Next:"
+echo "Installed. The web server and the fetch service are running. Next:"
 if grep -qx board <<<"$views"; then
   cat <<EOF
   1. Start the board:
        sudo systemctl enable --now $renderer
-     Until it is set up, it shows "Set me up" and the settings page's address.
+     Until it is set up, it shows "Set me up" and the settings site's address.
 EOF
 else
   cat <<EOF
@@ -116,7 +116,7 @@ else
 EOF
 fi
 cat <<EOF
-  2. Open the settings page: http://$(hostname).local:8090/settings on a phone or
+  2. Open the settings site: http://$(hostname).local:8090/settings on a phone or
      computer on your home network. Claim it with the code the board shows (or
      set the password here first:
        sudo -u departureboard $PREFIX/venv/bin/departureboard serve --install pi --set-password )

@@ -247,7 +247,7 @@ sudo systemctl enable --now departureboard.timer             # e-paper
 sudo systemctl enable --now departureboard-screen.service    # the HDMI screen
 ```
 
-For the HDMI screen, set `display = "hdmi-1280x400"` in `/etc/departureboard/config.toml` first, or run `sudo ./deploy/pi/install.sh --screen`: either way it installs pygame and names the screen's service. See [Choosing a display](#choosing-a-display).
+For the HDMI screen, set `display = "hdmi-1280x400"` in `/etc/departureboard/config.toml` (`install.sh` puts one there) and run `install.sh` again: it installs pygame and names the screen's service. `install.sh --screen` only installs pygame up front; which service it names still follows `display`. See [Choosing a display](#choosing-a-display).
 
 Then open `http://<pi name>.local:8090/settings` on a phone or computer on your home network, and carry on with [First run](#4-first-run-and-the-setup-wizard).
 
@@ -391,7 +391,7 @@ Each install keeps everything it saves in one folder, its store:
 | Docker | `/data`, in the `dashboard-data` volume |
 | Desktop | `~/Library/Application Support/departureboard` on a Mac; on Linux, `departureboard` in `$XDG_STATE_HOME`, else in `~/.local/state` |
 
-`--state-dir`, `state_file` or `[dashboard] state_dir` in `config.toml` can name another. In it:
+`--state-dir` names another. Without it, `state_file` or `[dashboard] state_dir` in `config.toml` can, except on a Pi, where systemd gives every service `/var/lib/departureboard` (as `$STATE_DIRECTORY`) and that wins. In Docker the container passes `--state-dir /data`. In it:
 
 - `settings.toml`: what the tabs and the wizard save, layered over `config.toml`, which is never rewritten. It holds only the settings they manage; anything else put in it is ignored, and the log names it. Addresses (`[train]` and `[bus]` `base_url`), `state_file`, `display` and the other hand-edited settings belong in `config.toml`. A `settings.toml` that can't be read is replaced on the next save, with a copy kept as `settings.toml.broken`.
 - `secrets.env`: keys pasted in the settings or the wizard, readable by the app's user only. They win over the keys you give it in a `secrets.env` of your own.
@@ -501,7 +501,7 @@ Or get the new release onto the Pi as for installing, check it, then from its fo
 sudo ./deploy/pi/update.sh
 ```
 
-`update.sh` installs the new code, refreshes the systemd units, restarts the web server and the fetch service, starts a bus timetable build if buses come from BODS, and runs the e-paper board once if its timer is on. `--config FILE` and `--secrets FILE` replace `/etc/departureboard/config.toml` and `secrets.env` too (the secrets copy is shredded). Restarting the web server signs browsers out.
+`update.sh` installs the new code, refreshes the systemd units, restarts the web server and the fetch service, starts a bus timetable build if buses come from BODS, restarts the screen's service if it is running, and runs the e-paper board once if its timer is on. `--config FILE` and `--secrets FILE` replace `/etc/departureboard/config.toml` and `secrets.env` too (the secrets copy is shredded). Restarting the web server signs browsers out.
 
 ### Choosing a display
 
@@ -555,7 +555,7 @@ windows = ["Mon-Sun 06:00-23:00"]
 
   Run by hand with your own config and keys (on a laptop, say), `departureboard timetable --force` does both in one step.
 
-Until there's a usable timetable (none yet, built for other stops, run out, or not rebuilt for four weeks), TransportAPI stands in on the board if its keys are set, checked every `fallback_interval_minutes` (default 12), within the daily budget, and only inside `fallback_windows`. Set those to the commute (`["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]` fits 28 lookups with two stops); without them it uses the bus windows, and the allowance runs out by mid-morning. Without TransportAPI keys the board says it isn't updating buses.
+Until there's a usable timetable (none yet, built for other stops, run out, or not rebuilt for four weeks), TransportAPI stands in on the board if its keys are set, checked every `fallback_interval_minutes` (default 12), within the daily budget, and only inside `fallback_windows`. Set those to the commute (`["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]` fits 28 lookups with two stops). Without `fallback_windows`, it uses the bus windows if `[bus] windows` is set (the Board tab sets it when you save), and then the allowance runs out by mid-morning; if not, it uses those commute windows. Both are set in `config.toml` only. Without TransportAPI keys the board says it isn't updating buses.
 
 ### The bus budget
 
@@ -588,7 +588,7 @@ Screen only. It needs `BODS_API_KEY` and a stop list for each route you want to 
 departureboard route 341 --stop A --noc BNML --config config.toml --secrets secrets.env
 ```
 
-Paste the printed `[bus.routes]` block into `config.toml`. It picks enough stops before yours to cover your walk plus 5 minutes of bus travel, at most 8. `BNML` is the operator code for Bee Network; for other operators, `probe bus --save DIR` writes TransportAPI's raw answers, which include an `operator` field. Timetable downloads for a large operator can be hundreds of MB; `--txc FILE` uses one you've already downloaded instead.
+Paste the printed `[bus.routes]` block into `config.toml`. It picks enough stops before yours to cover your walk plus 5 minutes of bus travel, at most 8. `BNML` is the operator code for Bee Network. The setup wizard and `departureboard setup discover` find your stops' operator codes, and save or print them as `[bus] operators`. Timetable downloads for a large operator can be hundreds of MB; `--txc FILE` uses one you've already downloaded instead.
 
 A bus that starts its journey at your stop is followed on its way in. If, say, most 341s to Hyde start at your stop, the page follows the 341 arriving from the other direction, which then turns round as your bus.
 

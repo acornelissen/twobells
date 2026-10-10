@@ -1,5 +1,5 @@
 [Unit]
-Description=Inky pHAT departure board tick
+Description=Departure board tick (Inky or Waveshare e-paper)
 Wants=network-online.target
 After=network-online.target
 

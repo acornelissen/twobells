@@ -41,16 +41,19 @@ CI runs ruff, the tests on Python 3.11, 3.12 and 3.13, and builds the wheel and 
 
 ## Develop on your laptop
 
-With [mise](https://mise.jdx.dev) (it pins python, ruff and node in `mise.toml`):
+With [mise](https://mise.jdx.dev) (it pins python, ruff, node and uv in `mise.toml`):
 
 ```bash
 mise install                 # the pinned tools
-mise run setup               # .venv with the package and its dev tools
+mise run setup               # .venv with the package and its dev tools, as uv.lock pins them
 mise run test
 mise run lint                # ruff
 mise run demo                # sample board to preview.png, no keys
 mise run emulate             # the browser panel emulator on sample data
+mise run serve               # the dashboard and settings, with ./config.toml and ./secrets.env
 ```
+
+[CONTRIBUTING.md](CONTRIBUTING.md) lists the checks a change must pass.
 
 Without mise: `uv sync && uv run pytest`.
 
@@ -77,7 +80,7 @@ departureboard emulate --demo --display hdmi-1280x400                # another p
 
 It opens <http://127.0.0.1:8780/>, or the next free port (`--port` picks another; `--no-browser` leaves the browser alone). Live modes emulate the `display` in your config; `--display` overrides it. Choose realistic (20 s), quick or instant refresh, and the scale (1× to 4× for the pHAT, ½× or 1× for the bigger panels); 1× is the panel's real pixel count. `--tick SECONDS` sets the tick (e-paper: 2 in the demo, 60 live; the screen: 1), and `--accent red` or `yellow` the demo's colour. The demo drops the bus feed from 07:30 to 07:52 simulated time, so the "Not updating" badge shows up.
 
-On start the emulator fetches every source once, even outside its windows, so the board fills straight away; after that it polls only inside the windows. A live start therefore costs one TransportAPI hit per bus stop. The daily budget still applies, and when it is spent the first fetch is skipped too. `departureboard run` does the same on its very first run, when there is no saved state yet. Live modes keep state in the store, so the TransportAPI budget holds across restarts.
+On start the emulator fetches every source once, even outside its windows, so the board fills straight away; after that it polls only inside the windows. Bus times from the BODS timetable cost nothing. Where TransportAPI gives them (`source = "transportapi"`, or standing in while there is no timetable), a live start costs one hit per bus stop; the daily budget still applies, and when it is spent the first fetch is skipped too. `departureboard run` does the same on its very first run, when there is no saved state yet. Live modes keep state in the store, so the TransportAPI budget holds across restarts.
 
 ## The dashboard's API
 
@@ -85,64 +88,31 @@ The server and the dashboard page talk through a read-only JSON and SSE API, spe
 
 ## Layout
 
-| Module | Role |
-|---|---|
-| `cli/` | The commands, a module each, and the parser in `cli/main.py` (see the [user guide](docs/user-guide.md#11-commands)) |
-| `installs.py` | The kinds of install (Pi, Docker, desktop) and everything that differs between them |
-| `store.py` | The store: the one folder an install saves in, and how settings and keys are layered over `config.toml` |
-| `migrate.py` | Brings the old dashboard's folder into the store, once, on a desktop |
-| `schema.py` | Every setting the settings and setup save, by group (general, board, dashboard); `[app] views`; the board's defaults |
-| `config.py` | Loads the settings and keys into the board's sources; checks whether the app is set up |
-| `version.py` | The installed version, for `--version` |
-| `model.py` | Provider-neutral `Departure` and lateness maths |
-| `darwin.py`, `transportapi.py` | Sources; HTTP injected, so parsing is tested with fixtures |
-| `timetable.py`, `schedule_model.py` | BODS TransXChange to the journeys calling at your stops, and when each runs (`timetable` command) |
-| `roadshape.py` | The roads between stops for the dashboard's bus maps, from the OpenStreetMap car router, once per timetable build |
-| `livebus.py` | Pure: matches live buses to timetabled journeys and works out departures and delays |
-| `bodsbus.py` | The `source = "bods"` bus source: timetable plus live positions, TransportAPI fallback |
-| `schedule.py`, `budget.py` | When to poll, and the daily hit cap |
-| `view.py` | Departures to text rows plus a change signature |
-| `panel.py` | Panel sizes; bigger panels draw each sign dot as a block of pixels |
-| `themes.py` | `sign` and `plain`: wording plus renderer |
-| `sign.py`, `dotfont.py` | Station board renderer and its dot-matrix font |
-| `render.py` | Plain renderer |
-| `display.py` | Inky or PNG output; picks the display named in config |
-| `waveshare.py` | Waveshare 10.85" e-Paper (G) driver |
-| `screen.py` | HDMI screen output with pygame |
-| `emulator.py`, `emulator.html`, `emulation.py` | Browser panel emulator and its demo/live wiring |
-| `bods.py`, `route.py` | Live bus positions from BODS; placing the next bus on its route strip |
-| `routesetup.py` | Builds a route strip from a BODS timetable and NaPTAN (`route` command) |
-| `weather.py` | Open-Meteo forecast and the rain-warning rule |
-| `holidays.py` | Bank holidays from GOV.UK (England and Wales, Scotland, Northern Ireland), cached weekly |
-| `walk.py` | Walking times, and when to leave for the next departure |
-| `app.py` | One tick of the board: poll what's due, redraw only on change |
-| `state.py` | JSON state kept between runs |
-| `status.py` | The Board tab's Status section; short, key-free error messages |
-| `fake.py` | Deterministic fake sources (sample Glossop data) and simulated clock |
-| `http.py` | Small HTTPS helper, standard library only |
-| `safexml.py` | XML parsing that refuses a DOCTYPE |
-| `dashserver.py` | The one web server: the dashboard's page, files and API, and everything under `/settings` handed to the settings site |
-| `settingsite.py` | The settings site: sign-in, the General, Board and Dashboard tabs, and the setup wizard's address |
-| `groupform.py` | One tab's form: its fields from `schema.py`, its checks, saving, and its key tests |
-| `formpages.py`, `web.css` | The settings site's sign-in, claim and reset pages, and its stylesheet |
-| `auth.py` | Passwords, sessions, form tokens, lockout, reset codes and the home-network request checks |
-| `overlay.py` | Merges what a tab or the wizard changes into the store's `settings.toml` and `secrets.env` |
-| `setup.py`, `osgb.py`, `data/` | First-run setup core: home from a postcode or address, nearby stations and stops, walk times, a config fragment |
-| `discover.py` | Finds the bus companies and lines serving your stops and builds their timetable (`setup discover`, and the wizard's search) |
-| `keytest.py` | Tests a key with one harmless call to its service (the wizard's and the tabs' test buttons) |
-| `setupapi.py`, `wizard_static/` | The setup wizard: its JSON API, and its page (HTML, CSS, JS) |
-| `setupspool.py` | On a Pi, hands the wizard's internet work from the web server to the fetch service through files in memory |
-| `fetch.py` | The Pi's fetch service (`fetch` command): the wizard's lookups and the dashboard's pollers, outbound only |
-| `handoff.py` | On a Pi, the dashboard's snapshot handed from the fetch service to the web server as a file |
-| `dashconfig.py` | The dashboard's settings |
-| `collector.py`, `snapshot.py` | The dashboard's pollers, and the versioned snapshot the page shows |
-| `history.py` | Punctuality history in SQLite (dashboard) |
-| `enrich.py` | Dashboard row extras: arrival times, the inbound bus, a bus due with no tracker |
-| `area.py` | Dashboard: the area map's live buses, and timetable changes coming up |
-| `disruptions.py` | Dashboard: bus disruptions from BODS SIRI-SX, rail incidents from the Knowledgebase |
-| `dashboard_static/` | Dashboard page: HTML, CSS, JS modules, vendored Leaflet 1.9.4 |
+One package, `src/departureboard`, a folder per part of the app. Each folder's `__init__.py` says what it holds.
 
-To add a provider, implement `fetch() -> list[Departure]` with a `name` and add it to `config.py`.
+| Folder | Role |
+|---|---|
+| `cli/` | The commands, a module each (`run`, `serve`, `timetable`, `setup`, and `dev` for `demo`, `emulate`, `probe` and `route`), and the parser in `cli/main.py` (see the [user guide](docs/user-guide.md#11-commands)). `__main__.py` makes it `python -m departureboard` |
+| `core/` | Shared building blocks: the provider-neutral `Departure` and lateness maths (`model.py`), when to poll (`polling.py`), the daily hit cap (`budget.py`), walk times (`walk.py`), the HTTPS helper (`net.py`), files written whole or not at all, and lock files (`files.py`), XML that refuses a DOCTYPE (`safexml.py`), grid references (`osgb.py`), and short, key-free error messages (`errors.py`) |
+| `settings/` | The store, the one folder an install saves in, layered over `config.toml` (`store.py`); every saved setting, by group, and the board's defaults (`schema.py`); loading them into the board's sources (`config.py`); the kinds of install and what differs between them (`installs.py`); saving a tab's or the wizard's changes (`overlay.py`); bringing the old dashboard's folder in, once (`migrate.py`) |
+| `sources/` | Where departures and the rest come from, with HTTP injected so parsing is tested with fixtures: Darwin (`darwin.py`), the BODS bus source (`bodsbus.py`: timetable plus live positions, with TransportAPI standing in) and its matching (`livebus.py`), BODS positions (`bods.py`), TransportAPI (`transportapi.py`), disruptions (`disruptions.py`), weather (`weather.py`) and bank holidays (`holidays.py`) |
+| `timetable/` | The BODS bus timetable: built from TransXChange for your stops (`build.py`), kept between builds (`model.py`), the roads between stops for the dashboard's maps (`roads.py`), and route strips for the screen (`routesetup.py`, the `route` command) |
+| `board/` | The board view: one tick, redrawn only on change (`app.py`), departures to rows (`view.py`), the two looks (`themes.py`, `sign.py` and `dotfont.py`, `render.py`), panel sizes (`panel.py`), route strips (`route.py`), state between runs (`state.py`) |
+| `board/displays/` | Inky or PNG output (`display.py`), the Waveshare 10.85" e-Paper (G) driver (`waveshare.py`), and the HDMI screen with pygame (`screen.py`) |
+| `dashboard/` | The dashboard view: its settings (`config.py`), pollers (`collector.py`), the versioned snapshot the page shows (`snapshot.py`), row extras (`enrich.py`), the area map (`area.py`), punctuality history in SQLite (`history.py`) |
+| `web/` | The one web server on port 8090 (`server.py`): the dashboard's page, files and API, and the settings site under `/settings` (`settingsite.py`, a `groupform.py` form per tab, `formpages.py` and `web.css`), sign-in and the home-network checks (`auth.py`), the Board tab's status (`status.py`) |
+| `setup/` | First-run setup: the wizard's JSON API (`api.py`), finding home, stations, stops and walk times (`lookups.py`), finding the bus companies and building their timetable (`discover.py`), key tests (`keytest.py`) |
+| `setup/spool/` | On a Pi, the wizard's internet work handed from the web server to the fetch service through files in memory: the web server's side (`runner.py`), the fetch service's (`worker.py`), the folder (`folder.py`) and the checks on what each side writes (`checks.py`) |
+| `fetch/` | The Pi's outbound-only fetch service (`service.py`, the `fetch` command), and the dashboard's snapshot handed to the web server as a file (`handoff.py`) |
+| `emulator/` | The browser panel emulator (`server.py`, `emulator.html`), its demo and live wiring (`emulation.py`), and the fake sources and clock (`fake.py`) |
+| `dashboard_static/` | The dashboard's page: HTML, CSS, JS modules, vendored Leaflet 1.9.4 |
+| `wizard_static/` | The setup wizard's page: HTML, CSS, a JS module per step. It sits beside `dashboard_static/` because it uses the dashboard's `dom.js` and Leaflet by relative path, which must resolve the same on disk as when served |
+| `data/` | Stations and NaPTAN areas for setup, built by `tools/build_setup_data.py` |
+| `version.py` | The installed version, for `--version` |
+
+Tests mirror the package: `tests/<folder>/test_<module>.py`, with `tests/test_deploy.py` keeping the deploy files and their docs in step. `deploy/` holds the Pi's units and scripts (`pi/`), the published image's compose file and the image's pinned requirements (`docker/`), the desktop's login files (`desktop/`), the Unraid template (`unraid/`) and `secrets.env.example`; `Dockerfile` and `docker-compose.yml` stay at the top, where `docker compose` looks.
+
+To add a provider, implement `fetch() -> list[Departure]` with a `name` and add it to `settings/config.py`.
 
 ## Licence
 
