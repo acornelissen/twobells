@@ -7,9 +7,9 @@ A train and bus departure app for your station and stops in Great Britain. One i
 
 A Pi can run either view or both; Docker and a desktop run the dashboard. Each install has one settings site, at `/settings` on port 8090, with one password and a setup wizard that finds your station, stops, walk times and bus companies from your postcode. The examples use Glossop, with trains to Manchester and buses from two nearby stops (`examples/glossop.toml`).
 
-![Board preview](docs/preview.png)
+![Board preview](docs/images/preview.png)
 
-New here? The [user guide](docs/USER_GUIDE.md) explains what everything on the board and the dashboard means, how to install it, how to use the settings, and how to look after it. [Getting your keys](docs/KEYS.md) covers the free keys it needs.
+New here? The [user guide](docs/user-guide.md) explains what everything on the board and the dashboard means, how to install it, how to use the settings, and how to look after it. [Getting your keys](docs/keys.md) covers the free keys it needs.
 
 - **Where it works:** trains anywhere in Great Britain (National Rail Darwin). Bus times and positions from BODS cover England only. The rain warning works anywhere. Bank holidays follow England and Wales, Scotland or Northern Ireland.
 - **Trains:** National Rail Darwin, via the Rail Data Marketplace. Free.
@@ -20,11 +20,11 @@ New here? The [user guide](docs/USER_GUIDE.md) explains what everything on the b
 
 ## Install
 
-- **Raspberry Pi** (the board, and the dashboard if you like): download a release tarball and its `SHA256SUMS`, check it with `sha256sum --check --ignore-missing SHA256SUMS`, unpack it and run `sudo ./deploy/install.sh`. Nothing is piped from the internet into `sudo bash`. Then open `http://<pi name>.local:8090/settings`. `sudo ./deploy/upgrade.sh VERSION` moves it to another release, checked the same way. See [On a Raspberry Pi](docs/USER_GUIDE.md#on-a-raspberry-pi).
-- **Docker** (a NAS, say; the dashboard): copy the folder, copy `deploy/secrets.env.example` to `secrets.env`, and `docker compose up -d --build`. The container is `departureboard`, keeping its data in the `dashboard-data` volume. See [Docker](docs/USER_GUIDE.md#9-docker). From the first release, `docker-compose.ghcr.yml` runs the published, signed image instead; [Docker on other NASes and on Linux](docs/DOCKER.md) covers QNAP, Unraid, TrueNAS SCALE, and Docker or Podman.
-- **Desktop** (a Mac or Linux laptop; the dashboard): `uv tool install departureboard` or `pipx install departureboard` (from PyPI from the first release), then `departureboard serve`. `deploy/desktop` has a launchd agent and a systemd user service to start it at login. See [Desktop](docs/USER_GUIDE.md#10-desktop).
+- **Raspberry Pi** (the board, and the dashboard if you like): download a release tarball and its `SHA256SUMS`, check it with `sha256sum --check --ignore-missing SHA256SUMS`, unpack it and run `sudo ./deploy/pi/install.sh`. Nothing is piped from the internet into `sudo bash`. Then open `http://<pi name>.local:8090/settings`. `sudo ./deploy/pi/upgrade.sh VERSION` moves it to another release, checked the same way. See [On a Raspberry Pi](docs/user-guide.md#on-a-raspberry-pi).
+- **Docker** (a NAS, say; the dashboard): copy the folder, copy `deploy/secrets.env.example` to `secrets.env`, and `docker compose up -d --build`. The container is `departureboard`, keeping its data in the `dashboard-data` volume. See [Docker](docs/user-guide.md#9-docker). From the first release, `deploy/docker/docker-compose.ghcr.yml` runs the published, signed image instead; [Docker on other NASes and on Linux](docs/docker.md) covers QNAP, Unraid, TrueNAS SCALE, and Docker or Podman.
+- **Desktop** (a Mac or Linux laptop; the dashboard): `uv tool install departureboard` or `pipx install departureboard` (from PyPI from the first release), then `departureboard serve`. `deploy/desktop` has a launchd agent and a systemd user service to start it at login. See [Desktop](docs/user-guide.md#10-desktop).
 
-No `config.toml` is needed: the setup wizard saves your settings in the install's store. `config.example.toml` lists everything that can be set by hand.
+No `config.toml` is needed: the setup wizard saves your settings in the install's store. `examples/config.example.toml` lists everything that can be set by hand.
 
 The settings password is claimed with a code shown on the board, or put in the log where there is no board. Or set it from the command line; in Docker:
 
@@ -33,7 +33,7 @@ docker exec -it departureboard python -m departureboard serve --set-password --s
 docker exec -it departureboard python -m departureboard serve --reset-code --state-dir /data
 ```
 
-Upgrading from the separate board settings page (port 8080) or `departureboard dashboard`: see [Upgrading](docs/USER_GUIDE.md#13-upgrading-from-before-the-two-views).
+Upgrading from the separate board settings page (port 8080) or `departureboard dashboard`: see [Upgrading](docs/user-guide.md#13-upgrading-from-before-the-two-views).
 
 ## Releases
 
@@ -87,7 +87,7 @@ The server and the dashboard page talk through a read-only JSON and SSE API, spe
 
 | Module | Role |
 |---|---|
-| `cli/` | The commands, a module each, and the parser in `cli/main.py` (see the [user guide](docs/USER_GUIDE.md#11-commands)) |
+| `cli/` | The commands, a module each, and the parser in `cli/main.py` (see the [user guide](docs/user-guide.md#11-commands)) |
 | `installs.py` | The kinds of install (Pi, Docker, desktop) and everything that differs between them |
 | `store.py` | The store: the one folder an install saves in, and how settings and keys are layered over `config.toml` |
 | `migrate.py` | Brings the old dashboard's folder into the store, once, on a desktop |

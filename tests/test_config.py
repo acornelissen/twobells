@@ -8,7 +8,7 @@ from departureboard.sources.darwin import DarwinSource
 from departureboard.sources.transportapi import TransportApiBusSource
 
 ROOT = Path(__file__).parent.parent
-TEMPLATE = ROOT / "config.example.toml"  # the blank template, with CHANGE_ME placeholders
+TEMPLATE = ROOT / "examples/config.example.toml"  # the blank template, with CHANGE_ME placeholders
 GLOSSOP = ROOT / "examples" / "glossop.toml"  # the worked example, filled in
 ENV = {"RDM_API_KEY": "rdm", "TAPI_APP_ID": "id", "TAPI_APP_KEY": "key"}
 
@@ -749,7 +749,7 @@ def test_the_board_looks_for_a_reset_code_in_the_store(tmp_path):
 
 
 def installed_template(tmp_path):
-    """config.example.toml as install.sh copies it, its state folder under tmp_path."""
+    """examples/config.example.toml as install.sh copies it, its state folder under tmp_path."""
     text = TEMPLATE.read_text().replace("/var/lib/departureboard/state.json", str(tmp_path / "state" / "state.json"))
     return write(tmp_path, text)
 

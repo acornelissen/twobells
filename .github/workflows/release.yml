@@ -129,7 +129,7 @@ jobs:
       - name: Install the wheel into a fresh venv and check its version
         run: |
           python -m venv "$RUNNER_TEMP/try"
-          "$RUNNER_TEMP/try/bin/pip" install --require-hashes --only-binary=:all: --no-deps -r deploy/requirements-docker.txt
+          "$RUNNER_TEMP/try/bin/pip" install --require-hashes --only-binary=:all: --no-deps -r deploy/docker/requirements-docker.txt
           "$RUNNER_TEMP/try/bin/pip" install --no-deps --no-index "dist/departureboard-$VERSION-py3-none-any.whl"
           cd "$RUNNER_TEMP"
           got="$("$RUNNER_TEMP/try/bin/departureboard" --version)"
@@ -216,8 +216,8 @@ jobs:
           name: dist
           path: out/
       - name: Archive the tagged source
-        # What deploy/install.sh needs (pyproject.toml, src/, deploy/,
-        # config.example.toml, examples/) plus the docs; not the tests or
+        # What deploy/pi/install.sh needs (pyproject.toml, src/, deploy/,
+        # examples/config.example.toml, examples/) plus the docs; not the tests or
         # the repo's CI, issue tracker and agent files.
         run: |
           git archive --format=tar.gz --prefix="inky-departures-$VERSION/" \
@@ -228,7 +228,7 @@ jobs:
           # writing to a grep that has already found its line and gone.
           listing="$(tar -tzf "out/inky-departures-$VERSION.tar.gz")"
           for script in install.sh update.sh upgrade.sh; do
-            grep -qx "inky-departures-$VERSION/deploy/$script" <<<"$listing"
+            grep -qx "inky-departures-$VERSION/deploy/pi/$script" <<<"$listing"
           done
       - name: Write SHA256SUMS
         working-directory: out
@@ -293,11 +293,11 @@ jobs:
           curl -fLO $base/SHA256SUMS
           sha256sum --check --ignore-missing SHA256SUMS &&
             tar -xzf inky-departures-$VERSION.tar.gz &&
-            cd inky-departures-$VERSION && sudo ./deploy/install.sh
+            cd inky-departures-$VERSION && sudo ./deploy/pi/install.sh
           \`\`\`
 
           A Pi installed from an earlier release moves to this one, checked the same way,
-          from the earlier release's folder: \`sudo ./deploy/upgrade.sh $VERSION\`
+          from the earlier release's folder: \`sudo ./deploy/pi/upgrade.sh $VERSION\`
 
           ## Verify
 

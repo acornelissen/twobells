@@ -8,7 +8,7 @@
 #     workflows; pyproject's dev pin of ruff must match mise.toml, so
 #     pyproject.toml and uv.lock are left out on purpose (uv lock --upgrade).
 #   - The binfmt and buildkit image digests in ci.yml and release.yml.
-#   - Debian packages that deploy/install.sh takes from apt.
+#   - Debian packages that deploy/pi/install.sh takes from apt.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -23,11 +23,12 @@ updates:
     commit-message:
       prefix: ci
 
-  # deploy/requirements-pi.txt and requirements-docker.txt: exact versions with
-  # hashes, installed with --no-deps. Check a bump's own dependencies by hand
-  # (install.sh takes them from Debian; the image takes nothing else).
+  # deploy/pi/requirements-*.txt and deploy/docker/requirements-docker.txt:
+  # exact versions with hashes, installed with --no-deps. Check a bump's own
+  # dependencies by hand (install.sh takes them from Debian; the image takes
+  # nothing else).
   - package-ecosystem: pip
-    directory: /deploy
+    directories: [/deploy/pi, /deploy/docker]
     schedule:
       interval: weekly
     cooldown:

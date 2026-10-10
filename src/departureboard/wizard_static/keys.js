@@ -15,7 +15,7 @@ const NEEDED = {
   BODS_API_KEY: () => state.chosen.length ? "Needed for buses." : "",
 };
 
-// The short way to get each key, from docs/KEYS.md; its link has the full guide.
+// The short way to get each key, from docs/keys.md; its link has the full guide.
 const SIGN_UP = {
   RDM_API_KEY: [
     "Register at raildata.org.uk as an individual not affiliated with a company. Approval can take up to 3 working days.",

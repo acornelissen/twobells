@@ -1,6 +1,6 @@
 # Docker on other NASes and on Linux
 
-The [user guide's Docker section](USER_GUIDE.md#9-docker) builds the image from source on a Synology NAS. This page covers the published image instead, on QNAP, Unraid, TrueNAS SCALE, and Docker or Podman on any Linux computer.
+The [user guide's Docker section](user-guide.md#9-docker) builds the image from source on a Synology NAS. This page covers the published image instead, on QNAP, Unraid, TrueNAS SCALE, and Docker or Podman on any Linux computer.
 
 From the first release, each release publishes a signed image, `ghcr.io/acornelissen/inky-departures`, for 64-bit computers (`linux/amd64` and `linux/arm64`). There is no image for 32-bit ARM. Until the first release, build from source as in the user guide.
 
@@ -31,7 +31,7 @@ cosign verify "ghcr.io/acornelissen/inky-departures@$DIGEST" \
 
 `cosign verify` must end without an error: then that digest was built and signed by this project's release workflow for that version. Use the image as `ghcr.io/acornelissen/inky-departures:0.1.0@sha256:...`, with the digest in full.
 
-`docker-compose.ghcr.yml` in the project is a compose file for the published image, with the same settings as `docker-compose.yml`. Replace `X.Y.Z` and `DIGEST` in its `image:` line; until you do, compose refuses to run it.
+`deploy/docker/docker-compose.ghcr.yml` in the project is a compose file for the published image, with the same settings as `docker-compose.yml`. Replace `X.Y.Z` and `DIGEST` in its `image:` line; until you do, compose refuses to run it.
 
 ### What the container needs
 
@@ -64,7 +64,7 @@ allowed_hosts = ["nas.example.com"]
 
 ### First start
 
-Open `http://<NAS IP address>:8090/` and [set it up](USER_GUIDE.md#4-first-run-and-the-setup-wizard). The code to claim the settings is in the container's log. The commands that set the password or print a new code are in [Password and reset codes](USER_GUIDE.md#6-password-and-reset-codes); they name the container `departureboard`, as the files and commands here call it. If your platform names it otherwise, use that name.
+Open `http://<NAS IP address>:8090/` and [set it up](user-guide.md#4-first-run-and-the-setup-wizard). The code to claim the settings is in the container's log. The commands that set the password or print a new code are in [Password and reset codes](user-guide.md#6-password-and-reset-codes); they name the container `departureboard`, as the files and commands here call it. If your platform names it otherwise, use that name.
 
 ### Updating
 

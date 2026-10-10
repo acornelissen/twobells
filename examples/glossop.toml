@@ -1,6 +1,6 @@
 # Worked example: a board in Glossop, Derbyshire, showing trains to
 # Manchester Piccadilly and buses from two stops in the town centre.
-# config.example.toml is the blank template to start from; this file shows
+# examples/config.example.toml is the blank template to start from; this file shows
 # what a filled-in one looks like. The station, stop and operator codes are
 # Glossop's; the walk times and the route's stops are made up for illustration.
 

@@ -399,12 +399,12 @@ def test_without_routes_old_strips_for_gone_stops_are_cleared(board):
     assert tomllib.loads((board.state / "settings.toml").read_text())["bus"]["routes"] == {}
 
 
-TEMPLATE = Path(__file__).parent.parent / "config.example.toml"
+TEMPLATE = Path(__file__).parent.parent / "examples/config.example.toml"
 
 
 @pytest.fixture
 def template(board):
-    """The board's fixture on config.example.toml as installed: CHANGE_ME
+    """The board's fixture on examples/config.example.toml as installed: CHANGE_ME
     placeholders for the station and stops, and nothing saved yet."""
     text = TEMPLATE.read_text().replace("/var/lib/departureboard/state.json", str(board.state / "state.json"))
     board.config.write_text(text)
@@ -478,7 +478,7 @@ def test_begin_says_which_keys_are_set_never_their_values(board):
     body = ok(board, "begin")
     keys = {k["name"]: k for k in body["keys"]}
     assert keys["RDM_API_KEY"]["set"] and not keys["TAPI_APP_ID"]["set"]
-    assert keys["BODS_API_KEY"]["doc"].endswith("docs/KEYS.md#bus-open-data-service")
+    assert keys["BODS_API_KEY"]["doc"].endswith("docs/keys.md#bus-open-data-service")
     assert RDM_KEY not in json.dumps(body) and BODS_KEY not in json.dumps(body)
     assert body["job"] == {"state": "idle"}
 
@@ -514,8 +514,8 @@ def test_begin_names_the_dashboards_page_and_offers_only_its_keys(dashboard):
     keys = {k["name"]: k for k in body["keys"]}
     assert list(keys) == ["RDM_API_KEY", "BODS_API_KEY", "RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"]
     assert keys["RDM_DETAILS_API_KEY"]["set"] and not keys["RDM_KB_API_KEY"]["set"]
-    assert keys["RDM_DETAILS_API_KEY"]["doc"].endswith("docs/KEYS.md#rail-data-marketplace-service-details")
-    assert keys["RDM_KB_API_KEY"]["doc"].endswith("docs/KEYS.md#rail-data-marketplace-knowledgebase-incidents")
+    assert keys["RDM_DETAILS_API_KEY"]["doc"].endswith("docs/keys.md#rail-data-marketplace-service-details")
+    assert keys["RDM_KB_API_KEY"]["doc"].endswith("docs/keys.md#rail-data-marketplace-knowledgebase-incidents")
     assert keys["RDM_KB_API_KEY"]["label"] == "Rail Data Marketplace Knowledgebase Incidents key"
     assert DETAILS_KEY not in json.dumps(body)
 

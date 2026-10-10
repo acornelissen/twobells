@@ -114,7 +114,7 @@ TITLE = "Set up your departures"
 _TITLE_LENGTH = 60
 _NOUN = re.compile(r"[a-z]{1,20}")  # one plain word, to sit in a sentence: "No trains on this board"
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
-KEY_DOCS = "https://github.com/acornelissen/inky-departures/blob/main/docs/KEYS.md"
+KEY_DOCS = "https://github.com/acornelissen/inky-departures/blob/main/docs/keys.md"
 _KEY_ANCHORS = {
     "RDM_API_KEY": "#rail-data-marketplace-live-departure-board",
     "RDM_DETAILS_API_KEY": "#rail-data-marketplace-service-details",

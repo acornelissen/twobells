@@ -250,7 +250,7 @@ def _accent(allowed: tuple[str, ...]) -> Callable[[str], str]:
     return check
 
 
-# The board's defaults, as config.example.toml has them: what its loader uses
+# The board's defaults, as examples/config.example.toml has them: what its loader uses
 # for a setting not given, and what its fields show then.
 BOARD_DEFAULTS: dict = {
     "title": "Departures",

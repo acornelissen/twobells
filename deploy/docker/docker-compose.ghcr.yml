@@ -9,7 +9,7 @@
 #     --certificate-identity https://github.com/acornelissen/inky-departures/.github/workflows/release.yml@refs/tags/vX.Y.Z \
 #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
 # then put the version and the digest in image: below. Until then compose
-# refuses the placeholder, so nothing unpinned runs. See docs/DOCKER.md.
+# refuses the placeholder, so nothing unpinned runs. See docs/docker.md.
 #
 # Keys: paste them in the settings (kept in the volume, readable by the app
 # only), or uncomment env_file with a secrets.env next to this file.

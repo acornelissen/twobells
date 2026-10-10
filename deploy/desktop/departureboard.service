@@ -2,7 +2,7 @@
 # service): departureboard serve, on this computer only, at
 # http://localhost:8090/. It starts again if it fails, not when you stop it.
 # Installed by `uv tool install` or `pipx install` in ~/.local/bin; see
-# docs/USER_GUIDE.md (Desktop) for the commands that install and start it.
+# docs/user-guide.md (Desktop) for the commands that install and start it.
 [Unit]
 Description=Departure board dashboard and settings, on this computer only
 

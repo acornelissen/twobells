@@ -1195,7 +1195,7 @@ def test_serve_starts_no_dashboard_until_there_is_something_to_show(tmp_path, se
 FIRST_RUNS = {
     "missing": None,
     "blank": "",
-    "example": (Path(__file__).parent.parent / "config.example.toml").read_text(),
+    "example": (Path(__file__).parent.parent / "examples/config.example.toml").read_text(),
 }
 
 
@@ -1710,7 +1710,7 @@ def test_the_setup_wizard_is_one_page_on_every_install_in_its_own_words(dashboar
 
 # --- A first run: the board shows where to set it up, rather than failing ---
 
-TEMPLATE = Path(__file__).parent.parent / "config.example.toml"
+TEMPLATE = Path(__file__).parent.parent / "examples/config.example.toml"
 
 
 def installed_template(tmp_path, display=None):

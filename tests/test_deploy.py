@@ -11,7 +11,8 @@ ROOT = Path(__file__).parent.parent
 DOCKERFILE = (ROOT / "Dockerfile").read_text()
 COMPOSE = (ROOT / "docker-compose.yml").read_text()
 DOCKERIGNORE = (ROOT / ".dockerignore").read_text()
-REQUIREMENTS = (ROOT / "deploy" / "requirements-docker.txt").read_text()
+PI = ROOT / "deploy" / "pi"  # the Pi's units, scripts and pins
+REQUIREMENTS = (ROOT / "deploy" / "docker" / "requirements-docker.txt").read_text()
 
 
 def test_base_image_is_pinned_by_digest():
@@ -30,7 +31,7 @@ def test_dependencies_come_from_hashed_wheels_only():
 def test_the_pi_builds_the_code_with_hashed_tools_and_fetches_nothing_else():
     # Build isolation would fetch whatever setuptools is newest, unpinned, and
     # run it as root; the build instead uses the hashed one, put in the venv first.
-    build_tools = (ROOT / "deploy" / "requirements-build.txt").read_text()
+    build_tools = (PI / "requirements-build.txt").read_text()
     assert re.findall(r"^([a-z0-9-]+)==\S+ \\$", build_tools, re.M) == ["setuptools"]
     assert len(re.findall(r"--hash=sha256:[0-9a-f]{64}", build_tools)) >= 1
     for name in ("install.sh", "update.sh"):
@@ -51,7 +52,7 @@ def test_it_runs_as_a_non_root_user_and_checks_its_health():
 def test_the_image_never_carries_keys_or_state():
     assert DOCKERIGNORE.splitlines()[1] == "*"  # everything out, then only what's needed back in
     allowed = [line for line in DOCKERIGNORE.splitlines() if line.startswith("!")]
-    assert allowed == ["!src/", "!pyproject.toml", "!deploy/requirements-docker.txt"]
+    assert allowed == ["!src/", "!pyproject.toml", "!deploy/docker/requirements-docker.txt"]
     assert "secrets" not in DOCKERFILE.replace("--secrets", "")
 
 
@@ -113,7 +114,7 @@ def test_the_documented_password_commands_fit_the_container():
 
     assert "container_name: departureboard\n" in COMPOSE and "dashboard-data:/data" in COMPOSE
     assert "WORKDIR /data" in DOCKERFILE and "chown 10001:10001 /data" in DOCKERFILE
-    docs = (ROOT / "docs" / "USER_GUIDE.md").read_text() + (ROOT / "README.md").read_text()
+    docs = (ROOT / "docs" / "user-guide.md").read_text() + (ROOT / "README.md").read_text()
     for flag in ("--set-password", "--reset-code"):
         command = f"docker exec -it departureboard python -m departureboard serve {flag} --state-dir /data"
         assert docs.count(command) == 2, flag  # once in each
@@ -156,16 +157,16 @@ def test_one_key_template_for_the_pi_and_docker_in_groups():
     places = [template.index(f"\n{name}=") for name in names]
     assert groups[0] < places[0] < places[1] < groups[1] < places[2] < places[3] < groups[2] < places[4]
     assert "/etc/departureboard/secrets.env" in template and "next to docker-compose.yml" in template
-    install = (ROOT / "deploy" / "install.sh").read_text()
+    install = (PI / "install.sh").read_text()
     assert '"$REPO/deploy/secrets.env.example" "$CONF/secrets.env"' in install
 
 
 # The Pi's units: the web server stays off the internet; the fetch service goes out for it.
 
 
-def _unit(name: str) -> dict[str, list[str]]:
+def _unit(name: str, folder: Path = PI) -> dict[str, list[str]]:
     settings: dict[str, list[str]] = {}
-    for line in (ROOT / "deploy" / name).read_text().splitlines():
+    for line in (folder / name).read_text().splitlines():
         if "=" in line and not line.startswith("#"):
             key, _, value = line.partition("=")
             settings.setdefault(key, []).append(value)
@@ -193,7 +194,7 @@ def test_the_pi_serves_its_settings_at_8090_and_nothing_at_8080():
     assert install_named("pi").host == "0.0.0.0"  # every address, kept to the home network above
     assert WEB_PORT == 8090 and setup_url("kitchen") == "http://kitchen.local:8090/settings"  # what the board shows
     # No second listener on the old port: bookmarks to it break, on purpose.
-    assert "8080" not in (ROOT / "deploy" / "departureboard-web.service").read_text()
+    assert "8080" not in (PI / "departureboard-web.service").read_text()
     assert _parser().parse_args(["web"]).port == 8090  # the old command, hidden, on the new port
 
 
@@ -235,7 +236,7 @@ def test_the_fetch_service_goes_out_and_listens_on_nothing():
 
 def test_the_setup_units_are_gone():
     for name in ("departureboard-setup.service", "departureboard-setup.path"):
-        assert not (ROOT / "deploy" / name).exists(), name
+        assert not (PI / name).exists(), name
 
 
 def test_the_spool_is_in_memory_and_shared_by_both_units():
@@ -257,16 +258,16 @@ def test_a_fetch_service_that_keeps_stopping_at_once_is_given_up_on_not_looped()
     for name in ("departureboard-fetch.service", "departureboard-fetch.path"):
         unit = _unit(name)
         assert unit["StartLimitIntervalSec"] == ["2min"] and unit["StartLimitBurst"] == ["10"], name
-    guide = (ROOT / "docs" / "USER_GUIDE.md").read_text()
+    guide = (ROOT / "docs" / "user-guide.md").read_text()
     assert "systemctl reset-failed departureboard-fetch.service departureboard-fetch.path" in guide
 
 
 def test_install_and_update_set_up_the_fetch_service():
-    install = (ROOT / "deploy" / "install.sh").read_text()
-    update = (ROOT / "deploy" / "update.sh").read_text()
+    install = (PI / "install.sh").read_text()
+    update = (PI / "update.sh").read_text()
     for text in (install, update):
         assert "departureboard-fetch.service" in text and "departureboard-fetch.path" in text
-    assert '"$REPO/deploy/departureboard-setup' not in install
+    assert '"$REPO/deploy/pi/departureboard-setup' not in install
     assert "systemctl enable --now departureboard-fetch.path departureboard-fetch.service" in install
     # The setup units go, the fetch units come in their place, then the old spools go.
     order = [
@@ -287,7 +288,7 @@ SCRIPTS = ("install.sh", "update.sh")
 
 
 def _script(name: str) -> str:
-    return (ROOT / "deploy" / name).read_text()
+    return (PI / name).read_text()
 
 
 def _run_lines(name: str) -> list[str]:
@@ -348,7 +349,7 @@ def test_install_starts_the_settings_and_the_fetch_service_and_installs_every_un
                  "departureboard-timetable.timer"):
         assert unit in started, unit
     units = re.search(r"for unit in (.*?); do", install, re.S).group(1).replace("\\", " ").split()
-    shipped = [path.name for path in (ROOT / "deploy").iterdir() if path.suffix in (".service", ".timer", ".path")]
+    shipped = [path.name for path in PI.iterdir() if path.suffix in (".service", ".timer", ".path")]
     assert sorted(units) == sorted(shipped)
 
 
@@ -419,8 +420,8 @@ def test_every_service_is_locked_down_as_far_as_its_work_allows(name):
 def test_install_and_update_give_the_settings_new_address():
     from departureboard.settings.installs import install_named
 
-    install = (ROOT / "deploy" / "install.sh").read_text()
-    update = (ROOT / "deploy" / "update.sh").read_text()
+    install = (PI / "install.sh").read_text()
+    update = (PI / "update.sh").read_text()
     assert "http://$(hostname).local:8090/settings" in install
     assert "The settings page moved to :8090/settings" in update
     for text in (install, update):
@@ -434,9 +435,9 @@ def test_install_and_update_give_the_settings_new_address():
 RELEASE = (ROOT / ".github" / "workflows" / "release.yml").read_text()
 IMAGE = re.search(r"^  IMAGE: (\S+)$", RELEASE, re.M).group(1)
 REPO = IMAGE.removeprefix("ghcr.io/")
-GUIDE = (ROOT / "docs" / "USER_GUIDE.md").read_text()
-DOCKER_DOCS = (ROOT / "docs" / "DOCKER.md").read_text()
-GHCR_COMPOSE = (ROOT / "docker-compose.ghcr.yml").read_text()
+GUIDE = (ROOT / "docs" / "user-guide.md").read_text()
+DOCKER_DOCS = (ROOT / "docs" / "docker.md").read_text()
+GHCR_COMPOSE = (ROOT / "deploy" / "docker" / "docker-compose.ghcr.yml").read_text()
 
 
 def _identity(tag: str) -> str:
@@ -469,8 +470,8 @@ def _needed_on_the_pi() -> set[str]:
         script = _script(name)
         needed |= {path for path in re.findall(r"\$REPO/([\w./-]+)", script) if not path.endswith(("/", "."))}
         units = re.search(r"for unit in (.*?); do", script, re.S).group(1).replace("\\", " ").split()
-        needed |= {f"deploy/{unit}" for unit in units}
-    needed |= {"deploy/install.sh", "deploy/update.sh", "deploy/upgrade.sh"}  # upgrade.sh runs the release's update.sh
+        needed |= {f"deploy/pi/{unit}" for unit in units}
+    needed |= {"deploy/pi/install.sh", "deploy/pi/update.sh", "deploy/pi/upgrade.sh"}  # upgrade.sh runs the release's update.sh
     return needed
 
 
@@ -478,8 +479,8 @@ def test_the_release_tarball_holds_everything_the_pi_scripts_use():
     excludes = _tarball_excludes()
     assert {"tests", ".github", ".beads", ".claude"} <= set(excludes)  # read from release.yml, not empty
     needed = _needed_on_the_pi()
-    assert {"config.example.toml", "deploy/secrets.env.example", "deploy/requirements-pi.txt",
-            "examples/glossop.toml", "deploy/departureboard-fetch.path", "LICENSE"} <= needed
+    assert {"examples/config.example.toml", "deploy/secrets.env.example", "deploy/pi/requirements-pi.txt",
+            "examples/glossop.toml", "deploy/pi/departureboard-fetch.path", "LICENSE"} <= needed
     for path in sorted(needed):
         assert (ROOT / path).is_file(), path
         assert _in_tarball(path), path
@@ -496,14 +497,14 @@ def test_the_release_tarball_holds_everything_the_pi_scripts_use():
 def _upgrade(*args: str):
     import subprocess
 
-    return subprocess.run(["bash", str(ROOT / "deploy" / "upgrade.sh"), *args], capture_output=True, text=True)
+    return subprocess.run(["bash", str(PI / "upgrade.sh"), *args], capture_output=True, text=True)
 
 
 def _sourced(call: str, *args: str):
     """Runs `call` in bash with upgrade.sh sourced (so its main doesn't run)."""
     import subprocess
 
-    return subprocess.run(["bash", "-c", f'source "$1"; shift; {call}', "bash", str(ROOT / "deploy" / "upgrade.sh"),
+    return subprocess.run(["bash", "-c", f'source "$1"; shift; {call}', "bash", str(PI / "upgrade.sh"),
                            *args], capture_output=True, text=True)
 
 
@@ -590,7 +591,7 @@ def test_upgrade_downloads_the_releases_files_over_https_only_and_cleans_up():
     assert "trap 'rm -rf \"$work\"' EXIT" in script
     # The tarball is checked before it is unpacked, and update.sh comes from the release it holds.
     assert script.index('check_tarball "$work" "$version"') < script.index("tar -xzf")
-    assert 'bash "$unpacked/deploy/update.sh" "$@"' in script
+    assert 'bash "$unpacked/deploy/pi/update.sh" "$@"' in script
     # The release's own names for the tarball, its folder and the signature, and its signing identity.
     assert '-o "out/inky-departures-$VERSION.tar.gz"' in RELEASE and '--prefix="inky-departures-$VERSION/"' in RELEASE
     assert "--bundle SHA256SUMS.sigstore.json SHA256SUMS" in RELEASE
@@ -607,10 +608,10 @@ def test_the_guide_installs_a_pi_from_a_checked_release():
     # Nothing is unpacked or run unless the sum is right, even pasted as a block.
     assert block.endswith('sha256sum --check --ignore-missing SHA256SUMS &&\n'
                           '  tar -xzf "inky-departures-$VERSION.tar.gz" &&\n'
-                          '  cd "inky-departures-$VERSION" &&\n  sudo ./deploy/install.sh\n')
+                          '  cd "inky-departures-$VERSION" &&\n  sudo ./deploy/pi/install.sh\n')
     assert f'--certificate-identity "{_identity("v$VERSION")}"' in GUIDE
     assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in GUIDE
-    assert "sudo ./deploy/upgrade.sh 0.2.0" in GUIDE
+    assert "sudo ./deploy/pi/upgrade.sh 0.2.0" in GUIDE
     assert "| sudo bash" not in GUIDE
 
 
@@ -725,7 +726,7 @@ def test_the_mac_login_agent_runs_serve_on_this_computer_only():
 
 
 def test_the_linux_login_service_runs_serve_on_this_computer_only():
-    unit = _unit("desktop/departureboard.service")
+    unit = _unit("departureboard.service", ROOT / "deploy" / "desktop")
     [start] = unit["ExecStart"]
     words = shlex.split(start)
     assert words[0] == "%h/.local/bin/departureboard"

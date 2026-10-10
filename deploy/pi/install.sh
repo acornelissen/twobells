@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installs the board on Raspberry Pi OS (Bookworm or later). Run it from the
 # unpacked release tarball (or a copy of the repo):
-#   sudo ./deploy/install.sh [--screen]
+#   sudo ./deploy/pi/install.sh [--screen]
 # --screen also installs pygame for the HDMI screen; that happens anyway when
 # /etc/departureboard/config.toml already says display = "hdmi-...".
 # It starts the settings page and the fetch service, and says how to start
@@ -13,7 +13,7 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 PREFIX=/opt/departureboard
 CONF=/etc/departureboard
 
@@ -47,15 +47,15 @@ rm -rf "$build/build" "$build"/src/*.egg-info
 # From PyPI only inky and its helper, at exact versions with their hashes; their
 # dependencies are the Debian packages above. (Not pip check: with system site
 # packages it also judges Debian's own, some of which it reports as broken.)
-"$PREFIX/venv/bin/pip" install --require-hashes --no-deps -r "$REPO/deploy/requirements-pi.txt"
+"$PREFIX/venv/bin/pip" install --require-hashes --no-deps -r "$REPO/deploy/pi/requirements-pi.txt"
 # The code is built with the hashed setuptools, not one fetched for the build.
-"$PREFIX/venv/bin/pip" install --require-hashes --no-deps -r "$REPO/deploy/requirements-build.txt"
+"$PREFIX/venv/bin/pip" install --require-hashes --no-deps -r "$REPO/deploy/pi/requirements-build.txt"
 "$PREFIX/venv/bin/pip" install --no-deps --no-build-isolation "$build"
 "$PREFIX/venv/bin/python" -c "import departureboard.cli.main, inky, PIL, numpy, smbus2, spidev, gpiod" \
   || { echo "A dependency is missing; see the error above" >&2; exit 1; }
 
 install -d -m 755 "$CONF"
-[[ -f "$CONF/config.toml" ]] || install -m 644 "$REPO/config.example.toml" "$CONF/config.toml"
+[[ -f "$CONF/config.toml" ]] || install -m 644 "$REPO/examples/config.example.toml" "$CONF/config.toml"
 [[ -f "$CONF/secrets.env" ]] || install -m 600 "$REPO/deploy/secrets.env.example" "$CONF/secrets.env"
 
 # Ask the app, as the services' user, about the settings in force: config.toml
@@ -77,7 +77,7 @@ fi
 for unit in departureboard.service departureboard.timer departureboard-screen.service departureboard-web.service \
     departureboard-timetable.service departureboard-timetable.timer \
     departureboard-fetch.service departureboard-fetch.path; do
-  install -m 644 "$REPO/deploy/$unit" /etc/systemd/system/
+  install -m 644 "$REPO/deploy/pi/$unit" /etc/systemd/system/
 done
 systemctl daemon-reload
 # The settings page can't reach the internet; the fetch service does its

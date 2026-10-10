@@ -2,9 +2,9 @@
 # Updates an installed board from an unpacked release tarball (or a copy of
 # the repo), then runs it once. Put the new release (and optionally a new
 # config.toml / secrets.env) on the Pi, then from its folder:
-#   sudo ./deploy/update.sh [--config FILE] [--secrets FILE]
+#   sudo ./deploy/pi/update.sh [--config FILE] [--secrets FILE]
 # A --secrets file is moved into place and the copy shredded.
-# deploy/upgrade.sh VERSION downloads and checks a release, then runs this.
+# deploy/pi/upgrade.sh VERSION downloads and checks a release, then runs this.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -12,7 +12,7 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 PREFIX=/opt/departureboard
 CONF=/etc/departureboard
 config="" secrets=""
@@ -42,7 +42,7 @@ rm -rf "$build/build" "$build"/src/*.egg-info
 
 # The code only: its dependencies are already in the venv. It is built with
 # the hashed setuptools, not one fetched for the build.
-"$PREFIX/venv/bin/pip" install --quiet --require-hashes --no-deps -r "$REPO/deploy/requirements-build.txt"
+"$PREFIX/venv/bin/pip" install --quiet --require-hashes --no-deps -r "$REPO/deploy/pi/requirements-build.txt"
 "$PREFIX/venv/bin/pip" install --quiet --no-deps --no-build-isolation --force-reinstall "$build"
 
 # Ask the new code, as the services' user, about the settings in force:
@@ -64,7 +64,7 @@ rm -f /etc/systemd/system/departureboard-setup.service /etc/systemd/system/depar
 for unit in departureboard.service departureboard.timer departureboard-screen.service departureboard-web.service \
     departureboard-timetable.service departureboard-timetable.timer \
     departureboard-fetch.service departureboard-fetch.path; do
-  install -m 644 "$REPO/deploy/$unit" /etc/systemd/system/
+  install -m 644 "$REPO/deploy/pi/$unit" /etc/systemd/system/
 done
 systemctl daemon-reload
 # The settings page hands its internet work to the fetch service, started at

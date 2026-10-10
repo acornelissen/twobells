@@ -165,7 +165,7 @@ def read_config(path: Path | str) -> dict:
     return Store.open(path).data()
 
 
-# What config.example.toml has where your station and stops go.
+# What examples/config.example.toml has where your station and stops go.
 PLACEHOLDER = "CHANGE_ME"
 
 

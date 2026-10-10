@@ -2,6 +2,6 @@
 *
 !src/
 !pyproject.toml
-!deploy/requirements-docker.txt
+!deploy/docker/requirements-docker.txt
 **/__pycache__
 **/*.pyc

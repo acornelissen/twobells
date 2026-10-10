@@ -45,7 +45,7 @@ The words always carry the meaning. Colour and highlighting only back them up, s
 
 This is the usual look: amber dots on black, like a railway station sign.
 
-![The station board look on the Inky pHAT](guide/phat-sign.png)
+![The station board look on the Inky pHAT](images/phat-sign.png)
 
 **Trains (top half)**
 
@@ -82,15 +82,15 @@ Each line reads: *route*, *stop*, *destination*, *when to leave*, *when it goes*
 | `RAIN FROM 07:00 (70%)` | Rain is likely (here a 70% chance) before you'd reach your next train or bus. Only shown when rain is likely; nothing on dry days. |
 | `! DISRUPTION …` | A National Rail incident notice for the station. It takes the whole line while it lasts, and goes when the notice is withdrawn. On the small display it's cut short with `…`. |
 
-![A rain warning at the bottom](guide/phat-rain.png)
+![A rain warning at the bottom](images/phat-rain.png)
 
-![A disruption notice at the bottom](guide/phat-notice.png)
+![A disruption notice at the bottom](images/phat-notice.png)
 
 ### The plain look
 
 The same information in black on white, with red highlights. The words are the same as the station board look; only where some of them sit differs. Someone may have switched to it on the Board tab of the settings.
 
-![The plain look on the Inky pHAT](guide/phat-plain.png)
+![The plain look on the Inky pHAT](images/phat-plain.png)
 
 The differences:
 
@@ -109,13 +109,13 @@ The plain look shows 3 trains and 2 buses.
 
 The 10.85" display shows the same board with bigger dots and more room, so long destinations fit, and each train's platform shows (`Plat 1`). Platforms aren't shown on the small display, where there isn't room.
 
-![The station board look on the 10.85 inch e-paper](guide/epaper-10in85.png)
+![The station board look on the 10.85 inch e-paper](images/epaper-10in85.png)
 
 ### The HDMI screen
 
 The screen can redraw every second, so it shows a bit more:
 
-![Departures on the HDMI screen](guide/screen-departures.png)
+![Departures on the HDMI screen](images/screen-departures.png)
 
 - **A running clock** at the bottom, in place of "Updated".
 - **Countdowns** in place of clock times: `Leave in 3 min`, then `Leave now` in the last minute. They round down, so `Leave in 3 min` means you have at least 3 minutes, never less.
@@ -127,7 +127,7 @@ The screen can redraw every second, so it shows a bit more:
 
 If it's set up (see [The bus position page](#the-bus-position-page)), the screen switches every 25 seconds: 15 seconds of departures, then 10 seconds of this page.
 
-![The bus position page on the HDMI screen, with sample data](guide/screen-bus.png)
+![The bus position page on the HDMI screen, with sample data](images/screen-bus.png)
 
 - **Top line:** the bus you can still catch, and when it goes (`341 to Hyde … 07:24 +4`).
 - **Second line:** when to leave, and how many stops away the bus is, counting your stop.
@@ -225,7 +225,7 @@ curl -fLO "$base/SHA256SUMS.sigstore.json"
 sha256sum --check --ignore-missing SHA256SUMS &&
   tar -xzf "inky-departures-$VERSION.tar.gz" &&
   cd "inky-departures-$VERSION" &&
-  sudo ./deploy/install.sh
+  sudo ./deploy/pi/install.sh
 ```
 
 `sha256sum` must say `OK`. If it doesn't, nothing after it runs: delete the download and don't run anything from it. Nothing is ever piped from the internet into `sudo bash`.
@@ -238,7 +238,7 @@ cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-A copy of the repo works the same way: `sudo ./deploy/install.sh` from its folder.
+A copy of the repo works the same way: `sudo ./deploy/pi/install.sh` from its folder.
 
 `install.sh` installs the app in `/opt/departureboard`, starts the web server and the fetch service, and prints the command that starts the board. It never starts the board itself:
 
@@ -247,7 +247,7 @@ sudo systemctl enable --now departureboard.timer             # e-paper
 sudo systemctl enable --now departureboard-screen.service    # the HDMI screen
 ```
 
-For the HDMI screen, set `display = "hdmi-1280x400"` in `/etc/departureboard/config.toml` first, or run `sudo ./deploy/install.sh --screen`: either way it installs pygame and names the screen's service. See [Choosing a display](#choosing-a-display).
+For the HDMI screen, set `display = "hdmi-1280x400"` in `/etc/departureboard/config.toml` first, or run `sudo ./deploy/pi/install.sh --screen`: either way it installs pygame and names the screen's service. See [Choosing a display](#choosing-a-display).
 
 Then open `http://<pi name>.local:8090/settings` on a phone or computer on your home network, and carry on with [First run](#4-first-run-and-the-setup-wizard).
 
@@ -446,7 +446,7 @@ The settings use plain HTTP on your home network. Use a password you don't use a
 
 ## 7. Keys
 
-All are free. [Getting your keys](KEYS.md) walks through signing up for each one, step by step.
+All are free. [Getting your keys](keys.md) walks through signing up for each one, step by step.
 
 | Key | For | Where to paste it |
 |---|---|---|
@@ -490,15 +490,15 @@ All of them run as the `departureboard` user, with the store in `/var/lib/depart
 To move to another release, run `upgrade.sh` with its version, from the folder of the release you have (or a copy of the repo):
 
 ```bash
-sudo ./deploy/upgrade.sh 0.2.0
+sudo ./deploy/pi/upgrade.sh 0.2.0
 ```
 
-It downloads that release's tarball and `SHA256SUMS` over https into a temporary folder, and stops unless the tarball's SHA-256 matches. With `cosign` installed it checks the signature of `SHA256SUMS` first. Then it unpacks the release and runs its `deploy/update.sh`, and removes the temporary folder. Options after the version go to `update.sh`.
+It downloads that release's tarball and `SHA256SUMS` over https into a temporary folder, and stops unless the tarball's SHA-256 matches. With `cosign` installed it checks the signature of `SHA256SUMS` first. Then it unpacks the release and runs its `deploy/pi/update.sh`, and removes the temporary folder. Options after the version go to `update.sh`.
 
 Or get the new release onto the Pi as for installing, check it, then from its folder:
 
 ```bash
-sudo ./deploy/update.sh
+sudo ./deploy/pi/update.sh
 ```
 
 `update.sh` installs the new code, refreshes the systemd units, restarts the web server and the fetch service, starts a bus timetable build if buses come from BODS, and runs the e-paper board once if its timer is on. `--config FILE` and `--secrets FILE` replace `/etc/departureboard/config.toml` and `secrets.env` too (the secrets copy is shredded). Restarting the web server signs browsers out.
@@ -627,7 +627,7 @@ Don't publish port 8090 on your router or through QuickConnect or DSM's reverse 
 
 **Updating:** copy the new project files over the old ones, then in Container Manager choose the project, then **Action**, then **Build** (or `docker compose up -d --build`). Your history, timetable, saved settings, keys and password stay in the volume. After editing `secrets.env`, build again too: just restarting the container doesn't read it again.
 
-**The published image.** From the first release, each release also publishes a signed image, `ghcr.io/acornelissen/inky-departures`, so there is nothing to build. `docker-compose.ghcr.yml` runs it with the same settings, pinned by version and digest. [Docker on other NASes and on Linux](DOCKER.md) says how to check the image, and how to run it on QNAP, Unraid, TrueNAS SCALE, and Docker or Podman on Linux.
+**The published image.** From the first release, each release also publishes a signed image, `ghcr.io/acornelissen/inky-departures`, so there is nothing to build. `deploy/docker/docker-compose.ghcr.yml` runs it with the same settings, pinned by version and digest. [Docker on other NASes and on Linux](docker.md) says how to check the image, and how to run it on QNAP, Unraid, TrueNAS SCALE, and Docker or Podman on Linux.
 
 ---
 
@@ -762,7 +762,7 @@ Without `down` or `--remove-orphans`, the old `departureboard-dashboard` contain
 **A Pi.** Get the new release (or copy of the repo) onto the Pi, then from its folder:
 
 ```bash
-sudo ./deploy/update.sh
+sudo ./deploy/pi/update.sh
 ```
 
 The settings moved from `http://<pi name>.local:8080/` to `http://<pi name>.local:8090/settings`, and nothing listens on 8080 any more, so old bookmarks stop working on purpose. `update.sh` replaces the old setup service with the fetch service.

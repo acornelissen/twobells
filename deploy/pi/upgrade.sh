@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Moves an installed board to another release, checked as when installing:
-#   sudo ./deploy/upgrade.sh 0.2.0 [--config FILE] [--secrets FILE]
+#   sudo ./deploy/pi/upgrade.sh 0.2.0 [--config FILE] [--secrets FILE]
 # It downloads that release's tarball and SHA256SUMS over https into a
 # temporary folder, stops unless the tarball's SHA-256 matches, unpacks it,
-# and runs that release's deploy/update.sh with the options after the
+# and runs that release's deploy/pi/update.sh with the options after the
 # version. With cosign installed, it checks SHA256SUMS's signature first.
 # The temporary folder is removed when it ends, whatever happens.
 set -euo pipefail
@@ -90,12 +90,12 @@ main() {
 
   tar -xzf "$work/$name" -C "$work" --no-same-owner
   local unpacked="$work/inky-departures-$version"
-  if [[ ! -f "$unpacked/deploy/update.sh" ]]; then
-    echo "$name has no deploy/update.sh. Nothing was installed." >&2
+  if [[ ! -f "$unpacked/deploy/pi/update.sh" ]]; then
+    echo "$name has no deploy/pi/update.sh. Nothing was installed." >&2
     exit 1
   fi
   # Run with bash, as /tmp may not allow running files from it.
-  bash "$unpacked/deploy/update.sh" "$@"
+  bash "$unpacked/deploy/pi/update.sh" "$@"
 }
 
 # Run, unless sourced (the tests call the functions above on their own).

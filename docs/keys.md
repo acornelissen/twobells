@@ -36,7 +36,7 @@ All of them are free.
 
 ## Where keys go
 
-The easiest way is to paste them in the settings, at `/settings` on your install's address (see [The settings](USER_GUIDE.md#5-the-settings)). Each key has a box in one place:
+The easiest way is to paste them in the settings, at `/settings` on your install's address (see [The settings](user-guide.md#5-the-settings)). Each key has a box in one place:
 
 | Key | Pasted on |
 |---|---|
@@ -44,7 +44,7 @@ The easiest way is to paste them in the settings, at `/settings` on your install
 | `TAPI_APP_ID`, `TAPI_APP_KEY` | the **Board** tab (only while the board view is on) |
 | `RDM_DETAILS_API_KEY`, `RDM_KB_API_KEY` | the **Dashboard** tab (only while the dashboard view is on) |
 
-Keys pasted there are saved in `secrets.env` in the install's store (`/var/lib/departureboard` on a Pi, the `/data` volume in Docker; see [Where things are kept](USER_GUIDE.md#where-things-are-kept)), readable only by the app. They win over keys in a file of your own, and need no restart.
+Keys pasted there are saved in `secrets.env` in the install's store (`/var/lib/departureboard` on a Pi, the `/data` volume in Docker; see [Where things are kept](user-guide.md#where-things-are-kept)), readable only by the app. They win over keys in a file of your own, and need no restart.
 
 **Testing a key.** The wizard has **How to get this key** (the short version of this guide) and a **Test this key** button by each key. Each tab has a **Test a key** section after **Save settings**, with a button for each of its keys. Testing makes one small request to the key's service and says what it found: it works, it's the wrong key, it's for another Rail Data Marketplace product, the service isn't answering, or it can't tell. It tests the key in the box if you've pasted one, without saving it, or else the key already saved. Each key can be tested once every 10 seconds.
 
@@ -206,7 +206,7 @@ Save the address first, then press **Test the Rail Data Marketplace Knowledgebas
 
 **What it unlocks:**
 
-- Bus times on the board and the dashboard, worked out from each bus company's timetable plus where the buses are right now (`source = "bods"` under `[bus]`, which the setup wizard sets; see [Bus times](USER_GUIDE.md#bus-times)).
+- Bus times on the board and the dashboard, worked out from each bus company's timetable plus where the buses are right now (`source = "bods"` under `[bus]`, which the setup wizard sets; see [Bus times](user-guide.md#bus-times)).
 - The bus position page on the HDMI screen.
 - On the dashboard: the strip of stops showing where each bus is, the bus map, and bus disruption notices.
 
@@ -239,7 +239,7 @@ The Bus Open Data Service (BODS) is run by the Department for Transport.
 
 The **Bus Open Data Service key** box in the setup wizard or on the **General** tab. Or `BODS_API_KEY` in a `secrets.env` of your own.
 
-Buses also need your stops and their bus companies, which the setup wizard finds; see [Bus times](USER_GUIDE.md#bus-times).
+Buses also need your stops and their bus companies, which the setup wizard finds; see [Bus times](user-guide.md#bus-times).
 
 ### Check it works
 
@@ -264,7 +264,7 @@ Either way, it ends with `Bus timetable: … journeys at your stops`. If it buil
 
 **Needed?** No. Most people can skip it. The dashboard never uses it.
 
-**Cost:** the **Free** plan gives 30 lookups ("hits") a day, for free. Each check costs one lookup per bus stop, so the board keeps to a daily budget; see [The bus budget](USER_GUIDE.md#the-bus-budget). Paid plans allow more.
+**Cost:** the **Free** plan gives 30 lookups ("hits") a day, for free. Each check costs one lookup per bus stop, so the board keeps to a daily budget; see [The bus budget](user-guide.md#the-bus-budget). Paid plans allow more.
 
 ### Make an account
 
