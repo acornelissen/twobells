@@ -1736,7 +1736,7 @@ def test_the_sheet_holds_the_history_and_remind_me():
 
 
 # The hero on a fake page, with the live region. The clock starts at 07:00:00
-# and `clock("07:01:30")` moves it on (never back). `bus(n, scheduled, leave)`
+# and `clock("07:01:30")` moves it on (never back); it doesn't move by itself. `bus(n, scheduled, leave)`
 # and `train(...)` make rows; `rows(...)` indexes them as main.js does; `draw`
 # renders the hero with your stops' names and `rain`. `announced` collects
 # every announcement the live region makes.
@@ -1752,6 +1752,10 @@ document.body.append(hero, live);
 const announced = [];
 globalThis.requestAnimationFrame = (fn) => { fn(); announced.push(live.textContent); };
 const at = (hms) => `2026-10-10T${hms}+01:00`;
+// The page's clock stands still between moves, so a time on a whole minute
+// stays on it (real milliseconds passing would make 10 min read as 9).
+const stopped = Date.now();
+Date.now = () => stopped;
 const clock = (hms) => observe(Date.parse(at(hms)));
 clock("07:00:00");
 const id = (n) => String(n).padStart(16, "0");
