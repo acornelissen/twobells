@@ -2,12 +2,15 @@
 # Secrets live in /etc/departureboard/secrets.env, not here.
 #
 # The settings page's setup wizard can set the board up for you, saving its
-# answers beside the state file over this one: until it is set up, the board
-# shows "Set me up" and the page's address. To do it by hand instead, replace
-# every CHANGE_ME; the board shows no departures until you do. If you don't
-# want trains or buses, put enabled = false in [train] or [bus] (its CHANGE_MEs
-# can stay), or leave the section out. examples/glossop.toml is a filled-in
-# board (trains from Glossop to Manchester, buses from two stops).
+# answers beside the state file over this one (settings.toml). That file holds
+# only what the page and the wizard manage: addresses (base_url), state_file,
+# display, timezone and the like are read from this file alone, and this file
+# is never rewritten. Until the board is set up, it shows "Set me up" and the
+# page's address. To do it by hand instead, replace every CHANGE_ME; the board
+# shows no departures until you do. If you don't want trains or buses, put
+# enabled = false in [train] or [bus] (its CHANGE_MEs can stay), or leave the
+# section out. examples/glossop.toml is a filled-in board (trains from Glossop
+# to Manchester, buses from two stops).
 #
 # Where it works: trains anywhere in Great Britain (National Rail Darwin).
 # Bus times and positions from BODS cover England only. The rain warning
@@ -36,6 +39,7 @@ bank_holidays = true
 # Whose bank holidays: "england-and-wales", "scotland" or "northern-ireland".
 bank_holiday_division = "england-and-wales"
 # The plain look's text size, 9-16 (11 is standard); bigger shows fewer departures on a small display.
+# The settings page offers 11-14 only.
 # text_size = 12
 # Degrees to turn the board clockwise to suit how it is mounted.
 # E-paper: 0 or 180. The 7.9" screen is portrait out of the box: 90 or 270.
@@ -71,6 +75,8 @@ interval_minutes = 12
 stale_after_minutes = 30
 daily_budget = 28
 windows = ["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]
+# TransportAPI's address; change it only if TransportAPI moves it.
+# base_url = "https://transportapi.com/v3"
 
 # Or work bus times out the way bustimes.org does: from the BODS timetable for
 # your stops plus live BODS bus positions. Free (needs BODS_API_KEY), so buses
@@ -108,12 +114,35 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 #   { name = "Your stop",     lat = 0.0, lon = 0.0 },
 # ]
 
+# The web dashboard only (`departureboard dashboard`); the board ignores this.
+# All optional; the values shown are the defaults. All but state_dir and allowed_hosts
+# can be changed from the dashboard's Settings too.
+# [dashboard]
+# Where its files live. Default: ~/Library/Application Support/departureboard-dashboard
+# on a Mac, else departureboard-dashboard in $XDG_STATE_HOME or ~/.local/state.
+# state_dir = "/path/to/folder"
+# train_rows = 10                 # 1-20
+# bus_rows = 10                   # 1-20
+# train_interval_seconds = 60     # at least 30
+# bus_interval_seconds = 30       # at least 15
+# weather_interval_minutes = 30   # at least 10
+# quiet_windows = ["Mon-Sun 01:00-05:00"]   # no checks then, unless the page is open
+# late_minutes_train = 3          # 1-60: how late counts as late in the history
+# late_minutes_bus = 2            # 1-60
+# history_days = 90               # 1-3650: days of history kept and shown
+# allowed_hosts = []              # extra host names the page answers to, like ["ds.home"]
+# Rail engineering works: the Knowledgebase Incidents address from the RDM
+# product page. Until it is set, they stay off, even with RDM_KB_API_KEY.
+# kb_incidents_url = "https://..."
+
 # Optional: a rain warning from Open-Meteo's forecast (free, no key). The board
 # says "Rain from 07:10 (70%)" when rain is likely before you would reach the
 # next train or bus you can still catch (or within the hour, without walk
 # times). Polled every 30 minutes, only inside the train and bus windows.
 # Two decimal places is plenty; that is all that is sent.
 # [weather]
+# enabled = true   # false switches the warning off; the location is kept, unread
 # lat = CHANGE_ME   # like 53.44 in Glossop
 # lon = CHANGE_ME   # like -1.95
 # threshold_percent = 50   # chance of rain, 1-100, worth a warning
+
