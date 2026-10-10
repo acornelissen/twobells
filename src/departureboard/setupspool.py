@@ -14,7 +14,8 @@ can open (0700):
 
   tmp/       files being written, by either side
   requests/  the page's requests, one file each: <id>.json
-  replies/   the service's replies: <id>.json
+  replies/   the service's answers to lookups: <id>.json
+  status/    the search's status: <id>.json
 
 Where. In memory, never on the SD card: a request can hold home's exact
 position or a pasted key, and flash can keep what was deleted. On the Pi
@@ -33,10 +34,13 @@ service runs or with what settings. The service takes each request,
 deleting it as it reads it (so a pasted key is kept as briefly as it
 can), checks it, does it, and writes the reply. The page waits for the
 reply, up to a limit per kind, deletes it once read, and deletes its own
-request if it is still there when it gives up. The search's reply is its
-status, rewritten as it goes and every few seconds besides (from a thread of
-its own, so a slow lookup doesn't hold it up), so the page can tell a stopped
-service from a slow search.
+request if it is still there when it gives up. A reply that comes after
+that is swept away once the longest wait is over, by both sides (the
+service looks every time round). The search's reply is its status, in
+status/, rewritten as it goes and every few seconds besides (from a thread
+of its own, so a slow lookup doesn't hold it up), so the page can tell a
+stopped service from a slow search. A finished search's status waits longer
+to be read: its result took minutes to find.
 
 Never a restart loop. systemd starts the service again whenever it stops
 with a request still waiting, so it never stops early and leaves one: a
@@ -93,12 +97,15 @@ MAX_REQUEST_BYTES = 16 * 1024  # the biggest, a walk to 25 places, is about 2 kB
 MAX_REPLY_BYTES = 512 * 1024  # the biggest, a search with route strips, is tens of kB
 MAX_DEPTH = 12
 REQUEST_MAX_AGE_S = 150.0  # longer than any wait: past this, whoever asked has given up
-REPLY_MAX_AGE_S = 600.0  # a reply nobody collected
 TMP_MAX_AGE_S = 60.0
 CLOCK_SKEW_S = 5.0  # a request from the future, by more than this, is refused
 # How long the page waits for each answer: the service may first need to
 # start (several seconds on a Pi Zero), and NaPTAN's area files are big.
 WAITS = {"postcode": 30.0, "address": 30.0, "stops": 120.0, "walk": 30.0, "testkey": 45.0}
+# An answer nobody collected. A lookup's can hold home's exact position, and
+# past the longest wait no page is waiting for it.
+REPLY_MAX_AGE_S = max(WAITS.values())
+STATUS_MAX_AGE_S = 600.0  # a finished search's status, unread
 START_WAIT_S = 90.0  # for the search's first status
 SILENT_S = 60.0  # a search unheard from for this long has stopped
 HEARTBEAT_S = 5.0
@@ -462,10 +469,11 @@ class Spool:
         self.tmp = self.folder / "tmp"
         self.requests = self.folder / "requests"
         self.replies = self.folder / "replies"
+        self.status = self.folder / "status"
 
     def make(self) -> None:
         """Make the folders (0700) if need be, and check each is a real folder of ours."""
-        for path in (self.folder, self.tmp, self.requests, self.replies):
+        for path in (self.folder, self.tmp, self.requests, self.replies, self.status):
             try:
                 path.mkdir(mode=0o700, exist_ok=True)
                 info = os.lstat(path)
@@ -521,9 +529,9 @@ class Spool:
 
     def sweep(self, now: float) -> None:
         """Delete what has been left too long: half-written files, requests no
-        one is waiting for, replies no one collected."""
+        one is waiting for, replies and search statuses no one collected."""
         for where, age in ((self.tmp, TMP_MAX_AGE_S), (self.requests, REQUEST_MAX_AGE_S),
-                           (self.replies, REPLY_MAX_AGE_S)):
+                           (self.replies, REPLY_MAX_AGE_S), (self.status, STATUS_MAX_AGE_S)):
             try:
                 names = os.listdir(where)
             except OSError:
@@ -583,11 +591,11 @@ class SpoolRunner:
         """Delete a request the service hasn't taken, so nothing in it waits there."""
         (self.spool.requests / f"{request_id}.json").unlink(missing_ok=True)
 
-    def reply(self, request_id: str, delete: bool) -> dict | None:
-        """The reply to `request_id`, checked, or None if there is none yet.
-        SetupError if it doesn't fit."""
+    def reply(self, request_id: str, delete: bool, where: Path | None = None) -> dict | None:
+        """The reply to `request_id` in replies/ (or `where`), checked, or None
+        if there is none yet. SetupError if it doesn't fit."""
         try:
-            body = Spool.read(self.spool.replies / f"{request_id}.json", MAX_REPLY_BYTES, delete)
+            body = Spool.read((where or self.spool.replies) / f"{request_id}.json", MAX_REPLY_BYTES, delete)
             return None if body is None else check_reply(parse(body), request_id)
         except Refused as why:
             log.warning("Refused the setup service's reply: %s", why)
@@ -687,12 +695,12 @@ class SpoolJob:
         self._status.update(state="failed", message=message, result=None)
         self._finished = True
         self._runner.withdraw(self.id)
-        (self._runner.spool.replies / f"{self.id}.json").unlink(missing_ok=True)
+        (self._runner.spool.status / f"{self.id}.json").unlink(missing_ok=True)
 
     def _update(self) -> None:
         now = self._runner.monotonic()
         try:
-            reply = self._runner.reply(self.id, delete=False)
+            reply = self._runner.reply(self.id, delete=False, where=self._runner.spool.status)
         except SetupError as error:
             self._end(str(error))
             return
@@ -718,7 +726,7 @@ class SpoolJob:
         self._status = status
         if status["state"] in _FINISHED:
             self._finished = True  # kept here from now on; the file has done its job
-            (self._runner.spool.replies / f"{self.id}.json").unlink(missing_ok=True)
+            (self._runner.spool.status / f"{self.id}.json").unlink(missing_ok=True)
         elif now - self._beat[1] > self._silent:
             log.warning("The setup service stopped mid-search")
             self._end(STOPPED)
@@ -850,6 +858,7 @@ class Worker:
 
     def step(self) -> bool:
         """Answer every waiting request and report the search. Whether any request came."""
+        self.spool.sweep(self._clock())  # an answer the page gave up on goes soon after
         handled = False
         for path in self._waiting():
             handled = True
@@ -908,7 +917,8 @@ class Worker:
         log.info("Setup request: %s", kind)
         if self._unavailable:
             if kind != "cancel":
-                self._reply(request_id, {"ok": False, "why": "setup", "error": self._unavailable})
+                self._reply(request_id, {"ok": False, "why": "setup", "error": self._unavailable},
+                            self.spool.status if kind == "search" else None)
             return
         pasted = [args.get(name, "") for name in ("value", "app_id", "key")]
         if kind == "cancel":
@@ -936,9 +946,10 @@ class Worker:
             reply = {"ok": False, "why": "fault", "error": "Something went wrong"}
         self._reply(request_id, _scrub(reply, self._secrets(pasted)))
 
-    def _reply(self, request_id: str, reply: dict) -> None:
+    def _reply(self, request_id: str, reply: dict, where: Path | None = None) -> None:
+        """Write a reply in replies/, or `where`."""
         try:
-            self.spool.write(self.spool.replies, request_id, {"v": VERSION, "id": request_id, **reply},
+            self.spool.write(where or self.spool.replies, request_id, {"v": VERSION, "id": request_id, **reply},
                              MAX_REPLY_BYTES)
         except (OSError, ValueError) as error:
             log.warning("Can't write a setup reply: %s", type(error).__name__)
@@ -984,13 +995,16 @@ class Worker:
             else:
                 self._cancelled = [*self._cancelled[-31:], job_id]
 
+    def _not_started(self, request_id: str, message: str) -> None:
+        """The status of a search that didn't start: failed, saying why."""
+        self._reply(request_id, {"ok": True, "beat": 0, "value": _failed(message)}, self.spool.status)
+
     def _search(self, request_id: str, args: dict) -> None:
         if request_id in self._cancelled:
-            self._reply(request_id, {"ok": True, "beat": 0, "value": _failed("Cancelled")})
+            self._not_started(request_id, "Cancelled")
             return
         if self._job is not None:
-            self._reply(request_id, {"ok": True, "beat": 0,
-                                     "value": _failed("A search is already running; wait for it or cancel it")})
+            self._not_started(request_id, "A search is already running; wait for it or cancel it")
             return
         saved = ""
         try:
@@ -999,20 +1013,18 @@ class Worker:
             log.warning("Can't read the keys: %s", type(error).__name__)
         key = args["key"] or saved
         if not key:
-            self._reply(request_id, {"ok": True, "beat": 0, "value": _failed(
-                "Paste your Bus Open Data Service key first; finding bus companies needs it")})
+            self._not_started(request_id, "Paste your Bus Open Data Service key first; finding bus companies needs it")
             return
         try:
             job = self._make_job(self._job_folder, args["stops"], key, routes=args["routes"],
                                  walk_minutes=args["walk"], nice=SEARCH_NICE)
             job.start()
         except discover.SetupBusy:
-            self._reply(request_id, {"ok": True, "beat": 0,
-                                     "value": _failed("A setup search is already running for this board")})
+            self._not_started(request_id, "A setup search is already running for this board")
             return
         except Exception as error:  # noqa: BLE001 - said plainly; never its text
             log.warning("Setup search failed to start: %s", type(error).__name__)
-            self._reply(request_id, {"ok": True, "beat": 0, "value": _failed("Something went wrong; try again")})
+            self._not_started(request_id, "Something went wrong; try again")
             return
         job_secrets = self._secrets([args["key"]])
         with self._lock:
@@ -1036,4 +1048,5 @@ class Worker:
             return
         self._beat += 1
         self._shown, self._written = shown, now
-        self._reply(self._job_id, {"ok": True, "beat": self._beat, "value": _scrub(shown, self._job_secrets)})
+        self._reply(self._job_id, {"ok": True, "beat": self._beat, "value": _scrub(shown, self._job_secrets)},
+                    self.spool.status)

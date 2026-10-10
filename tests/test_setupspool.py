@@ -284,11 +284,11 @@ def test_a_search_stays_alive_while_a_long_lookup_runs(board):
         wait_for(lambda: job.status()["state"] == "running")
         board.runner.post(setupspool.new_id(), "stops", {"home": HOME, "within_m": 1000, "limit": 15})
         assert entered.wait(5)
-        replies = board.state / setupspool.SPOOL / "replies"
+        status = board.runner.spool.status / f"{job.id}.json"
         while now[0] <= setupspool.SILENT_S + setupspool.HEARTBEAT_S:
-            beat = json.loads((replies / f"{job.id}.json").read_text())["beat"]
+            beat = json.loads(status.read_text())["beat"]
             now[0] += setupspool.HEARTBEAT_S + 1
-            wait_for(lambda: json.loads((replies / f"{job.id}.json").read_text())["beat"] > beat)
+            wait_for(lambda: json.loads(status.read_text())["beat"] > beat)
             assert job.status()["state"] == "running"
     finally:
         release.set()
@@ -444,7 +444,7 @@ def test_a_search_status_that_doesnt_fit_ends_it(board):
     job.start()
     bad = {**json.loads(json.dumps(RESULT))}
     bad["fragment"]["bus"]["operators"] = ["x; rm"]
-    board.runner.spool.write(board.runner.spool.replies, job.id, {"v": 1, "id": job.id, "ok": True, "beat": 1,
+    board.runner.spool.write(board.runner.spool.status, job.id, {"v": 1, "id": job.id, "ok": True, "beat": 1,
                              "value": {"state": "done", "step": "", "done": 1, "total": 1, "message": "",
                                        "result": bad}}, setupspool.MAX_REPLY_BYTES)
     assert job.status()["message"] == setupspool.UNFIT
@@ -494,7 +494,7 @@ def test_a_search_that_cant_be_made_nicer_still_runs(tmp_path, monkeypatch, capl
 def test_old_files_are_swept(board):
     spool = board.runner.spool
     old = time.time() - 3600
-    for folder in (spool.tmp, spool.requests, spool.replies):
+    for folder in (spool.tmp, spool.requests, spool.replies, spool.status):
         path = folder / ("e" * 32 + ".json")
         path.write_text("{}")
         os.utime(path, (old, old))
@@ -504,10 +504,39 @@ def test_old_files_are_swept(board):
     assert spool_text(board.state) == "{}"  # only the fresh one
 
 
+def test_a_lookups_answer_the_page_gave_up_on_goes_once_its_wait_is_over(board):
+    # A postcode's answer holds home's exact position: it mustn't sit in the spool until the Pi restarts.
+    rid = "a" * 32
+    board.runner.post(rid, "postcode", {"postcode": "SK13 1AH"})
+    board.worker.step()
+    reply = board.runner.spool.replies / f"{rid}.json"
+    assert reply.exists()  # and the page, having given up, never reads it
+    late = time.time() - max(setupspool.WAITS.values()) - 1
+    os.utime(reply, (late, late))
+    board.worker.step()  # the service's next look round, with nothing new asked
+    assert not reply.exists()
+
+
+def test_a_finished_search_waits_longer_for_the_page(board):
+    # The search's result took minutes to find; a phone asleep for a while can still collect it.
+    job = board.runner.make_job({"A": "1800SB12341"}, "", routes=False, walk_minutes={})
+    job.start()
+    board.worker.step()
+    FakeJob.made[-1].finish()
+    board.worker.step()
+    [status] = os.listdir(board.runner.spool.status)
+    late = time.time() - max(setupspool.WAITS.values()) - 1
+    os.utime(board.runner.spool.status / status, (late, late))
+    board.worker.step()
+    board.runner.post("b" * 32, "cancel", {"job": "c" * 32})  # the page's sweep too
+    assert job.status()["state"] == "done"
+    assert os.listdir(board.runner.spool.status) == []  # collected
+
+
 def test_the_spool_is_private_and_never_a_link(tmp_path):
     spool = Spool(tmp_path / "spool")
     spool.make()
-    for path in (spool.folder, spool.tmp, spool.requests, spool.replies):
+    for path in (spool.folder, spool.tmp, spool.requests, spool.replies, spool.status):
         assert oct(path.stat().st_mode & 0o777) == "0o700"
     (tmp_path / "linked").symlink_to(tmp_path / "spool")
     with pytest.raises(setupspool.SpoolError):
