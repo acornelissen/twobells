@@ -32,6 +32,6 @@ run = ".venv/bin/departureboard demo --png preview.png"
 description = "Browser panel emulator with sample data"
 run = ".venv/bin/departureboard emulate --demo"
 
-[tasks.dashboard]
+[tasks.serve]
 description = "Serve the dashboard and settings on this computer with ./config.toml and ./secrets.env"
 run = ".venv/bin/departureboard serve --install desktop --config config.toml --secrets secrets.env"
