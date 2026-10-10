@@ -12,7 +12,8 @@ memory while setup runs (the stops found near it, cleared on finishing); it
 goes to postcodes.io or Nominatim to find it and to the foot router for
 walk times, as setup.py describes, and is never logged or saved. With a
 spool runner it passes through a request file in the private spool folder,
-deleted as soon as the setup service reads it (setupspool.py). Finishing
+held in memory on the Pi, never on the SD card, and deleted as soon as the
+setup service reads it (setupspool.py). Finishing
 writes only what setup.config_fragment allows: the weather position rounded
 to 2 places (about a kilometre), the station, the stops and walk times, the
 bank holiday list, and [bus] source, operators and routes from the search.

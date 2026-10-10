@@ -486,7 +486,12 @@ def _setup_serve(args) -> int:
         print(f"Can't read {args.config}: {error.strerror or error}", file=sys.stderr)
         return 2
     if folder is None:
-        print("config.toml needs a state_file; the setup spool is beside it", file=sys.stderr)
+        print("config.toml needs a state_file; setup searches build the timetable there", file=sys.stderr)
+        return 2
+    try:
+        spool = setupspool.spool_folder(folder)
+    except setupspool.SpoolError as error:
+        print(error, file=sys.stderr)
         return 2
     target = board_target(args.config)
 
@@ -496,7 +501,7 @@ def _setup_serve(args) -> int:
         except (OSError, ConfigError, ValueError, TypeError):
             return {}  # a key test then asks about Glossop
 
-    worker = setupspool.Worker(folder / setupspool.SPOOL, job_folder=folder,
+    worker = setupspool.Worker(spool, job_folder=folder,
                                load_secrets=lambda: _env(args.config, args.secrets), settings=settings)
     try:
         return worker.run()
@@ -575,10 +580,10 @@ def _web(args) -> int:
     runner = None
     if args.setup_via_spool:
         # This service can't reach the internet; departureboard-setup.service does that work.
-        from .setupspool import SPOOL, SpoolError, SpoolRunner
+        from .setupspool import SpoolError, SpoolRunner, spool_folder
 
         try:
-            runner = SpoolRunner(folder / SPOOL)
+            runner = SpoolRunner(spool_folder(folder))
         except SpoolError as error:
             print(error, file=sys.stderr)
             return 2

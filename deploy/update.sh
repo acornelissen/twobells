@@ -54,9 +54,13 @@ for unit in departureboard.service departureboard.timer departureboard-screen.se
 done
 systemctl daemon-reload
 # The settings page hands the setup wizard's internet lookups to the setup
-# service; this starts it when asked. A running page restarts onto the new
-# code and unit (signing browsers out).
-systemctl enable --now departureboard-setup.path
+# service; the .path unit starts it when asked. Both restart onto the spool
+# folder in memory, and the old one on the SD card goes. A running page
+# restarts onto the new code and unit (signing browsers out).
+systemctl stop departureboard-setup.service
+rm -rf /var/lib/departureboard/setup-spool
+systemctl enable departureboard-setup.path
+systemctl restart departureboard-setup.path
 systemctl try-restart departureboard-web.service
 
 # Bus times from the BODS timetable need it built and kept fresh. The first

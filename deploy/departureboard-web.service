@@ -11,6 +11,11 @@ User=departureboard
 Group=departureboard
 StateDirectory=departureboard
 StateDirectoryMode=0750
+# The setup spool, shared with departureboard-setup.service: in memory, never
+# on the SD card, and kept when either stops, until the Pi restarts.
+RuntimeDirectory=departureboard-setup
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
 # Keys, so the page can say which are set and check settings before saving.
 EnvironmentFile=/etc/departureboard/secrets.env
 ExecStart=/opt/departureboard/venv/bin/departureboard web --config /etc/departureboard/config.toml --port 8080 --setup-via-spool

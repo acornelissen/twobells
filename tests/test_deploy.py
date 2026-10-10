@@ -96,12 +96,30 @@ def test_the_setup_service_goes_out_and_nothing_more():
     for setting in hardening:
         assert unit[setting] == timetable[setting], setting
     path = _unit("departureboard-setup.path")
-    assert path["DirectoryNotEmpty"] == [f"/var/lib/departureboard/{setupspool.SPOOL}/requests"]
+    assert path["DirectoryNotEmpty"] == [f"{setupspool.RUNTIME}/requests"]
     assert path["Unit"] == ["departureboard-setup.service"]
+
+
+def test_the_setup_spool_is_in_memory_and_shared_by_both_units():
+    from departureboard import setupspool
+
+    spool = {"RuntimeDirectory": ["departureboard-setup"], "RuntimeDirectoryMode": ["0700"],
+             "RuntimeDirectoryPreserve": ["yes"]}  # kept when either stops
+    web, setup = _unit("departureboard-web.service"), _unit("departureboard-setup.service")
+    for unit in (web, setup):
+        assert {key: unit.get(key) for key in spool} == spool
+    assert web["User"] == setup["User"] == ["departureboard"]  # so both can open the 0700 folder
+    assert setupspool.RUNTIME == Path("/run") / spool["RuntimeDirectory"][0]
+    watched = _unit("departureboard-setup.path")["DirectoryNotEmpty"][0]
+    assert watched.startswith("/run/departureboard-setup/") and "/var/lib" not in watched
 
 
 def test_install_and_update_set_up_the_setup_service():
     for script in ("install.sh", "update.sh"):
         text = (ROOT / "deploy" / script).read_text()
         assert "departureboard-setup.service" in text and "departureboard-setup.path" in text, script
-        assert "systemctl enable --now departureboard-setup.path" in text, script
+    assert "systemctl enable --now departureboard-setup.path" in (ROOT / "deploy" / "install.sh").read_text()
+    update = (ROOT / "deploy" / "update.sh").read_text()
+    # Onto the folder in memory, and the old spool on the SD card removed.
+    assert "systemctl enable departureboard-setup.path\nsystemctl restart departureboard-setup.path" in update
+    assert "rm -rf /var/lib/departureboard/setup-spool\n" in update

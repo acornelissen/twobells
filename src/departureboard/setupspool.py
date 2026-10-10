@@ -9,12 +9,20 @@ run in departureboard-setup.service instead: outbound only, started when
 setup is used, and gone a minute after it was last asked anything. The
 dashboard (Docker, a laptop) has no such filter and does them in-process.
 
-How the two talk. Through files in a spool folder in the board's state
-folder, which only the service user can open (0700):
+How the two talk. Through files in a spool folder only the service user
+can open (0700):
 
-  setup-spool/tmp/       files being written, by either side
-  setup-spool/requests/  the page's requests, one file each: <id>.json
-  setup-spool/replies/   the service's replies: <id>.json
+  tmp/       files being written, by either side
+  requests/  the page's requests, one file each: <id>.json
+  replies/   the service's replies: <id>.json
+
+Where. In memory, never on the SD card: a request can hold home's exact
+position or a pasted key, and flash can keep what was deleted. On the Pi
+both units name the same systemd RuntimeDirectory, /run/departureboard-setup
+(a tmpfs, kept while either runs and until the Pi restarts), and find it in
+$RUNTIME_DIRECTORY. Without that, run by hand, they use that folder if it
+is there, and otherwise setup-spool/ in the board's state folder: on disk,
+for the tests and a Mac (see spool_folder).
 
 Every file is written new in tmp/ (0600, never through a link) and renamed
 into place whole, so neither side ever reads half of one. A systemd path
@@ -22,7 +30,7 @@ unit, departureboard-setup.path, starts the service whenever requests/ isn't
 empty: the settings page needs no sudo, polkit rule or access to systemd,
 only a file in a folder it already owns, and it can't choose what the
 service runs or with what settings. The service takes each request,
-deleting it as it reads it (so a pasted key lies on disk as briefly as it
+deleting it as it reads it (so a pasted key is kept as briefly as it
 can), checks it, does it, and writes the reply. The page waits for the
 reply, up to a limit per kind, deletes it once read, and deletes its own
 request if it is still there when it gives up. The search's reply is its
@@ -64,7 +72,8 @@ from .status import safe_message
 
 log = logging.getLogger(__name__)
 
-SPOOL = "setup-spool"  # in the board's state folder
+SPOOL = "setup-spool"  # in the board's state folder, when there's no folder in memory
+RUNTIME = Path("/run/departureboard-setup")  # the units' RuntimeDirectory
 VERSION = 1
 MAX_REQUEST_BYTES = 16 * 1024  # the biggest, a walk to 25 places, is about 2 kB
 MAX_REPLY_BYTES = 512 * 1024  # the biggest, a search with route strips, is tens of kB
@@ -413,6 +422,21 @@ def check_reply(data, request_id: str) -> dict:
 # The spool folder and its files.
 
 
+def spool_folder(state: Path | None, environ: Mapping[str, str] | None = None) -> Path | None:
+    """Where the spool is: systemd's $RUNTIME_DIRECTORY (memory); else
+    RUNTIME if it is there (run by hand on the Pi); else setup-spool in the
+    `state` folder (on disk: the tests, a Mac); None without one.
+    SpoolError if $RUNTIME_DIRECTORY isn't one absolute path."""
+    given = (os.environ if environ is None else environ).get("RUNTIME_DIRECTORY", "")
+    if given:
+        if not os.path.isabs(given) or ":" in given:
+            raise SpoolError("RUNTIME_DIRECTORY must be one absolute folder for the setup spool")
+        return Path(given)
+    if os.path.lexists(RUNTIME):  # Spool.make refuses it unless it's a real folder of ours
+        return RUNTIME
+    return None if state is None else state / SPOOL
+
+
 class Spool:
     """The three folders, and reading and writing files in them safely."""
 
@@ -539,7 +563,7 @@ class SpoolRunner:
                          MAX_REQUEST_BYTES)
 
     def withdraw(self, request_id: str) -> None:
-        """Delete a request the service hasn't taken, so nothing in it waits on disk."""
+        """Delete a request the service hasn't taken, so nothing in it waits there."""
         (self.spool.requests / f"{request_id}.json").unlink(missing_ok=True)
 
     def reply(self, request_id: str, delete: bool) -> dict | None:

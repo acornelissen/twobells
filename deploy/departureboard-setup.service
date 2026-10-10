@@ -5,14 +5,20 @@ After=network-online.target
 
 [Service]
 # The settings page can't reach the internet (its unit's IP filter), so it
-# leaves its requests in /var/lib/departureboard/setup-spool and this answers
-# them: postcodes and addresses, nearby stops, walk times, key tests and the
+# leaves its requests in /run/departureboard-setup and this answers them:
+# postcodes and addresses, nearby stops, walk times, key tests and the
 # search for bus companies. It stops a minute after the last request.
 Type=oneshot
 User=departureboard
 Group=departureboard
 StateDirectory=departureboard
 StateDirectoryMode=0750
+# The spool: in memory, never on the SD card, as a request can hold home's
+# exact position or a pasted key. The same as the settings page's, and kept
+# when either stops, until the Pi restarts.
+RuntimeDirectory=departureboard-setup
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
 # Keys are read here, so the page never sends a saved one.
 EnvironmentFile=/etc/departureboard/secrets.env
 ExecStart=/opt/departureboard/venv/bin/departureboard setup serve --config /etc/departureboard/config.toml

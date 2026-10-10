@@ -1140,8 +1140,17 @@ def test_the_settings_page_opens_the_wizard_until_the_board_is_set_up(tmp_path, 
     assert not wizard.needed()
 
 
+@pytest.fixture
+def no_runtime_folder(tmp_path, monkeypatch):
+    """No systemd RuntimeDirectory, and none left in /run: the spool falls back to the state folder."""
+    from departureboard import setupspool
+
+    monkeypatch.delenv("RUNTIME_DIRECTORY", raising=False)
+    monkeypatch.setattr(setupspool, "RUNTIME", tmp_path / "no-run")
+
+
 @pytest.mark.parametrize("flag", [[], ["--setup-via-spool"]])
-def test_the_pis_settings_page_hands_setup_to_the_setup_service(tmp_path, monkeypatch, flag):
+def test_the_pis_settings_page_hands_setup_to_the_setup_service(tmp_path, monkeypatch, flag, no_runtime_folder):
     from departureboard import setupspool, web
 
     made = {}
@@ -1173,7 +1182,7 @@ def test_the_pis_settings_page_hands_setup_to_the_setup_service(tmp_path, monkey
         assert runner is None and not (tmp_path / "state" / setupspool.SPOOL).exists()
 
 
-def test_the_setup_service_answers_in_the_boards_state_folder(tmp_path, monkeypatch):
+def test_the_setup_service_answers_in_the_boards_state_folder(tmp_path, monkeypatch, no_runtime_folder):
     from departureboard import setupspool
 
     ran = []
@@ -1186,6 +1195,36 @@ def test_the_setup_service_answers_in_the_boards_state_folder(tmp_path, monkeypa
     assert worker.spool.folder == tmp_path / "state" / setupspool.SPOOL and worker._job_folder == tmp_path / "state"
     assert worker._load_secrets()["BODS_API_KEY"] == "saved-bods-key"
     assert isinstance(worker._settings(), dict)
+
+
+def test_the_page_and_the_setup_service_share_systemds_folder_in_memory(tmp_path, monkeypatch):
+    from departureboard import setupspool, web
+
+    run = tmp_path / "run"
+    run.mkdir(mode=0o700)  # as systemd makes RuntimeDirectory=
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
+    made, ran = {}, []
+    real = web.make_handler
+
+    class Server:
+        server_address = ("127.0.0.1", 8080)
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr(web, "make_handler", lambda *a, **kw: made.update(kw) or real(*a, **kw))
+    monkeypatch.setattr(web, "make_server", lambda handler, host, port: Server())
+    monkeypatch.setattr(setupspool.Worker, "run", lambda self: ran.append(self) or 0)
+    config = installed_template(tmp_path)
+    (tmp_path / "state").mkdir()
+    none = str(tmp_path / "none.env")
+    assert main(["web", "--config", str(config), "--secrets", none, "--setup-via-spool"]) == 0
+    assert main(["setup", "serve", "--config", str(config), "--secrets", none]) == 0
+    assert made["wizard"].api._runner.spool.folder == run and ran[0].spool.folder == run
+    assert (run / "requests").is_dir() and not (tmp_path / "state" / setupspool.SPOOL).exists()
 
 
 def test_the_setup_service_says_plainly_when_there_is_no_config(tmp_path, capsys):

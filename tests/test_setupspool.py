@@ -420,6 +420,23 @@ def test_the_spool_is_private_and_never_a_link(tmp_path):
         Spool(tmp_path / "linked").make()
 
 
+def test_the_spool_is_systemds_folder_in_memory_when_there_is_one(tmp_path, monkeypatch):
+    state, run = tmp_path / "state", tmp_path / "run"
+    monkeypatch.setattr(setupspool, "RUNTIME", tmp_path / "no-run")
+    assert setupspool.spool_folder(state, {"RUNTIME_DIRECTORY": str(run)}) == run
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
+    assert setupspool.spool_folder(state) == run
+    for odd in ("relative/run", f"{run}:{tmp_path / 'other'}"):
+        with pytest.raises(setupspool.SpoolError):
+            setupspool.spool_folder(state, {"RUNTIME_DIRECTORY": odd})
+    # Run by hand: the units' folder if it's there, else the state folder (on disk: tests, a Mac).
+    assert setupspool.spool_folder(state, {}) == state / setupspool.SPOOL
+    assert setupspool.spool_folder(None, {}) is None
+    monkeypatch.setattr(setupspool, "RUNTIME", run)
+    run.mkdir()
+    assert setupspool.spool_folder(state, {}) == run
+
+
 def test_the_service_stops_when_idle_and_runs_once(board):
     board.worker._idle = 0.05
     started = time.monotonic()
