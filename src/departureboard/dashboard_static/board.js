@@ -166,8 +166,9 @@ function remember(mode, rows, t) {
 }
 
 // The board itself: the "Just missed" line, the table, and the button for the
-// later departures.
-function drawBoard(mode, el, { caption, columns, cls, empty }, rows, drawRow) {
+// later departures. A `quiet` caption is for screen readers only, where the
+// section's heading already says it.
+function drawBoard(mode, el, { caption, quiet, columns, cls, empty }, rows, drawRow) {
   const board = boards[mode];
   const t = now();
   const { shown, missed } = arrange(rows, t);
@@ -183,7 +184,7 @@ function drawBoard(mode, el, { caption, columns, cls, empty }, rows, drawRow) {
   el.replaceChildren(...[
     missedLine,
     h("table", { role: "table", class: ["board", cls], id: board.table },
-      h("caption", {}, caption),
+      h("caption", { class: quiet ? "vh" : null }, caption),
       headRow(columns),
       h("tbody", { role: "rowgroup" }, drawn.map((row, i) => drawRow(row, i, i >= SHOWN ? mode : null)))),
     later > 0 ? h("button", {
@@ -429,7 +430,7 @@ export function renderBuses(snapshot, alerts) {
   statusLine(document.getElementById("buses-status"), buses.status, extra);
   const names = stopNames(buses.stops);
   drawBoard("bus", document.getElementById("buses-board"), {
-    caption: "Next buses", cls: "buses",
+    caption: "Next buses", quiet: true, cls: "buses",
     empty: tt.state === "building" ? "Bus times will show once the timetable is built." : "No buses are listed right now.",
     columns: [["Bus", "c-line"], ["Destination", "c-dest"], ["Stop", "c-stop"], ["Due", "c-due"], ["Leave", "c-leave"]],
   }, rows, (row, i, later) => busRow(row, later, names, alerts));

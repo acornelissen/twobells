@@ -88,8 +88,10 @@ function renderNow(current, sun) {
 // One column of the strip: the hour, an icon, the temperature and a rain bar,
 // with the percentage written only when it is worth noticing. A screen reader
 // hears one sentence instead: "19:00, light drizzle, 9 degrees, 47% chance of rain".
-function hourItem(hr) {
-  const time = hhmm(hr.start);
+// The hour that has begun by `t` is "Now".
+function hourItem(hr, t) {
+  const start = parseAt(hr.start);
+  const time = start !== null && start <= t ? "Now" : hhmm(hr.start);
   const temp = num(hr.temperature);
   const prob = num(hr.probability);
   const chance = prob !== null ? Math.min(100, Math.max(0, Math.round(prob))) : null;
@@ -117,10 +119,13 @@ function hourItem(hr) {
 // it (fitStrips). `old` is the strip drawn before, whose tab stop it keeps
 // until fitStrips looks again, so a focused strip keeps the focus. A wall
 // tablet's four hours fit, and it has no keyboard: a plain list there.
-const strip = (hours, name, old) => (isKiosk()
-  ? h("div", { class: "wx-strip" }, h("ol", { class: "wx-hours", ...name }, hours.map(hourItem)))
-  : h("div", { class: "wx-strip", role: "region", tabindex: old ? old.getAttribute("tabindex") : null, ...name },
-    h("ol", { class: "wx-hours" }, hours.map(hourItem))));
+const strip = (hours, t, name, old) => {
+  const items = hours.map((hr) => hourItem(hr, t));
+  return isKiosk()
+    ? h("div", { class: "wx-strip" }, h("ol", { class: "wx-hours", ...name }, items))
+    : h("div", { class: "wx-strip", role: "region", tabindex: old ? old.getAttribute("tabindex") : null, ...name },
+      h("ol", { class: "wx-hours" }, items));
+};
 
 // Makes each strip a tab stop only while its hours overflow it.
 function fitStrips() {
@@ -147,10 +152,10 @@ function renderHours(hours) {
   // patch() keeps the nodes, so an open "More hours" stays open and a
   // scrolled or focused strip stays put when a new snapshot comes in.
   patch(el,
-    strip(upcoming.slice(0, SHOWN), { "aria-labelledby": "weather-hours-heading" }, first),
+    strip(upcoming.slice(0, SHOWN), t, { "aria-labelledby": "weather-hours-heading" }, first),
     later.length ? h("details", {
       id: "weather-more", class: "wx-more", open: !!(more && more.open), on: { toggle: fitStrips },
-    }, h("summary", {}, "More hours"), strip(later, { "aria-label": "Later hours" }, rest)) : null);
+    }, h("summary", {}, "More hours"), strip(later, t, { "aria-label": "Later hours" }, rest)) : null);
   fitStrips();
 }
 

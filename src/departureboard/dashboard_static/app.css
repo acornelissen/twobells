@@ -448,8 +448,12 @@ main:focus { outline: none; }
   .dis-mark, button.link.dis-more { min-height: 2.75rem; }
 }
 
-/* --- Sections: plain on the page, no boxes. Trains and buses side by side
-   from 75rem, around here and the weather (the wider) under them. --- */
+/* --- Sections: plain on the page, no boxes. Narrow, one column: trains,
+   buses, around here, the weather. From 75rem the weather sits beside Next
+   to catch, which would otherwise leave half the width empty, as a wall
+   tablet's does; trains and buses side by side under them, and around here
+   last. The page's order stays as it reads narrow, departures first and the
+   weather, a sidebar there, last. --- */
 
 .sections { display: grid; gap: var(--s-7); }
 .boards, .extras { display: grid; gap: var(--s-7); }
@@ -458,10 +462,23 @@ main:focus { outline: none; }
 .section-status.problem { color: var(--bad-fg); font-weight: 500; }
 .empty { margin: var(--s-2) 0; color: var(--muted); }
 @media (min-width: 75rem) {
-  .boards, .extras { display: flex; gap: var(--s-7); align-items: flex-start; }
+  /* No gap between rows: an empty alert row or a hidden disruption line
+     would still leave its gap. The margins space them. */
+  :root:not([data-kiosk]) main {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    grid-template-areas: "hero weather" "alert alert" "dis dis" "boards boards" "area .";
+    gap: 0 var(--s-7);
+    align-items: start;
+  }
+  .sections, .extras { display: contents; }
+  .leave { grid-area: hero; }
+  #alert-banner { grid-area: alert; }
+  .disruptions { grid-area: dis; }
+  .boards { grid-area: boards; display: flex; gap: var(--s-7); align-items: flex-start; }
   .boards > * { flex: 1 1 0; }
-  .extras > .area { flex: 2 1 0; }
-  .extras > .weather { flex: 3 1 0; }
+  .weather { grid-area: weather; }
+  .area { grid-area: area; margin-top: var(--s-7); }
 }
 
 /* --- Boards, wide layout: trains like a station's departure screen, buses
@@ -977,6 +994,17 @@ table.history thead th { border-top: 0; color: var(--muted); }
   font-weight: 400;
   font-synthesis: none;
   letter-spacing: normal;
+}
+/* A long destination stays on one line, cut short at a word with an
+   ellipsis where its column is narrow; the table gives it the whole name's
+   width where there is room. The full name is still the button's name, and
+   the sheet's title. */
+:root[data-theme="board"] table.board .dest {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  overflow: hidden;
 }
 :root[data-theme="board"] .badge { padding-left: 0; padding-right: 0; background: transparent; }
 :root[data-theme="board"] .badge.st-cancelled { padding-left: var(--s-2); padding-right: var(--s-2); background: var(--bad-fg); }

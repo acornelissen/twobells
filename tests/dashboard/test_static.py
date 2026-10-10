@@ -265,6 +265,21 @@ def test_the_board_look_uses_the_dot_face_only_at_20px_and_up():
     assert re.search(r"--font:\s*\"Inter\"", css) and "monospace" not in css
 
 
+def test_the_board_look_keeps_a_long_destination_to_one_line():
+    # The dot face stays at 20px (above); a destination too long for its
+    # column is cut short on one line instead of wrapping the row taller.
+    dest = ':root[data-theme="board"] table.board .dest'
+    assert _css_value(dest, "display") == "-webkit-box"
+    assert _css_value(dest, "-webkit-box-orient") == "vertical"
+    assert _css_value(dest, "-webkit-line-clamp") == "1" and _css_value(dest, "line-clamp") == "1"
+    assert _css_value(dest, "overflow") == "hidden"
+    # Only in the Board look: in the modern one a long name wraps.
+    css = re.sub(r"/\*.*?\*/", "", (STATIC / "app.css").read_text(encoding="utf-8"), flags=re.S)
+    for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        if "line-clamp" in body and ".dest" in selectors:
+            assert all(s.strip().startswith(':root[data-theme="board"]') for s in selectors.split(",")), selectors
+
+
 def test_the_board_look_has_no_fake_led_effects():
     css = (STATIC / "app.css").read_text(encoding="utf-8")
     board = "".join(re.findall(r':root\[data-theme="board"\][^{]*\{[^}]*\}', css))
@@ -1199,15 +1214,27 @@ def test_a_record_sits_on_its_own_line():
     assert "display: block;" in record and "width: fit-content;" in record
 
 
-def test_trains_and_buses_sit_side_by_side_from_75rem():
+def test_from_75rem_the_weather_sits_beside_the_hero_over_the_boards():
     css = (STATIC / "app.css").read_text(encoding="utf-8")
     assert "100rem" not in css
     wide = _css_block("@media (min-width: 75rem)")
-    assert "display: flex" in wide[".boards"] and "display: flex" in wide[".extras"]
-    # The weather is the wider of the two below the boards.
-    assert "flex: 3 1 0" in wide[".extras > .weather"] and "flex: 2 1 0" in wide[".extras > .area"]
+    # Not on a wall tablet, which has its own layout.
+    main = wide[":root:not([data-kiosk]) main"]
+    assert "display: grid" in main
+    areas = re.search(r'grid-template-areas:\s*((?:"[^"]*"\s*)+);', main).group(1)
+    rows = [row.split() for row in re.findall(r'"([^"]*)"', areas)]
+    assert rows[0] == ["hero", "weather"]
+    assert rows.index(["dis", "dis"]) < rows.index(["boards", "boards"]) < [r[0] for r in rows].index("area")
+    # The wrappers step aside, so their sections are the grid's own items.
+    assert "display: contents" in wide[".sections"] and "display: contents" in wide[".extras"]
+    for selector, area in ((".leave", "hero"), (".weather", "weather"), (".disruptions", "dis"),
+                           (".boards", "boards"), (".area", "area"), ("#alert-banner", "alert")):
+        assert f"grid-area: {area};" in wide[selector], selector
+    # Trains and buses side by side.
+    assert "display: flex" in wide[".boards"] and "flex: 1 1 0" in wide[".boards > *"]
+    # The page reads as it did: departures first, the weather, a sidebar here, last.
     ids = [attrs.get("id") for _, attrs in _page().elements]
-    assert _inside("main", "trains") and ids.index("buses") < ids.index("area")
+    assert _inside("main", "trains") and ids.index("buses") < ids.index("area") < ids.index("weather")
 
 
 def test_sections_are_plain_only_the_hero_and_dialogs_are_raised():
@@ -1246,7 +1273,7 @@ def test_the_train_dialog_draws_the_journey_as_a_route_line():
 
 def _css_block(at_rule):
     """The rules inside an at-rule of app.css, as {selector: declarations}."""
-    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    css = re.sub(r"/\*.*?\*/", "", (STATIC / "app.css").read_text(encoding="utf-8"), flags=re.S)
     start = css.index("{", css.index(at_rule)) + 1
     depth, end = 1, start
     while depth:
@@ -1438,6 +1465,19 @@ def test_the_train_board_reads_like_a_station_screen():
     # screen reader has the header.
     assert found["platform"] == ["1", "not yet known", "Plat–"]
     assert found["walk"] == "10 min walk to Glossop."
+
+
+@needs_node
+def test_the_bus_board_caption_is_for_screen_readers_only():
+    # The section's "Buses" heading says it on screen; the table keeps its name.
+    found = run_js(_boards() + """
+        const caption = (id) => elements(board(id)).find((el) => el.nodeName === "CAPTION");
+        console.log(JSON.stringify([
+          [said(caption("buses-board")), caption("buses-board").getAttribute("class")],
+          [said(caption("trains-board")), caption("trains-board").getAttribute("class")],
+        ]));
+    """)
+    assert found == [["Next buses", "vh"], ["Next trains from Glossop to Manchester Piccadilly", None]]
 
 
 @needs_node
@@ -2345,7 +2385,7 @@ def test_both_maps_draw_a_bus_built_as_svg_nodes():
 
 def _css_value(selector, prop):
     """The value of prop in the app.css rule for exactly this selector."""
-    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    css = re.sub(r"/\*.*?\*/", "", (STATIC / "app.css").read_text(encoding="utf-8"), flags=re.S)
     for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
         if selector in [s.strip() for s in selectors.split(",")]:
             found = re.search(r"(?:^|;)\s*%s:\s*([^;]+)" % re.escape(prop), body)
@@ -2416,8 +2456,9 @@ def test_the_weather_shows_four_hours_and_the_rest_behind_more_hours():
     """)
     assert found["parts"] == ["DIV", "DETAILS"]
     # Each hour is one sentence for a screen reader; the drawing is hidden.
+    # The hour it is now (07:01) is "Now".
     assert found["first"] == [
-        "07:00, light rain, 11 degrees, 70% chance of rain",
+        "Now, light rain, 11 degrees, 70% chance of rain",
         "08:00, light rain, 11 degrees, 70% chance of rain",
         "09:00, rain, 12 degrees, 85% chance of rain",
         "10:00, rain showers, 12 degrees, 60% chance of rain",
@@ -2430,6 +2471,23 @@ def test_the_weather_shows_four_hours_and_the_rest_behind_more_hours():
     # The fixture's 07:01 is before sunrise, so sunrise is the one shown.
     assert found["now"] == ("11° Light rain"
                             "Feels like 9 degrees. Wind 12 mph from the west-south-west, gusts 25 mph. Sunrise 07:24.")
+
+
+@needs_node
+def test_the_weather_calls_the_hour_it_is_now_now():
+    found = run_js(_weather_panel() + """
+        const label = () => byClass(hours, "wx-hour").map((el) => el.textContent).slice(0, 2);
+        const said = () => items(hours).map((li) => spoken(li).split(",")[0]).slice(0, 2);
+        renderWeather(snapshot);
+        const current = [label(), said()];
+        // A forecast that starts with an hour still to come has no "Now".
+        const later = structuredClone(snapshot);
+        later.weather.hours = later.weather.hours.slice(1);
+        renderWeather(later);
+        console.log(JSON.stringify([current, [label(), said()]]));
+    """)
+    # At 07:01 the 07:00 hour is the one it is now.
+    assert found == [[["Now", "08:00"], ["Now", "08:00"]], [["08:00", "09:00"], ["08:00", "09:00"]]]
 
 
 @needs_node
