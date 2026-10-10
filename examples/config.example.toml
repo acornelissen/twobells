@@ -158,6 +158,7 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # late_minutes_train = 3          # 1-60: how late counts as late in the history
 # late_minutes_bus = 2            # 1-60
 # history_days = 90               # 1-3650: days of history kept and shown
+# row_strips = true               # each row's small drawing of its stops; never on a wall tablet
 # allowed_hosts = []              # extra host names the dashboard and settings answer to, like ["ds.home"]
 # Rail engineering works: the Knowledgebase Incidents address from the RDM
 # product page. Until it is set, they stay off, even with RDM_KB_API_KEY. The

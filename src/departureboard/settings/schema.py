@@ -437,6 +437,10 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               default=("Mon-Sun 01:00-05:00",)),
         Field("history_days", "dashboard", "dashboard", "history_days", "Days of punctuality history to keep",
               number(1, 3650), "number", default=90),
+        Field("row_strips", "dashboard", "dashboard", "row_strips", "Position strips in each row", on_off, "select",
+              hint="A small drawing of the stops in each departure row, with the train or bus where it is. "
+                   "Never on a wall tablet.",
+              options=_ON_OFF, default=True),
         Field("dashboard_train_rows", "dashboard", "dashboard", "train_rows", "Trains shown", number(1, 20),
               "number", default=10, needs="train"),
         Field("train_interval_seconds", "dashboard", "dashboard", "train_interval_seconds",

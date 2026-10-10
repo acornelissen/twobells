@@ -10,6 +10,8 @@
 // minutes gone, leaving one dimmed "Just missed" line until it departs. The
 // first 5 rows show; the rest wait behind "Show later departures". On a wall
 // tablet (kiosk.js) there are no controls: 4 rows, the destination as text.
+// Rows draw their position strips unless the settings turned them off
+// (applyRowStrips marks <html data-row-strips="off">) or the page is on a wall tablet.
 
 import { h, vh, setText, str, num, list, obj, own, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
@@ -212,11 +214,22 @@ export function toggleMore(button) {
 
 // --- Trains ---
 
+// Marks the page with whether the settings turned the rows' position strips
+// off (data-row-strips="off"). A snapshot from an older server doesn't say:
+// they are on. Call it before drawing the boards.
+export function applyRowStrips(root, snapshot) {
+  if (snapshot?.row_strips === false) root.dataset.rowStrips = "off";
+  else delete root.dataset.rowStrips;
+}
+
+// Whether rows draw their position strips: not when the settings turned
+// them off, and never on a wall tablet, which has no room for them.
+const drawsStrips = () => !isKiosk() && document.documentElement?.dataset.rowStrips !== "off";
+
 // Where the train or bus is, in words, with its strip drawn small before
-// them where there is one (rowStrip). Not on a wall tablet, which has no
-// room for it.
+// them where there is one (rowStrip) and rows draw them.
 function whereLine(where, kind, strip, at) {
-  const drawing = isKiosk() ? null : rowStrip(kind, strip, at);
+  const drawing = drawsStrips() ? rowStrip(kind, strip, at) : null;
   return h("span", { class: ["sub", "where", drawing ? "has-strip" : null] }, drawing, where);
 }
 
@@ -238,7 +251,7 @@ function trainRow(row, first, later, alerts) {
   const strip = obj(position?.strip);
   // Row 1 always says where its train is; a later row does when it has a
   // strip to draw.
-  const placed = where && (first || (strip && !isKiosk()))
+  const placed = where && (first || (strip && drawsStrips()))
     ? whereLine(where, "train", strip, num(strip?.train_at)) : null;
   return h("tr", rowAttrs(row, id, later),
     h("th", { scope: "row", role: "rowheader", class: "c-time" }, h("span", { class: "time" }, scheduled)),

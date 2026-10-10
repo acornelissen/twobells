@@ -602,14 +602,17 @@ class Hub:
     server's threads (which read and wait). Safe to share between threads."""
 
     def __init__(self, title: str, walk: WalkTimes, clock: Callable[[], datetime] | None = None,
-                 monotonic: Callable[[], float] = time.monotonic, tz: tzinfo | None = None) -> None:
+                 monotonic: Callable[[], float] = time.monotonic, tz: tzinfo | None = None,
+                 row_strips: bool = True) -> None:
         # The board's zone, not the host's: a container's clock is in UTC.
         self._clock = clock or (lambda: datetime.now(tz) if tz else datetime.now().astimezone())
         self._monotonic = monotonic
         self._lock = threading.Lock()
         self._changed = threading.Condition(self._lock)
         # `quiet` says whether a quiet window is on; the collector's heartbeat sets it.
-        self._static = {"title": title, "walk": {"train": walk.train, "bus": dict(walk.bus)}, "quiet": False}
+        # `row_strips` says whether the page draws each row's position strip.
+        self._static = {"title": title, "walk": {"train": walk.train, "bus": dict(walk.bus)}, "quiet": False,
+                        "row_strips": row_strips}
         self._parts: dict[str, dict | list | None] = dict.fromkeys(PARTS)
         self._part_lookups: dict[str, dict[str, dict]] = {part: {} for part in PARTS}
         self._lookups: dict[str, dict] = {}

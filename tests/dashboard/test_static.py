@@ -559,6 +559,7 @@ SNAPSHOT = {
     "title": str,
     "walk": {"train": Opt(integer), "bus": MapOf(integer)},
     "quiet": bool,
+    "row_strips": bool,
     "trains": Opt({
         "station": str, "filter": Opt(str), "status": STATUS, "messages": [MESSAGE], "rows": [TRAIN_ROW],
     }),
@@ -1514,6 +1515,64 @@ def test_a_row_with_a_position_draws_its_strip_small_beside_its_words():
 def test_a_wall_tablet_row_has_no_position_strip():
     found = run_js(KIOSK + _boards() + ROW_STRIPS)
     assert found == {"trains": [None] * 4, "buses": [None] * 4}
+
+
+# The page as a snapshot saying row_strips marks it, before the boards are drawn.
+def _row_strips(setting, kiosk=False):
+    page = '{ dataset: { kiosk: "on" } }' if kiosk else "{ dataset: {} }"
+    return (f'import {{ applyRowStrips }} from "./board.js";\ndocument.documentElement = {page};\n'
+            f"applyRowStrips(document.documentElement, {json.dumps(setting)});\n")
+
+
+# Each row's drawings and where-words, as [drawings, words].
+ROW_WHERE = """
+const where = (id) => bodyRows(id).map((tr) => [byClass(tr, "row-strip").length, byClass(tr, "where").map(said).join("")]);
+console.log(JSON.stringify({ trains: where("trains-board"), buses: where("buses-board") }));
+"""
+
+
+@needs_node
+@pytest.mark.parametrize("setting", [{"row_strips": True}, {}])
+def test_rows_draw_their_strips_when_the_setting_is_on_or_unsaid(setting):
+    # A snapshot from an older server has no row_strips: they are on.
+    found = run_js(_row_strips(setting) + _boards() + ROW_WHERE)
+    assert [n for n, _ in found["trains"]] == [1, 0, 1] + [0] * 7
+    assert [n for n, _ in found["buses"]] == [1, 1, 1, 0, 1, 0, 0, 0, 0]
+
+
+@needs_node
+def test_with_the_setting_off_rows_draw_no_strips_and_row_1_still_says_where():
+    found = run_js(_row_strips({"row_strips": False}) + _boards() + ROW_WHERE)
+    # As on a wall tablet: no drawings; row 1 says where its train is in
+    # words, a later train row says nothing, and a bus row keeps its words.
+    assert found["trains"] == [[0, "Not started yet: leaves Hadfield at 07:11"]] + [[0, ""]] * 9
+    assert found["buses"] == [[0, "2 stops away"], [0, "No live position"], [0, "4 stops away"], [0, ""],
+                              [0, "Not on the route yet"], [0, ""], [0, ""], [0, ""], [0, ""]]
+
+
+@needs_node
+@pytest.mark.parametrize("setting", [{"row_strips": True}, {"row_strips": False}])
+def test_a_wall_tablet_draws_no_strips_whatever_the_setting(setting):
+    found = run_js(_row_strips(setting, kiosk=True) + _boards() + ROW_WHERE)
+    assert [n for n, _ in found["trains"] + found["buses"]] == [0] * 8
+    assert found["trains"][0][1] == "Not started yet: leaves Hadfield at 07:11"
+
+
+@needs_node
+def test_the_page_is_marked_only_while_the_setting_is_off():
+    found = run_js("""
+        import { applyRowStrips } from "./board.js";
+        const root = { dataset: {} };
+        const marks = [];
+        for (const snapshot of [{ row_strips: false }, { row_strips: true }, { row_strips: false }, {},
+                                { row_strips: "false" }, null]) {
+          applyRowStrips(root, snapshot);
+          marks.push(root.dataset.rowStrips ?? null);
+        }
+        console.log(JSON.stringify(marks));
+    """)
+    # Only a real false turns them off; anything else leaves them on.
+    assert found == ["off", None, "off", None, None, None]
 
 
 @needs_node

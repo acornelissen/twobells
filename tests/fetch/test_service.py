@@ -198,6 +198,22 @@ def test_new_settings_start_the_pollers_again_with_them(pi):
     assert second.stopped and lock_free(store)
 
 
+def test_a_saved_position_strips_setting_reaches_the_snapshot(pi):
+    _, spool = pi
+    save(pi, ON)
+    running = Running(service(pi))
+    path = handoff.snapshot_path(spool.folder)
+    handed = lambda: json.loads(path.read_bytes())["snapshot"]  # noqa: E731
+    try:
+        wait_for(path.exists)
+        assert handed()["row_strips"] is True
+        save(pi, ON + "[dashboard]\nrow_strips = false\n")
+        wait_for(lambda: len(FakeCollector.made) == 2)
+        wait_for(lambda: path.exists() and handed()["row_strips"] is False)
+    finally:
+        running.stop()
+
+
 @pytest.mark.parametrize("broken", [
     ON + "[train]\ncrs = 12\n",  # the dashboard's settings don't load
     "[app]\nviews = 3\n",  # nor do the views

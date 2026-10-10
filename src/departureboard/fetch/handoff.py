@@ -68,6 +68,7 @@ READ_EVERY_S = 0.5  # how often the mirror looks at the file
 
 _FIELDS = ("v", "run", "made", "version", "snapshot", "lookups", "previous", "area", "healthy")
 _SNAPSHOT_FIELDS = ("version", "generated_at", "title", "walk", *PARTS)
+_OPTIONAL_FLAGS = ("quiet", "row_strips")
 _HISTORY_FIELDS = ("mode", "route", "scheduled", "label", "day_type", "phrase")
 _HEX16 = re.compile(r"[0-9a-f]{16}")
 
@@ -105,10 +106,11 @@ def check(data, now: float) -> dict:
     if check_num(top["made"], "made") > now + CLOCK_SKEW_S:
         raise Refused("made is in the future")
     check_int(top["version"], "version", 0, 2**53)
-    # An older fetch service, mid-upgrade, sends no `quiet`.
-    snapshot = check_obj(top["snapshot"], _SNAPSHOT_FIELDS, ("quiet",))
-    if "quiet" in snapshot and not isinstance(snapshot["quiet"], bool):
-        raise Refused("quiet isn't true or false")
+    # An older fetch service, mid-upgrade, sends no `quiet` or `row_strips`.
+    snapshot = check_obj(top["snapshot"], _SNAPSHOT_FIELDS, _OPTIONAL_FLAGS)
+    for name in _OPTIONAL_FLAGS:
+        if name in snapshot and not isinstance(snapshot[name], bool):
+            raise Refused(f"{name} isn't true or false")
     for name in ("lookups", "previous"):
         for key, value in check_dict(top[name], name, MAX_LOOKUPS).items():
             if not _HEX16.fullmatch(key):
@@ -183,7 +185,8 @@ class SnapshotWriter:
 class SnapshotMirror:
     """The fetch service's snapshot, read from the spool, for the web server
     on a Pi: a snapshot.SnapshotSource, as the Hub is elsewhere. Until the
-    first good file it shows an empty snapshot with `title` and `walk`.
+    first good file it shows an empty snapshot with `title`, `walk` and
+    `row_strips`.
 
     `poster` tells the fetch service a browser is using the dashboard
     (touch), which also starts it if it has stopped; and while `wanted()`
@@ -192,7 +195,7 @@ class SnapshotMirror:
 
     def __init__(self, folder: Path | str, title: str, walk: WalkTimes, poster: Poster | None, *,
                  wanted: Callable[[], bool] = lambda: True, timezone: str | None = None,
-                 every: float = READ_EVERY_S, clock: Callable[[], float] = time.time,
+                 row_strips: bool = True, every: float = READ_EVERY_S, clock: Callable[[], float] = time.time,
                  monotonic: Callable[[], float] = time.monotonic) -> None:
         self._path = snapshot_path(folder)
         self._poster = poster
@@ -202,7 +205,7 @@ class SnapshotMirror:
         self._monotonic = monotonic
         self._lock = threading.Lock()
         self._changed = threading.Condition(self._lock)
-        placeholder = Hub(title, walk, tz=ZoneInfo(timezone) if timezone else None)
+        placeholder = Hub(title, walk, tz=ZoneInfo(timezone) if timezone else None, row_strips=row_strips)
         self._version, self._body = placeholder.current()
         self._lookups: dict[str, dict] = {}
         self._previous: dict[str, dict] = {}

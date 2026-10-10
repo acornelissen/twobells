@@ -69,6 +69,7 @@ _KEYS = {
     "history_days",
     "allowed_hosts",
     "kb_incidents_url",
+    "row_strips",
 }
 _MAX_ROWS = 20
 # Why there are no buses on the dashboard when the board's come from TransportAPI.
@@ -98,6 +99,9 @@ class DashboardOptions:
     # The Knowledgebase Incidents address from the RDM product page; until it
     # is set, rail engineering works are off even with RDM_KB_API_KEY.
     kb_incidents_url: str = KB_URL_PLACEHOLDER
+    # Each row's small drawing of its stops, with the train or bus on it.
+    # The page leaves them out when this is off, and always on a wall tablet.
+    row_strips: bool = True
 
 
 def _ranged(section: dict, key: str, default: int, low: int, high: int) -> int:
@@ -171,6 +175,7 @@ def dashboard_options(data: dict) -> DashboardOptions:
         history_days=_ranged(section, "history_days", 90, 1, _MAX_HISTORY_DAYS),
         allowed_hosts=frozenset(_host(h) for h in _texts(section, "allowed_hosts", _WHERE)),
         kb_incidents_url=_feed_url(section, "kb_incidents_url", KB_URL_PLACEHOLDER),
+        row_strips=_flag(section, "row_strips", True, _WHERE),
     )
 
 

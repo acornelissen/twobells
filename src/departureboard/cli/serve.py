@@ -289,6 +289,7 @@ def _mirror(store: Store, install: Install, runner, dash):
         Poster(folder),
         wanted=lambda: _dashboard_wanted(store, install),
         timezone=dash.timezone if dash is not None else None,
+        row_strips=dash.options.row_strips if dash is not None else True,
     )
 
 
@@ -315,7 +316,7 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
         except sqlite3.Error as error:
             print(f"Can't open the punctuality history in {dash.state_dir}: {error}", file=sys.stderr)
             return 2, None
-        hub = Hub(dash.title, dash.walk, tz=ZoneInfo(dash.timezone))
+        hub = Hub(dash.title, dash.walk, tz=ZoneInfo(dash.timezone), row_strips=dash.options.row_strips)
         collector = Collector(dash, hub, history)
 
     def healthy() -> bool:

@@ -6,7 +6,7 @@
 import { $, setText, store, str, obj, focusKey, refocus } from "./dom.js";
 import { connect, STATE } from "./api.js";
 import { clockText, parseAt } from "./time.js";
-import { renderBuses, renderTrains, stopNames, tickBoards, toggleMore } from "./board.js";
+import { applyRowStrips, renderBuses, renderTrains, stopNames, tickBoards, toggleMore } from "./board.js";
 import { tickStrips } from "./strip.js";
 import { renderWeather } from "./weather.js";
 import { noteSnapshot } from "./live.js";
@@ -105,6 +105,7 @@ function render(data) {
   setText($("title"), placeName(title, obj(data.trains)?.station));
   document.title = title;
   if (kiosk) applyDim(document.documentElement, data);
+  applyRowStrips(document.documentElement, data);
   drawBoards();
   attempt("weather", () => renderWeather(data));
   attempt("disruptions", () => { renderDisruptions(data); markBusRows(data, rowsById); });

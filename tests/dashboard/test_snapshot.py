@@ -574,11 +574,11 @@ def snapshot(h):
 def test_the_first_snapshot_has_every_section_empty():
     h = hub()
     body = snapshot(h)
-    assert list(body) == ["version", "generated_at", "title", "walk", "quiet", "trains", "buses", "weather",
-                          "disruptions", "timetable_changes"]
+    assert list(body) == ["version", "generated_at", "title", "walk", "quiet", "row_strips", "trains", "buses",
+                          "weather", "disruptions", "timetable_changes"]
     assert body["version"] == 1 and body["title"] == "Glossop"
     assert body["walk"] == {"train": 10, "bus": {"A": 8, "B": 6}}
-    assert body["quiet"] is False
+    assert body["quiet"] is False and body["row_strips"] is True
     assert body["trains"] is body["buses"] is body["weather"] is body["disruptions"] is None
     assert body["timetable_changes"] is None
 
@@ -594,6 +594,14 @@ def test_the_version_goes_up_only_when_the_content_changes():
     assert h.version == 3
     with pytest.raises(ValueError):
         h.publish("ferries", {})
+
+
+def test_the_snapshot_says_whether_rows_draw_their_position_strips():
+    assert snapshot(hub(row_strips=False))["row_strips"] is False
+    h = hub(row_strips=False)
+    h.refresh(quiet=True)
+    h.publish("trains", {"rows": []})
+    assert snapshot(h)["row_strips"] is False  # it stays as the settings said
 
 
 def test_a_refresh_says_whether_a_quiet_window_is_on_and_only_a_change_is_new():

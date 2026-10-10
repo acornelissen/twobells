@@ -10,6 +10,7 @@
     }
   },
   "quiet": false,
+  "row_strips": true,
   "trains": {
     "station": "Glossop",
     "filter": "MAN",

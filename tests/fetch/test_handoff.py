@@ -181,6 +181,24 @@ def test_quiet_comes_through_and_an_older_fetch_service_may_leave_it_out(spool):
     assert mirror.check() is True and "quiet" not in json.loads(mirror.current()[1])
 
 
+def test_row_strips_come_through_and_an_older_fetch_service_may_leave_them_out(spool):
+    hub = Hub("Glossop", WalkTimes(train=10, bus={"A": 8}), row_strips=False)
+    SnapshotWriter(hub, spool, lambda: True).write()
+    mirror = mirror_of(spool)
+    assert mirror.check() is True and json.loads(mirror.current()[1])["row_strips"] is False
+    older = json.loads(handoff.snapshot_path(spool.folder).read_bytes())
+    del older["snapshot"]["row_strips"]
+    older["made"] += 1
+    put(spool, older)
+    # The page takes a snapshot without them as on.
+    assert mirror.check() is True and "row_strips" not in json.loads(mirror.current()[1])
+
+
+def test_until_the_first_file_the_mirror_says_whether_rows_draw_their_strips(spool):
+    assert json.loads(mirror_of(spool).current()[1])["row_strips"] is True
+    assert json.loads(mirror_of(spool, row_strips=False).current()[1])["row_strips"] is False
+
+
 def test_lookups_previous_and_the_area_come_through(spool):
     good_file(spool)
     mirror = mirror_of(spool)
@@ -287,6 +305,8 @@ REFUSED = {
     "snapshot not an object": lambda d: _with(d, snapshot=[]),
     "snapshot with more": lambda d: _with(d, snapshot={**d["snapshot"], "script": "x"}),
     "quiet not true or false": lambda d: _with(d, snapshot={**d["snapshot"], "quiet": "yes"}),
+    "row_strips not true or false": lambda d: _with(d, snapshot={**d["snapshot"], "row_strips": 0}),
+    "row_strips null": lambda d: _with(d, snapshot={**d["snapshot"], "row_strips": None}),
     "lookup id in the wrong form": lambda d: _with(d, lookups={"../../etc/passwd": {}}),
     "lookup id in capitals": lambda d: _with(d, lookups={BUS_ID.upper(): {}}),
     "previous id too long": lambda d: _with(d, previous={BUS_ID + "0": {}}),

@@ -147,6 +147,15 @@ class FoundJob:
                 "result": {"fragment": {"bus": bus}, "lines": {}, "stop_lines": {}, "notes": []}}
 
 
+def test_position_strips_are_on_until_switched_off(form):
+    assert fields_of(form)["row_strips"] == "true"
+    assert form.save(fields_of(form) | {"row_strips": "false"}) == {}
+    written = tomllib.loads((form.folder / "settings.toml").read_text())
+    assert written["dashboard"]["row_strips"] is False
+    assert load_dashboard(form.config, ENV, form.folder, lock=False).options.row_strips is False
+    assert fields_of(form)["row_strips"] == "false"
+
+
 def test_every_field_the_page_saves_is_read_back():
     from departureboard.settings.schema import FIELDS, saved_keys
 
