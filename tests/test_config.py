@@ -762,12 +762,40 @@ def test_no_config_or_the_template_as_installed_needs_setting_up(tmp_path):
     assert needs_setup(TEMPLATE)
 
 
+@pytest.mark.parametrize("text", ["", "\n# Nothing yet\n", 'title = "Departures"\ndisplay = "inky"\n'])
+def test_a_config_with_neither_trains_nor_buses_needs_setting_up(tmp_path, text):
+    from departureboard.config import needs_setup
+
+    assert needs_setup(write(tmp_path, text))
+
+
+def test_settings_saved_without_a_config_count(tmp_path):
+    from departureboard.store import Store
+    from departureboard.config import needs_setup
+
+    store = Store.open(tmp_path / "missing.toml", state_dir=tmp_path / "data")
+    assert needs_setup(store)
+    store.make()
+    (tmp_path / "data" / "settings.toml").write_text('title = "Departures"\n')
+    assert needs_setup(store)  # saved, but nothing to show
+    (tmp_path / "data" / "settings.toml").write_text('[train]\ncrs = "GLO"\n')
+    assert not needs_setup(store)
+
+
+def test_trains_and_buses_both_switched_off_need_setting_up(tmp_path):
+    from departureboard.config import needs_setup
+
+    config = write(tmp_path, '[train]\ncrs = "GLO"\nenabled = false\n[bus]\nenabled = false\n')
+    assert needs_setup(config)
+    config.write_text('[train]\ncrs = "GLO"\n[bus]\nenabled = false\n')
+    assert not needs_setup(config)
+
+
 def test_a_filled_in_board_needs_no_setting_up(tmp_path, example):
     from departureboard.config import needs_setup
 
     assert not needs_setup(example)
     assert not needs_setup(filled_template(tmp_path))
-    assert not needs_setup(write(tmp_path, 'title = "Departures"\n'))  # nothing to set up, but no placeholder
 
 
 def test_setting_up_from_the_page_counts_once_every_placeholder_is_covered(tmp_path):

@@ -921,9 +921,11 @@ def served(monkeypatch):
     return made
 
 
-def ask(app, path):
-    """A GET to `app`, served for real on a free port: (status, Location, body)."""
+def ask(app, path, fields=None):
+    """A GET to `app`, or with `fields` a form's POST from its own page, served
+    for real on a free port: (status, Location, body)."""
     import http.client
+    from urllib.parse import urlencode
 
     from departureboard.dashserver import DashboardServer
 
@@ -931,7 +933,12 @@ def ask(app, path):
     threading.Thread(target=server.serve_forever, args=(0.05,), daemon=True).start()
     try:
         conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=5)
-        conn.request("GET", path, headers={"Host": "localhost"})
+        if fields is None:
+            conn.request("GET", path, headers={"Host": "localhost"})
+        else:
+            conn.request("POST", path, urlencode(fields), headers={
+                "Host": "localhost", "Origin": "http://localhost",
+                "Content-Type": "application/x-www-form-urlencoded"})
         response = conn.getresponse()
         found = response.status, response.getheader("Location"), response.read()
         conn.close()
@@ -1015,6 +1022,36 @@ def test_serve_starts_no_dashboard_until_there_is_something_to_show(tmp_path, se
     assert app.hub is None and app.settings.problem == ""
     assert ask(app, "/") == (303, "/settings", b"")
     assert not (folder / "history.sqlite3").exists()
+
+
+FIRST_RUNS = {
+    "missing": None,
+    "blank": "",
+    "example": (Path(__file__).parent.parent / "config.example.toml").read_text(),
+}
+
+
+@pytest.mark.parametrize("install", ["docker", "pi"])
+@pytest.mark.parametrize("config", sorted(FIRST_RUNS))
+def test_a_first_run_serves_the_settings_and_signing_in_opens_the_wizard(tmp_path, served, monkeypatch, capsys,
+                                                                         install, config):
+    # Docker's first start (no config.toml), a blank one, and the template as installed on a Pi.
+    from departureboard.auth import PasswordStore
+
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))  # the Pi's spool, in memory
+    path, folder = tmp_path / "config.toml", tmp_path / "data"
+    if FIRST_RUNS[config] is not None:
+        path.write_text(FIRST_RUNS[config])
+    assert main(["serve", "--install", install, "--config", str(path), "--secrets", str(tmp_path / "none.env"),
+                 "--state-dir", str(folder)]) == 0
+    assert "Not set up yet: sign in and the page opens the setup wizard" in capsys.readouterr().err
+    app = served["app"]
+    assert app.hub is None  # no dashboard, so nothing is fetched
+    assert ask(app, "/") == (303, "/settings", b"")
+    assert ask(app, "/healthz") == (200, None, b"ok")
+    PasswordStore(folder / "web.json").set(DASH_PASSWORD)
+    status, where, _ = ask(app, "/settings/login", {"password": DASH_PASSWORD})
+    assert (status, where) == (303, "/settings/setup/")
 
 
 def test_serve_with_the_dashboard_view_off_runs_only_the_settings(tmp_path, served, dashboard_config):
@@ -1333,6 +1370,23 @@ def test_a_template_config_shows_the_setup_page_instead_of_failing(tmp_path, mon
     # Drawn once: e-paper wears, and the page doesn't change.
     rendered = [r.getMessage() for r in caplog.records if r.getMessage().startswith("rendered=")]
     assert rendered == ["rendered=True", "rendered=False", "rendered=False"]
+
+
+@pytest.mark.parametrize("config", sorted(FIRST_RUNS))
+def test_a_pi_not_set_up_shows_set_me_up_with_the_settings_address(tmp_path, monkeypatch, caplog, config):
+    import departureboard.cli as cli
+
+    caplog.set_level("INFO")
+    monkeypatch.setattr(cli.socket, "gethostname", lambda: "kitchen-board")
+    folder = tmp_path / "lib"
+    folder.mkdir()
+    monkeypatch.setenv("STATE_DIRECTORY", str(folder))  # as systemd sets it for the board's units
+    path = tmp_path / "config.toml"
+    if FIRST_RUNS[config] is not None:
+        path.write_text(FIRST_RUNS[config])
+    assert main(first_run_args(tmp_path, path)) == 0
+    assert "Not set up yet: showing http://kitchen-board.local:8080/settings on the board" in caplog.text
+    assert saved_page(folder) == "setup"
 
 
 @pytest.mark.parametrize("display, size", [("waveshare-10in85g", (1360, 480)), ("hdmi-1280x400", (1280, 400))])

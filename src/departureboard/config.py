@@ -179,19 +179,20 @@ def _has_placeholder(value) -> bool:
 
 
 def needs_setup(store: Store | Path | str) -> bool:
-    """Whether the board is still to be set up: there is neither config.toml
-    nor saved settings, or they still have one of the template's CHANGE_ME
-    placeholders outside a section switched off. A config.toml that can't be
-    read or parsed is not a first run but a fault, for load_config to report."""
+    """Whether the install is still to be set up: config.toml and the saved
+    settings together switch on neither trains nor buses (none there, a
+    blank one, or both switched off), or they still have one of the
+    template's CHANGE_ME placeholders outside a section switched off. A
+    config.toml that can't be read or parsed is not a first run but a
+    fault, for the loaders to report."""
     from .store import Store
 
     try:
-        store = Store.of(store)
-        if not (store.config_path.exists() or store.settings_file.exists()):
-            return True
-        data = switched_on(store.data())
+        data = switched_on(Store.of(store).data())
     except (OSError, ConfigError):
         return False
+    if "train" not in data and "bus" not in data:
+        return True
     return _has_placeholder(data)
 
 
