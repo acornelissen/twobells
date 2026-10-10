@@ -17,13 +17,15 @@ can open (0700):
   replies/   the service's answers to lookups: <id>.json
   status/    the search's status: <id>.json
 
-Where. In memory, never on the SD card: a request can hold home's exact
-position or a pasted key, and flash can keep what was deleted. On the Pi
-both units name the same systemd RuntimeDirectory, /run/departureboard-setup
-(a tmpfs, kept while either runs and until the Pi restarts), and find it in
-$RUNTIME_DIRECTORY. Without that, run by hand, they use that folder if it
-is there, and otherwise setup-spool/ in the board's state folder: on disk,
-for the tests and a Mac (see spool_folder).
+Where. In memory, never written as a file to the SD card: a request can
+hold home's exact position or a pasted key, and flash can keep what was
+deleted. On the Pi both units name the same systemd RuntimeDirectory,
+/run/departureboard-setup (a tmpfs, kept while either runs and until the Pi
+restarts), and find it in $RUNTIME_DIRECTORY. Run by hand, they use that
+folder if it is there; with neither they refuse, rather than fall back to a
+folder on the card. A run on a Mac, or a test, names a folder with
+$RUNTIME_DIRECTORY (see spool_folder). Memory itself can still reach the
+card if the Pi swaps to it (dphys-swapfile, say), as with anything else.
 
 Every file is written new in tmp/ (0600, never through a link) and renamed
 into place whole, so neither side ever reads half of one. A systemd path
@@ -90,7 +92,7 @@ from .status import safe_message
 
 log = logging.getLogger(__name__)
 
-SPOOL = "setup-spool"  # in the board's state folder, when there's no folder in memory
+SPOOL = "setup-spool"  # where the spool once was, in the board's state folder; update.sh deletes it
 RUNTIME = Path("/run/departureboard-setup")  # the units' RuntimeDirectory
 VERSION = 1
 MAX_REQUEST_BYTES = 16 * 1024  # the biggest, a walk to 25 places, is about 2 kB
@@ -446,11 +448,11 @@ def check_reply(data, request_id: str) -> dict:
 # The spool folder and its files.
 
 
-def spool_folder(state: Path | None, environ: Mapping[str, str] | None = None) -> Path | None:
+def spool_folder(environ: Mapping[str, str] | None = None) -> Path:
     """Where the spool is: systemd's $RUNTIME_DIRECTORY (memory); else
-    RUNTIME if it is there (run by hand on the Pi); else setup-spool in the
-    `state` folder (on disk: the tests, a Mac); None without one.
-    SpoolError if $RUNTIME_DIRECTORY isn't one absolute path."""
+    RUNTIME if it is there (run by hand on the Pi). SpoolError if there is
+    neither, as any other folder may be on the SD card, or if
+    $RUNTIME_DIRECTORY isn't one absolute path."""
     given = (os.environ if environ is None else environ).get("RUNTIME_DIRECTORY", "")
     if given:
         if not os.path.isabs(given) or ":" in given:
@@ -458,7 +460,9 @@ def spool_folder(state: Path | None, environ: Mapping[str, str] | None = None) -
         return Path(given)
     if os.path.lexists(RUNTIME):  # Spool.make refuses it unless it's a real folder of ours
         return RUNTIME
-    return None if state is None else state / SPOOL
+    raise SpoolError(f"No folder in memory for the setup spool: {RUNTIME} isn't there. On the Pi, "
+                     "start departureboard-web.service, which makes it; elsewhere, set RUNTIME_DIRECTORY "
+                     "to a folder that isn't on an SD card.")
 
 
 class Spool:

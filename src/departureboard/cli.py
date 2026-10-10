@@ -491,16 +491,15 @@ def _setup_serve(args) -> int:
     else:
         if folder is None:
             problem = "config.toml needs a state_file; setup searches build the timetable there"
+    if problem:
+        print(problem, file=sys.stderr)
     try:
-        spool = setupspool.spool_folder(folder)
+        spool = setupspool.spool_folder()
     except setupspool.SpoolError as error:
         print(error, file=sys.stderr)
         return 2
     stop = threading.Event()
     if problem:
-        print(problem, file=sys.stderr)
-        if spool is None:
-            return 2
         # Say so to the page, rather than stop with its requests waiting and be started again and again.
         worker = setupspool.Worker(spool, job_folder=None, load_secrets=dict, unavailable=setupspool.NO_SETTINGS,
                                    stop=stop)
@@ -599,7 +598,7 @@ def _web(args) -> int:
         from .setupspool import SpoolError, SpoolRunner, spool_folder
 
         try:
-            runner = SpoolRunner(spool_folder(folder))
+            runner = SpoolRunner(spool_folder())
         except SpoolError as error:
             print(error, file=sys.stderr)
             return 2

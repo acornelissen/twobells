@@ -543,21 +543,21 @@ def test_the_spool_is_private_and_never_a_link(tmp_path):
         Spool(tmp_path / "linked").make()
 
 
-def test_the_spool_is_systemds_folder_in_memory_when_there_is_one(tmp_path, monkeypatch):
-    state, run = tmp_path / "state", tmp_path / "run"
+def test_the_spool_is_systemds_folder_in_memory_and_never_on_disk(tmp_path, monkeypatch):
+    run = tmp_path / "run"
     monkeypatch.setattr(setupspool, "RUNTIME", tmp_path / "no-run")
-    assert setupspool.spool_folder(state, {"RUNTIME_DIRECTORY": str(run)}) == run
+    assert setupspool.spool_folder({"RUNTIME_DIRECTORY": str(run)}) == run
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
-    assert setupspool.spool_folder(state) == run
+    assert setupspool.spool_folder() == run
     for odd in ("relative/run", f"{run}:{tmp_path / 'other'}"):
         with pytest.raises(setupspool.SpoolError):
-            setupspool.spool_folder(state, {"RUNTIME_DIRECTORY": odd})
-    # Run by hand: the units' folder if it's there, else the state folder (on disk: tests, a Mac).
-    assert setupspool.spool_folder(state, {}) == state / setupspool.SPOOL
-    assert setupspool.spool_folder(None, {}) is None
+            setupspool.spool_folder({"RUNTIME_DIRECTORY": odd})
+    # Run by hand: the units' folder if it's there, and never one on the SD card instead.
+    with pytest.raises(setupspool.SpoolError, match="RUNTIME_DIRECTORY"):
+        setupspool.spool_folder({})
     monkeypatch.setattr(setupspool, "RUNTIME", run)
     run.mkdir()
-    assert setupspool.spool_folder(state, {}) == run
+    assert setupspool.spool_folder({}) == run
 
 
 def test_the_service_stops_when_idle_and_runs_once(board):

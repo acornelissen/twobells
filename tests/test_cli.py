@@ -1163,7 +1163,7 @@ def test_the_settings_page_opens_the_wizard_until_the_board_is_set_up(tmp_path, 
 
 @pytest.fixture
 def no_runtime_folder(tmp_path, monkeypatch):
-    """No systemd RuntimeDirectory, and none left in /run: the spool falls back to the state folder."""
+    """No systemd RuntimeDirectory, and none left in /run: no folder in memory for the setup spool."""
     from departureboard import setupspool
 
     monkeypatch.delenv("RUNTIME_DIRECTORY", raising=False)
@@ -1194,28 +1194,48 @@ def test_the_pis_settings_page_hands_setup_to_the_setup_service(tmp_path, monkey
     monkeypatch.setattr(web, "make_server", lambda handler, host, port: Server())
     config = installed_template(tmp_path)
     (tmp_path / "state").mkdir()  # as install.sh and systemd's StateDirectory make it
+    run = tmp_path / "run"
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))  # as systemd gives it
     assert main(["web", "--config", str(config), "--secrets", str(tmp_path / "none.env"), *flag]) == 0
     runner = made["wizard"].api._runner
     if flag:
         assert isinstance(runner, setupspool.SpoolRunner)
-        assert runner.spool.folder == tmp_path / "state" / setupspool.SPOOL and runner.spool.requests.is_dir()
+        assert runner.spool.folder == run and runner.spool.requests.is_dir()
     else:
-        assert runner is None and not (tmp_path / "state" / setupspool.SPOOL).exists()
+        assert runner is None and not run.exists()
+    assert os.listdir(tmp_path / "state") == []  # nothing of setup's on the SD card
 
 
-def test_the_setup_service_answers_in_the_boards_state_folder(tmp_path, monkeypatch, no_runtime_folder):
+def test_the_setup_service_searches_in_the_boards_state_folder(tmp_path, monkeypatch, no_runtime_folder):
     from departureboard import setupspool
 
     ran = []
     monkeypatch.setattr(setupspool.Worker, "run", lambda self: ran.append(self) or 0)
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
     config = installed_template(tmp_path)
     secrets = tmp_path / "secrets.env"
     secrets.write_text("BODS_API_KEY=saved-bods-key\n")
     assert main(["setup", "serve", "--config", str(config), "--secrets", str(secrets)]) == 0
     [worker] = ran
-    assert worker.spool.folder == tmp_path / "state" / setupspool.SPOOL and worker._job_folder == tmp_path / "state"
+    assert worker.spool.folder == tmp_path / "run" and worker._job_folder == tmp_path / "state"
     assert worker._load_secrets()["BODS_API_KEY"] == "saved-bods-key"
     assert isinstance(worker._settings(), dict)
+
+
+def test_without_a_folder_in_memory_the_setup_spool_is_refused(tmp_path, monkeypatch, capsys, no_runtime_folder):
+    # Never on the SD card, where flash can keep what was deleted: a request can hold home's position or a key.
+    from departureboard import setupspool, web
+
+    monkeypatch.setattr(web, "make_server", lambda handler, host, port: pytest.fail("served"))
+    monkeypatch.setattr(setupspool.Worker, "run", lambda self: pytest.fail("ran"))
+    config = installed_template(tmp_path)
+    (tmp_path / "state").mkdir()
+    none = str(tmp_path / "none.env")
+    assert main(["web", "--config", str(config), "--secrets", none, "--setup-via-spool"]) == 2
+    assert "RUNTIME_DIRECTORY" in capsys.readouterr().err
+    assert main(["setup", "serve", "--config", str(config), "--secrets", none]) == 2
+    assert "RUNTIME_DIRECTORY" in capsys.readouterr().err
+    assert os.listdir(tmp_path / "state") == []
 
 
 def test_the_page_and_the_setup_service_share_systemds_folder_in_memory(tmp_path, monkeypatch):
