@@ -9,9 +9,14 @@ started the evening before is 1460.
 from __future__ import annotations
 
 import json
+import logging
 import math
-from dataclasses import asdict, dataclass, field
+import threading
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime
+
+log = logging.getLogger(__name__)
 
 DateRange = tuple[date, date]  # first and last day, inclusive
 
@@ -101,7 +106,8 @@ class Schedule:
     # (lat, lon) points between the two stops, not including them, keyed
     # "ATCO_A>ATCO_B" in the order the bus calls (roadshape.shape_key). A pair
     # left out is drawn straight; empty in a file saved before they were kept.
-    shapes: dict[str, tuple[tuple[float, float], ...]] = field(default_factory=dict)
+    # From a file, a SavedRoads: read when first used.
+    shapes: Mapping[str, tuple[tuple[float, float], ...]] = field(default_factory=dict)
 
     @property
     def departure_journeys(self) -> tuple[Journey, ...]:
@@ -109,7 +115,9 @@ class Schedule:
         return tuple(journey for journey in self.journeys if not journey.inbound_only)
 
     def to_json(self) -> str:
-        return json.dumps(_plain(asdict(self)), separators=(",", ":"), sort_keys=True)
+        data = asdict(replace(self, shapes={}))
+        data["shapes"] = dict(self.shapes)
+        return json.dumps(_plain(data), separators=(",", ":"), sort_keys=True)
 
     @classmethod
     def from_json(cls, text: str) -> "Schedule":
@@ -122,8 +130,44 @@ class Schedule:
             positions={k: StopPosition(**v) for k, v in data.get("positions", {}).items()},
             operators=tuple(data.get("operators", ())),
             format=int(data.get("format", 1)),
-            shapes={str(key): tuple(_point(p) for p in points) for key, points in data.get("shapes", {}).items()},
+            shapes=SavedRoads(data.get("shapes", {})),
         )
+
+
+class SavedRoads(Mapping):
+    """A timetable file's roads (Schedule.shapes), read only when first used:
+    a file can hold thousands of points, and the e-paper board, reading it
+    every minute on a Pi Zero, never draws them. Read strictly: if any road
+    isn't a list of finite (lat, lon) pairs, none is kept, and the maps draw
+    straight lines; the timetable is still used."""
+
+    def __init__(self, saved):
+        self._saved = saved  # as json.loads gave it
+        self._roads: dict[str, tuple[tuple[float, float], ...]] | None = None
+        self._lock = threading.Lock()  # the dashboard's threads share a timetable
+
+    def _read(self) -> dict[str, tuple[tuple[float, float], ...]]:
+        with self._lock:
+            if self._roads is None:
+                try:
+                    self._roads = _roads(self._saved)
+                except (ValueError, TypeError) as error:
+                    log.warning("Ignoring the bus timetable's roads, drawing straight lines: %s", error)
+                    self._roads = {}
+                self._saved = None
+            return self._roads
+
+    def __getitem__(self, key: str) -> tuple[tuple[float, float], ...]:
+        return self._read()[key]
+
+    def __iter__(self):
+        return iter(self._read())
+
+    def __len__(self) -> int:
+        return len(self._read())
+
+    def __repr__(self) -> str:
+        return f"SavedRoads({self._read()!r})"
 
 
 def _plain(value):
@@ -167,6 +211,12 @@ def _journey(data: dict) -> Journey:
         calendar=_calendar(data["calendar"]),
         inbound_only=_flag(data.get("inbound_only", False)),
     )
+
+
+def _roads(saved) -> dict[str, tuple[tuple[float, float], ...]]:
+    if not isinstance(saved, dict):
+        raise TypeError("The roads must be a mapping")
+    return {str(key): tuple(_point(p) for p in points) for key, points in saved.items()}
 
 
 def _point(pair) -> tuple[float, float]:

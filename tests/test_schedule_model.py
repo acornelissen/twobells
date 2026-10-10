@@ -74,16 +74,50 @@ def test_road_shapes_round_trip_and_older_files_have_none():
     assert Schedule.from_json(json.dumps(old)).shapes == {}
 
 
-@pytest.mark.parametrize("points", [[[53.4, "x"]], [[53.4]], [[53.4, -1.9, 0]], [[53.4, None]], [53.4, -1.9]])
-def test_a_road_shape_that_isnt_points_is_refused(points):
-    text = json.dumps({"built": "2026-10-09T03:00:00", "valid_until": None, "stops": {}, "journeys": [],
-                       "shapes": {"A>B": points}})
-    with pytest.raises((ValueError, TypeError)):
-        Schedule.from_json(text)
+GOOD_ROAD = [[53.4436, -1.9563]]
 
 
-def test_a_road_shape_that_isnt_finite_is_refused():
-    text = ('{"built": "2026-10-09T03:00:00", "valid_until": null, "stops": {}, "journeys": [], '
-            '"shapes": {"A>B": [[NaN, -1.9]]}}')
-    with pytest.raises(ValueError, match="finite"):
-        Schedule.from_json(text)
+def _with_roads(shapes, journeys="[]"):
+    return ('{"built": "2026-10-09T03:00:00", "valid_until": null, "stops": {}, "journeys": ' + journeys
+            + ', "shapes": ' + shapes + '}')
+
+
+@pytest.mark.parametrize("points", [[[53.4, "x"]], [[53.4]], [[53.4, -1.9, 0]], [[53.4, None]], [53.4, -1.9],
+                                    "53.4", {"lat": 53.4}])
+def test_a_road_shape_that_isnt_points_leaves_every_road_straight(points, caplog):
+    # Strict: one bad road and none are used. The timetable itself still loads.
+    schedule = Schedule.from_json(_with_roads(json.dumps({"A>B": GOOD_ROAD, "B>C": points})))
+    assert schedule.shapes == {} and len(schedule.shapes) == 0 and schedule.shapes.get("A>B") is None
+    assert "roads" in caplog.text
+
+
+def test_a_road_shape_that_isnt_finite_leaves_every_road_straight(caplog):
+    schedule = Schedule.from_json(_with_roads('{"A>B": [[53.4436, -1.9563]], "B>C": [[NaN, -1.9]]}'))
+    assert schedule.shapes == {}
+    assert "finite" in caplog.text
+
+
+def test_roads_that_arent_a_mapping_are_none():
+    assert Schedule.from_json(_with_roads("[[53.4, -1.9]]")).shapes == {}
+
+
+def test_the_roads_are_read_only_when_first_asked_for(monkeypatch):
+    # The e-paper board reads the timetable every minute and never draws a road.
+    from departureboard import schedule_model
+
+    read = []
+    real = schedule_model._point
+    monkeypatch.setattr(schedule_model, "_point", lambda pair: read.append(pair) or real(pair))
+    schedule = Schedule.from_json(_with_roads(json.dumps({"A>B": GOOD_ROAD * 3})))
+    assert read == []
+    assert schedule.shapes["A>B"] == ((53.4436, -1.9563),) * 3
+    assert len(read) == 3
+    assert dict(schedule.shapes) == {"A>B": ((53.4436, -1.9563),) * 3} and len(read) == 3  # read once
+
+
+def test_roads_read_lazily_round_trip_and_compare_equal():
+    schedule = Schedule(datetime(2026, 10, 9, 3, 0), None, {}, (), shapes={"A>B": ((53.4436, -1.9563),)})
+    back = Schedule.from_json(schedule.to_json())
+    assert back == schedule and schedule == back
+    assert back.to_json() == schedule.to_json()
+    assert Schedule.from_json(back.to_json()) == back

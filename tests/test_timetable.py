@@ -700,6 +700,19 @@ def test_load_without_a_file_or_with_a_bad_one(tmp_path):
     assert load(tmp_path) is None
 
 
+def test_a_timetable_with_bad_roads_loads_with_straight_lines(tmp_path, caplog):
+    import json
+
+    save(tmp_path, _schedule())
+    data = json.loads((tmp_path / FILE_NAME).read_text())
+    data["shapes"] = {"A>B": [[53.4, -1.9]], "B>C": [[float("nan"), -1.9]]}
+    (tmp_path / FILE_NAME).write_text(json.dumps(data))
+    loaded = load(tmp_path)
+    assert loaded is not None and loaded.journeys == _schedule().journeys
+    assert loaded.shapes == {}
+    assert "finite" in caplog.text
+
+
 class FakeBuild:
     def __init__(self, result=None, error=None):
         self.result = result
