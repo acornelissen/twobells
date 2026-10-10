@@ -34,7 +34,7 @@ from test_livebus import EAST, HALFWAY, HENRY_A, JUNCTION, POSITIONS, ST_MARYS_W
 LONDON = ZoneInfo("Europe/London")
 FIXTURES = Path(__file__).parent / "fixtures"
 HEX16 = re.compile(r"[0-9a-f]{16}")
-WALK = WalkTimes(train=12, bus={"A": 5, "B": 10})
+WALK = WalkTimes(train=10, bus={"A": 8, "B": 6})
 
 
 def fixture(name):
@@ -215,7 +215,7 @@ def test_a_late_train_is_expected_later_and_left_for_later():
     row = part["rows"][0]
     assert (row["status"], row["status_text"], row["minutes_late"]) == ("late", "Expected 07:19", 7)
     assert row["expected_at"] == "2026-10-10T07:19:00+01:00"
-    assert row["leave_at"] == "2026-10-10T07:07:00+01:00"  # 12 min walk
+    assert row["leave_at"] == "2026-10-10T07:09:00+01:00"  # 10 min walk
     assert row["delay_reason"] == "This train has been delayed by a broken down train"
 
 
@@ -224,7 +224,7 @@ def test_delayed_without_a_time_has_no_minutes_late():
     assert (row["status"], row["status_text"], row["minutes_late"], row["expected_at"]) == (
         "late", "Delayed", None, None,
     )
-    assert row["leave_at"] == "2026-10-10T07:00:00+01:00"  # from the timetabled time
+    assert row["leave_at"] == "2026-10-10T07:02:00+01:00"  # from the timetabled time
 
 
 def test_a_cancelled_train_has_no_leave_time():
@@ -348,8 +348,8 @@ def test_leave_at_follows_each_stop_s_walk():
     part, _, _ = bus_part(at(10, 14), [bus(*HALFWAY, at(10, 14))])
     a = by(part["rows"], line="341", stop="A")
     b = by(part["rows"], line="237", stop="B")
-    assert a["leave_at"] == "2026-10-09T10:14:00+01:00"  # expected 10:19, 5 min walk to A
-    assert b["leave_at"] == "2026-10-09T10:08:00+01:00"  # timetabled 10:18, 10 min walk to B
+    assert a["leave_at"] == "2026-10-09T10:11:00+01:00"  # expected 10:19, 8 min walk to A
+    assert b["leave_at"] == "2026-10-09T10:12:00+01:00"  # timetabled 10:18, 6 min walk to B
     star = bus_part(at(10, 14), walk=WalkTimes(bus={"*": 3}))[0]
     assert by(star["rows"], line="237", stop="B")["leave_at"] == "2026-10-09T10:15:00+01:00"
     none = bus_part(at(10, 14), walk=WalkTimes(train=5))[0]
@@ -544,7 +544,7 @@ def test_the_first_snapshot_has_every_section_empty():
     assert list(body) == ["version", "generated_at", "title", "walk", "trains", "buses", "weather", "disruptions",
                           "timetable_changes"]
     assert body["version"] == 1 and body["title"] == "Glossop"
-    assert body["walk"] == {"train": 12, "bus": {"A": 5, "B": 10}}
+    assert body["walk"] == {"train": 10, "bus": {"A": 8, "B": 6}}
     assert body["trains"] is body["buses"] is body["weather"] is body["disruptions"] is None
     assert body["timetable_changes"] is None
 

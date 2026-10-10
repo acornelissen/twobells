@@ -104,7 +104,7 @@ class Running:
 
 
 def make_app(static_dir, **overrides):
-    hub = Hub("Glossop", WalkTimes(train=12))
+    hub = Hub("Glossop", WalkTimes(train=10))
     hub.publish("buses", {"rows": [{"id": BUS_ID}]}, {
         BUS_ID: {
             "bus": {"id": BUS_ID, "line": "341", "destination": "Hyde", "stop": "A", "stops": [], "vehicle": None,

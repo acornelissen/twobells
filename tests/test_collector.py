@@ -150,7 +150,7 @@ class Setup:
         self.weather = Weather() if weather else None
         self.details = Details() if details else None
         self.settings = DashboardSettings(
-            title="Glossop", timezone="Europe/London", state_dir=tmp_path, walk=WalkTimes(train=12, bus={"A": 5}),
+            title="Glossop", timezone="Europe/London", state_dir=tmp_path, walk=WalkTimes(train=10, bus={"A": 8}),
             options=options or DashboardOptions(), train=self.trains, train_crs="GLO", train_filter="MAN",
             bus=self.buses, bus_upkeep=self.upkeep_buses, bus_stops={"A": HENRY_A}, weather=self.weather,
             train_details=self.details, bank_holiday_division=division,
@@ -408,7 +408,7 @@ def test_buses_are_published_and_observed(tmp_path):
     buses = setup.snapshot()["buses"]
     assert buses["timetable"]["state"] == "ready" and buses["stops"] == {"A": "Henry Street"}
     row = next(r for r in buses["rows"] if r["line"] == "341")
-    assert row["live"] and row["expected"] == "10:19" and row["leave_at"] == "2026-10-09T10:14:00+01:00"
+    assert row["live"] and row["expected"] == "10:19" and row["leave_at"] == "2026-10-09T10:11:00+01:00"
     mode, rows, _ = setup.history.observed[0]
     assert mode == "bus" and {o.route for o in rows} >= {"A|341|Hadfield"}
     assert setup.history.late_minutes == 2

@@ -3,10 +3,10 @@
   "generated_at": "2026-10-10T07:01:30+01:00",
   "title": "Glossop > Man Picc",
   "walk": {
-    "train": 12,
+    "train": 10,
     "bus": {
-      "A": 5,
-      "B": 10
+      "A": 8,
+      "B": 6
     }
   },
   "trains": {
@@ -38,7 +38,7 @@
         "length": 3,
         "cancel_reason": null,
         "delay_reason": "This train has been delayed by a broken down train",
-        "leave_at": "2026-10-10T07:07:00+01:00",
+        "leave_at": "2026-10-10T07:09:00+01:00",
         "calling_points": [
           {
             "name": "Dinting",
@@ -275,7 +275,7 @@
         "length": 6,
         "cancel_reason": null,
         "delay_reason": null,
-        "leave_at": "2026-10-10T08:00:00+01:00",
+        "leave_at": "2026-10-10T08:02:00+01:00",
         "calling_points": [
           {
             "name": "Dinting",
@@ -406,7 +406,7 @@
         "length": 3,
         "cancel_reason": null,
         "delay_reason": "This train has been delayed by signalling problems",
-        "leave_at": "2026-10-10T08:30:00+01:00",
+        "leave_at": "2026-10-10T08:32:00+01:00",
         "calling_points": [
           {
             "name": "Dinting",
@@ -512,7 +512,7 @@
         "length": 3,
         "cancel_reason": null,
         "delay_reason": null,
-        "leave_at": "2026-10-10T09:00:00+01:00",
+        "leave_at": "2026-10-10T09:02:00+01:00",
         "calling_points": [
           {
             "name": "Dinting",
@@ -623,7 +623,7 @@
         "length": 3,
         "cancel_reason": null,
         "delay_reason": null,
-        "leave_at": "2026-10-10T09:33:00+01:00",
+        "leave_at": "2026-10-10T09:35:00+01:00",
         "calling_points": [
           {
             "name": "Dinting",
@@ -734,7 +734,7 @@
         "length": 2,
         "cancel_reason": null,
         "delay_reason": null,
-        "leave_at": "2026-10-10T10:00:00+01:00",
+        "leave_at": "2026-10-10T10:02:00+01:00",
         "calling_points": [
           {
             "name": "Dinting",
@@ -845,7 +845,7 @@
         "length": 3,
         "cancel_reason": null,
         "delay_reason": null,
-        "leave_at": "2026-10-10T10:30:00+01:00",
+        "leave_at": "2026-10-10T10:32:00+01:00",
         "calling_points": [
           {
             "name": "Dinting",
@@ -956,7 +956,7 @@
         "length": null,
         "cancel_reason": null,
         "delay_reason": null,
-        "leave_at": "2026-10-10T11:00:00+01:00",
+        "leave_at": "2026-10-10T11:02:00+01:00",
         "calling_points": [],
         "previous_points": [],
         "position": null,
@@ -981,7 +981,7 @@
         "length": 3,
         "cancel_reason": null,
         "delay_reason": null,
-        "leave_at": "2026-10-10T11:30:00+01:00",
+        "leave_at": "2026-10-10T11:32:00+01:00",
         "calling_points": [
           {
             "name": "Dinting",
@@ -1109,7 +1109,7 @@
         "status_text": "Timetable only",
         "minutes_late": null,
         "live": false,
-        "leave_at": "2026-10-10T06:55:00+01:00",
+        "leave_at": "2026-10-10T06:59:00+01:00",
         "vehicle": null,
         "strip": {
           "stops": [
@@ -1151,7 +1151,7 @@
         "status_text": "Expected 07:11",
         "minutes_late": 2,
         "live": true,
-        "leave_at": "2026-10-10T07:06:00+01:00",
+        "leave_at": "2026-10-10T07:03:00+01:00",
         "vehicle": {
           "age_s": 40,
           "recorded_at": "2026-10-10T07:00:50+01:00",
@@ -1198,7 +1198,7 @@
         "status_text": "Timetable only",
         "minutes_late": null,
         "live": false,
-        "leave_at": "2026-10-10T07:15:00+01:00",
+        "leave_at": "2026-10-10T07:12:00+01:00",
         "vehicle": null,
         "strip": {
           "stops": [
@@ -1245,7 +1245,7 @@
         "status_text": "Expected 07:28",
         "minutes_late": 4,
         "live": true,
-        "leave_at": "2026-10-10T07:23:00+01:00",
+        "leave_at": "2026-10-10T07:20:00+01:00",
         "vehicle": {
           "age_s": 75,
           "recorded_at": "2026-10-10T07:00:15+01:00",
@@ -1292,7 +1292,7 @@
         "status_text": "Timetable only",
         "minutes_late": null,
         "live": false,
-        "leave_at": "2026-10-10T07:25:00+01:00",
+        "leave_at": "2026-10-10T07:29:00+01:00",
         "vehicle": null,
         "strip": null,
         "history": {
@@ -1322,7 +1322,7 @@
         "status_text": "On time",
         "minutes_late": null,
         "live": true,
-        "leave_at": "2026-10-10T07:34:00+01:00",
+        "leave_at": "2026-10-10T07:31:00+01:00",
         "vehicle": {
           "age_s": 12,
           "recorded_at": "2026-10-10T07:01:18+01:00",
@@ -1369,7 +1369,7 @@
         "status_text": "Timetable only",
         "minutes_late": null,
         "live": false,
-        "leave_at": "2026-10-10T07:45:00+01:00",
+        "leave_at": "2026-10-10T07:42:00+01:00",
         "vehicle": null,
         "strip": null,
         "history": {
@@ -1399,7 +1399,7 @@
         "status_text": "Timetable only",
         "minutes_late": null,
         "live": false,
-        "leave_at": "2026-10-10T07:55:00+01:00",
+        "leave_at": "2026-10-10T07:59:00+01:00",
         "vehicle": null,
         "strip": null,
         "history": {
@@ -1429,7 +1429,7 @@
         "status_text": "Timetable only",
         "minutes_late": null,
         "live": false,
-        "leave_at": "2026-10-10T08:04:00+01:00",
+        "leave_at": "2026-10-10T08:01:00+01:00",
         "vehicle": null,
         "strip": null,
         "history": {
@@ -1459,7 +1459,7 @@
         "status_text": "Timetable only",
         "minutes_late": null,
         "live": false,
-        "leave_at": "2026-10-10T08:19:00+01:00",
+        "leave_at": "2026-10-10T08:16:00+01:00",
         "vehicle": null,
         "strip": null,
         "history": {
