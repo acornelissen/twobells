@@ -157,7 +157,7 @@ def all_lines(operator, stops):
 
 
 def test_all_lines_of_our_operator_count_only_within_our_area():
-    glossop = ("1000DGXX0001", 53.4435, -1.9500)  # in the box around our positioned stops
+    glossop = ("1000DGXX0001", 53.4435, -1.9550)  # in the box around our positioned stops
     stockport = ("0600XX0001", 53.4100, -2.1600)
     inside = situation("IN", affects=all_lines("BNML", [glossop]))
     outside = situation("OUT", affects=all_lines("BNML", [stockport]))
