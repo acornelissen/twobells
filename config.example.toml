@@ -1,24 +1,33 @@
-# Copy to /etc/departureboard/config.toml and edit.
-# Secrets live in /etc/departureboard/secrets.env, not here.
+# Optional. Without a config.toml the app uses its defaults, and the setup
+# wizard and the settings tabs (/settings, port 8090) set it up for you,
+# saving in the install's store (settings.toml) over this file, which is never
+# rewritten. Only what the settings manage is saved there: addresses
+# (base_url), state_file, display, allowed_hosts and state_dir are read from
+# this file alone.
 #
-# The settings page's setup wizard can set the board up for you, saving its
-# answers beside the state file over this one (settings.toml). That file holds
-# only what the page and the wizard manage: addresses (base_url), state_file,
-# display, timezone and the like are read from this file alone, and this file
-# is never rewritten. Until the board is set up, it shows "Set me up" and the
-# page's address. To do it by hand instead, replace every CHANGE_ME; the board
-# shows no departures until you do. If you don't want trains or buses, put
-# enabled = false in [train] or [bus] (its CHANGE_MEs can stay), or leave the
-# section out. examples/glossop.toml is a filled-in board (trains from Glossop
-# to Manchester, buses from two stops).
+# On a Pi, install.sh copies this to /etc/departureboard/config.toml. In
+# Docker, mount one with docker-compose.override.yml; on a desktop, give one
+# with --config. Keys live in secrets.env, never here.
+#
+# Until it is set up, the board shows "Set me up" and the settings' address,
+# and the dashboard's address opens the settings. To set it up by hand
+# instead, replace every CHANGE_ME; nothing shows departures until you do. If
+# you don't want trains or buses, put enabled = false in [train] or [bus] (its
+# CHANGE_MEs can stay), or leave the section out. examples/glossop.toml is a
+# filled-in one (trains from Glossop to Manchester, buses from two stops).
 #
 # Where it works: trains anywhere in Great Britain (National Rail Darwin).
 # Bus times and positions from BODS cover England only. The rain warning
 # (Open-Meteo) works anywhere.
 
-# The heading on the board, like "Glossop > Manchester Picc". Defaults to "Departures".
+# The heading on the dashboard and the board's plain look, like
+# "Glossop > Manchester Picc". Defaults to "Departures". Also on the General tab.
 # title = "Departures"
+# The zone departures and checking times are in. Also on the General tab.
 timezone = "Europe/London"
+# The store: the folder everything saved goes in, named by its state file.
+# A Pi's services use /var/lib/departureboard and Docker /data, whatever
+# this says. Leave it out on a desktop, where the store has its own place.
 state_file = "/var/lib/departureboard/state.json"
 # Never redraw more often than this, even if the data changes sooner.
 min_redraw_minutes = 2
@@ -32,6 +41,7 @@ theme = "sign"
 #   It can't be detected, so say its colour: panel_colour = "red", "yellow" or "black".
 # "waveshare-10in85g": Waveshare 10.85" e-Paper (G), 1360x480. Needs dtoverlay=spi0-0cs.
 # "hdmi-1280x400": Waveshare 7.9" HDMI screen on its side. Runs as a service, not a timer.
+# Set here only: changing it means switching services.
 display = "inky"
 # Trains and buses run a Sunday service on bank holidays (from GOV.UK): treat
 # them like Sundays, so only windows including Sun apply.
@@ -39,11 +49,16 @@ bank_holidays = true
 # Whose bank holidays: "england-and-wales", "scotland" or "northern-ireland".
 bank_holiday_division = "england-and-wales"
 # The plain look's text size, 9-16 (11 is standard); bigger shows fewer departures on a small display.
-# The settings page offers 11-14 only.
 # text_size = 12
 # Degrees to turn the board clockwise to suit how it is mounted.
 # E-paper: 0 or 180. The 7.9" screen is portrait out of the box: 90 or 270.
 rotate = 0
+
+# Which views are on: "board" (a Pi only), "dashboard", or both. The setup
+# wizard and the General tab set it. Default: the board on a Pi, the
+# dashboard in Docker and on a desktop.
+# [app]
+# views = ["board", "dashboard"]
 
 [train]
 # enabled = false   # switches trains off; the rest of [train] is kept, unread
@@ -114,12 +129,14 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 #   { name = "Your stop",     lat = 0.0, lon = 0.0 },
 # ]
 
-# The web dashboard only (`departureboard dashboard`); the board ignores this.
+# The dashboard view only; the board ignores this.
 # All optional; the values shown are the defaults. All but state_dir and allowed_hosts
-# can be changed from the dashboard's Settings too.
+# can be changed on the Dashboard tab too.
 # [dashboard]
-# Where its files live. Default: ~/Library/Application Support/departureboard-dashboard
-# on a Mac, else departureboard-dashboard in $XDG_STATE_HOME or ~/.local/state.
+# The store, when state_file above isn't set. Default: /var/lib/departureboard
+# on a Pi, /data in Docker, ~/Library/Application Support/departureboard on a
+# Mac, else departureboard in $XDG_STATE_HOME or ~/.local/state. An old
+# departureboard-dashboard folder there is used as it is.
 # state_dir = "/path/to/folder"
 # train_rows = 10                 # 1-20
 # bus_rows = 10                   # 1-20
@@ -130,9 +147,10 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # late_minutes_train = 3          # 1-60: how late counts as late in the history
 # late_minutes_bus = 2            # 1-60
 # history_days = 90               # 1-3650: days of history kept and shown
-# allowed_hosts = []              # extra host names the page answers to, like ["ds.home"]
+# allowed_hosts = []              # extra host names the dashboard and settings answer to, like ["ds.home"]
 # Rail engineering works: the Knowledgebase Incidents address from the RDM
-# product page. Until it is set, they stay off, even with RDM_KB_API_KEY.
+# product page. Until it is set, they stay off, even with RDM_KB_API_KEY. The
+# Dashboard tab takes an address at raildata.org.uk; any other goes here.
 # kb_incidents_url = "https://..."
 
 # Optional: a rain warning from Open-Meteo's forecast (free, no key). The board
