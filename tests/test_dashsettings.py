@@ -429,6 +429,18 @@ def test_the_wizard_api_needs_the_session_and_its_csrf_token(signed):
     assert signed.setup.calls == [("begin", {})]
 
 
+@pytest.mark.parametrize("name", ["Begin", "be-gin", "begin/x", "begin%20x", "a" * 21, "", "b%C3%A9gin"])
+def test_a_step_name_is_plain_lowercase_checked_before_the_body(signed, name):
+    cookie, csrf = signed.sign_in()
+    token = {"X-CSRF-Token": csrf}
+    response, text = signed("POST", f"/settings/setup/api/{name}", cookie=cookie, headers=token, json_body={})
+    assert response.status == 404 and json.loads(text) == {"error": "No such setup step"}
+    response, _ = post_framed(signed, f"/settings/setup/api/{name}",
+                              [("Cookie", cookie), ("X-CSRF-Token", csrf), ("Content-Type", "application/json")])
+    assert response.status == 404  # not 411: the name is checked before the body
+    assert signed.setup.calls == []
+
+
 def test_the_wizard_api_takes_only_small_json(signed):
     cookie, csrf = signed.sign_in()
     token = {"X-CSRF-Token": csrf}

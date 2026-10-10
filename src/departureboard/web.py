@@ -35,7 +35,6 @@ from __future__ import annotations
 import html
 import json
 import logging
-import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -110,7 +109,6 @@ BOARD = Wording(
 
 SETUP = "/setup/"
 SETUP_API = SETUP + "api/"
-_SETUP_STEP = re.compile(r"^[a-z]{1,20}$")
 SETUP_TYPES = WIZARD_TYPES
 JSON = "application/json; charset=utf-8"
 TEXT = "text/plain; charset=utf-8"
@@ -277,8 +275,9 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
             """One wizard step: signed in, with the session's token in the
             header, JSON of a sensible size. Same-origin is checked before this,
             and the name and the body's framing before the body is read."""
-            if not _SETUP_STEP.match(name):
-                self._setup_reply(_json_reply(404, {"error": "No such setup step"}))
+            unknown = pages.wizard_unknown_step(name)
+            if unknown is not None:
+                self._setup_reply(unknown)
                 return
             body = read_body(self.headers, self.rfile, setupapi.MAX_BODY)
             if isinstance(body, int):

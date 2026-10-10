@@ -177,6 +177,10 @@ class SettingsArea:
             return Reply(405, b"Method Not Allowed", headers={"Allow": "GET, HEAD, POST"})
         if not same_origin(headers):
             return Reply(403, b"Forbidden: cross-site request")
+        if path.startswith(SETUP_API):
+            unknown = self._pages.wizard_unknown_step(path[len(SETUP_API):])
+            if unknown is not None:
+                return unknown
         body = read_body(headers, stream, max_body(path))
         if isinstance(body, int):  # refused unread, so the connection can't carry on
             return Reply(body, HTTPStatus(body).phrase.encode(), headers={"Connection": "close"})

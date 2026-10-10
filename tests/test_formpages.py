@@ -461,6 +461,14 @@ def test_another_sites_page_gets_nothing_from_the_wizard_signed_in_or_not(host):
         assert host.pages.wizard_cross_site(sent) is None
 
 
+@pytest.mark.parametrize("name", ["Begin", "be-gin", "begin/x", "a" * 21, "", "b\u00e9gin", "begin\n"])
+def test_a_step_name_is_plain_lowercase(host, name):
+    assert json.loads(host.pages.wizard_unknown_step(name).body) == {"error": "No such setup step"}
+    reply = host.pages.wizard_step(name, b"{}")  # checked again, should a host forget
+    assert reply.status == 404 and host.steps.calls == []
+    assert host.pages.wizard_unknown_step("begin") is None and host.pages.wizard_unknown_step("a" * 20) is None
+
+
 def test_a_host_answers_the_wizard_in_its_own_json(tmp_path):
     host = Host(tmp_path, json_reply=lambda status, value: Reply(status, b"own", "application/json; charset=utf-8"))
     assert host.pages.wizard_session(headers()).body == b"own"

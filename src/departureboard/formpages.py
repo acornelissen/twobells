@@ -56,6 +56,8 @@ WIZARD_TYPES = {
 # issued, so a guesser learns nothing about whether there is one.
 WRONG_CODE = "That code isn't right, or it has run out. Ask for a new code and try again."
 _LENGTH = re.compile(r"[0-9]{1,15}")
+# A setup wizard step's name, as it comes in the path.
+_STEP_NAME = re.compile(r"[a-z]{1,20}")
 
 
 @dataclass(frozen=True)
@@ -362,6 +364,14 @@ class FormPages:
             return self._json(403, {"error": "Not from another site"})
         return None
 
+    def wizard_unknown_step(self, name: str) -> Reply | None:
+        """The refusal for a step name that isn't 1 to 20 plain lowercase
+        letters, so no other name ever reaches the wizard's API; None for one
+        that is. A host checks it before reading the body."""
+        if _STEP_NAME.fullmatch(name):
+            return None
+        return self._json(404, {"error": "No such setup step"})
+
     def wizard_session(self, headers: Headers) -> Reply:
         """The session's form token, for the wizard's page to send back in X-CSRF-Token."""
         session = self._sessions.get(self._token(headers))
@@ -384,6 +394,9 @@ class FormPages:
 
     def wizard_step(self, name: str, body: bytes) -> Reply:
         """Run step `name` with the request's JSON, once wizard_refusal has let it through."""
+        unknown = self.wizard_unknown_step(name)
+        if unknown is not None:
+            return unknown
         try:
             payload = setupapi.decode(body)
         except setupapi.Invalid as error:
