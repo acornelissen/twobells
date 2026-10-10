@@ -565,6 +565,27 @@ def test_rain_warning_can_be_turned_off_without_losing_the_location(tmp_path):
         load_config(write(tmp_path, base + 'enabled = "no"\n'), ENV)
 
 
+def test_trains_or_buses_switched_off_are_ignored_as_if_absent(tmp_path):
+    names = lambda text: [c.source.name for c in load_config(write(tmp_path, text), ENV).board.sources]  # noqa: E731
+    assert names(TRAIN_AND_BUS) == ["train", "bus"]
+    assert names(TRAIN_AND_BUS.replace("[bus]\n", "[bus]\nenabled = false\n")) == ["train"]
+    assert names(TRAIN_AND_BUS.replace("[train]\n", "[train]\nenabled = false\n")) == ["bus"]
+    assert names(TRAIN_AND_BUS.replace("[train]\n", "[train]\nenabled = true\n")) == ["train", "bus"]
+    # Whatever is in a section switched off, placeholders and walk times included, isn't read.
+    off = '[train]\nenabled = false\ncrs = "CHANGE_ME"\nwalk_minutes = "far"\n[bus]\nenabled = false\nstops = {}\n'
+    settings = load_config(write(tmp_path, off), ENV)
+    assert settings.board.sources == [] and settings.board.walk.train is None
+
+
+@pytest.mark.parametrize("section", ["train", "bus", "weather"])
+@pytest.mark.parametrize("value", ['"no"', "0", "1", '"false"'])
+def test_enabled_must_be_true_or_false(tmp_path, section, value):
+    text = TRAIN_AND_BUS + "[weather]\nlat = 53.44\nlon = -1.95\n"
+    text = text.replace(f"[{section}]\n", f"[{section}]\nenabled = {value}\n")
+    with pytest.raises(ConfigError, match=rf"\[{section}\] enabled must be true or false, not "):
+        load_config(write(tmp_path, text), ENV)
+
+
 def test_text_size_sets_the_plain_look_and_is_checked(tmp_path):
     base = 'theme = "plain"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n'
     assert load_config(write(tmp_path, base), ENV).board.theme.text_size == 11
@@ -726,6 +747,22 @@ def test_setting_up_from_the_page_counts_once_every_placeholder_is_covered(tmp_p
     assert needs_setup(config)  # the bus stop is still CHANGE_ME
     (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n[bus.stops]\nA = "1800SB12341"\n')
     assert not needs_setup(config)
+
+
+def test_placeholders_in_a_section_switched_off_need_no_setting_up(tmp_path):
+    from departureboard.config import needs_setup
+
+    config = installed_template(tmp_path)
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n[bus]\nenabled = false\n')
+    assert not needs_setup(config)  # the bus stop is still CHANGE_ME, but buses are off
+    (state / "settings.toml").write_text('[train]\nenabled = false\n[bus.stops]\nA = "1800SB12341"\n')
+    assert not needs_setup(config)
+    (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n[bus]\nenabled = true\n')
+    assert needs_setup(config)
+    (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n[bus]\nenabled = "no"\n')
+    assert not needs_setup(config)  # a fault, for load_config to report
 
 
 @pytest.mark.parametrize("text", ["title = \n", "[train\n"])

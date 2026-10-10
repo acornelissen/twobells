@@ -135,10 +135,11 @@ def _has_placeholder(value) -> bool:
 def needs_setup(path: Path | str) -> bool:
     """Whether the board is still to be set up: there is no config.toml, or
     it (with the settings saved from the web page over it) still has one of
-    the template's CHANGE_ME placeholders. A config.toml that can't be read
-    or parsed is not a first run but a fault, for load_config to report."""
+    the template's CHANGE_ME placeholders outside a section switched off. A
+    config.toml that can't be read or parsed is not a first run but a fault,
+    for load_config to report."""
     try:
-        data = read_config(path)
+        data = switched_on(read_config(path))
     except FileNotFoundError:
         return True
     except (OSError, ConfigError):
@@ -222,6 +223,27 @@ def _flag(section: dict, key: str, default: bool, where: str = "") -> bool:
     if not isinstance(value, bool):
         raise ConfigError(f"{where}{key} must be true or false, not {value!r}")
     return value
+
+
+# Sections that enabled = false switches off. The settings page and setup do
+# that, rather than remove one, as a saved overlay can't remove what
+# config.toml has; and what's in it is kept for switching it back on.
+SWITCHABLE = ("train", "bus", "weather")
+
+
+def is_enabled(data: dict, name: str) -> bool:
+    """Whether the section `name` isn't switched off: on unless it says
+    enabled = false. ConfigError if enabled isn't true or false."""
+    section = data.get(name)
+    if not isinstance(section, dict):
+        return True  # absent, or not a table, which its loader reports
+    return _flag(section, "enabled", True, f"[{name}] ")
+
+
+def switched_on(data: dict) -> dict:
+    """`data` without the sections switched off, so every loader ignores a
+    section with enabled = false as if it weren't there."""
+    return {key: value for key, value in data.items() if key not in SWITCHABLE or is_enabled(data, key)}
 
 
 def _texts(section: dict, key: str, where: str) -> list[str]:
@@ -392,12 +414,7 @@ def _coordinate(section: dict, key: str, limit: int) -> float:
 def _weather(data: dict, sources: list[SourceConfig], timezone: str) -> Weather | None:
     """The rain warning, if [weather] gives a position. It is polled every 30
     minutes, only while a train or bus window is open."""
-    section = _table(data, "weather", "[weather]")
-    enabled = section.get("enabled", True)
-    if not isinstance(enabled, bool):
-        raise ConfigError(f"[weather] enabled must be true or false, not {enabled!r}")
-    if not enabled:  # switched off on the settings page; the location stays in config.toml
-        return None
+    section = _table(data, "weather", "[weather]")  # absent if switched off; see switched_on
     if section.get("lat", "") == "" and section.get("lon", "") == "":  # "" is a cleared field
         return None
     lat, lon = _coordinate(section, "lat", 90), _coordinate(section, "lon", 180)
@@ -466,6 +483,7 @@ def settings_from(
     data: dict, env: Mapping[str, str], only: set[str] | None = None, holidays: frozenset[date] = frozenset()
 ) -> Settings:
     """Settings from already-read config data; the web page checks a change with this before saving."""
+    data = switched_on(data)
     try:
         theme = theme_named(_text(data, "theme", "sign"))
     except ValueError as error:
