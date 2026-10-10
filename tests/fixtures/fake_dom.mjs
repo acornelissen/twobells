@@ -86,6 +86,50 @@ class FakeElement extends FakeNode {
   get attributes() { return [...this.attrs].map(([name, value]) => ({ name, value })); }
   get id() { return this.getAttribute("id") || ""; }
   addEventListener(type, fn) { this.listeners.push([type, fn]); }
+  get classList() {
+    const names = () => (this.getAttribute("class") || "").split(" ").filter(Boolean);
+    const set = (list) => this.setAttribute("class", list.join(" "));
+    return {
+      contains: (name) => names().includes(name),
+      toggle: (name, force) => {
+        const on = force === undefined ? !names().includes(name) : !!force;
+        set(on ? [...new Set([...names(), name])] : names().filter((n) => n !== name));
+        return on;
+      },
+    };
+  }
+  querySelectorAll(selector) { return elements(this).slice(1).filter((el) => matches(el, selector)); }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+}
+
+// Just enough of CSS selectors for the page's own: compounds of a tag, #id,
+// .class, [attr] and [attr="value"], joined by spaces (descendants). h() puts
+// data-* in the dataset, so those attributes are read from there.
+function compound(text) {
+  const parts = text.match(/^[\w*]+|#[\w-]+|\.[\w-]+|\[[^\]]+\]/g) || [];
+  const attr = (el, name) => (name.startsWith("data-")
+    ? el.dataset[name.slice(5).replace(/-(\w)/g, (_, c) => c.toUpperCase())] ?? el.getAttribute(name)
+    : el.getAttribute(name));
+  return (el) => parts.every((part) => {
+    if (part[0] === "#") return el.id === part.slice(1);
+    if (part[0] === ".") return (el.getAttribute("class") || "").split(" ").includes(part.slice(1));
+    if (part[0] === "[") {
+      const [, name, value] = /^\[([\w-]+)(?:="([^"]*)")?\]$/.exec(part);
+      const found = attr(el, name);
+      return value === undefined ? found !== null && found !== undefined : found === value;
+    }
+    return part === "*" || el.nodeName.toUpperCase() === part.toUpperCase();
+  });
+}
+
+function matches(el, selector) {
+  const steps = selector.trim().split(/\s+/).map(compound);
+  if (!steps[steps.length - 1](el)) return false;
+  let i = steps.length - 2;
+  for (let node = el.parentNode; node && i >= 0; node = node.parentNode) {
+    if (node.nodeType === 1 && steps[i](node)) i--;
+  }
+  return i < 0;
 }
 
 globalThis.Node = FakeNode;
@@ -102,6 +146,7 @@ globalThis.document = {
     const find = (el) => (el.id === id ? el : el.childNodes.filter((c) => c.nodeType === 1).map(find).find(Boolean));
     return find(this.body) || null;
   },
+  querySelectorAll(selector) { return elements(this.body).filter((el) => matches(el, selector)); },
 };
 
 // What a screen reader would say: the text, skipping aria-hidden parts.

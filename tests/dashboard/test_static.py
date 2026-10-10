@@ -721,7 +721,6 @@ def test_disruptions_are_listed_most_relevant_first():
         for (const id of ["disruptions", "disruptions-status", "disruptions-body"]) {
           const el = document.createElement("div");
           el.setAttribute("id", id);
-          el.classList = { toggle() {} };
           document.body.append(el);
         }
         const item = (id, relevance, from) => ({
@@ -1227,7 +1226,6 @@ import { h } from "./dom.js";
 import { observeSnapshot } from "./time.js";
 import { renderWeather } from "./weather.js";
 const status = h("span", { id: "weather-status" });
-status.classList = { toggle() {} };
 const hours = h("div", { id: "weather-hours" });
 document.body.append(h("section", { id: "weather" }, status, h("div", { id: "weather-now" }),
                        h("p", { id: "weather-rain" }), hours));
