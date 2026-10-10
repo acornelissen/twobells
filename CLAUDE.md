@@ -69,7 +69,7 @@ mise run test         # pytest -q
 mise run lint         # ruff check src tests tools (config in pyproject.toml)
 mise run demo         # departureboard demo --png preview.png, no keys needed
 mise run emulate      # browser panel emulator on sample data
-mise run dashboard    # dashboard with ./config.toml and ./secrets.env
+mise run dashboard    # serve on a desktop with ./config.toml and ./secrets.env
 ```
 
 - Tests are pytest in `tests/`; `pythonpath = ["src"]`, so they run against this checkout's `src`.
@@ -80,18 +80,25 @@ mise run dashboard    # dashboard with ./config.toml and ./secrets.env
 
 ## Architecture Overview
 
-One package, `src/departureboard`, with one CLI, `departureboard` (`cli.py`):
+One package, `src/departureboard`, with one CLI, `departureboard` (`cli.py`). One install is one app with two
+views of the same departures: the **board** (e-paper or HDMI screen on a Pi) and the **dashboard** (a web page).
+`[app] views` says which are on. `installs.py` says what each install (`pi`, `docker`, `desktop`) offers; every
+difference between installs belongs in its table.
 
-- `run`: the board renderer for the Pi's e-paper or HDMI screen (systemd timer, or `--loop` for a screen).
-- `web`: the settings page on the home network. Its lookups go through `setup serve`
-  (`departureboard-setup.service`), which alone has outbound network access.
-- `dashboard`: the web dashboard for a Mac or NAS (`dashboard_static/`, `Dockerfile`, `docker-compose.yml`).
-- `timetable`: builds the BODS bus timetable for the configured stops.
-- `demo`, `emulate`, `probe`, `route`, `setup discover`: development and setup helpers.
-- `deploy/`: systemd units and install/update scripts for the Pi. `docs/`: user guide and API notes.
-
-A refactor is under way to merge the board and the dashboard into one app (bead epic `inky-departures-vrj`),
-so these entry points will change. Check the epic before adding to either.
+- **Store** (`store.py`): one folder per install holding `settings.toml` (only `schema.saved_keys`), `secrets.env`,
+  `web.json` (the one password), the timetable, history and locks. `config.toml` is optional, layered under it.
+  `schema.py` is the registry of every saved setting, by group (general, board, dashboard).
+- **`serve`**: the one web server on port 8090 (`dashserver.py`): the dashboard at `/` while its view is on, the
+  settings site at `/settings` (`settingsite.py`, a `groupform.py` tab per group, the wizard at `/settings/setup/`).
+- **`fetch`** (Pi only, `fetch.py`): outbound-only service doing the web server's internet work (the wizard's
+  lookups, the dashboard's pollers), handed over through files in `/run/departureboard-fetch` (`setupspool.py`,
+  `handoff.py`). The Pi's web server is LAN-only and never connects out.
+- **`run`**: the board renderer (systemd timer, or `--loop` for a screen). **`timetable`**: the BODS bus timetable.
+- `demo`, `emulate`, `probe`, `route`, `setup discover`: development and setup helpers. `web`, `dashboard`,
+  `setup serve` are hidden aliases until the first public release; `query` is hidden, for the deploy scripts.
+- `deploy/`: systemd units and install/update scripts for the Pi; `Dockerfile` and `docker-compose.yml` for Docker.
+  `.github/workflows/`: CI and the tagged release (PyPI, signed GHCR image, signed Pi tarball).
+  `docs/`: user guide, keys, dashboard API.
 
 ## Conventions & Patterns
 

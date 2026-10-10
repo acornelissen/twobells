@@ -2,10 +2,11 @@
 
 ## This project
 
-Python 3.12 package in `src/departureboard` with one CLI, `departureboard`: the board renderer (`run`), the
-settings page (`web`), the dashboard (`dashboard`), the setup service (`setup serve`) and the bus timetable
-builder (`timetable`). `deploy/` holds the Pi's systemd units; the `Dockerfile` builds the dashboard's container.
-A refactor is merging the board and the dashboard into one app (bead epic `inky-departures-vrj`).
+Python 3.12 package in `src/departureboard` with one CLI, `departureboard`. One install (Pi, Docker or desktop,
+`installs.py`) is one app with two views, the board and the dashboard, sharing one store (`store.py`). `serve` is
+the one web server (dashboard at `/`, settings at `/settings`, port 8090); `fetch` is a Pi's outbound-only service
+for it; `run` draws the board; `timetable` builds the bus timetable. `deploy/` holds the Pi's systemd units; the
+`Dockerfile` builds the container.
 
 ```bash
 mise install && mise run setup   # pinned tools, then .venv
