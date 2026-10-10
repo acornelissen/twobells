@@ -6,8 +6,9 @@ from urllib.error import HTTPError, URLError
 
 import pytest
 
-from departureboard import roadshape
+from departureboard import roadshape, setup
 from departureboard.roadshape import parse_route, path, segment_pairs, segment_shapes, shape_key, simplify
+from departureboard.setup import RateLimiter
 
 from test_livebus import (
     ARUNDEL, ASHTON, EAST, GRAPES, HENRY_A, HOWARD, JUNCTION, MARKET_HALL, POSITIONS, ST_MARYS_E, SUNLAWS, WEST,
@@ -181,7 +182,8 @@ class Router:
         return self.answers.pop(0) if self.answers else ROAD
 
     def shapes(self, pairs, **options):
-        return segment_shapes(pairs, self.get, clock=self.clock, sleep=self.sleep, **options)
+        limiter = RateLimiter(roadshape.REQUEST_INTERVAL, self.clock, self.sleep)
+        return segment_shapes(pairs, self.get, clock=self.clock, limiter=limiter, **options)
 
 
 def pairs_along(count):
@@ -308,6 +310,13 @@ def test_the_default_asks_the_router_politely_through_the_capped_getter(monkeypa
     assert roadshape.USER_AGENT.startswith("inky-departures/")
     assert "https://github.com/acornelissen/inky-departures" in roadshape.USER_AGENT
     assert roadshape.REQUEST_DEADLINE < 30 and roadshape.REQUEST_INTERVAL >= 1.0
+
+
+def test_roads_and_walk_times_share_one_limit_on_the_router():
+    # Both ask FOSSGIS's server; the setup service can look up walk times while
+    # a search asks for roads, and the policy is one request a second in all.
+    assert segment_shapes.__kwdefaults__["limiter"] is setup.ROUTER_LIMIT
+    assert setup.walk_minutes.__defaults__[1] is setup.ROUTER_LIMIT
 
 
 def test_shapes_are_far_smaller_than_the_answer():

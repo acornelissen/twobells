@@ -47,16 +47,17 @@ from urllib.error import HTTPError
 from . import http
 from .osgb import distance_m
 from .schedule_model import Journey, StopPosition
-from .setup import RateLimiter, in_uk
+from .setup import ROUTER_LIMIT, ROUTER_USER_AGENT, RateLimiter, in_uk
 from .status import safe_message
 
 log = logging.getLogger(__name__)
 
 ROUTER_URL = "https://routing.openstreetmap.de/routed-car/route/v1/driving"
 # FOSSGIS's policy (https://routing.openstreetmap.de/about.html): at most one
-# request a second, from a valid user agent; no scraping, no heavy use.
-USER_AGENT = "inky-departures/0.1 (e-paper departure board bus maps; https://github.com/acornelissen/inky-departures)"
-REQUEST_INTERVAL = 1.0  # seconds between requests, at least
+# request a second, from a valid user agent; no scraping, no heavy use. The
+# limit is setup's, shared with the foot router on the same server.
+USER_AGENT = ROUTER_USER_AGENT
+REQUEST_INTERVAL = 1.0  # seconds between requests, at least (ROUTER_LIMIT's)
 TIMEOUT = 10.0  # seconds for each step of a request
 REQUEST_DEADLINE = 15.0  # seconds for a whole request, however slowly the router sends
 MAX_PAIRS = 300  # requests per build; the rest are drawn straight
@@ -222,9 +223,9 @@ def segment_shapes(
     fetch: Fetch = router_get,
     *,
     clock: Callable[[], float] = time.monotonic,
-    sleep: Callable[[float], None] = time.sleep,
     cancelled: Callable[[], bool] = lambda: False,
     progress: Callable[[int, int], None] = lambda done, total: None,
+    limiter: RateLimiter = ROUTER_LIMIT,
 ) -> dict[Pair, list[Point]]:
     """The road between each pair of stops (ATCO codes, with their (lat, lon)
     positions), from the car router, one request per pair. A pair left out
@@ -232,7 +233,6 @@ def segment_shapes(
     road is straight anyway, or asking had stopped (see the module's notes,
     and `cancelled()`, asked before each request). `progress(done, total)`
     follows the requests. Never raises for the router's sake."""
-    limiter = RateLimiter(REQUEST_INTERVAL, clock, sleep)
     deadline = clock() + MAX_SECONDS
     shapes: dict[Pair, list[Point]] = {}
     asked = failed = in_a_row = 0

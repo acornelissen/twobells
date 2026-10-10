@@ -568,7 +568,7 @@ def test_the_foot_router_is_asked_at_most_once_a_second_without_real_sleeping():
 
 
 def test_the_foot_routers_rate_limit_is_shared_by_default():
-    assert walk_minutes.__defaults__ == (setup.foot_get, setup.FOOT_LIMIT)
+    assert walk_minutes.__defaults__ == (setup.foot_get, setup.ROUTER_LIMIT)
 
 
 def test_estimate_is_the_straight_line_plus_30_percent_at_4_8_kmh():
