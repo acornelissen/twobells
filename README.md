@@ -268,6 +268,10 @@ docker exec -it departureboard-dashboard python -m departureboard.cli dashboard 
 
 To add a page or provider, implement `fetch() -> list[Departure]` with a `name` and add it to `config.py`.
 
+## Licence
+
+MIT: see [LICENSE](LICENSE). The data the board shows comes under its providers' own terms.
+
 ## Data credits
 
 See [NOTICE.md](NOTICE.md) for every data source and licence.

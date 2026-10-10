@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,8 @@ name = "departureboard"
 version = "0.1.0"
 description = "Train and bus departure board for a Raspberry Pi with an e-paper or HDMI display, for Great Britain"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = ["Pillow>=10.1"]
 
 [project.optional-dependencies]
