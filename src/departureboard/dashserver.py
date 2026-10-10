@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import errno
 import hashlib
+import html
 import json
 import logging
 import os
@@ -42,6 +43,7 @@ from typing import TYPE_CHECKING, Callable
 from . import settingsite
 from .auth import local_host, private_address
 from .snapshot import SnapshotSource
+from .version import about
 
 if TYPE_CHECKING:
     from .settingsite import SettingsSite
@@ -91,6 +93,9 @@ _ID = re.compile(r"[0-9a-f]{16}")
 _STATIC_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*")
 _EVENT_ID = re.compile(r"[0-9]{1,15}")
 
+# Where index.html's footer says which version is running, filled in at start.
+VERSION_SLOT = b"<!-- version -->"
+
 NOT_BUILT = (
     b'<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><title>Departures</title></head>'
     b"<body><main><h1>Front end not built</h1><p>The dashboard's server is running, but its page "
@@ -113,9 +118,10 @@ class StaticFiles:
     present: bool = False  # False when the folder is missing: the front end isn't built
 
     @classmethod
-    def load(cls, folder: Path | str | None) -> "StaticFiles":
+    def load(cls, folder: Path | str | None, version: str | None = None) -> "StaticFiles":
         """Every file under `folder` with a known extension, skipping hidden
-        files, symlinks, odd names and anything too big."""
+        files, symlinks, odd names and anything too big. With `version`,
+        index.html's VERSION_SLOT says it, escaped, in a line of its own."""
         if folder is None or not Path(folder).is_dir():
             return cls({}, False)
         root = Path(folder)
@@ -132,6 +138,9 @@ class StaticFiles:
                     log.warning("Not serving %s: larger than %d bytes", relative, MAX_STATIC_BYTES)
                     continue
                 body = path.read_bytes()
+                if relative == "index.html" and version is not None:
+                    line = f'<p class="version">{html.escape(about(version))}</p>'
+                    body = body.replace(VERSION_SLOT, line.encode("utf-8"))
                 found[relative] = StaticFile(body, content_type, f'"{hashlib.sha256(body).hexdigest()}"')
         return cls(found, True)
 

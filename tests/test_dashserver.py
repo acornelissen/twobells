@@ -325,6 +325,32 @@ def test_files_are_read_once_at_start(server, static_dir):
     assert server.request("/static/new.css")[0].status == 404
 
 
+def test_the_page_says_which_version_is_running_in_its_footer(tmp_path):
+    folder = tmp_path / "static"
+    folder.mkdir()
+    page = b"<footer><p>Times from here.</p>\n  <!-- version -->\n</footer>"
+    (folder / "index.html").write_bytes(page)
+    (folder / "app.css").write_bytes(b"/* <!-- version --> */")
+    static = StaticFiles.load(folder, version="1.2.3")
+    index = static.get("index.html")
+    assert index.body == b'<footer><p>Times from here.</p>\n  <p class="version">departureboard 1.2.3</p>\n</footer>'
+    assert index.etag == f'"{hashlib.sha256(index.body).hexdigest()}"'  # the page as sent, so a new version is fetched
+    assert static.get("app.css").body == b"/* <!-- version --> */"  # the page only
+    assert StaticFiles.load(folder).get("index.html").body == page  # nothing to say, nothing changed
+    unknown = StaticFiles.load(folder, version="unknown").get("index.html").body
+    assert b'<p class="version">departureboard, version unknown</p>' in unknown
+    odd = StaticFiles.load(folder, version="<script>1</script>").get("index.html").body
+    assert b"departureboard &lt;script&gt;1&lt;/script&gt;" in odd and b"<script>" not in odd
+
+    running = start(tmp_path / "other", static=StaticFiles.load(folder, version="1.2.3"))
+    try:
+        response, body = running.request("/")
+        assert response.status == 200 and body == index.body
+        assert_secure(response)
+    finally:
+        running.close()
+
+
 def test_without_a_front_end_the_page_says_so(tmp_path):
     running = start(tmp_path / "missing")
     try:

@@ -1055,7 +1055,7 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
         site.problem = problem
         app = dashserver.DashboardApp(
             hub,
-            dashserver.StaticFiles.load(dashserver.default_static_dir()),
+            dashserver.StaticFiles.load(dashserver.default_static_dir(), version=site.version),
             healthy,
             site,
             dashboard_on=dashboard_on,

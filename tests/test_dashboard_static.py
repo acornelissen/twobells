@@ -816,6 +816,14 @@ def test_the_area_map_has_real_buttons_a_credit_and_a_text_list():
     assert "OpenStreetMap contributors" in dialog[:dialog.index("</dialog>")]
 
 
+def test_the_footer_has_one_place_for_the_version_the_server_fills_in():
+    from departureboard.dashserver import VERSION_SLOT
+
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    footer = html[html.index('<footer class="foot">'):html.index("</footer>")]
+    assert html.count(VERSION_SLOT.decode()) == 1 and VERSION_SLOT.decode() in footer
+
+
 def test_every_map_credit_links_to_fix_the_map():
     # The road router's policy (routing.openstreetmap.de/about.html) asks for the
     # OpenStreetMap credit and a link to "fix the map" wherever its roads are drawn.

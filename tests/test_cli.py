@@ -1052,6 +1052,19 @@ def test_a_config_that_fails_to_load_still_serves_the_settings(tmp_path, served,
     assert ask(app, "/api/snapshot")[0] == 404
 
 
+def test_serve_tells_the_dashboard_and_the_settings_its_version(tmp_path, served):
+    import tomllib
+
+    wanted = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())["project"]["version"]
+    assert main(["serve", "--install", "docker", "--config", str(tmp_path / "config.toml"),
+                 "--secrets", str(tmp_path / "none.env"), "--state-dir", str(tmp_path / "data")]) == 0
+    app = served["app"]
+    assert app.settings.version == wanted
+    page = app.static.get("index.html").body.decode()
+    footer = page[page.index('<footer class="foot">'):page.index("</footer>")]
+    assert f'<p class="version">departureboard {wanted}</p>' in footer
+
+
 @pytest.mark.parametrize("argv, host, port, attempts, browser", [
     (["serve", "--install", "docker"], "0.0.0.0", 8090, 1, False),
     (["serve", "--install", "docker", "--port", "8091"], "0.0.0.0", 8091, 1, False),
