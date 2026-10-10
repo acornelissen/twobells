@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 
+from ..core import words
 from ..core.model import Departure, Status, minutes_between
 from ..core.walk import WalkTimes, leave_by, leave_time
 
@@ -22,15 +23,10 @@ class Style(str, Enum):
 
 @dataclass(frozen=True)
 class Wording:
-    """Status words for a theme."""
+    """How a look says when to leave for a train. The words themselves are
+    core.words, the same in every look and on the dashboard."""
 
-    on_time: str
-    cancelled: str
-    delayed: str
-    unknown: str
-    late: Callable[[Departure], str]
-    leave: Callable[[str, str], str]  # (leave time, departure it is for)
-    leave_soon: Callable[[str, str], str]  # ("now" or "in N min", departure it is for)
+    leave: Callable[[str, str], str]  # ("Leave by 07:05", departure time it is for)
 
 
 def _target(dep: Departure) -> str:
@@ -38,19 +34,10 @@ def _target(dep: Departure) -> str:
     return dep.departs_at if dep.mode == "train" else dep.service
 
 
-PLAIN = Wording(
-    "On time", "Cancelled", "Delayed", "No info",
-    late=lambda dep: f"+{dep.minutes_late}",
-    leave=lambda leave, target: f"Leave {leave} ({target})",
-    leave_soon=lambda when, target: f"Leave {when} ({target})",
-)
-SIGN = Wording(
-    "On time", "Cancelled", "Delayed", "No info",
-    late=lambda dep: f"Exp {dep.expected}",
-    # Drawn under the train it refers to, so the time alone is enough.
-    leave=lambda leave, target: f"Leave by {leave}",
-    leave_soon=lambda when, target: f"Leave {when}",
-)
+# Drawn beside the section's label, so it names the train it is for.
+PLAIN = Wording(leave=lambda leave, target: f"{leave} ({target})")
+# Drawn under the train it refers to, so the leave words alone are enough.
+SIGN = Wording(leave=lambda leave, target: leave)
 
 
 @dataclass(frozen=True)
@@ -134,61 +121,62 @@ class SetupView:
         return hashlib.sha256(json.dumps(["setup page", self.url, self.heading, self.note]).encode()).hexdigest()
 
 
-def _until(clock: str, leave: str) -> str:
-    """'now' or 'in N min' to a leave time, rounded down so it never promises more time than there is."""
+def _until(clock: str, leave: str) -> int:
+    """Whole minutes to a leave time, rounded down so it never promises more time than there is."""
     seconds = minutes_between(clock[:5], leave) * 60 - int(clock[6:8])
-    minutes = max(0, seconds // 60)
-    return "now" if minutes == 0 else f"in {minutes} min"
+    return max(0, seconds // 60)
 
 
-def _train_row(dep: Departure, walk: WalkTimes | None, words: Wording, clock: str | None) -> Row:
+def _leave_words(leave: str, clock: str | None) -> str:
+    """When to leave: counting down on a screen ("Leave in 4 min"), a clock time on e-paper ("Leave by 07:05")."""
+    return words.leave_in(_until(clock, leave)) if clock else words.leave_by(leave)
+
+
+def _style(dep: Departure) -> Style:
     if dep.status is Status.CANCELLED:
-        right, style = words.cancelled, Style.INVERTED
-    elif dep.status is Status.LATE:
-        right, style = (words.late(dep) if dep.expected else words.delayed), Style.ALERT
-    elif dep.status is Status.ON_TIME:
-        right, style = words.on_time, Style.NORMAL
-    else:
-        right, style = words.unknown, Style.NORMAL
+        return Style.INVERTED
+    return Style.ALERT if dep.status is Status.LATE else Style.NORMAL
+
+
+def _train_row(dep: Departure, walk: WalkTimes | None, clock: str | None) -> Row:
     platform = f"Plat {dep.platform}" if dep.platform else None
-    return Row(dep.scheduled, dep.destination, right, style, platform=platform)
+    return Row(dep.scheduled, dep.destination, words.status(dep), _style(dep), platform=platform)
 
 
-def _bus_row(dep: Departure, walk: WalkTimes | None, words: Wording, clock: str | None) -> Row:
-    if dep.status is Status.CANCELLED:
-        right, style = words.cancelled, Style.INVERTED
-    elif dep.status is Status.LATE:
-        right, style = f"{dep.departs_at} +{dep.minutes_late}", Style.ALERT
+def _bus_row(dep: Departure, walk: WalkTimes | None, clock: str | None) -> Row:
+    # A bus running to time shows just its time.
+    if dep.status is Status.ON_TIME:
+        right = dep.scheduled
     elif dep.status is Status.UNKNOWN:
-        right, style = f"{dep.scheduled} sch", Style.NORMAL
+        right = f"{dep.scheduled} {words.SCHEDULED}"
     else:
-        right, style = dep.scheduled, Style.NORMAL
+        right = words.status(dep)
     leave = leave_time(dep, walk) if walk else None
-    if leave and clock:
-        # Past its leave minute the bus can't be reached on foot: say nothing rather than "now".
-        leave = _until(clock, leave) if minutes_between(clock[:5], leave) >= 0 else None
-    return Row(dep.service, dep.destination, right, style, f"leave {leave}" if leave else None, dep.stop)
+    # Past its leave minute the bus can't be reached on foot: on a screen, say
+    # nothing rather than "Leave now". E-paper keeps the clock time.
+    if leave and clock and minutes_between(clock[:5], leave) < 0:
+        leave = None
+    leave_text = _leave_words(leave, clock) if leave else None
+    return Row(dep.service, dep.destination, right, _style(dep), leave_text, dep.stop)
 
 
-def _leave(departures, walk: WalkTimes | None, now: str, words: Wording, clock: str | None):
+def _leave(departures, walk: WalkTimes | None, now: str, wording: Wording, clock: str | None):
     """(text, row index) for the next departure in reach, or (None, None)."""
     found = leave_by(departures, walk, now) if walk else None
     if found is None:
         return None, None
     leave, dep = found
-    if clock:
-        return words.leave_soon(_until(clock, leave), _target(dep)), departures.index(dep)
-    return words.leave(leave, _target(dep)), departures.index(dep)
+    return wording.leave(_leave_words(leave, clock), _target(dep)), departures.index(dep)
 
 
-def _section(label, departures, to_row, now, empty_text, stale, walk, words, clock) -> Section:
+def _section(label, departures, to_row, now, empty_text, stale, walk, wording, clock) -> Section:
     upcoming = [d for d in departures if not d.is_gone(now)]
-    rows = tuple(to_row(d, walk, words, clock) for d in upcoming)
+    rows = tuple(to_row(d, walk, clock) for d in upcoming)
     # Rows that carry their own leave time make a header summary redundant.
     if any(r.leave for r in rows):
         text, index = None, None
     else:
-        text, index = _leave(upcoming, walk, now, words, clock)
+        text, index = _leave(upcoming, walk, now, wording, clock)
     return Section(label, rows, empty_text, stale, text, index)
 
 

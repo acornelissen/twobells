@@ -57,7 +57,7 @@ Each line reads: *which train*, *scheduled time*, *destination*, *status*.
 | `Exp 07:49` | Running late; expected to leave at 07:49. |
 | `Delayed` | Late, but no expected time yet. |
 | `Cancelled`, on a highlighted bar | It isn't running. |
-| `No info` | No information about this train yet. |
+| `No report` | No live report for this train yet. |
 | `Leave by 07:07` | Set off at 07:07 to walk to the station and catch the train above it. It sits under the first train you can still reach, so if the 1st is too soon, it moves down to the 2nd. |
 
 **Buses (bottom half)**
@@ -67,9 +67,9 @@ Each line reads: *route*, *stop*, *destination*, *when to leave*, *when it goes*
 | You see | It means |
 |---|---|
 | `341 A Hyde` | Route 341 from stop A, going to Hyde. |
-| `leave 07:16` | Set off at 07:16 to walk to that stop in time. |
+| `Leave by 07:16` | Set off at 07:16 to walk to that stop in time. |
 | `07:41` | Live tracking says it's on time. |
-| `07:24 +4` | Live tracking says it's 4 minutes late and will leave at 07:24. |
+| `Exp 07:24` | Live tracking says it's running late and will leave at 07:24. |
 | `07:35 sch` | Timetable time only ("scheduled"): there's no live position for this bus yet, so it could be late. |
 | `Cancelled`, on a highlighted bar | It isn't running. |
 
@@ -97,8 +97,7 @@ The differences:
 | Plain look | Station board look |
 |---|---|
 | `Upd 07:03` in the top bar | `UPDATED 07:03` at the bottom |
-| `Leave 07:07 (07:12)` next to TRAINS: leave at 07:07 for the 07:12 | `Leave by 07:07` under the train |
-| `+7` in the accent colour: 7 minutes late | `Exp 07:49` |
+| `Leave by 07:07 (07:12)` next to TRAINS: leave by 07:07 for the 07:12 | `Leave by 07:07` under the train |
 | `Cancelled` on a black bar | `Cancelled` on a highlighted bar |
 | `! NOT UPDATING` in the accent colour, next to TRAINS or BUSES | `NOT UPDATING: …` at the bottom |
 | A rain warning or disruption notice in the top bar, in place of the title | At the bottom |
@@ -118,8 +117,8 @@ The screen can redraw every second, so it shows a bit more:
 ![Departures on the HDMI screen](images/screen-departures.png)
 
 - **A running clock** at the bottom, in place of "Updated".
-- **Countdowns** in place of clock times: `Leave in 3 min`, then `Leave now` in the last minute. They round down, so `Leave in 3 min` means you have at least 3 minutes, never less.
-- On the screen, a bus you can no longer reach on foot loses its leave time, rather than saying "leave now".
+- **Countdowns** in place of clock times: `Leave in 3 min` instead of `Leave by 07:07`, then `Leave now` in the last minute. They round down, so `Leave in 3 min` means you have at least 3 minutes, never less.
+- On the screen, a bus you can no longer reach on foot loses its leave time, rather than saying "Leave now".
 - **Platforms**, as on the bigger e-paper display.
 - A rain warning or disruption notice sits at the bottom left and the clock moves to the right. A notice too long for one line is shown a part at a time, changing every 5 seconds; each part starts with `!` and all but the last end with `…`.
 
@@ -129,7 +128,7 @@ If it's set up (see [The bus position page](#the-bus-position-page)), the screen
 
 ![The bus position page on the HDMI screen, with sample data](images/screen-bus.png)
 
-- **Top line:** the bus you can still catch, and when it goes (`341 to Hyde … 07:24 +4`).
+- **Top line:** the bus you can still catch, and when it goes (`341 to Hyde … Exp 07:24`).
 - **Second line:** when to leave, and how many stops away the bus is, counting your stop.
 - **The line of stops:** the stops the bus calls at before yours. Your stop is the highlighted one on the right (Henry Street in this sample); the bus is drawn on the road where it is now.
 

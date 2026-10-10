@@ -124,6 +124,6 @@ def test_where_says_when_positions_have_stopped():
 def test_route_view_signature_changes_as_the_bus_moves():
     from departureboard.board.route import RouteView
 
-    a = RouteView("341 to Hyde", "07:24 +4", "leave in 6 min", NAMES, 2.4, "3 stops away")
-    b = RouteView("341 to Hyde", "07:24 +4", "leave in 6 min", NAMES, 2.6, "3 stops away")
+    a = RouteView("341 to Hyde", "Exp 07:24", "Leave in 6 min", NAMES, 2.4, "3 stops away")
+    b = RouteView("341 to Hyde", "Exp 07:24", "Leave in 6 min", NAMES, 2.6, "3 stops away")
     assert a.signature() != b.signature()

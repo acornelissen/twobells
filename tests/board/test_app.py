@@ -99,7 +99,7 @@ def test_changed_data_triggers_render():
     trains.departures = [train(expected="07:19", status=Status.LATE)]
     result = run_once(board, state, display, THU_0700 + timedelta(minutes=2))
     assert result.rendered
-    assert result.view.trains.rows[0].right == "+7"
+    assert result.view.trains.rows[0].right == "Exp 07:19"
 
 
 def test_unchanged_data_never_redraws_however_long_it_has_been():
@@ -225,7 +225,7 @@ def test_changes_within_two_minutes_of_a_redraw_are_held_back():
     trains.departures = [train(expected="07:19", status=Status.LATE)]
     held = run_once(board, state, display, THU_0700 + timedelta(minutes=1))
     assert trains.calls == 2
-    assert held.view.trains.rows[0].right == "+7"
+    assert held.view.trains.rows[0].right == "Exp 07:19"
     assert not held.rendered
     assert len(display.shown) == 1
 
@@ -254,8 +254,8 @@ def test_board_walk_times_produce_leave_text():
     trains, buses, board, display, state = setup()
     board = dataclasses.replace(board, walk=WalkTimes(train=7, bus={"*": 5}))
     result = run_once(board, state, display, THU_0700)
-    assert result.view.trains.leave == "Leave 07:05 (07:12)"
-    assert result.view.buses.rows[0].leave == "leave 07:15"
+    assert result.view.trains.leave == "Leave by 07:05 (07:12)"
+    assert result.view.buses.rows[0].leave == "Leave by 07:15"
 
 
 def test_board_theme_picks_wording_and_renderer():

@@ -109,8 +109,8 @@ class RouteView:
     """The second page: one bus and the stretch of road before your stop."""
 
     title: str  # "341 to Hyde"
-    due: str  # as on the departures page, e.g. "07:24 +4"
-    leave: str | None  # "leave in 6 min"
+    due: str  # as on the departures page, e.g. "Exp 07:24"
+    leave: str | None  # "Leave in 6 min"
     stops: tuple[str, ...]  # the last one is yours
     bus_at: float | None  # stops along from the first; None if not on the strip
     where: str  # "3 stops away", "At your stop", ...

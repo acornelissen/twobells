@@ -57,7 +57,7 @@ def test_normal_board_uses_no_accent_colour():
 
 
 def test_alert_row_uses_accent_colour():
-    image = render(board([Row("07:12", "Manchester Piccadilly", "+7", Style.ALERT)]), PALETTE)
+    image = render(board([Row("07:12", "Manchester Piccadilly", "Exp 07:19", Style.ALERT)]), PALETTE)
     assert PALETTE.accent in colours(image)
 
 
@@ -153,7 +153,7 @@ def test_row_text_stays_inside_its_row(panel):
 
 
 def test_preview_palette_gives_rgb_png_colours():
-    image = render(board([Row("07:12", "Manchester", "+7", Style.ALERT)]), PALETTE.with_preview("red"))
+    image = render(board([Row("07:12", "Manchester", "Exp 07:19", Style.ALERT)]), PALETTE.with_preview("red"))
     rgb = image.convert("RGB")
     assert (255, 255, 255) in {c for _, c in rgb.getcolors()}
 
@@ -170,13 +170,13 @@ def ink_in_right_half_of_train_label_row(image):
 
 def test_leave_text_is_drawn_right_of_the_section_label():
     plain = render(board(), PALETTE)
-    with_leave = render(board(train_leave="Leave 07:05 (07:12)"), PALETTE)
+    with_leave = render(board(train_leave="Leave by 07:05 (07:12)"), PALETTE)
     assert ink_in_right_half_of_train_label_row(plain) == 0
     assert ink_in_right_half_of_train_label_row(with_leave) > 30
 
 
 def test_leave_text_is_not_in_accent_colour():
-    image = render(board(train_leave="Leave 07:05 (07:12)"), PALETTE)
+    image = render(board(train_leave="Leave by 07:05 (07:12)"), PALETTE)
     assert PALETTE.accent not in colours(image)
 
 
@@ -187,15 +187,15 @@ def test_row_layout_without_leave_has_no_leave_column():
 
 def test_row_layout_places_leave_between_destination_and_time():
     fonts = load_fonts()
-    row = Row("341", "A: Hyde", "07:24 +4", Style.ALERT, "leave 07:17")
+    row = Row("341", "A: Hyde", "Exp 07:24", Style.ALERT, "Leave by 07:17")
     layout = row_layout(row, fonts)
     assert layout.middle_x + fonts.regular.getlength(layout.middle) < layout.leave_x
-    assert layout.leave_x + fonts.small.getlength("leave 07:17") < layout.right_x
+    assert layout.leave_x + fonts.small.getlength("Leave by 07:17") < layout.right_x
 
 
 def test_long_destination_is_truncated_to_keep_leave_time_whole():
     fonts = load_fonts()
-    row = Row("394", "B: Stepping Hill Hospital", "07:35 sch", leave="leave 07:28")
+    row = Row("394", "B: Stepping Hill Hospital", "07:35 sch", leave="Leave by 07:28")
     layout = row_layout(row, fonts)
     assert layout.middle.endswith("…")
     assert layout.middle_x + fonts.regular.getlength(layout.middle) < layout.leave_x
@@ -206,7 +206,7 @@ def test_row_with_leave_draws_more_ink():
         return sum(n for n, c in image.getcolors() if c != PALETTE.white)
 
     plain = render(board(bus_rows=[Row("341", "A: Hyde", "07:20")]), PALETTE)
-    with_leave = render(board(bus_rows=[Row("341", "A: Hyde", "07:20", leave="leave 07:14")]), PALETTE)
+    with_leave = render(board(bus_rows=[Row("341", "A: Hyde", "07:20", leave="Leave by 07:14")]), PALETTE)
     assert ink(with_leave) > ink(plain)
 
 
@@ -220,7 +220,7 @@ BIG_PANELS = [WAVESHARE_10IN85G, HDMI_1280X400]
 
 @pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
 def test_bigger_panels_get_an_image_their_size(panel):
-    image = render(board([Row("07:12", "Manchester", "+7", Style.ALERT)]), PALETTE, panel)
+    image = render(board([Row("07:12", "Manchester", "Exp 07:19", Style.ALERT)]), PALETTE, panel)
     assert image.size == panel.size
     assert image.mode == "P"
     assert PALETTE.accent in colours(image)
@@ -238,7 +238,7 @@ def test_type_grows_with_the_panel(panel):
 
 
 def test_wider_panel_keeps_a_destination_whole_that_the_phat_truncates():
-    row = Row("394", "B: Stepping Hill Hospital", "07:35 sch", leave="leave 07:28")
+    row = Row("394", "B: Stepping Hill Hospital", "07:35 sch", leave="Leave by 07:28")
     assert row_layout(row, load_fonts()).middle.endswith("…")
     panel = HDMI_1280X400
     wide = row_layout(row, load_fonts(panel.scale), panel.width, panel.scale)
@@ -267,8 +267,8 @@ def test_route_page_in_the_plain_look():
         assert image.size == HDMI_1280X400.size
         return sum(n for n, c in image.getcolors() if c == PALETTE.black)
 
-    with_bus = RouteView("341 to Hyde", "07:24 +4", "leave in 6 min", names, 2.5, "3 stops away", "07:12:40")
-    without = RouteView("341 to Hyde", "07:24 +4", "leave in 6 min", names, None, "3 stops away", "07:12:40")
+    with_bus = RouteView("341 to Hyde", "Exp 07:24", "Leave in 6 min", names, 2.5, "3 stops away", "07:12:40")
+    without = RouteView("341 to Hyde", "Exp 07:24", "Leave in 6 min", names, None, "3 stops away", "07:12:40")
     assert ink(with_bus) > ink(without) + 500  # the bus is a solid block
 
 
@@ -285,7 +285,7 @@ def test_no_leave_text_for_a_train_that_is_not_drawn():
     # Only three trains fit; a leave time for the fourth would point at nothing.
     rows = [Row(f"07:{m}", "Manchester", "On time") for m in (12, 20, 31, 42)]
     view = board(rows)
-    for_fourth = dataclasses.replace(view, trains=dataclasses.replace(view.trains, leave="Leave 07:35 (07:42)", leave_for=3))
+    for_fourth = dataclasses.replace(view, trains=dataclasses.replace(view.trains, leave="Leave by 07:35 (07:42)", leave_for=3))
     for_third = dataclasses.replace(for_fourth, trains=dataclasses.replace(for_fourth.trains, leave_for=2))
     assert ink_in_right_half_of_train_label_row(render(for_fourth, PALETTE)) == 0
     assert ink_in_right_half_of_train_label_row(render(for_third, PALETTE)) > 30
@@ -305,7 +305,7 @@ def label_row_inks(image, y0=17, y1=28):
 
 def test_not_updating_and_leave_text_share_the_label_row_without_touching():
     rows = [Row("07:12", "Manchester Piccadilly", "On time")]
-    image = render(board(rows, stale_trains=True, train_leave="Leave 07:05 (07:12)"), PALETTE)
+    image = render(board(rows, stale_trains=True, train_leave="Leave by 07:05 (07:12)"), PALETTE)
     accent, black = label_row_inks(image)
     leave = [x for x in black if x > max(accent)]
     assert leave, "leave text drawn"
@@ -324,7 +324,7 @@ def test_plain_look_fits_the_waveshare_panel_height():
     # 122 design pixels at 4x is 488, taller than the 480 panel: the last bus row was cut off.
     trains = [Row(f"07:{m}", "Manchester Piccadilly", "On time") for m in (12, 42, 52)]
     rows = [Row("341", "A: Hyde", "07:20"), Row("61", "B: Buxton", "07:35 sch")]
-    image = render(board(trains, rows, train_leave="Leave 07:05 (07:12)"), PALETTE, WAVESHARE_10IN85G)
+    image = render(board(trains, rows, train_leave="Leave by 07:05 (07:12)"), PALETTE, WAVESHARE_10IN85G)
     bottom = [image.getpixel((x, y)) for x in range(WAVESHARE_10IN85G.width) for y in range(476, 480)]
     assert PALETTE.black not in bottom
 
@@ -338,7 +338,7 @@ def ink_columns(image, top, bottom, background):
 
 
 @pytest.mark.parametrize("panel", ALL_PANELS, ids=lambda p: p.name)
-@pytest.mark.parametrize("status", ["Cancelled", "On time", "Exp 07:49", "+7"])
+@pytest.mark.parametrize("status", ["Cancelled", "On time", "Exp 07:49", "Delayed", "No report"])
 def test_right_aligned_status_keeps_the_right_margin(panel, status):
     # Drawn on a paletted image, glyphs are hinted for one-bit output and can come
     # out a few pixels wider than getlength says: measure what is drawn.
@@ -368,7 +368,7 @@ def test_header_stamp_keeps_the_right_margin(panel):
 
 TRAINS_WITH_PLATFORMS = [
     Row("07:12", "Manchester Piccadilly", "On time", platform="Plat 1"),
-    Row("07:42", "Manchester Piccadilly", "+7", Style.ALERT),
+    Row("07:42", "Manchester Piccadilly", "Exp 07:49", Style.ALERT),
     Row("08:12", "Manchester Piccadilly", "Cancelled", Style.INVERTED, platform="Plat 2"),
 ]
 
@@ -507,7 +507,7 @@ def test_plain_look_shows_fewer_rows_rather_than_cut_them_off_on_the_original_ph
 def _full_board():
     trains = [Row(f"07:{m}", "Manchester Piccadilly", "On time") for m in (12, 42, 52)]
     buses = [Row("341", "A: Hyde", "07:20"), Row("61", "B: Buxton", "07:35 sch")]
-    return board(trains, buses, train_leave="Leave 07:05 (07:12)")
+    return board(trains, buses, train_leave="Leave by 07:05 (07:12)")
 
 
 def test_default_text_size_draws_exactly_as_before():

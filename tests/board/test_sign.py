@@ -27,8 +27,8 @@ TRAINS = [
     Row("08:12", "Manchester Piccadilly", "Cancelled", Style.INVERTED),
 ]
 BUSES = [
-    Row("341", "Hyde", "07:24 +4", Style.ALERT, "leave 07:17", "A"),
-    Row("394", "Stepping Hill Hospital via Marple and Romiley", "07:35 sch", Style.NORMAL, "leave 07:28", "B"),
+    Row("341", "Hyde", "Exp 07:24", Style.ALERT, "Leave by 07:17", "A"),
+    Row("394", "Stepping Hill Hospital via Marple and Romiley", "07:35 sch", Style.NORMAL, "Leave by 07:28", "B"),
 ]
 
 
@@ -87,15 +87,15 @@ def test_bus_rows_show_route_stop_destination_leave_and_time():
     items = sign_layout(board(buses=BUSES)).items
     route = find(items, "341")
     line = [i for i in items if i.y == route.y]
-    assert texts(line) == ["341", "A", "Hyde", "leave 07:17", "07:24 +4"]
+    assert texts(line) == ["341", "A", "Hyde", "Leave by 07:17", "Exp 07:24"]
 
 
 def test_bus_leave_times_line_up_and_long_destinations_give_way():
     items = sign_layout(board(buses=BUSES)).items
-    assert find(items, "leave 07:17").x == find(items, "leave 07:28").x
+    assert find(items, "Leave by 07:17").x == find(items, "Leave by 07:28").x
     dest = next(i for i in items if i.text.startswith("Stepping"))
     assert dest.text.endswith("…")
-    assert dest.x + FONT.getlength(dest.text) < find(items, "leave 07:28").x
+    assert dest.x + FONT.getlength(dest.text) < find(items, "Leave by 07:28").x
 
 
 def test_empty_sections_say_so():
@@ -154,7 +154,7 @@ def test_trains_and_buses_have_breathing_room_around_the_divider():
 
 
 def test_buses_still_clear_the_footer_with_a_full_board():
-    rows = [*BUSES, Row("237", "Ashton", "07:41", leave="leave 07:34", stop="A")]
+    rows = [*BUSES, Row("237", "Ashton", "07:41", leave="Leave by 07:34", stop="A")]
     items = sign_layout(board(TRAINS, rows, leave="Leave by 07:05")).items
     last_bus_bottom = find(items, "237").y + 9
     assert last_bus_bottom < find(items, "Updated 07:03").y - 2
@@ -281,7 +281,7 @@ NAMES = ("The Junction", "Grapes Inn", "Sunlaws Street", "St Marys Road", "Arund
 
 
 def route(bus_at=2.45, where="3 stops away", clock="07:12:40"):
-    return RouteView("341 to Hyde", "07:24 +4", "leave in 6 min", NAMES, bus_at, where, clock)
+    return RouteView("341 to Hyde", "Exp 07:24", "Leave in 6 min", NAMES, bus_at, where, clock)
 
 
 def test_route_page_is_the_screen_size():
@@ -335,7 +335,7 @@ def test_bus_is_drawn_where_it_is_and_not_when_unknown():
 def test_route_page_says_where_the_bus_is():
     width, height = dots(HDMI_1280X400)
     layout, _, _ = _route_layout(route(), width, height)
-    assert {"341 to Hyde", "07:24 +4", "leave in 6 min", "3 stops away", "07:12:40"} <= set(texts(layout.items))
+    assert {"341 to Hyde", "Exp 07:24", "Leave in 6 min", "3 stops away", "07:12:40"} <= set(texts(layout.items))
 
 
 def test_no_leave_line_for_a_train_that_is_not_drawn():

@@ -1,4 +1,6 @@
-from departureboard.board.view import SIGN, Style, build_view
+import pytest
+
+from departureboard.board.view import PLAIN, SIGN, Style, build_view
 from departureboard.core.model import Departure, Status
 from departureboard.core.walk import WalkTimes
 
@@ -39,9 +41,9 @@ def test_on_time_train_row():
     )
 
 
-def test_late_train_shows_delay_as_text_and_alert_style():
+def test_late_train_shows_expected_time_as_text_and_alert_style():
     [row] = view(trains=[train(expected="07:19", status=Status.LATE)]).trains.rows
-    assert row.right == "+7"
+    assert row.right == "Exp 07:19"
     assert row.style is Style.ALERT
 
 
@@ -59,12 +61,27 @@ def test_cancelled_train_is_inverted_and_labelled():
 
 def test_unknown_train_status():
     [row] = view(trains=[train(status=Status.UNKNOWN)]).trains.rows
-    assert row.right == "No info"
+    assert row.right == "No report"
 
 
 def test_sign_wording_for_unknown_train_status():
     [row] = view(trains=[train(status=Status.UNKNOWN)], wording=SIGN).trains.rows
-    assert row.right == "No info"
+    assert row.right == "No report"
+
+
+@pytest.mark.parametrize("wording", [PLAIN, SIGN])
+def test_both_looks_use_the_same_status_words(wording):
+    rows = view(
+        trains=[
+            train("07:12"),
+            train("07:42", "07:49", Status.LATE),
+            train("08:12", status=Status.LATE),
+            train("08:42", status=Status.CANCELLED),
+            train("09:12", status=Status.UNKNOWN),
+        ],
+        wording=wording,
+    ).trains.rows
+    assert [r.right for r in rows] == ["On time", "Exp 07:49", "Delayed", "Cancelled", "No report"]
 
 
 def test_departed_services_are_dropped():
@@ -81,7 +98,7 @@ def test_bus_rows_use_clock_times_not_countdowns():
         ]
     ).buses.rows
     assert (on_time.left, on_time.middle, on_time.right) == ("341", "Hyde", "07:20")
-    assert (late.right, late.style) == ("07:29 +4", Style.ALERT)
+    assert (late.right, late.style) == ("Exp 07:29", Style.ALERT)
     assert (timetabled.right, timetabled.style) == ("07:40 sch", Style.NORMAL)
 
 
@@ -127,12 +144,12 @@ def test_no_leave_text_without_walk_times():
 
 def test_train_leave_text_names_the_departure_time():
     v = view(trains=[train("07:12"), train("07:42")], now="07:00", walk=WALK)
-    assert v.trains.leave == "Leave 07:05 (07:12)"
+    assert v.trains.leave == "Leave by 07:05 (07:12)"
 
 
 def test_leave_text_moves_on_once_a_departure_is_out_of_reach():
     trains = [train("07:12"), train("07:42")]
-    assert view(trains=trains, now="07:06", walk=WALK).trains.leave == "Leave 07:35 (07:42)"
+    assert view(trains=trains, now="07:06", walk=WALK).trains.leave == "Leave by 07:35 (07:42)"
 
 
 def test_signature_changes_when_leave_time_changes():
@@ -148,12 +165,12 @@ def test_each_bus_row_has_its_own_leave_time():
         now="07:00",
         walk=WALK,
     ).buses.rows
-    assert [r.leave for r in rows] == ["leave 07:14", "leave 07:32"]
+    assert [r.leave for r in rows] == ["Leave by 07:14", "Leave by 07:32"]
 
 
 def test_bus_row_leave_time_stays_after_it_has_passed():
     [row] = view(buses=[bus("341", "07:20", stop="A")], now="07:16", walk=WALK).buses.rows
-    assert row.leave == "leave 07:14"
+    assert row.leave == "Leave by 07:14"
 
 
 def test_cancelled_bus_row_has_no_leave_time():
@@ -164,7 +181,7 @@ def test_cancelled_bus_row_has_no_leave_time():
 def test_bus_header_drops_leave_text_when_rows_carry_it():
     v = view(trains=[train("07:12")], buses=[bus("341", "07:20", stop="A")], now="07:00", walk=WALK)
     assert v.buses.leave is None
-    assert v.trains.leave == "Leave 07:05 (07:12)"
+    assert v.trains.leave == "Leave by 07:05 (07:12)"
 
 
 def test_train_rows_have_no_per_row_leave_time():
@@ -197,7 +214,7 @@ def test_sign_wording_for_leave_line():
 
 def test_plain_leave_text_names_the_actual_departure_time_when_late():
     v = view(trains=[train("07:12", "07:20", Status.LATE)], now="07:00", walk=WALK)
-    assert v.trains.leave == "Leave 07:13 (07:20)"
+    assert v.trains.leave == "Leave by 07:13 (07:20)"
 
 
 def test_section_records_which_row_the_leave_time_is_for():
@@ -248,14 +265,14 @@ def test_plain_countdown_names_the_train():
 def test_with_a_clock_bus_leave_times_count_down():
     walk = WalkTimes(bus={"*": 7})
     [row] = view(buses=[bus(scheduled="07:20")], now="07:03", clock="07:03:30", walk=walk).buses.rows
-    assert row.leave == "leave in 9 min"
+    assert row.leave == "Leave in 9 min"
 
 
 def test_without_a_clock_leave_times_stay_clock_times():
     walk = WalkTimes(train=7, bus={"*": 7})
     v = view(trains=[train("07:12")], buses=[bus(scheduled="07:20")], now="07:03", walk=walk, wording=SIGN)
     assert v.trains.leave == "Leave by 07:05"
-    assert v.buses.rows[0].leave == "leave 07:13"
+    assert v.buses.rows[0].leave == "Leave by 07:13"
 
 
 def test_countdown_drops_the_leave_hint_once_a_bus_is_out_of_reach():
@@ -267,7 +284,7 @@ def test_countdown_drops_the_leave_hint_once_a_bus_is_out_of_reach():
 def test_countdown_still_says_now_during_the_leave_minute():
     walk = WalkTimes(bus={"*": 7})
     [row] = view(buses=[bus(scheduled="07:08")], now="07:01", clock="07:01:40", walk=walk).buses.rows
-    assert row.leave == "leave now"
+    assert row.leave == "Leave now"
 
 
 def test_train_row_names_its_platform():

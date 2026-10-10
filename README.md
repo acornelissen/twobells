@@ -16,7 +16,7 @@ New here? The [user guide](docs/user-guide.md) explains what everything on the b
 - **Buses:** worked out the way [bustimes.org](https://bustimes.org) does, from the DfT's Bus Open Data Service (BODS) timetable for your stops plus live bus positions, free and checked all day. On the board, TransportAPI (free plan: 30 hits a day) can stand in while there is no usable timetable, or be the only source.
 - **E-paper** takes about 20 s to refresh, so the board redraws only when what it shows changes, and never more than once every 2 minutes. An HDMI screen redraws every second, with a running clock, countdowns and a page showing where the next bus is.
 - **Two looks** for the board: `sign`, an amber dot-matrix station board (its font drawn for this project at one pixel per LED), and `plain`, black on white with a red accent.
-- **Meaning is always in text** (`Exp 07:49`, `Cancelled`, `No info`, `+4`, `sch`, `Not updating`). Colour only reinforces it, so both views work for colour-blind viewers, and the board works on a mono panel.
+- **Meaning is always in text** (`On time`, `Exp 07:49`, `Delayed`, `Cancelled`, `No report`, `sch`, `Not updating`). Colour only reinforces it, so both views work for colour-blind viewers, and the board works on a mono panel.
 
 ## Install
 
