@@ -526,6 +526,49 @@ def test_without_a_location_the_page_says_where_to_set_it(setup):
     assert 'id="weather_enabled"' not in page
 
 
+def test_trains_or_buses_can_be_switched_off_and_back_on(setup):
+    form, config, state, _ = setup
+    assert fields_of(form)["train_enabled"] == "true" and fields_of(form)["bus_enabled"] == "true"
+    # Off, the section's other fields are kept as saved, unchecked, however they were left.
+    assert form.save(fields_of(form) | {"bus_enabled": "false", "bus_stops": "", "bus_rows": "many"}) == {}
+    assert [c.source.name for c in load_config(config, ENV).board.sources] == ["train"]
+    saved = tomllib.loads((state / "settings.toml").read_text())
+    assert saved["bus"] == {"enabled": False}
+    page = form.render("tok")
+    assert fields_of(form)["bus_enabled"] == "false" and 'id="bus_stops"' in page  # shown off, to turn back on
+    assert form.save(fields_of(form) | {"bus_enabled": "true"}) == {}
+    assert [c.source.name for c in load_config(config, ENV).board.sources] == ["train", "bus"]
+    assert read_config(config)["bus"]["stops"] == {"A": "1000DGHS0900", "B": "100000008350"}
+
+
+def test_switching_a_section_back_on_checks_its_fields(setup):
+    form, config, *_ = setup
+    assert form.save(fields_of(form) | {"train_enabled": "false"}) == {}
+    errors = form.save(fields_of(form) | {"train_enabled": "true", "train_crs": "Glossop"})
+    assert set(errors) == {"train_crs"}
+    assert [c.source.name for c in load_config(config, ENV).board.sources] == ["bus"]  # not saved
+
+
+def test_a_section_off_with_the_templates_placeholders_saves(tmp_path):
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    off = CONFIG.replace('[bus]\n', '[bus]\nenabled = false\n').replace('B = "100000008350"', 'B = "CHANGE_ME"')
+    config.write_text(off.format(state=state / "state.json"))
+    form = SettingsForm(config, lambda: dict(ENV))
+    assert fields_of(form)["bus_enabled"] == "false"
+    assert form.save(fields_of(form)) == {}
+    assert [c.source.name for c in load_config(config, ENV).board.sources] == ["train"]
+
+
+def test_status_leaves_out_a_section_switched_off(setup):
+    form, _, state, _ = setup
+    state.mkdir()
+    (state / "state.json").write_text('{"sources": {"bus": {"last_success": "2026-10-08T07:24:00"}}}')
+    assert "<h3>Buses</h3>" in form.render("tok")
+    assert form.save(fields_of(form) | {"bus_enabled": "false"}) == {}
+    assert "<h3>Buses</h3>" not in form.render("tok")
+
+
 def test_text_size_can_be_set_on_the_page(setup):
     form, config, *_ = setup
     assert 'id="text_size"' in form.render("tok")

@@ -40,6 +40,7 @@ _LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")
 _ATCO = re.compile(r"^[A-Za-z0-9]{6,12}$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _SECTIONS = {None: "Board", "train": "Trains", "bus": "Buses", "weather": "Rain warning"}
+_ON_OFF = (("true", "On"), ("false", "Off"))
 
 
 class Invalid(ValueError):
@@ -143,6 +144,10 @@ def _directions(raw: str) -> list[str]:
     return parts
 
 
+def _on_off(raw: str) -> bool:
+    return _choice(("true", "false"))(raw) == "true"
+
+
 def _accents(display: str, theme: str) -> tuple[str, ...]:
     """Accents that stand out on the look's background: yellow is too faint on
     the plain look's white (1.9:1), red too dim on the sign's black on a screen
@@ -206,13 +211,16 @@ def _fields(display: str, theme: str) -> list[Field]:
               hint="The part of the UK the board is in; each has its own bank holidays.",
               options=(("england-and-wales", "England and Wales"), ("scotland", "Scotland"),
                        ("northern-ireland", "Northern Ireland"))),
-        Field("weather_enabled", "weather", "enabled", "Rain warning",
-              lambda raw: _choice(("true", "false"))(raw) == "true", "select",
+        Field("weather_enabled", "weather", "enabled", "Rain warning", _on_off, "select",
               hint="A line on the board when rain is likely between now and when you'd reach your "
                    "next train or bus. Nothing is shown on dry days.",
-              options=(("true", "On"), ("false", "Off"))),
+              options=_ON_OFF),
         Field("weather_threshold_percent", "weather", "threshold_percent", "Warn from (chance of rain, %)",
               _number(1, 100), "number", hint="50 means warn when rain is more likely than not."),
+        Field("train_enabled", "train", "enabled", "Trains", _on_off, "select",
+              hint="Off: the board shows no trains and doesn't check for them. "
+                   "The settings below are kept for turning them back on.",
+              options=_ON_OFF),
         Field("train_crs", "train", "crs", "Station code", _crs(), hint="3 letters, like GLO for Glossop."),
         Field("train_filter_crs", "train", "filter_crs", "Only trains calling at", _crs(optional=True),
               hint="Optional station code, like MAN. Empty shows every train."),
@@ -224,6 +232,10 @@ def _fields(display: str, theme: str) -> list[Field]:
               hint="One per line, like Mon-Fri 06:30-09:30."),
         Field("train_walk_minutes", "train", "walk_minutes", "Walk to the station (minutes)",
               _number(0, 60, optional=True), "number", hint="Shows when to leave. Empty for none."),
+        Field("bus_enabled", "bus", "enabled", "Buses", _on_off, "select",
+              hint="Off: the board shows no buses and doesn't check for them. "
+                   "The settings below are kept for turning them back on.",
+              options=_ON_OFF),
         Field("bus_stops", "bus", "stops", "Stops", _stops, "area",
               hint="One per line, LABEL = ATCO code, like A = 1000DGHS0900. Find codes on bustimes.org."),
         Field("bus_directions", "bus", "directions", "Only buses heading to", _directions,
@@ -356,7 +368,7 @@ class SettingsForm:
             value = source.get(f.key)
             if f.name == "rotate" and value is None:
                 value = 180 if data.get("rotate_180") else 0
-            if f.name in ("bank_holidays", "weather_enabled"):
+            if f.name in ("bank_holidays", "weather_enabled", "train_enabled", "bus_enabled"):
                 value = "false" if value is False else "true"  # on unless turned off
             if f.name == "weather_threshold_percent" and value is None:
                 value = 50
@@ -375,9 +387,14 @@ class SettingsForm:
         display = data.get("display", "inky")
         errors: dict[str, str] = {}
         overlay: dict = {}
-        for f in _fields(display, fields.get("theme", "")):
+        form = _fields(display, fields.get("theme", ""))
+        # A section switched off keeps what is saved for it, unchecked, for switching it back on.
+        off = {f.section for f in form if f.key == "enabled" and fields.get(f.name) == "false"}
+        for f in form:
             if f.section and f.section not in data:
                 continue  # trains or buses aren't set up in config.toml
+            if f.section in off and f.key != "enabled":
+                continue
             try:
                 value = f.check(fields.get(f.name, ""))
             except Invalid as error:

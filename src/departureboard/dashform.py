@@ -99,6 +99,10 @@ FIELDS = {f.name: f for f in (
                "Empty checks all the time."),
     Field("history_days", "dashboard", "history_days", "Days of punctuality history to keep",
           _number(1, 3650), "number"),
+    Field("train_enabled", "train", "enabled", "Trains", _on_off, "select",
+          hint="Off: the dashboard shows no trains and doesn't check for them. "
+               "The settings below are kept for turning them back on.",
+          options=(("true", "On"), ("false", "Off"))),
     Field("train_crs", "train", "crs", "Station code", _crs(), hint="3 letters, like GLO for Glossop."),
     Field("train_filter_crs", "train", "filter_crs", "Only trains calling at", _crs(optional=True),
           hint="Optional station code, like MAN. Empty shows every train."),
@@ -112,6 +116,10 @@ FIELDS = {f.name: f for f in (
     Field("kb_incidents_url", "dashboard", "kb_incidents_url", "Knowledgebase Incidents address", _https,
           hint="For engineering works: the address on the Rail Data Marketplace product page. "
                "Empty leaves them off."),
+    Field("bus_enabled", "bus", "enabled", "Buses", _on_off, "select",
+          hint="Off: the dashboard shows no buses and doesn't check for them. "
+               "The settings below are kept for turning them back on.",
+          options=(("true", "On"), ("false", "Off"))),
     Field("bus_stops", "bus", "stops", "Stops", _stops, "area",
           hint="One per line, LABEL = ATCO code, like A = 1000DGHS0900. To find stops and their bus "
                "companies on a map, use setup."),
@@ -135,10 +143,10 @@ FIELDS = {f.name: f for f in (
 # (legend, the table the group needs in the settings, its fields, what to say without it)
 GROUPS = (
     ("Dashboard", None, ("title", "bank_holidays", "bank_holiday_division", "quiet_windows", "history_days"), ""),
-    ("Trains", "train", ("train_crs", "train_filter_crs", "train_walk_minutes", "train_rows",
+    ("Trains", "train", ("train_enabled", "train_crs", "train_filter_crs", "train_walk_minutes", "train_rows",
                          "train_interval_seconds", "late_minutes_train", "kb_incidents_url"),
      "Trains aren't set up. Use setup to pick a station, or add a [train] section to config.toml."),
-    ("Buses", "bus", ("bus_stops", "bus_directions", "bus_walk_minutes", "bus_rows", "bus_interval_seconds",
+    ("Buses", "bus", ("bus_enabled", "bus_stops", "bus_directions", "bus_walk_minutes", "bus_rows", "bus_interval_seconds",
                       "late_minutes_bus"),
      "Buses aren't set up. Use setup to pick stops and find their bus companies."),
     ("Weather", "weather", ("weather_enabled", "weather_threshold_percent", "weather_interval_minutes"),
@@ -154,7 +162,7 @@ def _current(data: dict) -> dict[str, str]:
         value = source.get(f.key) if isinstance(source, dict) else None
         if value is None and f.section == "dashboard":
             value = list(QUIET_DEFAULT) if f.key == "quiet_windows" else getattr(_DEFAULTS, f.key)
-        if f.name in ("bank_holidays", "weather_enabled"):
+        if f.name in ("bank_holidays", "weather_enabled", "train_enabled", "bus_enabled"):
             value = "false" if value is False else "true"  # on unless turned off
         if f.name == "title" and value is None:
             value = "Departures"
@@ -197,6 +205,9 @@ class DashboardForm:
         for _, needs, names, _ in GROUPS:
             if needs is not None and needs not in data:
                 continue  # not set up: setup or config.toml adds it
+            if fields.get(f"{needs}_enabled") == "false" and f"{needs}_enabled" in names:
+                # Switched off: the rest of the group is kept as saved, unchecked, for switching it back on.
+                names = (f"{needs}_enabled",)
             for name in names:
                 f = FIELDS[name]
                 try:
