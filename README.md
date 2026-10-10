@@ -247,8 +247,8 @@ It listens on <http://localhost:8090/> (or the next free port) and opens it in y
 Its **Settings** need a password, claimed with a code from the dashboard's log. Or set it from the command line, while the dashboard runs, with `departureboard dashboard --set-password` (it uses the same folder as the dashboard, or the one given with `--state-dir`), and print a code with `--reset-code`. In Docker:
 
 ```bash
-docker exec -it departureboard-dashboard python -m departureboard.cli dashboard --set-password --state-dir /data
-docker exec -it departureboard-dashboard python -m departureboard.cli dashboard --reset-code --state-dir /data
+docker exec -it departureboard python -m departureboard.cli serve --set-password --state-dir /data
+docker exec -it departureboard python -m departureboard.cli serve --reset-code --state-dir /data
 ```
 
 The server and page talk through a read-only JSON and SSE API, specified in [docs/dashboard-api.md](docs/dashboard-api.md); the page is vanilla JS modules with no build step, under a strict CSP.

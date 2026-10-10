@@ -1,18 +1,21 @@
 # The departures dashboard on a NAS. On Synology: Container Manager > Project >
 # Create, pick this folder, and it builds the image here. See docs/USER_GUIDE.md.
+# Set it up on its settings page; a config.toml kept by hand instead goes in
+# through docker-compose.override.yml (see docker-compose.override.yml.example).
 services:
-  dashboard:
+  departureboard:
     build: .
-    image: departureboard-dashboard:local
-    container_name: departureboard-dashboard
+    image: departureboard:local
+    container_name: departureboard
     restart: unless-stopped
     ports:
       - "8090:8090"
     env_file:
-      - dashboard.env            # RDM_API_KEY and BODS_API_KEY; keep it readable by you only
+      - secrets.env              # the keys, from deploy/secrets.env.example; keep it readable by you only
     volumes:
-      - ./config.toml:/config/config.toml:ro
-      - dashboard-data:/data     # bus timetable, history, bank holidays, saved settings and keys, settings password
+      # Bus timetable, history, bank holidays, saved settings and keys, settings
+      # password. Its name is the dashboard's from before, so nothing saved is lost.
+      - dashboard-data:/data
     read_only: true
     tmpfs:
       - /tmp:size=64m

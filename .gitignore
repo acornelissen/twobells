@@ -9,7 +9,10 @@ mise.*.local.toml
 *.egg-info/
 .pytest_cache/
 secrets.env
+# Docker's keys before they were secrets.env, until every NAS has moved
 dashboard.env
+# A NAS's own compose additions, such as its config.toml (docker-compose.override.yml.example)
+docker-compose.override.yml
 state.json
 # Kept beside state.json by the board
 bank-holidays.json

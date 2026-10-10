@@ -42,7 +42,7 @@ class Install:
 
 
 _PI_COMMAND = "sudo -u departureboard /opt/departureboard/venv/bin/departureboard serve --install pi"
-_DOCKER_COMMAND = "docker exec -it departureboard-dashboard python -m departureboard.cli dashboard {} --state-dir /data"
+_DOCKER_COMMAND = "docker exec -it departureboard python -m departureboard.cli serve {} --state-dir /data"
 
 INSTALLS = {
     install.name: install
@@ -51,8 +51,8 @@ INSTALLS = {
                 fetch="files", log_help="On the Pi: <code>sudo journalctl -u departureboard-web</code>.",
                 password_command=f"{_PI_COMMAND} --set-password", reset_command=f"{_PI_COMMAND} --reset-code"),
         Install("docker", ("dashboard",), ("dashboard",), Path("/data"), host="0.0.0.0",
-                log_help=("In Docker: <code>docker logs departureboard-dashboard</code>, or in Container Manager, "
-                          "Container, departureboard-dashboard, Log."),
+                log_help=("In Docker: <code>docker logs departureboard</code>, or in Container Manager, "
+                          "Container, departureboard, Log."),
                 password_command=_DOCKER_COMMAND.format("--set-password"),
                 reset_command=_DOCKER_COMMAND.format("--reset-code")),
         Install("desktop", ("dashboard",), ("dashboard",), None, browser=True,

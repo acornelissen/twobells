@@ -302,7 +302,7 @@ def test_the_sessions_are_built_on_the_stores_one_password(dash):
 
 def test_without_a_password_the_page_says_how_to_set_one(make):
     for install, command in (("pi", "departureboard serve --install pi --set-password"),
-                             ("docker", "departureboard.cli dashboard --set-password --state-dir /data")):
+                             ("docker", "departureboard.cli serve --set-password --state-dir /data")):
         running = make(install=install)
         _, text = running("GET", "/settings/login")
         assert command in text, install
@@ -1043,7 +1043,7 @@ def test_a_forgotten_password_is_reset_with_a_code_from_the_log(signed, caplog):
     old, _ = signed.sign_in()
     form_cookie = ask_for_code(signed)
     _, page = signed("GET", "/settings/reset?asked", cookie=form_cookie)
-    assert "docker logs departureboard-dashboard" in page and "Container Manager" in page
+    assert "docker logs departureboard<" in page and "Container Manager" in page
     assert "Code from the log" in page
     code = code_from_the_log(caplog)
     response, _ = reset(signed, form_cookie, f"{code[:3]} {code[3:]}")
@@ -1076,7 +1076,7 @@ def test_a_wrong_code_from_the_log_changes_nothing(signed, caplog):
 def test_the_first_claim_in_docker_needs_a_code_from_the_log(dash, caplog):
     _, page = dash("GET", "/settings/login")
     assert "Claim this dashboard" in page and 'action="/settings/reset"' in page
-    assert "docker exec -it departureboard-dashboard" in page
+    assert "docker exec -it departureboard python" in page
     assert dash("POST", "/settings/login", {"password": NEW_PASSWORD})[0].status == 403
     form_cookie, _ = dash.form()
     assert reset(dash, form_cookie, "000000")[0].status == 401

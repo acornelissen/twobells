@@ -43,9 +43,29 @@ def test_the_image_never_carries_keys_or_state():
 def test_compose_locks_the_container_down():
     for setting in ("read_only: true", "- ALL", "no-new-privileges:true", "mem_limit:", "pids_limit:"):
         assert setting in COMPOSE, setting
-    assert "./config.toml:/config/config.toml:ro" in COMPOSE
     for risky in ("privileged", "network_mode", "docker.sock", "cap_add"):
         assert risky not in COMPOSE, risky
+
+
+def test_compose_runs_departureboard_on_the_dashboards_old_volume():
+    lines = [line.split("#")[0].strip() for line in COMPOSE.splitlines()]
+    for line in ("departureboard:", "image: departureboard:local", "container_name: departureboard",
+                 "- secrets.env", "- dashboard-data:/data", "dashboard-data:", "- \"8090:8090\""):
+        assert line in lines, line
+    assert lines[lines.index("env_file:") + 1] == "- secrets.env"
+    # The volume keeps its name, or a NAS would start on a new, empty one.
+    assert re.search(r"^volumes:\n  dashboard-data:\n", COMPOSE, re.M)
+    # config.toml only through the optional override, which stays out of git.
+    assert "config.toml:" not in COMPOSE and "dashboard.env" not in COMPOSE
+    override = (ROOT / "docker-compose.override.yml.example").read_text()
+    assert "services:\n  departureboard:\n    volumes:\n      - ./config.toml:/config/config.toml:ro\n" in override
+    assert "docker-compose.override.yml" in (ROOT / ".gitignore").read_text().splitlines()
+    assert "/config/config.toml" in _entrypoint()  # where the override puts it
+
+
+def test_the_image_runs_as_departureboard_with_the_volumes_uid():
+    assert re.search(r"useradd --system --uid 10001 .* departureboard \\$", DOCKERFILE, re.M)
+    assert "chown 10001:10001 /data" in DOCKERFILE
 
 
 def _entrypoint() -> list[str]:
@@ -69,24 +89,42 @@ def test_the_documented_password_commands_fit_the_container():
     # Run with docker exec as the image's user, in the one writable place: /data.
     from departureboard.cli import _parser
 
-    assert "container_name: departureboard-dashboard" in COMPOSE and "dashboard-data:/data" in COMPOSE
+    assert "container_name: departureboard\n" in COMPOSE and "dashboard-data:/data" in COMPOSE
     assert "WORKDIR /data" in DOCKERFILE and "chown 10001:10001 /data" in DOCKERFILE
     docs = (ROOT / "docs" / "USER_GUIDE.md").read_text() + (ROOT / "README.md").read_text()
     for flag in ("--set-password", "--reset-code"):
-        command = f"docker exec -it departureboard-dashboard python -m departureboard.cli dashboard {flag} --state-dir /data"
+        command = f"docker exec -it departureboard python -m departureboard.cli serve {flag} --state-dir /data"
         assert docs.count(command) == 2, flag  # once in each
-        # The old command, kept as a hidden alias of serve, in the container's store.
-        args = _parser().parse_args(shlex.split(command)[7:])
-        assert (args.state_dir, getattr(args, flag[2:].replace("-", "_"))) == ("/data", True)
+        words = shlex.split(command)
+        assert words[:7] == ["docker", "exec", "-it", "departureboard", "python", "-m", "departureboard.cli"]
+        args = _parser().parse_args(words[7:])
+        assert (args.command, args.state_dir, getattr(args, flag[2:].replace("-", "_"))) == ("serve", "/data", True)
     from departureboard.installs import install_named
 
-    for flag, command in (("--set-password", install_named("docker").password_command),
-                          ("--reset-code", install_named("docker").reset_command)):
+    docker = install_named("docker")
+    for flag, command in (("--set-password", docker.password_command), ("--reset-code", docker.reset_command)):
         assert docs.count(command) == 2, flag  # what the settings pages tell the owner to run
+    assert "docker logs departureboard<" in docker.log_help and "Container, departureboard, Log" in docker.log_help
 
 
-def test_keys_file_is_git_ignored():
-    assert "dashboard.env" in (ROOT / ".gitignore").read_text().splitlines()
+def test_keys_files_are_git_ignored():
+    ignored = (ROOT / ".gitignore").read_text().splitlines()
+    assert "secrets.env" in ignored  # anywhere: the Pi's copy, Docker's next to docker-compose.yml
+    assert "dashboard.env" in ignored  # Docker's old name, until every NAS has moved it
+
+
+def test_one_key_template_for_the_pi_and_docker_in_groups():
+    assert not (ROOT / "deploy" / "dashboard.env.example").exists()
+    template = (ROOT / "deploy" / "secrets.env.example").read_text()
+    names = re.findall(r"^([A-Z_]+)=$", template, re.M)  # every value empty
+    assert names == ["RDM_API_KEY", "BODS_API_KEY", "TAPI_APP_ID", "TAPI_APP_KEY", "RDM_DETAILS_API_KEY",
+                     "RDM_KB_API_KEY"]
+    groups = [template.index(heading) for heading in ("# General:", "# Board:", "# Dashboard:")]
+    places = [template.index(f"\n{name}=") for name in names]
+    assert groups[0] < places[0] < places[1] < groups[1] < places[2] < places[3] < groups[2] < places[4]
+    assert "/etc/departureboard/secrets.env" in template and "next to docker-compose.yml" in template
+    install = (ROOT / "deploy" / "install.sh").read_text()
+    assert '"$REPO/deploy/secrets.env.example" "$CONF/secrets.env"' in install
 
 
 # The Pi's units: the web server stays off the internet; the fetch service goes out for it.
