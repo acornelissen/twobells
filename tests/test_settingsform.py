@@ -89,7 +89,7 @@ def test_saving_the_form_unchanged_keeps_the_same_board(setup):
 def test_a_change_is_saved_to_the_overlay_not_config_toml(setup):
     form, config, state, _ = setup
     original = config.read_text()
-    fields = fields_of(form) | {"title": "Home", "train_rows": "2", "bus_walk_minutes": "5"}
+    fields = fields_of(form) | {"title": "Home", "board_train_rows": "2", "bus_walk_minutes": "5"}
     assert form.save(fields) == {}
     assert config.read_text() == original
     settings = load_config(config, ENV)
@@ -102,7 +102,7 @@ def test_a_change_is_saved_to_the_overlay_not_config_toml(setup):
     "name, value, message",
     [
         ("train_crs", "GLOSSOP", "3-letter"),
-        ("train_rows", "99", "1 to 6"),
+        ("board_train_rows", "99", "1 to 6"),
         ("train_windows", "weekdays", "isn't a window"),
         ("bus_stops", "A = not a code!", "starts with 3 digits"),
         ("bus_stops", "A = DGHS09001000", "starts with 3 digits"),  # an ATCO code starts with its area's number
@@ -544,11 +544,11 @@ def test_switching_a_section_back_on_checks_its_fields(setup):
 
 def test_edits_to_a_section_switched_off_are_kept_for_switching_it_back_on(setup):
     form, config, *_ = setup
-    edits = {"bus_enabled": "false", "bus_rows": "5", "bus_stops": "A = 1800SB12341\r\nB = 100000008350"}
+    edits = {"bus_enabled": "false", "board_bus_rows": "5", "bus_stops": "A = 1800SB12341\r\nB = 100000008350"}
     assert form.save(fields_of(form) | edits) == {}
     assert [c.source.name for c in load_config(config, ENV).board.sources] == ["train"]
     shown = fields_of(form)
-    assert (shown["bus_rows"], shown["bus_stops"]) == ("5", "A = 1800SB12341\nB = 100000008350")
+    assert (shown["board_bus_rows"], shown["bus_stops"]) == ("5", "A = 1800SB12341\nB = 100000008350")
     assert form.save(shown | {"bus_enabled": "true"}) == {}
     bus = load_config(config, ENV).board.sources[1].source
     assert bus._stops == {"A": "1800SB12341", "B": "100000008350"} and bus._rows == 5
@@ -559,8 +559,8 @@ def test_a_mistake_in_a_section_switched_off_is_still_reported(setup):
     # Unchanged fields are left as saved, unchecked; a field changed is checked, as it is kept.
     fields = fields_of(form)
     unchanged = {"bus_windows": fields["bus_windows"].replace("\n", "\r\n") + "\r\n"}  # as a browser sends it
-    errors = form.save(fields | unchanged | {"bus_enabled": "false", "bus_rows": "many"})
-    assert set(errors) == {"bus_rows"}
+    errors = form.save(fields | unchanged | {"bus_enabled": "false", "board_bus_rows": "many"})
+    assert set(errors) == {"board_bus_rows"}
 
 
 def test_trains_and_buses_cannot_both_be_switched_off(setup):
@@ -657,7 +657,7 @@ def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
         saved.write('\n[dashboard]\ntitle = "Our house"\n')  # a table neither manages: not read, so dropped
 
     form = SettingsForm(config, lambda: dict(env))
-    assert form.save(fields_of(form) | {"title": "Home", "train_rows": "2"}) == {}
+    assert form.save(fields_of(form) | {"title": "Home", "board_train_rows": "2"}) == {}
     # Everything setup and the page wrote is read back: none of it is outside schema.saved_keys.
     written = tomllib.loads((state / "settings.toml").read_text())
     assert read_overlay_in(state) == written and "dashboard" not in written
@@ -674,13 +674,14 @@ def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
 
 def test_every_field_the_page_saves_is_read_back():
     from departureboard.display import DISPLAY_PANELS
-    from departureboard.settingsform import _fields
+    from departureboard.schema import fields
     from departureboard.themes import THEMES
 
     for display in DISPLAY_PANELS:
         for theme in THEMES:
-            for f in _fields(display, theme):
-                assert f.key in saved_keys()[f.section], f.name
+            for f in fields(display, theme):
+                if f.group in ("general", "board"):
+                    assert f.key in saved_keys()[f.section], f.name
 
 
 def test_the_page_can_still_clear_a_field_setup_filled(tmp_path):

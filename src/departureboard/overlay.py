@@ -44,6 +44,8 @@ from .config import (
 )
 from .schema import KEY_VALUE, saved_keys
 
+# A saved settings file that couldn't be read, kept beside it when the page replaces it.
+BROKEN_NAME = OVERLAY_NAME + ".broken"
 HEADER = ("# Saved from the settings page and setup. Layered over config.toml, which sets everything else:\n"
           "# anything here that the page and setup don't save is ignored.")
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
@@ -66,15 +68,28 @@ def _toml_key(key: str) -> str:
     return key if re.match(r"^[A-Za-z0-9_-]+$", key) else _toml_string(key)
 
 
-def _write(path: Path, text: str, mode: int) -> None:
+def _write(path: Path, text: str | bytes, mode: int) -> None:
     """Replace a file whole: written aside with `mode`, then renamed over it."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(text)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(text.encode("utf-8") if isinstance(text, str) else text)
     os.chmod(tmp, mode)
     os.replace(tmp, path)
+
+
+def _keep_broken(path: Path) -> None:
+    """A copy of a settings file that can't be read, as settings.toml.broken
+    beside it (for its owner only), before it is replaced. OSError if it
+    can't be kept, so it isn't replaced either."""
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        return  # gone since it was read: nothing to keep
+    with os.fdopen(fd, "rb") as handle:
+        content = handle.read()
+    _write(path.with_name(BROKEN_NAME), content, 0o600)
 
 
 def _value(value) -> str:
@@ -174,7 +189,8 @@ def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping
     environment and keys already saved) plus `keys`. Returns the overlay as
     written. OverlayError, with text that never holds a key, if not saved.
     With `replace`, `changes` take the saved overlay's place instead: for
-    the settings page replacing one it can't read."""
+    the settings page replacing one it can't read, which is kept as
+    settings.toml.broken."""
     for name, value in keys.items():
         if not _ENV_NAME.match(name) or not isinstance(value, str) or not KEY_VALUE.match(value):
             raise OverlayError(f"{name if _ENV_NAME.match(name) else 'A key'} isn't a key the board can store")
@@ -199,6 +215,12 @@ def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping
         readable = False
     if not readable:
         raise OverlayError("Not saved: some text can't be stored. Remove any unusual characters and try again.")
+    if replace:
+        try:
+            _keep_broken(settings_path)
+        except OSError as error:
+            raise OverlayError(f"Not saved: the broken settings file can't be kept aside "
+                               f"({error.strerror or type(error).__name__})") from None
     # Keys first, so settings that need them are never saved without them.
     if keys:
         _write(secrets_path, _secrets_text(secrets_path, keys), 0o600)

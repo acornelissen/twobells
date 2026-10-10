@@ -10,7 +10,6 @@ from urllib.parse import urlencode
 import pytest
 
 from departureboard.auth import MAX_FAILURES, Sessions
-from departureboard.dashconfig import dashboard_target
 from departureboard.dashform import DashboardForm
 from departureboard.store import Store
 from departureboard.dashserver import DashboardApp, StaticFiles, make_server
@@ -576,7 +575,7 @@ def real(tmp_path, caplog):
     folder = tmp_path / "dash"
     folder.mkdir()
     store = Store.open(config, state_dir=folder)
-    page = DashboardForm(dashboard_target(store), lambda: store.env(ENV))
+    page = DashboardForm(store, lambda: store.env(ENV))
     running = Running(folder, page=page)
     running.area.password.set(PASSWORD)
     running.config = config
@@ -597,8 +596,9 @@ def test_the_form_saves_into_the_dashboard_s_folder_only(real):
     _, page = real("GET", "/settings", cookie=cookie)
     assert "Currently set." in page and "rail-key-1234567" not in page and "bods-key-7654321" not in page
     fields = fields_from(page)
-    assert fields["train_crs"] == "GLO" and fields["train_rows"] == "10" and fields["bus_stops"] == "A = 1000DGHS0900"
-    fields.update(csrf=csrf, train_crs="man", train_rows="6", RDM_DETAILS_API_KEY="details-key-0001")
+    assert fields["train_crs"] == "GLO" and fields["dashboard_train_rows"] == "10"
+    assert fields["bus_stops"] == "A = 1000DGHS0900"
+    fields.update(csrf=csrf, train_crs="man", dashboard_train_rows="6", RDM_DETAILS_API_KEY="details-key-0001")
     response, text = real("POST", "/settings", fields, cookie=cookie)
     assert response.status == 200 and "Saved." in text, text
     saved = tomllib.loads((real.folder / "settings.toml").read_text())
@@ -611,10 +611,10 @@ def test_the_form_saves_into_the_dashboard_s_folder_only(real):
 def test_the_form_says_what_is_wrong_and_saves_nothing(real):
     cookie, csrf = real.sign_in()
     fields = fields_from(real("GET", "/settings", cookie=cookie)[1])
-    fields.update(csrf=csrf, train_rows="50", bus_stops="A = not a code!", kb_incidents_url="http://x")
+    fields.update(csrf=csrf, dashboard_train_rows="50", bus_stops="A = not a code!", kb_incidents_url="http://x")
     response, text = real("POST", "/settings", fields, cookie=cookie)
     assert response.status == 422 and "Not saved: fix 3 things" in text
-    assert 'href="#train_rows"' in text and 'aria-invalid="true"' in text
+    assert 'href="#dashboard_train_rows"' in text and 'aria-invalid="true"' in text
     assert not (real.folder / "settings.toml").exists()
 
 

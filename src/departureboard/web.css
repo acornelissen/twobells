@@ -59,6 +59,10 @@ input, select, textarea {
 }
 textarea { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.9375rem; resize: vertical; }
 .has-error input, .has-error select, .has-error textarea { border: 2px solid var(--error); }
+/* A checkbox with its label beside it, and its hint and error below the label. */
+.check { display: grid; grid-template-columns: auto 1fr; column-gap: 0.75rem; align-items: start; }
+.check input { grid-row: 1 / span 3; width: 1.5rem; height: 1.5rem; min-height: 0; margin: 0.125rem 0 0; }
+.check label, .check .hint, .check .error { grid-column: 2; margin-bottom: 0.25rem; }
 .error { color: var(--error); font-weight: 600; margin: 0 0 0.375rem; }
 .tag { font-weight: 700; }
 button {

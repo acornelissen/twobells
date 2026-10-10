@@ -846,7 +846,7 @@ def _settings_area(store: Store):
         noun="dashboard",
         keys=KEYS,
     )
-    area = SettingsArea(store.folder, DashboardForm(target, store.env), setup)
+    area = SettingsArea(store.folder, DashboardForm(store, store.env), setup)
     if not area.password.is_set():
         print("Settings: no password yet. Open /settings and claim it with a code from this log, "
               "or set one with `departureboard dashboard --set-password` (see the user guide for Docker).",
