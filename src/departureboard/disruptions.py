@@ -41,10 +41,10 @@ from urllib.parse import urlencode, urlsplit
 from xml.etree import ElementTree
 
 from . import http, safexml
+from .errors import safe_message
 from .model import iso
 from .schedule_model import Schedule, StopPosition
 from .snapshot import row_id
-from .status import safe_message
 
 SIRI_SX_URL = "https://data.bus-data.dft.gov.uk/api/v1/siri-sx/"
 # A placeholder: the Rail Data Marketplace gives the real address on the

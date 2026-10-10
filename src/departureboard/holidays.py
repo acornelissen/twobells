@@ -29,8 +29,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 from . import files
+from .errors import safe_message
 from .http import get_bytes
-from .status import safe_message
 
 log = logging.getLogger(__name__)
 

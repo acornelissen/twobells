@@ -38,11 +38,11 @@ from urllib.parse import urlencode, urlsplit
 
 from . import files, roadshape, routesetup, timetable
 from .bods import DEFAULT_BASE_URL, redact_key
+from .errors import safe_message
 from .http import get_bytes
 from .overlay import _toml_key, _toml_string
 from .routesetup import Pattern
 from .setup import in_uk
-from .status import safe_message
 from .walk import DEFAULT_STOP
 
 log = logging.getLogger(__name__)

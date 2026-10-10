@@ -46,6 +46,7 @@ from .area import area_view, timetable_changes
 from .darwin import DetailsUnavailable, ServiceDetails, ServiceGone, TrainBoard
 from .dashconfig import DashboardSettings
 from .disruptions import BusArea, RailArea, bus_disruptions, disruptions_part, train_disruptions
+from .errors import safe_message
 from .history import History, day_type, no_show_phrase, phrase
 from .model import Status
 from .snapshot import (
@@ -58,7 +59,6 @@ from .snapshot import (
     trains_part,
     weather_part,
 )
-from .status import safe_message
 from .timetable import TimetableBusy
 
 log = logging.getLogger(__name__)

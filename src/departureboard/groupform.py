@@ -34,11 +34,12 @@ from . import keytest, schema
 from .config import ConfigError, merge, settings_from
 from .display import DISPLAY_PANELS
 from .disruptions import kb_url_is_placeholder
+from .errors import safe_message
 from .holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
 from .overlay import BROKEN_NAME, OverlayError, save_to
 from .schema import KEY_VALUE, Field, Invalid
 from .state import StateStore
-from .status import render_status, safe_message
+from .status import render_status
 
 if TYPE_CHECKING:
     from .installs import Install

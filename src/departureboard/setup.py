@@ -31,11 +31,11 @@ from importlib.resources import files
 from typing import Protocol
 from urllib.parse import quote, urlencode
 
+from .errors import safe_message
 from .holidays import ENGLAND_AND_WALES
 from .http import get_bytes
 from .osgb import distance_m, grid_to_latlon
 from .routesetup import NAPTAN_URL
-from .status import safe_message
 
 log = logging.getLogger(__name__)
 

@@ -46,10 +46,10 @@ from itertools import pairwise
 from urllib.error import HTTPError
 
 from . import http
+from .errors import safe_message
 from .osgb import distance_m
 from .schedule_model import Journey, StopPosition
 from .setup import ROUTER_LIMIT, ROUTER_USER_AGENT, RateLimiter, in_uk
-from .status import safe_message
 
 log = logging.getLogger(__name__)
 

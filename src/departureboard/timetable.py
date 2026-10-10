@@ -85,8 +85,8 @@ from typing import BinaryIO, NamedTuple
 from urllib.parse import urlsplit
 
 from . import files, http, roadshape, routesetup, safexml
+from .errors import safe_message
 from .schedule_model import NEAR_M, Calendar, Call, DateRange, Journey, Schedule, StopPosition, metres
-from .status import safe_message
 
 log = logging.getLogger(__name__)
 

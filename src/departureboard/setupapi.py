@@ -67,6 +67,7 @@ from typing import Protocol
 
 from . import discover, keytest, schema, setup
 from .config import ConfigError
+from .errors import safe_message
 from .installs import INSTALLS, Install
 from .overlay import OverlayError, Target, save_to
 from .schema import ATCO as _ATCO
@@ -74,7 +75,6 @@ from .schema import CRS as _CRS
 from .schema import KEY_VALUE as _KEY_VALUE
 from .schema import LABEL as _LABEL
 from .setup import Place, SetupError, Station, Stop
-from .status import safe_message
 
 log = logging.getLogger(__name__)
 

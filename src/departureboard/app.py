@@ -18,13 +18,13 @@ from PIL.Image import Image
 from .auth import ResetCodes, spaced
 from .bods import Vehicle
 from .budget import DailyBudget
+from .errors import safe_message
 from .model import Departure, minutes_between
 from .panel import Panel
 from .render import Palette
 from .route import RouteStrip, RouteView, locate, target, where
 from .schedule import PollPolicy
 from .state import departure_to_dict, departures_from_dicts, from_iso, to_iso, vehicle_to_dict, vehicles_from_dicts
-from .status import safe_message
 from .themes import THEMES, Theme
 from .view import BoardView, CodeView, SetupView, build_view
 from .walk import WalkTimes, leave_time

@@ -17,11 +17,11 @@ from pathlib import Path
 
 from . import holidays, livebus, timetable
 from .bods import DEFAULT_BASE_URL, BodsVehicleSource, HttpGetBytes, Vehicle
+from .errors import safe_message
 from .http import get_bytes
 from .livebus import LiveDeparture, LiveJourney
 from .model import Departure
 from .schedule_model import Journey, Schedule
-from .status import safe_message
 
 log = logging.getLogger(__name__)
 

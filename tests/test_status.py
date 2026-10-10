@@ -3,7 +3,8 @@ from datetime import date, datetime
 
 import pytest
 
-from departureboard.status import render_status, safe_message
+from departureboard.errors import safe_message
+from departureboard.status import render_status
 
 
 @pytest.mark.parametrize("text, secret", [

@@ -96,6 +96,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from . import discover, files, keytest, routesetup, setup
+from .errors import safe_message
 from .schema import ATCO as _ATCO
 from .schema import CONTROL as _CONTROL
 from .schema import KEY_VALUE as _KEY_VALUE
@@ -103,7 +104,6 @@ from .schema import LABEL as _LABEL
 from .schema import NOC as _NOC
 from .setup import Place, SetupError, Station, Stop
 from .setupapi import KEY_TEST_EVERY, MAX_WALK_MINUTES, MIN_SCRUBBED, Invalid, RateLimit, _scrub, _stops, too_deep
-from .status import safe_message
 
 log = logging.getLogger(__name__)
 

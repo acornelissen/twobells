@@ -23,7 +23,7 @@ asks before testing that.
 
 A key never appears in a message: messages are built from fixed words and
 checked values only (a station code, an HTTP status), never the service's
-own text; then the keys are replaced and status.safe_message applied anyway.
+own text; then the keys are replaced and errors.safe_message applied anyway.
 Logs get the key's name and the state, nothing more.
 """
 
@@ -41,7 +41,7 @@ from urllib.request import Request
 
 from . import bods, darwin, http, transportapi
 from .disruptions import kb_url_is_placeholder
-from .status import safe_message
+from .errors import safe_message
 
 log = logging.getLogger(__name__)
 

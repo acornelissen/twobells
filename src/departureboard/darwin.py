@@ -10,9 +10,9 @@ from html.parser import HTMLParser
 from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
 
+from .errors import safe_message
 from .http import NotJSON, get_json, get_json_capped
 from .model import Departure, Status, minutes_between
-from .status import safe_message
 
 DEFAULT_BASE_URL = "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
 # The Rail Data Marketplace's "Service Details" product: one train's whole journey.
