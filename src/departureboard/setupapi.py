@@ -20,6 +20,10 @@ no error repeats one. `testkey` tries one key, saved or pasted, with one
 harmless call to its service (keytest.py), at most once per key every
 KEY_TEST_EVERY seconds across the whole process.
 
+Each host names its own page: `begin` answers with the host's title and the
+keys it uses (the Pi's settingsform.KEYS, the dashboard's dashform.KEYS),
+and only those keys can be saved or tested through it.
+
 Serving the page. The host serves, under one prefix ending in a slash (say
 /setup/), the files `static_files()` lists by their path under that prefix:
 the page itself at the prefix, wizard_static/* beside it and the dashboard's
@@ -83,10 +87,14 @@ _LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")  # as the settings page allows
 _CRS = re.compile(r"^[A-Za-z]{3}$")
 _ATCO = re.compile(r"^[0-9]{3}[0-9A-Za-z]{1,9}$")
 _LINK = re.compile(r"^(/(?!/)[A-Za-z0-9._~/-]*|https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?)$")
-_KEY_NAMES = tuple(name for name, _, _ in KEYS)
+TITLE = "Set up your board"
+_TITLE_LENGTH = 60
+_ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 KEY_DOCS = "https://github.com/acornelissen/inky-departures/blob/main/docs/KEYS.md"
 _KEY_ANCHORS = {
     "RDM_API_KEY": "#rail-data-marketplace-live-departure-board",
+    "RDM_DETAILS_API_KEY": "#rail-data-marketplace-service-details",
+    "RDM_KB_API_KEY": "#rail-data-marketplace-knowledgebase-incidents",
     "BODS_API_KEY": "#bus-open-data-service",
     "TAPI_APP_ID": "#transportapi",
     "TAPI_APP_KEY": "#transportapi",
@@ -262,14 +270,14 @@ def _key(value, field: str) -> str:
     return key
 
 
-def _keys(value) -> dict[str, str]:
-    """Keys to save: only the board's, each in the shape of a key; empty ones skipped."""
+def _keys(value, names: Sequence[str]) -> dict[str, str]:
+    """Keys to save: only the host's (`names`), each in the shape of a key; empty ones skipped."""
     if not isinstance(value, dict):
         raise Invalid("Send keys as an object", "keys")
     keys = {}
     for name, key in value.items():
-        if name not in _KEY_NAMES:
-            raise Invalid("That isn't one of the board's keys", "keys")
+        if name not in names:
+            raise Invalid("That isn't one of the keys set up here", "keys")
         key = _key(key, name)
         if key:
             keys[name] = key
@@ -317,16 +325,28 @@ class SetupApi:
         key_tests: RateLimit = KEY_TESTS,
         target: Target | None = None,
         saved_message: str = "Saved. The board shows the new settings within a few minutes.",
+        title: str = TITLE,
+        keys: Sequence[tuple[str, str, str]] = KEYS,
     ) -> None:
         """`load_secrets` gives the environment with every saved key, as the
         settings page's does; `job_folder` is where the search builds the bus
         timetable (the board's state folder, or the dashboard's); `links` are
         (label, href) pairs the finished page offers, like ("The board", "/").
         `target` is the overlay finishing saves into, by default the board's
-        beside config.toml's state file; `saved_message` says what happens next."""
+        beside config.toml's state file; `saved_message` says what happens next.
+        `title` heads the page, and `keys`, (name, label, hint) like
+        settingsform.KEYS, are the keys the host uses: offered, saved and
+        tested in that order, and no others."""
         for label, href in links:
             if not label or len(label) > 40 or not _LINK.match(href):
                 raise ValueError("A link is a short label and a plain path or http(s) address")
+        if not 0 < len(title) <= _TITLE_LENGTH or not title.isprintable():
+            raise ValueError(f"A title is 1 to {_TITLE_LENGTH} ordinary characters")
+        if not keys or any(not _ENV_NAME.match(name) for name, _, _ in keys):
+            raise ValueError("Keys are named like environment variables")
+        self._title = title
+        self._keys = tuple((name, label, hint) for name, label, hint in keys)
+        self._key_names = tuple(name for name, _, _ in self._keys)
         self._load_secrets = load_secrets
         self._job_folder = Path(job_folder)
         self._links = [{"label": label, "href": href} for label, href in links]
@@ -394,7 +414,8 @@ class SetupApi:
     def _secret_values(self, payload: object) -> list[str]:
         try:
             env = self._load_secrets()
-            values = [str(env.get(name, "")).strip() for name in _KEY_NAMES]
+            # Every key any host knows, not just this one's: scrubbing more does no harm.
+            values = [str(env.get(name, "")).strip() for name in {*self._key_names, *keytest.KEY_NAMES}]
         except Exception:  # noqa: BLE001 - the step itself says if secrets are unreadable
             values = []
         with self._lock:
@@ -411,13 +432,14 @@ class SetupApi:
     # Finding home.
 
     def begin(self, payload) -> dict:
-        """What the page needs first: which keys are set (never their values),
-        the links to show at the end, and any search already running."""
+        """What the page needs first: its title, the host's keys and which are
+        set (never their values), the links to show at the end, and any
+        search already running."""
         _fields(payload)
         env = self._load_secrets()
         keys = [{"name": name, "label": label, "hint": hint, "set": bool(str(env.get(name, "")).strip()),
-                 "doc": KEY_DOCS + _KEY_ANCHORS.get(name, "")} for name, label, hint in KEYS]
-        return {"keys": keys, "links": list(self._links), "job": self._job_status()}
+                 "doc": KEY_DOCS + _KEY_ANCHORS.get(name, "")} for name, label, hint in self._keys]
+        return {"title": self._title, "keys": keys, "links": list(self._links), "job": self._job_status()}
 
     def postcode(self, payload) -> dict:
         fields = _fields(payload, ("postcode",))
@@ -522,7 +544,7 @@ class SetupApi:
         if not isinstance(walk, dict) or set(walk) - set(stops):
             raise Invalid("Walk times are by stop label", "walk")
         walk = {label: _minutes(m, "walk") for label, m in walk.items()}
-        pasted = _keys(fields.get("keys", {})).get("BODS_API_KEY")
+        pasted = _keys(fields.get("keys", {}), self._key_names).get("BODS_API_KEY")
         api_key = pasted or str(self._load_secrets().get("BODS_API_KEY", "")).strip()
         if not api_key:
             raise Invalid("Paste your Bus Open Data Service key first; finding bus companies needs it",
@@ -561,8 +583,9 @@ class SetupApi:
         KEY_TEST_EVERY seconds of the last test of that key."""
         fields = _fields(payload, ("name",), ("value", "app_id"))
         name = fields["name"]
-        if not isinstance(name, str) or name not in keytest.KEY_NAMES:
-            raise Invalid("That isn't one of the board's keys", "name")
+        # Only this host's keys: the dashboard never spends a TransportAPI lookup.
+        if not isinstance(name, str) or name not in self._key_names or name not in keytest.KEY_NAMES:
+            raise Invalid("That isn't one of the keys set up here", "name")
         value = _key(fields.get("value", ""), name) or None
         env = dict(self._load_secrets())
         if "app_id" in fields:
@@ -611,7 +634,7 @@ class SetupApi:
         if set(walk) - allowed:
             raise Invalid("Walk times are only for your station and stops", "walk")
         walk = {key: (_minutes(m, "walk"), "given") for key, m in walk.items()}
-        keys = _keys(fields.get("keys", {}))
+        keys = _keys(fields.get("keys", {}), self._key_names)
 
         changes = setup.config_fragment(home, station, [(label, self._stop(atco)) for label, atco in stops.items()],
                                         walk)

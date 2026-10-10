@@ -5,7 +5,7 @@ import tomllib
 
 import pytest
 
-from departureboard import discover, setupapi
+from departureboard import dashform, discover, settingsform, setupapi
 from departureboard.config import read_base, read_config
 from departureboard.keytest import KeyResult
 from departureboard.overlay import Target
@@ -376,6 +376,91 @@ def test_begin_says_which_keys_are_set_never_their_values(board):
     assert keys["BODS_API_KEY"]["doc"].endswith("docs/KEYS.md#bus-open-data-service")
     assert RDM_KEY not in json.dumps(body) and BODS_KEY not in json.dumps(body)
     assert body["job"] == {"state": "idle"}
+
+
+def test_begin_names_the_pis_page_and_its_keys_by_default(board):
+    body = ok(board, "begin")
+    assert body["title"] == "Set up your board"
+    assert [k["name"] for k in body["keys"]] == [name for name, _, _ in settingsform.KEYS]
+
+
+# A host with keys of its own, as the dashboard has.
+
+DETAILS_KEY = "details-secret-key-789"
+KB_KEY = "kb-secret-key-012"
+
+
+@pytest.fixture
+def dashboard(board):
+    """The board's fixture, set up as the dashboard sets its wizard up."""
+    board.secrets["RDM_DETAILS_API_KEY"] = DETAILS_KEY
+    api = SetupApi(board.config, lambda: dict(board.secrets), board.state, stations=lambda: STATIONS,
+                   make_job=FakeJob, test_key=board._test_key, key_tests=RateLimit(10.0, clock=lambda: 0.0),
+                   title="Set up your dashboard", keys=dashform.KEYS)
+    api.calls, api.secrets, api.state = board.calls, board.secrets, board.state
+    return api
+
+
+def test_begin_names_the_dashboards_page_and_offers_only_its_keys(dashboard):
+    body = ok(dashboard, "begin")
+    assert body["title"] == "Set up your dashboard"
+    keys = {k["name"]: k for k in body["keys"]}
+    assert list(keys) == ["RDM_API_KEY", "BODS_API_KEY", "RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"]
+    assert keys["RDM_DETAILS_API_KEY"]["set"] and not keys["RDM_KB_API_KEY"]["set"]
+    assert keys["RDM_DETAILS_API_KEY"]["doc"].endswith("docs/KEYS.md#rail-data-marketplace-service-details")
+    assert keys["RDM_KB_API_KEY"]["doc"].endswith("docs/KEYS.md#rail-data-marketplace-knowledgebase-incidents")
+    assert keys["RDM_KB_API_KEY"]["label"] == "Rail Data Marketplace Knowledgebase Incidents key"
+    assert DETAILS_KEY not in json.dumps(body)
+
+
+@pytest.mark.parametrize("name", ["RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"])
+def test_the_dashboard_tests_its_own_keys(dashboard, name):
+    assert ok(dashboard, "testkey", {"name": name, "value": "pasted-key-345"})["state"] == "works"
+    _, tested, value, _, env = dashboard.calls[-1]
+    assert (tested, value, env["RDM_DETAILS_API_KEY"]) == (name, "pasted-key-345", DETAILS_KEY)
+
+
+@pytest.mark.parametrize("payload", [
+    {"name": "TAPI_APP_KEY"},
+    {"name": "TAPI_APP_ID"},
+    {"name": "RDM_API_KEY", "app_id": "an-app-id-1"},
+])
+def test_the_dashboard_never_tests_transportapi(dashboard, payload):
+    status, body = dashboard.handle("testkey", payload)
+    assert status == 400 and not [c for c in dashboard.calls if c[0] == "testkey"]
+
+
+def test_the_pi_does_not_test_keys_it_does_not_use(board):
+    status, body = board.handle("testkey", {"name": "RDM_KB_API_KEY"})
+    assert status == 400 and body["field"] == "name"
+
+
+def test_the_dashboard_saves_its_own_keys_and_no_others(dashboard):
+    (dashboard.state / "settings.toml").write_text('theme = "plain"\n')
+    finish = {"home": HOME, "station_crs": "GLO", "stops": {}, "walk": {}}
+    status, body = dashboard.handle("finish", {**finish, "keys": {"TAPI_APP_KEY": "pasted-tapi-key"}})
+    assert status == 400 and body["field"] == "keys"
+    assert ok(dashboard, "finish", {**finish, "keys": {"RDM_KB_API_KEY": KB_KEY}})["saved"]
+    assert f"RDM_KB_API_KEY={KB_KEY}" in (dashboard.state / "secrets.env").read_text()
+
+
+def test_the_dashboards_saved_keys_never_leave_in_an_answer(dashboard):
+    leaky = f"upstream said {DETAILS_KEY}"
+    dashboard._lookup_postcode = lambda postcode: (_ for _ in ()).throw(SetupError(leaky))
+    status, body = dashboard.handle("postcode", {"postcode": "SK13 1AH"})
+    assert status == 422 and DETAILS_KEY not in json.dumps(body)
+
+
+@pytest.mark.parametrize("title, keys", [
+    ("", settingsform.KEYS),
+    ("x" * 61, settingsform.KEYS),
+    ("Set up\nyour board", settingsform.KEYS),
+    ("Set up", ()),
+    ("Set up", (("lower_case", "Key", "Hint."),)),
+])
+def test_a_host_names_its_page_and_keys_plainly(board, title, keys):
+    with pytest.raises(ValueError):
+        SetupApi(board.config, dict, board.state, title=title, keys=keys)
 
 
 # Testing a key.
