@@ -182,3 +182,9 @@ def test_to_toml_round_trips_every_kind_of_value():
     data = {"a": 1, "b": 2.5, "c": 1e-7, "d": True, "e": "x\u007f\n\"y\"", "f": [1, 2], "g": [{"x": 1.5, "y": "z"}],
             "h": {"i": {"j": {"k": "deep"}}, "l": -0.0}, "m": {}}
     assert tomllib.loads(to_toml(data)) == data
+
+
+def test_to_toml_round_trips_characters_toml_is_fussy_about():
+    data = {"title": 'Say "hi" \\ there', "odd key": 1,
+            "bus": {"directions": ["Hyde ➜ 🚏", "Bus 🚌 café\x7f\x01\ttab"], "stops": {"A": "1000DGHS0900"}}}
+    assert tomllib.loads(to_toml(data)) == data

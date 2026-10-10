@@ -4,7 +4,7 @@ import tomllib
 import pytest
 
 from departureboard.config import SAVED_KEYS, load_config, read_config, read_overlay_in
-from departureboard.settingsform import SettingsForm, to_toml
+from departureboard.settingsform import SettingsForm
 
 ENV = {"RDM_API_KEY": "rdm-secret-123", "TAPI_APP_ID": "id", "TAPI_APP_KEY": "tapi-secret-456"}
 
@@ -363,16 +363,6 @@ def test_routes_set_in_config_survive_a_save(tmp_path):
     assert form.save(fields_of(form) | {"bus_stops": "A = 1000DGHS0900", "bus_walk_minutes": "5"}) == {}
     assert "routes" not in (state / "settings.toml").read_text()
     assert set(load_config(config, env).board.tracker.routes) == {"341"}
-
-
-def test_toml_writer_round_trips():
-    data = {"title": 'Say "hi" \\ there', "rotate": 90, "train": {"windows": ["Mon-Fri 06:30-09:30"]}, "bus": {"stops": {"A": "1000DGHS0900"}, "rows": 3}}
-    assert tomllib.loads(to_toml(data)) == data
-
-
-def test_toml_writer_round_trips_characters_toml_is_fussy_about():
-    data = {"title": "Bus 🚌 café\x7f\x01\ttab", "train": {"directions": ["Hyde ➜ 🚏"]}}
-    assert tomllib.loads(to_toml(data)) == data
 
 
 def test_an_emoji_title_saves_and_loads(setup):

@@ -5,16 +5,16 @@ some settings, so both save through here: it reads the saved overlay, merges
 the changes in as config.merge layers the overlay over config.toml
 (top-level tables key by key, anything deeper replaced) and writes the
 result back, keeping everything the caller doesn't manage. The wizard keeps
-the display, the look, rotation, text size, [dashboard] and so on; the page
-keeps the wizard's [bus] source, operators and routes and [weather] lat and
-lon.
+the look, rotation, text size, the dashboard's [dashboard] and so on; the
+page keeps the wizard's [bus] source, operators and routes and [weather] lat
+and lon.
 
 Nothing is written unless the merged settings then load, and keys go to the
 secrets overlay only, never into settings.toml. Only the settings a
 Target allows are read from the overlay (config.SAVED_KEYS for the board),
-so a save drops anything else found in it. Settings carry floats (the
-weather position) and route strips (arrays of inline tables), which the
-settings page's own TOML writer doesn't, so this module has its own.
+so a save drops anything else found in it. to_toml writes every kind of
+value settings carry, floats (the weather position) and route strips
+(arrays of inline tables) included.
 
 The board's overlay sits beside its state file. Another host, like the
 dashboard, names its own with a Target: the settings under it, its folder,

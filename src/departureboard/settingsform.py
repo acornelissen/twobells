@@ -298,37 +298,6 @@ def _toml_key(key: str) -> str:
     return key if re.match(r"^[A-Za-z0-9_-]+$", key) else _toml_string(key)
 
 
-def _toml_value(value) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, str):
-        return _toml_string(value)
-    if isinstance(value, list):
-        return "[" + ", ".join(_toml_value(v) for v in value) + "]"
-    raise TypeError(f"Can't write {type(value).__name__} to TOML")
-
-
-def to_toml(data: dict) -> str:
-    """TOML for the form's settings: top-level values, then tables and their sub-tables."""
-    lines = ["# Saved from the settings page. Layered over config.toml; edit there or here."]
-    lines += [f"{_toml_key(k)} = {_toml_value(v)}" for k, v in data.items() if not isinstance(v, dict)]
-
-    def table(path: list[str], body: dict) -> None:
-        lines.append("")
-        lines.append("[" + ".".join(_toml_key(p) for p in path) + "]")
-        lines.extend(f"{_toml_key(k)} = {_toml_value(v)}" for k, v in body.items() if not isinstance(v, dict))
-        for k, v in body.items():
-            if isinstance(v, dict):
-                table(path + [k], v)
-
-    for key, value in data.items():
-        if isinstance(value, dict):
-            table([key], value)
-    return "\n".join(lines) + "\n"
-
-
 def _write(path: Path, text: str, mode: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
