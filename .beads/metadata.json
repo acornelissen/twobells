@@ -1,7 +1,0 @@
-{
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "embedded",
-  "dolt_database": "inky_departures",
-  "project_id": "8be59acb-bf84-4533-a923-39ebb5ce5819"
-}

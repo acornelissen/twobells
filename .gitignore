@@ -8,6 +8,7 @@ mise.*.local.toml
 .mise.*.local.toml
 *.egg-info/
 .pytest_cache/
+.ruff_cache/
 secrets.env
 # Docker's keys before they were secrets.env, until every NAS has moved
 dashboard.env
@@ -23,19 +24,22 @@ web.json
 *.tmp
 *.sqlite3
 *.sqlite3-*
-dashboard-state.json
 dashboard.lock
 settings.toml
 /preview.png
-config.toml
+/config.toml
 probe-raw/
 
+# Beads stays local: the issue database, its config and hooks
+.beads/
+.beads.gate.lock
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
 .beads-credential-key
-.beads/proxieddb/
 *.gate.lock*
 
+# Personal agent settings; .claude/settings.json is shared
+.claude/settings.local.json
 # Agent worktrees (short-lived)
 .claude/worktrees/

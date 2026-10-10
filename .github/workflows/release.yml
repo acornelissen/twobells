@@ -223,7 +223,7 @@ jobs:
           git archive --format=tar.gz --prefix="inky-departures-$VERSION/" \
             -o "out/inky-departures-$VERSION.tar.gz" "$GITHUB_SHA" -- . \
             ':(exclude).beads' ':(exclude).claude' ':(exclude).github' \
-            ':(exclude)tests' ':(exclude)AGENTS.md' ':(exclude)CLAUDE.md'
+            ':(exclude)tests' ':(exclude)CLAUDE.md'
           # Listed once, not piped to grep -q: under pipefail, tar would fail
           # writing to a grep that has already found its line and gone.
           listing="$(tar -tzf "out/inky-departures-$VERSION.tar.gz")"
