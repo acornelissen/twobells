@@ -9,15 +9,17 @@
   departureboard route    print a [bus.routes] block for the screen's bus page (run on a laptop)
   departureboard timetable  build the BODS bus timetable for your stops, if due
   departureboard setup discover  find the bus operators serving your stops and print their settings
-  departureboard setup serve  answer the settings page's setup requests (departureboard-setup.service)
+  departureboard fetch    a Pi's internet work for its web server: the setup wizard's lookups and the
+                          dashboard's pollers (departureboard-fetch.service)
   departureboard serve    serve the settings, and the dashboard where its view is on, on the home
                           network: --install pi, docker or desktop (the default, opening the browser)
   departureboard serve --set-password | --reset-code
                           set the settings password, or print a code for a new one, and exit
 
-`web` (the board's old settings page: serve on a Pi, on port 8080) and
-`dashboard` (serve on a desktop) are the old commands, with their old
-flags. They still work, unlisted, until the first public release.
+`web` (the board's old settings page: serve on a Pi, on port 8080),
+`dashboard` (serve on a desktop) and `setup serve` (fetch) are the old
+commands, with their old flags. They still work, unlisted, until the
+first public release.
 """
 
 from __future__ import annotations
@@ -538,14 +540,17 @@ def _setup_discover(args) -> int:
     return 0
 
 
-def _setup_serve(args) -> int:
-    """The setup service: the wizard's internet work, for a settings page
-    started with --setup-via-spool (see setupspool.py)."""
+def _fetch(args) -> int:
+    """The fetch service on a Pi: the internet work of the web server, which
+    can't reach the internet itself: the wizard's lookups and the dashboard's
+    pollers (see fetch.py and setupspool.py)."""
     from . import setupspool
+    from .fetch import FetchService
 
+    install = install_named(args.install)
     store, problem = None, ""
     try:
-        store = _store(args)
+        store = Store.open(args.config, args.secrets, state_dir=args.state_dir, install=install.name)
     except ConfigError as error:
         problem = str(error)
     if problem:
@@ -558,25 +563,16 @@ def _setup_serve(args) -> int:
     stop = threading.Event()
     if problem:
         # Say so to the page, rather than stop with its requests waiting and be started again and again.
-        worker = setupspool.Worker(spool, job_folder=None, load_secrets=dict, unavailable=setupspool.NO_SETTINGS,
-                                   stop=stop)
+        service = setupspool.Worker(spool, job_folder=None, load_secrets=dict, unavailable=setupspool.NO_SETTINGS,
+                                    stop=stop)
     else:
-        target = store.target()
-
-        def settings() -> dict:
-            try:
-                return target.current()
-            except (OSError, ConfigError, ValueError, TypeError):
-                return {}  # a key test then asks about Glossop
-
-        worker = setupspool.Worker(spool, job_folder=store.folder, load_secrets=store.env, settings=settings,
-                                   stop=stop)
+        service = FetchService(store, install, spool, stop=stop)
     # systemctl stop, a timeout or update.sh: end cleanly, telling the page a running search was cancelled.
     previous = signal.signal(signal.SIGTERM, lambda signum, frame: stop.set())
     try:
-        return worker.run()
+        return service.run()
     except (OSError, setupspool.SpoolError) as error:
-        print(f"Can't use the setup spool: {error}", file=sys.stderr)
+        print(f"Can't use the spool: {error}", file=sys.stderr)
         return 2
     finally:
         signal.signal(signal.SIGTERM, previous)
@@ -1105,9 +1101,16 @@ def _parser() -> argparse.ArgumentParser:
                           help="a stop to search for, e.g. A=1000DGHS0900; repeat for each")
     discover.add_argument("--routes", action="store_true", help="also build a route strip for each line")
     discover.set_defaults(handler=_setup_discover)
-    serve = with_config(setup_sub.add_parser(
-        "serve", help="answer the settings page's setup requests; departureboard-setup.service runs this"))
-    serve.set_defaults(handler=_setup_serve)
+    # The fetch service's old name, kept working, unlisted, until the first public release.
+    old_fetch = with_config(setup_sub.add_parser("serve"))
+    old_fetch.set_defaults(handler=_fetch, install="pi", state_dir=None)
+    setup_sub.metavar = "{discover}"
+
+    fetch = with_config(sub.add_parser(
+        "fetch", help="do a Pi's internet work for its web server; departureboard-fetch.service runs this"))
+    fetch.add_argument("--install", choices=["pi"], default="pi", help="only a Pi has a fetch service")
+    fetch.add_argument("--state-dir", help="the store: the folder for saved settings, keys, the password and state")
+    fetch.set_defaults(handler=_fetch)
 
     emulate = with_config(sub.add_parser("emulate", help="run against a browser panel emulator"))
     emulate.add_argument("--demo", action="store_true", help="sample Glossop data on a fast simulated clock")

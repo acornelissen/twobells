@@ -1209,6 +1209,23 @@ def test_the_old_dashboard_command_is_hidden_but_works(capsys):
     assert (args.install, args.state_dir, args.set_password) == ("desktop", "/data", True)
 
 
+def test_the_fetch_service_is_listed_and_its_old_name_hidden_but_works():
+    import re
+
+    from departureboard.cli import _fetch, _parser
+
+    parser = _parser()
+    listed = re.search(r"\{([a-z,]+)\}", parser.format_help()).group(1).split(",")
+    assert "fetch" in listed
+    setup = parser._subparsers._group_actions[0].choices["setup"]
+    assert "serve" not in setup.format_help()
+    for argv in (["fetch"], ["setup", "serve"]):
+        args = parser.parse_args([*argv, "--config", "/etc/departureboard/config.toml"])
+        assert (args.handler, args.install, args.state_dir) == (_fetch, "pi", None)
+    with pytest.raises(SystemExit):
+        parser.parse_args(["fetch", "--install", "docker"])  # Docker and a desktop fetch in-process
+
+
 class FakeServer:
     def __init__(self):
         self.stopped = threading.Event()
@@ -1729,16 +1746,17 @@ def test_the_pis_settings_hand_setup_to_the_setup_service(tmp_path, monkeypatch,
     assert sorted(os.listdir(tmp_path / "state")) == []  # nothing of setup's on the SD card
 
 
-def test_the_setup_service_searches_in_the_boards_state_folder(tmp_path, monkeypatch, no_runtime_folder):
+@pytest.mark.parametrize("command", [["fetch"], ["setup", "serve"]])  # and by its old name, hidden
+def test_the_fetch_service_searches_in_the_boards_state_folder(tmp_path, monkeypatch, no_runtime_folder, command):
     from departureboard import setupspool
 
     ran = []
-    monkeypatch.setattr(setupspool.Worker, "run", lambda self: ran.append(self) or 0)
+    monkeypatch.setattr(setupspool.Worker, "run", lambda self, tend=None: ran.append(self) or 0)
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
     config = installed_template(tmp_path)
     secrets = tmp_path / "secrets.env"
     secrets.write_text("BODS_API_KEY=saved-bods-key\n")
-    assert main(["setup", "serve", "--config", str(config), "--secrets", str(secrets)]) == 0
+    assert main([*command, "--config", str(config), "--secrets", str(secrets)]) == 0
     [worker] = ran
     assert worker.spool.folder == tmp_path / "run" and worker._job_folder == tmp_path / "state"
     assert worker._load_secrets()["BODS_API_KEY"] == "saved-bods-key"
@@ -1762,27 +1780,29 @@ def test_without_a_folder_in_memory_the_setup_spool_is_refused(tmp_path, monkeyp
     assert "RUNTIME_DIRECTORY" in capsys.readouterr().err
     assert main(["setup", "serve", "--config", str(config), "--secrets", none]) == 2
     assert "RUNTIME_DIRECTORY" in capsys.readouterr().err
+    assert main(["fetch", "--config", str(config), "--secrets", none]) == 2
+    assert "RUNTIME_DIRECTORY" in capsys.readouterr().err
     assert os.listdir(tmp_path / "state") == []
 
 
-def test_the_page_and_the_setup_service_share_systemds_folder_in_memory(tmp_path, monkeypatch, served):
+def test_the_page_and_the_fetch_service_share_systemds_folder_in_memory(tmp_path, monkeypatch, served):
     from departureboard import setupspool
 
     run = tmp_path / "run"
     run.mkdir(mode=0o700)  # as systemd makes RuntimeDirectory=
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
     ran = []
-    monkeypatch.setattr(setupspool.Worker, "run", lambda self: ran.append(self) or 0)
+    monkeypatch.setattr(setupspool.Worker, "run", lambda self, tend=None: ran.append(self) or 0)
     config = installed_template(tmp_path)
     (tmp_path / "state").mkdir()
     none = str(tmp_path / "none.env")
     assert main(["web", "--config", str(config), "--secrets", none, "--setup-via-spool"]) == 0
-    assert main(["setup", "serve", "--config", str(config), "--secrets", none]) == 0
+    assert main(["fetch", "--config", str(config), "--secrets", none]) == 0
     assert served["app"].settings.setup._runner.spool.folder == run and ran[0].spool.folder == run
     assert (run / "requests").is_dir() and not (tmp_path / "state" / setupspool.SPOOL).exists()
 
 
-def test_the_setup_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypatch):
+def test_the_fetch_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypatch):
     # systemctl stop, a timeout or update.sh: SIGTERM mid-search. The page is told at once, not after a silence.
     import signal
 
@@ -1837,7 +1857,7 @@ def test_the_setup_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypat
     try:
         thread.start()
         try:
-            assert main(["setup", "serve", "--config", str(config), "--secrets", str(secrets)]) == 0
+            assert main(["fetch", "--config", str(config), "--secrets", str(secrets)]) == 0
         except Unhandled:
             pytest.fail("the setup service didn't handle SIGTERM")
         thread.join(5)
@@ -1849,14 +1869,14 @@ def test_the_setup_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypat
     assert [job.state for job in StuckJob.made] == ["failed"]
 
 
-def test_the_setup_service_without_a_config_searches_in_systemds_folder(tmp_path, monkeypatch, no_runtime_folder):
+def test_the_fetch_service_without_a_config_searches_in_systemds_folder(tmp_path, monkeypatch, no_runtime_folder):
     from departureboard import setupspool
 
     ran = []
-    monkeypatch.setattr(setupspool.Worker, "run", lambda self: ran.append(self) or 0)
+    monkeypatch.setattr(setupspool.Worker, "run", lambda self, tend=None: ran.append(self) or 0)
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
     monkeypatch.setenv("STATE_DIRECTORY", str(tmp_path / "lib"))
-    assert main(["setup", "serve", "--config", str(tmp_path / "missing.toml"),
+    assert main(["fetch", "--config", str(tmp_path / "missing.toml"),
                  "--secrets", str(tmp_path / "none.env")]) == 0
     [worker] = ran
     assert worker._job_folder == tmp_path / "lib"
@@ -1864,7 +1884,7 @@ def test_the_setup_service_without_a_config_searches_in_systemds_folder(tmp_path
 
 
 @pytest.mark.parametrize("config", ["not toml", "a folder"])
-def test_the_setup_service_answers_with_why_when_it_cant_read_its_config(tmp_path, monkeypatch, capsys, config):
+def test_the_fetch_service_answers_with_why_when_it_cant_read_its_config(tmp_path, monkeypatch, capsys, config):
     from departureboard import setupspool
 
     run = tmp_path / "run"
