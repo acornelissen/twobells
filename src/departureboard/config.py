@@ -31,7 +31,7 @@ from .transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
 from .themes import theme_named, with_text_size
 from .transportapi import TransportApiBusSource
 from .route import RouteStop, RouteStrip
-from .schema import BOARD_DEFAULTS, bus_defaults, refused, saved_keys, views
+from .schema import BOARD_DEFAULTS, CRS, NOC, bus_defaults, refused, saved_keys, views
 from .walk import DEFAULT_STOP, WalkTimes
 from .weather import OpenMeteoSource
 
@@ -315,16 +315,12 @@ def _policy(section: dict, defaults: dict, where: str, holidays: frozenset[date]
     return PollPolicy(windows, interval, holidays)
 
 
-# Station codes (CRS) are three letters, like GLO.
-_CRS = re.compile(r"[A-Za-z]{3}")
-
-
 def _train(section: dict, env: Mapping[str, str], holidays: frozenset[date]) -> SourceConfig:
     where = "[train] "
     crs = section.get("crs")
     if not isinstance(crs, str) or not crs.strip():
         raise ConfigError('[train] needs crs, the 3-letter station code, like crs = "GLO"')
-    if not _CRS.fullmatch(crs.strip()):
+    if not CRS.fullmatch(crs.strip()):
         raise ConfigError(f'[train] crs is {crs!r}; set your station\'s 3-letter code, like crs = "GLO"')
     defaults = BOARD_DEFAULTS["train"]
     policy = _policy(section, defaults, where, holidays)
@@ -349,10 +345,6 @@ def _stops(section: dict) -> dict[str, str]:
     return stops
 
 
-# National operator codes: a few letters or digits, like BNML.
-_NOC = re.compile(r"[A-Za-z0-9]{2,8}")
-
-
 def _transportapi(section: dict, env: Mapping[str, str], stops: dict[str, str]) -> TransportApiBusSource:
     return TransportApiBusSource(
         app_id=_secret(env, "TAPI_APP_ID"),
@@ -372,7 +364,7 @@ def _operators(section: dict) -> list[str]:
             'timetables to read, like operators = ["BNML", "HIPK"]'
         )
     for code in operators:
-        if not _NOC.fullmatch(code):
+        if not NOC.fullmatch(code):
             raise ConfigError(f"[bus] operators: {code!r} is not an operator code, like BNML")
     return operators
 
