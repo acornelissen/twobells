@@ -78,6 +78,7 @@ READ_EVERY_S = 0.5  # how often the mirror looks at the file
 
 _FIELDS = ("v", "run", "made", "version", "snapshot", "lookups", "previous", "area", "healthy")
 _SNAPSHOT_FIELDS = ("version", "generated_at", "title", "walk", *PARTS)
+_HISTORY_FIELDS = ("mode", "route", "scheduled", "label", "day_type", "phrase")
 _HEX16 = re.compile(r"[0-9a-f]{16}")
 
 
@@ -88,6 +89,19 @@ def snapshot_path(folder: Path | str) -> Path:
 def remove(folder: Path | str) -> None:
     """Delete the snapshot: the dashboard view is off, so none is kept."""
     snapshot_path(folder).unlink(missing_ok=True)
+
+
+def _lookup(value, name: str) -> None:
+    """A row's lookup: its bus map (sent as it is) and its history key,
+    which the web server asks the history with (snapshot.bus_row, train_row)."""
+    entry = _obj(value, (), ("bus", "history"))
+    if "bus" in entry and not isinstance(entry["bus"], dict):
+        raise Refused(f"{name} has a bus map that isn't an object")
+    if "history" in entry:
+        history = _obj(entry["history"], _HISTORY_FIELDS)
+        for field in _HISTORY_FIELDS:
+            if not isinstance(history[field], str) and not (field == "phrase" and history[field] is None):
+                raise Refused(f"{name} has a history {field} that isn't text")
 
 
 def check(data, now: float) -> dict:
@@ -106,8 +120,7 @@ def check(data, now: float) -> dict:
         for key, value in _dict(top[name], name, MAX_LOOKUPS).items():
             if not _HEX16.fullmatch(key):
                 raise Refused(f"{name} has a row id in the wrong form")
-            if not isinstance(value, dict):
-                raise Refused(f"{name} has an entry that isn't an object")
+            _lookup(value, name)
     if top["area"] is not None and not isinstance(top["area"], dict):
         raise Refused("area isn't an object")
     if not isinstance(top["healthy"], bool):

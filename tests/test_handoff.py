@@ -16,6 +16,8 @@ from departureboard.walk import WalkTimes
 
 BUS_ID = "4b7e000000000001"
 OLD_ID = "4b7e000000000002"
+HISTORY = {"mode": "bus", "route": "A|341|Hyde", "scheduled": "07:20", "label": "07:20 341 to Hyde",
+           "day_type": "weekday", "phrase": "Late 4 of the last 10 weekdays (avg 6 min)"}
 AREA = {"stops": [], "vehicles": [{"lat": 53.44, "lon": -1.95, "line": "341"}]}
 
 
@@ -38,7 +40,7 @@ def published_hub(bus="Hyde"):
     hub = Hub("Glossop", WalkTimes(train=10, bus={"A": 8}))
     hub.publish("buses", {"rows": [{"id": OLD_ID}]}, {OLD_ID: {"bus": {"id": OLD_ID}}})
     hub.publish("buses", {"rows": [{"id": BUS_ID, "destination": bus}]},
-                {BUS_ID: {"bus": {"id": BUS_ID, "destination": bus}, "history": {"mode": "bus"}}})
+                {BUS_ID: {"bus": {"id": BUS_ID, "destination": bus}, "history": HISTORY}})
     hub.put("area", AREA)
     return hub
 
@@ -168,7 +170,7 @@ def test_lookups_previous_and_the_area_come_through(spool):
     good_file(spool)
     mirror = mirror_of(spool)
     mirror.check()
-    assert mirror.lookup(BUS_ID) == {"bus": {"id": BUS_ID, "destination": "Hyde"}, "history": {"mode": "bus"}}
+    assert mirror.lookup(BUS_ID) == {"bus": {"id": BUS_ID, "destination": "Hyde"}, "history": HISTORY}
     assert mirror.lookup(OLD_ID) == {"bus": {"id": OLD_ID}}  # from the previous snapshot
     assert mirror.lookup("0" * 16) is None
     assert mirror.get("area") == AREA and mirror.get("other") is None
@@ -273,6 +275,11 @@ REFUSED = {
     "lookup id in capitals": lambda d: _with(d, lookups={BUS_ID.upper(): {}}),
     "previous id too long": lambda d: _with(d, previous={BUS_ID + "0": {}}),
     "a lookup not an object": lambda d: _with(d, lookups={BUS_ID: "x"}),
+    "a lookup with more": lambda d: _with(d, lookups={BUS_ID: {**d["lookups"][BUS_ID], "script": {}}}),
+    "a bus map not an object": lambda d: _with(d, lookups={BUS_ID: {"bus": "x"}}),
+    "a history short of fields": lambda d: _with(d, lookups={BUS_ID: {"history": {"mode": "bus"}}}),
+    "a history route not text": lambda d: _with(d, previous={BUS_ID: {"history": {**HISTORY, "route": 3}}}),
+    "a history mode null": lambda d: _with(d, lookups={BUS_ID: {"history": {**HISTORY, "mode": None}}}),
     "too many lookups": lambda d: _with(d, lookups={f"{n:016x}": {} for n in range(handoff.MAX_LOOKUPS + 1)}),
     "area not an object": lambda d: _with(d, area=[1]),
     "healthy not true or false": lambda d: _with(d, healthy=1),

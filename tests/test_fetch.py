@@ -22,6 +22,8 @@ PI = install_named("pi")
 ON = '[app]\nviews = ["board", "dashboard"]\n'
 OFF = '[app]\nviews = ["board"]\n'
 ROW = "4b7e000000000001"
+HISTORY = {"mode": "train", "route": "GLO|Manchester", "scheduled": "07:12", "label": "07:12 to Manchester",
+           "day_type": "weekday", "phrase": None}
 
 
 class FakeCollector:
@@ -36,7 +38,7 @@ class FakeCollector:
 
     def start(self):
         self.started = True
-        self.hub.publish("trains", {"rows": [{"id": ROW}]}, {ROW: {"history": {"mode": "train"}}})
+        self.hub.publish("trains", {"rows": [{"id": ROW}]}, {ROW: {"history": HISTORY}})
 
     def stop(self, timeout=5.0):
         self.stopped = True
