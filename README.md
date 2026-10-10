@@ -184,8 +184,11 @@ Then open `http://<pi name>.local:8080/` from a phone or laptop on the same netw
   - The wizard under `/setup/` is the only part with JavaScript, and the only part whose Content-Security-Policy
     allows it (`script-src 'self'`). It serves a fixed list of files with set content types, and its JSON API needs
     the session, its form token in an `X-CSRF-Token` header, a same-origin request and a body under 16 kB.
-  - Its lookups (postcodes, stops, walk times, bus timetables) go out from the settings page's service, so they need
-    the Pi's internet connection.
+  - The page's own service can't reach the internet (its unit's IP filter), so a flaw in it can't be used to. The
+    wizard's lookups (postcodes, stops, walk times, key tests, bus timetables) run in a separate
+    `departureboard-setup.service` with outbound access only, started by `departureboard-setup.path` when the page
+    leaves a request in `/var/lib/departureboard/setup-spool/` and stopped a minute after the last. It reads the
+    saved keys itself; a request holds only what you typed or pasted, and is deleted as it is read.
   - Five wrong passwords lock an address out for 15 minutes.
   - Being on the network is not enough to set a password: that needs a one-time code from the board's display (or
     the command line). A code lasts 10 minutes and works once; five wrong tries void it; at most one is shown a minute

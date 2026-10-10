@@ -164,6 +164,8 @@ Saving keeps your other settings: the look, rotation, text size and so on. Chang
 
 Where home goes: your postcode to postcodes.io (or the address you type to OpenStreetMap's Nominatim), then its position once to the OpenStreetMap foot router for walk times. The maps, only if you open them, load pictures from OpenStreetMap, which then sees roughly where home is. The board keeps only a rough position, to about 1 km, for the rain warning.
 
+Why setup has a service of its own: the settings page is kept to your home network, by the page and by the Pi's own firewall rules for it, so even a flaw in it can't reach the internet. The wizard's lookups, key tests and bus company search do need the internet, so on the Pi they run in a separate service, `departureboard-setup`, that starts when you use setup and stops a minute after. The page passes it each request through a private folder on the Pi (`/var/lib/departureboard/setup-spool`), deleted as soon as it is read; saved keys never go that way, as the setup service reads them itself. On the dashboard, the lookups run in the dashboard itself.
+
 The wizard is the one part of the settings page that needs JavaScript. The rest works without it.
 
 ### What you can change
@@ -374,7 +376,8 @@ Settings saved on the page go to `/var/lib/departureboard/settings.toml` and ove
 | What you see | Likely cause | What to do |
 |---|---|---|
 | Board says **Set me up** | Not set up yet: `config.toml` is still the template, or missing | Open the address it shows and follow the [setup wizard](#setting-up-home-station-and-stops), or fill in `config.toml` |
-| Setup can't find a postcode, stops or bus companies | The Pi can't reach the services setup asks, or one is down | Check the Pi's internet connection; `journalctl -u departureboard-web -n 20` |
+| Setup can't find a postcode, stops or bus companies | The Pi can't reach the services setup asks, or one is down | Check the Pi's internet connection; `journalctl -u departureboard-setup -n 20` |
+| Setup says **The setup service didn't answer in time** | The setup service isn't being started | `sudo systemctl enable --now departureboard-setup.path`; `systemctl status departureboard-setup.path departureboard-setup.service` |
 | E-paper blank after install | No data fetched yet | Wait a minute; check `journalctl -u departureboard -f` |
 | `NOT UPDATING: TRAINS` | Rail key wrong, or the feed is down | `departureboard probe train` |
 | `NOT UPDATING: BUSES` | No bus timetable yet and no TransportAPI keys; or TransportAPI's daily budget spent, its key wrong, or its feed down | Status section on the settings page; `departureboard probe bus` |
@@ -400,6 +403,7 @@ On the Pi, run these as `sudo /opt/departureboard/venv/bin/departureboard …`; 
 journalctl -u departureboard -f                 # e-paper board log
 journalctl -u departureboard-screen -f          # screen board log
 journalctl -u departureboard-web -f             # settings page log
+journalctl -u departureboard-setup -f           # setup wizard's lookups and bus company search
 departureboard probe train                      # check the rail key and station
 departureboard probe bus                        # check the bus keys and stops (TransportAPI: costs lookups)
 journalctl -u departureboard-timetable -n 20    # bus timetable builds
