@@ -426,8 +426,8 @@ Or set the password from the command line, even while the server runs. It asks f
 - **Docker**, on the NAS over SSH:
 
   ```bash
-  docker exec -it departureboard python -m departureboard.cli serve --set-password --state-dir /data
-  docker exec -it departureboard python -m departureboard.cli serve --reset-code --state-dir /data
+  docker exec -it departureboard python -m departureboard serve --set-password --state-dir /data
+  docker exec -it departureboard python -m departureboard serve --reset-code --state-dir /data
   ```
 
   Put `sudo` in front if Docker refuses permission. Both write only to the container's `/data` volume.

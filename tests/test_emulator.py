@@ -195,7 +195,7 @@ def test_default_port_avoids_claudecodebrowserx():
 
 
 def test_emulate_command_uses_the_shared_default_port():
-    from departureboard.cli import _parser
+    from departureboard.cli.main import _parser
     from departureboard.emulator.server import DEFAULT_PORT
 
     assert _parser().parse_args(["emulate", "--demo"]).port == DEFAULT_PORT

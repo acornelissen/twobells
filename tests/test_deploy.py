@@ -96,10 +96,10 @@ def _entrypoint() -> list[str]:
 
 
 def test_the_container_serves_as_a_docker_install_in_its_one_writable_folder():
-    from departureboard.cli import _parser
+    from departureboard.cli.main import _parser
 
     entrypoint = _entrypoint()
-    assert entrypoint[:3] == ["python", "-m", "departureboard.cli"]
+    assert entrypoint[:3] == ["python", "-m", "departureboard"]
     args = _parser().parse_args(entrypoint[3:])
     assert (args.command, args.install, args.state_dir, args.host, args.port) == ("serve", "docker", "/data",
                                                                                   "0.0.0.0", 8090)
@@ -109,16 +109,16 @@ def test_the_container_serves_as_a_docker_install_in_its_one_writable_folder():
 
 def test_the_documented_password_commands_fit_the_container():
     # Run with docker exec as the image's user, in the one writable place: /data.
-    from departureboard.cli import _parser
+    from departureboard.cli.main import _parser
 
     assert "container_name: departureboard\n" in COMPOSE and "dashboard-data:/data" in COMPOSE
     assert "WORKDIR /data" in DOCKERFILE and "chown 10001:10001 /data" in DOCKERFILE
     docs = (ROOT / "docs" / "USER_GUIDE.md").read_text() + (ROOT / "README.md").read_text()
     for flag in ("--set-password", "--reset-code"):
-        command = f"docker exec -it departureboard python -m departureboard.cli serve {flag} --state-dir /data"
+        command = f"docker exec -it departureboard python -m departureboard serve {flag} --state-dir /data"
         assert docs.count(command) == 2, flag  # once in each
         words = shlex.split(command)
-        assert words[:7] == ["docker", "exec", "-it", "departureboard", "python", "-m", "departureboard.cli"]
+        assert words[:7] == ["docker", "exec", "-it", "departureboard", "python", "-m", "departureboard"]
         args = _parser().parse_args(words[7:])
         assert (args.command, args.state_dir, getattr(args, flag[2:].replace("-", "_"))) == ("serve", "/data", True)
     from departureboard.settings.installs import install_named
@@ -180,7 +180,8 @@ def test_the_settings_page_stays_on_the_home_network_and_hands_its_internet_work
 
 
 def test_the_pi_serves_its_settings_at_8090_and_nothing_at_8080():
-    from departureboard.cli import WEB_PORT, _parser, setup_url
+    from departureboard.cli.common import WEB_PORT, setup_url
+    from departureboard.cli.main import _parser
     from departureboard.settings.installs import install_named
 
     web = _unit("departureboard-web.service")
@@ -334,7 +335,7 @@ def test_install_and_update_ask_the_app_not_config_toml(name):
 ])
 def test_install_and_update_keep_the_bus_timetable_only_when_the_settings_want_it(tmp_path, name, config, saved,
                                                                                     wanted):
-    from departureboard.cli import main
+    from departureboard.cli.main import main
 
     _settings(tmp_path, config, saved)
     assert (main(_query(name, "needs-timetable", tmp_path)) == 0) == wanted
@@ -353,7 +354,7 @@ def test_install_starts_the_settings_and_the_fetch_service_and_installs_every_un
 
 @pytest.mark.parametrize("saved, board", [("", True), ('[app]\nviews = ["dashboard"]\n', False)])
 def test_install_names_the_boards_unit_only_while_its_view_is_on(tmp_path, capsys, saved, board):
-    from departureboard.cli import main
+    from departureboard.cli.main import main
 
     _settings(tmp_path, saved=saved)
     assert main(_query("install.sh", "views", tmp_path)) == 0
@@ -370,7 +371,7 @@ def test_install_names_the_boards_unit_only_while_its_view_is_on(tmp_path, capsy
 def test_install_names_the_boards_unit_for_the_display_and_never_starts_it(tmp_path, capsys, display, renderer):
     import subprocess
 
-    from departureboard.cli import main
+    from departureboard.cli.main import main
 
     _settings(tmp_path, display)
     assert main(_query("install.sh", "display", tmp_path)) == 0
@@ -694,7 +695,7 @@ def test_the_documented_docker_run_is_locked_down_as_compose():
 
 
 def _desktop_serve(argv: list[str]) -> None:
-    from departureboard.cli import _parser
+    from departureboard.cli.main import _parser
     from departureboard.settings.installs import install_named
 
     args = _parser().parse_args(argv)

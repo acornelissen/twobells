@@ -20,7 +20,7 @@ Settings saved from the dashboard's settings page (and its setup wizard) go
 in the store too, never beside config.toml, which is read-only in Docker:
 the one settings.toml and secrets.env the board's page saves into. The
 dashboard watches every file its settings come from and, when one changes
-and the result still loads, starts afresh to use them (see cli._dashboard).
+and the result still loads, starts afresh to use them (see _SettingsWatch in cli/serve.py).
 """
 
 from __future__ import annotations

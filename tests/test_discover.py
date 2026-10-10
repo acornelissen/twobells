@@ -885,7 +885,7 @@ def cli_config(tmp_path, monkeypatch, bods):
 
 
 def test_cli_discover_prints_the_fragment(cli_config, capsys):
-    from departureboard.cli import main
+    from departureboard.cli.main import main
 
     args, state, made = cli_config
     code = main(["setup", "discover", "--stop", f"A={STOP_A}", "--stop", f"B={STOP_B}", "--routes", *args])
@@ -903,7 +903,7 @@ def test_cli_discover_prints_the_fragment(cli_config, capsys):
 
 
 def test_cli_discover_shows_the_roads_every_25_and_the_last(cli_config, capsys, monkeypatch):
-    from departureboard.cli import main
+    from departureboard.cli.main import main
 
     class Job:
         """Moves one step on each poll: two data sets, then 60 roads once the
@@ -943,7 +943,7 @@ def test_cli_discover_shows_the_roads_every_25_and_the_last(cli_config, capsys, 
 
 
 def test_cli_discover_does_not_write_config(cli_config, capsys):
-    from departureboard.cli import main
+    from departureboard.cli.main import main
 
     args, state, _ = cli_config
     config = Path(args[1])
@@ -954,7 +954,7 @@ def test_cli_discover_does_not_write_config(cli_config, capsys):
 
 
 def test_cli_discover_reports_failure(cli_config, capsys):
-    from departureboard.cli import main
+    from departureboard.cli.main import main
 
     args, _, _ = cli_config
     assert main(["setup", "discover", "--stop", "A=1000NOWHERE1", *args]) == 1
@@ -962,7 +962,7 @@ def test_cli_discover_reports_failure(cli_config, capsys):
 
 
 def test_cli_discover_needs_a_key(cli_config, tmp_path, capsys):
-    from departureboard.cli import main
+    from departureboard.cli.main import main
 
     args, _, _ = cli_config
     assert main(["setup", "discover", "--stop", f"A={STOP_A}", "--config", args[1],

@@ -51,7 +51,7 @@ rm -rf "$build/build" "$build"/src/*.egg-info
 # The code is built with the hashed setuptools, not one fetched for the build.
 "$PREFIX/venv/bin/pip" install --require-hashes --no-deps -r "$REPO/deploy/requirements-build.txt"
 "$PREFIX/venv/bin/pip" install --no-deps --no-build-isolation "$build"
-"$PREFIX/venv/bin/python" -c "import departureboard.cli, inky, PIL, numpy, smbus2, spidev, gpiod" \
+"$PREFIX/venv/bin/python" -c "import departureboard.cli.main, inky, PIL, numpy, smbus2, spidev, gpiod" \
   || { echo "A dependency is missing; see the error above" >&2; exit 1; }
 
 install -d -m 755 "$CONF"

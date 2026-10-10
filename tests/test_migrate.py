@@ -206,7 +206,7 @@ def test_a_problem_never_stops_a_start(board, old, caplog):
 def test_dashboard_brings_the_old_folder_before_setting_a_password(tmp_path, home, monkeypatch):
     import getpass
 
-    from departureboard.cli import main
+    from departureboard.cli.main import main
     from departureboard.web.auth import PasswordStore
 
     write(stores.platform_base() / "departureboard-dashboard" / "settings.toml", 'title = "Ours"\n')

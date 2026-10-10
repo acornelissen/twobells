@@ -29,8 +29,8 @@ No `config.toml` is needed: the setup wizard saves your settings in the install'
 The settings password is claimed with a code shown on the board, or put in the log where there is no board. Or set it from the command line; in Docker:
 
 ```bash
-docker exec -it departureboard python -m departureboard.cli serve --set-password --state-dir /data
-docker exec -it departureboard python -m departureboard.cli serve --reset-code --state-dir /data
+docker exec -it departureboard python -m departureboard serve --set-password --state-dir /data
+docker exec -it departureboard python -m departureboard serve --reset-code --state-dir /data
 ```
 
 Upgrading from the separate board settings page (port 8080) or `departureboard dashboard`: see [Upgrading](docs/USER_GUIDE.md#13-upgrading-from-before-the-two-views).
@@ -87,7 +87,7 @@ The server and the dashboard page talk through a read-only JSON and SSE API, spe
 
 | Module | Role |
 |---|---|
-| `cli.py` | The commands (see the [user guide](docs/USER_GUIDE.md#11-commands)) |
+| `cli/` | The commands, a module each, and the parser in `cli/main.py` (see the [user guide](docs/USER_GUIDE.md#11-commands)) |
 | `installs.py` | The kinds of install (Pi, Docker, desktop) and everything that differs between them |
 | `store.py` | The store: the one folder an install saves in, and how settings and keys are layered over `config.toml` |
 | `migrate.py` | Brings the old dashboard's folder into the store, once, on a desktop |

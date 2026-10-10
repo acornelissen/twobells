@@ -589,7 +589,8 @@ def test_an_address_too_long_to_read_on_one_line_breaks_before_its_port():
 @pytest.mark.parametrize("panel", PANELS)
 @pytest.mark.parametrize("off", [False, True])
 def test_the_settings_address_the_board_shows_fits_with_a_long_name(panel, off):
-    from departureboard.cli import OFF_HEADING, OFF_NOTE, setup_url
+    from departureboard.cli.common import setup_url
+    from departureboard.cli.run import OFF_HEADING, OFF_NOTE
 
     url = setup_url("my-very-long-departure-board-name")
     assert url.endswith(":8090/settings")

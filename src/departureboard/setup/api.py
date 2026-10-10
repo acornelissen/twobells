@@ -348,7 +348,7 @@ def saved_message(install: Install, views: Sequence[str]) -> str:
     if "board" in views:
         said.append("The board shows the new settings within a few minutes.")
     if "dashboard" in views:
-        if install.fetch == "process":  # serve starts again with the new settings (cli._SettingsWatch)
+        if install.fetch == "process":  # serve starts again with the new settings (cli/serve.py, _SettingsWatch)
             said.append("The dashboard starts again in a few seconds to use them.")
         else:
             said.append("The dashboard shows them within a few minutes.")

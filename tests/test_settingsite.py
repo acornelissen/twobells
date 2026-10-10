@@ -303,7 +303,7 @@ def test_the_sessions_are_built_on_the_stores_one_password(dash):
 
 def test_without_a_password_the_page_says_how_to_set_one(make):
     for install, command in (("pi", "departureboard serve --install pi --set-password"),
-                             ("docker", "departureboard.cli serve --set-password --state-dir /data")):
+                             ("docker", "departureboard serve --set-password --state-dir /data")):
         running = make(install=install)
         _, text = running("GET", "/settings/login")
         assert command in text, install
@@ -1182,7 +1182,7 @@ def test_asking_for_a_code_from_the_log_needs_this_browsers_form_token(signed, c
 def test_a_password_set_from_the_command_line_signs_every_browser_out(signed, monkeypatch, capsys):
     import getpass
 
-    from departureboard.cli import main
+    from departureboard.cli.main import main
 
     old, _ = signed.sign_in()
     assert signed("GET", "/settings", cookie=old)[0].status == 200
@@ -1197,7 +1197,7 @@ def test_a_password_set_from_the_command_line_signs_every_browser_out(signed, mo
 
 
 def test_a_code_from_the_command_line_claims_the_running_server(dash, capsys, caplog):
-    from departureboard.cli import main
+    from departureboard.cli.main import main
 
     assert main(["dashboard", "--reset-code", "--state-dir", str(dash.folder)]) == 0
     code = re.search(r"Settings reset code: (\d{3} \d{3})", capsys.readouterr().out).group(1)

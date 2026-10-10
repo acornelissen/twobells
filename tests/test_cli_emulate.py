@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from departureboard.cli import main
+from departureboard.cli.main import main
 from departureboard.emulator.emulation import build_emulation, demo_outage
 from departureboard.emulator.fake import FakeBusSource, FakeTrainSource
 from departureboard.sources.transportapi import TransportApiBusSource

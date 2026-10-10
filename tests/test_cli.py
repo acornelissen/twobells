@@ -11,7 +11,8 @@ from typing import ClassVar
 import pytest
 from PIL import Image
 
-from departureboard.cli import load_env_file, main
+from departureboard.cli.main import main
+from departureboard.settings.config import load_env_file
 from departureboard.sources import holidays
 
 
@@ -55,11 +56,11 @@ def test_demo_can_show_a_notice_and_a_rain_line(tmp_path, display, theme):
 
 
 def test_demo_rain_line_follows_the_rain_rule(monkeypatch, tmp_path):
-    from departureboard import cli
+    from departureboard.cli import dev
 
     views = []
-    real = cli.build_view
-    monkeypatch.setattr(cli, "build_view", lambda *a, **k: views.append(real(*a, **k)) or views[-1])
+    real = dev.build_view
+    monkeypatch.setattr(dev, "build_view", lambda *a, **k: views.append(real(*a, **k)) or views[-1])
     main(["demo", "--png", str(tmp_path / "a.png"), "--rain"])
     main(["demo", "--png", str(tmp_path / "b.png"), "--rain", "--display", "hdmi-1280x400"])
     main(["demo", "--png", str(tmp_path / "c.png"), "--notice"])
@@ -247,10 +248,10 @@ def test_probe_details_is_for_trains_only(probe_env, capsys):
 
 
 def test_emulate_primes_the_first_tick(monkeypatch):
-    import departureboard.cli as cli
+    from departureboard.cli import dev
 
     seen = {}
-    monkeypatch.setattr(cli, "run_loop", lambda *a, **kw: seen.update(kw))
+    monkeypatch.setattr(dev, "run_loop", lambda *a, **kw: seen.update(kw))
     assert main(["emulate", "--demo", "--no-browser", "--port", "0"]) == 0
     assert seen.get("prime") is True
 
@@ -258,12 +259,12 @@ def test_emulate_primes_the_first_tick(monkeypatch):
 def _run_setup(tmp_path, monkeypatch):
     from datetime import datetime
 
-    import departureboard.cli as cli
+    from departureboard.cli import run
     from departureboard.sources.darwin import DarwinSource
 
     calls = []
     monkeypatch.setattr(DarwinSource, "fetch", lambda self: calls.append(1) or [])
-    monkeypatch.setattr(cli, "_local_now", lambda tz: datetime(2026, 10, 10, 12, 0))  # Saturday
+    monkeypatch.setattr(run, "local_now", lambda tz: datetime(2026, 10, 10, 12, 0))  # Saturday
     config = tmp_path / "config.toml"
     config.write_text(
         f'state_file = "{tmp_path / "state.json"}"\n'
@@ -309,14 +310,14 @@ def test_run_loop_on_a_screen_draws_a_running_clock(tmp_path, monkeypatch):
 
 
 def test_sleeping_to_the_tick_lands_on_a_whole_second(monkeypatch):
-    from departureboard import cli
+    from departureboard.cli import common
 
     slept = []
-    monkeypatch.setattr(cli.time, "time", lambda: 1000.25)
-    monkeypatch.setattr(cli.time, "sleep", slept.append)
-    cli._sleep_to_the_tick(1)
-    cli._sleep_to_the_tick(60)
-    cli._sleep_to_the_tick(0)
+    monkeypatch.setattr(common.time, "time", lambda: 1000.25)
+    monkeypatch.setattr(common.time, "sleep", slept.append)
+    common.sleep_to_the_tick(1)
+    common.sleep_to_the_tick(60)
+    common.sleep_to_the_tick(0)
     assert slept == [0.75, 19.75]  # 1000.25 s is 40.25 s past a minute
 
 
@@ -350,7 +351,7 @@ def test_route_searches_each_download_before_fetching_the_next(tmp_path, capsys,
     import zipfile
     from pathlib import Path
 
-    from departureboard import cli
+    from departureboard.cli import dev
     from departureboard.timetable import routesetup
 
     txc = (Path(__file__).parent / "fixtures" / "txc_glossop_synthetic.xml").read_bytes()
@@ -365,7 +366,7 @@ def test_route_searches_each_download_before_fetching_the_next(tmp_path, capsys,
         return buffer.getvalue()
 
     real_patterns = routesetup.patterns
-    monkeypatch.setattr(cli, "get_bytes", fake_get)
+    monkeypatch.setattr(dev, "get_bytes", fake_get)
     monkeypatch.setattr(routesetup, "dataset_urls", lambda key, noc, line: ["one", "two"])
     monkeypatch.setattr(routesetup, "patterns", lambda doc, line: events.append("search") or real_patterns(doc, line))
     monkeypatch.setattr(routesetup, "naptan_stops", lambda atcos: {a: (a, 53.4, -1.9) for a in atcos})
@@ -388,7 +389,7 @@ def test_route_needs_a_known_stop(tmp_path, capsys):
 
 
 def test_keys_saved_from_the_web_page_win_over_secrets_env(tmp_path):
-    from departureboard.cli import _env
+    from departureboard.cli.dev import _env
 
     config = tmp_path / "config.toml"
     config.write_text(f'state_file = "{tmp_path / "state" / "state.json"}"\n')
@@ -404,14 +405,15 @@ def test_keys_saved_from_the_web_page_win_over_secrets_env(tmp_path):
 def _watched(tmp_path, extra=""):
     import argparse
 
-    from departureboard.cli import _settings, _Watcher
+    from departureboard.cli.common import load_settings
+    from departureboard.cli.run import _Watcher
 
     state = tmp_path / "state"
     state.mkdir()
     config = tmp_path / "config.toml"
     config.write_text(f'state_file = "{state / "state.json"}"\ntitle = "Before"\n{extra}')
     args = argparse.Namespace(config=str(config), secrets=str(tmp_path / "none.env"))
-    return _Watcher(args, _settings(args)), state
+    return _Watcher(args, load_settings(args)), state
 
 
 def test_watcher_reloads_when_saved_settings_change(tmp_path):
@@ -424,7 +426,7 @@ def test_watcher_reloads_when_saved_settings_change(tmp_path):
 
 
 def test_watcher_asks_for_a_restart_when_the_display_changes(tmp_path):
-    from departureboard.cli import _Restart
+    from departureboard.cli.run import _Restart
 
     watcher, state = _watched(tmp_path, 'display = "hdmi-1280x400"\n')
     (state / "settings.toml").write_text("rotate = 90\n")
@@ -455,7 +457,7 @@ def test_run_saves_state_even_when_drawing_fails(tmp_path, monkeypatch):
 
 
 def test_env_without_a_readable_config_is_just_the_environment(tmp_path):
-    from departureboard.cli import _env
+    from departureboard.cli.dev import _env
 
     config = tmp_path / "config.toml"
     config.write_text("title = \n")
@@ -618,12 +620,12 @@ def _holiday_run(tmp_path, monkeypatch, extra=""):
     """A board with a Mon-Fri train window, run at 07:00 on the August bank holiday Monday."""
     from datetime import datetime
 
-    import departureboard.cli as cli
+    from departureboard.cli import run
     from departureboard.sources.darwin import DarwinSource
 
     calls = []
     monkeypatch.setattr(DarwinSource, "fetch", lambda self: calls.append(1) or [])
-    monkeypatch.setattr(cli, "_local_now", lambda tz: datetime(2026, 8, 31, 7, 0))
+    monkeypatch.setattr(run, "local_now", lambda tz: datetime(2026, 8, 31, 7, 0))
     state = tmp_path / "state"
     state.mkdir()
     (state / "state.json").write_text('{"sources": {}}')  # not a first run, so nothing is primed
@@ -686,11 +688,12 @@ def test_a_probe_never_asks_gov_uk(tmp_path, monkeypatch, gov_uk):
 def test_reloaded_settings_keep_the_bank_holidays(tmp_path, monkeypatch):
     import argparse
 
-    from departureboard.cli import _settings, _Watcher
+    from departureboard.cli.common import load_settings
+    from departureboard.cli.run import _Watcher
 
     args, _ = _holiday_run(tmp_path, monkeypatch)
     namespace = argparse.Namespace(config=args[1], secrets=args[3])
-    watcher = _Watcher(namespace, _settings(namespace))
+    watcher = _Watcher(namespace, load_settings(namespace))
     (tmp_path / "state" / "settings.toml").write_text('title = "After"\n')
     board = watcher()
     assert board.sources[0].policy.holidays == {date(2026, 8, 31)}
@@ -836,7 +839,7 @@ def test_probe_bus_with_bods_says_why_it_cannot_use_the_timetable(bods_env, caps
 
 
 def test_dashboard_options_parse_with_their_defaults():
-    from departureboard.cli import _parser
+    from departureboard.cli.main import _parser
 
     args = _parser().parse_args(["dashboard"])
     assert (args.state_dir, args.host, args.port, args.lan, args.no_browser) == (None, "127.0.0.1", None, False, False)
@@ -931,7 +934,7 @@ def answering(port, deadline=10.0):
 
 
 def test_dashboard_starts_again_when_its_saved_settings_change(dashboard_config, tmp_path, monkeypatch, caplog):
-    from departureboard import cli
+    from departureboard.cli import serve
     from departureboard.core import net
     from departureboard.dashboard.config import load_dashboard
 
@@ -940,8 +943,8 @@ def test_dashboard_starts_again_when_its_saved_settings_change(dashboard_config,
 
     started_again = []
     monkeypatch.setattr(net, "urlopen", offline)
-    monkeypatch.setattr(cli, "SETTINGS_CHECK_S", 0.05)
-    monkeypatch.setattr(cli, "_start_again", started_again.append)
+    monkeypatch.setattr(serve, "SETTINGS_CHECK_S", 0.05)
+    monkeypatch.setattr(serve, "_start_again", started_again.append)
     caplog.set_level("INFO")
     folder, port = tmp_path / "dash", free_port()
 
@@ -965,13 +968,13 @@ def test_dashboard_starts_again_when_its_saved_settings_change(dashboard_config,
 
 
 def test_starting_again_runs_the_same_command_on_the_same_port_without_the_browser(monkeypatch):
-    from departureboard import cli
+    from departureboard.cli import serve
 
     ran = []
-    monkeypatch.setattr(sys, "orig_argv", ["python3", "-m", "departureboard.cli", "dashboard", "--lan"])
+    monkeypatch.setattr(sys, "orig_argv", ["python3", "-m", "departureboard", "dashboard", "--lan"])
     monkeypatch.setattr(os, "execv", lambda path, argv: ran.append((path, argv)))
-    cli._start_again(8091)
-    assert ran == [(sys.executable, [sys.executable, "-m", "departureboard.cli", "dashboard", "--lan",
+    serve._start_again(8091)
+    assert ran == [(sys.executable, [sys.executable, "-m", "departureboard", "dashboard", "--lan",
                                      "--no-browser", "--port", "8091"])]
 
 
@@ -1257,7 +1260,7 @@ def test_dockers_first_run_claims_in_the_log_sets_up_and_starts_the_dashboard_ag
     # A new container: no config.toml, nothing saved, the key from the environment.
     import re
 
-    from departureboard import cli
+    from departureboard.cli import serve
     from departureboard.core import net
     from departureboard.dashboard import collector
     from departureboard.web import server as dashserver
@@ -1266,9 +1269,9 @@ def test_dockers_first_run_claims_in_the_log_sets_up_and_starts_the_dashboard_ag
         raise OSError("offline in tests")
 
     monkeypatch.setattr(net, "urlopen", offline)
-    monkeypatch.setattr(cli, "SETTINGS_CHECK_S", 0.05)
+    monkeypatch.setattr(serve, "SETTINGS_CHECK_S", 0.05)
     started_again = []
-    monkeypatch.setattr(cli, "_start_again", started_again.append)
+    monkeypatch.setattr(serve, "_start_again", started_again.append)
     monkeypatch.setenv("RDM_API_KEY", "from-the-environment")
     caplog.set_level("INFO")
     folder, port = tmp_path / "data", free_port()
@@ -1371,7 +1374,7 @@ def test_serve_knows_only_the_installs_there_are(tmp_path, capsys):
 def test_the_old_dashboard_command_is_hidden_but_works(capsys):
     import re
 
-    from departureboard.cli import _parser
+    from departureboard.cli.main import _parser
 
     help_text = _parser().format_help()
     listed = re.search(r"\{([a-z,]+)\}", help_text).group(1).split(",")
@@ -1384,7 +1387,8 @@ def test_the_old_dashboard_command_is_hidden_but_works(capsys):
 def test_the_fetch_service_is_listed_and_its_old_name_hidden_but_works():
     import re
 
-    from departureboard.cli import _fetch, _parser
+    from departureboard.cli.main import _parser
+    from departureboard.cli.serve import fetch_command
 
     parser = _parser()
     listed = re.search(r"\{([a-z,]+)\}", parser.format_help()).group(1).split(",")
@@ -1393,7 +1397,7 @@ def test_the_fetch_service_is_listed_and_its_old_name_hidden_but_works():
     assert "serve" not in setup.format_help()
     for argv in (["fetch"], ["setup", "serve"]):
         args = parser.parse_args([*argv, "--config", "/etc/departureboard/config.toml"])
-        assert (args.handler, args.install, args.state_dir) == (_fetch, "pi", None)
+        assert (args.handler, args.install, args.state_dir) == (fetch_command, "pi", None)
     with pytest.raises(SystemExit):
         parser.parse_args(["fetch", "--install", "docker"])  # Docker and a desktop fetch in-process
 
@@ -1457,7 +1461,7 @@ def test_query_says_why_when_the_settings_cant_be_read(tmp_path, capsys, what, c
 def test_query_needs_no_keys_and_is_hidden(tmp_path, monkeypatch, capsys):
     import re
 
-    from departureboard.cli import _parser
+    from departureboard.cli.main import _parser
 
     for name in ("RDM_API_KEY", "BODS_API_KEY", "TAPI_APP_ID", "TAPI_APP_KEY"):
         monkeypatch.delenv(name, raising=False)
@@ -1486,16 +1490,16 @@ class FakeServer:
 ])
 def test_serve_starts_again_only_when_the_dashboard_should_start_stop_or_change(
         dashboard_config, tmp_path, monkeypatch, running, saved, restarts):
-    from departureboard import cli
+    from departureboard.cli import serve
     from departureboard.settings.installs import install_named
     from departureboard.settings.store import Store
 
-    monkeypatch.setattr(cli, "SETTINGS_CHECK_S", 0.02)
+    monkeypatch.setattr(serve, "SETTINGS_CHECK_S", 0.02)
     folder = tmp_path / "data"
     folder.mkdir()
     store = Store.open(dashboard_config, tmp_path / "none.env", state_dir=folder)
     server = FakeServer()
-    watch = cli._SettingsWatch(store, install_named("docker"), server, running)
+    watch = serve._SettingsWatch(store, install_named("docker"), server, running)
     watch.start()
     try:
         time.sleep(0.05)
@@ -1687,7 +1691,7 @@ def test_dashboard_reset_code_prints_one_code_the_settings_will_take(tmp_path, n
 ])
 def test_the_setup_wizard_is_one_page_on_every_install_in_its_own_words(dashboard_config, tmp_path, install, noun,
                                                                         offered, on, links):
-    from departureboard import cli
+    from departureboard.cli import serve
     from departureboard.settings.installs import install_named
     from departureboard.settings.schema import keys
     from departureboard.settings.store import Store
@@ -1695,7 +1699,7 @@ def test_the_setup_wizard_is_one_page_on_every_install_in_its_own_words(dashboar
     folder = tmp_path / "dash"
     folder.mkdir()
     store = Store.open(dashboard_config, tmp_path / "nonexistent", state_dir=folder, install=install)
-    site = cli._settings_site(store, install_named(install), install != "pi")
+    site = serve._settings_site(store, install_named(install), install != "pi")
     status, body = site.setup.handle("begin", {})
     assert status == 200 and body["title"] == "Set up your departures" and body["noun"] == noun
     # The keys every view uses; TransportAPI's and the dashboard's own are on their tabs.
@@ -1728,10 +1732,10 @@ def saved_page(folder):
 
 
 def test_a_template_config_shows_the_setup_page_instead_of_failing(tmp_path, monkeypatch, caplog):
-    import departureboard.cli as cli
+    from departureboard.cli import common
 
     caplog.set_level("INFO")
-    monkeypatch.setattr(cli.socket, "gethostname", lambda: "kitchen-board")
+    monkeypatch.setattr(common.socket, "gethostname", lambda: "kitchen-board")
     config = installed_template(tmp_path)
     for _ in range(3):  # the timer, minute after minute: never a failure
         assert main(first_run_args(tmp_path, config)) == 0
@@ -1746,10 +1750,10 @@ def test_a_template_config_shows_the_setup_page_instead_of_failing(tmp_path, mon
 
 @pytest.mark.parametrize("config", sorted(FIRST_RUNS))
 def test_a_pi_not_set_up_shows_set_me_up_with_the_settings_address(tmp_path, monkeypatch, caplog, config):
-    import departureboard.cli as cli
+    from departureboard.cli import common
 
     caplog.set_level("INFO")
-    monkeypatch.setattr(cli.socket, "gethostname", lambda: "kitchen-board")
+    monkeypatch.setattr(common.socket, "gethostname", lambda: "kitchen-board")
     folder = tmp_path / "lib"
     folder.mkdir()
     monkeypatch.setenv("STATE_DIRECTORY", str(folder))  # as systemd sets it for the board's units
@@ -1797,31 +1801,31 @@ def test_a_screen_not_yet_set_up_keeps_running(tmp_path):
 
 
 def test_a_screen_starts_again_once_set_up(tmp_path, monkeypatch):
-    import departureboard.cli as cli
+    from departureboard.cli import run
 
     answers = iter([True, True, False])  # set up between the first tick and the second
-    monkeypatch.setattr(cli, "needs_setup", lambda config: next(answers))
-    monkeypatch.setattr(cli, "SETUP_CHECK_S", 0)
+    monkeypatch.setattr(run, "needs_setup", lambda config: next(answers))
+    monkeypatch.setattr(run, "SETUP_CHECK_S", 0)
     config = installed_template(tmp_path, "hdmi-1280x400")
     # Once, for systemd's Restart=on-failure to start the board with its settings.
-    assert main(first_run_args(tmp_path, config, "--loop", "--ticks", "10", "--tick", "0")) == cli.RESTART
+    assert main(first_run_args(tmp_path, config, "--loop", "--ticks", "10", "--tick", "0")) == run.RESTART
     assert saved_page(tmp_path / "state") == "setup"
 
 
 def test_a_running_board_asks_whether_it_is_set_up_every_few_seconds(monkeypatch):
-    import departureboard.cli as cli
+    from departureboard.cli import run
 
     asked = []
-    monkeypatch.setattr(cli, "needs_setup", lambda config: asked.append(config) or True)
+    monkeypatch.setattr(run, "needs_setup", lambda config: asked.append(config) or True)
     now = [100.0]
-    check = cli._SetUpYet("config.toml", clock=lambda: now[0])
+    check = run._SetUpYet("config.toml", clock=lambda: now[0])
     for step in (0, 1, 1, 1, 1, 1, 1):
         now[0] += step
         assert check() is None
     assert len(asked) == 2  # at 100 and 105
-    monkeypatch.setattr(cli, "needs_setup", lambda config: False)
-    now[0] += cli.SETUP_CHECK_S
-    with pytest.raises(cli._Restart):
+    monkeypatch.setattr(run, "needs_setup", lambda config: False)
+    now[0] += run.SETUP_CHECK_S
+    with pytest.raises(run._Restart):
         check()
 
 
@@ -1844,14 +1848,14 @@ def board_with_views(tmp_path, views, display=None):
 @pytest.fixture
 def fetched(monkeypatch):
     """Every fetch the board makes: trains, TransportAPI's buses and bank holidays."""
-    import departureboard.cli as cli
+    from departureboard.cli import common
     from departureboard.sources.darwin import DarwinSource
     from departureboard.sources.transportapi import TransportApiBusSource
 
     calls = []
     monkeypatch.setattr(DarwinSource, "fetch", lambda self: calls.append("train") or [])
     monkeypatch.setattr(TransportApiBusSource, "fetch", lambda self: calls.append("bus") or [])
-    monkeypatch.setattr(cli, "bank_holidays", lambda *a, **kw: calls.append("holidays") or frozenset())
+    monkeypatch.setattr(common, "bank_holidays", lambda *a, **kw: calls.append("holidays") or frozenset())
     return calls
 
 
@@ -1870,15 +1874,15 @@ def test_with_the_board_view_off_the_board_says_so_and_fetches_nothing(tmp_path,
 
 
 def test_the_board_off_page_says_where_to_turn_it_on(tmp_path, fetched, monkeypatch):
-    import departureboard.cli as cli
+    from departureboard.cli import common, run
 
     shown = []
-    real = cli.run_once
-    monkeypatch.setattr(cli, "run_once", lambda board, *a, **kw: shown.append(board) or real(board, *a, **kw))
+    real = run.run_once
+    monkeypatch.setattr(run, "run_once", lambda board, *a, **kw: shown.append(board) or real(board, *a, **kw))
     assert main(board_with_views(tmp_path, [])) == 0  # no views at all is off too
     (board,) = shown
     assert (board.setup.heading, board.setup.note) == ("Board off", "Turn it on in Settings:")
-    assert board.setup.url == cli.setup_url()
+    assert board.setup.url == common.setup_url()
     assert board.sources == [] and board.weather is None and board.tracker is None
 
 
@@ -1899,44 +1903,45 @@ def test_a_code_asked_for_still_shows_with_the_board_view_off(tmp_path, fetched)
 
 
 def test_a_screen_with_the_board_view_off_starts_again_once_it_is_on(tmp_path, fetched, monkeypatch):
-    import departureboard.cli as cli
+    from departureboard.cli import run
 
     answers = iter([False, False, False, True])  # turned on after a couple of ticks
-    monkeypatch.setattr(cli, "_board_on", lambda store: next(answers))
-    monkeypatch.setattr(cli, "SETUP_CHECK_S", 0)
+    monkeypatch.setattr(run, "_board_on", lambda store: next(answers))
+    monkeypatch.setattr(run, "SETUP_CHECK_S", 0)
     args = board_with_views(tmp_path, ["dashboard"], display="hdmi-1280x400")
-    assert main([*args, "--loop", "--ticks", "10", "--tick", "0"]) == cli.RESTART
+    assert main([*args, "--loop", "--ticks", "10", "--tick", "0"]) == run.RESTART
     assert saved_page(tmp_path / "state") == "setup" and fetched == []
 
 
 def test_a_screen_with_the_board_view_off_asks_every_few_seconds(tmp_path, monkeypatch):
-    import departureboard.cli as cli
+    from departureboard.cli import run
     from departureboard.settings.store import Store
 
     board_with_views(tmp_path, ["dashboard"])
     store = Store.open(tmp_path / "config.toml")
     now = [100.0]
-    check = cli._ViewOn(store, clock=lambda: now[0])
+    check = run._ViewOn(store, clock=lambda: now[0])
     assert check() is None
     (tmp_path / "state" / "settings.toml").write_text('[app]\nviews = ["board"]\n')
     now[0] += 1
     assert check() is None  # not asked again yet
-    now[0] += cli.SETUP_CHECK_S
-    with pytest.raises(cli._Restart):
+    now[0] += run.SETUP_CHECK_S
+    with pytest.raises(run._Restart):
         check()
 
 
 def test_a_running_board_starts_again_when_its_view_is_turned_off(tmp_path, fetched):
     import argparse
 
-    import departureboard.cli as cli
+    from departureboard.cli.common import load_settings
+    from departureboard.cli.run import _Restart, _Watcher
 
     run = board_with_views(tmp_path, ["board"])
     args = argparse.Namespace(config=run[2], secrets=run[4])
-    watcher = cli._Watcher(args, cli._settings(args))
+    watcher = _Watcher(args, load_settings(args))
     assert watcher() is None  # nothing changed
     (tmp_path / "state" / "settings.toml").write_text('[app]\nviews = ["dashboard"]\n')
-    with pytest.raises(cli._Restart):
+    with pytest.raises(_Restart):
         watcher()  # to show the board view is off
 
 
@@ -2168,6 +2173,6 @@ def test_without_a_config_the_settings_start_in_systemds_folder(tmp_path, monkey
     ("", "http://raspberrypi.local:8090/settings"),
 ])
 def test_the_setup_address_is_this_pis_name(name, url):
-    from departureboard.cli import setup_url
+    from departureboard.cli.common import setup_url
 
     assert setup_url(name) == url

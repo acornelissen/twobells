@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from departureboard import version
-from departureboard.cli import main
+from departureboard.cli.main import main
 
 PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
 

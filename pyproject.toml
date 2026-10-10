@@ -21,7 +21,7 @@ screen = ["pygame>=2.5"]
 dev = ["pytest>=8", "pygame>=2.5", "ruff==0.16.10"]
 
 [project.scripts]
-departureboard = "departureboard.cli:main"
+departureboard = "departureboard.cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

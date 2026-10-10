@@ -80,7 +80,7 @@ mise run dashboard    # serve on a desktop with ./config.toml and ./secrets.env
 
 ## Architecture Overview
 
-One package, `src/departureboard`, with one CLI, `departureboard` (`cli.py`). One install is one app with two
+One package, `src/departureboard`, with one CLI, `departureboard` (`cli/`). One install is one app with two
 views of the same departures: the **board** (e-paper or HDMI screen on a Pi) and the **dashboard** (a web page).
 `[app] views` says which are on. `installs.py` says what each install (`pi`, `docker`, `desktop`) offers; every
 difference between installs belongs in its table.

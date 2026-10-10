@@ -42,7 +42,7 @@ class Install:
 
 
 _PI_COMMAND = "sudo -u departureboard /opt/departureboard/venv/bin/departureboard serve --install pi"
-_DOCKER_COMMAND = "docker exec -it departureboard python -m departureboard.cli serve {} --state-dir /data"
+_DOCKER_COMMAND = "docker exec -it departureboard python -m departureboard serve {} --state-dir /data"
 
 INSTALLS = {
     install.name: install

@@ -281,7 +281,7 @@ def test_a_second_service_stops_at_once_and_runs_no_dashboard(pi):
 
 def test_stopped_by_systemd_it_stops_the_pollers_and_lets_go(tmp_path, monkeypatch, pi):
     # systemctl stop or update.sh: SIGTERM. Through the command, as the unit runs it.
-    from departureboard.cli import main
+    from departureboard.cli.main import main
 
     store, spool = pi
     save(pi, ON)

@@ -25,7 +25,7 @@ RUN pip install --require-hashes --only-binary=:all: --no-deps -r /tmp/requireme
 # dashboard and settings) read the version, as nothing is installed.
 COPY pyproject.toml /app/pyproject.toml
 COPY src /app/src
-RUN python -c "import departureboard.cli; from departureboard.version import package_version as v; \
+RUN python -c "import departureboard.cli.main; from departureboard.version import package_version as v; \
 assert v() != 'unknown', 'no version in /app/pyproject.toml'"
 
 USER 10001:10001
@@ -33,6 +33,6 @@ WORKDIR /data
 EXPOSE 8090
 HEALTHCHECK --interval=60s --timeout=5s --start-period=120s --retries=3 \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=4)"]
-ENTRYPOINT ["python", "-m", "departureboard.cli", "serve", "--install", "docker", \
+ENTRYPOINT ["python", "-m", "departureboard", "serve", "--install", "docker", \
             "--config", "/config/config.toml", "--secrets", "/nonexistent", \
             "--state-dir", "/data", "--host", "0.0.0.0", "--port", "8090"]

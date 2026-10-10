@@ -189,7 +189,7 @@ def wording(install: Install, to_board: bool, dashboard_on: bool) -> Wording:
         asked = f"A 6-digit code is in the log now, valid for 10 minutes. {install.log_help}"
         ask, ask_again, code_label = "Put a code in the log", "Put a new code in the log", "Code from the log"
         no_code = f"{install.log_help} A new code can be made once a minute, up to 10 times a day."
-    if install.fetch == "process":  # serve starts again with the new settings (cli._SettingsWatch)
+    if install.fetch == "process":  # serve starts again with the new settings (cli/serve.py, _SettingsWatch)
         saved = ("Saved. The dashboard starts again in a few seconds to use the new settings; "
                  "sign in again to change anything else.")
     else:
