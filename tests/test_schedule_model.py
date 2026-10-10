@@ -61,3 +61,29 @@ def test_an_older_file_has_format_one_and_no_sign_letters():
                       "journeys": [], "positions": {"1000DGHS0900": {"name": "Henry Street", "lat": 53.4, "lon": -1.9}}})
     schedule = Schedule.from_json(old)
     assert schedule.format == 1 and schedule.positions["1000DGHS0900"].indicator is None
+
+
+def test_road_shapes_round_trip_and_older_files_have_none():
+    schedule = Schedule(datetime(2026, 10, 9, 3, 0), None, {"A": "1000DGHS0900"}, (),
+                        shapes={"1000DGHS3408>1000DGHS3406": ((53.4436, -1.9563), (53.44352, -1.9558))})
+    text = schedule.to_json()
+    assert '"shapes":{"1000DGHS3408>1000DGHS3406":[[53.4436,-1.9563],[53.44352,-1.9558]]}' in text
+    assert Schedule.from_json(text) == schedule
+    old = json.loads(text)
+    del old["shapes"]
+    assert Schedule.from_json(json.dumps(old)).shapes == {}
+
+
+@pytest.mark.parametrize("points", [[[53.4, "x"]], [[53.4]], [[53.4, -1.9, 0]], [[53.4, None]], [53.4, -1.9]])
+def test_a_road_shape_that_isnt_points_is_refused(points):
+    text = json.dumps({"built": "2026-10-09T03:00:00", "valid_until": None, "stops": {}, "journeys": [],
+                       "shapes": {"A>B": points}})
+    with pytest.raises((ValueError, TypeError)):
+        Schedule.from_json(text)
+
+
+def test_a_road_shape_that_isnt_finite_is_refused():
+    text = ('{"built": "2026-10-09T03:00:00", "valid_until": null, "stops": {}, "journeys": [], '
+            '"shapes": {"A>B": [[NaN, -1.9]]}}')
+    with pytest.raises(ValueError, match="finite"):
+        Schedule.from_json(text)

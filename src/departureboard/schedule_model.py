@@ -97,6 +97,11 @@ class Schedule:
     operators: tuple[str, ...] = ()
     # Which version of the builder made it; files from before this was kept are 1.
     format: int = 1
+    # The road between consecutive positioned stops, for the dashboard's maps:
+    # (lat, lon) points between the two stops, not including them, keyed
+    # "ATCO_A>ATCO_B" in the order the bus calls (roadshape.shape_key). A pair
+    # left out is drawn straight; empty in a file saved before they were kept.
+    shapes: dict[str, tuple[tuple[float, float], ...]] = field(default_factory=dict)
 
     @property
     def departure_journeys(self) -> tuple[Journey, ...]:
@@ -117,6 +122,7 @@ class Schedule:
             positions={k: StopPosition(**v) for k, v in data.get("positions", {}).items()},
             operators=tuple(data.get("operators", ())),
             format=int(data.get("format", 1)),
+            shapes={str(key): tuple(_point(p) for p in points) for key, points in data.get("shapes", {}).items()},
         )
 
 
@@ -161,6 +167,13 @@ def _journey(data: dict) -> Journey:
         calendar=_calendar(data["calendar"]),
         inbound_only=_flag(data.get("inbound_only", False)),
     )
+
+
+def _point(pair) -> tuple[float, float]:
+    lat, lon = (float(v) for v in pair)
+    if not (math.isfinite(lat) and math.isfinite(lon)):
+        raise ValueError("A road point must be two finite numbers")
+    return lat, lon
 
 
 def _flag(value) -> bool:

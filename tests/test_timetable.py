@@ -1019,3 +1019,64 @@ def load_round_trip(schedule):
 def timetable_format():
     from departureboard.timetable import FORMAT
     return FORMAT
+
+
+# The roads between stops, for the maps.
+
+
+def _routed(document, route=None):
+    """The schedule for Stop A from one document, every stop placed, with `route`."""
+    options = {"route": route} if route is not None else {}
+    return build_schedule({"A": STOP_A}, ["BNML"], "k", NOW, find_datasets=lambda key, noc, line: [BNML_LINK],
+                          fetch=lambda url, file: file.write(document),
+                          naptan=lambda atcos: {a: (p.name, p.lat, p.lon) for a, p in PLACES.items() if a in atcos},
+                          **options)
+
+
+def test_the_build_keeps_the_road_between_each_pair_of_positioned_stops_once():
+    asked = []
+
+    def route(pairs):
+        asked.append(dict(pairs))
+        return {pair: [(53.44351, -1.95562)] for pair in pairs} | {("NOT", "ASKED"): [(53.0, -1.0)]}
+
+    document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD, "1000DHAD0001"]),
+                     ("again", "237", "11:15:00", [STOP_A, HOWARD, "1000DHAD0001"]),
+                     ("in", "237", "10:00:00", COMING_IN + [MARKET_HALL])])
+    schedule = _routed(document, route)
+    assert len(asked) == 1
+    pairs = asked[0]
+    # The departures' and the inbound-only journey's, each once; Hadfield has no position.
+    assert list(pairs)[0] == (STOP_A, HOWARD)
+    assert set(pairs) == {(STOP_A, HOWARD), (JUNCTION, GRAPES), (GRAPES, SUNLAWS), (SUNLAWS, ST_MARYS_E),
+                          (ST_MARYS_E, ARUNDEL), (ARUNDEL, MARKET_HALL)}
+    assert pairs[(ARUNDEL, MARKET_HALL)] == ((POSITIONS[ARUNDEL].lat, POSITIONS[ARUNDEL].lon),
+                                             (POSITIONS[MARKET_HALL].lat, POSITIONS[MARKET_HALL].lon))
+    assert schedule.shapes[f"{STOP_A}>{HOWARD}"] == ((53.44351, -1.95562),)
+    assert len(schedule.shapes) == 6  # not the pair it wasn't asked about
+    assert load_round_trip(schedule) == schedule
+
+
+@pytest.mark.parametrize("route", [
+    lambda pairs: (_ for _ in ()).throw(RuntimeError("router exploded")),
+    lambda pairs: None,
+    lambda pairs: {pair: "not points" for pair in pairs},
+])
+def test_a_routing_failure_never_fails_the_build(route, caplog):
+    schedule = _routed(_stand_doc(), route)
+    assert _codes(schedule) == [("out", False), ("in", True)] and schedule.shapes == {}
+    assert "drawing straight lines" in caplog.text
+
+
+def test_by_default_the_build_asks_the_router_and_survives_it_being_down(caplog):
+    # The tests' network is down (conftest): the router is asked once, then every road is straight.
+    schedule = _routed(_stand_doc())
+    assert schedule.shapes == {} and schedule.format == FORMAT
+    assert "the router isn't answering" in caplog.text
+
+
+def test_a_timetable_from_before_road_shapes_is_due_once():
+    from dataclasses import replace
+
+    assert FORMAT >= 3
+    assert due(replace(_schedule(built=NOW), format=2), STOPS, NOW, ["BNML"]) == "it was built by an older version"

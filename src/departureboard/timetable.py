@@ -23,6 +23,11 @@ minutely board run: an operator's timetables can run to hundreds of
 megabytes. Each download waits on disk and its documents are parsed one at a
 time, so a Pi Zero holds one document in memory, never the lot.
 
+Roads. TransXChange gives no road between stops, so the build asks the
+OpenStreetMap car router for each pair of consecutive positioned stops, once,
+and keeps the roads for the dashboard's maps (roadshape.py). A pair it can't
+find is drawn straight; the router never fails a build.
+
 Times. A journey's DepartureTime is when it leaves its first stop. Each
 timing link's RunTime takes it to the next stop, where it may wait before
 leaving: a WaitTime on the From of the link leaving a stop, or else one on
@@ -60,7 +65,7 @@ from typing import AbstractSet, BinaryIO, Callable, Collection, Iterable, Iterat
 from urllib.parse import urlsplit
 from urllib.request import Request
 
-from . import http, routesetup, safexml
+from . import http, roadshape, routesetup, safexml
 from .schedule_model import NEAR_M, Calendar, Call, DateRange, Journey, Schedule, StopPosition, metres
 from .status import safe_message
 
@@ -69,7 +74,8 @@ log = logging.getLogger(__name__)
 FILE_NAME = "bus-timetable.json"  # beside state.json
 # The builder's version, saved in the file: an older one is rebuilt (see due).
 # 2: stops keep the letter on their sign.
-FORMAT = 2
+# 3: the roads between stops, for the dashboard's maps (shapes).
+FORMAT = 3
 MAX_AGE = timedelta(days=7)
 # Positions are kept for this many calls before each of your stops, and the one
 # after: livebus places buses along that stretch and sees them pass your stop.
@@ -92,6 +98,8 @@ FindDatasets = Callable[[str, str, "str | None"], list]  # (api_key, noc, line) 
 Download = Callable[[str, BinaryIO], None]  # (link, file to write it to)
 # atcos -> {atco: (name, lat, lon[, sign letter])}, as routesetup.naptan_stop_details
 Naptan = Callable[[Iterable[str]], dict]
+# {(atco, atco): ((lat, lon), (lat, lon))} -> {(atco, atco): [(lat, lon), ...]}, as roadshape.segment_shapes
+Route = Callable[[Mapping], Mapping]
 
 _NS = {"t": "http://www.transxchange.org.uk/"}
 _DURATION = re.compile(r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)(?:\.\d+)?S)?)?$")
@@ -632,6 +640,21 @@ def _positions(atcos: set[str], known: dict[str, StopPosition], naptan: Naptan) 
     return positions
 
 
+def _shapes(journeys: Iterable[Journey], positions: Mapping[str, StopPosition],
+            route: Route) -> dict[str, tuple[tuple[float, float], ...]]:
+    """The road between each pair of consecutive positioned stops, by
+    roadshape.shape_key, for the maps; none where the router can't say (the
+    maps draw those straight). Never fails the build."""
+    pairs = roadshape.segment_pairs(journeys, positions)
+    try:
+        found = route(pairs)
+        return {roadshape.shape_key(pair): tuple((float(lat), float(lon)) for lat, lon in found[pair])
+                for pair in pairs if found.get(pair)}
+    except Exception as error:  # noqa: BLE001 - straight lines will do
+        log.warning("Bus map roads not found, drawing straight lines: %s", safe_message(error))
+        return {}
+
+
 def build_schedule(
     stops: Mapping[str, str],
     operators: Iterable[str],
@@ -643,11 +666,14 @@ def build_schedule(
     find_datasets: FindDatasets = routesetup.dataset_urls,
     fetch: Download = download,
     naptan: Naptan = routesetup.naptan_stop_details,
+    route: Route = roadshape.segment_shapes,
 ) -> Schedule:
     """A schedule of every timetabled journey calling at your `stops` (labels
     to ATCO codes), from the BODS timetables of `operators` (national operator
     codes), and the inbound-only journeys of their lines (see the module's
     notes). Downloads wait in `scratch` (the state folder: /tmp may be memory).
+    The roads between its positioned stops come from `route` (see roadshape);
+    it failing only leaves them straight.
 
     Journeys whose timetable ended before today are left out (BODS keeps an
     old timetable beside its replacement for a while), and so are duplicates
@@ -696,14 +722,16 @@ def build_schedule(
     needed = nearby.union(*(_approach(journey) for journey in near))
     kept = tuple(journeys.values())
     ends = [journey.calendar.end for journey in kept if journey.calendar.end]
+    positions = {atco: position for atco, position in placed.items() if atco in needed}
     return Schedule(
         built=now,
         valid_until=min(ends, default=None),
         stops=dict(stops),
         journeys=kept + near,
-        positions={atco: position for atco, position in placed.items() if atco in needed},
+        positions=positions,
         operators=tuple(sorted(set(operators))),
         format=FORMAT,
+        shapes=_shapes(kept + near, positions, route),
     )
 
 
