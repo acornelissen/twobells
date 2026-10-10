@@ -32,5 +32,5 @@ description = "Browser panel emulator with sample data"
 run = ".venv/bin/departureboard emulate --demo"
 
 [tasks.dashboard]
-description = "Serve the dashboard with ./config.toml and ./secrets.env"
-run = ".venv/bin/departureboard dashboard --config config.toml --secrets secrets.env"
+description = "Serve the dashboard and settings on this computer with ./config.toml and ./secrets.env"
+run = ".venv/bin/departureboard serve --install desktop --config config.toml --secrets secrets.env"

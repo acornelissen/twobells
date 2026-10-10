@@ -243,10 +243,12 @@ def test_kb_refusals(answer, state):
 
 
 @pytest.mark.parametrize("url, words", [
-    (None, "Set [dashboard] kb_incidents_url"),
-    ("https://set-kb-incidents-url-from-the-rdm-product-page.invalid/incidents", "Set [dashboard] kb_incidents_url"),
-    ("http://example.com/incidents", "isn't an https address"),
-    ("https://user:pw@example.com/x", "isn't an https address"),
+    # The address can be saved on the Dashboard tab as well as in config.toml: both are named.
+    (None, "Set the Knowledgebase Incidents address on the Dashboard tab"),
+    ("https://set-kb-incidents-url-from-the-rdm-product-page.invalid/incidents",
+     "Set the Knowledgebase Incidents address on the Dashboard tab"),
+    ("http://example.com/incidents", "The Knowledgebase Incidents address isn't an https address"),
+    ("https://user:pw@example.com/x", "The Knowledgebase Incidents address isn't an https address"),
 ])
 def test_kb_without_an_address_says_so(url, words):
     config = {"dashboard": {"kb_incidents_url": url}} if url else {}

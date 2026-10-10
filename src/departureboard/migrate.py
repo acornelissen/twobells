@@ -3,7 +3,7 @@
 Before the store, the dashboard kept its own folder ([dashboard] state_dir,
 or departureboard-dashboard in Application Support or ~/.local/state) with
 its own settings, keys and password. On a desktop where that folder isn't
-the store, `dashboard` and `web` bring them across when they start:
+the store, `serve` brings them across when it starts:
 
 - a store with none of settings.toml, secrets.env and web.json takes the
   old folder's;
