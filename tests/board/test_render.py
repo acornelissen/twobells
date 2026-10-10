@@ -1,6 +1,10 @@
 import dataclasses
+import hashlib
+import string
+from pathlib import Path
 
 import pytest
+from fontTools.ttLib import TTFont
 
 from departureboard.board.panel import HDMI_1280X400, PHAT, PHAT_V1, WAVESHARE_10IN85G
 from departureboard.board.render import (
@@ -10,6 +14,7 @@ from departureboard.board.render import (
     drawn_length,
     fit_text,
     header_text,
+    heights,
     in_turns,
     left_column_width,
     load_fonts,
@@ -22,6 +27,7 @@ from departureboard.board.render import (
     wrap_text,
 )
 from departureboard.board.view import BoardView, CodeView, Row, Section, SetupView, Style
+from tests.paths import ROOT
 
 PALETTE = Palette(white=0, black=1, accent=2)
 
@@ -92,6 +98,58 @@ def test_fit_text_truncates_with_ellipsis():
 def test_left_column_clears_a_bold_clock_time():
     fonts = load_fonts()
     assert left_column_width(fonts) >= fonts.bold.getlength("00:00") + 4
+
+
+# --- Fonts: Inter, as on the dashboard, from the package ---
+
+BOARD_FONTS = ROOT / "src" / "departureboard" / "board" / "fonts"
+
+
+def test_board_fonts_are_pinned_and_licensed():
+    listed = {}
+    for line in (BOARD_FONTS / "SHA256SUMS").read_text().splitlines():
+        digest, name = line.split(maxsplit=1)
+        listed[name] = digest
+    assert set(listed) == {"Inter-Regular.ttf", "Inter-ExtraBold.ttf", "LICENSE"}
+    for name, digest in listed.items():
+        assert hashlib.sha256((BOARD_FONTS / name).read_bytes()).hexdigest() == digest, name
+    assert {p.name for p in BOARD_FONTS.iterdir()} == set(listed) | {"SHA256SUMS"}, "a font file is not pinned"
+    assert "SIL Open Font License, Version 1.1" in (BOARD_FONTS / "LICENSE").read_text()
+
+
+@pytest.mark.parametrize("scale", [1, 2, 4])
+def test_the_plain_look_draws_in_the_packaged_inter(scale):
+    fonts = load_fonts(scale)
+    assert fonts.regular.getname() == ("Inter", "Regular")
+    assert fonts.bold.getname() == fonts.small.getname() == ("Inter", "ExtraBold")
+    for font in (fonts.regular, fonts.bold, fonts.small):
+        assert Path(str(font.path)).parent == BOARD_FONTS
+
+
+@pytest.mark.parametrize("name", ["Inter-Regular.ttf", "Inter-ExtraBold.ttf"])
+def test_board_fonts_keep_their_hints_and_the_text_the_board_draws(name):
+    font = TTFont(BOARD_FONTS / name)
+    # The hints are what keep one-bit text crisp at the pHAT's 9 and 11 px.
+    assert {"fpgm", "prep", "cvt "} <= set(font.keys())
+    cmap = font.getBestCmap()
+    missing = [c for c in string.printable.strip() + " °·£é…–’“”→×" if ord(c) not in cmap]
+    assert not missing
+
+
+def test_times_line_up_in_tabular_figures():
+    for font in load_fonts(1).regular, load_fonts(1).bold, load_fonts(3).bold:
+        assert len({font.getlength(t) for t in ("07:12", "11:11", "08:48", "20:00")}) == 1
+
+
+@pytest.mark.parametrize("panel", [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400])
+def test_row_text_stays_inside_its_row(panel):
+    # Drawn a scale step below the row's top, as _Painter.row draws it.
+    s = plain_scale(panel)
+    fonts = load_fonts(s)
+    row_h = heights()[2] * s
+    for font in (fonts.regular, fonts.bold):
+        _, top, _, bottom = font.getbbox("ÉÅHdgjpqy", mode="1")
+        assert s + top >= 0 and s + bottom <= row_h
 
 
 def test_preview_palette_gives_rgb_png_colours():

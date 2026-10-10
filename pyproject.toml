@@ -59,6 +59,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "departureboard" = ["data/*.csv", "dashboard_static/**/*", "wizard_static/*"]
+"departureboard.board" = ["fonts/*"]
 "departureboard.emulator" = ["*.html"]
 "departureboard.web" = ["*.css"]
 

@@ -13,6 +13,14 @@ src/departureboard/dashboard_static/vendor/inter-4.1/:
 - LICENSE: the SIL Open Font License 1.1 it comes under, as released.
 - SHA256SUMS: what tests/dashboard/test_static.py checks the files against.
 
+and, for the board's plain look, under src/departureboard/board/fonts/:
+
+- Inter-Regular.ttf, Inter-ExtraBold.ttf: the release's static TrueType fonts,
+  hinted for small sizes on one-bit panels, cut down to the same Latin, with
+  tabular figures and the dashboard's tailed l (cv05) made the default
+  glyphs: Pillow draws without OpenType features on most installs.
+- LICENSE and SHA256SUMS, checked by tests/board/test_render.py.
+
 The download is checked against INTER_SHA256 before anything is read from it.
 fonttools (with brotli, for woff2) is in the dev dependency group.
 """
@@ -78,11 +86,71 @@ def build(data: bytes) -> None:
     print(f"wrote {OUT.relative_to(ROOT)}: InterVariable.woff2 {len(files['InterVariable.woff2']):,} bytes")
 
 
+BOARD_OUT = ROOT / "src" / "departureboard" / "board" / "fonts"
+BOARD_FONTS = ("Inter-Regular.ttf", "Inter-ExtraBold.ttf")
+
+
+def _feature_mapping(font, tag: str) -> dict[str, str]:
+    """The single substitutions an OpenType feature makes, glyph name to glyph name."""
+    gsub = font["GSUB"].table
+    mapping = {}
+    for record in gsub.FeatureList.FeatureRecord:
+        if record.FeatureTag != tag:
+            continue
+        for index in record.Feature.LookupListIndex:
+            lookup = gsub.LookupList.Lookup[index]
+            for table in lookup.SubTable:
+                table = getattr(table, "ExtSubTable", table)
+                mapping.update(getattr(table, "mapping", {}))
+    return mapping
+
+
+def _freeze(font) -> None:
+    """Point the cmap at the glyphs the dashboard asks for: tabular digits
+    (only the digits: Inter's tnum widens brackets too) and the tailed l."""
+    tnum = _feature_mapping(font, "tnum")
+    swaps = {name: tnum[name] for name in ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+                                           "nine")}
+    swaps |= _feature_mapping(font, "cv05")
+    for table in font["cmap"].tables:
+        if table.isUnicode():
+            table.cmap = {code: swaps.get(name, name) for code, name in table.cmap.items()}
+
+
+def build_board(data: bytes) -> None:
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        ttfs = {name: archive.read(f"extras/ttf/{name}") for name in BOARD_FONTS}
+        licence = archive.read("LICENSE.txt")
+    files = {"LICENSE": licence}
+    for name, ttf in ttfs.items():
+        options = subset.Options()
+        options.name_IDs = ["*"]
+        options.notdef_outline = True
+        options.hinting = True
+        font = subset.load_font(io.BytesIO(ttf), options)
+        _freeze(font)
+        subsetter = subset.Subsetter(options)
+        subsetter.populate(unicodes=subset.parse_unicodes(UNICODES))
+        subsetter.subset(font)
+        out = io.BytesIO()
+        subset.save_font(font, out, options)
+        files[name] = out.getvalue()
+    BOARD_OUT.mkdir(parents=True, exist_ok=True)
+    for name, body in files.items():
+        (BOARD_OUT / name).write_bytes(body)
+    sums = "".join(f"{hashlib.sha256(body).hexdigest()}  {name}\n" for name, body in sorted(files.items()))
+    (BOARD_OUT / "SHA256SUMS").write_text(sums)
+    sizes = ", ".join(f"{name} {len(files[name]):,} bytes" for name in BOARD_FONTS)
+    print(f"wrote {BOARD_OUT.relative_to(ROOT)}: {sizes}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--zip", type=Path, help="a downloaded Inter release zip, instead of downloading it")
     args = parser.parse_args()
-    build(release(args.zip))
+    data = release(args.zip)
+    build(data)
+    build_board(data)
 
 
 if __name__ == "__main__":

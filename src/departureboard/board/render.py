@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -23,7 +23,12 @@ _MAX_ROWS = {"Trains": 3, "Buses": 2}
 # Beside a section's label when its feed has stopped, in the sign look's words.
 _NOT_UPDATING = "! NOT UPDATING"
 
-_FONT_DIR = Path("/usr/share/fonts/truetype/dejavu")
+# Inter, as on the dashboard: hinted static fonts built by tools/build_fonts.py.
+# Bold is ExtraBold: at the pHAT's 9 and 11 px on a one-bit panel, Inter Bold
+# hints to one-pixel stems and reads as regular.
+_FONT_DIR = Path(__file__).with_name("fonts")
+_REGULAR = "Inter-Regular.ttf"
+_BOLD = "Inter-ExtraBold.ttf"
 _PREVIEW_ACCENTS = {"red": (200, 30, 30), "yellow": (230, 180, 0)}
 
 
@@ -48,12 +53,7 @@ class Fonts:
 
 
 def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
-    path = _FONT_DIR / name
-    if path.exists():
-        return ImageFont.truetype(str(path), size)
-    # Given a size, Pillow's default font is FreeType; every Pillow build we
-    # run on (the wheels, Debian's python3-pil) has FreeType.
-    return cast(ImageFont.FreeTypeFont, ImageFont.load_default(size=size))
+    return ImageFont.truetype(str(_FONT_DIR / name), size)
 
 
 # Body text in pHAT pixels; a text_size setting can make the plain look bigger.
@@ -62,9 +62,9 @@ TEXT_SIZE = 11
 
 def load_fonts(scale: int = 1, text_size: int = TEXT_SIZE) -> Fonts:
     return Fonts(
-        regular=_font("DejaVuSans.ttf", text_size * scale),
-        bold=_font("DejaVuSans-Bold.ttf", text_size * scale),
-        small=_font("DejaVuSans-Bold.ttf", (text_size - 2) * scale),
+        regular=_font(_REGULAR, text_size * scale),
+        bold=_font(_BOLD, text_size * scale),
+        small=_font(_BOLD, (text_size - 2) * scale),
     )
 
 
@@ -408,12 +408,12 @@ def _biggest_bold(text: str, width: float, height: float) -> ImageFont.FreeTypeF
     low, high = 6, max(6, int(height) * 2)
     while low < high:
         size = (low + high + 1) // 2
-        left, top, right, bottom = _font("DejaVuSans-Bold.ttf", size).getbbox(text, mode="1")
+        left, top, right, bottom = _font(_BOLD, size).getbbox(text, mode="1")
         if right - left <= width and bottom - top <= height:
             low = size
         else:
             high = size - 1
-    return _font("DejaVuSans-Bold.ttf", low)
+    return _font(_BOLD, low)
 
 
 def render_code(view: CodeView, palette: Palette, panel: Panel = PHAT, dark: bool = False) -> Image.Image:
@@ -430,7 +430,7 @@ def render_code(view: CodeView, palette: Palette, panel: Panel = PHAT, dark: boo
         background, ink = palette.white, palette.black
     image = Image.new("P", panel.size, background)
     draw = ImageDraw.Draw(image)
-    small = _font("DejaVuSans-Bold.ttf", TEXT_SIZE * s)
+    small = _font(_BOLD, TEXT_SIZE * s)
     label = fit_text("Settings reset code", small, width - 2 * pad, partial(drawn_length, small))
     until = fit_text(f"Valid until {view.until}", small, width - 2 * pad, partial(drawn_length, small))
     line_h = heights()[2] * s
@@ -464,7 +464,7 @@ def render_setup(view: SetupView, palette: Palette, panel: Panel = PHAT, dark: b
         background, ink = palette.white, palette.black
     image = Image.new("P", panel.size, background)
     draw = ImageDraw.Draw(image)
-    small = _font("DejaVuSans-Bold.ttf", TEXT_SIZE * s)
+    small = _font(_BOLD, TEXT_SIZE * s)
     note = fit_text(view.note, small, width - 2 * pad, partial(drawn_length, small))
     line_h = heights()[2] * s
     # The heading over the top half of what the note leaves; the address below.
