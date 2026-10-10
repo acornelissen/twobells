@@ -116,7 +116,7 @@ def test_the_knowledgebase_field_left_empty_keeps_engineering_works_off():
 @pytest.mark.parametrize("raw", ["https://api.example.test/kb", "http://api1.raildata.org.uk/kb", "raildata.org.uk",
                                  "https://api1.raildata.org.uk/a b", "https://api1.raildata.org.uk/" + "x" * 300])
 def test_the_knowledgebase_field_refuses_anywhere_else(raw):
-    with pytest.raises(schema.Invalid, match="raildata.org.uk"):
+    with pytest.raises(schema.Invalid, match=r"raildata\.org\.uk"):
         schema.https_feed(raw)
 
 

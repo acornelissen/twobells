@@ -7,17 +7,31 @@ import sys
 import threading
 import zipfile
 from dataclasses import replace
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
+from test_livebus import (
+    ARUNDEL,
+    GRAPES,
+    HALFWAY,
+    HOWARD,
+    JUNCTION,
+    MARKET_HALL,
+    POSITIONS,
+    ST_MARYS_E,
+    SUNLAWS,
+    at,
+    bus,
+)
 
 from departureboard import timetable
 from departureboard.holidays import Event, holiday_names
 from departureboard.schedule_model import Calendar, Call, Schedule, StopPosition, metres
 from departureboard.timetable import (
-    FORMAT,
     FILE_NAME,
+    FORMAT,
     LOCK_NAME,
     TimetableBusy,
     TimetableError,
@@ -32,10 +46,6 @@ from departureboard.timetable import (
     refresh,
     runs_on,
     save,
-)
-
-from test_livebus import (
-    ARUNDEL, GRAPES, HALFWAY, HOWARD, JUNCTION, MARKET_HALL, POSITIONS, ST_MARYS_E, SUNLAWS, at, bus,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -834,7 +844,7 @@ FAR_STAND = "1000DGHSFAR1"
 FAR = StopPosition("Far Stand", 53.44384, -1.942968)  # about 400 m east of Stop A
 PLACES = {**POSITIONS, FAR_STAND: FAR}
 COMING_IN = [JUNCTION, GRAPES, SUNLAWS, ST_MARYS_E, ARUNDEL]  # 10:00 to 10:08
-LEFT_JUNCTION = datetime(2026, 10, 9, 9, 0, tzinfo=timezone.utc)  # 10:00 BST
+LEFT_JUNCTION = datetime(2026, 10, 9, 9, 0, tzinfo=UTC)  # 10:00 BST
 
 
 def _doc(journeys, places=PLACES, ends=None):
@@ -857,7 +867,7 @@ def _doc(journeys, places=PLACES, ends=None):
         + "".join(
             f'<JourneyPatternTimingLink id="l{i}-{k}"><From><StopPointRef>{a}</StopPointRef></From>'
             f"<To><StopPointRef>{b}</StopPointRef></To><RunTime>PT2M</RunTime></JourneyPatternTimingLink>"
-            for k, (a, b) in enumerate(zip(calls, calls[1:], strict=False))
+            for k, (a, b) in enumerate(pairwise(calls))
         )
         + "</JourneyPatternSection>"
         for i, (*_, calls) in enumerate(journeys)
@@ -891,7 +901,7 @@ def _stand_doc(stand=MARKET_HALL, line="237", places=PLACES):
     """The 237 leaves Stop A at 10:15. A bus of `line` comes in from The
     Junction at 10:00 to `stand` at 10:10, without calling at Stop A."""
     return _doc([("out", "237", "10:15:00", [STOP_A, HOWARD, "1000DHAD0001"]),
-                 ("in", line, "10:00:00", COMING_IN + [stand])], places)
+                 ("in", line, "10:00:00", [*COMING_IN, stand])], places)
 
 
 def _build(document, naptan=None):
@@ -952,7 +962,7 @@ def test_the_bus_coming_in_to_the_stand_is_the_inbound_bus_and_never_a_departure
 
 def test_inbound_only_journeys_never_set_valid_until():
     # Their timetable ending can't make the board's run out.
-    document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD]), ("in", "237", "10:00:00", COMING_IN + [MARKET_HALL])],
+    document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD]), ("in", "237", "10:00:00", [*COMING_IN, MARKET_HALL])],
                     ends={"in": "2026-10-20"})
     schedule, _ = _build(document, naptan=PLACES)
     assert _codes(schedule) == [("out", False), ("in", True)]
@@ -997,7 +1007,7 @@ def test_positions_cover_the_stretch_before_the_stand():
     way_in = [f"1000DGXX{n:04d}" for n in range(24)]
     places = {**PLACES, **{atco: StopPosition(atco, 53.40 + n / 1000, -1.95) for n, atco in enumerate(way_in)}}
     document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD]),
-                     ("in", "237", "09:00:00", way_in + [MARKET_HALL])], places={})
+                     ("in", "237", "09:00:00", [*way_in, MARKET_HALL])], places={})
     schedule, asked = _build(document, naptan=places)
     assert _codes(schedule) == [("out", False), ("in", True)]
     assert set(way_in[-20:]) | {MARKET_HALL} <= set(schedule.positions)  # the stand and the 20 before it
@@ -1009,8 +1019,8 @@ def test_inbound_only_journeys_are_capped(monkeypatch, caplog):
 
     monkeypatch.setattr(timetable, "MAX_INBOUND_JOURNEYS", 1)
     document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD]),
-                     ("in", "237", "10:00:00", COMING_IN + [MARKET_HALL]),
-                     ("earlier", "237", "09:30:00", COMING_IN + [MARKET_HALL])])
+                     ("in", "237", "10:00:00", [*COMING_IN, MARKET_HALL]),
+                     ("earlier", "237", "09:30:00", [*COMING_IN, MARKET_HALL])])
     schedule, _ = _build(document, naptan=PLACES)
     assert _codes(schedule) == [("out", False), ("in", True)]
     assert "Left out 1 journeys ending near your stops" in caplog.text
@@ -1063,7 +1073,7 @@ def _unrouted(document):
 
 ROADS_DOC = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD, "1000DHAD0001"]),
                   ("again", "237", "11:15:00", [STOP_A, HOWARD, "1000DHAD0001"]),
-                  ("in", "237", "10:00:00", COMING_IN + [MARKET_HALL])])
+                  ("in", "237", "10:00:00", [*COMING_IN, MARKET_HALL])])
 ROADS_PAIRS = {(STOP_A, HOWARD), (JUNCTION, GRAPES), (GRAPES, SUNLAWS), (SUNLAWS, ST_MARYS_E),
                (ST_MARYS_E, ARUNDEL), (ARUNDEL, MARKET_HALL)}
 
@@ -1092,7 +1102,7 @@ def test_the_road_between_each_pair_of_positioned_stops_is_asked_for_once():
     assert len(asked) == 1
     pairs = asked[0]
     # The departures' and the inbound-only journey's, each once; Hadfield has no position.
-    assert list(pairs)[0] == (STOP_A, HOWARD)
+    assert next(iter(pairs)) == (STOP_A, HOWARD)
     assert set(pairs) == ROADS_PAIRS
     assert pairs[(ARUNDEL, MARKET_HALL)] == ((POSITIONS[ARUNDEL].lat, POSITIONS[ARUNDEL].lon),
                                              (POSITIONS[MARKET_HALL].lat, POSITIONS[MARKET_HALL].lon))
@@ -1104,7 +1114,7 @@ def test_the_road_between_each_pair_of_positioned_stops_is_asked_for_once():
 @pytest.mark.parametrize("route", [
     _failing,
     lambda pairs, progress: None,
-    lambda pairs, progress: {pair: "not points" for pair in pairs},
+    lambda pairs, progress: dict.fromkeys(pairs, "not points"),
 ])
 def test_a_routing_failure_leaves_the_roads_straight(route, caplog):
     schedule = _routed(_stand_doc(), route)

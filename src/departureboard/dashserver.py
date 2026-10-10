@@ -33,12 +33,13 @@ import re
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from . import settingsite
 from .auth import local_host, private_address
@@ -118,7 +119,7 @@ class StaticFiles:
     present: bool = False  # False when the folder is missing: the front end isn't built
 
     @classmethod
-    def load(cls, folder: Path | str | None, version: str | None = None) -> "StaticFiles":
+    def load(cls, folder: Path | str | None, version: str | None = None) -> StaticFiles:
         """Every file under `folder` with a known extension, skipping hidden
         files, symlinks, odd names and anything too big. With `version`,
         index.html's VERSION_SLOT says it, escaped, in a line of its own."""
@@ -194,7 +195,7 @@ def _matches(header: str | None, etag: str) -> bool:
 
 class _Handler(BaseHTTPRequestHandler):
     timeout = REQUEST_TIMEOUT_S  # a client that stalls lets go of its thread
-    server: "DashboardServer"
+    server: DashboardServer
     _security: dict[str, str] | None = None  # this request's security headers, once its path is known
 
     def version_string(self) -> str:
@@ -280,10 +281,10 @@ class _Handler(BaseHTTPRequestHandler):
             return self._handle
         raise AttributeError(name)
 
-    def do_GET(self) -> None:  # noqa: N802 - http.server API
+    def do_GET(self) -> None:
         self._handle()
 
-    def do_HEAD(self) -> None:  # noqa: N802 - http.server API
+    def do_HEAD(self) -> None:
         self._handle()
 
     def _outsider(self) -> bool:

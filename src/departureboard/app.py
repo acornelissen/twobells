@@ -6,10 +6,11 @@ import hashlib
 import json
 import logging
 import time
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from PIL.Image import Image
@@ -24,8 +25,8 @@ from .route import RouteStrip, RouteView, locate, target, where
 from .schedule import PollPolicy
 from .state import departure_to_dict, departures_from_dicts, from_iso, to_iso, vehicle_to_dict, vehicles_from_dicts
 from .status import safe_message
-from .view import BoardView, CodeView, SetupView, build_view
 from .themes import THEMES, Theme
+from .view import BoardView, CodeView, SetupView, build_view
 from .walk import WalkTimes, leave_time
 from .weather import Hour, hours_from_dicts, hours_to_dicts, rain_line
 
@@ -106,7 +107,7 @@ class Board:
     # E-paper refreshes are slow and wear the panel: never redraw more often than this.
     # A screen has no such limit.
     min_redraw: timedelta = timedelta(minutes=2)
-    walk: WalkTimes = WalkTimes()
+    walk: WalkTimes = field(default_factory=WalkTimes)
     theme: Theme = THEMES["plain"]
     tracker: Tracker | None = None
     weather: Weather | None = None

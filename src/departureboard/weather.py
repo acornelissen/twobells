@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import Callable
 from urllib.parse import urlencode
 
 from .http import get_bytes

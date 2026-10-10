@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from html.parser import HTMLParser
-from typing import Callable
 from datetime import datetime
+from html.parser import HTMLParser
 from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
 

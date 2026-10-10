@@ -8,6 +8,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+from test_livebus import EAST, HALFWAY, HENRY_A, JUNCTION, POSITIONS, ST_MARYS_W, WEST, at, bus, live, schedule
 
 from departureboard.bodsbus import BusBoard
 from departureboard.darwin import parse_board_rich, parse_service_details
@@ -28,8 +29,6 @@ from departureboard.snapshot import (
 )
 from departureboard.walk import WalkTimes
 from departureboard.weather import parse_conditions
-
-from test_livebus import EAST, HALFWAY, HENRY_A, JUNCTION, POSITIONS, ST_MARYS_W, WEST, at, bus, live, schedule
 
 LONDON = ZoneInfo("Europe/London")
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -89,9 +88,10 @@ def bus_part(now, vehicles=(), walk=WALK):
 
 def extras_part(now, no_shows=None, vehicles_ok=True):
     """Buses at 10:14 with WEST's bus coming in on INTO_A, 9 min late, and EAST's bus live."""
-    from departureboard.livebus import live_board
     from test_enrich import INTO_A, LEFT_JUNCTION
     from test_livebus import every_day
+
+    from departureboard.livebus import live_board
 
     plan = schedule(EAST, WEST, INTO_A)
     vehicles = [bus(*HALFWAY, now), bus(*HALFWAY, now, line="237", origin=JUNCTION, aimed=LEFT_JUNCTION)]
@@ -662,6 +662,7 @@ def test_touch_and_age_follow_the_clock():
 
 def test_rain_already_falling_is_said_as_now_not_an_hour_gone_by():
     from datetime import datetime
+
     from departureboard.snapshot import rain_sentence
     from departureboard.weather import Hour
 
@@ -760,8 +761,9 @@ def test_the_snapshot_is_stamped_in_the_board_s_zone_not_the_host_s():
 def test_inbound_only_journeys_are_not_counted_nor_observed():
     from dataclasses import replace
 
-    from departureboard.livebus import live_board
     from test_livebus import every_day
+
+    from departureboard.livebus import live_board
 
     only = replace(EAST, inbound_only=True)
     plan = schedule(only, WEST)
@@ -775,6 +777,7 @@ def test_inbound_only_journeys_are_not_counted_nor_observed():
 
 def test_a_stop_is_named_with_the_letter_on_its_sign():
     from dataclasses import replace as swap
+
     from departureboard.snapshot import stop_names
 
     lettered = swap(schedule(), positions={**POSITIONS, HENRY_A: swap(POSITIONS[HENRY_A], indicator="Stop A")})

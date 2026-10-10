@@ -123,7 +123,7 @@ class Schedule:
         return json.dumps(_plain(data), separators=(",", ":"), sort_keys=True)
 
     @classmethod
-    def from_json(cls, text: str) -> "Schedule":
+    def from_json(cls, text: str) -> Schedule:
         data = json.loads(text)
         return cls(
             built=datetime.fromisoformat(data["built"]),

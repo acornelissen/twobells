@@ -24,10 +24,10 @@ import re
 import secrets
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from http.cookies import SimpleCookie
 from pathlib import Path
-from typing import Callable
 from urllib.parse import urlparse
 
 from . import files
@@ -135,7 +135,7 @@ class Sessions:
     cookie_path: str = "/"
     # With the password store, a password set elsewhere (the command line runs
     # in its own process) ends every session made under the old one.
-    password: "PasswordStore | None" = None
+    password: PasswordStore | None = None
     _live: dict[str, Session] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -495,7 +495,7 @@ class ResetCodes:
             salt = secrets.token_bytes(16)
             expires = now + RESET_CODE_SECONDS
             self._write(self._record, {
-                "issued": recent + [now],
+                "issued": [*recent, now],
                 "code": {"salt": salt.hex(), "hash": _code_hash(salt, code), "expires": expires, "tries": 0},
             })
             self._display.unlink(missing_ok=True)  # it showed the old code, void now

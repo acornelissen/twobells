@@ -13,8 +13,9 @@ import json
 import re
 import zipfile
 from collections import Counter
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
-from typing import BinaryIO, Callable, Iterable, Iterator
+from typing import BinaryIO
 from urllib.parse import urlencode
 
 from . import safexml
@@ -105,7 +106,7 @@ def patterns(xml: bytes, line: str) -> list[Pattern]:
         links = [link for ref in refs for link in sections.get(ref, [])]
         if not links or not uses[pattern_id]:
             continue
-        stops = (links[0][0],) + tuple(link[1] for link in links)
+        stops = (links[0][0], *tuple(link[1] for link in links))
         found.append(Pattern(stops, tuple(link[2] for link in links), uses[pattern_id]))
     return found
 

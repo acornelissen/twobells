@@ -5,6 +5,7 @@ import threading
 import time
 from datetime import date
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from PIL import Image
@@ -301,7 +302,7 @@ def test_run_loop_on_a_screen_draws_a_running_clock(tmp_path, monkeypatch):
     config.write_text(f'display = "hdmi-1280x400"\nrotate = 90\nstate_file = "{state}"\n')
     out = tmp_path / "board.png"
     args = ["run", "--loop", "--ticks", "2", "--tick", "0", "--png", str(out)]
-    assert main(args + ["--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
+    assert main([*args, "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
     assert Image.open(out).size == (1280, 400)
     assert state.exists()
 
@@ -710,7 +711,7 @@ def bods_env(tmp_path, monkeypatch):
 
 def test_timetable_builds_and_reports_the_bus_timetable(bods_env, monkeypatch, capsys):
     from departureboard import timetable
-    from departureboard.schedule_model import Call, Calendar, Journey, Schedule
+    from departureboard.schedule_model import Calendar, Call, Journey, Schedule
 
     args, folder = bods_env
     seen = {}
@@ -2048,7 +2049,7 @@ def test_the_fetch_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypat
     class StuckJob:
         """A discover.SetupJob that runs until cancelled."""
 
-        made = []
+        made: ClassVar[list] = []
 
         def __init__(self, folder, stops, api_key, *, routes=False, walk_minutes=None, nice=0):
             self.state = "running"

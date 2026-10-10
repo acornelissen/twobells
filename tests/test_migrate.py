@@ -8,10 +8,10 @@ import stat
 import tomllib
 
 import pytest
-from departureboard.migrate import adopt_legacy
-from departureboard.store import Store
 
 from departureboard import store as stores
+from departureboard.migrate import adopt_legacy
+from departureboard.store import Store
 
 
 def mode(path):

@@ -5,18 +5,17 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+from test_livebus import HALFWAY, HENRY_A, at, bus, schedule
 
 from departureboard.bodsbus import BusBoard
 from departureboard.collector import Collector, Poller
-from departureboard.dashconfig import DashboardOptions, DashboardSettings
 from departureboard.darwin import DetailsError, DetailsUnavailable, ServiceGone, parse_board_rich, parse_service_details
+from departureboard.dashconfig import DashboardOptions, DashboardSettings
 from departureboard.history import Stats
 from departureboard.livebus import live_board
 from departureboard.snapshot import Hub
 from departureboard.walk import WalkTimes
 from departureboard.weather import parse_conditions
-
-from test_livebus import HALFWAY, HENRY_A, at, bus, schedule
 
 LONDON = ZoneInfo("Europe/London")
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -316,11 +315,11 @@ def test_details_are_forgotten_when_a_train_leaves_the_board(tmp_path):
     setup.collector.poll_trains()
     first = setup.trains.payload["trainServices"].pop(0)
     setup.collector.poll_trains()
-    assert setup.details.asked == IDS[:3] + [IDS[3]]  # the new third train
+    assert setup.details.asked == [*IDS[:3], IDS[3]]  # the new third train
     # Back again within the minute (a board that flickered): asked for afresh.
     setup.trains.payload["trainServices"].insert(0, first)
     setup.collector.poll_trains()
-    assert setup.details.asked == IDS[:3] + [IDS[3], IDS[0]]
+    assert setup.details.asked == [*IDS[:3], IDS[3], IDS[0]]
 
 
 def test_a_train_that_becomes_cancelled_loses_its_position(tmp_path):
@@ -352,7 +351,7 @@ def test_a_refused_key_turns_details_off_for_six_hours(tmp_path, caplog):
     setup.monotonic.now += 5 * 3600 + 1  # six hours on
     setup.details.errors.clear()
     setup.collector.poll_trains()
-    assert setup.details.asked == [IDS[0]] + IDS[:3]
+    assert setup.details.asked == [IDS[0], *IDS[:3]]
     assert positions(setup)[0] is not None
 
 
@@ -367,7 +366,7 @@ def test_other_failures_skip_that_train_this_round(tmp_path, caplog):
     # Asked again on the next poll, not switched off.
     setup.details.errors.clear()
     setup.collector.poll_trains()
-    assert setup.details.asked == IDS[:3] + [IDS[1]]
+    assert setup.details.asked == [*IDS[:3], IDS[1]]
     assert positions(setup)[1] is not None
 
 

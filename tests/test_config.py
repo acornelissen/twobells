@@ -228,7 +228,7 @@ def test_waveshare_display_can_be_chosen(tmp_path):
 
 def test_unknown_display_is_a_config_error(tmp_path):
     path = write(tmp_path, 'display = "crt"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
-    with pytest.raises(ConfigError, match="crt.*inky"):
+    with pytest.raises(ConfigError, match=r"crt.*inky"):
         load_config(path, ENV)
 
 
@@ -376,7 +376,7 @@ def test_broken_overlay_is_a_config_error(tmp_path):
     path = _with_state(tmp_path, "")
     (tmp_path / "state").mkdir()
     (tmp_path / "state" / "settings.toml").write_text("title = \n")
-    with pytest.raises(ConfigError, match="settings.toml"):
+    with pytest.raises(ConfigError, match=r"settings\.toml"):
         load_config(path, ENV)
 
 
@@ -452,7 +452,7 @@ def test_wrong_types_and_ranges_are_config_errors(tmp_path, text, message):
 def test_broken_config_toml_is_a_config_error_when_finding_the_overlay(tmp_path):
     from departureboard.config import overlay_paths
 
-    with pytest.raises(ConfigError, match="config.toml"):
+    with pytest.raises(ConfigError, match=r"config\.toml"):
         overlay_paths(write(tmp_path, "title = \n"))
 
 
@@ -770,8 +770,8 @@ def test_a_config_with_neither_trains_nor_buses_needs_setting_up(tmp_path, text)
 
 
 def test_settings_saved_without_a_config_count(tmp_path):
-    from departureboard.store import Store
     from departureboard.config import needs_setup
+    from departureboard.store import Store
 
     store = Store.open(tmp_path / "missing.toml", state_dir=tmp_path / "data")
     assert needs_setup(store)
@@ -858,7 +858,6 @@ def test_first_run_settings_keep_the_screen_and_its_turn(tmp_path):
 
 def test_first_run_settings_fall_back_to_the_defaults(tmp_path):
     from departureboard.config import first_run_settings
-
     from departureboard.store import Store
 
     missing = first_run_settings(tmp_path / "missing.toml")

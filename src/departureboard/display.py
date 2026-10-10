@@ -9,7 +9,6 @@ from PIL.Image import Image
 from .panel import HDMI_1280X400, PHAT, PHAT_V1, WAVESHARE_10IN85G, Panel
 from .render import Palette
 
-
 # What each `display` setting draws on. An Inky reports its own size once opened.
 DISPLAY_PANELS = {
     "inky": PHAT,

@@ -40,7 +40,7 @@ def test_draw_lights_one_pixel_per_dot():
     image = Image.new("P", (20, HEIGHT), 0)
     FONT.draw(ImageDraw.Draw(image), (0, 0), "1", fill=1)
     lit = "".join(GLYPHS["1"]).count("#")
-    assert dict((c, n) for n, c in image.getcolors())[1] == lit
+    assert {c: n for n, c in image.getcolors()}[1] == lit
 
 
 def test_descenders_draw_below_the_baseline():

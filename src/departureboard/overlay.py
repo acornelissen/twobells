@@ -30,9 +30,9 @@ import math
 import os
 import re
 import tomllib
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Mapping
 
 from . import files
 from .config import (
@@ -123,7 +123,7 @@ def to_toml(data: dict, header: str = HEADER) -> str:
         body(values)
         for k, v in values.items():
             if isinstance(v, dict):
-                table(path + [k], v)
+                table([*path, k], v)
 
     body(data)
     for key, value in data.items():

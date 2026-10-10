@@ -2,7 +2,9 @@ import stat
 
 import pytest
 
+from departureboard.bodsbus import BodsBusSource
 from departureboard.config import ConfigError
+from departureboard.darwin import DETAILS_BASE_URL, DarwinSource, ServiceDetailsClient
 from departureboard.dashconfig import (
     DashboardOptions,
     FileWatch,
@@ -10,11 +12,9 @@ from departureboard.dashconfig import (
     dashboard_target,
     load_dashboard,
 )
+from departureboard.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource
 from departureboard.overlay import OverlayError, save_to
 from departureboard.store import Store
-from departureboard.darwin import DETAILS_BASE_URL, DarwinSource, ServiceDetailsClient
-from departureboard.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource
-from departureboard.bodsbus import BodsBusSource
 from departureboard.weather import OpenMeteoSource
 
 ENV = {"RDM_API_KEY": "rail-key", "BODS_API_KEY": "bods-key", "TAPI_APP_ID": "id", "TAPI_APP_KEY": "tapi-key"}
@@ -425,7 +425,7 @@ def test_a_broken_saved_settings_file_is_a_config_error_naming_it(config, tmp_pa
     folder = tmp_path / "dash"
     folder.mkdir()
     (folder / "settings.toml").write_text("this is [not toml")
-    with pytest.raises(ConfigError, match="settings.toml"):
+    with pytest.raises(ConfigError, match=r"settings\.toml"):
         load_dashboard(config, ENV, folder)
 
 

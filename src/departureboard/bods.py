@@ -7,9 +7,9 @@ area around the configured route strips is asked for, so responses stay small.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Callable
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 from . import safexml
@@ -113,7 +113,7 @@ class BodsVehicleSource:
         lines: set[str],
         base_url: str = DEFAULT_BASE_URL,
         http_get: HttpGetBytes = get_bytes,
-        now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._api_key = api_key
         self._box = box
@@ -144,5 +144,5 @@ def _fresh(vehicle: Vehicle, now: datetime) -> bool:
     except ValueError:
         return False
     if recorded.tzinfo is None:
-        recorded = recorded.replace(tzinfo=timezone.utc)
+        recorded = recorded.replace(tzinfo=UTC)
     return now - recorded <= MAX_AGE

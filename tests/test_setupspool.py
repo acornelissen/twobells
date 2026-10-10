@@ -6,13 +6,14 @@ import logging
 import os
 import threading
 import time
+from typing import ClassVar
 
 import pytest
 
 from departureboard import discover, setupspool
 from departureboard.keytest import KeyResult
-from departureboard.setup import Place, SetupError, Stop
 from departureboard.overlay import board_target
+from departureboard.setup import Place, SetupError, Stop
 from departureboard.setupapi import RateLimit, SetupApi
 from departureboard.setupspool import Refused, Spool, SpoolRunner, Worker
 
@@ -41,7 +42,7 @@ RESULT = {
 class FakeJob:
     """A discover.SetupJob that finishes when told to."""
 
-    made: list["FakeJob"] = []
+    made: ClassVar[list["FakeJob"]] = []
     busy = False
 
     def __init__(self, folder, stops, api_key, *, routes=False, walk_minutes=None, nice=0):
@@ -93,7 +94,7 @@ def board(tmp_path):
         lookup_postcode=lambda postcode: calls.append(("postcode", postcode)) or HOME_PLACE,
         search_address=lambda q: calls.append(("address", q)) or [HOME_PLACE],
         nearby_stops=lambda lat, lon, within_m, limit: calls.append(("stops", lat, lon, within_m, limit)) or STOPS,
-        walk_minutes=lambda home, places: calls.append(("walk", home, places)) or {k: (4, "route") for k in places},
+        walk_minutes=lambda home, places: calls.append(("walk", home, places)) or dict.fromkeys(places, (4, "route")),
         make_job=FakeJob, test_key=test_key, idle=60, poll=0.01, stop=threading.Event(),
     )
     runner = SpoolRunner(state / "spool", poll=0.01, waits=dict.fromkeys(setupspool.WAITS, 5.0),
@@ -126,7 +127,8 @@ def spool_text(state) -> str:
     for folder, _, names in os.walk(state / "spool"):
         for name in names:
             if name != setupspool.WORKER_LOCK:
-                out.append(open(os.path.join(folder, name), encoding="utf-8", errors="replace").read())
+                with open(os.path.join(folder, name), encoding="utf-8", errors="replace") as file:
+                    out.append(file.read())
     return "\n".join(out)
 
 
@@ -660,7 +662,7 @@ def test_the_spool_is_systemds_folder_in_memory_and_never_on_disk(tmp_path, monk
 def test_the_spool_is_the_fetch_services_and_the_messages_name_it():
     from pathlib import Path
 
-    assert setupspool.RUNTIME == Path("/run/departureboard-fetch")
+    assert Path("/run/departureboard-fetch") == setupspool.RUNTIME
     assert "departureboard-fetch.path" in setupspool.NO_ANSWER
     assert "journalctl -u departureboard-fetch " in setupspool.NO_SETTINGS
 

@@ -76,11 +76,12 @@ import re
 import stat
 import tempfile
 import time
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Set
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import AbstractSet, BinaryIO, Callable, Collection, Iterable, Iterator, Mapping, NamedTuple
+from typing import BinaryIO, NamedTuple
 from urllib.parse import urlsplit
 
 from . import files, http, roadshape, routesetup, safexml
@@ -511,9 +512,9 @@ def _stands(doc: _Document, atcos: Collection[str], yours: Mapping[str, StopPosi
         if atco in atcos:
             continue
         here = doc.positions.get(atco)
-        if here is not None and any(metres(here, there) <= NEAR_M for there in placed.values()):
-            found.add(atco)
-        elif (here is None or len(placed) < len(atcos)) and atco[:3] in areas:
+        near = here is not None and any(metres(here, there) <= NEAR_M for there in placed.values())
+        unplaced = (here is None or len(placed) < len(atcos)) and atco[:3] in areas
+        if near or unplaced:
             found.add(atco)
     return found
 
@@ -562,7 +563,7 @@ def _within(day: date, ranges: Iterable[DateRange]) -> bool:
     return any(start <= day <= end for start, end in ranges)
 
 
-def runs_on(calendar: Calendar, day: date, holiday_names: Mapping[date, AbstractSet[str]] = {}) -> bool:
+def runs_on(calendar: Calendar, day: date, holiday_names: Mapping[date, Set[str]] = {}) -> bool:
     """Whether a journey with this calendar runs on `day`, its service day (the
     day it starts). `holiday_names` gives each day's TransXChange bank holiday
     names, from holidays.holiday_names. See the module's notes for the order."""
@@ -584,7 +585,7 @@ def runs_on(calendar: Calendar, day: date, holiday_names: Mapping[date, Abstract
     return day.weekday() in calendar.days
 
 
-def journeys_on(schedule: Schedule, day: date, holiday_names: Mapping[date, AbstractSet[str]] = {}) -> list[Journey]:
+def journeys_on(schedule: Schedule, day: date, holiday_names: Mapping[date, Set[str]] = {}) -> list[Journey]:
     """The schedule's journeys that run on `day`, their service day."""
     return [journey for journey in schedule.journeys if runs_on(journey.calendar, day, holiday_names)]
 

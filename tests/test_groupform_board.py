@@ -644,8 +644,8 @@ def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
     # Regression: the page wrote settings.toml whole from its own fields, so
     # the first save after setup dropped [bus] source, operators and routes,
     # [weather] lat and lon, and anything else it doesn't show.
-    from departureboard.setup import Stop
     from departureboard.overlay import board_target
+    from departureboard.setup import Stop
     from departureboard.setupapi import SetupApi
 
     state = tmp_path / "state"

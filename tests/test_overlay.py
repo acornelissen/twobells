@@ -3,8 +3,7 @@ import tomllib
 
 import pytest
 
-from departureboard.config import read_config
-from departureboard.config import ConfigError, read_base
+from departureboard.config import ConfigError, read_base, read_config
 from departureboard.overlay import OverlayError, Target, save_changes, save_to, to_toml
 
 ENV = {"RDM_API_KEY": "rdm-secret-123", "BODS_API_KEY": "bods-secret-456"}

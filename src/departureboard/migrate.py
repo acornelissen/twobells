@@ -30,10 +30,10 @@ import sqlite3
 import stat
 import sys
 import tomllib
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator, Mapping
 
 from . import files
 from .config import OVERLAY_NAME, SECRETS_OVERLAY_NAME, ConfigError, load_env_file, merge, parse_env, saved_only
@@ -257,6 +257,6 @@ def _history(source: Path, target: Path) -> list[str]:
 
 
 def _record(path: Path, old: Path, imported: list[str]) -> None:
-    record = {"v": 1, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "from": str(old),
+    record = {"v": 1, "at": datetime.now(UTC).isoformat(timespec="seconds"), "from": str(old),
               "imported": imported}
     _create(path, (json.dumps(record, indent=2) + "\n").encode("utf-8"), 0o600)

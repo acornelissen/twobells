@@ -17,7 +17,7 @@ def test_sign_theme_uses_yellow_as_amber():
 
 
 def test_unknown_theme_lists_the_choices():
-    with pytest.raises(ValueError, match="plain.*sign|sign.*plain"):
+    with pytest.raises(ValueError, match=r"plain.*sign|sign.*plain"):
         theme_named("neon")
 
 

@@ -33,8 +33,8 @@ import io
 import json
 import logging
 import re
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Callable, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import Request
@@ -104,7 +104,7 @@ _SERVICES["TAPI_APP_KEY"] = _SERVICES["TAPI_APP_ID"]
 
 def _fetch(url: str, headers: Mapping[str, str]) -> bytes:
     """An answer's body, at most MAX_BYTES of it: a test needs no more."""
-    request = Request(url, headers={"User-Agent": http.USER_AGENT, "Accept": "application/json", **headers})
+    request = Request(url, headers={"User-Agent": http.USER_AGENT, "Accept": "application/json", **headers})  # noqa: S310
     with http.urlopen(request, timeout=TIMEOUT) as response:
         return response.read(MAX_BYTES)
 

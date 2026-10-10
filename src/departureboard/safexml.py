@@ -8,7 +8,7 @@ much comes before it.
 
 from __future__ import annotations
 
-from typing import Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from xml.etree import ElementTree
 
 
@@ -23,7 +23,7 @@ class _Builder(ElementTree.TreeBuilder):
 
 
 def fromstring(data: bytes) -> ElementTree.Element:
-    parser = ElementTree.XMLParser(target=_Builder())
+    parser = ElementTree.XMLParser(target=_Builder())  # noqa: S314 - the target refuses a DOCTYPE
     parser.feed(data)
     return parser.close()
 
@@ -49,7 +49,7 @@ def iter_elements(chunks: Iterable[bytes], name: str) -> Iterator[ElementTree.El
     on, so a large document never sits in memory whole. Refuses a DOCTYPE like
     fromstring; a document that isn't well formed raises ElementTree.ParseError."""
     collector = _Collector(name)
-    parser = ElementTree.XMLParser(target=collector)
+    parser = ElementTree.XMLParser(target=collector)  # noqa: S314 - the target refuses a DOCTYPE
     for chunk in chunks:
         parser.feed(chunk)
         yield from _drain(collector)

@@ -265,7 +265,7 @@ def changes(steps):
     for _, ms in steps:
         times.append(elapsed)
         elapsed += ms
-    return times + [elapsed]
+    return [*times, elapsed]
 
 
 @pytest.mark.parametrize("speed", [20000, 2500, 0])

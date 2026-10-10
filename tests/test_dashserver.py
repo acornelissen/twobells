@@ -1,3 +1,4 @@
+import contextlib
 import hashlib
 import http.client
 import json
@@ -628,10 +629,8 @@ def test_connections_beyond_the_cap_are_closed_unanswered(static_dir):
         time.sleep(0.1)
         with socket.create_connection(("127.0.0.1", running.port), timeout=5) as extra:
             extra.sendall(b"GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n")
-            try:
+            with contextlib.suppress(ConnectionResetError):  # or reset: either way, no answer
                 assert extra.recv(100) == b""  # closed without an answer
-            except ConnectionResetError:
-                pass  # or reset: either way, no answer
         hog.close()
     finally:
         running.close()

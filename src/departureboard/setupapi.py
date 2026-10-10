@@ -60,15 +60,15 @@ import re
 import string
 import threading
 import time
+from collections.abc import Callable, Mapping, Sequence
 from importlib.resources import files
 from pathlib import Path
-from typing import Callable, Mapping, Protocol, Sequence
+from typing import Protocol
 
-from . import discover, keytest, setup
+from . import discover, keytest, schema, setup
 from .config import ConfigError
 from .installs import INSTALLS, Install
 from .overlay import OverlayError, Target, save_to
-from . import schema
 from .schema import ATCO as _ATCO
 from .schema import CRS as _CRS
 from .schema import KEY_VALUE as _KEY_VALUE

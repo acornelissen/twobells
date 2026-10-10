@@ -23,16 +23,17 @@ in words by the key's box, its key boxes empty, never a key in the page.
 from __future__ import annotations
 
 import html
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from . import keytest, schema
 from .config import ConfigError, merge, settings_from
-from .disruptions import kb_url_is_placeholder
 from .display import DISPLAY_PANELS
+from .disruptions import kb_url_is_placeholder
 from .holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
 from .overlay import BROKEN_NAME, OverlayError, save_to
 from .schema import KEY_VALUE, Field, Invalid

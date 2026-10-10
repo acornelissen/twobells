@@ -53,7 +53,7 @@ def _upcoming(now: datetime, headway: int, offset: int, count: int) -> list[date
 
 def _rng(seed: int, key: str, now: datetime) -> random.Random:
     bucket = (now.hour * 60 + now.minute) // _BUCKET_MINUTES
-    return random.Random(f"{seed}|{key}|{now.date()}|{bucket}")
+    return random.Random(f"{seed}|{key}|{now.date()}|{bucket}")  # noqa: S311 - sample data, not secrets
 
 
 class _FakeSource:

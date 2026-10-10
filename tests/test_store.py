@@ -5,13 +5,13 @@ import os
 from pathlib import Path
 
 import pytest
-from departureboard import store as store_module
-from departureboard.installs import install_named
-from departureboard.store import Store, find_folder, platform_folder
 
+from departureboard import store as store_module
 from departureboard.config import ConfigError
-from departureboard.schema import saved_keys
+from departureboard.installs import install_named
 from departureboard.overlay import save_to
+from departureboard.schema import saved_keys
+from departureboard.store import Store, find_folder, platform_folder
 
 HOME = Path("/home/me")
 ENV = {"RDM_API_KEY": "rail-key"}
@@ -250,7 +250,7 @@ def test_a_config_toml_that_can_t_be_read_is_a_config_error(tmp_path, content, w
 def test_a_broken_settings_toml_is_a_config_error_naming_it(board):
     path, folder = board
     write(folder / "settings.toml", "this is [not toml")
-    with pytest.raises(ConfigError, match="settings.toml"):
+    with pytest.raises(ConfigError, match=r"settings\.toml"):
         Store.open(path, environ={}).data()
 
 

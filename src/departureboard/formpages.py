@@ -23,8 +23,9 @@ import json
 import logging
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import BinaryIO, Callable, Protocol
+from typing import BinaryIO, Protocol
 from urllib.parse import parse_qs
 
 from . import setupapi

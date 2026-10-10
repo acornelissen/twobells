@@ -8,6 +8,7 @@ import os
 import signal
 import threading
 import time
+from typing import ClassVar
 
 import pytest
 
@@ -29,7 +30,7 @@ HISTORY = {"mode": "train", "route": "GLO|Manchester", "scheduled": "07:12", "la
 class FakeCollector:
     """A collector.Collector that publishes one row and fetches nothing."""
 
-    made: list["FakeCollector"] = []
+    made: ClassVar[list["FakeCollector"]] = []
 
     def __init__(self, dash, hub, history):
         self.dash, self.hub, self.history = dash, hub, history

@@ -1,8 +1,8 @@
 import dataclasses
-
-import pytest
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+import pytest
 
 from departureboard.app import Board, SourceConfig, run_once
 from departureboard.model import Departure, Status

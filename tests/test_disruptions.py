@@ -1,9 +1,10 @@
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+from test_livebus import EAST, WEST, schedule
 
 from departureboard import disruptions, http
 from departureboard.disruptions import (
@@ -24,13 +25,11 @@ from departureboard.safexml import DoctypeError
 from departureboard.schedule_model import StopPosition
 from departureboard.snapshot import row_id
 
-from test_livebus import EAST, WEST, schedule
-
 FIXTURES = Path(__file__).parent / "fixtures"
 SX = FIXTURES / "bods_siri_sx_glossop.xml"
 KB = FIXTURES / "kb_incidents_synthetic.xml"
 LONDON = ZoneInfo("Europe/London")
-UTC = timezone.utc
+UTC = UTC
 CAPTURED = datetime(2026, 10, 9, 22, 14, tzinfo=UTC)  # when the SIRI-SX capture was taken
 
 HADFIELD_ROADWORKS = "f6811095-2129-4149-b41c-5d0f62841166"  # 237 (BNML), from 12 Oct

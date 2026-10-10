@@ -24,7 +24,7 @@ class Panel:
     epaper: bool = True
 
     @classmethod
-    def sized(cls, name: str, width: int, height: int, epaper: bool = True) -> "Panel":
+    def sized(cls, name: str, width: int, height: int, epaper: bool = True) -> Panel:
         """A panel drawn as large as its height allows, whole pixels per dot."""
         return cls(name, width, height, max(1, height // _DESIGN_HEIGHT), epaper)
 

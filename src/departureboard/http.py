@@ -173,7 +173,7 @@ def urlopen(request: Request, timeout: float):
 
 
 def get_json(url: str, headers: dict | None = None, timeout: float = 15.0) -> dict:
-    request = Request(
+    request = Request(  # noqa: S310 - _opener opens only http and https
         url,
         headers={"Accept": "application/json", "User-Agent": USER_AGENT, **(headers or {})},
     )
@@ -194,7 +194,7 @@ def get_json_capped(url: str, headers: dict | None, max_bytes: int, timeout: flo
     and a body that isn't UTF-8 JSON (or nests too deeply to read) gives one
     plain ValueError (NotJSON; TooLarge for the size). The error text never
     repeats the URL or the headers."""
-    request = Request(
+    request = Request(  # noqa: S310 - _opener opens only http and https
         url,
         headers={"Accept": "application/json", "User-Agent": USER_AGENT, **(headers or {})},
     )
@@ -215,7 +215,7 @@ def get_bytes(url: str, max_bytes: int, timeout: float = 15.0, headers: dict | N
     are added to (or replace) the default User-Agent. `timeout` is for each
     step; with `deadline` (seconds), the whole request, redirects and all, is
     given up after that long, however slowly the server sends."""
-    request = Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
+    request = Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})  # noqa: S310 - _opener opens only http and https
     if deadline is not None:
         request.deadline = time.monotonic() + deadline
     with urlopen(request, timeout=timeout) as response:
@@ -230,7 +230,7 @@ def stream(url: str, headers: Mapping[str, str], max_bytes: int, timeout: float 
     (ValueError) and more than `max_bytes` (TooLarge)."""
     if urlsplit(url).scheme != "https":
         raise ValueError("Refusing an address that isn't https")
-    request = Request(url, headers={"User-Agent": USER_AGENT, **headers})
+    request = Request(url, headers={"User-Agent": USER_AGENT, **headers})  # noqa: S310 - _opener opens only http and https
     total = 0
     with urlopen(request, timeout=timeout) as response:
         while chunk := response.read(1 << 16):

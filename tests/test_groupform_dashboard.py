@@ -51,7 +51,7 @@ def fields_of(form):
     """What a browser would submit for the form as rendered."""
     page = form.render("tok")
     values = dict(re.findall(r'<input id="([a-z_]+)" name="[a-z_]+" type="text" value="([^"]*)"', page))
-    values |= {name: text for name, text in re.findall(r'<textarea id="([a-z_]+)"[^>]*>([^<]*)</textarea>', page)}
+    values |= dict(re.findall(r'<textarea id="([a-z_]+)"[^>]*>([^<]*)</textarea>', page))
     for name, options in re.findall(r'<select id="([a-z_]+)"[^>]*>(.*?)</select>', page):
         values[name] = re.search(r'<option value="([^"]*)" selected', options).group(1)
     return values

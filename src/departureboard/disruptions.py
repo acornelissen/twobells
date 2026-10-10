@@ -32,17 +32,17 @@ on a known operator's site.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, tzinfo
 from functools import partial
 from html.parser import HTMLParser
-from typing import Callable, Iterable, Mapping
 from urllib.parse import urlencode, urlsplit
 from xml.etree import ElementTree
 
 from . import http, safexml
-from .schedule_model import Schedule, StopPosition
 from .model import iso
+from .schedule_model import Schedule, StopPosition
 from .snapshot import row_id
 from .status import safe_message
 
@@ -96,9 +96,9 @@ Stream = Callable[[str, Mapping[str, str], int], Iterable[bytes]]
 class _Text(HTMLParser):
     """Collects the text of a fragment that may hold HTML, as words only."""
 
-    _BREAKS = {"p", "br", "li", "div", "tr", "h1", "h2", "h3", "h4", "ul", "ol"}
+    _BREAKS = frozenset({"p", "br", "li", "div", "tr", "h1", "h2", "h3", "h4", "ul", "ol"})
 
-    _HIDDEN = {"script", "style"}
+    _HIDDEN = frozenset({"script", "style"})
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -348,7 +348,7 @@ class BusArea:
     box: tuple[float, float, float, float] | None  # west, south, east, north
 
     @classmethod
-    def from_schedule(cls, schedule: Schedule) -> "BusArea":
+    def from_schedule(cls, schedule: Schedule) -> BusArea:
         lines = {(j.line.casefold(), j.operator.casefold()): j.line for j in schedule.journeys}
         places = list(schedule.positions.values())
         box = None

@@ -10,6 +10,7 @@ import hashlib
 import json
 import math
 from dataclasses import asdict, dataclass
+from itertools import pairwise
 
 from .bods import Vehicle
 from .model import Departure
@@ -64,7 +65,7 @@ def position_on(strip: RouteStrip, vehicle: Vehicle) -> float | None:
     points = [_xy(strip, s.lat, s.lon) for s in strip.stops]
     last = len(points) - 2
     best = None
-    for i, ((ax, ay), (bx, by)) in enumerate(zip(points, points[1:], strict=False)):
+    for i, ((ax, ay), (bx, by)) in enumerate(pairwise(points)):
         dx, dy = bx - ax, by - ay
         length_sq = dx * dx + dy * dy or 1e-9
         raw = ((px - ax) * dx + (py - ay) * dy) / length_sq

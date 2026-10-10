@@ -23,9 +23,10 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Callable, Mapping
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Callable, Mapping, NamedTuple
+from typing import NamedTuple
 
 from . import files
 from .http import get_bytes

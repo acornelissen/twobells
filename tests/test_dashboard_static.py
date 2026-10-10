@@ -411,7 +411,7 @@ SNAPSHOT = {
     }),
     "weather": Opt(WEATHER),
     "disruptions": Opt(DISRUPTIONS),
-    "timetable_changes": Opt([{"line": str, "operator": str, "from": lambda v: isinstance(v, str) and bool(DAY.match(v))}]),  # noqa: E501
+    "timetable_changes": Opt([{"line": str, "operator": str, "from": lambda v: isinstance(v, str) and bool(DAY.match(v))}]),
 }
 def lat_lon(value):
     return isinstance(value, list) and len(value) == 2 and all(number(x) for x in value)

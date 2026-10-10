@@ -2,12 +2,12 @@ import json
 from dataclasses import replace
 from datetime import date
 
+from test_livebus import EAST, HALFWAY, HENRY_A, ST_MARYS_W, WEST, at, bus, schedule
+
 from departureboard.area import area_view, timetable_changes
 from departureboard.bodsbus import BusBoard
 from departureboard.livebus import live_board
 from departureboard.schedule_model import Calendar, Call
-
-from test_livebus import EAST, HALFWAY, HENRY_A, ST_MARYS_W, WEST, at, bus, schedule
 
 NOW = at(10, 14, 30)
 

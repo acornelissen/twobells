@@ -3,16 +3,17 @@
 import json
 import tomllib
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
 from departureboard import discover, setupapi
-from departureboard.schema import keys as schema_keys
 from departureboard.config import load_config, needs_setup, read_base, read_config
 from departureboard.groupform import check_views
 from departureboard.installs import INSTALLS, Install
 from departureboard.keytest import KeyResult
 from departureboard.overlay import Target, board_target
+from departureboard.schema import keys as schema_keys
 from departureboard.setup import Place, SetupError, Station, Stop
 from departureboard.setupapi import Invalid, RateLimit, SetupApi, decode, suggested_labels
 from departureboard.store import Store
@@ -61,7 +62,7 @@ WITH_TAPI = schema_keys("general", "board")
 
 
 class FakeJob:
-    made: list["FakeJob"] = []
+    made: ClassVar[list["FakeJob"]] = []
     busy = False
 
     def __init__(self, folder, stops, api_key, *, routes=False, walk_minutes=None):
@@ -820,7 +821,7 @@ class FakeRunner:
 
     def walk_minutes(self, home, places):
         self.calls.append(("walk", home, dict(places)))
-        return {key: (4, "route") for key in places}
+        return dict.fromkeys(places, (4, "route"))
 
     def make_job(self, stops, pasted_key, *, routes, walk_minutes):
         self.calls.append(("job", dict(stops), pasted_key, routes, dict(walk_minutes)))

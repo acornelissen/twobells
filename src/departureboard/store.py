@@ -22,9 +22,10 @@ import logging
 import os
 import sys
 import tomllib
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Mapping
+from typing import TYPE_CHECKING
 
 from .config import OVERLAY_NAME, SECRETS_OVERLAY_NAME, ConfigError, load_env_file, merge, read_overlay_in
 from .installs import DEFAULT, install_named
@@ -39,7 +40,7 @@ FOLDER_NAME = "departureboard"
 # The dashboard's own folder before the store; one already there is used in place.
 OLD_FOLDER_NAME = "departureboard-dashboard"
 STATE_NAME = "state.json"
-PASSWORD_NAME = "web.json"
+PASSWORD_NAME = "web.json"  # noqa: S105 - the file the password hash is kept in
 
 
 def _absolute(path: Path) -> Path:
@@ -291,7 +292,7 @@ class Store:
         paths = [self.config_path]
         if self.secrets_path is not None:
             paths.append(self.secrets_path)
-        return paths + [self.settings_file, self.secrets_file]
+        return [*paths, self.settings_file, self.secrets_file]
 
     def make(self) -> None:
         """Create the folder, for its owner only, unless it is there."""

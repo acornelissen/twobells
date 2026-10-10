@@ -13,10 +13,11 @@ from __future__ import annotations
 import logging
 import re
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Mapping
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from .app import Board, SourceConfig, Tracker, Weather, reset_code_page
@@ -26,12 +27,12 @@ from .darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL
 from .darwin import DarwinSource
 from .display import DISPLAY_PANELS
 from .holidays import DIVISIONS, ENGLAND_AND_WALES
-from .schedule import PollPolicy, parse_window
-from .transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
-from .themes import theme_named, with_text_size
-from .transportapi import TransportApiBusSource
 from .route import RouteStop, RouteStrip
+from .schedule import PollPolicy, parse_window
 from .schema import BOARD_DEFAULTS, CRS, NOC, bus_defaults, refused, saved_keys, views
+from .themes import theme_named, with_text_size
+from .transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
+from .transportapi import TransportApiBusSource
 from .walk import DEFAULT_STOP, WalkTimes
 from .weather import OpenMeteoSource
 

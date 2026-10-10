@@ -31,9 +31,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
-from .model import iso
-
 from . import files
+from .model import iso
 
 FILE_NAME = "history.sqlite3"
 SCHEMA_VERSION = 1
@@ -206,7 +205,7 @@ class History:
             raise
 
     @classmethod
-    def reader(cls, folder: Path | str) -> "History | None":
+    def reader(cls, folder: Path | str) -> History | None:
         """The history in `folder`, to read only, as the web server on a Pi
         does while the fetch service writes it: None if there is none yet,
         or it isn't set up. Never makes or changes the file or its schema

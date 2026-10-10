@@ -92,8 +92,8 @@ import shutil
 import stat
 import threading
 import time
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Callable, Mapping
 
 from . import discover, files, keytest, routesetup, setup
 from .schema import ATCO as _ATCO
@@ -675,7 +675,7 @@ class SpoolRunner:
         return self._check(reply, _key_result)
 
     def make_job(self, stops: Mapping[str, str], pasted_key: str, *, routes: bool,
-                 walk_minutes: Mapping[str, int]) -> "SpoolJob":
+                 walk_minutes: Mapping[str, int]) -> SpoolJob:
         return SpoolJob(self, {"stops": dict(stops), "routes": routes, "walk": dict(walk_minutes),
                                "key": pasted_key}, self._start_wait, self._silent)
 
@@ -814,7 +814,7 @@ def _status_out(status: dict) -> dict:
     if out["state"] == "done" and isinstance(result, dict):
         notes = [safe_message(n) for n in result.get("notes", [])]
         if len(notes) > MAX_NOTES:
-            notes = notes[: MAX_NOTES - 1] + [f"And {len(notes) - MAX_NOTES + 1} more notes"]
+            notes = [*notes[:MAX_NOTES - 1], f"And {len(notes) - MAX_NOTES + 1} more notes"]
         out["result"] = {**result, "notes": notes}
         if isinstance(status.get("roads"), dict):
             out["roads"] = {key: status["roads"].get(key) for key in ("state", "done", "total")}

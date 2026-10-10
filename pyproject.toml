@@ -38,12 +38,18 @@ line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "B", "A", "N", "BLE"]
+select = ["E", "F", "W", "B", "A", "N", "BLE", "I", "UP", "SIM", "C4", "RUF", "S"]
 ignore = [
     "N818",  # exception names without an Error suffix are public API; renaming them is churn
+    "RUF001",  # typographic quotes and symbols in user-facing text are deliberate
+    "RUF059",  # unused names in unpacking say what each part is
+    "UP042",  # a StrEnum's str() differs from a (str, Enum)'s; not worth the behaviour change
+    "SIM108",  # an if/else block often reads better than a long or nested conditional expression
 ]
 
 [tool.ruff.lint.per-file-ignores]
 # Tests keep long fixture strings and asserts on one line, and use `l` for a
 # live row in short comprehensions.
-"tests/**" = ["E501", "E741"]
+# Tests assert, use made-up keys and passwords, and bind and fetch freely; their
+# regexes are full of braces, which % keeps readable where an f-string can't.
+"tests/**" = ["E501", "E741", "S", "UP031"]

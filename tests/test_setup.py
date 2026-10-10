@@ -501,7 +501,7 @@ def test_stop_search_refuses_silly_limits(kwargs):
         nearby_stops(HOME.lat, HOME.lon, http_get=refuse, grid=GRID, **kwargs)
 
 
-@pytest.mark.parametrize("body", ["ATCOCode\n\"unterminated".encode() + b"x" * 200_000, b"\xff\xfe\x00bad"])
+@pytest.mark.parametrize("body", [b"ATCOCode\n\"unterminated" + b"x" * 200_000, b"\xff\xfe\x00bad"])
 def test_unreadable_naptan_file_is_refused(body):
     with pytest.raises(SetupError, match="NaPTAN"):
         nearby_stops(HOME.lat, HOME.lon, http_get=Getter(body), grid=GRID)

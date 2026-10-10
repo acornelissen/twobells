@@ -29,9 +29,10 @@ import copy
 import fcntl
 import os
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Mapping, Protocol, Sequence
+from typing import IO, TYPE_CHECKING, Protocol
 from urllib.parse import urlsplit
 
 from . import files

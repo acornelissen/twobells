@@ -25,6 +25,7 @@ first public release. `query` (unlisted) answers install.sh and update.sh.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import json
 import logging
@@ -55,22 +56,22 @@ from .config import (
 )
 from .darwin import DarwinSource, TrainBoard
 from .display import DISPLAY_PANELS, PngDisplay, open_display
-from .holidays import bank_holidays
 from .emulation import build_emulation
 from .emulator import DEFAULT_PORT, make_server
 from .fake import DEMO_NOTICE, DEMO_TITLE, FakeWeatherSource
+from .holidays import bank_holidays
 from .http import get_bytes
-from .model import Departure, Status
-from .state import StateStore
-from .store import Store, WrongUser, check_owner
-from .timetable import TimetableBusy, TimetableError
-from .transportapi import TransportApiBusSource, redact_credentials
 from .installs import DEFAULT as DEFAULT_INSTALL
 from .installs import INSTALLS, Install, install_named
+from .model import Departure, Status
 from .schema import BOARD_DEFAULTS, views
+from .state import StateStore
+from .store import Store, WrongUser, check_owner
+from .themes import THEMES, theme_named
+from .timetable import TimetableBusy, TimetableError
+from .transportapi import TransportApiBusSource, redact_credentials
 from .version import package_version
 from .view import SetupView, build_view
-from .themes import THEMES, theme_named
 from .walk import WalkTimes
 from .weather import rain_line
 
@@ -778,10 +779,8 @@ def _demo(args) -> int:
 
 def _emulate(args) -> int:
     if not args.demo:  # keeps the board's state in the store
-        try:
+        with contextlib.suppress(ConfigError):  # loading the settings says what is wrong
             _as_owner(args, _store(args))
-        except ConfigError:
-            pass  # loading the settings says what is wrong
     env = None if args.demo else _env(args.config, args.secrets)
     em = build_emulation(
         demo=args.demo,
@@ -898,7 +897,7 @@ def _start_again(port: int) -> None:
     argv = [sys.executable, *sys.orig_argv[1:], "--no-browser", "--port", str(port)]
     sys.stdout.flush()
     sys.stderr.flush()
-    os.execv(sys.executable, argv)
+    os.execv(sys.executable, argv)  # noqa: S606 - starts this same program afresh, no shell involved
 
 
 def _settings_site(store: Store, install: Install, running: bool, runner=None):
@@ -1061,7 +1060,7 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
             history_days=dash.options.history_days if dash is not None else 90,
             allowed_hosts=dash.options.allowed_hosts if dash is not None else _allowed_hosts(store),
         )
-        host = "0.0.0.0" if args.lan else (args.host or install.host)
+        host = "0.0.0.0" if args.lan else (args.host or install.host)  # noqa: S104 - --lan asks for every interface
         # A port asked for is that port or nothing (Docker's health check expects
         # it); without one, a desktop takes the next free port after the default.
         if args.port is None:
@@ -1266,7 +1265,7 @@ def _parser() -> argparse.ArgumentParser:
     # on a Pi, on the settings' port there. Its setup always goes through
     # departureboard-fetch.service, so --setup-via-spool is taken and changes nothing.
     web = with_config(sub.add_parser("web"))
-    web.add_argument("--host", default="0.0.0.0")
+    web.add_argument("--host", default="0.0.0.0")  # noqa: S104 - the hidden alias keeps its old default
     web.add_argument("--port", type=_port, default=WEB_PORT)
     web.add_argument("--setup-via-spool", action="store_true")
     _password_flags(web)

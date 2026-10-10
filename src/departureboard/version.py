@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import re
 import tomllib
-from importlib.metadata import PackageNotFoundError, version as _metadata_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _metadata_version
 from pathlib import Path
 
 DIST_NAME = "departureboard"

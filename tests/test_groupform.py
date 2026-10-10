@@ -66,7 +66,7 @@ def fields_of(page_or_form):
     """What a browser would submit for the form as rendered: unticked boxes aren't sent."""
     page = page_or_form if isinstance(page_or_form, str) else page_or_form.render("tok")
     values = dict(re.findall(r'<input id="(\w+)" name="\w+" type="text" value="([^"]*)"', page))
-    values |= {name: text for name, text in re.findall(r'<textarea id="(\w+)"[^>]*>([^<]*)</textarea>', page)}
+    values |= dict(re.findall(r'<textarea id="(\w+)"[^>]*>([^<]*)</textarea>', page))
     for name, options in re.findall(r'<select id="(\w+)"[^>]*>(.*?)</select>', page):
         values[name] = re.search(r'<option value="([^"]*)" selected', options).group(1)
     values |= dict.fromkeys(re.findall(r'<input id="(\w+)" name="\w+" type="checkbox" value="on" checked', page), "on")

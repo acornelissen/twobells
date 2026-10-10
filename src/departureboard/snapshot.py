@@ -18,8 +18,9 @@ import math
 import re
 import threading
 import time
-from datetime import date, datetime, timedelta, timezone, tzinfo
-from typing import Callable, Mapping, Protocol
+from collections.abc import Callable, Mapping
+from datetime import UTC, date, datetime, timedelta, tzinfo
+from typing import Protocol
 
 from .bodsbus import BusBoard
 from .darwin import CallingPoint, ServiceDetails, TrainBoard, TrainService, train_position
@@ -262,7 +263,7 @@ def _recorded(value: str, tz: tzinfo) -> datetime | None:
     except (TypeError, ValueError):
         return None
     if recorded.tzinfo is None:
-        recorded = recorded.replace(tzinfo=timezone.utc)  # as bods.py reads a bare time
+        recorded = recorded.replace(tzinfo=UTC)  # as bods.py reads a bare time
     return recorded.astimezone(tz)
 
 
@@ -561,7 +562,7 @@ class Hub:
         self._lock = threading.Lock()
         self._changed = threading.Condition(self._lock)
         self._static = {"title": title, "walk": {"train": walk.train, "bus": dict(walk.bus)}}
-        self._parts: dict[str, dict | None] = {part: None for part in PARTS}
+        self._parts: dict[str, dict | None] = dict.fromkeys(PARTS)
         self._part_lookups: dict[str, dict[str, dict]] = {part: {} for part in PARTS}
         self._lookups: dict[str, dict] = {}
         self._previous: dict[str, dict] = {}

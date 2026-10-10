@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
@@ -379,8 +380,8 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
         Field("accent", "board", None, "accent", "Accent colour", _accent(accents), "select", default="",
               hint="Only reinforces meaning; the words always carry it. The station board look uses amber "
                    "and the plain look uses red; a colour too faint on the look's background isn't offered.",
-              options=(("", "The look's own"),)
-              + tuple((v, t) for v, t in (("yellow", "Yellow / amber"), ("red", "Red")) if v in accents)),
+              options=(("", "The look's own"),
+                       *((v, t) for v, t in (("yellow", "Yellow / amber"), ("red", "Red")) if v in accents))),
         Field("rotate", "board", None, "rotate", "Rotation", whole_choice(rotations), "select",
               hint="Degrees clockwise, to suit how the display is mounted.",
               options=tuple((r, f"{r}°") for r in rotations), default=board["rotate"]),
@@ -493,9 +494,9 @@ def refused(table: str | None, key: str, value: object) -> str | None:
     at raildata.org.uk (or the placeholder, which is never asked)."""
     from .disruptions import kb_url_is_placeholder
 
-    if (table, key) == ("dashboard", "kb_incidents_url"):
-        if not isinstance(value, str) or not (kb_url_is_placeholder(value) or at_raildata(value)):
-            return f"only config.toml can set an address outside {RAILDATA}"
+    if (table, key) == ("dashboard", "kb_incidents_url") and (
+            not isinstance(value, str) or not (kb_url_is_placeholder(value) or at_raildata(value))):
+        return f"only config.toml can set an address outside {RAILDATA}"
     return None
 
 

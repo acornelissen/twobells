@@ -35,15 +35,16 @@ import logging
 import random as _random
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, Callable
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from . import holidays as _holidays
 from .area import area_view, timetable_changes
-from .dashconfig import DashboardSettings
 from .darwin import DetailsUnavailable, ServiceDetails, ServiceGone, TrainBoard
+from .dashconfig import DashboardSettings
 from .disruptions import BusArea, RailArea, bus_disruptions, disruptions_part, train_disruptions
 from .history import History, day_type, no_show_phrase, phrase
 from .model import Status

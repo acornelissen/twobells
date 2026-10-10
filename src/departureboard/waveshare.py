@@ -9,7 +9,8 @@ prebuilt DEV_Config shared library.
 from __future__ import annotations
 
 import time
-from typing import Callable, Protocol
+from collections.abc import Callable
+from typing import Protocol
 
 from PIL.Image import Image
 

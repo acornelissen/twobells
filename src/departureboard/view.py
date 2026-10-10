@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Callable
 
 from .model import Departure, Status, minutes_between
 from .walk import WalkTimes, leave_by, leave_time

@@ -10,10 +10,10 @@ only costs the delays: the timetabled times are still shown.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
-from typing import Callable, Mapping
 
 from . import holidays, livebus, timetable
 from .bods import DEFAULT_BASE_URL, BodsVehicleSource, HttpGetBytes, Vehicle

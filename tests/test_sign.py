@@ -125,8 +125,8 @@ def test_everything_fits_on_the_panel():
     items = sign_layout(board(TRAINS, BUSES, leave="Leave by 07:05", stale_buses=True)).items
     for item in items:
         width, height = item_size(item)
-        assert 0 <= item.x and item.x + width <= WIDTH
-        assert 0 <= item.y and item.y + height <= HEIGHT
+        assert item.x >= 0 and item.x + width <= WIDTH
+        assert item.y >= 0 and item.y + height <= HEIGHT
 
 
 def test_rendered_board_is_amber_on_black():
@@ -154,7 +154,7 @@ def test_trains_and_buses_have_breathing_room_around_the_divider():
 
 
 def test_buses_still_clear_the_footer_with_a_full_board():
-    rows = BUSES + [Row("237", "Ashton", "07:41", leave="leave 07:34", stop="A")]
+    rows = [*BUSES, Row("237", "Ashton", "07:41", leave="leave 07:34", stop="A")]
     items = sign_layout(board(TRAINS, rows, leave="Leave by 07:05")).items
     last_bus_bottom = find(items, "237").y + 9
     assert last_bus_bottom < find(items, "Updated 07:03").y - 2
@@ -208,8 +208,8 @@ def test_everything_fits_on_a_bigger_board(panel):
     items = sign_layout(board(TRAINS, BUSES, leave="Leave by 07:05", stale_buses=True), width, height).items
     for item in items:
         w, h = item_size(item)
-        assert 0 <= item.x and item.x + w <= width
-        assert 0 <= item.y and item.y + h <= height
+        assert item.x >= 0 and item.x + w <= width
+        assert item.y >= 0 and item.y + h <= height
 
 
 @pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
@@ -297,8 +297,8 @@ def test_route_page_names_every_stop_and_fits():
         assert name in texts(layout.items)
     for item in layout.items:
         w, h = item_size(item)
-        assert 0 <= item.x and item.x + w <= width
-        assert 0 <= item.y and item.y + h <= height
+        assert item.x >= 0 and item.x + w <= width
+        assert item.y >= 0 and item.y + h <= height
     assert xs == sorted(xs) and len(xs) == len(NAMES)
 
 
@@ -339,7 +339,7 @@ def test_route_page_says_where_the_bus_is():
 
 
 def test_no_leave_line_for_a_train_that_is_not_drawn():
-    fourth = TRAINS + [Row("08:42", "Manchester Piccadilly", "On time")]
+    fourth = [*TRAINS, Row("08:42", "Manchester Piccadilly", "On time")]
     items = sign_layout(board(fourth, leave="Leave by 08:35", leave_for=3)).items
     assert "Leave by 08:35" not in texts(items)
 
@@ -411,7 +411,7 @@ def test_platforms_fit_on_a_bigger_board(panel):
     items = sign_layout(board(WITH_PLATFORMS, BUSES, leave="Leave by 07:05"), width, height).items
     for item in items:
         w, h = item_size(item)
-        assert 0 <= item.x and item.x + w <= width
+        assert item.x >= 0 and item.x + w <= width
 
 
 NOTICE = (
@@ -572,8 +572,8 @@ def test_everything_fits_with_a_notice(panel, clock):
     view = noticed(board(TRAINS, BUSES, leave="Leave by 07:05", stale_buses=True), clock=clock)
     for item in sign_layout(view, width, height).items:
         w, h = item_size(item)
-        assert 0 <= item.x and item.x + w <= width
-        assert 0 <= item.y and item.y + h <= height
+        assert item.x >= 0 and item.x + w <= width
+        assert item.y >= 0 and item.y + h <= height
 
 
 def test_everything_fits_on_the_original_phat():
@@ -582,6 +582,6 @@ def test_everything_fits_on_the_original_phat():
     items = sign_layout(board(TRAINS, BUSES, leave="Leave by 07:05", stale_buses=True), *PHAT_V1.size).items
     for item in items:
         w, h = item_size(item)
-        assert 0 <= item.x and item.x + w <= PHAT_V1.width
-        assert 0 <= item.y and item.y + h <= PHAT_V1.height
+        assert item.x >= 0 and item.x + w <= PHAT_V1.width
+        assert item.y >= 0 and item.y + h <= PHAT_V1.height
     assert {"1st", "2nd", "3rd"} <= set(texts(items))

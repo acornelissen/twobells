@@ -50,7 +50,7 @@ def test_strip_goes_back_far_enough_to_cover_the_walk_and_five_minutes():
 
 
 def test_strip_is_capped_so_names_stay_readable():
-    long = Pattern(tuple(f"S{i}" for i in range(20)) + (HENRY_A,), (60,) * 20, 4)
+    long = Pattern((*tuple(f"S{i}" for i in range(20)), HENRY_A), (60,) * 20, 4)
     stops, covered, _ = strip_before([long], HENRY_A, walk_minutes=30)
     assert len(stops) == MAX_STOPS
     assert covered == (MAX_STOPS - 1) * 60

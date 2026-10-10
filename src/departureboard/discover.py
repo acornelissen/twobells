@@ -28,11 +28,12 @@ import sys
 import threading
 import time
 from collections import defaultdict
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import BinaryIO, Callable, Iterable, Mapping
+from typing import BinaryIO
 from urllib.parse import urlencode, urlsplit
 
 from . import files, roadshape, routesetup, timetable
@@ -563,7 +564,7 @@ class SetupJob:
             try:
                 return timetable.build_schedule(*args, find_datasets=self._find_datasets,
                                                 fetch=_metered(self._fetch, limits), naptan=self._naptan, **options)
-            except Exception as error:  # noqa: BLE001 - refresh keeps the old one; the job says why
+            except Exception as error:
                 failures.append(error)
                 raise
 

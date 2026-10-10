@@ -21,16 +21,16 @@ your buses don't take from your stops. Their buses still show on the map.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from datetime import date, datetime, timedelta
-from typing import Iterable
 
 from .bods import Vehicle
 from .bodsbus import BusBoard
 from .disruptions import BusArea, plain_text
 from .livebus import LiveJourney
+from .model import iso
 from .roadshape import path
 from .schedule_model import Journey, Schedule
-from .model import iso
 from .snapshot import stop_name
 from .timetable import runs_on
 

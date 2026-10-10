@@ -2,7 +2,6 @@
 
 import io
 import logging
-import socket
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlsplit
@@ -136,7 +135,7 @@ def test_darwin_messages_say_what_to_do():
 
 @pytest.mark.parametrize("error, words", [
     (TimeoutError("timed out"), "took too long"),
-    (socket.timeout("timed out"), "took too long"),
+    (TimeoutError("timed out"), "took too long"),
     (URLError(TimeoutError("timed out")), "took too long"),
     (URLError(ConnectionRefusedError(61, "refused")), "couldn't be reached"),
     (ConnectionResetError(54, "reset"), "couldn't be reached"),
@@ -284,7 +283,7 @@ def test_bods_without_route_strips_asks_about_a_fixed_point():
     ((401, b'{"detail":"Invalid token."}'), "wrong_key"),
     ((403, b""), "wrong_key"),
     ((500, b""), "service_down"),
-    (URLError(socket.timeout("timed out")), "service_down"),
+    (URLError(TimeoutError("timed out")), "service_down"),
     (b'{"detail": "odd"}', "unknown"),
 ])
 def test_bods_refusals(answer, state):

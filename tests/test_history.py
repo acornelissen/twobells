@@ -1,7 +1,7 @@
 import sqlite3
 import stat
 import threading
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -285,7 +285,7 @@ def test_the_history_reader_opens_it_once_it_is_there(tmp_path):
     {"scheduled": "7:42"},
     {"scheduled": "24:00"},
     {"delay_min": "3"},
-    {"departs_at": datetime(2026, 10, 9, 7, 42, tzinfo=timezone.utc)},
+    {"departs_at": datetime(2026, 10, 9, 7, 42, tzinfo=UTC)},
 ])
 def test_observe_refuses_nonsense_and_writes_nothing(history, tmp_path, change):
     with pytest.raises(ValueError):

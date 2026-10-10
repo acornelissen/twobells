@@ -41,7 +41,8 @@ import logging
 import math
 import time
 from collections import Counter
-from typing import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+from itertools import pairwise
 from urllib.error import HTTPError
 
 from . import http
@@ -98,7 +99,7 @@ def segment_pairs(journeys: Iterable[Journey],
     counts: Counter[Pair] = Counter()
     for journey in journeys:
         placed = [call.atco for call in journey.calls if call.atco in positions]
-        counts.update((a, b) for a, b in zip(placed, placed[1:], strict=False) if a != b)
+        counts.update((a, b) for a, b in pairwise(placed) if a != b)
     return {
         (a, b): ((positions[a].lat, positions[a].lon), (positions[b].lat, positions[b].lon))
         for (a, b), _ in counts.most_common()
@@ -193,7 +194,7 @@ def parse_route(body: bytes, start: Point, end: Point) -> list[Point]:
     if _metres(start, road[0]) > SNAP_M or _metres(road[-1], end) > SNAP_M:
         raise ValueError("Router's road doesn't reach the stops")
     line = [start, *road, end]
-    length = sum(_metres(a, b) for a, b in zip(line, line[1:], strict=False))
+    length = sum(_metres(a, b) for a, b in pairwise(line))
     if length > DETOUR * _metres(start, end) + DETOUR_EXTRA_M:
         raise ValueError("Router's road is implausibly long")
     tolerance = TOLERANCE_M

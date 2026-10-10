@@ -5,15 +5,25 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 
 import pytest
+from test_livebus import (
+    ARUNDEL,
+    ASHTON,
+    EAST,
+    GRAPES,
+    HENRY_A,
+    HOWARD,
+    JUNCTION,
+    MARKET_HALL,
+    POSITIONS,
+    ST_MARYS_E,
+    SUNLAWS,
+    WEST,
+    journey,
+)
 
 from departureboard import roadshape, setup
 from departureboard.roadshape import parse_route, path, segment_pairs, segment_shapes, shape_key, simplify
 from departureboard.setup import RateLimiter
-
-from test_livebus import (
-    ARUNDEL, ASHTON, EAST, GRAPES, HENRY_A, HOWARD, JUNCTION, MARKET_HALL, POSITIONS, ST_MARYS_E, SUNLAWS, WEST,
-    journey,
-)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 ROAD = (FIXTURES / "osrm_route_glossop.json").read_bytes()  # Sunlaws Street to St Marys Road, hand-made

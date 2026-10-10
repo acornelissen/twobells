@@ -3,6 +3,31 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
+from test_livebus import (
+    ARUNDEL,
+    ASHTON,
+    EAST,
+    GEORGE,
+    GRAPES,
+    HALFWAY,
+    HENRY_A,
+    JUNCTION,
+    MARKET_HALL,
+    NIGHT,
+    POSITIONS,
+    SATURDAY,
+    ST_MARYS_E,
+    SUNLAWS,
+    UTC,
+    WEST,
+    at,
+    bus,
+    every_day,
+    fridays,
+    journey,
+    schedule,
+    stop_at,
+)
 
 from departureboard.bodsbus import BusBoard
 from departureboard.darwin import CallingPoint, TrainService
@@ -10,11 +35,6 @@ from departureboard.enrich import bus_arrival, bus_extras, inbound, inbound_text
 from departureboard.livebus import live_board
 from departureboard.model import Departure, Status
 from departureboard.schedule_model import Call
-
-from test_livebus import (
-    ARUNDEL, ASHTON, EAST, GEORGE, GRAPES, HALFWAY, HENRY_A, JUNCTION, MARKET_HALL, NIGHT, POSITIONS, SATURDAY,
-    ST_MARYS_E, SUNLAWS, UTC, WEST, at, bus, every_day, fridays, journey, schedule, stop_at,
-)
 
 LONDON = ZoneInfo("Europe/London")
 
@@ -210,7 +230,7 @@ def test_an_inbound_bus_of_another_line_does_not_count():
 def test_a_journey_ending_near_your_stop_counts_and_one_further_off_does_not():
     # Market Hall is under 100 m from Henry Street; George Street about 200 m.
     for end, counts in ((MARKET_HALL, True), (GEORGE, False)):
-        into = replace(INTO_A, calls=INTO_A.calls[:-1] + (Call(end, 610),))
+        into = replace(INTO_A, calls=(*INTO_A.calls[:-1], Call(end, 610)))
         board = make_board(at(10, 9), [inbound_bus(at(10, 9))], plan=schedule(EAST, WEST, into))
         assert len(board.journeys) == 1
         found = inbound(row(board, "237"), board.departures, board.journeys, board.schedule.positions)
@@ -232,7 +252,7 @@ def test_where_the_inbound_bus_is_and_where_it_came_from():
     found = inbound(row(board, "237"), board.departures, board.journeys, board.schedule.positions)
     assert (found["where"], found["late_min"], found["due"]) == ("At your stop", 2, "10:12")
     # From a stop the timetable has no position for: the name the tracker sends, tidied.
-    from_ashton = replace(INTO_A, calls=((Call(ASHTON, 540),) + INTO_A.calls[1:]))
+    from_ashton = replace(INTO_A, calls=((Call(ASHTON, 540), *INTO_A.calls[1:])))
     vehicle = replace(inbound_bus(at(10, 9), origin=ASHTON, aimed=LEFT_JUNCTION - timedelta(hours=1)),
                       origin_name="Ashton_under_Lyne_‮Interchange")
     board = make_board(at(10, 9), [vehicle], plan=schedule(EAST, WEST, from_ashton))

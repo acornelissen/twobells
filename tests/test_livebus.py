@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -7,13 +7,19 @@ import pytest
 
 from departureboard.bods import Vehicle, parse_siri_vm
 from departureboard.livebus import (
-    Progress, approach, departures, live_board, live_departures, match, progress,
+    Progress,
+    approach,
+    departures,
+    live_board,
+    live_departures,
+    match,
+    progress,
 )
 from departureboard.model import Status
 from departureboard.schedule_model import Calendar, Call, Journey, Schedule, StopPosition
 
 LONDON = ZoneInfo("Europe/London")
-UTC = timezone.utc
+UTC = UTC
 DAY = date(2026, 10, 9)  # a Friday in British Summer Time
 WINTER = date(2026, 11, 10)  # a Tuesday in GMT
 

@@ -13,8 +13,8 @@ from departureboard.render import (
     in_turns,
     left_column_width,
     load_fonts,
-    platform_column,
     plain_scale,
+    platform_column,
     render,
     render_code,
     render_setup,
@@ -65,7 +65,7 @@ def test_inverted_row_is_mostly_black():
     inverted = render(board([Row("07:12", "Manchester", "Cancelled", Style.INVERTED)]), PALETTE)
 
     def black(img):
-        return dict((c, n) for n, c in img.getcolors())[PALETTE.black]
+        return {c: n for n, c in img.getcolors()}[PALETTE.black]
 
     assert black(inverted) > black(plain) + WIDTH * 8
 

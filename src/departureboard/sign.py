@@ -103,7 +103,7 @@ def _buses(layout: SignLayout, section: Section, y: int, bottom: int, width: int
     stop_x = MARGIN + _w("000") + _COL_GAP - 1
     stops = [r.stop for r in rows if r.stop]
     # Room for the widest stop label, and at least a "W" so one-letter stops line up.
-    dest_x = stop_x + (max(map(_w, stops + ["W"])) + _COL_GAP - 1 if stops else 0)
+    dest_x = stop_x + (max(map(_w, [*stops, "W"])) + _COL_GAP - 1 if stops else 0)
     right_w = max(_w(r.right) for r in rows)
     leaves = [r.leave for r in rows if r.leave]
     leave_x = width - MARGIN - right_w - _COL_GAP - max(map(_w, leaves)) if leaves else None

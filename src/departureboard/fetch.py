@@ -30,8 +30,8 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 from zoneinfo import ZoneInfo
 
 from . import handoff, setupspool

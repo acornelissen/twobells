@@ -24,10 +24,11 @@ import string
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib.resources import files
-from typing import Callable, Mapping, Protocol, Sequence
+from typing import Protocol
 from urllib.parse import quote, urlencode
 
 from .holidays import ENGLAND_AND_WALES

@@ -35,7 +35,7 @@ class Palette:
     accent: int
     preview: str | None = None
 
-    def with_preview(self, accent_name: str) -> "Palette":
+    def with_preview(self, accent_name: str) -> Palette:
         return replace(self, preview=accent_name)
 
 

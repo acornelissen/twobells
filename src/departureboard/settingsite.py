@@ -43,11 +43,12 @@ from __future__ import annotations
 import html
 import logging
 import time
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from http import HTTPStatus
 from importlib.resources import files
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO, Callable, Mapping
+from typing import TYPE_CHECKING, BinaryIO
 from zoneinfo import ZoneInfo
 
 from . import schema, setupapi, timetable
@@ -207,7 +208,7 @@ def wording(install: Install, to_board: bool, dashboard_on: bool) -> Wording:
         cant_check="The code can't be checked right now. Try again in a moment.",
         saved=saved,
         reset_logged="Settings password set with a reset code; every session ended",
-        wrong_step_token="This page has run out. Reload it and try again.",
+        wrong_step_token="This page has run out. Reload it and try again.",  # noqa: S106 - a message
     )
 
 

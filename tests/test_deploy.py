@@ -246,7 +246,7 @@ def test_the_spool_is_in_memory_and_shared_by_both_units():
     for unit in (web, fetch):
         assert {key: unit.get(key) for key in spool} == spool
     assert web["User"] == fetch["User"] == ["departureboard"]  # so both can open the 0700 folder
-    assert setupspool.RUNTIME == Path("/run") / spool["RuntimeDirectory"][0]
+    assert Path("/run") / spool["RuntimeDirectory"][0] == setupspool.RUNTIME
     watched = _unit("departureboard-fetch.path")["DirectoryNotEmpty"][0]
     assert watched.startswith("/run/departureboard-fetch/") and "/var/lib" not in watched
 

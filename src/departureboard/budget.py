@@ -28,7 +28,7 @@ class DailyBudget:
         return {"day": self._day.isoformat() if self._day else None, "used": self._used}
 
     @classmethod
-    def from_dict(cls, data: dict | None, limit: int) -> "DailyBudget":
+    def from_dict(cls, data: dict | None, limit: int) -> DailyBudget:
         if not data or not data.get("day"):
             return cls(limit)
         return cls(limit, date.fromisoformat(data["day"]), int(data.get("used", 0)))

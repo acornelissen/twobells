@@ -13,9 +13,10 @@ vehicles, so nothing reads the clock or the network.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone, tzinfo
-from typing import Callable, Iterable
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
+from itertools import pairwise
 
 from .bods import Vehicle
 from .model import Departure, Status
@@ -81,13 +82,13 @@ def _recorded(vehicle: Vehicle) -> datetime | None:
     except ValueError:
         return None
     # SIRI-VM times carry an offset; a bare one is read as UTC, as bods.py does.
-    return recorded if recorded.tzinfo is not None else recorded.replace(tzinfo=timezone.utc)
+    return recorded if recorded.tzinfo is not None else recorded.replace(tzinfo=UTC)
 
 
 def _runs(calls: tuple[Call, ...], positions: dict[str, StopPosition]) -> list[range]:
     """Stretches of two or more consecutive calls whose stops have known positions."""
     runs, start = [], None
-    for i, call in enumerate(calls + (None,)):
+    for i, call in enumerate((*calls, None)):
         if call is not None and call.atco in positions:
             start = i if start is None else start
             continue
@@ -363,7 +364,7 @@ def approach(live: LiveDeparture, positions: dict[str, StopPosition], before: in
     if not 0 <= yours < len(calls) or calls[yours].atco not in positions:
         return None
     earlier = [i for i in range(yours) if calls[i].atco in positions]
-    picked = earlier[max(len(earlier) - before, 0) :] + [yours]
+    picked = [*earlier[max(len(earlier) - before, 0):], yours]
     if yours + 1 < len(calls) and calls[yours + 1].atco in positions:
         picked.append(yours + 1)
     stops = tuple(positions[calls[i].atco] for i in picked)
@@ -375,7 +376,7 @@ def _along(picked: list[int], at: float) -> float | None:
     """A point along a journey's calls as stops along the picked calls."""
     if at < picked[0]:
         return None
-    for n, (a, b) in enumerate(zip(picked, picked[1:], strict=False)):
+    for n, (a, b) in enumerate(pairwise(picked)):
         if at <= b:
             return n + (at - a) / (b - a)
     return len(picked) - 1 + (at - picked[-1])

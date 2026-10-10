@@ -147,7 +147,7 @@ def _handler(display: EmulatorDisplay, page: bytes):
             self.end_headers()
             self.wfile.write(body)
 
-        def do_GET(self) -> None:  # noqa: N802 - http.server API
+        def do_GET(self) -> None:
             path = urlparse(self.path).path
             if _host_name(self.headers.get("Host", "")) not in LOOPBACK_HOSTS:
                 self._send(403, "text/plain", b"forbidden")
