@@ -16,6 +16,7 @@ import { hhmm, now, parseAt, relative } from "./time.js";
 import { arrivesLine, busStatusExtras } from "./extras.js";
 import { icon } from "./icons.js";
 import { isKiosk } from "./kiosk.js";
+import { rowStrip } from "./strip.js";
 
 export const SHOWN = 5; // rows before "Show later departures"
 export const KIOSK_ROWS = 4; // rows on a wall tablet, which has no "Show later departures"
@@ -211,6 +212,14 @@ export function toggleMore(button) {
 
 // --- Trains ---
 
+// Where the train or bus is, in words, with its strip drawn small before
+// them where there is one (rowStrip). Not on a wall tablet, which has no
+// room for it.
+function whereLine(where, kind, strip, at) {
+  const drawing = isKiosk() ? null : rowStrip(kind, strip, at);
+  return h("span", { class: ["sub", "where", drawing ? "has-strip" : null] }, drawing, where);
+}
+
 // The first row's stops, as on a station's screen: "Calling at Dinting,
 // Hattersley, Manchester Piccadilly". Cancelled stops are left out.
 function callingAt(row) {
@@ -224,14 +233,20 @@ function trainRow(row, first, later, alerts) {
   const destination = str(row.destination);
   const platform = str(row.platform);
   const cancelled = row.status === "cancelled";
-  const where = str(obj(row.position)?.where);
+  const position = obj(row.position);
+  const where = str(position?.where);
+  const strip = obj(position?.strip);
+  // Row 1 always says where its train is; a later row does when it has a
+  // strip to draw.
+  const placed = where && (first || (strip && !isKiosk()))
+    ? whereLine(where, "train", strip, num(strip?.train_at)) : null;
   return h("tr", rowAttrs(row, id, later),
     h("th", { scope: "row", role: "rowheader", class: "c-time" }, h("span", { class: "time" }, scheduled)),
     td("c-dest", null,
       openButton(id, `the ${scheduled} to `, destination),
       arrivesLine(row),
       first && !cancelled ? callingAt(row) : null,
-      first && where ? h("span", { class: "sub where" }, where) : null,
+      placed,
       cancelled && str(row.cancel_reason) ? h("span", { class: "reason" }, str(row.cancel_reason)) : null,
       recordChip(row)),
     td("c-plat", "Plat", platform || [h("span", { "aria-hidden": "true" }, "–"), vh("not yet known")]),
@@ -396,7 +411,8 @@ function busRow(row, later, names, alerts) {
   const scheduled = str(row.scheduled);
   const line = str(row.line);
   const destination = str(row.destination);
-  const where = obj(row.vehicle) ? str(obj(row.strip)?.where) : "";
+  const strip = obj(row.strip);
+  const where = obj(row.vehicle) ? str(strip?.where) : "";
   const walk = num(row.walk_min);
   // The row header is said with every cell, so it is the line and where it
   // goes, nothing more: "237 to Ashton-under-Lyne Interchange". The rest is
@@ -405,7 +421,7 @@ function busRow(row, later, names, alerts) {
     h("th", { scope: "row", role: "rowheader", class: "c-line" }, h("span", { class: "line" }, line), vh(` to ${destination}`)),
     td("c-dest", null,
       openButton(id, `the ${scheduled} ${line} to `, destination),
-      where ? h("span", { class: "sub where" }, where) : null,
+      where ? whereLine(where, "bus", strip, num(strip?.bus_at)) : null,
       busStatusExtras(row),
       recordChip(row)),
     stopCell(stopText(row, names), walk),

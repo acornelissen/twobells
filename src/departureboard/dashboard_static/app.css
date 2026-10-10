@@ -586,7 +586,7 @@ table.board .badge.ghost { margin-top: var(--s-1); font-size: var(--t-sm); }
 .inbound .glyph { min-width: 0; }
 :root[data-theme="board"] .badge.ghost { padding: 0.125rem 0.375rem; border-color: var(--edge); }
 
-/* --- The bus strip, in the departure sheet --- */
+/* --- The bus strip, in the departure sheet and drawn small in the rows --- */
 
 .strip-wrap { display: inline-flex; flex-direction: column; gap: 0.125rem; width: 100%; max-width: 20rem; }
 .strip { display: block; width: 100%; height: auto; overflow: visible; }
@@ -597,6 +597,15 @@ table.board .badge.ghost { margin-top: var(--s-1); font-size: var(--t-sm); }
 .strip-yours { fill: var(--accent); stroke: var(--fg); stroke-width: 1.5; }
 .strip-bus { fill: var(--fg); }
 .strip-where, .strip-none { font-size: var(--t-sm); color: var(--muted); }
+.strip-train { fill: var(--fg); }
+.strip-window { fill: var(--bg); }
+/* The same strip drawn small in a row, before the words saying where the
+   train or bus is. It sits on the page, not a sheet, so its hollow parts
+   take the page's colour. */
+.where.has-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--s-2); }
+.strip.row-strip { flex: none; width: 9rem; }
+.row-strip .strip-ahead { stroke: var(--bg); }
+.row-strip .strip-stop, .row-strip .strip-after { fill: var(--bg); }
 
 /* --- Narrow screens: each row folds into two lines, the times and the leave
    countdown at the sides. The roles set in board.js keep the table

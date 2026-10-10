@@ -1434,7 +1434,8 @@ def test_the_train_board_reads_like_a_station_screen():
             status: [said(cell(rows[0], "c-status")), cell(rows[0], "badge-text").textContent],
             record: byClass(rows[0], "record").map((el) => el.childNodes[0].textContent),
           },
-          calling: rows.slice(1).map((tr) => byClass(tr, "calling-at").length + byClass(tr, "where").length),
+          calling: rows.slice(1).map((tr) => byClass(tr, "calling-at").length),
+          where: rows.slice(1).map((tr) => byClass(tr, "where").map(said).join("")),
           cancelled: [rows[1].getAttribute("class"), byClass(rows[1], "reason").map(said), said(cell(rows[1], "c-status")),
                       said(cell(rows[1], "c-leave"))],
           onTime: [said(cell(rows[2], "c-status")), byClass(rows[2], "glyph").length],
@@ -1448,11 +1449,13 @@ def test_the_train_board_reads_like_a_station_screen():
     assert found["caption"] == "Next trains from Glossop to Manchester Piccadilly"
     first = found["first"]
     assert first["time"] == "07:12"
-    # Row 1 alone says where it calls and where it is.
+    # Row 1 alone says where it calls; it says where it is, as does a later
+    # row whose train has a position strip to draw (the 08:12).
     assert first["calling"][0].startswith("Calling at Dinting, Broadbottom, Hattersley")
     assert first["calling"][0].endswith("Manchester Piccadilly")
     assert first["where"] == ["Not started yet: leaves Hadfield at 07:11"]
     assert found["calling"] == [0] * 9
+    assert found["where"] == ["", "Left Hadfield 08:04, on time"] + [""] * 7
     assert first["status"] == ["Expected 07:19", "Exp 07:19"]
     assert first["record"] == ["Often late: 4 of 10"]
     # Cancelled: struck through by its class, reversed out, with its reason.
@@ -1478,6 +1481,37 @@ def test_the_bus_board_caption_is_for_screen_readers_only():
         ]));
     """)
     assert found == [["Next buses", "vh"], ["Next trains from Glossop to Manchester Piccadilly", None]]
+
+
+# Each row's position strip, as [drawings, hidden, vehicles drawn, words], or null.
+ROW_STRIPS = """
+const strips = (id) => bodyRows(id).map((tr) => {
+  const svg = elements(tr).filter((el) => el.nodeName === "svg" && byClass(tr, "row-strip").includes(el));
+  if (!svg.length) return null;
+  return [svg.length, svg[0].getAttribute("aria-hidden"), byClass(svg[0], "strip-bus").length
+    + byClass(svg[0], "strip-train").length, said(byClass(tr, "where")[0])];
+});
+console.log(JSON.stringify({ trains: strips("trains-board"), buses: strips("buses-board") }));
+"""
+
+
+@needs_node
+def test_a_row_with_a_position_draws_its_strip_small_beside_its_words():
+    found = run_js(_boards() + ROW_STRIPS)
+    # Trains with a position strip: the 07:12 not started yet (no train
+    # drawn), the 08:12 on its way. One drawing each, hidden: the words say it.
+    assert found["trains"] == [[1, "true", 0, "Not started yet: leaves Hadfield at 07:11"], None,
+                               [1, "true", 1, "Left Hadfield 08:04, on time"]] + [None] * 7
+    # Buses with a live vehicle and a strip; the timetable-only ones keep
+    # their "sched." alone. The 07:05 has gone (just missed).
+    assert found["buses"] == [[1, "true", 1, "2 stops away"], None, [1, "true", 1, "4 stops away"], None,
+                              [1, "true", 0, "Not on the route yet"], None, None, None, None]
+
+
+@needs_node
+def test_a_wall_tablet_row_has_no_position_strip():
+    found = run_js(KIOSK + _boards() + ROW_STRIPS)
+    assert found == {"trains": [None] * 4, "buses": [None] * 4}
 
 
 @needs_node

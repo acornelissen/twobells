@@ -1,7 +1,8 @@
 // The little route strip in a bus's departure sheet: the stops before yours,
 // yours, and maybe the next, with the bus drawn where it is. The words are
 // the real content (role=img with a label); the drawing only reinforces them.
-// A train's sheet has its whole journey instead (train.js).
+// A train's sheet has its whole journey instead (train.js). A row on the
+// boards has the same strip drawn small beside its words (rowStrip).
 
 import { h, s, str, num, list, obj, validId } from "./dom.js";
 import { age, now, parseAt } from "./time.js";
@@ -35,24 +36,36 @@ const busGlyph = (x) => s("g", { class: "strip-bus" },
   s("path", { d: `M${x - 3} 11 L${x + 3} 11 L${x} 14 Z` }),
 );
 
-// The drawing and its words. `at` is the bus's place in stop units, or null
-// to draw no bus.
-function drawStrip(id, stops, yoursAt, at, label, where) {
-  const n = stops.length;
+// A train, taller and rounder than the bus, with a windscreen, so the two
+// differ by shape too. Drawing only.
+const trainGlyph = (x) => s("g", { class: "strip-train" },
+  s("rect", { x: x - 6, y: 0, width: 12, height: 12, rx: 4 }),
+  s("rect", { class: "strip-window", x: x - 4, y: 2, width: 8, height: 4, rx: 1 }),
+  s("path", { d: `M${x - 3} 12 L${x + 3} 12 L${x} 15 Z` }),
+);
+
+// The drawing: a line through `n` stops, yours bigger, and `glyph` at `at`
+// (the vehicle's place in stop units), or no vehicle when `at` is null.
+function stripSvg(n, yoursAt, at, glyph, attrs) {
   const yours = Math.min(Math.max(0, yoursAt ?? n - 1), n - 1);
   const x = (i) => PAD + (i * (W - 2 * PAD)) / (n - 1);
-  const svg = s("svg", {
-    class: "strip", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": label, focusable: "false",
-    dataset: { strip: "bus", id },
-  },
+  const svg = s("svg", { ...attrs, viewBox: `0 0 ${W} ${H}`, focusable: "false" },
     s("line", { class: "strip-line", x1: x(0), y1: Y, x2: x(n - 1), y2: Y }),
     s("line", { class: "strip-ahead", x1: x(yours), y1: Y, x2: x(n - 1), y2: Y }),
-    stops.map((_, i) => s("circle", {
+    Array.from({ length: n }, (_, i) => s("circle", {
       class: i === yours ? "strip-yours" : i > yours ? "strip-after" : "strip-stop",
       cx: x(i), cy: Y, r: i === yours ? 5 : 3,
     })),
   );
-  if (at !== null) svg.append(busGlyph(x(Math.min(Math.max(at, 0), n - 1))));
+  if (at !== null) svg.append(glyph(x(Math.min(Math.max(at, 0), n - 1))));
+  return svg;
+}
+
+// The drawing and its words. `at` is the bus's place in stop units, or null
+// to draw no bus.
+function drawStrip(id, stops, yoursAt, at, label, where) {
+  const svg = stripSvg(stops.length, yoursAt, at, busGlyph,
+    { class: "strip", role: "img", "aria-label": label, dataset: { strip: "bus", id } });
   // The words also show beside the drawing; the img label already says them.
   return h("span", { class: "strip-wrap" }, svg,
     where ? h("span", { class: "strip-where", "aria-hidden": "true" }, where) : null);
@@ -68,6 +81,17 @@ export function renderStrip(row, generatedMs) {
   }
   const busAt = obj(row.vehicle) ? num(strip.bus_at) : null;
   return drawStrip(validId(row.id) ? row.id : "", stops, num(strip.yours), busAt, label, str(strip.where));
+}
+
+// The strip drawn small in a row, for a bus or a train ("bus", "train"):
+// drawing only, hidden from screen readers, as the words beside it say where
+// the vehicle is. `at` is its place in stop units, or null to draw none.
+// Null when there is no strip to draw.
+export function rowStrip(kind, strip, at) {
+  const stops = list(obj(strip)?.stops);
+  if (stops.length < 2) return null;
+  return stripSvg(stops.length, num(strip.yours), at, kind === "train" ? trainGlyph : busGlyph,
+    { class: ["strip", "row-strip"], "aria-hidden": "true" });
 }
 
 // Keeps the "reported N s ago" label on a bus strip current between snapshots.
