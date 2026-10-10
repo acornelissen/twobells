@@ -1186,6 +1186,121 @@ def test_a_running_board_asks_whether_it_is_set_up_every_few_seconds(monkeypatch
         check()
 
 
+# --- The board view switched off: the board says so and fetches nothing ---
+
+
+def board_with_views(tmp_path, views, display=None):
+    """A board set up with trains and TransportAPI buses, and [app] views saved in its store."""
+    state = tmp_path / "state"
+    state.mkdir()
+    config = tmp_path / "config.toml"
+    config.write_text(f'state_file = "{state / "state.json"}"\n' + (f'display = "{display}"\n' if display else "")
+                      + '[train]\ncrs = "GLO"\n[bus]\n[bus.stops]\nA = "1000DGHS0900"\n')
+    (state / "settings.toml").write_text(f"[app]\nviews = {json.dumps(views)}\n")
+    secrets = tmp_path / "secrets.env"
+    secrets.write_text("RDM_API_KEY=rail\nTAPI_APP_ID=id\nTAPI_APP_KEY=tapi\n")
+    return ["run", "--config", str(config), "--secrets", str(secrets), "--png", str(tmp_path / "board.png")]
+
+
+@pytest.fixture
+def fetched(monkeypatch):
+    """Every fetch the board makes: trains, TransportAPI's buses and bank holidays."""
+    import departureboard.cli as cli
+    from departureboard.darwin import DarwinSource
+    from departureboard.transportapi import TransportApiBusSource
+
+    calls = []
+    monkeypatch.setattr(DarwinSource, "fetch", lambda self: calls.append("train") or [])
+    monkeypatch.setattr(TransportApiBusSource, "fetch", lambda self: calls.append("bus") or [])
+    monkeypatch.setattr(cli, "bank_holidays", lambda *a, **kw: calls.append("holidays") or frozenset())
+    return calls
+
+
+def test_with_the_board_view_off_the_board_says_so_and_fetches_nothing(tmp_path, fetched, caplog):
+    caplog.set_level("INFO")
+    args = board_with_views(tmp_path, ["dashboard"])
+    for _ in range(3):  # the timer, minute after minute
+        assert main(args) == 0
+    assert fetched == []
+    state = json.loads((tmp_path / "state" / "state.json").read_text())
+    # No source polled, so no TransportAPI allowance spent.
+    assert state["last_render"]["page"] == "setup" and "sources" not in state
+    assert "board view is off" in caplog.text
+    rendered = [r.getMessage() for r in caplog.records if r.getMessage().startswith("rendered=")]
+    assert rendered == ["rendered=True", "rendered=False", "rendered=False"]  # drawn once: e-paper wears
+
+
+def test_the_board_off_page_says_where_to_turn_it_on(tmp_path, fetched, monkeypatch):
+    import departureboard.cli as cli
+
+    shown = []
+    real = cli.run_once
+    monkeypatch.setattr(cli, "run_once", lambda board, *a, **kw: shown.append(board) or real(board, *a, **kw))
+    assert main(board_with_views(tmp_path, [])) == 0  # no views at all is off too
+    (board,) = shown
+    assert (board.setup.heading, board.setup.note) == ("Board off", "Turn it on in Settings:")
+    assert board.setup.url == cli.setup_url()
+    assert board.sources == [] and board.weather is None and board.tracker is None
+
+
+def test_with_the_board_view_on_the_board_fetches_as_ever(tmp_path, fetched):
+    assert main(board_with_views(tmp_path, ["board", "dashboard"])) == 0
+    assert "train" in fetched and "bus" in fetched
+    assert json.loads((tmp_path / "state" / "state.json").read_text())["last_render"]["page"] != "setup"
+
+
+def test_a_code_asked_for_still_shows_with_the_board_view_off(tmp_path, fetched):
+    from departureboard.auth import ResetCodes
+
+    args = board_with_views(tmp_path, ["dashboard"])
+    assert main(args) == 0
+    ResetCodes(tmp_path / "state").issue(time.time())
+    assert main(args) == 0
+    assert saved_page(tmp_path / "state") == "code" and fetched == []
+
+
+def test_a_screen_with_the_board_view_off_starts_again_once_it_is_on(tmp_path, fetched, monkeypatch):
+    import departureboard.cli as cli
+
+    answers = iter([False, False, False, True])  # turned on after a couple of ticks
+    monkeypatch.setattr(cli, "_board_on", lambda store: next(answers))
+    monkeypatch.setattr(cli, "SETUP_CHECK_S", 0)
+    args = board_with_views(tmp_path, ["dashboard"], display="hdmi-1280x400")
+    assert main([*args, "--loop", "--ticks", "10", "--tick", "0"]) == cli.RESTART
+    assert saved_page(tmp_path / "state") == "setup" and fetched == []
+
+
+def test_a_screen_with_the_board_view_off_asks_every_few_seconds(tmp_path, monkeypatch):
+    import departureboard.cli as cli
+    from departureboard.store import Store
+
+    board_with_views(tmp_path, ["dashboard"])
+    store = Store.open(tmp_path / "config.toml")
+    now = [100.0]
+    check = cli._ViewOn(store, clock=lambda: now[0])
+    assert check() is None
+    (tmp_path / "state" / "settings.toml").write_text('[app]\nviews = ["board"]\n')
+    now[0] += 1
+    assert check() is None  # not asked again yet
+    now[0] += cli.SETUP_CHECK_S
+    with pytest.raises(cli._Restart):
+        check()
+
+
+def test_a_running_board_starts_again_when_its_view_is_turned_off(tmp_path, fetched):
+    import argparse
+
+    import departureboard.cli as cli
+
+    run = board_with_views(tmp_path, ["board"])
+    args = argparse.Namespace(config=run[2], secrets=run[4])
+    watcher = cli._Watcher(args, cli._settings(args))
+    assert watcher() is None  # nothing changed
+    (tmp_path / "state" / "settings.toml").write_text('[app]\nviews = ["dashboard"]\n')
+    with pytest.raises(cli._Restart):
+        watcher()  # to show the board view is off
+
+
 def test_the_first_run_after_setting_up_fetches_everything(tmp_path, monkeypatch):
     args, calls = _run_setup(tmp_path, monkeypatch)
     # Only the set-me-up page was ever drawn: nothing fetched yet, so this is a fresh start.

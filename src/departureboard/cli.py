@@ -58,6 +58,7 @@ from .state import StateStore
 from .store import Store
 from .timetable import TimetableBusy, TimetableError
 from .transportapi import TransportApiBusSource, redact_credentials
+from .schema import views
 from .version import package_version
 from .view import SetupView, build_view
 from .themes import THEMES, theme_named
@@ -192,9 +193,21 @@ def _open_display(args, settings):
     return open_display(settings.display, settings.accent, settings.rotate, settings.panel_colour)
 
 
+def _board_on(store: Store) -> bool:
+    """Whether the board view is on ([app] views; on unless they say). On if
+    the settings can't be read, so load_config reports why."""
+    try:
+        return "board" in views(store.data(), default=("board",))
+    except (OSError, ConfigError):
+        return True
+
+
 def _run(args) -> int:
-    if needs_setup(_store(args)):
+    found = _store(args)
+    if needs_setup(found):
         return _run_first(args)
+    if not _board_on(found):
+        return _run_off(args)
     settings = _settings(args)
     display = _open_display(args, settings)
     store = StateStore(settings.state_file)
@@ -256,8 +269,8 @@ class _Watcher:
         except ConfigError as error:
             logging.warning("Settings changed but don't load (%s); keeping the current ones", error)
             return None
-        if self._hardware(new) != self._hardware(self._settings):
-            raise _Restart
+        if self._hardware(new) != self._hardware(self._settings) or not _board_on(_store(self._args)):
+            raise _Restart  # for the display, or to show the board view is off
         logging.info("Settings changed; reloaded")
         self._settings = new
         return new.board
@@ -293,7 +306,7 @@ def _run_loop(settings, display, store, state, args) -> int:
     except KeyboardInterrupt:
         pass
     except _Restart:
-        logging.info("Display settings changed; exiting so the service starts again")
+        logging.info("Display settings or views changed; exiting so the service starts again")
         store.save(state)
         return RESTART
     return 0
@@ -301,8 +314,13 @@ def _run_loop(settings, display, store, state, args) -> int:
 
 # The settings page's port, as departureboard-web.service runs it.
 WEB_PORT = 8080
-# Until the board is set up, how often a running screen checks whether it has been.
+# Until the board is set up (or while its view is off), how often a running
+# screen checks whether it has been (or is back on).
 SETUP_CHECK_S = 5
+# What the board shows while the board view is off. E-paper keeps its last
+# image, so showing nothing would leave departures up, going stale.
+OFF_HEADING = "Board off"
+OFF_NOTE = "Turn it on in Settings:"
 
 
 def setup_url(hostname: str | None = None, port: int = WEB_PORT) -> str:
@@ -322,14 +340,26 @@ class _SetUpYet:
         self._clock = clock
         self._checked: float | None = None
 
+    def _ready(self) -> bool:
+        return not needs_setup(self._store)
+
     def __call__(self):
         now = self._clock()
         if self._checked is not None and 0 <= now - self._checked < SETUP_CHECK_S:
             return None
         self._checked = now
-        if not needs_setup(self._store):
+        if self._ready():
             raise _Restart
         return None
+
+
+class _ViewOn(_SetUpYet):
+    """A running board's reload hook while the board view is off: every
+    SETUP_CHECK_S asks whether it is on again, and if so starts the board
+    again to load its settings."""
+
+    def _ready(self) -> bool:
+        return _board_on(self._store)
 
 
 def _run_first(args) -> int:
@@ -341,13 +371,37 @@ def _run_first(args) -> int:
     already showing, and exits 0. A running screen keeps it up and, once the
     board is set up, exits RESTART so systemd starts it with its settings."""
     found = _store(args)
+    logging.info("Not set up yet: showing %s on the board", setup_url())
+    return _show_instead(args, found, SetupView(setup_url()), _SetUpYet(found),
+                         "Set up; exiting so the service starts the board with its settings")
+
+
+def _run_off(args) -> int:
+    """The board view is off ([app] views): say so, with where to turn it
+    back on, and fetch nothing, so no TransportAPI allowance is spent. A
+    reset code asked for still shows first.
+
+    As for a board not yet set up, a single run draws the page once and
+    exits 0, and a running screen keeps it up until the view is on again,
+    then exits RESTART. No service is ever stopped or disabled."""
+    found = _store(args)
+    logging.info("The board view is off: showing where to turn it on, %s, on the board", setup_url())
+    page = SetupView(setup_url(), heading=OFF_HEADING, note=OFF_NOTE)
+    return _show_instead(args, found, page, _ViewOn(found),
+                         "Board view on; exiting so the service starts the board with its settings")
+
+
+def _show_instead(args, found: Store, page: SetupView, reload, restarting: str) -> int:
+    """Show `page` instead of departures, with the display and look the
+    settings give (or the defaults) and no sources, so nothing is fetched.
+    A running screen calls `reload` each tick; when it raises _Restart, says
+    `restarting` and exits RESTART."""
     settings = first_run_settings(found)
-    board = dataclasses.replace(settings.board, setup=SetupView(setup_url()))
+    board = dataclasses.replace(settings.board, setup=page)
     display = _open_display(args, settings)
     store = StateStore(settings.state_file)
     state = store.load()
     zone = ZoneInfo(settings.timezone)
-    logging.info("Not set up yet: showing %s on the board", board.setup.url)
     if not args.loop:
         try:
             result = run_once(board, state, display, _local_now(settings.timezone))
@@ -366,12 +420,12 @@ def _run_first(args) -> int:
             ticks=args.ticks,
             sleep=_sleep_to_the_tick,
             store=store,
-            reload=_SetUpYet(found),
+            reload=reload,
         )
     except KeyboardInterrupt:
         pass
     except _Restart:
-        logging.info("Set up; exiting so the service starts the board with its settings")
+        logging.info(restarting)
         store.save(state)
         return RESTART
     return 0

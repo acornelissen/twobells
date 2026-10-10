@@ -581,3 +581,24 @@ def test_the_setup_page_shows_its_address_and_is_ink_on_paper_or_light_on_black(
 def test_the_setup_page_signature_follows_its_address():
     assert SETUP_PAGE.signature() == SetupView(SETUP_PAGE.url).signature()
     assert SETUP_PAGE.signature() != SetupView("http://pi.local:8080/").signature()
+
+
+OFF_PAGE = SetupView(SETUP_PAGE.url, heading="Board off", note="Turn it on in Settings:")
+
+
+@pytest.mark.parametrize("panel", PANELS)
+def test_the_setup_page_can_say_something_else(panel):
+    # The board view switched off: the same page, with its own heading and note.
+    image = render_setup(OFF_PAGE, PALETTE, panel)
+    assert image.tobytes() != render_setup(SETUP_PAGE, PALETTE, panel).tobytes()
+    left, top, right, bottom = ink_box(image, PALETTE.white)
+    assert left > 0 and top > 0 and right < panel.width and bottom < panel.height
+    # The address is drawn as before, across the bottom.
+    band = image.crop((0, panel.height * 3 // 4, panel.width, panel.height))
+    assert band.tobytes() == render_setup(SETUP_PAGE, PALETTE, panel).crop(
+        (0, panel.height * 3 // 4, panel.width, panel.height)).tobytes()
+
+
+def test_the_setup_page_signature_follows_its_words():
+    assert OFF_PAGE.signature() != SETUP_PAGE.signature()
+    assert SetupView(SETUP_PAGE.url, heading="Board off").signature() != SETUP_PAGE.signature()

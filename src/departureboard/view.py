@@ -110,15 +110,22 @@ class CodeView:
         return hashlib.sha256(json.dumps(["code page", self.until, self.expires]).encode()).hexdigest()
 
 
+SETUP_HEADING = "Set me up"
+SETUP_NOTE = "On your home network, open"
+
+
 @dataclass(frozen=True)
 class SetupView:
     """The page shown instead of departures until the board is set up: the
-    settings page's address, where the setup wizard is."""
+    settings page's address, where the setup wizard is. With another
+    heading and note, the same page says the board view is off."""
 
     url: str  # "http://raspberrypi.local:8080/"
+    heading: str = SETUP_HEADING
+    note: str = SETUP_NOTE
 
     def signature(self) -> str:
-        return hashlib.sha256(json.dumps(["setup page", self.url]).encode()).hexdigest()
+        return hashlib.sha256(json.dumps(["setup page", self.url, self.heading, self.note]).encode()).hexdigest()
 
 
 def _until(clock: str, leave: str) -> str:
