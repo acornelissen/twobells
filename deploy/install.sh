@@ -3,6 +3,8 @@
 #   sudo ./deploy/install.sh [--screen]
 # --screen also installs pygame for the HDMI screen; that happens anyway when
 # /etc/departureboard/config.toml already says display = "hdmi-...".
+# It starts the settings page and the fetch service, and says how to start
+# the board itself.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -16,18 +18,12 @@ CONF=/etc/departureboard
 
 screen=false
 [[ "${1:-}" == "--screen" ]] && screen=true
-grep -Eq '^[[:space:]]*display[[:space:]]*=[[:space:]]*"hdmi-' "$CONF/config.toml" 2>/dev/null && screen=true
 
 apt-get update
 # spidev, gpiozero and lgpio drive the Waveshare panel; the venv sees them via system site packages.
 # Pillow, numpy, smbus2 and gpiod (for inky) come from Debian rather than pip: built for the
 # Pi, patched through apt, and seen by the venv through system site packages.
 apt-get install -y python3-venv python3-dev fonts-dejavu-core python3-spidev python3-gpiozero python3-lgpio python3-libgpiod python3-numpy python3-smbus2 python3-pil
-# pygame, only for the HDMI screen: it pulls in graphics libraries (LLVM, Mesa) and a
-# MIDI soundfont, slow to install on a Pi Zero and unused by e-paper.
-if $screen; then
-  apt-get install -y python3-pygame
-fi
 
 # The panels need SPI; the Inky also needs I2C (the I2C bus holds the board's EEPROM for auto-detect).
 raspi-config nonint do_spi 0
@@ -59,40 +55,93 @@ install -d -m 755 "$CONF"
 [[ -f "$CONF/config.toml" ]] || install -m 644 "$REPO/config.example.toml" "$CONF/config.toml"
 [[ -f "$CONF/secrets.env" ]] || install -m 600 "$REPO/deploy/secrets.env.example" "$CONF/secrets.env"
 
-install -m 644 "$REPO/deploy/departureboard.service" /etc/systemd/system/
-install -m 644 "$REPO/deploy/departureboard.timer" /etc/systemd/system/
-install -m 644 "$REPO/deploy/departureboard-screen.service" /etc/systemd/system/
-install -m 644 "$REPO/deploy/departureboard-web.service" /etc/systemd/system/
-install -m 644 "$REPO/deploy/departureboard-timetable.service" /etc/systemd/system/
-install -m 644 "$REPO/deploy/departureboard-timetable.timer" /etc/systemd/system/
-install -m 644 "$REPO/deploy/departureboard-fetch.service" /etc/systemd/system/
-install -m 644 "$REPO/deploy/departureboard-fetch.path" /etc/systemd/system/
+# Ask the app, as the services' user, about the settings in force: config.toml
+# with those saved from the settings page over it. No keys are read.
+query() {
+  runuser -u departureboard -- "$PREFIX/venv/bin/departureboard" query "$1" --install pi --config "$CONF/config.toml"
+}
+if ! display="$(query display)" || ! views="$(query views)"; then
+  echo "Fix the settings named above, then run this again" >&2
+  exit 1
+fi
+[[ "$display" == hdmi-* ]] && screen=true
+# pygame, only for the HDMI screen: it pulls in graphics libraries (LLVM, Mesa) and a
+# MIDI soundfont, slow to install on a Pi Zero and unused by e-paper.
+if $screen; then
+  apt-get install -y python3-pygame
+fi
+
+for unit in departureboard.service departureboard.timer departureboard-screen.service departureboard-web.service \
+    departureboard-timetable.service departureboard-timetable.timer \
+    departureboard-fetch.service departureboard-fetch.path; do
+  install -m 644 "$REPO/deploy/$unit" /etc/systemd/system/
+done
 systemctl daemon-reload
 # The settings page can't reach the internet; the fetch service does its
 # internet work (the wizard's lookups, the dashboard's feeds). It starts at
 # boot, and the .path unit starts it whenever the page leaves it a request.
 systemctl enable --now departureboard-fetch.path departureboard-fetch.service
+systemctl enable --now departureboard-web.service
+# Bus times from the BODS timetable need it built and kept fresh.
+timetable=false
+if query needs-timetable >/dev/null; then
+  systemctl enable --now departureboard-timetable.timer
+  timetable=true
+fi
 
+# The board itself is yours to start, so it is only named here: the e-paper
+# timer, or the screen's service, by the display config.toml sets.
+if [[ "$display" == hdmi-* ]]; then
+  renderer=departureboard-screen.service
+else
+  renderer=departureboard.timer
+fi
+
+echo
+echo "Installed. The settings page and the fetch service are running. Next:"
+if grep -qx board <<<"$views"; then
+  cat <<EOF
+  1. Start the board:
+       sudo systemctl enable --now $renderer
+     Until it is set up, it shows "Set me up" and the settings page's address.
+EOF
+else
+  cat <<EOF
+  1. The board view is off, so the board has nothing to show. Once it is on
+     in the settings, start it with:
+       sudo systemctl enable --now $renderer
+EOF
+fi
 cat <<EOF
-
-Installed. Next:
-  1. Start the settings page and the board:
-       sudo systemctl enable --now departureboard-web.service
-       sudo systemctl enable --now departureboard.timer          (e-paper)
-   or: sudo systemctl enable --now departureboard-screen.service (HDMI screen; first set
-       display = "hdmi-1280x400" in $CONF/config.toml)
-     Until it is set up, the board shows "Set me up" and the settings page's address.
-  2. Open the settings page: http://$(hostname).local:8090/settings on a phone or computer
-     on your home network. Claim it with the code the board shows (or set the
-     password here first:
+  2. Open the settings page: http://$(hostname).local:8090/settings on a phone or
+     computer on your home network. Claim it with the code the board shows (or
+     set the password here first:
        sudo -u departureboard $PREFIX/venv/bin/departureboard serve --install pi --set-password )
      and it opens the setup wizard: home, station, bus stops, walk times and
      keys, saved for you. No need to edit config.toml by hand.
-  3. Keep the bus timetable fresh (the wizard builds the first one):
+EOF
+if $timetable; then
+  echo "  3. The bus timetable is kept fresh by departureboard-timetable.timer."
+else
+  cat <<EOF
+  3. If your buses come from the BODS timetable, keep it fresh (the wizard
+     builds the first one):
        sudo systemctl enable --now departureboard-timetable.timer
-  4. Watch it:         journalctl -u departureboard -f
+EOF
+fi
+cat <<EOF
+  4. Watch it:         journalctl -u ${renderer%.timer} -f
      Check the keys:   sudo $PREFIX/venv/bin/departureboard probe train
                        sudo $PREFIX/venv/bin/departureboard probe bus
+EOF
+if [[ "$renderer" == departureboard.timer ]]; then
+  cat <<EOF
+
+For the HDMI screen, set display = "hdmi-1280x400" in $CONF/config.toml and
+run this again: it installs pygame and names the screen's service instead.
+EOF
+fi
+cat <<EOF
 
 To set it up by hand instead, edit $CONF/secrets.env (keys) and
 $CONF/config.toml (replace each CHANGE_ME; $REPO/examples/glossop.toml is a

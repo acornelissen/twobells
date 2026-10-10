@@ -211,18 +211,49 @@ def test_install_and_update_set_up_the_fetch_service():
     assert "departureboard-fetch.service" in units and "departureboard-setup" not in units
 
 
-def _timetable_question(conf: Path) -> list[str]:
-    """The departureboard command update.sh asks whether to build the bus
-    timetable, as it would run with its config folder at `conf`."""
-    update = (ROOT / "deploy" / "update.sh").read_text()
-    [line] = [line for line in update.splitlines() if line.startswith("if ") and " timetable " in line]
-    words = shlex.split(line.removeprefix("if ").removesuffix("; then"))
-    # Asked as the service user, not as root.
+SCRIPTS = ("install.sh", "update.sh")
+
+
+def _script(name: str) -> str:
+    return (ROOT / "deploy" / name).read_text()
+
+
+def _run_lines(name: str) -> list[str]:
+    """The script's systemctl commands: those it runs, not those it prints."""
+    return [line.strip() for line in _script(name).splitlines()
+            if line.strip().startswith("systemctl ") and not line.startswith("       ")]
+
+
+def _query(name: str, what: str, conf: Path) -> list[str]:
+    """The departureboard command line `query WHAT` runs in the script
+    `name`, as it would with its config folder at `conf`."""
+    [body] = re.findall(r"^query\(\) \{\n  (.*)\n\}$", _script(name), re.M)
+    words = shlex.split(body)
+    # Asked as the services' user, not as root.
     assert words[:4] == ["runuser", "-u", "departureboard", "--"], words
     assert words[4] == "$PREFIX/venv/bin/departureboard"
-    return [word.replace("$CONF", str(conf)) for word in words[5:]]
+    return [what if word == "$1" else word.replace("$CONF", str(conf)) for word in words[5:]]
 
 
+def _settings(tmp_path: Path, config: str = "", saved: str = "") -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    (tmp_path / "config.toml").write_text(f'state_file = "{state / "state.json"}"\n{config}')
+    if saved:
+        (state / "settings.toml").write_text(saved)
+
+
+@pytest.mark.parametrize("name", SCRIPTS)
+def test_install_and_update_ask_the_app_not_config_toml(name):
+    script = _script(name)
+    for grepped in ("grep -E", "[[:space:]]", "timetable --needed"):
+        assert grepped not in script, grepped
+    timer = "if query needs-timetable >/dev/null; then\n  systemctl enable --now departureboard-timetable.timer\n"
+    assert timer in script
+    assert '"$(query display)"' in script
+
+
+@pytest.mark.parametrize("name", SCRIPTS)
 @pytest.mark.parametrize("config, saved, wanted", [
     ('[bus]\nsource = "bods"\n', "", True),
     ("[bus]\n", '[bus]\nsource = "bods"\n', True),  # chosen on the settings page or in the wizard
@@ -230,17 +261,62 @@ def _timetable_question(conf: Path) -> list[str]:
     ("[bus]\n", "", False),  # TransportAPI
     ('[train]\ncrs = "GLO"\n', "", False),  # no buses at all
 ])
-def test_update_builds_the_bus_timetable_only_when_the_settings_want_it(tmp_path, config, saved, wanted):
+def test_install_and_update_keep_the_bus_timetable_only_when_the_settings_want_it(tmp_path, name, config, saved,
+                                                                                    wanted):
     from departureboard.cli import main
 
-    state = tmp_path / "state"
-    state.mkdir()
-    (tmp_path / "config.toml").write_text(f'state_file = "{state / "state.json"}"\n{config}')
-    if saved:
-        (state / "settings.toml").write_text(saved)
-    update = (ROOT / "deploy" / "update.sh").read_text()
-    assert 'source[[:space:]]*=' not in update  # not by reading config.toml alone
-    assert (main(_timetable_question(tmp_path)) == 0) == wanted
+    _settings(tmp_path, config, saved)
+    assert (main(_query(name, "needs-timetable", tmp_path)) == 0) == wanted
+
+
+def test_install_starts_the_settings_and_the_fetch_service_and_installs_every_unit():
+    install = _script("install.sh")
+    started = " ".join(line for line in _run_lines("install.sh") if line.startswith("systemctl enable --now "))
+    for unit in ("departureboard-web.service", "departureboard-fetch.path", "departureboard-fetch.service",
+                 "departureboard-timetable.timer"):
+        assert unit in started, unit
+    units = re.search(r"for unit in (.*?); do", install, re.S).group(1).replace("\\", " ").split()
+    shipped = [path.name for path in (ROOT / "deploy").iterdir() if path.suffix in (".service", ".timer", ".path")]
+    assert sorted(units) == sorted(shipped)
+
+
+@pytest.mark.parametrize("saved, board", [("", True), ('[app]\nviews = ["dashboard"]\n', False)])
+def test_install_names_the_boards_unit_only_while_its_view_is_on(tmp_path, capsys, saved, board):
+    from departureboard.cli import main
+
+    _settings(tmp_path, saved=saved)
+    assert main(_query("install.sh", "views", tmp_path)) == 0
+    assert ("board" in capsys.readouterr().out.splitlines()) == board
+    install = _script("install.sh")
+    assert 'if grep -qx board <<<"$views"; then\n  cat <<EOF\n  1. Start the board:\n' in install
+
+
+@pytest.mark.parametrize("display, renderer", [
+    ("", "departureboard.timer"),  # an Inky, unless config.toml says
+    ('display = "waveshare-10in85g"\n', "departureboard.timer"),
+    ('display = "hdmi-1280x400"\n', "departureboard-screen.service"),
+])
+def test_install_names_the_boards_unit_for_the_display_and_never_starts_it(tmp_path, capsys, display, renderer):
+    import subprocess
+
+    from departureboard.cli import main
+
+    _settings(tmp_path, display)
+    assert main(_query("install.sh", "display", tmp_path)) == 0
+    said = capsys.readouterr().out.strip()
+    [choice] = re.findall(r'^if \[\[ "\$display" == hdmi-\* \]\]; then\n  renderer=.*?\nfi$',
+                          _script("install.sh"), re.M | re.S)
+    shown = subprocess.run(["bash", "-c", f'display="$1"\n{choice}\necho "$renderer"', "bash", said],
+                           capture_output=True, text=True, check=True).stdout
+    assert shown == f"{renderer}\n"
+    for line in _run_lines("install.sh"):  # only printed, for the owner to run
+        assert "$renderer" not in line and "departureboard.timer" not in line and "screen" not in line, line
+
+
+def test_update_never_enables_or_disables_the_board():
+    for line in _run_lines("update.sh"):
+        if line.startswith(("systemctl enable", "systemctl disable")):
+            assert "departureboard.timer" not in line and "departureboard-screen" not in line, line
 
 
 SERVICES = ("departureboard.service", "departureboard-screen.service", "departureboard-web.service",

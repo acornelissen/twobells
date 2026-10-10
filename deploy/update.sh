@@ -38,14 +38,21 @@ build="$(mktemp -d)"
 trap 'rm -rf "$build"' EXIT
 cp -a "$REPO/." "$build/"
 rm -rf "$build/build" "$build"/src/*.egg-info
-# Switched to the HDMI screen since installing? It needs pygame.
-if grep -Eq '^[[:space:]]*display[[:space:]]*=[[:space:]]*"hdmi-' "$CONF/config.toml" \
-    && ! dpkg -s python3-pygame &>/dev/null; then
-  apt-get install -y python3-pygame
-fi
 
 # The code only: its dependencies are already in the venv.
 "$PREFIX/venv/bin/pip" install --quiet --no-deps --force-reinstall "$build"
+
+# Ask the new code, as the services' user, about the settings in force:
+# config.toml with those saved from the settings page over it. No keys are read.
+query() {
+  runuser -u departureboard -- "$PREFIX/venv/bin/departureboard" query "$1" --install pi --config "$CONF/config.toml"
+}
+# Switched to the HDMI screen since installing? It needs pygame. (Settings
+# that can't be read say why here; the board says so too.)
+display="$(query display)" || display=""
+if [[ "$display" == hdmi-* ]] && ! dpkg -s python3-pygame &>/dev/null; then
+  apt-get install -y python3-pygame
+fi
 
 # The setup service is now the fetch service, which also runs the
 # dashboard's feeds: the old units go.
@@ -66,17 +73,17 @@ systemctl restart departureboard-fetch.path departureboard-fetch.service
 systemctl try-restart departureboard-web.service
 rm -rf /run/departureboard-setup /var/lib/departureboard/setup-spool
 
-# Bus times from the BODS timetable need it built and kept fresh. The board
-# says whether its buses are on and use it, from config.toml with the
-# settings saved from the page over it. The first build takes minutes, so it
-# carries on in the background.
-if runuser -u departureboard -- "$PREFIX/venv/bin/departureboard" timetable --needed --config "$CONF/config.toml"; then
+# Bus times from the BODS timetable need it built and kept fresh. The first
+# build takes minutes, so it carries on in the background.
+if query needs-timetable >/dev/null; then
   systemctl enable --now departureboard-timetable.timer
   systemctl start --no-block departureboard-timetable.service
   echo "Building the bus timetable; follow it with: journalctl -u departureboard-timetable -f"
 fi
 
-# One run now, rather than waiting for the timer (a oneshot: this waits for it).
+# One run now, rather than waiting for the timer (a oneshot: this waits for
+# it). Whether the board runs at all is yours: this never enables or
+# disables its timer or the screen's service.
 if systemctl is-enabled --quiet departureboard.timer; then
   systemctl start departureboard.service || true
   journalctl -u departureboard.service -n 12 --no-pager -o cat
