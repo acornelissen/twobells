@@ -81,9 +81,12 @@ if query needs-timetable >/dev/null; then
   echo "Building the bus timetable; follow it with: journalctl -u departureboard-timetable -f"
 fi
 
-# One run now, rather than waiting for the timer (a oneshot: this waits for
-# it). Whether the board runs at all is yours: this never enables or
-# disables its timer or the screen's service.
+# A screen's service runs for good, so it needs restarting onto the new code;
+# try-restart leaves a stopped one stopped. Then one e-paper run now, rather
+# than waiting for the timer (a oneshot: this waits for it). Whether the
+# board runs at all is yours: this never enables or disables its timer or
+# the screen's service.
+systemctl try-restart departureboard-screen.service
 if systemctl is-enabled --quiet departureboard.timer; then
   systemctl start departureboard.service || true
   journalctl -u departureboard.service -n 12 --no-pager -o cat

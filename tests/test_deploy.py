@@ -357,6 +357,12 @@ def test_update_never_enables_or_disables_the_board():
             assert "departureboard.timer" not in line and "departureboard-screen" not in line, line
 
 
+def test_update_restarts_a_running_screen_onto_the_new_code():
+    # The screen's service runs for good; without a restart it keeps the old
+    # code. try-restart leaves a stopped one stopped, so the board stays yours.
+    assert "systemctl try-restart departureboard-screen.service" in _run_lines("update.sh")
+
+
 SERVICES = ("departureboard.service", "departureboard-screen.service", "departureboard-web.service",
             "departureboard-timetable.service", "departureboard-fetch.service")
 
