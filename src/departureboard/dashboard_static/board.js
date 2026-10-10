@@ -112,7 +112,7 @@ function trainRow(row, alerts) {
   );
 }
 
-function busRow(row, alerts, stops, generatedMs) {
+function busRow(row, alerts, generatedMs) {
   const id = validId(row.id) ? row.id : null;
   const scheduled = str(row.scheduled);
   const line = str(row.line);
@@ -194,7 +194,8 @@ export function renderBuses(snapshot, alerts) {
   const walks = obj(obj(snapshot.walk)?.bus) || {};
   const walkText = Object.keys(stops).sort()
     .filter((k) => num(walks[k]) !== null)
-    // Stops often share a street name ("Henry Street"), so the label leads.
+    // The name carries the letter on the sign ("Henry Street (Stop A)"), as
+    // stops often share a street name.
     .map((k) => `${num(walks[k])} min to ${str(stops[k]) || `Stop ${k}`}`);
   setText(document.getElementById("buses-walk"), walkText.length ? `Walk: ${walkText.join(", ")}.` : "");
   const generatedMs = parseAt(snapshot.generated_at);
@@ -206,7 +207,7 @@ export function renderBuses(snapshot, alerts) {
     board.replaceChildren(table("Next buses", [
       ["Due", "c-time"], ["Bus", "c-dest"], ["Stop", "c-plat"], ["Status", "c-status"], ["Where", "c-where"],
       ["Leave", "c-leave"], ["Record", "c-record"], ["Actions", "c-actions", true],
-    ], rows.map((row) => busRow(row, alerts, stops, generatedMs))));
+    ], rows.map((row) => busRow(row, alerts, generatedMs))));
   }
   return rows;
 }
