@@ -27,6 +27,7 @@ The first release.
   - **Position strips in each row**, on the Dashboard tab (`[dashboard] row_strips`, and `row_strips` in the snapshot), turns those strips off.
   - The **Board look** uses the e-paper sign's own dot-matrix lettering.
 - The settings site and the setup wizard share the dashboard's type, colours and icons.
+- Saving the settings, or restarting the server, no longer signs you out: the store keeps a hash of each session (`sessions.json`, readable by the app's user only). A new password still ends every session.
 - The board and the dashboard use the same status words: "On time", "Exp 17:54", "Delayed", "Cancelled", "No report". The plain e-paper look said "+7" for a late train; it now says "Exp 07:49". Its bus section says "Leave by" once, over the column of times.
 - The plain e-paper look draws in Inter, which ships with the package. The Pi no longer installs DejaVu fonts.
 - The dashboard API (`/api/snapshot`) changed shape. Anything reading it needs updating; `docs/dashboard-api.md` has the details.

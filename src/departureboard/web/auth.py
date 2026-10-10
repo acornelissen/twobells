@@ -5,13 +5,15 @@ Used by the settings site (web/settingsite.py) under the one server. The passwor
 lives in a file only the service user can read. It is set on the Pi itself,
 or on the page with a one-time code shown on the board (see ResetCodes), so
 being on the network is not enough to claim it. A session is a random token in an
-HttpOnly, SameSite=Strict cookie; the server keeps the rest. Every change
+HttpOnly, SameSite=Strict cookie; the server keeps the rest, in the store as a
+hash of the token, so a restart doesn't sign anyone out. Every change
 needs that session's form token, compared in constant time, and a request
 whose Origin (or Referer) is this same host.
 """
 
 from __future__ import annotations
 
+import base64
 import enum
 import fcntl
 import hashlib
@@ -121,6 +123,33 @@ class Session:
     password: str | None = None  # PasswordStore.stamp() when it was created
 
 
+# What secrets.token_urlsafe(32) makes: a session token, or a form cookie's value.
+_TOKEN = re.compile(r"[A-Za-z0-9_-]{43}")
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+MAX_SESSIONS_FILE = 64 * 1024  # bytes; MAX_SESSIONS entries take under 3 kB
+
+
+def _token_hash(token: str) -> str:
+    """What the sessions file keeps of a token. A token is 256 random bits,
+    so a fast hash is enough: nothing to guess, only to look up."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _form_token(token: str) -> str:
+    """A session's form token, made from its token so the file needn't hold
+    it: the page shows it, and it says nothing of the token behind it."""
+    mac = hmac.new(token.encode(), b"departureboard form token", hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(mac).rstrip(b"=").decode()
+
+
+def _read_private(path: Path, limit: int) -> bytes:
+    """Up to `limit` + 1 bytes of a file the app wrote for itself, never
+    through a link put in its place. OSError if it can't be read."""
+    fd = os.open(path, os.O_RDONLY | files.NOFOLLOW | files.CLOEXEC)
+    with os.fdopen(fd, "rb") as handle:
+        return handle.read(limit + 1)
+
+
 @dataclass
 class Sessions:
     """Server-side sessions: the cookie holds only a random token.
@@ -128,6 +157,17 @@ class Sessions:
     `cookie_name` and `cookie_path` set the cookie this store hands out. Two
     servers on one host share cookies whatever their ports, so each needs its
     own name.
+
+    With `file` (the store's sessions.json), sessions outlive the process, so
+    the restart after a save on a desktop or in Docker, or a Pi's update,
+    doesn't sign anyone out. The file is 0600, like web.json beside it, and
+    replaced whole on every change. It holds, for each session, a SHA-256 of
+    its token, its expiry and the password stamp it was made under: never the
+    token, nor its form token, which is made again from the token the browser
+    sends. Expired sessions, and those of an older password, are dropped on
+    every write. A file that can't be read, or doesn't look as written, means
+    no sessions: everyone signs in again. One server per store writes it; a
+    password set in another process ends its sessions through the stamp.
     """
 
     clock: Callable[[], float] = time.time
@@ -136,7 +176,8 @@ class Sessions:
     # With the password store, a password set elsewhere (the command line runs
     # in its own process) ends every session made under the old one.
     password: PasswordStore | None = None
-    _live: dict[str, Session] = field(default_factory=dict)
+    file: Path | None = None
+    _live: dict[str, Session] = field(default_factory=dict)  # by _token_hash
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def __post_init__(self) -> None:
@@ -145,41 +186,118 @@ class Sessions:
             raise ValueError("A cookie name is 1 to 64 letters, digits, _ or -")
         if not _COOKIE_PATH.match(self.cookie_path):
             raise ValueError("A cookie path starts with / and has only letters, digits, _, - and /")
+        if self.file is not None:
+            self._live = self._load()
 
     def create(self) -> tuple[str, Session]:
         """A new session and its token, making room by dropping expired
         sessions, then the oldest, so there are never more than MAX_SESSIONS."""
         with self._lock:
             now = self.clock()
-            self._live = {t: s for t, s in self._live.items() if s.expires > now}
+            stamp = self._stamp()
+            self._prune(now, stamp)
             while len(self._live) >= MAX_SESSIONS:
                 self._live.pop(min(self._live, key=lambda t: self._live[t].expires))
             token = secrets.token_urlsafe(32)
-            stamp = self.password.stamp() if self.password is not None else None
-            session = Session(now + SESSION_SECONDS, secrets.token_urlsafe(32), stamp)
-            self._live[token] = session
+            session = Session(now + SESSION_SECONDS, _form_token(token), stamp)
+            self._live[_token_hash(token)] = session
+            self._save()
             return token, session
 
     def get(self, token: str | None) -> Session | None:
         """The live session for `token`, or None if there isn't one or it has expired."""
+        if not token:
+            return None
         with self._lock:
-            session = self._live.get(token or "")
-            changed = (
-                session is not None and self.password is not None and session.password != self.password.stamp()
-            )
-            if session is None or changed or session.expires <= self.clock():
-                self._live.pop(token or "", None)
+            found = self._find(token)
+            if found is None:
                 return None
+            session = self._live[found]
+            if session.password != self._stamp() or session.expires <= self.clock():
+                del self._live[found]
+                self._save()
+                return None
+            session.csrf = _form_token(token)  # not in the file: made again from the token
             return session
 
     def end(self, token: str | None) -> None:
         with self._lock:
-            self._live.pop(token or "", None)
+            found = self._find(token)
+            if found is not None:
+                del self._live[found]
+                self._save()
 
     def end_all(self) -> None:
         """Signs every browser out, as after the password is reset."""
         with self._lock:
             self._live.clear()
+            self._save()
+
+    def _stamp(self) -> str | None:
+        return self.password.stamp() if self.password is not None else None
+
+    def _find(self, token: str | None) -> str | None:
+        """The key of `token`'s session, if there is one, compared in constant
+        time. Called with the lock held."""
+        if not token or not _TOKEN.fullmatch(token):
+            return None
+        digest = _token_hash(token)
+        return next((key for key in self._live if hmac.compare_digest(key, digest)), None)
+
+    def _prune(self, now: float, stamp: str | None) -> None:
+        """Drop the expired sessions, and those made under another password."""
+        self._live = {t: s for t, s in self._live.items() if s.expires > now and s.password == stamp}
+
+    def _save(self) -> None:
+        """Write the live sessions to the file, if there is one. Called with the lock held."""
+        if self.file is None:
+            return
+        self._prune(self.clock(), self._stamp())
+        entries = [{"hash": key, "expires": s.expires, "password": s.password} for key, s in self._live.items()]
+        try:
+            files.write_atomic(self.file, json.dumps({"sessions": entries}), 0o600)
+        except OSError as error:
+            log.warning("Can't save the settings sessions (%s); they end when the server stops",
+                        type(error).__name__)
+            # Whatever it held, nothing in it may come back: a session ended here among them.
+            try:
+                self.file.unlink(missing_ok=True)
+            except OSError as gone:
+                log.warning("Can't remove the old settings sessions either (%s)", type(gone).__name__)
+
+    def _load(self) -> dict[str, Session]:
+        """The sessions in the file still live under the current password; none
+        if it is missing, unreadable or not as written, so nothing odd is accepted."""
+        if self.file is None:
+            return {}
+        try:
+            raw = _read_private(self.file, MAX_SESSIONS_FILE)
+        except FileNotFoundError:
+            return {}
+        except OSError as error:
+            log.warning("Can't read the settings sessions (%s); everyone signs in again", type(error).__name__)
+            return {}
+        try:
+            data = json.loads(raw) if len(raw) <= MAX_SESSIONS_FILE else None
+        except (ValueError, RecursionError):
+            data = None
+        entries = data.get("sessions") if isinstance(data, dict) else None
+        if not isinstance(entries, list):
+            log.warning("The settings sessions file isn't as written; everyone signs in again")
+            return {}
+        now, stamp = self.clock(), self._stamp()
+        live: dict[str, Session] = {}
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            key, expires, password = entry.get("hash"), entry.get("expires"), entry.get("password")
+            if (isinstance(key, str) and _SHA256.fullmatch(key)
+                    and isinstance(expires, (int, float)) and not isinstance(expires, bool)
+                    and now < expires <= now + SESSION_SECONDS  # never longer than a session lasts
+                    and (password is None or isinstance(password, str)) and password == stamp):
+                live[key] = Session(float(expires), "", password)  # its form token comes with its token
+        newest = sorted(live.items(), key=lambda item: item[1].expires)[-MAX_SESSIONS:]
+        return dict(newest)
 
     def token_from(self, cookie_header: str | None) -> str | None:
         """This store's session token from a request's Cookie header, if it has one."""
@@ -209,10 +327,12 @@ def csrf_matches(session: Session | None, submitted: str) -> bool:
     """Whether a form's token is the session's own, compared in constant time.
     False without a session."""
     # As bytes: compare_digest raises on non-ASCII str, and a form can send anything.
-    return session is not None and hmac.compare_digest(submitted.encode(), session.csrf.encode())
+    return (session is not None and bool(session.csrf)
+            and hmac.compare_digest(submitted.encode(), session.csrf.encode()))
 
 
 FORM_TOKEN_SECONDS = 30 * 60
+FORM_KEY_BYTES = 32
 _NONCE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 _EXPIRES = re.compile(r"^[0-9]{1,12}$")
 
@@ -224,17 +344,26 @@ class FormTokens:
 
     A signed double-submit cookie: the browser keeps a random value in an
     HttpOnly, SameSite=Strict cookie, and the form carries an expiry and an
-    HMAC of that value and expiry under a key only this process knows. A page
+    HMAC of that value and expiry under a key only the server knows. A page
     on another site can neither read the cookie nor make the matching form
     value, and a cookie planted by a neighbouring host is no use without the
-    key. A token lasts FORM_TOKEN_SECONDS, and every one dies with a restart.
-    This is on top of the Origin check every POST passes.
+    key. A token lasts FORM_TOKEN_SECONDS. This is on top of the Origin
+    check every POST passes.
+
+    The key is random, 32 bytes. With `key_file` (the store's form.key, 0600
+    like web.json beside it) it is kept there, so a form opened before a
+    restart still posts after it; without, every token dies with the process.
+    The kept key is read, or made, when a form first needs it, so starting
+    the server writes nothing.
     """
 
     clock: Callable[[], float] = time.time
     cookie_name: str = "form"
     cookie_path: str = "/"
-    _key: bytes = field(default_factory=lambda: secrets.token_bytes(32))
+    key_file: Path | None = None
+    _key: bytes = field(default_factory=lambda: secrets.token_bytes(FORM_KEY_BYTES))
+    _key_read: bool = False
+    _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def __post_init__(self) -> None:
         if not _COOKIE_NAME.match(self.cookie_name):
@@ -268,7 +397,36 @@ class FormTokens:
         return right and self.clock() < int(expires)
 
     def _mac(self, nonce: str, expires: int) -> str:
-        return hmac.new(self._key, f"{nonce}.{expires}".encode(), hashlib.sha256).hexdigest()
+        return hmac.new(self._secret(), f"{nonce}.{expires}".encode(), hashlib.sha256).hexdigest()
+
+    def _secret(self) -> bytes:
+        if self.key_file is not None:
+            with self._lock:
+                if not self._key_read:
+                    self._key = _kept_key(self.key_file)
+                    self._key_read = True
+        return self._key
+
+
+def _kept_key(path: Path) -> bytes:
+    """The form key saved at `path`, or a new random one saved there in its
+    place when it is missing or not FORM_KEY_BYTES. One that can't be saved is
+    still used, for this process only."""
+    try:
+        key = _read_private(path, FORM_KEY_BYTES)
+        if len(key) == FORM_KEY_BYTES:
+            return key
+    except FileNotFoundError:
+        pass
+    except OSError as error:
+        log.warning("Can't read the settings form key (%s); making a new one", type(error).__name__)
+    key = secrets.token_bytes(FORM_KEY_BYTES)
+    try:
+        files.write_atomic(path, key, 0o600)
+    except OSError as error:
+        log.warning("Can't save the settings form key (%s); open forms stop working when the server stops",
+                    type(error).__name__)
+    return key
 
 
 @dataclass

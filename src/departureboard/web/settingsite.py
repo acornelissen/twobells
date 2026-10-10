@@ -191,8 +191,7 @@ def wording(install: Install, to_board: bool, dashboard_on: bool) -> Wording:
         ask, ask_again, code_label = "Put a code in the log", "Put a new code in the log", "Code from the log"
         no_code = f"{install.log_help} A new code can be made once a minute, up to 10 times a day."
     if install.fetch == "process":  # serve starts again with the new settings (cli/serve.py, _SettingsWatch)
-        saved = ("Saved. The dashboard starts again in a few seconds to use the new settings; "
-                 "sign in again to change anything else.")
+        saved = "Saved. The dashboard starts again in a few seconds to use the new settings."
     else:
         saved = "Saved. The board shows it within a few minutes; the screen within seconds."
     return Wording(
@@ -234,7 +233,8 @@ class SettingsSite:
         self.setup = setup
         self._dashboard_on = dashboard_on
         self.password = PasswordStore(store.password_file)
-        self.sessions = Sessions(clock, cookie_name=COOKIE_NAME, cookie_path=PREFIX, password=self.password)
+        self.sessions = Sessions(clock, cookie_name=COOKIE_NAME, cookie_path=PREFIX, password=self.password,
+                                 file=store.sessions_file)
         self.lockout = Lockout(clock)
         self._forms = {
             tab: GroupForm(store, (tab,), TAB_PATHS[tab], store.env, install=install, noun=install.noun,
@@ -245,7 +245,7 @@ class SettingsSite:
         self._pages = FormPages(
             self._forms["general"], self.password, self.sessions, self.lockout,
             codes or ResetCodes(store.folder, to_board=self.to_board),
-            FormTokens(clock, cookie_name=FORM_COOKIE_NAME, cookie_path=PREFIX),
+            FormTokens(clock, cookie_name=FORM_COOKIE_NAME, cookie_path=PREFIX, key_file=store.form_key_file),
             lambda: wording(install, self.to_board(), self._running()), prefix=PREFIX, shell=shell,
             home=self._home, log=log, resume_setup=SETUP, setup=setup, clock=clock,
         )

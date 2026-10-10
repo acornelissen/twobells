@@ -161,6 +161,19 @@ class Running:
         assert response.status == 200 and response.getheader("Content-Type") == "application/json"
         return json.loads(text)["csrf"]
 
+    def restart(self):
+        """The server started again over the same store, as serve does after a
+        save on a desktop or in Docker: a new process, nothing kept in memory."""
+        self.server.shutdown()
+        self.server.server_close()
+        self.site = SettingsSite(self.store, self.site.install, self.setup, stylesheet=b"body{}",
+                                 dashboard_on=lambda: self.on["now"], clock=self.clock)
+        self.app = DashboardApp(self.app.hub, StaticFiles({}, False), lambda: True, self.site,
+                                dashboard_on=lambda: self.on["now"], allowed_hosts=self.app.allowed_hosts)
+        self.server = make_server(self.app, "127.0.0.1", 0)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, args=(0.05,), daemon=True).start()
+
     def saved(self):
         return tomllib.loads((self.folder / "settings.toml").read_text())
 
@@ -295,6 +308,43 @@ def test_sign_out_ends_the_session(signed):
     response, _ = signed("POST", "/settings/logout", {"csrf": csrf}, cookie=cookie)
     assert response.status == 303 and response.getheader("Set-Cookie").startswith("settings_session=;")
     assert signed("GET", "/settings", cookie=cookie)[0].getheader("Location") == "/settings/login"
+
+
+def test_a_save_and_the_restart_after_it_keep_the_browser_signed_in(signed):
+    cookie, csrf = signed.sign_in()
+    fields = fields_from(signed("GET", "/settings", cookie=cookie)[1])
+    response, text = signed("POST", "/settings", fields | {"csrf": csrf, "title": "Our house"}, cookie=cookie)
+    assert response.status == 200 and "sign in again" not in text
+    signed.restart()
+    assert signed("GET", "/settings", cookie=cookie)[0].status == 200
+    # The page drawn before the restart still saves after it, with its form token.
+    response, text = signed("POST", "/settings", fields | {"csrf": csrf, "title": "Our home"}, cookie=cookie)
+    assert response.status == 200 and "Saved" in text, text
+    assert signed.saved()["title"] == "Our home"
+
+
+def test_a_signed_out_browser_stays_signed_out_after_a_restart(signed):
+    cookie, csrf = signed.sign_in()
+    signed("POST", "/settings/logout", {"csrf": csrf}, cookie=cookie)
+    signed.restart()
+    assert signed("GET", "/settings", cookie=cookie)[0].getheader("Location") == "/settings/login"
+
+
+def test_the_store_keeps_sessions_only_as_hashes_in_private_files(signed):
+    cookie, csrf = signed.sign_in()
+    signed.form()  # a sign-in page's form, signed with the kept key
+    token = cookie.split("=", 1)[1]
+    raw =(signed.folder / "sessions.json").read_bytes()
+    assert token.encode() not in raw and csrf.encode() not in raw
+    for name in ("sessions.json", "form.key"):
+        assert (signed.folder / name).stat().st_mode & 0o777 == 0o600, name
+
+
+def test_a_form_opened_before_a_restart_still_posts_after_it(pi_signed):
+    form_cookie, token = pi_signed.form()
+    pi_signed.restart()
+    response, _ = pi_signed("POST", "/settings/forgot", {"form": token}, cookie=form_cookie)
+    assert response.status == 303 and response.getheader("Location") == "/settings/reset?asked"
 
 
 def test_the_sessions_are_built_on_the_stores_one_password(dash):

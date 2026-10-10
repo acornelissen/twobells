@@ -69,8 +69,8 @@ done
 systemctl daemon-reload
 # The web server hands its internet work to the fetch service, started at
 # boot and by the .path unit when asked. Both restart onto the new code and
-# the spool folder in memory (a running server signs browsers out); then the
-# old spool folders, in memory and on the SD card, go.
+# the spool folder in memory; then the old spool folders, in memory and on
+# the SD card, go.
 systemctl enable departureboard-fetch.path departureboard-fetch.service
 systemctl restart departureboard-fetch.path departureboard-fetch.service
 systemctl try-restart departureboard-web.service

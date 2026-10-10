@@ -735,3 +735,189 @@ def test_sessions_without_a_password_store_work_as_before():
     sessions = Sessions()
     token, _ = sessions.create()
     assert sessions.get(token) is not None
+
+
+# --- Sessions kept in the store, to outlive a restart ---
+
+
+def kept(folder, clock=None, password=None):
+    """Sessions over the store's file, as a server (or the one after it) makes them."""
+    return Sessions(clock or Clock(), password=password, file=folder / "sessions.json")
+
+
+def test_a_session_outlives_the_process_that_made_it(tmp_path):
+    clock = Clock()
+    token, session = kept(tmp_path, clock).create()
+    again = kept(tmp_path, clock).get(token)  # a new process over the same store
+    assert again is not None
+    assert again.expires == session.expires and again.csrf == session.csrf  # so an open form still posts
+
+
+def test_the_file_holds_a_hash_of_each_token_never_the_token_or_its_form_token(tmp_path):
+    token, session = kept(tmp_path).create()
+    raw = (tmp_path / "sessions.json").read_bytes()
+    assert token.encode() not in raw and session.csrf.encode() not in raw
+    assert hashlib.sha256(token.encode()).hexdigest().encode() in raw
+
+
+def test_the_sessions_file_is_private(tmp_path):
+    kept(tmp_path).create()
+    assert (tmp_path / "sessions.json").stat().st_mode & 0o777 == 0o600
+
+
+def test_signing_out_takes_the_session_out_of_the_file(tmp_path):
+    clock = Clock()
+    sessions = kept(tmp_path, clock)
+    gone, _ = sessions.create()
+    stays, _ = sessions.create()
+    sessions.end(gone)
+    again = kept(tmp_path, clock)
+    assert again.get(gone) is None and again.get(stays) is not None
+    sessions.end_all()
+    assert kept(tmp_path, clock).get(stays) is None
+
+
+def test_an_expired_session_is_not_brought_back_and_is_dropped_from_the_file(tmp_path):
+    clock = Clock()
+    sessions = kept(tmp_path, clock)
+    old, _ = sessions.create()
+    clock.now += SESSION_SECONDS
+    assert kept(tmp_path, clock).get(old) is None
+    sessions.create()  # any write prunes
+    entries = json.loads((tmp_path / "sessions.json").read_text())["sessions"]
+    assert len(entries) == 1 and hashlib.sha256(old.encode()).hexdigest() not in json.dumps(entries)
+
+
+def test_the_file_keeps_no_more_than_the_most_sessions_the_oldest_dropped(tmp_path):
+    clock = Clock()
+    sessions = kept(tmp_path, clock)
+    tokens = []
+    for _ in range(MAX_SESSIONS + 1):
+        tokens.append(sessions.create()[0])
+        clock.now += 1
+    assert len(json.loads((tmp_path / "sessions.json").read_text())["sessions"]) == MAX_SESSIONS
+    again = kept(tmp_path, clock)
+    assert again.get(tokens[0]) is None and all(again.get(t) is not None for t in tokens[1:])
+
+
+def test_a_new_password_ends_every_kept_session(tmp_path):
+    password = PasswordStore(tmp_path / "web.json")
+    password.set("first password here")
+    clock = Clock()
+    token, _ = kept(tmp_path, clock, password).create()
+    PasswordStore(tmp_path / "web.json").set("second password here")  # the command line, say
+    assert kept(tmp_path, clock, password).get(token) is None
+    kept(tmp_path, clock, password).create()
+    raw = (tmp_path / "sessions.json").read_text()
+    assert hashlib.sha256(token.encode()).hexdigest() not in raw  # pruned on the next write
+
+
+@pytest.mark.parametrize("content", [
+    b"", b"{", b"\xff\xfe", b"[]", b"null", b'{"sessions": {}}', b'{"sessions": [1, "x", null]}',
+    b"[" * 100000,
+])
+def test_a_broken_sessions_file_signs_everyone_out_without_a_crash(tmp_path, content):
+    (tmp_path / "sessions.json").write_bytes(content)
+    sessions = kept(tmp_path)
+    assert sessions.get("a" * 43) is None
+    token, _ = sessions.create()  # and a new sign-in still works
+    assert kept(tmp_path).get(token) is not None
+
+
+def test_entries_that_are_not_as_written_are_never_accepted(tmp_path):
+    clock = Clock()
+    token = "t" * 43
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    for entry in [
+        {"hash": digest, "expires": "9999999999", "password": None},  # not a number
+        {"hash": digest, "expires": True, "password": None},
+        {"hash": digest, "expires": float("nan"), "password": None},
+        {"hash": digest, "expires": clock.now + SESSION_SECONDS + 1, "password": None},  # longer than any session
+        {"hash": digest, "expires": clock.now - 1, "password": None},
+        {"hash": digest.upper(), "expires": clock.now + 60, "password": None},
+        {"hash": digest + "\n", "expires": clock.now + 60, "password": None},
+        {"hash": token, "expires": clock.now + 60, "password": None},  # the token itself is no hash
+        {"hash": digest, "expires": clock.now + 60, "password": "an old salt"},
+    ]:
+        (tmp_path / "sessions.json").write_text(json.dumps({"sessions": [entry]}))
+        assert kept(tmp_path, clock).get(token) is None, entry
+    (tmp_path / "sessions.json").write_text(
+        json.dumps({"sessions": [{"hash": digest, "expires": clock.now + 60, "password": None}]}))
+    assert kept(tmp_path, clock).get(token) is not None  # the same entry, as written, does
+
+
+@pytest.mark.parametrize("token", ["", "a" * 42, "a" * 44, "a" * 42 + "\n", "a" * 42 + "!", "é" * 43])
+def test_a_cookie_that_is_no_token_finds_nothing(tmp_path, token):
+    sessions = kept(tmp_path)
+    sessions.create()
+    assert sessions.get(token) is None
+    sessions.end(token)  # and ends nothing
+
+
+def test_a_sessions_file_that_is_a_link_is_not_followed(tmp_path):
+    clock = Clock()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    token, _ = kept(elsewhere, clock).create()
+    (tmp_path / "sessions.json").symlink_to(elsewhere / "sessions.json")
+    assert kept(tmp_path, clock).get(token) is None
+
+
+def test_the_form_token_is_not_kept_but_made_again_from_the_session_token(tmp_path):
+    clock = Clock()
+    token, session = kept(tmp_path, clock).create()
+    _, other = kept(tmp_path, clock).create()
+    again = kept(tmp_path, clock).get(token)
+    assert csrf_matches(again, session.csrf) and not csrf_matches(again, other.csrf)
+
+
+def test_an_empty_form_token_never_matches():
+    assert not csrf_matches(Session(0, ""), "")
+
+
+def test_when_the_file_cant_be_written_a_signed_out_session_cannot_come_back(tmp_path, monkeypatch):
+    from departureboard.core import files
+
+    clock = Clock()
+    sessions = kept(tmp_path, clock)
+    token, _ = sessions.create()
+
+    def fail(*args, **kwargs):
+        raise OSError("read-only")
+
+    monkeypatch.setattr(files, "write_atomic", fail)
+    sessions.end(token)
+    assert sessions.get(token) is None
+    monkeypatch.undo()
+    assert kept(tmp_path, clock).get(token) is None
+
+
+# --- Form tokens before a session, kept in the store ---
+
+
+def test_a_form_opened_before_a_restart_still_posts_after_it(tmp_path):
+    clock = Clock()
+    tokens = FormTokens(clock, key_file=tmp_path / "form.key")
+    cookie, value = browser(tokens)
+    assert FormTokens(clock, key_file=tmp_path / "form.key").check(cookie, value)
+    assert not FormTokens(clock, key_file=tmp_path / "other.key").check(cookie, value)
+
+
+def test_the_form_key_is_made_when_first_needed_private_random_and_32_bytes(tmp_path):
+    tokens, other = FormTokens(key_file=tmp_path / "form.key"), FormTokens(key_file=tmp_path / "other.key")
+    assert not list(tmp_path.iterdir())  # starting the server writes nothing
+    browser(tokens)
+    browser(other)
+    key = (tmp_path / "form.key").read_bytes()
+    assert len(key) == 32 and key != (tmp_path / "other.key").read_bytes()
+    assert (tmp_path / "form.key").stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize("content", [b"", b"short", b"x" * 33])
+def test_a_broken_form_key_is_replaced(tmp_path, content):
+    (tmp_path / "form.key").write_bytes(content)
+    tokens = FormTokens(Clock(), key_file=tmp_path / "form.key")
+    cookie, value = browser(tokens)
+    key = (tmp_path / "form.key").read_bytes()
+    assert len(key) == 32 and key != content
+    assert FormTokens(Clock(), key_file=tmp_path / "form.key").check(cookie, value)

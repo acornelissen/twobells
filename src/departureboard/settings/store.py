@@ -2,7 +2,8 @@
 
 The board and the dashboard share it. It holds the settings the settings
 pages and setup save (settings.toml), the keys saved there (secrets.env),
-the settings password (web.json) and everything kept between runs: the
+the settings password (web.json), its sign-ins (sessions.json, form.key;
+all three 0600) and everything kept between runs: the
 board's state, the bus timetable, bank holidays and the dashboard's
 history. find_folder says which folder it is, by one rule for every
 command, so whichever view saves a setting, the other reads it.
@@ -41,6 +42,8 @@ FOLDER_NAME = "departureboard"
 OLD_FOLDER_NAME = "departureboard-dashboard"
 STATE_NAME = "state.json"
 PASSWORD_NAME = "web.json"  # noqa: S105 - the file the password hash is kept in
+SESSIONS_NAME = "sessions.json"  # hashes of the settings' session tokens (web/auth.py, Sessions)
+FORM_KEY_NAME = "form.key"  # the key the settings' sign-in forms are signed with (web/auth.py, FormTokens)
 
 
 def _absolute(path: Path) -> Path:
@@ -249,6 +252,14 @@ class Store:
     @property
     def password_file(self) -> Path:
         return self.folder / PASSWORD_NAME
+
+    @property
+    def sessions_file(self) -> Path:
+        return self.folder / SESSIONS_NAME
+
+    @property
+    def form_key_file(self) -> Path:
+        return self.folder / FORM_KEY_NAME
 
     def base(self) -> dict:
         """config.toml alone; {} if there is none."""

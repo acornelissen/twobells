@@ -328,7 +328,7 @@ Replace a key when it stops working, when you've made a new one, or if it might 
    - **The settings:** paste the new key into its box, on the wizard's **Keys** step or the tab that has it, and press **Save settings**. Leaving a box empty keeps the key you have. A key saved in the settings wins over one in a file of your own, so if you've ever pasted that key there, replace it there. Nothing needs restarting.
    - **A `secrets.env` of your own:** change the text after `NAME=` and save the file. Keep it to one line, with no spaces or quotes.
 3. **Restart what uses it**, only after changing a file of your own:
-   - On a Pi: the e-paper board and the timetable timer pick it up on their next run. Restart the rest: `sudo systemctl restart departureboard-web.service departureboard-fetch.service departureboard-screen.service` (leave out the screen if you don't use it). Restarting the web server signs browsers out.
+   - On a Pi: the e-paper board and the timetable timer pick it up on their next run. Restart the rest: `sudo systemctl restart departureboard-web.service departureboard-fetch.service departureboard-screen.service` (leave out the screen if you don't use it).
    - On a desktop: it notices the changed file and starts again by itself within a few seconds.
    - In Docker: in **Container Manager**, choose the project, then **Action**, then **Build** (or `docker compose up -d`). Just restarting the container doesn't read `secrets.env` again.
 4. **Check it works**, with the check from that key's section above.

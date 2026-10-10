@@ -394,7 +394,7 @@ Each tab has a **Test a key** section, after **Save settings**, with a button fo
 - **E-paper:** within a few minutes (it never redraws more often than every 2 minutes). Changing the look, accent colour or rotation redraws it too.
 - **HDMI screen:** within a second. If you change the rotation, accent colour or time zone, the screen restarts itself, which takes about 10 seconds.
 - **The dashboard on a Pi:** within a few minutes.
-- **The dashboard in Docker or on a desktop:** the server starts again by itself within a few seconds to use the new settings, and signs you out.
+- **The dashboard in Docker or on a desktop:** the server starts again by itself within a few seconds to use the new settings. You stay signed in.
 
 Turning a view off doesn't stop or disable any service. The board shows **Board off** and fetches nothing; the dashboard's address opens the settings.
 
@@ -415,6 +415,7 @@ Each install keeps everything it saves in one folder, its store:
 - `settings.toml`: what the tabs and the wizard save, layered over `config.toml`, which is never rewritten. It holds only the settings they manage; anything else put in it is ignored, and the log names it. Addresses (`[train]` and `[bus]` `base_url`), `state_file`, `display` and the other hand-edited settings belong in `config.toml`. A `settings.toml` that can't be read is replaced on the next save, with a copy kept as `settings.toml.broken`.
 - `secrets.env`: keys pasted in the settings or the wizard, readable by the app's user only. They win over the keys you give it in a `secrets.env` of your own.
 - `web.json`: the settings password, as a hash.
+- `sessions.json`: who is signed in to the settings, kept as a hash of each browser's session so a restart doesn't sign anyone out, and `form.key`, which the sign-in forms are signed with. Like `web.json` and `secrets.env`, readable by the app's user only. A new password ends every session.
 - The bus timetable, the punctuality history, bank holidays, the board's state, and lock files.
 
 `config.toml` is optional. Without one, the app uses its defaults and what you save. To undo everything saved in the settings, delete `settings.toml` and `secrets.env` from the store.
@@ -520,7 +521,7 @@ Or get the new release onto the Pi as for installing, check it, then from its fo
 sudo ./deploy/pi/update.sh
 ```
 
-`update.sh` installs the new code, refreshes the systemd units, restarts the web server and the fetch service, starts a bus timetable build if buses come from BODS, restarts the screen's service if it is running, and runs the e-paper board once if its timer is on. `--config FILE` and `--secrets FILE` replace `/etc/departureboard/config.toml` and `secrets.env` too (the secrets copy is shredded). Restarting the web server signs browsers out.
+`update.sh` installs the new code, refreshes the systemd units, restarts the web server and the fetch service, starts a bus timetable build if buses come from BODS, restarts the screen's service if it is running, and runs the e-paper board once if its timer is on. `--config FILE` and `--secrets FILE` replace `/etc/departureboard/config.toml` and `secrets.env` too (the secrets copy is shredded).
 
 ### Choosing a display
 
@@ -766,7 +767,7 @@ sudo systemctl start departureboard-timetable.service   # build the bus timetabl
 
 ## 13. Upgrading from before the two views
 
-The board's settings page and the dashboard used to be separate programs, each with its own folder and password. They are now one app, and the old commands `web`, `dashboard` and `setup serve` are replaced by `serve` and `fetch`. The old names still work, unlisted, until the first public release. Every upgrade signs you out: sign in again, with the password you had (the store keeps it).
+The board's settings page and the dashboard used to be separate programs, each with its own folder and password. They are now one app, and the old commands `web`, `dashboard` and `setup serve` are replaced by `serve` and `fetch`. The old names still work, unlisted, until the first public release. This upgrade signs you out once: sign in again, with the password you had (the store keeps it).
 
 **A NAS (Docker).** The keys file is now `secrets.env`, and the container is `departureboard`:
 
