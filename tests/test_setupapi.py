@@ -261,6 +261,13 @@ def test_another_search_on_the_same_folder_is_a_conflict(board):
     FakeJob.busy = True
     status, body = board.handle("start", {"stops": {"A": "1800SB12341"}, "routes": False})
     assert status == 409 and ok(board, "job")["job"] == {"state": "idle"}
+    assert body["error"] == "A setup search is already running for this board"
+
+
+def test_the_dashboard_says_dashboard_when_a_search_is_already_running(dashboard):
+    FakeJob.busy = True
+    status, body = dashboard.handle("start", {"stops": {"A": "1800SB12341"}, "routes": False})
+    assert status == 409 and body["error"] == "A setup search is already running for this dashboard"
 
 
 def test_the_search_needs_a_bus_key_pasted_or_saved(board):
@@ -380,7 +387,7 @@ def test_begin_says_which_keys_are_set_never_their_values(board):
 
 def test_begin_names_the_pis_page_and_its_keys_by_default(board):
     body = ok(board, "begin")
-    assert body["title"] == "Set up your board"
+    assert body["title"] == "Set up your board" and body["noun"] == "board"
     assert [k["name"] for k in body["keys"]] == [name for name, _, _ in settingsform.KEYS]
 
 
@@ -396,14 +403,14 @@ def dashboard(board):
     board.secrets["RDM_DETAILS_API_KEY"] = DETAILS_KEY
     api = SetupApi(board.config, lambda: dict(board.secrets), board.state, stations=lambda: STATIONS,
                    make_job=FakeJob, test_key=board._test_key, key_tests=RateLimit(10.0, clock=lambda: 0.0),
-                   title="Set up your dashboard", keys=dashform.KEYS)
+                   title="Set up your dashboard", noun="dashboard", keys=dashform.KEYS)
     api.calls, api.secrets, api.state = board.calls, board.secrets, board.state
     return api
 
 
 def test_begin_names_the_dashboards_page_and_offers_only_its_keys(dashboard):
     body = ok(dashboard, "begin")
-    assert body["title"] == "Set up your dashboard"
+    assert body["title"] == "Set up your dashboard" and body["noun"] == "dashboard"
     keys = {k["name"]: k for k in body["keys"]}
     assert list(keys) == ["RDM_API_KEY", "BODS_API_KEY", "RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"]
     assert keys["RDM_DETAILS_API_KEY"]["set"] and not keys["RDM_KB_API_KEY"]["set"]
@@ -461,6 +468,12 @@ def test_the_dashboards_saved_keys_never_leave_in_an_answer(dashboard):
 def test_a_host_names_its_page_and_keys_plainly(board, title, keys):
     with pytest.raises(ValueError):
         SetupApi(board.config, dict, board.state, title=title, keys=keys)
+
+
+@pytest.mark.parametrize("noun", ["", "Board", "the board", "board\n", "<b>", "x" * 21])
+def test_a_host_calls_itself_one_plain_word(board, noun):
+    with pytest.raises(ValueError):
+        SetupApi(board.config, dict, board.state, noun=noun)
 
 
 # Testing a key.

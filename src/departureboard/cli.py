@@ -766,6 +766,7 @@ def _settings_area(args, dash):
         target=target,
         saved_message="Saved. The dashboard starts again in a few seconds to use the new settings.",
         title="Set up your dashboard",
+        noun="dashboard",
         keys=KEYS,
     )
     area = SettingsArea(dash.state_dir, DashboardForm(target, load_secrets), setup)

@@ -20,7 +20,8 @@ no error repeats one. `testkey` tries one key, saved or pasted, with one
 harmless call to its service (keytest.py), at most once per key every
 KEY_TEST_EVERY seconds across the whole process.
 
-Each host names its own page: `begin` answers with the host's title and the
+Each host names its own page: `begin` answers with the host's title, the
+word for itself ("board" on the Pi, "dashboard" on the dashboard) and the
 keys it uses (the Pi's settingsform.KEYS, the dashboard's dashform.KEYS),
 and only those keys can be saved or tested through it.
 
@@ -89,6 +90,8 @@ _ATCO = re.compile(r"^[0-9]{3}[0-9A-Za-z]{1,9}$")
 _LINK = re.compile(r"^(/(?!/)[A-Za-z0-9._~/-]*|https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?)$")
 TITLE = "Set up your board"
 _TITLE_LENGTH = 60
+NOUN = "board"
+_NOUN = re.compile(r"[a-z]{1,20}")  # one plain word, to sit in a sentence: "No trains on this board"
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 KEY_DOCS = "https://github.com/acornelissen/inky-departures/blob/main/docs/KEYS.md"
 _KEY_ANCHORS = {
@@ -326,6 +329,7 @@ class SetupApi:
         target: Target | None = None,
         saved_message: str = "Saved. The board shows the new settings within a few minutes.",
         title: str = TITLE,
+        noun: str = NOUN,
         keys: Sequence[tuple[str, str, str]] = KEYS,
     ) -> None:
         """`load_secrets` gives the environment with every saved key, as the
@@ -334,17 +338,21 @@ class SetupApi:
         (label, href) pairs the finished page offers, like ("The board", "/").
         `target` is the overlay finishing saves into, by default the board's
         beside config.toml's state file; `saved_message` says what happens next.
-        `title` heads the page, and `keys`, (name, label, hint) like
-        settingsform.KEYS, are the keys the host uses: offered, saved and
-        tested in that order, and no others."""
+        `title` heads the page, `noun` is what its text calls the host
+        ("board": "No trains on this board"), and `keys`, (name, label,
+        hint) like settingsform.KEYS, are the keys the host uses: offered,
+        saved and tested in that order, and no others."""
         for label, href in links:
             if not label or len(label) > 40 or not _LINK.match(href):
                 raise ValueError("A link is a short label and a plain path or http(s) address")
         if not 0 < len(title) <= _TITLE_LENGTH or not title.isprintable():
             raise ValueError(f"A title is 1 to {_TITLE_LENGTH} ordinary characters")
+        if not _NOUN.fullmatch(noun):
+            raise ValueError("A noun is one lower-case word, like board")
         if not keys or any(not _ENV_NAME.match(name) for name, _, _ in keys):
             raise ValueError("Keys are named like environment variables")
         self._title = title
+        self._noun = noun
         self._keys = tuple((name, label, hint) for name, label, hint in keys)
         self._key_names = tuple(name for name, _, _ in self._keys)
         self._load_secrets = load_secrets
@@ -432,14 +440,15 @@ class SetupApi:
     # Finding home.
 
     def begin(self, payload) -> dict:
-        """What the page needs first: its title, the host's keys and which are
-        set (never their values), the links to show at the end, and any
-        search already running."""
+        """What the page needs first: its title, what it calls the host, the
+        host's keys and which are set (never their values), the links to show
+        at the end, and any search already running."""
         _fields(payload)
         env = self._load_secrets()
         keys = [{"name": name, "label": label, "hint": hint, "set": bool(str(env.get(name, "")).strip()),
                  "doc": KEY_DOCS + _KEY_ANCHORS.get(name, "")} for name, label, hint in self._keys]
-        return {"title": self._title, "keys": keys, "links": list(self._links), "job": self._job_status()}
+        return {"title": self._title, "noun": self._noun, "keys": keys, "links": list(self._links),
+                "job": self._job_status()}
 
     def postcode(self, payload) -> dict:
         fields = _fields(payload, ("postcode",))
@@ -555,8 +564,9 @@ class SetupApi:
             job = self._make_job(self._job_folder, stops, api_key, routes=routes, walk_minutes=walk)
             try:
                 job.start()
-            except discover.SetupBusy as error:
-                raise Conflict(str(error)) from None
+            except discover.SetupBusy:
+                # Another search on this folder, perhaps from the command line.
+                raise Conflict(f"A setup search is already running for this {self._noun}") from None
             self._job, self._job_stops, self._job_routes, self._job_key = job, stops, routes, api_key
         return {"job": self._job_status()}
 

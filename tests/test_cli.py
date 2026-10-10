@@ -991,7 +991,7 @@ def test_the_dashboards_setup_wizard_is_named_for_it_and_offers_its_keys(dashboa
     args = SimpleNamespace(config=str(dashboard_config), secrets=str(tmp_path / "nonexistent"))
     area = cli._settings_area(args, SimpleNamespace(state_dir=folder))
     status, body = area._setup.handle("begin", {})
-    assert status == 200 and body["title"] == "Set up your dashboard"
+    assert status == 200 and body["title"] == "Set up your dashboard" and body["noun"] == "dashboard"
     assert [k["name"] for k in body["keys"]] == [name for name, _, _ in dashform.KEYS]
     assert {"RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"} <= {k["name"] for k in body["keys"]}
     assert not [k for k in body["keys"] if k["name"].startswith("TAPI_")]
