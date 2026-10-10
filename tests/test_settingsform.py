@@ -529,8 +529,8 @@ def test_without_a_location_the_page_says_where_to_set_it(setup):
 def test_trains_or_buses_can_be_switched_off_and_back_on(setup):
     form, config, state, _ = setup
     assert fields_of(form)["train_enabled"] == "true" and fields_of(form)["bus_enabled"] == "true"
-    # Off, the section's other fields are kept as saved, unchecked, however they were left.
-    assert form.save(fields_of(form) | {"bus_enabled": "false", "bus_stops": "", "bus_rows": "many"}) == {}
+    # Off, the section's other fields are kept as saved, for switching it back on.
+    assert form.save(fields_of(form) | {"bus_enabled": "false"}) == {}
     assert [c.source.name for c in load_config(config, ENV).board.sources] == ["train"]
     saved = tomllib.loads((state / "settings.toml").read_text())
     assert saved["bus"] == {"enabled": False}
@@ -547,6 +547,27 @@ def test_switching_a_section_back_on_checks_its_fields(setup):
     errors = form.save(fields_of(form) | {"train_enabled": "true", "train_crs": "Glossop"})
     assert set(errors) == {"train_crs"}
     assert [c.source.name for c in load_config(config, ENV).board.sources] == ["bus"]  # not saved
+
+
+def test_edits_to_a_section_switched_off_are_kept_for_switching_it_back_on(setup):
+    form, config, *_ = setup
+    edits = {"bus_enabled": "false", "bus_rows": "5", "bus_stops": "A = 1800SB12341\r\nB = 100000008350"}
+    assert form.save(fields_of(form) | edits) == {}
+    assert [c.source.name for c in load_config(config, ENV).board.sources] == ["train"]
+    shown = fields_of(form)
+    assert (shown["bus_rows"], shown["bus_stops"]) == ("5", "A = 1800SB12341\nB = 100000008350")
+    assert form.save(shown | {"bus_enabled": "true"}) == {}
+    bus = load_config(config, ENV).board.sources[1].source
+    assert bus._stops == {"A": "1800SB12341", "B": "100000008350"} and bus._rows == 5
+
+
+def test_a_mistake_in_a_section_switched_off_is_still_reported(setup):
+    form, *_ = setup
+    # Unchanged fields are left as saved, unchecked; a field changed is checked, as it is kept.
+    fields = fields_of(form)
+    unchanged = {"bus_windows": fields["bus_windows"].replace("\n", "\r\n") + "\r\n"}  # as a browser sends it
+    errors = form.save(fields | unchanged | {"bus_enabled": "false", "bus_rows": "many"})
+    assert set(errors) == {"bus_rows"}
 
 
 def test_trains_and_buses_cannot_both_be_switched_off(setup):

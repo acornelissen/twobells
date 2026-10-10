@@ -159,6 +159,14 @@ def neither_on(data: dict, fields: dict[str, str], noun: str) -> dict[str, str]:
     return {}
 
 
+def edited(raw: str, shown: str) -> bool:
+    """Whether a field was changed from what the page showed, ignoring the
+    spaces, blank lines and line endings a browser may add."""
+    def lines(text: str) -> list[str]:
+        return [line.strip() for line in text.splitlines() if line.strip()]
+    return lines(raw) != lines(shown)
+
+
 def _accents(display: str, theme: str) -> tuple[str, ...]:
     """Accents that stand out on the look's background: yellow is too faint on
     the plain look's white (1.9:1), red too dim on the sign's black on a screen
@@ -399,12 +407,15 @@ class SettingsForm:
         errors: dict[str, str] = {}
         overlay: dict = {}
         form = _fields(display, fields.get("theme", ""))
-        # A section switched off keeps what is saved for it, unchecked, for switching it back on.
+        # A section switched off keeps what is saved for it, for switching it back on:
+        # a field left as shown is left alone, unchecked (it may be the template's
+        # placeholder), and one changed is checked and saved, as with it on.
         off = {f.section for f in form if f.key == "enabled" and fields.get(f.name) == "false"}
+        shown = self._current(data)
         for f in form:
             if f.section and f.section not in data:
                 continue  # trains or buses aren't set up in config.toml
-            if f.section in off and f.key != "enabled":
+            if f.section in off and f.key != "enabled" and not edited(fields.get(f.name, ""), shown[f.name]):
                 continue
             try:
                 value = f.check(fields.get(f.name, ""))

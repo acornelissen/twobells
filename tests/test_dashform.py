@@ -57,8 +57,8 @@ def test_trains_and_buses_are_on_unless_switched_off(form):
 
 
 def test_trains_or_buses_can_be_switched_off_and_back_on(form):
-    # Off, the group's other fields are kept as saved, unchecked, however they were left.
-    assert form.save(fields_of(form) | {"bus_enabled": "false", "bus_stops": "", "bus_rows": "99"}) == {}
+    # Off, the group's other fields are kept as saved, for switching it back on.
+    assert form.save(fields_of(form) | {"bus_enabled": "false"}) == {}
     assert loaded(form) == (True, False, True)
     saved = tomllib.loads((form.folder / "settings.toml").read_text())
     assert saved["bus"] == {"enabled": False} and "bus_rows" not in saved["dashboard"]
@@ -73,6 +73,22 @@ def test_switching_a_section_back_on_checks_its_fields(form):
     errors = form.save(fields_of(form) | {"train_enabled": "true", "train_crs": "Glossop"})
     assert set(errors) == {"train_crs"}
     assert loaded(form) == (False, True, True)  # not saved
+
+
+def test_edits_to_a_group_switched_off_are_kept_for_switching_it_back_on(form):
+    edits = {"bus_enabled": "false", "bus_rows": "4", "bus_stops": "A = 1800SB12341\r\nB = 1800SB12342"}
+    assert form.save(fields_of(form) | edits) == {}
+    assert loaded(form) == (True, False, True)
+    shown = fields_of(form)
+    assert (shown["bus_rows"], shown["bus_stops"]) == ("4", "A = 1800SB12341\nB = 1800SB12342")
+    assert form.save(shown | {"bus_enabled": "true"}) == {}
+    dash = load_dashboard(form.config, ENV, form.folder, lock=False)
+    assert dash.bus_stops == {"A": "1800SB12341", "B": "1800SB12342"} and dash.options.bus_rows == 4
+
+
+def test_a_mistake_in_a_group_switched_off_is_still_reported(form):
+    errors = form.save(fields_of(form) | {"bus_enabled": "false", "bus_rows": "99", "bus_stops": ""})
+    assert set(errors) == {"bus_rows", "bus_stops"}
 
 
 def test_trains_and_buses_cannot_both_be_switched_off(form):

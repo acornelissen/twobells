@@ -37,6 +37,7 @@ from .settingsform import (
     _stops,
     _text,
     _walk_per_stop,
+    edited,
     neither_on,
 )
 
@@ -203,14 +204,18 @@ class DashboardForm:
             return {"_form": f"Not saved: the settings can't be read ({error})"}
         errors: dict[str, str] = {}
         changes: dict = {}
+        shown = _current(data)
         for _, needs, names, _ in GROUPS:
             if needs is not None and needs not in data:
                 continue  # not set up: setup or config.toml adds it
-            if fields.get(f"{needs}_enabled") == "false" and f"{needs}_enabled" in names:
-                # Switched off: the rest of the group is kept as saved, unchecked, for switching it back on.
-                names = (f"{needs}_enabled",)
+            switch = f"{needs}_enabled"
+            off = switch in names and fields.get(switch) == "false"
             for name in names:
                 f = FIELDS[name]
+                if off and name != switch and not edited(fields.get(name, ""), shown[name]):
+                    # Switched off, the group keeps what is saved, for switching it back on: a
+                    # field left as shown is left alone, unchecked, and one changed is saved.
+                    continue
                 try:
                     value = f.check(fields.get(f.name, ""))
                 except Invalid as error:
