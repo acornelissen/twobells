@@ -29,6 +29,7 @@ Logs get the key's name and the state, nothing more.
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import re
@@ -283,8 +284,21 @@ def _details(keys: Mapping[str, str], config_data: Mapping, fetch: Fetch) -> Key
     service = _SERVICES["RDM_DETAILS_API_KEY"]
     train = _a_train(keys, config_data, fetch)
     url = f"{darwin.DETAILS_BASE_URL}/GetServiceDetails/{quote(train or _NO_TRAIN, safe='')}"
+    def ask(url: str, headers: Mapping[str, str]) -> bytes | None:
+        try:
+            return fetch(url, headers)
+        except HTTPError as error:
+            # Darwin itself, past the gateway, answers a train it doesn't know
+            # with its own 500 ({"Message": ...}); the gateway's errors are faults.
+            if error.code >= 500:
+                text = _error_body(error)
+                if '"message"' in text and '"fault"' not in text:
+                    return None
+                raise HTTPError(error.url, error.code, error.reason, error.headers, io.BytesIO(text.encode())) from None
+            raise
+
     try:
-        body = _call(fetch, url, {"x-apikey": keys["RDM_DETAILS_API_KEY"]}, service)
+        body = _call(ask, url, {"x-apikey": keys["RDM_DETAILS_API_KEY"]}, service)
     except _Outcome as outcome:
         if outcome.result.state in ("wrong_key", "not_subscribed", "service_down"):
             raise
@@ -323,7 +337,8 @@ def _bods(keys: Mapping[str, str], config_data: Mapping, fetch: Fetch) -> KeyRes
     service = _SERVICES["BODS_API_KEY"]
     params = {"boundingBox": ",".join(f"{v:.5f}" for v in _box(config_data)), "api_key": keys["BODS_API_KEY"]}
     url = f"{bods.DEFAULT_BASE_URL}/datafeed/?{urlencode(params)}"
-    body = _call(fetch, url, {"Accept": "application/xml"}, service)
+    # BODS answers text/xml and refuses a request for application/xml (406).
+    body = _call(fetch, url, {"Accept": "text/xml, application/xml;q=0.9, */*;q=0.1"}, service)
     if not body.lstrip().startswith(b"<"):
         return _unreadable(service)
     return KeyResult("works", "It works: the Bus Open Data Service sent bus positions.")

@@ -342,3 +342,24 @@ def test_the_literal_key_is_replaced_even_in_fixed_words():
     # A key that happens to be a word the messages use is still never shown.
     result = keytest.test_key("RDM_API_KEY", "works", CONFIG, {}, fetch=Fake(("Get", BOARD)))
     assert "works" not in result.message
+
+
+# Seen live on 10 Oct 2026: BODS refuses Accept: application/xml with 406, and
+# Darwin (past the gateway) answers a made-up train with its own 500.
+
+
+def test_bods_asks_for_xml_the_way_bods_accepts():
+    fake = Fake(("datafeed", VEHICLES))
+    check("BODS_API_KEY", fake)
+    accept = fake.calls[0][1]["Accept"]
+    assert accept.startswith("text/xml") and "*/*" in accept
+
+
+def test_details_darwin_s_own_error_for_a_made_up_train_means_the_key_got_through():
+    empty = b'{"locationName": "Glossop", "crs": "GLO", "trainServices": null}'
+    fake = Fake(("GetDepartureBoard", empty), ("GetServiceDetails", (500, b'{"Message":"Unexpected server error"}')))
+    result = check("RDM_DETAILS_API_KEY", fake)
+    assert result.state == "unknown" and "accepted the key" in result.message
+    # The gateway's own failure still says the service is down.
+    fake = Fake(("GetDepartureBoard", empty), ("GetServiceDetails", (500, b'{"fault":{"faultstring":"x"}}')))
+    assert check("RDM_DETAILS_API_KEY", fake).state == "service_down"
