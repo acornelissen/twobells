@@ -307,7 +307,7 @@ async function findPostcode(event) {
   event.preventDefault();
   const input = $("postcode");
   const value = input.value.trim();
-  if (!POSTCODE.test(value)) return refuse("postcode", "Enter a UK postcode, like SK13 1AH.");
+  if (!POSTCODE.test(value)) return refuse("postcode", "Enter a UK postcode, like SW1A 1AA.");
   setError("postcode", "");
   await once(event.submitter || $("postcode-form").querySelector("button"), async () => {
     say("Looking up the postcode…");

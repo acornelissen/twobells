@@ -207,7 +207,7 @@ def _fetch(http_get: HttpGetBytes, url: str, max_bytes: int, what: str, *private
 
 
 def normalise_postcode(postcode: str) -> str:
-    """'SK13 1AH' as 'SK13 1AH'. SetupError if it isn't the shape of a UK postcode."""
+    """'sk131ah' as 'SK13 1AH'. SetupError if it isn't the shape of a UK postcode."""
     if not isinstance(postcode, str) or len(postcode) > 16:
         raise SetupError("That isn't a UK postcode")
     packed = "".join(postcode.split()).upper()
