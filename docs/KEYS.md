@@ -1,6 +1,6 @@
 # Getting your keys
 
-The board and the dashboard get train and bus times from a few free online services. Some of them want to know who's asking, so they give you a key: a long string of letters and numbers that you copy into a file. This guide covers every key, step by step.
+The board and the dashboard get train and bus times from a few free online services. Some of them want to know who's asking, so they give you a key: a long string of letters and numbers that you paste into the settings. This guide covers every key, step by step.
 
 Checked: October 2026. The services change their websites from time to time, so a button may have moved or been renamed; the steps should still be close.
 
@@ -21,7 +21,7 @@ Checked: October 2026. The services change their websites from time to time, so 
 
 All of them are free.
 
-| Key | Pi board, trains only | Pi board, trains and buses | Dashboard | Everything |
+| Key | Board, trains only | Board, trains and buses | Dashboard | Everything |
 |---|---|---|---|---|
 | `RDM_API_KEY` (Live Departure Board) | needed | needed | needed for trains | needed |
 | `BODS_API_KEY` (Bus Open Data Service) | – | needed | needed for buses | needed |
@@ -36,26 +36,31 @@ All of them are free.
 
 ## Where keys go
 
-Each key goes on its own line, as `NAME=key`, with no spaces and no quotes:
+The easiest way is to paste them in the settings, at `/settings` on your install's address (see [The settings](USER_GUIDE.md#5-the-settings)). Each key has a box in one place:
+
+| Key | Pasted on |
+|---|---|
+| `RDM_API_KEY`, `BODS_API_KEY` | the setup wizard's **Keys** step, or the **General** tab |
+| `TAPI_APP_ID`, `TAPI_APP_KEY` | the **Board** tab (only while the board view is on) |
+| `RDM_DETAILS_API_KEY`, `RDM_KB_API_KEY` | the **Dashboard** tab (only while the dashboard view is on) |
+
+Keys pasted there are saved in `secrets.env` in the install's store (`/var/lib/departureboard` on a Pi, the `/data` volume in Docker; see [Where things are kept](USER_GUIDE.md#where-things-are-kept)), readable only by the app. They win over keys in a file of your own, and need no restart.
+
+**Testing a key.** The wizard has **How to get this key** (the short version of this guide) and a **Test this key** button by each key. Each tab has a **Test a key** section after **Save settings**, with a button for each of its keys. Testing makes one small request to the key's service and says what it found: it works, it's the wrong key, it's for another Rail Data Marketplace product, the service isn't answering, or it can't tell. It tests the key in the box if you've pasted one, without saving it, or else the key already saved. Each key can be tested once every 10 seconds.
+
+**Or in a file of your own.** Each key goes on its own line, as `NAME=key`, with no spaces and no quotes:
 
 ```
 RDM_API_KEY=0a1b2c3d4e5f...
 ```
 
-Where that line goes depends on what you're setting up:
+`deploy/secrets.env.example` has every key, grouped General, Board and Dashboard. Where the file goes:
 
-| Setting up | File | Notes |
+| Install | File | Notes |
 |---|---|---|
-| The board on a Pi | `/etc/departureboard/secrets.env` | Edit with `sudo nano /etc/departureboard/secrets.env`. Or paste keys on the settings page (see below). |
-| The dashboard on a Mac | `secrets.env` in the project folder | Start the dashboard with `--secrets secrets.env`. |
-| The dashboard in Docker (a Synology NAS) | `dashboard.env`, next to `docker-compose.yml` | Copy it from `deploy/dashboard.env.example`. |
-| The dashboard, from its **Settings** | `secrets.env` in the dashboard's own folder | Saved for you when you paste a key on **Settings** (see below). In Docker the folder is the `/data` volume. |
-
-**The settings page** on the Pi has a box for `RDM_API_KEY`, `BODS_API_KEY`, `TAPI_APP_ID` and `TAPI_APP_KEY`, and saves them to `/var/lib/departureboard/secrets.env`. The two dashboard-only keys (`RDM_DETAILS_API_KEY` and `RDM_KB_API_KEY`) aren't on it.
-
-**The dashboard's Settings** (`/settings` on the dashboard, behind its own password) has a box for `RDM_API_KEY`, `BODS_API_KEY`, `RDM_DETAILS_API_KEY` and `RDM_KB_API_KEY`, and saves them to `secrets.env` in the dashboard's own folder, where they win over the keys in the `secrets.env` you start it with, or in `dashboard.env`. It has no TransportAPI boxes, as the dashboard never uses it. See [Changing the dashboard's settings](USER_GUIDE.md#changing-the-dashboards-settings).
-
-**The setup page** (the first-run setup wizard, on the Pi or the dashboard) has the same boxes as that settings page, each with **How to get this key** (the short version of this guide) and a **Test this key** button. Testing makes one small request to the key's service and says what it found: it works, it's the wrong key, it's for another Rail Data Marketplace product, the service isn't answering, or it can't tell. It tests the key in the box if you've pasted one, without saving it, or else the key already saved. Each key can be tested once every 10 seconds.
+| A Pi | `/etc/departureboard/secrets.env` | Edit with `sudo nano /etc/departureboard/secrets.env`, then restart the services (see [Replacing a key](#replacing-a-key)). |
+| Docker (a Synology NAS, say) | `secrets.env`, next to `docker-compose.yml` | Copied from `deploy/secrets.env.example`. |
+| A desktop | any file, given with `--secrets` | For example `departureboard serve --secrets secrets.env`. |
 
 Never put a key in `config.toml`. That file holds settings, gets copied about, and anyone on the Pi can read it.
 
@@ -104,11 +109,11 @@ base_url = "https://api1.raildata.org.uk/..."
 
 ### Put it in
 
-`RDM_API_KEY` in `secrets.env` (Pi or Mac) or `dashboard.env` (Docker), or the **Rail Data Marketplace key** box on the Pi's settings page or the dashboard's **Settings**.
+The **Rail Data Marketplace key** box in the setup wizard or on the **General** tab. Or `RDM_API_KEY` in a `secrets.env` of your own.
 
 ### Check it works
 
-On the setup page, press **Test this key**. "Not subscribed" means the key is for another RDM product: subscribe to Live Departure Board and copy its own Consumer key.
+In the wizard, press **Test this key**; on the **General** tab, **Test the Rail Data Marketplace key**. "Not subscribed" means the key is for another RDM product: subscribe to Live Departure Board and copy its own Consumer key.
 
 Or on the Pi:
 
@@ -116,7 +121,7 @@ Or on the Pi:
 sudo /opt/departureboard/venv/bin/departureboard probe train
 ```
 
-On a Mac, from the project folder: `departureboard probe train --config config.toml --secrets secrets.env`.
+On a desktop: `departureboard probe train`, with the same `--config` and `--secrets` as you start it with, if any.
 
 It lists the next trains from your station. An error mentioning 401 or 403 means the key is wrong, or isn't for Live Departure Board. If you've only just subscribed, give it a few minutes and try again.
 
@@ -124,7 +129,7 @@ It lists the next trains from your station. An error mentioning 401 or 403 means
 
 ## Rail Data Marketplace: Service Details
 
-**What it unlocks:** on the dashboard, where each of the next three trains is ("Left Hadfield 22:44, on time", "At Glossop now"), and the stops before your station in **Details**. It doesn't change the Pi board.
+**What it unlocks:** on the dashboard, where each of the next three trains is ("Left Hadfield 22:44, on time", "At Glossop now"), and the stops before your station in **Details**. It doesn't change the board.
 
 **Needed?** No. Without it, the dashboard works as before, just without train positions.
 
@@ -146,19 +151,19 @@ You need the [RDM account](#make-an-rdm-account) from above.
 
 ### Put it in
 
-`RDM_DETAILS_API_KEY` in `secrets.env` (Mac) or `dashboard.env` (Docker), or the **Rail Data Marketplace Service Details key** box on the dashboard's **Settings**. It isn't on the Pi's settings page.
+The **Rail Data Marketplace Service Details key** box on the **Dashboard** tab. Or `RDM_DETAILS_API_KEY` in a `secrets.env` of your own.
 
 ### Check it works
 
-Start (or restart) the dashboard and open it. Within a minute or two, the next three trains get a strip showing where they are.
+On the **Dashboard** tab, press **Test the Rail Data Marketplace Service Details key**. Then open the dashboard: within a minute or two, the next three trains get a strip showing where they are.
 
-If they don't, look at the dashboard's log (the terminal window on a Mac; **Container Manager**, then the container's **Log**, on a NAS) for "train positions off for 6 hours". That means the key was refused: check you copied the Service Details key, not the Live Departure Board one. After fixing it, restart the dashboard, or it waits the full 6 hours before trying again.
+If they don't, look at the log (on a Pi `journalctl -u departureboard-fetch`; in Docker `docker logs departureboard`; on a desktop, the Terminal window running it) for "train positions off for 6 hours". That means the key was refused: check you copied the Service Details key, not the Live Departure Board one. Saving the right key on the tab starts the dashboard's feeds again; a key changed in a file of your own needs a restart (see [Replacing a key](#replacing-a-key)), or the dashboard waits the full 6 hours before trying again.
 
 ---
 
 ## Rail Data Marketplace: Knowledgebase Incidents
 
-**What it unlocks:** on the dashboard, planned engineering works and other National Rail incidents that affect your trains and stations. It doesn't change the Pi board.
+**What it unlocks:** on the dashboard, planned engineering works and other National Rail incidents that affect your trains and stations. It doesn't change the board.
 
 **Needed?** No.
 
@@ -183,8 +188,8 @@ You need the [RDM account](#make-an-rdm-account) from above.
 
 ### Put them in
 
-- The key: `RDM_KB_API_KEY` in `secrets.env` (Mac) or `dashboard.env` (Docker), or the **Rail Data Marketplace Knowledgebase Incidents key** box on the dashboard's **Settings**. It isn't on the Pi's settings page.
-- The address: the **Knowledgebase Incidents address** box under **Trains** on the dashboard's **Settings**, or in `config.toml`, under `[dashboard]`:
+- The key: the **Rail Data Marketplace Knowledgebase Incidents key** box on the **Dashboard** tab. Or `RDM_KB_API_KEY` in a `secrets.env` of your own.
+- The address: the **Knowledgebase Incidents address** box under **Trains** on the **Dashboard** tab. It must be at `raildata.org.uk`; any other address goes in `config.toml`, under `[dashboard]`:
 
   ```toml
   [dashboard]
@@ -193,7 +198,7 @@ You need the [RDM account](#make-an-rdm-account) from above.
 
 ### Check it works
 
-Restart the dashboard. If the address is missing, the dashboard says engineering works are off and asks you to set `kb_incidents_url`. Otherwise, any works affecting your trains appear with the other disruption notices. There often aren't any, so an empty list doesn't mean the key failed; look in the dashboard's log for an error about incidents if you're unsure.
+Save the address first, then press **Test the Rail Data Marketplace Knowledgebase Incidents key** on the **Dashboard** tab: the test asks the saved address. If the address is missing, the dashboard says engineering works are off and asks you to set `kb_incidents_url`. Otherwise, any works affecting your trains appear with the other disruption notices. There often aren't any, so an empty list doesn't mean the key failed; look in the dashboard's log for an error about incidents if you're unsure.
 
 ---
 
@@ -201,7 +206,7 @@ Restart the dashboard. If the address is missing, the dashboard says engineering
 
 **What it unlocks:**
 
-- Bus times on the board and the dashboard, worked out from each bus company's timetable plus where the buses are right now (with `source = "bods"` under `[bus]` in `config.toml`; see [Bus times](USER_GUIDE.md#bus-times)).
+- Bus times on the board and the dashboard, worked out from each bus company's timetable plus where the buses are right now (`source = "bods"` under `[bus]`, which the setup wizard sets; see [Bus times](USER_GUIDE.md#bus-times)).
 - The bus position page on the HDMI screen.
 - On the dashboard: the strip of stops showing where each bus is, the bus map, and bus disruption notices.
 
@@ -232,13 +237,13 @@ The Bus Open Data Service (BODS) is run by the Department for Transport.
 
 ### Put it in
 
-`BODS_API_KEY` in `secrets.env` (Pi or Mac) or `dashboard.env` (Docker), or the **Bus Open Data Service key** box on the Pi's settings page or the dashboard's **Settings**.
+The **Bus Open Data Service key** box in the setup wizard or on the **General** tab. Or `BODS_API_KEY` in a `secrets.env` of your own.
 
-Buses also need your stops and bus companies in `config.toml`; see [Bus times](USER_GUIDE.md#bus-times).
+Buses also need your stops and their bus companies, which the setup wizard finds; see [Bus times](USER_GUIDE.md#bus-times).
 
 ### Check it works
 
-On the setup page, press **Test this key**. It asks BODS for the buses in a small patch of map, so it works whether or not any are running.
+In the wizard, press **Test this key**; on the **General** tab, **Test the Bus Open Data Service key**. It asks BODS for the buses in a small patch of map, so it works whether or not any are running.
 
 Or build the bus timetable. On the Pi:
 
@@ -247,15 +252,15 @@ sudo systemctl start departureboard-timetable.service
 journalctl -u departureboard-timetable -n 5
 ```
 
-On a Mac: `departureboard timetable --config config.toml --secrets secrets.env`.
+On a desktop: `departureboard timetable`, with the same `--config` and `--secrets` as you start it with, if any.
 
-Either way, it ends with `Bus timetable: … journeys at your stops`. If it builds a timetable, the key works. Then `departureboard probe bus` (with `sudo /opt/departureboard/venv/bin/` in front on the Pi) lists the next buses. If every bus shows `sch` for a long time, the settings page's **Status** section says whether live positions are failing.
+Either way, it ends with `Bus timetable: … journeys at your stops`. If it builds a timetable, the key works. Then `departureboard probe bus` (with `sudo /opt/departureboard/venv/bin/` in front on the Pi) lists the next buses. If every bus shows `sch` for a long time, **Status** on the **Board** tab says whether live positions are failing.
 
 ---
 
 ## TransportAPI
 
-**What it unlocks:** bus times on the Pi board, as a stand-in while there's no usable bus timetable from BODS (none built yet, or built for other stops). You can also use it on its own instead of BODS, but the free plan doesn't stretch across a whole day.
+**What it unlocks:** bus times on the board, as a stand-in while there's no usable bus timetable from BODS (none built yet, or built for other stops). You can also use it on its own instead of BODS, but the free plan doesn't stretch across a whole day.
 
 **Needed?** No. Most people can skip it. The dashboard never uses it.
 
@@ -272,13 +277,13 @@ Your account starts with one app. Open it to see its credentials: an **app_id** 
 
 ### Put them in
 
-`TAPI_APP_ID` and `TAPI_APP_KEY` in `/etc/departureboard/secrets.env`, or the **TransportAPI app ID** and **TransportAPI app key** boxes on the settings page.
+The **TransportAPI app ID** and **TransportAPI app key** boxes on the **Board** tab. Or `TAPI_APP_ID` and `TAPI_APP_KEY` in `/etc/departureboard/secrets.env`.
 
 ### Check it works
 
-On the setup page, paste both, then press **Test this key** under the app key. It tests the two together, and uses one of today's 30 lookups, so it asks first. The board doesn't count that lookup in its own daily budget, which leaves 2 spare by default.
+On the **Board** tab, paste both (or leave them empty to test the saved ones), then press **Test the TransportAPI app ID and key**. It tests the two together, and uses one of today's 30 lookups, as the note by the button says. The board doesn't count that lookup in its own daily budget, which leaves 2 spare by default.
 
-The settings page's **Status** section shows how many of today's TransportAPI lookups are used, and a "Problem: …" line if a lookup failed. While the BODS timetable is working, TransportAPI isn't used at all, so there's nothing to see.
+**Status** on the **Board** tab shows how many of today's TransportAPI lookups are used, and a "Problem: …" line if a lookup failed. While the BODS timetable is working, TransportAPI isn't used at all, so there's nothing to see.
 
 With `source = "transportapi"` under `[bus]`, `departureboard probe bus` checks it directly. That uses one lookup per stop from today's 30.
 
@@ -305,11 +310,11 @@ A key is like a password for your account with that service. Anyone who has it c
 - **Never paste a key into a chat, an email, a forum post, a GitHub issue, or a screenshot.** If someone is helping you, describe the error instead; the board's own messages never include keys.
 - **Keep the key files private.**
   - On the Pi, the installer makes `/etc/departureboard/secrets.env` readable only by the system. If you made the file yourself, run `sudo chmod 600 /etc/departureboard/secrets.env`.
-  - On a Mac: `chmod 600 secrets.env`.
-  - On a NAS: in File Station, give only your own account access to `dashboard.env`.
-- **Keys stay off GitHub.** `secrets.env` and `dashboard.env` are already left out of the project's git repository and its Docker image. Don't rename them to something that isn't.
-- **The settings page never shows a key.** Its key boxes only say whether each key is set. You can paste a new key in, but nobody can read one out, even with the settings password.
-- **The settings page uses plain HTTP**, so paste keys into it only from your home network.
+  - On a desktop: `chmod 600 secrets.env`.
+  - On a NAS: in File Station, give only your own account access to `secrets.env`.
+- **Keys stay off GitHub.** `secrets.env` and `dashboard.env` (its old name in Docker) are already left out of the project's git repository and its Docker image. Don't rename them to something that isn't.
+- **The settings never show a key.** Their key boxes only say whether each key is set. You can paste a new key in, but nobody can read one out, even with the settings password.
+- **The settings use plain HTTP**, so paste keys into them only from your home network.
 - **You only need the Consumer key** from the Rail Data Marketplace. Leave the **Consumer secret** where it is.
 
 ## Replacing a key
@@ -320,12 +325,10 @@ Replace a key when it stops working, when you've made a new one, or if it might 
    - TransportAPI: make a new app, use its keys, and delete the old app.
    - Rail Data Marketplace and BODS: look in your account for a way to make a new key, or contact them through the site's help or contact page.
 2. **Put the new key in** where the old one was:
-   - **The Pi's settings page:** paste the new key into its box and press **Save settings**. Leaving a box empty keeps the key you have. A key saved on the page wins over `/etc/departureboard/secrets.env`, so if you've ever pasted that key on the page, replace it on the page.
-   - **The dashboard's Settings:** the same. A key saved there wins over the one in your `secrets.env` or `dashboard.env`, so if you've ever pasted that key there, replace it there. The dashboard starts again by itself to use it.
-   - **`secrets.env` or `dashboard.env`:** change the text after `NAME=` and save the file. Keep it to one line, with no spaces or quotes.
-3. **Restart what uses it:**
-   - The e-paper board picks it up at its next check.
-   - The HDMI screen and the settings page: `sudo systemctl restart departureboard-screen.service departureboard-web.service` (leave out whichever you don't use).
-   - The dashboard on a Mac: it notices the changed `secrets.env` and starts again by itself within a few seconds. Or press Ctrl-C and start it again.
-   - The dashboard on a NAS: in **Container Manager**, choose the project, then **Action**, then **Build**. Just restarting the container doesn't read `dashboard.env` again.
+   - **The settings:** paste the new key into its box, on the wizard's **Keys** step or the tab that has it, and press **Save settings**. Leaving a box empty keeps the key you have. A key saved in the settings wins over one in a file of your own, so if you've ever pasted that key there, replace it there. Nothing needs restarting.
+   - **A `secrets.env` of your own:** change the text after `NAME=` and save the file. Keep it to one line, with no spaces or quotes.
+3. **Restart what uses it**, only after changing a file of your own:
+   - On a Pi: the e-paper board and the timetable timer pick it up on their next run. Restart the rest: `sudo systemctl restart departureboard-web.service departureboard-fetch.service departureboard-screen.service` (leave out the screen if you don't use it). Restarting the web server signs browsers out.
+   - On a desktop: it notices the changed file and starts again by itself within a few seconds.
+   - In Docker: in **Container Manager**, choose the project, then **Action**, then **Build** (or `docker compose up -d`). Just restarting the container doesn't read `secrets.env` again.
 4. **Check it works**, with the check from that key's section above.
