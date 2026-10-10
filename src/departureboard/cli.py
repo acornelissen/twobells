@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import signal
 import socket
 import sys
@@ -61,7 +62,7 @@ from .fake import DEMO_NOTICE, DEMO_TITLE, FakeWeatherSource
 from .http import get_bytes
 from .model import Departure, Status
 from .state import StateStore
-from .store import Store
+from .store import Store, WrongUser, check_owner
 from .timetable import TimetableBusy, TimetableError
 from .transportapi import TransportApiBusSource, redact_credentials
 from .installs import DEFAULT as DEFAULT_INSTALL
@@ -96,6 +97,13 @@ def _parse_stops(specs: list[str] | None) -> dict[str, str] | None:
 def _store(args) -> Store:
     """The store for a command's --config, --secrets and --state-dir (if it has one)."""
     return Store.open(args.config, args.secrets, state_dir=getattr(args, "state_dir", None))
+
+
+def _as_owner(args, store: Store) -> Store:
+    """`store`, for a command about to write to it; WrongUser, saying to run
+    this command line as its owner, if this is root and it isn't root's."""
+    check_owner(store.folder, shlex.join(["departureboard", *getattr(args, "argv", sys.argv[1:])]))
+    return store
 
 
 def _adopt(args, store: Store, install: str = "desktop") -> None:
@@ -211,7 +219,7 @@ def _board_on(store: Store) -> bool:
 
 
 def _run(args) -> int:
-    found = _store(args)
+    found = _as_owner(args, _store(args))
     if needs_setup(found):
         return _run_first(args)
     if not _board_on(found):
@@ -493,7 +501,7 @@ def _setup_discover(args) -> int:
     from .config import _walk
 
     stops = _parse_stops(args.stop)
-    store = _store(args)
+    store = _as_owner(args, _store(args))
     data = store.data()
     folder = store.folder
     key = store.env().get("BODS_API_KEY", "").strip()
@@ -657,6 +665,7 @@ def _timetable(args) -> int:
         except OSError as error:
             print(f"Can't read {args.config}: {error.strerror or error}", file=sys.stderr)
             return 2
+    _as_owner(args, _store(args))
     settings = _settings(args, only={"bus"})
     source = next((c.source for c in settings.board.sources if c.source.name == "bus"), None)
     if not isinstance(source, BodsBusSource):
@@ -725,6 +734,11 @@ def _demo(args) -> int:
 
 
 def _emulate(args) -> int:
+    if not args.demo:  # keeps the board's state in the store
+        try:
+            _as_owner(args, _store(args))
+        except ConfigError:
+            pass  # loading the settings says what is wrong
     env = None if args.demo else _env(args.config, args.secrets)
     em = build_emulation(
         demo=args.demo,
@@ -893,6 +907,7 @@ def _serve(args) -> int:
     # Only config.toml is read to find the store: a broken settings.toml must
     # not stop the page that fixes it.
     store = Store.open(args.config, args.secrets, state_dir=args.state_dir, install=install.name)
+    _as_owner(args, store)  # --set-password and --reset-code write there too
     _adopt(args, store, install.name)
     if args.set_password or args.reset_code:
         return _password(args, store, install)
@@ -1220,10 +1235,14 @@ def _password_flags(parser: argparse.ArgumentParser) -> None:
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     args = _parser().parse_args(argv)
+    args.argv = sys.argv[1:] if argv is None else list(argv)  # to say how to run it as someone else
     try:
         return args.handler(args)
     except ConfigError as error:
         print(f"Config error: {error}", file=sys.stderr)
+        return 2
+    except WrongUser as error:
+        print(error, file=sys.stderr)
         return 2
 
 

@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 import pytest
+from departureboard import store as store_module
 from departureboard.installs import install_named
 from departureboard.store import Store, find_folder, platform_folder
 
@@ -299,3 +300,40 @@ def test_the_target_checks_as_its_view_loads(board):
     with pytest.raises(OverlayError, match="crs"):
         save_to(store.target(), {"train": {"crs": "TOOLONG"}}, {}, ENV)
     assert store.target().base()["state_file"] == str(store.state_file)
+
+
+# Run as root on a store that is the service user's, a command would leave
+# root's files there that the services can't use: it is refused instead.
+
+
+@pytest.fixture
+def as_root(monkeypatch):
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+
+
+def test_root_is_told_to_run_as_the_stores_owner(tmp_path, as_root):
+    import pwd
+
+    me = pwd.getpwuid(os.stat(tmp_path).st_uid).pw_name  # tests never run as root
+    with pytest.raises(store_module.WrongUser) as refused:
+        store_module.check_owner(tmp_path, "departureboard timetable --config /etc/departureboard/config.toml")
+    assert str(refused.value) == (f"Run this as the service's user: sudo -u {me} "
+                                  "departureboard timetable --config /etc/departureboard/config.toml")
+
+
+def test_an_owner_with_no_name_is_named_by_number(tmp_path, as_root, monkeypatch):
+    monkeypatch.setattr(store_module, "_owner", lambda folder: 4242424)
+    with pytest.raises(store_module.WrongUser, match=r"sudo -u '#4242424' departureboard run$"):
+        store_module.check_owner(tmp_path, "departureboard run")
+
+
+def test_root_may_write_its_own_store_or_make_a_new_one(tmp_path, as_root, monkeypatch):
+    store_module.check_owner(tmp_path / "not yet made", "departureboard run")
+    monkeypatch.setattr(store_module, "_owner", lambda folder: 0)
+    store_module.check_owner(tmp_path, "departureboard run")
+
+
+def test_anyone_but_root_goes_ahead_as_today(tmp_path, monkeypatch):
+    monkeypatch.setattr(os, "geteuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(store_module, "_owner", lambda folder: 999)
+    store_module.check_owner(tmp_path, "departureboard run")

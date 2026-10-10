@@ -11,6 +11,9 @@ Settings are layered: the loaders' defaults, then config.toml if there is
 one, then settings.toml, of which only the keys the pages and setup save are
 read (schema.saved_keys), whichever view saved them. Keys: the environment,
 then the --secrets file, then the store's secrets.env.
+
+Root may not write a store that belongs to another user (check_owner):
+the commands that write to it say whom to run as instead.
 """
 
 from __future__ import annotations
@@ -118,6 +121,40 @@ def make_folder(folder: Path) -> None:
         os.chmod(folder, 0o700)  # whatever the umask
     except OSError as error:
         raise ConfigError(f"Can't create the state folder {folder}: {error.strerror or error}") from None
+
+
+class WrongUser(Exception):
+    """Root, on a store that belongs to another user: the command is to be
+    run as that user. The text is the one line to say."""
+
+
+def _owner(folder: Path) -> int:
+    return os.stat(folder).st_uid
+
+
+def check_owner(folder: Path, command: str) -> None:
+    """Raise WrongUser, naming the owner to run `command` as, when this
+    process runs as root and the store's folder belongs to another user (on
+    a Pi, the services'): a file root wrote there would be root's alone, and
+    the services would fail on it with "Permission denied". Not root, no
+    folder yet, or root's own: nothing to say. Privileges are never dropped."""
+    geteuid = getattr(os, "geteuid", None)  # not on Windows
+    if geteuid is None or geteuid() != 0:
+        return
+    try:
+        uid = _owner(folder)
+    except OSError:
+        return  # no folder yet: whoever makes it owns it
+    if uid == 0:
+        return
+    import pwd
+    import shlex
+
+    try:
+        name = pwd.getpwuid(uid).pw_name
+    except KeyError:
+        name = shlex.quote(f"#{uid}")  # sudo -u takes a user's number as #uid
+    raise WrongUser(f"Run this as the service's user: sudo -u {name} {command}")
 
 
 def read_base(path: Path | str) -> dict:

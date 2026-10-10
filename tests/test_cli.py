@@ -526,6 +526,71 @@ def test_reset_code_and_set_password_are_one_or_the_other(tmp_path):
         main(["web", "--config", str(config), "--reset-code", "--set-password"])
 
 
+# Root, by hand on a Pi, on the store the services' user owns: anything it
+# wrote there would be root's, and the services would then fail with
+# "Permission denied". Every command that writes to the store refuses.
+
+
+@pytest.fixture
+def root_on_their_store(tmp_path, monkeypatch):
+    """Root (faked) and a store that, like any in the tests, belongs to another user."""
+    import pwd
+
+    config, state = _web_config(tmp_path)
+    state.mkdir()
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+    return config, state, pwd.getpwuid(os.stat(state).st_uid).pw_name
+
+
+@pytest.mark.parametrize("command", [
+    ["run"],
+    ["run", "--loop"],
+    ["timetable"],
+    ["timetable", "--force"],
+    ["setup", "discover", "--stop", "A=1000DGHS0900"],
+    ["emulate", "--no-browser"],
+    ["serve", "--install", "pi"],
+    ["serve", "--set-password"],
+    ["serve", "--reset-code"],
+    ["web"],
+    ["web", "--reset-code"],
+    ["dashboard", "--no-browser"],
+    ["dashboard", "--set-password"],
+])
+def test_root_is_refused_a_store_that_belongs_to_the_services_user(root_on_their_store, capsys, command):
+    import shlex
+
+    config, state, owner = root_on_their_store
+    argv = [*command, "--config", str(config)]
+    assert main(argv) == 2
+    said = capsys.readouterr()
+    assert said.err.splitlines() == [f"Run this as the service's user: sudo -u {owner} departureboard {shlex.join(argv)}"]
+    assert said.out == "" and list(state.iterdir()) == []
+
+
+@pytest.mark.parametrize("command", [
+    ["timetable", "--needed"],  # update.sh asks this; it only reads
+    ["probe", "train"],
+    ["route", "341", "--stop", "A", "--noc", "BNML"],
+])
+def test_root_may_still_run_what_only_reads_the_store(root_on_their_store, capsys, command):
+    config, state, _ = root_on_their_store
+    main([*command, "--config", str(config)])
+    assert "Run this as" not in capsys.readouterr().err and list(state.iterdir()) == []
+
+
+def test_root_may_use_its_own_store_and_anyone_else_goes_ahead_as_today(root_on_their_store, monkeypatch, capsys):
+    from departureboard import store
+
+    config, state, _ = root_on_their_store
+    monkeypatch.setattr(store, "_owner", lambda folder: 0)
+    assert main(["web", "--config", str(config), "--reset-code"]) == 0
+    monkeypatch.setattr(store, "_owner", lambda folder: 999)
+    monkeypatch.setattr(os, "geteuid", lambda: 1000, raising=False)
+    assert main(["web", "--config", str(config), "--reset-code"]) == 0
+    assert capsys.readouterr().out.count("Settings reset code:") == 2
+
+
 def _holiday_run(tmp_path, monkeypatch, extra=""):
     """A board with a Mon-Fri train window, run at 07:00 on the August bank holiday Monday."""
     from datetime import datetime
