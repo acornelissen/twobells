@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import html
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from functools import cache
 from pathlib import Path
@@ -50,7 +50,7 @@ from ..settings.schema import KEY_VALUE, Field, Invalid
 from ..setup import keytest
 from ..sources.disruptions import kb_url_is_placeholder
 from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
-from . import windowrows
+from . import places, windowrows
 from .icons import icon
 from .status import render_status
 
@@ -181,6 +181,11 @@ def _shown(value, kind: str) -> str:
     return str(value)
 
 
+def _walk_text(values: Mapping[str, str]) -> str:
+    """Walks by stop label as one text, "A = 5" a line, to tell whether they changed."""
+    return "\n".join(f"{label} = {value.strip()}" for label, value in values.items() if value.strip())
+
+
 def _default(f: Field, data: dict):
     """What a field shows when the settings don't say: what the loader uses then."""
     if f.name == "rotate":
@@ -304,6 +309,11 @@ class GroupForm:
             if f.name == "bank_holidays":
                 values[f.name] = schema.holiday_choice(data)
                 continue
+            if f.kind == "per_stop":
+                walks = self._walks_shown(f, data)
+                values |= walks
+                values[f.name] = _walk_text({box[len(f.name) + 1:]: value for box, value in walks.items()})
+                continue
             source = data if f.section is None else data.get(f.section, {})
             value = source.get(f.key) if isinstance(source, dict) else None
             if value is None:
@@ -347,6 +357,9 @@ class GroupForm:
                 continue  # the views, below
             if f.needs is not None and f.needs not in data:
                 continue  # not set up: setup or config.toml adds it
+            if f.kind == "per_stop":
+                errors |= self._save_walks(f, data, fields, shown, f.needs in off, changes)
+                continue
             if (f.needs in off and f.key != "enabled" and not rows.get(f.name)
                     and not edited(fields.get(f.name, ""), shown[f.name])):
                 continue
@@ -401,10 +414,10 @@ class GroupForm:
         said = []
         for f in form:
             old, new = before.get(f.name, ""), after.get(f.name, "")
-            same = not edited(old, new) if f.kind in ("text", "area", "windows") else old == new
+            same = not edited(old, new) if f.kind in ("text", "area", "windows", "per_stop") else old == new
             if same:
                 continue
-            if f.kind in ("text", "area", "windows"):
+            if f.kind in ("text", "area", "windows", "per_stop"):
                 said.append(f.label)
             else:
                 said.append(f"{f.label}, {_words(f, old)} to {_words(f, new)}")
@@ -426,6 +439,85 @@ class GroupForm:
             return {f"view_{offered[0]}": "Pick at least one view, or nothing shows your departures"}
         changes["app"] = {"views": chosen}
         return {}
+
+    # Walks to each stop
+
+    def _stop_labels(self, data: dict, fields: Mapping[str, str] | None = None) -> list[str]:
+        """The bus stops' labels: as typed in Stop codes when that is right, else as saved."""
+        typed = (fields or {}).get("bus_stops")
+        if typed is not None:
+            try:
+                return list(schema.stops(typed))
+            except Invalid:
+                pass  # its own error says so; the walks go by the saved stops
+        bus = data.get("bus")
+        stops = bus.get("stops") if isinstance(bus, dict) else None
+        if not isinstance(stops, dict):
+            return []
+        return [label for label in stops if isinstance(label, str) and schema.LABEL.match(label)]
+
+    def _walk_boxes(self, f: Field, data: dict) -> list[tuple[str, str]]:
+        """Each stop's walk box: its name (the field's, then the label) and its
+        label in words, like "Henry Street (A)", from the bus timetable when it has the stop."""
+        bus = data.get("bus")
+        stops = bus.get("stops") if isinstance(bus, dict) else None
+        stops = stops if isinstance(stops, dict) else {}
+        names = places.stop_names(self._store.folder) if stops else {}
+        boxes = []
+        for label in self._stop_labels(data):
+            name = names.get(str(stops.get(label)))
+            boxes.append((f"{f.name}_{label}", f"{name} ({label})" if name else f"Stop {label}"))
+        return boxes
+
+    def _walks_shown(self, f: Field, data: dict) -> dict[str, str]:
+        """What each stop's walk box shows: its own walk, else the one for
+        every stop ("*", or a single number)."""
+        bus = data.get("bus")
+        walks = bus.get(f.key) if isinstance(bus, dict) else None
+        shown = {}
+        for label in self._stop_labels(data):
+            value = walks.get(label, walks.get("*")) if isinstance(walks, dict) else walks
+            shown[f"{f.name}_{label}"] = _shown(value, "text")
+        return shown
+
+    def _save_walks(self, f: Field, data: dict, fields: Mapping[str, str], shown: Mapping[str, str], off: bool,
+                    changes: dict) -> dict[str, str]:
+        """The walk boxes into `changes` as a table by stop label (with any "*"
+        kept), as setup saves them; or each box's error. A section switched off
+        keeps its walks unless one was changed. Nothing for no stops."""
+        labels = self._stop_labels(data, fields)
+        if not labels:
+            return {}
+        typed = {label: fields.get(f"{f.name}_{label}", "") for label in labels}
+        if off and not edited(_walk_text(typed), shown.get(f.name, "")):
+            return {}
+        bus = data.get("bus")
+        saved = bus.get(f.key) if isinstance(bus, dict) else None
+        table = {"*": saved["*"]} if isinstance(saved, dict) and "*" in saved else {}
+        errors = {}
+        check = schema.number(0, 60, optional=True)
+        for label, raw in typed.items():
+            try:
+                minutes = check(raw)
+            except Invalid as error:
+                errors[f"{f.name}_{label}"] = str(error)
+                continue
+            if minutes is not None:
+                table[label] = minutes
+        if not errors:
+            changes.setdefault(f.section, {})[f.key] = table
+        return errors
+
+    def _walks(self, f: Field, data: dict, shown: Mapping[str, str], errors: Mapping[str, str]) -> str:
+        """The walk boxes, one a stop, in a group of their own under the field's label."""
+        boxes = self._walk_boxes(f, data)
+        if not boxes:
+            return ""
+        attrs, notes = _described(f.name, f.hint, None)
+        inside = "".join(_field(replace(f, name=box, label=words, kind="number"), shown.get(box, ""),
+                                errors.get(box), "") for box, words in boxes)
+        return (f'<fieldset class="field walks"{attrs}><legend>{html.escape(f.label)}</legend>{notes}{inside}'
+                "</fieldset>")
 
     # Testing a key
 
@@ -600,9 +692,12 @@ class GroupForm:
         return isinstance(section, dict) and section.get("enabled") is False
 
     def _draw(self, f: Field, data: dict, shown: dict[str, str], errors: dict[str, str]) -> str:
-        """A field with what it shows and its errors: time windows as rows, with each row's."""
+        """A field with what it shows and its errors: time windows as rows,
+        with each row's, and the walks as a box for each stop, with each box's."""
         if f.kind == "windows":
             return windowrows.render(f, shown, errors)
+        if f.kind == "per_stop":
+            return self._walks(f, data, shown, errors)
         return self._field(f, data, shown.get(f.name, ""), errors.get(f.name))
 
     def _field(self, f: Field, data: dict, value: str, error: str | None) -> str:
@@ -623,9 +718,12 @@ class GroupForm:
         if not isinstance(stops, dict) or not stops:
             return ""
         e = html.escape
-        listed = ", ".join(f"{label}: {code}" for label, code in stops.items())
-        change = f' <a href="{e(self._setup)}">Change them with setup</a>' if self._setup else ""
-        return (f'<dl class="readonly"><div><dt>Stops</dt><dd>{e(listed)}.{change}</dd></div></dl>')
+        names = places.stop_names(self._store.folder)
+        listed = "".join(f"<li>{e(str(label))}: {e(names[code])} ({e(str(code))})</li>" if code in names
+                         else f"<li>{e(str(label))}: {e(str(code))}</li>" for label, code in stops.items())
+        change = f'<a href="{e(self._setup)}?step=stops">Change them with setup</a>' if self._setup else ""
+        return (f'<dl class="readonly"><div><dt>Stops</dt><dd><ul class="stops">{listed}</ul>{change}</dd></div>'
+                "</dl>")
 
     def _readonly(self, page: str, heading: str, data: dict) -> str:
         """What a section shows but can't change: where it is set instead."""
@@ -700,6 +798,8 @@ class GroupForm:
             for name in errors:
                 if f.kind == "windows" and (name == f.name or name.startswith(f.name + "-")):
                     anchors[name], names[name] = windowrows.anchor(f.name, name), windowrows.said(f, name)
+            if f.kind == "per_stop":
+                names |= {box: f"{f.heading} – {f.label}, {words}" for box, words in self._walk_boxes(f, data)}
         items = "".join(
             f'<li><a href="#{e(anchors.get(name, name))}">{e(names.get(name, name))}: {e(text)}</a></li>'
             if name != "_form" else f"<li>{e(text)}</li>"

@@ -4,6 +4,7 @@ board's settings, saved and shown. The settings site's pages
 
 import re
 import tomllib
+from datetime import datetime
 
 import pytest
 
@@ -93,7 +94,7 @@ def test_form_shows_the_current_settings(setup):
     assert [fields[f"train_windows-{row}-{box}"] for row in (1, 2, 3, 4) for box in ("from", "to")] == [
         "06:30", "09:30", "16:30", "19:30", "", "", "", ""]  # and two spare rows
     assert fields["bus_stops"] == "A = 1000DGHS0900\nB = 100000008350"
-    assert fields["bus_walk_minutes"] == "A = 7\nB = 6"
+    assert fields["bus_walk_minutes_A"] == "7" and fields["bus_walk_minutes_B"] == "6"
     assert fields["theme"] == "sign" and fields["rotate"] == "0"
 
 
@@ -109,12 +110,12 @@ def test_saving_the_form_unchanged_keeps_the_same_board(setup):
 def test_a_change_is_saved_to_the_overlay_not_config_toml(setup):
     form, config, state, _ = setup
     original = config.read_text()
-    fields = fields_of(form) | {"title": "Home", "board_train_rows": "2", "bus_walk_minutes": "5"}
+    fields = fields_of(form) | {"title": "Home", "board_train_rows": "2", "bus_walk_minutes_B": "5"}
     assert form.save(fields) == {}
     assert config.read_text() == original
     settings = load_config(config, ENV)
     assert settings.board.title == "Home"
-    assert dict(settings.board.walk.bus) == {"*": 5}
+    assert dict(settings.board.walk.bus) == {"A": 7, "B": 5}
     assert (state / "settings.toml").stat().st_mode & 0o777 == 0o640
 
 
@@ -212,12 +213,72 @@ def test_the_error_summary_takes_focus(setup):
 @pytest.mark.parametrize("name, value, quoted", [
     ("bus_stops", "A = 1000DGHS0900\nB = bad!", "“B = bad!”"),
     ("bus_stops", "A = 1000DGHS0900\nStop B = 100000008350", "“Stop B = 100000008350”"),
-    ("bus_walk_minutes", "A = 7\nB = soon", "“B = soon”"),
 ])
 def test_errors_in_a_many_line_field_quote_the_line(setup, name, value, quoted):
     form, *_ = setup
     errors = form.save(fields_of(form) | {name: value})
     assert quoted in errors[name]
+
+
+def test_each_stop_has_its_own_walk_box_labelled_with_its_name(setup):
+    from departureboard.timetable import build as timetable
+    from departureboard.timetable.model import Schedule, StopPosition
+
+    form, config, state, _ = setup
+    page = form.render("tok")
+    walks = re.search(r'<fieldset class="field walks"[^>]*>(.*?)</fieldset>', page).group(1)
+    assert "<legend>Walk to each stop</legend>" in walks
+    assert '<label for="bus_walk_minutes_A">Stop A<span class="vh"> (minutes)</span></label>' in walks
+    assert re.search(r'<input id="bus_walk_minutes_B" name="bus_walk_minutes_B" type="text" value="6" '
+                     r'inputmode="numeric" autocomplete="off" class="w-3"', walks)
+    assert '<span class="unit" aria-hidden="true">minutes</span>' in walks
+    assert "<textarea" not in walks
+    # With the bus timetable, each box and the stops are named, the names escaped.
+    state.mkdir(exist_ok=True)
+    places = {"1000DGHS0900": StopPosition("Henry Street", 53.4, -1.9, "Stop A"),
+              "100000008350": StopPosition("<i>Market</i>", 53.4, -1.9, "")}
+    timetable.save(state, Schedule(datetime(2026, 10, 8), None, {}, (), places))
+    page = form.render("tok")
+    assert '<label for="bus_walk_minutes_A">Henry Street (A)<span class="vh">' in page
+    assert '<label for="bus_walk_minutes_B">&lt;i&gt;Market&lt;/i&gt; (B)<span class="vh">' in page
+    stops = re.search(r"<dt>Stops</dt><dd>(.*?)</dd>", page).group(1)
+    assert "<li>A: Henry Street (1000DGHS0900)</li>" in stops and "&lt;i&gt;Market&lt;/i&gt;" in stops
+
+
+def test_the_walk_boxes_save_the_same_table_as_setup(setup):
+    form, config, state, _ = setup
+    assert form.save(fields_of(form) | {"bus_walk_minutes_A": "4", "bus_walk_minutes_B": ""}) == {}
+    assert tomllib.loads((state / "settings.toml").read_text())["bus"]["walk_minutes"] == {"A": 4}
+    assert dict(load_config(config, ENV).board.walk.bus) == {"A": 4}
+    fields = fields_of(form)
+    assert fields["bus_walk_minutes_A"] == "4" and fields["bus_walk_minutes_B"] == ""
+    changed = []
+    assert form.save(fields_of(form) | {"bus_walk_minutes_B": "9"}, changed) == {}
+    assert changed == ["Walk to each stop"]
+
+
+def test_one_walk_for_every_stop_shows_in_each_box(tmp_path):
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    config.write_text(CONFIG.format(state=state / "state.json").replace("[bus.walk_minutes]\nA = 7\nB = 6\n", "")
+                      .replace("daily_budget = 28", "daily_budget = 28\nwalk_minutes = 5"))
+    form = board_form(config, lambda: dict(ENV))
+    fields = fields_of(form)
+    assert fields["bus_walk_minutes_A"] == fields["bus_walk_minutes_B"] == "5"
+    assert form.save(fields) == {}
+    assert dict(load_config(config, ENV).board.walk.bus) == {"A": 5, "B": 5}
+
+
+@pytest.mark.parametrize("value", ["soon", "61", "-1", "5.5"])
+def test_a_wrong_walk_is_that_boxs_error_named_by_its_stop(setup, value):
+    form, *_ = setup
+    errors = form.save(fields_of(form) | {"bus_walk_minutes_B": value})
+    assert set(errors) == {"bus_walk_minutes_B"}
+    page = form.render("tok", errors=errors, values=fields_of(form) | {"bus_walk_minutes_B": value})
+    assert '<a href="#bus_walk_minutes_B">Buses – Walk to each stop, Stop B:' in page
+    assert re.search(r'<input id="bus_walk_minutes_B" name="bus_walk_minutes_B" type="text" value="'
+                     + re.escape(value) + r'"[^>]*aria-describedby="bus_walk_minutes_B-error" aria-invalid="true"',
+                     page)
 
 
 def test_key_boxes_are_plain_text_so_password_managers_leave_them_alone(setup):
@@ -317,7 +378,7 @@ def test_a_screen_can_turn_a_quarter(tmp_path):
 
 def test_removing_a_stop_takes_effect(setup):
     form, config, *_ = setup
-    assert form.save(fields_of(form) | {"bus_stops": "A = 1000DGHS0900", "bus_walk_minutes": "A = 7"}) == {}
+    assert form.save(fields_of(form) | {"bus_stops": "A = 1000DGHS0900"}) == {}  # B's walk box is still sent
     settings = load_config(config, ENV)
     assert settings.board.sources[1].source.stops == {"A": "1000DGHS0900"}
     assert dict(settings.board.walk.bus) == {"A": 7}
@@ -344,11 +405,12 @@ def test_clearing_directions_takes_effect(tmp_path):
 
 def test_clearing_walk_times_takes_effect(setup):
     form, config, *_ = setup
-    assert form.save(fields_of(form) | {"train_walk_minutes": "", "bus_walk_minutes": ""}) == {}
+    cleared = {"train_walk_minutes": "", "bus_walk_minutes_A": "", "bus_walk_minutes_B": ""}
+    assert form.save(fields_of(form) | cleared) == {}
     walk = load_config(config, ENV).board.walk
     assert walk.train is None and dict(walk.bus) == {}
     fields = fields_of(form)
-    assert fields["train_walk_minutes"] == "" and fields["bus_walk_minutes"] == ""
+    assert fields["train_walk_minutes"] == "" and fields["bus_walk_minutes_A"] == fields["bus_walk_minutes_B"] == ""
 
 
 def test_choosing_the_looks_own_accent_clears_one_set_in_config(tmp_path):
@@ -377,7 +439,7 @@ def test_routes_set_in_config_survive_a_save(tmp_path):
     config.write_text(text + ROUTES)
     env = {**ENV, "BODS_API_KEY": "bods"}
     form = board_form(config, lambda: dict(env))
-    assert form.save(fields_of(form) | {"bus_stops": "A = 1000DGHS0900", "bus_walk_minutes": "5"}) == {}
+    assert form.save(fields_of(form) | {"bus_stops": "A = 1000DGHS0900", "bus_walk_minutes_A": "5"}) == {}
     assert "routes" not in (state / "settings.toml").read_text()
     assert set(load_config(config, env).board.tracker.routes) == {"341"}
 

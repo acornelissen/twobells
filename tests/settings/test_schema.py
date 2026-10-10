@@ -88,7 +88,7 @@ def test_time_windows_are_rows_each_with_a_name():
 def test_a_unit_is_for_a_number_in_a_narrow_box():
     for f in schema.FIELDS:
         if f.unit:
-            assert f.kind == "number" and f.width, f.name
+            assert f.kind in ("number", "per_stop") and f.width, f.name
 
 
 @pytest.mark.parametrize("data, chosen", [

@@ -317,8 +317,9 @@ class Field:
     key: str
     label: str
     check: Callable[[str], object]
-    # text, number, radios (2 to 4 choices), select (more), area, check, or windows: time windows as rows
-    # of days and times (web/windowrows.py), each row called `item`
+    # text, number, radios (2 to 4 choices), select (more), area, check; windows: time windows as rows
+    # of days and times (web/windowrows.py), each row called `item`; or per_stop: a number box for each
+    # bus stop, saved as a table by stop label
     kind: str = "text"
     hint: str = ""
     options: tuple[tuple[str, str], ...] = ()  # a choice's (value, words); a text box's suggestions
@@ -420,9 +421,9 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
         Field("bus_enabled", "general", "bus", "enabled", "Show buses", on_off, "radios",
               hint=f"Off: no buses are shown or checked for. {_KEPT}", options=_ON_OFF, default=True, needs="bus",
               page="trains_buses", heading="Buses"),
-        Field("bus_walk_minutes", "general", "bus", "walk_minutes", "Walk to each stop (minutes)", walk_per_stop,
-              "area", hint="One per line, LABEL = minutes, or one number for every stop. Leave it empty for none.",
-              needs="bus", page="trains_buses", heading="Buses"),
+        Field("bus_walk_minutes", "general", "bus", "walk_minutes", "Walk to each stop", walk_per_stop,
+              "per_stop", hint="Shows when to leave. Leave a box empty for none.", needs="bus",
+              page="trains_buses", heading="Buses", width="3", unit="minutes"),
         Field("bus_directions", "general", "bus", "directions", "Only buses heading to", directions,
               hint="Optional, separated by commas, like Ashton, Hyde. Leave it empty to show every bus.",
               needs="bus", page="trains_buses", heading="Buses"),
