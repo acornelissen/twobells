@@ -1,0 +1,126 @@
+# Lint, tests on every supported Python, a package build and a container build,
+# for pushes to main and for pull requests. Nothing here publishes anything or
+# holds a write token. The jobs run the same mise tasks as a laptop does
+# (mise.toml), so "it passes here" means the same thing in both places.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # mise.toml sets up a venv and tasks; trust it without a prompt.
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.10.3
+      - run: mise run setup
+      - run: mise run lint
+
+  test:
+    name: Test (Python ${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    env:
+      # Overrides mise.toml's python for this job only; node and the tasks stay as they are.
+      MISE_PYTHON_VERSION: ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.10.3
+          # One cache per Python, or the first job's would serve them all.
+          cache_key_prefix: mise-v1-py${{ matrix.python }}
+      - run: mise run setup
+      - name: Check the venv runs the Python under test
+        env:
+          WANT: ${{ matrix.python }}
+        run: .venv/bin/python -c 'import os, sys; v = "%d.%d" % sys.version_info[:2]; print(sys.version); assert v == os.environ["WANT"], v'
+      - run: mise run test
+
+  package:
+    name: Package builds and installs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.10.3
+          install_args: python
+      - name: Build the sdist and wheel
+        run: |
+          python -m venv "$RUNNER_TEMP/build"
+          "$RUNNER_TEMP/build/bin/python" -m pip install --require-hashes -r .github/requirements-build.txt
+          "$RUNNER_TEMP/build/bin/python" -m build --no-isolation --outdir dist .
+          ls -l dist
+      - name: Install the wheel into a fresh venv and run it
+        # Pillow from the container's hashed pins (cp312, amd64 and arm64
+        # wheels), then the wheel itself with no index: nothing unpinned.
+        run: |
+          python -m venv "$RUNNER_TEMP/try"
+          "$RUNNER_TEMP/try/bin/pip" install --require-hashes --only-binary=:all: --no-deps -r deploy/requirements-docker.txt
+          "$RUNNER_TEMP/try/bin/pip" install --no-deps --no-index dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/try/bin/departureboard" --help
+          "$RUNNER_TEMP/try/bin/departureboard" --version
+          "$RUNNER_TEMP/try/bin/python" -I -c '
+          from importlib.resources import files
+          d = files("departureboard")
+          for name in ("data/gb_stations.csv", "data/naptan_area_grid.csv", "web.css", "emulator.html"):
+              assert d.joinpath(name).is_file(), f"{name} missing from the wheel"
+          '
+
+  docker:
+    name: Container builds (amd64, arm64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          image: docker.io/tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.34.0@sha256:b059f8d7226d0b326bc871af489a5dddf65e36af4d20d14251b072974d9ee87c
+      - name: Build for both platforms (not pushed)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
