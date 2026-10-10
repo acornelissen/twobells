@@ -1,0 +1,85 @@
+# Rebuilds the setup wizard's station and bus-area files from NaPTAN once a
+# month (tools/build_setup_data.py; about 130 MB down) and, if the data
+# itself changed, opens a pull request for review. It never pushes to main.
+# A refresh that only moves the "downloaded <date>" header line is dropped.
+#
+# One-time setup by the repo owner:
+#   Settings > Actions > General > Workflow permissions: tick "Allow GitHub
+#   Actions to create and approve pull requests", or the PR step fails.
+#
+# A pull request opened with the workflow's own token doesn't start CI (a
+# GitHub rule against loops). The suite runs here before the PR is opened;
+# to run CI on the PR as well, close and reopen it.
+name: Refresh NaPTAN data
+
+on:
+  schedule:
+    - cron: "17 5 3 * *" # 05:17 UTC on the 3rd of each month
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: data-refresh
+  cancel-in-progress: false
+
+env:
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+
+jobs:
+  refresh:
+    name: Rebuild and propose
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write # push the PR branch (never main)
+      pull-requests: write # open the PR
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.10.3
+          cache: false
+      - name: Rebuild from NaPTAN
+        run: python tools/build_setup_data.py
+      - name: Keep it only if the data changed
+        id: diff
+        run: |
+          if git diff --quiet -I '^# ' -- src/departureboard/data; then
+            echo "No change beyond the header; nothing to propose."
+            git checkout -- src/departureboard/data
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff --stat -- src/departureboard/data
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Test against the new data
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          mise run setup
+          mise run test
+      # Rather than gh pr create: it pushes the branch with its own scoped
+      # auth (checkout keeps no credentials) and makes signed commits.
+      - name: Open a pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          branch: data/naptan-refresh
+          delete-branch: true
+          add-paths: src/departureboard/data/*.csv
+          sign-commits: true
+          commit-message: |
+            chore(data): refresh setup data from NaPTAN
+
+            Monthly rebuild by tools/build_setup_data.py (data.yml).
+          title: "chore(data): refresh setup data from NaPTAN"
+          body: |
+            Monthly rebuild of `src/departureboard/data/` from NaPTAN by
+            `tools/build_setup_data.py`. The test suite passed against it in
+            the workflow run.
+
+            Before merging, skim the diff: stations added or gone, positions
+            that jumped, bus areas that vanished. CI does not start on its
+            own for this PR; close and reopen it to run CI.
