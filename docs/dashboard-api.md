@@ -62,7 +62,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "line": "341",
       "destination": "Hyde Bus Station",
       "stop": "A",
-      "stop_name": "Henry Street (Stop A)",
+      "stop_name": "Church Street (Stop A)",
       "scheduled": "07:20", "scheduled_at": "…",
       "expected": "07:24", "expected_at": "…",
       "status": "late",
@@ -130,7 +130,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `building` (first build in progress);
   - `missing` (no timetable, with `status.note` saying why).
 - **`timetable.journeys`** counts the timetabled journeys calling at your stops. The journeys kept only to find an inbound bus (ending at a stand near your stop without calling at it; see `inbound`) aren't counted.
-- **`stop_name`:** the stop's name from the stop data with the letter on its sign when known ("Henry Street (Stop A)"); "Stop A" from the board's label when the stop has no data. Show this rather than the label.
+- **`stop_name`:** the stop's name from the stop data with the letter on its sign when known ("Church Street (Stop A)"); "Stop A" from the board's label when the stop has no data. Show this rather than the label.
 - **`strip`:**
   - `stops` are the stop names before yours, then yours, then possibly the next one.
   - `yours` is the index of your stop.
@@ -172,7 +172,7 @@ The map for one bus row; 404 if the id is unknown (as when it's gone from the bo
 ```json
 {
   "id": "4b7e…",
-  "line": "341", "destination": "Hyde Bus Station", "stop": "A", "stop_name": "Henry Street (Stop A)",
+  "line": "341", "destination": "Hyde Bus Station", "stop": "A", "stop_name": "Church Street (Stop A)",
   "stops": [
     {"name": "Park Road", "lat": 53.4433, "lon": -1.9550, "time": "07:16", "yours": false},
     {"name": "Church Street", "lat": 53.4436, "lon": -1.9500, "time": "07:20", "yours": true}
