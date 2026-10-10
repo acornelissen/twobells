@@ -27,7 +27,8 @@ is set up, claiming the page or signing in opens the wizard.
 
 Every POST body, form or step, needs one plain Content-Length within its
 limit (formpages.read_body); anything else is refused unread, and the
-connection closed.
+connection closed. Other methods get 405, and http.server's own errors
+plain text, both with the same security headers as every other response.
 """
 
 from __future__ import annotations
@@ -189,6 +190,29 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
 
         def _reply(self, reply: Reply) -> None:
             self._send(reply.status, reply.body, reply.content_type, extra=reply.headers)
+
+        def send_error(self, code: int, message: str | None = None, explain: str | None = None) -> None:
+            """http.server's own errors (a bad request line, say), with our headers and no HTML."""
+            self.close_connection = True
+            try:
+                phrase = HTTPStatus(code).phrase
+            except ValueError:
+                phrase = "Error"
+            self._send(code, phrase.encode(), TEXT)
+
+        def __getattr__(self, name: str):
+            # http.server calls do_<METHOD>; every method but GET, HEAD and POST lands here.
+            if name.startswith("do_"):
+                return self._not_allowed
+            raise AttributeError(name)
+
+        def _not_allowed(self) -> None:
+            path = urlparse(self.path).path
+            if self._refuse_outsiders() or self._refuse_cross_site(path):
+                return
+            on_wizard = wizard is not None and path.startswith(SETUP)
+            self._send(405, b"Method Not Allowed", TEXT, extra={"Allow": "GET, HEAD, POST"},
+                       headers=setupapi.PAGE_HEADERS if on_wizard else FORM_PAGE_HEADERS)
 
         def _redirect(self, where: str, extra: dict[str, str] | None = None) -> None:
             self._send(303, extra={"Location": where, **(extra or {})})

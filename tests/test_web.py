@@ -197,6 +197,77 @@ def test_every_response_carries_the_security_headers(server):
     assert response.getheader("Server") == "departureboard"
 
 
+def assert_page_headers(response, path=""):
+    assert "default-src 'none'" in response.getheader("Content-Security-Policy"), path
+    assert "script-src" not in response.getheader("Content-Security-Policy"), path
+    assert response.getheader("X-Frame-Options") == "DENY", path
+    assert response.getheader("X-Content-Type-Options") == "nosniff", path
+    assert response.getheader("Cache-Control") == "no-store", path
+
+
+@pytest.mark.parametrize("method", ["PUT", "DELETE", "PATCH", "OPTIONS", "TRACE", "BREW"])
+def test_other_methods_are_not_allowed(server, method):
+    port, page, _ = server
+    for path in ("/", "/login", "/nowhere"):
+        response, text = request(port, method, path)
+        assert response.status == 405, (method, path)
+        assert response.getheader("Allow") == "GET, HEAD, POST"
+        assert_page_headers(response, path)
+        assert response.getheader("Content-Type") == "text/plain; charset=utf-8" and "<html" not in text.lower()
+    assert request(port, method, "/", host="evil.example.com")[0].status == 403  # outsiders first
+    assert page.saved == []
+
+
+def test_other_methods_on_the_wizard_get_its_headers_and_the_api_refuses_other_sites_first(wizard_server):
+    from departureboard.setupapi import PAGE_HEADERS
+
+    port, steps, *_ = wizard_server
+    cookie = signed_in(wizard_server)
+    for path in ("/setup/", "/setup/api/begin"):
+        response, _ = request(port, "PUT", path, cookie=cookie)
+        assert response.status == 405 and response.getheader("Allow") == "GET, HEAD, POST", path
+        assert response.getheader("Content-Security-Policy") == PAGE_HEADERS["Content-Security-Policy"], path
+    response, text = request(port, "PUT", "/setup/api/begin", cookie=cookie, extra={"Sec-Fetch-Site": "cross-site"})
+    assert response.status == 403 and json.loads(text) == {"error": "Not from another site"}
+    assert steps.calls == []
+
+
+def raw_exchange(port, data):
+    """Send `data` as it is and return everything the server says back."""
+    import socket
+
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as raw:
+        raw.sendall(data)
+        reply = b""
+        while chunk := raw.recv(4096):
+            reply += chunk
+    return reply.decode("latin-1")
+
+
+@pytest.mark.parametrize("data, status", [
+    (b"GET / HTTP/1.0\r\n" + b"X: y\r\n" * 101 + b"\r\n", "431"),  # too many headers
+    (b"GET /" + b"a" * 70000 + b" HTTP/1.0\r\n\r\n", "414"),
+], ids=["too-many-headers", "path-too-long"])
+def test_http_servers_own_errors_carry_the_headers_and_no_html(server, data, status):
+    port, _, _ = server
+    reply = raw_exchange(port, data)
+    head = reply.split("\r\n\r\n", 1)[0]
+    assert head.startswith(f"HTTP/1.0 {status}")
+    assert "Content-Security-Policy: default-src 'none'" in head and "X-Frame-Options: DENY" in head
+    assert "Server: departureboard\r\n" in head
+    assert "<html" not in reply.lower() and "python" not in reply.lower()
+
+
+@pytest.mark.parametrize("data, phrase", [
+    (b"GET / HTTP/9.9\r\n\r\n", "HTTP Version Not Supported"),
+    (b"GET\r\n\r\n", "Bad Request"),
+], ids=["unknown-version", "bad-request-line"])
+def test_a_request_line_too_broken_for_headers_gets_a_bare_phrase(server, data, phrase):
+    # http.server answers these HTTP/0.9 style, with no status line or headers.
+    port, _, _ = server
+    assert raw_exchange(port, data) == phrase
+
+
 def test_sign_in_sets_a_strict_http_only_cookie(server):
     port, _, _ = server
     response, _ = request(port, "POST", "/login", {"password": PASSWORD})
