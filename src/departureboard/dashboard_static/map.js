@@ -111,13 +111,18 @@ function reportedText(vehicle) {
   return seconds === null ? "" : `reported ${age(seconds)}`;
 }
 
+// The line a map draws: along the roads when the server sends at least two
+// usable [lat, lon] points, else straight through `stops` (the same pairs).
+export function roadLine(path, stops = []) {
+  const road = list(path).filter((p) => Array.isArray(p) && num(p[0]) !== null && num(p[1]) !== null);
+  return road.length > 1 ? road : stops;
+}
+
 function drawMap(data, fit) {
   const stops = list(data.stops).filter((s) => obj(s) && num(s.lat) !== null && num(s.lon) !== null);
   layers.clearLayers();
   const points = stops.map((s) => [s.lat, s.lon]);
-  // Along the roads when the server sends them, else straight from stop to stop.
-  const road = list(data.path).filter((p) => Array.isArray(p) && num(p[0]) !== null && num(p[1]) !== null);
-  const line = road.length > 1 ? road : points;
+  const line = roadLine(data.path, points);
   if (line.length > 1) L.polyline(line, { className: "route-line", interactive: false }).addTo(layers);
   for (const stop of stops) {
     const yours = stop.yours === true;

@@ -669,6 +669,28 @@ def test_the_area_map_has_real_buttons_a_credit_and_a_text_list():
     assert "OpenStreetMap contributors" in dialog[:dialog.index("</dialog>")]
 
 
+@needs_node
+def test_maps_draw_along_the_roads_or_else_straight_between_stops():
+    found = run_js("""
+        import { roadLine } from "./map.js";
+        const stops = [[53.4438, -1.949], [53.4434, -1.9554]];
+        const road = [[53.4438, -1.949], [53.4436, -1.952], [53.4434, -1.9554]];
+        console.log(JSON.stringify([
+          roadLine(road, stops),
+          roadLine([[53.4438, -1.949], "x", [53.4436, NaN], [53.4434], null, { lat: 1, lon: 2 }, [53.4434, -1.9554]], stops),
+          roadLine([[53.4438, -1.949]], stops),  // one point is no road
+          roadLine("junk", stops),
+          roadLine(undefined, stops),
+          roadLine([[53.4438, "-1.949"], [53.4434, -1.9554]]),  // no stops to fall back on
+        ]));
+    """)
+    stops = [[53.4438, -1.949], [53.4434, -1.9554]]
+    assert found == [[[53.4438, -1.949], [53.4436, -1.952], [53.4434, -1.9554]], stops, stops, stops, stops, []]
+    # Both maps draw their lines through it.
+    assert "roadLine(data.path, points)" in (STATIC / "map.js").read_text(encoding="utf-8")
+    assert "roadLine(route.path" in (STATIC / "area.js").read_text(encoding="utf-8")
+
+
 def test_the_area_map_gives_leaflet_nodes_never_strings():
     text = (STATIC / "area.js").read_text(encoding="utf-8")
     # Leaflet parses a string as HTML: popups, tooltips and icons get DOM nodes from h().

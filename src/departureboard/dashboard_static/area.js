@@ -7,7 +7,7 @@
 import { $, h, fill, setText, str, num, list, obj, openDialog, setUpDialog } from "./dom.js";
 import { getJSON } from "./api.js";
 import { age, now, parseAt } from "./time.js";
-import { busPin, loadLeaflet, TILES } from "./map.js";
+import { busPin, loadLeaflet, roadLine, TILES } from "./map.js";
 
 const AREA_EVERY_MS = 25_000; // the summary asks for the area at most this often
 const MAX_VEHICLES = 80;
@@ -189,10 +189,8 @@ function drawMap() {
   layers.clearLayers();
   markers = new Map();
   for (const route of list(area.routes).filter(obj)) {
-    const usable = (line) => list(line).filter((p) => Array.isArray(p) && num(p[0]) !== null && num(p[1]) !== null);
     // Along the roads when the server sends them, else straight from stop to stop.
-    const road = usable(route.path);
-    const points = road.length > 1 ? road : usable(route.points);
+    const points = roadLine(route.path, roadLine(route.points));
     if (points.length > 1) L.polyline(points, { className: "area-route", interactive: false }).addTo(layers);
   }
   for (const stop of list(area.stops).filter(obj)) {
