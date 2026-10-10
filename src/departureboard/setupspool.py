@@ -1,8 +1,11 @@
 """The setup wizard's internet work, done by a separate setup service on the Pi.
 
 Why. The settings page's service (departureboard-web.service) reaches only
-the home network: its kernel IP filter denies everything else, so a flaw in
-the page can't be used to talk to the internet. But the wizard's lookups
+the home network: its kernel IP filter denies everything else, so the page
+can't open a connection to the internet itself. That narrows what a flaw
+in the page could do; it isn't a wall. Both units run as the same user and
+share the board's state folder, and the page still says what the setup
+service looks up, within the checks below (Trust). But the wizard's lookups
 (postcodes.io, Nominatim, NaPTAN, the OpenStreetMap foot router), its key
 tests and its search for bus companies need the internet. On the Pi they
 run in departureboard-setup.service instead: outbound only, started when
