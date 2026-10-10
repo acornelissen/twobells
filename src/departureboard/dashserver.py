@@ -221,6 +221,10 @@ class _Handler(BaseHTTPRequestHandler):
     def send_error(self, code: int, message: str | None = None, explain: str | None = None) -> None:
         """http.server's own errors (a bad request line, say), with our headers and no HTML."""
         self.close_connection = True
+        # A request line too broken to read leaves http.server on HTTP/0.9, which
+        # would send no status line or headers (on 3.12; 3.13 sends them). Answer
+        # as HTTP/1.0 on every Python, so our security headers always go.
+        self.request_version = "HTTP/1.0"
         try:
             phrase = HTTPStatus(code).phrase
         except ValueError:

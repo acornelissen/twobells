@@ -262,10 +262,13 @@ def test_http_servers_own_errors_carry_the_headers_and_no_html(server, data, sta
     (b"GET / HTTP/9.9\r\n\r\n", "HTTP Version Not Supported"),
     (b"GET\r\n\r\n", "Bad Request"),
 ], ids=["unknown-version", "bad-request-line"])
-def test_a_request_line_too_broken_for_headers_gets_a_bare_phrase(server, data, phrase):
-    # http.server answers these HTTP/0.9 style, with no status line or headers.
+def test_a_broken_request_line_gets_our_headers_on_every_python(server, data, phrase):
+    # http.server would answer these HTTP/0.9 style (a bare phrase) on Python
+    # 3.12 but with headers on 3.13; the server answers the same way on both.
     port, _, _ = server
-    assert raw_exchange(port, data) == phrase
+    head, body = raw_exchange(port, data).split("\r\n\r\n", 1)
+    assert head.startswith("HTTP/1.0 ") and body == phrase
+    assert "Content-Security-Policy: default-src 'none'" in head and "X-Frame-Options: DENY" in head
 
 
 def test_sign_in_sets_a_strict_http_only_cookie(server):

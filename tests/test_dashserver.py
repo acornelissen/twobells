@@ -176,6 +176,23 @@ def test_http_server_errors_carry_them_too(server):
     assert "Content-Security-Policy: default-src 'none'" in head and "<html" not in head.lower()
 
 
+@pytest.mark.parametrize("data, phrase", [
+    (b"GET / HTTP/9.9\r\n\r\n", "HTTP Version Not Supported"),
+    (b"GET\r\n\r\n", "Bad Request"),
+], ids=["unknown-version", "bad-request-line"])
+def test_a_broken_request_line_gets_our_headers_on_every_python(server, data, phrase):
+    # http.server would answer these HTTP/0.9 style (a bare phrase) on Python
+    # 3.12 but with headers on 3.13; the server answers the same way on both.
+    with socket.create_connection(("127.0.0.1", server.port), timeout=5) as raw:
+        raw.sendall(data)
+        reply = b""
+        while chunk := raw.recv(4096):
+            reply += chunk
+    head, body = reply.decode("latin-1").split("\r\n\r\n", 1)
+    assert head.startswith("HTTP/1.0 ") and body == phrase
+    assert "Content-Security-Policy: default-src 'none'" in head
+
+
 def test_other_methods_are_not_allowed(server):
     for method in ("POST", "PUT", "DELETE", "PATCH", "OPTIONS", "BREW"):
         response, _ = server.request("/api/snapshot", method)
