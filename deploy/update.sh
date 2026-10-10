@@ -81,3 +81,8 @@ if systemctl is-enabled --quiet departureboard.timer; then
   systemctl start departureboard.service || true
   journalctl -u departureboard.service -n 12 --no-pager -o cat
 fi
+
+# The web server moved from 8080 in this version, and nothing listens there
+# now: say so, last, where it is seen.
+echo
+echo "The settings page moved to :8090/settings: http://$(hostname).local:8090/settings"

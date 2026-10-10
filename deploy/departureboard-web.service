@@ -1,5 +1,5 @@
 [Unit]
-Description=Departure board settings page (home network only)
+Description=Departure board settings, and the dashboard if on (home network only)
 Wants=network-online.target
 After=network-online.target
 # The setup wizard's lookups and the dashboard's feeds are fetched there:
@@ -19,7 +19,7 @@ RuntimeDirectoryMode=0700
 RuntimeDirectoryPreserve=yes
 # Keys, so the page can say which are set and check settings before saving.
 EnvironmentFile=/etc/departureboard/secrets.env
-ExecStart=/opt/departureboard/venv/bin/departureboard web --config /etc/departureboard/config.toml --port 8080 --setup-via-spool
+ExecStart=/opt/departureboard/venv/bin/departureboard serve --install pi --config /etc/departureboard/config.toml --port 8090
 Restart=on-failure
 RestartSec=5
 UMask=0027

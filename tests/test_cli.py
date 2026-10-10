@@ -1702,7 +1702,7 @@ def test_a_template_config_shows_the_setup_page_instead_of_failing(tmp_path, mon
     assert Image.open(tmp_path / "board.png").size == (250, 122)
     state = json.loads((tmp_path / "state" / "state.json").read_text())
     assert state["last_render"]["page"] == "setup" and "sources" not in state
-    assert "http://kitchen-board.local:8080/" in caplog.text
+    assert "http://kitchen-board.local:8090/settings" in caplog.text
     # Drawn once: e-paper wears, and the page doesn't change.
     rendered = [r.getMessage() for r in caplog.records if r.getMessage().startswith("rendered=")]
     assert rendered == ["rendered=True", "rendered=False", "rendered=False"]
@@ -1721,7 +1721,7 @@ def test_a_pi_not_set_up_shows_set_me_up_with_the_settings_address(tmp_path, mon
     if FIRST_RUNS[config] is not None:
         path.write_text(FIRST_RUNS[config])
     assert main(first_run_args(tmp_path, path)) == 0
-    assert "Not set up yet: showing http://kitchen-board.local:8080/settings on the board" in caplog.text
+    assert "Not set up yet: showing http://kitchen-board.local:8090/settings on the board" in caplog.text
     assert saved_page(folder) == "setup"
 
 
@@ -1945,7 +1945,7 @@ def test_the_pis_settings_hand_setup_to_the_fetch_service(tmp_path, monkeypatch,
     run = tmp_path / "run"
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))  # as systemd gives it
     assert main(["web", "--config", str(config), "--secrets", str(tmp_path / "none.env"), *flag]) == 0
-    assert (served["host"], served["port"], served["attempts"]) == ("0.0.0.0", 8080, 1)
+    assert (served["host"], served["port"], served["attempts"]) == ("0.0.0.0", 8090, 1)  # the old 8080 no more
     site = served["app"].settings
     assert site.install.name == "pi" and not served["app"].dashboard_on()
     runner = site.setup._runner
@@ -2125,10 +2125,10 @@ def test_without_a_config_the_settings_start_in_systemds_folder(tmp_path, monkey
 
 
 @pytest.mark.parametrize("name, url", [
-    ("kitchen-board", "http://kitchen-board.local:8080/settings"),
-    ("Board.lan", "http://board.local:8080/settings"),
-    ("bad name\n", "http://raspberrypi.local:8080/settings"),
-    ("", "http://raspberrypi.local:8080/settings"),
+    ("kitchen-board", "http://kitchen-board.local:8090/settings"),
+    ("Board.lan", "http://board.local:8090/settings"),
+    ("bad name\n", "http://raspberrypi.local:8090/settings"),
+    ("", "http://raspberrypi.local:8090/settings"),
 ])
 def test_the_setup_address_is_this_pis_name(name, url):
     from departureboard.cli import setup_url

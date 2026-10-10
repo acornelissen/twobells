@@ -16,10 +16,10 @@
   departureboard serve --set-password | --reset-code
                           set the settings password, or print a code for a new one, and exit
 
-`web` (the board's old settings page: serve on a Pi, on port 8080),
+`web` (the board's old settings page: serve on a Pi, now on port 8090),
 `dashboard` (serve on a desktop) and `setup serve` (fetch) are the old
 commands, with their old flags. They still work, unlisted, until the
-first public release.
+first public release. `query` (unlisted) answers install.sh and update.sh.
 """
 
 from __future__ import annotations
@@ -328,8 +328,9 @@ def _run_loop(settings, display, store, state, args) -> int:
     return 0
 
 
-# The settings' port, as departureboard-web.service runs them (`web`).
-WEB_PORT = 8080
+# The settings' port on a Pi, as departureboard-web.service serves them
+# (and the old `web` command's). Nothing listens on the old 8080.
+WEB_PORT = 8090
 # Until the board is set up (or while its view is off), how often a running
 # screen checks whether it has been (or is back on).
 SETUP_CHECK_S = 5

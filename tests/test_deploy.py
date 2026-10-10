@@ -105,8 +105,24 @@ def test_the_settings_page_stays_on_the_home_network_and_hands_its_internet_work
     web = _unit("departureboard-web.service")
     assert web["IPAddressDeny"] == ["any"]  # with the dashboard view on too: its feeds come from the fetch service
     assert web["IPAddressAllow"] == ["localhost link-local 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7"]
-    assert web["ExecStart"][0].endswith(" --setup-via-spool")
     assert "departureboard-fetch.path" in web["Wants"]
+
+
+def test_the_pi_serves_its_settings_at_8090_and_nothing_at_8080():
+    from departureboard.cli import WEB_PORT, _parser, setup_url
+    from departureboard.installs import install_named
+
+    web = _unit("departureboard-web.service")
+    assert web["ExecStart"] == ["/opt/departureboard/venv/bin/departureboard serve --install pi "
+                                "--config /etc/departureboard/config.toml --port 8090"]
+    args = _parser().parse_args(shlex.split(web["ExecStart"][0])[1:])
+    assert (args.command, args.install, args.config, args.port, args.host, args.lan) == (
+        "serve", "pi", "/etc/departureboard/config.toml", 8090, None, False)
+    assert install_named("pi").host == "0.0.0.0"  # every address, kept to the home network above
+    assert WEB_PORT == 8090 and setup_url("kitchen") == "http://kitchen.local:8090/settings"  # what the board shows
+    # No second listener on the old port: bookmarks to it break, on purpose.
+    assert "8080" not in (ROOT / "deploy" / "departureboard-web.service").read_text()
+    assert _parser().parse_args(["web"]).port == 8090  # the old command, hidden, on the new port
 
 
 def test_the_settings_service_has_room_for_every_connection_the_server_takes():
@@ -116,7 +132,7 @@ def test_the_settings_service_has_room_for_every_connection_the_server_takes():
 
     web = _unit("departureboard-web.service")
     assert int(web["TasksMax"][0]) >= max(64, dashserver.MAX_CONNECTIONS + 8)
-    assert web["ExecStart"][0].split()[1] == "web"  # serve on a Pi, through the old command, until it moves
+    assert web["MemoryMax"] == ["128M"]
 
 
 def test_the_fetch_service_goes_out_and_listens_on_nothing():
@@ -244,3 +260,16 @@ def test_every_service_is_locked_down_as_far_as_its_work_allows(name):
     assert unit.get("ProtectClock") == (["yes"] if devices else None)
     # The e-paper drivers learn which Pi this is from /proc/cpuinfo and /proc/device-tree.
     assert unit.get("ProcSubset") == (None if name == "departureboard.service" else ["pid"])
+
+
+def test_install_and_update_give_the_settings_new_address():
+    from departureboard.installs import install_named
+
+    install = (ROOT / "deploy" / "install.sh").read_text()
+    update = (ROOT / "deploy" / "update.sh").read_text()
+    assert "http://$(hostname).local:8090/settings" in install
+    assert "The settings page moved to :8090/settings" in update
+    for text in (install, update):
+        assert ":8080" not in text and "departureboard web " not in text
+    # The command the settings page gives for the password, as install.sh gives it.
+    assert install_named("pi").password_command.replace("/opt/departureboard", "$PREFIX") in install

@@ -41,7 +41,7 @@ class Install:
     reset_command: str = ""
 
 
-_PI_COMMAND = "sudo -u departureboard /opt/departureboard/venv/bin/departureboard web"
+_PI_COMMAND = "sudo -u departureboard /opt/departureboard/venv/bin/departureboard serve --install pi"
 _DOCKER_COMMAND = "docker exec -it departureboard-dashboard python -m departureboard.cli dashboard {} --state-dir /data"
 
 INSTALLS = {

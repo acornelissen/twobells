@@ -82,10 +82,10 @@ Installed. Next:
    or: sudo systemctl enable --now departureboard-screen.service (HDMI screen; first set
        display = "hdmi-1280x400" in $CONF/config.toml)
      Until it is set up, the board shows "Set me up" and the settings page's address.
-  2. Open the settings page: http://$(hostname).local:8080/ on a phone or computer
+  2. Open the settings page: http://$(hostname).local:8090/settings on a phone or computer
      on your home network. Claim it with the code the board shows (or set the
      password here first:
-       sudo -u departureboard $PREFIX/venv/bin/departureboard web --set-password )
+       sudo -u departureboard $PREFIX/venv/bin/departureboard serve --install pi --set-password )
      and it opens the setup wizard: home, station, bus stops, walk times and
      keys, saved for you. No need to edit config.toml by hand.
   3. Keep the bus timetable fresh (the wizard builds the first one):

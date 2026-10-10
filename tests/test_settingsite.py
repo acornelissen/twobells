@@ -301,7 +301,7 @@ def test_the_sessions_are_built_on_the_stores_one_password(dash):
 
 
 def test_without_a_password_the_page_says_how_to_set_one(make):
-    for install, command in (("pi", "departureboard web --set-password"),
+    for install, command in (("pi", "departureboard serve --install pi --set-password"),
                              ("docker", "departureboard.cli dashboard --set-password --state-dir /data")):
         running = make(install=install)
         _, text = running("GET", "/settings/login")

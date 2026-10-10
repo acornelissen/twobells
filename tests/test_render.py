@@ -540,7 +540,7 @@ def test_the_code_page_signature_never_carries_the_code():
 
 # --- The set-me-up page, until the board is set up ---
 
-SETUP_PAGE = SetupView("http://raspberrypi.local:8080/")
+SETUP_PAGE = SetupView("http://raspberrypi.local:8090/settings")  # as setup_url gives it
 PANELS = [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400]
 
 
@@ -564,7 +564,7 @@ def test_the_address_is_drawn_across_the_panel(panel):
 
 @pytest.mark.parametrize("panel", PANELS)
 def test_a_long_name_still_fits(panel):
-    image = render_setup(SetupView("http://my-very-long-departure-board-name.local:8080/"), PALETTE, panel)
+    image = render_setup(SetupView("http://my-very-long-departure-board-name.local:8090/settings"), PALETTE, panel)
     left, top, right, bottom = ink_box(image, PALETTE.white)
     assert left > 0 and right < panel.width
 
@@ -575,7 +575,7 @@ def test_the_settings_address_the_board_shows_fits_with_a_long_name(panel, off):
     from departureboard.cli import OFF_HEADING, OFF_NOTE, setup_url
 
     url = setup_url("my-very-long-departure-board-name")
-    assert url.endswith(":8080/settings")
+    assert url.endswith(":8090/settings")
     page = SetupView(url, heading=OFF_HEADING, note=OFF_NOTE) if off else SetupView(url)
     left, top, right, bottom = ink_box(render_setup(page, PALETTE, panel), PALETTE.white)
     assert left > 0 and top > 0 and right < panel.width and bottom < panel.height
@@ -583,7 +583,7 @@ def test_the_settings_address_the_board_shows_fits_with_a_long_name(panel, off):
 
 def test_the_setup_page_shows_its_address_and_is_ink_on_paper_or_light_on_black():
     page = render_setup(SETUP_PAGE, PALETTE, PHAT)
-    assert page.tobytes() != render_setup(SetupView("http://pi.local:8080/"), PALETTE, PHAT).tobytes()
+    assert page.tobytes() != render_setup(SetupView("http://pi.local:8090/settings"), PALETTE, PHAT).tobytes()
     assert colours(page) == {PALETTE.white, PALETTE.black}
     assert colours(render_setup(SETUP_PAGE, PALETTE, PHAT, dark=True)) == {PALETTE.black, PALETTE.accent}
     mono = Palette(white=0, black=1, accent=1)
@@ -592,7 +592,7 @@ def test_the_setup_page_shows_its_address_and_is_ink_on_paper_or_light_on_black(
 
 def test_the_setup_page_signature_follows_its_address():
     assert SETUP_PAGE.signature() == SetupView(SETUP_PAGE.url).signature()
-    assert SETUP_PAGE.signature() != SetupView("http://pi.local:8080/").signature()
+    assert SETUP_PAGE.signature() != SetupView("http://pi.local:8090/settings").signature()
 
 
 OFF_PAGE = SetupView(SETUP_PAGE.url, heading="Board off", note="Turn it on in Settings:")

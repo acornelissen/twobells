@@ -1171,7 +1171,7 @@ def test_the_emulator_shows_the_code_page(panel):
 
 # --- The set-me-up page, until the board is set up ---
 
-SETUP_PAGE = SetupView("http://raspberrypi.local:8080/")
+SETUP_PAGE = SetupView("http://raspberrypi.local:8090/settings")
 
 
 def first_run(**overrides):
