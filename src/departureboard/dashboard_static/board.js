@@ -1,9 +1,9 @@
 // The train and bus boards, laid out like the signs: trains like a station's
 // departure screen (Time, Destination, Plat, Expected, Leave), buses like a
-// stop's countdown sign (Bus, Stop, Due, Leave). Each is a real <table> with
-// a caption and scoped headers; on narrow screens CSS folds each row into two
-// lines, and the explicit ARIA roles keep the table semantics that some
-// browsers drop when a table's display changes.
+// stop's countdown sign (Bus, Destination, Stop, Due, Leave). Each is a real
+// <table> with a caption and scoped headers; on narrow screens CSS folds each
+// row into two lines, and the explicit ARIA roles keep the table semantics
+// that some browsers drop when a table's display changes.
 //
 // A row has one control, its destination: a button that opens the departure
 // sheet (sheet.js). A row drops out once its leaving time is more than 2
@@ -20,7 +20,7 @@ import { isKiosk } from "./kiosk.js";
 export const SHOWN = 5; // rows before "Show later departures"
 export const KIOSK_ROWS = 4; // rows on a wall tablet, which has no "Show later departures"
 const MAX_ROWS = 20; // the most the settings allow
-const GO_MS = 2 * 60_000; // "Go now" lasts this long past the leaving time
+export const GO_MS = 2 * 60_000; // "Go now" lasts this long past the leaving time (the hero's too)
 
 // On time is plain words; only the exceptions get an icon.
 const ICON = { late: "triangle-alert", cancelled: "x", unknown: "clock" };
@@ -374,15 +374,22 @@ function busRow(row, later, names, alerts) {
   const destination = str(row.destination);
   const where = obj(row.vehicle) ? str(obj(row.strip)?.where) : "";
   const walk = num(row.walk_min);
+  // The row header is said with every cell, so it is the line and where it
+  // goes, nothing more: "237 to Ashton-under-Lyne Interchange". The rest is
+  // in the destination's own cell.
   return h("tr", rowAttrs(row, id, later),
-    h("th", { scope: "row", role: "rowheader", class: "c-dest" },
-      h("span", { class: "line" }, line), " ",
+    h("th", { scope: "row", role: "rowheader", class: "c-line" }, h("span", { class: "line" }, line), vh(` to ${destination}`)),
+    td("c-dest", null,
       openButton(id, `the ${scheduled} ${line} to `, destination),
       where ? h("span", { class: "sub where" }, where) : null,
       busStatusExtras(row),
       recordChip(row)),
+    // "Henry Street A · 8 min walk" on one line in the narrow layout, two in
+    // the wide one, where the dot is hidden; either way said with a comma.
     td("c-stop", null, h("span", { class: "stop" }, stopLabel(stopText(row, names))),
-      walk !== null ? h("span", { class: "sub walk" }, `${walk} min walk`) : null),
+      walk !== null
+        ? [h("span", { class: "walk-sep", "aria-hidden": "true" }, " · "), vh(", "), h("span", { class: "sub walk" }, `${walk} min walk`)]
+        : null),
     dueCell(row),
     leaveCell(row, id, alerts),
   );
@@ -406,7 +413,7 @@ export function renderBuses(snapshot, alerts) {
   drawBoard("bus", document.getElementById("buses-board"), {
     caption: "Next buses", cls: "buses",
     empty: tt.state === "building" ? "Bus times will show once the timetable is built." : "No buses are listed right now.",
-    columns: [["Bus", "c-dest"], ["Stop", "c-stop"], ["Due", "c-due"], ["Leave", "c-leave"]],
+    columns: [["Bus", "c-line"], ["Destination", "c-dest"], ["Stop", "c-stop"], ["Due", "c-due"], ["Leave", "c-leave"]],
   }, rows, (row, i, later) => busRow(row, later, names, alerts));
   return rows;
 }

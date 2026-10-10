@@ -10,12 +10,12 @@
 import { $, h, patch, setText, vh, str, num, obj, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
 import { describe, isOn, remindNote, toggle } from "./alerts.js";
-import { stopText } from "./board.js";
+import { GO_MS, stopText } from "./board.js";
 import { announce, unannounce } from "./live.js";
 import { icon } from "./icons.js";
 import { isKiosk } from "./kiosk.js";
 
-const NOW_MS = 60_000; // "Leave now" in the last minute
+const NOW_MS = 60_000; // "Leave now" from the last minute until the row drops (GO_MS)
 const SECONDS_MS = 2 * 60_000; // seconds shown below this
 const SOON_MS = 3 * 60_000; // amber from here
 const LIVE_GRACE_MS = 5 * 60_000; // a live departure this soon after a ghost bus is taken instead
@@ -56,12 +56,13 @@ const SURE = {
 };
 
 // Every departure you can still make on foot at `t`, soonest leaving first:
-// leaving time not yet passed, not cancelled. [{ row, mode, leave }].
+// not cancelled, and its leaving time not more than GO_MS gone, as long as
+// its row says "Go now". [{ row, mode, leave }].
 export function catchable(rowsById, t = now()) {
   const found = [];
   for (const { row, mode } of rowsById.values()) {
     const leave = parseAt(row.leave_at);
-    if (leave === null || leave < t || row.status === "cancelled") continue;
+    if (leave === null || leave + GO_MS < t || row.status === "cancelled") continue;
     found.push({ row, mode, leave });
   }
   return found.sort((a, b) => a.leave - b.leave);

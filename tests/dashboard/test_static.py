@@ -1143,6 +1143,32 @@ def test_a_section_has_its_own_status_line_only_when_it_is_behind():
                       "Problem: timed out. Showing the forecast from 06:49."]
 
 
+def test_the_board_look_keeps_the_hero_soon_and_now_edges():
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    # A board-look border for every hero would outrank .leave.soon and .leave.now.
+    assert not re.search(r':root\[data-theme="board"\] \.leave\s*\{', css)
+    assert _css_value(':root[data-theme="board"] .leave:not(.soon):not(.now)', "border-color") == "var(--fg)"
+
+
+def test_touch_targets_are_44px_on_coarse_pointers():
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    rules = {}
+    for start in [m.end() for m in re.finditer(r"@media \(pointer: coarse\)\s*\{", css)]:
+        end = css.index("\n}", start)
+        for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css[start:end]):
+            for selector in selectors.split(","):
+                rules[selector.strip()] = rules.get(selector.strip(), "") + body
+    for selector in (".dis-mark", "button.link.dis-more", "button.open", "button.more"):
+        assert "min-height: 2.75rem" in rules.get(selector, ""), selector
+
+
+def test_a_record_sits_on_its_own_line():
+    # Inline, it ran on from the destination or the reason before it.
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    record = re.search(r"\n\.record\s*\{([^}]*)\}", css).group(1)
+    assert "display: block;" in record and "width: fit-content;" in record
+
+
 def test_trains_and_buses_sit_side_by_side_from_75rem():
     css = (STATIC / "app.css").read_text(encoding="utf-8")
     assert "100rem" not in css
@@ -1400,7 +1426,7 @@ def test_a_row_drops_once_its_leaving_time_is_two_minutes_gone():
           arranged: ["07:01:59", "07:02:01", "07:03:01", "07:09:01", "07:10:01"].map(ids),
           words: [leaveText(26 * 60_000 + 5_000), leaveText(60_000), leaveText(59_000), leaveText(-119_000)],
           // The fixture's 07:05 bus left its walk at 06:59: at 07:01:30 it is gone, just missed.
-          buses: bodyRows("buses-board").map((tr) => /the (\\d\\d:\\d\\d)/.exec(said(tr.childNodes[0]))[1]),
+          buses: bodyRows("buses-board").map((tr) => /the (\\d\\d:\\d\\d)/.exec(said(cell(tr, "c-dest")))[1]),
           missed: byClass(board("buses-board"), "just-missed").map(said),
           trainsMissed: byClass(board("trains-board"), "just-missed").length,
         }));
@@ -1434,7 +1460,7 @@ def test_the_tick_says_go_now_then_asks_for_the_row_to_drop():
         const ticks = [at(0), at(1), at(3), at(4)];
         // Drawn again, it has gone; and a board whose section goes away asks for nothing more.
         renderBuses(snapshot, alerts);
-        const redrawn = [/the (\\d\\d:\\d\\d)/.exec(said(bodyRows("buses-board")[0].childNodes[0]))[1], tickBoards()];
+        const redrawn = [/the (\\d\\d:\\d\\d)/.exec(said(cell(bodyRows("buses-board")[0], "c-dest")))[1], tickBoards()];
         renderBuses({ ...snapshot, buses: null }, alerts);
         renderTrains({ ...snapshot, trains: null }, alerts);
         observe(generated + 60 * 60_000);
@@ -1488,6 +1514,51 @@ def test_each_row_is_one_tab_stop_that_names_its_departure():
 
 
 @needs_node
+def test_a_bus_row_is_headed_by_its_line_and_destination_only():
+    # The row header is said with every cell: what is extra about the bus
+    # (where it is, no tracker, its record) belongs in a cell of its own.
+    found = run_js(_boards() + """
+        import { markBusRows } from "./disruptions.js";
+        markBusRows(snapshot, new Map(snapshot.buses.rows.map((row) => [row.id, { row, mode: "bus" }])));
+        const byId = new Map(snapshot.buses.rows.map((row) => [row.id, row]));
+        const head = elements(board("buses-board")).filter((el) => el.nodeName === "TH" && el.getAttribute("scope") === "col");
+        console.log(JSON.stringify({
+          head: head.map(said),
+          rows: bodyRows("buses-board").map((tr) => {
+            const th = tr.childNodes.find((el) => el.nodeName === "TH");
+            const row = byId.get(tr.dataset.id);
+            return [th.getAttribute("role"), said(th), `${row.line} to ${row.destination}`, shown(th),
+                    elements(th).length, byClass(cell(tr, "c-dest"), "open").length];
+          }),
+          extras: bodyRows("buses-board").flatMap((tr) => ["where", "record", "ghost", "dis-mark"]
+            .flatMap((name) => byClass(tr, name).map((el) => [name, el.parentNode.nodeName === "TH"]))),
+        }));
+    """)
+    assert found["head"] == ["Bus", "Destination", "Stop", "Due", "Leave"]
+    for role, said, expected, shown, nodes, buttons in found["rows"]:
+        # "341 to Hyde Bus Station": the line once, the destination, nothing more.
+        assert (role, said, buttons) == ("rowheader", expected, 1)
+        assert shown == expected.split(" to ")[0] and nodes <= 3
+    extras = {name for name, _ in found["extras"]}
+    assert {"where", "dis-mark"} <= extras and not any(in_th for _, in_th in found["extras"])
+
+
+@needs_node
+def test_a_stop_and_its_walk_are_kept_apart():
+    found = run_js(_boards() + """
+        const stop = cell(bodyRows("buses-board")[0], "c-stop");
+        const sep = byClass(stop, "walk-sep")[0];
+        console.log(JSON.stringify([said(stop), sep.getAttribute("aria-hidden"), sep.textContent]));
+    """)
+    assert found == ["Henry Street A, 8 min walk", "true", " · "]
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    # A real node, not generated content with alt text, which older browsers don't read.
+    assert "::before { content: \" · \"" not in css
+    assert re.search(r"\n\.walk-sep\s*\{\s*display:\s*none;", css)
+    assert re.search(r"table\.board \.c-stop \.walk-sep\s*\{\s*display:\s*inline;", css)
+
+
+@needs_node
 def test_a_bus_row_with_a_disruption_in_force_links_to_it():
     found = run_js(_boards() + """
         import { markBusRows } from "./disruptions.js";
@@ -1517,7 +1588,7 @@ def test_a_timetable_only_bus_shows_its_clock_time_never_minutes():
     rows = found["rows"]
     # The 07:09 is live and 2 min late: it counts down from 07:11, the time the
     # tracker gives, with a quiet mark (an icon) that screen readers hear as "live".
-    assert rows[0][2:] == ["9 min", "9 min, live, expected 07:11", 1, "Henry Street A8 min walk"]
+    assert rows[0][2:] == ["9 min", "9 min, live, expected 07:11", 1, "Henry Street A, 8 min walk"]
     for live, scheduled, shown, spoken, minutes, _ in rows:
         if live:
             assert minutes == 1 and "sched." not in shown and ", live, " in spoken
@@ -1852,6 +1923,21 @@ def test_the_hero_counts_seconds_only_under_two_minutes():
         ["Leave in 1:53", "Leave in 1 min 53 s", ["soon"]],
         ["Leave now", "Leave now", ["now"]],  # the last minute
         ["Leave now", "Leave now", ["now"]],
+    ]
+
+
+@needs_node
+def test_the_hero_keeps_a_departure_as_long_as_its_row_says_go_now():
+    found = run_js(HERO + """
+        const map = rows(bus(1, "07:20", "07:15"), bus(2, "07:30", "07:25"));
+        const state = (time) => { clock(time); draw(map); return [shown($("leave-time")), shown($("leave-what")).slice(0, 5)]; };
+        console.log(JSON.stringify(["07:14:30", "07:16:00", "07:16:59", "07:17:01"].map(state)));
+    """)
+    assert found == [
+        ["Leave now", "07:20"],
+        ["Leave now", "07:20"],  # its row says "Go now" until 2 min after its leaving time
+        ["Leave now", "07:20"],
+        ["Leave in 7 min", "07:30"],  # then the row drops, and so does the hero
     ]
 
 

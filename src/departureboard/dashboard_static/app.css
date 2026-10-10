@@ -360,7 +360,7 @@ main:focus { outline: none; }
 .leave.now .leave-then, .leave.now .leave-rain, .leave.now .sure, .leave.now .note,
 .leave.now #leave-remind { color: inherit; }
 .leave.now #leave-remind { border-color: currentColor; }
-:root[data-theme="board"] .leave { border-color: var(--fg); }
+:root[data-theme="board"] .leave:not(.soon):not(.now) { border-color: var(--fg); }
 /* The banner's own colour would hide the usual focus ring. */
 .leave :focus-visible { outline-color: currentColor; }
 
@@ -445,6 +445,7 @@ main:focus { outline: none; }
 }
 @media (pointer: coarse) {
   .dis-line, .dis-coming > summary { min-height: 2.75rem; padding-block: var(--s-3); }
+  .dis-mark, button.link.dis-more { min-height: 2.75rem; }
 }
 
 /* --- Sections: plain on the page, no boxes. Trains and buses side by side
@@ -471,7 +472,7 @@ table.board caption { text-align: left; font-weight: 500; padding: 0 0 var(--s-2
 table.board th, table.board td { padding: var(--s-3) var(--s-2); text-align: left; vertical-align: top; border-top: 1px solid var(--line); }
 table.board thead th { padding-block: var(--s-2); font-size: var(--t-xs); font-weight: 500; color: var(--muted); border-top: 0; }
 table.board tbody th { font-weight: 400; }
-table.board .c-time { width: 1%; white-space: nowrap; }
+table.board .c-time, table.board .c-line { width: 1%; white-space: nowrap; }
 table.board .time, table.board .due { font-size: var(--t-lg); font-weight: 600; line-height: 1.2; }
 table.board .c-plat { width: 1%; white-space: nowrap; }
 table.board .c-status, table.board .c-due, table.board .c-leave { white-space: nowrap; }
@@ -509,7 +510,8 @@ button.open:hover:not(:disabled) { background: none; text-decoration: underline;
 }
 /* Only a notable record shows in a row: "Often late: 4 of 10". */
 .record {
-  display: inline-block;
+  display: block;
+  width: fit-content;
   margin-top: var(--s-1);
   padding: 0 var(--s-2);
   border-radius: 999px;
@@ -519,6 +521,8 @@ button.open:hover:not(:disabled) { background: none; text-decoration: underline;
   background: var(--late-bg);
 }
 .cell-label { display: none; }
+/* The dot between a stop and its walk, shown only where they share a line. */
+.walk-sep { display: none; }
 .countdown { font-weight: 500; }
 .countdown.go { padding: 0 var(--s-2); border-radius: var(--r-sm); font-weight: 600; color: var(--late-fg); background: var(--late-bg); }
 .leave-at { display: block; font-size: var(--t-sm); color: var(--muted); }
@@ -604,29 +608,29 @@ table.board .badge.ghost { margin-top: var(--s-1); font-size: var(--t-sm); }
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas: "time dest status" "plat dest leave";
   }
-  /* [237] Ashton-under-Lyne       4 min
-     Henry Street A · 8 min walk   in 2 min */
+  /* [237] Ashton-under-Lyne             4 min
+           Henry Street A · 8 min walk   in 2 min */
   table.board.buses tr {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "dest due" "stop leave";
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "line dest due" "line stop leave";
   }
   table.board th, table.board td { display: block; width: auto; padding: 0; border: 0; }
   table.board .c-time { grid-area: time; }
+  table.board .c-line { grid-area: line; }
   table.board .c-dest { grid-area: dest; }
   table.board .c-plat { grid-area: plat; font-size: var(--t-sm); color: var(--muted); }
   table.board .c-status { grid-area: status; text-align: right; }
   table.board .c-stop { grid-area: stop; font-size: var(--t-sm); }
   table.board .c-due { grid-area: due; text-align: right; }
   table.board .c-leave { grid-area: leave; text-align: right; }
-  table.board .c-stop .sub { display: inline; }
-  table.board .c-stop .sub::before { content: " · " / ""; }
+  table.board .c-stop .sub, table.board .c-stop .walk-sep { display: inline; }
   /* The countdown says it; the clock time is in the sheet. */
   table.board .leave-at { display: none; }
   .cell-label { display: inline; margin-right: var(--s-1); font-size: var(--t-xs); color: var(--muted); }
   .c-leave:has(.go) .cell-label { display: none; }
 }
 @media (pointer: coarse) {
-  button.more { min-height: 2.75rem; }
+  button.more, button.open { min-height: 2.75rem; }
 }
 
 /* --- Weather --- */
