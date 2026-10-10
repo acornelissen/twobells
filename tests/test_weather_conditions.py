@@ -48,7 +48,7 @@ def test_source_asks_for_current_hourly_and_daily_weather_in_mph():
     query = parse_qs(parts.query)
     assert all(len(values) == 1 for values in query.values())  # no parameter twice
     assert {k: v[0] for k, v in query.items()} == {
-        "latitude": "53.44",  # rounded: the house's exact position isn't needed
+        "latitude": "53.44",  # rounded: an exact position (here Glossop station) isn't needed
         "longitude": "-1.95",
         "current": "temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,is_day",
         "hourly": "temperature_2m,precipitation_probability,precipitation,weather_code,wind_speed_10m,is_day",

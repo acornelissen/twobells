@@ -101,7 +101,7 @@ def test_source_asks_for_the_hourly_rain_forecast_in_the_boards_timezone():
     assert f"{parts.scheme}://{parts.netloc}{parts.path}" == "https://api.open-meteo.com/v1/forecast"
     query = {k: v[0] for k, v in parse_qs(parts.query).items()}
     assert query == {
-        "latitude": "53.44",  # rounded: the house's exact position isn't needed
+        "latitude": "53.44",  # rounded: an exact position (here Glossop station) isn't needed
         "longitude": "-1.95",
         "hourly": "precipitation_probability,precipitation",
         "timezone": "Europe/London",
