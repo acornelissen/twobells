@@ -1027,3 +1027,103 @@ def test_bus_marker_colours_stand_out_on_the_tiles():
     ]
     for fg, bg, need in pairs:
         assert _contrast(fg, bg) >= need, f"{fg} on {bg} is {_contrast(fg, bg):.2f}:1"
+
+
+# --- Weather ---
+
+
+# The weather panel on a fake page, at the fixture's time (07:01): the hours
+# from 07:00 to 18:00 are the next 12.
+WEATHER_PANEL = """
+import { readFileSync } from "node:fs";
+import { h } from "./dom.js";
+import { observeSnapshot } from "./time.js";
+import { renderWeather } from "./weather.js";
+const status = h("span", { id: "weather-status" });
+status.classList = { toggle() {} };
+const hours = h("div", { id: "weather-hours" });
+document.body.append(h("section", { id: "weather" }, status, h("div", { id: "weather-now" }),
+                       h("p", { id: "weather-rain" }), hours));
+const snapshot = JSON.parse(readFileSync(%r, "utf-8"));
+observeSnapshot(snapshot.generated_at);
+const items = (node) => elements(node).filter((el) => el.nodeName === "LI");
+"""
+
+
+def _weather_panel():
+    return WEATHER_PANEL % str(FIXTURES / "dashboard_snapshot.json")
+
+
+@needs_node
+def test_the_weather_shows_four_hours_and_the_rest_behind_more_hours():
+    found = run_js(_weather_panel() + """
+        renderWeather(snapshot);
+        const [first, more] = hours.childNodes;
+        const said = (node) => items(node).map((li) => spoken(li));
+        console.log(JSON.stringify({
+          parts: hours.childNodes.map((el) => el.nodeName),
+          first: said(first),
+          summary: spoken(more.childNodes[0]),
+          later: said(more),
+          regions: byClass(hours, "wx-strip").map((el) =>
+            [el.getAttribute("role"), el.getAttribute("tabindex"),
+             el.getAttribute("aria-labelledby") || el.getAttribute("aria-label")]),
+          now: spoken(document.getElementById("weather-now")),
+        }));
+    """)
+    assert found["parts"] == ["DIV", "DETAILS"]
+    # Each hour is one sentence for a screen reader; the drawing is hidden.
+    assert found["first"] == [
+        "07:00, light rain, 11 degrees, 70% chance of rain",
+        "08:00, light rain, 11 degrees, 70% chance of rain",
+        "09:00, rain, 12 degrees, 85% chance of rain",
+        "10:00, rain showers, 12 degrees, 60% chance of rain",
+    ]
+    assert found["summary"] == "More hours"
+    assert [s[:5] for s in found["later"]] == ["11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"]
+    # Both strips can scroll sideways, so keyboard users can reach them by name.
+    assert found["regions"] == [["region", "0", "weather-hours-heading"], ["region", "0", "Later hours"]]
+    # The fixture's 07:01 is before sunrise, so sunrise is the one shown.
+    assert found["now"] == ("11° Light rain"
+                            "Feels like 9 degrees. Wind 12 mph from the west-south-west, gusts 25 mph. Sunrise 07:24.")
+
+
+@needs_node
+def test_the_weather_writes_the_chance_of_rain_from_30_percent():
+    found = run_js(_weather_panel() + """
+        renderWeather(snapshot);
+        console.log(JSON.stringify(items(hours).map((li) => {
+          const bar = byClass(li, "wx-bar-fill")[0];
+          return [byClass(li, "wx-pct").map((el) => el.textContent).join(""),
+                  bar.style.getPropertyValue("--rain"), byClass(li, "wx-rain")[0].getAttribute("aria-hidden")];
+        })));
+    """)
+    written = [pct for pct, _, _ in found]
+    assert written == ["70%", "70%", "85%", "60%", "30%", "", "", "", "", "", "", ""]
+    # Every hour has its bar, drawn to scale and hidden from screen readers.
+    assert [bar for _, bar, _ in found] == ["70%", "70%", "85%", "60%", "30%", "20%", "10%", "10%", "5%", "0%", "0%",
+                                            "5%"]
+    assert all(hidden == "true" for _, _, hidden in found)
+
+
+@needs_node
+def test_more_hours_stays_open_across_a_new_snapshot():
+    found = run_js(_weather_panel() + """
+        renderWeather(snapshot);
+        const more = document.getElementById("weather-more");
+        more.setAttribute("open", "");
+        more.open = true;
+        renderWeather(snapshot);
+        console.log(JSON.stringify([document.getElementById("weather-more") === more, more.hasAttribute("open")]));
+    """)
+    assert found == [True, True]
+
+
+def test_the_weather_hours_are_one_row_not_a_wrapping_grid():
+    for body in _css_rules(".wx-hours"):
+        assert "auto-fill" not in body and "auto-fit" not in body and "wrap" not in body
+    assert _css_value(".wx-hours", "display") == "flex"
+    strip = " ".join(_css_rules(".wx-strip"))
+    assert "overflow-x: auto" in strip and "scroll-snap-type: x" in strip
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert '<h3 id="weather-hours-heading">Next hours</h3>' in html

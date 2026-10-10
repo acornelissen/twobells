@@ -505,30 +505,45 @@ tr.row-cancelled .c-time .time { text-decoration: line-through; text-decoration-
 .wx-now .wx-glyph { font-size: 2rem; }
 .wx-now .wx-temp { font-size: var(--t-xl); font-weight: 600; }
 .wx-now .wx-text { font-size: var(--t-lg); }
-.wx-detail, .wx-sun { margin: var(--s-1) 0; color: var(--muted); }
+.wx-detail { margin: var(--s-1) 0; color: var(--muted); }
 .wx-rain-line { margin: var(--s-2) 0; font-weight: 500; }
+/* The hours: one row of fixed columns that never wraps; where it doesn't fit
+   it scrolls sideways, a column at a time. */
+.wx-strip {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+}
 .wx-hours {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
-  gap: var(--s-2);
+  display: flex;
+  gap: var(--s-3);
   margin: 0;
-  padding: 0;
+  padding: 0 0 var(--s-2);
   list-style: none;
 }
 .wx-hours li {
+  flex: 0 0 4rem;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--s-1);
-  padding: var(--s-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  font-size: var(--t-sm);
+  scroll-snap-align: start;
 }
-.wx-hour { font-weight: 500; color: var(--muted); }
+.wx-hour { font-size: var(--t-xs); color: var(--muted); }
 .wx-hours .wx-glyph { font-size: 1.5rem; }
-.wx-hours .wx-temp { font-size: var(--t-md); font-weight: 600; }
-.wx-rain, .wx-wind { color: var(--muted); }
+.wx-hours .wx-temp { font-size: var(--t-md); font-weight: 500; }
+.wx-rain { display: flex; flex-direction: column; align-items: center; gap: var(--s-1); align-self: stretch; }
+/* The rain bar: a hairline track with the chance drawn along it. The fill is
+   a border, not a background, so it still shows in forced colours. */
+.wx-bar { display: block; align-self: stretch; height: 4px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.wx-bar-fill { display: block; width: var(--rain, 0%); height: 0; border-top: 4px solid var(--accent); }
+.wx-pct { font-size: var(--t-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.wx-more { margin-top: var(--s-1); }
+.wx-more summary { width: fit-content; padding: var(--s-2) 0; color: var(--accent); cursor: pointer; }
+.wx-more[open] summary { margin-bottom: var(--s-2); }
+@media (pointer: coarse) {
+  .wx-more summary { padding: var(--s-3) 0; }
+}
 
 /* --- Footer --- */
 
@@ -820,7 +835,6 @@ table.history thead th { border-top: 0; color: var(--muted); }
   letter-spacing: normal;
 }
 :root[data-theme="board"] .badge { padding-left: 0; padding-right: 0; background: transparent; }
-:root[data-theme="board"] .wx-hours li,
 :root[data-theme="board"] .panel { border-color: var(--edge); }
 
 /* --- Motion --- */

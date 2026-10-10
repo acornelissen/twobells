@@ -172,7 +172,7 @@ It is at the install's address, port 8090: `http://<pi name>.local:8090/` on a P
 - **History:** how that departure ran on recent days of the same kind (weekdays, Saturdays, Sundays), such as "Late 4 of the last 10 weekdays (avg 6 min)". Late means 3 minutes or more for trains and 2 for buses. It needs a few days of running before it says anything.
 - **Alert me:** a reminder a minute before you need to leave. On a desktop (the address starts `http://localhost`) the browser can show a notification; on a phone the reminder shows on the page while it's open.
 - **Board look:** switches to the station-board style, amber on black, with the times, destinations and status in the same dot-matrix lettering as the e-paper board. The rest stays in plain type so it's easy to read. It's remembered per browser.
-- **Weather:** now, the next 12 hours, rain warning, sunrise and sunset.
+- **Weather:** now (temperature, feels like, wind, and the next sunrise or sunset), the rain warning, and the next 4 hours in a row, each with a bar for the chance of rain (written out from 30%). **More hours** shows the rest of the next 12.
 - **Disruptions:** see [Disruptions and engineering works](#disruptions-and-engineering-works).
 
 Nothing on the page can change anything: it only shows, and needs no password. Changes go through the settings, which do. It checks for new times every minute (trains) and 30 seconds (buses), and stops from 01:00 to 05:00 unless someone has it open.
