@@ -68,11 +68,12 @@ Raspberry Pi OS Lite (Bookworm or later) on the Zero W, with Wi-Fi and SSH set u
 ```bash
 git clone <this repo> inky-departures && cd inky-departures
 sudo ./deploy/install.sh
-sudo nano /etc/departureboard/secrets.env   # keys
-sudo nano /etc/departureboard/config.toml   # replace each CHANGE_ME: station, bus stops
+sudo systemctl enable --now departureboard-web.service departureboard.timer
 ```
 
-`config.toml` starts as a copy of `config.example.toml`, which won't run until its `CHANGE_ME` placeholders are filled. `examples/glossop.toml` is a filled-in board to compare against.
+`config.toml` starts as a copy of `config.example.toml`. Until it is set up, the board shows **Set me up** and the settings page's address (`http://<pi name>.local:8080/`). Open it, claim the page with the code the board shows, and the setup wizard finds your station, bus stops, walk times and bus companies and saves them with your keys (see [Settings page](#settings-page)).
+
+Or set it up by hand: put the keys in `/etc/departureboard/secrets.env` and replace each `CHANGE_ME` in `/etc/departureboard/config.toml`. `examples/glossop.toml` is a filled-in board to compare against.
 
 Check the keys and codes with one live call each. With TransportAPI, the bus probe uses one hit per stop from your 30 daily hits; the default schedule uses 28. With BODS, build the timetable first, then probe:
 
@@ -166,7 +167,9 @@ sudo systemctl enable --now departureboard-web.service
 
 Then open `http://<pi name>.local:8080/` from a phone or laptop on the same network. The first visit claims the page: press **Show a code on the board**, read the 6-digit code off the board, and type it with a new password. A forgotten password works the same way, from **Forgot password?** on the sign-in page. Or set the password on the Pi with `sudo -u departureboard /opt/departureboard/venv/bin/departureboard web --set-password`, and print a code with `... web --reset-code` when the board can't show one.
 
-- Saved settings go to `/var/lib/departureboard/settings.toml`, layered over `config.toml`, which is never rewritten. Keys go to `/var/lib/departureboard/secrets.env` (0600).
+**Set up home, station and stops** (`/setup/`) is the setup wizard: postcode or address, the nearest stations and stops, walk times, keys, then a search for the bus companies serving your stops, which builds their timetable. Until the board is set up it opens straight after claiming or signing in. The [user guide](docs/USER_GUIDE.md#setting-up-home-station-and-stops) says what it sends where.
+
+- Saved settings go to `/var/lib/departureboard/settings.toml`, layered over `config.toml`, which is never rewritten. Keys go to `/var/lib/departureboard/secrets.env` (0600). The form and the wizard both merge what they change into those files, so neither loses what the other saved.
 - Nothing is saved unless every field passes its check and the whole configuration loads.
 - The e-paper board picks changes up on its next minute. The screen reloads within a second, and restarts itself if the display settings changed.
 - Changing between e-paper and the screen means switching services, so the display type stays in `config.toml`.
@@ -178,6 +181,11 @@ Then open `http://<pi name>.local:8080/` from a phone or laptop on the same netw
     so keep it behind your router with no port forwarded to 8080.
   - Requests must name a local host, which stops DNS-rebinding pages.
   - A signed-in session, a form token and a same-origin check are needed to change anything.
+  - The wizard under `/setup/` is the only part with JavaScript, and the only part whose Content-Security-Policy
+    allows it (`script-src 'self'`). It serves a fixed list of files with set content types, and its JSON API needs
+    the session, its form token in an `X-CSRF-Token` header, a same-origin request and a body under 16 kB.
+  - Its lookups (postcodes, stops, walk times, bus timetables) go out from the settings page's service, so they need
+    the Pi's internet connection.
   - Five wrong passwords lock an address out for 15 minutes.
   - Being on the network is not enough to set a password: that needs a one-time code from the board's display (or
     the command line). A code lasts 10 minutes and works once; five wrong tries void it; at most one is shown a minute

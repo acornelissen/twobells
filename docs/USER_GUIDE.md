@@ -147,7 +147,24 @@ The settings page works from any phone or laptop on the home network.
 
 If something isn't right, nothing is saved. A box at the top lists the problems, each named by section and field (for example *Trains – Station code*); click one to jump to it, where the error is shown in words.
 
-What you save replaces what's in `config.toml`, including emptying a box: clearing *Only trains calling at* really does show every train again.
+What you save replaces what's in `config.toml`, including emptying a box: clearing *Only trains calling at* really does show every train again. Settings the page doesn't show are kept, like the bus companies and route strips setup found, and the rain warning's location.
+
+### Setting up home, station and stops
+
+Near the top of the settings page, **Set up home, station and stops** opens the setup wizard: six short steps that find everything near home for you, instead of looking up codes. Until the board is set up, it opens by itself when you sign in.
+
+1. **Home:** type your postcode, or search for an address, and check the place it finds. A map is there if you want it, but every step works without one.
+2. **Station:** pick from the stations nearest home, type another station's code, or choose no trains. Optionally, say where you usually go (like `MAN`) to show only trains calling there.
+3. **Bus stops:** tick the stops you use, up to 10. Each gets a short label for the board; the letter on the stop's sign is suggested.
+4. **Walk times:** worked out from the walking route to each; change any that are wrong.
+5. **Keys:** paste the keys the board needs for what you picked. See [Getting your keys](KEYS.md).
+6. **Check and save:** with bus stops, saving first finds the bus companies serving them and builds their timetable, which can take a few minutes; leave the page open, or cancel. On a screen you can also ask for each line's route strip (slower).
+
+Saving keeps your other settings: the look, rotation, text size and so on. Change anything else on the settings page afterwards.
+
+Where home goes: your postcode to postcodes.io (or the address you type to OpenStreetMap's Nominatim), then its position once to the OpenStreetMap foot router for walk times. The maps, only if you open them, load pictures from OpenStreetMap, which then sees roughly where home is. The board keeps only a rough position, to about 1 km, for the rain warning.
+
+The wizard is the one part of the settings page that needs JavaScript. The rest works without it.
 
 ### What you can change
 
@@ -182,7 +199,7 @@ What you save replaces what's in `config.toml`, including emptying a box: cleari
 
 **Rain warning**
 
-Shown when `config.toml` gives a location (see [Rain warning set-up](#rain-warning-set-up)).
+Shown when setup or `config.toml` gives a location (see [Rain warning set-up](#rain-warning-set-up)).
 
 - **Rain warning:** on or off.
 - **Warn from (chance of rain, %):** 50 means warn when rain is more likely than not.
@@ -208,7 +225,7 @@ It's the first place to look when the board seems wrong.
 - **E-paper:** within a few minutes (it never redraws more often than every 2 minutes). Changing the look, accent colour or rotation redraws it too.
 - **HDMI screen:** within a second. If you change the rotation or accent colour, the screen restarts itself, which takes about 10 seconds.
 
-A few things aren't on the page and are changed in `config.toml` on the Pi: the type of display, where bus times come from (`source` and `operators`, see [Bus times](#bus-times)), and the stop list for the bus position page.
+A few things aren't on the page. The setup wizard sets where bus times come from (`source` and `operators`, see [Bus times](#bus-times)) and, if you ask, the stop list for the bus position page; or change them in `config.toml` on the Pi. The type of display is set in `config.toml` only.
 
 ### If you can't sign in
 
@@ -224,7 +241,13 @@ A few things aren't on the page and are changed in `config.toml` on the Pi: the 
 
 Step-by-step install commands are in the [README](../README.md#2-install-on-the-pi). This part covers the choices and day-to-day care.
 
-`config.toml` starts as a blank template: replace each `CHANGE_ME` with your station code and bus stop codes, and the board starts once they're filled. `examples/glossop.toml` in the repo is a filled-in board to compare against.
+`config.toml` starts as a blank template. Until the board is set up, it shows **Set me up** and the settings page's address, `http://<pi name>.local:8080/`, instead of departures. Start the settings page (see [The settings page](#the-settings-page)), open that address on a phone or laptop at home, claim the page with the code the board shows, and the [setup wizard](#setting-up-home-station-and-stops) opens. It saves your station, stops, walk times, bus companies and keys; `config.toml` itself is never changed.
+
+To set up by hand instead, replace each `CHANGE_ME` in `config.toml` with your station code and bus stop codes. `examples/glossop.toml` in the repo is a filled-in board to compare against. Either way, the board shows departures within a minute of being set up (a screen restarts itself first, which takes about 10 seconds).
+
+The type of display is the one thing to set in `config.toml` before anything else: it starts as `"inky"` (see [Choosing a display](#choosing-a-display)).
+
+Until it is set up, the board never fails and restarts: the e-paper timer draws the page once and leaves it, and the screen keeps it up, checking every few seconds whether setup has finished. If `config.toml` is missing altogether, the board shows the same page, but the settings page can't start until `config.toml` is back (`install.sh` puts the template there).
 
 **Where it works:**
 
@@ -329,7 +352,7 @@ Start the page:
 sudo systemctl enable --now departureboard-web.service
 ```
 
-Open `http://<pi name>.local:8080/`. The first visit asks you to claim the page: press **Show a code on the board**, and the board shows a 6-digit code instead of departures (e-paper can take a minute). Type the code and a new password (10 characters or more). The code works once, for 10 minutes; the departures come back as soon as it is used or runs out.
+Open `http://<pi name>.local:8080/`. The first visit asks you to claim the page: press **Show a code on the board**, and the board shows a 6-digit code instead of departures (e-paper can take a minute). Type the code and a new password (10 characters or more). The code works once, for 10 minutes; the departures (or the set-me-up page) come back as soon as it is used or runs out. On a board not yet set up, claiming it opens the setup wizard.
 
 Forgot the password? Press **Forgot password?** on the sign-in page and do the same. Every browser signed in is signed out.
 
@@ -348,6 +371,8 @@ Settings saved on the page go to `/var/lib/departureboard/settings.toml` and ove
 
 | What you see | Likely cause | What to do |
 |---|---|---|
+| Board says **Set me up** | Not set up yet: `config.toml` is still the template, or missing | Open the address it shows and follow the [setup wizard](#setting-up-home-station-and-stops), or fill in `config.toml` |
+| Setup can't find a postcode, stops or bus companies | The Pi can't reach the services setup asks, or one is down | Check the Pi's internet connection; `journalctl -u departureboard-web -n 20` |
 | E-paper blank after install | No data fetched yet | Wait a minute; check `journalctl -u departureboard -f` |
 | `NOT UPDATING: TRAINS` | Rail key wrong, or the feed is down | `departureboard probe train` |
 | `NOT UPDATING: BUSES` | No bus timetable yet and no TransportAPI keys; or TransportAPI's daily budget spent, its key wrong, or its feed down | Status section on the settings page; `departureboard probe bus` |
