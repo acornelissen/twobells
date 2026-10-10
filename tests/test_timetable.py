@@ -1068,11 +1068,11 @@ ROADS_PAIRS = {(STOP_A, HOWARD), (JUNCTION, GRAPES), (GRAPES, SUNLAWS), (SUNLAWS
                (ST_MARYS_E, ARUNDEL), (ARUNDEL, MARKET_HALL)}
 
 
-def _roads_found(pairs):
+def _roads_found(pairs, progress=None):
     return {pair: [(53.44351, -1.95562)] for pair in pairs}
 
 
-def _failing(pairs):
+def _failing(pairs, progress=None):
     raise RuntimeError("router exploded")
 
 
@@ -1084,7 +1084,7 @@ def test_building_asks_no_router():
 def test_the_road_between_each_pair_of_positioned_stops_is_asked_for_once():
     asked = []
 
-    def route(pairs):
+    def route(pairs, progress):
         asked.append(dict(pairs))
         return _roads_found(pairs) | {("NOT", "ASKED"): [(53.0, -1.0)]}
 
@@ -1103,8 +1103,8 @@ def test_the_road_between_each_pair_of_positioned_stops_is_asked_for_once():
 
 @pytest.mark.parametrize("route", [
     _failing,
-    lambda pairs: None,
-    lambda pairs: {pair: "not points" for pair in pairs},
+    lambda pairs, progress: None,
+    lambda pairs, progress: {pair: "not points" for pair in pairs},
 ])
 def test_a_routing_failure_leaves_the_roads_straight(route, caplog):
     schedule = _routed(_stand_doc(), route)
@@ -1127,7 +1127,7 @@ def test_last_week_s_roads_are_kept_for_the_same_stops_and_only_new_ones_asked_f
     last_week = replace(last_week, positions={**last_week.positions, ARUNDEL: moved}, shapes=shapes)
     asked = []
 
-    def route(pairs):
+    def route(pairs, progress):
         asked.extend(pairs)
         return {pair: [(53.5, -1.8)] for pair in pairs}
 
@@ -1154,7 +1154,7 @@ def _road_build(stops, operators, api_key, now, **options):
 def test_refresh_saves_the_timetable_before_asking_for_its_roads(tmp_path):
     saved_when_asked = []
 
-    def route(pairs):
+    def route(pairs, progress):
         saved_when_asked.append(load(tmp_path))
         return _roads_found(pairs)
 
@@ -1165,7 +1165,7 @@ def test_refresh_saves_the_timetable_before_asking_for_its_roads(tmp_path):
 
 def test_a_timetable_is_kept_when_finding_its_roads_is_stopped(tmp_path):
     # As when the timetable service runs out of time while asking for roads.
-    def route(pairs):
+    def route(pairs, progress):
         raise SystemExit("stopped")
 
     with pytest.raises(SystemExit):
@@ -1197,12 +1197,137 @@ def test_refresh_reuses_the_saved_timetable_s_roads(tmp_path):
     first = refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", build=_road_build, route=_roads_found)
     asked = []
 
-    def route(pairs):
+    def route(pairs, progress):
         asked.extend(pairs)
         return {}
 
     again = refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", force=True, build=_road_build, route=route)
     assert asked == [] and len(again.shapes) == 6 and again.shapes == first.shapes
+
+
+# A timetable saved before its roads are found says so, so that whoever
+# builds next finds them: the wizard's search may be stopped, or the
+# dashboard start again with new settings, while they are being found.
+
+
+def test_a_timetable_is_saved_with_its_roads_to_find_until_they_are_found(tmp_path):
+    seen = []
+
+    def route(pairs, progress):
+        seen.append(load(tmp_path).roads_pending)
+        return _roads_found(pairs)
+
+    schedule = refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", build=_road_build, route=route)
+    assert seen == [True]
+    assert schedule.roads_pending is False and load(tmp_path) == schedule
+
+
+def test_refresh_says_when_the_timetable_is_saved_before_finding_its_roads(tmp_path):
+    told = []
+
+    def route(pairs, progress):
+        told.append("roads")
+        return _roads_found(pairs)
+
+    refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", build=_road_build, route=route,
+            saved=lambda schedule: told.append(("saved", load(tmp_path) == schedule, len(schedule.shapes))))
+    assert told == [("saved", True, 0), "roads"]
+
+
+def test_a_failed_build_says_nothing_was_saved(tmp_path):
+    def failing(*args, **options):
+        raise TimetableError("BODS is down")
+
+    told = []
+    assert refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", build=failing, saved=told.append) is None
+    assert told == []
+
+
+def test_roads_stopped_part_way_are_kept_and_the_rest_found_next_time(tmp_path):
+    first_two = sorted(ROADS_PAIRS)[:2]
+
+    def stopped(pairs, progress):
+        return _roads_found([pair for pair in pairs if pair in first_two])
+
+    kept = refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", build=_road_build, route=stopped,
+                   cancelled=lambda: True)
+    assert kept.roads_pending is True and len(kept.shapes) == 2 and load(tmp_path) == kept
+    asked = []
+
+    def route(pairs, progress):
+        asked.extend(pairs)
+        return _roads_found(pairs)
+
+    def no_build(*args, **options):
+        raise AssertionError("not due, so not built again")
+
+    later = NOW + timedelta(hours=1)
+    found = refresh(tmp_path, {"A": STOP_A}, ["BNML"], later, "k", build=no_build, route=route)
+    assert set(asked) == ROADS_PAIRS - set(first_two)  # only those it hadn't found
+    assert found.roads_pending is False and len(found.shapes) == 6 and load(tmp_path) == found
+    assert found.built == kept.built  # the same timetable, with its roads
+    asked.clear()
+    assert refresh(tmp_path, {"A": STOP_A}, ["BNML"], later, "k", build=no_build, route=route) == found
+    assert asked == []  # nothing left to find
+
+
+def test_a_timetable_saved_before_its_roads_gets_them_from_the_next_build(tmp_path):
+    # As when the process stops while finding them: the hourly upkeep or timer finds them.
+    save(tmp_path, replace(_unrouted(ROADS_DOC), roads_pending=True))
+    found = build(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", route=_roads_found)
+    assert found.roads_pending is False and len(found.shapes) == 6 and load(tmp_path) == found
+
+
+def test_how_far_the_roads_have_got_is_kept_while_they_are_found(tmp_path, monkeypatch):
+    seen = []
+
+    def route(pairs, progress):
+        for done in range(4):
+            progress(done, 3)
+            seen.append(timetable.roads_progress(tmp_path))
+        return _roads_found(pairs)
+
+    monkeypatch.setattr(timetable, "ROADS_EVERY_S", 0)
+    refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", build=_road_build, route=route)
+    assert seen == [(0, 3), (1, 3), (2, 3), (3, 3)]
+    assert timetable.roads_progress(tmp_path) is None  # gone once they're found
+    assert not (tmp_path / timetable.ROADS_FILE).exists()
+
+
+def test_how_far_the_roads_have_got_is_written_now_and_then_and_the_last(tmp_path):
+    clock = [1000.0]
+    progress = timetable.RoadsProgress(tmp_path, clock=lambda: clock[0])
+    progress(0, 10)
+    progress(1, 10)  # too soon after the last: an SD card is spared
+    assert timetable.roads_progress(tmp_path, now=lambda: clock[0]) == (0, 10)
+    clock[0] += timetable.ROADS_EVERY_S
+    progress(2, 10)
+    progress(10, 10)  # the last, at once
+    assert timetable.roads_progress(tmp_path, now=lambda: clock[0]) == (10, 10)
+    assert stat.S_IMODE((tmp_path / timetable.ROADS_FILE).stat().st_mode) == 0o640
+    progress.clear()
+    assert not (tmp_path / timetable.ROADS_FILE).exists()
+
+
+def test_roads_progress_left_by_a_process_that_stopped_is_ignored(tmp_path):
+    timetable.RoadsProgress(tmp_path, clock=lambda: 1000.0)(5, 10)
+    assert timetable.roads_progress(tmp_path, now=lambda: 1000.0 + timetable.ROADS_STALE_S - 1) == (5, 10)
+    assert timetable.roads_progress(tmp_path, now=lambda: 1000.0 + timetable.ROADS_STALE_S + 1) is None
+
+
+@pytest.mark.parametrize("text", ["", "[]", '{"done": 1, "total": 2}', '{"done": "1", "total": 2, "at": 1000}',
+                                  '{"done": 3, "total": 2, "at": 1000}', '{"done": -1, "total": 2, "at": 1000}',
+                                  '{"done": true, "total": 2, "at": 1000}', "x" * 1000])
+def test_roads_progress_that_doesnt_fit_is_ignored(tmp_path, text):
+    (tmp_path / timetable.ROADS_FILE).write_text(text)
+    assert timetable.roads_progress(tmp_path, now=lambda: 1000.0) is None
+
+
+def test_roads_progress_through_a_link_is_ignored(tmp_path):
+    elsewhere = tmp_path / "elsewhere.json"
+    elsewhere.write_text('{"done": 1, "total": 2, "at": 1000}')
+    (tmp_path / timetable.ROADS_FILE).symlink_to(elsewhere)
+    assert timetable.roads_progress(tmp_path, now=lambda: 1000.0) is None
 
 
 def test_a_timetable_from_before_road_shapes_is_due_once():

@@ -108,6 +108,9 @@ class Schedule:
     # left out is drawn straight; empty in a file saved before they were kept.
     # From a file, a SavedRoads: read when first used.
     shapes: Mapping[str, tuple[tuple[float, float], ...]] = field(default_factory=dict)
+    # Saved before its roads were found, or while they were stopped part way:
+    # the next build finds the rest (timetable.refresh). False in older files.
+    roads_pending: bool = False
 
     @property
     def departure_journeys(self) -> tuple[Journey, ...]:
@@ -131,6 +134,7 @@ class Schedule:
             operators=tuple(data.get("operators", ())),
             format=int(data.get("format", 1)),
             shapes=SavedRoads(data.get("shapes", {})),
+            roads_pending=data.get("roads_pending") is True,
         )
 
 

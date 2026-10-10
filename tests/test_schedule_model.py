@@ -74,6 +74,16 @@ def test_road_shapes_round_trip_and_older_files_have_none():
     assert Schedule.from_json(json.dumps(old)).shapes == {}
 
 
+def test_roads_still_to_find_round_trip_and_older_files_have_none_to_find():
+    schedule = Schedule(datetime(2026, 10, 9, 3, 0), None, {"A": "1000DGHS0900"}, (), roads_pending=True)
+    assert Schedule.from_json(schedule.to_json()).roads_pending is True
+    old = json.loads(schedule.to_json())
+    del old["roads_pending"]
+    assert Schedule.from_json(json.dumps(old)).roads_pending is False
+    old["roads_pending"] = "yes"  # only true itself says so; the timetable still loads
+    assert Schedule.from_json(json.dumps(old)).roads_pending is False
+
+
 GOOD_ROAD = [[53.4436, -1.9563]]
 
 

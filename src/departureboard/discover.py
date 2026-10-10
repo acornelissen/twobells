@@ -536,12 +536,13 @@ class SetupJob:
                 failures.append(error)
                 raise
 
-        def progress(done, total):
-            self._set(step=STEP_ROADS, done=done, total=total)
-
-        def roads(pairs):
+        def roads(pairs, progress):
             # As the weekly build asks for them, but stopping when cancelled.
-            return roadshape.segment_shapes(pairs, self._router, cancelled=self._cancel.is_set, progress=progress)
+            def both(done, total):
+                progress(done, total)
+                self._set(step=STEP_ROADS, done=done, total=total)
+
+            return roadshape.segment_shapes(pairs, self._router, cancelled=self._cancel.is_set, progress=both)
 
         now = self._now()
         try:

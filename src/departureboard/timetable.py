@@ -36,7 +36,11 @@ positioned stops, once, and saves it again with the roads for the
 dashboard's maps (add_roads, roadshape.py). A road the last timetable has
 between the same two stops, neither of them moved, is kept rather than asked
 for again. A pair it can't find is drawn straight; the router never costs a
-timetable.
+timetable. Until its roads are found the saved timetable says so
+(roads_pending), so if they are stopped part way (the wizard's search
+cancelled, the process stopped or started again) the next build finds the
+rest, due or not. While they are being found, how far they have got is kept
+in ROADS_FILE for the settings page (roads_progress).
 
 Times. A journey's DepartureTime is when it leaves its first stop. Each
 timing link's RunTime takes it to the next stop, where it may wait before
@@ -64,10 +68,12 @@ Calendars. runs_on() decides, in this order:
 from __future__ import annotations
 
 import fcntl
+import json
 import logging
 import math
 import os
 import re
+import stat
 import tempfile
 import time
 from contextlib import contextmanager
@@ -87,6 +93,10 @@ log = logging.getLogger(__name__)
 FILE_NAME = "bus-timetable.json"  # beside state.json
 LOCK_NAME = "timetable.lock"  # beside it; held while any build runs
 LOCK_WAIT_S = 1.0  # between looks at a held lock, when waiting for it
+ROADS_FILE = "bus-roads.json"  # beside it while its roads are being found: how far they have got
+ROADS_EVERY_S = 5.0  # written at most this often (and the last), to spare an SD card
+ROADS_STALE_S = 60.0  # unwritten this long, whatever was finding them has stopped
+_ROADS_FILE_BYTES = 200
 # The builder's version, saved in the file: an older one is rebuilt (see due).
 # 2: stops keep the letter on their sign.
 # 3: the roads between stops, for the dashboard's maps (shapes).
@@ -113,8 +123,10 @@ FindDatasets = Callable[[str, str, "str | None"], list]  # (api_key, noc, line) 
 Download = Callable[[str, BinaryIO], None]  # (link, file to write it to)
 # atcos -> {atco: (name, lat, lon[, sign letter])}, as routesetup.naptan_stop_details
 Naptan = Callable[[Iterable[str]], dict]
-# {(atco, atco): ((lat, lon), (lat, lon))} -> {(atco, atco): [(lat, lon), ...]}, as roadshape.segment_shapes
-Route = Callable[[Mapping], Mapping]
+# ({(atco, atco): ((lat, lon), (lat, lon))}, progress=...) -> {(atco, atco): [(lat, lon), ...]},
+# as roadshape.segment_shapes
+Route = Callable[..., Mapping]
+Progress = Callable[[int, int], None]  # (done, total)
 
 _NS = {"t": "http://www.transxchange.org.uk/"}
 _DURATION = re.compile(r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)(?:\.\d+)?S)?)?$")
@@ -674,17 +686,18 @@ def _kept_roads(pairs: Mapping, previous: Schedule | None) -> dict[str, tuple[tu
 
 
 def add_roads(schedule: Schedule, route: Route = roadshape.segment_shapes,
-              previous: Schedule | None = None) -> Schedule:
+              previous: Schedule | None = None, progress: Progress = lambda done, total: None) -> Schedule:
     """The schedule with the road between each pair of consecutive positioned
     stops, by roadshape.shape_key, for the maps; none where the router can't
     say (the maps draw those straight). A road in `previous` (the timetable
     this one replaces) between the same two stops, neither of them moved, is
-    kept rather than asked for again. Never fails for the router's sake."""
+    kept rather than asked for again. `progress(done, total)` follows the
+    router's requests. Never fails for the router's sake."""
     pairs = roadshape.segment_pairs(schedule.journeys, schedule.positions)
     kept = _kept_roads(pairs, previous)
     wanted = {pair: ends for pair, ends in pairs.items() if roadshape.shape_key(pair) not in kept}
     try:
-        found = route(wanted)
+        found = route(wanted, progress=progress)
         new = {roadshape.shape_key(pair): tuple((float(lat), float(lon)) for lat, lon in found[pair])
                for pair in wanted if found.get(pair)}
     except Exception as error:  # noqa: BLE001 - straight lines will do
@@ -806,6 +819,75 @@ def load(folder: Path | str) -> Schedule | None:
         return None
 
 
+class RoadsProgress:
+    """How far finding the roads has got, kept in ROADS_FILE beside the
+    timetable for the settings page (roads_progress), which may be another
+    process's. Call it as roadshape.segment_shapes's `progress`; clear() once
+    the roads are found. Written whole, at most every ROADS_EVERY_S seconds
+    and the last; it never fails, as it only says how things are going."""
+
+    def __init__(self, folder: Path | str, clock: Callable[[], float] = time.time) -> None:
+        self._path = Path(folder) / ROADS_FILE
+        self._clock = clock
+        self._written: float | None = None
+
+    def __call__(self, done: int, total: int) -> None:
+        now = self._clock()
+        if self._written is not None and done < total and now - self._written < ROADS_EVERY_S:
+            return
+        self._written = now
+        tmp = self._path.with_suffix(".tmp")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            with os.fdopen(os.open(tmp, flags, 0o640), "w", encoding="utf-8") as file:
+                os.fchmod(file.fileno(), 0o640)
+                file.write(json.dumps({"done": done, "total": total, "at": now}))
+            os.replace(tmp, self._path)
+        except OSError as error:
+            log.warning("Can't keep how far the bus map roads have got: %s", error.strerror or error)
+
+    def clear(self) -> None:
+        try:
+            self._path.unlink(missing_ok=True)
+        except OSError as error:
+            log.warning("Can't remove %s: %s", self._path, error.strerror or error)
+
+
+def roads_progress(folder: Path | str, now: Callable[[], float] = time.time) -> tuple[int, int] | None:
+    """(done, total) while the roads for the maps are being found, from
+    ROADS_FILE. None when they aren't, when it was left by a process that
+    stopped (unwritten for ROADS_STALE_S), or when it isn't a small plain
+    file of two counts and a time."""
+    try:
+        fd = os.open(Path(folder) / ROADS_FILE, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None
+        body = os.read(fd, _ROADS_FILE_BYTES + 1)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+    if len(body) > _ROADS_FILE_BYTES:
+        return None
+    try:
+        data = json.loads(body)
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    done, total, at = data.get("done"), data.get("total"), data.get("at")
+    if any(isinstance(n, bool) or not isinstance(n, int) for n in (done, total)) or not 0 <= done <= total:
+        return None
+    if isinstance(at, bool) or not isinstance(at, (int, float)) or not math.isfinite(at):
+        return None
+    if abs(now() - at) > ROADS_STALE_S:
+        return None
+    return done, total
+
+
 def due(
     schedule: Schedule | None, stops: Mapping[str, str], now: datetime, operators: Iterable[str] | None = None
 ) -> str | None:
@@ -839,26 +921,35 @@ def refresh(
     force: bool = False,
     build: Callable[..., Schedule] = build_schedule,
     route: Route = roadshape.segment_shapes,
+    saved: Callable[[Schedule], None] = lambda schedule: None,
+    cancelled: Callable[[], bool] = lambda: False,
 ) -> Schedule | None:
     """The schedule to use, from `folder` (the state folder). It is built
     again first if it is due (see due: weekly, or when the stops or operators
     change) or `force`d. A failed build keeps the saved one. With nothing due
-    this only reads the saved file.
+    this only reads the saved file, unless its roads are still to be found.
 
-    A new timetable is saved before its roads are asked for (add_roads, with
-    `route`, keeping the saved one's where it can), then saved again with
-    them. However long the router takes, or if this is stopped meanwhile,
-    the timetable is kept, at worst with straight lines on the maps.
+    A new timetable is saved before its roads are asked for, marked
+    roads_pending, and `saved(schedule)` is told; then it is saved again
+    with them (add_roads, with `route`, keeping the saved one's where it
+    can). However long the router takes, or if this is stopped meanwhile,
+    the timetable is kept, at worst with straight lines on the maps. If
+    `cancelled()` says so once they have been asked for (they stopped part
+    way), or this is stopped, they stay pending: the next refresh finds the
+    rest.
 
     It takes no lock: build it with build(), which does."""
     current = load(folder)
     operators = list(operators)
     reason = "asked to" if force else due(current, stops, now, operators)
     if reason is None:
+        if current is not None and current.roads_pending:
+            log.info("Bus timetable saved before all its roads were found: finding the rest")
+            return _with_roads(folder, current, route, current, cancelled)
         return current
     try:
         Path(folder).mkdir(parents=True, exist_ok=True)
-        fresh = build(stops, operators, api_key, now, lines=lines, scratch=folder)
+        fresh = replace(build(stops, operators, api_key, now, lines=lines, scratch=folder), roads_pending=True)
         save(folder, fresh)
     except Exception as error:  # noqa: BLE001 - any failure keeps the last good schedule
         log.warning("Bus timetable not rebuilt (%s), keeping the saved one: %s", reason, safe_message(error))
@@ -866,13 +957,24 @@ def refresh(
     calling = len(fresh.departure_journeys)
     log.info("Bus timetable rebuilt (%s): %d journeys at your stops, %d ending near them", reason, calling,
              len(fresh.journeys) - calling)
+    saved(fresh)
+    return _with_roads(folder, fresh, route, current, cancelled)
+
+
+def _with_roads(folder: Path | str, schedule: Schedule, route: Route, previous: Schedule | None,
+                cancelled: Callable[[], bool]) -> Schedule:
+    """The saved `schedule` with its roads (add_roads), saved again: still
+    pending if `cancelled()` by the end. As it was if they can't be saved."""
+    progress = RoadsProgress(folder)
     try:
-        routed = add_roads(fresh, route, current)
-        if routed.shapes:
-            save(folder, routed)
+        routed = add_roads(schedule, route, previous, progress)
+        routed = replace(routed, roads_pending=cancelled())
+        save(folder, routed)
     except Exception as error:  # noqa: BLE001 - the timetable is saved; the maps draw straight lines
         log.warning("Bus map roads not saved, drawing straight lines: %s", safe_message(error))
-        return fresh
+        return schedule
+    finally:
+        progress.clear()
     return routed
 
 
@@ -919,10 +1021,12 @@ def build(
     **options,
 ) -> Schedule | None:
     """The one way to build the timetable: refresh (with `options`: lines,
-    force, build, route) while holding the store's lock, so two builds never
-    run at once, in this process or another. Without `wait`, TimetableBusy
-    if another build is running; with it, wait for that one (see _lock).
+    force, build, route, saved) while holding the store's lock, so two
+    builds never run at once, in this process or another, and its roads are
+    found under it too. Without `wait`, TimetableBusy if another build is
+    running; with it, wait for that one (see _lock). `cancelled()` stops the
+    wait, and tells refresh whether finding the roads was stopped.
     TimetableError if the lock file can't be opened."""
     folder = Path(folder)
     with _lock(folder, wait, cancelled, waiting):
-        return refresh(folder, stops, operators, now, api_key, **options)
+        return refresh(folder, stops, operators, now, api_key, cancelled=cancelled, **options)
