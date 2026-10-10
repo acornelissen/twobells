@@ -48,6 +48,20 @@ def test_our_stops_and_the_routes_are_drawn_from_the_timetable():
     assert west < -1.965966 and east > -1.948157 and south < 53.443239 and north > 53.444467
 
 
+def test_the_routes_follow_the_timetable_s_roads():
+    from test_livebus import HOWARD, MARKET_HALL
+
+    roads = {f"{HENRY_A}>{MARKET_HALL}": ((53.4620, -1.9495),), f"{HENRY_A}>{HOWARD}": ((53.4436, -1.9485),)}
+    view = area_view(BusBoard([], replace(schedule(), shapes=roads), True, None, [], []), NOW)
+    routes = {r["line"]: r for r in view["routes"]}
+    west = routes["237"]
+    assert west["path"] == [west["points"][0], [53.4620, -1.9495], *west["points"][1:]]
+    east = routes["341"]
+    assert east["path"] == [*east["points"][:-1], [53.4436, -1.9485], east["points"][-1]]
+    # Without roads, straight from stop to stop.
+    assert all(r["path"] == r["points"] for r in area_view(board([]), NOW)["routes"])
+
+
 def test_the_longest_journey_stands_for_its_line_and_destination():
     short = replace(EAST, calls=EAST.calls[3:6], journey_code="short")
     view = area_view(BusBoard([], schedule(short, EAST), True, None, [], []), NOW)

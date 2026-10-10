@@ -189,7 +189,10 @@ function drawMap() {
   layers.clearLayers();
   markers = new Map();
   for (const route of list(area.routes).filter(obj)) {
-    const points = list(route.points).filter((p) => Array.isArray(p) && num(p[0]) !== null && num(p[1]) !== null);
+    const usable = (line) => list(line).filter((p) => Array.isArray(p) && num(p[0]) !== null && num(p[1]) !== null);
+    // Along the roads when the server sends them, else straight from stop to stop.
+    const road = usable(route.path);
+    const points = road.length > 1 ? road : usable(route.points);
     if (points.length > 1) L.polyline(points, { className: "area-route", interactive: false }).addTo(layers);
   }
   for (const stop of list(area.stops).filter(obj)) {

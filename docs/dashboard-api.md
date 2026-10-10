@@ -177,7 +177,7 @@ The map for one bus row; 404 if the id is unknown (as when it's gone from the bo
     {"name": "Park Road", "lat": 53.4433, "lon": -1.9550, "time": "07:16", "yours": false},
     {"name": "Church Street", "lat": 53.4436, "lon": -1.9500, "time": "07:20", "yours": true}
   ],
-  "path": [[53.443494, -1.959026], [53.44352, -1.9558], [53.44386, -1.95069], [53.44384, -1.948999]],
+  "path": [[53.4433, -1.9550], [53.44345, -1.9532], [53.4438, -1.9512], [53.4436, -1.9500]],
   "vehicle": {"lat": 53.4435, "lon": -1.9573, "bearing": 95.0, "recorded_at": "…", "age_s": 40},
   "where": "2 stops away"
 }
@@ -296,7 +296,8 @@ The area map: every live bus on our lines around our stops, from the bus poller'
      "recorded_at": "2026-10-09T10:14:00+01:00", "age_s": 30, "next_stop": "Park Road"}
   ],
   "stops": [{"label": "A", "name": "Church Street", "lat": 53.4436, "lon": -1.9500}],
-  "routes": [{"line": "341", "destination": "Hadfield", "points": [[53.444467, -1.965966], [53.444223, -1.962774]]}]
+  "routes": [{"line": "341", "destination": "Hadfield", "points": [[53.444467, -1.965966], [53.444223, -1.962774]],
+              "path": [[53.444467, -1.965966], [53.44438, -1.96431], [53.444223, -1.962774]]}]
 }
 ```
 
@@ -304,5 +305,5 @@ The area map: every live bus on our lines around our stops, from the bus poller'
 - `box` is west, south, east, north around the timetable's positioned stops (about 1 km wider), or `null`. Only buses inside it, on lines our timetable has, reported in the last 5 minutes, are sent; at most 80.
 - `destination` is the timetabled journey's when the bus was matched to one, else the bus's own. `next_stop` is the next positioned stop on that journey, or `null` when it wasn't matched or the stop isn't positioned. `bearing` and `recorded_at` can be `null`.
 - `stops` are our stops that have a position, by label.
-- `routes`: for each line and destination, the positioned stops of its longest journey, in order, as `[lat, lon]` pairs (at least two); at most 40. Only journeys calling at your stops are drawn, not those kept only to find an inbound bus.
+- `routes`: for each line and destination, the positioned stops of its longest journey, in order, as `[lat, lon]` pairs (at least two); at most 40. Only journeys calling at your stops are drawn, not those kept only to find an inbound bus. `path` is the road through those stops, as for `/api/bus/<id>`: straight between stops the timetable has no road for.
 - **On the page:** "Around here" has an **Area map** button opening a dialog with the map (line numbers on the bus markers, words in the popups), real zoom and "Show the whole area" buttons, the OpenStreetMap credit, and the same buses listed in words, each with a "Show on map" button. It also lists the stations on the train line in order, from the rows' calling points (and `previous_points`), with each train that has a `position` placed at or between stations, in words.

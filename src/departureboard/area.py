@@ -28,6 +28,7 @@ from .bods import Vehicle
 from .bodsbus import BusBoard
 from .disruptions import BusArea, plain_text
 from .livebus import LiveJourney
+from .roadshape import path
 from .schedule_model import Journey, Schedule
 from .snapshot import iso, stop_name
 from .timetable import runs_on
@@ -84,17 +85,19 @@ def _vehicle(vehicle: Vehicle, placed: LiveJourney | None, schedule: Schedule, n
 
 
 def _routes(journeys: Iterable[Journey], schedule: Schedule) -> list[dict]:
-    """Each line and destination's positioned stops, as one line on the map:
-    the journey with the most of them stands for the rest."""
-    best: dict[tuple[str, str], tuple[tuple[float, float], ...]] = {}
+    """Each line and destination's positioned stops, as one line on the map,
+    and the road through them (straight where the timetable has none): the
+    journey with the most of them stands for the rest."""
+    best: dict[tuple[str, str], tuple[str, ...]] = {}
     for journey in journeys:
-        points = tuple((schedule.positions[c.atco].lat, schedule.positions[c.atco].lon)
-                       for c in journey.calls if c.atco in schedule.positions)
+        atcos = tuple(c.atco for c in journey.calls if c.atco in schedule.positions)
         key = (journey.line, journey.destination)
-        if len(points) >= 2 and len(points) > len(best.get(key, ())):
-            best[key] = points
+        if len(atcos) >= 2 and len(atcos) > len(best.get(key, ())):
+            best[key] = atcos
     keys = sorted(best, key=lambda k: (_line_order(k[0]), k[1]))[:MAX_ROUTES]
-    return [{"line": line, "destination": destination, "points": [list(p) for p in best[(line, destination)]]}
+    return [{"line": line, "destination": destination,
+             "points": [[schedule.positions[a].lat, schedule.positions[a].lon] for a in best[(line, destination)]],
+             "path": path(best[(line, destination)], schedule.positions, schedule.shapes)}
             for line, destination in keys]
 
 
