@@ -501,6 +501,76 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .cp-time { font-weight: 700; font-variant-numeric: tabular-nums; }
 .cp-state { color: var(--muted); }
 .cp-cancelled .cp-name { text-decoration: line-through; }
+
+/* The train dialog's journey as a route line (train.js): a dot per stop down
+   the left, solid and filled up to the train, dashed and hollow after it,
+   and the train drawn on the line. --dot-y is the middle of an item's first
+   line, so a stop's rail runs from its dot to the next one's. Drawing only:
+   every item says "passed", "next stop" or "train here" in words. */
+.calling.journey { --dot-y: calc(0.625rem + 0.725rem); padding-left: 0; list-style: none; }
+.journey li { position: relative; padding: 0.625rem 0 0.625rem 2.25rem; border-bottom: 0; }
+.journey li::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  left: 0.75rem;
+  top: var(--dot-y);
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--edge);
+  border-radius: 50%;
+  background: var(--surface);
+  transform: translate(-50%, -50%);
+}
+.journey li.cp-passed::before, .journey li.cp-here::before { border-color: var(--fg); background: var(--fg); }
+.journey li.yours::before { width: 1.125rem; height: 1.125rem; border: 3px solid var(--fg); background: var(--accent); }
+.cp-rail {
+  position: absolute;
+  left: calc(0.75rem - 1.5px);
+  top: var(--dot-y);
+  height: 100%;
+  border-left: 3px dashed var(--edge);
+}
+/* The solid part: all of a passed stop's rail, and the way to the train. */
+.cp-rail::before {
+  content: "";
+  position: absolute;
+  left: -3px;
+  top: 0;
+  width: 3px;
+  height: calc(var(--part, 0) * 100%);
+  background: var(--fg);
+}
+.cp-passed { --part: 1; }
+.cp-train {
+  position: absolute;
+  z-index: 2;
+  left: 0.75rem;
+  top: calc(var(--dot-y) + var(--part, 0) * 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--badge-bg);
+  transform: translate(-50%, -50%);
+}
+.cp-train-glyph { width: 1rem; height: 1rem; fill: var(--badge-fg); }
+.cp-train-window { fill: var(--badge-bg); }
+.cp-train-wheels { fill: none; stroke: var(--badge-fg); stroke-width: 1.5; stroke-linecap: round; }
+.cp-tag {
+  display: inline-block;
+  padding: 0 0.375rem;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.cp-next .cp-tag, .cp-here .cp-tag { color: var(--badge-fg); background: var(--badge-bg); border-color: var(--badge-bg); }
+.cp-passed .cp-name { color: var(--muted); }
 .phrase { font-size: 1.125rem; font-weight: 600; }
 .scroll { overflow-x: auto; }
 table.history { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }

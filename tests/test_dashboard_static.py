@@ -543,6 +543,32 @@ def test_the_disruptions_panel_is_on_the_page():
     assert {"disruptions", "disruptions-heading", "disruptions-status", "disruptions-body"} <= ids
 
 
+# --- The train dialog's journey line ---
+
+
+def _css_rules(selector_part):
+    """The declaration blocks of app.css rules whose selector mentions selector_part."""
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    return [body for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css) if selector_part in selectors]
+
+
+def test_the_train_dialog_draws_the_journey_as_a_route_line():
+    js = (STATIC / "train.js").read_text(encoding="utf-8")
+    assert 'class: ["calling", "journey"]' in js and _css_rules(".calling.journey")
+    for cls in ("cp-rail", "cp-train", "cp-tag"):
+        assert f'"{cls}"' in js and _css_rules(f".{cls}"), cls
+    # The drawing is hidden from screen readers; the words carry it.
+    assert '{ class: "cp-rail", "aria-hidden": "true" }' in js
+    assert '{ class: "cp-train", "aria-hidden": "true" }' in js
+    assert "Train is between" in js and "Train is at" in js and "vh(" in js
+    assert 'passed: "passed", next: "next stop"' in js
+    # The train's place along a gap goes through the CSSOM, never a style attribute.
+    assert 'style.setProperty("--part"' in js
+    # It doesn't move by itself.
+    for body in _css_rules(".cp-") + _css_rules(".journey"):
+        assert "animation" not in body and "transition" not in body
+
+
 # --- Around here: the line and the area map ---
 
 
