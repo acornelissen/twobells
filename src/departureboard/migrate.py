@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Mapping
 
+from . import files
 from .config import OVERLAY_NAME, SECRETS_OVERLAY_NAME, ConfigError, load_env_file, merge, parse_env, saved_only
 from .schema import KEY_VALUE, saved_keys
 from .store import OLD_FOLDER_NAME, PASSWORD_NAME, Store, platform_base
@@ -102,7 +103,7 @@ def adopt_legacy(store: Store, install: str = "desktop", config_data: dict | Non
 
 @contextmanager
 def _locked(path: Path) -> Iterator[None]:
-    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    fd = files.open_lock(path)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         yield

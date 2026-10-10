@@ -26,7 +26,7 @@ from .darwin import CallingPoint, ServiceDetails, TrainBoard, TrainService, trai
 from .enrich import bus_extras, train_arrival
 from .history import Observed, day_type
 from .livebus import LiveDeparture, approach
-from .model import Departure, Status, minutes_between
+from .model import Departure, Status, iso, minutes_between
 from .roadshape import path
 from .route import where
 from .schedule_model import Schedule, StopPosition
@@ -64,10 +64,6 @@ def no_no_shows(route: str, scheduled: str, day: date) -> str | None:
 def row_id(kind: str, identity: str) -> str:
     """The opaque id of a row: 16 hex characters, the same every time for the same departure."""
     return hashlib.sha256(f"{kind}|{identity}".encode()).hexdigest()[:16]
-
-
-def iso(moment: datetime | None) -> str | None:
-    return moment.isoformat(timespec="seconds") if moment is not None else None
 
 
 def status_block(last_success: datetime | None = None, stale: bool = False,

@@ -31,6 +31,10 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
+from .model import iso
+
+from . import files
+
 FILE_NAME = "history.sqlite3"
 SCHEMA_VERSION = 1
 
@@ -133,10 +137,6 @@ def day_type(day: date, holidays: frozenset[date] = frozenset()) -> str:
 _day_type = day_type  # stats() has a parameter of the same name
 
 
-def _iso(moment: datetime) -> str:
-    return moment.isoformat(timespec="seconds")
-
-
 def _naive(moment: datetime, name: str) -> datetime:
     if not isinstance(moment, datetime) or moment.tzinfo is not None:
         raise ValueError(f"{name} must be a naive local datetime")
@@ -168,7 +168,7 @@ def _row(mode: str, row: Observed, polled_at: str) -> tuple:
         mode, row.day.isoformat(), row.scheduled, _text(row.route), _text(row.identity),
         _text(row.service) or "", _text(row.destination) or "", _text(row.platform),
         row.status, row.delay_min, int(bool(row.live)), _text(row.reason),
-        polled_at, polled_at, _iso(departs_at),
+        polled_at, polled_at, iso(departs_at),
     )
 
 
@@ -176,7 +176,7 @@ def _create(path: Path) -> None:
     """Create the file if need be, readable by its owner and group only, as
     timetable.save does. SQLite gives its -wal and -shm files the same mode."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_RDWR | os.O_CREAT | files.NOFOLLOW
     fd = os.open(path, flags, 0o640)
     try:
         os.fchmod(fd, 0o640)  # whatever the umask, or an old file's mode
@@ -240,10 +240,10 @@ class History:
         """Record what a successful poll of `mode` showed at `polled_at`, and
         decide the outcome of anything that has left since the last one."""
         _mode(mode)
-        now = _iso(_naive(polled_at, "polled_at"))
+        now = iso(_naive(polled_at, "polled_at"))
         values = [_row(mode, row, now) for row in rows]  # all checked before any is written
         seen = {(value[1], value[3], value[2]) for value in values}  # (day, route, scheduled)
-        left = _iso(polled_at + _LEFT)
+        left = iso(polled_at + _LEFT)
         with self._lock, self._db:
             self._db.executemany(_UPSERT, values)
             gone = [
@@ -259,7 +259,7 @@ class History:
     def sweep(self, now: datetime) -> None:
         """Decide anything still undecided half an hour after its time: a
         "Delayed" that never got a time, or one that left while the board was off."""
-        stale = _iso(_naive(now, "now") - _STALE)
+        stale = iso(_naive(now, "now") - _STALE)
         with self._lock, self._db:
             rows = self._db.execute(
                 "SELECT mode, day, route, scheduled, last_seen, departs_at FROM outcome"

@@ -45,7 +45,7 @@ from datetime import datetime, time, timedelta, tzinfo
 from .bodsbus import BusBoard
 from .darwin import CallingPoint, TrainService
 from .livebus import LiveDeparture, LiveJourney
-from .model import Status
+from .model import Status, iso
 from .schedule_model import NEAR_M, StopPosition, metres
 
 # An inbound bus arrives at most this long before the departure it works.
@@ -59,13 +59,9 @@ _NAME_LIMIT = 80
 _CLOCK = re.compile(r"([01][0-9]|2[0-3]):[0-5][0-9]")
 
 
-def _iso(moment: datetime) -> str:
-    return moment.isoformat(timespec="seconds")
-
-
 def _arrival(name: str, at: datetime, minutes: int) -> dict:
     """The contract's arrival: `at` is aware, in the board's zone."""
-    return {"name": name, "at": at.strftime("%H:%M"), "at_iso": _iso(at), "minutes": minutes}
+    return {"name": name, "at": at.strftime("%H:%M"), "at_iso": iso(at), "minutes": minutes}
 
 
 # Trains

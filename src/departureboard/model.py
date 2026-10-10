@@ -71,3 +71,8 @@ class Departure:
         fetched = fetched.replace(second=0, microsecond=0)
         leaves = fetched + timedelta(minutes=minutes_between(fetched.strftime("%H:%M"), self._leaves))
         return leaves < now.replace(second=0, microsecond=0)
+
+
+def iso(moment: datetime | None) -> str | None:
+    """`moment` to the second, as the dashboard's API and history give times."""
+    return moment.isoformat(timespec="seconds") if moment is not None else None

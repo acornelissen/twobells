@@ -34,15 +34,16 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, tzinfo
+from functools import partial
 from html.parser import HTMLParser
-from typing import Callable, Iterable, Iterator, Mapping
+from typing import Callable, Iterable, Mapping
 from urllib.parse import urlencode, urlsplit
-from urllib.request import Request
 from xml.etree import ElementTree
 
 from . import http, safexml
 from .schedule_model import Schedule, StopPosition
-from .snapshot import iso, row_id
+from .model import iso
+from .snapshot import row_id
 from .status import safe_message
 
 SIRI_SX_URL = "https://data.bus-data.dft.gov.uk/api/v1/siri-sx/"
@@ -603,19 +604,7 @@ def disruptions_part(bus: list[Disruption], bus_status: dict | None, train: list
 # Fetching.
 
 
-def stream(url: str, headers: Mapping[str, str], max_bytes: int, timeout: float = READ_TIMEOUT) -> Iterator[bytes]:
-    """A response body in chunks as it arrives, refusing anything but https
-    and more than `max_bytes` (http.TooLarge)."""
-    if urlsplit(url).scheme != "https":
-        raise ValueError("Refusing a feed address that isn't https")
-    request = Request(url, headers={"User-Agent": http.USER_AGENT, **headers})
-    total = 0
-    with http.urlopen(request, timeout=timeout) as response:
-        while chunk := response.read(1 << 16):
-            total += len(chunk)
-            if total > max_bytes:
-                raise http.TooLarge(f"Response larger than {max_bytes} bytes")
-            yield chunk
+stream = partial(http.stream, timeout=READ_TIMEOUT)
 
 
 def _failure(error: BaseException, key: str) -> RuntimeError:

@@ -22,12 +22,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Callable, Mapping, NamedTuple
 
+from . import files
 from .http import get_bytes
 from .status import safe_message
 
@@ -187,10 +187,7 @@ def _save(path: Path, fetched: datetime | None, checked: datetime,
         ],
     }
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(record, indent=2), encoding="utf-8")
-        os.replace(tmp, path)
+        files.write_atomic(path, json.dumps(record, indent=2), 0o640)
     except OSError as error:
         log.warning("Can't save the bank holiday cache %s: %s", path, error)
 

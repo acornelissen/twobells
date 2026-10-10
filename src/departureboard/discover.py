@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import BinaryIO, Callable, Iterable, Mapping
 from urllib.parse import urlencode, urlsplit
 
-from . import roadshape, routesetup, timetable
+from . import files, roadshape, routesetup, timetable
 from .bods import DEFAULT_BASE_URL, redact_key
 from .http import get_bytes
 from .overlay import _toml_key, _toml_string
@@ -475,8 +475,7 @@ class SetupJob:
 
     def _take_lock(self) -> None:
         self._folder.mkdir(parents=True, exist_ok=True)
-        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
-        fd = os.open(self._folder / LOCK_NAME, flags, 0o600)
+        fd = files.open_lock(self._folder / LOCK_NAME)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:

@@ -18,7 +18,6 @@ from departureboard.disruptions import (
     parse_siri_sx,
     plain_text,
     safe_link,
-    stream,
     train_disruptions,
 )
 from departureboard.safexml import DoctypeError
@@ -288,10 +287,10 @@ def test_a_response_bigger_than_the_cap_is_refused(monkeypatch):
     sent = []
     monkeypatch.setattr(http, "urlopen", lambda request, timeout: sent.append(request) or FakeResponse(b"x" * 300_000))
     with pytest.raises(http.TooLarge):
-        list(stream("https://example.test/feed", {"x-apikey": "k"}, 200_000))
+        list(http.stream("https://example.test/feed", {"x-apikey": "k"}, 200_000))
     assert sent[0].get_header("X-apikey") == "k"
     with pytest.raises(ValueError, match="https"):
-        list(stream("http://example.test/feed", {}, 10))
+        list(http.stream("http://example.test/feed", {}, 10))
 
 
 def test_the_bus_source_asks_siri_sx_with_the_key_and_never_repeats_it():

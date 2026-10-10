@@ -82,9 +82,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import AbstractSet, BinaryIO, Callable, Collection, Iterable, Iterator, Mapping, NamedTuple
 from urllib.parse import urlsplit
-from urllib.request import Request
 
-from . import http, roadshape, routesetup, safexml
+from . import files, http, roadshape, routesetup, safexml
 from .schedule_model import NEAR_M, Calendar, Call, DateRange, Journey, Schedule, StopPosition, metres
 from .status import safe_message
 
@@ -598,14 +597,11 @@ def download(url: str, file: BinaryIO, max_bytes: int = routesetup.MAX_DOWNLOAD_
     but https, and more than `max_bytes`."""
     if urlsplit(url).scheme != "https":
         raise TimetableError("Refusing a timetable link that isn't https")
-    request = Request(url, headers={"User-Agent": http.USER_AGENT})
-    total = 0
-    with http.urlopen(request, timeout=DOWNLOAD_TIMEOUT) as response:
-        while chunk := response.read(1 << 16):
-            total += len(chunk)
-            if total > max_bytes:
-                raise TimetableError(f"Timetable download larger than {max_bytes} bytes; refusing")
+    try:
+        for chunk in http.stream(url, {}, max_bytes, timeout=DOWNLOAD_TIMEOUT):
             file.write(chunk)
+    except http.TooLarge:
+        raise TimetableError(f"Timetable download larger than {max_bytes} bytes; refusing") from None
 
 
 def _dataset_links(operators: Iterable[str], api_key: str, lines, find_datasets: FindDatasets) -> list[tuple[str, str]]:
@@ -791,17 +787,7 @@ def build_schedule(
 def save(folder: Path | str, schedule: Schedule) -> None:
     """Save the schedule beside the state file, whole or not at all, readable
     by its owner and group only."""
-    path = Path(folder) / FILE_NAME
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
-    with os.fdopen(os.open(tmp, flags, 0o640), "w", encoding="utf-8") as file:
-        os.fchmod(file.fileno(), 0o640)  # whatever the umask, or a leftover file's mode
-        file.write(schedule.to_json())
-        file.flush()
-        # On disk before it replaces the old file, so a power cut can't leave it empty.
-        os.fsync(file.fileno())
-    os.replace(tmp, path)
+    files.write_atomic(Path(folder) / FILE_NAME, schedule.to_json(), 0o640)
 
 
 def load(folder: Path | str) -> Schedule | None:
@@ -836,13 +822,8 @@ class RoadsProgress:
         if self._written is not None and done < total and now - self._written < ROADS_EVERY_S:
             return
         self._written = now
-        tmp = self._path.with_suffix(".tmp")
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
         try:
-            with os.fdopen(os.open(tmp, flags, 0o640), "w", encoding="utf-8") as file:
-                os.fchmod(file.fileno(), 0o640)
-                file.write(json.dumps({"done": done, "total": total, "at": now}))
-            os.replace(tmp, self._path)
+            files.write_atomic(self._path, json.dumps({"done": done, "total": total, "at": now}), 0o640)
         except OSError as error:
             log.warning("Can't keep how far the bus map roads have got: %s", error.strerror or error)
 
@@ -859,7 +840,7 @@ def roads_progress(folder: Path | str, now: Callable[[], float] = time.time) -> 
     stopped (unwritten for ROADS_STALE_S), or when it isn't a small plain
     file of two counts and a time."""
     try:
-        fd = os.open(Path(folder) / ROADS_FILE, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
+        fd = os.open(Path(folder) / ROADS_FILE, os.O_RDONLY | os.O_NONBLOCK | files.NOFOLLOW)
     except OSError:
         return None
     try:
@@ -987,7 +968,7 @@ def _lock(folder: Path, wait: bool, cancelled: Callable[[], bool], waiting: Call
     path = folder / LOCK_NAME
     try:
         folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-        fd = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        fd = files.open_lock(path)
     except OSError as error:
         raise TimetableError(f"Can't open {path}: {error.strerror or error}") from None
     try:

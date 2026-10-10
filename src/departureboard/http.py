@@ -6,6 +6,7 @@ import io
 import json
 import time
 from functools import partial
+from typing import Iterator, Mapping
 from http.client import HTTPConnection, HTTPSConnection
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
@@ -202,3 +203,18 @@ def get_bytes(url: str, max_bytes: int, timeout: float = 15.0, headers: dict | N
     if len(body) > max_bytes:
         raise ValueError(f"Response larger than {max_bytes} bytes")
     return body
+
+
+def stream(url: str, headers: Mapping[str, str], max_bytes: int, timeout: float = 15.0) -> Iterator[bytes]:
+    """A response body in chunks as it arrives, refusing anything but https
+    (ValueError) and more than `max_bytes` (TooLarge)."""
+    if urlsplit(url).scheme != "https":
+        raise ValueError("Refusing an address that isn't https")
+    request = Request(url, headers={"User-Agent": USER_AGENT, **headers})
+    total = 0
+    with urlopen(request, timeout=timeout) as response:
+        while chunk := response.read(1 << 16):
+            total += len(chunk)
+            if total > max_bytes:
+                raise TooLarge(f"Response larger than {max_bytes} bytes")
+            yield chunk

@@ -50,17 +50,17 @@ def test_malformed_departures_are_skipped_with_a_warning(caplog):
 
 
 def test_save_flushes_to_disk_before_replacing(tmp_path, monkeypatch):
-    import departureboard.state as state
+    import departureboard.files as files  # state.json is written through files.write_atomic
 
     calls = []
-    replace = state.os.replace
+    replace = files.os.replace
 
     def replacing(src, dst):
         calls.append("replace")
         replace(src, dst)
 
-    monkeypatch.setattr(state.os, "fsync", lambda fd: calls.append("fsync"))
-    monkeypatch.setattr(state.os, "replace", replacing)
+    monkeypatch.setattr(files.os, "fsync", lambda fd: calls.append("fsync"))
+    monkeypatch.setattr(files.os, "replace", replacing)
     StateStore(tmp_path / "state.json").save({"a": 1})
     assert calls == ["fsync", "replace"]
     assert StateStore(tmp_path / "state.json").load() == {"a": 1}

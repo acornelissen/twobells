@@ -30,7 +30,8 @@ from .disruptions import BusArea, plain_text
 from .livebus import LiveJourney
 from .roadshape import path
 from .schedule_model import Journey, Schedule
-from .snapshot import iso, stop_name
+from .model import iso
+from .snapshot import stop_name
 from .timetable import runs_on
 
 CHANGE_DAYS = 28

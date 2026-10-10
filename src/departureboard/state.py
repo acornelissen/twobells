@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
+from . import files
 from .bods import Vehicle
 from .model import Departure, Status
 
@@ -85,11 +85,4 @@ class StateStore:
         return state
 
     def save(self, state: dict) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as file:
-            file.write(json.dumps(state, indent=2))
-            file.flush()
-            # On disk before it replaces the old file, so a power cut can't leave it empty.
-            os.fsync(file.fileno())
-        os.replace(tmp, self._path)
+        files.write_atomic(self._path, json.dumps(state, indent=2), 0o640)

@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Mapping, Protocol, Sequence
 from urllib.parse import urlsplit
 
+from . import files
 from .bodsbus import BusBoard
 from .config import ConfigError, _flag, _table, _texts, _whole, settings_from, switched_on
 from .darwin import DarwinSource, ServiceDetails, ServiceDetailsClient, TrainBoard
@@ -235,9 +236,8 @@ class DashboardSettings:
 
 def _lock(folder: Path) -> IO:
     """An exclusive lock on the folder, held until the file is closed."""
-    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
     try:
-        fd = os.open(folder / LOCK_FILE, flags, 0o600)
+        fd = files.open_lock(folder / LOCK_FILE)
     except OSError as error:
         raise ConfigError(f"Can't open {folder / LOCK_FILE}: {error.strerror or error}") from None
     handle = os.fdopen(fd, "r+")

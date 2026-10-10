@@ -30,6 +30,8 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlparse
 
+from . import files
+
 log = logging.getLogger(__name__)
 
 MIN_PASSWORD = 10
@@ -83,12 +85,7 @@ class PasswordStore:
         salt = secrets.token_bytes(16)
         digest = hashlib.scrypt(password.encode(), salt=salt, dklen=32, **SCRYPT)
         record = {"salt": salt.hex(), "hash": digest.hex(), **SCRYPT}
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_suffix(".tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as handle:
-            json.dump(record, handle)
-        os.replace(tmp, self._path)
+        files.write_atomic(self._path, json.dumps(record), 0o600)
 
     def stamp(self) -> str | None:
         """What identifies the saved password: its salt, new with every change.
@@ -557,7 +554,7 @@ class ResetCodes:
     def _locked(self):
         """The lock, held until the returned file is closed."""
         self._folder.mkdir(parents=True, exist_ok=True)
-        handle = os.fdopen(os.open(self._lock_path, os.O_RDWR | os.O_CREAT, 0o600), "r+")
+        handle = os.fdopen(files.open_lock(self._lock_path), "r+")
         try:
             fcntl.flock(handle, fcntl.LOCK_EX)
         except OSError:
@@ -567,13 +564,7 @@ class ResetCodes:
 
     @staticmethod
     def _write(path: Path, data: dict) -> None:
-        tmp = path.with_suffix(".tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as handle:
-            json.dump(data, handle)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, path)
+        files.write_atomic(path, json.dumps(data), 0o600)
 
     @staticmethod
     def _read(path: Path) -> dict:

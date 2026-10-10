@@ -95,7 +95,7 @@ import time
 from pathlib import Path
 from typing import Callable, Mapping
 
-from . import discover, keytest, routesetup, setup
+from . import discover, files, keytest, routesetup, setup
 from .schema import ATCO as _ATCO
 from .schema import CONTROL as _CONTROL
 from .schema import KEY_VALUE as _KEY_VALUE
@@ -144,8 +144,6 @@ _ID = re.compile(r"^[0-9a-f]{32}$")
 _FILE = re.compile(r"^([0-9a-f]{32})\.json$")
 _CRS = re.compile(r"^[A-Z]{3}$")  # upper case, as setup sends it
 _LINE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ./+-]{0,15}$")
-_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
-_O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
 _STATES = ("queued", "running", "done", "failed")
 _FINISHED = ("done", "failed")
 
@@ -517,7 +515,7 @@ class Spool:
         if len(body) > cap:
             raise ValueError("Too big for the setup spool")
         tmp = self.tmp / f"{file_id}.{secrets.token_hex(4)}.tmp"
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_NOFOLLOW | _O_CLOEXEC, 0o600)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | files.NOFOLLOW | files.CLOEXEC, 0o600)
         try:
             with os.fdopen(fd, "wb") as file:
                 file.write(body)
@@ -532,7 +530,7 @@ class Spool:
         file of ours, with one link, within `cap`. With `delete`, it is gone
         afterwards whatever it held."""
         try:
-            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | _O_NOFOLLOW | _O_CLOEXEC)
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | files.NOFOLLOW | files.CLOEXEC)
         except FileNotFoundError:
             return None
         except OSError:  # a link, or something else that won't open as a file
@@ -903,7 +901,7 @@ class Worker:
         each time round once the lock is held; while it says True the
         service stays up, however idle."""
         self.spool.make()
-        fd = os.open(self.spool.folder / WORKER_LOCK, os.O_RDWR | os.O_CREAT | _O_NOFOLLOW | _O_CLOEXEC, 0o600)
+        fd = files.open_lock(self.spool.folder / WORKER_LOCK)
         try:
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)

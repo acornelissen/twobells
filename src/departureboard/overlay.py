@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping
 
+from . import files
 from .config import (
     OVERLAY_NAME,
     SECRETS_OVERLAY_NAME,
@@ -70,13 +71,7 @@ def _toml_key(key: str) -> str:
 
 def _write(path: Path, text: str | bytes, mode: int) -> None:
     """Replace a file whole: written aside with `mode`, then renamed over it."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
-    with os.fdopen(fd, "wb") as handle:
-        handle.write(text.encode("utf-8") if isinstance(text, str) else text)
-    os.chmod(tmp, mode)
-    os.replace(tmp, path)
+    files.write_atomic(path, text, mode)
 
 
 def _keep_broken(path: Path) -> None:
@@ -84,7 +79,7 @@ def _keep_broken(path: Path) -> None:
     beside it (for its owner only), before it is replaced. OSError if it
     can't be kept, so it isn't replaced either."""
     try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        fd = os.open(path, os.O_RDONLY | files.NOFOLLOW)
     except FileNotFoundError:
         return  # gone since it was read: nothing to keep
     with os.fdopen(fd, "rb") as handle:
