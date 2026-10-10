@@ -325,10 +325,15 @@ export function stopNames(stops) {
   return names;
 }
 
+// Stop names up to this long stay whole on one line ("Henry Street A");
+// longer ones may wrap.
+const SHORT_STOP = 18;
+
 // A stop's name for display, its short sign letter or number kept on the
 // line with the word before it, so "Henry Street A" never wraps to leave the
 // "A" alone. The text is unchanged; only where it may wrap.
 export function stopLabel(text) {
+  if (text && text.length <= SHORT_STOP) return ["", h("span", { class: "nobreak" }, text)];
   const match = /^(.*?)(\S+ \S{1,3})$/.exec(text);
   return match ? [match[1], h("span", { class: "nobreak" }, match[2])] : text;
 }

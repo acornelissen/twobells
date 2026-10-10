@@ -1342,14 +1342,18 @@ def test_a_stop_letter_never_wraps_away_from_its_name():
             typeof part === "string" ? ["text", part] : [part.getAttribute("class"), part.textContent]);
         };
         console.log(JSON.stringify([parts("Henry Street A"), parts("Henry Street (B)"), parts("Stand 12"),
-          parts("Victoria Street towards Market Hall"), parts("Glossop")]));
+          parts("Victoria Street towards Market Hall"), parts("Glossop"), parts("Glossop Brook Road Stop C")]));
     """)
+    # A short stop's name stays whole on one line, so a bus row isn't three
+    # lines tall for "Henry / Street A"; a long one may wrap, never before
+    # its letter.
     assert found == [
-        [["text", "Henry "], ["nobreak", "Street A"]],
-        [["text", "Henry "], ["nobreak", "Street (B)"]],
+        [["text", ""], ["nobreak", "Henry Street A"]],
+        [["text", ""], ["nobreak", "Henry Street (B)"]],
         [["text", ""], ["nobreak", "Stand 12"]],
         [["text", "Victoria Street towards Market Hall"]],
-        [["text", "Glossop"]],
+        [["text", ""], ["nobreak", "Glossop"]],
+        [["text", "Glossop Brook Road "], ["nobreak", "Stop C"]],
     ]
     css = (STATIC / "app.css").read_text(encoding="utf-8")
     assert re.search(r"\.nobreak\s*\{\s*white-space:\s*nowrap;", css)
