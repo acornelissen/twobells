@@ -7,15 +7,21 @@ from zoneinfo import ZoneInfo
 import pytest
 from test_livebus import HALFWAY, HENRY_A, at, bus, schedule
 
-from departureboard.bodsbus import BusBoard
-from departureboard.collector import Collector, Poller
-from departureboard.darwin import DetailsError, DetailsUnavailable, ServiceGone, parse_board_rich, parse_service_details
-from departureboard.dashconfig import DashboardOptions, DashboardSettings
-from departureboard.history import Stats
-from departureboard.livebus import live_board
-from departureboard.snapshot import Hub
-from departureboard.walk import WalkTimes
-from departureboard.weather import parse_conditions
+from departureboard.core.walk import WalkTimes
+from departureboard.dashboard.collector import Collector, Poller
+from departureboard.dashboard.config import DashboardOptions, DashboardSettings
+from departureboard.dashboard.history import Stats
+from departureboard.dashboard.snapshot import Hub
+from departureboard.sources.bodsbus import BusBoard
+from departureboard.sources.darwin import (
+    DetailsError,
+    DetailsUnavailable,
+    ServiceGone,
+    parse_board_rich,
+    parse_service_details,
+)
+from departureboard.sources.livebus import live_board
+from departureboard.sources.weather import parse_conditions
 
 LONDON = ZoneInfo("Europe/London")
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -338,7 +344,7 @@ def test_a_refused_key_turns_details_off_for_six_hours(tmp_path, caplog):
     setup.monotonic.now += 61
     setup.details.errors["*"] = DetailsUnavailable("Service details refused the key (HTTP 403)")
     setup.details.asked.clear()
-    with caplog.at_level("WARNING", logger="departureboard.collector"):
+    with caplog.at_level("WARNING", logger="departureboard.dashboard.collector"):
         setup.collector.poll_trains()  # the board itself still works
         setup.monotonic.now += 3600
         setup.collector.poll_trains()
@@ -358,7 +364,7 @@ def test_a_refused_key_turns_details_off_for_six_hours(tmp_path, caplog):
 def test_other_failures_skip_that_train_this_round(tmp_path, caplog):
     setup = Setup(tmp_path, now=TONIGHT, details=True)
     setup.details.errors[IDS[1]] = DetailsError("HTTP Error 500: Internal Server Error")
-    with caplog.at_level("WARNING", logger="departureboard.collector"):
+    with caplog.at_level("WARNING", logger="departureboard.dashboard.collector"):
         setup.collector.poll_trains()
     assert setup.details.asked == IDS[:3]
     assert [p is not None for p in positions(setup)[:3]] == [True, False, True]
@@ -375,7 +381,7 @@ def test_a_failure_keeps_what_was_known_and_never_logs_a_key(tmp_path, caplog):
     setup.collector.poll_trains()
     setup.monotonic.now += 61
     setup.details.errors["*"] = RuntimeError("timed out: x-apikey=SECRET123")
-    with caplog.at_level("WARNING", logger="departureboard.collector"):
+    with caplog.at_level("WARNING", logger="departureboard.dashboard.collector"):
         setup.collector.poll_trains()
     assert positions(setup)[0] is not None
     assert "SECRET123" not in caplog.text and "SECRET123" not in setup.hub.current()[1].decode()
@@ -517,8 +523,8 @@ def test_without_bods_buses_the_buses_say_why_and_nothing_polls_them(tmp_path):
     # The board's buses come from TransportAPI, which the dashboard never uses.
     from dataclasses import replace
 
-    from departureboard.collector import Collector
-    from departureboard.dashconfig import BUS_NOTE
+    from departureboard.dashboard.collector import Collector
+    from departureboard.dashboard.config import BUS_NOTE
 
     setup = Setup(tmp_path, buses=False)
     settings = replace(setup.settings, bus_note=BUS_NOTE)
@@ -603,7 +609,7 @@ def test_upkeep_without_build_timetable_shows_the_timetable_others_build(tmp_pat
 
 
 def test_upkeep_skips_the_timetable_while_another_build_runs(tmp_path, caplog):
-    from departureboard.timetable import TimetableBusy
+    from departureboard.timetable.build import TimetableBusy
 
     setup = Setup(tmp_path, reason="there is no bus timetable yet")
 
@@ -645,7 +651,7 @@ def test_outside_the_quiet_windows_polling_goes_on(tmp_path):
 
 
 def test_quiet_windows_come_from_the_options(tmp_path):
-    from departureboard.schedule import parse_window
+    from departureboard.core.polling import parse_window
 
     setup = Setup(tmp_path, now=at(12, 0), options=DashboardOptions(quiet_windows=(parse_window("Fri 11:00-13:00"),)))
     assert setup.collector.quiet()
@@ -691,7 +697,7 @@ class Feed:
 
 
 def disrupted(tmp_path, now=datetime(2026, 10, 9, 23, 14, tzinfo=LONDON), bus=True, train=True, note=None):
-    from departureboard.disruptions import parse_kb_incidents, parse_siri_sx
+    from departureboard.sources.disruptions import parse_kb_incidents, parse_siri_sx
 
     setup = Setup(tmp_path, now=now)
     setup.situations = Feed(parse_siri_sx, FIXTURES / "bods_siri_sx_glossop.xml")
@@ -786,7 +792,7 @@ def test_each_bus_poll_keeps_the_area_map_without_asking_again(tmp_path):
 
 
 def test_timetable_changes_are_worked_out_once_per_timetable_and_day(tmp_path, monkeypatch):
-    from departureboard import collector as module
+    from departureboard.dashboard import collector as module
 
     calls = []
     monkeypatch.setattr(module, "timetable_changes",

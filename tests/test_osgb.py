@@ -1,6 +1,6 @@
 import pytest
 
-from departureboard.osgb import distance_m, grid_to_latlon
+from departureboard.core.osgb import distance_m, grid_to_latlon
 
 
 @pytest.mark.parametrize(

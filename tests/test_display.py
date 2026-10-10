@@ -1,6 +1,6 @@
 from PIL import Image
 
-from departureboard.display import InkyDisplay, PngDisplay
+from departureboard.board.displays.display import InkyDisplay, PngDisplay
 
 
 class FakeInky:
@@ -64,7 +64,7 @@ def test_png_display_writes_preview(tmp_path):
 
 
 def test_inky_phat_is_the_default_panel():
-    from departureboard.panel import PHAT
+    from departureboard.board.panel import PHAT
 
     assert InkyDisplay(device=FakeInky()).panel == PHAT
 
@@ -77,7 +77,7 @@ def test_other_inky_sizes_are_drawn_at_their_own_size():
 
 
 def test_png_display_can_preview_another_panel(tmp_path):
-    from departureboard.panel import WAVESHARE_10IN85G
+    from departureboard.board.panel import WAVESHARE_10IN85G
 
     display = PngDisplay(tmp_path / "big.png", panel=WAVESHARE_10IN85G)
     assert display.panel == WAVESHARE_10IN85G
@@ -86,15 +86,15 @@ def test_png_display_can_preview_another_panel(tmp_path):
 def test_open_display_refuses_an_unknown_name():
     import pytest
 
-    from departureboard.display import open_display
+    from departureboard.board.displays.display import open_display
 
     with pytest.raises(ValueError, match="inky"):
         open_display("crt", "red")
 
 
 def test_every_display_setting_has_a_panel():
-    from departureboard.display import DISPLAY_PANELS
-    from departureboard.panel import HDMI_1280X400, PHAT, PHAT_V1, WAVESHARE_10IN85G
+    from departureboard.board.displays.display import DISPLAY_PANELS
+    from departureboard.board.panel import HDMI_1280X400, PHAT, PHAT_V1, WAVESHARE_10IN85G
 
     assert DISPLAY_PANELS == {
         "inky": PHAT,
@@ -121,9 +121,9 @@ class FakeOldPHAT:
 
 
 def test_the_original_phat_is_its_own_display_setting(monkeypatch):
-    from departureboard import display as display_module
-    from departureboard.display import DISPLAY_PANELS, open_display
-    from departureboard.panel import PHAT_V1
+    from departureboard.board.displays import display as display_module
+    from departureboard.board.displays.display import DISPLAY_PANELS, open_display
+    from departureboard.board.panel import PHAT_V1
 
     made = []
     monkeypatch.setattr(display_module, "_original_phat", lambda colour: made.append(colour) or FakeOldPHAT(colour))
@@ -135,7 +135,7 @@ def test_the_original_phat_is_its_own_display_setting(monkeypatch):
 
 
 def test_a_board_without_an_eeprom_gets_a_helpful_error():
-    from departureboard.display import InkyDisplay
+    from departureboard.board.displays.display import InkyDisplay
 
     def no_eeprom():
         raise RuntimeError("No EEPROM detected! You must manually initialise your Inky board.")
@@ -147,8 +147,8 @@ def test_a_board_without_an_eeprom_gets_a_helpful_error():
 
 
 def test_the_original_phat_is_set_up_with_its_panel_colour(monkeypatch):
-    from departureboard import display as display_module
-    from departureboard.display import open_display
+    from departureboard.board.displays import display as display_module
+    from departureboard.board.displays.display import open_display
 
     made = []
     monkeypatch.setattr(display_module, "_original_phat", lambda colour: made.append(colour) or FakeOldPHAT(colour))

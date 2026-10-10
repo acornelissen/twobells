@@ -1,4 +1,4 @@
-from departureboard.panel import HDMI_1280X400, PANELS, PHAT, WAVESHARE_10IN85G, Panel
+from departureboard.board.panel import HDMI_1280X400, PANELS, PHAT, WAVESHARE_10IN85G, Panel
 
 
 def test_phat_is_drawn_at_one_pixel_per_dot():

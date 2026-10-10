@@ -5,8 +5,9 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from departureboard.bods import Vehicle, parse_siri_vm
-from departureboard.livebus import (
+from departureboard.core.model import Status
+from departureboard.sources.bods import Vehicle, parse_siri_vm
+from departureboard.sources.livebus import (
     Progress,
     approach,
     departures,
@@ -15,8 +16,7 @@ from departureboard.livebus import (
     match,
     progress,
 )
-from departureboard.model import Status
-from departureboard.schedule_model import Calendar, Call, Journey, Schedule, StopPosition
+from departureboard.timetable.model import Calendar, Call, Journey, Schedule, StopPosition
 
 LONDON = ZoneInfo("Europe/London")
 UTC = UTC

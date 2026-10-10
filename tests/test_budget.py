@@ -1,6 +1,6 @@
 from datetime import date
 
-from departureboard.budget import DailyBudget
+from departureboard.core.budget import DailyBudget
 
 TODAY = date(2026, 10, 8)
 TOMORROW = date(2026, 10, 9)

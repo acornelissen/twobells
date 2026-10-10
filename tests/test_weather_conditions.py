@@ -7,8 +7,8 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from departureboard import http
-from departureboard.weather import (
+from departureboard.core import net
+from departureboard.sources.weather import (
     MAX_BYTES,
     WMO_TEXT,
     Current,
@@ -291,7 +291,7 @@ def test_an_oversized_response_is_refused_before_parsing(monkeypatch):
     class Response(io.BytesIO):
         pass
 
-    monkeypatch.setattr(http, "urlopen", lambda request, timeout: Response(b" " * (MAX_BYTES + 10)))
+    monkeypatch.setattr(net, "urlopen", lambda request, timeout: Response(b" " * (MAX_BYTES + 10)))
     with pytest.raises(ValueError, match="larger than"):
         OpenMeteoSource(53.44, -1.95).fetch_conditions()
 

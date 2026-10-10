@@ -1,5 +1,5 @@
-from departureboard.model import Departure, Status, shift
-from departureboard.walk import WalkTimes, leave_by, leave_time
+from departureboard.core.model import Departure, Status, shift
+from departureboard.core.walk import WalkTimes, leave_by, leave_time
 
 
 def train(scheduled, expected=None, status=Status.ON_TIME):

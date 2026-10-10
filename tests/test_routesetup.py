@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from departureboard.routesetup import (
+from departureboard.timetable.routesetup import (
     MAX_STOPS,
     Pattern,
     RouteSetupError,
@@ -130,7 +130,7 @@ def test_a_download_can_be_read_from_a_file(tmp_path):
 
 
 def test_an_oversized_plain_file_is_refused(tmp_path, monkeypatch):
-    from departureboard import routesetup
+    from departureboard.timetable import routesetup
 
     monkeypatch.setattr(routesetup, "MAX_XML_BYTES", 10)
     plain = tmp_path / "plain"
@@ -140,7 +140,7 @@ def test_an_oversized_plain_file_is_refused(tmp_path, monkeypatch):
 
 
 def test_too_many_files_in_a_zip_is_refused(monkeypatch):
-    from departureboard import routesetup
+    from departureboard.timetable import routesetup
 
     monkeypatch.setattr(routesetup, "MAX_ZIP_MEMBERS", 2)
     with pytest.raises(RouteSetupError, match="refusing"):
@@ -148,7 +148,7 @@ def test_too_many_files_in_a_zip_is_refused(monkeypatch):
 
 
 def test_oversized_file_in_a_zip_is_refused(monkeypatch):
-    from departureboard import routesetup
+    from departureboard.timetable import routesetup
 
     monkeypatch.setattr(routesetup, "MAX_XML_BYTES", 10)
     with pytest.raises(RouteSetupError, match="refusing"):
@@ -156,7 +156,7 @@ def test_oversized_file_in_a_zip_is_refused(monkeypatch):
 
 
 def test_a_zip_unpacking_to_too_much_in_total_is_refused(monkeypatch):
-    from departureboard import routesetup
+    from departureboard.timetable import routesetup
 
     monkeypatch.setattr(routesetup, "MAX_UNZIPPED_BYTES", 150)
     files = {f"{i}.xml": b"<x>" + b"a" * 50 + b"</x>" for i in range(3)}  # 57 bytes each
@@ -168,7 +168,7 @@ def test_a_zip_unpacking_to_too_much_in_total_is_refused(monkeypatch):
 
 
 def test_a_zip_within_the_total_is_read_whole(monkeypatch):
-    from departureboard import routesetup
+    from departureboard.timetable import routesetup
 
     monkeypatch.setattr(routesetup, "MAX_UNZIPPED_BYTES", 171)
     files = {f"{i}.xml": b"<x>" + b"a" * 50 + b"</x>" for i in range(3)}

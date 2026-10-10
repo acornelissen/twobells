@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from departureboard import holidays
-from departureboard.holidays import CACHE_NAME, URL, bank_holidays, parse, read_cache
+from departureboard.sources import holidays
+from departureboard.sources.holidays import CACHE_NAME, URL, bank_holidays, parse, read_cache
 
 BODY = (Path(__file__).parent / "fixtures" / "govuk_bank_holidays.json").read_bytes()
 ENGLAND_AND_WALES = frozenset(date.fromisoformat(d) for d in (

@@ -9,12 +9,12 @@ import time
 
 import pytest
 
-from departureboard.dashserver import DashboardApp, StaticFiles, make_server
-from departureboard.installs import install_named
-from departureboard.settingsite import SettingsSite
-from departureboard.snapshot import Hub
-from departureboard.store import Store
-from departureboard.walk import WalkTimes
+from departureboard.core.walk import WalkTimes
+from departureboard.dashboard.snapshot import Hub
+from departureboard.settings.installs import install_named
+from departureboard.settings.store import Store
+from departureboard.web.server import DashboardApp, StaticFiles, make_server
+from departureboard.web.settingsite import SettingsSite
 
 # The contract's headers, copied from docs/dashboard-api.md rather than imported.
 SECURITY = {

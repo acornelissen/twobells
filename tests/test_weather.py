@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from departureboard.weather import (
+from departureboard.sources.weather import (
     MAX_BYTES,
     Hour,
     OpenMeteoSource,

@@ -8,11 +8,12 @@ import time
 
 import pytest
 
-from departureboard import handoff, setupspool
-from departureboard.handoff import MAX_SNAPSHOT_BYTES, SnapshotMirror, SnapshotWriter
-from departureboard.setupspool import Poster, Spool
-from departureboard.snapshot import Hub
-from departureboard.walk import WalkTimes
+from departureboard.core.walk import WalkTimes
+from departureboard.dashboard.snapshot import Hub
+from departureboard.fetch import handoff
+from departureboard.fetch.handoff import MAX_SNAPSHOT_BYTES, SnapshotMirror, SnapshotWriter
+from departureboard.setup import spool as setupspool
+from departureboard.setup.spool import Poster, Spool
 
 BUS_ID = "4b7e000000000001"
 OLD_ID = "4b7e000000000002"

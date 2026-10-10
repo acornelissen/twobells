@@ -1,7 +1,7 @@
 import pytest
 
-from departureboard.model import Status
-from departureboard.transportapi import TransportApiBusSource, parse_stop
+from departureboard.core.model import Status
+from departureboard.sources.transportapi import TransportApiBusSource, parse_stop
 
 
 def bus(**overrides):
@@ -155,7 +155,7 @@ def test_fetch_raw_returns_payload_for_one_stop():
 
 
 def test_redact_strips_credentials_from_nested_urls():
-    from departureboard.transportapi import redact_credentials
+    from departureboard.sources.transportapi import redact_credentials
 
     payload = {
         "departures": {

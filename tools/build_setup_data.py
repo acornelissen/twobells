@@ -33,11 +33,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from departureboard import safexml  # noqa: E402
-from departureboard.http import get_bytes  # noqa: E402
-from departureboard.osgb import distance_m  # noqa: E402
-from departureboard.routesetup import NAPTAN_URL  # noqa: E402
-from departureboard.setup import BUS_STOP_TYPES, naptan_position  # noqa: E402
+from departureboard.core import safexml  # noqa: E402
+from departureboard.core.net import get_bytes  # noqa: E402
+from departureboard.core.osgb import distance_m  # noqa: E402
+from departureboard.setup.lookups import BUS_STOP_TYPES, naptan_position  # noqa: E402
+from departureboard.timetable.routesetup import NAPTAN_URL  # noqa: E402
 
 RAIL_URL = f"{NAPTAN_URL}?dataFormat=xml&atcoAreaCodes=910"
 STOPS_URL = f"{NAPTAN_URL}?dataFormat=csv"

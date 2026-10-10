@@ -1,9 +1,9 @@
 import pytest
 
-from departureboard.render import render
-from departureboard.sign import render_sign
-from departureboard.themes import THEMES, theme_named
-from departureboard.view import PLAIN, SIGN
+from departureboard.board.render import render
+from departureboard.board.sign import render_sign
+from departureboard.board.themes import THEMES, theme_named
+from departureboard.board.view import PLAIN, SIGN
 
 
 def test_plain_theme():

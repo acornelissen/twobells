@@ -1,5 +1,5 @@
-from departureboard.model import Departure, Status
-from departureboard.state import StateStore, departure_from_dict, departure_to_dict
+from departureboard.board.state import StateStore, departure_from_dict, departure_to_dict
+from departureboard.core.model import Departure, Status
 
 
 def test_missing_state_file_loads_empty(tmp_path):
@@ -40,7 +40,7 @@ def test_state_file_that_is_not_an_object_loads_empty(tmp_path, caplog):
 
 
 def test_malformed_departures_are_skipped_with_a_warning(caplog):
-    from departureboard.state import departures_from_dicts
+    from departureboard.board.state import departures_from_dicts
 
     good = departure_to_dict(Departure("bus", "341", "Hyde", "07:20", None, Status.ON_TIME))
     bad = [{**good, "colour": "red"}, {**good, "status": "lost"}, {"mode": "bus"}, "341", None]
@@ -50,7 +50,7 @@ def test_malformed_departures_are_skipped_with_a_warning(caplog):
 
 
 def test_save_flushes_to_disk_before_replacing(tmp_path, monkeypatch):
-    import departureboard.files as files  # state.json is written through files.write_atomic
+    import departureboard.core.files as files  # state.json is written through files.write_atomic
 
     calls = []
     replace = files.os.replace
@@ -69,7 +69,7 @@ def test_save_flushes_to_disk_before_replacing(tmp_path, monkeypatch):
 def test_state_with_a_malformed_table_is_cleaned_not_fatal(tmp_path):
     import json
 
-    from departureboard.state import StateStore
+    from departureboard.board.state import StateStore
 
     path = tmp_path / "state.json"
     path.write_text(json.dumps({"sources": [1, 2], "budgets": "x", "last_render": {"at": None}, "sources_ok": 1}))

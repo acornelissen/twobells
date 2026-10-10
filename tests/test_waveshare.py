@@ -1,8 +1,8 @@
 import pytest
 from PIL import Image
 
-from departureboard.panel import WAVESHARE_10IN85G
-from departureboard.waveshare import BLACK, RED, WHITE, YELLOW, Controller, WaveshareDisplay, pack
+from departureboard.board.displays.waveshare import BLACK, RED, WHITE, YELLOW, Controller, WaveshareDisplay, pack
+from departureboard.board.panel import WAVESHARE_10IN85G
 
 SIZE = WAVESHARE_10IN85G.size
 
@@ -175,8 +175,8 @@ def test_rotates_for_upside_down_mounting():
 
 
 def test_renders_straight_onto_the_panel():
-    from departureboard.themes import THEMES
-    from departureboard.view import BoardView, Section
+    from departureboard.board.themes import THEMES
+    from departureboard.board.view import BoardView, Section
 
     display = WaveshareDisplay(accent="yellow", controller=lambda: controller(FakeBus()))
     view = BoardView("GLO > MAN", Section("Trains", (), "No trains", True), Section("Buses", (), "No buses"), "07:03")

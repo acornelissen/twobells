@@ -1,7 +1,7 @@
 // The first-run setup wizard: from home to saved settings in six steps, or
 // seven where the install offers more than one view to turn on.
 //
-// It talks only to its host's setup API (setupapi.py), by relative URLs, so
+// It talks only to its host's setup API (setup/api.py), by relative URLs, so
 // the page works under whatever prefix the host mounts it at. Every step
 // works without a map: maps are opt-in (their pictures come from
 // OpenStreetMap, which then sees roughly where home is), load Leaflet only
@@ -29,7 +29,7 @@ const NOUN = /^[a-z]{1,20}$/;
 const VIEW = /^[a-z]{1,20}$/;
 const MAX_STOPS = 10;
 const MAX_WALK = 60;
-const UK = { lat: [49.0, 61.0], lon: [-8.7, 2.0] }; // as setup.py's LAT_RANGE and LON_RANGE
+const UK = { lat: [49.0, 61.0], lon: [-8.7, 2.0] }; // as setup/lookups.py's LAT_RANGE and LON_RANGE
 const UK_CENTRE = [54.5, -3.0];
 const BEARINGS = {
   N: "north", NE: "north-east", E: "east", SE: "south-east",

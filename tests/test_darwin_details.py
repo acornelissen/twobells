@@ -3,15 +3,15 @@ from pathlib import Path
 
 import pytest
 
-from departureboard import darwin
-from departureboard.darwin import (
+from departureboard.core.model import Status
+from departureboard.sources import darwin
+from departureboard.sources.darwin import (
     CallingPoint,
     DarwinSource,
     TrainBoard,
     parse_board,
     parse_board_rich,
 )
-from departureboard.model import Status
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

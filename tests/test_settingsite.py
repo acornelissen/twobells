@@ -13,17 +13,17 @@ from urllib.parse import urlencode
 
 import pytest
 
-from departureboard import settingsite
-from departureboard.auth import FAILURE_WINDOW_S, MAX_FAILURES, PasswordStore, Sessions
-from departureboard.dashserver import DashboardApp, StaticFiles, make_server
-from departureboard.installs import install_named
-from departureboard.keytest import KeyResult
-from departureboard.settingsite import SettingsSite
-from departureboard.setup import SetupError
-from departureboard.setupapi import PAGE_HEADERS, RateLimit, SetupApi, TooSoon, static_files
-from departureboard.snapshot import Hub
-from departureboard.store import Store
-from departureboard.walk import WalkTimes
+from departureboard.core.walk import WalkTimes
+from departureboard.dashboard.snapshot import Hub
+from departureboard.settings.installs import install_named
+from departureboard.settings.store import Store
+from departureboard.setup.api import PAGE_HEADERS, RateLimit, SetupApi, TooSoon, static_files
+from departureboard.setup.keytest import KeyResult
+from departureboard.setup.lookups import SetupError
+from departureboard.web import settingsite
+from departureboard.web.auth import FAILURE_WINDOW_S, MAX_FAILURES, PasswordStore, Sessions
+from departureboard.web.server import DashboardApp, StaticFiles, make_server
+from departureboard.web.settingsite import SettingsSite
 
 PASSWORD = "correct horse battery"
 NEW_PASSWORD = "a brand new password"
@@ -462,7 +462,7 @@ def test_the_general_tab_says_when_the_bus_timetable_was_saved_and_how_its_roads
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
-    from departureboard import timetable
+    from departureboard.timetable import build as timetable
 
     docker = make(install="docker")  # whose dashboard starts again on saving: this page says how far they got
     cookie = docker.session()
@@ -1534,13 +1534,13 @@ def test_outsiders_are_refused_before_the_settings(make):
 
 
 def test_slow_clients_are_dropped():
-    from departureboard.dashserver import _Handler
+    from departureboard.web.server import _Handler
 
     assert _Handler.timeout and _Handler.timeout <= 10  # a client that stalls lets go of its thread
 
 
 def test_a_client_hanging_up_early_is_not_reported(capsys, caplog):
-    from departureboard.dashserver import DashboardServer
+    from departureboard.web.server import DashboardServer
 
     server = DashboardServer.__new__(DashboardServer)
     try:

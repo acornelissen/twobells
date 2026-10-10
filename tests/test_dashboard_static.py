@@ -338,7 +338,7 @@ STATUS = {"last_success": Opt(at), "stale": bool, "error": Opt(str), "note": Opt
 ROW_STATUS = one_of("on_time", "late", "cancelled", "unknown")
 HISTORY = {"phrase": Opt(str)}
 BUS_HISTORY = {"phrase": Opt(str), "no_show_phrase": Opt(str)}
-# Row extras (enrich.py): when it gets there, and the bus coming to work a departure.
+# Row extras (dashboard/enrich.py): when it gets there, and the bus coming to work a departure.
 ARRIVES = {"name": str, "at": hhmm, "at_iso": at, "minutes": integer}
 INBOUND = {"from": Opt(str), "due": hhmm, "late_min": integer, "where": str, "text": str}
 
@@ -817,7 +817,7 @@ def test_the_area_map_has_real_buttons_a_credit_and_a_text_list():
 
 
 def test_the_footer_has_one_place_for_the_version_the_server_fills_in():
-    from departureboard.dashserver import VERSION_SLOT
+    from departureboard.web.server import VERSION_SLOT
 
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     footer = html[html.index('<footer class="foot">'):html.index("</footer>")]

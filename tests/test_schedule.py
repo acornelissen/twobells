@@ -2,7 +2,7 @@ from datetime import date, datetime, time, timedelta
 
 import pytest
 
-from departureboard.schedule import PollPolicy, Window, parse_window
+from departureboard.core.polling import PollPolicy, Window, parse_window
 
 THU_0700 = datetime(2026, 10, 8, 7, 0)
 SAT_0700 = datetime(2026, 10, 10, 7, 0)

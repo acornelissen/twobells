@@ -10,10 +10,9 @@ from zoneinfo import ZoneInfo
 import pytest
 from test_livebus import EAST, HALFWAY, HENRY_A, JUNCTION, POSITIONS, ST_MARYS_W, WEST, at, bus, live, schedule
 
-from departureboard.bodsbus import BusBoard
-from departureboard.darwin import parse_board_rich, parse_service_details
-from departureboard.model import Departure, Status
-from departureboard.snapshot import (
+from departureboard.core.model import Departure, Status
+from departureboard.core.walk import WalkTimes
+from departureboard.dashboard.snapshot import (
     Hub,
     bus_observations,
     bus_row,
@@ -27,8 +26,9 @@ from departureboard.snapshot import (
     trains_part,
     weather_part,
 )
-from departureboard.walk import WalkTimes
-from departureboard.weather import parse_conditions
+from departureboard.sources.bodsbus import BusBoard
+from departureboard.sources.darwin import parse_board_rich, parse_service_details
+from departureboard.sources.weather import parse_conditions
 
 LONDON = ZoneInfo("Europe/London")
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -91,7 +91,7 @@ def extras_part(now, no_shows=None, vehicles_ok=True):
     from test_enrich import INTO_A, LEFT_JUNCTION
     from test_livebus import every_day
 
-    from departureboard.livebus import live_board
+    from departureboard.sources.livebus import live_board
 
     plan = schedule(EAST, WEST, INTO_A)
     vehicles = [bus(*HALFWAY, now), bus(*HALFWAY, now, line="237", origin=JUNCTION, aimed=LEFT_JUNCTION)]
@@ -639,7 +639,7 @@ def test_export_has_the_snapshot_its_lookups_and_the_area_taken_together():
 
 
 def test_the_hub_is_a_snapshot_source():
-    from departureboard.snapshot import SnapshotSource
+    from departureboard.dashboard.snapshot import SnapshotSource
 
     h: SnapshotSource = hub()
     for name in ("current", "wait", "lookup", "get", "touch", "active", "age", "close"):
@@ -663,8 +663,8 @@ def test_touch_and_age_follow_the_clock():
 def test_rain_already_falling_is_said_as_now_not_an_hour_gone_by():
     from datetime import datetime
 
-    from departureboard.snapshot import rain_sentence
-    from departureboard.weather import Hour
+    from departureboard.dashboard.snapshot import rain_sentence
+    from departureboard.sources.weather import Hour
 
     hours = [Hour(datetime(2026, 10, 9, 22), 92, 0.4), Hour(datetime(2026, 10, 9, 23), 80, 0.3)]
     now = datetime(2026, 10, 9, 22, 39)
@@ -675,8 +675,8 @@ def test_rain_already_falling_is_said_as_now_not_an_hour_gone_by():
 
 
 def test_calling_point_words_become_times_or_flags():
-    from departureboard.darwin import CallingPoint
-    from departureboard.snapshot import calling_point
+    from departureboard.dashboard.snapshot import calling_point
+    from departureboard.sources.darwin import CallingPoint
 
     on_time = calling_point(CallingPoint("Dinting", "DGT", "07:15", "On time", None, False, None))
     assert (on_time["expected"], on_time["cancelled"]) == ("07:15", False)
@@ -695,7 +695,12 @@ def real_disruptions():
     synthetic Knowledgebase fixture, as the collector makes it."""
     from test_disruptions import KB, RAIL, area, situations
 
-    from departureboard.disruptions import bus_disruptions, disruptions_part, parse_kb_incidents, train_disruptions
+    from departureboard.sources.disruptions import (
+        bus_disruptions,
+        disruptions_part,
+        parse_kb_incidents,
+        train_disruptions,
+    )
 
     captured = datetime(2026, 10, 9, 23, 14, tzinfo=LONDON)
     bus = bus_disruptions(situations(), area(), captured)
@@ -711,8 +716,8 @@ def real_timetable_changes():
     from test_livebus import EAST, WEST
     from test_livebus import schedule as plan
 
-    from departureboard.area import timetable_changes
-    from departureboard.schedule_model import Calendar, Call
+    from departureboard.dashboard.area import timetable_changes
+    from departureboard.timetable.model import Calendar, Call
 
     old = changed(EAST, calendar=Calendar(days=frozenset(range(7)), end=date(2026, 10, 24)))
     new = changed(EAST, calls=tuple(Call(c.atco, c.minute + 5) for c in EAST.calls),
@@ -763,7 +768,7 @@ def test_inbound_only_journeys_are_not_counted_nor_observed():
 
     from test_livebus import every_day
 
-    from departureboard.livebus import live_board
+    from departureboard.sources.livebus import live_board
 
     only = replace(EAST, inbound_only=True)
     plan = schedule(only, WEST)
@@ -778,7 +783,7 @@ def test_inbound_only_journeys_are_not_counted_nor_observed():
 def test_a_stop_is_named_with_the_letter_on_its_sign():
     from dataclasses import replace as swap
 
-    from departureboard.snapshot import stop_names
+    from departureboard.dashboard.snapshot import stop_names
 
     lettered = swap(schedule(), positions={**POSITIONS, HENRY_A: swap(POSITIONS[HENRY_A], indicator="Stop A")})
     assert stop_names({"A": HENRY_A}, lettered) == {"A": "Henry Street (Stop A)"}

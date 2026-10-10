@@ -21,9 +21,10 @@ from test_livebus import (
     journey,
 )
 
-from departureboard import roadshape, setup
-from departureboard.roadshape import parse_route, path, segment_pairs, segment_shapes, shape_key, simplify
-from departureboard.setup import RateLimiter
+from departureboard.setup import lookups
+from departureboard.setup.lookups import RateLimiter
+from departureboard.timetable import roads as roadshape
+from departureboard.timetable.roads import parse_route, path, segment_pairs, segment_shapes, shape_key, simplify
 
 FIXTURES = Path(__file__).parent / "fixtures"
 ROAD = (FIXTURES / "osrm_route_glossop.json").read_bytes()  # Sunlaws Street to St Marys Road, hand-made
@@ -312,7 +313,7 @@ def test_the_default_asks_the_router_politely_through_the_capped_getter(monkeypa
         asked.append((url, max_bytes, timeout, headers, deadline))
         return ROAD
 
-    monkeypatch.setattr(roadshape.http, "get_bytes", get_bytes)
+    monkeypatch.setattr(roadshape.net, "get_bytes", get_bytes)
     assert roadshape.router_get("https://x", 10) == ROAD
     assert asked == [("https://x", 10, roadshape.TIMEOUT, {"User-Agent": roadshape.USER_AGENT},
                       roadshape.REQUEST_DEADLINE)]
@@ -325,8 +326,8 @@ def test_the_default_asks_the_router_politely_through_the_capped_getter(monkeypa
 def test_roads_and_walk_times_share_one_limit_on_the_router():
     # Both ask FOSSGIS's server; the setup service can look up walk times while
     # a search asks for roads, and the policy is one request a second in all.
-    assert segment_shapes.__kwdefaults__["limiter"] is setup.ROUTER_LIMIT
-    assert setup.walk_minutes.__defaults__[1] is setup.ROUTER_LIMIT
+    assert segment_shapes.__kwdefaults__["limiter"] is lookups.ROUTER_LIMIT
+    assert lookups.walk_minutes.__defaults__[1] is lookups.ROUTER_LIMIT
 
 
 def test_shapes_are_far_smaller_than_the_answer():

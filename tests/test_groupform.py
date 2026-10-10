@@ -8,11 +8,11 @@ import tomllib
 
 import pytest
 
-from departureboard.config import load_config
-from departureboard.dashconfig import load_dashboard
-from departureboard.groupform import GroupForm
-from departureboard.installs import Install, install_named
-from departureboard.store import Store
+from departureboard.dashboard.config import load_dashboard
+from departureboard.settings.config import load_config
+from departureboard.settings.installs import Install, install_named
+from departureboard.settings.store import Store
+from departureboard.web.groupform import GroupForm
 
 ENV = {"RDM_API_KEY": "rail-key-1234567", "BODS_API_KEY": "bods-key-7654321"}
 

@@ -10,8 +10,8 @@ from email.message import Message
 
 import pytest
 
-from departureboard.auth import MAX_FAILURES, FormTokens, Lockout, PasswordStore, ResetCodes, Sessions
-from departureboard.formpages import (
+from departureboard.web.auth import MAX_FAILURES, FormTokens, Lockout, PasswordStore, ResetCodes, Sessions
+from departureboard.web.formpages import (
     HTML,
     TEXT,
     WIZARD_TYPES,

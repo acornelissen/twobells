@@ -1,6 +1,6 @@
-from departureboard.model import Departure, Status
-from departureboard.view import SIGN, Style, build_view
-from departureboard.walk import WalkTimes
+from departureboard.board.view import SIGN, Style, build_view
+from departureboard.core.model import Departure, Status
+from departureboard.core.walk import WalkTimes
 
 
 def train(scheduled="07:12", expected=None, status=Status.ON_TIME, dest="Manchester Piccadilly"):
@@ -297,7 +297,7 @@ def test_messages_become_one_notice():
 
 
 def test_notice_is_capped():
-    from departureboard.view import NOTICE_LIMIT
+    from departureboard.board.view import NOTICE_LIMIT
 
     notice = view(notices=["x" * 300, "y" * 300]).notice
     assert len(notice) == NOTICE_LIMIT and notice.endswith("…")

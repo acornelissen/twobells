@@ -8,8 +8,8 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from departureboard import keytest
-from departureboard.keytest import KeyResult
+from departureboard.setup import keytest
+from departureboard.setup.keytest import KeyResult
 
 FIXTURES = Path(__file__).parent / "fixtures"
 BOARD = (FIXTURES / "ldbws_glossop_details.json").read_bytes()

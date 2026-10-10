@@ -10,12 +10,13 @@ from typing import ClassVar
 
 import pytest
 
-from departureboard import discover, setupspool
-from departureboard.keytest import KeyResult
-from departureboard.overlay import board_target
-from departureboard.setup import Place, SetupError, Stop
-from departureboard.setupapi import RateLimit, SetupApi
-from departureboard.setupspool import Refused, Spool, SpoolRunner, Worker
+from departureboard.settings.overlay import board_target
+from departureboard.setup import discover
+from departureboard.setup import spool as setupspool
+from departureboard.setup.api import RateLimit, SetupApi
+from departureboard.setup.keytest import KeyResult
+from departureboard.setup.lookups import Place, SetupError, Stop
+from departureboard.setup.spool import Refused, Spool, SpoolRunner, Worker
 
 HOME = {"lat": 53.461964, "lon": -1.965633}
 HOME_PLACE = Place(HOME["lat"], HOME["lon"], "SK13 1AH", "England", "High Peak")
@@ -85,7 +86,7 @@ def board(tmp_path):
 
     def test_key(name, value, settings, env):
         calls.append(("testkey", name, value, dict(env)))
-        logging.getLogger("departureboard.keytest").info("Tested %s: %s", name, "wrong_key")
+        logging.getLogger("departureboard.setup.keytest").info("Tested %s: %s", name, "wrong_key")
         return KeyResult("wrong_key", f"It refused {value or env.get(name)}")
 
     worker = Worker(

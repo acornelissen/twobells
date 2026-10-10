@@ -2,11 +2,11 @@ import dataclasses
 
 import pytest
 
-from departureboard.dotfont import DotFont
-from departureboard.panel import HDMI_1280X400, WAVESHARE_10IN85G
-from departureboard.render import HEIGHT, WIDTH, Palette
-from departureboard.sign import MARGIN, item_size, render_sign, sign_layout
-from departureboard.view import BoardView, Row, Section, Style
+from departureboard.board.dotfont import DotFont
+from departureboard.board.panel import HDMI_1280X400, WAVESHARE_10IN85G
+from departureboard.board.render import HEIGHT, WIDTH, Palette
+from departureboard.board.sign import MARGIN, item_size, render_sign, sign_layout
+from departureboard.board.view import BoardView, Row, Section, Style
 
 PALETTE = Palette(white=0, black=1, accent=2)
 FONT = DotFont()
@@ -274,8 +274,8 @@ def test_buses_clear_the_clock():
     assert last_bus + 9 < find(items, "07:03:15").y
 
 
-from departureboard.route import RouteView  # noqa: E402
-from departureboard.sign import _route_layout, render_route_sign  # noqa: E402
+from departureboard.board.route import RouteView  # noqa: E402
+from departureboard.board.sign import _route_layout, render_route_sign  # noqa: E402
 
 NAMES = ("The Junction", "Grapes Inn", "Sunlaws Street", "St Marys Road", "Arundel Street", "Henry Street")
 
@@ -557,7 +557,7 @@ def test_screen_shows_the_rain_line_left_of_the_clock():
 
 
 def test_footer_glyphs_cover_notices_and_the_rain_line():
-    from departureboard.dotfont import GLYPHS, TINY
+    from departureboard.board.dotfont import GLYPHS, TINY
 
     for char in "!()%/'&+;…":
         assert char in TINY, char
@@ -577,7 +577,7 @@ def test_everything_fits_with_a_notice(panel, clock):
 
 
 def test_everything_fits_on_the_original_phat():
-    from departureboard.panel import PHAT_V1
+    from departureboard.board.panel import PHAT_V1
 
     items = sign_layout(board(TRAINS, BUSES, leave="Leave by 07:05", stale_buses=True), *PHAT_V1.size).items
     for item in items:

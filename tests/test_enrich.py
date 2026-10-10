@@ -29,12 +29,12 @@ from test_livebus import (
     stop_at,
 )
 
-from departureboard.bodsbus import BusBoard
-from departureboard.darwin import CallingPoint, TrainService
-from departureboard.enrich import bus_arrival, bus_extras, inbound, inbound_text, is_ghost, train_arrival
-from departureboard.livebus import live_board
-from departureboard.model import Departure, Status
-from departureboard.schedule_model import Call
+from departureboard.core.model import Departure, Status
+from departureboard.dashboard.enrich import bus_arrival, bus_extras, inbound, inbound_text, is_ghost, train_arrival
+from departureboard.sources.bodsbus import BusBoard
+from departureboard.sources.darwin import CallingPoint, TrainService
+from departureboard.sources.livebus import live_board
+from departureboard.timetable.model import Call
 
 LONDON = ZoneInfo("Europe/London")
 

@@ -1,5 +1,5 @@
-from departureboard.darwin import DarwinSource, parse_board
-from departureboard.model import Status
+from departureboard.core.model import Status
+from departureboard.sources.darwin import DarwinSource, parse_board
 
 
 def service(**overrides):
@@ -125,7 +125,7 @@ def test_parses_a_glossop_board():
 
 
 def test_default_base_url_matches_the_marketplace_subscription():
-    from departureboard.darwin import DEFAULT_BASE_URL
+    from departureboard.sources.darwin import DEFAULT_BASE_URL
 
     assert DEFAULT_BASE_URL == (
         "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
@@ -143,7 +143,7 @@ def test_platform_is_kept_only_when_it_looks_like_one():
         assert platform(odd) is None
 
 
-from departureboard.darwin import MESSAGE_LIMIT, parse_messages, plain_text  # noqa: E402
+from departureboard.sources.darwin import MESSAGE_LIMIT, parse_messages, plain_text  # noqa: E402
 
 
 def load_fixture(name):

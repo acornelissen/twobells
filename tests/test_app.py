@@ -4,13 +4,13 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from departureboard.app import Board, SourceConfig, run_once
-from departureboard.model import Departure, Status
-from departureboard.panel import HDMI_1280X400, PHAT
-from departureboard.render import Palette
-from departureboard.schedule import PollPolicy, parse_window
-from departureboard.state import StateStore
-from departureboard.view import CodeView, SetupView
+from departureboard.board.app import Board, SourceConfig, run_once
+from departureboard.board.panel import HDMI_1280X400, PHAT
+from departureboard.board.render import Palette
+from departureboard.board.state import StateStore
+from departureboard.board.view import CodeView, SetupView
+from departureboard.core.model import Departure, Status
+from departureboard.core.polling import PollPolicy, parse_window
 
 THU_0700 = datetime(2026, 10, 8, 7, 0)
 
@@ -171,8 +171,8 @@ def test_state_survives_a_round_trip_through_disk(tmp_path):
 
 
 def test_run_loop_ticks_and_advances_a_simulated_clock():
-    from departureboard.app import run_loop
-    from departureboard.fake import SimClock
+    from departureboard.board.app import run_loop
+    from departureboard.emulator.fake import SimClock
 
     trains, buses, board, display, state = setup()
     clock = SimClock(THU_0700)
@@ -192,7 +192,7 @@ def test_run_loop_ticks_and_advances_a_simulated_clock():
 
 
 def test_run_loop_saves_state_each_tick(tmp_path):
-    from departureboard.app import run_loop
+    from departureboard.board.app import run_loop
 
     trains, buses, board, display, state = setup()
     store = StateStore(tmp_path / "state.json")
@@ -248,7 +248,7 @@ def test_minimum_redraw_gap_is_configurable():
 
 
 def test_board_walk_times_produce_leave_text():
-    from departureboard.walk import WalkTimes
+    from departureboard.core.walk import WalkTimes
 
     trains, buses, board, display, state = setup()
     board = dataclasses.replace(board, walk=WalkTimes(train=7, bus={"*": 5}))
@@ -258,7 +258,7 @@ def test_board_walk_times_produce_leave_text():
 
 
 def test_board_theme_picks_wording_and_renderer():
-    from departureboard.themes import theme_named
+    from departureboard.board.themes import theme_named
 
     trains, buses, board, display, state = setup()
     trains.departures = [train(status=Status.CANCELLED)]
@@ -295,8 +295,8 @@ def test_without_prime_nothing_is_fetched_outside_windows():
 
 
 def test_run_loop_primes_only_the_first_tick():
-    from departureboard.app import run_loop
-    from departureboard.fake import SimClock
+    from departureboard.board.app import run_loop
+    from departureboard.emulator.fake import SimClock
 
     trains, buses, board, display, state = setup()
     run_loop(board, state, display, SimClock(SATURDAY), 0, ticks=3, sleep=lambda s: None, prime=True)
@@ -304,7 +304,7 @@ def test_run_loop_primes_only_the_first_tick():
 
 
 class FakeScreen(FakeDisplay):
-    from departureboard.panel import HDMI_1280X400 as panel  # noqa: N811 - the display's panel attribute
+    from departureboard.board.panel import HDMI_1280X400 as panel  # noqa: N811 - the display's panel attribute
 
 
 def test_screen_gets_a_running_clock():
@@ -343,7 +343,7 @@ class CountingStore:
 
 
 def test_loop_writes_state_only_when_fetched_data_changes():
-    from departureboard.app import run_loop
+    from departureboard.board.app import run_loop
 
     trains, buses, board, display, state = setup()
     store = CountingStore()
@@ -355,9 +355,9 @@ def test_loop_writes_state_only_when_fetched_data_changes():
 
 # --- Route strip page (screens only) ---
 
-from departureboard.app import Tracker  # noqa: E402
-from departureboard.bods import Vehicle  # noqa: E402
-from departureboard.route import RouteStop, RouteStrip  # noqa: E402
+from departureboard.board.app import Tracker  # noqa: E402
+from departureboard.board.route import RouteStop, RouteStrip  # noqa: E402
+from departureboard.sources.bods import Vehicle  # noqa: E402
 
 STRIP = RouteStrip(
     "341",
@@ -435,7 +435,7 @@ def test_no_bus_page_without_a_tracked_bus_to_catch():
 
 
 def test_bus_page_follows_the_next_bus_you_can_still_reach():
-    from departureboard.walk import WalkTimes
+    from departureboard.core.walk import WalkTimes
 
     # Walk 7 min: the 07:05 has gone by the time you'd get there, the 07:25 has not.
     board, _, state = tracked_setup([bus_on("341", "07:05"), bus_on("341", "07:25")], [vehicle_at(4), vehicle_at(1)])
@@ -470,7 +470,7 @@ def test_positions_are_polled_on_their_own_interval():
 
 
 def test_positions_are_not_written_to_disk():
-    from departureboard.app import _fetched
+    from departureboard.board.app import _fetched
 
     board, _, state = tracked_setup([bus_on("341", "07:20")], [vehicle_at(2)])
     run_once(board, state, FakeScreen(), THU_0700)
@@ -505,7 +505,7 @@ def test_a_saved_position_that_doesnt_read_back_is_skipped():
 
 
 def test_run_loop_switches_to_reloaded_settings():
-    from departureboard.app import run_loop
+    from departureboard.board.app import run_loop
 
     trains, buses, board, display, state = setup()
     renamed = dataclasses.replace(board, title="Renamed")
@@ -560,7 +560,7 @@ def test_failed_draw_is_not_recorded_so_the_next_run_draws_again():
 
 
 def test_run_loop_saves_state_before_a_draw_failure_escapes():
-    from departureboard.app import run_loop
+    from departureboard.board.app import run_loop
 
     trains, buses, board, display, state = setup()
     store = CountingStore()
@@ -581,7 +581,7 @@ def test_malformed_saved_departures_are_skipped():
 
 
 def test_new_look_alone_redraws_epaper_once_the_gap_has_passed():
-    from departureboard.themes import theme_named
+    from departureboard.board.themes import theme_named
 
     trains, buses, board, display, state = setup()
     run_once(board, state, display, THU_0700)
@@ -604,7 +604,7 @@ def test_new_accent_or_rotation_redraws_epaper():
 
 
 def test_turning_a_real_inky_round_redraws_it():
-    from departureboard.display import InkyDisplay
+    from departureboard.board.displays.display import InkyDisplay
 
     class Inky:
         WHITE, BLACK, RED = 0, 1, 2
@@ -743,7 +743,7 @@ def test_darwin_messages_reach_the_board():
     import json
     from pathlib import Path
 
-    from departureboard.darwin import DarwinSource
+    from departureboard.sources.darwin import DarwinSource
 
     payload = json.loads((Path(__file__).parent / "fixtures" / "ldbws_glossop_nrcc.json").read_text())
     source = DarwinSource(api_key="k", crs="GLO", http_get=lambda url, headers: payload)
@@ -753,9 +753,9 @@ def test_darwin_messages_reach_the_board():
     assert " / Ticket machines at Glossop & Dinting take cards only." in result.view.notice
 
 
-from departureboard.app import Weather  # noqa: E402
-from departureboard.walk import WalkTimes  # noqa: E402
-from departureboard.weather import Hour  # noqa: E402
+from departureboard.board.app import Weather  # noqa: E402
+from departureboard.core.walk import WalkTimes  # noqa: E402
+from departureboard.sources.weather import Hour  # noqa: E402
 
 
 class FakeWeather:
@@ -895,7 +895,7 @@ def test_rain_line_redraws_the_board():
 
 
 def test_loop_also_saves_every_few_minutes_so_the_status_panel_keeps_up():
-    from departureboard.app import run_loop
+    from departureboard.board.app import run_loop
 
     trains, buses, board, display, state = setup()
     store = CountingStore()
@@ -907,7 +907,7 @@ def test_loop_also_saves_every_few_minutes_so_the_status_panel_keeps_up():
 
 
 def test_changing_the_text_size_redraws_the_epaper():
-    from departureboard.themes import theme_named, with_text_size
+    from departureboard.board.themes import theme_named, with_text_size
 
     trains, buses, board, display, state = setup()
     board = dataclasses.replace(board, theme=theme_named("plain"))
@@ -1113,8 +1113,8 @@ def test_the_code_page_beats_the_bus_page_on_a_screen():
 @pytest.mark.parametrize("panel", ["inky-phat", "inky-phat-v1", "waveshare-10in85g", "hdmi-1280x400"])
 @pytest.mark.parametrize("look", ["plain", "sign"])
 def test_every_panel_and_look_draws_the_code_page(panel, look):
-    from departureboard.panel import PANELS
-    from departureboard.themes import THEMES
+    from departureboard.board.panel import PANELS
+    from departureboard.board.themes import THEMES
 
     trains, buses, board, _, state = setup()
     board = dataclasses.replace(board, theme=THEMES[look], reset_code=Waiting())
@@ -1137,8 +1137,8 @@ def test_every_panel_and_look_draws_the_code_page(panel, look):
 def test_the_board_reads_the_code_the_settings_page_left(tmp_path):
     import time
 
-    from departureboard.app import reset_code_page
-    from departureboard.auth import ResetCodes
+    from departureboard.board.app import reset_code_page
+    from departureboard.web.auth import ResetCodes
 
     page = reset_code_page(tmp_path, "Europe/London")
     assert page() is None
@@ -1158,8 +1158,8 @@ def test_the_emulator_shows_the_code_page(panel):
 
     from PIL import Image
 
-    from departureboard.emulator import EmulatorDisplay
-    from departureboard.panel import PANELS
+    from departureboard.board.panel import PANELS
+    from departureboard.emulator.server import EmulatorDisplay
 
     trains, buses, board, _, state = setup()
     board = dataclasses.replace(board, reset_code=Waiting(CODE))
@@ -1218,8 +1218,8 @@ def test_a_screen_not_yet_set_up_shows_no_bus_page():
 @pytest.mark.parametrize("panel", ["inky-phat", "inky-phat-v1", "waveshare-10in85g", "hdmi-1280x400"])
 @pytest.mark.parametrize("look", ["plain", "sign"])
 def test_every_panel_and_look_draws_the_setup_page(panel, look):
-    from departureboard.panel import PANELS
-    from departureboard.themes import THEMES
+    from departureboard.board.panel import PANELS
+    from departureboard.board.themes import THEMES
 
     class Display(FakeDisplay):
         pass

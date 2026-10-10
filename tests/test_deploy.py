@@ -121,7 +121,7 @@ def test_the_documented_password_commands_fit_the_container():
         assert words[:7] == ["docker", "exec", "-it", "departureboard", "python", "-m", "departureboard.cli"]
         args = _parser().parse_args(words[7:])
         assert (args.command, args.state_dir, getattr(args, flag[2:].replace("-", "_"))) == ("serve", "/data", True)
-    from departureboard.installs import install_named
+    from departureboard.settings.installs import install_named
 
     docker = install_named("docker")
     for flag, command in (("--set-password", docker.password_command), ("--reset-code", docker.reset_command)):
@@ -130,7 +130,7 @@ def test_the_documented_password_commands_fit_the_container():
 
 
 def test_a_desktop_says_where_its_log_is_however_it_runs():
-    from departureboard.installs import install_named
+    from departureboard.settings.installs import install_named
 
     desktop = install_named("desktop").log_help
     # In a terminal, or started at login by the files in deploy/desktop.
@@ -181,7 +181,7 @@ def test_the_settings_page_stays_on_the_home_network_and_hands_its_internet_work
 
 def test_the_pi_serves_its_settings_at_8090_and_nothing_at_8080():
     from departureboard.cli import WEB_PORT, _parser, setup_url
-    from departureboard.installs import install_named
+    from departureboard.settings.installs import install_named
 
     web = _unit("departureboard-web.service")
     assert web["ExecStart"] == ["/opt/departureboard/venv/bin/departureboard serve --install pi "
@@ -199,7 +199,7 @@ def test_the_pi_serves_its_settings_at_8090_and_nothing_at_8080():
 def test_the_settings_service_has_room_for_every_connection_the_server_takes():
     # A thread per connection, and a few of the server's own; past TasksMax a
     # connection can't be answered at all.
-    from departureboard import dashserver
+    from departureboard.web import server as dashserver
 
     web = _unit("departureboard-web.service")
     assert int(web["TasksMax"][0]) >= max(64, dashserver.MAX_CONNECTIONS + 8)
@@ -207,7 +207,7 @@ def test_the_settings_service_has_room_for_every_connection_the_server_takes():
 
 
 def test_the_fetch_service_goes_out_and_listens_on_nothing():
-    from departureboard import setupspool
+    from departureboard.setup import spool as setupspool
 
     unit = _unit("departureboard-fetch.service")
     assert "IPAddressDeny" not in unit and "IPAddressAllow" not in unit
@@ -238,7 +238,7 @@ def test_the_setup_units_are_gone():
 
 
 def test_the_spool_is_in_memory_and_shared_by_both_units():
-    from departureboard import setupspool
+    from departureboard.setup import spool as setupspool
 
     spool = {"RuntimeDirectory": ["departureboard-fetch"], "RuntimeDirectoryMode": ["0700"],
              "RuntimeDirectoryPreserve": ["yes"]}  # kept when either stops
@@ -416,7 +416,7 @@ def test_every_service_is_locked_down_as_far_as_its_work_allows(name):
 
 
 def test_install_and_update_give_the_settings_new_address():
-    from departureboard.installs import install_named
+    from departureboard.settings.installs import install_named
 
     install = (ROOT / "deploy" / "install.sh").read_text()
     update = (ROOT / "deploy" / "update.sh").read_text()
@@ -695,7 +695,7 @@ def test_the_documented_docker_run_is_locked_down_as_compose():
 
 def _desktop_serve(argv: list[str]) -> None:
     from departureboard.cli import _parser
-    from departureboard.installs import install_named
+    from departureboard.settings.installs import install_named
 
     args = _parser().parse_args(argv)
     assert (args.command, args.install, args.lan, args.host, args.port, args.no_browser) == (

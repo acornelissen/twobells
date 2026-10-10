@@ -13,7 +13,7 @@ from urllib.request import urlopen
 import pytest
 from PIL import Image
 
-from departureboard.emulator import EPAPER, EmulatorDisplay, make_server
+from departureboard.emulator.server import EPAPER, EmulatorDisplay, make_server
 
 NOW = datetime(2026, 10, 8, 7, 3)
 
@@ -188,7 +188,7 @@ def test_reports_port_range_when_all_attempts_are_taken():
 
 def test_default_port_avoids_claudecodebrowserx():
     # ClaudeCodeBrowserX listens on 8765 (HTTP) and 8766 (WebSocket).
-    from departureboard.emulator import DEFAULT_PORT
+    from departureboard.emulator.server import DEFAULT_PORT
 
     attempts = 10
     assert not {8765, 8766} & set(range(DEFAULT_PORT, DEFAULT_PORT + attempts))
@@ -196,7 +196,7 @@ def test_default_port_avoids_claudecodebrowserx():
 
 def test_emulate_command_uses_the_shared_default_port():
     from departureboard.cli import _parser
-    from departureboard.emulator import DEFAULT_PORT
+    from departureboard.emulator.server import DEFAULT_PORT
 
     assert _parser().parse_args(["emulate", "--demo"]).port == DEFAULT_PORT
 
@@ -207,7 +207,7 @@ def test_status_describes_the_phat_by_default():
 
 
 def test_status_gives_bigger_panels_their_physical_size():
-    from departureboard.panel import WAVESHARE_10IN85G
+    from departureboard.board.panel import WAVESHARE_10IN85G
 
     panel = EmulatorDisplay(panel=WAVESHARE_10IN85G).status()["panel"]
     assert (panel["width"], panel["height"]) == (1360, 480)
@@ -217,8 +217,8 @@ def test_status_gives_bigger_panels_their_physical_size():
 
 
 def test_screen_frames_use_screen_colours():
-    from departureboard.panel import HDMI_1280X400
-    from departureboard.screen import SCREEN_RGB
+    from departureboard.board.displays.screen import SCREEN_RGB
+    from departureboard.board.panel import HDMI_1280X400
 
     display = EmulatorDisplay(accent="yellow", panel=HDMI_1280X400)
     image = Image.new("P", HDMI_1280X400.size, display.palette.black)
@@ -230,7 +230,7 @@ def test_screen_frames_use_screen_colours():
 
 
 def test_screen_board_time_has_seconds():
-    from departureboard.panel import HDMI_1280X400
+    from departureboard.board.panel import HDMI_1280X400
 
     display = EmulatorDisplay(panel=HDMI_1280X400)
     display.tick(NOW.replace(second=15), rendered=True)
@@ -250,7 +250,7 @@ def waveform(speed, reduce=False):
     node = shutil.which("node")
     if node is None:
         pytest.skip("needs node to run the page's script")
-    from departureboard.emulator import _page
+    from departureboard.emulator.server import _page
 
     found = re.search(r'<script id="waveform">(.*?)</script>', _page().decode(), re.S)
     assert found, "page has no waveform script"
@@ -289,7 +289,7 @@ def test_reduced_motion_refresh_does_not_flicker():
 
 
 def test_page_asks_the_browser_about_reduced_motion():
-    from departureboard.emulator import _page
+    from departureboard.emulator.server import _page
 
     page = _page().decode()
     assert 'matchMedia("(prefers-reduced-motion: reduce)")' in page

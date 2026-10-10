@@ -8,10 +8,10 @@ import tomllib
 
 import pytest
 
-from departureboard.dashconfig import dashboard_target, load_dashboard
-from departureboard.groupform import GroupForm
-from departureboard.installs import install_named
-from departureboard.store import Store
+from departureboard.dashboard.config import dashboard_target, load_dashboard
+from departureboard.settings.installs import install_named
+from departureboard.settings.store import Store
+from departureboard.web.groupform import GroupForm
 
 CONFIG = """
 title = "Glossop"
@@ -148,7 +148,7 @@ class FoundJob:
 
 
 def test_every_field_the_page_saves_is_read_back():
-    from departureboard.schema import FIELDS, saved_keys
+    from departureboard.settings.schema import FIELDS, saved_keys
 
     for f in FIELDS:
         if f.group in ("general", "dashboard"):
@@ -156,9 +156,9 @@ def test_every_field_the_page_saves_is_read_back():
 
 
 def test_everything_setup_and_the_page_save_is_read_back(form):
-    from departureboard.config import read_overlay_in
-    from departureboard.schema import keys
-    from departureboard.setupapi import SetupApi
+    from departureboard.settings.config import read_overlay_in
+    from departureboard.settings.schema import keys
+    from departureboard.setup.api import SetupApi
 
     stations = (("Glossop", "GLO", 53.4445, -1.9491), ("Manchester Piccadilly", "MAN", 53.4774, -2.2309))
     store = Store.open(form.config, state_dir=form.folder)

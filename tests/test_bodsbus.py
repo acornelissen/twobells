@@ -6,10 +6,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from departureboard import holidays, timetable
-from departureboard.bodsbus import BodsBusSource, unusable
-from departureboard.model import Departure, Status
-from departureboard.schedule_model import Calendar, Call, Journey, Schedule, StopPosition
+from departureboard.core.model import Departure, Status
+from departureboard.sources import holidays
+from departureboard.sources.bodsbus import BodsBusSource, unusable
+from departureboard.timetable import build as timetable
+from departureboard.timetable.model import Calendar, Call, Journey, Schedule, StopPosition
 
 LONDON = ZoneInfo("Europe/London")
 # Real NaPTAN stops on High Street West, Glossop, heading east.

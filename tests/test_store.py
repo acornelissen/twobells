@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from departureboard import store as store_module
-from departureboard.config import ConfigError
-from departureboard.installs import install_named
-from departureboard.overlay import save_to
-from departureboard.schema import saved_keys
-from departureboard.store import Store, find_folder, platform_folder
+from departureboard.settings import store as store_module
+from departureboard.settings.config import ConfigError
+from departureboard.settings.installs import install_named
+from departureboard.settings.overlay import save_to
+from departureboard.settings.schema import saved_keys
+from departureboard.settings.store import Store, find_folder, platform_folder
 
 HOME = Path("/home/me")
 ENV = {"RDM_API_KEY": "rail-key"}
@@ -221,7 +221,7 @@ def test_a_missing_config_toml_is_no_settings_and_says_so(tmp_path, caplog):
 
 
 def test_without_config_toml_a_desktop_uses_its_own_folder(tmp_path, monkeypatch):
-    from departureboard import store as stores
+    from departureboard.settings import store as stores
 
     monkeypatch.setattr(stores, "_home", lambda: tmp_path / "home")
     store = Store.open(tmp_path / "missing.toml", environ={}, platform="darwin")
@@ -293,7 +293,7 @@ def test_a_board_save_keeps_the_dashboard_s_settings_and_a_dashboard_save_the_bo
 
 
 def test_the_target_checks_as_its_view_loads(board):
-    from departureboard.overlay import OverlayError
+    from departureboard.settings.overlay import OverlayError
 
     path, _ = board
     store = Store.open(path, environ={})

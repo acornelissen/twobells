@@ -2,8 +2,8 @@ import dataclasses
 
 import pytest
 
-from departureboard.panel import HDMI_1280X400, PHAT, PHAT_V1, WAVESHARE_10IN85G
-from departureboard.render import (
+from departureboard.board.panel import HDMI_1280X400, PHAT, PHAT_V1, WAVESHARE_10IN85G
+from departureboard.board.render import (
     HEIGHT,
     WIDTH,
     Palette,
@@ -21,7 +21,7 @@ from departureboard.render import (
     row_layout,
     wrap_text,
 )
-from departureboard.view import BoardView, CodeView, Row, Section, SetupView, Style
+from departureboard.board.view import BoardView, CodeView, Row, Section, SetupView, Style
 
 PALETTE = Palette(white=0, black=1, accent=2)
 
@@ -199,8 +199,8 @@ def test_header_shows_the_running_clock_on_a_screen():
 
 
 def test_route_page_in_the_plain_look():
-    from departureboard.render import render_route
-    from departureboard.route import RouteView
+    from departureboard.board.render import render_route
+    from departureboard.board.route import RouteView
 
     names = ("The Junction", "Grapes Inn", "Sunlaws Street", "St Marys Road", "Arundel Street", "Henry Street")
 
@@ -215,9 +215,9 @@ def test_route_page_in_the_plain_look():
 
 
 def test_themes_draw_the_route_page():
-    from departureboard.render import render_route
-    from departureboard.sign import render_route_sign
-    from departureboard.themes import THEMES
+    from departureboard.board.render import render_route
+    from departureboard.board.sign import render_route_sign
+    from departureboard.board.themes import THEMES
 
     assert THEMES["plain"].render_route is render_route
     assert THEMES["sign"].render_route is render_route_sign
@@ -436,7 +436,7 @@ def test_in_turns_follows_the_board_clock():
 
 
 def test_plain_look_shows_fewer_rows_rather_than_cut_them_off_on_the_original_phat():
-    from departureboard.panel import PHAT_V1
+    from departureboard.board.panel import PHAT_V1
 
     trains = [Row(f"07:{m}", "Manchester Piccadilly", "On time") for m in (12, 42, 52)]
     buses = [Row("341", "A: Hyde", "07:20"), Row("61", "B: Buxton", "07:35 sch")]
@@ -457,8 +457,8 @@ def test_default_text_size_draws_exactly_as_before():
 
 
 def test_slightly_bigger_text_still_fits_the_original_phat():
-    from departureboard.panel import PHAT_V1
-    from departureboard.render import row_limits
+    from departureboard.board.panel import PHAT_V1
+    from departureboard.board.render import row_limits
 
     assert row_limits(PHAT_V1, text_size=12) == {"Trains": 2, "Buses": 1}
     image = render(_full_board(), PALETTE, PHAT_V1, text_size=12)
@@ -467,7 +467,7 @@ def test_slightly_bigger_text_still_fits_the_original_phat():
 
 
 def test_bigger_text_draws_more_ink():
-    from departureboard.panel import PHAT_V1
+    from departureboard.board.panel import PHAT_V1
 
     def ink(size):
         image = render(_full_board(), PALETTE, PHAT_V1, text_size=size)
@@ -478,8 +478,8 @@ def test_bigger_text_draws_more_ink():
 
 @pytest.mark.parametrize("text_size", [11, 12, 13])
 def test_a_shortened_destination_leaves_a_gap_before_the_status(text_size):
-    from departureboard.panel import PHAT_V1
-    from departureboard.render import drawn_length
+    from departureboard.board.panel import PHAT_V1
+    from departureboard.board.render import drawn_length
 
     fonts = load_fonts(1, text_size)
     layout = row_layout(Row("20:22", "Manchester Piccadilly", "On time"), fonts, PHAT_V1.width, 1)
@@ -570,7 +570,7 @@ def test_a_long_name_still_fits(panel):
 
 
 def test_an_address_too_long_to_read_on_one_line_breaks_before_its_port():
-    from departureboard.render import MIN_ADDRESS_PX, _biggest_bold, address_lines
+    from departureboard.board.render import MIN_ADDRESS_PX, _biggest_bold, address_lines
 
     long_url = "http://my-very-long-departure-board-name.local:8090/settings"
     one_line = _biggest_bold(long_url, 200, 40)

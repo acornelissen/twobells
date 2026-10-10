@@ -26,10 +26,9 @@ from test_livebus import (
     bus,
 )
 
-from departureboard import timetable
-from departureboard.holidays import Event, holiday_names
-from departureboard.schedule_model import Calendar, Call, Schedule, StopPosition, metres
-from departureboard.timetable import (
+from departureboard.sources.holidays import Event, holiday_names
+from departureboard.timetable import build as timetable
+from departureboard.timetable.build import (
     FILE_NAME,
     FORMAT,
     LOCK_NAME,
@@ -47,6 +46,7 @@ from departureboard.timetable import (
     runs_on,
     save,
 )
+from departureboard.timetable.model import Calendar, Call, Schedule, StopPosition, metres
 
 FIXTURES = Path(__file__).parent / "fixtures"
 TXC_341 = (FIXTURES / "txc_bnml_341.xml").read_bytes()
@@ -652,7 +652,7 @@ def test_one_download_at_a_time():
 
 
 def test_documents_are_unpacked_one_at_a_time(tmp_path):
-    from departureboard.timetable import _documents
+    from departureboard.timetable.build import _documents
 
     blob = _zip({"a.xml": b"<a/>", "b.xml": b"<b/>"})
     documents = _documents([("X", "https://x/1")], lambda url, file: file.write(blob), tmp_path)
@@ -675,7 +675,7 @@ def test_download_refuses_anything_but_https(url):
 
 
 def test_download_is_capped(monkeypatch):
-    from departureboard import http
+    from departureboard.core import net
 
     class Response(io.BytesIO):
         def __enter__(self):
@@ -684,7 +684,7 @@ def test_download_is_capped(monkeypatch):
         def __exit__(self, *exc):
             return False
 
-    monkeypatch.setattr(http, "urlopen", lambda request, timeout: Response(b"x" * 300_000))
+    monkeypatch.setattr(net, "urlopen", lambda request, timeout: Response(b"x" * 300_000))
     file = io.BytesIO()
     download("https://example.com/ok", file, max_bytes=300_000)
     assert len(file.getvalue()) == 300_000
@@ -833,7 +833,7 @@ def test_a_timetable_that_starts_later_is_kept_but_never_runs_before_it_starts()
     assert route and all(j.calendar.start == date(2026, 2, 17) for j in route)
     assert not [j for j in journeys_on(early, date(2026, 2, 16)) if j.line == "341"]
     assert [j for j in journeys_on(early, date(2026, 2, 17)) if j.line == "341"]
-    from departureboard.area import timetable_changes
+    from departureboard.dashboard.area import timetable_changes
 
     assert {"line": "341", "operator": "BNGN", "from": "2026-02-17"} in timetable_changes(early, date(2026, 2, 1))
 
@@ -937,10 +937,10 @@ def test_a_journey_ending_at_a_stand_near_your_stop_is_kept_inbound_only():
 
 
 def test_the_bus_coming_in_to_the_stand_is_the_inbound_bus_and_never_a_departure(tmp_path):
-    from departureboard.bodsbus import BusBoard
-    from departureboard.enrich import inbound
-    from departureboard.livebus import live_board
-    from departureboard.snapshot import bus_observations
+    from departureboard.dashboard.enrich import inbound
+    from departureboard.dashboard.snapshot import bus_observations
+    from departureboard.sources.bodsbus import BusBoard
+    from departureboard.sources.livebus import live_board
 
     schedule, _ = _build(_stand_doc(), naptan=PLACES)
     save(tmp_path, schedule)
@@ -1015,7 +1015,7 @@ def test_positions_cover_the_stretch_before_the_stand():
 
 
 def test_inbound_only_journeys_are_capped(monkeypatch, caplog):
-    from departureboard import timetable
+    from departureboard.timetable import build as timetable
 
     monkeypatch.setattr(timetable, "MAX_INBOUND_JOURNEYS", 1)
     document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD]),
@@ -1027,7 +1027,7 @@ def test_inbound_only_journeys_are_capped(monkeypatch, caplog):
 
 
 def test_the_build_keeps_each_stop_s_sign_letter_and_its_format():
-    from departureboard.timetable import FORMAT
+    from departureboard.timetable.build import FORMAT
 
     bods = FakeBods()
     bods.naptan = lambda atcos: {STOP_A: ("Henry Street", 53.44384, -1.948999, "Stop A")}
@@ -1046,12 +1046,12 @@ def test_a_timetable_from_an_older_version_is_due_once():
 
 
 def load_round_trip(schedule):
-    from departureboard.schedule_model import Schedule
+    from departureboard.timetable.model import Schedule
     return Schedule.from_json(schedule.to_json())
 
 
 def timetable_format():
-    from departureboard.timetable import FORMAT
+    from departureboard.timetable.build import FORMAT
     return FORMAT
 
 
@@ -1186,7 +1186,7 @@ def test_a_timetable_is_kept_when_finding_its_roads_is_stopped(tmp_path):
 
 
 def test_a_timetable_is_kept_without_roads_when_saving_them_fails(tmp_path, monkeypatch, caplog):
-    from departureboard import timetable
+    from departureboard.timetable import build as timetable
 
     real_save = timetable.save
     saves = []

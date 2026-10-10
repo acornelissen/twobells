@@ -7,16 +7,17 @@ from typing import ClassVar
 
 import pytest
 
-from departureboard import discover, setupapi
-from departureboard.config import load_config, needs_setup, read_base, read_config
-from departureboard.groupform import check_views
-from departureboard.installs import INSTALLS, Install
-from departureboard.keytest import KeyResult
-from departureboard.overlay import Target, board_target
-from departureboard.schema import keys as schema_keys
-from departureboard.setup import Place, SetupError, Station, Stop
-from departureboard.setupapi import Invalid, RateLimit, SetupApi, decode, suggested_labels
-from departureboard.store import Store
+from departureboard.settings.config import load_config, needs_setup, read_base, read_config
+from departureboard.settings.installs import INSTALLS, Install
+from departureboard.settings.overlay import Target, board_target
+from departureboard.settings.schema import keys as schema_keys
+from departureboard.settings.store import Store
+from departureboard.setup import api as setupapi
+from departureboard.setup import discover
+from departureboard.setup.api import Invalid, RateLimit, SetupApi, decode, suggested_labels
+from departureboard.setup.keytest import KeyResult
+from departureboard.setup.lookups import Place, SetupError, Station, Stop
+from departureboard.web.groupform import check_views
 
 # Home, near Hadfield station, to more places than anything written may show.
 HOME = {"lat": 53.461964, "lon": -1.965633}

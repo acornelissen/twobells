@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from departureboard.bods import MAX_RESPONSE_BYTES, BodsVehicleSource, parse_siri_vm, redact_key
+from departureboard.sources.bods import MAX_RESPONSE_BYTES, BodsVehicleSource, parse_siri_vm, redact_key
 
 FIXTURE = (Path(__file__).parent / "fixtures" / "bods_glossop_synthetic.xml").read_bytes()
 BOX = (-1.99, 53.43, -1.94, 53.46)
@@ -93,7 +93,7 @@ def test_redact_key():
 def test_get_bytes_refuses_an_oversized_body(monkeypatch):
     import io
 
-    from departureboard import http
+    from departureboard.core import net
 
     class FakeResponse(io.BytesIO):
         def __enter__(self):
@@ -102,11 +102,11 @@ def test_get_bytes_refuses_an_oversized_body(monkeypatch):
         def __exit__(self, *args):
             return False
 
-    monkeypatch.setattr(http, "urlopen", lambda request, timeout: FakeResponse(b"x" * 11))
+    monkeypatch.setattr(net, "urlopen", lambda request, timeout: FakeResponse(b"x" * 11))
     with pytest.raises(ValueError, match="larger"):
-        http.get_bytes("https://example.invalid/", max_bytes=10)
-    monkeypatch.setattr(http, "urlopen", lambda request, timeout: FakeResponse(b"x" * 10))
-    assert http.get_bytes("https://example.invalid/", max_bytes=10) == b"x" * 10
+        net.get_bytes("https://example.invalid/", max_bytes=10)
+    monkeypatch.setattr(net, "urlopen", lambda request, timeout: FakeResponse(b"x" * 10))
+    assert net.get_bytes("https://example.invalid/", max_bytes=10) == b"x" * 10
 
 
 def test_positions_not_updated_for_five_minutes_are_dropped():

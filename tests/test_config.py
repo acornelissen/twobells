@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from departureboard.config import ConfigError, load_config
-from departureboard.darwin import DarwinSource
-from departureboard.transportapi import TransportApiBusSource
+from departureboard.settings.config import ConfigError, load_config
+from departureboard.sources.darwin import DarwinSource
+from departureboard.sources.transportapi import TransportApiBusSource
 
 ROOT = Path(__file__).parent.parent
 TEMPLATE = ROOT / "config.example.toml"  # the blank template, with CHANGE_ME placeholders
@@ -335,7 +335,7 @@ def test_saved_settings_are_layered_over_config(tmp_path):
 
 
 def test_overlay_cannot_move_the_state_file(tmp_path):
-    from departureboard.config import read_config
+    from departureboard.settings.config import read_config
 
     path = _with_state(tmp_path, "")
     (tmp_path / "state").mkdir()
@@ -344,8 +344,8 @@ def test_overlay_cannot_move_the_state_file(tmp_path):
 
 
 def test_saved_settings_cannot_send_the_keys_to_another_address(tmp_path, caplog):
-    from departureboard.darwin import DEFAULT_BASE_URL as DARWIN_URL
-    from departureboard.transportapi import DEFAULT_BASE_URL as TAPI_URL
+    from departureboard.sources.darwin import DEFAULT_BASE_URL as DARWIN_URL
+    from departureboard.sources.transportapi import DEFAULT_BASE_URL as TAPI_URL
 
     path = _with_state(tmp_path, TRAIN + BUS)
     (tmp_path / "state").mkdir()
@@ -381,14 +381,14 @@ def test_broken_overlay_is_a_config_error(tmp_path):
 
 
 def test_merge_replaces_lists_and_merges_tables():
-    from departureboard.config import merge
+    from departureboard.settings.config import merge
 
     base = {"a": 1, "t": {"x": 1, "y": [1, 2]}, "l": [1]}
     assert merge(base, {"t": {"y": [3]}, "l": [2]}) == {"a": 1, "t": {"x": 1, "y": [3]}, "l": [2]}
 
 
 def test_merge_replaces_tables_below_the_top_level():
-    from departureboard.config import merge
+    from departureboard.settings.config import merge
 
     base = {"bus": {"rows": 2, "stops": {"A": "x", "B": "y"}, "routes": {"341": {}}}}
     merged = merge(base, {"bus": {"stops": {"A": "x"}, "walk_minutes": {}}})
@@ -450,15 +450,15 @@ def test_wrong_types_and_ranges_are_config_errors(tmp_path, text, message):
 
 
 def test_broken_config_toml_is_a_config_error_when_finding_the_overlay(tmp_path):
-    from departureboard.config import overlay_paths
+    from departureboard.settings.config import overlay_paths
 
     with pytest.raises(ConfigError, match=r"config\.toml"):
         overlay_paths(write(tmp_path, "title = \n"))
 
 
 def test_no_state_file_means_the_store_s_overlay_not_the_working_directory_s(tmp_path, monkeypatch):
-    from departureboard.config import overlay_paths
-    from departureboard.store import platform_folder
+    from departureboard.settings.config import overlay_paths
+    from departureboard.settings.store import platform_folder
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / "settings.toml").write_text('title = "From cwd"\n')
@@ -646,7 +646,7 @@ A = "1000DGHS0900"
 
 
 def bods_bus(tmp_path, env, extra=""):
-    from departureboard.bodsbus import BodsBusSource
+    from departureboard.sources.bodsbus import BodsBusSource
 
     path = write(tmp_path, BODS_BUS.format(state=tmp_path / "state" / "state.json") + extra)
     config = load_config(path, env).board.sources[0]
@@ -713,7 +713,7 @@ def test_bus_source_defaults_to_transportapi(tmp_path):
 
 
 def test_bods_bus_fallback_has_its_own_windows(tmp_path):
-    from departureboard.schedule import parse_window
+    from departureboard.core.polling import parse_window
 
     path = write(tmp_path, BODS_BUS.format(state=tmp_path / "s.json").replace(
         'source = "bods"', 'source = "bods"\nfallback_windows = ["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]'))
@@ -732,8 +732,8 @@ def test_bods_bus_fallback_windows_are_checked(tmp_path):
 def test_the_board_looks_for_a_reset_code_in_the_store(tmp_path):
     import time
 
-    from departureboard.auth import ResetCodes
-    from departureboard.store import platform_folder
+    from departureboard.settings.store import platform_folder
+    from departureboard.web.auth import ResetCodes
 
     elsewhere = load_config(write(tmp_path, TRAIN), ENV).board
     code = ResetCodes(platform_folder()).issue(time.time())  # no state_file: the platform's folder
@@ -755,7 +755,7 @@ def installed_template(tmp_path):
 
 
 def test_no_config_or_the_template_as_installed_needs_setting_up(tmp_path):
-    from departureboard.config import needs_setup
+    from departureboard.settings.config import needs_setup
 
     assert needs_setup(tmp_path / "missing.toml")
     assert needs_setup(installed_template(tmp_path))
@@ -764,14 +764,14 @@ def test_no_config_or_the_template_as_installed_needs_setting_up(tmp_path):
 
 @pytest.mark.parametrize("text", ["", "\n# Nothing yet\n", 'title = "Departures"\ndisplay = "inky"\n'])
 def test_a_config_with_neither_trains_nor_buses_needs_setting_up(tmp_path, text):
-    from departureboard.config import needs_setup
+    from departureboard.settings.config import needs_setup
 
     assert needs_setup(write(tmp_path, text))
 
 
 def test_settings_saved_without_a_config_count(tmp_path):
-    from departureboard.config import needs_setup
-    from departureboard.store import Store
+    from departureboard.settings.config import needs_setup
+    from departureboard.settings.store import Store
 
     store = Store.open(tmp_path / "missing.toml", state_dir=tmp_path / "data")
     assert needs_setup(store)
@@ -783,7 +783,7 @@ def test_settings_saved_without_a_config_count(tmp_path):
 
 
 def test_trains_and_buses_both_switched_off_need_setting_up(tmp_path):
-    from departureboard.config import needs_setup
+    from departureboard.settings.config import needs_setup
 
     config = write(tmp_path, '[train]\ncrs = "GLO"\nenabled = false\n[bus]\nenabled = false\n')
     assert needs_setup(config)
@@ -792,14 +792,14 @@ def test_trains_and_buses_both_switched_off_need_setting_up(tmp_path):
 
 
 def test_a_filled_in_board_needs_no_setting_up(tmp_path, example):
-    from departureboard.config import needs_setup
+    from departureboard.settings.config import needs_setup
 
     assert not needs_setup(example)
     assert not needs_setup(filled_template(tmp_path))
 
 
 def test_setting_up_from_the_page_counts_once_every_placeholder_is_covered(tmp_path):
-    from departureboard.config import needs_setup
+    from departureboard.settings.config import needs_setup
 
     config = installed_template(tmp_path)
     state = tmp_path / "state"
@@ -811,7 +811,7 @@ def test_setting_up_from_the_page_counts_once_every_placeholder_is_covered(tmp_p
 
 
 def test_placeholders_in_a_section_switched_off_need_no_setting_up(tmp_path):
-    from departureboard.config import needs_setup
+    from departureboard.settings.config import needs_setup
 
     config = installed_template(tmp_path)
     state = tmp_path / "state"
@@ -828,7 +828,7 @@ def test_placeholders_in_a_section_switched_off_need_no_setting_up(tmp_path):
 
 @pytest.mark.parametrize("text", ["title = \n", "[train\n"])
 def test_a_broken_config_is_a_fault_to_report_not_a_first_run(tmp_path, text):
-    from departureboard.config import needs_setup
+    from departureboard.settings.config import needs_setup
 
     assert not needs_setup(write(tmp_path, text))
 
@@ -836,8 +836,8 @@ def test_a_broken_config_is_a_fault_to_report_not_a_first_run(tmp_path, text):
 def test_first_run_settings_use_the_templates_display_and_state_folder(tmp_path):
     import time
 
-    from departureboard.auth import ResetCodes
-    from departureboard.config import first_run_settings
+    from departureboard.settings.config import first_run_settings
+    from departureboard.web.auth import ResetCodes
 
     settings = first_run_settings(installed_template(tmp_path))
     assert settings.board.sources == [] and settings.board.weather is None
@@ -849,7 +849,7 @@ def test_first_run_settings_use_the_templates_display_and_state_folder(tmp_path)
 
 
 def test_first_run_settings_keep_the_screen_and_its_turn(tmp_path):
-    from departureboard.config import first_run_settings
+    from departureboard.settings.config import first_run_settings
 
     text = TEMPLATE.read_text().replace('display = "inky"', 'display = "hdmi-1280x400"').replace("rotate = 0", "rotate = 90")
     settings = first_run_settings(write(tmp_path, text))
@@ -857,8 +857,8 @@ def test_first_run_settings_keep_the_screen_and_its_turn(tmp_path):
 
 
 def test_first_run_settings_fall_back_to_the_defaults(tmp_path):
-    from departureboard.config import first_run_settings
-    from departureboard.store import Store
+    from departureboard.settings.config import first_run_settings
+    from departureboard.settings.store import Store
 
     missing = first_run_settings(tmp_path / "missing.toml")
     assert (missing.display, missing.rotate) == ("inky", 0) and missing.board.reset_code is not None

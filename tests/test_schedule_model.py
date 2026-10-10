@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 import pytest
 
-from departureboard.schedule_model import Calendar, Call, Journey, Schedule, StopPosition
+from departureboard.timetable.model import Calendar, Call, Journey, Schedule, StopPosition
 
 
 def test_schedule_round_trips_through_json():
@@ -113,11 +113,11 @@ def test_roads_that_arent_a_mapping_are_none():
 
 def test_the_roads_are_read_only_when_first_asked_for(monkeypatch):
     # The e-paper board reads the timetable every minute and never draws a road.
-    from departureboard import schedule_model
+    from departureboard.timetable import model
 
     read = []
-    real = schedule_model._point
-    monkeypatch.setattr(schedule_model, "_point", lambda pair: read.append(pair) or real(pair))
+    real = model._point
+    monkeypatch.setattr(model, "_point", lambda pair: read.append(pair) or real(pair))
     schedule = Schedule.from_json(_with_roads(json.dumps({"A>B": GOOD_ROAD * 3})))
     assert read == []
     assert schedule.shapes["A>B"] == ((53.4436, -1.9563),) * 3

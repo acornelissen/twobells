@@ -98,7 +98,8 @@ jobs:
           "$RUNNER_TEMP/try/bin/python" -I -c '
           from importlib.resources import files
           d = files("departureboard")
-          for name in ("data/gb_stations.csv", "data/naptan_area_grid.csv", "web.css", "emulator.html"):
+          for name in ("data/gb_stations.csv", "data/naptan_area_grid.csv", "web/web.css", "emulator/emulator.html",
+                       "dashboard_static/index.html", "wizard_static/wizard.js"):
               assert d.joinpath(name).is_file(), f"{name} missing from the wheel"
           '
 

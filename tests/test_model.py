@@ -1,4 +1,4 @@
-from departureboard.model import Departure, Status, minutes_between
+from departureboard.core.model import Departure, Status, minutes_between
 
 
 def make(scheduled="07:12", expected=None, status=Status.ON_TIME):

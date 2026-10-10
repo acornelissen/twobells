@@ -1,3 +1,4 @@
+import http.client
 import json
 import os
 import sys
@@ -10,8 +11,8 @@ from typing import ClassVar
 import pytest
 from PIL import Image
 
-from departureboard import holidays
 from departureboard.cli import load_env_file, main
+from departureboard.sources import holidays
 
 
 @pytest.fixture(autouse=True)
@@ -105,7 +106,7 @@ PAYLOADS = {
 
 @pytest.fixture
 def probe_env(tmp_path, monkeypatch):
-    from departureboard.transportapi import TransportApiBusSource
+    from departureboard.sources.transportapi import TransportApiBusSource
 
     calls = []
 
@@ -183,7 +184,7 @@ def test_demo_png_can_use_either_theme(tmp_path):
 def test_probe_train_reports_http_errors_on_one_line(tmp_path, monkeypatch, capsys):
     from urllib.error import HTTPError
 
-    from departureboard.darwin import DarwinSource
+    from departureboard.sources.darwin import DarwinSource
 
     def refuse(self):
         raise HTTPError("https://example.test", 403, "Forbidden", None, None)
@@ -206,7 +207,7 @@ def test_probe_train_reports_http_errors_on_one_line(tmp_path, monkeypatch, caps
 def train_probe(tmp_path, monkeypatch):
     """A train config, and a fake Darwin that answers with the synthetic
     detailed Glossop board and records the URLs asked for."""
-    from departureboard import darwin
+    from departureboard.sources import darwin
 
     board = json.loads((Path(__file__).parent / "fixtures" / "ldbws_glossop_details.json").read_text())
     urls = []
@@ -258,7 +259,7 @@ def _run_setup(tmp_path, monkeypatch):
     from datetime import datetime
 
     import departureboard.cli as cli
-    from departureboard.darwin import DarwinSource
+    from departureboard.sources.darwin import DarwinSource
 
     calls = []
     monkeypatch.setattr(DarwinSource, "fetch", lambda self: calls.append(1) or [])
@@ -329,7 +330,7 @@ def test_route_prints_a_config_block_from_a_timetable_file(tmp_path, capsys, mon
     import tomllib
     from pathlib import Path
 
-    from departureboard import routesetup
+    from departureboard.timetable import routesetup
 
     fixtures = Path(__file__).parent / "fixtures"
     naptan = (fixtures / "naptan_glossop_high_street_west.csv").read_bytes()
@@ -349,7 +350,8 @@ def test_route_searches_each_download_before_fetching_the_next(tmp_path, capsys,
     import zipfile
     from pathlib import Path
 
-    from departureboard import cli, routesetup
+    from departureboard import cli
+    from departureboard.timetable import routesetup
 
     txc = (Path(__file__).parent / "fixtures" / "txc_glossop_synthetic.xml").read_bytes()
     buffer = io.BytesIO()
@@ -437,7 +439,7 @@ def test_watcher_keeps_running_settings_when_new_ones_are_broken(tmp_path):
 
 
 def test_run_saves_state_even_when_drawing_fails(tmp_path, monkeypatch):
-    from departureboard.display import PngDisplay
+    from departureboard.board.displays.display import PngDisplay
 
     args, calls = _run_setup(tmp_path, monkeypatch)
 
@@ -498,7 +500,7 @@ def test_reset_code_prints_a_code_the_page_will_take(tmp_path, capsys):
     import re
     import time
 
-    from departureboard.auth import ResetCodes
+    from departureboard.web.auth import ResetCodes
 
     config, state = _web_config(tmp_path)
     assert main(["web", "--config", str(config), "--reset-code"]) == 0
@@ -512,7 +514,7 @@ def test_reset_code_prints_a_code_the_page_will_take(tmp_path, capsys):
 def test_reset_code_is_not_held_back_by_the_pages_limits(tmp_path, capsys):
     import time
 
-    from departureboard.auth import ResetCodes
+    from departureboard.web.auth import ResetCodes
 
     config, state = _web_config(tmp_path)
     ResetCodes(state).issue(time.time())  # someone just pressed the page's button
@@ -601,7 +603,7 @@ def test_root_may_still_run_what_only_reads_the_store(root_on_their_store, capsy
 
 
 def test_root_may_use_its_own_store_and_anyone_else_goes_ahead_as_today(root_on_their_store, monkeypatch, capsys):
-    from departureboard import store
+    from departureboard.settings import store
 
     config, state, _ = root_on_their_store
     monkeypatch.setattr(store, "_owner", lambda folder: 0)
@@ -617,7 +619,7 @@ def _holiday_run(tmp_path, monkeypatch, extra=""):
     from datetime import datetime
 
     import departureboard.cli as cli
-    from departureboard.darwin import DarwinSource
+    from departureboard.sources.darwin import DarwinSource
 
     calls = []
     monkeypatch.setattr(DarwinSource, "fetch", lambda self: calls.append(1) or [])
@@ -710,8 +712,8 @@ def bods_env(tmp_path, monkeypatch):
 
 
 def test_timetable_builds_and_reports_the_bus_timetable(bods_env, monkeypatch, capsys):
-    from departureboard import timetable
-    from departureboard.schedule_model import Calendar, Call, Journey, Schedule
+    from departureboard.timetable import build as timetable
+    from departureboard.timetable.model import Calendar, Call, Journey, Schedule
 
     args, folder = bods_env
     seen = {}
@@ -734,7 +736,7 @@ def test_timetable_builds_and_reports_the_bus_timetable(bods_env, monkeypatch, c
 
 
 def test_timetable_fails_when_no_timetable_could_be_built(bods_env, monkeypatch, capsys):
-    from departureboard import timetable
+    from departureboard.timetable import build as timetable
 
     args, _ = bods_env
     monkeypatch.setattr(timetable, "refresh", lambda *a, **k: None)
@@ -750,7 +752,7 @@ def test_timetable_needs_the_bods_bus_source(probe_env, capsys):
 
 def test_timetable_with_buses_switched_off_has_nothing_to_do(bods_env, monkeypatch, capsys):
     # The wizard switches buses off for a board of trains alone; the weekly timer must still succeed.
-    from departureboard import timetable
+    from departureboard.timetable import build as timetable
 
     args, folder = bods_env
     folder.mkdir()
@@ -764,7 +766,7 @@ def test_timetable_with_buses_switched_off_has_nothing_to_do(bods_env, monkeypat
 
 def test_timetable_builds_from_bods_set_only_in_the_saved_settings(bods_env, monkeypatch, capsys):
     # The settings page or the wizard saved source = "bods" and the operators; config.toml says neither.
-    from departureboard import timetable
+    from departureboard.timetable import build as timetable
 
     args, folder = bods_env
     config = Path(args[1])
@@ -790,7 +792,7 @@ def test_timetable_is_skipped_while_another_build_runs(bods_env, monkeypatch, ca
     import fcntl
     import os
 
-    from departureboard import timetable
+    from departureboard.timetable import build as timetable
 
     args, folder = bods_env
     folder.mkdir()
@@ -805,7 +807,7 @@ def test_timetable_is_skipped_while_another_build_runs(bods_env, monkeypatch, ca
 
 
 def test_timetable_fails_when_its_lock_cannot_be_opened(bods_env, capsys):
-    from departureboard import timetable
+    from departureboard.timetable import build as timetable
 
     args, folder = bods_env
     folder.mkdir()
@@ -879,8 +881,9 @@ def test_dashboard_never_moves_off_a_port_it_was_given(dashboard_config, tmp_pat
 
 
 def test_dashboard_runs_until_interrupted_and_lets_go_of_its_folder(dashboard_config, tmp_path, monkeypatch, capsys):
-    from departureboard import dashserver, http
-    from departureboard.dashconfig import load_dashboard
+    from departureboard.core import net
+    from departureboard.dashboard.config import load_dashboard
+    from departureboard.web import server as dashserver
 
     def offline(request, timeout):
         raise OSError("offline in tests")
@@ -889,7 +892,7 @@ def test_dashboard_runs_until_interrupted_and_lets_go_of_its_folder(dashboard_co
         raise KeyboardInterrupt
 
     opened = []
-    monkeypatch.setattr(http, "urlopen", offline)
+    monkeypatch.setattr(net, "urlopen", offline)
     monkeypatch.setattr(dashserver.DashboardServer, "serve_forever", interrupted)
     monkeypatch.setattr("webbrowser.open", opened.append)
     folder = tmp_path / "dash"
@@ -913,7 +916,6 @@ def free_port():
 
 def answering(port, deadline=10.0):
     """Whether the dashboard on `port` answers within `deadline` seconds."""
-    import http.client
 
     stop = time.monotonic() + deadline
     while time.monotonic() < stop:
@@ -929,14 +931,15 @@ def answering(port, deadline=10.0):
 
 
 def test_dashboard_starts_again_when_its_saved_settings_change(dashboard_config, tmp_path, monkeypatch, caplog):
-    from departureboard import cli, http
-    from departureboard.dashconfig import load_dashboard
+    from departureboard import cli
+    from departureboard.core import net
+    from departureboard.dashboard.config import load_dashboard
 
     def offline(request, timeout):
         raise OSError("offline in tests")
 
     started_again = []
-    monkeypatch.setattr(http, "urlopen", offline)
+    monkeypatch.setattr(net, "urlopen", offline)
     monkeypatch.setattr(cli, "SETTINGS_CHECK_S", 0.05)
     monkeypatch.setattr(cli, "_start_again", started_again.append)
     caplog.set_level("INFO")
@@ -990,7 +993,8 @@ class Stopped:
 @pytest.fixture
 def served(monkeypatch):
     """What serve would serve, and where: make_server records it and the server stops at once."""
-    from departureboard import dashserver, http
+    from departureboard.core import net
+    from departureboard.web import server as dashserver
 
     def offline(request, timeout):
         raise OSError("offline in tests")
@@ -1001,7 +1005,7 @@ def served(monkeypatch):
         made.update(app=app, host=host, port=port, attempts=attempts)
         return Stopped()
 
-    monkeypatch.setattr(http, "urlopen", offline)
+    monkeypatch.setattr(net, "urlopen", offline)
     monkeypatch.setattr(dashserver, "make_server", make_server)
     monkeypatch.setattr("webbrowser.open", lambda url: made.setdefault("opened", []).append(url))
     return made
@@ -1010,10 +1014,9 @@ def served(monkeypatch):
 def ask(app, path, fields=None):
     """A GET to `app`, or with `fields` a form's POST from its own page, served
     for real on a free port: (status, Location, body)."""
-    import http.client
     from urllib.parse import urlencode
 
-    from departureboard.dashserver import DashboardServer
+    from departureboard.web.server import DashboardServer
 
     server = DashboardServer(("127.0.0.1", 0), app)
     threading.Thread(target=server.serve_forever, args=(0.05,), daemon=True).start()
@@ -1086,7 +1089,7 @@ def test_serve_listens_and_opens_the_browser_as_its_install_does(tmp_path, serve
 
 def test_serve_on_a_pi_not_set_up_shows_no_dashboard_and_hands_setup_to_the_fetch_service(tmp_path, served,
                                                                                          monkeypatch):
-    from departureboard import setupspool
+    from departureboard.setup import spool as setupspool
 
     run = tmp_path / "run"
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
@@ -1104,7 +1107,7 @@ def test_serve_on_a_pi_not_set_up_shows_no_dashboard_and_hands_setup_to_the_fetc
 @pytest.fixture
 def pi_with_the_dashboard(tmp_path, monkeypatch, dashboard_config):
     """A Pi set up, with its spool in memory and the dashboard view on; no pollers may run in serve."""
-    from departureboard import collector
+    from departureboard.dashboard import collector
 
     monkeypatch.setattr(collector, "Collector", lambda *args, **kwargs: pytest.fail("pollers in serve"))
     run = tmp_path / "run"
@@ -1121,11 +1124,11 @@ def test_serve_on_a_pi_shows_the_dashboard_the_fetch_service_hands_over(tmp_path
                                                                          capsys):
     import fcntl
 
-    from departureboard import handoff
-    from departureboard.history import History
-    from departureboard.setupspool import Spool
-    from departureboard.snapshot import Hub
-    from departureboard.walk import WalkTimes
+    from departureboard.core.walk import WalkTimes
+    from departureboard.dashboard.history import History
+    from departureboard.dashboard.snapshot import Hub
+    from departureboard.fetch import handoff
+    from departureboard.setup.spool import Spool
 
     args, folder, run = pi_with_the_dashboard
     assert main(args) == 0
@@ -1198,7 +1201,7 @@ FIRST_RUNS = {
 def test_a_first_run_serves_the_settings_and_signing_in_opens_the_wizard(tmp_path, served, monkeypatch, capsys,
                                                                          install, config):
     # Docker's first start (no config.toml), a blank one, and the template as installed on a Pi.
-    from departureboard.auth import PasswordStore
+    from departureboard.web.auth import PasswordStore
 
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))  # the Pi's spool, in memory
     path, folder = tmp_path / "config.toml", tmp_path / "data"
@@ -1229,7 +1232,6 @@ class Browser:
         self.port, self.cookies = port, {}
 
     def __call__(self, method, path, form=None, json_body=None, headers=None):
-        import http.client
         from urllib.parse import urlencode
 
         sent = {"Host": f"localhost:{self.port}", "Origin": f"http://localhost:{self.port}", **(headers or {})}
@@ -1255,12 +1257,15 @@ def test_dockers_first_run_claims_in_the_log_sets_up_and_starts_the_dashboard_ag
     # A new container: no config.toml, nothing saved, the key from the environment.
     import re
 
-    from departureboard import cli, collector, dashserver, http
+    from departureboard import cli
+    from departureboard.core import net
+    from departureboard.dashboard import collector
+    from departureboard.web import server as dashserver
 
     def offline(request, timeout):
         raise OSError("offline in tests")
 
-    monkeypatch.setattr(http, "urlopen", offline)
+    monkeypatch.setattr(net, "urlopen", offline)
     monkeypatch.setattr(cli, "SETTINGS_CHECK_S", 0.05)
     started_again = []
     monkeypatch.setattr(cli, "_start_again", started_again.append)
@@ -1338,7 +1343,7 @@ def test_serve_with_the_dashboard_view_off_runs_only_the_settings(tmp_path, serv
 def test_serve_sets_the_password_and_prints_a_code_in_the_store(tmp_path, typed, no_dashboard, capsys, install):
     import re
 
-    from departureboard.auth import PasswordStore, ResetCodes
+    from departureboard.web.auth import PasswordStore, ResetCodes
 
     typed[0].extend([DASH_PASSWORD] * 2)
     folder = tmp_path / "data"
@@ -1482,8 +1487,8 @@ class FakeServer:
 def test_serve_starts_again_only_when_the_dashboard_should_start_stop_or_change(
         dashboard_config, tmp_path, monkeypatch, running, saved, restarts):
     from departureboard import cli
-    from departureboard.installs import install_named
-    from departureboard.store import Store
+    from departureboard.settings.installs import install_named
+    from departureboard.settings.store import Store
 
     monkeypatch.setattr(cli, "SETTINGS_CHECK_S", 0.02)
     folder = tmp_path / "data"
@@ -1524,7 +1529,8 @@ def typed(monkeypatch):
 @pytest.fixture
 def no_dashboard(monkeypatch):
     """Fails the test if the dashboard itself would start."""
-    from departureboard import dashconfig, dashserver
+    from departureboard.dashboard import config as dashconfig
+    from departureboard.web import server as dashserver
 
     def started(*args, **kwargs):
         raise AssertionError("the dashboard started")
@@ -1534,7 +1540,7 @@ def no_dashboard(monkeypatch):
 
 
 def test_dashboard_set_password_needs_only_its_folder_as_in_docker(tmp_path, typed, no_dashboard, capsys):
-    from departureboard.auth import PasswordStore
+    from departureboard.web.auth import PasswordStore
 
     answers, prompts = typed
     answers += [DASH_PASSWORD, DASH_PASSWORD]
@@ -1551,8 +1557,8 @@ def test_dashboard_set_password_needs_only_its_folder_as_in_docker(tmp_path, typ
 
 def test_dashboard_set_password_finds_the_folder_as_the_dashboard_does(tmp_path, typed, no_dashboard,
                                                                         monkeypatch):
-    from departureboard import store
-    from departureboard.auth import PasswordStore
+    from departureboard.settings import store
+    from departureboard.web.auth import PasswordStore
 
     answers, _ = typed
     config = tmp_path / "config.toml"
@@ -1577,8 +1583,8 @@ def test_dashboard_set_password_finds_the_folder_as_the_dashboard_does(tmp_path,
 
 def test_dashboard_set_password_without_a_folder_or_config_uses_this_computer_s_folder(tmp_path, typed,
                                                                                       no_dashboard):
-    from departureboard.auth import PasswordStore
-    from departureboard.store import platform_folder
+    from departureboard.settings.store import platform_folder
+    from departureboard.web.auth import PasswordStore
 
     typed[0].extend([DASH_PASSWORD] * 2)
     assert main(["dashboard", "--config", str(tmp_path / "missing.toml"), "--set-password"]) == 0
@@ -1588,7 +1594,7 @@ def test_dashboard_set_password_without_a_folder_or_config_uses_this_computer_s_
 def test_dashboard_set_password_uses_the_same_password_as_the_boards_page(tmp_path, typed, no_dashboard, capsys):
     import re
 
-    from departureboard.auth import PasswordStore, ResetCodes, show_in_log
+    from departureboard.web.auth import PasswordStore, ResetCodes, show_in_log
 
     config, state = _web_config(tmp_path)
     typed[0].extend([DASH_PASSWORD] * 2)
@@ -1604,7 +1610,7 @@ def test_dashboard_set_password_uses_the_same_password_as_the_boards_page(tmp_pa
     (DASH_PASSWORD, "something else entirely", "Those didn't match"),
 ])
 def test_dashboard_set_password_refuses_a_bad_one(tmp_path, typed, capsys, first, again, says):
-    from departureboard.auth import PasswordStore
+    from departureboard.web.auth import PasswordStore
 
     folder = tmp_path / "data"
     PasswordStore(folder / "web.json").set("the old password")
@@ -1615,8 +1621,8 @@ def test_dashboard_set_password_refuses_a_bad_one(tmp_path, typed, capsys, first
 
 
 def test_dashboard_set_password_works_beside_a_running_dashboard(dashboard_config, tmp_path, typed):
-    from departureboard.auth import PasswordStore
-    from departureboard.dashconfig import load_dashboard
+    from departureboard.dashboard.config import load_dashboard
+    from departureboard.web.auth import PasswordStore
 
     folder = tmp_path / "dash"
     running = load_dashboard(dashboard_config, {"RDM_API_KEY": "k"}, folder)  # holds the folder's lock
@@ -1657,7 +1663,7 @@ def test_dashboard_password_flags_are_one_or_the_other(tmp_path, flags):
 def test_dashboard_reset_code_prints_one_code_the_settings_will_take(tmp_path, no_dashboard, capsys, caplog):
     import re
 
-    from departureboard.auth import ResetCodes, show_in_log
+    from departureboard.web.auth import ResetCodes, show_in_log
 
     caplog.set_level("DEBUG")
     folder = tmp_path / "data"
@@ -1682,9 +1688,9 @@ def test_dashboard_reset_code_prints_one_code_the_settings_will_take(tmp_path, n
 def test_the_setup_wizard_is_one_page_on_every_install_in_its_own_words(dashboard_config, tmp_path, install, noun,
                                                                         offered, on, links):
     from departureboard import cli
-    from departureboard.installs import install_named
-    from departureboard.schema import keys
-    from departureboard.store import Store
+    from departureboard.settings.installs import install_named
+    from departureboard.settings.schema import keys
+    from departureboard.settings.store import Store
 
     folder = tmp_path / "dash"
     folder.mkdir()
@@ -1774,7 +1780,7 @@ def test_without_a_config_the_setup_page_keeps_its_state_in_systemds_folder(tmp_
 def test_a_code_asked_for_shows_on_a_board_not_yet_set_up(tmp_path):
     import time
 
-    from departureboard.auth import ResetCodes
+    from departureboard.web.auth import ResetCodes
 
     config = installed_template(tmp_path)
     assert main(first_run_args(tmp_path, config)) == 0
@@ -1839,8 +1845,8 @@ def board_with_views(tmp_path, views, display=None):
 def fetched(monkeypatch):
     """Every fetch the board makes: trains, TransportAPI's buses and bank holidays."""
     import departureboard.cli as cli
-    from departureboard.darwin import DarwinSource
-    from departureboard.transportapi import TransportApiBusSource
+    from departureboard.sources.darwin import DarwinSource
+    from departureboard.sources.transportapi import TransportApiBusSource
 
     calls = []
     monkeypatch.setattr(DarwinSource, "fetch", lambda self: calls.append("train") or [])
@@ -1883,7 +1889,7 @@ def test_with_the_board_view_on_the_board_fetches_as_ever(tmp_path, fetched):
 
 
 def test_a_code_asked_for_still_shows_with_the_board_view_off(tmp_path, fetched):
-    from departureboard.auth import ResetCodes
+    from departureboard.web.auth import ResetCodes
 
     args = board_with_views(tmp_path, ["dashboard"])
     assert main(args) == 0
@@ -1905,7 +1911,7 @@ def test_a_screen_with_the_board_view_off_starts_again_once_it_is_on(tmp_path, f
 
 def test_a_screen_with_the_board_view_off_asks_every_few_seconds(tmp_path, monkeypatch):
     import departureboard.cli as cli
-    from departureboard.store import Store
+    from departureboard.settings.store import Store
 
     board_with_views(tmp_path, ["dashboard"])
     store = Store.open(tmp_path / "config.toml")
@@ -1943,7 +1949,7 @@ def test_the_first_run_after_setting_up_fetches_everything(tmp_path, monkeypatch
 
 
 def test_the_settings_open_the_wizard_until_the_board_is_set_up(tmp_path, monkeypatch, capsys, served):
-    from departureboard.settingsite import PREFIX, SETUP
+    from departureboard.web.settingsite import PREFIX, SETUP
 
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
     config = installed_template(tmp_path)
@@ -1959,7 +1965,7 @@ def test_the_settings_open_the_wizard_until_the_board_is_set_up(tmp_path, monkey
 @pytest.fixture
 def no_runtime_folder(tmp_path, monkeypatch):
     """No systemd RuntimeDirectory, and none left in /run: no folder in memory for the setup spool."""
-    from departureboard import setupspool
+    from departureboard.setup import spool as setupspool
 
     monkeypatch.delenv("RUNTIME_DIRECTORY", raising=False)
     monkeypatch.setattr(setupspool, "RUNTIME", tmp_path / "no-run")
@@ -1968,7 +1974,7 @@ def no_runtime_folder(tmp_path, monkeypatch):
 @pytest.mark.parametrize("flag", [[], ["--setup-via-spool"]])
 def test_the_pis_settings_hand_setup_to_the_fetch_service(tmp_path, monkeypatch, flag, no_runtime_folder, served):
     # Always, now: the flag the unit still passes is taken and changes nothing.
-    from departureboard import setupspool
+    from departureboard.setup import spool as setupspool
 
     config = installed_template(tmp_path)
     (tmp_path / "state").mkdir()  # as install.sh and systemd's StateDirectory make it
@@ -1986,7 +1992,7 @@ def test_the_pis_settings_hand_setup_to_the_fetch_service(tmp_path, monkeypatch,
 
 @pytest.mark.parametrize("command", [["fetch"], ["setup", "serve"]])  # and by its old name, hidden
 def test_the_fetch_service_searches_in_the_boards_state_folder(tmp_path, monkeypatch, no_runtime_folder, command):
-    from departureboard import setupspool
+    from departureboard.setup import spool as setupspool
 
     ran = []
     monkeypatch.setattr(setupspool.Worker, "run", lambda self, tend=None: ran.append(self) or 0)
@@ -2005,7 +2011,8 @@ def test_the_fetch_service_searches_in_the_boards_state_folder(tmp_path, monkeyp
 def test_without_a_folder_in_memory_the_setup_spool_is_refused(tmp_path, monkeypatch, capsys, no_runtime_folder,
                                                                flag):
     # Never on the SD card, where flash can keep what was deleted: a request can hold home's position or a key.
-    from departureboard import dashserver, setupspool
+    from departureboard.setup import spool as setupspool
+    from departureboard.web import server as dashserver
 
     monkeypatch.setattr(dashserver, "make_server", lambda *args, **kwargs: pytest.fail("served"))
     monkeypatch.setattr(setupspool.Worker, "run", lambda self: pytest.fail("ran"))
@@ -2024,7 +2031,7 @@ def test_without_a_folder_in_memory_the_setup_spool_is_refused(tmp_path, monkeyp
 
 
 def test_the_page_and_the_fetch_service_share_systemds_folder_in_memory(tmp_path, monkeypatch, served):
-    from departureboard import setupspool
+    from departureboard.setup import spool as setupspool
 
     run = tmp_path / "run"
     run.mkdir(mode=0o700)  # as systemd makes RuntimeDirectory=
@@ -2044,7 +2051,7 @@ def test_the_fetch_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypat
     # systemctl stop, a timeout or update.sh: SIGTERM mid-search. The page is told at once, not after a silence.
     import signal
 
-    from departureboard import setupspool
+    from departureboard.setup import spool as setupspool
 
     class StuckJob:
         """A discover.SetupJob that runs until cancelled."""
@@ -2108,7 +2115,7 @@ def test_the_fetch_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypat
 
 
 def test_the_fetch_service_without_a_config_searches_in_systemds_folder(tmp_path, monkeypatch, no_runtime_folder):
-    from departureboard import setupspool
+    from departureboard.setup import spool as setupspool
 
     ran = []
     monkeypatch.setattr(setupspool.Worker, "run", lambda self, tend=None: ran.append(self) or 0)
@@ -2123,7 +2130,7 @@ def test_the_fetch_service_without_a_config_searches_in_systemds_folder(tmp_path
 
 @pytest.mark.parametrize("config", ["not toml", "a folder"])
 def test_the_fetch_service_answers_with_why_when_it_cant_read_its_config(tmp_path, monkeypatch, capsys, config):
-    from departureboard import setupspool
+    from departureboard.setup import spool as setupspool
 
     run = tmp_path / "run"
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
@@ -2142,7 +2149,7 @@ def test_the_fetch_service_answers_with_why_when_it_cant_read_its_config(tmp_pat
 
 
 def test_without_a_config_the_settings_start_in_systemds_folder(tmp_path, monkeypatch, capsys, served):
-    from departureboard.settingsite import SETUP
+    from departureboard.web.settingsite import SETUP
 
     folder = tmp_path / "lib"
     folder.mkdir()

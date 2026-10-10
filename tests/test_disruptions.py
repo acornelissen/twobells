@@ -6,8 +6,11 @@ from zoneinfo import ZoneInfo
 import pytest
 from test_livebus import EAST, WEST, schedule
 
-from departureboard import disruptions, http
-from departureboard.disruptions import (
+from departureboard.core import net
+from departureboard.core.safexml import DoctypeError
+from departureboard.dashboard.snapshot import row_id
+from departureboard.sources import disruptions
+from departureboard.sources.disruptions import (
     BusArea,
     BusDisruptionSource,
     RailArea,
@@ -21,9 +24,7 @@ from departureboard.disruptions import (
     safe_link,
     train_disruptions,
 )
-from departureboard.safexml import DoctypeError
-from departureboard.schedule_model import StopPosition
-from departureboard.snapshot import row_id
+from departureboard.timetable.model import StopPosition
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SX = FIXTURES / "bods_siri_sx_glossop.xml"
@@ -284,12 +285,12 @@ class FakeResponse:
 
 def test_a_response_bigger_than_the_cap_is_refused(monkeypatch):
     sent = []
-    monkeypatch.setattr(http, "urlopen", lambda request, timeout: sent.append(request) or FakeResponse(b"x" * 300_000))
-    with pytest.raises(http.TooLarge):
-        list(http.stream("https://example.test/feed", {"x-apikey": "k"}, 200_000))
+    monkeypatch.setattr(net, "urlopen", lambda request, timeout: sent.append(request) or FakeResponse(b"x" * 300_000))
+    with pytest.raises(net.TooLarge):
+        list(net.stream("https://example.test/feed", {"x-apikey": "k"}, 200_000))
     assert sent[0].get_header("X-apikey") == "k"
     with pytest.raises(ValueError, match="https"):
-        list(http.stream("http://example.test/feed", {}, 10))
+        list(net.stream("http://example.test/feed", {}, 10))
 
 
 def test_the_bus_source_asks_siri_sx_with_the_key_and_never_repeats_it():
@@ -311,7 +312,7 @@ def test_the_bus_source_asks_siri_sx_with_the_key_and_never_repeats_it():
     assert "s3cret" not in str(caught.value)
 
     def too_big(url, headers, cap):
-        raise http.TooLarge(f"Response larger than {cap} bytes")
+        raise net.TooLarge(f"Response larger than {cap} bytes")
 
     with pytest.raises(RuntimeError, match="larger than 12000000"):
         BusDisruptionSource("s3cret", open_stream=too_big).fetch()

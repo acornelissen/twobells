@@ -7,11 +7,11 @@ import tomllib
 
 import pytest
 
-from departureboard.config import load_config, read_config, read_overlay_in
-from departureboard.groupform import GroupForm
-from departureboard.installs import install_named
-from departureboard.schema import saved_keys
-from departureboard.store import Store
+from departureboard.settings.config import load_config, read_config, read_overlay_in
+from departureboard.settings.installs import install_named
+from departureboard.settings.schema import saved_keys
+from departureboard.settings.store import Store
+from departureboard.web.groupform import GroupForm
 
 ENV = {"RDM_API_KEY": "rdm-secret-123", "TAPI_APP_ID": "id", "TAPI_APP_KEY": "tapi-secret-456"}
 
@@ -259,7 +259,7 @@ def test_the_sign_look_on_e_paper_offers_both_accents(setup):
 def test_outlined_buttons_have_a_border_that_stands_out():
     from importlib.resources import files
 
-    css = files("departureboard").joinpath("web.css").read_text()
+    css = files("departureboard.web").joinpath("web.css").read_text()
     assert re.search(r"button\.quiet \{[^}]*border: 1px solid var\(--muted\)", css)
 
     def luminance(hex_colour):
@@ -276,7 +276,7 @@ def test_outlined_buttons_have_a_border_that_stands_out():
 def test_problem_text_is_readable_in_light_and_dark():
     from importlib.resources import files
 
-    css = files("departureboard").joinpath("web.css").read_text()
+    css = files("departureboard.web").joinpath("web.css").read_text()
     assert re.search(r"\.problem \{[^}]*color: var\(--error\)", css)
 
     def luminance(hex_colour):
@@ -644,9 +644,9 @@ def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
     # Regression: the page wrote settings.toml whole from its own fields, so
     # the first save after setup dropped [bus] source, operators and routes,
     # [weather] lat and lon, and anything else it doesn't show.
-    from departureboard.overlay import board_target
-    from departureboard.setup import Stop
-    from departureboard.setupapi import SetupApi
+    from departureboard.settings.overlay import board_target
+    from departureboard.setup.api import SetupApi
+    from departureboard.setup.lookups import Stop
 
     state = tmp_path / "state"
     config = tmp_path / "config.toml"
@@ -681,9 +681,9 @@ def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
 
 
 def test_every_field_the_page_saves_is_read_back():
-    from departureboard.display import DISPLAY_PANELS
-    from departureboard.schema import fields
-    from departureboard.themes import THEMES
+    from departureboard.board.displays.display import DISPLAY_PANELS
+    from departureboard.board.themes import THEMES
+    from departureboard.settings.schema import fields
 
     for display in DISPLAY_PANELS:
         for theme in THEMES:

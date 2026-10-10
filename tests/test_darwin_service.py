@@ -8,8 +8,9 @@ from urllib.error import HTTPError, URLError
 
 import pytest
 
-from departureboard import darwin, http
-from departureboard.darwin import (
+from departureboard.core import net
+from departureboard.sources import darwin
+from departureboard.sources.darwin import (
     CallingPoint,
     DetailsError,
     DetailsUnavailable,
@@ -324,7 +325,7 @@ def serve(monkeypatch, body):
         seen.append(request)
         return Response(body)
 
-    monkeypatch.setattr(http, "urlopen", fake_urlopen)
+    monkeypatch.setattr(net, "urlopen", fake_urlopen)
     return seen
 
 

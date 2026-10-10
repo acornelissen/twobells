@@ -8,9 +8,9 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from departureboard import roadshape, setup
-from departureboard.osgb import distance_m
-from departureboard.setup import (
+from departureboard.core.osgb import distance_m
+from departureboard.setup import lookups
+from departureboard.setup.lookups import (
     AnswerCache,
     Place,
     RateLimiter,
@@ -31,6 +31,7 @@ from departureboard.setup import (
     stop_labels,
     walk_minutes,
 )
+from departureboard.timetable import roads
 
 FIXTURES = Path(__file__).parent / "fixtures"
 NAPTAN = (FIXTURES / "naptan_setup_glossop.csv").read_bytes()
@@ -181,7 +182,7 @@ def test_postcode_lookup_asks_postcodes_io_with_the_postcode_quoted():
     getter = Getter(POSTCODE_ANSWER)
     place = lookup_postcode("sk13 1ah", http_get=getter)
     assert getter.urls == ["https://api.postcodes.io/postcodes/SK13%201AH"]
-    assert getter.caps == [setup.MAX_POSTCODE_BYTES]
+    assert getter.caps == [lookups.MAX_POSTCODE_BYTES]
     assert place == HOME
 
 
@@ -223,7 +224,7 @@ def test_postcode_answer_text_is_cleaned_and_cut():
 
 
 def test_oversized_postcode_answer_is_refused():
-    body = json.dumps({**POSTCODE_ANSWER, "pad": "x" * setup.MAX_POSTCODE_BYTES}).encode()
+    body = json.dumps({**POSTCODE_ANSWER, "pad": "x" * lookups.MAX_POSTCODE_BYTES}).encode()
     with pytest.raises(SetupError, match="larger than"):
         lookup_postcode("SK13 1AH", http_get=Getter(body))
 
@@ -274,7 +275,7 @@ def test_address_search_asks_nominatim_for_gb_places():
     query = parse_qs(parts.query)
     assert query["format"] == ["jsonv2"] and query["countrycodes"] == ["gb"] and query["limit"] == ["5"]
     assert query["q"] == ["Station Road, Hadfield"]
-    assert getter.caps == [setup.MAX_NOMINATIM_BYTES]
+    assert getter.caps == [lookups.MAX_NOMINATIM_BYTES]
     assert places[0] == Place(53.461499, -1.9663028, NOMINATIM_ANSWER[0]["display_name"], "England", "High Peak")
     assert places[1].country == "Scotland" and places[1].admin_district == "Glasgow"
 
@@ -314,7 +315,7 @@ def test_nominatim_answer_that_isnt_a_list_is_refused(body):
 
 
 def test_oversized_nominatim_answer_is_refused():
-    body = json.dumps([{"display_name": "x" * setup.MAX_NOMINATIM_BYTES}]).encode()
+    body = json.dumps([{"display_name": "x" * lookups.MAX_NOMINATIM_BYTES}]).encode()
     with pytest.raises(SetupError, match="larger than"):
         search("Station Road", Getter(body))
 
@@ -332,7 +333,7 @@ def test_nominatim_is_asked_at_most_once_a_second_without_real_sleeping():
 
 
 def test_the_rate_limit_is_shared_by_default():
-    assert search_address.__defaults__[1] is setup.NOMINATIM_LIMIT
+    assert search_address.__defaults__[1] is lookups.NOMINATIM_LIMIT
 
 
 def test_repeated_search_comes_from_the_cache_without_waiting():
@@ -371,8 +372,8 @@ def test_nominatim_getter_names_the_project(monkeypatch):
         seen.update(headers)
         return b"[]"
 
-    monkeypatch.setattr(setup, "get_bytes", fake_get_bytes)
-    setup.nominatim_get("https://nominatim.openstreetmap.org/search?q=x", 100)
+    monkeypatch.setattr(lookups, "get_bytes", fake_get_bytes)
+    lookups.nominatim_get("https://nominatim.openstreetmap.org/search?q=x", 100)
     assert seen["User-Agent"].startswith("inky-departures/")
     assert "github.com/acornelissen/inky-departures" in seen["User-Agent"]
 
@@ -414,7 +415,7 @@ def test_bundled_station_list_finds_hadfield_first():
 
 
 def test_bundled_station_list_is_whole_and_unique():
-    rows = setup.bundled_stations()
+    rows = lookups.bundled_stations()
     assert len(rows) > 2500
     assert len({row[1] for row in rows}) == len(rows)
     assert {"GLO", "HDF", "MAN", "EUS", "EDB", "CDF"} <= {row[1] for row in rows}
@@ -482,7 +483,7 @@ def test_inactive_tram_far_bad_and_unplaced_stops_are_left_out():
     atcos = {s.atco for s in nearby_stops(TOWN.lat, TOWN.lon, http_get=Getter(NAPTAN), grid=GRID)}
     assert not atcos & {"1000DGHS3404", "1000DGHSTRM1", "../../etc", "1800EH48511", "1000DGNOWHER"}
     # Woolley Close is left out only for being 3.1 km away.
-    wide = {s.atco for s in setup.stops_near(NAPTAN.decode(), TOWN.lat, TOWN.lon, 5000, 50)}
+    wide = {s.atco for s in lookups.stops_near(NAPTAN.decode(), TOWN.lat, TOWN.lon, 5000, 50)}
     assert "1800EH48511" in wide and not wide & {"1000DGHS3404", "1000DGHSTRM1", "../../etc", "1000DGNOWHER"}
 
 
@@ -547,12 +548,12 @@ def test_the_foot_router_is_asked_with_the_road_routers_user_agent(monkeypatch):
         asked.append((url, max_bytes, headers))
         return json.dumps(OSRM_ANSWER).encode()
 
-    monkeypatch.setattr(setup, "get_bytes", get_bytes)
+    monkeypatch.setattr(lookups, "get_bytes", get_bytes)
     clock = FakeClock()
     walk_minutes(HOME, PLACES, limiter=RateLimiter(1.0, clock, clock.sleep))
     # FOSSGIS's policy: a valid user agent, saying who is asking and how to reach them.
-    assert len(asked) == 1 and asked[0][1] == setup.MAX_OSRM_BYTES
-    assert asked[0][2] == {"User-Agent": roadshape.USER_AGENT}
+    assert len(asked) == 1 and asked[0][1] == lookups.MAX_OSRM_BYTES
+    assert asked[0][2] == {"User-Agent": roads.USER_AGENT}
 
 
 def test_the_foot_router_is_asked_at_most_once_a_second_without_real_sleeping():
@@ -568,7 +569,7 @@ def test_the_foot_router_is_asked_at_most_once_a_second_without_real_sleeping():
 
 
 def test_the_foot_routers_rate_limit_is_shared_by_default():
-    assert walk_minutes.__defaults__ == (setup.foot_get, setup.ROUTER_LIMIT)
+    assert walk_minutes.__defaults__ == (lookups.foot_get, lookups.ROUTER_LIMIT)
 
 
 def test_estimate_is_the_straight_line_plus_30_percent_at_4_8_kmh():
@@ -598,7 +599,7 @@ def test_router_answers_of_the_wrong_shape_fall_back_to_estimates(answer):
     "getter",
     [
         Getter(b"<html>502 Bad Gateway</html>"),
-        Getter(json.dumps({**OSRM_ANSWER, "pad": "x" * setup.MAX_OSRM_BYTES}).encode()),
+        Getter(json.dumps({**OSRM_ANSWER, "pad": "x" * lookups.MAX_OSRM_BYTES}).encode()),
         Getter(error=URLError("timed out")),
         Getter(error=HTTPError("https://routing.openstreetmap.de/x", 429, "Too Many Requests", {}, None)),
     ],
@@ -619,7 +620,7 @@ def test_no_destinations_means_no_request():
 
 
 def test_too_many_destinations_are_refused():
-    many = {str(i): STOP_A for i in range(setup.MAX_WALK_DESTINATIONS + 1)}
+    many = {str(i): STOP_A for i in range(lookups.MAX_WALK_DESTINATIONS + 1)}
     with pytest.raises(SetupError):
         walk_minutes(HOME, many, http_get=refuse)
 
@@ -732,4 +733,4 @@ def test_duplicate_labels_or_stops_are_refused():
 
 def test_too_many_stops_are_refused():
     with pytest.raises(SetupError):
-        stop_labels([(None, stop(f"1000DGHS{i:04d}", "opp")) for i in range(setup.MAX_BOARD_STOPS + 1)])
+        stop_labels([(None, stop(f"1000DGHS{i:04d}", "opp")) for i in range(lookups.MAX_BOARD_STOPS + 1)])

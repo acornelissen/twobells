@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from departureboard.osgb import distance_m
+from departureboard.core.osgb import distance_m
 
 _SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "build_setup_data.py"
 

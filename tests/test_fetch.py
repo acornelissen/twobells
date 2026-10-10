@@ -12,12 +12,14 @@ from typing import ClassVar
 
 import pytest
 
-from departureboard import fetch, handoff, setupspool
-from departureboard.fetch import FetchService
-from departureboard.installs import install_named
-from departureboard.setup import Place
-from departureboard.store import Store
-from departureboard.walk import WalkTimes
+from departureboard.core.walk import WalkTimes
+from departureboard.fetch import handoff
+from departureboard.fetch import service as fetch
+from departureboard.fetch.service import FetchService
+from departureboard.settings.installs import install_named
+from departureboard.settings.store import Store
+from departureboard.setup import spool as setupspool
+from departureboard.setup.lookups import Place
 
 PI = install_named("pi")
 ON = '[app]\nviews = ["board", "dashboard"]\n'

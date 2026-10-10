@@ -16,9 +16,9 @@ from urllib.parse import urljoin
 
 import pytest
 
-from departureboard import keytest
-from departureboard.schema import keys
-from departureboard.setupapi import PAGE_HEADERS, static_files
+from departureboard.settings.schema import keys
+from departureboard.setup import keytest
+from departureboard.setup.api import PAGE_HEADERS, static_files
 
 # The wizard offers only the keys every view uses; each view's own are on its settings tab.
 KEYS = keys("general")

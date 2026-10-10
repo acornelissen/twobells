@@ -42,10 +42,19 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import migrate
-from .app import run_loop, run_once
-from .bodsbus import BodsBusSource
-from .config import (
+from .board.app import run_loop, run_once
+from .board.displays.display import DISPLAY_PANELS, PngDisplay, open_display
+from .board.state import StateStore
+from .board.themes import THEMES, theme_named
+from .board.view import SetupView, build_view
+from .core.model import Departure, Status
+from .core.net import get_bytes
+from .core.walk import WalkTimes
+from .emulator.emulation import build_emulation
+from .emulator.fake import DEMO_NOTICE, DEMO_TITLE, FakeWeatherSource
+from .emulator.server import DEFAULT_PORT, make_server
+from .settings import migrate
+from .settings.config import (
     ConfigError,
     first_run_settings,
     holiday_division,
@@ -54,26 +63,17 @@ from .config import (
     load_env_file,
     needs_setup,
 )
-from .darwin import DarwinSource, TrainBoard
-from .display import DISPLAY_PANELS, PngDisplay, open_display
-from .emulation import build_emulation
-from .emulator import DEFAULT_PORT, make_server
-from .fake import DEMO_NOTICE, DEMO_TITLE, FakeWeatherSource
-from .holidays import bank_holidays
-from .http import get_bytes
-from .installs import DEFAULT as DEFAULT_INSTALL
-from .installs import INSTALLS, Install, install_named
-from .model import Departure, Status
-from .schema import BOARD_DEFAULTS, views
-from .state import StateStore
-from .store import Store, WrongUser, check_owner
-from .themes import THEMES, theme_named
-from .timetable import TimetableBusy, TimetableError
-from .transportapi import TransportApiBusSource, redact_credentials
+from .settings.installs import DEFAULT as DEFAULT_INSTALL
+from .settings.installs import INSTALLS, Install, install_named
+from .settings.schema import BOARD_DEFAULTS, views
+from .settings.store import Store, WrongUser, check_owner
+from .sources.bodsbus import BodsBusSource
+from .sources.darwin import DarwinSource, TrainBoard
+from .sources.holidays import bank_holidays
+from .sources.transportapi import TransportApiBusSource, redact_credentials
+from .sources.weather import rain_line
+from .timetable.build import TimetableBusy, TimetableError
 from .version import package_version
-from .view import SetupView, build_view
-from .walk import WalkTimes
-from .weather import rain_line
 
 DEFAULT_CONFIG = "/etc/departureboard/config.toml"
 DEFAULT_SECRETS = "/etc/departureboard/secrets.env"
@@ -117,7 +117,7 @@ def _program() -> str:
 
 
 def _adopt(args, store: Store, install: str = "desktop") -> None:
-    """Bring the old dashboard's folder into the store, once (see migrate.py).
+    """Bring the old dashboard's folder into the store, once (see settings/migrate.py).
     A folder given with --state-dir was the old dashboard's own, so then
     there is nothing to bring."""
     if not getattr(args, "state_dir", None):
@@ -459,9 +459,9 @@ def _show_instead(args, found: Store, page: SetupView, reload, restarting: str) 
 
 
 def _route(args) -> int:
-    from . import routesetup
-    from .config import _walk
-    from .walk import DEFAULT_STOP
+    from .core.walk import DEFAULT_STOP
+    from .settings.config import _walk
+    from .timetable import routesetup
 
     store = _store(args)
     data = store.data()
@@ -508,8 +508,8 @@ def _route(args) -> int:
 
 
 def _setup_discover(args) -> int:
-    from . import discover
-    from .config import _walk
+    from .settings.config import _walk
+    from .setup import discover
 
     stops = _parse_stops(args.stop)
     store = _as_owner(args, _store(args))
@@ -566,9 +566,9 @@ def _setup_discover(args) -> int:
 def _fetch(args) -> int:
     """The fetch service on a Pi: the internet work of the web server, which
     can't reach the internet itself: the wizard's lookups and the dashboard's
-    pollers (see fetch.py and setupspool.py)."""
-    from . import setupspool
-    from .fetch import FetchService
+    pollers (see fetch/service.py and setup/spool.py)."""
+    from .fetch.service import FetchService
+    from .setup import spool as setupspool
 
     install = install_named(args.install)
     store, problem = None, ""
@@ -625,7 +625,7 @@ def _reset_code(folder: Path, where: str) -> int:
     """Print a one-time code for setting a new settings password, and where it
     goes. Running this proves access, so no rate limit, and the code comes
     here rather than to the board or the log."""
-    from .auth import ResetCodes, spaced
+    from .web.auth import ResetCodes, spaced
 
     def show(code: str, expires: float) -> None:
         until = time.strftime("%H:%M", time.localtime(expires))
@@ -848,7 +848,7 @@ class _SettingsWatch(threading.Thread):
     keeps the ones running."""
 
     def __init__(self, store: Store, install: Install, server, running: bool) -> None:
-        from .dashconfig import FileWatch
+        from .dashboard.config import FileWatch
 
         super().__init__(name="settings-watch", daemon=True)
         self._store = store
@@ -860,7 +860,7 @@ class _SettingsWatch(threading.Thread):
         self.restart = False
 
     def run(self) -> None:
-        from .dashconfig import load_dashboard
+        from .dashboard.config import load_dashboard
 
         while not self._stopping.wait(SETTINGS_CHECK_S):
             if not self._watch.changed():
@@ -905,9 +905,9 @@ def _settings_site(store: Store, install: Install, running: bool, runner=None):
     both saving into the store, checked as each view that is on loads.
     `running`: whether serve runs the dashboard, for the links to it.
     `runner` does the wizard's internet work, if another service does it."""
-    from .groupform import check_views
-    from .settingsite import PREFIX, SettingsSite
-    from .setupapi import SetupApi
+    from .setup.api import SetupApi
+    from .web.groupform import check_views
+    from .web.settingsite import PREFIX, SettingsSite
 
     target = store.target(lambda data, env: check_views(data, env, store.folder, install))
     # The dashboard, wherever it is offered, is served at / once its view is on and set up.
@@ -931,7 +931,7 @@ def _allowed_hosts(store: Store) -> frozenset[str]:
     """[dashboard] allowed_hosts in config.toml, for the settings when the
     dashboard doesn't run; none if it can't be read (an address on the home
     network still reaches them)."""
-    from .dashconfig import allowed_hosts
+    from .dashboard.config import allowed_hosts
 
     try:
         return allowed_hosts(store.base())
@@ -942,8 +942,8 @@ def _allowed_hosts(store: Store) -> frozenset[str]:
 
 def _serve(args) -> int:
     """The settings site on every install, and the dashboard where its view
-    is on (see settingsite.py and dashserver.py)."""
-    from .dashconfig import load_dashboard
+    is on (see web/settingsite.py and web/server.py)."""
+    from .dashboard.config import load_dashboard
 
     install = install_named(args.install)
     # Only config.toml is read to find the store: a broken settings.toml must
@@ -957,7 +957,7 @@ def _serve(args) -> int:
     runner = None
     if install.fetch == "files":
         # This service can't reach the internet; departureboard-fetch.service does that work.
-        from .setupspool import SpoolError, SpoolRunner, spool_folder
+        from .setup.spool import SpoolError, SpoolRunner, spool_folder
 
         try:
             runner = SpoolRunner(spool_folder())
@@ -994,10 +994,10 @@ def _mirror(store: Store, install: Install, runner, dash):
     through the spool `runner` uses. Until the first comes, an empty one
     with the title and walk times of `dash` (the dashboard's settings, if
     its view was on and they loaded at start), or the defaults."""
-    from .handoff import SnapshotMirror
-    from .schema import BOARD_DEFAULTS
-    from .setupspool import Poster
-    from .walk import WalkTimes
+    from .core.walk import WalkTimes
+    from .fetch.handoff import SnapshotMirror
+    from .settings.schema import BOARD_DEFAULTS
+    from .setup.spool import Poster
 
     folder = runner.spool.folder
     return SnapshotMirror(
@@ -1016,10 +1016,10 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
     the settings changed."""
     import sqlite3
 
-    from . import dashserver
-    from .collector import Collector
-    from .history import History, HistoryReader
-    from .snapshot import Hub
+    from .dashboard.collector import Collector
+    from .dashboard.history import History, HistoryReader
+    from .dashboard.snapshot import Hub
+    from .web import server as dashserver
 
     history = hub = collector = mirror = None
     if install.fetch == "files" and "dashboard" in install.offered:
@@ -1120,8 +1120,8 @@ def _password(args, store: Store, install: Install) -> int:
     a running server (whose sessions end when the password changes; see
     auth.Sessions). Nothing else is loaded, so broken settings can't keep
     their owner out."""
-    from .auth import PasswordStore
-    from .settingsite import PREFIX
+    from .web.auth import PasswordStore
+    from .web.settingsite import PREFIX
 
     store.make()
     if args.set_password:

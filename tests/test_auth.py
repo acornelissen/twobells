@@ -5,7 +5,7 @@ import threading
 
 import pytest
 
-from departureboard.auth import (
+from departureboard.web.auth import (
     FAILURE_WINDOW_S,
     FORM_PAGE_HEADERS,
     FORM_TOKEN_SECONDS,
@@ -378,7 +378,7 @@ def test_form_pages_carry_strict_headers():
 
 def test_a_non_ascii_csrf_token_is_a_mismatch_not_a_crash():
     # hmac.compare_digest raises TypeError on non-ASCII str; a form can send anything.
-    from departureboard.auth import Session, csrf_matches
+    from departureboard.web.auth import Session, csrf_matches
 
     session = Session(expires=0.0, csrf="abc123")
     assert csrf_matches(session, "abc12é") is False
@@ -457,7 +457,7 @@ def test_without_a_code_nothing_matches(tmp_path):
 
 
 def test_a_new_code_replaces_the_old(tmp_path, monkeypatch):
-    import departureboard.auth as auth
+    import departureboard.web.auth as auth
 
     draws = iter([111111, 222222])
     monkeypatch.setattr(auth.secrets, "randbelow", lambda n: next(draws))
@@ -471,7 +471,7 @@ def test_a_new_code_replaces_the_old(tmp_path, monkeypatch):
 
 
 def test_codes_come_from_the_secrets_module(tmp_path, monkeypatch):
-    import departureboard.auth as auth
+    import departureboard.web.auth as auth
 
     asked = []
     monkeypatch.setattr(auth.secrets, "randbelow", lambda n: asked.append(n) or 42)
@@ -530,7 +530,7 @@ def test_the_files_are_private_and_only_the_handover_holds_the_code(tmp_path):
 
 
 def test_each_code_gets_a_fresh_salt(tmp_path, monkeypatch):
-    import departureboard.auth as auth
+    import departureboard.web.auth as auth
 
     monkeypatch.setattr(auth.secrets, "randbelow", lambda n: 123456)
     codes = ResetCodes(tmp_path)
@@ -716,7 +716,7 @@ def test_the_form_cookie_is_strict_http_only_and_scoped():
 def test_a_password_changed_elsewhere_signs_everyone_out(tmp_path):
     # `departureboard web --set-password` runs in its own process: the page's
     # sessions must notice the new password through the file, not memory.
-    from departureboard.auth import PasswordStore, Sessions
+    from departureboard.web.auth import PasswordStore, Sessions
 
     store = PasswordStore(tmp_path / "web.json")
     store.set("first password here")
@@ -730,7 +730,7 @@ def test_a_password_changed_elsewhere_signs_everyone_out(tmp_path):
 
 
 def test_sessions_without_a_password_store_work_as_before():
-    from departureboard.auth import Sessions
+    from departureboard.web.auth import Sessions
 
     sessions = Sessions()
     token, _ = sessions.create()

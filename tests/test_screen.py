@@ -1,8 +1,8 @@
 import pytest
 from PIL import Image
 
-from departureboard.panel import HDMI_1280X400
-from departureboard.screen import SCREEN_RGB, ScreenDisplay
+from departureboard.board.displays.screen import SCREEN_RGB, ScreenDisplay
+from departureboard.board.panel import HDMI_1280X400
 
 
 class FakeScreen:
@@ -65,7 +65,7 @@ def test_bad_settings_are_refused():
 def test_pygame_screen_shows_a_frame_headless(monkeypatch):
     pygame = pytest.importorskip("pygame")
     monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
-    from departureboard.screen import PygameScreen
+    from departureboard.board.displays.screen import PygameScreen
 
     screen = PygameScreen()
     try:
@@ -81,7 +81,7 @@ def test_pygame_screen_shows_a_frame_headless(monkeypatch):
 def test_without_pygame_the_error_says_how_to_install_it(monkeypatch):
     import builtins
 
-    from departureboard.screen import PygameScreen
+    from departureboard.board.displays.screen import PygameScreen
 
     real_import = builtins.__import__
 

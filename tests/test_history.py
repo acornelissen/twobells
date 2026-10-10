@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from departureboard.history import FILE_NAME, History, Observed, Stats, day_type, no_show_phrase, phrase
+from departureboard.dashboard.history import FILE_NAME, History, Observed, Stats, day_type, no_show_phrase, phrase
 
 FRIDAY = date(2026, 10, 9)
 TRAIN = "train|GLO>MAN|Manchester Piccadilly"
@@ -267,7 +267,7 @@ def test_a_reader_opens_only_a_set_up_plain_file(tmp_path):
 
 
 def test_the_history_reader_opens_it_once_it_is_there(tmp_path):
-    from departureboard.history import HistoryReader
+    from departureboard.dashboard.history import HistoryReader
 
     reader = HistoryReader(tmp_path)
     assert reader.recent("train", TRAIN, "07:42") == []

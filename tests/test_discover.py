@@ -12,8 +12,8 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from departureboard import discover, timetable
-from departureboard.discover import (
+from departureboard.setup import discover
+from departureboard.setup.discover import (
     Cancelled,
     Dataset,
     DiscoveryError,
@@ -22,6 +22,7 @@ from departureboard.discover import (
     discover_operators,
     list_datasets,
 )
+from departureboard.timetable import build as timetable
 
 FIXTURES = Path(__file__).parent / "fixtures"
 TXC_341 = (FIXTURES / "txc_bnml_341.xml").read_bytes()  # filed under BNML, says BNGN inside
@@ -446,7 +447,7 @@ class FakeResponse(io.BytesIO):
 def test_by_default_the_job_s_timetable_keeps_each_stop_s_sign_letter(bods, monkeypatch):
     # NaPTAN is asked for real (here, its CSV from a fake network), as the weekly build does,
     # so the timetable the wizard saves says which side of the road a stop is from the start.
-    from departureboard import http
+    from departureboard.core import net
 
     others = set(re.findall(rb"<StopPointRef>(\w+)</StopPointRef>", TXC_341 + TXC_237 + TXC_61))
     rows = [f"{atco.decode()},Somewhere,53.44,-1.95,\n" for atco in sorted(others)]
@@ -459,7 +460,7 @@ def test_by_default_the_job_s_timetable_keeps_each_stop_s_sign_letter(bods, monk
             return FakeResponse(csv)
         raise OSError("No network in tests")
 
-    monkeypatch.setattr(http, "urlopen", network)
+    monkeypatch.setattr(net, "urlopen", network)
     job = SetupJob(bods.scratch, STOPS, KEY, routes=True, now=lambda: SUMMER_NOW, find=bods.find,
                    fetch=bods.fetch, find_datasets=_find_by_noc(bods))
     job.start()
@@ -597,9 +598,9 @@ class Router:
 
 
 def test_the_search_is_done_once_the_timetable_is_saved_and_the_roads_follow(bods, monkeypatch):
-    from departureboard import setup
+    from departureboard.setup import lookups
 
-    monkeypatch.setattr(setup.ROUTER_LIMIT, "wait", lambda: None)  # a road a second would take minutes
+    monkeypatch.setattr(lookups.ROUTER_LIMIT, "wait", lambda: None)  # a road a second would take minutes
     router = Router()
     job = _job(bods, naptan=_spaced, router=router)
     job.start()
@@ -624,9 +625,9 @@ def test_the_search_is_done_once_the_timetable_is_saved_and_the_roads_follow(bod
 
 
 def test_another_search_may_start_while_the_roads_are_found_and_waits_for_them(bods, monkeypatch):
-    from departureboard import setup
+    from departureboard.setup import lookups
 
-    monkeypatch.setattr(setup.ROUTER_LIMIT, "wait", lambda: None)
+    monkeypatch.setattr(lookups.ROUTER_LIMIT, "wait", lambda: None)
     monkeypatch.setattr(timetable, "LOCK_WAIT_S", 0.01)
     router = Router()
     first = _job(bods, naptan=_spaced, router=router)
@@ -755,8 +756,9 @@ def test_the_wizard_and_the_weekly_build_save_the_same_timetable(bods, tmp_path,
     # Both as they run for real, through the same network: BODS, NaPTAN and the road router.
     from zoneinfo import ZoneInfo
 
-    from departureboard import http, setup
-    from departureboard.bodsbus import BodsBusSource
+    from departureboard.core import net
+    from departureboard.setup import lookups
+    from departureboard.sources.bodsbus import BodsBusSource
 
     every = sorted(set(re.findall(rb"<StopPointRef>(\w+)</StopPointRef>", TXC_341 + TXC_237 + TXC_61)))
     rows = [f"{atco.decode()},Stop {i},{53.4 + i * 0.001:.6f},-1.95,{'Stop ' + str(i % 3)}\n"
@@ -780,8 +782,8 @@ def test_the_wizard_and_the_weekly_build_save_the_same_timetable(bods, tmp_path,
             return FakeResponse(json.dumps({"results": list(filed.values())}).encode())
         raise OSError(f"Not faked: {request.full_url}")
 
-    monkeypatch.setattr(http, "urlopen", network)
-    monkeypatch.setattr(setup.ROUTER_LIMIT, "wait", lambda: None)  # a road a second would take minutes
+    monkeypatch.setattr(net, "urlopen", network)
+    monkeypatch.setattr(lookups.ROUTER_LIMIT, "wait", lambda: None)  # a road a second would take minutes
     wizard, weekly = tmp_path / "wizard", tmp_path / "weekly"
     job = SetupJob(wizard, STOPS, KEY, now=lambda: SUMMER_NOW)
     job.start()
@@ -802,10 +804,11 @@ def test_roads_stopped_with_the_process_are_found_by_the_next_upkeep(bods, monke
     # thing on starting, finds the roads it hadn't (as a Pi's hourly timer does).
     from zoneinfo import ZoneInfo
 
-    from departureboard import http, setup
-    from departureboard.bodsbus import BodsBusSource
+    from departureboard.core import net
+    from departureboard.setup import lookups
+    from departureboard.sources.bodsbus import BodsBusSource
 
-    monkeypatch.setattr(setup.ROUTER_LIMIT, "wait", lambda: None)
+    monkeypatch.setattr(lookups.ROUTER_LIMIT, "wait", lambda: None)
 
     def stopping(url, max_bytes):  # one road, then the process "stops"
         job.cancel()
@@ -817,7 +820,7 @@ def test_roads_stopped_with_the_process_are_found_by_the_next_upkeep(bods, monke
     assert status["state"] == "done" and status["roads"]["state"] == "cancelled"
     first = timetable.load(bods.scratch)
     assert first.roads_pending is True and len(first.shapes) == 1
-    monkeypatch.setattr(http, "urlopen", lambda request, timeout: FakeResponse(_osrm(urlsplit(request.full_url).path)))
+    monkeypatch.setattr(net, "urlopen", lambda request, timeout: FakeResponse(_osrm(urlsplit(request.full_url).path)))
     london = ZoneInfo("Europe/London")
     upkeep = BodsBusSource(bods.scratch, STOPS, KEY, london, operators=["BNML", "HIPK"],
                            clock=lambda: SUMMER_NOW.replace(minute=30, tzinfo=london))
