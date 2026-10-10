@@ -2,11 +2,12 @@
 
 import json
 import tomllib
+from pathlib import Path
 
 import pytest
 
 from departureboard import dashform, discover, settingsform, setupapi
-from departureboard.config import read_base, read_config
+from departureboard.config import load_config, needs_setup, read_base, read_config
 from departureboard.keytest import KeyResult
 from departureboard.overlay import Target
 from departureboard.setup import Place, SetupError, Station, Stop
@@ -285,7 +286,7 @@ def test_finishing_writes_what_setup_found_into_the_overlay(board):
     status, body = saved_with_a_search(board)
     assert status == 200 and body["saved"] and body["links"][0] == {"label": "The board", "href": "/"}
     saved = tomllib.loads((board.state / "settings.toml").read_text())
-    assert saved["train"] == {"crs": "GLO", "walk_minutes": 6, "filter_crs": "MAN"}
+    assert saved["train"] == {"crs": "GLO", "walk_minutes": 6, "filter_crs": "MAN", "enabled": True}
     assert saved["bus"]["stops"] == {"A": "1800SB12341"} and saved["bus"]["walk_minutes"] == {"A": 3}
     assert saved["bus"]["source"] == "bods" and saved["bus"]["operators"] == ["BNML"]
     assert saved["bus"]["routes"]["341"]["stop"] == "A"
@@ -327,7 +328,8 @@ def test_trains_only_needs_no_search(board):
     status, body = board.handle("finish", {"home": HOME, "station_crs": "GLO", "stops": {}, "walk": {}})
     assert status == 200, body
     saved = tomllib.loads((board.state / "settings.toml").read_text())
-    assert saved["train"] == {"crs": "GLO", "walk_minutes": "", "filter_crs": ""} and "bus" not in saved
+    assert saved["train"] == {"crs": "GLO", "walk_minutes": "", "filter_crs": "", "enabled": True}
+    assert saved["bus"] == {"enabled": False}  # switched off, not removed: an overlay can't remove config.toml's
     assert "bank_holiday_division" not in saved  # a point on the map has no country
 
 
@@ -345,6 +347,52 @@ def test_without_routes_old_strips_for_gone_stops_are_cleared(board):
     status, body = saved_with_a_search(board, routes=False)
     assert status == 200, body
     assert tomllib.loads((board.state / "settings.toml").read_text())["bus"]["routes"] == {}
+
+
+TEMPLATE = Path(__file__).parent.parent / "config.example.toml"
+
+
+@pytest.fixture
+def template(board):
+    """The board's fixture on config.example.toml as installed: CHANGE_ME
+    placeholders for the station and stops, and nothing saved yet."""
+    text = TEMPLATE.read_text().replace("/var/lib/departureboard/state.json", str(board.state / "state.json"))
+    board.config.write_text(text)
+    (board.state / "settings.toml").unlink()
+    return board
+
+
+def test_the_template_with_only_a_station_saves_with_buses_off(template):
+    status, body = template.handle("finish", {"home": HOME, "station_crs": "GLO", "stops": {}, "walk": {}})
+    assert status == 200, body
+    saved = tomllib.loads((template.state / "settings.toml").read_text())
+    assert saved["train"]["enabled"] is True and saved["bus"] == {"enabled": False}
+    assert not needs_setup(template.config)
+    sources = load_config(template.config, template.secrets).board.sources
+    assert [config.source.name for config in sources] == ["train"]
+
+
+def test_the_template_with_only_stops_saves_with_trains_off(template):
+    ok(template, "start", {"stops": {"A": "1800SB12341"}, "routes": False})
+    FakeJob.made[-1].finish(False)
+    status, body = template.handle("finish", {"home": HOME, "stops": {"A": "1800SB12341"}, "walk": {}})
+    assert status == 200, body
+    saved = tomllib.loads((template.state / "settings.toml").read_text())
+    assert saved["train"] == {"enabled": False} and saved["bus"]["enabled"] is True
+    assert not needs_setup(template.config)
+    sources = load_config(template.config, template.secrets).board.sources
+    assert [config.source.name for config in sources] == ["bus"]
+
+
+def test_choosing_again_switches_a_section_back_on(template):
+    ok(template, "start", {"stops": {"A": "1800SB12341"}, "routes": False})
+    FakeJob.made[-1].finish(False)
+    ok(template, "finish", {"home": HOME, "stops": {"A": "1800SB12341"}, "walk": {}})
+    ok(template, "finish", {"home": HOME, "station_crs": "GLO", "stops": {"A": "1800SB12341"}, "walk": {}})
+    saved = tomllib.loads((template.state / "settings.toml").read_text())
+    assert saved["train"]["enabled"] is True and saved["bus"]["enabled"] is True
+    sources = load_config(template.config, template.secrets).board.sources
+    assert [config.source.name for config in sources] == ["train", "bus"]
 
 
 def test_settings_that_would_not_load_are_not_saved(board):

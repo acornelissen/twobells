@@ -648,12 +648,21 @@ class SetupApi:
 
         changes = setup.config_fragment(home, station, [(label, self._stop(atco)) for label, atco in stops.items()],
                                         walk)
+        # What isn't chosen is switched off rather than removed, which an overlay
+        # can't do: config.toml's [train] or [bus] (the template's placeholders,
+        # say) would otherwise stay in force. Choosing it again switches it on.
         if station is not None:
             changes["train"].setdefault("walk_minutes", "")  # "" clears an old one, as the settings page does
             changes["train"]["filter_crs"] = filter_crs
+            changes["train"]["enabled"] = True
+        else:
+            changes["train"] = {"enabled": False}
         if stops:
             changes["bus"].setdefault("walk_minutes", {})
             changes["bus"].update(self._found_bus(stops))
+            changes["bus"]["enabled"] = True
+        else:
+            changes["bus"] = {"enabled": False}
         division = setup.bank_holiday_division(home.country)
         if division:
             changes["bank_holiday_division"] = division
