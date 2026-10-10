@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import BinaryIO, Callable, Iterable, Mapping
 from urllib.parse import urlencode, urlsplit
 
-from . import routesetup, timetable
+from . import roadshape, routesetup, timetable
 from .bods import DEFAULT_BASE_URL, redact_key
 from .http import get_bytes
 from .routesetup import Pattern
@@ -338,6 +338,7 @@ def discover_operators(
 LOCK_NAME = "setup-job.lock"  # in the state folder; held while a job runs
 STEP_DISCOVER = "Finding the bus companies that serve your stops"
 STEP_TIMETABLE = "Building the bus timetable"
+STEP_ROADS = "Finding the roads for the bus maps"
 STEP_ROUTES = "Building route strips"
 _NAME_LIMIT = 80
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
@@ -373,7 +374,8 @@ class SetupJob:
     saved) and, with `routes`, a route strip for each line at your stops.
 
     start() runs it in a thread; status() says how it is going; cancel()
-    stops it at the next chunk of a download. One job at a time per state
+    stops it at the next chunk of a download, or before the next request
+    for the road between two stops (the timetable is saved by then). One job at a time per state
     folder: a lock file there, held while the job runs and let go by the
     system if the process dies. It writes no settings: its result holds the
     [bus] settings to add, for the caller to show and save. With `nice`, its
@@ -393,6 +395,7 @@ class SetupJob:
         find_datasets: timetable.FindDatasets = routesetup.dataset_urls,
         fetch: timetable.Download = timetable.download,
         naptan: timetable.Naptan = routesetup.naptan_stop_details,
+        router: roadshape.Fetch = roadshape.router_get,
         discover_options: Mapping | None = None,
         nice: int = 0,
     ) -> None:
@@ -406,6 +409,7 @@ class SetupJob:
         self._find_datasets = find_datasets
         self._fetch = fetch
         self._naptan = naptan
+        self._router = router
         self._options = dict(discover_options or {})
         self._nice = nice
         self._cancel = threading.Event()
@@ -494,7 +498,6 @@ class SetupJob:
         )
         self._set(step=STEP_TIMETABLE, done=0, total=1)
         schedule = self._timetable(found.operators)
-        self._set(done=1)
         notes = list(found.notes)
         bus: dict = {"source": "bods", "operators": list(found.operators)}
         if self._routes:
@@ -529,13 +532,22 @@ class SetupJob:
                 failures.append(error)
                 raise
 
+        def progress(done, total):
+            self._set(step=STEP_ROADS, done=done, total=total)
+
+        def roads(pairs):
+            # As the weekly build asks for them, but stopping when cancelled.
+            return roadshape.segment_shapes(pairs, self._router, cancelled=self._cancel.is_set, progress=progress)
+
         now = self._now()
         schedule = timetable.refresh(self._folder, self._stops, operators, now, self._api_key,
-                                     force=True, build=build)
+                                     force=True, build=build, route=roads)
         if failures:
             if isinstance(failures[0], Cancelled):
                 raise failures[0]
             raise DiscoveryError(f"The bus timetable couldn't be built: {safe_message(failures[0])}")
+        if self._cancel.is_set():
+            raise Cancelled("Cancelled")  # while finding the roads; the timetable is saved
         if schedule is None or timetable.due(schedule, self._stops, now, operators):
             raise DiscoveryError("The bus timetable was built but couldn't be saved")  # refresh logged why
         return schedule

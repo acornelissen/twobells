@@ -23,10 +23,11 @@ minutely board run: an operator's timetables can run to hundreds of
 megabytes. Each download waits on disk and its documents are parsed one at a
 time, so a Pi Zero holds one document in memory, never the lot.
 
-Roads. TransXChange gives no road between stops, so the build asks the
-OpenStreetMap car router for each pair of consecutive positioned stops, once,
-and keeps the roads for the dashboard's maps (roadshape.py). A pair it can't
-find is drawn straight; the router never fails a build.
+Roads. TransXChange gives no road between stops, so once a new timetable is
+saved, refresh asks the OpenStreetMap car router for each pair of consecutive
+positioned stops, once, and saves it again with the roads for the
+dashboard's maps (add_roads, roadshape.py). A pair it can't find is drawn
+straight; the router never costs a timetable.
 
 Times. A journey's DepartureTime is when it leaves its first stop. Each
 timing link's RunTime takes it to the next stop, where it may wait before
@@ -640,19 +641,19 @@ def _positions(atcos: set[str], known: dict[str, StopPosition], naptan: Naptan) 
     return positions
 
 
-def _shapes(journeys: Iterable[Journey], positions: Mapping[str, StopPosition],
-            route: Route) -> dict[str, tuple[tuple[float, float], ...]]:
-    """The road between each pair of consecutive positioned stops, by
-    roadshape.shape_key, for the maps; none where the router can't say (the
-    maps draw those straight). Never fails the build."""
-    pairs = roadshape.segment_pairs(journeys, positions)
+def add_roads(schedule: Schedule, route: Route = roadshape.segment_shapes) -> Schedule:
+    """The schedule with the road between each pair of consecutive positioned
+    stops, by roadshape.shape_key, for the maps; none where the router can't
+    say (the maps draw those straight). Never fails for the router's sake."""
+    pairs = roadshape.segment_pairs(schedule.journeys, schedule.positions)
     try:
         found = route(pairs)
-        return {roadshape.shape_key(pair): tuple((float(lat), float(lon)) for lat, lon in found[pair])
-                for pair in pairs if found.get(pair)}
+        new = {roadshape.shape_key(pair): tuple((float(lat), float(lon)) for lat, lon in found[pair])
+               for pair in pairs if found.get(pair)}
     except Exception as error:  # noqa: BLE001 - straight lines will do
         log.warning("Bus map roads not found, drawing straight lines: %s", safe_message(error))
-        return {}
+        new = {}
+    return replace(schedule, shapes=new)
 
 
 def build_schedule(
@@ -666,14 +667,12 @@ def build_schedule(
     find_datasets: FindDatasets = routesetup.dataset_urls,
     fetch: Download = download,
     naptan: Naptan = routesetup.naptan_stop_details,
-    route: Route = roadshape.segment_shapes,
 ) -> Schedule:
     """A schedule of every timetabled journey calling at your `stops` (labels
     to ATCO codes), from the BODS timetables of `operators` (national operator
     codes), and the inbound-only journeys of their lines (see the module's
     notes). Downloads wait in `scratch` (the state folder: /tmp may be memory).
-    The roads between its positioned stops come from `route` (see roadshape);
-    it failing only leaves them straight.
+    It has no roads yet: see add_roads.
 
     Journeys whose timetable ended before today are left out (BODS keeps an
     old timetable beside its replacement for a while), and so are duplicates
@@ -731,7 +730,6 @@ def build_schedule(
         positions=positions,
         operators=tuple(sorted(set(operators))),
         format=FORMAT,
-        shapes=_shapes(kept + near, positions, route),
     )
 
 
@@ -801,11 +799,16 @@ def refresh(
     lines: Iterable[str] | None = None,
     force: bool = False,
     build: Callable[..., Schedule] = build_schedule,
+    route: Route = roadshape.segment_shapes,
 ) -> Schedule | None:
     """The schedule to use, from `folder` (the state folder). It is built
     again first if it is due (see due: weekly, or when the stops or operators
     change) or `force`d. A failed build keeps the saved one. With nothing due
-    this only reads the saved file."""
+    this only reads the saved file.
+
+    A new timetable is saved before its roads are asked for (add_roads, with
+    `route`), then saved again with them. However long the router takes, or if this is stopped meanwhile,
+    the timetable is kept, at worst with straight lines on the maps."""
     current = load(folder)
     operators = list(operators)
     reason = "asked to" if force else due(current, stops, now, operators)
@@ -821,4 +824,11 @@ def refresh(
     calling = len(fresh.departure_journeys)
     log.info("Bus timetable rebuilt (%s): %d journeys at your stops, %d ending near them", reason, calling,
              len(fresh.journeys) - calling)
-    return fresh
+    try:
+        routed = add_roads(fresh, route)
+        if routed.shapes:
+            save(folder, routed)
+    except Exception as error:  # noqa: BLE001 - the timetable is saved; the maps draw straight lines
+        log.warning("Bus map roads not saved, drawing straight lines: %s", safe_message(error))
+        return fresh
+    return routed

@@ -2,11 +2,11 @@
 
 BODS timetables say which stops a bus calls at, not the roads between them,
 so the maps would draw straight lines through buildings and across fields.
-When the timetable is built (timetable.build_schedule, about once a week),
-each pair of consecutive positioned stops on its journeys is sent once to
-the OpenStreetMap car router (OSRM, on the same free FOSSGIS server setup.py
-asks for walks), and the road it finds is saved with the timetable. The maps
-never ask the router: they draw what was saved.
+Once a new timetable is saved (timetable.refresh: about once a week, and on
+every setup search), each pair of consecutive positioned stops on its
+journeys is sent once to the OpenStreetMap car router (OSRM, on the same free
+FOSSGIS server setup.py asks for walks), and the road it finds is saved with
+the timetable. The maps never ask the router: they draw what was saved.
 
 The router's answers are untrusted. A road is kept only if the answer is the
 shape OSRM sends and at most MAX_ROUTE_BYTES, its points are numbers inside
@@ -242,10 +242,10 @@ def segment_shapes(
         if asked >= MAX_PAIRS:
             stopped = f"asked about {MAX_PAIRS} stop pairs"
             break
-        limiter.wait()
         if cancelled():
             stopped = "cancelled"
             break
+        limiter.wait()
         if clock() >= deadline:
             stopped = f"took {MAX_SECONDS} s"
             break

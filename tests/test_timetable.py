@@ -12,6 +12,7 @@ from departureboard.timetable import (
     FORMAT,
     FILE_NAME,
     TimetableError,
+    add_roads,
     build_schedule,
     download,
     due,
@@ -1025,31 +1026,51 @@ def timetable_format():
 
 
 def _routed(document, route=None):
-    """The schedule for Stop A from one document, every stop placed, with `route`."""
+    """The schedule for Stop A from one document, every stop placed, with
+    the roads `route` finds (the router itself if not given)."""
     options = {"route": route} if route is not None else {}
+    return add_roads(_unrouted(document), **options)
+
+
+def _unrouted(document):
     return build_schedule({"A": STOP_A}, ["BNML"], "k", NOW, find_datasets=lambda key, noc, line: [BNML_LINK],
                           fetch=lambda url, file: file.write(document),
-                          naptan=lambda atcos: {a: (p.name, p.lat, p.lon) for a, p in PLACES.items() if a in atcos},
-                          **options)
+                          naptan=lambda atcos: {a: (p.name, p.lat, p.lon) for a, p in PLACES.items() if a in atcos})
 
 
-def test_the_build_keeps_the_road_between_each_pair_of_positioned_stops_once():
+ROADS_DOC = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD, "1000DHAD0001"]),
+                  ("again", "237", "11:15:00", [STOP_A, HOWARD, "1000DHAD0001"]),
+                  ("in", "237", "10:00:00", COMING_IN + [MARKET_HALL])])
+ROADS_PAIRS = {(STOP_A, HOWARD), (JUNCTION, GRAPES), (GRAPES, SUNLAWS), (SUNLAWS, ST_MARYS_E),
+               (ST_MARYS_E, ARUNDEL), (ARUNDEL, MARKET_HALL)}
+
+
+def _roads_found(pairs):
+    return {pair: [(53.44351, -1.95562)] for pair in pairs}
+
+
+def _failing(pairs):
+    raise RuntimeError("router exploded")
+
+
+def test_building_asks_no_router():
+    schedule = _unrouted(ROADS_DOC)
+    assert schedule.shapes == {} and schedule.format == FORMAT
+
+
+def test_the_road_between_each_pair_of_positioned_stops_is_asked_for_once():
     asked = []
 
     def route(pairs):
         asked.append(dict(pairs))
-        return {pair: [(53.44351, -1.95562)] for pair in pairs} | {("NOT", "ASKED"): [(53.0, -1.0)]}
+        return _roads_found(pairs) | {("NOT", "ASKED"): [(53.0, -1.0)]}
 
-    document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD, "1000DHAD0001"]),
-                     ("again", "237", "11:15:00", [STOP_A, HOWARD, "1000DHAD0001"]),
-                     ("in", "237", "10:00:00", COMING_IN + [MARKET_HALL])])
-    schedule = _routed(document, route)
+    schedule = _routed(ROADS_DOC, route)
     assert len(asked) == 1
     pairs = asked[0]
     # The departures' and the inbound-only journey's, each once; Hadfield has no position.
     assert list(pairs)[0] == (STOP_A, HOWARD)
-    assert set(pairs) == {(STOP_A, HOWARD), (JUNCTION, GRAPES), (GRAPES, SUNLAWS), (SUNLAWS, ST_MARYS_E),
-                          (ST_MARYS_E, ARUNDEL), (ARUNDEL, MARKET_HALL)}
+    assert set(pairs) == ROADS_PAIRS
     assert pairs[(ARUNDEL, MARKET_HALL)] == ((POSITIONS[ARUNDEL].lat, POSITIONS[ARUNDEL].lon),
                                              (POSITIONS[MARKET_HALL].lat, POSITIONS[MARKET_HALL].lon))
     assert schedule.shapes[f"{STOP_A}>{HOWARD}"] == ((53.44351, -1.95562),)
@@ -1058,21 +1079,70 @@ def test_the_build_keeps_the_road_between_each_pair_of_positioned_stops_once():
 
 
 @pytest.mark.parametrize("route", [
-    lambda pairs: (_ for _ in ()).throw(RuntimeError("router exploded")),
+    _failing,
     lambda pairs: None,
     lambda pairs: {pair: "not points" for pair in pairs},
 ])
-def test_a_routing_failure_never_fails_the_build(route, caplog):
+def test_a_routing_failure_leaves_the_roads_straight(route, caplog):
     schedule = _routed(_stand_doc(), route)
     assert _codes(schedule) == [("out", False), ("in", True)] and schedule.shapes == {}
     assert "drawing straight lines" in caplog.text
 
 
-def test_by_default_the_build_asks_the_router_and_survives_it_being_down(caplog):
+def test_by_default_the_router_is_asked_and_survives_being_down(caplog):
     # The tests' network is down (conftest): the router is asked once, then every road is straight.
     schedule = _routed(_stand_doc())
     assert schedule.shapes == {} and schedule.format == FORMAT
     assert "the router isn't answering" in caplog.text
+
+
+# The timetable is saved before its roads are asked for.
+
+
+def _road_build(stops, operators, api_key, now, **options):
+    return _unrouted(ROADS_DOC)
+
+
+def test_refresh_saves_the_timetable_before_asking_for_its_roads(tmp_path):
+    saved_when_asked = []
+
+    def route(pairs):
+        saved_when_asked.append(load(tmp_path))
+        return _roads_found(pairs)
+
+    schedule = refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", build=_road_build, route=route)
+    assert saved_when_asked[0] is not None and saved_when_asked[0].shapes == {}
+    assert len(schedule.shapes) == 6 and load(tmp_path) == schedule
+
+
+def test_a_timetable_is_kept_when_finding_its_roads_is_stopped(tmp_path):
+    # As when the timetable service runs out of time while asking for roads.
+    def route(pairs):
+        raise SystemExit("stopped")
+
+    with pytest.raises(SystemExit):
+        refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", build=_road_build, route=route)
+    kept = load(tmp_path)
+    assert kept is not None and kept.journeys and kept.shapes == {}
+    assert due(kept, {"A": STOP_A}, NOW, ["BNML"]) is None  # not built again until next week
+
+
+def test_a_timetable_is_kept_without_roads_when_saving_them_fails(tmp_path, monkeypatch, caplog):
+    from departureboard import timetable
+
+    real_save = timetable.save
+    saves = []
+
+    def save(folder, schedule):
+        saves.append(schedule)
+        if len(saves) == 2:
+            raise OSError("disk full")
+        real_save(folder, schedule)
+
+    monkeypatch.setattr(timetable, "save", save)
+    schedule = refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", build=_road_build, route=_roads_found)
+    assert len(saves) == 2 and schedule.shapes == {} and load(tmp_path) == schedule
+    assert "disk full" in caplog.text
 
 
 def test_a_timetable_from_before_road_shapes_is_due_once():

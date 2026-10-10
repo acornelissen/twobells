@@ -3,6 +3,7 @@ import json
 import re
 import stat
 import threading
+import time
 import tomllib
 import zipfile
 from datetime import date, datetime
@@ -547,6 +548,29 @@ def test_cancelling_while_the_timetable_builds(bods):
     job.start()
     assert _finish(job)["message"] == "Cancelled"
     assert timetable.load(bods.scratch) is None
+
+
+def test_the_roads_show_their_progress_and_cancelling_stops_them_at_once(bods):
+    seen = []
+
+    def router(url, max_bytes):
+        seen.append(job.status())
+        if len(seen) == 2:
+            job.cancel()
+        raise ValueError("no road here")
+
+    def naptan(atcos):  # every stop 111 m from the last, so each pair is asked about
+        return {atco: (f"Stop {atco}", 53.44 + i * 0.001, -1.95) for i, atco in enumerate(sorted(atcos))}
+
+    job = _job(bods, naptan=naptan, router=router)
+    start = time.monotonic()
+    job.start()
+    status = _finish(job)
+    assert (status["state"], status["message"]) == ("failed", "Cancelled")
+    assert len(seen) == 2 and time.monotonic() - start < 3  # one request a second, then no more
+    assert [(s["step"], s["done"]) for s in seen] == [(discover.STEP_ROADS, 0), (discover.STEP_ROADS, 1)]
+    assert seen[0]["total"] > 2
+    assert timetable.load(bods.scratch) is not None  # saved before its roads were asked for
 
 
 def test_cancelling_before_starting(bods):
