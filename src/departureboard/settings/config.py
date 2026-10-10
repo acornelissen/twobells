@@ -34,7 +34,7 @@ from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES
 from ..sources.transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
 from ..sources.transportapi import TransportApiBusSource
 from ..sources.weather import OpenMeteoSource
-from .schema import BOARD_DEFAULTS, CRS, NOC, bus_defaults, refused, saved_keys, views
+from .schema import BOARD_DEFAULTS, CRS, DEFAULT_BUS_SOURCE, NOC, bus_defaults, refused, saved_keys, views
 
 if TYPE_CHECKING:
     from .store import Store
@@ -362,8 +362,8 @@ def _operators(section: dict) -> list[str]:
     operators = _texts(section, "operators", "[bus] ")
     if not operators:
         raise ConfigError(
-            '[bus] source = "bods" needs operators, the codes of the bus companies whose '
-            'timetables to read, like operators = ["BNML", "HIPK"]'
+            '[bus] needs operators, the codes of the bus companies whose timetables to read, '
+            'like operators = ["BNML", "HIPK"]; or source = "transportapi" to use TransportAPI alone'
         )
     for code in operators:
         if not NOC.fullmatch(code):
@@ -374,11 +374,11 @@ def _operators(section: dict) -> list[str]:
 def _bus(
     section: dict, env: Mapping[str, str], holidays: frozenset[date], folder: Path, timezone: str
 ) -> SourceConfig:
-    """TransportAPI's departures, or with source = "bods" the BODS timetable
-    and live positions, falling back to TransportAPI if its keys are set."""
+    """The BODS timetable and live positions, falling back to TransportAPI if
+    its keys are set; or with source = "transportapi" TransportAPI alone."""
     where = "[bus] "
     stops = _stops(section)
-    kind = _text(section, "source", "transportapi", where)
+    kind = _text(section, "source", DEFAULT_BUS_SOURCE, where)
     if kind not in ("transportapi", "bods"):
         raise ConfigError(f'[bus] source must be "transportapi" or "bods", not {kind!r}')
     defaults = bus_defaults(kind)
@@ -399,16 +399,10 @@ def _bus(
         fallback=_transportapi(section, env, stops) if has_tapi else None,
     )
     # The timetable costs nothing to read, so it is checked often and all day;
-    # TransportAPI, if it has to stand in, at its own slower pace and in its own
-    # windows (the commute, say), so the daily allowance lasts: by default the
-    # bus windows given, or else TransportAPI's own.
+    # TransportAPI, only a backup, at its own slower pace and in its own windows
+    # (the commute), never the bus windows, so the daily allowance lasts.
     policy = _policy(section, defaults, where, holidays)
-    if "fallback_windows" in section:
-        fallback_windows = _windows(section, "fallback_windows", (), where)
-    elif "windows" in section:
-        fallback_windows = policy.windows
-    else:
-        fallback_windows = _windows({}, "fallback_windows", BOARD_DEFAULTS["bus"]["windows"], where)
+    fallback_windows = _windows(section, "fallback_windows", BOARD_DEFAULTS["bus"]["windows"], where)
     fallback_every = timedelta(minutes=_whole(section, "fallback_interval_minutes",
                                               defaults["fallback_interval_minutes"], where))
     return SourceConfig(

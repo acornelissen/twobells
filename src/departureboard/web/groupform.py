@@ -132,7 +132,7 @@ def _default(f: Field, data: dict):
         return 180 if data.get("rotate_180") else f.default  # the older spelling of rotate = 180
     if f.group == "board" and f.section == "bus":
         bus = data.get("bus")
-        return schema.bus_defaults(bus.get("source") if isinstance(bus, dict) else None)[f.key]
+        return schema.bus_defaults(schema.bus_source(bus))[f.key]
     return f.default
 
 
@@ -460,7 +460,7 @@ class GroupForm:
                 "Open-Meteo. Setup sets it from home, or set it in config.toml.</p>"
             )
         if section == "bus" and "dashboard" in self._groups and isinstance(data["bus"], dict) \
-                and data["bus"].get("source") != "bods":
+                and schema.bus_source(data["bus"]) != "bods":
             from ..dashboard.config import BUS_NOTE
 
             out.append(f'<p class="hint">{e(BUS_NOTE)}</p>')

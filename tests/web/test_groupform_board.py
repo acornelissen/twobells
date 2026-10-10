@@ -31,6 +31,7 @@ windows = ["Mon-Fri 06:30-09:30", "Mon-Fri 16:30-19:30"]
 walk_minutes = 7
 
 [bus]
+source = "transportapi"
 rows = 3
 directions = []
 interval_minutes = 12
@@ -593,7 +594,7 @@ def test_the_only_section_set_up_cannot_be_switched_off(tmp_path):
 def test_a_section_off_with_the_templates_placeholders_saves(tmp_path):
     state = tmp_path / "state"
     config = tmp_path / "config.toml"
-    off = CONFIG.replace('[bus]\n', '[bus]\nenabled = false\n').replace('B = "100000008350"', 'B = "CHANGE_ME"')
+    off = CONFIG.replace('[bus]\nsource = "transportapi"\n', '[bus]\nsource = "transportapi"\nenabled = false\n').replace('B = "100000008350"', 'B = "CHANGE_ME"')
     config.write_text(off.format(state=state / "state.json"))
     form = board_form(config, lambda: dict(ENV))
     assert fields_of(form)["bus_enabled"] == "false"

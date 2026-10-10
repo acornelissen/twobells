@@ -58,8 +58,8 @@ rows = 3
 directions = []
 interval_minutes = 2
 stale_after_minutes = 30
-# Default: every day, 06:00-23:00. Set here, they are TransportAPI's windows
-# too, unless fallback_windows says otherwise.
+# Default: every day, 06:00-23:00. TransportAPI, standing in, keeps to its
+# own fallback_windows (below), whatever these say.
 # windows = ["Mon-Sun 06:00-23:00"]
 # The HDMI screen's bus page ([bus.routes], below): how often to check where
 # the buses are, at least 10 (BODS refreshes every 10 s).
@@ -69,8 +69,7 @@ stale_after_minutes = 30
 # (TAPI_APP_ID, TAPI_APP_KEY) are set. Its free plan is 30 hits a day, and
 # every check costs one hit per stop, so it checks every
 # fallback_interval_minutes, within daily_budget (2 spare for manual probes),
-# and only inside fallback_windows. Without fallback_windows it uses [bus]
-# windows if they are set, else the ones below.
+# and only inside fallback_windows (default: the ones below, the commute).
 # 2 stops x (07:00-08:30 every 12 min = 8 checks + 17:00-18:00 = 6 checks) = 28 hits.
 # fallback_interval_minutes = 12
 # fallback_windows = ["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]

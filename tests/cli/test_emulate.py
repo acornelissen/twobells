@@ -21,7 +21,7 @@ def test_live_mode_can_fake_trains_while_waiting_for_rail_key(tmp_path):
     config.write_text(
         f'state_file = "{tmp_path / "state.json"}"\n'
         '[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n'
-        '[bus]\nwindows = ["Mon-Fri 07:00-08:30"]\n[bus.stops]\nA = "1000DGHS0900"\n'
+        '[bus]\nsource = "transportapi"\nwindows = ["Mon-Fri 07:00-08:30"]\n[bus.stops]\nA = "1000DGHS0900"\n'
     )
     env = {"TAPI_APP_ID": "id", "TAPI_APP_KEY": "key"}
 
@@ -89,7 +89,7 @@ def _live_config(tmp_path, display):
     config = tmp_path / "config.toml"
     config.write_text(
         f'display = "{display}"\nstate_file = "{tmp_path / "state.json"}"\n'
-        '[bus]\nwindows = ["Mon-Fri 07:00-08:30"]\n[bus.stops]\nA = "1000DGHS0900"\n'
+        '[bus]\nsource = "transportapi"\nwindows = ["Mon-Fri 07:00-08:30"]\n[bus.stops]\nA = "1000DGHS0900"\n'
     )
     return config
 

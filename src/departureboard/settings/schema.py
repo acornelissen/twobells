@@ -283,14 +283,22 @@ BOARD_DEFAULTS: dict = {
         "windows": ("Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"),
     },
 }
-# With [bus] source = "bods" the timetable costs nothing to read, so it is
-# checked often and all day; TransportAPI, if it has to stand in, every
-# fallback_interval_minutes in the bus windows given, or else TransportAPI's own.
+# Buses come from the BODS timetable unless [bus] says source = "transportapi"
+# (BODS covers England only); TransportAPI otherwise only stands in for it.
+DEFAULT_BUS_SOURCE = "bods"
+# The timetable costs nothing to read, so it is checked often and all day;
+# TransportAPI, if it has to stand in, every fallback_interval_minutes in
+# fallback_windows, or else its own windows above, so its daily hits last.
 BODS_DEFAULTS: dict = {
     "interval_minutes": 2,
     "windows": ("Mon-Sun 06:00-23:00",),
     "fallback_interval_minutes": 12,
 }
+
+
+def bus_source(bus: object) -> object:
+    """Where [bus] says buses come from: its source, or the default."""
+    return bus.get("source", DEFAULT_BUS_SOURCE) if isinstance(bus, dict) else DEFAULT_BUS_SOURCE
 
 
 def bus_defaults(source: object) -> dict:

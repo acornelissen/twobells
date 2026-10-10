@@ -206,7 +206,7 @@ def test_the_board_loads_with_the_schema_s_defaults(tmp_path):
 
     from departureboard.settings.config import settings_from
 
-    data = {"state_file": str(tmp_path / "state.json"), "train": {"crs": "GLO"}, "bus": {"stops": STOPS}}
+    data = {"state_file": str(tmp_path / "state.json"), "train": {"crs": "GLO"}, "bus": {"source": "transportapi", "stops": STOPS}}
     settings = settings_from(data, ENV)
     top = schema.BOARD_DEFAULTS
     assert (settings.board.title, settings.timezone, settings.display, settings.rotate) == (

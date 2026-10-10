@@ -139,13 +139,13 @@ def test_example_watches_both_henry_street_stops(tmp_path, example):
 
 
 def test_bus_without_stops_is_rejected(tmp_path):
-    path = write(tmp_path, '[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n')
+    path = write(tmp_path, '[bus]\nsource = "transportapi"\nwindows = ["Mon-Fri 07:00-08:00"]\n')
     with pytest.raises(ConfigError, match="stops"):
         load_config(path, ENV)
 
 
 def test_bus_stop_left_as_placeholder_is_rejected(tmp_path):
-    path = write(tmp_path, '[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "CHANGE_ME"\n')
+    path = write(tmp_path, '[bus]\nsource = "transportapi"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "CHANGE_ME"\n')
     with pytest.raises(ConfigError, match="CHANGE_ME"):
         load_config(path, ENV)
 
@@ -179,7 +179,7 @@ def test_old_refresh_every_setting_is_ignored(tmp_path):
 def test_walk_minutes_for_station_and_each_stop(tmp_path):
     path = write(tmp_path, (
         '[train]\ncrs = "GLO"\nwalk_minutes = 7\nwindows = ["Mon-Fri 06:30-09:30"]\n'
-        '[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n'
+        '[bus]\nsource = "transportapi"\nwindows = ["Mon-Fri 07:00-08:00"]\n'
         '[bus.stops]\nA = "1000DGHS0900"\nB = "100000008350"\n'
         '[bus.walk_minutes]\nA = 7\nB = 6\n'
     ))
@@ -190,7 +190,7 @@ def test_walk_minutes_for_station_and_each_stop(tmp_path):
 
 def test_single_bus_walk_time_applies_to_every_stop(tmp_path):
     path = write(tmp_path, (
-        '[bus]\nwalk_minutes = 5\nwindows = ["Mon-Fri 07:00-08:00"]\n'
+        '[bus]\nsource = "transportapi"\nwalk_minutes = 5\nwindows = ["Mon-Fri 07:00-08:00"]\n'
         '[bus.stops]\nA = "1000DGHS0900"\n'
     ))
     assert dict(load_config(path, ENV).board.walk.bus) == {"*": 5}
@@ -273,6 +273,7 @@ ROUTE = '''
 display = "hdmi-1280x400"
 rotate = 90
 [bus]
+source = "transportapi"
 windows = ["Mon-Fri 07:00-08:30"]
 [bus.stops]
 A = "1000DGHS0900"
@@ -365,7 +366,7 @@ def test_saved_settings_cannot_send_the_keys_to_another_address(tmp_path, caplog
     (tmp_path / "state" / "settings.toml").write_text(
         'display = "hdmi-1280x400"\n'
         '[train]\nrows = 2\nbase_url = "https://example.invalid/rail"\n'
-        '[bus]\nbase_url = "https://example.invalid/bus"\n'
+        '[bus]\nsource = "transportapi"\nbase_url = "https://example.invalid/bus"\n'
         '[dashboard]\nstate_dir = "/example.invalid"\n'
     )
     caplog.set_level("WARNING")
@@ -403,16 +404,16 @@ def test_merge_replaces_lists_and_merges_tables():
 def test_merge_replaces_tables_below_the_top_level():
     from departureboard.settings.config import merge
 
-    base = {"bus": {"rows": 2, "stops": {"A": "x", "B": "y"}, "routes": {"341": {}}}}
-    merged = merge(base, {"bus": {"stops": {"A": "x"}, "walk_minutes": {}}})
-    assert merged == {"bus": {"rows": 2, "stops": {"A": "x"}, "walk_minutes": {}, "routes": {"341": {}}}}
+    base = {"bus": {"source": "transportapi", "rows": 2, "stops": {"A": "x", "B": "y"}, "routes": {"341": {}}}}
+    merged = merge(base, {"bus": {"source": "transportapi", "stops": {"A": "x"}, "walk_minutes": {}}})
+    assert merged == {"bus": {"source": "transportapi", "rows": 2, "stops": {"A": "x"}, "walk_minutes": {}, "routes": {"341": {}}}}
 
 
 def test_empty_values_saved_by_the_page_mean_none(tmp_path):
     path = write(tmp_path, (
         'accent = ""\n'
         '[train]\ncrs = "GLO"\nfilter_crs = ""\nwalk_minutes = ""\nwindows = ["Mon-Fri 06:30-09:30"]\n'
-        '[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n[bus.walk_minutes]\n'
+        '[bus]\nsource = "transportapi"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n[bus.walk_minutes]\n'
     ))
     settings = load_config(path, ENV)
     assert settings.accent == "yellow"
@@ -421,7 +422,7 @@ def test_empty_values_saved_by_the_page_mean_none(tmp_path):
 
 
 TRAIN = '[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n'
-BUS = '[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n'
+BUS = '[bus]\nsource = "transportapi"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n'
 
 
 @pytest.mark.parametrize(
@@ -444,14 +445,14 @@ BUS = '[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"
         ('timezone = "Mars/Olympus"\n' + TRAIN, "timezone"),
         ('display = ["inky"]\n' + TRAIN, "display"),
         ("state_file = 5\n" + TRAIN, "state_file"),
-        ('[bus]\nstops = ["1000DGHS0900"]\nwindows = ["Mon-Fri 07:00-08:00"]\n', "stops"),
-        ('[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = 1000\n', "A"),
-        ('[bus]\nwalk_minutes = "5"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n', "walk_minutes"),
+        ('[bus]\nsource = "transportapi"\nstops = ["1000DGHS0900"]\nwindows = ["Mon-Fri 07:00-08:00"]\n', "stops"),
+        ('[bus]\nsource = "transportapi"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = 1000\n', "A"),
+        ('[bus]\nsource = "transportapi"\nwalk_minutes = "5"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n', "walk_minutes"),
         (BUS + '[bus.walk_minutes]\nA = "7"\n', "walk_minutes"),
-        ('[bus]\ndaily_budget = "28"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n', "daily_budget"),
-        ('[bus]\ndirections = "Ashton"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n', "directions"),
+        ('[bus]\nsource = "transportapi"\ndaily_budget = "28"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n', "daily_budget"),
+        ('[bus]\nsource = "transportapi"\ndirections = "Ashton"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n', "directions"),
         ('display = "hdmi-1280x400"\n' + BUS + '[bus.routes]\n341 = "Glossop"\n', "341"),
-        ('display = "hdmi-1280x400"\n[bus]\nroutes = "341"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n', "routes"),
+        ('display = "hdmi-1280x400"\n[bus]\nsource = "transportapi"\nroutes = "341"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n', "routes"),
         ('display = "hdmi-1280x400"\n' + BUS + '[bus.routes.341]\nstop = "A"\nstops = "Arundel Street"\n', "341"),
         ("title = \n", "config.toml"),
         ('bank_holidays = "yes"\n' + TRAIN, "bank_holidays"),
@@ -522,6 +523,7 @@ TRAIN_AND_BUS = """
 crs = "GLO"
 windows = ["Mon-Fri 06:30-09:30"]
 [bus]
+source = "transportapi"
 windows = ["Mon-Fri 17:00-18:00"]
 [bus.stops]
 A = "1000DGHS0900"
@@ -611,11 +613,11 @@ def test_rain_warning_can_be_turned_off_without_losing_the_location(tmp_path):
 def test_trains_or_buses_switched_off_are_ignored_as_if_absent(tmp_path):
     names = lambda text: [c.source.name for c in load_config(write(tmp_path, text), ENV).board.sources]  # noqa: E731
     assert names(TRAIN_AND_BUS) == ["train", "bus"]
-    assert names(TRAIN_AND_BUS.replace("[bus]\n", "[bus]\nenabled = false\n")) == ["train"]
+    assert names(TRAIN_AND_BUS.replace("[bus]\nsource = \"transportapi\"\n", "[bus]\nsource = \"transportapi\"\nenabled = false\n")) == ["train"]
     assert names(TRAIN_AND_BUS.replace("[train]\n", "[train]\nenabled = false\n")) == ["bus"]
     assert names(TRAIN_AND_BUS.replace("[train]\n", "[train]\nenabled = true\n")) == ["train", "bus"]
     # Whatever is in a section switched off, placeholders and walk times included, isn't read.
-    off = '[train]\nenabled = false\ncrs = "CHANGE_ME"\nwalk_minutes = "far"\n[bus]\nenabled = false\nstops = {}\n'
+    off = '[train]\nenabled = false\ncrs = "CHANGE_ME"\nwalk_minutes = "far"\n[bus]\nsource = "transportapi"\nenabled = false\nstops = {}\n'
     settings = load_config(write(tmp_path, off), ENV)
     assert settings.board.sources == [] and settings.board.walk.train is None
 
@@ -675,8 +677,18 @@ def test_bods_bus_falls_back_to_transportapi_when_its_keys_are_set(tmp_path):
     # The timetable is checked every 2 minutes; TransportAPI, standing in, every 12.
     assert config.policy.interval == timedelta(minutes=2)
     assert config.fallback_policy.interval == timedelta(minutes=12)
-    assert config.fallback_policy.windows == config.policy.windows
     assert config.daily_budget == 28
+
+
+def test_the_stand_in_keeps_to_transportapi_s_windows_whatever_the_bus_windows(tmp_path):
+    """The bus windows are all day (the Board tab saves them so); TransportAPI,
+    only a backup, keeps to the commute, or its 28 hits are gone by mid-morning."""
+    from departureboard.core.polling import parse_window
+    from departureboard.settings.schema import BOARD_DEFAULTS
+
+    config = bods_bus(tmp_path, {**ENV, "BODS_API_KEY": "bods"})
+    assert config.policy.windows == (parse_window("Mon-Sun 06:00-23:00"),)
+    assert config.fallback_policy.windows == tuple(parse_window(w) for w in BOARD_DEFAULTS["bus"]["windows"])
 
 
 def test_bods_bus_needs_no_transportapi_keys(tmp_path):
@@ -717,12 +729,30 @@ def test_unknown_bus_source_is_reported(tmp_path):
         load_config(path, {"BODS_API_KEY": "bods"})
 
 
-def test_bus_source_defaults_to_transportapi(tmp_path):
-    path = write(tmp_path, '[bus]\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n')
+def test_bus_source_defaults_to_bods(tmp_path):
+    from departureboard.sources.bodsbus import BodsBusSource
+
+    path = write(tmp_path, f'state_file = "{tmp_path / "s.json"}"\n[bus]\noperators = ["BNML"]\n'
+                           '[bus.stops]\nA = "1000DGHS0900"\n')
+    config = load_config(path, {**ENV, "BODS_API_KEY": "bods"}).board.sources[0]
+    assert isinstance(config.source, BodsBusSource)
+    assert config.source._fallback is not None  # TransportAPI's keys are set: it stands in
+    assert config.policy.interval == timedelta(minutes=2)
+
+
+def test_transportapi_alone_is_asked_for_outright(tmp_path):
+    path = write(tmp_path, '[bus]\nsource = "transportapi"\nwindows = ["Mon-Fri 07:00-08:00"]\n'
+                           '[bus.stops]\nA = "1000DGHS0900"\n')
     config = load_config(path, ENV).board.sources[0]
     assert isinstance(config.source, TransportApiBusSource)
     assert config.fallback_policy is None
     assert config.policy.interval == timedelta(minutes=12)
+
+
+def test_buses_with_no_operators_say_how_to_use_transportapi_alone(tmp_path):
+    path = write(tmp_path, '[bus]\n[bus.stops]\nA = "1000DGHS0900"\n')
+    with pytest.raises(ConfigError, match=r'needs operators.*source = "transportapi"'):
+        load_config(path, {**ENV, "BODS_API_KEY": "bods"})
 
 
 def test_bods_bus_fallback_has_its_own_windows(tmp_path):
@@ -798,9 +828,9 @@ def test_settings_saved_without_a_config_count(tmp_path):
 def test_trains_and_buses_both_switched_off_need_setting_up(tmp_path):
     from departureboard.settings.config import needs_setup
 
-    config = write(tmp_path, '[train]\ncrs = "GLO"\nenabled = false\n[bus]\nenabled = false\n')
+    config = write(tmp_path, '[train]\ncrs = "GLO"\nenabled = false\n[bus]\nsource = "transportapi"\nenabled = false\n')
     assert needs_setup(config)
-    config.write_text('[train]\ncrs = "GLO"\n[bus]\nenabled = false\n')
+    config.write_text('[train]\ncrs = "GLO"\n[bus]\nsource = "transportapi"\nenabled = false\n')
     assert not needs_setup(config)
 
 
@@ -832,14 +862,14 @@ def test_placeholders_in_a_section_switched_off_need_no_setting_up(tmp_path):
     config = installed_template(tmp_path)
     state = tmp_path / "state"
     state.mkdir()
-    (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n[bus]\nenabled = false\n')
+    (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n[bus]\nsource = "transportapi"\nenabled = false\n')
     assert not needs_setup(config)  # the bus stop is still CHANGE_ME, but buses are off
     (state / "settings.toml").write_text('[train]\nenabled = false\n[bus]\noperators = ["SBUS"]\n'
                                          '[bus.stops]\nA = "1800SB12341"\n')
     assert not needs_setup(config)
-    (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n[bus]\nenabled = true\n')
+    (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n[bus]\nsource = "transportapi"\nenabled = true\n')
     assert needs_setup(config)
-    (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n[bus]\nenabled = "no"\n')
+    (state / "settings.toml").write_text('[train]\ncrs = "GLO"\n[bus]\nsource = "transportapi"\nenabled = "no"\n')
     assert not needs_setup(config)  # a fault, for load_config to report
 
 

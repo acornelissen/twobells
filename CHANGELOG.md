@@ -19,5 +19,6 @@ The first release.
 - The package is organised by app area (`core`, `settings`, `sources`, `timetable`, `board`, `dashboard`, `web`, `setup`, `fetch`, `emulator`, `cli`), with the tests mirroring it.
 - The repo keeps deploy files in `deploy/`, docs in `docs/` and example settings in `examples/`.
 - The example settings lead with bus times from the BODS timetable.
+- `[bus]` takes bus times from the BODS timetable unless it says `source = "transportapi"`; a config that relied on TransportAPI being the default needs that line. TransportAPI otherwise only stands in while there is no usable timetable, and then only in its own `fallback_windows` (the commute by default), never the all-day bus windows.
 
 [Unreleased]: https://github.com/acornelissen/inky-departures/commits/main

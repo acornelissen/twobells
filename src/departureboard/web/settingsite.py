@@ -445,7 +445,7 @@ class SettingsSite:
             ("Station", e(station) + off(train) if station else "Not set up"),
             ("Bus stops", e(stops) + off(bus) if stops else "Not set up"),
             *(self._timetable(data) if stops and isinstance(bus, dict) and not off(bus)
-              and bus.get("source") == "bods" else []),
+              and schema.bus_source(bus) == "bods" else []),
             ("Home", "Set, for the weather" if home else "Not set"),
         ]
         listed = "".join(f"<dt>{name}</dt><dd>{value}</dd>" for name, value in rows)

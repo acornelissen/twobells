@@ -9,7 +9,7 @@ from typing import cast
 from ..board.displays.display import DISPLAY_PANELS
 from ..settings.config import ConfigError, is_enabled
 from ..settings.installs import install_named
-from ..settings.schema import BOARD_DEFAULTS, views
+from ..settings.schema import BOARD_DEFAULTS, bus_source, views
 from ..settings.store import Store
 from .common import as_owner, local_now, open_store, parse_stops
 
@@ -79,7 +79,7 @@ def _wants_timetable(store: Store) -> bool:
     in config.toml with the settings saved from the page over it."""
     data = store.data()
     bus = data.get("bus")
-    return isinstance(bus, dict) and is_enabled(data, "bus") and bus.get("source") == "bods"
+    return isinstance(bus, dict) and is_enabled(data, "bus") and bus_source(bus) == "bods"
 
 
 def query_command(args) -> int:

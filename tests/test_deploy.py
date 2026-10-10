@@ -331,9 +331,9 @@ def test_install_and_update_ask_the_app_not_config_toml(name):
 @pytest.mark.parametrize("name", SCRIPTS)
 @pytest.mark.parametrize("config, saved, wanted", [
     ('[bus]\nsource = "bods"\n', "", True),
-    ("[bus]\n", '[bus]\nsource = "bods"\n', True),  # chosen on the settings site or in the wizard
-    ('[bus]\nsource = "bods"\n', "[bus]\nenabled = false\n", False),  # buses switched off since
-    ("[bus]\n", "", False),  # TransportAPI
+    ("[bus]\nsource = \"transportapi\"\n", '[bus]\nsource = "bods"\n', True),  # chosen on the settings site or in the wizard
+    ('[bus]\nsource = "bods"\n', "[bus]\nsource = \"transportapi\"\nenabled = false\n", False),  # buses switched off since
+    ("[bus]\nsource = \"transportapi\"\n", "", False),  # TransportAPI
     ('[train]\ncrs = "GLO"\n', "", False),  # no buses at all
 ])
 def test_install_and_update_keep_the_bus_timetable_only_when_the_settings_want_it(tmp_path, name, config, saved,

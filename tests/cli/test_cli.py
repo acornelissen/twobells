@@ -90,6 +90,7 @@ def test_run_reports_config_errors_without_traceback(tmp_path, capsys):
 
 CONFIG = """
 [bus]
+source = "transportapi"
 windows = ["Mon-Fri 07:00-08:00"]
 [bus.stops]
 A = "atco-a"
@@ -324,7 +325,7 @@ def test_sleeping_to_the_tick_lands_on_a_whole_second(monkeypatch):
 
 def _route_config(tmp_path):
     config = tmp_path / "config.toml"
-    config.write_text('[bus]\nwindows = ["Mon-Fri 07:00-08:30"]\nwalk_minutes = 2\n[bus.stops]\nA = "1000DGHS0900"\n')
+    config.write_text('[bus]\nsource = "transportapi"\nwindows = ["Mon-Fri 07:00-08:30"]\nwalk_minutes = 2\n[bus.stops]\nA = "1000DGHS0900"\n')
     return config
 
 
@@ -749,7 +750,7 @@ def test_timetable_fails_when_no_timetable_could_be_built(bods_env, monkeypatch,
 def test_timetable_needs_the_bods_bus_source(probe_env, capsys):
     args, _ = probe_env
     assert main(["timetable", *args]) == 2
-    assert 'source = "bods"' in capsys.readouterr().err
+    assert 'source = "transportapi"' in capsys.readouterr().err
 
 
 def test_timetable_with_buses_switched_off_has_nothing_to_do(bods_env, monkeypatch, capsys):
@@ -758,7 +759,7 @@ def test_timetable_with_buses_switched_off_has_nothing_to_do(bods_env, monkeypat
 
     args, folder = bods_env
     folder.mkdir()
-    (folder / "settings.toml").write_text("[bus]\nenabled = false\n")
+    (folder / "settings.toml").write_text("[bus]\nsource = \"transportapi\"\nenabled = false\n")
     monkeypatch.setattr(timetable, "refresh", lambda *a, **k: pytest.fail("built a timetable"))
     assert main(["timetable", *args]) == 0
     captured = capsys.readouterr()
@@ -774,7 +775,7 @@ def test_timetable_builds_from_bods_set_only_in_the_saved_settings(bods_env, mon
     config = Path(args[1])
     config.write_text(
         f'state_file = "{folder / "state.json"}"\n'
-        '[bus]\nwindows = ["Mon-Sun 06:00-23:00"]\n[bus.stops]\nA = "1000DGHS0900"\n'
+        '[bus]\nsource = "transportapi"\nwindows = ["Mon-Sun 06:00-23:00"]\n[bus.stops]\nA = "1000DGHS0900"\n'
     )
     folder.mkdir()
     (folder / "settings.toml").write_text('[bus]\nsource = "bods"\noperators = ["HIPK"]\n')
@@ -1434,9 +1435,9 @@ def test_query_display_prints_the_display_config_toml_sets(tmp_path, capsys, con
 
 @pytest.mark.parametrize("config, saved, wanted", [
     ('[bus]\nsource = "bods"\n', "", True),
-    ("[bus]\n", '[bus]\nsource = "bods"\n', True),  # chosen on the settings site or in the wizard
-    ('[bus]\nsource = "bods"\n', "[bus]\nenabled = false\n", False),  # buses switched off since
-    ("[bus]\n", "", False),  # TransportAPI
+    ("[bus]\nsource = \"transportapi\"\n", '[bus]\nsource = "bods"\n', True),  # chosen on the settings site or in the wizard
+    ('[bus]\nsource = "bods"\n', "[bus]\nsource = \"transportapi\"\nenabled = false\n", False),  # buses switched off since
+    ("[bus]\nsource = \"transportapi\"\n", "", False),  # TransportAPI
     ('[train]\ncrs = "GLO"\n', "", False),  # no buses at all
 ])
 def test_query_needs_timetable_says_yes_or_no_and_exits_so(tmp_path, capsys, config, saved, wanted):
@@ -1837,7 +1838,7 @@ def board_with_views(tmp_path, views, display=None):
     state.mkdir()
     config = tmp_path / "config.toml"
     config.write_text(f'state_file = "{state / "state.json"}"\n' + (f'display = "{display}"\n' if display else "")
-                      + '[train]\ncrs = "GLO"\n[bus]\n[bus.stops]\nA = "1000DGHS0900"\n')
+                      + '[train]\ncrs = "GLO"\n[bus]\nsource = "transportapi"\n[bus.stops]\nA = "1000DGHS0900"\n')
     (state / "settings.toml").write_text(f"[app]\nviews = {json.dumps(views)}\n")
     secrets = tmp_path / "secrets.env"
     secrets.write_text("RDM_API_KEY=rail\nTAPI_APP_ID=id\nTAPI_APP_KEY=tapi\n")

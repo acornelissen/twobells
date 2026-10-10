@@ -172,10 +172,10 @@ def test_transportapi_keys_are_dropped_so_there_is_no_fallback(config, tmp_path,
 def test_buses_not_from_bods_are_left_out_with_a_note(tmp_path, opened):
     # The board's TransportAPI buses: the dashboard starts without them and says why.
     path = tmp_path / "config.toml"
-    path.write_text('[train]\ncrs = "GLO"\n[bus]\nrows = 2\n[bus.stops]\nA = "1000DGHS0900"\n')
+    path.write_text('[train]\ncrs = "GLO"\n[bus]\nsource = "transportapi"\nrows = 2\n[bus.stops]\nA = "1000DGHS0900"\n')
     dash = load(path, tmp_path / "dash", opened=opened)
     assert dash.bus is None and dash.bus_upkeep is None and dash.bus_disruptions is None and dash.bus_stops == {}
-    assert "BODS" in dash.bus_note and 'source = "bods"' in dash.bus_note
+    assert "BODS" in dash.bus_note and 'source = "transportapi"' in dash.bus_note
     assert dash.train is not None
 
 

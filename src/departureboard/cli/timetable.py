@@ -25,7 +25,8 @@ def timetable_command(args) -> int:
         if not is_enabled(data, "bus"):
             print("Buses are switched off, so there's no bus timetable to build")
             return 0
-        print('Bus times come from TransportAPI; set source = "bods" under [bus] first', file=sys.stderr)
+        print('Bus times come from TransportAPI alone; take source = "transportapi" out of [bus] first',
+              file=sys.stderr)
         return 2
     # The timetable's bank holiday names come from this list, so keep it fresh
     # whatever bank_holidays says about checking times. Always England and

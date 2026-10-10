@@ -39,6 +39,7 @@ from ..core import files
 from ..core.polling import Window, parse_window
 from ..core.walk import WalkTimes
 from ..settings.config import ConfigError, _flag, _table, _texts, _whole, settings_from, switched_on
+from ..settings.schema import bus_source
 from ..sources.bodsbus import BodsBusSource, BusBoard
 from ..sources.darwin import DarwinSource, ServiceDetails, ServiceDetailsClient, TrainBoard
 from ..sources.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource, kb_url_is_placeholder
@@ -69,7 +70,7 @@ _KEYS = {
 _MAX_ROWS = 20
 # Why there are no buses on the dashboard when the board's come from TransportAPI.
 BUS_NOTE = ('The dashboard shows buses only from the free BODS timetable. Use setup to find your stops\' '
-            'bus companies, or set [bus] source = "bods" with their operators in config.toml.')
+            'bus companies, or take source = "transportapi" out of [bus] in config.toml and add their operators.')
 _MAX_LATE = 60
 _MAX_HISTORY_DAYS = 3650
 # A host name: dot-separated labels of letters, digits and inner hyphens.
@@ -324,7 +325,7 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
     bus_note = None
     if "bus" in data:
         bus = _table(data, "bus", "[bus]")
-        if bus.get("source") == "bods":
+        if bus_source(bus) == "bods":
             bus["rows"] = options.bus_rows
         else:
             del data["bus"]  # the board's TransportAPI buses: none here, and a note saying why
