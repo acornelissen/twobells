@@ -5,12 +5,21 @@ from __future__ import annotations
 import io
 import json
 import time
+from collections.abc import Iterator, Mapping
 from functools import partial
-from typing import Iterator, Mapping
 from http.client import HTTPConnection, HTTPSConnection
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
-from urllib.request import HTTPHandler, HTTPRedirectHandler, HTTPSHandler, Request, build_opener
+from urllib.request import (
+    HTTPDefaultErrorHandler,
+    HTTPErrorProcessor,
+    HTTPHandler,
+    HTTPRedirectHandler,
+    HTTPSHandler,
+    OpenerDirector,
+    Request,
+    UnknownHandler,
+)
 
 # Some gateways (the Rail Data Marketplace among them) refuse urllib's default
 # "Python-urllib/x.y" agent with a 403, so always identify ourselves.
@@ -145,7 +154,18 @@ class _HTTPSHandler(_Deadlines, HTTPSHandler):
     pass
 
 
-_opener = build_opener(SafeRedirects, _HTTPHandler, _HTTPSHandler)
+def _build_opener() -> OpenerDirector:
+    """urllib's build_opener always adds file:, ftp: and data: handlers; this
+    opener has only http and https, so any other address fails as an
+    unknown url type, wherever it came from (a redirect included)."""
+    opener = OpenerDirector()
+    for handler in (UnknownHandler, HTTPDefaultErrorHandler, SafeRedirects, _HTTPHandler, _HTTPSHandler,
+                    HTTPErrorProcessor):
+        opener.add_handler(handler())
+    return opener
+
+
+_opener = _build_opener()
 
 
 def urlopen(request: Request, timeout: float):

@@ -3,7 +3,7 @@ import json
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
 import pytest
@@ -54,7 +54,7 @@ def redirecting():
     seen = []
 
     class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):  # noqa: N802 - http.server API
+        def do_GET(self):
             port = self.server.server_address[1]
             if self.path in ("/elsewhere", "/same"):
                 host = "localhost" if self.path == "/elsewhere" else "127.0.0.1"
@@ -191,7 +191,7 @@ def dripping():
     answers at once; /moved redirects to /body. Each gives up after 5 s."""
 
     class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):  # noqa: N802 - http.server API
+        def do_GET(self):
             try:
                 if self.path == "/quick":
                     self.send_response(200)
@@ -243,3 +243,10 @@ def test_a_deadline_stops_a_server_that_sends_slowly(dripping, path):
 def test_a_request_within_its_deadline_is_answered(dripping):
     assert http.get_bytes(dripping + "/quick", 100, timeout=1.0, deadline=5.0) == b"ok"
 
+
+
+@pytest.mark.parametrize("url", ["file:///etc/hosts", "ftp://example.test/x", "data:,hello"])
+def test_only_http_and_https_are_opened(url):
+    # Through the opener itself: conftest stands in for urlopen to keep tests offline.
+    with pytest.raises(URLError, match="unknown url type"):
+        http._opener.open(Request(url), timeout=1)
