@@ -1,7 +1,10 @@
 """Deployment security settings (the dashboard container, the Pi's units), so an edit can't quietly drop one."""
 
 import re
+import shlex
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).parent.parent
 DOCKERFILE = (ROOT / "Dockerfile").read_text()
@@ -132,3 +135,35 @@ def test_install_and_update_set_up_the_setup_service():
     # Onto the folder in memory, and the old spool on the SD card removed.
     assert "systemctl enable departureboard-setup.path\nsystemctl restart departureboard-setup.path" in update
     assert "rm -rf /var/lib/departureboard/setup-spool\n" in update
+
+
+def _timetable_question(conf: Path) -> list[str]:
+    """The departureboard command update.sh asks whether to build the bus
+    timetable, as it would run with its config folder at `conf`."""
+    update = (ROOT / "deploy" / "update.sh").read_text()
+    [line] = [line for line in update.splitlines() if line.startswith("if ") and " timetable " in line]
+    words = shlex.split(line.removeprefix("if ").removesuffix("; then"))
+    # Asked as the service user, not as root.
+    assert words[:4] == ["runuser", "-u", "departureboard", "--"], words
+    assert words[4] == "$PREFIX/venv/bin/departureboard"
+    return [word.replace("$CONF", str(conf)) for word in words[5:]]
+
+
+@pytest.mark.parametrize("config, saved, wanted", [
+    ('[bus]\nsource = "bods"\n', "", True),
+    ("[bus]\n", '[bus]\nsource = "bods"\n', True),  # chosen on the settings page or in the wizard
+    ('[bus]\nsource = "bods"\n', "[bus]\nenabled = false\n", False),  # buses switched off since
+    ("[bus]\n", "", False),  # TransportAPI
+    ('[train]\ncrs = "GLO"\n', "", False),  # no buses at all
+])
+def test_update_builds_the_bus_timetable_only_when_the_settings_want_it(tmp_path, config, saved, wanted):
+    from departureboard.cli import main
+
+    state = tmp_path / "state"
+    state.mkdir()
+    (tmp_path / "config.toml").write_text(f'state_file = "{state / "state.json"}"\n{config}')
+    if saved:
+        (state / "settings.toml").write_text(saved)
+    update = (ROOT / "deploy" / "update.sh").read_text()
+    assert 'source[[:space:]]*=' not in update  # not by reading config.toml alone
+    assert (main(_timetable_question(tmp_path)) == 0) == wanted

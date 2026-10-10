@@ -649,7 +649,21 @@ def _probe(args) -> int:
     return 2
 
 
+def _wants_timetable(config: Path | str) -> bool:
+    """Whether the board's buses are on and come from the BODS timetable,
+    in config.toml with the settings saved from the page over it."""
+    data = read_config(config)
+    bus = data.get("bus")
+    return isinstance(bus, dict) and is_enabled(data, "bus") and bus.get("source") == "bods"
+
+
 def _timetable(args) -> int:
+    if args.needed:  # for update.sh: exit 0 if the timetable is wanted, 1 if not; no keys needed
+        try:
+            return 0 if _wants_timetable(args.config) else 1
+        except OSError as error:
+            print(f"Can't read {args.config}: {error.strerror or error}", file=sys.stderr)
+            return 2
     settings = _settings(args, only={"bus"})
     source = next((c.source for c in settings.board.sources if c.source.name == "bus"), None)
     if not isinstance(source, BodsBusSource):
@@ -982,6 +996,7 @@ def _parser() -> argparse.ArgumentParser:
 
     tt = with_config(sub.add_parser("timetable", help="build the BODS bus timetable for your stops, if due"))
     tt.add_argument("--force", action="store_true", help="build it now, as after changing operators")
+    tt.add_argument("--needed", action="store_true", help=argparse.SUPPRESS)  # update.sh asks this
     tt.set_defaults(handler=_timetable)
 
     demo = sub.add_parser("demo", help="render sample data (a Glossop morning) to a PNG")

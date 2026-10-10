@@ -63,9 +63,11 @@ systemctl enable departureboard-setup.path
 systemctl restart departureboard-setup.path
 systemctl try-restart departureboard-web.service
 
-# Bus times from the BODS timetable need it built and kept fresh. The first
-# build takes minutes, so it carries on in the background.
-if grep -Eq '^[[:space:]]*source[[:space:]]*=[[:space:]]*"bods"' "$CONF/config.toml"; then
+# Bus times from the BODS timetable need it built and kept fresh. The board
+# says whether its buses are on and use it, from config.toml with the
+# settings saved from the page over it. The first build takes minutes, so it
+# carries on in the background.
+if runuser -u departureboard -- "$PREFIX/venv/bin/departureboard" timetable --needed --config "$CONF/config.toml"; then
   systemctl enable --now departureboard-timetable.timer
   systemctl start --no-block departureboard-timetable.service
   echo "Building the bus timetable; follow it with: journalctl -u departureboard-timetable -f"
