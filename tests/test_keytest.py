@@ -127,6 +127,13 @@ def test_no_answer_is_service_down(error, words):
     assert result.state == "service_down" and words in result.message
 
 
+def test_no_answer_names_no_host():
+    # The Pi's and the dashboard's wizards both show this, so it can't say "board".
+    result = check("RDM_API_KEY", Fake(("Get", URLError(ConnectionRefusedError(61, "refused")))))
+    assert result.message == ("The Rail Data Marketplace couldn't be reached. It may be down, or there may be no "
+                              "internet here. Try again in a few minutes.")
+
+
 def test_an_answer_that_is_not_json_is_unknown():
     assert check("RDM_API_KEY", Fake(("Get", b"<html>maintenance</html>"))).state == "unknown"
     assert check("RDM_API_KEY", Fake(("Get", b"[1, 2]"))).state == "unknown"

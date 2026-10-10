@@ -117,7 +117,7 @@ class _Outcome(Exception):
 
 
 _SLOW = "took too long to answer"
-_UNREACHABLE = "couldn't be reached. It may be down, or the board may be offline"
+_UNREACHABLE = "couldn't be reached. It may be down, or there may be no internet here"
 
 
 def _call(fetch: Fetch, url: str, headers: Mapping[str, str], service: _Service) -> bytes:
