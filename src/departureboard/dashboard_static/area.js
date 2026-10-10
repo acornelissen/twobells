@@ -4,10 +4,10 @@
 // when opened; its markers and popups are DOM nodes, never strings (Leaflet
 // would parse a string as HTML), and a list beside it says the same in words.
 
-import { $, h, s as svg, fill, setText, str, num, list, obj, openDialog, setUpDialog } from "./dom.js";
+import { $, h, fill, setText, str, num, list, obj, openDialog, setUpDialog } from "./dom.js";
 import { getJSON } from "./api.js";
 import { age, now, parseAt } from "./time.js";
-import { loadLeaflet, TILES } from "./map.js";
+import { busPin, loadLeaflet, TILES } from "./map.js";
 
 const AREA_EVERY_MS = 25_000; // the summary asks for the area at most this often
 const MAX_VEHICLES = 80;
@@ -156,14 +156,11 @@ function summary(data) {
   return `${found.length} ${found.length === 1 ? "bus" : "buses"} on your lines around your stops.`;
 }
 
+// The same bus marker as the bus map's (map.js), with its line number.
 function busIcon(vehicle) {
-  const bearing = num(vehicle.bearing);
-  const arrow = svg("svg", { class: "area-arrow", viewBox: "0 0 24 24", "aria-hidden": "true", focusable: "false" },
-    bearing !== null ? svg("path", { d: "M12 0 L16.5 3.8 L12 2.8 L7.5 3.8 Z" }) : null);
-  if (bearing !== null) arrow.style.transform = `rotate(${bearing}deg)`;
   return L.divIcon({
-    html: h("span", { class: "area-pin" }, arrow, h("span", { class: "area-pin-line" }, str(vehicle.line))),
-    className: "area-marker", iconSize: [40, 40], iconAnchor: [20, 20],
+    html: busPin(num(vehicle.bearing), str(vehicle.line)),
+    className: "area-marker", iconSize: [34, 34], iconAnchor: [17, 17],
   });
 }
 

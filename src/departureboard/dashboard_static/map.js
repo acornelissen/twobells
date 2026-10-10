@@ -69,17 +69,36 @@ function ensureMap() {
   layers = L.layerGroup().addTo(map);
 }
 
-// The bus marker: an arrow pointing along the bus's bearing, turned through
-// the CSSOM (the CSP allows that; it forbids style attributes in markup).
-function busIcon(bearing) {
-  // Drawn pointing north, so it turns by the bearing itself (clockwise from north).
-  const arrow = bearing !== null
-    ? svg("svg", { class: "bus-arrow", viewBox: "0 0 24 24", "aria-hidden": "true", focusable: "false" },
-      svg("path", { d: "M12 2 L20 21 L12 16 L4 21 Z" }))
-    : svg("svg", { class: "bus-arrow", viewBox: "0 0 24 24", "aria-hidden": "true", focusable: "false" },
-      svg("circle", { cx: 12, cy: 12, r: 7 }));
-  if (bearing !== null) arrow.style.transform = `rotate(${bearing}deg)`;
-  return L.divIcon({ html: h("span", { class: "bus-pin" }, arrow), className: "bus-marker", iconSize: [36, 36], iconAnchor: [18, 18] });
+// A bus from the front, upright on a dark disc. Drawing only.
+function busGlyph() {
+  return svg("svg", { class: "bus-glyph", viewBox: "0 0 24 24", "aria-hidden": "true", focusable: "false" },
+    svg("path", { class: "bus-mirrors", d: "M4 7.5 H2.75 V11 M20 7.5 H21.25 V11" }),
+    svg("rect", { class: "bus-body", x: 5.5, y: 17, width: 3, height: 5, rx: 1 }),
+    svg("rect", { class: "bus-body", x: 15.5, y: 17, width: 3, height: 5, rx: 1 }),
+    svg("rect", { class: "bus-body", x: 4, y: 1.5, width: 16, height: 18, rx: 3 }),
+    svg("rect", { class: "bus-dark", x: 7, y: 3, width: 10, height: 1.75, rx: 0.5 }),
+    svg("rect", { class: "bus-dark", x: 6, y: 6, width: 12, height: 6.5, rx: 1 }),
+    svg("circle", { class: "bus-dark", cx: 7.75, cy: 15.75, r: 1.4 }),
+    svg("circle", { class: "bus-dark", cx: 16.25, cy: 15.75, r: 1.4 }));
+}
+
+// The bus marker, here and on the area map: the bus stays upright with its
+// line number under it, and a chevron outside the disc turns to the bearing
+// (clockwise from north) through the CSSOM, which the CSP allows (it forbids
+// style attributes in markup). No bearing, no chevron.
+export function busPin(bearing, line) {
+  let heading = null;
+  if (bearing !== null) {
+    heading = svg("svg", { class: "bus-heading", viewBox: "0 0 60 60", "aria-hidden": "true", focusable: "false" },
+      svg("path", { d: "M30 1 L39 12.5 L30 9.5 L21 12.5 Z" }));
+    heading.style.transform = `rotate(${bearing}deg)`;
+  }
+  return h("span", { class: "bus-pin" }, heading, busGlyph(),
+    line ? h("span", { class: "bus-pin-line" }, line) : null);
+}
+
+function busIcon(bearing, line) {
+  return L.divIcon({ html: busPin(bearing, line), className: "bus-marker", iconSize: [34, 34], iconAnchor: [17, 17] });
 }
 
 function stopTooltip(stop) {
@@ -107,7 +126,7 @@ function drawMap(data, fit) {
   busPosition = vehicle && num(vehicle.lat) !== null && num(vehicle.lon) !== null ? [vehicle.lat, vehicle.lon] : null;
   busMarker = null;
   if (busPosition) {
-    busMarker = L.marker(busPosition, { icon: busIcon(num(vehicle.bearing)), keyboard: false, zIndexOffset: 1000 })
+    busMarker = L.marker(busPosition, { icon: busIcon(num(vehicle.bearing), str(data.line)), keyboard: false, zIndexOffset: 1000 })
       .bindPopup(h("span", {}, h("strong", {}, `${str(data.line)} to ${str(data.destination)}`), ` ${reportedText(vehicle)}`))
       .addTo(layers);
   }

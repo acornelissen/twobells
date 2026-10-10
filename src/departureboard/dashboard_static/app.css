@@ -601,19 +601,52 @@ table.history thead th { border-top: 0; color: var(--muted); }
 .leaflet-container .stop-dot { fill: #ffffff; fill-opacity: 1; stroke: #1d4ed8; stroke-width: 2; }
 .leaflet-container .stop-yours { fill: #b3261e; fill-opacity: 1; stroke: #ffffff; stroke-width: 3; }
 .leaflet-tooltip { color: #14161a; font-size: 0.875rem; }
-.bus-marker { background: none; border: 0; }
+/* The bus marker on both maps (map.js busPin): an amber bus on a dark disc
+   with a white edge, a dark chevron with a white edge for the bearing, and
+   the line number in a label under it. Fixed colours, as the tiles are
+   light in every theme; the contrast test checks them against the tiles. */
+.bus-marker, .area-marker { background: none; border: 0; }
 .bus-pin {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   background: #14161a;
   border: 2px solid #ffffff;
   border-radius: 50%;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
 }
-.bus-arrow { width: 22px; height: 22px; fill: #ffb000; }
+.bus-glyph { position: relative; width: 22px; height: 22px; }
+.bus-body { fill: #ffb000; }
+.bus-dark { fill: #14161a; }
+.bus-mirrors { fill: none; stroke: #ffb000; stroke-width: 1.5; stroke-linecap: round; }
+.bus-heading {
+  position: absolute;
+  top: -15px;
+  left: -15px;
+  width: 60px;
+  height: 60px;
+  overflow: visible;
+  fill: #14161a;
+  stroke: #ffffff;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.bus-pin-line {
+  position: absolute;
+  top: calc(100% - 4px);
+  left: 50%;
+  padding: 0 0.25rem;
+  color: #14161a;
+  background: #ffffff;
+  border: 1.5px solid #14161a;
+  border-radius: 0.375rem;
+  font: 700 0.75rem/1.25 system-ui, sans-serif;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
 
 /* --- Timetable change notices, above the bus table --- */
 
@@ -672,23 +705,6 @@ table.history thead th { border-top: 0; color: var(--muted); }
 .area-list .link { margin-left: 0.25rem; }
 /* The tiles are always light, so these colours don't follow the theme. */
 .leaflet-container .area-route { stroke: #1d4ed8; stroke-width: 3; stroke-opacity: 0.6; }
-.area-marker { background: none; border: 0; }
-.area-pin {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  color: #ffffff;
-  background: #14161a;
-  border: 2px solid #ffffff;
-  border-radius: 50%;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
-  font: 700 0.8125rem/1 system-ui, sans-serif;
-}
-.area-arrow { position: absolute; top: -10px; left: -10px; width: calc(100% + 20px); height: calc(100% + 20px); overflow: visible; fill: #ffb000; stroke: #14161a; stroke-width: 0.6; }
-.area-pin-line { position: relative; }
 
 /* --- Board theme flourishes: an LED-matrix texture behind the rows --- */
 

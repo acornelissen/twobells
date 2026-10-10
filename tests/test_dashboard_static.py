@@ -589,5 +589,57 @@ def test_the_area_map_gives_leaflet_nodes_never_strings():
     # Leaflet parses a string as HTML: popups, tooltips and icons get DOM nodes from h().
     for call in re.findall(r"\.bind(?:Popup|Tooltip)\(\s*([^,)]+)", text):
         assert call.strip().startswith("h("), call
-    assert re.search(r"divIcon\(\{\s*html: h\(", text)
+    # The icon is map.js's bus marker, a DOM node built with h() (checked below).
+    assert re.search(r"divIcon\(\{\s*html: busPin\(", text)
     assert "attributionControl: false" in text  # the credit is our own text under the map
+
+
+def test_both_maps_draw_a_bus_built_as_svg_nodes():
+    map_js = (STATIC / "map.js").read_text(encoding="utf-8")
+    area_js = (STATIC / "area.js").read_text(encoding="utf-8")
+    # svg() is dom.js's s(), which builds with createElementNS.
+    assert "document.createElementNS(SVG_NS, tag)" in (STATIC / "dom.js").read_text(encoding="utf-8")
+    assert 'import { $, h, s as svg,' in map_js
+    pin = map_js[map_js.index("export function busPin("):]
+    pin = pin[:pin.index("\n}\n")]
+    assert 'svg("svg", { class: "bus-heading"' in pin and 'return h("span", { class: "bus-pin" }' in pin
+    glyph = map_js[map_js.index("function busGlyph("):map_js.index("export function busPin(")]
+    assert 'svg("svg", { class: "bus-glyph"' in glyph and glyph.count('class: "bus-body"') >= 1
+    # Only the bearing chevron turns, through the CSSOM; the bus stays upright.
+    assert "heading.style.transform = `rotate(${bearing}deg)`" in pin
+    assert pin.count("style.transform") == 1
+    assert re.search(r"divIcon\(\{\s*html: busPin\(", map_js)
+    assert "busPin(num(vehicle.bearing), str(vehicle.line))" in area_js
+    # The old arrows are gone.
+    for old in ("bus-arrow", "area-arrow", "area-pin"):
+        assert old not in map_js + area_js + (STATIC / "app.css").read_text(encoding="utf-8"), old
+
+
+def _css_value(selector, prop):
+    """The value of prop in the app.css rule for exactly this selector."""
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        if selector in [s.strip() for s in selectors.split(",")]:
+            found = re.search(r"(?:^|;)\s*%s:\s*([^;]+)" % re.escape(prop), body)
+            if found:
+                return found.group(1).strip()
+    raise AssertionError(f"no {prop} for {selector}")
+
+
+OSM_LAND = "#f2efe9"  # the light background of OpenStreetMap's standard tiles
+
+
+def test_bus_marker_colours_stand_out_on_the_tiles():
+    disc = _css_value(".bus-pin", "background")
+    edge = _css_value(".bus-pin", "border").split()[-1]
+    pairs = [
+        (disc, OSM_LAND, 3.0),  # the disc on the map
+        (edge, disc, 3.0),  # its white edge, for dark map areas
+        (_css_value(".bus-body", "fill"), disc, 3.0),  # the bus on its disc
+        (_css_value(".bus-dark", "fill"), _css_value(".bus-body", "fill"), 3.0),  # windows on the bus
+        (_css_value(".bus-heading", "fill"), OSM_LAND, 3.0),  # the bearing chevron
+        (_css_value(".bus-heading", "stroke"), _css_value(".bus-heading", "fill"), 3.0),
+        (_css_value(".bus-pin-line", "color"), _css_value(".bus-pin-line", "background"), 4.5),  # the line number
+    ]
+    for fg, bg, need in pairs:
+        assert _contrast(fg, bg) >= need, f"{fg} on {bg} is {_contrast(fg, bg):.2f}:1"
