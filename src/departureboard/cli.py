@@ -1050,7 +1050,7 @@ def _parser() -> argparse.ArgumentParser:
     emulate.add_argument("--display", choices=sorted(DISPLAY_PANELS), help="panel to emulate (default: config's)")
     emulate.add_argument("--port", type=int, default=DEFAULT_PORT)
     emulate.add_argument("--port-attempts", type=int, default=10, help=argparse.SUPPRESS)
-    emulate.add_argument("--tick", type=float, help="seconds per tick (demo 2; live 60, or 1 for a screen)")
+    emulate.add_argument("--tick", type=float, help="seconds per tick (e-paper: demo 2, live 60; a screen: 1)")
     emulate.add_argument("--ticks", type=int, help=argparse.SUPPRESS)
     emulate.add_argument("--no-browser", action="store_true")
     emulate.set_defaults(handler=_emulate)
