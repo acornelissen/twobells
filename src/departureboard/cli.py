@@ -58,6 +58,7 @@ from .http import get_bytes
 from .model import Departure, Status
 from .state import StateStore
 from .transportapi import TransportApiBusSource, redact_credentials
+from .version import package_version
 from .view import SetupView, build_view
 from .themes import THEMES, theme_named
 from .walk import WalkTimes
@@ -977,6 +978,7 @@ def _port(text: str) -> int:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="departureboard")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {package_version()}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     def with_config(p):
