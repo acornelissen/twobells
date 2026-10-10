@@ -886,12 +886,212 @@ def test_starting_again_runs_the_same_command_on_the_same_port_without_the_brows
                                      "--no-browser", "--port", "8091"])]
 
 
-def test_dashboard_reports_config_errors_without_traceback(tmp_path, capsys):
+class Stopped:
+    """A server that stops as soon as it starts, as for Ctrl+C."""
+
+    server_address = ("127.0.0.1", 8090)
+
+    def serve_forever(self, poll_interval=0.5):
+        raise KeyboardInterrupt
+
+    def shutdown(self):
+        pass
+
+    def server_close(self):
+        pass
+
+
+@pytest.fixture
+def served(monkeypatch):
+    """What serve would serve, and where: make_server records it and the server stops at once."""
+    from departureboard import dashserver, http
+
+    def offline(request, timeout):
+        raise OSError("offline in tests")
+
+    made = {}
+
+    def make_server(app, host, port, attempts=1):
+        made.update(app=app, host=host, port=port, attempts=attempts)
+        return Stopped()
+
+    monkeypatch.setattr(http, "urlopen", offline)
+    monkeypatch.setattr(dashserver, "make_server", make_server)
+    monkeypatch.setattr("webbrowser.open", lambda url: made.setdefault("opened", []).append(url))
+    return made
+
+
+def ask(app, path):
+    """A GET to `app`, served for real on a free port: (status, Location, body)."""
+    import http.client
+
+    from departureboard.dashserver import DashboardServer
+
+    server = DashboardServer(("127.0.0.1", 0), app)
+    threading.Thread(target=server.serve_forever, args=(0.05,), daemon=True).start()
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=5)
+        conn.request("GET", path, headers={"Host": "localhost"})
+        response = conn.getresponse()
+        found = response.status, response.getheader("Location"), response.read()
+        conn.close()
+        return found
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_config_that_fails_to_load_still_serves_the_settings(tmp_path, served, capsys):
+    # In Docker a crash would be started again and again; the settings are where it is fixed.
     config = tmp_path / "config.toml"
-    config.write_text("[dashboard]\ntrain_rows = 50\n")
-    code = main(["dashboard", "--config", str(config), "--state-dir", str(tmp_path / "dash")])
-    assert code == 2
-    assert "train_rows must be a whole number from 1 to 20" in capsys.readouterr().err
+    config.write_text('[train]\ncrs = "GLO"\n[dashboard]\ntrain_rows = 50\nallowed_hosts = ["departures.example.com"]\n')
+    code = main(["serve", "--install", "docker", "--config", str(config), "--secrets", str(tmp_path / "none.env"),
+                 "--state-dir", str(tmp_path / "data")])
+    assert code == 0
+    err = capsys.readouterr().err
+    assert "train_rows must be a whole number from 1 to 20" in err and "Traceback" not in err
+    app = served["app"]
+    assert app.hub is None and "train_rows must be a whole number from 1 to 20" in app.settings.problem
+    assert app.allowed_hosts == {"departures.example.com"}  # so the owner can still reach the settings by it
+    assert ask(app, "/") == (303, "/settings", b"")
+    assert ask(app, "/settings/login")[0] == 200
+    assert ask(app, "/healthz") == (200, None, b"ok")
+    assert ask(app, "/api/snapshot")[0] == 404
+
+
+@pytest.mark.parametrize("argv, host, port, attempts, browser", [
+    (["serve", "--install", "docker"], "0.0.0.0", 8090, 1, False),
+    (["serve", "--install", "docker", "--port", "8091"], "0.0.0.0", 8091, 1, False),
+    (["serve"], "127.0.0.1", 8090, 10, True),  # a desktop: the next free port, and the browser
+    (["serve", "--install", "desktop", "--lan", "--no-browser"], "0.0.0.0", 8090, 10, False),
+    (["serve", "--install", "desktop", "--port", "8095", "--host", "192.168.1.5"], "192.168.1.5", 8095, 1, True),
+    (["dashboard"], "127.0.0.1", 8090, 10, True),
+    (["dashboard", "--lan", "--no-browser", "--port", "8090"], "0.0.0.0", 8090, 1, False),
+])
+def test_serve_listens_and_opens_the_browser_as_its_install_does(tmp_path, served, dashboard_config, argv, host,
+                                                                  port, attempts, browser):
+    paths = ["--config", str(dashboard_config), "--secrets", str(tmp_path / "none.env"),
+             "--state-dir", str(tmp_path / "data")]
+    assert main([*argv, *paths]) == 0
+    assert (served["host"], served["port"], served["attempts"]) == (host, port, attempts)
+    assert bool(served.get("opened")) is browser
+    assert served["app"].hub is not None  # its dashboard view is on, and set up
+
+
+def test_serve_on_a_pi_runs_no_dashboard_and_hands_setup_to_the_setup_service(tmp_path, served, monkeypatch):
+    from departureboard import setupspool
+
+    run = tmp_path / "run"
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
+    config = installed_template(tmp_path)
+    (tmp_path / "state").mkdir()
+    assert main(["serve", "--install", "pi", "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
+    assert (served["host"], served["port"], served["attempts"]) == ("0.0.0.0", 8090, 1)
+    app = served["app"]
+    assert app.hub is None and app.settings.install.name == "pi" and not served.get("opened")
+    assert isinstance(app.settings.setup._runner, setupspool.SpoolRunner)
+    assert app.settings.store.folder == tmp_path / "state"
+
+
+def test_serve_starts_no_dashboard_until_there_is_something_to_show(tmp_path, served, capsys):
+    # A new container: no config.toml, nothing saved. The settings open the wizard.
+    folder = tmp_path / "data"
+    assert main(["serve", "--install", "docker", "--config", str(tmp_path / "missing.toml"),
+                 "--secrets", str(tmp_path / "none.env"), "--state-dir", str(folder)]) == 0
+    err = capsys.readouterr().err
+    assert "opens the setup wizard" in err and "Settings: no password yet" in err and "in this log" in err
+    app = served["app"]
+    assert app.hub is None and app.settings.problem == ""
+    assert ask(app, "/") == (303, "/settings", b"")
+    assert not (folder / "history.sqlite3").exists()
+
+
+def test_serve_with_the_dashboard_view_off_runs_only_the_settings(tmp_path, served, dashboard_config):
+    folder = tmp_path / "data"
+    folder.mkdir()
+    (folder / "settings.toml").write_text("[app]\nviews = []\n")
+    assert main(["serve", "--install", "docker", "--config", str(dashboard_config), "--secrets",
+                 str(tmp_path / "none.env"), "--state-dir", str(folder)]) == 0
+    assert served["app"].hub is None and served["app"].settings.tabs() == ("general",)
+
+
+@pytest.mark.parametrize("install", ["docker", "desktop"])
+def test_serve_sets_the_password_and_prints_a_code_in_the_store(tmp_path, typed, no_dashboard, capsys, install):
+    import re
+
+    from departureboard.auth import PasswordStore, ResetCodes
+
+    typed[0].extend([DASH_PASSWORD] * 2)
+    folder = tmp_path / "data"
+    assert main(["serve", "--install", install, "--set-password", "--state-dir", str(folder)]) == 0
+    assert typed[1] == ["New dashboard settings password: ", "Again: "]
+    assert PasswordStore(folder / "web.json").check(DASH_PASSWORD)
+    assert main(["serve", "--install", install, "--reset-code", "--state-dir", str(folder)]) == 0
+    out = capsys.readouterr().out
+    code = "".join(re.search(r"Settings reset code: (\d{3}) (\d{3})", out).groups())
+    assert "/settings/reset" in out and not (folder / "reset-display.json").exists()
+    assert ResetCodes(folder).verify(code, time.time())
+
+
+def test_serve_password_flags_are_one_or_the_other(tmp_path):
+    with pytest.raises(SystemExit):
+        main(["serve", "--state-dir", str(tmp_path), "--set-password", "--reset-code"])
+
+
+def test_serve_knows_only_the_installs_there_are(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        main(["serve", "--install", "laptop", "--state-dir", str(tmp_path)])
+    assert "invalid choice: 'laptop'" in capsys.readouterr().err
+
+
+def test_the_old_dashboard_command_is_hidden_but_works(capsys):
+    import re
+
+    from departureboard.cli import _parser
+
+    help_text = _parser().format_help()
+    listed = re.search(r"\{([a-z,]+)\}", help_text).group(1).split(",")
+    assert "serve" in listed and "dashboard" not in listed
+    assert not re.search(r"^ +dashboard ", help_text, re.M)
+    args = _parser().parse_args(["dashboard", "--state-dir", "/data", "--set-password"])
+    assert (args.install, args.state_dir, args.set_password) == ("desktop", "/data", True)
+
+
+class FakeServer:
+    def __init__(self):
+        self.stopped = threading.Event()
+
+    def shutdown(self):
+        self.stopped.set()
+
+
+@pytest.mark.parametrize("running, saved, restarts", [
+    (True, 'title = "Our house"\n', True),  # new settings for the dashboard
+    (True, "[app]\nviews = []\n", True),  # the dashboard turned off
+    (False, 'title = "Our house"\n', True),  # it couldn't start, and now can
+    (False, '[app]\nviews = []\ntitle = "Our house"\n', False),  # no dashboard before or after
+    (True, "[train]\ncrs = 12\n", False),  # doesn't load: the running one stays
+])
+def test_serve_starts_again_only_when_the_dashboard_should_start_stop_or_change(
+        dashboard_config, tmp_path, monkeypatch, running, saved, restarts):
+    from departureboard import cli
+    from departureboard.installs import install_named
+    from departureboard.store import Store
+
+    monkeypatch.setattr(cli, "SETTINGS_CHECK_S", 0.02)
+    folder = tmp_path / "data"
+    folder.mkdir()
+    store = Store.open(dashboard_config, tmp_path / "none.env", state_dir=folder)
+    server = FakeServer()
+    watch = cli._SettingsWatch(store, install_named("docker"), server, running)
+    watch.start()
+    try:
+        time.sleep(0.05)
+        (folder / "settings.toml").write_text(saved)
+        assert server.stopped.wait(1.0 if restarts else 0.3) is restarts
+        assert watch.restart is restarts
+    finally:
+        watch.stop()
 
 
 # The dashboard's settings password and reset codes, from the command line

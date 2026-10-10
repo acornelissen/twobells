@@ -11,9 +11,13 @@
   departureboard timetable  build the BODS bus timetable for your stops, if due
   departureboard setup discover  find the bus operators serving your stops and print their settings
   departureboard setup serve  answer the settings page's setup requests (departureboard-setup.service)
-  departureboard dashboard  serve the web dashboard (Mac or NAS), opening it in the browser
-  departureboard web|dashboard --set-password | --reset-code
+  departureboard serve    serve the settings, and the dashboard where its view is on, on the home
+                          network: --install pi, docker or desktop (the default, opening the browser)
+  departureboard serve --set-password | --reset-code
                           set the settings password, or print a code for a new one, and exit
+
+`dashboard` is the dashboard's old command, serve on a desktop with its
+old flags; it still works, unlisted, until the first public release.
 """
 
 from __future__ import annotations
@@ -58,7 +62,8 @@ from .state import StateStore
 from .store import Store
 from .timetable import TimetableBusy, TimetableError
 from .transportapi import TransportApiBusSource, redact_credentials
-from .installs import Install, install_named
+from .installs import DEFAULT as DEFAULT_INSTALL
+from .installs import INSTALLS, Install, install_named
 from .schema import keys, views
 from .version import package_version
 from .view import SetupView, build_view
@@ -91,12 +96,12 @@ def _store(args) -> Store:
     return Store.open(args.config, args.secrets, state_dir=getattr(args, "state_dir", None))
 
 
-def _adopt(args, store: Store) -> None:
+def _adopt(args, store: Store, install: str = "desktop") -> None:
     """Bring the old dashboard's folder into the store, once (see migrate.py).
     A folder given with --state-dir was the old dashboard's own, so then
     there is nothing to bring."""
     if not getattr(args, "state_dir", None):
-        migrate.adopt_legacy(store)
+        migrate.adopt_legacy(store, install)
 
 
 def _env(config: Path | str, secrets: Path | str) -> dict[str, str]:
@@ -826,23 +831,32 @@ def _emulate(args) -> int:
     return 0
 
 
-# How often the dashboard looks for changed settings files.
+# How often serve looks for changed settings files, where it runs the dashboard itself.
 SETTINGS_CHECK_S = 2.0
 
 
-class _SettingsWatch(threading.Thread):
-    """Looks every SETTINGS_CHECK_S for a change to any file the dashboard's
-    settings come from: the overlay its settings page saved, config.toml or
-    the secrets. When one has changed and the settings still load, it stops
-    the server, so the dashboard can start afresh with them; when they don't
-    load, it says so and keeps the ones running."""
+def _dashboard_wanted(store: Store, install: Install) -> bool:
+    """Whether serve should run the dashboard: its view is on, and there is
+    something to show. ConfigError if [app] views is wrong."""
+    return "dashboard" in views(store.data(), install) and not needs_setup(store)
 
-    def __init__(self, store: Store, server) -> None:
+
+class _SettingsWatch(threading.Thread):
+    """Looks every SETTINGS_CHECK_S for a change to any file the settings
+    come from: those saved in the store, config.toml or the secrets. When
+    the dashboard should start, stop or take new settings (it is wanted and
+    its settings load, or it runs and is no longer wanted), it stops the
+    server, so serve can start afresh; when they don't load, it says so and
+    keeps the ones running."""
+
+    def __init__(self, store: Store, install: Install, server, running: bool) -> None:
         from .dashconfig import FileWatch
 
         super().__init__(name="settings-watch", daemon=True)
         self._store = store
+        self._install = install
         self._server = server
+        self._running = running
         self._watch = FileWatch(store.watched())
         self._stopping = threading.Event()
         self.restart = False
@@ -854,14 +868,18 @@ class _SettingsWatch(threading.Thread):
             if not self._watch.changed():
                 continue
             try:
-                load_dashboard(self._store, self._store.env(), lock=False)
+                wanted = _dashboard_wanted(self._store, self._install)
+                if wanted:
+                    load_dashboard(self._store, self._store.env(), lock=False)
             except ConfigError as error:
                 logging.warning("Settings changed but don't load (%s); keeping the current ones", error)
                 continue
-            except Exception as error:  # noqa: BLE001 - the running dashboard carries on
+            except Exception as error:  # noqa: BLE001 - the running server carries on
                 logging.warning("Settings changed but can't be checked (%s); keeping the current ones",
                                 type(error).__name__)
                 continue
+            if not wanted and not self._running:
+                continue  # no dashboard before or after: nothing to start again for
             logging.info("Settings changed; starting the dashboard again to use them")
             self.restart = True
             self._server.shutdown()
@@ -874,9 +892,9 @@ class _SettingsWatch(threading.Thread):
 
 
 def _start_again(port: int) -> None:
-    """Replace this process with a fresh dashboard, started the same way, on
-    the same port and without opening the browser again. Nothing of the old
-    one is left: every thread, the lock and the listening socket go with it.
+    """Replace this process with a fresh one, started the same way, on the
+    same port and without opening the browser again. Nothing of the old one
+    is left: every thread, the lock and the listening socket go with it.
     Inside Docker the process stays the container's main one throughout."""
     argv = [sys.executable, *sys.orig_argv[1:], "--no-browser", "--port", str(port)]
     sys.stdout.flush()
@@ -887,8 +905,8 @@ def _start_again(port: int) -> None:
 def _settings_site(store: Store, install: Install, running: bool, runner=None):
     """The password-protected settings site: its tabs and the setup wizard,
     both saving into the store, checked as each view that is on loads.
-    `running`: whether the dashboard runs, for the links to it. `runner`
-    does the wizard's internet work, if another service does it."""
+    `running`: whether serve runs the dashboard, for the links to it.
+    `runner` does the wizard's internet work, if another service does it."""
     from .groupform import check_views
     from .settingsite import PREFIX, SettingsSite
     from .setupapi import SetupApi
@@ -907,7 +925,7 @@ def _settings_site(store: Store, install: Install, running: bool, runner=None):
         runner=runner,
         **extra,
     )
-    site = SettingsSite(store, install, setup, dashboard_on=lambda: running)
+    site = SettingsSite(store, install, setup, dashboard_on=lambda: running and "dashboard" in site.views())
     if not site.password.is_set():
         where = "on the board" if site.to_board() else "in this log"
         print(f"Settings: no password yet. Open {PREFIX} and claim it with a code shown {where}, "
@@ -915,63 +933,128 @@ def _settings_site(store: Store, install: Install, running: bool, runner=None):
     return site
 
 
-def _dashboard(args) -> int:
+def _allowed_hosts(store: Store) -> frozenset[str]:
+    """[dashboard] allowed_hosts in config.toml, for the settings when the
+    dashboard doesn't run; none if it can't be read (an address on the home
+    network still reaches them)."""
+    from .dashconfig import allowed_hosts
+
+    try:
+        return allowed_hosts(store.base())
+    except (OSError, ConfigError) as error:
+        logging.warning("[dashboard] allowed_hosts left out: %s", error)
+        return frozenset()
+
+
+def _serve(args) -> int:
+    """The settings site on every install, and the dashboard where its view
+    is on (see settingsite.py and dashserver.py)."""
+    from .dashconfig import load_dashboard
+
+    install = install_named(args.install)
+    # Only config.toml is read to find the store: a broken settings.toml must
+    # not stop the page that fixes it.
+    store = Store.open(args.config, args.secrets, state_dir=args.state_dir, install=install.name)
+    _adopt(args, store, install.name)
+    if args.set_password or args.reset_code:
+        return _password(args, store, install)
+    store.make()
+    runner = None
+    if install.fetch == "files":
+        # This service can't reach the internet; departureboard-setup.service does that work.
+        from .setupspool import SpoolError, SpoolRunner, spool_folder
+
+        try:
+            runner = SpoolRunner(spool_folder())
+        except SpoolError as error:
+            print(error, file=sys.stderr)
+            return 2
+    dash, problem = None, ""
+    try:
+        if _dashboard_wanted(store, install):
+            dash = load_dashboard(store, store.env())
+    except ConfigError as error:
+        # Start anyway, so the settings can fix it (and Docker doesn't start it again and again).
+        problem = str(error)
+        print(f"The dashboard can't start: {error}. Fix it in the settings.", file=sys.stderr)
+    try:
+        code, restart = _serve_with(args, store, install, runner, dash, problem)
+    finally:
+        if dash is not None:
+            dash.close()
+    if restart is not None:
+        _start_again(restart)
+    return code
+
+
+def _serve_with(args, store: Store, install: Install, runner, dash, problem: str) -> tuple[int, int | None]:
+    """Run the server until stopped, with the dashboard if `dash` (its
+    settings) is given. The exit code, and the port to start again on if
+    the settings changed."""
     import sqlite3
 
     from . import dashserver
     from .collector import Collector
-    from .dashconfig import load_dashboard
     from .history import History
     from .snapshot import Hub
 
-    store = _store(args)
-    _adopt(args, store)
-    if args.set_password or args.reset_code:
-        return _dashboard_password(args, store)
-    dash = load_dashboard(store, store.env())
-    history = watch = None
-    try:
+    history = hub = collector = None
+    if dash is not None:
         try:
             history = History(dash.state_dir)
         except sqlite3.Error as error:
             print(f"Can't open the punctuality history in {dash.state_dir}: {error}", file=sys.stderr)
-            return 2
+            return 2, None
         hub = Hub(dash.title, dash.walk, tz=ZoneInfo(dash.timezone))
         collector = Collector(dash, hub, history)
+    watch = None
+    try:
+        site = _settings_site(store, install, hub is not None, runner)
+        site.problem = problem
         app = dashserver.DashboardApp(
             hub,
             dashserver.StaticFiles.load(dashserver.default_static_dir()),
-            collector.healthy,
-            recent=history.recent,
-            history_days=dash.options.history_days,
-            allowed_hosts=dash.options.allowed_hosts,
-            settings=_settings_site(store, install_named("desktop"), True),
+            collector.healthy if collector is not None else (lambda: True),
+            site,
+            dashboard_on=lambda: "dashboard" in site.views(),
+            recent=history.recent if history is not None else None,
+            history_days=dash.options.history_days if dash is not None else 90,
+            allowed_hosts=dash.options.allowed_hosts if dash is not None else _allowed_hosts(store),
         )
-        host = "0.0.0.0" if args.lan else args.host
+        host = "0.0.0.0" if args.lan else (args.host or install.host)
         # A port asked for is that port or nothing (Docker's health check expects
-        # it); without one, the next free port after the default will do.
-        port, attempts = (dashserver.DEFAULT_PORT, 10) if args.port is None else (args.port, 1)
+        # it); without one, a desktop takes the next free port after the default.
+        if args.port is None:
+            port, attempts = dashserver.DEFAULT_PORT, (10 if install.browser else 1)
+        else:
+            port, attempts = args.port, 1
         try:
             server = dashserver.make_server(app, host, port, attempts)
         except OSError as error:
             hint = " Stop the other process or pass another --port." if args.port is not None else ""
             print(f"Can't listen on {host}:{port}: {error.strerror or error}.{hint}", file=sys.stderr)
-            return 2
+            return 2, None
         port = server.server_address[1]
-        collector.start()
+        if collector is not None:
+            collector.start()
+        if needs_setup(store):
+            print("Not set up yet: sign in and the page opens the setup wizard", file=sys.stderr)
         url = f"http://localhost:{port}/"
-        print(f"Dashboard at {url}  (Ctrl+C to stop)")
+        if hub is not None:
+            print(f"Dashboard at {url}  (Ctrl+C to stop)")
+        print(f"Settings at {url}settings  (home network only)")
         if args.lan:
             name = socket.gethostname().split(".")[0]
             print(f"On your home network: http://{name}.local:{port}/ or this computer's IP address and port {port}")
-        if not args.no_browser:
-            webbrowser.open(url)
-        # docker stop sends SIGTERM: shut down as for Ctrl+C (signals reach the main thread only).
+        if install.browser and not args.no_browser:
+            webbrowser.open(url if hub is not None else f"{url}settings")
+        # docker stop and systemctl stop send SIGTERM: shut down as for Ctrl+C (signals reach the main thread only).
         on_main = threading.current_thread() is threading.main_thread()
         previous = signal.signal(signal.SIGTERM, _interrupt) if on_main else None
         try:
-            watch = _SettingsWatch(store, server)
-            watch.start()
+            if install.fetch == "process":  # where serve runs the dashboard, a change starts it again
+                watch = _SettingsWatch(store, install, server, hub is not None)
+                watch.start()
             server.serve_forever()
         except KeyboardInterrupt:
             pass
@@ -980,31 +1063,29 @@ def _dashboard(args) -> int:
                 watch.stop()
             if on_main:
                 signal.signal(signal.SIGTERM, previous)
-            hub.close()
-            if not collector.stop(timeout=5):
+            if hub is not None:
+                hub.close()
+            if collector is not None and not collector.stop(timeout=5):
                 logging.info("A dashboard poller was still fetching; it ends with the process")
             server.server_close()
     finally:
         if history is not None:
             history.close()
-        dash.close()
-    if watch is not None and watch.restart:
-        _start_again(port)
-    return 0
+    return 0, (port if watch is not None and watch.restart else None)
 
 
-def _dashboard_password(args, store: Store) -> int:
-    """--set-password or --reset-code for the settings: in the store, the
-    same password as `web`'s, alongside a running dashboard (whose sessions
-    end when the password changes; see auth.Sessions). Nothing else is
-    loaded, so broken settings can't keep their owner out."""
+def _password(args, store: Store, install: Install) -> int:
+    """--set-password or --reset-code for the settings: in the store, beside
+    a running server (whose sessions end when the password changes; see
+    auth.Sessions). Nothing else is loaded, so broken settings can't keep
+    their owner out."""
     from .auth import PasswordStore
     from .settingsite import PREFIX
 
     store.make()
     if args.set_password:
-        return _set_password(PasswordStore(store.password_file), "New dashboard settings password: ")
-    return _reset_code(store.folder, f"Enter it on the dashboard's {PREFIX}/reset page with a new password.")
+        return _set_password(PasswordStore(store.password_file), f"New {install.noun} settings password: ")
+    return _reset_code(store.folder, f"Enter it on the settings page, {PREFIX}/reset, with a new password.")
 
 
 def _interrupt(signum, frame) -> None:
@@ -1019,6 +1100,10 @@ def _port(text: str) -> int:
     if not 0 <= port <= 65535:
         raise argparse.ArgumentTypeError(f"{text!r} is not a port number from 0 to 65535")
     return port
+
+
+# Old commands kept working, unlisted, until the first public release.
+HIDDEN_COMMANDS = ("dashboard",)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -1105,19 +1190,41 @@ def _parser() -> argparse.ArgumentParser:
     emulate.add_argument("--no-browser", action="store_true")
     emulate.set_defaults(handler=_emulate)
 
-    dashboard = with_config(sub.add_parser("dashboard", help="serve the web dashboard and open it in the browser"))
-    dashboard.add_argument("--state-dir", help="the dashboard's own folder for its timetable and history")
-    dashboard.add_argument("--host", default="127.0.0.1", help="address to listen on (default: this computer only)")
-    dashboard.add_argument("--port", type=_port, help="port to listen on (default: 8090, or the next free one)")
-    dashboard.add_argument("--lan", action="store_true", help="listen on all addresses, for phones at home")
-    dashboard.add_argument("--no-browser", action="store_true", help="don't open the browser")
-    once = dashboard.add_mutually_exclusive_group()
+    serve = with_config(sub.add_parser(
+        "serve", help="serve the settings, and the dashboard where it is on, on the home network"))
+    serve.add_argument("--install", choices=list(INSTALLS), default=DEFAULT_INSTALL,
+                       help="what this runs on: a Pi with its board, Docker, or a desktop (the default)")
+    serve.add_argument("--state-dir", help="the store: the folder for saved settings, keys, the password and state")
+    serve.add_argument("--host", help="address to listen on (default: all on a Pi and in Docker, "
+                                      "this computer only on a desktop)")
+    serve.add_argument("--port", type=_port,
+                       help="port to listen on (default: 8090, or on a desktop the next free one)")
+    serve.add_argument("--lan", action="store_true", help="listen on all addresses, for phones at home")
+    serve.add_argument("--no-browser", action="store_true", help="don't open the browser")
+    _password_flags(serve)
+    serve.set_defaults(handler=_serve)
+
+    # The dashboard's old command, serve on a desktop, with its own flags: the
+    # documented Docker password commands run it. Hidden (no help, and left
+    # out of the list); going before the first release.
+    dashboard = with_config(sub.add_parser("dashboard"))
+    dashboard.add_argument("--state-dir")
+    dashboard.add_argument("--host", default="127.0.0.1")
+    dashboard.add_argument("--port", type=_port)
+    dashboard.add_argument("--lan", action="store_true")
+    dashboard.add_argument("--no-browser", action="store_true")
+    _password_flags(dashboard)
+    dashboard.set_defaults(handler=_serve, install="desktop")
+    sub.metavar = "{" + ",".join(name for name in sub.choices if name not in HIDDEN_COMMANDS) + "}"
+    return parser
+
+
+def _password_flags(parser: argparse.ArgumentParser) -> None:
+    once = parser.add_mutually_exclusive_group()
     once.add_argument("--set-password", action="store_true",
-                      help="set the password for the dashboard's settings and exit (it may be running)")
+                      help="set the settings password and exit (the server may be running)")
     once.add_argument("--reset-code", action="store_true",
                       help="print a one-time code for setting a new settings password, and exit")
-    dashboard.set_defaults(handler=_dashboard)
-    return parser
 
 
 def main(argv: list[str] | None = None) -> int:

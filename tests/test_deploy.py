@@ -1,5 +1,6 @@
 """Deployment security settings (the dashboard container, the Pi's units), so an edit can't quietly drop one."""
 
+import json
 import re
 import shlex
 from pathlib import Path
@@ -47,15 +48,41 @@ def test_compose_locks_the_container_down():
         assert risky not in COMPOSE, risky
 
 
+def _entrypoint() -> list[str]:
+    found = re.search(r"^ENTRYPOINT (\[.*?\])$", DOCKERFILE, re.M | re.S).group(1)
+    return json.loads(found.replace("\\\n", ""))
+
+
+def test_the_container_serves_as_a_docker_install_in_its_one_writable_folder():
+    from departureboard.cli import _parser
+
+    entrypoint = _entrypoint()
+    assert entrypoint[:3] == ["python", "-m", "departureboard.cli"]
+    args = _parser().parse_args(entrypoint[3:])
+    assert (args.command, args.install, args.state_dir, args.host, args.port) == ("serve", "docker", "/data",
+                                                                                  "0.0.0.0", 8090)
+    assert (args.config, args.secrets) == ("/config/config.toml", "/nonexistent")
+    assert "EXPOSE 8090" in DOCKERFILE and "127.0.0.1:8090/healthz" in DOCKERFILE
+
+
 def test_the_documented_password_commands_fit_the_container():
     # Run with docker exec as the image's user, in the one writable place: /data.
+    from departureboard.cli import _parser
+
     assert "container_name: departureboard-dashboard" in COMPOSE and "dashboard-data:/data" in COMPOSE
-    assert '"python", "-m", "departureboard.cli", "dashboard"' in DOCKERFILE and "WORKDIR /data" in DOCKERFILE
-    assert "chown 10001:10001 /data" in DOCKERFILE
+    assert "WORKDIR /data" in DOCKERFILE and "chown 10001:10001 /data" in DOCKERFILE
     docs = (ROOT / "docs" / "USER_GUIDE.md").read_text() + (ROOT / "README.md").read_text()
     for flag in ("--set-password", "--reset-code"):
         command = f"docker exec -it departureboard-dashboard python -m departureboard.cli dashboard {flag} --state-dir /data"
         assert docs.count(command) == 2, flag  # once in each
+        # The old command, kept as a hidden alias of serve, in the container's store.
+        args = _parser().parse_args(shlex.split(command)[7:])
+        assert (args.state_dir, getattr(args, flag[2:].replace("-", "_"))) == ("/data", True)
+    from departureboard.installs import install_named
+
+    for flag, command in (("--set-password", install_named("docker").password_command),
+                          ("--reset-code", install_named("docker").reset_command)):
+        assert docs.count(command) == 2, flag  # what the settings pages tell the owner to run
 
 
 def test_keys_file_is_git_ignored():

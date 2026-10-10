@@ -130,6 +130,13 @@ def _feed_url(section: dict, key: str, default: str) -> str:
     return url
 
 
+def allowed_hosts(data: dict) -> frozenset[str]:
+    """[dashboard] allowed_hosts alone, checked: for the settings, which
+    answer to them even when the rest of [dashboard] doesn't load."""
+    section = _table(data, "dashboard", "[dashboard]")
+    return frozenset(_host(h) for h in _texts(section, "allowed_hosts", _WHERE))
+
+
 def dashboard_options(data: dict) -> DashboardOptions:
     """The [dashboard] table of already-read config data, checked."""
     section = _table(data, "dashboard", "[dashboard]")
