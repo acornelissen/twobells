@@ -321,7 +321,7 @@ class SettingsArea:
             '<input id="again" name="again" type="password" autocomplete="new-password" '
             f'required{flagged("again")}>'
             f'<button type="submit">{"Set password" if claim else "Set new password"} and sign in</button></form>'
-            f'<p class="hint after">Where to find the log: {LOG_HELP} '
+            f'<p class="hint after">{LOG_HELP} '
             "A new code can be made once a minute, up to 10 times a day.</p>"
         )
         if not claim:
