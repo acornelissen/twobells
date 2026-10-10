@@ -44,6 +44,7 @@ returns a Reply; the server adds headers_for(path) and its own limits.
 from __future__ import annotations
 
 import html
+import json
 import logging
 import time
 from collections.abc import Callable, Mapping
@@ -53,16 +54,19 @@ from importlib.resources import files
 from io import BufferedIOBase
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo
 
+from ..board.state import StateStore
 from ..settings import schema
 from ..settings.config import ConfigError, needs_setup
 from ..settings.schema import BOARD_DEFAULTS
 from ..setup import api as setupapi
 from ..setup.keytest import KeyResult
 from ..setup.lookups import SetupError
-from ..timetable import build as timetable
+from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
 from ..version import about, package_version
+from . import overview as view
 from .auth import (
     FORM_PAGE_HEADERS,
     FormTokens,
@@ -88,9 +92,9 @@ from .formpages import (
 )
 from .formpages import WIZARD_TYPES as _CONTENT_TYPES
 from .groupform import GroupForm, Tested
-from .status import _when
 
 if TYPE_CHECKING:
+    from ..dashboard.snapshot import SnapshotSource
     from ..settings.installs import Install
     from ..settings.store import Store
 
@@ -121,6 +125,10 @@ _STEP_BODY_REFUSED = {
     411: "Say how long the request is",
     413: "That request is too big",
 }
+# The wizard's shortcuts (?step=), which a sign-in started there goes back to.
+SETUP_STEPS = ("stops", "station")
+# The largest snapshot the overview reads, as a Pi's handoff allows.
+MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024
 # Where the board's old settings page had these, until the first public release.
 _MOVED = {"/login": PREFIX + "/login", "/reset": PREFIX + "/reset", "/setup": SETUP}
 
@@ -246,7 +254,10 @@ class SettingsSite:
     `setup` runs the wizard's steps. `dashboard_on()` says whether the
     dashboard is running, for the links to it. `problem` is why the
     dashboard couldn't start, if it couldn't: the Overview says so, and
-    `version` (by default the package's) is what it says is running."""
+    `version` (by default the package's) is what it says is running.
+    `hub` is where the dashboard's snapshot is (serve sets it, with
+    `healthy()` saying whether its pollers are working), for the
+    Overview's health."""
 
     def __init__(self, store: Store, install: Install, setup: SetupSteps, *,
                  dashboard_on: Callable[[], bool] = lambda: False, stylesheet: bytes | None = None,
@@ -256,6 +267,8 @@ class SettingsSite:
         self.version = package_version() if version is None else version
         self.install = install
         self.problem = ""
+        self.hub: SnapshotSource | None = None
+        self.healthy: Callable[[], bool] = lambda: True
         self.setup = setup
         self._dashboard_on = dashboard_on
         self.password = PasswordStore(store.password_file)
@@ -275,7 +288,7 @@ class SettingsSite:
             codes or ResetCodes(store.folder, to_board=self.to_board),
             FormTokens(clock, cookie_name=FORM_COOKIE_NAME, cookie_path=PREFIX, key_file=store.form_key_file),
             lambda: wording(install, self.to_board(), self._running()), prefix=PREFIX, shell=shell,
-            home=self._home, log=log, resume_setup=SETUP, setup=setup, clock=clock,
+            home=self._home, log=log, resume_setup=SETUP, setup_steps=SETUP_STEPS, setup=setup, clock=clock,
         )
         self._stylesheet = _default_stylesheet() if stylesheet is None else stylesheet
         self._files = wizard_files() if files is None else files
@@ -396,12 +409,17 @@ class SettingsSite:
 
     def _get(self, path: str, query: str, headers: Headers) -> Reply:
         tab = self._tab(path)
+        if tab == "overview":  # drawn for this request: the wall tablet's address is the one the browser used
+            return self._pages.settings_page(headers, Overview(self, headers.get("Host")), self._title(tab))
         if tab is not None:
             return self._pages.settings_page(headers, self._forms[tab], self._title(tab), saved=query == "saved")
         if path == PREFIX + "/":
             return redirect(PREFIX)
         if path == PREFIX + "/login":
-            return self._pages.login_page(200, headers, to_setup=query == "next=setup")
+            asked = _query(query)
+            to_setup = asked.get("next") == "setup"
+            step = asked.get("step", "") if to_setup and asked.get("step") in SETUP_STEPS else ""
+            return self._pages.login_page(200, headers, to_setup=to_setup, step=step)
         if path == PREFIX + "/reset":
             return self._pages.reset_page(200, headers, asked=query == "asked")
         if path == PREFIX + "/style.css":
@@ -410,7 +428,8 @@ class SettingsSite:
             return redirect(SETUP)
         if path == SETUP:
             if self.sessions.get(self.sessions.token_from(headers.get("Cookie"))) is None:
-                return redirect(PREFIX + "/login?next=setup")
+                step = _query(query).get("step")
+                return redirect(PREFIX + "/login?next=setup" + (f"&step={step}" if step in SETUP_STEPS else ""))
             body, content_type = self._files.get("", (b"", None))
             return Reply(200, body, content_type) if content_type else Reply(404, b"Not Found")
         if path == SETUP_API + "session":
@@ -451,10 +470,23 @@ class SettingsSite:
     def _footer(self) -> str:
         return f'<footer class="foot"><p>Running {html.escape(about(self.version))}.</p></footer>'
 
-    def overview(self, csrf: str) -> str:
-        """The overview: why the dashboard isn't running, if it isn't, and
-        where the departures are for."""
+    def overview(self, csrf: str, host: str | None = None) -> str:
+        """The overview: why the dashboard isn't running, if it isn't; how
+        each feed is doing; your place in names; the keys' state; and the
+        ways to change things, open the dashboard and reach it from a wall
+        tablet, at `host` (the Host the browser used)."""
         e = html.escape
+        try:
+            data = self.store.data()
+        except (OSError, ConfigError):
+            data = {}
+        try:
+            zone = ZoneInfo(data.get("timezone", "Europe/London"))
+        except (KeyError, TypeError, ValueError):  # a bad zone: the General page says so on saving
+            zone = ZoneInfo("Europe/London")
+        now = datetime.now(zone).replace(tzinfo=None)
+        views = self.views()
+        running = self._running()
         out = [self._header("overview", csrf)]
         if self.problem:
             out.append(
@@ -462,72 +494,77 @@ class SettingsSite:
                 f"<p>{e(self.problem)}</p>"
                 "<p>Fix the settings here, or config.toml; it starts once they load.</p></div>"
             )
-        out.append(self._place())
+        groups = []
+        if "board" in views and "board" in self.install.offered:
+            groups.append(("On the board", view.board_feeds(data, self._board_state(), now, self._holidays(data))))
+        if running:
+            groups.append(("On the dashboard", view.dashboard_feeds(self._snapshot(), now, zone, self._updating())))
+        out.append(view.render_health(groups, now, PREFIX, problems=1 if self.problem else 0))
+        out.append(view.render_place(data, self.store.folder, now, zone))
+        out.append(view.render_keys(data, views, self._secrets(), TAB_PATHS["keys"]))
+        out.append(view.render_actions(data, SETUP, running, host))
         out.append(self._footer())
         return "".join(out)
 
-    def _place(self) -> str:
-        """A summary of where the departures are for, and the way to change it with setup."""
+    def _board_state(self) -> dict | None:
+        """The board's state file, read only (the board alone writes it); None if it can't be read."""
         try:
-            data = self.store.data()
-        except (OSError, ConfigError):
-            data = {}
-        train, bus, weather = (data.get(name) for name in ("train", "bus", "weather"))
-        station = str(train.get("crs", "")).strip() if isinstance(train, dict) else ""
-        stops = bus.get("stops") if isinstance(bus, dict) else None
-        stops = ", ".join(str(label) for label in stops) if isinstance(stops, dict) else ""
-        home = isinstance(weather, dict) and "lat" in weather and "lon" in weather
-
-        def off(section) -> str:
-            return " (switched off)" if isinstance(section, dict) and section.get("enabled") is False else ""
-
-        e = html.escape
-        rows = [
-            ("Station", e(station) + off(train) if station else "Not set up"),
-            ("Bus stops", e(stops) + off(bus) if stops else "Not set up"),
-            *(self._timetable(data) if stops and isinstance(bus, dict) and not off(bus)
-              and schema.bus_source(bus) == "bods" else []),
-            ("Home", "Set, for the weather" if home else "Not set"),
-        ]
-        listed = "".join(f"<dt>{name}</dt><dd>{value}</dd>" for name, value in rows)
-        return (
-            '<section class="place card" aria-labelledby="place-title"><h2 id="place-title">Your place</h2>'
-            f"<dl>{listed}</dl>"
-            f'<p><a href="{SETUP}">Change with setup</a></p>'
-            '<p class="hint">Setup finds home, your station and stops step by step, '
-            "with walk times and the bus companies.</p></section>"
-        )
-
-    def _timetable(self, data: dict) -> list[tuple[str, str]]:
-        """When the bus timetable was last saved, and while the roads for the
-        bus maps are being found (after setup's search, or the next build),
-        how far they have got. Only the file's time is read, not the file."""
-        try:
-            zone = ZoneInfo(data.get("timezone", "Europe/London"))
-        except (KeyError, TypeError, ValueError):  # a bad zone: the form says so on saving
-            zone = ZoneInfo("Europe/London")
-        now = datetime.now(zone).replace(tzinfo=None)
-        try:
-            saved = datetime.fromtimestamp((self.store.folder / timetable.FILE_NAME).stat().st_mtime, zone)
-            rows = [("Bus timetable", html.escape(f"Saved {_when(saved.replace(tzinfo=None), now)}"))]
+            return StateStore(self.store.state_file).load()
         except OSError:
-            rows = [("Bus timetable", "Not built yet")]
-        found = timetable.roads_progress(self.store.folder)
-        if found is not None:
-            rows.append(("Bus map roads", f"Finding them ({found[0]} of {found[1]})"))
-        return rows
+            return None
+
+    def _holidays(self, data: dict) -> frozenset:
+        division = data.get("bank_holiday_division", ENGLAND_AND_WALES)
+        return read_cache(self.store.folder, division if division in DIVISIONS else ENGLAND_AND_WALES)
+
+    def _snapshot(self) -> dict | None:
+        """The dashboard's snapshot as its browsers get it, or None."""
+        if self.hub is None:
+            return None
+        try:
+            _, body = self.hub.current()
+            if len(body) > MAX_SNAPSHOT_BYTES:
+                return None
+            found = json.loads(body)
+        except Exception as error:  # noqa: BLE001 - the overview can do without it
+            log.warning("Can't read the dashboard's snapshot for the overview: %s", type(error).__name__)
+            return None
+        return found if isinstance(found, dict) else None
+
+    def _updating(self) -> bool:
+        try:
+            return bool(self.healthy())
+        except Exception as error:  # noqa: BLE001 - said as not updating
+            log.warning("Can't tell whether the dashboard is updating: %s", type(error).__name__)
+            return False
+
+    def _secrets(self) -> dict[str, str]:
+        """The keys saved, only to say which are set; never shown."""
+        try:
+            return dict(self.store.env())
+        except (OSError, ConfigError):
+            return {}
+
+
+def _query(query: str) -> dict[str, str]:
+    """A query string's fields, the first of each; {} if it doesn't read."""
+    try:
+        return {name: values[0] for name, values in parse_qs(query, max_num_fields=10).items()}
+    except ValueError:
+        return {}
 
 
 class Overview:
-    """The overview page, drawn by the site. It has no form: nothing is
-    saved or tested from it."""
+    """The overview page, drawn by the site for one request (`host` is its
+    Host header). It has no form: nothing is saved or tested from it."""
 
-    def __init__(self, site: SettingsSite) -> None:
+    def __init__(self, site: SettingsSite, host: str | None = None) -> None:
         self._site = site
+        self._host = host
 
     def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,
                values: dict[str, str] | None = None, tested: Tested | None = None) -> str:
-        return self._site.overview(csrf)
+        return self._site.overview(csrf, self._host)
 
     def save(self, fields: dict[str, str], changed: list[str] | None = None) -> dict[str, str]:
         return {"_form": "Nothing is saved from the overview"}

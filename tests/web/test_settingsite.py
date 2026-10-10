@@ -298,10 +298,37 @@ def test_signing_in_from_setup_goes_back_to_it(signed):
     response, _ = signed("GET", "/settings/setup/")
     assert response.status == 303 and response.getheader("Location") == "/settings/login?next=setup"
     _, page = signed("GET", "/settings/login?next=setup")
-    assert 'name="next" value="setup"' in page
+    assert 'name="next" value="setup"' in page and 'name="step"' not in page
     response, _ = signed("POST", "/settings/login", {"password": PASSWORD, "next": "setup"})
     assert response.getheader("Location") == "/settings/setup/"
     response, _ = signed("POST", "/settings/login", {"password": PASSWORD, "next": "https://evil.example.com/"})
+    assert response.getheader("Location") == "/settings"
+
+
+@pytest.mark.parametrize("step", ["stops", "station"])
+def test_signing_in_from_a_wizard_shortcut_goes_back_to_its_step(signed, step):
+    response, _ = signed("GET", f"/settings/setup/?step={step}")
+    assert response.status == 303
+    assert response.getheader("Location") == f"/settings/login?next=setup&step={step}"
+    _, page = signed("GET", f"/settings/login?next=setup&step={step}")
+    assert f'<input type="hidden" name="step" value="{step}">' in page
+    response, _ = signed("POST", "/settings/login", {"password": PASSWORD, "next": "setup", "step": step})
+    assert response.getheader("Location") == f"/settings/setup/?step={step}"
+    # A wrong password keeps the step for the next try.
+    response, page = signed("POST", "/settings/login", {"password": "wrong", "next": "setup", "step": step})
+    assert response.status == 401 and f'name="step" value="{step}"' in page
+
+
+@pytest.mark.parametrize("step", ["keys", "//evil.example.com", "stops\r\nSet-Cookie: x=1", "STOPS", ""])
+def test_only_the_shortcuts_steps_are_kept_and_never_lead_elsewhere(signed, step):
+    response, _ = signed("GET", "/settings/setup/?" + urlencode({"step": step}))
+    assert response.getheader("Location") in ("/settings/login?next=setup", None)  # None: the server refused it
+    _, page = signed("GET", "/settings/login?" + urlencode({"next": "setup", "step": step}))
+    assert 'name="step"' not in page
+    response, _ = signed("POST", "/settings/login", {"password": PASSWORD, "next": "setup", "step": step})
+    assert response.getheader("Location") == "/settings/setup/"
+    # A step without the wizard to go back to is no step at all.
+    response, _ = signed("POST", "/settings/login", {"password": PASSWORD, "step": "stops"})
     assert response.getheader("Location") == "/settings"
 
 
@@ -517,14 +544,19 @@ def test_each_page_shows_its_own_settings(make):
     assert 'action="/settings/board"' in board and 'action="/settings/trains-and-buses"' in trains
 
 
-def test_the_overview_sums_up_the_place_and_links_to_setup(pi):
+def test_the_overview_sums_up_the_place_in_names_and_links_to_setup(pi):
     cookie = pi.session()
     page = pi("GET", "/settings", cookie=cookie)[1]
     place = re.search(r'<section class="place card"[^>]*>(.*?)</section>', page).group(1)
     assert '<h2 id="place-title">Your place</h2>' in place
-    assert "<dt>Station</dt><dd>GLO</dd>" in place and "<dt>Bus stops</dt><dd>A</dd>" in place
+    assert "<dt>Station</dt><dd>Glossop (GLO)</dd>" in place
+    assert '<dt>Bus stops</dt><dd><ul class="stops"><li>A: 1000DGHS0900</li></ul>' in place  # no timetable yet
     assert "<dt>Home</dt><dd>Not set</dd>" in place
-    assert '<a href="/settings/setup/">Change with setup</a>' in place
+    shortcuts = re.search(r'<section class="actions card"[^>]*>(.*?)</section>', page).group(1)
+    assert re.findall(r'<a href="([^"]+)">', shortcuts) == [
+        "/settings/setup/", "/settings/setup/?step=stops", "/settings/setup/?step=station"]
+    assert page.index("Health</h2>") < page.index("Your place</h2>") < page.index("Keys</h2>") \
+        < page.index("Shortcuts</h2>") < page.index("<footer")
 
 
 def test_the_overview_saves_nothing(signed):
@@ -544,18 +576,20 @@ def test_the_overview_says_when_the_bus_timetable_was_saved_and_how_its_roads_ar
     from zoneinfo import ZoneInfo
 
     from departureboard.timetable import build as timetable
+    from departureboard.timetable.model import Schedule
 
     docker = make(install="docker")  # whose dashboard starts again on saving: this page says how far they got
     cookie = docker.session()
     place = _place(docker("GET", "/settings", cookie=cookie)[1])
     assert "<dt>Bus timetable</dt><dd>Not built yet</dd>" in place and "Bus map roads" not in place
-    saved = docker.folder / timetable.FILE_NAME
-    saved.write_text("{}")  # only when it was saved is read
     when = time.time() - 180
-    os.utime(saved, (when, when))
     clock = datetime.fromtimestamp(when, ZoneInfo("Europe/London"))
+    timetable.save(docker.folder, Schedule(clock.replace(tzinfo=None), None, {"A": "1000DGHS0900"}, (), {},
+                                           ("BNML",), timetable.FORMAT))
+    saved = docker.folder / timetable.FILE_NAME
+    os.utime(saved, (when, when))
     place = _place(docker("GET", "/settings", cookie=cookie)[1])
-    assert f"<dt>Bus timetable</dt><dd>Saved {clock:%H:%M}, 3 min ago</dd>" in place
+    assert f"<dt>Bus timetable</dt><dd>Saved {clock:%H:%M}, 3 min ago</dd>" in place  # fresh: no warning
     assert place.index("Bus stops") < place.index("Bus timetable") < place.index("Home")
     progress = timetable.RoadsProgress(docker.folder)
     progress(12, 140)
@@ -574,6 +608,65 @@ def test_the_overview_says_when_the_bus_timetable_was_saved_and_how_its_roads_ar
 def test_the_overview_says_nothing_of_a_bus_timetable_it_doesnt_use(make, config):
     docker = make(install="docker", config=config)
     assert "Bus timetable" not in docker("GET", "/settings", cookie=docker.session())[1]
+
+
+def _health(page):
+    return re.search(r'<section class="health card"[^>]*>(.*?)</section>', page).group(1)
+
+
+def test_the_overview_says_how_the_dashboards_feeds_are_doing(dash):
+    from datetime import datetime
+
+    from departureboard.dashboard.snapshot import status_block
+
+    dash.site.hub = dash.app.hub
+    cookie = dash.session()
+    health = _health(dash("GET", "/settings", cookie=cookie)[1])
+    assert "Nothing checked yet" in health  # nothing published yet
+    dash.app.hub.publish("trains", {"status": status_block(datetime.now().astimezone()), "positions": None})
+    health = _health(dash("GET", "/settings", cookie=cookie)[1])
+    assert "All working" in health and "<strong>Trains</strong>" in health
+    assert '<a href="/settings">Reload</a>' in health
+    failed = status_block(datetime.now().astimezone(), True, "HTTP Error 503 <i>down</i>")
+    dash.app.hub.publish("weather", {"status": failed})
+    health = _health(dash("GET", "/settings", cookie=cookie)[1])
+    assert "1 problem" in health and "HTTP Error 503 &lt;i&gt;down&lt;/i&gt;" in health
+    dash.site.healthy = lambda: False
+    assert "2 problems" in _health(dash("GET", "/settings", cookie=cookie)[1])
+    dash.on["now"] = False  # the dashboard stopped: its feeds aren't said
+    assert "Nothing checked yet" in _health(dash("GET", "/settings", cookie=cookie)[1])
+
+
+def test_the_overview_counts_the_dashboard_not_running_as_a_problem(dash):
+    dash.on["now"] = False
+    dash.site.problem = "[dashboard] train_rows must be a whole number"
+    assert "1 problem" in _health(dash("GET", "/settings", cookie=dash.session())[1])
+
+
+def test_on_a_pi_the_overview_says_how_the_board_is_doing(pi):
+    import json as _json
+
+    pi.store.state_file.write_text(_json.dumps({"last_render": {"at": "2026-10-08T07:58:00"}}))
+    health = _health(pi("GET", "/settings", cookie=pi.session())[1])
+    assert "<strong>Display</strong>" in health and "<dt>Last redrawn</dt>" in health
+    assert "On the dashboard" not in health  # its view is off
+
+
+def test_the_overview_gives_the_wall_tablets_address_on_the_host_used(dash):
+    cookie = dash.session()
+    page = dash("GET", "/settings", cookie=cookie, host=f"glossop.local:{dash.port}")[1]
+    assert f"<code>http://glossop.local:{dash.port}/?kiosk</code>" in page
+    assert '<a href="/">Open the dashboard</a>' in page
+    page = dash("GET", "/settings", cookie=cookie)[1]  # localhost: no use to a tablet
+    assert "http://localhost" not in page and "<code>/?kiosk</code>" in page
+
+
+def test_the_overview_says_which_keys_are_set_never_what_they_are(signed):
+    page = signed("GET", "/settings", cookie=signed.session())[1]
+    keys = re.search(r'<section class="keys card"[^>]*>(.*?)</section>', page).group(1)
+    assert "<dt>Rail Data Marketplace key</dt>" in keys and "Set" in keys
+    assert "rail-key" not in page and "bods-key" not in page
+    assert '<a href="/settings/keys">Change or test keys</a>' in keys
 
 
 def test_every_page_says_which_version_is_running_in_its_footer(pi):

@@ -334,6 +334,8 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
     try:
         site = _settings_site(store, install, hub is not None, runner)
         site.problem = problem
+        # The Overview reads the dashboard's health from the same snapshot, never connecting out itself.
+        site.hub, site.healthy = hub, healthy
         app = dashserver.DashboardApp(
             hub,
             dashserver.StaticFiles.load(dashserver.default_static_dir(), version=site.version),

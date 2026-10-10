@@ -308,12 +308,18 @@ button.primary:hover { background: var(--accent); filter: brightness(1.08); }
 .signin label { margin-top: var(--s-3); }
 .forgot { margin-top: var(--s-4); }
 .after { margin-top: var(--s-5); }
-.place dl { display: grid; grid-template-columns: minmax(6rem, max-content) 1fr; gap: 0.125rem var(--s-4);
-  margin: 0 0 var(--s-3); }
-.place dt { font-weight: 500; color: var(--muted); }
-.place dd { margin: 0; overflow-wrap: anywhere; }
-.place p { margin: 0 0 var(--s-3); }
-.place a { font-weight: 500; }
+/* The Overview: health, your place, the keys and the shortcuts, each a section.card. */
+section.card > p { margin: 0 0 var(--s-3); }
+section.card h3 { margin: var(--s-4) 0 var(--s-2); }
+.health-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
+.health-line .pill { font-size: var(--t-sm); }
+.feeds, .stops, .shortcuts { list-style: none; margin: 0; padding: 0; }
+.feed { padding-top: var(--s-3); border-top: 1px solid var(--line); }
+.feed-name { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); margin: 0 0 var(--s-2); }
+.feed .readonly { margin-bottom: var(--s-3); }
+.stops li + li { margin-top: 0.125rem; }
+.shortcuts { margin-bottom: var(--s-2); }
+.shortcuts a { display: inline-block; min-height: 1.5rem; padding: var(--s-1) 0; font-weight: 500; }
 code { font-family: var(--mono); font-size: 0.9375em; overflow-wrap: anywhere; }
 /* Testing a key. A result's words carry it; the colour and icon only repeat them. */
 .key-test { margin-bottom: var(--s-3); }
@@ -337,11 +343,11 @@ code { font-family: var(--mono); font-size: 0.9375em; overflow-wrap: anywhere; }
   .savebar button { width: 100%; }
 }
 @media (max-width: 24rem) {
-  .status dl, .place dl, .readonly div { grid-template-columns: 1fr; }
+  .status dl, .readonly div { grid-template-columns: 1fr; }
   .status dd { margin-bottom: var(--s-2); }
 }
 @media (pointer: coarse) {
-  .index a { min-height: 2.75rem; padding: var(--s-2) 0; }
+  .index a, .shortcuts a { min-height: 2.75rem; padding: var(--s-2) 0; }
   .option { min-height: 2.75rem; }
   .option label { padding: var(--s-2) 0; }
   .day { min-height: 2.75rem; }

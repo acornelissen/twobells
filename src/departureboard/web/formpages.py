@@ -205,7 +205,8 @@ class FormPages:
     `page` is the settings form drawn and saved when no other is named.
     `wording()` gives the words for each page. `home()` is where a new
     session lands. `resume_setup`, if set, is the wizard's page: a sign-in
-    started there (`?next=setup`) goes back to it. `shell(title, body)`
+    started there (`?next=setup`) goes back to it, at the shortcut's step
+    if it was one of `setup_steps` (`&step=stops`). `shell(title, body)`
     wraps a page in the HTML document. Log lines go to `log`, so each
     host's keep their own name. `setup` runs the wizard's steps, answered
     with `json_reply`."""
@@ -213,7 +214,7 @@ class FormPages:
     def __init__(self, page: SettingsPage, password: PasswordStore, sessions: Sessions, lockout: Lockout,
                  codes: ResetCodes, forms: FormTokens, wording: Callable[[], Wording], *, prefix: str,
                  shell: Callable[[str, str], str], home: Callable[[], str], log: logging.Logger,
-                 resume_setup: str = "", setup: SetupSteps | None = None,
+                 resume_setup: str = "", setup_steps: tuple[str, ...] = (), setup: SetupSteps | None = None,
                  json_reply: Callable[[int, dict], Reply] = compact_json,
                  clock: Callable[[], float] = time.time) -> None:
         self._page = page
@@ -229,6 +230,7 @@ class FormPages:
         self._home = home
         self._log = log
         self._resume_setup = resume_setup
+        self._setup_steps = setup_steps
         self._setup = setup
         self._json = json_reply
         self._clock = clock
@@ -258,8 +260,10 @@ class FormPages:
             return self._html(200, f"Saved – {title}", page.render(session.csrf, message=notice))
         return self._html(200, title, page.render(session.csrf))
 
-    def login_page(self, status: int, headers: Headers, message: str = "", to_setup: bool = False) -> Reply:
-        """Sign in, or the first claim while no password is set."""
+    def login_page(self, status: int, headers: Headers, message: str = "", to_setup: bool = False,
+                   step: str = "") -> Reply:
+        """Sign in, or the first claim while no password is set. With
+        `to_setup`, signing in goes back to the wizard, at `step` if it is one of setup_steps."""
         if not self._password.is_set():
             return self.reset_page(status, headers, message)  # the first claim
         wording = self._wording()
@@ -268,6 +272,8 @@ class FormPages:
                  if message else "")
         described = ' aria-describedby="login-error" aria-invalid="true"' if message else ""
         then = '<input type="hidden" name="next" value="setup">' if to_setup else ""
+        if to_setup and step in self._setup_steps:
+            then += f'<input type="hidden" name="step" value="{html.escape(step)}">'
         body = (
             f"<h1>{wording.title}</h1>"
             f"{error}"
@@ -341,14 +347,16 @@ class FormPages:
         if not self._password.is_set():
             return self.login_page(403, headers)
         to_setup = bool(self._resume_setup) and fields.get("next") == "setup"
+        # Only a step on the list goes into the address signing in leads to.
+        step = fields.get("step", "") if to_setup and fields.get("step") in self._setup_steps else ""
         result = self._checker.sign_in(client, fields.get("password", ""))
         if result is SignInResult.BUSY:
-            return self.login_page(429, headers, "Busy, try again in a moment.", to_setup)
+            return self.login_page(429, headers, "Busy, try again in a moment.", to_setup, step)
         if result is SignInResult.LOCKED:
-            return self.login_page(429, headers, "Too many attempts. Try again in 15 minutes.", to_setup)
+            return self.login_page(429, headers, "Too many attempts. Try again in 15 minutes.", to_setup, step)
         if result is SignInResult.WRONG:
-            return self.login_page(401, headers, "That password isn't right.", to_setup)
-        return self._signed_in(to_setup)
+            return self.login_page(401, headers, "That password isn't right.", to_setup, step)
+        return self._signed_in(to_setup, step)
 
     def ask_for_code(self, fields: dict[str, str], headers: Headers) -> Reply:
         """Issue a reset code, if this browser's form token is good. The reply
@@ -510,7 +518,9 @@ class FormPages:
     def _form_token_ok(self, fields: dict[str, str], headers: Headers) -> bool:
         return self._forms.check(headers.get("Cookie"), fields.get("form", ""))
 
-    def _signed_in(self, to_setup: bool = False) -> Reply:
+    def _signed_in(self, to_setup: bool = False, step: str = "") -> Reply:
         token, _ = self._sessions.create()
         where = self._resume_setup if to_setup else self._home()
+        if to_setup and step in self._setup_steps:
+            where += f"?step={step}"
         return redirect(where, {"Set-Cookie": self._sessions.cookie(token)})
