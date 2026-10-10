@@ -888,6 +888,36 @@ def test_rail_messages_join_the_summary_and_severe_is_red():
 
 
 @needs_node
+def test_feed_words_never_reach_the_lookup_tables_inherited_keys():
+    # "constructor", "toString" and "__proto__" are keys every object inherits:
+    # a feed that sends one must get the same as any other unknown word.
+    found = run_js(DISRUPTION_PAGE + """
+        import { statusKey } from "./board.js";
+        const odd = ["constructor", "toString", "__proto__", "hasOwnProperty"];
+        renderDisruptions(at({
+          trains: { messages: [{ text: "Trains may be delayed.", kind: "service", severity: "constructor" }] },
+          disruptions: { status: {}, items: [
+            item("aaaaaaaaaaaaaaaa", "constructor", { severity: "toString" }),
+            item("bbbbbbbbbbbbbbbb", "your_stop", { mode: "constructor" }),
+            item("cccccccccccccccc", "line", { severity: "__proto__" }),
+          ] },
+        }));
+        console.log(JSON.stringify({
+          keys: odd.map(statusKey),
+          now: summary().now,
+          badges: byClass($("disruptions-now"), "badge-text").map((el) => el.textContent),
+          modes: byClass($("disruptions-now"), "dis-mode").map((el) => el.textContent),
+        }));
+    """)
+    assert found["keys"] == ["unknown"] * 4
+    # The item with a mode the page doesn't know is left out; the others are
+    # treated as having no known relevance or severity.
+    assert found["now"] == ["Train: Trains may be delayed.", "disruption-aaaaaaaaaaaaaaaa", "disruption-cccccccccccccccc"]
+    assert found["badges"] == ["Disruption"] * 3
+    assert found["modes"] == ["Train:", "Bus:", "Bus:"]
+
+
+@needs_node
 def test_a_long_summary_shows_two_lines_until_more():
     found = run_js(DISRUPTION_PAGE + """
         const long = "Due to roadworks on Station Road, service 237 will divert via Woolley Bridge in both directions "
@@ -1806,6 +1836,19 @@ def test_the_focus_stays_in_the_sheet_when_its_departure_leaves_the_board():
         console.log(JSON.stringify([remind.hidden, document.activeElement === title]));
     """)
     assert found == [True, True]
+
+
+@needs_node
+def test_the_history_never_reads_inherited_keys_as_words():
+    found = run_js(_sheet() + """
+        HISTORY.day_type = "constructor";
+        HISTORY.days = HISTORY.days.map((d) => ({ ...d, status: "toString" }));
+        openTrain(train(1));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const caption = elements(history).find((el) => el.nodeName === "CAPTION");
+        console.log(JSON.stringify([spoken(caption), byClass(history, "badge-text").map((el) => el.textContent)[0]]));
+    """)
+    assert found[0].endswith(" days, newest first") and found[1] == "Unknown"
 
 
 @needs_node

@@ -1,7 +1,7 @@
 // The departure sheet's punctuality part (sheet.js): the phrase, then a table
 // of days, loaded when the sheet opens.
 
-import { $, h, vh, fill, str, num, list, obj, validId } from "./dom.js";
+import { $, h, vh, fill, str, num, list, obj, own, validId } from "./dom.js";
 import { getJSON } from "./api.js";
 import { statusBadge } from "./board.js";
 
@@ -25,7 +25,7 @@ function dayRow(d) {
   const delay = num(d.delay_min);
   return h("tr", {},
     h("th", { scope: "row" }, dayText(d.day)),
-    h("td", {}, statusBadge(d.status, WORDS[d.status] || "Unknown")),
+    h("td", {}, statusBadge(d.status, own(WORDS, d.status) || "Unknown")),
     h("td", {}, delay === null ? [h("span", { "aria-hidden": "true" }, "–"), vh("Not known")] : `${delay} min`),
     h("td", {}, d.live === true ? "Live" : "Timetable"),
     h("td", {}, str(d.reason)));
@@ -38,7 +38,7 @@ function render(data) {
     return;
   }
   const days = list(data.days).filter(obj).slice(0, 90);
-  const dayType = DAY_TYPES[data.day_type] || "days";
+  const dayType = own(DAY_TYPES, data.day_type) || "days";
   fill(body,
     h("p", { class: "phrase" }, str(data.phrase) || "Not enough days recorded yet."),
     days.length

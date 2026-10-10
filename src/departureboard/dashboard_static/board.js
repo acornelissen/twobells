@@ -11,7 +11,7 @@
 // first 5 rows show; the rest wait behind "Show later departures". On a wall
 // tablet (kiosk.js) there are no controls: 4 rows, the destination as text.
 
-import { h, vh, setText, str, num, list, obj, validId } from "./dom.js";
+import { h, vh, setText, str, num, list, obj, own, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
 import { arrivesLine, busStatusExtras } from "./extras.js";
 import { icon } from "./icons.js";
@@ -26,7 +26,7 @@ export const GO_MS = 2 * 60_000; // "Go now" lasts this long past the leaving ti
 const ICON = { late: "triangle-alert", cancelled: "x", unknown: "clock" };
 const WORDS = { on_time: "On time", late: "Late", cancelled: "Cancelled", unknown: "No report" };
 
-export const statusKey = (status) => (WORDS[status] ? status : "unknown");
+export const statusKey = (status) => (own(WORDS, status) ? status : "unknown");
 
 const lowerFirst = (text) => text.charAt(0).toLowerCase() + text.slice(1);
 

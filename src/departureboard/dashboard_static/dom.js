@@ -126,6 +126,10 @@ export const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : nul
 export const list = (v) => (Array.isArray(v) ? v : []);
 export const obj = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
 
+// A feed value looked up in a table of the page's own: only the table's own
+// keys count, never ones every object inherits ("constructor", "__proto__").
+export const own = (table, key) => (Object.hasOwn(table, key) ? table[key] : undefined);
+
 // Row ids are 16 lowercase hex characters; anything else never reaches a URL.
 export const validId = (id) => typeof id === "string" && /^[0-9a-f]{16}$/.test(id);
 

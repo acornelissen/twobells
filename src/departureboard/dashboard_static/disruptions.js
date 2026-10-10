@@ -5,7 +5,7 @@
 // part most relevant first; "Coming up this week" stays folded inside. Bus
 // rows that one touches get a "Disruption" link to it.
 
-import { $, h, vh, fill, setText, str, list, obj, validId } from "./dom.js";
+import { $, h, vh, fill, setText, str, list, obj, own, validId } from "./dom.js";
 import { now, parseAt } from "./time.js";
 import { icon } from "./icons.js";
 import { stopNames, trainMessages } from "./board.js";
@@ -15,7 +15,7 @@ const MODE = { bus: "Bus", train: "Train" };
 // The server's relevance tiers, most relevant first: at one of our stops, at a
 // stop on our routes nearby, or on our line inside our area.
 const RELEVANCE = { your_stop: 0, nearby: 1, line: 2 };
-const rank = (item) => RELEVANCE[item.relevance] ?? 2;
+const rank = (item) => own(RELEVANCE, item.relevance) ?? 2;
 // The tiers the summary line speaks of: those on your journeys.
 const ON_YOUR_JOURNEYS = new Set(["your_stop", "nearby"]);
 const WHERE = { your_stop: " (your stop)", nearby: " (nearby)" };
@@ -88,7 +88,7 @@ function whenLine({ period, current, more }, today) {
 }
 
 function severityBadge(severity) {
-  const [words, cls, name] = SEVERITY[severity] || SEVERITY.unknown;
+  const [words, cls, name] = own(SEVERITY, severity) || SEVERITY.unknown;
   return h("span", { class: ["badge", cls] }, h("span", { class: "glyph", "aria-hidden": "true" }, icon(name)),
     h("span", { class: "badge-text" }, words));
 }
@@ -146,7 +146,7 @@ function entry(arranged, today) {
   return h("li", {
     class: "dis-item", id: `disruption-${item.id}`, tabindex: "-1", dataset: { focusKey: `disruption:${item.id}` },
   },
-    h("h4", { class: "dis-title" }, h("span", { class: "dis-mode" }, `${MODE[item.mode] || "Bus"}:`), " ", title),
+    h("h4", { class: "dis-title" }, h("span", { class: "dis-mode" }, `${own(MODE, item.mode) || "Bus"}:`), " ", title),
     h("p", { class: "dis-when" }, severityBadge(item.severity), " ", whenLine(arranged, today)),
     h("p", { class: "dis-facts" }, facts(item)),
     summaryPart(item),
@@ -165,7 +165,7 @@ function messageEntry(message) {
 // The train board's disruption messages, with the items' severities.
 function serviceMessages(snapshot) {
   return trainMessages(snapshot.trains).filter((m) => m.kind === "service")
-    .map((m) => ({ text: m.text, severity: RAIL_SEVERITY[m.severity] || "unknown" }));
+    .map((m) => ({ text: m.text, severity: own(RAIL_SEVERITY, m.severity) || "unknown" }));
 }
 
 // "Roadworks at Henry Street A (your stop) until 18:00 today": a bus item by
@@ -175,7 +175,7 @@ function headline({ item, period }, names, today) {
   const where = list(item.stops).map((label) => str(names[str(label)])).find(Boolean)
     || list(item.places).map(str).find(Boolean);
   const what = item.mode === "bus" && where
-    ? `${str(item.reason) || "Disruption"} at ${where}${WHERE[item.relevance] || ""}` : str(item.title);
+    ? `${str(item.reason) || "Disruption"} at ${where}${own(WHERE, item.relevance) || ""}` : str(item.title);
   return period[3] ? `${what} until ${whenText(period[3], today)}` : what;
 }
 
@@ -227,7 +227,7 @@ function statusText(status) {
 // The items the page can use: valid ids and modes only.
 function items(snapshot) {
   const part = obj(snapshot.disruptions);
-  return part ? list(part.items).filter((i) => obj(i) && validId(i.id) && MODE[i.mode]) : [];
+  return part ? list(part.items).filter((i) => obj(i) && validId(i.id) && own(MODE, i.mode)) : [];
 }
 
 // Draws the summary line and the items behind it. Nothing at all shows
