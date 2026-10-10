@@ -26,8 +26,10 @@ time, so a Pi Zero holds one document in memory, never the lot.
 Roads. TransXChange gives no road between stops, so once a new timetable is
 saved, refresh asks the OpenStreetMap car router for each pair of consecutive
 positioned stops, once, and saves it again with the roads for the
-dashboard's maps (add_roads, roadshape.py). A pair it can't find is drawn
-straight; the router never costs a timetable.
+dashboard's maps (add_roads, roadshape.py). A road the last timetable has
+between the same two stops, neither of them moved, is kept rather than asked
+for again. A pair it can't find is drawn straight; the router never costs a
+timetable.
 
 Times. A journey's DepartureTime is when it leaves its first stop. Each
 timing link's RunTime takes it to the next stop, where it may wait before
@@ -641,19 +643,39 @@ def _positions(atcos: set[str], known: dict[str, StopPosition], naptan: Naptan) 
     return positions
 
 
-def add_roads(schedule: Schedule, route: Route = roadshape.segment_shapes) -> Schedule:
+def _kept_roads(pairs: Mapping, previous: Schedule | None) -> dict[str, tuple[tuple[float, float], ...]]:
+    """The roads in `previous` between the same two stops, neither of them moved."""
+    if previous is None:
+        return {}
+    kept = {}
+    for (a, b), (start, end) in pairs.items():
+        road = previous.shapes.get(roadshape.shape_key((a, b)))
+        was_a, was_b = previous.positions.get(a), previous.positions.get(b)
+        if road and was_a and was_b and (was_a.lat, was_a.lon) == start and (was_b.lat, was_b.lon) == end:
+            kept[roadshape.shape_key((a, b))] = road
+    return kept
+
+
+def add_roads(schedule: Schedule, route: Route = roadshape.segment_shapes,
+              previous: Schedule | None = None) -> Schedule:
     """The schedule with the road between each pair of consecutive positioned
     stops, by roadshape.shape_key, for the maps; none where the router can't
-    say (the maps draw those straight). Never fails for the router's sake."""
+    say (the maps draw those straight). A road in `previous` (the timetable
+    this one replaces) between the same two stops, neither of them moved, is
+    kept rather than asked for again. Never fails for the router's sake."""
     pairs = roadshape.segment_pairs(schedule.journeys, schedule.positions)
+    kept = _kept_roads(pairs, previous)
+    wanted = {pair: ends for pair, ends in pairs.items() if roadshape.shape_key(pair) not in kept}
     try:
-        found = route(pairs)
+        found = route(wanted)
         new = {roadshape.shape_key(pair): tuple((float(lat), float(lon)) for lat, lon in found[pair])
-               for pair in pairs if found.get(pair)}
+               for pair in wanted if found.get(pair)}
     except Exception as error:  # noqa: BLE001 - straight lines will do
         log.warning("Bus map roads not found, drawing straight lines: %s", safe_message(error))
         new = {}
-    return replace(schedule, shapes=new)
+    if kept:
+        log.info("Bus map roads: kept %d from the last timetable", len(kept))
+    return replace(schedule, shapes={**kept, **new})
 
 
 def build_schedule(
@@ -807,7 +829,8 @@ def refresh(
     this only reads the saved file.
 
     A new timetable is saved before its roads are asked for (add_roads, with
-    `route`), then saved again with them. However long the router takes, or if this is stopped meanwhile,
+    `route`, keeping the saved one's where it can), then saved again with
+    them. However long the router takes, or if this is stopped meanwhile,
     the timetable is kept, at worst with straight lines on the maps."""
     current = load(folder)
     operators = list(operators)
@@ -825,7 +848,7 @@ def refresh(
     log.info("Bus timetable rebuilt (%s): %d journeys at your stops, %d ending near them", reason, calling,
              len(fresh.journeys) - calling)
     try:
-        routed = add_roads(fresh, route)
+        routed = add_roads(fresh, route, current)
         if routed.shapes:
             save(folder, routed)
     except Exception as error:  # noqa: BLE001 - the timetable is saved; the maps draw straight lines

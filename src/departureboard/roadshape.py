@@ -6,7 +6,9 @@ Once a new timetable is saved (timetable.refresh: about once a week, and on
 every setup search), each pair of consecutive positioned stops on its
 journeys is sent once to the OpenStreetMap car router (OSRM, on the same free
 FOSSGIS server setup.py asks for walks), and the road it finds is saved with
-the timetable. The maps never ask the router: they draw what was saved.
+the timetable. A pair the last timetable has a road for, neither stop moved,
+keeps that road and isn't asked about (timetable.add_roads). The maps never
+ask the router: they draw what was saved.
 
 The router's answers are untrusted. A road is kept only if the answer is the
 shape OSRM sends and at most MAX_ROUTE_BYTES, its points are numbers inside

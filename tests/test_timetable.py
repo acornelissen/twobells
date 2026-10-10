@@ -1,6 +1,7 @@
 import io
 import stat
 import zipfile
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -1025,11 +1026,11 @@ def timetable_format():
 # The roads between stops, for the maps.
 
 
-def _routed(document, route=None):
+def _routed(document, route=None, previous=None):
     """The schedule for Stop A from one document, every stop placed, with
     the roads `route` finds (the router itself if not given)."""
     options = {"route": route} if route is not None else {}
-    return add_roads(_unrouted(document), **options)
+    return add_roads(_unrouted(document), previous=previous, **options)
 
 
 def _unrouted(document):
@@ -1096,6 +1097,31 @@ def test_by_default_the_router_is_asked_and_survives_being_down(caplog):
     assert "the router isn't answering" in caplog.text
 
 
+def test_last_week_s_roads_are_kept_for_the_same_stops_and_only_new_ones_asked_for():
+    last_week = _routed(ROADS_DOC, _roads_found)
+    moved = replace(last_week.positions[ARUNDEL], lat=last_week.positions[ARUNDEL].lat + 0.001)
+    shapes = {**last_week.shapes, f"{SUNLAWS}>{ST_MARYS_E}": ((53.4, -1.9),)}
+    del shapes[f"{JUNCTION}>{GRAPES}"]  # left straight last week: asked about again
+    last_week = replace(last_week, positions={**last_week.positions, ARUNDEL: moved}, shapes=shapes)
+    asked = []
+
+    def route(pairs):
+        asked.extend(pairs)
+        return {pair: [(53.5, -1.8)] for pair in pairs}
+
+    schedule = _routed(ROADS_DOC, route, previous=last_week)
+    # Arundel has moved, so both its roads are asked for again.
+    assert set(asked) == {(JUNCTION, GRAPES), (ST_MARYS_E, ARUNDEL), (ARUNDEL, MARKET_HALL)}
+    assert schedule.shapes[f"{SUNLAWS}>{ST_MARYS_E}"] == ((53.4, -1.9),)  # last week's
+    assert schedule.shapes[f"{ARUNDEL}>{MARKET_HALL}"] == ((53.5, -1.8),)  # this week's
+    assert len(schedule.shapes) == 6
+
+
+def test_last_week_s_roads_are_kept_even_when_the_router_fails():
+    last_week = _routed(ROADS_DOC, _roads_found)
+    assert _routed(ROADS_DOC, _failing, previous=last_week).shapes == last_week.shapes
+
+
 # The timetable is saved before its roads are asked for.
 
 
@@ -1143,6 +1169,18 @@ def test_a_timetable_is_kept_without_roads_when_saving_them_fails(tmp_path, monk
     schedule = refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", build=_road_build, route=_roads_found)
     assert len(saves) == 2 and schedule.shapes == {} and load(tmp_path) == schedule
     assert "disk full" in caplog.text
+
+
+def test_refresh_reuses_the_saved_timetable_s_roads(tmp_path):
+    first = refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", build=_road_build, route=_roads_found)
+    asked = []
+
+    def route(pairs):
+        asked.extend(pairs)
+        return {}
+
+    again = refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", force=True, build=_road_build, route=route)
+    assert asked == [] and len(again.shapes) == 6 and again.shapes == first.shapes
 
 
 def test_a_timetable_from_before_road_shapes_is_due_once():
