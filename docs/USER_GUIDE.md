@@ -285,8 +285,6 @@ Change what you need on a tab, then press **Save settings** at the bottom. If so
 
 What you save replaces what's in `config.toml`, including emptying a box: clearing *Only trains calling at* really does show every train again. Settings a tab doesn't show are kept, like the bus companies and route strips setup found, the weather's location, and the other tabs'.
 
-![The settings page](guide/settings-page.png)
-
 ### General
 
 - **Your place:** the station, bus stops and whether home is set, with **Change with setup**, which opens the [setup wizard](#4-first-run-and-the-setup-wizard).
@@ -325,7 +323,7 @@ Trains and buses can't both be off, or there would be nothing to show.
 - **Rotation:** if the display is mounted upside down (or, for the screen, on its side).
 - **Least minutes between redraws:** e-paper only. Lower means fresher but more wear and flicker; 2 is a good balance.
 - **Text size:** the plain look only, 9 to 16 (11 is standard). Bigger shows fewer departures on a small display.
-- **Trains shown**, **Check every (minutes)**, and **Say "not updating" after (minutes)**, for trains and for buses.
+- **Trains shown** and **Buses shown**, and for each, **Check every (minutes)** and **Say "not updating" after (minutes)**.
 - **When to check:** one window per line, written like `Mon-Fri 06:30-09:30`. Days can be `Mon-Sun`, `Sat,Sun`, `Mon-Fri`, or wrap round the week like `Fri-Mon`. A window can run past midnight: `Fri 22:00-01:00` runs from Friday night into Saturday morning.
 - **Most TransportAPI hits a day:** a hard limit on TransportAPI lookups, used only while it stands in for the bus timetable. The free plan allows 30 a day, and each check costs one per stop.
 - **Keys:** the TransportAPI app ID and app key, with one test for the two. That test uses one of today's 30 TransportAPI lookups.
