@@ -22,7 +22,7 @@ New here? The [user guide](docs/USER_GUIDE.md) explains what everything on the b
 
 - **Raspberry Pi** (the board, and the dashboard if you like): download a release tarball and its `SHA256SUMS`, check it with `sha256sum --check --ignore-missing SHA256SUMS`, unpack it and run `sudo ./deploy/install.sh`. Nothing is piped from the internet into `sudo bash`. Then open `http://<pi name>.local:8090/settings`. `sudo ./deploy/upgrade.sh VERSION` moves it to another release, checked the same way. See [On a Raspberry Pi](docs/USER_GUIDE.md#on-a-raspberry-pi).
 - **Docker** (a NAS, say; the dashboard): copy the folder, copy `deploy/secrets.env.example` to `secrets.env`, and `docker compose up -d --build`. The container is `departureboard`, keeping its data in the `dashboard-data` volume. See [Docker](docs/USER_GUIDE.md#9-docker).
-- **Desktop** (a Mac or Linux laptop; the dashboard): install the package and run `departureboard serve`. See [Desktop](docs/USER_GUIDE.md#10-desktop).
+- **Desktop** (a Mac or Linux laptop; the dashboard): `uv tool install departureboard` or `pipx install departureboard` (from PyPI from the first release), then `departureboard serve`. `deploy/desktop` has a launchd agent and a systemd user service to start it at login. See [Desktop](docs/USER_GUIDE.md#10-desktop).
 
 No `config.toml` is needed: the setup wizard saves your settings in the install's store. `config.example.toml` lists everything that can be set by hand.
 

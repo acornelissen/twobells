@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Starts the departures dashboard when you log in to your Mac (a launchd
+  agent): departureboard serve, on this computer only, at
+  http://localhost:8090/. It starts again if it fails, not when you stop it.
+  /Users/YOU is a placeholder for your home folder; the commands in
+  docs/USER_GUIDE.md (Desktop) put yours in and load it.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>uk.departureboard.serve</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOU/.local/bin/departureboard</string>
+    <string>serve</string>
+    <string>--install</string>
+    <string>desktop</string>
+    <string>--port</string>
+    <string>8090</string>
+    <string>--no-browser</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>Umask</key>
+  <integer>63</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/YOU/Library/Logs/departureboard.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/YOU/Library/Logs/departureboard.log</string>
+</dict>
+</plist>

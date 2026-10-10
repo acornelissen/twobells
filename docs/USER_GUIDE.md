@@ -631,17 +631,49 @@ Don't publish port 8090 on your router or through QuickConnect or DSM's reverse 
 
 ## 10. Desktop
 
-On a Mac or a Linux laptop, the dashboard runs while you leave it running. With the package installed (from PyPI once released, `pip install departureboard` in a virtual environment, or from a copy of the repo as the README says):
+On a Mac or a Linux laptop, the dashboard runs while you leave it running. It needs Python 3.11 or later, and its only dependency is Pillow: the Pi's extras (the Inky driver, pygame) aren't needed. Install it with [uv](https://docs.astral.sh/uv/) or [pipx](https://pipx.pypa.io/), which give it a virtual environment of its own and put the `departureboard` command in `~/.local/bin`. From PyPI, from the first release on:
 
 ```bash
+uv tool install departureboard      # or: pipx install departureboard
 departureboard serve
 ```
 
-It opens in your browser, at `http://localhost:8090/` (or the next free port), and the settings on the first run. The first build of the bus timetable takes a minute or so. Ctrl-C stops it.
+Before the first release, run `uv tool install .` or `pipx install .` in a copy of the repo instead. To update: `uv tool upgrade departureboard` or `pipx upgrade departureboard`.
+
+`departureboard serve` runs as a desktop install unless told otherwise. It opens in your browser, at `http://localhost:8090/` (or the next free port), and the settings on the first run. The first build of the bus timetable takes a minute or so. Ctrl-C stops it.
 
 - `--lan` lets phones on the home Wi-Fi open it, at the address it prints. `--host` and `--port` pick others (a port you name is that port or nothing); `--no-browser` leaves the browser alone.
 - `--config config.toml` and `--secrets secrets.env` use files of your own, if you keep them. When either changes, or a setting is saved, it starts again by itself within a few seconds.
-- It keeps its files in its [store](#where-things-are-kept); `--state-dir` names another folder.
+- It keeps its files in its [store](#where-things-are-kept): `~/Library/Application Support/departureboard` on a Mac, and `~/.local/state/departureboard` on Linux (unless `$XDG_STATE_HOME` says otherwise). `--state-dir` names another folder.
+- To see the board without a Pi, `departureboard emulate --demo` draws it in your browser on sample data.
+
+### Start it when you log in
+
+The release tarball and the repo have a file for each in `deploy/desktop`. Both run `departureboard serve` from `~/.local/bin` on this computer only, at `http://localhost:8090/`, without opening the browser, and start it again if it fails. Run the commands from the tarball's or the repo's folder.
+
+**On a Mac** (a launchd agent). The file names your home folder as `/Users/YOU`; `sed` puts yours in:
+
+```bash
+mkdir -p ~/Library/LaunchAgents
+sed "s|/Users/YOU|$HOME|g" deploy/desktop/uk.departureboard.serve.plist \
+  > ~/Library/LaunchAgents/uk.departureboard.serve.plist
+launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/uk.departureboard.serve.plist
+```
+
+It starts now and at each login. Its log, with any reset code, is `~/Library/Logs/departureboard.log`. To stop it until the next login: `launchctl bootout "gui/$(id -u)/uk.departureboard.serve"`. To stop it for good, run that and delete `~/Library/LaunchAgents/uk.departureboard.serve.plist`.
+
+**On Linux** (a systemd user service):
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp deploy/desktop/departureboard.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now departureboard.service
+```
+
+It starts now and whenever you log in. Its log, with any reset code: `journalctl --user -u departureboard -f`. To stop it: `systemctl --user stop departureboard.service`; to stop it starting at login: `systemctl --user disable --now departureboard.service`.
+
+If `command -v departureboard` doesn't print `~/.local/bin/departureboard` (with your home folder), change that path in the file before copying it.
 
 ---
 

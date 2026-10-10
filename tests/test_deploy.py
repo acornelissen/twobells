@@ -583,3 +583,61 @@ def test_the_guide_installs_a_pi_from_a_checked_release():
     assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in GUIDE
     assert "sudo ./deploy/upgrade.sh 0.2.0" in GUIDE
     assert "| sudo bash" not in GUIDE
+# The desktop: started at login, on this computer only.
+
+
+def _desktop_serve(argv: list[str]) -> None:
+    from departureboard.cli import _parser
+    from departureboard.installs import install_named
+
+    args = _parser().parse_args(argv)
+    assert (args.command, args.install, args.lan, args.host, args.port, args.no_browser) == (
+        "serve", "desktop", False, None, 8090, True)
+    assert install_named("desktop").host == "127.0.0.1"  # no --host or --lan: this computer only
+
+
+def test_the_mac_login_agent_runs_serve_on_this_computer_only():
+    import plistlib
+
+    path = ROOT / "deploy" / "desktop" / "uk.departureboard.serve.plist"
+    agent = plistlib.loads(path.read_bytes())
+    assert agent["Label"] == path.stem == "uk.departureboard.serve"
+    program = agent["ProgramArguments"]
+    assert program[0] == "/Users/YOU/.local/bin/departureboard"
+    _desktop_serve(program[1:])
+    assert agent["RunAtLoad"] is True
+    assert agent["KeepAlive"] == {"SuccessfulExit": False}  # again if it fails, not when stopped
+    for key in ("StandardOutPath", "StandardErrorPath"):
+        assert agent[key] == "/Users/YOU/Library/Logs/departureboard.log"
+    # The guide's sed puts the home folder in every path.
+    assert set(re.findall(r"/Users/\w+", path.read_text())) == {"/Users/YOU"}
+    assert 'sed "s|/Users/YOU|$HOME|g" deploy/desktop/uk.departureboard.serve.plist' in GUIDE
+    assert 'launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/uk.departureboard.serve.plist' in GUIDE
+    assert 'launchctl bootout "gui/$(id -u)/uk.departureboard.serve"' in GUIDE
+
+
+def test_the_linux_login_service_runs_serve_on_this_computer_only():
+    unit = _unit("desktop/departureboard.service")
+    [start] = unit["ExecStart"]
+    words = shlex.split(start)
+    assert words[0] == "%h/.local/bin/departureboard"
+    _desktop_serve(words[1:])
+    assert unit["Restart"] == ["on-failure"] and unit["WantedBy"] == ["default.target"]
+    assert "User" not in unit and "Group" not in unit  # a user service runs as that user
+    for setting in ("NoNewPrivileges", "LockPersonality", "RestrictRealtime", "RestrictSUIDSGID"):
+        assert unit[setting] == ["yes"], setting
+    assert unit["UMask"] == ["0077"]
+    for command in ("cp deploy/desktop/departureboard.service ~/.config/systemd/user/",
+                    "systemctl --user enable --now departureboard.service",
+                    "journalctl --user -u departureboard -f"):
+        assert command in GUIDE, command
+
+
+def test_the_desktop_needs_pillow_only():
+    import tomllib
+
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    names = {re.split(r"[<>=!~ ;\[]", spec, maxsplit=1)[0].lower() for spec in project["dependencies"]}
+    assert names == {"pillow"}
+    assert any(spec.startswith("inky") for spec in project["optional-dependencies"]["pi"])  # the Pi's, as an extra
+    assert "uv tool install departureboard" in GUIDE and "pipx install departureboard" in GUIDE
