@@ -102,8 +102,17 @@ def _store(args) -> Store:
 def _as_owner(args, store: Store) -> Store:
     """`store`, for a command about to write to it; WrongUser, saying to run
     this command line as its owner, if this is root and it isn't root's."""
-    check_owner(store.folder, shlex.join(["departureboard", *getattr(args, "argv", sys.argv[1:])]))
+    check_owner(store.folder, shlex.join([_program(), *getattr(args, "argv", sys.argv[1:])]))
     return store
+
+
+def _program() -> str:
+    """This program as it was run, for a line to paste: on a Pi it is in its
+    venv, not on the PATH, so a path is kept; otherwise its name."""
+    run_as = sys.argv[0] if sys.argv else ""
+    if Path(run_as).name == "departureboard" and os.sep in run_as:
+        return os.path.abspath(run_as)
+    return "departureboard"
 
 
 def _adopt(args, store: Store, install: str = "desktop") -> None:

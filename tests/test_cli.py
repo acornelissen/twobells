@@ -570,6 +570,23 @@ def test_root_is_refused_a_store_that_belongs_to_the_services_user(root_on_their
     assert said.out == "" and list(state.iterdir()) == []
 
 
+@pytest.mark.parametrize("argv0, named", [
+    # On a Pi it isn't on the PATH, so the line names it where it was run from.
+    ("/opt/departureboard/venv/bin/departureboard", "/opt/departureboard/venv/bin/departureboard"),
+    ("departureboard", "departureboard"),  # found on the PATH (or not): its name does
+    ("/usr/bin/pytest", "departureboard"),  # run some other way, as in these tests
+])
+def test_the_line_for_root_names_the_program_as_it_was_run(root_on_their_store, capsys, monkeypatch, argv0, named):
+    import shlex
+
+    config, _, owner = root_on_their_store
+    monkeypatch.setattr(sys, "argv", [argv0])
+    argv = ["timetable", "--config", str(config)]
+    assert main(argv) == 2
+    assert capsys.readouterr().err.splitlines() == [
+        f"Run this as the service's user: sudo -u {owner} {shlex.join([named, *argv])}"]
+
+
 @pytest.mark.parametrize("command", [
     ["timetable", "--needed"],  # query needs-timetable's old name; it only reads
     ["query", "views"],  # install.sh and update.sh ask these
