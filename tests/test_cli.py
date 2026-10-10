@@ -985,7 +985,8 @@ def test_serve_listens_and_opens_the_browser_as_its_install_does(tmp_path, serve
     assert served["app"].hub is not None  # its dashboard view is on, and set up
 
 
-def test_serve_on_a_pi_runs_no_dashboard_and_hands_setup_to_the_setup_service(tmp_path, served, monkeypatch):
+def test_serve_on_a_pi_not_set_up_shows_no_dashboard_and_hands_setup_to_the_fetch_service(tmp_path, served,
+                                                                                         monkeypatch):
     from departureboard import setupspool
 
     run = tmp_path / "run"
@@ -995,9 +996,71 @@ def test_serve_on_a_pi_runs_no_dashboard_and_hands_setup_to_the_setup_service(tm
     assert main(["serve", "--install", "pi", "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
     assert (served["host"], served["port"], served["attempts"]) == ("0.0.0.0", 8090, 1)
     app = served["app"]
-    assert app.hub is None and app.settings.install.name == "pi" and not served.get("opened")
+    assert not app.dashboard_on() and app.settings.install.name == "pi" and not served.get("opened")
+    assert ask(app, "/") == (303, "/settings", b"")
     assert isinstance(app.settings.setup._runner, setupspool.SpoolRunner)
     assert app.settings.store.folder == tmp_path / "state"
+
+
+@pytest.fixture
+def pi_with_the_dashboard(tmp_path, monkeypatch, dashboard_config):
+    """A Pi set up, with its spool in memory and the dashboard view on; no pollers may run in serve."""
+    from departureboard import collector
+
+    monkeypatch.setattr(collector, "Collector", lambda *args, **kwargs: pytest.fail("pollers in serve"))
+    run = tmp_path / "run"
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
+    folder = tmp_path / "state"
+    folder.mkdir()
+    (folder / "settings.toml").write_text('[app]\nviews = ["board", "dashboard"]\n')
+    args = ["serve", "--install", "pi", "--config", str(dashboard_config), "--secrets", str(tmp_path / "none.env"),
+            "--state-dir", str(folder)]
+    return args, folder, run
+
+
+def test_serve_on_a_pi_shows_the_dashboard_the_fetch_service_hands_over(tmp_path, served, pi_with_the_dashboard,
+                                                                         capsys):
+    import fcntl
+
+    from departureboard import handoff
+    from departureboard.history import History
+    from departureboard.setupspool import Spool
+    from departureboard.snapshot import Hub
+    from departureboard.walk import WalkTimes
+
+    args, folder, run = pi_with_the_dashboard
+    assert main(args) == 0
+    app = served["app"]
+    assert isinstance(app.hub, handoff.SnapshotMirror) and app.dashboard_on()
+    assert "Dashboard at" in capsys.readouterr().out
+    assert ask(app, "/healthz") == (503, None, b"unavailable")  # nothing handed over yet
+    with open(folder / "dashboard.lock", "a") as lock:  # the fetch service's to take, not serve's
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    assert not (folder / "history.sqlite3").exists()  # serve makes none: only reads the fetch service's
+    hub = Hub("Glossop", WalkTimes())
+    hub.publish("trains", {"rows": [{"id": "9f1c000000000002"}]}, {"9f1c000000000002": {"history": {
+        "mode": "train", "route": "GLO|Manchester", "scheduled": "07:12", "label": "07:12 to Manchester",
+        "day_type": "weekday", "phrase": None}}})
+    handoff.SnapshotWriter(hub, Spool(run), lambda: True).write()
+    app.hub.check()
+    assert ask(app, "/healthz") == (200, None, b"ok")
+    assert json.loads(ask(app, "/api/snapshot")[2])["trains"]["rows"] == [{"id": "9f1c000000000002"}]
+    assert json.loads(ask(app, "/api/history/9f1c000000000002")[2])["days"] == []  # no history yet
+    History(folder).close()  # the fetch service starts one
+    assert ask(app, "/api/history/9f1c000000000002")[0] == 200
+    assert os.listdir(run / "requests")  # the browser was said to the fetch service
+
+
+def test_a_pi_turns_its_dashboard_on_and_off_without_starting_again(tmp_path, served, pi_with_the_dashboard):
+    args, folder, _ = pi_with_the_dashboard
+    (folder / "settings.toml").write_text('[app]\nviews = ["board"]\n')
+    assert main(args) == 0
+    app = served["app"]
+    assert ask(app, "/") == (303, "/settings", b"") and ask(app, "/healthz") == (200, None, b"ok")
+    assert ask(app, "/api/snapshot")[0] == 404
+    (folder / "settings.toml").write_text('[app]\nviews = ["board", "dashboard"]\n')  # saved on the General tab
+    assert ask(app, "/")[0] == 200 and ask(app, "/api/snapshot")[0] == 200
+    assert ask(app, "/healthz")[0] == 503  # until the fetch service hands a snapshot over
 
 
 def test_a_pi_with_broken_settings_serves_them_without_a_word_about_a_dashboard(tmp_path, served, monkeypatch,
@@ -1008,7 +1071,7 @@ def test_a_pi_with_broken_settings_serves_them_without_a_word_about_a_dashboard(
     config.write_text("display = [\n")
     assert main(["web", "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
     assert "dashboard" not in capsys.readouterr().err.lower()
-    assert served["app"].settings.problem == "" and served["app"].hub is None
+    assert served["app"].settings.problem == "" and not served["app"].dashboard_on()
 
 
 def test_serve_starts_no_dashboard_until_there_is_something_to_show(tmp_path, served, capsys):
@@ -1046,7 +1109,12 @@ def test_a_first_run_serves_the_settings_and_signing_in_opens_the_wizard(tmp_pat
                  "--state-dir", str(folder)]) == 0
     assert "Not set up yet: sign in and the page opens the setup wizard" in capsys.readouterr().err
     app = served["app"]
-    assert app.hub is None  # no dashboard, so nothing is fetched
+    # Nothing is fetched until it is set up: no hub in-process, and a Pi's
+    # snapshot mirror stays switched off.
+    if install == "pi":
+        assert not app.dashboard_on()
+    else:
+        assert app.hub is None
     assert ask(app, "/") == (303, "/settings", b"")
     assert ask(app, "/healthz") == (200, None, b"ok")
     PasswordStore(folder / "web.json").set(DASH_PASSWORD)
@@ -1436,13 +1504,13 @@ def test_dashboard_reset_code_prints_one_code_the_settings_will_take(tmp_path, n
     assert ResetCodes(folder, show=show_in_log).verify(code, time.time())
 
 
-@pytest.mark.parametrize("install, noun, offered, links", [
-    ("pi", "board", ["board"], ["Settings"]),
-    ("docker", "dashboard", ["dashboard"], ["The dashboard", "Settings"]),
-    ("desktop", "dashboard", ["dashboard"], ["The dashboard", "Settings"]),
+@pytest.mark.parametrize("install, noun, offered, on, links", [
+    ("pi", "board", ["board", "dashboard"], ["board"], ["Settings"]),  # a Pi offers both, the board on at first
+    ("docker", "dashboard", ["dashboard"], ["dashboard"], ["The dashboard", "Settings"]),
+    ("desktop", "dashboard", ["dashboard"], ["dashboard"], ["The dashboard", "Settings"]),
 ])
 def test_the_setup_wizard_is_one_page_on_every_install_in_its_own_words(dashboard_config, tmp_path, install, noun,
-                                                                        offered, links):
+                                                                        offered, on, links):
     from departureboard import cli
     from departureboard.installs import install_named
     from departureboard.schema import keys
@@ -1456,7 +1524,7 @@ def test_the_setup_wizard_is_one_page_on_every_install_in_its_own_words(dashboar
     assert status == 200 and body["title"] == "Set up your departures" and body["noun"] == noun
     # The keys every view uses; TransportAPI's and the dashboard's own are on their tabs.
     assert [k["name"] for k in body["keys"]] == [name for name, _, _ in keys("general")]
-    assert [view["name"] for view in body["views"]["offered"]] == offered and body["views"]["on"] == offered
+    assert [view["name"] for view in body["views"]["offered"]] == offered and body["views"]["on"] == on
     assert [link["label"] for link in body["links"]] == links
 
 
@@ -1728,7 +1796,7 @@ def no_runtime_folder(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("flag", [[], ["--setup-via-spool"]])
-def test_the_pis_settings_hand_setup_to_the_setup_service(tmp_path, monkeypatch, flag, no_runtime_folder, served):
+def test_the_pis_settings_hand_setup_to_the_fetch_service(tmp_path, monkeypatch, flag, no_runtime_folder, served):
     # Always, now: the flag the unit still passes is taken and changes nothing.
     from departureboard import setupspool
 
@@ -1739,7 +1807,7 @@ def test_the_pis_settings_hand_setup_to_the_setup_service(tmp_path, monkeypatch,
     assert main(["web", "--config", str(config), "--secrets", str(tmp_path / "none.env"), *flag]) == 0
     assert (served["host"], served["port"], served["attempts"]) == ("0.0.0.0", 8080, 1)
     site = served["app"].settings
-    assert site.install.name == "pi" and served["app"].hub is None
+    assert site.install.name == "pi" and not served["app"].dashboard_on()
     runner = site.setup._runner
     assert isinstance(runner, setupspool.SpoolRunner)
     assert runner.spool.folder == run and runner.spool.requests.is_dir()

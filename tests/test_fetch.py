@@ -2,7 +2,6 @@
 the wizard's requests, and stopping when there is nothing to do. In threads,
 with the pollers faked: no network."""
 
-import dataclasses
 import fcntl
 import json
 import os
@@ -12,15 +11,14 @@ import time
 
 import pytest
 
-from departureboard import fetch, handoff, installs, setupspool
+from departureboard import fetch, handoff, setupspool
 from departureboard.fetch import FetchService
 from departureboard.installs import install_named
 from departureboard.setup import Place
 from departureboard.store import Store
 from departureboard.walk import WalkTimes
 
-# The Pi, once it offers the dashboard view.
-PI = dataclasses.replace(install_named("pi"), offered=("board", "dashboard"))
+PI = install_named("pi")
 ON = '[app]\nviews = ["board", "dashboard"]\n'
 OFF = '[app]\nviews = ["board"]\n'
 ROW = "4b7e000000000001"
@@ -283,7 +281,6 @@ def test_stopped_by_systemd_it_stops_the_pollers_and_lets_go(tmp_path, monkeypat
     store, spool = pi
     save(pi, ON)
     monkeypatch.setattr(fetch, "Collector", lambda dash, hub, history, **kwargs: FakeCollector(dash, hub, history))
-    monkeypatch.setitem(installs.INSTALLS, "pi", PI)
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(spool.folder))
 
     class Unhandled(Exception):

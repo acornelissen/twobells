@@ -47,7 +47,7 @@ _DOCKER_COMMAND = "docker exec -it departureboard-dashboard python -m departureb
 INSTALLS = {
     install.name: install
     for install in (
-        Install("pi", ("board",), ("board",), Path("/var/lib/departureboard"), noun="board", host="0.0.0.0",
+        Install("pi", ("board", "dashboard"), ("board",), Path("/var/lib/departureboard"), noun="board", host="0.0.0.0",
                 fetch="files", log_help="On the Pi: <code>sudo journalctl -u departureboard-web</code>.",
                 password_command=f"{_PI_COMMAND} --set-password", reset_command=f"{_PI_COMMAND} --reset-code"),
         Install("docker", ("dashboard",), ("dashboard",), Path("/data"), host="0.0.0.0",

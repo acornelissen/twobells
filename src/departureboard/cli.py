@@ -899,7 +899,7 @@ def _serve(args) -> int:
     store.make()
     runner = None
     if install.fetch == "files":
-        # This service can't reach the internet; departureboard-setup.service does that work.
+        # This service can't reach the internet; departureboard-fetch.service does that work.
         from .setupspool import SpoolError, SpoolRunner, spool_folder
 
         try:
@@ -909,12 +909,19 @@ def _serve(args) -> int:
             return 2
     dash, problem = None, ""
     try:
-        if _dashboard_wanted(store, install):
-            dash = load_dashboard(store, store.env())
+        wanted = _dashboard_wanted(store, install)
     except ConfigError as error:
+        # The views can't be read: said as the dashboard's problem only where it is on unless they say.
+        wanted, problem = False, (str(error) if "dashboard" in install.default_views else "")
+    if wanted:
+        try:
+            # Where another service runs its pollers (a Pi's fetch service), that one holds the store's lock.
+            dash = load_dashboard(store, store.env(), lock=install.fetch == "process")
+        except ConfigError as error:
+            problem = str(error)
+    if problem:
         # Start anyway, so the settings can fix it (and Docker doesn't start it again and again).
-        problem = str(error)
-        print(f"The dashboard can't start: {error}. Fix it in the settings.", file=sys.stderr)
+        print(f"The dashboard can't start: {problem}. Fix it in the settings.", file=sys.stderr)
     try:
         code, restart = _serve_with(args, store, install, runner, dash, problem)
     finally:
@@ -925,6 +932,27 @@ def _serve(args) -> int:
     return code
 
 
+def _mirror(store: Store, install: Install, runner, dash):
+    """On a Pi: the dashboard's snapshot as the fetch service hands it over,
+    through the spool `runner` uses. Until the first comes, an empty one
+    with the title and walk times of `dash` (the dashboard's settings, if
+    its view was on and they loaded at start), or the defaults."""
+    from .handoff import SnapshotMirror
+    from .schema import BOARD_DEFAULTS
+    from .setupspool import Poster
+    from .walk import WalkTimes
+
+    folder = runner.spool.folder
+    return SnapshotMirror(
+        folder,
+        dash.title if dash is not None else BOARD_DEFAULTS["title"],
+        dash.walk if dash is not None else WalkTimes(),
+        Poster(folder),
+        wanted=lambda: _dashboard_wanted(store, install),
+        timezone=dash.timezone if dash is not None else None,
+    )
+
+
 def _serve_with(args, store: Store, install: Install, runner, dash, problem: str) -> tuple[int, int | None]:
     """Run the server until stopped, with the dashboard if `dash` (its
     settings) is given. The exit code, and the port to start again on if
@@ -933,11 +961,16 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
 
     from . import dashserver
     from .collector import Collector
-    from .history import History
+    from .history import History, HistoryReader
     from .snapshot import Hub
 
-    history = hub = collector = None
-    if dash is not None:
+    history = hub = collector = mirror = None
+    if install.fetch == "files" and "dashboard" in install.offered:
+        # No pollers here (this service can't reach the internet): the fetch
+        # service runs them and hands over what they find.
+        hub = mirror = _mirror(store, install, runner, dash)
+        history = HistoryReader(store.folder)
+    elif install.fetch == "process" and dash is not None:
         try:
             history = History(dash.state_dir)
         except sqlite3.Error as error:
@@ -945,6 +978,17 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
             return 2, None
         hub = Hub(dash.title, dash.walk, tz=ZoneInfo(dash.timezone))
         collector = Collector(dash, hub, history)
+
+    def healthy() -> bool:
+        if mirror is not None:
+            return mirror.healthy()
+        return collector.healthy() if collector is not None else True
+
+    def dashboard_on() -> bool:
+        # The mirror is always there, so the dashboard is on as soon as its view
+        # is (a save on a Pi doesn't start serve again).
+        return "dashboard" in site.views() and (mirror is None or not needs_setup(store))
+
     watch = None
     try:
         site = _settings_site(store, install, hub is not None, runner)
@@ -952,9 +996,9 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
         app = dashserver.DashboardApp(
             hub,
             dashserver.StaticFiles.load(dashserver.default_static_dir()),
-            collector.healthy if collector is not None else (lambda: True),
+            healthy,
             site,
-            dashboard_on=lambda: "dashboard" in site.views(),
+            dashboard_on=dashboard_on,
             recent=history.recent if history is not None else None,
             history_days=dash.options.history_days if dash is not None else 90,
             allowed_hosts=dash.options.allowed_hosts if dash is not None else _allowed_hosts(store),
@@ -975,10 +1019,12 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
         port = server.server_address[1]
         if collector is not None:
             collector.start()
+        if mirror is not None:
+            mirror.start()
         if needs_setup(store):
             print("Not set up yet: sign in and the page opens the setup wizard", file=sys.stderr)
         url = f"http://localhost:{port}/"
-        if hub is not None:
+        if hub is not None and dashboard_on():
             print(f"Dashboard at {url}  (Ctrl+C to stop)")
         print(f"Settings at {url}settings  (home network only)")
         if args.lan:

@@ -689,9 +689,10 @@ def test_finishing_takes_only_views_offered_each_once(both, views):
 
 
 def test_a_view_the_install_doesnt_offer_is_refused(board):
-    api = SetupApi(board_target(board.config), lambda: dict(board.secrets), board.state, install=INSTALLS["pi"],
+    # Docker offers only the dashboard: it has no board to drive.
+    api = SetupApi(board_target(board.config), lambda: dict(board.secrets), board.state, install=INSTALLS["docker"],
                    stations=lambda: STATIONS)
-    status, body = api.handle("finish", {**TRAINS_ONLY, "views": ["dashboard"]})
+    status, body = api.handle("finish", {**TRAINS_ONLY, "views": ["board"]})
     assert status == 400 and body == {"error": "That isn't one of the views offered here", "field": "views"}
     assert "app" not in tomllib.loads((board.state / "settings.toml").read_text())
 

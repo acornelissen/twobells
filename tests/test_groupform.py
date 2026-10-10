@@ -153,7 +153,8 @@ def test_a_view_box_sending_anything_but_on_is_refused(store):
 
 
 def test_with_one_view_offered_there_is_no_choice_and_none_is_saved(store):
-    for form in (board_form(store, lambda: dict(ENV)), dashboard_form(store, lambda: dict(ENV))):
+    board_only = Install("board only", ("board",), ("board",), None)
+    for form in (form_for(store, ("general", "board"), board_only), dashboard_form(store, lambda: dict(ENV))):
         page = form.render("tok")
         assert "<legend>Views</legend>" not in page and 'type="checkbox"' not in page
         assert form.save(fields_of(page)) == {}

@@ -76,6 +76,8 @@ def fields_of(form):
     for name, body in re.findall(r'<select id="(\w+)" name="\w+"[^>]*>(.*?)</select>', page):
         chosen = re.search(r'value="([^"]*)" selected', body)
         fields[name] = chosen.group(1) if chosen else ""
+    # A ticked box is sent as "on"; an unticked one isn't sent (the views, on a Pi that offers two).
+    fields |= dict.fromkeys(re.findall(r'<input id="(\w+)" name="\w+" type="checkbox" value="on" checked', page), "on")
     return fields
 
 
