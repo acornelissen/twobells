@@ -1,1 +1,1 @@
-"""Train and bus departure board for an Inky pHAT."""
+"""Train and bus departures for GB, on an e-paper or HDMI board and a web dashboard."""

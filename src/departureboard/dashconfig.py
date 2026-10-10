@@ -1,4 +1,4 @@
-"""Settings for the web dashboard (`departureboard dashboard`).
+"""Settings for the dashboard view (`departureboard serve`).
 
 The dashboard reads the board's config.toml, plus an optional [dashboard]
 table, and keeps everything it writes (the bus timetable, bank holidays,

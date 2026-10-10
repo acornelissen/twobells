@@ -133,9 +133,6 @@ class TransportApiBusSource:
     def parse(self, payload: dict, label: str) -> list[Departure]:
         return parse_stop(payload, self._directions, label)
 
-    def fetch_stop(self, label: str, atco: str) -> list[Departure]:
-        return self.parse(self.fetch_raw(atco), label)
-
     def fetch(self) -> list[Departure]:
         # Merged on date and time: by time alone, 00:05 at one stop would beat 23:55 at another.
         merged = [

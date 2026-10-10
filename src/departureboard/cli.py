@@ -708,12 +708,6 @@ def _query(args) -> int:
 
 
 def _timetable(args) -> int:
-    if args.needed:  # for update.sh: exit 0 if the timetable is wanted, 1 if not; no keys needed
-        try:
-            return 0 if _wants_timetable(_store(args)) else 1
-        except OSError as error:
-            print(f"Can't read {args.config}: {error.strerror or error}", file=sys.stderr)
-            return 2
     _as_owner(args, _store(args))
     settings = _settings(args, only={"bus"})
     source = next((c.source for c in settings.board.sources if c.source.name == "bus"), None)
@@ -1185,7 +1179,6 @@ def _parser() -> argparse.ArgumentParser:
 
     tt = with_config(sub.add_parser("timetable", help="build the BODS bus timetable for your stops, if due"))
     tt.add_argument("--force", action="store_true", help="build it now, as after changing operators")
-    tt.add_argument("--needed", action="store_true", help=argparse.SUPPRESS)  # query needs-timetable's old name
     tt.set_defaults(handler=_timetable)
 
     # For install.sh and update.sh, so they ask the app rather than read config.toml. Hidden.

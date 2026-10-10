@@ -88,7 +88,7 @@ def board(tmp_path):
         return KeyResult("wrong_key", f"It refused {value or env.get(name)}")
 
     worker = Worker(
-        state / setupspool.SPOOL, job_folder=state, load_secrets=lambda: dict(secrets),
+        state / "spool", job_folder=state, load_secrets=lambda: dict(secrets),
         settings=lambda: {"train": {"crs": "GLO"}},
         lookup_postcode=lambda postcode: calls.append(("postcode", postcode)) or HOME_PLACE,
         search_address=lambda q: calls.append(("address", q)) or [HOME_PLACE],
@@ -96,7 +96,7 @@ def board(tmp_path):
         walk_minutes=lambda home, places: calls.append(("walk", home, places)) or {k: (4, "route") for k in places},
         make_job=FakeJob, test_key=test_key, idle=60, poll=0.01, stop=threading.Event(),
     )
-    runner = SpoolRunner(state / setupspool.SPOOL, poll=0.01, waits=dict.fromkeys(setupspool.WAITS, 5.0),
+    runner = SpoolRunner(state / "spool", poll=0.01, waits=dict.fromkeys(setupspool.WAITS, 5.0),
                          start_wait=5.0)
     api = SetupApi(board_target(config), lambda: dict(secrets), state, runner=runner, stations=lambda: STATIONS,
                    key_tests=RateLimit(10.0))
@@ -123,7 +123,7 @@ def ok(api, name, payload=None):
 def spool_text(state) -> str:
     """Everything left in the spool, as one string."""
     out = []
-    for folder, _, names in os.walk(state / setupspool.SPOOL):
+    for folder, _, names in os.walk(state / "spool"):
         for name in names:
             if name != setupspool.WORKER_LOCK:
                 out.append(open(os.path.join(folder, name), encoding="utf-8", errors="replace").read())
@@ -189,8 +189,8 @@ def test_the_search_round_trips_with_its_progress(serving, caplog):
 
 def test_the_search_uses_the_saved_key_there_without_sending_it(board):
     ok(board, "start", {"stops": {"A": "1800SB12341"}, "routes": False})
-    [name] = os.listdir(board.state / setupspool.SPOOL / "requests")
-    request = board.state / setupspool.SPOOL / "requests" / name
+    [name] = os.listdir(board.state / "spool" / "requests")
+    request = board.state / "spool" / "requests" / name
     assert oct(request.stat().st_mode & 0o777) == "0o600"
     text = request.read_text()
     assert SAVED_BODS not in text and json.loads(text)["args"]["key"] == ""
@@ -426,7 +426,7 @@ def request(board, name="a" * 32, made_offset=0.0, **change) -> dict:
 
 
 def put(board, data, name=None, raw=None):
-    path = board.state / setupspool.SPOOL / "requests" / (name or f"{data['id']}.json")
+    path = board.state / "spool" / "requests" / (name or f"{data['id']}.json")
     path.write_bytes(raw if raw is not None else json.dumps(data).encode())
     os.chmod(path, 0o600)
     return path
@@ -457,7 +457,7 @@ def put(board, data, name=None, raw=None):
 def test_the_service_deletes_requests_that_dont_fit_unanswered(board, change, caplog):
     path = put(board, request(board, **change), name="a" * 32 + ".json")
     board.worker.step()
-    assert not path.exists() and os.listdir(board.state / setupspool.SPOOL / "replies") == []
+    assert not path.exists() and os.listdir(board.state / "spool" / "replies") == []
     assert board.calls == [] and FakeJob.made == []
     assert "Refused a setup request" in caplog.text
 
@@ -472,13 +472,13 @@ def test_the_service_deletes_requests_that_dont_fit_unanswered(board, change, ca
 def test_the_service_deletes_oversized_or_odd_files_unread(board, raw):
     path = put(board, None, name="a" * 32 + ".json", raw=raw)
     board.worker.step()
-    assert not path.exists() and os.listdir(board.state / setupspool.SPOOL / "replies") == []
+    assert not path.exists() and os.listdir(board.state / "spool" / "replies") == []
 
 
 def test_the_service_never_follows_a_link_or_keeps_a_stray(board, tmp_path):
     target = tmp_path / "elsewhere.json"
     target.write_text(json.dumps(request(board)))
-    requests = board.state / setupspool.SPOOL / "requests"
+    requests = board.state / "spool" / "requests"
     (requests / ("a" * 32 + ".json")).symlink_to(target)
     (requests / "stray.txt").write_text("x")
     (requests / "folder").mkdir()
@@ -487,7 +487,7 @@ def test_the_service_never_follows_a_link_or_keeps_a_stray(board, tmp_path):
 
 
 def test_the_page_refuses_replies_that_dont_fit(board):
-    replies = board.state / setupspool.SPOOL / "replies"
+    replies = board.state / "spool" / "replies"
     rid = "c" * 32
     for reply in (
         {"v": 1, "id": "d" * 32, "ok": True, "value": {}},  # someone else's
@@ -515,8 +515,8 @@ def test_the_page_refuses_replies_that_dont_fit(board):
 ])
 def test_the_page_checks_each_answers_shape(board, kind, value):
     def answer():
-        wait_for(lambda: os.listdir(board.state / setupspool.SPOOL / "requests"))
-        [name] = os.listdir(board.state / setupspool.SPOOL / "requests")
+        wait_for(lambda: os.listdir(board.state / "spool" / "requests"))
+        [name] = os.listdir(board.state / "spool" / "requests")
         rid = name.removesuffix(".json")
         board.runner.spool.write(board.runner.spool.replies, rid, {"v": 1, "id": rid, "ok": True, "value": value},
                                  setupspool.MAX_REPLY_BYTES)

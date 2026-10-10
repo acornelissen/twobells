@@ -588,7 +588,6 @@ def test_the_line_for_root_names_the_program_as_it_was_run(root_on_their_store, 
 
 
 @pytest.mark.parametrize("command", [
-    ["timetable", "--needed"],  # query needs-timetable's old name; it only reads
     ["query", "views"],  # install.sh and update.sh ask these
     ["query", "needs-timetable"],
     ["probe", "train"],
@@ -2037,7 +2036,7 @@ def test_the_page_and_the_fetch_service_share_systemds_folder_in_memory(tmp_path
     assert main(["web", "--config", str(config), "--secrets", none, "--setup-via-spool"]) == 0
     assert main(["fetch", "--config", str(config), "--secrets", none]) == 0
     assert served["app"].settings.setup._runner.spool.folder == run and ran[0].spool.folder == run
-    assert (run / "requests").is_dir() and not (tmp_path / "state" / setupspool.SPOOL).exists()
+    assert (run / "requests").is_dir() and not (tmp_path / "state" / "setup-spool").exists()  # the spool's old home
 
 
 def test_the_fetch_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypatch):

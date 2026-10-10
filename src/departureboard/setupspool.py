@@ -107,7 +107,6 @@ from .status import safe_message
 
 log = logging.getLogger(__name__)
 
-SPOOL = "setup-spool"  # where the spool once was, in the board's state folder; update.sh deletes it
 RUNTIME = Path("/run/departureboard-fetch")  # the units' RuntimeDirectory
 VERSION = 1
 MAX_REQUEST_BYTES = 16 * 1024  # the biggest, a walk to 25 places, is about 2 kB
