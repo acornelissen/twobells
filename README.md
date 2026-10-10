@@ -200,10 +200,21 @@ Then open `http://<pi name>.local:8080/` from a phone or laptop on the same netw
 
 ## 3. Develop on your laptop
 
+With [mise](https://mise.jdx.dev) (it pins python, ruff and node in `mise.toml`):
+
 ```bash
-python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"
-pytest
+mise install                 # the pinned tools
+mise run setup               # .venv with the package and its dev tools
+mise run test
+mise run lint                # ruff
+mise tasks                   # the rest: demo, emulate, dashboard
+```
+
+Without mise: `python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]" && .venv/bin/pytest`.
+
+Then, with the venv active (`. .venv/bin/activate`, or any shell where mise is activated):
+
+```bash
 departureboard demo --png preview.png            # sample data, no keys
 departureboard demo --png big.png --display waveshare-10in85g   # or hdmi-1280x400
 departureboard run --png preview.png --config config.toml --secrets secrets.env
