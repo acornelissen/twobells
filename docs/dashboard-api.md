@@ -163,7 +163,7 @@ Server-sent events (`text/event-stream`):
 - Every 15 s: a comment line `: ping`.
 - Resuming: if `Last-Event-ID` equals the current version, it sends no snapshot until the next change.
 - The server closes a stream after 30 min, and the browser reconnects.
-- With too many streams open the server answers 503; the browser falls back to polling `/api/snapshot` every 30 s.
+- With too many streams open (12) the server answers 503 with `Retry-After: 30`; the browser falls back to polling `/api/snapshot` every 30 s.
 
 ## `GET /api/bus/<id>`
 
@@ -201,7 +201,7 @@ The punctuality history of a train or bus row (same ids as the snapshot); 404 if
 }
 ```
 
-`days` are newest first, at most 90.
+`days` are newest first, at most `[dashboard] history_days` of them (1 to 3650, default 90).
 
 ## `GET /healthz`
 
@@ -212,6 +212,16 @@ The punctuality history of a train or bus row (same ids as the snapshot); 404 if
 - `/`: the page.
 - `/static/<path>`: files from `src/departureboard/dashboard_static/`, from an allowlist built at start.
 - `/manifest.webmanifest`.
+
+## Access rules (every request)
+
+Checked in this order, before anything else. Each refusal has a plain-text body and the security headers below.
+
+- **403** unless the client's address is private, loopback or link-local, the request has exactly one `Host` header, and that host is local or in `[dashboard] allowed_hosts`. Local means a private IP address, a name without dots, or a name ending `.local`, `.lan` or `.home.arpa`. This stops DNS rebinding.
+- Then everything under `/settings` goes to the settings area, which has its own rules (see the top of this page).
+- **405** with `Allow: GET, HEAD` for any other method.
+- **404** when the request target is over 512 characters, doesn't start with `/`, or holds `..`, a backslash, or an encoded dot, slash, backslash or NUL (`%2e`, `%2f`, `%5c`, `%00`, in any case).
+- **403** for `/api/` when `Sec-Fetch-Site` is `cross-site`: another site's page can't read the API through the browser.
 
 ## Security headers (every response)
 
@@ -285,7 +295,7 @@ A top-level key of `/api/snapshot`, after `disruptions`: the bus lines whose tim
 
 ## `GET /api/area`
 
-The area map: every live bus on our lines around our stops, from the bus poller's last BODS fetch (no extra calls). 404 until the buses have been checked with a usable timetable, and again while there is none. Not part of the snapshot and not versioned: the page asks again with each snapshot while the map is open, and every 25 s or so for its summary. Same Host, client and cross-site rules and headers as the rest of the API.
+The area map: every live bus on our lines around our stops, from the bus poller's last BODS fetch (no extra calls). 404 until the buses have been checked with a usable timetable, and again while there is none. Not part of the snapshot and not versioned: the page asks again with each snapshot while the map is open, and every 25 s or so for its summary. Same [access rules](#access-rules-every-request) and headers as the rest of the API.
 
 ```json
 {
@@ -296,8 +306,7 @@ The area map: every live bus on our lines around our stops, from the bus poller'
      "recorded_at": "2026-10-09T10:14:00+01:00", "age_s": 30, "next_stop": "Park Road"}
   ],
   "stops": [{"label": "A", "name": "Church Street", "lat": 53.4435, "lon": -1.9590}],
-  "routes": [{"line": "341", "destination": "Hadfield", "points": [[53.444467, -1.965966], [53.444223, -1.962774]],
-              "path": [[53.444467, -1.965966], [53.44438, -1.96431], [53.444223, -1.962774]]}]
+  "routes": [{"line": "341", "destination": "Hadfield", "path": [[53.444467, -1.965966], [53.44438, -1.96431], [53.444223, -1.962774]]}]
 }
 ```
 
@@ -305,5 +314,5 @@ The area map: every live bus on our lines around our stops, from the bus poller'
 - `box` is west, south, east, north around the timetable's positioned stops (about 1 km wider), or `null`. Only buses inside it, on lines our timetable has, reported in the last 5 minutes, are sent; at most 80.
 - `destination` is the timetabled journey's when the bus was matched to one, else the bus's own. `next_stop` is the next positioned stop on that journey, or `null` when it wasn't matched or the stop isn't positioned. `bearing` and `recorded_at` can be `null`.
 - `stops` are our stops that have a position, by label.
-- `routes`: for each line and destination, the positioned stops of its longest journey, in order, as `[lat, lon]` pairs (at least two); at most 40. Only journeys calling at your stops are drawn, not those kept only to find an inbound bus. `path` is the road through those stops, as for `/api/bus/<id>`: straight between stops the timetable has no road for.
+- `routes`: for each line and destination, `path`: the road through the positioned stops of its longest journey, in order, as `[lat, lon]` pairs (at least two, every stop among them), as for `/api/bus/<id>`: straight between stops the timetable has no road for. At most 40. Only journeys calling at your stops are drawn, not those kept only to find an inbound bus.
 - **On the page:** "Around here" has an **Area map** button opening a dialog with the map (line numbers on the bus markers, words in the popups), real zoom and "Show the whole area" buttons, the OpenStreetMap credit, and the same buses listed in words, each with a "Show on map" button. It also lists the stations on the train line in order, from the rows' calling points (and `previous_points`), with each train that has a `position` placed at or between stations, in words.
