@@ -1256,8 +1256,8 @@ def _parser() -> argparse.ArgumentParser:
     _password_flags(dashboard)
     dashboard.set_defaults(handler=_serve, install="desktop")
 
-    # The board's old settings page, which departureboard-web.service runs: serve
-    # on a Pi, on the page's old port. Its setup always goes through
+    # The board's old settings page, which departureboard-web.service ran: serve
+    # on a Pi, on the settings' port there. Its setup always goes through
     # departureboard-fetch.service, so --setup-via-spool is taken and changes nothing.
     web = with_config(sub.add_parser("web"))
     web.add_argument("--host", default="0.0.0.0")
