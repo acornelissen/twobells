@@ -40,7 +40,7 @@ def test_our_stops_and_the_routes_are_drawn_from_the_timetable():
         {"label": "A", "name": "Henry Street", "lat": 53.44384, "lon": -1.948999},
         {"label": "B", "name": "St Marys Road", "lat": 53.44343, "lon": -1.955353},
     ]
-    routes = {(r["line"], r["destination"]): r["points"] for r in view["routes"]}
+    routes = {(r["line"], r["destination"]): r["path"] for r in view["routes"]}  # straight: no roads saved
     assert list(routes) == [("237", "Ashton"), ("341", "Hadfield")]
     assert len(routes[("341", "Hadfield")]) == 7  # The Junction to Howard Arms; Ashton and Hadfield aren't placed
     assert routes[("237", "Ashton")][0] == [53.44384, -1.948999]
@@ -53,19 +53,18 @@ def test_the_routes_follow_the_timetable_s_roads():
 
     roads = {f"{HENRY_A}>{MARKET_HALL}": ((53.4620, -1.9495),), f"{HENRY_A}>{HOWARD}": ((53.4436, -1.9485),)}
     view = area_view(BusBoard([], replace(schedule(), shapes=roads), True, None, [], []), NOW)
-    routes = {r["line"]: r for r in view["routes"]}
-    west = routes["237"]
-    assert west["path"] == [west["points"][0], [53.4620, -1.9495], *west["points"][1:]]
-    east = routes["341"]
-    assert east["path"] == [*east["points"][:-1], [53.4436, -1.9485], east["points"][-1]]
+    routes = {r["line"]: r["path"] for r in view["routes"]}
     # Without roads, straight from stop to stop.
-    assert all(r["path"] == r["points"] for r in area_view(board([]), NOW)["routes"])
+    stops = {r["line"]: r["path"] for r in area_view(board([]), NOW)["routes"]}
+    assert routes["237"] == [stops["237"][0], [53.4620, -1.9495], *stops["237"][1:]]
+    assert routes["341"] == [*stops["341"][:-1], [53.4436, -1.9485], stops["341"][-1]]
+    assert all(set(r) == {"line", "destination", "path"} for r in view["routes"])  # each stop is sent once
 
 
 def test_the_longest_journey_stands_for_its_line_and_destination():
     short = replace(EAST, calls=EAST.calls[3:6], journey_code="short")
     view = area_view(BusBoard([], schedule(short, EAST), True, None, [], []), NOW)
-    assert len(view["routes"][0]["points"]) == 7
+    assert len(view["routes"][0]["path"]) == 7
 
 
 def test_inbound_only_journeys_draw_no_route():

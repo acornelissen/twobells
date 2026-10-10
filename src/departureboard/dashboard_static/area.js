@@ -189,9 +189,9 @@ function drawMap() {
   layers.clearLayers();
   markers = new Map();
   for (const route of list(area.routes).filter(obj)) {
-    // Along the roads when the server sends them, else straight from stop to stop.
-    const points = roadLine(route.path, roadLine(route.points));
-    if (points.length > 1) L.polyline(points, { className: "area-route", interactive: false }).addTo(layers);
+    // The road through the route's stops, straight where there is none.
+    const road = roadLine(route.path);
+    if (road.length > 1) L.polyline(road, { className: "area-route", interactive: false }).addTo(layers);
   }
   for (const stop of list(area.stops).filter(obj)) {
     if (num(stop.lat) === null || num(stop.lon) === null) continue;

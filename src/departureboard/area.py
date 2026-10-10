@@ -85,9 +85,10 @@ def _vehicle(vehicle: Vehicle, placed: LiveJourney | None, schedule: Schedule, n
 
 
 def _routes(journeys: Iterable[Journey], schedule: Schedule) -> list[dict]:
-    """Each line and destination's positioned stops, as one line on the map,
-    and the road through them (straight where the timetable has none): the
-    journey with the most of them stands for the rest."""
+    """Each line and destination as one line on the map: the road through its
+    positioned stops (straight where the timetable has none), which passes
+    every stop, so they aren't sent again. The journey with the most of them
+    stands for the rest."""
     best: dict[tuple[str, str], tuple[str, ...]] = {}
     for journey in journeys:
         atcos = tuple(c.atco for c in journey.calls if c.atco in schedule.positions)
@@ -96,7 +97,6 @@ def _routes(journeys: Iterable[Journey], schedule: Schedule) -> list[dict]:
             best[key] = atcos
     keys = sorted(best, key=lambda k: (_line_order(k[0]), k[1]))[:MAX_ROUTES]
     return [{"line": line, "destination": destination,
-             "points": [[schedule.positions[a].lat, schedule.positions[a].lon] for a in best[(line, destination)]],
              "path": path(best[(line, destination)], schedule.positions, schedule.shapes)}
             for line, destination in keys]
 

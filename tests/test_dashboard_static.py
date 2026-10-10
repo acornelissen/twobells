@@ -432,7 +432,7 @@ AREA = {
         "recorded_at": Opt(at), "age_s": Opt(integer), "next_stop": Opt(str),
     }],
     "stops": [{"label": str, "name": str, "lat": number, "lon": number}],
-    "routes": [{"line": str, "destination": str, "points": [lat_lon], "path": [lat_lon]}],
+    "routes": [{"line": str, "destination": str, "path": [lat_lon]}],
 }
 HISTORY_DETAIL = {
     "id": row_id, "mode": one_of("train", "bus"), "label": str,
@@ -525,11 +525,10 @@ def test_area_fixture_follows_the_contract():
     assert any(v["next_stop"] for v in vehicles) and any(v["next_stop"] is None for v in vehicles)
     assert any(v["bearing"] is None for v in vehicles)
     assert {s["label"] for s in area["stops"]} == set(_fixture("dashboard_snapshot.json")["buses"]["stops"])
-    assert all(len(r["points"]) >= 2 for r in area["routes"])
-    for route in area["routes"]:  # the road passes every stop, in order
-        assert [point for point in route["path"] if point in route["points"]] == route["points"]
-    assert any(len(r["path"]) > len(r["points"]) for r in area["routes"])
-    assert any(r["path"] == r["points"] for r in area["routes"])  # one left straight
+    ours = [[s["lat"], s["lon"]] for s in area["stops"]]
+    for route in area["routes"]:  # at least two points, through one of our stops
+        assert len(route["path"]) >= 2 and any(point in ours for point in route["path"])
+    assert len({len(r["path"]) for r in area["routes"]}) > 1  # one follows the roads, one is straight
 
 
 def test_history_fixture_follows_the_contract():
