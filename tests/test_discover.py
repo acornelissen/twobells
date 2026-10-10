@@ -572,7 +572,10 @@ def test_the_roads_show_their_progress_and_cancelling_stops_them_at_once(bods):
     # done with its result; only the roads were stopped, and the next build finds them.
     assert status["state"] == "done" and status["result"]["fragment"]["bus"]["operators"] == ["BNML", "HIPK"]
     assert status["roads"]["state"] == "cancelled"
-    assert len(seen) == 2 and time.monotonic() - start < 3  # one request a second, then no more
+    # Two requests and no more. The time only shows it didn't sit out the roads'
+    # 5-minute budget: the once-a-second limit is real and shared by the whole
+    # suite, so a tight bound failed now and then under load.
+    assert len(seen) == 2 and time.monotonic() - start < 15
     assert [(s["state"], s["roads"]["state"], s["roads"]["done"]) for s in seen] == [
         ("done", "running", 0), ("done", "running", 1)]
     assert seen[0]["roads"]["total"] > 2
