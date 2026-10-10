@@ -1,0 +1,36 @@
+# Tool versions and tasks for working on the board. `mise install`, then
+# `mise run setup` once; `mise tasks` lists the rest.
+[tools]
+python = "3.12.14"  # the Dockerfile's python:3.12-slim
+ruff = "0.16.10"    # for editors and the shell; keep in step with ruff in pyproject's dev extras
+node = "22.22.3"    # only for the JS behaviour tests, which skip without node
+
+[env]
+# The project's venv, made with the python above on first use and active in
+# the shell. Tasks still name .venv/bin/ outright, so a venv activated by hand
+# elsewhere can't take their place on PATH.
+_.python.venv = { path = ".venv", create = true }
+
+[tasks.setup]
+description = "Install the package and its dev tools into .venv"
+run = '.venv/bin/python -m pip install -e ".[dev]"'
+
+[tasks.test]
+description = "Run the test suite"
+run = ".venv/bin/pytest -q"
+
+[tasks.lint]
+description = "Check the code with ruff"
+run = ".venv/bin/ruff check src tests tools"
+
+[tasks.demo]
+description = "Render sample data to preview.png"
+run = ".venv/bin/departureboard demo --png preview.png"
+
+[tasks.emulate]
+description = "Browser panel emulator with sample data"
+run = ".venv/bin/departureboard emulate --demo"
+
+[tasks.dashboard]
+description = "Serve the dashboard with ./config.toml and ./secrets.env"
+run = ".venv/bin/departureboard dashboard --config config.toml --secrets secrets.env"

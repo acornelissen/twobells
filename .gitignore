@@ -1,6 +1,11 @@
 __pycache__/
 *.pyc
 .venv/
+# Personal mise overrides; mise.toml itself is shared
+mise.local.toml
+.mise.local.toml
+mise.*.local.toml
+.mise.*.local.toml
 *.egg-info/
 .pytest_cache/
 secrets.env
