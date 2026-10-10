@@ -23,6 +23,10 @@ start, each with its content type set here; its API takes JSON, only from a
 signed-in session, with the session's form token in an X-CSRF-Token header,
 from this same origin, and no bigger than setupapi.MAX_BODY. Until the board
 is set up, claiming the page or signing in opens the wizard.
+
+Every POST body, form or step, needs one plain Content-Length within its
+limit (formpages.read_body); anything else is refused unread, and the
+connection closed.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ import re
 import sys
 import time
 from dataclasses import dataclass, field
+from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable, Mapping
@@ -61,6 +66,7 @@ from .formpages import (
     Wording,
     document,
     parse_form,
+    read_body,
 )
 
 # Their home before auth.py; the old names still work.
@@ -107,6 +113,12 @@ _SETUP_STEP = re.compile(r"^[a-z]{1,20}$")
 SETUP_TYPES = WIZARD_TYPES
 JSON = "application/json; charset=utf-8"
 TEXT = "text/plain; charset=utf-8"
+# A wizard step's body refused unread, by formpages.read_body's status.
+_STEP_BODY_REFUSED = {
+    400: "Send the request with one plain length",
+    411: "Say how long the request is",
+    413: "That request is too big",
+}
 
 
 def _json_reply(status: int, value: dict) -> Reply:
@@ -192,15 +204,16 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
             return False
 
         def _form(self) -> dict[str, str] | None:
+            """The POST's form, or None once it has been refused: unread if it
+            isn't framed by one plain length within MAX_BODY."""
+            body = read_body(self.headers, self.rfile, MAX_BODY)
+            if isinstance(body, int):
+                self._send(body, HTTPStatus(body).phrase.encode(), TEXT, extra={"Connection": "close"})
+                return None
             if self.headers.get_content_type() != "application/x-www-form-urlencoded":
+                self._send(400, b"Bad request", TEXT)
                 return None
-            try:
-                length = int(self.headers.get("Content-Length", "0"))
-            except ValueError:
-                return None
-            if not 0 <= length <= MAX_BODY:
-                return None
-            return parse_form(self.rfile.read(length))
+            return parse_form(body)
 
         def do_GET(self) -> None:  # noqa: N802 - http.server API
             if self._refuse_outsiders():
@@ -252,23 +265,21 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
         def _setup_step(self, name: str) -> None:
             """One wizard step: signed in, with the session's token in the
             header, JSON of a sensible size. Same-origin is checked before this,
-            and the size before the body is read."""
+            and the name and the body's framing before the body is read."""
+            if not _SETUP_STEP.match(name):
+                self._setup_reply(_json_reply(404, {"error": "No such setup step"}))
+                return
+            body = read_body(self.headers, self.rfile, setupapi.MAX_BODY)
+            if isinstance(body, int):
+                reply = _json_reply(body, {"error": _STEP_BODY_REFUSED[body]})
+                self._send(reply.status, reply.body, reply.content_type, extra={"Connection": "close"},
+                           headers=setupapi.PAGE_HEADERS)
+                return
             refused = pages.wizard_refusal(self.headers)
             if refused is not None:
                 self._setup_reply(refused)
                 return
-            try:
-                length = int(self.headers.get("Content-Length", ""))
-            except ValueError:
-                self._setup_reply(_json_reply(411, {"error": "Say how long the request is"}))
-                return
-            if not 0 <= length <= setupapi.MAX_BODY:
-                self._setup_reply(_json_reply(413, {"error": "That request is too big"}))
-                return
-            if not _SETUP_STEP.match(name):
-                self._setup_reply(_json_reply(404, {"error": "No such setup step"}))
-                return
-            self._setup_reply(pages.wizard_step(name, self.rfile.read(length)))
+            self._setup_reply(pages.wizard_step(name, body))
 
         def do_POST(self) -> None:  # noqa: N802 - http.server API
             if self._refuse_outsiders():
@@ -282,7 +293,6 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
                 return
             fields = self._form()
             if fields is None:
-                self._send(400, b"Bad request", TEXT)
                 return
             client = self.client_address[0]
             if path == "/login":

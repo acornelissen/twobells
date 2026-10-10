@@ -293,8 +293,54 @@ def test_oversized_or_wrong_type_bodies_are_refused(server):
     conn.close()
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     conn.request("POST", "/login", "a=1", {"Host": f"localhost:{port}", "Origin": f"http://localhost:{port}", "Content-Type": "application/x-www-form-urlencoded", "Content-Length": str(10**7)})
-    assert conn.getresponse().status == 400
+    assert conn.getresponse().status == 413
     conn.close()
+
+
+def framed_post(port, path, pairs, body=b"", cookie=None, origin="same"):
+    """POST with exactly these extra (name, value) header pairs, repeats and
+    all, and no Content-Length unless they hold one."""
+    host = f"localhost:{port}"
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    conn.putrequest("POST", path, skip_host=True, skip_accept_encoding=True)
+    conn.putheader("Host", host)
+    if origin == "same":
+        conn.putheader("Origin", f"http://{host}")
+    elif origin:
+        conn.putheader("Origin", origin)
+    if cookie:
+        conn.putheader("Cookie", cookie)
+    for name, value in pairs:
+        conn.putheader(name, value)
+    conn.endheaders()
+    if body:
+        conn.send(body)
+    response = conn.getresponse()
+    text = response.read().decode()
+    conn.close()
+    return response, text
+
+
+FORM = ("Content-Type", "application/x-www-form-urlencoded")
+BAD_FRAMING = [
+    ([("Transfer-Encoding", "chunked")], 400),
+    ([("Transfer-Encoding", "chunked"), ("Content-Length", "3")], 400),
+    ([("Content-Length", "3"), ("Content-Length", "3")], 400),
+    ([], 411),
+    ([("Content-Length", "three")], 411),
+    ([("Content-Length", "-1")], 411),
+    ([("Content-Length", str(10**7))], 413),
+]
+
+
+@pytest.mark.parametrize("pairs, status", BAD_FRAMING)
+def test_a_form_framed_any_way_but_one_plain_length_is_refused_unread(server, pairs, status):
+    port, page, _ = server
+    cookie, csrf = sign_in(port)
+    response, text = framed_post(port, "/", [FORM, *pairs], cookie=cookie)
+    assert response.status == status and response.getheader("Connection") == "close"
+    assert "default-src 'none'" in response.getheader("Content-Security-Policy")
+    assert "<html" not in text.lower() and page.saved == []
 
 
 class SlowPassword(Password):
@@ -812,7 +858,7 @@ def test_a_step_from_outside_the_home_network_is_refused(wizard_server):
     ({"content_type": None}, 415),
     ({"body": b"{" + b" " * 20000 + b"}"}, 413),
     ({"length": 10**7}, 413),
-    ({"length": -1}, 413),
+    ({"length": -1}, 411),
     ({"length": "none"}, 411),
     ({"body": b"not json"}, 400),
     ({"body": b"[" * 50 + b"]" * 50}, 400),  # nested too deep
@@ -825,6 +871,18 @@ def test_a_step_must_be_json_of_a_sensible_size(wizard_server, change, status):
     response, text = step(port, "begin", cookie=cookie, csrf=csrf, **change)
     assert response.status == status and "error" in json.loads(text)
     assert steps.calls == []
+
+
+@pytest.mark.parametrize("pairs, status", BAD_FRAMING)
+def test_a_step_framed_any_way_but_one_plain_length_is_refused_unread(wizard_server, pairs, status):
+    port, steps, *_ = wizard_server
+    cookie = signed_in(wizard_server)
+    csrf = session_token(port, cookie)
+    response, text = framed_post(port, "/setup/api/begin",
+                                 [("Content-Type", "application/json"), ("X-CSRF-Token", csrf), *pairs],
+                                 cookie=cookie)
+    assert response.status == status and response.getheader("Connection") == "close"
+    assert "error" in json.loads(text) and steps.calls == []
 
 
 @pytest.mark.parametrize("name", ["Begin", "be-gin", "begin/x", "a" * 21, ""])

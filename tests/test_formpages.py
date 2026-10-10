@@ -21,6 +21,7 @@ from departureboard.formpages import (
     compact_json,
     document,
     parse_form,
+    read_body,
 )
 
 
@@ -36,6 +37,53 @@ def test_a_form_with_too_many_fields_is_refused():
     assert len(parse_form(b"&".join(b"f%d=1" % n for n in range(300)))) == 300
     with pytest.raises(ValueError):
         parse_form(b"&".join(b"f%d=1" % n for n in range(301)))
+
+
+def framed(*pairs):
+    """Request headers with exactly these (name, value) pairs, repeats and all."""
+    message = Message()
+    for name, value in pairs:
+        message[name] = value
+    return message
+
+
+class Stream:
+    """A request body that remembers whether anyone read it."""
+
+    def __init__(self, data=b"a=1"):
+        self.data = data
+        self.read_from = False
+
+    def read(self, size):
+        self.read_from = True
+        return self.data[:size]
+
+
+def test_a_body_with_one_plain_length_is_read_to_that_length():
+    stream = Stream(b"a=1&b=2")
+    assert read_body(framed(("Content-Length", "3")), stream, 10) == b"a=1"
+    assert read_body(framed(("Content-Length", "0")), Stream(), 10) == b""
+    assert read_body(framed(("Content-Length", "10")), Stream(), 10) == b"a=1"
+
+
+@pytest.mark.parametrize("pairs, status", [
+    ([("Transfer-Encoding", "chunked")], 400),
+    ([("Transfer-Encoding", "chunked"), ("Content-Length", "3")], 400),
+    ([("Content-Length", "3"), ("Content-Length", "3")], 400),
+    ([], 411),
+    ([("Content-Length", "")], 411),
+    ([("Content-Length", "three")], 411),
+    ([("Content-Length", "-1")], 411),
+    ([("Content-Length", "+3")], 411),
+    ([("Content-Length", "3.0")], 411),
+    ([("Content-Length", "\u00b2")], 411),  # a digit to str.isdigit, not to int()
+    ([("Content-Length", "11")], 413),
+    ([("Content-Length", "9" * 5000)], 413),  # past int()'s own digit limit
+])
+def test_a_body_framed_any_other_way_is_refused_unread(pairs, status):
+    stream = Stream()
+    assert read_body(framed(*pairs), stream, 10) == status
+    assert not stream.read_from
 
 
 def test_the_document_escapes_its_title_and_names_its_stylesheet():

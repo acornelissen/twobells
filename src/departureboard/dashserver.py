@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Callable
 
 from . import dashsettings
 from .auth import local_host, private_address
+from .formpages import read_body
 from .snapshot import Hub
 
 if TYPE_CHECKING:
@@ -369,25 +370,13 @@ class _Handler(BaseHTTPRequestHandler):
             return
         body = b""
         if self.command == "POST":
-            body = self._body(dashsettings.max_body(path))
+            body = read_body(self.headers, self.rfile, dashsettings.max_body(path))
             if isinstance(body, int):  # refused unread, so the connection can't carry on
                 self._send(body, HTTPStatus(body).phrase.encode(), extra={"Connection": "close"}, security=security)
                 return
         query = raw.split("#", 1)[0].partition("?")[2]
         reply = self.app.settings.handle(self.command, path, query, self.headers, self.client_address[0], body)
         self._send(reply.status, reply.body, reply.content_type, extra=reply.headers, security=security)
-
-    def _body(self, limit: int) -> bytes | int:
-        """A POST's body, or the status refusing it: only a plain
-        Content-Length of at most `limit` bytes."""
-        if self.headers.get("Transfer-Encoding") is not None or len(self.headers.get_all("Content-Length") or []) > 1:
-            return 400
-        length = (self.headers.get("Content-Length") or "").strip()
-        if not length.isdigit():
-            return 411
-        if int(length) > limit:
-            return 413
-        return self.rfile.read(int(length))
 
     # Server-sent events
 

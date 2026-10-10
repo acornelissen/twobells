@@ -6,9 +6,9 @@ in, ask for a reset code, reset the password with it (which is also the
 first claim, when no password is set), sign out, and save the settings
 form. It also checks a setup wizard step (the session, its token in
 X-CSRF-Token, JSON) and runs it. Each host routes its own requests, refuses
-outsiders, checks the origin, reads bodies under its own limits, serves the
-wizard's files and sends its own security headers; it hands the parsed form
-(or the step's body) here and sends back the Reply.
+outsiders, checks the origin, reads bodies (with read_body, under its own
+limits), serves the wizard's files and sends its own security headers; it
+hands the parsed form (or the step's body) here and sends back the Reply.
 
 What differs between the hosts is passed in: the path prefix ("" or
 "/settings"), the sessions and form tokens (each with its own cookie name
@@ -22,9 +22,10 @@ from __future__ import annotations
 import html
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Protocol
+from typing import BinaryIO, Callable, Protocol
 from urllib.parse import parse_qs
 
 from . import setupapi
@@ -54,6 +55,7 @@ WIZARD_TYPES = {
 # The same words whether the code was wrong, used, run out, voided or never
 # issued, so a guesser learns nothing about whether there is one.
 WRONG_CODE = "That code isn't right, or it has run out. Ask for a new code and try again."
+_LENGTH = re.compile(r"[0-9]{1,15}")
 
 
 @dataclass(frozen=True)
@@ -84,6 +86,8 @@ class Headers(Protocol):
     """A request's headers, as http.server gives them."""
 
     def get(self, name: str, default: str | None = None) -> str | None: ...
+
+    def get_all(self, name: str, failobj: list | None = None) -> list[str] | None: ...
 
     def get_content_type(self) -> str: ...
 
@@ -127,6 +131,23 @@ def parse_form(body: bytes) -> dict[str, str]:
     UTF-8 become U+FFFD; past 300 fields it is refused (ValueError)."""
     parsed = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True, max_num_fields=300)
     return {key: values[-1] for key, values in parsed.items()}
+
+
+def read_body(headers: Headers, stream: BinaryIO, limit: int) -> bytes | int:
+    """A POST's body, or the status refusing it unread: 400 for any
+    Transfer-Encoding or more than one Content-Length, 411 for a missing one
+    or one that isn't plain digits, 413 for more than `limit` bytes. Only one
+    plain length is taken, so nothing in front of the host can read the body
+    as ending somewhere else. A refusal leaves the body on the wire, so the
+    host sends it with Connection: close."""
+    if headers.get("Transfer-Encoding") is not None or len(headers.get_all("Content-Length") or []) > 1:
+        return 400
+    length = (headers.get("Content-Length") or "").strip()
+    if not _LENGTH.fullmatch(length):
+        return 413 if length.isascii() and length.isdigit() else 411
+    if int(length) > limit:
+        return 413
+    return stream.read(int(length))
 
 
 def redirect(where: str, extra: dict[str, str] | None = None) -> Reply:
