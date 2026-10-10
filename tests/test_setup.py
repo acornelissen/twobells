@@ -35,9 +35,10 @@ from departureboard.setup import (
 FIXTURES = Path(__file__).parent / "fixtures"
 NAPTAN = (FIXTURES / "naptan_setup_glossop.csv").read_bytes()
 
-# Hadfield station's postcode, a public place, standing in for a home.
-HOME = Place(53.4620, -1.9656, "SK13 1AH", "England", "High Peak")
-HOME_TEXT = ("53.4620", "-1.9656", "53.46200", "-1.96560")
+# Hadfield station's postcode (National Rail lists the station at SK13 1AH),
+# a public place, standing in for a home, at its postcodes.io position.
+HOME = Place(53.461964, -1.965633, "SK13 1AH", "England", "High Peak")
+HOME_TEXT = ("53.461964", "-1.965633", "53.46196", "-1.96563", "53.4620", "-1.9656")
 # Glossop station: the stop searches look around it, as the NaPTAN fixture
 # holds the town centre's stops.
 TOWN = Place(53.44447, -1.94907, "Glossop station")
@@ -52,8 +53,8 @@ POSTCODE_ANSWER = {
         "eastings": 402379,
         "northings": 396134,
         "country": "England",
-        "longitude": -1.9656,
-        "latitude": 53.4620,
+        "longitude": -1.965633,
+        "latitude": 53.461964,
         "region": "East Midlands",
         "outcode": "SK13",
         "incode": "1AH",
@@ -79,7 +80,7 @@ NOMINATIM_ANSWER = [
         "importance": 0.0000522,
         "addresstype": "highway",
         "name": "Hadfield Station",
-        "display_name": "Hadfield Station, Station Road, Hadfield, High Peak, Derbyshire, England, SK13 1DL, United Kingdom",
+        "display_name": "Hadfield Station, Station Road, Hadfield, High Peak, Derbyshire, England, SK13 1AH, United Kingdom",
         "address": {
             "highway": "Hadfield Station",
             "road": "Station Road",
@@ -88,7 +89,7 @@ NOMINATIM_ANSWER = [
             "county": "Derbyshire",
             "state_district": "East Midlands",
             "state": "England",
-            "postcode": "SK13 1DL",
+            "postcode": "SK13 1AH",  # OSM files this stop under SK13 1DL, among houses
             "country": "United Kingdom",
             "country_code": "gb",
         },
@@ -181,7 +182,7 @@ def test_postcode_lookup_asks_postcodes_io_with_the_postcode_quoted():
     place = lookup_postcode("sk13 1ah", http_get=getter)
     assert getter.urls == ["https://api.postcodes.io/postcodes/SK13%201AH"]
     assert getter.caps == [setup.MAX_POSTCODE_BYTES]
-    assert place == Place(53.4620, -1.9656, "SK13 1AH", "England", "High Peak")
+    assert place == HOME
 
 
 @pytest.mark.parametrize(
@@ -527,7 +528,7 @@ def test_walk_times_come_from_one_router_request_rounded_up():
     assert len(getter.urls) == 1
     assert getter.urls[0] == (
         "https://routing.openstreetmap.de/routed-foot/table/v1/foot/"
-        "-1.965600,53.462000;-1.965320,53.460740;-1.948999,53.443840;-1.989039,53.458888?sources=0"
+        "-1.965633,53.461964;-1.965320,53.460740;-1.948999,53.443840;-1.989039,53.458888?sources=0"
     )
     assert walk["HDF"] == (2, "route")  # 61.2 s
     assert walk["1000DGHS0900"] == (10, "route")  # 600 s exactly
@@ -598,12 +599,12 @@ def test_a_destination_outside_the_uk_is_refused():
 def test_logs_never_contain_coordinates_postcodes_or_addresses(caplog):
     caplog.set_level(logging.DEBUG)
     url_error = URLError("failed for https://routing.openstreetmap.de/routed-foot/table/v1/foot/"
-                         "-1.965600,53.462000;-1.965320,53.460740?sources=0 near 53.4620, -1.9656")
+                         "-1.965633,53.461964;-1.965320,53.460740?sources=0 near 53.461964, -1.965633")
     walk_minutes(HOME, PLACES, http_get=Getter(error=url_error))
     walk_minutes(HOME, PLACES, http_get=Getter(b"not json"))
     lookup_postcode("SK13 1AH", http_get=Getter(POSTCODE_ANSWER))
     with pytest.raises(SetupError):
-        lookup_postcode("SK13 1AH", http_get=Getter(error=URLError("SK13 1AH at 53.4620,-1.9656")))
+        lookup_postcode("SK13 1AH", http_get=Getter(error=URLError("SK13 1AH at 53.461964,-1.965633")))
     search("Station Road, Hadfield", Getter(NOMINATIM_ANSWER))
     nearby_stops(HOME.lat, HOME.lon, http_get=Getter(NAPTAN), grid=GRID)
     nearby_stations(HOME.lat, HOME.lon)
