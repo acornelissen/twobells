@@ -607,6 +607,16 @@ def test_the_setup_page_shows_its_address_and_is_ink_on_paper_or_light_on_black(
     assert colours(render_setup(SETUP_PAGE, mono, PHAT, dark=True)) == {0, 1}
 
 
+@pytest.mark.parametrize("panel", PANELS)
+def test_the_board_shows_the_address_without_http(panel):
+    # Browsers take name.local:8090/settings as typed; leaving out http://
+    # keeps a long Pi name readable on the small panels.
+    view = SetupView("http://kitchen-board.local:8090/settings")
+    assert view.shown == "kitchen-board.local:8090/settings"
+    bare = SetupView("kitchen-board.local:8090/settings")
+    assert render_setup(view, PALETTE, panel).tobytes() == render_setup(bare, PALETTE, panel).tobytes()
+
+
 def test_the_setup_page_signature_follows_its_address():
     assert SETUP_PAGE.signature() == SetupView(SETUP_PAGE.url).signature()
     assert SETUP_PAGE.signature() != SetupView("http://pi.local:8090/settings").signature()

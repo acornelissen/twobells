@@ -124,6 +124,12 @@ class SetupView:
     heading: str = SETUP_HEADING
     note: str = SETUP_NOTE
 
+    @property
+    def shown(self) -> str:
+        """The address as the board draws it: without http://, which browsers
+        add themselves, so a long name stays readable on a small panel."""
+        return self.url.removeprefix("http://")
+
     def signature(self) -> str:
         return hashlib.sha256(json.dumps(["setup page", self.url, self.heading, self.note]).encode()).hexdigest()
 

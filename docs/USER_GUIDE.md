@@ -151,7 +151,7 @@ On bank holidays trains and buses run a Sunday service, so the board treats them
 
 ### Other things the board can show
 
-- **Set me up**, with the settings address (`http://<pi name>.local:8090/settings`): the app isn't set up yet. See [First run](#4-first-run-and-the-setup-wizard).
+- **Set me up**, with the settings address (`<pi name>.local:8090/settings`; type it as shown, the browser adds `http://`): the app isn't set up yet. See [First run](#4-first-run-and-the-setup-wizard).
 - **Board off**, with the same address: the board view is switched off on the General tab. Nothing is fetched for it until it is back on.
 - **A 6-digit code:** someone asked for one to set the settings password. It goes once it is used, or after 10 minutes.
 

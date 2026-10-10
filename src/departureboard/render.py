@@ -472,7 +472,7 @@ def render_setup(view: SetupView, palette: Palette, panel: Panel = PHAT, dark: b
     note_y = pad + heading_h + pad
     draw.text(((width - drawn_length(small, note)) / 2, note_y), note, font=small, fill=ink)
     limit = width - 2 * pad - 2 * s
-    lines, font = address_lines(view.url, limit, address_h)
+    lines, font = address_lines(view.shown, limit, address_h)
     band = address_h / len(lines)
     for i, line in enumerate(lines):
         boxed(line, note_y + line_h + pad + i * band, band, limit, font)
