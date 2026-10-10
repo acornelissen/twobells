@@ -779,8 +779,11 @@ SETTINGS_CHECK_S = 2.0
 
 
 def _dashboard_wanted(store: Store, install: Install) -> bool:
-    """Whether serve should run the dashboard: its view is on, and there is
-    something to show. ConfigError if [app] views is wrong."""
+    """Whether serve should run the dashboard: the install offers it, its
+    view is on, and there is something to show. ConfigError if [app] views
+    is wrong, or the settings can't be read, where it is offered."""
+    if "dashboard" not in install.offered:
+        return False
     return "dashboard" in views(store.data(), install) and not needs_setup(store)
 
 

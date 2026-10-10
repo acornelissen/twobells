@@ -993,6 +993,17 @@ def test_serve_on_a_pi_runs_no_dashboard_and_hands_setup_to_the_setup_service(tm
     assert app.settings.store.folder == tmp_path / "state"
 
 
+def test_a_pi_with_broken_settings_serves_them_without_a_word_about_a_dashboard(tmp_path, served, monkeypatch,
+                                                                                  capsys):
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
+    monkeypatch.setenv("STATE_DIRECTORY", str(tmp_path / "lib"))
+    config = tmp_path / "config.toml"
+    config.write_text("display = [\n")
+    assert main(["web", "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
+    assert "dashboard" not in capsys.readouterr().err.lower()
+    assert served["app"].settings.problem == "" and served["app"].hub is None
+
+
 def test_serve_starts_no_dashboard_until_there_is_something_to_show(tmp_path, served, capsys):
     # A new container: no config.toml, nothing saved. The settings open the wizard.
     folder = tmp_path / "data"
