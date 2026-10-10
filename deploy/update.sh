@@ -40,8 +40,10 @@ trap 'rm -rf "$build"' EXIT
 cp -a "$REPO/." "$build/"
 rm -rf "$build/build" "$build"/src/*.egg-info
 
-# The code only: its dependencies are already in the venv.
-"$PREFIX/venv/bin/pip" install --quiet --no-deps --force-reinstall "$build"
+# The code only: its dependencies are already in the venv. It is built with
+# the hashed setuptools, not one fetched for the build.
+"$PREFIX/venv/bin/pip" install --quiet --require-hashes --no-deps -r "$REPO/deploy/requirements-build.txt"
+"$PREFIX/venv/bin/pip" install --quiet --no-deps --no-build-isolation --force-reinstall "$build"
 
 # Ask the new code, as the services' user, about the settings in force:
 # config.toml with those saved from the settings page over it. No keys are read.

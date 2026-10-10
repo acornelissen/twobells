@@ -27,6 +27,21 @@ def test_dependencies_come_from_hashed_wheels_only():
             assert re.search(r"--hash=sha256:[0-9a-f]{64}", block)
 
 
+def test_the_pi_builds_the_code_with_hashed_tools_and_fetches_nothing_else():
+    # Build isolation would fetch whatever setuptools is newest, unpinned, and
+    # run it as root; the build instead uses the hashed one, put in the venv first.
+    build_tools = (ROOT / "deploy" / "requirements-build.txt").read_text()
+    assert re.findall(r"^([a-z0-9-]+)==\S+ \\$", build_tools, re.M) == ["setuptools"]
+    assert len(re.findall(r"--hash=sha256:[0-9a-f]{64}", build_tools)) >= 1
+    for name in ("install.sh", "update.sh"):
+        lines = [line.strip() for line in _script(name).splitlines()
+                 if line.strip().startswith('"$PREFIX/venv/bin/pip" install')]
+        tools = next(i for i, line in enumerate(lines) if "requirements-build.txt" in line)
+        assert "--require-hashes" in lines[tools] and "--no-deps" in lines[tools], name
+        code = [i for i, line in enumerate(lines) if '"$build"' in line]
+        assert code and all(i > tools and "--no-build-isolation" in lines[i] for i in code), name
+
+
 def test_it_runs_as_a_non_root_user_and_checks_its_health():
     assert re.search(r"^USER 10001:10001$", DOCKERFILE, re.M)
     assert "HEALTHCHECK" in DOCKERFILE and "/healthz" in DOCKERFILE

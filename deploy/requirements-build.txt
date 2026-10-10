@@ -1,0 +1,7 @@
+# The build backend pyproject.toml asks for, at an exact version with its
+# hashes, so the Pi builds the code with --no-build-isolation and pip fetches
+# nothing unpinned (as root) to build it. The same pin as
+# .github/requirements-build.txt; Dependabot keeps both up to date.
+setuptools==84.0.0 \
+    --hash=sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670 \
+    --hash=sha256:f4695c21257f0d9b537ec2692c941d02ee143b7cc1276941349a546573b2ef73

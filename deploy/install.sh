@@ -48,7 +48,9 @@ rm -rf "$build/build" "$build"/src/*.egg-info
 # dependencies are the Debian packages above. (Not pip check: with system site
 # packages it also judges Debian's own, some of which it reports as broken.)
 "$PREFIX/venv/bin/pip" install --require-hashes --no-deps -r "$REPO/deploy/requirements-pi.txt"
-"$PREFIX/venv/bin/pip" install --no-deps "$build"
+# The code is built with the hashed setuptools, not one fetched for the build.
+"$PREFIX/venv/bin/pip" install --require-hashes --no-deps -r "$REPO/deploy/requirements-build.txt"
+"$PREFIX/venv/bin/pip" install --no-deps --no-build-isolation "$build"
 "$PREFIX/venv/bin/python" -c "import departureboard.cli, inky, PIL, numpy, smbus2, spidev, gpiod" \
   || { echo "A dependency is missing; see the error above" >&2; exit 1; }
 
