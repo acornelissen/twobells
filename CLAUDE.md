@@ -60,18 +60,43 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ## Build & Test
 
-_Add your build and test commands here_
+Python 3.12 package, tools pinned in `mise.toml` (python, ruff, node).
 
 ```bash
-# Example:
-# npm install
-# npm test
+mise install          # pinned tools
+mise run setup        # .venv with the package and dev extras (pip install -e ".[dev]")
+mise run test         # pytest -q
+mise run lint         # ruff check src tests tools (config in pyproject.toml)
+mise run demo         # departureboard demo --png preview.png, no keys needed
+mise run emulate      # browser panel emulator on sample data
+mise run dashboard    # dashboard with ./config.toml and ./secrets.env
 ```
+
+- Tests are pytest in `tests/`; `pythonpath = ["src"]`, so they run against this checkout's `src`.
+- `test_deploy.py` keeps the Dockerfile, compose file, systemd units and the docs that describe them in step;
+  `test_cli.py` covers the command line. Change the docs and deploy files together with the code.
+- The dashboard's and emulator's JS behaviour tests run through `node` when it is on PATH and skip otherwise.
+- Don't run a formatter over the codebase; ruff is for checks only.
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+One package, `src/departureboard`, with one CLI, `departureboard` (`cli.py`):
+
+- `run`: the board renderer for the Pi's e-paper or HDMI screen (systemd timer, or `--loop` for a screen).
+- `web`: the settings page on the home network. Its lookups go through `setup serve`
+  (`departureboard-setup.service`), which alone has outbound network access.
+- `dashboard`: the web dashboard for a Mac or NAS (`dashboard_static/`, `Dockerfile`, `docker-compose.yml`).
+- `timetable`: builds the BODS bus timetable for the configured stops.
+- `demo`, `emulate`, `probe`, `route`, `setup discover`: development and setup helpers.
+- `deploy/`: systemd units and install/update scripts for the Pi. `docs/`: user guide and API notes.
+
+A refactor is under way to merge the board and the dashboard into one app (bead epic `inky-departures-vrj`),
+so these entry points will change. Check the epic before adding to either.
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+- Security first: treat every input as hostile, validate at boundaries, least privilege in units and containers.
+- WCAG 2.2 AA is the floor for every page: keyboard use, semantic markup, contrast, visible focus.
+- Plain British English in code, UI text and docs. No emoji.
+- Conventional commits, `<type>(<scope>): <subject>`, imperative; the body says why.
+- Track work in beads (`bd`), not TODO files.

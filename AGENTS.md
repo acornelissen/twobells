@@ -1,27 +1,20 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
+## This project
 
-> **Architecture in one line:** Issues live in a local Dolt database
-> (`.beads/dolt/`); cross-machine sync uses `bd dolt push/pull` (a
-> git-compatible protocol), stored under `refs/dolt/data` on your git
-> remote — separate from `refs/heads/*` where your code lives.
-> `.beads/issues.jsonl` is a passive export, not the wire protocol.
->
-> See [sync-concepts](https://github.com/gastownhall/beads/blob/main/docs/core-concepts/sync-concepts.md)
-> for the one-screen overview and anti-patterns (don't treat JSONL as the
-> source of truth; don't `bd import` during normal operation; don't
-> reach for third-party Dolt hosting before trying the default).
-
-## Quick Reference
+Python 3.12 package in `src/departureboard` with one CLI, `departureboard`: the board renderer (`run`), the
+settings page (`web`), the dashboard (`dashboard`), the setup service (`setup serve`) and the bus timetable
+builder (`timetable`). `deploy/` holds the Pi's systemd units; the `Dockerfile` builds the dashboard's container.
+A refactor is merging the board and the dashboard into one app (bead epic `inky-departures-vrj`).
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
-bd close <id>         # Complete work
-bd dolt push          # Push beads data to remote
+mise install && mise run setup   # pinned tools, then .venv
+mise run test                    # pytest
+mise run lint                    # ruff
 ```
+
+`CLAUDE.md` has the details: tests that keep docs and deploy files in step, and the project's conventions
+(security first, WCAG 2.2 AA, plain British English, conventional commits, beads for tracking).
 
 ## Non-Interactive Shell Commands
 
