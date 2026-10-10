@@ -94,11 +94,20 @@ def test_index_references_resolve():
     for tag, attrs in _page().elements:
         for name in ("href", "src"):
             value = attrs.get(name)
-            if value and not value.startswith(("#", "https://")):
+            # /settings is the server's own settings area, not a file.
+            if value and not value.startswith(("#", "https://")) and value != "/settings":
                 refs.append(value)
     assert "/static/main.js" in refs
     for ref in refs:
         assert _served(ref).is_file(), ref
+
+
+def test_the_header_links_to_the_settings():
+    page = _page()
+    header = [i for i, (tag, attrs) in enumerate(page.elements) if tag == "header"]
+    main = [i for i, (tag, _) in enumerate(page.elements) if tag == "main"]
+    links = [attrs for tag, attrs in page.elements[header[0]:main[0]] if tag == "a"]
+    assert {"class": "top-link", "href": "/settings"} in links
 
 
 IMPORT = re.compile(

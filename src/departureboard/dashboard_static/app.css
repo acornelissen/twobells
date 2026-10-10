@@ -185,6 +185,19 @@ button.link {
 .connection[data-state="polling"] { color: var(--late-fg); background: var(--late-bg); }
 .connection[data-state="offline"] { color: var(--bad-fg); background: var(--bad-bg); }
 #theme-toggle[aria-pressed="true"] { color: var(--accent-fg); background: var(--accent); border-color: var(--accent); }
+/* Looks like the quiet buttons beside it, with their target size. */
+.top-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.5rem 1rem;
+  color: var(--fg);
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid var(--edge);
+  border-radius: 0.5rem;
+}
+.top-link:hover { text-decoration: underline; text-underline-offset: 0.15em; }
 
 main { max-width: 84rem; margin: 0 auto; padding: 0 1rem 2rem; }
 main:focus { outline: none; }
