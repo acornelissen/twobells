@@ -164,7 +164,7 @@ Saving keeps your other settings: the look, rotation, text size and so on. Chang
 
 Where home goes: your postcode to postcodes.io (or the address you type to OpenStreetMap's Nominatim), then its position once to the OpenStreetMap foot router for walk times. The maps, only if you open them, load pictures from OpenStreetMap, which then sees roughly where home is. The board keeps only a rough position, to about 1 km, for the rain warning.
 
-Why setup has a service of its own: the settings page is kept to your home network, by the page and by the Pi's own firewall rules for it, so even a flaw in it can't reach the internet. The wizard's lookups, key tests and bus company search do need the internet, so on the Pi they run in a separate service, `departureboard-setup`, that starts when you use setup and stops a minute after. The page passes it each request through a private folder in the Pi's memory (`/run/departureboard-setup`), deleted as soon as it is read: nothing from setup, not your home's position nor a pasted key, is written to the SD card as a file. Memory itself can reach the card if the Pi swaps to it (with `dphys-swapfile`, say), as with anything else the Pi is doing. Saved keys never go that way, as the setup service reads them itself. Its search for bus companies runs at a lower priority than everything else, so the board and the wizard's other lookups stay quick while it works. On the dashboard, the lookups run in the dashboard itself.
+Why setup has a service of its own: the settings page is kept to your home network, by the page and by the Pi's own firewall rules for it, so the page can't open a connection to the internet itself. That narrows what a flaw in the page could do, but it isn't a wall: the page and the setup service run as the same user, and the page still tells the service what to look up. (On a Pi Zero or Zero W the firewall rules can't be enforced; see the [README](../README.md#settings-page).) The wizard's lookups, key tests and bus company search do need the internet, so on the Pi they run in a separate service, `departureboard-setup`, that starts when you use setup and stops a minute after. The page passes it each request through a private folder in the Pi's memory (`/run/departureboard-setup`), deleted as soon as it is read: nothing from setup, not your home's position nor a pasted key, is written to the SD card as a file. Memory itself can reach the card if the Pi swaps to it (with `dphys-swapfile`, say), as with anything else the Pi is doing. Saved keys never go that way, as the setup service reads them itself. Its search for bus companies runs at a lower priority than everything else, so the board and the wizard's other lookups stay quick while it works. On the dashboard, the lookups run in the dashboard itself.
 
 The wizard is the one part of the settings page that needs JavaScript. The rest works without it.
 
@@ -176,8 +176,10 @@ The wizard is the one part of the settings page that needs JavaScript. The rest 
 - **Look:** station board or plain.
 - **Accent colour:** the look's own (amber for the station board, red for plain), or another that stays readable on the look's background. A colour too faint on the background isn't offered.
 - **Rotation:** if the display is mounted upside down (or, for the screen, on its side).
-- **Text size:** the plain look only. *Slightly bigger* and up show fewer departures on a small display.
+- **Text size:** the plain look only. *Slightly bigger* and up show fewer departures on a small display. The page offers sizes 11 (*Standard*) to 14; `text_size` in `config.toml` takes 9 to 16. If `config.toml` sets one the page doesn't offer, saving the page replaces it with the size the box shows.
 - **Least minutes between redraws:** e-paper only. Lower means fresher but more wear and flicker; 2 is a good balance.
+- **Bank holidays:** treat them like Sundays (the usual choice), or ignore them.
+- **Bank holidays for:** England and Wales, Scotland, or Northern Ireland, wherever the board is. Each has its own bank holidays.
 
 **Trains**
 
@@ -197,9 +199,6 @@ The wizard is the one part of the settings page that needs JavaScript. The rest 
 - **Most hits a day:** a hard limit on TransportAPI lookups, used only while it stands in for the bus timetable. The free plan allows 30 a day, and each check costs one per stop.
 - **When to check:** as for trains.
 - **Walk to each stop:** one per line (`A = 7`), or one number for every stop. Empty means no leave times.
-
-- **Bank holidays:** treat them like Sundays (the usual choice), or ignore them.
-- **Bank holidays for:** England and Wales, Scotland, or Northern Ireland, wherever the board is. Each has its own bank holidays.
 
 **Rain warning**
 
@@ -236,7 +235,7 @@ A few things aren't on the page. The setup wizard sets where bus times come from
 - **"That password isn't right":** after 5 wrong tries, that device is locked out for 15 minutes and sees "Too many attempts. Try again in 15 minutes."
 - **"Busy, try again in a moment":** a few sign-ins were being checked at once; try again.
 - **"Set a password first":** no password has been set yet; see [Setting up the settings page](#the-settings-page).
-- **Forgotten password:** set a new one on the Pi (same command as when setting it up).
+- **Forgotten password:** press **Forgot password?** on the sign-in page and type the code the board shows with a new password (see [The settings page](#the-settings-page)). If the board can't show a code, print one on the Pi.
 - **"Forbidden":** the page only answers devices on the home network, using its local name or address. It won't work over mobile data or a VPN to elsewhere.
 
 ---
@@ -303,7 +302,7 @@ windows = ["Mon-Sun 06:00-23:00"]
 
 - **The timetable** is built on the Pi by `departureboard-timetable.timer`. It checks every hour and rebuilds weekly, when a timetable in it ends, or when your stops or operators change. It downloads the operators' timetables from BODS and keeps only the journeys calling at your stops, with the days each runs: school-term-only journeys run only in the terms the timetable gives, and bank holidays follow the operator's own rules. It also keeps journeys of the same lines that end at a stand within 150 m of your stop without calling at it, only to spot the bus coming in to work a departure from your stop; they never show as departures.
 - **Each check**, the board asks BODS where those lines' buses are, matches each bus to its timetabled journey, and shows how late it is. A bus running early is shown on time, since buses wait at timing points. A bus without a live position shows its timetable time with `sch`.
-- **Building it now**, rather than waiting up to an hour:
+- **Building it now**, rather than waiting up to an hour: the service builds only when a build is due, so delete the old timetable first. Run by hand with your own config and keys (on a laptop, say), `departureboard timetable --force` does both in one step; on the Pi, use the service, which reads the keys in `/etc/departureboard/secrets.env` and writes the timetable as the board's user.
 
   ```bash
   sudo rm -f /var/lib/departureboard/bus-timetable.json     # only to rebuild
@@ -369,7 +368,7 @@ sudo -u departureboard /opt/departureboard/venv/bin/departureboard web --set-pas
 
 The page uses plain HTTP on your home network. Use a password you don't use anywhere else.
 
-Settings saved on the page go to `/var/lib/departureboard/settings.toml` and override `config.toml`, which the page never changes. Keys pasted on the page go to `/var/lib/departureboard/secrets.env`. To undo everything saved on the page, delete those two files.
+Settings saved on the page go to `/var/lib/departureboard/settings.toml` and override `config.toml`, which the page never changes. That file holds only the settings the page and the setup wizard manage; anything else put in it is ignored, and the log names it. Addresses such as `[train] base_url`, and hand-edited settings such as `display`, belong in `config.toml`. Keys pasted on the page go to `/var/lib/departureboard/secrets.env`. To undo everything saved on the page, delete those two files.
 
 ### Troubleshooting
 
@@ -414,6 +413,23 @@ departureboard demo --png preview.png           # draw a sample board without an
 departureboard emulate --demo --display hdmi-1280x400   # try the screen on a laptop
 ```
 
+### Commands and options
+
+Every command but `demo` takes `--config FILE` and `--secrets FILE`, which default to `/etc/departureboard/config.toml` and `/etc/departureboard/secrets.env`. `departureboard <command> --help` lists the options too.
+
+| Command | What it does | Options |
+|---|---|---|
+| `run` | One tick of the board: check what's due, redraw if anything changed. `departureboard.timer` runs it every minute. | `--png FILE` draws to a picture instead of the display. `--loop` keeps running, as the screen's service does; `--tick SECONDS` sets how often it ticks then (1 on a screen, 60 on e-paper). |
+| `probe train` or `probe bus` | One live call, to check the keys, station and stops. | `--stop LABEL=ATCO` (once per stop) asks those stops instead of the config's. `--save DIR` keeps TransportAPI's raw answers. `--details` (trains only) adds coaches and calling points. |
+| `timetable` | Builds the bus timetable for your stops from BODS, if a build is due. `departureboard-timetable.timer` runs it hourly. | `--force` builds it now. |
+| `demo` | Draws a sample board (a Glossop morning) to a picture, with no keys. | `--png FILE` (default `preview.png`), `--display` (default `inky`), `--theme sign` or `plain`, `--accent red` or `yellow`, `--notice` for a sample disruption notice, `--rain` for a sample rain warning. |
+| `emulate` | Runs the board against a panel drawn in your browser (see the README). | `--demo` for sample data on a fast clock, `--fake-train` for fake trains and live buses, `--display`, `--accent red` or `yellow` (demo only), `--tick SECONDS`, `--port` (default 8780), `--no-browser`. |
+| `route LINE` | Prints a `[bus.routes]` block for the screen's bus page. | `--stop LABEL` (needed), and `--noc CODE` or `--txc FILE`; see [The bus position page](#the-bus-position-page). |
+| `setup discover` | Finds the bus companies serving your stops, builds their timetable, and prints the settings to add to `config.toml`. Needs `BODS_API_KEY`. | `--stop LABEL=ATCO` (needed, once per stop). `--routes` also builds a route strip for each line. |
+| `setup serve` | Answers the settings page's setup requests. `departureboard-setup.service` runs it; there's no need to run it yourself. | |
+| `web` | Serves the settings page. `departureboard-web.service` runs it. | `--host` (default all addresses), `--port` (default 8080), `--setup-via-spool` hands the wizard's lookups to `departureboard-setup.service`, as the service does. `--set-password` or `--reset-code`: see [The settings page](#the-settings-page). |
+| `dashboard` | Serves the dashboard and opens it in the browser. | `--state-dir DIR`, `--host` (default this computer only), `--port` (default 8090, or the next free one; a port you name is that port or nothing), `--lan` for every address, `--no-browser`. `--set-password` or `--reset-code`: see [Changing the dashboard's settings](#changing-the-dashboards-settings). |
+
 ---
 
 ## 4. The dashboard
@@ -441,9 +457,9 @@ With the project installed (see the README), and the same `config.toml` and `sec
 departureboard dashboard --config config.toml --secrets secrets.env
 ```
 
-It opens in your browser. The first start takes a minute or so to build the bus timetable. Add `--lan` to let phones on the home Wi-Fi open it at the address it prints. Ctrl-C stops it.
+It opens in your browser, at `http://localhost:8090/` (or the next free port). The first start takes a minute or so to build the bus timetable. Add `--lan` to let phones on the home Wi-Fi open it at the address it prints. Ctrl-C stops it. Its other options are under [Commands and options](#commands-and-options).
 
-It keeps its own folder (`~/Library/Application Support/departureboard-dashboard`): the bus timetable, the history, bank holidays, and anything saved from **Settings**. It needs `[bus] source = "bods"`, unless buses are off (`[bus] enabled = false`).
+It keeps its own folder (`~/Library/Application Support/departureboard-dashboard` on a Mac; on Linux, `departureboard-dashboard` in `$XDG_STATE_HOME`, else in `~/.local/state`): the bus timetable, the history, bank holidays, and anything saved from **Settings**. It needs `[bus] source = "bods"`, unless buses are off (`[bus] enabled = false`).
 
 ### On a Synology NAS
 
@@ -456,7 +472,7 @@ It keeps its own folder (`~/Library/Application Support/departureboard-dashboard
 
 The container runs as an unprivileged user with a read-only system, keeps its data in a Docker volume, and restarts by itself. Its health shows in Container Manager.
 
-It only answers to local addresses: the NAS's IP address, a name without dots (`nas`), or a `.local` name. To use another name, such as `ds.home`, add it to `config.toml`:
+It only answers to local addresses: the NAS's IP address, a name without dots (`nas`), or a name ending `.local`, `.lan` or `.home.arpa`. To use another name, such as `ds.home`, add it to `config.toml`:
 
 ```toml
 [dashboard]
@@ -500,9 +516,9 @@ Or skip the log and set the password from the command line, while the dashboard 
   departureboard dashboard --config config.toml --reset-code
   ```
 
-  Without `--state-dir`, they use the same folder as the dashboard: `[dashboard] state_dir` if set, else `~/Library/Application Support/departureboard-dashboard`.
+  Without `--state-dir`, they use the same folder as the dashboard: `[dashboard] state_dir` if set, else `~/Library/Application Support/departureboard-dashboard` (on Linux, in `$XDG_STATE_HOME` or `~/.local/state`).
 
-- Saved settings go in the dashboard's own folder (in Docker, the `dashboard-data` volume), as `settings.toml`, layered over `config.toml`, which is never changed (Docker mounts it read-only). Keys go to `secrets.env` beside it, readable only by the dashboard, and are layered over `dashboard.env`. The password is in `web.json` there too.
+- Saved settings go in the dashboard's own folder (in Docker, the `dashboard-data` volume), as `settings.toml`, layered over `config.toml`, which is never changed (Docker mounts it read-only). It holds only what **Settings** and its setup manage; anything else put in it is ignored, and the log names it. Addresses (`[train] base_url`), `allowed_hosts`, `state_dir` and other hand-edited settings belong in `config.toml`; the Knowledgebase address is the one address **Settings** sets. Keys go to `secrets.env` beside it, readable only by the dashboard, and are layered over `dashboard.env`. The password is in `web.json` there too.
 - After a save the dashboard starts again by itself within a few seconds to use the new settings, and signs you out. Settings that wouldn't load are never saved; if `config.toml` is edited into something that doesn't load, the dashboard says so in its log and carries on with what it had.
 - The sign-in is separate from the board's settings page, even on the same computer.
 
@@ -515,10 +531,10 @@ All optional, under `[dashboard]` in `config.toml`. All but `allowed_hosts` and 
 | `train_rows`, `bus_rows` | 10 | How many of each to show (1 to 20) |
 | `train_interval_seconds` | 60 | How often to check trains (at least 30) |
 | `bus_interval_seconds` | 30 | How often to check buses (at least 15) |
-| `weather_interval_minutes` | 30 | How often to check the forecast |
+| `weather_interval_minutes` | 30 | How often to check the forecast (at least 10) |
 | `quiet_windows` | `["Mon-Sun 01:00-05:00"]` | When not to check, unless the page is open |
-| `late_minutes_train`, `late_minutes_bus` | 3, 2 | How late counts as late in the history |
-| `history_days` | 90 | How long history is kept |
+| `late_minutes_train`, `late_minutes_bus` | 3, 2 | How late counts as late in the history (1 to 60) |
+| `history_days` | 90 | How many days of history to keep and show (1 to 3650) |
 | `allowed_hosts` | `[]` | Extra names the page answers to |
 | `state_dir` | see above | Where its files live |
 | `kb_incidents_url` | a placeholder | The Knowledgebase Incidents address from the RDM product page (see below) |
