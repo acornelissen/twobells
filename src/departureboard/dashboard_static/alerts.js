@@ -1,8 +1,8 @@
-// The "Leave now" banner and the reminders set with "Remind me" in the
-// departure sheet.
+// The reminders set with "Remind me" in the departure sheet or the hero, and
+// the in-page alerts they fire.
 
 import { $, h, setText, store, str, num, obj } from "./dom.js";
-import { countdown, now, parseAt } from "./time.js";
+import { now, parseAt } from "./time.js";
 
 const KEY = "dashboard.alerts";
 const LEAD_MS = 60_000; // an alert fires when it is a minute to leaving time
@@ -128,37 +128,4 @@ export function tickAlerts(rowsById) {
     }
   }
   if (changed) save();
-}
-
-// The next departure you can still make on foot: leaving time not yet passed,
-// not cancelled. Returns { row, mode, leave } or null.
-export function nextCatchable(rowsById) {
-  const t = now();
-  let best = null;
-  for (const { row, mode } of rowsById.values()) {
-    const leave = parseAt(row.leave_at);
-    if (leave === null || leave < t || row.status === "cancelled") continue;
-    if (!best || leave < best.leave) best = { row, mode, leave };
-  }
-  return best;
-}
-
-// The countdown banner. Updated every second, so it is deliberately not a
-// live region: the announcer speaks only real changes.
-export function renderLeave(rowsById) {
-  const next = nextCatchable(rowsById);
-  const banner = $("leave");
-  const big = $("leave-time");
-  const what = $("leave-what");
-  if (!next) {
-    banner.classList.remove("soon", "now");
-    setText(big, "Nothing to leave for");
-    setText(what, "No departure with a walk time is coming up.");
-    return;
-  }
-  const ms = next.leave - now();
-  banner.classList.toggle("now", ms <= LEAD_MS);
-  banner.classList.toggle("soon", ms > LEAD_MS && ms <= 3 * LEAD_MS);
-  setText(big, ms <= LEAD_MS ? "Leave now" : `Leave in ${countdown(ms)}`);
-  setText(what, `for ${describe(next.row, next.mode)}.`);
 }

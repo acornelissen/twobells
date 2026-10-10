@@ -376,6 +376,8 @@ TEXT_PAIRS = [
     # The boards: late words and the live mark straight on the surface, and
     # a row's text on its hover tint.
     ("late-fg", "surface"), ("ok-fg", "surface"), ("fg", "surface-2"), ("muted", "surface-2"),
+    # The hero: its quiet lines, confidence words and a pressed Remind me.
+    ("muted", "leave-bg"), ("ok-fg", "leave-bg"), ("late-fg", "leave-bg"), ("accent", "leave-bg"),
 ]
 OUTLINE_PAIRS = [("focus", "bg"), ("focus", "surface"), ("edge", "surface"), ("edge", "bg")]
 
@@ -1392,6 +1394,222 @@ def test_the_sheet_holds_the_history_and_remind_me():
     assert found["days"] == len(history["days"]) + 1  # and the header row
     # A cancelled train has nothing to leave for, so no reminder.
     assert found["cancelled"] == [True, ""]
+
+
+# --- Next to catch ---
+
+
+# The hero on a fake page, with the live region. The clock starts at 07:00:00
+# and `clock("07:01:30")` moves it on (never back). `bus(n, scheduled, leave)`
+# and `train(...)` make rows; `rows(...)` indexes them as main.js does; `draw`
+# renders the hero with your stops' names and `rain`. `announced` collects
+# every announcement the live region makes.
+HERO = """
+import { h } from "./dom.js";
+import { observe } from "./time.js";
+import { renderHero, setUpHero } from "./hero.js";
+const p = (id) => h("p", { id });
+const hero = h("section", { id: "leave" }, h("h2", { id: "leave-heading" }), p("leave-time"), p("leave-what"),
+  p("leave-sure"), p("leave-then"), p("leave-rain"), h("button", { id: "leave-remind" }), p("notify-note"));
+const live = h("div", { id: "live" });
+document.body.append(hero, live);
+const announced = [];
+globalThis.requestAnimationFrame = (fn) => { fn(); announced.push(live.textContent); };
+const at = (hms) => `2026-10-10T${hms}+01:00`;
+const clock = (hms) => observe(Date.parse(at(hms)));
+clock("07:00:00");
+const id = (n) => String(n).padStart(16, "0");
+const bus = (n, scheduled, leave, extra = {}) => ({
+  id: id(n), scheduled, line: "237", destination: "Ashton-under-Lyne Interchange", stop: "A", walk_min: 5,
+  leave_at: leave && at(`${leave}:00`), scheduled_at: at(`${scheduled}:00`), status: "unknown", live: false,
+  ghost: false, ...extra,
+});
+const train = (n, scheduled, leave, extra = {}) => ({
+  id: id(n), scheduled, destination: "Manchester Piccadilly", platform: "1", walk_min: 12,
+  leave_at: leave && at(`${leave}:00`), scheduled_at: at(`${scheduled}:00`), status: "on_time", ...extra,
+});
+const rows = (...list) => new Map(list.map((row) => [row.id, { row, mode: "platform" in row ? "train" : "bus" }]));
+const ctx = { stops: { A: "Henry Street A" }, rain: "" };
+const draw = (map, more = {}) => renderHero(map, { ...ctx, ...more });
+const $ = (name) => document.getElementById(name);
+// What shows on screen (skipping what only screen readers get) and what is said.
+const shown = (el) => (el.nodeType === 3 ? el.nodeValue
+  : (el.getAttribute("class") || "").split(" ").includes("vh") ? "" : el.childNodes.map(shown).join(""));
+const said = (el) => spoken(el).replace(/\\s+/g, " ").trim();
+const wait = () => new Promise((resolve) => setTimeout(resolve, 20));
+"""
+
+
+@needs_node
+def test_the_hero_counts_seconds_only_under_two_minutes():
+    found = run_js(HERO + """
+        import { leaveWords } from "./hero.js";
+        const s = 1000, min = 60 * s;
+        const words = [64 * min + 30 * s, 6 * min + 59 * s, 2 * min, 2 * min - 1, 113.9 * s, 61 * s, 60 * s, 5 * s]
+          .map(leaveWords);
+        const map = rows(bus(1, "07:20", "07:15"));
+        const state = (time) => {
+          clock(time);
+          draw(map);
+          return [shown($("leave-time")), said($("leave-time")),
+                  ["soon", "now"].filter((name) => hero.classList.contains(name))];
+        };
+        console.log(JSON.stringify({
+          words, states: ["07:05:00", "07:12:00", "07:13:07", "07:14:15", "07:14:59"].map(state),
+        }));
+    """)
+    assert found["words"] == [
+        ["Leave in 1 h 4 min", "Leave in 1 h 4 min"],
+        ["Leave in 6 min", "Leave in 6 min"],  # rounded down: never more time than there is
+        ["Leave in 2 min", "Leave in 2 min"],
+        ["Leave in 1:59", "Leave in 1 min 59 s"],
+        ["Leave in 1:53", "Leave in 1 min 53 s"],
+        ["Leave in 1:01", "Leave in 1 min 1 s"],
+        ["Leave now", "Leave now"],
+        ["Leave now", "Leave now"],
+    ]
+    assert found["states"] == [
+        ["Leave in 10 min", "Leave in 10 min", []],
+        ["Leave in 3 min", "Leave in 3 min", ["soon"]],  # amber from 3 minutes
+        ["Leave in 1:53", "Leave in 1 min 53 s", ["soon"]],
+        ["Leave now", "Leave now", ["now"]],  # the last minute
+        ["Leave now", "Leave now", ["now"]],
+    ]
+
+
+@needs_node
+def test_the_hero_says_how_sure_its_departure_is():
+    found = run_js(HERO + """
+        const sure = (row) => { draw(rows(row)); return said($("leave-sure")); };
+        console.log(JSON.stringify([
+          sure(bus(1, "07:20", "07:15", { live: true, status: "on_time" })),
+          sure(bus(2, "07:20", "07:15")),
+          sure(bus(3, "07:20", "07:15", { ghost: true })),
+          sure(train(4, "07:20", "07:08")),
+          sure(train(5, "07:20", "07:08", { status: "late", expected_at: at("07:24:00") })),
+        ]));
+    """)
+    assert found == ["Live", "Timetable only", "May not be running", "Live", "Live"]
+
+
+@needs_node
+def test_the_hero_names_its_departure_on_one_line():
+    found = run_js(HERO + """
+        const line = (row) => { draw(rows(row)); return [shown($("leave-what")), said($("leave-what"))]; };
+        console.log(JSON.stringify([
+          line(bus(1, "17:55", "07:15")),
+          line(train(2, "18:22", "07:15")),
+          line(train(3, "18:22", "07:15", { platform: null, walk_min: null })),
+        ]));
+    """)
+    assert found == [
+        ["17:55 237 Ashton-under-Lyne Interchange · Henry Street A · 5 min walk",
+         "17:55 237 bus to Ashton-under-Lyne Interchange, Henry Street A, 5 min walk"],
+        ["18:22 train to Manchester Piccadilly · Platform 1 · 12 min walk",
+         "18:22 train to Manchester Piccadilly, Platform 1, 12 min walk"],
+        ["18:22 train to Manchester Piccadilly", "18:22 train to Manchester Piccadilly"],
+    ]
+
+
+@needs_node
+def test_then_offers_the_next_train_and_the_next_bus():
+    found = run_js(HERO + """
+        const then = (...list) => {
+          draw(rows(...list));
+          const el = $("leave-then");
+          return [el.hidden === true, shown(el), said(el), shown($("leave-what")).slice(0, 5)];
+        };
+        console.log(JSON.stringify({
+          both: then(
+            train(1, "07:05", "06:55", { status: "cancelled", leave_at: null }),  // cancelled: never the one
+            bus(2, "07:12", null),  // no walk time: never the one
+            bus(3, "07:15", "07:10"),
+            train(4, "07:25", "07:13"),
+            bus(5, "07:27", "07:22", { line: "341" }),
+            bus(6, "07:40", "07:35"),
+            train(7, "07:55", "07:43"),
+          ),
+          buses: then(bus(3, "07:15", "07:10"), bus(5, "07:27", "07:22", { line: "341" }), bus(6, "07:40", "07:35")),
+          trainFirst: then(train(4, "07:25", "07:13"), bus(5, "07:27", "07:22", { line: "341" })),
+          none: then(bus(3, "07:15", "07:10")),
+        }));
+    """)
+    assert found["both"] == [False, "Then: 07:25 train (leave 07:13) · 07:27 341 (leave 07:22)",
+                             "Then: 07:25 train (leave 07:13), 07:27 341 bus (leave 07:22)", "07:15"]
+    assert found["buses"][:2] == [False, "Then: 07:27 341 (leave 07:22)"]
+    assert found["trainFirst"] == [False, "Then: 07:27 341 (leave 07:22)", "Then: 07:27 341 bus (leave 07:22)",
+                                   "07:25"]
+    assert found["none"][:2] == [True, ""]
+
+
+@needs_node
+def test_a_bus_that_may_not_be_running_gives_way_to_a_live_one_soon_after():
+    found = run_js(HERO + """
+        import { nextCatchable } from "./hero.js";
+        const ghost = bus(1, "07:15", "07:10", { ghost: true });
+        const pick = (...list) => nextCatchable(rows(...list)).row.id.slice(-1);
+        console.log(JSON.stringify([
+          pick(ghost, bus(2, "07:19", "07:14", { live: true })),  // live, 4 min after: take it
+          pick(ghost, bus(2, "07:20", "07:15", { live: true })),  // 5 min after: still
+          pick(ghost, bus(2, "07:21", "07:16", { live: true })),  // 6 min after: the ghost stays
+          pick(ghost, bus(2, "07:16", "07:11"), bus(3, "07:18", "07:13", { live: true })),  // timetable only doesn't count
+          pick(ghost, train(4, "07:25", "07:13")),  // a train is live
+          pick(bus(2, "07:15", "07:10"), bus(3, "07:16", "07:11", { live: true })),  // only a ghost gives way
+          pick(ghost),
+        ]));
+    """)
+    assert found == ["2", "2", "1", "3", "4", "2", "1"]
+
+
+@needs_node
+def test_the_hero_announces_a_new_departure_once_and_never_the_countdown():
+    found = run_js(HERO + """
+        const map = rows(bus(1, "07:10", "07:05"), train(2, "07:20", "07:08"));
+        draw(map);  // the first draw only notes what was there
+        for (const time of ["07:01:00", "07:02:00", "07:04:30", "07:04:59"]) { clock(time); draw(map); }
+        await wait();
+        const ticking = [...announced];
+        clock("07:05:01");  // the bus's leaving time has passed: the train is next
+        draw(map);
+        clock("07:05:02");
+        draw(map);
+        await wait();
+        console.log(JSON.stringify({ ticking, after: announced, region: live.textContent,
+                                     hero: said($("leave-what")) }));
+    """)
+    assert found["ticking"] == []
+    assert found["after"] == ["Next to catch is now the 07:20 train to Manchester Piccadilly."]
+    assert found["region"] == "Next to catch is now the 07:20 train to Manchester Piccadilly."
+    assert found["hero"].startswith("07:20 train to Manchester Piccadilly")
+
+
+@needs_node
+def test_the_hero_has_its_own_remind_me_and_the_rain():
+    found = run_js(HERO + """
+        let changed = 0;
+        setUpHero(() => { changed += 1; });
+        const map = rows(bus(1, "07:20", "07:15"));
+        draw(map, { rain: "Rain from 08:00 (70%)" });
+        const button = $("leave-remind");
+        const note = $("notify-note");
+        const state = () => [button.getAttribute("aria-pressed"), said(button), note.hidden, said(note)];
+        const before = state();
+        const click = button.listeners.find(([type]) => type === "click")[1];
+        click();
+        const on = state();
+        click();
+        const off = state();
+        const rain = [$("leave-rain").hidden, said($("leave-rain"))];
+        draw(map);
+        console.log(JSON.stringify({ before, on, off, changed, rain, dry: $("leave-rain").hidden }));
+    """)
+    assert found["before"] == ["false", "Remind me", True, ""]
+    # The same honest words as the sheet's: on plain http it shows only on the page.
+    assert found["on"] == ["true", "Remind me", False, "The reminder shows only on this page, while it is open."]
+    assert found["off"] == found["before"]
+    assert found["changed"] == 2
+    assert found["rain"] == [False, "Rain from 08:00 (70%)"]
+    assert found["dry"] is True
 
 
 # --- Around here: the line and the area map ---

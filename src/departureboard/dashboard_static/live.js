@@ -3,7 +3,8 @@
 // 2 min or more, a bus newly flagged as having no tracker (once per
 // departure, however often the flag comes and goes), and a new disruption
 // message. Station notices (a closed ticket office, lifts out of use) are not
-// disruption and are never spoken. Countdowns and clocks never go through it.
+// disruption and are never spoken. The hero says when the departure to catch
+// changes (announce()). Countdowns and clocks never go through it.
 
 import { $, str } from "./dom.js";
 import { parseAt } from "./time.js";
@@ -47,6 +48,12 @@ function queue(key, text) {
   if (timer) return;
   const wait = Math.max(0, lastSpoken + GAP_MS - Date.now());
   timer = setTimeout(speak, wait);
+}
+
+// Queues words of the page's own, such as the hero's new departure. `key`
+// keeps one entry per subject: newer words replace older ones not yet spoken.
+export function announce(key, text) {
+  queue(key, text);
 }
 
 // Compares a new snapshot's rows with the last one's. rowsById maps id to

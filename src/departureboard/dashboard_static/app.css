@@ -287,7 +287,20 @@ main:focus { outline: none; }
 .leave.now .leave-label { color: inherit; }
 .leave-time { margin: var(--s-1) 0; font-size: var(--t-hero); font-weight: 600; line-height: 1.05; letter-spacing: -0.02em; }
 .leave-what { margin: 0; font-size: var(--t-md); }
-.leave .note { margin: var(--s-2) 0 0; font-size: var(--t-sm); }
+.leave-sure, .leave-then, .leave-rain { margin: var(--s-2) 0 0; font-size: var(--t-sm); }
+.leave-then, .leave-rain { color: var(--muted); }
+.sure { display: inline-flex; align-items: center; gap: var(--s-1); font-weight: 500; }
+.sure-live { color: var(--ok-fg); }
+.sure-live .icon { width: 0.5rem; height: 0.5rem; fill: currentColor; }
+.sure-timetable { color: var(--muted); }
+.sure-ghost { color: var(--late-fg); }
+.leave-remind { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); margin-top: var(--s-3); }
+.leave .note { flex: 1 1 16rem; margin: 0; font-size: var(--t-sm); color: var(--muted); }
+#leave-remind[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+/* Leave now: every word in the one red, on its tint. */
+.leave.now .leave-then, .leave.now .leave-rain, .leave.now .sure, .leave.now .note,
+.leave.now #leave-remind { color: inherit; }
+.leave.now #leave-remind { border-color: currentColor; }
 :root[data-theme="board"] .leave { border-color: var(--fg); }
 /* The banner's own colour would hide the usual focus ring. */
 .leave :focus-visible { outline-color: currentColor; }

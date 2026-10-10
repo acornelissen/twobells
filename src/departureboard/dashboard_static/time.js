@@ -74,12 +74,3 @@ export function age(seconds) {
   if (seconds < 5400) return `${Math.round(seconds / 60)} min ago`;
   return `${Math.round(seconds / 3600)} h ago`;
 }
-
-// "4 min 32 s" for the leave banner, which counts down by the second.
-export function countdown(ms) {
-  const total = Math.max(0, Math.round(ms / 1000));
-  const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), sec = total % 60;
-  if (h) return `${h} h ${m} min`;
-  if (m >= 10) return `${m} min`;
-  return m ? `${m} min ${sec} s` : `${sec} s`;
-}

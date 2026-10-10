@@ -8,7 +8,8 @@ import { renderBuses, renderTrains, stopNames, tickBoards, toggleMore } from "./
 import { tickStrips } from "./strip.js";
 import { renderWeather } from "./weather.js";
 import { noteSnapshot } from "./live.js";
-import { isOn, renderLeave, tickAlerts } from "./alerts.js";
+import { isOn, tickAlerts } from "./alerts.js";
+import { renderHero, setUpHero } from "./hero.js";
 import { openSheet, refreshSheet, setUpSheet } from "./sheet.js";
 import { setUpMap } from "./map.js";
 import { markBusRows, renderDisruptions } from "./disruptions.js";
@@ -26,6 +27,12 @@ const sheetContext = () => ({
   station: str(obj(snapshot?.trains)?.station),
   stops: stopNames(obj(snapshot?.buses)?.stops),
   generatedMs: parseAt(snapshot?.generated_at),
+});
+
+// What the hero needs beyond the rows: your stops' names and the rain sentence.
+const heroContext = () => ({
+  stops: stopNames(obj(snapshot?.buses)?.stops),
+  rain: str(obj(snapshot?.weather)?.rain),
 });
 
 // --- Theme: "modern" (default) or "board"; theme.js applied it before paint.
@@ -118,7 +125,7 @@ function tick() {
   if (!snapshot) return;
   if (tickBoards()) redrawBoards();
   tickStrips(new Map([...rowsById].map(([id, e]) => [id, e.row])), parseAt(snapshot.generated_at));
-  renderLeave(rowsById);
+  attempt("next to catch", () => renderHero(rowsById, heroContext()));
   tickAlerts(rowsById);
 }
 
@@ -144,10 +151,14 @@ $("main").addEventListener("click", (event) => {
   if (opener) open(opener);
 });
 
-setUpSheet(() => {
+// A reminder set or cleared, in the sheet or the hero: fire it at once if it
+// is due, and show its bell in the row.
+const remindChanged = () => {
   tickAlerts(rowsById);
   redrawBoards();
-});
+};
+setUpSheet(remindChanged);
+setUpHero(remindChanged);
 setUpMap();
 setUpArea();
 
