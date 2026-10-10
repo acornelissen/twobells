@@ -179,3 +179,119 @@ def test_a_view_the_install_does_not_offer_is_left_off_and_said(caplog):
 def test_views_that_are_not_a_list_of_views_are_a_config_error(data, words):
     with pytest.raises(ConfigError, match=words.replace("[", r"\[").replace("]", r"\]")):
         schema.views(data, PI)
+
+
+def test_the_board_s_loader_refuses_malformed_views_too(tmp_path):
+    from departureboard.config import settings_from
+
+    with pytest.raises(ConfigError, match="views"):
+        settings_from({"state_file": str(tmp_path / "state.json"), "app": {"views": ["tv"]}}, {})
+
+
+# The defaults agree with the loaders
+
+
+ENV = {"RDM_API_KEY": "rail", "BODS_API_KEY": "bods", "TAPI_APP_ID": "id", "TAPI_APP_KEY": "tapi"}
+STOPS = {"A": "1000DGHS0900"}
+
+
+def parsed(windows):
+    from departureboard.schedule import parse_window
+
+    return tuple(parse_window(w) for w in windows)
+
+
+def test_the_board_loads_with_the_schema_s_defaults(tmp_path):
+    from datetime import timedelta
+
+    from departureboard.config import settings_from
+
+    data = {"state_file": str(tmp_path / "state.json"), "train": {"crs": "GLO"}, "bus": {"stops": STOPS}}
+    settings = settings_from(data, ENV)
+    top = schema.BOARD_DEFAULTS
+    assert (settings.board.title, settings.timezone, settings.display, settings.rotate) == (
+        top["title"], top["timezone"], top["display"], top["rotate"])
+    assert settings.board.min_redraw == timedelta(minutes=top["min_redraw_minutes"])
+    assert (settings.board.theme.name, settings.board.theme.text_size) == (top["theme"], top["text_size"])
+    train, bus = settings.board.sources
+    for config, defaults in ((train, top["train"]), (bus, top["bus"])):
+        assert config.source._rows == defaults["rows"]
+        assert config.policy.interval == timedelta(minutes=defaults["interval_minutes"])
+        assert config.policy.windows == parsed(defaults["windows"])
+        assert config.stale_after == timedelta(minutes=defaults["stale_after_minutes"])
+    assert bus.daily_budget == top["bus"]["daily_budget"]
+
+
+def test_buses_from_bods_load_with_the_schema_s_defaults(tmp_path):
+    from datetime import timedelta
+
+    from departureboard.config import settings_from
+
+    data = {"state_file": str(tmp_path / "state.json"),
+            "bus": {"stops": STOPS, "source": "bods", "operators": ["BNML"]}}
+    (bus,) = settings_from(data, ENV).board.sources
+    defaults = schema.bus_defaults("bods")
+    assert bus.source._rows == defaults["rows"]
+    assert bus.policy.interval == timedelta(minutes=defaults["interval_minutes"])
+    assert bus.policy.windows == parsed(schema.BODS_DEFAULTS["windows"])
+    # TransportAPI, standing in, keeps to its own pace and windows, so its allowance lasts.
+    assert bus.fallback_policy.interval == timedelta(minutes=defaults["fallback_interval_minutes"])
+    assert bus.fallback_policy.windows == parsed(schema.BOARD_DEFAULTS["bus"]["windows"])
+
+
+def test_the_board_s_fields_show_the_loader_s_defaults():
+    board = schema.BOARD_DEFAULTS
+    for f in schema.FIELDS:
+        if f.group != "board" or f.name == "accent":  # the accent's default is the look's own
+            continue
+        defaults = board if f.section is None else board[f.section]
+        assert f.default == defaults[f.key], f.name
+
+
+def test_the_dashboard_s_fields_show_dashboard_options_defaults():
+    from departureboard.dashconfig import DashboardOptions
+    from departureboard.disruptions import kb_url_is_placeholder
+
+    options = DashboardOptions()
+    for f in schema.FIELDS:
+        if f.group != "dashboard":
+            continue
+        loaded = getattr(options, f.key)
+        if f.key == "quiet_windows":
+            assert parsed(f.default) == loaded
+        elif f.key == "kb_incidents_url":
+            assert f.default == "" and kb_url_is_placeholder(loaded)  # shown empty: engineering works are off
+        else:
+            assert f.default == loaded, f.name
+
+
+def test_with_only_general_settings_saved_each_view_loads_with_its_defaults(tmp_path):
+    # What setup saves: the station and stops, walk times and where home is; nothing of either view's own.
+    from departureboard.config import load_config
+    from departureboard.dashconfig import DashboardOptions, load_dashboard
+    from departureboard.store import Store
+
+    folder = tmp_path / "store"
+    folder.mkdir()
+    (folder / "settings.toml").write_text(
+        'title = "Home"\nbank_holiday_division = "scotland"\n[app]\nviews = ["board", "dashboard"]\n'
+        '[train]\ncrs = "GLO"\nwalk_minutes = 6\n'
+        '[bus]\nsource = "bods"\noperators = ["BNML"]\n[bus.stops]\nA = "1000DGHS0900"\n'
+        '[weather]\nlat = 53.44\nlon = -1.95\n')
+    store = Store.open(tmp_path / "config.toml", state_dir=folder, environ={})
+    assert not store.config_path.exists()
+    general = {(f.section, f.key) for f in schema.FIELDS if f.group == "general"}
+    general |= {(table, key) for table, keys in schema.MANAGED.items() for key in keys}
+    saved = store.saved()
+    assert {(t, k) for t, table in saved.items() if isinstance(table, dict) for k in table} <= general
+    assert {(None, k) for k, value in saved.items() if not isinstance(value, dict)} <= general
+
+    board = load_config(store, ENV)
+    train, bus = board.board.sources
+    assert train.policy.windows == parsed(schema.BOARD_DEFAULTS["train"]["windows"])
+    assert bus.policy.windows == parsed(schema.BODS_DEFAULTS["windows"])
+    assert board.board.weather is not None and board.board.title == "Home"
+
+    dash = load_dashboard(store, ENV, lock=False)
+    assert dash.train is not None and dash.bus is not None and dash.weather is not None
+    assert dash.options == DashboardOptions() and dash.title == "Home"

@@ -31,7 +31,7 @@ from .transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
 from .themes import theme_named, with_text_size
 from .transportapi import TransportApiBusSource
 from .route import RouteStop, RouteStrip
-from .schema import refused, saved_keys
+from .schema import BOARD_DEFAULTS, bus_defaults, refused, saved_keys, views
 from .walk import DEFAULT_STOP, WalkTimes
 from .weather import OpenMeteoSource
 
@@ -293,19 +293,25 @@ def switched_on(data: dict) -> dict:
     return {key: value for key, value in data.items() if key not in SWITCHABLE or is_enabled(data, key)}
 
 
-def _texts(section: dict, key: str, where: str) -> list[str]:
-    value = section.get(key, [])
+def _texts(section: dict, key: str, where: str, default: tuple[str, ...] = ()) -> list[str]:
+    value = section.get(key, list(default))
     if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
         raise ConfigError(f'{where}{key} must be a list of text, like ["a", "b"], not {value!r}')
     return value
 
 
-def _policy(section: dict, default_interval: int, where: str, holidays: frozenset[date]) -> PollPolicy:
+def _windows(section: dict, key: str, default: tuple[str, ...], where: str) -> tuple:
     try:
-        windows = tuple(parse_window(w) for w in _texts(section, "windows", where))
+        return tuple(parse_window(w) for w in _texts(section, key, where, default))
     except ValueError as error:
         raise ConfigError(str(error)) from error
-    interval = timedelta(minutes=_whole(section, "interval_minutes", default_interval, where))
+
+
+def _policy(section: dict, defaults: dict, where: str, holidays: frozenset[date]) -> PollPolicy:
+    """When and how often to check, from the section or else `defaults`. A
+    section without windows has the defaults' (none would mean never)."""
+    windows = _windows(section, "windows", defaults["windows"], where)
+    interval = timedelta(minutes=_whole(section, "interval_minutes", defaults["interval_minutes"], where))
     return PollPolicy(windows, interval, holidays)
 
 
@@ -320,15 +326,17 @@ def _train(section: dict, env: Mapping[str, str], holidays: frozenset[date]) -> 
         raise ConfigError('[train] needs crs, the 3-letter station code, like crs = "GLO"')
     if not _CRS.fullmatch(crs.strip()):
         raise ConfigError(f'[train] crs is {crs!r}; set your station\'s 3-letter code, like crs = "GLO"')
-    policy = _policy(section, 2, where, holidays)
+    defaults = BOARD_DEFAULTS["train"]
+    policy = _policy(section, defaults, where, holidays)
     source = DarwinSource(
         api_key=_secret(env, "RDM_API_KEY"),
         crs=crs,
         filter_crs=_text(section, "filter_crs", "", where) or None,  # "" is the page's "no filter"
-        rows=_whole(section, "rows", 3, where),
+        rows=_whole(section, "rows", defaults["rows"], where),
         base_url=_text(section, "base_url", DARWIN_BASE_URL, where),
     )
-    return SourceConfig(source, policy, timedelta(minutes=_whole(section, "stale_after_minutes", 6, where)))
+    stale_after = timedelta(minutes=_whole(section, "stale_after_minutes", defaults["stale_after_minutes"], where))
+    return SourceConfig(source, policy, stale_after)
 
 
 def _stops(section: dict) -> dict[str, str]:
@@ -350,7 +358,7 @@ def _transportapi(section: dict, env: Mapping[str, str], stops: dict[str, str]) 
         app_id=_secret(env, "TAPI_APP_ID"),
         app_key=_secret(env, "TAPI_APP_KEY"),
         stops=stops,
-        rows=_whole(section, "rows", 2, "[bus] "),
+        rows=_whole(section, "rows", BOARD_DEFAULTS["bus"]["rows"], "[bus] "),
         directions=_texts(section, "directions", "[bus] ") or None,
         base_url=_text(section, "base_url", TAPI_BASE_URL, "[bus] "),
     )
@@ -379,10 +387,11 @@ def _bus(
     kind = _text(section, "source", "transportapi", where)
     if kind not in ("transportapi", "bods"):
         raise ConfigError(f'[bus] source must be "transportapi" or "bods", not {kind!r}')
-    stale_after = timedelta(minutes=_whole(section, "stale_after_minutes", 30, where))
-    daily_budget = _whole(section, "daily_budget", 28, where)
+    defaults = bus_defaults(kind)
+    stale_after = timedelta(minutes=_whole(section, "stale_after_minutes", defaults["stale_after_minutes"], where))
+    daily_budget = _whole(section, "daily_budget", defaults["daily_budget"], where)
     if kind == "transportapi":
-        return SourceConfig(_transportapi(section, env, stops), _policy(section, 12, where, holidays),
+        return SourceConfig(_transportapi(section, env, stops), _policy(section, defaults, where, holidays),
                             stale_after, daily_budget=daily_budget)
     has_tapi = env.get("TAPI_APP_ID", "").strip() and env.get("TAPI_APP_KEY", "").strip()
     source = BodsBusSource(
@@ -391,21 +400,23 @@ def _bus(
         _secret(env, "BODS_API_KEY"),
         ZoneInfo(timezone),
         operators=_operators(section),
-        rows=_whole(section, "rows", 2, where),
+        rows=_whole(section, "rows", defaults["rows"], where),
         directions=_texts(section, "directions", where) or None,
         fallback=_transportapi(section, env, stops) if has_tapi else None,
     )
     # The timetable costs nothing to read, so it is checked often and all day;
     # TransportAPI, if it has to stand in, at its own slower pace and in its own
-    # windows (the commute, say), so the daily allowance lasts.
-    policy = _policy(section, 2, where, holidays)
-    fallback_windows = policy.windows
+    # windows (the commute, say), so the daily allowance lasts: by default the
+    # bus windows given, or else TransportAPI's own.
+    policy = _policy(section, defaults, where, holidays)
     if "fallback_windows" in section:
-        try:
-            fallback_windows = tuple(parse_window(w) for w in _texts(section, "fallback_windows", where))
-        except ValueError as error:
-            raise ConfigError(str(error)) from error
-    fallback_every = timedelta(minutes=_whole(section, "fallback_interval_minutes", 12, where))
+        fallback_windows = _windows(section, "fallback_windows", (), where)
+    elif "windows" in section:
+        fallback_windows = policy.windows
+    else:
+        fallback_windows = _windows({}, "fallback_windows", BOARD_DEFAULTS["bus"]["windows"], where)
+    fallback_every = timedelta(minutes=_whole(section, "fallback_interval_minutes",
+                                              defaults["fallback_interval_minutes"], where))
     return SourceConfig(
         source,
         policy,
@@ -500,7 +511,7 @@ def holiday_division(data: dict) -> str:
 
 def _rotate(data: dict, epaper: bool) -> int:
     # rotate_180 = true is the older spelling of rotate = 180.
-    rotate = data.get("rotate", 180 if data.get("rotate_180") else 0)
+    rotate = data.get("rotate", 180 if data.get("rotate_180") else BOARD_DEFAULTS["rotate"])
     allowed = (0, 180) if epaper else (0, 90, 180, 270)
     if rotate not in allowed:
         raise ConfigError(f"rotate must be one of {', '.join(map(str, allowed))} for this display, not {rotate!r}")
@@ -534,15 +545,16 @@ def settings_from(
 ) -> Settings:
     """Settings from already-read config data; the web page checks a change with this before saving."""
     data = switched_on(data)
+    views(data)  # checked here too, so a malformed [app] views is never saved
     try:
-        theme = theme_named(_text(data, "theme", "sign"))
+        theme = theme_named(_text(data, "theme", BOARD_DEFAULTS["theme"]))
     except ValueError as error:
         raise ConfigError(str(error)) from error
-    text_size = data.get("text_size", 11)
+    text_size = data.get("text_size", BOARD_DEFAULTS["text_size"])
     if isinstance(text_size, bool) or not isinstance(text_size, int) or not 9 <= text_size <= 16:
         raise ConfigError(f"text_size must be a whole number from 9 to 16, not {text_size!r}")
     theme = with_text_size(theme, text_size)
-    display = _text(data, "display", "inky")
+    display = _text(data, "display", BOARD_DEFAULTS["display"])
     if display not in DISPLAY_PANELS:
         raise ConfigError(f"Unknown display {display!r}; choose from {', '.join(sorted(DISPLAY_PANELS))}")
     rotate = _rotate(data, DISPLAY_PANELS[display].epaper)
@@ -552,14 +564,14 @@ def settings_from(
     panel_colour = data.get("panel_colour", accent)
     if panel_colour not in ("red", "yellow", "black"):
         raise ConfigError(f"panel_colour must be red, yellow or black, not {panel_colour!r}")
-    timezone = _text(data, "timezone", "Europe/London")
+    timezone = _text(data, "timezone", BOARD_DEFAULTS["timezone"])
     try:
         ZoneInfo(timezone)
     except (KeyError, ValueError):  # ZoneInfoNotFoundError is a KeyError
         raise ConfigError(f"Unknown timezone {timezone!r}; use one like Europe/London") from None
     state_file = _text(data, "state_file", "state.json")
     # On by default: services run a Sunday timetable on bank holidays.
-    holidays = frozenset(holidays) if _flag(data, "bank_holidays", True) else frozenset()
+    holidays = frozenset(holidays) if _flag(data, "bank_holidays", BOARD_DEFAULTS["bank_holidays"]) else frozenset()
     division = holiday_division(data)
     sources = []
     tracker = None
@@ -575,9 +587,9 @@ def settings_from(
     # Where the settings page leaves a reset code: beside the state file, in the store.
     folder = state_dir(data)
     board = Board(
-        title=_text(data, "title", "Departures"),
+        title=_text(data, "title", BOARD_DEFAULTS["title"]),
         sources=sources,
-        min_redraw=timedelta(minutes=_whole(data, "min_redraw_minutes", 2)),
+        min_redraw=timedelta(minutes=_whole(data, "min_redraw_minutes", BOARD_DEFAULTS["min_redraw_minutes"])),
         walk=_walk(data),
         theme=theme,
         tracker=tracker,
