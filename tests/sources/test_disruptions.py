@@ -199,18 +199,27 @@ def our_line(line, stops=(("1000DGXX0001", 53.4435, -1.9550),)):
             f"<StopPoints>{points}</StopPoints>")
 
 
-def test_our_line_counts_only_with_an_affected_stop_in_our_area():
+def test_our_line_counts_only_with_an_affected_stop_in_our_area_or_none_named():
     # Like the live Stockport Road (394) and Mayfield Depot (219) notices:
     # our line, but nowhere near our stops.
     mayfield = ("1800NE43431", 53.4740, -2.2260)
     body = sx(
         situation("FAR", affects=our_line("237", [mayfield])),
-        situation("NO_STOPS", affects=our_line("237", [])),
         situation("NEAR", affects=our_line("237", [mayfield, ("1000DGXX0001", 53.4435, -1.9550)])),
     )
     found = bus_disruptions(parse_siri_sx(body), area(), CAPTURED)
     assert keys(found) == ["NEAR"]
     assert found[0].relevance == "line" and found[0].places == ("1000DGXX0001",)
+
+
+def test_our_own_line_with_no_stops_named_is_kept_but_all_lines_is_not():
+    # A withdrawn or curtailed service names its line and no stops.
+    withdrawn = situation("WITHDRAWN", affects=our_line("237", []))
+    network = situation("NETWORK", affects=all_lines("BNML", []))
+    other = situation("OTHER_61", affects=our_line("237", []).replace("BNML", "AMSY"))
+    found = bus_disruptions(parse_siri_sx(sx(withdrawn, network, other)), area(), CAPTURED)
+    assert keys(found) == ["WITHDRAWN"]
+    assert found[0].relevance == "line" and found[0].lines == ("237",) and found[0].places == ()
 
 
 def test_lines_come_only_from_the_parts_of_a_notice_in_our_area():
@@ -235,6 +244,19 @@ def test_the_most_relevant_come_first_then_those_in_force_now():
     found = bus_disruptions(parse_siri_sx(body), area(), now)
     assert keys(found) == ["STOP_LATER", "NEARBY_NOW", "NEARBY_SOON", "LINE_NOW"]
     assert [d.relevance for d in found] == ["your_stop", "nearby", "nearby", "line"]
+
+
+def test_within_a_tier_and_time_the_most_severe_come_first():
+    now = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
+    body = sx(
+        situation("SLIGHT", start="2026-10-09T08:00:00Z", severity="slight", affects=our_line("341")),
+        situation("UNKNOWN", start="2026-10-09T09:00:00Z", severity="unknown", affects=our_line("341")),
+        situation("SEVERE", start="2026-10-09T10:00:00Z", severity="severe", affects=our_line("341")),
+        situation("SOON_SEVERE", start="2026-10-10T08:00:00Z", severity="severe", affects=our_line("341")),
+    )
+    found = bus_disruptions(parse_siri_sx(body), area(), now)
+    # In force now before coming up; unknown ranks as normal.
+    assert keys(found) == ["SEVERE", "UNKNOWN", "SLIGHT", "SOON_SEVERE"]
 
 
 def test_validity_windows():

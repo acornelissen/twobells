@@ -16,11 +16,12 @@ most relevant:
     closure;
   - line: one of our lines, or "all lines" of an operator that runs one of
     them, with one of its affected stops inside our area (the box around the
-    positioned stops, about a kilometre wider each side). A line is ours
-    only when run by the operator our timetable has for it: "61" is a line
-    in a dozen towns. A notice on our line with no affected stop in our area
-    (roadworks at its far end, or no stops given) is left out, to keep the
-    noise down.
+    positioned stops, about a kilometre wider each side); or one of our
+    lines named with no stops at all (a withdrawn or curtailed service).
+    A line is ours only when run by the operator our timetable has for it:
+    "61" is a line in a dozen towns. A notice on our line whose stops are
+    all outside our area (roadworks at its far end), and "all lines" with
+    no stop in our area, are left out, to keep the noise down.
 
 Trains. An incident is ours if it names one of the operators running our
 trains and mentions one of our stations: our own, the filter station, or
@@ -29,7 +30,7 @@ your_stop when it mentions our own station, otherwise line.
 
 Either way it must be valid now or at some point in the next seven days.
 Each mode's list is ordered by relevance, then those in force now, then the
-soonest.
+most severe, then the soonest.
 
 All feed text is untrusted: it is cut to plain text (any HTML in it is
 dropped, never interpreted), and links are kept only if they are https and
@@ -417,11 +418,16 @@ def _add(names: list[str], name: str) -> None:
         names.append(name)
 
 
+def _named_lines(consequence: Consequence, area: BusArea) -> set[str]:
+    """Our lines a consequence names by line and operator, as shown."""
+    return {shown for line, operator in consequence.lines
+            if (shown := area.lines.get((line.casefold(), operator.casefold()))) is not None}
+
+
 def _our_lines(consequence: Consequence, area: BusArea) -> set[str]:
     """Our lines a consequence names, as shown: by line and operator, or every
     line of an operator of ours for "all lines"."""
-    found = {shown for line, operator in consequence.lines
-             if (shown := area.lines.get((line.casefold(), operator.casefold()))) is not None}
+    found = _named_lines(consequence, area)
     operators = {o.casefold() for o in consequence.operators} & area.operators
     if consequence.all_lines and operators:
         found.update(shown for (_, op), shown in area.lines.items() if op in operators)
@@ -451,6 +457,11 @@ def _bus_match(situation: Situation, area: BusArea) -> tuple[str, set[str], set[
             tiers.add(tier)
             labels.update(ours)
             _add(places, stop.name or (position.name if position else ""))
+        if not consequence.stops and _named_lines(consequence, area):
+            # One of our own lines with no stops named: a withdrawn or
+            # curtailed service. "All lines" with no stops stays out.
+            counted = True
+            tiers.add("line")
         if counted:
             lines.update(named)
     if not tiers:
@@ -493,12 +504,14 @@ def _line_order(line: str) -> tuple:
 
 
 def _ordered(found: list[Disruption], now: datetime) -> list[Disruption]:
-    """Most relevant first; within a tier, those in force now, then the
-    soonest. Periods are in order and none has ended (see _soon), so one is
-    in force now when its first has started."""
+    """Most relevant first; within a tier, those in force now, then the most
+    severe (unknown counts as normal), then the soonest. Periods are in order
+    and none has ended (see _soon), so one is in force now when its first has
+    started."""
     unique = {d.key: d for d in found}
     return sorted(unique.values(), key=lambda d: (
-        RELEVANCE.index(d.relevance), d.periods[0][0] > now, d.periods[0][0], d.title))[:MAX_ITEMS]
+        RELEVANCE.index(d.relevance), d.periods[0][0] > now, -_RANK.get(d.severity, _RANK["normal"]),
+        d.periods[0][0], d.title))[:MAX_ITEMS]
 
 
 # Rail incidents (National Rail Knowledgebase).

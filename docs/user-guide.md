@@ -180,7 +180,7 @@ The dashboard shows buses only from the BODS timetable (see [Bus times](#bus-tim
 
 ### Disruptions and engineering works
 
-- **Buses:** roadworks, diversions and stop closures come from Bus Open Data (the same `BODS_API_KEY`), checked every 10 minutes. Only those at your stops, at the stops your buses use nearby, or on your lines (run by the same operator) with a stop in your area are shown, for now and the next 7 days, those at your stops first. Roadworks at the far end of one of your lines are left out. A bus row with one in force gets a **Disruption** link to it.
+- **Buses:** roadworks, diversions and stop closures come from Bus Open Data (the same `BODS_API_KEY`), checked every 10 minutes. Only those at your stops, at the stops your buses use nearby, or on your lines (run by the same operator) with a stop in your area or with no stops named (a withdrawn or shortened service) are shown, for now and the next 7 days, those at your stops first. Roadworks at the far end of one of your lines are left out. A bus row with one in force gets a **Disruption** link to it.
 - **Trains** (optional): engineering works come from the National Rail Knowledgebase through the Rail Data Marketplace. Subscribe to its **Knowledgebase Incidents** product, put its key in `RDM_KB_API_KEY`, and copy the address the product page gives into **Knowledgebase Incidents address** on the Dashboard tab, or into `config.toml`:
 
   ```toml

@@ -300,10 +300,10 @@ A top-level key of `/api/snapshot`, after `weather`. It is `null` when neither s
   - buses, by `relevance`:
     - `your_stop`: at one of our own stops, whatever its lines;
     - `nearby`: at a positioned stop our journeys use near our stops, if that part of the notice names one of our lines or no lines at all;
-    - `line`: on our line *with* the operator our timetable has for it, or "all lines" of one of our operators, with an affected stop inside our area (about 1 km around the positioned stops).
-    - Nothing else: a notice on our line whose stops are all outside our area (roadworks at the far end of the route), or that names no stops, is left out. Only the parts of a notice in our area give its `lines` and `places`.
+    - `line`: on our line *with* the operator our timetable has for it, or "all lines" of one of our operators, with an affected stop inside our area (about 1 km around the positioned stops); or on our line with no stops named at all (a withdrawn or curtailed service).
+    - Nothing else: a notice on our line whose stops are all outside our area (roadworks at the far end of the route), and "all lines" with no affected stop in our area, are left out. Only the parts of a notice in our area give its `lines` and `places`.
   - trains: names one of the operators running our trains, and mentions one of our stations (ours, the filter station, or any our trains call at) by name or three-letter code. `relevance` is `your_stop` when it mentions our own station, else `line`.
-- **Items:** buses first, then trains, each most relevant first, then those in force now, then the soonest; at most 30 of each.
+- **Items:** buses first, then trains, each most relevant first, then those in force now, then the most severe (`unknown` counts as `normal`), then the soonest; at most 30 of each.
   - `id` is 16 hex characters, stable for the same notice; the feed's own number stays on the server.
   - `title`, `summary` (at most 500 characters) and `reason` are plain text, with any HTML in the feed dropped.
   - `periods` are the notice's validity periods that touch now to 7 days ahead, in order (at most 14). `from_at` and `to_at` repeat the first. `to_at` is `null` when open-ended.
