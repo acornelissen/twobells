@@ -1,0 +1,28 @@
+{
+  "code": "Ok",
+  "routes": [
+    {
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [-1.959028, 53.443488],
+          [-1.958367, 53.443448],
+          [-1.9575, 53.44344],
+          [-1.95682, 53.443476],
+          [-1.9563, 53.4436],
+          [-1.9558, 53.44352],
+          [-1.955761, 53.443509]
+        ]
+      },
+      "legs": [{"steps": [], "summary": "", "weight": 31.2, "duration": 31.2, "distance": 242.6}],
+      "weight_name": "routability",
+      "weight": 31.2,
+      "duration": 31.2,
+      "distance": 242.6
+    }
+  ],
+  "waypoints": [
+    {"hint": "", "distance": 0.7, "name": "High Street West", "location": [-1.959028, 53.443488]},
+    {"hint": "", "distance": 0.2, "name": "High Street West", "location": [-1.955761, 53.443509]}
+  ]
+}
