@@ -821,9 +821,9 @@ def test_every_map_credit_links_to_fix_the_map():
     # OpenStreetMap credit and a link to "fix the map" wherever its roads are drawn.
     # Both are plain links that open in the same tab.
     html = (STATIC / "index.html").read_text(encoding="utf-8")
-    credits = re.findall(r"<p[^>]*>Map data ©.*?</p>", html)
-    assert len(credits) == 3  # the page footer, the bus map and the area map
-    for credit in credits:
+    map_credits = re.findall(r"<p[^>]*>Map data ©.*?</p>", html)
+    assert len(map_credits) == 3  # the page footer, the bus map and the area map
+    for credit in map_credits:
         assert re.findall(r"<a ([^>]*)>([^<]*)</a>", credit) == [
             ('href="https://www.openstreetmap.org/copyright"', "OpenStreetMap contributors"),
             ('href="https://www.openstreetmap.org/fixthemap"', "Fix the map"),
