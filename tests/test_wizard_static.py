@@ -6,7 +6,10 @@ and vendored Leaflet through the paths setupapi.static_files() serves. These
 tests keep it that way without a browser.
 """
 
+import json
 import re
+import shutil
+import subprocess
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin
@@ -429,3 +432,145 @@ def test_page_headers_allow_only_what_the_page_needs():
     assert "unsafe" not in csp and "connect-src 'self'" in csp and "frame-ancestors 'none'" in csp
     assert "img-src 'self' data: https://tile.openstreetmap.org" in csp
     assert PAGE_HEADERS["X-Content-Type-Options"] == "nosniff" and PAGE_HEADERS["Cache-Control"] == "no-store"
+
+
+# The roads for the bus maps, found after the search: a progress bar and a
+# choice to wait for them or carry on.
+
+
+def test_the_roads_have_a_named_progress_bar_their_count_beside_it_and_two_buttons():
+    ids = _ids()
+    assert "hidden" in ids["roads-box"][1]
+    tag, bar = ids["roads-progress"]
+    assert tag == "progress" and "roads-count" in bar.get("aria-describedby", "").split()
+    assert ids["roads-intro"][1].get("tabindex") == "-1"  # focus goes there when the choice appears
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert '<label for="roads-progress" class="vh">Roads for the bus maps</label>' in html  # its name
+    assert re.search(r'<button type="button" id="roads-wait"[^>]*>Wait for the roads</button>', html)
+    assert re.search(r'<button type="button" id="roads-on"[^>]*>Carry on</button>', html)
+    # In the finish step, after the search's box and before Save.
+    finish = _between(html, '<section id="step-finish"', '<section id="step-done"')
+    assert finish.index('id="job-box"') < finish.index('id="roads-box"') < finish.index('id="finish-actions"')
+
+
+def test_saving_waits_on_the_roads_and_the_done_step_says_if_they_are_still_being_found():
+    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    save = _between(text, "async function save", "function finished")
+    assert save.index("await search()") < save.index("await followRoads(job)") < save.index('call("finish"')
+    assert 'roads === "found" ? "Found the roads for the bus maps. Saving…" : "Saving…"' in save
+    done = _between(text, "function finished", "function setUpFinish")
+    assert 'roads === "carried"' in done and "still being found" in done
+
+
+NODE = shutil.which("node")
+needs_node = pytest.mark.skipif(NODE is None, reason="node isn't installed: the page's behaviour tests need it")
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+# The roads' part of the finish step on a fake page, and an api/job that
+# answers each of STATUSES in turn (the last again once they run out).
+# begin's sign-in never answers, so only what the test calls runs.
+ROADS_PAGE = """
+import "FAKE_DOM";
+const proto = Object.getPrototypeOf(document.createElement("p"));
+proto.focus = function () { document.activeElement = this; };
+for (const id of ["job-box", "roads-box", "roads-intro", "roads-progress", "roads-count", "roads-wait",
+                  "roads-on", "live", "alert"]) {
+  const el = document.createElement(id === "roads-progress" ? "progress" : "div");
+  el.setAttribute("id", id);
+  if (id === "roads-box") el.hidden = true;
+  document.body.append(el);
+}
+const said = [];
+Object.defineProperty(document.getElementById("live"), "textContent", {
+  set(text) { if (text) said.push(text); }, get() { return ""; } });
+const statuses = STATUSES;
+let asked = 0;
+globalThis.fetch = (url) => {
+  if (url !== "api/job") return new Promise(() => {});
+  const job = statuses[Math.min(asked++, statuses.length - 1)];
+  return Promise.resolve({ ok: true, status: 200, headers: { get: () => "application/json" },
+                           json: async () => ({ job }) });
+};
+const $ = (id) => document.getElementById(id);
+const click = (id) => { for (const [type, fn] of $(id).listeners) if (type === "click") fn({ currentTarget: $(id) }); };
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+const { followRoads, setUpRoads } = await import("./wizard.js");
+setUpRoads();
+"""
+
+
+def run_roads(statuses, script):
+    prelude = ROADS_PAGE.replace("FAKE_DOM", (FIXTURES / "fake_dom.mjs").as_uri())
+    prelude = prelude.replace("STATUSES", json.dumps(statuses))
+    done = subprocess.run([NODE, "--input-type=module", "-e", prelude + script], cwd=STATIC,
+                          capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
+def _roads(state, done, total=140):
+    return {"state": "done", "step": "", "done": 0, "total": 0, "message": "Found 1",
+            "found": {"operators": ["BNML"]}, "roads": {"state": state, "done": done, "total": total}}
+
+
+@needs_node
+def test_waiting_for_the_roads_follows_them_to_the_end_saying_so_now_and_then():
+    statuses = [_roads("running", n) for n in (20, 40, 70, 100, 140)] + [_roads("done", 140)]
+    found = run_roads(statuses, """
+        const pending = followRoads(START, 1);
+        const shown = { box: $("roads-box").hidden, jobBox: $("job-box").hidden, focus: document.activeElement.id,
+                        count: $("roads-count").textContent, max: $("roads-progress").max,
+                        value: $("roads-progress").value };
+        click("roads-wait");
+        const outcome = await pending;
+        await sleep(120);
+        console.log(JSON.stringify({ outcome, shown, said, asked, wait: $("roads-wait").getAttribute("aria-disabled"),
+                                     box: $("roads-box").hidden, count: $("roads-count").textContent,
+                                     max: $("roads-progress").max, value: $("roads-progress").value }));
+    """.replace("START", json.dumps(_roads("running", 0))))
+    assert found["outcome"] == "found" and found["asked"] == 6
+    assert found["shown"] == {"box": False, "jobBox": True, "focus": "roads-intro",
+                              "count": "Finding the roads for the bus maps: 0 of 140", "max": 140, "value": 0}
+    # Said at the start, when waiting, and at each quarter: never every road.
+    assert found["said"] == [
+        "The timetable is built. Finding the roads for the bus maps: 0 of 140. Wait for them, or carry on.",
+        "Waiting for the roads. Setup saves once they are found.",
+        "Finding the roads for the bus maps: 40 of 140",
+        "Finding the roads for the bus maps: 70 of 140",
+    ]
+    assert found["wait"] == "true" and found["box"] is True
+    assert (found["count"], found["max"], found["value"]) == ("Finding the roads for the bus maps: 140 of 140", 140, 140)
+
+
+@needs_node
+def test_carrying_on_leaves_the_roads_to_finish_on_their_own_at_once():
+    found = run_roads([_roads("running", 10)], """
+        const start = Date.now();
+        const pending = followRoads({ ...statuses[0] }, 5000);
+        click("roads-on");
+        const outcome = await pending;
+        console.log(JSON.stringify({ outcome, asked, quick: Date.now() - start < 1000, box: $("roads-box").hidden }));
+    """)
+    assert found == {"outcome": "carried", "asked": 0, "quick": True, "box": True}
+
+
+@needs_node
+@pytest.mark.parametrize("statuses", [
+    [_roads("cancelled", 12)],  # stopped: the next build finds the rest
+    [{"state": "failed", "message": "Gone"}],  # lost track of them: they finish anyway
+])
+def test_roads_that_stop_or_are_lost_are_left_to_finish_on_their_own(statuses):
+    found = run_roads(statuses, """
+        console.log(JSON.stringify(await followRoads(START, 1)));
+    """.replace("START", json.dumps(_roads("running", 0))))
+    assert found == "carried"
+
+
+@needs_node
+def test_a_search_with_no_roads_to_find_moves_straight_on():
+    found = run_roads([], """
+        const outcome = await followRoads({ state: "done", found: {} }, 1);
+        const done = await followRoads({ state: "done", roads: { state: "done", done: 3, total: 3 } }, 1);
+        console.log(JSON.stringify({ outcome, done, asked, box: $("roads-box").hidden, said }));
+    """)
+    assert found == {"outcome": "none", "done": "none", "asked": 0, "box": True, "said": []}

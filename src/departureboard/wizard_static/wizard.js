@@ -1020,6 +1020,101 @@ async function search() {
   return job;
 }
 
+// After the search: the roads for the bus maps. The search is done once the
+// timetable is saved; the roads are found after it, for up to five minutes.
+// The person may wait for them or carry on, and either way they finish on
+// their own. Said politely at the start and each quarter of the way, never
+// on every road; save() says when they are found.
+
+const ROADS = "Finding the roads for the bus maps";
+const roadsRunning = (job) => (obj(job && job.roads) || {}).state === "running";
+
+function showRoads(roads) {
+  const done = num(roads.done);
+  const total = num(roads.total);
+  const bar = $("roads-progress");
+  if (total && done !== null) {
+    bar.max = total;
+    bar.value = Math.min(done, total);
+    $("roads-count").textContent = `${ROADS}: ${Math.min(done, total)} of ${total}`;
+  } else {
+    bar.removeAttribute("value"); // indeterminate: still working out how many there are
+    $("roads-count").textContent = ROADS;
+  }
+}
+
+// 0 to 4: how many quarters of the roads are found.
+function quarters(roads) {
+  const done = num(roads.done);
+  const total = num(roads.total);
+  return total && done !== null ? Math.floor((4 * Math.min(done, total)) / total) : 0;
+}
+
+// Follows the roads of a finished search until they are found or the person
+// carries on. "found" once they are; "carried" if the person carried on, or
+// they stopped or can't be followed (they finish on their own, or the next
+// timetable build finds them); "none" if there were none to find.
+export async function followRoads(job, pollMs = POLL_MS) {
+  if (!roadsRunning(job)) return "none";
+  let carried = false;
+  const carry = new Promise((resolve) => {
+    state.carryOn = () => { carried = true; resolve(); };
+  });
+  let roads = obj(job.roads);
+  $("job-box").hidden = true;
+  for (const id of ["roads-wait", "roads-on"]) $(id).removeAttribute("aria-disabled");
+  $("roads-box").hidden = false;
+  showRoads(roads);
+  let said = quarters(roads);
+  say(`The timetable is built. ${$("roads-count").textContent}. Wait for them, or carry on.`);
+  $("roads-intro").focus();
+  let outcome = "carried";
+  let failures = 0;
+  while (!carried) {
+    await Promise.race([sleep(pollMs), carry]);
+    if (carried) break;
+    let latest;
+    try {
+      latest = obj((await call("job")).job);
+      failures = 0;
+    } catch {
+      if (++failures >= POLL_FAILURES) break;
+      continue;
+    }
+    if (carried || !latest || latest.state !== "done") break;
+    roads = obj(latest.roads) || {};
+    if (roads.state === "done") {
+      outcome = "found";
+      break;
+    }
+    if (roads.state !== "running") break;
+    showRoads(roads);
+    const now = quarters(roads);
+    if (now > said && now < 4) {
+      said = now;
+      say($("roads-count").textContent);
+    }
+  }
+  state.carryOn = null;
+  $("roads-box").hidden = true;
+  return outcome;
+}
+
+// The two choices. Waiting is what happens anyway; the button says so and
+// stays where it is, so focus does too. Carrying on saves now.
+export function setUpRoads() {
+  $("roads-wait").addEventListener("click", () => {
+    if ($("roads-wait").getAttribute("aria-disabled") === "true") return;
+    $("roads-wait").setAttribute("aria-disabled", "true");
+    say("Waiting for the roads. Setup saves once they are found.");
+  });
+  $("roads-on").addEventListener("click", () => {
+    if (!state.carryOn || $("roads-on").getAttribute("aria-disabled") === "true") return;
+    $("roads-on").setAttribute("aria-disabled", "true");
+    state.carryOn();
+  });
+}
+
 function payload() {
   const keys = pastedKeys();
   const body = {
@@ -1041,9 +1136,10 @@ async function save(button) {
   setError("finish", "");
   try {
     const job = state.chosen.length ? await search() : null;
-    say("Saving…");
+    const roads = job ? await followRoads(job) : "none";
+    say(roads === "found" ? "Found the roads for the bus maps. Saving…" : "Saving…");
     const data = await call("finish", payload());
-    finished(data, job);
+    finished(data, job, roads);
   } catch (error) {
     setError("finish", error.message);
     shout(error.message);
@@ -1055,7 +1151,7 @@ async function save(button) {
   }
 }
 
-function finished(data, job) {
+function finished(data, job, roads) {
   fill($("done-message"), str(data.message) || "Saved.");
   const found = job ? obj(job.found) : null;
   const items = [];
@@ -1066,6 +1162,10 @@ function finished(data, job) {
       items.push(`Bus company ${operator}${its.length ? `: ${its.length === 1 ? "line" : "lines"} ${its.join(", ")}` : ""}.`);
     }
     for (const text of list(found.notes).map(str).filter(Boolean)) items.push(text);
+  }
+  if (roads === "carried") {
+    items.push("The roads for the bus maps are still being found, and finish on their own. "
+      + "The settings page's General tab says how far they have got.");
   }
   fill($("done-found"), items.map((text) => h("li", {}, text)));
   const links = list(data.links).map(obj).filter((l) => l && str(l.label) && LINK.test(str(l.href)));
@@ -1079,6 +1179,7 @@ function setUpFinish() {
   $("job-cancel").addEventListener("click", async () => {
     try { await call("cancel"); say("Cancelling the search…"); } catch (error) { shout(error.message); }
   });
+  setUpRoads();
 }
 
 // Start.

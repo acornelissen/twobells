@@ -207,6 +207,17 @@
       <button type="button" id="job-cancel" class="quiet">Cancel the search</button>
     </div>
 
+    <div id="roads-box" class="job" hidden>
+      <p id="roads-intro" class="job-status" tabindex="-1">The timetable is built. The roads for the bus maps are still being found, for up to 5 minutes; until then the maps draw straight lines between stops. Wait for them, or carry on and they finish on their own.</p>
+      <label for="roads-progress" class="vh">Roads for the bus maps</label>
+      <progress id="roads-progress" aria-describedby="roads-count"></progress>
+      <p id="roads-count" class="hint">Finding the roads for the bus maps</p>
+      <div class="actions">
+        <button type="button" id="roads-wait" class="quiet">Wait for the roads</button>
+        <button type="button" id="roads-on">Carry on</button>
+      </div>
+    </div>
+
     <div class="actions" id="finish-actions">
       <button type="button" class="quiet" id="finish-back" data-back="keys">Back</button>
       <button type="button" id="save">Save</button>
