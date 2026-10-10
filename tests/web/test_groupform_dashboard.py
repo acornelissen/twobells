@@ -30,7 +30,7 @@ ENV = {"RDM_API_KEY": "rail-key-1234567", "BODS_API_KEY": "bods-key-7654321"}
 
 def dashboard_form(store, load_secrets):
     """A dashboard's settings pages as one form, on a desktop."""
-    return GroupForm(store, ("trains_buses", "dashboard", "keys", "general"), "/settings", load_secrets,
+    return GroupForm(store, ("trains_buses", "dashboard", "general"), "/settings", load_secrets,
                      install=install_named("desktop"), noun="dashboard")
 
 
@@ -187,11 +187,11 @@ def test_everything_setup_and_the_page_save_is_read_back(form):
         "home": {"lat": 53.46, "lon": -1.96, "country": "Scotland"}, "station_crs": "GLO", "filter_crs": "MAN",
         "stops": {"A": "1800SB12341"}, "walk": {"GLO": 6, "1800SB12341": 3}})
     assert status == 200, body
-    changed = {"bus_directions": "Ashton", "kb_incidents_url": "https://api1.raildata.org.uk/kb/incidents"}
+    changed = {"bus_directions": "Ashton"}
     assert form.save(fields_of(form) | changed) == {}
     written = tomllib.loads((form.folder / "settings.toml").read_text())
     assert read_overlay_in(form.folder) == written
-    assert written["bus"]["routes"] and written["weather"]["lat"] and written["dashboard"]["kb_incidents_url"]
+    assert written["bus"]["routes"] and written["weather"]["lat"] and written["bus"]["directions"] == ["Ashton"]
 
 
 def test_quiet_hours_are_rows_and_may_all_be_removed(form):

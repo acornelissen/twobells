@@ -27,7 +27,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from io import BufferedIOBase
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 from urllib.parse import parse_qs
 
 from ..setup import api
@@ -46,7 +46,7 @@ from .auth import (
 )
 
 if TYPE_CHECKING:
-    from .groupform import Tested
+    from .keyspage import Tested
 
 TEXT = "text/plain; charset=utf-8"
 HTML = "text/html; charset=utf-8"
@@ -91,12 +91,36 @@ class SettingsPage(Protocol):
     visitor, and saved from their fields."""
 
     def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,
-               values: dict[str, str] | None = None, tested: Tested | None = None) -> str: ...
+               values: dict[str, str] | None = None) -> str: ...
 
     # field -> error, empty when saved; what was saved is added to `changed` in words
     def save(self, fields: dict[str, str], changed: list[str] | None = None) -> dict[str, str]: ...
 
-    def test_key(self, fields: dict[str, str]) -> Tested | None: ...  # the result to render, or None: no such test
+
+class KeyForms(Protocol):
+    """The Keys page (a keyspage.KeysPage): a form per key, each saved and
+    tested on its own, and drawn with a test's result."""
+
+    def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,
+               values: dict[str, str] | None = None, tested: Tested | None = None) -> str: ...
+
+    def knows(self, name: str) -> bool: ...  # whether form `name` is on the page
+
+    # field -> error, empty when saved; as SettingsPage.save, for the form fields["key"]
+    def save(self, fields: dict[str, str], changed: list[str] | None = None) -> dict[str, str]: ...
+
+    def test_key(self, fields: dict[str, str]) -> Tested | None: ...  # the saved key's result, or None: no such test
+
+
+@dataclass(frozen=True)
+class Notice:
+    """What a page says once, after a save or a key test redirected to it:
+    the page, its title's first word, what changed, and a key test's result."""
+
+    page: SettingsPage | KeyForms
+    title: str  # "Saved", "Key tested"
+    message: str = ""
+    tested: Tested | None = None
 
 
 class SetupSteps(Protocol):
@@ -234,31 +258,39 @@ class FormPages:
         self._setup = setup
         self._json = json_reply
         self._clock = clock
-        # Each save's notice, by its session's form token, until the page
-        # after it (a GET, as the save answers with a redirect) shows it.
-        self._notices: dict[str, str] = {}
+        # Each save's or key test's notice, by its session's form token, until
+        # the page after it (a GET, as both answer with a redirect) shows it.
+        self._notices: dict[str, Notice] = {}
         self._notices_lock = threading.Lock()
 
     # Pages
 
-    def settings_page(self, headers: Headers, page: SettingsPage | None = None, title: str | None = None,
-                      saved: bool = False) -> Reply:
+    def settings_page(self, headers: Headers, page: SettingsPage | KeyForms | None = None,
+                      title: str | None = None, saved: bool = False) -> Reply:
         """A settings form (`page`, or the one given at the start) for a
         signed-in visitor, under `title` (or the wording's); sign-in for
-        anyone else. `saved` (the address's ?saved) shows what the
-        session's last save changed, once."""
+        anyone else. `saved` (the address's ?saved, or ?tested) shows what
+        the session's last save on that page changed, or its key test found, once."""
         session = self._sessions.get(self._token(headers))
         if session is None:
             return redirect(self._prefix + "/login")
         page = page or self._page
         title = title or self._wording().title
-        notice = ""
+        notice = None
         if saved:
             with self._notices_lock:
-                notice = self._notices.pop(session.csrf, "")
-        if notice:
-            return self._html(200, f"Saved – {title}", page.render(session.csrf, message=notice))
-        return self._html(200, title, page.render(session.csrf))
+                notice = self._notices.get(session.csrf)
+                if notice is not None and notice.page is page:  # said on its own page only
+                    del self._notices[session.csrf]
+                else:
+                    notice = None
+        if notice is None:
+            return self._html(200, title, page.render(session.csrf))
+        if notice.tested is not None:  # only the Keys page tests, so this is it
+            body = cast("KeyForms", page).render(session.csrf, message=notice.message, tested=notice.tested)
+        else:
+            body = page.render(session.csrf, message=notice.message)
+        return self._html(200, f"{notice.title} – {title}", body)
 
     def login_page(self, status: int, headers: Headers, message: str = "", to_setup: bool = False,
                    step: str = "") -> Reply:
@@ -425,31 +457,39 @@ class FormPages:
         if errors:
             body = page.render(session.csrf, errors=errors, values=fields)
             return self._html(422, f"{title}: fix the errors", body)
-        with self._notices_lock:
-            self._notices.pop(session.csrf, None)
-            while len(self._notices) >= _MAX_NOTICES:
-                del self._notices[next(iter(self._notices))]  # the oldest
-            self._notices[session.csrf] = saved_notice(changed, wording.saved)
+        self._notice(session.csrf, Notice(page, "Saved", saved_notice(changed, wording.saved)))
         return redirect((where or self._prefix) + "?saved")
 
-    def test_key(self, fields: dict[str, str], headers: Headers, page: SettingsPage | None = None,
-                 title: str | None = None) -> Reply:
-        """A settings form's key test (its `test` button), from a signed-in
-        session with its token, as save is: the form drawn again with the
-        result and what was typed (the form never shows a key), and nothing saved."""
+    def key_form(self, fields: dict[str, str], headers: Headers, page: KeyForms, title: str, where: str) -> Reply:
+        """One of the Keys page's forms (fields["key"]), from a signed-in
+        session with its token, as save is. Its button (fields["do"]) saves
+        its key, saves then tests it, or tests the saved key. Done, it
+        redirects to `where` with ?saved (or ?tested, after a test alone),
+        whose page says what changed and what the test found; refused, the
+        page is drawn again under `title` with the problems, its key boxes empty."""
         session = self._sessions.get(self._token(headers))
         if session is None:
             return redirect(self._prefix + "/login")
         if not csrf_matches(session, fields.get("csrf", "")):
             return Reply(403, b"Forbidden: form expired, reload the page")
         fields.pop("csrf", None)
-        page = page or self._page
-        tested = page.test_key(fields)
-        if tested is None:
+        do = fields.get("do") or "save"  # Enter in a box sends the first button, Save key
+        if do not in ("save", "save_test", "test") or not page.knows(fields.get("key", "")):
+            return Reply(400, b"Bad request: no such key or button")
+        changed: list[str] = []
+        if do != "test":
+            errors = page.save(fields, changed)
+            if errors:
+                return self._html(422, f"{title}: fix the errors", page.render(session.csrf, errors=errors,
+                                                                                values=fields))
+        tested = page.test_key(fields) if do != "save" else None
+        if do != "save" and tested is None:
             return Reply(400, b"Bad request: no such key to test")
-        fields.pop("test", None)
-        title = title or self._wording().title
-        return self._html(200, f"Key tested – {title}", page.render(session.csrf, values=fields, tested=tested))
+        if tested is not None and not changed:  # nothing saved: a test alone
+            self._notice(session.csrf, Notice(page, "Key tested", "", tested))
+            return redirect(where + "?tested")
+        self._notice(session.csrf, Notice(page, "Saved", saved_notice(changed, self._wording().saved), tested))
+        return redirect(where + "?saved")
 
     # The setup wizard
 
@@ -503,6 +543,14 @@ class FormPages:
         return self._json(*self._setup.handle(name, payload))
 
     # Helpers
+
+    def _notice(self, csrf: str, notice: Notice) -> None:
+        """Keep `notice` for the session's next page, in place of any before it."""
+        with self._notices_lock:
+            self._notices.pop(csrf, None)
+            while len(self._notices) >= _MAX_NOTICES:
+                del self._notices[next(iter(self._notices))]  # the oldest
+            self._notices[csrf] = notice
 
     def _token(self, headers: Headers) -> str | None:
         return self._sessions.token_from(headers.get("Cookie"))

@@ -1,7 +1,7 @@
 """Saving changes into the web page's settings overlay without losing the rest.
 
-The settings pages (web/groupform.py) and the setup wizard each change only
-some settings, so both save through here: it reads the saved overlay, merges
+The settings pages (web/groupform.py, web/keyspage.py) and the setup wizard
+each change only some settings, so all save through here: it reads the saved overlay, merges
 the changes in as config.merge layers the overlay over config.toml
 (top-level tables key by key, anything deeper replaced) and writes the
 result back, keeping everything the caller doesn't manage. The wizard keeps
@@ -10,7 +10,8 @@ page keeps the wizard's [bus] source, operators and routes and [weather] lat
 and lon.
 
 Nothing is written unless the merged settings then load, and keys go to the
-secrets overlay only, never into settings.toml. Only the settings a
+secrets overlay only, never into settings.toml; a save of keys alone leaves
+settings.toml as it is. Only the settings a
 Target allows are read from the overlay (schema.saved_keys),
 so a save drops anything else found in it. to_toml writes every kind of
 value settings carry, floats (the weather position) and route strips
@@ -219,7 +220,8 @@ def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping
     # Keys first, so settings that need them are never saved without them.
     if keys:
         _write(secrets_path, _secrets_text(secrets_path, keys), 0o600)
-    _write(settings_path, text, 0o640)
+    if changes or replace:  # keys alone (the Keys page's) leave settings.toml as it is
+        _write(settings_path, text, 0o640)
     return overlay
 
 

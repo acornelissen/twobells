@@ -52,7 +52,7 @@ B = 6
 
 def board_form(store_or_config, load_secrets, clock=None):
     """A board's settings pages as one form, on a Pi."""
-    return GroupForm(Store.of(store_or_config), ("trains_buses", "board", "keys", "general"), "/settings/board",
+    return GroupForm(Store.of(store_or_config), ("trains_buses", "board", "general"), "/settings/board",
                      load_secrets, install=install_named("pi"), noun="board", clock=clock)
 
 
@@ -150,32 +150,6 @@ def test_the_whole_configuration_must_still_load(setup):
     assert not (state / "settings.toml").exists()
 
 
-def test_keys_are_write_only(setup):
-    form, *_ = setup
-    page = form.render("tok")
-    assert "rdm-secret-123" not in page and "tapi-secret-456" not in page
-    assert "Currently set" in page and "Currently not set" in page  # BODS isn't
-
-
-def test_a_pasted_key_is_saved_privately_and_merged(setup):
-    form, config, state, _ = setup
-    (state).mkdir(parents=True, exist_ok=True)
-    (state / "secrets.env").write_text("TAPI_APP_ID=kept\nRDM_DETAILS_API_KEY=kept-too\n")
-    assert form.save(fields_of(form) | {"BODS_API_KEY": "abc123DEF"}) == {}
-    saved = (state / "secrets.env").read_text()
-    assert "BODS_API_KEY=abc123DEF" in saved and "TAPI_APP_ID=kept" in saved
-    # A key this page doesn't list is kept too, as the setup wizard keeps it.
-    assert "RDM_DETAILS_API_KEY=kept-too" in saved
-    assert (state / "secrets.env").stat().st_mode & 0o777 == 0o600
-
-
-def test_keys_cannot_inject_extra_lines(setup):
-    form, _, state, _ = setup
-    errors = form.save(fields_of(form) | {"BODS_API_KEY": "abc\nRDM_API_KEY=evil"})
-    assert "BODS_API_KEY" in errors
-    assert not (state / "secrets.env").exists()
-
-
 def test_values_are_escaped_in_the_page(setup):
     form, *_ = setup
     page = form.render("tok", values={"title": '"><script>alert(1)</script>'})
@@ -195,12 +169,10 @@ def test_summary_items_name_their_section_and_field(setup):
     page = form.render("tok", errors={
         "train_crs": "Enter a 3-letter station code, like GLO",
         "title": "Enter some text",
-        "TAPI_APP_KEY": "Paste the key exactly",
         "_form": "Not saved: something",
     })
     assert '<a href="#train_crs">Trains – Station code: Enter a 3-letter station code, like GLO</a>' in page
     assert '<a href="#title">Title: Enter some text</a>' in page  # its section's heading is its label
-    assert '<a href="#TAPI_APP_KEY">Keys – TransportAPI app key: Paste the key exactly</a>' in page
     assert "<li>Not saved: something</li>" in page
 
 
@@ -281,14 +253,6 @@ def test_a_wrong_walk_is_that_boxs_error_named_by_its_stop(setup, value):
                      page)
 
 
-def test_key_boxes_are_plain_text_so_password_managers_leave_them_alone(setup):
-    form, *_ = setup
-    page = form.render("tok")
-    assert 'type="password"' not in page
-    for name in ("RDM_API_KEY", "TAPI_APP_ID", "TAPI_APP_KEY", "BODS_API_KEY"):
-        assert f'<input id="{name}" name="{name}" type="text" autocomplete="off" spellcheck="false"' in page
-
-
 def _accents(page):
     return re.findall(r'<input type="radio" id="[\w-]+" name="accent" value="([^"]*)"', page)
 
@@ -364,7 +328,7 @@ def test_every_control_has_a_label(setup):
     page = form.render("tok")
     ids = set(re.findall(r'<(?:input|select|textarea)[^>]* id="([\w-]+)"', page))
     labelled = set(re.findall(r'<label for="([\w-]+)"', page))
-    assert {"title", "theme", "theme-1", "rotate-1", "TAPI_APP_KEY"} <= ids <= labelled
+    assert {"title", "theme", "theme-1", "rotate-1", "board_train_rows"} <= ids <= labelled
 
 
 def test_a_screen_can_turn_a_quarter(tmp_path):

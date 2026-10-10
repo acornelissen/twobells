@@ -8,7 +8,9 @@ import socket
 import threading
 import time
 import tomllib
+from datetime import datetime
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -839,17 +841,6 @@ def test_save_errors_come_back_on_the_form(signed):
     assert not (signed.folder / "settings.toml").exists()
 
 
-def test_keys_pasted_with_a_mistake_are_not_saved_and_the_summary_says_so(signed):
-    cookie, csrf = signed.sign_in("/settings/keys")
-    fields = fields_from(signed("GET", "/settings/keys", cookie=cookie)[1])
-    fields |= {"csrf": csrf, "RDM_DETAILS_API_KEY": "details-key-0001", "RDM_KB_API_KEY": "has spaces"}
-    response, text = signed("POST", "/settings/keys", fields, cookie=cookie)
-    assert response.status == 422 and "The keys you pasted weren&#x27;t saved" not in text
-    assert "The keys you pasted weren't saved. Paste them again once the rest is right." in text
-    assert "details-key-0001" not in text and "has spaces" not in text
-    assert not signed.store.secrets_file.exists()
-
-
 @pytest.mark.parametrize("path", ["/settings/trains-and-buses", "/settings/dashboard"])
 @pytest.mark.parametrize("csrf, origin", [
     ("forged", "same"),
@@ -874,28 +865,10 @@ def test_a_save_without_a_session_goes_to_sign_in(signed):
         assert response.status == 303 and response.getheader("Location") == "/settings/login", path
 
 
-def test_a_save_on_one_page_leaves_the_others_settings_and_keys_alone(signed):
-    signed.store.settings_file.write_text('title = "Our house"\ntheme = "plain"\n[dashboard]\nhistory_days = 30\n')
-    signed.store.secrets_file.write_text("TAPI_APP_ID=kept\n")
-    cookie, csrf = signed.sign_in("/settings/keys")
-    fields = fields_from(signed("GET", "/settings/keys", cookie=cookie)[1])
-    assert "title" not in fields and "history_days" not in fields
-    changed = fields | {"csrf": csrf, "RDM_DETAILS_API_KEY": "details-key-0001"}
-    response, text = signed("POST", "/settings/keys", changed, cookie=cookie)
-    assert response.status == 303, text
-    saved = signed.saved()
-    assert saved["title"] == "Our house" and saved["theme"] == "plain" and saved["dashboard"]["history_days"] == 30
-    assert signed.store.secrets_file.read_text() == "TAPI_APP_ID=kept\nRDM_DETAILS_API_KEY=details-key-0001\n"
-    assert signed.config.read_text() == CONFIG
-    page = signed("GET", "/settings/keys?saved", cookie=cookie)[1]
-    assert "Saved 1 change: Rail Data Marketplace key for where each train is." in page
-    assert "details-key-0001" not in "".join(signed.seen)
-
-
 def test_the_forms_save_into_the_store_and_never_show_a_key(signed):
     cookie, csrf = signed.sign_in()
     _, page = signed("GET", "/settings/keys", cookie=cookie)
-    assert "Currently set." in page and "rail-key-1234567" not in page and "bods-key-7654321" not in page
+    assert "Saved, not tested</span>" in page and "rail-key-1234567" not in page and "bods-key-7654321" not in page
     _, page = signed("GET", "/settings/trains-and-buses", cookie=cookie)
     fields = fields_from(page)
     assert fields["train_crs"] == "GLO" and fields["bus_stops"] == "A = 1000DGHS0900"
@@ -940,42 +913,310 @@ def test_a_form_with_too_many_fields_is_refused_not_dropped(dash):
     assert response.status == 413
 
 
-# Testing a key, on the Keys page
+# The Keys page: one small form per key, each saved and tested on its own
 
 
-def press_test(running, path, name, typed=None):
-    """Press a page's test button for key `name`, with `typed` in its boxes."""
-    cookie = running.session()
-    fields = fields_from(running("GET", path, cookie=cookie)[1])
-    return running("POST", path, fields | (typed or {}) | {"csrf": running.csrf(cookie), "test": name}, cookie=cookie)
+def key_form(page, name):
+    """The form of key `name` on the Keys page, as drawn."""
+    return re.search(r'<form method="post" action="/settings/keys" novalidate class="keyform">'
+                     r'<input type="hidden" name="csrf" value="[^"]*">'
+                     r'<input type="hidden" name="key" value="%s">.*?</form>' % name, page, re.S).group(0)
 
 
-def test_the_keys_page_has_a_test_button_for_each_key_of_the_views_on(make):
+def press(running, name, do="save", typed=None, cookie=None, origin="same", csrf="right"):
+    """Press button `do` of key `name`'s form, with `typed` in its boxes, as a
+    browser posts that form alone (do=None: Enter in a box, before the browser
+    adds the first button). (The redirect or refusal, the session's cookie.)"""
+    cookie = cookie or running.session()
+    form = key_form(running("GET", "/settings/keys", cookie=cookie)[1], name)
+    fields = dict.fromkeys(re.findall(r'<input id="(\w+)" name="\w+" type="text" class="key-box"', form), "")
+    fields |= fields_from(form) | {"key": name}
+    if csrf is not None:
+        fields["csrf"] = running.csrf(cookie) if csrf == "right" else csrf
+    if do is not None:
+        fields["do"] = do
+    response, _ = running("POST", "/settings/keys", fields | (typed or {}), cookie=cookie, origin=origin)
+    return response, cookie
+
+
+def after(running, response, cookie):
+    """The page a redirect goes to."""
+    assert response.status == 303, response.status
+    return running("GET", response.getheader("Location"), cookie=cookie)[1]
+
+
+def results(running):
+    return json.loads((running.folder / "keytests.json").read_text())
+
+
+def pill_time(running):
+    """When a test now is said to be, as the pill says it."""
+    when = datetime.fromtimestamp(int(running.clock.now), ZoneInfo("Europe/London"))
+    return f"{when.day} {when:%b %H:%M}"
+
+
+def test_each_key_of_the_views_on_has_a_small_form_of_its_own(make):
     pi, docker = make(install="pi"), make(install="docker")
     expected = {
-        pi: ["RDM_API_KEY", "BODS_API_KEY", "TAPI_APP_KEY"],  # the app ID is tested with its key
-        docker: ["RDM_API_KEY", "BODS_API_KEY", "RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"],
+        pi: [("RDM_API_KEY", "Trains"), ("BODS_API_KEY", "Buses"), ("TAPI_APP_KEY", "Buses from TransportAPI")],
+        docker: [("RDM_API_KEY", "Trains"), ("BODS_API_KEY", "Buses"), ("RDM_DETAILS_API_KEY", "Where each train is"),
+                 ("RDM_KB_API_KEY", "Engineering works")],
     }
-    for running, names in expected.items():
+    for running, forms in expected.items():
         page = running("GET", "/settings/keys", cookie=running.session())[1]
-        assert re.findall(r'<button type="submit" name="test" value="(\w+)"', page) == names
-        # Save comes first, so Enter in any box saves rather than tests.
-        assert page.index(">Save changes</button>") < page.index('name="test"')
-        assert '<fieldset class="card key-tests"><legend><h2 id="section-test-a-key">Test a key</h2></legend>' in page
+        assert re.findall(r'<input type="hidden" name="key" value="(\w+)">', page) == [name for name, _ in forms]
+        for name, feature in forms:
+            form = key_form(page, name)
+            assert re.search(r'<fieldset class="card"><legend><h2 id="section-[\w-]+">%s</h2> <span class="pill '
+                             % feature, form), name
+            assert form.count("<form") == 1 and form.count('name="csrf"') == 1
         for other in ("/settings/trains-and-buses", "/settings/general"):
-            assert 'name="test"' not in running("GET", other, cookie=running.session())[1], other
-    board = pi("GET", "/settings/keys", cookie=pi.session())[1]
-    assert ">Test the TransportAPI app ID and key</button>" in board
-    assert re.search(r'<p class="hint" id="TAPI_APP_KEY-cost">Uses 1 of today\'s 30 TransportAPI lookups', board)
-    assert 'value="TAPI_APP_KEY" aria-describedby="key-tests-hint TAPI_APP_KEY-cost"' in board
+            other_page = running("GET", other, cookie=running.session())[1]
+            assert 'name="do"' not in other_page and "key-box" not in other_page, other
 
 
-def test_testing_a_key_needs_signing_in(signed):
-    response, _ = signed("POST", "/settings/keys", {"csrf": "x", "test": "RDM_KB_API_KEY"})
-    assert response.status == 303 and response.getheader("Location") == "/settings/login"
-    assert signed.setup.tests == []
+def test_save_key_comes_first_so_enter_saves_then_save_and_test_or_test_saved_key(signed):
+    page = signed("GET", "/settings/keys", cookie=signed.session())[1]
+    saved = key_form(page, "RDM_API_KEY")  # saved in the fixture
+    buttons = re.findall(r'<button type="submit" name="do" value="(\w+)"([^>]*)>([^<]+)</button>', saved)
+    assert buttons == [("save", ' class="primary"', "Save key"), ("save_test", ' class="if-typed"', "Save and test"),
+                       ("test", ' class="if-empty"', "Test saved key")]
+    not_set = key_form(page, "RDM_DETAILS_API_KEY")
+    buttons = re.findall(r'<button type="submit" name="do" value="(\w+)"([^>]*)>([^<]+)</button>', not_set)
+    assert buttons == [("save", ' class="primary"', "Save key"), ("save_test", "", "Save and test")]
+    # Enter in a box sends the first button; a post without one saves too.
+    response, cookie = press(signed, "RDM_DETAILS_API_KEY", None, {"RDM_DETAILS_API_KEY": "details-key-0001"})
+    assert "Saved 1 change" in after(signed, response, cookie) and signed.setup.tests == []
+    assert "RDM_DETAILS_API_KEY=details-key-0001" in signed.store.secrets_file.read_text()
 
 
+def test_the_stylesheet_shows_save_and_test_or_test_saved_key_as_the_box_is_filled_or_empty():
+    css = WEB_CSS.read_text()
+    assert ".keyform:not(:has(.key-box:not(:placeholder-shown))) .if-typed { display: none; }" in css
+    assert ".keyform:has(.key-box:not(:placeholder-shown)) .if-empty { display: none; }" in css
+
+
+def test_key_boxes_are_plain_text_never_filled_and_left_alone_by_password_managers(signed):
+    page = signed("GET", "/settings/keys", cookie=signed.session())[1]
+    boxes = re.findall(r'<input id="\w+" name="\w+" type="text" class="key-box"[^>]*>', page)
+    assert len(boxes) == 4 and 'type="password"' not in page
+    for box in boxes:
+        assert "value=" not in box
+        for attribute in ('autocomplete="off"', 'spellcheck="false"', 'autocapitalize="none"', 'autocorrect="off"',
+                          "data-1p-ignore", 'data-lpignore="true"', 'placeholder="'):
+            assert attribute in box, (box, attribute)
+    assert 'placeholder="Paste a new key to replace the saved one"' in key_form(page, "RDM_API_KEY")
+    assert 'placeholder="Paste the key"' in key_form(page, "RDM_DETAILS_API_KEY")
+
+
+def test_each_keys_state_is_a_pill_in_words(signed):
+    signed.secrets.write_text("BODS_API_KEY=bods-key-7654321\n")  # trains are on, with no key
+    cookie = signed.session()
+    page = signed("GET", "/settings/keys", cookie=cookie)[1]
+    pills = dict(re.findall(r'name="key" value="(\w+)">.*?<span class="pill pill-(\w+)">', page, re.S))
+    assert pills == {"RDM_API_KEY": "warn", "BODS_API_KEY": "neutral", "RDM_DETAILS_API_KEY": "neutral",
+                     "RDM_KB_API_KEY": "neutral"}
+    assert f'{icon("triangle-alert")} Needed for trains</span>' in key_form(page, "RDM_API_KEY")
+    assert f'{icon("info")} Saved, not tested</span>' in key_form(page, "BODS_API_KEY")
+    assert f'{icon("minus")} Not set</span>' in key_form(page, "RDM_DETAILS_API_KEY")
+    signed.setup.result = KeyResult("wrong_key", "The Bus Open Data Service refused this key.")
+    after(signed, press(signed, "BODS_API_KEY", "test", cookie=cookie)[0], cookie)
+    page = signed("GET", "/settings/keys", cookie=cookie)[1]
+    assert f'<span class="pill pill-bad">{icon("x")} Refused, tested {pill_time(signed)}</span>' in page
+
+
+def test_saving_one_key_leaves_every_other_key_and_setting_as_saved(signed):
+    settings = 'title = "Our house"\ntheme = "plain"\n[dashboard]\nhistory_days = 30\n'
+    signed.store.settings_file.write_text(settings)
+    signed.store.secrets_file.write_text("TAPI_APP_ID=kept\nRDM_API_KEY=saved-rail-key-1\n")
+    # Whatever else a forged post carries, only its form's key is saved.
+    others = {"RDM_API_KEY": "sneaky-rail-key", "title": "x", "kb_incidents_url": "https://raildata.org.uk/x"}
+    response, cookie = press(signed, "RDM_DETAILS_API_KEY", "save", others | {"RDM_DETAILS_API_KEY": "details-key-0001"})
+    assert response.getheader("Location") == "/settings/keys?saved"
+    assert signed.store.settings_file.read_text() == settings
+    assert signed.store.secrets_file.read_text() == (
+        "TAPI_APP_ID=kept\nRDM_API_KEY=saved-rail-key-1\nRDM_DETAILS_API_KEY=details-key-0001\n")
+    assert signed.store.secrets_file.stat().st_mode & 0o777 == 0o600
+    assert signed.config.read_text() == CONFIG and signed.secrets.read_text() == KEYS
+    page = after(signed, response, cookie)
+    assert "<title>Saved – Keys – Our house settings</title>" in page
+    notice = re.search(r'<p class="notice-ok" role="status" tabindex="-1" autofocus>(.*?)</p>', page).group(1)
+    assert notice == (f"{icon('check')} Saved 1 change: Rail Data Marketplace key for where each train is. "
+                      "The dashboard starts again in a few seconds to use them.")
+    for secret in ("details-key-0001", "saved-rail-key-1", "sneaky-rail-key"):
+        assert secret not in "".join(signed.seen)
+
+
+def test_the_first_key_can_be_saved_before_the_others(signed):
+    signed.secrets.write_text("")  # trains and buses set up, and neither key: the settings don't load yet
+    response, _ = press(signed, "RDM_API_KEY", "save", {"RDM_API_KEY": "first-rail-key"})
+    assert response.getheader("Location") == "/settings/keys?saved"
+    assert signed.store.secrets_file.read_text() == "RDM_API_KEY=first-rail-key\n"
+
+
+def test_save_and_test_saves_then_tests_the_key_without_pasting_it_again(signed):
+    response, cookie = press(signed, "RDM_DETAILS_API_KEY", "save_test", {"RDM_DETAILS_API_KEY": "details-key-0001"})
+    assert response.getheader("Location") == "/settings/keys?saved"
+    assert signed.store.secrets_file.read_text() == "RDM_DETAILS_API_KEY=details-key-0001\n"
+    assert signed.setup.tests == [("RDM_DETAILS_API_KEY", None, None)]  # as saved
+    page = after(signed, response, cookie)
+    form = key_form(page, "RDM_DETAILS_API_KEY")
+    result = ('<p class="key-result key-result-works" id="RDM_DETAILS_API_KEY-test" role="status" tabindex="-1" '
+              f'autofocus>{icon("check")} Saved. <strong>Works:</strong> It works: the service answered.</p>')
+    box = re.search(r'<input id="RDM_DETAILS_API_KEY"[^>]*>', form).group(0)
+    assert form[form.index(box) + len(box):].startswith(result)
+    assert 'aria-describedby="RDM_DETAILS_API_KEY-hint RDM_DETAILS_API_KEY-test"' in box
+    # The result takes focus; the notice above still says what was saved.
+    assert '<p class="notice-ok" role="status">' in page and page.count("autofocus") == 1
+    assert f"Works, tested {pill_time(signed)}</span>" in form
+    assert results(signed) == {"results": {"RDM_DETAILS_API_KEY": {"state": "works", "time": int(signed.clock.now)}}}
+    assert "key-result" not in signed("GET", "/settings/keys?saved", cookie=cookie)[1]  # said once
+
+
+@pytest.mark.parametrize("do", ["test", "save_test"])
+def test_a_saved_key_is_tested_as_saved_with_its_box_empty_and_nothing_saved(signed, do):
+    response, cookie = press(signed, "RDM_API_KEY", do)
+    assert response.getheader("Location") == "/settings/keys?tested"
+    assert signed.setup.tests == [("RDM_API_KEY", None, None)]
+    assert not signed.store.settings_file.exists() and not signed.store.secrets_file.exists()
+    page = after(signed, response, cookie)
+    assert "<title>Key tested – Keys – Glossop settings</title>" in page and "notice-ok" not in page
+    assert (f'autofocus>{icon("check")} <strong>Works:</strong> It works: the service answered.</p>'
+            in key_form(page, "RDM_API_KEY"))
+    page = signed("GET", "/settings/keys", cookie=cookie)[1]
+    assert "key-result" not in page and f"Works, tested {pill_time(signed)}</span>" in key_form(page, "RDM_API_KEY")
+
+
+def test_a_result_is_said_only_on_the_keys_page(signed):
+    response, cookie = press(signed, "RDM_API_KEY", "test")
+    for path in ("/settings/general?tested", "/settings/trains-and-buses?saved", "/settings?saved"):
+        reply, page = signed("GET", path, cookie=cookie)
+        assert reply.status == 200 and "key-result" not in page and "Key tested" not in page, path
+    assert "<strong>Works:</strong>" in after(signed, response, cookie)
+
+
+def test_test_saved_key_never_saves_what_is_typed(signed):
+    response, cookie = press(signed, "RDM_DETAILS_API_KEY", "test", {"RDM_DETAILS_API_KEY": "typed-details-key-1"})
+    assert response.getheader("Location") == "/settings/keys?tested"
+    assert signed.setup.tests == [("RDM_DETAILS_API_KEY", None, None)] and not signed.store.secrets_file.exists()
+
+
+def test_a_result_is_kept_as_its_state_and_time_only_in_a_private_file(signed):
+    typed = "typed-details-key-1"
+    signed.setup.result = KeyResult("not_subscribed", f"Refused {typed} and rail-key-1234567.")
+    press(signed, "RDM_DETAILS_API_KEY", "save_test", {"RDM_DETAILS_API_KEY": typed})
+    path = signed.folder / "keytests.json"
+    assert path.stat().st_mode & 0o777 == 0o600
+    raw = path.read_bytes()
+    assert json.loads(raw) == {"results": {"RDM_DETAILS_API_KEY": {"state": "refused",
+                                                                   "time": int(signed.clock.now)}}}
+    for secret in (typed, "rail-key-1234567", "bods-key-7654321", "Refused"):
+        assert secret.encode() not in raw
+
+
+def test_an_inconclusive_test_keeps_the_last_result(signed):
+    press(signed, "RDM_API_KEY", "test")
+    first = results(signed)
+    signed.clock.now += 60
+    signed.setup.result = KeyResult("service_down", "The Rail Data Marketplace took too long to answer.")
+    press(signed, "RDM_API_KEY", "test")
+    assert results(signed) == first
+
+
+def test_replacing_a_key_forgets_its_last_result(signed):
+    press(signed, "RDM_API_KEY", "test")
+    press(signed, "BODS_API_KEY", "test")
+    response, cookie = press(signed, "RDM_API_KEY", "save", {"RDM_API_KEY": "new-rail-key-1"})
+    assert list(results(signed)["results"]) == ["BODS_API_KEY"]
+    page = after(signed, response, cookie)
+    assert "Saved, not tested</span>" in key_form(page, "RDM_API_KEY")
+    assert "Works, tested" in key_form(page, "BODS_API_KEY")
+
+
+def test_a_key_pasted_wrongly_is_not_saved_or_tested_and_the_summary_says_so(signed):
+    cookie = signed.session()
+    for do in ("save", "save_test"):
+        response, _ = press(signed, "RDM_KB_API_KEY", do, {"RDM_KB_API_KEY": "has spaces in it"}, cookie=cookie)
+        assert response.status == 422
+    page = signed.seen[-1]
+    assert "<title>Keys – Glossop settings: fix the errors</title>" in page
+    assert ('<a href="#RDM_KB_API_KEY">Engineering works – Rail Data Marketplace key for engineering works: '
+            "Paste the key exactly") in page
+    assert "The key you pasted wasn't saved. Paste it again once the rest is right." in page
+    assert re.search(r'<div class="field has-error"><label for="RDM_KB_API_KEY">', page)
+    assert "has spaces in it" not in "".join(signed.seen)
+    assert signed.setup.tests == [] and not signed.store.secrets_file.exists()
+
+
+@pytest.mark.parametrize("typed", ["abc\nRDM_API_KEY=evil", "abc\r\nx", "abc#x", "x" * 201])
+def test_a_key_cannot_carry_another_line_or_anything_but_a_key(signed, typed):
+    response, _ = press(signed, "BODS_API_KEY", "save_test", {"BODS_API_KEY": typed})
+    assert response.status == 422 and "Paste the key exactly" in signed.seen[-1]
+    assert not signed.store.secrets_file.exists() and signed.setup.tests == []
+
+
+def test_saving_an_empty_box_says_to_paste_a_key(signed):
+    for name, do in (("RDM_DETAILS_API_KEY", "save"), ("RDM_DETAILS_API_KEY", "save_test"), ("RDM_API_KEY", "save")):
+        response, _ = press(signed, name, do)
+        assert response.status == 422 and f'<a href="#{name}">' in signed.seen[-1], (name, do)
+        assert "Nothing to save: paste a key first." in signed.seen[-1]
+    assert signed.setup.tests == [] and not signed.store.secrets_file.exists()
+
+
+def test_the_engineering_works_address_sits_with_its_key(signed):
+    page = signed("GET", "/settings/keys", cookie=signed.session())[1]
+    assert page.count('id="kb_incidents_url"') == 1 and 'id="kb_incidents_url"' in key_form(page, "RDM_KB_API_KEY")
+    response, _ = press(signed, "RDM_KB_API_KEY", "save", {"kb_incidents_url": "https://api.example.test/kb"})
+    assert response.status == 422 and not signed.store.settings_file.exists()
+    assert '<a href="#kb_incidents_url">Engineering works – Engineering works address: ' in signed.seen[-1]
+    assert 'value="https://api.example.test/kb"' in signed.seen[-1]  # what was typed, to put right
+    url = "https://api1.raildata.org.uk/1010-knowledgebase-incidents/incidents"
+    response, cookie = press(signed, "RDM_KB_API_KEY", "save", {"kb_incidents_url": url, "RDM_KB_API_KEY": "kb-key-0001"})
+    assert signed.saved() == {"dashboard": {"kb_incidents_url": url}}
+    assert signed.store.secrets_file.read_text() == "RDM_KB_API_KEY=kb-key-0001\n"
+    page = after(signed, response, cookie)
+    assert ("Saved 2 changes: Rail Data Marketplace key for engineering works; Engineering works address." in page)
+    assert f'value="{url}"' in key_form(page, "RDM_KB_API_KEY")
+    # The address alone, then nothing changed.
+    press(signed, "RDM_KB_API_KEY", "test")
+    assert "RDM_KB_API_KEY" in results(signed)["results"]
+    response, cookie = press(signed, "RDM_KB_API_KEY", "save", {"kb_incidents_url": ""})
+    assert "Saved 1 change: Engineering works address." in after(signed, response, cookie)
+    assert "RDM_KB_API_KEY" not in results(signed)["results"]  # tested with the old address
+    response, cookie = press(signed, "RDM_KB_API_KEY", "save")
+    assert "Saved. Nothing had changed." in after(signed, response, cookie)
+
+
+def test_transportapis_app_id_and_key_share_one_form_and_test(pi_signed):
+    page = pi_signed("GET", "/settings/keys", cookie=pi_signed.session())[1]
+    form = key_form(page, "TAPI_APP_KEY")
+    assert re.findall(r'<input id="(\w+)" name="\w+" type="text" class="key-box"', form) == ["TAPI_APP_ID",
+                                                                                              "TAPI_APP_KEY"]
+    assert ('<p class="hint" id="TAPI_APP_KEY-cost">Testing uses 1 of today\'s 30 TransportAPI lookups, the same '
+            "ones bus times use.</p>") in form
+    assert 'value="save_test" aria-describedby="TAPI_APP_KEY-cost">Save and test</button>' in form
+    response, cookie = press(pi_signed, "TAPI_APP_KEY", "save_test", {"TAPI_APP_ID": "typed-app-id"})
+    assert pi_signed.store.secrets_file.read_text() == "TAPI_APP_ID=typed-app-id\n"
+    assert pi_signed.setup.tests == [("TAPI_APP_KEY", None, None)]
+    page = after(pi_signed, response, cookie)
+    assert "Saved 1 change: TransportAPI app ID." in page
+    form = key_form(page, "TAPI_APP_KEY")
+    assert form.count('id="TAPI_APP_KEY-test"') == 1  # the one result, by the app key's box
+    assert re.search(r'<input id="TAPI_APP_KEY"[^>]*aria-describedby="[^"]*TAPI_APP_KEY-test"', form)
+    press(pi_signed, "TAPI_APP_KEY", "save", {"TAPI_APP_KEY": "typed-app-key"})
+    assert pi_signed.store.secrets_file.read_text() == "TAPI_APP_ID=typed-app-id\nTAPI_APP_KEY=typed-app-key\n"
+    assert "TAPI_APP_KEY" not in results(pi_signed)["results"]  # replacing either forgets the pair's result
+
+
+def test_a_key_form_needs_signing_in(signed):
+    for do in ("save", "save_test", "test"):
+        response, _ = signed("POST", "/settings/keys", {"csrf": "x", "key": "RDM_API_KEY", "do": do,
+                                                         "RDM_API_KEY": "new-rail-key-1"})
+        assert response.status == 303 and response.getheader("Location") == "/settings/login"
+    assert signed.setup.tests == [] and not signed.store.secrets_file.exists()
+
+
+@pytest.mark.parametrize("do", ["save", "save_test", "test"])
 @pytest.mark.parametrize("csrf, origin", [
     ("forged", "same"),
     (None, "same"),
@@ -983,63 +1224,53 @@ def test_testing_a_key_needs_signing_in(signed):
     ("right", "null"),
     ("right", None),
 ])
-def test_testing_a_key_needs_the_same_origin_and_the_form_token(signed, csrf, origin):
-    cookie = signed.session()
-    right = signed.csrf(cookie)
-    body = {"test": "RDM_KB_API_KEY", "RDM_KB_API_KEY": "typed-kb-key-1"}
-    if csrf is not None:
-        body["csrf"] = right if csrf == "right" else csrf
-    response, _ = signed("POST", "/settings/keys", body, cookie=cookie, origin=origin)
-    assert response.status == 403 and signed.setup.tests == []
+def test_a_key_form_needs_the_same_origin_and_the_form_token(signed, do, csrf, origin):
+    response, _ = press(signed, "RDM_API_KEY", do, {"RDM_API_KEY": "new-rail-key-1"}, origin=origin, csrf=csrf)
+    assert response.status == 403
+    assert signed.setup.tests == [] and not signed.store.secrets_file.exists()
+    assert not (signed.folder / "keytests.json").exists()
 
 
-def test_a_key_test_is_a_plain_small_form_like_a_save(signed):
+def test_a_key_form_is_a_plain_small_form_like_a_save(signed):
     cookie = signed.session()
     csrf = signed.csrf(cookie)
-    response, _ = signed("POST", "/settings/keys", cookie=cookie, json_body={"csrf": csrf, "test": "RDM_API_KEY"})
+    response, _ = signed("POST", "/settings/keys", cookie=cookie,
+                         json_body={"csrf": csrf, "key": "RDM_API_KEY", "do": "test"})
     assert response.status == 400
-    response, _ = signed("POST", "/settings/keys", {"csrf": csrf, "test": "RDM_API_KEY", "title": "x" * 70_000},
-                         cookie=cookie)
+    response, _ = signed("POST", "/settings/keys", {"csrf": csrf, "key": "RDM_API_KEY", "do": "test",
+                                                   "title": "x" * 70_000}, cookie=cookie)
     assert response.status == 413 and signed.setup.tests == []
 
 
-def test_a_key_is_tested_as_typed_else_as_saved_and_nothing_is_saved(signed):
-    press_test(signed, "/settings/keys", "RDM_DETAILS_API_KEY", {"RDM_DETAILS_API_KEY": " typed-details-key-1 "})
-    press_test(signed, "/settings/keys", "RDM_KB_API_KEY")  # its box empty: the saved one
-    press_test(signed, "/settings/keys", "RDM_API_KEY", {"kb_incidents_url": "https://raildata.org.uk/not-saved"})
-    assert signed.setup.tests == [
-        ("RDM_DETAILS_API_KEY", "typed-details-key-1", None),
-        ("RDM_KB_API_KEY", None, None),
-        ("RDM_API_KEY", None, None),
-    ]
-    assert not (signed.folder / "settings.toml").exists() and not signed.store.secrets_file.exists()
+@pytest.mark.parametrize("name, do", [
+    ("TAPI_APP_KEY", "test"),  # the board's, and its view is off
+    ("TAPI_APP_ID", "save"),  # a box, not a form
+    ("PASSWORD", "save"),
+    ("", "test"),
+    ("RDM_API_KEY", "delete"),
+])
+def test_only_the_keys_of_the_forms_shown_are_saved_or_tested(signed, name, do):
+    cookie = signed.session()
+    body = {"csrf": signed.csrf(cookie), "key": name, "do": do, name or "x": "new-key-0001"}
+    response, _ = signed("POST", "/settings/keys", body, cookie=cookie)
+    assert response.status == 400 and signed.setup.tests == [] and not signed.store.secrets_file.exists()
 
 
-def test_transportapis_app_id_and_key_are_tested_together(pi_signed):
-    press_test(pi_signed, "/settings/keys", "TAPI_APP_KEY",
-               {"TAPI_APP_ID": "typed-app-id", "TAPI_APP_KEY": "typed-app-key"})
-    response, page = press_test(pi_signed, "/settings/keys", "TAPI_APP_KEY", {"TAPI_APP_ID": "typed-app-id"})
-    assert pi_signed.setup.tests == [("TAPI_APP_KEY", "typed-app-key", "typed-app-id"),
-                                     ("TAPI_APP_KEY", None, "typed-app-id")]
-    # The one result is by the app key's box, and both boxes point to it.
-    assert page.count('id="TAPI_APP_KEY-test"') == 1
-    for box in ("TAPI_APP_ID", "TAPI_APP_KEY"):
-        assert re.search(r'<input id="%s"[^>]*aria-describedby="[^"]*TAPI_APP_KEY-test"' % box, page), box
+@pytest.mark.parametrize("path", ["/settings/dashboard", "/settings/trains-and-buses", "/settings/general"])
+def test_no_other_page_saves_or_tests_a_key(signed, path):
+    cookie = signed.session()
+    fields = fields_from(signed("GET", path, cookie=cookie)[1])
+    body = fields | {"csrf": signed.csrf(cookie), "key": "RDM_API_KEY", "do": "save_test",
+                     "RDM_API_KEY": "new-rail-key-1", "test": "RDM_API_KEY"}
+    response, _ = signed("POST", path, body, cookie=cookie)
+    assert response.status == 303 and signed.setup.tests == [] and not signed.store.secrets_file.exists()
 
 
-def test_the_result_is_shown_by_its_keys_box_and_unsaved_changes_stay(signed):
-    url = "https://api1.raildata.org.uk/kb"
-    response, page = press_test(signed, "/settings/keys", "RDM_KB_API_KEY",
-                                {"RDM_KB_API_KEY": "typed-kb-key-1", "kb_incidents_url": url})
-    assert response.status == 200 and "<title>Key tested – Keys – Glossop settings</title>" in page
-    box = re.search(r'<input id="RDM_KB_API_KEY"[^>]*>', page).group(0)
-    assert 'aria-describedby="RDM_KB_API_KEY-hint RDM_KB_API_KEY-test"' in box and "value=" not in box
-    result = ('<p class="key-result key-result-works" id="RDM_KB_API_KEY-test" role="status" tabindex="-1" '
-              f'autofocus>{icon("check")} <strong>Works:</strong> It works: the service answered.</p>')
-    assert 'aria-hidden="true"' in icon("check")
-    assert page[page.index(box) + len(box):].startswith(result)
-    assert fields_from(page)["kb_incidents_url"] == url
-    assert not (signed.folder / "settings.toml").exists()
+def test_the_overview_tests_nothing(signed):
+    cookie = signed.session()
+    response, _ = signed("POST", "/settings", {"csrf": signed.csrf(cookie), "key": "RDM_API_KEY", "do": "test"},
+                         cookie=cookie)
+    assert response.status == 405 and signed.setup.tests == []
 
 
 @pytest.mark.parametrize("state, words", [
@@ -1052,55 +1283,36 @@ def test_the_result_is_shown_by_its_keys_box_and_unsaved_changes_stay(signed):
 ])
 def test_every_result_is_said_in_words_not_colour_alone(signed, state, words):
     signed.setup.result = KeyResult(state, "Said plainly.")
-    _, page = press_test(signed, "/settings/keys", "BODS_API_KEY")
+    response, cookie = press(signed, "BODS_API_KEY", "test")
+    page = after(signed, response, cookie)
     assert f'class="key-result key-result-{state}" id="BODS_API_KEY-test"' in page
     assert f"<strong>{words}:</strong> Said plainly.</p>" in page
 
 
-def test_a_key_is_never_shown_or_logged(signed, caplog):
+def test_no_key_is_ever_shown_or_logged(signed, caplog):
     typed = "typed-details-key-1"
     signed.setup.result = KeyResult("wrong_key", f"Refused {typed} and rail-key-1234567.")
-    response, page = press_test(signed, "/settings/keys", "RDM_DETAILS_API_KEY", {"RDM_DETAILS_API_KEY": typed})
-    assert response.status == 200 and "Refused … and …." in page
-    for secret in (typed, "rail-key-1234567", "bods-key-7654321"):
+    response, cookie = press(signed, "RDM_DETAILS_API_KEY", "save_test", {"RDM_DETAILS_API_KEY": typed})
+    assert "Refused … and …." in after(signed, response, cookie)
+    after(signed, *press(signed, "RDM_API_KEY", "test", {"RDM_API_KEY": "typed-rail-key-2"}))
+    response, _ = press(signed, "BODS_API_KEY", "save", {"BODS_API_KEY": "bad bods key 3"})
+    assert response.status == 422
+    for secret in (typed, "typed-rail-key-2", "bad bods key 3", "rail-key-1234567", "bods-key-7654321"):
         assert secret not in "".join(signed.seen) and secret not in caplog.text
-
-
-def test_a_key_typed_wrongly_is_not_tested(signed):
-    _, page = press_test(signed, "/settings/keys", "RDM_KB_API_KEY", {"RDM_KB_API_KEY": "has spaces in it"})
-    assert signed.setup.tests == [] and "has spaces in it" not in page
-    assert "<strong>Not tested:</strong> Paste the key exactly" in page
-
-
-@pytest.mark.parametrize("path, name", [
-    ("/settings/dashboard", "RDM_KB_API_KEY"),
-    ("/settings/trains-and-buses", "RDM_API_KEY"),
-    ("/settings/general", "BODS_API_KEY"),
-    ("/settings/keys", "TAPI_APP_KEY"),  # the board's, and its view is off
-    ("/settings/keys", "PASSWORD"),
-    ("/settings/keys", ""),
-])
-def test_only_the_keys_page_tests_keys_and_only_those_it_shows(signed, path, name):
-    response, _ = press_test(signed, path, name)
-    assert response.status == 400 and signed.setup.tests == []
-
-
-def test_the_overview_tests_nothing(signed):
-    cookie = signed.session()
-    response, _ = signed("POST", "/settings", {"csrf": signed.csrf(cookie), "test": "RDM_API_KEY"}, cookie=cookie)
-    assert response.status == 405 and signed.setup.tests == []
 
 
 @pytest.mark.parametrize("failure, said", [
     (TooSoon("Wait 7 s before testing this key again"), "Wait 7 s before testing this key again"),
     (SetupError("The fetch service didn't answer in time"), "The fetch service didn't answer in time"),
-    (RuntimeError("typed-kb-key-1 went wrong"), "Something went wrong while testing the key. Try again."),
+    (RuntimeError("rail-key-1234567 went wrong"), "Something went wrong while testing the key. Try again."),
 ])
 def test_a_test_that_cant_run_says_why_plainly(signed, caplog, failure, said):
     signed.setup.result = failure
-    response, page = press_test(signed, "/settings/keys", "RDM_KB_API_KEY", {"RDM_KB_API_KEY": "typed-kb-key-1"})
-    assert response.status == 200 and f"<strong>Not tested:</strong> {said}" in page
-    assert "typed-kb-key-1" not in page and "typed-kb-key-1" not in caplog.text
+    response, cookie = press(signed, "RDM_API_KEY", "test")
+    page = after(signed, response, cookie)
+    assert f"<strong>Not tested:</strong> {said}" in page
+    assert "rail-key-1234567" not in page and "rail-key-1234567" not in caplog.text
+    assert not (signed.folder / "keytests.json").exists()
 
 
 class KeyRunner:
@@ -1134,20 +1346,21 @@ def on_a_pi(make):
 
 
 def test_on_a_pi_the_test_runs_in_the_setup_service_never_here(on_a_pi):
-    _, page = press_test(on_a_pi, "/settings/keys", "TAPI_APP_KEY",
-                         {"TAPI_APP_ID": "typed-app-id", "TAPI_APP_KEY": "typed-app-key"})
-    assert "<strong>Works:</strong> It works." in page
-    assert on_a_pi.runner.tests == [("TAPI_APP_KEY", "typed-app-key", "typed-app-id")] and on_a_pi.here == []
+    response, cookie = press(on_a_pi, "TAPI_APP_KEY", "save_test",
+                             {"TAPI_APP_ID": "typed-app-id", "TAPI_APP_KEY": "typed-app-key"})
+    assert "<strong>Works:</strong> It works." in after(on_a_pi, response, cookie)
+    # Saved first, so the service reads the pair as saved: no key is handed to it.
+    assert on_a_pi.runner.tests == [("TAPI_APP_KEY", None, None)] and on_a_pi.here == []
 
 
 def test_each_key_is_tested_at_most_once_every_ten_seconds_as_in_the_wizard(on_a_pi):
-    press_test(on_a_pi, "/settings/keys", "RDM_API_KEY")
-    _, page = press_test(on_a_pi, "/settings/keys", "RDM_API_KEY")
-    assert "<strong>Not tested:</strong> Wait 10 s before testing this key again" in page
-    press_test(on_a_pi, "/settings/keys", "BODS_API_KEY")  # another key has its own limit
+    press(on_a_pi, "RDM_API_KEY", "test")
+    response, cookie = press(on_a_pi, "RDM_API_KEY", "test")
+    assert "<strong>Not tested:</strong> Wait 10 s before testing this key again" in after(on_a_pi, response, cookie)
+    press(on_a_pi, "BODS_API_KEY", "test")  # another key has its own limit
     assert on_a_pi.setup.handle("testkey", {"name": "BODS_API_KEY"})[0] == 429  # one limit with the wizard
     on_a_pi.now[0] += 10
-    press_test(on_a_pi, "/settings/keys", "RDM_API_KEY")
+    press(on_a_pi, "RDM_API_KEY", "test")
     assert [name for name, _, _ in on_a_pi.runner.tests] == ["RDM_API_KEY", "BODS_API_KEY", "RDM_API_KEY"]
 
 

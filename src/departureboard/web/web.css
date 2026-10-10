@@ -321,8 +321,14 @@ section.card h3 { margin: var(--s-4) 0 var(--s-2); }
 .shortcuts { margin-bottom: var(--s-2); }
 .shortcuts a { display: inline-block; min-height: 1.5rem; padding: var(--s-1) 0; font-weight: 500; }
 code { font-family: var(--mono); font-size: 0.9375em; overflow-wrap: anywhere; }
+/* The Keys page: a form per key, its buttons in a row. Save and test shows
+   while a box has something in it, Test saved key while they are all empty;
+   a browser without :has shows both. */
+.key-box::placeholder { color: var(--muted); opacity: 1; }
+.key-actions { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-3); margin: 0 0 var(--s-4); }
+.keyform:not(:has(.key-box:not(:placeholder-shown))) .if-typed { display: none; }
+.keyform:has(.key-box:not(:placeholder-shown)) .if-empty { display: none; }
 /* Testing a key. A result's words carry it; the colour and icon only repeat them. */
-.key-test { margin-bottom: var(--s-3); }
 .key-result { margin: var(--s-2) 0 0; padding: var(--s-2) var(--s-3); border: 1px solid var(--line);
   border-left-width: 0.25rem; border-radius: var(--r-sm); }
 .key-result-works { color: var(--ok-fg); border-color: var(--ok-fg); }

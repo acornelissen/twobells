@@ -1,7 +1,8 @@
 """One settings form for any of the settings pages in schema.PAGES.
 
 Each page of the settings site (web/settingsite.py) but the overview is a
-GroupForm of one page: Trains and buses, Board, Dashboard, Keys or General.
+GroupForm of one page: Trains and buses, Board, Dashboard or General. The
+Keys page is web/keyspage.py's.
 What the site puts around the form (its header, the tabs, the footer)
 comes from it.
 
@@ -12,28 +13,21 @@ one of them has an error. A field shows only while the view that uses it
 is on, and while what it needs is set up; a section with nothing set up
 says so, with a link to setup.
 
-Saved values go to settings.toml in the store (layered over config.toml)
-and keys to the secrets.env beside it, merged into what is there
-(overlay.save_to), so settings the form doesn't show, other pages'
-included, survive. Nothing is written unless every field passes its own
-check and the merged settings then load in every view that is on, so a
-change for one view can't break the other. Keys are write-only: the form
-shows whether one is set, never its value. A settings.toml that can't be
-read is replaced on saving, keeping a copy as settings.toml.broken. A save
-says what it changed in words (never a key), for the page drawn after it.
-
-Given a way to test keys, the form has a test button for each of its keys
-(TransportAPI's app ID and key are one test), after Save so that Enter in
-a box still saves. A test takes the key typed in its box, else the saved
-one, saves nothing, and is answered with the form drawn again: the result
-in words by the key's box, its key boxes empty, never a key in the page.
+Saved values go to settings.toml in the store (layered over config.toml),
+merged into what is there (overlay.save_to), so settings the form doesn't
+show, other pages' included, survive. Nothing is written unless every
+field passes its own check and the merged settings then load in every view
+that is on, so a change for one view can't break the other. A
+settings.toml that can't be read is replaced on saving, keeping a copy as
+settings.toml.broken. A save says what it changed in words, for the page
+drawn after it.
 """
 
 from __future__ import annotations
 
 import html
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import datetime
 from functools import cache
 from pathlib import Path
@@ -42,13 +36,10 @@ from zoneinfo import ZoneInfo
 
 from ..board.displays.display import DISPLAY_PANELS
 from ..board.state import StateStore
-from ..core.errors import safe_message
 from ..settings import schema
 from ..settings.config import ConfigError, merge, settings_from
 from ..settings.overlay import BROKEN_NAME, OverlayError, save_to
-from ..settings.schema import KEY_VALUE, Field, Invalid
-from ..setup import keytest
-from ..sources.disruptions import kb_url_is_placeholder
+from ..settings.schema import Field, Invalid
 from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
 from . import places, windowrows
 from .icons import icon
@@ -58,21 +49,6 @@ if TYPE_CHECKING:
     from ..settings.installs import Install
     from ..settings.store import Store
 
-# (name, typed value or None, typed app ID or None) -> its result; see SettingsSite.
-KeyTest = Callable[[str, "str | None", "str | None"], keytest.KeyResult]
-# Each key test's result: an icon, hidden from screen readers, and the words that carry it.
-RESULTS = {
-    "works": ("check", "Works"),
-    "wrong_key": ("x", "Wrong key"),
-    "not_subscribed": ("x", "Not subscribed"),
-    "service_down": ("triangle-alert", "Service not answering"),
-    "missing": ("triangle-alert", "No key"),
-    "unknown": ("info", "Can't tell"),
-    "not_tested": ("triangle-alert", "Not tested"),
-}
-_MIN_SCRUBBED = 6  # as setupapi: shorter can't be told from ordinary words
-_KEY_SHAPE = "Paste the key exactly; it has only letters, digits and . _ ~ + / = -"
-KEYS_HEADING = "Keys"
 # Each section's one-line description, by (page, heading).
 NOTES: dict[tuple[str, str], str] = {
     ("trains_buses", "Title"): "What the board and the dashboard are called.",
@@ -84,7 +60,6 @@ NOTES: dict[tuple[str, str], str] = {
     ("board", "Buses"): "How many buses the board shows, and when it checks for them.",
     ("dashboard", "Departures"): "How many departures the dashboard lists, and how often it checks.",
     ("dashboard", "Quiet hours"): "When the dashboard rests, overnight say.",
-    ("keys", KEYS_HEADING): "Keys are never shown. Paste one to replace it; leave a box empty to keep it.",
     ("general", "Views"): "Where your departures show. At least one is on.",
     ("general", "Dates and times"): "Bank holidays, and the time zone.",
 }
@@ -127,16 +102,6 @@ def check_views(data: dict, env: Mapping[str, str], folder: Path, install: Insta
         settings_from(data, env)
     if "dashboard" in on:
         _build(data, env, folder)
-
-
-@dataclass(frozen=True)
-class Tested:
-    """A key test's result, for the box of key `name`: a RESULTS state, and
-    plain words with no key in them."""
-
-    name: str
-    state: str
-    message: str
 
 
 def edited(raw: str, shown: str) -> bool:
@@ -223,15 +188,14 @@ class GroupForm:
     changes take effect, in the save bar; `setup` is the setup wizard's
     address, for the sections with nothing set up; `clock` gives the local
     time as a naive datetime, by default the time now in the configured
-    timezone. `test_key`, if given, tests a key and never raises; without
-    it the form has no test buttons."""
+    timezone."""
 
     def __init__(self, store: Store, pages: Sequence[str], action: str,
                  load_secrets: Callable[[], Mapping[str, str]], *, install: Install, noun: str,
                  header: Callable[[str], str] = lambda csrf: "", footer: Callable[[], str] = lambda: "",
-                 applies: str = "", setup: str = "", clock: Callable[[], datetime] | None = None,
-                 test_key: KeyTest | None = None) -> None:
-        unknown = set(pages) - set(schema.PAGES[1:])
+                 applies: str = "", setup: str = "", clock: Callable[[], datetime] | None = None) -> None:
+        # Not the overview, nor the keys page: it is a keyspage.KeysPage.
+        unknown = set(pages) - {page for page in schema.PAGES[1:] if page != "keys"}
         if unknown:
             raise ValueError(f"Unknown settings pages: {', '.join(sorted(unknown))}")
         self._store = store
@@ -245,7 +209,6 @@ class GroupForm:
         self._applies = applies
         self._setup = setup
         self._clock = clock
-        self._test_key = test_key
 
     # Reading
 
@@ -283,12 +246,6 @@ class GroupForm:
             return True
         return bool(str(self._load_secrets().get("TAPI_APP_KEY", "")).strip())
 
-    def _keys(self, data: dict) -> tuple[tuple[str, str, str], ...]:
-        """The keys on the form: on the keys page, those of every view on."""
-        if "keys" not in self._pages:
-            return ()
-        return schema.keys("general", *self._views_on(data))
-
     def _choosing_views(self) -> bool:
         return "general" in self._pages and len(self._install.offered) > 1
 
@@ -320,8 +277,6 @@ class GroupForm:
                 value = _default(f, data)
             if f.check is schema.on_off:
                 value = "false" if value is False else "true"  # on unless turned off
-            if f.name == "kb_incidents_url" and isinstance(value, str) and kb_url_is_placeholder(value):
-                value = ""
             values[f.name] = _shown(value, f.kind)
         return values
 
@@ -382,31 +337,22 @@ class GroupForm:
             errors |= self._views(fields, changes)
         if "trains_buses" in self._pages:
             errors |= neither_on(data, fields, self._noun)
-        keys = {}
-        for name, _, _ in self._keys(data):
-            raw = fields.get(name, "").strip()
-            if not raw:
-                continue
-            if not KEY_VALUE.match(raw):
-                errors[name] = _KEY_SHAPE
-            else:
-                keys[name] = raw
         if errors:
             return errors
         # Merged into what is saved, so settings this form doesn't show (setup's
         # bus operators and routes, the weather position, the other view's)
         # survive; a broken file can't be merged into, so it is replaced.
         try:
-            save_to(self._store.target(self._loads), changes, keys, self._load_secrets(), replace=bool(broken))
+            save_to(self._store.target(self._loads), changes, {}, self._load_secrets(), replace=bool(broken))
         except OverlayError as error:
             return {"_form": str(error)}
         if changed is not None:
-            changed.extend(self._changed(form, shown, keys))
+            changed.extend(self._changed(form, shown))
         return {}
 
-    def _changed(self, form: list[Field], before: dict[str, str], keys: Mapping[str, str]) -> list[str]:
+    def _changed(self, form: list[Field], before: dict[str, str]) -> list[str]:
         """What a save changed, in words: each field's label, and its old and
-        new values unless it is free text. Keys by their label alone."""
+        new values unless it is free text."""
         try:
             after = self._current(self._read()[0])
         except (OSError, ConfigError):
@@ -421,8 +367,6 @@ class GroupForm:
                 said.append(f.label)
             else:
                 said.append(f"{f.label}, {_words(f, old)} to {_words(f, new)}")
-        labels = {name: label for name, label, _ in schema.keys(*schema.GROUPS)}
-        said.extend(labels.get(name, name) for name in keys)
         return said
 
     def _views(self, fields: dict[str, str], changes: dict) -> dict[str, str]:
@@ -519,39 +463,6 @@ class GroupForm:
         return (f'<fieldset class="field walks"{attrs}><legend>{html.escape(f.label)}</legend>{notes}{inside}'
                 "</fieldset>")
 
-    # Testing a key
-
-    def key_tests(self) -> tuple[str, ...]:
-        """The keys with a test button, by the name it sends: each of the
-        form's keys keytest knows, TransportAPI's app ID tested with its app key."""
-        if self._test_key is None:
-            return ()
-        try:
-            data, _ = self._read()
-        except (OSError, ConfigError):
-            data = {}
-        return tuple(name for name, _, _ in self._keys(data) if name in keytest.KEY_NAMES and name != "TAPI_APP_ID")
-
-    def test_key(self, fields: dict[str, str]) -> Tested | None:
-        """Test the key the button pressed names (fields["test"]): the one
-        typed in its box, else the saved one. None if the form has no such
-        button. Nothing is saved."""
-        name = fields.get("test", "")
-        if self._test_key is None or name not in self.key_tests():
-            return None
-        boxes = ("TAPI_APP_ID", name) if name == "TAPI_APP_KEY" else (name,)
-        typed = {box: fields.get(box, "").strip() for box in boxes}
-        if any(value and not KEY_VALUE.match(value) for value in typed.values()):
-            return Tested(name, "not_tested", _KEY_SHAPE)
-        result = self._test_key(name, typed[name] or None, typed.get("TAPI_APP_ID") or None)
-        # Belt and braces: whatever the test said, no key, typed or saved, is shown.
-        env = self._load_secrets()
-        secrets = [*typed.values(), *(str(env.get(key, "")).strip() for key in keytest.KEY_NAMES)]
-        message = result.message
-        for secret in sorted((s for s in secrets if len(s) >= _MIN_SCRUBBED), key=len, reverse=True):
-            message = message.replace(secret, "…")
-        return Tested(name, result.state if result.state in RESULTS else "unknown", safe_message(message))
-
     # Drawing
 
     def _now(self, data: dict) -> datetime:
@@ -575,17 +486,14 @@ class GroupForm:
         return render_status(data, state, self._now(data), read_cache(self._store.folder, division))
 
     def _sections(self, fields: list[Field], data: dict) -> list[tuple[str, str, list[Field]]]:
-        """The form's sections in order: each one's page and heading, and its
-        fields. The keys page's has its keys, with or without fields."""
+        """The form's sections in order: each one's page and heading, and its fields."""
         found: dict[tuple[str, str], list[Field]] = {}
         for f in fields:
             found.setdefault((f.page, f.heading), []).append(f)
-        if self._keys(data):
-            found.setdefault(("keys", KEYS_HEADING), [])
         return [(page, heading, here) for (page, heading), here in found.items()]
 
     def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,
-               values: dict[str, str] | None = None, tested: Tested | None = None) -> str:
+               values: dict[str, str] | None = None) -> str:
         errors = errors or {}
         e = html.escape
         unreadable = ""
@@ -598,7 +506,7 @@ class GroupForm:
         sections = self._sections(fields, data)
         out = [self._header(csrf)]
         if errors:
-            out.append(self._summary(fields, data, errors, values or {}))
+            out.append(self._summary(fields, data, errors))
         if message:
             out.append(f'<p class="notice-ok" role="status" tabindex="-1" autofocus>{icon("check")} '
                        f"{e(message)}</p>")
@@ -623,7 +531,7 @@ class GroupForm:
         out.append(f'<form method="post" action="{e(self._action)}" novalidate>')
         out.append(f'<input type="hidden" name="csrf" value="{e(csrf)}">')
         for page, heading, here in sections:
-            out.append(self._section(page, heading, here, data, shown, errors, tested))
+            out.append(self._section(page, heading, here, data, shown, errors))
         # Save first: the first button is the one Enter in a box presses.
         out.append('<div class="savebar">')
         if self._applies:
@@ -632,13 +540,12 @@ class GroupForm:
         else:
             out.append('<button type="submit" class="primary">Save changes</button>')
         out.append("</div>")
-        out.append(self._key_test_buttons(data))
         out.append("</form>")
         out.append(self._footer())
         return "".join(out)
 
     def _section(self, page: str, heading: str, fields: list[Field], data: dict, shown: dict[str, str],
-                 errors: dict[str, str], tested: Tested | None) -> str:
+                 errors: dict[str, str]) -> str:
         """One section: a fieldset with the heading in its legend, a pill when
         it is switched off, its description, then its fields, the advanced
         ones in a disclosure; or, with nothing set up, how to set it up."""
@@ -664,8 +571,6 @@ class GroupForm:
             where = f'<a href="{e(self._setup)}">{e(link)}</a>' if self._setup else e(link)
             out.append(f'<p class="empty">{e(before)} {where}{e(after)}</p></fieldset>')
             return "".join(out)
-        if heading == KEYS_HEADING and page == "keys":
-            out.append(self._key_fields(data, errors, tested))
         common = [f for f in here if f.tier == "common"]
         advanced = [f for f in here if f.tier == "advanced"]
         for f in common:
@@ -749,50 +654,11 @@ class GroupForm:
             return f'<p class="hint">{e(BUS_NOTE)}</p>'
         return ""
 
-    def _key_fields(self, data: dict, errors: dict[str, str], tested: Tested | None) -> str:
-        secrets = self._load_secrets()
-        out = []
-        for name, label, hint in self._keys(data):
-            status = "set" if str(secrets.get(name, "")).strip() else "not set"
-            result_id, result = "", ""
-            if tested is not None and name == tested.name:
-                result_id, result = f"{name}-test", _result(tested)
-            elif tested is not None and (name, tested.name) == ("TAPI_APP_ID", "TAPI_APP_KEY"):
-                result_id = "TAPI_APP_KEY-test"  # tested together: the one result, by the app key's box
-            out.append(_key_field(name, label, f"{hint} Currently {status}.", errors.get(name), result_id, result))
-        return "".join(out)
-
-    def _key_test_buttons(self, data: dict) -> str:
-        names = self.key_tests()
-        if not names:
-            return ""
-        e = html.escape
-        labels = {name: label for name, label, _ in self._keys(data)}
-        out = ['<fieldset class="card key-tests"><legend><h2 id="section-test-a-key">Test a key</h2></legend>'
-               '<p class="hint" id="key-tests-hint">Tests the key typed in its box above, or the saved one if the '
-               "box is empty, with one small request to its service. Nothing is saved, and the key boxes are "
-               "emptied: paste a key again to save it.</p>"]
-        for name in names:
-            described, cost = "key-tests-hint", ""
-            text = f"Test the {labels[name]}"
-            if name in keytest.COSTS_A_LOOKUP:
-                text = "Test the TransportAPI app ID and key"
-                described += f" {name}-cost"
-                cost = (f'<p class="hint" id="{name}-cost">Uses 1 of today\'s 30 TransportAPI lookups, the same '
-                        "ones bus times use.</p>")
-            out.append(f'<div class="key-test">{cost}<button type="submit" name="test" value="{e(name)}" '
-                       f'aria-describedby="{described}">{e(text)}</button></div>')
-        out.append("</fieldset>")
-        return "".join(out)
-
-    def _summary(self, fields: list[Field], data: dict, errors: dict[str, str], values: dict[str, str]) -> str:
+    def _summary(self, fields: list[Field], data: dict, errors: dict[str, str]) -> str:
         """The error summary: each problem named by section and field, linked
-        to the field (a choice's first option); and, as key boxes are never
-        filled again, that keys pasted weren't saved."""
+        to the field (a choice's first option)."""
         e = html.escape
         names = {f.name: f.label if f.heading == f.label else f"{f.heading} – {f.label}" for f in fields}
-        keys = self._keys(data)
-        names |= {name: f"{KEYS_HEADING} – {label}" for name, label, _ in keys}
         anchors = {}
         for f in fields:
             for name in errors:
@@ -805,19 +671,17 @@ class GroupForm:
             if name != "_form" else f"<li>{e(text)}</li>"
             for name, text in errors.items()
         )
-        pasted = ""
-        if any(values.get(name, "").strip() for name, _, _ in keys):
-            pasted = "<p>The keys you pasted weren't saved. Paste them again once the rest is right.</p>"
         return (
             '<div class="summary" role="alert" tabindex="-1" id="problems" autofocus>'
             f"<h2>Not saved: fix {len(errors)} {'thing' if len(errors) == 1 else 'things'}</h2>"
-            f"<ul>{items}</ul>{pasted}</div>"
+            f"<ul>{items}</ul></div>"
         )
 
 
 def _described(name: str, hint: str, error: str | None, also: str = "") -> tuple[str, str]:
     """A field's aria attributes, and its hint and error paragraphs; `also`
-    is the id of another paragraph about it, like a key test's result."""
+    is the id of another paragraph about it, like a key test's result
+    (web/keyspage.py)."""
     e = html.escape
     ids, parts = [], []
     if hint:
@@ -898,28 +762,4 @@ def _checkbox(f: Field, value: str, error: str | None) -> str:
         f'<div class="field check{" has-error" if error else ""}">'
         f'<input id="{f.name}" name="{f.name}" type="checkbox" value="on"{checked}{attrs}>'
         f'<label for="{f.name}">{e(f.label)}</label>{notes}</div>'
-    )
-
-
-def _key_field(name: str, label: str, hint: str, error: str | None, result_id: str = "", result: str = "") -> str:
-    """A key's box, never with its value; `result` (HTML, with id `result_id`) goes right after it."""
-    e = html.escape
-    attrs, notes = _described(name, hint, error, result_id)
-    return (
-        f'<div class="field{" has-error" if error else ""}"><label for="{name}">{e(label)}</label>{notes}'
-        # Plain text: password managers ignore autocomplete="off" on password
-        # boxes and could fill in the settings password here, so they are told
-        # to leave it alone in their own words too.
-        f'<input id="{name}" name="{name}" type="text" autocomplete="off" spellcheck="false" autocapitalize="none" '
-        f'autocorrect="off" data-1p-ignore data-lpignore="true"{attrs}>{result}</div>'
-    )
-
-
-def _result(tested: Tested) -> str:
-    """A key test's result, in words, focused when the page opens so it is read out."""
-    shape, words = RESULTS[tested.state]
-    message = html.escape(tested.message, quote=False)
-    return (
-        f'<p class="key-result key-result-{tested.state}" id="{tested.name}-test" role="status" tabindex="-1" '
-        f'autofocus>{icon(shape)} <strong>{words}:</strong> {message}</p>'
     )

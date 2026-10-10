@@ -24,12 +24,13 @@ the pages and forms web/formpages.py's:
 - The settings are in pages by task, one tab each (schema.PAGES): the
   Overview at /settings, which only shows, then Trains and buses, Board
   and Dashboard while their view is on (a page whose view is off is not
-  found), Keys and General, each a groupform.GroupForm of its own fields.
-  A save answers with a redirect to the page's ?saved, which says what
-  changed. The Keys page tests its keys: a button posting its form with
-  test=<key>, checked as a save is, and run by the wizard's API
-  (SetupApi.test_key), so the wizard's limit and, on a Pi, its runner
-  apply. Pages are drawn on the server with no JavaScript, under a CSP
+  found) and General, each a groupform.GroupForm of its own fields, and
+  Keys, a keyspage.KeysPage with a small form per key. A save answers with
+  a redirect to the page's ?saved, which says what changed. Each key's form
+  saves that key alone, and can test it as saved: checked as a save is,
+  answered with a redirect too (to ?tested after a test alone), and run by
+  the wizard's API (SetupApi.test_key), so the wizard's limit and, on a Pi,
+  its runner apply. Pages are drawn on the server with no JavaScript, under a CSP
   allowing form-action 'self'. The setup wizard
   under /settings/setup/ is the one place with scripts: its own files
   only, from an allowlist read at start and served without a session, its
@@ -91,7 +92,8 @@ from .formpages import (
     redirect,
 )
 from .formpages import WIZARD_TYPES as _CONTENT_TYPES
-from .groupform import GroupForm, Tested
+from .groupform import GroupForm
+from .keyspage import KeysPage
 
 if TYPE_CHECKING:
     from ..dashboard.snapshot import SnapshotSource
@@ -278,11 +280,13 @@ class SettingsSite:
         self._forms: dict[str, SettingsPage] = {
             tab: GroupForm(store, (tab,), TAB_PATHS[tab], store.env, install=install, noun=install.noun,
                            header=lambda csrf, tab=tab: self._header(tab, csrf), footer=self._footer,
-                           applies=applies(install), setup=SETUP,
-                           test_key=self._test_key if tab == "keys" else None)
-            for tab in TABS[1:]
+                           applies=applies(install), setup=SETUP)
+            for tab in TABS[1:] if tab != "keys"
         }
         self._forms["overview"] = Overview(self)
+        self._keys = KeysPage(store, TAB_PATHS["keys"], store.env, install=install,
+                              header=lambda csrf: self._header("keys", csrf), footer=self._footer,
+                              applies=applies(install), test_key=self._test_key, clock=clock)
         self._pages = FormPages(
             self._forms["overview"], self.password, self.sessions, self.lockout,
             codes or ResetCodes(store.folder, to_board=self.to_board),
@@ -394,8 +398,8 @@ class SettingsSite:
         tab = self._tab(path)
         if tab == "overview":  # it only shows
             return Reply(405, b"Method Not Allowed", headers={"Allow": "GET, HEAD"})
-        if tab is not None and "test" in fields:  # a key's test button, not Save
-            return self._pages.test_key(fields, headers, self._forms[tab], self._title(tab))
+        if tab == "keys":
+            return self._pages.key_form(fields, headers, self._keys, self._title(tab), TAB_PATHS[tab])
         if tab is not None:
             return self._pages.save(fields, headers, self._forms[tab], self._title(tab), TAB_PATHS[tab])
         return Reply(404, b"Not Found")
@@ -412,7 +416,8 @@ class SettingsSite:
         if tab == "overview":  # drawn for this request: the wall tablet's address is the one the browser used
             return self._pages.settings_page(headers, Overview(self, headers.get("Host")), self._title(tab))
         if tab is not None:
-            return self._pages.settings_page(headers, self._forms[tab], self._title(tab), saved=query == "saved")
+            page = self._keys if tab == "keys" else self._forms[tab]
+            return self._pages.settings_page(headers, page, self._title(tab), saved=query in ("saved", "tested"))
         if path == PREFIX + "/":
             return redirect(PREFIX)
         if path == PREFIX + "/login":
@@ -556,21 +561,18 @@ def _query(query: str) -> dict[str, str]:
 
 class Overview:
     """The overview page, drawn by the site for one request (`host` is its
-    Host header). It has no form: nothing is saved or tested from it."""
+    Host header). It has no form: nothing is saved from it."""
 
     def __init__(self, site: SettingsSite, host: str | None = None) -> None:
         self._site = site
         self._host = host
 
     def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,
-               values: dict[str, str] | None = None, tested: Tested | None = None) -> str:
+               values: dict[str, str] | None = None) -> str:
         return self._site.overview(csrf, self._host)
 
     def save(self, fields: dict[str, str], changed: list[str] | None = None) -> dict[str, str]:
         return {"_form": "Nothing is saved from the overview"}
-
-    def test_key(self, fields: dict[str, str]) -> Tested | None:
-        return None
 
 
 def _default_stylesheet() -> bytes:

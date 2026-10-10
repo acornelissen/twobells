@@ -32,8 +32,8 @@ lon = -1.95
 # An install that offers both views, as a Pi will.
 BOTH = Install("both", ("board", "dashboard"), ("board",), None)
 # Every page a board's settings have, and a dashboard's: the forms below show them all at once.
-BOARD_PAGES = ("trains_buses", "board", "keys", "general")
-DASHBOARD_PAGES = ("trains_buses", "dashboard", "keys", "general")
+BOARD_PAGES = ("trains_buses", "board", "general")
+DASHBOARD_PAGES = ("trains_buses", "dashboard", "general")
 
 
 @pytest.fixture
@@ -100,13 +100,11 @@ def test_saving_the_dashboard_s_settings_keeps_the_board_s(store):
     assert written["dashboard"]["train_rows"] == 12
 
 
-def test_a_form_shows_only_its_own_view_s_fields_and_keys(store):
+def test_a_form_shows_only_its_own_view_s_fields(store):
     board = board_form(store, lambda: dict(ENV)).render("tok")
     dashboard = dashboard_form(store, lambda: dict(ENV)).render("tok")
     assert 'id="board_train_rows"' in board and 'id="dashboard_train_rows"' not in board
     assert 'id="dashboard_train_rows"' in dashboard and 'id="board_train_rows"' not in dashboard
-    assert 'id="TAPI_APP_ID"' in board and 'id="TAPI_APP_ID"' not in dashboard
-    assert 'id="RDM_KB_API_KEY"' in dashboard and 'id="RDM_KB_API_KEY"' not in board
     for page in (board, dashboard):
         assert 'id="title"' in page and 'id="timezone"' in page and 'id="train_crs"' in page
 
@@ -184,10 +182,10 @@ def test_a_save_that_would_break_the_other_view_is_refused(store):
 def test_turning_a_view_on_checks_that_it_loads(store):
     store.make()
     store.settings_file.write_text('[app]\nviews = ["board"]\n')
-    form = form_for(store, ("general", "keys"), env={"RDM_API_KEY": "rail-key-1234567", "BODS_API_KEY": "bods"})
+    form = form_for(store, ("general",), env={"RDM_API_KEY": "rail-key-1234567", "BODS_API_KEY": "bods"})
     assert form.save(fields_of(form) | {"view_dashboard": "on", "kb_incidents_url": "x"}) == {}  # not this form's
     store.settings_file.write_text('[app]\nviews = ["board"]\n')
-    form = form_for(store, ("general", "keys"), env={**ENV, "RDM_DETAILS_API_KEY": "bad key"})
+    form = form_for(store, ("general",), env={**ENV, "RDM_DETAILS_API_KEY": "bad key"})
     errors = form.save(fields_of(form) | {"view_dashboard": "on"})
     assert "RDM_DETAILS_API_KEY" in errors["_form"]
     assert saved(store) == {"app": {"views": ["board"]}}
@@ -251,16 +249,6 @@ def test_defaults_are_shown_where_the_settings_say_nothing(store):
     assert window_rows(dashboard, "quiet_windows") == [(f"{weekdays} sat sun", "01:00", "05:00")]
 
 
-def test_the_knowledgebase_address_must_be_at_raildata(store):
-    form = dashboard_form(store, lambda: dict(ENV))
-    errors = form.save(fields_of(form) | {"kb_incidents_url": "https://api.example.test/kb"})
-    assert set(errors) == {"kb_incidents_url"} and "raildata.org.uk" in errors["kb_incidents_url"]
-    url = "https://api1.raildata.org.uk/1010-knowledgebase-incidents/incidents"
-    assert form.save(fields_of(form) | {"kb_incidents_url": url}) == {}
-    assert saved(store)["dashboard"]["kb_incidents_url"] == url
-    assert fields_of(form)["kb_incidents_url"] == url
-
-
 # A broken settings.toml
 
 
@@ -303,9 +291,9 @@ def test_a_config_toml_that_can_t_be_read_is_said_and_nothing_saved(store):
 def test_every_control_has_a_label_and_every_group_a_legend(store):
     store.make()
     store.settings_file.write_text('[app]\nviews = ["board", "dashboard"]\n')
-    page = form_for(store, ("trains_buses", "board", "dashboard", "keys", "general")).render("tok")
+    page = form_for(store, ("trains_buses", "board", "dashboard", "general")).render("tok")
     ids = set(re.findall(r'<(?:input|select|textarea)[^>]* id="([\w-]+)"', page))
-    assert {"theme", "theme-1", "text_size", "title", "RDM_KB_API_KEY", "train_windows-1-mon", "quiet_windows-3-to"} <= ids
+    assert {"theme", "theme-1", "text_size", "title", "timezone", "train_windows-1-mon", "quiet_windows-3-to"} <= ids
     assert ids <= set(re.findall(r'<label for="([\w-]+)"', page))
     assert page.count("<fieldset") == page.count("<legend>") == page.count("</fieldset>")
 
@@ -336,8 +324,8 @@ def test_two_choices_or_a_few_short_ones_sit_side_by_side(store):
     assert re.search(r"\.option \{ min-height: 2\.75rem;", coarse)
 
 
-@pytest.mark.parametrize("pages", [("general", "screen"), ("overview",)])
-def test_unknown_pages_and_the_overview_are_refused(store, pages):
+@pytest.mark.parametrize("pages", [("general", "screen"), ("overview",), ("general", "keys")])
+def test_unknown_pages_the_overview_and_the_keys_page_are_refused(store, pages):
     with pytest.raises(ValueError, match=pages[-1]):
         form_for(store, pages)
 
@@ -345,11 +333,11 @@ def test_unknown_pages_and_the_overview_are_refused(store, pages):
 # What a save says it changed
 
 
-def test_a_save_says_what_it_changed_in_words_and_never_a_key(store):
+def test_a_save_says_what_it_changed_in_words(store):
     form = board_form(store, lambda: dict(ENV))
     changed = []
     fields = fields_of(form) | {"title": "Home", "theme": "plain", "accent": "", "min_redraw_minutes": "5",
-                                "bus_enabled": "false", "bank_holidays": "scotland", "RDM_API_KEY": "new-rail-key-1"}
+                                "bus_enabled": "false", "bank_holidays": "scotland"}
     assert form.save(fields, changed) == {}
     assert changed == [
         "Title",  # free text: named, not quoted
@@ -357,7 +345,6 @@ def test_a_save_says_what_it_changed_in_words_and_never_a_key(store):
         "Look, Station board (amber dot matrix) to Plain (black on white)",
         "Redraw at most every, 2 minutes to 5 minutes",
         "Bank holidays, Like Sundays, for England and Wales to Like Sundays, for Scotland",
-        "Rail Data Marketplace key",
     ]
     again = []
     assert form.save(fields_of(form), again) == {} and again == []

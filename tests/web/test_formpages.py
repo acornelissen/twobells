@@ -436,6 +436,14 @@ def test_one_host_can_draw_and_save_several_forms_each_under_its_own_title(host)
     assert host.pages.settings_page(headers(), other, "Gadget settings").status == 303  # still needs a session
 
 
+def test_a_saved_notice_is_said_only_on_the_page_that_saved(host):
+    other = FakePage()
+    cookie, csrf = host.signed_in()
+    host.pages.save({"csrf": csrf, "title": "Glossop"}, headers(cookie), other, "Gadget settings", "/area/gadget")
+    assert "Saved" not in host.pages.settings_page(headers(cookie), saved=True).body.decode()
+    assert "Saved 2 changes" in host.pages.settings_page(headers(cookie), other, saved=True).body.decode()
+
+
 def test_a_saved_notice_is_only_for_the_session_that_saved(host):
     cookie, csrf = host.signed_in()
     other, _ = host.signed_in()
