@@ -44,7 +44,7 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 from . import discover, keytest, setup
-from .config import ConfigError, read_config
+from .config import ConfigError
 from .overlay import OverlayError, Target, board_target, save_to
 from .settingsform import _KEY_VALUE, KEYS
 from .setup import Place, SetupError, Station, Stop
@@ -579,10 +579,11 @@ class SetupApi:
         return {"state": result.state, "message": result.message}
 
     def _settings(self) -> dict:
-        """The board's settings, for what a key test asks about; empty if they don't read."""
+        """The settings in force for this host (its saved overlay included),
+        for what a key test asks about; empty if they don't read."""
         try:
-            return read_config(self._config_path)
-        except (OSError, ConfigError):
+            return self._target.current()
+        except (OSError, ConfigError, ValueError, TypeError):
             return {}
 
     # Saving.
