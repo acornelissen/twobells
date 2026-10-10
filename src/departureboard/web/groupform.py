@@ -1,17 +1,26 @@
-"""One settings form for any of the groups of settings in schema.FIELDS.
+"""One settings form for any of the settings pages in schema.PAGES.
 
-Each tab of the settings site (web/settingsite.py) is a GroupForm of one
-group: General, Board or Dashboard. What the site puts around the form
-(its heading, signing out, the tabs) comes from it.
+Each page of the settings site (web/settingsite.py) but the overview is a
+GroupForm of one page: Trains and buses, Board, Dashboard, Keys or General.
+What the site puts around the form (its header, the tabs, the footer)
+comes from it.
+
+A page's fields are drawn in sections, one per heading the fields give
+(schema.Field.heading), each a fieldset whose legend holds the section's
+h2, with its advanced fields in a closed Advanced disclosure, opened when
+one of them has an error. A field shows only while the view that uses it
+is on, and while what it needs is set up; a section with nothing set up
+says so, with a link to setup.
 
 Saved values go to settings.toml in the store (layered over config.toml)
 and keys to the secrets.env beside it, merged into what is there
-(overlay.save_to), so settings the form doesn't show, other groups'
+(overlay.save_to), so settings the form doesn't show, other pages'
 included, survive. Nothing is written unless every field passes its own
 check and the merged settings then load in every view that is on, so a
 change for one view can't break the other. Keys are write-only: the form
 shows whether one is set, never its value. A settings.toml that can't be
-read is replaced on saving, keeping a copy as settings.toml.broken.
+read is replaced on saving, keeping a copy as settings.toml.broken. A save
+says what it changed in words (never a key), for the page drawn after it.
 
 Given a way to test keys, the form has a test button for each of its keys
 (TransportAPI's app ID and key are one test), after Save so that Enter in
@@ -26,6 +35,7 @@ import html
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -61,15 +71,36 @@ RESULTS = {
 }
 _MIN_SCRUBBED = 6  # as setupapi: shorter can't be told from ordinary words
 _KEY_SHAPE = "Paste the key exactly; it has only letters, digits and . _ ~ + / = -"
-LEGENDS: dict[str | None, str] = {None: "General", "train": "Trains", "bus": "Buses", "weather": "Weather"}
-VIEWS_LEGEND = "Views"
-_SECTIONS = (None, "train", "bus", "weather")
+KEYS_HEADING = "Keys"
+# Each section's one-line description, by (page, heading).
+NOTES: dict[tuple[str, str], str] = {
+    ("trains_buses", "Title"): "What the board and the dashboard are called.",
+    ("trains_buses", "Trains"): "Departures from your station.",
+    ("trains_buses", "Buses"): "Departures from your stops.",
+    ("trains_buses", "Weather"): "A rain warning beside the departures, and the dashboard's forecast.",
+    ("board", "Display"): "How the board looks.",
+    ("board", "Trains"): "How many trains the board shows, and when it checks for them.",
+    ("board", "Buses"): "How many buses the board shows, and when it checks for them.",
+    ("dashboard", "Departures"): "How many departures the dashboard lists, and how often it checks.",
+    ("dashboard", "Quiet hours"): "When the dashboard rests, overnight say.",
+    ("keys", KEYS_HEADING): "Keys are never shown. Paste one to replace it; leave a box empty to keep it.",
+    ("general", "Views"): "Where your departures show. At least one is on.",
+    ("general", "Dates and times"): "Bank holidays, and the time zone.",
+}
+# What a section whose fields all need something not set up says: the words,
+# the link to setup's, and the words after the link.
 _MISSING = {
-    "train": "Trains aren't set up. Use setup to pick a station, or add a [train] section to config.toml.",
-    "bus": "Buses aren't set up. Use setup to pick stops and find their bus companies, "
-           "or add a [bus] section to config.toml.",
-    "weather": "No location set. Use setup to set home, or add a [weather] section with lat and lon "
-               "to config.toml, for the rain warning and forecast.",
+    "train": ("Trains aren't set up.", "Pick a station with setup", ", or add a [train] section to config.toml."),
+    "bus": ("Buses aren't set up.", "Pick stops with setup",
+            ", which finds their bus companies too, or add a [bus] section to config.toml."),
+    "weather": ("No location is set for the rain warning and forecast.", "Set home with setup",
+                ", or add a [weather] section with lat and lon to config.toml."),
+}
+# How a unit is said by a screen reader, where its sign isn't a word.
+_SPOKEN = {"%": "per cent"}
+_KEYBOARDS = {
+    "code": ' autocapitalize="characters" autocorrect="off" spellcheck="false"',
+    "plain": ' autocapitalize="none" autocorrect="off" spellcheck="false"',
 }
 
 
@@ -115,6 +146,28 @@ def edited(raw: str, shown: str) -> bool:
     return lines(raw) != lines(shown)
 
 
+def section_id(heading: str) -> str:
+    """A section's heading's id: never a field's name, which are ids too."""
+    return "section-" + "-".join(heading.lower().split())
+
+
+@cache
+def _stations() -> dict[str, str]:
+    """Each station's name by its code, from the bundled list: no network."""
+    from ..setup.lookups import bundled_stations
+
+    return {code: name for name, code, _, _ in bundled_stations()}
+
+
+def _station(code: str) -> str:
+    """A station code with its name, like "Glossop (GLO)", or the code alone."""
+    try:
+        name = _stations().get(code)
+    except (OSError, ValueError):  # the bundled list is part of the package; the hint can do without
+        name = None
+    return f"{name} ({code})" if name else code
+
+
 def _shown(value, kind: str) -> str:
     """A config value as the form shows it: lists one per line in a text area,
     comma-separated in a one-line box."""
@@ -137,40 +190,55 @@ def _default(f: Field, data: dict):
     return f.default
 
 
+def _words(f: Field, value: str) -> str:
+    """A field's value in words, for saying what a save changed."""
+    if f.kind in ("radios", "select"):
+        return dict(f.options).get(value, value) or "none"
+    if f.kind == "check":
+        return "on" if value == "on" else "off"
+    if not value:
+        return "none"
+    if f.unit == "%":
+        return f"{value}%"
+    return f"{value} {f.unit}" if f.unit else value
+
+
 class GroupForm:
-    """The form for some groups of settings, for a signed-in owner: drawn
-    from the settings in force, and saved into the store.
+    """The form for some settings pages (usually one), for a signed-in
+    owner: drawn from the settings in force, and saved into the store.
 
-    `groups` are schema.GROUPS to show; `action` is where the form posts;
-    `load_secrets` gives the environment with every key saved; `install`
-    says which views can be switched on (a choice only when it offers more
-    than one) and which are on by default; `noun` is what shows the
-    departures ("board"), for the words when trains and buses are both off;
-    `header` draws what goes before the form, given the form token;
-    `legends` renames the fieldsets (None is the first); `clock` gives the
-    local time as a naive datetime, by default the time now in the
-    configured timezone. `test_key`, if given, tests a key and never
-    raises; without it the form has no test buttons."""
+    `pages` are schema.PAGES to show (not the overview); `action` is where
+    the form posts; `load_secrets` gives the environment with every key
+    saved; `install` says which views can be switched on (a choice only
+    when it offers more than one) and which are on by default; `noun` is
+    what shows the departures ("board"), for the words when trains and
+    buses are both off; `header` draws what goes before the form, given the
+    form token, and `footer` what goes after it; `applies` says when saved
+    changes take effect, in the save bar; `setup` is the setup wizard's
+    address, for the sections with nothing set up; `clock` gives the local
+    time as a naive datetime, by default the time now in the configured
+    timezone. `test_key`, if given, tests a key and never raises; without
+    it the form has no test buttons."""
 
-    def __init__(self, store: Store, groups: Sequence[str], action: str,
+    def __init__(self, store: Store, pages: Sequence[str], action: str,
                  load_secrets: Callable[[], Mapping[str, str]], *, install: Install, noun: str,
-                 header: Callable[[str], str] = lambda csrf: "",
-                 legends: Mapping[str | None, str] | None = None,
-                 clock: Callable[[], datetime] | None = None,
+                 header: Callable[[str], str] = lambda csrf: "", footer: Callable[[], str] = lambda: "",
+                 applies: str = "", setup: str = "", clock: Callable[[], datetime] | None = None,
                  test_key: KeyTest | None = None) -> None:
-        unknown = set(groups) - set(schema.GROUPS)
+        unknown = set(pages) - set(schema.PAGES[1:])
         if unknown:
-            raise ValueError(f"Unknown settings groups: {', '.join(sorted(unknown))}")
+            raise ValueError(f"Unknown settings pages: {', '.join(sorted(unknown))}")
         self._store = store
-        self._groups = tuple(groups)
+        self._pages = tuple(pages)
         self._action = action
         self._load_secrets = load_secrets
         self._install = install
         self._noun = noun
         self._header = header
-        self._legends = {**LEGENDS, **(legends or {})}
+        self._footer = footer
+        self._applies = applies
+        self._setup = setup
         self._clock = clock
-        self._keys = schema.keys(*self._groups)
         self._test_key = test_key
 
     # Reading
@@ -186,11 +254,37 @@ class GroupForm:
             return base, str(error)
 
     def _fields(self, data: dict, theme: str) -> list[Field]:
+        """The fields on the form: those of its pages, while the view that uses
+        each is on. The TransportAPI allowance only while TransportAPI is used."""
         display = data.get("display", schema.BOARD_DEFAULTS["display"])
-        return [f for f in schema.fields(str(display), theme) if f.group in self._groups]
+        on = self._views_on(data)
+        found = []
+        for f in schema.fields(str(display), theme):
+            if f.page not in self._pages or (f.group != "general" and f.group not in on):
+                continue
+            if f.kind == "check" and (not self._choosing_views() or f.name.removeprefix("view_")
+                                      not in self._install.offered):
+                continue
+            if f.name == "bus_daily_budget" and not self._transportapi(data):
+                continue
+            found.append(f)
+        return found
+
+    def _transportapi(self, data: dict) -> bool:
+        """Whether the board's buses may come from TransportAPI: its source,
+        or standing in for the timetable with its keys saved."""
+        if schema.bus_source(data.get("bus")) == "transportapi":
+            return True
+        return bool(str(self._load_secrets().get("TAPI_APP_KEY", "")).strip())
+
+    def _keys(self, data: dict) -> tuple[tuple[str, str, str], ...]:
+        """The keys on the form: on the keys page, those of every view on."""
+        if "keys" not in self._pages:
+            return ()
+        return schema.keys("general", *self._views_on(data))
 
     def _choosing_views(self) -> bool:
-        return "general" in self._groups and len(self._install.offered) > 1
+        return "general" in self._pages and len(self._install.offered) > 1
 
     def _views_on(self, data: dict) -> tuple[str, ...]:
         try:
@@ -205,6 +299,9 @@ class GroupForm:
         for f in self._fields(data, str(data.get("theme", ""))):
             if f.kind == "check":
                 values[f.name] = "on" if f.name.removeprefix("view_") in on else ""
+                continue
+            if f.name == "bank_holidays":
+                values[f.name] = schema.holiday_choice(data)
                 continue
             source = data if f.section is None else data.get(f.section, {})
             value = source.get(f.key) if isinstance(source, dict) else None
@@ -222,8 +319,9 @@ class GroupForm:
     def _loads(self, data: dict, env: Mapping[str, str]) -> None:
         check_views(data, env, self._store.folder, self._install)
 
-    def save(self, fields: dict[str, str]) -> dict[str, str]:
-        """Save the fields; field name -> error, or empty when saved."""
+    def save(self, fields: dict[str, str], changed: list[str] | None = None) -> dict[str, str]:
+        """Save the fields; field name -> error, or empty when saved. Once
+        saved, what changed is added to `changed` in words, if given."""
         try:
             data, broken = self._read()
         except (OSError, ConfigError) as error:
@@ -249,15 +347,18 @@ class GroupForm:
                 errors[f.name] = str(error)
                 continue
             target = changes if f.section is None else changes.setdefault(f.section, {})
+            if f.name == "bank_holidays":
+                target.update(schema.holiday_settings(str(value)))
+                continue
             # Every key is written, empty ones too, so clearing a field clears
             # config.toml's value rather than letting it show through.
             target[f.key] = "" if value is None else value
         if self._choosing_views():
             errors |= self._views(fields, changes)
-        if "general" in self._groups:
+        if "trains_buses" in self._pages:
             errors |= neither_on(data, fields, self._noun)
         keys = {}
-        for name, _, _ in self._keys:
+        for name, _, _ in self._keys(data):
             raw = fields.get(name, "").strip()
             if not raw:
                 continue
@@ -274,7 +375,30 @@ class GroupForm:
             save_to(self._store.target(self._loads), changes, keys, self._load_secrets(), replace=bool(broken))
         except OverlayError as error:
             return {"_form": str(error)}
+        if changed is not None:
+            changed.extend(self._changed(form, shown, keys))
         return {}
+
+    def _changed(self, form: list[Field], before: dict[str, str], keys: Mapping[str, str]) -> list[str]:
+        """What a save changed, in words: each field's label, and its old and
+        new values unless it is free text. Keys by their label alone."""
+        try:
+            after = self._current(self._read()[0])
+        except (OSError, ConfigError):
+            return []
+        said = []
+        for f in form:
+            old, new = before.get(f.name, ""), after.get(f.name, "")
+            same = not edited(old, new) if f.kind in ("text", "area") else old == new
+            if same:
+                continue
+            if f.kind in ("text", "area"):
+                said.append(f.label)
+            else:
+                said.append(f"{f.label}, {_words(f, old)} to {_words(f, new)}")
+        labels = {name: label for name, label, _ in schema.keys(*schema.GROUPS)}
+        said.extend(labels.get(name, name) for name in keys)
+        return said
 
     def _views(self, fields: dict[str, str], changes: dict) -> dict[str, str]:
         """[app] views from the checkboxes into `changes`; an error unless at least one is ticked."""
@@ -298,7 +422,11 @@ class GroupForm:
         form's keys keytest knows, TransportAPI's app ID tested with its app key."""
         if self._test_key is None:
             return ()
-        return tuple(name for name, _, _ in self._keys if name in keytest.KEY_NAMES and name != "TAPI_APP_ID")
+        try:
+            data, _ = self._read()
+        except (OSError, ConfigError):
+            data = {}
+        return tuple(name for name, _, _ in self._keys(data) if name in keytest.KEY_NAMES and name != "TAPI_APP_ID")
 
     def test_key(self, fields: dict[str, str]) -> Tested | None:
         """Test the key the button pressed names (fields["test"]): the one
@@ -342,6 +470,16 @@ class GroupForm:
             division = ENGLAND_AND_WALES
         return render_status(data, state, self._now(data), read_cache(self._store.folder, division))
 
+    def _sections(self, fields: list[Field], data: dict) -> list[tuple[str, str, list[Field]]]:
+        """The form's sections in order: each one's page and heading, and its
+        fields. The keys page's has its keys, with or without fields."""
+        found: dict[tuple[str, str], list[Field]] = {}
+        for f in fields:
+            found.setdefault((f.page, f.heading), []).append(f)
+        if self._keys(data):
+            found.setdefault(("keys", KEYS_HEADING), [])
+        return [(page, heading, here) for (page, heading), here in found.items()]
+
     def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,
                values: dict[str, str] | None = None, tested: Tested | None = None) -> str:
         errors = errors or {}
@@ -353,10 +491,13 @@ class GroupForm:
             data, broken, unreadable = {}, "", str(error)
         shown = {**self._current(data), **(values or {})}
         fields = self._fields(data, shown.get("theme", ""))
-        secrets = self._load_secrets()
+        sections = self._sections(fields, data)
         out = [self._header(csrf)]
+        if errors:
+            out.append(self._summary(fields, data, errors, values or {}))
         if message:
-            out.append(f'<p class="saved" role="status">{e(message)}</p>')
+            out.append(f'<p class="notice-ok" role="status" tabindex="-1" autofocus>{icon("check")} '
+                       f"{e(message)}</p>")
         if unreadable:
             out.append(
                 '<div class="summary" role="alert"><h2>The settings can\'t be read</h2>'
@@ -369,19 +510,133 @@ class GroupForm:
                 "<p>The page shows config.toml's settings. Saving replaces the broken file, "
                 f"keeping a copy of it as {BROKEN_NAME}.</p></div>"
             )
-        if errors:
-            out.append(self._summary(fields, errors))
-        if "board" in self._groups:
+        if "board" in self._pages:
             out.append(self._status(data))
+        if len(sections) > 3:
+            links = "".join(f'<li><a href="#{section_id(heading)}">{e(heading)}</a></li>'
+                            for _, heading, _ in sections)
+            out.append(f'<nav class="index" aria-label="On this page"><ul>{links}</ul></nav>')
         out.append(f'<form method="post" action="{e(self._action)}" novalidate>')
         out.append(f'<input type="hidden" name="csrf" value="{e(csrf)}">')
-        for section in _SECTIONS:
-            out.append(self._fieldset(section, fields, data, shown, errors))
-            if section is None and self._choosing_views():
-                out.append(self._views_fieldset(fields, shown, errors))
-        out.append("<fieldset><legend>Keys</legend>"
-                   '<p class="hint">Keys are never shown. Paste one to replace it; leave a box empty to keep it.</p>')
-        for name, label, hint in self._keys:
+        for page, heading, here in sections:
+            out.append(self._section(page, heading, here, data, shown, errors, tested))
+        # Save first: the first button is the one Enter in a box presses.
+        out.append('<div class="savebar">')
+        if self._applies:
+            out.append(f'<p class="applies" id="applies">{e(self._applies)}</p>'
+                       '<button type="submit" class="primary" aria-describedby="applies">Save changes</button>')
+        else:
+            out.append('<button type="submit" class="primary">Save changes</button>')
+        out.append("</div>")
+        out.append(self._key_test_buttons(data))
+        out.append("</form>")
+        out.append(self._footer())
+        return "".join(out)
+
+    def _section(self, page: str, heading: str, fields: list[Field], data: dict, shown: dict[str, str],
+                 errors: dict[str, str], tested: Tested | None) -> str:
+        """One section: a fieldset with the heading in its legend, a pill when
+        it is switched off, its description, then its fields, the advanced
+        ones in a disclosure; or, with nothing set up, how to set it up."""
+        e = html.escape
+        needs = {f.needs for f in fields}
+        single = next(iter(needs)) if len(needs) == 1 else None
+        missing = single in _MISSING and single not in data
+        here = [f for f in fields if f.needs is None or f.needs in data]
+        if not here and fields and not missing:  # a mixed section with none of it set up
+            single = next(f.needs for f in fields if f.needs in _MISSING)
+            missing = True
+        pill = ""
+        if missing:
+            pill = f' <span class="pill pill-neutral">{icon("minus")} Not set up</span>'
+        elif single in _MISSING and self._off(str(single), fields, data, shown):
+            pill = f' <span class="pill pill-neutral">{icon("minus")} Off</span>'
+        out = [f'<fieldset class="card"><legend><h2 id="{section_id(heading)}">{e(heading)}</h2>{pill}</legend>']
+        note = NOTES.get((page, heading), "")
+        if note:
+            out.append(f'<p class="hint lead">{e(note)}</p>')
+        if missing:
+            before, link, after = _MISSING[str(single)]
+            where = f'<a href="{e(self._setup)}">{e(link)}</a>' if self._setup else e(link)
+            out.append(f'<p class="empty">{e(before)} {where}{e(after)}</p></fieldset>')
+            return "".join(out)
+        if heading == KEYS_HEADING and page == "keys":
+            out.append(self._key_fields(data, errors, tested))
+        common = [f for f in here if f.tier == "common"]
+        advanced = [f for f in here if f.tier == "advanced"]
+        for f in common:
+            out.append(self._field(f, data, shown.get(f.name, ""), errors.get(f.name)))
+            if f.name == "bus_enabled":
+                out.append(self._stops(data))
+        out.append(self._readonly(page, heading, data))
+        if advanced:
+            opened = " open" if any(f.name in errors for f in advanced) else ""
+            out.append(f'<details class="advanced"{opened}><summary>Advanced</summary>')
+            out.extend(self._field(f, data, shown.get(f.name, ""), errors.get(f.name)) for f in advanced)
+            out.append("</details>")
+        out.append("</fieldset>")
+        return "".join(out)
+
+    @staticmethod
+    def _off(needs: str, fields: list[Field], data: dict, shown: dict[str, str]) -> bool:
+        """Whether section `needs` is switched off: as its switch shows, if it
+        is in `fields`, else as the settings say."""
+        switch = f"{needs}_enabled"
+        if any(f.name == switch for f in fields):
+            return shown.get(switch) == "false"
+        section = data.get(needs)
+        return isinstance(section, dict) and section.get("enabled") is False
+
+    def _field(self, f: Field, data: dict, value: str, error: str | None) -> str:
+        if f.kind == "check":
+            return _checkbox(f, value, error)
+        if f.kind == "radios":
+            return _radios(f, value, error)
+        hint = f.hint
+        crs = data.get("train", {}).get("crs") if isinstance(data.get("train"), dict) else None
+        if f.name == "train_crs" and isinstance(crs, str) and schema.CRS.match(crs):
+            hint = f"{hint} Currently {_station(crs.upper())}."
+        return _field(f, value, error, hint)
+
+    def _stops(self, data: dict) -> str:
+        """The bus stops, read only: setup changes them, or Advanced by hand."""
+        bus = data.get("bus")
+        stops = bus.get("stops") if isinstance(bus, dict) else None
+        if not isinstance(stops, dict) or not stops:
+            return ""
+        e = html.escape
+        listed = ", ".join(f"{label}: {code}" for label, code in stops.items())
+        change = f' <a href="{e(self._setup)}">Change them with setup</a>' if self._setup else ""
+        return (f'<dl class="readonly"><div><dt>Stops</dt><dd>{e(listed)}.{change}</dd></div></dl>')
+
+    def _readonly(self, page: str, heading: str, data: dict) -> str:
+        """What a section shows but can't change: where it is set instead."""
+        e = html.escape
+        tag = f' <span class="pill pill-neutral">{icon("info")} Set in config.toml</span>'
+        if (page, heading) == ("board", "Display"):
+            display = str(data.get("display", schema.BOARD_DEFAULTS["display"]))
+            panel = DISPLAY_PANELS.get(display)
+            size = f" ({panel.width}×{panel.height})" if panel is not None else ""
+            return (f'<dl class="readonly"><div><dt>Display</dt><dd>{e(display)}{size}{tag}</dd></div></dl>'
+                    '<p class="hint">Changing the display means switching services, so it is set in '
+                    "config.toml.</p>")
+        if (page, heading) == ("trains_buses", "Weather") and isinstance(data.get("weather"), dict):
+            where = data["weather"]
+            place = f"{where.get('lat', '')}, {where.get('lon', '')}"
+            return (f'<dl class="readonly"><div><dt>Location</dt><dd>{e(place)}</dd></div></dl>'
+                    '<p class="hint">Rounded to about 1 km before it is sent to Open-Meteo. Setup sets it from '
+                    "home, or set it in config.toml.</p>")
+        if (page, heading) == ("dashboard", "Departures") and isinstance(data.get("bus"), dict) \
+                and schema.bus_source(data["bus"]) != "bods":
+            from ..dashboard.config import BUS_NOTE
+
+            return f'<p class="hint">{e(BUS_NOTE)}</p>'
+        return ""
+
+    def _key_fields(self, data: dict, errors: dict[str, str], tested: Tested | None) -> str:
+        secrets = self._load_secrets()
+        out = []
+        for name, label, hint in self._keys(data):
             status = "set" if str(secrets.get(name, "")).strip() else "not set"
             result_id, result = "", ""
             if tested is not None and name == tested.name:
@@ -389,20 +644,15 @@ class GroupForm:
             elif tested is not None and (name, tested.name) == ("TAPI_APP_ID", "TAPI_APP_KEY"):
                 result_id = "TAPI_APP_KEY-test"  # tested together: the one result, by the app key's box
             out.append(_key_field(name, label, f"{hint} Currently {status}.", errors.get(name), result_id, result))
-        out.append("</fieldset>")
-        # Save first: the first button is the one Enter in a box presses.
-        out.append('<div class="actions"><button type="submit" class="primary">Save settings</button></div>')
-        out.append(self._key_test_buttons())
-        out.append("</form>")
         return "".join(out)
 
-    def _key_test_buttons(self) -> str:
+    def _key_test_buttons(self, data: dict) -> str:
         names = self.key_tests()
         if not names:
             return ""
         e = html.escape
-        labels = {name: label for name, label, _ in self._keys}
-        out = ['<fieldset class="key-tests"><legend>Test a key</legend>'
+        labels = {name: label for name, label, _ in self._keys(data)}
+        out = ['<fieldset class="card key-tests"><legend><h2 id="section-test-a-key">Test a key</h2></legend>'
                '<p class="hint" id="key-tests-hint">Tests the key typed in its box above, or the saved one if the '
                "box is empty, with one small request to its service. Nothing is saved, and the key boxes are "
                "emptied: paste a key again to save it.</p>"]
@@ -419,65 +669,27 @@ class GroupForm:
         out.append("</fieldset>")
         return "".join(out)
 
-    def _summary(self, fields: list[Field], errors: dict[str, str]) -> str:
+    def _summary(self, fields: list[Field], data: dict, errors: dict[str, str], values: dict[str, str]) -> str:
+        """The error summary: each problem named by section and field, linked
+        to the field (a choice's first option); and, as key boxes are never
+        filled again, that keys pasted weren't saved."""
         e = html.escape
-        names = {f.name: f"{VIEWS_LEGEND if f.kind == 'check' else self._legends[f.needs]} – {f.label}"
-                 for f in fields}
-        names |= {name: f"Keys – {label}" for name, label, _ in self._keys}
+        names = {f.name: f.label if f.heading == f.label else f"{f.heading} – {f.label}" for f in fields}
+        keys = self._keys(data)
+        names |= {name: f"{KEYS_HEADING} – {label}" for name, label, _ in keys}
         items = "".join(
             f'<li><a href="#{e(name)}">{e(names.get(name, name))}: {e(text)}</a></li>'
             if name != "_form" else f"<li>{e(text)}</li>"
             for name, text in errors.items()
         )
+        pasted = ""
+        if any(values.get(name, "").strip() for name, _, _ in keys):
+            pasted = "<p>The keys you pasted weren't saved. Paste them again once the rest is right.</p>"
         return (
             '<div class="summary" role="alert" tabindex="-1" id="problems" autofocus>'
             f"<h2>Not saved: fix {len(errors)} {'thing' if len(errors) == 1 else 'things'}</h2>"
-            f"<ul>{items}</ul></div>"
+            f"<ul>{items}</ul>{pasted}</div>"
         )
-
-    def _fieldset(self, section: str | None, fields: list[Field], data: dict, shown: dict[str, str],
-                  errors: dict[str, str]) -> str:
-        e = html.escape
-        here = [f for f in fields if f.needs == section and f.kind != "check"]
-        if not here:
-            return ""
-        out = [f"<fieldset><legend>{e(self._legends[section])}</legend>"]
-        if section is None and "board" in self._groups:
-            display = str(data.get("display", schema.BOARD_DEFAULTS["display"]))
-            panel = DISPLAY_PANELS.get(display)
-            size = f" ({panel.width}×{panel.height})" if panel is not None else ""
-            out.append(
-                f'<p class="hint">Display: <strong>{e(display)}</strong>{size}. Changing the display '
-                "means switching services, so it's set in config.toml.</p>"
-            )
-        if section is not None and section not in data:
-            out.append(f'<p class="hint">{e(_MISSING[section])}</p></fieldset>')
-            return "".join(out)
-        if section == "weather" and isinstance(data["weather"], dict):
-            where = data["weather"]
-            out.append(
-                f'<p class="hint">Location: <strong>{e(str(where.get("lat", "")))}, '
-                f'{e(str(where.get("lon", "")))}</strong>, rounded to about 1 km before it is sent to '
-                "Open-Meteo. Setup sets it from home, or set it in config.toml.</p>"
-            )
-        if section == "bus" and "dashboard" in self._groups and isinstance(data["bus"], dict) \
-                and schema.bus_source(data["bus"]) != "bods":
-            from ..dashboard.config import BUS_NOTE
-
-            out.append(f'<p class="hint">{e(BUS_NOTE)}</p>')
-        for f in here:
-            out.append(_field(f, shown.get(f.name, ""), errors.get(f.name)))
-        out.append("</fieldset>")
-        return "".join(out)
-
-    def _views_fieldset(self, fields: list[Field], shown: dict[str, str], errors: dict[str, str]) -> str:
-        boxes = [f for f in fields if f.kind == "check" and f.name.removeprefix("view_") in self._install.offered]
-        out = [f"<fieldset><legend>{VIEWS_LEGEND}</legend>"
-               '<p class="hint">Where your departures show. At least one is on.</p>']
-        for f in boxes:
-            out.append(_checkbox(f, shown.get(f.name, ""), errors.get(f.name)))
-        out.append("</fieldset>")
-        return "".join(out)
 
 
 def _described(name: str, hint: str, error: str | None, also: str = "") -> tuple[str, str]:
@@ -499,10 +711,15 @@ def _described(name: str, hint: str, error: str | None, also: str = "") -> tuple
     return attrs, "".join(parts)
 
 
-def _field(f: Field, value: str, error: str | None) -> str:
+def _label(f: Field) -> str:
+    """A field's label, its unit said too for screen readers (the suffix shown after the box is hidden from them)."""
+    unit = f'<span class="vh"> ({html.escape(_SPOKEN.get(f.unit, f.unit))})</span>' if f.unit else ""
+    return f'<label for="{f.name}">{html.escape(f.label)}{unit}</label>'
+
+
+def _field(f: Field, value: str, error: str | None, hint: str | None = None) -> str:
     e = html.escape
-    attrs, notes = _described(f.name, f.hint, error)
-    label = f'<label for="{f.name}">{e(f.label)}</label>'
+    attrs, notes = _described(f.name, f.hint if hint is None else hint, error)
     if f.kind == "select":
         options = "".join(
             f'<option value="{e(v)}"{" selected" if v == value else ""}>{e(text)}</option>' for v, text in f.options
@@ -513,9 +730,36 @@ def _field(f: Field, value: str, error: str | None) -> str:
         control = (f'<textarea id="{f.name}" name="{f.name}" rows="{rows}" spellcheck="false"{attrs}>'
                    f"{e(value)}</textarea>")
     else:
-        mode = ' inputmode="numeric"' if f.kind == "number" else ""
-        control = f'<input id="{f.name}" name="{f.name}" type="text" value="{e(value)}"{mode}{attrs}>'
-    return f'<div class="field{" has-error" if error else ""}">{label}{notes}{control}</div>'
+        extra = ' inputmode="numeric" autocomplete="off"' if f.kind == "number" else ""
+        extra += f' class="w-{f.width}"' if f.width else ""
+        extra += _KEYBOARDS.get(f.keyboard, "")
+        suggestions = ""
+        if f.options:
+            extra += f' list="{f.name}-suggestions"'
+            listed = "".join(f'<option value="{e(v)}"></option>' for v, _ in f.options)
+            suggestions = f'<datalist id="{f.name}-suggestions">{listed}</datalist>'
+        control = f'<input id="{f.name}" name="{f.name}" type="text" value="{e(value)}"{extra}{attrs}>{suggestions}'
+        if f.unit:
+            control = f'<div class="with-unit">{control}<span class="unit" aria-hidden="true">{e(f.unit)}</span></div>'
+    return f'<div class="field{" has-error" if error else ""}">{_label(f)}{notes}{control}</div>'
+
+
+def _radios(f: Field, value: str, error: str | None) -> str:
+    """A short choice: a radio button each, in a fieldset of its own whose
+    legend is the field's label. The first button's id is the field's name,
+    for the links to it; the hint and error describe the group."""
+    e = html.escape
+    attrs, notes = _described(f.name, f.hint, error)
+    # The error says it of the group: a fieldset takes no aria-invalid.
+    attrs = attrs.replace(' aria-invalid="true"', "")
+    options = []
+    for index, (v, text) in enumerate(f.options):
+        box = f.name if index == 0 else f"{f.name}-{index}"
+        checked = " checked" if v == value else ""
+        options.append(f'<div class="option"><input type="radio" id="{box}" name="{f.name}" value="{e(v)}"{checked}>'
+                       f'<label for="{box}">{e(text)}</label></div>')
+    return (f'<fieldset class="field radios{" has-error" if error else ""}"{attrs}><legend>{e(f.label)}</legend>'
+            f'{notes}{"".join(options)}</fieldset>')
 
 
 def _checkbox(f: Field, value: str, error: str | None) -> str:
@@ -537,8 +781,10 @@ def _key_field(name: str, label: str, hint: str, error: str | None, result_id: s
     return (
         f'<div class="field{" has-error" if error else ""}"><label for="{name}">{e(label)}</label>{notes}'
         # Plain text: password managers ignore autocomplete="off" on password
-        # boxes and could fill in the settings password here.
-        f'<input id="{name}" name="{name}" type="text" autocomplete="off" spellcheck="false"{attrs}>{result}</div>'
+        # boxes and could fill in the settings password here, so they are told
+        # to leave it alone in their own words too.
+        f'<input id="{name}" name="{name}" type="text" autocomplete="off" spellcheck="false" autocapitalize="none" '
+        f'autocorrect="off" data-1p-ignore data-lpignore="true"{attrs}>{result}</div>'
     )
 
 

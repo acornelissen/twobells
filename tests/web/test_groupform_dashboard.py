@@ -1,7 +1,6 @@
-"""A GroupForm of the general and dashboard groups together, as the
-dashboard's old settings page had them: the dashboard's settings, saved
-into the store, without the web server. The settings site's tabs
-(test_settingsite.py) are each one of these groups."""
+"""A GroupForm of every page a dashboard's settings have, together: the
+dashboard's settings, saved into the store, without the web server. The
+settings site's pages (test_settingsite.py) are each one of these."""
 
 import re
 import tomllib
@@ -30,9 +29,9 @@ ENV = {"RDM_API_KEY": "rail-key-1234567", "BODS_API_KEY": "bods-key-7654321"}
 
 
 def dashboard_form(store, load_secrets):
-    """The general and dashboard groups' form, on a desktop."""
-    return GroupForm(store, ("general", "dashboard"), "/settings", load_secrets, install=install_named("desktop"),
-                     noun="dashboard", legends={None: "Dashboard"})
+    """A dashboard's settings pages as one form, on a desktop."""
+    return GroupForm(store, ("trains_buses", "dashboard", "keys", "general"), "/settings", load_secrets,
+                     install=install_named("desktop"), noun="dashboard")
 
 
 @pytest.fixture
@@ -54,6 +53,7 @@ def fields_of(form):
     values |= dict(re.findall(r'<textarea id="([a-z_]+)"[^>]*>([^<]*)</textarea>', page))
     for name, options in re.findall(r'<select id="([a-z_]+)"[^>]*>(.*?)</select>', page):
         values[name] = re.search(r'<option value="([^"]*)" selected', options).group(1)
+    values |= dict(re.findall(r'<input type="radio" id="[\w-]+" name="(\w+)" value="([^"]*)" checked', page))
     return values
 
 
@@ -109,8 +109,11 @@ def test_trains_and_buses_cannot_both_be_switched_off(form):
     assert set(errors) == {"train_enabled"} and "dashboard would show nothing" in errors["train_enabled"]
     assert not (form.folder / "settings.toml").exists()  # not saved
     page = form.render("tok", errors=errors, values=fields)
-    assert '<a href="#train_enabled">Trains – Trains: Trains and buses can' in page
-    assert re.search(r'id="train_enabled"[^>]*aria-describedby="train_enabled-hint train_enabled-error"', page)
+    assert '<a href="#train_enabled">Trains – Show trains: Trains and buses can' in page
+    # A choice's hint and error describe its group of buttons; its first button is the link's target.
+    assert ('<fieldset class="field radios has-error" aria-describedby="train_enabled-hint train_enabled-error">'
+            "<legend>Show trains</legend>") in page
+    assert '<input type="radio" id="train_enabled" name="train_enabled" value="true">' in page
 
 
 def test_a_section_off_with_the_templates_placeholders_saves(form):
@@ -121,10 +124,14 @@ def test_a_section_off_with_the_templates_placeholders_saves(form):
     assert loaded(form) == (True, False, True)
 
 
-def test_the_on_off_choice_is_labelled_and_described(form):
+def test_the_on_off_choice_is_a_labelled_and_described_pair_of_radio_buttons(form):
     page = form.render("tok")
-    assert '<label for="train_enabled">Trains</label>' in page
-    assert 'id="bus_enabled" name="bus_enabled" aria-describedby="bus_enabled-hint"' in page
+    assert ('<fieldset class="field radios" aria-describedby="bus_enabled-hint"><legend>Show buses</legend>'
+            in page)
+    assert ('<div class="option"><input type="radio" id="bus_enabled" name="bus_enabled" value="true" checked>'
+            '<label for="bus_enabled">On</label></div>') in page
+    assert ('<div class="option"><input type="radio" id="bus_enabled-1" name="bus_enabled" value="false">'
+            '<label for="bus_enabled-1">Off</label></div>') in page
 
 
 # What is saved is read back

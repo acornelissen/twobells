@@ -1,6 +1,6 @@
-"""One form for any groups of settings: what every tab of the settings site
-shares (the general and board groups together are tested in
-test_groupform_board, the general and dashboard in test_groupform_dashboard)."""
+"""One form for any settings pages: what every page of the settings site
+shares (the board's pages together are tested in test_groupform_board, the
+dashboard's in test_groupform_dashboard)."""
 
 import re
 import stat
@@ -31,6 +31,9 @@ lon = -1.95
 """
 # An install that offers both views, as a Pi will.
 BOTH = Install("both", ("board", "dashboard"), ("board",), None)
+# Every page a board's settings have, and a dashboard's: the forms below show them all at once.
+BOARD_PAGES = ("trains_buses", "board", "keys", "general")
+DASHBOARD_PAGES = ("trains_buses", "dashboard", "keys", "general")
 
 
 @pytest.fixture
@@ -47,19 +50,18 @@ def saved(store):
 
 
 def board_form(store, load_secrets):
-    """The general and board groups' form, on a Pi."""
-    return GroupForm(store, ("general", "board"), "/settings/board", load_secrets, install=install_named("pi"),
-                     noun="board", legends={None: "Board", "weather": "Rain warning"})
+    """A board's settings pages as one form, on a Pi."""
+    return GroupForm(store, BOARD_PAGES, "/settings/board", load_secrets, install=install_named("pi"), noun="board")
 
 
 def dashboard_form(store, load_secrets):
-    """The general and dashboard groups' form, on a desktop."""
-    return GroupForm(store, ("general", "dashboard"), "/settings", load_secrets, install=install_named("desktop"),
-                     noun="dashboard", legends={None: "Dashboard"})
+    """A dashboard's settings pages as one form, on a desktop."""
+    return GroupForm(store, DASHBOARD_PAGES, "/settings", load_secrets, install=install_named("desktop"),
+                     noun="dashboard")
 
 
-def form_for(store, groups, install=BOTH, env=ENV):
-    return GroupForm(store, groups, "/settings", lambda: dict(env), install=install, noun="board")
+def form_for(store, pages, install=BOTH, env=ENV):
+    return GroupForm(store, pages, "/settings", lambda: dict(env), install=install, noun="board")
 
 
 def fields_of(page_or_form):
@@ -69,11 +71,12 @@ def fields_of(page_or_form):
     values |= dict(re.findall(r'<textarea id="(\w+)"[^>]*>([^<]*)</textarea>', page))
     for name, options in re.findall(r'<select id="(\w+)"[^>]*>(.*?)</select>', page):
         values[name] = re.search(r'<option value="([^"]*)" selected', options).group(1)
+    values |= dict(re.findall(r'<input type="radio" id="[\w-]+" name="(\w+)" value="([^"]*)" checked', page))
     values |= dict.fromkeys(re.findall(r'<input id="(\w+)" name="\w+" type="checkbox" value="on" checked', page), "on")
     return values
 
 
-# A save of one group leaves the other's alone
+# A save of one view's pages leaves the other's alone
 
 
 def test_saving_the_board_s_settings_keeps_the_dashboard_s(store):
@@ -97,7 +100,7 @@ def test_saving_the_dashboard_s_settings_keeps_the_board_s(store):
     assert written["dashboard"]["train_rows"] == 12
 
 
-def test_a_form_shows_only_its_own_groups(store):
+def test_a_form_shows_only_its_own_view_s_fields_and_keys(store):
     board = board_form(store, lambda: dict(ENV)).render("tok")
     dashboard = dashboard_form(store, lambda: dict(ENV)).render("tok")
     assert 'id="board_train_rows"' in board and 'id="dashboard_train_rows"' not in board
@@ -112,8 +115,8 @@ def test_a_form_shows_only_its_own_groups(store):
 
 
 def test_the_views_are_checkboxes_in_a_fieldset_of_their_own(store):
-    page = form_for(store, ("general", "board")).render("tok")
-    views = page[page.index("<legend>Views</legend>"):]
+    page = form_for(store, ("general",)).render("tok")
+    views = page[page.index('<legend><h2 id="section-views">Views</h2></legend>'):]
     views = views[:views.index("</fieldset>")]
     for name, label in (("view_board", "The board"), ("view_dashboard", "The dashboard")):
         assert re.search(rf'<input id="{name}" name="{name}" type="checkbox" value="on"', views)
@@ -123,7 +126,7 @@ def test_the_views_are_checkboxes_in_a_fieldset_of_their_own(store):
 
 
 def test_the_views_ticked_are_saved_and_shown(store):
-    form = form_for(store, ("general", "dashboard"))
+    form = form_for(store, ("trains_buses", "general"))
     assert form.save(fields_of(form) | {"view_dashboard": "on"}) == {}
     assert saved(store)["app"] == {"views": ["board", "dashboard"]}
     shown = fields_of(form)
@@ -135,7 +138,7 @@ def test_the_views_ticked_are_saved_and_shown(store):
 
 
 def test_at_least_one_view_must_be_on(store):
-    form = form_for(store, ("general", "board"))
+    form = form_for(store, ("general",))
     fields = {name: value for name, value in fields_of(form).items() if not name.startswith("view_")}
     errors = form.save(fields)
     assert set(errors) == {"view_board"} and "at least one view" in errors["view_board"]
@@ -147,16 +150,16 @@ def test_at_least_one_view_must_be_on(store):
 
 
 def test_a_view_box_sending_anything_but_on_is_refused(store):
-    form = form_for(store, ("general", "board"))
+    form = form_for(store, ("general",))
     errors = form.save(fields_of(form) | {"view_dashboard": "yes"})
     assert set(errors) == {"view_dashboard"}
 
 
 def test_with_one_view_offered_there_is_no_choice_and_none_is_saved(store):
     board_only = Install("board only", ("board",), ("board",), None)
-    for form in (form_for(store, ("general", "board"), board_only), dashboard_form(store, lambda: dict(ENV))):
+    for form in (form_for(store, ("general",), board_only), dashboard_form(store, lambda: dict(ENV))):
         page = form.render("tok")
-        assert "<legend>Views</legend>" not in page and 'type="checkbox"' not in page
+        assert 'id="section-views"' not in page and 'type="checkbox"' not in page
         assert form.save(fields_of(page)) == {}
         assert "app" not in saved(store)
 
@@ -169,7 +172,7 @@ def test_a_save_that_would_break_the_other_view_is_refused(store):
     store.config_path.write_text(CONFIG.replace('source = "bods"', 'source = "transportapi"'))
     store.make()
     store.settings_file.write_text('[app]\nviews = ["board", "dashboard"]\n')
-    dashboard = form_for(store, ("general", "dashboard"))
+    dashboard = form_for(store, ("trains_buses", "general"))
     errors = dashboard.save(fields_of(dashboard) | {"title": "Home"})
     assert set(errors) == {"_form"} and "TAPI_APP_ID" in errors["_form"]
     assert saved(store) == {"app": {"views": ["board", "dashboard"]}}  # not saved
@@ -181,10 +184,10 @@ def test_a_save_that_would_break_the_other_view_is_refused(store):
 def test_turning_a_view_on_checks_that_it_loads(store):
     store.make()
     store.settings_file.write_text('[app]\nviews = ["board"]\n')
-    form = form_for(store, ("general", "board"), env={"RDM_API_KEY": "rail-key-1234567", "BODS_API_KEY": "bods"})
+    form = form_for(store, ("general", "keys"), env={"RDM_API_KEY": "rail-key-1234567", "BODS_API_KEY": "bods"})
     assert form.save(fields_of(form) | {"view_dashboard": "on", "kb_incidents_url": "x"}) == {}  # not this form's
     store.settings_file.write_text('[app]\nviews = ["board"]\n')
-    form = form_for(store, ("general", "board"), env={**ENV, "RDM_DETAILS_API_KEY": "bad key"})
+    form = form_for(store, ("general", "keys"), env={**ENV, "RDM_DETAILS_API_KEY": "bad key"})
     errors = form.save(fields_of(form) | {"view_dashboard": "on"})
     assert "RDM_DETAILS_API_KEY" in errors["_form"]
     assert saved(store) == {"app": {"views": ["board"]}}
@@ -193,8 +196,8 @@ def test_turning_a_view_on_checks_that_it_loads(store):
 def test_the_dashboard_s_form_says_when_its_buses_can_t_be_shown(store):
     store.config_path.write_text(CONFIG.replace('source = "bods"', 'source = "transportapi"'))
     page = dashboard_form(store, lambda: dict(ENV)).render("tok")
-    buses = page[page.index("<legend>Buses</legend>"):]
-    assert "only from the free BODS timetable" in buses[:buses.index("</fieldset>")]
+    departures = page[page.index('<h2 id="section-departures">'):page.index('<h2 id="section-quiet-hours">')]
+    assert "only from the free BODS timetable" in departures
     assert "only from the free BODS timetable" not in board_form(store, lambda: dict(ENV)).render("tok")
 
 
@@ -283,12 +286,51 @@ def test_a_config_toml_that_can_t_be_read_is_said_and_nothing_saved(store):
 
 
 def test_every_control_has_a_label_and_every_group_a_legend(store):
-    page = form_for(store, ("general", "board", "dashboard")).render("tok")
-    ids = set(re.findall(r'<(?:input|select|textarea) id="(\w+)"', page))
-    assert ids and ids <= set(re.findall(r'<label for="(\w+)"', page))
-    assert page.count("<fieldset>") == page.count("<legend>") == page.count("</fieldset>")
+    store.make()
+    store.settings_file.write_text('[app]\nviews = ["board", "dashboard"]\n')
+    page = form_for(store, ("trains_buses", "board", "dashboard", "keys", "general")).render("tok")
+    ids = set(re.findall(r'<(?:input|select|textarea)[^>]* id="([\w-]+)"', page))
+    assert {"theme", "theme-1", "text_size", "title", "RDM_KB_API_KEY"} <= ids
+    assert ids <= set(re.findall(r'<label for="([\w-]+)"', page))
+    assert page.count("<fieldset") == page.count("<legend>") == page.count("</fieldset>")
 
 
-def test_unknown_groups_are_refused(store):
-    with pytest.raises(ValueError, match="screen"):
-        form_for(store, ("general", "screen"))
+@pytest.mark.parametrize("pages", [("general", "screen"), ("overview",)])
+def test_unknown_pages_and_the_overview_are_refused(store, pages):
+    with pytest.raises(ValueError, match=pages[-1]):
+        form_for(store, pages)
+
+
+# What a save says it changed
+
+
+def test_a_save_says_what_it_changed_in_words_and_never_a_key(store):
+    form = board_form(store, lambda: dict(ENV))
+    changed = []
+    fields = fields_of(form) | {"title": "Home", "theme": "plain", "accent": "", "min_redraw_minutes": "5",
+                                "bus_enabled": "false", "bank_holidays": "scotland", "RDM_API_KEY": "new-rail-key-1"}
+    assert form.save(fields, changed) == {}
+    assert changed == [
+        "Title",  # free text: named, not quoted
+        "Show buses, On to Off",
+        "Look, Station board (amber dot matrix) to Plain (black on white)",
+        "Redraw at most every, 2 minutes to 5 minutes",
+        "Bank holidays, Like Sundays, for England and Wales to Like Sundays, for Scotland",
+        "Rail Data Marketplace key",
+    ]
+    again = []
+    assert form.save(fields_of(form), again) == {} and again == []
+
+
+def test_nothing_is_said_changed_when_a_save_is_refused(store):
+    form = board_form(store, lambda: dict(ENV))
+    changed = []
+    assert form.save(fields_of(form) | {"title": "Home", "min_redraw_minutes": "0"}, changed) != {}
+    assert changed == []
+
+
+def test_a_section_switched_off_says_so_on_every_page_that_has_it(store):
+    store.config_path.write_text(CONFIG.replace('operators = ["BNML"]', 'operators = ["BNML"]\nenabled = false'))
+    page = board_form(store, lambda: dict(ENV)).render("tok")
+    off = re.findall(r'<h2 id="(section-[\w-]+)">[^<]+</h2> <span class="pill pill-neutral">', page)
+    assert off == ["section-buses", "section-buses"]  # on Trains and buses, and the board's own section

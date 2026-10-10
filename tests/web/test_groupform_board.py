@@ -1,6 +1,6 @@
-"""A GroupForm of the general and board groups together, as the board's
-old settings page had them: the board's settings, saved and shown. The
-settings site's tabs (test_settingsite.py) are each one of these groups."""
+"""A GroupForm of every page a board's settings have, together: the
+board's settings, saved and shown. The settings site's pages
+(test_settingsite.py) are each one of these."""
 
 import re
 import tomllib
@@ -50,10 +50,9 @@ B = 6
 
 
 def board_form(store_or_config, load_secrets, clock=None):
-    """The general and board groups' form, on a Pi."""
-    return GroupForm(Store.of(store_or_config), ("general", "board"), "/settings/board", load_secrets,
-                     install=install_named("pi"), noun="board", legends={None: "Board", "weather": "Rain warning"},
-                     clock=clock)
+    """A board's settings pages as one form, on a Pi."""
+    return GroupForm(Store.of(store_or_config), ("trains_buses", "board", "keys", "general"), "/settings/board",
+                     load_secrets, install=install_named("pi"), noun="board", clock=clock)
 
 
 @pytest.fixture
@@ -77,6 +76,8 @@ def fields_of(form):
     for name, body in re.findall(r'<select id="(\w+)" name="\w+"[^>]*>(.*?)</select>', page):
         chosen = re.search(r'value="([^"]*)" selected', body)
         fields[name] = chosen.group(1) if chosen else ""
+    for name, value in re.findall(r'<input type="radio" id="[\w-]+" name="(\w+)" value="([^"]*)" checked', page):
+        fields[name] = value
     # A ticked box is sent as "on"; an unticked one isn't sent (the views, on a Pi that offers two).
     fields |= dict.fromkeys(re.findall(r'<input id="(\w+)" name="\w+" type="checkbox" value="on" checked', page), "on")
     return fields
@@ -194,7 +195,7 @@ def test_summary_items_name_their_section_and_field(setup):
         "_form": "Not saved: something",
     })
     assert '<a href="#train_crs">Trains – Station code: Enter a 3-letter station code, like GLO</a>' in page
-    assert '<a href="#title">Board – Title: Enter some text</a>' in page
+    assert '<a href="#title">Title: Enter some text</a>' in page  # its section's heading is its label
     assert '<a href="#TAPI_APP_KEY">Keys – TransportAPI app key: Paste the key exactly</a>' in page
     assert "<li>Not saved: something</li>" in page
 
@@ -225,8 +226,7 @@ def test_key_boxes_are_plain_text_so_password_managers_leave_them_alone(setup):
 
 
 def _accents(page):
-    select = re.search(r'<select id="accent"[^>]*>(.*?)</select>', page).group(1)
-    return re.findall(r'value="([^"]*)"', select)
+    return re.findall(r'<input type="radio" id="[\w-]+" name="accent" value="([^"]*)"', page)
 
 
 def _form_for(tmp_path, extra):
@@ -298,9 +298,9 @@ def test_problem_text_is_readable_in_light_and_dark():
 def test_every_control_has_a_label(setup):
     form, *_ = setup
     page = form.render("tok")
-    ids = set(re.findall(r'<(?:input|select|textarea) id="(\w+)"', page))
-    labelled = set(re.findall(r'<label for="(\w+)"', page))
-    assert ids and ids <= labelled
+    ids = set(re.findall(r'<(?:input|select|textarea)[^>]* id="([\w-]+)"', page))
+    labelled = set(re.findall(r'<label for="([\w-]+)"', page))
+    assert {"title", "theme", "theme-1", "rotate-1", "TAPI_APP_KEY"} <= ids <= labelled
 
 
 def test_a_screen_can_turn_a_quarter(tmp_path):
@@ -405,36 +405,35 @@ def test_a_broken_settings_file_still_shows_the_page_and_saving_replaces_it(setu
     assert "broken" not in form.render("tok")
 
 
-def test_bank_holidays_are_treated_like_sundays_unless_turned_off(setup):
+def test_bank_holidays_are_treated_like_england_and_wales_sundays_unless_turned_off(setup):
     form, config, state, _ = setup
-    assert fields_of(form)["bank_holidays"] == "true"
-    assert form.save({**fields_of(form), "bank_holidays": "false"}) == {}
+    assert fields_of(form)["bank_holidays"] == "england-and-wales"
+    assert form.save({**fields_of(form), "bank_holidays": "ignore"}) == {}
     assert tomllib.loads((state / "settings.toml").read_text())["bank_holidays"] is False
     assert read_config(config)["bank_holidays"] is False
-    assert fields_of(form)["bank_holidays"] == "false"
-    assert form.save({**fields_of(form), "bank_holidays": "true"}) == {}
+    assert fields_of(form)["bank_holidays"] == "ignore"
+    assert form.save({**fields_of(form), "bank_holidays": "england-and-wales"}) == {}
     assert read_config(config)["bank_holidays"] is True
+    assert read_config(config)["bank_holiday_division"] == "england-and-wales"
 
 
-def test_bank_holidays_setting_refuses_anything_else(setup):
-    form, _, state, _ = setup
-    errors = form.save({**fields_of(form), "bank_holidays": "sometimes"})
-    assert "bank_holidays" in errors
-    assert not (state / "settings.toml").exists()
-
-
-def test_bank_holiday_division_defaults_to_england_and_wales_and_can_be_changed(setup):
-    form, config, _, _ = setup
-    assert fields_of(form)["bank_holiday_division"] == "england-and-wales"
-    assert form.save({**fields_of(form), "bank_holiday_division": "scotland"}) == {}
+def test_the_part_of_the_uk_is_part_of_the_bank_holidays_choice(setup):
+    form, config, state, _ = setup
+    assert form.save({**fields_of(form), "bank_holidays": "scotland"}) == {}
+    assert read_config(config)["bank_holidays"] is True
     assert read_config(config)["bank_holiday_division"] == "scotland"
-    assert fields_of(form)["bank_holiday_division"] == "scotland"
+    assert fields_of(form)["bank_holidays"] == "scotland"
+    # Turned off, the part of the UK is kept for turning them back on: the settings file's shape is unchanged.
+    assert form.save({**fields_of(form), "bank_holidays": "ignore"}) == {}
+    written = tomllib.loads((state / "settings.toml").read_text())
+    assert (written["bank_holidays"], written["bank_holiday_division"]) == (False, "scotland")
 
 
-def test_bank_holiday_division_refuses_anything_else(setup):
+@pytest.mark.parametrize("chosen", ["sometimes", "true", "wales", ""])
+def test_bank_holidays_setting_refuses_anything_else(setup, chosen):
     form, _, state, _ = setup
-    errors = form.save({**fields_of(form), "bank_holiday_division": "wales"})
-    assert "bank_holiday_division" in errors
+    errors = form.save({**fields_of(form), "bank_holidays": chosen})
+    assert "bank_holidays" in errors
     assert not (state / "settings.toml").exists()
 
 
@@ -456,7 +455,7 @@ def test_status_comes_before_the_form_under_its_own_heading(tmp_path):
     form, _ = _status_form(tmp_path, saved)
     page = form.render("tok")
     assert page.index('<h2 id="status-title">Status</h2>') < page.index('<form method="post" action="/settings/board"')
-    assert page.index("Status</h2>") < page.index("<fieldset>")
+    assert page.index("Status</h2>") < page.index("<fieldset")
     assert "07:58, 3 min ago" in page
 
 
@@ -490,13 +489,19 @@ def test_status_shows_no_keys_from_the_state_file(tmp_path):
     assert "tapi-secret-456" not in page and "Problem:" in page
 
 
-def test_bank_holidays_setting_is_in_the_board_section_with_a_hint(setup):
+def test_bank_holidays_are_one_choice_with_a_hint_under_dates_and_times(setup):
     form, *_ = setup
     page = form.render("tok")
-    board = page[page.index("<legend>Board</legend>"):page.index("<legend>Trains</legend>")]
-    assert '<label for="bank_holidays">Bank holidays</label>' in board
-    assert 'aria-describedby="bank_holidays-hint"' in board
-    assert "Treat bank holidays like Sundays" in board and "Ignore bank holidays" in board
+    dates = page[page.index('<h2 id="section-dates-and-times">'):]
+    dates = dates[:dates.index("</details>")]
+    assert ('<fieldset class="field radios" aria-describedby="bank_holidays-hint"><legend>Bank holidays</legend>'
+            in dates)
+    words = re.findall(r'<label for="bank_holidays(?:-\d)?">([^<]+)</label>', dates)
+    assert words == ["Like Sundays, for England and Wales", "Like Sundays, for Scotland",
+                     "Like Sundays, for Northern Ireland", "Ignore them"]
+    # The time zone waits under Advanced, with every zone suggested.
+    assert dates.index("<summary>Advanced</summary>") < dates.index('id="timezone"')
+    assert 'list="timezone-suggestions"' in dates and '<option value="Europe/London">' in dates
 
 
 def _weather_form(tmp_path):
@@ -509,7 +514,8 @@ def _weather_form(tmp_path):
 def test_rain_warning_controls_are_on_the_page(tmp_path):
     form, _ = _weather_form(tmp_path)
     page = form.render("tok")
-    assert "Rain warning" in page and 'id="weather_enabled"' in page and 'id="weather_threshold_percent"' in page
+    assert '<h2 id="section-weather">Weather</h2>' in page
+    assert 'id="weather_enabled"' in page and 'id="weather_threshold_percent"' in page
     assert "53.44" in page  # the location is shown, not editable
     assert 'name="weather_lat"' not in page
 
@@ -526,7 +532,9 @@ def test_rain_warning_can_be_switched_off_and_its_threshold_changed(tmp_path):
 def test_without_a_location_the_page_says_where_to_set_it(setup):
     form, *_ = setup
     page = form.render("tok")
-    assert "Rain warning" in page and "[weather]" in page
+    weather = page[page.index('<h2 id="section-weather">'):]
+    weather = weather[:weather.index("</fieldset>")]
+    assert "Not set up" in weather and "No location is set" in weather and "[weather]" in weather
     assert 'id="weather_enabled"' not in page
 
 
@@ -581,8 +589,11 @@ def test_trains_and_buses_cannot_both_be_switched_off(setup):
     assert set(errors) == {"train_enabled"} and "board would show nothing" in errors["train_enabled"]
     assert not (state / "settings.toml").exists()  # not saved
     page = form.render("tok", errors=errors, values=fields)
-    assert '<a href="#train_enabled">Trains – Trains: Trains and buses can' in page
-    assert re.search(r'id="train_enabled"[^>]*aria-describedby="train_enabled-hint train_enabled-error"', page)
+    assert '<a href="#train_enabled">Trains – Show trains: Trains and buses can' in page
+    # A choice's hint and error describe its group of buttons; its first button is the link's target.
+    assert ('<fieldset class="field radios has-error" aria-describedby="train_enabled-hint train_enabled-error">'
+            "<legend>Show trains</legend>") in page
+    assert '<input type="radio" id="train_enabled" name="train_enabled" value="true">' in page
 
 
 def test_the_only_section_set_up_cannot_be_switched_off(tmp_path):

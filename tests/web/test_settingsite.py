@@ -229,6 +229,8 @@ def fields_from(page):
     values |= dict(re.findall(r'<textarea id="(\w+)"[^>]*>([^<]*)</textarea>', page))
     for name, options in re.findall(r'<select id="(\w+)"[^>]*>(.*?)</select>', page):
         values[name] = re.search(r'<option value="([^"]*)" selected', options).group(1)
+    values |= dict(re.findall(r'<input type="radio" id="[\w-]+" name="(\w+)" value="([^"]*)" checked', page))
+    values |= dict.fromkeys(re.findall(r'<input id="(\w+)" name="\w+" type="checkbox" value="on" checked', page), "on")
     return values
 
 
@@ -311,15 +313,18 @@ def test_sign_out_ends_the_session(signed):
 
 
 def test_a_save_and_the_restart_after_it_keep_the_browser_signed_in(signed):
+    path = "/settings/trains-and-buses"
     cookie, csrf = signed.sign_in()
-    fields = fields_from(signed("GET", "/settings", cookie=cookie)[1])
-    response, text = signed("POST", "/settings", fields | {"csrf": csrf, "title": "Our house"}, cookie=cookie)
-    assert response.status == 200 and "sign in again" not in text
+    fields = fields_from(signed("GET", path, cookie=cookie)[1])
+    response, _ = signed("POST", path, fields | {"csrf": csrf, "title": "Our house"}, cookie=cookie)
+    assert response.status == 303
+    page = signed("GET", path + "?saved", cookie=cookie)[1]
+    assert "Saved 1 change: Title." in page and "sign in again" not in page
     signed.restart()
-    assert signed("GET", "/settings", cookie=cookie)[0].status == 200
+    assert signed("GET", path, cookie=cookie)[0].status == 200
     # The page drawn before the restart still saves after it, with its form token.
-    response, text = signed("POST", "/settings", fields | {"csrf": csrf, "title": "Our home"}, cookie=cookie)
-    assert response.status == 200 and "Saved" in text, text
+    response, text = signed("POST", path, fields | {"csrf": csrf, "title": "Our home"}, cookie=cookie)
+    assert response.status == 303, text
     assert signed.saved()["title"] == "Our home"
 
 
@@ -435,22 +440,34 @@ def test_only_two_passwords_are_checked_at_once(slow):
     assert password.checks == 2
 
 
-# The tabs
+# The pages
 
 
 def test_the_tabs_are_a_labelled_list_of_links_with_the_current_one_marked(signed):
     cookie, _ = signed.sign_in()
-    for path, name in (("/settings", "General"), ("/settings/dashboard", "Dashboard")):
+    tabs = [("/settings", "Overview"), ("/settings/trains-and-buses", "Trains and buses"),
+            ("/settings/dashboard", "Dashboard"), ("/settings/keys", "Keys"), ("/settings/general", "General")]
+    for path, name in tabs:
         response, page = signed("GET", path, cookie=cookie)
         assert response.status == 200, path
         nav = re.search(r'<nav aria-label="Settings"[^>]*><ul>(.*?)</ul></nav>', page).group(1)
         links = re.findall(r'<li><a href="([^"]+)"( aria-current="page")?>([^<]+)</a></li>', nav)
-        assert [(href, label) for href, _, label in links] == [("/settings", "General"),
-                                                               ("/settings/dashboard", "Dashboard")]
+        assert [(href, label) for href, _, label in links] == tabs
         assert [label for _, current, label in links if current] == [name]
-        assert f"<title>{name} settings</title>" in page and f"<h1>{name} settings</h1>" in page
-        assert page.index("<h1>") < page.index('<nav aria-label="Settings"') < page.index(f'action="{path}" novalidate')
-        assert '<a href="/">Back to the dashboard</a>' in page
+        # Each page's title names it, then the site, by the place: the title's part before ">".
+        assert f"<title>{name} – Glossop settings</title>" in page and f"<h1>{name}</h1>" in page
+        assert page.index('<a href="/">Back to the dashboard</a>') < page.index("<h1>")
+        assert page.index("<h1>") < page.index('action="/settings/logout"') < page.index('<nav aria-label="Settings"')
+        if path != "/settings":
+            assert page.index('<nav aria-label="Settings"') < page.index(f'action="{path}" novalidate')
+
+
+def test_the_site_is_named_by_the_place_or_else_by_what_shows_the_departures(make):
+    for config, install, name in (('title = "Glossop > Manchester"\n', "pi", "Glossop"),
+                                  ('title = "Departures"\n', "pi", "Board"), ("", "docker", "Dashboard")):
+        running = make(install=install, config=config)
+        page = running("GET", "/settings/general", cookie=running.session())[1]
+        assert f"<title>General – {name} settings</title>" in page, config
 
 
 def test_a_tab_is_there_only_while_its_view_is_on(make):
@@ -476,39 +493,52 @@ def test_a_tab_goes_as_soon_as_its_view_is_turned_off(pi):
     assert pi("GET", "/settings/board", cookie=cookie)[0].status == 200
     pi.store.settings_file.write_text("[app]\nviews = []\n")
     assert pi("GET", "/settings/board", cookie=cookie)[0].status == 404
-    page = pi("GET", "/settings", cookie=cookie)[1]
+    page = pi("GET", "/settings/general", cookie=cookie)[1]
     assert 'href="/settings/board"' not in page and 'aria-current="page">General</a>' in page
 
 
-def test_each_tab_shows_its_own_group(make):
+def test_each_page_shows_its_own_settings(make):
     pi = make(install="pi")
     pi.store.make()
     cookie = pi.session()
-    general = pi("GET", "/settings", cookie=cookie)[1]
-    board = pi("GET", "/settings/board", cookie=cookie)[1]
-    assert 'id="train_crs"' in general and 'id="RDM_API_KEY"' in general and 'id="theme"' not in general
-    assert 'id="theme"' in board and 'id="TAPI_APP_KEY"' in board and 'id="train_crs"' not in board
-    assert '<h2 id="status-title">Status</h2>' in board and "status-title" not in general
-    assert board.index("<h1>") < board.index("Status</h2>") < board.index("<fieldset>")
-    assert 'action="/settings/board"' in board and 'action="/settings"' in general
+    pages = {path: pi("GET", path, cookie=cookie)[1] for path in (
+        "/settings", "/settings/trains-and-buses", "/settings/board", "/settings/keys", "/settings/general")}
+    overview, trains, board, keys, general = pages.values()
+    assert "<form method=\"post\" action=\"/settings\"" not in overview and 'id="title"' not in overview
+    assert 'id="train_crs"' in trains and 'id="title"' in trains and 'id="theme"' not in trains
+    assert 'id="theme"' in board and 'id="train_crs"' not in board and 'id="TAPI_APP_KEY"' not in board
+    assert 'id="RDM_API_KEY"' in keys and 'id="TAPI_APP_KEY"' in keys and 'id="train_crs"' not in keys
+    assert 'id="bank_holidays"' in general and 'id="view_dashboard"' in general and 'id="timezone"' in general
+    # A setting is on one page only.
+    for name in ("title", "train_crs", "theme", "RDM_API_KEY", "bank_holidays"):
+        assert sum(f'id="{name}"' in page for page in pages.values()) == 1, name
+    assert '<h2 id="status-title">Status</h2>' in board and "status-title" not in trains
+    assert board.index("<h1>") < board.index("Status</h2>") < board.index("<fieldset")
+    assert 'action="/settings/board"' in board and 'action="/settings/trains-and-buses"' in trains
 
 
-def test_the_general_tab_sums_up_the_place_and_links_to_setup(pi):
+def test_the_overview_sums_up_the_place_and_links_to_setup(pi):
     cookie = pi.session()
     page = pi("GET", "/settings", cookie=cookie)[1]
-    place = re.search(r'<section class="place"[^>]*>(.*?)</section>', page).group(1)
+    place = re.search(r'<section class="place card"[^>]*>(.*?)</section>', page).group(1)
     assert '<h2 id="place-title">Your place</h2>' in place
     assert "<dt>Station</dt><dd>GLO</dd>" in place and "<dt>Bus stops</dt><dd>A</dd>" in place
     assert "<dt>Home</dt><dd>Not set</dd>" in place
     assert '<a href="/settings/setup/">Change with setup</a>' in place
-    assert page.index("Your place") < page.index('<form method="post" action="/settings"')
+
+
+def test_the_overview_saves_nothing(signed):
+    cookie, csrf = signed.sign_in()
+    response, _ = signed("POST", "/settings", {"csrf": csrf, "title": "x"}, cookie=cookie)
+    assert response.status == 405 and response.getheader("Allow") == "GET, HEAD"
+    assert not (signed.folder / "settings.toml").exists()
 
 
 def _place(page):
-    return re.search(r'<section class="place"[^>]*>(.*?)</section>', page).group(1)
+    return re.search(r'<section class="place card"[^>]*>(.*?)</section>', page).group(1)
 
 
-def test_the_general_tab_says_when_the_bus_timetable_was_saved_and_how_its_roads_are_getting_on(make):
+def test_the_overview_says_when_the_bus_timetable_was_saved_and_how_its_roads_are_getting_on(make):
     import os
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -541,29 +571,30 @@ def test_the_general_tab_says_when_the_bus_timetable_was_saved_and_how_its_roads
     CONFIG.replace('operators = ["BNML"]', 'operators = ["BNML"]\nenabled = false'),
     'title = "Glossop"\n[train]\ncrs = "GLO"\n',
 ])
-def test_the_general_tab_says_nothing_of_a_bus_timetable_it_doesnt_use(make, config):
+def test_the_overview_says_nothing_of_a_bus_timetable_it_doesnt_use(make, config):
     docker = make(install="docker", config=config)
     assert "Bus timetable" not in docker("GET", "/settings", cookie=docker.session())[1]
 
 
-def test_the_general_tab_says_which_version_is_running(pi):
+def test_every_page_says_which_version_is_running_in_its_footer(pi):
     cookie = pi.session()
-    general = pi("GET", "/settings", cookie=cookie)[1]
     wanted = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
-    assert f'<p class="hint about">Running departureboard {wanted}.</p>' in general
-    assert general.index("Your place") < general.index("Running departureboard") < general.index('<form method="post" action="/settings" novalidate')
-    assert "Running departureboard" not in pi("GET", "/settings/board", cookie=cookie)[1]
+    for path in ("/settings", "/settings/board", "/settings/general"):
+        page = pi("GET", path, cookie=cookie)[1]
+        assert f'<footer class="foot"><p>Running departureboard {wanted}.</p></footer>' in page, path
+        assert page.index("</form>" if path != "/settings" else "</section>") < page.index("<footer"), path
+    assert "Running departureboard" not in pi("GET", "/settings/login")[1]
 
 
-def test_the_general_tab_says_plainly_when_the_version_is_unknown(pi):
+def test_the_footer_says_plainly_when_the_version_is_unknown(pi):
     cookie = pi.session()
     pi.site.version = "unknown"
-    assert '<p class="hint about">Running departureboard, version unknown.</p>' in pi("GET", "/settings", cookie=cookie)[1]
+    assert "<p>Running departureboard, version unknown.</p>" in pi("GET", "/settings", cookie=cookie)[1]
     pi.site.version = "<b>1</b>"
     assert "Running departureboard &lt;b&gt;1&lt;/b&gt;." in pi("GET", "/settings", cookie=cookie)[1]
 
 
-def test_the_general_tab_says_why_the_dashboard_isnt_running(dash):
+def test_the_overview_says_why_the_dashboard_isnt_running(dash):
     cookie = dash.session()
     assert "isn't running" not in dash("GET", "/settings", cookie=cookie)[1]
     dash.site.problem = "[dashboard] train_rows must be a whole number from 1 to 20, not <50>"
@@ -582,16 +613,113 @@ def test_the_way_back_to_the_dashboard_is_there_only_while_it_runs(dash):
     assert 'href="/"' not in dash("GET", "/settings/login")[1]
 
 
+# Sections and their cues
+
+
+def test_sections_are_fieldsets_headed_in_their_legends_with_an_index_when_there_are_many(signed):
+    page = signed("GET", "/settings/trains-and-buses", cookie=signed.session())[1]
+    headings = re.findall(r'<fieldset class="card"><legend><h2 id="([\w-]+)">([^<]+)</h2>', page)
+    assert headings == [("section-title", "Title"), ("section-trains", "Trains"), ("section-buses", "Buses"),
+                        ("section-weather", "Weather")]
+    index = re.search(r'<nav class="index" aria-label="On this page"><ul>(.*?)</ul></nav>', page).group(1)
+    assert re.findall(r'<a href="#([\w-]+)">', index) == [name for name, _ in headings]
+    assert page.index("<h1>") < page.index('class="index"') < page.index('<form method="post" action="/settings/t')
+    # Three sections or fewer need no index.
+    page = signed("GET", "/settings/dashboard", cookie=signed.session())[1]
+    assert 'class="index"' not in page and page.count('<fieldset class="card">') == 2
+
+
+def test_a_section_switched_off_says_so_with_its_fields_still_there(signed):
+    signed.config.write_text(CONFIG.replace('operators = ["BNML"]', 'operators = ["BNML"]\nenabled = false'))
+    page = signed("GET", "/settings/trains-and-buses", cookie=signed.session())[1]
+    buses = page[page.index('<h2 id="section-buses">'):page.index('<div class="savebar">')]
+    assert buses.startswith(f'<h2 id="section-buses">Buses</h2> <span class="pill pill-neutral">{icon("minus")} Off'
+                            "</span></legend>")
+    assert 'id="bus_directions"' in buses
+    assert "pill" not in page[page.index('<h2 id="section-trains">'):page.index('<h2 id="section-buses">')]
+
+
+def test_a_section_not_set_up_links_to_setup(make):
+    running = make(install="docker", config='title = "Glossop"\n[train]\ncrs = "GLO"\n')
+    page = running("GET", "/settings/trains-and-buses", cookie=running.session())[1]
+    buses = page[page.index('<h2 id="section-buses">'):]
+    buses = buses[:buses.index("</fieldset>")]
+    assert "Not set up" in buses and 'id="bus_enabled"' not in buses
+    assert '<p class="empty">Buses aren&#x27;t set up. <a href="/settings/setup/">Pick stops with setup</a>' in buses
+
+
+def test_advanced_settings_wait_behind_a_disclosure_opened_by_their_errors(pi_signed):
+    cookie, csrf = pi_signed.sign_in("/settings/board")
+    page = pi_signed("GET", "/settings/board", cookie=cookie)[1]
+    display = page[page.index('<h2 id="section-display">'):page.index('<h2 id="section-trains">')]
+    assert '<details class="advanced"><summary>Advanced</summary>' in display
+    assert display.index("<summary>") < display.index('id="min_redraw_minutes"')
+    assert display.index('id="theme"') < display.index("<summary>")
+    fields = fields_from(page) | {"csrf": csrf, "min_redraw_minutes": "0"}
+    response, page = pi_signed("POST", "/settings/board", fields, cookie=cookie)
+    assert response.status == 422
+    assert '<details class="advanced" open><summary>Advanced</summary>' in page
+    assert page.count("<details") - page.count("<details class=\"advanced\" open>") >= 1  # the others stay closed
+
+
+def test_numbers_are_narrow_text_boxes_with_their_unit_beside_them_and_in_their_label(pi):
+    page = pi("GET", "/settings/board", cookie=pi.session())[1]
+    field = re.search(r'<div class="field">(<label for="min_redraw_minutes">.*?)</div></div>', page).group(1)
+    assert field.startswith('<label for="min_redraw_minutes">Redraw at most every<span class="vh"> (minutes)</span>'
+                            "</label>")
+    assert ('<div class="with-unit"><input id="min_redraw_minutes" name="min_redraw_minutes" type="text" value="2" '
+            'inputmode="numeric" autocomplete="off" class="w-3"') in field
+    assert field.endswith('<span class="unit" aria-hidden="true">minutes</span>')
+
+
+def test_codes_and_zones_get_the_keyboard_they_need(signed):
+    cookie = signed.session()
+    trains = signed("GET", "/settings/trains-and-buses", cookie=cookie)[1]
+    assert re.search(r'<input id="train_crs" [^>]*class="w-4" autocapitalize="characters" autocorrect="off" '
+                     r'spellcheck="false"', trains)
+    assert "Currently Glossop (GLO)." in trains  # the name from the bundled station list
+    general = signed("GET", "/settings/general", cookie=cookie)[1]
+    assert re.search(r'<input id="timezone" [^>]*autocapitalize="none" autocorrect="off"', general)
+    keys = signed("GET", "/settings/keys", cookie=cookie)[1]
+    assert re.search(r'<input id="RDM_API_KEY" [^>]*autocapitalize="none" autocorrect="off" data-1p-ignore '
+                     r'data-lpignore="true"', keys)
+
+
+def test_the_display_is_shown_read_only_as_set_in_config_toml(pi):
+    page = pi("GET", "/settings/board", cookie=pi.session())[1]
+    shown = re.search(r'<dl class="readonly"><div><dt>Display</dt><dd>(.*?)</dd></div></dl>', page).group(1)
+    assert shown.startswith("inky (250×122)") and "Set in config.toml</span>" in shown
+    assert 'name="display"' not in page and "disabled" not in page
+
+
+def test_the_save_bar_says_when_changes_take_effect_before_saving(make):
+    for install, words in (("pi", "Changes show on the board and the dashboard within a few minutes"),
+                           ("docker", "Saving starts the dashboard again")):
+        running = make(install=install)
+        page = running("GET", "/settings/general", cookie=running.session())[1]
+        bar = re.search(r'<div class="savebar">(.*?)</div>', page).group(1)
+        assert bar.startswith(f'<p class="applies" id="applies">{words}')
+        assert bar.endswith('<button type="submit" class="primary" aria-describedby="applies">Save changes</button>')
+
+
 # Saving
 
 
-def test_a_signed_in_save_with_the_form_token_works(signed):
+def test_a_signed_in_save_redirects_to_its_page_which_says_what_changed(signed):
     cookie, csrf = signed.sign_in()
-    fields = fields_from(signed("GET", "/settings", cookie=cookie)[1])
-    response, text = signed("POST", "/settings", fields | {"csrf": csrf, "title": "Our house"}, cookie=cookie)
-    assert response.status == 200 and "Saved. The dashboard starts again" in text
-    assert "<title>Saved – General settings</title>" in text
+    path = "/settings/trains-and-buses"
+    fields = fields_from(signed("GET", path, cookie=cookie)[1])
+    response, text = signed("POST", path, fields | {"csrf": csrf, "title": "Our house", "train_walk_minutes": "9"},
+                            cookie=cookie)
+    assert response.status == 303 and response.getheader("Location") == path + "?saved" and text == ""
     assert signed.saved()["title"] == "Our house"
+    response, page = signed("GET", path + "?saved", cookie=cookie)
+    assert "<title>Saved – Trains and buses – Our house settings</title>" in page
+    notice = re.search(r'<p class="notice-ok" role="status" tabindex="-1" autofocus>(.*?)</p>', page).group(1)
+    assert notice == (f"{icon('check')} Saved 2 changes: Title; Walk to the station, none to 9 minutes. "
+                      "The dashboard starts again in a few seconds to use them.")
+    assert page.index('<nav aria-label="Settings"') < page.index("notice-ok") < page.index(f'action="{path}"')
+    assert "notice-ok" not in signed("GET", path + "?saved", cookie=cookie)[1]  # said once
 
 
 def test_a_save_on_the_pi_says_when_the_board_shows_it(pi_signed):
@@ -599,22 +727,37 @@ def test_a_save_on_the_pi_says_when_the_board_shows_it(pi_signed):
     fields = fields_from(pi_signed("GET", "/settings/board", cookie=cookie)[1])
     response, text = pi_signed("POST", "/settings/board", fields | {"csrf": csrf, "board_train_rows": "2"},
                                cookie=cookie)
-    assert response.status == 200, text
-    assert "<title>Saved – Board settings</title>" in text
-    assert "Saved. The board shows it within a few minutes; the screen within seconds." in text
+    assert response.status == 303, text
+    page = pi_signed("GET", response.getheader("Location"), cookie=cookie)[1]
+    assert "<title>Saved – Board – Glossop settings</title>" in page
+    assert ("Saved 1 change: Trains shown, 3 to 2. The board shows them within a few minutes, a screen within "
+            "seconds.") in page
     assert pi_signed.saved()["train"]["rows"] == 2
 
 
 def test_save_errors_come_back_on_the_form(signed):
     cookie, csrf = signed.sign_in()
-    fields = fields_from(signed("GET", "/settings", cookie=cookie)[1])
-    response, text = signed("POST", "/settings", fields | {"csrf": csrf, "train_crs": "Glossop"}, cookie=cookie)
+    path = "/settings/trains-and-buses"
+    fields = fields_from(signed("GET", path, cookie=cookie)[1])
+    response, text = signed("POST", path, fields | {"csrf": csrf, "train_crs": "Glossop"}, cookie=cookie)
     assert response.status == 422 and "Not saved: fix 1 thing" in text and 'href="#train_crs"' in text
-    assert "<title>General settings: fix the errors</title>" in text
+    assert "<title>Trains and buses – Glossop settings: fix the errors</title>" in text
+    assert text.index('<nav aria-label="Settings"') < text.index('class="summary"') < text.index(f'action="{path}"')
     assert not (signed.folder / "settings.toml").exists()
 
 
-@pytest.mark.parametrize("path", ["/settings", "/settings/dashboard"])
+def test_keys_pasted_with_a_mistake_are_not_saved_and_the_summary_says_so(signed):
+    cookie, csrf = signed.sign_in("/settings/keys")
+    fields = fields_from(signed("GET", "/settings/keys", cookie=cookie)[1])
+    fields |= {"csrf": csrf, "RDM_DETAILS_API_KEY": "details-key-0001", "RDM_KB_API_KEY": "has spaces"}
+    response, text = signed("POST", "/settings/keys", fields, cookie=cookie)
+    assert response.status == 422 and "The keys you pasted weren&#x27;t saved" not in text
+    assert "The keys you pasted weren't saved. Paste them again once the rest is right." in text
+    assert "details-key-0001" not in text and "has spaces" not in text
+    assert not signed.store.secrets_file.exists()
+
+
+@pytest.mark.parametrize("path", ["/settings/trains-and-buses", "/settings/dashboard"])
 @pytest.mark.parametrize("csrf, origin", [
     ("forged", "same"),
     (None, "same"),
@@ -633,52 +776,55 @@ def test_every_change_needs_the_same_origin_and_the_form_token(signed, path, csr
 
 
 def test_a_save_without_a_session_goes_to_sign_in(signed):
-    for path in ("/settings", "/settings/dashboard"):
+    for path in ("/settings/trains-and-buses", "/settings/dashboard", "/settings/keys", "/settings/general"):
         response, _ = signed("POST", path, {"csrf": "x", "title": "x"})
         assert response.status == 303 and response.getheader("Location") == "/settings/login", path
 
 
-def test_a_save_on_one_tab_leaves_the_others_settings_and_keys_alone(signed):
+def test_a_save_on_one_page_leaves_the_others_settings_and_keys_alone(signed):
     signed.store.settings_file.write_text('title = "Our house"\ntheme = "plain"\n[dashboard]\nhistory_days = 30\n')
     signed.store.secrets_file.write_text("TAPI_APP_ID=kept\n")
-    cookie, csrf = signed.sign_in("/settings/dashboard")
-    fields = fields_from(signed("GET", "/settings/dashboard", cookie=cookie)[1])
-    assert "title" not in fields and fields["history_days"] == "30"
-    changed = fields | {"csrf": csrf, "dashboard_train_rows": "6", "RDM_DETAILS_API_KEY": "details-key-0001"}
-    response, text = signed("POST", "/settings/dashboard", changed, cookie=cookie)
-    assert response.status == 200, text
+    cookie, csrf = signed.sign_in("/settings/keys")
+    fields = fields_from(signed("GET", "/settings/keys", cookie=cookie)[1])
+    assert "title" not in fields and "history_days" not in fields
+    changed = fields | {"csrf": csrf, "RDM_DETAILS_API_KEY": "details-key-0001"}
+    response, text = signed("POST", "/settings/keys", changed, cookie=cookie)
+    assert response.status == 303, text
     saved = signed.saved()
-    assert saved["title"] == "Our house" and saved["theme"] == "plain"
-    assert saved["dashboard"]["train_rows"] == 6 and saved["dashboard"]["history_days"] == 30
+    assert saved["title"] == "Our house" and saved["theme"] == "plain" and saved["dashboard"]["history_days"] == 30
     assert signed.store.secrets_file.read_text() == "TAPI_APP_ID=kept\nRDM_DETAILS_API_KEY=details-key-0001\n"
     assert signed.config.read_text() == CONFIG
+    page = signed("GET", "/settings/keys?saved", cookie=cookie)[1]
+    assert "Saved 1 change: Rail Data Marketplace key for where each train is." in page
     assert "details-key-0001" not in "".join(signed.seen)
 
 
 def test_the_forms_save_into_the_store_and_never_show_a_key(signed):
     cookie, csrf = signed.sign_in()
-    _, page = signed("GET", "/settings", cookie=cookie)
+    _, page = signed("GET", "/settings/keys", cookie=cookie)
     assert "Currently set." in page and "rail-key-1234567" not in page and "bods-key-7654321" not in page
+    _, page = signed("GET", "/settings/trains-and-buses", cookie=cookie)
     fields = fields_from(page)
     assert fields["train_crs"] == "GLO" and fields["bus_stops"] == "A = 1000DGHS0900"
-    response, text = signed("POST", "/settings", fields | {"csrf": csrf, "train_crs": "man"}, cookie=cookie)
-    assert response.status == 200 and "Saved." in text, text
+    response, text = signed("POST", "/settings/trains-and-buses", fields | {"csrf": csrf, "train_crs": "man"},
+                            cookie=cookie)
+    assert response.status == 303, text
     assert signed.saved()["train"]["crs"] == "MAN"
     _, page = signed("GET", "/settings/dashboard", cookie=cookie)
     assert fields_from(page)["dashboard_train_rows"] == "10"
 
 
-def test_the_dashboard_tab_says_what_is_wrong_and_saves_nothing(signed):
+def test_the_dashboard_page_says_what_is_wrong_and_saves_nothing(signed):
     cookie, csrf = signed.sign_in("/settings/dashboard")
     fields = fields_from(signed("GET", "/settings/dashboard", cookie=cookie)[1])
-    fields.update(csrf=csrf, dashboard_train_rows="50", kb_incidents_url="http://x")
+    fields.update(csrf=csrf, dashboard_train_rows="50", history_days="0")
     response, text = signed("POST", "/settings/dashboard", fields, cookie=cookie)
     assert response.status == 422 and "Not saved: fix 2 things" in text
     assert 'href="#dashboard_train_rows"' in text and 'aria-invalid="true"' in text
     assert not (signed.folder / "settings.toml").exists()
 
 
-def test_the_dashboard_tab_says_when_its_buses_cant_be_shown(make):
+def test_the_dashboard_page_says_when_its_buses_cant_be_shown(make):
     running = make(install="docker", config=CONFIG.replace('source = "bods"', 'source = "transportapi"'))
     page = running("GET", "/settings/dashboard", cookie=running.session())[1]
     assert "only from the free BODS timetable" in page
@@ -686,11 +832,12 @@ def test_the_dashboard_tab_says_when_its_buses_cant_be_shown(make):
 
 def test_bodies_must_be_plain_small_forms(signed):
     cookie, csrf = signed.sign_in()
-    response, _ = signed("POST", "/settings", cookie=cookie, json_body={"csrf": csrf})
+    path = "/settings/trains-and-buses"
+    response, _ = signed("POST", path, cookie=cookie, json_body={"csrf": csrf})
     assert response.status == 400
-    response, _ = signed("POST", "/settings", {"csrf": csrf, "title": "x" * 70_000}, cookie=cookie)
+    response, _ = signed("POST", path, {"csrf": csrf, "title": "x" * 70_000}, cookie=cookie)
     assert response.status == 413
-    response, _ = signed("POST", "/settings", None, cookie=cookie, headers={"Transfer-Encoding": "chunked"})
+    response, _ = signed("POST", path, None, cookie=cookie, headers={"Transfer-Encoding": "chunked"})
     assert response.status == 400
     assert not (signed.folder / "settings.toml").exists()
 
@@ -700,38 +847,38 @@ def test_a_form_with_too_many_fields_is_refused_not_dropped(dash):
     assert response.status == 413
 
 
-# Testing a key, on its tab
+# Testing a key, on the Keys page
 
 
 def press_test(running, path, name, typed=None):
-    """Press a tab's test button for key `name`, with `typed` in its boxes."""
+    """Press a page's test button for key `name`, with `typed` in its boxes."""
     cookie = running.session()
     fields = fields_from(running("GET", path, cookie=cookie)[1])
     return running("POST", path, fields | (typed or {}) | {"csrf": running.csrf(cookie), "test": name}, cookie=cookie)
 
 
-def test_each_tab_has_a_test_button_for_each_of_its_keys(make):
+def test_the_keys_page_has_a_test_button_for_each_key_of_the_views_on(make):
     pi, docker = make(install="pi"), make(install="docker")
     expected = {
-        (pi, "/settings"): ["RDM_API_KEY", "BODS_API_KEY"],
-        (pi, "/settings/board"): ["TAPI_APP_KEY"],  # the app ID is tested with it
-        (docker, "/settings"): ["RDM_API_KEY", "BODS_API_KEY"],
-        (docker, "/settings/dashboard"): ["RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"],
+        pi: ["RDM_API_KEY", "BODS_API_KEY", "TAPI_APP_KEY"],  # the app ID is tested with its key
+        docker: ["RDM_API_KEY", "BODS_API_KEY", "RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"],
     }
-    for (running, path), names in expected.items():
-        page = running("GET", path, cookie=running.session())[1]
-        assert re.findall(r'<button type="submit" name="test" value="(\w+)"', page) == names, path
+    for running, names in expected.items():
+        page = running("GET", "/settings/keys", cookie=running.session())[1]
+        assert re.findall(r'<button type="submit" name="test" value="(\w+)"', page) == names
         # Save comes first, so Enter in any box saves rather than tests.
-        assert page.index(">Save settings</button>") < page.index('name="test"'), path
-        assert '<fieldset class="key-tests"><legend>Test a key</legend>' in page
-    board = pi("GET", "/settings/board", cookie=pi.session())[1]
+        assert page.index(">Save changes</button>") < page.index('name="test"')
+        assert '<fieldset class="card key-tests"><legend><h2 id="section-test-a-key">Test a key</h2></legend>' in page
+        for other in ("/settings/trains-and-buses", "/settings/general"):
+            assert 'name="test"' not in running("GET", other, cookie=running.session())[1], other
+    board = pi("GET", "/settings/keys", cookie=pi.session())[1]
     assert ">Test the TransportAPI app ID and key</button>" in board
     assert re.search(r'<p class="hint" id="TAPI_APP_KEY-cost">Uses 1 of today\'s 30 TransportAPI lookups', board)
     assert 'value="TAPI_APP_KEY" aria-describedby="key-tests-hint TAPI_APP_KEY-cost"' in board
 
 
 def test_testing_a_key_needs_signing_in(signed):
-    response, _ = signed("POST", "/settings/dashboard", {"csrf": "x", "test": "RDM_KB_API_KEY"})
+    response, _ = signed("POST", "/settings/keys", {"csrf": "x", "test": "RDM_KB_API_KEY"})
     assert response.status == 303 and response.getheader("Location") == "/settings/login"
     assert signed.setup.tests == []
 
@@ -749,24 +896,24 @@ def test_testing_a_key_needs_the_same_origin_and_the_form_token(signed, csrf, or
     body = {"test": "RDM_KB_API_KEY", "RDM_KB_API_KEY": "typed-kb-key-1"}
     if csrf is not None:
         body["csrf"] = right if csrf == "right" else csrf
-    response, _ = signed("POST", "/settings/dashboard", body, cookie=cookie, origin=origin)
+    response, _ = signed("POST", "/settings/keys", body, cookie=cookie, origin=origin)
     assert response.status == 403 and signed.setup.tests == []
 
 
 def test_a_key_test_is_a_plain_small_form_like_a_save(signed):
     cookie = signed.session()
     csrf = signed.csrf(cookie)
-    response, _ = signed("POST", "/settings", cookie=cookie, json_body={"csrf": csrf, "test": "RDM_API_KEY"})
+    response, _ = signed("POST", "/settings/keys", cookie=cookie, json_body={"csrf": csrf, "test": "RDM_API_KEY"})
     assert response.status == 400
-    response, _ = signed("POST", "/settings", {"csrf": csrf, "test": "RDM_API_KEY", "title": "x" * 70_000},
+    response, _ = signed("POST", "/settings/keys", {"csrf": csrf, "test": "RDM_API_KEY", "title": "x" * 70_000},
                          cookie=cookie)
     assert response.status == 413 and signed.setup.tests == []
 
 
 def test_a_key_is_tested_as_typed_else_as_saved_and_nothing_is_saved(signed):
-    press_test(signed, "/settings/dashboard", "RDM_DETAILS_API_KEY", {"RDM_DETAILS_API_KEY": " typed-details-key-1 "})
-    press_test(signed, "/settings/dashboard", "RDM_KB_API_KEY")  # its box empty: the saved one
-    press_test(signed, "/settings", "RDM_API_KEY", {"title": "Not saved"})
+    press_test(signed, "/settings/keys", "RDM_DETAILS_API_KEY", {"RDM_DETAILS_API_KEY": " typed-details-key-1 "})
+    press_test(signed, "/settings/keys", "RDM_KB_API_KEY")  # its box empty: the saved one
+    press_test(signed, "/settings/keys", "RDM_API_KEY", {"kb_incidents_url": "https://raildata.org.uk/not-saved"})
     assert signed.setup.tests == [
         ("RDM_DETAILS_API_KEY", "typed-details-key-1", None),
         ("RDM_KB_API_KEY", None, None),
@@ -776,9 +923,9 @@ def test_a_key_is_tested_as_typed_else_as_saved_and_nothing_is_saved(signed):
 
 
 def test_transportapis_app_id_and_key_are_tested_together(pi_signed):
-    press_test(pi_signed, "/settings/board", "TAPI_APP_KEY",
+    press_test(pi_signed, "/settings/keys", "TAPI_APP_KEY",
                {"TAPI_APP_ID": "typed-app-id", "TAPI_APP_KEY": "typed-app-key"})
-    response, page = press_test(pi_signed, "/settings/board", "TAPI_APP_KEY", {"TAPI_APP_ID": "typed-app-id"})
+    response, page = press_test(pi_signed, "/settings/keys", "TAPI_APP_KEY", {"TAPI_APP_ID": "typed-app-id"})
     assert pi_signed.setup.tests == [("TAPI_APP_KEY", "typed-app-key", "typed-app-id"),
                                      ("TAPI_APP_KEY", None, "typed-app-id")]
     # The one result is by the app key's box, and both boxes point to it.
@@ -788,16 +935,17 @@ def test_transportapis_app_id_and_key_are_tested_together(pi_signed):
 
 
 def test_the_result_is_shown_by_its_keys_box_and_unsaved_changes_stay(signed):
-    response, page = press_test(signed, "/settings/dashboard", "RDM_KB_API_KEY",
-                                {"RDM_KB_API_KEY": "typed-kb-key-1", "history_days": "45"})
-    assert response.status == 200 and "<title>Key tested – Dashboard settings</title>" in page
+    url = "https://api1.raildata.org.uk/kb"
+    response, page = press_test(signed, "/settings/keys", "RDM_KB_API_KEY",
+                                {"RDM_KB_API_KEY": "typed-kb-key-1", "kb_incidents_url": url})
+    assert response.status == 200 and "<title>Key tested – Keys – Glossop settings</title>" in page
     box = re.search(r'<input id="RDM_KB_API_KEY"[^>]*>', page).group(0)
     assert 'aria-describedby="RDM_KB_API_KEY-hint RDM_KB_API_KEY-test"' in box and "value=" not in box
     result = ('<p class="key-result key-result-works" id="RDM_KB_API_KEY-test" role="status" tabindex="-1" '
               f'autofocus>{icon("check")} <strong>Works:</strong> It works: the service answered.</p>')
     assert 'aria-hidden="true"' in icon("check")
     assert page[page.index(box) + len(box):].startswith(result)
-    assert fields_from(page)["history_days"] == "45"
+    assert fields_from(page)["kb_incidents_url"] == url
     assert not (signed.folder / "settings.toml").exists()
 
 
@@ -811,7 +959,7 @@ def test_the_result_is_shown_by_its_keys_box_and_unsaved_changes_stay(signed):
 ])
 def test_every_result_is_said_in_words_not_colour_alone(signed, state, words):
     signed.setup.result = KeyResult(state, "Said plainly.")
-    _, page = press_test(signed, "/settings", "BODS_API_KEY")
+    _, page = press_test(signed, "/settings/keys", "BODS_API_KEY")
     assert f'class="key-result key-result-{state}" id="BODS_API_KEY-test"' in page
     assert f"<strong>{words}:</strong> Said plainly.</p>" in page
 
@@ -819,28 +967,35 @@ def test_every_result_is_said_in_words_not_colour_alone(signed, state, words):
 def test_a_key_is_never_shown_or_logged(signed, caplog):
     typed = "typed-details-key-1"
     signed.setup.result = KeyResult("wrong_key", f"Refused {typed} and rail-key-1234567.")
-    response, page = press_test(signed, "/settings/dashboard", "RDM_DETAILS_API_KEY", {"RDM_DETAILS_API_KEY": typed})
+    response, page = press_test(signed, "/settings/keys", "RDM_DETAILS_API_KEY", {"RDM_DETAILS_API_KEY": typed})
     assert response.status == 200 and "Refused … and …." in page
     for secret in (typed, "rail-key-1234567", "bods-key-7654321"):
         assert secret not in "".join(signed.seen) and secret not in caplog.text
 
 
 def test_a_key_typed_wrongly_is_not_tested(signed):
-    _, page = press_test(signed, "/settings/dashboard", "RDM_KB_API_KEY", {"RDM_KB_API_KEY": "has spaces in it"})
+    _, page = press_test(signed, "/settings/keys", "RDM_KB_API_KEY", {"RDM_KB_API_KEY": "has spaces in it"})
     assert signed.setup.tests == [] and "has spaces in it" not in page
     assert "<strong>Not tested:</strong> Paste the key exactly" in page
 
 
 @pytest.mark.parametrize("path, name", [
-    ("/settings/dashboard", "RDM_API_KEY"),
-    ("/settings", "RDM_KB_API_KEY"),
-    ("/settings/dashboard", "TAPI_APP_KEY"),
-    ("/settings", "PASSWORD"),
-    ("/settings", ""),
+    ("/settings/dashboard", "RDM_KB_API_KEY"),
+    ("/settings/trains-and-buses", "RDM_API_KEY"),
+    ("/settings/general", "BODS_API_KEY"),
+    ("/settings/keys", "TAPI_APP_KEY"),  # the board's, and its view is off
+    ("/settings/keys", "PASSWORD"),
+    ("/settings/keys", ""),
 ])
-def test_a_tab_tests_only_its_own_keys(signed, path, name):
+def test_only_the_keys_page_tests_keys_and_only_those_it_shows(signed, path, name):
     response, _ = press_test(signed, path, name)
     assert response.status == 400 and signed.setup.tests == []
+
+
+def test_the_overview_tests_nothing(signed):
+    cookie = signed.session()
+    response, _ = signed("POST", "/settings", {"csrf": signed.csrf(cookie), "test": "RDM_API_KEY"}, cookie=cookie)
+    assert response.status == 405 and signed.setup.tests == []
 
 
 @pytest.mark.parametrize("failure, said", [
@@ -850,7 +1005,7 @@ def test_a_tab_tests_only_its_own_keys(signed, path, name):
 ])
 def test_a_test_that_cant_run_says_why_plainly(signed, caplog, failure, said):
     signed.setup.result = failure
-    response, page = press_test(signed, "/settings/dashboard", "RDM_KB_API_KEY", {"RDM_KB_API_KEY": "typed-kb-key-1"})
+    response, page = press_test(signed, "/settings/keys", "RDM_KB_API_KEY", {"RDM_KB_API_KEY": "typed-kb-key-1"})
     assert response.status == 200 and f"<strong>Not tested:</strong> {said}" in page
     assert "typed-kb-key-1" not in page and "typed-kb-key-1" not in caplog.text
 
@@ -886,20 +1041,20 @@ def on_a_pi(make):
 
 
 def test_on_a_pi_the_test_runs_in_the_setup_service_never_here(on_a_pi):
-    _, page = press_test(on_a_pi, "/settings/board", "TAPI_APP_KEY",
+    _, page = press_test(on_a_pi, "/settings/keys", "TAPI_APP_KEY",
                          {"TAPI_APP_ID": "typed-app-id", "TAPI_APP_KEY": "typed-app-key"})
     assert "<strong>Works:</strong> It works." in page
     assert on_a_pi.runner.tests == [("TAPI_APP_KEY", "typed-app-key", "typed-app-id")] and on_a_pi.here == []
 
 
 def test_each_key_is_tested_at_most_once_every_ten_seconds_as_in_the_wizard(on_a_pi):
-    press_test(on_a_pi, "/settings", "RDM_API_KEY")
-    _, page = press_test(on_a_pi, "/settings", "RDM_API_KEY")
+    press_test(on_a_pi, "/settings/keys", "RDM_API_KEY")
+    _, page = press_test(on_a_pi, "/settings/keys", "RDM_API_KEY")
     assert "<strong>Not tested:</strong> Wait 10 s before testing this key again" in page
-    press_test(on_a_pi, "/settings", "BODS_API_KEY")  # another key has its own limit
+    press_test(on_a_pi, "/settings/keys", "BODS_API_KEY")  # another key has its own limit
     assert on_a_pi.setup.handle("testkey", {"name": "BODS_API_KEY"})[0] == 429  # one limit with the wizard
     on_a_pi.now[0] += 10
-    press_test(on_a_pi, "/settings", "RDM_API_KEY")
+    press_test(on_a_pi, "/settings/keys", "RDM_API_KEY")
     assert [name for name, _, _ in on_a_pi.runner.tests] == ["RDM_API_KEY", "BODS_API_KEY", "RDM_API_KEY"]
 
 
@@ -1515,7 +1670,8 @@ def test_a_reply_that_is_not_strict_json_is_never_sent(pi):
 def test_settings_pages_allow_their_own_forms_and_no_scripts(make):
     for running in (make(install="docker", dashboard=True), make(install="pi")):
         cookie = running.session()
-        for path in ["/settings/login", "/settings/reset", "/settings", "/settings/style.css", "/settings/nowhere",
+        for path in ["/settings/login", "/settings/reset", "/settings", "/settings/keys", "/settings/style.css",
+                     "/settings/trains-and-buses?saved", "/settings/nowhere",
                      "/login", "/setup/"]:
             response, _ = running("GET", path, cookie=cookie)
             policy = csp(response)
@@ -1709,6 +1865,8 @@ TEXT_PAIRS = [
     ("accent-fg", "accent"), ("ok-fg", "surface"), ("bad-fg", "surface"), ("bad-fg", "bg"),
     # The problem summary and a refused key on their red tint, a key that can't be told on amber.
     ("fg", "bad-bg"), ("bad-fg", "bad-bg"), ("late-fg", "late-bg"),
+    # The neutral pill on its tint.
+    ("fg", "surface-2"),
 ]
 OUTLINE_PAIRS = [("focus", "bg"), ("focus", "surface"), ("edge", "surface"), ("edge", "bg"), ("bad-fg", "surface")]
 
@@ -1739,8 +1897,8 @@ def test_buttons_are_quiet_but_each_forms_main_action(make):
     css = WEB_CSS.read_text(encoding="utf-8")
     assert re.search(r"\nbutton \{[^}]*background: transparent", css)
     assert re.search(r"button\.primary \{[^}]*background: var\(--accent\)", css)
-    page = running("GET", "/settings", cookie=running.session())[1]
-    assert re.findall(r'<button type="submit" class="primary">([^<]*)</button>', page) == ["Save settings"]
+    page = running("GET", "/settings/general", cookie=running.session())[1]
+    assert re.findall(r'<button type="submit" class="primary"[^>]*>([^<]*)</button>', page) == ["Save changes"]
     assert '<button type="submit">Sign out</button>' in page
     for path in ("/settings/login", "/settings/reset"):
         page = running("GET", path)[1]

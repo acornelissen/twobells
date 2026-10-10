@@ -1163,7 +1163,7 @@ def test_a_pi_turns_its_dashboard_on_and_off_without_starting_again(tmp_path, se
     app = served["app"]
     assert ask(app, "/") == (303, "/settings", b"") and ask(app, "/healthz") == (200, None, b"ok")
     assert ask(app, "/api/snapshot")[0] == 404
-    (folder / "settings.toml").write_text('[app]\nviews = ["board", "dashboard"]\n')  # saved on the General tab
+    (folder / "settings.toml").write_text('[app]\nviews = ["board", "dashboard"]\n')  # saved on the General page
     assert ask(app, "/")[0] == 200 and ask(app, "/api/snapshot")[0] == 200
     assert ask(app, "/healthz")[0] == 503  # until the fetch service hands a snapshot over
 
@@ -1339,7 +1339,8 @@ def test_serve_with_the_dashboard_view_off_runs_only_the_settings(tmp_path, serv
     (folder / "settings.toml").write_text("[app]\nviews = []\n")
     assert main(["serve", "--install", "docker", "--config", str(dashboard_config), "--secrets",
                  str(tmp_path / "none.env"), "--state-dir", str(folder)]) == 0
-    assert served["app"].hub is None and served["app"].settings.tabs() == ("general",)
+    assert served["app"].hub is None
+    assert served["app"].settings.tabs() == ("overview", "trains_buses", "keys", "general")
 
 
 @pytest.mark.parametrize("install", ["docker", "desktop"])

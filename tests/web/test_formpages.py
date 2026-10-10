@@ -121,7 +121,7 @@ WIDGET = Wording(
     back='<p class="after"><a href="/">Back to the widget</a></p>',
     no_code_made="That form had run out, so no code was shown.",
     cant_check="The code can't be checked: use the tool.",
-    saved="Saved for the widget.",
+    saved="The widget shows them soon.",
     reset_logged="Widget password reset",
     wrong_step_token="Reload the widget.",
 )
@@ -142,10 +142,12 @@ class FakePage:
     def render(self, csrf, message="", errors=None, values=None):
         return f"<form csrf={csrf}>{message}|{errors or ''}|{values or ''}</form>"
 
-    def save(self, fields):
+    def save(self, fields, changed=None):
         if fields.get("title") == "bad":
             return {"title": "Too bad"}
         self.saved.append(fields)
+        if changed is not None and fields.get("title") != "same":
+            changed.extend(["Title", "Size, 3 to 4"])
         return {}
 
 
@@ -400,12 +402,19 @@ def test_a_save_needs_a_session_and_its_token(host):
     assert host.page.saved == []
 
 
-def test_a_save_says_what_happened_in_the_hosts_words(host):
+def test_a_save_redirects_to_a_page_that_says_once_what_changed_in_the_hosts_words(host):
     cookie, csrf = host.signed_in()
     reply = host.pages.save({"csrf": csrf, "title": "Glossop"}, headers(cookie))
-    assert reply.status == 200 and "<title>Saved – Widget settings</title>" in reply.body.decode()
-    assert "Saved for the widget." in reply.body.decode()
+    # Redirected, so reloading the page after can't post the form again.
+    assert reply.status == 303 and reply.headers["Location"] == "/area?saved" and reply.body == b""
     assert host.page.saved == [{"title": "Glossop"}]  # the token isn't one of the settings
+    page = host.pages.settings_page(headers(cookie), saved=True).body.decode()
+    assert "<title>Saved – Widget settings</title>" in page
+    assert "Saved 2 changes: Title; Size, 3 to 4. The widget shows them soon." in page
+    page = host.pages.settings_page(headers(cookie), saved=True).body.decode()  # said once
+    assert "<title>Widget settings</title>" in page and "Saved" not in page
+    host.pages.save({"csrf": csrf, "title": "same"}, headers(cookie))
+    assert "Saved. Nothing had changed." in host.pages.settings_page(headers(cookie), saved=True).body.decode()
     reply = host.pages.save({"csrf": csrf, "title": "bad"}, headers(cookie))
     assert reply.status == 422 and "<title>Widget settings: fix the errors</title>" in reply.body.decode()
     assert "Too bad" in reply.body.decode() and "'title': 'bad'" in reply.body.decode()
@@ -416,12 +425,24 @@ def test_one_host_can_draw_and_save_several_forms_each_under_its_own_title(host)
     cookie, csrf = host.signed_in()
     reply = host.pages.settings_page(headers(cookie), other, "Gadget settings")
     assert reply.status == 200 and "<title>Gadget settings</title>" in reply.body.decode()
-    reply = host.pages.save({"csrf": csrf, "title": "Glossop"}, headers(cookie), other, "Gadget settings")
+    reply = host.pages.save({"csrf": csrf, "title": "Glossop"}, headers(cookie), other, "Gadget settings",
+                            "/area/gadget")
+    assert reply.status == 303 and reply.headers["Location"] == "/area/gadget?saved"
+    reply = host.pages.settings_page(headers(cookie), other, "Gadget settings", saved=True)
     assert "<title>Saved – Gadget settings</title>" in reply.body.decode()
     assert other.saved == [{"title": "Glossop"}] and host.page.saved == []
     reply = host.pages.save({"csrf": csrf, "title": "bad"}, headers(cookie), other, "Gadget settings")
     assert reply.status == 422 and "<title>Gadget settings: fix the errors</title>" in reply.body.decode()
     assert host.pages.settings_page(headers(), other, "Gadget settings").status == 303  # still needs a session
+
+
+def test_a_saved_notice_is_only_for_the_session_that_saved(host):
+    cookie, csrf = host.signed_in()
+    other, _ = host.signed_in()
+    host.pages.save({"csrf": csrf, "title": "Glossop"}, headers(cookie))
+    assert "Saved" not in host.pages.settings_page(headers(other), saved=True).body.decode()
+    assert "Saved 2 changes" in host.pages.settings_page(headers(cookie), saved=True).body.decode()
+    assert host.pages.settings_page(headers(), saved=True).status == 303  # still needs a session
 
 
 def test_the_words_are_asked_for_afresh_on_every_page(host):

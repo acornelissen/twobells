@@ -53,6 +53,72 @@ def test_a_field_s_needs_is_a_section_that_can_be_set_up():
             assert f.needs == f.section, f.name
 
 
+def test_every_field_is_on_one_settings_page_under_a_heading():
+    for form in every_form():
+        for f in form:
+            assert f.page in schema.PAGES and f.page != "overview", f.name  # the overview only shows
+            assert f.heading and f.tier in schema.TIERS, f.name
+            assert f.width in ("", *schema.WIDTHS) and f.keyboard in ("", *schema.KEYBOARDS), f.name
+
+
+def test_a_page_s_fields_are_for_its_view():
+    # The board's and the dashboard's pages are there only while their view is on.
+    for f in schema.FIELDS:
+        if f.page in ("board", "dashboard"):
+            assert f.group == f.page, f.name
+        if f.page in ("trains_buses", "general"):
+            assert f.group == "general", f.name
+
+
+def test_short_choices_are_radios_and_long_ones_selects():
+    for form in every_form():
+        for f in form:
+            if f.kind == "radios":
+                assert 2 <= len(f.options) <= 4, f.name
+            if f.kind == "select":
+                assert len(f.options) > 4, f.name
+
+
+def test_a_unit_is_for_a_number_in_a_narrow_box():
+    for f in schema.FIELDS:
+        if f.unit:
+            assert f.kind == "number" and f.width, f.name
+
+
+@pytest.mark.parametrize("data, chosen", [
+    ({}, "england-and-wales"),
+    ({"bank_holiday_division": "scotland"}, "scotland"),
+    ({"bank_holidays": True, "bank_holiday_division": "northern-ireland"}, "northern-ireland"),
+    ({"bank_holidays": False, "bank_holiday_division": "scotland"}, "ignore"),
+    ({"bank_holiday_division": "wales"}, "england-and-wales"),  # not one: saving puts it right
+])
+def test_bank_holidays_are_one_choice_from_the_two_settings(data, chosen):
+    assert schema.holiday_choice(data) == chosen
+
+
+@pytest.mark.parametrize("chosen, saved", [
+    ("scotland", {"bank_holidays": True, "bank_holiday_division": "scotland"}),
+    ("england-and-wales", {"bank_holidays": True, "bank_holiday_division": "england-and-wales"}),
+    ("ignore", {"bank_holidays": False}),  # the part of the UK kept, for turning them back on
+])
+def test_the_bank_holidays_choice_saves_the_same_two_settings(chosen, saved):
+    assert schema.holiday_settings(schema.holidays(chosen)) == saved
+    assert {"bank_holidays", "bank_holiday_division"} <= schema.saved_keys()[None]
+
+
+@pytest.mark.parametrize("raw", ["", "wales", "true", "false"])
+def test_the_bank_holidays_choice_refuses_anything_else(raw):
+    with pytest.raises(schema.Invalid):
+        schema.holidays(raw)
+
+
+def test_the_time_zone_suggests_every_zone_london_first():
+    zone = {f.name: f for f in schema.FIELDS}["timezone"]
+    names = [value for value, _ in zone.options]
+    assert names[0] == "Europe/London" and "UTC" in names and "America/New_York" in names
+    assert len(names) == len(set(names)) and all(schema.timezone(name) == name for name in names[:50])
+
+
 def test_each_key_is_in_exactly_one_group():
     names = Counter(k.name for k in schema.KEYS)
     assert set(names.values()) == {1}
@@ -280,7 +346,7 @@ def test_with_only_general_settings_saved_each_view_loads_with_its_defaults(tmp_
         '[weather]\nlat = 53.44\nlon = -1.95\n')
     store = Store.open(tmp_path / "config.toml", state_dir=folder, environ={})
     assert not store.config_path.exists()
-    general = {(f.section, f.key) for f in schema.FIELDS if f.group == "general"}
+    general = {(f.section, key) for f in schema.FIELDS if f.group == "general" for key in (f.key, *f.also)}
     general |= {(table, key) for table, keys in schema.MANAGED.items() for key in keys}
     saved = store.saved()
     assert {(t, k) for t, table in saved.items() if isinstance(table, dict) for k in table} <= general

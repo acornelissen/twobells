@@ -373,7 +373,7 @@ def _views(value, offered: Sequence[str]) -> list[str]:
 
 
 def view_choices(offered: Sequence[str]) -> list[dict]:
-    """Each view offered, with its name and what it is as the General tab says them."""
+    """Each view offered, with its name and what it is as the General page says them."""
     fields = {f.name: f for f in schema.FIELDS}
     return [{"name": view, "label": fields[f"view_{view}"].label, "hint": fields[f"view_{view}"].hint}
             for view in offered]

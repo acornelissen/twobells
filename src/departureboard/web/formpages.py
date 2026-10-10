@@ -22,6 +22,7 @@ import html
 import json
 import logging
 import re
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -64,6 +65,17 @@ WRONG_CODE = "That code isn't right, or it has run out. Ask for a new code and t
 _LENGTH = re.compile(r"[0-9]{1,15}")
 # A setup wizard step's name, as it comes in the path.
 _STEP_NAME = re.compile(r"[a-z]{1,20}")
+# The most sessions with a saved notice waiting for their next page.
+_MAX_NOTICES = 64
+
+
+def saved_notice(changed: list[str], then: str) -> str:
+    """What a save says on the page after it: what changed, in words, and
+    when it takes effect (`then`)."""
+    if not changed:
+        return "Saved. Nothing had changed."
+    count = f"{len(changed)} change{'' if len(changed) == 1 else 's'}"
+    return f"Saved {count}: {'; '.join(changed)}. {then}".strip()
 
 
 @dataclass(frozen=True)
@@ -81,7 +93,8 @@ class SettingsPage(Protocol):
     def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,
                values: dict[str, str] | None = None, tested: Tested | None = None) -> str: ...
 
-    def save(self, fields: dict[str, str]) -> dict[str, str]: ...  # field -> error; empty when saved
+    # field -> error, empty when saved; what was saved is added to `changed` in words
+    def save(self, fields: dict[str, str], changed: list[str] | None = None) -> dict[str, str]: ...
 
     def test_key(self, fields: dict[str, str]) -> Tested | None: ...  # the result to render, or None: no such test
 
@@ -123,7 +136,7 @@ class Wording:
     back: str  # HTML paragraph closing every pre-session page, or ""
     no_code_made: str  # the error when the form asking for a code had run out
     cant_check: str  # the error when the code can't be checked
-    saved: str  # the message after a save
+    saved: str  # when what was saved takes effect, said after a save
     reset_logged: str  # the log line after a reset
     wrong_step_token: str  # the error when a wizard step's X-CSRF-Token is wrong
 
@@ -219,18 +232,31 @@ class FormPages:
         self._setup = setup
         self._json = json_reply
         self._clock = clock
+        # Each save's notice, by its session's form token, until the page
+        # after it (a GET, as the save answers with a redirect) shows it.
+        self._notices: dict[str, str] = {}
+        self._notices_lock = threading.Lock()
 
     # Pages
 
-    def settings_page(self, headers: Headers, page: SettingsPage | None = None, title: str | None = None) -> Reply:
+    def settings_page(self, headers: Headers, page: SettingsPage | None = None, title: str | None = None,
+                      saved: bool = False) -> Reply:
         """A settings form (`page`, or the one given at the start) for a
         signed-in visitor, under `title` (or the wording's); sign-in for
-        anyone else."""
+        anyone else. `saved` (the address's ?saved) shows what the
+        session's last save changed, once."""
         session = self._sessions.get(self._token(headers))
         if session is None:
             return redirect(self._prefix + "/login")
         page = page or self._page
-        return self._html(200, title or self._wording().title, page.render(session.csrf))
+        title = title or self._wording().title
+        notice = ""
+        if saved:
+            with self._notices_lock:
+                notice = self._notices.pop(session.csrf, "")
+        if notice:
+            return self._html(200, f"Saved – {title}", page.render(session.csrf, message=notice))
+        return self._html(200, title, page.render(session.csrf))
 
     def login_page(self, status: int, headers: Headers, message: str = "", to_setup: bool = False) -> Reply:
         """Sign in, or the first claim while no password is set."""
@@ -370,9 +396,13 @@ class FormPages:
         return redirect(self._prefix + "/login", {"Set-Cookie": self._sessions.expired_cookie()})
 
     def save(self, fields: dict[str, str], headers: Headers, page: SettingsPage | None = None,
-             title: str | None = None) -> Reply:
+             title: str | None = None, where: str | None = None) -> Reply:
         """A settings form (`page`, or the one given at the start), from a
-        signed-in session with its token, answered under `title` (or the wording's)."""
+        signed-in session with its token. Saved, it redirects to `where`
+        (the page's address, or the prefix) with ?saved, whose page says
+        what changed, so reloading it can't post the form again; refused,
+        the form is drawn again under `title` (or the wording's) with what
+        was typed and the problems."""
         session = self._sessions.get(self._token(headers))
         if session is None:
             return redirect(self._prefix + "/login")
@@ -382,11 +412,17 @@ class FormPages:
         page = page or self._page
         wording = self._wording()
         title = title or wording.title
-        errors = page.save(fields)
+        changed: list[str] = []
+        errors = page.save(fields, changed)
         if errors:
             body = page.render(session.csrf, errors=errors, values=fields)
             return self._html(422, f"{title}: fix the errors", body)
-        return self._html(200, f"Saved – {title}", page.render(session.csrf, message=wording.saved))
+        with self._notices_lock:
+            self._notices.pop(session.csrf, None)
+            while len(self._notices) >= _MAX_NOTICES:
+                del self._notices[next(iter(self._notices))]  # the oldest
+            self._notices[session.csrf] = saved_notice(changed, wording.saved)
+        return redirect((where or self._prefix) + "?saved")
 
     def test_key(self, fields: dict[str, str], headers: Headers, page: SettingsPage | None = None,
                  title: str | None = None) -> Reply:

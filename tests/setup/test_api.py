@@ -519,7 +519,7 @@ def test_begin_names_the_dashboards_page_and_offers_only_its_keys(dashboard):
     assert keys["RDM_DETAILS_API_KEY"]["set"] and not keys["RDM_KB_API_KEY"]["set"]
     assert keys["RDM_DETAILS_API_KEY"]["doc"].endswith("docs/keys.md#rail-data-marketplace-service-details")
     assert keys["RDM_KB_API_KEY"]["doc"].endswith("docs/keys.md#rail-data-marketplace-knowledgebase-incidents")
-    assert keys["RDM_KB_API_KEY"]["label"] == "Rail Data Marketplace Knowledgebase Incidents key"
+    assert keys["RDM_KB_API_KEY"]["label"] == "Rail Data Marketplace key for engineering works"
     assert DETAILS_KEY not in json.dumps(body)
 
 

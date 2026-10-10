@@ -179,7 +179,7 @@ function finished(data, job, roads) {
   }
   if (roads === "carried") {
     items.push("The roads for the bus maps are still being found, and finish on their own. "
-      + "The settings site's General tab says how far they have got.");
+      + "The settings site's Overview says how far they have got.");
   }
   fill($("done-found"), items.map((text) => h("li", {}, text)));
   const links = list(data.links).map(obj).filter((l) => l && str(l.label) && LINK.test(str(l.href)));

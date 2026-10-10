@@ -335,9 +335,9 @@ def _kb(keys: Mapping[str, str], config_data: Mapping, fetch: Fetch) -> KeyResul
     url = _https(raw, "")
     if not url or kb_url_is_placeholder(url):
         if isinstance(raw, str) and raw.strip() and not url:
-            return KeyResult("unknown", "The Knowledgebase Incidents address isn't an https address, "
+            return KeyResult("unknown", "The engineering works address isn't an https address, "
                                         "so this key can't be tested.")
-        return KeyResult("unknown", "Set the Knowledgebase Incidents address on the Dashboard tab, from the "
+        return KeyResult("unknown", "Set the engineering works address on the settings' Keys page, from the "
                                     "product's Specification tab, to test this key.")
     body = _call(fetch, url, {"x-apikey": keys["RDM_KB_API_KEY"], "Accept": "application/xml"}, service)
     if not body.lstrip().startswith(b"<"):

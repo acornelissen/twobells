@@ -1,7 +1,9 @@
 """Every setting the settings pages and setup save, in one registry.
 
 Each field belongs to one group of settings: general (both views use it),
-the board's or the dashboard's. The settings pages draw their fields from
+the board's or the dashboard's; and to one of the settings pages (PAGES),
+under a heading there, with what the page needs to draw it: its tier, the
+width of its box and its unit. The settings pages draw their fields from
 here, and what the store's settings.toml may hold (saved_keys) is these
 fields' keys and the few setup writes that no field shows (MANAGED).
 Anything else is set in config.toml alone: addresses keys are sent to
@@ -22,9 +24,10 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import cache
 from typing import TYPE_CHECKING, Literal, overload
 from urllib.parse import urlsplit
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, available_timezones
 
 from ..board.displays.display import DISPLAY_PANELS
 from ..board.themes import THEMES
@@ -309,16 +312,25 @@ def bus_defaults(source: object) -> dict:
 @dataclass(frozen=True)
 class Field:
     name: str  # form field name and element id; unique
-    group: str  # "general", "board" or "dashboard"
+    group: str  # the view that uses it: "general" (both), "board" or "dashboard"
     section: str | None  # the table it is saved in: None (the top level), "app", "train", "bus", "weather", "dashboard"
     key: str
     label: str
     check: Callable[[str], object]
-    kind: str = "text"  # text, number, select, area, check
+    kind: str = "text"  # text, number, radios (2 to 4 choices), select (more), area, check
     hint: str = ""
-    options: tuple[tuple[str, str], ...] = ()
+    options: tuple[tuple[str, str], ...] = ()  # a choice's (value, words); a text box's suggestions
     default: object = None  # shown when the settings don't say
     needs: str | None = None  # the table that must be set up for the field to show: "train", "bus" or "weather"
+    # Where the settings pages show it: its page (PAGES), the heading of its
+    # section there, and whether it waits under the section's Advanced.
+    page: str = ""
+    heading: str = ""
+    tier: str = "common"  # or "advanced"
+    width: str = ""  # a box for about this many characters: WIDTHS; "" for the full width
+    unit: str = ""  # said after the box, like "minutes"
+    keyboard: str = ""  # "code": capitals, no corrections (station codes); "plain": no capitals or corrections
+    also: tuple[str, ...] = ()  # other keys it saves, in the same table (bank holidays: the division)
 
 
 @dataclass(frozen=True)
@@ -329,10 +341,50 @@ class Key:
     hint: str
 
 
+# The settings pages, by task. The overview only shows; every other page
+# has a form of the fields whose page it is (the keys have theirs).
+PAGES = ("overview", "trains_buses", "board", "dashboard", "keys", "general")
+TIERS = ("common", "advanced")
+WIDTHS = ("2", "3", "4", "5", "10", "20")
+KEYBOARDS = ("code", "plain")
+# The bank holidays choice: a part of the UK whose bank holidays run Sunday
+# times, or none. It saves bank_holidays and bank_holiday_division, as setup does.
+IGNORE_HOLIDAYS = "ignore"
+
+
+def holidays(raw: str) -> str:
+    return choice((*DIVISIONS, IGNORE_HOLIDAYS))(raw)
+
+
+def holiday_settings(chosen: str) -> dict[str, object]:
+    """What a bank holidays choice saves. Ignoring them keeps the part of the
+    UK, for turning them back on."""
+    if chosen == IGNORE_HOLIDAYS:
+        return {"bank_holidays": False}
+    return {"bank_holidays": True, "bank_holiday_division": chosen}
+
+
+def holiday_choice(data: dict) -> str:
+    """The bank holidays choice settings `data` make: England and Wales
+    unless they say otherwise (saving says what is wrong with a bad one)."""
+    if data.get("bank_holidays") is False:
+        return IGNORE_HOLIDAYS
+    division = data.get("bank_holiday_division", ENGLAND_AND_WALES)
+    return division if division in DIVISIONS else ENGLAND_AND_WALES
+
+
+@cache
+def _zones() -> tuple[tuple[str, str], ...]:
+    """Every time zone this computer knows, Europe/London first, as suggestions."""
+    found = sorted(zone for zone in available_timezones() if _ZONE.fullmatch(zone) and zone != "Europe/London")
+    return tuple((zone, zone) for zone in ("Europe/London", *found))
+
+
 _ON_OFF = (("true", "On"), ("false", "Off"))
 _TEXT_SIZES = tuple(str(size) for size in range(9, 17))
 _TEXT_SIZE_NAMES = {"9": "smallest", "11": "standard", "16": "biggest"}
 _KEPT = "The settings below are kept for turning them back on."
+_LISTED = "The first 5 show; the rest are behind Show later departures. A wall tablet shows 4."
 
 
 def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
@@ -343,137 +395,170 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
     accents = _accents(display, theme)
     board, train, bus = BOARD_DEFAULTS, BOARD_DEFAULTS["train"], BOARD_DEFAULTS["bus"]
     return (
-        # General: what both views show.
+        # Trains and buses: what both views show.
         Field("title", "general", None, "title", "Title", text(60), default=board["title"],
-              hint="Shown at the top of the dashboard, and on the board's plain look."),
-        Field("timezone", "general", None, "timezone", "Time zone", timezone, default=board["timezone"],
-              hint="Like Europe/London. Departures and checking times are in this zone."),
-        Field("bank_holidays", "general", None, "bank_holidays", "Bank holidays", on_off, "select",
-              hint="Trains and buses run a Sunday service on bank holidays. Treated like Sundays, only "
-                   "checking times that include Sun apply then. Dates come from GOV.UK.",
-              options=(("true", "Treat bank holidays like Sundays"), ("false", "Ignore bank holidays")),
-              default=board["bank_holidays"]),
-        Field("bank_holiday_division", "general", None, "bank_holiday_division", "Bank holidays for",
-              choice(DIVISIONS), "select", hint="The part of the UK you live in; each has its own bank holidays.",
-              options=(("england-and-wales", "England and Wales"), ("scotland", "Scotland"),
-                       ("northern-ireland", "Northern Ireland")),
-              default=ENGLAND_AND_WALES),
-        Field("view_board", "general", "app", "views", "The board", ticked, "check",
-              hint="Departures on the e-paper or screen board."),
-        Field("view_dashboard", "general", "app", "views", "The dashboard", ticked, "check",
-              hint="Departures, maps and the weather in a web browser."),
-        Field("train_enabled", "general", "train", "enabled", "Trains", on_off, "select",
+              page="trains_buses", heading="Title",
+              hint="The board shows all of it. The dashboard shows the part before “>” as its heading: "
+                   "Glossop, from Glossop > Manchester."),
+        Field("train_enabled", "general", "train", "enabled", "Show trains", on_off, "radios",
               hint=f"Off: no trains are shown or checked for. {_KEPT}", options=_ON_OFF, default=True,
-              needs="train"),
+              needs="train", page="trains_buses", heading="Trains"),
         Field("train_crs", "general", "train", "crs", "Station code", crs(),
-              hint="3 letters, like GLO for Glossop.", needs="train"),
+              hint="3 letters, like GLO for Glossop.", needs="train", page="trains_buses", heading="Trains",
+              width="4", keyboard="code"),
         Field("train_filter_crs", "general", "train", "filter_crs", "Only trains calling at", crs(optional=True),
-              hint="Optional station code, like MAN. Empty shows every train.", needs="train"),
-        Field("train_walk_minutes", "general", "train", "walk_minutes", "Walk to the station (minutes)",
-              number(0, 60, optional=True), "number", hint="Shows when to leave. Empty for none.", needs="train"),
-        Field("bus_enabled", "general", "bus", "enabled", "Buses", on_off, "select",
-              hint=f"Off: no buses are shown or checked for. {_KEPT}", options=_ON_OFF, default=True, needs="bus"),
-        Field("bus_stops", "general", "bus", "stops", "Stops", stops, "area",
-              hint="One per line, LABEL = ATCO code, like A = 1000DGHS0900. To find stops and their bus "
-                   "companies on a map, use setup.", needs="bus"),
-        Field("bus_directions", "general", "bus", "directions", "Only buses heading to", directions,
-              hint="Optional, comma-separated, like Ashton, Hyde. Empty shows every bus.", needs="bus"),
+              hint="A station code, like MAN. Leave it empty to show every train.", needs="train",
+              page="trains_buses", heading="Trains", width="4", keyboard="code"),
+        Field("train_walk_minutes", "general", "train", "walk_minutes", "Walk to the station",
+              number(0, 60, optional=True), "number", hint="Shows when to leave. Leave it empty for none.",
+              needs="train", page="trains_buses", heading="Trains", width="3", unit="minutes"),
+        Field("bus_enabled", "general", "bus", "enabled", "Show buses", on_off, "radios",
+              hint=f"Off: no buses are shown or checked for. {_KEPT}", options=_ON_OFF, default=True, needs="bus",
+              page="trains_buses", heading="Buses"),
         Field("bus_walk_minutes", "general", "bus", "walk_minutes", "Walk to each stop (minutes)", walk_per_stop,
-              "area", hint="One per line, LABEL = minutes, or one number for every stop. Empty for none.",
-              needs="bus"),
-        Field("weather_enabled", "general", "weather", "enabled", "Weather", on_off, "select",
+              "area", hint="One per line, LABEL = minutes, or one number for every stop. Leave it empty for none.",
+              needs="bus", page="trains_buses", heading="Buses"),
+        Field("bus_directions", "general", "bus", "directions", "Only buses heading to", directions,
+              hint="Optional, separated by commas, like Ashton, Hyde. Leave it empty to show every bus.",
+              needs="bus", page="trains_buses", heading="Buses"),
+        Field("bus_stops", "general", "bus", "stops", "Stop codes", stops, "area",
+              hint="One per line, LABEL = stop code, like A = 1000DGHS0900. Setup finds stops and their bus "
+                   "companies on a map.", needs="bus", page="trains_buses", heading="Buses", tier="advanced"),
+        Field("weather_enabled", "general", "weather", "enabled", "Show the weather", on_off, "radios",
               hint="A warning when rain is likely before you'd reach your next train or bus, and the "
                    "dashboard's forecast, from Open-Meteo.",
-              options=_ON_OFF, default=True, needs="weather"),
+              options=_ON_OFF, default=True, needs="weather", page="trains_buses", heading="Weather"),
         Field("weather_threshold_percent", "general", "weather", "threshold_percent",
-              "Warn of rain from (chance, %)", number(1, 100), "number",
-              hint="50 means warn when rain is more likely than not.", default=50, needs="weather"),
+              "Warn of rain when the chance is at least", number(1, 100), "number",
+              hint="50 means warn when rain is more likely than not.", default=50, needs="weather",
+              page="trains_buses", heading="Weather", width="3", unit="%"),
         # The board's own.
-        Field("theme", "board", None, "theme", "Look", choice(tuple(THEMES)), "select", default=board["theme"],
-              options=(("sign", "Station board (amber dot matrix)"), ("plain", "Plain (black on white)"))),
-        Field("accent", "board", None, "accent", "Accent colour", _accent(accents), "select", default="",
+        Field("theme", "board", None, "theme", "Look", choice(tuple(THEMES)), "radios", default=board["theme"],
+              options=(("sign", "Station board (amber dot matrix)"), ("plain", "Plain (black on white)")),
+              page="board", heading="Display"),
+        Field("rotate", "board", None, "rotate", "Rotation", whole_choice(rotations), "radios",
+              hint="Degrees clockwise, to suit how the display is mounted.",
+              options=tuple((r, f"{r}°") for r in rotations), default=board["rotate"],
+              page="board", heading="Display"),
+        Field("accent", "board", None, "accent", "Accent colour", _accent(accents), "radios", default="",
               hint="Only reinforces meaning; the words always carry it. The station board look uses amber "
                    "and the plain look uses red; a colour too faint on the look's background isn't offered.",
               options=(("", "The look's own"),
-                       *((v, t) for v, t in (("yellow", "Yellow / amber"), ("red", "Red")) if v in accents))),
-        Field("rotate", "board", None, "rotate", "Rotation", whole_choice(rotations), "select",
-              hint="Degrees clockwise, to suit how the display is mounted.",
-              options=tuple((r, f"{r}°") for r in rotations), default=board["rotate"]),
-        Field("min_redraw_minutes", "board", None, "min_redraw_minutes", "Least minutes between redraws",
+                       *((v, t) for v, t in (("yellow", "Yellow / amber"), ("red", "Red")) if v in accents)),
+              page="board", heading="Display", tier="advanced"),
+        Field("min_redraw_minutes", "board", None, "min_redraw_minutes", "Redraw at most every",
               number(1, 60), "number", hint="E-paper only. Refreshes are slow and wear the panel.",
-              default=board["min_redraw_minutes"]),
+              default=board["min_redraw_minutes"], page="board", heading="Display", tier="advanced",
+              width="3", unit="minutes"),
         Field("text_size", "board", None, "text_size", "Text size", whole_choice(_TEXT_SIZES), "select",
               hint="The plain look only. Bigger text shows fewer departures on a small display.",
               options=tuple((s, f"{s} ({_TEXT_SIZE_NAMES[s]})" if s in _TEXT_SIZE_NAMES else s)
                             for s in _TEXT_SIZES),
-              default=board["text_size"]),
+              default=board["text_size"], page="board", heading="Display", tier="advanced"),
         Field("board_train_rows", "board", "train", "rows", "Trains shown", number(1, 6), "number",
-              default=train["rows"], needs="train"),
-        Field("train_interval_minutes", "board", "train", "interval_minutes", "Check every (minutes)",
-              number(1, 60), "number", default=train["interval_minutes"], needs="train"),
-        Field("train_stale_after_minutes", "board", "train", "stale_after_minutes",
-              "Say “not updating” after (minutes)", number(1, 240), "number",
-              default=train["stale_after_minutes"], needs="train"),
+              default=train["rows"], needs="train", page="board", heading="Trains", width="2"),
         Field("train_windows", "board", "train", "windows", "When to check", windows, "area",
-              hint="One per line, like Mon-Fri 06:30-09:30.", default=train["windows"], needs="train"),
+              hint="One per line, like Mon-Fri 06:30-09:30.", default=train["windows"], needs="train",
+              page="board", heading="Trains"),
+        Field("train_interval_minutes", "board", "train", "interval_minutes", "Check every",
+              number(1, 60), "number", default=train["interval_minutes"], needs="train",
+              page="board", heading="Trains", tier="advanced", width="3", unit="minutes"),
+        Field("train_stale_after_minutes", "board", "train", "stale_after_minutes",
+              "Say “not updating” after", number(1, 240), "number",
+              default=train["stale_after_minutes"], needs="train", page="board", heading="Trains",
+              tier="advanced", width="3", unit="minutes"),
         Field("board_bus_rows", "board", "bus", "rows", "Buses shown", number(1, 6), "number",
-              default=bus["rows"], needs="bus"),
-        Field("bus_interval_minutes", "board", "bus", "interval_minutes", "Check every (minutes)",
-              number(1, 120), "number", hint="With TransportAPI, each check costs one hit per stop.",
-              default=bus["interval_minutes"], needs="bus"),
-        Field("bus_stale_after_minutes", "board", "bus", "stale_after_minutes",
-              "Say “not updating” after (minutes)", number(1, 480), "number",
-              default=bus["stale_after_minutes"], needs="bus"),
-        Field("bus_daily_budget", "board", "bus", "daily_budget", "Most TransportAPI hits a day",
-              number(1, 1000), "number", hint="The free TransportAPI plan allows 30.",
-              default=bus["daily_budget"], needs="bus"),
+              default=bus["rows"], needs="bus", page="board", heading="Buses", width="2"),
         Field("bus_windows", "board", "bus", "windows", "When to check", windows, "area",
-              hint="One per line, like Mon-Fri 07:00-08:30.", default=bus["windows"], needs="bus"),
+              hint="One per line, like Mon-Fri 07:00-08:30.", default=bus["windows"], needs="bus",
+              page="board", heading="Buses"),
+        Field("bus_interval_minutes", "board", "bus", "interval_minutes", "Check every",
+              number(1, 120), "number", hint="With TransportAPI, each check costs one lookup per stop.",
+              default=bus["interval_minutes"], needs="bus", page="board", heading="Buses", tier="advanced",
+              width="3", unit="minutes"),
+        Field("bus_stale_after_minutes", "board", "bus", "stale_after_minutes",
+              "Say “not updating” after", number(1, 480), "number",
+              default=bus["stale_after_minutes"], needs="bus", page="board", heading="Buses", tier="advanced",
+              width="3", unit="minutes"),
+        Field("bus_daily_budget", "board", "bus", "daily_budget", "Most TransportAPI lookups a day",
+              number(1, 1000), "number", hint="The free TransportAPI plan allows 30.",
+              default=bus["daily_budget"], needs="bus", page="board", heading="Buses", tier="advanced",
+              width="4", unit="lookups"),
         # The dashboard's own, in its [dashboard] table; the defaults are
         # dashconfig.DashboardOptions' (test_schema checks they agree).
-        Field("quiet_windows", "dashboard", "dashboard", "quiet_windows", "When not to check", quiet_windows,
-              "area", hint="One per line, like Mon-Sun 01:00-05:00. The dashboard still checks while someone "
-                           "has it open. Empty checks all the time.",
-              default=("Mon-Sun 01:00-05:00",)),
-        Field("history_days", "dashboard", "dashboard", "history_days", "Days of punctuality history to keep",
-              number(1, 3650), "number", default=90),
-        Field("row_strips", "dashboard", "dashboard", "row_strips", "Position strips in each row", on_off, "select",
+        Field("dashboard_train_rows", "dashboard", "dashboard", "train_rows", "Most trains listed", number(1, 20),
+              "number", hint=_LISTED, default=10, needs="train", page="dashboard", heading="Departures",
+              width="2"),
+        Field("dashboard_bus_rows", "dashboard", "dashboard", "bus_rows", "Most buses listed", number(1, 20),
+              "number", hint=_LISTED, default=10, needs="bus", page="dashboard", heading="Departures",
+              width="2"),
+        Field("row_strips", "dashboard", "dashboard", "row_strips", "Position strips in each row", on_off, "radios",
               hint="A small drawing of the stops in each departure row, with the train or bus where it is. "
                    "Never on a wall tablet.",
-              options=_ON_OFF, default=True),
-        Field("dashboard_train_rows", "dashboard", "dashboard", "train_rows", "Trains shown", number(1, 20),
-              "number", default=10, needs="train"),
+              options=_ON_OFF, default=True, page="dashboard", heading="Departures"),
         Field("train_interval_seconds", "dashboard", "dashboard", "train_interval_seconds",
-              "Check every (seconds)", number(30, 3600), "number", default=60, needs="train"),
-        Field("late_minutes_train", "dashboard", "dashboard", "late_minutes_train", "Late means at least (minutes)",
-              number(1, 60), "number", hint="For the punctuality history.", default=3, needs="train"),
-        Field("kb_incidents_url", "dashboard", "dashboard", "kb_incidents_url", "Knowledgebase Incidents address",
-              https_feed, hint=f"For engineering works: the address on the Rail Data Marketplace product page, "
-                               f"at {RAILDATA}. Empty leaves them off.",
-              default="", needs="train"),
-        Field("dashboard_bus_rows", "dashboard", "dashboard", "bus_rows", "Buses shown", number(1, 20), "number",
-              default=10, needs="bus"),
-        Field("bus_interval_seconds", "dashboard", "dashboard", "bus_interval_seconds", "Check every (seconds)",
-              number(15, 3600), "number", default=30, needs="bus"),
-        Field("late_minutes_bus", "dashboard", "dashboard", "late_minutes_bus", "Late means at least (minutes)",
-              number(1, 60), "number", hint="For the punctuality history.", default=2, needs="bus"),
+              "Check for trains every", number(30, 3600), "number", default=60, needs="train",
+              page="dashboard", heading="Departures", tier="advanced", width="4", unit="seconds"),
+        Field("bus_interval_seconds", "dashboard", "dashboard", "bus_interval_seconds", "Check for buses every",
+              number(15, 3600), "number", default=30, needs="bus", page="dashboard", heading="Departures",
+              tier="advanced", width="4", unit="seconds"),
         Field("weather_interval_minutes", "dashboard", "dashboard", "weather_interval_minutes",
-              "Check the forecast every (minutes)", number(10, 1440), "number", default=30, needs="weather"),
+              "Check the forecast every", number(10, 1440), "number", default=30, needs="weather",
+              page="dashboard", heading="Departures", tier="advanced", width="4", unit="minutes"),
+        Field("late_minutes_train", "dashboard", "dashboard", "late_minutes_train", "Count trains as late from",
+              number(1, 60), "number", hint="For the punctuality history.", default=3, needs="train",
+              page="dashboard", heading="Departures", tier="advanced", width="3", unit="minutes"),
+        Field("late_minutes_bus", "dashboard", "dashboard", "late_minutes_bus", "Count buses as late from",
+              number(1, 60), "number", hint="For the punctuality history.", default=2, needs="bus",
+              page="dashboard", heading="Departures", tier="advanced", width="3", unit="minutes"),
+        Field("history_days", "dashboard", "dashboard", "history_days", "Keep punctuality history for",
+              number(1, 3650), "number", default=90, page="dashboard", heading="Departures", tier="advanced",
+              width="4", unit="days"),
+        Field("quiet_windows", "dashboard", "dashboard", "quiet_windows", "When to stop checking", quiet_windows,
+              "area", hint="One per line, like Mon-Sun 01:00-05:00. The dashboard still checks while someone "
+                           "has it open, and a wall tablet dims then. Leave it empty to check all the time.",
+              default=("Mon-Sun 01:00-05:00",), page="dashboard", heading="Quiet hours"),
+        # Keys: each key's box is the page's own (KEYS); the engineering works
+        # address sits with its key.
+        Field("kb_incidents_url", "dashboard", "dashboard", "kb_incidents_url", "Engineering works address",
+              https_feed, hint=f"The address on the Rail Data Marketplace's Knowledgebase Incidents product page, "
+                               f"at {RAILDATA}. Leave it empty to leave engineering works off.",
+              default="", needs="train", page="keys", heading="Keys"),
+        # General.
+        Field("view_board", "general", "app", "views", "The board", ticked, "check",
+              hint="Departures on the e-paper or screen board.", page="general", heading="Views"),
+        Field("view_dashboard", "general", "app", "views", "The dashboard", ticked, "check",
+              hint="Departures, maps and the weather in a web browser.", page="general", heading="Views"),
+        Field("bank_holidays", "general", None, "bank_holidays", "Bank holidays", holidays, "radios",
+              hint="Trains and buses run Sunday times on bank holidays, so only checking times that include "
+                   "Sun apply then. Each part of the UK has its own; the dates come from GOV.UK.",
+              options=(("england-and-wales", "Like Sundays, for England and Wales"),
+                       ("scotland", "Like Sundays, for Scotland"),
+                       ("northern-ireland", "Like Sundays, for Northern Ireland"),
+                       (IGNORE_HOLIDAYS, "Ignore them")),
+              default=ENGLAND_AND_WALES, page="general", heading="Dates and times",
+              also=("bank_holiday_division",)),
+        Field("timezone", "general", None, "timezone", "Time zone", timezone, default=board["timezone"],
+              hint="Like Europe/London. Departures and checking times are in this zone.", options=_zones(),
+              page="general", heading="Dates and times", tier="advanced", width="20", keyboard="plain"),
     )
 
 
 FIELDS = fields()
 
 KEYS = (
-    Key("RDM_API_KEY", "general", "Rail Data Marketplace key", "Trains: the consumer key for Live Departure Board."),
-    Key("BODS_API_KEY", "general", "Bus Open Data Service key",
-        "Buses: the BODS timetable, live positions and disruptions."),
-    Key("TAPI_APP_ID", "board", "TransportAPI app ID", "The board's buses, unless they come from BODS."),
-    Key("TAPI_APP_KEY", "board", "TransportAPI app key", "The board's buses, unless they come from BODS."),
-    Key("RDM_DETAILS_API_KEY", "dashboard", "Rail Data Marketplace Service Details key",
-        "Optional: shows where each of the next few trains is."),
-    Key("RDM_KB_API_KEY", "dashboard", "Rail Data Marketplace Knowledgebase Incidents key",
-        "Optional: engineering works, with the Knowledgebase address under Trains."),
+    Key("RDM_API_KEY", "general", "Rail Data Marketplace key",
+        "Trains: the Live Departure Board key from Rail Data Marketplace, National Rail's data site."),
+    Key("BODS_API_KEY", "general", "Bus data key",
+        "Buses: the key from the Bus Open Data Service, the government's free bus data, for the timetable, "
+        "live positions and disruptions."),
+    Key("TAPI_APP_ID", "board", "TransportAPI app ID", "The board's buses, unless they come from the bus data."),
+    Key("TAPI_APP_KEY", "board", "TransportAPI app key", "The board's buses, unless they come from the bus data."),
+    Key("RDM_DETAILS_API_KEY", "dashboard", "Rail Data Marketplace key for where each train is",
+        "Optional: shows where each of the next few trains is. Rail Data Marketplace calls it Service Details."),
+    Key("RDM_KB_API_KEY", "dashboard", "Rail Data Marketplace key for engineering works",
+        "Optional: engineering works, with the address below. Rail Data Marketplace calls it Knowledgebase "
+        "Incidents."),
 )
 
 
@@ -500,7 +585,7 @@ def saved_keys() -> dict[str | None, frozenset[str]]:
     in config.toml only."""
     found: dict[str | None, set[str]] = {None: set()}
     for f in FIELDS:
-        found.setdefault(f.section, set()).add(f.key)
+        found.setdefault(f.section, set()).update((f.key, *f.also))
     for table, names in MANAGED.items():
         found.setdefault(table, set()).update(names)
     return {table: frozenset(names) for table, names in found.items()}

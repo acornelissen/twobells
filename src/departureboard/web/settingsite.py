@@ -21,13 +21,16 @@ the pages and forms web/formpages.py's:
   the old board page's `session` cookie, at Path=/, reaches /settings too,
   and must never be mistaken for one. Every POST must be same-origin and
   carry the session's (or the form's) token.
-- The settings are in tabs, each a groupform.GroupForm of one group:
-  General at /settings, and Board and Dashboard while their view is on (a
-  tab whose view is off is not found). Each tab tests its own keys: a
-  button posting the tab's form with test=<key>, checked as a save is,
-  and run by the wizard's API (SetupApi.test_key), so the wizard's limit
-  and, on a Pi, its runner apply. Pages are drawn on the server with
-  no JavaScript, under a CSP allowing form-action 'self'. The setup wizard
+- The settings are in pages by task, one tab each (schema.PAGES): the
+  Overview at /settings, which only shows, then Trains and buses, Board
+  and Dashboard while their view is on (a page whose view is off is not
+  found), Keys and General, each a groupform.GroupForm of its own fields.
+  A save answers with a redirect to the page's ?saved, which says what
+  changed. The Keys page tests its keys: a button posting its form with
+  test=<key>, checked as a save is, and run by the wizard's API
+  (SetupApi.test_key), so the wizard's limit and, on a Pi, its runner
+  apply. Pages are drawn on the server with no JavaScript, under a CSP
+  allowing form-action 'self'. The setup wizard
   under /settings/setup/ is the one place with scripts: its own files
   only, from an allowlist read at start and served without a session, its
   page and API needing the session, and its API the session's token in
@@ -54,6 +57,7 @@ from zoneinfo import ZoneInfo
 
 from ..settings import schema
 from ..settings.config import ConfigError, needs_setup
+from ..settings.schema import BOARD_DEFAULTS
 from ..setup import api as setupapi
 from ..setup.keytest import KeyResult
 from ..setup.lookups import SetupError
@@ -73,6 +77,7 @@ from .formpages import (
     FormPages,
     Headers,
     Reply,
+    SettingsPage,
     SetupSteps,
     Wording,
     compact_json,
@@ -82,7 +87,7 @@ from .formpages import (
     redirect,
 )
 from .formpages import WIZARD_TYPES as _CONTENT_TYPES
-from .groupform import GroupForm
+from .groupform import GroupForm, Tested
 from .status import _when
 
 if TYPE_CHECKING:
@@ -96,15 +101,20 @@ SETUP = "/settings/setup/"
 SETUP_API = "/settings/setup/api/"
 COOKIE_NAME = "settings_session"
 FORM_COOKIE_NAME = "settings_form"
-# Each tab: its address, its name in the tabs, and its fieldsets' names (None is the first).
-TABS = ("general", "board", "dashboard")
-TAB_PATHS = {"general": PREFIX, "board": PREFIX + "/board", "dashboard": PREFIX + "/dashboard"}
-TAB_NAMES = {"general": "General", "board": "Board", "dashboard": "Dashboard"}
-_LEGENDS: dict[str, dict[str | None, str]] = {
-    "general": {None: "General"},
-    "board": {None: "Board"},
-    "dashboard": {None: "Dashboard"},
+# Each page, in the tabs' order: its address and its name. The board's and
+# the dashboard's are there while their view is on.
+TABS = schema.PAGES
+TAB_PATHS = {
+    "overview": PREFIX,
+    "trains_buses": PREFIX + "/trains-and-buses",
+    "board": PREFIX + "/board",
+    "dashboard": PREFIX + "/dashboard",
+    "keys": PREFIX + "/keys",
+    "general": PREFIX + "/general",
 }
+TAB_NAMES = {"overview": "Overview", "trains_buses": "Trains and buses", "board": "Board",
+             "dashboard": "Dashboard", "keys": "Keys", "general": "General"}
+_VIEWS = {"board", "dashboard"}
 # A wizard step's body refused unread, by formpages.read_body's status.
 _STEP_BODY_REFUSED = {
     400: "Send the request with one plain length",
@@ -167,6 +177,22 @@ def shell(title: str, body: str) -> str:
     return document(title, body, f"{PREFIX}/style.css")
 
 
+def applies(install: Install) -> str:
+    """When saved changes take effect on `install`, said before saving."""
+    if install.fetch == "process":
+        return "Saving starts the dashboard again, which takes a few seconds."
+    return "Changes show on the board and the dashboard within a few minutes; a screen within seconds."
+
+
+def place_name(data: dict, noun: str) -> str:
+    """The place the settings are for, as the dashboard's heading says it:
+    the title's part before ">", unless that is the default title; else what
+    shows the departures, like "Board"."""
+    title = str(data.get("title", "")).strip()
+    place = title.partition(">")[0].strip()
+    return place if place and place != BOARD_DEFAULTS["title"] else noun.capitalize()
+
+
 def wording(install: Install, to_board: bool, dashboard_on: bool) -> Wording:
     """The pages' words on `install`: codes shown on the board (`to_board`)
     or put in the log, and a way back to the dashboard while it runs."""
@@ -191,9 +217,9 @@ def wording(install: Install, to_board: bool, dashboard_on: bool) -> Wording:
         ask, ask_again, code_label = "Put a code in the log", "Put a new code in the log", "Code from the log"
         no_code = f"{install.log_help} A new code can be made once a minute, up to 10 times a day."
     if install.fetch == "process":  # serve starts again with the new settings (cli/serve.py, _SettingsWatch)
-        saved = "Saved. The dashboard starts again in a few seconds to use the new settings."
+        saved = "The dashboard starts again in a few seconds to use them."
     else:
-        saved = "Saved. The board shows it within a few minutes; the screen within seconds."
+        saved = "The board shows them within a few minutes, a screen within seconds."
     return Wording(
         title=f"{noun.capitalize()} settings",
         claim_title=f"Claim this {noun}",
@@ -219,7 +245,7 @@ class SettingsSite:
 
     `setup` runs the wizard's steps. `dashboard_on()` says whether the
     dashboard is running, for the links to it. `problem` is why the
-    dashboard couldn't start, if it couldn't: the General tab says so, and
+    dashboard couldn't start, if it couldn't: the Overview says so, and
     `version` (by default the package's) is what it says is running."""
 
     def __init__(self, store: Store, install: Install, setup: SetupSteps, *,
@@ -236,14 +262,16 @@ class SettingsSite:
         self.sessions = Sessions(clock, cookie_name=COOKIE_NAME, cookie_path=PREFIX, password=self.password,
                                  file=store.sessions_file)
         self.lockout = Lockout(clock)
-        self._forms = {
+        self._forms: dict[str, SettingsPage] = {
             tab: GroupForm(store, (tab,), TAB_PATHS[tab], store.env, install=install, noun=install.noun,
-                           header=lambda csrf, tab=tab: self._header(tab, csrf), legends=_LEGENDS[tab],
-                           test_key=self._test_key)
-            for tab in TABS
+                           header=lambda csrf, tab=tab: self._header(tab, csrf), footer=self._footer,
+                           applies=applies(install), setup=SETUP,
+                           test_key=self._test_key if tab == "keys" else None)
+            for tab in TABS[1:]
         }
+        self._forms["overview"] = Overview(self)
         self._pages = FormPages(
-            self._forms["general"], self.password, self.sessions, self.lockout,
+            self._forms["overview"], self.password, self.sessions, self.lockout,
             codes or ResetCodes(store.folder, to_board=self.to_board),
             FormTokens(clock, cookie_name=FORM_COOKIE_NAME, cookie_path=PREFIX, key_file=store.form_key_file),
             lambda: wording(install, self.to_board(), self._running()), prefix=PREFIX, shell=shell,
@@ -266,9 +294,9 @@ class SettingsSite:
         return "board" in self.views()
 
     def tabs(self) -> tuple[str, ...]:
-        """The tabs shown: General, and each view's while it is on."""
+        """The pages shown, as tabs: every one but a view's while it is off."""
         on = self.views()
-        return tuple(tab for tab in TABS if tab == "general" or tab in on)
+        return tuple(tab for tab in TABS if tab not in _VIEWS or tab in on)
 
     def _running(self) -> bool:
         try:
@@ -351,10 +379,12 @@ class SettingsSite:
         if path == PREFIX + "/logout":
             return self._pages.sign_out(fields, headers)
         tab = self._tab(path)
+        if tab == "overview":  # it only shows
+            return Reply(405, b"Method Not Allowed", headers={"Allow": "GET, HEAD"})
         if tab is not None and "test" in fields:  # a key's test button, not Save
             return self._pages.test_key(fields, headers, self._forms[tab], self._title(tab))
         if tab is not None:
-            return self._pages.save(fields, headers, self._forms[tab], self._title(tab))
+            return self._pages.save(fields, headers, self._forms[tab], self._title(tab), TAB_PATHS[tab])
         return Reply(404, b"Not Found")
 
     def _tab(self, path: str) -> str | None:
@@ -367,7 +397,7 @@ class SettingsSite:
     def _get(self, path: str, query: str, headers: Headers) -> Reply:
         tab = self._tab(path)
         if tab is not None:
-            return self._pages.settings_page(headers, self._forms[tab], self._title(tab))
+            return self._pages.settings_page(headers, self._forms[tab], self._title(tab), saved=query == "saved")
         if path == PREFIX + "/":
             return redirect(PREFIX)
         if path == PREFIX + "/login":
@@ -393,36 +423,47 @@ class SettingsSite:
 
     # Drawing
 
-    @staticmethod
-    def _title(tab: str) -> str:
-        return f"{TAB_NAMES[tab]} settings"
+    def _title(self, tab: str) -> str:
+        """A page's title: its name, then the site's, like "Board - Glossop settings" (with an en dash)."""
+        try:
+            data = self.store.data()
+        except (OSError, ConfigError):
+            data = {}
+        return f"{TAB_NAMES[tab]} – {place_name(data, self.install.noun)} settings"
 
     def _header(self, tab: str, csrf: str) -> str:
-        """What goes before a tab's form: its heading, signing out, the tabs,
-        and the tab's own notes."""
+        """What goes before a page's form: the way back to the dashboard while
+        it runs, the page's name, signing out, then the tabs."""
         e = html.escape
         items = []
         for shown in self.tabs():
             current = ' aria-current="page"' if shown == tab else ""
             items.append(f'<li><a href="{TAB_PATHS[shown]}"{current}>{TAB_NAMES[shown]}</a></li>')
-        out = [
-            f'<header class="bar"><h1>{self._title(tab)}</h1>'
+        back = '<p class="to-dashboard"><a href="/">Back to the dashboard</a></p>' if self._running() else ""
+        return (
+            f'<header class="top">{back}<div class="bar"><h1>{TAB_NAMES[tab]}</h1>'
             f'<form method="post" action="{PREFIX}/logout">'
             f'<input type="hidden" name="csrf" value="{e(csrf)}">'
-            '<button type="submit">Sign out</button></form></header>',
-            f'<nav aria-label="Settings" class="tabs"><ul>{"".join(items)}</ul></nav>',
-        ]
-        if self._running():
-            out.append('<p class="to-dashboard"><a href="/">Back to the dashboard</a></p>')
-        if tab == "general":
-            if self.problem:
-                out.append(
-                    '<div class="summary" role="alert"><h2>The dashboard isn\'t running</h2>'
-                    f"<p>{e(self.problem)}</p>"
-                    "<p>Fix the settings here, or config.toml; it starts once they load.</p></div>"
-                )
-            out.append(self._place())
-            out.append(f'<p class="hint about">Running {e(about(self.version))}.</p>')
+            '<button type="submit">Sign out</button></form></div></header>'
+            f'<nav aria-label="Settings" class="tabs"><ul>{"".join(items)}</ul></nav>'
+        )
+
+    def _footer(self) -> str:
+        return f'<footer class="foot"><p>Running {html.escape(about(self.version))}.</p></footer>'
+
+    def overview(self, csrf: str) -> str:
+        """The overview: why the dashboard isn't running, if it isn't, and
+        where the departures are for."""
+        e = html.escape
+        out = [self._header("overview", csrf)]
+        if self.problem:
+            out.append(
+                '<div class="summary" role="alert"><h2>The dashboard isn\'t running</h2>'
+                f"<p>{e(self.problem)}</p>"
+                "<p>Fix the settings here, or config.toml; it starts once they load.</p></div>"
+            )
+        out.append(self._place())
+        out.append(self._footer())
         return "".join(out)
 
     def _place(self) -> str:
@@ -450,7 +491,7 @@ class SettingsSite:
         ]
         listed = "".join(f"<dt>{name}</dt><dd>{value}</dd>" for name, value in rows)
         return (
-            '<section class="place" aria-labelledby="place-title"><h2 id="place-title">Your place</h2>'
+            '<section class="place card" aria-labelledby="place-title"><h2 id="place-title">Your place</h2>'
             f"<dl>{listed}</dl>"
             f'<p><a href="{SETUP}">Change with setup</a></p>'
             '<p class="hint">Setup finds home, your station and stops step by step, '
@@ -475,6 +516,24 @@ class SettingsSite:
         if found is not None:
             rows.append(("Bus map roads", f"Finding them ({found[0]} of {found[1]})"))
         return rows
+
+
+class Overview:
+    """The overview page, drawn by the site. It has no form: nothing is
+    saved or tested from it."""
+
+    def __init__(self, site: SettingsSite) -> None:
+        self._site = site
+
+    def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,
+               values: dict[str, str] | None = None, tested: Tested | None = None) -> str:
+        return self._site.overview(csrf)
+
+    def save(self, fields: dict[str, str], changed: list[str] | None = None) -> dict[str, str]:
+        return {"_form": "Nothing is saved from the overview"}
+
+    def test_key(self, fields: dict[str, str]) -> Tested | None:
+        return None
 
 
 def _default_stylesheet() -> bytes:

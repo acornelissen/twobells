@@ -116,15 +116,15 @@ def test_a_source_quiet_for_longer_than_allowed_is_not_updating():
     assert "Last update 07:24, 37 min ago Problem: not updating; nothing new for over 30 min." in buses
 
 
-def test_bus_hits_today_are_counted_against_the_daily_budget():
+def test_bus_lookups_today_are_counted_against_the_daily_budget():
     buses = section(render_status(DATA, STATE, NOW), "Buses")
-    assert "TransportAPI hits today 12 of 28" in buses
+    assert "TransportAPI lookups today 12 of 28" in buses
     assert "Problem" not in buses.split("TransportAPI")[1]
 
 
-def test_yesterdays_hits_do_not_count_and_a_spent_budget_is_a_problem():
+def test_yesterdays_lookups_do_not_count_and_a_spent_budget_is_a_problem():
     yesterday = {**STATE, "budgets": {"bus": {"day": "2026-10-07", "used": 28}}}
-    assert "hits today 0 of 28" in section(render_status(DATA, yesterday, NOW), "Buses")
+    assert "lookups today 0 of 28" in section(render_status(DATA, yesterday, NOW), "Buses")
     spent = {**STATE, "budgets": {"bus": {"day": "2026-10-08", "used": 28}}}
     assert "28 of 28 Problem: all used" in section(render_status(DATA, spent, NOW), "Buses")
 

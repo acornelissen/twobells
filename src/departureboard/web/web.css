@@ -74,10 +74,11 @@
 }
 
 * { box-sizing: border-box; }
-/* Keep a focused field clear of the sticky Save bar (WCAG 2.4.11), and when an
-   error link jumps to a field, keep its label and error message in view. */
-html { scroll-padding-bottom: 5.5rem; -webkit-text-size-adjust: 100%; }
-input, select, textarea { scroll-margin-top: 7rem; }
+/* Keep a focused field clear of the sticky save bar (WCAG 2.4.11): the
+   padding is the bar's height, taller once it stacks on a narrow screen.
+   When an error link jumps to a field, keep its label and error in view. */
+html { scroll-padding-bottom: 6.5rem; -webkit-text-size-adjust: 100%; }
+input, select, textarea, fieldset.field { scroll-margin-top: 7rem; }
 body {
   margin: 0;
   background: var(--bg);
@@ -87,7 +88,7 @@ body {
   overflow-wrap: break-word;
   -webkit-font-smoothing: antialiased;
 }
-main { max-width: 42rem; margin: 0 auto; padding: var(--s-5) var(--s-4) var(--s-7); }
+main { max-width: 42rem; margin: 0 auto; padding: var(--s-5) var(--s-4) 0; }
 h1, h2, h3 { line-height: 1.2; font-weight: 600; }
 h1 { font-size: var(--t-xl); margin: 0; }
 h2 { font-size: var(--t-lg); margin: 0 0 var(--s-2); }
@@ -97,21 +98,61 @@ a { color: var(--accent); text-underline-offset: 0.15em; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 [tabindex="-1"]:focus:not(:focus-visible) { outline: none; }
 .icon { display: inline-block; flex: none; width: 1em; height: 1em; vertical-align: -0.125em; }
+/* Said to screen readers, not shown: a field's unit in its label, say. */
+.vh {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The header: the way back to the dashboard, the page's name, signing out. */
+.top { margin-bottom: var(--s-4); }
+.to-dashboard { margin: 0 0 var(--s-2); }
 .bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--s-3) var(--s-4);
   margin-bottom: var(--s-5); }
+.top .bar { margin-bottom: 0; }
+/* The settings tabs: a row of links that wraps, the current one marked by a
+   bar under it and heavier text as well as by aria-current, never colour alone. */
+.tabs ul { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); list-style: none; margin: 0 0 var(--s-5);
+  padding: 0; border-bottom: 1px solid var(--line); }
+.tabs a { display: inline-block; min-height: 2.75rem; padding: var(--s-3) var(--s-1) var(--s-2);
+  border-bottom: 3px solid transparent; }
+.tabs a[aria-current="page"] { color: var(--fg); font-weight: 600; text-decoration: none; border-bottom-color: var(--accent); }
+/* A long page's sections, as links. */
+.index ul { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); list-style: none; margin: 0 0 var(--s-5);
+  padding: 0; font-size: var(--t-sm); }
+.index a { display: inline-block; min-height: 1.5rem; padding: var(--s-1) 0; }
+.foot { margin: var(--s-6) 0 0; padding: var(--s-4) 0 var(--s-5); color: var(--muted); font-size: var(--t-sm);
+  border-top: 1px solid var(--line); }
+.foot p { margin: 0; }
 
-/* Forms: each group of fields a surface, hairline edged. */
-fieldset {
-  min-width: 0;
+/* Sections: each a card, hairline edged, its heading in the legend, floated
+   in so it sits inside the card like any heading. */
+fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.card {
+  display: block;
   margin: 0 0 var(--s-5);
   padding: var(--s-4) var(--s-4) var(--s-1);
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
 }
-legend { font-weight: 600; font-size: var(--t-lg); padding: 0 var(--s-1); }
+.card > legend { float: left; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3);
+  width: 100%; padding: 0; margin: 0 0 var(--s-2); }
+.card > legend + * { clear: both; }
+.card > legend h2 { margin: 0; }
+.lead { margin-bottom: var(--s-4); }
+.empty { margin: 0 0 var(--s-4); }
+
+/* A field: its label, hint and error, then its box. */
 .field { margin-bottom: var(--s-5); }
-label { display: block; font-weight: 500; margin-bottom: var(--s-1); }
+label, .field > legend { display: block; font-weight: 500; margin-bottom: var(--s-1); padding: 0; }
 .hint { color: var(--muted); margin: 0 0 var(--s-2); font-size: var(--t-sm); }
 input, select, textarea {
   display: block;
@@ -125,14 +166,59 @@ input, select, textarea {
   border-radius: var(--r-sm);
 }
 textarea { font-family: var(--mono); font-size: var(--t-sm); resize: vertical; }
-input[type="checkbox"] { accent-color: var(--accent); }
-.has-error input, .has-error select, .has-error textarea { border: 2px solid var(--bad-fg); }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+/* A box sized for what it takes, so its size says what it wants. */
+input.w-2 { width: 4.5em; }
+input.w-3 { width: 5.5em; }
+input.w-4 { width: 6.5em; }
+input.w-5 { width: 7.5em; }
+input.w-10 { width: 12em; max-width: 100%; }
+input.w-20 { width: 22em; max-width: 100%; }
+/* A number's unit, said after its box. */
+.with-unit { display: flex; align-items: center; gap: var(--s-2); }
+.unit { color: var(--muted); }
+/* A field with an error: a bar down its side, and a heavier edge on its box. */
+.field.has-error { padding-left: var(--s-3); border-left: 0.25rem solid var(--bad-fg); }
+.has-error input:not([type="radio"]), .has-error select, .has-error textarea { border: 2px solid var(--bad-fg); }
+/* A field that only matters with the one above it. */
+.field.nested { margin-left: var(--s-2); padding-left: var(--s-4); border-left: 2px solid var(--line); }
+/* A short choice: a radio button each, the whole row its target. */
+.option { display: flex; align-items: center; gap: var(--s-3); min-height: 2.75rem; }
+.option input { flex: none; width: 1.5rem; height: 1.5rem; min-height: 0; margin: 0; padding: 0; }
+.option label { flex: 1; margin: 0; padding: var(--s-2) 0; font-weight: 400; cursor: pointer; }
 /* A checkbox with its label beside it, and its hint and error below the label. */
 .check { display: grid; grid-template-columns: auto 1fr; column-gap: var(--s-3); align-items: start; }
 .check input { grid-row: 1 / span 3; width: 1.5rem; height: 1.5rem; min-height: 0; margin: 0.125rem 0 0; }
 .check label, .check .hint, .check .error { grid-column: 2; margin-bottom: var(--s-1); }
 .error { color: var(--bad-fg); font-weight: 600; margin: 0 0 var(--s-2); }
 .tag { font-weight: 600; }
+/* What a page shows but can't change, and where it is changed instead. */
+.readonly { margin: 0 0 var(--s-4); }
+.readonly div { display: grid; grid-template-columns: minmax(6rem, max-content) 1fr; gap: 0.125rem var(--s-4); }
+.readonly dt { font-weight: 500; color: var(--muted); }
+.readonly dd { margin: 0; overflow-wrap: anywhere; }
+/* Settings most people never change, closed until opened (or until one has an error). */
+.advanced { margin: 0 0 var(--s-4); border-top: 1px solid var(--line); }
+.advanced > summary { display: list-item; min-height: 2.75rem; padding: var(--s-3) 0; font-weight: 500; cursor: pointer; }
+.advanced[open] > summary { margin-bottom: var(--s-2); }
+
+/* Pills: a state in a word, the icon and colour only repeating it. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 0.0625rem var(--s-2);
+  font-size: var(--t-xs);
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+}
+.pill-ok { color: var(--ok-fg); background: var(--surface); }
+.pill-warn { color: var(--late-fg); background: var(--late-bg); }
+.pill-bad { color: var(--bad-fg); background: var(--bad-bg); }
+.pill-neutral { color: var(--fg); background: var(--surface-2); border-color: var(--edge); }
 
 /* A button is quiet unless it is the one thing to do: .primary fills it. */
 button {
@@ -155,6 +241,24 @@ button {
 button:hover { background: var(--surface-2); }
 button.primary { color: var(--accent-fg); background: var(--accent); border-color: var(--accent); }
 button.primary:hover { background: var(--accent); filter: brightness(1.08); }
+/* The save bar: when changes take effect, then Save, kept in view at the
+   foot of the window; stacked on a narrow screen. */
+.savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2) var(--s-4);
+  margin: 0 calc(-1 * var(--s-4)) var(--s-5);
+  padding: var(--s-3) var(--s-4);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+.applies { flex: 1 1 16rem; margin: 0; color: var(--muted); font-size: var(--t-sm); }
+.savebar button { margin-left: auto; }
 
 /* Messages: red for what went wrong, green only as words. */
 .summary {
@@ -165,9 +269,11 @@ button.primary:hover { background: var(--accent); filter: brightness(1.08); }
   border-radius: var(--r-lg);
 }
 .summary ul { margin: 0; padding-left: var(--s-5); }
+.summary ul + p { margin: var(--s-3) 0 0; }
 .summary a { color: var(--bad-fg); font-weight: 600; }
 .summary:focus-visible, .summary :focus-visible { outline-color: currentColor; }
-.saved {
+.notice-ok {
+  margin: 0 0 var(--s-5);
   padding: var(--s-3) var(--s-4);
   color: var(--ok-fg);
   font-weight: 600;
@@ -176,37 +282,21 @@ button.primary:hover { background: var(--accent); filter: brightness(1.08); }
   border-left: 0.25rem solid var(--ok-fg);
   border-radius: var(--r-md);
 }
+.notice-ok:focus-visible { outline-color: currentColor; }
 .notice { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s-4); }
 .signin { max-width: 22rem; margin-top: var(--s-4); }
 .signin button { margin-top: var(--s-4); }
 .signin label { margin-top: var(--s-3); }
 .forgot { margin-top: var(--s-4); }
 .after { margin-top: var(--s-5); }
-/* The settings tabs: a row of links that wraps, the current one marked by a
-   bar under it and heavier text as well as by aria-current, never colour alone. */
-.tabs ul { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); list-style: none; margin: 0 0 var(--s-5);
-  padding: 0; border-bottom: 1px solid var(--line); }
-.tabs a { display: inline-block; min-height: 2.75rem; padding: var(--s-3) var(--s-1) var(--s-2);
-  border-bottom: 3px solid transparent; }
-.tabs a[aria-current="page"] { color: var(--fg); font-weight: 600; text-decoration: none; border-bottom-color: var(--accent); }
-.to-dashboard { margin: calc(-1 * var(--s-3)) 0 var(--s-5); }
-.place { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s-4);
-  margin: 0 0 var(--s-5); }
 .place dl { display: grid; grid-template-columns: minmax(6rem, max-content) 1fr; gap: 0.125rem var(--s-4);
   margin: 0 0 var(--s-3); }
 .place dt { font-weight: 500; color: var(--muted); }
 .place dd { margin: 0; overflow-wrap: anywhere; }
-.place p { margin: 0; }
+.place p { margin: 0 0 var(--s-3); }
 .place a { font-weight: 500; }
-.about { margin: 0 0 var(--s-5); }
-.setup-link { border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s-3) var(--s-4);
-  margin: 0 0 var(--s-5); }
-.setup-link p { margin: 0; }
-.setup-link a { font-weight: 500; }
 code { font-family: var(--mono); font-size: 0.9375em; overflow-wrap: anywhere; }
-.actions { position: sticky; bottom: 0; padding: var(--s-3) 0; background: var(--bg); }
 /* Testing a key. A result's words carry it; the colour and icon only repeat them. */
-.key-tests { margin-top: var(--s-4); }
 .key-test { margin-bottom: var(--s-3); }
 .key-result { margin: var(--s-2) 0 0; padding: var(--s-2) var(--s-3); border: 1px solid var(--line);
   border-left-width: 0.25rem; border-radius: var(--r-sm); }
@@ -223,9 +313,16 @@ code { font-family: var(--mono); font-size: 0.9375em; overflow-wrap: anywhere; }
 .status dd { margin: 0; overflow-wrap: anywhere; }
 /* The word "Problem:" carries the meaning; the colour only draws the eye. */
 .problem { display: block; color: var(--bad-fg); }
+@media (max-width: 30rem) {
+  html { scroll-padding-bottom: 10rem; }
+  .savebar button { width: 100%; }
+}
 @media (max-width: 24rem) {
-  .status dl, .place dl { grid-template-columns: 1fr; }
+  .status dl, .place dl, .readonly div { grid-template-columns: 1fr; }
   .status dd { margin-bottom: var(--s-2); }
+}
+@media (pointer: coarse) {
+  .index a { min-height: 2.75rem; padding: var(--s-2) 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }

@@ -124,7 +124,7 @@ def _budget(data: dict, state: dict, now: datetime) -> list[str]:
     detail = html.escape(f"{used} of {limit}")
     if used >= limit:
         detail += " " + _problem("all used; no more bus checks until midnight.")
-    return [_item("TransportAPI hits today", detail)]
+    return [_item("TransportAPI lookups today", detail)]
 
 
 def render_status(data: dict, state: dict | None, now: datetime,
