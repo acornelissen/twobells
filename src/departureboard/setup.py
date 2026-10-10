@@ -502,7 +502,19 @@ def nearby_stops(lat: float, lon: float, within_m: float = 800, limit: int = 15,
     return stops_near(text, lat, lon, within_m, limit)
 
 
-# Walk times, from the OpenStreetMap foot router (OSRM).
+# Walk times, from the OpenStreetMap foot router (OSRM). It is FOSSGIS's
+# server, as for roadshape's bus map roads, under the same policy
+# (https://routing.openstreetmap.de/about.html): at most one request a second,
+# from a valid user agent.
+
+FOOT_LIMIT = RateLimiter(1.0)
+
+
+def foot_get(url: str, max_bytes: int) -> bytes:
+    # Imported here, not at the top: roadshape imports this module.
+    from .roadshape import USER_AGENT
+
+    return get_bytes(url, max_bytes, headers={"User-Agent": USER_AGENT})
 
 
 def estimate_minutes(home: Located, place: Located) -> int:
@@ -535,7 +547,8 @@ def parse_osrm_table(body: bytes, count: int) -> list[float | None]:
 
 
 def walk_minutes(home: Located, destinations: Mapping[str, Located],
-                 http_get: HttpGetBytes = get_bytes) -> dict[str, tuple[int, str]]:
+                 http_get: HttpGetBytes = foot_get,
+                 limiter: RateLimiter = FOOT_LIMIT) -> dict[str, tuple[int, str]]:
     """Walking minutes from home to each destination, by the key it was given
     under (a station's CRS or a stop's ATCO code, say): (minutes, "route") from
     one router request, rounded up, or (minutes, "estimate") from the straight
@@ -551,6 +564,7 @@ def walk_minutes(home: Located, destinations: Mapping[str, Located],
     estimates = {key: (estimate_minutes(home, destinations[key]), "estimate") for key in keys}
     points = [home, *(destinations[key] for key in keys)]
     url = f"{OSRM_URL}/{';'.join(f'{p.lon:.6f},{p.lat:.6f}' for p in points)}?sources=0"
+    limiter.wait()
     try:
         seconds = parse_osrm_table(http_get(url, MAX_OSRM_BYTES), len(keys))
     except Exception as error:  # noqa: BLE001 - any failure falls back to estimates

@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from departureboard import setup
+from departureboard import roadshape, setup
 from departureboard.osgb import distance_m
 from departureboard.setup import (
     AnswerCache,
@@ -522,9 +522,14 @@ FAR = Stop("1800EH48511", "Woolley Close", "nr", "E", 53.458888, -1.989039, 1590
 PLACES = {"HDF": STATION, "1000DGHS0900": STOP_A, "1800EH48511": FAR}
 
 
+def walk_times(home, places, getter):
+    clock = FakeClock()
+    return walk_minutes(home, places, http_get=getter, limiter=RateLimiter(1.0, clock, clock.sleep))
+
+
 def test_walk_times_come_from_one_router_request_rounded_up():
     getter = Getter(OSRM_ANSWER)
-    walk = walk_minutes(HOME, PLACES, http_get=getter)
+    walk = walk_times(HOME, PLACES, getter)
     assert len(getter.urls) == 1
     assert getter.urls[0] == (
         "https://routing.openstreetmap.de/routed-foot/table/v1/foot/"
@@ -533,6 +538,37 @@ def test_walk_times_come_from_one_router_request_rounded_up():
     assert walk["HDF"] == (2, "route")  # 61.2 s
     assert walk["1000DGHS0900"] == (10, "route")  # 600 s exactly
     assert walk["1800EH48511"] == (estimate_minutes(HOME, FAR), "estimate")  # no route found
+
+
+def test_the_foot_router_is_asked_with_the_road_routers_user_agent(monkeypatch):
+    asked = []
+
+    def get_bytes(url, max_bytes, headers):
+        asked.append((url, max_bytes, headers))
+        return json.dumps(OSRM_ANSWER).encode()
+
+    monkeypatch.setattr(setup, "get_bytes", get_bytes)
+    clock = FakeClock()
+    walk_minutes(HOME, PLACES, limiter=RateLimiter(1.0, clock, clock.sleep))
+    # FOSSGIS's policy: a valid user agent, saying who is asking and how to reach them.
+    assert len(asked) == 1 and asked[0][1] == setup.MAX_OSRM_BYTES
+    assert asked[0][2] == {"User-Agent": roadshape.USER_AGENT}
+
+
+def test_the_foot_router_is_asked_at_most_once_a_second_without_real_sleeping():
+    clock, getter = FakeClock(), Getter(OSRM_ANSWER)
+    limiter = RateLimiter(1.0, clock, clock.sleep)
+    walk_minutes(HOME, PLACES, http_get=getter, limiter=limiter)
+    clock.now += 0.25
+    walk_minutes(HOME, PLACES, http_get=getter, limiter=limiter)
+    assert clock.slept == [pytest.approx(0.75)] and len(getter.urls) == 2
+    clock.now += 5
+    walk_minutes(HOME, PLACES, http_get=getter, limiter=limiter)
+    assert len(clock.slept) == 1 and len(getter.urls) == 3
+
+
+def test_the_foot_routers_rate_limit_is_shared_by_default():
+    assert walk_minutes.__defaults__ == (setup.foot_get, setup.FOOT_LIMIT)
 
 
 def test_estimate_is_the_straight_line_plus_30_percent_at_4_8_kmh():
@@ -554,7 +590,7 @@ def test_estimate_is_the_straight_line_plus_30_percent_at_4_8_kmh():
     ],
 )
 def test_router_answers_of_the_wrong_shape_fall_back_to_estimates(answer):
-    walk = walk_minutes(HOME, PLACES, http_get=Getter(answer))
+    walk = walk_times(HOME, PLACES, Getter(answer))
     assert walk == {key: (estimate_minutes(HOME, place), "estimate") for key, place in PLACES.items()}
 
 
@@ -568,14 +604,14 @@ def test_router_answers_of_the_wrong_shape_fall_back_to_estimates(answer):
     ],
 )
 def test_router_failure_falls_back_to_estimates(getter):
-    walk = walk_minutes(HOME, PLACES, http_get=getter)
+    walk = walk_times(HOME, PLACES, getter)
     assert all(kind == "estimate" for _, kind in walk.values())
     assert walk["HDF"] == (estimate_minutes(HOME, STATION), "estimate")
 
 
 def test_a_walk_longer_than_six_hours_is_the_router_lost():
     answer = {"code": "Ok", "durations": [[0, 61.2, 600, 6 * 3600 + 1]]}
-    assert walk_minutes(HOME, PLACES, http_get=Getter(answer))["1800EH48511"][1] == "estimate"
+    assert walk_times(HOME, PLACES, Getter(answer))["1800EH48511"][1] == "estimate"
 
 
 def test_no_destinations_means_no_request():
@@ -600,8 +636,8 @@ def test_logs_never_contain_coordinates_postcodes_or_addresses(caplog):
     caplog.set_level(logging.DEBUG)
     url_error = URLError("failed for https://routing.openstreetmap.de/routed-foot/table/v1/foot/"
                          "-1.965633,53.461964;-1.965320,53.460740?sources=0 near 53.461964, -1.965633")
-    walk_minutes(HOME, PLACES, http_get=Getter(error=url_error))
-    walk_minutes(HOME, PLACES, http_get=Getter(b"not json"))
+    walk_times(HOME, PLACES, Getter(error=url_error))
+    walk_times(HOME, PLACES, Getter(b"not json"))
     lookup_postcode("SK13 1AH", http_get=Getter(POSTCODE_ANSWER))
     with pytest.raises(SetupError):
         lookup_postcode("SK13 1AH", http_get=Getter(error=URLError("SK13 1AH at 53.461964,-1.965633")))
