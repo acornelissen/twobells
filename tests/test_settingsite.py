@@ -8,6 +8,7 @@ import socket
 import threading
 import time
 import tomllib
+from pathlib import Path
 from urllib.parse import urlencode
 
 import pytest
@@ -450,6 +451,23 @@ def test_the_general_tab_sums_up_the_place_and_links_to_setup(pi):
     assert "<dt>Home</dt><dd>Not set</dd>" in place
     assert '<a href="/settings/setup/">Change with setup</a>' in place
     assert page.index("Your place") < page.index('<form method="post" action="/settings"')
+
+
+def test_the_general_tab_says_which_version_is_running(pi):
+    cookie = pi.session()
+    general = pi("GET", "/settings", cookie=cookie)[1]
+    wanted = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())["project"]["version"]
+    assert f'<p class="hint about">Running departureboard {wanted}.</p>' in general
+    assert general.index("Your place") < general.index("Running departureboard") < general.index('<form method="post" action="/settings" novalidate')
+    assert "Running departureboard" not in pi("GET", "/settings/board", cookie=cookie)[1]
+
+
+def test_the_general_tab_says_plainly_when_the_version_is_unknown(pi):
+    cookie = pi.session()
+    pi.site.version = "unknown"
+    assert '<p class="hint about">Running departureboard, version unknown.</p>' in pi("GET", "/settings", cookie=cookie)[1]
+    pi.site.version = "<b>1</b>"
+    assert "Running departureboard &lt;b&gt;1&lt;/b&gt;." in pi("GET", "/settings", cookie=cookie)[1]
 
 
 def test_the_general_tab_says_why_the_dashboard_isnt_running(dash):

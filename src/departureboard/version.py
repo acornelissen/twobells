@@ -41,3 +41,9 @@ def source_version(pyproject: Path) -> str:
     if not isinstance(found, str) or not _VERSION.fullmatch(found):
         return UNKNOWN
     return found
+
+
+def about(found: str) -> str:
+    """How the dashboard and the settings name what is running, given its
+    version: "departureboard 0.1.0", or "departureboard, version unknown"."""
+    return f"{DIST_NAME}, version {UNKNOWN}" if found == UNKNOWN else f"{DIST_NAME} {found}"

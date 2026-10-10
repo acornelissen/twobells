@@ -76,6 +76,7 @@ from .formpages import WIZARD_TYPES as _CONTENT_TYPES
 from .groupform import GroupForm
 from .keytest import KeyResult
 from .setup import SetupError
+from .version import about, package_version
 
 if TYPE_CHECKING:
     from .installs import Install
@@ -212,13 +213,15 @@ class SettingsSite:
 
     `setup` runs the wizard's steps. `dashboard_on()` says whether the
     dashboard is running, for the links to it. `problem` is why the
-    dashboard couldn't start, if it couldn't: the General tab says so."""
+    dashboard couldn't start, if it couldn't: the General tab says so, and
+    `version` (by default the package's) is what it says is running."""
 
     def __init__(self, store: Store, install: Install, setup: SetupSteps, *,
                  dashboard_on: Callable[[], bool] = lambda: False, stylesheet: bytes | None = None,
                  files: dict[str, tuple[bytes, str]] | None = None, clock: Callable[[], float] = time.time,
-                 codes: ResetCodes | None = None) -> None:
+                 codes: ResetCodes | None = None, version: str | None = None) -> None:
         self.store = store
+        self.version = package_version() if version is None else version
         self.install = install
         self.problem = ""
         self.setup = setup
@@ -411,6 +414,7 @@ class SettingsSite:
                     "<p>Fix the settings here, or config.toml; it starts once they load.</p></div>"
                 )
             out.append(self._place())
+            out.append(f'<p class="hint about">Running {e(about(self.version))}.</p>')
         return "".join(out)
 
     def _place(self) -> str:
