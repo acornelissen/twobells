@@ -18,7 +18,12 @@ screen = ["pygame>=2.5"]
 [dependency-groups]
 # The tools for working on the board (uv sync installs them; uv.lock pins them).
 # pygame is here for the screen's tests.
-dev = ["pytest>=8", "pygame>=2.5", "ruff==0.16.10"]
+dev = [
+    "pytest>=8",
+    "pygame>=2.5",
+    "ruff==0.16.10",
+    "pyright==1.1.406",
+]
 
 [project.scripts]
 departureboard = "departureboard.cli.main:main"
