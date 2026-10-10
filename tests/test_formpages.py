@@ -2,6 +2,7 @@
 own tests (test_web.py, test_dashsettings.py) cover them end to end."""
 
 import html
+import json
 import logging
 import re
 from email.message import Message
@@ -15,7 +16,9 @@ from departureboard.formpages import (
     WIZARD_TYPES,
     WRONG_CODE,
     FormPages,
+    Reply,
     Wording,
+    compact_json,
     document,
     parse_form,
 )
@@ -70,6 +73,7 @@ WIDGET = Wording(
     cant_check="The code can't be checked: use the tool.",
     saved="Saved for the widget.",
     reset_logged="Widget password reset",
+    wrong_step_token="Reload the widget.",
 )
 
 
@@ -95,6 +99,17 @@ class FakePage:
         return {}
 
 
+class FakeSteps:
+    """setupapi.SetupApi's handle(), recording what reached it."""
+
+    def __init__(self):
+        self.calls = []
+
+    def handle(self, name, payload):
+        self.calls.append((name, payload))
+        return (200, {"step": name}) if name == "begin" else (404, {"error": "No such setup step"})
+
+
 def headers(cookie=None, **more):
     """Request headers as http.server gives them."""
     message = Message()
@@ -114,7 +129,7 @@ def cookie_from(reply, name):
 class Host:
     """A FormPages as a host builds it, and what it was built from."""
 
-    def __init__(self, folder, resume_setup=""):
+    def __init__(self, folder, resume_setup="", json_reply=compact_json):
         folder.mkdir(exist_ok=True)
         self.clock = Clock()
         self.page = FakePage()
@@ -125,10 +140,12 @@ class Host:
         self.shown = []
         self.codes = ResetCodes(folder, show=lambda code, expires: self.shown.append(code))
         forms = FormTokens(self.clock, cookie_name="widget_form", cookie_path="/area")
+        self.steps = FakeSteps()
         self.pages = FormPages(self.page, self.password, self.sessions, self.lockout, self.codes, forms, WIDGET,
                                prefix="/area", shell=lambda title, body: f"<title>{title}</title>{body}",
                                home=lambda: "/area", log=logging.getLogger("tests.widget"),
-                               resume_setup=resume_setup, clock=self.clock)
+                               resume_setup=resume_setup, setup=self.steps, json_reply=json_reply,
+                               clock=self.clock)
 
     def signed_in(self):
         """A session cookie and its form token, made directly."""
@@ -340,3 +357,60 @@ def test_a_save_says_what_happened_in_the_hosts_words(host):
     reply = host.pages.save({"csrf": csrf, "title": "bad"}, headers(cookie))
     assert reply.status == 422 and "<title>Widget settings: fix the errors</title>" in reply.body.decode()
     assert "Too bad" in reply.body.decode() and "'title': 'bad'" in reply.body.decode()
+
+
+# --- The setup wizard's checks ---
+
+
+def test_the_wizard_gets_the_sessions_form_token_only_when_signed_in(host):
+    reply = host.pages.wizard_session(headers())
+    assert reply.status == 401 and json.loads(reply.body) == {"error": "Sign in first"}
+    assert reply.content_type == "application/json"
+    cookie, csrf = host.signed_in()
+    reply = host.pages.wizard_session(headers(cookie))
+    assert reply.status == 200 and reply.body == f'{{"csrf":"{csrf}"}}'.encode()
+
+
+def test_a_step_needs_the_session_its_token_in_the_header_and_json(host):
+    cookie, csrf = host.signed_in()
+    _, other = host.signed_in()
+    for sent, status in [
+        (headers(X_CSRF_Token=csrf, Content_Type="application/json"), 401),  # no session
+        (headers(cookie, Content_Type="application/json"), 403),  # no token
+        (headers(cookie, X_CSRF_Token="", Content_Type="application/json"), 403),
+        (headers(cookie, X_CSRF_Token=other, Content_Type="application/json"), 403),  # another session's
+        (headers(cookie, X_CSRF_Token=csrf), 415),
+        (headers(cookie, X_CSRF_Token=csrf, Content_Type="application/x-www-form-urlencoded"), 415),
+    ]:
+        reply = host.pages.wizard_refusal(sent)
+        assert reply is not None and reply.status == status, dict(sent)
+    assert json.loads(host.pages.wizard_refusal(headers(cookie)).body) == {"error": "Reload the widget."}
+    assert host.pages.wizard_refusal(headers(cookie, X_CSRF_Token=csrf, Content_Type="application/json")) is None
+
+
+def test_a_step_runs_with_its_decoded_body(host):
+    reply = host.pages.wizard_step("begin", b'{"x": [1, 2]}')
+    assert reply.status == 200 and json.loads(reply.body) == {"step": "begin"}
+    assert host.steps.calls == [("begin", {"x": [1, 2]})]
+    reply = host.pages.wizard_step("nosuch", b"{}")
+    assert reply.status == 404 and host.steps.calls[-1] == ("nosuch", {})
+
+
+@pytest.mark.parametrize("body", [b"not json", b"[" * 50 + b"]" * 50, b'{"n": NaN}', b"{" + b" " * 20000 + b"}"])
+def test_a_step_that_is_not_sensible_json_never_runs(host, body):
+    reply = host.pages.wizard_step("begin", body)
+    assert reply.status == 400 and "error" in json.loads(reply.body)
+    assert host.steps.calls == []
+
+
+def test_a_host_answers_the_wizard_in_its_own_json(tmp_path):
+    host = Host(tmp_path, json_reply=lambda status, value: Reply(status, b"own", "application/json; charset=utf-8"))
+    assert host.pages.wizard_session(headers()).body == b"own"
+    assert host.pages.wizard_step("begin", b"{}").body == b"own"
+
+
+def test_compact_json_is_ascii_and_refuses_nan():
+    reply = compact_json(200, {"name": "Café", "n": [1, 2]})
+    assert reply.body == b'{"name":"Caf\\u00e9","n":[1,2]}' and reply.content_type == "application/json"
+    with pytest.raises(ValueError):
+        compact_json(200, {"n": float("nan")})

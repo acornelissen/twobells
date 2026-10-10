@@ -4,25 +4,30 @@ dashboard's (dashsettings.py, under /settings).
 FormPages draws the sign-in and reset pages and answers their forms: sign
 in, ask for a reset code, reset the password with it (which is also the
 first claim, when no password is set), sign out, and save the settings
-form. Each host routes its own requests, refuses outsiders, checks the
-origin, reads bodies under its own limits and sends its own security
-headers; it hands the parsed form here and sends back the Reply.
+form. It also checks a setup wizard step (the session, its token in
+X-CSRF-Token, JSON) and runs it. Each host routes its own requests, refuses
+outsiders, checks the origin, reads bodies under its own limits, serves the
+wizard's files and sends its own security headers; it hands the parsed form
+(or the step's body) here and sends back the Reply.
 
 What differs between the hosts is passed in: the path prefix ("" or
 "/settings"), the sessions and form tokens (each with its own cookie name
 and path), the reset codes (shown on the board, or put in the log), the
-wording, the settings form, and where a new session lands.
+wording, the settings form, the wizard's API and its JSON, and where a new
+session lands.
 """
 
 from __future__ import annotations
 
 import html
+import json
 import logging
 import time
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
 from urllib.parse import parse_qs
 
+from . import setupapi
 from .auth import (
     MIN_PASSWORD,
     FormTokens,
@@ -69,6 +74,12 @@ class SettingsPage(Protocol):
     def save(self, fields: dict[str, str]) -> dict[str, str]: ...  # field -> error; empty when saved
 
 
+class SetupSteps(Protocol):
+    """setupapi.SetupApi: a step's (status, JSON-ready reply) for its decoded body."""
+
+    def handle(self, name: str, payload: object) -> tuple[int, dict]: ...
+
+
 class Headers(Protocol):
     """A request's headers, as http.server gives them."""
 
@@ -97,6 +108,7 @@ class Wording:
     cant_check: str  # the error when the code can't be checked
     saved: str  # the message after a save
     reset_logged: str  # the log line after a reset
+    wrong_step_token: str  # the error when a wizard step's X-CSRF-Token is wrong
 
 
 def document(title: str, body: str, stylesheet: str) -> str:
@@ -121,18 +133,28 @@ def redirect(where: str, extra: dict[str, str] | None = None) -> Reply:
     return Reply(303, b"", TEXT, {"Location": where, **(extra or {})})
 
 
+def compact_json(status: int, value: dict) -> Reply:
+    """Compact ASCII JSON: the dashboard's way. The Pi's page sends its own."""
+    return Reply(status, json.dumps(value, separators=(",", ":"), allow_nan=False).encode("ascii"),
+                 "application/json")
+
+
 class FormPages:
-    """The sign-in, reset and settings pages and forms, under `prefix`.
+    """The sign-in, reset and settings pages and forms, under `prefix`, and
+    the setup wizard's session and step checks.
 
     `home()` is where a new session lands. `resume_setup`, if set, is the
     wizard's page: a sign-in started there (`?next=setup`) goes back to it.
     `shell(title, body)` wraps a page in the HTML document. Log lines go to
-    `log`, so each host's keep their own name."""
+    `log`, so each host's keep their own name. `setup` runs the wizard's
+    steps, answered with `json_reply`."""
 
     def __init__(self, page: SettingsPage, password: PasswordStore, sessions: Sessions, lockout: Lockout,
                  codes: ResetCodes, forms: FormTokens, wording: Wording, *, prefix: str,
                  shell: Callable[[str, str], str], home: Callable[[], str], log: logging.Logger,
-                 resume_setup: str = "", clock: Callable[[], float] = time.time) -> None:
+                 resume_setup: str = "", setup: SetupSteps | None = None,
+                 json_reply: Callable[[int, dict], Reply] = compact_json,
+                 clock: Callable[[], float] = time.time) -> None:
         self._page = page
         self._password = password
         self._sessions = sessions
@@ -146,6 +168,8 @@ class FormPages:
         self._home = home
         self._log = log
         self._resume_setup = resume_setup
+        self._setup = setup
+        self._json = json_reply
         self._clock = clock
 
     # Pages
@@ -306,6 +330,36 @@ class FormPages:
             body = self._page.render(session.csrf, errors=errors, values=fields)
             return self._html(422, f"{title}: fix the errors", body)
         return self._html(200, f"Saved – {title}", self._page.render(session.csrf, message=self._wording.saved))
+
+    # The setup wizard
+
+    def wizard_session(self, headers: Headers) -> Reply:
+        """The session's form token, for the wizard's page to send back in X-CSRF-Token."""
+        session = self._sessions.get(self._token(headers))
+        if session is None:
+            return self._json(401, {"error": "Sign in first"})
+        return self._json(200, {"csrf": session.csrf})
+
+    def wizard_refusal(self, headers: Headers) -> Reply | None:
+        """Why a wizard step can't run, or None when it can: it needs the
+        session, its form token in X-CSRF-Token, and JSON. The host checks
+        the origin and the body's size itself."""
+        session = self._sessions.get(self._token(headers))
+        if session is None:
+            return self._json(401, {"error": "You've been signed out. Reload the page and sign in again."})
+        if not csrf_matches(session, headers.get("X-CSRF-Token") or ""):
+            return self._json(403, {"error": self._wording.wrong_step_token})
+        if headers.get_content_type() != "application/json":
+            return self._json(415, {"error": "Send JSON"})
+        return None
+
+    def wizard_step(self, name: str, body: bytes) -> Reply:
+        """Run step `name` with the request's JSON, once wizard_refusal has let it through."""
+        try:
+            payload = setupapi.decode(body)
+        except setupapi.Invalid as error:
+            return self._json(400, {"error": str(error)})
+        return self._json(*self._setup.handle(name, payload))
 
     # Helpers
 

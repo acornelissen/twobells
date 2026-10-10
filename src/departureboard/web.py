@@ -36,7 +36,7 @@ import time
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Callable, Mapping, Protocol
+from typing import Callable, Mapping
 from urllib.parse import urlparse
 
 from . import setupapi
@@ -47,7 +47,6 @@ from .auth import (
     PasswordStore,
     ResetCodes,
     Sessions,
-    csrf_matches,
     outsider,
     same_origin,
 )
@@ -58,6 +57,7 @@ from .formpages import (
     FormPages,
     Reply,
     SettingsPage,
+    SetupSteps,
     Wording,
     document,
     parse_form,
@@ -97,6 +97,7 @@ BOARD = Wording(
     cant_check="The code can't be checked right now. Set the password on the Pi instead.",
     saved="Saved. The board shows it within a few minutes; the screen within seconds.",
     reset_logged="Settings page password set with a reset code; every session ended",
+    wrong_step_token="This page has run out. Reload it and try again.",
 )
 
 
@@ -108,10 +109,8 @@ JSON = "application/json; charset=utf-8"
 TEXT = "text/plain; charset=utf-8"
 
 
-class SetupSteps(Protocol):
-    """setupapi.SetupApi: a step's (status, JSON-ready reply) for its decoded body."""
-
-    def handle(self, name: str, payload: object) -> tuple[int, dict]: ...
+def _json_reply(status: int, value: dict) -> Reply:
+    return Reply(status, json.dumps(value).encode(), JSON)
 
 
 @dataclass(frozen=True)
@@ -156,7 +155,8 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
             return "/"
 
     pages = FormPages(page, password, sessions, lockout, codes or ResetCodes(password.path.parent),
-                      FormTokens(clock), BOARD, prefix="", shell=shell, home=home, log=log, clock=clock)
+                      FormTokens(clock), BOARD, prefix="", shell=shell, home=home, log=log,
+                      setup=wizard.api if wizard is not None else None, json_reply=_json_reply, clock=clock)
 
     class Handler(BaseHTTPRequestHandler):
         timeout = REQUEST_TIMEOUT_S  # a client that stalls mid-request lets go of its thread
@@ -229,19 +229,15 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
         def _setup_send(self, status: int, body: bytes, content_type: str) -> None:
             self._send(status, body, content_type, headers=setupapi.PAGE_HEADERS)
 
-        def _json(self, status: int, reply: dict) -> None:
-            self._setup_send(status, json.dumps(reply).encode(), JSON)
+        def _setup_reply(self, reply: Reply) -> None:
+            self._setup_send(reply.status, reply.body, reply.content_type)
 
         def _setup_file(self, relative: str) -> None:
             """The wizard's page, a file on its list, or its session's form token."""
-            session = sessions.get(self._token())
             if relative == "api/session":
-                if session is None:
-                    self._json(401, {"error": "Sign in first"})
-                else:
-                    self._json(200, {"csrf": session.csrf})
+                self._setup_reply(pages.wizard_session(self.headers))
                 return
-            if session is None:
+            if sessions.get(self._token()) is None:
                 if relative == "":
                     self._redirect("/login")
                 else:
@@ -255,34 +251,24 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
 
         def _setup_step(self, name: str) -> None:
             """One wizard step: signed in, with the session's token in the
-            header, JSON of a sensible size. Same-origin is checked before this."""
-            session = sessions.get(self._token())
-            if session is None:
-                self._json(401, {"error": "You've been signed out. Reload the page and sign in again."})
-                return
-            if not csrf_matches(session, self.headers.get("X-CSRF-Token", "")):
-                self._json(403, {"error": "This page has run out. Reload it and try again."})
-                return
-            if self.headers.get_content_type() != "application/json":
-                self._json(415, {"error": "Send JSON"})
+            header, JSON of a sensible size. Same-origin is checked before this,
+            and the size before the body is read."""
+            refused = pages.wizard_refusal(self.headers)
+            if refused is not None:
+                self._setup_reply(refused)
                 return
             try:
                 length = int(self.headers.get("Content-Length", ""))
             except ValueError:
-                self._json(411, {"error": "Say how long the request is"})
+                self._setup_reply(_json_reply(411, {"error": "Say how long the request is"}))
                 return
             if not 0 <= length <= setupapi.MAX_BODY:
-                self._json(413, {"error": "That request is too big"})
+                self._setup_reply(_json_reply(413, {"error": "That request is too big"}))
                 return
             if not _SETUP_STEP.match(name):
-                self._json(404, {"error": "No such setup step"})
+                self._setup_reply(_json_reply(404, {"error": "No such setup step"}))
                 return
-            try:
-                payload = setupapi.decode(self.rfile.read(length))
-            except setupapi.Invalid as error:
-                self._json(400, {"error": str(error)})
-                return
-            self._json(*wizard.api.handle(name, payload))
+            self._setup_reply(pages.wizard_step(name, self.rfile.read(length)))
 
         def do_POST(self) -> None:  # noqa: N802 - http.server API
             if self._refuse_outsiders():

@@ -30,12 +30,11 @@ server adds headers_for(path) and its own limits, the same as for the rest.
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from importlib.resources import files
 from pathlib import Path
-from typing import Callable, Mapping, Protocol
+from typing import Callable, Mapping
 
 from . import setupapi
 from .auth import (
@@ -45,7 +44,6 @@ from .auth import (
     PasswordStore,
     ResetCodes,
     Sessions,
-    csrf_matches,
     same_origin,
     show_in_log,
 )
@@ -55,7 +53,9 @@ from .formpages import (
     Headers,
     Reply,
     SettingsPage,
+    SetupSteps,
     Wording,
+    compact_json,
     document,
     parse_form,
     redirect,
@@ -92,9 +92,9 @@ DASHBOARD = Wording(
     saved=("Saved. The dashboard starts again in a few seconds to use the new settings; "
            "sign in again to change anything else."),
     reset_logged="Dashboard settings password set with a reset code; every session ended",
+    wrong_step_token="That request had no valid form token. Reload the page.",
 )
 
-_JSON = "application/json"
 _SHARED = {
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
@@ -103,12 +103,6 @@ _SHARED = {
 # Cache-Control is the server's to send (no-store), once.
 SETTINGS_HEADERS = {**{k: v for k, v in FORM_PAGE_HEADERS.items() if k != "Cache-Control"}, **_SHARED}
 WIZARD_HEADERS = {**{k: v for k, v in setupapi.PAGE_HEADERS.items() if k != "Cache-Control"}, **_SHARED}
-
-
-class SetupHandlers(Protocol):
-    """The wizard's handlers (setupapi.SetupApi)."""
-
-    def handle(self, name: str, payload: object) -> tuple[int, dict]: ...
 
 
 def owns(path: str) -> bool:
@@ -149,7 +143,7 @@ def shell(title: str, body: str) -> str:
 class SettingsArea:
     """Everything under /settings, for one dashboard and its state folder."""
 
-    def __init__(self, folder: Path | str, page: SettingsPage, setup: SetupHandlers, *,
+    def __init__(self, folder: Path | str, page: SettingsPage, setup: SetupSteps, *,
                  stylesheet: bytes | None = None, files: dict[str, tuple[bytes, str]] | None = None,
                  clock: Callable[[], float] = time.time, codes: ResetCodes | None = None) -> None:
         folder = Path(folder)
@@ -160,7 +154,8 @@ class SettingsArea:
             page, self.password, self.sessions, self.lockout,
             codes or ResetCodes(folder, show=show_in_log),
             FormTokens(clock, cookie_name=FORM_COOKIE_NAME, cookie_path=PREFIX),
-            DASHBOARD, prefix=PREFIX, shell=shell, home=lambda: PREFIX, log=log, resume_setup=SETUP, clock=clock,
+            DASHBOARD, prefix=PREFIX, shell=shell, home=lambda: PREFIX, log=log, resume_setup=SETUP,
+            setup=setup, clock=clock,
         )
         self._setup = setup
         self._stylesheet = _default_stylesheet() if stylesheet is None else stylesheet
@@ -170,7 +165,7 @@ class SettingsArea:
         """The reply to one request the server has already let in: from the home
         network, naming a local host, with a path under /settings."""
         if path.startswith(SETUP_API) and (headers.get("Sec-Fetch-Site") or "").strip().lower() == "cross-site":
-            return _json(403, {"error": "Not from another site"})
+            return compact_json(403, {"error": "Not from another site"})
         if method in ("GET", "HEAD"):
             return self._get(path, query, headers)
         if method != "POST":
@@ -178,7 +173,10 @@ class SettingsArea:
         if not same_origin(headers):
             return Reply(403, b"Forbidden: cross-site request")
         if path.startswith(SETUP_API):
-            return self._wizard_api(path[len(SETUP_API):], headers, body)
+            refused = self._pages.wizard_refusal(headers)
+            if refused is not None:
+                return refused
+            return self._pages.wizard_step(path[len(SETUP_API):], body)
         if headers.get_content_type() != "application/x-www-form-urlencoded":
             return Reply(400, b"Bad request")
         fields = parse_form(body)
@@ -194,13 +192,9 @@ class SettingsArea:
             return self._pages.save(fields, headers)
         return Reply(404, b"Not Found")
 
-    def _token(self, headers: Headers) -> str | None:
-        return self.sessions.token_from(headers.get("Cookie"))
-
     def _get(self, path: str, query: str, headers: Headers) -> Reply:
         if path == PREFIX:
             return self._pages.settings_page(headers)
-        session = self.sessions.get(self._token(headers))
         if path == PREFIX + "/":
             return redirect(PREFIX)
         if path == PREFIX + "/login":
@@ -212,37 +206,17 @@ class SettingsArea:
         if path == SETUP[:-1]:
             return redirect(SETUP)
         if path == SETUP:
-            if session is None:
+            if self.sessions.get(self.sessions.token_from(headers.get("Cookie"))) is None:
                 return redirect(PREFIX + "/login?next=setup")
             body, content_type = self._files.get("", (b"", None))
             return Reply(200, body, content_type) if content_type else Reply(404, b"Not Found")
         if path == SETUP_API + "session":
-            if session is None:
-                return _json(401, {"error": "Sign in first"})
-            return _json(200, {"csrf": session.csrf})
+            return self._pages.wizard_session(headers)
+        # The wizard's own files need no session: the page and its API do.
         found = self._files.get(path[len(SETUP):]) if path.startswith(SETUP) else None
         if found is not None:
             return Reply(200, found[0], found[1])
         return Reply(404, b"Not Found")
-
-    def _wizard_api(self, name: str, headers: Headers, body: bytes) -> Reply:
-        session = self.sessions.get(self._token(headers))
-        if session is None:
-            return _json(401, {"error": "You've been signed out. Reload the page and sign in again."})
-        if not csrf_matches(session, headers.get("X-CSRF-Token") or ""):
-            return _json(403, {"error": "That request had no valid form token. Reload the page."})
-        if headers.get_content_type() != _JSON:
-            return _json(415, {"error": "Send JSON"})
-        try:
-            payload = setupapi.decode(body)
-        except setupapi.Invalid as error:
-            return _json(400, {"error": str(error)})
-        status, reply = self._setup.handle(name, payload)
-        return _json(status, reply)
-
-
-def _json(status: int, value: dict) -> Reply:
-    return Reply(status, json.dumps(value, separators=(",", ":"), allow_nan=False).encode("ascii"), _JSON)
 
 
 def _default_stylesheet() -> bytes:
