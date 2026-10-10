@@ -1,5 +1,6 @@
 import io
 import json
+import re
 import stat
 import threading
 import tomllib
@@ -430,6 +431,43 @@ def test_the_job_builds_route_strips_when_asked(bods):
         assert 2 <= len(route["stops"]) <= 8
         assert route["stops"][-1] == {"name": f"Stop {stop}", "lat": 53.44, "lon": -1.95}  # yours last
     assert routes["61"]["stop"] == "B" and routes["341"]["stop"] == "A"
+
+
+class FakeResponse(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+def test_by_default_the_job_s_timetable_keeps_each_stop_s_sign_letter(bods, monkeypatch):
+    # NaPTAN is asked for real (here, its CSV from a fake network), as the weekly build does,
+    # so the timetable the wizard saves says which side of the road a stop is from the start.
+    from departureboard import http
+
+    others = set(re.findall(rb"<StopPointRef>(\w+)</StopPointRef>", TXC_341 + TXC_237 + TXC_61))
+    rows = [f"{atco.decode()},Somewhere,53.44,-1.95,\n" for atco in sorted(others)]
+    rows += [f"{atco},Henry Street,53.44384,-1.948999,{letter}\n" for atco, letter in ((STOP_A, "Stop A"),
+                                                                                        (STOP_B, "Stop B"))]
+    csv = ("ATCOCode,CommonName,Latitude,Longitude,Indicator\n" + "".join(rows)).encode()
+
+    def network(request, timeout):
+        if urlsplit(request.full_url).hostname == "naptan.api.dft.gov.uk":
+            return FakeResponse(csv)
+        raise OSError("No network in tests")
+
+    monkeypatch.setattr(http, "urlopen", network)
+    job = SetupJob(bods.scratch, STOPS, KEY, routes=True, now=lambda: SUMMER_NOW, find=bods.find,
+                   fetch=bods.fetch, find_datasets=_find_by_noc(bods))
+    job.start()
+    status = _finish(job)
+    assert status["state"] == "done", status["message"]
+    saved = timetable.load(bods.scratch)
+    assert saved.positions[STOP_A].indicator == "Stop A" and saved.positions[STOP_B].indicator == "Stop B"
+    # Route strips still read NaPTAN's name and position from the longer rows.
+    routes = status["result"]["fragment"]["bus"]["routes"]
+    assert routes["341"]["stops"][-1] == {"name": "Henry Street", "lat": 53.44384, "lon": -1.948999}
 
 
 def test_route_strips_are_skipped_if_naptan_fails(bods):

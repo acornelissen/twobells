@@ -392,7 +392,7 @@ class SetupJob:
         find: FindDatasets = list_datasets,
         find_datasets: timetable.FindDatasets = routesetup.dataset_urls,
         fetch: timetable.Download = timetable.download,
-        naptan: timetable.Naptan = routesetup.naptan_stops,
+        naptan: timetable.Naptan = routesetup.naptan_stop_details,
         discover_options: Mapping | None = None,
         nice: int = 0,
     ) -> None:
@@ -604,9 +604,10 @@ def fragment_toml(result: dict) -> str:
 
 
 def _strip_stop(place) -> dict | None:
-    """A route strip stop from NaPTAN's (name, lat, lon), if it is usable."""
+    """A route strip stop from NaPTAN's (name, lat, lon[, sign letter]), if
+    it is usable."""
     try:
-        name, lat, lon = place
+        name, lat, lon, *_ = place
         lat, lon = float(lat), float(lon)
     except (TypeError, ValueError):
         return None
