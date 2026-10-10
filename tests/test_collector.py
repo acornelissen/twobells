@@ -514,6 +514,24 @@ def test_weather_is_published_and_kept_on_error(tmp_path):
     assert stale["now"] == weather["now"] and stale["status"]["stale"]
 
 
+def test_without_bods_buses_the_buses_say_why_and_nothing_polls_them(tmp_path):
+    # The board's buses come from TransportAPI, which the dashboard never uses.
+    from dataclasses import replace
+
+    from departureboard.collector import Collector
+    from departureboard.dashconfig import BUS_NOTE
+
+    setup = Setup(tmp_path, buses=False)
+    settings = replace(setup.settings, bus_note=BUS_NOTE)
+    collector = Collector(settings, setup.hub, setup.history, clock=setup.clock, fetch_holidays=setup._holidays,
+                          random=lambda: 0.5, monotonic=setup.monotonic)
+    buses = setup.snapshot()["buses"]
+    assert buses["rows"] == [] and buses["stops"] == {}
+    assert buses["status"]["note"] == BUS_NOTE and buses["status"]["error"] is None
+    assert buses["timetable"]["state"] == "missing"
+    assert "buses" not in collector.pollers()
+
+
 def test_sections_not_configured_stay_null(tmp_path):
     setup = Setup(tmp_path, train=False, buses=False)
     body = setup.snapshot()

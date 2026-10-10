@@ -266,6 +266,15 @@ class Collector:
                                    self._bus_no_shows)
         self._hub.publish("buses", part, lookups)
 
+    def _publish_bus_note(self) -> None:
+        """No buses, and why (DashboardSettings.bus_note): the board's come
+        from TransportAPI, which the dashboard doesn't use. Said as poll_buses
+        says a timetable it can't use: a buses part with no rows and a note."""
+        timetable = timetable_block("missing", None, self._tz)
+        part, lookups = buses_part(None, self._clock(), status_block(note=self._settings.bus_note), timetable,
+                                   {}, self._settings.walk)
+        self._hub.publish("buses", part, lookups)
+
     def _publish_weather(self) -> None:
         part = weather_part(self._weather.data, self._clock(), self._weather.status(), self._settings.rain_threshold)
         self._hub.publish("weather", part)
@@ -302,6 +311,8 @@ class Collector:
             self._publish_trains()
         if self._settings.bus is not None:
             self._publish_buses()
+        elif self._settings.bus_note is not None:
+            self._publish_bus_note()
         if self._settings.weather is not None:
             self._publish_weather()
         with self._disruptions_lock:
