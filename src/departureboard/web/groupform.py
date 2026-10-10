@@ -40,6 +40,7 @@ from ..settings.schema import KEY_VALUE, Field, Invalid
 from ..setup import keytest
 from ..sources.disruptions import kb_url_is_placeholder
 from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
+from .icons import icon
 from .status import render_status
 
 if TYPE_CHECKING:
@@ -48,15 +49,15 @@ if TYPE_CHECKING:
 
 # (name, typed value or None, typed app ID or None) -> its result; see SettingsSite.
 KeyTest = Callable[[str, "str | None", "str | None"], keytest.KeyResult]
-# Each key test's result: a glyph, hidden from screen readers, and the words that carry it.
+# Each key test's result: an icon, hidden from screen readers, and the words that carry it.
 RESULTS = {
-    "works": ("✓", "Works"),
-    "wrong_key": ("✗", "Wrong key"),
-    "not_subscribed": ("✗", "Not subscribed"),
-    "service_down": ("!", "Service not answering"),
-    "missing": ("!", "No key"),
-    "unknown": ("?", "Can't tell"),
-    "not_tested": ("!", "Not tested"),
+    "works": ("check", "Works"),
+    "wrong_key": ("x", "Wrong key"),
+    "not_subscribed": ("x", "Not subscribed"),
+    "service_down": ("triangle-alert", "Service not answering"),
+    "missing": ("triangle-alert", "No key"),
+    "unknown": ("info", "Can't tell"),
+    "not_tested": ("triangle-alert", "Not tested"),
 }
 _MIN_SCRUBBED = 6  # as setupapi: shorter can't be told from ordinary words
 _KEY_SHAPE = "Paste the key exactly; it has only letters, digits and . _ ~ + / = -"
@@ -390,7 +391,7 @@ class GroupForm:
             out.append(_key_field(name, label, f"{hint} Currently {status}.", errors.get(name), result_id, result))
         out.append("</fieldset>")
         # Save first: the first button is the one Enter in a box presses.
-        out.append('<div class="actions"><button type="submit">Save settings</button></div>')
+        out.append('<div class="actions"><button type="submit" class="primary">Save settings</button></div>')
         out.append(self._key_test_buttons())
         out.append("</form>")
         return "".join(out)
@@ -414,7 +415,7 @@ class GroupForm:
                 cost = (f'<p class="hint" id="{name}-cost">Uses 1 of today\'s 30 TransportAPI lookups, the same '
                         "ones bus times use.</p>")
             out.append(f'<div class="key-test">{cost}<button type="submit" name="test" value="{e(name)}" '
-                       f'class="quiet" aria-describedby="{described}">{e(text)}</button></div>')
+                       f'aria-describedby="{described}">{e(text)}</button></div>')
         out.append("</fieldset>")
         return "".join(out)
 
@@ -543,9 +544,9 @@ def _key_field(name: str, label: str, hint: str, error: str | None, result_id: s
 
 def _result(tested: Tested) -> str:
     """A key test's result, in words, focused when the page opens so it is read out."""
-    glyph, words = RESULTS[tested.state]
+    shape, words = RESULTS[tested.state]
     message = html.escape(tested.message, quote=False)
     return (
         f'<p class="key-result key-result-{tested.state}" id="{tested.name}-test" role="status" tabindex="-1" '
-        f'autofocus><span aria-hidden="true">{glyph}</span> <strong>{words}:</strong> {message}</p>'
+        f'autofocus>{icon(shape)} <strong>{words}:</strong> {message}</p>'
     )

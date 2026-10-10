@@ -93,7 +93,7 @@ install is one app with two views of the same departures: the **board** (e-paper
 - Folders by app area, each `__init__.py` saying what it holds: `core` (model, polling, net, files, errors),
   `settings`, `sources`, `timetable`, `board` (`board/displays`), `dashboard`, `web`, `setup` (`setup/spool`),
   `fetch`, `emulator`, `cli`. `dashboard_static/` and `wizard_static/` sit side by side at the package root on
-  purpose: the wizard imports the dashboard's `dom.js` and Leaflet by relative path, the same on disk as served.
+  purpose: the wizard imports the dashboard's `dom.js`, `icons.js`, Leaflet and Inter by relative path, the same on disk as served.
 - **Store** (`settings/store.py`): one folder per install holding `settings.toml` (only `schema.saved_keys`),
   `secrets.env`, `web.json` (the one password), the timetable, history and locks. `config.toml` is optional,
   layered under it. `settings/schema.py` is the registry of every saved setting, by group (general, board, dashboard).

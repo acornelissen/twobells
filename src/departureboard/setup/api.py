@@ -44,11 +44,11 @@ checked as each of those views loads them before anything is saved.
 Serving the page. The host serves, under one prefix ending in a slash (say
 /setup/), the files `static_files()` lists by their path under that prefix:
 the page itself at the prefix, wizard_static/* beside it and the dashboard's
-dom.js and Leaflet under dashboard_static/, so the page's relative imports
-resolve. The API is at <prefix>api/<name>, POST with a JSON body, CSRF token
-in the X-CSRF-Token header; and the host's own GET <prefix>api/session
-answers {"csrf": token} for a signed-in session. Send the page and its files
-with PAGE_HEADERS.
+dom.js, icons.js, Leaflet and Inter under dashboard_static/, so the page's
+relative imports resolve. The API is at <prefix>api/<name>, POST with a JSON
+body, CSRF token in the X-CSRF-Token header; and the host's own GET
+<prefix>api/session answers {"csrf": token} for a signed-in session. Send the
+page and its files with PAGE_HEADERS.
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ KEY_TEST_EVERY = 10.0  # seconds between tests of one key
 
 PAGE_HEADERS = {
     "Content-Security-Policy": (
-        "default-src 'none'; script-src 'self'; style-src 'self'; "
+        "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; "
         "img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self'; "
         "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     ),
@@ -238,11 +238,12 @@ def too_deep(value, limit: int) -> bool:
 
 def static_files() -> dict[str, Path]:
     """The files a host serves for the wizard, by their path under its prefix
-    ("" is the page). Nothing else from either folder is needed."""
+    ("" is the page). Nothing else from either folder is needed. The settings
+    site's stylesheet takes Inter from here too, so both load the one copy."""
     # Siblings, so the page's relative imports resolve the same on disk as served.
     root = Path(str(files("departureboard")))
     wizard, dashboard = root / "wizard_static", root / "dashboard_static"
-    leaflet = "vendor/leaflet-1.9.4"
+    leaflet, inter = "vendor/leaflet-1.9.4", "vendor/inter-4.1/InterVariable.woff2"
     # wizard.js and the modules it imports, each named: anything else is a 404.
     scripts = ("wizard", "api", "say", "state", "steps", "maps", "home", "station", "stops", "walk", "keys",
                "views", "finish", "roads")
@@ -251,6 +252,8 @@ def static_files() -> dict[str, Path]:
         **{f"wizard_static/{name}.js": wizard / f"{name}.js" for name in scripts},
         "wizard_static/wizard.css": wizard / "wizard.css",
         "dashboard_static/dom.js": dashboard / "dom.js",
+        "dashboard_static/icons.js": dashboard / "icons.js",
+        f"dashboard_static/{inter}": dashboard / inter,
         f"dashboard_static/{leaflet}/leaflet-src.esm.js": dashboard / leaflet / "leaflet-src.esm.js",
         f"dashboard_static/{leaflet}/leaflet.css": dashboard / leaflet / "leaflet.css",
     }

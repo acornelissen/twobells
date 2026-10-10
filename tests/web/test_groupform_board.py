@@ -261,24 +261,7 @@ def test_outlined_buttons_have_a_border_that_stands_out():
     from importlib.resources import files
 
     css = files("departureboard.web").joinpath("web.css").read_text()
-    assert re.search(r"button\.quiet \{[^}]*border: 1px solid var\(--muted\)", css)
-
-    def luminance(hex_colour):
-        rgb = [int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
-        rgb = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
-        return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
-
-    light, dark = re.findall(r"--bg: (#\w{6});\s*--fg: #\w{6};\s*--muted: (#\w{6});", css)
-    for bg, muted in (light, dark):
-        high, low = sorted((luminance(bg), luminance(muted)), reverse=True)
-        assert (high + 0.05) / (low + 0.05) >= 3
-
-
-def test_problem_text_is_readable_in_light_and_dark():
-    from importlib.resources import files
-
-    css = files("departureboard.web").joinpath("web.css").read_text()
-    assert re.search(r"\.problem \{[^}]*color: var\(--error\)", css)
+    assert re.search(r"\nbutton \{[^}]*border: 1px solid var\(--edge\)", css)
 
     def luminance(hex_colour):
         rgb = [int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
@@ -286,7 +269,26 @@ def test_problem_text_is_readable_in_light_and_dark():
         return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
 
     backgrounds = re.findall(r"--bg: (#\w{6});", css)
-    errors = re.findall(r"--error: (#\w{6});", css)
+    edges = re.findall(r"--edge: (#\w{6});", css)
+    assert len(backgrounds) == len(edges) == 2
+    for bg, edge in zip(backgrounds, edges, strict=True):
+        high, low = sorted((luminance(bg), luminance(edge)), reverse=True)
+        assert (high + 0.05) / (low + 0.05) >= 3
+
+
+def test_problem_text_is_readable_in_light_and_dark():
+    from importlib.resources import files
+
+    css = files("departureboard.web").joinpath("web.css").read_text()
+    assert re.search(r"\.problem \{[^}]*color: var\(--bad-fg\)", css)
+
+    def luminance(hex_colour):
+        rgb = [int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        rgb = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+        return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+
+    backgrounds = re.findall(r"--bg: (#\w{6});", css)
+    errors = re.findall(r"--bad-fg: (#\w{6});", css)
     assert len(backgrounds) == len(errors) == 2
     for bg, error in zip(backgrounds, errors, strict=True):
         high, low = sorted((luminance(bg), luminance(error)), reverse=True)

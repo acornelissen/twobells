@@ -47,7 +47,7 @@ SCRYPT = {"n": 2**14, "r": 8, "p": 1}
 # Headers for a page drawn on the server, with a form and no JavaScript.
 FORM_PAGE_HEADERS = {
     "Content-Security-Policy": (
-        "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; "
+        "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; form-action 'self'; "
         "frame-ancestors 'none'; base-uri 'none'"
     ),
     "X-Content-Type-Options": "nosniff",

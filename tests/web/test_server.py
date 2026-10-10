@@ -454,7 +454,7 @@ def test_healthz(static_dir):
 # The dashboard off: its view off, not set up, or its settings don't load
 
 
-SETTINGS_CSP = ("default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; "
+SETTINGS_CSP = ("default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; form-action 'self'; "
                 "frame-ancestors 'none'; base-uri 'none'")
 
 

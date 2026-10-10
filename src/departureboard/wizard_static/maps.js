@@ -2,6 +2,7 @@
 // DOM nodes, never strings.
 
 import { $, h } from "../dashboard_static/dom.js";
+import { icon } from "../dashboard_static/icons.js";
 import { note } from "./say.js";
 import { state } from "./state.js";
 
@@ -58,7 +59,7 @@ export function pin(text, extra = "") {
 
 function homePin() {
   return L.divIcon({
-    html: h("span", { class: "pin pin-home" }, h("span", { "aria-hidden": "true" }, "⌂")),
+    html: h("span", { class: "pin pin-home" }, icon("house")),
     className: "pin-marker",
     iconSize: [32, 32],
     iconAnchor: [16, 16],

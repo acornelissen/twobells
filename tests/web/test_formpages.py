@@ -95,9 +95,10 @@ def test_the_document_escapes_its_title_and_names_its_stylesheet():
     assert '<html lang="en-GB">' in page
 
 
-def test_the_wizard_serves_only_pages_scripts_and_styles():
-    assert set(WIZARD_TYPES) == {".html", ".js", ".css"}
-    assert all(value.endswith("; charset=utf-8") for value in WIZARD_TYPES.values())
+def test_the_wizard_serves_only_pages_scripts_styles_and_its_font():
+    assert set(WIZARD_TYPES) == {".html", ".js", ".css", ".woff2"}
+    assert WIZARD_TYPES[".woff2"] == "font/woff2"
+    assert all(value.endswith("; charset=utf-8") for kind, value in WIZARD_TYPES.items() if kind != ".woff2")
 
 
 # --- FormPages, with a made-up host under /area ---

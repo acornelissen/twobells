@@ -1,9 +1,9 @@
 """Static checks on the setup wizard's browser files, as for the dashboard's.
 
 The page runs under setupapi.PAGE_HEADERS (`script-src 'self'; style-src
-'self'`), sets server text only as text, and borrows the dashboard's dom.js
-and vendored Leaflet through the paths setupapi.static_files() serves. These
-tests keep it that way without a browser.
+'self'`), sets server text only as text, and borrows the dashboard's dom.js,
+icons.js, vendored Leaflet and Inter through the paths setupapi.static_files()
+serves. These tests keep it that way without a browser.
 
 The script is wizard.js and the modules beside it, one per step and a few
 they share; the checks on a step's code read that step's module.
@@ -22,6 +22,8 @@ from departureboard.settings.schema import keys
 from departureboard.setup import keytest
 from departureboard.setup.api import PAGE_HEADERS, static_files
 from tests.paths import FIXTURES, ROOT
+
+DASHBOARD = ROOT / "src" / "departureboard" / "dashboard_static"
 
 # The wizard offers only the keys every view uses; each view's own are on its settings tab.
 KEYS = keys("general")
@@ -129,15 +131,55 @@ def test_js_imports_resolve_to_served_files(name):
         assert (STATIC / spec).resolve().is_file(), spec  # in the source tree
         found = _served(urljoin(js_url, spec))  # and where a host serves it
         assert found is not None and found.resolve() == (STATIC / spec).resolve(), spec
-    # The modules wizard.js imports may import nothing the host doesn't serve.
-    dom = (STATIC / "../dashboard_static/dom.js").read_text(encoding="utf-8")
-    assert not IMPORT.findall(dom)
+    # The dashboard's modules the wizard imports may import nothing the host doesn't serve.
+    for borrowed in ("dom.js", "icons.js"):
+        url = urljoin(PREFIX, f"dashboard_static/{borrowed}")
+        for spec in IMPORT.findall((DASHBOARD / borrowed).read_text(encoding="utf-8")):
+            found = _served(urljoin(url, spec))
+            assert found is not None and found.resolve() == (DASHBOARD / spec).resolve(), (borrowed, spec)
 
 
 def test_leaflet_css_resolves_to_a_served_file():
     base = re.search(r'const LEAFLET = "([^"]+)"', _js("maps.js")).group(1)
     url = urljoin(urljoin(PREFIX, "wizard_static/maps.js"), f"{base}leaflet.css")
     assert _served(url) is not None
+
+
+def test_inter_resolves_to_the_dashboards_served_copy():
+    css = (STATIC / "wizard.css").read_text(encoding="utf-8")
+    [src] = re.findall(r'src: url\("([^"]+)"\) format\("woff2"\)', css)
+    found = _served(urljoin(urljoin(PREFIX, "wizard_static/wizard.css"), src))
+    assert found is not None and found.resolve() == (DASHBOARD / "vendor/inter-4.1/InterVariable.woff2").resolve()
+    assert re.search(r'--font: "Inter", system-ui', css)
+
+
+def _icon_names():
+    return set(re.findall(r'^  "([a-z-]+)": \[', (DASHBOARD / "icons.js").read_text(encoding="utf-8"), re.M))
+
+
+def test_every_icon_the_wizard_asks_for_is_in_the_set():
+    asked = set()
+    for name in SCRIPTS:
+        for call in re.findall(r"\bicon\(([^()]*)\)", _js(name)):
+            asked.update(re.findall(r'"([a-z-]+)"', call))
+    assert asked and asked <= _icon_names(), asked - _icon_names()
+
+
+PICTOGRAPHS = re.compile("[←-⇿⌀-⏿①-⓿■-➿⬀-⯿︎️]")
+
+
+def test_no_text_glyphs_stand_in_for_icons():
+    # They fall back to whatever font has them, so they come out at odd sizes.
+    for path in OWN:
+        found = PICTOGRAPHS.findall(path.read_text(encoding="utf-8"))
+        assert not found, f"{path.name}: {found}"
+
+
+def test_a_done_step_shows_a_tick_and_says_so():
+    steps = _between(_js("steps.js"), "export function numberSteps", "export function go")
+    assert 'item.append(icon("check"), h("span", { class: "vh" }, " (done)"))' in steps
+    css = (STATIC / "wizard.css").read_text(encoding="utf-8")
+    assert ".progress li:not(.done) .icon, .progress li:not(.done) .vh { display: none; }" in css
 
 
 STATIC_IMPORT = re.compile(r"""^\s*import\s+(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']""", re.M)
@@ -213,16 +255,16 @@ def test_key_test_says_its_result_politely_in_words():
     hook = _between(text, "function keyTestButton", "function signUp")
     assert 'type: "button"' in hook and '"Test this key"' in hook
     assert 'role: "status", "aria-live": "polite"' in hook
-    # Every state the host can answer has a glyph and words; the glyph is
-    # hidden from screen readers, which read the words.
+    # Every state the host can answer has an icon and words; the icon is
+    # hidden from screen readers (icons.js), which read the words.
     found = re.findall(r'(\w+): \["([^"]+)", "([^"]+)"\]', _between(text, "const RESULTS", "function showResult"))
-    results = {state: (glyph, words) for state, glyph, words in found}
+    results = {state: (shape, words) for state, shape, words in found}
     assert set(keytest.STATES) <= set(results)
-    assert all(glyph and words for glyph, words in results.values())
-    assert '"aria-hidden": "true" }, glyph), h("strong", {}, `${words}:`)' in text
+    assert all(shape in _icon_names() and words for shape, words in results.values())
+    assert 'fill(region, icon(shape), h("strong", {}, `${words}:`)' in text
     css = (STATIC / "wizard.css").read_text(encoding="utf-8")
     for state in keytest.STATES:
-        assert re.search(r"\.key-result-%s\b[^{]*\{ color: var\(--(ok-fg|error|warn-fg)\); \}" % state, css), state
+        assert re.search(r"\.key-result-%s\b[^{]*\{ color: var\(--(ok-fg|bad-fg|late-fg)\); \}" % state, css), state
 
 
 def test_the_wizard_says_nothing_of_the_keys_on_the_views_tabs():
@@ -402,14 +444,25 @@ def test_map_toggles_say_whether_they_are_open():
     assert html.count("OpenStreetMap contributors") == 3
 
 
+def _palette(path, name):
+    css = path.read_text(encoding="utf-8")
+    match = re.search(r"/\* theme: %s \*/[^{]*\{(?:[^{}]*\{)?([^{}]*)\}" % name, css)
+    assert match, name
+    return dict(re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6})\b", match.group(1)))
+
+
 def _palettes():
-    css = (STATIC / "wizard.css").read_text(encoding="utf-8")
-    palettes = {}
-    for name in ("light", "dark"):
-        match = re.search(r"/\* theme: %s \*/[^{]*\{(?:[^{}]*\{)?([^{}]*)\}" % name, css)
-        assert match, name
-        palettes[name] = dict(re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6})\b", match.group(1)))
-    return {"light": palettes["light"], "dark": {**palettes["light"], **palettes["dark"]}}
+    light, dark = (_palette(STATIC / "wizard.css", name) for name in ("light", "dark"))
+    return {"light": light, "dark": {**light, **dark}}
+
+
+def test_the_colours_are_the_dashboards():
+    # The same names mean the same colours as on the dashboard's modern look;
+    # only the map pins' are the wizard's own.
+    dashboard = {theme: _palette(DASHBOARD / "app.css", f"modern-{theme}") for theme in ("light", "dark")}
+    for theme, tokens in _palettes().items():
+        own = {name: value for name, value in tokens.items() if not name.startswith("pin-")}
+        assert own == {name: dashboard[theme][name] for name in own}, theme
 
 
 def _luminance(colour):
@@ -425,11 +478,13 @@ def _contrast(a, b):
 
 TEXT_PAIRS = [
     ("fg", "bg"), ("fg", "surface"), ("muted", "surface"), ("muted", "bg"), ("accent", "surface"),
-    ("accent-fg", "accent"), ("error", "surface"), ("ok-fg", "ok-bg"), ("ok-fg", "surface"),
-    ("warn-fg", "warn-bg"), ("warn-fg", "surface"), ("tag-fg", "tag-bg"), ("pin-fg", "pin-bg"),
-    ("pin-fg", "pin-chosen-bg"),
+    ("accent-fg", "accent"), ("bad-fg", "surface"), ("ok-fg", "surface"), ("late-fg", "late-bg"),
+    ("late-fg", "surface"),
+    # Notes, the chosen place and tags on their quiet tint.
+    ("fg", "surface-2"), ("ok-fg", "surface-2"), ("muted", "surface-2"),
+    ("pin-fg", "pin-bg"), ("pin-fg", "pin-chosen-bg"), ("pin-fg", "pin-home-bg"),
 ]
-OUTLINE_PAIRS = [("focus", "bg"), ("focus", "surface"), ("edge", "surface"), ("edge", "bg"), ("error", "surface")]
+OUTLINE_PAIRS = [("focus", "bg"), ("focus", "surface"), ("edge", "surface"), ("edge", "bg"), ("bad-fg", "surface")]
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
@@ -452,6 +507,7 @@ def test_targets_are_big_enough():
 def test_page_headers_allow_only_what_the_page_needs():
     csp = PAGE_HEADERS["Content-Security-Policy"]
     assert "default-src 'none'" in csp and "script-src 'self';" in csp and "style-src 'self';" in csp
+    assert "font-src 'self';" in csp
     assert "unsafe" not in csp and "connect-src 'self'" in csp and "frame-ancestors 'none'" in csp
     assert "img-src 'self' data: https://tile.openstreetmap.org" in csp
     assert PAGE_HEADERS["X-Content-Type-Options"] == "nosniff" and PAGE_HEADERS["Cache-Control"] == "no-store"

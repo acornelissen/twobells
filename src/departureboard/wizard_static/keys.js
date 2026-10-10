@@ -2,6 +2,7 @@
 // when saving (and the bus key for the search, if pasted), and to test it.
 
 import { $, h, fill, str } from "../dashboard_static/dom.js";
+import { icon } from "../dashboard_static/icons.js";
 import { call } from "./api.js";
 import { enterFinish, pastedKeys } from "./finish.js";
 import { note, refuse, setError } from "./say.js";
@@ -33,21 +34,21 @@ const SIGN_UP = {
 // The wizard offers only the keys every view uses; each view's own are
 // signed up for and tested on its settings tab.
 const TESTED = ["RDM_API_KEY", "BODS_API_KEY"];
-const RESULTS = { // state: [glyph, words]; the colour only repeats them
-  testing: ["…", "Testing"],
-  works: ["✓", "Works"],
-  wrong_key: ["✗", "Wrong key"],
-  not_subscribed: ["✗", "Not subscribed"],
-  service_down: ["!", "Service not answering"],
-  missing: ["!", "No key"],
-  unknown: ["?", "Can't tell"],
-  problem: ["!", "Not tested"],
+const RESULTS = { // state: [icon, words]; the colour and icon only repeat the words
+  testing: ["clock", "Testing"],
+  works: ["check", "Works"],
+  wrong_key: ["x", "Wrong key"],
+  not_subscribed: ["x", "Not subscribed"],
+  service_down: ["triangle-alert", "Service not answering"],
+  missing: ["triangle-alert", "No key"],
+  unknown: ["info", "Can't tell"],
+  problem: ["triangle-alert", "Not tested"],
 };
 
 function showResult(region, result, text) {
-  const [glyph, words] = RESULTS[result] || RESULTS.unknown;
+  const [shape, words] = RESULTS[result] || RESULTS.unknown;
   region.className = `key-result key-result-${RESULTS[result] ? result : "unknown"}`;
-  fill(region, h("span", { class: "key-glyph", "aria-hidden": "true" }, glyph), h("strong", {}, `${words}:`), ` ${text}`);
+  fill(region, icon(shape), h("strong", {}, `${words}:`), ` ${text}`);
 }
 
 function keySet(name) {
@@ -83,7 +84,7 @@ function keyTestButton(name, input) {
   if (!TESTED.includes(name)) return null;
   const id = `key-${name}`;
   const region = h("p", { class: "key-result", id: `${id}-result`, role: "status", "aria-live": "polite" });
-  const button = h("button", { type: "button", class: "quiet", id: `${id}-test` }, "Test this key");
+  const button = h("button", { type: "button", id: `${id}-test` }, "Test this key");
   button.addEventListener("click", () => testKey(name, input, button, region));
   // A result is about what was in the box then; once that changes, it's gone.
   input.addEventListener("input", () => { region.className = "key-result"; fill(region); });

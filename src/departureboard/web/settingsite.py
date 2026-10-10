@@ -153,7 +153,7 @@ def wizard_files(found: Mapping[str, Path] | None = None) -> dict[str, tuple[byt
     for relative, path in (setupapi.static_files() if found is None else found).items():
         content_type = _CONTENT_TYPES.get(Path(path).suffix.lower())
         if content_type is None:
-            log.warning("Setup page file %s left out: not a page, script or style", relative or "index.html")
+            log.warning("Setup page file %s left out: not a page, script, style or font", relative or "index.html")
             continue
         try:
             out[relative] = (Path(path).read_bytes(), content_type)
@@ -409,7 +409,7 @@ class SettingsSite:
             f'<header class="bar"><h1>{self._title(tab)}</h1>'
             f'<form method="post" action="{PREFIX}/logout">'
             f'<input type="hidden" name="csrf" value="{e(csrf)}">'
-            '<button type="submit" class="quiet">Sign out</button></form></header>',
+            '<button type="submit">Sign out</button></form></header>',
             f'<nav aria-label="Settings" class="tabs"><ul>{"".join(items)}</ul></nav>',
         ]
         if self._running():

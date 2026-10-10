@@ -1,133 +1,232 @@
+/* The settings site. The dashboard's look (dashboard_static/app.css): its
+   colours, Inter, and its type (--t-*), spacing (--s-*) and radius (--r-*)
+   scales. tests/web/test_settingsite.py checks the colours are the
+   dashboard's and the text pairs reach 4.5:1 and the outlines 3:1 in both
+   themes. Weights are 400, 500 and 600 only. */
+
+/* Inter from the wizard's files (setupapi.static_files), so the settings
+   pages and the wizard load the one copy. */
+@font-face {
+  font-family: "Inter";
+  src: url("/settings/setup/dashboard_static/vendor/inter-4.1/InterVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* theme: light */
 :root {
-  --bg: #f7f7f5;
-  --fg: #1b1c1e;
-  --muted: #55575c;
-  --line: #c9cac6;
-  --field: #ffffff;
-  --accent: #1d4ed8;
-  --error: #b42318;
-  --ok-bg: #e7f4ea;
-  --ok-fg: #185c2b;
-  --focus: #1d4ed8;
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #eef0f3;
+  --fg: #14171c;
+  --muted: #555d69;
+  --line: #e2e5e9;
+  --edge: #7d848f;
+  --accent: #1f56d1;
+  --accent-fg: #ffffff;
+  --focus: #1f56d1;
+  --ok-fg: #13703a;
+  --late-fg: #8a4600;
+  --late-bg: #fdf0d8;
+  --bad-fg: #b42318;
+  --bad-bg: #fdeceb;
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --t-xs: 0.8125rem;
+  --t-sm: 0.875rem;
+  --t-md: 1rem;
+  --t-lg: 1.25rem;
+  --t-xl: 1.75rem;
+  --s-1: 0.25rem;
+  --s-2: 0.5rem;
+  --s-3: 0.75rem;
+  --s-4: 1rem;
+  --s-5: 1.5rem;
+  --s-6: 2rem;
+  --s-7: 3rem;
+  --r-sm: 0.375rem;
+  --r-md: 0.625rem;
+  --r-lg: 0.875rem;
   color-scheme: light;
 }
+
+/* theme: dark */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #17181a;
-    --fg: #ecebe6;
-    --muted: #b3b1aa;
-    --line: #45474c;
-    --field: #202124;
-    --accent: #8ab4ff;
-    --error: #ff8a80;
-    --ok-bg: #173323;
-    --ok-fg: #9be3b0;
-    --focus: #8ab4ff;
+    --bg: #0f1114;
+    --surface: #171a1f;
+    --surface-2: #1f232a;
+    --fg: #ebedf0;
+    --muted: #959ca8;
+    --line: #2a2f37;
+    --edge: #6b7380;
+    --accent: #82b1ff;
+    --accent-fg: #0b1220;
+    --focus: #82b1ff;
+    --ok-fg: #6fd49a;
+    --late-fg: #f5b84a;
+    --late-bg: #33260d;
+    --bad-fg: #ff8f85;
+    --bad-bg: #3a1714;
     color-scheme: dark;
   }
 }
+
 * { box-sizing: border-box; }
 /* Keep a focused field clear of the sticky Save bar (WCAG 2.4.11), and when an
    error link jumps to a field, keep its label and error message in view. */
-html { scroll-padding-bottom: 5.5rem; }
+html { scroll-padding-bottom: 5.5rem; -webkit-text-size-adjust: 100%; }
 input, select, textarea { scroll-margin-top: 7rem; }
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: 1rem/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: var(--t-md)/1.5 var(--font);
+  font-feature-settings: "cv05" 1;
+  overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
 }
-main { max-width: 42rem; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
-h1 { font-size: 1.5rem; margin: 0; }
-h2 { font-size: 1.125rem; margin: 0 0 0.5rem; }
-.bar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
-fieldset { border: 1px solid var(--line); border-radius: 0.5rem; padding: 1rem 1rem 0.25rem; margin: 0 0 1.5rem; }
-legend { font-weight: 600; font-size: 1.125rem; padding: 0 0.25rem; }
-.field { margin-bottom: 1.25rem; }
-label { display: block; font-weight: 600; margin-bottom: 0.25rem; }
-.hint { color: var(--muted); margin: 0 0 0.375rem; font-size: 0.9375rem; }
+main { max-width: 42rem; margin: 0 auto; padding: var(--s-5) var(--s-4) var(--s-7); }
+h1, h2, h3 { line-height: 1.2; font-weight: 600; }
+h1 { font-size: var(--t-xl); margin: 0; }
+h2 { font-size: var(--t-lg); margin: 0 0 var(--s-2); }
+h3 { font-size: var(--t-md); }
+/* The browser's own link blue is too dark on the dark background. */
+a { color: var(--accent); text-underline-offset: 0.15em; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+[tabindex="-1"]:focus:not(:focus-visible) { outline: none; }
+.icon { display: inline-block; flex: none; width: 1em; height: 1em; vertical-align: -0.125em; }
+.bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--s-3) var(--s-4);
+  margin-bottom: var(--s-5); }
+
+/* Forms: each group of fields a surface, hairline edged. */
+fieldset {
+  min-width: 0;
+  margin: 0 0 var(--s-5);
+  padding: var(--s-4) var(--s-4) var(--s-1);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+legend { font-weight: 600; font-size: var(--t-lg); padding: 0 var(--s-1); }
+.field { margin-bottom: var(--s-5); }
+label { display: block; font-weight: 500; margin-bottom: var(--s-1); }
+.hint { color: var(--muted); margin: 0 0 var(--s-2); font-size: var(--t-sm); }
 input, select, textarea {
   display: block;
   width: 100%;
   min-height: 2.75rem;
-  padding: 0.5rem 0.625rem;
+  padding: var(--s-2) var(--s-3);
   font: inherit;
   color: var(--fg);
-  background: var(--field);
-  border: 1px solid var(--muted);
-  border-radius: 0.375rem;
+  background: var(--surface);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-sm);
 }
-textarea { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.9375rem; resize: vertical; }
-.has-error input, .has-error select, .has-error textarea { border: 2px solid var(--error); }
+textarea { font-family: var(--mono); font-size: var(--t-sm); resize: vertical; }
+input[type="checkbox"] { accent-color: var(--accent); }
+.has-error input, .has-error select, .has-error textarea { border: 2px solid var(--bad-fg); }
 /* A checkbox with its label beside it, and its hint and error below the label. */
-.check { display: grid; grid-template-columns: auto 1fr; column-gap: 0.75rem; align-items: start; }
+.check { display: grid; grid-template-columns: auto 1fr; column-gap: var(--s-3); align-items: start; }
 .check input { grid-row: 1 / span 3; width: 1.5rem; height: 1.5rem; min-height: 0; margin: 0.125rem 0 0; }
-.check label, .check .hint, .check .error { grid-column: 2; margin-bottom: 0.25rem; }
-.error { color: var(--error); font-weight: 600; margin: 0 0 0.375rem; }
-.tag { font-weight: 700; }
+.check label, .check .hint, .check .error { grid-column: 2; margin-bottom: var(--s-1); }
+.error { color: var(--bad-fg); font-weight: 600; margin: 0 0 var(--s-2); }
+.tag { font-weight: 600; }
+
+/* A button is quiet unless it is the one thing to do: .primary fills it. */
 button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
   min-height: 2.75rem;
   min-width: 2.75rem;
-  padding: 0.5rem 1.25rem;
+  padding: var(--s-2) var(--s-4);
   font: inherit;
-  font-weight: 600;
-  color: #ffffff;
-  background: var(--accent);
-  border: 0;
-  border-radius: 0.375rem;
+  font-weight: 500;
+  color: var(--fg);
+  background: transparent;
+  /* --edge, not --line: a button's edge needs 3:1 against the page (WCAG 1.4.11). */
+  border: 1px solid var(--edge);
+  border-radius: var(--r-md);
   cursor: pointer;
 }
-@media (prefers-color-scheme: dark) { button { color: #0b1020; } }
-/* --muted, not --line: an outlined button's edge needs 3:1 against the page (WCAG 1.4.11). */
-button.quiet { color: var(--fg); background: transparent; border: 1px solid var(--muted); }
-:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-.summary { border: 2px solid var(--error); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1.5rem; }
-.summary ul { margin: 0; padding-left: 1.25rem; }
-.summary a { color: var(--error); font-weight: 600; }
-.saved { background: var(--ok-bg); color: var(--ok-fg); border-radius: 0.5rem; padding: 0.75rem 1rem; font-weight: 600; }
-.notice { background: var(--field); border: 1px solid var(--line); border-radius: 0.5rem; padding: 1rem; }
-.signin { max-width: 22rem; margin-top: 1rem; }
-.signin button { margin-top: 1rem; }
-.signin label { margin-top: 0.75rem; }
-.forgot { margin-top: 1rem; }
-.after { margin-top: 1.5rem; }
-/* The browser's own link blue is too dark on the dark background. */
-a { color: var(--accent); }
+button:hover { background: var(--surface-2); }
+button.primary { color: var(--accent-fg); background: var(--accent); border-color: var(--accent); }
+button.primary:hover { background: var(--accent); filter: brightness(1.08); }
+
+/* Messages: red for what went wrong, green only as words. */
+.summary {
+  margin-bottom: var(--s-5);
+  padding: var(--s-4);
+  background: var(--bad-bg);
+  border: 2px solid var(--bad-fg);
+  border-radius: var(--r-lg);
+}
+.summary ul { margin: 0; padding-left: var(--s-5); }
+.summary a { color: var(--bad-fg); font-weight: 600; }
+.summary:focus-visible, .summary :focus-visible { outline-color: currentColor; }
+.saved {
+  padding: var(--s-3) var(--s-4);
+  color: var(--ok-fg);
+  font-weight: 600;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 0.25rem solid var(--ok-fg);
+  border-radius: var(--r-md);
+}
+.notice { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s-4); }
+.signin { max-width: 22rem; margin-top: var(--s-4); }
+.signin button { margin-top: var(--s-4); }
+.signin label { margin-top: var(--s-3); }
+.forgot { margin-top: var(--s-4); }
+.after { margin-top: var(--s-5); }
 /* The settings tabs: a row of links that wraps, the current one marked by a
-   bar under it and bold text as well as by aria-current, never colour alone. */
-.tabs ul { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; list-style: none; margin: 0 0 1.5rem; padding: 0;
-  border-bottom: 1px solid var(--line); }
-.tabs a { display: inline-block; min-height: 2.75rem; padding: 0.625rem 0.25rem 0.5rem;
+   bar under it and heavier text as well as by aria-current, never colour alone. */
+.tabs ul { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); list-style: none; margin: 0 0 var(--s-5);
+  padding: 0; border-bottom: 1px solid var(--line); }
+.tabs a { display: inline-block; min-height: 2.75rem; padding: var(--s-3) var(--s-1) var(--s-2);
   border-bottom: 3px solid transparent; }
-.tabs a[aria-current="page"] { color: var(--fg); font-weight: 700; text-decoration: none; border-bottom-color: var(--accent); }
-.to-dashboard { margin: -0.75rem 0 1.5rem; }
-.place { border: 1px solid var(--line); border-radius: 0.5rem; padding: 1rem; margin: 0 0 1.5rem; }
-.place dl { display: grid; grid-template-columns: minmax(6rem, max-content) 1fr; gap: 0.125rem 1rem; margin: 0 0 0.75rem; }
-.place dt { font-weight: 600; }
+.tabs a[aria-current="page"] { color: var(--fg); font-weight: 600; text-decoration: none; border-bottom-color: var(--accent); }
+.to-dashboard { margin: calc(-1 * var(--s-3)) 0 var(--s-5); }
+.place { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s-4);
+  margin: 0 0 var(--s-5); }
+.place dl { display: grid; grid-template-columns: minmax(6rem, max-content) 1fr; gap: 0.125rem var(--s-4);
+  margin: 0 0 var(--s-3); }
+.place dt { font-weight: 500; color: var(--muted); }
 .place dd { margin: 0; overflow-wrap: anywhere; }
 .place p { margin: 0; }
-.place a { font-weight: 600; }
-.about { margin: 0 0 1.5rem; }
-.setup-link { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.75rem 1rem; margin: 0 0 1.5rem; }
+.place a { font-weight: 500; }
+.about { margin: 0 0 var(--s-5); }
+.setup-link { border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s-3) var(--s-4);
+  margin: 0 0 var(--s-5); }
 .setup-link p { margin: 0; }
-.setup-link a { font-weight: 600; }
-code { font-family: ui-monospace, "SF Mono", Menlo, monospace; overflow-wrap: anywhere; }
-.actions { position: sticky; bottom: 0; padding: 0.75rem 0; background: var(--bg); }
-/* Testing a key. A result's words carry it; the colour and glyph only repeat them. */
-.key-tests { margin-top: 1rem; }
-.key-test { margin-bottom: 0.75rem; }
-.key-result { margin: 0.5rem 0 0; padding: 0.5rem 0.75rem; border: 1px solid var(--line); border-left-width: 4px;
-  border-radius: 0.375rem; }
-.key-result-works { color: var(--ok-fg); background: var(--ok-bg); border-color: var(--ok-fg); }
-.key-result-wrong_key, .key-result-not_subscribed { color: var(--error); border-color: var(--error); }
-.status { border: 1px solid var(--line); border-radius: 0.5rem; padding: 1rem; margin: 0 0 1.5rem; }
-.status h3 { font-size: 1rem; margin: 1rem 0 0.25rem; }
-.status dl { display: grid; grid-template-columns: minmax(7.5rem, max-content) 1fr; gap: 0.125rem 1rem; margin: 0; }
-.status dt { font-weight: 600; }
+.setup-link a { font-weight: 500; }
+code { font-family: var(--mono); font-size: 0.9375em; overflow-wrap: anywhere; }
+.actions { position: sticky; bottom: 0; padding: var(--s-3) 0; background: var(--bg); }
+/* Testing a key. A result's words carry it; the colour and icon only repeat them. */
+.key-tests { margin-top: var(--s-4); }
+.key-test { margin-bottom: var(--s-3); }
+.key-result { margin: var(--s-2) 0 0; padding: var(--s-2) var(--s-3); border: 1px solid var(--line);
+  border-left-width: 0.25rem; border-radius: var(--r-sm); }
+.key-result-works { color: var(--ok-fg); border-color: var(--ok-fg); }
+.key-result-wrong_key, .key-result-not_subscribed { color: var(--bad-fg); background: var(--bad-bg); border-color: var(--bad-fg); }
+.key-result-service_down, .key-result-missing, .key-result-unknown, .key-result-not_tested {
+  color: var(--late-fg); background: var(--late-bg); border-color: var(--late-fg); }
+.key-result:focus-visible { outline-color: currentColor; }
+.status { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s-4);
+  margin: 0 0 var(--s-5); }
+.status h3 { margin: var(--s-4) 0 var(--s-1); }
+.status dl { display: grid; grid-template-columns: minmax(7.5rem, max-content) 1fr; gap: 0.125rem var(--s-4); margin: 0; }
+.status dt { font-weight: 500; color: var(--muted); }
 .status dd { margin: 0; overflow-wrap: anywhere; }
 /* The word "Problem:" carries the meaning; the colour only draws the eye. */
-.problem { display: block; color: var(--error); }
+.problem { display: block; color: var(--bad-fg); }
 @media (max-width: 24rem) {
   .status dl, .place dl { grid-template-columns: 1fr; }
-  .status dd { margin-bottom: 0.375rem; }
+  .status dd { margin-bottom: var(--s-2); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
 }

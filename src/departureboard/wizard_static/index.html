@@ -59,20 +59,20 @@
     </div>
 
     <div class="map-part">
-      <button type="button" id="home-map-toggle" class="quiet" aria-expanded="false" aria-controls="home-map-box">Pick on a map instead</button>
+      <button type="button" id="home-map-toggle" aria-expanded="false" aria-controls="home-map-box">Pick on a map instead</button>
       <div id="home-map-box" hidden>
         <p class="hint">Click or tap where home is. Map pictures come from OpenStreetMap, which sees roughly where you are looking.</p>
         <p class="map-status" id="home-map-status"></p>
         <div id="home-map" class="map" role="region" aria-label="Map to pick home on. The postcode and address boxes above do the same."></div>
         <p class="map-credit">Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>.</p>
-        <button type="button" id="home-map-centre" class="quiet">Put home at the middle of the map</button>
+        <button type="button" id="home-map-centre">Put home at the middle of the map</button>
       </div>
     </div>
 
     <p id="home-chosen" class="chosen" hidden></p>
     <p class="error" id="home-error" hidden></p>
     <div class="actions">
-      <button type="button" id="home-next" data-next="station">Next: station</button>
+      <button type="button" id="home-next" class="primary" data-next="station">Next: station</button>
     </div>
   </section>
 
@@ -108,7 +108,7 @@
     </div>
 
     <div class="map-part">
-      <button type="button" id="station-map-toggle" class="quiet" aria-expanded="false" aria-controls="station-map-box">Show the stations on a map</button>
+      <button type="button" id="station-map-toggle" aria-expanded="false" aria-controls="station-map-box">Show the stations on a map</button>
       <div id="station-map-box" hidden>
         <p class="hint">The numbers match the list. Choosing a station on the map picks it in the list.</p>
         <p class="map-status" id="station-map-status"></p>
@@ -118,8 +118,8 @@
     </div>
 
     <div class="actions">
-      <button type="button" class="quiet" data-back="home">Back</button>
-      <button type="button" id="station-next" data-next="stops">Next: bus stops</button>
+      <button type="button" data-back="home">Back</button>
+      <button type="button" id="station-next" class="primary" data-next="stops">Next: bus stops</button>
     </div>
   </section>
 
@@ -135,7 +135,7 @@
     </fieldset>
 
     <div class="map-part">
-      <button type="button" id="stops-map-toggle" class="quiet" aria-expanded="false" aria-controls="stops-map-box">Show the stops on a map</button>
+      <button type="button" id="stops-map-toggle" aria-expanded="false" aria-controls="stops-map-box">Show the stops on a map</button>
       <div id="stops-map-box" hidden>
         <p class="hint">The numbers match the list. Choosing a stop on the map ticks or unticks it.</p>
         <p class="map-status" id="stops-map-status"></p>
@@ -145,8 +145,8 @@
     </div>
 
     <div class="actions">
-      <button type="button" class="quiet" data-back="station">Back</button>
-      <button type="button" id="stops-next" data-next="walk">Next: walk times</button>
+      <button type="button" data-back="station">Back</button>
+      <button type="button" id="stops-next" class="primary" data-next="walk">Next: walk times</button>
     </div>
   </section>
 
@@ -157,8 +157,8 @@
     <p id="walk-status" class="note" hidden></p>
     <div id="walk-list"></div>
     <div class="actions">
-      <button type="button" class="quiet" data-back="stops">Back</button>
-      <button type="button" id="walk-next" data-next="keys">Next: keys</button>
+      <button type="button" data-back="stops">Back</button>
+      <button type="button" id="walk-next" class="primary" data-next="keys">Next: keys</button>
     </div>
   </section>
 
@@ -168,8 +168,8 @@
     <p class="hint">Train and bus times come from free services that give you a key. Keys are never shown here: paste one to save it, or leave a box empty to keep the key you have.</p>
     <div id="keys-list"></div>
     <div class="actions">
-      <button type="button" class="quiet" data-back="walk">Back</button>
-      <button type="button" id="keys-next">Next: check and save</button>
+      <button type="button" data-back="walk">Back</button>
+      <button type="button" id="keys-next" class="primary">Next: check and save</button>
     </div>
   </section>
 
@@ -183,8 +183,8 @@
       <div id="views-list" class="options"></div>
     </fieldset>
     <div class="actions">
-      <button type="button" class="quiet" data-back="keys">Back</button>
-      <button type="button" id="views-next">Next: check and save</button>
+      <button type="button" data-back="keys">Back</button>
+      <button type="button" id="views-next" class="primary">Next: check and save</button>
     </div>
   </section>
 
@@ -204,7 +204,7 @@
       <label for="job-progress" class="vh">Progress</label>
       <progress id="job-progress"></progress>
       <p id="job-count" class="hint"></p>
-      <button type="button" id="job-cancel" class="quiet">Cancel the search</button>
+      <button type="button" id="job-cancel">Cancel the search</button>
     </div>
 
     <div id="roads-box" class="job" hidden>
@@ -213,14 +213,14 @@
       <progress id="roads-progress" aria-describedby="roads-count"></progress>
       <p id="roads-count" class="hint">Finding the roads for the bus maps</p>
       <div class="actions">
-        <button type="button" id="roads-wait" class="quiet">Wait for the roads</button>
-        <button type="button" id="roads-on">Carry on</button>
+        <button type="button" id="roads-wait">Wait for the roads</button>
+        <button type="button" id="roads-on" class="primary">Carry on</button>
       </div>
     </div>
 
     <div class="actions" id="finish-actions">
-      <button type="button" class="quiet" id="finish-back" data-back="keys">Back</button>
-      <button type="button" id="save">Save</button>
+      <button type="button" id="finish-back" data-back="keys">Back</button>
+      <button type="button" id="save" class="primary">Save</button>
     </div>
   </section>
 

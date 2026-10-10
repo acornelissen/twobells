@@ -101,13 +101,13 @@ One package, `src/departureboard`, a folder per part of the app. Each folder's `
 | `board/` | The board view: one tick, redrawn only on change (`app.py`), departures to rows (`view.py`), the two looks (`themes.py`, `sign.py` and `dotfont.py`, `render.py` with Inter from `fonts/`), panel sizes (`panel.py`), route strips (`route.py`), state between runs (`state.py`) |
 | `board/displays/` | Inky or PNG output (`display.py`), the Waveshare 10.85" e-Paper (G) driver (`waveshare.py`), and the HDMI screen with pygame (`screen.py`) |
 | `dashboard/` | The dashboard view: its settings (`config.py`), pollers (`collector.py`), the versioned snapshot the page shows (`snapshot.py`), row extras (`enrich.py`), the area map (`area.py`), punctuality history in SQLite (`history.py`) |
-| `web/` | The one web server on port 8090 (`server.py`): the dashboard's page, files and API, and the settings site under `/settings` (`settingsite.py`, a `groupform.py` form per tab, `formpages.py` and `web.css`), sign-in and the home-network checks (`auth.py`), the Board tab's status (`status.py`) |
+| `web/` | The one web server on port 8090 (`server.py`): the dashboard's page, files and API, and the settings site under `/settings` (`settingsite.py`, a `groupform.py` form per tab, `formpages.py`, `web.css` and `icons.py`), sign-in and the home-network checks (`auth.py`), the Board tab's status (`status.py`) |
 | `setup/` | First-run setup: the wizard's JSON API (`api.py`), finding home, stations, stops and walk times (`lookups.py`), finding the bus companies and building their timetable (`discover.py`), key tests (`keytest.py`) |
 | `setup/spool/` | On a Pi, the wizard's internet work handed from the web server to the fetch service through files in memory: the web server's side (`runner.py`), the fetch service's (`worker.py`), the folder (`folder.py`) and the checks on what each side writes (`checks.py`) |
 | `fetch/` | The Pi's outbound-only fetch service (`service.py`, the `fetch` command), and the dashboard's snapshot handed to the web server as a file (`handoff.py`) |
 | `emulator/` | The browser panel emulator (`server.py`, `emulator.html`), its demo and live wiring (`emulation.py`), and the fake sources and clock (`fake.py`) |
 | `dashboard_static/` | The dashboard's page: HTML, CSS, JS modules, vendored Leaflet 1.9.4 |
-| `wizard_static/` | The setup wizard's page: HTML, CSS, a JS module per step. It sits beside `dashboard_static/` because it uses the dashboard's `dom.js` and Leaflet by relative path, which must resolve the same on disk as when served |
+| `wizard_static/` | The setup wizard's page: HTML, CSS, a JS module per step. It sits beside `dashboard_static/` because it uses the dashboard's `dom.js`, `icons.js`, Leaflet and Inter by relative path, which must resolve the same on disk as when served |
 | `data/` | Stations and NaPTAN areas for setup, built by `tools/build_setup_data.py` |
 | `version.py` | The installed version, for `--version` |
 

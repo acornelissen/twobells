@@ -1,7 +1,8 @@
 // Moving between steps. The new step's heading takes focus, so a screen
 // reader starts there and keyboard users carry on from the top.
 
-import { $, fill } from "../dashboard_static/dom.js";
+import { $, h, fill } from "../dashboard_static/dom.js";
+import { icon } from "../dashboard_static/icons.js";
 import { state } from "./state.js";
 
 const STEPS = ["home", "station", "stops", "walk", "keys", "views", "finish", "done"];
@@ -17,7 +18,11 @@ const shownSteps = () => STEPS.filter((step) => step !== "views" || state.askVie
 // and points the buttons either side of the views step past it if it isn't.
 export function numberSteps() {
   const counted = shownSteps().filter((step) => step !== "done");
-  for (const item of $("progress").children) item.hidden = !counted.includes(item.dataset.step);
+  for (const item of $("progress").children) {
+    item.hidden = !counted.includes(item.dataset.step);
+    // A step's tick, and the word a screen reader says for it, shown once it is done.
+    if (!item.querySelector(".icon")) item.append(icon("check"), h("span", { class: "vh" }, " (done)"));
+  }
   counted.forEach((step, i) => fill($(`${step}-number`), `Step ${i + 1} of ${counted.length}:`));
   $("keys-next").textContent = state.askViews ? "Next: views" : "Next: check and save";
   $("finish-back").dataset.back = state.askViews ? "views" : "keys";

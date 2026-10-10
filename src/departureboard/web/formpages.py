@@ -56,6 +56,7 @@ WIZARD_TYPES = {
     ".html": HTML,
     ".js": "text/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
+    ".woff2": "font/woff2",
 }
 # The same words whether the code was wrong, used, run out, voided or never
 # issued, so a guesser learns nothing about whether there is one.
@@ -248,10 +249,10 @@ class FormPages:
             '<label for="password">Password</label>'
             '<input id="password" name="password" type="password" autocomplete="current-password" '
             f"required autofocus{described}>"
-            '<button type="submit">Sign in</button></form>'
+            '<button type="submit" class="primary">Sign in</button></form>'
             f'<form method="post" action="{self._prefix}/forgot" class="forgot">'
             f'<input type="hidden" name="form" value="{token}">'
-            '<button type="submit" class="quiet">Forgot password?</button></form>'
+            '<button type="submit">Forgot password?</button></form>'
             f"{wording.back}"
         )
         return self._html(status, "Sign in", body, cookie)
@@ -283,7 +284,7 @@ class FormPages:
         parts.append(
             f'<form method="post" action="{self._prefix}/forgot" class="forgot">'
             f'<input type="hidden" name="form" value="{token}">'
-            f'<button type="submit" class="quiet">{ask}</button></form>'
+            f'<button type="submit">{ask}</button></form>'
             f'<form method="post" action="{self._prefix}/reset" class="signin">'
             f'<input type="hidden" name="form" value="{token}">'
             f'<label for="code">{wording.code_label}</label>'
@@ -296,7 +297,8 @@ class FormPages:
             '<label for="again">New password again</label>'
             '<input id="again" name="again" type="password" autocomplete="new-password" '
             f'required{flagged("again")}>'
-            f'<button type="submit">{"Set password" if claim else "Set new password"} and sign in</button></form>'
+            f'<button type="submit" class="primary">{"Set password" if claim else "Set new password"} and sign in'
+            "</button></form>"
             f'<p class="hint after">{wording.no_code}</p>'
         )
         if claim:

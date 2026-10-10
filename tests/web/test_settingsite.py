@@ -21,6 +21,7 @@ from departureboard.setup.keytest import KeyResult
 from departureboard.setup.lookups import SetupError
 from departureboard.web import settingsite
 from departureboard.web.auth import FAILURE_WINDOW_S, MAX_FAILURES, PasswordStore, Sessions
+from departureboard.web.icons import icon
 from departureboard.web.server import DashboardApp, StaticFiles, make_server
 from departureboard.web.settingsite import SettingsSite
 from tests.paths import ROOT
@@ -676,7 +677,7 @@ def test_each_tab_has_a_test_button_for_each_of_its_keys(make):
     board = pi("GET", "/settings/board", cookie=pi.session())[1]
     assert ">Test the TransportAPI app ID and key</button>" in board
     assert re.search(r'<p class="hint" id="TAPI_APP_KEY-cost">Uses 1 of today\'s 30 TransportAPI lookups', board)
-    assert 'value="TAPI_APP_KEY" class="quiet" aria-describedby="key-tests-hint TAPI_APP_KEY-cost"' in board
+    assert 'value="TAPI_APP_KEY" aria-describedby="key-tests-hint TAPI_APP_KEY-cost"' in board
 
 
 def test_testing_a_key_needs_signing_in(signed):
@@ -743,7 +744,8 @@ def test_the_result_is_shown_by_its_keys_box_and_unsaved_changes_stay(signed):
     box = re.search(r'<input id="RDM_KB_API_KEY"[^>]*>', page).group(0)
     assert 'aria-describedby="RDM_KB_API_KEY-hint RDM_KB_API_KEY-test"' in box and "value=" not in box
     result = ('<p class="key-result key-result-works" id="RDM_KB_API_KEY-test" role="status" tabindex="-1" '
-              'autofocus><span aria-hidden="true">✓</span> <strong>Works:</strong> It works: the service answered.</p>')
+              f'autofocus>{icon("check")} <strong>Works:</strong> It works: the service answered.</p>')
+    assert 'aria-hidden="true"' in icon("check")
     assert page[page.index(box) + len(box):].startswith(result)
     assert fields_from(page)["history_days"] == "45"
     assert not (signed.folder / "settings.toml").exists()
@@ -1280,7 +1282,7 @@ def test_the_wizard_page_and_its_files_are_served_from_an_allowlist(pi):
     assert response.status == 200 and "wizard_static/wizard.js" in page
     assert response.getheader("Content-Type") == "text/html; charset=utf-8"
     types = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
-             ".css": "text/css; charset=utf-8"}
+             ".css": "text/css; charset=utf-8", ".woff2": "font/woff2"}
     for relative, path in static_files().items():
         conn = http.client.HTTPConnection("127.0.0.1", pi.port, timeout=10)
         conn.request("GET", f"/settings/setup/{relative}", headers={"Host": f"localhost:{pi.port}"})
@@ -1597,3 +1599,82 @@ def test_without_the_dashboard_its_api_is_not_found_and_the_health_check_is_ok(p
         assert pi("GET", path)[0].status == 404, path
     response, text = pi("GET", "/healthz")
     assert response.status == 200 and text == "ok"
+
+
+# The look: the dashboard's colours, Inter and icons
+
+
+WEB_CSS = ROOT / "src" / "departureboard" / "web" / "web.css"
+DASHBOARD_STATIC = ROOT / "src" / "departureboard" / "dashboard_static"
+
+
+def _palette(path, name):
+    css = path.read_text(encoding="utf-8")
+    match = re.search(r"/\* theme: %s \*/[^{]*\{(?:[^{}]*\{)?([^{}]*)\}" % name, css)
+    assert match, name
+    return dict(re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6})\b", match.group(1)))
+
+
+def _palettes():
+    light, dark = (_palette(WEB_CSS, name) for name in ("light", "dark"))
+    return {"light": light, "dark": {**light, **dark}}
+
+
+def _contrast(a, b):
+    def luminance(colour):
+        channels = [int(colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    hi, lo = sorted((luminance(a), luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def test_the_colours_are_the_dashboards():
+    dashboard = {theme: _palette(DASHBOARD_STATIC / "app.css", f"modern-{theme}") for theme in ("light", "dark")}
+    for theme, tokens in _palettes().items():
+        assert tokens == {name: dashboard[theme][name] for name in tokens}, theme
+
+
+TEXT_PAIRS = [
+    ("fg", "bg"), ("fg", "surface"), ("muted", "surface"), ("muted", "bg"), ("accent", "surface"), ("accent", "bg"),
+    ("accent-fg", "accent"), ("ok-fg", "surface"), ("bad-fg", "surface"), ("bad-fg", "bg"),
+    # The problem summary and a refused key on their red tint, a key that can't be told on amber.
+    ("fg", "bad-bg"), ("bad-fg", "bad-bg"), ("late-fg", "late-bg"),
+]
+OUTLINE_PAIRS = [("focus", "bg"), ("focus", "surface"), ("edge", "surface"), ("edge", "bg"), ("bad-fg", "surface")]
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_theme_contrast(theme):
+    tokens = _palettes()[theme]
+    for pairs, need in ((TEXT_PAIRS, 4.5), (OUTLINE_PAIRS, 3.0)):
+        for fg, bg in pairs:
+            ratio = _contrast(tokens[fg], tokens[bg])
+            assert ratio >= need, f"{theme}: --{fg} on --{bg} is {ratio:.2f}:1"
+
+
+def test_the_stylesheet_takes_inter_from_the_wizards_files():
+    # One copy, the dashboard's, served with the wizard's files and without a session.
+    css = WEB_CSS.read_text(encoding="utf-8")
+    [src] = re.findall(r'src: url\("([^"]+)"\) format\("woff2"\)', css)
+    assert src.startswith(settingsite.SETUP)
+    served = static_files()[src.removeprefix(settingsite.SETUP)]
+    assert served.resolve() == (DASHBOARD_STATIC / "vendor" / "inter-4.1" / "InterVariable.woff2").resolve()
+    assert re.search(r'--font: "Inter", system-ui', css)
+    assert "font-src 'self'" in settingsite.SETTINGS_HEADERS["Content-Security-Policy"]
+    assert "font-src 'self'" in settingsite.WIZARD_HEADERS["Content-Security-Policy"]
+
+
+def test_buttons_are_quiet_but_each_forms_main_action(make):
+    running = make(install="pi")
+    css = WEB_CSS.read_text(encoding="utf-8")
+    assert re.search(r"\nbutton \{[^}]*background: transparent", css)
+    assert re.search(r"button\.primary \{[^}]*background: var\(--accent\)", css)
+    page = running("GET", "/settings", cookie=running.session())[1]
+    assert re.findall(r'<button type="submit" class="primary">([^<]*)</button>', page) == ["Save settings"]
+    assert '<button type="submit">Sign out</button>' in page
+    for path in ("/settings/login", "/settings/reset"):
+        page = running("GET", path)[1]
+        assert len(re.findall(r'<button type="submit" class="primary">', page)) == 1, path
+        assert re.search(r'<button type="submit">[^<]+</button>', page), path  # asking for a code
