@@ -40,6 +40,7 @@ from .config import (
     ConfigError,
     first_run_settings,
     holiday_division,
+    is_enabled,
     load_config,
     load_env_file,
     needs_setup,
@@ -652,6 +653,14 @@ def _timetable(args) -> int:
     settings = _settings(args, only={"bus"})
     source = next((c.source for c in settings.board.sources if c.source.name == "bus"), None)
     if not isinstance(source, BodsBusSource):
+        # Not a fault with buses off (the wizard does that for trains alone): the weekly timer runs anyway.
+        data = read_config(args.config)
+        if "bus" not in data:
+            print("There are no buses on this board, so there's no bus timetable to build")
+            return 0
+        if not is_enabled(data, "bus"):
+            print("Buses are switched off, so there's no bus timetable to build")
+            return 0
         print('Bus times come from TransportAPI; set source = "bods" under [bus] first', file=sys.stderr)
         return 2
     # The timetable's bank holiday names come from this list, so keep it fresh

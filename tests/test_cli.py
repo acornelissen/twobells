@@ -662,6 +662,27 @@ def test_timetable_needs_the_bods_bus_source(probe_env, capsys):
     assert 'source = "bods"' in capsys.readouterr().err
 
 
+def test_timetable_with_buses_switched_off_has_nothing_to_do(bods_env, monkeypatch, capsys):
+    # The wizard switches buses off for a board of trains alone; the weekly timer must still succeed.
+    from departureboard import timetable
+
+    args, folder = bods_env
+    folder.mkdir()
+    (folder / "settings.toml").write_text("[bus]\nenabled = false\n")
+    monkeypatch.setattr(timetable, "refresh", lambda *a, **k: pytest.fail("built a timetable"))
+    assert main(["timetable", *args]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "Buses are switched off, so there's no bus timetable to build\n"
+    assert "TransportAPI" not in captured.err
+
+
+def test_timetable_with_no_buses_at_all_has_nothing_to_do(tmp_path, capsys):
+    config = tmp_path / "config.toml"
+    config.write_text(f'state_file = "{tmp_path / "state.json"}"\n[train]\ncrs = "GLO"\n')
+    assert main(["timetable", "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
+    assert "no bus timetable to build" in capsys.readouterr().out
+
+
 def test_probe_bus_with_bods_says_why_it_cannot_use_the_timetable(bods_env, capsys):
     args, _ = bods_env
     assert main(["probe", "bus", *args]) == 1
