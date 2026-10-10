@@ -103,7 +103,9 @@ def test_a_change_is_saved_to_the_overlay_not_config_toml(setup):
         ("train_crs", "GLOSSOP", "3-letter"),
         ("train_rows", "99", "1 to 6"),
         ("train_windows", "weekdays", "isn't a window"),
-        ("bus_stops", "A = not a code!", "6 to 12"),
+        ("bus_stops", "A = not a code!", "starts with 3 digits"),
+        ("bus_stops", "A = DGHS09001000", "starts with 3 digits"),  # an ATCO code starts with its area's number
+        ("bus_stops", "A = 1000DGHS09001", "starts with 3 digits"),  # 13 characters, one too many
         ("bus_stops", "Stop A = 1000DGHS0900", "LABEL"),
         ("title", "x" * 61, "60"),
         ("title", "bad\x07bell", "ordinary"),

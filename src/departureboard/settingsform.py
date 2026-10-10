@@ -24,6 +24,7 @@ from .config import ConfigError, merge, read_base, read_overlay
 from .display import DISPLAY_PANELS
 from .holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
 from .schedule import parse_window
+from .setup import _ATCO
 from .state import StateStore
 from .status import render_status
 from .themes import THEMES
@@ -37,7 +38,6 @@ KEYS = (
 _KEY_VALUE = re.compile(r"^[A-Za-z0-9._~+/=-]{1,200}$")
 _CRS = re.compile(r"^[A-Za-z]{3}$")
 _LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")
-_ATCO = re.compile(r"^[A-Za-z0-9]{6,12}$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _SECTIONS = {None: "Board", "train": "Trains", "bus": "Buses", "weather": "Rain warning"}
 _ON_OFF = (("true", "On"), ("false", "Off"))
@@ -116,8 +116,8 @@ def _pairs(raw: str, value_check: Callable[[str], object], what: str) -> dict[st
 
 
 def _atco(raw: str) -> str:
-    if not _ATCO.match(raw):
-        raise Invalid("A stop code is 6 to 12 letters and digits, like 1000DGHS0900")
+    if not _ATCO.fullmatch(raw):
+        raise Invalid("A stop code starts with 3 digits, then up to 9 letters and digits, like 1000DGHS0900")
     return raw
 
 
