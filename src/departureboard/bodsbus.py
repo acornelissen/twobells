@@ -122,11 +122,12 @@ class BodsBusSource:
 
     def refresh_timetable(self, force: bool = False) -> Schedule | None:
         """Build the timetable again if it is due (see timetable.due) or `force`d,
-        from the operators' BODS timetables. Slow: run it apart from the board."""
+        from the operators' BODS timetables. Slow: run it apart from the board.
+        TimetableBusy, building nothing, if another build is running."""
         if not self._operators:
             raise ValueError("No operators to read timetables for")
         now = self._clock().replace(tzinfo=None)
-        schedule = timetable.refresh(self._folder, self._stops, self._operators, now, self._api_key, force=force)
+        schedule = timetable.build(self._folder, self._stops, self._operators, now, self._api_key, force=force)
         self._loaded = (None, None)  # read it again next time
         return schedule
 

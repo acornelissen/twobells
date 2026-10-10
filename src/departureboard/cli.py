@@ -56,6 +56,7 @@ from .http import get_bytes
 from .model import Departure, Status
 from .state import StateStore
 from .store import Store
+from .timetable import TimetableBusy, TimetableError
 from .transportapi import TransportApiBusSource, redact_credentials
 from .version import package_version
 from .view import SetupView, build_view
@@ -674,7 +675,15 @@ def _timetable(args) -> int:
     # whatever bank_holidays says about checking times. Always England and
     # Wales: BODS timetables are England's.
     bank_holidays(settings.state_file.parent, datetime.now())
-    schedule = source.refresh_timetable(force=args.force)
+    try:
+        schedule = source.refresh_timetable(force=args.force)
+    except TimetableBusy:
+        # Not a fault: the timer and the setup search may meet. The other build saves it.
+        print("Another bus timetable build is running, so this one is skipped")
+        return 0
+    except TimetableError as error:
+        print(f"Bus timetable not built: {error}", file=sys.stderr)
+        return 1
     reason = source.unusable()
     if schedule is None or reason:
         print(f"No usable bus timetable: {reason}", file=sys.stderr)

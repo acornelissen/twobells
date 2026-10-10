@@ -201,6 +201,19 @@ def test_refresh_builds_with_the_board_s_stops_and_operators(tmp_path, monkeypat
     assert bus.unusable() is None
 
 
+def test_refresh_skips_while_another_build_holds_the_store(tmp_path, monkeypatch):
+    import fcntl
+
+    monkeypatch.setattr(timetable, "refresh", lambda *a, **k: pytest.fail("built beside another build"))
+    fd = os.open(tmp_path / timetable.LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    try:
+        with pytest.raises(timetable.TimetableBusy):
+            source(tmp_path, at(3, 0)).refresh_timetable(force=True)
+    finally:
+        os.close(fd)
+
+
 def test_the_note_says_how_a_fetch_fell_short(tmp_path):
     bus = source(tmp_path, at(10, 0), fallback=Fallback())
     bus.fetch()

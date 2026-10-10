@@ -676,6 +676,59 @@ def test_timetable_with_buses_switched_off_has_nothing_to_do(bods_env, monkeypat
     assert "TransportAPI" not in captured.err
 
 
+def test_timetable_builds_from_bods_set_only_in_the_saved_settings(bods_env, monkeypatch, capsys):
+    # The settings page or the wizard saved source = "bods" and the operators; config.toml says neither.
+    from departureboard import timetable
+
+    args, folder = bods_env
+    config = Path(args[1])
+    config.write_text(
+        f'state_file = "{folder / "state.json"}"\n'
+        '[bus]\nwindows = ["Mon-Sun 06:00-23:00"]\n[bus.stops]\nA = "1000DGHS0900"\n'
+    )
+    folder.mkdir()
+    (folder / "settings.toml").write_text('[bus]\nsource = "bods"\noperators = ["HIPK"]\n')
+    seen = []
+
+    def fake_refresh(folder, stops, operators, now, api_key, *, force=False, **kwargs):
+        seen.append((folder, operators))
+        return None
+
+    monkeypatch.setattr(timetable, "refresh", fake_refresh)
+    main(["timetable", *args])
+    assert seen == [(folder, ["HIPK"])]
+
+
+def test_timetable_is_skipped_while_another_build_runs(bods_env, monkeypatch, capsys):
+    # The weekly timer meeting the setup search: the other build saves it; the timer isn't a failure.
+    import fcntl
+    import os
+
+    from departureboard import timetable
+
+    args, folder = bods_env
+    folder.mkdir()
+    monkeypatch.setattr(timetable, "refresh", lambda *a, **k: pytest.fail("built beside another build"))
+    fd = os.open(folder / timetable.LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    try:
+        assert main(["timetable", *args, "--force"]) == 0
+    finally:
+        os.close(fd)
+    assert capsys.readouterr().out == "Another bus timetable build is running, so this one is skipped\n"
+
+
+def test_timetable_fails_when_its_lock_cannot_be_opened(bods_env, capsys):
+    from departureboard import timetable
+
+    args, folder = bods_env
+    folder.mkdir()
+    (folder / timetable.LOCK_NAME).symlink_to(folder / "elsewhere")
+    assert main(["timetable", *args]) == 1
+    assert "Bus timetable not built: Can't open" in capsys.readouterr().err
+    assert not (folder / "elsewhere").exists()
+
+
 def test_timetable_with_no_buses_at_all_has_nothing_to_do(tmp_path, capsys):
     config = tmp_path / "config.toml"
     config.write_text(f'state_file = "{tmp_path / "state.json"}"\n[train]\ncrs = "GLO"\n')
