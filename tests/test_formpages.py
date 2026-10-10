@@ -451,6 +451,16 @@ def test_a_step_that_is_not_sensible_json_never_runs(host, body):
     assert host.steps.calls == []
 
 
+def test_another_sites_page_gets_nothing_from_the_wizard_signed_in_or_not(host):
+    cookie, _ = host.signed_in()
+    for sent in (headers(Sec_Fetch_Site="cross-site"), headers(cookie, Sec_Fetch_Site=" Cross-Site")):
+        reply = host.pages.wizard_cross_site(sent)
+        assert reply.status == 403 and json.loads(reply.body) == {"error": "Not from another site"}
+    for site in (None, "same-origin", "same-site", "none"):
+        sent = headers(cookie) if site is None else headers(cookie, Sec_Fetch_Site=site)
+        assert host.pages.wizard_cross_site(sent) is None
+
+
 def test_a_host_answers_the_wizard_in_its_own_json(tmp_path):
     host = Host(tmp_path, json_reply=lambda status, value: Reply(status, b"own", "application/json; charset=utf-8"))
     assert host.pages.wizard_session(headers()).body == b"own"

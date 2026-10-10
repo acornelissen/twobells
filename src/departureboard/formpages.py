@@ -354,6 +354,14 @@ class FormPages:
 
     # The setup wizard
 
+    def wizard_cross_site(self, headers: Headers) -> Reply | None:
+        """The refusal for any request to the wizard's API from another
+        site's page (Sec-Fetch-Site: cross-site), session or not, before
+        anything else is looked at; None for any other request."""
+        if (headers.get("Sec-Fetch-Site") or "").strip().lower() == "cross-site":
+            return self._json(403, {"error": "Not from another site"})
+        return None
+
     def wizard_session(self, headers: Headers) -> Reply:
         """The session's form token, for the wizard's page to send back in X-CSRF-Token."""
         session = self._sessions.get(self._token(headers))

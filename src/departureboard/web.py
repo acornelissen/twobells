@@ -21,7 +21,8 @@ setupapi.PAGE_HEADERS, whose policy allows the page's own scripts; every
 other page keeps the script-free policy. Its files are a fixed list read at
 start, each with its content type set here; its API takes JSON, only from a
 signed-in session, with the session's form token in an X-CSRF-Token header,
-from this same origin, and no bigger than setupapi.MAX_BODY. Until the board
+from this same origin, and no bigger than setupapi.MAX_BODY; any request to
+it from another site's page (Sec-Fetch-Site) is refused. Until the board
 is set up, claiming the page or signing in opens the wizard.
 
 Every POST body, form or step, needs one plain Content-Length within its
@@ -215,8 +216,18 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
                 return None
             return parse_form(body)
 
+        def _refuse_cross_site(self, path: str) -> bool:
+            """Another site's page gets nothing from the wizard's API, whatever it sends."""
+            if wizard is None or not path.startswith(SETUP_API):
+                return False
+            refused = pages.wizard_cross_site(self.headers)
+            if refused is None:
+                return False
+            self._setup_reply(refused)
+            return True
+
         def do_GET(self) -> None:  # noqa: N802 - http.server API
-            if self._refuse_outsiders():
+            if self._refuse_outsiders() or self._refuse_cross_site(urlparse(self.path).path):
                 return
             url = urlparse(self.path)
             path = url.path
@@ -282,12 +293,12 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
             self._setup_reply(pages.wizard_step(name, body))
 
         def do_POST(self) -> None:  # noqa: N802 - http.server API
-            if self._refuse_outsiders():
+            path = urlparse(self.path).path
+            if self._refuse_outsiders() or self._refuse_cross_site(path):
                 return
             if not same_origin(self.headers):
                 self._send(403, b"Forbidden: cross-site request", TEXT)
                 return
-            path = urlparse(self.path).path
             if wizard is not None and path.startswith(SETUP_API):
                 self._setup_step(path.removeprefix(SETUP_API))
                 return

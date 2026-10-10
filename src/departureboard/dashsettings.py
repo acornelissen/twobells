@@ -57,7 +57,6 @@ from .formpages import (
     SettingsPage,
     SetupSteps,
     Wording,
-    compact_json,
     document,
     parse_form,
     read_body,
@@ -168,8 +167,10 @@ class SettingsArea:
         """The reply to one request the server has already let in: from the home
         network, naming a local host, with a path under /settings. A POST's
         body is read from `stream` only once its origin is known to be ours."""
-        if path.startswith(SETUP_API) and (headers.get("Sec-Fetch-Site") or "").strip().lower() == "cross-site":
-            return compact_json(403, {"error": "Not from another site"})
+        if path.startswith(SETUP_API):
+            refused = self._pages.wizard_cross_site(headers)
+            if refused is not None:
+                return refused
         if method in ("GET", "HEAD"):
             return self._get(path, query, headers)
         if method != "POST":

@@ -151,9 +151,9 @@ def server(tmp_path):
     httpd.server_close()
 
 
-def request(port, method, path, body=None, host=None, origin="same", cookie=None):
+def request(port, method, path, body=None, host=None, origin="same", cookie=None, extra=None):
     host = host or f"localhost:{port}"
-    headers = {"Host": host}
+    headers = {"Host": host, **(extra or {})}
     if origin == "same":
         headers["Origin"] = f"http://{host}"
     elif origin:
@@ -705,7 +705,7 @@ def wizard_server(tmp_path):
 
 
 def step(port, name, body=b"{}", cookie=None, csrf=None, origin="same", content_type="application/json",
-         length=None):
+         length=None, extra=None):
     """POST a wizard step as the page does: JSON, with the form token in a header."""
     host = f"localhost:{port}"
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
@@ -723,6 +723,8 @@ def step(port, name, body=b"{}", cookie=None, csrf=None, origin="same", content_
         conn.putheader("Content-Type", content_type)
     if length != "none":
         conn.putheader("Content-Length", str(len(body) if length is None else length))
+    for header, value in (extra or {}).items():
+        conn.putheader(header, value)
     conn.endheaders()
     conn.send(body)
     response = conn.getresponse()
@@ -842,6 +844,25 @@ def test_a_step_from_another_site_is_refused(wizard_server):
     for origin in ("http://evil.example.com", "null", None):
         assert step(port, "begin", cookie=cookie, csrf=csrf, origin=origin)[0].status == 403, origin
     assert steps.calls == []
+
+
+def test_the_wizard_api_refuses_another_sites_page_outright(wizard_server):
+    from departureboard.setupapi import PAGE_HEADERS
+
+    port, steps, *_ = wizard_server
+    cookie = signed_in(wizard_server)
+    csrf = session_token(port, cookie)
+    cross = {"Sec-Fetch-Site": "cross-site"}
+    for method, path in (("GET", "/setup/api/session"), ("GET", "/setup/api/begin"), ("HEAD", "/setup/api/session")):
+        response, text = request(port, method, path, cookie=cookie, extra=cross)
+        assert response.status == 403, (method, path)
+        assert response.getheader("Content-Security-Policy") == PAGE_HEADERS["Content-Security-Policy"]
+        assert method == "HEAD" or (json.loads(text) == {"error": "Not from another site"} and csrf not in text)
+    response, text = step(port, "begin", cookie=cookie, csrf=csrf, extra={"Sec-Fetch-Site": "Cross-Site "})
+    assert response.status == 403 and json.loads(text) == {"error": "Not from another site"}
+    assert steps.calls == []
+    for same in ("same-origin", "none"):  # the page's own fetches, and a typed-in address
+        assert request(port, "GET", "/setup/api/session", cookie=cookie, extra={"Sec-Fetch-Site": same})[0].status == 200
 
 
 def test_a_step_from_outside_the_home_network_is_refused(wizard_server):
