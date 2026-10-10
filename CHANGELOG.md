@@ -35,6 +35,7 @@ The first release.
   - The keys and the engineering works address are on the Keys page, with their tests.
   - The Overview says whether everything is working (each feed's last update, checking times, last error and what it means), your place in names (*Glossop (GLO), 12 min walk*; *A: Henry Street, 5 min walk*) with the bus timetable flagged only when out of date, each key's state, and shortcuts: change stops only, change station only, the dashboard and the wall tablet's address.
   - The walks to the stops are a box for each stop, named by the stop, instead of `LABEL = minutes` lines.
+  - Each field you change is marked **Changed**, the save bar counts the changes not saved yet, and leaving the page with any asks first. A checking time or quiet hours row has **Weekdays**, **Weekends** and **Every day** buttons. This is the settings pages' one script, `/settings/settings.js`; the pages work without it, and the sign-in pages still run none.
   - While all is working, the Overview folds its feeds behind **Show each feed**. The Board page's Status panel is gone: how the board is doing is on the Overview, which the Board page links to.
 - The board and the dashboard use the same status words: "On time", "Exp 17:54", "Delayed", "Cancelled", "No report". The plain e-paper look said "+7" for a late train; it now says "Exp 07:49". Its bus section says "Leave by" once, over the column of times.
 - The plain e-paper look draws in Inter, which ships with the package. The Pi no longer installs DejaVu fonts.

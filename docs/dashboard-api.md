@@ -2,7 +2,7 @@
 
 The contract between the dashboard's server (`departureboard serve`, on every install) and its browser front end. Everything is read-only: GET and HEAD only.
 
-Everything under `/settings` is the settings site, not part of this API: it has its own pages, cookies (`settings_session`, `settings_form`, both `Path=/settings`) and headers (`form-action 'self'` and no scripts, except `script-src 'self'` for the setup wizard under `/settings/setup/`). The board's old settings addresses `/login`, `/reset` and `/setup/` redirect there. Nothing here changes because of it.
+Everything under `/settings` is the settings site, not part of this API: it has its own pages, cookies (`settings_session`, `settings_form`, both `Path=/settings`) and headers (`form-action 'self'`, and `script-src 'self'` only for the setup wizard under `/settings/setup/` and for `/settings/settings.js` on a signed-in visitor's settings pages). The board's old settings addresses `/login`, `/reset` and `/setup/` redirect there. Nothing here changes because of it.
 
 The API is there only while the dashboard is on: its view is on (`[app] views`), the app is set up, and its settings load. While it is off, `/` redirects (303) to `/settings`, `/healthz` answers 200 `ok` so a container's health check still hears the server, and everything else here (`/api/…`, `/static/…`, `/manifest.webmanifest`) is 404. Responses then carry the settings site's security headers rather than those below.
 
