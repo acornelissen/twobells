@@ -289,6 +289,7 @@ class KeysPage:
         ]
         for box in form.boxes:
             label, hint = labels[box]
+            hint = _under(form.feature, hint)
             last = box == form.boxes[-1]
             there = bool(str(env.get(box, "")).strip())
             out.append(_key_box(box, label, hint, errors.get(box), there, result_id,
@@ -335,6 +336,13 @@ class KeysPage:
             f"<h2>Not saved: fix {len(errors)} {'thing' if len(errors) == 1 else 'things'}</h2>"
             f"<ul>{items}</ul>{pasted}</div>"
         )
+
+
+def _under(heading: str, hint: str) -> str:
+    """A key's hint under its form's heading: without the heading it starts
+    with for the wizard, which has no such heading ("Trains: the key from…")."""
+    rest = hint.removeprefix(f"{heading}: ")
+    return rest if rest == hint else rest[:1].upper() + rest[1:]
 
 
 def _key_box(name: str, label: str, hint: str, error: str | None, there: bool, result_id: str = "",

@@ -16,6 +16,7 @@ import pytest
 
 from departureboard.core.walk import WalkTimes
 from departureboard.dashboard.snapshot import Hub
+from departureboard.settings import schema
 from departureboard.settings.installs import install_named
 from departureboard.settings.store import Store
 from departureboard.setup.api import PAGE_HEADERS, RateLimit, SetupApi, TooSoon, static_files
@@ -973,6 +974,17 @@ def test_each_key_of_the_views_on_has_a_small_form_of_its_own(make):
         for other in ("/settings/trains-and-buses", "/settings/general"):
             other_page = running("GET", other, cookie=running.session())[1]
             assert 'name="do"' not in other_page and "key-box" not in other_page, other
+
+
+def test_a_keys_hint_does_not_repeat_its_forms_heading(signed):
+    page = signed("GET", "/settings/keys", cookie=signed.session())[1]
+    trains, buses = key_form(page, "RDM_API_KEY"), key_form(page, "BODS_API_KEY")
+    assert '<p class="hint" id="RDM_API_KEY-hint">The Live Departure Board key from Rail Data Marketplace' in trains
+    assert '<p class="hint" id="BODS_API_KEY-hint">The key from the Bus Open Data Service' in buses
+    assert "Trains: " not in trains and "Buses: " not in buses
+    # The wizard lists the keys without those headings, so its hints keep them.
+    hints = {name: hint for name, _, hint in schema.keys("general")}
+    assert hints["RDM_API_KEY"].startswith("Trains: ") and hints["BODS_API_KEY"].startswith("Buses: ")
 
 
 def test_save_key_comes_first_so_enter_saves_then_save_and_test_or_test_saved_key(signed):
