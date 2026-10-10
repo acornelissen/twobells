@@ -375,6 +375,7 @@ def test_the_service_deletes_requests_that_dont_fit_unanswered(board, change, ca
     b'{"v": 1, "id": "' + b"a" * 32 + b'", "made": NaN, "kind": "postcode", "args": {}}',
     b"\xff\xfe not utf-8",
     b"[" * 50 + b"]" * 50,
+    b"[" * 3000 + b"]" * 3000,  # deeper than Python will recurse, though json reads it
 ])
 def test_the_service_deletes_oversized_or_odd_files_unread(board, raw):
     path = put(board, None, name="a" * 32 + ".json", raw=raw)
