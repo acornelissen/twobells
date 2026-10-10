@@ -1,4 +1,4 @@
-# Lint, tests on every supported Python, a package build and a container build,
+# Lint, a type check, tests on every supported Python, a package build and a container build,
 # for pushes to main and for pull requests. Nothing here publishes anything or
 # holds a write token. The jobs run the same mise tasks as a laptop does
 # (mise.toml), so "it passes here" means the same thing in both places.
@@ -35,6 +35,7 @@ jobs:
           version: 2026.10.3
       - run: mise run setup
       - run: mise run lint
+      - run: mise run typecheck
 
   test:
     name: Test (Python ${{ matrix.python }})

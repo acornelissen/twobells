@@ -48,6 +48,7 @@ mise install                 # the pinned tools
 mise run setup               # .venv with the package and its dev tools, as uv.lock pins them
 mise run test
 mise run lint                # ruff
+mise run typecheck           # pyright
 mise run demo                # sample board to preview.png, no keys
 mise run emulate             # the browser panel emulator on sample data
 mise run serve               # the dashboard and settings, with ./config.toml and ./secrets.env

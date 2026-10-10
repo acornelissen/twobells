@@ -84,3 +84,10 @@ ignore = [
 # Tests assert, use made-up keys and passwords, and bind and fetch freely; their
 # regexes are full of braces, which % keeps readable where an f-string can't.
 "tests/**" = ["E501", "E741", "S", "UP031"]
+
+[tool.pyright]
+include = ["src"]
+typeCheckingMode = "basic"
+pythonVersion = "3.11"
+venvPath = "."
+venv = ".venv"

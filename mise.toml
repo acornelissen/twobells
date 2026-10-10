@@ -24,6 +24,12 @@ run = ".venv/bin/pytest -q"
 description = "Check the code with ruff"
 run = ".venv/bin/ruff check src tests tools"
 
+[tasks.typecheck]
+description = "Check types with pyright"
+run = ".venv/bin/pyright"
+# Quiets the PyPI wrapper's note on every run that a newer pyright is out.
+env = { PYRIGHT_PYTHON_IGNORE_WARNINGS = "1" }
+
 [tasks.demo]
 description = "Render sample data to preview.png"
 run = ".venv/bin/departureboard demo --png preview.png"

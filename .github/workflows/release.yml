@@ -1,7 +1,7 @@
 # Publishes a release when a tag like v0.1.0 is pushed:
 #
 #   verify   the tag is vX.Y.Z, equals pyproject.toml's version and is on main;
-#            lint and tests pass
+#            lint, the type check and tests pass
 #   dist     sdist and wheel, built with hashed build tools, smoke-tested
 #   image    multi-arch container (amd64, arm64) to GHCR with SBOM and
 #            provenance, signed with cosign (keyless) by digest
@@ -98,6 +98,7 @@ jobs:
           cache: false # nothing cached feeds a release
       - run: mise run setup
       - run: mise run lint
+      - run: mise run typecheck
       - run: mise run test
 
   dist:
