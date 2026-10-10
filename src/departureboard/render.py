@@ -375,6 +375,24 @@ def render_route(view: RouteView, palette: Palette, panel: Panel = PHAT, text_si
     return image
 
 
+# The settings address, in pixels high, below which it is hard to read: then
+# it breaks onto two lines instead of shrinking further.
+MIN_ADDRESS_PX = 8
+
+
+def address_lines(url: str, width: float, height: float) -> tuple[list[str], ImageFont.FreeTypeFont]:
+    """The settings address as drawn in `width` x `height`: on one line if it
+    fits there at MIN_ADDRESS_PX or more, else broken before its port (a
+    long board name), both lines at the one size that fits half the height."""
+    font = _biggest_bold(url, width, height)
+    left, _, right, _ = font.getbbox(url, mode="1")
+    cut = url.rfind(":")
+    if (font.size >= MIN_ADDRESS_PX and right - left <= width) or cut <= len("https:"):
+        return [url], font
+    lines = [url[:cut], url[cut:]]
+    return lines, min((_biggest_bold(line, width, height / 2) for line in lines), key=lambda f: f.size)
+
+
 def _biggest_bold(text: str, width: float, height: float) -> ImageFont.FreeTypeFont:
     """The largest bold type `text` fits in `width` x `height` at, as drawn."""
     low, high = 6, max(6, int(height) * 2)
@@ -443,9 +461,9 @@ def render_setup(view: SetupView, palette: Palette, panel: Panel = PHAT, dark: b
     room = height - line_h - 4 * pad
     heading_h, address_h = room * 0.55, room * 0.45
 
-    def boxed(text: str, top: float, band: float, limit: float) -> None:
-        """`text` as big as fits `limit` wide and the band high, centred in the band by its drawn box."""
-        font = _biggest_bold(text, limit, band)
+    def boxed(text: str, top: float, band: float, limit: float, font: ImageFont.FreeTypeFont | None = None) -> None:
+        """`text` as big as fits `limit` wide and the band high (or in `font`), centred in the band by its drawn box."""
+        font = font or _biggest_bold(text, limit, band)
         left, box_top, right, bottom = font.getbbox(text, mode="1")
         x = (width - (right - left)) / 2 - left
         draw.text((x, top + (band - (bottom - box_top)) / 2 - box_top), text, font=font, fill=ink)
@@ -453,6 +471,10 @@ def render_setup(view: SetupView, palette: Palette, panel: Panel = PHAT, dark: b
     boxed(view.heading, pad, heading_h, width * 0.9)
     note_y = pad + heading_h + pad
     draw.text(((width - drawn_length(small, note)) / 2, note_y), note, font=small, fill=ink)
-    boxed(view.url, note_y + line_h + pad, address_h, width - 2 * pad - 2 * s)
+    limit = width - 2 * pad - 2 * s
+    lines, font = address_lines(view.url, limit, address_h)
+    band = address_h / len(lines)
+    for i, line in enumerate(lines):
+        boxed(line, note_y + line_h + pad + i * band, band, limit, font)
     apply_preview(image, palette)
     return image

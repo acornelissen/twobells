@@ -569,6 +569,23 @@ def test_a_long_name_still_fits(panel):
     assert left > 0 and right < panel.width
 
 
+def test_an_address_too_long_to_read_on_one_line_breaks_before_its_port():
+    from departureboard.render import MIN_ADDRESS_PX, _biggest_bold, address_lines
+
+    long_url = "http://my-very-long-departure-board-name.local:8090/settings"
+    one_line = _biggest_bold(long_url, 200, 40)
+    assert one_line.size < MIN_ADDRESS_PX  # too small to read on one line
+    lines, font = address_lines(long_url, 200, 40)
+    assert lines == ["http://my-very-long-departure-board-name.local", ":8090/settings"]
+    assert font.size > one_line.size  # bigger, broken in two
+    for line in lines:
+        left, _, right, _ = font.getbbox(line, mode="1")
+        assert right - left <= 200
+    # A usual name stays on one line.
+    lines, _ = address_lines("http://pi.local:8090/settings", 200, 40)
+    assert lines == ["http://pi.local:8090/settings"]
+
+
 @pytest.mark.parametrize("panel", PANELS)
 @pytest.mark.parametrize("off", [False, True])
 def test_the_settings_address_the_board_shows_fits_with_a_long_name(panel, off):
