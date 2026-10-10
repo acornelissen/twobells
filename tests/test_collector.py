@@ -558,6 +558,52 @@ def test_upkeep_carries_on_after_a_failure_and_reports_it(tmp_path):
     assert setup.history.swept  # the history was still looked after
 
 
+def _not_building(setup):
+    return Collector(setup.settings, setup.hub, setup.history, clock=setup.clock, fetch_holidays=setup._holidays,
+                     random=lambda: 0.5, monotonic=setup.monotonic, build_timetable=False)
+
+
+def test_upkeep_without_build_timetable_never_downloads_one(tmp_path):
+    # A Pi's fetch service: its timer and the setup search build the timetable.
+    setup = Setup(tmp_path, reason="there is no bus timetable yet", options=DashboardOptions(history_days=30))
+    collector = _not_building(setup)
+    collector.upkeep()
+    assert collector.pollers()["upkeep"].step() == 3600
+    assert setup.upkeep_buses.refreshes == []
+    assert len(setup.holiday_calls) == 2 and len(setup.history.swept) == 2  # the rest of upkeep still runs
+    collector.poll_buses()
+    buses = setup.snapshot()["buses"]
+    assert buses["timetable"]["state"] == "missing"  # not "building": nothing here will build it
+    assert buses["status"]["note"] == "There is no bus timetable yet"
+
+
+def test_upkeep_without_build_timetable_shows_the_timetable_others_build(tmp_path):
+    setup = Setup(tmp_path, reason="there is no bus timetable yet")
+    collector = _not_building(setup)
+    setup.buses.reason = None  # the timer saved one
+    collector.poll_buses()
+    assert setup.snapshot()["buses"]["timetable"]["state"] == "ready"
+
+
+def test_upkeep_skips_the_timetable_while_another_build_runs(tmp_path, caplog):
+    from departureboard.timetable import TimetableBusy
+
+    setup = Setup(tmp_path, reason="there is no bus timetable yet")
+
+    def busy():
+        raise TimetableBusy("Another bus timetable build is running")
+
+    setup.upkeep_buses.on_refresh = busy
+    with caplog.at_level("INFO"):
+        setup.collector.upkeep()  # not a failure to back off from
+    assert "another bus timetable build is running" in caplog.text
+    assert setup.history.swept
+    setup.collector.poll_buses()
+    buses = setup.snapshot()["buses"]
+    assert buses["timetable"]["state"] == "building"  # until the other build saves it
+    assert buses["status"]["note"].startswith("Building the bus timetable")
+
+
 # Quiet windows
 
 

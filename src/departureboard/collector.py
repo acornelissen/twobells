@@ -21,6 +21,12 @@ thread, except the disruptions' (see _disruptions_lock). The bus poller and the 
 BodsBusSource (see DashboardSettings.bus_upkeep), as one remembers the
 timetable it last read; they share only the timetable file, which is
 replaced whole, and the poller reads it again when it changes.
+
+The bus timetable is built by upkeep only with build_timetable (Docker and
+a desktop). Without it (the Pi, where its timer and the setup search build
+it) upkeep never downloads one, and the poller reads what they save. Either
+way a build that finds another running in the store is skipped
+(timetable.build) and tried again next hour.
 """
 
 from __future__ import annotations
@@ -52,6 +58,7 @@ from .snapshot import (
     weather_part,
 )
 from .status import safe_message
+from .timetable import TimetableBusy
 
 log = logging.getLogger(__name__)
 
@@ -175,6 +182,7 @@ class Collector:
         fetch_holidays: Callable[..., frozenset[date]] = _holidays.bank_holidays,
         random: Callable[[], float] = _random.random,
         monotonic: Callable[[], float] = time.monotonic,
+        build_timetable: bool = True,
     ) -> None:
         self._settings = settings
         self._options = settings.options
@@ -193,7 +201,9 @@ class Collector:
         # Service details by Darwin service ID, with when they came (monotonic).
         self._details: dict[str, tuple[float, ServiceDetails]] = {}
         self._details_off_until: float | None = None
-        self._timetable_tried = False  # has upkeep tried to build the bus timetable yet
+        self._build_timetable = build_timetable
+        # Has upkeep tried to build the bus timetable yet; without build_timetable it never will.
+        self._timetable_tried = not build_timetable
         self._building = False  # is it building one now, with none usable
         # Disruptions: the feeds, and what counts as ours, shared between the
         # disruption, bus and train pollers under this lock.
@@ -458,7 +468,7 @@ class Collector:
 
     def upkeep(self) -> None:
         """Hourly: bank holidays (refreshed weekly), the bus timetable (rebuilt
-        when due), and the history's sweep and purge."""
+        when due, with build_timetable), and the history's sweep and purge."""
         local = self._clock().replace(tzinfo=None)
         errors: list[Exception] = []
         try:
@@ -468,16 +478,21 @@ class Collector:
                 self._holidays = frozenset(found)
         except Exception as error:  # noqa: BLE001 - bank_holidays keeps the last list
             errors.append(error)
-        upkeep_bus = self._settings.bus_upkeep
+        upkeep_bus = self._settings.bus_upkeep if self._build_timetable else None
         if upkeep_bus is not None:
             self._building = upkeep_bus.unusable() is not None
             try:
                 upkeep_bus.refresh_timetable()
+                self._timetable_tried = True
+            except TimetableBusy:
+                # Building elsewhere: shown as building until it is saved, or tried here next hour.
+                self._timetable_tried = False
+                log.info("dashboard upkeep: another bus timetable build is running; trying again next hour")
             except Exception as error:  # noqa: BLE001 - the saved timetable is kept
                 errors.append(error)
+                self._timetable_tried = True
             finally:
                 self._building = False
-                self._timetable_tried = True
             if "buses" in self._pollers:
                 self._pollers["buses"].wake()  # show the new timetable, or why there is none
         if self._history is not None:
