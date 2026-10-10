@@ -313,7 +313,7 @@ A top-level key of `/api/snapshot`, after `weather`. It is `null` when neither s
   - `severity` is `slight`, `normal`, `severe` or `unknown`; always shown in words.
   - `relevance` is `your_stop`, `nearby` or `line`, most relevant first (see above).
   - `link` is `null` unless the feed gave an https link on a known operator's site (`disruptions.LINK_HOSTS`).
-- **On the page:** a panel lists them, in force first, then coming up, each most relevant first, in words. A bus row whose line or stop an item names, during one of its periods, gets a "Disruption" link to it. Rail `messages` stay in their own panel.
+- **On the page:** one line under the hero names the first item in force at or near our stops (`your_stop` or `nearby`), or a rail service message, and how many more there are; opening it lists them all, in force first, then coming up (folded), each most relevant first, in words. Rail service `messages` join it. A bus row whose line or stop an item names, during one of its periods, gets a "Disruption" link that opens the line at it.
 
 ## Snapshot: `timetable_changes`
 

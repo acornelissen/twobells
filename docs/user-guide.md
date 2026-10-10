@@ -165,6 +165,8 @@ It is at the install's address, port 8090: `http://<pi name>.local:8090/` on a P
 
 ### What's on it
 
+- **At the top:** the place ("Glossop" from a title of "Glossop > Manchester Picc"), the time, and one status word: **Live**, **Reconnecting…**, or "Not updated since 17:42" when trains, buses, the weather or the disruption checks have fallen behind. A section has its own line only when it has a problem or a note.
+- **The order:** Next to catch, then the disruption line, then the trains and buses (side by side on a wide screen), then Around here and the weather.
 - **Next to catch:** the next train or bus you can still reach on foot, and how long until you need to leave: "Leave in 6 min", with the seconds only in the last 2 minutes ("Leave in 1:53"), amber from 3 minutes, then **Leave now** in red in the last minute. Under it, one line says which departure it is, from where and how far ("17:55 237 Ashton-under-Lyne Interchange · Henry Street A · 5 min walk"), and how sure it is: **Live** (a train on the live board, or a bus with a live position), **Timetable only** (a bus with no live position), or **May not be running** (a bus due with no tracker). If that bus may not be running and a live train or bus leaves within 5 minutes after it, the live one is shown instead. **Then:** offers what to catch instead, the next train and the next bus with their leave times. The rain warning shows here too, and **Remind me** works as in a departure's sheet. Screen readers hear when the departure changes, never the countdown.
 - **Trains:** time, destination (with when it gets there, "arr 18:25 · 33 min"), platform ("–" until it's known), expected ("On time", "Exp 18:56", "Delayed", or "Cancelled" with the reason), and when to leave. The first train also lists where it calls and, with the Service Details key below, where it is now.
 - **Buses:** the line and destination, the stop ("Henry Street A") and its walk, when it's due, and when to leave. A bus with a live position counts down in minutes ("4 min", "Due") with a small live mark and says where it is ("2 stops away"); a bus known only from the timetable shows its time with "sched.", and never minutes.
@@ -176,7 +178,7 @@ It is at the install's address, port 8090: `http://<pi name>.local:8090/` on a P
 - **Remind me:** a reminder a minute before you need to leave. On a desktop (the address starts `http://localhost`) the browser can show a notification as well. Anywhere else on plain `http://`, such as a phone on your home network, the reminder shows only on the page, while it's open; the sheet says which.
 - **Board look:** switches to the station-board style, amber on black, with the times, destinations and status in the same dot-matrix lettering as the e-paper board. The rest stays in plain type so it's easy to read. It's remembered per browser.
 - **Weather:** now (temperature, feels like, wind, and the next sunrise or sunset), the rain warning, and the next 4 hours in a row, each with a bar for the chance of rain (written out from 30%). **More hours** shows the rest of the next 12.
-- **Disruptions:** see [Disruptions and engineering works](#disruptions-and-engineering-works).
+- **Disruption:** one line under Next to catch. When something affects your journeys now (at or near your stops, or a National Rail message about your trains), it leads, in amber, or red when severe: "Roadworks at Henry Street A (your stop) until 20:00 today · 2 more this week". Otherwise it says "No disruption on your journeys". Select it to see every notice, in force now first; **Coming up this week** opens the rest. Screen readers hear a new one once, never the line itself. Nothing shows without disruption checks. See [Disruptions and engineering works](#disruptions-and-engineering-works).
 
 Nothing on the page can change anything: it only shows, and needs no password. Changes go through the settings, which do. It checks for new times every minute (trains) and 30 seconds (buses), and stops from 01:00 to 05:00 unless someone has it open.
 
@@ -192,7 +194,7 @@ The dashboard shows buses only from the BODS timetable (see [Bus times](#bus-tim
   kb_incidents_url = "https://…"
   ```
 
-  It's checked every 30 minutes. Only incidents for the companies running your trains that name one of your stations are shown. With the key but no address, the page says so; without the key, nothing changes. National Rail's own messages on the train board stay where they are; those about the station itself, like a closed ticket office or lifts out of use, are a quiet "Station information" line rather than a disruption, and aren't announced.
+  It's checked every 30 minutes. Only incidents for the companies running your trains that name one of your stations are shown. With the key but no address, the page says so; without the key, nothing changes. National Rail's own messages on the train board join the disruption line; those about the station itself, like a closed ticket office or lifts out of use, are a quiet "Station information" line rather than a disruption, and aren't announced.
 
 ---
 
