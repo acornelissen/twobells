@@ -1,3 +1,4 @@
+
 """Deployment security settings (the dashboard container, the Pi's units), so an edit can't quietly drop one."""
 
 import json
@@ -7,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).parent.parent
+from tests.paths import ROOT
+
 DOCKERFILE = (ROOT / "Dockerfile").read_text()
 COMPOSE = (ROOT / "docker-compose.yml").read_text()
 DOCKERIGNORE = (ROOT / ".dockerignore").read_text()

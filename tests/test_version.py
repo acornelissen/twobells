@@ -1,13 +1,13 @@
 import tomllib
 from importlib.metadata import PackageNotFoundError
-from pathlib import Path
 
 import pytest
 
 from departureboard import version
 from departureboard.cli.main import main
+from tests.paths import ROOT
 
-PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
+PYPROJECT = ROOT / "pyproject.toml"
 
 
 def pyproject_version():
