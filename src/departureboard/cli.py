@@ -10,6 +10,7 @@
   departureboard web      serve the settings page on the home network
   departureboard timetable  build the BODS bus timetable for your stops, if due
   departureboard setup discover  find the bus operators serving your stops and print their settings
+  departureboard setup serve  answer the settings page's setup requests (departureboard-setup.service)
   departureboard dashboard  serve the web dashboard (Mac or NAS), opening it in the browser
   departureboard web|dashboard --set-password | --reset-code
                           set the settings password, or print a code for a new one, and exit
@@ -472,6 +473,38 @@ def _setup_discover(args) -> int:
     return 0
 
 
+def _setup_serve(args) -> int:
+    """The setup service: the wizard's internet work, for a settings page
+    started with --setup-via-spool (see setupspool.py)."""
+    from . import setupspool
+    from .config import read_base
+    from .overlay import board_target
+
+    try:
+        folder = state_dir(read_base(args.config))
+    except OSError as error:
+        print(f"Can't read {args.config}: {error.strerror or error}", file=sys.stderr)
+        return 2
+    if folder is None:
+        print("config.toml needs a state_file; the setup spool is beside it", file=sys.stderr)
+        return 2
+    target = board_target(args.config)
+
+    def settings() -> dict:
+        try:
+            return target.current()
+        except (OSError, ConfigError, ValueError, TypeError):
+            return {}  # a key test then asks about Glossop
+
+    worker = setupspool.Worker(folder / setupspool.SPOOL, job_folder=folder,
+                               load_secrets=lambda: _env(args.config, args.secrets), settings=settings)
+    try:
+        return worker.run()
+    except (OSError, setupspool.SpoolError) as error:
+        print(f"Can't use the setup spool: {error}", file=sys.stderr)
+        return 2
+
+
 def _set_password(password, prompt: str) -> int:
     """Ask for a new settings password twice, without echoing it, and save it."""
     import getpass
@@ -539,8 +572,19 @@ def _web(args) -> int:
     stylesheet = files("departureboard").joinpath("web.css").read_bytes()
     # Codes for a forgotten password, or the first claim, show on the board.
     codes = auth.ResetCodes(folder)
+    runner = None
+    if args.setup_via_spool:
+        # This service can't reach the internet; departureboard-setup.service does that work.
+        from .setupspool import SPOOL, SpoolError, SpoolRunner
+
+        try:
+            runner = SpoolRunner(folder / SPOOL)
+        except SpoolError as error:
+            print(error, file=sys.stderr)
+            return 2
     # The search builds the bus timetable in the board's own folder, where the board reads it.
-    steps = SetupApi(args.config, lambda: _env(args.config, args.secrets), folder, links=[("Board settings", "/")])
+    steps = SetupApi(args.config, lambda: _env(args.config, args.secrets), folder, links=[("Board settings", "/")],
+                     runner=runner)
     # Until the board is set up, claiming the page or signing in opens the wizard.
     wizard = web.Wizard.load(steps, lambda: needs_setup(args.config))
     handler = web.make_handler(form, password, auth.Sessions(password=password), auth.Lockout(), web.shell, stylesheet,
@@ -941,10 +985,15 @@ def _parser() -> argparse.ArgumentParser:
                           help="a stop to search for, e.g. A=1000DGHS0900; repeat for each")
     discover.add_argument("--routes", action="store_true", help="also build a route strip for each line")
     discover.set_defaults(handler=_setup_discover)
+    serve = with_config(setup_sub.add_parser(
+        "serve", help="answer the settings page's setup requests; departureboard-setup.service runs this"))
+    serve.set_defaults(handler=_setup_serve)
 
     web = with_config(sub.add_parser("web", help="serve the settings page on the home network"))
     web.add_argument("--host", default="0.0.0.0", help="address to listen on (default: all)")
     web.add_argument("--port", type=int, default=WEB_PORT)
+    web.add_argument("--setup-via-spool", action="store_true",
+                     help="hand the setup wizard's internet lookups to departureboard-setup.service")
     once = web.add_mutually_exclusive_group()
     once.add_argument("--set-password", action="store_true", help="set the page's password and exit")
     once.add_argument("--reset-code", action="store_true",

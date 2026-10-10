@@ -1140,6 +1140,59 @@ def test_the_settings_page_opens_the_wizard_until_the_board_is_set_up(tmp_path, 
     assert not wizard.needed()
 
 
+@pytest.mark.parametrize("flag", [[], ["--setup-via-spool"]])
+def test_the_pis_settings_page_hands_setup_to_the_setup_service(tmp_path, monkeypatch, flag):
+    from departureboard import setupspool, web
+
+    made = {}
+    real = web.make_handler
+
+    def make_handler(*args, **kwargs):
+        made.update(kwargs)
+        return real(*args, **kwargs)
+
+    class Server:
+        server_address = ("127.0.0.1", 8080)
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr(web, "make_handler", make_handler)
+    monkeypatch.setattr(web, "make_server", lambda handler, host, port: Server())
+    config = installed_template(tmp_path)
+    (tmp_path / "state").mkdir()  # as install.sh and systemd's StateDirectory make it
+    assert main(["web", "--config", str(config), "--secrets", str(tmp_path / "none.env"), *flag]) == 0
+    runner = made["wizard"].api._runner
+    if flag:
+        assert isinstance(runner, setupspool.SpoolRunner)
+        assert runner.spool.folder == tmp_path / "state" / setupspool.SPOOL and runner.spool.requests.is_dir()
+    else:
+        assert runner is None and not (tmp_path / "state" / setupspool.SPOOL).exists()
+
+
+def test_the_setup_service_answers_in_the_boards_state_folder(tmp_path, monkeypatch):
+    from departureboard import setupspool
+
+    ran = []
+    monkeypatch.setattr(setupspool.Worker, "run", lambda self: ran.append(self) or 0)
+    config = installed_template(tmp_path)
+    secrets = tmp_path / "secrets.env"
+    secrets.write_text("BODS_API_KEY=saved-bods-key\n")
+    assert main(["setup", "serve", "--config", str(config), "--secrets", str(secrets)]) == 0
+    [worker] = ran
+    assert worker.spool.folder == tmp_path / "state" / setupspool.SPOOL and worker._job_folder == tmp_path / "state"
+    assert worker._load_secrets()["BODS_API_KEY"] == "saved-bods-key"
+    assert isinstance(worker._settings(), dict)
+
+
+def test_the_setup_service_says_plainly_when_there_is_no_config(tmp_path, capsys):
+    assert main(["setup", "serve", "--config", str(tmp_path / "missing.toml")]) == 2
+    assert "missing.toml" in capsys.readouterr().err
+
+
 def test_the_settings_page_says_plainly_when_there_is_no_config(tmp_path, capsys):
     assert main(["web", "--config", str(tmp_path / "missing.toml")]) == 2
     err = capsys.readouterr().err
