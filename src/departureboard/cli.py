@@ -558,7 +558,7 @@ def _fetch(args) -> int:
     install = install_named(args.install)
     store, problem = None, ""
     try:
-        store = Store.open(args.config, args.secrets, state_dir=args.state_dir, install=install.name)
+        store = _as_owner(args, Store.open(args.config, args.secrets, state_dir=args.state_dir, install=install.name))
     except ConfigError as error:
         problem = str(error)
     if problem:

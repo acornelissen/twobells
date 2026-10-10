@@ -556,6 +556,8 @@ def root_on_their_store(tmp_path, monkeypatch):
     ["web", "--reset-code"],
     ["dashboard", "--no-browser"],
     ["dashboard", "--set-password"],
+    ["fetch"],
+    ["setup", "serve"],
 ])
 def test_root_is_refused_a_store_that_belongs_to_the_services_user(root_on_their_store, capsys, command):
     import shlex
