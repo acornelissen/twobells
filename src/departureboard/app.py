@@ -22,7 +22,7 @@ from .panel import Panel
 from .render import Palette
 from .route import RouteStrip, RouteView, locate, target, where
 from .schedule import PollPolicy
-from .state import departure_to_dict, departures_from_dicts, from_iso, to_iso
+from .state import departure_to_dict, departures_from_dicts, from_iso, to_iso, vehicle_to_dict, vehicles_from_dicts
 from .status import safe_message
 from .view import BoardView, CodeView, SetupView, build_view
 from .themes import THEMES, Theme
@@ -283,7 +283,7 @@ def _poll_vehicles(tracker: Tracker, state: dict, now: datetime) -> None:
         log.warning("vehicles: fetch failed: %s", message)
         entry["last_error"] = {"at": to_iso(now), "message": message}
         return
-    entry["items"] = [vars(v) for v in vehicles]
+    entry["items"] = [vehicle_to_dict(v) for v in vehicles]
     entry["last_success"] = to_iso(now)
     entry.pop("last_error", None)
 
@@ -311,7 +311,7 @@ def _route_view(board: Board, state: dict, view: BoardView, now: datetime, clock
     entry = state.get("vehicles", {})
     last_success = from_iso(entry.get("last_success"))
     stale = last_success is None or now - last_success > tracker.stale_after
-    vehicles = [] if stale else [Vehicle(**v) for v in entry.get("items", [])]
+    vehicles = [] if stale else vehicles_from_dicts(entry.get("items", []))
     bus_at = None if stale else locate(strip, vehicles, target(upcoming, chosen))
     names = tuple(s.name for s in strip.stops)
     return RouteView(

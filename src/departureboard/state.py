@@ -9,6 +9,7 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
+from .bods import Vehicle
 from .model import Departure, Status
 
 log = logging.getLogger(__name__)
@@ -41,6 +42,23 @@ def to_iso(moment: datetime | None) -> str | None:
 
 def from_iso(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
+
+
+def vehicle_to_dict(vehicle: Vehicle) -> dict:
+    data = asdict(vehicle)
+    data["origin_aimed"] = to_iso(vehicle.origin_aimed)  # a datetime, which JSON can't hold
+    return data
+
+
+def vehicles_from_dicts(items: list) -> list[Vehicle]:
+    """Saved bus positions, skipping any that don't read back (hand-edited, or from another version)."""
+    vehicles = []
+    for item in items:
+        try:
+            vehicles.append(Vehicle(**{**item, "origin_aimed": from_iso(item.get("origin_aimed"))}))
+        except (TypeError, ValueError, AttributeError) as error:
+            log.warning("Skipping a saved bus position that doesn't read back: %r (%s)", item, error)
+    return vehicles
 
 
 class StateStore:

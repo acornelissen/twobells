@@ -478,6 +478,32 @@ def test_positions_are_not_written_to_disk():
     assert "vehicles" not in _fetched(state)
 
 
+def test_positions_with_their_journey_start_save_and_read_back(tmp_path):
+    # Live positions name the timetabled journey they run, with its start time
+    # (a datetime); saving the state with them must not fail, and the bus page
+    # must still place the bus from the saved state.
+    aimed = datetime(2026, 10, 8, 6, 40, tzinfo=ZoneInfo("Europe/London"))
+    tracked = dataclasses.replace(vehicle_at(2), operator="BNML", origin_ref="1800SB12345", origin_aimed=aimed)
+    board, positions, state = tracked_setup([bus_on("341", "07:20")], [tracked])
+    run_once(board, state, FakeScreen(), THU_0700)
+    store = StateStore(tmp_path / "state.json")
+    store.save(state)
+    saved = store.load()
+    positions.vehicles = []
+    positions.error = OSError("down")  # so the page can only use what was saved
+    route = run_once(board, saved, FakeScreen(), ROUTE_TIME).route
+    assert route.bus_at == pytest.approx(2, abs=0.01)
+
+
+def test_a_saved_position_that_doesnt_read_back_is_skipped():
+    board, positions, state = tracked_setup([bus_on("341", "07:20")], [vehicle_at(2)])
+    run_once(board, state, FakeScreen(), THU_0700)
+    state["vehicles"]["items"].append({"line": "341", "origin_aimed": "not a time"})
+    positions.error = OSError("down")
+    route = run_once(board, state, FakeScreen(), ROUTE_TIME).route
+    assert route.bus_at == pytest.approx(2, abs=0.01)
+
+
 def test_run_loop_switches_to_reloaded_settings():
     from departureboard.app import run_loop
 
