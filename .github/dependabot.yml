@@ -1,0 +1,64 @@
+# Weekly update PRs for what CI and the builds pin. Dependabot rewrites the
+# SHA pins (and their version comments) in the workflows, and rewrites both
+# version and --hash lines in hashed requirement files. Each waits 7 days
+# after an upstream release, so a hijacked release has time to be pulled.
+#
+# Not covered here, so bump them by hand:
+#   - mise.toml tools (python, ruff, node) and the mise version in the
+#     workflows; pyproject's dev pin of ruff must match mise.toml, so
+#     pyproject.toml is left out on purpose.
+#   - The binfmt and buildkit image digests in ci.yml and release.yml.
+#   - Debian packages that deploy/install.sh takes from apt.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+
+  # deploy/requirements-pi.txt and requirements-docker.txt: exact versions with
+  # hashes, installed with --no-deps. Check a bump's own dependencies by hand
+  # (install.sh takes them from Debian; the image takes nothing else).
+  - package-ecosystem: pip
+    directory: /deploy
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+
+  # The hashed build tools (build, setuptools) CI and the release use.
+  - package-ecosystem: pip
+    directory: /.github
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      build-tools:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+
+  # The python:3.12-slim base image, pinned by digest in the Dockerfile. Only
+  # new digests of 3.12-slim: moving to another Python is a deliberate change
+  # (requirements-docker.txt pins cp312 wheels).
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+    commit-message:
+      prefix: build
