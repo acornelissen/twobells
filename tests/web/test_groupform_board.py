@@ -613,7 +613,7 @@ def test_checking_times_are_rows_saved_as_the_windows_the_board_reads(setup):
     saved = tomllib.loads((state / "settings.toml").read_text())
     assert saved["train"]["windows"] == ["Mon-Fri 06:30-09:30", "Sat,Sun 09:00-12:00"]
     assert saved["bus"]["windows"] == ["Mon-Fri 07:00-08:30"]
-    assert changed == ["When to check"]
+    assert changed == ["When to check for trains"]  # which of the two, said in the notice
     train = load_config(config, ENV).board.sources[0]
     assert len(train.policy.windows) == 2
     again = []
@@ -640,7 +640,7 @@ def test_the_board_needs_at_least_one_checking_time(setup):
     errors = form.save(fields)
     assert set(errors) == {"bus_windows"} and not (state / "settings.toml").exists()
     page = form.render("tok", errors=errors, values=fields)
-    assert '<a href="#bus_windows-1-mon">Buses – When to check: Add at least one checking time' in page
+    assert '<a href="#bus_windows-1-mon">Buses – When to check for buses: Add at least one checking time' in page
 
 
 def test_a_mistake_in_a_section_switched_off_is_still_reported(setup):

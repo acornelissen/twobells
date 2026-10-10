@@ -230,7 +230,7 @@ def test_the_days_sit_side_by_side_each_a_44px_target_on_a_touch_screen():
 
 def test_the_label_heads_the_rows_with_its_hint_then_how_to_write_times():
     page = drawn(TRAINS, "")
-    assert page.startswith(f'<div class="field windows"><h3>When to check</h3>'
+    assert page.startswith(f'<div class="field windows"><h3>When to check for trains</h3>'
                            f'<p class="hint" id="train_windows-hint">{html.escape(TRAINS.hint)}</p>'
                            '<p class="hint" id="train_windows-times">')
 
