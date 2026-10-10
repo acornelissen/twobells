@@ -337,6 +337,7 @@ def discover_operators(
 
 LOCK_NAME = "setup-job.lock"  # in the state folder; held while a job runs
 STEP_DISCOVER = "Finding the bus companies that serve your stops"
+STEP_WAITING = "Waiting for another bus timetable build to finish"
 STEP_TIMETABLE = "Building the bus timetable"
 STEP_ROADS = "Finding the roads for the bus maps"
 STEP_ROUTES = "Building route strips"
@@ -377,7 +378,8 @@ class SetupJob:
     stops it at the next chunk of a download, or before the next request
     for the road between two stops (the timetable is saved by then). One job at a time per state
     folder: a lock file there, held while the job runs and let go by the
-    system if the process dies. It writes no settings: its result holds the
+    system if the process dies. The timetable is built through
+    timetable.build, which first waits for any other build in the folder. It writes no settings: its result holds the
     [bus] settings to add, for the caller to show and save. With `nice`, its
     thread runs that much nicer on Linux, so it gives way to the caller's
     other work (the Pi's setup service answering the wizard's lookups)."""
@@ -520,11 +522,13 @@ class SetupJob:
         return result, message
 
     def _timetable(self, operators: list[str]):
-        """Build the timetable now, as `departureboard timetable --force` does."""
+        """Build the timetable now, as `departureboard timetable --force` does,
+        once any other build in the store has finished (timetable.build)."""
         failures: list[Exception] = []
         limits = _Limits(sys.maxsize, routesetup.MAX_DOWNLOAD_BYTES, math.inf, time.monotonic, self._cancel.is_set)
 
         def build(*args, **options):
+            self._set(step=STEP_TIMETABLE, done=0, total=1)  # the lock is ours now
             try:
                 return timetable.build_schedule(*args, find_datasets=self._find_datasets,
                                                 fetch=_metered(self._fetch, limits), naptan=self._naptan, **options)
@@ -540,8 +544,17 @@ class SetupJob:
             return roadshape.segment_shapes(pairs, self._router, cancelled=self._cancel.is_set, progress=progress)
 
         now = self._now()
-        schedule = timetable.refresh(self._folder, self._stops, operators, now, self._api_key,
-                                     force=True, build=build, route=roads)
+        try:
+            # Waits for a build already running (the weekly timer, the dashboard's
+            # upkeep), so the timetable saved is the one for what was found.
+            schedule = timetable.build(self._folder, self._stops, operators, now, self._api_key, force=True,
+                                       wait=True, cancelled=self._cancel.is_set,
+                                       waiting=lambda: self._set(step=STEP_WAITING, done=0, total=0),
+                                       build=build, route=roads)
+        except timetable.TimetableBusy:
+            raise Cancelled("Cancelled") from None  # while waiting: it only gives up when cancelled
+        except timetable.TimetableError as error:  # the lock file can't be opened
+            raise DiscoveryError(f"The bus timetable couldn't be built: {safe_message(error)}") from None
         if failures:
             if isinstance(failures[0], Cancelled):
                 raise failures[0]

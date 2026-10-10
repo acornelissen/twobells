@@ -405,7 +405,8 @@ def test_the_job_finds_operators_builds_the_timetable_and_returns_the_settings(b
     assert len(saved.journeys) == journeys > 0
     assert saved.operators == ("BNML", "HIPK") and saved.stops == STOPS
     assert timetable.due(saved, STOPS, SUMMER_NOW, ["BNML", "HIPK"]) is None
-    assert sorted(p.name for p in bods.scratch.iterdir()) == sorted([discover.LOCK_NAME, timetable.FILE_NAME])
+    assert sorted(p.name for p in bods.scratch.iterdir()) == sorted(
+        [discover.LOCK_NAME, timetable.LOCK_NAME, timetable.FILE_NAME])
 
 
 def test_the_job_reports_its_progress(bods):
@@ -607,6 +608,126 @@ def test_the_lock_file_is_private(bods):
     job.start()
     _finish(job)
     assert stat.S_IMODE((bods.scratch / discover.LOCK_NAME).stat().st_mode) == 0o600
+
+
+# Sharing the timetable with the weekly build.
+
+
+def _hold_build_lock(folder):
+    """Hold the store's timetable lock, as a weekly build would; closing the file lets go."""
+    import fcntl
+    import os
+
+    folder.mkdir(parents=True, exist_ok=True)
+    fd = os.open(folder / timetable.LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return fd
+
+
+def _until(job, step):
+    deadline = time.monotonic() + 5
+    while job.status()["step"] != step:
+        assert time.monotonic() < deadline, job.status()
+        time.sleep(0.01)
+
+
+def test_the_job_waits_for_a_build_already_running_then_builds(bods, monkeypatch):
+    import os
+
+    monkeypatch.setattr(timetable, "LOCK_WAIT_S", 0.01)
+    fd = _hold_build_lock(bods.scratch)
+    job = _job(bods)
+    job.start()
+    _until(job, discover.STEP_WAITING)
+    status = job.status()
+    assert (status["state"], status["done"], status["total"]) == ("running", 0, 0)
+    assert timetable.load(bods.scratch) is None
+    os.close(fd)  # the other build is done
+    status = _finish(job)
+    assert status["state"] == "done", status["message"]
+    saved = timetable.load(bods.scratch)
+    assert saved.operators == ("BNML", "HIPK") and saved.stops == STOPS  # for what this job found
+
+
+def test_cancelling_while_waiting_for_another_build(bods, monkeypatch):
+    import os
+
+    monkeypatch.setattr(timetable, "LOCK_WAIT_S", 0.01)
+    fd = _hold_build_lock(bods.scratch)
+    try:
+        job = _job(bods)
+        job.start()
+        _until(job, discover.STEP_WAITING)
+        job.cancel()
+        status = _finish(job)
+    finally:
+        os.close(fd)
+    assert (status["state"], status["message"]) == ("failed", "Cancelled")
+    assert timetable.load(bods.scratch) is None
+
+
+def test_a_link_in_place_of_the_build_lock_fails_the_job(bods):
+    bods.scratch.mkdir(parents=True)
+    (bods.scratch / timetable.LOCK_NAME).symlink_to(bods.scratch / "elsewhere")
+    job = _job(bods)
+    job.start()
+    status = _finish(job)
+    assert status["state"] == "failed"
+    assert status["message"].startswith("The bus timetable couldn't be built: Can't open")
+    assert not (bods.scratch / "elsewhere").exists() and timetable.load(bods.scratch) is None
+
+
+def _osrm(path):
+    """The car router's answer: a road bending a little between the two stops in the path."""
+    (lon1, lat1), (lon2, lat2) = (map(float, end.split(",")) for end in path.rsplit("/", 1)[1].split(";"))
+    middle = [(lon1 + lon2) / 2 + 0.0002, (lat1 + lat2) / 2]
+    route = {"geometry": {"type": "LineString", "coordinates": [[lon1, lat1], middle, [lon2, lat2]]}}
+    return json.dumps({"code": "Ok", "routes": [route]}).encode()
+
+
+def test_the_wizard_and_the_weekly_build_save_the_same_timetable(bods, tmp_path, monkeypatch):
+    # Both as they run for real, through the same network: BODS, NaPTAN and the road router.
+    from zoneinfo import ZoneInfo
+
+    from departureboard import http, setup
+    from departureboard.bodsbus import BodsBusSource
+
+    every = sorted(set(re.findall(rb"<StopPointRef>(\w+)</StopPointRef>", TXC_341 + TXC_237 + TXC_61)))
+    rows = [f"{atco.decode()},Stop {i},{53.4 + i * 0.001:.6f},-1.95,{'Stop ' + str(i % 3)}\n"
+            for i, atco in enumerate(every)]
+    csv = ("ATCOCode,CommonName,Latitude,Longitude,Indicator\n" + "".join(rows)).encode()
+    pages = [bods.lists["100"], bods.lists["180"]]
+
+    def network(request, timeout):
+        parts = urlsplit(request.full_url)
+        query = parse_qs(parts.query)
+        if parts.hostname == "naptan.api.dft.gov.uk":
+            return FakeResponse(csv)
+        if parts.hostname == "routing.openstreetmap.de":
+            return FakeResponse(_osrm(parts.path))
+        if request.full_url in bods.blobs:
+            return FakeResponse(bods.blobs[request.full_url])
+        if "adminArea" in query:
+            return FakeResponse(json.dumps(bods.lists[query["adminArea"][0]]).encode())
+        if "noc" in query:
+            filed = {r["url"]: r for page in pages for r in page["results"] if query["noc"][0] in r["noc"]}
+            return FakeResponse(json.dumps({"results": list(filed.values())}).encode())
+        raise OSError(f"Not faked: {request.full_url}")
+
+    monkeypatch.setattr(http, "urlopen", network)
+    monkeypatch.setattr(setup.ROUTER_LIMIT, "wait", lambda: None)  # a road a second would take minutes
+    wizard, weekly = tmp_path / "wizard", tmp_path / "weekly"
+    job = SetupJob(wizard, STOPS, KEY, now=lambda: SUMMER_NOW)
+    job.start()
+    status = _finish(job)
+    assert status["state"] == "done", status["message"]
+    source = BodsBusSource(weekly, STOPS, KEY, ZoneInfo("Europe/London"), operators=["BNML", "HIPK"],
+                           clock=lambda: SUMMER_NOW.replace(tzinfo=ZoneInfo("Europe/London")))
+    assert source.refresh_timetable() is not None
+    made = json.loads((wizard / timetable.FILE_NAME).read_text())
+    assert made["shapes"] and any(p.get("indicator") for p in made["positions"].values())
+    assert made["format"] == timetable.FORMAT
+    assert json.loads((weekly / timetable.FILE_NAME).read_text()) == made
 
 
 # The settings, as TOML.
