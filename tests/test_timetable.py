@@ -9,6 +9,7 @@ import pytest
 from departureboard.holidays import Event, holiday_names
 from departureboard.schedule_model import Calendar, Call, Schedule, StopPosition, metres
 from departureboard.timetable import (
+    FORMAT,
     FILE_NAME,
     TimetableError,
     build_schedule,
@@ -675,7 +676,7 @@ def test_download_is_capped(monkeypatch):
 def _schedule(built=NOW, stops=STOPS, valid_until=None, operators=("BNML",)):
     journeys = tuple(parse_journeys(TXC_61, OURS))
     return Schedule(built, valid_until, dict(stops), journeys, {STOP_B: StopPosition("Henry Street", 53.4, -1.9)},
-                    operators=operators)
+                    operators=operators, format=FORMAT)
 
 
 def test_save_and_load_round_trip(tmp_path):
@@ -989,3 +990,32 @@ def test_inbound_only_journeys_are_capped(monkeypatch, caplog):
     schedule, _ = _build(document, naptan=PLACES)
     assert _codes(schedule) == [("out", False), ("in", True)]
     assert "Left out 1 journeys ending near your stops" in caplog.text
+
+
+def test_the_build_keeps_each_stop_s_sign_letter_and_its_format():
+    from departureboard.timetable import FORMAT
+
+    bods = FakeBods()
+    bods.naptan = lambda atcos: {STOP_A: ("Henry Street", 53.44384, -1.948999, "Stop A")}
+    schedule = build_schedule(STOPS, ["BNML"], "k", NOW, find_datasets=bods.find, fetch=bods.fetch, naptan=bods.naptan)
+    assert schedule.positions[STOP_A].indicator == "Stop A"
+    assert schedule.format == FORMAT
+    assert load_round_trip(schedule).positions[STOP_A].indicator == "Stop A"
+
+
+def test_a_timetable_from_an_older_version_is_due_once():
+    from dataclasses import replace
+
+    old = replace(_schedule(built=NOW), format=1)
+    assert due(old, STOPS, NOW, ["BNML"]) == "it was built by an older version"
+    assert due(replace(old, format=timetable_format()), STOPS, NOW, ["BNML"]) is None
+
+
+def load_round_trip(schedule):
+    from departureboard.schedule_model import Schedule
+    return Schedule.from_json(schedule.to_json())
+
+
+def timetable_format():
+    from departureboard.timetable import FORMAT
+    return FORMAT

@@ -198,7 +198,7 @@ function drawMap() {
   for (const stop of list(area.stops).filter(obj)) {
     if (num(stop.lat) === null || num(stop.lon) === null) continue;
     L.circleMarker([stop.lat, stop.lon], { className: "stop-yours", radius: 8 })
-      .bindTooltip(h("span", {}, h("strong", {}, `Stop ${str(stop.label)}`), ` ${str(stop.name)}`),
+      .bindTooltip(h("span", {}, h("strong", {}, str(stop.name) || `Stop ${str(stop.label)}`)),
         { permanent: true, direction: "top", offset: [0, -6] })
       .addTo(layers);
   }
@@ -227,7 +227,7 @@ function drawList() {
     L ? h("button", { type: "button", class: "link", on: { click: () => showBus(i) } },
       "Show on map", h("span", { class: "vh" }, `: ${str(vehicle.line)} to ${str(vehicle.destination)}`)) : null)));
   fill($("area-stops"), list(area?.stops).filter(obj).map((stop) =>
-    h("li", {}, h("strong", {}, `Stop ${str(stop.label)}`), ` ${str(stop.name)}`)));
+    h("li", {}, h("strong", {}, str(stop.name) || `Stop ${str(stop.label)}`))));
 }
 
 function show() {

@@ -138,7 +138,8 @@ function show(data, fit) {
     $("map-centre").disabled = true;
     return;
   }
-  setText($("bus-title"), `${str(data.line)} to ${str(data.destination)}${str(data.stop) ? `, Stop ${str(data.stop)}` : ""}`);
+  const stop = str(data.stop_name) || (str(data.stop) ? `Stop ${str(data.stop)}` : "");
+  setText($("bus-title"), `${str(data.line)} to ${str(data.destination)}${stop ? `, ${stop}` : ""}`);
   setText($("map-status"), "");
   drawText(data);
   if (L) {

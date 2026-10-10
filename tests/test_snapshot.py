@@ -15,6 +15,7 @@ from departureboard.model import Departure, Status
 from departureboard.snapshot import (
     Hub,
     bus_observations,
+    bus_row,
     buses_part,
     clock_at,
     row_id,
@@ -383,7 +384,7 @@ def test_the_bus_map_has_the_positioned_stops_and_the_bus():
 
 def test_stop_names_and_the_timetable():
     part, _, _ = bus_part(at(10, 0))
-    assert part["stops"] == {"A": "Henry Street"}
+    assert part["stops"] == {"A": "Henry Street"}  # no sign letter known: the name alone
     assert part["timetable"] == {"state": "ready", "built": "2026-10-09T03:00:00+01:00", "valid_until": None,
                                  "journeys": 2}
     missing = buses_part(None, at(10, 0), status_block(note="Building"), timetable_block("building", None, LONDON),
@@ -728,3 +729,25 @@ def test_inbound_only_journeys_are_not_counted_nor_observed():
     assert placed  # its bus is placed, for the inbound line
     seen = bus_observations(BusBoard(rows, plan, True, None, placed))
     assert {o.route for o in seen} == {"A|237|Ashton", "B|237|Ashton"}
+
+
+
+def test_a_stop_is_named_with_the_letter_on_its_sign():
+    from dataclasses import replace as swap
+    from departureboard.snapshot import stop_names
+
+    lettered = swap(schedule(), positions={**POSITIONS, HENRY_A: swap(POSITIONS[HENRY_A], indicator="Stop A")})
+    assert stop_names({"A": HENRY_A}, lettered) == {"A": "Henry Street (Stop A)"}
+    assert stop_names({"A": HENRY_A, "Z": "nowhere"}, lettered)["Z"] == "Stop Z"
+
+
+def test_bus_rows_and_maps_name_the_stop_with_its_sign_letter():
+    from dataclasses import replace as swap
+
+    lettered = {**POSITIONS, HENRY_A: swap(POSITIONS[HENRY_A], indicator="Stop A")}
+    found = live(at(10, 14), [bus(*HALFWAY, at(10, 14))])
+    row, lookup = bus_row(next(l for l in found if l.departure.stop == "A"), lettered, at(10, 14), WALK)
+    assert row["stop_name"] == "Henry Street (Stop A)"
+    assert lookup["bus"]["stop_name"] == "Henry Street (Stop A)"
+    plain, _ = bus_row(next(l for l in found if l.departure.stop == "A"), POSITIONS, at(10, 14), WALK)
+    assert plain["stop_name"] == "Henry Street"

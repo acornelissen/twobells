@@ -37,13 +37,13 @@ function showNote(text) {
 }
 
 // What a row is called in an alert: "the 07:12 train to Manchester Piccadilly",
-// plus ", platform 1" or " from Stop A" when `where` is set.
+// plus ", platform 1" or " from Henry Street (Stop A)" when `where` is set.
 export function describe(row, mode, where = true) {
   const scheduled = str(row.scheduled);
   const dest = str(row.destination);
   if (mode === "bus") {
-    const stop = str(row.stop);
-    return `the ${scheduled} ${str(row.line)} bus to ${dest}${where && stop ? ` from Stop ${stop}` : ""}`;
+    const stop = str(row.stop_name) || (str(row.stop) ? `Stop ${str(row.stop)}` : "");
+    return `the ${scheduled} ${str(row.line)} bus to ${dest}${where && stop ? ` from ${stop}` : ""}`;
   }
   const platform = str(row.platform);
   return `the ${scheduled} train to ${dest}${where && platform ? `, platform ${platform}` : ""}`;

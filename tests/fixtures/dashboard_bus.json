@@ -61,5 +61,6 @@
     "recorded_at": "2026-10-10T07:00:50+01:00",
     "age_s": 40
   },
-  "where": "2 stops away"
+  "where": "2 stops away",
+  "stop_name": "Henry Street (Stop A)"
 }

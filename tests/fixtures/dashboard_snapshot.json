@@ -1135,7 +1135,8 @@
           "minutes": 45
         },
         "inbound": null,
-        "ghost": true
+        "ghost": true,
+        "stop_name": "Henry Street (Stop B)"
       },
       {
         "id": "aff4f89451678d07",
@@ -1181,7 +1182,8 @@
           "minutes": 38
         },
         "inbound": null,
-        "ghost": false
+        "ghost": false,
+        "stop_name": "Henry Street (Stop A)"
       },
       {
         "id": "26c72ed8411e9f75",
@@ -1227,7 +1229,8 @@
           "where": "4 stops away",
           "text": "Bus arriving from Buxton Market Place, 4 min late (due 07:16)"
         },
-        "ghost": false
+        "ghost": false,
+        "stop_name": "Henry Street (Stop A)"
       },
       {
         "id": "603869ee7f9755cf",
@@ -1273,7 +1276,8 @@
           "minutes": 38
         },
         "inbound": null,
-        "ghost": false
+        "ghost": false,
+        "stop_name": "Henry Street (Stop A)"
       },
       {
         "id": "672b5765b44d882d",
@@ -1302,7 +1306,8 @@
           "minutes": 45
         },
         "inbound": null,
-        "ghost": false
+        "ghost": false,
+        "stop_name": "Henry Street (Stop B)"
       },
       {
         "id": "cd02480bb4441430",
@@ -1348,7 +1353,8 @@
           "minutes": 38
         },
         "inbound": null,
-        "ghost": false
+        "ghost": false,
+        "stop_name": "Henry Street (Stop A)"
       },
       {
         "id": "d0aaaac897c1382c",
@@ -1377,7 +1383,8 @@
           "minutes": 55
         },
         "inbound": null,
-        "ghost": false
+        "ghost": false,
+        "stop_name": "Henry Street (Stop A)"
       },
       {
         "id": "349614ac48b4fcf3",
@@ -1406,7 +1413,8 @@
           "minutes": 45
         },
         "inbound": null,
-        "ghost": false
+        "ghost": false,
+        "stop_name": "Henry Street (Stop B)"
       },
       {
         "id": "7433ef25b82e840c",
@@ -1435,7 +1443,8 @@
           "minutes": 38
         },
         "inbound": null,
-        "ghost": false
+        "ghost": false,
+        "stop_name": "Henry Street (Stop A)"
       },
       {
         "id": "c6ddaeec4db145a8",
@@ -1464,7 +1473,8 @@
           "minutes": 38
         },
         "inbound": null,
-        "ghost": false
+        "ghost": false,
+        "stop_name": "Henry Street (Stop A)"
       }
     ]
   },

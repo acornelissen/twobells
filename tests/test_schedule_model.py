@@ -54,3 +54,10 @@ def test_inbound_only_must_be_true_or_false():
     data["journeys"][0]["inbound_only"] = "false"
     with pytest.raises(TypeError):
         Schedule.from_json(json.dumps(data))
+
+
+def test_an_older_file_has_format_one_and_no_sign_letters():
+    old = json.dumps({"built": "2026-10-09T03:00:00", "valid_until": None, "stops": {"A": "1000DGHS0900"},
+                      "journeys": [], "positions": {"1000DGHS0900": {"name": "Henry Street", "lat": 53.4, "lon": -1.9}}})
+    schedule = Schedule.from_json(old)
+    assert schedule.format == 1 and schedule.positions["1000DGHS0900"].indicator is None

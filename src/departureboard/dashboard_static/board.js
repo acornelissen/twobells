@@ -123,7 +123,7 @@ function busRow(row, alerts, stops, generatedMs) {
     h("th", { scope: "row", role: "rowheader", class: "c-time" }, cellLabel("Due"), h("span", { class: "time" }, scheduled)),
     td("c-dest", "Bus", h("span", { class: "line" }, line), " ", h("span", { class: "dest" }, destination),
       arrivesLine(row)),
-    td("c-plat", "Stop", stop ? `Stop ${stop}` : "–", stops[stop] ? vh(`, ${stops[stop]}`) : null),
+    td("c-plat", "Stop", str(row.stop_name) || (stop ? `Stop ${stop}` : "–")),
     td("c-status", "Status", statusBadge(row.status, row.status_text), reasons(row), busStatusExtras(row)),
     td("c-where", "Where", renderStrip(row, generatedMs)),
     leaveCell(row),
@@ -195,7 +195,7 @@ export function renderBuses(snapshot, alerts) {
   const walkText = Object.keys(stops).sort()
     .filter((k) => num(walks[k]) !== null)
     // Stops often share a street name ("Henry Street"), so the label leads.
-    .map((k) => `${num(walks[k])} min to Stop ${k}${str(stops[k]) ? ` (${str(stops[k])})` : ""}`);
+    .map((k) => `${num(walks[k])} min to ${str(stops[k]) || `Stop ${k}`}`);
   setText(document.getElementById("buses-walk"), walkText.length ? `Walk: ${walkText.join(", ")}.` : "");
   const generatedMs = parseAt(snapshot.generated_at);
   const board = document.getElementById("buses-board");

@@ -205,20 +205,24 @@ def dataset_urls(api_key: str, noc: str, line: str | None = None, http_get: Http
     return [r["url"] for r in results if r.get("url") and has_line(r)]
 
 
-def naptan_stops(atcos: Iterable[str], http_get: HttpGetBytes = get_bytes) -> dict[str, tuple[str, float, float]]:
+def naptan_stops(atcos: Iterable[str], http_get: HttpGetBytes = get_bytes,
+                 with_indicator: bool = False) -> dict[str, tuple]:
     """Name, latitude and longitude for each stop, from the NaPTAN API (no key needed)."""
     wanted = set(atcos)
     areas = sorted({atco[:3] for atco in wanted})
     query = urlencode({"atcoAreaCodes": ",".join(areas), "dataFormat": "csv"})
     text = http_get(f"{NAPTAN_URL}?{query}", 100_000_000).decode("utf-8-sig")
-    return parse_naptan(text, wanted)
+    return parse_naptan(text, wanted, with_indicator)
 
 
-def parse_naptan(text: str, wanted: set[str]) -> dict[str, tuple[str, float, float]]:
+def parse_naptan(text: str, wanted: set[str], with_indicator: bool = False) -> dict[str, tuple]:
+    """Name, latitude and longitude for each wanted stop; with_indicator adds
+    the letter or word on its sign ("Stop A", "Opp"), "" when there's none."""
     found = {}
     for row in csv.DictReader(io.StringIO(text)):
         if row.get("ATCOCode") in wanted:
-            found[row["ATCOCode"]] = (row["CommonName"].strip(), float(row["Latitude"]), float(row["Longitude"]))
+            place = (row["CommonName"].strip(), float(row["Latitude"]), float(row["Longitude"]))
+            found[row["ATCOCode"]] = (*place, (row.get("Indicator") or "").strip()) if with_indicator else place
     return found
 
 
@@ -233,3 +237,8 @@ def route_toml(line: str, label: str, atcos: list[str], stops: dict[str, tuple[s
     return "\n".join(
         [f"# {note}", f'[bus.routes."{line}"]', f"stop = {json.dumps(label)}", "stops = [", *rows, "]", ""]
     )
+
+
+def naptan_stop_details(atcos: Iterable[str]) -> dict[str, tuple]:
+    """naptan_stops with each stop's sign letter, as the bus timetable keeps it."""
+    return naptan_stops(atcos, with_indicator=True)

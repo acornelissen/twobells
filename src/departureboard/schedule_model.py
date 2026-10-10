@@ -71,6 +71,9 @@ class StopPosition:
     name: str
     lat: float
     lon: float
+    # The letter or word on the stop's sign ("Stop A"); "" for none, None when
+    # not known (a file from before it was kept, or a timetable's own position).
+    indicator: str | None = None
 
 
 def metres(a: StopPosition, b: StopPosition) -> float:
@@ -92,6 +95,8 @@ class Schedule:
     # The national operator codes whose timetables it was built from, sorted;
     # empty in a file saved before they were recorded.
     operators: tuple[str, ...] = ()
+    # Which version of the builder made it; files from before this was kept are 1.
+    format: int = 1
 
     @property
     def departure_journeys(self) -> tuple[Journey, ...]:
@@ -111,6 +116,7 @@ class Schedule:
             journeys=tuple(_journey(j) for j in data["journeys"]),
             positions={k: StopPosition(**v) for k, v in data.get("positions", {}).items()},
             operators=tuple(data.get("operators", ())),
+            format=int(data.get("format", 1)),
         )
 
 

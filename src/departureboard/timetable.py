@@ -53,7 +53,7 @@ import math
 import os
 import re
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import AbstractSet, BinaryIO, Callable, Collection, Iterable, Iterator, Mapping, NamedTuple
@@ -67,6 +67,9 @@ from .status import safe_message
 log = logging.getLogger(__name__)
 
 FILE_NAME = "bus-timetable.json"  # beside state.json
+# The builder's version, saved in the file: an older one is rebuilt (see due).
+# 2: stops keep the letter on their sign.
+FORMAT = 2
 MAX_AGE = timedelta(days=7)
 # Positions are kept for this many calls before each of your stops, and the one
 # after: livebus places buses along that stretch and sees them pass your stop.
@@ -87,7 +90,8 @@ _SKEW = timedelta(days=1)
 
 FindDatasets = Callable[[str, str, "str | None"], list]  # (api_key, noc, line) -> links, as routesetup.dataset_urls
 Download = Callable[[str, BinaryIO], None]  # (link, file to write it to)
-Naptan = Callable[[Iterable[str]], dict]  # atcos -> {atco: (name, lat, lon)}, as routesetup.naptan_stops
+# atcos -> {atco: (name, lat, lon[, sign letter])}, as routesetup.naptan_stop_details
+Naptan = Callable[[Iterable[str]], dict]
 
 _NS = {"t": "http://www.transxchange.org.uk/"}
 _DURATION = re.compile(r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)(?:\.\d+)?S)?)?$")
@@ -258,6 +262,13 @@ class _Document:
     sections: dict[str, list[_Link]] = field(default_factory=dict)
     patterns: dict[str, _Pattern] = field(default_factory=dict)
     services: dict[str, _Service] = field(default_factory=dict)
+
+
+def _sign(text) -> str:
+    """A stop's sign letter or word as NaPTAN gives it ("Stop A", "Opp"):
+    printable, short, "" for none."""
+    cleaned = "".join(ch for ch in str(text) if ch.isprintable()).strip()
+    return cleaned[:20]
 
 
 def _position(name: str, lat: str, lon: str) -> StopPosition | None:
@@ -613,6 +624,8 @@ def _positions(atcos: set[str], known: dict[str, StopPosition], naptan: Naptan) 
     for atco in sorted(atcos):
         row = found.get(atco)
         position = _position(str(row[0]).strip()[:_TEXT_LIMIT], str(row[1]), str(row[2])) if row else None
+        if position is not None and len(row) > 3:
+            position = replace(position, indicator=_sign(row[3]))
         position = position or known.get(atco)
         if position is not None:
             positions[atco] = position
@@ -629,7 +642,7 @@ def build_schedule(
     scratch: Path | str | None = None,
     find_datasets: FindDatasets = routesetup.dataset_urls,
     fetch: Download = download,
-    naptan: Naptan = routesetup.naptan_stops,
+    naptan: Naptan = routesetup.naptan_stop_details,
 ) -> Schedule:
     """A schedule of every timetabled journey calling at your `stops` (labels
     to ATCO codes), from the BODS timetables of `operators` (national operator
@@ -690,6 +703,7 @@ def build_schedule(
         journeys=kept + near,
         positions={atco: position for atco, position in placed.items() if atco in needed},
         operators=tuple(sorted(set(operators))),
+        format=FORMAT,
     )
 
 
@@ -736,6 +750,8 @@ def due(
         return "there is none"
     if dict(schedule.stops) != dict(stops):
         return "your stops changed"
+    if schedule.format < FORMAT:
+        return "it was built by an older version"
     if operators is not None and schedule.operators != tuple(sorted(set(operators))):
         return "your operators changed"
     if now - schedule.built >= MAX_AGE:

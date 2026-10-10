@@ -29,7 +29,7 @@ from .bodsbus import BusBoard
 from .disruptions import BusArea, plain_text
 from .livebus import LiveJourney
 from .schedule_model import Journey, Schedule
-from .snapshot import iso
+from .snapshot import iso, stop_name
 from .timetable import runs_on
 
 CHANGE_DAYS = 28
@@ -115,7 +115,7 @@ def area_view(board: BusBoard, now: datetime) -> dict:
             continue
         vehicles.append(_vehicle(vehicle, placed.get(vehicle), schedule, now))
     vehicles.sort(key=lambda v: (_line_order(v["line"]), v["destination"], v["lat"], v["lon"]))
-    stops = [{"label": label, "name": schedule.positions[atco].name, "lat": schedule.positions[atco].lat,
+    stops = [{"label": label, "name": stop_name(schedule.positions[atco], label), "lat": schedule.positions[atco].lat,
               "lon": schedule.positions[atco].lon}
              for label, atco in sorted(schedule.stops.items()) if atco in schedule.positions]
     return {

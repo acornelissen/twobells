@@ -343,7 +343,7 @@ TRAIN_ROW = {
     "arrives": Opt(ARRIVES),
 }
 BUS_ROW = {
-    "id": row_id, "line": str, "destination": str, "stop": str,
+    "id": row_id, "line": str, "destination": str, "stop": str, "stop_name": str,
     "scheduled": hhmm, "scheduled_at": at, "expected": Opt(hhmm), "expected_at": Opt(at),
     "status": ROW_STATUS, "status_text": str, "minutes_late": Opt(integer),
     "live": bool, "leave_at": Opt(at),
@@ -398,7 +398,7 @@ SNAPSHOT = {
     "timetable_changes": Opt([{"line": str, "operator": str, "from": lambda v: isinstance(v, str) and bool(DAY.match(v))}]),  # noqa: E501
 }
 BUS_DETAIL = {
-    "id": row_id, "line": str, "destination": str, "stop": str,
+    "id": row_id, "line": str, "destination": str, "stop": str, "stop_name": str,
     "stops": [{"name": str, "lat": number, "lon": number, "time": Opt(hhmm), "yours": bool}],
     "vehicle": Opt({"lat": number, "lon": number, "bearing": Opt(number), "recorded_at": at, "age_s": integer}),
     "where": Opt(str),

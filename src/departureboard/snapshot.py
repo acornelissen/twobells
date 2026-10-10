@@ -332,6 +332,7 @@ def bus_map(row: dict, live: LiveDeparture, positions: dict[str, StopPosition], 
         "line": row["line"],
         "destination": row["destination"],
         "stop": row["stop"],
+        "stop_name": row["stop_name"],
         "stops": stops,
         "vehicle": _vehicle(live, now, with_position=True),
         "where": strip["where"] if strip else _where(live, None, 0, None),
@@ -355,6 +356,7 @@ def bus_row(live: LiveDeparture, positions: dict[str, StopPosition], now: dateti
         "line": dep.service,
         "destination": dep.destination,
         "stop": dep.stop,
+        "stop_name": stop_name(positions.get(live.journey.calls[live.call_index].atco), dep.stop),
         "scheduled": dep.scheduled,
         "scheduled_at": iso(scheduled_at),
         "expected": expected_at.strftime("%H:%M") if expected_at else None,
@@ -387,10 +389,19 @@ def timetable_block(state: str, schedule: Schedule | None, tz: tzinfo) -> dict:
 
 
 def stop_names(stops: dict[str, str], schedule: Schedule | None) -> dict[str, str]:
-    """Each stop label's name, from the timetable's positions, else "Stop A"."""
+    """Each stop label's name from the stop data, with the letter on its sign
+    when known ("Henry Street (Stop A)": two stops often share a name), else
+    "Stop A" from the label."""
     positions = schedule.positions if schedule is not None else {}
-    return {label: positions[atco].name if atco in positions else f"Stop {label}"
-            for label, atco in stops.items()}
+    return {label: stop_name(positions.get(atco), label) for label, atco in stops.items()}
+
+
+def stop_name(place: StopPosition | None, label: str | None) -> str:
+    """A stop's name from the stop data, with the letter on its sign when known
+    ("Henry Street (Stop A)"), else "Stop A" from the board's label."""
+    if place is None:
+        return f"Stop {label}" if label else "Your stop"
+    return f"{place.name} ({place.indicator})" if place.indicator else place.name
 
 
 def buses_part(board: BusBoard | None, now: datetime, status: dict, timetable: dict,

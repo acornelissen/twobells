@@ -241,3 +241,9 @@ def test_dataset_search_pages_past_the_first_hundred_but_not_forever():
     calls.clear()
     assert len(dataset_urls("k", "BNML", http_get=endless)) == 500
     assert calls == [0, 100, 200, 300, 400]
+
+
+def test_naptan_can_also_give_each_stop_s_sign_letter():
+    found = parse_naptan(NAPTAN, {"1000DGHS0900"}, with_indicator=True)
+    assert found["1000DGHS0900"] == ("Henry Street", 53.44384, -1.948999, "Stop A")
+    assert parse_naptan(NAPTAN, {"1000DGHS0900"})["1000DGHS0900"] == ("Henry Street", 53.44384, -1.948999)
