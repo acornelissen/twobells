@@ -1,5 +1,10 @@
+import fcntl
 import io
+import os
 import stat
+import subprocess
+import sys
+import threading
 import zipfile
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
@@ -7,13 +12,17 @@ from pathlib import Path
 
 import pytest
 
+from departureboard import timetable
 from departureboard.holidays import Event, holiday_names
 from departureboard.schedule_model import Calendar, Call, Schedule, StopPosition, metres
 from departureboard.timetable import (
     FORMAT,
     FILE_NAME,
+    LOCK_NAME,
+    TimetableBusy,
     TimetableError,
     add_roads,
+    build,
     build_schedule,
     download,
     due,
@@ -1201,3 +1210,106 @@ def test_a_timetable_from_before_road_shapes_is_due_once():
 
     assert FORMAT >= 3
     assert due(replace(_schedule(built=NOW), format=2), STOPS, NOW, ["BNML"]) == "it was built by an older version"
+
+
+# One build at a time.
+
+
+def _hold_lock(folder):
+    """Hold the build lock as another build would; closing the file lets go."""
+    folder.mkdir(parents=True, exist_ok=True)
+    fd = os.open(folder / LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return fd
+
+
+def test_build_refreshes_holding_the_lock_and_lets_go(tmp_path):
+    fake = FakeBuild()
+    schedule = build(tmp_path, STOPS, ["BNML"], NOW, "k", lines=["341"], build=fake)
+    assert schedule == load(tmp_path)
+    assert fake.calls == [(STOPS, ["BNML"], "k", NOW, {"lines": ["341"], "scratch": tmp_path})]
+    build(tmp_path, STOPS, ["BNML"], NOW, "k", force=True, build=fake)  # let go: free for the next
+    assert len(fake.calls) == 2
+
+
+def test_two_builders_racing_one_builds_and_the_other_skips(tmp_path):
+    inside, release = threading.Event(), threading.Event()
+
+    def slow(stops, operators, api_key, now, **options):
+        inside.set()
+        assert release.wait(5)
+        return _schedule(built=now, stops=stops)
+
+    results = []
+    first = threading.Thread(target=lambda: results.append(build(tmp_path, STOPS, ["BNML"], NOW, "k", build=slow)))
+    first.start()
+    assert inside.wait(5)
+    second = FakeBuild()
+    with pytest.raises(TimetableBusy, match="Another bus timetable build is running"):
+        build(tmp_path, STOPS, ["BNML"], NOW, "k", force=True, build=second)
+    release.set()
+    first.join(5)
+    assert second.calls == [] and results == [load(tmp_path)]
+
+
+def test_a_build_in_another_process_makes_this_one_skip(tmp_path):
+    holder = subprocess.Popen(
+        [sys.executable, "-c", "import fcntl, os, sys\n"
+         f"fd = os.open({str(tmp_path / LOCK_NAME)!r}, os.O_RDWR | os.O_CREAT, 0o600)\n"
+         "fcntl.flock(fd, fcntl.LOCK_EX)\nprint('held', flush=True)\nsys.stdin.read()\n"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    fake = FakeBuild()
+    try:
+        assert holder.stdout.readline() == "held\n"
+        with pytest.raises(TimetableBusy):
+            build(tmp_path, STOPS, ["BNML"], NOW, "k", build=fake)
+        assert fake.calls == []
+    finally:
+        holder.communicate("", timeout=5)  # it exits, and the system lets go of its lock
+    build(tmp_path, STOPS, ["BNML"], NOW, "k", build=fake)
+    assert len(fake.calls) == 1
+
+
+def test_a_waiting_build_runs_once_the_other_is_done(tmp_path, monkeypatch):
+    monkeypatch.setattr(timetable, "LOCK_WAIT_S", 0.01)
+    fd = _hold_lock(tmp_path)
+    waited = threading.Event()
+    fake = FakeBuild()
+    results = []
+    waiter = threading.Thread(target=lambda: results.append(build(
+        tmp_path, STOPS, ["BNML"], NOW, "k", force=True, wait=True, waiting=waited.set, build=fake)))
+    waiter.start()
+    assert waited.wait(5)
+    assert fake.calls == [] and waiter.is_alive()
+    os.close(fd)
+    waiter.join(5)
+    assert len(fake.calls) == 1 and results == [load(tmp_path)]
+
+
+def test_a_waiting_build_stops_waiting_when_cancelled(tmp_path, monkeypatch):
+    monkeypatch.setattr(timetable, "LOCK_WAIT_S", 0.01)
+    fd = _hold_lock(tmp_path)
+    looks = []
+
+    def cancelled():
+        looks.append(1)
+        return len(looks) >= 3
+
+    fake = FakeBuild()
+    with pytest.raises(TimetableBusy):
+        build(tmp_path, STOPS, ["BNML"], NOW, "k", wait=True, cancelled=cancelled, build=fake)
+    os.close(fd)
+    assert fake.calls == [] and len(looks) == 3
+
+
+def test_the_lock_file_is_private_and_a_link_in_its_place_is_refused(tmp_path):
+    build(tmp_path / "store", STOPS, ["BNML"], NOW, "k", build=FakeBuild())
+    assert stat.S_IMODE((tmp_path / "store" / LOCK_NAME).stat().st_mode) == 0o600
+    elsewhere = tmp_path / "elsewhere"
+    planted = tmp_path / "planted"
+    planted.mkdir()
+    (planted / LOCK_NAME).symlink_to(elsewhere)
+    fake = FakeBuild()
+    with pytest.raises(TimetableError, match="Can't open"):
+        build(planted, STOPS, ["BNML"], NOW, "k", build=fake)
+    assert fake.calls == [] and not elsewhere.exists()

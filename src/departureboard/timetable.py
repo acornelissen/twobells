@@ -18,10 +18,17 @@ your stops; when they can't tell, it is held for NaPTAN to measure only if
 its last stop is in the same ATCO area (the first three characters) as one
 of yours.
 
-Built about once a week by a timer or the command line, never from the
-minutely board run: an operator's timetables can run to hundreds of
-megabytes. Each download waits on disk and its documents are parsed one at a
-time, so a Pi Zero holds one document in memory, never the lot.
+Built about once a week by a timer, the command line or the dashboard's
+upkeep, and by the setup search, never from the minutely board run: an
+operator's timetables can run to hundreds of megabytes. Each download waits
+on disk and its documents are parsed one at a time, so a Pi Zero holds one
+document in memory, never the lot.
+
+One build at a time. Every build goes through build(), which holds a lock
+file in the store (LOCK_NAME) while it runs, let go by the system if the
+process dies. A build that finds it held is skipped (TimetableBusy), except
+the setup search's, which waits for it: the timetable it saves must be the
+one for what it found.
 
 Roads. TransXChange gives no road between stops, so once a new timetable is
 saved, refresh asks the OpenStreetMap car router for each pair of consecutive
@@ -56,11 +63,14 @@ Calendars. runs_on() decides, in this order:
 
 from __future__ import annotations
 
+import fcntl
 import logging
 import math
 import os
 import re
 import tempfile
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -75,6 +85,8 @@ from .status import safe_message
 log = logging.getLogger(__name__)
 
 FILE_NAME = "bus-timetable.json"  # beside state.json
+LOCK_NAME = "timetable.lock"  # beside it; held while any build runs
+LOCK_WAIT_S = 1.0  # between looks at a held lock, when waiting for it
 # The builder's version, saved in the file: an older one is rebuilt (see due).
 # 2: stops keep the letter on their sign.
 # 3: the roads between stops, for the dashboard's maps (shapes).
@@ -146,6 +158,10 @@ _HOLIDAY_GROUPS = {
 
 class TimetableError(Exception):
     pass
+
+
+class TimetableBusy(TimetableError):
+    """Another build holds the lock, so this one didn't run."""
 
 
 # Reading TransXChange.
@@ -832,7 +848,9 @@ def refresh(
     A new timetable is saved before its roads are asked for (add_roads, with
     `route`, keeping the saved one's where it can), then saved again with
     them. However long the router takes, or if this is stopped meanwhile,
-    the timetable is kept, at worst with straight lines on the maps."""
+    the timetable is kept, at worst with straight lines on the maps.
+
+    It takes no lock: build it with build(), which does."""
     current = load(folder)
     operators = list(operators)
     reason = "asked to" if force else due(current, stops, now, operators)
@@ -856,3 +874,55 @@ def refresh(
         log.warning("Bus map roads not saved, drawing straight lines: %s", safe_message(error))
         return fresh
     return routed
+
+
+@contextmanager
+def _lock(folder: Path, wait: bool, cancelled: Callable[[], bool], waiting: Callable[[], None]) -> Iterator[None]:
+    """Hold the store's build lock. Without `wait`, TimetableBusy at once if
+    another holds it; with it, look again every LOCK_WAIT_S seconds, calling
+    `waiting()` once, until it is free or `cancelled()` (TimetableBusy too).
+    The file is private, and a link put in its place is refused."""
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = folder / LOCK_NAME
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except OSError as error:
+        raise TimetableError(f"Can't open {path}: {error.strerror or error}") from None
+    try:
+        told = False
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if not wait or cancelled():
+                    raise TimetableBusy("Another bus timetable build is running") from None
+                if not told:
+                    told = True
+                    waiting()
+                time.sleep(LOCK_WAIT_S)
+        yield
+    finally:
+        os.close(fd)  # lets go of the lock, if it was taken
+
+
+def build(
+    folder: Path | str,
+    stops: Mapping[str, str],
+    operators: Iterable[str],
+    now: datetime,
+    api_key: str,
+    *,
+    wait: bool = False,
+    cancelled: Callable[[], bool] = lambda: False,
+    waiting: Callable[[], None] = lambda: None,
+    **options,
+) -> Schedule | None:
+    """The one way to build the timetable: refresh (with `options`: lines,
+    force, build, route) while holding the store's lock, so two builds never
+    run at once, in this process or another. Without `wait`, TimetableBusy
+    if another build is running; with it, wait for that one (see _lock).
+    TimetableError if the lock file can't be opened."""
+    folder = Path(folder)
+    with _lock(folder, wait, cancelled, waiting):
+        return refresh(folder, stops, operators, now, api_key, **options)
