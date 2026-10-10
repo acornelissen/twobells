@@ -551,6 +551,10 @@ def test_cancelling_while_the_timetable_builds(bods):
     assert timetable.load(bods.scratch) is None
 
 
+def _spaced(atcos):  # every stop 111 m from the last, so each pair is asked about
+    return {atco: (f"Stop {atco}", 53.44 + i * 0.001, -1.95) for i, atco in enumerate(sorted(atcos))}
+
+
 def test_the_roads_show_their_progress_and_cancelling_stops_them_at_once(bods):
     seen = []
 
@@ -560,18 +564,77 @@ def test_the_roads_show_their_progress_and_cancelling_stops_them_at_once(bods):
             job.cancel()
         raise ValueError("no road here")
 
-    def naptan(atcos):  # every stop 111 m from the last, so each pair is asked about
-        return {atco: (f"Stop {atco}", 53.44 + i * 0.001, -1.95) for i, atco in enumerate(sorted(atcos))}
-
-    job = _job(bods, naptan=naptan, router=router)
+    job = _job(bods, naptan=_spaced, router=router)
     start = time.monotonic()
     job.start()
     status = _finish(job)
-    assert (status["state"], status["message"]) == ("failed", "Cancelled")
+    # The timetable was saved before its roads were asked for, so the search is
+    # done with its result; only the roads were stopped, and the next build finds them.
+    assert status["state"] == "done" and status["result"]["fragment"]["bus"]["operators"] == ["BNML", "HIPK"]
+    assert status["roads"]["state"] == "cancelled"
     assert len(seen) == 2 and time.monotonic() - start < 3  # one request a second, then no more
-    assert [(s["step"], s["done"]) for s in seen] == [(discover.STEP_ROADS, 0), (discover.STEP_ROADS, 1)]
-    assert seen[0]["total"] > 2
-    assert timetable.load(bods.scratch) is not None  # saved before its roads were asked for
+    assert [(s["state"], s["roads"]["state"], s["roads"]["done"]) for s in seen] == [
+        ("done", "running", 0), ("done", "running", 1)]
+    assert seen[0]["roads"]["total"] > 2
+    saved = timetable.load(bods.scratch)
+    assert saved is not None and saved.roads_pending is True
+
+
+class Router:
+    """The car router, holding each answer until the test lets it go."""
+
+    def __init__(self):
+        self.asked = threading.Event()
+        self.release = threading.Event()
+
+    def __call__(self, url, max_bytes):
+        self.asked.set()
+        assert self.release.wait(5)
+        return _osrm(urlsplit(url).path)
+
+
+def test_the_search_is_done_once_the_timetable_is_saved_and_the_roads_follow(bods, monkeypatch):
+    from departureboard import setup
+
+    monkeypatch.setattr(setup.ROUTER_LIMIT, "wait", lambda: None)  # a road a second would take minutes
+    router = Router()
+    job = _job(bods, naptan=_spaced, router=router)
+    job.start()
+    assert router.asked.wait(5)
+    # The wizard can save the settings now: the timetable is saved, without its roads yet.
+    status = job.status()
+    assert status["state"] == "done" and status["result"]["timetable_journeys"] > 0
+    assert status["message"].startswith("Found 2 bus companies")
+    assert status["roads"] == {"state": "running", "done": 0, "total": status["roads"]["total"]}
+    assert status["roads"]["total"] > 2
+    saved = timetable.load(bods.scratch)
+    assert saved.roads_pending is True and saved.shapes == {}
+    assert timetable.roads_progress(bods.scratch) == (0, status["roads"]["total"])
+    assert not job.wait(0)  # the roads go on in its thread
+    router.release.set()
+    status = _finish(job)
+    assert status["state"] == "done" and status["roads"]["state"] == "done"
+    assert status["roads"]["done"] == status["roads"]["total"]
+    saved = timetable.load(bods.scratch)
+    assert saved.roads_pending is False and saved.shapes
+    assert timetable.roads_progress(bods.scratch) is None
+
+
+def test_another_search_may_start_while_the_roads_are_found_and_waits_for_them(bods, monkeypatch):
+    from departureboard import setup
+
+    monkeypatch.setattr(setup.ROUTER_LIMIT, "wait", lambda: None)
+    monkeypatch.setattr(timetable, "LOCK_WAIT_S", 0.01)
+    router = Router()
+    first = _job(bods, naptan=_spaced, router=router)
+    first.start()
+    assert router.asked.wait(5)
+    second = _job(bods)
+    second.start()  # the first's own lock went with its result
+    _until(second, discover.STEP_WAITING)  # its timetable waits for the first's roads
+    router.release.set()
+    assert _finish(first)["roads"]["state"] == "done"
+    assert _finish(second)["state"] == "done"
 
 
 def test_cancelling_before_starting(bods):
@@ -730,6 +793,36 @@ def test_the_wizard_and_the_weekly_build_save_the_same_timetable(bods, tmp_path,
     assert json.loads((weekly / timetable.FILE_NAME).read_text()) == made
 
 
+def test_roads_stopped_with_the_process_are_found_by_the_next_upkeep(bods, monkeypatch):
+    # Docker and a desktop start serve again when the wizard saves, and the
+    # search's thread goes with the process: the dashboard's upkeep, first
+    # thing on starting, finds the roads it hadn't (as a Pi's hourly timer does).
+    from zoneinfo import ZoneInfo
+
+    from departureboard import http, setup
+    from departureboard.bodsbus import BodsBusSource
+
+    monkeypatch.setattr(setup.ROUTER_LIMIT, "wait", lambda: None)
+
+    def stopping(url, max_bytes):  # one road, then the process "stops"
+        job.cancel()
+        return _osrm(urlsplit(url).path)
+
+    job = _job(bods, naptan=_spaced, router=stopping)
+    job.start()
+    status = _finish(job)
+    assert status["state"] == "done" and status["roads"]["state"] == "cancelled"
+    first = timetable.load(bods.scratch)
+    assert first.roads_pending is True and len(first.shapes) == 1
+    monkeypatch.setattr(http, "urlopen", lambda request, timeout: FakeResponse(_osrm(urlsplit(request.full_url).path)))
+    london = ZoneInfo("Europe/London")
+    upkeep = BodsBusSource(bods.scratch, STOPS, KEY, london, operators=["BNML", "HIPK"],
+                           clock=lambda: SUMMER_NOW.replace(minute=30, tzinfo=london))
+    found = upkeep.refresh_timetable()
+    assert found.roads_pending is False and len(found.shapes) > 1
+    assert found.built == first.built and timetable.load(bods.scratch) == found  # not built again
+
+
 # The settings, as TOML.
 
 
@@ -807,7 +900,8 @@ def test_cli_discover_shows_the_roads_every_25_and_the_last(cli_config, capsys, 
     from departureboard.cli import main
 
     class Job:
-        """Moves one step on each poll: two data sets, then 60 roads, then fails (no timetable needed)."""
+        """Moves one step on each poll: two data sets, then 60 roads once the
+        search is done, then fails (no timetable needed)."""
 
         def __init__(self, *args, **options):
             self.steps = [(discover.STEP_DISCOVER, done, 2) for done in range(3)]
@@ -820,6 +914,9 @@ def test_cli_discover_shows_the_roads_every_25_and_the_last(cli_config, capsys, 
         def status(self):
             if self.at < len(self.steps):
                 step, done, total = self.steps[self.at]
+                if step == discover.STEP_ROADS:  # found after the search is done, in the background
+                    return {"state": "done", "step": "", "done": 0, "total": 0, "message": "", "result": None,
+                            "roads": {"state": "running", "done": done, "total": total}}
                 return {"state": "running", "step": step, "done": done, "total": total, "message": "", "result": None}
             return {"state": "failed", "step": "", "done": 0, "total": 0, "message": "Stopped", "result": None}
 

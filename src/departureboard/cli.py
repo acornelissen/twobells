@@ -535,9 +535,13 @@ def _setup_discover(args) -> int:
         while True:
             status = job.status()
             step, done, total = status["step"], status["done"], status["total"]
-            if step == discover.STEP_ROADS and done != total:
-                done -= done % 25  # a road a second, up to 300: every 25th, and the last
-            if status["state"] == "running" and (step, done, total) != shown:
+            running = status["state"] == "running"
+            roads = status.get("roads") or {}
+            if roads.get("state") == "running":  # once the search is done; waited for here
+                step, done, total, running = discover.STEP_ROADS, roads["done"], roads["total"], True
+                if done != total:
+                    done -= done % 25  # a road a second, up to 300: every 25th, and the last
+            if running and (step, done, total) != shown:
                 shown = (step, done, total)
                 count = f": {done} of {total}" if total else ""
                 print(f"{step}{count}", file=sys.stderr)

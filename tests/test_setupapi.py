@@ -80,12 +80,17 @@ class FakeJob:
     def cancel(self):
         if self.state["state"] in ("queued", "running"):
             self.state.update(state="failed", message="Cancelled")
+        if self.state.get("roads", {}).get("state") == "running":
+            self.state["roads"]["state"] = "cancelled"
 
-    def finish(self, routes=True):
+    def finish(self, routes=True, roads=None):
+        """Done; with `roads` (done, total), still finding the roads for the maps."""
         result = json.loads(json.dumps(RESULT))
         if not routes:
             del result["fragment"]["bus"]["routes"]
         self.state.update(state="done", step=discover.STEP_TIMETABLE, done=1, total=1, message="Found 1", result=result)
+        if roads is not None:
+            self.state["roads"] = {"state": "running", "done": roads[0], "total": roads[1]}
 
 
 @pytest.fixture
@@ -260,6 +265,38 @@ def test_the_job_runs_one_at_a_time_and_reports_what_it_found(board):
     assert found["operators"] == ["BNML"] and found["routes"] == ["341"] and found["stop_lines"] == {"A": ["341"]}
     ok(board, "start", {"stops": {"B": "1800SB12342"}, "routes": False})  # done: a new search may start
     assert len(FakeJob.made) == 2
+
+
+def test_the_roads_found_after_the_search_are_reported_and_saving_need_not_wait(board):
+    ok(board, "stops", HOME)
+    ok(board, "start", {"stops": {"A": "1800SB12341"}, "routes": True})
+    job = FakeJob.made[-1]
+    job.finish(roads=(12, 140))
+    status = ok(board, "job")["job"]
+    assert status["state"] == "done" and status["found"]["operators"] == ["BNML"]
+    assert status["roads"] == {"state": "running", "done": 12, "total": 140}
+    saved = ok(board, "finish", {"home": HOME, "stops": {"A": "1800SB12341"}, "walk": {}})
+    assert saved["saved"] and job.state["roads"]["state"] == "running"  # they finish on their own
+    job.state["roads"].update(state="done", done=140)
+    assert ok(board, "job")["job"]["roads"] == {"state": "done", "done": 140, "total": 140}
+
+
+def test_a_job_s_roads_report_only_what_fits(board):
+    ok(board, "start", {"stops": {"A": "1800SB12341"}, "routes": False})
+    job = FakeJob.made[-1]
+    job.finish(routes=False)
+    assert "roads" not in ok(board, "job")["job"]  # from before the roads were reported
+    job.state["roads"] = {"state": "lost", "done": "12", "total": None, "extra": "<b>"}
+    assert ok(board, "job")["job"]["roads"] == {"state": "done", "done": 0, "total": 0}
+
+
+def test_a_new_search_stops_the_last_one_s_roads(board):
+    ok(board, "start", {"stops": {"A": "1800SB12341"}, "routes": False})
+    first = FakeJob.made[-1]
+    first.finish(routes=False, roads=(3, 10))
+    started = ok(board, "start", {"stops": {"B": "1800SB12342"}, "routes": False})["job"]
+    assert started["state"] == "running" and started["stops"] == {"B": "1800SB12342"}
+    assert first.state["roads"]["state"] == "cancelled"  # its timetable is about to be replaced
 
 
 def test_cancelling_the_job(board):

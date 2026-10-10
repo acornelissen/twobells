@@ -51,7 +51,9 @@ service looks every time round). The search's reply is its status, in
 status/, rewritten as it goes and every few seconds besides (from a thread
 of its own, so a slow lookup doesn't hold it up), so the page can tell a
 stopped service from a slow search. A finished search's status waits longer
-to be read: its result took minutes to find.
+to be read: its result took minutes to find. A search is done once its
+timetable is saved; its status goes on with the roads for the bus maps
+(`roads`) until they are found, and the service stays up for them.
 
 Never a restart loop. systemd starts the service again whenever it stops
 with a request still waiting, so it never stops early and leaves one: a
@@ -417,9 +419,18 @@ def _result(value) -> dict:
     }
 
 
+def _roads(value) -> dict:
+    fields = _obj(value, ("state", "done", "total"))
+    if fields["state"] not in discover.ROADS_STATES:
+        raise Refused("the roads' state isn't one they have")
+    total = _int(fields["total"], "roads total", 0, 1_000_000)
+    return {"state": fields["state"], "done": _int(fields["done"], "roads done", 0, total), "total": total}
+
+
 def check_status(value) -> dict:
-    """A search's status, as discover.SetupJob.status gives it."""
-    fields = _obj(value, ("state", "step", "done", "total", "message", "result"))
+    """A search's status, as discover.SetupJob.status gives it: once done,
+    perhaps with its roads."""
+    fields = _obj(value, ("state", "step", "done", "total", "message", "result"), ("roads",))
     state = fields["state"]
     if state not in _STATES:
         raise Refused("state isn't a search's")
@@ -428,9 +439,14 @@ def check_status(value) -> dict:
         result = _result(result)
     elif result is not None:
         raise Refused("a result before the search is done")
-    return {"state": state, "step": _str(fields["step"], "step", 100),
-            "done": _int(fields["done"], "done", 0, 1_000_000), "total": _int(fields["total"], "total", 0, 1_000_000),
-            "message": safe_message(_str(fields["message"], "message", 400)), "result": result}
+    status = {"state": state, "step": _str(fields["step"], "step", 100),
+              "done": _int(fields["done"], "done", 0, 1_000_000), "total": _int(fields["total"], "total", 0, 1_000_000),
+              "message": safe_message(_str(fields["message"], "message", 400)), "result": result}
+    if fields.get("roads") is not None:
+        if state != "done":
+            raise Refused("roads before the search is done")
+        status["roads"] = _roads(fields["roads"])
+    return status
 
 
 def check_reply(data, request_id: str) -> dict:
@@ -736,7 +752,7 @@ class SpoolJob:
         if self._beat is None or self._beat[0] != beat:
             self._beat = (beat, now)
         self._status = status
-        if status["state"] in _FINISHED:
+        if status["state"] in _FINISHED and not discover.roads_running(status):
             self._finished = True  # kept here from now on; the file has done its job
             (self._runner.spool.status / f"{self.id}.json").unlink(missing_ok=True)
         elif now - self._beat[1] > self._silent:
@@ -803,6 +819,8 @@ def _status_out(status: dict) -> dict:
         if len(notes) > MAX_NOTES:
             notes = notes[: MAX_NOTES - 1] + [f"And {len(notes) - MAX_NOTES + 1} more notes"]
         out["result"] = {**result, "notes": notes}
+        if isinstance(status.get("roads"), dict):
+            out["roads"] = {key: status["roads"].get(key) for key in ("state", "done", "total")}
     else:
         out["result"] = None
     return out
@@ -817,7 +835,8 @@ class Worker:
     the replies, and runs at most one search at a time (discover.SetupJob's
     lock in the board's state folder also keeps it to one with the command
     line's). run() keeps going until it has had nothing to do for `idle`
-    seconds and no search is running. With `unavailable`, the reason it
+    seconds and no search is running, nor finding its roads once done (a
+    new search stops those). With `unavailable`, the reason it
     can't do any (its config can't be read), it answers each request with
     that instead, so the page says so rather than waiting."""
 
@@ -935,11 +954,20 @@ class Worker:
                 self._report()
 
     def _stop_search(self) -> None:
-        """Stopped mid-search: cancel it and say so, rather than go quiet."""
+        """Stopped mid-search: cancel it and say so, rather than go quiet.
+        A search already done keeps its result: only its roads stop, and
+        the next build of the timetable finds the rest."""
         with self._lock:
             if self._job is not None:
                 self._job.cancel()
-                self._write_status(_failed("Cancelled"), force=True)
+                status = self._job.status()
+                if status.get("state") == "done":
+                    shown = _status_out(status)
+                    if discover.roads_running(shown):
+                        shown["roads"] = {**shown["roads"], "state": "cancelled"}
+                else:
+                    shown = _failed("Cancelled")
+                self._write_status(shown, force=True)
                 self._job, self._job_secrets = None, []
 
     def _waiting(self) -> list[Path]:
@@ -1066,8 +1094,11 @@ class Worker:
             self._not_started(request_id, "Cancelled")
             return
         if self._job is not None:
-            self._not_started(request_id, "A search is already running; wait for it or cancel it")
-            return
+            if not discover.roads_running(self._job.status()):
+                self._not_started(request_id, "A search is already running; wait for it or cancel it")
+                return
+            # Done but for its roads: they stop, as this search's timetable replaces its.
+            self._job.cancel()
         saved = ""
         try:
             saved = str(self._load_secrets().get("BODS_API_KEY", "")).strip()
@@ -1101,8 +1132,8 @@ class Worker:
                 return
             status = self._job.status()
             self._write_status(_status_out(status))
-            if status.get("state") in _FINISHED:
-                self._job, self._job_secrets = None, []
+            if status.get("state") in _FINISHED and not discover.roads_running(status):
+                self._job, self._job_secrets = None, []  # kept, and the service up, while its roads are found
 
     def _write_status(self, shown: dict, force: bool = False) -> None:
         now = self._monotonic()

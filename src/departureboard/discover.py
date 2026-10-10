@@ -345,8 +345,17 @@ _NAME_LIMIT = 80
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
+ROADS_STATES = ("running", "done", "cancelled")  # a done job's roads, as its status gives them
+
+
 class SetupBusy(Exception):
     """Another setup job is running for this state folder."""
+
+
+def roads_running(status: Mapping) -> bool:
+    """Whether a job's status says it is done but still finding the roads for the maps."""
+    roads = status.get("roads")
+    return isinstance(roads, dict) and roads.get("state") == "running"
 
 
 def _local_now() -> datetime:
@@ -376,13 +385,20 @@ class SetupJob:
 
     start() runs it in a thread; status() says how it is going; cancel()
     stops it at the next chunk of a download, or before the next request
-    for the road between two stops (the timetable is saved by then). One job at a time per state
-    folder: a lock file there, held while the job runs and let go by the
-    system if the process dies. The timetable is built through
-    timetable.build, which first waits for any other build in the folder. It writes no settings: its result holds the
-    [bus] settings to add, for the caller to show and save. With `nice`, its
-    thread runs that much nicer on Linux, so it gives way to the caller's
-    other work (the Pi's setup service answering the wizard's lookups)."""
+    for the road between two stops. The job is done once the timetable is
+    saved, without the roads for the bus maps: its result can be saved at
+    once. The roads follow in the same thread (status()'s `roads`), for up
+    to roadshape.MAX_SECONDS, under the timetable's lock; cancelling them
+    leaves the job done, and the next build finds the rest.
+
+    One job at a time per state folder: a lock file there, held until the
+    job is done and let go by the system if the process dies. The timetable
+    is built through timetable.build, which first waits for any other build
+    in the folder, and the roads of an earlier job. It writes no settings:
+    its result holds the [bus] settings to add, for the caller to show and
+    save. With `nice`, its thread runs that much nicer on Linux, so it gives
+    way to the caller's other work (the Pi's setup service answering the
+    wizard's lookups)."""
 
     def __init__(
         self,
@@ -424,7 +440,8 @@ class SetupJob:
 
     def status(self) -> dict:
         """{state: queued, running, done or failed; step; done; total;
-        message; result}, a copy safe to keep."""
+        message; result}, a copy safe to keep. Once done it has `roads`
+        too: {state: running, done or cancelled; done; total}."""
         with self._lock:
             return copy.deepcopy(self._status)
 
@@ -479,7 +496,7 @@ class SetupJob:
         if self._nice:
             _lower_priority(self._nice)
         try:
-            result, message = self._steps()
+            self._steps()
         except Cancelled:
             self._set(state="failed", message="Cancelled")
         except DiscoveryError as error:
@@ -487,19 +504,25 @@ class SetupJob:
         except Exception as error:  # noqa: BLE001 - shown on the page, not a traceback
             log.warning("Setup job failed: %s", safe_message(error))
             self._set(state="failed", message=safe_message(error))
-        else:
-            self._set(state="done", message=message, result=result)
         finally:
             self._let_go()
 
-    def _steps(self) -> tuple[dict, str]:
+    def _steps(self) -> None:
         found = discover_operators(
             self._stops, self._api_key, self._folder, find=self._find, fetch=self._fetch,
             progress=lambda done, total: self._set(done=done, total=total),
             cancelled=self._cancel.is_set, with_patterns=self._routes, today=self._now().date(), **self._options,
         )
         self._set(step=STEP_TIMETABLE, done=0, total=1)
-        schedule = self._timetable(found.operators)
+        self._timetable(found.operators, lambda schedule: self._done(found, schedule))
+        # Back here once the roads are found, or stopped: the job was done before them.
+        roads = self.status()["roads"]
+        self._set(roads={**roads, "state": "cancelled" if self._cancel.is_set() else "done"})
+
+    def _done(self, found: Discovery, schedule) -> None:
+        """The timetable is saved, without its roads yet: the job is done,
+        with its result, and the folder free for another (which waits for
+        the roads, under the timetable's lock). The roads follow."""
         notes = list(found.notes)
         bus: dict = {"source": "bods", "operators": list(found.operators)}
         if self._routes:
@@ -519,12 +542,21 @@ class SetupJob:
         companies = "bus company" if len(found.operators) == 1 else "bus companies"
         message = (f"Found {len(found.operators)} {companies} ({', '.join(found.operators)}) and built a "
                    f"timetable of {len(schedule.journeys)} journeys")
-        return result, message
+        self._set(state="done", step="", done=0, total=0, message=message, result=result,
+                  roads={"state": "running", "done": 0, "total": 0})
+        self._let_go()
 
-    def _timetable(self, operators: list[str]):
+    def _timetable(self, operators: list[str], saved: Callable) -> None:
         """Build the timetable now, as `departureboard timetable --force` does,
-        once any other build in the store has finished (timetable.build)."""
+        once any other build in the store has finished (timetable.build).
+        `saved(schedule)` once it is saved, before its roads are found;
+        back here when they are, or are stopped."""
         failures: list[Exception] = []
+        told: list = []
+
+        def ready(schedule):
+            told.append(schedule)
+            saved(schedule)
         limits = _Limits(sys.maxsize, routesetup.MAX_DOWNLOAD_BYTES, math.inf, time.monotonic, self._cancel.is_set)
 
         def build(*args, **options):
@@ -540,31 +572,29 @@ class SetupJob:
             # As the weekly build asks for them, but stopping when cancelled.
             def both(done, total):
                 progress(done, total)
-                self._set(step=STEP_ROADS, done=done, total=total)
+                self._set(roads={"state": "running", "done": done, "total": total})
 
             return roadshape.segment_shapes(pairs, self._router, cancelled=self._cancel.is_set, progress=both)
 
-        now = self._now()
         try:
             # Waits for a build already running (the weekly timer, the dashboard's
-            # upkeep), so the timetable saved is the one for what was found.
-            schedule = timetable.build(self._folder, self._stops, operators, now, self._api_key, force=True,
-                                       wait=True, cancelled=self._cancel.is_set,
-                                       waiting=lambda: self._set(step=STEP_WAITING, done=0, total=0),
-                                       build=build, route=roads)
+            # upkeep, an earlier search's roads), so the timetable saved is the one
+            # for what was found.
+            timetable.build(self._folder, self._stops, operators, self._now(), self._api_key, force=True,
+                            wait=True, cancelled=self._cancel.is_set,
+                            waiting=lambda: self._set(step=STEP_WAITING, done=0, total=0),
+                            build=build, route=roads, saved=ready)
         except timetable.TimetableBusy:
             raise Cancelled("Cancelled") from None  # while waiting: it only gives up when cancelled
         except timetable.TimetableError as error:  # the lock file can't be opened
             raise DiscoveryError(f"The bus timetable couldn't be built: {safe_message(error)}") from None
+        if told:
+            return  # saved, and its roads found or stopped since
         if failures:
             if isinstance(failures[0], Cancelled):
                 raise failures[0]
             raise DiscoveryError(f"The bus timetable couldn't be built: {safe_message(failures[0])}")
-        if self._cancel.is_set():
-            raise Cancelled("Cancelled")  # while finding the roads; the timetable is saved
-        if schedule is None or timetable.due(schedule, self._stops, now, operators):
-            raise DiscoveryError("The bus timetable was built but couldn't be saved")  # refresh logged why
-        return schedule
+        raise DiscoveryError("The bus timetable was built but couldn't be saved")  # refresh logged why
 
     def _strips(self, found: Discovery, notes: list[str]) -> dict:
         """[bus.routes] for each line at your stops: the stops before yours on

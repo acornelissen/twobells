@@ -656,12 +656,15 @@ class SetupApi:
                 "timetable_journeys": result.get("timetable_journeys", 0),
                 "notes": [safe_message(note) for note in result.get("notes", [])],
             }
+            if isinstance(status.get("roads"), dict):
+                out["roads"] = _roads(status["roads"])
         return out
 
     def start(self, payload) -> dict:
         """Start the search for `stops`; with `routes`, route strips too. The
         Bus Open Data Service key is the one pasted (in `keys`) or else the one
-        saved. One search at a time."""
+        saved. One search at a time; one done but still finding the roads for
+        the maps (its status's `roads`) has them stopped."""
         fields = _fields(payload, ("stops", "routes"), ("walk", "keys"))
         stops = _stops(fields["stops"], least=1)
         routes = _flag(fields["routes"], "routes")
@@ -675,8 +678,13 @@ class SetupApi:
             raise Invalid("Paste your Bus Open Data Service key first; finding bus companies needs it",
                           "BODS_API_KEY")
         with self._lock:
-            if self._job is not None and self._job.status().get("state") in ("queued", "running"):
+            last = self._job.status() if self._job is not None else {}
+            if last.get("state") in ("queued", "running"):
                 raise Conflict("A search is already running; wait for it or cancel it")
+            if discover.roads_running(last):
+                # Its timetable is about to be replaced. The roads it found are kept
+                # for the new one, which waits for it to stop (the timetable's lock).
+                self._job.cancel()
             if self._runner is not None:
                 # The runner reads the saved key itself: only a pasted one goes to it.
                 job = self._runner.make_job(stops, pasted or "", routes=routes, walk_minutes=walk)
@@ -843,6 +851,15 @@ class SetupApi:
         except (OSError, ConfigError, AttributeError):
             return {}
         return routes if isinstance(routes, dict) else {}
+
+
+def _roads(roads: Mapping) -> dict:
+    """A done job's roads for the page: running, done or cancelled, and two
+    counts. Anything else reads as done, so the page never waits for it."""
+    state = roads.get("state")
+    done, total = (n if isinstance(n, int) and not isinstance(n, bool) and n >= 0 else 0
+                   for n in (roads.get("done"), roads.get("total")))
+    return {"state": state if state in discover.ROADS_STATES else "done", "done": done, "total": total}
 
 
 def _error(error: BaseException, secrets: Sequence[str], field: str | None = None) -> dict:

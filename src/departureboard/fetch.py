@@ -20,7 +20,10 @@ the dashboard starts when its view comes on, stops (its snapshot deleted)
 when it goes off, and starts again with new settings when they change and
 still load; settings that don't load leave it as it was. With the
 dashboard off it stops after a minute with nothing to do, so a board-only
-Pi Zero stays light; never with a request waiting, or a search running.
+Pi Zero stays light; never with a request waiting, or a search running
+or still finding the roads for the bus maps after it is done. Stopped
+(SIGTERM) meanwhile, a done search keeps its result and only its roads
+stop: the timetable is saved without them, and its next build finds them.
 """
 
 from __future__ import annotations

@@ -64,9 +64,12 @@ class FakeJob:
         if self.state["state"] in ("queued", "running"):
             self.state.update(state="failed", message="Cancelled")
 
-    def finish(self):
+    def finish(self, roads=None):
+        """Done; with `roads` (done, total), still finding the roads for the maps."""
         self.state.update(state="done", step=discover.STEP_TIMETABLE, done=1, total=1,
                           message=f"Found 1 with {self.api_key}", result=json.loads(json.dumps(RESULT)))
+        if roads is not None:
+            self.state["roads"] = {"state": "running", "done": roads[0], "total": roads[1]}
 
 
 @pytest.fixture
@@ -323,6 +326,95 @@ def test_a_service_told_to_stop_says_the_search_was_cancelled_at_once(board):
         release.set()
         thread.join(5)
     assert not thread.is_alive()
+
+
+# The roads for the bus maps, found after the search is done.
+
+
+def test_the_roads_after_the_search_are_reported_and_keep_the_service_up(board):
+    board.worker._idle = 0.05
+    job = board.runner.make_job({"A": "1800SB12341"}, "", routes=False, walk_minutes={})
+    job.start()
+    board.worker.step()
+    fake = FakeJob.made[-1]
+    fake.finish(roads=(3, 10))
+    thread = threading.Thread(target=board.worker.run, daemon=True)
+    thread.start()
+    try:
+        wait_for(lambda: job.status().get("roads") == {"state": "running", "done": 3, "total": 10})
+        assert job.status()["state"] == "done"  # the settings can be saved now
+        time.sleep(0.3)
+        assert thread.is_alive()  # long past idle: it is still finding them
+        fake.state["roads"].update(done=7)
+        wait_for(lambda: job.status()["roads"]["done"] == 7)
+        fake.state["roads"].update(state="done", done=10)
+        thread.join(5)
+        assert not thread.is_alive()  # idle once they are found
+    finally:
+        board.worker._stop.set()
+        thread.join(5)
+    assert job.status()["roads"] == {"state": "done", "done": 10, "total": 10}
+    assert os.listdir(board.runner.spool.status) == []  # collected
+
+
+def test_a_service_told_to_stop_while_the_roads_are_found_keeps_the_search_done(board):
+    # As systemd's stop: the timetable is saved without its roads, and the next build finds them.
+    job = board.runner.make_job({"A": "1800SB12341"}, "", routes=False, walk_minutes={})
+    job.start()
+    board.worker.step()
+    fake = FakeJob.made[-1]
+    fake.finish(roads=(3, 10))
+    thread = threading.Thread(target=board.worker.run, daemon=True)
+    thread.start()
+    wait_for(lambda: job.status().get("roads", {}).get("state") == "running")
+    board.worker._stop.set()
+    thread.join(5)
+    assert not thread.is_alive() and fake.cancelled
+    status = job.status()
+    assert status["state"] == "done" and status["result"]["fragment"]["bus"]["operators"] == ["BNML"]
+    assert status["roads"] == {"state": "cancelled", "done": 3, "total": 10}
+
+
+def test_a_new_search_stops_the_last_one_s_roads_there(serving):
+    ok(serving, "start", {"stops": {"A": "1800SB12341"}, "routes": False})
+    wait_for(lambda: FakeJob.made)
+    first = FakeJob.made[-1]
+    wait_for(lambda: ok(serving, "job")["job"]["state"] == "running")
+    first.finish(roads=(3, 10))
+    wait_for(lambda: ok(serving, "job")["job"].get("roads", {}).get("state") == "running")
+    ok(serving, "start", {"stops": {"B": "1800SB12342"}, "routes": False})
+    wait_for(lambda: len(FakeJob.made) == 2)
+    assert first.cancelled and FakeJob.made[-1].stops == {"B": "1800SB12342"}
+    wait_for(lambda: ok(serving, "job")["job"]["state"] == "running")
+
+
+def test_check_status_takes_the_roads_of_a_search_that_is_done():
+    status = {"state": "done", "step": "", "done": 0, "total": 0, "message": "Found 1", "result": RESULT,
+              "roads": {"state": "running", "done": 12, "total": 140}}
+    assert setupspool.check_status(status)["roads"] == {"state": "running", "done": 12, "total": 140}
+    assert "roads" not in setupspool.check_status({**status, "roads": None})
+    del status["roads"]
+    assert "roads" not in setupspool.check_status(status)
+
+
+@pytest.mark.parametrize("roads", [
+    {"state": "lost", "done": 1, "total": 2},
+    {"state": "running", "done": "1", "total": 2},
+    {"state": "running", "done": 3, "total": 2},
+    {"state": "running", "done": 1},
+    {"state": "running", "done": 1, "total": 2, "more": 1},
+    [1, 2],
+])
+def test_check_status_refuses_roads_that_dont_fit(roads):
+    status = {"state": "done", "step": "", "done": 0, "total": 0, "message": "", "result": RESULT, "roads": roads}
+    with pytest.raises(Refused):
+        setupspool.check_status(status)
+
+
+def test_check_status_refuses_roads_before_the_search_is_done():
+    with pytest.raises(Refused):
+        setupspool.check_status({"state": "running", "step": "", "done": 0, "total": 0, "message": "",
+                                 "result": None, "roads": {"state": "running", "done": 0, "total": 2}})
 
 
 # Refused files, both ways.
