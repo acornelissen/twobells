@@ -227,6 +227,59 @@ def test_refuses_a_newer_schema(tmp_path):
         History(tmp_path)
 
 
+# Read by another process: the web server on a Pi, while the fetch service writes.
+
+
+def test_a_reader_reads_what_the_writer_wrote_while_it_writes(history, tmp_path):
+    reader = History.reader(tmp_path)
+    history.observe("train", [_train(status="late", delay=4, expected=_at("07:46"))], _at("07:44"))
+    history.observe("train", [], _at("07:45"))
+    assert reader.recent("train", TRAIN, "07:42") == history.recent("train", TRAIN, "07:42") != []
+    reader.close()
+
+
+def test_a_reader_never_writes(history, tmp_path):
+    reader = History.reader(tmp_path)
+    with pytest.raises(sqlite3.OperationalError, match="readonly"):
+        reader.observe("train", [_train()], _at("07:40"))
+    with pytest.raises(sqlite3.OperationalError, match="readonly"):
+        reader.purge(_at("07:40"), 0)
+    reader.close()
+
+
+def test_a_reader_makes_nothing_where_there_is_no_history(tmp_path):
+    assert History.reader(tmp_path) is None
+    assert History.reader(tmp_path / "missing") is None
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_reader_opens_only_a_set_up_plain_file(tmp_path):
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    History(other).close()
+    (tmp_path / FILE_NAME).symlink_to(other / FILE_NAME)
+    assert History.reader(tmp_path) is None  # never through a link
+    (tmp_path / FILE_NAME).unlink()
+    sqlite3.connect(tmp_path / FILE_NAME).close()  # an empty file: the writer hasn't set it up yet
+    assert History.reader(tmp_path) is None
+    with sqlite3.connect(tmp_path / FILE_NAME) as db:
+        assert db.execute("SELECT count(*) FROM sqlite_master").fetchone() == (0,)  # and still untouched
+
+
+def test_the_history_reader_opens_it_once_it_is_there(tmp_path):
+    from departureboard.history import HistoryReader
+
+    reader = HistoryReader(tmp_path)
+    assert reader.recent("train", TRAIN, "07:42") == []
+    assert not (tmp_path / FILE_NAME).exists()
+    history = History(tmp_path)
+    history.observe("train", [_train(status="cancelled")], _at("07:40"))
+    history.observe("train", [], _at("07:41"))
+    assert reader.recent("train", TRAIN, "07:42")[0]["status"] == "cancelled"
+    reader.close()
+    history.close()
+
+
 @pytest.mark.parametrize("change", [
     {"status": "early"},
     {"scheduled": "7:42"},

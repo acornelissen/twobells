@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+import stat
 import threading
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -204,6 +205,33 @@ class History:
             self._db.close()
             raise
 
+    @classmethod
+    def reader(cls, folder: Path | str) -> "History | None":
+        """The history in `folder`, to read only, as the web server on a Pi
+        does while the fetch service writes it: None if there is none yet,
+        or it isn't set up. Never makes or changes the file or its schema
+        (PRAGMA query_only), and opens nothing but a plain file."""
+        path = Path(folder) / FILE_NAME
+        try:
+            if not stat.S_ISREG(os.lstat(path).st_mode):
+                return None
+        except FileNotFoundError:
+            return None
+        db = sqlite3.connect(f"{path.absolute().as_uri()}?mode=rw", uri=True, check_same_thread=False)
+        try:
+            db.execute("PRAGMA query_only=ON")
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+        except Exception:
+            db.close()
+            raise
+        if version != SCHEMA_VERSION:
+            db.close()
+            return None
+        history = cls.__new__(cls)
+        history._lock = threading.Lock()
+        history._db = db
+        return history
+
     def close(self) -> None:
         with self._lock:
             self._db.close()
@@ -351,6 +379,30 @@ class History:
         oldest = (_naive(now, "now").date() - timedelta(days=days)).isoformat()
         with self._lock, self._db:
             self._db.execute("DELETE FROM outcome WHERE day < ?", (oldest,))
+
+
+class HistoryReader:
+    """History.recent from the history another process writes (the fetch
+    service, on a Pi), opened read-only the first time it is there."""
+
+    def __init__(self, folder: Path | str) -> None:
+        self._folder = Path(folder)
+        self._lock = threading.Lock()
+        self._history: History | None = None
+
+    def recent(self, mode: str, route: str, scheduled: str, days: int = 90) -> list[dict]:
+        """As History.recent; nothing while there is no history yet."""
+        with self._lock:
+            if self._history is None:
+                self._history = History.reader(self._folder)
+            history = self._history
+        return [] if history is None else history.recent(mode, route, scheduled, days)
+
+    def close(self) -> None:
+        with self._lock:
+            if self._history is not None:
+                self._history.close()
+                self._history = None
 
 
 _NOUNS = {"weekday": "weekdays", "saturday": "Saturdays", "sunday": "Sundays"}

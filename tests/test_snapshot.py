@@ -624,6 +624,29 @@ def test_an_unchanged_publish_keeps_the_previous_lookups():
     assert h.lookup("bbbb") == {"bus": 3}  # the latest data for a row still on the board
 
 
+def test_export_has_the_snapshot_its_lookups_and_the_area_taken_together():
+    h = hub()
+    h.publish("buses", {"rows": ["a"]}, {"aaaa": {"bus": 1}})
+    h.publish("buses", {"rows": ["b"]}, {"bbbb": {"bus": 2}})
+    h.put("area", {"vehicles": []})
+    found = h.export()
+    assert set(found) == {"version", "snapshot", "lookups", "previous", "area"}
+    assert found["version"] == 3 and found["snapshot"] == snapshot(h)
+    assert (found["lookups"], found["previous"], found["area"]) == ({"bbbb": {"bus": 2}}, {"aaaa": {"bus": 1}},
+                                                                    {"vehicles": []})
+    h.put("area", None)
+    assert h.export()["area"] is None
+
+
+def test_the_hub_is_a_snapshot_source():
+    from departureboard.snapshot import SnapshotSource
+
+    h: SnapshotSource = hub()
+    for name in ("current", "wait", "lookup", "get", "touch", "active", "age", "close"):
+        assert callable(getattr(h, name)), name
+    assert h.closed is False
+
+
 def test_touch_and_age_follow_the_clock():
     mono = Clock()
     h = hub(monotonic=mono)

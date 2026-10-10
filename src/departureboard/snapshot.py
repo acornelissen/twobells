@@ -19,7 +19,7 @@ import re
 import threading
 import time
 from datetime import date, datetime, timedelta, timezone, tzinfo
-from typing import Callable, Mapping
+from typing import Callable, Mapping, Protocol
 
 from .bodsbus import BusBoard
 from .darwin import CallingPoint, ServiceDetails, TrainBoard, TrainService, train_position
@@ -528,6 +528,31 @@ def _encode(value) -> str:
     return json.dumps(value, separators=(",", ":"), allow_nan=False)
 
 
+class SnapshotSource(Protocol):
+    """What the web server reads the snapshot from: the Hub the pollers
+    publish to, in the same process (Docker, a desktop), or on a Pi a mirror
+    of the snapshot the fetch service hands over (handoff.SnapshotMirror)."""
+
+    def current(self) -> tuple[int, bytes]: ...
+
+    def wait(self, after_version: int, timeout: float) -> int: ...
+
+    def lookup(self, row_id: str) -> dict | None: ...
+
+    def get(self, name: str): ...
+
+    def touch(self) -> None: ...
+
+    def active(self, within: float) -> bool: ...
+
+    def age(self) -> float: ...
+
+    def close(self) -> None: ...
+
+    @property
+    def closed(self) -> bool: ...
+
+
 class Hub:
     """The latest snapshot, shared by the pollers (which publish) and the web
     server's threads (which read and wait). Safe to share between threads."""
@@ -607,6 +632,16 @@ class Hub:
         """What the server keeps about a row of the current or previous snapshot."""
         with self._lock:
             return self._lookups.get(row_id) or self._previous.get(row_id)
+
+    def export(self) -> dict:
+        """Everything another process needs to serve this snapshot, taken
+        together: the version, the snapshot as sent, the lookups of this and
+        the previous snapshot, and the area map (None without one)."""
+        with self._lock:
+            version, body, area = self._version, self._body, self._resources.get("area")
+            lookups, previous = dict(self._lookups), dict(self._previous)
+        return {"version": version, "snapshot": json.loads(body), "lookups": lookups, "previous": previous,
+                "area": area}
 
     def put(self, name: str, value) -> None:
         """Keep a resource the server answers with on its own (the area map's

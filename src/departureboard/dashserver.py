@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Callable
 
 from . import settingsite
 from .auth import local_host, private_address
-from .snapshot import Hub
+from .snapshot import SnapshotSource
 
 if TYPE_CHECKING:
     from .settingsite import SettingsSite
@@ -149,9 +149,11 @@ Recent = Callable[[str, str, str, int], list]  # (mode, route, scheduled, days) 
 @dataclass
 class DashboardApp:
     """What the handlers serve, and the limits they keep to. Without a hub
-    the dashboard isn't running; with one, it is on while dashboard_on()."""
+    the dashboard isn't running; with one, it is on while dashboard_on().
+    The hub is the pollers' own (snapshot.Hub) or, on a Pi, a mirror of the
+    fetch service's (handoff.SnapshotMirror)."""
 
-    hub: Hub | None
+    hub: SnapshotSource | None
     static: StaticFiles
     healthy: Callable[[], bool]
     settings: SettingsSite
