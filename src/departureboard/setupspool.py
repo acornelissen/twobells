@@ -789,7 +789,8 @@ class Worker:
         """`folder` is the spool; `job_folder` the board's state folder, where
         the search builds the timetable. `load_secrets` gives the saved keys,
         as the other units' environment does, and `settings` the board's
-        settings, for what a key test asks about. Setting `stop` ends run()."""
+        settings, for what a key test asks about. Setting `stop` ends run(),
+        and a search running is cancelled and said to be."""
         self.spool = Spool(folder)
         self._job_folder = None if job_folder is None else Path(job_folder)
         self._unavailable = unavailable
@@ -842,10 +843,7 @@ class Worker:
             finally:
                 finished.set()
                 heartbeat.join()
-            with self._lock:
-                if self._job is not None:  # stopped mid-search: say so rather than go quiet
-                    self._job.cancel()
-                    self._write_status(_failed("Cancelled"), force=True)
+            self._stop_search()
             return 0
         finally:
             os.close(fd)
@@ -864,7 +862,18 @@ class Worker:
         lookup holds the main thread for up to its wait (NaPTAN's, longer than
         the page's SILENT_S), and the page must not take that for a stop."""
         while not finished.wait(self._poll):
-            self._report()
+            if self._stop.is_set():  # at once, though a lookup may still hold the main thread
+                self._stop_search()
+            else:
+                self._report()
+
+    def _stop_search(self) -> None:
+        """Stopped mid-search: cancel it and say so, rather than go quiet."""
+        with self._lock:
+            if self._job is not None:
+                self._job.cancel()
+                self._write_status(_failed("Cancelled"), force=True)
+                self._job, self._job_secrets = None, []
 
     def _waiting(self) -> list[Path]:
         try:

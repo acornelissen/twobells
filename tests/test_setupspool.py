@@ -297,6 +297,33 @@ def test_a_search_stays_alive_while_a_long_lookup_runs(board):
     assert not thread.is_alive()
 
 
+def test_a_service_told_to_stop_says_the_search_was_cancelled_at_once(board):
+    # Even while a lookup still holds the main thread, as systemd's stop doesn't wait for it.
+    entered, release = threading.Event(), threading.Event()
+
+    def slow_stops(lat, lon, within_m, limit):
+        entered.set()
+        release.wait(10)
+        return STOPS
+
+    board.worker._nearby_stops = slow_stops
+    thread = threading.Thread(target=board.worker.run, daemon=True)
+    thread.start()
+    try:
+        job = board.runner.make_job({"A": "1800SB12341"}, "", routes=False, walk_minutes={})
+        job.start()
+        wait_for(lambda: job.status()["state"] == "running")
+        board.runner.post(setupspool.new_id(), "stops", {"home": HOME, "within_m": 1000, "limit": 15})
+        assert entered.wait(5)
+        board.worker._stop.set()
+        wait_for(lambda: job.status()["state"] == "failed")
+        assert job.status()["message"] == "Cancelled" and FakeJob.made[-1].cancelled
+    finally:
+        release.set()
+        thread.join(5)
+    assert not thread.is_alive()
+
+
 # Refused files, both ways.
 
 

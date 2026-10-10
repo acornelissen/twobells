@@ -1248,6 +1248,73 @@ def test_the_page_and_the_setup_service_share_systemds_folder_in_memory(tmp_path
     assert (run / "requests").is_dir() and not (tmp_path / "state" / setupspool.SPOOL).exists()
 
 
+def test_the_setup_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypatch):
+    # systemctl stop, a timeout or update.sh: SIGTERM mid-search. The page is told at once, not after a silence.
+    import signal
+
+    from departureboard import setupspool
+
+    class StuckJob:
+        """A discover.SetupJob that runs until cancelled."""
+
+        made = []
+
+        def __init__(self, folder, stops, api_key, *, routes=False, walk_minutes=None, nice=0):
+            self.state = "running"
+            StuckJob.made.append(self)
+
+        def start(self):
+            pass
+
+        def status(self):
+            return {"state": self.state, "step": "Finding bus companies", "done": 0, "total": 3, "message": "",
+                    "result": None}
+
+        def cancel(self):
+            self.state = "failed"
+
+    class Unhandled(Exception):
+        pass
+
+    def unhandled(signum, frame):
+        raise Unhandled  # SIGTERM reached the test's own handler: the service didn't take it
+
+    real = setupspool.Worker
+    monkeypatch.setattr(setupspool, "Worker", lambda *a, **kw: real(*a, make_job=StuckJob, **kw))
+    run = tmp_path / "run"
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
+    config = installed_template(tmp_path)
+    (tmp_path / "state").mkdir()
+    secrets = tmp_path / "secrets.env"
+    secrets.write_text("BODS_API_KEY=saved-bods-key\n")
+    asked = {}
+
+    def page():
+        runner = setupspool.SpoolRunner(run, poll=0.01)
+        asked["job"] = job = runner.make_job({"A": "1800SB12341"}, "", routes=False, walk_minutes={})
+        job.start()
+        deadline = time.monotonic() + 5
+        while job.status()["state"] != "running" and time.monotonic() < deadline:
+            time.sleep(0.01)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    previous = signal.signal(signal.SIGTERM, unhandled)
+    thread = threading.Thread(target=page)
+    try:
+        thread.start()
+        try:
+            assert main(["setup", "serve", "--config", str(config), "--secrets", str(secrets)]) == 0
+        except Unhandled:
+            pytest.fail("the setup service didn't handle SIGTERM")
+        thread.join(5)
+        assert signal.getsignal(signal.SIGTERM) is unhandled  # put back as it was
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+    status = asked["job"].status()
+    assert (status["state"], status["message"]) == ("failed", "Cancelled")
+    assert [job.state for job in StuckJob.made] == ["failed"]
+
+
 def test_the_setup_service_says_plainly_when_there_is_no_config(tmp_path, capsys, no_runtime_folder):
     assert main(["setup", "serve", "--config", str(tmp_path / "missing.toml")]) == 2  # and nowhere to answer
     assert "missing.toml" in capsys.readouterr().err

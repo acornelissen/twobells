@@ -496,12 +496,14 @@ def _setup_serve(args) -> int:
     except setupspool.SpoolError as error:
         print(error, file=sys.stderr)
         return 2
+    stop = threading.Event()
     if problem:
         print(problem, file=sys.stderr)
         if spool is None:
             return 2
         # Say so to the page, rather than stop with its requests waiting and be started again and again.
-        worker = setupspool.Worker(spool, job_folder=None, load_secrets=dict, unavailable=setupspool.NO_SETTINGS)
+        worker = setupspool.Worker(spool, job_folder=None, load_secrets=dict, unavailable=setupspool.NO_SETTINGS,
+                                   stop=stop)
     else:
         target = board_target(args.config)
 
@@ -512,12 +514,16 @@ def _setup_serve(args) -> int:
                 return {}  # a key test then asks about Glossop
 
         worker = setupspool.Worker(spool, job_folder=folder,
-                                   load_secrets=lambda: _env(args.config, args.secrets), settings=settings)
+                                   load_secrets=lambda: _env(args.config, args.secrets), settings=settings, stop=stop)
+    # systemctl stop, a timeout or update.sh: end cleanly, telling the page a running search was cancelled.
+    previous = signal.signal(signal.SIGTERM, lambda signum, frame: stop.set())
     try:
         return worker.run()
     except (OSError, setupspool.SpoolError) as error:
         print(f"Can't use the setup spool: {error}", file=sys.stderr)
         return 2
+    finally:
+        signal.signal(signal.SIGTERM, previous)
 
 
 def _set_password(password, prompt: str) -> int:
