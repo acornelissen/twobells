@@ -55,6 +55,11 @@ def area(**positions):
     return BusArea.from_schedule(replace(plan, positions={**plan.positions, **positions}))
 
 
+# A positioned stop west of Glossop, as a fuller timetable has one: it puts
+# the Hadfield roadworks' stops at Brookfield inside our area.
+DINTING_LANE = {"1000DGDL0001": StopPosition("Dinting Lane", 53.452, -1.975)}
+
+
 def keys(found):
     return [d.key for d in found]
 
@@ -84,13 +89,27 @@ def test_situations_are_read_whole():
     assert found["d4f83d44-29d7-4349-bc80-0b6d5554969e"].reason == "Roadworks"
 
 
-def test_only_our_lines_and_stops_in_the_next_seven_days_are_kept():
-    found = bus_disruptions(situations(), area(), CAPTURED)
-    assert keys(found) == [STOCKPORT_STOP, HADFIELD_ROADWORKS]  # soonest first
-    stockport, hadfield = found
-    assert stockport.lines == ("394",) and stockport.stops == ()
+def test_a_notice_on_our_line_far_from_our_stops_is_left_out():
+    # The Stockport Road closure names our 394, but its stops are in
+    # Stockport; the Hadfield roadworks' stops are outside this small area.
+    assert bus_disruptions(situations(), area(), CAPTURED) == []
+
+
+def test_a_notice_on_our_line_with_a_stop_in_our_area_is_kept_as_line():
+    found = bus_disruptions(situations(), area(**DINTING_LANE), CAPTURED)
+    assert keys(found) == [HADFIELD_ROADWORKS]  # Stockport is still too far
+    hadfield = found[0]
+    assert hadfield.relevance == "line" and hadfield.stops == ()
     assert hadfield.lines == ("237",) and hadfield.mode == "bus" and hadfield.severity == "normal"
+    assert "Brookfield" in hadfield.places
     assert hadfield.summary.startswith("Due to") and len(hadfield.summary) <= 500
+
+
+def test_a_notice_on_our_line_at_a_stop_on_our_routes_is_nearby():
+    brookfield = StopPosition("Brookfield", 53.452107, -1.979437)
+    found = bus_disruptions(situations(), area(**{"1000DDSL4374": brookfield}), CAPTURED)
+    assert keys(found) == [HADFIELD_ROADWORKS]
+    assert found[0].relevance == "nearby"
 
 
 def test_a_line_must_be_run_by_our_operator_for_it():
@@ -104,6 +123,7 @@ def test_a_situation_at_our_stop_counts_whatever_its_lines():
     near_remembrance = datetime(2026, 11, 7, 12, 0, tzinfo=UTC)
     found = {d.key: d for d in bus_disruptions(situations(), area(), near_remembrance)}
     remembrance = found[REMEMBRANCE]
+    assert remembrance.relevance == "your_stop"
     assert remembrance.stops == ("A", "B")  # Henry Street and St Marys Road are our stops
     assert remembrance.lines == ("237",)  # its 341 is BNGN's; ours is BNML's
     assert "Henry Street" in remembrance.places and "George Street" in remembrance.places
@@ -114,7 +134,8 @@ def test_a_stop_on_our_routes_counts_only_when_its_consequence_names_no_lines():
     heaton = StopPosition("Heaton Park", 53.53, -2.25)
     assert LIFT not in keys(bus_disruptions(situations(), area(), CAPTURED))
     found = bus_disruptions(situations(), area(**{"9400ZZMAHEA": heaton}), CAPTURED)
-    assert LIFT in keys(found)
+    lift = {d.key: d for d in found}[LIFT]
+    assert lift.relevance == "nearby"
     # The Stockport closure lists its own lines, so its stops alone wouldn't do.
     stockport = next(s for s in situations() if s.number == STOCKPORT_STOP)
     others = replace(stockport, consequences=tuple(
@@ -163,13 +184,62 @@ def test_all_lines_of_our_operator_count_only_within_our_area():
     found = bus_disruptions(parse_siri_sx(sx(inside, outside, nowhere, others)), area(), CAPTURED)
     assert keys(found) == ["IN"]
     assert found[0].lines == ("237", "341") and found[0].stops == ()
-    assert found[0].reason == "Road closed"
+    assert found[0].reason == "Road closed" and found[0].relevance == "line"
+
+
+def our_line(line, stops=(("1000DGXX0001", 53.4435, -1.9550),)):
+    """A consequence on our line (BNML's), at stops given as (ATCO, lat, lon);
+    by default one in our area but not on our routes."""
+    points = "".join(
+        f"<AffectedStopPoint><StopPointRef>{atco}</StopPointRef><StopPointName>{atco}</StopPointName>"
+        f"<Location><Longitude>{lon}</Longitude><Latitude>{lat}</Latitude></Location></AffectedStopPoint>"
+        for atco, lat, lon in stops)
+    return ("<Networks><AffectedNetwork><AffectedLine><AffectedOperator><OperatorRef>BNML</OperatorRef>"
+            f"</AffectedOperator><LineRef>{line}</LineRef></AffectedLine></AffectedNetwork></Networks>"
+            f"<StopPoints>{points}</StopPoints>")
+
+
+def test_our_line_counts_only_with_an_affected_stop_in_our_area():
+    # Like the live Stockport Road (394) and Mayfield Depot (219) notices:
+    # our line, but nowhere near our stops.
+    mayfield = ("1800NE43431", 53.4740, -2.2260)
+    body = sx(
+        situation("FAR", affects=our_line("237", [mayfield])),
+        situation("NO_STOPS", affects=our_line("237", [])),
+        situation("NEAR", affects=our_line("237", [mayfield, ("1000DGXX0001", 53.4435, -1.9550)])),
+    )
+    found = bus_disruptions(parse_siri_sx(body), area(), CAPTURED)
+    assert keys(found) == ["NEAR"]
+    assert found[0].relevance == "line" and found[0].places == ("1000DGXX0001",)
+
+
+def test_lines_come_only_from_the_parts_of_a_notice_in_our_area():
+    far = ("<Consequence><Severity>severe</Severity><Affects>"
+           + our_line("341", [("1800NE43431", 53.4740, -2.2260)]) + "</Affects></Consequence>")
+    body = sx(situation("TWO", affects=our_line("237")).replace("</Consequences>", far + "</Consequences>"))
+    found = bus_disruptions(parse_siri_sx(body), area(), CAPTURED)
+    assert found[0].lines == ("237",)
+
+
+def test_the_most_relevant_come_first_then_those_in_force_now():
+    now = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
+    henry_street = ("1000DGHS0900", 53.44384, -1.948999)  # our stop A
+    st_marys = ("1000DGHS3406", 53.443511, -1.955759)  # on our routes
+    body = sx(
+        situation("LINE_NOW", start="2026-10-09T08:00:00Z", affects=our_line("341")),
+        situation("NEARBY_SOON", start="2026-10-10T08:00:00Z", affects=our_line("341", [st_marys])),
+        situation("NEARBY_NOW", start="2026-10-09T09:00:00Z", affects=our_line("341", [st_marys])),
+        situation("STOP_LATER", start="2026-10-14T08:00:00Z", end="2026-10-15T08:00:00Z",
+                  affects=our_line("341", [henry_street])),
+    )
+    found = bus_disruptions(parse_siri_sx(body), area(), now)
+    assert keys(found) == ["STOP_LATER", "NEARBY_NOW", "NEARBY_SOON", "LINE_NOW"]
+    assert [d.relevance for d in found] == ["your_stop", "nearby", "nearby", "line"]
 
 
 def test_validity_windows():
     now = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
-    line = ("<Networks><AffectedNetwork><AffectedLine><AffectedOperator><OperatorRef>BNML</OperatorRef>"
-            "</AffectedOperator><LineRef>341</LineRef></AffectedLine></AffectedNetwork></Networks>")
+    line = our_line("341")
     body = sx(
         situation("ENDED", start="2026-10-01T00:00:00Z", end="2026-10-09T11:59:00Z", affects=line),
         situation("NOW", start="2026-10-09T11:00:00+01:00", end=None, affects=line),
@@ -186,8 +256,7 @@ def test_only_the_periods_in_the_next_seven_days_are_kept():
     nightly = "".join(
         f"<ValidityPeriod><StartTime>2026-10-{d:02d}T19:00:00Z</StartTime>"
         f"<EndTime>2026-10-{d + 1:02d}T04:00:00Z</EndTime></ValidityPeriod>" for d in range(1, 28))
-    line = ("<Networks><AffectedNetwork><AffectedLine><AffectedOperator><OperatorRef>BNML</OperatorRef>"
-            "</AffectedOperator><LineRef>237</LineRef></AffectedLine></AffectedNetwork></Networks>")
+    line = our_line("237")
     later = situation("NIGHTS", start="2026-10-27T19:00:00Z", end="2026-10-28T04:00:00Z", affects=line)
     body = sx(later.replace("<Progress>open</Progress>", f"<Progress>open</Progress>{nightly}"))
     found = bus_disruptions(parse_siri_sx(body), area(), datetime(2026, 10, 9, 12, 0, tzinfo=UTC))
@@ -326,7 +395,7 @@ def test_the_bus_source_asks_siri_sx_with_the_key_and_never_repeats_it():
 
 STATIONS = {"GLO": "Glossop", "MAN": "Manchester Piccadilly", "DTG": "Dinting", "HDF": "Hadfield",
             "GUI": "Guide Bridge", "BDB": "Broadbottom"}
-RAIL = RailArea(frozenset({"NT"}), STATIONS)
+RAIL = RailArea(frozenset({"NT"}), STATIONS, "GLO")
 TONIGHT = datetime(2026, 10, 9, 22, 0, tzinfo=LONDON)
 
 
@@ -346,12 +415,20 @@ def test_kb_incidents_are_read():
 
 def test_only_our_operators_at_our_stations_soon_are_kept():
     found = train_disruptions(parse_kb_incidents(KB.read_bytes()), RAIL, TONIGHT)
-    assert keys(found) == ["A1B2C3D4E5F60002", "A1B2C3D4E5F60001"]
-    signals, works = found
+    # The works name Glossop, our own station, so they come first.
+    assert keys(found) == ["A1B2C3D4E5F60001", "A1B2C3D4E5F60002"]
+    works, signals = found
     assert signals.mode == "train" and signals.planned is False and signals.places == ("Dinting",)
+    assert signals.relevance == "line"
     assert works.planned is True and works.title.startswith("Engineering works")
     assert set(works.places) == {"Glossop", "Guide Bridge", "Hadfield", "Manchester Piccadilly"}
-    assert works.lines == () and works.stops == ()
+    assert works.lines == () and works.stops == () and works.relevance == "your_stop"
+
+
+def test_without_our_own_station_rail_incidents_are_in_force_first():
+    found = train_disruptions(parse_kb_incidents(KB.read_bytes()), replace(RAIL, home=""), TONIGHT)
+    assert keys(found) == ["A1B2C3D4E5F60002", "A1B2C3D4E5F60001"]  # the signals now, the works next week
+    assert {d.relevance for d in found} == {"line"}
 
 
 def test_a_station_code_counts_as_a_mention():
@@ -393,17 +470,19 @@ def test_the_placeholder_address_is_known():
 
 
 def test_the_section_has_both_sources_and_their_items():
-    bus = bus_disruptions(situations(), area(), CAPTURED)
+    bus = bus_disruptions(situations(), area(**DINTING_LANE), CAPTURED)
     train = train_disruptions(parse_kb_incidents(KB.read_bytes()), RAIL, TONIGHT)
     part = disruptions_part(bus, {"last_success": None, "stale": False, "error": None, "note": None}, train, None,
                             LONDON)
     assert part["status"]["train"] is None
     items = part["items"]
-    assert [i["mode"] for i in items] == ["bus", "bus", "train", "train"]
-    hadfield = items[1]
+    assert [i["mode"] for i in items] == ["bus", "train", "train"]
+    hadfield = items[0]
     assert hadfield["id"] == row_id("disruption", f"bus|{HADFIELD_ROADWORKS}")
     assert hadfield["from_at"] == "2026-10-12T08:00:00+01:00" and hadfield["to_at"] == "2026-10-30T16:00:00+00:00"
     assert hadfield["periods"] == [{"from_at": hadfield["from_at"], "to_at": hadfield["to_at"]}]
     assert hadfield["lines"] == ["237"] and hadfield["severity"] == "normal" and hadfield["link"] is None
+    assert hadfield["relevance"] == "line"
+    assert [i["relevance"] for i in items[1:]] == ["your_stop", "line"]
     assert items[2]["to_at"] is None and items[2]["severity"] == "severe"
     assert HADFIELD_ROADWORKS not in str(part)  # feed numbers stay on the server

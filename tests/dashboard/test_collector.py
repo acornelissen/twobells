@@ -726,27 +726,42 @@ def test_disruption_feeds_are_polled_every_ten_and_thirty_minutes(tmp_path):
     assert pollers["bus-disruptions"].step() == 600 and pollers["train-incidents"].step() == 1800
 
 
+# The day before Remembrance Sunday, whose road closures are at our stops.
+REMEMBRANCE_EVE = datetime(2026, 11, 7, 12, 0, tzinfo=LONDON)
+
+
 def test_bus_disruptions_wait_for_the_timetable_to_know_what_is_ours(tmp_path):
-    setup = disrupted(tmp_path)
+    setup = disrupted(tmp_path, now=REMEMBRANCE_EVE)
     setup.collector.poll_bus_disruptions()
     part = setup.snapshot()["disruptions"]
     assert part["status"]["bus"]["note"] == "Waiting for the bus timetable" and part["items"] == []
-    assert part["status"]["bus"]["last_success"] == "2026-10-09T23:14:00+01:00"
+    assert part["status"]["bus"]["last_success"] == "2026-11-07T12:00:00+00:00"
     setup.collector.poll_buses()  # the timetable: 341 and 237, both BNML's
-    assert titles(setup, "bus") == ["Station Road, Hadfield - Roadworks"]
+    assert titles(setup, "bus") == ["Glossop Remembrance Sunday"]
+    assert setup.snapshot()["disruptions"]["items"][0]["relevance"] == "your_stop"
     assert setup.snapshot()["disruptions"]["status"]["bus"]["note"] is None
     assert setup.situations.calls == 1  # filtered again without asking again
 
 
-def test_a_failed_disruption_poll_keeps_what_was_known_without_the_key(tmp_path):
+def test_bus_disruptions_far_from_our_stops_are_left_out(tmp_path):
+    # The capture's Stockport Road closure names our 394 (not in this
+    # timetable) and its Hadfield roadworks our 237, but neither has a stop
+    # in our area.
     setup = disrupted(tmp_path)
+    setup.collector.poll_buses()
+    setup.collector.poll_bus_disruptions()
+    assert titles(setup, "bus") == []
+
+
+def test_a_failed_disruption_poll_keeps_what_was_known_without_the_key(tmp_path):
+    setup = disrupted(tmp_path, now=REMEMBRANCE_EVE)
     setup.collector.poll_buses()
     setup.collector.poll_bus_disruptions()
     setup.situations.error = RuntimeError("HTTP 500 for https://data.bus-data.dft.gov.uk/x?api_key=sekrit")
     with pytest.raises(RuntimeError):
         setup.collector.poll_bus_disruptions()
     part = setup.snapshot()["disruptions"]
-    assert titles(setup, "bus") == ["Station Road, Hadfield - Roadworks"]
+    assert titles(setup, "bus") == ["Glossop Remembrance Sunday"]
     assert part["status"]["bus"]["stale"] is True and "sekrit" not in json.dumps(part)
 
 
@@ -756,9 +771,11 @@ def test_rail_incidents_are_filtered_by_the_train_board(tmp_path):
     assert titles(setup, "train") == []
     assert setup.snapshot()["disruptions"]["status"]["train"]["note"] == "Waiting for the train board"
     setup.collector.poll_trains()  # Northern trains via Dinting and Guide Bridge
+    # The works name Glossop, our own station, so they come before the signals at Dinting.
     assert titles(setup, "train") == [
-        "Disruption at Dinting", "Engineering works between Manchester Piccadilly and Glossop / Hadfield",
+        "Engineering works between Manchester Piccadilly and Glossop / Hadfield", "Disruption at Dinting",
     ]
+    assert [i["relevance"] for i in setup.snapshot()["disruptions"]["items"]] == ["your_stop", "line"]
     # An empty board late at night keeps what is ours.
     setup.trains.payload = {"locationName": "Glossop", "trainServices": []}
     setup.collector.poll_trains()

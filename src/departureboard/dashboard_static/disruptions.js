@@ -1,13 +1,17 @@
 // The disruptions panel: bus roadworks, diversions and stop closures, and
-// rail engineering works, in words, those in force first. Bus rows that one
-// touches get a "Disruption" link to it. Rail messages from the train board
-// stay in their own panel (board.js).
+// rail engineering works, in words, those in force first, each part most
+// relevant first. Bus rows that one touches get a "Disruption" link to it.
+// Rail messages from the train board stay in their own panel (board.js).
 
 import { $, h, vh, fill, setText, str, list, obj, validId } from "./dom.js";
 import { now, parseAt } from "./time.js";
 import { icon } from "./icons.js";
 
 const MODE = { bus: "Bus", train: "Train" };
+// The server's relevance tiers, most relevant first: at one of our stops, at a
+// stop on our routes nearby, or on our line inside our area.
+const RELEVANCE = { your_stop: 0, nearby: 1, line: 2 };
+const rank = (item) => RELEVANCE[item.relevance] ?? 2;
 // Severity in words, and the badge colours that reinforce them.
 const SEVERITY = {
   slight: ["Minor disruption", "st-unknown", "info"],
@@ -61,7 +65,7 @@ function arranged(items, t) {
     const current = left.find(([from]) => from <= t);
     found.push({ item, period: current || left[0], current: !!current, more: left.length - 1 });
   }
-  const order = (a, b) => a.period[0] - b.period[0];
+  const order = (a, b) => rank(a.item) - rank(b.item) || a.period[0] - b.period[0];
   return { current: found.filter((f) => f.current).sort(order), coming: found.filter((f) => !f.current).sort(order) };
 }
 

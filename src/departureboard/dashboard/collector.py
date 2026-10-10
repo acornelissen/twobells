@@ -363,7 +363,7 @@ class Collector:
         for point in points:
             if point.crs:
                 stations[point.crs] = point.name
-        found = RailArea(operators, stations)
+        found = RailArea(operators, stations, self._settings.train_crs)
         if found != self._rail_area:
             with self._disruptions_lock:
                 self._rail_area = found

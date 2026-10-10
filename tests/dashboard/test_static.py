@@ -515,6 +515,7 @@ DISRUPTION = {
     "from_at": at, "to_at": Opt(at), "periods": [PERIOD], "planned": bool,
     "lines": [str], "stops": [str], "places": [str],
     "severity": one_of("slight", "normal", "severe", "unknown"),
+    "relevance": one_of("your_stop", "nearby", "line"),
     "link": Opt(lambda v: isinstance(v, str) and v.startswith("https://")),
 }
 DISRUPTIONS = {"status": {"bus": Opt(STATUS), "train": Opt(STATUS)}, "items": [DISRUPTION]}
@@ -635,6 +636,7 @@ def test_disruptions_in_the_fixture_cover_what_the_page_draws():
     rows = snapshot["buses"]["rows"]
     assert any(r["line"] in i["lines"] and r["stop"] in i["stops"] for i in items for r in rows)
     assert len({i["id"] for i in items}) == len(items)
+    assert {i["relevance"] for i in items} >= {"your_stop", "line"}
 
 
 def test_bus_fixture_follows_the_contract():
@@ -703,6 +705,32 @@ def test_feed_links_leave_without_a_referrer_or_an_opener():
 def test_the_disruptions_panel_is_on_the_page():
     ids = {attrs.get("id") for _, attrs in _page().elements}
     assert {"disruptions", "disruptions-heading", "disruptions-status", "disruptions-body"} <= ids
+
+
+@needs_node
+def test_disruptions_are_listed_most_relevant_first():
+    found = run_js("""
+        import { renderDisruptions } from "./disruptions.js";
+        for (const id of ["disruptions", "disruptions-status", "disruptions-body"]) {
+          const el = document.createElement("div");
+          el.setAttribute("id", id);
+          el.classList = { toggle() {} };
+          document.body.append(el);
+        }
+        const item = (id, relevance, from) => ({
+          id, mode: "bus", title: id, summary: "", reason: null, planned: true, lines: [], stops: [], places: [],
+          severity: "normal", relevance, link: null, periods: [{ from_at: from, to_at: null }],
+        });
+        renderDisruptions({ generated_at: "2026-10-10T07:00:00+01:00", disruptions: { status: {}, items: [
+          item("aaaaaaaaaaaaaaaa", "line", "2026-01-01T00:00:00+00:00"),
+          item("bbbbbbbbbbbbbbbb", "nearby", "2026-02-01T00:00:00+00:00"),
+          item("cccccccccccccccc", "your_stop", "2026-03-01T00:00:00+00:00"),
+          item("dddddddddddddddd", "line", "2025-12-01T00:00:00+00:00"),
+        ] } });
+        console.log(JSON.stringify(elements(document.body).filter((el) => el.nodeName === "LI").map((el) => el.id)));
+    """)
+    assert found == ["disruption-cccccccccccccccc", "disruption-bbbbbbbbbbbbbbbb",
+                     "disruption-dddddddddddddddd", "disruption-aaaaaaaaaaaaaaaa"]
 
 
 # --- The train dialog's journey line ---

@@ -6,23 +6,30 @@ Both feeds cover far more than our corner of the map (SIRI-SX is all of
 England, about 5 MB), so each is read as it arrives, one situation or
 incident at a time, and only what touches us is kept:
 
-Buses. A situation is ours if one of its consequences names
-  - one of our lines run by the operator our timetable has for it (line and
-    operator must both match: "61" is a line in a dozen towns);
-  - one of our own stops (the ones in [bus] stops);
-  - a stop our timetabled journeys call at near our stops (the timetable's
-    positioned stops), but only when that consequence lists no lines of its
-    own, as with "all lines" or a plain stop closure;
-  - or "all lines" of an operator that runs one of our lines, but only when
-    one of its affected stops lies within our area (the box around the
-    positioned stops, about a kilometre wider each side). A network-wide
-    notice with no stops in our area is left out, to keep the noise down.
+Buses. A situation is ours if one of its consequences names, from the
+most relevant:
+  - your_stop: one of our own stops (the ones in [bus] stops), whatever its
+    lines;
+  - nearby: a stop our timetabled journeys call at near our stops (the
+    timetable's positioned stops), when that consequence names one of our
+    lines or lists no lines of its own, as with "all lines" or a plain stop
+    closure;
+  - line: one of our lines, or "all lines" of an operator that runs one of
+    them, with one of its affected stops inside our area (the box around the
+    positioned stops, about a kilometre wider each side). A line is ours
+    only when run by the operator our timetable has for it: "61" is a line
+    in a dozen towns. A notice on our line with no affected stop in our area
+    (roadworks at its far end, or no stops given) is left out, to keep the
+    noise down.
 
 Trains. An incident is ours if it names one of the operators running our
 trains and mentions one of our stations: our own, the filter station, or
-any station our trains call at, by name or by its three-letter code.
+any station our trains call at, by name or by its three-letter code. It is
+your_stop when it mentions our own station, otherwise line.
 
 Either way it must be valid now or at some point in the next seven days.
+Each mode's list is ordered by relevance, then those in force now, then the
+soonest.
 
 All feed text is untrusted: it is cut to plain text (any HTML in it is
 dropped, never interpreted), and links are kept only if they are https and
@@ -65,6 +72,7 @@ MAX_PERIODS = 14
 MAX_PLACES = 10
 AREA_MARGIN = 0.01  # degrees, about a kilometre
 SEVERITIES = ("slight", "normal", "severe", "unknown")
+RELEVANCE = ("your_stop", "nearby", "line")  # most relevant first
 
 # Links are kept only to these sites (exact host names): the operators and
 # authorities that run or publish our services. Anything else is dropped.
@@ -375,6 +383,7 @@ class RailArea:
 
     operators: frozenset[str]  # Darwin operator codes, like "NT"
     stations: Mapping[str, str]  # CRS code -> name
+    home: str = ""  # our own station's CRS code, one of stations
 
 
 @dataclass(frozen=True)
@@ -393,6 +402,7 @@ class Disruption:
     places: tuple[str, ...]  # stop or station names, in words
     severity: str
     link: str | None
+    relevance: str  # one of RELEVANCE
 
 
 def _soon(periods, now: datetime) -> tuple[tuple[datetime, datetime | None], ...]:
@@ -407,33 +417,45 @@ def _add(names: list[str], name: str) -> None:
         names.append(name)
 
 
-def _bus_match(situation: Situation, area: BusArea) -> tuple[set[str], set[str], list[str]] | None:
-    """(our lines, our stop labels, place names) a situation affects, or None."""
-    lines, labels, places = set(), set(), []
-    matched = False
-    our_operators = area.operators
+def _our_lines(consequence: Consequence, area: BusArea) -> set[str]:
+    """Our lines a consequence names, as shown: by line and operator, or every
+    line of an operator of ours for "all lines"."""
+    found = {shown for line, operator in consequence.lines
+             if (shown := area.lines.get((line.casefold(), operator.casefold()))) is not None}
+    operators = {o.casefold() for o in consequence.operators} & area.operators
+    if consequence.all_lines and operators:
+        found.update(shown for (_, op), shown in area.lines.items() if op in operators)
+    return found
+
+
+def _bus_match(situation: Situation, area: BusArea) -> tuple[str, set[str], set[str], list[str]] | None:
+    """(relevance, our lines, our stop labels, place names) a situation
+    affects, or None. Only the consequences that touch our area count. See
+    the module's notes for the tiers."""
+    tiers, lines, labels, places = set(), set(), set(), []
     for consequence in situation.consequences:
-        for line, operator in consequence.lines:
-            shown = area.lines.get((line.casefold(), operator.casefold()))
-            if shown is not None:
-                lines.add(shown)
+        named = _our_lines(consequence, area)
+        counted = False
         for stop in consequence.stops:
             ours = [label for label, atco in area.stops.items() if atco == stop.atco]
             position = area.positioned.get(stop.atco)
-            if ours or (position is not None and not consequence.lines):
-                matched = True
-                labels.update(ours)
-            if ours or position is not None:
-                _add(places, stop.name or (position.name if position else ""))
-        operators = {o.casefold() for o in consequence.operators} & our_operators
-        if consequence.all_lines and operators and any(area.inside(s) for s in consequence.stops):
-            lines.update(shown for (_, op), shown in area.lines.items() if op in operators)
-            for stop in consequence.stops:
-                if area.inside(stop):
-                    _add(places, stop.name)
-    if not (lines or matched):
+            if ours:
+                tier = "your_stop"
+            elif position is not None and (named or not consequence.lines):
+                tier = "nearby"
+            elif named and area.inside(stop):
+                tier = "line"
+            else:
+                continue
+            counted = True
+            tiers.add(tier)
+            labels.update(ours)
+            _add(places, stop.name or (position.name if position else ""))
+        if counted:
+            lines.update(named)
+    if not tiers:
         return None
-    return lines, labels, places
+    return min(tiers, key=RELEVANCE.index), lines, labels, places
 
 
 def _worst(severities: Iterable[str]) -> str:
@@ -443,7 +465,7 @@ def _worst(severities: Iterable[str]) -> str:
 
 def bus_disruptions(situations: Iterable[Situation], area: BusArea | None, now: datetime) -> list[Disruption]:
     """The situations that affect our lines or stops in the next seven days,
-    soonest first. See the module's notes for what counts."""
+    most relevant first. See the module's notes for what counts."""
     if area is None:
         return []
     found = []
@@ -454,15 +476,15 @@ def bus_disruptions(situations: Iterable[Situation], area: BusArea | None, now: 
         hit = _bus_match(situation, area)
         if hit is None:
             continue
-        lines, labels, places = hit
+        relevance, lines, labels, places = hit
         found.append(Disruption(
             key=situation.number, mode="bus", title=situation.summary or "Bus disruption",
             summary=situation.description, reason=situation.reason, planned=situation.planned,
             periods=periods, lines=tuple(sorted(lines, key=_line_order)), stops=tuple(sorted(labels)),
             places=tuple(places), severity=_worst(c.severity for c in situation.consequences),
-            link=situation.link,
+            link=situation.link, relevance=relevance,
         ))
-    return _ordered(found)
+    return _ordered(found, now)
 
 
 def _line_order(line: str) -> tuple:
@@ -470,9 +492,13 @@ def _line_order(line: str) -> tuple:
     return (int(digits) if digits else 10**6, line)
 
 
-def _ordered(found: list[Disruption]) -> list[Disruption]:
+def _ordered(found: list[Disruption], now: datetime) -> list[Disruption]:
+    """Most relevant first; within a tier, those in force now, then the
+    soonest. Periods are in order and none has ended (see _soon), so one is
+    in force now when its first has started."""
     unique = {d.key: d for d in found}
-    return sorted(unique.values(), key=lambda d: (d.periods[0][0], d.title))[:MAX_ITEMS]
+    return sorted(unique.values(), key=lambda d: (
+        RELEVANCE.index(d.relevance), d.periods[0][0] > now, d.periods[0][0], d.title))[:MAX_ITEMS]
 
 
 # Rail incidents (National Rail Knowledgebase).
@@ -543,7 +569,7 @@ def _mentions(text: str, name: str, crs: str) -> bool:
 
 def train_disruptions(incidents: Iterable[Incident], area: RailArea | None, now: datetime) -> list[Disruption]:
     """The incidents that name one of our operators and mention one of our
-    stations, valid now or in the next seven days, soonest first."""
+    stations, valid now or in the next seven days, most relevant first."""
     if area is None or not area.operators:
         return []
     found = []
@@ -553,18 +579,20 @@ def train_disruptions(incidents: Iterable[Incident], area: RailArea | None, now:
             continue
         text = " ".join((incident.summary, incident.routes, incident.description))
         places: list[str] = []
+        home = False
         for crs, name in sorted(area.stations.items()):
             if _mentions(text, name, crs):
                 _add(places, name or crs)
+                home = home or crs == area.home
         if not places:
             continue
         found.append(Disruption(
             key=incident.number, mode="train", title=incident.summary or "Rail disruption",
             summary=incident.description or incident.routes, reason=None, planned=incident.planned,
             periods=periods, lines=(), stops=(), places=tuple(places), severity=incident.severity,
-            link=incident.link,
+            link=incident.link, relevance="your_stop" if home else "line",
         ))
-    return _ordered(found)
+    return _ordered(found, now)
 
 
 # The snapshot's disruptions section (docs/dashboard-api.md).
@@ -587,6 +615,7 @@ def _item(disruption: Disruption, tz: tzinfo) -> dict:
         "stops": list(disruption.stops),
         "places": list(disruption.places),
         "severity": disruption.severity if disruption.severity in SEVERITIES else "unknown",
+        "relevance": disruption.relevance if disruption.relevance in RELEVANCE else "line",
         "link": disruption.link,
     }
 
@@ -594,7 +623,7 @@ def _item(disruption: Disruption, tz: tzinfo) -> dict:
 def disruptions_part(bus: list[Disruption], bus_status: dict | None, train: list[Disruption],
                      train_status: dict | None, tz: tzinfo) -> dict:
     """The disruptions section: each source's status (None when it isn't set
-    up) and the items, buses then trains, each soonest first."""
+    up) and the items, buses then trains, each most relevant first."""
     return {
         "status": {"bus": bus_status, "train": train_status},
         "items": [_item(d, tz) for d in [*bus, *train]],

@@ -280,6 +280,7 @@ A top-level key of `/api/snapshot`, after `weather`. It is `null` when neither s
     "stops": [],
     "places": ["Station Road"],
     "severity": "normal",
+    "relevance": "line",
     "link": null
   }]
 }
@@ -289,17 +290,22 @@ A top-level key of `/api/snapshot`, after `weather`. It is `null` when neither s
   - `bus`: BODS SIRI-SX (the buses' `BODS_API_KEY`), polled every 10 minutes. `null` without buses. `note` is "Waiting for the bus timetable" until the timetable says which lines and stops are ours.
   - `train`: the National Rail Knowledgebase's incidents through the Rail Data Marketplace (`RDM_KB_API_KEY`, at `[dashboard] kb_incidents_url`), polled every 30 minutes. `null` without the key or without the address (the settings site and the log say which). `note` is "Waiting for the train board" until a board names our operators.
 - **Which are kept** (see `disruptions.py`): valid now or in the next 7 days, and:
-  - buses: on our line *with* the operator our timetable has for it; at one of our own stops; at a positioned stop our journeys use, if that part of the notice names no lines; or "all lines" of one of our operators with an affected stop inside our area (about 1 km around the positioned stops). Nothing else.
-  - trains: names one of the operators running our trains, and mentions one of our stations (ours, the filter station, or any our trains call at) by name or three-letter code.
-- **Items:** buses first, then trains, each soonest first; at most 30 of each.
+  - buses, by `relevance`:
+    - `your_stop`: at one of our own stops, whatever its lines;
+    - `nearby`: at a positioned stop our journeys use near our stops, if that part of the notice names one of our lines or no lines at all;
+    - `line`: on our line *with* the operator our timetable has for it, or "all lines" of one of our operators, with an affected stop inside our area (about 1 km around the positioned stops).
+    - Nothing else: a notice on our line whose stops are all outside our area (roadworks at the far end of the route), or that names no stops, is left out. Only the parts of a notice in our area give its `lines` and `places`.
+  - trains: names one of the operators running our trains, and mentions one of our stations (ours, the filter station, or any our trains call at) by name or three-letter code. `relevance` is `your_stop` when it mentions our own station, else `line`.
+- **Items:** buses first, then trains, each most relevant first, then those in force now, then the soonest; at most 30 of each.
   - `id` is 16 hex characters, stable for the same notice; the feed's own number stays on the server.
   - `title`, `summary` (at most 500 characters) and `reason` are plain text, with any HTML in the feed dropped.
   - `periods` are the notice's validity periods that touch now to 7 days ahead, in order (at most 14). `from_at` and `to_at` repeat the first. `to_at` is `null` when open-ended.
   - `planned` is the feed's own word: engineering works and booked roadworks are planned.
   - `lines` are our lines it affects (bus only); `stops` our stop labels it names, as in `buses.stops` (bus only); `places` stop or station names, in words.
   - `severity` is `slight`, `normal`, `severe` or `unknown`; always shown in words.
+  - `relevance` is `your_stop`, `nearby` or `line`, most relevant first (see above).
   - `link` is `null` unless the feed gave an https link on a known operator's site (`disruptions.LINK_HOSTS`).
-- **On the page:** a panel lists them, in force first, then coming up, in words. A bus row whose line or stop an item names, during one of its periods, gets a "Disruption" link to it. Rail `messages` stay in their own panel.
+- **On the page:** a panel lists them, in force first, then coming up, each most relevant first, in words. A bus row whose line or stop an item names, during one of its periods, gets a "Disruption" link to it. Rail `messages` stay in their own panel.
 
 ## Snapshot: `timetable_changes`
 

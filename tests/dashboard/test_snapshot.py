@@ -730,10 +730,10 @@ def real_disruptions():
         parse_kb_incidents,
         train_disruptions,
     )
-    from tests.sources.test_disruptions import KB, RAIL, area, situations
+    from tests.sources.test_disruptions import DINTING_LANE, KB, RAIL, area, situations
 
     captured = datetime(2026, 10, 9, 23, 14, tzinfo=LONDON)
-    bus = bus_disruptions(situations(), area(), captured)
+    bus = bus_disruptions(situations(), area(**DINTING_LANE), captured)
     train = train_disruptions(parse_kb_incidents(KB.read_bytes()), RAIL, captured)
     return disruptions_part(bus, status_block(), train, None, LONDON)
 

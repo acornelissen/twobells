@@ -1735,6 +1735,7 @@
           "Henry Street"
         ],
         "severity": "normal",
+        "relevance": "your_stop",
         "link": "https://tfgm.com/travel-updates"
       },
       {
@@ -1758,6 +1759,7 @@
         "stops": [],
         "places": [],
         "severity": "normal",
+        "relevance": "line",
         "link": null
       },
       {
@@ -1784,6 +1786,7 @@
           "Manchester Piccadilly"
         ],
         "severity": "normal",
+        "relevance": "your_stop",
         "link": "https://www.nationalrail.co.uk/service-disruptions/glossop-20261015/"
       }
     ]
