@@ -191,8 +191,12 @@ def _json(body: bytes, service: _Service):
 
 
 def _section(config_data: Mapping, name: str) -> Mapping:
+    """A table of the settings; empty if it is missing or switched off (its
+    settings are kept for switching it back on, but nothing is sent to them)."""
     section = config_data.get(name) if isinstance(config_data, Mapping) else None
-    return section if isinstance(section, Mapping) else {}
+    if not isinstance(section, Mapping) or section.get("enabled", True) is not True:
+        return {}
+    return section
 
 
 def _https(value, default: str) -> str:

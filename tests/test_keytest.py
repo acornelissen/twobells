@@ -87,6 +87,25 @@ def test_darwin_asks_for_one_row_of_the_configured_station():
     assert headers == {"x-apikey": RDM_KEY}
 
 
+def test_a_section_switched_off_is_not_asked_about():
+    # Its settings are kept for switching back on, but nothing is sent to them.
+    elsewhere = "https://elsewhere.example.test/api"
+    route = {"stop": "A", "stops": [{"name": "Glossop", "lat": 53.44, "lon": -1.95},
+                                    {"name": "Hadfield", "lat": 53.46, "lon": -1.965}]}
+    config = {"train": {"enabled": False, "crs": "MAN", "base_url": elsewhere},
+              "bus": {"enabled": False, "stops": {"A": "1800SB12341"}, "routes": {"341": route}, "base_url": elsewhere}}
+    darwin = Fake(("GetDepartureBoard", BOARD))
+    assert check("RDM_API_KEY", darwin, config=config).message.endswith("answered for GLO.")
+    assert darwin.calls[0][0].startswith("https://api1.raildata.org.uk/")
+    tapi = Fake(("stop_timetables", TIMETABLE))
+    check("TAPI_APP_KEY", tapi, config=config)
+    assert tapi.calls[0][0].startswith("https://transportapi.com/v3/uk/bus/stop_timetables/1000DGHS0900.json?")
+    bods = Fake(("datafeed", VEHICLES))
+    check("BODS_API_KEY", bods, config=config)
+    box = parse_qs(urlsplit(bods.calls[0][0]).query)["boundingBox"][0]
+    assert box == "-1.95200,53.44084,-1.94600,53.44684"  # the fixed point, not the route strip's stop
+
+
 def test_darwin_without_a_station_asks_about_glossop():
     fake = Fake(("GetDepartureBoard", BOARD))
     assert check("RDM_API_KEY", fake, config={"train": {"crs": "../x"}}).state == "works"
