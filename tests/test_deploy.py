@@ -400,3 +400,186 @@ def test_install_and_update_give_the_settings_new_address():
         assert ":8080" not in text and "departureboard web " not in text
     # The command the settings page gives for the password, as install.sh gives it.
     assert install_named("pi").password_command.replace("/opt/departureboard", "$PREFIX") in install
+
+
+# Installing from a release: the Pi's tarball, upgrade.sh, the published image and the desktop files.
+
+RELEASE = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+IMAGE = re.search(r"^  IMAGE: (\S+)$", RELEASE, re.M).group(1)
+REPO = IMAGE.removeprefix("ghcr.io/")
+GUIDE = (ROOT / "docs" / "USER_GUIDE.md").read_text()
+
+
+def _identity(tag: str) -> str:
+    """The signing identity release.yml's notes give for a tag."""
+    template = re.search(r'identity="(\S+)"', RELEASE).group(1)
+    return template.replace("$GITHUB_REPOSITORY", REPO).replace("$TAG", tag)
+
+
+def _tarball_excludes() -> list[str]:
+    archive = RELEASE[RELEASE.index("git archive "):RELEASE.index('listing="$(tar -tzf')]
+    return re.findall(r"':\(exclude\)([^']+)'", archive)
+
+
+def _in_tarball(path: str) -> bool:
+    from fnmatch import fnmatch
+
+    return not any(path == ex or path.startswith(f"{ex}/") or fnmatch(path, ex) for ex in _tarball_excludes())
+
+
+def _needed_on_the_pi() -> set[str]:
+    """Every file install.sh, update.sh and upgrade.sh use from the release."""
+    import tomllib
+
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    # pip builds the package from these.
+    needed = {"pyproject.toml", *project["project"]["license-files"]}
+    needed |= {str(path.relative_to(ROOT)) for path in (ROOT / "src" / "departureboard").rglob("*")
+               if path.is_file() and "__pycache__" not in path.parts}
+    for name in ("install.sh", "update.sh"):
+        script = _script(name)
+        needed |= {path for path in re.findall(r"\$REPO/([\w./-]+)", script) if not path.endswith(("/", "."))}
+        units = re.search(r"for unit in (.*?); do", script, re.S).group(1).replace("\\", " ").split()
+        needed |= {f"deploy/{unit}" for unit in units}
+    needed |= {"deploy/install.sh", "deploy/update.sh", "deploy/upgrade.sh"}  # upgrade.sh runs the release's update.sh
+    return needed
+
+
+def test_the_release_tarball_holds_everything_the_pi_scripts_use():
+    excludes = _tarball_excludes()
+    assert {"tests", ".github", ".beads", ".claude"} <= set(excludes)  # read from release.yml, not empty
+    needed = _needed_on_the_pi()
+    assert {"config.example.toml", "deploy/secrets.env.example", "deploy/requirements-pi.txt",
+            "examples/glossop.toml", "deploy/departureboard-fetch.path", "LICENSE"} <= needed
+    for path in sorted(needed):
+        assert (ROOT / path).is_file(), path
+        assert _in_tarball(path), path
+    # git archive also leaves out whatever .gitattributes marks export-ignore.
+    attributes = ROOT / ".gitattributes"
+    assert not attributes.exists() or "export-ignore" not in attributes.read_text()
+    # And the scripts never need git: a tarball has no .git.
+    for name in ("install.sh", "update.sh", "upgrade.sh"):
+        assert not re.search(r"(^|[\s;&|(])git\s", _script(name), re.M), name
+    # The release checks the scripts are in the tarball it built.
+    assert "for script in install.sh update.sh upgrade.sh; do" in RELEASE
+
+
+def _upgrade(*args: str):
+    import subprocess
+
+    return subprocess.run(["bash", str(ROOT / "deploy" / "upgrade.sh"), *args], capture_output=True, text=True)
+
+
+def _sourced(call: str, *args: str):
+    """Runs `call` in bash with upgrade.sh sourced (so its main doesn't run)."""
+    import subprocess
+
+    return subprocess.run(["bash", "-c", f'source "$1"; shift; {call}', "bash", str(ROOT / "deploy" / "upgrade.sh"),
+                           *args], capture_output=True, text=True)
+
+
+@pytest.mark.parametrize("version, valid", [
+    ("0.1.0", True), ("10.20.300", True),
+    ("", False), ("0.1", False), ("v0.1.0", False), ("0.1.0-rc1", False), ("0.1.0 ", False), ("0.1.0\n", False),
+    ("0.1.0;id", False), ("../0.1.0", False), ("0.1.0/../../x", False), ("0..1", False), ("a.b.c", False),
+])
+def test_upgrade_takes_only_a_plain_release_version(version, valid):
+    assert (_sourced('valid_version "$1"', version).returncode == 0) == valid
+
+
+@pytest.mark.parametrize("args", [[], ["0.2"], ["v0.2.0"], ["0.2.0; reboot"], ["--config", "x"]])
+def test_upgrade_refuses_a_bad_version_before_doing_anything(args):
+    done = _upgrade(*args)
+    assert done.returncode == 2
+    assert "Usage: sudo" in done.stderr and "like 0.2.0" in done.stderr
+
+
+def test_upgrade_needs_root_after_the_version():
+    import os
+
+    if os.geteuid() == 0:
+        pytest.skip("run as root, it would go on to download")
+    done = _upgrade("0.2.0")
+    assert (done.returncode, done.stderr) == (1, "Run with sudo\n")
+
+
+def _release_folder(tmp_path: Path, sums: str | None = None) -> Path:
+    import hashlib
+
+    folder = tmp_path / "download"
+    folder.mkdir()
+    name = "inky-departures-0.2.0.tar.gz"
+    (folder / name).write_bytes(b"the release")
+    digest = hashlib.sha256(b"the release").hexdigest()
+    wheel = hashlib.sha256(b"a wheel").hexdigest()
+    lines = f"{wheel}  departureboard-0.2.0-py3-none-any.whl\n{digest}  {name}\n"  # as release.yml writes them
+    (folder / "SHA256SUMS").write_text(lines if sums is None else sums.format(digest=digest, name=name))
+    return folder
+
+
+def _check(folder: Path):
+    import shutil
+
+    if shutil.which("sha256sum") is None:
+        pytest.skip("no sha256sum here")
+    return _sourced('check_tarball "$1" 0.2.0', str(folder))
+
+
+def test_upgrade_accepts_a_tarball_that_matches_its_sum(tmp_path):
+    done = _check(_release_folder(tmp_path))
+    assert (done.returncode, done.stdout) == (0, "inky-departures-0.2.0.tar.gz: OK\n")
+
+
+def test_upgrade_refuses_a_tarball_that_doesnt_match(tmp_path):
+    folder = _release_folder(tmp_path)
+    (folder / "inky-departures-0.2.0.tar.gz").write_bytes(b"the release, changed")
+    done = _check(folder)
+    assert done.returncode == 1 and "does not match SHA256SUMS" in done.stderr
+
+
+@pytest.mark.parametrize("sums", [
+    "",  # nothing for it
+    "{digest}  inky-departures-0.1.0.tar.gz\n",  # another release's
+    "{digest}  {name}.old\n",
+    "{digest}  {name}\n{digest}  {name}\n",  # twice: not one sum
+    "{digest}0  {name}\n",
+    "{name}  {digest}\n",
+])
+def test_upgrade_refuses_without_exactly_one_sum_for_the_tarball(tmp_path, sums):
+    done = _check(_release_folder(tmp_path, sums=sums))
+    assert done.returncode == 1 and "no single sum" in done.stderr
+
+
+def test_upgrade_downloads_the_releases_files_over_https_only_and_cleans_up():
+    script = _script("upgrade.sh")
+    assert f"RELEASES=https://github.com/{REPO}/releases/download\n" in script
+    assert 'local base="$RELEASES/v$version"' in script
+    assert "--proto '=https' --proto-redir '=https'" in script
+    for wanted in ('fetch "$base/$name" "$work/$name"', 'fetch "$base/SHA256SUMS" "$work/SHA256SUMS"'):
+        assert wanted in script
+    assert "| sh" not in script and "| bash" not in script and "eval " not in script
+    assert "trap 'rm -rf \"$work\"' EXIT" in script
+    # The tarball is checked before it is unpacked, and update.sh comes from the release it holds.
+    assert script.index('check_tarball "$work" "$version"') < script.index("tar -xzf")
+    assert 'bash "$unpacked/deploy/update.sh" "$@"' in script
+    # The release's own names for the tarball, its folder and the signature, and its signing identity.
+    assert '-o "out/inky-departures-$VERSION.tar.gz"' in RELEASE and '--prefix="inky-departures-$VERSION/"' in RELEASE
+    assert "--bundle SHA256SUMS.sigstore.json SHA256SUMS" in RELEASE
+    identity = re.search(r"^IDENTITY=(\S+)$", script, re.M).group(1)
+    assert f"{identity}@refs/tags/v$version" == _identity("v$version")
+    assert '--certificate-identity "$IDENTITY@refs/tags/v$version"' in script
+
+
+def test_the_guide_installs_a_pi_from_a_checked_release():
+    block = re.search(r"```bash\nVERSION=0\.1\.0\n(.*?)```", GUIDE, re.S).group(1)
+    assert f'base="https://github.com/{REPO}/releases/download/v$VERSION"' in block
+    for name in ("inky-departures-$VERSION.tar.gz", "SHA256SUMS", "SHA256SUMS.sigstore.json"):
+        assert f'curl -fLO "$base/{name}"' in block
+    # Nothing is unpacked or run unless the sum is right, even pasted as a block.
+    assert block.endswith('sha256sum --check --ignore-missing SHA256SUMS &&\n'
+                          '  tar -xzf "inky-departures-$VERSION.tar.gz" &&\n'
+                          '  cd "inky-departures-$VERSION" &&\n  sudo ./deploy/install.sh\n')
+    assert f'--certificate-identity "{_identity("v$VERSION")}"' in GUIDE
+    assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in GUIDE
+    assert "sudo ./deploy/upgrade.sh 0.2.0" in GUIDE
+    assert "| sudo bash" not in GUIDE

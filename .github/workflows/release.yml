@@ -224,7 +224,12 @@ jobs:
             -o "out/inky-departures-$VERSION.tar.gz" "$GITHUB_SHA" -- . \
             ':(exclude).beads' ':(exclude).claude' ':(exclude).github' \
             ':(exclude)tests' ':(exclude)AGENTS.md' ':(exclude)CLAUDE.md'
-          tar -tzf "out/inky-departures-$VERSION.tar.gz" | grep -qx "inky-departures-$VERSION/deploy/install.sh"
+          # Listed once, not piped to grep -q: under pipefail, tar would fail
+          # writing to a grep that has already found its line and gone.
+          listing="$(tar -tzf "out/inky-departures-$VERSION.tar.gz")"
+          for script in install.sh update.sh upgrade.sh; do
+            grep -qx "inky-departures-$VERSION/deploy/$script" <<<"$listing"
+          done
       - name: Write SHA256SUMS
         working-directory: out
         run: |
@@ -286,10 +291,13 @@ jobs:
           \`\`\`bash
           curl -fLO $base/inky-departures-$VERSION.tar.gz
           curl -fLO $base/SHA256SUMS
-          sha256sum --check --ignore-missing SHA256SUMS
-          tar -xzf inky-departures-$VERSION.tar.gz
-          cd inky-departures-$VERSION && sudo ./deploy/install.sh
+          sha256sum --check --ignore-missing SHA256SUMS &&
+            tar -xzf inky-departures-$VERSION.tar.gz &&
+            cd inky-departures-$VERSION && sudo ./deploy/install.sh
           \`\`\`
+
+          A Pi installed from an earlier release moves to this one, checked the same way,
+          from the earlier release's folder: \`sudo ./deploy/upgrade.sh $VERSION\`
 
           ## Verify
 

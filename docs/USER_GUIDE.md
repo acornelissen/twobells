@@ -214,17 +214,31 @@ Whichever you pick, you need no `config.toml`: the [setup wizard](#4-first-run-a
 
 Raspberry Pi OS Lite (Bookworm or later), with Wi-Fi and SSH set up in Raspberry Pi Imager. A Zero W runs the board; the Waveshare panel and the HDMI screen want a Zero 2 W or better (see [Choosing a display](#choosing-a-display)).
 
-Install from a release: download its tarball and `SHA256SUMS` from the [releases page](https://github.com/acornelissen/inky-departures/releases), check the tarball against it, then run the installer from inside. For version 0.1.0:
+Install from a release (from the first release on): download its tarball and `SHA256SUMS` from the [releases page](https://github.com/acornelissen/inky-departures/releases), check the tarball against it, then run the installer from inside. On the Pi, with the version you want in the first line:
 
 ```bash
-curl -fLO https://github.com/acornelissen/inky-departures/releases/download/v0.1.0/inky-departures-0.1.0.tar.gz
-curl -fLO https://github.com/acornelissen/inky-departures/releases/download/v0.1.0/SHA256SUMS
-sha256sum --check --ignore-missing SHA256SUMS
-tar -xzf inky-departures-0.1.0.tar.gz
-cd inky-departures-0.1.0 && sudo ./deploy/install.sh
+VERSION=0.1.0
+base="https://github.com/acornelissen/inky-departures/releases/download/v$VERSION"
+curl -fLO "$base/inky-departures-$VERSION.tar.gz"
+curl -fLO "$base/SHA256SUMS"
+curl -fLO "$base/SHA256SUMS.sigstore.json"
+sha256sum --check --ignore-missing SHA256SUMS &&
+  tar -xzf "inky-departures-$VERSION.tar.gz" &&
+  cd "inky-departures-$VERSION" &&
+  sudo ./deploy/install.sh
 ```
 
-`sha256sum` must say `OK`; if it doesn't, delete the download and don't run anything from it. `SHA256SUMS` is signed too: the release notes show how to check it with `cosign`. A copy of the repo works the same way (`sudo ./deploy/install.sh` from its folder). Nothing is ever piped from the internet into `sudo bash`.
+`sha256sum` must say `OK`. If it doesn't, nothing after it runs: delete the download and don't run anything from it. Nothing is ever piped from the internet into `sudo bash`.
+
+`SHA256SUMS` is signed too, so you can check who made it. With [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) installed, run this after the downloads and before the `sha256sum` line. It must say `Verified OK`:
+
+```bash
+cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity "https://github.com/acornelissen/inky-departures/.github/workflows/release.yml@refs/tags/v$VERSION" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+A copy of the repo works the same way: `sudo ./deploy/install.sh` from its folder.
 
 `install.sh` installs the app in `/opt/departureboard`, starts the web server and the fetch service, and prints the command that starts the board. It never starts the board itself:
 
@@ -473,13 +487,21 @@ All of them run as the `departureboard` user, with the store in `/var/lib/depart
 
 ### Updating
 
-Get the new release (or a copy of the repo) onto the Pi as for installing, then from its folder:
+To move to another release, run `upgrade.sh` with its version, from the folder of the release you have (or a copy of the repo):
+
+```bash
+sudo ./deploy/upgrade.sh 0.2.0
+```
+
+It downloads that release's tarball and `SHA256SUMS` over https into a temporary folder, and stops unless the tarball's SHA-256 matches. With `cosign` installed it checks the signature of `SHA256SUMS` first. Then it unpacks the release and runs its `deploy/update.sh`, and removes the temporary folder. Options after the version go to `update.sh`.
+
+Or get the new release onto the Pi as for installing, check it, then from its folder:
 
 ```bash
 sudo ./deploy/update.sh
 ```
 
-It installs the new code, refreshes the systemd units, restarts the web server and the fetch service, starts a bus timetable build if buses come from BODS, and runs the e-paper board once if its timer is on. `--config FILE` and `--secrets FILE` replace `/etc/departureboard/config.toml` and `secrets.env` too (the secrets copy is shredded). Restarting the web server signs browsers out.
+`update.sh` installs the new code, refreshes the systemd units, restarts the web server and the fetch service, starts a bus timetable build if buses come from BODS, and runs the e-paper board once if its timer is on. `--config FILE` and `--secrets FILE` replace `/etc/departureboard/config.toml` and `secrets.env` too (the secrets copy is shredded). Restarting the web server signs browsers out.
 
 ### Choosing a display
 

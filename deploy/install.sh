@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Installs the board on Raspberry Pi OS (Bookworm or later). Run from the repo root:
+# Installs the board on Raspberry Pi OS (Bookworm or later). Run it from the
+# unpacked release tarball (or a copy of the repo):
 #   sudo ./deploy/install.sh [--screen]
 # --screen also installs pygame for the HDMI screen; that happens anyway when
 # /etc/departureboard/config.toml already says display = "hdmi-...".

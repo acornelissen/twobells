@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Updates an installed board from a copy of the repo, then runs it once.
-# Copy the repo (and optionally a new config.toml / secrets.env) next to it,
-# then from the repo root:
+# Updates an installed board from an unpacked release tarball (or a copy of
+# the repo), then runs it once. Put the new release (and optionally a new
+# config.toml / secrets.env) on the Pi, then from its folder:
 #   sudo ./deploy/update.sh [--config FILE] [--secrets FILE]
 # A --secrets file is moved into place and the copy shredded.
+# deploy/upgrade.sh VERSION downloads and checks a release, then runs this.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
