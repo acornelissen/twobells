@@ -44,5 +44,16 @@ def test_compose_locks_the_container_down():
         assert risky not in COMPOSE, risky
 
 
+def test_the_documented_password_commands_fit_the_container():
+    # Run with docker exec as the image's user, in the one writable place: /data.
+    assert "container_name: departureboard-dashboard" in COMPOSE and "dashboard-data:/data" in COMPOSE
+    assert '"python", "-m", "departureboard.cli", "dashboard"' in DOCKERFILE and "WORKDIR /data" in DOCKERFILE
+    assert "chown 10001:10001 /data" in DOCKERFILE
+    docs = (ROOT / "docs" / "USER_GUIDE.md").read_text() + (ROOT / "README.md").read_text()
+    for flag in ("--set-password", "--reset-code"):
+        command = f"docker exec -it departureboard-dashboard python -m departureboard.cli dashboard {flag} --state-dir /data"
+        assert docs.count(command) == 2, flag  # once in each
+
+
 def test_keys_file_is_git_ignored():
     assert "dashboard.env" in (ROOT / ".gitignore").read_text().splitlines()

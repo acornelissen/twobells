@@ -475,6 +475,25 @@ It needs a password, and the dashboard has no display to show a code on, so the 
 
 A forgotten password works the same way, from **Forgot password?**: setting a new one signs every browser out. A code lasts 10 minutes and works once; a new one can be made once a minute, up to 10 a day, and five wrong tries spoil it. Five wrong passwords lock an address out for 15 minutes.
 
+Or skip the log and set the password from the command line, while the dashboard runs. It asks for the new password twice and doesn't show it as you type; every browser signed in is signed out. To get a code instead, printed straight to you (no once-a-minute limit), use `--reset-code` and type the code on the sign-in page under **Forgot password?**, or on the claim page the first time.
+
+- **Synology**, over SSH:
+
+  ```bash
+  docker exec -it departureboard-dashboard python -m departureboard.cli dashboard --set-password --state-dir /data
+  docker exec -it departureboard-dashboard python -m departureboard.cli dashboard --reset-code --state-dir /data
+  ```
+
+  Put `sudo` in front if Docker refuses permission. Both write only to the container's `/data` volume.
+- **Mac:** the same options as you start the dashboard with, plus `--set-password` or `--reset-code`:
+
+  ```bash
+  departureboard dashboard --config config.toml --set-password
+  departureboard dashboard --config config.toml --reset-code
+  ```
+
+  Without `--state-dir`, they use the same folder as the dashboard: `[dashboard] state_dir` if set, else `~/Library/Application Support/departureboard-dashboard`.
+
 - Saved settings go in the dashboard's own folder (in Docker, the `dashboard-data` volume), as `settings.toml`, layered over `config.toml`, which is never changed (Docker mounts it read-only). Keys go to `secrets.env` beside it, readable only by the dashboard, and are layered over `dashboard.env`. The password is in `web.json` there too.
 - After a save the dashboard starts again by itself within a few seconds to use the new settings, and signs you out. Settings that wouldn't load are never saved; if `config.toml` is edited into something that doesn't load, the dashboard says so in its log and carries on with what it had.
 - The sign-in is separate from the board's settings page, even on the same computer.
