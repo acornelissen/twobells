@@ -64,7 +64,7 @@ from .timetable import TimetableBusy, TimetableError
 from .transportapi import TransportApiBusSource, redact_credentials
 from .installs import DEFAULT as DEFAULT_INSTALL
 from .installs import INSTALLS, Install, install_named
-from .schema import keys, views
+from .schema import views
 from .version import package_version
 from .view import SetupView, build_view
 from .themes import THEMES, theme_named
@@ -858,18 +858,14 @@ def _settings_site(store: Store, install: Install, running: bool, runner=None):
     from .setupapi import SetupApi
 
     target = store.target(lambda data, env: check_views(data, env, store.folder, install))
-    links = [("The dashboard", "/")] if running else []
-    extra = {}
-    if install.fetch == "process":  # a save starts serve again (_SettingsWatch)
-        extra["saved_message"] = "Saved. The dashboard starts again in a few seconds to use the new settings."
+    # The dashboard, wherever it is offered, is served at / once its view is on and set up.
+    view_links = {"dashboard": ("The dashboard", "/")} if "dashboard" in install.offered else {}
     setup = SetupApi(
         target, store.env, store.folder,
-        links=[*links, ("Settings", PREFIX)],
-        title=f"Set up your {install.noun}",
-        noun=install.noun,
-        keys=keys("general", *install.offered),
+        install=install,
+        links=[("Settings", PREFIX)],
+        view_links=view_links,
         runner=runner,
-        **extra,
     )
     site = SettingsSite(store, install, setup, dashboard_on=lambda: running and "dashboard" in site.views())
     if not site.password.is_set():

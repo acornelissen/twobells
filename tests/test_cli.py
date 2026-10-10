@@ -1315,7 +1315,13 @@ def test_dashboard_reset_code_prints_one_code_the_settings_will_take(tmp_path, n
     assert ResetCodes(folder, show=show_in_log).verify(code, time.time())
 
 
-def test_the_dashboards_setup_wizard_is_named_for_it_and_offers_its_keys(dashboard_config, tmp_path):
+@pytest.mark.parametrize("install, noun, offered, links", [
+    ("pi", "board", ["board"], ["Settings"]),
+    ("docker", "dashboard", ["dashboard"], ["The dashboard", "Settings"]),
+    ("desktop", "dashboard", ["dashboard"], ["The dashboard", "Settings"]),
+])
+def test_the_setup_wizard_is_one_page_on_every_install_in_its_own_words(dashboard_config, tmp_path, install, noun,
+                                                                        offered, links):
     from departureboard import cli
     from departureboard.installs import install_named
     from departureboard.schema import keys
@@ -1323,13 +1329,14 @@ def test_the_dashboards_setup_wizard_is_named_for_it_and_offers_its_keys(dashboa
 
     folder = tmp_path / "dash"
     folder.mkdir()
-    store = Store.open(dashboard_config, tmp_path / "nonexistent", state_dir=folder)
-    site = cli._settings_site(store, install_named("desktop"), True)
+    store = Store.open(dashboard_config, tmp_path / "nonexistent", state_dir=folder, install=install)
+    site = cli._settings_site(store, install_named(install), install != "pi")
     status, body = site.setup.handle("begin", {})
-    assert status == 200 and body["title"] == "Set up your dashboard" and body["noun"] == "dashboard"
-    assert [k["name"] for k in body["keys"]] == [name for name, _, _ in keys("general", "dashboard")]
-    assert {"RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"} <= {k["name"] for k in body["keys"]}
-    assert not [k for k in body["keys"] if k["name"].startswith("TAPI_")]
+    assert status == 200 and body["title"] == "Set up your departures" and body["noun"] == noun
+    # The keys every view uses; TransportAPI's and the dashboard's own are on their tabs.
+    assert [k["name"] for k in body["keys"]] == [name for name, _, _ in keys("general")]
+    assert [view["name"] for view in body["views"]["offered"]] == offered and body["views"]["on"] == offered
+    assert [link["label"] for link in body["links"]] == links
 
 
 # --- A first run: the board shows where to set it up, rather than failing ---

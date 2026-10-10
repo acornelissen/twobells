@@ -31,10 +31,14 @@ setup service, as the settings page's own service is kept off the internet.
 A runner is given only what was typed or pasted, never a saved key or the
 saved settings; it reads those itself.
 
-Each host names its own page: `begin` answers with the host's title, the
-word for itself ("board" on the Pi, "dashboard" on the dashboard) and the
-keys it uses (schema.keys of the general group and its views' groups),
-and only those keys can be saved or tested through it.
+One wizard for every install: `begin` answers with the page's title, the
+word for what shows the departures there ("board" on a Pi, "dashboard"
+elsewhere; installs.py), the keys every view uses (schema.keys of the
+general group: each view's own keys are on its settings tab), and the
+views the install offers with those on now. Only those keys can be saved
+or tested through it. `finish` takes the views to turn on, at least one
+and only those offered, saves them as [app] views, and the settings are
+checked as each of those views loads them before anything is saved.
 
 Serving the page. The host serves, under one prefix ending in a slash (say
 /setup/), the files `static_files()` lists by their path under that prefix:
@@ -61,6 +65,7 @@ from typing import Callable, Mapping, Protocol, Sequence
 
 from . import discover, keytest, setup
 from .config import ConfigError
+from .installs import INSTALLS, Install
 from .overlay import OverlayError, Target, save_to
 from . import schema
 from .schema import ATCO as _ATCO
@@ -100,11 +105,10 @@ PAGE_HEADERS = {
 
 _POSTCODE_LENGTH = 16
 _LINK = re.compile(r"^(/(?!/)[A-Za-z0-9._~/-]*|https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?)$")
-# The Pi's keys, as its settings page lists them.
-BOARD_KEYS = schema.keys("general", "board")
-TITLE = "Set up your board"
+# The keys every view uses; each view's own are on its settings tab.
+GENERAL_KEYS = schema.keys("general")
+TITLE = "Set up your departures"
 _TITLE_LENGTH = 60
-NOUN = "board"
 _NOUN = re.compile(r"[a-z]{1,20}")  # one plain word, to sit in a sentence: "No trains on this board"
 _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 KEY_DOCS = "https://github.com/acornelissen/inky-departures/blob/main/docs/KEYS.md"
@@ -308,6 +312,38 @@ def _key(value, field: str) -> str:
     return key
 
 
+def _views(value, offered: Sequence[str]) -> list[str]:
+    """The views to turn on: at least one, each once, only those offered;
+    in the order offered."""
+    if not isinstance(value, list) or not 1 <= len(value) <= len(offered):
+        raise Invalid("Pick at least one of the views offered", "views")
+    if not all(isinstance(view, str) for view in value) or len(set(value)) != len(value):
+        raise Invalid("Pick each view once", "views")
+    if any(view not in offered for view in value):
+        raise Invalid("That isn't one of the views offered here", "views")
+    return [view for view in offered if view in value]
+
+
+def view_choices(offered: Sequence[str]) -> list[dict]:
+    """Each view offered, with its name and what it is as the General tab says them."""
+    fields = {f.name: f for f in schema.FIELDS}
+    return [{"name": view, "label": fields[f"view_{view}"].label, "hint": fields[f"view_{view}"].hint}
+            for view in offered]
+
+
+def saved_message(install: Install, views: Sequence[str]) -> str:
+    """What happens once setup saves, with `views` on, on `install`."""
+    said = ["Saved."]
+    if "board" in views:
+        said.append("The board shows the new settings within a few minutes.")
+    if "dashboard" in views:
+        if install.fetch == "process":  # serve starts again with the new settings (cli._SettingsWatch)
+            said.append("The dashboard starts again in a few seconds to use them.")
+        else:
+            said.append("The dashboard shows them within a few minutes.")
+    return " ".join(said)
+
+
 def _keys(value, names: Sequence[str]) -> dict[str, str]:
     """Keys to save: only the host's (`names`), each in the shape of a key; empty ones skipped."""
     if not isinstance(value, dict):
@@ -361,40 +397,55 @@ class SetupApi:
         make_job: MakeJob = discover.SetupJob,
         test_key: Callable[..., keytest.KeyResult] = keytest.test_key,
         key_tests: RateLimit = KEY_TESTS,
-        saved_message: str = "Saved. The board shows the new settings within a few minutes.",
+        install: Install = INSTALLS["pi"],
+        view_links: Mapping[str, tuple[str, str]] | None = None,
+        saved_message: str | None = None,
         title: str = TITLE,
-        noun: str = NOUN,
-        keys: Sequence[tuple[str, str, str]] = BOARD_KEYS,
+        noun: str | None = None,
+        keys: Sequence[tuple[str, str, str]] = GENERAL_KEYS,
         runner: Runner | None = None,
     ) -> None:
         """`target` is the overlay finishing saves into (store.Store.target),
-        checked as the host loads its settings. `load_secrets` gives the
-        environment with every saved key, as the settings page's does;
+        checked as each view on loads its settings. `load_secrets` gives
+        the environment with every saved key, as the settings page's does;
         `job_folder` is where the search builds the bus timetable (the
-        store); `links` are (label, href) pairs the finished page offers,
-        like ("The board", "/"). `saved_message` says what happens next.
-        `title` heads the page, `noun` is what its text calls the host
-        ("board": "No trains on this board"), and `keys`, (name, label,
-        hint) like schema.keys(), are the keys the host uses: offered,
-        saved and tested in that order, and no others. `runner`, if given,
-        does the lookups that need the internet, the key tests and the
-        search instead of this process (and the functions passed for them)."""
-        for label, href in links:
+        store). `install` says which views can be turned on (its offered,
+        and its default views while none are saved), what shows the
+        departures (its noun, unless `noun` says) and how a save takes
+        effect. The finished page offers `links`, (label, href) pairs like
+        ("Settings", "/settings"), after `view_links`' link for each view
+        on, like {"dashboard": ("The dashboard", "/")}; `saved_message`,
+        if given, says what happens next instead of saved_message().
+        `title` heads the page, `noun` is what its text calls what shows
+        the departures ("board": "No trains on this board"), and `keys`,
+        (name, label, hint) like schema.keys(), are the keys offered, saved
+        and tested in that order, and no others. `runner`, if given, does
+        the lookups that need the internet, the key tests and the search
+        instead of this process (and the functions passed for them)."""
+        noun = install.noun if noun is None else noun
+        view_links = dict(view_links or {})
+        for label, href in [*links, *view_links.values()]:
             if not label or len(label) > 40 or not _LINK.match(href):
                 raise ValueError("A link is a short label and a plain path or http(s) address")
+        if set(view_links) - set(schema.VIEWS):
+            raise ValueError("A view's link is for a view")
         if not 0 < len(title) <= _TITLE_LENGTH or not title.isprintable():
             raise ValueError(f"A title is 1 to {_TITLE_LENGTH} ordinary characters")
         if not _NOUN.fullmatch(noun):
             raise ValueError("A noun is one lower-case word, like board")
         if not keys or any(not _ENV_NAME.match(name) for name, _, _ in keys):
             raise ValueError("Keys are named like environment variables")
+        if not install.offered or set(install.offered) - set(schema.VIEWS):
+            raise ValueError("An install offers at least one view, and only views")
         self._title = title
         self._noun = noun
+        self._install = install
         self._keys = tuple((name, label, hint) for name, label, hint in keys)
         self._key_names = tuple(name for name, _, _ in self._keys)
         self._load_secrets = load_secrets
         self._job_folder = Path(job_folder)
         self._links = [{"label": label, "href": href} for label, href in links]
+        self._view_links = {view: {"label": label, "href": href} for view, (label, href) in view_links.items()}
         if runner is not None:
             lookup_postcode, search_address = runner.lookup_postcode, runner.search_address
             nearby_stops, walk_minutes = runner.nearby_stops, runner.walk_minutes
@@ -482,15 +533,30 @@ class SetupApi:
     # Finding home.
 
     def begin(self, payload) -> dict:
-        """What the page needs first: its title, what it calls the host, the
-        host's keys and which are set (never their values), the links to show
-        at the end, and any search already running."""
+        """What the page needs first: its title, what it calls what shows
+        the departures, the keys and which are set (never their values),
+        the views offered with those on now, the links to show at the end,
+        and any search already running."""
         _fields(payload)
         env = self._load_secrets()
         keys = [{"name": name, "label": label, "hint": hint, "set": bool(str(env.get(name, "")).strip()),
                  "doc": KEY_DOCS + _KEY_ANCHORS.get(name, "")} for name, label, hint in self._keys]
-        return {"title": self._title, "noun": self._noun, "keys": keys, "links": list(self._links),
-                "job": self._job_status()}
+        on = self._views_now()
+        return {"title": self._title, "noun": self._noun, "keys": keys,
+                "views": {"offered": view_choices(self._install.offered), "on": list(on)},
+                "links": self._links_for(on), "job": self._job_status()}
+
+    def _views_now(self) -> tuple[str, ...]:
+        """The views on in the settings in force; the install's defaults if they don't read."""
+        try:
+            return schema.views(self._target.current(), self._install)
+        except (OSError, ConfigError):
+            return self._install.default_views
+
+    def _links_for(self, views: Sequence[str]) -> list[dict]:
+        """The finished page's links: each view's on, then the rest."""
+        found = [dict(self._view_links[view]) for view in views if view in self._view_links]
+        return found + [dict(link) for link in self._links]
 
     def postcode(self, payload) -> dict:
         fields = _fields(payload, ("postcode",))
@@ -675,7 +741,7 @@ class SetupApi:
     def finish(self, payload) -> dict:
         """Save what setup found into the settings overlay, merged with what is
         there, and any pasted keys into the secrets overlay."""
-        fields = _fields(payload, ("home", "stops", "walk"), ("station_crs", "filter_crs", "keys"))
+        fields = _fields(payload, ("home", "stops", "walk"), ("station_crs", "filter_crs", "keys", "views"))
         home = _point(fields["home"])
         station = None
         if fields.get("station_crs") is not None:
@@ -696,6 +762,7 @@ class SetupApi:
             raise Invalid("Walk times are only for your station and stops", "walk")
         walk = {key: (_minutes(m, "walk"), "given") for key, m in walk.items()}
         keys = _keys(fields.get("keys", {}), self._key_names)
+        views = _views(fields["views"], self._install.offered) if "views" in fields else None
 
         changes = setup.config_fragment(home, station, [(label, self._stop(atco)) for label, atco in stops.items()],
                                         walk)
@@ -717,11 +784,16 @@ class SetupApi:
         division = setup.bank_holiday_division(home.country)
         if division:
             changes["bank_holiday_division"] = division
+        if views is not None:
+            # The target checks the settings as each of these views loads them.
+            changes["app"] = {"views": views}
         env = dict(self._load_secrets())
         save_to(self._target, changes, keys, env)
         with self._lock:
             self._found_stops.clear()
-        return {"saved": True, "message": self._saved_message, "links": list(self._links)}
+        on = tuple(views) if views is not None else self._views_now()
+        message = self._saved_message or saved_message(self._install, on)
+        return {"saved": True, "message": message, "links": self._links_for(on)}
 
     def _stop(self, atco: str) -> Stop:
         with self._lock:

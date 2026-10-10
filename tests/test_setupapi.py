@@ -9,10 +9,13 @@ import pytest
 from departureboard import discover, setupapi
 from departureboard.schema import keys as schema_keys
 from departureboard.config import load_config, needs_setup, read_base, read_config
+from departureboard.groupform import check_views
+from departureboard.installs import INSTALLS, Install
 from departureboard.keytest import KeyResult
 from departureboard.overlay import Target, board_target
 from departureboard.setup import Place, SetupError, Station, Stop
 from departureboard.setupapi import Invalid, RateLimit, SetupApi, decode, suggested_labels
+from departureboard.store import Store
 
 # Home, near Hadfield station, to more places than anything written may show.
 HOME = {"lat": 53.461964, "lon": -1.965633}
@@ -50,6 +53,11 @@ RESULT = {
     "timetable_journeys": 40,
     "notes": [],
 }
+
+
+# Setup offers the general keys; a host may offer more. These tests offer the
+# board's too, so TransportAPI's paired key test can be tried.
+WITH_TAPI = schema_keys("general", "board")
 
 
 class FakeJob:
@@ -113,6 +121,7 @@ def board(tmp_path):
         make_job=FakeJob,
         test_key=test_key,
         key_tests=RateLimit(10.0, clock=lambda: clock[0]),
+        keys=WITH_TAPI,
     )
     api.calls, api.secrets, api.state, api.config, api.clock = calls, secrets, state, config, clock
     return api
@@ -432,10 +441,12 @@ def test_begin_says_which_keys_are_set_never_their_values(board):
     assert body["job"] == {"state": "idle"}
 
 
-def test_begin_names_the_pis_page_and_its_keys_by_default(board):
-    body = ok(board, "begin")
-    assert body["title"] == "Set up your board" and body["noun"] == "board"
-    assert [k["name"] for k in body["keys"]] == [name for name, _, _ in schema_keys("general", "board")]
+def test_begin_names_the_page_and_offers_only_the_general_keys_by_default(board):
+    api = SetupApi(board_target(board.config), lambda: dict(board.secrets), board.state)
+    body = ok(api, "begin")
+    assert body["title"] == "Set up your departures" and body["noun"] == "board"
+    assert [k["name"] for k in body["keys"]] == ["RDM_API_KEY", "BODS_API_KEY"]
+    assert [name for name, _, _ in setupapi.GENERAL_KEYS] == [name for name, _, _ in schema_keys("general")]
 
 
 # A host with keys of its own, as the dashboard has.
@@ -594,6 +605,153 @@ def test_a_key_test_never_answers_with_the_key(board):
         assert secret not in text
 
 
+# Per install: the page's words, and which views it can turn on.
+
+
+@pytest.mark.parametrize("name, noun", [("pi", "board"), ("docker", "dashboard"), ("desktop", "dashboard")])
+def test_each_install_names_the_page_the_same_and_what_shows_the_departures_its_own_way(board, name, noun):
+    api = SetupApi(board_target(board.config), lambda: dict(board.secrets), board.state, install=INSTALLS[name])
+    body = ok(api, "begin")
+    assert body["title"] == "Set up your departures" and body["noun"] == noun
+    assert [k["name"] for k in body["keys"]] == ["RDM_API_KEY", "BODS_API_KEY"]  # the same on every install
+    assert [view["name"] for view in body["views"]["offered"]] == list(INSTALLS[name].offered)
+
+
+# An install offering both views, as the Pi will once it runs the dashboard too.
+BOTH = Install("both", ("board", "dashboard"), ("board",), None, noun="board", fetch="files")
+ONE = Install("one", ("dashboard",), ("dashboard",), None, fetch="process")
+
+
+@pytest.fixture
+def both(board):
+    """The board's fixture on an install offering both views, its settings
+    checked as each view on loads them, as serve checks them."""
+    store = Store.open(board.config)
+    api = SetupApi(store.target(lambda data, env: check_views(data, env, store.folder, BOTH)),
+                   lambda: dict(board.secrets), board.state, install=BOTH, stations=lambda: STATIONS,
+                   make_job=FakeJob, links=[("Settings", "/settings")],
+                   view_links={"dashboard": ("The dashboard", "/")})
+    api.secrets, api.state, api.config = board.secrets, board.state, board.config
+    return api
+
+
+TRAINS_ONLY = {"home": HOME, "station_crs": "GLO", "stops": {}, "walk": {}}
+
+
+def test_begin_offers_the_installs_views_and_says_which_are_on(both):
+    views = ok(both, "begin")["views"]
+    assert [view["name"] for view in views["offered"]] == ["board", "dashboard"]
+    assert [view["label"] for view in views["offered"]] == ["The board", "The dashboard"]
+    assert all(view["hint"] for view in views["offered"])  # what each is, for the page to explain
+    assert views["on"] == ["board"]  # none saved yet: the install's default
+    (both.state / "settings.toml").write_text('[app]\nviews = ["dashboard"]\n')
+    assert ok(both, "begin")["views"]["on"] == ["dashboard"]
+
+
+def test_begin_says_the_install_s_default_views_when_the_settings_dont_read(both):
+    (both.state / "settings.toml").write_text("[app]\nviews = \"board\"\n")
+    assert ok(both, "begin")["views"]["on"] == ["board"]
+
+
+@pytest.mark.parametrize("views, saved", [
+    (["board"], ["board"]),
+    (["dashboard"], ["dashboard"]),
+    (["dashboard", "board"], ["board", "dashboard"]),  # in the order offered
+])
+def test_finishing_turns_on_the_views_chosen(both, views, saved):
+    assert ok(both, "finish", {**TRAINS_ONLY, "views": views})["saved"]
+    assert tomllib.loads((both.state / "settings.toml").read_text())["app"] == {"views": saved}
+
+
+def test_finishing_without_views_leaves_them_as_they_are(both):
+    (both.state / "settings.toml").write_text('[app]\nviews = ["dashboard"]\n')
+    assert ok(both, "finish", TRAINS_ONLY)["saved"]
+    assert tomllib.loads((both.state / "settings.toml").read_text())["app"] == {"views": ["dashboard"]}
+
+
+@pytest.mark.parametrize("views", [
+    [],  # at least one
+    ["board", "board"],
+    ["board", "board", "dashboard"],
+    ["screen"],
+    ["Board"],
+    [1],
+    [["board"]],
+    "board",
+    {"board": True},
+    None,
+])
+def test_finishing_takes_only_views_offered_each_once(both, views):
+    before = (both.state / "settings.toml").read_text()
+    status, body = both.handle("finish", {**TRAINS_ONLY, "views": views})
+    assert status == 400 and body["field"] == "views"
+    assert (both.state / "settings.toml").read_text() == before
+
+
+def test_a_view_the_install_doesnt_offer_is_refused(board):
+    api = SetupApi(board_target(board.config), lambda: dict(board.secrets), board.state, install=INSTALLS["pi"],
+                   stations=lambda: STATIONS)
+    status, body = api.handle("finish", {**TRAINS_ONLY, "views": ["dashboard"]})
+    assert status == 400 and body == {"error": "That isn't one of the views offered here", "field": "views"}
+    assert "app" not in tomllib.loads((board.state / "settings.toml").read_text())
+
+
+def test_a_key_outside_the_general_group_is_refused(board):
+    api = SetupApi(board_target(board.config), lambda: dict(board.secrets), board.state, stations=lambda: STATIONS)
+    for name in ("TAPI_APP_ID", "TAPI_APP_KEY", "RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"):
+        status, body = api.handle("finish", {**TRAINS_ONLY, "keys": {name: "pasted-key-345"}})
+        assert status == 400 and body["field"] == "keys", name
+        status, body = api.handle("testkey", {"name": name, "value": "pasted-key-345"})
+        assert status == 400 and body["field"] == "name", name
+    assert not (board.state / "secrets.env").exists()  # nothing saved
+    assert ok(api, "finish", {**TRAINS_ONLY, "keys": {"BODS_API_KEY": "new-bods-key-000"}})["saved"]
+    assert "BODS_API_KEY=new-bods-key-000" in (board.state / "secrets.env").read_text()
+
+
+def test_the_settings_are_checked_as_each_view_turned_on_loads_them(both):
+    # The board ignores [dashboard]; the dashboard can't start with it wrong.
+    both.config.write_text(both.config.read_text() + "\n[dashboard]\ntrain_rows = 50\n")
+    assert ok(both, "finish", {**TRAINS_ONLY, "views": ["board"]})["saved"]
+    before = (both.state / "settings.toml").read_text()
+    status, body = both.handle("finish", {**TRAINS_ONLY, "views": ["board", "dashboard"]})
+    assert status == 422 and "train_rows" in body["error"]
+    assert (both.state / "settings.toml").read_text() == before
+
+
+@pytest.mark.parametrize("views, message, links", [
+    (["board"], "Saved. The board shows the new settings within a few minutes.", ["Settings"]),
+    (["dashboard"], "Saved. The dashboard shows them within a few minutes.", ["The dashboard", "Settings"]),
+    (["board", "dashboard"],
+     "Saved. The board shows the new settings within a few minutes. The dashboard shows them within a few minutes.",
+     ["The dashboard", "Settings"]),
+])
+def test_the_finished_page_says_what_happens_next_and_links_to_each_view_on(both, views, message, links):
+    body = ok(both, "finish", {**TRAINS_ONLY, "views": views})
+    assert body["message"] == message
+    assert [link["label"] for link in body["links"]] == links
+    assert {"label": "The dashboard", "href": "/"} in body["links"] or "dashboard" not in views
+
+
+def test_where_serve_starts_again_the_finished_page_says_so(board):
+    api = SetupApi(board_target(board.config), lambda: dict(board.secrets), board.state, install=ONE,
+                   stations=lambda: STATIONS, links=[("Settings", "/settings")],
+                   view_links={"dashboard": ("The dashboard", "/")})
+    body = ok(api, "finish", {**TRAINS_ONLY, "views": ["dashboard"]})
+    assert body["message"] == "Saved. The dashboard starts again in a few seconds to use them."
+    assert body["links"] == [{"label": "The dashboard", "href": "/"}, {"label": "Settings", "href": "/settings"}]
+
+
+@pytest.mark.parametrize("options", [
+    {"view_links": {"screen": ("Screen", "/")}},
+    {"view_links": {"dashboard": ("The dashboard", "javascript:alert(1)")}},
+    {"install": Install("none", (), (), None)},
+    {"install": Install("odd", ("screen",), (), None)},
+])
+def test_an_install_offers_views_and_links_to_them_plainly(board, options):
+    with pytest.raises(ValueError):
+        SetupApi(board_target(board.config), dict, board.state, **options)
+
+
 def test_links_must_be_plain(board):
     for href in ("javascript:alert(1)", "//evil.example/", "/a b"):
         with pytest.raises(ValueError):
@@ -637,7 +795,7 @@ def ran(board):
     runner = FakeRunner()
     api = SetupApi(board_target(board.config), lambda: dict(board.secrets), board.state, runner=runner,
                    stations=lambda: STATIONS, nearby_stations=board._nearby_stations,
-                   key_tests=RateLimit(10.0, clock=lambda: board.clock[0]))
+                   key_tests=RateLimit(10.0, clock=lambda: board.clock[0]), keys=WITH_TAPI)
     api.runner, api.board = runner, board
     return api
 
