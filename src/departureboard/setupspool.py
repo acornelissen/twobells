@@ -44,6 +44,12 @@ first answers everything), and one that can't read the board's config
 answers every request with NO_SETTINGS until it has been idle a minute.
 The units' start limits catch the rest.
 
+Priority. The search for bus companies downloads and reads timetables for
+minutes on a small Pi, so it runs SEARCH_NICE steps nicer than the rest:
+os.nice() in the search's own thread, which on Linux lowers that thread
+alone (discover.SetupJob's `nice`), and needs no second process. The lookups the wizard
+waits on, answered by the service's main thread, keep the usual priority.
+
 Trust. Only the service user can write in the spool, but each side still
 treats what the other wrote as untrusted: a file must be a plain file the
 service user owns, with one link, under its size cap, named by a request id,
@@ -99,6 +105,7 @@ IDLE_S = 60.0  # the service stops after this long with nothing to do
 POLL_S = 0.2
 MAX_NOTES = 30
 WORKER_LOCK = "worker.lock"
+SEARCH_NICE = 10  # the search's thread gives way to the wizard's lookups (and the board)
 
 NO_ANSWER = ("The setup service didn't answer in time. Try again; if it keeps happening, "
              "check departureboard-setup.path is enabled on the Pi.")
@@ -969,7 +976,7 @@ class Worker:
             return
         try:
             job = self._make_job(self._job_folder, args["stops"], key, routes=args["routes"],
-                                 walk_minutes=args["walk"])
+                                 walk_minutes=args["walk"], nice=SEARCH_NICE)
             job.start()
         except discover.SetupBusy:
             self._reply(request_id, {"ok": True, "beat": 0,

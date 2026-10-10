@@ -351,6 +351,22 @@ def _local_now() -> datetime:
     return datetime.now().replace(microsecond=0)
 
 
+# On Linux a thread's nice value is its own, so os.nice() in the search's
+# thread lowers only the search (and threads it starts). Elsewhere it lowers
+# the whole process, for good, so there it is left alone.
+_NICE_PER_THREAD = sys.platform.startswith("linux")
+
+
+def _lower_priority(by: int) -> None:
+    """Make this thread `by` nicer, where that is this thread's alone."""
+    if not _NICE_PER_THREAD:
+        return
+    try:
+        os.nice(by)
+    except OSError as error:  # the search still runs, at the usual priority
+        log.warning("Can't lower the setup search's priority: %s", error.strerror or error)
+
+
 class SetupJob:
     """Finds the operators serving `stops`, builds their timetable into the
     state `folder` (so the board can use it as soon as the settings are
@@ -360,7 +376,9 @@ class SetupJob:
     stops it at the next chunk of a download. One job at a time per state
     folder: a lock file there, held while the job runs and let go by the
     system if the process dies. It writes no settings: its result holds the
-    [bus] settings to add, for the caller to show and save."""
+    [bus] settings to add, for the caller to show and save. With `nice`, its
+    thread runs that much nicer on Linux, so it gives way to the caller's
+    other work (the Pi's setup service answering the wizard's lookups)."""
 
     def __init__(
         self,
@@ -376,6 +394,7 @@ class SetupJob:
         fetch: timetable.Download = timetable.download,
         naptan: timetable.Naptan = routesetup.naptan_stops,
         discover_options: Mapping | None = None,
+        nice: int = 0,
     ) -> None:
         self._folder = Path(folder)
         self._stops = dict(stops)
@@ -388,6 +407,7 @@ class SetupJob:
         self._fetch = fetch
         self._naptan = naptan
         self._options = dict(discover_options or {})
+        self._nice = nice
         self._cancel = threading.Event()
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -450,6 +470,8 @@ class SetupJob:
     # Doing.
 
     def _run(self) -> None:
+        if self._nice:
+            _lower_priority(self._nice)
         try:
             result, message = self._steps()
         except Cancelled:

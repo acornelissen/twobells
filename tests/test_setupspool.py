@@ -43,8 +43,9 @@ class FakeJob:
     made: list["FakeJob"] = []
     busy = False
 
-    def __init__(self, folder, stops, api_key, *, routes=False, walk_minutes=None):
+    def __init__(self, folder, stops, api_key, *, routes=False, walk_minutes=None, nice=0):
         self.folder, self.stops, self.api_key, self.routes, self.walk = folder, stops, api_key, routes, walk_minutes
+        self.nice = nice
         self.state = {"state": "queued", "step": "", "done": 0, "total": 0, "message": "", "result": None}
         self.cancelled = False
         FakeJob.made.append(self)
@@ -166,6 +167,7 @@ def test_the_search_round_trips_with_its_progress(serving, caplog):
     job = FakeJob.made[-1]
     assert (job.stops, job.api_key, job.routes, job.walk, job.folder) == (
         {"A": "1800SB12341"}, PASTED, True, {"A": 3}, serving.state)
+    assert job.nice == setupspool.SEARCH_NICE == 10  # it gives way to the lookups
     wait_for(lambda: ok(serving, "job")["job"]["state"] == "running")
     assert ok(serving, "job")["job"]["total"] == 3
     job.finish()
@@ -392,6 +394,36 @@ def test_check_status_takes_a_real_jobs_result():
     assert setupspool.check_status(status)["result"] == RESULT
     with pytest.raises(Refused):
         setupspool.check_status({**status, "state": "running"})  # a result before it's done
+
+
+# Priority.
+
+
+def stop_searching(api_key, area, at_most):
+    raise discover.DiscoveryError("stop here")
+
+
+@pytest.mark.parametrize("per_thread, nice, lowered", [(True, 10, [10]), (True, 0, []), (False, 10, [])])
+def test_the_search_runs_nicer_in_its_own_thread_only(tmp_path, monkeypatch, per_thread, nice, lowered):
+    calls = []
+    monkeypatch.setattr(discover, "_NICE_PER_THREAD", per_thread)  # Linux: a thread's nice value is its own
+    monkeypatch.setattr(os, "nice", lambda by: calls.append((by, threading.current_thread().name)) or 0)
+    job = discover.SetupJob(tmp_path, {"A": "1800SB12341"}, "key", find=stop_searching, nice=nice)
+    job.start()
+    assert job.wait(5) and job.status()["message"] == "stop here"
+    assert calls == [(by, "setup-job") for by in lowered]  # never the caller's thread
+
+
+def test_a_search_that_cant_be_made_nicer_still_runs(tmp_path, monkeypatch, caplog):
+    def refused(by):
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(discover, "_NICE_PER_THREAD", True)
+    monkeypatch.setattr(os, "nice", refused)
+    job = discover.SetupJob(tmp_path, {"A": "1800SB12341"}, "key", find=stop_searching, nice=10)
+    job.start()
+    assert job.wait(5) and job.status()["message"] == "stop here"
+    assert "Can't lower the setup search's priority" in caplog.text
 
 
 # Housekeeping.
