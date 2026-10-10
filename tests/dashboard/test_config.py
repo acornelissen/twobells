@@ -318,14 +318,17 @@ def test_bus_disruptions_use_the_buses_key(config, tmp_path, opened):
 
 def test_without_the_knowledgebase_key_nothing_changes(config, tmp_path, opened):
     dash = load(config, tmp_path / "dash", opened=opened)
-    assert dash.train_incidents is None and dash.train_incidents_note is None
+    assert dash.train_incidents is None
     assert dashboard_options({}).kb_incidents_url == KB_URL_PLACEHOLDER
 
 
-def test_the_knowledgebase_key_without_its_address_says_so(config, tmp_path, opened):
+def test_the_knowledgebase_key_without_its_address_says_so_in_the_log(config, tmp_path, opened, caplog):
+    # Setup advice, so the log and the settings site say it; the dashboard is the household's page.
+    caplog.set_level("INFO")
     dash = load(config, tmp_path / "dash", env={**ENV, "RDM_KB_API_KEY": "kb-key"}, opened=opened)
     assert dash.train_incidents is None
-    assert "kb_incidents_url" in dash.train_incidents_note
+    assert not hasattr(dash, "train_incidents_note")
+    assert "Engineering works are off: set [dashboard] kb_incidents_url" in caplog.text
 
 
 def test_the_knowledgebase_key_and_address_build_the_source(config, tmp_path, opened):
@@ -335,7 +338,6 @@ def test_the_knowledgebase_key_and_address_build_the_source(config, tmp_path, op
     assert (dash.train_incidents._api_key, dash.train_incidents._url) == (
         "kb-key", "https://api.example.test/kb/incidents",
     )
-    assert dash.train_incidents_note is None
 
 
 @pytest.mark.parametrize("url", ["http://api.example.test/kb", "https://user:pw@api.example.test/kb", "ftp://x",
@@ -407,7 +409,7 @@ def test_a_saved_knowledgebase_address_must_be_at_raildata(config, tmp_path, ope
     (folder / "settings.toml").write_text(f'[dashboard]\nkb_incidents_url = "{url}"\nhistory_days = 30\n')
     caplog.set_level("WARNING")
     dash = load(config, folder, env={**ENV, "RDM_KB_API_KEY": "kb-key"}, opened=opened)
-    assert dash.train_incidents is None and "kb_incidents_url" in dash.train_incidents_note
+    assert dash.train_incidents is None
     assert dash.options.history_days == 30  # the rest of the table is read
     logged = " ".join(r.getMessage() for r in caplog.records)
     assert "[dashboard] kb_incidents_url is ignored" in logged and "example.test" not in logged
@@ -418,7 +420,7 @@ def test_the_board_s_saved_settings_cannot_set_the_dashboard_s(config, tmp_path,
     board.mkdir()
     (board / "settings.toml").write_text('[dashboard]\nkb_incidents_url = "https://elsewhere.example.test/kb"\n')
     dash = load(config, tmp_path / "dash", env={**ENV, "RDM_KB_API_KEY": "kb-key"}, opened=opened)
-    assert dash.train_incidents is None and "kb_incidents_url" in dash.train_incidents_note
+    assert dash.train_incidents is None
 
 
 def test_a_broken_saved_settings_file_is_a_config_error_naming_it(config, tmp_path):

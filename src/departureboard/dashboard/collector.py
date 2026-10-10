@@ -282,8 +282,7 @@ class Collector:
 
     def _has_disruptions(self) -> bool:
         settings = self._settings
-        return (settings.bus_disruptions is not None or settings.train_incidents is not None
-                or settings.train_incidents_note is not None)
+        return settings.bus_disruptions is not None or settings.train_incidents is not None
 
     def _publish_disruptions(self) -> None:
         """Filter the disruptions again and publish them; call with
@@ -303,8 +302,6 @@ class Collector:
             if self._rail_area is None:
                 train_status["note"] = "Waiting for the train board"
             train = train_disruptions(self._incidents.data or [], self._rail_area, now)
-        elif settings.train_incidents_note is not None:
-            train_status = status_block(note=settings.train_incidents_note)
         self._hub.publish("disruptions", disruptions_part(bus, bus_status, train, train_status, self._tz))
 
     def _publish_all(self) -> None:

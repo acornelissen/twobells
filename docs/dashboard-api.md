@@ -269,7 +269,7 @@ A top-level key of `/api/snapshot`, after `weather`. It is `null` when neither s
 
 - **Sources:**
   - `bus`: BODS SIRI-SX (the buses' `BODS_API_KEY`), polled every 10 minutes. `null` without buses. `note` is "Waiting for the bus timetable" until the timetable says which lines and stops are ours.
-  - `train`: the National Rail Knowledgebase's incidents through the Rail Data Marketplace (`RDM_KB_API_KEY`, at `[dashboard] kb_incidents_url`), polled every 30 minutes. `null` without the key. With the key but no address, `note` says so and nothing is fetched. `note` is "Waiting for the train board" until a board names our operators.
+  - `train`: the National Rail Knowledgebase's incidents through the Rail Data Marketplace (`RDM_KB_API_KEY`, at `[dashboard] kb_incidents_url`), polled every 30 minutes. `null` without the key or without the address (the settings site and the log say which). `note` is "Waiting for the train board" until a board names our operators.
 - **Which are kept** (see `disruptions.py`): valid now or in the next 7 days, and:
   - buses: on our line *with* the operator our timetable has for it; at one of our own stops; at a positioned stop our journeys use, if that part of the notice names no lines; or "all lines" of one of our operators with an affected stop inside our area (about 1 km around the positioned stops). Nothing else.
   - trains: names one of the operators running our trains, and mentions one of our stations (ours, the filter station, or any our trains call at) by name or three-letter code.

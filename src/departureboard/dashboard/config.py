@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import copy
 import fcntl
+import logging
 import os
 import re
 from collections.abc import Mapping, Sequence
@@ -49,6 +50,8 @@ from ..sources.weather import Conditions, OpenMeteoSource
 if TYPE_CHECKING:
     from ..settings.overlay import Target
     from ..settings.store import Store
+
+log = logging.getLogger(__name__)
 
 LOCK_FILE = "dashboard.lock"
 
@@ -220,10 +223,8 @@ class DashboardSettings:
     weather: ConditionsSource | None = None
     # BODS SIRI-SX, with the buses; None without buses.
     bus_disruptions: DisruptionFeed | None = None
-    # The Knowledgebase's incidents; None without RDM_KB_API_KEY or its address,
-    # with train_incidents_note saying which when the key is there.
+    # The Knowledgebase's incidents; None without RDM_KB_API_KEY or its address.
     train_incidents: DisruptionFeed | None = None
-    train_incidents_note: str | None = None
     rain_threshold: int = 50
     bank_holidays: bool = True
     bank_holiday_division: str = ENGLAND_AND_WALES
@@ -346,10 +347,11 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
     details_key = _header_key(env, "RDM_DETAILS_API_KEY")
     weather = settings.board.weather
     kb_key = _header_key(env, "RDM_KB_API_KEY")
-    incidents = incidents_note = None
+    incidents = None
     if train is not None and kb_key:
         if kb_url_is_placeholder(options.kb_incidents_url):
-            incidents_note = "Engineering works are off: set [dashboard] kb_incidents_url from the RDM product page"
+            # Setup advice: the log and the settings site say it, not the household's page.
+            log.info("Engineering works are off: set [dashboard] kb_incidents_url from the RDM product page")
         else:
             incidents = TrainIncidentSource(kb_key, options.kb_incidents_url)
     bus_key = env.get("BODS_API_KEY", "").strip()
@@ -372,7 +374,6 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
         weather=weather.source if weather is not None and isinstance(weather.source, OpenMeteoSource) else None,
         bus_disruptions=BusDisruptionSource(bus_key) if bus is not None and bus_key else None,
         train_incidents=incidents,
-        train_incidents_note=incidents_note,
         rain_threshold=weather.threshold if weather is not None else 50,
         bank_holidays=_flag(data, "bank_holidays", True),
         bank_holiday_division=settings.bank_holiday_division,

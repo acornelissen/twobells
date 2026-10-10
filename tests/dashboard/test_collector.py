@@ -695,7 +695,7 @@ class Feed:
         return self.parse(self.path.read_bytes())
 
 
-def disrupted(tmp_path, now=datetime(2026, 10, 9, 23, 14, tzinfo=LONDON), bus=True, train=True, note=None):
+def disrupted(tmp_path, now=datetime(2026, 10, 9, 23, 14, tzinfo=LONDON), bus=True, train=True):
     from departureboard.sources.disruptions import parse_kb_incidents, parse_siri_sx
 
     setup = Setup(tmp_path, now=now)
@@ -703,7 +703,6 @@ def disrupted(tmp_path, now=datetime(2026, 10, 9, 23, 14, tzinfo=LONDON), bus=Tr
     setup.incidents = Feed(parse_kb_incidents, FIXTURES / "kb_incidents_synthetic.xml")
     setup.settings.bus_disruptions = setup.situations if bus else None
     setup.settings.train_incidents = setup.incidents if train else None
-    setup.settings.train_incidents_note = note
     setup.collector = Collector(setup.settings, setup.hub, setup.history, clock=setup.clock,
                                 fetch_holidays=setup._holidays, random=lambda: 0.5, monotonic=setup.monotonic)
     return setup
@@ -764,11 +763,11 @@ def test_rail_incidents_are_filtered_by_the_train_board(tmp_path):
     assert len(titles(setup, "train")) == 2
 
 
-def test_the_knowledgebase_note_shows_when_its_address_is_missing(tmp_path):
-    setup = disrupted(tmp_path, train=False, note="Engineering works are off: set [dashboard] kb_incidents_url")
+def test_without_the_knowledgebase_only_bus_disruptions_are_published(tmp_path):
+    # No train feed means no train status: the dashboard never carries setup advice.
+    setup = disrupted(tmp_path, train=False)
     assert "train-incidents" not in setup.collector.pollers()
-    status = setup.snapshot()["disruptions"]["status"]
-    assert status["train"]["note"].startswith("Engineering works are off") and status["train"]["error"] is None
+    assert setup.snapshot()["disruptions"]["status"]["train"] is None
 
 
 # The area map
