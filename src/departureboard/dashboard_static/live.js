@@ -6,7 +6,9 @@
 // your stops), once. The disruption summary line itself is never spoken.
 // Station notices (a closed ticket office, lifts out of use) are not
 // disruption and are never spoken. The hero says when the departure to catch
-// changes (announce()). Countdowns and clocks never go through it.
+// changes (announce()). Countdowns and clocks never go through it. While a
+// dialog is open the region sits inside it (dom.js openDialog), as the page
+// behind a modal dialog is inert.
 
 import { $, str } from "./dom.js";
 import { now as clockNow, parseAt } from "./time.js";
@@ -56,6 +58,12 @@ function queue(key, text) {
 // keeps one entry per subject: newer words replace older ones not yet spoken.
 export function announce(key, text) {
   queue(key, text);
+}
+
+// Takes back words queued with announce() that are not yet spoken. Returns
+// whether there were any.
+export function unannounce(key) {
+  return pending.delete(key);
 }
 
 // Compares a new snapshot's rows with the last one's. rowsById maps id to

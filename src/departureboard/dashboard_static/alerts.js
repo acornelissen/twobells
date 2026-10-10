@@ -82,22 +82,27 @@ export function toggle(id, row, note = showNote) {
 }
 
 // Shows the in-page alert (role=alert speaks it) and, where allowed, a
-// system notification with the same words.
+// system notification with the same words. While a dialog is open the page
+// behind it is inert, so the alert shows in the dialog too; dismissing either
+// copy dismisses both.
 function fire(id, title, body) {
-  const banner = $("alert-banner");
-  const item = h("div", { class: "alert-item" },
-    h("p", {}, h("strong", {}, `${title}.`), " ", body),
-    h("button", {
-      type: "button", class: "quiet",
-      on: {
-        click: () => {
-          const hadFocus = item.contains(document.activeElement);
-          item.remove();
-          if (hadFocus) $("leave-heading").focus();
-        },
-      },
-    }, "Dismiss"));
-  banner.append(item);
+  const dialog = document.querySelector("dialog[open]");
+  const banners = [$("alert-banner"), dialog && dialog.querySelector("[data-alerts]")].filter(Boolean);
+  const copies = [];
+  const dismiss = () => {
+    const focused = copies.find((item) => item.contains(document.activeElement));
+    const inDialog = !!focused && !!dialog && dialog.contains(focused);
+    for (const item of copies) item.remove();
+    if (inDialog) dialog.querySelector("[data-dialog-title]").focus();
+    else if (focused) $("leave-heading").focus();
+  };
+  for (const banner of banners) {
+    const item = h("div", { class: "alert-item" },
+      h("p", {}, h("strong", {}, `${title}.`), " ", body),
+      h("button", { type: "button", class: "quiet", on: { click: dismiss } }, "Dismiss"));
+    copies.push(item);
+    banner.append(item);
+  }
   if (canNotify() && Notification.permission === "granted") {
     try { new Notification(title, { body, tag: id }); } catch { /* some phones need a service worker */ }
   }

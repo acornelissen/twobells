@@ -1,5 +1,7 @@
 // The page header: the place as its heading, and the one status pill that
-// says whether the page is live and whether every part of it is current.
+// says whether the page is live and whether the trains and buses are current.
+// The weather and the disruption checks say their own problems in their
+// sections, so one optional feed failing doesn't make the whole page stale.
 
 import { str, obj } from "./dom.js";
 import { STATE } from "./api.js";
@@ -19,18 +21,15 @@ export function placeName(title, station) {
   return str(station).trim() || place || text.slice(at + 1).trim() || DEFAULT_TITLE;
 }
 
-// Every part's status in the snapshot: the trains, buses, weather and both
-// disruption feeds.
+// The departures' status in the snapshot: the trains' and the buses'.
 function statuses(snapshot) {
   const s = obj(snapshot) || {};
-  const disruptions = obj(obj(s.disruptions)?.status) || {};
-  return [obj(s.trains)?.status, obj(s.buses)?.status, obj(s.weather)?.status, disruptions.bus, disruptions.train]
-    .map(obj).filter(Boolean);
+  return [obj(s.trains)?.status, obj(s.buses)?.status].map(obj).filter(Boolean);
 }
 
-// "Not updated since 17:42" when a part is stale or failing, from the oldest
-// good update among them; "Not updated yet" when one has never had one; ""
-// when every part is current.
+// "Not updated since 17:42" when the trains or buses are stale or failing,
+// from the oldest good update among them; "Not updated yet" when one has
+// never had one; "" when both are current.
 export function staleText(snapshot) {
   const behind = statuses(snapshot).filter((st) => str(st.error) || st.stale);
   if (!behind.length) return "";
@@ -49,8 +48,8 @@ const CONNECTION = {
   [STATE.offline]: ["x", "Offline"],
 };
 
-// The pill as [state, icon, words]. While the page hears from the server, a
-// part that has fallen behind says so instead; when it can't, that comes
+// The pill as [state, icon, words]. While the page hears from the server,
+// trains or buses that have fallen behind say so instead; when it can't, that comes
 // first, with how long since it last did (`lastOk`, local ms, 0 for never).
 export function pill(state, snapshot, lastOk, nowMs) {
   const reaching = state === STATE.live || state === STATE.polling;

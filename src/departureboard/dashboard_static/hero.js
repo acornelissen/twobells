@@ -4,13 +4,14 @@
 //
 // It is drawn every second, so the countdown is deliberately not a live
 // region: the announcer (live.js) is told only when the departure it points
-// at changes.
+// at changes and the change has held for 30 s, so a bus whose tracker comes
+// and goes doesn't flip the announcement back and forth.
 
 import { $, h, patch, setText, vh, str, num, obj, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
 import { describe, isOn, remindNote, toggle } from "./alerts.js";
 import { stopText } from "./board.js";
-import { announce } from "./live.js";
+import { announce, unannounce } from "./live.js";
 import { icon } from "./icons.js";
 import { isKiosk } from "./kiosk.js";
 
@@ -18,8 +19,11 @@ const NOW_MS = 60_000; // "Leave now" in the last minute
 const SECONDS_MS = 2 * 60_000; // seconds shown below this
 const SOON_MS = 3 * 60_000; // amber from here
 const LIVE_GRACE_MS = 5 * 60_000; // a live departure this soon after a ghost bus is taken instead
+const HOLD_MS = 30_000; // a new departure is announced once the hero has pointed at it this long
 
-let target; // the id the hero points at: undefined before the first draw, null for none
+let said; // the id last announced, the first one shown counting: undefined before the first draw
+let saidBefore; // the one before it, while the words for `said` may still be waiting to be spoken
+let pointing = null; // { id, since }: a departure other than `said` the hero points at, and since when
 let shown = null; // { row, mode } on show, for Remind me
 let onRemind = () => {};
 
@@ -136,6 +140,29 @@ export function setUpHero(remindChanged) {
   });
 }
 
+// Tells the live region when the hero points at a new departure (`id`, of
+// entry `next`) and has done for HOLD_MS. If it goes back to the last one
+// before the words are spoken, they are taken back.
+function noteTarget(id, next, t) {
+  if (said === undefined) said = id;
+  if (!id || id === said) {
+    pointing = null;
+    return;
+  }
+  if (id === saidBefore && unannounce("hero")) {
+    said = saidBefore;
+    saidBefore = undefined;
+    pointing = null;
+    return;
+  }
+  if (!pointing || pointing.id !== id) pointing = { id, since: t };
+  if (t - pointing.since < HOLD_MS) return;
+  announce("hero", `Next to catch is now ${describe(next.row, next.mode, false)}.`);
+  saidBefore = said;
+  said = id;
+  pointing = null;
+}
+
 // Draws the hero. rowsById maps id to { row, mode }; `context` is
 // { stops (board.js stopNames), rain (the weather's rain sentence) }.
 export function renderHero(rowsById, context) {
@@ -143,11 +170,7 @@ export function renderHero(rowsById, context) {
   const next = nextCatchable(rowsById, t);
   const banner = $("leave");
   const id = next ? str(next.row.id) || null : null;
-  if (target !== undefined && id && id !== target) {
-    const what = describe(next.row, next.mode, false);
-    announce("hero", `Next to catch is now ${what}.`);
-  }
-  target = id;
+  noteTarget(id, next, t);
   shown = next;
   const rain = str(obj(context)?.rain);
   setText($("leave-rain"), rain);

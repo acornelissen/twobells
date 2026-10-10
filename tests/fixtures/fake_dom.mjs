@@ -14,6 +14,11 @@ class FakeNode {
   get lastChild() { return this.childNodes[this.childNodes.length - 1] || null; }
   get isConnected() { return this.parentNode ? this.parentNode.isConnected : this === document.body; }
 
+  contains(node) {
+    for (let n = node; n; n = n.parentNode) if (n === this) return true;
+    return false;
+  }
+
   append(...nodes) {
     for (const node of nodes) {
       const child = node instanceof FakeNode ? node : new FakeText(String(node));
@@ -148,6 +153,7 @@ globalThis.document = {
     return find(this.body) || null;
   },
   querySelectorAll(selector) { return elements(this.body).filter((el) => matches(el, selector)); },
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; },
 };
 
 // What a screen reader would say: the text, skipping aria-hidden parts.

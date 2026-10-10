@@ -1059,7 +1059,9 @@ def test_the_heading_is_the_place_never_cut():
 
 
 @needs_node
-def test_the_status_pill_rolls_up_parts_that_fall_behind():
+def test_the_status_pill_follows_the_trains_and_buses_only():
+    # The weather and the disruption checks say their problems in their own
+    # sections: one optional feed failing all day mustn't make the page look stale.
     found = run_js("""
         import { pill } from "./header.js";
         const ok = (last) => ({ last_success: last, stale: false, error: null, note: null });
@@ -1071,11 +1073,15 @@ def test_the_status_pill_rolls_up_parts_that_fall_behind():
         const t = Date.parse(at("07:05"));
         console.log(JSON.stringify([
           pill("live", snapshot({}), t, t),
-          // Buses stale since 06:40 and the weather failing since 06:49: the older one.
+          // Buses stale since 06:40, trains failing since 06:50: the older one.
           pill("live", snapshot({ buses: { status: { ...ok(at("06:40")), stale: true } },
-                                 weather: { status: { ...ok(at("06:49")), error: "timed out" } } }), t, t),
-          pill("polling", snapshot({ disruptions: { status: { bus: { ...ok(at("06:30")), stale: true } } } }), t, t),
+                                 trains: { status: { ...ok(at("06:50")), error: "timed out" } } }), t, t),
           pill("live", snapshot({ trains: { status: { ...ok(null), error: "no key" } } }), t, t),
+          // The weather failing and the disruption checks stale: still live.
+          pill("live", snapshot({ weather: { status: { ...ok(null), error: "timed out" } },
+                                 disruptions: { status: { bus: { ...ok(at("06:30")), stale: true },
+                                                          train: { ...ok(null), error: "no key" } } } }), t, t),
+          pill("polling", snapshot({ weather: { status: { ...ok(at("06:00")), stale: true } } }), 0, t),
           // Losing the server comes first, with how long ago it last answered.
           pill("reconnecting", snapshot({ buses: { status: { ...ok(at("06:40")), stale: true } } }), t - 120000, t),
           pill("connecting", null, 0, t),
@@ -1084,8 +1090,9 @@ def test_the_status_pill_rolls_up_parts_that_fall_behind():
     assert found == [
         ["live", "circle", "Live"],
         ["stale", "triangle-alert", "Not updated since 06:40"],
-        ["stale", "triangle-alert", "Not updated since 06:30"],
         ["stale", "triangle-alert", "Not updated yet"],
+        ["live", "circle", "Live"],
+        ["polling", "refresh-cw", "Updating every 30 s"],
         ["reconnecting", "circle-dashed", "Reconnecting…, last update 2 min ago"],
         ["connecting", "circle-dashed", "Connecting…"],
     ]
@@ -1902,25 +1909,76 @@ def test_a_bus_that_may_not_be_running_gives_way_to_a_live_one_soon_after():
 
 
 @needs_node
-def test_the_hero_announces_a_new_departure_once_and_never_the_countdown():
+def test_the_hero_announces_a_new_departure_once_it_holds_and_never_the_countdown():
     found = run_js(HERO + """
         const map = rows(bus(1, "07:10", "07:05"), train(2, "07:20", "07:08"));
         draw(map);  // the first draw only notes what was there
-        for (const time of ["07:01:00", "07:02:00", "07:04:30", "07:04:59"]) { clock(time); draw(map); }
+        for (const time of ["07:01:00", "07:02:00", "07:04:30", "07:06:59"]) { clock(time); draw(map); }
         await wait();
         const ticking = [...announced];
-        clock("07:05:01");  // the bus's leaving time has passed: the train is next
+        clock("07:07:01");  // the bus's "Go now" is over: the train is next
         draw(map);
-        clock("07:05:02");
+        clock("07:07:20");
         draw(map);
         await wait();
-        console.log(JSON.stringify({ ticking, after: announced, region: live.textContent,
+        const early = [...announced];
+        clock("07:07:31");  // it has held for 30 s
+        draw(map);
+        clock("07:07:40");
+        draw(map);
+        await wait();
+        console.log(JSON.stringify({ ticking, early, after: announced, region: live.textContent,
                                      hero: said($("leave-what")) }));
     """)
     assert found["ticking"] == []
+    assert found["early"] == []
     assert found["after"] == ["Next to catch is now the 07:20 train to Manchester Piccadilly."]
     assert found["region"] == "Next to catch is now the 07:20 train to Manchester Piccadilly."
     assert found["hero"].startswith("07:20 train to Manchester Piccadilly")
+
+
+@needs_node
+def test_the_hero_never_announces_a_departure_that_flips_back():
+    # A bus whose tracker comes and goes gives way to a live one and takes the
+    # place back, snapshot after snapshot: only a change that holds is spoken.
+    found = run_js(HERO + """
+        const timers = [];
+        const realTimeout = globalThis.setTimeout;
+        const ghostly = (ghost) => rows(bus(1, "07:40", "07:35", { ghost }), bus(2, "07:42", "07:37", { live: true }));
+        const pointsAt = () => said($("leave-what")).slice(0, 5);
+        const flips = [];
+        draw(ghostly(false));
+        // Flipping every 10 s for a minute and a half: never said.
+        for (let s = 10; s <= 90; s += 10) {
+          clock(`07:0${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
+          draw(ghostly(s % 20 === 10));
+          flips.push(pointsAt());
+        }
+        await wait();
+        const flipping = [...announced];
+        // The live bus holds for 30 s: said once.
+        clock("07:02:00"); draw(ghostly(true));
+        clock("07:02:31"); draw(ghostly(true));
+        await wait();
+        const held = [...announced];
+        // The first bus comes back and holds, but its words wait their turn
+        // behind the last; the live bus is back before they are spoken.
+        globalThis.setTimeout = (fn) => { timers.push(fn); return timers.length; };
+        clock("07:03:00"); draw(ghostly(false));
+        clock("07:03:31"); draw(ghostly(false));
+        const waiting = timers.length;
+        clock("07:03:40"); draw(ghostly(true));
+        for (const fn of timers) fn();
+        globalThis.setTimeout = realTimeout;
+        await wait();
+        console.log(JSON.stringify({ flips, flipping, held, waiting, after: announced }));
+    """)
+    assert found["flips"] == ["07:42", "07:40"] * 4 + ["07:42"]
+    assert found["flipping"] == []
+    assert found["held"] == ["Next to catch is now the 07:42 237 bus to Ashton-under-Lyne Interchange."]
+    assert found["waiting"] == 1
+    # The live region last said the live bus, and it is the one again: nothing more.
+    assert found["after"] == found["held"]
 
 
 @needs_node
@@ -1950,6 +2008,60 @@ def test_the_hero_has_its_own_remind_me_and_the_rain():
     assert found["changed"] == 2
     assert found["rain"] == [False, "Rain from 08:00 (70%)"]
     assert found["dry"] is True
+
+
+# --- Reminders while a dialog is open ---
+
+
+@needs_node
+def test_a_reminder_due_while_a_dialog_is_open_is_shown_and_said_in_it():
+    # The page behind a modal dialog is inert: an alert or announcement made
+    # there is neither seen nor heard.
+    found = run_js("""
+        import { h, openDialog, setUpDialog } from "./dom.js";
+        import { observe } from "./time.js";
+        import { tickAlerts, toggle } from "./alerts.js";
+        observe(Date.parse("2026-10-10T07:00:00+01:00"));
+        const heading = h("h2", { id: "leave-heading" });
+        const banner = h("div", { id: "alert-banner", role: "alert" });
+        const live = h("div", { id: "live", "aria-live": "polite" });
+        const title = h("h2", { "data-dialog-title": "" });
+        const inDialog = h("div", { "data-alerts": "", role: "alert" });
+        const dialog = h("dialog", { id: "sheet" }, title, h("button", { "data-close": "" }), inDialog);
+        dialog.showModal = () => { dialog.open = true; dialog.setAttribute("open", ""); };
+        const closed = () => dialog.listeners.filter(([type]) => type === "close").map(([, fn]) => fn);
+        dialog.close = () => { dialog.open = false; dialog.removeAttribute("open"); closed().forEach((fn) => fn()); };
+        document.body.append(h("main", { id: "main" }, heading, banner), live, dialog);
+        setUpDialog(dialog);
+        const row = { id: "0123456789abcdef", scheduled: "07:20", destination: "Manchester Piccadilly",
+                      leave_at: "2026-10-10T07:00:30+01:00", scheduled_at: "2026-10-10T07:20:00+01:00" };
+        toggle(row.id, row, () => {});
+        openDialog(dialog, null);
+        const liveIn = live.parentNode === dialog;
+        tickAlerts(new Map([[row.id, { row, mode: "train" }]]));
+        const said = (el) => spoken(el).replace(/\\s+/g, " ").trim();
+        const fired = [said(inDialog), said(banner)];
+        // Dismissed in the dialog: gone from both, and the focus stays in the dialog.
+        const dismiss = elements(inDialog).find((el) => el.nodeName === "BUTTON");
+        dismiss.focus();
+        dismiss.listeners.find(([type]) => type === "click")[1]();
+        const dismissed = [said(inDialog), said(banner), document.activeElement === title];
+        dialog.close();
+        console.log(JSON.stringify({ liveIn, fired, dismissed, liveBack: live.parentNode === document.body }));
+    """)
+    alert = "Time to leave. Leave now for the 07:20 train to Manchester Piccadilly.Dismiss"
+    assert found["liveIn"] is True
+    assert found["fired"] == [alert, alert]
+    assert found["dismissed"] == ["", "", True]
+    assert found["liveBack"] is True
+
+
+def test_every_dialog_has_a_place_for_alerts():
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    dialogs = re.findall(r"<dialog.*?</dialog>", html, re.S)
+    assert len(dialogs) == 2
+    for dialog in dialogs:
+        assert '<div class="alert-banner" data-alerts role="alert"></div>' in dialog
 
 
 # --- Around here: the line and the area map ---

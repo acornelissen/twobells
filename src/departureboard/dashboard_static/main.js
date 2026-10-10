@@ -55,7 +55,7 @@ $("theme-toggle").addEventListener("click", () => {
 });
 applyTheme(document.documentElement.dataset.theme === "board" ? "board" : "modern");
 
-// --- The status pill: live or not, and whether every part is current.
+// --- The status pill: live or not, and whether the trains and buses are current.
 
 function renderConnection() {
   const last = connection ? connection.lastOk() : 0;

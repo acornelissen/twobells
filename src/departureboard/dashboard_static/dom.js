@@ -143,12 +143,16 @@ export function refocus(key) {
 
 // Modal dialogs: showModal() for the focus trap and Escape, focus moved to the
 // title on open and back to the button that opened it on close (found again by
-// its focus key if a new snapshot has re-rendered the table meanwhile).
+// its focus key if a new snapshot has re-rendered the table meanwhile). The
+// page's live region (#live) moves into the dialog while it is open, as the
+// page behind a modal dialog is inert and nothing said there is heard.
 export function setUpDialog(dialog, onClose) {
   dialog.querySelector("[data-close]").addEventListener("click", () => dialog.close());
   // A click on the backdrop lands on the dialog element itself.
   dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
   dialog.addEventListener("close", () => {
+    const live = document.getElementById("live");
+    if (live && dialog.contains(live)) document.body.append(live);
     if (onClose) onClose();
     const key = dialog.dataset.returnKey;
     const back = (key && document.querySelector(`[data-focus-key="${CSS.escape(key)}"]`)) || dialog.returnTo;
@@ -162,5 +166,7 @@ export function openDialog(dialog, opener) {
   dialog.dataset.returnKey = (opener && opener.dataset && opener.dataset.focusKey) || "";
   dialog.returnTo = opener || null;
   if (!dialog.open) dialog.showModal();
+  const live = document.getElementById("live");
+  if (live) dialog.append(live);
   dialog.querySelector("[data-dialog-title]").focus();
 }
