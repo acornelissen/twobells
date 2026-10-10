@@ -111,11 +111,11 @@ The screen can redraw every second, so it shows a bit more:
 
 If it's set up, the screen switches every 25 seconds: 15 seconds of departures, then 10 seconds of this page.
 
-![The bus position page on the HDMI screen](guide/screen-bus.png)
+![The bus position page on the HDMI screen, with sample data](guide/screen-bus.png)
 
 - **Top line:** the bus you can still catch, and when it goes (`341 to Hyde … 07:24 +4`).
 - **Second line:** when to leave, and how many stops away the bus is, counting your stop.
-- **The line of stops:** the stops the bus calls at before yours. Your stop is the highlighted one on the right; the bus is drawn on the road where it is now.
+- **The line of stops:** the stops the bus calls at before yours. Your stop is the highlighted one on the right (Henry Street in this sample); the bus is drawn on the road where it is now.
 
 It also says:
 

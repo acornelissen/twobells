@@ -190,7 +190,7 @@ DEMO_STRIP = RouteStrip(
 
 
 class FakeVehicleSource:
-    """Each 341 drives along the demo strip and reaches your stop when it is due."""
+    """Each 341 drives along the demo strip and reaches its last stop when it is due."""
 
     name = "vehicles"
 

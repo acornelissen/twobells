@@ -174,11 +174,11 @@ The map for one bus row; 404 if the id is unknown (as when it's gone from the bo
   "id": "4b7e…",
   "line": "341", "destination": "Hyde Bus Station", "stop": "A", "stop_name": "Church Street (Stop A)",
   "stops": [
-    {"name": "Park Road", "lat": 53.4433, "lon": -1.9550, "time": "07:16", "yours": false},
-    {"name": "Church Street", "lat": 53.4436, "lon": -1.9500, "time": "07:20", "yours": true}
+    {"name": "Park Road", "lat": 53.4433, "lon": -1.9625, "time": "07:16", "yours": false},
+    {"name": "Church Street", "lat": 53.4435, "lon": -1.9590, "time": "07:20", "yours": true}
   ],
-  "path": [[53.4433, -1.9550], [53.44345, -1.9532], [53.4438, -1.9512], [53.4436, -1.9500]],
-  "vehicle": {"lat": 53.4435, "lon": -1.9573, "bearing": 95.0, "recorded_at": "…", "age_s": 40},
+  "path": [[53.4433, -1.9625], [53.44345, -1.9610], [53.4436, -1.9598], [53.4435, -1.9590]],
+  "vehicle": {"lat": 53.4438, "lon": -1.9648, "bearing": 95.0, "recorded_at": "…", "age_s": 40},
   "where": "2 stops away"
 }
 ```
@@ -292,10 +292,10 @@ The area map: every live bus on our lines around our stops, from the bus poller'
   "fetched_at": "2026-10-09T10:14:30+01:00",
   "box": [-1.975966, 53.433239, -1.938157, 53.454467],
   "vehicles": [
-    {"line": "341", "destination": "Hadfield", "lat": 53.443503, "lon": -1.957393, "bearing": 90.0,
+    {"line": "341", "destination": "Hadfield", "lat": 53.4438, "lon": -1.9648, "bearing": 90.0,
      "recorded_at": "2026-10-09T10:14:00+01:00", "age_s": 30, "next_stop": "Park Road"}
   ],
-  "stops": [{"label": "A", "name": "Church Street", "lat": 53.4436, "lon": -1.9500}],
+  "stops": [{"label": "A", "name": "Church Street", "lat": 53.4435, "lon": -1.9590}],
   "routes": [{"line": "341", "destination": "Hadfield", "points": [[53.444467, -1.965966], [53.444223, -1.962774]],
               "path": [[53.444467, -1.965966], [53.44438, -1.96431], [53.444223, -1.962774]]}]
 }

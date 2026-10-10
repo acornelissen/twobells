@@ -56,7 +56,8 @@ _ERROR_BYTES = 4096  # of an error's body, to tell a wrong key from an unsubscri
 _MIN_REPLACED = 4  # a key shorter than this can't be told from ordinary words
 
 DEFAULT_CRS = "GLO"
-# Glossop, Henry Street: a real stop and its position, for when none is configured.
+# Glossop, Henry Street: a public stop and its position for the test call, used when
+# none is configured.
 DEFAULT_ATCO = "1000DGHS0900"
 DEFAULT_POINT = (53.44384, -1.948999)
 BOX_MARGIN = 0.003  # degrees, a few hundred metres

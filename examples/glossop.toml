@@ -89,9 +89,9 @@ B = 10
 # [bus.routes.341]
 # stop = "A"            # your stop's label from [bus.stops]
 # stops = [             # in the order the bus calls; yours last
-#   { name = "Two stops back", lat = 53.4430, lon = -1.9600 },
-#   { name = "One stop back",  lat = 53.4433, lon = -1.9550 },
-#   { name = "Your stop",      lat = 53.4436, lon = -1.9500 },
+#   { name = "Two stops back", lat = 53.4445, lon = -1.9660 },
+#   { name = "One stop back",  lat = 53.4442, lon = -1.9625 },
+#   { name = "Your stop",      lat = 53.4435, lon = -1.9590 },
 # ]
 
 # Optional: a rain warning from Open-Meteo's forecast (free, no key). The board
