@@ -1054,6 +1054,110 @@ def test_a_first_run_serves_the_settings_and_signing_in_opens_the_wizard(tmp_pat
     assert (status, where) == (303, "/settings/setup/")
 
 
+class Browser:
+    """Just enough of a browser for the settings site: one host, its cookies
+    by name, and same-origin requests."""
+
+    def __init__(self, port):
+        self.port, self.cookies = port, {}
+
+    def __call__(self, method, path, form=None, json_body=None, headers=None):
+        import http.client
+        from urllib.parse import urlencode
+
+        sent = {"Host": f"localhost:{self.port}", "Origin": f"http://localhost:{self.port}", **(headers or {})}
+        if self.cookies:
+            sent["Cookie"] = "; ".join(f"{k}={v}" for k, v in self.cookies.items())
+        body = None
+        if form is not None:
+            body, sent["Content-Type"] = urlencode(form), "application/x-www-form-urlencoded"
+        if json_body is not None:
+            body, sent["Content-Type"] = json.dumps(json_body), "application/json"
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request(method, path, body, sent)
+        response = conn.getresponse()
+        text = response.read().decode()
+        conn.close()
+        for header in response.headers.get_all("Set-Cookie") or []:
+            name, _, value = header.split(";")[0].partition("=")
+            self.cookies[name] = value
+        return response, text
+
+
+def test_dockers_first_run_claims_in_the_log_sets_up_and_starts_the_dashboard_again(tmp_path, monkeypatch, caplog):
+    # A new container: no config.toml, nothing saved, the key from the environment.
+    import re
+
+    from departureboard import cli, collector, dashserver, http
+
+    def offline(request, timeout):
+        raise OSError("offline in tests")
+
+    monkeypatch.setattr(http, "urlopen", offline)
+    monkeypatch.setattr(cli, "SETTINGS_CHECK_S", 0.05)
+    started_again = []
+    monkeypatch.setattr(cli, "_start_again", started_again.append)
+    monkeypatch.setenv("RDM_API_KEY", "from-the-environment")
+    caplog.set_level("INFO")
+    folder, port = tmp_path / "data", free_port()
+    argv = ["serve", "--install", "docker", "--config", str(tmp_path / "missing.toml"),
+            "--secrets", str(tmp_path / "none.env"), "--state-dir", str(folder), "--port", str(port)]
+    seen = {}
+
+    def owner():
+        try:
+            setting_up()
+        finally:
+            if "finish" not in seen:  # something failed: stop the server, as Ctrl+C does, so the test ends
+                import signal
+
+                os.kill(os.getpid(), signal.SIGINT)
+
+    def setting_up():
+        assert answering(port)
+        browser = Browser(port)
+        response, _ = browser("GET", "/")
+        seen["home"] = (response.status, response.getheader("Location"))
+        # Claim the settings with a code from the container's log.
+        _, page = browser("GET", "/settings/login")
+        token = re.search(r'name="form" value="([^"]+)"', page).group(1)
+        browser("POST", "/settings/forgot", {"form": token})
+        code = "".join(re.search(r"Settings reset code: (\d{3}) (\d{3})", caplog.text).groups())
+        _, page = browser("GET", "/settings/reset?asked")
+        token = re.search(r'name="form" value="([^"]+)"', page).group(1)
+        response, _ = browser("POST", "/settings/reset", {"form": token, "code": code, "password": DASH_PASSWORD,
+                                                          "again": DASH_PASSWORD})
+        seen["claimed"] = (response.status, response.getheader("Location"))
+        # The wizard, as its page calls it.
+        csrf = json.loads(browser("GET", "/settings/setup/api/session")[1])["csrf"]
+        step = {"X-CSRF-Token": csrf}
+        seen["begin"] = json.loads(browser("POST", "/settings/setup/api/begin", json_body={}, headers=step)[1])
+        response, text = browser("POST", "/settings/setup/api/finish", headers=step, json_body={
+            "home": {"lat": 53.443, "lon": -1.949}, "station_crs": "GLO", "stops": {}, "walk": {"GLO": 6},
+            "views": ["dashboard"]})
+        seen["finish"] = (response.status, json.loads(text))
+
+    helper = threading.Thread(target=owner, daemon=True)
+    helper.start()
+    assert main(argv) == 0  # until the settings saved start it again
+    helper.join(timeout=10)
+    assert seen["home"] == (303, "/settings")
+    assert seen["claimed"] == (303, "/settings/setup/")
+    assert seen["begin"]["noun"] == "dashboard" and seen["begin"]["views"]["on"] == ["dashboard"]
+    status, finished = seen["finish"]
+    assert status == 200 and finished["message"] == "Saved. The dashboard starts again in a few seconds to use them."
+    assert finished["links"][0] == {"label": "The dashboard", "href": "/"}
+    assert started_again == [port] and "starting the dashboard again" in caplog.text
+
+    # Started again, as _start_again would: now the Collector runs.
+    started, made = [], {}
+    start = collector.Collector.start
+    monkeypatch.setattr(collector.Collector, "start", lambda self: started.append(self) or start(self))
+    monkeypatch.setattr(dashserver, "make_server", lambda app, host, port, attempts=1: made.update(app=app) or Stopped())
+    assert main(argv) == 0
+    assert made["app"].hub is not None and len(started) == 1
+
+
 def test_serve_with_the_dashboard_view_off_runs_only_the_settings(tmp_path, served, dashboard_config):
     folder = tmp_path / "data"
     folder.mkdir()
