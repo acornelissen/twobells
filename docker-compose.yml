@@ -12,7 +12,7 @@ services:
       - dashboard.env            # RDM_API_KEY and BODS_API_KEY; keep it readable by you only
     volumes:
       - ./config.toml:/config/config.toml:ro
-      - dashboard-data:/data     # bus timetable, history, bank holidays
+      - dashboard-data:/data     # bus timetable, history, bank holidays, saved settings and keys, settings password
     read_only: true
     tmpfs:
       - /tmp:size=64m

@@ -2,6 +2,8 @@
 
 The contract between the dashboard's server (`departureboard dashboard`) and its browser front end. Everything is read-only: GET and HEAD only.
 
+The password-protected settings area under `/settings` is not part of this API: it has its own pages, cookies (`dash_session`, `dash_form`, both `Path=/settings`) and headers (`form-action 'self'` and no scripts, except `script-src 'self'` for the setup wizard under `/settings/setup/`). Nothing here changes because of it.
+
 Rules for every response:
 - **Times:** `*_at` fields are ISO 8601 with the board's UTC offset (`2026-10-10T07:12:00+01:00`). `HH:MM` fields are for display only. The browser counts down from `*_at` against the server clock (`generated_at` plus its own offset), so the server never pushes every second.
 - **Text** is plain text from the feeds; the browser must set it with `textContent`, never as HTML.

@@ -398,7 +398,7 @@ The dashboard is the board's big sibling: a web page with the next 10 trains and
 - **Board look:** switches to the station-board style, amber on black. It's remembered per browser.
 - **Weather:** now, the next 12 hours, rain warning, sunrise and sunset.
 
-Nothing on the page can change anything: it only shows. It checks for new times every minute (trains) and 30 seconds (buses), and stops from 01:00 to 05:00 unless someone has it open.
+Nothing on the page can change anything: it only shows. Changes go through **Settings**, which needs a password (see [Changing the dashboard's settings](#changing-the-dashboards-settings)). It checks for new times every minute (trains) and 30 seconds (buses), and stops from 01:00 to 05:00 unless someone has it open.
 
 ### On a Mac
 
@@ -410,7 +410,7 @@ departureboard dashboard --config config.toml --secrets secrets.env
 
 It opens in your browser. The first start takes a minute or so to build the bus timetable. Add `--lan` to let phones on the home Wi-Fi open it at the address it prints. Ctrl-C stops it.
 
-It keeps its own folder (`~/Library/Application Support/departureboard-dashboard`): the bus timetable, the history, and bank holidays. It needs `[bus] source = "bods"`.
+It keeps its own folder (`~/Library/Application Support/departureboard-dashboard`): the bus timetable, the history, bank holidays, and anything saved from **Settings**. It needs `[bus] source = "bods"`.
 
 ### On a Synology NAS
 
@@ -430,13 +430,33 @@ It only answers to local addresses: the NAS's IP address, a name without dots (`
 allowed_hosts = ["ds.home"]
 ```
 
-Don't publish port 8090 on your router or through QuickConnect or DSM's reverse proxy: the page has no password, by design, for the home network only. For extra safety, add a DSM firewall rule that allows 8090 only from your home network's addresses.
+Don't publish port 8090 on your router or through QuickConnect or DSM's reverse proxy: the page itself has no password, by design, for the home network only, and the settings sign-in is not meant to face the internet either. For extra safety, add a DSM firewall rule that allows 8090 only from your home network's addresses.
 
-**Updating:** copy the new project files over the old ones, then in Container Manager choose the project, then **Action**, then **Build**. Your history and timetable stay in the volume.
+**Updating:** copy the new project files over the old ones, then in Container Manager choose the project, then **Action**, then **Build**. Your history, timetable, saved settings and settings password stay in the volume.
+
+### Changing the dashboard's settings
+
+**Settings**, at the top of the page (or `/settings`), changes what the dashboard shows without editing `config.toml`: the station and stops, walking times, how many trains and buses, how often to check, the weather, and keys. **Set up with a map** finds your station, stops and their bus companies from your postcode, as on the board.
+
+It needs a password, and the dashboard has no display to show a code on, so the code goes to its log instead, which only you can read:
+
+1. Open **Settings**. The first time, it asks you to claim the dashboard. Press **Put a code in the log**.
+2. Read the 6-digit code from the log:
+   - **Synology:** in **Container Manager**, go to **Container**, choose `departureboard-dashboard`, then **Log**. Or over SSH: `docker logs departureboard-dashboard 2>&1 | grep "reset code"`.
+   - **Mac:** the Terminal window running the dashboard.
+
+   The line reads `Settings reset code: 123 456, valid until 14:05`.
+3. Type the code with a new password (at least 10 characters).
+
+A forgotten password works the same way, from **Forgot password?**: setting a new one signs every browser out. A code lasts 10 minutes and works once; a new one can be made once a minute, up to 10 a day, and five wrong tries spoil it. Five wrong passwords lock an address out for 15 minutes.
+
+- Saved settings go in the dashboard's own folder (in Docker, the `dashboard-data` volume), as `settings.toml`, layered over `config.toml`, which is never changed (Docker mounts it read-only). Keys go to `secrets.env` beside it, readable only by the dashboard, and are layered over `dashboard.env`. The password is in `web.json` there too.
+- After a save the dashboard starts again by itself within a few seconds to use the new settings, and signs you out. Settings that wouldn't load are never saved; if `config.toml` is edited into something that doesn't load, the dashboard says so in its log and carries on with what it had.
+- The sign-in is separate from the board's settings page, even on the same computer.
 
 ### Dashboard settings
 
-All optional, under `[dashboard]` in `config.toml`:
+All optional, under `[dashboard]` in `config.toml`. All but `allowed_hosts` and `state_dir` can be changed from **Settings** too:
 
 | Setting | Default | What it does |
 |---|---|---|
