@@ -25,6 +25,9 @@ web.json
 *.sqlite3
 *.sqlite3-*
 dashboard.lock
+migrate.lock
+migrated.json
+timetable.lock
 settings.toml
 /preview.png
 /config.toml
