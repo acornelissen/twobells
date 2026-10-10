@@ -49,10 +49,13 @@ Where that line goes depends on what you're setting up:
 | The board on a Pi | `/etc/departureboard/secrets.env` | Edit with `sudo nano /etc/departureboard/secrets.env`. Or paste keys on the settings page (see below). |
 | The dashboard on a Mac | `secrets.env` in the project folder | Start the dashboard with `--secrets secrets.env`. |
 | The dashboard in Docker (a Synology NAS) | `dashboard.env`, next to `docker-compose.yml` | Copy it from `deploy/dashboard.env.example`. |
+| The dashboard, from its **Settings** | `secrets.env` in the dashboard's own folder | Saved for you when you paste a key on **Settings** (see below). In Docker the folder is the `/data` volume. |
 
-**The settings page** on the Pi has a box for `RDM_API_KEY`, `BODS_API_KEY`, `TAPI_APP_ID` and `TAPI_APP_KEY`. The two dashboard-only keys (`RDM_DETAILS_API_KEY` and `RDM_KB_API_KEY`) aren't on it, because the dashboard has no settings page.
+**The settings page** on the Pi has a box for `RDM_API_KEY`, `BODS_API_KEY`, `TAPI_APP_ID` and `TAPI_APP_KEY`, and saves them to `/var/lib/departureboard/secrets.env`. The two dashboard-only keys (`RDM_DETAILS_API_KEY` and `RDM_KB_API_KEY`) aren't on it.
 
-**The setup page** (the first-run setup wizard) has the same four boxes, each with **How to get this key** (the short version of this guide) and a **Test this key** button. Testing makes one small request to the key's service and says what it found: it works, it's the wrong key, it's for another Rail Data Marketplace product, the service isn't answering, or it can't tell. It tests the key in the box if you've pasted one, without saving it, or else the key already saved. Each key can be tested once every 10 seconds.
+**The dashboard's Settings** (`/settings` on the dashboard, behind its own password) has a box for `RDM_API_KEY`, `BODS_API_KEY`, `RDM_DETAILS_API_KEY` and `RDM_KB_API_KEY`, and saves them to `secrets.env` in the dashboard's own folder, where they win over the keys in the `secrets.env` you start it with, or in `dashboard.env`. It has no TransportAPI boxes, as the dashboard never uses it. See [Changing the dashboard's settings](USER_GUIDE.md#changing-the-dashboards-settings).
+
+**The setup page** (the first-run setup wizard, on the Pi or the dashboard) has the same boxes as that settings page, each with **How to get this key** (the short version of this guide) and a **Test this key** button. Testing makes one small request to the key's service and says what it found: it works, it's the wrong key, it's for another Rail Data Marketplace product, the service isn't answering, or it can't tell. It tests the key in the box if you've pasted one, without saving it, or else the key already saved. Each key can be tested once every 10 seconds.
 
 Never put a key in `config.toml`. That file holds settings, gets copied about, and anyone on the Pi can read it.
 
@@ -101,7 +104,7 @@ base_url = "https://api1.raildata.org.uk/..."
 
 ### Put it in
 
-`RDM_API_KEY` in `secrets.env` (Pi or Mac) or `dashboard.env` (Docker), or the **Rail Data Marketplace key** box on the settings page.
+`RDM_API_KEY` in `secrets.env` (Pi or Mac) or `dashboard.env` (Docker), or the **Rail Data Marketplace key** box on the Pi's settings page or the dashboard's **Settings**.
 
 ### Check it works
 
@@ -143,7 +146,7 @@ You need the [RDM account](#make-an-rdm-account) from above.
 
 ### Put it in
 
-`RDM_DETAILS_API_KEY` in `secrets.env` (Mac) or `dashboard.env` (Docker). It isn't on the Pi's settings page.
+`RDM_DETAILS_API_KEY` in `secrets.env` (Mac) or `dashboard.env` (Docker), or the **Rail Data Marketplace Service Details key** box on the dashboard's **Settings**. It isn't on the Pi's settings page.
 
 ### Check it works
 
@@ -180,8 +183,8 @@ You need the [RDM account](#make-an-rdm-account) from above.
 
 ### Put them in
 
-- The key: `RDM_KB_API_KEY` in `secrets.env` (Mac) or `dashboard.env` (Docker). It isn't on the Pi's settings page.
-- The address: in `config.toml`, under `[dashboard]`:
+- The key: `RDM_KB_API_KEY` in `secrets.env` (Mac) or `dashboard.env` (Docker), or the **Rail Data Marketplace Knowledgebase Incidents key** box on the dashboard's **Settings**. It isn't on the Pi's settings page.
+- The address: the **Knowledgebase Incidents address** box under **Trains** on the dashboard's **Settings**, or in `config.toml`, under `[dashboard]`:
 
   ```toml
   [dashboard]
@@ -229,7 +232,7 @@ The Bus Open Data Service (BODS) is run by the Department for Transport.
 
 ### Put it in
 
-`BODS_API_KEY` in `secrets.env` (Pi or Mac) or `dashboard.env` (Docker), or the **Bus Open Data Service key** box on the settings page.
+`BODS_API_KEY` in `secrets.env` (Pi or Mac) or `dashboard.env` (Docker), or the **Bus Open Data Service key** box on the Pi's settings page or the dashboard's **Settings**.
 
 Buses also need your stops and bus companies in `config.toml`; see [Bus times](USER_GUIDE.md#bus-times).
 
@@ -318,10 +321,11 @@ Replace a key when it stops working, when you've made a new one, or if it might 
    - Rail Data Marketplace and BODS: look in your account for a way to make a new key, or contact them through the site's help or contact page.
 2. **Put the new key in** where the old one was:
    - **The Pi's settings page:** paste the new key into its box and press **Save settings**. Leaving a box empty keeps the key you have. A key saved on the page wins over `/etc/departureboard/secrets.env`, so if you've ever pasted that key on the page, replace it on the page.
+   - **The dashboard's Settings:** the same. A key saved there wins over the one in your `secrets.env` or `dashboard.env`, so if you've ever pasted that key there, replace it there. The dashboard starts again by itself to use it.
    - **`secrets.env` or `dashboard.env`:** change the text after `NAME=` and save the file. Keep it to one line, with no spaces or quotes.
 3. **Restart what uses it:**
    - The e-paper board picks it up at its next check.
    - The HDMI screen and the settings page: `sudo systemctl restart departureboard-screen.service departureboard-web.service` (leave out whichever you don't use).
-   - The dashboard on a Mac: press Ctrl-C and start it again.
+   - The dashboard on a Mac: it notices the changed `secrets.env` and starts again by itself within a few seconds. Or press Ctrl-C and start it again.
    - The dashboard on a NAS: in **Container Manager**, choose the project, then **Action**, then **Build**. Just restarting the container doesn't read `dashboard.env` again.
 4. **Check it works**, with the check from that key's section above.
