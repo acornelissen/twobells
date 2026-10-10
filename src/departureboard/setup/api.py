@@ -231,9 +231,12 @@ def static_files() -> dict[str, Path]:
     root = Path(str(files("departureboard")))
     wizard, dashboard = root / "wizard_static", root / "dashboard_static"
     leaflet = "vendor/leaflet-1.9.4"
+    # wizard.js and the modules it imports, each named: anything else is a 404.
+    scripts = ("wizard", "api", "say", "state", "steps", "maps", "home", "station", "stops", "walk", "keys",
+               "views", "finish", "roads")
     return {
         "": wizard / "index.html",
-        "wizard_static/wizard.js": wizard / "wizard.js",
+        **{f"wizard_static/{name}.js": wizard / f"{name}.js" for name in scripts},
         "wizard_static/wizard.css": wizard / "wizard.css",
         "dashboard_static/dom.js": dashboard / "dom.js",
         f"dashboard_static/{leaflet}/leaflet-src.esm.js": dashboard / leaflet / "leaflet-src.esm.js",

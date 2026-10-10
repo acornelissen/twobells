@@ -4,6 +4,9 @@ The page runs under setupapi.PAGE_HEADERS (`script-src 'self'; style-src
 'self'`), sets server text only as text, and borrows the dashboard's dom.js
 and vendored Leaflet through the paths setupapi.static_files() serves. These
 tests keep it that way without a browser.
+
+The script is wizard.js and the modules beside it, one per step and a few
+they share; the checks on a step's code read that step's module.
 """
 
 import json
@@ -28,6 +31,8 @@ STATIC = ROOT / "src" / "departureboard" / "wizard_static"
 OWN = sorted(p for p in STATIC.rglob("*") if p.is_file())
 PREFIX = "http://pi.local/setup/"  # any prefix ending in a slash
 STEPS = ("home", "station", "stops", "walk", "keys", "views", "finish", "done")
+SCRIPTS = ("api.js", "finish.js", "home.js", "keys.js", "maps.js", "roads.js", "say.js", "state.js", "station.js",
+           "steps.js", "stops.js", "views.js", "walk.js", "wizard.js")
 
 
 class _Page(HTMLParser):
@@ -63,14 +68,25 @@ def _ids():
     return {attrs["id"]: (tag, attrs) for tag, attrs in _page().elements if "id" in attrs}
 
 
+def _js(name):
+    return (STATIC / name).read_text(encoding="utf-8")
+
+
+def _all_js():
+    """Every module's text, for checks on the script as a whole."""
+    return "\n".join(_js(name) for name in SCRIPTS)
+
+
 def _served(url):
     """The file a host answers a URL under the prefix with, per static_files()."""
     assert url.startswith(PREFIX), f"{url} is outside the wizard's prefix"
     return static_files().get(url.removeprefix(PREFIX))
 
 
-def test_only_the_three_files_are_shipped():
-    assert [p.name for p in OWN] == ["index.html", "wizard.css", "wizard.js"]
+def test_only_the_listed_files_are_shipped_and_each_is_served():
+    assert [p.name for p in OWN] == sorted(["index.html", "wizard.css", *SCRIPTS])
+    served = {path for path in static_files() if path.startswith("wizard_static/")}
+    assert served == {f"wizard_static/{p.name}" for p in OWN if p.name != "index.html"}
 
 
 def test_every_served_file_exists():
@@ -104,9 +120,10 @@ IMPORT = re.compile(
 )
 
 
-def test_js_imports_resolve_to_served_files():
-    js_url = urljoin(PREFIX, "wizard_static/wizard.js")
-    specs = IMPORT.findall((STATIC / "wizard.js").read_text(encoding="utf-8"))
+@pytest.mark.parametrize("name", SCRIPTS)
+def test_js_imports_resolve_to_served_files(name):
+    js_url = urljoin(PREFIX, f"wizard_static/{name}")
+    specs = IMPORT.findall(_js(name))
     assert "../dashboard_static/dom.js" in specs
     for spec in specs:
         assert spec.startswith(("./", "../")), f"bare or absolute import {spec!r}"
@@ -119,17 +136,24 @@ def test_js_imports_resolve_to_served_files():
 
 
 def test_leaflet_css_resolves_to_a_served_file():
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
-    base = re.search(r'const LEAFLET = "([^"]+)"', text).group(1)
-    url = urljoin(urljoin(PREFIX, "wizard_static/wizard.js"), f"{base}leaflet.css")
+    base = re.search(r'const LEAFLET = "([^"]+)"', _js("maps.js")).group(1)
+    url = urljoin(urljoin(PREFIX, "wizard_static/maps.js"), f"{base}leaflet.css")
     assert _served(url) is not None
 
 
+STATIC_IMPORT = re.compile(r"""^\s*import\s+(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']""", re.M)
+
+
 def test_leaflet_loads_only_when_a_map_opens():
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
-    static = re.findall(r"""^\s*import\s+(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']""", text, re.M)
-    assert static == ["../dashboard_static/dom.js"]
-    assert 'import("../dashboard_static/vendor/leaflet-1.9.4/leaflet-src.esm.js")' in text
+    assert STATIC_IMPORT.findall(_js("wizard.js")) == [
+        "../dashboard_static/dom.js", "./api.js", "./finish.js", "./home.js", "./keys.js", "./say.js", "./state.js",
+        "./station.js", "./steps.js", "./stops.js", "./views.js", "./walk.js",
+    ]
+    # No module loads Leaflet up front: maps.js imports it when the first map opens.
+    for name in SCRIPTS:
+        assert not [spec for spec in STATIC_IMPORT.findall(_js(name)) if "leaflet" in spec], name
+    assert [name for name in SCRIPTS if "leaflet-src" in _js(name)] == ["maps.js"]
+    assert 'import("../dashboard_static/vendor/leaflet-1.9.4/leaflet-src.esm.js")' in _js("maps.js")
 
 
 BANNED = [
@@ -155,7 +179,7 @@ def test_no_html_sinks_storage_or_logging(path):
 
 
 def test_leaflet_gets_nodes_never_strings():
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    text = _all_js()
     calls = re.findall(r"\.bind(?:Popup|Tooltip)\(\s*([^,)]+)", text)
     assert calls
     for call in calls:
@@ -167,14 +191,15 @@ def test_leaflet_gets_nodes_never_strings():
 
 
 def test_the_api_is_called_by_relative_url_with_the_csrf_token():
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    text = _js("api.js")
     assert "fetch(`api/${name}`" in text and 'fetch("api/session"' in text
     assert '"X-CSRF-Token": state.csrf' in text and 'credentials: "same-origin"' in text
-    assert not re.search(r"""fetch\(\s*["'`](/|https?:)""", text)
+    assert [name for name in SCRIPTS if "fetch(" in _js(name)] == ["api.js"]
+    assert not re.search(r"""fetch\(\s*["'`](/|https?:)""", _all_js())
 
 
 def test_key_inputs_are_write_only():
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    text = _js("keys.js")
     draw = text[text.index("function drawKeys"):text.index("function enterKeys")]
     assert 'autocomplete: "off"' in draw and "value:" not in draw  # never filled in from the server
     assert "keyTestButton(key.name, input)" in draw  # the hook for "Test this key" (bead 0fm.8)
@@ -185,7 +210,7 @@ def _between(text, start, end):
 
 
 def test_key_test_says_its_result_politely_in_words():
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    text = _js("keys.js")
     hook = _between(text, "function keyTestButton", "function signUp")
     assert 'type: "button"' in hook and '"Test this key"' in hook
     assert 'role: "status", "aria-live": "polite"' in hook
@@ -203,21 +228,21 @@ def test_key_test_says_its_result_politely_in_words():
 
 def test_the_wizard_says_nothing_of_the_keys_on_the_views_tabs():
     # TransportAPI's and the dashboard's own keys are signed up for and tested on their tabs.
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    text = _all_js()
     for gone in ("TAPI", "TransportAPI", "RDM_DETAILS_API_KEY", "RDM_KB_API_KEY", "LOOKUP_WARNING", "confirm("):
         assert gone not in text, gone
-    assert 'call("testkey", body)' in _between(text, "async function testKey", "function keyTestButton")
+    assert 'call("testkey", body)' in _between(_js("keys.js"), "async function testKey", "function keyTestButton")
 
 
 def test_every_key_on_the_page_says_how_to_get_it():
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    text = _js("keys.js")
     sign_up = _between(text, "const SIGN_UP", "const TESTED")
     assert re.findall(r"^  (\w+): \[$", sign_up, re.MULTILINE) == [name for name, _, _ in KEYS]
     assert "The full guide (opens in a new tab)" in text and 'rel: "noopener noreferrer"' in text
 
 
 def test_every_key_the_wizard_offers_has_a_test_button():
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    text = _js("keys.js")
     tested = set(re.findall(r'"([A-Z_]+)"', _between(text, "const TESTED", "const RESULTS")))
     assert tested == {name for name, _, _ in KEYS}
     assert tested <= set(keytest.KEY_NAMES)
@@ -234,11 +259,10 @@ def test_page_is_british_english_and_says_what_it_is():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     assert "<title>Setup</title>" in html and '<h1 id="title">Setup</h1>' in html
     assert "board" not in _between(html, "<title>", "<main")
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
-    begin = _between(text, "async function begin", "begin();")
+    begin = _between(_js("wizard.js"), "async function begin", "begin();")
     assert 'state.title = str(data.title).slice(0, 60) || state.title;' in begin
     assert 'fill($("title"), state.title);' in begin
-    assert "document.title = `${TITLES[step]}: ${state.title}`;" in text
+    assert "document.title = `${TITLES[step]}: ${state.title}`;" in _js("steps.js")
 
 
 BOARD = re.compile(r"\bboards?\b", re.IGNORECASE)
@@ -248,7 +272,7 @@ PRODUCTS = re.compile(r"Live (Fastest )?Departure Boards?")  # Rail Data Marketp
 def test_the_script_says_the_hosts_noun_never_board():
     # The dashboard's wizard says "dashboard": every "board" the person reads
     # comes from begin's noun, and "board" is only the default until then.
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    text = _all_js()
     code = re.sub(r"(^\s*|\s)//.*$", "", text, flags=re.MULTILINE)  # comments aren't read by anyone
     lines = [line.strip() for line in PRODUCTS.sub("", code).splitlines() if BOARD.search(line)]
     assert lines == ['noun: "board",']
@@ -262,7 +286,7 @@ def test_the_page_says_the_hosts_noun_never_board():
     nouns = re.findall(r"<span data-noun>board</span>", html)
     assert len(nouns) == 4
     assert not BOARD.search(html.replace("<span data-noun>board</span>", "")), "a board not set from begin's noun"
-    begin = _between((STATIC / "wizard.js").read_text(encoding="utf-8"), "async function begin", "begin();")
+    begin = _between(_js("wizard.js"), "async function begin", "begin();")
     # Only a plain word, and set as text.
     assert "if (NOUN.test(str(data.noun))) state.noun = data.noun;" in begin
     assert 'for (const el of document.querySelectorAll("[data-noun]")) el.textContent = state.noun;' in begin
@@ -275,8 +299,7 @@ def test_each_step_is_a_section_with_a_focusable_heading():
         assert tag == "section" and attrs["aria-labelledby"] == f"{step}-heading" and "hidden" in attrs
         tag, attrs = ids[f"{step}-heading"]
         assert tag == "h2" and attrs.get("tabindex") == "-1"
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
-    assert "$(`${step}-heading`).focus()" in text
+    assert "$(`${step}-heading`).focus()" in _js("steps.js")
 
 
 def test_the_steps_are_numbered_for_those_shown():
@@ -287,7 +310,7 @@ def test_the_steps_are_numbered_for_those_shown():
     assert [attrs["data-step"] for tag, attrs in _page().elements if tag == "li" and "data-step" in attrs] == numbered
     for step in numbered:
         assert ids[f"{step}-number"][0] == "span"
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    text = _js("steps.js")
     number = _between(text, "function numberSteps", "// One action at a time")
     assert 'STEPS.filter((step) => step !== "views" || state.askViews)' in text
     assert "item.hidden = !counted.includes(item.dataset.step);" in number
@@ -295,7 +318,7 @@ def test_the_steps_are_numbered_for_those_shown():
     # Past the views step when it isn't asked, both ways.
     assert '$("finish-back").dataset.back = state.askViews ? "views" : "keys";' in number
     assert ids["finish-back"][1]["data-back"] == "keys"
-    begin = _between(text, "async function begin", "begin();")
+    begin = _between(_js("wizard.js"), "async function begin", "begin();")
     assert begin.index("numberSteps();") < begin.index('go("home"')
 
 
@@ -309,8 +332,7 @@ def test_the_views_step_is_a_group_of_labelled_checkboxes_with_its_error_describ
     assert "<legend>Show the departures on</legend>" in fieldset and 'id="views-list"' in fieldset
     assert ids["views-error"][1]["class"] == "error" and "hidden" in ids["views-error"][1]
     assert ids["views-next"][0] == "button"
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
-    draw = _between(text, "function drawViews", "const firstView")
+    draw = _between(_js("views.js"), "function drawViews", "const firstView")
     # A real checkbox each, with its own label and the view's hint and the error described.
     assert 'type: "checkbox", id, value: view.name' in draw
     assert 'h("label", { for: id }, view.label)' in draw
@@ -321,23 +343,25 @@ def test_the_views_step_is_a_group_of_labelled_checkboxes_with_its_error_describ
 
 
 def test_the_views_step_asks_only_when_there_is_a_choice_and_needs_one_ticked():
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
-    begin = _between(text, "async function begin", "begin();")
+    begin = _between(_js("wizard.js"), "async function begin", "begin();")
     assert "state.askViews = state.views.length > 1;" in begin
     # One view offered: sent as chosen, without asking.
     assert "state.chosenViews = state.views.length === 1 ? [state.views[0].name] : [];" in begin
     assert "VIEW.test(str(v.name))" in begin
-    assert _between(text, "function leaveKeys", "// Step 6").count("if (state.askViews) enterViews();") == 1
-    leave = _between(text, "function leaveViews", "// Step 7")
+    keys, views = _js("keys.js"), _js("views.js")
+    leave_keys = keys[keys.index("function leaveKeys"):]  # the last in keys.js
+    assert leave_keys.count("if (state.askViews) enterViews();") == 1
+    leave = views[views.index("function leaveViews"):]  # the last in views.js
     assert 'refuse("views", "Tick at least one view, or the departures show nowhere.", firstView())' in leave
     assert leave.index("if (!chosen.length)") < leave.index("enterFinish();")
     # Those on now ticked; with none on, the first offered (the board, where there is one).
-    assert "const ticked = state.viewsOn.length ? state.viewsOn : [state.views[0].name];" in text
-    assert "if (state.chosenViews.length) body.views = state.chosenViews;" in _between(text, "function payload", "async function save")
+    assert "const ticked = state.viewsOn.length ? state.viewsOn : [state.views[0].name];" in views
+    payload = _between(_js("finish.js"), "function payload", "async function save")
+    assert "if (state.chosenViews.length) body.views = state.chosenViews;" in payload
 
 
 def test_the_done_links_come_from_finish():
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    text = _js("finish.js")
     done = _between(text, "function finished", "function setUpFinish")
     assert "list(data.links).map(obj).filter((l) => l && str(l.label) && LINK.test(str(l.href)))" in done
     assert 'h("a", { href: l.href }, l.label)' in done
@@ -454,7 +478,7 @@ def test_the_roads_have_a_named_progress_bar_their_count_beside_it_and_two_butto
 
 
 def test_saving_waits_on_the_roads_and_the_done_step_says_if_they_are_still_being_found():
-    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    text = _js("finish.js")
     save = _between(text, "async function save", "function finished")
     assert save.index("await search()") < save.index("await followRoads(job)") < save.index('call("finish"')
     assert 'roads === "found" ? "Found the roads for the bus maps. Saving…" : "Saving…"' in save
@@ -468,7 +492,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 # The roads' part of the finish step on a fake page, and an api/job that
 # answers each of STATUSES in turn (the last again once they run out).
-# begin's sign-in never answers, so only what the test calls runs.
+# Only roads.js and what it imports load, so only what the test calls runs.
 ROADS_PAGE = """
 import "FAKE_DOM";
 const proto = Object.getPrototypeOf(document.createElement("p"));
@@ -494,7 +518,7 @@ globalThis.fetch = (url) => {
 const $ = (id) => document.getElementById(id);
 const click = (id) => { for (const [type, fn] of $(id).listeners) if (type === "click") fn({ currentTarget: $(id) }); };
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
-const { followRoads, setUpRoads } = await import("./wizard.js");
+const { followRoads, setUpRoads } = await import("./roads.js");
 setUpRoads();
 """
 
