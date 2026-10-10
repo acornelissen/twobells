@@ -10,12 +10,34 @@ const TITLES = {
   home: "Home", station: "Station", stops: "Bus stops", walk: "Walk times",
   keys: "Keys", views: "Views", finish: "Check and save", done: "Done",
 };
+// A step as the button going on to it says it: "Next: walk times".
+const NEXT = {
+  station: "station", stops: "bus stops", walk: "walk times", keys: "keys", views: "views", finish: "check and save",
+};
+// A shortcut's steps: its own, the walk times, the keys only while the one
+// it needs isn't set, and saving.
+const SHORTCUTS = {
+  station: ["station", "walk", "keys", "finish", "done"],
+  stops: ["stops", "walk", "keys", "finish", "done"],
+};
+const NEEDS = { station: "RDM_API_KEY", stops: "BODS_API_KEY" };
 
-// The steps shown, in order: the views step only where there is a choice.
-const shownSteps = () => STEPS.filter((step) => step !== "views" || state.askViews);
+// A Back button's data-back on a shortcut's first step: it leaves for the settings.
+export const LEAVE = "settings";
+
+const keySet = (name) => state.keys.some((key) => key.name === name && key.set);
+
+// The steps shown, in order: the views step only where there is a choice,
+// and on a shortcut only its own.
+export function shownSteps() {
+  if (state.only) return SHORTCUTS[state.only].filter((step) => step !== "keys" || !keySet(NEEDS[state.only]));
+  return STEPS.filter((step) => step !== "views" || state.askViews);
+}
 
 // Numbers each step's heading and the progress list for the steps shown,
-// and points the buttons either side of the views step past it if it isn't.
+// names the step each Next goes on to, and points each Back at the step
+// before. On a shortcut's first step, Back leaves for the settings, or
+// isn't there if the host gave nowhere to go.
 export function numberSteps() {
   const counted = shownSteps().filter((step) => step !== "done");
   for (const item of $("progress").children) {
@@ -23,9 +45,16 @@ export function numberSteps() {
     // A step's tick, and the word a screen reader says for it, shown once it is done.
     if (!item.querySelector(".icon")) item.append(icon("check"), h("span", { class: "vh" }, " (done)"));
   }
-  counted.forEach((step, i) => fill($(`${step}-number`), `Step ${i + 1} of ${counted.length}:`));
-  $("keys-next").textContent = state.askViews ? "Next: views" : "Next: check and save";
-  $("finish-back").dataset.back = state.askViews ? "views" : "keys";
+  counted.forEach((step, i) => {
+    fill($(`${step}-number`), `Step ${i + 1} of ${counted.length}:`);
+    const next = $(`${step}-next`);
+    if (next && counted[i + 1]) next.textContent = `Next: ${NEXT[counted[i + 1]]}`;
+    const back = $(`step-${step}`).querySelector("[data-back]");
+    if (!back) return;
+    back.dataset.back = i ? counted[i - 1] : LEAVE;
+    back.textContent = i ? "Back" : "Back to settings";
+    back.hidden = !i && !state.back;
+  });
 }
 
 export function go(step, { focus = true } = {}) {

@@ -356,8 +356,9 @@ def test_the_steps_are_numbered_for_those_shown():
     assert 'STEPS.filter((step) => step !== "views" || state.askViews)' in text
     assert "item.hidden = !counted.includes(item.dataset.step);" in number
     assert "fill($(`${step}-number`), `Step ${i + 1} of ${counted.length}:`)" in number
-    # Past the views step when it isn't asked, both ways.
-    assert '$("finish-back").dataset.back = state.askViews ? "views" : "keys";' in number
+    # Each Back goes to the step before among those shown: past the views step
+    # when it isn't asked (see the behaviour tests below).
+    assert "back.dataset.back = i ? counted[i - 1] : LEAVE;" in number
     assert ids["finish-back"][1]["data-back"] == "keys"
     begin = _between(_js("wizard.js"), "async function begin", "begin();")
     assert begin.index("numberSteps();") < begin.index('go("home"')
@@ -652,3 +653,306 @@ def test_a_search_with_no_roads_to_find_moves_straight_on():
         console.log(JSON.stringify({ outcome, done, asked, box: $("roads-box").hidden, said }));
     """)
     assert found == {"outcome": "none", "done": "none", "asked": 0, "box": True, "said": []}
+
+
+# The whole page on a fake DOM built from index.html, with an API that answers
+# from ANSWERS, at a URL with SEARCH: how it starts, and the shortcuts
+# ("Change station only", "Change stops only") from start to save.
+
+VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
+
+
+class _Tree(HTMLParser):
+    """index.html's body as nested [tag, attrs, children], text as strings."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.root = ["body", {}, []]
+        self.open = [self.root]
+        self.inside = False
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "body":
+            self.inside = True
+            return
+        if not self.inside:
+            return
+        node = [tag, {name: value or "" for name, value in attrs}, []]
+        self.open[-1][2].append(node)
+        if tag not in VOID:
+            self.open.append(node)
+
+    def handle_endtag(self, tag):
+        if self.inside and tag != "body" and tag not in VOID and len(self.open) > 1:
+            self.open.pop()
+
+    def handle_data(self, data):
+        if self.inside and data.strip():
+            self.open[-1][2].append(data)
+
+
+def _body_tree():
+    parser = _Tree()
+    parser.feed((STATIC / "index.html").read_text(encoding="utf-8"))
+    return parser.root[2]
+
+
+WIZARD_PAGE = """
+import "FAKE_DOM";
+const build = (node) => {
+  if (typeof node === "string") return document.createTextNode(node);
+  const [tag, attrs, children] = node;
+  const el = document.createElement(tag);
+  for (const [name, value] of Object.entries(attrs)) {
+    if (name === "hidden") el.hidden = true;
+    else el.setAttribute(name, value);
+    if (name.startsWith("data-")) el.dataset[name.slice(5).replace(/-(\\w)/g, (_, c) => c.toUpperCase())] = value;
+  }
+  el.append(...children.map(build));
+  return el;
+};
+document.body.append(...TREE.map(build));
+const assigned = [];
+globalThis.window = { location: { search: SEARCH, assign: (url) => { assigned.push(url); } } };
+const answers = ANSWERS;
+const sent = [];
+globalThis.fetch = async (url, init) => {
+  const name = url.replace(/^api\\//, "");
+  if (init && init.body) sent.push([name, JSON.parse(init.body)]);
+  const body = name === "session" ? { csrf: "token" } : answers[name];
+  const json = async () => (body === undefined ? { error: "No such setup step" } : body);
+  return { ok: body !== undefined, status: body === undefined ? 404 : 200,
+           headers: { get: () => "application/json" }, json };
+};
+const $ = (id) => document.getElementById(id);
+const click = (id) => { for (const [type, fn] of $(id).listeners) if (type === "click") fn({ currentTarget: $(id) }); };
+const settle = () => new Promise((resolve) => { setTimeout(resolve, 100); });
+const shown = () => [...document.querySelectorAll("section")].filter((s) => !s.hidden).map((s) => s.id);
+const progress = () => $("progress").children.filter((li) => !li.hidden).map((li) => li.dataset.step);
+const back = (step) => {
+  const button = $(`step-${step}`).querySelector("[data-back]");
+  return { to: button.dataset.back, text: button.textContent, hidden: button.hidden === true };
+};
+const ticked = () => [...$("stops-list").querySelectorAll('input[type="checkbox"]')]
+  .filter((box) => box.checked).map((box) => box.value);
+const asked = (name) => sent.filter(([n]) => n === name).map(([, body]) => body);
+const { state } = await import("./state.js");
+await import("./wizard.js");
+await settle();
+"""
+
+KEYS_SET = [{"name": "RDM_API_KEY", "label": "Train key", "hint": "", "set": True, "doc": ""},
+            {"name": "BODS_API_KEY", "label": "Bus key", "hint": "", "set": True, "doc": ""}]
+BEGIN = {"title": "Set up your departures", "noun": "board", "keys": KEYS_SET,
+         "views": {"offered": [{"name": "board", "label": "The board"}, {"name": "dashboard", "label": "The dashboard"}],
+                   "on": ["board"]},
+         "links": [], "back": "/settings", "job": {"state": "idle"}}
+SAVED_NOW = {
+    "home": {"lat": 53.46, "lon": -1.97},
+    "station": {"crs": "GLO", "name": "Glossop", "walk": 6},
+    "filter": {"crs": "MAN", "name": "Manchester Piccadilly"},
+    "stops": [{"label": "A", "atco": "1800SB12341", "name": "Station Road", "indicator": "Stop A", "walk": 3},
+              {"label": "Z", "atco": "1800SB99999", "name": "", "indicator": "", "walk": None}],
+}
+NEAR_STOPS = [
+    {"atco": "1800SB12341", "name": "Station Road", "indicator": "Stop A", "bearing": "N", "lat": 53.4615,
+     "lon": -1.9662, "distance_m": 64, "label": "A"},
+    {"atco": "1800SB12342", "name": "Station Road", "indicator": "Stop B", "bearing": "S", "lat": 53.4614,
+     "lon": -1.9665, "distance_m": 85, "label": "B"},
+]
+NEAR_STATIONS = [{"crs": "HDF", "name": "Hadfield", "lat": 53.46, "lon": -1.96, "distance_m": 600},
+                 {"crs": "GLO", "name": "Glossop", "lat": 53.44, "lon": -1.95, "distance_m": 2000}]
+
+
+def run_wizard(script, search="", **answers):
+    """The page at ?SEARCH, its API answering from BEGIN, SAVED_NOW and `answers`."""
+    answers = {"begin": BEGIN, "saved": SAVED_NOW, "stops": {"stops": NEAR_STOPS},
+               "stations": {"stations": NEAR_STATIONS}, "walk": {"walk": {}},
+               "finish": {"saved": True, "message": "Saved.", "links": []}, **answers}
+    prelude = WIZARD_PAGE.replace("FAKE_DOM", (FIXTURES / "fake_dom.mjs").as_uri())
+    prelude = prelude.replace("TREE", json.dumps(_body_tree())).replace("SEARCH", json.dumps(search))
+    prelude = prelude.replace("ANSWERS", json.dumps({k: v for k, v in answers.items() if v is not None}))
+    done = subprocess.run([NODE, "--input-type=module", "-e", prelude + script], cwd=STATIC,
+                          capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
+START = """
+console.log(JSON.stringify({ shown: shown(), focus: document.activeElement && document.activeElement.id,
+                             title: $("title").textContent, page: document.title, progress: progress(),
+                             only: state.only, asked: sent.map(([name]) => name) }));
+"""
+
+
+@needs_node
+@pytest.mark.parametrize("search", ["", "?step=home", "?step=keys", "?step=finish", "?step=STOPS", "?step=__proto__",
+                                    "?step=constructor", "?step=stops%00", "?other=stops"])
+def test_only_the_two_shortcuts_start_part_way_anything_else_starts_at_home(search):
+    found = run_wizard(START, search)
+    assert found["shown"] == ["step-home"] and found["focus"] is None  # as ever: focus isn't moved on load
+    assert found["only"] == "" and found["title"] == "Set up your departures"
+    assert found["progress"] == ["home", "station", "stops", "walk", "keys", "views", "finish"]
+    assert found["asked"] == ["begin", "saved"]
+
+
+@needs_node
+@pytest.mark.parametrize("search, step, title, progress", [
+    ("?step=stops", "stops", "Change your bus stops", ["stops", "walk", "finish"]),
+    ("?step=station", "station", "Change your station", ["station", "walk", "finish"]),
+])
+def test_a_shortcut_starts_at_its_step_with_focus_on_its_heading(search, step, title, progress):
+    found = run_wizard(START, search)
+    assert found["shown"] == [f"step-{step}"] and found["focus"] == f"{step}-heading"
+    assert found["title"] == title and found["page"].endswith(f": {title}")
+    assert found["progress"] == progress
+
+
+@needs_node
+def test_a_shortcut_shows_the_keys_step_only_while_its_key_is_not_set():
+    keys = [dict(KEYS_SET[0], set=False), KEYS_SET[1]]
+    assert run_wizard(START, "?step=station", begin={**BEGIN, "keys": keys})["progress"] == [
+        "station", "walk", "keys", "finish"]
+    assert run_wizard(START, "?step=stops", begin={**BEGIN, "keys": keys})["progress"] == ["stops", "walk", "finish"]
+
+
+@needs_node
+def test_back_from_a_shortcuts_first_step_returns_to_the_settings():
+    found = run_wizard("""
+        const first = back("stops"), walk = back("walk"), finish = back("finish");
+        for (const [type, fn] of $("step-stops").querySelector("[data-back]").listeners) if (type === "click") fn();
+        console.log(JSON.stringify({ first, walk, finish, assigned, shown: shown() }));
+    """, "?step=stops")
+    assert found["first"] == {"to": "settings", "text": "Back to settings", "hidden": False}
+    assert found["walk"] == {"to": "stops", "text": "Back", "hidden": False}
+    assert found["finish"] == {"to": "walk", "text": "Back", "hidden": False}
+    assert found["assigned"] == ["/settings"] and found["shown"] == ["step-stops"]
+
+
+@needs_node
+@pytest.mark.parametrize("given", ["", "//evil.example.com/", "https://evil.example.com/", "javascript:alert(1)"])
+def test_without_a_plain_path_to_go_back_to_a_shortcuts_first_step_has_no_back(given):
+    found = run_wizard("""
+        console.log(JSON.stringify({ first: back("station"), back: state.back }));
+    """, "?step=station", begin={**BEGIN, "back": given})
+    assert found == {"first": {"to": "settings", "text": "Back to settings", "hidden": True}, "back": ""}
+
+
+@needs_node
+def test_the_whole_wizards_back_buttons_go_one_step_back_past_the_views_when_not_asked():
+    script = """
+        console.log(JSON.stringify(["station", "stops", "walk", "keys", "views", "finish"].map((s) => back(s).to)));
+    """
+    assert run_wizard(script) == ["home", "station", "stops", "walk", "keys", "views"]
+    one_view = {**BEGIN, "views": {"offered": [{"name": "dashboard", "label": "The dashboard"}], "on": []}}
+    assert run_wizard(script, begin=one_view)[-1] == "keys"
+
+
+@needs_node
+def test_the_stops_shortcut_ticks_todays_stops_and_saves_only_them():
+    found = run_wizard("""
+        const start = { ticked: ticked(), near: $("stops-near").hidden, asked: asked("stops"),
+                        labels: [...$("stops-list").querySelectorAll('input[type="text"]')].map((i) => i.value),
+                        listed: $("stops-list").textContent };
+        click("stops-next");
+        await settle();
+        const walk = { shown: shown(), asked: asked("walk"), values: ["walk-0", "walk-1"].map((id) => $(id).value),
+                       hints: $("walk-list").textContent };
+        click("walk-next");
+        await settle();
+        const finish = { shown: shown(), only: $("only-hint").hidden,
+                         summary: [...$("summary").querySelectorAll("dt")].map((dt) => dt.textContent),
+                         routes: $("routes-box").hidden };
+        click("save");
+        await settle();
+        console.log(JSON.stringify({ start, walk, finish, saved: asked("finish"), started: asked("start"),
+                                     done: shown() }));
+    """, "?step=stops", walk={"walk": {"1800SB99999": {"minutes": 4, "source": "route"}}})
+    start, walk, finish = found["start"], found["walk"], found["finish"]
+    # Found near where home roughly is, today's ticked by their labels; one not
+    # found nearby is listed all the same, so it can be kept.
+    assert start["asked"] == [{"lat": 53.46, "lon": -1.97}] and start["near"] is False
+    assert start["ticked"] == ["1800SB12341", "1800SB99999"]
+    assert start["labels"] == ["A", "B", "Z"] and "Stop code 1800SB99999" in start["listed"]
+    # Today's walk kept; the other worked out, and said to be rough.
+    assert walk["shown"] == ["step-walk"] and walk["asked"] == [
+        {"home": {"lat": 53.46, "lon": -1.97}, "station_crs": None, "stop_atcos": ["1800SB99999"]}]
+    assert walk["values"] == ["3", "4"] and "Saved" in walk["hints"] and "roughly where home is" in walk["hints"]
+    assert "Glossop" not in walk["hints"]  # the station isn't this shortcut's
+    # Straight to saving: the keys are set. Only the stops, and no search for the same stops.
+    assert finish["shown"] == ["step-finish"] and finish["only"] is False and finish["routes"] is True
+    assert finish["summary"] == ["Bus stops", "Keys to save"]
+    assert found["saved"] == [{"only": "stops", "stops": {"A": "1800SB12341", "Z": "1800SB99999"},
+                               "walk": {"1800SB12341": 3, "1800SB99999": 4}}]
+    assert found["started"] == [] and found["done"] == ["step-done"]
+
+
+@needs_node
+def test_the_station_shortcut_picks_todays_station_and_saves_only_it():
+    found = run_wizard("""
+        const start = { glo: $("station-GLO").checked, hdf: $("station-HDF").checked, filter: $("filter").value };
+        click("station-next");
+        await settle();
+        const walk = { shown: shown(), values: [$("walk-0").value], extra: $("walk-1"), asked: asked("walk") };
+        click("walk-next");
+        await settle();
+        click("save");
+        await settle();
+        console.log(JSON.stringify({ start, walk, saved: asked("finish"), stops: asked("stops") }));
+    """, "?step=station", station={"station": {"crs": "MAN", "name": "Manchester Piccadilly", "lat": 53.47,
+                                                 "lon": -2.23, "distance_m": 0}})
+    assert found["start"] == {"glo": True, "hdf": False, "filter": "MAN"}
+    assert found["walk"] == {"shown": ["step-walk"], "values": ["6"], "extra": None, "asked": []}
+    assert found["saved"] == [{"only": "station", "station_crs": "GLO", "filter_crs": "MAN", "walk": {"GLO": 6}}]
+    assert found["stops"] == []  # the stops stay as they are
+
+
+@needs_node
+def test_the_station_shortcut_types_todays_code_when_it_isnt_near_home():
+    found = run_wizard("""
+        console.log(JSON.stringify({ other: $("station-other").checked, code: $("station-code").value,
+                                     box: $("station-code-box").hidden }));
+    """, "?step=station", stations={"stations": NEAR_STATIONS[:1]})
+    assert found == {"other": True, "code": "GLO", "box": False}
+
+
+@needs_node
+def test_the_station_shortcut_wont_leave_nothing_to_show():
+    found = run_wizard("""
+        $("station-GLO").checked = false;  // one radio of a group at a time, as a browser does
+        $("station-none").checked = true;
+        $("filter").value = "";
+        click("station-next");
+        await settle();
+        console.log(JSON.stringify({ shown: shown(), error: $("station-error").textContent,
+                                     focus: document.activeElement.id }))
+    """, "?step=station", saved={**SAVED_NOW, "stops": []})
+    assert found["shown"] == ["step-station"] and found["focus"] == "station-none"
+    assert "nothing to show" in found["error"]
+
+
+@needs_node
+def test_with_no_home_saved_a_shortcut_lists_only_todays_choices():
+    found = run_wizard("""
+        console.log(JSON.stringify({ ticked: ticked(), status: $("stops-status").textContent,
+                                     near: $("stops-near").hidden, asked: sent.map(([name]) => name) }));
+    """, "?step=stops", saved={**SAVED_NOW, "home": None})
+    assert found["ticked"] == ["1800SB12341", "1800SB99999"] and found["near"] is True
+    assert "Home isn't saved" in found["status"] and found["asked"] == ["begin", "saved"]
+
+
+@needs_node
+def test_the_whole_wizard_starts_from_todays_station_and_stops_where_they_are_near():
+    found = run_wizard("""
+        state.home = { lat: 53.462, lon: -1.966, label: "SK13 1AH", country: "" };
+        click("home-next");
+        await settle();
+        const station = { glo: $("station-GLO").checked, filter: $("filter").value };
+        click("station-next");
+        await settle();
+        console.log(JSON.stringify({ station, ticked: ticked(), listed: $("stops-list").textContent }));
+    """, station={"station": {"crs": "MAN", "name": "Manchester Piccadilly", "lat": 53.47, "lon": -2.23,
+                               "distance_m": 0}})
+    assert found["station"] == {"glo": True, "filter": "MAN"}
+    # Only those found near home: today's stop elsewhere isn't added.
+    assert found["ticked"] == ["1800SB12341"] and "1800SB99999" not in found["listed"]

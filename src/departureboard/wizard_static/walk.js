@@ -2,10 +2,11 @@
 
 import { $, h, fill, num, obj } from "../dashboard_static/dom.js";
 import { call } from "./api.js";
+import { enterFinish } from "./finish.js";
 import { enterKeys } from "./keys.js";
 import { note, refuse, say, setError, shout } from "./say.js";
 import { homeKey, state, stopName } from "./state.js";
-import { go } from "./steps.js";
+import { go, shownSteps } from "./steps.js";
 
 const MAX_WALK = 60;
 
@@ -14,6 +15,8 @@ const SOURCES = {
   estimate: ["Estimate", "Guessed from the distance; check it."],
   none: ["Not known", "Type it in, or leave it empty."],
   edited: ["Yours", "Changed by you."],
+  saved: ["Saved", "As it is now."],
+  rough: ["Estimate", "Worked out from roughly where home is; check it."],
 };
 
 function sourceNote(source) {
@@ -40,36 +43,57 @@ function drawWalk() {
   }));
 }
 
+// A shortcut starts each walk from today's, where there is one: the
+// station's while it is the same station, and each stop's still ticked.
+function keepSavedWalks() {
+  const saved = new Map(state.saved.stops.map((stop) => [stop.atco, stop.walk]));
+  if (state.saved.station) saved.set(state.saved.station.crs, state.saved.station.walk);
+  for (const walk of state.walk) {
+    const minutes = saved.get(walk.key);
+    if (minutes !== undefined && minutes !== null) Object.assign(walk, { minutes, source: "saved" });
+  }
+}
+
 export async function enterWalk() {
   go("walk");
-  const key = JSON.stringify([homeKey(), state.station && state.station.crs, state.chosen.map((s) => s.atco)]);
+  // A shortcut asks only about its own part.
+  const station = state.only === "stops" ? null : state.station;
+  const stops = state.only === "station" ? [] : state.chosen;
+  const key = JSON.stringify([homeKey(), station && station.crs, stops.map((s) => s.atco)]);
   if (state.walkFor === key) return; // keep what was typed
   state.walk = [];
-  if (state.station) state.walk.push({ key: state.station.crs, what: `${state.station.name} station` });
-  for (const stop of state.chosen) state.walk.push({ key: stop.atco, what: `stop ${stop.label}, ${stopName(stop)}` });
+  if (station) state.walk.push({ key: station.crs, what: `${station.name} station` });
+  for (const stop of stops) state.walk.push({ key: stop.atco, what: `stop ${stop.label}, ${stopName(stop)}` });
   for (const walk of state.walk) Object.assign(walk, { minutes: null, source: "none" });
+  if (state.only) keepSavedWalks();
+  const asking = state.walk.filter((walk) => walk.source === "none").map((walk) => walk.key);
   fill($("walk-list"));
-  note("walk-status", "Working out the walks…");
-  try {
-    const data = await call("walk", {
-      home: { lat: state.home.lat, lon: state.home.lon },
-      station_crs: state.station ? state.station.crs : null,
-      stop_atcos: state.chosen.map((s) => s.atco),
-    });
-    const found = obj(data.walk) || {};
-    for (const walk of state.walk) {
-      const answer = obj(found[walk.key]);
-      const minutes = answer ? num(answer.minutes) : null;
-      if (minutes !== null && Number.isInteger(minutes) && minutes >= 0) {
-        walk.minutes = Math.min(minutes, MAX_WALK);
-        walk.source = answer.source === "route" ? "route" : "estimate";
+  if (asking.length && state.home) {
+    note("walk-status", "Working out the walks…");
+    try {
+      const data = await call("walk", {
+        home: { lat: state.home.lat, lon: state.home.lon },
+        station_crs: station && asking.includes(station.crs) ? station.crs : null,
+        stop_atcos: stops.map((s) => s.atco).filter((atco) => asking.includes(atco)),
+      });
+      const found = obj(data.walk) || {};
+      for (const walk of state.walk) {
+        const answer = asking.includes(walk.key) ? obj(found[walk.key]) : null;
+        const minutes = answer ? num(answer.minutes) : null;
+        if (minutes !== null && Number.isInteger(minutes) && minutes >= 0) {
+          walk.minutes = Math.min(minutes, MAX_WALK);
+          if (state.only) walk.source = "rough"; // a shortcut's home is only roughly where it is
+          else walk.source = answer.source === "route" ? "route" : "estimate";
+        }
       }
+      note("walk-status", "");
+      say("Walk times worked out. Check them below.");
+    } catch (error) {
+      note("walk-status", `${error.message} Type the walks in yourself.`);
+      shout(error.message);
     }
+  } else {
     note("walk-status", "");
-    say("Walk times worked out. Check them below.");
-  } catch (error) {
-    note("walk-status", `${error.message} Type the walks in yourself.`);
-    shout(error.message);
   }
   state.walkFor = key;
   drawWalk();
@@ -90,6 +114,8 @@ export function leaveWalk() {
     minutes[walk.key] = value;
   }
   state.walkMinutes = minutes;
-  enterKeys();
+  // A shortcut skips the keys while the one it needs is set.
+  if (shownSteps().includes("keys")) enterKeys();
+  else enterFinish();
   return true;
 }

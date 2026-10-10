@@ -191,7 +191,7 @@ main:focus { outline: none; }
   background: var(--surface-2);
 }
 .tag-route, .is-set { color: var(--ok-fg); }
-.tag-estimate { color: var(--late-fg); background: var(--late-bg); }
+.tag-estimate, .tag-rough { color: var(--late-fg); background: var(--late-bg); }
 .not-set { color: var(--late-fg); }
 .num { font-variant-numeric: tabular-nums; font-weight: 600; }
 
@@ -267,7 +267,7 @@ button[aria-pressed="true"] { color: var(--accent-fg); background: var(--accent)
 }
 
 .actions { display: flex; flex-wrap: wrap; gap: var(--s-3); justify-content: space-between; margin-top: var(--s-5); }
-.actions button:only-child { margin-left: auto; }
+.actions button:only-child, .actions button[hidden] + button { margin-left: auto; }
 
 /* Keys: how to get each, and testing it. */
 

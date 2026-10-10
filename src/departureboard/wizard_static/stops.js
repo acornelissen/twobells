@@ -37,7 +37,7 @@ function drawStops() {
   fill($("stops-list"), state.stops.map((stop, i) => {
     const id = `stop-${i}`;
     const ticked = state.labels.has(stop.atco);
-    const about = [`${distance(stop.distance_m)} away`];
+    const about = [stop.distance_m === null ? "One of your stops now" : `${distance(stop.distance_m)} away`];
     if (BEARINGS[stop.bearing]) about.push(`buses head ${BEARINGS[stop.bearing]}`);
     const checkbox = h("input", { type: "checkbox", id, value: stop.atco, checked: ticked, "aria-describedby": `${id}-about` });
     const label = h("input", {
@@ -70,6 +70,7 @@ function drawStopsMap() {
   addHome(layer);
   const points = state.home ? [[state.home.lat, state.home.lon]] : [];
   state.stops.forEach((stop, i) => {
+    if (stop.lat === null) return; // a shortcut's stop not found near home: in the list only
     points.push([stop.lat, stop.lon]);
     const ticked = state.labels.has(stop.atco);
     L.marker([stop.lat, stop.lon], { icon: pin(String(i + 1), ticked ? "pin-chosen" : ""), keyboard: false })
@@ -86,12 +87,19 @@ function drawStopsMap() {
   fit("stops", points, 16);
 }
 
-export async function enterStops() {
-  go("stops");
-  if (state.stopsFor === homeKey()) return;
-  state.stops = [];
-  state.labels = new Map();
-  fill($("stops-list"));
+// A shortcut lists today's stops even where they aren't among those found
+// near home, so each can be kept: after the rest, with no place on the map.
+function keepSavedStops() {
+  for (const saved of state.saved.stops) {
+    if (state.stops.some((stop) => stop.atco === saved.atco)) continue;
+    state.stops.push({
+      atco: saved.atco, name: saved.name || `Stop code ${saved.atco}`, indicator: saved.indicator, bearing: "",
+      lat: null, lon: null, distance_m: null, label: saved.label,
+    });
+  }
+}
+
+async function findStops() {
   note("stops-status", "Finding the bus stops near home. This downloads your area's stop list and can take a minute…");
   say("Finding the bus stops near home. This can take a minute.");
   try {
@@ -109,6 +117,20 @@ export async function enterStops() {
     note("stops-status", `${error.message} Go back and forward to try again, or carry on without buses.`);
     shout(error.message);
   }
+}
+
+export async function enterStops() {
+  go("stops");
+  $("stops-near").hidden = !(state.only && state.home);
+  if (state.home && state.stopsFor === homeKey()) return;
+  state.stops = [];
+  fill($("stops-list"));
+  if (state.home) await findStops();
+  else note("stops-status", "Home isn't saved, so only your stops now are listed. To find others, run the full setup.");
+  if (state.only) keepSavedStops();
+  // Today's stops ticked, with their labels, wherever they are listed.
+  state.labels = new Map(state.saved.stops.filter((saved) => state.stops.some((stop) => stop.atco === saved.atco))
+    .map((saved) => [saved.atco, saved.label]));
   drawStops();
 }
 

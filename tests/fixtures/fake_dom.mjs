@@ -90,6 +90,13 @@ class FakeElement extends FakeNode {
   removeAttribute(name) { this.attrs.delete(name); }
   get attributes() { return [...this.attrs].map(([name, value]) => ({ name, value })); }
   get id() { return this.getAttribute("id") || ""; }
+  get children() { return this.childNodes.filter((c) => c.nodeType === 1); }
+  // A form control's state as a browser keeps it: its attribute until set.
+  get value() { return this._value ?? this.getAttribute("value") ?? ""; }
+  set value(value) { this._value = value; }
+  get checked() { return this._checked ?? this.hasAttribute("checked"); }
+  set checked(on) { this._checked = Boolean(on); }
+  get validity() { return { badInput: false }; }
   addEventListener(type, fn) { this.listeners.push([type, fn]); }
   focus() { document.activeElement = this; }
   get classList() {
@@ -109,16 +116,18 @@ class FakeElement extends FakeNode {
 }
 
 // Just enough of CSS selectors for the page's own: compounds of a tag, #id,
-// .class, [attr] and [attr="value"], joined by spaces (descendants). h() puts
-// data-* in the dataset, so those attributes are read from there.
+// .class, [attr], [attr="value"] and :checked, joined by spaces
+// (descendants). h() puts data-* in the dataset, so those attributes are
+// read from there.
 function compound(text) {
-  const parts = text.match(/^[\w*]+|#[\w-]+|\.[\w-]+|\[[^\]]+\]/g) || [];
+  const parts = text.match(/^[\w*]+|#[\w-]+|\.[\w-]+|\[[^\]]+\]|:checked/g) || [];
   const attr = (el, name) => (name.startsWith("data-")
     ? el.dataset[name.slice(5).replace(/-(\w)/g, (_, c) => c.toUpperCase())] ?? el.getAttribute(name)
     : el.getAttribute(name));
   return (el) => parts.every((part) => {
     if (part[0] === "#") return el.id === part.slice(1);
     if (part[0] === ".") return (el.getAttribute("class") || "").split(" ").includes(part.slice(1));
+    if (part === ":checked") return el.checked === true;
     if (part[0] === "[") {
       const [, name, value] = /^\[([\w-]+)(?:="([^"]*)")?\]$/.exec(part);
       const found = attr(el, name);

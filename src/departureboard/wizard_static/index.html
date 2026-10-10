@@ -127,6 +127,7 @@
   <section id="step-stops" class="step" aria-labelledby="stops-heading" hidden>
     <h2 id="stops-heading" tabindex="-1"><span id="stops-number">Step 3 of 7:</span> Your bus stops</h2>
     <p class="hint">Tick the stops you use, up to 10. Each gets a short label on the <span data-noun>board</span>, like A; the letter on the stop's sign is suggested when it has one. Tick none for no buses.</p>
+    <p id="stops-near" class="hint" hidden>These are the stops near roughly where home is, as saved for the weather, to about a kilometre. To look from home exactly, run the <a href="./">full setup</a>.</p>
     <p id="stops-status" class="note" hidden></p>
     <fieldset id="stops-set" aria-describedby="stops-error">
       <legend>Bus stops near home</legend>
@@ -192,6 +193,7 @@
   <section id="step-finish" class="step" aria-labelledby="finish-heading" hidden>
     <h2 id="finish-heading" tabindex="-1"><span id="finish-number">Step 7 of 7:</span> Check and save</h2>
     <dl id="summary" class="summary-list"></dl>
+    <p class="hint" id="only-hint" hidden>Only this changes. Everything else stays as it is.</p>
     <div class="option" id="routes-box">
       <input type="checkbox" id="routes">
       <label for="routes">Also draw each bus line's route on the screen's map (slower to set up)</label>

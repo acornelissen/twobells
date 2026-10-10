@@ -7,6 +7,7 @@ import { note, refuse, say, setError, shout } from "./say.js";
 import { distance, homeKey, state } from "./state.js";
 import { go, once } from "./steps.js";
 import { enterStops } from "./stops.js";
+import { enterWalk } from "./walk.js";
 
 const CRS = /^[A-Za-z]{3}$/;
 
@@ -16,9 +17,15 @@ function checkedStation() {
 }
 
 function drawStations() {
-  // The choice made before, if it still applies; else the nearest station.
+  // The choice made before (or today's), if it still applies; else the nearest station.
   let current = state.stationChoice;
-  if (!["other", "none"].includes(current) && !state.stations.some((s) => s.crs === current)) {
+  const listed = state.stations.some((s) => s.crs === current);
+  if (state.only && CRS.test(current) && !listed) {
+    // A shortcut's station, not among those near home: its code, typed in.
+    $("station-code").value = current;
+    current = "other";
+  }
+  if (!["other", "none"].includes(current) && !listed) {
     current = state.stations.length ? state.stations[0].crs : "";
   }
   fill($("station-list"), state.stations.map((station, i) => {
@@ -58,6 +65,12 @@ function drawStationMap() {
 
 export async function enterStation() {
   go("station");
+  if (!state.home) {
+    // A shortcut, with no home saved to find stations near.
+    note("station-status", "Home isn't saved, so no stations are listed. Type your station's code, or pick no trains.");
+    drawStations();
+    return;
+  }
   if (state.stationsFor === homeKey()) return;
   state.stations = [];
   fill($("station-list"));
@@ -100,6 +113,10 @@ async function leaveStation(button) {
   if (choice === "other" && !CRS.test(code)) return refuse("station-code", "Type a 3-letter code, like GLO.");
   if (filter && !CRS.test(filter)) return refuse("filter", "Type a 3-letter code, like MAN, or leave it empty.");
   if (filter && choice === "none") return refuse("filter", "Pick a station first, or leave this empty.");
+  if (choice === "none" && state.only === "station" && !state.chosen.length) {
+    return refuse("station", `Pick a station: with no bus stops either, the ${state.noun} has nothing to show.`,
+      $("station-none"));
+  }
   await once(button, async () => {
     let station = null;
     if (choice === "other") {
@@ -116,7 +133,8 @@ async function leaveStation(button) {
     state.stationChoice = choice;
     state.station = station;
     state.filter = destination;
-    enterStops();
+    if (state.only === "station") enterWalk(); // the stops stay as they are
+    else enterStops();
   });
 }
 

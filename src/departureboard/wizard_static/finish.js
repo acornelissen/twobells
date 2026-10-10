@@ -14,10 +14,25 @@ const LINK = /^(\/(?!\/)|https?:\/\/)/;
 export function pastedKeys() {
   const keys = {};
   for (const key of state.keys) {
-    const value = $(`key-${key.name}`).value.trim();
+    const input = $(`key-${key.name}`); // none where a shortcut skipped the keys
+    const value = input ? input.value.trim() : "";
     if (value) keys[key.name] = value;
   }
   return keys;
+}
+
+// Whether a shortcut's stops are today's, each by the same label.
+function sameStopsAsSaved() {
+  const saved = state.saved.stops;
+  return saved.length === state.chosen.length
+    && state.chosen.every((stop) => saved.some((s) => s.label === stop.label && s.atco === stop.atco));
+}
+
+// Whether saving first searches for the bus companies: with stops, unless a
+// shortcut changes only the station, or keeps today's stops as they are.
+function searching() {
+  if (state.only === "station" || !state.chosen.length) return false;
+  return !(state.only === "stops" && sameStopsAsSaved());
 }
 
 function summaryRow(term, ...details) {
@@ -32,17 +47,22 @@ function minutesText(key) {
 export function enterFinish() {
   go("finish");
   const keys = Object.keys(pastedKeys()).map((name) => (state.keys.find((k) => k.name === name) || {}).label || name);
+  // A shortcut shows, and saves, only its own part.
+  const shows = (part) => !state.only || state.only === part;
   fill($("summary"),
-    summaryRow("Home", state.home.label, h("span", { class: "hint" }, " (only a position rounded to about 1 km is saved, for the rain warning)")),
-    summaryRow("Station", state.station ? `${state.station.name} (${state.station.crs}), ${minutesText(state.station.crs)}` : "No trains"),
-    state.filter ? summaryRow("Only trains calling at", `${state.filter.name} (${state.filter.crs})`) : null,
-    summaryRow("Bus stops", state.chosen.length
+    state.only ? null : summaryRow("Home", state.home.label,
+      h("span", { class: "hint" }, " (only a position rounded to about 1 km is saved, for the rain warning)")),
+    shows("station") ? summaryRow("Station", state.station
+      ? `${state.station.name} (${state.station.crs}), ${minutesText(state.station.crs)}` : "No trains") : null,
+    shows("station") && state.filter ? summaryRow("Only trains calling at", `${state.filter.name} (${state.filter.crs})`) : null,
+    shows("stops") ? summaryRow("Bus stops", state.chosen.length
       ? h("ul", {}, state.chosen.map((s) => h("li", {}, `${s.label}: ${stopName(s)}, ${minutesText(s.atco)}`)))
-      : "No buses"),
+      : "No buses") : null,
     summaryRow("Keys to save", keys.length ? keys.join(", ") : "None; the keys already set stay"),
     state.askViews ? summaryRow("Show the departures on", state.views
       .filter((view) => state.chosenViews.includes(view.name)).map((view) => view.label).join(", ")) : null);
-  const buses = state.chosen.length > 0;
+  $("only-hint").hidden = !state.only;
+  const buses = searching();
   $("routes-box").hidden = !buses;
   $("search-hint").hidden = !buses;
   setError("finish", "");
@@ -105,13 +125,19 @@ async function search() {
 
 function payload() {
   const keys = pastedKeys();
-  const body = {
-    home: { lat: state.home.lat, lon: state.home.lon, ...(state.home.country ? { country: state.home.country } : {}) },
-    station_crs: state.station ? state.station.crs : null,
-    filter_crs: state.filter ? state.filter.crs : null,
-    stops: Object.fromEntries(state.chosen.map((s) => [s.label, s.atco])),
-    walk: state.walkMinutes,
-  };
+  const station = { station_crs: state.station ? state.station.crs : null, filter_crs: state.filter ? state.filter.crs : null };
+  const stops = { stops: Object.fromEntries(state.chosen.map((s) => [s.label, s.atco])) };
+  let body;
+  if (state.only === "station") body = { only: "station", ...station, walk: state.walkMinutes };
+  else if (state.only === "stops") body = { only: "stops", ...stops, walk: state.walkMinutes };
+  else {
+    body = {
+      home: { lat: state.home.lat, lon: state.home.lon, ...(state.home.country ? { country: state.home.country } : {}) },
+      ...station,
+      ...stops,
+      walk: state.walkMinutes,
+    };
+  }
   if (Object.keys(keys).length) body.keys = keys;
   if (state.chosenViews.length) body.views = state.chosenViews;
   return body;
@@ -123,7 +149,7 @@ async function save(button) {
   for (const el of document.querySelectorAll("#finish-actions button")) el.setAttribute("aria-disabled", "true");
   setError("finish", "");
   try {
-    const job = state.chosen.length ? await search() : null;
+    const job = searching() ? await search() : null;
     const roads = job ? await followRoads(job) : "none";
     say(roads === "found" ? "Found the roads for the bus maps. Saving…" : "Saving…");
     const data = await call("finish", payload());

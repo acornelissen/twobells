@@ -14,6 +14,12 @@ export const state = {
   chosenViews: [], // names, when leaving the views step (or the one offered)
   viewsDrawn: false,
   links: [],
+  only: "", // a shortcut's part, "station" or "stops" (the page's ?step=); "" for the whole wizard
+  back: "", // where Back on a shortcut's first step goes, a path like /settings, from begin
+  // Today's choices, from saved: {home: {lat, lon} | null, to about a kilometre,
+  // station: {crs, name, walk} | null, filter: {crs, name} | null,
+  // stops: [{label, atco, name, indicator, walk}]}; walk is minutes or null.
+  saved: { home: null, station: null, filter: null, stops: [] },
   home: null, // {lat, lon, label, country}; exact, so it stays in this page and the server's memory
   stations: [],
   stationsFor: "",

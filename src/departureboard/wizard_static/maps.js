@@ -69,7 +69,7 @@ function homePin() {
 export function addHome(layer) {
   if (!state.home) return null;
   return L.marker([state.home.lat, state.home.lon], { icon: homePin(), keyboard: false, zIndexOffset: 1000 })
-    .bindTooltip(h("span", {}, "Home"), { direction: "top", offset: [0, -14] })
+    .bindTooltip(h("span", {}, state.only ? "Roughly home" : "Home"), { direction: "top", offset: [0, -14] })
     .addTo(layer);
 }
 
