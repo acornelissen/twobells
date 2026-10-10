@@ -8,6 +8,8 @@ way without a browser.
 import hashlib
 import json
 import re
+import shutil
+import subprocess
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -21,6 +23,20 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 OWN_FILES = [p for p in STATIC.rglob("*") if p.is_file() and VENDOR not in p.parents]
 OWN_JS = [p for p in OWN_FILES if p.suffix == ".js"]
+
+NODE = shutil.which("node")
+needs_node = pytest.mark.skipif(NODE is None, reason="node isn't installed: the page's behaviour tests need it")
+
+
+def run_js(script):
+    """Runs script as an ES module under node, in the static folder, with
+    tests/fixtures/fake_dom.mjs giving it a document; returns what it prints
+    with console.log, read as JSON."""
+    prelude = f'import {{ spoken, elements, byClass }} from "{(FIXTURES / "fake_dom.mjs").as_uri()}";\n'
+    done = subprocess.run([NODE, "--input-type=module", "-e", prelude + script], cwd=STATIC,
+                          capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
 
 
 # --- index.html ---
@@ -583,6 +599,59 @@ def test_the_train_dialog_draws_the_journey_as_a_route_line():
     # It doesn't move by itself.
     for body in _css_rules(".cp-") + _css_rules(".journey"):
         assert "animation" not in body and "transition" not in body
+
+
+# Where the train is along its journey: the stops before this station (0, 1),
+# this station (2), and the stops after (3, 4).
+BEFORE = '[{ name: "Hadfield" }, { name: "Dinting" }]'
+AFTER = '[{ name: "Broadbottom" }, { name: "Manchester Piccadilly" }]'
+STRIP = '["Dinting", "Glossop", "Broadbottom"]'  # the strip starts one stop before this station
+
+
+@needs_node
+@pytest.mark.parametrize(
+    "train_at, before, place",
+    [
+        (1, BEFORE, {"at": 2}),  # at this station
+        (0, BEFORE, {"at": 1}),
+        (0.5, BEFORE, {"gap": 1, "part": 0.5}),  # between Dinting and here
+        (1.25, BEFORE, {"gap": 2, "part": 0.25}),
+        (0.01, BEFORE, {"at": 1}),  # as good as at a stop
+        (0.99, BEFORE, {"at": 2}),
+        (-3, BEFORE, {"at": 1}),  # off the strip: held to its ends
+        (9, BEFORE, {"at": 3}),
+        (None, BEFORE, None),  # not placed
+        (1, '[{ name: "Dinting" }]', {"at": 1}),  # a shorter journey before: the strip lines up on this station
+        (0, "[]", None),  # the strip's first stop isn't in the journey
+    ],
+)
+def test_the_train_is_placed_on_its_journey_from_the_strip(train_at, before, place):
+    train_at = "null" if train_at is None else train_at
+    found = run_js(f"""
+        import {{ placeOnJourney }} from "./train.js";
+        const row = {{ position: {{ where: "x", strip: {{ stops: {STRIP}, yours: 1, train_at: {train_at} }} }} }};
+        console.log(JSON.stringify(placeOnJourney(row, {before}, {AFTER})));
+    """)
+    assert found == place
+
+
+@needs_node
+def test_actual_times_place_the_train_when_the_strip_cannot_or_lags():
+    found = run_js("""
+        import { placeOnJourney } from "./train.js";
+        const before = [{ name: "Hadfield", actual: "07:01" }, { name: "Dinting", actual: "07:04" }];
+        const after = [{ name: "Broadbottom", actual: "07:12" }, { name: "Manchester Piccadilly" }];
+        const strip = (at) => ({ position: { strip: { stops: ["Dinting", "Glossop", "Broadbottom"], yours: 1,
+                                                       train_at: at } } });
+        console.log(JSON.stringify([
+          placeOnJourney({}, before, []),  // no strip: just past the last stop it left
+          placeOnJourney(strip(0), before, after),  // the strip lags the actual times
+          placeOnJourney(strip(2), before, after),  // the strip agrees with them
+          placeOnJourney({}, before, [{ name: "Broadbottom", actual: "07:12" }]),  // there: at the last stop
+          placeOnJourney({}, [{ name: "Hadfield" }], [{ name: "Broadbottom", cancelled: true }]),  // nothing to go on
+        ]));
+    """)
+    assert found == [{"gap": 1, "part": 0.5}, {"gap": 3, "part": 0.5}, {"at": 3}, {"at": 3}, None]
 
 
 # --- Around here: the line and the area map ---
