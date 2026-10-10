@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "departureboard" / "wizard_static"
 OWN = sorted(p for p in STATIC.rglob("*") if p.is_file())
 PREFIX = "http://pi.local/setup/"  # any prefix ending in a slash
-STEPS = ("home", "station", "stops", "walk", "keys", "finish", "done")
+STEPS = ("home", "station", "stops", "walk", "keys", "views", "finish", "done")
 
 
 class _Page(HTMLParser):
@@ -280,6 +280,70 @@ def test_each_step_is_a_section_with_a_focusable_heading():
     assert "$(`${step}-heading`).focus()" in text
 
 
+def test_the_steps_are_numbered_for_those_shown():
+    # Six steps, or seven where there are views to choose: the headings and
+    # the progress list are numbered for the steps shown.
+    ids = _ids()
+    numbered = [step for step in STEPS if step != "done"]
+    assert [attrs["data-step"] for tag, attrs in _page().elements if tag == "li" and "data-step" in attrs] == numbered
+    for step in numbered:
+        assert ids[f"{step}-number"][0] == "span"
+    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    number = _between(text, "function numberSteps", "// One action at a time")
+    assert 'STEPS.filter((step) => step !== "views" || state.askViews)' in text
+    assert "item.hidden = !counted.includes(item.dataset.step);" in number
+    assert "fill($(`${step}-number`), `Step ${i + 1} of ${counted.length}:`)" in number
+    # Past the views step when it isn't asked, both ways.
+    assert '$("finish-back").dataset.back = state.askViews ? "views" : "keys";' in number
+    assert ids["finish-back"][1]["data-back"] == "keys"
+    begin = _between(text, "async function begin", "begin();")
+    assert begin.index("numberSteps();") < begin.index('go("home"')
+
+
+def test_the_views_step_is_a_group_of_labelled_checkboxes_with_its_error_described():
+    ids = _ids()
+    tag, attrs = ids["views-set"]
+    assert tag == "fieldset" and attrs["aria-describedby"].split() == ["views-hint", "views-error"]
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
+    fieldset = page[page.index('<fieldset id="views-set"'):]
+    fieldset = fieldset[:fieldset.index("</fieldset>")]
+    assert "<legend>Show the departures on</legend>" in fieldset and 'id="views-list"' in fieldset
+    assert ids["views-error"][1]["class"] == "error" and "hidden" in ids["views-error"][1]
+    assert ids["views-next"][0] == "button"
+    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    draw = _between(text, "function drawViews", "const firstView")
+    # A real checkbox each, with its own label and the view's hint and the error described.
+    assert 'type: "checkbox", id, value: view.name' in draw
+    assert 'h("label", { for: id }, view.label)' in draw
+    assert '"aria-describedby": view.hint ? `${id}-hint views-error` : "views-error"' in draw
+    assert 'h("p", { class: "hint", id: `${id}-hint` }, view.hint)' in draw
+    # Text from the server goes in as text only.
+    assert "view.label" in draw and "innerHTML" not in draw
+
+
+def test_the_views_step_asks_only_when_there_is_a_choice_and_needs_one_ticked():
+    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    begin = _between(text, "async function begin", "begin();")
+    assert "state.askViews = state.views.length > 1;" in begin
+    # One view offered: sent as chosen, without asking.
+    assert "state.chosenViews = state.views.length === 1 ? [state.views[0].name] : [];" in begin
+    assert "VIEW.test(str(v.name))" in begin
+    assert _between(text, "function leaveKeys", "// Step 6").count("if (state.askViews) enterViews();") == 1
+    leave = _between(text, "function leaveViews", "// Step 7")
+    assert 'refuse("views", "Tick at least one view, or the departures show nowhere.", firstView())' in leave
+    assert leave.index("if (!chosen.length)") < leave.index("enterFinish();")
+    # Those on now ticked; with none on, the first offered (the board, where there is one).
+    assert "const ticked = state.viewsOn.length ? state.viewsOn : [state.views[0].name];" in text
+    assert "if (state.chosenViews.length) body.views = state.chosenViews;" in _between(text, "function payload", "async function save")
+
+
+def test_the_done_links_come_from_finish():
+    text = (STATIC / "wizard.js").read_text(encoding="utf-8")
+    done = _between(text, "function finished", "function setUpFinish")
+    assert "list(data.links).map(obj).filter((l) => l && str(l.label) && LINK.test(str(l.href)))" in done
+    assert 'h("a", { href: l.href }, l.label)' in done
+
+
 def test_announcements_have_one_polite_region_one_alert_and_the_job_status():
     elements = _page().elements
     live = sorted((attrs["id"], attrs["aria-live"]) for _, attrs in elements if "aria-live" in attrs)
@@ -301,7 +365,7 @@ def test_every_control_has_a_label_and_its_error_is_described():
                 assert error in attrs.get("aria-describedby", "").split(), attrs["id"]
         if tag == "button":
             assert attrs.get("type") in ("button", "submit"), attrs
-    for name in ("station", "stops"):
+    for name in ("station", "stops", "views"):
         assert f"{name}-error" in ids[f"{name}-set"][1]["aria-describedby"]
 
 

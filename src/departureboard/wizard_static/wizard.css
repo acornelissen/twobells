@@ -180,6 +180,8 @@ legend { font-weight: 700; font-size: 1.0625rem; padding: 0; margin-bottom: 0.5r
 .option input { flex: none; width: 1.5rem; height: 1.5rem; margin: 0.125rem 0 0; accent-color: var(--accent); }
 .option label { flex: 1; font-weight: 400; margin: 0; padding-top: 0.125rem; cursor: pointer; }
 .options { margin: 0; }
+.option-text { flex: 1; }
+.option-text .hint { margin: 0.125rem 0 0; }
 
 .stop-list { list-style: none; margin: 0; padding: 0; }
 .stop { border-top: 1px solid var(--line); padding: 0.25rem 0; }

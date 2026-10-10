@@ -1,4 +1,5 @@
-// The first-run setup wizard: six steps from home to a saved board.
+// The first-run setup wizard: from home to saved settings in six steps, or
+// seven where the install offers more than one view to turn on.
 //
 // It talks only to its host's setup API (setupapi.py), by relative URLs, so
 // the page works under whatever prefix the host mounts it at. Every step
@@ -14,10 +15,10 @@ const LEAFLET = "../dashboard_static/vendor/leaflet-1.9.4/";
 const TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const POLL_MS = 2000;
 const POLL_FAILURES = 5; // network blips while the search runs, in a row, before giving up
-const STEPS = ["home", "station", "stops", "walk", "keys", "finish", "done"];
+const STEPS = ["home", "station", "stops", "walk", "keys", "views", "finish", "done"];
 const TITLES = {
   home: "Home", station: "Station", stops: "Bus stops", walk: "Walk times",
-  keys: "Keys", finish: "Check and save", done: "Done",
+  keys: "Keys", views: "Views", finish: "Check and save", done: "Done",
 };
 const POSTCODE = /^[A-Za-z]{1,2}[0-9][A-Za-z0-9]?\s*[0-9][A-Za-z]{2}$/;
 const CRS = /^[A-Za-z]{3}$/;
@@ -25,6 +26,7 @@ const LABEL = /^[A-Za-z0-9]{1,3}$/;
 const KEY = /^[A-Za-z0-9._~+/=-]{1,200}$/;
 const LINK = /^(\/(?!\/)|https?:\/\/)/;
 const NOUN = /^[a-z]{1,20}$/;
+const VIEW = /^[a-z]{1,20}$/;
 const MAX_STOPS = 10;
 const MAX_WALK = 60;
 const UK = { lat: [49.0, 61.0], lon: [-8.7, 2.0] }; // as setup.py's LAT_RANGE and LON_RANGE
@@ -43,6 +45,11 @@ const state = {
   title: "Setup", // the host's, like "Set up your board", from begin
   noun: "board", // what the text calls the host, like "dashboard", from begin
   keys: [], // [{name, label, hint, set, doc}]: the host's own, from begin
+  views: [], // [{name, label, hint}]: the views the install offers, from begin
+  viewsOn: [], // the names of those on now, from begin
+  askViews: false, // whether there is a choice, so a step for it
+  chosenViews: [], // names, when leaving the views step (or the one offered)
+  viewsDrawn: false,
   links: [],
   home: null, // {lat, lon, label, country}; exact, so it stays in this page and the server's memory
   stations: [],
@@ -166,6 +173,19 @@ function distance(metres) {
 
 // Moving between steps. The new step's heading takes focus, so a screen
 // reader starts there and keyboard users carry on from the top.
+
+// The steps shown, in order: the views step only where there is a choice.
+const shownSteps = () => STEPS.filter((step) => step !== "views" || state.askViews);
+
+// Numbers each step's heading and the progress list for the steps shown,
+// and points the buttons either side of the views step past it if it isn't.
+function numberSteps() {
+  const counted = shownSteps().filter((step) => step !== "done");
+  for (const item of $("progress").children) item.hidden = !counted.includes(item.dataset.step);
+  counted.forEach((step, i) => fill($(`${step}-number`), `Step ${i + 1} of ${counted.length}:`));
+  $("keys-next").textContent = state.askViews ? "Next: views" : "Next: check and save";
+  $("finish-back").dataset.back = state.askViews ? "views" : "keys";
+}
 
 function go(step, { focus = true } = {}) {
   for (const name of STEPS) $(`step-${name}`).hidden = name !== step;
@@ -910,11 +930,50 @@ function leaveKeys() {
       return refuse(id, "Paste this key, or go back and change your choices.");
     }
   }
+  if (state.askViews) enterViews();
+  else enterFinish();
+  return true;
+}
+
+// Step 6, where the install offers more than one view: which to turn on.
+// Those on now are ticked; with none on, the first offered.
+
+function drawViews() {
+  const ticked = state.viewsOn.length ? state.viewsOn : [state.views[0].name];
+  fill($("views-list"), state.views.map((view) => {
+    const id = `view-${view.name}`;
+    const checkbox = h("input", {
+      type: "checkbox", id, value: view.name, checked: ticked.includes(view.name),
+      "aria-describedby": view.hint ? `${id}-hint views-error` : "views-error",
+    });
+    checkbox.addEventListener("change", () => setError("views", "", firstView()));
+    return h("div", { class: "option" }, checkbox,
+      h("div", { class: "option-text" },
+        h("label", { for: id }, view.label),
+        view.hint ? h("p", { class: "hint", id: `${id}-hint` }, view.hint) : null));
+  }));
+  state.viewsDrawn = true;
+}
+
+const firstView = () => $(`view-${state.views[0].name}`);
+
+function enterViews() {
+  go("views");
+  if (!state.viewsDrawn) drawViews();
+}
+
+function leaveViews() {
+  const chosen = state.views.filter((view) => $(`view-${view.name}`).checked).map((view) => view.name);
+  setError("views", "", firstView());
+  if (!chosen.length) {
+    return refuse("views", "Tick at least one view, or the departures show nowhere.", firstView());
+  }
+  state.chosenViews = chosen;
   enterFinish();
   return true;
 }
 
-// Step 6: check, search and save.
+// Step 7: check, search and save.
 
 function summaryRow(term, ...details) {
   return [h("dt", {}, term), h("dd", {}, ...details)];
@@ -935,7 +994,9 @@ function enterFinish() {
     summaryRow("Bus stops", state.chosen.length
       ? h("ul", {}, state.chosen.map((s) => h("li", {}, `${s.label}: ${stopName(s)}, ${minutesText(s.atco)}`)))
       : "No buses"),
-    summaryRow("Keys to save", keys.length ? keys.join(", ") : "None; the keys already set stay"));
+    summaryRow("Keys to save", keys.length ? keys.join(", ") : "None; the keys already set stay"),
+    state.askViews ? summaryRow("Show the departures on", state.views
+      .filter((view) => state.chosenViews.includes(view.name)).map((view) => view.label).join(", ")) : null);
   const buses = state.chosen.length > 0;
   $("routes-box").hidden = !buses;
   $("search-hint").hidden = !buses;
@@ -1007,6 +1068,7 @@ function payload() {
     walk: state.walkMinutes,
   };
   if (Object.keys(keys).length) body.keys = keys;
+  if (state.chosenViews.length) body.views = state.chosenViews;
   return body;
 }
 
@@ -1071,6 +1133,7 @@ function setUpSteps() {
   setUpStops();
   $("walk-next").addEventListener("click", leaveWalk);
   $("keys-next").addEventListener("click", leaveKeys);
+  $("views-next").addEventListener("click", leaveViews);
   setUpFinish();
 }
 
@@ -1085,12 +1148,21 @@ async function begin() {
     state.keys = list(data.keys).map(obj).filter((k) => k && /^[A-Z_]{1,64}$/.test(str(k.name)))
       .map((k) => ({ name: k.name, label: str(k.label) || k.name, hint: str(k.hint), set: k.set === true, doc: str(k.doc) }));
     state.links = list(data.links);
+    const views = obj(data.views) || {};
+    state.views = list(views.offered).map(obj).filter((v) => v && VIEW.test(str(v.name)))
+      .map((v) => ({ name: v.name, label: str(v.label) || v.name, hint: str(v.hint) }));
+    state.viewsOn = list(views.on).map(str).filter((name) => state.views.some((v) => v.name === name));
+    // One view offered: nothing to ask, so it is sent as chosen. None (an
+    // older host): no views are sent, and the host keeps those it has.
+    state.askViews = state.views.length > 1;
+    state.chosenViews = state.views.length === 1 ? [state.views[0].name] : [];
   } catch (error) {
     note("loading", error.message);
     return;
   }
   note("loading", "");
   setUpSteps();
+  numberSteps();
   go("home", { focus: false });
 }
 
