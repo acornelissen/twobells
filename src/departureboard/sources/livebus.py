@@ -168,10 +168,10 @@ def _live(
             continue  # unmatched, or could be yesterday's journey or today's
         day, journey = hits[0]
         placed = progress(vehicle, journey, positions, day, tz)
-        if placed is None:
+        recorded = _recorded(vehicle)  # readable whenever progress places the bus
+        if placed is None or recorded is None:
             continue
         key = (day, id(journey))
-        recorded = _recorded(vehicle)  # readable, or progress would have been None
         if key in live and live[key][0] >= recorded:
             continue  # two buses on one journey: keep the latest report
         live[key] = (recorded, placed, vehicle)

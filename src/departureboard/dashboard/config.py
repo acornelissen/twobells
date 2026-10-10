@@ -39,11 +39,11 @@ from ..core import files
 from ..core.polling import Window, parse_window
 from ..core.walk import WalkTimes
 from ..settings.config import ConfigError, _flag, _table, _texts, _whole, settings_from, switched_on
-from ..sources.bodsbus import BusBoard
+from ..sources.bodsbus import BodsBusSource, BusBoard
 from ..sources.darwin import DarwinSource, ServiceDetails, ServiceDetailsClient, TrainBoard
 from ..sources.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource, kb_url_is_placeholder
 from ..sources.holidays import ENGLAND_AND_WALES
-from ..sources.weather import Conditions
+from ..sources.weather import Conditions, OpenMeteoSource
 
 if TYPE_CHECKING:
     from ..settings.overlay import Target
@@ -183,7 +183,7 @@ class BusSource(Protocol):
 
     def fetch_live(self, rows: int | None = None) -> BusBoard: ...
 
-    def refresh_timetable(self, force: bool = False): ...
+    def refresh_timetable(self, force: bool = False) -> object: ...  # what it returns isn't used
 
 
 class ConditionsSource(Protocol):
@@ -339,7 +339,7 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
         if isinstance(config.source, DarwinSource):
             train = config.source
             train.with_details = True  # GetDepBoardWithDetails: calling points and reasons
-        elif config.source.name == "bus":
+        elif isinstance(config.source, BodsBusSource):  # TransportAPI buses were dropped above
             bus = config.source
     train_section = data.get("train", {})
     details_key = _header_key(env, "RDM_DETAILS_API_KEY")
@@ -367,7 +367,8 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
         bus_note=bus_note,
         bus_upkeep=copy.copy(bus) if bus is not None else None,
         bus_stops=dict(data["bus"]["stops"]) if bus is not None else {},
-        weather=weather.source if weather is not None else None,
+        # The board's forecast is Open-Meteo's, which gives the conditions now too.
+        weather=weather.source if weather is not None and isinstance(weather.source, OpenMeteoSource) else None,
         bus_disruptions=BusDisruptionSource(bus_key) if bus is not None and bus_key else None,
         train_incidents=incidents,
         train_incidents_note=incidents_note,

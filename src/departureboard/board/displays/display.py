@@ -19,14 +19,14 @@ DISPLAY_PANELS = {
 
 
 def _detect():
-    from inky.auto import auto  # imported lazily: only present on the Pi
+    from inky.auto import auto  # pyright: ignore[reportMissingImports]  # imported lazily: only present on the Pi
 
     return auto()
 
 
 def _original_phat(colour: str):
     """The original pHAT can't be detected; the library is told its colour."""
-    from inky import InkyPHAT  # imported lazily: only present on the Pi
+    from inky import InkyPHAT  # pyright: ignore[reportMissingImports]  # imported lazily: only present on the Pi
 
     return InkyPHAT(colour if colour in ("red", "yellow") else "black")
 

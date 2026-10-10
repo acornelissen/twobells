@@ -257,7 +257,7 @@ def bus_route(live: LiveDeparture) -> str:
     return f"{dep.stop or ''}|{dep.service}|{dep.destination}"
 
 
-def _recorded(value: str, tz: tzinfo) -> datetime | None:
+def _recorded(value: str, tz: tzinfo | None) -> datetime | None:
     try:
         recorded = datetime.fromisoformat(value)
     except (TypeError, ValueError):
@@ -475,7 +475,7 @@ def _current(conditions: Conditions) -> dict | None:
     }
 
 
-def _sun(conditions: Conditions, today: date, tz: tzinfo) -> dict | None:
+def _sun(conditions: Conditions, today: date, tz: tzinfo | None) -> dict | None:
     days = [entry for entry in conditions.sun if entry[0] == today] or conditions.sun[:1]
     if not days:
         return None
@@ -536,7 +536,7 @@ class SnapshotSource(Protocol):
 
     def lookup(self, row_id: str) -> dict | None: ...
 
-    def get(self, name: str): ...
+    def get(self, name: str) -> object | None: ...
 
     def touch(self) -> None: ...
 
@@ -562,14 +562,14 @@ class Hub:
         self._lock = threading.Lock()
         self._changed = threading.Condition(self._lock)
         self._static = {"title": title, "walk": {"train": walk.train, "bus": dict(walk.bus)}}
-        self._parts: dict[str, dict | None] = dict.fromkeys(PARTS)
+        self._parts: dict[str, dict | list | None] = dict.fromkeys(PARTS)
         self._part_lookups: dict[str, dict[str, dict]] = {part: {} for part in PARTS}
         self._lookups: dict[str, dict] = {}
         self._previous: dict[str, dict] = {}
         self._version = 0
         self._canonical: str | None = None
         self._body = b""
-        self._rebuilt: float | None = None
+        self._rebuilt = 0.0  # _rebuild, below, sets it
         self._touched: float | None = None
         self._closed = False
         self._resources: dict[str, object] = {}  # served on their own, not in the snapshot
@@ -591,7 +591,7 @@ class Hub:
         self._body = _encode(snapshot).encode("ascii")
         self._rebuilt = self._monotonic()
 
-    def publish(self, part: str, data: dict | None, lookups: dict[str, dict] | None = None) -> int:
+    def publish(self, part: str, data: dict | list | None, lookups: dict[str, dict] | None = None) -> int:
         """Replace one section (trains, buses, weather or disruptions) and its
         lookups by row id. Returns the version, which only goes up if anything changed."""
         if part not in PARTS:
@@ -649,7 +649,7 @@ class Hub:
             else:
                 self._resources[name] = value
 
-    def get(self, name: str):
+    def get(self, name: str) -> object | None:
         """A resource kept by put(), or None."""
         with self._lock:
             return self._resources.get(name)

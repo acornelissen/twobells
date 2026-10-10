@@ -35,6 +35,7 @@ import logging
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from typing import TypeGuard, TypeVar
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import Request
@@ -74,6 +75,7 @@ _OTHER_PRODUCT = "invalid apikey for given resource"
 _ALLOWANCE = ("limit", "quota", "exceeded")
 
 Fetch = Callable[[str, Mapping[str, str]], bytes]
+_Body = TypeVar("_Body")
 
 
 @dataclass(frozen=True)
@@ -122,7 +124,8 @@ _SLOW = "took too long to answer"
 _UNREACHABLE = "couldn't be reached. It may be down, or there may be no internet here"
 
 
-def _call(fetch: Fetch, url: str, headers: Mapping[str, str], service: _Service) -> bytes:
+def _call(fetch: Callable[[str, Mapping[str, str]], _Body], url: str, headers: Mapping[str, str],
+          service: _Service) -> _Body:
     """One request; a failure becomes the result it means, as an _Outcome."""
     try:
         return fetch(url, headers)
@@ -228,6 +231,11 @@ def _board_url(config_data: Mapping) -> str:
     return f"{base}/GetDepartureBoard/{_crs(config_data)}?{urlencode({'numRows': 1})}"
 
 
+def _number(value: object) -> TypeGuard[float]:
+    """An int or float, and not a bool, which Python counts as an int."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def _own_stops(config_data: Mapping) -> list[tuple[float, float]]:
     """Where the route strips' own stops are (each strip's last, as config.toml has it)."""
     routes = _section(config_data, "bus").get("routes")
@@ -238,8 +246,7 @@ def _own_stops(config_data: Mapping) -> list[tuple[float, float]]:
         if not isinstance(last, Mapping):
             continue
         lat, lon = last.get("lat"), last.get("lon")
-        if (all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (lat, lon))
-                and 49.0 <= lat <= 61.0 and -8.7 <= lon <= 2.0):
+        if _number(lat) and _number(lon) and 49.0 <= lat <= 61.0 and -8.7 <= lon <= 2.0:
             points.append((float(lat), float(lon)))
     return points
 

@@ -155,8 +155,8 @@ def _handler(display: EmulatorDisplay, page: bytes):
                 self._send(200, "text/html; charset=utf-8", page)
             elif path == "/status.json":
                 self._send(200, "application/json", json.dumps(display.status()).encode())
-            elif path == "/frame.png" and display.frame_png() is not None:
-                self._send(200, "image/png", display.frame_png())
+            elif path == "/frame.png" and (frame := display.frame_png()) is not None:
+                self._send(200, "image/png", frame)
             else:
                 self._send(404, "text/plain", b"not found")
 

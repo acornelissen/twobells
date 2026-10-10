@@ -289,7 +289,7 @@ def _poll_vehicles(tracker: Tracker, state: dict, now: datetime) -> None:
     entry.pop("last_error", None)
 
 
-def _route_view(board: Board, state: dict, view: BoardView, now: datetime, clock: str) -> RouteView | None:
+def _route_view(board: Board, state: dict, view: BoardView, now: datetime, clock: str | None) -> RouteView | None:
     """The page for the next bus you can catch that has a route strip, if any."""
     tracker = board.tracker
     if tracker is None or not tracker.policy.is_active(now):
@@ -326,7 +326,7 @@ def _route_view(board: Board, state: dict, view: BoardView, now: datetime, clock
     )
 
 
-def _render_key(shown: BoardView | RouteView, theme: Theme, display: Display) -> str:
+def _render_key(shown: BoardView | RouteView | CodeView | SetupView, theme: Theme, display: Display) -> str:
     """What is on the panel: the words, and how they are drawn. A new look, accent
     or rotation has to reach e-paper even when the words have not changed."""
     # The display classes keep their rotation private; a public `rotate` wins if there is one.

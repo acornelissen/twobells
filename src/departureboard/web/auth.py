@@ -514,16 +514,16 @@ class ResetCodes:
         typed = "".join(typed.split())  # "123 456" as shown
         with self._locked():
             record = self._load()
-            current = record["code"]
+            current, found = record["code"], True
             try:
                 salt = bytes.fromhex(current["salt"])
                 stored, expires, tries = str(current["hash"]), float(current["expires"]), int(current["tries"])
             except (TypeError, KeyError, ValueError):
-                current, salt, stored, expires, tries = None, b"", "", 0.0, 0
+                found, salt, stored, expires, tries = False, b"", "", 0.0, 0
             # Hashed, compared and saved with or without a code, so the time
             # taken doesn't say whether there is one.
             right = hmac.compare_digest(_code_hash(salt, typed).encode(), stored.encode())
-            live = current is not None and now < expires and tries < RESET_MAX_TRIES
+            live = found and now < expires and tries < RESET_MAX_TRIES
             if live and not right:
                 current["tries"] = tries + 1
                 if current["tries"] >= RESET_MAX_TRIES:

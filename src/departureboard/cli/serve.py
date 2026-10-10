@@ -56,7 +56,7 @@ def fetch_command(args) -> int:
         print(error, file=sys.stderr)
         return 2
     stop = threading.Event()
-    if problem:
+    if store is None:
         # Say so to the page, rather than stop with its requests waiting and be started again and again.
         service = Worker(spool, job_folder=None, load_secrets=dict, unavailable=NO_SETTINGS, stop=stop)
     else:

@@ -16,7 +16,7 @@ from ...core import files
 from ...core.errors import safe_message
 from .. import discover, keytest
 from .. import lookups as setup
-from ..api import KEY_TEST_EVERY, MIN_SCRUBBED, RateLimit, _scrub
+from ..api import KEY_TEST_EVERY, MIN_SCRUBBED, Job, MakeJob, RateLimit, _scrub
 from ..lookups import Place, SetupError, Stop
 from .checks import _FINISHED, MAX_NOTES, VERSION, Refused, check_request, parse
 from .folder import MAX_REPLY_BYTES, MAX_REQUEST_BYTES, Spool, _remove
@@ -86,7 +86,7 @@ class Worker:
         search_address: Callable[[str], list[Place]] = setup.search_address,
         nearby_stops: Callable[..., list[Stop]] = setup.nearby_stops,
         walk_minutes: Callable[..., dict[str, tuple[int, str]]] = setup.walk_minutes,
-        make_job: Callable[..., object] = discover.SetupJob,
+        make_job: MakeJob = discover.SetupJob,
         test_key: Callable[..., keytest.KeyResult] = keytest.test_key,
         # Behind the page's own limit, in case something else writes requests; looser so the two never disagree.
         key_tests: RateLimit | None = None,
@@ -125,7 +125,7 @@ class Worker:
         self._stop = stop or threading.Event()
         # The search's status is written from two threads (see _keep_reporting); this keeps them apart.
         self._lock = threading.RLock()
-        self._job = None
+        self._job: Job | None = None
         self._job_id = ""
         self._job_secrets: list[str] = []
         self._shown: dict | None = None
@@ -289,7 +289,8 @@ class Worker:
             return [_stop_out(s) for s in self._nearby_stops(lat, lon, within_m=args["within_m"],
                                                             limit=args["limit"])]
         if kind == "walk":
-            home = Place(*args["home"], "")
+            lat, lon = args["home"]
+            home = Place(lat, lon, "")
             places = {key: Place(lat, lon, "") for key, (lat, lon) in args["places"].items()}
             return {key: [minutes, source] for key, (minutes, source) in self._walk_minutes(home, places).items()}
         if kind == "testkey":

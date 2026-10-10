@@ -175,7 +175,7 @@ class SpoolJob:
     def status(self) -> dict:
         with self._lock:
             if self._started is not None and not self._finished:
-                self._update()
+                self._update(self._started)
             return copy.deepcopy(self._status)
 
     def _end(self, message: str) -> None:
@@ -184,7 +184,7 @@ class SpoolJob:
         self._runner.withdraw(self.id)
         (self._runner.spool.status / f"{self.id}.json").unlink(missing_ok=True)
 
-    def _update(self) -> None:
+    def _update(self, started: float) -> None:
         now = self._runner.monotonic()
         try:
             reply = self._runner.reply(self.id, delete=False, where=self._runner.spool.status)
@@ -194,7 +194,7 @@ class SpoolJob:
         if reply is None:
             if self._beat is not None:  # swept away after going unread for long
                 self._end(GONE)
-            elif now - self._started > self._start_wait:
+            elif now - started > self._start_wait:
                 log.warning("The setup service didn't start the search in time")
                 self._end(NO_ANSWER)
             return

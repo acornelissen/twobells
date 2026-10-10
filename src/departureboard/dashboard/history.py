@@ -418,7 +418,7 @@ def phrase(stats: Stats, day_type: str) -> str | None:
         return f"Cancelled {stats.cancelled} and late {stats.late} of {last}"
     if stats.cancelled:
         return f"Cancelled {stats.cancelled} of {last}"
-    if stats.late:
+    if stats.late and stats.avg_late is not None:  # there is an average whenever there are late days
         return f"Late {stats.late} of {last} (avg {int(stats.avg_late + 0.5)} min)"
     if stats.on_time == stats.days:
         return f"On time {last}"

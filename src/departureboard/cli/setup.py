@@ -4,6 +4,7 @@ and the unlisted `query`, which answers install.sh and update.sh."""
 from __future__ import annotations
 
 import sys
+from typing import cast
 
 from ..board.displays.display import DISPLAY_PANELS
 from ..settings.config import ConfigError, is_enabled
@@ -19,7 +20,8 @@ def discover_command(args) -> int:
     from ..settings.config import _walk
     from ..setup import discover
 
-    stops = parse_stops(args.stop)
+    # argparse requires at least one --stop here, so there are always stops.
+    stops = cast(dict[str, str], parse_stops(args.stop))
     store = as_owner(args, open_store(args))
     data = store.data()
     folder = store.folder
@@ -31,7 +33,8 @@ def discover_command(args) -> int:
         walk = _walk(data).bus
     except ConfigError:
         walk = {}  # route strips go back a few minutes without it
-    timezone = data.get("timezone") if isinstance(data.get("timezone"), str) else "Europe/London"
+    timezone = data.get("timezone")
+    timezone = timezone if isinstance(timezone, str) else "Europe/London"
     job = discover.SetupJob(folder, stops, key, routes=args.routes, walk_minutes=walk,
                             now=lambda: local_now(timezone))
     try:

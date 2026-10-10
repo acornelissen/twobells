@@ -103,7 +103,9 @@ def train_arrival(service: TrainService, filter_crs: str | None, scheduled_at: d
     if dep.status is Status.CANCELLED or (dep.status is Status.LATE and expected_at is None):
         return None
     point = _target(service.calling_points, filter_crs)
-    arrives = _point_time(point) if point is not None else None
+    if point is None:
+        return None
+    arrives = _point_time(point)
     if arrives is None:
         return None
     leaves = (expected_at or scheduled_at).replace(second=0, microsecond=0)
@@ -117,7 +119,7 @@ def train_arrival(service: TrainService, filter_crs: str | None, scheduled_at: d
 # Buses
 
 
-def bus_arrival(live: LiveDeparture, tz: tzinfo) -> dict | None:
+def bus_arrival(live: LiveDeparture, tz: tzinfo | None) -> dict | None:
     """When the bus reaches its journey's last call: the timetabled time plus
     the delay it has now. None if your stop is its last call."""
     calls = live.journey.calls

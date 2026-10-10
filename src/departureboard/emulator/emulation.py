@@ -125,4 +125,6 @@ def build_emulation(
     """`display` names the panel to emulate; live mode defaults to the configured one."""
     if demo:
         return _demo(accent, tick_seconds, display or "inky")
+    if config is None:
+        raise ValueError("The live emulator needs a config")
     return _live(config, env or {}, fake_train, tick_seconds, display)

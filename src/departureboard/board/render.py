@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
+from typing import Protocol, cast
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -50,7 +51,9 @@ def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
     path = _FONT_DIR / name
     if path.exists():
         return ImageFont.truetype(str(path), size)
-    return ImageFont.load_default(size=size)
+    # Given a size, Pillow's default font is FreeType; every Pillow build we
+    # run on (the wheels, Debian's python3-pil) has FreeType.
+    return cast(ImageFont.FreeTypeFont, ImageFont.load_default(size=size))
 
 
 # Body text in pHAT pixels; a text_size setting can make the plain look bigger.
@@ -136,7 +139,13 @@ def platform_column(rows, fonts: Fonts, width: int, scale: int) -> float | None:
     return width - _PAD * scale - right_w - _COL_GAP * scale - platform_w
 
 
-def fit_text(text: str, font: ImageFont.FreeTypeFont, width: float, measure=None) -> str:
+class Measurable(Protocol):
+    """A font fit_text can measure with: FreeTypeFont, or the sign look's DotFont."""
+
+    def getlength(self, text: str) -> float: ...
+
+
+def fit_text(text: str, font: Measurable, width: float, measure=None) -> str:
     """`text`, cut short with an ellipsis if it is wider than `width`.
     `measure` overrides font.getlength, e.g. with drawn_length."""
     measure = measure or font.getlength
@@ -303,9 +312,10 @@ class _Painter:
         layout = row_layout(row, self.f, self.width, s, platform_x)
         self.draw.text((_PAD * s, y + s), layout.left, font=self.f.bold, fill=ink)
         self.draw.text((layout.middle_x, y + s), layout.middle, font=self.f.regular, fill=ink)
-        if layout.platform_x is not None:
+        # row_layout only places a platform or leave time the row has.
+        if layout.platform_x is not None and row.platform:
             self.draw.text((layout.platform_x, y + s), row.platform, font=self.f.regular, fill=ink)
-        if layout.leave_x is not None:
+        if layout.leave_x is not None and row.leave:
             self.draw.text((layout.leave_x, y + self.small_drop * s), row.leave, font=self.f.small, fill=ink)
         self.draw.text((layout.right_x, y + s), row.right, font=self.f.bold, fill=status_ink)
 

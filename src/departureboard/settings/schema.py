@@ -22,7 +22,7 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, overload
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
@@ -75,6 +75,12 @@ def text(limit: int) -> Callable[[str], str]:
             raise Invalid(f"Use up to {limit} ordinary characters")
         return value
     return check
+
+
+@overload
+def number(low: int, high: int, optional: Literal[False] = False) -> Callable[[str], int]: ...
+@overload
+def number(low: int, high: int, optional: bool) -> Callable[[str], int | None]: ...
 
 
 def number(low: int, high: int, optional: bool = False) -> Callable[[str], int | None]:

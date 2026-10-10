@@ -330,9 +330,12 @@ class Collector:
     # Jobs
 
     def poll_trains(self) -> None:
+        source = self._settings.train
+        if source is None:  # pollers() only polls the feeds there are
+            return
         now = self._clock()
         try:
-            board = self._settings.train.fetch_board()
+            board = source.fetch_board()
         except Exception as error:
             self._trains.failed(error)
             self._publish_trains()
@@ -375,6 +378,9 @@ class Collector:
         left the board, or been cancelled, are forgotten. A refused key turns
         details off for six hours; any other failure skips that train until
         the next poll, keeping what was known."""
+        client = self._settings.train_details
+        if client is None:  # poll_trains only asks when there is one
+            return
         running = {s.service_id for s in board.services
                    if s.service_id and s.departure.status is not Status.CANCELLED}
         self._details = {sid: entry for sid, entry in self._details.items() if sid in running}
@@ -386,7 +392,7 @@ class Collector:
             if entry is not None and self._monotonic() - entry[0] < DETAILS_TTL:
                 continue
             try:
-                found = self._settings.train_details.details(service_id)
+                found = client.details(service_id)
             except DetailsUnavailable as error:
                 self._details_off_until = self._monotonic() + DETAILS_OFF
                 self._details = {}
@@ -401,6 +407,8 @@ class Collector:
 
     def poll_buses(self) -> None:
         source = self._settings.bus
+        if source is None:  # pollers() only polls the feeds there are
+            return
         now = self._clock()
         reason = source.unusable()
         if reason is not None:
@@ -449,9 +457,12 @@ class Collector:
             self._publish_disruptions()
 
     def poll_weather(self) -> None:
+        source = self._settings.weather
+        if source is None:  # pollers() only polls the feeds there are
+            return
         now = self._clock()
         try:
-            conditions = self._settings.weather.fetch_conditions()
+            conditions = source.fetch_conditions()
         except Exception as error:
             self._weather.failed(error)
             self._publish_weather()

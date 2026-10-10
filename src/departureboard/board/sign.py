@@ -138,19 +138,19 @@ def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> Non
         # shows the notice (or rain warning) a part at a time in the room left of it.
         clock_x = free_end - _w(view.clock)
         layout.add(clock_x, height - GLYPH_H - 1, view.clock)
-        layout.add(MARGIN, height - GLYPH_H - 1, fitted_note(view, clock_x - _COL_GAP - MARGIN, _w, _FONT))
+        layout.add(MARGIN, height - GLYPH_H - 1, fitted_note(view, clock_x - _COL_GAP - MARGIN, _w, _FONT) or "")
     elif view.clock:
         # A screen shows the time centred along the bottom, like a station clock.
         layout.add((width - _w(view.clock)) // 2, height - GLYPH_H - 1, view.clock)
     elif view.notice:
         # As much as fits, in place of "Updated", in the footer's small print.
-        layout.add(MARGIN, y, fitted_note(view, free_end - MARGIN, _SMALL.getlength, _SMALL), small=True)
+        layout.add(MARGIN, y, fitted_note(view, free_end - MARGIN, _SMALL.getlength, _SMALL) or "", small=True)
     elif view.rain and _SMALL.getlength(view.rain) + _COL_GAP + _SMALL.getlength(stamp) <= free_end - MARGIN:
         # The rain warning on the left, keeping "Updated" on the right.
         layout.add(MARGIN, y, view.rain, small=True)
         layout.add(free_end - _SMALL.getlength(stamp), y, stamp, small=True)
     elif view.rain:
-        layout.add(MARGIN, y, fitted_note(view, free_end - MARGIN, _SMALL.getlength, _SMALL), small=True)
+        layout.add(MARGIN, y, fitted_note(view, free_end - MARGIN, _SMALL.getlength, _SMALL) or "", small=True)
     else:
         layout.add(MARGIN, y, stamp, small=True)
     if badge:
@@ -182,7 +182,7 @@ def render_sign(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Image
     draw = ImageDraw.Draw(image)
     layout = sign_layout(view, width, height)
     band_rows = sorted({i.y for i in layout.items if i.inverted and not i.small})
-    bands = [(0, y - 1, width - 1, y + GLYPH_H) for y in band_rows]
+    bands: list[tuple[float, float, float, float]] = [(0, y - 1, width - 1, y + GLYPH_H) for y in band_rows]
     for item in (i for i in layout.items if i.inverted and i.small):
         text_w, text_h = item_size(item)
         bands.append((item.x - 2, item.y - 1, item.x + text_w + 1, item.y + text_h))
@@ -287,7 +287,7 @@ def _enlarge(image: Image.Image, panel: Panel, background: int, bands) -> Image.
         for y in range(scale - 1, big.height, scale):
             draw.line((0, y, big.width - 1, y), fill=background)
         for x0, y0, x1, y1 in bands:
-            box = tuple(int(v * scale) for v in (x0, y0, x1 + 1, y1 + 1))
+            box = (int(x0 * scale), int(y0 * scale), int((x1 + 1) * scale), int((y1 + 1) * scale))
             big.paste(solid.crop(box), box[:2])
     canvas = Image.new("P", panel.size, background)
     canvas.paste(big, ((panel.width - big.width) // 2, (panel.height - big.height) // 2))

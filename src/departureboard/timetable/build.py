@@ -76,12 +76,12 @@ import re
 import stat
 import tempfile
 import time
-from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Set
+from collections.abc import Callable, Collection, Generator, Iterable, Iterator, Mapping, Set
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import BinaryIO, NamedTuple
+from typing import NamedTuple, Protocol
 from urllib.parse import urlsplit
 
 from ..core import files, net, safexml
@@ -122,7 +122,15 @@ _LATEST = 2 * 24 * 3600  # a journey still running two days after its service da
 _SKEW = timedelta(days=1)
 
 FindDatasets = Callable[[str, str, "str | None"], list]  # (api_key, noc, line) -> links, as routesetup.dataset_urls
-Download = Callable[[str, BinaryIO], None]  # (link, file to write it to)
+
+
+class Writable(Protocol):
+    """Where a download is written: an open binary file, or one that meters it."""
+
+    def write(self, data: bytes, /) -> int: ...
+
+
+Download = Callable[[str, Writable], None]  # (link, file to write it to)
 # atcos -> {atco: (name, lat, lon[, sign letter])}, as routesetup.naptan_stop_details
 Naptan = Callable[[Iterable[str]], dict]
 # ({(atco, atco): ((lat, lon), (lat, lon))}, progress=...) -> {(atco, atco): [(lat, lon), ...]},
@@ -595,7 +603,7 @@ def journeys_on(schedule: Schedule, day: date, holiday_names: Mapping[date, Set[
 # Building the schedule.
 
 
-def download(url: str, file: BinaryIO, max_bytes: int = routesetup.MAX_DOWNLOAD_BYTES) -> None:
+def download(url: str, file: Writable, max_bytes: int = routesetup.MAX_DOWNLOAD_BYTES) -> None:
     """Write a timetable download into `file` as it arrives, refusing anything
     but https, and more than `max_bytes`."""
     if urlsplit(url).scheme != "https":
@@ -619,7 +627,7 @@ def _dataset_links(operators: Iterable[str], api_key: str, lines, find_datasets:
     return [(noc, url) for url, noc in links.items()]
 
 
-def _documents(links: list[tuple[str, str]], fetch: Download, scratch) -> Iterator[tuple[str, bytes]]:
+def _documents(links: list[tuple[str, str]], fetch: Download, scratch) -> Generator[tuple[str, bytes], None, None]:
     """(operator code, document) for every TransXChange document behind the
     links. Each download waits in a temporary file, gone once its documents
     have been used; each document is unpacked only when wanted."""
@@ -663,7 +671,7 @@ def _positions(atcos: set[str], known: dict[str, StopPosition], naptan: Naptan) 
     for atco in sorted(atcos):
         row = found.get(atco)
         position = _position(str(row[0]).strip()[:_TEXT_LIMIT], str(row[1]), str(row[2])) if row else None
-        if position is not None and len(row) > 3:
+        if position is not None and row and len(row) > 3:
             position = replace(position, indicator=_sign(row[3]))
         position = position or known.get(atco)
         if position is not None:
@@ -863,7 +871,8 @@ def roads_progress(folder: Path | str, now: Callable[[], float] = time.time) -> 
     if not isinstance(data, dict):
         return None
     done, total, at = data.get("done"), data.get("total"), data.get("at")
-    if any(isinstance(n, bool) or not isinstance(n, int) for n in (done, total)) or not 0 <= done <= total:
+    if (not isinstance(done, int) or isinstance(done, bool) or not isinstance(total, int) or isinstance(total, bool)
+            or not 0 <= done <= total):
         return None
     if isinstance(at, bool) or not isinstance(at, (int, float)) or not math.isfinite(at):
         return None

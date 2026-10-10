@@ -108,7 +108,7 @@ class FetchService:
     def _tend(self) -> bool:
         """Each time round: take on changed settings. Whether the dashboard runs, which keeps the service up."""
         first = self._watch is None
-        if first:
+        if self._watch is None:
             self._watch = FileWatch(self._store.watched())
         if first or self._watch.changed():
             try:
@@ -162,7 +162,8 @@ class FetchService:
 
     def _stop_dashboard(self) -> None:
         """Stop the pollers and the writer, if they run, and let go of the lock."""
-        if self.collector is None:
+        # The four are set, and cleared, together.
+        if self.collector is None or self.hub is None or self._writer is None or self._dash is None:
             return
         self.hub.close()
         if not self.collector.stop(timeout=5):

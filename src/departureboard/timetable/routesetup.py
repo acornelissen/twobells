@@ -15,7 +15,7 @@ import zipfile
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
-from typing import BinaryIO
+from typing import IO
 from urllib.parse import urlencode
 
 from ..core import safexml
@@ -128,7 +128,7 @@ def strip_before(found: Iterable[Pattern], atco: str, walk_minutes: int) -> tupl
     return list(best.stops[start : index + 1]), covered, best.journeys
 
 
-def timetable_documents(blob: bytes | BinaryIO) -> Iterator[bytes]:
+def timetable_documents(blob: bytes | IO[bytes]) -> Iterator[bytes]:
     """The TransXChange XML in a download: one file, or every .xml in a zip,
     unpacked one at a time. The download can be bytes or an open file, so a
     big one can wait on disk rather than in memory."""

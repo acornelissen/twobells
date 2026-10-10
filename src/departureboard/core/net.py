@@ -11,6 +11,7 @@ from http.client import HTTPConnection, HTTPSConnection
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import (
+    AbstractHTTPHandler,
     HTTPDefaultErrorHandler,
     HTTPErrorProcessor,
     HTTPHandler,
@@ -50,8 +51,11 @@ class SafeRedirects(HTTPRedirectHandler):
             for name in list(followed.headers):
                 if name.lower() not in _PORTABLE_HEADERS:
                     del followed.headers[name]
-        if followed is not None and getattr(req, "deadline", None) is not None:
-            followed.deadline = req.deadline  # the redirect shares the request's deadline
+        deadline = getattr(req, "deadline", None)
+        if followed is not None and deadline is not None:
+            # The redirect shares the request's deadline. urllib makes the new
+            # Request, so it can't be a _TimedRequest that declares one.
+            followed.deadline = deadline  # pyright: ignore[reportAttributeAccessIssue]
         return followed
 
 
@@ -63,13 +67,19 @@ class SafeRedirects(HTTPRedirectHandler):
 # standard library can't time that.
 
 
-def _time_left(deadline: float, timeout: float) -> float:
-    """`timeout`, or what is left before `deadline` if that is less;
-    TimeoutError once it has passed."""
+class _TimedRequest(Request):
+    """A Request with the time.monotonic time its whole request must be done by, if any."""
+
+    deadline: float | None = None
+
+
+def _time_left(deadline: float, timeout: float | None) -> float:
+    """`timeout` (none: no limit of its own), or what is left before
+    `deadline` if that is less; TimeoutError once it has passed."""
     left = deadline - time.monotonic()
     if left <= 0:
         raise TimeoutError("Gave up: the server took too long")
-    return min(timeout, left)
+    return left if timeout is None else min(timeout, left)
 
 
 class _DeadlineSocket:
@@ -135,7 +145,7 @@ class _DeadlineHTTPSConnection(_DeadlineConnection, HTTPSConnection):
     pass
 
 
-class _Deadlines:
+class _Deadlines(AbstractHTTPHandler):
     """Handler mixin: a request with a `deadline` gets a connection keeping to it."""
 
     def do_open(self, http_class, req, **kwargs):
@@ -215,7 +225,8 @@ def get_bytes(url: str, max_bytes: int, timeout: float = 15.0, headers: dict | N
     are added to (or replace) the default User-Agent. `timeout` is for each
     step; with `deadline` (seconds), the whole request, redirects and all, is
     given up after that long, however slowly the server sends."""
-    request = Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})  # noqa: S310 - _opener opens only http and https
+    # _opener opens only http and https, whatever the URL says.
+    request = _TimedRequest(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
     if deadline is not None:
         request.deadline = time.monotonic() + deadline
     with urlopen(request, timeout=timeout) as response:

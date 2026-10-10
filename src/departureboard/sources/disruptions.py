@@ -438,7 +438,7 @@ def _bus_match(situation: Situation, area: BusArea) -> tuple[set[str], set[str],
 
 def _worst(severities: Iterable[str]) -> str:
     known = [s for s in severities if s in _RANK]
-    return max(known, key=_RANK.get) if known else "unknown"
+    return max(known, key=lambda s: _RANK[s]) if known else "unknown"
 
 
 def bus_disruptions(situations: Iterable[Situation], area: BusArea | None, now: datetime) -> list[Disruption]:

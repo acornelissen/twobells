@@ -89,7 +89,7 @@ def parse_forecast(payload) -> list[Hour]:
     times = hourly.get("time")
     chances = hourly.get("precipitation_probability")
     amounts = hourly.get("precipitation")
-    if not all(isinstance(series, list) for series in (times, chances, amounts)):
+    if not (isinstance(times, list) and isinstance(chances, list) and isinstance(amounts, list)):
         raise ValueError("Forecast hourly data is not a set of lists")
     if not len(times) == len(chances) == len(amounts):
         raise ValueError("Forecast hourly series differ in length")
@@ -228,8 +228,9 @@ def _series(section, keys: tuple[str, ...], what: str) -> list[tuple]:
     belong to the time they sit beside."""
     if not isinstance(section, dict):
         raise ValueError(f"Forecast has no {what} data")
-    columns = [section.get(key) for key in keys]
-    if not all(isinstance(column, list) for column in columns):
+    found = [section.get(key) for key in keys]
+    columns = [column for column in found if isinstance(column, list)]
+    if len(columns) != len(found):
         raise ValueError(f"Forecast {what} data is not a set of lists")
     if len({len(column) for column in columns}) > 1:
         raise ValueError(f"Forecast {what} series differ in length")

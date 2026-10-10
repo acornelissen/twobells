@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import Protocol
+from typing import Protocol, cast
 
 from PIL.Image import Image
 
@@ -59,7 +59,8 @@ def pack(image: Image) -> bytes:
     """Four pixels to a byte, leftmost in the top bits, as the panel reads them."""
     if image.mode != "P" or image.size != WAVESHARE_10IN85G.size:
         raise ValueError(f"Expected a {WAVESHARE_10IN85G.size} paletted image, got {image.mode} {image.size}")
-    low, high = image.getextrema()
+    # A one-band ("P") image has one (low, high) pair, not one per band.
+    low, high = cast(tuple[int, int], image.getextrema())
     if high > RED:
         raise ValueError(f"Pixel value {high} is not one of the panel's four colours")
     return image.tobytes("raw", "P;2")
@@ -84,8 +85,8 @@ class GpioBus:
 
     def __init__(self, spi_bus: int = 0, spi_device: int = 0, speed_hz: int = 4_000_000) -> None:
         # Imported lazily: only present on the Pi.
-        import spidev
-        from gpiozero import DigitalInputDevice, DigitalOutputDevice
+        import spidev  # pyright: ignore[reportMissingImports]
+        from gpiozero import DigitalInputDevice, DigitalOutputDevice  # pyright: ignore[reportMissingImports]
 
         self._cs_master = DigitalOutputDevice(self.CS_MASTER, initial_value=True)
         self._cs_slave = DigitalOutputDevice(self.CS_SLAVE, initial_value=True)

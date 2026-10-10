@@ -57,6 +57,8 @@ def _rng(seed: int, key: str, now: datetime) -> random.Random:
 
 
 class _FakeSource:
+    name: str  # each kind of source says which it is
+
     def __init__(self, clock, seed: int = 1, rows: int = 3, failing_when=None) -> None:
         self._clock = clock
         self._seed = seed
@@ -69,6 +71,9 @@ class _FakeSource:
         if self.failing or (self._failing_when and self._failing_when(now)):
             raise OSError(f"fake {self.name} source is failing")
         return self._departures(now)
+
+    def _departures(self, now: datetime) -> list[Departure]:
+        raise NotImplementedError
 
 
 # The sample board's heading (Glossop's own board, as examples/glossop.toml has it).

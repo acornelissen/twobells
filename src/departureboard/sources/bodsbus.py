@@ -14,6 +14,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
+from typing import cast
 
 from ..core.errors import safe_message
 from ..core.model import Departure
@@ -152,7 +153,7 @@ class BodsBusSource:
     @property
     def cost(self) -> int:
         """Hits of the fallback's daily allowance the next fetch will use."""
-        return self._fallback.cost if self.falling_back else 0
+        return self._fallback.cost if self._fallback is not None and self.falling_back else 0
 
     def _vehicles(self, schedule: Schedule) -> tuple[list[Vehicle], str | None]:
         """Live buses around the timetable's stops, and a note if asking failed."""
@@ -190,7 +191,8 @@ class BodsBusSource:
             log.warning("bus: %s, using TransportAPI", reason)
             self.note = f"From TransportAPI: {reason}"
             return self._fallback.fetch()
-        board = self._board(schedule, now, self._rows)
+        # unusable() gives a reason when there is no timetable, so there is one here.
+        board = self._board(cast(Schedule, schedule), now, self._rows)
         self.note = board.note
         return [live.departure for live in board.departures]
 
@@ -204,7 +206,8 @@ class BodsBusSource:
         reason = unusable(schedule, self._stops, now.replace(tzinfo=None))
         if reason is not None:
             raise RuntimeError(reason)
-        return self._board(schedule, now, self._rows if rows is None else rows)
+        # As in fetch: no reason means there is a timetable.
+        return self._board(cast(Schedule, schedule), now, self._rows if rows is None else rows)
 
 
 def _holiday_names(folder: Path, today: date) -> dict[date, frozenset[str]]:

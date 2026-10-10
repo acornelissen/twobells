@@ -389,7 +389,7 @@ class DarwinSource:
         self.messages: list[str] = []
 
     def _url(self) -> str:
-        params = {"numRows": self._rows}
+        params: dict[str, int | str] = {"numRows": self._rows}
         if self._filter_crs:
             params.update(filterCrs=self._filter_crs, filterType="to")
         method = "GetDepBoardWithDetails" if self.with_details else "GetDepartureBoard"
@@ -460,13 +460,14 @@ class ServiceDetails:
 def _station_call(raw: dict) -> StationCall | None:
     name = _name(raw.get("locationName"))
     sta, std = _matching(_CLOCK, raw.get("sta")), _matching(_CLOCK, raw.get("std"))
-    if name is None or (sta is None and std is None):
+    scheduled = std or sta
+    if name is None or scheduled is None:
         return None
     eta, ata, etd, atd = (_time(raw.get(key)) for key in ("eta", "ata", "etd", "atd"))
     return StationCall(
         name=name,
         crs=_matching(_CRS, raw.get("crs")),
-        scheduled=std or sta,
+        scheduled=scheduled,
         expected=etd if std else eta,
         actual=atd if std else ata,
         cancelled=raw.get("isCancelled") is True or "Cancelled" in (eta, etd),
@@ -594,7 +595,8 @@ def train_position(details: ServiceDetails | None, now: datetime) -> TrainPositi
     before = previous[-STRIP_BEFORE:]
     stops = tuple(p.name for p in before) + (here.name,) + ((after[0].name,) if after else ())
     yours = len(before)
-    arrives = _clock(here.eta, here.sta) if here.sta else _clock(here.etd, here.std)
+    # A call has a booked arrival or departure (see _station_call), and `scheduled` is one of them.
+    arrives = _clock(here.eta, here.sta) if here.sta else _clock(here.etd, here.std or here.scheduled)
 
     if here.atd is not None:
         if not after:

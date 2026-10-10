@@ -25,10 +25,12 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import BinaryIO, Protocol
+from io import BufferedIOBase
+from typing import TYPE_CHECKING, Protocol
 from urllib.parse import parse_qs
 
 from ..setup import api
+from ..setup.keytest import KeyResult
 from .auth import (
     MIN_PASSWORD,
     FormTokens,
@@ -41,6 +43,9 @@ from .auth import (
     SignInResult,
     csrf_matches,
 )
+
+if TYPE_CHECKING:
+    from .groupform import Tested
 
 TEXT = "text/plain; charset=utf-8"
 HTML = "text/html; charset=utf-8"
@@ -73,11 +78,11 @@ class SettingsPage(Protocol):
     visitor, and saved from their fields."""
 
     def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,
-               values: dict[str, str] | None = None, tested: object = None) -> str: ...
+               values: dict[str, str] | None = None, tested: Tested | None = None) -> str: ...
 
     def save(self, fields: dict[str, str]) -> dict[str, str]: ...  # field -> error; empty when saved
 
-    def test_key(self, fields: dict[str, str]) -> object: ...  # the result to render, or None: no such test
+    def test_key(self, fields: dict[str, str]) -> Tested | None: ...  # the result to render, or None: no such test
 
 
 class SetupSteps(Protocol):
@@ -86,15 +91,15 @@ class SetupSteps(Protocol):
 
     def handle(self, name: str, payload: object) -> tuple[int, dict]: ...
 
-    def test_key(self, name: str, value: str | None = None, app_id: str | None = None) -> object: ...
+    def test_key(self, name: str, value: str | None = None, app_id: str | None = None) -> KeyResult: ...
 
 
 class Headers(Protocol):
     """A request's headers, as http.server gives them."""
 
-    def get(self, name: str, default: str | None = None) -> str | None: ...
+    def get(self, name: str, /) -> str | None: ...
 
-    def get_all(self, name: str, failobj: list | None = None) -> list[str] | None: ...
+    def get_all(self, name: str, /) -> list[str] | None: ...
 
     def get_content_type(self) -> str: ...
 
@@ -144,7 +149,7 @@ def parse_form(body: bytes) -> dict[str, str]:
     return {key: values[-1] for key, values in parsed.items()}
 
 
-def read_body(headers: Headers, stream: BinaryIO, limit: int) -> bytes | int:
+def read_body(headers: Headers, stream: BufferedIOBase, limit: int) -> bytes | int:
     """A POST's body, or the status refusing it unread: 400 for any
     Transfer-Encoding or more than one Content-Length, 411 for a missing one
     or one that isn't plain digits, 413 for more than `limit` bytes. Only one
@@ -447,6 +452,8 @@ class FormPages:
             payload = api.decode(body)
         except api.Invalid as error:
             return self._json(400, {"error": str(error)})
+        if self._setup is None:  # no wizard here, so no steps
+            return self._json(404, {"error": "No such setup step"})
         return self._json(*self._setup.handle(name, payload))
 
     # Helpers

@@ -305,7 +305,7 @@ class SnapshotMirror:
         with self._lock:
             return self._lookups.get(row_id) or self._previous.get(row_id)
 
-    def get(self, name: str):
+    def get(self, name: str) -> dict | None:
         with self._lock:
             return self._area if name == "area" else None
 

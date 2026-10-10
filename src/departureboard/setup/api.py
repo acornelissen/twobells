@@ -63,7 +63,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from importlib.resources import files
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, overload
 
 from ..core.errors import safe_message
 from ..settings import schema
@@ -168,7 +168,19 @@ KEY_TESTS = RateLimit(KEY_TEST_EVERY)
 
 
 Reply = tuple[int, dict]
-MakeJob = Callable[..., object]  # (folder, stops, api_key, *, routes, walk_minutes) -> a discover.SetupJob
+
+
+class Job(Protocol):
+    """A search for bus companies: a discover.SetupJob, or on a Pi the runner's stand-in for one."""
+
+    def start(self) -> None: ...
+
+    def status(self) -> dict: ...
+
+    def cancel(self) -> None: ...
+
+
+MakeJob = Callable[..., Job]  # (folder, stops, api_key, *, routes, walk_minutes) -> a discover.SetupJob
 
 
 class Runner(Protocol):
@@ -187,7 +199,7 @@ class Runner(Protocol):
     def walk_minutes(self, home: Place, places: Mapping[str, Station | Stop]) -> dict[str, tuple[int, str]]: ...
 
     def make_job(self, stops: Mapping[str, str], pasted_key: str, *, routes: bool,
-                 walk_minutes: Mapping[str, int]) -> object: ...
+                 walk_minutes: Mapping[str, int]) -> Job: ...
 
     def test_key(self, name: str, value: str | None, app_id: str | None) -> keytest.KeyResult: ...
 
@@ -385,8 +397,8 @@ def _station(station: Station) -> dict:
 def suggested_labels(stops: Sequence[Stop]) -> list[str]:
     """A label for each stop found, as setup.stop_labels picks them: the letter
     on its sign when every stop has a different one, else A, B, C in order."""
-    codes = [setup._indicator_code(stop.indicator) for stop in stops]
-    if all(codes) and len(set(codes)) == len(codes):
+    codes = [code for stop in stops if (code := setup._indicator_code(stop.indicator))]
+    if len(codes) == len(stops) and len(set(codes)) == len(codes):
         return codes
     return list(string.ascii_uppercase[: len(stops)])
 
@@ -478,7 +490,7 @@ class SetupApi:
         self._saved_message = saved_message
         self._lock = threading.Lock()
         self._found_stops: dict[str, Stop] = {}
-        self._job = None
+        self._job: Job | None = None
         self._job_stops: dict[str, str] = {}
         self._job_routes = False
         self._job_key = ""
@@ -687,7 +699,7 @@ class SetupApi:
             last = self._job.status() if self._job is not None else {}
             if last.get("state") in ("queued", "running"):
                 raise Conflict("A search is already running; wait for it or cancel it")
-            if discover.roads_running(last):
+            if self._job is not None and discover.roads_running(last):
                 # Its timetable is about to be replaced. The roads it found are kept
                 # for the new one, which waits for it to stop (the timetable's lock).
                 self._job.cancel()
@@ -874,6 +886,14 @@ def _error(error: BaseException, secrets: Sequence[str], field: str | None = Non
     if field:
         out["field"] = field
     return out
+
+
+@overload
+def _scrub(value: str, secrets: Sequence[str]) -> str: ...
+@overload
+def _scrub(value: dict, secrets: Sequence[str]) -> dict: ...
+@overload
+def _scrub(value: object, secrets: Sequence[str]) -> object: ...
 
 
 def _scrub(value, secrets: Sequence[str]):

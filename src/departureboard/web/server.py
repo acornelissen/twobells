@@ -208,6 +208,13 @@ class _Handler(BaseHTTPRequestHandler):
     def app(self) -> DashboardApp:
         return self.server.app
 
+    @property
+    def hub(self) -> SnapshotSource:
+        """The running dashboard's hub; the dashboard's routes are only taken once _on() has found one."""
+        if self.app.hub is None:
+            raise RuntimeError("The dashboard isn't running")
+        return self.app.hub
+
     # Responses
 
     def _on(self) -> bool:
@@ -316,7 +323,7 @@ class _Handler(BaseHTTPRequestHandler):
             if self.headers.get("Sec-Fetch-Site", "").strip().lower() == "cross-site":
                 self._error(403)
                 return
-            self.app.hub.touch()
+            self.hub.touch()
         self._route(path)
 
     def _route(self, path: str) -> None:
@@ -368,7 +375,7 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(200, found.body, found.content_type, "no-cache", {"ETag": found.etag})
 
     def _snapshot(self) -> None:
-        version, body = self.app.hub.current()
+        version, body = self.hub.current()
         etag = f'"v{version}"'
         if _matches(self.headers.get("If-None-Match"), etag):
             self._not_modified(etag, "no-cache")
@@ -378,7 +385,7 @@ class _Handler(BaseHTTPRequestHandler):
     def _lookup(self, row_id: str, kind: str) -> dict | None:
         if not _ID.fullmatch(row_id):
             return None
-        entry = self.app.hub.lookup(row_id)
+        entry = self.hub.lookup(row_id)
         return entry.get(kind) if entry else None
 
     def _bus(self, row_id: str) -> None:
@@ -390,7 +397,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _area(self) -> None:
         """The area map: live buses around our stops, from the last bus poll."""
-        found = self.app.hub.get("area")
+        found = self.hub.get("area")
         if found is None:
             self._error(404)
         else:
@@ -454,7 +461,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.server.streams.release()
 
     def _stream(self) -> None:
-        hub, app = self.app.hub, self.app
+        hub, app = self.hub, self.app
         deadline = time.monotonic() + app.stream_seconds
         self.wfile.write(b"retry: %d\n\n" % RETRY_MS)
         sent, body = hub.current()

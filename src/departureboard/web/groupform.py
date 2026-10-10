@@ -304,7 +304,7 @@ class GroupForm:
         typed in its box, else the saved one. None if the form has no such
         button. Nothing is saved."""
         name = fields.get("test", "")
-        if name not in self.key_tests():
+        if self._test_key is None or name not in self.key_tests():
             return None
         boxes = ("TAPI_APP_ID", name) if name == "TAPI_APP_KEY" else (name,)
         typed = {box: fields.get(box, "").strip() for box in boxes}

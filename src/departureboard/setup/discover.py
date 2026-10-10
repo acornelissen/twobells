@@ -33,7 +33,6 @@ from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import BinaryIO
 from urllib.parse import urlencode, urlsplit
 
 from ..core import files
@@ -191,7 +190,7 @@ class _Limits:
 class _MeteredFile:
     """The file a download is written to, stopping it at a limit."""
 
-    def __init__(self, file: BinaryIO, limits: _Limits):
+    def __init__(self, file: timetable.Writable, limits: _Limits):
         self._file = file
         self._limits = limits
         self._written = 0

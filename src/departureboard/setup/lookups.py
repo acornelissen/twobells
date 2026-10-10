@@ -328,7 +328,8 @@ def _nominatim_place(item) -> Place | None:
     label = _text(item.get("display_name"), 200)
     if position is None or not label:
         return None
-    address = item.get("address") if isinstance(item.get("address"), dict) else {}
+    address = item.get("address")
+    address = address if isinstance(address, dict) else {}
     state = _text(address.get("state"), 40)  # England, Scotland... in Great Britain
     district = ""
     for key in ("city", "town", "county"):
@@ -596,8 +597,9 @@ def stop_labels(stops: Sequence[tuple[str | None, Stop]]) -> list[str]:
             raise SetupError("A stop label is 1 to 3 letters or digits")
     if len(set(given)) != len(given):
         raise SetupError("Two stops have the same label")
-    codes = [_indicator_code(stop.indicator) for label, stop in stops if not label]
-    if all(codes) and len(set(codes)) == len(codes) and not set(codes) & set(given):
+    unlabelled = [stop for label, stop in stops if not label]
+    codes = [code for stop in unlabelled if (code := _indicator_code(stop.indicator))]
+    if len(codes) == len(unlabelled) and len(set(codes)) == len(codes) and not set(codes) & set(given):
         defaults = iter(codes)
     else:
         defaults = iter(c for c in string.ascii_uppercase if c not in given)

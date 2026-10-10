@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+from typing import overload
 
 _DAY = 24 * 60
 _HALF_DAY = _DAY // 2
@@ -71,6 +72,14 @@ class Departure:
         fetched = fetched.replace(second=0, microsecond=0)
         leaves = fetched + timedelta(minutes=minutes_between(fetched.strftime("%H:%M"), self._leaves))
         return leaves < now.replace(second=0, microsecond=0)
+
+
+@overload
+def iso(moment: datetime) -> str: ...
+@overload
+def iso(moment: None) -> None: ...
+@overload
+def iso(moment: datetime | None) -> str | None: ...
 
 
 def iso(moment: datetime | None) -> str | None:

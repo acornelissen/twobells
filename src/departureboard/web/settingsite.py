@@ -47,8 +47,9 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from http import HTTPStatus
 from importlib.resources import files
+from io import BufferedIOBase
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from ..settings import schema
@@ -300,7 +301,8 @@ class SettingsSite:
 
     # Requests
 
-    def handle(self, method: str, path: str, query: str, headers: Headers, client: str, stream: BinaryIO) -> Reply:
+    def handle(self, method: str, path: str, query: str, headers: Headers, client: str,
+               stream: BufferedIOBase) -> Reply:
         """The reply to one request the server has already let in: from the home
         network, naming a local host, with a path the site owns. A POST's
         body is read from `stream` only once its origin is known to be ours."""
@@ -442,7 +444,8 @@ class SettingsSite:
         rows = [
             ("Station", e(station) + off(train) if station else "Not set up"),
             ("Bus stops", e(stops) + off(bus) if stops else "Not set up"),
-            *(self._timetable(data) if stops and not off(bus) and bus.get("source") == "bods" else []),
+            *(self._timetable(data) if stops and isinstance(bus, dict) and not off(bus)
+              and bus.get("source") == "bods" else []),
             ("Home", "Set, for the weather" if home else "Not set"),
         ]
         listed = "".join(f"<dt>{name}</dt><dd>{value}</dd>" for name, value in rows)
