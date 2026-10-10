@@ -33,11 +33,9 @@ import html
 import json
 import logging
 import time
-from dataclasses import dataclass, field
 from importlib.resources import files
 from pathlib import Path
 from typing import Callable, Mapping, Protocol
-from urllib.parse import parse_qs
 
 from . import setupapi
 from .auth import (
@@ -55,6 +53,10 @@ from .auth import (
     same_origin,
     show_in_log,
 )
+from .formpages import HTML as _HTML
+from .formpages import MAX_FORM_BODY, WRONG_CODE, Reply, document, parse_form  # noqa: F401 - WRONG_CODE's old home
+from .formpages import TEXT as _TEXT
+from .formpages import WIZARD_TYPES as _CONTENT_TYPES
 
 log = logging.getLogger(__name__)
 
@@ -64,17 +66,10 @@ SETUP_API = "/settings/setup/api/"
 COOKIE_NAME = "dash_session"
 FORM_COOKIE_NAME = "dash_form"
 PASSWORD_FILE = "web.json"
-MAX_FORM_BODY = 64 * 1024
 LOG_HELP = ("In Docker: <code>docker logs departureboard-dashboard</code>, or in Container Manager, "
             "Container, departureboard-dashboard, Log. On a Mac: the Terminal window running the dashboard.")
-# The same words whether the code was wrong, used, run out, voided or never
-# issued, so a guesser learns nothing about whether there is one.
-WRONG_CODE = "That code isn't right, or it has run out. Ask for a new code and try again."
 
-_TEXT = "text/plain; charset=utf-8"
-_HTML = "text/html; charset=utf-8"
 _JSON = "application/json"
-_CONTENT_TYPES = {".html": _HTML, ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
 _SHARED = {
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
@@ -106,14 +101,6 @@ class Headers(Protocol):
     def get(self, name: str, default: str | None = None) -> str | None: ...
 
     def get_content_type(self) -> str: ...
-
-
-@dataclass(frozen=True)
-class Reply:
-    status: int
-    body: bytes = b""
-    content_type: str = _TEXT
-    headers: dict[str, str] = field(default_factory=dict)  # Location, Set-Cookie
 
 
 def owns(path: str) -> bool:
@@ -148,13 +135,7 @@ def wizard_files(found: Mapping[str, Path] | None = None) -> dict[str, tuple[byt
 
 def shell(title: str, body: str) -> str:
     """The HTML document around a page's content."""
-    return (
-        '<!doctype html><html lang="en-GB"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{html.escape(title)}</title>"
-        f'<link rel="stylesheet" href="{PREFIX}/style.css"></head>'
-        f"<body><main>{body}</main></body></html>"
-    )
+    return document(title, body, f"{PREFIX}/style.css")
 
 
 class SettingsArea:
@@ -191,8 +172,7 @@ class SettingsArea:
             return self._wizard_api(path[len(SETUP_API):], headers, body)
         if headers.get_content_type() != "application/x-www-form-urlencoded":
             return Reply(400, b"Bad request")
-        parsed = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True, max_num_fields=300)
-        fields = {key: values[-1] for key, values in parsed.items()}
+        fields = parse_form(body)
         if path == PREFIX + "/login":
             return self._sign_in(fields, headers, client)
         if path == PREFIX + "/forgot":

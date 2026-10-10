@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable, Mapping, Protocol
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 from . import setupapi
 from .auth import (
@@ -55,6 +55,7 @@ from .auth import (
     outsider,
     same_origin,
 )
+from .formpages import MAX_FORM_BODY, WIZARD_TYPES, WRONG_CODE, document, parse_form
 
 # Their home before auth.py; the old names still work.
 from .auth import FAILURE_WINDOW_S, MAX_FAILURES, SESSION_SECONDS, local_host, private_address  # noqa: F401
@@ -65,25 +66,17 @@ from .auth import PasswordStore as Password  # noqa: F401
 log = logging.getLogger(__name__)
 
 DEFAULT_PORT = 8080
-MAX_BODY = 64 * 1024
+MAX_BODY = MAX_FORM_BODY
 REQUEST_TIMEOUT_S = 10
 # How to get a code when the board can't show one, as the service user.
 RESET_CODE_COMMAND = "sudo -u departureboard /opt/departureboard/venv/bin/departureboard web --reset-code"
 SET_PASSWORD_COMMAND = "sudo -u departureboard /opt/departureboard/venv/bin/departureboard web --set-password"
-# The same words whether the code was wrong, used, run out, voided or never
-# issued, so a guesser learns nothing about whether there is one.
-WRONG_CODE = "That code isn't right, or it has run out. Ask for a new code and try again."
 
 
 SETUP = "/setup/"
 SETUP_API = SETUP + "api/"
 _SETUP_STEP = re.compile(r"^[a-z]{1,20}$")
-# The only kinds of file the wizard serves, each with its type said outright.
-SETUP_TYPES = {
-    ".html": "text/html; charset=utf-8",
-    ".js": "text/javascript; charset=utf-8",
-    ".css": "text/css; charset=utf-8",
-}
+SETUP_TYPES = WIZARD_TYPES
 JSON = "application/json; charset=utf-8"
 TEXT = "text/plain; charset=utf-8"
 
@@ -179,9 +172,7 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
                 return None
             if not 0 <= length <= MAX_BODY:
                 return None
-            raw = self.rfile.read(length).decode("utf-8", errors="replace")
-            parsed = parse_qs(raw, keep_blank_values=True, max_num_fields=300)
-            return {key: values[-1] for key, values in parsed.items()}
+            return parse_form(self.rfile.read(length))
 
         def do_GET(self) -> None:  # noqa: N802 - http.server API
             if self._refuse_outsiders():
@@ -473,13 +464,7 @@ def make_handler(page: SettingsPage, password: PasswordStore, sessions: Sessions
 
 def shell(title: str, body: str) -> str:
     """The HTML document around a page's content."""
-    return (
-        '<!doctype html><html lang="en-GB"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{html.escape(title)}</title>"
-        '<link rel="stylesheet" href="/style.css"></head>'
-        f"<body><main>{body}</main></body></html>"
-    )
+    return document(title, body, "/style.css")
 
 
 class _Server(ThreadingHTTPServer):
