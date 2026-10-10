@@ -1,6 +1,6 @@
 """Saving changes into the web page's settings overlay without losing the rest.
 
-The settings page (settingsform.py) and the setup wizard each change only
+The settings pages (groupform.py) and the setup wizard each change only
 some settings, so both save through here: it reads the saved overlay, merges
 the changes in as config.merge layers the overlay over config.toml
 (top-level tables key by key, anything deeper replaced) and writes the
@@ -11,7 +11,7 @@ and lon.
 
 Nothing is written unless the merged settings then load, and keys go to the
 secrets overlay only, never into settings.toml. Only the settings a
-Target allows are read from the overlay (config.SAVED_KEYS for the board),
+Target allows are read from the overlay (schema.saved_keys),
 so a save drops anything else found in it. to_toml writes every kind of
 value settings carry, floats (the weather position) and route strips
 (arrays of inline tables) included.
@@ -25,7 +25,9 @@ settings may hold.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import math
+import os
 import re
 import tomllib
 from dataclasses import dataclass, field
@@ -34,14 +36,13 @@ from typing import Callable, Mapping
 
 from .config import (
     OVERLAY_NAME,
-    SAVED_KEYS,
     SECRETS_OVERLAY_NAME,
     ConfigError,
     merge,
     read_overlay_in,
     settings_from,
 )
-from .settingsform import _KEY_VALUE, _toml_key, _toml_string, _write
+from .schema import KEY_VALUE, saved_keys
 
 HEADER = ("# Saved from the settings page and setup. Layered over config.toml, which sets everything else:\n"
           "# anything here that the page and setup don't save is ignored.")
@@ -50,6 +51,30 @@ _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
 class OverlayError(Exception):
     """The changes weren't saved; the text says why and is safe to show."""
+
+
+def _toml_string(value: str) -> str:
+    """A TOML basic string. JSON's escapes are TOML's too, except that JSON
+    writes characters beyond the BMP as surrogate pairs, which TOML rejects,
+    and leaves DEL raw, which TOML forbids."""
+    if any("\ud800" <= c <= "\udfff" for c in value):
+        raise ValueError("Text has a broken character")
+    return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
+def _toml_key(key: str) -> str:
+    return key if re.match(r"^[A-Za-z0-9_-]+$", key) else _toml_string(key)
+
+
+def _write(path: Path, text: str, mode: int) -> None:
+    """Replace a file whole: written aside with `mode`, then renamed over it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    os.chmod(tmp, mode)
+    os.replace(tmp, path)
 
 
 def _value(value) -> str:
@@ -107,12 +132,12 @@ class Target:
     `folder` is where its settings.toml and secrets.env live (None: nowhere
     yet, so nothing can be saved); `check` raises ConfigError (or KeyError,
     TypeError, ValueError) unless merged settings and an environment load;
-    `allowed` is what the saved settings may hold (see config.SAVED_KEYS)."""
+    `allowed` is what the saved settings may hold (see schema.saved_keys)."""
 
     base: Callable[[], dict]
     folder: Callable[[dict], Path | None]
     check: Callable[[dict, Mapping[str, str]], object] = _board_loads
-    allowed: Mapping[str | None, frozenset[str]] = field(default_factory=lambda: SAVED_KEYS)
+    allowed: Mapping[str | None, frozenset[str]] = field(default_factory=saved_keys)
 
     def current(self) -> dict:
         """The settings in force: the base with the saved overlay over it."""
@@ -151,7 +176,7 @@ def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping
     With `replace`, `changes` take the saved overlay's place instead: for
     the settings page replacing one it can't read."""
     for name, value in keys.items():
-        if not _ENV_NAME.match(name) or not isinstance(value, str) or not _KEY_VALUE.match(value):
+        if not _ENV_NAME.match(name) or not isinstance(value, str) or not KEY_VALUE.match(value):
             raise OverlayError(f"{name if _ENV_NAME.match(name) else 'A key'} isn't a key the board can store")
     try:
         base = target.base()

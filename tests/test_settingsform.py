@@ -3,7 +3,8 @@ import tomllib
 
 import pytest
 
-from departureboard.config import SAVED_KEYS, load_config, read_config, read_overlay_in
+from departureboard.config import load_config, read_config, read_overlay_in
+from departureboard.schema import saved_keys
 from departureboard.settingsform import SettingsForm
 
 ENV = {"RDM_API_KEY": "rdm-secret-123", "TAPI_APP_ID": "id", "TAPI_APP_KEY": "tapi-secret-456"}
@@ -657,7 +658,7 @@ def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
 
     form = SettingsForm(config, lambda: dict(env))
     assert form.save(fields_of(form) | {"title": "Home", "train_rows": "2"}) == {}
-    # Everything setup and the page wrote is read back: none of it is outside config.SAVED_KEYS.
+    # Everything setup and the page wrote is read back: none of it is outside schema.saved_keys.
     written = tomllib.loads((state / "settings.toml").read_text())
     assert read_overlay_in(state) == written and "dashboard" not in written
 
@@ -679,7 +680,7 @@ def test_every_field_the_page_saves_is_read_back():
     for display in DISPLAY_PANELS:
         for theme in THEMES:
             for f in _fields(display, theme):
-                assert f.key in SAVED_KEYS[f.section], f.name
+                assert f.key in saved_keys()[f.section], f.name
 
 
 def test_the_page_can_still_clear_a_field_setup_filled(tmp_path):

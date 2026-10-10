@@ -138,16 +138,15 @@ class FoundJob:
 
 
 def test_every_field_the_page_saves_is_read_back():
-    from departureboard.dashconfig import SAVED_KEYS
     from departureboard.dashform import FIELDS
+    from departureboard.schema import saved_keys
 
     for f in FIELDS.values():
-        assert f.key in SAVED_KEYS[f.section], f.name
+        assert f.key in saved_keys()[f.section], f.name
 
 
 def test_everything_setup_and_the_page_save_is_read_back(form):
     from departureboard.config import read_overlay_in
-    from departureboard.dashconfig import SAVED_KEYS
     from departureboard.dashform import KEYS
     from departureboard.setupapi import SetupApi
 
@@ -160,8 +159,8 @@ def test_everything_setup_and_the_page_save_is_read_back(form):
         "home": {"lat": 53.46, "lon": -1.96, "country": "Scotland"}, "station_crs": "GLO", "filter_crs": "MAN",
         "stops": {"A": "1800SB12341"}, "walk": {"GLO": 6, "1800SB12341": 3}})
     assert status == 200, body
-    changed = {"bus_directions": "Ashton", "kb_incidents_url": "https://api.example.test/kb"}
+    changed = {"bus_directions": "Ashton", "kb_incidents_url": "https://api1.raildata.org.uk/kb/incidents"}
     assert form.save(fields_of(form) | changed) == {}
     written = tomllib.loads((form.folder / "settings.toml").read_text())
-    assert read_overlay_in(form.folder, SAVED_KEYS) == written
+    assert read_overlay_in(form.folder) == written
     assert written["bus"]["routes"] and written["weather"]["lat"] and written["dashboard"]["kb_incidents_url"]

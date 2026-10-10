@@ -9,8 +9,8 @@ command, so whichever view saves a setting, the other reads it.
 
 Settings are layered: the loaders' defaults, then config.toml if there is
 one, then settings.toml, of which only the keys the pages and setup save are
-read (SAVED_KEYS). Keys: the environment, then the --secrets file, then
-the store's secrets.env.
+read (schema.saved_keys), whichever view saved them. Keys: the environment,
+then the --secrets file, then the store's secrets.env.
 """
 
 from __future__ import annotations
@@ -23,9 +23,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Mapping
 
-from . import config, dashconfig
 from .config import OVERLAY_NAME, SECRETS_OVERLAY_NAME, ConfigError, load_env_file, merge, read_overlay_in
 from .installs import DEFAULT, install_named
+from .schema import saved_keys
 
 if TYPE_CHECKING:
     from .overlay import Target
@@ -37,20 +37,6 @@ FOLDER_NAME = "departureboard"
 OLD_FOLDER_NAME = "departureboard-dashboard"
 STATE_NAME = "state.json"
 PASSWORD_NAME = "web.json"
-
-
-def _union(*allowlists: Mapping[str | None, frozenset[str]]) -> dict[str | None, frozenset[str]]:
-    keys: dict[str | None, frozenset[str]] = {}
-    for allowed in allowlists:
-        for table, names in allowed.items():
-            keys[table] = keys.get(table, frozenset()) | names
-    return keys
-
-
-# What the store's settings.toml may hold: what the board's settings page and
-# setup save, and the dashboard's. Both views read and save the one file, so
-# each keeps what the other saved.
-SAVED_KEYS = _union(config.SAVED_KEYS, dashconfig.SAVED_KEYS)
 
 
 def _absolute(path: Path) -> Path:
@@ -231,11 +217,11 @@ class Store:
         return read_base(self.config_path)
 
     def saved(self) -> dict:
-        """The settings saved in settings.toml, only SAVED_KEYS; {} if none."""
+        """The settings saved in settings.toml, only schema.saved_keys; {} if none."""
         if self.folder.exists() and not self.folder.is_dir():
             raise ConfigError(f"{self.folder} is not a folder")
         try:
-            return read_overlay_in(self.folder, SAVED_KEYS)
+            return read_overlay_in(self.folder, saved_keys())
         except OSError as error:
             raise ConfigError(f"Can't read {self.settings_file}: {error.strerror or error}") from None
 
@@ -261,7 +247,7 @@ class Store:
         from .overlay import Target
 
         checked = {} if check is None else {"check": check}
-        return Target(lambda: self.placed(self.base()), lambda base: self.folder, allowed=SAVED_KEYS, **checked)
+        return Target(lambda: self.placed(self.base()), lambda base: self.folder, allowed=saved_keys(), **checked)
 
     def watched(self) -> list[Path]:
         """Every file settings and keys come from, to notice a change."""

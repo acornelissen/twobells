@@ -379,15 +379,30 @@ def test_saved_settings_hold_only_what_the_settings_page_and_setup_save(config, 
     folder.mkdir()
     (folder / "settings.toml").write_text(
         '[train]\ncrs = "MAN"\nbase_url = "https://example.invalid/rail"\n'
-        '[dashboard]\nkb_incidents_url = "https://api.example.test/kb/incidents"\n'
+        '[dashboard]\nkb_incidents_url = "https://api1.raildata.org.uk/kb/incidents"\n'
     )
     caplog.set_level("WARNING")
     dash = load(config, folder, env={**ENV, "RDM_KB_API_KEY": "kb-key"}, opened=opened)
     assert dash.train_crs == "MAN" and dash.train._base_url == DEFAULT_BASE_URL
-    # The settings page manages the Knowledgebase address, checked as https.
-    assert dash.train_incidents._url == "https://api.example.test/kb/incidents"
+    # The settings page manages the Knowledgebase address, at raildata.org.uk.
+    assert dash.train_incidents._url == "https://api1.raildata.org.uk/kb/incidents"
     logged = " ".join(r.getMessage() for r in caplog.records)
     assert "[train] base_url" in logged and "example.invalid" not in logged
+
+
+@pytest.mark.parametrize("url", ["https://api.example.test/kb/incidents", "https://raildata.org.uk.example.test/kb",
+                                 "https://user@api1.raildata.org.uk/kb", "http://api1.raildata.org.uk/kb"])
+def test_a_saved_knowledgebase_address_must_be_at_raildata(config, tmp_path, opened, caplog, url):
+    # RDM_KB_API_KEY is sent to it, so an address anywhere else is config.toml's alone.
+    folder = tmp_path / "dash"
+    folder.mkdir()
+    (folder / "settings.toml").write_text(f'[dashboard]\nkb_incidents_url = "{url}"\nhistory_days = 30\n')
+    caplog.set_level("WARNING")
+    dash = load(config, folder, env={**ENV, "RDM_KB_API_KEY": "kb-key"}, opened=opened)
+    assert dash.train_incidents is None and "kb_incidents_url" in dash.train_incidents_note
+    assert dash.options.history_days == 30  # the rest of the table is read
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert "[dashboard] kb_incidents_url is ignored" in logged and "example.test" not in logged
 
 
 def test_the_board_s_saved_settings_cannot_set_the_dashboard_s(config, tmp_path, opened):

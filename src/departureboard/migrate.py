@@ -35,8 +35,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Mapping
 
-from . import dashconfig
 from .config import OVERLAY_NAME, SECRETS_OVERLAY_NAME, ConfigError, load_env_file, merge, parse_env, saved_only
+from .schema import KEY_VALUE, saved_keys
 from .store import OLD_FOLDER_NAME, PASSWORD_NAME, Store, platform_base
 
 log = logging.getLogger(__name__)
@@ -177,7 +177,7 @@ def _create(path: Path, content: bytes, mode: int) -> bool:
 
 def _replace(path: Path, text: str, mode: int) -> None:
     """Replace a store file whole: written aside, then renamed over it."""
-    from .settingsform import _write
+    from .overlay import _write
 
     _write(path, text, mode)
 
@@ -188,7 +188,7 @@ def _dashboard_table(old: Path, store: Store) -> list[str]:
     if content is None:
         return []
     try:
-        saved = saved_only(tomllib.loads(content.decode("utf-8")), dashconfig.SAVED_KEYS, old / OVERLAY_NAME)
+        saved = saved_only(tomllib.loads(content.decode("utf-8")), saved_keys(), old / OVERLAY_NAME)
         current = store.saved()
     except (tomllib.TOMLDecodeError, UnicodeDecodeError, ConfigError) as error:
         log.warning("Not bringing the dashboard's [dashboard] settings: %s", error)
@@ -210,7 +210,6 @@ def _dashboard_table(old: Path, store: Store) -> list[str]:
 def _dashboard_keys(old: Path, store: Store) -> list[str]:
     """The dashboard's own keys from the old folder, each only if the store has none."""
     from .overlay import _secrets_text
-    from .settingsform import _KEY_VALUE
 
     content = _read_plain(old / SECRETS_OVERLAY_NAME)
     if content is None:
@@ -218,7 +217,7 @@ def _dashboard_keys(old: Path, store: Store) -> list[str]:
     found = parse_env(content.decode("utf-8", errors="replace"))
     have = load_env_file(store.secrets_file)
     keys = {name: found[name] for name in DASHBOARD_KEYS
-            if found.get(name) and _KEY_VALUE.match(found[name]) and not have.get(name)}
+            if found.get(name) and KEY_VALUE.match(found[name]) and not have.get(name)}
     if keys:
         _replace(store.secrets_file, _secrets_text(store.secrets_file, keys), 0o600)
     return list(keys)

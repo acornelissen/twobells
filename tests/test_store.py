@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 from departureboard.installs import install_named
-from departureboard.store import SAVED_KEYS, Store, find_folder, platform_folder
+from departureboard.store import Store, find_folder, platform_folder
 
-from departureboard import config, dashconfig
 from departureboard.config import ConfigError
+from departureboard.schema import saved_keys
 from departureboard.overlay import save_to
 
 HOME = Path("/home/me")
@@ -185,11 +185,14 @@ def test_saved_settings_cannot_move_the_store_or_send_keys_elsewhere(board, capl
     assert "example.invalid" not in logged and "/elsewhere" not in logged
 
 
-def test_the_saved_keys_are_the_board_s_and_the_dashboard_s():
-    for allowed in (config.SAVED_KEYS, dashconfig.SAVED_KEYS):
-        for table, names in allowed.items():
-            assert names <= SAVED_KEYS[table]
-    assert set(SAVED_KEYS) == set(config.SAVED_KEYS) | set(dashconfig.SAVED_KEYS)
+def test_the_saved_keys_are_the_schema_s_whichever_view_saved_them(board):
+    path, folder = board
+    write(folder / "settings.toml", 'theme = "plain"\n[app]\nviews = ["board"]\n[train]\nrows = 2\n'
+                                    '[dashboard]\ntrain_rows = 4\n')
+    store = Store.open(path, environ={})
+    assert store.saved() == {"theme": "plain", "app": {"views": ["board"]}, "train": {"rows": 2},
+                             "dashboard": {"train_rows": 4}}
+    assert store.target().allowed == saved_keys()
 
 
 def test_keys_are_the_environment_then_secrets_then_the_store_s(board, tmp_path):

@@ -16,16 +16,15 @@ from __future__ import annotations
 
 import html
 from typing import Callable, Mapping
-from urllib.parse import urlsplit
 
 from .config import ConfigError
 from .dashconfig import DashboardOptions
-from .disruptions import KB_URL_PLACEHOLDER, kb_url_is_placeholder
+from .disruptions import kb_url_is_placeholder
 from .holidays import DIVISIONS, ENGLAND_AND_WALES
 from .overlay import OverlayError, Target, save_to
 from .schedule import parse_window
+from .schema import https_feed
 from .settingsform import (
-    _CONTROL,
     _KEY_VALUE,
     Field,
     Invalid,
@@ -49,7 +48,6 @@ KEYS = (
     ("RDM_KB_API_KEY", "Rail Data Marketplace Knowledgebase Incidents key",
      "Optional: engineering works, with the Knowledgebase address under Trains."),
 )
-_MAX_URL = 300
 _DEFAULTS = DashboardOptions()
 QUIET_DEFAULT = ("Mon-Sun 01:00-05:00",)  # DashboardOptions.quiet_windows, as written
 
@@ -64,23 +62,6 @@ def _quiet_windows(raw: str) -> list[str]:
         except ValueError:
             raise Invalid(f"“{line[:40]}” isn't a window like Mon-Sun 01:00-05:00") from None
     return lines
-
-
-def _https(raw: str) -> str:
-    """An https address, or empty for none (stored as the placeholder, which
-    keeps engineering works off)."""
-    value = raw.strip()
-    if not value:
-        return KB_URL_PLACEHOLDER
-    try:
-        parts = urlsplit(value)
-        parts.port  # noqa: B018 - raises ValueError for a port that isn't a number
-    except ValueError:
-        parts = None
-    if (parts is None or parts.scheme != "https" or not parts.hostname or parts.username or parts.password
-            or len(value) > _MAX_URL or _CONTROL.search(value) or any(c.isspace() for c in value)):
-        raise Invalid("Enter an https address like https://example.com/path, or leave it empty")
-    return value
 
 
 def _on_off(raw: str) -> bool:
@@ -115,9 +96,9 @@ FIELDS = {f.name: f for f in (
           _number(30, 3600), "number"),
     Field("late_minutes_train", "dashboard", "late_minutes_train", "Late means at least (minutes)",
           _number(1, 60), "number", hint="For the punctuality history."),
-    Field("kb_incidents_url", "dashboard", "kb_incidents_url", "Knowledgebase Incidents address", _https,
-          hint="For engineering works: the address on the Rail Data Marketplace product page. "
-               "Empty leaves them off."),
+    Field("kb_incidents_url", "dashboard", "kb_incidents_url", "Knowledgebase Incidents address", https_feed,
+          hint="For engineering works: the address on the Rail Data Marketplace product page, "
+               "at raildata.org.uk. Empty leaves them off."),
     Field("bus_enabled", "bus", "enabled", "Buses", _on_off, "select",
           hint="Off: the dashboard shows no buses and doesn't check for them. "
                "The settings below are kept for turning them back on.",

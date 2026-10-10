@@ -1,0 +1,181 @@
+"""The settings registry: fields, keys, what may be saved, and [app] views."""
+
+import logging
+from collections import Counter
+
+import pytest
+
+from departureboard import schema
+from departureboard.config import ConfigError
+from departureboard.display import DISPLAY_PANELS
+from departureboard.installs import INSTALLS, install_named
+from departureboard.themes import THEMES
+
+
+def every_form():
+    for display in DISPLAY_PANELS:
+        for theme in THEMES:
+            yield schema.fields(display, theme)
+
+
+def test_every_field_is_in_exactly_one_known_group():
+    for form in every_form():
+        for f in form:
+            assert f.group in schema.GROUPS, f.name
+
+
+def test_field_names_are_unique():
+    for form in every_form():
+        names = Counter(f.name for f in form)
+        assert [name for name, count in names.items() if count > 1] == []
+
+
+def test_each_setting_has_one_field_but_the_views_checkboxes():
+    # [app] views is the one setting drawn as several fields: a checkbox per view.
+    for form in every_form():
+        places = Counter((f.section, f.key) for f in form if f.kind != "check")
+        assert [place for place, count in places.items() if count > 1] == []
+        assert {f.name for f in form if f.kind == "check"} == {f"view_{view}" for view in schema.VIEWS}
+
+
+def test_the_rows_fields_have_names_of_their_own():
+    names = {f.name: (f.section, f.key) for f in schema.FIELDS}
+    assert names["board_train_rows"] == ("train", "rows")
+    assert names["board_bus_rows"] == ("bus", "rows")
+    assert names["dashboard_train_rows"] == ("dashboard", "train_rows")
+    assert names["dashboard_bus_rows"] == ("dashboard", "bus_rows")
+
+
+def test_a_field_s_needs_is_a_section_that_can_be_set_up():
+    for f in schema.FIELDS:
+        assert f.needs in (None, "train", "bus", "weather"), f.name
+        if f.section in ("train", "bus", "weather"):
+            assert f.needs == f.section, f.name
+
+
+def test_each_key_is_in_exactly_one_group():
+    names = Counter(k.name for k in schema.KEYS)
+    assert set(names.values()) == {1}
+    assert {k.group for k in schema.KEYS} <= set(schema.GROUPS)
+    assert [name for name, _, _ in schema.keys("general")] == ["RDM_API_KEY", "BODS_API_KEY"]
+    assert [name for name, _, _ in schema.keys("board")] == ["TAPI_APP_ID", "TAPI_APP_KEY"]
+    assert [name for name, _, _ in schema.keys("dashboard")] == ["RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"]
+
+
+def test_saved_keys_cover_every_field_and_what_setup_manages():
+    saved = schema.saved_keys()
+    for form in every_form():
+        for f in form:
+            assert f.key in saved[f.section], f.name
+    for table, names in schema.MANAGED.items():
+        assert names <= saved[table], table
+
+
+@pytest.mark.parametrize("table, key", [
+    (None, "state_file"), (None, "display"), (None, "panel_colour"), (None, "rotate_180"),
+    ("train", "base_url"), ("bus", "base_url"), ("bus", "fallback_windows"), ("bus", "fallback_interval_minutes"),
+    ("bus", "position_interval_seconds"), ("dashboard", "state_dir"), ("dashboard", "allowed_hosts"),
+])
+def test_saved_keys_leave_out_what_only_config_toml_sets(table, key):
+    assert key not in schema.saved_keys().get(table, frozenset())
+
+
+@pytest.mark.parametrize("url, kept", [
+    ("https://api1.raildata.org.uk/kb/incidents", True),
+    ("https://raildata.org.uk/kb", True),
+    ("https://set-kb-incidents-url-from-the-rdm-product-page.invalid/incidents", True),  # the placeholder
+    ("https://api.example.test/kb", False),
+    ("https://raildata.org.uk.example.test/kb", False),
+    ("https://evilraildata.org.uk/kb", False),
+    ("http://api1.raildata.org.uk/kb", False),
+    ("https://me:pw@api1.raildata.org.uk/kb", False),
+    ("https://api1.raildata.org.uk\\@example.test/kb", False),
+    ("https://api1.raildata.org.uk:x/kb", False),
+    (42, False),
+])
+def test_a_saved_knowledgebase_address_must_be_at_raildata(url, kept):
+    assert (schema.refused("dashboard", "kb_incidents_url", url) is None) is kept
+
+
+def test_other_saved_values_are_not_refused():
+    assert schema.refused(None, "title", "Anything") is None
+    assert schema.refused("train", "crs", "GLO") is None
+
+
+@pytest.mark.parametrize("raw", ["https://api1.raildata.org.uk/kb/incidents", " https://raildata.org.uk/x "])
+def test_the_knowledgebase_field_takes_a_raildata_address(raw):
+    assert schema.https_feed(raw) == raw.strip()
+
+
+def test_the_knowledgebase_field_left_empty_keeps_engineering_works_off():
+    from departureboard.disruptions import kb_url_is_placeholder
+
+    assert kb_url_is_placeholder(schema.https_feed("  "))
+
+
+@pytest.mark.parametrize("raw", ["https://api.example.test/kb", "http://api1.raildata.org.uk/kb", "raildata.org.uk",
+                                 "https://api1.raildata.org.uk/a b", "https://api1.raildata.org.uk/" + "x" * 300])
+def test_the_knowledgebase_field_refuses_anywhere_else(raw):
+    with pytest.raises(schema.Invalid, match="raildata.org.uk"):
+        schema.https_feed(raw)
+
+
+@pytest.mark.parametrize("raw", ["Europe/London", "UTC", "America/New_York", "Etc/GMT+5"])
+def test_a_time_zone_is_checked_against_the_zone_database(raw):
+    assert schema.timezone(f" {raw} ") == raw
+
+
+@pytest.mark.parametrize("raw", ["", "Mars/Olympus", "Europe", "../etc/passwd", "Europe/Lon\ndon", "x" * 70])
+def test_a_time_zone_that_is_not_one_is_refused(raw):
+    with pytest.raises(schema.Invalid, match="time zone"):
+        schema.timezone(raw)
+
+
+# [app] views
+
+
+PI, DOCKER = install_named("pi"), install_named("docker")
+
+
+def test_every_install_offers_views_and_defaults_to_some_of_them():
+    for install in INSTALLS.values():
+        assert install.offered and set(install.offered) <= set(schema.VIEWS)
+        assert install.default_views and set(install.default_views) <= set(install.offered)
+
+
+@pytest.mark.parametrize("data", [{}, {"app": {}}, {"title": "x", "app": {"other": 1}}])
+def test_without_views_an_install_has_its_default_ones(data):
+    assert schema.views(data, PI) == ("board",)
+    assert schema.views(data, DOCKER) == ("dashboard",)
+    assert schema.views(data, default=("board",)) == ("board",)
+    assert schema.views(data) == ()
+
+
+def test_views_are_the_ones_named():
+    data = {"app": {"views": ["dashboard", "board"]}}
+    assert schema.views(data) == ("dashboard", "board")
+
+
+def test_no_views_at_all_is_allowed():
+    assert schema.views({"app": {"views": []}}, PI) == ()
+    assert schema.views({"app": {"views": []}}, default=("board",)) == ()
+
+
+def test_a_view_the_install_does_not_offer_is_left_off_and_said(caplog):
+    caplog.set_level(logging.INFO)
+    assert schema.views({"app": {"views": ["board", "dashboard"]}}, DOCKER) == ("dashboard",)
+    assert "no board view" in caplog.text
+    # The board renderer asks without an install: what is named is what is on.
+    assert schema.views({"app": {"views": ["dashboard"]}}, default=("board",)) == ("dashboard",)
+
+
+@pytest.mark.parametrize("data, words", [
+    ({"app": "board"}, "[app] must be a table"),
+    ({"app": {"views": "board"}}, "must be a list"),
+    ({"app": {"views": [1]}}, "must be a list"),
+    ({"app": {"views": ["board", "screen"]}}, "'screen' is not a view"),
+    ({"app": {"views": ["board", "board"]}}, "more than once"),
+])
+def test_views_that_are_not_a_list_of_views_are_a_config_error(data, words):
+    with pytest.raises(ConfigError, match=words.replace("[", r"\[").replace("]", r"\]")):
+        schema.views(data, PI)

@@ -88,7 +88,11 @@ from pathlib import Path
 from typing import Callable, Mapping
 
 from . import discover, keytest, routesetup, setup
-from .settingsform import _KEY_VALUE
+from .schema import ATCO as _ATCO
+from .schema import CONTROL as _CONTROL
+from .schema import KEY_VALUE as _KEY_VALUE
+from .schema import LABEL as _LABEL
+from .schema import NOC as _NOC
 from .setup import Place, SetupError, Station, Stop
 from .setupapi import KEY_TEST_EVERY, MAX_WALK_MINUTES, MIN_SCRUBBED, Invalid, RateLimit, _scrub, _stops
 from .status import safe_message
@@ -130,11 +134,7 @@ NO_SETTINGS = ("The board's settings can't be read, so setup can't look anything
 
 _ID = re.compile(r"^[0-9a-f]{32}$")
 _FILE = re.compile(r"^([0-9a-f]{32})\.json$")
-_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
-_CRS = re.compile(r"^[A-Z]{3}$")
-_ATCO = re.compile(r"^[0-9]{3}[0-9A-Za-z]{1,9}$")
-_LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")
-_NOC = re.compile(r"^[A-Za-z0-9]{2,8}$")
+_CRS = re.compile(r"^[A-Z]{3}$")  # upper case, as setup sends it
 _LINE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ./+-]{0,15}$")
 _O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)

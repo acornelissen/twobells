@@ -62,7 +62,11 @@ from typing import Callable, Mapping, Protocol, Sequence
 from . import discover, keytest, setup
 from .config import ConfigError
 from .overlay import OverlayError, Target, save_to
-from .settingsform import _KEY_VALUE, KEYS
+from . import schema
+from .schema import ATCO as _ATCO
+from .schema import CRS as _CRS
+from .schema import KEY_VALUE as _KEY_VALUE
+from .schema import LABEL as _LABEL
 from .setup import Place, SetupError, Station, Stop
 from .status import safe_message
 
@@ -95,10 +99,9 @@ PAGE_HEADERS = {
 }
 
 _POSTCODE_LENGTH = 16
-_LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")  # as the settings page allows
-_CRS = re.compile(r"^[A-Za-z]{3}$")
-_ATCO = re.compile(r"^[0-9]{3}[0-9A-Za-z]{1,9}$")
 _LINK = re.compile(r"^(/(?!/)[A-Za-z0-9._~/-]*|https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?)$")
+# The Pi's keys, as its settings page lists them.
+BOARD_KEYS = schema.keys("general", "board")
 TITLE = "Set up your board"
 _TITLE_LENGTH = 60
 NOUN = "board"
@@ -361,7 +364,7 @@ class SetupApi:
         saved_message: str = "Saved. The board shows the new settings within a few minutes.",
         title: str = TITLE,
         noun: str = NOUN,
-        keys: Sequence[tuple[str, str, str]] = KEYS,
+        keys: Sequence[tuple[str, str, str]] = BOARD_KEYS,
         runner: Runner | None = None,
     ) -> None:
         """`target` is the overlay finishing saves into (store.Store.target),

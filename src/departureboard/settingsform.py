@@ -11,8 +11,6 @@ set, never its value.
 from __future__ import annotations
 
 import html
-import json
-import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -21,6 +19,10 @@ from typing import TYPE_CHECKING, Callable
 from zoneinfo import ZoneInfo
 
 from .config import ConfigError, merge
+from .overlay import _toml_key, _toml_string, _write  # noqa: F401 - discover.py imports these from here
+from .schema import KEY_VALUE as _KEY_VALUE
+from .schema import Invalid
+from .schema import keys
 from .display import DISPLAY_PANELS
 from .holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
 from .schedule import parse_window
@@ -32,23 +34,12 @@ from .themes import THEMES
 if TYPE_CHECKING:
     from .store import Store
 
-KEYS = (
-    ("RDM_API_KEY", "Rail Data Marketplace key", "Trains: the consumer key for Live Departure Board."),
-    ("TAPI_APP_ID", "TransportAPI app ID", "Buses."),
-    ("TAPI_APP_KEY", "TransportAPI app key", "Buses."),
-    ("BODS_API_KEY", "Bus Open Data Service key",
-     "For bus times with source = \"bods\", and the bus position page on a screen."),
-)
-_KEY_VALUE = re.compile(r"^[A-Za-z0-9._~+/=-]{1,200}$")
+KEYS = keys("general", "board")
 _CRS = re.compile(r"^[A-Za-z]{3}$")
 _LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _SECTIONS = {None: "Board", "train": "Trains", "bus": "Buses", "weather": "Rain warning"}
 _ON_OFF = (("true", "On"), ("false", "Off"))
-
-
-class Invalid(ValueError):
-    pass
 
 
 def _text(limit: int) -> Callable[[str], str]:
@@ -289,29 +280,6 @@ def _shown(value, kind: str) -> str:
     return str(value)
 
 
-def _toml_string(value: str) -> str:
-    """A TOML basic string. JSON's escapes are TOML's too, except that JSON
-    writes characters beyond the BMP as surrogate pairs, which TOML rejects,
-    and leaves DEL raw, which TOML forbids."""
-    if any("\ud800" <= c <= "\udfff" for c in value):
-        raise ValueError("Text has a broken character")
-    return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
-
-
-def _toml_key(key: str) -> str:
-    return key if re.match(r"^[A-Za-z0-9_-]+$", key) else _toml_string(key)
-
-
-def _write(path: Path, text: str, mode: int) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(text)
-    os.chmod(tmp, mode)
-    os.replace(tmp, path)
-
-
 class SettingsForm:
     def __init__(self, store: Store | Path | str, load_secrets: Callable[[], dict[str, str]],
                  clock: Callable[[], datetime] | None = None) -> None:
@@ -372,7 +340,6 @@ class SettingsForm:
         return values
 
     def save(self, fields: dict[str, str]) -> dict[str, str]:
-        # Imported here: overlay.py builds on this module's TOML helpers.
         from .overlay import OverlayError, save_to
 
         data, broken = self._read()

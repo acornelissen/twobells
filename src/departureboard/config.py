@@ -3,7 +3,7 @@
 Settings saved from the web page live in settings.toml in the store (see
 store.py) and are layered over config.toml, so the service never writes to
 /etc and comments in a hand-edited config.toml survive. Only the settings
-the page and setup save are read from it (SAVED_KEYS); anything else, like
+the pages and setup save are read from it (schema.saved_keys); anything else, like
 the addresses the keys are sent to, is set in config.toml. Keys saved there
 go in a secrets.env beside it, layered over the main one.
 """
@@ -31,6 +31,7 @@ from .transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
 from .themes import theme_named, with_text_size
 from .transportapi import TransportApiBusSource
 from .route import RouteStop, RouteStrip
+from .schema import refused, saved_keys
 from .walk import DEFAULT_STOP, WalkTimes
 from .weather import OpenMeteoSource
 
@@ -85,20 +86,6 @@ def read_base(path: Path | str) -> dict:
         raise ConfigError(f"{path}: {error}") from error
 
 
-# What the board's settings.toml may hold, by table (None is the top level):
-# the keys its settings page (settingsform) and setup (setupapi) save.
-# Anything else in it is ignored, so whatever can write that file can't send
-# the keys to another server: addresses like [train] base_url, and state_file,
-# which decides where the file is, are set in config.toml only.
-SAVED_KEYS: dict[str | None, frozenset[str]] = {
-    None: frozenset({"title", "theme", "accent", "rotate", "min_redraw_minutes", "text_size", "bank_holidays",
-                     "bank_holiday_division"}),
-    "train": frozenset({"enabled", "crs", "filter_crs", "rows", "interval_minutes", "stale_after_minutes",
-                        "windows", "walk_minutes"}),
-    "bus": frozenset({"enabled", "stops", "directions", "rows", "interval_minutes", "stale_after_minutes",
-                      "daily_budget", "windows", "walk_minutes", "source", "operators", "routes"}),
-    "weather": frozenset({"enabled", "threshold_percent", "lat", "lon"}),
-}
 _PLAIN_KEY = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
@@ -108,30 +95,38 @@ def _key_name(key: str) -> str:
 
 
 def saved_only(saved: dict, allowed: Mapping[str | None, frozenset[str]], where: Path) -> dict:
-    """`saved` with only the keys in `allowed`. Each other is logged by its
-    name, never its value."""
+    """`saved` with only the keys in `allowed`, less any value schema.refused
+    refuses. Each other is logged by its name, never its value."""
     kept: dict = {}
     for key, value in saved.items():
         ignored = []
         if key in allowed and isinstance(value, dict):
-            table = {k: v for k, v in value.items() if k in allowed[key]}
-            ignored = [f"[{_key_name(key)}] {_key_name(k)}" for k in value if k not in table]
+            table = {}
+            for k, v in value.items():
+                why = "only config.toml can set it" if k not in allowed[key] else refused(key, k, v)
+                if why is None:
+                    table[k] = v
+                else:
+                    ignored.append((f"[{_key_name(key)}] {_key_name(k)}", why))
             if table or not value:  # a table left empty only by this is dropped, as if never there
                 kept[key] = table
-        elif key in allowed[None]:
+        elif key in allowed[None] and refused(None, key, value) is None:
             kept[key] = value
         else:
-            ignored = [f"[{_key_name(key)}]" if isinstance(value, dict) else _key_name(key)]
-        for name in ignored:
-            log.warning("%s: %s is ignored; only config.toml can set it", where, name)
+            name = f"[{_key_name(key)}]" if isinstance(value, dict) else _key_name(key)
+            ignored = [(name, refused(None, key, value) or "only config.toml can set it")]
+        for name, why in ignored:
+            log.warning("%s: %s is ignored; %s", where, name, why)
     return kept
 
 
-def read_overlay_in(folder: Path | None, allowed: Mapping[str | None, frozenset[str]] = SAVED_KEYS) -> dict:
+def read_overlay_in(folder: Path | None, allowed: Mapping[str | None, frozenset[str]] | None = None) -> dict:
     """The saved settings in `folder`'s settings.toml, only the keys in
-    `allowed`; empty if there are none."""
+    `allowed` (by default schema.saved_keys); empty if there are none."""
     if folder is None:
         return {}
+    if allowed is None:
+        allowed = saved_keys()
     overlay = folder / OVERLAY_NAME
     try:
         saved = tomllib.loads(overlay.read_text(encoding="utf-8"))

@@ -63,19 +63,6 @@ _KEYS = {
     "allowed_hosts",
     "kb_incidents_url",
 }
-# What the dashboard's settings page (dashform) and setup (setupapi) save,
-# by table (None is the top level). The store's settings.toml may hold these
-# and config.SAVED_KEYS (see store.SAVED_KEYS); anything else is ignored. The
-# Knowledgebase address is one the page sets, so it is checked as https.
-SAVED_KEYS: dict[str | None, frozenset[str]] = {
-    None: frozenset({"title", "bank_holidays", "bank_holiday_division"}),
-    "dashboard": frozenset({"quiet_windows", "history_days", "train_rows", "train_interval_seconds",
-                            "late_minutes_train", "kb_incidents_url", "bus_rows", "bus_interval_seconds",
-                            "late_minutes_bus", "weather_interval_minutes"}),
-    "train": frozenset({"enabled", "crs", "filter_crs", "walk_minutes"}),
-    "bus": frozenset({"enabled", "stops", "directions", "walk_minutes", "source", "operators", "routes"}),
-    "weather": frozenset({"enabled", "threshold_percent", "lat", "lon"}),
-}
 _MAX_ROWS = 20
 _MAX_LATE = 60
 _MAX_HISTORY_DAYS = 3650
