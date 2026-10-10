@@ -1,5 +1,9 @@
 [Unit]
 Description=Departure board: start the setup service when the settings page asks
+# Started at boot and whenever the settings page starts (its Wants=); more
+# often than this is a loop of its own.
+StartLimitIntervalSec=2min
+StartLimitBurst=10
 
 [Path]
 # The settings page writes each setup request here. systemd watches the folder

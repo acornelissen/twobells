@@ -2,6 +2,12 @@
 Description=Departure board: the setup wizard's internet lookups (started by departureboard-setup.path)
 Wants=network-online.target
 After=network-online.target
+# Each run lasts at least the minute it waits for more, so ten starts in two
+# minutes means it keeps stopping at once with a request waiting. systemd
+# then stops starting it, and the .path unit fails, rather than loop; see
+# the user guide's troubleshooting (systemctl reset-failed).
+StartLimitIntervalSec=2min
+StartLimitBurst=10
 
 [Service]
 # The settings page can't reach the internet (its unit's IP filter), so it

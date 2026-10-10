@@ -114,6 +114,15 @@ def test_the_setup_spool_is_in_memory_and_shared_by_both_units():
     assert watched.startswith("/run/departureboard-setup/") and "/var/lib" not in watched
 
 
+def test_a_setup_service_that_keeps_stopping_at_once_is_given_up_on_not_looped():
+    # Each run waits a minute for more, so ten starts in two minutes is a loop.
+    for name in ("departureboard-setup.service", "departureboard-setup.path"):
+        unit = _unit(name)
+        assert unit["StartLimitIntervalSec"] == ["2min"] and unit["StartLimitBurst"] == ["10"], name
+    guide = (ROOT / "docs" / "USER_GUIDE.md").read_text()
+    assert "systemctl reset-failed departureboard-setup.service departureboard-setup.path" in guide
+
+
 def test_install_and_update_set_up_the_setup_service():
     for script in ("install.sh", "update.sh"):
         text = (ROOT / "deploy" / script).read_text()

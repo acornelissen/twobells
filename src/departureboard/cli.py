@@ -480,29 +480,38 @@ def _setup_serve(args) -> int:
     from .config import read_base
     from .overlay import board_target
 
+    folder, problem = None, ""
     try:
         folder = state_dir(read_base(args.config))
     except OSError as error:
-        print(f"Can't read {args.config}: {error.strerror or error}", file=sys.stderr)
-        return 2
-    if folder is None:
-        print("config.toml needs a state_file; setup searches build the timetable there", file=sys.stderr)
-        return 2
+        problem = f"Can't read {args.config}: {error.strerror or error}"
+    except ConfigError as error:
+        problem = str(error)
+    else:
+        if folder is None:
+            problem = "config.toml needs a state_file; setup searches build the timetable there"
     try:
         spool = setupspool.spool_folder(folder)
     except setupspool.SpoolError as error:
         print(error, file=sys.stderr)
         return 2
-    target = board_target(args.config)
+    if problem:
+        print(problem, file=sys.stderr)
+        if spool is None:
+            return 2
+        # Say so to the page, rather than stop with its requests waiting and be started again and again.
+        worker = setupspool.Worker(spool, job_folder=None, load_secrets=dict, unavailable=setupspool.NO_SETTINGS)
+    else:
+        target = board_target(args.config)
 
-    def settings() -> dict:
-        try:
-            return target.current()
-        except (OSError, ConfigError, ValueError, TypeError):
-            return {}  # a key test then asks about Glossop
+        def settings() -> dict:
+            try:
+                return target.current()
+            except (OSError, ConfigError, ValueError, TypeError):
+                return {}  # a key test then asks about Glossop
 
-    worker = setupspool.Worker(spool, job_folder=folder,
-                               load_secrets=lambda: _env(args.config, args.secrets), settings=settings)
+        worker = setupspool.Worker(spool, job_folder=folder,
+                                   load_secrets=lambda: _env(args.config, args.secrets), settings=settings)
     try:
         return worker.run()
     except (OSError, setupspool.SpoolError) as error:

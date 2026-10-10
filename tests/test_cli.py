@@ -1227,9 +1227,29 @@ def test_the_page_and_the_setup_service_share_systemds_folder_in_memory(tmp_path
     assert (run / "requests").is_dir() and not (tmp_path / "state" / setupspool.SPOOL).exists()
 
 
-def test_the_setup_service_says_plainly_when_there_is_no_config(tmp_path, capsys):
-    assert main(["setup", "serve", "--config", str(tmp_path / "missing.toml")]) == 2
+def test_the_setup_service_says_plainly_when_there_is_no_config(tmp_path, capsys, no_runtime_folder):
+    assert main(["setup", "serve", "--config", str(tmp_path / "missing.toml")]) == 2  # and nowhere to answer
     assert "missing.toml" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("config", ["missing", "not toml", "no state_file"])
+def test_the_setup_service_answers_with_why_when_it_cant_read_its_config(tmp_path, monkeypatch, capsys, config):
+    from departureboard import setupspool
+
+    run = tmp_path / "run"
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
+    ran = []
+    monkeypatch.setattr(setupspool.Worker, "run", lambda self: ran.append(self) or 0)
+    path = tmp_path / "config.toml"
+    if config == "not toml":
+        path.write_text("display = [\n")
+    elif config == "no state_file":
+        path.write_text('display = "hdmi-1280x400"\n')
+    # A clean stop once each request has its answer, so systemd doesn't start it again and again.
+    assert main(["setup", "serve", "--config", str(path), "--secrets", str(tmp_path / "none.env")]) == 0
+    [worker] = ran
+    assert worker.spool.folder == run and worker._unavailable == setupspool.NO_SETTINGS
+    assert "Traceback" not in capsys.readouterr().err
 
 
 def test_the_settings_page_says_plainly_when_there_is_no_config(tmp_path, capsys):

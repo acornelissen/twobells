@@ -37,6 +37,13 @@ request if it is still there when it gives up. The search's reply is its
 status, rewritten as it goes and every few seconds besides, so the page can
 tell a stopped service from a slow search.
 
+Never a restart loop. systemd starts the service again whenever it stops
+with a request still waiting, so it never stops early and leaves one: a
+second service, finding the lock taken, stops at once and quietly (the
+first answers everything), and one that can't read the board's config
+answers every request with NO_SETTINGS until it has been idle a minute.
+The units' start limits catch the rest.
+
 Trust. Only the service user can write in the spool, but each side still
 treats what the other wrote as untrusted: a file must be a plain file the
 service user owns, with one link, under its size cap, named by a request id,
@@ -98,6 +105,8 @@ NO_ANSWER = ("The setup service didn't answer in time. Try again; if it keeps ha
 STOPPED = "The setup service stopped before the search finished. Try again."
 UNFIT = "The setup service sent an answer that doesn't fit. Try again."
 GONE = "The search's answer was left unread too long and has gone. Search again."
+NO_SETTINGS = ("The board's settings can't be read, so setup can't look anything up. "
+               "On the Pi, journalctl -u departureboard-setup says why.")
 
 _ID = re.compile(r"^[0-9a-f]{32}$")
 _FILE = re.compile(r"^([0-9a-f]{32})\.json$")
@@ -743,13 +752,15 @@ class Worker:
     the replies, and runs at most one search at a time (discover.SetupJob's
     lock in the board's state folder also keeps it to one with the command
     line's). run() keeps going until it has had nothing to do for `idle`
-    seconds and no search is running."""
+    seconds and no search is running. With `unavailable`, the reason it
+    can't do any (its config can't be read), it answers each request with
+    that instead, so the page says so rather than waiting."""
 
     def __init__(
         self,
         folder: Path | str,
         *,
-        job_folder: Path | str,
+        job_folder: Path | str | None,
         load_secrets: Callable[[], Mapping[str, str]],
         settings: Callable[[], Mapping] = dict,
         lookup_postcode: Callable[[str], Place] = setup.lookup_postcode,
@@ -765,13 +776,15 @@ class Worker:
         clock: Callable[[], float] = time.time,
         monotonic: Callable[[], float] = time.monotonic,
         stop: threading.Event | None = None,
+        unavailable: str = "",
     ) -> None:
         """`folder` is the spool; `job_folder` the board's state folder, where
         the search builds the timetable. `load_secrets` gives the saved keys,
         as the other units' environment does, and `settings` the board's
         settings, for what a key test asks about. Setting `stop` ends run()."""
         self.spool = Spool(folder)
-        self._job_folder = Path(job_folder)
+        self._job_folder = None if job_folder is None else Path(job_folder)
+        self._unavailable = unavailable
         self._load_secrets = load_secrets
         self._settings = settings
         self._lookup_postcode = lookup_postcode
@@ -800,7 +813,7 @@ class Worker:
         try:
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
+            except OSError:  # it answers what's waiting; this stops cleanly, so systemd doesn't count a failure
                 log.info("Another setup service is already answering")
                 return 0
             self.spool.sweep(self._clock())
@@ -859,6 +872,10 @@ class Worker:
             log.warning("Refused a setup request: %s", why)
             return
         log.info("Setup request: %s", kind)
+        if self._unavailable:
+            if kind != "cancel":
+                self._reply(request_id, {"ok": False, "why": "setup", "error": self._unavailable})
+            return
         pasted = [args.get(name, "") for name in ("value", "app_id", "key")]
         if kind == "cancel":
             self._cancel(args["job"])

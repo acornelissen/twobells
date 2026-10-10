@@ -450,6 +450,44 @@ def test_only_one_service_answers_at_a_time(board):
     board.runner.spool.make()
     with open(board.runner.spool.folder / setupspool.WORKER_LOCK, "w") as held:
         fcntl.flock(held, fcntl.LOCK_EX)
-        put(board, request(board))
-        assert board.worker.run() == 0  # returned at once, leaving the request
-    assert os.listdir(board.runner.spool.requests) == ["a" * 32 + ".json"] and board.calls == []
+        path = put(board, request(board))
+        old = time.time() - 3600  # one a sweep would delete
+        os.utime(path, (old, old))
+        body = path.read_bytes()
+        board.worker._idle = 60  # not waited: it stops at once
+        started = time.monotonic()
+        assert board.worker.run() == 0  # a clean stop, so systemd counts no failure
+        assert time.monotonic() - started < 2
+    # Untouched, for the service holding the lock: not read, swept or answered.
+    assert os.listdir(board.runner.spool.requests) == ["a" * 32 + ".json"] and path.read_bytes() == body
+    assert path.stat().st_mtime == old and os.listdir(board.runner.spool.replies) == [] and board.calls == []
+
+
+def test_a_service_that_cant_read_its_config_says_so_to_each_request(board, tmp_path):
+    worker = Worker(board.runner.spool.folder, job_folder=None, load_secrets=dict, idle=0, poll=0.01,
+                    unavailable=setupspool.NO_SETTINGS)
+    board.runner.post("a" * 32, "postcode", {"postcode": "SK13 1AH"})
+    board.runner.post("b" * 32, "testkey", {"name": "RDM_API_KEY", "value": PASTED, "app_id": ""})
+    job = board.runner.make_job({"A": "1800SB12341"}, PASTED, routes=False, walk_minutes={})
+    job.start()
+    board.runner.post("c" * 32, "cancel", {"job": "d" * 32})
+    assert worker.run() == 0
+    assert os.listdir(board.runner.spool.requests) == []  # none left to start it again
+    for rid in ("a" * 32, "b" * 32):
+        assert board.runner.reply(rid, delete=True) == {
+            "v": 1, "id": rid, "ok": False, "why": "setup", "error": setupspool.NO_SETTINGS}
+    assert job.status()["state"] == "failed" and job.status()["message"] == setupspool.NO_SETTINGS
+    assert board.runner.reply("c" * 32, delete=True) is None  # a cancel needs no answer
+    assert board.calls == [] and FakeJob.made == [] and PASTED not in spool_text(board.state)
+
+
+def test_the_page_shows_why_the_service_cant_help(board):
+    board.worker = Worker(board.runner.spool.folder, job_folder=None, load_secrets=dict, poll=0.01,
+                          unavailable=setupspool.NO_SETTINGS, stop=threading.Event())
+    thread = threading.Thread(target=board.worker.run, daemon=True)
+    thread.start()
+    try:
+        assert board.handle("postcode", {"postcode": "SK13 1AH"}) == (422, {"error": setupspool.NO_SETTINGS})
+    finally:
+        board.worker._stop.set()
+        thread.join(5)
