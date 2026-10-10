@@ -144,12 +144,16 @@ def read_overlay_in(folder: Path | None, allowed: Mapping[str | None, frozenset[
 
 def load_env_file(path: Path | str) -> dict[str, str]:
     """NAME=value lines from a secrets file; empty if it can't be read."""
-    values: dict[str, str] = {}
     try:
-        lines = Path(path).read_text().splitlines()
+        return parse_env(Path(path).read_text())
     except OSError:
-        return values
-    for line in lines:
+        return {}
+
+
+def parse_env(text: str) -> dict[str, str]:
+    """NAME=value lines from a secrets file's text."""
+    values: dict[str, str] = {}
+    for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue

@@ -5,12 +5,12 @@ import os
 from pathlib import Path
 
 import pytest
+from departureboard.installs import install_named
+from departureboard.store import SAVED_KEYS, Store, find_folder, platform_folder
 
 from departureboard import config, dashconfig
 from departureboard.config import ConfigError
-from departureboard.installs import install_named
 from departureboard.overlay import save_to
-from departureboard.store import SAVED_KEYS, Store, find_folder, platform_folder
 
 HOME = Path("/home/me")
 ENV = {"RDM_API_KEY": "rail-key"}

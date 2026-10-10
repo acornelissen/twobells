@@ -34,6 +34,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from . import migrate
 from .app import run_loop, run_once
 from .bodsbus import BodsBusSource
 from .config import (
@@ -85,6 +86,14 @@ def _parse_stops(specs: list[str] | None) -> dict[str, str] | None:
 def _store(args) -> Store:
     """The store for a command's --config, --secrets and --state-dir (if it has one)."""
     return Store.open(args.config, args.secrets, state_dir=getattr(args, "state_dir", None))
+
+
+def _adopt(args, store: Store) -> None:
+    """Bring the old dashboard's folder into the store, once (see migrate.py).
+    A folder given with --state-dir was the old dashboard's own, so then
+    there is nothing to bring."""
+    if not getattr(args, "state_dir", None):
+        migrate.adopt_legacy(store)
 
 
 def _env(config: Path | str, secrets: Path | str) -> dict[str, str]:
@@ -562,6 +571,7 @@ def _web(args) -> int:
     # not stop the page that fixes it.
     store = _store(args)
     store.make()
+    _adopt(args, store)
     password = auth.PasswordStore(store.password_file)
     if args.set_password:
         return _set_password(password, "New settings page password: ")
@@ -845,6 +855,7 @@ def _dashboard(args) -> int:
     from .snapshot import Hub
 
     store = _store(args)
+    _adopt(args, store)
     if args.set_password or args.reset_code:
         return _dashboard_password(args, store)
     dash = load_dashboard(store, store.env())
