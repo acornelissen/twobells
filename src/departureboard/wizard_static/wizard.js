@@ -766,30 +766,12 @@ const SIGN_UP = {
     "If BODS emails you to confirm your address, follow its link.",
     "Sign in, open Account settings and copy the API key.",
   ],
-  RDM_DETAILS_API_KEY: [
-    "Optional. With the Rail Data Marketplace account above, find Service Details in the Data product catalogue and subscribe (free).",
-    "Open Subscriptions, then Service Details, then the Specification tab, and copy its own Consumer key. It isn't the Live Departure Board one.",
-  ],
-  RDM_KB_API_KEY: [
-    "Optional. With the Rail Data Marketplace account above, find Knowledgebase Incidents in the Data product catalogue and subscribe (free).",
-    "Open Subscriptions, then the incidents product, then the Specification tab, and copy its own Consumer key.",
-    "Copy the URL at the top of that tab too, into Knowledgebase Incidents address on the settings page, under Trains.",
-  ],
-  TAPI_APP_ID: [
-    "Optional: most setups don't need TransportAPI. It stands in for bus times while there's no bus timetable.",
-    "Sign up at developer.transportapi.com and choose the Free plan, 30 lookups a day.",
-    "Open the app your account starts with, and copy its app_id here and its app_key into the next box.",
-  ],
-  TAPI_APP_KEY: [
-    "Optional, with the app ID above: both come from the same app on developer.transportapi.com.",
-    "Open the app and copy its app_key here.",
-  ],
 };
 
 // "Test this key": the host makes one harmless call to the key's service.
-// TransportAPI's app ID and key are tested together, from the key's box.
-// Only the keys the host offers are drawn, so each host gets its own buttons.
-const TESTED = ["RDM_API_KEY", "RDM_DETAILS_API_KEY", "RDM_KB_API_KEY", "BODS_API_KEY", "TAPI_APP_KEY"];
+// The wizard offers only the keys every view uses; each view's own are
+// signed up for and tested on its settings tab.
+const TESTED = ["RDM_API_KEY", "BODS_API_KEY"];
 const RESULTS = { // state: [glyph, words]; the colour only repeats them
   testing: ["…", "Testing"],
   works: ["✓", "Works"],
@@ -800,7 +782,6 @@ const RESULTS = { // state: [glyph, words]; the colour only repeats them
   unknown: ["?", "Can't tell"],
   problem: ["!", "Not tested"],
 };
-const LOOKUP_WARNING = "Testing TransportAPI uses 1 of today's 30 free lookups, the same ones bus times use. Test now?";
 
 function showResult(region, result, text) {
   const [glyph, words] = RESULTS[result] || RESULTS.unknown;
@@ -820,22 +801,10 @@ async function testKey(name, input, button, region) {
   setError(id, "");
   if (value && !KEY.test(value)) return refuse(id, "Paste the key exactly; it has only letters, digits and . _ ~ + / = -");
   if (value) body.value = value;
-  let ready = Boolean(value) || keySet(name);
-  if (name === "TAPI_APP_KEY") {
-    const other = $("key-TAPI_APP_ID");
-    const appId = other ? other.value.trim() : "";
-    setError("key-TAPI_APP_ID", "");
-    if (appId && !KEY.test(appId)) return refuse("key-TAPI_APP_ID", "Paste the app ID exactly; it has only letters, digits and . _ ~ + / = -");
-    if (appId) body.app_id = appId;
-    ready = ready && (Boolean(appId) || keySet("TAPI_APP_ID"));
-  }
-  if (!ready) {
-    showResult(region, "missing", name === "TAPI_APP_KEY"
-      ? "Paste the app ID and the app key first: they're tested together."
-      : "Paste the key first, then test it.");
+  if (!value && !keySet(name)) {
+    showResult(region, "missing", "Paste the key first, then test it.");
     return false;
   }
-  if (name === "TAPI_APP_KEY" && !window.confirm(LOOKUP_WARNING)) return false;
   await once(button, async () => {
     showResult(region, "testing", "asking the service…");
     try {
@@ -852,19 +821,12 @@ async function testKey(name, input, button, region) {
 function keyTestButton(name, input) {
   if (!TESTED.includes(name)) return null;
   const id = `key-${name}`;
-  const paired = name === "TAPI_APP_KEY";
   const region = h("p", { class: "key-result", id: `${id}-result`, role: "status", "aria-live": "polite" });
-  const button = h("button", {
-    type: "button", class: "quiet", id: `${id}-test`, "aria-describedby": paired ? `${id}-test-hint` : null,
-  }, "Test this key");
+  const button = h("button", { type: "button", class: "quiet", id: `${id}-test` }, "Test this key");
   button.addEventListener("click", () => testKey(name, input, button, region));
   // A result is about what was in the box then; once that changes, it's gone.
   input.addEventListener("input", () => { region.className = "key-result"; fill(region); });
-  return h("div", { class: "key-test" },
-    paired ? h("p", { class: "hint", id: `${id}-test-hint` },
-      "Tests the app ID and app key together, and uses 1 of today's 30 lookups, so it asks first.") : null,
-    button,
-    region);
+  return h("div", { class: "key-test" }, button, region);
 }
 
 function signUp(key) {

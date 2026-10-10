@@ -17,8 +17,8 @@ from departureboard import keytest
 from departureboard.schema import keys
 from departureboard.setupapi import PAGE_HEADERS, static_files
 
-# The Pi's keys and the dashboard's: the general group's and each view's own.
-KEYS, DASHBOARD_KEYS = keys("general", "board"), keys("general", "dashboard")
+# The wizard offers only the keys every view uses; each view's own are on its settings tab.
+KEYS = keys("general")
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "departureboard" / "wizard_static"
@@ -188,7 +188,7 @@ def test_key_test_says_its_result_politely_in_words():
     assert 'role: "status", "aria-live": "polite"' in hook
     # Every state the host can answer has a glyph and words; the glyph is
     # hidden from screen readers, which read the words.
-    found = re.findall(r'(\w+): \["([^"]+)", "([^"]+)"\]', _between(text, "const RESULTS", "const LOOKUP"))
+    found = re.findall(r'(\w+): \["([^"]+)", "([^"]+)"\]', _between(text, "const RESULTS", "function showResult"))
     results = {state: (glyph, words) for state, glyph, words in found}
     assert set(keytest.STATES) <= set(results)
     assert all(glyph and words for glyph, words in results.values())
@@ -198,29 +198,25 @@ def test_key_test_says_its_result_politely_in_words():
         assert re.search(r"\.key-result-%s\b[^{]*\{ color: var\(--(ok-fg|error|warn-fg)\); \}" % state, css), state
 
 
-def test_key_test_asks_before_spending_a_transportapi_lookup():
+def test_the_wizard_says_nothing_of_the_keys_on_the_views_tabs():
+    # TransportAPI's and the dashboard's own keys are signed up for and tested on their tabs.
     text = (STATIC / "wizard.js").read_text(encoding="utf-8")
-    test = _between(text, "async function testKey", "function keyTestButton")
-    assert 'call("testkey", body)' in test
-    assert test.index("window.confirm(LOOKUP_WARNING)") < test.index('call("testkey"')
-    assert 'name === "TAPI_APP_KEY" && !window.confirm(LOOKUP_WARNING)' in test
-    assert "1 of today's 30" in _between(text, "const LOOKUP_WARNING", "function showResult")
+    for gone in ("TAPI", "TransportAPI", "RDM_DETAILS_API_KEY", "RDM_KB_API_KEY", "LOOKUP_WARNING", "confirm("):
+        assert gone not in text, gone
+    assert 'call("testkey", body)' in _between(text, "async function testKey", "function keyTestButton")
 
 
 def test_every_key_on_the_page_says_how_to_get_it():
     text = (STATIC / "wizard.js").read_text(encoding="utf-8")
     sign_up = _between(text, "const SIGN_UP", "const TESTED")
-    for name, _, _ in (*KEYS, *DASHBOARD_KEYS):  # the Pi's and the dashboard's
-        assert re.search(r"\b%s: \[\s*\"" % name, sign_up), name
+    assert re.findall(r"^  (\w+): \[$", sign_up, re.MULTILINE) == [name for name, _, _ in KEYS]
     assert "The full guide (opens in a new tab)" in text and 'rel: "noopener noreferrer"' in text
 
 
-def test_every_key_either_host_offers_has_a_test_button():
+def test_every_key_the_wizard_offers_has_a_test_button():
     text = (STATIC / "wizard.js").read_text(encoding="utf-8")
     tested = set(re.findall(r'"([A-Z_]+)"', _between(text, "const TESTED", "const RESULTS")))
-    offered = {name for name, _, _ in (*KEYS, *DASHBOARD_KEYS)}
-    # TransportAPI's app ID is tested with its app key, from the key's box.
-    assert tested == offered - {"TAPI_APP_ID"}
+    assert tested == {name for name, _, _ in KEYS}
     assert tested <= set(keytest.KEY_NAMES)
 
 
