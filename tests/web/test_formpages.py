@@ -95,6 +95,32 @@ def test_the_document_escapes_its_title_and_names_its_stylesheet():
     assert '<html lang="en-GB">' in page
 
 
+def test_the_document_runs_no_script_unless_given_one_deferred():
+    assert "<script" not in document("Board", "<p>body</p>", "/settings/style.css")
+    page = document("Board", "<p>body</p>", "/settings/style.css", "/settings/settings.js")
+    head = page.split("</head>", 1)[0]
+    assert head.endswith('<link rel="stylesheet" href="/settings/style.css">'
+                         '<script src="/settings/settings.js" defer></script>')
+
+
+def test_a_signed_in_visitors_pages_take_the_page_shell_and_sign_in_the_plain_one(tmp_path):
+    made = Host(tmp_path)
+    made.pages = FormPages(made.page, made.password, made.sessions, made.lockout, made.codes,
+                           FormTokens(made.clock, cookie_name="widget_form", cookie_path="/area"),
+                           lambda: made.wording, prefix="/area",
+                           shell=lambda title, body: f"<plain>{body}",
+                           page_shell=lambda title, body: f"<scripted>{body}",
+                           home=lambda: "/area", log=logging.getLogger("tests.widget"), clock=made.clock)
+    made.password.set(PASSWORD)
+    cookie, csrf = made.signed_in()
+    assert made.pages.settings_page(headers(cookie)).body.startswith(b"<scripted>")
+    refused = made.pages.save({"csrf": csrf, "title": "bad"}, headers(cookie))
+    assert refused.status == 422 and refused.body.startswith(b"<scripted>")
+    assert made.pages.login_page(200, headers()).body.startswith(b"<plain>")
+    assert made.pages.reset_page(200, headers()).body.startswith(b"<plain>")
+    assert made.pages.sign_in({"password": "wrong"}, headers(), CLIENT).body.startswith(b"<plain>")
+
+
 def test_the_wizard_serves_only_pages_scripts_styles_and_its_font():
     assert set(WIZARD_TYPES) == {".html", ".js", ".css", ".woff2"}
     assert WIZARD_TYPES[".woff2"] == "font/woff2"

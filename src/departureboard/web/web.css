@@ -282,6 +282,31 @@ button.primary:hover { background: var(--accent); filter: brightness(1.08); }
 .applies { flex: 1 1 16rem; margin: 0; color: var(--muted); font-size: var(--t-sm); }
 .savebar button { margin-left: auto; }
 
+/* Changes not saved yet (settings.js): a bar down the field's side in the
+   accent, and a tag saying "Changed" in words; the count by Save, kept in
+   the page for screen readers while there is none. */
+.field.is-changed:not(.has-error) { padding-left: var(--s-3); border-left: 0.25rem solid var(--accent); }
+.window.is-changed { border-left: 0.25rem solid var(--accent); }
+.changed-tag {
+  display: inline-block;
+  padding: 0 var(--s-2);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--accent);
+  background: var(--surface);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+}
+.unsaved { margin: 0; font-weight: 600; font-size: var(--t-sm); }
+.unsaved:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.savebar .unsaved { margin-left: auto; }
+.savebar .unsaved + button { margin-left: 0; }
+.key-actions .unsaved { align-self: center; }
+/* Ticking a time window's days at once (settings.js). */
+.presets { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-2) 0 var(--s-1); }
+.presets button { min-height: 2rem; padding: var(--s-1) var(--s-3); font-size: var(--t-sm); }
+
 /* Messages: red for what went wrong, green only as words. */
 .summary {
   margin-bottom: var(--s-5);
@@ -352,6 +377,7 @@ code { font-family: var(--mono); font-size: 0.9375em; overflow-wrap: anywhere; }
   .option label { padding: var(--s-2) 0; }
   .day { min-height: 2.75rem; }
   .day label { padding: var(--s-2) var(--s-2) var(--s-2) 0; }
+  .presets button { min-height: 2.75rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }

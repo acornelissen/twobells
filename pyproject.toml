@@ -61,7 +61,7 @@ where = ["src"]
 "departureboard" = ["data/*.csv", "dashboard_static/**/*", "wizard_static/*"]
 "departureboard.board" = ["fonts/*"]
 "departureboard.emulator" = ["*.html"]
-"departureboard.web" = ["*.css"]
+"departureboard.web" = ["*.css", "*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

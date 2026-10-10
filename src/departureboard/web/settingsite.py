@@ -30,12 +30,16 @@ the pages and forms web/formpages.py's:
   saves that key alone, and can test it as saved: checked as a save is,
   answered with a redirect too (to ?tested after a test alone), and run by
   the wizard's API (SetupApi.test_key), so the wizard's limit and, on a Pi,
-  its runner apply. Pages are drawn on the server with no JavaScript, under a CSP
-  allowing form-action 'self'. The setup wizard
-  under /settings/setup/ is the one place with scripts: its own files
-  only, from an allowlist read at start and served without a session, its
-  page and API needing the session, and its API the session's token in
-  X-CSRF-Token, under setupapi.PAGE_HEADERS.
+  its runner apply. Pages are drawn on the server and work without
+  JavaScript, under a CSP allowing form-action 'self'. A signed-in
+  visitor's pages (the tabs) run one script of the site's own,
+  /settings/settings.js, which only marks unsaved changes and asks before
+  leaving with them: their CSP adds script-src 'self' (PAGE_HEADERS); the
+  sign-in and reset pages, and everything else here, allow no script.
+  The setup wizard under /settings/setup/ has scripts of its own: its own
+  files only, from an allowlist read at start and served without a
+  session, its page and API needing the session, and its API the
+  session's token in X-CSRF-Token, under setupapi.PAGE_HEADERS.
 
 Framework-free: handle() takes the request with its body unread and checks
 the origin before reading it (one plain length, capped by max_body), and
@@ -142,6 +146,10 @@ _SHARED = {
 }
 # Cache-Control is the server's to send (no-store), once.
 SETTINGS_HEADERS = {**{k: v for k, v in FORM_PAGE_HEADERS.items() if k != "Cache-Control"}, **_SHARED}
+# The tabs' pages: the same, but for running settings.js.
+PAGE_HEADERS = {**SETTINGS_HEADERS, "Content-Security-Policy": SETTINGS_HEADERS["Content-Security-Policy"].replace(
+    "default-src 'none'; ", "default-src 'none'; script-src 'self'; ", 1)}
+SCRIPT = PREFIX + "/settings.js"
 WIZARD_HEADERS = {**{k: v for k, v in setupapi.PAGE_HEADERS.items() if k != "Cache-Control"}, **_SHARED}
 
 
@@ -158,8 +166,11 @@ def owns(path: str) -> bool:
 
 
 def headers_for(path: str) -> dict[str, str]:
-    """The security headers for a path: scripts only on the wizard's."""
-    return WIZARD_HEADERS if path == SETUP[:-1] or path.startswith(SETUP) else SETTINGS_HEADERS
+    """The security headers for a path: scripts only on the wizard's and the
+    tabs' pages (settings.js), none on any other, sign-in included."""
+    if path == SETUP[:-1] or path.startswith(SETUP):
+        return WIZARD_HEADERS
+    return PAGE_HEADERS if path in TAB_PATHS.values() else SETTINGS_HEADERS
 
 
 def max_body(path: str) -> int:
@@ -184,8 +195,13 @@ def wizard_files(found: Mapping[str, Path] | None = None) -> dict[str, tuple[byt
 
 
 def shell(title: str, body: str) -> str:
-    """The HTML document around a page's content."""
+    """The HTML document around a page's content: with no script, for the sign-in and reset pages."""
     return document(title, body, f"{PREFIX}/style.css")
+
+
+def page_shell(title: str, body: str) -> str:
+    """The HTML document around a signed-in visitor's settings page, with settings.js."""
+    return document(title, body, f"{PREFIX}/style.css", SCRIPT)
 
 
 def applies(install: Install) -> str:
@@ -264,6 +280,7 @@ class SettingsSite:
 
     def __init__(self, store: Store, install: Install, setup: SetupSteps, *,
                  dashboard_on: Callable[[], bool] = lambda: False, stylesheet: bytes | None = None,
+                 script: bytes | None = None,
                  files: dict[str, tuple[bytes, str]] | None = None, clock: Callable[[], float] = time.time,
                  codes: ResetCodes | None = None, version: str | None = None) -> None:
         self.store = store
@@ -293,9 +310,11 @@ class SettingsSite:
             codes or ResetCodes(store.folder, to_board=self.to_board),
             FormTokens(clock, cookie_name=FORM_COOKIE_NAME, cookie_path=PREFIX, key_file=store.form_key_file),
             lambda: wording(install, self.to_board(), self._running()), prefix=PREFIX, shell=shell,
+            page_shell=page_shell,
             home=self._home, log=log, resume_setup=SETUP, setup_steps=SETUP_STEPS, setup=setup, clock=clock,
         )
         self._stylesheet = _default_stylesheet() if stylesheet is None else stylesheet
+        self._script = _default_script() if script is None else script
         self._files = wizard_files() if files is None else files
 
     # What is on
@@ -430,6 +449,8 @@ class SettingsSite:
             return self._pages.reset_page(200, headers, asked=query == "asked")
         if path == PREFIX + "/style.css":
             return Reply(200, self._stylesheet, "text/css; charset=utf-8")
+        if path == SCRIPT:
+            return Reply(200, self._script, "text/javascript; charset=utf-8")
         if path == SETUP[:-1]:
             return redirect(SETUP)
         if path == SETUP:
@@ -592,3 +613,7 @@ class Overview:
 
 def _default_stylesheet() -> bytes:
     return files("departureboard.web").joinpath("web.css").read_bytes()
+
+
+def _default_script() -> bytes:
+    return files("departureboard.web").joinpath("settings.js").read_bytes()

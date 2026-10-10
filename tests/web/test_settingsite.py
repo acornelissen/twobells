@@ -1460,7 +1460,9 @@ def test_a_form_framed_any_way_but_one_plain_length_is_refused_unread(pi_signed,
     cookie = pi_signed.session()
     response, text = framed_post(pi_signed, "/settings/board", [FORM, ("Cookie", cookie), *pairs])
     assert response.status == status and response.getheader("Connection") == "close"
-    assert "default-src 'none'" in csp(response) and "script-src" not in csp(response)
+    # A tab's address: its page's CSP, allowing only the site's own script, on plain text.
+    assert csp(response) == settingsite.PAGE_HEADERS["Content-Security-Policy"]
+    assert response.getheader("Content-Type") == "text/plain; charset=utf-8"
     assert "<html" not in text.lower() and not (pi_signed.folder / "settings.toml").exists()
 
 
@@ -1483,7 +1485,10 @@ def test_other_methods_are_not_allowed(make):
         for path in ("/settings", "/settings/login", "/settings/nowhere"):
             response, text = running(method, path, {"title": "x"})
             assert response.status == 405 and response.getheader("Allow") == "GET, HEAD, POST", (method, path)
-            assert "script-src" not in csp(response) and response.getheader("X-Frame-Options") == "DENY"
+            # Only a tab's address (the Overview's) allows the site's own script, for its pages.
+            expected = settingsite.PAGE_HEADERS if path == "/settings" else settingsite.SETTINGS_HEADERS
+            assert csp(response) == expected["Content-Security-Policy"], (method, path)
+            assert response.getheader("X-Frame-Options") == "DENY"
             assert response.getheader("Content-Type") == "text/plain; charset=utf-8" and "<html" not in text.lower()
         for path in ("/", "/nowhere", "/login"):
             response, _ = running(method, path)
@@ -2030,15 +2035,24 @@ def test_a_reply_that_is_not_strict_json_is_never_sent(pi):
 # Headers
 
 
-def test_settings_pages_allow_their_own_forms_and_no_scripts(make):
+TAB_PAGES = ["/settings", "/settings/keys", "/settings/trains-and-buses?saved", "/settings/general"]
+NO_SCRIPT = ["/settings/login", "/settings/reset", "/settings/style.css", "/settings/settings.js", "/settings/nowhere",
+             "/login", "/setup/"]
+
+
+def test_settings_pages_allow_their_own_forms_and_only_settings_js(make):
     for running in (make(install="docker", dashboard=True), make(install="pi")):
         cookie = running.session()
-        for path in ["/settings/login", "/settings/reset", "/settings", "/settings/keys", "/settings/style.css",
-                     "/settings/trains-and-buses?saved", "/settings/nowhere",
-                     "/login", "/setup/"]:
+        for path in TAB_PAGES + NO_SCRIPT:
             response, _ = running("GET", path, cookie=cookie)
             policy = csp(response)
-            assert "form-action 'self'" in policy and "script-src" not in policy and "default-src 'none'" in policy
+            assert "form-action 'self'" in policy and "default-src 'none'" in policy
+            if path in TAB_PAGES:  # a signed-in visitor's pages run settings.js, and nothing else
+                assert policy == settingsite.PAGE_HEADERS["Content-Security-Policy"], path
+                assert re.findall(r"script-src [^;]*", policy) == ["script-src 'self'"]
+                assert "unsafe" not in policy and "connect-src" not in policy
+            else:  # sign-in and the rest: none
+                assert "script-src" not in policy, path
             assert "frame-ancestors 'none'" in policy and response.getheader("X-Frame-Options") == "DENY"
             assert response.getheader("X-Content-Type-Options") == "nosniff"
             assert response.getheader("Cache-Control") == "no-store"
@@ -2047,7 +2061,86 @@ def test_settings_pages_allow_their_own_forms_and_no_scripts(make):
             assert len(response.getheaders()) == len({k.lower() for k, _ in response.getheaders()}), path
 
 
-def test_only_the_wizard_may_run_scripts(pi):
+SETTINGS_JS = ROOT / "src" / "departureboard" / "web" / "settings.js"
+LOADS_IT = '<script src="/settings/settings.js" defer></script>'
+
+
+def test_settings_js_is_served_as_a_script_without_a_session(pi):
+    response, text = pi("GET", "/settings/settings.js")
+    assert response.status == 200 and response.getheader("Content-Type") == "text/javascript; charset=utf-8"
+    assert response.getheader("X-Content-Type-Options") == "nosniff"
+    assert text == SETTINGS_JS.read_text(encoding="utf-8")  # the file as it is: nothing of this install's in it
+
+
+def test_settings_js_is_loaded_on_a_signed_in_visitors_pages_only(make):
+    running = make(install="pi")
+    cookie = running.session()
+    for path in [*TAB_PAGES, "/settings/board"]:
+        page = running("GET", path, cookie=cookie)[1]
+        head = page.split("</head>", 1)[0]
+        assert head.count("<script") == 1 and LOADS_IT in head, path
+    # A refused save draws its page again, with it.
+    response, page = running("POST", "/settings/trains-and-buses", {"csrf": running.csrf(cookie), "train_crs": "1"},
+                             cookie=cookie)
+    assert response.status == 422 and LOADS_IT in page
+    # The first claim, signing in and a forgotten password never run it, nor any script.
+    assert "<script" not in running("GET", "/settings/login")[1]  # no password yet: the first claim
+    running.site.password.set(PASSWORD)
+    for path in ("/settings/login", "/settings/reset", "/settings/reset?asked"):
+        assert "<script" not in running("GET", path)[1], path
+    response, page = running("POST", "/settings/login", {"password": "wrong password"})
+    assert response.status == 401 and "<script" not in page
+    # The wizard has its own scripts, and not this one.
+    assert "settings.js" not in running("GET", "/settings/setup/", cookie=running.session())[1]
+
+
+def test_no_settings_page_has_inline_script_or_handlers(make):
+    running = make(install="pi")
+    cookie = running.session()
+    for path in [*TAB_PAGES, "/settings/board", "/settings/login", "/settings/reset"]:
+        page = running("GET", path, cookie=cookie if path not in ("/settings/login", "/settings/reset") else None)[1]
+        for tag, inside in re.findall(r"<script([^>]*)>(.*?)</script>", page, re.S):
+            assert 'src="' in tag and inside == "", path
+        assert not re.search(r"\son[a-z]+\s*=", page), path
+        assert "javascript:" not in page.lower(), path
+
+
+# What settings.js may do: only mark changes, and ask before leaving with them.
+FORBIDDEN_JS = [
+    (re.compile(r"\bfetch\s*\("), "fetch"),
+    (re.compile(r"\bXMLHttpRequest\b"), "XMLHttpRequest"),
+    (re.compile(r"\bWebSocket\b|\bEventSource\b|\bsendBeacon\b"), "a connection"),
+    (re.compile(r"\blocalStorage\b|\bsessionStorage\b|\bindexedDB\b|\bdocument\.cookie\b"), "storage"),
+    (re.compile(r"\bconsole\."), "console"),
+    (re.compile(r"\bpostMessage\b|\bwindow\.open\b|\blocation\b"), "another window or address"),
+    (re.compile(r"\bimport\b|\brequire\s*\("), "another script"),
+    (re.compile(r"\.(?:href|src|action|formAction)\s*="), "an address set"),
+    (re.compile(r"\.disabled\b"), "disabling"),
+]
+
+
+def test_settings_js_has_no_html_sinks_connections_storage_or_logging():
+    from tests.dashboard.test_static import BANNED
+
+    text = SETTINGS_JS.read_text(encoding="utf-8")
+    found = [name for pattern, name in BANNED + FORBIDDEN_JS if pattern.search(text)]
+    assert not found, f"settings.js uses {found}"
+    assert '"use strict";' in text
+    # Words go in as text; the only attributes set are its own class, role and type.
+    assert set(re.findall(r'setAttribute\("([\w-]+)"', text)) == {"class", "role", "type"}
+    # A key box is read only to tell whether it is empty.
+    assert [line.strip() for line in text.splitlines() if "key-box" in line] == [
+        'if (control.classList.contains("key-box")) return control.value !== ""; // only whether a key is typed']
+
+
+def test_the_package_ships_settings_js():
+    import tomllib
+
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert "*.js" in data["tool"]["setuptools"]["package-data"]["departureboard.web"]
+
+
+def test_the_wizard_runs_its_own_scripts_under_its_own_headers(pi):
     cookie = pi.session()
     for path in ["/settings/setup/", "/settings/setup/wizard_static/wizard.js", "/settings/setup/api/session",
                  "/settings/setup/nothing"]:

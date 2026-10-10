@@ -165,13 +165,15 @@ class Wording:
     wrong_step_token: str  # the error when a wizard step's X-CSRF-Token is wrong
 
 
-def document(title: str, body: str, stylesheet: str) -> str:
-    """The HTML document around a page's content, with `stylesheet` its CSS's path."""
+def document(title: str, body: str, stylesheet: str, script: str = "") -> str:
+    """The HTML document around a page's content, with `stylesheet` its CSS's
+    path and `script`, if given, the path of the one script it runs, deferred."""
+    deferred = f'<script src="{html.escape(script)}" defer></script>' if script else ""
     return (
         '<!doctype html><html lang="en-GB"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{html.escape(title)}</title>"
-        f'<link rel="stylesheet" href="{stylesheet}"></head>'
+        f'<link rel="stylesheet" href="{stylesheet}">{deferred}</head>'
         f"<body><main>{body}</main></body></html>"
     )
 
@@ -231,14 +233,17 @@ class FormPages:
     session lands. `resume_setup`, if set, is the wizard's page: a sign-in
     started there (`?next=setup`) goes back to it, at the shortcut's step
     if it was one of `setup_steps` (`&step=stops`). `shell(title, body)`
-    wraps a page in the HTML document. Log lines go to `log`, so each
+    wraps a page in the HTML document; `page_shell`, if given, wraps a
+    signed-in visitor's settings pages instead (with their script), so the
+    sign-in and reset pages never have one. Log lines go to `log`, so each
     host's keep their own name. `setup` runs the wizard's steps, answered
     with `json_reply`."""
 
     def __init__(self, page: SettingsPage, password: PasswordStore, sessions: Sessions, lockout: Lockout,
                  codes: ResetCodes, forms: FormTokens, wording: Callable[[], Wording], *, prefix: str,
                  shell: Callable[[str, str], str], home: Callable[[], str], log: logging.Logger,
-                 resume_setup: str = "", setup_steps: tuple[str, ...] = (), setup: SetupSteps | None = None,
+                 page_shell: Callable[[str, str], str] | None = None, resume_setup: str = "",
+                 setup_steps: tuple[str, ...] = (), setup: SetupSteps | None = None,
                  json_reply: Callable[[int, dict], Reply] = compact_json,
                  clock: Callable[[], float] = time.time) -> None:
         self._page = page
@@ -251,6 +256,7 @@ class FormPages:
         self._wording = wording
         self._prefix = prefix
         self._shell = shell
+        self._page_shell = page_shell or shell
         self._home = home
         self._log = log
         self._resume_setup = resume_setup
@@ -285,12 +291,12 @@ class FormPages:
                 else:
                     notice = None
         if notice is None:
-            return self._html(200, title, page.render(session.csrf))
+            return self._signed_in_html(200, title, page.render(session.csrf))
         if notice.tested is not None:  # only the Keys page tests, so this is it
             body = cast("KeyForms", page).render(session.csrf, message=notice.message, tested=notice.tested)
         else:
             body = page.render(session.csrf, message=notice.message)
-        return self._html(200, f"{notice.title} – {title}", body)
+        return self._signed_in_html(200, f"{notice.title} – {title}", body)
 
     def login_page(self, status: int, headers: Headers, message: str = "", to_setup: bool = False,
                    step: str = "") -> Reply:
@@ -456,7 +462,7 @@ class FormPages:
         errors = page.save(fields, changed)
         if errors:
             body = page.render(session.csrf, errors=errors, values=fields)
-            return self._html(422, f"{title}: fix the errors", body)
+            return self._signed_in_html(422, f"{title}: fix the errors", body)
         self._notice(session.csrf, Notice(page, "Saved", saved_notice(changed, wording.saved)))
         return redirect((where or self._prefix) + "?saved")
 
@@ -480,8 +486,8 @@ class FormPages:
         if do != "test":
             errors = page.save(fields, changed)
             if errors:
-                return self._html(422, f"{title}: fix the errors", page.render(session.csrf, errors=errors,
-                                                                                values=fields))
+                body = page.render(session.csrf, errors=errors, values=fields)
+                return self._signed_in_html(422, f"{title}: fix the errors", body)
         tested = page.test_key(fields) if do != "save" else None
         if do != "save" and tested is None:
             return Reply(400, b"Bad request: no such key to test")
@@ -557,6 +563,10 @@ class FormPages:
 
     def _html(self, status: int, title: str, body: str, extra: dict[str, str] | None = None) -> Reply:
         return Reply(status, self._shell(title, body).encode(), HTML, extra or {})
+
+    def _signed_in_html(self, status: int, title: str, body: str) -> Reply:
+        """A signed-in visitor's settings page."""
+        return Reply(status, self._page_shell(title, body).encode(), HTML)
 
     def _form_token(self, headers: Headers) -> tuple[str, dict[str, str]]:
         """A pre-session form's hidden field, and the header that sets its cookie."""

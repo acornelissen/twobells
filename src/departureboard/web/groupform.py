@@ -503,7 +503,7 @@ class GroupForm:
             links = "".join(f'<li><a href="#{section_id(heading)}">{e(heading)}</a></li>'
                             for _, heading, _ in sections)
             out.append(f'<nav class="index" aria-label="On this page"><ul>{links}</ul></nav>')
-        out.append(f'<form method="post" action="{e(self._action)}" novalidate>')
+        out.append(f'<form method="post" action="{e(self._action)}" novalidate class="settings-form">')
         out.append(f'<input type="hidden" name="csrf" value="{e(csrf)}">')
         for page, heading, here in sections:
             out.append(self._section(page, heading, here, data, shown, errors))

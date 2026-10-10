@@ -1,6 +1,8 @@
-// Just enough of the DOM for the dashboard's modules to build nodes under
-// node, for tests/test_dashboard_static.py. Importing it sets the globals
-// (document, Node), so import it before the module under test.
+// Just enough of the DOM for the dashboard's modules, the wizard's and the
+// settings pages' settings.js to run under node, for their behaviour tests
+// (tests/dashboard/test_static.py, tests/setup/test_wizard.py,
+// tests/web/test_settings_js.py). Importing it sets the globals (document,
+// Node), so import it before the module under test.
 
 class FakeNode {
   constructor(nodeType, nodeName) {
@@ -27,6 +29,25 @@ class FakeNode {
       this.childNodes.push(child);
     }
   }
+
+  prepend(...nodes) {
+    const rest = [...this.childNodes];
+    for (const child of rest) child.remove();
+    this.append(...nodes, ...rest);
+  }
+
+  // Insert nodes beside this one, before it or after it, in its parent.
+  _beside(nodes, after) {
+    const parent = this.parentNode;
+    const made = nodes.map((node) => (node instanceof FakeNode ? node : new FakeText(String(node))));
+    for (const node of made) node.remove();
+    const at = parent.childNodes.indexOf(this) + (after ? 1 : 0);
+    parent.childNodes.splice(at, 0, ...made);
+    for (const node of made) node.parentNode = parent;
+  }
+
+  before(...nodes) { this._beside(nodes, false); }
+  after(...nodes) { this._beside(nodes, true); }
 
   remove() {
     if (!this.parentNode) return;
@@ -91,11 +112,28 @@ class FakeElement extends FakeNode {
   get attributes() { return [...this.attrs].map(([name, value]) => ({ name, value })); }
   get id() { return this.getAttribute("id") || ""; }
   get children() { return this.childNodes.filter((c) => c.nodeType === 1); }
-  // A form control's state as a browser keeps it: its attribute until set.
-  get value() { return this._value ?? this.getAttribute("value") ?? ""; }
+  // A form control's state as a browser keeps it: its attribute (a text
+  // area's text) until set, which stays its default.
+  get value() { return this._value ?? this.defaultValue; }
   set value(value) { this._value = value; }
-  get checked() { return this._checked ?? this.hasAttribute("checked"); }
+  get defaultValue() { return this.nodeName === "TEXTAREA" ? this.textContent : this.getAttribute("value") ?? ""; }
+  get checked() { return this._checked ?? this.defaultChecked; }
   set checked(on) { this._checked = Boolean(on); }
+  get defaultChecked() { return this.hasAttribute("checked"); }
+  get selected() { return this._selected ?? this.defaultSelected; }
+  set selected(on) { this._selected = Boolean(on); }
+  get defaultSelected() { return this.hasAttribute("selected"); }
+  get options() { return this.querySelectorAll("option"); }
+  // A list shows its first option when none is selected.
+  get selectedIndex() {
+    const found = this.options.findIndex((option) => option.selected);
+    return found >= 0 ? found : (this.options.length ? 0 : -1);
+  }
+  set selectedIndex(index) { this.options.forEach((option, at) => { option.selected = at === index; }); }
+  closest(selector) {
+    for (let node = this; node && node.nodeType === 1; node = node.parentNode) if (matches(node, selector)) return node;
+    return null;
+  }
   get validity() { return { badInput: false }; }
   addEventListener(type, fn) { this.listeners.push([type, fn]); }
   focus() { document.activeElement = this; }
@@ -117,8 +155,8 @@ class FakeElement extends FakeNode {
 
 // Just enough of CSS selectors for the page's own: compounds of a tag, #id,
 // .class, [attr], [attr="value"] and :checked, joined by spaces
-// (descendants). h() puts data-* in the dataset, so those attributes are
-// read from there.
+// (descendants), in a list separated by commas. h() puts data-* in the
+// dataset, so those attributes are read from there.
 function compound(text) {
   const parts = text.match(/^[\w*]+|#[\w-]+|\.[\w-]+|\[[^\]]+\]|:checked/g) || [];
   const attr = (el, name) => (name.startsWith("data-")
@@ -138,6 +176,10 @@ function compound(text) {
 }
 
 function matches(el, selector) {
+  return selector.split(",").some((one) => matchesOne(el, one));
+}
+
+function matchesOne(el, selector) {
   const steps = selector.trim().split(/\s+/).map(compound);
   if (!steps[steps.length - 1](el)) return false;
   let i = steps.length - 2;
