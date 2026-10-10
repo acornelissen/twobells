@@ -599,3 +599,82 @@ def test_links_must_be_plain(board):
     for href in ("javascript:alert(1)", "//evil.example/", "/a b"):
         with pytest.raises(ValueError):
             SetupApi(board.config, dict, board.state, links=[("Board", href)])
+
+
+# A runner: the internet work done elsewhere (the Pi's setup service).
+
+
+class FakeRunner:
+    def __init__(self):
+        self.calls = []
+
+    def lookup_postcode(self, postcode):
+        self.calls.append(("postcode", postcode))
+        return HOME_PLACE
+
+    def search_address(self, query):
+        self.calls.append(("address", query))
+        return [HOME_PLACE]
+
+    def nearby_stops(self, lat, lon, *, within_m, limit):
+        self.calls.append(("stops", lat, lon, within_m, limit))
+        return list(STOPS)
+
+    def walk_minutes(self, home, places):
+        self.calls.append(("walk", home, dict(places)))
+        return {key: (4, "route") for key in places}
+
+    def make_job(self, stops, pasted_key, *, routes, walk_minutes):
+        self.calls.append(("job", dict(stops), pasted_key, routes, dict(walk_minutes)))
+        return FakeJob("unused", stops, pasted_key, routes=routes, walk_minutes=walk_minutes)
+
+    def test_key(self, name, value, app_id):
+        self.calls.append(("testkey", name, value, app_id))
+        return KeyResult("wrong_key", f"refused {value} and {app_id}")
+
+
+@pytest.fixture
+def ran(board):
+    runner = FakeRunner()
+    api = SetupApi(board.config, lambda: dict(board.secrets), board.state, runner=runner,
+                   stations=lambda: STATIONS, nearby_stations=board._nearby_stations,
+                   key_tests=RateLimit(10.0, clock=lambda: board.clock[0]))
+    api.runner, api.board = runner, board
+    return api
+
+
+def test_a_runner_does_the_lookups(ran):
+    assert ok(ran, "postcode", {"postcode": "SK13 1AH"})["place"]["label"] == "SK13 1AH"
+    assert ok(ran, "address", {"q": "1 High Street"})["places"][0]["district"] == "High Peak"
+    assert [s["label"] for s in ok(ran, "stops", HOME)["stops"]] == ["A", "B", "C"]
+    walk = ok(ran, "walk", {"home": HOME, "station_crs": "GLO", "stop_atcos": ["1800SB12341"]})["walk"]
+    assert walk == {"GLO": {"minutes": 4, "source": "route"}, "1800SB12341": {"minutes": 4, "source": "route"}}
+    assert [c[0] for c in ran.runner.calls] == ["postcode", "address", "stops", "walk"]
+    assert ran.runner.calls[2][3:] == (setupapi.STOPS_WITHIN_M, setupapi.STOPS_SHOWN)
+    assert ran.board.calls == []  # nothing in this process
+
+
+def test_a_runner_is_never_given_a_saved_key(ran):
+    ok(ran, "start", {"stops": {"A": "1800SB12341"}, "routes": True, "walk": {"A": 3}})
+    assert ran.runner.calls[-1] == ("job", {"A": "1800SB12341"}, "", True, {"A": 3})  # "": the saved one
+    FakeJob.made[-1].finish()
+    ok(ran, "start", {"stops": {"A": "1800SB12341"}, "routes": False, "keys": {"BODS_API_KEY": "pasted-key-789"}})
+    assert ran.runner.calls[-1][2] == "pasted-key-789"
+    ok(ran, "testkey", {"name": "RDM_API_KEY"})
+    assert ran.runner.calls[-1] == ("testkey", "RDM_API_KEY", None, None)
+    assert RDM_KEY not in repr(ran.runner.calls) and BODS_KEY not in repr(ran.runner.calls)
+
+
+def test_a_runner_still_needs_a_bus_key_saved_or_pasted(ran):
+    del ran.board.secrets["BODS_API_KEY"]
+    assert ran.handle("start", {"stops": {"A": "1800SB12341"}, "routes": False})[0] == 400
+    assert ran.runner.calls == []
+
+
+def test_a_runners_key_test_is_limited_and_scrubbed(ran):
+    status, body = ran.handle("testkey", {"name": "TAPI_APP_KEY", "value": "pasted-tapi-key",
+                                          "app_id": "pasted-tapi-id"})
+    assert status == 200 and ran.runner.calls[-1] == ("testkey", "TAPI_APP_KEY", "pasted-tapi-key", "pasted-tapi-id")
+    assert "pasted-tapi" not in json.dumps(body)
+    assert ran.handle("testkey", {"name": "TAPI_APP_ID"})[0] == 429
+    assert len(ran.runner.calls) == 1

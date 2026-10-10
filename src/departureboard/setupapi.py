@@ -20,6 +20,14 @@ no error repeats one. `testkey` tries one key, saved or pasted, with one
 harmless call to its service (keytest.py), at most once per key every
 KEY_TEST_EVERY seconds across the whole process.
 
+Where the internet work runs. By default the lookups, the key tests and the
+search run here, in this process (the dashboard; a laptop). A host that
+mustn't reach the internet itself passes a `runner` (see Runner) that does
+them elsewhere: on the Pi, setupspool.SpoolRunner hands them to a separate
+setup service, as the settings page's own service is kept off the internet.
+A runner is given only what was typed or pasted, never a saved key or the
+saved settings; it reads those itself.
+
 Each host names its own page: `begin` answers with the host's title, the
 word for itself ("board" on the Pi, "dashboard" on the dashboard) and the
 keys it uses (the Pi's settingsform.KEYS, the dashboard's dashform.KEYS),
@@ -46,7 +54,7 @@ import threading
 import time
 from importlib.resources import files
 from pathlib import Path
-from typing import Callable, Mapping, Sequence
+from typing import Callable, Mapping, Protocol, Sequence
 
 from . import discover, keytest, setup
 from .config import ConfigError
@@ -148,6 +156,27 @@ KEY_TESTS = RateLimit(KEY_TEST_EVERY)
 
 Reply = tuple[int, dict]
 MakeJob = Callable[..., object]  # (folder, stops, api_key, *, routes, walk_minutes) -> a discover.SetupJob
+
+
+class Runner(Protocol):
+    """Setup's internet work, done somewhere other than this process. Each
+    lookup takes and gives what setup.py's does, raising SetupError when it
+    can't. make_job's job has a discover.SetupJob's start, status and
+    cancel; given no `pasted_key`, it uses the saved Bus Open Data Service
+    key, as test_key uses the saved key `name` without a `value`."""
+
+    def lookup_postcode(self, postcode: str) -> Place: ...
+
+    def search_address(self, query: str) -> list[Place]: ...
+
+    def nearby_stops(self, lat: float, lon: float, *, within_m: float, limit: int) -> list[Stop]: ...
+
+    def walk_minutes(self, home: Place, places: Mapping[str, Station | Stop]) -> dict[str, tuple[int, str]]: ...
+
+    def make_job(self, stops: Mapping[str, str], pasted_key: str, *, routes: bool,
+                 walk_minutes: Mapping[str, int]) -> object: ...
+
+    def test_key(self, name: str, value: str | None, app_id: str | None) -> keytest.KeyResult: ...
 
 
 def decode(body: bytes) -> object:
@@ -331,6 +360,7 @@ class SetupApi:
         title: str = TITLE,
         noun: str = NOUN,
         keys: Sequence[tuple[str, str, str]] = KEYS,
+        runner: Runner | None = None,
     ) -> None:
         """`load_secrets` gives the environment with every saved key, as the
         settings page's does; `job_folder` is where the search builds the bus
@@ -341,7 +371,9 @@ class SetupApi:
         `title` heads the page, `noun` is what its text calls the host
         ("board": "No trains on this board"), and `keys`, (name, label,
         hint) like settingsform.KEYS, are the keys the host uses: offered,
-        saved and tested in that order, and no others."""
+        saved and tested in that order, and no others. `runner`, if given,
+        does the lookups that need the internet, the key tests and the
+        search instead of this process (and the functions passed for them)."""
         for label, href in links:
             if not label or len(label) > 40 or not _LINK.match(href):
                 raise ValueError("A link is a short label and a plain path or http(s) address")
@@ -358,8 +390,13 @@ class SetupApi:
         self._load_secrets = load_secrets
         self._job_folder = Path(job_folder)
         self._links = [{"label": label, "href": href} for label, href in links]
+        if runner is not None:
+            lookup_postcode, search_address = runner.lookup_postcode, runner.search_address
+            nearby_stops, walk_minutes = runner.nearby_stops, runner.walk_minutes
+        self._runner = runner
         self._lookup_postcode = lookup_postcode
         self._search_address = search_address
+        # The stations are a bundled list, so finding them never needs the runner.
         self._nearby_stations = nearby_stations
         self._nearby_stops = nearby_stops
         self._walk_minutes = walk_minutes
@@ -561,7 +598,11 @@ class SetupApi:
         with self._lock:
             if self._job is not None and self._job.status().get("state") in ("queued", "running"):
                 raise Conflict("A search is already running; wait for it or cancel it")
-            job = self._make_job(self._job_folder, stops, api_key, routes=routes, walk_minutes=walk)
+            if self._runner is not None:
+                # The runner reads the saved key itself: only a pasted one goes to it.
+                job = self._runner.make_job(stops, pasted or "", routes=routes, walk_minutes=walk)
+            else:
+                job = self._make_job(self._job_folder, stops, api_key, routes=routes, walk_minutes=walk)
             try:
                 job.start()
             except discover.SetupBusy:
@@ -597,18 +638,23 @@ class SetupApi:
         if not isinstance(name, str) or name not in self._key_names or name not in keytest.KEY_NAMES:
             raise Invalid("That isn't one of the keys set up here", "name")
         value = _key(fields.get("value", ""), name) or None
-        env = dict(self._load_secrets())
+        app_id = None
         if "app_id" in fields:
             if name != "TAPI_APP_KEY":
                 raise Invalid("Only the TransportAPI app key is tested with an app ID", "app_id")
-            app_id = _key(fields["app_id"], "TAPI_APP_ID")
-            if app_id:
-                env["TAPI_APP_ID"] = app_id
+            app_id = _key(fields["app_id"], "TAPI_APP_ID") or None
         # TransportAPI's two keys are one test, so share one limit.
         wait = self._key_tests.take("TAPI" if name in keytest.COSTS_A_LOOKUP else name)
         if wait:
             raise TooSoon(f"Wait {math.ceil(wait)} s before testing this key again")
-        result = self._test_key(name, value, self._settings(), env)
+        if self._runner is not None:
+            # The runner reads the saved keys and settings itself; only what was pasted goes to it.
+            result = self._runner.test_key(name, value, app_id)
+        else:
+            env = dict(self._load_secrets())
+            if app_id:
+                env["TAPI_APP_ID"] = app_id
+            result = self._test_key(name, value, self._settings(), env)
         return {"state": result.state, "message": result.message}
 
     def _settings(self) -> dict:
