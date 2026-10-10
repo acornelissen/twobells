@@ -11,6 +11,8 @@
   departureboard timetable  build the BODS bus timetable for your stops, if due
   departureboard setup discover  find the bus operators serving your stops and print their settings
   departureboard dashboard  serve the web dashboard (Mac or NAS), opening it in the browser
+  departureboard web|dashboard --set-password | --reset-code
+                          set the settings password, or print a code for a new one, and exit
 """
 
 from __future__ import annotations
@@ -470,8 +472,46 @@ def _setup_discover(args) -> int:
     return 0
 
 
-def _web(args) -> int:
+def _set_password(password, prompt: str) -> int:
+    """Ask for a new settings password twice, without echoing it, and save it."""
     import getpass
+
+    first = getpass.getpass(prompt)
+    if first != getpass.getpass("Again: "):
+        print("Those didn't match", file=sys.stderr)
+        return 1
+    try:
+        password.set(first)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 1
+    except OSError as error:
+        print(f"Can't save the password in {password.path}: {error.strerror or error}", file=sys.stderr)
+        return 1
+    print(f"Password saved to {password.path}")
+    return 0
+
+
+def _reset_code(folder: Path, where: str) -> int:
+    """Print a one-time code for setting a new settings password, and where it
+    goes. Running this proves access, so no rate limit, and the code comes
+    here rather than to the board or the log."""
+    from .auth import ResetCodes, spaced
+
+    def show(code: str, expires: float) -> None:
+        until = time.strftime("%H:%M", time.localtime(expires))
+        print(f"Settings reset code: {spaced(code)}  (valid until {until}, once)")
+        print(where)
+
+    try:
+        ResetCodes(folder, show=show).issue(time.time(), limit=False)
+    except OSError as error:
+        print(f"Can't save a reset code in {folder}: {error.strerror or error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _web(args) -> int:
     from importlib.resources import files
 
     from . import auth, web
@@ -492,26 +532,9 @@ def _web(args) -> int:
         return 2
     password = auth.PasswordStore(folder / "web.json")
     if args.set_password:
-        first = getpass.getpass("New settings page password: ")
-        if first != getpass.getpass("Again: "):
-            print("Those didn't match", file=sys.stderr)
-            return 1
-        try:
-            password.set(first)
-        except ValueError as error:
-            print(error, file=sys.stderr)
-            return 1
-        print(f"Password saved to {folder / 'web.json'}")
-        return 0
+        return _set_password(password, "New settings page password: ")
     if args.reset_code:
-        # Running this on the device proves access, so no rate limit, and the
-        # code comes here rather than to the board.
-        try:
-            auth.ResetCodes(folder, show=_print_reset_code).issue(time.time(), limit=False)
-        except OSError as error:
-            print(f"Can't save a reset code in {folder}: {error.strerror or error}", file=sys.stderr)
-            return 1
-        return 0
+        return _reset_code(folder, "Enter it on the settings page with a new password.")
     form = SettingsForm(args.config, lambda: _env(args.config, args.secrets))
     stylesheet = files("departureboard").joinpath("web.css").read_bytes()
     # Codes for a forgotten password, or the first claim, show on the board.
@@ -540,14 +563,6 @@ def _web(args) -> int:
     finally:
         server.server_close()
     return 0
-
-
-def _print_reset_code(code: str, expires: float) -> None:
-    from .auth import spaced
-
-    until = time.strftime("%H:%M", time.localtime(expires))
-    print(f"Settings reset code: {spaced(code)}  (valid until {until}, once)")
-    print("Enter it on the settings page with a new password.")
 
 
 def _probe(args) -> int:
@@ -755,7 +770,9 @@ def _settings_area(args, dash):
     )
     area = SettingsArea(dash.state_dir, DashboardForm(target, load_secrets), setup)
     if not area.password.is_set():
-        print("Settings: no password yet. Open /settings and claim it with a code from this log.", file=sys.stderr)
+        print("Settings: no password yet. Open /settings and claim it with a code from this log, "
+              "or set one with `departureboard dashboard --set-password` (see the user guide for Docker).",
+              file=sys.stderr)
     return area
 
 
@@ -768,6 +785,8 @@ def _dashboard(args) -> int:
     from .history import History
     from .snapshot import Hub
 
+    if args.set_password or args.reset_code:
+        return _dashboard_password(args)
     dash = load_dashboard(args.config, _env(args.config, args.secrets), args.state_dir)
     history = watch = None
     try:
@@ -831,6 +850,25 @@ def _dashboard(args) -> int:
     if watch is not None and watch.restart:
         _start_again(port)
     return 0
+
+
+def _dashboard_password(args) -> int:
+    """--set-password or --reset-code for the dashboard's settings: in its
+    state folder, found as the dashboard finds it, alongside a running one
+    (whose sessions end when the password changes; see auth.Sessions)."""
+    from .auth import PasswordStore
+    from .dashconfig import password_folder
+    from .dashsettings import PASSWORD_FILE, PREFIX
+
+    try:
+        folder = password_folder(args.config, _env(args.config, args.secrets), args.state_dir)
+    except OSError as error:
+        print(f"Can't read {args.config}: {error.strerror or error}. Give the dashboard's folder with "
+              "--state-dir (in Docker, /data), or its config.toml with --config.", file=sys.stderr)
+        return 2
+    if args.set_password:
+        return _set_password(PasswordStore(folder / PASSWORD_FILE), "New dashboard settings password: ")
+    return _reset_code(folder, f"Enter it on the dashboard's {PREFIX}/reset page with a new password.")
 
 
 def _interrupt(signum, frame) -> None:
@@ -930,6 +968,11 @@ def _parser() -> argparse.ArgumentParser:
     dashboard.add_argument("--port", type=_port, help="port to listen on (default: 8090, or the next free one)")
     dashboard.add_argument("--lan", action="store_true", help="listen on all addresses, for phones at home")
     dashboard.add_argument("--no-browser", action="store_true", help="don't open the browser")
+    once = dashboard.add_mutually_exclusive_group()
+    once.add_argument("--set-password", action="store_true",
+                      help="set the password for the dashboard's settings and exit (it may be running)")
+    once.add_argument("--reset-code", action="store_true",
+                      help="print a one-time code for setting a new settings password, and exit")
     dashboard.set_defaults(handler=_dashboard)
     return parser
 

@@ -9,7 +9,9 @@ names so the two never share a cookie on one host:
   claim, when none is set, and a forgotten one both need a one-time code.
   The dashboard has no display, so the code goes to its log (the container
   log in Docker, the Terminal on a Mac), which only the owner can read.
-  No response ever holds a code.
+  No response ever holds a code. `departureboard dashboard --set-password`
+  and `--reset-code` do the same from the command line, in the same folder;
+  a password set there ends every session here (Sessions checks its stamp).
 - A session is a random token in an HttpOnly, SameSite=Strict cookie named
   dash_session with Path=/settings; pre-session forms carry a signed
   double-submit token (dash_form). Every POST must be same-origin and carry

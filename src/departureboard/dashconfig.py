@@ -379,14 +379,41 @@ def load_dashboard(config_path: Path | str, env: Mapping[str, str],
     lock; call close() on the result to let it go. With lock=False it only
     checks that the settings load: no folder is made and no lock taken."""
     base = read_config(config_path)
-    options = dashboard_options(base)
-    folder = Path(state_dir_override or options.state_dir or default_state_dir(env=env)).expanduser()
+    folder = _folder(base, env, state_dir_override)
     _check_folder(folder, base)
     settings = _build(merge(base, saved_settings(folder)), dashboard_env(env, folder), folder)
     if lock:
         _make_folder(folder)
         settings.lock = _lock(folder)
     return settings
+
+
+def _folder(base: dict, env: Mapping[str, str], state_dir_override: Path | str | None) -> Path:
+    """The state folder: the one given, else [dashboard] state_dir, else the default."""
+    options = dashboard_options(base)
+    return Path(state_dir_override or options.state_dir or default_state_dir(env=env)).expanduser()
+
+
+def password_folder(config_path: Path | str, env: Mapping[str, str],
+                    state_dir_override: Path | str | None = None) -> Path:
+    """The state folder load_dashboard would use, made if need be, for setting
+    the settings password or a reset code from the command line. No lock is
+    taken (the dashboard may be running) and nothing else is loaded, so broken
+    settings can't keep their owner out. With a folder given, config.toml is
+    read only to refuse the board's folder, and need not exist: in Docker the
+    command runs with --state-dir /data and no --config."""
+    if state_dir_override:
+        try:
+            base = read_config(config_path)
+        except (OSError, ConfigError):
+            base = {}
+        folder = Path(state_dir_override).expanduser()
+    else:
+        base = read_config(config_path)  # OSError: the caller says where the folder could be given
+        folder = _folder(base, env, None)
+    _check_folder(folder, base)
+    _make_folder(folder)
+    return folder
 
 
 def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSettings:

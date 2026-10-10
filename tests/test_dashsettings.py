@@ -289,6 +289,40 @@ def test_a_forgotten_password_is_reset_with_a_code_from_the_log(signed, caplog):
     assert_only_in_the_log(code, signed, caplog)
 
 
+def test_the_dashboard_builds_its_sessions_on_its_password(dash):
+    assert dash.area.sessions.password is dash.area.password
+    assert dash.area.password.path == dash.folder / "web.json"
+
+
+def test_a_password_set_from_the_command_line_signs_every_browser_out(signed, monkeypatch, capsys):
+    import getpass
+
+    from departureboard.cli import main
+
+    old, _ = signed.sign_in()
+    assert signed("GET", "/settings", cookie=old)[0].status == 200
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": NEW_PASSWORD)
+    # Another process, as `docker exec … dashboard --set-password --state-dir /data` is.
+    assert main(["dashboard", "--set-password", "--state-dir", str(signed.folder)]) == 0
+    response, _ = signed("GET", "/settings", cookie=old)
+    assert response.status == 303 and response.getheader("Location") == "/settings/login"
+    assert signed("POST", "/settings/login", {"password": PASSWORD})[0].status == 401
+    response, _ = signed("POST", "/settings/login", {"password": NEW_PASSWORD})
+    assert response.status == 303 and response.getheader("Location") == "/settings"
+
+
+def test_a_code_from_the_command_line_claims_the_running_dashboard(dash, capsys, caplog):
+    from departureboard.cli import main
+
+    assert main(["dashboard", "--reset-code", "--state-dir", str(dash.folder)]) == 0
+    code = re.search(r"Settings reset code: (\d{3} \d{3})", capsys.readouterr().out).group(1)
+    assert code.replace(" ", "") not in caplog.text  # printed, not put in the log
+    form_cookie, _ = dash.form()
+    response, _ = reset(dash, form_cookie, code)
+    assert response.status == 303 and response.getheader("Location") == "/settings"
+    assert dash.area.password.check(NEW_PASSWORD)
+
+
 def test_a_wrong_code_changes_nothing_and_says_no_more(signed, caplog):
     form_cookie, _ = signed.form()
     response, without = reset(signed, form_cookie, "123456")

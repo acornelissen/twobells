@@ -820,6 +820,167 @@ def test_dashboard_reports_config_errors_without_traceback(tmp_path, capsys):
     assert "train_rows must be a whole number from 1 to 20" in capsys.readouterr().err
 
 
+# The dashboard's settings password and reset codes, from the command line
+
+DASH_PASSWORD = "a long enough password"
+
+
+@pytest.fixture
+def typed(monkeypatch):
+    """What getpass answers, in turn; every prompt it was asked with."""
+    import getpass
+
+    answers, prompts = [], []
+
+    def ask(prompt=""):
+        prompts.append(prompt)
+        return answers.pop(0)
+
+    monkeypatch.setattr(getpass, "getpass", ask)
+    return answers, prompts
+
+
+@pytest.fixture
+def no_dashboard(monkeypatch):
+    """Fails the test if the dashboard itself would start."""
+    from departureboard import dashconfig, dashserver
+
+    def started(*args, **kwargs):
+        raise AssertionError("the dashboard started")
+
+    monkeypatch.setattr(dashconfig, "load_dashboard", started)
+    monkeypatch.setattr(dashserver, "make_server", started)
+
+
+def test_dashboard_set_password_needs_only_its_folder_as_in_docker(tmp_path, typed, no_dashboard, capsys):
+    from departureboard.auth import PasswordStore
+
+    answers, prompts = typed
+    answers += [DASH_PASSWORD, DASH_PASSWORD]
+    folder = tmp_path / "data"
+    # As `docker exec … dashboard --set-password --state-dir /data`: no config.toml or secrets.env there.
+    assert main(["dashboard", "--set-password", "--state-dir", str(folder)]) == 0
+    assert prompts == ["New dashboard settings password: ", "Again: "]
+    assert PasswordStore(folder / "web.json").check(DASH_PASSWORD)
+    assert (folder.stat().st_mode & 0o777, (folder / "web.json").stat().st_mode & 0o777) == (0o700, 0o600)
+    out = capsys.readouterr().out
+    assert f"Password saved to {folder / 'web.json'}" in out and DASH_PASSWORD not in out
+    assert sorted(p.name for p in folder.iterdir()) == ["web.json"]  # nothing else written
+
+
+def test_dashboard_set_password_finds_the_folder_as_the_dashboard_does(tmp_path, typed, no_dashboard,
+                                                                        monkeypatch):
+    from departureboard.auth import PasswordStore
+    from departureboard.dashconfig import default_state_dir
+
+    answers, _ = typed
+    config = tmp_path / "config.toml"
+    config.write_text(f'[train]\ncrs = "GLO"\n[dashboard]\nstate_dir = "{tmp_path / "named"}"\n')
+    answers += [DASH_PASSWORD] * 2
+    assert main(["dashboard", "--config", str(config), "--set-password"]) == 0
+    assert PasswordStore(tmp_path / "named" / "web.json").check(DASH_PASSWORD)
+    # --state-dir wins over [dashboard] state_dir, as when running.
+    answers += [DASH_PASSWORD] * 2
+    assert main(["dashboard", "--config", str(config), "--set-password", "--state-dir", str(tmp_path / "given")]) == 0
+    assert (tmp_path / "given" / "web.json").exists()
+    # Neither: the dashboard's default folder.
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
+    config.write_text('[train]\ncrs = "GLO"\n')
+    answers += [DASH_PASSWORD] * 2
+    assert main(["dashboard", "--config", str(config), "--set-password"]) == 0
+    assert PasswordStore(default_state_dir() / "web.json").check(DASH_PASSWORD)
+    assert str(default_state_dir()).startswith(str(tmp_path))
+
+
+def test_dashboard_set_password_without_a_folder_or_config_says_how_to_give_one(tmp_path, typed, capsys):
+    code = main(["dashboard", "--config", str(tmp_path / "missing.toml"), "--set-password"])
+    assert code == 2 and "--state-dir" in capsys.readouterr().err
+    assert not typed[1]  # never asked for a password
+
+
+def test_dashboard_set_password_refuses_the_boards_own_folder(tmp_path, typed, capsys):
+    (tmp_path / "board").mkdir()
+    (tmp_path / "board" / "state.json").write_text("{}")
+    assert main(["dashboard", "--set-password", "--state-dir", str(tmp_path / "board")]) == 2
+    assert "board" in capsys.readouterr().err and not (tmp_path / "board" / "web.json").exists()
+
+
+@pytest.mark.parametrize("first, again, says", [
+    ("too short", "too short", "Use at least 10 characters"),
+    (DASH_PASSWORD, "something else entirely", "Those didn't match"),
+])
+def test_dashboard_set_password_refuses_a_bad_one(tmp_path, typed, capsys, first, again, says):
+    from departureboard.auth import PasswordStore
+
+    folder = tmp_path / "data"
+    PasswordStore(folder / "web.json").set("the old password")
+    typed[0].extend([first, again])
+    assert main(["dashboard", "--set-password", "--state-dir", str(folder)]) == 1
+    assert says in capsys.readouterr().err
+    assert PasswordStore(folder / "web.json").check("the old password")
+
+
+def test_dashboard_set_password_works_beside_a_running_dashboard(dashboard_config, tmp_path, typed):
+    from departureboard.auth import PasswordStore
+    from departureboard.dashconfig import load_dashboard
+
+    folder = tmp_path / "dash"
+    running = load_dashboard(dashboard_config, {"RDM_API_KEY": "k"}, folder)  # holds the folder's lock
+    try:
+        typed[0].extend([DASH_PASSWORD] * 2)
+        assert main(["dashboard", "--config", str(dashboard_config), "--set-password", "--state-dir", str(folder)]) == 0
+    finally:
+        running.close()
+    assert PasswordStore(folder / "web.json").check(DASH_PASSWORD)
+
+
+def test_dashboard_password_and_code_write_only_in_the_state_folder(tmp_path, typed, monkeypatch, capsys):
+    # As in the container, where the root is read-only and only /data (the
+    # working folder too) can be written: everything around it is read-only here.
+    root = tmp_path / "root"
+    data = root / "data"
+    data.mkdir(parents=True)
+    monkeypatch.chdir(data)
+    for name in ("HOME", "TMPDIR", "XDG_STATE_HOME"):
+        monkeypatch.setenv(name, str(root))
+    root.chmod(0o500)
+    try:
+        typed[0].extend([DASH_PASSWORD] * 2)
+        assert main(["dashboard", "--set-password", "--state-dir", str(data)]) == 0
+        assert main(["dashboard", "--reset-code", "--state-dir", str(data)]) == 0
+    finally:
+        root.chmod(0o700)
+    assert sorted(p.name for p in root.iterdir()) == ["data"]
+    assert sorted(p.name for p in data.iterdir()) == ["reset.json", "reset.lock", "web.json"]
+
+
+@pytest.mark.parametrize("flags", [["--set-password", "--reset-code"], ["--reset-code", "--set-password"]])
+def test_dashboard_password_flags_are_one_or_the_other(tmp_path, flags):
+    with pytest.raises(SystemExit):
+        main(["dashboard", "--state-dir", str(tmp_path), *flags])
+
+
+def test_dashboard_reset_code_prints_one_code_the_settings_will_take(tmp_path, no_dashboard, capsys, caplog):
+    import re
+
+    from departureboard.auth import ResetCodes, show_in_log
+
+    caplog.set_level("DEBUG")
+    folder = tmp_path / "data"
+    ResetCodes(folder, show=show_in_log).issue(time.time())  # someone just asked for one on the page
+    caplog.clear()
+    assert main(["dashboard", "--reset-code", "--state-dir", str(folder)]) == 0  # no page limits here
+    captured = capsys.readouterr()
+    codes = re.findall(r"Settings reset code: (\d{3}) (\d{3})", captured.out)
+    assert len(codes) == 1 and "valid until" in captured.out and "/settings/reset" in captured.out
+    code = "".join(codes[0])
+    assert code not in captured.err and code not in caplog.text  # printed once, never logged
+    assert not (folder / "reset-display.json").exists()
+    # The dashboard's settings check codes in the same folder.
+    assert ResetCodes(folder, show=show_in_log).verify(code, time.time())
+
+
 def test_the_dashboards_setup_wizard_is_named_for_it_and_offers_its_keys(dashboard_config, tmp_path):
     from types import SimpleNamespace
 
