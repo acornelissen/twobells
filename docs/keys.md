@@ -40,13 +40,13 @@ The easiest way is to paste them in the settings, at `/settings` on your install
 
 | Key | Pasted on |
 |---|---|
-| `RDM_API_KEY`, `BODS_API_KEY` | the setup wizard's **Keys** step, or the **General** tab |
-| `TAPI_APP_ID`, `TAPI_APP_KEY` | the **Board** tab (only while the board view is on) |
-| `RDM_DETAILS_API_KEY`, `RDM_KB_API_KEY` | the **Dashboard** tab (only while the dashboard view is on) |
+| `RDM_API_KEY`, `BODS_API_KEY` | the setup wizard's **Keys** step, or the settings' **Keys** page |
+| `TAPI_APP_ID`, `TAPI_APP_KEY` | the **Keys** page (only while the board view is on) |
+| `RDM_DETAILS_API_KEY`, `RDM_KB_API_KEY` | the **Keys** page (only while the dashboard view is on) |
 
 Keys pasted there are saved in `secrets.env` in the install's store (`/var/lib/departureboard` on a Pi, the `/data` volume in Docker; see [Where things are kept](user-guide.md#where-things-are-kept)), readable only by the app. They win over keys in a file of your own, and need no restart.
 
-**Testing a key.** The wizard has **How to get this key** (the short version of this guide) and a **Test this key** button by each key. Each tab has a **Test a key** section after **Save settings**, with a button for each of its keys. Testing makes one small request to the key's service and says what it found: it works, it's the wrong key, it's for another Rail Data Marketplace product, the service isn't answering, or it can't tell. It tests the key in the box if you've pasted one, without saving it, or else the key already saved. Each key can be tested once every 10 seconds.
+**Testing a key.** The wizard has **How to get this key** (the short version of this guide) and a **Test this key** button by each key. The settings' **Keys** page has a **Test a key** section after **Save changes**, with a button for each key. Testing makes one small request to the key's service and says what it found: it works, it's the wrong key, it's for another Rail Data Marketplace product, the service isn't answering, or it can't tell. It tests the key in the box if you've pasted one, without saving it, or else the key already saved. Each key can be tested once every 10 seconds.
 
 **Or in a file of your own.** Each key goes on its own line, as `NAME=key`, with no spaces and no quotes:
 
@@ -109,11 +109,11 @@ base_url = "https://api1.raildata.org.uk/..."
 
 ### Put it in
 
-The **Rail Data Marketplace key** box in the setup wizard or on the **General** tab. Or `RDM_API_KEY` in a `secrets.env` of your own.
+The **Rail Data Marketplace key** box in the setup wizard or on the settings' **Keys** page. Or `RDM_API_KEY` in a `secrets.env` of your own.
 
 ### Check it works
 
-In the wizard, press **Test this key**; on the **General** tab, **Test the Rail Data Marketplace key**. "Not subscribed" means the key is for another RDM product: subscribe to Live Departure Board and copy its own Consumer key.
+In the wizard, press **Test this key**; on the **Keys** page, **Test the Rail Data Marketplace key**. "Not subscribed" means the key is for another RDM product: subscribe to Live Departure Board and copy its own Consumer key.
 
 Or on the Pi:
 
@@ -151,13 +151,13 @@ You need the [RDM account](#make-an-rdm-account) from above.
 
 ### Put it in
 
-The **Rail Data Marketplace Service Details key** box on the **Dashboard** tab. Or `RDM_DETAILS_API_KEY` in a `secrets.env` of your own.
+The **Rail Data Marketplace key for where each train is** box on the settings' **Keys** page. Or `RDM_DETAILS_API_KEY` in a `secrets.env` of your own.
 
 ### Check it works
 
-On the **Dashboard** tab, press **Test the Rail Data Marketplace Service Details key**. Then open the dashboard: within a minute or two, the first train's row says where it is, and the next three trains' sheets draw them on their journeys.
+On the **Keys** page, press **Test the Rail Data Marketplace key for where each train is**. Then open the dashboard: within a minute or two, the first train's row says where it is, and the next three trains' sheets draw them on their journeys.
 
-If they don't, look at the log (on a Pi `journalctl -u departureboard-fetch`; in Docker `docker logs departureboard`; on a desktop, the Terminal window running it) for "train positions off for 6 hours". That means the key was refused: check you copied the Service Details key, not the Live Departure Board one. Saving the right key on the tab starts the dashboard's feeds again; a key changed in a file of your own needs a restart (see [Replacing a key](#replacing-a-key)), or the dashboard waits the full 6 hours before trying again.
+If they don't, look at the log (on a Pi `journalctl -u departureboard-fetch`; in Docker `docker logs departureboard`; on a desktop, the Terminal window running it) for "train positions off for 6 hours". That means the key was refused: check you copied the Service Details key, not the Live Departure Board one. Saving the right key on the Keys page starts the dashboard's feeds again; a key changed in a file of your own needs a restart (see [Replacing a key](#replacing-a-key)), or the dashboard waits the full 6 hours before trying again.
 
 ---
 
@@ -188,8 +188,8 @@ You need the [RDM account](#make-an-rdm-account) from above.
 
 ### Put them in
 
-- The key: the **Rail Data Marketplace Knowledgebase Incidents key** box on the **Dashboard** tab. Or `RDM_KB_API_KEY` in a `secrets.env` of your own.
-- The address: the **Knowledgebase Incidents address** box under **Trains** on the **Dashboard** tab. It must be at `raildata.org.uk`; any other address goes in `config.toml`, under `[dashboard]`:
+- The key: the **Rail Data Marketplace key for engineering works** box on the settings' **Keys** page. Or `RDM_KB_API_KEY` in a `secrets.env` of your own.
+- The address: the **Engineering works address** box just below it. It must be at `raildata.org.uk`; any other address goes in `config.toml`, under `[dashboard]`:
 
   ```toml
   [dashboard]
@@ -198,7 +198,7 @@ You need the [RDM account](#make-an-rdm-account) from above.
 
 ### Check it works
 
-Save the address first, then press **Test the Rail Data Marketplace Knowledgebase Incidents key** on the **Dashboard** tab: the test asks the saved address. If the address is missing, the dashboard says engineering works are off and asks you to set `kb_incidents_url`. Otherwise, any works affecting your trains appear with the other disruption notices. There often aren't any, so an empty list doesn't mean the key failed; look in the dashboard's log for an error about incidents if you're unsure.
+Save the address first, then press **Test the Rail Data Marketplace key for engineering works** on the **Keys** page: the test asks the saved address. If the address is missing, the dashboard says engineering works are off and asks you to set `kb_incidents_url`. Otherwise, any works affecting your trains appear with the other disruption notices. There often aren't any, so an empty list doesn't mean the key failed; look in the dashboard's log for an error about incidents if you're unsure.
 
 ---
 
@@ -237,13 +237,13 @@ The Bus Open Data Service (BODS) is run by the Department for Transport.
 
 ### Put it in
 
-The **Bus Open Data Service key** box in the setup wizard or on the **General** tab. Or `BODS_API_KEY` in a `secrets.env` of your own.
+The **Bus data key** box in the setup wizard or on the settings' **Keys** page. Or `BODS_API_KEY` in a `secrets.env` of your own.
 
 Buses also need your stops and their bus companies, which the setup wizard finds; see [Bus times](user-guide.md#bus-times).
 
 ### Check it works
 
-In the wizard, press **Test this key**; on the **General** tab, **Test the Bus Open Data Service key**. It asks BODS for the buses in a small patch of map, so it works whether or not any are running.
+In the wizard, press **Test this key**; on the **Keys** page, **Test the Bus data key**. It asks BODS for the buses in a small patch of map, so it works whether or not any are running.
 
 Or build the bus timetable. On the Pi:
 
@@ -254,7 +254,7 @@ journalctl -u departureboard-timetable -n 5
 
 On a desktop: `departureboard timetable`, with the same `--config` and `--secrets` as you start it with, if any.
 
-Either way, it ends with `Bus timetable: … journeys at your stops`. If it builds a timetable, the key works. Then `departureboard probe bus` (with `sudo /opt/departureboard/venv/bin/` in front on the Pi) lists the next buses. If every bus shows `sch` for a long time, **Status** on the **Board** tab says whether live positions are failing.
+Either way, it ends with `Bus timetable: … journeys at your stops`. If it builds a timetable, the key works. Then `departureboard probe bus` (with `sudo /opt/departureboard/venv/bin/` in front on the Pi) lists the next buses. If every bus shows `sch` for a long time, **Status** on the settings' **Board** page says whether live positions are failing.
 
 ---
 
@@ -277,13 +277,13 @@ Your account starts with one app. Open it to see its credentials: an **app_id** 
 
 ### Put them in
 
-The **TransportAPI app ID** and **TransportAPI app key** boxes on the **Board** tab. Or `TAPI_APP_ID` and `TAPI_APP_KEY` in `/etc/departureboard/secrets.env`.
+The **TransportAPI app ID** and **TransportAPI app key** boxes on the settings' **Keys** page, while the board view is on. Or `TAPI_APP_ID` and `TAPI_APP_KEY` in `/etc/departureboard/secrets.env`.
 
 ### Check it works
 
-On the **Board** tab, paste both (or leave them empty to test the saved ones), then press **Test the TransportAPI app ID and key**. It tests the two together, and uses one of today's 30 lookups, as the note by the button says. The board doesn't count that lookup in its own daily budget, which leaves 2 spare by default.
+On the **Keys** page, paste both (or leave them empty to test the saved ones), then press **Test the TransportAPI app ID and key**. It tests the two together, and uses one of today's 30 lookups, as the note by the button says. The board doesn't count that lookup in its own daily budget, which leaves 2 spare by default.
 
-**Status** on the **Board** tab shows how many of today's TransportAPI lookups are used, and a "Problem: …" line if a lookup failed. While the BODS timetable is working, TransportAPI isn't used at all, so there's nothing to see.
+**Status** on the settings' **Board** page shows how many of today's TransportAPI lookups are used, and a "Problem: …" line if a lookup failed. While the BODS timetable is working, TransportAPI isn't used at all, so there's nothing to see.
 
 With `source = "transportapi"` under `[bus]`, `departureboard probe bus` checks it directly. That uses one lookup per stop from today's 30.
 
@@ -325,7 +325,7 @@ Replace a key when it stops working, when you've made a new one, or if it might 
    - TransportAPI: make a new app, use its keys, and delete the old app.
    - Rail Data Marketplace and BODS: look in your account for a way to make a new key, or contact them through the site's help or contact page.
 2. **Put the new key in** where the old one was:
-   - **The settings:** paste the new key into its box, on the wizard's **Keys** step or the tab that has it, and press **Save settings**. Leaving a box empty keeps the key you have. A key saved in the settings wins over one in a file of your own, so if you've ever pasted that key there, replace it there. Nothing needs restarting.
+   - **The settings:** paste the new key into its box, on the wizard's **Keys** step or the settings' **Keys** page, and press **Save changes**. Leaving a box empty keeps the key you have. A key saved in the settings wins over one in a file of your own, so if you've ever pasted that key there, replace it there. Nothing needs restarting.
    - **A `secrets.env` of your own:** change the text after `NAME=` and save the file. Keep it to one line, with no spaces or quotes.
 3. **Restart what uses it**, only after changing a file of your own:
    - On a Pi: the e-paper board and the timetable timer pick it up on their next run. Restart the rest: `sudo systemctl restart departureboard-web.service departureboard-fetch.service departureboard-screen.service` (leave out the screen if you don't use it).

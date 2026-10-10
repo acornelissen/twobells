@@ -15,7 +15,7 @@ Contents:
 2. [The dashboard](#2-the-dashboard): what's on the web page.
 3. [Installing](#3-installing): on a Pi, in Docker, or on a desktop.
 4. [First run and the setup wizard](#4-first-run-and-the-setup-wizard)
-5. [The settings](#5-the-settings): the General, Board and Dashboard tabs.
+5. [The settings](#5-the-settings): the Overview, Trains and buses, Board, Dashboard, Keys and General pages.
 6. [Password and reset codes](#6-password-and-reset-codes)
 7. [Keys](#7-keys)
 8. [Looking after a Pi](#8-looking-after-a-pi): its services, displays, bus times and more.
@@ -88,7 +88,7 @@ Each line reads: *route*, *stop*, *destination*, *when to leave*, *when it goes*
 
 ### The plain look
 
-The same information in black on white, with red highlights. The words are the same as the station board look; only where some of them sit differs. Someone may have switched to it on the Board tab of the settings.
+The same information in black on white, with red highlights. The words are the same as the station board look; only where some of them sit differs. Someone may have switched to it on the Board page of the settings.
 
 ![The plain look on the Inky pHAT](images/phat-plain.png)
 
@@ -145,14 +145,14 @@ The page only appears when the board is checking buses (see *When it checks* bel
 
 ### When it checks
 
-The board only fetches new times during set windows. Train times and the bus timetable cost nothing, so their windows can cover the whole day; if bus times come from TransportAPI instead (see [Bus times](#bus-times)), its free limit means short windows, such as weekday mornings and early evenings. Outside the windows it keeps showing what it last knew, and doesn't say "not updating", because it isn't trying to. Departures drop off once their time has passed, so the evening never shows the morning's buses. The windows are on the Board tab.
+The board only fetches new times during set windows. Train times and the bus timetable cost nothing, so their windows can cover the whole day; if bus times come from TransportAPI instead (see [Bus times](#bus-times)), its free limit means short windows, such as weekday mornings and early evenings. Outside the windows it keeps showing what it last knew, and doesn't say "not updating", because it isn't trying to. Departures drop off once their time has passed, so the evening never shows the morning's buses. The windows are on the Board page of the settings.
 
 On bank holidays trains and buses run a Sunday service, so the board treats them like Sundays: weekday-only windows are off, and windows that include Sundays apply.
 
 ### Other things the board can show
 
 - **Set me up**, with the settings address (`<pi name>.local:8090/settings`; type it as shown, the browser adds `http://`): the app isn't set up yet. See [First run](#4-first-run-and-the-setup-wizard).
-- **Board off**, with the same address: the board view is switched off on the General tab. Nothing is fetched for it until it is back on.
+- **Board off**, with the same address: the board view is switched off on the General page of the settings. Nothing is fetched for it until it is back on.
 - **A 6-digit code:** someone asked for one to set the settings password. It goes once it is used, or after 10 minutes.
 
 ---
@@ -187,7 +187,7 @@ The dashboard shows buses only from the BODS timetable (see [Bus times](#bus-tim
 ### Disruptions and engineering works
 
 - **Buses:** roadworks, diversions and stop closures come from Bus Open Data (the same `BODS_API_KEY`), checked every 10 minutes. Only those at your stops, at the stops your buses use nearby, or on your lines (run by the same operator) with a stop in your area or with no stops named (a withdrawn or shortened service) are shown, for now and the next 7 days, those at your stops first. Roadworks at the far end of one of your lines are left out. A bus row with one in force gets a **Disruption** link to it.
-- **Trains** (optional): engineering works come from the National Rail Knowledgebase through the Rail Data Marketplace. Subscribe to its **Knowledgebase Incidents** product, put its key in `RDM_KB_API_KEY`, and copy the address the product page gives into **Knowledgebase Incidents address** on the Dashboard tab, or into `config.toml`:
+- **Trains** (optional): engineering works come from the National Rail Knowledgebase through the Rail Data Marketplace. Subscribe to its **Knowledgebase Incidents** product, put its key in `RDM_KB_API_KEY`, and copy the address the product page gives into **Engineering works address** on the Keys page, or into `config.toml`:
 
   ```toml
   [dashboard]
@@ -203,7 +203,7 @@ For a tablet on the wall, open the dashboard's address with `?kiosk` on the end:
 - **What it shows:** the place, the time and the status word; Next to catch (the countdown, which departure, how sure it is, and **Then:**); the disruption line, without the notices behind it; the next 4 trains and 4 buses; and the weather now with the next 4 hours. On a landscape screen the weather sits beside Next to catch and the trains and buses side by side; on a portrait one they're stacked. Around here, the small position strips in the rows (whatever the setting), reminders, the sheets and **Show later departures** are left out.
 - **Look:** the Board look, unless that tablet has had the Board look turned off. To change it, open the address without `?kiosk`, choose with **Board look**, then go back.
 - **When it's behind:** a wide amber banner across the top says "Not updated since 17:42", or "Offline" when the tablet can't reach the dashboard, big enough to read across the room.
-- **At night:** during the dashboard's quiet windows (**When not to check** on the Dashboard tab, 01:00 to 05:00 unless you change it), the page dims to dark grey or dim amber on black. Every few minutes the whole page moves a pixel or two, so nothing is burnt into the screen.
+- **At night:** during the dashboard's quiet hours (**Quiet hours** on the Dashboard page, 01:00 to 05:00 unless you change it), the page dims to dark grey or dim amber on black. Every few minutes the whole page moves a pixel or two, so nothing is burnt into the screen.
 - **New versions:** the page reloads itself once a day at 03:30, the tablet's time, once the dashboard answers.
 
 The page can't keep the screen on by itself: browsers allow that only on `https://` pages, and the dashboard is plain `http://` on your home network. Set the tablet's own screen timeout (auto-lock, sleep) to never, ideally with it plugged in. To keep it on the page, use Guided Access on an iPad (Settings > Accessibility), screen pinning on Android, or a kiosk browser app.
@@ -284,11 +284,11 @@ The wizard's steps:
 2. **Station:** pick from the stations nearest home, type another station's code, or choose no trains. Optionally, say where you usually go (like `MAN`) to show only trains calling there.
 3. **Bus stops:** tick the stops you use, up to 10. Each gets a short label for the board; the letter on the stop's sign is suggested.
 4. **Walk times:** worked out from the walking route to each; change any that are wrong.
-5. **Keys:** paste the keys every view uses: the Rail Data Marketplace key for trains and the BODS key for buses. Each has **How to get this key** and a **Test this key** button. See [Keys](#7-keys). Keys only one view uses are on that view's tab.
+5. **Keys:** paste the keys every view uses: the Rail Data Marketplace key for trains and the BODS key for buses. Each has **How to get this key** and a **Test this key** button. See [Keys](#7-keys). Keys only one view uses are on the settings' Keys page.
 6. **Views** (a Pi only): the board, the dashboard, or both. The board is ticked at first. Docker and a desktop have only the dashboard, so they skip this step.
-7. **Check and save:** with bus stops, saving first finds the bus companies serving them and builds their timetable, which can take a few minutes; leave the page open, or cancel. You can also ask for each line's route strip, for the screen's bus page (slower). Once the timetable is built, the roads for the dashboard's bus maps are found, for up to 5 minutes more, with a progress bar: press **Wait for the roads** to save once they are found, or **Carry on** to save now and let them finish on their own. Until then the maps draw straight lines between stops, and **Your place** on the General tab says how far they have got. If they are stopped part way (the dashboard starting again with the new settings, say), the next timetable build, within the hour, finds the rest.
+7. **Check and save:** with bus stops, saving first finds the bus companies serving them and builds their timetable, which can take a few minutes; leave the page open, or cancel. You can also ask for each line's route strip, for the screen's bus page (slower). Once the timetable is built, the roads for the dashboard's bus maps are found, for up to 5 minutes more, with a progress bar: press **Wait for the roads** to save once they are found, or **Carry on** to save now and let them finish on their own. Until then the maps draw straight lines between stops, and **Your place** on the settings' Overview says how far they have got. If they are stopped part way (the dashboard starting again with the new settings, say), the next timetable build, within the hour, finds the rest.
 
-Saving keeps your other settings: the look, rotation, text size and so on. Change anything else on the [settings tabs](#5-the-settings) afterwards. Choosing no trains, or no bus stops, switches them off (shown as **Off** on the General tab); running setup again and picking a station or stops switches them back on. **Change with setup**, under **Your place** on the General tab, opens the wizard again at any time. Run again, it starts with your station and the stops you have ticked, wherever they are near home.
+Saving keeps your other settings: the look, rotation, text size and so on. Change anything else on the [settings pages](#5-the-settings) afterwards. Choosing no trains, or no bus stops, switches them off (shown as **Off** on the Trains and buses page); running setup again and picking a station or stops switches them back on. **Change with setup**, under **Your place** on the Overview, opens the wizard again at any time.
 
 **Changing only the stops, or only the station:** `/settings/setup/?step=stops` (change stops only) and `/settings/setup/?step=station` (change station only) open the wizard at that step, with today's choices ticked. Then come the walk times, starting from the ones you have, the keys only if the one it needs isn't set, and **Check and save**, which saves only that part: home, the views and everything else stay as they are. Stops are found near roughly where home is, the position kept for the weather (to about 1 km), and your stops are listed even if they aren't near it; for a search from home exactly, run the whole wizard. Keeping the same stops with the same labels needs no new bus company search. **Back to settings**, on the first step, returns to the settings.
 
@@ -308,35 +308,46 @@ Until it is set up, the board never fails and restarts: the e-paper timer draws 
 
 The settings are at `/settings` on the install's address, port 8090, from any phone or computer on the home network. Sign in with the settings password.
 
-They are in tabs:
+They are in pages by task, one tab each:
 
-- **General** (`/settings`): what both views use. Always there.
+- **Overview** (`/settings`): where your departures are for, with **Change with setup**. It only shows; nothing is changed here.
+- **Trains and buses** (`/settings/trains-and-buses`): the title, your station, stops and the weather, which both views use.
 - **Board** (`/settings/board`): the board's own settings. Only while the board view is on.
 - **Dashboard** (`/settings/dashboard`): the dashboard's own. Only while the dashboard view is on.
+- **Keys** (`/settings/keys`): the keys, each with a test.
+- **General** (`/settings/general`): the views and bank holidays, and the time zone.
 
-Change what you need on a tab, then press **Save settings** at the bottom. If something isn't right, nothing is saved. A box at the top lists the problems, each named by section and field (for example *Trains – Station code*); click one to jump to it, where the error is shown in words. Nothing is saved either unless the settings then load in every view that is on, so a change for one view can't break the other.
+A setting is on one page only. Each page's settings are in sections; a page with more than three lists them at the top, to jump to. The settings most people never change wait under **Advanced** at the end of their section: open it to see them. A section that is switched off says **Off** by its heading, and keeps its settings for turning it back on; one that isn't set up yet says **Not set up**, with a link to the [setup wizard](#4-first-run-and-the-setup-wizard). Numbers have their unit beside the box; something set in `config.toml` only, like the display, is shown with **Set in config.toml** and can't be changed here.
 
-What you save replaces what's in `config.toml`, including emptying a box: clearing *Only trains calling at* really does show every train again. Settings a tab doesn't show are kept, like the bus companies and route strips setup found, the weather's location, and the other tabs'.
+Change what you need on a page, then press **Save changes** in the bar at the foot of the window, which also says when the changes take effect. The page then says what you changed, for example *Saved 2 changes: Title; Trains shown, 3 to 2* (never a key). If something isn't right, nothing is saved. A box under the tabs lists the problems, each named by section and field (for example *Trains – Station code*); click one to jump to it, where the error is shown in words. Keys you pasted aren't kept when that happens: paste them again. Nothing is saved either unless the settings then load in every view that is on, so a change for one view can't break the other.
 
-### General
+What you save replaces what's in `config.toml`, including emptying a box: clearing *Only trains calling at* really does show every train again. Settings a page doesn't show are kept, like the bus companies and route strips setup found, the weather's location, and the other pages'.
 
-- **Your place:** the station, bus stops and whether home is set, with **Change with setup**, which opens the [setup wizard](#4-first-run-and-the-setup-wizard).
-- **Title:** shown at the top of the dashboard, and in the board's plain look.
-- **Time zone:** like `Europe/London`. Departures and checking times are in this zone.
-- **Bank holidays:** treat them like Sundays (the usual choice), or ignore them.
-- **Bank holidays for:** England and Wales, Scotland, or Northern Ireland. Each has its own bank holidays.
-- **Views** (a Pi only): the board, the dashboard, or both. At least one stays on.
-- **Trains:** on or off. Off, no trains are shown or checked for; the rest of this section is kept, unchecked, for turning them back on.
-- **Station code:** 3 letters, like `GLO` for Glossop. National Rail's station pages show it.
-- **Only trains calling at:** for example `MAN`, so only trains to Manchester show. Empty shows every train.
-- **Walk to the station (minutes):** used for the leave time. Empty means no leave time.
-- **Buses:** on or off, as for trains.
-- **Stops:** one per line, written `LABEL = ATCO code`, for example `A = 1000DGHS0900`. The label is the letter shown on the board. Find stop codes on [bustimes.org](https://bustimes.org): the code is the last part of a stop page's address.
-- **Only buses heading to:** optional, comma-separated, for example `Ashton, Hyde`. Empty shows every bus.
-- **Walk to each stop (minutes):** one per line (`A = 7`), or one number for every stop. Empty means no leave times.
-- **Weather:** on or off. The rain warning on the board and the dashboard's forecast. Shown once setup or `config.toml` gives a location (see [Rain warning set-up](#rain-warning-set-up)).
-- **Warn of rain from (chance, %):** 50 means warn when rain is more likely than not.
-- **Keys:** the Rail Data Marketplace key and the Bus Open Data Service key, with a test button for each.
+### Overview
+
+- **Your place:** the station, bus stops, the bus timetable (when it was saved, and how finding the bus maps' roads is getting on) and whether home is set, with **Change with setup**, which opens the [setup wizard](#4-first-run-and-the-setup-wizard).
+- If the dashboard can't start, why, at the top.
+
+The version running is at the foot of every page.
+
+### Trains and buses
+
+- **Title:** the board shows all of it. The dashboard shows the part before `>` as its heading: Glossop, from `Glossop > Manchester`.
+- **Trains**
+  - **Show trains:** on or off. Off, no trains are shown or checked for; the rest of this section is kept, unchecked, for turning them back on.
+  - **Station code:** 3 letters, like `GLO` for Glossop, with the station's name for the one saved. National Rail's station pages show it.
+  - **Only trains calling at:** a station code, for example `MAN`, so only trains to Manchester show. Empty shows every train.
+  - **Walk to the station:** in minutes, for the leave time. Empty means no leave time.
+- **Buses**
+  - **Show buses:** on or off, as for trains.
+  - **Stops:** the stops setup found, by their label (the letter shown on the board) and stop code.
+  - **Walk to each stop (minutes):** one per line (`A = 7`), or one number for every stop. Empty means no leave times.
+  - **Only buses heading to:** optional, separated by commas, for example `Ashton, Hyde`. Empty shows every bus.
+  - Advanced: **Stop codes**, one per line, written `LABEL = stop code`, for example `A = 1000DGHS0900`. Find stop codes on [bustimes.org](https://bustimes.org): the code is the last part of a stop page's address.
+- **Weather** (once setup or `config.toml` gives a location; see [Rain warning set-up](#rain-warning-set-up))
+  - **Show the weather:** on or off. The rain warning on the board and the dashboard's forecast.
+  - **Warn of rain when the chance is at least:** 50 % means warn when rain is more likely than not.
+  - **Location:** shown, not changed here: setup sets it from home.
 
 Trains and buses can't both be off, or there would be nothing to show.
 
@@ -350,46 +361,60 @@ Trains and buses can't both be off, or there would be nothing to show.
   - when the display last redrew.
 
   It's the first place to look when the board seems wrong.
-- **Display:** which display `config.toml` sets. Changing it means switching services, so it's set there only.
-- **Look:** station board or plain.
-- **Accent colour:** the look's own (amber for the station board, red for plain), or another that stays readable on the look's background. A colour too faint on the background isn't offered.
-- **Rotation:** if the display is mounted upside down (or, for the screen, on its side).
-- **Least minutes between redraws:** e-paper only. Lower means fresher but more wear and flicker; 2 is a good balance.
-- **Text size:** the plain look only, 9 to 16 (11 is standard). Bigger shows fewer departures on a small display.
-- **Trains shown** and **Buses shown**, and for each, **Check every (minutes)** and **Say "not updating" after (minutes)**.
-- **When to check:** one window per line, written like `Mon-Fri 06:30-09:30`. Days can be `Mon-Sun`, `Sat,Sun`, `Mon-Fri`, or wrap round the week like `Fri-Mon`. A window can run past midnight: `Fri 22:00-01:00` runs from Friday night into Saturday morning.
-- **Most TransportAPI hits a day:** a hard limit on TransportAPI lookups, used only while it stands in for the bus timetable. The free plan allows 30 a day, and each check costs one per stop.
-- **Keys:** the TransportAPI app ID and app key, with one test for the two. That test uses one of today's 30 TransportAPI lookups.
+- **Display**
+  - **Look:** station board or plain.
+  - **Rotation:** if the display is mounted upside down (or, for the screen, on its side).
+  - **Display:** which display `config.toml` sets. Changing it means switching services, so it's set there only.
+  - Advanced: **Accent colour**, the look's own (amber for the station board, red for plain) or another that stays readable on the look's background (a colour too faint on the background isn't offered); **Redraw at most every** so many minutes, e-paper only (lower means fresher but more wear and flicker; 2 is a good balance); **Text size**, the plain look only, 9 to 16 (11 is standard; bigger shows fewer departures on a small display).
+- **Trains** and **Buses**, each:
+  - **Trains shown** or **Buses shown**.
+  - **When to check:** one window per line, written like `Mon-Fri 06:30-09:30`. Days can be `Mon-Sun`, `Sat,Sun`, `Mon-Fri`, or wrap round the week like `Fri-Mon`. A window can run past midnight: `Fri 22:00-01:00` runs from Friday night into Saturday morning.
+  - Advanced: **Check every** so many minutes, and **Say "not updating" after** so many minutes. For buses, while TransportAPI is used (its source, or its keys saved for it to stand in for the bus timetable), **Most TransportAPI lookups a day** too: a hard limit, used only while it stands in for the timetable. The free plan allows 30 a day, and each check costs one per stop.
 
 ### Dashboard
 
-- **When not to check:** one window per line, like `Mon-Sun 01:00-05:00`. The dashboard still checks while someone has it open. Empty checks all the time.
-- **Days of punctuality history to keep:** 1 to 3650.
-- **Position strips in each row:** on or off. On, each departure row has a small drawing of its stops with the train or bus where it is; off, the rows keep their words without it. A wall tablet never shows them.
-- **Trains:** how many to show, how often to check (seconds), how late counts as late in the history, and the **Knowledgebase Incidents address** for engineering works.
-- **Buses:** how many to show, how often to check (seconds), and how late counts as late.
-- **Weather:** how often to check the forecast.
-- **Keys:** the Service Details key and the Knowledgebase Incidents key, with a test button for each.
+- **Departures**
+  - **Most trains listed** and **Most buses listed:** the first 5 show; the rest are behind **Show later departures**. A wall tablet shows 4.
+  - **Position strips in each row:** on or off. On, each departure row has a small drawing of its stops with the train or bus where it is; off, the rows keep their words without it. A wall tablet never shows them.
+  - Advanced: **Check for trains every** and **Check for buses every** so many seconds; **Check the forecast every** so many minutes; **Count trains as late from** and **Count buses as late from** so many minutes, for the punctuality history; **Keep punctuality history for** so many days (1 to 3650).
+- **Quiet hours**
+  - **When to stop checking:** one window per line, like `Mon-Sun 01:00-05:00`. The dashboard still checks while someone has it open, and a wall tablet dims then. Empty checks all the time.
 
 The same settings can go under `[dashboard]` in `config.toml`. All are optional:
 
 | Setting | Default | What it does |
 |---|---|---|
-| `train_rows`, `bus_rows` | 10 | How many of each to show (1 to 20) |
+| `train_rows`, `bus_rows` | 10 | How many of each to list (1 to 20) |
 | `train_interval_seconds` | 60 | How often to check trains (at least 30) |
 | `bus_interval_seconds` | 30 | How often to check buses (at least 15) |
 | `weather_interval_minutes` | 30 | How often to check the forecast (at least 10) |
-| `quiet_windows` | `["Mon-Sun 01:00-05:00"]` | When not to check, unless the page is open |
+| `quiet_windows` | `["Mon-Sun 01:00-05:00"]` | Quiet hours: when not to check, unless the page is open |
 | `late_minutes_train`, `late_minutes_bus` | 3, 2 | How late counts as late in the history (1 to 60) |
 | `history_days` | 90 | How many days of history to keep and show (1 to 3650) |
 | `row_strips` | `true` | Each row's small drawing of its stops, with the train or bus on it (never on a wall tablet) |
-| `kb_incidents_url` | a placeholder | The Knowledgebase Incidents address from the RDM product page |
+| `kb_incidents_url` | a placeholder | The engineering works address from the RDM Knowledgebase Incidents product page |
 | `allowed_hosts` | `[]` | Extra names the dashboard and settings answer to (`config.toml` only) |
 | `state_dir` | see [Where things are kept](#where-things-are-kept) | Where the app keeps its files (`config.toml` only) |
 
+### Keys
+
+Keys are never shown: each box says whether its key is set. Paste one to replace it; leave a box empty to keep it.
+
+- **Rail Data Marketplace key** (trains) and **Bus data key** (the Bus Open Data Service, the government's free bus data): always.
+- **TransportAPI app ID** and **app key:** while the board view is on.
+- **Rail Data Marketplace key for where each train is** (RDM calls it Service Details) and **for engineering works** (Knowledgebase Incidents), with the **Engineering works address** below it: while the dashboard view is on.
+
+See [Keys](#7-keys) for where to get each.
+
 ### Testing a key
 
-Each tab has a **Test a key** section, after **Save settings**, with a button for each of its keys. A test takes the key typed in its box, or the saved one if the box is empty, and makes one small request to the key's service. It says what it found by the key's box: it works, it's the wrong key, it's for another Rail Data Marketplace product, the service isn't answering, or it can't tell. Nothing is saved, and the key boxes are emptied: paste a key again to save it. Each key can be tested once every 10 seconds.
+The Keys page has a **Test a key** section, after **Save changes**, with a button for each key. A test takes the key typed in its box, or the saved one if the box is empty, and makes one small request to the key's service. It says what it found by the key's box: it works, it's the wrong key, it's for another Rail Data Marketplace product, the service isn't answering, or it can't tell. Nothing is saved, and the key boxes are emptied: paste a key again to save it. Each key can be tested once every 10 seconds. Testing the TransportAPI app ID and key together uses one of today's 30 TransportAPI lookups.
+
+### General
+
+- **Views** (a Pi only): the board, the dashboard, or both. At least one stays on.
+- **Bank holidays:** trains and buses run Sunday times on bank holidays, so only checking times that include `Sun` apply then. Pick the part of the UK whose bank holidays to follow (England and Wales, Scotland, or Northern Ireland), or ignore them. Dates come from GOV.UK.
+- Advanced: **Time zone**, like `Europe/London`, with every zone suggested as you type. Departures and checking times are in this zone.
 
 ### When changes take effect
 
@@ -398,9 +423,11 @@ Each tab has a **Test a key** section, after **Save settings**, with a button fo
 - **The dashboard on a Pi:** within a few minutes.
 - **The dashboard in Docker or on a desktop:** the server starts again by itself within a few seconds to use the new settings. You stay signed in.
 
+The save bar says which applies before you save.
+
 Turning a view off doesn't stop or disable any service. The board shows **Board off** and fetches nothing; the dashboard's address opens the settings.
 
-A few things aren't on the tabs. The setup wizard sets where bus times come from (`source` and `operators`, see [Bus times](#bus-times)) and, if you ask, the stop list for the bus position page; or set them in `config.toml`. The type of display, addresses such as `[train] base_url`, `allowed_hosts` and `state_dir` are set in `config.toml` only.
+A few things aren't on the settings pages. The setup wizard sets where bus times come from (`source` and `operators`, see [Bus times](#bus-times)) and, if you ask, the stop list for the bus position page; or set them in `config.toml`. The type of display, addresses such as `[train] base_url`, `allowed_hosts` and `state_dir` are set in `config.toml` only.
 
 ### Where things are kept
 
@@ -414,7 +441,7 @@ Each install keeps everything it saves in one folder, its store:
 
 `--state-dir` names another. Without it, `state_file` or `[dashboard] state_dir` in `config.toml` can, except on a Pi, where systemd gives every service `/var/lib/departureboard` (as `$STATE_DIRECTORY`) and that wins. In Docker the container passes `--state-dir /data`. In it:
 
-- `settings.toml`: what the tabs and the wizard save, layered over `config.toml`, which is never rewritten. It holds only the settings they manage; anything else put in it is ignored, and the log names it. Addresses (`[train]` and `[bus]` `base_url`), `state_file`, `display` and the other hand-edited settings belong in `config.toml`. A `settings.toml` that can't be read is replaced on the next save, with a copy kept as `settings.toml.broken`.
+- `settings.toml`: what the settings pages and the wizard save, layered over `config.toml`, which is never rewritten. It holds only the settings they manage; anything else put in it is ignored, and the log names it. Addresses (`[train]` and `[bus]` `base_url`), `state_file`, `display` and the other hand-edited settings belong in `config.toml`. A `settings.toml` that can't be read is replaced on the next save, with a copy kept as `settings.toml.broken`.
 - `secrets.env`: keys pasted in the settings or the wizard, readable by the app's user only. They win over the keys you give it in a `secrets.env` of your own.
 - `web.json`: the settings password, as a hash.
 - `sessions.json`: who is signed in to the settings, kept as a hash of each browser's session so a restart doesn't sign anyone out, and `form.key`, which the sign-in forms are signed with. Like `web.json` and `secrets.env`, readable by the app's user only. A new password ends every session.
@@ -472,11 +499,11 @@ All are free. [Getting your keys](keys.md) walks through signing up for each one
 
 | Key | For | Where to paste it |
 |---|---|---|
-| `RDM_API_KEY` | trains | the wizard, or the General tab |
-| `BODS_API_KEY` | bus times, positions and disruptions | the wizard, or the General tab |
-| `TAPI_APP_ID`, `TAPI_APP_KEY` | the board's bus times without the BODS timetable (optional) | the Board tab |
-| `RDM_DETAILS_API_KEY` | where each train is, on the dashboard (optional) | the Dashboard tab |
-| `RDM_KB_API_KEY` | engineering works, on the dashboard (optional) | the Dashboard tab |
+| `RDM_API_KEY` | trains | the wizard, or the Keys page |
+| `BODS_API_KEY` | bus times, positions and disruptions | the wizard, or the Keys page |
+| `TAPI_APP_ID`, `TAPI_APP_KEY` | the board's bus times without the BODS timetable (optional) | the Keys page, while the board view is on |
+| `RDM_DETAILS_API_KEY` | where each train is, on the dashboard (optional) | the Keys page, while the dashboard view is on |
+| `RDM_KB_API_KEY` | engineering works, on the dashboard (optional) | the Keys page, while the dashboard view is on |
 
 Keys pasted in the settings are saved in the store's `secrets.env`, and need no restart. Or keep them in a file of your own, one `NAME=key` per line, from `deploy/secrets.env.example`: `/etc/departureboard/secrets.env` on a Pi, `secrets.env` next to `docker-compose.yml` in Docker, and any file you give with `--secrets` on a desktop. Keys are never shown, only whether each is set.
 
@@ -581,7 +608,7 @@ Until there's a usable timetable (none yet, built for other stops, run out, or n
 
 ### The bus budget
 
-This applies only to TransportAPI: with `source = "bods"`, only while it stands in for the timetable. Its free plan allows 30 lookups a day, and each check costs one per stop. With two stops, checking every 12 minutes from 07:00 to 08:30 and 17:00 to 18:00 uses 28 a day. The board keeps 2 spare for test lookups. It never goes over **Most TransportAPI hits a day**: once the budget is spent, bus times stop updating until midnight, and after the "not updating" time passes the board says so.
+This applies only to TransportAPI: with `source = "bods"`, only while it stands in for the timetable. Its free plan allows 30 lookups a day, and each check costs one per stop. With two stops, checking every 12 minutes from 07:00 to 08:30 and 17:00 to 18:00 uses 28 a day. The board keeps 2 spare for test lookups. It never goes over **Most TransportAPI lookups a day**: once the budget is spent, bus times stop updating until midnight, and after the "not updating" time passes the board says so.
 
 Bus positions for the screen's second page come from BODS, with no daily allowance to manage. They're checked every 30 seconds, only during the bus windows, and never written to the SD card.
 
@@ -596,11 +623,11 @@ lon = -1.95
 threshold_percent = 50
 ```
 
-`enabled = false` in `[weather]` switches the warning off and keeps the location, as **Weather: Off** on the General tab does. The board checks the forecast every 30 minutes, only while it is checking trains or buses. If it can't be fetched, the last forecast is used for up to 3 hours.
+`enabled = false` in `[weather]` switches the warning off and keeps the location, as **Show the weather: Off** on the Trains and buses page does. The board checks the forecast every 30 minutes, only while it is checking trains or buses. If it can't be fetched, the last forecast is used for up to 3 hours.
 
 ### Bank holidays
 
-Dates come from GOV.UK, which lists England and Wales, Scotland, and Northern Ireland separately. The app uses England and Wales unless told otherwise: choose another on the General tab (**Bank holidays for**), or set `bank_holiday_division = "scotland"` or `"northern-ireland"` in `config.toml`. All three lists are kept for a week in the store. If GOV.UK can't be reached, the app keeps the dates it has and tries again in 6 hours. To ignore bank holidays for the checking windows, choose that on the General tab, or set `bank_holidays = false`. Bus times from the timetable always follow the operators' own bank holiday rules.
+Dates come from GOV.UK, which lists England and Wales, Scotland, and Northern Ireland separately. The app uses England and Wales unless told otherwise: choose another under **Bank holidays** on the General page of the settings, or set `bank_holiday_division = "scotland"` or `"northern-ireland"` in `config.toml`. All three lists are kept for a week in the store. If GOV.UK can't be reached, the app keeps the dates it has and tries again in 6 hours. To ignore bank holidays for the checking windows, choose **Ignore them** there, or set `bank_holidays = false`. Bus times from the timetable always follow the operators' own bank holiday rules.
 
 ### The bus position page
 
@@ -623,7 +650,7 @@ sudo /opt/departureboard/venv/bin/departureboard probe train
 sudo /opt/departureboard/venv/bin/departureboard probe bus
 ```
 
-With TransportAPI, the bus probe uses one hit per stop from your 30 daily hits. With BODS, build the timetable first. The bus probe tells you whether you're getting live estimates (an expected time and status `late`/`on_time`) or only timetabled times (`unknown`, shown as `sch` on the board).
+With TransportAPI, the bus probe uses one lookup per stop from your 30 daily lookups. With BODS, build the timetable first. The bus probe tells you whether you're getting live estimates (an expected time and status `late`/`on_time`) or only timetabled times (`unknown`, shown as `sch` on the board).
 
 ---
 
@@ -737,28 +764,28 @@ sudo systemctl start departureboard-timetable.service   # build the bus timetabl
 | What you see | Likely cause | What to do |
 |---|---|---|
 | Board says **Set me up** | Not set up yet | Open the address it shows and follow the [setup wizard](#4-first-run-and-the-setup-wizard) |
-| Board says **Board off** | The board view is off | Tick **The board** under **Views** on the General tab |
+| Board says **Board off** | The board view is off | Tick **The board** under **Views** on the General page of the settings |
 | Setup can't find a postcode, stops or bus companies | The Pi can't reach the services setup asks, or one is down | Check the Pi's internet connection; `journalctl -u departureboard-fetch -n 20` |
 | Setup says **The fetch service didn't answer in time** | The fetch service isn't being started | `sudo systemctl enable --now departureboard-fetch.path`; `systemctl status departureboard-fetch.path departureboard-fetch.service` |
 | Setup keeps saying **didn't answer in time**, and `systemctl status departureboard-fetch.path` says `failed` with `start-limit-hit` | The fetch service kept stopping at once, so systemd stopped starting it | Find why with `journalctl -u departureboard-fetch -n 30` and fix that, then `sudo systemctl reset-failed departureboard-fetch.service departureboard-fetch.path` and `sudo systemctl start departureboard-fetch.path` |
 | Setup says **The board's settings can't be read** | The fetch service can't read `/etc/departureboard/config.toml` | `journalctl -u departureboard-fetch -n 20` says why; fix `config.toml`, or delete it to use the defaults |
 | A command says `Run this as the service's user: sudo -u departureboard …` | It was run as root, on the services' store | Run it as `sudo -u departureboard /opt/departureboard/venv/bin/departureboard …` |
 | E-paper blank after install | The board isn't started, or nothing fetched yet | `sudo systemctl enable --now departureboard.timer`; wait a minute; `journalctl -u departureboard -f` |
-| `NOT UPDATING: TRAINS` | Rail key wrong, or the feed is down | Test the key on the General tab; `departureboard probe train` |
-| `NOT UPDATING: BUSES` | No bus timetable yet and no TransportAPI keys; or TransportAPI's daily budget spent, its key wrong, or its feed down | Status on the Board tab; `departureboard probe bus` |
+| `NOT UPDATING: TRAINS` | Rail key wrong, or the feed is down | Test the key on the Keys page of the settings; `departureboard probe train` |
+| `NOT UPDATING: BUSES` | No bus timetable yet and no TransportAPI keys; or TransportAPI's daily budget spent, its key wrong, or its feed down | Status on the Board page of the settings; `departureboard probe bus` |
 | Every bus says `sch` | No live positions for those buses right now, or live positions failing (Status says so) | Usually nothing; times are from the timetable |
 | Status says `From TransportAPI: there is no bus timetable yet` | The timetable hasn't been built, or the build failed | `journalctl -u departureboard-timetable -n 20`; start it as in [Bus times](#bus-times) |
 | Status says `From TransportAPI: the bus timetable is for other stops` | You changed the stops; it rebuilds within the hour | Wait, or start the timetable service |
 | Buses not updating while Status says `From TransportAPI` | Outside `fallback_windows`, or the daily budget is spent | Fix the timetable (see the row above); TransportAPI is only a stand-in |
 | E-paper errors about chip select | SPI chip selects in use | Add `dtoverlay=spi0-0cs` to `/boot/firmware/config.txt` and reboot |
 | Screen black | Screen service not running | `systemctl status departureboard-screen.service` |
-| Screen upside down or sideways | Rotation | Change **Rotation** on the Board tab |
+| Screen upside down or sideways | Rotation | Change **Rotation** on the Board page of the settings |
 | No bus position page | Not a screen, outside the bus windows, no `BODS_API_KEY`, or no route set up for the next bus | Check those in that order |
 | Bus page always says `Not yet past …` | The strip is short (in town 8 stops is about 7 minutes) | Normal; the bus appears when it's close |
-| No rain line on a rainy day | The chance is below the threshold, it's outside the checking windows, no location, or the forecast couldn't be fetched for over 3 hours | Check Status on the Board tab, and **Weather** on the General tab |
+| No rain line on a rainy day | The chance is below the threshold, it's outside the checking windows, no location, or the forecast couldn't be fetched for over 3 hours | Check Status on the Board page of the settings, and **Weather** on the Trains and buses page |
 | Board quiet on a bank holiday | Weekday windows are off on bank holidays | Add a window including Sun, or choose "Ignore bank holidays" |
 | No code on the board when claiming the settings | The board isn't running | Start it, or print a code on the Pi with `--reset-code` (see [Password and reset codes](#6-password-and-reset-codes)) |
-| The dashboard's address opens the settings | The dashboard view is off, the app isn't set up, or the dashboard's settings don't load | The General tab says why when it can't start; tick **The dashboard** under **Views** on a Pi |
+| The dashboard's address opens the settings | The dashboard view is off, the app isn't set up, or the dashboard's settings don't load | The settings' Overview says why when it can't start; tick **The dashboard** under **Views** on the General page on a Pi |
 | The dashboard on a Pi doesn't update | The fetch service isn't running | `systemctl status departureboard-fetch.service`; `journalctl -u departureboard-fetch -n 20` |
 | The dashboard says there are no buses because they come from TransportAPI | It shows buses only from the BODS timetable | Run setup again to find your stops' bus companies |
 | Settings won't open | Server stopped, or you're not on the home network | `systemctl status departureboard-web.service` on a Pi; the container's state in Docker |
