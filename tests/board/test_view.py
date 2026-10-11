@@ -336,3 +336,26 @@ def test_notice_is_capped():
 
 def test_signature_changes_with_the_notice():
     assert view().signature() != view(notices=["Lifts out of use."]).signature()
+
+
+def test_each_row_carries_where_its_train_or_bus_is():
+    from departureboard.core.model import Strip, strip_key
+
+    train = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, platform="1")
+    bus = Departure("bus", "341", "Hyde", "07:20", "07:24", Status.LATE, stop="A")
+    other = Departure("bus", "61", "Buxton", "07:35", None, Status.UNKNOWN, stop="B")
+    at_dinting = Strip("At Dinting", stops=7, yours=5, at=4.0)
+    three_away = Strip("3 stops away", stops=6, yours=5, at=2.0)
+    view = build_view("Glossop", [train], [bus, other], "07:03", set(),
+                      strips={strip_key(train): at_dinting, strip_key(bus): three_away})
+    assert view.trains.rows[0].strip == at_dinting
+    assert [row.strip for row in view.buses.rows] == [three_away, None]
+
+
+def test_where_a_train_is_changes_the_view():
+    from departureboard.core.model import Strip, strip_key
+
+    train = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME)
+    before = build_view("Glossop", [train], [], "07:03", set(), strips={strip_key(train): Strip("At Hadfield", 3, 2)})
+    after = build_view("Glossop", [train], [], "07:03", set(), strips={strip_key(train): Strip("At Dinting", 3, 2)})
+    assert before.signature() != after.signature()

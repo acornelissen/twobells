@@ -6,12 +6,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
+from collections.abc import Callable, Mapping
+from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 
 from ..core import words
-from ..core.model import Departure, Status, minutes_between
+from ..core.model import Departure, Status, Strip, minutes_between, strip_key
 from ..core.walk import WalkTimes, leave_by, leave_time
 
 
@@ -53,6 +53,8 @@ class Row:
     # The leave time alone ("07:16") when `leave` is a clock time, for a look
     # that says words.LEAVE_BY once, over the column, rather than on every row.
     leave_at: str | None = None
+    # Where its train or bus is; only screens wide enough draw it.
+    strip: Strip | None = None
 
 
 @dataclass(frozen=True)
@@ -174,9 +176,9 @@ def _leave(departures, walk: WalkTimes | None, now: str, wording: Wording, clock
     return wording.leave(_leave_words(leave, clock), _target(dep)), departures.index(dep)
 
 
-def _section(label, departures, to_row, now, empty_text, stale, walk, wording, clock) -> Section:
+def _section(label, departures, to_row, now, empty_text, stale, walk, wording, clock, strips) -> Section:
     upcoming = [d for d in departures if not d.is_gone(now)]
-    rows = tuple(to_row(d, walk, clock) for d in upcoming)
+    rows = tuple(replace(to_row(d, walk, clock), strip=strips.get(strip_key(d))) for d in upcoming)
     # Rows that carry their own leave time make a header summary redundant.
     if any(r.leave for r in rows):
         text, index = None, None
@@ -196,15 +198,19 @@ def build_view(
     clock: str | None = None,
     notices: list[str] | None = None,
     rain: str | None = None,
+    strips: Mapping[tuple[str, str, str, str], Strip] | None = None,
 ) -> BoardView:
     """`clock` (HH:MM:SS, matching `now`) is for screens: it is shown, and
     leave times count down instead of giving a clock time. `notices` are the
     station's disruption messages, shown one after another as one notice;
-    `rain` is the rain warning, if there is one."""
+    `rain` is the rain warning, if there is one. `strips` say where each
+    departure's train or bus is, by strip_key."""
+    strips = strips or {}
     return BoardView(
         title=title,
-        trains=_section("Trains", trains, _train_row, now, "No trains", "train" in stale, walk, wording, clock),
-        buses=_section("Buses", buses, _bus_row, now, "No buses", "bus" in stale, walk, wording, clock),
+        trains=_section("Trains", trains, _train_row, now, "No trains", "train" in stale, walk, wording, clock,
+                        strips),
+        buses=_section("Buses", buses, _bus_row, now, "No buses", "bus" in stale, walk, wording, clock, strips),
         updated=now,
         clock=clock,
         notice=_notice(notices or []),
