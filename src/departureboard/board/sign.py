@@ -13,12 +13,13 @@ from dataclasses import dataclass, field
 
 from PIL import Image, ImageDraw
 
+from ..core.model import Strip
 from .dotfont import HEIGHT as GLYPH_H
 from .dotfont import TINY, TINY_HEIGHT, DotFont
-from .panel import PHAT, PLATFORM_COLUMN_MIN_WIDTH, Panel
+from .panel import LEAVE_COLUMN_MIN_WIDTH, PHAT, PLATFORM_COLUMN_MIN_WIDTH, STRIP_COLUMN_MIN_WIDTH, Panel
 from .render import HEIGHT, WIDTH, Palette, apply_preview, fit_text, fitted_note
 from .route import RouteView
-from .view import BoardView, Section, Style
+from .view import BoardView, Row, Section, Style
 
 MARGIN = 3
 _LINE = 11
@@ -48,10 +49,32 @@ def item_size(item: Item) -> tuple[int, int]:
     return _FONT.getlength(item.text), GLYPH_H
 
 
+# On a screen wide enough, where each train or bus is: the words, cut to fit
+# WHERE_WIDTH ("3 stops away" fits), then a little line of its stops.
+WHERE_WIDTH = 66
+STRIP_WIDTH = 48  # eight stops, six dots apart
+# Twice the usual gap after the destination, so it and the where words don't
+# run together into one name.
+_WHERE_GAP = 2 * _COL_GAP
+
+
+@dataclass(frozen=True)
+class StripMark:
+    """A row's little line of stops, STRIP_WIDTH dots from x, on the row at y."""
+
+    x: float
+    y: int
+    strip: Strip
+    train: bool
+    inverted: bool = False
+    width: int = STRIP_WIDTH
+
+
 @dataclass
 class SignLayout:
     items: list[Item] = field(default_factory=list)
     rules: list[int] = field(default_factory=list)
+    strips: list[StripMark] = field(default_factory=list)
 
     def add(self, x: float, y: int, text: str, inverted: bool = False, small: bool = False) -> None:
         self.items.append(Item(x, y, text, inverted, small))
@@ -65,60 +88,133 @@ def _right(text: str, width: int) -> float:
     return width - MARGIN - _w(text)
 
 
-def _trains(layout: SignLayout, section: Section, y: int, width: int) -> int:
+@dataclass(frozen=True)
+class _Columns:
+    """Where a section's columns between destination and status start, if it
+    has them, and `end`: where the first of them (or the status) starts."""
+
+    end: float
+    leave_x: float | None = None
+    platform_x: float | None = None
+
+
+def _train_columns(section: Section, width: int) -> _Columns:
+    """From the right, each column left-aligned clear of the widest one after
+    it, so it lines up."""
+    rows = section.rows[:_MAX_TRAINS]
+    if not rows:
+        return _Columns(width - MARGIN)
+    end = width - MARGIN - max(_w(r.right) for r in rows)
+    leave_x = platform_x = None
+    if section.leave and width >= LEAVE_COLUMN_MIN_WIDTH and (section.leave_for or 0) < len(rows):
+        # One line a row: the leave words on their train's row, not under it,
+        # set further off the platform so the two don't read as one phrase.
+        leave_x = end = end - _COL_GAP - _w(section.leave)
+        end -= _COL_GAP
+    if width >= PLATFORM_COLUMN_MIN_WIDTH and any(r.platform for r in rows):
+        platform_x = end = end - _COL_GAP - max(_w(r.platform) for r in rows if r.platform)
+    return _Columns(end, leave_x, platform_x)
+
+
+def _bus_columns(section: Section, width: int) -> _Columns:
+    rows = section.rows
+    if not rows:
+        return _Columns(width - MARGIN)
+    end = width - MARGIN - max(_w(r.right) for r in rows)
+    leaves = [r.leave for r in rows if r.leave]
+    if not leaves:
+        return _Columns(end)
+    leave_x = end - _COL_GAP - max(map(_w, leaves))
+    return _Columns(leave_x, leave_x)
+
+
+def _where_column(view: BoardView, trains: _Columns, buses: _Columns, width: int) -> float | None:
+    """Where the where words start, with the little lines after them: one
+    column down the board, clear of both sections' other columns. Only on a
+    screen wide enough: a strip changes every few seconds, so e-paper, which
+    redraws slowly and only on change, never shows one. It has a fixed width,
+    so it stays put as the words change."""
+    if view.clock is None or width < STRIP_COLUMN_MIN_WIDTH:
+        return None
+    return min(trains.end, buses.end) - _COL_GAP - STRIP_WIDTH - _COL_GAP - WHERE_WIDTH
+
+
+def _add_strip(layout: SignLayout, row: Row, where_x: float, y: int, train: bool, inverted: bool) -> None:
+    # A row without one leaves the space blank.
+    if row.strip is None:
+        return
+    if row.strip.where:
+        layout.add(where_x, y, fit_text(row.strip.where, _FONT, WHERE_WIDTH), inverted)
+    layout.strips.append(StripMark(where_x + WHERE_WIDTH + _COL_GAP, y, row.strip, train, inverted))
+
+
+def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _Columns,
+            where_x: float | None) -> int:
     time_x = MARGIN + _w(_ORDINALS[-1]) + _COL_GAP
     dest_x = time_x + _w("00:00") + _COL_GAP
     rows = section.rows[:_MAX_TRAINS]
     if not rows:
         layout.add(MARGIN, y, section.empty_text)
         return y + _LINE
-    platform_x = None
-    if width >= PLATFORM_COLUMN_MIN_WIDTH and any(r.platform for r in rows):
-        # Left-aligned, clear of the widest status, so the column lines up.
-        right_w = max(_w(r.right) for r in rows)
-        platform_x = width - MARGIN - right_w - _COL_GAP - max(_w(r.platform) for r in rows if r.platform)
+    if not any(r.strip for r in rows):
+        where_x = None  # no room kept for strips that none of them has
+    leave_for = section.leave_for or 0
     for index, row in enumerate(rows):
         inverted = row.style is Style.INVERTED
         status_x = _right(row.right, width)
-        dest_end = (platform_x if platform_x is not None else status_x) - _COL_GAP
+        if where_x is not None:
+            dest_end = where_x - _WHERE_GAP
+        elif columns.leave_x is not None or columns.platform_x is not None:
+            dest_end = columns.end - _COL_GAP
+        else:
+            dest_end = status_x - _COL_GAP
         layout.add(MARGIN, y, _ORDINALS[index], inverted)
         layout.add(time_x, y, row.left, inverted)
         layout.add(dest_x, y, fit_text(row.middle, _FONT, dest_end - dest_x), inverted)
-        if platform_x is not None and row.platform:
-            layout.add(platform_x, y, row.platform, inverted)
+        if where_x is not None:
+            _add_strip(layout, row, where_x, y, True, inverted)
+        if columns.platform_x is not None and row.platform:
+            layout.add(columns.platform_x, y, row.platform, inverted)
+        if columns.leave_x is not None and section.leave and index == leave_for:
+            layout.add(columns.leave_x, y, section.leave, inverted)
         layout.add(status_x, y, row.right, inverted)
         y += _LINE
-        if section.leave and index == (section.leave_for or 0):
+        if section.leave and columns.leave_x is None and index == leave_for:
             # Where the real board scrolls "Calling at", say when to set off.
             layout.add(time_x, y, fit_text(section.leave, _FONT, width - MARGIN - time_x))
             y += _LINE
     return y
 
 
-def _buses(layout: SignLayout, section: Section, y: int, bottom: int, width: int) -> int:
+def _buses(layout: SignLayout, section: Section, y: int, bottom: int, width: int, columns: _Columns,
+           where_x: float | None) -> int:
     rows = list(section.rows)
     if not rows:
         layout.add(MARGIN, y, section.empty_text)
         return y + _LINE
+    if not any(r.strip for r in rows):
+        where_x = None
     stop_x = MARGIN + _w("000") + _COL_GAP - 1
     stops = [r.stop for r in rows if r.stop]
     # Room for the widest stop label, and at least a "W" so one-letter stops line up.
     dest_x = stop_x + (max(map(_w, [*stops, "W"])) + _COL_GAP - 1 if stops else 0)
-    right_w = max(_w(r.right) for r in rows)
-    leaves = [r.leave for r in rows if r.leave]
-    leave_x = width - MARGIN - right_w - _COL_GAP - max(map(_w, leaves)) if leaves else None
     for row in rows:
         if y + GLYPH_H > bottom:
             break
         inverted = row.style is Style.INVERTED
         status_x = _right(row.right, width)
-        dest_end = (leave_x if leave_x is not None else status_x) - _COL_GAP
+        if where_x is not None:
+            dest_end = where_x - _WHERE_GAP
+        else:
+            dest_end = (status_x if columns.leave_x is None else columns.leave_x) - _COL_GAP
         layout.add(MARGIN, y, fit_text(row.left, _FONT, stop_x - MARGIN - 2), inverted)
         if row.stop:
             layout.add(stop_x, y, row.stop, inverted)
         layout.add(dest_x, y, fit_text(row.middle, _FONT, dest_end - dest_x), inverted)
-        if row.leave and leave_x is not None:
-            layout.add(leave_x, y, row.leave, inverted)
+        if where_x is not None:
+            _add_strip(layout, row, where_x, y, False, inverted)
+        if row.leave and columns.leave_x is not None:
+            layout.add(columns.leave_x, y, row.leave, inverted)
         layout.add(status_x, y, row.right, inverted)
         y += _LINE
     return y
@@ -162,11 +258,13 @@ def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> Non
 def sign_layout(view: BoardView, width: int = WIDTH, height: int = HEIGHT) -> SignLayout:
     """Places the text on a board `width` x `height` dots."""
     layout = SignLayout()
-    y = _trains(layout, view.trains, _TOP, width)
+    trains, buses = _train_columns(view.trains, width), _bus_columns(view.buses, width)
+    where_x = _where_column(view, trains, buses, width)
+    y = _trains(layout, view.trains, _TOP, width, trains, where_x)
     rule = y + _ABOVE_RULE - 2  # each line already carries 2 dots of leading
     layout.rules.append(rule)
     footer_top = height - (GLYPH_H if view.clock else TINY_HEIGHT) - 3
-    _buses(layout, view.buses, rule + _BELOW_RULE, footer_top, width)
+    _buses(layout, view.buses, rule + _BELOW_RULE, footer_top, width, buses, where_x)
     _footer(layout, view, width, height)
     return layout
 
@@ -194,9 +292,57 @@ def render_sign(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Image
     for item in layout.items:
         font = _SMALL if item.small else _FONT
         font.draw(draw, (item.x, item.y), item.text, fill=palette.black if item.inverted else ink)
+    for mark in layout.strips:
+        draw.point(sorted(strip_dots(mark)), fill=palette.black if mark.inverted else ink)
     image = _enlarge(image, panel, palette.black, bands)
     apply_preview(image, palette)
     return image
+
+
+# The vehicle over a row's little line, pointing down at it: a bus square
+# with windows, a train rounder with a windscreen, so the two differ by shape.
+_LITTLE_BUS = (
+    "#########",
+    "#.#.#.#.#",
+    "#########",
+    "#########",
+    "....#....",
+)
+_LITTLE_TRAIN = (
+    ".#######.",
+    "##.....##",
+    "#########",
+    ".#######.",
+    "....#....",
+)
+_STRIP_LINE = 6  # the line's row, down from the top of its row's text: the baseline
+
+
+def strip_dots(mark: StripMark) -> set[tuple[int, int]]:
+    """The lit dots of a row's little line, as the dashboard's row strip draws
+    it: a line through the stops, solid up to yours and every other dot after
+    it; stops before yours filled, yours bigger, those after it hollow; and the
+    train or bus where it is, none when that isn't known. Drawing only: the
+    words beside it say where the vehicle is."""
+    strip = mark.strip
+    line_y = mark.y + _STRIP_LINE
+    left, right = round(mark.x) + 3, round(mark.x) + mark.width - 4  # room for your stop at either end
+    step = (right - left) / (strip.stops - 1)
+    xs = [round(left + i * step) for i in range(strip.stops)]
+    yours = xs[strip.yours]
+    lit = {(x, line_y) for x in range(xs[0], xs[-1] + 1) if x <= yours or (x - yours) % 2 == 0}
+    for i, x in enumerate(xs):
+        r = 2 if i == strip.yours else 1
+        box = {(x + dx, line_y + dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1)}
+        lit |= box - {(x, line_y)} if i > strip.yours else box
+    if strip.at is not None:
+        glyph = _LITTLE_TRAIN if mark.train else _LITTLE_BUS
+        glyph_w = len(glyph[0])
+        x0 = min(max(round(left + strip.at * step) - glyph_w // 2, round(mark.x)), round(mark.x) + mark.width - glyph_w)
+        # From a dot above the text, inside a reversed-out row's band, down to just over the stops.
+        top = mark.y - 1
+        lit |= {(x0 + dx, top + dy) for dy, row in enumerate(glyph) for dx, dot in enumerate(row) if dot == "#"}
+    return lit
 
 
 # A bus side-on, drawn on the road line: windows, wheels.

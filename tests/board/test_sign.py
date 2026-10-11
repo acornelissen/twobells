@@ -1,4 +1,5 @@
 import dataclasses
+import itertools
 
 import pytest
 
@@ -597,3 +598,273 @@ def test_everything_fits_on_the_original_phat():
         assert item.x >= 0 and item.x + w <= PHAT_V1.width
         assert item.y >= 0 and item.y + h <= PHAT_V1.height
     assert {"1st", "2nd", "3rd"} <= set(texts(items))
+
+
+# The bar screen: four pixels a dot, one line a row, and where each train or bus is.
+
+from departureboard.board.panel import (  # noqa: E402
+    LEAVE_COLUMN_MIN_WIDTH,
+    PLATFORM_COLUMN_MIN_WIDTH,
+    STRIP_COLUMN_MIN_WIDTH,
+)
+from departureboard.board.sign import STRIP_WIDTH, WHERE_WIDTH, StripMark, strip_dots  # noqa: E402
+from departureboard.core.model import Strip  # noqa: E402
+
+CLOCK = "07:03:15"
+# The screens wide enough for strips.
+STRIP_PANELS = [HDMI_1280X400, HDMI_1920X440]
+SCREEN_TRAINS = [
+    dataclasses.replace(TRAINS[0], platform="Plat 1", strip=Strip("At Dinting", 4, 2, 1.0)),
+    dataclasses.replace(TRAINS[1], platform="Plat 1", strip=Strip("Not left Hadfield yet", 4, 2, None)),
+    dataclasses.replace(TRAINS[2], platform="Plat 2"),  # cancelled: nowhere to be
+]
+SCREEN_BUSES = [
+    Row("341", "Hyde", "Exp 07:24", Style.ALERT, "Leave in 12 min", "A", strip=Strip("3 stops away", 7, 5, 2.4)),
+    Row("61", "Buxton", "07:35 sch", Style.NORMAL, "Leave in 23 min", "B"),
+    Row("237", "Ashton", "07:41", Style.NORMAL, "Leave in 29 min", "A", strip=Strip("1 stop away", 7, 5, 4.0)),
+]
+
+
+def screen(trains=SCREEN_TRAINS, buses=SCREEN_BUSES, leave="Leave in 3 min", leave_for=0, stale_buses=False, **changes):
+    view = board(trains, buses, leave=leave, leave_for=leave_for, stale_buses=stale_buses)
+    return dataclasses.replace(view, clock=CLOCK, **changes)
+
+
+def line_of(items, text):
+    y = find(items, text).y
+    return sorted((i for i in items if i.y == y), key=lambda i: i.x)
+
+
+def test_the_bar_screen_draws_four_pixels_a_dot():
+    assert HDMI_1920X440.scale == 4
+    assert dots(HDMI_1920X440) == (480, 110)
+
+
+def test_only_the_bar_screen_puts_a_trains_leave_time_on_its_row():
+    assert dots(HDMI_1920X440)[0] >= LEAVE_COLUMN_MIN_WIDTH
+    for panel in (WAVESHARE_10IN85G, HDMI_1280X400):
+        assert dots(panel)[0] < LEAVE_COLUMN_MIN_WIDTH
+
+
+def test_on_the_bar_screen_each_train_is_one_line_with_its_leave_time_in_a_column():
+    items = sign_layout(screen(), *dots(HDMI_1920X440)).items
+    first = line_of(items, "1st")
+    assert texts(first) == ["1st", "07:12", "Manchester Piccadilly", "At Dinting", "Plat 1", "Leave in 3 min", "On time"]
+    # Nothing between the 1st and the 2nd: the rows are a line apart.
+    assert find(items, "2nd").y - find(items, "1st").y == 11
+
+
+def test_the_trains_leave_column_follows_a_later_train():
+    items = sign_layout(screen(leave="Leave in 33 min", leave_for=1), *dots(HDMI_1920X440)).items
+    assert find(items, "Leave in 33 min").y == find(items, "2nd").y
+
+
+def test_no_leave_column_for_a_train_that_is_not_drawn():
+    fourth = [*SCREEN_TRAINS, Row("08:42", "Manchester Piccadilly", "On time")]
+    items = sign_layout(screen(fourth, leave="Leave in 95 min", leave_for=3), *dots(HDMI_1920X440)).items
+    assert "Leave in 95 min" not in texts(items)
+
+
+def test_the_trains_leave_column_sits_between_platform_and_status():
+    items = sign_layout(screen(), *dots(HDMI_1920X440)).items
+    leave = find(items, "Leave in 3 min")
+    platforms = [i for i in items if i.text.startswith("Plat")]
+    assert len({i.x for i in platforms}) == 1
+    assert platforms[0].x + FONT.getlength("Plat 1") + 5 <= leave.x
+    for status in ("On time", "Exp 07:49", "Cancelled"):
+        assert leave.x + FONT.getlength(leave.text) + 5 <= find(items, status).x
+
+
+def test_the_7_9_inch_screen_keeps_the_leave_line_under_its_train():
+    items = sign_layout(screen(), *dots(HDMI_1280X400)).items
+    leave = find(items, "Leave in 3 min")
+    assert find(items, "1st").y < leave.y < find(items, "2nd").y
+
+
+def test_the_bar_screen_fits_three_trains_three_buses_and_the_clock():
+    width, height = dots(HDMI_1920X440)
+    items = sign_layout(screen(), width, height).items
+    assert {"1st", "2nd", "3rd", "341", "61", "237", CLOCK} <= set(texts(items))
+    clock = find(items, CLOCK)
+    assert find(items, "237").y + 9 < clock.y
+    assert clock.y + 9 <= height
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_wide_screens_say_where_each_train_and_bus_is(panel):
+    layout = sign_layout(screen(), *dots(panel))
+    items = layout.items
+    assert texts(line_of(items, "341"))[3] == "3 stops away"
+    assert "1 stop away" in texts(line_of(items, "237"))
+    assert "At Dinting" in texts(line_of(items, "1st"))
+    assert {(m.y, m.strip.where, m.train) for m in layout.strips} == {
+        (find(items, "1st").y, "At Dinting", True),
+        (find(items, "2nd").y, "Not left Hadfield yet", True),
+        (find(items, "341").y, "3 stops away", False),
+        (find(items, "237").y, "1 stop away", False),
+    }
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_a_row_without_a_strip_leaves_the_space_blank(panel):
+    layout = sign_layout(screen(), *dots(panel))
+    for first in ("3rd", "61"):
+        y = find(layout.items, first).y
+        assert not any(m.y == y for m in layout.strips)
+    assert texts(line_of(layout.items, "61")) == ["61", "B", "Buxton", "Leave in 23 min", "07:35 sch"]
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_the_where_words_and_little_lines_line_up_down_the_board(panel):
+    layout = sign_layout(screen(), *dots(panel))
+    assert len({m.x for m in layout.strips}) == 1
+    assert len({find(layout.items, w).x for w in ("At Dinting", "3 stops away", "1 stop away")}) == 1
+    assert all(m.width == STRIP_WIDTH for m in layout.strips)
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+@pytest.mark.parametrize("leave_for", [0, 1])
+def test_a_rows_columns_never_overlap(panel, leave_for):
+    layout = sign_layout(screen(leave_for=leave_for), *dots(panel))
+    for mark in layout.strips:
+        line = [i for i in layout.items if i.y == mark.y]
+        boxes = sorted([(i.x, i.x + item_size(i)[0]) for i in line] + [(mark.x, mark.x + mark.width)])
+        for (_, end), (start, _) in itertools.pairwise(boxes):
+            assert end + 4 <= start, (mark, line)
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_long_where_words_are_cut_to_their_column(panel):
+    items = sign_layout(screen(), *dots(panel)).items
+    where = next(i for i in items if i.text.startswith("Not left"))
+    assert where.text.endswith("…")
+    assert FONT.getlength(where.text) <= WHERE_WIDTH
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_the_destination_gives_way_to_the_strip(panel):
+    long = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom, Hattersley, Godley and Hyde Central"
+    rows = [dataclasses.replace(SCREEN_TRAINS[0], middle=long)]
+    items = sign_layout(screen(rows), *dots(panel)).items
+    dest = next(i for i in items if i.text.startswith("Manchester"))
+    assert dest.text.endswith("…")
+    assert dest.x + FONT.getlength(dest.text) + 5 <= find(items, "At Dinting").x
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_every_destination_keeps_room_beside_the_strip(panel):
+    # The threshold's promise: a long destination keeps about 18 letters.
+    long = "Stepping Hill Hospital via Marple and Romiley"
+    trains = [dataclasses.replace(r, middle=long) for r in SCREEN_TRAINS]
+    buses = [dataclasses.replace(r, middle=long) for r in SCREEN_BUSES]
+    items = sign_layout(screen(trains, buses), *dots(panel)).items
+    shown = [i for i in items if i.text.startswith("Stepping")]
+    assert len(shown) == 6
+    assert all(FONT.getlength(i.text) >= 95 for i in shown)
+
+
+def test_the_strip_threshold_lets_in_both_screens_and_not_the_e_paper():
+    assert dots(HDMI_1280X400)[0] >= STRIP_COLUMN_MIN_WIDTH > dots(WAVESHARE_10IN85G)[0]
+    assert STRIP_COLUMN_MIN_WIDTH > PLATFORM_COLUMN_MIN_WIDTH
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_without_a_clock_no_strips_however_wide(panel):
+    # A strip changes every few seconds: only a screen, which redraws, shows one.
+    layout = sign_layout(dataclasses.replace(screen(), clock=None), *dots(panel))
+    assert not layout.strips
+    assert not any(i.text in ("At Dinting", "3 stops away") for i in layout.items)
+
+
+@pytest.mark.parametrize("panel", [None, WAVESHARE_10IN85G], ids=lambda p: p.name if p else "inky-phat")
+def test_the_e_paper_boards_are_unchanged_by_strips(panel):
+    plain_trains = [dataclasses.replace(r, strip=None) for r in SCREEN_TRAINS]
+    plain_buses = [dataclasses.replace(r, strip=None) for r in SCREEN_BUSES]
+    kwargs = {"panel": panel} if panel else {}
+    with_strips = render_sign(board(SCREEN_TRAINS, SCREEN_BUSES, leave="Leave by 07:07"), PALETTE, **kwargs)
+    without = render_sign(board(plain_trains, plain_buses, leave="Leave by 07:07"), PALETTE, **kwargs)
+    assert with_strips.tobytes() == without.tobytes()
+
+
+# A strip stays inside its row's reversed-out band: a dot above the text to its bottom.
+STRIP_TOP, STRIP_BOTTOM = -1, 8
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+@pytest.mark.parametrize("notice", [None, NOTICE])
+def test_everything_fits_on_a_wide_screen_with_strips(panel, notice):
+    width, height = dots(panel)
+    layout = sign_layout(screen(stale_buses=True, notice=notice), width, height)
+    for item in layout.items:
+        w, h = item_size(item)
+        assert item.x >= 0 and item.x + w <= width
+        assert item.y >= 0 and item.y + h <= height
+    footer_top = min(i.y for i in layout.items if i.text == CLOCK)
+    for mark in layout.strips:
+        for x, y in strip_dots(mark):
+            assert mark.x <= x < mark.x + mark.width
+            assert mark.y + STRIP_TOP <= y <= mark.y + STRIP_BOTTOM < footer_top
+
+
+def mark(strip, train=False):
+    return StripMark(100, 20, strip, train)
+
+
+def test_the_little_line_marks_your_stop_bigger_and_the_stretch_after_it_dotted():
+    lit = strip_dots(mark(Strip("3 stops away", 7, 5, None)))
+    bottom = max(y for _, y in lit)
+    line_y = bottom - 2  # your stop reaches two dots either side of the line
+    top_xs = sorted(x for x, y in lit if y == line_y - 2)
+    assert top_xs and top_xs[-1] - top_xs[0] == 4  # only yours, five dots across
+    yours_x = top_xs[0] + 2
+    line = sorted(x for x, y in lit if y == line_y)
+    assert all((x, line_y) in lit for x in range(line[0], yours_x))  # solid up to yours
+    assert any((x, line_y) not in lit for x in range(yours_x + 3, line[-1]))  # gaps after it
+
+
+def test_the_little_line_draws_the_vehicle_where_it_is_and_none_when_unknown():
+    def vehicle(strip, train=False):
+        return {(x, y) for x, y in strip_dots(mark(strip, train)) if y < 20 + 4}
+
+    near = vehicle(Strip("At the first", 7, 5, 0.0))
+    far = vehicle(Strip("At your stop", 7, 5, 5.0))
+    assert near and far
+    assert max(x for x, _ in near) < min(x for x, _ in far)
+    assert not vehicle(Strip("No live position", 7, 5, None))
+    # A train and a bus differ by shape too, not only by the section they are in.
+    assert vehicle(Strip("At Dinting", 4, 2, 1.0), train=True) != vehicle(Strip("At Dinting", 4, 2, 1.0))
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_the_little_line_is_lit_on_the_screen(panel):
+    layout = sign_layout(screen(), *dots(panel))
+    [strip] = [m for m in layout.strips if m.strip.where == "3 stops away"]
+    image = render_sign(screen(), PALETTE, panel)
+    x0, y0 = _origin(panel)
+    for x, y in strip_dots(strip):
+        assert image.getpixel((x0 + x * panel.scale, y0 + y * panel.scale)) == PALETTE.accent
+
+
+def test_a_cancelled_rows_strip_is_dark_on_its_band():
+    rows = [dataclasses.replace(SCREEN_TRAINS[0], style=Style.INVERTED, right="Cancelled")]
+    panel = HDMI_1920X440
+    [strip] = [m for m in sign_layout(screen(rows), *dots(panel)).strips if m.train]
+    assert strip.inverted
+    image = render_sign(screen(rows), PALETTE, panel)
+    x0, y0 = _origin(panel)
+    for x, y in strip_dots(strip):
+        assert image.getpixel((x0 + x * panel.scale, y0 + y * panel.scale)) == PALETTE.black
+
+
+@pytest.mark.parametrize("bus_at", [2.45, None])
+def test_the_route_page_fits_the_bar_screen(bus_at):
+    width, height = dots(HDMI_1920X440)
+    layout, road, _ = _route_layout(route(bus_at), width, height)
+    for item in layout.items:
+        w, h = item_size(item)
+        assert item.x >= 0 and item.x + w <= width
+        assert item.y >= 0 and item.y + h <= height
+    # The bus, six dots tall on the road, clears the second line and the names above the road.
+    assert find(layout.items, "Leave in 6 min").y + 9 < road - 8
+    assert all(find(layout.items, name).y + 9 <= road - 2 for name in NAMES[::2])
+    assert render_route_sign(route(bus_at), PALETTE, HDMI_1920X440).size == HDMI_1920X440.size

@@ -881,3 +881,144 @@ def test_the_setup_page_can_say_something_else(panel):
 def test_the_setup_page_signature_follows_its_words():
     assert OFF_PAGE.signature() != SETUP_PAGE.signature()
     assert SetupView(SETUP_PAGE.url, heading="Board off").signature() != SETUP_PAGE.signature()
+
+
+# Where each train or bus is, on a screen wide enough; and the bar screen's third bus.
+
+from departureboard.board.panel import STRIP_COLUMN_MIN_WIDTH  # noqa: E402
+from departureboard.board.render import STRIP_WIDTH, WHERE_WIDTH, row_limits, where_column  # noqa: E402
+from departureboard.core.model import Strip  # noqa: E402
+
+CLOCK = "07:03:15"
+STRIP_PANELS = [HDMI_1280X400, HDMI_1920X440]
+STRIP_TRAINS = (
+    Row("07:12", "Manchester Piccadilly", "On time", platform="Plat 1", strip=Strip("At Dinting", 4, 2, 1.0)),
+    Row("07:42", "Manchester Piccadilly", "Exp 07:49", Style.ALERT, platform="Plat 1",
+        strip=Strip("Not left Hadfield yet", 4, 2, None)),
+    Row("08:12", "Manchester Piccadilly", "Cancelled", Style.INVERTED, platform="Plat 2"),
+)
+STRIP_BUSES = (
+    Row("341", "Hyde", "Exp 07:24", Style.ALERT, "Leave in 12 min", "A", strip=Strip("3 stops away", 7, 5, 2.4)),
+    Row("61", "Buxton", "07:35 sch", leave="Leave in 23 min", stop="B"),
+    Row("237", "Ashton", "07:41", leave="Leave in 29 min", stop="A", strip=Strip("1 stop away", 7, 5, 4.0)),
+)
+
+
+def on_screen(trains=STRIP_TRAINS, buses=STRIP_BUSES, clock=CLOCK):
+    return dataclasses.replace(board(trains, buses, train_leave="Leave in 3 min (07:12)"), clock=clock)
+
+
+def strip_layouts(panel, trains=STRIP_TRAINS, buses=STRIP_BUSES):
+    """Each row's layout, as the painter places it, and the where column."""
+    s = plain_scale(panel)
+    fonts = load_fonts(s)
+    where_x = where_column([trains, buses], fonts, panel.width, s, live=True)
+    layouts = []
+    for rows in (trains, buses):
+        platform_x = platform_column(rows, fonts, panel.width, s)
+        leave_x = leave_column(rows, fonts, panel.width, s)
+        layouts += [(row, row_layout(row, fonts, panel.width, s, platform_x, leave_x, where_x)) for row in rows]
+    return layouts, where_x, fonts, s
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_wide_screens_say_where_each_train_and_bus_is_in_a_column(panel):
+    layouts, where_x, fonts, s = strip_layouts(panel)
+    assert where_x is not None
+    shown = {row.left: layout.where for row, layout in layouts}
+    assert shown["07:12"] == "At Dinting" and shown["341"] == "3 stops away" and shown["237"] == "1 stop away"
+    assert shown["07:42"].startswith("Not left") and shown["07:42"].endswith("…")
+    for row, layout in layouts:
+        if row.strip:
+            assert layout.where_x == where_x
+            assert drawn_length(fonts.small, layout.where) <= WHERE_WIDTH * s
+            assert layout.strip_x == where_x + (WHERE_WIDTH + 6) * s
+        else:
+            # Left blank, but the destination still stops where the others' do.
+            assert layout.where is None and layout.strip_x is None
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_a_rows_columns_never_overlap_in_the_plain_look(panel):
+    layouts, where_x, fonts, s = strip_layouts(panel)
+    for _, layout in layouts:
+        assert layout.middle_x + drawn_length(fonts.regular, layout.middle) + 6 * s <= where_x
+        strip_end = where_x + (WHERE_WIDTH + 6 + STRIP_WIDTH) * s
+        for later in (layout.platform_x, layout.leave_x, layout.right_x):
+            if later is not None:
+                assert strip_end + 6 * s <= later
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_destinations_keep_their_room_beside_the_strip(panel):
+    layouts, _, _, _ = strip_layouts(panel)
+    for row, layout in layouts:
+        assert layout.middle == (f"{row.stop}: {row.middle}" if row.stop else row.middle)
+
+
+def test_the_plain_look_shows_strips_on_both_screens_only():
+    fonts = load_fonts(3)
+    for panel in STRIP_PANELS:
+        assert panel.width / plain_scale(panel) >= STRIP_COLUMN_MIN_WIDTH
+    # The 10.85" e-paper is wide enough in the plain look, but e-paper is never live.
+    assert where_column([STRIP_TRAINS], fonts, WAVESHARE_10IN85G.width, 3, live=False) is None
+    assert where_column([STRIP_TRAINS], load_fonts(), WIDTH, 1, live=True) is None
+    no_strips = tuple(dataclasses.replace(r, strip=None) for r in STRIP_TRAINS)
+    assert where_column([no_strips], fonts, HDMI_1920X440.width, 3, live=True) is None
+
+
+@pytest.mark.parametrize("panel", [PHAT, WAVESHARE_10IN85G], ids=lambda p: p.name)
+def test_e_paper_in_the_plain_look_is_unchanged_by_strips(panel):
+    plain = (tuple(dataclasses.replace(r, strip=None) for r in STRIP_TRAINS),
+             tuple(dataclasses.replace(r, strip=None) for r in STRIP_BUSES))
+    with_strips = render(on_screen(clock=None), PALETTE, panel)
+    assert with_strips.tobytes() == render(on_screen(*plain, clock=None), PALETTE, panel).tobytes()
+
+
+def ink_in(image, box, colour=PALETTE.black):
+    x0, y0, x1, y1 = (int(v) for v in box)
+    return sum(1 for x in range(x0, x1) for y in range(y0, y1) if image.getpixel((x, y)) == colour)
+
+
+def bus_rows_top(panel):
+    """The first bus row's top and the row height, as render places them."""
+    s = plain_scale(panel)
+    header_h, label_h, row_h = heights()
+    trains = (header_h + 6 + label_h) * s
+    return trains + 3 * row_h * s + (6 + 1 + label_h) * s, row_h * s
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_the_little_line_is_drawn_with_the_vehicle_where_it_is(panel):
+    _, where_x, _, s = strip_layouts(panel)
+    top, row_h = bus_rows_top(panel)
+    strip_x = where_x + (WHERE_WIDTH + 6) * s
+    right = strip_x + STRIP_WIDTH * s
+    drawn = render(on_screen(), PALETTE, panel)
+    assert ink_in(drawn, (strip_x, top, right, top + row_h)) > 0
+    above_the_line = (strip_x, top, right, top + 6 * s)
+    assert ink_in(drawn, above_the_line) > 0
+    unknown = (dataclasses.replace(STRIP_BUSES[0], strip=Strip("3 stops away", 7, 5, None)), *STRIP_BUSES[1:])
+    assert ink_in(render(on_screen(buses=unknown), PALETTE, panel), above_the_line) == 0
+    # The 61 has no strip: its space is blank.
+    assert ink_in(drawn, (strip_x, top + row_h, right, top + 2 * row_h)) == 0
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_your_stop_is_in_the_accent_colour(panel):
+    _, where_x, _, s = strip_layouts(panel)
+    top, row_h = bus_rows_top(panel)
+    strip_x = where_x + (WHERE_WIDTH + 6) * s
+    drawn = render(on_screen(), PALETTE, panel)
+    assert ink_in(drawn, (strip_x, top, strip_x + STRIP_WIDTH * s, top + row_h), PALETTE.accent) > 0
+
+
+def test_the_bar_screen_shows_three_buses_in_the_plain_look():
+    assert row_limits(HDMI_1920X440) == {"Trains": 3, "Buses": 3}
+    # E-paper and the 7.9" screen keep what they had: there's no room for more there.
+    for panel in (PHAT, WAVESHARE_10IN85G, HDMI_1280X400):
+        assert row_limits(panel)["Buses"] == 2, panel.name
+    image = render(on_screen(), PALETTE, HDMI_1920X440)
+    top, row_h = bus_rows_top(HDMI_1920X440)
+    assert top + 3 * row_h <= HDMI_1920X440.height
+    assert ink_in(image, (0, top + 2 * row_h, 200, top + 3 * row_h)) > 0  # the 237

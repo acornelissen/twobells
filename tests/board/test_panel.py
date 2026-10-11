@@ -8,8 +8,12 @@ def test_phat_is_drawn_at_one_pixel_per_dot():
 def test_bigger_panels_scale_by_whole_pixels_from_their_height():
     assert (WAVESHARE_10IN85G.size, WAVESHARE_10IN85G.scale) == ((1360, 480), 4)
     assert (HDMI_1280X400.size, HDMI_1280X400.scale) == ((1280, 400), 3)
-    assert (HDMI_1920X440.size, HDMI_1920X440.scale) == ((1920, 440), 3)
     assert Panel.sized("tiny", 200, 60).scale == 1
+
+
+def test_the_bar_screen_draws_bigger_dots_than_its_height_alone_gives():
+    # Four pixels a dot, 480x110 dots: a third bigger, with a line a row to make room.
+    assert (HDMI_1920X440.size, HDMI_1920X440.scale) == ((1920, 440), 4)
 
 
 def test_the_lcd_is_not_epaper():

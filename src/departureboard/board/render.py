@@ -11,7 +11,8 @@ from typing import Protocol
 from PIL import Image, ImageDraw, ImageFont
 
 from ..core import words
-from .panel import PHAT, PLATFORM_COLUMN_MIN_WIDTH, Panel
+from ..core.model import Strip
+from .panel import PHAT, PLATFORM_COLUMN_MIN_WIDTH, STRIP_COLUMN_MIN_WIDTH, Panel
 from .route import RouteView
 from .view import BoardView, CodeView, Row, Section, SetupView, Style
 
@@ -22,6 +23,8 @@ WIDTH, HEIGHT = PHAT.size
 _SECTION_GAP = 6
 _PAD = 3
 _MAX_ROWS = {"Trains": 3, "Buses": 2}
+# A screen with the room (the bar screen) shows one more bus; e-paper keeps its two.
+_SCREEN_MAX_BUSES = 3
 # Beside a section's label when its feed has stopped, in the sign look's words.
 _NOT_UPDATING = "! NOT UPDATING"
 
@@ -97,9 +100,18 @@ class RowLayout:
     platform_x: float | None = None
     # The leave text as drawn: the time alone under a words.LEAVE_BY heading.
     leave: str | None = None
+    # Where its train or bus is, as drawn, and its little line; None on a row
+    # without a strip, or a board without the column.
+    where: str | None = None
+    where_x: float | None = None
+    strip_x: float | None = None
 
 
 _COL_GAP = 6
+# On a screen wide enough, in pHAT pixels: the where words in the small type
+# ("3 stops away" fits), then a little line of stops.
+WHERE_WIDTH = 60
+STRIP_WIDTH = 48
 
 
 def _with_stop(row: Row) -> str:
@@ -122,11 +134,13 @@ def row_layout(
     scale: int = 1,
     platform_x: float | None = None,
     leave_x: float | None = None,
+    where_x: float | None = None,
 ) -> RowLayout:
     """Column positions for a row. The destination gives way so times stay whole.
     `platform_x` and `leave_x` are where a section's platform and leave
     columns start, if it has them; without `leave_x` a leave time sits just
-    left of the row's own status."""
+    left of the row's own status. `where_x` is where the where words start,
+    with the little line after them, on a board with that column."""
     pad, gap = _PAD * scale, _COL_GAP * scale
     right_x = width - pad - drawn_length(fonts.bold, row.right)
     middle_x = pad + left_column_width(fonts, scale)
@@ -140,6 +154,13 @@ def row_layout(
         leave_x = None
     if platform_x is not None:
         middle_end = platform_x - gap
+    where = strip_x = None
+    if where_x is not None:
+        # Twice the gap, so the destination and the where words don't run together.
+        middle_end = where_x - 2 * gap
+        if row.strip is not None:
+            where = fit_text(row.strip.where, fonts.small, WHERE_WIDTH * scale, partial(drawn_length, fonts.small))
+            strip_x = where_x + WHERE_WIDTH * scale + gap
     return RowLayout(
         # Measured as drawn, like the right-aligned text, so a cut destination
         # doesn't run into the status.
@@ -150,6 +171,9 @@ def row_layout(
         right_x=right_x,
         platform_x=platform_x if row.platform else None,
         leave=leave,
+        where=where or None,
+        where_x=where_x if row.strip is not None else None,
+        strip_x=strip_x,
     )
 
 
@@ -172,6 +196,61 @@ def leave_column(rows, fonts: Fonts, width: int, scale: int) -> float | None:
     right_w = max(drawn_length(fonts.bold, r.right) for r in rows)
     leave_w = max(drawn_length(fonts.small, text) for text in leaves)
     return width - _PAD * scale - right_w - _COL_GAP * scale - leave_w
+
+
+def where_column(sections, fonts: Fonts, width: int, scale: int, live: bool) -> float | None:
+    """Where the where words start, with the little lines after them: one
+    column down the board, clear of every section's platform, leave and
+    status columns, given each section's rows as drawn. Only on a screen
+    (`live`) wide enough, with a strip to show: a strip changes every few
+    seconds, and e-paper redraws slowly, only on change."""
+    if not live or width / scale < STRIP_COLUMN_MIN_WIDTH or not any(r.strip for rows in sections for r in rows):
+        return None
+    ends: list[float] = []
+    for rows in (rows for rows in sections if rows):
+        ends.append(width - _PAD * scale - max(drawn_length(fonts.bold, r.right) for r in rows))
+        ends += [x for x in (platform_column(rows, fonts, width, scale), leave_column(rows, fonts, width, scale))
+                 if x is not None]
+    return min(ends) - (_COL_GAP * 2 + STRIP_WIDTH + WHERE_WIDTH) * scale
+
+
+def draw_strip(draw: ImageDraw.ImageDraw, strip: Strip, train: bool, x: float, y: int, scale: int, row_h: int,
+               ink: int, paper: int, yours_fill: int) -> None:
+    """A row's little line, as the dashboard's row strip draws it: a line
+    through the stops, solid up to yours and dashed after it; stops before
+    yours filled, yours bigger and in `yours_fill`, those after it hollow; and
+    the train or bus where it is, none when that isn't known. Drawing only:
+    the words beside it say where the vehicle is. `y` is the row's top."""
+    s = scale
+    line_y = y + (row_h - 4) * s
+    left, right = x + 4 * s, x + (STRIP_WIDTH - 4) * s
+    step = (right - left) / (strip.stops - 1)
+    xs = [left + i * step for i in range(strip.stops)]
+    yours = xs[strip.yours]
+    draw.line((xs[0], line_y, yours, line_y), fill=ink, width=s)
+    dash = 2 * s
+    for start in range(round(yours), round(xs[-1]), 2 * dash):
+        draw.line((start, line_y, min(start + dash, xs[-1]), line_y), fill=ink, width=s)
+    for i, cx in enumerate(xs):
+        if i == strip.yours:
+            r = 3 * s
+            draw.ellipse((cx - r, line_y - r, cx + r, line_y + r), fill=yours_fill, outline=ink, width=s)
+        else:
+            r = 2 * s
+            draw.ellipse((cx - r, line_y - r, cx + r, line_y + r), fill=ink if i < strip.yours else paper,
+                         outline=ink, width=s)
+    if strip.at is None:
+        return
+    vx = left + strip.at * step
+    top = max(y, line_y - 9 * s)  # inside the row, even with small text
+    # A bus square, a train rounder with a windscreen, so the two differ by
+    # shape; each points down at the line.
+    if train:
+        draw.rounded_rectangle((vx - 5 * s, top, vx + 5 * s, top + 5 * s), radius=2 * s, fill=ink)
+        draw.rectangle((vx - 3 * s, top + s, vx + 3 * s, top + 2 * s), fill=paper)
+    else:
+        draw.rounded_rectangle((vx - 6 * s, top, vx + 6 * s, top + 5 * s), radius=s, fill=ink)
+    draw.polygon([(vx - 2 * s, top + 5 * s), (vx + 2 * s, top + 5 * s), (vx, top + 7 * s)], fill=ink)
 
 
 class Measurable(Protocol):
@@ -274,7 +353,8 @@ def row_limits(panel: Panel, text_size: int = TEXT_SIZE) -> dict[str, int]:
     header_h, label_h, row_h = heights(text_size)
     fixed = header_h + _SECTION_GAP + label_h + 1 + _SECTION_GAP + label_h
     rows = max(2, (panel.height // s - fixed) // row_h)
-    buses = max(1, min(_MAX_ROWS["Buses"], rows - _MAX_ROWS["Trains"]))
+    most_buses = _MAX_ROWS["Buses"] if panel.epaper else _SCREEN_MAX_BUSES
+    buses = max(1, min(most_buses, rows - _MAX_ROWS["Trains"]))
     return {"Trains": min(_MAX_ROWS["Trains"], rows - buses), "Buses": buses}
 
 
@@ -321,7 +401,10 @@ class _Painter:
         self.draw.text((pad, s), title, font=self.f.bold, fill=self.p.white)
         self.draw.text((stamp_x, s), stamp, font=self.f.regular, fill=self.p.white)
 
-    def section(self, section: Section, y: int) -> int:
+    def drawn_rows(self, section: Section) -> tuple[Row, ...]:
+        return section.rows[: self.limits.get(section.label, 2)]
+
+    def section(self, section: Section, y: int, where_x: float | None = None) -> int:
         s, pad = self.s, _PAD * self.s
         label = section.label.upper()
         self.draw.text((pad, y + s), label, font=self.f.small, fill=self.p.black)
@@ -330,7 +413,7 @@ class _Painter:
             x = label_end + 6 * s
             self.draw.text((x, y + s), _NOT_UPDATING, font=self.f.small, fill=self.p.accent)
             label_end = x + self.f.small.getlength(_NOT_UPDATING)
-        rows = section.rows[: self.limits.get(section.label, 2)]
+        rows = self.drawn_rows(section)
         # As on the sign, a leave time for a row that doesn't fit is left out.
         if section.leave and (section.leave_for is None or section.leave_for < len(rows)):
             leave = fit_text(section.leave, self.f.small, self.width - pad - label_end - 8 * s)
@@ -351,21 +434,25 @@ class _Painter:
             self.draw.text((pad, y + s), section.empty_text, font=self.f.regular, fill=self.p.black)
             return y + self.row_h * s
         platform_x = platform_column(rows, self.f, self.width, s)
+        if not any(r.strip for r in rows):
+            where_x = None  # no room kept for strips that none of them has
         for row in rows:
-            self.row(row, y, platform_x, leave_x)
+            self.row(row, y, platform_x, leave_x, where_x, train=section.label == "Trains")
             y += self.row_h * s
         return y
 
-    def row(self, row: Row, y: int, platform_x: float | None = None, leave_x: float | None = None) -> None:
+    def row(self, row: Row, y: int, platform_x: float | None = None, leave_x: float | None = None,
+            where_x: float | None = None, train: bool = True) -> None:
         s = self.s
-        ink, status_ink = self.p.black, self.p.black
+        ink, status_ink, paper, yours_fill = self.p.black, self.p.black, self.p.white, self.p.accent
         if row.style is Style.INVERTED:
             self.draw.rectangle((0, y, self.width - 1, y + self.row_h * s - 1), fill=self.p.black)
-            ink = status_ink = self.p.white
+            ink = status_ink = yours_fill = self.p.white
+            paper = self.p.black
         elif row.style is Style.ALERT:
             status_ink = self.p.accent
 
-        layout = row_layout(row, self.f, self.width, s, platform_x, leave_x)
+        layout = row_layout(row, self.f, self.width, s, platform_x, leave_x, where_x)
         self.draw.text((_PAD * s, y + s), layout.left, font=self.f.bold, fill=ink)
         self.draw.text((layout.middle_x, y + s), layout.middle, font=self.f.regular, fill=ink)
         # row_layout only places a platform or leave time the row has.
@@ -373,6 +460,10 @@ class _Painter:
             self.draw.text((layout.platform_x, y + s), row.platform, font=self.f.regular, fill=ink)
         if layout.leave_x is not None and layout.leave:
             self.draw.text((layout.leave_x, y + self.small_drop * s), layout.leave, font=self.f.small, fill=ink)
+        if layout.where_x is not None and layout.where:
+            self.draw.text((layout.where_x, y + self.small_drop * s), layout.where, font=self.f.small, fill=ink)
+        if layout.strip_x is not None and row.strip is not None:
+            draw_strip(self.draw, row.strip, train, layout.strip_x, y, s, self.row_h, ink, paper, yours_fill)
         self.draw.text((layout.right_x, y + s), row.right, font=self.f.bold, fill=status_ink)
 
     def rule(self, y: int) -> None:
@@ -387,9 +478,11 @@ def render(view: BoardView, palette: Palette, panel: Panel = PHAT, text_size: in
     s = plain_scale(panel)
     painter = _Painter(palette, load_fonts(s, text_size), panel, text_size)
     painter.header(view)
-    y = painter.section(view.trains, (painter.header_h + _SECTION_GAP) * s)
+    sections = [painter.drawn_rows(view.trains), painter.drawn_rows(view.buses)]
+    where_x = where_column(sections, painter.f, panel.width, s, live=view.clock is not None)
+    y = painter.section(view.trains, (painter.header_h + _SECTION_GAP) * s, where_x)
     painter.rule(y + s)
-    painter.section(view.buses, y + (_SECTION_GAP + 1) * s)
+    painter.section(view.buses, y + (_SECTION_GAP + 1) * s, where_x)
     painter.apply_preview_palette()
     return painter.image
 
