@@ -315,7 +315,7 @@ class SettingsSite:
                               applies=applies(install), test_key=self._test_key, clock=clock)
         self._pages = FormPages(
             self._forms["overview"], self.password, self.sessions, self.lockout,
-            codes or ResetCodes(store.folder, to_board=self.to_board),
+            codes or ResetCodes(store.folder, to_board=self.to_board, zone=store.zone),
             FormTokens(clock, cookie_name=FORM_COOKIE_NAME, cookie_path=PREFIX, key_file=store.form_key_file),
             lambda: wording(install, self.to_board(), self._running()), prefix=PREFIX, shell=shell,
             page_shell=page_shell,

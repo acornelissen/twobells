@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import threading
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -451,6 +452,26 @@ def test_wrong_tries_from_many_addresses_void_the_code(tmp_path):
         assert not codes.verify(wrong(code), T0 + 1, f"192.168.1.{100 + i}")
     assert not codes.verify(code, T0 + 2, OWNER)
     assert not (tmp_path / "reset-display.json").exists()
+
+
+# T0 + RESET_CODE_SECONDS is 08:10 UTC, 08:10 in London (winter) and 13:40 in Kolkata.
+KOLKATA = ZoneInfo("Asia/Kolkata")
+
+
+def test_a_code_in_the_log_runs_out_at_a_time_in_the_boards_zone(tmp_path, caplog):
+    caplog.set_level("DEBUG")
+    codes = ResetCodes(tmp_path, to_board=lambda: False, zone=lambda: KOLKATA)
+    codes.issue(T0)
+    assert any("valid until 13:40" in r.getMessage() for r in caplog.records)
+    caplog.clear()
+    assert codes.issue(T0 + 1) is None
+    assert any("still stands" in r.getMessage() and "13:40" in r.getMessage() for r in caplog.records)
+
+
+def test_show_in_log_says_the_time_in_the_zone_given(caplog):
+    caplog.set_level("DEBUG")
+    show_in_log("123456", T0 + RESET_CODE_SECONDS, KOLKATA)
+    assert [r.getMessage() for r in caplog.records] == ["Settings reset code: 123 456, valid until 13:40"]
 
 
 def test_the_tries_counted_per_address_are_kept_on_disk(tmp_path):

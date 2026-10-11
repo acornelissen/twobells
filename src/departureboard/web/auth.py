@@ -28,6 +28,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, tzinfo
 from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib.parse import urlparse
@@ -619,11 +620,17 @@ def spaced(code: str) -> str:
     return f"{code[:3]} {code[3:]}"
 
 
-def show_in_log(code: str, expires: float) -> None:
+def clock_time(when: float, zone: tzinfo | None) -> str:
+    """The Unix time `when` as HH:MM in `zone`, or the process's own zone for
+    None (which in Docker is UTC, not the board's)."""
+    return datetime.fromtimestamp(when, zone).strftime("%H:%M")
+
+
+def show_in_log(code: str, expires: float, zone: tzinfo | None = None) -> None:
     """Where a code goes when there is no board to show it (or its view is off): the
-    log, which only the owner can read. The one place a code is logged on purpose."""
-    until = time.strftime("%H:%M", time.localtime(expires))
-    log.warning("Settings reset code: %s, valid until %s", spaced(code), until)
+    log, which only the owner can read, with when it runs out in `zone`. The
+    one place a code is logged on purpose."""
+    log.warning("Settings reset code: %s, valid until %s", spaced(code), clock_time(expires, zone))
 
 
 def _code_hash(salt: bytes, code: str) -> str:
@@ -637,17 +644,21 @@ class ResetCodes:
     `show(code, expires)` is where a new code goes. Without one, each code
     asks `to_board()`: true hands it to the board through
     reset-display.json, false puts it in the log (show_in_log), so turning
-    the board view on or off changes where the next code goes.
+    the board view on or off changes where the next code goes. `zone()` is
+    the time zone the times a code runs out are said in, as the board would
+    say them; by default the process's own.
     """
 
     def __init__(self, folder: Path | str, show: Callable[[str, float], None] | None = None,
-                 to_board: Callable[[], bool] = lambda: True) -> None:
+                 to_board: Callable[[], bool] = lambda: True,
+                 zone: Callable[[], tzinfo | None] = lambda: None) -> None:
         self._folder = Path(folder)
         self._record = self._folder / "reset.json"
         self._display = self._folder / "reset-display.json"
         self._lock_path = self._folder / "reset.lock"
         self._show = show
         self._to_board = to_board
+        self._zone = zone
 
     def issue(self, now: float, limit: bool = True) -> str | None:
         """A new code, valid for RESET_CODE_SECONDS, passed to `show`. With
@@ -660,7 +671,7 @@ class ResetCodes:
             record = self._load()
             expires = self._still_shown(record["code"], now)
             if limit and expires is not None:
-                until = time.strftime("%H:%M", time.localtime(expires))
+                until = clock_time(expires, self._zone())
                 log.warning("Settings reset code asked for again: the last one still stands, valid until %s", until)
                 return None
             # Times ahead of now are from before the clock went back: not counted.
@@ -681,7 +692,7 @@ class ResetCodes:
             elif self._to_board():
                 self._hand_to_board(code, expires)
             else:
-                show_in_log(code, expires)
+                show_in_log(code, expires, self._zone())
         log.info("Settings reset code issued, valid for %d minutes", RESET_CODE_SECONDS // 60)
         return code
 
