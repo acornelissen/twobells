@@ -481,7 +481,22 @@ def test_the_container_has_room_for_the_largest_timetable_document_it_reads_and_
     for name, found in limits.items():
         assert found, name
         limit = int(found.group(1)) * 1024 * 1024
-        assert _timetable_memory(install_named("docker")) + room <= limit, name
+        assert _timetable_memory(install_named("docker")) + _cached_timetable(install_named("docker")) + room <= limit, name
+
+
+# What a timetable takes once loaded, a journey at a time (measured with
+# tracemalloc at 4.84 to 4.94 KB for an 80-call journey, commits 0832a6a and 183d128).
+LOADED_JOURNEY_BYTES = 5_000
+
+
+def _cached_timetable(install) -> int:
+    """The dashboard's own copy of the timetable, held beside a build where
+    serve runs both (Docker): its poller keeps it through upkeep's weekly
+    rebuild, so the buses don't blank."""
+    from departureboard.timetable import build, routesetup
+
+    limits = routesetup.document_limits(install)
+    return (limits.journeys + build.inbound_limit(limits)) * LOADED_JOURNEY_BYTES
 
 
 def test_the_fetch_service_goes_out_and_listens_on_nothing():

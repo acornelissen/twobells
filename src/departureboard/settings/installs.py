@@ -73,7 +73,9 @@ INSTALLS = {
                 log_help="On the Pi: <code>sudo journalctl -u departureboard-web</code>.",
                 password_command=f"{_PI_COMMAND} --set-password", reset_command=f"{_PI_COMMAND} --reset-code"),
         Install("docker", ("dashboard",), ("dashboard",), Path("/data"), host="0.0.0.0",  # noqa: S104 - inside the container
-                timetable_read_bytes=100_000_000, timetable_parse_bytes=100_000_000, timetable_journeys=12_000,
+                # Its dashboard keeps its own copy of the timetable through a rebuild, so the
+                # buses don't blank: 8,000 leaves room for both (tests/test_deploy.py).
+                timetable_read_bytes=100_000_000, timetable_parse_bytes=100_000_000, timetable_journeys=8_000,
                 log_help=("In Docker: <code>docker logs departureboard</code>, or in Container Manager, "
                           "Container, departureboard, Log."),
                 password_command=_DOCKER_COMMAND.format("--set-password"),
