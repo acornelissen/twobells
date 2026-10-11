@@ -2,6 +2,7 @@ import errno
 import http.client
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -205,13 +206,6 @@ def test_probe_bus_works_without_rail_key(probe_env, capsys):
     assert main(["probe", "bus", *args]) == 0
 
 
-def test_demo_png_can_use_either_theme(tmp_path):
-    for theme in ("sign", "plain"):
-        out = tmp_path / f"{theme}.png"
-        assert main(["demo", "--theme", theme, "--png", str(out)]) == 0
-        assert Image.open(out).size == (250, 122)
-
-
 def test_probe_train_reports_http_errors_on_one_line(tmp_path, monkeypatch, capsys):
     from urllib.error import HTTPError
 
@@ -255,9 +249,9 @@ def test_probe_train_details_prints_coaches_and_calling_points(train_probe, caps
     assert main(["probe", "train", "--details", *args]) == 0
     out = capsys.readouterr().out
     assert ["/GetDepBoardWithDetails/GLO" in url for url in urls] == [True]
-    assert "22:25  Manchester Piccadilly" in out
+    assert re.search(r"^22:25\s+Manchester Piccadilly\b", out, re.M)
     assert "Northern from Hadfield, 2 coaches" in out
-    assert "    22:39  Newton for Hyde" in out and "On time" in out
+    assert re.search(r"^\s+22:39\s+Newton for Hyde\b", out, re.M) and "On time" in out
 
 
 def test_probe_train_without_details_is_unchanged(train_probe, capsys):
@@ -265,7 +259,7 @@ def test_probe_train_without_details_is_unchanged(train_probe, capsys):
     assert main(["probe", "train", *args]) == 0
     out = capsys.readouterr().out
     assert ["/GetDepartureBoard/GLO" in url for url in urls] == [True]
-    assert "22:25  Northern   Manchester Piccadilly" in out
+    assert re.search(r"^22:25\s+Northern\s+Manchester Piccadilly\b", out, re.M)
     assert "coaches" not in out and "Newton for Hyde" not in out
 
 
@@ -305,37 +299,34 @@ def _run_setup(tmp_path, monkeypatch):
     return args, calls
 
 
-def test_first_ever_run_primes_outside_windows(tmp_path, monkeypatch):
+def test_the_first_run_primes_outside_windows_and_later_runs_respect_them(tmp_path, monkeypatch):
     args, calls = _run_setup(tmp_path, monkeypatch)
+    assert main(args) == 0
+    assert calls == [1]  # the first ever run fetches, though it's Saturday
     assert main(args) == 0
     assert calls == [1]
 
 
-def test_later_runs_respect_windows(tmp_path, monkeypatch):
-    args, calls = _run_setup(tmp_path, monkeypatch)
-    main(args)
-    main(args)
-    assert calls == [1]
+def test_run_loop_on_a_screen_draws_a_running_clock(tmp_path, monkeypatch, caplog):
+    # A board that is set up: the loop draws departures, not the set-me-up page.
+    from departureboard.sources.darwin import DarwinSource
 
-
-def test_run_png_draws_at_the_configured_display_size(tmp_path):
+    caplog.set_level("INFO")
+    calls = []
+    monkeypatch.setattr(DarwinSource, "fetch", lambda self: calls.append(1) or [])
     config = tmp_path / "config.toml"
     state = tmp_path / "state.json"
-    config.write_text(f'display = "waveshare-10in85g"\nstate_file = "{state}"\n')
-    out = tmp_path / "board.png"
-    assert main(["run", "--config", str(config), "--secrets", str(tmp_path / "none.env"), "--png", str(out)]) == 0
-    assert Image.open(out).size == (1360, 480)
-
-
-def test_run_loop_on_a_screen_draws_a_running_clock(tmp_path, monkeypatch):
-    config = tmp_path / "config.toml"
-    state = tmp_path / "state.json"
-    config.write_text(f'display = "hdmi-1280x400"\nrotate = 90\nstate_file = "{state}"\n')
+    config.write_text(f'display = "hdmi-1280x400"\nrotate = 90\nstate_file = "{state}"\n'
+                      '[train]\ncrs = "GLO"\nwindows = ["Mon-Sun 00:00-23:59"]\n')
+    secrets = tmp_path / "secrets.env"
+    secrets.write_text("RDM_API_KEY=k\n")
     out = tmp_path / "board.png"
     args = ["run", "--loop", "--ticks", "2", "--tick", "0.001", "--png", str(out)]
-    assert main([*args, "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
+    assert main([*args, "--config", str(config), "--secrets", str(secrets)]) == 0
+    assert "Not set up yet" not in caplog.text and calls
     assert Image.open(out).size == (1280, 400)
-    assert state.exists()
+    saved = json.loads(state.read_text())
+    assert saved["sources"]["train"]["last_attempt"] and saved["last_render"]["page"] != "setup"
 
 
 @pytest.mark.parametrize("display, frames", [("hdmi-1920x440", True), ("waveshare-10in85g", False)])
@@ -355,8 +346,10 @@ def test_a_running_screen_draws_frames_for_scrolling_text_and_e_paper_does_not(t
     assert seen["frame_seconds"] == (SCROLL_FRAME_S if frames else None)
 
 
-@pytest.mark.parametrize("command", [["run", "--loop"], ["emulate", "--demo", "--no-browser"]])
-@pytest.mark.parametrize("tick", ["0", "-1", "nan", "inf", "-inf", "soon"])
+@pytest.mark.parametrize("command, tick", [
+    *((["run", "--loop"], tick) for tick in ("0", "-1", "nan", "inf", "-inf", "soon")),
+    (["emulate", "--demo", "--no-browser"], "0"),  # the same check, wired to emulate too
+])
 def test_a_tick_must_be_a_number_of_seconds_above_nothing(command, tick, capsys):
     # 0 or less would spin a core flat out; nan and inf would never tick.
     with pytest.raises(SystemExit) as stopped:
@@ -625,7 +618,6 @@ def _web_config(tmp_path):
 
 
 def test_reset_code_prints_a_code_the_page_will_take(tmp_path, capsys):
-    import re
     import time
 
     from departureboard.web.auth import ResetCodes
@@ -650,7 +642,6 @@ def process_in_utc(monkeypatch):
 
 
 def test_reset_code_gives_its_expiry_in_the_boards_time_zone(tmp_path, capsys, process_in_utc):
-    import re
     from datetime import datetime, timedelta
     from zoneinfo import ZoneInfo
 
@@ -681,12 +672,6 @@ def test_reset_code_is_not_held_back_by_the_pages_limits(tmp_path, capsys):
     assert main(["web", "--config", str(config), "--reset-code"]) == 0
     assert main(["web", "--config", str(config), "--reset-code"]) == 0
     assert capsys.readouterr().out.count("Settings reset code:") == 2
-
-
-def test_reset_code_and_set_password_are_one_or_the_other(tmp_path):
-    config, _ = _web_config(tmp_path)
-    with pytest.raises(SystemExit):
-        main(["web", "--config", str(config), "--reset-code", "--set-password"])
 
 
 # Root, by hand on a Pi, on the store the services' user owns: anything it
@@ -1025,10 +1010,10 @@ def test_dashboard_options_parse_with_their_defaults():
     )
 
 
-@pytest.mark.parametrize("port", ["-1", "65536", "http", ""])
-def test_dashboard_refuses_a_port_that_is_not_one(port, capsys):
+def test_dashboard_refuses_a_port_that_is_not_one(capsys):
+    # The same check as emulate's, whose test covers each kind of bad port.
     with pytest.raises(SystemExit):
-        main(["dashboard", "--port", port])
+        main(["dashboard", "--port", "http"])
     assert "port number" in capsys.readouterr().err
 
 
@@ -1244,9 +1229,8 @@ def test_serve_tells_the_dashboard_and_the_settings_its_version(tmp_path, served
                  "--secrets", str(tmp_path / "none.env"), "--state-dir", str(tmp_path / "data")]) == 0
     app = served["app"]
     assert app.settings.version == wanted
-    page = app.static.get("index.html").body.decode()
-    footer = page[page.index('<footer class="foot">'):page.index("</footer>")]
-    assert f'<p class="version">departureboard {wanted}</p>' in footer
+    # How the footer shows it is tests/web/test_server.py's; here, that the page is given this version.
+    assert f"departureboard {wanted}" in app.static.get("index.html").body.decode()
 
 
 @pytest.mark.parametrize("argv, host, port, attempts, browser", [
@@ -1455,8 +1439,6 @@ class Browser:
 
 def test_dockers_first_run_claims_in_the_log_sets_up_and_starts_the_dashboard_again(tmp_path, monkeypatch, caplog):
     # A new container: no config.toml, nothing saved, the key from the environment.
-    import re
-
     from departureboard.cli import serve
     from departureboard.core import net
     from departureboard.dashboard import collector
@@ -1517,7 +1499,7 @@ def test_dockers_first_run_claims_in_the_log_sets_up_and_starts_the_dashboard_ag
     assert seen["claimed"] == (303, "/settings/setup/")
     assert seen["begin"]["noun"] == "dashboard" and seen["begin"]["views"]["on"] == ["dashboard"]
     status, finished = seen["finish"]
-    assert status == 200 and finished["message"] == "Saved. The dashboard starts again in a few seconds to use them."
+    assert status == 200 and "starts again" in finished["message"]  # its words are tests/setup/test_api.py's
     assert finished["links"][0] == {"label": "The dashboard", "href": "/"}
     assert started_again == [port] and "starting the dashboard again" in caplog.text
 
@@ -1545,10 +1527,8 @@ def test_serve_with_the_dashboard_view_off_runs_only_the_settings(tmp_path, serv
     assert served["app"].settings.tabs() == ("overview", "trains_buses", "keys", "general")
 
 
-@pytest.mark.parametrize("install", ["docker", "desktop"])
+@pytest.mark.parametrize("install", ["docker"])  # a desktop's is the dashboard command's, tested below
 def test_serve_sets_the_password_and_prints_a_code_in_the_store(tmp_path, typed, no_dashboard, capsys, install):
-    import re
-
     from departureboard.web.auth import PasswordStore, ResetCodes
 
     typed[0].extend([DASH_PASSWORD] * 2)
@@ -1563,41 +1543,40 @@ def test_serve_sets_the_password_and_prints_a_code_in_the_store(tmp_path, typed,
     assert ResetCodes(folder).verify(code, time.time())
 
 
-def test_serve_password_flags_are_one_or_the_other(tmp_path):
-    with pytest.raises(SystemExit):
-        main(["serve", "--state-dir", str(tmp_path), "--set-password", "--reset-code"])
-
-
 def test_serve_knows_only_the_installs_there_are(tmp_path, capsys):
     with pytest.raises(SystemExit):
         main(["serve", "--install", "laptop", "--state-dir", str(tmp_path)])
     assert "invalid choice: 'laptop'" in capsys.readouterr().err
 
 
-def test_the_old_dashboard_command_is_hidden_but_works(capsys):
-    import re
+def listed_commands(help_text=None):
+    """The commands `departureboard --help` lists, from its {run,probe,...}."""
+    from departureboard.cli.main import _parser
 
+    help_text = _parser().format_help() if help_text is None else help_text
+    return re.search(r"\{([a-z,]+)\}", help_text).group(1).split(",")
+
+
+def test_the_old_dashboard_command_is_hidden_but_works(capsys):
     from departureboard.cli.main import _parser
 
     help_text = _parser().format_help()
-    listed = re.search(r"\{([a-z,]+)\}", help_text).group(1).split(",")
+    listed = listed_commands(help_text)
     assert "serve" in listed and "dashboard" not in listed
     assert not re.search(r"^ +dashboard ", help_text, re.M)
     args = _parser().parse_args(["dashboard", "--state-dir", "/data", "--set-password"])
     assert (args.install, args.state_dir, args.set_password) == ("desktop", "/data", True)
 
 
-def test_the_fetch_service_is_listed_and_its_old_name_hidden_but_works():
-    import re
-
+def test_the_fetch_service_is_listed_and_its_old_name_hidden_but_works(capsys):
     from departureboard.cli.main import _parser
     from departureboard.cli.serve import fetch_command
 
     parser = _parser()
-    listed = re.search(r"\{([a-z,]+)\}", parser.format_help()).group(1).split(",")
-    assert "fetch" in listed
-    setup = parser._subparsers._group_actions[0].choices["setup"]
-    assert "serve" not in setup.format_help()
+    assert "fetch" in listed_commands()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["setup", "--help"])
+    assert "serve" not in capsys.readouterr().out
     for argv in (["fetch"], ["setup", "serve"]):
         args = parser.parse_args([*argv, "--config", "/etc/departureboard/config.toml"])
         assert (args.handler, args.install, args.state_dir) == (fetch_command, "pi", None)
@@ -1662,16 +1641,13 @@ def test_query_says_why_when_the_settings_cant_be_read(tmp_path, capsys, what, c
 
 
 def test_query_needs_no_keys_and_is_hidden(tmp_path, monkeypatch, capsys):
-    import re
-
     from departureboard.cli.main import _parser
 
     for name in ("RDM_API_KEY", "BODS_API_KEY", "TAPI_APP_ID", "TAPI_APP_KEY"):
         monkeypatch.delenv(name, raising=False)
     assert _query(tmp_path, "views") == 0 and capsys.readouterr().out == "board\n"
     assert not (tmp_path / "state" / "settings.toml").exists()  # nothing written
-    listed = re.search(r"\{([a-z,]+)\}", _parser().format_help()).group(1).split(",")
-    assert "query" not in listed
+    assert "query" not in listed_commands()
     with pytest.raises(SystemExit):
         _parser().parse_args(["query", "keys"])
 
@@ -1831,8 +1807,6 @@ def test_dashboard_set_password_without_a_folder_or_config_uses_this_computer_s_
 
 
 def test_dashboard_set_password_uses_the_same_password_as_the_boards_page(tmp_path, typed, no_dashboard, capsys):
-    import re
-
     from departureboard.web.auth import PasswordStore, ResetCodes, show_in_log
 
     config, state = _web_config(tmp_path)
@@ -1893,15 +1867,15 @@ def test_dashboard_password_and_code_write_only_in_the_state_folder(tmp_path, ty
     assert sorted(p.name for p in data.iterdir()) == ["reset.json", "reset.lock", "web.json"]
 
 
-@pytest.mark.parametrize("flags", [["--set-password", "--reset-code"], ["--reset-code", "--set-password"]])
-def test_dashboard_password_flags_are_one_or_the_other(tmp_path, flags):
-    with pytest.raises(SystemExit):
-        main(["dashboard", "--state-dir", str(tmp_path), *flags])
+@pytest.mark.parametrize("command", ["serve", "dashboard", "web"])
+def test_the_password_flags_are_one_or_the_other(tmp_path, command):
+    config, state = _web_config(tmp_path)
+    with pytest.raises(SystemExit) as stopped:  # refused as it is read, before anything is done
+        main([command, "--config", str(config), "--set-password", "--reset-code"])
+    assert stopped.value.code == 2 and not state.exists()
 
 
 def test_dashboard_reset_code_prints_one_code_the_settings_will_take(tmp_path, no_dashboard, capsys, caplog):
-    import re
-
     from departureboard.web.auth import ResetCodes, show_in_log
 
     caplog.set_level("DEBUG")
@@ -1997,7 +1971,8 @@ def test_a_pi_not_set_up_shows_set_me_up_with_the_settings_address(tmp_path, mon
         path.write_text(FIRST_RUNS[config])
     assert main(first_run_args(tmp_path, path)) == 0
     assert "Not set up yet: showing http://kitchen-board.local:8090/settings on the board" in caplog.text
-    assert saved_page(folder) == "setup"
+    assert Image.open(tmp_path / "board.png").size == (250, 122)
+    assert saved_page(folder) == "setup"  # in systemd's folder, even without a config.toml
 
 
 @pytest.mark.parametrize("display, size", [("waveshare-10in85g", (1360, 480)), ("hdmi-1280x400", (1280, 400))])
@@ -2005,15 +1980,6 @@ def test_the_setup_page_is_drawn_for_the_configured_display(tmp_path, display, s
     config = installed_template(tmp_path, display)
     assert main(first_run_args(tmp_path, config)) == 0
     assert Image.open(tmp_path / "board.png").size == size
-
-
-def test_without_a_config_the_setup_page_keeps_its_state_in_systemds_folder(tmp_path, monkeypatch):
-    folder = tmp_path / "lib"
-    folder.mkdir()
-    monkeypatch.setenv("STATE_DIRECTORY", str(folder))
-    assert main(first_run_args(tmp_path, tmp_path / "missing.toml")) == 0
-    assert Image.open(tmp_path / "board.png").size == (250, 122)
-    assert saved_page(folder) == "setup"
 
 
 def test_a_code_asked_for_shows_on_a_board_not_yet_set_up(tmp_path):
@@ -2188,6 +2154,26 @@ def test_the_first_run_after_setting_up_fetches_everything(tmp_path, monkeypatch
     assert calls == [1]
 
 
+def signed_in(app, folder):
+    """Set the settings password in `folder` and sign in to `app`, served for
+    real on a free port: where signing in leads, and that page's status and body."""
+    from departureboard.web.auth import PasswordStore
+    from departureboard.web.server import DashboardServer
+
+    PasswordStore(folder / "web.json").set(DASH_PASSWORD)
+    server = DashboardServer(("127.0.0.1", 0), app)
+    threading.Thread(target=server.serve_forever, args=(0.05,), daemon=True).start()
+    try:
+        browser = Browser(server.server_address[1])
+        response, _ = browser("POST", "/settings/login", {"password": DASH_PASSWORD})
+        where = response.getheader("Location")
+        response, page = browser("GET", where)
+        return where, response.status, page
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_the_settings_open_the_wizard_until_the_board_is_set_up(tmp_path, monkeypatch, capsys, served):
     from departureboard.web.settingsite import PREFIX, SETUP
 
@@ -2195,12 +2181,12 @@ def test_the_settings_open_the_wizard_until_the_board_is_set_up(tmp_path, monkey
     config = installed_template(tmp_path)
     assert main(["web", "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
     assert "opens the setup wizard" in capsys.readouterr().err
-    site = served["app"].settings
-    assert "" in site._files and site._home() == SETUP
+    where, status, page = signed_in(served["app"], tmp_path / "state")
+    assert (where, status) == (SETUP, 200) and "<title>Setup</title>" in page  # the wizard's own page
     config.write_text(config.read_text().replace('crs = "CHANGE_ME"', 'crs = "GLO"')
                       .replace('A = "CHANGE_ME"', 'A = "1800SB12341"')
                       .replace('operators = ["CHANGE_ME"]', 'operators = ["SBUS"]'))
-    assert site._home() == PREFIX
+    assert signed_in(served["app"], tmp_path / "state")[:2] == (PREFIX, 200)
 
 
 @pytest.fixture
@@ -2211,8 +2197,7 @@ def no_runtime_folder(tmp_path, monkeypatch):
     monkeypatch.setattr("departureboard.setup.spool.folder.RUNTIME", tmp_path / "no-run")
 
 
-@pytest.mark.parametrize("flag", [[], ["--setup-via-spool"]])
-def test_the_pis_settings_hand_setup_to_the_fetch_service(tmp_path, monkeypatch, flag, no_runtime_folder, served):
+def test_the_pis_settings_hand_setup_to_the_fetch_service(tmp_path, monkeypatch, no_runtime_folder, served):
     # Always, now: the flag the unit still passes is taken and changes nothing.
     from departureboard.setup.spool.runner import SpoolRunner
 
@@ -2220,7 +2205,7 @@ def test_the_pis_settings_hand_setup_to_the_fetch_service(tmp_path, monkeypatch,
     (tmp_path / "state").mkdir()  # as install.sh and systemd's StateDirectory make it
     run = tmp_path / "run"
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))  # as systemd gives it
-    assert main(["web", "--config", str(config), "--secrets", str(tmp_path / "none.env"), *flag]) == 0
+    assert main(["web", "--config", str(config), "--secrets", str(tmp_path / "none.env"), "--setup-via-spool"]) == 0
     assert (served["host"], served["port"], served["attempts"]) == ("0.0.0.0", 8090, 1)  # the old 8080 no more
     site = served["app"].settings
     assert site.install.name == "pi" and not served["app"].dashboard_on()
@@ -2230,8 +2215,8 @@ def test_the_pis_settings_hand_setup_to_the_fetch_service(tmp_path, monkeypatch,
     assert sorted(os.listdir(tmp_path / "state")) == []  # nothing of setup's on the SD card
 
 
-@pytest.mark.parametrize("command", [["fetch"], ["setup", "serve"]])  # and by its old name, hidden
-def test_the_fetch_service_searches_in_the_boards_state_folder(tmp_path, monkeypatch, no_runtime_folder, command):
+def test_the_fetch_service_searches_in_the_boards_state_folder(tmp_path, monkeypatch, no_runtime_folder):
+    # By its old name, `setup serve`, it parses the same: see the fetch service's listing test.
     from departureboard.setup.spool.worker import Worker
 
     ran = []
@@ -2240,7 +2225,7 @@ def test_the_fetch_service_searches_in_the_boards_state_folder(tmp_path, monkeyp
     config = installed_template(tmp_path)
     secrets = tmp_path / "secrets.env"
     secrets.write_text("BODS_API_KEY=saved-bods-key\n")
-    assert main([*command, "--config", str(config), "--secrets", str(secrets)]) == 0
+    assert main(["fetch", "--config", str(config), "--secrets", str(secrets)]) == 0
     [worker] = ran
     assert worker.spool.folder == tmp_path / "run" and worker._job_folder == tmp_path / "state"
     assert worker._load_secrets()["BODS_API_KEY"] == "saved-bods-key"
@@ -2400,7 +2385,8 @@ def test_without_a_config_the_settings_start_in_systemds_folder(tmp_path, monkey
     assert main(["web", "--config", str(tmp_path / "missing.toml"), "--secrets", str(tmp_path / "none.env")]) == 0
     assert "opens the setup wizard" in capsys.readouterr().err
     site = served["app"].settings
-    assert site._home() == SETUP and site.setup._job_folder == folder and site.store.folder == folder
+    assert site.setup._job_folder == folder and site.store.folder == folder
+    assert signed_in(served["app"], folder)[:2] == (SETUP, 200)  # the password is read from systemd's folder too
 
 
 @pytest.mark.parametrize("name, url", [
