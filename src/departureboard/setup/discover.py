@@ -302,13 +302,13 @@ def discover_operators(
                         skip(routesetup.too_big(name, limits.parse, len(document)))
                         continue
                     try:
+                        # Those that ended before today are let go uncounted, as a build does.
                         journeys, _ = timetable._parse_document(document, atcos, fallback,
-                                                                room=timetable._Room(limits.journeys))
+                                                                room=timetable._Room(limits.journeys), today=today)
                     except (timetable.TimetableError, routesetup.RouteSetupError) as error:
                         notes.append(f"Skipped a timetable: {safe_message(error)}")
                         continue
-                    current = [j for j in journeys if _LINE.match(j.line)
-                               and not (j.calendar.end and j.calendar.end < today)]
+                    current = [j for j in journeys if _LINE.match(j.line)]
                     noc = _filed_under(dataset, (j.operator for j in current))
                     if noc is None:
                         continue

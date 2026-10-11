@@ -248,6 +248,21 @@ def test_a_document_with_more_journeys_at_your_stops_than_the_install_holds_is_s
     assert found.notes == ["Skipped a timetable: More than 4 journeys call at your stops; refusing"]
 
 
+def test_journeys_that_have_ended_are_not_counted_against_the_install_s_limit(bods):
+    # As the timetable's build lets them go uncounted: a document full of old
+    # versions isn't skipped as too big when only one of its journeys still runs.
+    from tests.timetable.test_build import HOWARD, _doc
+
+    ended = {f"old{i}": "2026-02-01" for i in range(3)}
+    document = _doc([*((code, "237", f"0{i + 6}:00:00", [STOP_A, HOWARD]) for i, code in enumerate(ended)),
+                     ("out", "237", "10:15:00", [STOP_A, HOWARD])], ends=ended)
+    bods.blobs[_link(1)] = _zip({"237.xml": document})
+    bods.blobs[_link(2)] = _zip({"201.xml": ELSEWHERE})
+    found = bods.discover(limits=DocumentLimits(journeys=1))
+    assert found.notes == []
+    assert found.lines == {"BNML": ["237"]} and found.journeys_found == 1
+
+
 def test_a_document_too_big_to_read_is_skipped_and_noted(bods):
     bods.blobs[_link(1)] = _zip({"341.xml": TXC_341, "big.xml": b"<x>" + b"a" * len(TXC_341) + b"</x>"})
     found = bods.discover(limits=DocumentLimits(read=len(TXC_341)))

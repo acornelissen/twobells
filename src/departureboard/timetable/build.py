@@ -811,10 +811,11 @@ def _read_document(
 
 def _parse_document(
     xml: bytes, atcos: Collection[str], noc: str, yours: Mapping[str, StopPosition] | None = None,
-    room: _Room | None = None,
+    room: _Room | None = None, *, today: date | None = None,
 ) -> tuple[list[Journey], dict[str, StopPosition]]:
-    """_read_document without the versions."""
-    found, positions = _read_document(xml, atcos, noc, yours, room)
+    """_read_document without the versions: with `today`, those that ended
+    before it are let go uncounted, as a build lets them go."""
+    found, positions = _read_document(xml, atcos, noc, yours, room, today=today)
     return [journey for _, journey in found], positions
 
 
