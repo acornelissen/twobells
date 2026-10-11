@@ -635,6 +635,38 @@ def test_a_lookups_answer_the_page_gave_up_on_goes_once_its_wait_is_over(board):
     assert not reply.exists()
 
 
+def test_every_reply_goes_when_the_service_stops(board):
+    # A late answer can hold home's exact position, and the spool lasts until
+    # the Pi restarts; once the service stops, no page is still waiting for one.
+    board.worker._idle = 0
+    left = board.runner.spool.replies / ("e" * 32 + ".json")
+    left.write_text("{}")
+    board.runner.post("a" * 32, "postcode", {"postcode": "SK13 1AH"})
+    assert board.worker.run() == 0
+    assert ("postcode", "SK13 1AH") in board.calls  # answered, then swept on the way out
+    assert os.listdir(board.runner.spool.replies) == []
+
+
+def test_every_reply_goes_when_the_service_is_told_to_stop(serving):
+    rid = "a" * 32
+    serving.runner.post(rid, "postcode", {"postcode": "SK13 1AH"})
+    wait_for(lambda: (serving.runner.spool.replies / f"{rid}.json").exists())
+    serving.worker._stop.set()  # as SIGTERM does
+    wait_for(lambda: os.listdir(serving.runner.spool.replies) == [])
+
+
+def test_a_second_service_leaves_the_replies_of_the_one_answering(board):
+    import fcntl
+
+    board.runner.spool.make()
+    reply = board.runner.spool.replies / ("e" * 32 + ".json")
+    reply.write_text("{}")
+    with open(board.runner.spool.folder / WORKER_LOCK, "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        assert board.worker.run() == 0
+    assert reply.exists()
+
+
 def test_a_finished_search_waits_longer_for_the_page(board):
     # The search's result took minutes to find; a phone asleep for a while can still collect it.
     job = board.runner.make_job({"A": "1800SB12341"}, "", routes=False, walk_minutes={})
@@ -687,6 +719,20 @@ def test_the_spool_is_the_fetch_services_and_the_messages_name_it():
     assert "journalctl -u departureboard-fetch " in NO_SETTINGS
 
 
+def read_on_the_way_out(worker, runner, ids) -> dict:
+    """The replies to `ids` as the service leaves them, read just before it
+    deletes them on the way out, as a page waiting for them would have."""
+    found = {}
+    clear = worker._clear_replies
+
+    def read_then_clear():
+        found.update({rid: runner.reply(rid, delete=False) for rid in ids})
+        clear()
+
+    worker._clear_replies = read_then_clear
+    return found
+
+
 def test_the_service_stops_when_idle_and_runs_once(board):
     board.worker._idle = 0.05
     started = time.monotonic()
@@ -706,10 +752,11 @@ def test_the_service_stays_up_while_told_to_and_never_leaves_a_request_waiting(b
 
     real_step = board.worker.step
     board.worker.step = lambda: False if len(asked) == 20 else real_step()
+    replies = read_on_the_way_out(board.worker, board.runner, ["e" * 32])
     assert board.worker.run(tend) == 0
     assert len(asked) > 20  # kept going past the idle time while busy, and once more for the late request
     assert os.listdir(board.runner.spool.requests) == []
-    assert board.runner.reply("e" * 32, delete=True)["ok"] is True
+    assert replies["e" * 32]["ok"] is True
 
 
 def test_an_active_request_is_handed_on_and_gets_no_reply(board, caplog):
@@ -784,13 +831,13 @@ def test_a_service_that_cant_read_its_config_says_so_to_each_request(board, tmp_
     job = board.runner.make_job({"A": "1800SB12341"}, PASTED, routes=False, walk_minutes={})
     job.start()
     board.runner.post("c" * 32, "cancel", {"job": "d" * 32})
+    replies = read_on_the_way_out(worker, board.runner, ["a" * 32, "b" * 32, "c" * 32])
     assert worker.run() == 0
     assert os.listdir(board.runner.spool.requests) == []  # none left to start it again
     for rid in ("a" * 32, "b" * 32):
-        assert board.runner.reply(rid, delete=True) == {
-            "v": 1, "id": rid, "ok": False, "why": "setup", "error": NO_SETTINGS}
+        assert replies[rid] == {"v": 1, "id": rid, "ok": False, "why": "setup", "error": NO_SETTINGS}
     assert job.status()["state"] == "failed" and job.status()["message"] == NO_SETTINGS
-    assert board.runner.reply("c" * 32, delete=True) is None  # a cancel needs no answer
+    assert replies["c" * 32] is None  # a cancel needs no answer
     assert board.calls == [] and FakeJob.made == [] and PASTED not in spool_text(board.state)
 
 

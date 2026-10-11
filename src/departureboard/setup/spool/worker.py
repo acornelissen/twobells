@@ -135,9 +135,9 @@ class Worker:
 
     def run(self, tend: Callable[[], bool] | None = None) -> int:
         """Answer requests until stopped, or idle for `idle` seconds with no
-        search running and no request waiting. `tend`, if given, is called
-        each time round once the lock is held; while it says True the
-        service stays up, however idle."""
+        search running and no request waiting, then delete the replies left.
+        `tend`, if given, is called each time round once the lock is held;
+        while it says True the service stays up, however idle."""
         self.spool.make()
         fd = files.open_lock(self.spool.folder / WORKER_LOCK)
         try:
@@ -164,9 +164,21 @@ class Worker:
                 finished.set()
                 heartbeat.join()
             self._stop_search()
+            self._clear_replies()
             return 0
         finally:
             os.close(fd)
+
+    def _clear_replies(self) -> None:
+        """Delete every reply on the way out, while the lock is still held. A
+        late one can hold home's exact position, and the spool lasts until the
+        Pi restarts; once the service stops, no page is still waiting for one."""
+        try:
+            names = os.listdir(self.spool.replies)
+        except OSError:
+            return
+        for name in names:
+            _remove(self.spool.replies / name)
 
     def step(self) -> bool:
         """Answer every waiting request and report the search. Whether any request came."""

@@ -47,7 +47,8 @@ can), checks it, does it, and writes the reply. The page waits for the
 reply, up to a limit per kind, deletes it once read, and deletes its own
 request if it is still there when it gives up. A reply that comes after
 that is swept away once the longest wait is over, by both sides (the
-service looks every time round). The search's reply is its status, in
+service looks every time round), and every reply goes when the service
+stops, as no page can still be waiting for one then. The search's reply is its status, in
 status/, rewritten as it goes and every few seconds besides (from a thread
 of its own, so a slow lookup doesn't hold it up), so the page can tell a
 stopped service from a slow search. A finished search's status waits longer

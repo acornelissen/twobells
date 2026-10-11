@@ -22,6 +22,7 @@ from departureboard.setup.lookups import Place
 from departureboard.setup.spool.folder import Spool
 from departureboard.setup.spool.runner import Poster, SpoolRunner
 from departureboard.setup.spool.worker import WORKER_LOCK
+from tests.setup.test_spool import read_on_the_way_out
 
 PI = install_named("pi")
 ON = '[app]\nviews = ["board", "dashboard"]\n'
@@ -282,8 +283,11 @@ def test_it_answers_a_waiting_request_before_stopping(pi):
     home = Place(53.461964, -1.965633, "SK13 1AH", "England", "High Peak")
     runner = SpoolRunner(spool.folder)
     runner.post("a" * 32, "postcode", {"postcode": "SK13 1AH"})
-    assert service(pi, idle=0, lookup_postcode=lambda postcode: home).run() == 0
-    assert runner.reply("a" * 32, delete=True)["value"]["label"] == "SK13 1AH"
+    found = service(pi, idle=0, lookup_postcode=lambda postcode: home)
+    replies = read_on_the_way_out(found.worker, runner, ["a" * 32])
+    assert found.run() == 0
+    assert replies["a" * 32]["value"]["label"] == "SK13 1AH"
+    assert os.listdir(spool.replies) == []  # then gone with the service
 
 
 def test_a_second_service_stops_at_once_and_runs_no_dashboard(pi):
