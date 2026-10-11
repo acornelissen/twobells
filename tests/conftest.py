@@ -1,3 +1,5 @@
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
 import pytest
@@ -34,3 +36,69 @@ def own_home(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(store, "_home", lambda: home)
     for name in ("XDG_STATE_HOME", "STATE_DIRECTORY"):
         monkeypatch.delenv(name, raising=False)
+
+
+# A server that sends very slowly, for the deadlines.
+
+
+@pytest.fixture
+def dripping():
+    """A local server that sends very slowly: /body sends its headers, then a
+    byte every 50 ms; /headers sends a header line every 50 ms; /quick
+    answers at once; /moved redirects to /body. Each gives up after 5 s."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            try:
+                if self.path == "/quick":
+                    self.send_response(200)
+                    self.send_header("Content-Length", "2")
+                    self.end_headers()
+                    self.wfile.write(b"ok")
+                elif self.path == "/moved":
+                    self.send_response(302)
+                    self.send_header("Location", "/body")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                elif self.path == "/body":
+                    self.send_response(200)
+                    self.send_header("Content-Length", "100")
+                    self.end_headers()
+                    self.wfile.flush()
+                    self.drip(b"x")
+                else:
+                    self.wfile.write(b"HTTP/1.1 200 OK\r\n")
+                    self.drip(b"X-Pad: x\r\n")
+            except OSError:
+                pass  # the client gave up
+
+        def drip(self, piece):
+            for _ in range(100):
+                self.wfile.write(piece)
+                self.wfile.flush()
+                threading.Event().wait(0.05)
+
+        def log_message(self, format, *args):  # noqa: A002
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+    server.server_close()
+
+
+@pytest.fixture
+def drip_to(dripping, monkeypatch):
+    """`drip_to(path)` sends every request from then on to the dripping
+    server's `path`, so code that opens only https can meet a slow server.
+    The request keeps its own deadline."""
+
+    def to(path):
+        def opener(request, timeout):
+            request.full_url = dripping + path
+            return net._opener.open(request, timeout=timeout)
+
+        monkeypatch.setattr(net, "urlopen", opener)
+
+    return to

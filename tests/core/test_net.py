@@ -185,53 +185,6 @@ def test_get_bytes_adds_the_callers_headers_and_may_replace_the_agent(monkeypatc
 # A deadline for the whole request.
 
 
-@pytest.fixture
-def dripping():
-    """A local server that sends very slowly: /body sends its headers, then a
-    byte every 50 ms; /headers sends a header line every 50 ms; /quick
-    answers at once; /moved redirects to /body. Each gives up after 5 s."""
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            try:
-                if self.path == "/quick":
-                    self.send_response(200)
-                    self.send_header("Content-Length", "2")
-                    self.end_headers()
-                    self.wfile.write(b"ok")
-                elif self.path == "/moved":
-                    self.send_response(302)
-                    self.send_header("Location", "/body")
-                    self.send_header("Content-Length", "0")
-                    self.end_headers()
-                elif self.path == "/body":
-                    self.send_response(200)
-                    self.send_header("Content-Length", "100")
-                    self.end_headers()
-                    self.wfile.flush()
-                    self.drip(b"x")
-                else:
-                    self.wfile.write(b"HTTP/1.1 200 OK\r\n")
-                    self.drip(b"X-Pad: x\r\n")
-            except OSError:
-                pass  # the client gave up
-
-        def drip(self, piece):
-            for _ in range(100):
-                self.wfile.write(piece)
-                self.wfile.flush()
-                threading.Event().wait(0.05)
-
-        def log_message(self, format, *args):  # noqa: A002
-            pass
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    yield f"http://127.0.0.1:{server.server_address[1]}"
-    server.shutdown()
-    server.server_close()
-
-
 @pytest.mark.parametrize("path", ["/body", "/headers", "/moved"])
 def test_a_deadline_stops_a_server_that_sends_slowly(dripping, path):
     # Each read gets a byte well within its 1 s timeout, so only the deadline stops it.
@@ -274,6 +227,45 @@ def test_get_bytes_has_the_usual_deadline_unless_told_otherwise(monkeypatch):
 
 def test_a_request_within_its_deadline_is_answered(dripping):
     assert net.get_bytes(dripping + "/quick", 100, timeout=1.0, deadline=5.0) == b"ok"
+
+
+@pytest.mark.parametrize("path", ["/body", "/headers", "/moved"])
+def test_stream_gives_up_on_a_server_that_sends_slowly(drip_to, path):
+    drip_to(path)
+    start = time.monotonic()
+    with pytest.raises(OSError):
+        list(net.stream("https://example.test/feed", {}, 1_000, timeout=1.0, deadline=0.3))
+    assert time.monotonic() - start < 1.0
+
+
+@pytest.mark.parametrize("path", ["/body", "/headers", "/moved"])
+def test_stream_gives_up_on_a_slow_server_unless_told_otherwise(drip_to, monkeypatch, path):
+    # The dashboard's disruption feeds come through stream: a trickled answer
+    # mustn't tie up their poller for ever.
+    drip_to(path)
+    monkeypatch.setattr(net, "time", SimpleNamespace(monotonic=FastClock().monotonic))
+    start = time.monotonic()
+    with pytest.raises(TimeoutError):
+        list(net.stream("https://example.test/feed", {}, 1_000, timeout=1.0))
+    assert time.monotonic() - start < 4.0
+
+
+def test_stream_has_the_usual_deadline_unless_told_otherwise(monkeypatch):
+    seen = serve(monkeypatch, b"body")
+    before = time.monotonic()
+    assert b"".join(net.stream("https://example.test/x", {}, 100)) == b"body"
+    assert before < seen["request"].deadline <= time.monotonic() + net.DEADLINE
+    list(net.stream("https://example.test/x", {}, 100, deadline=None))
+    assert seen["request"].deadline is None
+
+
+def test_a_timed_request_carries_the_agent_and_its_deadline():
+    before = time.monotonic()
+    request = net.timed_request("https://example.test/x", {"Accept": "text/xml"}, 5.0)
+    assert request.get_header("User-agent") == net.USER_AGENT
+    assert request.get_header("Accept") == "text/xml"
+    assert before + 5.0 <= request.deadline <= time.monotonic() + 5.0
+    assert net.timed_request("https://example.test/x", {}, None).deadline is None
 
 
 @pytest.mark.parametrize("path", ["/body", "/headers", "/moved"])

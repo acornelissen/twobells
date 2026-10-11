@@ -809,6 +809,19 @@ def test_download_is_capped(monkeypatch):
         download("https://example.com/big", io.BytesIO(), max_bytes=299_999)
 
 
+def test_download_gets_long_enough_for_a_big_zip_on_a_slow_line(monkeypatch):
+    # A timetable zip is tens of MB; the usual deadline would cut it off.
+    import time
+
+    from departureboard.core import net
+
+    seen = []
+    monkeypatch.setattr(net, "urlopen", lambda request, timeout: seen.append(request) or io.BytesIO(b"zip"))
+    before = time.monotonic()
+    download("https://example.com/ok", io.BytesIO())
+    assert before + net.DOWNLOAD_DEADLINE <= seen[0].deadline <= time.monotonic() + net.DOWNLOAD_DEADLINE
+
+
 # Keeping it.
 
 def _schedule(built=NOW, stops=STOPS, valid_until=None, operators=("BNML",)):

@@ -198,6 +198,17 @@ DEADLINE = 30.0
 DOWNLOAD_DEADLINE = 30 * 60.0
 
 
+def timed_request(url: str, headers: Mapping[str, str], deadline: float | None) -> Request:
+    """A request for `url` with the default User-Agent (`headers` add to or
+    replace it) that urlopen gives up on `deadline` seconds from now,
+    redirects and all (None: no limit). The opener opens only http and https,
+    whatever the URL says."""
+    request = _TimedRequest(url, headers={"User-Agent": USER_AGENT, **headers})
+    if deadline is not None:
+        request.deadline = time.monotonic() + deadline
+    return request
+
+
 def get_json_capped(url: str, headers: dict | None, max_bytes: int, timeout: float = 15.0,
                     deadline: float | None = DEADLINE):
     """JSON from `url`, asked for with the caller's `headers` added to (or
@@ -208,10 +219,7 @@ def get_json_capped(url: str, headers: dict | None, max_bytes: int, timeout: flo
     repeats the URL or the headers. `timeout` is for each step; the whole
     request is given up after `deadline` seconds (None: no limit), however
     slowly the server sends."""
-    # _opener opens only http and https, whatever the URL says.
-    request = _TimedRequest(url, headers={"Accept": "application/json", "User-Agent": USER_AGENT, **(headers or {})})
-    if deadline is not None:
-        request.deadline = time.monotonic() + deadline
+    request = timed_request(url, {"Accept": "application/json", **(headers or {})}, deadline)
     with urlopen(request, timeout=timeout) as response:
         body = response.read(max_bytes + 1)
     if len(body) > max_bytes:
@@ -230,10 +238,7 @@ def get_bytes(url: str, max_bytes: int, timeout: float = 15.0, headers: dict | N
     step; the whole request, redirects and all, is given up after `deadline`
     seconds (None: no limit), however slowly the server sends. A big download
     passes DOWNLOAD_DEADLINE."""
-    # _opener opens only http and https, whatever the URL says.
-    request = _TimedRequest(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
-    if deadline is not None:
-        request.deadline = time.monotonic() + deadline
+    request = timed_request(url, headers or {}, deadline)
     with urlopen(request, timeout=timeout) as response:
         body = response.read(max_bytes + 1)
     if len(body) > max_bytes:
@@ -241,12 +246,16 @@ def get_bytes(url: str, max_bytes: int, timeout: float = 15.0, headers: dict | N
     return body
 
 
-def stream(url: str, headers: Mapping[str, str], max_bytes: int, timeout: float = 15.0) -> Iterator[bytes]:
+def stream(url: str, headers: Mapping[str, str], max_bytes: int, timeout: float = 15.0,
+           deadline: float | None = DEADLINE) -> Iterator[bytes]:
     """A response body in chunks as it arrives, refusing anything but https
-    (ValueError) and more than `max_bytes` (TooLarge)."""
+    (ValueError) and more than `max_bytes` (TooLarge). `timeout` is for each
+    step; the whole request is given up after `deadline` seconds from the
+    first chunk asked for (None: no limit), the caller's time with each chunk
+    included. A big download passes DOWNLOAD_DEADLINE."""
     if urlsplit(url).scheme != "https":
         raise ValueError("Refusing an address that isn't https")
-    request = Request(url, headers={"User-Agent": USER_AGENT, **headers})  # noqa: S310 - _opener opens only http and https
+    request = timed_request(url, headers, deadline)
     total = 0
     with urlopen(request, timeout=timeout) as response:
         while chunk := response.read(1 << 16):

@@ -655,7 +655,7 @@ def download(url: str, file: Writable, max_bytes: int = routesetup.MAX_DOWNLOAD_
     if urlsplit(url).scheme != "https":
         raise TimetableError("Refusing a timetable link that isn't https")
     try:
-        for chunk in net.stream(url, {}, max_bytes, timeout=DOWNLOAD_TIMEOUT):
+        for chunk in net.stream(url, {}, max_bytes, timeout=DOWNLOAD_TIMEOUT, deadline=net.DOWNLOAD_DEADLINE):
             file.write(chunk)
     except net.TooLarge:
         raise TimetableError(f"Timetable download larger than {max_bytes} bytes; refusing") from None
