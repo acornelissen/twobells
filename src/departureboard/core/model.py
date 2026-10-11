@@ -14,6 +14,11 @@ _HALF_DAY = _DAY // 2
 # A clock time, 00:00 to 23:59: the only shape a departure's times may take.
 _CLOCK = re.compile(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]")
 
+# A train Darwin calls "Delayed" (or gives no time for) has no time to go by,
+# so it stays until a fetch no longer lists it. If the fetches stop, it goes
+# this long after the last one, so it can't sit on the board for ever.
+HOLD_UNTIMED = timedelta(hours=1)
+
 
 class Status(str, Enum):
     ON_TIME = "on_time"
@@ -88,13 +93,23 @@ class Departure:
         # A cancelled departure goes from the board at its booked time.
         return self.scheduled if self.status is Status.CANCELLED else self.departs_at
 
+    @property
+    def _untimed(self) -> bool:
+        """A train that is late with no time to go by. A bus without a live
+        time is different: it goes by its timetable."""
+        return self.mode == "train" and self.expected is None and self.status in (Status.LATE, Status.UNKNOWN)
+
     def is_gone(self, now: str) -> bool:
+        if self._untimed:
+            return False
         return minutes_between(now, self._leaves) < 0
 
     def has_left(self, now: datetime, fetched: datetime) -> bool:
         """Like is_gone, but on the calendar: the time is read as the one nearest
         to when it was fetched, so this morning's 08:40 never comes back tonight."""
         fetched = fetched.replace(second=0, microsecond=0)
+        if self._untimed:
+            return now.replace(second=0, microsecond=0) > fetched + HOLD_UNTIMED
         leaves = fetched + timedelta(minutes=minutes_between(fetched.strftime("%H:%M"), self._leaves))
         return leaves < now.replace(second=0, microsecond=0)
 

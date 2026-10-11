@@ -1234,6 +1234,22 @@ def test_every_panel_and_look_draws_the_setup_page(panel, look):
     assert pixels(image) == pixels(THEMES[look].render_setup(SETUP_PAGE, display.palette, display.panel))
 
 
+def test_a_delayed_train_stays_on_the_board_until_a_fetch_drops_it():
+    # Darwin's "Delayed": late, with no time to go by. It must not vanish at its booked time.
+    trains, buses, board, display, state = setup()
+    trains.departures = [train("07:00", status=Status.LATE), train("07:30")]
+    result = run_once(board, state, display, THU_0700 + timedelta(minutes=1))
+    assert [r.left for r in result.view.trains.rows] == ["07:00", "07:30"]
+    assert result.view.trains.rows[0].right == "Delayed"
+
+    result = run_once(board, state, display, THU_0700 + timedelta(minutes=2))
+    assert [r.left for r in result.view.trains.rows] == ["07:00", "07:30"]
+
+    trains.departures = [train("07:30")]
+    result = run_once(board, state, display, THU_0700 + timedelta(minutes=3))
+    assert [r.left for r in result.view.trains.rows] == ["07:30"]
+
+
 @pytest.mark.parametrize("saved", ["07:12", 5, None])
 def test_malformed_saved_departures_show_none_rather_than_stopping(saved):
     trains, buses, board, display, state = setup()

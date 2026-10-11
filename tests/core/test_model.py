@@ -1,4 +1,5 @@
 import dataclasses
+from datetime import timedelta
 
 import pytest
 
@@ -80,6 +81,34 @@ def test_has_left_carries_over_midnight():
     dep = make("00:20")
     assert not dep.has_left(datetime(2026, 10, 9, 0, 10), fetched)
     assert dep.has_left(datetime(2026, 10, 9, 12, 30), fetched)
+
+
+def test_a_delayed_train_without_an_estimate_is_not_gone_at_its_booked_time():
+    from datetime import datetime
+
+    for status in (Status.LATE, Status.UNKNOWN):
+        dep = make("10:00", status=status)
+        assert not dep.is_gone(now="10:01")
+        assert not dep.has_left(datetime(2026, 10, 8, 10, 30), datetime(2026, 10, 8, 10, 1))
+
+
+def test_a_delayed_train_goes_in_the_end_if_no_fetch_comes():
+    from datetime import datetime
+
+    from departureboard.core.model import HOLD_UNTIMED
+
+    fetched = datetime(2026, 10, 8, 10, 1)
+    dep = make("10:00", status=Status.LATE)
+    assert not dep.has_left(fetched + HOLD_UNTIMED, fetched)
+    assert dep.has_left(fetched + HOLD_UNTIMED + timedelta(minutes=1), fetched)
+
+
+def test_a_bus_without_a_live_time_still_goes_at_its_booked_time():
+    from datetime import datetime
+
+    bus = Departure("bus", "341", "Hyde", "10:00", None, Status.UNKNOWN)
+    assert bus.is_gone(now="10:01")
+    assert bus.has_left(datetime(2026, 10, 8, 10, 1), datetime(2026, 10, 8, 9, 50))
 
 
 @pytest.mark.parametrize("field, value", [

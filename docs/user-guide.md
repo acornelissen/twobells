@@ -55,9 +55,9 @@ Each line reads: *which train*, *scheduled time*, *destination*, *status*.
 |---|---|
 | `1st 07:12 … On time` | The next train, running to time. |
 | `Exp 07:49` | Running late; expected to leave at 07:49. |
-| `Delayed` | Late, but no expected time yet. |
+| `Delayed` | Late, but no expected time yet. It stays on the board past its time until National Rail stops listing it. |
 | `Cancelled`, on a highlighted bar | It isn't running. |
-| `No report` | No live report for this train yet. |
+| `No report` | No live report for this train yet. Like `Delayed`, it stays until National Rail stops listing it. |
 | `Leave by 07:07` | Set off at 07:07 to walk to the station and catch the train above it. It sits under the first train you can still reach, so if the 1st is too soon, it moves down to the 2nd. |
 
 **Buses (bottom half)**
