@@ -956,3 +956,68 @@ def test_the_whole_wizard_starts_from_todays_station_and_stops_where_they_are_ne
     assert found["station"] == {"glo": True, "filter": "MAN"}
     # Only those found near home: today's stop elsewhere isn't added.
     assert found["ticked"] == ["1800SB12341"] and "1800SB99999" not in found["listed"]
+
+
+# Errors are said with the control that takes the focus, and taken back with them.
+
+DESCRIBED = """
+const described = (el) => (el.getAttribute("aria-describedby") || "").split(" ").map((id) => $(id))
+  .filter((p) => p && !p.hidden).map((p) => p.textContent).join(" ");
+"""
+
+
+@needs_node
+def test_next_with_no_home_says_why_with_the_postcode_box():
+    # WCAG 3.3.1: the postcode box takes the focus; its description says what is wrong.
+    found = run_wizard(DESCRIBED + """
+        click("home-next");
+        await settle();
+        console.log(JSON.stringify({ focus: document.activeElement.id, said: described($("postcode")) }));
+    """, saved={**SAVED_NOW, "home": None})
+    assert found["focus"] == "postcode"
+    assert "Find your postcode or address, or pick a point on the map, first." in found["said"]
+
+
+@needs_node
+def test_a_station_refused_is_marked_invalid_until_the_error_goes():
+    # WCAG 4.1.2: aria-invalid goes when the error does, not only when the same control is passed.
+    found = run_wizard("""
+        $("station-GLO").checked = false;
+        $("station-none").checked = true;
+        $("filter").value = "";
+        click("station-next");
+        await settle();
+        const refused = $("station-none").getAttribute("aria-invalid");
+        $("station-none").checked = false;
+        $("station-GLO").checked = true;
+        click("station-next");
+        await settle();
+        console.log(JSON.stringify({ refused, after: $("station-none").getAttribute("aria-invalid"),
+                                     error: $("station-error").hidden }));
+    """, "?step=station", saved={**SAVED_NOW, "stops": []})
+    assert found == {"refused": "true", "after": None, "error": True}
+
+
+@needs_node
+def test_stops_refused_are_marked_invalid_until_the_error_goes():
+    found = run_wizard("""
+        state.home = { lat: 53.462, lon: -1.966, label: "SK13 1AH", country: "" };
+        click("home-next");
+        await settle();
+        $("station-GLO").checked = false;
+        $("station-none").checked = true;
+        $("filter").value = "";
+        click("station-next");
+        await settle();
+        for (const box of $("stops-list").querySelectorAll('input[type="checkbox"]')) box.checked = false;
+        state.labels.clear();
+        click("stops-next");
+        const first = $("stops-list").querySelector('input[type="checkbox"]');
+        const refused = [document.activeElement === first, first.getAttribute("aria-invalid")];
+        first.checked = true;
+        for (const [type, fn] of first.listeners) if (type === "change") fn({ currentTarget: first });
+        console.log(JSON.stringify({ refused, after: first.getAttribute("aria-invalid"),
+                                     error: $("stops-error").hidden }));
+    """, station={"station": {"crs": "MAN", "name": "Manchester Piccadilly", "lat": 53.47, "lon": -2.23,
+                               "distance_m": 0}})
+    assert found == {"refused": [True, "true"], "after": None, "error": True}

@@ -17,16 +17,27 @@ export function note(id, text) {
   el.hidden = !text;
 }
 
+const marked = new Map(); // each error's name -> the input it marked invalid
+
 // An error beside a control: `name`-error holds it, and the control (if an
 // input) is marked invalid. The error's id is already in its aria-describedby.
+// The input marked last for `name` is unmarked first, so clearing the error
+// clears the mark wherever it went (a group's error marks one of its boxes).
 export function setError(name, text, control = $(name)) {
   const error = $(`${name}-error`);
   if (!error) return;
   fill(error, text ? [h("span", { class: "tag" }, "Error:"), ` ${text}`] : null);
   error.hidden = !text;
+  const before = marked.get(name);
+  if (before) before.removeAttribute("aria-invalid");
+  marked.delete(name);
   if (control && control.tagName === "INPUT") {
-    if (text) control.setAttribute("aria-invalid", "true");
-    else control.removeAttribute("aria-invalid");
+    if (text) {
+      control.setAttribute("aria-invalid", "true");
+      marked.set(name, control);
+    } else {
+      control.removeAttribute("aria-invalid");
+    }
   }
 }
 

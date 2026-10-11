@@ -111,6 +111,7 @@ class FakeElement extends FakeNode {
   removeAttribute(name) { this.attrs.delete(name); }
   get attributes() { return [...this.attrs].map(([name, value]) => ({ name, value })); }
   get id() { return this.getAttribute("id") || ""; }
+  get tagName() { return this.nodeName; }
   get children() { return this.childNodes.filter((c) => c.nodeType === 1); }
   // A form control's state as a browser keeps it: its attribute (a text
   // area's text) until set, which stays its default.
