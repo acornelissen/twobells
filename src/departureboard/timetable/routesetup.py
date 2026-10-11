@@ -240,6 +240,18 @@ def _bomb(name: str) -> RouteSetupError:
     return RouteSetupError(f"Timetable zip file {shown} unpacks to more than {MAX_RATIO} times its size; refusing")
 
 
+# How a timetable zip may pack its files. zipfile unpacks bzip2 and LZMA a
+# whole read at a time, with no cap on what comes out, so _unpacked's ratio
+# check would come after a bomb had filled the memory; timetables are stored
+# or deflated.
+_PACKINGS = (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
+
+
+def _odd_packing(name: str) -> RouteSetupError:
+    shown = _CONTROL.sub("?", name)[:_NAME_LIMIT]
+    return RouteSetupError(f"Timetable zip file {shown} is packed in a way timetables never are; refusing")
+
+
 def _unpacked(archive: zipfile.ZipFile, member: zipfile.ZipInfo, reads: _CountedReads, max_bytes: int) -> bytes:
     """A file in a zip, up to one byte more than `max_bytes`, unpacked a
     chunk at a time and refused (_bomb) once it has come to more than
@@ -267,8 +279,9 @@ def named_documents(blob: bytes | IO[bytes], max_bytes: int = MAX_XML_BYTES, *, 
     The download can be bytes or an open file, so a big one can wait on disk
     rather than in memory. A file over `max_bytes` is skipped, told to
     `skipped` (too_big; logged unless it says otherwise), and the rest read;
-    a zip of too many files, too much in all, or a file unpacking to more
-    than MAX_RATIO times its size, is refused."""
+    a zip of too many files, too much in all, a file packed other than
+    stored or deflated, or one unpacking to more than MAX_RATIO times its
+    size, is refused."""
     source = io.BytesIO(blob) if isinstance(blob, (bytes, bytearray)) else blob
     if not zipfile.is_zipfile(source):
         if isinstance(blob, (bytes, bytearray)):
@@ -288,6 +301,8 @@ def named_documents(blob: bytes | IO[bytes], max_bytes: int = MAX_XML_BYTES, *, 
             raise RouteSetupError(f"Timetable zip has {len(members)} files; refusing more than {MAX_ZIP_MEMBERS}")
         total = 0
         for member in members:
+            if member.compress_type not in _PACKINGS:
+                raise _odd_packing(member.filename)
             if member.file_size > max_bytes:
                 skipped(too_big(member.filename, max_bytes, member.file_size))
                 continue

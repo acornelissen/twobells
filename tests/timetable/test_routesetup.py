@@ -323,6 +323,21 @@ def test_a_zip_bomb_is_refused_before_it_is_unpacked():
         next(documents)
 
 
+@pytest.mark.parametrize("method", [zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA], ids=["bzip2", "lzma"])
+def test_a_file_packed_any_way_but_deflate_is_refused_before_it_is_unpacked(method, monkeypatch):
+    # zipfile unpacks bzip2 and LZMA a whole read at a time, with no cap on
+    # what comes out, so the ratio check would come too late: a few hundred
+    # bytes can unpack to gigabytes. Timetables are stored or deflated.
+    blob = _zip({"a.xml": TXC, "packed.xml": TXC}, method)
+    opened = []
+    real_open = zipfile.ZipFile.open
+    monkeypatch.setattr(zipfile.ZipFile, "open", lambda self, member, *a, **k: opened.append(member) or real_open(
+        self, member, *a, **k))
+    with pytest.raises(RouteSetupError, match=r"a\.xml is packed in a way timetables never are; refusing"):
+        list(timetable_documents(blob))
+    assert opened == []  # refused from its header, never unpacked
+
+
 def _understated(data: bytes, padding: int) -> bytes:
     """A zip of `data` deflated as bomb.xml, whose header says it takes
     `padding` more bytes of the zip than it does (junk after its deflated
