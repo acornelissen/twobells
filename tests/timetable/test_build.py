@@ -1909,13 +1909,23 @@ def _long_route(calls, journeys):
     return (xml[:start] + "<VehicleJourneys>" + many + xml[end:]).encode(), stops[calls // 2]
 
 
-def test_each_journey_kept_takes_no_more_than_the_installs_are_sized_for():
-    # JOURNEY_BYTES was measured on BODS data set 2100 (First South
-    # Yorkshire): its largest documents' journeys, of 80 calls on average,
-    # took 14.6 KB each on Python 3.12 and 15.6 KB on 3.11, held as the build
-    # holds them (tracemalloc); 24 calls, 6.6 to 7.0 KB. Journeys made up as
-    # long take less, so this guards against the build holding more of each.
+def _a_calendar_each(xml):
+    """`xml` with a day of non-operation of its own in each journey's profile."""
+    days = (date(2026, 1, 1) + timedelta(days=n) for n in range(10_000))
+    special = ("</RegularDayType><SpecialDaysOperation><DaysOfNonOperation><DateRange><StartDate>{}</StartDate>"
+               "</DateRange></DaysOfNonOperation></SpecialDaysOperation>")
+    return re.sub(rb"</RegularDayType>", lambda _: special.format(next(days)).encode(), xml)
+
+
+@pytest.mark.parametrize("calendars", ["shared", "a calendar each"])
+def test_each_journey_kept_takes_no_more_than_the_installs_are_sized_for(calendars):
+    # JOURNEY_BYTES (see its notes) was worked out from BODS data set 2100
+    # (First South Yorkshire), whose journeys took 2.2 KB more than these,
+    # made up as long: 80 calls, with a calendar each, as at worst, or one
+    # shared, as most are. This guards against the build holding more of each.
     xml, stop = _long_route(80, 500)
+    if calendars == "a calendar each":
+        xml = _a_calendar_each(xml)
 
     def kept():
         found, _ = timetable._read_document(xml, {stop}, "NOC", {})
@@ -1930,3 +1940,40 @@ def test_each_journey_kept_takes_no_more_than_the_installs_are_sized_for():
     assert len(held) == len(found) == 500
     assert all(len(journey.calls) == 80 for _, journey in found)
     assert taken / len(found) <= timetable.JOURNEY_BYTES
+
+
+def _with_journey(xml, code, departure, profile=None):
+    """`xml` with a copy of its first journey: another code and departure, and `profile` for its own."""
+    first = re.search(rb"<VehicleJourney>.*?</VehicleJourney>", xml, re.S).group(0)
+    copy = re.sub(rb"<VehicleJourneyCode>[^<]*<", f"<VehicleJourneyCode>{code}<".encode(), first)
+    copy = re.sub(rb"<JourneyCode>[^<]*<", f"<JourneyCode>{code}<".encode(), copy)
+    copy = re.sub(rb"<DepartureTime>[^<]*<", f"<DepartureTime>{departure}<".encode(), copy)
+    if profile is not None:
+        copy = re.sub(rb"<OperatingProfile>.*?</OperatingProfile>", profile.encode(), copy, flags=re.S)
+    return xml.replace(b"</VehicleJourneys>", copy + b"</VehicleJourneys>")
+
+
+def test_journeys_kept_from_a_document_share_what_they_have_in_common():
+    # BODS gives each journey an operating profile of its own, mostly the
+    # same few, and runs the same times on other days as journeys of their
+    # own: the journeys kept share one calendar, one tuple of calls and one
+    # of each minute, rather than each holding a copy (JOURNEY_BYTES).
+    xml, stop = _long_route(80, 2)  # leaving at 05:00 and 05:01, Monday to Friday
+    saturday = PROFILE.replace("<MondayToFriday/>", "<Saturday/>")
+    xml = _with_journey(xml, "sat", "05:00:00", saturday)
+    weekday, next_one, sat = timetable._parse_document(xml, {stop}, "NOC")[0]
+    assert weekday.calendar == next_one.calendar and weekday.calendar is next_one.calendar
+    assert sat.calendar != weekday.calendar
+    assert sat.calls == weekday.calls and sat.calls is weekday.calls
+    assert next_one.calls[0].minute == weekday.calls[1].minute == 301  # 05:01, past the ints Python shares
+    assert next_one.calls[0].minute is weekday.calls[1].minute
+    assert weekday.line is sat.line and weekday.destination is sat.destination
+
+
+def test_journeys_ended_by_a_later_version_share_their_new_calendar():
+    old = _with_journey(_txc(LINKS, departure="07:37:00", start="2026-01-01"), "vj2", "08:37:00")
+    new = _txc(LINKS, departure="07:40:00", start="2026-10-20")
+    schedule = _versions(old, new)
+    ended = [journey for journey in schedule.journeys if journey.calendar.end == date(2026, 10, 19)]
+    assert len(ended) == 2
+    assert ended[0].calendar is ended[1].calendar

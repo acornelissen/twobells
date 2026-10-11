@@ -5,16 +5,21 @@ from departureboard.timetable import routesetup
 LARGEST_FILE = 36_904_485
 
 
-def test_a_pi_reads_50_mb_of_each_timetable_file_and_holds_5000_journeys_to_fit_its_memory():
+def test_a_pi_reads_50_mb_of_each_timetable_file_and_holds_8500_journeys_to_fit_its_memory():
     # Its units' MemoryMax=256M: see tests/test_deploy.py.
     assert routesetup.document_limits(install_named("pi")) == routesetup.DocumentLimits(
-        read=50_000_000, parse=50_000_000, journeys=5_000)
+        read=50_000_000, parse=50_000_000, journeys=8_500)
 
 
-def test_docker_reads_100_mb_of_each_timetable_file_and_holds_7000_journeys_to_fit_its_container():
+def test_a_pi_holds_the_journeys_at_sheffield_s_busiest_stops():
+    # 5,816 from First South Yorkshire alone (BODS data set 2100, 2026).
+    assert routesetup.document_limits(install_named("pi")).journeys >= 5_816
+
+
+def test_docker_reads_100_mb_of_each_timetable_file_and_holds_12000_journeys_to_fit_its_container():
     # Its compose files' and Unraid template's 512 MB: see tests/test_deploy.py.
     assert routesetup.document_limits(install_named("docker")) == routesetup.DocumentLimits(
-        read=100_000_000, parse=100_000_000, journeys=7_000)
+        read=100_000_000, parse=100_000_000, journeys=12_000)
 
 
 def test_a_desktop_reads_200_mb_of_each_and_holds_20000_journeys():

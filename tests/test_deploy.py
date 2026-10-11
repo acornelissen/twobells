@@ -427,7 +427,8 @@ def test_the_timetable_unit_has_room_for_the_largest_document_it_reads_and_its_j
     # Checked whole on BODS data set 2100 (First South Yorkshire) with a Pi's
     # limits, Python 3.11 under a 256 MB Linux cgroup: the busiest stop that
     # fits, 4,732 journeys and 2,500 held inbound-only, peaked at 221 MB; one
-    # with 5,816 failed cleanly at 229 MB.
+    # with 5,816 failed cleanly at 229 MB. That was with the limit at 5,000,
+    # before journeys had slots and shared their values (build.JOURNEY_BYTES).
     from departureboard.cli.main import _parser
     from departureboard.settings.installs import install_named
 

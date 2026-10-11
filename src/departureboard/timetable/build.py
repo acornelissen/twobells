@@ -132,11 +132,15 @@ CALLS_AFTER = 1
 # this too).
 MAX_INBOUND_JOURNEYS = 10_000
 # The most memory each journey found takes, held until the timetable is
-# saved, that the installs' limits are sized by (settings/installs.py):
-# measured with tracemalloc on BODS data set 2100 (First South Yorkshire), its
-# largest documents' journeys, of 80 calls on average, took 14.6 KB each on
-# Python 3.12 and 15.6 KB on 3.11; of 24 calls, about 7 KB.
-JOURNEY_BYTES = 16_000
+# saved, that the installs' limits are sized by (settings/installs.py). Held
+# as the build holds them (tracemalloc), BODS data set 2100's (First South
+# Yorkshire) largest documents' journeys, of 80 calls on average, took 15.6 KB
+# each on Python 3.11 and 14.6 KB on 3.12, before journeys had slots and
+# shared what they have in common (_Shared). Journeys made up as long, with
+# the same holidays off and a calendar each, took 13.4 and 12.7 KB then, and
+# take 7.5 and 7.4 KB now; with the 2.2 KB more each real one took, about
+# 9.7 KB. Most share a calendar, which saves another 2.6 KB.
+JOURNEY_BYTES = 10_000
 MAX_FILE_BYTES = 50_000_000
 DOWNLOAD_TIMEOUT = 60.0  # seconds without data before a download is given up
 _TEXT_LIMIT = 80  # line names, destinations, codes
@@ -295,20 +299,45 @@ def _link(node, base: _Link | None = None) -> _Link:
     )
 
 
-def _calls(links: list[_Link], departure: int) -> tuple[Call, ...] | None:
-    """Each stop with the minute the bus leaves it (reaches it, for the last);
-    None if the times are nonsense."""
-    calls = []
+class _Shared(dict):
+    """One of each equal value the journeys kept from a document hold. BODS
+    gives each journey an operating profile of its own, mostly the same few,
+    and runs the same times on other days as journeys of their own, so the
+    journeys kept share one calendar, one tuple of calls, one of each minute
+    and so on, rather than each holding a copy (JOURNEY_BYTES). Only what
+    the journeys kept hold goes in, and the minutes of the others' calls (at
+    most _LATEST // 60 of them), so it holds little more than they do. It
+    holds strings, ints, tuples and calendars, never a bool: True would be
+    taken for 1."""
+
+    def __call__(self, value):
+        return self.setdefault(value, value)
+
+    def kept(self, version: _Version, journey: Journey) -> tuple[_Version, Journey]:
+        """The journey, and the version it is from, as values already held."""
+        return self(version), replace(
+            journey, line=self(journey.line), operator=self(journey.operator),
+            destination=self(journey.destination), calls=self(journey.calls), calendar=self(journey.calendar),
+        )
+
+
+def _calls(links: list[_Link], departure: int, shared: _Shared | None = None) -> tuple[Call, ...] | None:
+    """Each stop with the minute the bus leaves it (reaches it, for the last),
+    one of each minute from `shared`; None if the times are nonsense."""
+    times = []
     time = departure
     arriving_wait = 0
     for index, link in enumerate(links):
         if index:
             time += arriving_wait if link.origin_wait is None else link.origin_wait
-        calls.append(Call(link.origin, time // 60))
+        times.append((link.origin, time))
         time += link.run
         arriving_wait = link.destination_wait
-    calls.append(Call(links[-1].destination, time // 60))
-    return tuple(calls) if time < _LATEST else None
+    times.append((links[-1].destination, time))
+    if time >= _LATEST:  # the last is the latest: no wait or run time is negative
+        return None
+    minute = shared if shared is not None else _Shared()
+    return tuple(Call(atco, minute(seconds // 60)) for atco, seconds in times)
 
 
 @dataclass
@@ -506,11 +535,12 @@ def _pattern_links(pattern: _Pattern, doc: _Document) -> list[_Link]:
 
 
 def _journey(
-    node, doc: _Document, atcos: Collection[str], noc: str, pattern_refs: dict, stands: Collection[str] = ()
+    node, doc: _Document, atcos: Collection[str], noc: str, pattern_refs: dict, stands: Collection[str] = (),
+    shared: _Shared | None = None,
 ) -> tuple[_Version, Journey] | None:
     """The journey a VehicleJourney describes, with the version of the service
     it is in, if it calls at one of `atcos`, or, marked inbound_only, if it
-    doesn't but ends at one of `stands`."""
+    doesn't but ends at one of `stands`. Its minutes are from `shared`."""
     ref = _text(node, "t:JourneyPatternRef") or pattern_refs.get(_text(node, "t:VehicleJourneyRef"), "")
     pattern = doc.patterns.get(ref)
     if pattern is None:
@@ -532,7 +562,7 @@ def _journey(
     }
     if overrides:
         links = [_link(overrides[link.id], link) if link.id in overrides else link for link in links]
-    calls = _calls(links, departure)
+    calls = _calls(links, departure, shared)
     if calls is None:
         return None
     service = doc.services.get(_text(node, "t:ServiceRef"), pattern.service)
@@ -675,12 +705,14 @@ def _journeys_kept(
 ) -> list[tuple[_Version, Journey]]:
     """The journeys calling at your stops, and the inbound-only ones of the
     lines among them (see the module's notes), each counted against `room`
-    as it is found (no limit without it)."""
+    as it is found (no limit without it). Those kept share their equal
+    values (_Shared)."""
     room = room or _Room()
     found = []
+    shared = _Shared()
     calling, inbound = room.held, room.held_inbound
     for node in vehicle_journeys:
-        read = _journey(node, doc, atcos, noc, pattern_refs, stands)
+        read = _journey(node, doc, atcos, noc, pattern_refs, stands, shared)
         if read is None:
             continue
         if read[1].inbound_only:
@@ -694,7 +726,7 @@ def _journeys_kept(
                 raise TimetableError(f"More than {room.journeys} journeys call at your stops; refusing")
         else:
             continue
-        found.append(read)
+        found.append(shared.kept(*read))
     lines = {(journey.line.casefold(), journey.operator) for _, journey in found if not journey.inbound_only}
     return [(v, j) for v, j in found if not j.inbound_only or (j.line.casefold(), j.operator) in lines]
 
@@ -827,7 +859,8 @@ def _group(version: _Version, journey: Journey) -> tuple[str, str, str]:
 _Seen = tuple[date, date | None, int]
 
 
-def _until_replaced(version: _Version, journey: Journey, versions: Mapping[tuple, Set[_Seen]]) -> Journey | None:
+def _until_replaced(version: _Version, journey: Journey, versions: Mapping[tuple, Set[_Seen]],
+                    shared: _Shared | None = None) -> Journey | None:
     """The journey as a later version of its service leaves it, as bustimes.org
     does: BODS keeps an old version beside the one replacing it, often
     open-ended, and both would run. It ends the day before the first later
@@ -836,7 +869,7 @@ def _until_replaced(version: _Version, journey: Journey, versions: Mapping[tuple
     runs_on puts first), within the journey's own period. None if a version
     starting the same day with a higher RevisionNumber replaces it. `versions`
     has every version of each service seen. A journey whose document gives no
-    ServiceCode is kept as it is."""
+    ServiceCode is kept as it is. A new calendar is from `shared`, if given."""
     if not version.service:
         return journey
     calendar = journey.calendar
@@ -853,17 +886,20 @@ def _until_replaced(version: _Version, journey: Journey, versions: Mapping[tuple
                        if other > start and other_end is not None and (end is None or other <= end)))
     if end == calendar.end and not off:
         return journey
-    return replace(journey, calendar=replace(calendar, end=end, dates_off=calendar.dates_off + off))
+    calendar = replace(calendar, end=end, dates_off=calendar.dates_off + off)
+    return replace(journey, calendar=shared(calendar) if shared is not None else calendar)
 
 
 def _current(found: Iterable[tuple[_Version, Journey]], versions: Mapping[tuple, Set[_Seen]],
              today: date) -> tuple[Journey, ...]:
     """The journeys still running from `today`, each until a later version of
     its service replaces it (_until_replaced), and each once: duplicates (same
-    line, operator, calls and calendar) can't be told apart by live times."""
+    line, operator, calls and calendar) can't be told apart by live times.
+    Those a version ends the same way share their new calendar."""
     kept: dict[tuple, Journey] = {}
+    calendars = _Shared()
     for version, journey in found:
-        current = _until_replaced(version, journey, versions)
+        current = _until_replaced(version, journey, versions, calendars)
         if current is None or (current.calendar.end and current.calendar.end < today):
             continue
         kept.setdefault((current.line, current.operator, current.calls, current.calendar), current)

@@ -898,7 +898,7 @@ def test_timetable_builds_and_reports_the_bus_timetable(bods_env, monkeypatch, c
 
 @pytest.mark.parametrize("install, limits", [
     ([], (200_000_000, 200_000_000, 20_000)),  # a desktop's, as the docs say to run it there
-    (["--install", "pi"], (50_000_000, 50_000_000, 5_000)),  # the Pi's timer, to fit its unit's memory
+    (["--install", "pi"], (50_000_000, 50_000_000, 8_500)),  # the Pi's timer, to fit its unit's memory
 ])
 def test_timetable_reads_as_much_of_each_file_as_its_install_allows(bods_env, monkeypatch, install, limits):
     from departureboard.timetable import build as timetable
