@@ -276,7 +276,9 @@ class SettingsSite:
     `version` (by default the package's) is what it says is running.
     `hub` is where the dashboard's snapshot is (serve sets it, with
     `healthy()` saying whether its pollers are working), for the
-    Overview's health."""
+    Overview's health; and on a Pi, `network_guard` is whether the server
+    can connect out, as serve found at start (netguard.probe), None until
+    it has looked."""
 
     def __init__(self, store: Store, install: Install, setup: SetupSteps, *,
                  dashboard_on: Callable[[], bool] = lambda: False, stylesheet: bytes | None = None,
@@ -289,6 +291,7 @@ class SettingsSite:
         self.problem = ""
         self.hub: SnapshotSource | None = None
         self.healthy: Callable[[], bool] = lambda: True
+        self.network_guard: str | None = None
         self.setup = setup
         self._dashboard_on = dashboard_on
         self.password = PasswordStore(store.password_file)
@@ -530,6 +533,8 @@ class SettingsSite:
                 note = "Today is a bank holiday, so the board checks at its Sunday times."
         if running:
             groups.append(("On the dashboard", view.dashboard_feeds(self._snapshot(), now, zone, self._updating())))
+        if self.network_guard is not None:
+            groups.append(("On this device", [view.guard_feed(self.network_guard)]))
         out.append(view.render_health(groups, now, PREFIX, problems=1 if self.problem else 0, note=note))
         out.append(view.render_place(data, self.store.folder, now, zone))
         out.append(view.render_keys(data, views, self._secrets(), TAB_PATHS["keys"], self._key_tests(zone)))

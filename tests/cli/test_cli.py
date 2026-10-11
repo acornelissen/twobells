@@ -997,6 +997,7 @@ class Stopped:
 def served(monkeypatch):
     """What serve would serve, and where: make_server records it and the server stops at once."""
     from departureboard.core import net
+    from departureboard.web import netguard
     from departureboard.web import server as dashserver
 
     def offline(request, timeout):
@@ -1008,8 +1009,13 @@ def served(monkeypatch):
         made.update(app=app, host=host, port=port, attempts=attempts)
         return Stopped()
 
+    def check_guard():
+        made["guard_checks"] = made.get("guard_checks", 0) + 1
+        return made.get("guard", netguard.ON)
+
     monkeypatch.setattr(net, "urlopen", offline)
     monkeypatch.setattr(dashserver, "make_server", make_server)
+    monkeypatch.setattr(netguard, "check", check_guard)  # nothing sent from the tests
     monkeypatch.setattr("webbrowser.open", lambda url: made.setdefault("opened", []).append(url))
     return made
 
@@ -1225,6 +1231,22 @@ def test_a_first_run_serves_the_settings_and_signing_in_opens_the_wizard(tmp_pat
     PasswordStore(folder / "web.json").set(DASH_PASSWORD)
     status, where, _ = ask(app, "/settings/login", {"password": DASH_PASSWORD})
     assert (status, where) == (303, "/settings/setup/")
+
+
+@pytest.mark.parametrize("install", ["pi", "docker", "desktop"])
+def test_serve_on_a_pi_checks_it_cant_connect_out_for_the_overview(tmp_path, served, monkeypatch, install):
+    # A Pi's web server is kept off the internet (its unit's firewall and
+    # departureboard-web.nft); Docker's and a desktop's fetch for themselves.
+    from departureboard.settings.installs import install_named
+
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
+    served["guard"] = "off"
+    assert main(["serve", "--install", install, "--config", str(tmp_path / "config.toml"), "--no-browser",
+                 "--secrets", str(tmp_path / "none.env"), "--state-dir", str(tmp_path / "data")]) == 0
+    guarded = install == "pi"
+    assert install_named(install).network_guard is guarded
+    assert served.get("guard_checks", 0) == (1 if guarded else 0)
+    assert served["app"].settings.network_guard == ("off" if guarded else None)
 
 
 class Browser:

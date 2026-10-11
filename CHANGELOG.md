@@ -13,6 +13,7 @@ The first release.
 - One settings site per install, at `/settings` on port 8090, with one password and a setup wizard that works from your postcode.
 - Three installs: a Raspberry Pi, Docker, and a desktop (macOS or Linux).
 - Signed releases: the package on PyPI, a signed container image on GHCR, and a signed source tarball for the Pi.
+- A network guard for the Pi's web server: nftables rules for it alone (`deploy/pi/departureboard-web.nft`), loaded as it starts, that keep it from connecting out to the internet and keep port 8090 to the home network. They back up the unit's systemd IP firewall, which a Pi Zero's kernel can't apply ("Preparation of BPF allow maps failed"). `install.sh` and `update.sh` install `nftables`. The server checks at start whether it can connect out, warns in its log if it can, and the settings' Overview shows **Network guard**: On, Off (a problem) or Can't tell.
 - A wall-tablet mode for the dashboard at `/?kiosk`: one screen with no controls, the station-board look by default, a shift of a pixel or two every few minutes against burn-in, dimmed in quiet hours, a large banner when the times stop updating, and a reload at 03:30.
 
 ### Changed

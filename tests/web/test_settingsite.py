@@ -657,6 +657,20 @@ def test_on_a_pi_the_overview_says_how_the_board_is_doing(pi):
     assert "On the dashboard" not in health  # its view is off
 
 
+def test_on_a_pi_the_overview_says_whether_the_web_server_can_connect_out(pi):
+    assert pi.site.network_guard is None  # until serve has checked
+    health = _health(pi("GET", "/settings", cookie=pi.session())[1])
+    assert "Network guard" not in health and "On this device" not in health
+    for found, pill, problem in (("on", "On", False), ("off", "Off", True), ("unknown", "Can&#x27;t tell", False)):
+        pi.site.network_guard = found
+        health = _health(pi("GET", "/settings", cookie=pi.session())[1])
+        assert health.index("<h3>On the board</h3>") < health.index("<h3>On this device</h3>")
+        guard = re.search(r'<li class="feed[^"]*"><p class="feed-name"><strong>Network guard</strong>(.*?)</li>',
+                          health).group(1)
+        assert re.search(rf"</svg> {pill}</span>", guard), found
+        assert ("1 problem" in health) is problem, found
+
+
 @pytest.mark.parametrize("saved, said", [
     (None, "Board Waiting"),  # no state file yet
     ("", "Board Waiting"),  # an empty one

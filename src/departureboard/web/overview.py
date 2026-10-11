@@ -56,6 +56,19 @@ MEANINGS = {
     "updates": "The dashboard shows what it last had until they start again. Restarting the device usually helps.",
     "budget": "The board checks for buses again after midnight.",
 }
+# The web server's network guard (netguard.py), checked as it starts on a Pi:
+# its state, pill and what it means.
+GUARD = {
+    "on": ("ok", ("pill-ok", "check", "On"), "This server can't connect out to the internet."),
+    "off": ("problem", ("pill-bad", "x", "Off"),
+            "The server still refuses visitors outside your home network itself; nothing stops it connecting out."),
+    "unknown": ("waiting", ("pill-neutral", "info", "Can't tell"),
+                "There was no route to the internet to check with, so whether anything stops this server "
+                "connecting out can't be told."),
+}
+_GUARD_CHECKED = ("Checked", "When the web server started")
+_GUARD_FIX = ("What to do", "On the Pi, restart it: sudo systemctl restart departureboard-web. If it stays off, "
+              "sudo journalctl -u departureboard-web says why.")
 # A Host header as the server let it in: a name or an address, and a port.
 _HOST = re.compile(r"(?:\[[0-9A-Fa-f:.]{2,45}\]|[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)(?::[0-9]{1,5})?")
 # Optional keys, by what they add.
@@ -70,7 +83,8 @@ _TESTED = {"works": ("pill-ok", "check", "Works"), "refused": ("pill-bad", "x", 
 class Feed:
     """One feed's health, in words: its name, a STATES key, when it last
     updated, whether it is being checked now, and its last error, note and
-    what a problem means, each "" for none. `extra` are more (term, words)."""
+    what a problem means, each "" for none. `extra` are more (term, words).
+    `pill` is its pill's look, icon and words, when not its state's."""
 
     name: str
     state: str
@@ -80,6 +94,7 @@ class Feed:
     note: str = ""
     meaning: str = ""
     extra: tuple[tuple[str, str], ...] = ()
+    pill: tuple[str, str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -268,6 +283,14 @@ def _budget(data: dict, state: dict, now: datetime) -> tuple[tuple[tuple[str, st
     return (("TransportAPI lookups today", f"{used} of {limit}"),), used >= limit
 
 
+def guard_feed(found: str) -> Feed:
+    """The network guard's line in the health, from netguard.probe(): On is
+    working, Off a problem, and Can't tell neither."""
+    state, pill, meaning = GUARD.get(found, GUARD["unknown"])
+    extra = (_GUARD_CHECKED, _GUARD_FIX) if state == "problem" else (_GUARD_CHECKED,)
+    return Feed("Network guard", state, "", "", meaning=meaning, extra=extra, pill=pill)
+
+
 # Drawing
 
 
@@ -282,7 +305,9 @@ def _row(term: str, detail: str) -> str:
 
 def _feed(feed: Feed) -> str:
     e = html.escape
-    rows = [_row("Last redrawn" if feed.name == "Display" else "Last update", e(feed.updated))]
+    rows = []
+    if feed.updated:
+        rows.append(_row("Last redrawn" if feed.name == "Display" else "Last update", e(feed.updated)))
     if feed.checking:
         rows.append(_row("Checking now", e(feed.checking)))
     if feed.error:
@@ -293,7 +318,7 @@ def _feed(feed: Feed) -> str:
     if feed.meaning:
         rows.append(_row("What it means", e(feed.meaning)))
     return (f'<li class="feed feed-{feed.state}"><p class="feed-name"><strong>{e(feed.name)}</strong> '
-            f'{_pill(*STATES[feed.state])}</p><dl class="readonly">{"".join(rows)}</dl></li>')
+            f'{_pill(*(feed.pill or STATES[feed.state]))}</p><dl class="readonly">{"".join(rows)}</dl></li>')
 
 
 def render_health(groups: Sequence[tuple[str, list[Feed]]], now: datetime, reload: str, problems: int = 0,

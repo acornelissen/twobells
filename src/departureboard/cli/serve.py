@@ -303,6 +303,7 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
     from ..dashboard.collector import Collector
     from ..dashboard.history import History, HistoryReader
     from ..dashboard.snapshot import Hub
+    from ..web import netguard
     from ..web import server as dashserver
 
     history = hub = collector = mirror = None
@@ -360,6 +361,9 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
             print(f"Can't listen on {host}:{port}: {error.strerror or error}.{hint}", file=sys.stderr)
             return 2, None
         port = server.server_address[1]
+        if install.network_guard:
+            # Whether the kernel really keeps this server off the internet; in the log and on the Overview.
+            site.network_guard = netguard.check()
         if collector is not None:
             collector.start()
         if mirror is not None:

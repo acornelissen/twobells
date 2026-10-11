@@ -31,6 +31,10 @@ class Install:
     # "files": the internet work (the setup wizard's lookups) is another
     # service's, asked through files (setup/spool/); "process": serve's own.
     fetch: str = "process"
+    # Whether the web server is kept from connecting out (a Pi's: its unit's
+    # firewall and deploy/pi/departureboard-web.nft), so serve checks at start
+    # that it is (web/netguard.py) and the Overview says.
+    network_guard: bool = False
     # Open the browser at start; and, with no --port, take the next free port
     # after the default if it is busy.
     browser: bool = False
@@ -47,8 +51,9 @@ _DOCKER_COMMAND = "docker exec -it departureboard python -m departureboard serve
 INSTALLS = {
     install.name: install
     for install in (
-        Install("pi", ("board", "dashboard"), ("board",), Path("/var/lib/departureboard"), noun="board", host="0.0.0.0",  # noqa: S104 - LAN; systemd allows only the home network
-                fetch="files", log_help="On the Pi: <code>sudo journalctl -u departureboard-web</code>.",
+        Install("pi", ("board", "dashboard"), ("board",), Path("/var/lib/departureboard"), noun="board", host="0.0.0.0",  # noqa: S104 - LAN; systemd and nftables allow only the home network
+                fetch="files", network_guard=True,
+                log_help="On the Pi: <code>sudo journalctl -u departureboard-web</code>.",
                 password_command=f"{_PI_COMMAND} --set-password", reset_command=f"{_PI_COMMAND} --reset-code"),
         Install("docker", ("dashboard",), ("dashboard",), Path("/data"), host="0.0.0.0",  # noqa: S104 - inside the container
                 log_help=("In Docker: <code>docker logs departureboard</code>, or in Container Manager, "
