@@ -901,6 +901,36 @@ def test_a_timetable_just_small_enough_is_saved_and_loads(tmp_path, monkeypatch)
     assert load(tmp_path) == schedule
 
 
+def test_a_timetable_file_larger_than_any_build_saves_is_not_read(tmp_path, monkeypatch, caplog):
+    save(tmp_path, _schedule())
+    monkeypatch.setattr(timetable, "MAX_FILE_BYTES", (tmp_path / FILE_NAME).stat().st_size - 1)
+    assert load(tmp_path) is None and load(tmp_path, journeys=False) is None
+    assert "larger than" in caplog.text
+
+
+def test_a_saved_journey_takes_no_more_than_saved_journey_bytes(tmp_path):
+    # As MAX_FILE_BYTES is sized (tests/settings/test_installs.py): 80 calls,
+    # as JOURNEY_BYTES's journeys have on average, and as long a calendar as
+    # most get: school terms, bank holidays off and Christmas.
+    count = 100
+    calendar = Calendar(frozenset(range(5)), date(2026, 1, 1), date(2026, 12, 31),
+                        bank_holidays_on=frozenset({"EasterMonday"}),
+                        bank_holidays_off=frozenset({"ChristmasDay", "BoxingDay", "NewYearsDay", "GoodFriday",
+                                                     "MayDay", "SpringBank", "LateSummerBankHolidayNotScotland"}),
+                        dates_off=((date(2026, 12, 24), date(2026, 12, 26)),),
+                        school_days_only=tuple((date(2026, m, 1), date(2026, m, 20)) for m in range(1, 13)))
+    journeys = tuple(
+        Journey("X57", "FSYO", "Sheffield Interchange via Meadowhall", f"VJ_{n:010d}",
+                tuple(Call(f"370023{k:06d}", 1300 + n + k) for k in range(80)), calendar)
+        for n in range(count))
+    empty = Schedule(NOW, None, {"A": "370023000000"}, (), {}, ("FSYO",), FORMAT)
+    save(tmp_path, empty)
+    without = (tmp_path / FILE_NAME).stat().st_size
+    save(tmp_path, replace(empty, journeys=journeys))
+    each = ((tmp_path / FILE_NAME).stat().st_size - without) / count
+    assert 3_500 < each <= timetable.SAVED_JOURNEY_BYTES
+
+
 def _long_schedule(count=1_000, calls=80):
     """A timetable of `count` journeys of `calls` calls each, sharing their
     stops, minutes and calendars as a build's do, with every stop placed and

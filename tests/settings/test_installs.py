@@ -1,5 +1,5 @@
-from departureboard.settings.installs import install_named
-from departureboard.timetable import routesetup
+from departureboard.settings.installs import INSTALLS, install_named
+from departureboard.timetable import build, routesetup
 
 # The largest timetable file seen: First South Yorkshire's, BODS data set 2100 (2026).
 LARGEST_FILE = 36_904_485
@@ -26,6 +26,26 @@ def test_a_desktop_reads_200_mb_of_each_and_holds_20000_journeys():
     # No memory limit of its own.
     assert routesetup.document_limits(install_named("desktop")) == routesetup.DocumentLimits(
         read=200_000_000, parse=200_000_000, journeys=20_000)
+
+
+def _largest_saved_timetable(name: str) -> int:
+    """The largest timetable file a build on install `name` saves: its most
+    journeys, inbound-only ones too, at build.SAVED_JOURNEY_BYTES each
+    (tests/timetable/test_build.py measures it), and their stops and roads."""
+    limits = routesetup.document_limits(install_named(name))
+    return (limits.journeys + build.inbound_limit(limits)) * build.SAVED_JOURNEY_BYTES + build.STOPS_AND_ROADS_BYTES
+
+
+def test_every_install_saves_the_largest_timetable_its_limits_allow():
+    # One larger than load() reads isn't saved (TimetableTooBig): the build
+    # would be wasted, and the timetable left to go stale.
+    for name in INSTALLS:
+        assert _largest_saved_timetable(name) <= build.MAX_FILE_BYTES, name
+
+
+def test_no_timetable_file_larger_than_an_install_saves_is_read():
+    # load() refuses anything bigger: no build here made it.
+    assert max(_largest_saved_timetable(name) for name in INSTALLS) == build.MAX_FILE_BYTES
 
 
 def test_every_install_parses_the_largest_timetable_file_seen_and_a_busy_stop_s_journeys():

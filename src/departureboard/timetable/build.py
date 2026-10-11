@@ -141,7 +141,19 @@ MAX_INBOUND_JOURNEYS = 10_000
 # take 7.5 and 7.4 KB now; with the 2.2 KB more each real one took, about
 # 9.7 KB. Most share a calendar, which saves another 2.6 KB.
 JOURNEY_BYTES = 10_000
-MAX_FILE_BYTES = 50_000_000
+# The most a journey takes in the saved file (save, a journey at a time):
+# one of 80 calls with school terms, bank holidays and Christmas off takes
+# 3.9 KB (tests/timetable/test_build.py). Its stops and roads take a few MB
+# beside the journeys; roads that would make it too big are left out, for
+# good (_with_roads).
+SAVED_JOURNEY_BYTES = 4_000
+STOPS_AND_ROADS_BYTES = 10_000_000
+# The largest timetable file saved, and read: the most journeys any install
+# holds (a desktop's 20,000 and 10,000 inbound-only), at SAVED_JOURNEY_BYTES
+# each, and their stops and roads. Each install's limits fit it, and load()
+# refuses anything bigger, which no build here made
+# (tests/settings/test_installs.py).
+MAX_FILE_BYTES = 130_000_000
 DOWNLOAD_TIMEOUT = 60.0  # seconds without data before a download is given up
 _TEXT_LIMIT = 80  # line names, destinations, codes
 _LATEST = 2 * 24 * 3600  # a journey still running two days after its service day is nonsense
