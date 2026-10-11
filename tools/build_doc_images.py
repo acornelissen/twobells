@@ -40,6 +40,7 @@ DEMOS = {
     "phat-plain.png": (["--display", "inky", "--theme", "plain"], 3),
     "epaper-10in85.png": (["--display", "waveshare-10in85g", "--theme", "sign"], 1),
     "screen-departures.png": (["--display", "hdmi-1280x400", "--theme", "sign"], 1),
+    "screen-bar.png": (["--display", "hdmi-1920x440", "--theme", "sign"], 1),
 }
 
 

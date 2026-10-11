@@ -37,7 +37,7 @@ The board can run on three kinds of display. They all show the same information:
 |---|---|---|
 | Inky pHAT e-paper | small, 2.13" | Redraws only when something changes, at most every 2 minutes. Each redraw takes about 20 seconds and flickers. That's normal. |
 | Waveshare e-paper | wide, 10.85" | Same as the pHAT, just bigger. |
-| HDMI screen | wide, 7.9" or 11.3" | Updates every second, with a running clock, countdowns and a second page showing where your bus is. |
+| HDMI screen | wide, 7.9" or 11.3" | Updates every second, with a running clock, countdowns, where each train and bus is, and a second page showing where your bus is. |
 
 The words always carry the meaning. Colour and highlighting only back them up, so the board reads the same in black and white or to someone who is colour-blind.
 
@@ -103,7 +103,7 @@ The differences:
 | `! NOT UPDATING` in the accent colour, next to TRAINS or BUSES | `NOT UPDATING: …` at the bottom |
 | A rain warning or disruption notice in the top bar, in place of the title | At the bottom |
 
-The plain look shows 3 trains and 2 buses.
+The plain look shows 3 trains and 2 buses (3 buses on the 11.3" bar screen, which has the room).
 
 ### The bigger e-paper display
 
@@ -115,13 +115,20 @@ The 10.85" display shows the same board with bigger dots and more room, so long 
 
 The screen can redraw every second, so it shows a bit more:
 
-![Departures on the HDMI screen](images/screen-departures.png)
+![Departures on the 7.9 inch HDMI screen](images/screen-departures.png)
 
 - **A running clock** at the bottom, in place of "Updated".
 - **Countdowns** in place of clock times: `Leave in 3 min` instead of `Leave by 07:07`, then `Leave now` in the last minute. They round down, so `Leave in 3 min` means you have at least 3 minutes, never less. In the plain look each bus line says its own countdown, with no `Leave by` next to BUSES.
 - On the screen, a bus you can no longer reach on foot loses its leave time, rather than saying "Leave now".
 - **Platforms**, as on the bigger e-paper display.
+- **Where each train or bus is**, after its destination: in words (`At Dinting`, `3 stops away`, cut short with `…` if they don't fit), then a little line of its stops, as on the dashboard. The line is solid up to your stop, which is the bigger one, and dotted after it; the train or bus is drawn over the line where it is, and not at all while the board doesn't know. The words say it all; the line only backs them up. A row the board knows nothing for, like a cancelled train or a bus with no live position, leaves the space blank.
 - A rain warning or disruption notice sits at the bottom left and the clock moves to the right. A notice too long for one line is shown a part at a time, changing every 5 seconds; each part starts with `!` and all but the last end with `…`.
+
+#### The 11.3" bar screen
+
+The bar screen shows the same as the 7.9" screen with text a third bigger, and one line for each train or bus: `Leave in 3 min` sits on its train's line, between the platform and the status, rather than on a line of its own under it. That makes room for 3 trains, 3 buses and the clock.
+
+![Departures on the 11.3 inch bar screen](images/screen-bar.png)
 
 #### Where the next bus is
 
@@ -568,6 +575,7 @@ sudo ./deploy/pi/update.sh
 | Colours | black, white, red or yellow | black, white, red, yellow | full colour | full colour |
 | Redraw | about 20 s, on change only | about 21 s, on change only | instant, every second | instant, every second |
 | Clock, countdowns, bus page | no | no | yes | yes |
+| Where each train or bus is, on its row | no | no | yes | yes |
 | Light at night | none | none | the screen stays lit | the screen stays lit |
 | Pi | Zero W or later | Zero 2 W or later | Zero 2 W or later (Zero needs a mini-HDMI adapter) | Zero 2 W or later (Zero needs a mini-HDMI adapter) |
 | `display =` in `config.toml` | `"inky"` | `"waveshare-10in85g"` | `"hdmi-1280x400"`, plus `rotate = 90` or `270` | `"hdmi-1920x440"` (and `rotate = 90` or `270` only if it comes up on its side) |
@@ -585,7 +593,7 @@ The display is set in `/etc/departureboard/config.toml` only. It starts as `"ink
   ```
 
   State is written only when new data arrives, not on every redraw, to spare the SD card. Touch isn't used yet, and the backlight stays on. Feeds are polled on the same schedule as on e-paper, so the TransportAPI budget is unchanged.
-- **The 11.3" bar screen** is set up the same way, with `display = "hdmi-1920x440"`; the board draws three pixels a dot, as on the 7.9" screen, with more room across for long destinations. Bar screens differ in how they come up: if the log (`journalctl -u departureboard-screen`) says the screen is 440x1920, set `rotate = 90` or `270`; if it says another size, the screen isn't telling the Pi its own, so add `video=HDMI-A-1:1920x440@60` to the end of the line in `/boot/firmware/cmdline.txt` and restart.
+- **The 11.3" bar screen** is set up the same way, with `display = "hdmi-1920x440"`. The board draws four pixels a dot there, one more than on the 7.9" screen, so the text is a third bigger, with one line for each train or bus (see [The 11.3" bar screen](#the-113-bar-screen)). Bar screens differ in how they come up: if the log (`journalctl -u departureboard-screen`) says the screen is 440x1920, set `rotate = 90` or `270`; if it says another size, the screen isn't telling the Pi its own, so add `video=HDMI-A-1:1920x440@60` to the end of the line in `/boot/firmware/cmdline.txt` and restart.
 
 If the display errors about chip select, add `dtoverlay=spi0-0cs` to `/boot/firmware/config.txt` and reboot.
 
