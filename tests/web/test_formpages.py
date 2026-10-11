@@ -358,6 +358,29 @@ def test_asking_again_too_soon_reads_the_same_and_keeps_the_code(host):
     assert first == again and len(host.shown) == 1
 
 
+def test_asking_again_while_a_code_is_live_keeps_it_and_spends_none_of_the_allowance(host):
+    cookie, token = host.pre_session()
+    for _ in range(30):  # a neighbour pressing the button over and over
+        assert host.pages.ask_for_code({"form": token}, headers(cookie)).status == 303
+        host.clock.now += 15
+    assert len(host.shown) == 1  # one code, shown once, never replaced while it lasts
+    assert host.reset(host.shown[0]).status == 303
+    host.clock.now += 60
+    host.pages.ask_for_code({"form": token}, headers(cookie))
+    assert len(host.shown) == 2  # once used, a new one
+
+
+def test_wrong_codes_from_another_address_leave_the_owners_code_working(host):
+    host.codes.issue(host.clock())
+    code = host.shown[-1]
+    wrong = f"{(int(code) + 1) % 10**6:06d}"
+    cookie, token = host.pre_session()
+    for _ in range(MAX_FAILURES + 3):
+        fields = {"form": token, "code": wrong, "password": NEW_PASSWORD, "again": NEW_PASSWORD}
+        assert host.pages.reset(fields, headers(cookie), "192.168.1.66").status == 401
+    assert host.reset(code).status == 303  # from CLIENT, the owner's address
+
+
 def test_a_reset_checks_the_new_password_before_spending_the_code(host):
     host.codes.issue(host.clock())
     code = host.shown[-1]
@@ -397,7 +420,7 @@ def test_a_reset_ends_every_session_clears_the_lockout_and_signs_this_browser_in
 
 
 def test_a_code_that_cannot_be_checked_says_so_in_the_hosts_words(host, caplog, monkeypatch):
-    def broken(typed, now):
+    def broken(typed, now, client):
         raise PermissionError("reset.json")
 
     monkeypatch.setattr(host.codes, "verify", broken)

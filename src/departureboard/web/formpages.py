@@ -398,7 +398,8 @@ class FormPages:
 
     def ask_for_code(self, fields: dict[str, str], headers: Headers) -> Reply:
         """Issue a reset code, if this browser's form token is good. The reply
-        is the same whether a code was issued, limited or failed."""
+        is the same whether a code was issued, one still live stands, or it
+        was limited or failed."""
         if not self._form_token_ok(fields, headers):
             return self.reset_page(403, headers, self._wording().no_code_made)
         try:
@@ -410,8 +411,8 @@ class FormPages:
         return redirect(self._prefix + "/reset?asked")
 
     def reset(self, fields: dict[str, str], headers: Headers, client: str) -> Reply:
-        """A new password with a reset code: every session ends, and this
-        browser starts a new one."""
+        """A new password with a reset code, its wrong tries counted by
+        `client`'s address: every session ends, and this browser starts a new one."""
         if not self._form_token_ok(fields, headers):
             return self.reset_page(403, headers, "That form had run out, so nothing was changed. Try again.")
         new = fields.get("password", "")
@@ -422,7 +423,7 @@ class FormPages:
         if new != fields.get("again", ""):
             return self.reset_page(422, headers, "The two new passwords don't match.", "again")
         try:
-            right = self._codes.verify(fields.get("code", ""), self._clock())
+            right = self._codes.verify(fields.get("code", ""), self._clock(), client)
         except OSError as error:
             self._log.warning("Can't check a settings reset code: %s", type(error).__name__)
             return self.reset_page(503, headers, self._wording().cant_check)

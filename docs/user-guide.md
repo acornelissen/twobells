@@ -460,9 +460,9 @@ The settings have one password per install, at least 10 characters. Claiming the
 
 To claim the settings, open them and press **Show a code on the board** (or **Put a code in the log**), then type the code with a new password. A forgotten password works the same way, from **Forgot password?** on the sign-in page; setting a new one signs every browser out.
 
-A code lasts 10 minutes and works once; five wrong tries void it. A new one can be made once a minute, up to 10 a day.
+A code lasts 10 minutes and works once. Asking again while it lasts shows the same code (in the log, a line says the last one still stands) and uses up none of the limits. Five wrong tries from one device shut that device out of the code, so no one else can spoil yours; ten in all, from any devices, void it. A new code can be made once the last is used or runs out, at most once a minute and 10 times a day.
 
-Or set the password from the command line, even while the server runs. It asks for the new password twice and doesn't show it as you type; every browser signed in is signed out. `--reset-code` prints a code straight to you instead (no once-a-minute limit), to type on the sign-in page under **Forgot password?**, or on the claim page the first time.
+Or set the password from the command line, even while the server runs. It asks for the new password twice and doesn't show it as you type; every browser signed in is signed out. `--reset-code` prints a new code straight to you instead (no limits, and it replaces any code already out), to type on the sign-in page under **Forgot password?**, or on the claim page the first time.
 
 - **Pi:**
 

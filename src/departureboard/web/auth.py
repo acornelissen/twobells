@@ -557,13 +557,15 @@ def outsider(address: str, host: str | None) -> bool:
 # loop) only shows them. So there are three files:
 #
 #   reset.json          what `verify` needs: a salted sha256 of the code, its
-#                       expiry and wrong tries, and when codes were issued (for
-#                       the rate limits). Never the code itself.
+#                       expiry and wrong tries (in all, and by client address),
+#                       and when codes were issued (for the rate limits). Never
+#                       the code itself.
 #   reset-display.json  the plain code and its expiry, for the board to draw.
 #                       Written only when the code is meant for the board, and
 #                       read only by it. Removed when the code is used or
-#                       voided (by `verify`), replaced (by `issue`), or found
-#                       expired (by the board).
+#                       voided (by `verify`), replaced (by `issue`, once it
+#                       is used or has run out, or by the command line), or
+#                       found expired (by the board).
 #   reset.lock          an flock held around every change to the other two, so
 #                       the board can't delete a code `issue` has just written,
 #                       and two checks at once can't both use one code.
@@ -578,12 +580,22 @@ def outsider(address: str, host: str | None) -> bool:
 # process that may not even be running when the code is issued, needs no
 # channel to the page beyond the folder they already share.
 #
-# Guessing: 5 wrong tries void a code and at most 10 are issued a day, so a
-# guesser on the network gets 50 tries in a million a day, and every code it
-# asks for shows on the board for the owner to see.
+# Asking again: while a code lasts, the page never replaces it. Asking again
+# leaves it where it is shown (the board keeps drawing it; the log says the
+# last one still stands) and spends none of the limits below, so no one else
+# on the network can swap the owner's code for one the owner hasn't seen, or
+# use up the day's codes while one is showing.
+#
+# Guessing: 5 wrong tries from one client address shut that address out of the
+# code, so a guesser can't void the owner's code; 10 from all addresses
+# together void it, so changing address buys no more than that. At most 10
+# codes are issued a day, so a guesser on the network gets 100 tries in a
+# million a day, and every code it asks for shows on the board for the owner
+# to see.
 
 RESET_CODE_SECONDS = 10 * 60
 RESET_MAX_TRIES = 5
+RESET_MAX_TRIES_ALL = 10
 RESET_ISSUE_GAP_S = 60
 RESET_ISSUES_PER_DAY = 10
 _DAY_S = 24 * 3600
@@ -637,13 +649,20 @@ class ResetCodes:
         self._show = show
         self._to_board = to_board
 
-    def issue(self, now: float, limit: bool = True) -> str:
-        """A new code, valid for RESET_CODE_SECONDS, replacing any before it,
-        and passed to `show`. With `limit` (the page; not the command line,
-        which proves access by running at all) raises ResetLimited within
-        RESET_ISSUE_GAP_S of the last code, or after RESET_ISSUES_PER_DAY in a day."""
+    def issue(self, now: float, limit: bool = True) -> str | None:
+        """A new code, valid for RESET_CODE_SECONDS, passed to `show`. With
+        `limit` (the page; not the command line, which proves access by
+        running at all) a code that is still live where codes go now stands:
+        None, and nothing spent. Otherwise it raises ResetLimited within
+        RESET_ISSUE_GAP_S of the last code, or after RESET_ISSUES_PER_DAY in a
+        day. Without `limit` the new code replaces any before it."""
         with self._locked():
             record = self._load()
+            expires = self._still_shown(record["code"], now)
+            if limit and expires is not None:
+                until = time.strftime("%H:%M", time.localtime(expires))
+                log.warning("Settings reset code asked for again: the last one still stands, valid until %s", until)
+                return None
             # Times ahead of now are from before the clock went back: not counted.
             recent = [t for t in record["issued"] if 0 <= now - t < _DAY_S]
             too_soon = any(now - t < RESET_ISSUE_GAP_S for t in recent)
@@ -666,9 +685,11 @@ class ResetCodes:
         log.info("Settings reset code issued, valid for %d minutes", RESET_CODE_SECONDS // 60)
         return code
 
-    def verify(self, typed: str, now: float) -> bool:
-        """Whether `typed` is the current code, compared in constant time. A
-        right code is used up; RESET_MAX_TRIES wrong ones void it."""
+    def verify(self, typed: str, now: float, client: str = "") -> bool:
+        """Whether `typed`, from the address `client`, is the current code,
+        compared in constant time. A right code is used up. RESET_MAX_TRIES
+        wrong ones shut that address out of this code, and RESET_MAX_TRIES_ALL
+        from every address together void it."""
         typed = "".join(typed.split())  # "123 456" as shown
         with self._locked():
             record = self._load()
@@ -676,21 +697,29 @@ class ResetCodes:
             try:
                 salt = bytes.fromhex(current["salt"])
                 stored, expires, tries = str(current["hash"]), float(current["expires"]), int(current["tries"])
-            except (TypeError, KeyError, ValueError):
-                found, salt, stored, expires, tries = False, b"", "", 0.0, 0
+                by_client = current.get("by_client", {})  # none in a code saved before they were counted
+                if not isinstance(by_client, dict):
+                    raise TypeError
+                mine = int(by_client.get(client, 0))
+            except (TypeError, KeyError, ValueError, AttributeError):
+                found, salt, stored, expires, tries, by_client, mine = False, b"", "", 0.0, 0, {}, 0
             # Hashed, compared and saved with or without a code, so the time
             # taken doesn't say whether there is one.
             right = hmac.compare_digest(_code_hash(salt, typed).encode(), stored.encode())
-            live = found and now < expires and tries < RESET_MAX_TRIES
-            if live and not right:
+            live = found and now < expires and tries < RESET_MAX_TRIES_ALL
+            allowed = mine < RESET_MAX_TRIES  # this address has tries left
+            if live and allowed and not right:
                 current["tries"] = tries + 1
-                if current["tries"] >= RESET_MAX_TRIES:
-                    log.warning("Settings reset code voided after %d wrong tries", RESET_MAX_TRIES)
-            if right or not live or current["tries"] >= RESET_MAX_TRIES:
+                # At most RESET_MAX_TRIES_ALL addresses before the code is void, so this stays small.
+                current["by_client"] = {**by_client, client: mine + 1}
+                if current["tries"] >= RESET_MAX_TRIES_ALL:
+                    log.warning("Settings reset code voided after %d wrong tries", RESET_MAX_TRIES_ALL)
+            used = right and live and allowed
+            if used or not live or current["tries"] >= RESET_MAX_TRIES_ALL:
                 record["code"] = None  # used, expired or voided
                 self._display.unlink(missing_ok=True)
             self._write(self._record, record)
-            return right and live
+            return used
 
     def pending(self, now: float) -> PendingCode | None:
         """For the board: the code it should be showing, if any. An expired or
@@ -708,6 +737,23 @@ class ResetCodes:
         except OSError as error:
             log.warning("Can't read the settings reset code handover: %s", type(error).__name__)
         return None
+
+    def _still_shown(self, current: dict | None, now: float) -> float | None:
+        """When the code saved in `current` runs out, if it is live and still
+        where a new code would go: on the board while codes go there, or in
+        the log while they don't (or with `show`, wherever that put it).
+        None if there is no such code, so a new one may be issued."""
+        if current is None:
+            return None
+        try:
+            expires, tries = float(current["expires"]), int(current["tries"])
+        except (TypeError, KeyError, ValueError):
+            return None
+        if not (now < expires and tries < RESET_MAX_TRIES_ALL):
+            return None
+        if self._show is None and self._display.exists() != self._to_board():
+            return None  # the board view went on or off since: the code isn't where the page says to look
+        return expires
 
     def _locked(self):
         """The lock, held until the returned file is closed."""

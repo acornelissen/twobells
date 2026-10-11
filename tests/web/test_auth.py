@@ -17,6 +17,7 @@ from departureboard.web.auth import (
     RESET_ISSUE_GAP_S,
     RESET_ISSUES_PER_DAY,
     RESET_MAX_TRIES,
+    RESET_MAX_TRIES_ALL,
     SCRYPT,
     SESSION_SECONDS,
     FormTokens,
@@ -423,19 +424,41 @@ def test_a_code_runs_out_after_ten_minutes(tmp_path):
     assert codes.verify(code, later + RESET_CODE_SECONDS - 1)
 
 
-def test_wrong_tries_void_the_code(tmp_path):
+OWNER, GUESSER = "192.168.1.20", "192.168.1.66"
+
+
+def test_wrong_tries_shut_out_that_address_but_leave_the_code_for_the_owner(tmp_path):
     codes = ResetCodes(tmp_path)
     code = codes.issue(T0)
     assert RESET_MAX_TRIES == 5
     for _ in range(RESET_MAX_TRIES - 1):
-        assert not codes.verify(wrong(code), T0 + 1)
-    assert codes.verify(code, T0 + 1)  # four wrong, then right: still fine
+        assert not codes.verify(wrong(code), T0 + 1, OWNER)
+    assert codes.verify(code, T0 + 1, OWNER)  # four wrong, then right: still fine
     later = T0 + RESET_ISSUE_GAP_S
     code = codes.issue(later)
     for _ in range(RESET_MAX_TRIES):
-        assert not codes.verify(wrong(code), later + 1)
-    assert not codes.verify(code, later + 2)
+        assert not codes.verify(wrong(code), later + 1, GUESSER)
+    assert not codes.verify(code, later + 2, GUESSER)  # that address is out, even with the right code
+    assert displayed(tmp_path)["code"] == code  # still on the board
+    assert codes.verify(code, later + 3, OWNER)  # someone else can't void the owner's code
+
+
+def test_wrong_tries_from_many_addresses_void_the_code(tmp_path):
+    codes = ResetCodes(tmp_path)
+    code = codes.issue(T0)
+    assert RESET_MAX_TRIES < RESET_MAX_TRIES_ALL == 10
+    for i in range(RESET_MAX_TRIES_ALL):  # one guess from each: a guesser changing its address
+        assert not codes.verify(wrong(code), T0 + 1, f"192.168.1.{100 + i}")
+    assert not codes.verify(code, T0 + 2, OWNER)
     assert not (tmp_path / "reset-display.json").exists()
+
+
+def test_the_tries_counted_per_address_are_kept_on_disk(tmp_path):
+    code = ResetCodes(tmp_path).issue(T0)
+    for _ in range(RESET_MAX_TRIES):
+        assert not ResetCodes(tmp_path).verify(wrong(code), T0 + 1, GUESSER)
+    assert not ResetCodes(tmp_path).verify(code, T0 + 2, GUESSER)
+    assert ResetCodes(tmp_path).verify(code, T0 + 2, OWNER)
 
 
 @pytest.mark.parametrize("typed", ["", "12345", "abcdef", "1234567", "١٢٣٤٥٦", "x" * 10_000])
@@ -456,14 +479,14 @@ def test_without_a_code_nothing_matches(tmp_path):
     assert not codes.verify("000000", T0)
 
 
-def test_a_new_code_replaces_the_old(tmp_path, monkeypatch):
+def test_a_new_code_replaces_the_old_once_it_has_run_out(tmp_path, monkeypatch):
     import departureboard.web.auth as auth
 
     draws = iter([111111, 222222])
     monkeypatch.setattr(auth.secrets, "randbelow", lambda n: next(draws))
     codes = ResetCodes(tmp_path)
     assert codes.issue(T0) == "111111"
-    later = T0 + RESET_ISSUE_GAP_S
+    later = T0 + RESET_CODE_SECONDS
     assert codes.issue(later) == "222222"
     assert displayed(tmp_path)["code"] == "222222"
     assert not codes.verify("111111", later + 1)
@@ -481,7 +504,7 @@ def test_codes_come_from_the_secrets_module(tmp_path, monkeypatch):
 
 def test_issuing_waits_a_minute_between_codes(tmp_path):
     codes = ResetCodes(tmp_path)
-    codes.issue(T0)
+    assert codes.verify(codes.issue(T0), T0 + 1)  # used at once
     with pytest.raises(ResetLimited):
         codes.issue(T0 + RESET_ISSUE_GAP_S - 1)
     codes.issue(T0 + RESET_ISSUE_GAP_S)
@@ -490,8 +513,8 @@ def test_issuing_waits_a_minute_between_codes(tmp_path):
 def test_no_more_than_ten_codes_a_day(tmp_path):
     codes = ResetCodes(tmp_path)
     for i in range(RESET_ISSUES_PER_DAY):
-        codes.issue(T0 + i * RESET_ISSUE_GAP_S)
-    later = T0 + RESET_ISSUES_PER_DAY * RESET_ISSUE_GAP_S
+        codes.issue(T0 + i * RESET_CODE_SECONDS)
+    later = T0 + RESET_ISSUES_PER_DAY * RESET_CODE_SECONDS
     with pytest.raises(ResetLimited):
         codes.issue(later)
     with pytest.raises(ResetLimited):
@@ -505,12 +528,34 @@ def test_the_command_line_can_skip_the_limits(tmp_path):
     assert codes.verify(codes.issue(T0 + 1, limit=False), T0 + 2)
 
 
-def test_a_limited_issue_leaves_the_current_code_alone(tmp_path):
+def test_asking_again_while_a_code_is_live_shows_the_same_code(tmp_path):
     codes = ResetCodes(tmp_path)
     code = codes.issue(T0)
-    with pytest.raises(ResetLimited):
-        codes.issue(T0 + 1)
-    assert displayed(tmp_path)["code"] == code
+    for later in (T0 + 1, T0 + RESET_ISSUE_GAP_S, T0 + RESET_CODE_SECONDS - 1):
+        assert codes.issue(later) is None  # no new code, and not limited: the board still shows this one
+        assert displayed(tmp_path)["code"] == code
+    assert codes.verify(code, T0 + RESET_CODE_SECONDS - 1)
+
+
+def test_asking_again_while_a_code_is_live_spends_none_of_the_allowance(tmp_path):
+    codes = ResetCodes(tmp_path)
+    code = codes.issue(T0)
+    for i in range(1, 3 * RESET_ISSUES_PER_DAY):  # someone pressing the button all day long
+        assert codes.issue(T0 + i) is None
+    assert codes.verify(code, T0 + RESET_ISSUE_GAP_S, OWNER)
+    for i in range(1, RESET_ISSUES_PER_DAY):  # the rest of the day's codes are still there
+        codes.issue(T0 + i * RESET_CODE_SECONDS)
+
+
+def test_a_live_code_that_went_to_the_log_is_pointed_to_again_never_logged_twice(tmp_path, caplog):
+    caplog.set_level("DEBUG")
+    codes = ResetCodes(tmp_path, to_board=lambda: False)
+    code = codes.issue(T0)
+    caplog.clear()
+    assert codes.issue(T0 + 1) is None
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("still stands" in m for m in messages)
+    assert not any(code[:3] in m and code[3:] in m for m in messages)
     assert codes.verify(code, T0 + 2)
 
 
@@ -536,7 +581,7 @@ def test_each_code_gets_a_fresh_salt(tmp_path, monkeypatch):
     codes = ResetCodes(tmp_path)
     codes.issue(T0)
     first = json.loads((tmp_path / "reset.json").read_text())["code"]
-    codes.issue(T0 + RESET_ISSUE_GAP_S)
+    codes.issue(T0 + RESET_CODE_SECONDS)
     second = json.loads((tmp_path / "reset.json").read_text())["code"]
     assert first["salt"] != second["salt"] and first["hash"] != second["hash"]
 
@@ -571,7 +616,7 @@ def test_a_code_shown_elsewhere_never_reaches_the_board(tmp_path):
     codes = ResetCodes(tmp_path)
     codes.issue(T0)
     elsewhere = ResetCodes(tmp_path, show=lambda code, expires: shown.append((code, expires)))
-    later = T0 + RESET_ISSUE_GAP_S
+    later = T0 + RESET_CODE_SECONDS
     code = elsewhere.issue(later)
     assert shown == [(code, later + RESET_CODE_SECONDS)]
     assert codes.pending(later) is None  # and the old code has left the board
@@ -588,7 +633,7 @@ def test_only_the_log_hook_ever_logs_a_code(tmp_path, caplog):
     messages = [r.getMessage() for r in caplog.records]
     assert messages and not any(code in m or f"{code[:3]} {code[3:]}" in m for m in messages)
     caplog.clear()
-    code = ResetCodes(tmp_path, show=show_in_log).issue(T0 + RESET_ISSUE_GAP_S)
+    code = ResetCodes(tmp_path, show=show_in_log).issue(T0 + RESET_CODE_SECONDS)
     assert any(f"{code[:3]} {code[3:]}" in r.getMessage() for r in caplog.records)
     assert not (tmp_path / "reset-display.json").exists()
 
@@ -628,6 +673,20 @@ def test_simultaneous_wrong_guesses_cannot_beat_the_try_limit(tmp_path):
     for thread in threads:
         thread.join()
     assert not ResetCodes(tmp_path).verify(code, T0 + 2)
+
+
+def test_simultaneous_wrong_guesses_from_many_addresses_cannot_beat_the_cap(tmp_path):
+    code = ResetCodes(tmp_path).issue(T0)
+    guess = wrong(code)
+    threads = [threading.Thread(target=lambda i=i: ResetCodes(tmp_path).verify(guess, T0 + 1, f"10.0.0.{i}"))
+               for i in range(3 * RESET_MAX_TRIES_ALL)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert not ResetCodes(tmp_path).verify(code, T0 + 2, OWNER)
+    record = json.loads((tmp_path / "reset.json").read_text())
+    assert record["code"] is None  # voided, and its tally of addresses with it
 
 
 # --- Ending every session ---

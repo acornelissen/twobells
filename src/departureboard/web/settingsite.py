@@ -230,19 +230,24 @@ def wording(install: Install, to_board: bool, dashboard_on: bool) -> Wording:
                        "ask for a code on its display, then type it below with a new password.")
         reset_intro = ("Ask for a code on the board's display, then type it below with a new password. "
                        "Every browser signed in now is signed out.")
-        asked = "Look at the board: a 6-digit code shows there for 10 minutes. E-paper can take a minute to change."
-        ask, ask_again, code_label = "Show a code on the board", "Show a new code", "Code from the board"
+        asked = ("Look at the board: a 6-digit code shows there for 10 minutes from when it was first asked for. "
+                 "Asking again shows the same code until it is used or runs out. "
+                 "E-paper can take a minute to change.")
+        ask, ask_again, code_label = "Show a code on the board", "Show the code again", "Code from the board"
         no_code = (f"No code? Look at the board (or run <code>{e(install.reset_command)}</code> on the device "
                    "to print it). "
-                   "A new code can be shown once a minute, up to 10 times a day.")
+                   "A new code can be shown once the last is used or runs out, "
+                   "at most once a minute and 10 times a day.")
     else:
         claim_intro = (f"No password is set yet. To set one, show that you can read the {noun}'s log: "
                        "ask for a code, find it in the log, then type it below with a new password.")
         reset_intro = (f"Ask for a code, find it in the {noun}'s log, then type it below with a new password. "
                        "Every browser signed in now is signed out.")
-        asked = f"A 6-digit code is in the log now, valid for 10 minutes. {install.log_help}"
-        ask, ask_again, code_label = "Put a code in the log", "Put a new code in the log", "Code from the log"
-        no_code = f"{install.log_help} A new code can be made once a minute, up to 10 times a day."
+        asked = ("A 6-digit code is in the log, valid for 10 minutes from when it was first asked for. "
+                 f"Asking again keeps the same code until it is used or runs out. {install.log_help}")
+        ask, ask_again, code_label = "Put a code in the log", "Ask for the code again", "Code from the log"
+        no_code = (f"{install.log_help} A new code can be made once the last is used or runs out, "
+                   "at most once a minute and 10 times a day.")
     if install.fetch == "process":  # serve starts again with the new settings (cli/serve.py, _SettingsWatch)
         saved = "The dashboard starts again in a few seconds to use them."
     else:

@@ -1579,7 +1579,7 @@ def test_a_wrong_code_changes_nothing_and_says_no_more_than_that(pi_signed, capl
         response, text = reset(pi, form_cookie, wrong)
         assert response.status == 401 and not response.getheader("Set-Cookie", "").startswith("settings_session=")
         answers.add(error.search(text).group(1))
-    response, text = reset(pi, form_cookie, code)  # voided after five wrong
+    response, text = reset(pi, form_cookie, code)  # this address is out after five wrong
     assert response.status == 401
     answers.add(error.search(text).group(1))
     answers.add(error.search(without).group(1))
