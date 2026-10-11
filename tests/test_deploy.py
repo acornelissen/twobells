@@ -306,6 +306,44 @@ def test_install_and_update_install_nftables():
     assert update.index(needed) < update.index('"$PREFIX/venv/bin/pip" install')
 
 
+def _import_checks(name: str) -> list[tuple[int, set[str]]]:
+    """Where each of the script's import checks is, and the modules it imports.
+    Each stops the script, saying why, when an import fails."""
+    stop = '  || { echo "A dependency is missing; see the error above" >&2; exit 1; }'
+    pattern = r'^"\$PREFIX/venv/bin/python" -c "import ([\w., ]+)" \\\n' + re.escape(stop) + "$"
+    return [(found.start(), set(found.group(1).replace(",", " ").split()))
+            for found in re.finditer(pattern, _script(name), re.M)]
+
+
+def test_update_installs_the_pis_pypi_packages_and_checks_they_import_before_the_new_code():
+    pinned = '--require-hashes --no-deps -r "$REPO/deploy/pi/requirements-pi.txt"'
+    assert f'"$PREFIX/venv/bin/pip" install {pinned}' in _script("install.sh")
+    update = _script("update.sh")
+    # A new release may pin another inky; without this the Pi kept the one it was installed with.
+    pi = update.index(f'"$PREFIX/venv/bin/pip" install --quiet {pinned}')
+    code = update.index('--force-reinstall "$build"')
+    # The same import check as install.sh: the dependencies before the new code
+    # goes in, so if one is missing the old code still runs; the new code after.
+    [(_, installed)] = _import_checks("install.sh")
+    (deps_at, deps), (new_at, new) = _import_checks("update.sh")
+    assert deps | new == installed and new == {"departureboard.cli.main"}
+    assert pi < deps_at < code < new_at
+
+
+def test_update_installs_pygame_for_the_screen_before_the_new_code():
+    update = _script("update.sh")
+    # Looked for where Debian's python3-pygame puts it, not asked of dpkg (a
+    # package removed but not purged still passes dpkg -s), with the package
+    # lists refreshed first. An if block: set -e ignores a failing apt-get
+    # update inside an && list.
+    assert not re.search(r"^[^#\n]*dpkg -s", update, re.M)
+    needed = ('if [[ "$display" == hdmi-* && ! -f /usr/lib/python3/dist-packages/pygame/__init__.py ]]; then\n'
+              "  apt-get update\n  apt-get install -y python3-pygame\nfi\n")
+    assert update.index('display="$(query display)" || display=""') < update.index(needed)
+    # Before the new code goes in, so if it fails the old code still runs.
+    assert update.index(needed) < update.index('"$PREFIX/venv/bin/pip" install')
+
+
 def test_the_pi_serves_its_settings_at_8090_and_nothing_at_8080():
     from departureboard.cli.common import WEB_PORT, setup_url
     from departureboard.cli.main import _parser

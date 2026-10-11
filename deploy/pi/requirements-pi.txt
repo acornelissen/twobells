@@ -1,7 +1,7 @@
 # The only packages the board takes from PyPI on a Pi, at exact versions with
 # their hashes: pip refuses anything else. Installed with --no-deps; their own
 # dependencies (Pillow, numpy, smbus2, spidev, gpiod) come from Debian, and
-# install.sh checks they all import.
+# install.sh and update.sh check they all import.
 # To update: change the version and paste both hashes from
 #   https://pypi.org/pypi/<name>/<version>/json  (urls[].digests.sha256)
 inky==2.5.0 \

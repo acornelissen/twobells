@@ -558,7 +558,7 @@ Or get the new release onto the Pi as for installing, check it, then from its fo
 sudo ./deploy/pi/update.sh
 ```
 
-`update.sh` installs the new code, refreshes the systemd units, restarts the web server and the fetch service, starts a bus timetable build if buses come from BODS, restarts the screen's service if it is running, and runs the e-paper board once if its timer is on. `--config FILE` and `--secrets FILE` replace `/etc/departureboard/config.toml` and `secrets.env` too (the secrets copy is shredded).
+`update.sh` first installs what the new release needs: `nftables` if it's missing, pygame if `display` says `hdmi-…` and it's missing, and the Inky driver from PyPI at the versions and hashes the release pins (`deploy/pi/requirements-pi.txt`). It checks they all import, as `install.sh` does, and stops before touching the code if one doesn't, so the old code still runs. Then it installs the new code, checks that imports too, refreshes the systemd units, restarts the web server and the fetch service, starts a bus timetable build if buses come from BODS, restarts the screen's service if it is running, and runs the e-paper board once if its timer is on. `--config FILE` and `--secrets FILE` replace `/etc/departureboard/config.toml` and `secrets.env` too (the secrets copy is shredded).
 
 ### Choosing a display
 

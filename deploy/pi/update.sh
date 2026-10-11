@@ -43,6 +43,28 @@ if [[ ! -x /usr/sbin/nft ]]; then
   apt-get install -y nftables
 fi
 
+# Ask the code installed, as the services' user, about the settings in force:
+# config.toml with those saved from the settings site over it. No keys are
+# read. Until the new code goes in below, that is the old code.
+query() {
+  runuser -u departureboard -- "$PREFIX/venv/bin/departureboard" query "$1" --install pi --config "$CONF/config.toml"
+}
+# Switched to the HDMI screen since installing? It needs pygame, looked for
+# where Debian's python3-pygame puts it, and installed as nftables is above.
+# (Settings that can't be read say why here; the board says so too.)
+display="$(query display)" || display=""
+if [[ "$display" == hdmi-* && ! -f /usr/lib/python3/dist-packages/pygame/__init__.py ]]; then
+  apt-get update
+  apt-get install -y python3-pygame
+fi
+
+# inky and its helper, at the versions and hashes this release names (a new
+# release may pin new ones), then the same check as install.sh that they and
+# their Debian dependencies import, all before the new code goes in.
+"$PREFIX/venv/bin/pip" install --quiet --require-hashes --no-deps -r "$REPO/deploy/pi/requirements-pi.txt"
+"$PREFIX/venv/bin/python" -c "import inky, PIL, numpy, smbus2, spidev, gpiod" \
+  || { echo "A dependency is missing; see the error above" >&2; exit 1; }
+
 # Build from a clean copy: pip builds in the source tree, and as root that
 # leaves root-owned build/ and *.egg-info behind (and a stale build/ can leak
 # old files into the next install).
@@ -51,22 +73,13 @@ trap 'rm -rf "$build"' EXIT
 cp -a "$REPO/." "$build/"
 rm -rf "$build/build" "$build"/src/*.egg-info
 
-# The code only: its dependencies are already in the venv. It is built with
-# the hashed setuptools, not one fetched for the build.
+# The code only: its dependencies are in the venv now. It is built with the
+# hashed setuptools, not one fetched for the build. Then the rest of
+# install.sh's check: the new code imports.
 "$PREFIX/venv/bin/pip" install --quiet --require-hashes --no-deps -r "$REPO/deploy/pi/requirements-build.txt"
 "$PREFIX/venv/bin/pip" install --quiet --no-deps --no-build-isolation --force-reinstall "$build"
-
-# Ask the new code, as the services' user, about the settings in force:
-# config.toml with those saved from the settings site over it. No keys are read.
-query() {
-  runuser -u departureboard -- "$PREFIX/venv/bin/departureboard" query "$1" --install pi --config "$CONF/config.toml"
-}
-# Switched to the HDMI screen since installing? It needs pygame. (Settings
-# that can't be read say why here; the board says so too.)
-display="$(query display)" || display=""
-if [[ "$display" == hdmi-* ]] && ! dpkg -s python3-pygame &>/dev/null; then
-  apt-get install -y python3-pygame
-fi
+"$PREFIX/venv/bin/python" -c "import departureboard.cli.main" \
+  || { echo "A dependency is missing; see the error above" >&2; exit 1; }
 
 # The setup service is now the fetch service, which also runs the
 # dashboard's feeds: the old units go.
