@@ -148,6 +148,6 @@ def key_states(store: Store, install: Install) -> tuple[KeyState, ...]:
         views = install.default_views
     try:
         env = store.env()
-    except (OSError, ValueError):  # a secrets file that isn't text
+    except (OSError, ConfigError):  # a secrets file that isn't text
         env = {}
     return states(forms_for(views), data, env, views, keyresults.load(store.folder))

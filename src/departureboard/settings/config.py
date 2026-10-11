@@ -139,11 +139,14 @@ def read_overlay_in(folder: Path | None, allowed: Mapping[str | None, frozenset[
 
 
 def load_env_file(path: Path | str) -> dict[str, str]:
-    """NAME=value lines from a secrets file; empty if it can't be read."""
+    """NAME=value lines from a secrets file; empty if it can't be read.
+    ConfigError, never holding the file's content, if it isn't UTF-8 text."""
     try:
-        return parse_env(Path(path).read_text())
+        return parse_env(Path(path).read_text(encoding="utf-8"))
     except OSError:
         return {}
+    except UnicodeDecodeError:
+        raise ConfigError(f"{path} isn't UTF-8 text; save it again as plain NAME=value lines") from None
 
 
 def parse_env(text: str) -> dict[str, str]:

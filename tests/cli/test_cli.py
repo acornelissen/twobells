@@ -12,7 +12,7 @@ import pytest
 from PIL import Image
 
 from departureboard.cli.main import main
-from departureboard.settings.config import load_env_file
+from departureboard.settings.config import ConfigError, load_env_file
 from departureboard.sources import holidays
 from tests.paths import FIXTURES, ROOT
 
@@ -86,6 +86,19 @@ def test_run_reports_config_errors_without_traceback(tmp_path, capsys):
     code = main(["run", "--config", str(config), "--secrets", str(tmp_path / "missing.env")])
     assert code == 2
     assert "RDM_API_KEY" in capsys.readouterr().err
+
+
+def test_a_secrets_file_that_is_not_text_is_a_config_error_not_a_traceback(tmp_path, capsys):
+    config = tmp_path / "config.toml"
+    config.write_text(f'state_file = "{tmp_path / "state" / "state.json"}"\n[train]\ncrs = "GLO"\n')
+    secrets = tmp_path / "secrets.env"
+    secrets.write_bytes(b"RDM_API_KEY=secret-\xff\n")
+    with pytest.raises(ConfigError, match="UTF-8") as caught:
+        load_env_file(secrets)
+    assert "secret-" not in str(caught.value)
+    assert main(["run", "--config", str(config), "--secrets", str(secrets)]) == 2
+    err = capsys.readouterr().err
+    assert "UTF-8" in err and "Traceback" not in err and "secret-" not in err
 
 
 CONFIG = """
