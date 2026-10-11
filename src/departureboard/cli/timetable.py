@@ -45,7 +45,7 @@ def timetable_command(args) -> int:
     if schedule is None or reason:
         print(f"No usable bus timetable: {reason}", file=sys.stderr)
         return 1
-    until = f", until {schedule.valid_until:%d %b %Y}" if schedule.valid_until else ""
+    until = f", one service in it runs until {schedule.valid_until:%d %b %Y}" if schedule.valid_until else ""
     calling = len(schedule.departure_journeys)
     inbound = len(schedule.journeys) - calling
     near = f" (and {inbound} ending near them)" if inbound else ""

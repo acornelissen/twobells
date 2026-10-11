@@ -105,7 +105,9 @@ def metres(a: StopPosition, b: StopPosition) -> float:
 @dataclass(frozen=True)
 class Schedule:
     built: datetime  # when it was made, board-local time
-    valid_until: date | None  # the earliest OperatingPeriod end among its journeys, if any
+    # The earliest OperatingPeriod end among its journeys, if any: when it is
+    # built again (timetable.due). Only that service ends then, not the rest.
+    valid_until: date | None
     stops: dict[str, str]  # your stop labels to ATCO codes, as configured when built
     # Journeys calling at one of your stops, and inbound-only ones (see Journey).
     journeys: tuple[Journey, ...]

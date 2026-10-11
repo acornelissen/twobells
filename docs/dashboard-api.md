@@ -154,6 +154,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `building` (first build in progress);
   - `missing` (no timetable, with `status.note` saying why).
 - **`timetable.journeys`** counts the timetabled journeys calling at your stops. The journeys kept only to find an inbound bus (ending at a stand near your stop without calling at it; see `inbound`) aren't counted.
+- **`timetable.valid_until`** is the last day of the first service in the timetable to end (`YYYY-MM-DD`), or null when none has an end. Only that service stops then; the timetable is built again the day after.
 - **`buses.stops`:** each of your stops by its board label, with what tells it from another stop of the same name (two stops across a road from each other usually share one). Nothing is made up: a stop the stop data doesn't have has every field null but `walk_min`.
   - `name`: NaPTAN's name for the stop, like "Church Street", or null.
   - `letter`: the letter or number on its sign from NaPTAN's indicator ("Stop A" is `A`, "Stand 12" is `12`), or null where the indicator is a word like "opp" or there is none.

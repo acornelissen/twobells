@@ -612,7 +612,7 @@ windows = ["Mon-Sun 06:00-23:00"]
 
   Run by hand with your own config and keys (on a laptop, say), `departureboard timetable --force` does both in one step.
 
-Until there's a usable timetable (none yet, built for other stops, run out, or not rebuilt for four weeks), TransportAPI stands in on the board if its keys are set, checked every `fallback_interval_minutes` (default 12), within the daily budget, and only inside `fallback_windows`. By default those are the commute, `["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]`, which fits 28 lookups with two stops, whatever the bus windows say. Both are set in `config.toml` only. Without TransportAPI keys the board says it isn't updating buses.
+Until there's a usable timetable (none yet, built for other stops, or not rebuilt for four weeks), TransportAPI stands in on the board if its keys are set, checked every `fallback_interval_minutes` (default 12), within the daily budget, and only inside `fallback_windows`. By default those are the commute, `["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]`, which fits 28 lookups with two stops, whatever the bus windows say. Both are set in `config.toml` only. Without TransportAPI keys the board says it isn't updating buses.
 
 ### The bus budget
 

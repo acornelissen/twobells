@@ -141,20 +141,18 @@ def test_a_timetable_for_other_stops_is_not_used(tmp_path):
     assert fallback.calls == 1
 
 
-@pytest.mark.parametrize(
-    "changes, now, reason",
-    [
-        ({"valid_until": date(2026, 10, 8)}, datetime(2026, 10, 9, 10, 0), "has run out"),
-        ({}, BUILT + timedelta(days=28, minutes=1), "over four weeks old"),
-    ],
-)
-def test_an_out_of_date_timetable_is_not_used(changes, now, reason):
-    assert reason in unusable(schedule(**changes), STOPS, now)
+def test_an_out_of_date_timetable_is_not_used():
+    assert "over four weeks old" in unusable(schedule(), STOPS, BUILT + timedelta(days=28, minutes=1))
 
 
-def test_a_timetable_ending_today_or_four_weeks_old_is_still_used():
-    assert unusable(schedule(valid_until=date(2026, 10, 9)), STOPS, datetime(2026, 10, 9, 23, 0)) is None
+def test_a_timetable_four_weeks_old_is_still_used():
     assert unusable(schedule(), STOPS, BUILT + timedelta(days=28)) is None
+
+
+def test_one_service_ending_leaves_the_timetable_in_use():
+    # valid_until is the first end of any one service in it: when it is built
+    # again, not when the rest stop running.
+    assert unusable(schedule(valid_until=date(2026, 10, 8)), STOPS, datetime(2026, 10, 9, 10, 0)) is None
 
 
 def test_a_rebuilt_timetable_is_read_again(tmp_path):

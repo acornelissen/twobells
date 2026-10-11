@@ -2,8 +2,10 @@
 your stops (built by `departureboard timetable`), adjusted by live BODS bus
 positions (see livebus).
 
-Until there is a usable timetable (none yet, your stops changed, or it has
-run out), TransportAPI fills in if its keys are set. Live positions failing
+Until there is a usable timetable (none yet, your stops changed, or not
+rebuilt for four weeks), TransportAPI fills in if its keys are set. One
+service in it ending doesn't make it unusable: the rest still run, and it
+is built again (timetable.due). Live positions failing
 only costs the delays: the timetabled times are still shown.
 """
 
@@ -43,8 +45,6 @@ def unusable(schedule: Schedule | None, stops: Mapping[str, str], now: datetime)
         return "there is no bus timetable yet"
     if dict(schedule.stops) != dict(stops):
         return "the bus timetable is for other stops"
-    if schedule.valid_until and now.date() > schedule.valid_until:
-        return "the bus timetable has run out"
     if now - schedule.built > MAX_AGE:
         return "the bus timetable is over four weeks old"
     return None
