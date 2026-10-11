@@ -128,6 +128,32 @@ def test_the_plain_look_draws_in_the_packaged_inter(scale):
         assert Path(str(font.path)).parent == BOARD_FONTS
 
 
+def test_the_plain_look_lays_text_out_the_same_on_every_computer(monkeypatch):
+    # Left to choose, Pillow lays text out with raqm where it can load FriBiDi
+    # (Ubuntu, and Debian's Pillow on a Pi) and with its own basic layout
+    # elsewhere (a Mac). The two measure text differently, so what fits a row,
+    # and every recorded page, would differ from one computer to the next.
+    from PIL import ImageFont
+
+    from twobells.board import render as board_render
+
+    asked = []
+    truetype = ImageFont.truetype
+
+    def recording(*args, **kwargs):
+        asked.append(kwargs.get("layout_engine"))
+        return truetype(*args, **kwargs)
+
+    monkeypatch.setattr(ImageFont, "truetype", recording)
+    board_render._font.cache_clear()
+    try:
+        fonts = load_fonts(3, 13)
+    finally:
+        board_render._font.cache_clear()  # no font loaded under the stand-in stays behind
+    assert asked and set(asked) == {ImageFont.Layout.BASIC}
+    assert {f.layout_engine for f in (fonts.regular, fonts.bold, fonts.small)} == {ImageFont.Layout.BASIC}
+
+
 @pytest.mark.parametrize("name", ["Inter-Regular.ttf", "Inter-ExtraBold.ttf"])
 def test_board_fonts_keep_their_hints_and_the_text_the_board_draws(name):
     font = TTFont(BOARD_FONTS / name)

@@ -78,11 +78,15 @@ class Fonts:
 # up scrolling text. So the fonts, what text measures and the glyphs it draws
 # are kept between redraws, each in a bounded store: a Pi Zero has 512 MB.
 # The board is drawn on one thread, so sharing the fonts is safe.
+#
+# Always Pillow's basic layout: left to choose, Pillow uses raqm wherever it
+# can load FriBiDi (Debian's Pillow on a Pi, Ubuntu), which measures text
+# differently, so what fits a row would change from one computer to another.
 
 
 @functools.lru_cache(maxsize=32)
 def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(str(_FONT_DIR / name), size)
+    return ImageFont.truetype(str(_FONT_DIR / name), size, layout_engine=ImageFont.Layout.BASIC)
 
 
 # Body text in pHAT pixels; a text_size setting can make the plain look bigger.
