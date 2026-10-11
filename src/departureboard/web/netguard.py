@@ -1,8 +1,10 @@
 """Whether the web server can connect out. A Pi's is kept off the internet
 twice: by its unit's systemd IP firewall and by nftables rules for it alone
-(deploy/pi/departureboard-web.nft). Either can fail to apply (systemd's does
-on a Pi Zero), so serve checks at start that one holds, says so in the log,
-and the settings' Overview says so too. The Overview looks again as it is
+(deploy/pi/departureboard-web.nft, which departureboard-guard.service loads,
+matching this server by the cgroup systemd puts in its set). Either can fail
+to apply (systemd's firewall does on a Pi Zero, and the set stays empty
+before systemd 254), so serve checks at start that one holds, says so in the
+log, and the settings' Overview says so too. The Overview looks again as it is
 drawn, at most once a minute: Wi-Fi may have had no route yet at start, and
 a ruleset can be flushed while the server runs.
 
@@ -79,8 +81,9 @@ def _say(found: str) -> None:
         log.info("Network guard on: this server can't connect out to the internet")
     elif found == OFF:
         log.warning("Network guard off: nothing stops this server connecting out to the internet. It still turns "
-                    "away visitors outside the home network itself. On a Pi, see why in this log, and check "
-                    "`sudo nft list table inet departureboard_web`")
+                    "away visitors outside the home network itself. On a Pi, see why with "
+                    "`journalctl -u departureboard-guard -u departureboard-web`, and check that "
+                    "`sudo nft list set inet departureboard_web web` lists this server")
     else:
         log.warning("Network guard: can't tell whether this server can connect out (no route out to check "
                     "with yet?)")

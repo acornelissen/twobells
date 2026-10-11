@@ -5,6 +5,13 @@ After=network-online.target
 # The setup wizard's lookups and the dashboard's feeds are fetched there:
 # this service can't reach the internet.
 Wants=departureboard-fetch.path
+# The network guard (deploy/pi/departureboard-web.nft), loaded first so its
+# set is there for NFTSet= below. Wanted, not required: if it can't load, the
+# server starts anyway. It still turns away visitors outside the home network
+# itself, and says in its log and on the settings' Overview whether anything
+# stops it connecting out.
+Wants=departureboard-guard.service
+After=departureboard-guard.service
 
 [Service]
 Type=simple
@@ -59,13 +66,10 @@ TasksMax=64
 IPAddressDeny=any
 IPAddressAllow=localhost link-local 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7
 # The same again in nftables, for where systemd can't apply the two lines
-# above (a Pi Zero's kernel refuses them the memory). Loaded as root ("+") as
-# the service starts, once its cgroup is there to match, and removed as it
-# stops. If nft is missing or fails ("-"), the server starts anyway: it still
-# turns away visitors outside the home network itself, and it says in its
-# log and on the settings' Overview that nothing stops it connecting out.
-ExecStartPre=-+/usr/sbin/nft -f /opt/departureboard/departureboard-web.nft
-ExecStopPost=-+/usr/sbin/nft delete table inet departureboard_web
+# above (a Pi Zero's kernel refuses them the memory): systemd puts this
+# cgroup's id in the guard's set as the server starts, and takes it out as it
+# stops (needs systemd 254 or later).
+NFTSet=cgroup:inet:departureboard_web:web
 
 [Install]
 WantedBy=multi-user.target

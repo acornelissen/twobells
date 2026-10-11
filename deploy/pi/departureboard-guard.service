@@ -1,0 +1,46 @@
+[Unit]
+Description=Departure board web server's network guard (nftables)
+# The web server's unit puts its cgroup in this table's set (NFTSet=) as the
+# server starts, so the table must be there first. After nftables' own rules,
+# which begin by flushing every table, this one too.
+Before=departureboard-web.service
+After=nftables.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Loaded as root, and removed as this stops. Loading it again empties the
+# set, so the web server must restart after: install.sh and update.sh do.
+ExecStart=/usr/sbin/nft -f /opt/departureboard/departureboard-web.nft
+ExecStop=-/usr/sbin/nft delete table inet departureboard_web
+# nft needs CAP_NET_ADMIN and a netlink socket, nothing more. Not in a network
+# or user namespace of its own: the rules must be the Pi's.
+CapabilityBoundingSet=CAP_NET_ADMIN
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_NETLINK
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+ProtectHostname=yes
+ProtectKernelLogs=yes
+RestrictRealtime=yes
+PrivateIPC=yes
+ProtectClock=yes
+ProcSubset=pid
+RestrictSUIDSGID=yes
+ProtectProc=invisible
+
+[Install]
+WantedBy=multi-user.target

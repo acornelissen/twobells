@@ -184,8 +184,10 @@ def test_the_settings_page_stays_on_the_home_network_and_hands_its_internet_work
 
 # The second layer of the same, for where systemd can't apply IPAddressAllow= (a Pi Zero's kernel).
 GUARD = PI / "departureboard-web.nft"
+GUARD_UNIT = "departureboard-guard.service"  # loads it at boot, before the web server
 GUARD_FILE = "/opt/departureboard/departureboard-web.nft"  # where install.sh and update.sh put it
 GUARD_TABLE = "inet departureboard_web"
+GUARD_SET = "web"  # the web server's cgroup, put in by systemd (the web unit's NFTSet=)
 # systemd's names in IPAddressAllow=, as systemd.resource-control(5) gives them.
 SYSTEMD_NAMES = {"localhost": ("127.0.0.0/8", "::1/128"), "link-local": ("169.254.0.0/16", "fe80::/64")}
 
@@ -215,14 +217,63 @@ def _guard_set(name: str) -> set:
     return {ipaddress.ip_network(element.strip()) for element in elements.split(",")}
 
 
-def test_the_web_unit_loads_its_guard_as_root_and_starts_without_it():
-    # Loaded as it starts, when its cgroup is there to match; gone as it stops.
-    # "+": as root, outside the sandbox; "-": the server starts anyway (its own
-    # address check still holds) and says the guard is off.
+def test_the_guard_unit_loads_the_table_as_root_at_boot_before_the_web_server():
+    guard = _unit(GUARD_UNIT)
+    assert guard["Type"] == ["oneshot"] and guard["RemainAfterExit"] == ["yes"]
+    assert guard["ExecStart"] == [f"/usr/sbin/nft -f {GUARD_FILE}"]
+    # "-": stopping never fails on a table already gone (nft flush ruleset, say).
+    assert guard["ExecStop"] == [f"-/usr/sbin/nft delete table {GUARD_TABLE}"]
+    assert guard["Before"] == ["departureboard-web.service"]
+    # After nftables' own rules, which begin by flushing every table, this one too.
+    assert guard["After"] == ["nftables.service"]
+    assert guard["WantedBy"] == ["multi-user.target"]
+    # Root, but with nothing more than nft needs: CAP_NET_ADMIN and a netlink socket.
+    assert "User" not in guard and "DynamicUser" not in guard
+    assert guard["CapabilityBoundingSet"] == ["CAP_NET_ADMIN"]
+    assert guard["RestrictAddressFamilies"] == ["AF_NETLINK"]
+    assert "AmbientCapabilities" not in guard
+    # In the Pi's own network namespace and user namespace, or the rules would guard nothing.
+    for setting in ("PrivateNetwork", "PrivateUsers", "NetworkNamespacePath"):
+        assert setting not in guard, setting
+
+
+def test_the_web_unit_puts_its_cgroup_in_the_guards_set_and_starts_without_it():
     web = _unit("departureboard-web.service")
-    assert web["ExecStartPre"] == [f"-+/usr/sbin/nft -f {GUARD_FILE}"]
-    assert web["ExecStopPost"] == [f"-+/usr/sbin/nft delete table {GUARD_TABLE}"]
+    # systemd puts the cgroup's id, as the kernel has it, in the guard's set as
+    # the server starts, and takes it out as it stops.
+    assert web["NFTSet"] == [f"cgroup:{GUARD_TABLE.replace(' ', ':')}:{GUARD_SET}"]
+    # After the guard, so its set is there to fill; but only wanted: if it
+    # can't load, the server starts anyway (its own address check still
+    # holds) and says the guard is off.
+    assert GUARD_UNIT in web["Wants"] and GUARD_UNIT in web["After"]
+    for binding in ("Requires", "Requisite", "BindsTo", "PartOf"):
+        assert GUARD_UNIT not in " ".join(web.get(binding, [])), binding
     assert web["User"] == ["departureboard"]  # the server itself is never root
+
+
+def test_the_guide_says_how_the_guard_holds_and_how_to_bring_it_back():
+    guide = (ROOT / "docs" / "user-guide.md").read_text()
+    for said in (f"`{GUARD_UNIT}`", "`NFTSet=`", "systemd 254",
+                 # A Pi Zero or Pi 1 has neither systemd's firewall nor, on Bookworm (252), the guard.
+                 "Raspberry Pi OS Trixie",
+                 # Flushing the ruleset removes it; this loads it, then puts the server in its set again.
+                 f"sudo systemctl restart {GUARD_UNIT.removesuffix('.service')} departureboard-web",
+                 f"sudo nft list set {GUARD_TABLE} {GUARD_SET}"):
+        assert said in guide, said
+    assert "The unit loads them as root as the server starts" not in guide
+
+
+def test_nothing_matches_the_web_server_by_a_cgroup_path():
+    # nft turns a cgroup path into an id by its inode number, which on a 32-bit
+    # kernel isn't the kernel's id (that has generation bits in its high
+    # word), so a rule by path never matches there. The set holds the id
+    # systemd gets from the kernel instead.
+    assert "system.slice" not in _rules() and not re.search(r'cgroupv2 level \d+ "', _rules())
+    for unit in PI.iterdir():
+        if unit.suffix in (".service", ".timer", ".path"):
+            for key, values in _unit(unit.name).items():
+                if key.startswith("Exec") and unit.name != GUARD_UNIT:
+                    assert not [value for value in values if "nft" in value], (unit.name, key)
 
 
 def test_the_guard_replaces_its_own_table_in_one_go_and_nothing_else():
@@ -241,10 +292,15 @@ def test_the_guard_lets_the_web_server_reach_only_the_home_network():
     rules = _rules()
     output = _block(rules, "chain output {")
     assert "type filter hook output priority filter; policy accept;" in output
-    # Only the web service's own sockets, by its cgroup: the fetch service, the same user, still goes out.
-    cgroup = f'socket cgroupv2 level 2 "system.slice/{GUARD.stem}.service" jump web_out'
+    # Only the web service's own sockets, by its cgroup (system.slice/<unit> is
+    # level 2) in the set systemd fills: the fetch service, the same user,
+    # still goes out.
+    cgroup = f"socket cgroupv2 level 2 @{GUARD_SET} jump web_out"
     assert [line.strip() for line in output.strip().splitlines()][1:] == [cgroup]
     assert (PI / f"{GUARD.stem}.service").is_file()
+    # Empty as loaded: what is in it is systemd's to say.
+    assert [line.strip() for line in _block(rules, f"set {GUARD_SET} {{").strip().splitlines()] == [
+        "type cgroupsv2"]
     web_out = [line.strip() for line in _block(rules, "chain web_out {").strip().splitlines()]
     assert web_out == ["ip daddr @home4 accept", "ip6 daddr @home6 accept", "reject with icmpx admin-prohibited"]
 
@@ -281,14 +337,77 @@ def test_install_and_update_put_the_guard_where_only_root_can_change_it(name):
     put = f'install -m 644 -o root -g root "$REPO/deploy/pi/{GUARD.name}" "$PREFIX/{GUARD.name}"'
     assert put.replace("$PREFIX", "/opt/departureboard").endswith(f'"{GUARD_FILE}"')
     assert put in script
-    # In place before the web server starts, or restarts onto the new unit.
-    started = "systemctl enable --now departureboard-web.service" if name == "install.sh" else \
-        "systemctl try-restart departureboard-web.service"
-    assert script.index(put) < script.index(started)
-    # And afterwards, said if it didn't load.
-    check = (f"if systemctl is-active --quiet departureboard-web.service && ! nft list table {GUARD_TABLE} "
-             "&>/dev/null; then")
-    assert script.index(started) < script.index(check)
+    # In place before the guard loads it afresh, and that before the web
+    # server starts, or restarts: loading the table empties its set, which
+    # systemd fills again as the server starts. Enabled, so it loads at boot.
+    # A guard that fails to load doesn't stop the script (|| true): the rest
+    # still goes in, and it says so at the end.
+    steps = [put, "\nsystemctl daemon-reload\n", f"\nsystemctl enable {GUARD_UNIT}\n",
+             f"\nsystemctl restart {GUARD_UNIT} || true\n",
+             "systemctl enable --now departureboard-web.service" if name == "install.sh" else
+             "systemctl try-restart departureboard-web.service"]
+    places = [script.index(step) for step in steps]
+    assert places == sorted(places)
+    started = steps[-1]
+    # And afterwards, said if it isn't holding the server.
+    assert script.index(started) < script.index("\nsay_if_unguarded\n")
+
+
+SAY_IF_UNGUARDED = re.compile(r"^say_if_unguarded\(\) \{\n.*?^\}$", re.M | re.S)
+# What nft lists for the guard's set once systemd has put the web server in (a
+# 32-bit Pi may give the id as a number), and for one still empty.
+FILLED = (f"table {GUARD_TABLE} {{\n\tset {GUARD_SET} {{\n\t\ttype cgroupsv2\n"
+          '\t\telements = { "system.slice/departureboard-web.service" }\n\t}\n}\n')
+EMPTY = f"table {GUARD_TABLE} {{\n\tset {GUARD_SET} {{\n\t\ttype cgroupsv2\n\t}}\n}}\n"
+
+
+def _say_if_unguarded(name: str, active: bool, listed: str | None, systemd: str = "257 (257.9-1~deb13u1)"):
+    """Runs the script's say_if_unguarded, under its set -euo pipefail, with
+    systemctl and nft stood in for: the web server running or not, nft
+    listing `listed` for the guard's set (None: no table), and `systemd` as
+    the first line of systemctl --version has it."""
+    import subprocess
+
+    [function] = SAY_IF_UNGUARDED.findall(_script(name))
+    stubs = ('systemctl() {\n  case "$1" in\n    is-active) [[ "$ACTIVE" == yes ]] ;;\n'
+             '    --version) echo "systemd $SYSTEMD"; echo "+PAM +AUDIT" ;;\n    *) return 9 ;;\n  esac\n}\n'
+             f'nft() {{\n  [[ "$*" == "list set {GUARD_TABLE} {GUARD_SET}" && -n "$LISTED" ]] '
+             '|| { echo "Error: No such file or directory" >&2; return 1; }\n  printf "%s" "$LISTED"\n}\n')
+    env = {"PATH": "/usr/bin:/bin", "ACTIVE": "yes" if active else "no", "LISTED": listed or "", "SYSTEMD": systemd}
+    return subprocess.run(["bash", "-c", f"set -euo pipefail\n{stubs}{function}\nsay_if_unguarded\necho carried on"],
+                          capture_output=True, text=True, env=env, check=True)
+
+
+@pytest.mark.parametrize("name", ["install.sh", "update.sh"])
+def test_install_and_update_say_when_the_guard_isnt_holding_the_web_server(name):
+    # Holding it: the table in, and the server's cgroup in its set.
+    held = _say_if_unguarded(name, True, FILLED)
+    assert (held.stdout, held.stderr) == ("carried on\n", "")
+    assert _say_if_unguarded(name, False, None).stderr == ""  # no server running, nothing to guard
+    for listed in (None, EMPTY):  # no table; or a table, but systemd hasn't put the server in its set
+        said = _say_if_unguarded(name, True, listed)
+        assert said.stdout == "carried on\n"  # a warning, never a stop: the board and dashboard still work
+        assert said.stderr.startswith("Warning: the web server's network guard isn't holding it"), said.stderr
+        assert "journalctl -u departureboard-guard -u departureboard-web" in said.stderr
+        assert "Trixie" not in said.stderr
+
+
+@pytest.mark.parametrize("name", ["install.sh", "update.sh"])
+@pytest.mark.parametrize("systemd, old", [("252 (252.38-1~deb12u1)", True), ("253", True), ("254", False),
+                                           ("257 (257.9-1~deb13u1)", False), ("unknown", False)])
+def test_install_and_update_say_when_systemd_is_too_old_to_fill_the_guards_set(name, systemd, old):
+    # NFTSet= came in systemd 254; Bookworm has 252, Trixie 257.
+    said = _say_if_unguarded(name, True, EMPTY, systemd).stderr
+    assert said.startswith("Warning: the web server's network guard isn't holding it")
+    assert ("Raspberry Pi OS Trixie" in said) == old, said
+    assert ("journalctl" in said) == (not old), said
+    assert ("The board and the dashboard work all the same" in said) == old
+    assert _say_if_unguarded(name, True, FILLED, systemd).stderr == ""
+
+
+def test_install_and_update_say_the_same_about_the_guard():
+    [said] = SAY_IF_UNGUARDED.findall(_script("install.sh"))
+    assert SAY_IF_UNGUARDED.findall(_script("update.sh")) == [said]
 
 
 def test_install_and_update_install_nftables():
@@ -296,10 +415,10 @@ def test_install_and_update_install_nftables():
     [packages] = [line for line in install.splitlines() if line.startswith("apt-get install -y python3-venv")]
     assert "nftables" in packages.split()
     update = _script("update.sh")
-    # Looked for where the unit runs it (a package removed but not purged still
-    # passes dpkg -s), and the package lists refreshed first: an installed Pi's
-    # may be months old, naming versions the mirror no longer has.
-    nft = shlex.split(_unit("departureboard-web.service")["ExecStartPre"][0].lstrip("-+"))[0]
+    # Looked for where the guard's unit runs it (a package removed but not
+    # purged still passes dpkg -s), and the package lists refreshed first: an
+    # installed Pi's may be months old, naming versions the mirror no longer has.
+    nft = shlex.split(_unit(GUARD_UNIT)["ExecStart"][0])[0]
     # An if block: set -e ignores a failing apt-get update inside an && list.
     needed = f"if [[ ! -x {nft} ]]; then\n  apt-get update\n  apt-get install -y nftables\nfi\n"
     # Before the new code goes in, so if it fails the old code still runs.
@@ -317,8 +436,9 @@ def test_install_run_again_restarts_a_running_web_server_onto_its_new_unit_and_g
     started = install.index("systemctl enable --now departureboard-web.service\n")
     restart = "if $restart_web; then\n  systemctl try-restart departureboard-web.service\nfi\n"
     assert started < install.index(restart)
-    check = f"if systemctl is-active --quiet departureboard-web.service && ! nft list table {GUARD_TABLE}"
-    assert install.index(restart) < install.index(check)
+    # The guard loaded afresh first, so systemd puts the restarted server in its set.
+    assert install.index(f"systemctl restart {GUARD_UNIT}") < install.index(restart)
+    assert install.index(restart) < install.index("\nsay_if_unguarded\n")
 
 
 def test_install_run_again_restarts_a_running_fetch_service_only_if_its_unit_changed():
@@ -333,9 +453,11 @@ def test_install_run_again_restarts_a_running_fetch_service_only_if_its_unit_cha
     assert started < install.index(restart)
 
 
-def test_install_never_starts_a_service_by_restarting_it():
-    # try-restart leaves a stopped service stopped; restart would start it.
-    assert not [line for line in _run_lines("install.sh") if line.startswith("systemctl restart")]
+def test_install_never_starts_a_service_by_restarting_it_but_the_guard():
+    # try-restart leaves a stopped service stopped; restart would start it. The
+    # guard is install.sh's own, enabled just before, and should run.
+    restarts = [line for line in _run_lines("install.sh") if line.startswith("systemctl restart")]
+    assert restarts == [f"systemctl restart {GUARD_UNIT} || true"]
 
 
 def _import_checks(name: str) -> list[tuple[int, set[str]]]:
@@ -703,7 +825,7 @@ def test_update_restarts_a_running_screen_onto_the_new_code():
 
 
 SERVICES = ("departureboard.service", "departureboard-screen.service", "departureboard-web.service",
-            "departureboard-timetable.service", "departureboard-fetch.service")
+            "departureboard-timetable.service", "departureboard-fetch.service", GUARD_UNIT)
 
 
 @pytest.mark.parametrize("name", SERVICES)

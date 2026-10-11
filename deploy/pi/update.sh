@@ -32,10 +32,10 @@ if [[ -n "$secrets" ]]; then
   shred -u "$secrets"
 fi
 
-# The web server's network guard needs nft, where its unit runs it (a package
-# removed but not purged still passes dpkg -s). The package lists are
-# refreshed first, as an installed Pi's may name versions long gone from the
-# mirror. Installed before the new code goes in, so if it fails the old code
+# The web server's network guard needs nft, where departureboard-guard.service
+# runs it (a package removed but not purged still passes dpkg -s). The
+# package lists are refreshed first, as an installed Pi's may name versions
+# long gone from the mirror. Installed before the new code goes in, so if it fails the old code
 # still runs. An if, not || { a && b; }: set -e doesn't stop on a failing
 # apt-get update inside an && list.
 if [[ ! -x /usr/sbin/nft ]]; then
@@ -97,13 +97,20 @@ rm -rf "$build/build" "$build"/src/*.egg-info
 systemctl disable --now departureboard-setup.path departureboard-setup.service 2>/dev/null || true
 rm -f /etc/systemd/system/departureboard-setup.service /etc/systemd/system/departureboard-setup.path
 for unit in departureboard.service departureboard.timer departureboard-screen.service departureboard-web.service \
-    departureboard-timetable.service departureboard-timetable.timer \
+    departureboard-guard.service departureboard-timetable.service departureboard-timetable.timer \
     departureboard-fetch.service departureboard-fetch.path; do
   install -m 644 "$REPO/deploy/pi/$unit" /etc/systemd/system/
 done
-# The web server's network guard, which its unit loads as root: root's alone to change.
+# The web server's network guard, which departureboard-guard.service loads as
+# root: root's alone to change.
 install -m 644 -o root -g root "$REPO/deploy/pi/departureboard-web.nft" "$PREFIX/departureboard-web.nft"
 systemctl daemon-reload
+# The guard loads at boot, before the web server. Loaded afresh now, which
+# empties its set, so a running web server restarts after it, below, and
+# systemd puts it in the set again. If it fails, the rest still goes in and
+# the end says so.
+systemctl enable departureboard-guard.service
+systemctl restart departureboard-guard.service || true
 # The web server hands its internet work to the fetch service, started at
 # boot and by the .path unit when asked. Both restart onto the new code and
 # the spool folder in memory; then the old spool folders, in memory and on
@@ -112,10 +119,29 @@ systemctl enable departureboard-fetch.path departureboard-fetch.service
 systemctl restart departureboard-fetch.path departureboard-fetch.service
 systemctl try-restart departureboard-web.service
 rm -rf /run/departureboard-setup /var/lib/departureboard/setup-spool
-if systemctl is-active --quiet departureboard-web.service && ! nft list table inet departureboard_web &>/dev/null; then
-  echo "Warning: the web server's network guard didn't load, so nothing stops it connecting out." >&2
-  echo "It still turns away visitors outside your home network. Why: journalctl -u departureboard-web" >&2
-fi
+# Says if the network guard isn't holding the web server: that needs its
+# table in and the server's cgroup in its set, which systemd fills as the
+# server starts (NFTSet=, systemd 254 or later). A warning, never a stop:
+# the board and the dashboard work without it.
+say_if_unguarded() {
+  local listed version
+  systemctl is-active --quiet departureboard-web.service || return 0
+  listed="$(nft list set inet departureboard_web web 2>/dev/null)" || listed=""
+  if [[ "$listed" == *"elements = "* ]]; then
+    return 0
+  fi
+  echo "Warning: the web server's network guard isn't holding it. Only systemd's own firewall, which" >&2
+  echo "a Pi Zero or Pi 1 can't apply, stops it connecting out; the settings' Overview says whether" >&2
+  echo "anything does. It still turns away visitors outside your home network." >&2
+  version="$(systemctl --version | awk 'NR == 1 { print $2 }')" || version=""
+  if [[ "$version" =~ ^[0-9]+$ ]] && (( version < 254 )); then
+    echo "This systemd ($version) can't put the web server in the guard: that needs 254 or later, as in" >&2
+    echo "Raspberry Pi OS Trixie. The board and the dashboard work all the same." >&2
+  else
+    echo "Why: journalctl -u departureboard-guard -u departureboard-web" >&2
+  fi
+}
+say_if_unguarded
 
 # Bus times from the BODS timetable need it built and kept fresh. The first
 # build takes minutes, so it carries on in the background.

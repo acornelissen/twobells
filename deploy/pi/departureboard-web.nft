@@ -1,13 +1,18 @@
 # The web server's network guard: home network only, and nothing out to the
-# internet. departureboard-web.service loads it as it starts and removes it
-# as it stops (nft -f, as root). It is the second layer under the unit's
-# IPAddressAllow=, which systemd can't apply on some Pis (a Pi Zero's kernel
-# refuses it the memory it needs), and holds the same addresses.
+# internet. departureboard-guard.service loads it at boot, before the web
+# server starts, and removes it as it stops (nft -f, as root). It is the
+# second layer under the web unit's IPAddressAllow=, which systemd can't apply
+# on some Pis (a Pi Zero's kernel refuses it the memory it needs), and holds
+# the same addresses.
 #
-# The output rules match the service's own sockets by its cgroup, which nft
-# looks up as this loads: so the service's cgroup must be there already, and
-# a restart, which makes a new one, loads this again. The fetch service, the
-# same user in another cgroup, still reaches the internet.
+# The output rules match the web server's own sockets by its cgroup, through
+# the set web, which systemd fills: the web unit's NFTSet= puts its cgroup's
+# id in as the server starts and takes it out as it stops. Not by a cgroup
+# path here: nft turns a path into an id by the folder's inode number, which
+# on a 32-bit kernel isn't the kernel's id (that has more in its high bits),
+# so such a rule never matches there. Loading this again empties the set, so
+# the web server must restart after it. The fetch service, the same user in
+# another cgroup, still reaches the internet.
 
 # Made if it isn't there, so there is always one to delete: loading this
 # twice replaces the rules, in one go, rather than adding them again.
@@ -29,10 +34,16 @@ table inet departureboard_web {
 		elements = { ::1/128, fe80::/64, fc00::/7 }
 	}
 
+	# The web server's cgroup, put in and taken out by systemd (the web
+	# unit's NFTSet=). Empty until the web server starts.
+	set web {
+		type cgroupsv2
+	}
+
 	# Whatever the web server sends: to the home network, or refused at once.
 	chain output {
 		type filter hook output priority filter; policy accept;
-		socket cgroupv2 level 2 "system.slice/departureboard-web.service" jump web_out
+		socket cgroupv2 level 2 @web jump web_out
 	}
 
 	chain web_out {
