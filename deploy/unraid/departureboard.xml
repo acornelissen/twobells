@@ -10,6 +10,6 @@
   <TemplateURL/>
   <Icon/>
   <ExtraParams>--read-only --tmpfs /tmp:size=64m --cap-drop ALL --security-opt no-new-privileges:true --memory 512m --pids-limit 128 --log-opt max-size=1m --log-opt max-file=3</ExtraParams>
-  <Config Name="Web port" Target="8090" Default="8090" Mode="tcp" Description="The dashboard at / and the settings at /settings. Home network only." Type="Port" Display="always" Required="true" Mask="false">8090</Config>
+  <Config Name="Web port" Target="8090" Default="0.0.0.0:8090" Mode="tcp" Description="The dashboard at / and the settings at /settings. Home network only. Keep the 0.0.0.0: (IPv4 only), or IPv6 visitors look to the app as if they were on the home network." Type="Port" Display="always" Required="true" Mask="false">0.0.0.0:8090</Config>
   <Config Name="Data" Target="/data" Default="/mnt/user/appdata/departureboard" Mode="rw" Description="Saved settings, keys, the settings password, the bus timetable and history. Must be owned by uid 10001 (chown 10001:10001)." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/departureboard</Config>
 </Container>

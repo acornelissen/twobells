@@ -18,8 +18,10 @@ services:
     image: ghcr.io/acornelissen/inky-departures:X.Y.Z@sha256:DIGEST
     container_name: departureboard
     restart: unless-stopped
+    # IPv4 only: Docker hands IPv6 visitors on from its own network's gateway,
+    # which the app would take for the home network.
     ports:
-      - "8090:8090"
+      - "0.0.0.0:8090:8090"
     # env_file:
     #   - secrets.env
     volumes:

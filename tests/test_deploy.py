@@ -68,7 +68,7 @@ def test_compose_locks_the_container_down():
 def test_compose_runs_departureboard_on_the_dashboards_old_volume():
     lines = [line.split("#")[0].strip() for line in COMPOSE.splitlines()]
     for line in ("departureboard:", "image: departureboard:local", "container_name: departureboard",
-                 "- secrets.env", "- dashboard-data:/data", "dashboard-data:", "- \"8090:8090\""):
+                 "- secrets.env", "- dashboard-data:/data", "dashboard-data:", "- \"0.0.0.0:8090:8090\""):
         assert line in lines, line
     assert lines[lines.index("env_file:") + 1] == "- secrets.env"
     # The volume keeps its name, or a NAS would start on a new, empty one.
@@ -754,7 +754,7 @@ def test_the_published_image_compose_file_is_pinned_and_locked_down_as_the_built
     assert len(hardening) > 10
     for line in hardening:
         assert line in published, line
-    for line in ("    container_name: departureboard", "    restart: unless-stopped", '      - "8090:8090"',
+    for line in ("    container_name: departureboard", "    restart: unless-stopped", '      - "0.0.0.0:8090:8090"',
                  "      - dashboard-data:/data", "volumes:", "  dashboard-data:"):
         assert line in published, line
     # Pinned by version and digest: the placeholder fails until both are filled in.
@@ -812,10 +812,50 @@ def test_the_documented_docker_run_is_locked_down_as_compose():
     assert words[-1] == f"{IMAGE}:$VERSION@$DIGEST"
     rest = _docker_run_flags(words[5:-1])
     assert {key: rest.pop(key) for key in ("--restart", "-p", "-v")} == {
-        "--restart": "unless-stopped", "-p": "8090:8090", "-v": "dashboard-data:/data"}  # the compose file's volume
+        "--restart": "unless-stopped", "-p": "0.0.0.0:8090:8090", "-v": "dashboard-data:/data"}  # the compose file's volume
     assert rest == HARDENING_FLAGS
     assert f'--certificate-identity "{_identity("v$VERSION")}"' in DOCKER_DOCS
     assert f'cosign verify "{IMAGE}@$DIGEST"' in DOCKER_DOCS
+
+
+def _compose_ports(text: str) -> list[str]:
+    """The entries under the compose file's `ports:`."""
+    lines = _live(text)
+    ports = []
+    for line in lines[lines.index("    ports:") + 1:]:
+        if not line.startswith("      - "):
+            break
+        ports.append(line.removeprefix("      - ").strip('"'))
+    return ports
+
+
+def test_docker_publishes_its_port_on_ipv4_only():
+    import ipaddress
+    import xml.etree.ElementTree as ET
+
+    # docker-proxy hands an IPv6 visitor's connection on from the bridge's
+    # gateway, a private IPv4 address, so the app would take anyone reaching
+    # it over IPv6 for the home network. Published on an IPv4 address only,
+    # the app sees each visitor's own address.
+    root = ET.parse(ROOT / "deploy" / "unraid" / "departureboard.xml").getroot()
+    published = {
+        "docker-compose.yml": _compose_ports(COMPOSE),
+        "docker-compose.ghcr.yml": _compose_ports(GHCR_COMPOSE),
+        # Unraid passes a Port setting to docker run as -p VALUE:TARGET/MODE.
+        "departureboard.xml": [f"{value}:{config.get('Target')}" for config in root.findall("Config")
+                               if config.get("Type") == "Port" for value in (config.text, config.get("Default"))],
+        "docker.md": re.findall(r"(?:-p |\"|`)([^\s\"`]*:\d+:\d+)", DOCKER_DOCS),
+    }
+    for where, ports in published.items():
+        assert ports, where
+        for port in ports:
+            assert port.count(":") == 2, (where, port)  # an address, then the ports
+            host, outside, inside = port.split(":")
+            assert isinstance(ipaddress.ip_address(host), ipaddress.IPv4Address), (where, port)
+            assert (outside, inside) == ("8090", "8090"), (where, port)
+    assert "-p 0.0.0.0:8090:8090" in DOCKER_DOCS  # the docker run command
+    for text in (COMPOSE, GHCR_COMPOSE, DOCKER_DOCS):
+        assert "IPv6" in text  # and why
 
 
 # The desktop: started at login, on this computer only.

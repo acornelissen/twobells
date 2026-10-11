@@ -35,7 +35,7 @@ cosign verify "ghcr.io/acornelissen/inky-departures@$DIGEST" \
 
 ### What the container needs
 
-- **Port 8090**, for the dashboard at `/` and the settings at `/settings`.
+- **Port 8090**, for the dashboard at `/` and the settings at `/settings`, published on IPv4 only (`0.0.0.0:8090:8090`; see [Keep it on the home network](#keep-it-on-the-home-network)).
 - **A data folder at `/data`** that its user, uid 10001, can write to. A new named volume takes that owner from the image by itself. A folder on the NAS doesn't: give it to 10001 first (each platform below says how).
 - **Nothing else.** It runs as uid 10001 with a read-only system, no Linux capabilities, no new privileges, 512 MB of memory and 128 processes at most, and a 64 MB `/tmp` in memory. Keep those settings wherever the platform allows them.
 - **Keys:** paste them in the settings, which keep them in `/data`, readable by the app only. No environment variables are needed.
@@ -60,7 +60,8 @@ allowed_hosts = ["nas.example.com"]
 - Never forward port 8090 on your router. Don't put it behind the NAS's reverse proxy or remote-access service either. The dashboard has no password, by design, and the settings sign-in is not meant to face the internet.
 - If the NAS or computer has a firewall, allow port 8090 only from your home network's addresses.
 - The app turns away addresses outside the home network itself, but in Docker it may see every request as coming from Docker's own private network. The firewall is what keeps the rest out.
-- On Linux, ports Docker publishes skip `ufw`'s rules ([Docker's documentation](https://docs.docker.com/engine/network/packet-filtering-firewalls/) explains why). To limit it to one network, publish the port on the computer's home-network address only: `-p 192.168.1.20:8090:8090`, or `"192.168.1.20:8090:8090"` under `ports:`.
+- The files and commands here publish the port on IPv4 only: `0.0.0.0:8090:8090`, not `8090:8090`. Docker passes on a visitor's IPv6 connection from its own network's gateway, a private address, so the app would take anyone reaching it over IPv6 for the home network. Keep the `0.0.0.0:` if you change the port.
+- On Linux, ports Docker publishes skip `ufw`'s rules ([Docker's documentation](https://docs.docker.com/engine/network/packet-filtering-firewalls/) explains why). To limit it to one network, publish the port on the computer's home-network IPv4 address only: `-p 192.168.1.20:8090:8090`, or `"192.168.1.20:8090:8090"` under `ports:`.
 
 ### First start
 
@@ -143,7 +144,7 @@ With the version and digest checked as above:
 
 ```bash
 docker run -d --name departureboard --restart unless-stopped \
-  -p 8090:8090 -v dashboard-data:/data \
+  -p 0.0.0.0:8090:8090 -v dashboard-data:/data \
   --read-only --tmpfs /tmp:size=64m --cap-drop ALL \
   --security-opt no-new-privileges:true --memory 512m --pids-limit 128 \
   --log-opt max-size=1m --log-opt max-file=3 \
