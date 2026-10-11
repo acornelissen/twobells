@@ -4,7 +4,7 @@
 // when opened; its markers and popups are DOM nodes, never strings (Leaflet
 // would parse a string as HTML), and a list beside it says the same in words.
 
-import { $, h, fill, setText, str, num, list, obj, openDialog, setUpDialog } from "./dom.js";
+import { $, h, fill, setText, str, num, list, obj, openDialog, setUpDialog, focusKey, refocus } from "./dom.js";
 import { getJSON } from "./api.js";
 import { age, now, parseAt } from "./time.js";
 import { busPin, loadLeaflet, roadLine, TILES } from "./map.js";
@@ -186,7 +186,23 @@ function fitAll() {
   else if (points.length) map.setView(points[0], 15, { animate: false });
 }
 
+// Each bus's key, the same from one answer to the next while it is listed:
+// /api/area has no ids, so its line, destination and place among the buses
+// with both (they are sorted by line and destination).
+function busKeys(found) {
+  const seen = new Map();
+  return found.map((vehicle) => {
+    const name = `${str(vehicle.line)}:${str(vehicle.destination)}`;
+    const n = (seen.get(name) || 0) + 1;
+    seen.set(name, n);
+    return `area-bus:${name}:${n}`;
+  });
+}
+
 function drawMap() {
+  // The bus whose popup is open keeps it open on its new marker.
+  const keys = busKeys(vehicles(area));
+  const opened = [...markers].find(([, marker]) => marker.isPopupOpen())?.[1].busKey;
   layers.clearLayers();
   markers = new Map();
   for (const route of list(area.routes).filter(obj)) {
@@ -206,7 +222,9 @@ function drawMap() {
       .bindPopup(h("span", {}, h("strong", {}, `${str(vehicle.line)} to ${str(vehicle.destination)}`),
         str(vehicle.next_stop) ? `. Next stop ${str(vehicle.next_stop)}` : "", `. ${reported(vehicle)}.`))
       .addTo(layers);
+    marker.busKey = keys[i];
     markers.set(i, marker);
+    if (keys[i] === opened) marker.openPopup();
   });
 }
 
@@ -218,13 +236,18 @@ function showBus(i) {
   marker.openPopup();
 }
 
+// Drawn again with each snapshot while the map is open: a focused button
+// keeps the focus, found again by its bus's key.
 function drawList() {
   const found = vehicles(area);
+  const keys = busKeys(found);
+  const key = focusKey();
   setText($("area-dialog-summary"), summary(area));
   fill($("area-vehicles"), found.map((vehicle, i) => h("li", {},
     h("span", {}, describe(vehicle)), " ",
-    L ? h("button", { type: "button", class: "link", on: { click: () => showBus(i) } },
+    L ? h("button", { type: "button", class: "link", dataset: { focusKey: keys[i] }, on: { click: () => showBus(i) } },
       "Show on map", h("span", { class: "vh" }, `: ${str(vehicle.line)} to ${str(vehicle.destination)}`)) : null)));
+  refocus(key);
   fill($("area-stops"), list(area?.stops).filter(obj).map((stop) =>
     h("li", {}, h("strong", {}, str(stop.name) || `Stop ${str(stop.label)}`))));
 }

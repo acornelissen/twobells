@@ -982,6 +982,74 @@ def test_a_disruption_link_keeps_the_focus_across_snapshots():
 
 
 @needs_node
+def test_the_area_map_keeps_the_focus_and_the_open_popup_across_snapshots():
+    # WCAG 2.4.3: each snapshot redraws the open area map's list and markers;
+    # the focused "Show on map" button and the bus's open popup must survive it.
+    area = json.dumps(_fixture("dashboard_area.json"))
+    found = run_js("""
+        import { register } from "node:module";
+        // Leaflet itself needs a real browser: a stand-in that keeps what the page asks of it.
+        register("data:text/javascript," + encodeURIComponent(`
+          export async function resolve(spec, context, next) {
+            if (!spec.includes("leaflet-src.esm.js")) return next(spec, context);
+            const names = ["map", "tileLayer", "layerGroup", "polyline", "circleMarker", "marker", "divIcon"];
+            const body = names.map((n) => "export const " + n + " = (...a) => globalThis.FAKE_L." + n + "(...a);").join("");
+            return { url: "data:text/javascript," + encodeURIComponent(body), shortCircuit: true };
+          }`));
+        const { h } = await import("./dom.js");
+        const markers = [];
+        const chain = (extra = {}) => { const o = { addTo: () => o, bindTooltip: () => o, ...extra }; return o; };
+        globalThis.FAKE_L = {
+          map: () => ({ invalidateSize() {}, fitBounds() {}, setView() {}, getZoom: () => 14 }),
+          tileLayer: () => chain(), layerGroup: () => chain({ clearLayers() {} }), polyline: () => chain(),
+          circleMarker: () => chain(), divIcon: () => ({}),
+          marker: (at) => {
+            const m = chain({ open: false, bindPopup: () => m, getLatLng: () => at,
+                              openPopup() { m.open = true; return m; }, isPopupOpen: () => m.open });
+            markers.push(m);
+            return m;
+          },
+        };
+        globalThis.CSS = { escape: (text) => text };
+        globalThis.matchMedia = () => ({ matches: true });
+        globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => (AREA),
+          headers: { get: (name) => (name === "Content-Type" ? "application/json" : null) } });
+        document.head = document.createElement("head");
+        document.head.append = (link) => { for (const [type, fn] of link.listeners) if (type === "load") fn(); };
+        const dialog = h("dialog", { id: "area-dialog" },
+          h("h2", { "data-dialog-title": "" }), h("button", { "data-close": "" }), h("p", { id: "area-status" }),
+          h("div", { id: "area-map" }), h("p", { id: "area-dialog-summary" }), h("ul", { id: "area-vehicles" }),
+          h("ul", { id: "area-stops" }));
+        dialog.showModal = () => { dialog.open = true; };
+        document.body.append(dialog, h("p", { id: "osm-credit" }), h("button", { id: "area-zoom-in" }),
+          h("button", { id: "area-zoom-out" }), h("button", { id: "area-fit" }),
+          h("section", { id: "area" }, h("div", { id: "line-part" }), h("p", { id: "line-summary" }),
+            h("ul", { id: "line-diagram" }), h("ul", { id: "timetable-changes" }),
+            h("div", { id: "area-buses" }, h("p", { id: "area-summary" }),
+              h("button", { id: "area-open", "data-focus-key": "area-open" }))));
+        const { setUpArea, renderArea } = await import("./area.js");
+        setUpArea();
+        const opener = document.getElementById("area-open");
+        opener.listeners.find(([type]) => type === "click")[1]({ currentTarget: opener });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        const buttons = () => document.getElementById("area-vehicles").querySelectorAll("button");
+        const second = buttons()[1];
+        second.focus();
+        second.listeners.find(([type]) => type === "click")[1]({});
+        const before = markers.length;
+        await renderArea({ generated_at: "2026-10-09T10:15:00+01:00", buses: { rows: [] } });
+        const fresh = buttons()[1];
+        console.log(JSON.stringify({
+          count: buttons().length, redrawn: fresh !== second, focused: document.activeElement === fresh,
+          popups: markers.slice(before).map((m) => m.open),
+        }));
+    """.replace("(AREA)", f"({area})"))
+    assert found["count"] > 1 and found["redrawn"] is True
+    assert found["focused"] is True
+    assert found["popups"] == [i == 1 for i in range(found["count"])]
+
+
+@needs_node
 def test_a_row_link_opens_the_summary_at_its_item():
     found = run_js(_boards() + DISRUPTION_PAGE.replace('import { h } from "./dom.js";\n', "") + """
         renderDisruptions(snapshot);
