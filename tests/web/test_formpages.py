@@ -311,6 +311,15 @@ def test_a_reset_page_error_marks_its_field(host):
     assert page.count('aria-invalid="true"') == 1
 
 
+@pytest.mark.parametrize(("invalid", "box"), [("code", "code"), ("password", "new-password"), ("again", "again")])
+def test_a_reset_page_error_puts_the_cursor_in_its_field(host, invalid, box):
+    # An alert already on the page as it loads isn't always said: the field it
+    # is about takes the focus, and with it its description, the error.
+    page = host.pages.reset_page(422, headers(), "Wrong", invalid).body.decode()
+    assert re.search(rf'<input id="{box}" [^>]*autofocus[^>]*aria-describedby="[^"]*reset-error"', page)
+    assert page.count("autofocus") == 1
+
+
 def test_a_right_password_starts_a_session_and_goes_home(host):
     reply = host.pages.sign_in({"password": PASSWORD}, headers(), CLIENT)
     assert reply.status == 303 and reply.headers["Location"] == "/area"

@@ -359,6 +359,11 @@ class FormPages:
             attributes = f' aria-describedby="{described}"' if described else ""
             return attributes + (' aria-invalid="true"' if wrong else "")
 
+        def focus(name: str) -> str:
+            """The cursor goes to the field the error is about: an alert already
+            on the page as it loads isn't always said, but a field's description is."""
+            return " autofocus" if message and invalid == name else ""
+
         ask = wording.ask_again if asked else wording.ask
         parts.append(
             f'<form method="post" action="{self._prefix}/forgot" class="forgot">'
@@ -372,10 +377,10 @@ class FormPages:
             '<label for="new-password">New password</label>'
             f'<p class="hint" id="new-password-hint">At least {MIN_PASSWORD} characters.</p>'
             '<input id="new-password" name="password" type="password" autocomplete="new-password" '
-            f'minlength="{MIN_PASSWORD}" required{flagged("password", "new-password-hint")}>'
+            f'minlength="{MIN_PASSWORD}" required{focus("password")}{flagged("password", "new-password-hint")}>'
             '<label for="again">New password again</label>'
             '<input id="again" name="again" type="password" autocomplete="new-password" '
-            f'required{flagged("again")}>'
+            f'required{focus("again")}{flagged("again")}>'
             f'<button type="submit" class="primary">{"Set password" if claim else "Set new password"} and sign in'
             "</button></form>"
             f'<p class="hint after">{wording.no_code}</p>'
