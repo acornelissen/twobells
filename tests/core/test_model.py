@@ -118,3 +118,34 @@ def test_a_bus_without_a_live_time_still_goes_at_its_booked_time():
 def test_a_departure_needs_clock_times(field, value):
     with pytest.raises(ValueError):
         dataclasses.replace(make(expected="07:19", status=Status.LATE), **{field: value})
+
+
+def test_a_strip_says_where_and_draws_a_short_line_with_your_stop_on_it():
+    from departureboard.core.model import Strip
+
+    strip = Strip("At Dinting", stops=7, yours=5, at=3.4)
+    assert (strip.where, strip.stops, strip.yours, strip.at) == ("At Dinting", 7, 5, 3.4)
+    assert Strip("Not started yet", stops=2, yours=1).at is None
+
+
+@pytest.mark.parametrize("fields", [
+    {"where": "x" * 61, "stops": 3, "yours": 1}, {"where": 3, "stops": 3, "yours": 1},
+    {"where": "a", "stops": 1, "yours": 0}, {"where": "a", "stops": 9, "yours": 0},
+    {"where": "a", "stops": True, "yours": 0}, {"where": "a", "stops": 3, "yours": 3},
+    {"where": "a", "stops": 3, "yours": -1}, {"where": "a", "stops": 3, "yours": 1, "at": 2.5},
+    {"where": "a", "stops": 3, "yours": 1, "at": -0.1}, {"where": "a", "stops": 3, "yours": 1, "at": float("nan")},
+])
+def test_a_strip_that_cant_be_drawn_is_refused(fields):
+    from departureboard.core.model import Strip
+
+    with pytest.raises(ValueError):
+        Strip(**fields)
+
+
+def test_a_strip_belongs_to_the_same_departure_whatever_its_live_time():
+    from departureboard.core.model import strip_key
+
+    on_time = Departure("bus", "341", "Hyde", "07:20", None, Status.ON_TIME, stop="A")
+    late = Departure("bus", "341", "Hyde", "07:20", "07:24", Status.LATE, stop="A")
+    other = Departure("bus", "341", "Hyde", "07:20", None, Status.ON_TIME, stop="B")
+    assert strip_key(on_time) == strip_key(late) != strip_key(other)

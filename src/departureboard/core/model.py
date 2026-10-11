@@ -114,6 +114,43 @@ class Departure:
         return leaves < now.replace(second=0, microsecond=0)
 
 
+
+# The most stops a row's strip draws: the dashboard's five before yours, yours
+# and the next, with room to spare.
+STRIP_MOST_STOPS = 8
+WHERE_MOST_CHARS = 60
+
+
+@dataclass(frozen=True)
+class Strip:
+    """Where a departure's train or bus is, for a screen's row: the words, and
+    a little line of `stops` stops with yours at `yours` and the vehicle `at`
+    its place in stop units along them (None draws no vehicle). Kept beside the
+    departures, not in them: it changes every few seconds, and the departures
+    are saved only when new ones come."""
+
+    where: str  # "At Dinting", "3 stops away"
+    stops: int
+    yours: int
+    at: float | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.where, str) or len(self.where) > WHERE_MOST_CHARS:
+            raise ValueError("where is not short text")
+        if isinstance(self.stops, bool) or not isinstance(self.stops, int) or not 2 <= self.stops <= STRIP_MOST_STOPS:
+            raise ValueError(f"stops must be 2 to {STRIP_MOST_STOPS}, not {self.stops!r}")
+        if isinstance(self.yours, bool) or not isinstance(self.yours, int) or not 0 <= self.yours < self.stops:
+            raise ValueError(f"yours must be a stop on the strip, not {self.yours!r}")
+        if self.at is not None and (isinstance(self.at, bool) or not isinstance(self.at, (int, float))
+                                    or not 0 <= self.at <= self.stops - 1):
+            raise ValueError(f"at must be on the strip, not {self.at!r}")
+
+
+def strip_key(dep: Departure) -> tuple[str, str, str, str]:
+    """Which departure a Strip is for: the same train or bus from one fetch to
+    the next, whatever its live time says."""
+    return dep.mode, dep.service, dep.stop or "", dep.scheduled
+
 @overload
 def iso(moment: datetime) -> str: ...
 @overload
