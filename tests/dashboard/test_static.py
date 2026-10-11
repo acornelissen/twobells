@@ -2455,6 +2455,25 @@ def test_the_hero_has_its_own_remind_me_and_the_rain():
     assert found["dry"] is True
 
 
+@needs_node
+def test_a_focused_remind_me_hidden_hands_the_focus_to_the_hero_s_heading():
+    # WCAG 2.4.3: with nothing left to leave for, Remind me hides; if it had the
+    # focus, the focus goes to the hero's heading rather than to nowhere.
+    found = run_js(HERO + """
+        setUpHero(() => {});
+        draw(rows(bus(1, "07:20", "07:15")));
+        $("leave-remind").focus();
+        draw(rows());
+        const gone = [$("leave-remind").hidden, document.activeElement.id];
+        // Not focused: hiding it leaves the focus alone.
+        draw(rows(bus(2, "07:30", "07:25")));
+        $("leave-time").focus();
+        draw(rows());
+        console.log(JSON.stringify({ gone, elsewhere: document.activeElement.id }));
+    """)
+    assert found == {"gone": [True, "leave-heading"], "elsewhere": "leave-time"}
+
+
 # --- Reminders while a dialog is open ---
 
 

@@ -121,6 +121,8 @@ function drawRemind() {
   const note = $("notify-note");
   // A wall tablet has no controls: no Remind me.
   const id = shown && validId(shown.row.id) && !isKiosk() ? shown.row.id : "";
+  // Hidden while focused, the focus would fall to nowhere: the hero's heading takes it.
+  if (!id && !button.hidden && document.activeElement === button) $("leave-heading").focus({ preventScroll: true });
   button.hidden = !id;
   const on = !!id && isOn(id);
   button.setAttribute("aria-pressed", String(on));

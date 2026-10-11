@@ -147,6 +147,7 @@ class FakeElement extends FakeNode {
         set(on ? [...new Set([...names(), name])] : names().filter((n) => n !== name));
         return on;
       },
+      remove: (...gone) => set(names().filter((n) => !gone.includes(n))),
     };
   }
   querySelectorAll(selector) { return elements(this).slice(1).filter((el) => matches(el, selector)); }
