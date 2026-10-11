@@ -197,11 +197,14 @@ def test_a_failing_job_backs_off_up_to_five_minutes_then_recovers():
     assert poller.step() == 30 and poller.failures == 0
 
 
-def test_a_slow_job_backs_off_no_further_than_five_minutes():
+def test_a_failing_job_never_runs_more_often_than_its_interval():
     def job():
         raise RuntimeError("down")
 
-    assert Poller("weather", job, 1800, random=lambda: 0.5).step() == 300
+    weather = Poller("weather", job, 1800, random=lambda: 0.5)
+    assert [weather.step() for _ in range(3)] == [1800, 1800, 1800]
+    assert Poller("upkeep", job, 3600, random=lambda: 0.5).step() == 3600
+    assert Poller("x", job, 200, random=lambda: 0.5).step() == 300  # backs off up to five minutes
 
 
 def test_a_quiet_poller_does_not_run_its_job():

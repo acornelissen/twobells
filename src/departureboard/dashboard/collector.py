@@ -3,7 +3,9 @@
 One thread per job (trains, buses, weather, upkeep, and a heartbeat that
 keeps the snapshot's clock fresh and says whether a quiet window is on). A job that fails keeps the last good data
 on show, marked stale with a short error that never carries a key, and tries
-again later and later (up to five minutes apart) until it works.
+again later and later (up to five minutes apart, or its own interval if that
+is longer: a failing job never runs more often than a working one) until it
+works.
 
 In the quiet windows (01:00-05:00 by default) nothing is fetched unless a
 browser has used the dashboard in the last ten minutes.
@@ -63,7 +65,7 @@ from .snapshot import (
 
 log = logging.getLogger(__name__)
 
-MAX_BACKOFF = 300.0  # seconds between tries of a failing job, at most
+MAX_BACKOFF = 300.0  # seconds between tries of a failing job, at most, unless its interval is longer
 QUIET_CHECK = 5.0  # seconds between looks at the clock in a quiet window
 CLIENT_GRACE = 600.0  # a browser seen this recently keeps the quiet windows busy
 UPKEEP_SECONDS = 3600.0
@@ -112,7 +114,7 @@ class Poller:
         except Exception as error:  # noqa: BLE001 - logged and retried; the job keeps its last data
             self.failures += 1
             log.warning("dashboard %s failed (%d in a row): %s", self.name, self.failures, safe_message(error))
-            delay = min(self._interval * 2**self.failures, self._max_backoff)
+            delay = max(self._interval, min(self._interval * 2**self.failures, self._max_backoff))
         else:
             self.failures = 0
             delay = self._interval
