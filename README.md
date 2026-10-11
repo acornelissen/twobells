@@ -1,13 +1,80 @@
 # inky-departures
 
-A train and bus departure app for your station and stops in Great Britain. One install is one app with two views of the same departures:
+**Know when to leave.** Live trains and buses for your station and stops in Great Britain, with the walk already worked out: a departure board by the door and a dashboard on your phone, from one small app you run at home.
+
+[![CI](https://github.com/acornelissen/inky-departures/actions/workflows/ci.yml/badge.svg)](https://github.com/acornelissen/inky-departures/actions/workflows/ci.yml)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/dashboard-dark.png">
+  <img alt="The dashboard on a Glossop morning: Leave now for the 07:09 341 bus, then the 07:12 train, with the weather, a disruption at your stop, and the train and bus departures" src="docs/images/dashboard-light.png">
+</picture>
+
+One install is one app with two views of the same departures:
 
 - **The board:** a Raspberry Pi with a four-colour Inky pHAT (250x122), a Waveshare 10.85" e-Paper (G) (1360x480), a Waveshare 7.9" HDMI screen (1280x400, on its side), or an 11.3" HDMI bar screen (1920x440).
 - **The dashboard:** a web page for a phone or computer at home, with the next 10 trains and buses, calling points, bus strips and maps, the weather, disruptions and punctuality history.
 
 A Pi can run either view or both; Docker and a desktop run the dashboard. Each install has one settings site, at `/settings` on port 8090, with one password and a setup wizard that finds your station, stops, walk times and bus companies from your postcode. The examples use Glossop, with trains to Manchester and buses from two nearby stops (`examples/glossop.toml`).
 
-![Board preview](docs/images/preview.png)
+## Why it's worth a place by your door
+
+- **It tells you when to leave, not just when it goes.** Every train and bus comes with your walk to its stop, so the page says *Leave now*, *Leave in 4 min* or *Go now*, and can remind you a minute before.
+- **Live trains, properly.** National Rail Darwin gives the platform, coaches, delays and their reasons, every calling point, and where the train is right now.
+- **Live buses, for free, all day.** Worked out the way [bustimes.org](https://bustimes.org) does it, from the BODS timetable plus live bus positions. A strip under each bus shows how many stops away it is.
+- **The things that change your plan.** Disruptions on your journeys, rain on its way, a new timetable starting soon, and which trains are *often late*.
+- **Yours, at home.** It runs on a Pi, a NAS or a laptop on your own network, with free API keys and no cloud account. The Pi's web server never connects to the internet, and releases are signed.
+- **Easy to read for everyone.** It meets WCAG 2.2 AA, works with a keyboard and a screen reader, and always says what it means in words. Colour only backs the words up.
+
+## The dashboard
+
+The next trains and buses side by side, each with its walk, its countdown and where it is now:
+
+![The train and bus boards: the 07:12 waiting at Hadfield and often late, the 07:42 cancelled, and buses with strips showing them two and four stops away](docs/images/dashboard-boards.png)
+
+Open a train for its whole journey, or the area map for every bus on your lines:
+
+<p>
+  <img width="40%" alt="The 07:12 to Manchester Piccadilly: expected 07:19 after a broken down train, leave by 07:09, arriving 07:55, and its journey with the train at Hadfield" src="docs/images/dashboard-train.png">
+  <img width="59%" alt="The area map of Glossop with three live buses on their routes past Henry Street and St Marys Road, and the same buses listed in words" src="docs/images/dashboard-map.png">
+</p>
+
+Where there is room, the line runs across the page with each train placed on it:
+
+![The line from Manchester Piccadilly to Hadfield with Glossop marked as this station and the 07:12 waiting at Hadfield](docs/images/dashboard-line.png)
+
+Light, dark, or the amber Board look, at any size from a phone to a wall tablet (`/?kiosk`):
+
+![The dashboard on a phone in the light look, the dark look and the amber Board look](docs/images/dashboard-looks.png)
+
+## The board
+
+An e-paper board needs no attention: it redraws only when what it shows changes. It comes in two looks: `sign`, an amber dot-matrix station board whose font was drawn for this project one pixel per LED, and `plain`, black on white with a red accent.
+
+![The station board look on the Inky pHAT, scaled up: the next three trains with the 08:12 cancelled, and three buses with when to leave for each](docs/images/phat-sign.png)
+
+On the 10.85" e-paper there is room for platforms:
+
+![The station board look on the 10.85 inch e-paper](docs/images/epaper-10in85.png)
+
+An HDMI screen redraws every second, with a running clock and countdowns, and a page showing where your next bus is:
+
+![The bus position page: the 341 to Hyde three stops from Henry Street, leave in 3 min](docs/images/screen-bus.png)
+
+## Set up in a few minutes
+
+No config files to write. Give the setup wizard your postcode or address: it finds your nearest stations and bus stops, works out the walk to each along real streets, finds your bus companies and builds their timetable.
+
+<p>
+  <img width="49%" alt="Setup step 2: the five nearest stations with their distances, Glossop chosen, and trains filtered to those calling at Manchester (MAN)" src="docs/images/setup-station.png">
+  <img width="49%" alt="Setup step 4: walk times to Glossop station and two bus stops, each worked out along streets and paths" src="docs/images/setup-walk.png">
+</p>
+
+Everything else is on the settings site, in plain words, behind one password:
+
+<img width="49%" alt="The settings site's Dashboard page: position strips on or off, and quiet hours by day" src="docs/images/settings-dashboard.png">
+
+## What it covers
 
 New here? The [user guide](docs/user-guide.md) explains what everything on the board and the dashboard means, how to install it, how to use the settings, and how to look after it. [Getting your keys](docs/keys.md) covers the free keys it needs.
 
