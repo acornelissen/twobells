@@ -14,6 +14,7 @@ import pytest
 from departureboard.web.auth import (
     MAX_FAILURES,
     RESET_MAX_TRIES,
+    TOTAL_FAILURES,
     FormTokens,
     Lockout,
     PasswordStore,
@@ -330,6 +331,25 @@ def test_repeated_wrong_passwords_lock_the_address_out(host):
     reply = host.pages.sign_in({"password": PASSWORD}, headers(), CLIENT)
     assert reply.status == 429 and "Too many attempts" in reply.body.decode()
     assert host.pages.sign_in({"password": PASSWORD}, headers(), "192.168.1.21").status == 303
+
+
+def test_wrong_passwords_from_many_addresses_slow_sign_in_for_everyone(host):
+    for i in range(TOTAL_FAILURES):  # a guesser changing its address
+        assert host.pages.sign_in({"password": "nope nope nope"}, headers(), f"192.168.1.{100 + i}").status == 401
+    reply = host.pages.sign_in({"password": PASSWORD}, headers(), CLIENT)
+    assert reply.status == 429
+    assert ('<p class="error" role="alert" id="login-error">Lots of wrong passwords have been tried lately, '
+            "so signing in is slowed for everyone. Try again in a minute.</p>") in reply.body.decode()
+    host.clock.now += 1
+    assert host.pages.sign_in({"password": PASSWORD}, headers(), CLIENT).status == 303
+
+
+def test_a_reset_code_signs_in_while_sign_in_is_slowed(host):
+    for i in range(TOTAL_FAILURES):
+        host.pages.sign_in({"password": "nope nope nope"}, headers(), f"192.168.1.{100 + i}")
+    assert host.pages.sign_in({"password": PASSWORD}, headers(), CLIENT).status == 429
+    host.codes.issue(host.clock(), limit=False)  # as `serve --reset-code` does
+    assert host.reset(host.shown[-1]).status == 303
 
 
 def test_a_sign_in_from_the_wizard_goes_back_to_it_only_where_offered(tmp_path):

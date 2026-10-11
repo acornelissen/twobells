@@ -470,7 +470,7 @@ The settings have one password per install, at least 10 characters. Claiming the
 
 To claim the settings, open them and press **Show a code on the board** (or **Put a code in the log**), then type the code with a new password. A forgotten password works the same way, from **Forgot password?** on the sign-in page; setting a new one signs every browser out.
 
-A code lasts 10 minutes and works once. Asking again while it lasts shows the same code (in the log, a line says the last one still stands) and uses up none of the limits. Five wrong tries from one device shut that device out of the code, so no one else can spoil yours; asking again from that device says so, and the time the code runs out, after which it can ask for a new one. Ten in all, from any devices, void it. A new code can be made once the last is used or runs out, at most once a minute and 10 times a day.
+A code lasts 10 minutes and works once. Asking again while it lasts shows the same code (in the log, a line says the last one still stands) and uses up none of the limits. Five wrong tries from one device shut that device out of the code, so no one else can spoil yours (over IPv6, the devices on one network count as one, as a device can change its IPv6 address at will); asking again from that device says so, and the time the code runs out, after which it can ask for a new one. Ten in all, from any devices, void it. A new code can be made once the last is used or runs out, at most once a minute and 10 times a day.
 
 Or set the password from the command line, even while the server runs. It asks for the new password twice and doesn't show it as you type; every browser signed in is signed out. `--reset-code` prints a new code straight to you instead (no limits, and it replaces any code already out), to type on the sign-in page under **Forgot password?**, or on the claim page the first time.
 
@@ -494,7 +494,8 @@ Or set the password from the command line, even while the server runs. It asks f
 
 If you can't sign in:
 
-- **"That password isn't right":** after 5 wrong tries, that device is locked out for 15 minutes and sees "Too many attempts. Try again in 15 minutes."
+- **"That password isn't right":** after 5 wrong tries, that device is locked out for 15 minutes and sees "Too many attempts. Try again in 15 minutes." Over IPv6 the devices on one network count as one, as a device can change its IPv6 address at will, so a wrong guess on another device can lock yours out too; a device using IPv4 counts on its own.
+- **"Lots of wrong passwords have been tried lately":** after 20 wrong tries in 15 minutes from all devices together, signing in slows for everyone: each try waits a little after the last, at most a minute. Try again in a minute. If someone keeps guessing, sign in with a reset code instead (it isn't slowed), from the page's **Forgot password?** or the command line above.
 - **"Busy, try again in a moment":** a few sign-ins were being checked at once; try again.
 - **"Set a password first":** no password has been set yet; claim the settings as above.
 - **"Forbidden":** the settings only answer devices on the home network, using a local name or address. They won't work over mobile data or a VPN to elsewhere.
@@ -550,7 +551,7 @@ All of them run as the `departureboard` user, with the store in `/var/lib/depart
 - Requests must name a local host, which stops DNS-rebinding pages.
 - A signed-in session, a form token and a same-origin check are needed to change anything.
 - The wizard under `/settings/setup/` is the only part that needs JavaScript. It serves a fixed list of files with set content types, and its JSON API needs the session, its form token in an `X-CSRF-Token` header, a same-origin request and a body under 16 kB. Its pages, and a signed-in visitor's settings pages, are the only ones whose Content-Security-Policy allows a script (`script-src 'self'`): on the settings pages that is `/settings/settings.js` alone, which marks unsaved changes and connects to nothing. The sign-in, reset and first-claim pages allow none.
-- Five wrong passwords lock an address out for 15 minutes. Being on the network is not enough to set a password: that needs a [one-time code](#6-password-and-reset-codes).
+- Five wrong passwords lock an address out for 15 minutes (an IPv6 address by its /64, as a device can take any address in it). Twenty from all addresses together slow every sign-in after them, down to one try a minute, so changing address gains a guesser nothing. Being on the network is not enough to set a password: that needs a [one-time code](#6-password-and-reset-codes).
 
 ### Updating
 

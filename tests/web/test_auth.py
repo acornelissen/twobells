@@ -13,6 +13,7 @@ from departureboard.web.auth import (
     MAX_CHECKS,
     MAX_FAILURES,
     MAX_SESSIONS,
+    MAX_SLOW_S,
     MIN_PASSWORD,
     RESET_CODE_SECONDS,
     RESET_ISSUE_GAP_S,
@@ -21,6 +22,7 @@ from departureboard.web.auth import (
     RESET_MAX_TRIES_ALL,
     SCRYPT,
     SESSION_SECONDS,
+    TOTAL_FAILURES,
     FormTokens,
     Lockout,
     PasswordCheck,
@@ -32,6 +34,7 @@ from departureboard.web.auth import (
     Session,
     Sessions,
     SignInResult,
+    client_key,
     csrf_matches,
     local_host,
     outsider,
@@ -251,6 +254,122 @@ def test_simultaneous_attempts_are_counted_exactly():
     assert allowed.count(True) == MAX_FAILURES
 
 
+
+def test_a_client_is_its_ipv4_address_or_its_ipv6_network():
+    assert client_key("192.168.1.20") == "192.168.1.20"
+    assert client_key("::ffff:192.168.1.20") == "192.168.1.20"  # IPv4 by way of an IPv6 socket
+    # One host can take any address in its /64 at will, so the /64 is the client.
+    assert client_key("fd12:3456:789a:1:aaaa:bbbb:cccc:dddd") == "fd12:3456:789a:1::/64"
+    assert client_key("fd12:3456:789a:1::2") == "fd12:3456:789a:1::/64"
+    assert client_key("fd12:3456:789a:2::2") == "fd12:3456:789a:2::/64"
+    assert client_key("fe80::1%eth0") == "fe80::/64"
+    assert client_key("::1") == "::/64"
+    assert client_key("") == ""  # no address, as from the command line
+
+
+def test_ipv6_addresses_in_one_network_share_a_count():
+    lockout = Lockout(Clock())
+    for i in range(MAX_FAILURES):  # a new address for every guess
+        assert lockout.attempt(f"fd12:3456:789a:1::{i + 1:x}")
+    assert not lockout.attempt("fd12:3456:789a:1:ffff:ffff:ffff:ffff")
+    assert lockout.attempt("fd12:3456:789a:2::1")  # another network is another client
+
+
+def test_an_ipv4_address_counts_the_same_mapped_or_not():
+    lockout = Lockout(Clock())
+    for _ in range(MAX_FAILURES):
+        assert lockout.attempt("::ffff:10.0.0.5")
+    assert not lockout.attempt("10.0.0.5")
+    lockout.succeeded("10.0.0.5")
+    assert lockout.attempt("::ffff:10.0.0.5")
+
+
+def test_failures_past_the_total_slow_everyone_with_a_growing_wait():
+    clock = Clock()
+    lockout = Lockout(clock)
+    assert MAX_FAILURES < TOTAL_FAILURES
+    assert MAX_SLOW_S <= 60  # the sign-in page says to try again in a minute
+    for i in range(TOTAL_FAILURES):  # one guess from each of many addresses
+        assert lockout.admit(f"10.0.1.{i}") is None
+    # A fresh address may not try at once: everyone waits a second after the
+    # last try, then 2, 4... with each failure past the total.
+    assert lockout.admit("10.0.2.1") is SignInResult.SLOWED
+    wait = 1
+    while wait < MAX_SLOW_S:
+        clock.now += wait - 0.5
+        assert lockout.admit(f"10.0.2.{wait}") is SignInResult.SLOWED, wait
+        clock.now += 0.5
+        assert lockout.admit(f"10.0.2.{wait}") is None, wait
+        wait *= 2
+    # The wait stops growing at MAX_SLOW_S.
+    for i in range(10):
+        clock.now += MAX_SLOW_S - 0.5
+        assert lockout.admit(f"10.0.3.{i}") is SignInResult.SLOWED
+        clock.now += 0.5
+        assert lockout.admit(f"10.0.3.{i}") is None
+
+
+def test_the_slow_down_lets_go_as_failures_leave_the_window():
+    clock = Clock()
+    lockout = Lockout(clock)
+    for i in range(TOTAL_FAILURES + 3):
+        lockout.admit(f"10.0.1.{i}")
+    clock.now += FAILURE_WINDOW_S + 1
+    assert all(lockout.admit("10.0.2.1") is None for _ in range(MAX_FAILURES))
+
+
+def test_a_locked_out_client_is_told_locked_not_slowed():
+    clock = Clock()
+    lockout = Lockout(clock)
+    for _ in range(MAX_FAILURES):
+        lockout.admit("10.0.0.5")
+    for i in range(TOTAL_FAILURES):
+        lockout.admit(f"10.0.1.{i}")
+    assert lockout.admit("10.0.0.5") is SignInResult.LOCKED
+
+
+def test_a_refused_try_does_not_extend_the_slow_down():
+    clock = Clock()
+    lockout = Lockout(clock)
+    for i in range(TOTAL_FAILURES):
+        lockout.admit(f"10.0.1.{i}")
+    for _ in range(100):
+        clock.now += 0.009
+        assert lockout.admit("10.0.2.1") is SignInResult.SLOWED
+    clock.now = 1000.0 + 1
+    assert lockout.admit("10.0.2.1") is None
+
+
+def test_a_success_takes_that_clients_failures_off_the_total():
+    lockout = Lockout(Clock())
+    for _ in range(MAX_FAILURES - 1):  # the owner's typos
+        lockout.admit("10.0.0.5")
+    lockout.succeeded("10.0.0.5")
+    for i in range(TOTAL_FAILURES):
+        assert lockout.admit(f"10.0.1.{i}") is None
+
+
+def test_quiet_clients_are_dropped():
+    clock = Clock()
+    lockout = Lockout(clock)
+    for i in range(TOTAL_FAILURES):
+        lockout.admit(f"fd12:3456:789a:{i:x}::1")
+    clock.now += FAILURE_WINDOW_S + 1
+    lockout.admit("10.0.0.5")
+    assert list(lockout._failures) == ["10.0.0.5"]  # what the table holds is the point
+
+
+def test_the_clock_going_back_locks_no_one_out_for_long():
+    clock = Clock()
+    lockout = Lockout(clock)
+    for i in range(TOTAL_FAILURES + 5):
+        clock.now += 1
+        lockout.admit(f"10.0.1.{i}")
+    clock.now -= 3600  # failures now an hour ahead: from before the clock went back, not counted
+    assert lockout.admit("10.0.1.0") is None
+    assert lockout.admit("10.0.2.1") is None
+
+
 # --- PasswordCheck ---
 
 
@@ -276,6 +395,15 @@ def test_the_right_password_signs_in_and_clears_the_count():
         assert check.sign_in("10.0.0.5", "wrong") is SignInResult.WRONG
     assert check.sign_in("10.0.0.5", PASSWORD) is SignInResult.SIGNED_IN
     assert all(lockout.attempt("10.0.0.5") for _ in range(MAX_FAILURES))
+
+
+def test_a_slowed_sign_in_is_not_checked():
+    password = FakePassword()
+    check = PasswordCheck(password, Lockout(Clock()))
+    for i in range(TOTAL_FAILURES):
+        assert check.sign_in(f"10.0.1.{i}", "wrong") is SignInResult.WRONG
+    assert check.sign_in("10.0.2.1", PASSWORD) is SignInResult.SLOWED
+    assert password.checks == TOTAL_FAILURES
 
 
 def test_a_locked_out_address_is_not_checked_even_with_the_right_password():
@@ -453,6 +581,30 @@ def test_wrong_tries_from_many_addresses_void_the_code(tmp_path):
         assert not codes.verify(wrong(code), T0 + 1, f"192.168.1.{100 + i}")
     assert not codes.verify(code, T0 + 2, OWNER)
     assert not (tmp_path / "reset-display.json").exists()
+
+
+
+OWNER6, GUESSER6 = "fd12:3456:789a:1::20", "fd12:3456:789a:2::66"
+
+
+def test_a_guesser_changing_its_ipv6_address_is_still_one_client(tmp_path):
+    codes = ResetCodes(tmp_path)
+    code = codes.issue(T0)
+    for i in range(RESET_MAX_TRIES):  # a new address in its /64 for every guess
+        assert not codes.verify(wrong(code), T0 + 1, f"fd12:3456:789a:2::{i + 100:x}")
+    assert not codes.verify(code, T0 + 2, GUESSER6)  # that network is out, even with the right code
+    with pytest.raises(ResetShutOut):
+        codes.issue(T0 + 3, client="fd12:3456:789a:2:ffff::1")
+    assert codes.verify(code, T0 + 4, OWNER6)  # not void: the owner's network still has its tries
+
+
+def test_an_ipv4_client_counts_the_same_mapped_or_not_at_the_code(tmp_path):
+    codes = ResetCodes(tmp_path)
+    code = codes.issue(T0)
+    for _ in range(RESET_MAX_TRIES):
+        assert not codes.verify(wrong(code), T0 + 1, "::ffff:" + GUESSER)
+    assert not codes.verify(code, T0 + 2, GUESSER)
+    assert codes.verify(code, T0 + 3, OWNER)
 
 
 # T0 + RESET_CODE_SECONDS is 08:10 UTC, 08:10 in London (winter) and 13:40 in Kolkata.

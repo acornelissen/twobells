@@ -67,6 +67,10 @@ WRONG_CODE = "That code isn't right, or it has run out. Ask for a new code and t
 # it can't use that code, so it is told when it may ask for a new one.
 SHUT_OUT = ("Too many wrong tries from this device, so it can't use the code that is out now. "
             "That code runs out at {until}; ask for a new one then.")
+# Signing in while every client together has had too many wrong passwords:
+# each try waits up to a minute (auth.MAX_SLOW_S) after the last.
+SLOWED = ("Lots of wrong passwords have been tried lately, so signing in is slowed for everyone. "
+          "Try again in a minute.")
 _LENGTH = re.compile(r"[0-9]{1,15}")
 # A setup wizard step's name, as it comes in the path.
 _STEP_NAME = re.compile(r"[a-z]{1,20}")
@@ -386,7 +390,8 @@ class FormPages:
     # Forms
 
     def sign_in(self, fields: dict[str, str], headers: Headers, client: str) -> Reply:
-        """A password typed on the sign-in page, rate limited by `client`'s address."""
+        """A password typed on the sign-in page, rate limited by `client`'s
+        address (an IPv6 one by its /64) and across every client."""
         if not self._password.is_set():
             return self.login_page(403, headers)
         to_setup = bool(self._resume_setup) and fields.get("next") == "setup"
@@ -397,6 +402,8 @@ class FormPages:
             return self.login_page(429, headers, "Busy, try again in a moment.", to_setup, step)
         if result is SignInResult.LOCKED:
             return self.login_page(429, headers, "Too many attempts. Try again in 15 minutes.", to_setup, step)
+        if result is SignInResult.SLOWED:
+            return self.login_page(429, headers, SLOWED, to_setup, step)
         if result is SignInResult.WRONG:
             return self.login_page(401, headers, "That password isn't right.", to_setup, step)
         return self._signed_in(to_setup, step)

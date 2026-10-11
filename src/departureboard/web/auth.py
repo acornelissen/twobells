@@ -40,9 +40,13 @@ log = logging.getLogger(__name__)
 MIN_PASSWORD = 10
 SESSION_SECONDS = 12 * 3600
 MAX_SESSIONS = 20
-# Sign-in: this many failures from one address in the window locks it out for the window.
+# Sign-in: this many failures from one client (see client_key) in the window locks it out for the window.
 MAX_FAILURES = 5
 FAILURE_WINDOW_S = 15 * 60
+# Past this many failures in the window from every client together, everyone is
+# slowed: a try waits 1 s after the last, doubling with each failure, at most MAX_SLOW_S.
+TOTAL_FAILURES = 20
+MAX_SLOW_S = 60
 # Each check is a scrypt run of 16 MiB and up to a second; more at once could exhaust a Pi.
 MAX_CHECKS = 2
 SCRYPT = {"n": 2**14, "r": 8, "p": 1}
@@ -430,42 +434,97 @@ def _kept_key(path: Path) -> bytes:
     return key
 
 
-@dataclass
-class Lockout:
-    """Counts wrong passwords per client address. MAX_FAILURES within
-    FAILURE_WINDOW_S locks that address out until the oldest falls out of
-    the window."""
-
-    clock: Callable[[], float] = time.time
-    _failures: dict[str, list[float]] = field(default_factory=dict)
-    _lock: threading.Lock = field(default_factory=threading.Lock)
-
-    def _recent(self, address: str) -> list[float]:
-        cutoff = self.clock() - FAILURE_WINDOW_S
-        recent = [t for t in self._failures.get(address, []) if t > cutoff]
-        self._failures[address] = recent
-        return recent
-
-    def attempt(self, address: str) -> bool:
-        """Whether this address may try a password now. The try counts as a
-        failure until `succeeded`, so simultaneous guesses can't slip past the limit."""
-        with self._lock:
-            recent = self._recent(address)
-            if len(recent) >= MAX_FAILURES:
-                return False
-            recent.append(self.clock())
-            return True
-
-    def succeeded(self, address: str) -> None:
-        with self._lock:
-            self._failures.pop(address, None)
+def client_key(address: str) -> str:
+    """Who a client counts as, for the sign-in lockout and a reset code's wrong
+    tries: an IPv4 address as it is (also when it comes as an IPv4-mapped IPv6
+    one), an IPv6 address by its /64. A host can take any address in its /64
+    at will, so counting each address apart would give it endless tries; the
+    cost is that the devices on one /64, on a home network usually all of them
+    over IPv6, share a count. Anything that isn't an address, as given."""
+    try:
+        ip = ipaddress.ip_address(address.split("%")[0])
+    except ValueError:
+        return address
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped:
+            return str(ip.ipv4_mapped)
+        return str(ipaddress.IPv6Network((ip, 64), strict=False))
+    return str(ip)
 
 
 class SignInResult(enum.Enum):
     SIGNED_IN = "signed in"
     WRONG = "wrong password"
-    LOCKED = "locked out"  # too many wrong passwords from this address
+    LOCKED = "locked out"  # too many wrong passwords from this client
+    SLOWED = "slowed"  # too many from every client together: everyone waits a moment
     BUSY = "busy"  # MAX_CHECKS checks already running
+
+
+@dataclass
+class Lockout:
+    """Counts wrong passwords by client (client_key: an IPv6 one by its /64).
+    MAX_FAILURES within FAILURE_WINDOW_S locks that client out until the
+    oldest falls out of the window.
+
+    Past TOTAL_FAILURES within the window from every client together, so a
+    guesser changing address gets no more than that, everyone is slowed
+    rather than locked out: the next try waits after the last one, longer
+    with each failure past the total, at most MAX_SLOW_S. A guesser can then
+    keep the owner waiting a minute at a time, but not locked out, and the
+    reset code (which this doesn't count) and the command line still work.
+
+    Clients with no failures left in the window are dropped, so the table
+    holds only what the limits let through in one window."""
+
+    clock: Callable[[], float] = time.time
+    _failures: dict[str, list[float]] = field(default_factory=dict)
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def _prune(self, now: float) -> None:
+        """Keep only the failures in the window, and the clients that have
+        some. Times ahead of now are from before the clock went back: not
+        counted, so a clock set back can't stretch a lockout. Called with the lock held."""
+        cutoff = now - FAILURE_WINDOW_S
+        kept: dict[str, list[float]] = {}
+        for key, times in self._failures.items():
+            recent = [t for t in times if cutoff < t <= now]
+            if recent:
+                kept[key] = recent
+        self._failures = kept
+
+    def _slowed(self, now: float) -> bool:
+        """Whether everyone must wait before the next try. Called with the lock held, after _prune."""
+        total = sum(len(times) for times in self._failures.values())
+        if total < TOTAL_FAILURES:
+            return False
+        last = max(max(times) for times in self._failures.values())
+        return now < last + min(2.0 ** (total - TOTAL_FAILURES), MAX_SLOW_S)
+
+    def admit(self, address: str) -> SignInResult | None:
+        """None if this client may try a password now; else LOCKED, or SLOWED
+        while everyone waits. An admitted try counts as a failure until
+        `succeeded`, so simultaneous guesses can't slip past the limits; a
+        refused one counts for nothing."""
+        with self._lock:
+            now = self.clock()
+            self._prune(now)
+            key = client_key(address)
+            mine = self._failures.get(key, [])
+            if len(mine) >= MAX_FAILURES:
+                return SignInResult.LOCKED
+            if self._slowed(now):
+                return SignInResult.SLOWED
+            self._failures[key] = [*mine, now]
+            return None
+
+    def attempt(self, address: str) -> bool:
+        """Whether this client may try a password now (see `admit`)."""
+        return self.admit(address) is None
+
+    def succeeded(self, address: str) -> None:
+        """Clears this client's failures, from its own count and the total."""
+        with self._lock:
+            self._failures.pop(client_key(address), None)
 
 
 class PasswordCheck:
@@ -481,12 +540,12 @@ class PasswordCheck:
         if not self._checking.acquire(blocking=False):
             return SignInResult.BUSY
         try:
-            allowed = self._lockout.attempt(address)
-            right = allowed and self._password.check(typed)
+            refused = self._lockout.admit(address)
+            right = refused is None and self._password.check(typed)
         finally:
             self._checking.release()
-        if not allowed:
-            return SignInResult.LOCKED
+        if refused is not None:
+            return refused
         if not right:
             return SignInResult.WRONG
         self._lockout.succeeded(address)
@@ -558,7 +617,7 @@ def outsider(address: str, host: str | None) -> bool:
 # loop) only shows them. So there are three files:
 #
 #   reset.json          what `verify` needs: a salted sha256 of the code, its
-#                       expiry and wrong tries (in all, and by client address),
+#                       expiry and wrong tries (in all, and by client_key),
 #                       and when codes were issued (for the rate limits). Never
 #                       the code itself.
 #   reset-display.json  the plain code and its expiry, for the board to draw.
@@ -587,10 +646,10 @@ def outsider(address: str, host: str | None) -> bool:
 # on the network can swap the owner's code for one the owner hasn't seen, or
 # use up the day's codes while one is showing.
 #
-# Guessing: 5 wrong tries from one client address shut that address out of the
-# code, so a guesser can't void the owner's code (asking again from there
-# says so, and when the code runs out); 10 from all addresses
-# together void it, so changing address buys no more than that. At most 10
+# Guessing: 5 wrong tries from one client (by client_key: an IPv6 one by its
+# /64) shut that client out of the code, so a guesser can't void the owner's
+# code (asking again from there says so, and when the code runs out); 10 from
+# all clients together void it, so changing address buys no more than that. At most 10
 # codes are issued a day, so a guesser on the network gets 100 tries in a
 # million a day, and every code it asks for shows on the board for the owner
 # to see.
@@ -649,9 +708,10 @@ def _code_hash(salt: bytes, code: str) -> str:
 
 
 def _tries_by(current: dict, client: str) -> int:
-    """The wrong tries the address `client` has had at the saved code `current`; 0 if they can't be read."""
+    """The wrong tries the address `client` (counted by client_key) has had
+    at the saved code `current`; 0 if they can't be read."""
     try:
-        return int(current.get("by_client", {}).get(client, 0))
+        return int(current.get("by_client", {}).get(client_key(client), 0))
     except (TypeError, ValueError, AttributeError):
         return 0
 
@@ -683,8 +743,8 @@ class ResetCodes:
         """A new code, valid for RESET_CODE_SECONDS, passed to `show`. With
         `limit` (the page; not the command line, which proves access by
         running at all) a code that is still live where codes go now stands:
-        None, and nothing spent; or ResetShutOut if the address `client` has
-        had its RESET_MAX_TRIES wrong tries at it. Otherwise it raises
+        None, and nothing spent; or ResetShutOut if the address `client` (by
+        client_key) has had its RESET_MAX_TRIES wrong tries at it. Otherwise it raises
         ResetLimited within RESET_ISSUE_GAP_S of the last code, or after
         RESET_ISSUES_PER_DAY in a day. Without `limit` the new code replaces
         any before it."""
@@ -722,9 +782,10 @@ class ResetCodes:
     def verify(self, typed: str, now: float, client: str = "") -> bool:
         """Whether `typed`, from the address `client`, is the current code,
         compared in constant time. A right code is used up. RESET_MAX_TRIES
-        wrong ones shut that address out of this code, and RESET_MAX_TRIES_ALL
-        from every address together void it."""
+        wrong ones shut that client (by client_key) out of this code, and
+        RESET_MAX_TRIES_ALL from every client together void it."""
         typed = "".join(typed.split())  # "123 456" as shown
+        client = client_key(client)
         with self._locked():
             record = self._load()
             current, found = record["code"], True
@@ -744,7 +805,7 @@ class ResetCodes:
             allowed = mine < RESET_MAX_TRIES  # this address has tries left
             if live and allowed and not right:
                 current["tries"] = tries + 1
-                # At most RESET_MAX_TRIES_ALL addresses before the code is void, so this stays small.
+                # At most RESET_MAX_TRIES_ALL clients before the code is void, so this stays small.
                 current["by_client"] = {**by_client, client: mine + 1}
                 if current["tries"] >= RESET_MAX_TRIES_ALL:
                     log.warning("Settings reset code voided after %d wrong tries", RESET_MAX_TRIES_ALL)
