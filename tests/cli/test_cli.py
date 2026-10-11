@@ -543,6 +543,38 @@ def test_reset_code_prints_a_code_the_page_will_take(tmp_path, capsys):
     assert ResetCodes(state).verify("".join(code.groups()), time.time())
 
 
+@pytest.fixture
+def process_in_utc(monkeypatch):
+    """The process's own time zone is UTC, as in the Docker image."""
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+def test_reset_code_gives_its_expiry_in_the_boards_time_zone(tmp_path, capsys, process_in_utc):
+    import re
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    config, _ = _web_config(tmp_path)
+    config.write_text(config.read_text() + 'timezone = "Asia/Tokyo"\n')
+    before = datetime.now(ZoneInfo("Asia/Tokyo"))
+    assert main(["web", "--config", str(config), "--reset-code"]) == 0
+    after = datetime.now(ZoneInfo("Asia/Tokyo"))
+    until = re.search(r"valid until (\d\d:\d\d)", capsys.readouterr().out).group(1)
+    # Ten minutes on, in Tokyo's time (9 hours ahead of the process's UTC).
+    assert until in {(moment + timedelta(minutes=10)).strftime("%H:%M") for moment in (before, after)}
+
+
+def test_reset_code_still_comes_when_the_time_zone_setting_is_broken(tmp_path, capsys, process_in_utc):
+    config, _ = _web_config(tmp_path)
+    config.write_text(config.read_text() + 'timezone = "../../etc/passwd"\n')
+    assert main(["web", "--config", str(config), "--reset-code"]) == 0
+    assert "valid until" in capsys.readouterr().out
+
+
 def test_reset_code_is_not_held_back_by_the_pages_limits(tmp_path, capsys):
     import time
 

@@ -12,10 +12,11 @@ import sys
 import threading
 import time
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from ..settings import migrate
+from ..settings import migrate, schema
 from ..settings.config import ConfigError, needs_setup
 from ..settings.installs import Install, install_named
 from ..settings.schema import views
@@ -92,14 +93,25 @@ def _set_password(password, prompt: str) -> int:
     return 0
 
 
-def _reset_code(folder: Path, where: str) -> int:
+def _zone(store: Store) -> ZoneInfo:
+    """The board's time zone, for the time a reset code runs out, as the
+    board would show it; Europe/London if the settings can't say, so broken
+    settings can't keep their owner out."""
+    try:
+        return ZoneInfo(schema.timezone(str(store.data().get("timezone", schema.BOARD_DEFAULTS["timezone"]))))
+    except (OSError, ConfigError, schema.Invalid):
+        return ZoneInfo(schema.BOARD_DEFAULTS["timezone"])
+
+
+def _reset_code(folder: Path, where: str, zone: ZoneInfo) -> int:
     """Print a one-time code for setting a new settings password, and where it
-    goes. Running this proves access, so no rate limit, and the code comes
-    here rather than to the board or the log."""
+    goes, with when it runs out in `zone` (the process's own may be UTC, as
+    in Docker). Running this proves access, so no rate limit, and the code
+    comes here rather than to the board or the log."""
     from ..web.auth import ResetCodes, spaced
 
     def show(code: str, expires: float) -> None:
-        until = time.strftime("%H:%M", time.localtime(expires))
+        until = datetime.fromtimestamp(expires, zone).strftime("%H:%M")
         print(f"Settings reset code: {spaced(code)}  (valid until {until}, once)")
         print(where)
 
@@ -432,7 +444,8 @@ def _password(args, store: Store, install: Install) -> int:
     store.make()
     if args.set_password:
         return _set_password(PasswordStore(store.password_file), f"New {install.noun} settings password: ")
-    return _reset_code(store.folder, f"Enter it on the settings site, {PREFIX}/reset, with a new password.")
+    return _reset_code(store.folder, f"Enter it on the settings site, {PREFIX}/reset, with a new password.",
+                       _zone(store))
 
 
 def _interrupt(signum, frame) -> None:
