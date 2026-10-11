@@ -93,6 +93,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple, Protocol
 from urllib.parse import urlsplit
+from xml.etree import ElementTree
 
 from ..core import files, net, safexml
 from ..core.errors import safe_message
@@ -360,54 +361,62 @@ def _position(name: str, lat: str, lon: str) -> StopPosition | None:
     return StopPosition(name, lat_value, lon_value)
 
 
-def _read_stops(root, doc: _Document) -> None:
-    for node in root.iterfind("t:StopPoints/t:AnnotatedStopPointRef", _NS):
-        atco, name = _text(node, "t:StopPointRef"), _text(node, "t:CommonName")
-        doc.names[atco] = name
-        position = _position(name, _text(node, "t:Location/t:Latitude"), _text(node, "t:Location/t:Longitude"))
-        if position is not None:
-            doc.positions[atco] = position
-    for node in root.iterfind("t:StopPoints/t:StopPoint", _NS):
-        doc.names[_text(node, "t:AtcoCode")] = _text(node, "t:Descriptor/t:CommonName")
+# Each reader below takes one element of a document: the TransXChange
+# element named, inside the section of the root named (StopPoints and so on).
+
+def _read_stop_ref(node, doc: _Document) -> None:
+    """A StopPoints/AnnotatedStopPointRef: a stop's name and, if given, position."""
+    atco, name = _text(node, "t:StopPointRef"), _text(node, "t:CommonName")
+    doc.names[atco] = name
+    position = _position(name, _text(node, "t:Location/t:Latitude"), _text(node, "t:Location/t:Longitude"))
+    if position is not None:
+        doc.positions[atco] = position
 
 
-def _read_operators(root, doc: _Document) -> None:
-    for node in root.iterfind("t:Operators/*", _NS):
-        code = _text(node, "t:NationalOperatorCode") or _text(node, "t:OperatorCode")
-        if code:
-            doc.operators[node.get("id", "")] = code
+def _stop_point_name(node) -> tuple[str, str]:
+    """(ATCO code, name) of a StopPoints/StopPoint, whose name wins over an
+    AnnotatedStopPointRef's for the same stop."""
+    return _text(node, "t:AtcoCode"), _text(node, "t:Descriptor/t:CommonName")
 
 
-def _read_schools(root, doc: _Document) -> None:
-    for node in root.iterfind("t:ServicedOrganisations/t:ServicedOrganisation", _NS):
-        doc.schools[_text(node, "t:OrganisationCode")] = (
-            _ranges(node.find("t:WorkingDays", _NS)),
-            _ranges(node.find("t:Holidays", _NS)),
+def _read_operator(node, doc: _Document) -> None:
+    """Any element in Operators."""
+    code = _text(node, "t:NationalOperatorCode") or _text(node, "t:OperatorCode")
+    if code:
+        doc.operators[node.get("id", "")] = code
+
+
+def _read_school(node, doc: _Document) -> None:
+    """A ServicedOrganisations/ServicedOrganisation."""
+    doc.schools[_text(node, "t:OrganisationCode")] = (
+        _ranges(node.find("t:WorkingDays", _NS)),
+        _ranges(node.find("t:Holidays", _NS)),
+    )
+
+
+def _read_section(node, doc: _Document) -> None:
+    """A JourneyPatternSections/JourneyPatternSection."""
+    doc.sections[node.get("id", "")] = [_link(link) for link in node.iterfind("t:JourneyPatternTimingLink", _NS)]
+
+
+def _read_service(node, doc: _Document) -> None:
+    """A Services/Service, with its journey patterns."""
+    service = _Service(
+        code=_text(node, "t:ServiceCode"),
+        lines={line.get("id", ""): _text(line, "t:LineName") for line in node.iterfind("t:Lines/t:Line", _NS)},
+        start=_date(_text(node, "t:OperatingPeriod/t:StartDate")),
+        end=_date(_text(node, "t:OperatingPeriod/t:EndDate")),
+        profile=node.find("t:OperatingProfile", _NS),
+        operator_ref=_text(node, "t:RegisteredOperatorRef"),
+    )
+    doc.services[service.code] = service
+    for pattern in node.iterfind("t:StandardService/t:JourneyPattern", _NS):
+        doc.patterns[pattern.get("id", "")] = _Pattern(
+            service,
+            [(ref.text or "").strip() for ref in pattern.iterfind("t:JourneyPatternSectionRefs", _NS)],
+            _text(pattern, "t:DestinationDisplay"),
+            _text(pattern, "t:OperatorRef"),
         )
-
-
-def _read_services(root, doc: _Document) -> None:
-    for section in root.iterfind("t:JourneyPatternSections/t:JourneyPatternSection", _NS):
-        doc.sections[section.get("id", "")] = [
-            _link(node) for node in section.iterfind("t:JourneyPatternTimingLink", _NS)
-        ]
-    for node in root.iterfind("t:Services/t:Service", _NS):
-        service = _Service(
-            code=_text(node, "t:ServiceCode"),
-            lines={line.get("id", ""): _text(line, "t:LineName") for line in node.iterfind("t:Lines/t:Line", _NS)},
-            start=_date(_text(node, "t:OperatingPeriod/t:StartDate")),
-            end=_date(_text(node, "t:OperatingPeriod/t:EndDate")),
-            profile=node.find("t:OperatingProfile", _NS),
-            operator_ref=_text(node, "t:RegisteredOperatorRef"),
-        )
-        doc.services[service.code] = service
-        for pattern in node.iterfind("t:StandardService/t:JourneyPattern", _NS):
-            doc.patterns[pattern.get("id", "")] = _Pattern(
-                service,
-                [(ref.text or "").strip() for ref in pattern.iterfind("t:JourneyPatternSectionRefs", _NS)],
-                _text(pattern, "t:DestinationDisplay"),
-                _text(pattern, "t:OperatorRef"),
-            )
 
 
 def _school_rules(profile, doc: _Document) -> tuple[tuple[DateRange, ...], tuple[DateRange, ...], bool]:
@@ -560,41 +569,112 @@ def _stands(doc: _Document, atcos: Collection[str], yours: Mapping[str, StopPosi
     return found
 
 
-def _read_document(
-    xml: bytes, atcos: Collection[str], noc: str, yours: Mapping[str, StopPosition] | None = None
-) -> tuple[list[tuple[_Version, Journey]], dict[str, StopPosition]]:
-    """The journeys in a document calling at your stops, each with the version
-    of the service it is in, and the document's stop positions. With `yours`
-    (your stops' positions known so far), also its inbound-only journeys of
-    the lines calling there (see the module's notes). It is parsed whole:
-    the caller keeps to routesetup.DocumentLimits.parse. Parsing it piece by
-    piece (safexml.iter_elements) would need two passes, as its journeys
-    refer to patterns and to each other, and it is held whole to look for
-    your stops anyway."""
+_TXC = "{" + _NS["t"] + "}"  # as in an element's tag
+# The sections of a document read first, then the one read again for its journeys.
+_FIRST_PASS = frozenset(_TXC + name for name in (
+    "StopPoints", "Operators", "ServicedOrganisations", "JourneyPatternSections", "Services", "VehicleJourneys"))
+_SECOND_PASS = frozenset({_TXC + "VehicleJourneys"})
+_CHUNK = 64 * 1024  # bytes of a document parsed at a time; the elements finished in them are held together
+
+
+def _elements(xml: bytes, sections: Collection[str]) -> Iterator[tuple[str, ElementTree.Element]]:
+    """safexml.iter_grandchildren over a document held in memory."""
+    chunks = (xml[start : start + _CHUNK] for start in range(0, len(xml), _CHUNK))
     try:
-        root = safexml.fromstring(xml)
+        yield from safexml.iter_grandchildren(chunks, sections)
     except safexml.DoctypeError:
         raise TimetableError("Timetable file has a DOCTYPE; refusing to parse it") from None
     except SyntaxError as error:  # ElementTree.ParseError
         raise TimetableError(f"Timetable file is not XML: {error}") from None
-    revision = root.get("RevisionNumber", "").strip()
-    doc = _Document(revision=int(revision) if revision.isdigit() and len(revision) < 10 else 0)
-    _read_stops(root, doc)
-    _read_operators(root, doc)
-    _read_schools(root, doc)
-    _read_services(root, doc)
-    vehicle_journeys = root.findall("t:VehicleJourneys/t:VehicleJourney", _NS)
-    pattern_refs = {_text(node, "t:VehicleJourneyCode"): _text(node, "t:JourneyPatternRef")
-                    for node in vehicle_journeys}
-    stands = _stands(doc, atcos, yours) if yours is not None else set()
+
+
+def _read_first_pass(xml: bytes) -> tuple[_Document, set[str]]:
+    """Everything in a document but its journeys, and the codes of the
+    journeys whose pattern others take: a journey without a
+    JourneyPatternRef takes that of the journey its VehicleJourneyRef names."""
+    doc = _Document()
+    point_names: dict[str, str] = {}
+    referenced: set[str] = set()
+    for section, node in _elements(xml, _FIRST_PASS):
+        name = section.removeprefix(_TXC)
+        tag = node.tag.removeprefix(_TXC)
+        if not section:  # the root
+            revision = node.get("RevisionNumber", "").strip()
+            doc.revision = int(revision) if revision.isdigit() and len(revision) < 10 else 0
+        elif name == "StopPoints" and tag == "AnnotatedStopPointRef":
+            _read_stop_ref(node, doc)
+        elif name == "StopPoints" and tag == "StopPoint":
+            atco, common_name = _stop_point_name(node)
+            point_names[atco] = common_name
+        elif name == "Operators":
+            _read_operator(node, doc)
+        elif name == "ServicedOrganisations" and tag == "ServicedOrganisation":
+            _read_school(node, doc)
+        elif name == "JourneyPatternSections" and tag == "JourneyPatternSection":
+            _read_section(node, doc)
+        elif name == "Services" and tag == "Service":
+            _read_service(node, doc)
+        elif name == "VehicleJourneys" and tag == "VehicleJourney" and not _text(node, "t:JourneyPatternRef"):
+            referenced.add(_text(node, "t:VehicleJourneyRef"))
+    doc.names.update(point_names)
+    return doc, referenced
+
+
+def _pattern_refs(xml: bytes, codes: Set[str]) -> dict[str, str]:
+    """The JourneyPatternRef of each journey whose VehicleJourneyCode is one
+    of `codes`, read in a pass of its own only if there are any: most
+    journeys give their own, and holding every journey's would take memory
+    in step with the document."""
+    refs: dict[str, str] = {}
+    if codes:
+        for node in _vehicle_journeys(xml):
+            code = _text(node, "t:VehicleJourneyCode")
+            if code in codes:
+                refs[code] = _text(node, "t:JourneyPatternRef")
+    return refs
+
+
+def _vehicle_journeys(xml: bytes) -> Iterator[ElementTree.Element]:
+    """Each VehicleJourney in a document, one at a time."""
+    for section, node in _elements(xml, _SECOND_PASS):
+        if section and node.tag == _TXC + "VehicleJourney":
+            yield node
+
+
+def _journeys_kept(
+    vehicle_journeys: Iterable, doc: _Document, atcos: Collection[str], noc: str, pattern_refs: dict,
+    stands: Collection[str],
+) -> list[tuple[_Version, Journey]]:
+    """The journeys calling at your stops, and the inbound-only ones of the
+    lines among them (see the module's notes)."""
     found = []
     for node in vehicle_journeys:
         read = _journey(node, doc, atcos, noc, pattern_refs, stands)
         if read is not None and (read[1].inbound_only or any(call.atco in atcos for call in read[1].calls)):
             found.append(read)
     lines = {(journey.line.casefold(), journey.operator) for _, journey in found if not journey.inbound_only}
-    kept = [(v, j) for v, j in found if not j.inbound_only or (j.line.casefold(), j.operator) in lines]
-    return kept, doc.positions
+    return [(v, j) for v, j in found if not j.inbound_only or (j.line.casefold(), j.operator) in lines]
+
+
+def _read_document(
+    xml: bytes, atcos: Collection[str], noc: str, yours: Mapping[str, StopPosition] | None = None
+) -> tuple[list[tuple[_Version, Journey]], dict[str, StopPosition]]:
+    """The journeys in a document calling at your stops, each with the version
+    of the service it is in, and the document's stop positions. With `yours`
+    (your stops' positions known so far), also its inbound-only journeys of
+    the lines calling there (see the module's notes).
+
+    It is read in two passes over the bytes, each element built and dropped
+    in turn (safexml.iter_grandchildren), never the whole tree: first all but
+    the journeys, as a journey refers to patterns, services and other
+    journeys anywhere in it; then the journeys, keeping only those found. A
+    journey taking its pattern from another adds a pass between them
+    (_pattern_refs). Memory follows what is kept, not the document
+    (routesetup.DocumentLimits)."""
+    doc, referenced = _read_first_pass(xml)
+    pattern_refs = _pattern_refs(xml, referenced)
+    stands = _stands(doc, atcos, yours) if yours is not None else set()
+    return _journeys_kept(_vehicle_journeys(xml), doc, atcos, noc, pattern_refs, stands), doc.positions
 
 
 def _parse_document(

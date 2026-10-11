@@ -1,10 +1,12 @@
 import fcntl
 import io
 import os
+import re
 import stat
 import subprocess
 import sys
 import threading
+import tracemalloc
 import zipfile
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
@@ -12,6 +14,7 @@ from itertools import pairwise
 
 import pytest
 
+from departureboard.core import safexml
 from departureboard.sources.holidays import Event, holiday_names
 from departureboard.timetable import build as timetable
 from departureboard.timetable.build import (
@@ -1718,3 +1721,112 @@ def test_a_store_that_is_not_a_folder_is_a_timetable_error(tmp_path):
     with pytest.raises(TimetableError, match="Can't open"):
         build(tmp_path / "store", STOPS, ["BNML"], NOW, "k", build=fake)
     assert fake.calls == []
+
+
+# Reading a document in two passes, one element at a time.
+
+def _whole_tree(xml, atcos, noc="", yours=None):
+    """The document read as the timetable used to read it, parsed whole: the
+    oracle the two passes must agree with."""
+    ns = timetable._NS
+    root = safexml.fromstring(xml)
+    revision = root.get("RevisionNumber", "").strip()
+    doc = timetable._Document(revision=int(revision) if revision.isdigit() and len(revision) < 10 else 0)
+    for node in root.iterfind("t:StopPoints/t:AnnotatedStopPointRef", ns):
+        timetable._read_stop_ref(node, doc)
+    for node in root.iterfind("t:StopPoints/t:StopPoint", ns):
+        atco, name = timetable._stop_point_name(node)
+        doc.names[atco] = name
+    for node in root.iterfind("t:Operators/*", ns):
+        timetable._read_operator(node, doc)
+    for node in root.iterfind("t:ServicedOrganisations/t:ServicedOrganisation", ns):
+        timetable._read_school(node, doc)
+    for node in root.iterfind("t:JourneyPatternSections/t:JourneyPatternSection", ns):
+        timetable._read_section(node, doc)
+    for node in root.iterfind("t:Services/t:Service", ns):
+        timetable._read_service(node, doc)
+    vehicle_journeys = root.findall("t:VehicleJourneys/t:VehicleJourney", ns)
+    pattern_refs = {timetable._text(node, "t:VehicleJourneyCode"): timetable._text(node, "t:JourneyPatternRef")
+                    for node in vehicle_journeys}
+    stands = timetable._stands(doc, atcos, yours) if yours is not None else set()
+    return timetable._journeys_kept(vehicle_journeys, doc, atcos, noc, pattern_refs, stands), doc.positions
+
+
+def _every_stop(xml):
+    return {ref.decode() for ref in re.findall(rb"<StopPointRef>([^<]+)</StopPointRef>", xml)}
+
+
+_TWO_OPERATORS = ('<Operator id="o1"><NationalOperatorCode>AAAA</NationalOperatorCode></Operator>'
+                  '<LicensedOperator id="o2"><OperatorCode>BBBB</OperatorCode></LicensedOperator>')
+_TWO_NAMES = (f"<AnnotatedStopPointRef><StopPointRef>{STOP_A}</StopPointRef><CommonName>Old</CommonName>"
+              f"</AnnotatedStopPointRef><StopPoint><AtcoCode>{STOP_A}</AtcoCode><Descriptor><CommonName>New"
+              "</CommonName></Descriptor></StopPoint>")
+# Every sample document: the real ones, and the made-up ones for what they don't show.
+_SAMPLES = {
+    **{path.name: path.read_bytes() for path in sorted(FIXTURES.glob("txc_*.xml"))},
+    "waits": _txc([("X1", STOP_A, "PT2M", "PT1M", "PT30S"), (STOP_A, "X2", "PT1M30S", "PT2M", "")]),
+    "school days": _txc(LINKS, profile=_school("DaysOfOperation", "WorkingDays", "TERM"), extra=SCHOOLS),
+    "own profile": _txc(LINKS, profile=_profile("<RegularDayType><DaysOfWeek><MondayToFriday/></DaysOfWeek>"
+                                                "</RegularDayType>"),
+                        journey=_profile("<RegularDayType><DaysOfWeek><Saturday/></DaysOfWeek></RegularDayType>")),
+    "two operators": _txc(LINKS, operators=_TWO_OPERATORS, journey="<OperatorRef>o2</OperatorRef>"),
+    "revision": _txc(LINKS, revision=3, end="2026-12-31"),
+    "a stop named twice": _txc(LINKS, stops=_TWO_NAMES),
+    "a stand": _stand_doc(),
+}
+
+
+@pytest.mark.parametrize("name", list(_SAMPLES))
+def test_two_passes_read_a_document_as_parsing_it_whole_did(name):
+    xml = _SAMPLES[name]
+    for atcos in (OURS, {STOP_A}, _every_stop(xml), set()):
+        for yours in (None, {}, {STOP_A: POSITIONS[STOP_A]}):
+            read = timetable._read_document(xml, atcos, "NOC", yours)
+            expected = _whole_tree(xml, atcos, "NOC", yours)
+            assert read == expected
+            assert list(read[1].items()) == list(expected[1].items())  # in the same order too
+    # Each sample has journeys to compare, but the route setup's, whose journeys have no times.
+    assert timetable._read_document(xml, _every_stop(xml), "NOC", {})[0] or name == "txc_glossop_synthetic.xml"
+
+
+def test_journeys_before_the_services_they_run_are_read_all_the_same():
+    # The second pass reads the journeys once everything they refer to is known.
+    xml = _txc(LINKS)
+    head, rest = xml.split(b" <JourneyPatternSections>", 1)
+    middle, rest = rest.split(b" <VehicleJourneys>", 1)
+    journeys, tail = rest.split(b"</VehicleJourneys>", 1)
+    reordered = head + b" <VehicleJourneys>" + journeys + b"</VehicleJourneys> <JourneyPatternSections>" + middle + tail
+    assert parse_journeys(xml, OURS)
+    assert parse_journeys(reordered, OURS) == parse_journeys(xml, OURS)
+
+
+def test_a_journey_may_take_its_pattern_from_a_journey_after_it():
+    xml = _txc(LINKS).replace(
+        b"<VehicleJourneys><VehicleJourney>",
+        b"<VehicleJourneys><VehicleJourney><VehicleJourneyCode>early</VehicleJourneyCode><ServiceRef>S1</ServiceRef>"
+        b"<LineRef>L1</LineRef><VehicleJourneyRef>vj1</VehicleJourneyRef><DepartureTime>08:00:00</DepartureTime>"
+        b"</VehicleJourney><VehicleJourney>",
+    )
+    journeys = _by_code(parse_journeys(xml, OURS))
+    assert set(journeys) == {"early", "vj1"}
+    assert _at(journeys["early"], STOP_A) == _minute("08:05")
+
+
+def test_a_large_document_is_never_held_as_a_whole_tree():
+    # Parsed whole, a document took about 8 times its size; read in two
+    # passes, one element is held at a time beside what is kept from it.
+    head, rest = TXC_237.split(b"<VehicleJourneys>", 1)
+    journeys, tail = rest.split(b"</VehicleJourneys>", 1)
+    copies = 4_000_000 // len(journeys)
+    xml = b"".join([head, b"<VehicleJourneys>",
+                    *(journeys.replace(b"<VehicleJourneyCode>", f"<VehicleJourneyCode>c{n}-".encode())
+                      for n in range(copies)),
+                    b"</VehicleJourneys>", tail])
+    tracemalloc.start()
+    try:
+        found, _ = timetable._read_document(xml, {"1000NOWHERE1"}, "NOC")
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert found == []
+    assert peak < len(xml) / 2  # about a fifth; whole, it was nearly 8 times
