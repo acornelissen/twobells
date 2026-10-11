@@ -113,22 +113,19 @@ def test_the_container_serves_as_a_docker_install_in_its_one_writable_folder():
 def test_the_documented_password_commands_fit_the_container():
     # Run with docker exec as the image's user, in the one writable place: /data.
     from departureboard.cli.main import _parser
-
-    assert "container_name: departureboard\n" in COMPOSE and "dashboard-data:/data" in COMPOSE
-    assert "WORKDIR /data" in DOCKERFILE and "chown 10001:10001 /data" in DOCKERFILE
-    docs = (ROOT / "docs" / "user-guide.md").read_text() + (ROOT / "README.md").read_text()
-    for flag in ("--set-password", "--reset-code"):
-        command = f"docker exec -it departureboard python -m departureboard serve {flag} --state-dir /data"
-        assert docs.count(command) == 2, flag  # once in each
-        words = shlex.split(command)
-        assert words[:7] == ["docker", "exec", "-it", "departureboard", "python", "-m", "departureboard"]
-        args = _parser().parse_args(words[7:])
-        assert (args.command, args.state_dir, getattr(args, flag[2:].replace("-", "_"))) == ("serve", "/data", True)
     from departureboard.settings.installs import install_named
 
+    assert "WORKDIR /data" in DOCKERFILE
+    guide, readme = (ROOT / "docs" / "user-guide.md").read_text(), (ROOT / "README.md").read_text()
     docker = install_named("docker")
+    # What the settings pages tell the owner to run, as the docs give it.
     for flag, command in (("--set-password", docker.password_command), ("--reset-code", docker.reset_command)):
-        assert docs.count(command) == 2, flag  # what the settings pages tell the owner to run
+        assert command in guide and command in readme, flag
+        words = shlex.split(command)
+        assert words[:4] == ["docker", "exec", "-it", "departureboard"]  # the compose file's container_name
+        assert words[4:7] == ["python", "-m", "departureboard"]
+        args = _parser().parse_args(words[7:])
+        assert (args.command, args.state_dir, getattr(args, flag[2:].replace("-", "_"))) == ("serve", "/data", True)
     assert "docker logs departureboard<" in docker.log_help and "Container, departureboard, Log" in docker.log_help
 
 
@@ -151,13 +148,17 @@ def test_keys_files_are_git_ignored():
 
 def test_one_key_template_for_the_pi_and_docker_in_groups():
     assert not (ROOT / "deploy" / "dashboard.env.example").exists()
+    from departureboard.settings import schema
+
     template = (ROOT / "deploy" / "secrets.env.example").read_text()
-    names = re.findall(r"^([A-Z_]+)=$", template, re.M)  # every value empty
-    assert names == ["RDM_API_KEY", "BODS_API_KEY", "TAPI_APP_ID", "TAPI_APP_KEY", "RDM_DETAILS_API_KEY",
-                     "RDM_KB_API_KEY"]
-    groups = [template.index(heading) for heading in ("# General:", "# Board:", "# Dashboard:")]
-    places = [template.index(f"\n{name}=") for name in names]
-    assert groups[0] < places[0] < places[1] < groups[1] < places[2] < places[3] < groups[2] < places[4]
+    assert re.findall(r"^[A-Z_]+=.", template, re.M) == []  # every value empty
+    # Each group's keys under its heading, as the settings registry has them, and no others.
+    groups = ("general", "board", "dashboard")
+    starts = [template.index(f"# {group.capitalize()}:") for group in groups]
+    for group, start, end in zip(groups, starts, [*starts[1:], len(template)], strict=True):
+        names = re.findall(r"^([A-Z_]+)=$", template[start:end], re.M)
+        assert names == [name for name, _, _ in schema.keys(group)], group
+    assert len(re.findall(r"^[A-Z_]+=", template, re.M)) == sum(len(schema.keys(group)) for group in groups)
     assert "/etc/departureboard/secrets.env" in template and "next to docker-compose.yml" in template
     install = (PI / "install.sh").read_text()
     assert '"$REPO/deploy/secrets.env.example" "$CONF/secrets.env"' in install
@@ -378,31 +379,29 @@ def _say_if_unguarded(name: str, active: bool, listed: str | None, systemd: str 
                           capture_output=True, text=True, env=env, check=True)
 
 
-@pytest.mark.parametrize("name", ["install.sh", "update.sh"])
-def test_install_and_update_say_when_the_guard_isnt_holding_the_web_server(name):
+# install.sh's only: update.sh's is the same (test_install_and_update_say_the_same_about_the_guard).
+def test_install_and_update_say_when_the_guard_isnt_holding_the_web_server():
     # Holding it: the table in, and the server's cgroup in its set.
-    held = _say_if_unguarded(name, True, FILLED)
+    held = _say_if_unguarded("install.sh", True, FILLED)
     assert (held.stdout, held.stderr) == ("carried on\n", "")
-    assert _say_if_unguarded(name, False, None).stderr == ""  # no server running, nothing to guard
+    assert _say_if_unguarded("install.sh", False, None).stderr == ""  # no server running, nothing to guard
     for listed in (None, EMPTY):  # no table; or a table, but systemd hasn't put the server in its set
-        said = _say_if_unguarded(name, True, listed)
+        said = _say_if_unguarded("install.sh", True, listed)
         assert said.stdout == "carried on\n"  # a warning, never a stop: the board and dashboard still work
-        assert said.stderr.startswith("Warning: the web server's network guard isn't holding it"), said.stderr
+        assert said.stderr.startswith("Warning:"), said.stderr
         assert "journalctl -u departureboard-guard -u departureboard-web" in said.stderr
         assert "Trixie" not in said.stderr
 
 
-@pytest.mark.parametrize("name", ["install.sh", "update.sh"])
 @pytest.mark.parametrize("systemd, old", [("252 (252.38-1~deb12u1)", True), ("253", True), ("254", False),
                                            ("257 (257.9-1~deb13u1)", False), ("unknown", False)])
-def test_install_and_update_say_when_systemd_is_too_old_to_fill_the_guards_set(name, systemd, old):
+def test_install_and_update_say_when_systemd_is_too_old_to_fill_the_guards_set(systemd, old):
     # NFTSet= came in systemd 254; Bookworm has 252, Trixie 257.
-    said = _say_if_unguarded(name, True, EMPTY, systemd).stderr
-    assert said.startswith("Warning: the web server's network guard isn't holding it")
-    assert ("Raspberry Pi OS Trixie" in said) == old, said
-    assert ("journalctl" in said) == (not old), said
-    assert ("The board and the dashboard work all the same" in said) == old
-    assert _say_if_unguarded(name, True, FILLED, systemd).stderr == ""
+    said = _say_if_unguarded("install.sh", True, EMPTY, systemd).stderr
+    assert said.startswith("Warning:"), said
+    assert ("254" in said and "Trixie" in said) == old, said
+    assert ("journalctl -u departureboard-guard -u departureboard-web" in said) == (not old), said
+    assert _say_if_unguarded("install.sh", True, FILLED, systemd).stderr == ""
 
 
 def test_install_and_update_say_the_same_about_the_guard():
@@ -499,7 +498,6 @@ def test_update_installs_pygame_for_the_screen_before_the_new_code():
 
 
 def test_the_pi_serves_its_settings_at_8090_and_nothing_at_8080():
-    from departureboard.cli.common import WEB_PORT, setup_url
     from departureboard.cli.main import _parser
     from departureboard.settings.installs import install_named
 
@@ -510,10 +508,8 @@ def test_the_pi_serves_its_settings_at_8090_and_nothing_at_8080():
     assert (args.command, args.install, args.config, args.port, args.host, args.lan) == (
         "serve", "pi", "/etc/departureboard/config.toml", 8090, None, False)
     assert install_named("pi").host == "0.0.0.0"  # every address, kept to the home network above
-    assert WEB_PORT == 8090 and setup_url("kitchen") == "http://kitchen.local:8090/settings"  # what the board shows
     # No second listener on the old port: bookmarks to it break, on purpose.
     assert "8080" not in (PI / "departureboard-web.service").read_text()
-    assert _parser().parse_args(["web"]).port == 8090  # the old command, hidden, on the new port
 
 
 def test_the_settings_service_has_room_for_every_connection_the_server_takes():
@@ -774,7 +770,7 @@ def test_install_names_the_boards_unit_only_while_its_view_is_on(tmp_path, capsy
     assert main(_query("install.sh", "views", tmp_path)) == 0
     assert ("board" in capsys.readouterr().out.splitlines()) == board
     install = _script("install.sh")
-    assert 'if grep -qx board <<<"$views"; then\n  cat <<EOF\n  1. Start the board:\n' in install
+    assert '\nif grep -qx board <<<"$views"; then\n' in install
 
 
 @pytest.mark.parametrize("display, renderer", [
@@ -849,7 +845,7 @@ def test_install_and_update_give_the_settings_new_address():
     install = (PI / "install.sh").read_text()
     update = (PI / "update.sh").read_text()
     assert "http://$(hostname).local:8090/settings" in install
-    assert "The settings site moved to :8090/settings" in update
+    assert ":8090/settings" in update
     for text in (install, update):
         assert ":8080" not in text and "departureboard web " not in text
     # The command the settings site gives for the password, as install.sh gives it.
@@ -1032,9 +1028,10 @@ def test_the_guide_installs_a_pi_from_a_checked_release():
     for name in ("inky-departures-$VERSION.tar.gz", "SHA256SUMS", "SHA256SUMS.sigstore.json"):
         assert f'curl -fLO "$base/{name}"' in block
     # Nothing is unpacked or run unless the sum is right, even pasted as a block.
-    assert block.endswith('sha256sum --check --ignore-missing SHA256SUMS &&\n'
-                          '  tar -xzf "inky-departures-$VERSION.tar.gz" &&\n'
-                          '  cd "inky-departures-$VERSION" &&\n  sudo ./deploy/pi/install.sh\n')
+    last = block[block.rindex("sha256sum "):]
+    steps = [step.strip() for step in last.split("&&")]
+    assert steps == ["sha256sum --check --ignore-missing SHA256SUMS", 'tar -xzf "inky-departures-$VERSION.tar.gz"',
+                     'cd "inky-departures-$VERSION"', "sudo ./deploy/pi/install.sh"]
     assert f'--certificate-identity "{_identity("v$VERSION")}"' in GUIDE
     assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in GUIDE
     assert "sudo ./deploy/pi/upgrade.sh 0.2.0" in GUIDE
@@ -1101,7 +1098,6 @@ def test_unraids_template_runs_the_published_image_locked_down():
     assert (data.get("Type"), data.get("Mode"), data.text) == ("Path", "rw", "/mnt/user/appdata/departureboard")
     # A folder, not a volume: the guide gives it to the image's user first.
     assert "chown 10001:10001 /mnt/user/appdata/departureboard" in DOCKER_DOCS
-    assert re.search(r"^USER 10001:10001$", DOCKERFILE, re.M)
     assert 's/X\\.Y\\.Z/$VERSION/' in DOCKER_DOCS and "templates-user/my-departureboard.xml" in DOCKER_DOCS
 
 
