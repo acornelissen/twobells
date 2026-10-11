@@ -76,18 +76,28 @@ def _bearing(text: str) -> float | None:
     return bearing if math.isfinite(bearing) else None
 
 
+def _degrees(text: str, limit: float) -> float | None:
+    """A latitude (limit 90) or longitude (limit 180); None if missing,
+    unreadable, not finite ("nan", "inf") or off the map."""
+    try:
+        degrees = float(text)
+    except ValueError:
+        return None
+    return degrees if math.isfinite(degrees) and -limit <= degrees <= limit else None
+
+
 def parse_siri_vm(body: bytes) -> list[Vehicle]:
-    """Vehicles from a SIRI-VM document. Activities missing a position are skipped."""
+    """Vehicles from a SIRI-VM document. Activities missing a position, or
+    with one that isn't on the map, are skipped."""
     root = safexml.fromstring(body)  # refuses a DOCTYPE, so no entity tricks
     vehicles = []
     for activity in root.iterfind(".//siri:VehicleActivity", _NS):
         journey = activity.find("siri:MonitoredVehicleJourney", _NS)
         if journey is None:
             continue
-        try:
-            lat = float(_text(journey, "siri:VehicleLocation/siri:Latitude"))
-            lon = float(_text(journey, "siri:VehicleLocation/siri:Longitude"))
-        except ValueError:
+        lat = _degrees(_text(journey, "siri:VehicleLocation/siri:Latitude"), 90)
+        lon = _degrees(_text(journey, "siri:VehicleLocation/siri:Longitude"), 180)
+        if lat is None or lon is None:
             continue
         vehicles.append(
             Vehicle(

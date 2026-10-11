@@ -29,6 +29,29 @@ def test_an_unreadable_bearing_loses_only_that_bearing(bearing):
     assert [v.bearing for v in vehicles[1:]] == [120.0, 270.0, 95.0]
 
 
+@pytest.mark.parametrize(
+    ("tag", "value"),
+    [
+        (b"Latitude", b"nan"), (b"Latitude", b"inf"), (b"Latitude", b"-inf"), (b"Latitude", b"1e400"),
+        (b"Latitude", b"90.5"), (b"Latitude", b"-91"),
+        (b"Longitude", b"nan"), (b"Longitude", b"-inf"), (b"Longitude", b"180.5"), (b"Longitude", b"-181"),
+    ],
+)
+def test_a_position_that_isnt_on_earth_drops_only_that_vehicle(tag, value):
+    old = {b"Latitude": b"<Latitude>53.443502</Latitude>", b"Longitude": b"<Longitude>-1.957392</Longitude>"}[tag]
+    body = FIXTURE.replace(old, b"<" + tag + b">" + value + b"</" + tag + b">")
+    vehicles = parse_siri_vm(body)
+    assert len(vehicles) == 3  # the others are kept
+    assert "BNML-1001" not in {v.vehicle_ref for v in vehicles}
+
+
+def test_a_position_at_the_edge_of_the_map_is_kept():
+    body = FIXTURE.replace(b"<Latitude>53.443502</Latitude>", b"<Latitude>-90</Latitude>")
+    body = body.replace(b"<Longitude>-1.957392</Longitude>", b"<Longitude>180</Longitude>")
+    first = parse_siri_vm(body)[0]
+    assert (first.lat, first.lon) == (-90.0, 180.0)
+
+
 def test_falls_back_to_line_ref_without_a_published_name():
     body = FIXTURE.replace(b"<PublishedLineName>237</PublishedLineName>", b"")
     assert "237" in {v.line for v in parse_siri_vm(body)}
