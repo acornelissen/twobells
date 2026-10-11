@@ -477,8 +477,10 @@ class GroupForm:
             data, broken, unreadable = {}, "", str(error)
         shown = {**self._current(data), **(values or {})}
         fields = self._fields(data, shown.get("theme", ""))
+        unsaved: set[str] = set()
         if values is not None:  # drawn again as sent: an unticked box isn't sent, so it stays unticked
             shown |= {f.name: values.get(f.name, "") for f in fields if f.kind == "check"}
+            unsaved = self._unsaved(fields, data, values)
         sections = self._sections(fields, data)
         out = [self._header(csrf)]
         if errors:
@@ -508,7 +510,7 @@ class GroupForm:
         out.append(f'<form method="post" action="{e(self._action)}" novalidate class="settings-form">')
         out.append(f'<input type="hidden" name="csrf" value="{e(csrf)}">')
         for page, heading, here in sections:
-            out.append(self._section(page, heading, here, data, shown, errors))
+            out.append(self._section(page, heading, here, data, shown, errors, unsaved))
         # Save first: the first button is the one Enter in a box presses.
         out.append('<div class="savebar">')
         if self._applies:
@@ -522,7 +524,7 @@ class GroupForm:
         return "".join(out)
 
     def _section(self, page: str, heading: str, fields: list[Field], data: dict, shown: dict[str, str],
-                 errors: dict[str, str]) -> str:
+                 errors: dict[str, str], unsaved: set[str]) -> str:
         """One section: a fieldset with the heading in its legend, a pill when
         it is switched off, its description, then its fields, the advanced
         ones in a disclosure; or, with nothing set up, how to set it up."""
@@ -551,14 +553,14 @@ class GroupForm:
         common = [f for f in here if f.tier == "common"]
         advanced = [f for f in here if f.tier == "advanced"]
         for f in common:
-            out.append(self._draw(f, data, shown, errors))
+            out.append(self._draw(f, data, shown, errors, unsaved))
             if f.name == "bus_enabled":
                 out.append(self._stops(data))
         out.append(self._readonly(page, heading, data))
         if advanced:
             opened = " open" if any(f.name in errors for f in advanced) else ""
             out.append(f'<details class="advanced"{opened}><summary>Advanced</summary>')
-            out.extend(self._draw(f, data, shown, errors) for f in advanced)
+            out.extend(self._draw(f, data, shown, errors, unsaved) for f in advanced)
             out.append("</details>")
         out.append("</fieldset>")
         return "".join(out)
@@ -573,14 +575,39 @@ class GroupForm:
         section = data.get(needs)
         return isinstance(section, dict) and section.get("enabled") is False
 
-    def _draw(self, f: Field, data: dict, shown: dict[str, str], errors: dict[str, str]) -> str:
+    def _draw(self, f: Field, data: dict, shown: dict[str, str], errors: dict[str, str], unsaved: set[str]) -> str:
         """A field with what it shows and its errors: time windows as rows,
-        with each row's, and the walks as a box for each stop, with each box's."""
+        with each row's, and the walks as a box for each stop, with each box's.
+        One in `unsaved` says so on its first tag, for settings.js."""
         if f.kind == "windows":
-            return windowrows.render(f, shown, errors)
-        if f.kind == "per_stop":
-            return self._walks(f, data, shown, errors)
-        return self._field(f, data, shown.get(f.name, ""), errors.get(f.name))
+            drawn = windowrows.render(f, shown, errors)
+        elif f.kind == "per_stop":
+            drawn = self._walks(f, data, shown, errors)
+        else:
+            drawn = self._field(f, data, shown.get(f.name, ""), errors.get(f.name))
+        if f.name in unsaved and drawn:
+            drawn = drawn.replace(">", " data-unsaved>", 1)
+        return drawn
+
+    def _unsaved(self, fields: list[Field], data: dict, values: Mapping[str, str]) -> set[str]:
+        """The fields whose `values` (a refused save's) differ from the
+        settings in force: drawn again as typed, they are still not saved."""
+        current = self._current(data)
+        found = set()
+        for f in fields:
+            was = current.get(f.name, "")
+            if f.kind == "windows":
+                text, mistakes = windowrows.read(f.name, values, was)
+                differs = bool(mistakes) or edited(text, was)
+            elif f.kind == "per_stop":
+                differs = any(edited(values.get(box, ""), current.get(box, "")) for box, _ in self._walk_boxes(f, data))
+            elif f.kind in ("text", "number", "area"):
+                differs = edited(values.get(f.name, ""), was)
+            else:
+                differs = values.get(f.name, "") != was
+            if differs:
+                found.add(f.name)
+        return found
 
     def _field(self, f: Field, data: dict, value: str, error: str | None) -> str:
         if f.kind == "check":

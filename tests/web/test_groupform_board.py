@@ -606,7 +606,8 @@ def test_trains_and_buses_cannot_both_be_switched_off(setup):
     page = form.render("tok", errors=errors, values=fields)
     assert '<a href="#train_enabled">Trains – Show trains: Trains and buses can' in page
     # A choice's hint and error describe its group of buttons; its first button is the link's target.
-    assert ('<fieldset class="field radios has-error" aria-describedby="train_enabled-hint train_enabled-error">'
+    assert ('<fieldset class="field radios has-error" aria-describedby="train_enabled-hint train_enabled-error"'
+            ' data-unsaved>'
             "<legend>Show trains</legend>") in page
     assert '<input type="radio" id="train_enabled" name="train_enabled" value="true">' in page
 

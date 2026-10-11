@@ -16,6 +16,7 @@ from departureboard.setup.keytest import KeyResult
 from departureboard.web.keyspage import KeysPage
 from tests.paths import FIXTURES, ROOT
 from tests.setup.test_wizard import _Tree
+from tests.web.test_groupform import fields_of
 from tests.web.test_groupform_board import CONFIG, ENV, board_form
 
 NODE = shutil.which("node")
@@ -210,6 +211,25 @@ def test_leaving_asks_first_while_there_are_changes_and_not_once_they_are_sent(b
     """)
     assert found["at"] == {"changed": 1, "putBack": 0, "twice": 1, "sent": 0, "back": 1}
     assert found["asked"]["prevented"] is True
+
+
+def test_a_refused_save_s_page_counts_what_was_typed_and_asks_before_leaving(tmp_path):
+    # Drawn again after a refused save, the boxes hold what was typed: still
+    # not saved, so marked, counted and guarded as if typed on this page.
+    config = tmp_path / "config.toml"
+    config.write_text(CONFIG.format(state=tmp_path / "state.json"))
+    form = board_form(config, lambda: dict(ENV))
+    sent = fields_of(form.render("tok")) | {"title": "Home", "min_redraw_minutes": "0"}
+    errors = form.save(sent)
+    assert errors
+    found = run(form.render("tok", errors=errors, values=sent), """
+        const first = { said: said(), leaving: leaving(), changed: changed().length };
+        typed("title", "Elsewhere");
+        flush();
+        console.log(JSON.stringify({ first, then: { said: said(), changed: changed().length } }));
+    """)
+    assert found["first"] == {"said": "2 unsaved changes", "leaving": 1, "changed": 2}
+    assert found["then"] == {"said": "2 unsaved changes", "changed": 2}
 
 
 def test_save_is_never_disabled(board_page):

@@ -3,7 +3,8 @@
 //
 // Each settings form (form.settings-form, and each key's form.keyform) is
 // compared with what the server drew: a box's defaultValue, a tick's
-// defaultChecked, a list's defaultSelected. A field changed is marked
+// defaultChecked, a list's defaultSelected; a field the server drew with
+// what a refused save sent (data-unsaved) counts as changed. A field changed is marked
 // .is-changed with a "Changed" tag in words; a time window's row counts as
 // one field. The form's save bar (or a key form's buttons) says "2 unsaved
 // changes" in a polite live region, once typing stops. Leaving the page asks
@@ -56,6 +57,10 @@
   // The field a control belongs to: its time window's row, else its .field.
   const fieldOf = (control) => control.closest(".window") || control.closest(".field");
 
+  // Whether the server drew the control's field with what a refused save
+  // sent (data-unsaved): it differs from what is saved, whatever it is drawn with.
+  const refused = (control) => control.closest("[data-unsaved]") !== null;
+
   function tagged(field, on) {
     field.classList.toggle("is-changed", on);
     const tag = tags.get(field);
@@ -81,7 +86,7 @@
     const fields = new Map();
     for (const control of controls(form)) {
       const field = fieldOf(control);
-      if (field) fields.set(field, fields.get(field) || changed(control));
+      if (field) fields.set(field, fields.get(field) || changed(control) || refused(control));
     }
     let count = 0;
     for (const [field, on] of fields) {

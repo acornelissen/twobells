@@ -373,6 +373,19 @@ def test_nothing_is_said_changed_when_a_save_is_refused(store):
     assert changed == []
 
 
+def test_a_refused_save_marks_each_field_drawn_as_typed_but_not_saved(store):
+    # The page drawn again shows what was typed, so the settings script can't
+    # tell it from what is saved: the fields that differ say so.
+    form = board_form(store, lambda: dict(ENV))
+    sent = fields_of(form) | {"title": "Home", "min_redraw_minutes": "0", "view_dashboard": "on"}
+    errors = form.save(sent)
+    assert "min_redraw_minutes" in errors
+    page = form.render("tok", errors=errors, values=sent)
+    marked = set(re.findall(r'<(?:div|fieldset) class="field[^"]*" data-unsaved>.*?(?:id|for)="(\w+)"', page))
+    assert marked == {"title", "min_redraw_minutes", "view_dashboard"}
+    assert "data-unsaved" not in form.render("tok")
+
+
 def test_a_section_switched_off_says_so_on_every_page_that_has_it(store):
     store.config_path.write_text(CONFIG.replace('operators = ["BNML"]', 'operators = ["BNML"]\nenabled = false'))
     page = board_form(store, lambda: dict(ENV)).render("tok")
