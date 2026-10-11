@@ -333,3 +333,31 @@ def test_detailed_source_uses_a_size_capped_request_by_default(monkeypatch):
     )
     assert DarwinSource(api_key="k", crs="GLO", with_details=True).fetch_board().services == []
     assert seen == [darwin.DETAILS_MAX_BYTES]
+
+
+@pytest.mark.parametrize("with_details", [False, True])
+def test_a_fetch_keeps_its_services_for_where_the_trains_are(with_details):
+    payload = load_fixture("ldbws_glossop_details.json")
+    _, fake_get = recording(payload)
+    source = DarwinSource(api_key="k", crs="GLO", http_get=fake_get, with_details=with_details)
+    assert source.services == []
+    departures = source.fetch()
+    assert [s.service_id for s in source.services][:2] == ["9000001GLSP____", "9000002GLSP____"]
+    assert [s.departure for s in source.services] == departures
+
+
+def test_a_failed_fetch_keeps_the_last_services():
+    payload = load_fixture("ldbws_glossop_details.json")
+    answers = [payload, OSError("down")]
+
+    def fake_get(url, headers):
+        answer = answers.pop(0)
+        if isinstance(answer, BaseException):
+            raise answer
+        return answer
+
+    source = DarwinSource(api_key="k", crs="GLO", http_get=fake_get)
+    source.fetch()
+    with pytest.raises(OSError):
+        source.fetch()
+    assert len(source.services) == 5

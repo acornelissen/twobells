@@ -23,13 +23,12 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from typing import Protocol
 
-from ..board.route import where
 from ..core import words
 from ..core.model import Departure, Status, iso, minutes_between
 from ..core.walk import WalkTimes
 from ..sources.bodsbus import BusBoard
 from ..sources.darwin import CallingPoint, Message, ServiceDetails, TrainBoard, TrainService, train_position
-from ..sources.livebus import LiveDeparture, approach
+from ..sources.livebus import LiveDeparture, approach, where_words
 from ..sources.weather import Conditions, Hour, rain_line
 from ..timetable.model import Schedule, StopPosition, sign_letter
 from ..timetable.roads import path
@@ -305,23 +304,14 @@ def _vehicle(live: LiveDeparture, now: datetime, with_position: bool) -> dict | 
     return found
 
 
-def _where(live: LiveDeparture, names: list[str] | None, yours: int, bus_at: float | None) -> str:
-    """Where the bus is, in words for the row and screen readers."""
-    if live.progress is None:
-        return "No live position"
-    if not names:
-        return "Live position known"
-    return where(tuple(names[: yours + 1]), bus_at, False)
-
-
 def _strip(live: LiveDeparture, positions: dict[str, StopPosition]) -> dict | None:
     found = approach(live, positions)
     if found is None:
         return None
     names = [stop.name for stop in found.stops]
     bus_at = round(found.bus_at, 3) if found.bus_at is not None else None
-    return {"stops": names, "yours": found.yours, "bus_at": bus_at,
-            "where": _where(live, names, found.yours, found.bus_at)}
+    # The words are livebus's, so a screen's row says the same (livebus.row_strip).
+    return {"stops": names, "yours": found.yours, "bus_at": bus_at, "where": where_words(live, found)}
 
 
 def _call_time(minute: int) -> str:
@@ -353,7 +343,7 @@ def bus_map(row: dict, live: LiveDeparture, positions: dict[str, StopPosition], 
         "stops": stops,
         "path": path([calls[i].atco for i in picked], positions, shapes),
         "vehicle": _vehicle(live, now, with_position=True),
-        "where": strip["where"] if strip else _where(live, None, 0, None),
+        "where": strip["where"] if strip else where_words(live, None),
     }
 
 

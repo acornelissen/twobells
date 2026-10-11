@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from html.parser import HTMLParser
+from typing import Protocol
 from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
 
@@ -450,6 +452,9 @@ class DarwinSource:
         # The messages' text from the last successful fetch; the app keeps
         # them with the departures, for the e-paper board's notice.
         self.messages: list[str] = []
+        # The trains of the last successful fetch, with their service IDs, so
+        # a screen can ask where they are (TrainDetails). Kept in memory only.
+        self.services: list[TrainService] = []
 
     def _url(self) -> str:
         params: dict[str, int | str] = {"numRows": self._rows}
@@ -466,15 +471,12 @@ class DarwinSource:
         """The rich board: calling points too when with_details is set."""
         board = parse_board_rich(self._get())
         self.messages = [m.text for m in board.messages]
+        self.services = board.services
         return board
 
     def fetch(self) -> list[Departure]:
-        if self.with_details:
-            return [s.departure for s in self.fetch_board().services]
-        board = self._get()
-        departures = parse_board(board)
-        self.messages = [m.text for m in parse_messages(board)]
-        return departures
+        # The plain board reads the same way (parse_board), just without calling points.
+        return [s.departure for s in self.fetch_board().services]
 
 
 # One train's whole journey, from GetServiceDetails (the Rail Data
@@ -596,6 +598,68 @@ class ServiceDetailsClient:
         return parse_service_details(raw)
 
 
+class DetailsSource(Protocol):
+    def details(self, service_id: str) -> ServiceDetails: ...
+
+
+DETAILS_TRAINS = 3  # trains placed on their route: the first ones not cancelled
+DETAILS_TTL = 60.0  # seconds before a train's details are asked for again
+DETAILS_OFF = 6 * 3600.0  # seconds without details after the key is refused
+
+
+class TrainDetails:
+    """Service details for the first few trains on a board that aren't
+    cancelled, each asked for at most once a minute. Details of trains that
+    have left the board, or been cancelled, are forgotten. A refused key turns
+    details off for six hours; any other failure skips that train this round,
+    keeping what was known. The dashboard and a screen's board keep one each."""
+
+    def __init__(self, client: DetailsSource, monotonic: Callable[[], float] = time.monotonic) -> None:
+        self._client = client
+        self._monotonic = monotonic
+        # By Darwin service ID, with when they came (monotonic).
+        self._found: dict[str, tuple[float, ServiceDetails]] = {}
+        self._off_until: float | None = None
+
+    def refresh(self, services: list[TrainService]) -> list[tuple[str, Exception | None]]:
+        """Asks for the details that are due. Says how each ask went, in
+        order: None if it worked, else the error. DetailsUnavailable ends the
+        round; ServiceGone forgets that train."""
+        running = [s.service_id for s in services
+                   if s.service_id and s.departure.status is not Status.CANCELLED]
+        self._found = {sid: entry for sid, entry in self._found.items() if sid in running}
+        if self._off_until is not None and self._monotonic() < self._off_until:
+            return []
+        results: list[tuple[str, Exception | None]] = []
+        for service_id in running[:DETAILS_TRAINS]:
+            entry = self._found.get(service_id)
+            if entry is not None and self._monotonic() - entry[0] < DETAILS_TTL:
+                continue
+            try:
+                found = self._client.details(service_id)
+            except DetailsUnavailable as error:
+                self._off_until = self._monotonic() + DETAILS_OFF
+                self._found = {}
+                results.append((service_id, error))
+                return results
+            except ServiceGone as error:
+                self._found.pop(service_id, None)
+                results.append((service_id, error))
+            except Exception as error:  # noqa: BLE001 - one train's position matters less than the rest
+                results.append((service_id, error))
+            else:
+                self._found[service_id] = (self._monotonic(), found)
+                results.append((service_id, None))
+        return results
+
+    def known(self, max_age: float | None = None) -> dict[str, ServiceDetails]:
+        """The details known, by service ID; with `max_age`, only those that
+        came at most that many seconds ago."""
+        now = self._monotonic()
+        return {sid: found for sid, (came, found) in self._found.items()
+                if max_age is None or 0 <= now - came <= max_age}
+
+
 # Where the train is, for the dashboard's strip: worked out from the stops
 # Darwin says it has been to, and the times between them.
 
@@ -609,6 +673,8 @@ class TrainPosition:
     strip_stops: tuple[str, ...]  # up to 5 stops before this station, it, and the next
     yours: int  # this station's index in strip_stops
     train_at: float | None  # the train in stop units along strip_stops; None if not on it
+    # The same in a few words, for a screen's row: "Left Hadfield", "At Glossop".
+    short: str = field(default="", compare=False)
 
 
 def _clock(value: str | None, scheduled: str) -> str:
@@ -669,18 +735,19 @@ def train_position(details: ServiceDetails | None, now: datetime) -> TrainPositi
         else:
             left_here = _clock(here.atd, here.std or here.scheduled)
             train_at = yours + _along(left_here, _clock(after[0].expected, after[0].scheduled), now)
-        return TrainPosition(f"Departed {here.name}", stops, yours, round(train_at, 3))
+        return TrainPosition(f"Departed {here.name}", stops, yours, round(train_at, 3), "Departed")
     if here.ata is not None:
-        return TrainPosition(f"At {here.name} now", stops, yours, yours)
+        return TrainPosition(f"At {here.name} now", stops, yours, yours, f"At {here.name}")
 
     last = max((i for i, p in enumerate(previous) if _passed(p)), default=None)
     if last is None:
         if previous:
             first = previous[0]
             starts = _clock(first.expected, first.scheduled)
-            return TrainPosition(f"Not started yet: leaves {first.name} at {starts}", stops, yours, None)
+            return TrainPosition(f"Not started yet: leaves {first.name} at {starts}", stops, yours, None,
+                                 "Not started")
         starts = _clock(here.etd, here.std or here.scheduled)
-        return TrainPosition(f"Not started yet: leaves {here.name} at {starts}", stops, yours, None)
+        return TrainPosition(f"Not started yet: leaves {here.name} at {starts}", stops, yours, None, "Not started")
 
     left = previous[last]
     if last + 1 < len(previous):
@@ -689,6 +756,6 @@ def train_position(details: ServiceDetails | None, now: datetime) -> TrainPositi
         due = arrives
     index = last - (len(previous) - len(before))  # its place on the strip
     if index < 0:
-        return TrainPosition(_left(left), stops, yours, None)  # further back than the strip shows
+        return TrainPosition(_left(left), stops, yours, None, f"Left {left.name}")  # further back than the strip
     train_at = index + _along(_clock(left.actual, left.scheduled), due, now)
-    return TrainPosition(_left(left), stops, yours, round(train_at, 3))
+    return TrainPosition(_left(left), stops, yours, round(train_at, 3), f"Left {left.name}")

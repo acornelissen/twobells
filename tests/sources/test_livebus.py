@@ -14,6 +14,8 @@ from departureboard.sources.livebus import (
     live_departures,
     match,
     progress,
+    row_strip,
+    where_words,
 )
 from departureboard.timetable.model import Calendar, Call, Journey, Schedule, StopPosition
 from tests.paths import FIXTURES
@@ -612,3 +614,57 @@ def test_approach_with_the_bus_just_past_your_stop():
 def test_approach_without_a_bus():
     found = approach(row(live(at(10, 0)), "A", "341"), POSITIONS)
     assert found.bus_at is None and len(found.stops) == 7
+
+
+# A screen's row strip, from the approach
+
+
+def test_a_row_strip_says_where_the_bus_is_as_the_dashboard_does():
+    late = row(live(at(10, 14), [bus(*HALFWAY, at(10, 14))]), "A", "341")
+    found = row_strip(late, POSITIONS)
+    assert (found.where, found.stops, found.yours) == ("3 stops away", 7, 5)
+    assert found.at == pytest.approx(2.5, abs=0.02)
+    assert found.where == where_words(late, approach(late, POSITIONS))  # the dashboard row's words
+
+
+def test_a_row_strip_with_the_bus_not_yet_on_it():
+    coming = replace(row(live(at(10, 0)), "A", "341"), progress=Progress(0.5, 0.0))
+    found = row_strip(coming, POSITIONS)
+    # Counted in calls, short for a row; the dashboard says "Not yet past The Junction".
+    assert found.where == "6 stops away" and found.at is None
+    assert where_words(coming, approach(coming, POSITIONS)) == "Not yet past The Junction"
+
+
+def test_a_row_strip_s_words_fit_its_20_characters():
+    rows = [replace(row(live(at(10, 0)), "A", "341"), progress=Progress(at_, 0.0))
+            for at_ in (0.5, 3.5, 5.5, 6.0)]
+    found = [row_strip(r, POSITIONS).where for r in rows]
+    assert found == ["6 stops away", "3 stops away", "1 stop away", "At your stop"]
+    assert all(len(words) <= 20 for words in found)
+
+
+def test_a_row_strip_with_the_bus_at_your_stop():
+    passing = replace(row(live(at(10, 10)), "A", "341"), progress=Progress(6.05, 0.0))
+    found = row_strip(passing, without(HOWARD))  # your stop is the strip's last
+    assert found.where == "At your stop" and found.at == 5
+
+
+def test_no_row_strip_without_a_live_bus_or_your_stop_s_position():
+    timetabled = row(live(at(10, 0)), "A", "341")
+    assert row_strip(timetabled, POSITIONS) is None
+    placed = replace(timetabled, progress=Progress(3.0, 0.0))
+    assert row_strip(placed, without(HENRY_A)) is None
+
+
+def test_no_row_strip_rather_than_a_bad_one():
+    beyond = replace(row(live(at(10, 10)), "A", "341"), progress=Progress(6.5, 0.0))
+    assert row_strip(beyond, without(HOWARD)) is None  # past your stop: no row should have it
+    lonely = {HENRY_A: POSITIONS[HENRY_A]}  # a strip of one stop can't be drawn
+    assert row_strip(replace(beyond, progress=Progress(5.0, 0.0)), lonely) is None
+
+
+def test_where_words_without_a_bus_or_a_strip():
+    timetabled = row(live(at(10, 0)), "A", "341")
+    assert where_words(timetabled, approach(timetabled, POSITIONS)) == "No live position"
+    placed = replace(timetabled, progress=Progress(3.0, 0.0))
+    assert where_words(placed, None) == "Live position known"

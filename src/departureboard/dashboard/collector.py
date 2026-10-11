@@ -44,9 +44,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ..core.errors import safe_message
-from ..core.model import Status
 from ..sources import holidays as _holidays
-from ..sources.darwin import DetailsUnavailable, ServiceDetails, ServiceGone, TrainBoard
+from ..sources.darwin import DetailsUnavailable, ServiceGone, TrainBoard, TrainDetails
 from ..sources.disruptions import BusArea, RailArea, bus_disruptions, disruptions_part, train_disruptions
 from ..timetable.build import TimetableBusy
 from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
@@ -72,9 +71,6 @@ CLIENT_GRACE = 600.0  # a browser seen this recently keeps the quiet windows bus
 UPKEEP_SECONDS = 3600.0
 HEARTBEAT_SECONDS = 60.0
 HEALTHY_AGE = 180.0  # /healthz wants a snapshot rebuilt this recently
-DETAILS_TRAINS = 3  # trains placed on their route each poll: the first ones not cancelled
-DETAILS_TTL = 60.0  # seconds before a train's details are asked for again
-DETAILS_OFF = 6 * 3600.0  # seconds without details after the key is refused
 BUS_DISRUPTIONS_SECONDS = 600.0
 TRAIN_INCIDENTS_SECONDS = 1800.0
 _JITTER = 0.1  # intervals vary by this fraction either way, so jobs drift apart
@@ -209,9 +205,9 @@ class Collector:
         self._trains, self._buses, self._weather = _Feed(), _Feed(), _Feed()
         # How asking where the trains and the buses are is going, for the settings' Overview.
         self._train_positions, self._bus_positions = _Feed(), _Feed()
-        # Service details by Darwin service ID, with when they came (monotonic).
-        self._details: dict[str, tuple[float, ServiceDetails]] = {}
-        self._details_off_until: float | None = None
+        # Where the first few trains are: their service details, asked for at
+        # most once a minute each (sources.darwin.TrainDetails has the rules).
+        self._details = TrainDetails(settings.train_details, monotonic) if settings.train_details else None
         self._build_timetable = build_timetable
         # The most of each timetable file upkeep reads and parses: the install's (settings/installs.py).
         self._timetable_limits = timetable_limits
@@ -257,7 +253,7 @@ class Collector:
 
     def _publish_trains(self) -> None:
         settings = self._settings
-        details = {service_id: found for service_id, (_, found) in self._details.items()}
+        details = self._details.known() if self._details is not None else {}
         part, lookups = trains_part(
             self._trains.data, self._trains.fetched, self._trains.status(), settings.train_crs,
             settings.train_filter, settings.walk, self._route_prefix, self._phrases,
@@ -372,7 +368,8 @@ class Collector:
         if self._settings.train_filter:
             stations.setdefault(self._settings.train_filter, "")
         points = [p for s in board.services for p in s.calling_points]
-        points += [p for _, found in self._details.values() for p in found.previous]
+        known = self._details.known() if self._details is not None else {}
+        points += [p for found in known.values() for p in found.previous]
         for point in points:
             if point.crs:
                 stations[point.crs] = point.name
@@ -383,41 +380,22 @@ class Collector:
                 self._publish_disruptions()
 
     def _refresh_details(self, board: TrainBoard) -> None:
-        """Service details for the first few trains that aren't cancelled,
-        each asked for at most once a minute. Details of trains that have
-        left the board, or been cancelled, are forgotten. A refused key turns
-        details off for six hours; any other failure skips that train until
-        the next poll, keeping what was known."""
-        client = self._settings.train_details
-        if client is None:  # poll_trains only asks when there is one
+        """Service details for the first few trains (TrainDetails has the
+        rules), with how asking went for the settings' Overview: a refused
+        key turns details off for six hours; any other failure skips that
+        train until the next poll, keeping what was known."""
+        if self._details is None:  # poll_trains only asks when there is a client
             return
-        running = {s.service_id for s in board.services
-                   if s.service_id and s.departure.status is not Status.CANCELLED}
-        self._details = {sid: entry for sid, entry in self._details.items() if sid in running}
-        if self._details_off_until is not None and self._monotonic() < self._details_off_until:
-            return
-        wanted = [s.service_id for s in board.services if s.service_id in running][:DETAILS_TRAINS]
-        for service_id in wanted:
-            entry = self._details.get(service_id)
-            if entry is not None and self._monotonic() - entry[0] < DETAILS_TTL:
-                continue
-            try:
-                found = client.details(service_id)
-            except DetailsUnavailable as error:
-                self._details_off_until = self._monotonic() + DETAILS_OFF
-                self._details = {}
+        for _, error in self._details.refresh(board.services):
+            if error is None:
+                self._train_positions.worked(None, self._clock())
+            elif isinstance(error, DetailsUnavailable):
                 self._train_positions.failed(error)
                 self._train_positions.note = "Not asked again for 6 hours"
                 log.warning("dashboard train positions off for 6 hours: %s", safe_message(error))
-                return
-            except ServiceGone:
-                self._details.pop(service_id, None)
-            except Exception as error:  # noqa: BLE001 - the board matters more than one train's position
+            elif not isinstance(error, ServiceGone):
                 self._train_positions.failed(error)
                 log.warning("dashboard train position skipped: %s", safe_message(error))
-            else:
-                self._details[service_id] = (self._monotonic(), found)
-                self._train_positions.worked(None, self._clock())
 
     def poll_buses(self) -> None:
         source = self._settings.bus

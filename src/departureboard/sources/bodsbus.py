@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import cast
 
 from ..core.errors import safe_message
-from ..core.model import Departure
+from ..core.model import Departure, Strip, strip_key
 from ..core.net import get_bytes
 from ..timetable import build as timetable
 from ..timetable.model import Journey, Schedule
@@ -110,6 +110,9 @@ class BodsBusSource:
         self._loaded: tuple[tuple[int, int] | None, Schedule | None] = (None, None)
         # How the last fetch fell short, for the settings site; None if it didn't.
         self.note: str | None = None
+        # The last fetch's live board, so a screen's row strips can use it
+        # rather than ask again; None after a failure or the fallback.
+        self.board: BusBoard | None = None
 
     def _schedule(self) -> Schedule | None:
         """The saved timetable, read again only when the file changes (the board
@@ -188,6 +191,7 @@ class BodsBusSource:
         schedule = self._schedule()
         reason = unusable(schedule, self._stops, now.replace(tzinfo=None))
         self.note = None
+        self.board = None
         if reason is not None:
             if self._fallback is None:
                 raise RuntimeError(f"{reason}; run departureboard timetable")
@@ -197,7 +201,24 @@ class BodsBusSource:
         # unusable() gives a reason when there is no timetable, so there is one here.
         board = self._board(cast(Schedule, schedule), now, self._rows)
         self.note = board.note
+        self.board = board
         return [live.departure for live in board.departures]
+
+    def live_strips(self, reuse: bool = False) -> dict[tuple[str, str, str, str], Strip]:
+        """Where each row's bus is, for a screen, by core.model.strip_key: the
+        dashboard row's words and strip. With `reuse`, from the last fetch's
+        live board (none after the fallback) instead of asking BODS again.
+        Buses without a live position have none. Raises as fetch_live does."""
+        board = self.board if reuse else self.fetch_live()
+        if board is None:
+            return {}
+        positions = board.schedule.positions
+        found = {}
+        for live in board.departures:
+            strip = livebus.row_strip(live, positions)
+            if strip is not None:
+                found[strip_key(live.departure)] = strip
+        return found
 
     def fetch_live(self, rows: int | None = None) -> BusBoard:
         """The next `rows` buses (the board's number if not given) with their

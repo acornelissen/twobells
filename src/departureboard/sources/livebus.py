@@ -18,8 +18,8 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from itertools import pairwise
 
-from ..board.route import RouteStop, RouteStrip, position_on
-from ..core.model import Departure, Status
+from ..board.route import RouteStop, RouteStrip, position_on, where
+from ..core.model import Departure, Status, Strip
 from ..timetable.model import Call, Journey, Schedule, StopPosition
 from .bods import Vehicle
 
@@ -384,3 +384,39 @@ def _along(picked: list[int], at: float) -> float | None:
         if at <= b:
             return n + (at - a) / (b - a)
     return len(picked) - 1 + (at - picked[-1])
+
+
+def where_words(live: LiveDeparture, found: Approach | None) -> str:
+    """Where the bus is, in words for a row and screen readers, as the route
+    strip says it ("3 stops away", "At your stop"). `found` is its approach."""
+    if live.progress is None:
+        return "No live position"
+    if found is None:
+        return "Live position known"
+    names = tuple(stop.name for stop in found.stops)
+    return where(names[: found.yours + 1], found.bus_at, False)
+
+
+def row_strip(live: LiveDeparture, positions: dict[str, StopPosition]) -> Strip | None:
+    """Where the bus is, for a screen's row: the dashboard row's words and
+    strip. None without a placed bus or your stop's position, and for anything
+    a row can't draw (Strip refuses it): never a guess."""
+    found = approach(live, positions)
+    if live.progress is None or found is None:
+        return None
+    last = len(found.stops) - 1
+    at = found.bus_at
+    if at is not None:
+        if at > last + PASSED_MARGIN:
+            return None  # past your stop and off the strip: its row has gone
+        at = round(min(at, last), 3)  # at your stop, perhaps just past the pole
+    words = where_words(live, found)
+    if at is None:
+        # Not on the strip yet: "Not yet past The Junction" is too long for a
+        # row (about 20 characters), so count the calls to your stop instead.
+        away = live.call_index - math.floor(live.progress.at + 0.02)
+        words = "1 stop away" if away == 1 else f"{away} stops away"
+    try:
+        return Strip(words, len(found.stops), found.yours, at)
+    except ValueError:
+        return None

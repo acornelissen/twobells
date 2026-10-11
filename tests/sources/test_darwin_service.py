@@ -2,12 +2,14 @@
 
 import io
 import json
+from dataclasses import replace
 from datetime import datetime
 from urllib.error import HTTPError, URLError
 
 import pytest
 
 from departureboard.core import net
+from departureboard.core.model import Status
 from departureboard.sources import darwin
 from departureboard.sources.darwin import (
     CallingPoint,
@@ -17,6 +19,7 @@ from departureboard.sources.darwin import (
     ServiceDetailsClient,
     ServiceGone,
     StationCall,
+    TrainDetails,
     TrainPosition,
     parse_service_details,
     train_position,
@@ -173,6 +176,22 @@ def test_departed_once_it_has_left_this_station():
     assert train_position(arrived, datetime(2026, 10, 9, 22, 59)).train_at == 1
     terminating = details([point("Dinting", "22:45", at="On time")], [], atd="On time")
     assert train_position(terminating, datetime(2026, 10, 9, 22, 59)).train_at == 1
+
+
+def test_short_words_for_a_screen_s_row_fit_its_20_characters():
+    at = datetime(2026, 10, 9, 22, 40)
+    waiting = details([point("Hadfield", "22:44", et="On time")])
+    on_its_way = details([point("Guide Bridge", "22:30", at="22:33"), point("Flowery Field", "22:34", et="22:37")])
+    far_back = parse_service_details(load_fixture("ldbws_service_details_from_manchester.json"))
+    arrived = details([point("Dinting", "22:45", at="On time")], ata="22:50")
+    gone = details([point("Dinting", "22:45", at="On time")], ata="22:50", atd="22:52")
+    found = [train_position(d, at).short for d in (waiting, on_its_way, far_back, arrived, gone)]
+    assert found == ["Not started", "Left Guide Bridge", "Left Flowery Field", "At Glossop", "Departed"]
+    assert all(len(words) <= 20 for words in found)
+    # The dashboard's sentence is unchanged, and the short words don't count in comparisons.
+    assert train_position(waiting, at) == TrainPosition(
+        "Not started yet: leaves Hadfield at 22:44", ("Hadfield", "Glossop"), 1, None,
+    )
 
 
 def test_the_strip_shows_up_to_five_stops_before_this_station():
@@ -348,3 +367,107 @@ def test_a_real_sized_answer_is_read_through_the_capped_request(monkeypatch):
     serve(monkeypatch, (FIXTURES / "ldbws_service_details_from_manchester.json").read_bytes())
     found = ServiceDetailsClient(KEY).details("9000005GLSP____")
     assert len(found.previous) == 10
+
+
+# The cache the dashboard and a screen's board each keep
+
+
+class Asked:
+    """A details client answering with the Hadfield train for any service."""
+
+    def __init__(self):
+        self.asked = []
+        self.errors = {}  # service ID -> exception, or "*" for every train
+
+    def details(self, service_id):
+        self.asked.append(service_id)
+        error = self.errors.get(service_id) or self.errors.get("*")
+        if error:
+            raise error
+        return parse_service_details(load_fixture("ldbws_service_details_from_hadfield.json"))
+
+
+class Ticking:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+def services(cancelled=()):
+    board = darwin.parse_board_rich(load_fixture("ldbws_glossop_details.json"))
+    for index in cancelled:
+        dep = board.services[index].departure
+        board.services[index] = replace(board.services[index], departure=replace(dep, status=Status.CANCELLED))
+    return board.services
+
+
+IDS = ["9000001GLSP____", "9000002GLSP____", "9000003GLSP____", "9000004GLSP____", "9000005GLSP____"]
+
+
+def cache():
+    client, clock = Asked(), Ticking()
+    return client, clock, TrainDetails(client, monotonic=clock)
+
+
+def test_the_first_three_running_trains_are_asked_for():
+    client, _, found = cache()
+    assert found.refresh(services(cancelled=[1])) == [(IDS[0], None), (IDS[2], None), (IDS[3], None)]
+    assert client.asked == [IDS[0], IDS[2], IDS[3]]
+    assert set(found.known()) == {IDS[0], IDS[2], IDS[3]}
+
+
+def test_each_train_is_asked_for_at_most_once_a_minute():
+    client, clock, found = cache()
+    found.refresh(services())
+    clock.now += 59
+    assert found.refresh(services()) == []
+    clock.now += 1
+    found.refresh(services())
+    assert client.asked == IDS[:3] * 2
+
+
+def test_trains_that_leave_the_board_or_are_cancelled_are_forgotten():
+    _, _, found = cache()
+    found.refresh(services())
+    found.refresh(services(cancelled=[0])[1:])
+    assert IDS[0] not in found.known() and IDS[1] in found.known()
+
+
+def test_known_details_can_be_limited_by_age():
+    _, clock, found = cache()
+    found.refresh(services())
+    clock.now += 120
+    assert set(found.known(max_age=120)) == set(IDS[:3])
+    clock.now += 1
+    assert found.known(max_age=120) == {} and len(found.known()) == 3
+
+
+def test_a_refused_key_ends_the_round_and_turns_details_off_for_six_hours():
+    client, clock, found = cache()
+    found.refresh(services())
+    clock.now += 61
+    refused = DetailsUnavailable("Service details refused the key (HTTP 403)")
+    client.errors["*"] = refused
+    assert found.refresh(services()) == [(IDS[0], refused)]
+    assert found.known() == {}
+    clock.now += 6 * 3600 - 1
+    assert found.refresh(services()) == []
+    client.errors.clear()
+    clock.now += 1
+    assert [error for _, error in found.refresh(services())] == [None, None, None]
+
+
+def test_other_failures_and_gone_trains_are_said_and_the_rest_still_asked():
+    client, clock, found = cache()
+    found.refresh(services())
+    clock.now += 61
+    gone, broken = ServiceGone("Darwin no longer knows this train"), DetailsError("HTTP Error 500")
+    client.errors.update({IDS[0]: gone, IDS[1]: broken})
+    assert found.refresh(services()) == [(IDS[0], gone), (IDS[1], broken), (IDS[2], None)]
+    assert IDS[0] not in found.known()  # gone
+    assert IDS[1] in found.known()  # kept what was known
+    # Not switched off: asked again on the next round.
+    client.errors.clear()
+    assert found.refresh(services()) == [(IDS[0], None), (IDS[1], None)]

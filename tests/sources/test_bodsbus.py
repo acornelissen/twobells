@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from departureboard.core.model import Departure, Status
+from departureboard.core.model import Departure, Status, strip_key
 from departureboard.sources import holidays
 from departureboard.sources.bodsbus import BodsBusSource, unusable
 from departureboard.timetable import build as timetable
@@ -304,3 +304,44 @@ def test_fetch_live_raises_for_a_timetable_it_can_t_use(tmp_path):
     bus = source(tmp_path, at(10, 0), stops={"A": HENRY_A, "B": "100000008350"})
     with pytest.raises(RuntimeError, match="for other stops"):
         bus.fetch_live()
+
+
+# A screen's row strips
+
+
+def test_live_strips_say_where_each_row_s_bus_is(tmp_path):
+    timetable.save(tmp_path, schedule())
+    bus = source(tmp_path, at(10, 4, 30))
+    strips = bus.live_strips()
+    [departure] = bus.fetch()
+    assert list(strips) == [strip_key(departure)]
+    found = strips[strip_key(departure)]
+    assert (found.where, found.stops, found.yours) == ("1 stop away", 3, 1)
+    assert found.at == pytest.approx(0.5, abs=0.02)
+
+
+def test_live_strips_can_reuse_the_last_fetch_s_live_board(tmp_path):
+    timetable.save(tmp_path, schedule())
+    bus = source(tmp_path, at(10, 4, 30))
+    assert bus.live_strips(reuse=True) == {}  # nothing fetched yet
+    bus.fetch()
+    assert len(bus.asked) == 1
+    assert len(bus.live_strips(reuse=True)) == 1
+    assert len(bus.asked) == 1  # no second request
+
+
+def test_live_strips_leave_out_buses_without_a_live_position(tmp_path):
+    timetable.save(tmp_path, schedule())
+    bus = source(tmp_path, at(10, 0), body=OSError("network down"))
+    assert bus.live_strips() == {}
+    bus.fetch()
+    assert bus.live_strips(reuse=True) == {}
+
+
+def test_live_strips_raise_without_a_usable_timetable(tmp_path):
+    fallback = Fallback()
+    bus = source(tmp_path, at(10, 0), fallback=fallback)
+    with pytest.raises(RuntimeError):
+        bus.live_strips()
+    bus.fetch()  # from TransportAPI, which knows nothing of where buses are
+    assert bus.live_strips(reuse=True) == {}
