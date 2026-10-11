@@ -15,9 +15,10 @@ import math
 import random
 from datetime import datetime, timedelta
 
-from ..board.route import RouteStop, RouteStrip
-from ..core.model import Departure, Status
+from ..board.route import RouteStop, RouteStrip, where
+from ..core.model import Departure, Status, Strip, minutes_between, shift, strip_key
 from ..sources.bods import Vehicle
+from ..sources.darwin import CallingPoint, ServiceDetails, ServiceGone, StationCall, TrainService
 from ..sources.weather import Hour
 
 _BUCKET_MINUTES = 6
@@ -87,7 +88,7 @@ DEMO_NOTICE = (
 
 class FakeTrainSource(_FakeSource):
     """Trains, and like Darwin, the station's disruption messages while
-    `notice_when(now)` holds."""
+    `notice_when(now)` holds, and each train's service ID."""
 
     name = "train"
 
@@ -95,10 +96,15 @@ class FakeTrainSource(_FakeSource):
         super().__init__(clock, seed, rows, failing_when)
         self._notice_when = notice_when
         self.messages: list[str] = []
+        self.services: list[TrainService] = []
 
     def fetch(self) -> list[Departure]:
         departures = super().fetch()
         self.messages = [DEMO_NOTICE] if self._notice_when and self._notice_when(self._clock()) else []
+        self.services = [
+            TrainService(dep, f"FAKE{dep.scheduled.replace(':', '')}GLO", "Hadfield", "NT", 3, None, None, ())
+            for dep in departures
+        ]
         return departures
 
     def _departures(self, now: datetime) -> list[Departure]:
@@ -136,6 +142,28 @@ class FakeBusSource(_FakeSource):
     def __init__(self, clock, seed: int = 1, rows: int = 2, failing_when=None) -> None:
         super().__init__(clock, seed, rows, failing_when)
 
+    def live_strips(self, reuse: bool = False) -> dict[tuple[str, str, str, str], Strip]:
+        """Where each bus with a tracker is, as BodsBusSource says it: along the
+        demo strip's stops to yours, two minutes a stop, reaching yours when
+        it is due. Fails while the bus feed does."""
+        now = self._clock()
+        if self.failing or (self._failing_when and self._failing_when(now)):
+            raise OSError(f"fake {self.name} source is failing")
+        names = tuple(stop.name for stop in DEMO_STRIP.stops)
+        yours = len(names) - 1
+        found = {}
+        for dep in self._departures(now):
+            if dep.status is Status.UNKNOWN:
+                continue  # no tracker, so no position
+            minutes = minutes_between(_hhmm(now), dep.departs_at) - now.second / 60
+            along = yours - minutes / 2
+            if along >= 0:
+                at = round(min(along, yours), 3)
+                found[strip_key(dep)] = Strip(where(names, at, False), len(names), yours, at)
+            else:  # not on the strip yet: counted on in stops, as livebus.row_strip does
+                found[strip_key(dep)] = Strip(f"{yours - math.floor(along)} stops away", len(names), yours)
+        return found
+
     def _departures(self, now: datetime) -> list[Departure]:
         departures = []
         for line, destination, stop, headway, offset in _BUS_ROUTES:
@@ -154,6 +182,50 @@ class FakeBusSource(_FakeSource):
                 )
         departures.sort(key=lambda d: d.departs_at)
         return departures[: self._rows]
+
+
+# The fake trains' journey: (name, CRS, minutes from leaving Glossop). Each
+# comes from Hadfield by Dinting, reaches Glossop a minute before it leaves,
+# and goes back by Dinting to Manchester.
+_BEFORE = (("Hadfield", "HDF", -8), ("Dinting", "DTG", -4))
+_AFTER = (("Dinting", "DTG", 3), ("Broadbottom", "BDB", 7), ("Hattersley", "HTY", 10), ("Godley", "GDL", 12),
+          ("Manchester Piccadilly", "MAN", 32))
+
+
+class FakeServiceDetails:
+    """Darwin's Service Details for the fake trains: the stops a train has
+    been to have their times, the rest are on time or as late as it is."""
+
+    def __init__(self, trains: FakeTrainSource, clock) -> None:
+        self._trains = trains
+        self._clock = clock
+
+    def details(self, service_id: str) -> ServiceDetails:
+        service = next((s for s in self._trains.services if s.service_id == service_id), None)
+        if service is None:
+            raise ServiceGone("Darwin no longer knows this train")
+        dep, now = service.departure, _hhmm(self._clock())
+        late = dep.minutes_late
+
+        def times(offset: int) -> tuple[str, str | None, str | None]:
+            """(booked, expected, actual) at `offset` minutes from leaving Glossop."""
+            booked = shift(dep.scheduled, offset)
+            if late is None:
+                return booked, "Delayed", None
+            due = shift(booked, late)
+            if minutes_between(now, due) <= 0:
+                return booked, None, due  # been and gone
+            return booked, "On time" if late == 0 else due, None
+
+        def point(name: str, crs: str, offset: int) -> CallingPoint:
+            return CallingPoint(name, crs, *times(offset), cancelled=False, length=3)
+
+        sta, eta, ata = times(-1)
+        std, etd, atd = times(0)
+        here = StationCall("Glossop", "GLO", std, etd, atd, dep.status is Status.CANCELLED, 3,
+                           sta=sta, eta=eta, ata=ata, std=std, etd=etd, atd=atd)
+        return ServiceDetails(tuple(point(*p) for p in _BEFORE), tuple(point(*p) for p in _AFTER), here,
+                              None, None, 3, None)
 
 
 # Chance of rain by hour of the day: a wet hour from 07:00, dry otherwise.

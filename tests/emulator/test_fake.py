@@ -130,3 +130,41 @@ def test_fake_forecast_covers_two_days_with_a_wet_morning_hour():
     assert hours[0].start == START.replace(hour=0, minute=0)
     assert [h.start.hour for h in hours if h.probability >= 50] == [7, 7]
     assert hours == FakeWeatherSource(SimClock(START + timedelta(hours=3))).fetch()
+
+
+def test_fake_buses_say_where_each_tracked_bus_is():
+    from departureboard.core.model import strip_key
+
+    source = FakeBusSource(SimClock(datetime(2026, 10, 8, 7, 6)), rows=5)
+    departures = {strip_key(d): d for d in source.fetch()}
+    strips = source.live_strips()
+    assert set(strips) < set(departures)
+    assert all(departures[key].status is not Status.UNKNOWN for key in strips)  # no tracker, no position
+    next_bus = strips[("bus", "393", "B", "07:08")]  # two minutes away, two minutes a stop
+    assert (next_bus.where, next_bus.at, next_bus.yours) == ("1 stop away", 4.0, 5)
+
+
+def test_fake_bus_positions_fail_with_the_bus_feed():
+    source = FakeBusSource(SimClock(START), failing_when=lambda now: True)
+    with pytest.raises(OSError):
+        source.live_strips()
+
+
+def test_fake_trains_say_where_they_are():
+    from departureboard.emulator.fake import FakeServiceDetails
+    from departureboard.sources.darwin import ServiceGone, train_position
+
+    clock = SimClock(datetime(2026, 10, 8, 7, 9))
+    trains = FakeTrainSource(clock)
+    trains.fetch()
+    assert [s.service_id for s in trains.services] == ["FAKE0712GLO", "FAKE0742GLO", "FAKE0812GLO"]
+    details = FakeServiceDetails(trains, clock)
+    waiting = train_position(details.details("FAKE0712GLO"), clock())
+    assert waiting.where == "Not started yet: leaves Hadfield at 07:11"  # 07:12, seven minutes late
+    assert waiting.strip_stops == ("Hadfield", "Dinting", "Glossop", "Dinting") and waiting.train_at is None
+    for _ in range(4):
+        clock.advance()
+    on_its_way = train_position(details.details("FAKE0712GLO"), clock())
+    assert on_its_way.where.startswith("Left Hadfield") and 0 < on_its_way.train_at < 1
+    with pytest.raises(ServiceGone):
+        details.details("FAKE0000GLO")

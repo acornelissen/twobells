@@ -173,3 +173,23 @@ def test_demo_is_the_same_every_run():
         return views
 
     assert run() == run()
+
+
+def test_screen_demo_says_where_the_trains_and_buses_are():
+    from departureboard.board.app import run_once
+
+    em = build_emulation(demo=True, display="hdmi-1280x400")
+    state, trains, buses, words = {}, set(), set(), set()
+    for _ in range(12 * 15):  # 15 simulated minutes at 5 s a tick
+        view = run_once(em.board, state, em.display, em.clock(), prime=not state).view
+        trains |= {r.strip.where for r in view.trains.rows if r.strip and r.strip.at is not None}
+        buses |= {r.strip.where for r in view.buses.rows if r.strip and r.strip.at is not None}
+        words |= {r.strip.where for r in (*view.trains.rows, *view.buses.rows) if r.strip}
+        em.clock.advance()
+    assert "Left Hadfield" in trains and "Not started" in words
+    assert {"3 stops away", "1 stop away"} <= buses
+    assert all(len(w) <= 20 for w in words)  # a row has room for about 20 characters
+
+
+def test_epaper_demo_asks_where_nothing_is():
+    assert build_emulation(demo=True).board.positions is None

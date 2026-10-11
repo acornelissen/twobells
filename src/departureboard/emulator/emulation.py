@@ -7,16 +7,28 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, time, timedelta
 from pathlib import Path
+from typing import cast
 from zoneinfo import ZoneInfo
 
 from ..board.app import Board, SourceConfig, Tracker, Weather
 from ..board.displays.display import DISPLAY_PANELS
+from ..board.positions import Positions
 from ..board.state import StateStore
 from ..board.themes import THEMES
 from ..core.polling import PollPolicy, parse_window
 from ..core.walk import WalkTimes
 from ..settings.config import load_config
-from .fake import DEMO_STRIP, DEMO_TITLE, FakeBusSource, FakeTrainSource, FakeVehicleSource, FakeWeatherSource, SimClock
+from ..sources.darwin import TrainDetails
+from .fake import (
+    DEMO_STRIP,
+    DEMO_TITLE,
+    FakeBusSource,
+    FakeServiceDetails,
+    FakeTrainSource,
+    FakeVehicleSource,
+    FakeWeatherSource,
+    SimClock,
+)
 from .server import EmulatorDisplay
 
 DEMO_START = datetime(2026, 10, 8, 6, 58)  # a Thursday
@@ -53,6 +65,13 @@ def _fake_train(clock, interval_minutes: int = 2, notice_when=None) -> SourceCon
     return SourceConfig(source, policy, stale_after=timedelta(minutes=6))
 
 
+def _fake_positions(train: SourceConfig, clock) -> Positions:
+    """Where the fake trains are, from fake Service Details; once a minute
+    each by the emulator's clock, as the real ones are by the wall clock."""
+    details = FakeServiceDetails(cast(FakeTrainSource, train.source), clock)
+    return Positions(details=TrainDetails(details, monotonic=lambda: clock().timestamp()))
+
+
 def _demo(accent: str | None, tick_seconds: float | None, display: str) -> Emulation:
     theme = THEMES["sign"]
     panel = DISPLAY_PANELS[display]
@@ -60,19 +79,22 @@ def _demo(accent: str | None, tick_seconds: float | None, display: str) -> Emula
     # running clock, page changes and the moving bus can be followed.
     clock = SimClock(DEMO_START) if panel.epaper else SimClock(DEMO_START, timedelta(seconds=5))
     bus = FakeBusSource(clock, rows=3 if panel.epaper else 5, failing_when=demo_outage)
-    tracker = None
+    train = _fake_train(clock, notice_when=demo_disruption)
+    tracker = positions = None
     if not panel.epaper:
         tracker = Tracker(FakeVehicleSource(clock), {"341": DEMO_STRIP}, PollPolicy(_ALWAYS, timedelta(seconds=30)))
+        positions = _fake_positions(train, clock)
     board = Board(
         title=DEMO_TITLE,
         sources=[
-            _fake_train(clock, notice_when=demo_disruption),
+            train,
             SourceConfig(bus, PollPolicy(_ALWAYS, timedelta(minutes=6)), timedelta(minutes=12)),
         ],
         walk=WalkTimes(train=5, bus={"A": 8, "B": 8}),
         theme=theme,
         tracker=tracker,
         weather=Weather(FakeWeatherSource(clock), PollPolicy(_ALWAYS, timedelta(minutes=30))),
+        positions=positions,
     )
 
     return Emulation(
@@ -101,9 +123,13 @@ def _live(
         return now.replace(second=0) if panel.epaper else now
 
     sources = list(settings.board.sources)
+    positions = settings.board.positions
     if fake_train:
-        sources.insert(0, _fake_train(clock))
-    board = replace(settings.board, sources=sources)
+        train = _fake_train(clock)
+        sources.insert(0, train)
+        if positions is not None:  # a screen: the fake trains say where they are, not Darwin
+            positions = _fake_positions(train, clock)
+    board = replace(settings.board, sources=sources, positions=positions)
     return Emulation(
         board,
         clock,
