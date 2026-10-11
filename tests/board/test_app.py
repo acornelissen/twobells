@@ -1232,3 +1232,13 @@ def test_every_panel_and_look_draws_the_setup_page(panel, look):
     assert image.size == PANELS[panel].size and image.mode == "P"
     assert len(image.getcolors()) >= 2  # something drawn, not a blank panel
     assert pixels(image) == pixels(THEMES[look].render_setup(SETUP_PAGE, display.palette, display.panel))
+
+
+@pytest.mark.parametrize("saved", ["07:12", 5, None])
+def test_malformed_saved_departures_show_none_rather_than_stopping(saved):
+    trains, buses, board, display, state = setup()
+    trains.error = buses.error = OSError("network down")
+    entry = {"last_success": "2026-10-08T06:58:00", "departures": saved}
+    state["sources"] = {"train": dict(entry), "bus": dict(entry)}
+    result = run_once(board, state, display, THU_0700)
+    assert result.view.trains.rows == () and result.view.buses.rows == ()

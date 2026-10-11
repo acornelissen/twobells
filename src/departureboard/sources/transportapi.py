@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 from urllib.parse import urlencode
 
-from ..core.model import Departure, Status, minutes_between
+from ..core.model import Departure, Status, is_clock, minutes_between
 from ..core.net import get_json
 
 DEFAULT_BASE_URL = "https://transportapi.com/v3"
@@ -28,10 +28,21 @@ def redact_credentials(value: Any) -> Any:
     return value
 
 
+# Each entry comes from outside, so every field is checked as it is read: an
+# entry without a clock time to leave at is skipped, and any other field of
+# the wrong type is left blank, never raised.
+
+
+def _text(value) -> str:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return value if isinstance(value, str) else ""
+
+
 def _parse_bus(entry: dict, stop_label: str | None) -> Departure:
     aimed = entry["aimed_departure_time"]
     expected = entry.get("expected_departure_time")
-    if not expected:
+    if not is_clock(expected):
         status, expected = Status.UNKNOWN, None
     elif minutes_between(aimed, expected) > 0:
         status = Status.LATE
@@ -39,8 +50,8 @@ def _parse_bus(entry: dict, stop_label: str | None) -> Departure:
         status, expected = Status.ON_TIME, None
     return Departure(
         mode="bus",
-        service=str(entry.get("line_name") or entry.get("line") or ""),
-        destination=entry.get("direction") or "",
+        service=_text(entry.get("line_name")) or _text(entry.get("line")),
+        destination=_text(entry.get("direction")),
         scheduled=aimed,
         expected=expected,
         status=status,
@@ -49,22 +60,27 @@ def _parse_bus(entry: dict, stop_label: str | None) -> Departure:
 
 
 def _sort_key(entry: dict) -> tuple[str, str]:
-    return (
-        entry.get("date") or "",
-        entry.get("best_departure_estimate") or entry["aimed_departure_time"],
-    )
+    best = entry.get("best_departure_estimate")
+    return (_text(entry.get("date")), best if is_clock(best) else entry["aimed_departure_time"])
 
 
 def _matches(entry: dict, directions: Iterable[str] | None) -> bool:
     if not directions:
         return True
-    direction = (entry.get("direction") or "").lower()
+    direction = _text(entry.get("direction")).lower()
     return any(d.lower() in direction for d in directions)
 
 
 def _entries(payload: dict, directions: Iterable[str] | None) -> list[dict]:
-    groups = (payload.get("departures") or {}).values()
-    return [e for group in groups for e in group if _matches(e, directions)]
+    """The entries with a clock time to leave at, from every group."""
+    groups = payload.get("departures") if isinstance(payload, dict) else None
+    if not isinstance(groups, dict):
+        return []
+    return [
+        e for group in groups.values() if isinstance(group, list)
+        for e in group
+        if isinstance(e, dict) and is_clock(e.get("aimed_departure_time")) and _matches(e, directions)
+    ]
 
 
 def _dated(

@@ -46,6 +46,7 @@ def _platform(value) -> str | None:
 
 
 def _parse_service(service: dict) -> Departure:
+    """A Departure from a service whose fields _rich_service has checked."""
     status, expected = _status_and_expected(service)
     destinations = service.get("destination") or []
     return Departure(
@@ -60,7 +61,9 @@ def _parse_service(service: dict) -> Departure:
 
 
 def parse_board(board: dict) -> list[Departure]:
-    return [_parse_service(s) for s in board.get("trainServices") or []]
+    """The departures alone, read with the rich board's checks (below): a
+    train without a clock time to leave at is skipped."""
+    return [s.departure for s in parse_board_rich(board).services]
 
 
 # Incident messages (NRCC) for the station: a few, each short enough to read on a board.

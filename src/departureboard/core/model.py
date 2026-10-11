@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import overload
+from typing import TypeGuard, overload
 
 _DAY = 24 * 60
 _HALF_DAY = _DAY // 2
+
+# A clock time, 00:00 to 23:59: the only shape a departure's times may take.
+_CLOCK = re.compile(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]")
 
 
 class Status(str, Enum):
@@ -16,6 +20,11 @@ class Status(str, Enum):
     LATE = "late"
     CANCELLED = "cancelled"
     UNKNOWN = "unknown"
+
+
+def is_clock(value: object) -> TypeGuard[str]:
+    """Whether value is a clock time as HH:MM."""
+    return isinstance(value, str) and _CLOCK.fullmatch(value) is not None
 
 
 def _to_minutes(hhmm: str) -> int:
@@ -45,6 +54,22 @@ class Departure:
     status: Status
     platform: str | None = None
     stop: str | None = None
+
+    def __post_init__(self) -> None:
+        # Every time is worked out from these, so one that isn't HH:MM would
+        # stop the board on every run; it is refused here instead.
+        if not is_clock(self.scheduled):
+            raise ValueError(f"scheduled time is not HH:MM: {self.scheduled!r}")
+        if self.expected is not None and not is_clock(self.expected):
+            raise ValueError(f"expected time is not HH:MM: {self.expected!r}")
+        if not isinstance(self.status, Status):
+            raise TypeError("status is not a Status")
+        for name in ("mode", "service", "destination"):
+            if not isinstance(getattr(self, name), str):
+                raise TypeError(f"{name} is not text")
+        for name in ("platform", "stop"):
+            if getattr(self, name) is not None and not isinstance(getattr(self, name), str):
+                raise TypeError(f"{name} is not text")
 
     @property
     def departs_at(self) -> str:

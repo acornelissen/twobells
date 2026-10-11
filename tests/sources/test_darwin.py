@@ -264,3 +264,27 @@ def test_source_keeps_the_messages_from_its_last_fetch():
     assert source.messages[1].startswith("Ticket machines at Glossop")
     source.fetch()
     assert source.messages == []
+
+
+@pytest.mark.parametrize("std", ["soon", "7:12", "24:00", None, 712, ["07:12"]])
+def test_a_train_whose_booked_time_is_not_a_clock_time_is_skipped(std):
+    trains = parse_board(board(service(std=std), service(std="07:40")))
+    assert [d.scheduled for d in trains] == ["07:40"]
+
+
+def test_the_plain_board_checks_each_field_like_the_rich_one():
+    odd = service(etd=1912, destination=["Manchester"], operator={"name": "Northern"}, isCancelled="false")
+    [dep] = parse_board(board(odd))
+    assert dep.status is Status.UNKNOWN
+    assert dep.destination == ""
+    assert dep.service == ""
+
+
+def test_a_single_service_not_in_a_list_is_read():
+    [dep] = parse_board({"trainServices": service(std="07:40")})
+    assert dep.scheduled == "07:40"
+
+
+def test_services_of_the_wrong_shape_are_skipped():
+    assert parse_board(board("07:12", None, [service()])) == []
+    assert parse_board({"trainServices": "07:12"}) == []

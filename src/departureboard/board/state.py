@@ -22,11 +22,16 @@ def departure_to_dict(dep: Departure) -> dict:
 
 
 def departure_from_dict(data: dict) -> Departure:
+    """A saved departure. Raises TypeError or ValueError if it isn't one,
+    such as a time that isn't HH:MM (Departure checks its own fields)."""
     return Departure(**{**data, "status": Status(data["status"])})
 
 
 def departures_from_dicts(items: list) -> list[Departure]:
     """Saved departures, skipping any that don't read back (hand-edited, or from another version)."""
+    if not isinstance(items, list):
+        log.warning("Ignoring saved departures that aren't a list: %r", type(items).__name__)
+        return []
     departures = []
     for item in items:
         try:
@@ -82,6 +87,11 @@ class StateStore:
             if key in state and not isinstance(state[key], dict):
                 log.warning("Ignoring malformed %r in state file %s", key, self._path)
                 del state[key]
+        # Each source's entry is read with .get() on every run.
+        for name, entry in list(state.get("sources", {}).items()):
+            if not isinstance(entry, dict):
+                log.warning("Ignoring malformed source %r in state file %s", name, self._path)
+                del state["sources"][name]
         return state
 
     def save(self, state: dict) -> None:

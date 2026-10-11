@@ -1,3 +1,7 @@
+import dataclasses
+
+import pytest
+
 from departureboard.core.model import Departure, Status, minutes_between
 
 
@@ -76,3 +80,12 @@ def test_has_left_carries_over_midnight():
     dep = make("00:20")
     assert not dep.has_left(datetime(2026, 10, 9, 0, 10), fetched)
     assert dep.has_left(datetime(2026, 10, 9, 12, 30), fetched)
+
+
+@pytest.mark.parametrize("field, value", [
+    ("scheduled", "soon"), ("scheduled", "7:12"), ("scheduled", "24:00"), ("scheduled", None),
+    ("expected", "Delayed"), ("expected", "07:60"), ("expected", ""),
+])
+def test_a_departure_needs_clock_times(field, value):
+    with pytest.raises(ValueError):
+        dataclasses.replace(make(expected="07:19", status=Status.LATE), **{field: value})

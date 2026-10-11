@@ -180,3 +180,39 @@ def test_parses_a_late_evening_response():
     assert (dep.service, dep.destination, dep.scheduled) == ("237", "Ashton", "23:41")
     assert dep.status is Status.UNKNOWN  # timetable only (source "tnds"), no live estimate
     assert dep.stop == "A"
+
+
+def test_a_bus_without_a_booked_time_is_skipped():
+    payload = stop(
+        bus(aimed_departure_time=None, best_departure_estimate=None),
+        bus(aimed_departure_time="07:40", best_departure_estimate="07:40"),
+    )
+    assert [d.scheduled for d in parse_stop(payload)] == ["07:40"]
+
+
+@pytest.mark.parametrize("aimed", ["soon", "7:20", "24:00", "07:60", "07:20:00", 720, ["07:20"]])
+def test_a_bus_whose_booked_time_is_not_a_clock_time_is_skipped(aimed):
+    payload = stop(bus(aimed_departure_time=aimed), bus(aimed_departure_time="07:40"))
+    assert [d.scheduled for d in parse_stop(payload)] == ["07:40"]
+
+
+@pytest.mark.parametrize("expected", ["soon", "7:24", 724, {"time": "07:24"}])
+def test_a_live_time_that_is_not_a_clock_time_reads_as_unknown(expected):
+    [dep] = parse_stop(stop(bus(expected_departure_time=expected, best_departure_estimate=expected)))
+    assert dep.status is Status.UNKNOWN
+    assert dep.expected is None
+
+
+def test_entries_of_the_wrong_shape_are_skipped():
+    good = bus(aimed_departure_time="07:40")
+    assert [d.scheduled for d in parse_stop(stop("07:20", None, [good], good))] == ["07:40"]
+    assert parse_stop({"departures": ["07:20"]}) == []
+    assert parse_stop({"departures": {"all": "07:20"}}) == []
+    assert parse_stop({"departures": "07:20"}) == []
+    assert parse_stop(["07:20"]) == []
+
+
+def test_odd_text_fields_are_left_blank_not_raised():
+    entry = bus(line_name={"x": 1}, line=None, direction=["Hyde"], date=20261009)
+    [dep] = parse_stop(stop(entry))
+    assert (dep.service, dep.destination) == ("", "")
