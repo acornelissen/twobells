@@ -40,10 +40,9 @@ on a known operator's site.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, tzinfo
-from functools import partial
 from html.parser import HTMLParser
 from urllib.parse import urlencode, urlsplit
 from xml.etree import ElementTree
@@ -63,6 +62,9 @@ KB_URL_PLACEHOLDER = "https://set-kb-incidents-url-from-the-rdm-product-page.inv
 MAX_SX_BYTES = 12_000_000  # all of England is about 5.5 MB
 MAX_KB_BYTES = 8_000_000
 READ_TIMEOUT = 60.0
+# For a whole feed, read and parsed as it arrives: all of England's
+# situations on a slow line, but over before the next poll is due.
+FEED_DEADLINE = 5 * 60.0
 HORIZON = timedelta(days=7)
 TEXT_LIMIT = 500
 TITLE_LIMIT = 160
@@ -646,7 +648,8 @@ def disruptions_part(bus: list[Disruption], bus_status: dict | None, train: list
 # Fetching.
 
 
-stream = partial(net.stream, timeout=READ_TIMEOUT)
+def stream(url: str, headers: Mapping[str, str], max_bytes: int) -> Iterator[bytes]:
+    return net.stream(url, headers, max_bytes, timeout=READ_TIMEOUT, deadline=FEED_DEADLINE)
 
 
 def _failure(error: BaseException, key: str) -> RuntimeError:

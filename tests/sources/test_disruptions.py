@@ -1,3 +1,4 @@
+import time
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -6,6 +7,7 @@ import pytest
 
 from departureboard.core import net
 from departureboard.core.safexml import DoctypeError
+from departureboard.dashboard.collector import BUS_DISRUPTIONS_SECONDS
 from departureboard.dashboard.snapshot import row_id
 from departureboard.sources import disruptions
 from departureboard.sources.disruptions import (
@@ -381,6 +383,35 @@ def test_a_response_bigger_than_the_cap_is_refused(monkeypatch):
     assert sent[0].get_header("X-apikey") == "k"
     with pytest.raises(ValueError, match="https"):
         list(net.stream("http://example.test/feed", {}, 10))
+
+
+def test_a_feed_sent_slowly_is_given_up_at_its_deadline(drip_to, monkeypatch):
+    # A trickled answer mustn't tie up the disruptions poller for ever.
+    monkeypatch.setattr(disruptions, "FEED_DEADLINE", 0.3)
+    drip_to("/body")
+    start = time.monotonic()
+    with pytest.raises(RuntimeError):
+        TrainIncidentSource("k", "https://example.test/incidents").fetch()
+    assert time.monotonic() - start < 1.0
+
+
+def test_the_feeds_get_long_enough_for_a_big_feed_on_a_slow_line(monkeypatch):
+    seen = []
+
+    def fake_urlopen(request, timeout):
+        seen.append(request)
+        return FakeResponse((SX if "siri-sx" in request.full_url else KB).read_bytes())
+
+    monkeypatch.setattr(net, "urlopen", fake_urlopen)
+    before = time.monotonic()
+    BusDisruptionSource("k").fetch()
+    TrainIncidentSource("k", "https://example.test/incidents").fetch()
+    for request in seen:
+        assert before + disruptions.FEED_DEADLINE <= request.deadline <= time.monotonic() + disruptions.FEED_DEADLINE
+    # All of England's situations at 40 kB/s, a slow line for a Pi, but over
+    # before the next poll is due.
+    assert disruptions.MAX_SX_BYTES / disruptions.FEED_DEADLINE <= 40_000
+    assert disruptions.FEED_DEADLINE < BUS_DISRUPTIONS_SECONDS
 
 
 def test_the_bus_source_asks_siri_sx_with_the_key_and_never_repeats_it():
