@@ -428,6 +428,28 @@ def _finish(job):
     return job.status()
 
 
+def test_the_whole_job_runs_inside_while_running_its_roads_too(bods):
+    # The Pi's fetch service sets its dashboard's timetable aside meanwhile
+    # (fetch/service.py), so it isn't held beside the search or the build.
+    from contextlib import contextmanager
+
+    events = []
+
+    @contextmanager
+    def running():
+        events.append("in")
+        yield
+        events.append(("out", job.status()["roads"]["state"]))
+
+    find = bods.find
+    bods.find = lambda *args: events.append("find") or find(*args)
+    job = _job(bods, while_running=running)
+    job.start()
+    assert _finish(job)["state"] == "done"
+    assert job.wait(5)
+    assert events == ["in", "find", ("out", "done")]
+
+
 def test_the_job_finds_operators_builds_the_timetable_and_returns_the_settings(bods):
     job = _job(bods)
     assert job.status() == {"state": "queued", "step": "", "done": 0, "total": 0, "message": "", "result": None}

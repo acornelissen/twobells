@@ -88,6 +88,7 @@ class Buses:
         self.refreshes = []
         self.limits = []
         self.on_refresh = None
+        self.let_go_calls = 0
 
     def unusable(self):
         return self.reason
@@ -99,6 +100,9 @@ class Buses:
         note = None if self.vehicles_ok else "Timetabled times only; live positions failed: down"
         found, placed = live_board(schedule(), self.clock(), vehicles, lambda journey, day: True, 10)
         return BusBoard(found, schedule(), self.vehicles_ok, note, placed, vehicles)
+
+    def let_go(self):
+        self.let_go_calls += 1
 
     def refresh_timetable(self, force=False, limits=None):
         self.refreshes.append(force)
@@ -534,6 +538,57 @@ def test_the_timetable_is_building_during_the_first_build(tmp_path):
     setup.upkeep_buses.on_refresh = meanwhile
     setup.collector.upkeep()
     assert seen == ["building"]
+
+
+def test_with_the_timetable_set_aside_the_bus_poller_holds_none_of_it_and_reads_it_again_after(tmp_path):
+    # As the Pi's fetch service sets it aside while a setup search builds a
+    # timetable in the same process, so the two are never held at once
+    # (tests/test_deploy.py counts on it).
+    setup = Setup(tmp_path)
+    setup.collector.poll_buses()
+    assert setup.snapshot()["buses"]["rows"]
+    setup.collector.set_timetable_aside(True)
+    assert setup.buses.let_go_calls == 1
+    buses = setup.snapshot()["buses"]
+    assert buses["rows"] == [] and buses["timetable"]["state"] == "building"
+    assert buses["status"]["note"].startswith("Building the bus timetable")
+    fetch_live, unusable = setup.buses.fetch_live, setup.buses.unusable
+    setup.buses.fetch_live = lambda rows=None: pytest.fail("read while set aside")
+    setup.buses.unusable = lambda: pytest.fail("read while set aside")
+    setup.collector.poll_buses()
+    assert setup.snapshot()["buses"]["timetable"]["state"] == "building"
+    setup.buses.fetch_live, setup.buses.unusable = fetch_live, unusable
+    setup.collector.set_timetable_aside(False)
+    setup.collector.poll_buses()
+    buses = setup.snapshot()["buses"]
+    assert buses["rows"] and buses["timetable"]["state"] == "ready"
+
+
+def test_setting_the_timetable_aside_waits_for_a_bus_poll_under_way_and_lets_go_of_what_it_found(tmp_path):
+    import threading
+
+    setup = Setup(tmp_path)
+    started, release = threading.Event(), threading.Event()
+    fetch_live = setup.buses.fetch_live
+
+    def slow(rows=None):
+        started.set()
+        release.wait(5)
+        return fetch_live(rows)
+
+    setup.buses.fetch_live = slow
+    poll = threading.Thread(target=setup.collector.poll_buses)
+    poll.start()
+    assert started.wait(5)
+    aside = threading.Thread(target=setup.collector.set_timetable_aside, args=(True,))
+    aside.start()
+    aside.join(0.2)
+    assert aside.is_alive()  # waiting for the poll
+    release.set()
+    poll.join(5)
+    aside.join(5)
+    assert not aside.is_alive()
+    assert setup.snapshot()["buses"]["rows"] == [] and setup.buses.let_go_calls == 1
 
 
 def test_the_timetable_is_missing_after_a_failed_build(tmp_path):

@@ -420,7 +420,11 @@ def _timetable_memory(install) -> int:
     no more than its journeys again (tests/timetable/test_build.py checks
     both), so neither takes what a build does. A rebuild lets go of the
     last timetable's journeys first, keeping only its stops and roads (a
-    few MB, in Python's room below)."""
+    few MB, in Python's room below). On a Pi the fetch service's dashboard
+    holds the timetable it reads, but sets it aside while a setup search
+    runs there (tests/fetch/test_service.py and
+    tests/dashboard/test_collector.py check both), so it is never held
+    beside the search's build: alone, it is no more than loading takes."""
     from departureboard.timetable import build, routesetup
 
     limits = routesetup.document_limits(install)
@@ -434,7 +438,8 @@ def _timetable_memory(install) -> int:
 def test_the_timetable_unit_has_room_for_the_largest_document_it_reads_and_its_journeys():
     # Room is kept for Python and the rest of the build (40 MB; importing
     # the command line takes about 22 MB on top of the interpreter's own). The
-    # fetch service reads documents for the setup search, and builds too.
+    # fetch service reads documents for the setup search, and builds too, its
+    # dashboard's timetable set aside meanwhile.
     # Checked whole on BODS data set 2100 (First South Yorkshire) with a Pi's
     # limits, Python 3.11 under a 256 MB Linux cgroup: the busiest stop that
     # fits, 4,732 journeys and 2,500 held inbound-only, peaked at 221 MB; one

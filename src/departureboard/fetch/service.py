@@ -10,7 +10,9 @@ spool folder in memory (setup/spool/):
 - while the dashboard view is on, the dashboard's pollers
   (collector.Collector, which never builds the bus timetable here: the
   timetable timer and the wizard's search do), their snapshot handed over as
-  a file (handoff.SnapshotWriter);
+  a file (handoff.SnapshotWriter). While a search runs, which builds a
+  timetable in this process, they set the one they read aside
+  (Collector.set_timetable_aside), so the two are never held at once;
 - `active` requests from the web server, saying a browser is using the
   dashboard, so the pollers keep going through the quiet hours.
 
@@ -31,7 +33,8 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -86,8 +89,10 @@ class FetchService:
             except (OSError, ConfigError, ValueError, TypeError):
                 return {}  # a key test then asks about Glossop
 
-        # The bus company search reads as much of each timetable file as the install can.
-        worker_options.setdefault("make_job", partial(discover.SetupJob, limits=document_limits(install)))
+        # The bus company search reads as much of each timetable file as the
+        # install can, with the dashboard's timetable set aside while it runs.
+        worker_options.setdefault("make_job", partial(discover.SetupJob, limits=document_limits(install),
+                                                      while_running=self._searching))
         self.worker = Worker(folder, job_folder=store.folder, load_secrets=store.env, settings=settings,
                              stop=self.stop, on_active=self._active, **worker_options)
         self._watch: FileWatch | None = None
@@ -96,6 +101,28 @@ class FetchService:
         self.hub: Hub | None = None
         self.collector: Collector | None = None
         self._writer: handoff.SnapshotWriter | None = None
+        # Setup searches running (one finding its roads can overlap the next),
+        # and the lock that keeps the count and the collector told in step.
+        self._searches = 0
+        self._searches_lock = threading.Lock()
+
+    @contextmanager
+    def _searching(self) -> Iterator[None]:
+        """While a setup search runs in its thread: the dashboard's timetable
+        is set aside, in the pollers running now and any started meanwhile."""
+        self._count_search(1)
+        try:
+            yield
+        finally:
+            self._count_search(-1)
+
+    def _count_search(self, change: int) -> None:
+        with self._searches_lock:
+            before = self._searches
+            self._searches += change
+            collector = self.collector
+            if collector is not None and (before == 0) != (self._searches == 0):
+                collector.set_timetable_aside(self._searches > 0)
 
     def run(self) -> int:
         try:
@@ -161,7 +188,10 @@ class FetchService:
         except BaseException:
             dash.close()  # the lock, so the next try can take it
             raise
-        self._dash, self.hub, self.collector, self._writer = dash, hub, collector, writer
+        with self._searches_lock:
+            if self._searches:
+                collector.set_timetable_aside(True)  # before it starts, so it never reads it
+            self._dash, self.hub, self.collector, self._writer = dash, hub, collector, writer
         collector.start()
         writer.start()
         log.info("The dashboard's pollers are running")

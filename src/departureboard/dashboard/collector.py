@@ -19,7 +19,8 @@ depends on the bus timetable and the train board, so when either changes
 the disruptions are filtered again; that state is shared, under its lock.
 
 Threads: each feed's state below is only touched by its own poller's
-thread, except the disruptions' (see _disruptions_lock). The bus poller and the upkeep thread each have their own
+thread, except the disruptions' (see _disruptions_lock) and the buses' when
+the timetable is set aside (see set_timetable_aside). The bus poller and the upkeep thread each have their own
 BodsBusSource (see DashboardSettings.bus_upkeep), as one remembers the
 timetable it last read; they share only the timetable file, which is
 replaced whole, and the poller reads it again when it changes.
@@ -214,6 +215,11 @@ class Collector:
         # Has upkeep tried to build the bus timetable yet; without build_timetable it never will.
         self._timetable_tried = not build_timetable
         self._building = False  # is it building one now, with none usable
+        # Set aside (set_timetable_aside): the bus poller holds none of the
+        # timetable and doesn't read it. The lock is held through each bus
+        # poll and while setting it aside, so what a poll found is let go too.
+        self._timetable_aside = False
+        self._bus_lock = threading.Lock()
         # Disruptions: the feeds, and what counts as ours, shared between the
         # disruption, bus and train pollers under this lock.
         self._disruptions_lock = threading.Lock()
@@ -397,9 +403,45 @@ class Collector:
                 self._train_positions.failed(error)
                 log.warning("dashboard train position skipped: %s", safe_message(error))
 
-    def poll_buses(self) -> None:
+    def set_timetable_aside(self, aside: bool) -> None:
+        """While `aside`, the bus poller lets go of the timetable and doesn't
+        read it again, showing it as being built; after, it reads it again at
+        once. The Pi's fetch service sets it aside while a setup search runs
+        beside it, which builds a timetable: the two are never held at once
+        (fetch/service.py). A bus poll under way is waited for."""
+        with self._bus_lock:
+            self._timetable_aside = aside
+            if aside:
+                self._let_go_of_timetable()
+        if not aside and "buses" in self._pollers:
+            self._pollers["buses"].wake()
+
+    def _let_go_of_timetable(self) -> None:
+        """Hold nothing of the timetable, showing it as being built; with _bus_lock held."""
         source = self._settings.bus
-        if source is None:  # pollers() only polls the feeds there are
+        if source is not None:
+            source.let_go()
+        self._buses.data, self._buses.error = None, None
+        self._buses.note = "Building the bus timetable; this takes a few minutes"
+        self._area_schedule = None
+        self._publish_buses("building")
+        self._hub.put("area", None)
+        if self._changes_for is not None:
+            self._changes_for = None
+            self._hub.publish("timetable_changes", None)
+
+    def poll_buses(self) -> None:
+        if self._settings.bus is None:  # pollers() only polls the feeds there are
+            return
+        with self._bus_lock:
+            if self._timetable_aside:
+                self._publish_buses("building")
+                return
+            self._poll_buses()
+
+    def _poll_buses(self) -> None:
+        source = self._settings.bus
+        if source is None:
             return
         now = self._clock()
         reason = source.unusable()

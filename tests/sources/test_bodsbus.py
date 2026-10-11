@@ -235,6 +235,23 @@ def test_refresh_lets_go_of_the_timetable_it_has_read_while_it_builds(tmp_path, 
     assert bus.refresh_timetable() == schedule()
 
 
+def test_letting_go_of_the_timetable_keeps_nothing_of_it_until_it_is_asked_for_again(tmp_path):
+    # As the Pi's fetch service's dashboard does while a setup search builds
+    # a timetable beside it (dashboard/collector.py).
+    import gc
+    import weakref
+
+    timetable.save(tmp_path, schedule())
+    bus = source(tmp_path, at(10, 4, 30))
+    bus.fetch()
+    read = weakref.ref(bus._schedule())
+    assert bus.board is not None
+    bus.let_go()
+    gc.collect()
+    assert read() is None and bus.board is None
+    assert bus.unusable() is None  # read again
+
+
 def test_refresh_skips_while_another_build_holds_the_store(tmp_path, monkeypatch):
     import fcntl
 

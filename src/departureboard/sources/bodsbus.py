@@ -126,6 +126,12 @@ class BodsBusSource:
             self._loaded = (stamp, timetable.load(self._folder) if stamp else None)
         return self._loaded[1]
 
+    def let_go(self) -> None:
+        """Hold nothing of the timetable until it is asked for again: neither
+        what was read nor the last live board, which holds it too."""
+        self._loaded = (None, None)
+        self.board = None
+
     def refresh_timetable(self, force: bool = False, limits: DocumentLimits = DEFAULT_LIMITS) -> Schedule | None:
         """Build the timetable again if it is due (see timetable.due) or `force`d,
         from the operators' BODS timetables, reading as much of each as

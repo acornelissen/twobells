@@ -29,7 +29,7 @@ import threading
 import time
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping
-from contextlib import closing
+from contextlib import AbstractContextManager, closing, nullcontext
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -414,7 +414,9 @@ class SetupJob:
     save. With `nice`, its thread runs that much nicer on Linux, so it gives
     way to the caller's other work (the Pi's fetch service answering the
     wizard's lookups). `limits` are how much of each timetable document the
-    search and the timetable read: the install's (routesetup.document_limits)."""
+    search and the timetable read: the install's (routesetup.document_limits).
+    The whole job, the roads too, runs inside `while_running()`: the Pi's
+    fetch service sets its dashboard's timetable aside meanwhile."""
 
     def __init__(
         self,
@@ -433,6 +435,7 @@ class SetupJob:
         discover_options: Mapping | None = None,
         nice: int = 0,
         limits: DocumentLimits = DEFAULT_LIMITS,
+        while_running: Callable[[], AbstractContextManager[object]] = nullcontext,
     ) -> None:
         self._folder = Path(folder)
         self._stops = dict(stops)
@@ -448,6 +451,7 @@ class SetupJob:
         self._options = dict(discover_options or {})
         self._nice = nice
         self._limits = limits
+        self._while_running = while_running
         self._cancel = threading.Event()
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -513,7 +517,8 @@ class SetupJob:
         if self._nice:
             _lower_priority(self._nice)
         try:
-            self._steps()
+            with self._while_running():
+                self._steps()
         except Cancelled:
             self._set(state="failed", message="Cancelled")
         except DiscoveryError as error:

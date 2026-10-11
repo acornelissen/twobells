@@ -40,6 +40,7 @@ class FakeCollector:
     def __init__(self, dash, hub, history):
         self.dash, self.hub, self.history = dash, hub, history
         self.started = self.stopped = False
+        self.aside = []
         FakeCollector.made.append(self)
 
     def start(self):
@@ -52,6 +53,9 @@ class FakeCollector:
 
     def healthy(self):
         return True
+
+    def set_timetable_aside(self, aside):
+        self.aside.append(aside)
 
 
 @pytest.fixture
@@ -345,3 +349,29 @@ def test_the_bus_company_search_reads_as_much_of_each_timetable_file_as_a_pi_can
     monkeypatch.setattr(discover, "SetupJob", lambda *args, **options: made.append(options))
     service(pi).worker._make_job("folder", {"A": "1000DGHS0900"}, "k", routes=False, walk_minutes={}, nice=5)
     assert made[0]["limits"] == routesetup.document_limits(PI)
+
+
+def test_a_setup_search_sets_the_dashboard_s_timetable_aside_while_it_runs(pi, monkeypatch):
+    # It builds a timetable here, beside the dashboard's pollers: the one they
+    # read isn't held beside it (tests/test_deploy.py counts on it), even by
+    # pollers started again meanwhile.
+    from departureboard.setup import discover
+
+    made = []
+    monkeypatch.setattr(discover, "SetupJob", lambda *args, **options: made.append(options))
+    save(pi, ON)
+    running = Running(service(pi))
+    try:
+        wait_for(lambda: FakeCollector.made and FakeCollector.made[0].started)
+        first = FakeCollector.made[0]
+        assert first.aside == []
+        running.service.worker._make_job("folder", {"A": "1000DGHS0900"}, "k", routes=False, walk_minutes={},
+                                         nice=5)
+        with made[0]["while_running"]():
+            assert first.aside == [True]
+            save(pi, ON + "# changed\n")
+            wait_for(lambda: len(FakeCollector.made) == 2 and FakeCollector.made[1].started)
+            assert FakeCollector.made[1].aside == [True]
+        assert FakeCollector.made[1].aside == [True, False]
+    finally:
+        running.stop()
