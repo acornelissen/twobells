@@ -24,7 +24,8 @@ apt-get update
 # spidev, gpiozero and lgpio drive the Waveshare panel; the venv sees them via system site packages.
 # Pillow, numpy, smbus2 and gpiod (for inky) come from Debian rather than pip: built for the
 # Pi, patched through apt, and seen by the venv through system site packages.
-apt-get install -y python3-venv python3-dev python3-spidev python3-gpiozero python3-lgpio python3-libgpiod python3-numpy python3-smbus2 python3-pil
+# nftables loads the web server's network guard (departureboard-web.nft).
+apt-get install -y python3-venv python3-dev python3-spidev python3-gpiozero python3-lgpio python3-libgpiod python3-numpy python3-smbus2 python3-pil nftables
 
 # The panels need SPI; the Inky also needs I2C (the I2C bus holds the board's EEPROM for auto-detect).
 raspi-config nonint do_spi 0
@@ -79,12 +80,18 @@ for unit in departureboard.service departureboard.timer departureboard-screen.se
     departureboard-fetch.service departureboard-fetch.path; do
   install -m 644 "$REPO/deploy/pi/$unit" /etc/systemd/system/
 done
+# The web server's network guard, which its unit loads as root: root's alone to change.
+install -m 644 -o root -g root "$REPO/deploy/pi/departureboard-web.nft" "$PREFIX/departureboard-web.nft"
 systemctl daemon-reload
 # The web server can't reach the internet; the fetch service does its
 # internet work (the wizard's lookups, the dashboard's feeds). It starts at
 # boot, and the .path unit starts it whenever the server leaves it a request.
 systemctl enable --now departureboard-fetch.path departureboard-fetch.service
 systemctl enable --now departureboard-web.service
+if systemctl is-active --quiet departureboard-web.service && ! nft list table inet departureboard_web &>/dev/null; then
+  echo "Warning: the web server's network guard didn't load, so nothing stops it connecting out." >&2
+  echo "It still turns away visitors outside your home network. Why: journalctl -u departureboard-web" >&2
+fi
 # Bus times from the BODS timetable need it built and kept fresh.
 timetable=false
 if query needs-timetable >/dev/null; then

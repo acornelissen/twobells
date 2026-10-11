@@ -182,6 +182,125 @@ def test_the_settings_page_stays_on_the_home_network_and_hands_its_internet_work
     assert "departureboard-fetch.path" in web["Wants"]
 
 
+# The second layer of the same, for where systemd can't apply IPAddressAllow= (a Pi Zero's kernel).
+GUARD = PI / "departureboard-web.nft"
+GUARD_FILE = "/opt/departureboard/departureboard-web.nft"  # where install.sh and update.sh put it
+GUARD_TABLE = "inet departureboard_web"
+# systemd's names in IPAddressAllow=, as systemd.resource-control(5) gives them.
+SYSTEMD_NAMES = {"localhost": ("127.0.0.0/8", "::1/128"), "link-local": ("169.254.0.0/16", "fe80::/64")}
+
+
+def _rules() -> str:
+    """The guard's rules without their comments."""
+    return "\n".join(line.split("#")[0].rstrip() for line in GUARD.read_text().splitlines()
+                     if line.split("#")[0].strip())
+
+
+def _block(text: str, opening: str) -> str:
+    """What is between `opening` (ending in "{") and its closing brace."""
+    start = text.index(opening) + len(opening)
+    depth = 1
+    for i, char in enumerate(text[start:], start):
+        depth += {"{": 1, "}": -1}.get(char, 0)
+        if depth == 0:
+            return text[start:i]
+    raise AssertionError(f"{opening} never closes")
+
+
+def _guard_set(name: str) -> set:
+    import ipaddress
+
+    body = _block(_rules(), f"set {name} {{")
+    elements = _block(body, "elements = {")
+    return {ipaddress.ip_network(element.strip()) for element in elements.split(",")}
+
+
+def test_the_web_unit_loads_its_guard_as_root_and_starts_without_it():
+    # Loaded as it starts, when its cgroup is there to match; gone as it stops.
+    # "+": as root, outside the sandbox; "-": the server starts anyway (its own
+    # address check still holds) and says the guard is off.
+    web = _unit("departureboard-web.service")
+    assert web["ExecStartPre"] == [f"-+/usr/sbin/nft -f {GUARD_FILE}"]
+    assert web["ExecStopPost"] == [f"-+/usr/sbin/nft delete table {GUARD_TABLE}"]
+    assert web["User"] == ["departureboard"]  # the server itself is never root
+
+
+def test_the_guard_replaces_its_own_table_in_one_go_and_nothing_else():
+    rules = _rules()
+    lines = rules.splitlines()
+    # Made if missing, deleted, then made afresh: loading twice never adds the rules twice.
+    assert lines[:3] == [f"table {GUARD_TABLE}", f"delete table {GUARD_TABLE}", f"table {GUARD_TABLE} {{"]
+    assert rules.count(f"table {GUARD_TABLE}") == 3 and rules.count("table ") == 3  # no other table
+    for risky in ("flush ruleset", "include", "policy drop"):  # nobody else's rules touched
+        assert risky not in rules, risky
+    assert rules.count("{") == rules.count("}")
+    assert _block(rules, f"table {GUARD_TABLE} {{").strip().endswith("}")
+
+
+def test_the_guard_lets_the_web_server_reach_only_the_home_network():
+    rules = _rules()
+    output = _block(rules, "chain output {")
+    assert "type filter hook output priority filter; policy accept;" in output
+    # Only the web service's own sockets, by its cgroup: the fetch service, the same user, still goes out.
+    cgroup = f'socket cgroupv2 level 2 "system.slice/{GUARD.stem}.service" jump web_out'
+    assert [line.strip() for line in output.strip().splitlines()][1:] == [cgroup]
+    assert (PI / f"{GUARD.stem}.service").is_file()
+    web_out = [line.strip() for line in _block(rules, "chain web_out {").strip().splitlines()]
+    assert web_out == ["ip daddr @home4 accept", "ip6 daddr @home6 accept", "reject with icmpx admin-prohibited"]
+
+
+def test_the_guard_holds_the_same_addresses_as_the_unit():
+    import ipaddress
+
+    [allowed] = _unit("departureboard-web.service")["IPAddressAllow"]
+    wanted = set()
+    for word in allowed.split():
+        wanted |= {ipaddress.ip_network(net) for net in SYSTEMD_NAMES.get(word, (word,))}
+    home4, home6 = _guard_set("home4"), _guard_set("home6")
+    assert home4 | home6 == wanted
+    assert {net.version for net in home4} == {4} and {net.version for net in home6} == {6}
+    for name, kind in (("home4", "ipv4_addr"), ("home6", "ipv6_addr")):
+        body = _block(_rules(), f"set {name} {{")
+        assert f"type {kind}" in body and "flags interval" in body, name
+
+
+def test_the_guard_keeps_the_units_port_to_the_home_network():
+    from departureboard.cli.main import _parser
+
+    port = _parser().parse_args(shlex.split(_unit("departureboard-web.service")["ExecStart"][0])[1:]).port
+    incoming = [line.strip() for line in _block(_rules(), "chain input {").strip().splitlines()]
+    assert incoming == ["type filter hook input priority filter; policy accept;",
+                        f"tcp dport {port} ip saddr != @home4 drop",
+                        f"tcp dport {port} ip6 saddr != @home6 drop"]
+
+
+@pytest.mark.parametrize("name", ["install.sh", "update.sh"])
+def test_install_and_update_put_the_guard_where_only_root_can_change_it(name):
+    script = _script(name)
+    assert re.search(r"^PREFIX=/opt/departureboard$", script, re.M)
+    put = f'install -m 644 -o root -g root "$REPO/deploy/pi/{GUARD.name}" "$PREFIX/{GUARD.name}"'
+    assert put.replace("$PREFIX", "/opt/departureboard").endswith(f'"{GUARD_FILE}"')
+    assert put in script
+    # In place before the web server starts, or restarts onto the new unit.
+    started = "systemctl enable --now departureboard-web.service" if name == "install.sh" else \
+        "systemctl try-restart departureboard-web.service"
+    assert script.index(put) < script.index(started)
+    # And afterwards, said if it didn't load.
+    check = (f"if systemctl is-active --quiet departureboard-web.service && ! nft list table {GUARD_TABLE} "
+             "&>/dev/null; then")
+    assert script.index(started) < script.index(check)
+
+
+def test_install_and_update_install_nftables():
+    install = _script("install.sh")
+    [packages] = [line for line in install.splitlines() if line.startswith("apt-get install -y python3-venv")]
+    assert "nftables" in packages.split()
+    update = _script("update.sh")
+    needed = "dpkg -s nftables &>/dev/null || apt-get install -y nftables\n"
+    # Before the new code goes in, so a failed install changes nothing.
+    assert update.index(needed) < update.index('"$PREFIX/venv/bin/pip" install')
+
+
 def test_the_pi_serves_its_settings_at_8090_and_nothing_at_8080():
     from departureboard.cli.common import WEB_PORT, setup_url
     from departureboard.cli.main import _parser

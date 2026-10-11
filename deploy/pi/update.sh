@@ -32,6 +32,10 @@ if [[ -n "$secrets" ]]; then
   shred -u "$secrets"
 fi
 
+# The web server's network guard needs nft; installed before the new code
+# goes in, so if it fails nothing has changed.
+dpkg -s nftables &>/dev/null || apt-get install -y nftables
+
 # Build from a clean copy: pip builds in the source tree, and as root that
 # leaves root-owned build/ and *.egg-info behind (and a stale build/ can leak
 # old files into the next install).
@@ -66,6 +70,8 @@ for unit in departureboard.service departureboard.timer departureboard-screen.se
     departureboard-fetch.service departureboard-fetch.path; do
   install -m 644 "$REPO/deploy/pi/$unit" /etc/systemd/system/
 done
+# The web server's network guard, which its unit loads as root: root's alone to change.
+install -m 644 -o root -g root "$REPO/deploy/pi/departureboard-web.nft" "$PREFIX/departureboard-web.nft"
 systemctl daemon-reload
 # The web server hands its internet work to the fetch service, started at
 # boot and by the .path unit when asked. Both restart onto the new code and
@@ -75,6 +81,10 @@ systemctl enable departureboard-fetch.path departureboard-fetch.service
 systemctl restart departureboard-fetch.path departureboard-fetch.service
 systemctl try-restart departureboard-web.service
 rm -rf /run/departureboard-setup /var/lib/departureboard/setup-spool
+if systemctl is-active --quiet departureboard-web.service && ! nft list table inet departureboard_web &>/dev/null; then
+  echo "Warning: the web server's network guard didn't load, so nothing stops it connecting out." >&2
+  echo "It still turns away visitors outside your home network. Why: journalctl -u departureboard-web" >&2
+fi
 
 # Bus times from the BODS timetable need it built and kept fresh. The first
 # build takes minutes, so it carries on in the background.
