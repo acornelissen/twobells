@@ -31,8 +31,12 @@ _SIGN_LETTER = re.compile(r"^(?:(?i:stop|stand|stance|bay)\s+)?([A-Z]{1,2}[0-9]?
 # Short words NaPTAN gives as an indicator that say where, not which stop.
 _NOT_LETTERS = frozenset({"AT", "BY", "IN", "NR", "ON", "OP", "OS"})
 
+# The journeys and what they hold have slots, not a dict each: a build holds
+# thousands of journeys of up to a hundred calls (timetable/build.py's
+# JOURNEY_BYTES). The saved file is the same either way.
 
-@dataclass(frozen=True)
+
+@dataclass(frozen=True, slots=True)
 class Calendar:
     """When a journey runs, from its TransXChange operating profile."""
 
@@ -50,7 +54,7 @@ class Calendar:
     not_on_school_days: tuple[DateRange, ...] = ()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Call:
     """A stop the journey calls at, with its timetabled departure time."""
 
@@ -58,7 +62,7 @@ class Call:
     minute: int  # minutes after midnight of the service day
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Journey:
     line: str  # as on the bus, e.g. "341"
     operator: str  # national operator code, e.g. "BNML"
@@ -76,7 +80,7 @@ class Journey:
         return self.calls[0]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class StopPosition:
     name: str
     lat: float

@@ -1,4 +1,7 @@
+import copy
+import dataclasses
 import json
+import pickle
 from datetime import date, datetime
 
 import pytest
@@ -144,3 +147,55 @@ def test_roads_read_lazily_round_trip_and_compare_equal():
     assert back == schedule and schedule == back
     assert back.to_json() == schedule.to_json()
     assert Schedule.from_json(back.to_json()) == back
+
+
+def _every_field():
+    calendar = Calendar(
+        days=frozenset({0, 4}), start=date(2026, 9, 27), end=date(2027, 1, 3),
+        bank_holidays_on=frozenset({"MayDay"}), bank_holidays_off=frozenset({"ChristmasDay", "BoxingDay"}),
+        dates_on=((date(2026, 12, 24), date(2026, 12, 24)),), dates_off=((date(2026, 12, 25), date(2026, 12, 26)),),
+        school_days_only=((date(2026, 9, 1), date(2026, 10, 23)),),
+        not_on_school_days=((date(2026, 10, 26), date(2026, 10, 30)),),
+    )
+    journey = Journey("341", "BNML", "Hyde", "10620", (Call("1000DGHS0900", 380), Call("1800ANIN0K1", 1460)),
+                      calendar, inbound_only=True)
+    return Schedule(datetime(2026, 10, 9, 3, 0), date(2027, 1, 3), {"A": "1000DGHS0900"}, (journey,),
+                    {"1000DGHS0900": StopPosition("Henry Street", 53.44384, -1.948999, "A")}, ("BNML",), 3,
+                    {"1000DGHS0900>1800ANIN0K1": ((53.44, -1.95),)}, True)
+
+
+# A timetable file with every field, as saved before journeys took slots.
+_SAVED = (
+    '{"built":"2026-10-09T03:00:00","format":3,"journeys":[{"calendar":{"bank_holidays_off":["BoxingDay",'
+    '"ChristmasDay"],"bank_holidays_on":["MayDay"],"dates_off":[["2026-12-25","2026-12-26"]],"dates_on":'
+    '[["2026-12-24","2026-12-24"]],"days":[0,4],"end":"2027-01-03","not_on_school_days":[["2026-10-26",'
+    '"2026-10-30"]],"school_days_only":[["2026-09-01","2026-10-23"]],"start":"2026-09-27"},"calls":[{"atco":'
+    '"1000DGHS0900","minute":380},{"atco":"1800ANIN0K1","minute":1460}],"destination":"Hyde","inbound_only":true,'
+    '"journey_code":"10620","line":"341","operator":"BNML"}],"operators":["BNML"],"positions":{"1000DGHS0900":'
+    '{"indicator":"A","lat":53.44384,"lon":-1.948999,"name":"Henry Street"}},"roads_pending":true,"shapes":'
+    '{"1000DGHS0900>1800ANIN0K1":[[53.44,-1.95]]},"stops":{"A":"1000DGHS0900"},"valid_until":"2027-01-03"}'
+)
+
+
+def test_a_timetable_is_saved_as_it_always_was_and_older_files_load():
+    schedule = _every_field()
+    assert schedule.to_json() == _SAVED
+    assert Schedule.from_json(_SAVED) == schedule
+
+
+def test_journeys_keep_no_dict_of_their_own_and_stay_frozen():
+    # A build holds thousands of journeys of 80 calls each: slots, not a
+    # dict per object, keep each small. They still compare, hash, copy and
+    # pickle as before, and can't be changed.
+    schedule = _every_field()
+    journey = schedule.journeys[0]
+    for value in (journey, journey.calls[0], journey.calendar, schedule.positions["1000DGHS0900"]):
+        assert not hasattr(value, "__dict__"), type(value).__name__
+        assert pickle.loads(pickle.dumps(value)) == value
+        assert copy.deepcopy(value) == value and hash(copy.copy(value)) == hash(value)
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            setattr(value, dataclasses.fields(value)[0].name, "changed")
+        with pytest.raises((AttributeError, TypeError)):  # TypeError: dataclasses' slots, Python 3.12
+            value.extra = 1
+    assert dataclasses.replace(journey, line="342").line == "342"
+    assert len({journey, dataclasses.replace(journey)}) == 1
