@@ -532,7 +532,7 @@ Keys pasted in the settings are saved in the store's `secrets.env`, and need no 
 | `departureboard.timer` | The e-paper board: one `departureboard run` a minute. |
 | `departureboard-screen.service` | The HDMI screen: `departureboard run --loop`. |
 
-`install.sh` enables the web server and the fetch service, and the timetable timer when buses come from BODS. The board's timer or screen service is yours to enable: `install.sh` prints the command and never enables it, and `update.sh` never enables or disables it either.
+`install.sh` enables the web server and the fetch service, and the timetable timer when buses come from BODS. Run again, it restarts the web server if it was running, so its new unit and network guard load, and the fetch service if it was running and its unit changed. The board's timer or screen service is yours to enable: `install.sh` prints the command and never enables it, and `update.sh` never enables or disables it either.
 
 All of them run as the `departureboard` user, with the store in `/var/lib/departureboard`. Commands that write to the store refuse to run as root and say how to run them as that user instead.
 

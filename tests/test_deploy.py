@@ -306,6 +306,38 @@ def test_install_and_update_install_nftables():
     assert update.index(needed) < update.index('"$PREFIX/venv/bin/pip" install')
 
 
+def test_install_run_again_restarts_a_running_web_server_onto_its_new_unit_and_guard():
+    # enable --now leaves a running service on its old unit, without the guard
+    # it may now load, and the check after it would blame the guard.
+    install = _script("install.sh")
+    units_go_in = install.index("for unit in ")
+    asked = "systemctl is-active --quiet departureboard-web.service && restart_web=true\n"
+    assert "restart_web=false\n" + asked in install
+    assert install.index(asked) < units_go_in  # as it was before this run
+    started = install.index("systemctl enable --now departureboard-web.service\n")
+    restart = "if $restart_web; then\n  systemctl try-restart departureboard-web.service\nfi\n"
+    assert started < install.index(restart)
+    check = f"if systemctl is-active --quiet departureboard-web.service && ! nft list table {GUARD_TABLE}"
+    assert install.index(restart) < install.index(check)
+
+
+def test_install_run_again_restarts_a_running_fetch_service_only_if_its_unit_changed():
+    install = _script("install.sh")
+    changed = ("if systemctl is-active --quiet departureboard-fetch.service \\\n"
+               '    && ! cmp -s "$REPO/deploy/pi/departureboard-fetch.service" '
+               "/etc/systemd/system/departureboard-fetch.service; then\n  restart_fetch=true\nfi\n")
+    assert "restart_fetch=false\n" + changed in install
+    assert install.index(changed) < install.index("for unit in ")  # the unit as it was before this run
+    started = install.index("systemctl enable --now departureboard-fetch.path departureboard-fetch.service\n")
+    restart = "if $restart_fetch; then\n  systemctl try-restart departureboard-fetch.service\nfi\n"
+    assert started < install.index(restart)
+
+
+def test_install_never_starts_a_service_by_restarting_it():
+    # try-restart leaves a stopped service stopped; restart would start it.
+    assert not [line for line in _run_lines("install.sh") if line.startswith("systemctl restart")]
+
+
 def _import_checks(name: str) -> list[tuple[int, set[str]]]:
     """Where each of the script's import checks is, and the modules it imports.
     Each stops the script, saying why, when an import fails."""

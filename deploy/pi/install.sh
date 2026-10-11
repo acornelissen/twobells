@@ -75,6 +75,17 @@ if $screen; then
   apt-get install -y python3-pygame
 fi
 
+# Run again, the web server may be running already on the old unit, and
+# enable --now leaves it so: it restarts below, onto the new unit, which
+# loads its network guard afresh. The fetch service restarts too if its unit
+# changed. Each as it was before this run; try-restart never starts one.
+restart_web=false
+systemctl is-active --quiet departureboard-web.service && restart_web=true
+restart_fetch=false
+if systemctl is-active --quiet departureboard-fetch.service \
+    && ! cmp -s "$REPO/deploy/pi/departureboard-fetch.service" /etc/systemd/system/departureboard-fetch.service; then
+  restart_fetch=true
+fi
 for unit in departureboard.service departureboard.timer departureboard-screen.service departureboard-web.service \
     departureboard-timetable.service departureboard-timetable.timer \
     departureboard-fetch.service departureboard-fetch.path; do
@@ -87,7 +98,13 @@ systemctl daemon-reload
 # internet work (the wizard's lookups, the dashboard's feeds). It starts at
 # boot, and the .path unit starts it whenever the server leaves it a request.
 systemctl enable --now departureboard-fetch.path departureboard-fetch.service
+if $restart_fetch; then
+  systemctl try-restart departureboard-fetch.service
+fi
 systemctl enable --now departureboard-web.service
+if $restart_web; then
+  systemctl try-restart departureboard-web.service
+fi
 if systemctl is-active --quiet departureboard-web.service && ! nft list table inet departureboard_web &>/dev/null; then
   echo "Warning: the web server's network guard didn't load, so nothing stops it connecting out." >&2
   echo "It still turns away visitors outside your home network. Why: journalctl -u departureboard-web" >&2
