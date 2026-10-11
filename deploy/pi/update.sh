@@ -58,6 +58,18 @@ if [[ "$display" == hdmi-* && ! -f /usr/lib/python3/dist-packages/pygame/__init_
   apt-get install -y python3-pygame
 fi
 
+# pip takes the departureboard command away for a moment while it puts new
+# code in, so a tick the timer starts then fails: the board's timer is held
+# (and a tick under way stopped; it saves what it has) until the new code and
+# units are in, and started again however this ends, if it was running.
+timer_was_running=false
+if systemctl is-active --quiet departureboard.timer; then
+  timer_was_running=true
+  systemctl stop departureboard.timer departureboard.service
+fi
+build=""
+trap 'if [[ -n "$build" ]]; then rm -rf "$build"; fi; if $timer_was_running; then systemctl start departureboard.timer; fi' EXIT
+
 # inky and its helper, at the versions and hashes this release names (a new
 # release may pin new ones), then the same check as install.sh that they and
 # their Debian dependencies import, all before the new code goes in.
@@ -69,7 +81,6 @@ fi
 # leaves root-owned build/ and *.egg-info behind (and a stale build/ can leak
 # old files into the next install).
 build="$(mktemp -d)"
-trap 'rm -rf "$build"' EXIT
 cp -a "$REPO/." "$build/"
 rm -rf "$build/build" "$build"/src/*.egg-info
 

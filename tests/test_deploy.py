@@ -683,6 +683,19 @@ def test_update_never_enables_or_disables_the_board():
             assert "departureboard.timer" not in line and "departureboard-screen" not in line, line
 
 
+def test_update_holds_the_boards_timer_while_the_code_is_reinstalled():
+    # pip takes the departureboard command away for a moment while it puts the
+    # new code in; a tick the timer starts then fails. The timer is held from
+    # before the code goes in until the units are in, and only one that was
+    # running is started again, even when the update stops part way.
+    script = _script("update.sh")
+    held = script.index("systemctl stop departureboard.timer departureboard.service")
+    assert script.index("is-active --quiet departureboard.timer") < held
+    assert held < script.index('--force-reinstall "$build"') < script.index("systemctl daemon-reload")
+    [trap] = [line for line in script.splitlines() if line.startswith("trap ")]
+    assert "systemctl start departureboard.timer" in trap and "timer_was_running" in trap
+
+
 def test_update_restarts_a_running_screen_onto_the_new_code():
     # The screen's service runs for good; without a restart it keeps the old
     # code. try-restart leaves a stopped one stopped, so the board stays yours.
