@@ -20,6 +20,15 @@ def test_parses_vehicles_with_a_position():
     assert first.vehicle_ref == "BNML-1001"
 
 
+@pytest.mark.parametrize("bearing", [b"north", b"nan", b"inf", b"-inf", b"1e400"])
+def test_an_unreadable_bearing_loses_only_that_bearing(bearing):
+    body = FIXTURE.replace(b"<Bearing>90.0</Bearing>", b"<Bearing>" + bearing + b"</Bearing>")
+    vehicles = parse_siri_vm(body)
+    assert len(vehicles) == 4  # the others are kept
+    assert vehicles[0].bearing is None
+    assert [v.bearing for v in vehicles[1:]] == [120.0, 270.0, 95.0]
+
+
 def test_falls_back_to_line_ref_without_a_published_name():
     body = FIXTURE.replace(b"<PublishedLineName>237</PublishedLineName>", b"")
     assert "237" in {v.line for v in parse_siri_vm(body)}

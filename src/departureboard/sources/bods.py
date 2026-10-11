@@ -6,6 +6,7 @@ area around the configured route strips is asked for, so responses stay small.
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -66,6 +67,15 @@ def _aware_time(text: str) -> datetime | None:
     return when if when.tzinfo is not None else None
 
 
+def _bearing(text: str) -> float | None:
+    """Degrees; None if missing or unreadable, so one bad bearing costs only itself."""
+    try:
+        bearing = float(text)
+    except ValueError:
+        return None
+    return bearing if math.isfinite(bearing) else None
+
+
 def parse_siri_vm(body: bytes) -> list[Vehicle]:
     """Vehicles from a SIRI-VM document. Activities missing a position are skipped."""
     root = safexml.fromstring(body)  # refuses a DOCTYPE, so no entity tricks
@@ -79,7 +89,6 @@ def parse_siri_vm(body: bytes) -> list[Vehicle]:
             lon = float(_text(journey, "siri:VehicleLocation/siri:Longitude"))
         except ValueError:
             continue
-        bearing = _text(journey, "siri:Bearing")
         vehicles.append(
             Vehicle(
                 line=_text(journey, "siri:PublishedLineName") or _text(journey, "siri:LineRef"),
@@ -88,7 +97,7 @@ def parse_siri_vm(body: bytes) -> list[Vehicle]:
                 lat=lat,
                 lon=lon,
                 recorded_at=_text(activity, "siri:RecordedAtTime"),
-                bearing=float(bearing) if bearing else None,
+                bearing=_bearing(_text(journey, "siri:Bearing")),
                 vehicle_ref=_text(journey, "siri:VehicleRef"),
                 operator=_text(journey, "siri:OperatorRef"),
                 origin_ref=_text(journey, "siri:OriginRef"),
