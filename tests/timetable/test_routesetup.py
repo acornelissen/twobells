@@ -1,12 +1,16 @@
 import io
 import json
+import re
 import tomllib
 import tracemalloc
 import zipfile
 import zlib
+from collections import Counter
 
 import pytest
 
+from departureboard.core import safexml
+from departureboard.timetable import routesetup
 from departureboard.timetable.routesetup import (
     MAX_NAPTAN_BYTES,
     MAX_STOPS,
@@ -26,6 +30,7 @@ from tests.paths import FIXTURES
 TXC = (FIXTURES / "txc_glossop_synthetic.xml").read_bytes()
 NAPTAN = (FIXTURES / "naptan_glossop_high_street_west.csv").read_text()
 HENRY_A = "1000DGHS0900"
+NS = {"t": "http://www.transxchange.org.uk/"}
 
 
 def test_reads_each_pattern_of_the_line_with_its_journey_count():
@@ -41,6 +46,107 @@ def test_other_lines_are_left_out():
     assert all(p.journeys != 5 for p in patterns(TXC, "341"))
     assert [p.journeys for p in patterns(TXC, "237")] == [5]
     assert patterns(TXC, "999") == []
+
+
+def _patterns_whole_tree(xml, line):
+    """patterns as it was, parsing the whole document as one tree (about 8
+    times its size): kept only to check that reading it an element at a
+    time gives the same."""
+    root = safexml.fromstring(xml)
+    line_ids = {
+        node.get("id")
+        for node in root.iterfind(".//t:Services/t:Service/t:Lines/t:Line", NS)
+        if (node.findtext("t:LineName", "", NS) or "").strip() == line
+    }
+    if not line_ids:
+        return []
+    sections = {}
+    for section in root.iterfind(".//t:JourneyPatternSections/t:JourneyPatternSection", NS):
+        links = []
+        for link in section.iterfind("t:JourneyPatternTimingLink", NS):
+            links.append(
+                (
+                    link.findtext("t:From/t:StopPointRef", "", NS).strip(),
+                    link.findtext("t:To/t:StopPointRef", "", NS).strip(),
+                    routesetup._seconds(link.findtext("t:RunTime", None, NS)),
+                )
+            )
+        sections[section.get("id")] = links
+    journey_patterns = {}
+    for service in root.iterfind(".//t:Services/t:Service", NS):
+        service_lines = {n.get("id") for n in service.iterfind("t:Lines/t:Line", NS)}
+        if not service_lines & line_ids:
+            continue
+        for pattern in service.iterfind(".//t:StandardService/t:JourneyPattern", NS):
+            refs = [r.text.strip() for r in pattern.iterfind("t:JourneyPatternSectionRefs", NS) if r.text]
+            journey_patterns[pattern.get("id")] = refs
+    uses = Counter(
+        journey.findtext("t:JourneyPatternRef", "", NS).strip()
+        for journey in root.iterfind(".//t:VehicleJourneys/t:VehicleJourney", NS)
+        if journey.findtext("t:LineRef", "", NS).strip() in line_ids
+    )
+    found = []
+    for pattern_id, refs in journey_patterns.items():
+        links = [link for ref in refs for link in sections.get(ref, [])]
+        if not links or not uses[pattern_id]:
+            continue
+        stops = (links[0][0], *tuple(link[1] for link in links))
+        found.append(Pattern(stops, tuple(link[2] for link in links), uses[pattern_id]))
+    return found
+
+
+def _reordered(xml):
+    """`xml` with its journeys first and its services last."""
+    head, rest = xml.split(b"<StopPoints>", 1)
+    rest = b"<StopPoints>" + rest
+    pieces = {name: re.search(rb"<%s>.*?</%s>" % (name, name), rest, re.S).group(0)
+              for name in (b"Services", b"VehicleJourneys")}
+    for piece in pieces.values():
+        rest = rest.replace(piece, b"")
+    return head + pieces[b"VehicleJourneys"] + rest.replace(b"</TransXChange>", pieces[b"Services"] + b"</TransXChange>")
+
+
+def _twice(xml, tag, change=lambda element: element):
+    """`xml` with its first `tag` element given again, changed, after the others."""
+    element = re.search(rb"<%s[ >].*?</%s>" % (tag, tag), xml, re.S).group(0)
+    return xml.replace(b"</%ss>" % tag, change(element) + b"</%ss>" % tag, 1)
+
+
+def _without_first_link(section):
+    return re.sub(rb"<JourneyPatternTimingLink[ >].*?</JourneyPatternTimingLink>", b"", section, count=1, flags=re.S)
+
+
+# Every sample document, and odd ones: services after their journeys, a
+# service given twice, a section given again with a stop fewer.
+_SAMPLES = {path.name: path.read_bytes() for path in sorted(FIXTURES.glob("txc_*.xml"))}
+_SAMPLES["services last"] = _reordered(_SAMPLES["txc_bnml_341.xml"])
+_SAMPLES["a service twice"] = _twice(_SAMPLES["txc_bnml_341.xml"], b"Service")
+_SAMPLES["a section twice"] = _twice(_SAMPLES["txc_hipk_61.xml"], b"JourneyPatternSection", _without_first_link)
+
+
+@pytest.mark.parametrize("name", list(_SAMPLES))
+def test_patterns_read_an_element_at_a_time_are_those_of_the_whole_tree(name):
+    xml = _SAMPLES[name]
+    lines = {line.decode().strip() for line in re.findall(rb"<LineName>([^<]*)</LineName>", xml)}
+    for line in (*sorted(lines), "no such line", ""):
+        assert patterns(xml, line) == _patterns_whole_tree(xml, line), line
+    assert any(patterns(xml, line) for line in lines)
+
+
+def test_patterns_never_hold_a_document_as_a_whole_tree():
+    xml = _SAMPLES["txc_bnml_237.xml"]
+    head, rest = xml.split(b"<VehicleJourneys>", 1)
+    journeys, tail = rest.split(b"</VehicleJourneys>", 1)
+    big = head + b"<VehicleJourneys>" + journeys * (4_000_000 // len(journeys)) + b"</VehicleJourneys>" + tail
+    line = re.search(rb"<LineName>([^<]*)</LineName>", xml).group(1).decode()
+    tracemalloc.start()
+    try:
+        found = patterns(big, line)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert found
+    assert peak < len(big) / 2  # whole, about 8 times
 
 
 def test_strip_goes_back_far_enough_to_cover_the_walk_and_five_minutes():

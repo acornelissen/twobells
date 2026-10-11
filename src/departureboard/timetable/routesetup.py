@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from typing import IO, TYPE_CHECKING
 from urllib.parse import urlencode
+from xml.etree.ElementTree import Element
 
 from ..core import safexml
 from ..core.net import get_bytes
@@ -126,55 +127,71 @@ def _seconds(duration: str | None) -> int:
     return hours * 3600 + minutes * 60 + seconds
 
 
-def _parse(xml: bytes):
+_TXC = "{" + _NS["t"] + "}"  # as in an element's tag
+_SECTIONS, _SERVICES, _JOURNEYS = (_TXC + name for name in ("JourneyPatternSections", "Services", "VehicleJourneys"))
+_CHUNK = 64 * 1024  # bytes of a document parsed at a time
+
+
+def _elements(xml: bytes, sections: frozenset[str]) -> Iterator[tuple[str, Element]]:
+    """safexml.iter_grandchildren over a document held in memory."""
+    chunks = (xml[start : start + _CHUNK] for start in range(0, len(xml), _CHUNK))
     try:
-        return safexml.fromstring(xml)
+        yield from safexml.iter_grandchildren(chunks, sections)
     except safexml.DoctypeError:
         raise RouteSetupError("Timetable file has a DOCTYPE; refusing to parse it") from None
 
 
 def patterns(xml: bytes, line: str) -> list[Pattern]:
-    """Every journey pattern of `line` in one TransXChange document."""
-    root = _parse(xml)
-    line_ids = {
-        node.get("id")
-        for node in root.iterfind(".//t:Services/t:Service/t:Lines/t:Line", _NS)
-        if (node.findtext("t:LineName", "", _NS) or "").strip() == line
-    }
+    """Every journey pattern of `line` in one TransXChange document. It is
+    read an element at a time (safexml.iter_grandchildren), never as a whole
+    tree, which took about 8 times the document: the setup search reads it in
+    a Pi's fetch service. Its sections, services and journeys can come in any
+    order, so what each says is noted and the patterns found at the end."""
+    line_ids = set()
+    sections = {}
+    services = []  # each service's line ids, and its journey patterns' (id, section refs)
+    uses = Counter()  # journeys, by (LineRef, JourneyPatternRef)
+    for section, node in _elements(xml, frozenset({_SECTIONS, _SERVICES, _JOURNEYS})):
+        if section == _SECTIONS and node.tag == _TXC + "JourneyPatternSection":
+            links = []
+            for link in node.iterfind("t:JourneyPatternTimingLink", _NS):
+                links.append(
+                    (
+                        link.findtext("t:From/t:StopPointRef", "", _NS).strip(),
+                        link.findtext("t:To/t:StopPointRef", "", _NS).strip(),
+                        _seconds(link.findtext("t:RunTime", None, _NS)),
+                    )
+                )
+            sections[node.get("id")] = links
+        elif section == _SERVICES and node.tag == _TXC + "Service":
+            lines = list(node.iterfind("t:Lines/t:Line", _NS))
+            line_ids.update(n.get("id") for n in lines if (n.findtext("t:LineName", "", _NS) or "").strip() == line)
+            services.append((
+                {n.get("id") for n in lines},
+                [(pattern.get("id"), [r.text.strip() for r in pattern.iterfind("t:JourneyPatternSectionRefs", _NS)
+                                      if r.text])
+                 for pattern in node.iterfind(".//t:StandardService/t:JourneyPattern", _NS)],
+            ))
+        elif section == _JOURNEYS and node.tag == _TXC + "VehicleJourney":
+            line_ref = node.findtext("t:LineRef", "", _NS).strip()
+            uses[(line_ref, node.findtext("t:JourneyPatternRef", "", _NS).strip())] += 1
     if not line_ids:
         return []
-    sections = {}
-    for section in root.iterfind(".//t:JourneyPatternSections/t:JourneyPatternSection", _NS):
-        links = []
-        for link in section.iterfind("t:JourneyPatternTimingLink", _NS):
-            links.append(
-                (
-                    link.findtext("t:From/t:StopPointRef", "", _NS).strip(),
-                    link.findtext("t:To/t:StopPointRef", "", _NS).strip(),
-                    _seconds(link.findtext("t:RunTime", None, _NS)),
-                )
-            )
-        sections[section.get("id")] = links
     journey_patterns = {}
-    for service in root.iterfind(".//t:Services/t:Service", _NS):
-        service_lines = {n.get("id") for n in service.iterfind("t:Lines/t:Line", _NS)}
-        if not service_lines & line_ids:
-            continue
-        for pattern in service.iterfind(".//t:StandardService/t:JourneyPattern", _NS):
-            refs = [r.text.strip() for r in pattern.iterfind("t:JourneyPatternSectionRefs", _NS) if r.text]
-            journey_patterns[pattern.get("id")] = refs
-    uses = Counter(
-        journey.findtext("t:JourneyPatternRef", "", _NS).strip()
-        for journey in root.iterfind(".//t:VehicleJourneys/t:VehicleJourney", _NS)
-        if journey.findtext("t:LineRef", "", _NS).strip() in line_ids
-    )
+    for service_lines, service_patterns in services:
+        if service_lines & line_ids:
+            journey_patterns.update(service_patterns)
+    used = Counter()
+    for (line_ref, pattern_ref), count in uses.items():
+        if line_ref in line_ids:
+            used[pattern_ref] += count
     found = []
     for pattern_id, refs in journey_patterns.items():
         links = [link for ref in refs for link in sections.get(ref, [])]
-        if not links or not uses[pattern_id]:
+        if not links or not used[pattern_id]:
             continue
         stops = (links[0][0], *tuple(link[1] for link in links))
-        found.append(Pattern(stops, tuple(link[2] for link in links), uses[pattern_id]))
+        found.append(Pattern(stops, tuple(link[2] for link in links), used[pattern_id]))
     return found
 
 
