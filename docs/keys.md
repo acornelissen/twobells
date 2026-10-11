@@ -42,7 +42,8 @@ The easiest way is to paste them in the settings, at `/settings` on your install
 |---|---|
 | `RDM_API_KEY`, `BODS_API_KEY` | the setup wizard's **Keys** step, or the settings' **Keys** page |
 | `TAPI_APP_ID`, `TAPI_APP_KEY` | the **Keys** page (only while the board view is on) |
-| `RDM_DETAILS_API_KEY`, `RDM_KB_API_KEY` | the **Keys** page (only while the dashboard view is on) |
+| `RDM_DETAILS_API_KEY` | the **Keys** page (only while the dashboard view, or the board view on an HDMI screen, is on) |
+| `RDM_KB_API_KEY` | the **Keys** page (only while the dashboard view is on) |
 
 Keys pasted there are saved in `secrets.env` in the install's store (`/var/lib/departureboard` on a Pi, the `/data` volume in Docker; see [Where things are kept](user-guide.md#where-things-are-kept)), readable only by the app. They win over keys in a file of your own, and need no restart.
 
@@ -161,7 +162,7 @@ The **Rail Data Marketplace key for where each train is** box on the settings' *
 
 ### Check it works
 
-On the **Keys** page, press **Save and test** as you paste it, or **Test saved key** in the **Where each train is** form. Then open the dashboard: within a minute or two, the first train's row says where it is, and the next three trains' sheets draw them on their journeys.
+On the **Keys** page, press **Save and test** as you paste it, or **Test saved key** in the **Where each train is** form. Then open the dashboard: within a minute or two, the first train's row says where it is, and the next three trains' sheets draw them on their journeys. A running screen picks the saved key up too, without a restart.
 
 If they don't, look at the log (on a Pi `journalctl -u departureboard-fetch`, or `journalctl -u departureboard-screen` for the screen's rows; in Docker `docker logs departureboard`; on a desktop, the Terminal window running it) for "train positions off for 6 hours". That means the key was refused: check you copied the Service Details key, not the Live Departure Board one. Saving the right key on the Keys page starts the dashboard's feeds again; a key changed in a file of your own needs a restart (see [Replacing a key](#replacing-a-key)), or the dashboard waits the full 6 hours before trying again.
 

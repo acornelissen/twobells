@@ -499,6 +499,28 @@ def test_watcher_asks_for_a_restart_when_the_display_changes(tmp_path):
         watcher()
 
 
+def test_a_running_screen_picks_up_a_newly_saved_where_each_train_is_key(tmp_path):
+    # Saved on the Keys page into the store's secrets.env, which the watcher watches: no restart needed.
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "secrets.env").write_text("RDM_API_KEY=rail-key-1234567\n")
+    import argparse
+
+    from departureboard.cli.common import load_settings
+    from departureboard.cli.run import _Watcher
+
+    config = tmp_path / "config.toml"
+    config.write_text(f'state_file = "{tmp_path / "state" / "state.json"}"\ndisplay = "hdmi-1280x400"\n'
+                      '[train]\ncrs = "GLO"\n')
+    args = argparse.Namespace(config=str(config), secrets=str(tmp_path / "none.env"))
+    settings = load_settings(args)
+    assert settings.board.positions is not None and settings.board.positions.details is None
+    watcher = _Watcher(args, settings)
+    (tmp_path / "state" / "secrets.env").write_text("RDM_API_KEY=rail-key-1234567\n"
+                                                    "RDM_DETAILS_API_KEY=details-key-0042\n")
+    board = watcher()
+    assert board is not None and board.positions is not None and board.positions.details is not None
+
+
 def test_watcher_keeps_running_settings_when_new_ones_are_broken(tmp_path):
     watcher, state = _watched(tmp_path)
     (state / "settings.toml").write_text('theme = "neon"\n')

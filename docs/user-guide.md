@@ -409,7 +409,8 @@ Keys are never shown, not even here. Each key has a small form of its own, heade
 
 - **Trains** (the Rail Data Marketplace key) and **Buses** (the bus data key, from the Bus Open Data Service, the government's free bus data): always.
 - **Buses from TransportAPI** (its app ID and app key, in one form): while the board view is on.
-- **Where each train is** (RDM calls it Service Details) and **Engineering works** (Knowledgebase Incidents, with the **Engineering works address** in the same form): while the dashboard view is on.
+- **Where each train is** (RDM calls it Service Details): while the dashboard view is on, or the board view on an HDMI screen (e-paper doesn't use it).
+- **Engineering works** (Knowledgebase Incidents, with the **Engineering works address** in the same form): while the dashboard view is on.
 
 A label by each heading says how the key stands: **Not set**, **Needed for trains** (or whatever is switched on without it), **Saved, not tested**, **Works, tested 10 Oct 10:42**, or **Refused, tested …**. Paste a key and press **Save key** (or Enter) to replace the saved one. Each form saves its own key only: every other key and setting stays as it is. The page then names the key it saved, never the key itself. If the key isn't pasted right, nothing is saved and a box at the top says so: paste it again.
 
@@ -513,7 +514,7 @@ All are free. [Getting your keys](keys.md) walks through signing up for each one
 | `RDM_API_KEY` | trains | the wizard, or the Keys page |
 | `BODS_API_KEY` | bus times, positions and disruptions | the wizard, or the Keys page |
 | `TAPI_APP_ID`, `TAPI_APP_KEY` | the board's bus times without the BODS timetable (optional) | the Keys page, while the board view is on |
-| `RDM_DETAILS_API_KEY` | where each train is, on the dashboard (optional) | the Keys page, while the dashboard view is on |
+| `RDM_DETAILS_API_KEY` | where each train is, on the dashboard and an HDMI screen (optional) | the Keys page, while the dashboard view, or the board view on a screen, is on |
 | `RDM_KB_API_KEY` | engineering works, on the dashboard (optional) | the Keys page, while the dashboard view is on |
 
 Keys pasted in the settings are saved in the store's `secrets.env`, and need no restart. Or keep them in a file of your own, one `NAME=key` per line, from `deploy/secrets.env.example`: `/etc/departureboard/secrets.env` on a Pi, `secrets.env` next to `docker-compose.yml` in Docker, and any file you give with `--secrets` on a desktop. Keys are never shown, only whether each is set.

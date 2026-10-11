@@ -431,6 +431,15 @@ def test_each_keys_state_in_one_line_never_its_value():
     assert '<a href="/settings/keys">Change or test keys</a>' in page
 
 
+def test_a_screen_boards_keys_include_where_each_train_is_and_e_papers_dont():
+    optional = "Rail Data Marketplace key for where each train is Not set Optional: where each train is."
+    train = {"crs": "GLO"}
+    assert optional in text_of(keys({"display": "hdmi-1920x440", "train": train}, ALL_SET))
+    assert "where each train is" not in text_of(keys({"display": "waveshare-10in85g", "train": train}, ALL_SET))
+    assert "where each train is" not in text_of(keys({"train": train}, ALL_SET))  # inky, the default
+    assert "engineering works" not in text_of(keys({"display": "hdmi-1920x440", "train": train}, ALL_SET))
+
+
 def test_a_key_not_set_says_what_needs_it():
     data = {"train": {"crs": "GLO"}, "bus": {"source": "transportapi"}}
     rows = text_of(keys(data, {}))

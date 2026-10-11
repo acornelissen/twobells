@@ -51,7 +51,8 @@ FORMS = (
             "The board's bus times while there is no bus timetable, or when the board's buses come from it.",
             ("TAPI_APP_ID", "TAPI_APP_KEY")),
     KeyForm("RDM_DETAILS_API_KEY", "Where each train is",
-            "Optional: where each of the next few trains is, on the dashboard.", ("RDM_DETAILS_API_KEY",)),
+            "Optional: where each of the next few trains is, on the dashboard and a screen board.",
+            ("RDM_DETAILS_API_KEY",)),
     KeyForm("RDM_KB_API_KEY", "Engineering works",
             "Optional: planned engineering works on your trains' lines, on the dashboard.", ("RDM_KB_API_KEY",)),
 )
@@ -99,9 +100,10 @@ def pill(state: KeyState) -> str:
     return f'<span class="pill pill-{tone}">{icon(shape)} {html.escape(state.words)}</span>'
 
 
-def forms_for(views: tuple[str, ...]) -> tuple[KeyForm, ...]:
-    """The forms of the keys the views on use."""
-    names = {name for name, _, _ in schema.keys("general", *views)}
+def forms_for(views: tuple[str, ...], data: Mapping) -> tuple[KeyForm, ...]:
+    """The forms of the keys the views on use, with the display the settings `data` give."""
+    display = str(data.get("display", schema.BOARD_DEFAULTS["display"]))
+    names = {name for name, _, _ in schema.keys_used(views, display)}
     return tuple(form for form in FORMS if set(form.boxes) <= names)
 
 
@@ -142,4 +144,4 @@ def key_states(store: Store, install: Install) -> tuple[KeyState, ...]:
         env = store.env()
     except (OSError, ConfigError):  # a secrets file that isn't text
         env = {}
-    return states(forms_for(views), data, env, views, keyresults.load(store.folder))
+    return states(forms_for(views, data), data, env, views, keyresults.load(store.folder))

@@ -134,6 +134,24 @@ def test_each_key_is_in_exactly_one_group():
     assert [name for name, _, _ in schema.keys("dashboard")] == ["RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"]
 
 
+@pytest.mark.parametrize("views, display, details", [
+    (("board",), "hdmi-1280x400", True),  # a screen's rows say where each train is
+    (("board",), "hdmi-1920x440", True),
+    (("board",), "inky", False),  # e-paper never asks
+    (("board",), "waveshare-10in85g", False),
+    (("dashboard",), "inky", True),
+    (("board", "dashboard"), "hdmi-1280x400", True),
+    (("dashboard",), "hdmi-1280x400", True),
+    ((), "hdmi-1280x400", False),  # the board view off
+])
+def test_the_where_each_train_is_key_is_used_by_the_dashboard_and_a_screen_board(views, display, details):
+    names = [name for name, _, _ in schema.keys_used(views, display)]
+    assert ("RDM_DETAILS_API_KEY" in names) is details
+    assert ("RDM_KB_API_KEY" in names) is ("dashboard" in views)  # engineering works: the dashboard's alone
+    assert ("TAPI_APP_KEY" in names) is ("board" in views)
+    assert names[:2] == ["RDM_API_KEY", "BODS_API_KEY"] and len(names) == len(set(names))
+
+
 def test_saved_keys_cover_every_field_and_what_setup_manages():
     saved = schema.saved_keys()
     for form in every_form():

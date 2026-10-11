@@ -354,6 +354,7 @@ class Key:
     group: str
     label: str
     hint: str
+    screen: bool = False  # the board uses it too while its display is a screen
 
 
 # The settings pages, by task. The overview only shows; every other page
@@ -573,7 +574,8 @@ KEYS = (
     Key("TAPI_APP_ID", "board", "TransportAPI app ID", "The board's buses, unless they come from the bus data."),
     Key("TAPI_APP_KEY", "board", "TransportAPI app key", "The board's buses, unless they come from the bus data."),
     Key("RDM_DETAILS_API_KEY", "dashboard", "Rail Data Marketplace key for where each train is",
-        "Optional: shows where each of the next few trains is. Rail Data Marketplace calls it Service Details."),
+        "Optional: shows where each of the next few trains is. Rail Data Marketplace calls it Service Details.",
+        screen=True),
     Key("RDM_KB_API_KEY", "dashboard", "Rail Data Marketplace key for engineering works",
         "Optional: engineering works, with the address below. Rail Data Marketplace calls it Knowledgebase "
         "Incidents."),
@@ -583,6 +585,15 @@ KEYS = (
 def keys(*groups: str) -> tuple[tuple[str, str, str], ...]:
     """(name, label, hint) of each key in `groups`, as setup and the pages list them."""
     return tuple((k.name, k.label, k.hint) for k in KEYS if k.group in groups)
+
+
+def keys_used(views: tuple[str, ...] | list[str], display: str) -> tuple[tuple[str, str, str], ...]:
+    """(name, label, hint) of each key the views on use: the general keys,
+    each view's own, and while the board is on a screen, the keys its rows
+    use too (where each train is). E-paper never asks for those."""
+    screen = "board" in views and not DISPLAY_PANELS.get(display, DISPLAY_PANELS["inky"]).epaper
+    return tuple((k.name, k.label, k.hint) for k in KEYS
+                 if k.group == "general" or k.group in views or (screen and k.screen))
 
 
 # What setup saves that no field shows: the bus companies and route strips

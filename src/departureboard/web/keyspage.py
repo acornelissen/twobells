@@ -128,7 +128,7 @@ class KeysPage:
             return self._install.default_views
 
     def _forms(self, data: dict) -> tuple[KeyForm, ...]:
-        return keystate.forms_for(self._views(data))
+        return keystate.forms_for(self._views(data), data)
 
     def _form(self, name: str) -> KeyForm | None:
         """The form called `name`, while it is on the page."""

@@ -1041,6 +1041,19 @@ def test_each_key_of_the_views_on_has_a_small_form_of_its_own(make):
             assert 'name="do"' not in other_page and "key-box" not in other_page, other
 
 
+def test_a_board_only_pi_with_a_screen_saves_the_where_each_train_is_key(make):
+    screen = make(install="pi", config='display = "hdmi-1280x400"\n' + CONFIG)
+    page = screen("GET", "/settings/keys", cookie=screen.session())[1]
+    assert re.findall(r'<input type="hidden" name="key" value="(\w+)">', page) == [
+        "RDM_API_KEY", "BODS_API_KEY", "TAPI_APP_KEY", "RDM_DETAILS_API_KEY"]
+    assert "RDM_KB_API_KEY" not in page  # engineering works are the dashboard's alone
+    response, cookie = press(screen, "RDM_DETAILS_API_KEY", "save", {"RDM_DETAILS_API_KEY": "details-key-0042"})
+    after(screen, response, cookie)
+    assert "RDM_DETAILS_API_KEY=details-key-0042" in screen.store.secrets_file.read_text()
+    overview = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", screen("GET", "/settings", cookie=cookie)[1]))
+    assert "Rail Data Marketplace key for where each train is Set" in overview
+
+
 def test_a_keys_hint_does_not_repeat_its_forms_heading(signed):
     page = signed("GET", "/settings/keys", cookie=signed.session())[1]
     trains, buses = key_form(page, "RDM_API_KEY"), key_form(page, "BODS_API_KEY")

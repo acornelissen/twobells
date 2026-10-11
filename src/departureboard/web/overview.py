@@ -483,7 +483,8 @@ def render_keys(data: dict, views: Sequence[str], env: Mapping[str, str], keys_p
     e = html.escape
     tested = tested or {}
     rows = []
-    for name, label, _ in schema.keys("general", *views):
+    display = str(data.get("display", schema.BOARD_DEFAULTS["display"]))
+    for name, label, _ in schema.keys_used(tuple(views), display):
         if str(env.get(name, "")).strip():
             test = tested.get(name)
             if test is not None and test.state in _TESTED:

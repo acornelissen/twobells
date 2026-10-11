@@ -47,6 +47,16 @@ def test_each_key_of_the_views_on_has_a_state(store):
     assert list(states(store, "pi")) == ["RDM_API_KEY", "BODS_API_KEY", "TAPI_APP_KEY"]
 
 
+def test_a_screen_boards_where_each_train_is_key_has_a_state_on_a_board_only_install(store):
+    store.config_path.write_text('display = "hdmi-1280x400"\n' + CONFIG)
+    assert states(store, "pi") == {
+        "RDM_API_KEY": ("needed", "Needed for trains"),
+        "BODS_API_KEY": ("needed", "Needed for buses"),
+        "TAPI_APP_KEY": ("not_set", "Not set"),
+        "RDM_DETAILS_API_KEY": ("not_set", "Not set"),  # optional, so never needed
+    }
+
+
 def test_a_tested_key_says_how_its_last_test_went_and_when(store):
     store.secrets_file.write_text("RDM_API_KEY=rail-key-1234567\nBODS_API_KEY=bods-key-7654321\n")
     keyresults.record(store.folder, "RDM_API_KEY", "works", NOW)
