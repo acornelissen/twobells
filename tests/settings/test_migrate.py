@@ -1,16 +1,19 @@
 """Bringing the old dashboard's folder into the store, once."""
 
+import fcntl
 import json
 import logging
 import os
 import sqlite3
 import stat
+import threading
 import tomllib
 
 import pytest
 
 from departureboard.settings import store as stores
 from departureboard.settings.migrate import adopt_legacy
+from departureboard.settings.overlay import LOCK_NAME
 from departureboard.settings.store import Store
 
 
@@ -176,6 +179,30 @@ def test_a_linked_file_in_the_old_folder_is_refused(board, old, tmp_path, caplog
     assert adopt(store) == ["secrets.env", "web.json"]
     assert not (folder / "settings.toml").exists() and not (folder / "history.sqlite3").exists()
     assert "link" in caplog.text and "plain file" in caplog.text
+
+
+def test_it_takes_turns_with_a_save_so_neither_loses_the_other_s_changes(board, old):
+    # A save (overlay.save_to) holds settings.lock from reading the saved
+    # settings to writing them back; bringing [dashboard] in must hold it too.
+    store, folder = board
+    write(folder / "settings.toml", 'title = "Board title"\n', 0o640)
+    lock = os.open(folder / LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)  # a save part way through
+        imported = []
+        adopting = threading.Thread(target=lambda: imported.extend(adopt(store)))
+        adopting.start()
+        adopting.join(0.5)
+        assert adopting.is_alive(), "brought [dashboard] in while a save was part way through"
+        assert tomllib.loads((folder / "settings.toml").read_text()) == {"title": "Board title"}
+        write(folder / "settings.toml", 'title = "Saved meanwhile"\n', 0o640)  # the save lands
+    finally:
+        os.close(lock)
+    adopting.join(10)
+    assert not adopting.is_alive()
+    assert "[dashboard]" in imported
+    saved = tomllib.loads((folder / "settings.toml").read_text())
+    assert saved == {"title": "Saved meanwhile", "dashboard": {"train_rows": 4}}
 
 
 def test_a_store_file_already_there_is_never_overwritten(board, old):

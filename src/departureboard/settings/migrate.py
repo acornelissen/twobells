@@ -15,7 +15,9 @@ the store, `serve` brings them across when it starts:
 Files are copied, never moved, so the old folder stays as it was, and a
 file there that is a link (or not a plain file) is refused. migrated.json
 records where from and what was brought (file and key names, never
-values); with it there, this never runs again. A Pi and Docker never had
+values); with it there, this never runs again. It holds migrate.lock
+throughout, and the settings lock every save holds while it reads, merges
+and writes the store's files, so a save at the same time loses nothing. A Pi and Docker never had
 a dashboard folder apart from the store, so there is nothing to do there.
 """
 
@@ -37,6 +39,7 @@ from pathlib import Path
 
 from ..core import files
 from .config import OVERLAY_NAME, SECRETS_OVERLAY_NAME, ConfigError, load_env_file, merge, parse_env, saved_only
+from .overlay import LOCK_NAME
 from .schema import KEY_VALUE, saved_keys
 from .store import OLD_FOLDER_NAME, PASSWORD_NAME, Store, platform_base
 
@@ -116,6 +119,16 @@ def _has_store(folder: Path) -> bool:
 
 
 def _import(old: Path, store: Store) -> list[str]:
+    # Saves (overlay.save_to) hold the settings lock from reading the store's
+    # files to writing them back, so this does too, to keep a save made
+    # meanwhile. It is taken after migrate.lock and a save never takes that,
+    # so neither waits on the other while holding what the other wants.
+    with _locked(store.folder / LOCK_NAME):
+        imported = _import_store_files(old, store)
+    return imported + _history(old / HISTORY, store.folder / HISTORY)
+
+
+def _import_store_files(old: Path, store: Store) -> list[str]:
     imported: list[str] = []
     if not _has_store(store.folder):
         for name, mode in STORE_FILES:
@@ -127,7 +140,6 @@ def _import(old: Path, store: Store) -> list[str]:
                  store.folder, old)
         imported += _dashboard_table(old, store)
         imported += _dashboard_keys(old, store)
-    imported += _history(old / HISTORY, store.folder / HISTORY)
     return imported
 
 
