@@ -66,7 +66,7 @@ Dockerfile does), ruff, node and uv. Dev tools are a PEP 735 dependency group, p
 ```bash
 mise install          # pinned tools
 mise run setup        # .venv with the package and dev tools (uv sync --locked)
-mise run test         # pytest -q
+mise run test         # pytest -q, in parallel (xdist); plain pytest runs serially
 mise run lint         # ruff check src tests tools (rules in pyproject.toml; S on src only)
 mise run typecheck    # pyright, basic mode
 mise run demo         # departureboard demo --png preview.png, no keys needed
