@@ -786,6 +786,29 @@ def test_a_document_with_more_journeys_at_your_stops_than_the_limit_fails_as_the
     assert len(read) == 3  # of the 341's 5
 
 
+def test_journeys_that_have_already_ended_are_not_counted_against_the_limit():
+    # They are let go as they are read, so take no memory: only the one still
+    # running counts.
+    ended = {f"old{i}": "2026-02-01" for i in range(3)}
+    document = _doc([*((code, "237", f"0{i + 6}:00:00", [STOP_A, HOWARD]) for i, code in enumerate(ended)),
+                     ("out", "237", "10:15:00", [STOP_A, HOWARD])], ends=ended)
+    schedule, _ = _build(document, naptan=PLACES, limits=DocumentLimits(journeys=1))
+    assert _codes(schedule) == [("out", False)]
+
+
+def test_an_ended_version_not_counted_against_the_limit_still_switches_the_earlier_one_off():
+    # As a temporary version does while it runs (_until_replaced): seen,
+    # though it isn't kept.
+    usual = _txc(LINKS, departure="07:37:00", start="2026-01-01")
+    roadworks = _txc(LINKS, departure="07:40:00", start="2026-09-01", end="2026-10-05")
+    bods = FakeBods()
+    bods.blobs[BNML_LINK] = _zip({"0.xml": usual, "1.xml": roadworks})
+    bods.datasets["HIPK"] = []
+    schedule = bods.build(limits=DocumentLimits(journeys=1))
+    assert [journey.calendar.dates_off for journey in schedule.journeys] == [
+        ((date(2026, 9, 1), date(2026, 10, 5)),)]
+
+
 def test_a_build_with_every_document_for_your_stops_skipped_fails():
     with pytest.raises(TimetableError, match="No timetabled journeys"):
         FakeBods().build(limits=DocumentLimits(parse=100))
@@ -1299,6 +1322,29 @@ def test_inbound_only_journeys_are_capped_at_half_the_journey_limit(caplog):
     schedule, _ = _build(document, naptan=PLACES, limits=DocumentLimits(journeys=2))
     assert _codes(schedule) == [("out", False), ("in", True)]
     assert "Left out 1 journeys ending near your stops: more than 1" in caplog.text
+
+
+def test_inbound_only_journeys_of_lines_not_leaving_your_stops_take_none_of_the_room(caplog):
+    # The 236 never leaves Stop A, so its buses coming in are let go: they
+    # mustn't fill the room the 237's need, or be counted as left out.
+    document = _doc([("in-a", "236", "09:00:00", [*COMING_IN, MARKET_HALL]),
+                     ("in-b", "236", "09:30:00", [*COMING_IN, MARKET_HALL]),
+                     ("in", "237", "10:00:00", [*COMING_IN, MARKET_HALL]),
+                     ("out", "237", "10:15:00", [STOP_A, HOWARD])])
+    schedule, _ = _build(document, naptan=PLACES, limits=DocumentLimits(journeys=4))  # room for 2 coming in
+    assert _codes(schedule) == [("out", False), ("in", True)]
+    assert "Left out" not in caplog.text
+
+
+def test_only_inbound_only_journeys_of_lines_leaving_your_stops_are_counted_as_left_out(caplog):
+    document = _doc([("in-a", "236", "09:00:00", [*COMING_IN, MARKET_HALL]),
+                     ("in-1", "237", "09:15:00", [*COMING_IN, MARKET_HALL]),
+                     ("in-2", "237", "09:30:00", [*COMING_IN, MARKET_HALL]),
+                     ("in-3", "237", "09:45:00", [*COMING_IN, MARKET_HALL]),
+                     ("out", "237", "10:15:00", [STOP_A, HOWARD])])
+    schedule, _ = _build(document, naptan=PLACES, limits=DocumentLimits(journeys=4))
+    assert _codes(schedule) == [("out", False), ("in-1", True), ("in-2", True)]
+    assert "Left out 1 journeys ending near your stops: more than 2" in caplog.text
 
 
 def test_the_build_keeps_each_stop_s_sign_letter_and_its_format():

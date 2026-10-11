@@ -699,47 +699,93 @@ class _Room:
     left_out: int = 0
 
 
+def _line(journey: Journey) -> tuple[str, str]:
+    """A journey's line and operator, as inbound-only journeys are matched to those calling at your stops."""
+    return journey.line.casefold(), journey.operator
+
+
+def _seen(version: _Version, journey: Journey) -> tuple[tuple[str, str, str], _Seen]:
+    """The service a journey is a version of (_group), and that version as seen."""
+    return _group(version, journey), (journey.calendar.start or date.min, journey.calendar.end, version.revision)
+
+
 def _journeys_kept(
     vehicle_journeys: Iterable, doc: _Document, atcos: Collection[str], noc: str, pattern_refs: dict,
-    stands: Collection[str], room: _Room | None = None,
+    stands: Collection[str], room: _Room | None = None, *, today: date | None = None,
+    versions: dict[tuple, set[_Seen]] | None = None,
+    calling_lines: Callable[[], Set[tuple[str, str]]] | None = None,
 ) -> list[tuple[_Version, Journey]]:
     """The journeys calling at your stops, and the inbound-only ones of the
     lines among them (see the module's notes), each counted against `room`
     as it is found (no limit without it). Those kept share their equal
-    values (_Shared)."""
+    values (_Shared).
+
+    A journey whose timetable ended before `today` is let go as it is read,
+    uncounted, its version noted in `versions` (an ended version still
+    switches the ones before it off, _until_replaced). An inbound-only
+    journey of a line with no journey calling at your stops is let go at
+    the end. If the room for inbound-only ones fills first,
+    `calling_lines()` (the document's lines calling at your stops, read
+    again) says which to let go there and then, so they never take room
+    from those kept; only those of the lines kept count as left out."""
     room = room or _Room()
     found = []
     shared = _Shared()
     calling, inbound = room.held, room.held_inbound
+    lines: set[tuple[str, str]] = set()  # calling at your stops, ended or not
+    ended: set[tuple[tuple[str, str, str], _Seen, tuple[str, str] | None]] = set()  # one of each version
+    leaving: Set[tuple[str, str]] | None = None  # calling_lines(), once asked
+    left_out: dict[tuple[str, str], int] = {}  # by line
     for node in vehicle_journeys:
         read = _journey(node, doc, atcos, noc, pattern_refs, stands, shared)
         if read is None:
             continue
-        if read[1].inbound_only:
+        version, journey = read
+        line = _line(journey)
+        if not journey.inbound_only:
+            lines.add(line)
+        if today is not None and journey.calendar.end and journey.calendar.end < today:
+            ended.add((*_seen(version, journey), line if journey.inbound_only else None))
+            continue
+        if journey.inbound_only:
+            if leaving is not None and line not in leaving:
+                continue
+            if inbound >= room.inbound and leaving is None and calling_lines is not None:
+                leaving = calling_lines()
+                found = [(v, j) for v, j in found if not j.inbound_only or _line(j) in leaving]
+                inbound = room.held_inbound + sum(j.inbound_only for _, j in found)
+                if line not in leaving:
+                    continue
             if inbound >= room.inbound:
-                room.left_out += 1
+                left_out[line] = left_out.get(line, 0) + 1
                 continue
             inbound += 1
-        elif any(call.atco in atcos for call in read[1].calls):
+        elif any(call.atco in atcos for call in journey.calls):
             calling += 1
             if calling > room.journeys:
                 raise TimetableError(f"More than {room.journeys} journeys call at your stops; refusing")
         else:
             continue
-        found.append(shared.kept(*read))
-    lines = {(journey.line.casefold(), journey.operator) for _, journey in found if not journey.inbound_only}
-    return [(v, j) for v, j in found if not j.inbound_only or (j.line.casefold(), j.operator) in lines]
+        found.append(shared.kept(version, journey))
+    room.left_out += sum(count for line, count in left_out.items() if line in lines)
+    if versions is not None:
+        for group, seen, line in ended:
+            if line is None or line in lines:
+                versions.setdefault(group, set()).add(seen)
+    return [(v, j) for v, j in found if not j.inbound_only or _line(j) in lines]
 
 
 def _read_document(
     xml: bytes, atcos: Collection[str], noc: str, yours: Mapping[str, StopPosition] | None = None,
-    room: _Room | None = None,
+    room: _Room | None = None, *, today: date | None = None, versions: dict[tuple, set[_Seen]] | None = None,
 ) -> tuple[list[tuple[_Version, Journey]], dict[str, StopPosition]]:
     """The journeys in a document calling at your stops, each with the version
     of the service it is in, and the document's stop positions. With `yours`
     (your stops' positions known so far), also its inbound-only journeys of
     the lines calling there (see the module's notes). As many as `room`
-    allows (_Room; no limit without it).
+    allows (_Room; no limit without it). With `today`, those that ended
+    before it are left out, their versions noted in `versions`
+    (_journeys_kept).
 
     It is read in two passes over the bytes, each element built and dropped
     in turn (safexml.iter_grandchildren), never the whole tree: first all but
@@ -747,11 +793,19 @@ def _read_document(
     journeys anywhere in it; then the journeys, keeping only those found. A
     journey taking its pattern from another adds a pass between them
     (_pattern_refs). Memory follows what is kept, not the document
-    (routesetup.DocumentLimits), and what is kept is counted as it is found."""
+    (routesetup.DocumentLimits), and what is kept is counted as it is found.
+    Should the room for inbound-only journeys fill, the journeys are read
+    once more for the lines calling at your stops (_journeys_kept)."""
     doc, referenced = _read_first_pass(xml)
     pattern_refs = _pattern_refs(xml, referenced)
     stands = _stands(doc, atcos, yours) if yours is not None else set()
-    found = _journeys_kept(_vehicle_journeys(xml), doc, atcos, noc, pattern_refs, stands, room)
+
+    def calling_lines() -> set[tuple[str, str]]:
+        read = (_journey(node, doc, atcos, noc, pattern_refs) for node in _vehicle_journeys(xml))
+        return {_line(journey) for _, journey in filter(None, read) if not journey.inbound_only}
+
+    found = _journeys_kept(_vehicle_journeys(xml), doc, atcos, noc, pattern_refs, stands, room, today=today,
+                           versions=versions, calling_lines=calling_lines)
     return found, doc.positions
 
 
@@ -1017,14 +1071,13 @@ def _read_timetables(links: list[tuple[str, str]], atcos: set[str], today: date,
             log.warning("%s", routesetup.too_big(name, limits.parse, len(document)))
             continue
         room.held, room.held_inbound = len(journeys), len(inbound)
-        found, positions = _read_document(document, atcos, noc, yours, room)
+        found, positions = _read_document(document, atcos, noc, yours, room, today=today, versions=versions)
         yours.update((atco, positions[atco]) for atco in atcos if atco in positions)
+        # Those that ended before today were let go as they were read, their
+        # versions noted: even an ended version switches the ones before it off.
         for version, journey in found:
-            # Even an ended version ends the ones before it, if it was open-ended.
-            versions.setdefault(_group(version, journey), set()).add(
-                (journey.calendar.start or date.min, journey.calendar.end, version.revision))
-            if journey.calendar.end and journey.calendar.end < today:
-                continue
+            group, seen = _seen(version, journey)
+            versions.setdefault(group, set()).add(seen)
             key = (version, journey.line, journey.operator, journey.calls, journey.calendar)
             if not journey.inbound_only:
                 journeys.setdefault(key, (version, journey))
