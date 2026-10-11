@@ -190,8 +190,9 @@ class SnapshotMirror:
 
     `poster` tells the fetch service a browser is using the dashboard
     (touch), which also starts it if it has stopped; and while `wanted()`
-    (the dashboard view is on) and the file is missing or stale, the
-    mirror asks it to start, as often as the poster allows."""
+    (the fetch service would run the dashboard: its view is on and its
+    settings load) and the file is missing or stale, the mirror asks it to
+    start, as often as the poster allows."""
 
     def __init__(self, folder: Path | str, title: str, walk: WalkTimes, poster: Poster | None, *,
                  wanted: Callable[[], bool] = lambda: True, timezone: str | None = None,

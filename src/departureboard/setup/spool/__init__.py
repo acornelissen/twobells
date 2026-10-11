@@ -60,7 +60,10 @@ with a request still waiting, so it never stops early and leaves one: a
 second service, finding the lock taken, stops at once and quietly (the
 first answers everything), and one that can't read the board's config
 answers every request with NO_SETTINGS until it has been idle a minute.
-The units' start limits catch the rest.
+Nor does the web server wake it for a dashboard it can't run: while the
+dashboard's settings don't load, the fetch service stops when idle, and
+the web server, checking them the same way, doesn't ask for it until a
+save makes them load. The units' start limits catch the rest.
 
 Priority. The search for bus companies downloads and reads timetables for
 minutes on a small Pi, so it runs SEARCH_NICE steps nicer than the rest:

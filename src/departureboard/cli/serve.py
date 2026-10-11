@@ -120,6 +120,22 @@ def _dashboard_wanted(store: Store, install: Install) -> bool:
     return "dashboard" in views(store.data(), install) and not needs_setup(store)
 
 
+def _fetch_runs_dashboard(store: Store, install: Install) -> bool:
+    """On a Pi: whether the fetch service would run the dashboard now, as it
+    decides (fetch/service.py): wanted, and its settings load. While they
+    don't, it stops when idle, so the mirror mustn't wake it for them every
+    minute; a save that fixes them makes this true again."""
+    from ..dashboard.config import load_dashboard
+
+    if not _dashboard_wanted(store, install):
+        return False
+    try:
+        load_dashboard(store, store.env(), lock=False)
+    except ConfigError:
+        return False
+    return True
+
+
 class _SettingsWatch(threading.Thread):
     """Looks every SETTINGS_CHECK_S for a change to any file the settings
     come from: those saved in the store, config.toml or the secrets. When
@@ -288,7 +304,7 @@ def _mirror(store: Store, install: Install, runner, dash):
         dash.title if dash is not None else BOARD_DEFAULTS["title"],
         dash.walk if dash is not None else WalkTimes(),
         Poster(folder),
-        wanted=lambda: _dashboard_wanted(store, install),
+        wanted=lambda: _fetch_runs_dashboard(store, install),
         timezone=dash.timezone if dash is not None else None,
         row_strips=dash.options.row_strips if dash is not None else True,
     )

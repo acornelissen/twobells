@@ -1545,6 +1545,38 @@ def test_serve_starts_again_only_when_the_dashboard_should_start_stop_or_change(
         watch.stop()
 
 
+@pytest.mark.parametrize("saved, wakes", [
+    ('[app]\nviews = ["board", "dashboard"]\n', True),  # loads: the fetch service is asked to start
+    ('[app]\nviews = ["board", "dashboard"]\n[train]\ncrs = 12\n', False),  # wanted, but doesn't load
+    ('[app]\nviews = ["board"]\n', False),  # not wanted
+])
+def test_a_pis_mirror_wakes_the_fetch_service_only_when_it_would_run_the_dashboard(
+        dashboard_config, tmp_path, saved, wakes):
+    # A fetch service that can't load the dashboard's settings stops when idle;
+    # waking it every minute for that would be a restart loop.
+    from departureboard.cli import serve
+    from departureboard.fetch.service import FetchService
+    from departureboard.settings.installs import install_named
+    from departureboard.settings.store import Store
+    from departureboard.setup.spool.runner import SpoolRunner
+
+    pi = install_named("pi")
+    folder = tmp_path / "data"
+    folder.mkdir()
+    store = Store.open(dashboard_config, tmp_path / "none.env", state_dir=folder, install="pi")
+    (folder / "settings.toml").write_text(saved)
+    runner = SpoolRunner(tmp_path / "run")
+    runner.spool.make()
+    started = []
+    fetch = FetchService(store, pi, runner.spool.folder, idle=0, poll=0.01,
+                         collector=lambda *args: started.append(args) or pytest.fail("no pollers in this test"))
+    if not wakes:
+        assert fetch.run() == 0 and started == []  # the fetch service runs no dashboard and stops
+    mirror = serve._mirror(store, pi, runner, None)
+    mirror.wake_if_stale()
+    assert bool(os.listdir(runner.spool.requests)) is wakes
+
+
 # The dashboard's settings password and reset codes, from the command line
 
 DASH_PASSWORD = "a long enough password"
