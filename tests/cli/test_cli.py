@@ -486,6 +486,45 @@ def test_run_saves_state_even_when_drawing_fails(tmp_path, monkeypatch):
     assert "last_render" not in state
 
 
+def _stopped_while_drawing(monkeypatch):
+    """PngDisplay.show as if systemd sent SIGTERM mid-refresh (at TimeoutStartSec,
+    or systemctl stop): it calls the handler run installed. Without one the
+    process would die there and then, skipping the cleanup."""
+    import signal
+
+    from departureboard.board.displays.display import PngDisplay
+
+    def stopped(self, image):
+        handler = signal.getsignal(signal.SIGTERM)
+        assert callable(handler), "run leaves SIGTERM to kill it outright"
+        handler(signal.SIGTERM, None)
+
+    monkeypatch.setattr(PngDisplay, "show", stopped)
+
+
+def test_a_run_stopped_by_sigterm_still_saves_what_it_fetched(tmp_path, monkeypatch):
+    import signal
+
+    args, calls = _run_setup(tmp_path, monkeypatch)
+    _stopped_while_drawing(monkeypatch)
+    before = signal.getsignal(signal.SIGTERM)
+    with pytest.raises(SystemExit) as stopped:
+        main(args)
+    assert stopped.value.code == 0  # asked to stop, and stopped cleanly
+    state = json.loads((tmp_path / "state.json").read_text())
+    assert state["sources"]["train"]["last_attempt"] and calls == [1]
+    assert signal.getsignal(signal.SIGTERM) == before
+
+
+def test_a_running_screen_stopped_by_sigterm_still_saves_what_it_fetched(tmp_path, monkeypatch):
+    args, calls = _run_setup(tmp_path, monkeypatch)
+    _stopped_while_drawing(monkeypatch)
+    with pytest.raises(SystemExit):
+        main([*args, "--loop", "--ticks", "3", "--tick", "0.001"])
+    state = json.loads((tmp_path / "state.json").read_text())
+    assert state["sources"]["train"]["last_attempt"] and calls == [1]
+
+
 def test_env_without_a_readable_config_is_just_the_environment(tmp_path):
     from departureboard.cli.dev import _env
 

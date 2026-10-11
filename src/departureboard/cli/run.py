@@ -6,7 +6,10 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import signal
+import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -45,7 +48,36 @@ def _board_on(store: Store) -> bool:
         return True
 
 
+def _stop(signum, frame) -> None:
+    # A second SIGTERM mustn't cut short the cleanup the first set going.
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    raise SystemExit(0)
+
+
+@contextmanager
+def _stopped_cleanly():
+    """systemd stops a run with SIGTERM: at the unit's TimeoutStartSec, or on
+    systemctl stop. Left alone it kills Python there and then, skipping the
+    finally blocks that save the state (and the bus budget spent) and put an
+    e-paper panel to sleep, which mustn't be left powered. Raising SystemExit
+    runs them; it exits 0, as being asked to stop isn't a fault (systemd counts
+    a death by SIGTERM as clean too). Signals reach the main thread only."""
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    previous = signal.signal(signal.SIGTERM, _stop)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
 def run_command(args) -> int:
+    with _stopped_cleanly():
+        return _run(args)
+
+
+def _run(args) -> int:
     found = as_owner(args, open_store(args))
     if needs_setup(found):
         return _run_first(args)
@@ -140,8 +172,10 @@ def _run_loop(settings, display, store, state, args) -> int:
         pass
     except _Restart:
         logging.info("Display settings or views changed; exiting so the service starts again")
-        store.save(state)
         return RESTART
+    finally:
+        # However it ends (Ctrl+C, SIGTERM, a restart): keep what was fetched.
+        store.save(state)
     return 0
 
 
@@ -240,6 +274,7 @@ def _show_instead(args, found: Store, page: SetupView, reload, restarting: str) 
         pass
     except _Restart:
         logging.info(restarting)
-        store.save(state)
         return RESTART
+    finally:
+        store.save(state)
     return 0
