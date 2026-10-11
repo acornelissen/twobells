@@ -203,6 +203,19 @@ def test_a_time_zone_that_is_not_one_is_refused(raw):
         schema.timezone(raw)
 
 
+@pytest.mark.parametrize(("data", "name"), [
+    ({"timezone": "Asia/Kolkata"}, "Asia/Kolkata"),
+    ({"timezone": " UTC "}, "UTC"),
+    ({}, "Europe/London"),  # the board's default
+    ({"timezone": "Mars/Olympus"}, "Europe/London"),
+    ({"timezone": "../etc/passwd"}, "Europe/London"),
+    ({"timezone": ""}, "Europe/London"),
+    ({"timezone": 7}, "Europe/London"),
+])
+def test_the_zone_in_settings_is_the_default_when_they_name_none(data, name):
+    assert schema.zone(data).key == name
+
+
 # [app] views
 
 

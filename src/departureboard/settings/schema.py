@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import cache
 from typing import TYPE_CHECKING, Literal, overload
@@ -208,6 +208,17 @@ def timezone(raw: str) -> str:
     except (KeyError, ValueError, OSError):  # ZoneInfoNotFoundError is a KeyError
         raise Invalid("Enter a time zone like Europe/London") from None
     return value
+
+
+def zone(data: Mapping) -> ZoneInfo:
+    """The time zone settings `data` name, for saying a time as the board
+    would; the default (Europe/London) if they name none or a bad one, so
+    broken settings can't stop a page or a reset code saying a time. Saving
+    a bad zone is refused (timezone), so this is for settings from elsewhere."""
+    try:
+        return ZoneInfo(timezone(str(data.get("timezone", BOARD_DEFAULTS["timezone"]))))
+    except Invalid:
+        return ZoneInfo(BOARD_DEFAULTS["timezone"])
 
 
 def at_raildata(url: str) -> bool:

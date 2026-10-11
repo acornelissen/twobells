@@ -28,7 +28,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
+from . import schema
 from .config import OVERLAY_NAME, SECRETS_OVERLAY_NAME, ConfigError, load_env_file, merge, read_overlay_in
 from .installs import DEFAULT, install_named
 from .schema import saved_keys
@@ -282,6 +284,14 @@ class Store:
     def data(self) -> dict:
         """The settings in force: config.toml with the saved settings over it."""
         return self.placed(merge(self.base(), self.saved()))
+
+    def zone(self) -> ZoneInfo:
+        """The settings' time zone (schema.zone), the default if they can't be
+        read, so broken settings can't stop a page or a reset code saying a time."""
+        try:
+            return schema.zone(self.data())
+        except (OSError, ConfigError):
+            return schema.zone({})
 
     def env(self, environ: Mapping[str, str] | None = None) -> dict[str, str]:
         """The environment, then the --secrets file, then the keys saved in the store."""

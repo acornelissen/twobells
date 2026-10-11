@@ -17,7 +17,7 @@ from functools import partial
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from ..settings import migrate, schema
+from ..settings import migrate
 from ..settings.config import ConfigError, needs_setup
 from ..settings.installs import Install, install_named
 from ..settings.schema import views
@@ -92,16 +92,6 @@ def _set_password(password, prompt: str) -> int:
         return 1
     print(f"Password saved to {password.path}")
     return 0
-
-
-def _zone(store: Store) -> ZoneInfo:
-    """The board's time zone, for the time a reset code runs out, as the
-    board would show it; Europe/London if the settings can't say, so broken
-    settings can't keep their owner out."""
-    try:
-        return ZoneInfo(schema.timezone(str(store.data().get("timezone", schema.BOARD_DEFAULTS["timezone"]))))
-    except (OSError, ConfigError, schema.Invalid):
-        return ZoneInfo(schema.BOARD_DEFAULTS["timezone"])
 
 
 def _reset_code(folder: Path, where: str, zone: ZoneInfo) -> int:
@@ -449,7 +439,7 @@ def _password(args, store: Store, install: Install) -> int:
     if args.set_password:
         return _set_password(PasswordStore(store.password_file), f"New {install.noun} settings password: ")
     return _reset_code(store.folder, f"Enter it on the settings site, {PREFIX}/reset, with a new password.",
-                       _zone(store))
+                       store.zone())
 
 
 def _interrupt(signum, frame) -> None:

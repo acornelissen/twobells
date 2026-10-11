@@ -515,10 +515,7 @@ class SettingsSite:
             data = self.store.data()
         except (OSError, ConfigError):
             data = {}
-        try:
-            zone = ZoneInfo(data.get("timezone", "Europe/London"))
-        except (KeyError, TypeError, ValueError):  # a bad zone: the General page says so on saving
-            zone = ZoneInfo("Europe/London")
+        zone = schema.zone(data)
         now = datetime.now(zone).replace(tzinfo=None)
         views = self.views()
         running = self._running()

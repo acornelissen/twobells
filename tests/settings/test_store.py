@@ -171,6 +171,16 @@ def test_settings_are_config_toml_then_the_saved_ones(board):
     assert data["state_file"] == str(folder / "board.json")
 
 
+def test_the_store_s_time_zone_is_the_saved_one_or_the_default(board):
+    path, folder = board
+    store = Store.open(path, environ={})
+    assert store.zone().key == "Europe/London"
+    write(folder / "settings.toml", 'timezone = "Asia/Kolkata"\n')
+    assert store.zone().key == "Asia/Kolkata"
+    write(folder / "settings.toml", "timezone = [not toml")
+    assert store.zone().key == "Europe/London"  # settings that can't be read can't stop a time being said
+
+
 def test_saved_settings_cannot_move_the_store_or_send_keys_elsewhere(board, caplog):
     path, folder = board
     write(folder / "settings.toml", f'state_file = "{folder.parent / "evil.json"}"\n'

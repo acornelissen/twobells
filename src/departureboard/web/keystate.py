@@ -22,7 +22,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 from ..settings import keyresults, schema
 from ..settings.config import ConfigError
@@ -106,13 +105,6 @@ def forms_for(views: tuple[str, ...]) -> tuple[KeyForm, ...]:
     return tuple(form for form in FORMS if set(form.boxes) <= names)
 
 
-def _zone(data: Mapping) -> ZoneInfo:
-    try:
-        return ZoneInfo(str(data.get("timezone", "Europe/London")))
-    except (KeyError, ValueError):  # a bad zone: the settings say so on saving
-        return ZoneInfo("Europe/London")
-
-
 def states(forms: tuple[KeyForm, ...], data: Mapping, env: Mapping[str, str], views: tuple[str, ...],
            results: Mapping[str, keyresults.LastTest]) -> tuple[KeyState, ...]:
     """Each form's state, from the settings in force, the keys saved and the results kept."""
@@ -126,7 +118,7 @@ def states(forms: tuple[KeyForm, ...], data: Mapping, env: Mapping[str, str], vi
         if last is None:
             out.append(KeyState(form, "not_tested"))
             continue
-        tested = datetime.fromtimestamp(last.time, _zone(data)).replace(tzinfo=None)
+        tested = datetime.fromtimestamp(last.time, schema.zone(data)).replace(tzinfo=None)
         out.append(KeyState(form, last.state, tested=tested))
     return tuple(out)
 
