@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
@@ -179,15 +180,28 @@ class Measurable(Protocol):
     def getlength(self, text: str) -> float: ...
 
 
+def _longest_fit(low: int, high: int, fits: Callable[[int], bool]) -> int:
+    """The largest n from `low` to `high` that fits, or `low` if none does.
+    A halving search: text only gets wider as it gets longer, so where it
+    stops fitting can be found in a few measures rather than one per
+    character (drawn_length is slow, and a notice can be hundreds long)."""
+    while low < high:
+        middle = (low + high + 1) // 2
+        if fits(middle):
+            low = middle
+        else:
+            high = middle - 1
+    return low
+
+
 def fit_text(text: str, font: Measurable, width: float, measure=None) -> str:
     """`text`, cut short with an ellipsis if it is wider than `width`.
     `measure` overrides font.getlength, e.g. with drawn_length."""
     measure = measure or font.getlength
     if measure(text) <= width:
         return text
-    while text and measure(text + "…") > width:
-        text = text[:-1]
-    return text.rstrip() + "…"
+    keep = _longest_fit(0, len(text) - 1, lambda n: measure(text[:n] + "…") <= width)
+    return text[:keep].rstrip() + "…"
 
 
 def wrap_text(text: str, width: float, measure) -> list[str]:
@@ -202,9 +216,7 @@ def wrap_text(text: str, width: float, measure) -> list[str]:
         if line:
             lines.append(line)
         while len(word) > 1 and measure(word) > width:
-            cut = len(word) - 1
-            while cut > 1 and measure(word[:cut]) > width:
-                cut -= 1
+            cut = _longest_fit(1, len(word) - 1, lambda n, word=word: measure(word[:n]) <= width)
             lines.append(word[:cut])
             word = word[cut:]
         line = word

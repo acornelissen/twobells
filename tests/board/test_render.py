@@ -1,4 +1,5 @@
 import dataclasses
+import functools
 import hashlib
 import string
 from pathlib import Path
@@ -576,6 +577,93 @@ def test_wrap_text_keeps_words_whole_and_splits_only_overlong_ones():
     assert wrap_text("one two three four", 9, measure) == ["one two", "three", "four"]
     assert wrap_text("abcdefghijkl xy", 5, measure) == ["abcde", "fghij", "kl xy"]
     assert wrap_text("", 5, measure) == []
+
+
+def _fit_text_one_at_a_time(text, font, width, measure=None):
+    """fit_text as it was, taking off a character at a time: what it must still give."""
+    measure = measure or font.getlength
+    if measure(text) <= width:
+        return text
+    while text and measure(text + "…") > width:
+        text = text[:-1]
+    return text.rstrip() + "…"
+
+
+def _wrap_text_one_at_a_time(text, width, measure):
+    """wrap_text as it was, shortening an overlong word a character at a time."""
+    lines, line = [], ""
+    for word in text.split():
+        candidate = f"{line} {word}" if line else word
+        if measure(candidate) <= width:
+            line = candidate
+            continue
+        if line:
+            lines.append(line)
+        while len(word) > 1 and measure(word) > width:
+            cut = len(word) - 1
+            while cut > 1 and measure(word[:cut]) > width:
+                cut -= 1
+            lines.append(word[:cut])
+            word = word[cut:]
+        line = word
+    if line:
+        lines.append(line)
+    return lines
+
+
+FIT_SAMPLES = (
+    "",
+    "Hyde",
+    "Manchester Piccadilly via Hadfield and Dinting",
+    "! Disruption between Glossop and Manchester Piccadilly until the end of the day. "
+    "Trains may be cancelled or delayed by up to 20 minutes.",
+    "Stepping Hill Hospital via Marple and Romiley    ",
+    "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW iiiiiiiiiiiiiiiiiiiiii",
+    "Llanfairpwllgwyngyllgogerychwyrndrobwllllantysiliogogogoch",
+)
+
+
+def test_fit_text_and_wrap_text_give_what_they_gave_a_character_at_a_time():
+    from departureboard.board.dotfont import TINY, DotFont
+
+    fonts = load_fonts()
+    measures = [
+        (fonts.regular, fonts.regular.getlength),
+        (fonts.regular, lambda text: drawn_length(fonts.regular, text)),
+        (fonts.bold, lambda text: drawn_length(fonts.bold, text)),
+        (DotFont(), DotFont().getlength),
+        (DotFont(TINY), DotFont(TINY).getlength),
+    ]
+    for font, uncached in measures:
+        measure = functools.lru_cache(maxsize=None)(uncached)  # the same prefixes come up at every width
+        for text in FIT_SAMPLES:
+            for width in (0, 1, 5, 9, 17, 40, 80, 133, 250, 400, 1300):
+                assert fit_text(text, font, width, measure) == _fit_text_one_at_a_time(text, font, width, measure)
+                if width:
+                    assert wrap_text(text, width, measure) == _wrap_text_one_at_a_time(text, width, measure)
+
+
+def test_fit_text_measures_a_long_notice_a_few_times_not_once_a_character():
+    calls = []
+
+    def measure(text):
+        calls.append(text)
+        return len(text)
+
+    notice = "x" * 240
+    assert fit_text(notice, None, 60, measure) == "x" * 59 + "…"
+    assert len(calls) <= 12  # about log2(240) halvings, not 180 one-character steps
+
+
+def test_wrap_text_splits_an_overlong_word_with_a_few_measures():
+    calls = []
+
+    def measure(text):
+        calls.append(text)
+        return len(text)
+
+    assert wrap_text("y" * 240, 100, measure) == ["y" * 100, "y" * 100, "y" * 40]
+    assert len(calls) <= 40
 
 
 def test_in_turns_follows_the_board_clock():
