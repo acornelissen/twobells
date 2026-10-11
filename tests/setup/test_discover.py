@@ -141,9 +141,9 @@ def test_documents_without_your_stops_are_never_parsed(bods, monkeypatch):
     parsed = []
     original = timetable._parse_document
 
-    def spy(xml, atcos, noc):
+    def spy(xml, atcos, noc, **options):
         parsed.append(xml)
-        return original(xml, atcos, noc)
+        return original(xml, atcos, noc, **options)
 
     monkeypatch.setattr(timetable, "_parse_document", spy)
     bods.discover()
@@ -239,6 +239,13 @@ def test_a_document_for_your_stops_too_big_to_parse_is_skipped_and_noted(bods):
     assert found.operators == ["HIPK"]
     assert found.notes == [f"Skipped {name}: {len(xml):,} bytes, more than the {limit:,} bytes this install can read"
                            for name, xml in (("341.xml", TXC_341), ("237.xml", TXC_237))]
+
+
+def test_a_document_with_more_journeys_at_your_stops_than_the_install_holds_is_skipped_and_noted(bods):
+    # The 341 has 5 at your stops, the 237 and the 61 have 4 each.
+    found = bods.discover(limits=DocumentLimits(journeys=4))
+    assert found.lines == {"BNML": ["237"], "HIPK": ["61"]}
+    assert found.notes == ["Skipped a timetable: More than 4 journeys call at your stops; refusing"]
 
 
 def test_a_document_too_big_to_read_is_skipped_and_noted(bods):

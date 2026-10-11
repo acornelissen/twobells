@@ -404,17 +404,33 @@ def test_the_settings_service_has_room_for_every_connection_the_server_takes():
     assert web["MemoryMax"] == ["128M"]
 
 
-def test_the_timetable_unit_has_room_for_the_largest_document_it_reads():
-    # Read whole, a document can be held twice while it is unpacked; parsed,
-    # it is held with up to as much again for what is read from it: twice its
-    # size. (Measured on BODS documents read an element at a time: at most
-    # 0.76 times more, 0.37 on a 37 MB one; parsed whole, it was 8 times.)
-    # Room is kept for Python and the journeys found so far. The fetch
-    # service reads them for the setup search.
+def _timetable_memory(install) -> int:
+    """The most a timetable build or setup search holds on `install`, but for
+    Python and its imports. Read whole, a document can be held twice while it
+    is unpacked; parsed, it is held with up to as much again for what is read
+    from it, but its journeys (tests/timetable/test_build.py measures both):
+    twice its size. Beside it are the journeys found, from it and the
+    documents before: those calling at your stops, up to the install's limit,
+    and inbound-only ones, up to half that (build.inbound_limit), each taking
+    up to build.JOURNEY_BYTES."""
+    from departureboard.timetable import build, routesetup
+
+    limits = routesetup.document_limits(install)
+    journeys = limits.journeys + build.inbound_limit(limits)
+    return 2 * max(limits.read, limits.parse) + journeys * build.JOURNEY_BYTES
+
+
+def test_the_timetable_unit_has_room_for_the_largest_document_it_reads_and_its_journeys():
+    # Room is kept for Python and the rest of the build (40 MB; importing
+    # the command line takes about 22 MB on top of the interpreter's own). The
+    # fetch service reads documents for the setup search, and builds too.
+    # Checked whole on BODS data set 2100 (First South Yorkshire) with a Pi's
+    # limits, Python 3.11 under a 256 MB Linux cgroup: the busiest stop that
+    # fits, 4,732 journeys and 2,500 held inbound-only, peaked at 221 MB; one
+    # with 5,816 failed cleanly at 229 MB.
     from departureboard.cli.main import _parser
     from departureboard.settings.installs import install_named
 
-    pi = install_named("pi")
     room = 40_000_000
     for name in ("departureboard-timetable.service", "departureboard-fetch.service"):
         unit = _unit(name)
@@ -422,11 +438,10 @@ def test_the_timetable_unit_has_room_for_the_largest_document_it_reads():
         memory = unit["MemoryMax"][0]
         assert memory.endswith("M"), name
         limit = int(memory[:-1]) * 1024 * 1024
-        assert 2 * pi.timetable_read_bytes + room <= limit, name
-        assert 2 * pi.timetable_parse_bytes + room <= limit, name
+        assert _timetable_memory(install_named("pi")) + room <= limit, name
 
 
-def test_the_container_has_room_for_the_largest_timetable_document_it_reads():
+def test_the_container_has_room_for_the_largest_timetable_document_it_reads_and_its_journeys():
     # As the Pi's units above, but the build shares the container with the web
     # server and the dashboard's pollers (serve's upkeep runs it), so more room
     # is kept for them.
@@ -435,7 +450,6 @@ def test_the_container_has_room_for_the_largest_timetable_document_it_reads():
 
     from departureboard.settings.installs import install_named
 
-    docker = install_named("docker")
     room = 150_000_000
     extra = ET.parse(ROOT / "deploy" / "unraid" / "departureboard.xml").getroot().findtext("ExtraParams")
     limits = {
@@ -446,8 +460,7 @@ def test_the_container_has_room_for_the_largest_timetable_document_it_reads():
     for name, found in limits.items():
         assert found, name
         limit = int(found.group(1)) * 1024 * 1024
-        assert 2 * docker.timetable_read_bytes + room <= limit, name
-        assert 2 * docker.timetable_parse_bytes + room <= limit, name
+        assert _timetable_memory(install_named("docker")) + room <= limit, name
 
 
 def test_the_fetch_service_goes_out_and_listens_on_nothing():

@@ -302,7 +302,8 @@ def discover_operators(
                         skip(routesetup.too_big(name, limits.parse, len(document)))
                         continue
                     try:
-                        journeys, _ = timetable._parse_document(document, atcos, fallback)
+                        journeys, _ = timetable._parse_document(document, atcos, fallback,
+                                                                room=timetable._Room(limits.journeys))
                     except (timetable.TimetableError, routesetup.RouteSetupError) as error:
                         notes.append(f"Skipped a timetable: {safe_message(error)}")
                         continue

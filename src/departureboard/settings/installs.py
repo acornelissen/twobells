@@ -45,12 +45,17 @@ class Install:
     reset_command: str = ""
     # The most of one bus timetable file (TransXChange) read, to look for your
     # stops in, and parsed if it mentions them (held, with up to as much again
-    # for what is read from it); a bigger one is skipped
+    # for what is read from it); a bigger one is skipped. Beside it, the most
+    # journeys calling at your stops held, past which the build fails, and
+    # half as many inbound-only ones, each up to build.JOURNEY_BYTES
     # (routesetup.DocumentLimits). A Pi's fit its units' MemoryMax=256M,
-    # Docker's its container's 512 MB, shared with the web server; a
-    # desktop's are the timetable's own.
+    # Docker's its container's 512 MB, shared with the web server
+    # (tests/test_deploy.py); a desktop's are the timetable's own. The
+    # largest file seen is 37 MB, and a busy stop's week low thousands of
+    # journeys.
     timetable_read_bytes: int = 200_000_000
     timetable_parse_bytes: int = 200_000_000
+    timetable_journeys: int = 20_000
 
 
 _PI_COMMAND = "sudo -u departureboard /opt/departureboard/venv/bin/departureboard serve --install pi"
@@ -60,11 +65,12 @@ INSTALLS = {
     install.name: install
     for install in (
         Install("pi", ("board", "dashboard"), ("board",), Path("/var/lib/departureboard"), noun="board", host="0.0.0.0",  # noqa: S104 - LAN; systemd and nftables allow only the home network
-                fetch="files", network_guard=True, timetable_read_bytes=100_000_000, timetable_parse_bytes=100_000_000,
+                fetch="files", network_guard=True, timetable_read_bytes=50_000_000, timetable_parse_bytes=50_000_000,
+                timetable_journeys=5_000,
                 log_help="On the Pi: <code>sudo journalctl -u departureboard-web</code>.",
                 password_command=f"{_PI_COMMAND} --set-password", reset_command=f"{_PI_COMMAND} --reset-code"),
         Install("docker", ("dashboard",), ("dashboard",), Path("/data"), host="0.0.0.0",  # noqa: S104 - inside the container
-                timetable_read_bytes=100_000_000, timetable_parse_bytes=100_000_000,
+                timetable_read_bytes=100_000_000, timetable_parse_bytes=100_000_000, timetable_journeys=7_000,
                 log_help=("In Docker: <code>docker logs departureboard</code>, or in Container Manager, "
                           "Container, departureboard, Log."),
                 password_command=_DOCKER_COMMAND.format("--set-password"),

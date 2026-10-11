@@ -84,6 +84,7 @@ import math
 import os
 import re
 import stat
+import sys
 import tempfile
 import time
 from collections.abc import Callable, Collection, Generator, Iterable, Iterator, Mapping, Set
@@ -124,11 +125,18 @@ MAX_AGE = timedelta(days=7)
 # after: livebus places buses along that stretch and sees them pass your stop.
 CALLS_BEFORE = 20
 CALLS_AFTER = 1
-MAX_JOURNEYS = 20_000  # far more than any town's stops see
-# Inbound-only journeys kept, at most; beyond it the rest are left out. Most
-# are dropped once NaPTAN has placed their last stop, so this counts them
-# before that, while they are all held at once (a Pi Zero builds this too).
+# Inbound-only journeys kept, at most, and no more than half the install's
+# limit of those calling at your stops (inbound_limit); beyond it the rest are
+# left out. Most are dropped once NaPTAN has placed their last stop, so this
+# counts them before that, while they are all held at once (a Pi Zero builds
+# this too).
 MAX_INBOUND_JOURNEYS = 10_000
+# The most memory each journey found takes, held until the timetable is
+# saved, that the installs' limits are sized by (settings/installs.py):
+# measured with tracemalloc on BODS data set 2100 (First South Yorkshire), its
+# largest documents' journeys, of 80 calls on average, took 14.6 KB each on
+# Python 3.12 and 15.6 KB on 3.11; of 24 calls, about 7 KB.
+JOURNEY_BYTES = 16_000
 MAX_FILE_BYTES = 50_000_000
 DOWNLOAD_TIMEOUT = 60.0  # seconds without data before a download is given up
 _TEXT_LIMIT = 80  # line names, destinations, codes
@@ -641,28 +649,65 @@ def _vehicle_journeys(xml: bytes) -> Iterator[ElementTree.Element]:
             yield node
 
 
+def inbound_limit(limits: DocumentLimits) -> int:
+    """The most inbound-only journeys a build with these limits holds."""
+    return min(MAX_INBOUND_JOURNEYS, limits.journeys // 2)
+
+
+@dataclass
+class _Room:
+    """How many journeys a build may hold, counted as each is found, so a
+    document with more than the memory there is fails cleanly: those calling
+    at your stops (`journeys`; one more is a TimetableError) and inbound-only
+    ones (`inbound`; the rest are left out, and counted). `held` and
+    `held_inbound` are those kept from the documents before."""
+
+    journeys: int = sys.maxsize
+    inbound: int = sys.maxsize
+    held: int = 0
+    held_inbound: int = 0
+    left_out: int = 0
+
+
 def _journeys_kept(
     vehicle_journeys: Iterable, doc: _Document, atcos: Collection[str], noc: str, pattern_refs: dict,
-    stands: Collection[str],
+    stands: Collection[str], room: _Room | None = None,
 ) -> list[tuple[_Version, Journey]]:
     """The journeys calling at your stops, and the inbound-only ones of the
-    lines among them (see the module's notes)."""
+    lines among them (see the module's notes), each counted against `room`
+    as it is found (no limit without it)."""
+    room = room or _Room()
     found = []
+    calling, inbound = room.held, room.held_inbound
     for node in vehicle_journeys:
         read = _journey(node, doc, atcos, noc, pattern_refs, stands)
-        if read is not None and (read[1].inbound_only or any(call.atco in atcos for call in read[1].calls)):
-            found.append(read)
+        if read is None:
+            continue
+        if read[1].inbound_only:
+            if inbound >= room.inbound:
+                room.left_out += 1
+                continue
+            inbound += 1
+        elif any(call.atco in atcos for call in read[1].calls):
+            calling += 1
+            if calling > room.journeys:
+                raise TimetableError(f"More than {room.journeys} journeys call at your stops; refusing")
+        else:
+            continue
+        found.append(read)
     lines = {(journey.line.casefold(), journey.operator) for _, journey in found if not journey.inbound_only}
     return [(v, j) for v, j in found if not j.inbound_only or (j.line.casefold(), j.operator) in lines]
 
 
 def _read_document(
-    xml: bytes, atcos: Collection[str], noc: str, yours: Mapping[str, StopPosition] | None = None
+    xml: bytes, atcos: Collection[str], noc: str, yours: Mapping[str, StopPosition] | None = None,
+    room: _Room | None = None,
 ) -> tuple[list[tuple[_Version, Journey]], dict[str, StopPosition]]:
     """The journeys in a document calling at your stops, each with the version
     of the service it is in, and the document's stop positions. With `yours`
     (your stops' positions known so far), also its inbound-only journeys of
-    the lines calling there (see the module's notes).
+    the lines calling there (see the module's notes). As many as `room`
+    allows (_Room; no limit without it).
 
     It is read in two passes over the bytes, each element built and dropped
     in turn (safexml.iter_grandchildren), never the whole tree: first all but
@@ -670,18 +715,20 @@ def _read_document(
     journeys anywhere in it; then the journeys, keeping only those found. A
     journey taking its pattern from another adds a pass between them
     (_pattern_refs). Memory follows what is kept, not the document
-    (routesetup.DocumentLimits)."""
+    (routesetup.DocumentLimits), and what is kept is counted as it is found."""
     doc, referenced = _read_first_pass(xml)
     pattern_refs = _pattern_refs(xml, referenced)
     stands = _stands(doc, atcos, yours) if yours is not None else set()
-    return _journeys_kept(_vehicle_journeys(xml), doc, atcos, noc, pattern_refs, stands), doc.positions
+    found = _journeys_kept(_vehicle_journeys(xml), doc, atcos, noc, pattern_refs, stands, room)
+    return found, doc.positions
 
 
 def _parse_document(
-    xml: bytes, atcos: Collection[str], noc: str, yours: Mapping[str, StopPosition] | None = None
+    xml: bytes, atcos: Collection[str], noc: str, yours: Mapping[str, StopPosition] | None = None,
+    room: _Room | None = None,
 ) -> tuple[list[Journey], dict[str, StopPosition]]:
     """_read_document without the versions."""
-    found, positions = _read_document(xml, atcos, noc, yours)
+    found, positions = _read_document(xml, atcos, noc, yours, room)
     return [journey for _, journey in found], positions
 
 
@@ -940,6 +987,7 @@ def build_schedule(
     known: dict[str, StopPosition] = {}
     yours: dict[str, StopPosition] = {}
     left_out = 0
+    room = _Room(limits.journeys, inbound_limit(limits))
     links = _dataset_links(operators, api_key, lines, find_datasets)
     for noc, name, document in _documents(links, fetch, scratch, limits.read):
         # Skip, unparsed, the many documents of a big operator that never mention your stops.
@@ -948,7 +996,8 @@ def build_schedule(
         if len(document) > limits.parse:
             log.warning("%s", routesetup.too_big(name, limits.parse, len(document)))
             continue
-        found, positions = _read_document(document, atcos, noc, yours)
+        room.held, room.held_inbound = len(journeys), len(inbound)
+        found, positions = _read_document(document, atcos, noc, yours, room)
         yours.update((atco, positions[atco]) for atco in atcos if atco in positions)
         for version, journey in found:
             # Even an ended version ends the ones before it, if it was open-ended.
@@ -960,19 +1009,18 @@ def build_schedule(
             if not journey.inbound_only:
                 journeys.setdefault(key, (version, journey))
                 nearby |= _nearby(journey, atcos)
-            elif key in inbound or len(inbound) < MAX_INBOUND_JOURNEYS:
+            elif key in inbound or len(inbound) < room.inbound:
                 inbound.setdefault(key, (version, journey))
                 approaches |= _approach(journey)
             else:
                 left_out += 1
         known.update((atco, position) for atco, position in positions.items() if atco in nearby or atco in approaches)
-        if len(journeys) > MAX_JOURNEYS:
-            raise TimetableError(f"More than {MAX_JOURNEYS} journeys call at your stops; refusing")
     kept = _current(journeys.values(), versions, today)
     if not kept:
         raise TimetableError("No timetabled journeys call at your stops")
+    left_out += room.left_out
     if left_out:
-        log.warning("Left out %d journeys ending near your stops: more than %d", left_out, MAX_INBOUND_JOURNEYS)
+        log.warning("Left out %d journeys ending near your stops: more than %d", left_out, room.inbound)
     placed = _positions(nearby | approaches, known, naptan)
     near = tuple(journey for journey in _current(inbound.values(), versions, today)
                  if _ends_near(journey, atcos, placed))

@@ -33,6 +33,8 @@ MAX_DOWNLOAD_BYTES = 300_000_000
 # One TransXChange file, uncompressed, unless an install reads less (see
 # DocumentLimits).
 MAX_XML_BYTES = 200_000_000
+# Journeys calling at your stops a build holds, unless an install holds fewer.
+MAX_JOURNEYS = 20_000
 # Zip-bomb guards; a zip's files are read one at a time, so these bound the
 # work, not the memory. Every file in one download, uncompressed: the largest
 # seen, BODS data set 2100 (First South Yorkshire, 2026), is 1.29 GB from a
@@ -65,20 +67,24 @@ class DocumentLimits:
     in, and parsed if it mentions them; a bigger one is skipped, the rest
     still read. Unpacking one from a zip can hold it twice for a moment;
     parsing one holds it with up to as much again for what is read from it
-    (build reads it an element at a time, never as a whole tree). Each
+    (build reads it an element at a time, never as a whole tree), beside
+    the journeys found: at most `journeys` calling at your stops, from it and
+    the documents before, or the build fails as it finds one more, and half
+    as many inbound-only ones, the rest left out (build.inbound_limit). Each
     install's are in its table (settings/installs.py): a Pi's fit its units'
     MemoryMax=256M."""
 
     read: int = MAX_XML_BYTES
     parse: int = MAX_XML_BYTES
+    journeys: int = MAX_JOURNEYS
 
 
-DEFAULT_LIMITS = DocumentLimits()  # the timetable's own, as Docker's and a desktop's are
+DEFAULT_LIMITS = DocumentLimits()  # the timetable's own, as a desktop's are
 
 
 def document_limits(install: Install) -> DocumentLimits:
     """The DocumentLimits of an install, from its table."""
-    return DocumentLimits(install.timetable_read_bytes, install.timetable_parse_bytes)
+    return DocumentLimits(install.timetable_read_bytes, install.timetable_parse_bytes, install.timetable_journeys)
 
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")

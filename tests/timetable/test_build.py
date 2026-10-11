@@ -36,7 +36,7 @@ from departureboard.timetable.build import (
     save,
 )
 from departureboard.timetable.model import Calendar, Call, Schedule, StopPosition, metres
-from departureboard.timetable.routesetup import DocumentLimits
+from departureboard.timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
 from tests.paths import FIXTURES
 from tests.sources.test_livebus import (
     ARUNDEL,
@@ -768,6 +768,24 @@ def test_a_document_too_big_to_read_is_skipped_and_the_rest_built(caplog):
     assert f"Skipped big.xml: {len(big):,} bytes" in caplog.text
 
 
+def test_the_journey_limit_counts_every_document_s_journeys():
+    # 5 of the 341, then the 237's 4 (ended, so let go once read), then 4 of the 61.
+    assert len(FakeBods().build(limits=DocumentLimits(journeys=9)).journeys) == 9
+    with pytest.raises(TimetableError, match="More than 8 journeys call at your stops; refusing"):
+        FakeBods().build(limits=DocumentLimits(journeys=8))
+
+
+def test_a_document_with_more_journeys_at_your_stops_than_the_limit_fails_as_they_are_read(monkeypatch):
+    # Checked as each is kept, not once the document is read: a document can
+    # hold more of them than the memory there is.
+    read = []
+    journey = timetable._journey
+    monkeypatch.setattr(timetable, "_journey", lambda *args, **options: read.append(1) or journey(*args, **options))
+    with pytest.raises(TimetableError, match="More than 2 journeys call at your stops; refusing"):
+        FakeBods().build(limits=DocumentLimits(journeys=2))
+    assert len(read) == 3  # of the 341's 5
+
+
 def test_a_build_with_every_document_for_your_stops_skipped_fails():
     with pytest.raises(TimetableError, match="No timetabled journeys"):
         FakeBods().build(limits=DocumentLimits(parse=100))
@@ -1151,7 +1169,7 @@ def _stand_doc(stand=MARKET_HALL, line="237", places=PLACES):
                  ("in", line, "10:00:00", [*COMING_IN, stand])], places)
 
 
-def _build(document, naptan=None):
+def _build(document, naptan=None, limits=DEFAULT_LIMITS):
     """The schedule for Stop A alone from one document, and the stops NaPTAN
     was asked for. `naptan` is what NaPTAN knows; None if it can't be reached."""
     asked = set()
@@ -1163,7 +1181,7 @@ def _build(document, naptan=None):
         return {atco: (place.name, place.lat, place.lon) for atco, place in naptan.items() if atco in asked}
 
     schedule = build_schedule({"A": STOP_A}, ["BNML"], "k", NOW, find_datasets=lambda key, noc, line: [BNML_LINK],
-                              fetch=lambda url, file: file.write(document), naptan=lookup)
+                              fetch=lambda url, file: file.write(document), naptan=lookup, limits=limits)
     return schedule, asked
 
 
@@ -1271,6 +1289,16 @@ def test_inbound_only_journeys_are_capped(monkeypatch, caplog):
     schedule, _ = _build(document, naptan=PLACES)
     assert _codes(schedule) == [("out", False), ("in", True)]
     assert "Left out 1 journeys ending near your stops" in caplog.text
+
+
+def test_inbound_only_journeys_are_capped_at_half_the_journey_limit(caplog):
+    # They are held as they are read too, so count against the install's memory.
+    document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD]),
+                     ("in", "237", "10:00:00", [*COMING_IN, MARKET_HALL]),
+                     ("earlier", "237", "09:30:00", [*COMING_IN, MARKET_HALL])])
+    schedule, _ = _build(document, naptan=PLACES, limits=DocumentLimits(journeys=2))
+    assert _codes(schedule) == [("out", False), ("in", True)]
+    assert "Left out 1 journeys ending near your stops: more than 1" in caplog.text
 
 
 def test_the_build_keeps_each_stop_s_sign_letter_and_its_format():
@@ -1812,16 +1840,21 @@ def test_a_journey_may_take_its_pattern_from_a_journey_after_it():
     assert _at(journeys["early"], STOP_A) == _minute("08:05")
 
 
+def _large_237(size: int) -> bytes:
+    """The 237's document grown to about `size` bytes with copies of its journeys."""
+    head, rest = TXC_237.split(b"<VehicleJourneys>", 1)
+    journeys, tail = rest.split(b"</VehicleJourneys>", 1)
+    copies = size // len(journeys)
+    return b"".join([head, b"<VehicleJourneys>",
+                     *(journeys.replace(b"<VehicleJourneyCode>", f"<VehicleJourneyCode>c{n}-".encode())
+                       for n in range(copies)),
+                     b"</VehicleJourneys>", tail])
+
+
 def test_a_large_document_is_never_held_as_a_whole_tree():
     # Parsed whole, a document took about 8 times its size; read in two
     # passes, one element is held at a time beside what is kept from it.
-    head, rest = TXC_237.split(b"<VehicleJourneys>", 1)
-    journeys, tail = rest.split(b"</VehicleJourneys>", 1)
-    copies = 4_000_000 // len(journeys)
-    xml = b"".join([head, b"<VehicleJourneys>",
-                    *(journeys.replace(b"<VehicleJourneyCode>", f"<VehicleJourneyCode>c{n}-".encode())
-                      for n in range(copies)),
-                    b"</VehicleJourneys>", tail])
+    xml = _large_237(4_000_000)
     tracemalloc.start()
     try:
         found, _ = timetable._read_document(xml, {"1000NOWHERE1"}, "NOC")
@@ -1830,3 +1863,70 @@ def test_a_large_document_is_never_held_as_a_whole_tree():
         tracemalloc.stop()
     assert found == []
     assert peak < len(xml) / 2  # about a fifth; whole, it was nearly 8 times
+
+
+def _peak(read):
+    """What `read()` gives, and the most memory it took while it ran."""
+    tracemalloc.start()
+    try:
+        found = read()
+        return found, tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+
+def test_a_document_takes_at_most_itself_again_and_its_journeys_found_to_parse():
+    # What each install's caps and journey limit are sized by (see
+    # tests/test_deploy.py): a document parsed is held (counted there), with
+    # at most as much again, and each journey found, as it is found. Only a
+    # document mentioning your stops is parsed, so it is measured with stops
+    # that match: one, and every stop it has.
+    xml = _large_237(4_000_000)
+    for atcos in ({STOP_A}, _every_stop(TXC_237)):
+        (found, _), peak = _peak(lambda atcos=atcos: timetable._read_document(xml, atcos, "NOC", {}))
+        assert len(found) > 1000
+        assert peak <= len(xml) + len(found) * timetable.JOURNEY_BYTES
+
+
+PROFILE = ("<OperatingProfile><RegularDayType><DaysOfWeek><MondayToFriday/></DaysOfWeek></RegularDayType>"
+           "<BankHolidayOperation><DaysOfNonOperation><ChristmasDay/><BoxingDay/><GoodFriday/>"
+           "</DaysOfNonOperation></BankHolidayOperation></OperatingProfile>")
+
+
+def _long_route(calls, journeys):
+    """A document of `journeys` journeys of `calls` stops each, all on one
+    pattern, each with an operating profile and a ticket machine code of its
+    own, as BODS's are."""
+    stops = [f"370{n:09d}" for n in range(calls)]
+    links = [(a, b, "PT1M30S", "", "") for a, b in pairwise(stops)]
+    one = (f"<VehicleJourney>{PROFILE}<VehicleJourneyCode>vj{{n}}</VehicleJourneyCode>"
+           "<Operational><TicketMachine><JourneyCode>{code}</JourneyCode></TicketMachine></Operational>"
+           "<ServiceRef>S1</ServiceRef><LineRef>L1</LineRef><JourneyPatternRef>p1</JourneyPatternRef>"
+           "<DepartureTime>{hour:02d}:{minute:02d}:00</DepartureTime></VehicleJourney>")
+    many = "".join(one.format(n=n, code=1000 + n, hour=5 + n // 60 % 18, minute=n % 60) for n in range(journeys))
+    xml = _txc(links).decode()
+    start, end = xml.index("<VehicleJourneys>"), xml.index("</VehicleJourneys>")
+    return (xml[:start] + "<VehicleJourneys>" + many + xml[end:]).encode(), stops[calls // 2]
+
+
+def test_each_journey_kept_takes_no_more_than_the_installs_are_sized_for():
+    # JOURNEY_BYTES was measured on BODS data set 2100 (First South
+    # Yorkshire): its largest documents' journeys, of 80 calls on average,
+    # took 14.6 KB each on Python 3.12 and 15.6 KB on 3.11, held as the build
+    # holds them (tracemalloc); 24 calls, 6.6 to 7.0 KB. Journeys made up as
+    # long take less, so this guards against the build holding more of each.
+    xml, stop = _long_route(80, 500)
+
+    def kept():
+        found, _ = timetable._read_document(xml, {stop}, "NOC", {})
+        return found, {(v, j.line, j.operator, j.calls, j.calendar): (v, j) for v, j in found}
+
+    tracemalloc.start()
+    try:
+        found, held = kept()
+        taken = tracemalloc.get_traced_memory()[0]
+    finally:
+        tracemalloc.stop()
+    assert len(held) == len(found) == 500
+    assert all(len(journey.calls) == 80 for _, journey in found)
+    assert taken / len(found) <= timetable.JOURNEY_BYTES
