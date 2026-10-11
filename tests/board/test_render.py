@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from fontTools.ttLib import TTFont
 
-from departureboard.board.panel import HDMI_1280X400, PHAT, PHAT_V1, WAVESHARE_10IN85G
+from departureboard.board.panel import HDMI_1280X400, HDMI_1920X440, PHAT, PHAT_V1, WAVESHARE_10IN85G
 from departureboard.board.render import (
     HEIGHT,
     WIDTH,
@@ -145,7 +145,7 @@ def test_times_line_up_in_tabular_figures():
         assert len({font.getlength(t) for t in ("07:12", "11:11", "08:48", "20:00")}) == 1
 
 
-@pytest.mark.parametrize("panel", [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400])
+@pytest.mark.parametrize("panel", [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400, HDMI_1920X440])
 def test_row_text_stays_inside_its_row(panel):
     # Drawn a scale step below the row's top, as _Painter.row draws it.
     s = plain_scale(panel)
@@ -219,7 +219,7 @@ def test_plain_layout_prefixes_destination_with_stop_label():
     assert layout.middle == "A: Hyde"
 
 
-EVERY_PANEL = [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400]
+EVERY_PANEL = [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400, HDMI_1920X440]
 
 
 def e_paper_bus_rows(destination="Hyde"):
@@ -309,7 +309,7 @@ def test_the_leave_heading_is_drawn_beside_buses(panel):
     assert black_right_of(render(buses_only(), PALETTE, panel), top, bottom, int(leave_x) - 1)
 
 
-BIG_PANELS = [WAVESHARE_10IN85G, HDMI_1280X400]
+BIG_PANELS = [WAVESHARE_10IN85G, HDMI_1280X400, HDMI_1920X440]
 
 
 @pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
@@ -423,7 +423,7 @@ def test_plain_look_fits_the_waveshare_panel_height():
     assert PALETTE.black not in bottom
 
 
-ALL_PANELS = [PHAT, WAVESHARE_10IN85G, HDMI_1280X400]
+ALL_PANELS = [PHAT, WAVESHARE_10IN85G, HDMI_1280X400, HDMI_1920X440]
 
 
 def ink_columns(image, top, bottom, background):
@@ -501,7 +501,7 @@ def test_wide_panels_put_the_platform_between_destination_and_status(panel):
 def test_destination_gives_way_to_the_platform_on_wide_panels(panel):
     s = plain_scale(panel)
     fonts = load_fonts(s)
-    long = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom and Guide Bridge"
+    long = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom, Hattersley, Godley, Hyde Central, Woodley, Romiley, Bredbury and Guide Bridge"
     rows = [Row("07:12", long, "On time", platform="Plat 1")]
     platform_x = platform_column(rows, fonts, panel.width, s)
     layout = row_layout(rows[0], fonts, panel.width, s, platform_x)
@@ -736,7 +736,7 @@ def ink_box(image, background):
     return image.point(lambda v: 0 if v == background else 255, mode="L").getbbox()
 
 
-@pytest.mark.parametrize("panel", [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400])
+@pytest.mark.parametrize("panel", [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400, HDMI_1920X440])
 @pytest.mark.parametrize("dark", [False, True])
 def test_the_code_page_fits_every_panel(panel, dark):
     image = render_code(CODE_PAGE, PALETTE, panel, dark=dark)
@@ -745,7 +745,7 @@ def test_the_code_page_fits_every_panel(panel, dark):
     assert left > 0 and top > 0 and right < panel.width and bottom < panel.height  # nothing cut off
 
 
-@pytest.mark.parametrize("panel", [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400])
+@pytest.mark.parametrize("panel", [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400, HDMI_1920X440])
 def test_the_code_is_drawn_big(panel):
     # The middle band, between the two lines of small print, is mostly code.
     image = render_code(CODE_PAGE, PALETTE, panel)
@@ -780,7 +780,7 @@ def test_the_code_page_signature_never_carries_the_code():
 # --- The set-me-up page, until the board is set up ---
 
 SETUP_PAGE = SetupView("http://raspberrypi.local:8090/settings")  # as setup_url gives it
-PANELS = [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400]
+PANELS = [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400, HDMI_1920X440]
 
 
 @pytest.mark.parametrize("panel", PANELS)

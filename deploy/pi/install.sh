@@ -147,8 +147,9 @@ EOF
 if [[ "$renderer" == departureboard.timer ]]; then
   cat <<EOF
 
-For the HDMI screen, set display = "hdmi-1280x400" in $CONF/config.toml and
-run this again: it installs pygame and names the screen's service instead.
+For an HDMI screen, set display = "hdmi-1280x400" or "hdmi-1920x440" in
+$CONF/config.toml and run this again: it installs pygame and names the
+screen's service instead.
 EOF
 fi
 cat <<EOF

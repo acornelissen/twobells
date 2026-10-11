@@ -43,6 +43,7 @@ EPAPER = {
 FRAMES_MM = {
     "waveshare-10in85g": (270.56, 105.92, 259.76, 91.68),  # Waveshare's drawing
     "hdmi-1280x400": (207.78, 69.80, 191.5, 59.8),  # active area from the 7.9" diagonal
+    "hdmi-1920x440": (296.05, 74.11, 279.77, 64.11),  # active area from the 11.3" diagonal; outline a guess
 }
 
 

@@ -2,7 +2,7 @@
 
 A train and bus departure app for your station and stops in Great Britain. One install is one app with two views of the same departures:
 
-- **The board:** a Raspberry Pi with a four-colour Inky pHAT (250x122), a Waveshare 10.85" e-Paper (G) (1360x480), or a Waveshare 7.9" HDMI screen (1280x400, on its side).
+- **The board:** a Raspberry Pi with a four-colour Inky pHAT (250x122), a Waveshare 10.85" e-Paper (G) (1360x480), a Waveshare 7.9" HDMI screen (1280x400, on its side), or an 11.3" HDMI bar screen (1920x440).
 - **The dashboard:** a web page for a phone or computer at home, with the next 10 trains and buses, calling points, bus strips and maps, the weather, disruptions and punctuality history.
 
 A Pi can run either view or both; Docker and a desktop run the dashboard. Each install has one settings site, at `/settings` on port 8090, with one password and a setup wizard that finds your station, stops, walk times and bus companies from your postcode. The examples use Glossop, with trains to Manchester and buses from two nearby stops (`examples/glossop.toml`).
@@ -62,7 +62,7 @@ Then, with the venv active (`. .venv/bin/activate`, or any shell where mise is a
 
 ```bash
 departureboard demo --png preview.png            # sample data, no keys
-departureboard demo --png big.png --display waveshare-10in85g   # or hdmi-1280x400
+departureboard demo --png big.png --display waveshare-10in85g   # or hdmi-1280x400, hdmi-1920x440
 departureboard run --png preview.png --config config.toml --secrets secrets.env
 departureboard serve --config config.toml --secrets secrets.env   # the dashboard and settings
 ```

@@ -3,7 +3,7 @@ import dataclasses
 import pytest
 
 from departureboard.board.dotfont import DotFont
-from departureboard.board.panel import HDMI_1280X400, WAVESHARE_10IN85G
+from departureboard.board.panel import HDMI_1280X400, HDMI_1920X440, WAVESHARE_10IN85G
 from departureboard.board.render import HEIGHT, WIDTH, Palette
 from departureboard.board.sign import MARGIN, item_size, render_sign, sign_layout
 from departureboard.board.view import BoardView, Row, Section, Style
@@ -187,7 +187,7 @@ def test_cancelled_first_train_band_keeps_the_top_padding():
     assert all(image.getpixel((x, y)) == PALETTE.black for x in range(WIDTH) for y in range(4))
 
 
-BIG_PANELS = [WAVESHARE_10IN85G, HDMI_1280X400]
+BIG_PANELS = [WAVESHARE_10IN85G, HDMI_1280X400, HDMI_1920X440]
 
 
 def dots(panel):
@@ -377,7 +377,7 @@ def test_wide_boards_show_the_platform_between_destination_and_status(panel):
 @pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
 def test_destination_gives_way_to_the_platform_column(panel):
     width, height = dots(panel)
-    long = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom and Guide Bridge"
+    long = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom, Hattersley, Godley, Hyde Central, Woodley, Romiley, Bredbury and Guide Bridge"
     rows = [Row("07:12", long, "On time", platform="Plat 1")]
     items = sign_layout(board(rows), width, height).items
     dest = next(i for i in items if i.text.startswith("Manchester"))
@@ -388,7 +388,7 @@ def test_destination_gives_way_to_the_platform_column(panel):
 @pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
 def test_no_platform_column_when_no_train_has_one(panel):
     width, height = dots(panel)
-    long = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom and Guide Bridge"
+    long = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom, Hattersley, Godley, Hyde Central, Woodley, Romiley, Bredbury and Guide Bridge"
     with_column = sign_layout(board([Row("07:12", long, "On time", platform="Plat 1")]), width, height).items
     without = sign_layout(board([Row("07:12", long, "On time")]), width, height).items
 

@@ -9,7 +9,7 @@ _DESIGN_HEIGHT = 120
 
 # A board at least this wide, in design units (sign dots, or the plain look's
 # pHAT pixels), has room for a platform column. The pHAT is 250 across; the
-# 10.85" panel and the HDMI screen are 340 or more in either look.
+# 10.85" panel and the HDMI screens are 340 or more in either look.
 PLATFORM_COLUMN_MIN_WIDTH = 300
 
 
@@ -39,5 +39,7 @@ PHAT_V1 = Panel.sized("inky-phat-v1", 212, 104)
 WAVESHARE_10IN85G = Panel.sized("waveshare-10in85g", 1360, 480)
 # The 7.9" HDMI screen is 400x1280 portrait; the board runs it on its side.
 HDMI_1280X400 = Panel.sized("hdmi-1280x400", 1280, 400, epaper=False)
+# An 11.3" 1920x440 bar screen: the same three pixels a dot, with room for more across.
+HDMI_1920X440 = Panel.sized("hdmi-1920x440", 1920, 440, epaper=False)
 
-PANELS = {p.name: p for p in (PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400)}
+PANELS = {p.name: p for p in (PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400, HDMI_1920X440)}

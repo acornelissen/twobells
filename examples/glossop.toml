@@ -19,6 +19,7 @@ theme = "sign"
 #   It can't be detected, so say its colour: panel_colour = "red", "yellow" or "black".
 # "waveshare-10in85g": Waveshare 10.85" e-Paper (G), 1360x480. Needs dtoverlay=spi0-0cs.
 # "hdmi-1280x400": Waveshare 7.9" HDMI screen on its side. Runs as a service, not a timer.
+# "hdmi-1920x440": an 11.3" 1920x440 HDMI bar screen. Runs as a service, not a timer.
 display = "inky"
 # Trains and buses run a Sunday service on bank holidays (from GOV.UK): treat
 # them like Sundays, so only windows including Sun apply.

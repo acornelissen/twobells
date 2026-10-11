@@ -37,7 +37,7 @@ The board can run on three kinds of display. They all show the same information:
 |---|---|---|
 | Inky pHAT e-paper | small, 2.13" | Redraws only when something changes, at most every 2 minutes. Each redraw takes about 20 seconds and flickers. That's normal. |
 | Waveshare e-paper | wide, 10.85" | Same as the pHAT, just bigger. |
-| HDMI screen | wide, 7.9" | Updates every second, with a running clock, countdowns and a second page showing where your bus is. |
+| HDMI screen | wide, 7.9" or 11.3" | Updates every second, with a running clock, countdowns and a second page showing where your bus is. |
 
 The words always carry the meaning. Colour and highlighting only back them up, so the board reads the same in black and white or to someone who is colour-blind.
 
@@ -264,7 +264,7 @@ sudo systemctl enable --now departureboard.timer             # e-paper
 sudo systemctl enable --now departureboard-screen.service    # the HDMI screen
 ```
 
-For the HDMI screen, set `display = "hdmi-1280x400"` in `/etc/departureboard/config.toml` (`install.sh` puts one there) and run `install.sh` again: it installs pygame and names the screen's service. `install.sh --screen` only installs pygame up front; which service it names still follows `display`. See [Choosing a display](#choosing-a-display).
+For the HDMI screen, set `display = "hdmi-1280x400"` (or `"hdmi-1920x440"` for the 11.3" bar screen) in `/etc/departureboard/config.toml` (`install.sh` puts one there) and run `install.sh` again: it installs pygame and names the screen's service. `install.sh --screen` only installs pygame up front; which service it names still follows `display`. See [Choosing a display](#choosing-a-display).
 
 Then open `http://<pi name>.local:8090/settings` on a phone or computer on your home network, and carry on with [First run](#4-first-run-and-the-setup-wizard).
 
@@ -562,16 +562,16 @@ sudo ./deploy/pi/update.sh
 
 ### Choosing a display
 
-| | Inky pHAT | Waveshare 10.85" e-Paper (G) | 7.9" HDMI screen |
-|---|---|---|---|
-| Size | 250×122 | 1360×480 | 1280×400 (on its side) |
-| Colours | black, white, red or yellow | black, white, red, yellow | full colour |
-| Redraw | about 20 s, on change only | about 21 s, on change only | instant, every second |
-| Clock, countdowns, bus page | no | no | yes |
-| Light at night | none | none | the screen stays lit |
-| Pi | Zero W or later | Zero 2 W or later | Zero 2 W or later (Zero needs a mini-HDMI adapter) |
-| `display =` in `config.toml` | `"inky"` | `"waveshare-10in85g"` | `"hdmi-1280x400"`, plus `rotate = 90` or `270` |
-| Runs as | `departureboard.timer` | `departureboard.timer` | `departureboard-screen.service` |
+| | Inky pHAT | Waveshare 10.85" e-Paper (G) | 7.9" HDMI screen | 11.3" HDMI bar screen |
+|---|---|---|---|---|
+| Size | 250×122 | 1360×480 | 1280×400 (on its side) | 1920×440 |
+| Colours | black, white, red or yellow | black, white, red, yellow | full colour | full colour |
+| Redraw | about 20 s, on change only | about 21 s, on change only | instant, every second | instant, every second |
+| Clock, countdowns, bus page | no | no | yes | yes |
+| Light at night | none | none | the screen stays lit | the screen stays lit |
+| Pi | Zero W or later | Zero 2 W or later | Zero 2 W or later (Zero needs a mini-HDMI adapter) | Zero 2 W or later (Zero needs a mini-HDMI adapter) |
+| `display =` in `config.toml` | `"inky"` | `"waveshare-10in85g"` | `"hdmi-1280x400"`, plus `rotate = 90` or `270` | `"hdmi-1920x440"` (and `rotate = 90` or `270` only if it comes up on its side) |
+| Runs as | `departureboard.timer` | `departureboard.timer` | `departureboard-screen.service` | `departureboard-screen.service` |
 
 The display is set in `/etc/departureboard/config.toml` only. It starts as `"inky"`.
 
@@ -585,6 +585,7 @@ The display is set in `/etc/departureboard/config.toml` only. It starts as `"ink
   ```
 
   State is written only when new data arrives, not on every redraw, to spare the SD card. Touch isn't used yet, and the backlight stays on. Feeds are polled on the same schedule as on e-paper, so the TransportAPI budget is unchanged.
+- **The 11.3" bar screen** is set up the same way, with `display = "hdmi-1920x440"`; the board draws three pixels a dot, as on the 7.9" screen, with more room across for long destinations. Bar screens differ in how they come up: if the log (`journalctl -u departureboard-screen`) says the screen is 440x1920, set `rotate = 90` or `270`; if it says another size, the screen isn't telling the Pi its own, so add `video=HDMI-A-1:1920x440@60` to the end of the line in `/boot/firmware/cmdline.txt` and restart.
 
 If the display errors about chip select, add `dtoverlay=spi0-0cs` to `/boot/firmware/config.txt` and reboot.
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL.Image import Image
 
-from ..panel import HDMI_1280X400, PHAT, PHAT_V1, WAVESHARE_10IN85G, Panel
+from ..panel import HDMI_1280X400, HDMI_1920X440, PHAT, PHAT_V1, WAVESHARE_10IN85G, Panel
 from ..render import Palette
 
 # What each `display` setting draws on. An Inky reports its own size once opened.
@@ -15,6 +15,7 @@ DISPLAY_PANELS = {
     "inky-phat-v1": PHAT_V1,
     "waveshare-10in85g": WAVESHARE_10IN85G,
     "hdmi-1280x400": HDMI_1280X400,
+    "hdmi-1920x440": HDMI_1920X440,
 }
 
 
@@ -76,10 +77,10 @@ def open_display(name: str, accent: str, rotate: int = 0, panel_colour: str | No
         from .waveshare import WaveshareDisplay
 
         return WaveshareDisplay(accent, rotate == 180)
-    if name == "hdmi-1280x400":
+    if name in DISPLAY_PANELS and not DISPLAY_PANELS[name].epaper:
         from .screen import ScreenDisplay
 
-        return ScreenDisplay(accent, rotate)
+        return ScreenDisplay(accent, rotate, panel=DISPLAY_PANELS[name])
     raise ValueError(f"Unknown display {name!r}; choose from {', '.join(sorted(DISPLAY_PANELS))}")
 
 

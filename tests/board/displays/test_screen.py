@@ -1,8 +1,8 @@
 import pytest
 from PIL import Image
 
-from departureboard.board.displays.screen import SCREEN_RGB, ScreenDisplay
-from departureboard.board.panel import HDMI_1280X400
+from departureboard.board.displays.screen import SCREEN_RGB, ScreenDisplay, fit_note
+from departureboard.board.panel import HDMI_1280X400, HDMI_1920X440
 
 
 class FakeScreen:
@@ -14,7 +14,7 @@ class FakeScreen:
 
 
 def board_image(display, accent_at=(0, 0)):
-    image = Image.new("P", HDMI_1280X400.size, display.palette.black)
+    image = Image.new("P", display.panel.size, display.palette.black)
     image.putpixel(accent_at, display.palette.accent)
     return image
 
@@ -53,6 +53,34 @@ def test_rotation_turns_the_board_clockwise(rotate, size, top_left_lands_at):
     [frame] = screen.frames
     assert frame.size == size
     assert frame.getpixel(top_left_lands_at) == SCREEN_RGB["yellow"]
+
+
+@pytest.mark.parametrize(
+    "rotate, size, top_left_lands_at",
+    [(0, (1920, 440), (0, 0)), (90, (440, 1920), (439, 0)), (270, (440, 1920), (0, 1919))],
+)
+def test_the_11in3_bar_screen_draws_at_1920x440_and_turns_like_the_other(rotate, size, top_left_lands_at):
+    screen = FakeScreen()
+    display = ScreenDisplay(rotate=rotate, panel=HDMI_1920X440, screen=screen)
+    assert display.panel == HDMI_1920X440
+    display.show(board_image(display, accent_at=(0, 0)))
+    [frame] = screen.frames
+    assert frame.size == size
+    assert frame.getpixel(top_left_lands_at) == SCREEN_RGB["yellow"]
+
+
+def test_a_frame_that_fits_the_screen_needs_no_note():
+    assert fit_note((1920, 440), (1920, 440)) is None
+
+
+def test_a_screen_on_its_side_is_told_to_turn_the_board():
+    note = fit_note((1920, 440), (440, 1920))
+    assert "440x1920" in note and "rotate = 90" in note
+
+
+def test_a_screen_at_another_resolution_is_told_its_mode():
+    note = fit_note((1920, 440), (1920, 1080))
+    assert "1920x1080" in note and "1920x440" in note and "video=" in note
 
 
 def test_bad_settings_are_refused():

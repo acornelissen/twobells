@@ -257,7 +257,7 @@ def test_page_lays_itself_out_from_the_status_panel(served):
     _, base = served
     with urlopen(base + "/") as response:
         body = response.read().decode()
-    for name in ("inky-phat", "waveshare-10in85g", "hdmi-1280x400"):
+    for name in ("inky-phat", "waveshare-10in85g", "hdmi-1280x400", "hdmi-1920x440"):
         assert name in body
 
 

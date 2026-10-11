@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import pytest
+
 from departureboard.cli.main import main
 from departureboard.emulator.emulation import build_emulation, demo_outage
 from departureboard.emulator.fake import FakeBusSource, FakeTrainSource
@@ -80,9 +82,10 @@ def test_demo_accent_can_be_overridden():
     assert build_emulation(demo=True, accent="red").display.status()["accent"] == "red"
 
 
-def test_demo_can_emulate_another_display():
-    em = build_emulation(demo=True, display="hdmi-1280x400")
-    assert em.display.status()["panel"]["name"] == "hdmi-1280x400"
+@pytest.mark.parametrize("display", ["hdmi-1280x400", "hdmi-1920x440"])
+def test_demo_can_emulate_another_display(display):
+    em = build_emulation(demo=True, display=display)
+    assert em.display.status()["panel"]["name"] == display
 
 
 def _live_config(tmp_path, display):
