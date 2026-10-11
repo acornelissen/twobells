@@ -49,6 +49,7 @@ from ..sources import holidays as _holidays
 from ..sources.darwin import DetailsUnavailable, ServiceDetails, ServiceGone, TrainBoard
 from ..sources.disruptions import BusArea, RailArea, bus_disruptions, disruptions_part, train_disruptions
 from ..timetable.build import TimetableBusy
+from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
 from .area import area_view, timetable_changes
 from .config import DashboardSettings
 from .history import History, day_type, no_show_phrase, phrase
@@ -190,6 +191,7 @@ class Collector:
         random: Callable[[], float] = _random.random,
         monotonic: Callable[[], float] = time.monotonic,
         build_timetable: bool = True,
+        timetable_limits: DocumentLimits = DEFAULT_LIMITS,
     ) -> None:
         self._settings = settings
         self._options = settings.options
@@ -211,6 +213,8 @@ class Collector:
         self._details: dict[str, tuple[float, ServiceDetails]] = {}
         self._details_off_until: float | None = None
         self._build_timetable = build_timetable
+        # The most of each timetable file upkeep reads and parses: the install's (settings/installs.py).
+        self._timetable_limits = timetable_limits
         # Has upkeep tried to build the bus timetable yet; without build_timetable it never will.
         self._timetable_tried = not build_timetable
         self._building = False  # is it building one now, with none usable
@@ -518,7 +522,7 @@ class Collector:
         if upkeep_bus is not None:
             self._building = upkeep_bus.unusable() is not None
             try:
-                upkeep_bus.refresh_timetable()
+                upkeep_bus.refresh_timetable(limits=self._timetable_limits)
                 self._timetable_tried = True
             except TimetableBusy:
                 # Building elsewhere: shown as building until it is saved, or tried here next hour.

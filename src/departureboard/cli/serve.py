@@ -325,6 +325,7 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
     from ..dashboard.collector import Collector
     from ..dashboard.history import History, HistoryReader
     from ..dashboard.snapshot import Hub
+    from ..timetable.routesetup import document_limits
     from ..web import netguard
     from ..web import server as dashserver
 
@@ -341,7 +342,7 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
             print(f"Can't open the punctuality history in {dash.state_dir}: {error}", file=sys.stderr)
             return 2, None
         hub = Hub(dash.title, dash.walk, tz=ZoneInfo(dash.timezone), row_strips=dash.options.row_strips)
-        collector = Collector(dash, hub, history)
+        collector = Collector(dash, hub, history, timetable_limits=document_limits(install))
 
     def healthy() -> bool:
         if mirror is not None:

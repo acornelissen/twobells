@@ -1471,6 +1471,11 @@ def test_dockers_first_run_claims_in_the_log_sets_up_and_starts_the_dashboard_ag
     monkeypatch.setattr(dashserver, "make_server", lambda app, host, port, attempts=1: made.update(app=app) or Stopped())
     assert main(argv) == 0
     assert made["app"].hub is not None and len(started) == 1
+    # Its upkeep builds the bus timetable within Docker's limits, which fit the container.
+    from departureboard.settings.installs import install_named
+    from departureboard.timetable.routesetup import document_limits
+
+    assert started[0]._timetable_limits == document_limits(install_named("docker"))
 
 
 def test_serve_with_the_dashboard_view_off_runs_only_the_settings(tmp_path, served, dashboard_config):

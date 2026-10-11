@@ -391,6 +391,30 @@ def test_the_timetable_unit_has_room_for_the_largest_document_it_reads():
         assert 8 * pi.timetable_parse_bytes + room <= limit, name
 
 
+def test_the_container_has_room_for_the_largest_timetable_document_it_reads():
+    # As the Pi's units above, but the build shares the container with the web
+    # server and the dashboard's pollers (serve's upkeep runs it), so more room
+    # is kept for them.
+    import re
+    import xml.etree.ElementTree as ET
+
+    from departureboard.settings.installs import install_named
+
+    docker = install_named("docker")
+    room = 150_000_000
+    extra = ET.parse(ROOT / "deploy" / "unraid" / "departureboard.xml").getroot().findtext("ExtraParams")
+    limits = {
+        "docker-compose.yml": re.search(r"^\s*mem_limit: (\d+)m$", COMPOSE, re.M),
+        "docker-compose.ghcr.yml": re.search(r"^\s*mem_limit: (\d+)m$", GHCR_COMPOSE, re.M),
+        "departureboard.xml": re.search(r"--memory (\d+)m\b", extra or ""),
+    }
+    for name, found in limits.items():
+        assert found, name
+        limit = int(found.group(1)) * 1024 * 1024
+        assert 2 * docker.timetable_read_bytes + room <= limit, name
+        assert 8 * docker.timetable_parse_bytes + room <= limit, name
+
+
 def test_the_fetch_service_goes_out_and_listens_on_nothing():
     from departureboard.setup.spool.folder import RUNTIME
 

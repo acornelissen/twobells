@@ -46,6 +46,7 @@ from ..sources.darwin import DarwinSource, ServiceDetails, ServiceDetailsClient,
 from ..sources.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource, kb_url_is_placeholder
 from ..sources.holidays import ENGLAND_AND_WALES
 from ..sources.weather import Conditions, OpenMeteoSource
+from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
 
 if TYPE_CHECKING:
     from ..settings.overlay import Target
@@ -192,7 +193,8 @@ class BusSource(Protocol):
 
     def fetch_live(self, rows: int | None = None) -> BusBoard: ...
 
-    def refresh_timetable(self, force: bool = False) -> object: ...  # what it returns isn't used
+    # What it returns isn't used.
+    def refresh_timetable(self, force: bool = False, limits: DocumentLimits = DEFAULT_LIMITS) -> object: ...
 
 
 class ConditionsSource(Protocol):

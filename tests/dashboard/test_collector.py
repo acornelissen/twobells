@@ -20,6 +20,7 @@ from departureboard.sources.darwin import (
 )
 from departureboard.sources.livebus import live_board
 from departureboard.sources.weather import parse_conditions
+from departureboard.timetable.routesetup import DocumentLimits
 from tests.paths import FIXTURES
 from tests.sources.test_livebus import HALFWAY, HENRY_A, at, bus, schedule
 
@@ -85,6 +86,7 @@ class Buses:
         self.error = None
         self.vehicles_ok = True
         self.refreshes = []
+        self.limits = []
         self.on_refresh = None
 
     def unusable(self):
@@ -98,8 +100,9 @@ class Buses:
         found, placed = live_board(schedule(), self.clock(), vehicles, lambda journey, day: True, 10)
         return BusBoard(found, schedule(), self.vehicles_ok, note, placed, vehicles)
 
-    def refresh_timetable(self, force=False):
+    def refresh_timetable(self, force=False, limits=None):
         self.refreshes.append(force)
+        self.limits.append(limits)
         if self.on_refresh:
             self.on_refresh()
 
@@ -600,6 +603,17 @@ def test_upkeep_refreshes_holidays_timetable_and_history(tmp_path):
     assert setup.upkeep_buses.refreshes == [False]  # never forced: rebuilt only when due
     assert setup.history.swept == [datetime(2026, 10, 9, 10, 14)]
     assert setup.history.purged == [(datetime(2026, 10, 9, 10, 14), 30)]
+
+
+def test_upkeep_builds_the_timetable_within_the_limits_it_was_given(tmp_path):
+    # The install's (settings/installs.py): Docker's fit its container's memory.
+    setup = Setup(tmp_path)
+    limits = DocumentLimits(read=100_000_000, parse=40_000_000)
+    collector = Collector(setup.settings, setup.hub, setup.history, clock=setup.clock,
+                          fetch_holidays=setup._holidays, random=lambda: 0.5, monotonic=setup.monotonic,
+                          timetable_limits=limits)
+    collector.upkeep()
+    assert setup.upkeep_buses.limits == [limits]
 
 
 def test_upkeep_asks_for_the_configured_bank_holiday_division(tmp_path):
