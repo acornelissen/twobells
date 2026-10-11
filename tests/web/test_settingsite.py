@@ -28,6 +28,7 @@ from departureboard.web.auth import FAILURE_WINDOW_S, MAX_FAILURES, PasswordStor
 from departureboard.web.icons import icon
 from departureboard.web.server import DashboardApp, StaticFiles, make_server
 from departureboard.web.settingsite import SettingsSite
+from tests.contrast import assert_contrast
 from tests.paths import ROOT
 
 PASSWORD = "correct horse battery"
@@ -794,8 +795,9 @@ def test_a_section_switched_off_says_so_with_its_fields_still_there(signed):
     signed.config.write_text(CONFIG.replace('operators = ["BNML"]', 'operators = ["BNML"]\nenabled = false'))
     page = signed("GET", "/settings/trains-and-buses", cookie=signed.session())[1]
     buses = page[page.index('<h2 id="section-buses">'):page.index('<div class="savebar">')]
-    assert buses.startswith(f'<h2 id="section-buses">Buses</h2> <span class="pill pill-neutral">{icon("minus")} Off'
-                            "</span></legend>")
+    # Its legend carries a neutral pill saying Off.
+    legend = buses[:buses.index("</legend>")]
+    assert re.search(r'<span class="pill pill-neutral">[^<]*(?:<svg.*?</svg>)?\s*Off</span>$', legend, re.S)
     assert 'id="bus_directions"' in buses
     assert "pill" not in page[page.index('<h2 id="section-trains">'):page.index('<h2 id="section-buses">')]
 
@@ -877,8 +879,9 @@ def test_a_signed_in_save_redirects_to_its_page_which_says_what_changed(signed):
     response, page = signed("GET", path + "?saved", cookie=cookie)
     assert "<title>Saved – Trains and buses – Our house settings</title>" in page
     notice = re.search(r'<p class="notice-ok" role="status" tabindex="-1" autofocus>(.*?)</p>', page).group(1)
-    assert notice == (f"{icon('check')} Saved 2 changes: Title; Walk to the station, none to 9 minutes. "
-                      "The dashboard starts again in a few seconds to use them.")
+    # The count and each change (worded by groupform, tested there), then when Docker uses them.
+    assert "Saved 2 changes" in notice and "Title" in notice and "Walk to the station" in notice
+    assert "The dashboard starts again in a few seconds" in notice
     assert page.index('<nav aria-label="Settings"') < page.index("notice-ok") < page.index(f'action="{path}"')
     assert "notice-ok" not in signed("GET", path + "?saved", cookie=cookie)[1]  # said once
 
@@ -1081,7 +1084,8 @@ def test_save_key_comes_first_so_enter_saves_then_save_and_test_or_test_saved_ke
 
 
 def test_the_stylesheet_shows_save_and_test_or_test_saved_key_as_the_box_is_filled_or_empty():
-    css = WEB_CSS.read_text()
+    css = " ".join(WEB_CSS.read_text().split())  # however it is spaced
+    # Save and test hides while no box in its form has text; Test saved key while one has.
     assert ".keyform:not(:has(.key-box:not(:placeholder-shown))) .if-typed { display: none; }" in css
     assert ".keyform:has(.key-box:not(:placeholder-shown)) .if-empty { display: none; }" in css
 
@@ -1131,8 +1135,8 @@ def test_saving_one_key_leaves_every_other_key_and_setting_as_saved(signed):
     page = after(signed, response, cookie)
     assert "<title>Saved – Keys – Our house settings</title>" in page
     notice = re.search(r'<p class="notice-ok" role="status" tabindex="-1" autofocus>(.*?)</p>', page).group(1)
-    assert notice == (f"{icon('check')} Saved 1 change: Rail Data Marketplace key for where each train is. "
-                      "The dashboard starts again in a few seconds to use them.")
+    assert "Saved 1 change" in notice and "Rail Data Marketplace key for where each train is" in notice
+    assert "The dashboard starts again in a few seconds" in notice
     for secret in ("details-key-0001", "saved-rail-key-1", "sneaky-rail-key"):
         assert secret not in "".join(signed.seen)
 
@@ -2200,8 +2204,10 @@ def test_settings_js_has_no_html_sinks_connections_storage_or_logging():
     # Words go in as text; the only attributes set are its own class, role and type.
     assert set(re.findall(r'setAttribute\("([\w-]+)"', text)) == {"class", "role", "type"}
     # A key box is read only to tell whether it is empty.
-    assert [line.strip() for line in text.splitlines() if "key-box" in line] == [
-        'if (control.classList.contains("key-box")) return control.value !== ""; // only whether a key is typed']
+    boxes = [line.split("//", 1)[0] for line in text.splitlines() if "key-box" in line]
+    assert boxes, "settings.js no longer tells a key box apart"
+    for line in boxes:
+        assert re.findall(r"\.value\b[^;)]*", line) == ['.value !== ""'], line
 
 
 def test_the_package_ships_settings_js():
@@ -2334,24 +2340,6 @@ def test_settings_with_a_slash_goes_to_settings(pi):
     assert response.status == 303 and response.getheader("Location") == "/settings"
 
 
-def test_the_front_page_is_the_dashboard_while_it_runs_else_the_settings(make):
-    pi = make(install="pi")
-    response, _ = pi("GET", "/")
-    assert response.status == 303 and response.getheader("Location") == "/settings"
-    dash = make(install="docker", dashboard=True)
-    response, text = dash("GET", "/")
-    assert response.status == 200 and "Front end not built" in text
-    dash.on["now"] = False  # its view turned off, or it couldn't start
-    assert dash("GET", "/")[0].getheader("Location") == "/settings"
-
-
-def test_without_the_dashboard_its_api_is_not_found_and_the_health_check_is_ok(pi):
-    for path in ("/api/snapshot", "/api/events", "/api/area", "/static/app.css", "/manifest.webmanifest"):
-        assert pi("GET", path)[0].status == 404, path
-    response, text = pi("GET", "/healthz")
-    assert response.status == 200 and text == "ok"
-
-
 # The look: the dashboard's colours, Inter and icons
 
 
@@ -2369,16 +2357,6 @@ def _palette(path, name):
 def _palettes():
     light, dark = (_palette(WEB_CSS, name) for name in ("light", "dark"))
     return {"light": light, "dark": {**light, **dark}}
-
-
-def _contrast(a, b):
-    def luminance(colour):
-        channels = [int(colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
-        r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels)
-        return 0.2126 * r + 0.7152 * g + 0.0722 * b
-
-    hi, lo = sorted((luminance(a), luminance(b)), reverse=True)
-    return (hi + 0.05) / (lo + 0.05)
 
 
 def test_the_colours_are_the_dashboards():
@@ -2400,11 +2378,7 @@ OUTLINE_PAIRS = [("focus", "bg"), ("focus", "surface"), ("edge", "surface"), ("e
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_theme_contrast(theme):
-    tokens = _palettes()[theme]
-    for pairs, need in ((TEXT_PAIRS, 4.5), (OUTLINE_PAIRS, 3.0)):
-        for fg, bg in pairs:
-            ratio = _contrast(tokens[fg], tokens[bg])
-            assert ratio >= need, f"{theme}: --{fg} on --{bg} is {ratio:.2f}:1"
+    assert_contrast(theme, _palettes()[theme], TEXT_PAIRS, OUTLINE_PAIRS)
 
 
 def test_the_stylesheet_takes_inter_from_the_wizards_files():

@@ -21,6 +21,7 @@ import pytest
 from departureboard.settings.schema import keys
 from departureboard.setup import keytest
 from departureboard.setup.api import PAGE_HEADERS, static_files
+from tests.contrast import assert_contrast
 from tests.paths import FIXTURES, ROOT
 
 DASHBOARD = ROOT / "src" / "departureboard" / "dashboard_static"
@@ -466,17 +467,6 @@ def test_the_colours_are_the_dashboards():
         assert own == {name: dashboard[theme][name] for name in own}, theme
 
 
-def _luminance(colour):
-    channels = [int(colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
-    r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels)
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
-
-
-def _contrast(a, b):
-    hi, lo = sorted((_luminance(a), _luminance(b)), reverse=True)
-    return (hi + 0.05) / (lo + 0.05)
-
-
 TEXT_PAIRS = [
     ("fg", "bg"), ("fg", "surface"), ("muted", "surface"), ("muted", "bg"), ("accent", "surface"),
     ("accent-fg", "accent"), ("bad-fg", "surface"), ("ok-fg", "surface"), ("late-fg", "late-bg"),
@@ -490,11 +480,7 @@ OUTLINE_PAIRS = [("focus", "bg"), ("focus", "surface"), ("edge", "surface"), ("e
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_theme_contrast(theme):
-    tokens = _palettes()[theme]
-    for pairs, need in ((TEXT_PAIRS, 4.5), (OUTLINE_PAIRS, 3.0)):
-        for fg, bg in pairs:
-            ratio = _contrast(tokens[fg], tokens[bg])
-            assert ratio >= need, f"{theme}: --{fg} on --{bg} is {ratio:.2f}:1"
+    assert_contrast(theme, _palettes()[theme], TEXT_PAIRS, OUTLINE_PAIRS)
 
 
 def test_targets_are_big_enough():

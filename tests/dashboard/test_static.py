@@ -16,6 +16,7 @@ from html.parser import HTMLParser
 import pytest
 from PIL import Image
 
+from tests.contrast import assert_contrast, contrast, luminance
 from tests.paths import FIXTURES, ROOT
 
 STATIC = ROOT / "src" / "departureboard" / "dashboard_static"
@@ -378,17 +379,6 @@ def _palettes():
     return {name: {**base.get(name, palettes["modern-light"]), **tokens} for name, tokens in palettes.items()}
 
 
-def _luminance(colour):
-    channels = [int(colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
-    r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels)
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
-
-
-def _contrast(a, b):
-    hi, lo = sorted((_luminance(a), _luminance(b)), reverse=True)
-    return (hi + 0.05) / (lo + 0.05)
-
-
 TEXT_PAIRS = [
     ("fg", "bg"), ("fg", "surface"), ("muted", "surface"), ("muted", "bg"), ("accent", "surface"),
     ("accent", "bg"), ("accent-fg", "accent"), ("ok-fg", "ok-bg"), ("late-fg", "late-bg"), ("bad-fg", "bad-bg"),
@@ -407,11 +397,7 @@ OUTLINE_PAIRS = [("focus", "bg"), ("focus", "surface"), ("edge", "surface"), ("e
 
 @pytest.mark.parametrize("theme", THEMES)
 def test_theme_contrast(theme):
-    tokens = _palettes()[theme]
-    for pairs, need in ((TEXT_PAIRS, 4.5), (OUTLINE_PAIRS, 3.0)):
-        for fg, bg in pairs:
-            ratio = _contrast(tokens[fg], tokens[bg])
-            assert ratio >= need, f"{theme}: --{fg} on --{bg} is {ratio:.2f}:1"
+    assert_contrast(theme, _palettes()[theme], TEXT_PAIRS, OUTLINE_PAIRS)
 
 
 # --- The contract fixtures (docs/dashboard-api.md), for both sides to share ---
@@ -2645,7 +2631,7 @@ def test_bus_marker_colours_stand_out_on_the_tiles():
         (_css_value(".bus-pin-line", "color"), _css_value(".bus-pin-line", "background"), 4.5),  # the line number
     ]
     for fg, bg, need in pairs:
-        assert _contrast(fg, bg) >= need, f"{fg} on {bg} is {_contrast(fg, bg):.2f}:1"
+        assert contrast(fg, bg) >= need, f"{fg} on {bg} is {contrast(fg, bg):.2f}:1"
 
 
 # --- Weather ---
@@ -3037,7 +3023,7 @@ def test_a_wall_tablet_dims_while_the_snapshot_says_a_quiet_window_is_on():
     # have in the look's own dark palette. test_theme_contrast keeps them legible.
     palettes = _palettes()
     for dim, look in (("kiosk-dim", "modern-dark"), ("kiosk-dim-board", "board")):
-        assert _luminance(palettes[dim]["fg"]) <= 0.6 * _luminance(palettes[look]["fg"])
+        assert luminance(palettes[dim]["fg"]) <= 0.6 * luminance(palettes[look]["fg"])
         assert palettes[dim]["bg"] == "#000000"
     # Only on a wall tablet, in a quiet window.
     css = (STATIC / "app.css").read_text(encoding="utf-8")
