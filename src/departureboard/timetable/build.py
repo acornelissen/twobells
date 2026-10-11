@@ -73,6 +73,7 @@ Calendars. runs_on() decides, in this order:
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import logging
 import math
@@ -104,6 +105,9 @@ ROADS_FILE = "bus-roads.json"  # beside it while its roads are being found: how 
 ROADS_EVERY_S = 5.0  # written at most this often (and the last), to spare an SD card
 ROADS_STALE_S = 60.0  # unwritten this long, whatever was finding them has stopped
 _ROADS_FILE_BYTES = 200
+FAILED_FILE = "bus-timetable-failed.json"  # beside it after a build fails: when, and for what (see refresh)
+RETRY_AFTER = timedelta(hours=6)  # a failed build waits this long before it is tried again
+_FAILED_FILE_BYTES = 200
 # The builder's version, saved in the file: an older one is rebuilt (see due).
 # 2: stops keep the letter on their sign.
 # 3: the roads between stops, for the dashboard's maps (shapes).
@@ -923,30 +927,37 @@ class RoadsProgress:
             log.warning("Can't remove %s: %s", self._path, error.strerror or error)
 
 
-def roads_progress(folder: Path | str, now: Callable[[], float] = time.time) -> tuple[int, int] | None:
-    """(done, total) while the roads for the maps are being found, from
-    ROADS_FILE. None when they aren't, when it was left by a process that
-    stopped (unwritten for ROADS_STALE_S), or when it isn't a small plain
-    file of two counts and a time."""
+def _small_json(path: Path, limit: int) -> dict | None:
+    """The JSON object in a small plain file of at most `limit` bytes; None if
+    there is none, it is bigger, a link or not a plain file, or not an object."""
     try:
-        fd = os.open(Path(folder) / ROADS_FILE, os.O_RDONLY | os.O_NONBLOCK | files.NOFOLLOW)
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | files.NOFOLLOW)
     except OSError:
         return None
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             return None
-        body = os.read(fd, _ROADS_FILE_BYTES + 1)
+        body = os.read(fd, limit + 1)
     except OSError:
         return None
     finally:
         os.close(fd)
-    if len(body) > _ROADS_FILE_BYTES:
+    if len(body) > limit:
         return None
     try:
         data = json.loads(body)
     except (ValueError, RecursionError):
         return None
-    if not isinstance(data, dict):
+    return data if isinstance(data, dict) else None
+
+
+def roads_progress(folder: Path | str, now: Callable[[], float] = time.time) -> tuple[int, int] | None:
+    """(done, total) while the roads for the maps are being found, from
+    ROADS_FILE. None when they aren't, when it was left by a process that
+    stopped (unwritten for ROADS_STALE_S), or when it isn't a small plain
+    file of two counts and a time."""
+    data = _small_json(Path(folder) / ROADS_FILE, _ROADS_FILE_BYTES)
+    if data is None:
         return None
     done, total, at = data.get("done"), data.get("total"), data.get("at")
     if (not isinstance(done, int) or isinstance(done, bool) or not isinstance(total, int) or isinstance(total, bool)
@@ -981,6 +992,46 @@ def due(
     return None
 
 
+def _built_for(stops: Mapping[str, str], operators: Iterable[str]) -> str:
+    """A digest of the stops and operators a build is for, so a failed build's
+    record (FAILED_FILE) says what it was for without keeping them."""
+    plain = json.dumps([sorted(dict(stops).items()), sorted(set(operators))], separators=(",", ":"))
+    return hashlib.sha256(plain.encode()).hexdigest()
+
+
+def _note_failure(folder: Path | str, stops: Mapping[str, str], operators: Iterable[str], now: datetime) -> None:
+    """Keep when a build failed and what for, in FAILED_FILE (see refresh)."""
+    try:
+        files.write_atomic(Path(folder) / FAILED_FILE,
+                           json.dumps({"at": now.isoformat(), "for": _built_for(stops, operators)}), 0o640)
+    except OSError as error:
+        log.warning("Can't keep when the bus timetable build failed: %s", error.strerror or error)
+
+
+def _failed_lately(folder: Path | str, stops: Mapping[str, str], operators: Iterable[str],
+                   now: datetime) -> datetime | None:
+    """When the last build failed, if it was for these stops and operators
+    less than RETRY_AFTER ago; None otherwise, or if FAILED_FILE can't be
+    read. A failure the clock puts in the future doesn't count."""
+    data = _small_json(Path(folder) / FAILED_FILE, _FAILED_FILE_BYTES)
+    if data is None or data.get("for") != _built_for(stops, operators) or not isinstance(data.get("at"), str):
+        return None
+    try:
+        at = datetime.fromisoformat(data["at"])
+    except ValueError:
+        return None
+    if at.tzinfo is not None or not timedelta(0) <= now - at < RETRY_AFTER:
+        return None
+    return at
+
+
+def _forget_failure(folder: Path | str) -> None:
+    try:
+        (Path(folder) / FAILED_FILE).unlink(missing_ok=True)
+    except OSError as error:
+        log.warning("Can't remove %s: %s", FAILED_FILE, error.strerror or error)
+
+
 def refresh(
     folder: Path | str,
     stops: Mapping[str, str],
@@ -997,8 +1048,11 @@ def refresh(
 ) -> Schedule | None:
     """The schedule to use, from `folder` (the state folder). It is built
     again first if it is due (see due: weekly, or when the stops or operators
-    change) or `force`d. A failed build keeps the saved one. With nothing due
-    this only reads the saved file, unless its roads are still to be found.
+    change) or `force`d. A failed build keeps the saved one, and is kept in
+    FAILED_FILE: it isn't tried again for RETRY_AFTER (each try downloads
+    every timetable again), unless `force`d or the stops or operators
+    change. With nothing due this only reads the saved file, unless its
+    roads are still to be found.
 
     A new timetable is saved before its roads are asked for, marked
     roads_pending, and `saved(schedule)` is told; then it is saved again
@@ -1013,6 +1067,11 @@ def refresh(
     current = load(folder)
     operators = list(operators)
     reason = "asked to" if force else due(current, stops, now, operators)
+    failed = _failed_lately(folder, stops, operators, now) if reason and not force else None
+    if failed is not None:
+        log.info("Bus timetable due (%s), but building it failed at %s: trying again after %s", reason,
+                 f"{failed:%H:%M}", f"{failed + RETRY_AFTER:%H:%M}")
+        reason = None
     if reason is None:
         if current is not None and current.roads_pending:
             log.info("Bus timetable saved before all its roads were found: finding the rest")
@@ -1024,7 +1083,9 @@ def refresh(
         save(folder, fresh)
     except Exception as error:  # noqa: BLE001 - any failure keeps the last good schedule
         log.warning("Bus timetable not rebuilt (%s), keeping the saved one: %s", reason, safe_message(error))
+        _note_failure(folder, stops, operators, now)
         return current
+    _forget_failure(folder)
     calling = len(fresh.departure_journeys)
     log.info("Bus timetable rebuilt (%s): %d journeys at your stops, %d ending near them", reason, calling,
              len(fresh.journeys) - calling)

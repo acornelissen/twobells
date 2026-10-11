@@ -849,6 +849,71 @@ def test_a_failed_first_build_leaves_nothing(tmp_path):
     assert not (tmp_path / FILE_NAME).exists()
 
 
+def test_a_failed_build_is_tried_again_after_six_hours_not_every_hour(tmp_path, caplog):
+    caplog.set_level("INFO")
+    old = _schedule(built=NOW - timedelta(days=8))
+    save(tmp_path, old)
+    build = FakeBuild(error=TimetableError("BODS down"))
+    for hours in range(6):
+        assert refresh(tmp_path, STOPS, ["BNML"], NOW + timedelta(hours=hours, minutes=59), "k", build=build) == old
+    assert len(build.calls) == 1
+    assert "failed at 03:59: trying again after 09:59" in caplog.text
+    build.error = None
+    later = NOW + timedelta(hours=6, minutes=59)
+    assert refresh(tmp_path, STOPS, ["BNML"], later, "k", build=build).built == later
+    assert len(build.calls) == 2
+    assert [p.name for p in tmp_path.iterdir()] == [FILE_NAME]  # a build that works forgets the failure
+
+
+def test_a_failed_first_build_waits_too(tmp_path):
+    build = FakeBuild(error=TimetableError("no"))
+    refresh(tmp_path, STOPS, ["BNML"], NOW, "k", build=build)
+    assert refresh(tmp_path, STOPS, ["BNML"], NOW + timedelta(hours=1), "k", build=build) is None
+    assert len(build.calls) == 1
+
+
+@pytest.mark.parametrize("stops, operators, force", [
+    (STOPS, ["BNML"], True),  # asked to
+    ({"A": STOP_A}, ["BNML"], False),  # stops changed
+    (STOPS, ["BNML", "HIPK"], False),  # operators changed
+])
+def test_a_failed_build_is_tried_again_at_once_when_forced_or_the_stops_or_operators_change(
+        tmp_path, stops, operators, force):
+    build = FakeBuild(error=TimetableError("no"))
+    refresh(tmp_path, STOPS, ["BNML"], NOW, "k", build=build)
+    refresh(tmp_path, stops, operators, NOW + timedelta(minutes=5), "k", force=force, build=build)
+    assert len(build.calls) == 2
+
+
+def test_a_failure_recorded_when_the_clock_was_ahead_does_not_hold_back_a_build(tmp_path):
+    build = FakeBuild(error=TimetableError("no"))
+    refresh(tmp_path, STOPS, ["BNML"], NOW + timedelta(days=30), "k", build=build)
+    refresh(tmp_path, STOPS, ["BNML"], NOW, "k", build=build)
+    assert len(build.calls) == 2
+
+
+@pytest.mark.parametrize("text", ["", "{", "[]", '{"at": "soon", "for": "x"}', '{"at": 5}', "x" * 5000],
+                         ids=["empty", "half", "list", "bad time", "no digest", "too big"])
+def test_a_failed_build_record_that_doesnt_fit_is_ignored(tmp_path, text):
+    (tmp_path / timetable.FAILED_FILE).write_text(text)
+    build = FakeBuild()
+    refresh(tmp_path, STOPS, ["BNML"], NOW, "k", build=build)
+    assert len(build.calls) == 1
+
+
+def test_the_failed_build_record_is_private_and_a_link_in_its_place_is_refused(tmp_path):
+    build = FakeBuild(error=TimetableError("no"))
+    refresh(tmp_path, STOPS, ["BNML"], NOW, "k", build=build)
+    path = tmp_path / timetable.FAILED_FILE
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+    assert STOP_A not in path.read_text()  # only a digest of what it was for
+    elsewhere = tmp_path / "elsewhere.json"
+    path.rename(elsewhere)
+    path.symlink_to(elsewhere)
+    refresh(tmp_path, STOPS, ["BNML"], NOW + timedelta(minutes=5), "k", build=build)
+    assert len(build.calls) == 2
+
+
 def test_refresh_end_to_end_with_fakes(tmp_path):
     bods = FakeBods()
 

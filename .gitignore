@@ -19,6 +19,7 @@ state.json
 bank-holidays.json
 bus-timetable.json
 bus-timetable.tmp
+bus-timetable-failed.json
 # Settings page password hash, atomic-write leftovers, dashboard state (dev runs keep state here)
 web.json
 sessions.json
