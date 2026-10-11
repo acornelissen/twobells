@@ -467,7 +467,7 @@ main:focus { outline: none; }
   :root:not([data-kiosk]) main {
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    grid-template-areas: "hero weather" "alert alert" "dis dis" "boards boards" "area .";
+    grid-template-areas: "hero weather" "alert alert" "dis dis" "boards boards" "area area";
     gap: 0 var(--s-7);
     align-items: start;
   }
@@ -921,6 +921,9 @@ table.history thead th { border-top: 0; color: var(--muted); }
 
 /* --- Around here: the line of stations, and the area map --- */
 
+/* The section is a container: the line runs across the page when the
+   section is wide enough (below), down it otherwise. */
+.area { container: area / inline-size; }
 .area h3 { margin-top: 0.75rem; }
 .line-diagram { margin: 0.5rem 0; padding: 0; list-style: none; }
 .line-diagram > li { position: relative; margin: 0; padding: 0.25rem 0 0.25rem 1.75rem; }
@@ -959,6 +962,82 @@ table.history thead th { border-top: 0; color: var(--muted); }
   font-size: var(--t-sm);
 }
 .line-between { padding-top: 0; padding-bottom: 0; }
+/* The rail and the list of trains under it are for the line across the page. */
+.line-rail, .line-train-list { display: none; }
+
+/* The line across the page: the stations in a row of equal columns, a dot in
+   the middle of each on the rail, the names slanted up over it. The track
+   element holds --stations, and the names' lengths in characters, --longest
+   and --last, which make room for the slant above the rail and right of it.
+   Trains are markers on the rail (drawing only) and listed under it in words;
+   the stations' own train lists and the between items are for the line
+   down the page. */
+@container area (min-width: 40rem) {
+  .line-track {
+    --label-room: calc(var(--longest, 0) * 0.34rem + 1rem);
+    --rail-y: calc(var(--label-room) + 0.875rem);
+    position: relative;
+    isolation: isolate;
+    padding-right: calc(var(--last, 0) * 0.34rem);
+    padding-bottom: calc(var(--deepest, 0) * 1.75rem);
+  }
+  .line-diagram {
+    display: grid;
+    grid-template-columns: repeat(var(--stations, 1), minmax(0, 1fr));
+    margin: 0;
+    padding: var(--label-room) 0 0.75rem;
+  }
+  .line-diagram > li { height: 1.75rem; padding: 0; }
+  .line-diagram > li::before, .line-between, .line-diagram .line-trains { display: none; }
+  .line-station::after { left: calc(50% - 0.375rem); }
+  .line-label {
+    position: absolute;
+    bottom: calc(100% - 0.375rem);
+    left: calc(50% + 0.25rem);
+    font-size: var(--t-sm);
+    line-height: 1.2;
+    white-space: nowrap;
+    transform: rotate(-45deg);
+    transform-origin: 0 100%;
+  }
+  .line-rail {
+    display: block;
+    position: absolute;
+    top: var(--rail-y);
+    left: 0;
+    right: calc(var(--last, 0) * 0.34rem);
+    height: 0;
+  }
+  /* The track between the first dot and the last, behind the dots. */
+  .line-rail::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    left: calc(50% / var(--stations, 1));
+    right: calc(50% / var(--stations, 1));
+    top: -1.5px;
+    border-top: 3px solid var(--edge);
+  }
+  .line-marker {
+    position: absolute;
+    z-index: 1;
+    left: calc((var(--at) + 0.5) / var(--stations, 1) * 100%);
+    top: calc(var(--stack, 0) * 1.75rem);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.125rem;
+    padding: 0.0625rem 0.375rem;
+    border: 2px solid var(--bg);
+    border-radius: 999px;
+    color: var(--badge-fg);
+    background: var(--badge-bg);
+    font-size: var(--t-xs);
+    font-weight: 600;
+    white-space: nowrap;
+    transform: translate(-50%, -50%);
+  }
+  .line-train-list { display: block; margin: 0 0 0.5rem; }
+}
 /* Forced colours (Windows High Contrast) drop backgrounds, which draw the
    journey's filled dots, its solid rail and the train, and this station's
    dot on the line. They are drawn in the reader's system colours instead,
@@ -976,6 +1055,7 @@ table.history thead th { border-top: 0; color: var(--muted); }
   .cp-train-wheels { stroke: Canvas; }
   .line-station::after { border-color: CanvasText; background: Canvas; }
   .line-station.yours::after { background: Highlight; }
+  .line-marker { forced-color-adjust: none; border-color: Canvas; color: Canvas; background: CanvasText; }
 }
 .area-list { margin: 0 0 0.5rem; padding-left: 1.25rem; }
 .area-list li { padding: 0.25rem 0; }

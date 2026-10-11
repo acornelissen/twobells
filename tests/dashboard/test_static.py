@@ -1036,6 +1036,48 @@ def test_the_area_map_keeps_the_focus_and_the_open_popup_across_snapshots():
 
 
 @needs_node
+def test_the_line_across_the_page_marks_each_train_and_lists_it_in_words():
+    # Across a wide section the stations' own train lists are hidden: each placed
+    # train is a marker on the rail (drawing only) and a line in the list under
+    # it, in line order, its arrow pointing along the row the way it is going.
+    snapshot = _fixture("dashboard_snapshot.json")
+    rows = snapshot["trains"]["rows"]
+    back = {**rows[2], "id": "back", "scheduled": "08:30", "destination": "Hadfield",
+            "position": {"where": "Left Gorton 08:25, on time",
+                         "strip": {"stops": ["Ashburys", "Gorton", "Guide Bridge"], "yours": 1, "train_at": 1.5}}}
+    snapshot["trains"]["rows"] = [*rows, back]
+    found = run_js("""
+        const { h } = await import("./dom.js");
+        document.body.append(h("div", { id: "line-part" }), h("p", { id: "line-summary" }),
+          h("div", { id: "line-track" }, h("ol", { id: "line-diagram" }), h("div", { id: "line-rail", "aria-hidden": "true" })),
+          h("ul", { id: "line-train-list" }));
+        const { renderLine } = await import("./area.js");
+        renderLine(SNAPSHOT);
+        const $ = (id) => document.getElementById(id);
+        const stations = byClass($("line-diagram"), "line-station").map(spoken);
+        const prop = (el, name) => el.style.getPropertyValue(name);
+        const arrows = (el) => byClass(el, "glyph").map((g) => g.childNodes[0]?.getAttribute("class") || "");
+        console.log(JSON.stringify({
+          stations: stations.length, first: stations[0], last: stations.at(-1),
+          track: ["--stations", "--longest", "--last", "--deepest"].map((n) => prop($("line-track"), n)),
+          markers: byClass($("line-rail"), "line-marker").map((m) => [spoken(m), prop(m, "--at"), prop(m, "--stack")]),
+          list: [...$("line-train-list").childNodes].map(spoken),
+          arrows: arrows($("line-train-list")),
+          railHidden: $("line-rail").getAttribute("aria-hidden"),
+        }));
+    """.replace("SNAPSHOT", json.dumps(snapshot)))
+    assert found["first"] == "Manchester Piccadilly" and found["last"] == "Hadfield"
+    n = found["stations"]
+    # The longest label is "Manchester Piccadilly" or Glossop with its "(this station)".
+    assert found["track"] == [str(n), str(len("Glossop (this station)")), str(len("Hadfield")), "0"]
+    assert found["markers"] == [["08:30", "2.5", "0"], ["08:12", str(n - 1.5), "0"]]
+    assert found["list"] == [" 08:30 to Hadfield: Left Gorton 08:25, on time",
+                             " 08:12 to Manchester Piccadilly: Left Hadfield 08:04, on time"]
+    assert [("right" in a, "left" in a) for a in found["arrows"]] == [(True, False), (False, True)]
+    assert found["railHidden"] == "true"
+
+
+@needs_node
 def test_a_row_link_opens_the_summary_at_its_item():
     found = run_js(_boards() + DISRUPTION_PAGE.replace('import { h } from "./dom.js";\n', "") + """
         renderDisruptions(snapshot);

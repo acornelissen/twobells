@@ -1,5 +1,7 @@
 // "Around here": the trains on the line, drawn as a list of stations with
-// each placed train between them, and the area map of every live bus on
+// each placed train between them (across the page where it is wide enough:
+// the stations in a row, a marker per train on the rail and the trains
+// listed under it), and the area map of every live bus on
 // your lines near your stops (GET /api/area). The map loads Leaflet only
 // when opened; its markers and popups are DOM nodes, never strings (Leaflet
 // would parse a string as HTML), and a list beside it says the same in words.
@@ -73,16 +75,32 @@ export function placeOnLine(row, line) {
   return { from: Math.min(here, next), to: Math.max(here, next) };
 }
 
+// The way a train at line position `index` is going: up or down the line,
+// or left and right when it runs `across`; null when it leaves the line.
+function arrow(row, line, index, across) {
+  const towards = line.indexOf(str(row.destination));
+  if (towards < 0) return null;
+  const back = towards < index;
+  return icon(across ? (back ? "arrow-left" : "arrow-right") : (back ? "arrow-up" : "arrow-down"));
+}
+
 // One train in the line, at line position `index`; the arrow points the way
 // it is going, and the words say it too.
-function trainItem(row, line, index) {
-  const destination = str(row.destination);
-  const towards = line.indexOf(destination);
+function trainItem(row, line, index, across = false) {
   const where = str(obj(row.position)?.where);
-  const arrow = towards < 0 ? null : icon(towards < index ? "arrow-up" : "arrow-down");
   return h("li", { class: "line-train" },
-    h("span", { class: "glyph", "aria-hidden": "true" }, arrow), " ",
-    h("strong", {}, `${str(row.scheduled)} to ${destination}`), where ? `: ${where}` : "");
+    h("span", { class: "glyph", "aria-hidden": "true" }, arrow(row, line, index, across)), " ",
+    h("strong", {}, `${str(row.scheduled)} to ${str(row.destination)}`), where ? `: ${where}` : "");
+}
+
+// A train's marker on the rail across the page: its arrow and time, at line
+// position `index` (x.5 between two stations). The list under the rail says it in words.
+function trainMarker(row, line, index, stack) {
+  const marker = h("span", { class: "line-marker" },
+    h("span", { class: "glyph" }, arrow(row, line, index, true)), str(row.scheduled));
+  marker.style.setProperty("--at", String(index));
+  marker.style.setProperty("--stack", String(stack));
+  return marker;
 }
 
 // Moves Manchester (the filter station) to the top when it's at the bottom.
@@ -116,19 +134,39 @@ export function renderLine(snapshot) {
     : placed ? `${placed} ${placed === 1 ? "train" : "trains"} placed on the line.`
       : "No live train positions right now.");
   const items = [];
+  const along = []; // [row, line position] in line order, for the rail across the page
   line.forEach((name, i) => {
     const trainsHere = at.get(i) || [];
     items.push(h("li", { class: ["line-station", name === station ? "yours" : null] },
-      h("span", { class: "line-name" }, name), name === station ? h("span", { class: "cp-state" }, " (this station)") : null,
+      h("span", { class: "line-label" },
+        h("span", { class: "line-name" }, name), name === station ? h("span", { class: "cp-state" }, " (this station)") : null),
       trainsHere.length ? h("ul", { class: "line-trains" }, trainsHere.map((r) => trainItem(r, line, i))) : null));
+    along.push(...trainsHere.map((r) => [r, i]));
     const moving = between.get(i) || [];
     if (moving.length && i + 1 < line.length) {
       items.push(h("li", { class: "line-between" },
         h("span", { class: "vh" }, `Between ${name} and ${line[i + 1]}: `),
         h("ul", { class: "line-trains" }, moving.map((r) => trainItem(r, line, i + 0.5)))));
+      along.push(...moving.map((r) => [r, i + 0.5]));
     }
   });
   fill($("line-diagram"), items);
+  // Across the page the names are slanted over the rail: room above it for
+  // the longest and to the right of it for the last, by their lengths.
+  const labels = line.map((name) => (name === station ? `${name} (this station)` : name));
+  const track = $("line-track");
+  track.style.setProperty("--stations", String(line.length));
+  track.style.setProperty("--longest", String(Math.max(0, ...labels.map((l) => l.length))));
+  track.style.setProperty("--last", String(labels.at(-1)?.length ?? 0));
+  const stacked = new Map(); // line position -> markers there so far
+  fill($("line-rail"), along.map(([r, index]) => {
+    const stack = stacked.get(index) || 0;
+    stacked.set(index, stack + 1);
+    return trainMarker(r, line, index, stack);
+  }));
+  track.style.setProperty("--deepest", String(Math.max(1, ...stacked.values()) - 1));
+  $("line-rail").hidden = !line.length;
+  fill($("line-train-list"), along.map(([r, index]) => trainItem(r, line, index, true)));
 }
 
 // --- The area map.
