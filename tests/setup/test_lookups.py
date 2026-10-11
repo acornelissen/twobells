@@ -309,6 +309,17 @@ def test_bad_nominatim_entries_are_skipped_and_at_most_five_kept():
     assert [p.label for p in places] == [f"Place {i}" for i in range(5)]
 
 
+def test_a_place_nominatim_names_twice_is_listed_once():
+    # Norfolk Square, Glossop came back as two OSM objects with one name; two
+    # buttons saying the same thing are no choice. The first, best ranked, stays.
+    name = "Norfolk Square, Whitfield, Glossop, High Peak, Derbyshire, England, SK13 8BP, United Kingdom"
+    entries = [{"lat": "53.4434", "lon": "-1.9490", "display_name": name},
+               {"lat": "53.4436", "lon": "-1.9487", "display_name": name},
+               {"lat": "53.4440", "lon": "-1.9500", "display_name": "Norfolk Street, Glossop"}]
+    places = parse_nominatim(json.dumps(entries).encode())
+    assert [(p.label, p.lat) for p in places] == [(name, 53.4434), ("Norfolk Street, Glossop", 53.4440)]
+
+
 @pytest.mark.parametrize("body", [b'{"error": "Bad request"}', b"<html>", b'"text"'])
 def test_nominatim_answer_that_isnt_a_list_is_refused(body):
     with pytest.raises(SetupError):

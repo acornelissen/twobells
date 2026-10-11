@@ -342,11 +342,18 @@ def _nominatim_place(item) -> Place | None:
 
 
 def parse_nominatim(body: bytes) -> list[Place]:
-    """Usable places from Nominatim's jsonv2 search answer, bad entries skipped."""
+    """Usable places from Nominatim's jsonv2 search answer, bad entries
+    skipped, and each name once: OpenStreetMap can hold one place as two
+    objects (a square as a road and an area), which would list the same name
+    twice. The first, ranked higher, is kept."""
     data = _json(body, "Nominatim")
     if not isinstance(data, list):
         raise SetupError("Nominatim sent an answer that isn't a list of places")
-    return [p for p in map(_nominatim_place, data[:MAX_ADDRESS_RESULTS]) if p is not None]
+    places: dict[str, Place] = {}
+    for place in map(_nominatim_place, data[:MAX_ADDRESS_RESULTS]):
+        if place is not None:
+            places.setdefault(place.label.casefold(), place)
+    return list(places.values())
 
 
 def search_address(text: str, http_get: HttpGetBytes = nominatim_get, limiter: RateLimiter = NOMINATIM_LIMIT,
