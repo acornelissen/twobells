@@ -476,7 +476,7 @@ def test_screen_keeps_its_clock_on_the_bottom_line_beside_the_notice():
     assert clock.y == notice.y == height - 10
     assert not notice.small and not clock.small
     assert clock.x + FONT.getlength(clock.text) == width - MARGIN
-    assert notice.x == MARGIN and notice.x + FONT.getlength(notice.text) + 5 <= clock.x
+    assert notice.x == MARGIN and notice.x + item_size(notice)[0] + 5 <= clock.x
 
 
 def test_screen_clock_and_notice_clear_the_not_updating_badge():
@@ -487,22 +487,11 @@ def test_screen_clock_and_notice_clear_the_not_updating_badge():
     assert find(items, "07:03:15").x + FONT.getlength("07:03:15") + 5 <= badge.x - 2
 
 
-def test_screen_shows_a_long_notice_in_parts_every_five_seconds():
-    def shown(clock):
-        [notice], _, _, _ = screen_footer(noticed(board(), clock=clock))
-        return notice.text
-
-    parts = []
+def test_screen_scrolls_a_long_notice_whole_in_its_space():
     for second in range(0, 60, 5):
-        text = shown(f"07:03:{second:02d}")
-        assert shown(f"07:03:{second + 4:02d}") == text  # steady within its five seconds
-        if text not in parts:
-            parts.append(text)
-    assert len(parts) > 1
-    assert all(p.startswith("! ") for p in parts)
-    assert sum(p.endswith(" …") for p in parts) == len(parts) - 1
-    words = " ".join(p[2:].removesuffix(" …") for p in parts).split()
-    assert sorted(words) == sorted(NOTICE.split())
+        [notice], clock, _, _ = screen_footer(noticed(board(), clock=f"07:03:{second:02d}"))
+        assert notice.text == "! " + NOTICE  # whole, not cut short or in parts
+        assert notice.box is not None and notice.x + notice.box + 5 <= clock.x
 
 
 def test_screen_shows_a_short_notice_whole_and_steady():
@@ -736,11 +725,11 @@ def test_a_rows_columns_never_overlap(panel, leave_for):
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
-def test_long_where_words_are_cut_to_their_column(panel):
+def test_long_where_words_scroll_in_their_column(panel):
     items = sign_layout(screen(), *dots(panel)).items
     where = next(i for i in items if i.text.startswith("Not yet left"))
-    assert where.text.endswith("…")
-    assert FONT.getlength(where.text) <= where_width(dots(panel)[0])
+    assert where.text == "Not yet left Hadfield sidings"
+    assert where.box == where_width(dots(panel)[0])
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
@@ -749,8 +738,8 @@ def test_the_destination_gives_way_to_the_strip(panel):
     rows = [dataclasses.replace(SCREEN_TRAINS[0], middle=long)]
     items = sign_layout(screen(rows), *dots(panel)).items
     dest = next(i for i in items if i.text.startswith("Manchester"))
-    assert dest.text.endswith("…")
-    assert dest.x + FONT.getlength(dest.text) + 5 <= find(items, "At Dinting").x
+    assert dest.text == long and dest.box is not None  # scrolling in its space
+    assert dest.x + item_size(dest)[0] + 5 <= find(items, "At Dinting").x
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
@@ -938,7 +927,7 @@ def test_a_screen_shows_the_notice_then_the_rain_warning_then_the_clock(panel, s
     notice, rain, clock = footer_line(items, height)
     assert notice.text.startswith("! ") and notice.x == MARGIN
     assert rain.text == RAIN and clock.text == CLOCK
-    assert notice.x + FONT.getlength(notice.text) + 10 <= rain.x
+    assert notice.x + item_size(notice)[0] + 10 <= rain.x
     assert rain.x + FONT.getlength(RAIN) + 5 <= clock.x
     if stale:
         badge = find(items, "Not updating: buses")
@@ -949,19 +938,16 @@ def test_a_screen_shows_the_notice_then_the_rain_warning_then_the_clock(panel, s
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
-def test_beside_the_rain_warning_the_notice_still_takes_turns_in_its_own_space(panel):
+def test_beside_the_rain_warning_the_notice_scrolls_in_its_own_space(panel):
     width, height = dots(panel)
-    parts = set()
-    for second in range(0, 60, 5):
-        view = both(screen(), clock=f"07:03:{second:02d}")
-        notice, rain, _ = footer_line(sign_layout(view, width, height).items, height)
-        assert notice.x + FONT.getlength(notice.text) + 10 <= rain.x
-        parts.add(notice.text)
-    assert len(parts) > 1 and all(p.startswith("! ") for p in parts)
+    view = both(screen())
+    notice, rain, _ = footer_line(sign_layout(view, width, height).items, height)
+    assert notice.text == "! " + NOTICE and notice.box is not None
+    assert notice.x + notice.box + 10 <= rain.x
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
-def test_the_rain_warning_stays_put_as_the_notice_turns(panel):
+def test_the_rain_warning_stays_put_as_the_clock_runs(panel):
     width, height = dots(panel)
     xs = {find(sign_layout(both(screen(), clock=f"07:03:{s:02d}"), width, height).items, RAIN).x
           for s in range(0, 60, 5)}
@@ -1028,3 +1014,88 @@ def test_the_footer_rule_is_drawn_dotted():
     y = y0 + footer_rule(layout) * panel.scale
     assert image.getpixel((x0 + MARGIN * panel.scale, y)) == PALETTE.accent
     assert image.getpixel((x0 + (MARGIN + 1) * panel.scale, y)) == PALETTE.black
+
+
+# On a screen, text too long for its space scrolls, a dot at a time, inside its own box.
+
+from departureboard.board.panel import PHAT  # noqa: E402
+from departureboard.board.scroll import SCROLL_PAUSE_S, SCROLL_STEPS_PER_S  # noqa: E402
+from departureboard.board.sign import route_sign_frame, sign_frame  # noqa: E402
+
+LONG = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom, Hattersley, Godley and Hyde Central"
+
+
+def long_screen():
+    trains = [dataclasses.replace(r, middle=LONG) for r in SCREEN_TRAINS]
+    return screen(trains, notice=NOTICE)
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_each_scrolling_field_sits_in_its_own_column_in_whole_dots(panel):
+    layout = sign_layout(long_screen(), *dots(panel))
+    frame = sign_frame(long_screen(), PALETTE, panel)
+    scrolling = [i for i in layout.items if i.box is not None]
+    assert {i.text for i in scrolling} >= {LONG, "! " + NOTICE, "Not yet left Hadfield sidings"}
+    assert [s.text for s in frame.scrolls] == [i.text for i in scrolling]
+    x0, y0 = _origin(panel)
+    s = panel.scale
+    for item, scroll in zip(scrolling, frame.scrolls, strict=True):
+        assert scroll.box == (x0 + int(item.x) * s, y0 + item.y * s, x0 + (int(item.x) + item.box) * s,
+                              y0 + (item.y + 9) * s)
+        assert scroll.step == s  # a dot at a time
+        assert scroll.strip.width == FONT.getlength(item.text) * s
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_text_that_fits_on_a_screen_does_not_scroll(panel):
+    scrolling = {s.text for s in sign_frame(screen(), PALETTE, panel).scrolls}
+    assert not scrolling & {"At Dinting", "3 stops away", "Hyde", "Buxton"}
+    short = sign_frame(screen(notice="Lifts out of use"), PALETTE, panel)
+    assert "! Lifts out of use" not in {s.text for s in short.scrolls}
+
+
+def test_scrolling_text_moves_only_inside_its_box():
+    panel = HDMI_1920X440
+    frame = sign_frame(long_screen(), PALETTE, panel)
+    still, later = frame.at(0), frame.at(SCROLL_PAUSE_S + 1)
+    changed = [(x, y) for y in range(panel.height) for x in range(panel.width)
+               if still.getpixel((x, y)) != later.getpixel((x, y))]
+    assert changed
+    boxes = [s.box for s in frame.scrolls]
+    assert all(any(left <= x < right and top <= y < bottom for left, top, right, bottom in boxes)
+               for x, y in changed)
+
+
+def test_scrolling_text_holds_at_its_start_then_moves_a_dot_a_step():
+    panel = HDMI_1920X440
+    frame = sign_frame(long_screen(), PALETTE, panel)
+    scroll = next(s for s in frame.scrolls if s.text == LONG)
+    assert scroll.offset(0) == scroll.offset(SCROLL_PAUSE_S - 0.1) == 0
+    assert scroll.offset(SCROLL_PAUSE_S + 1) == SCROLL_STEPS_PER_S * panel.scale
+    assert frame.image.tobytes() == frame.at(0).tobytes()  # the still board shows each from its start
+
+
+def test_a_reversed_out_row_scrolls_on_its_lit_band():
+    frame = sign_frame(long_screen(), PALETTE, HDMI_1920X440)
+    normal, _, cancelled = (s for s in frame.scrolls if s.text == LONG)
+    # Below the last letter, an "l" with no descender: lit on the cancelled train's band, dark on a normal row.
+    assert cancelled.strip.getpixel((cancelled.strip.width - 2, 33)) == PALETTE.accent
+    assert normal.strip.getpixel((normal.strip.width - 2, 33)) == PALETTE.black
+
+
+def test_e_paper_still_cuts_long_text_short_and_nothing_scrolls():
+    trains = [dataclasses.replace(r, middle=LONG) for r in TRAINS]
+    view = dataclasses.replace(board(trains, BUSES), notice=NOTICE)
+    for panel in (PHAT, WAVESHARE_10IN85G):
+        assert sign_frame(view, PALETTE, panel).scrolls == ()
+        items = sign_layout(view, *dots(panel)).items
+        assert all(i.box is None for i in items)
+        assert any(i.text.startswith("Manchester") and i.text.endswith("…") for i in items)
+        assert any(i.text.startswith("! ") and i.text.endswith("…") for i in items)
+
+
+def test_the_route_page_scrolls_a_long_title_on_a_screen():
+    view = RouteView("341 to " + LONG, "Exp 07:24", "Leave in 6 min", NAMES, 1.0, "2 stops away", CLOCK)
+    assert [s.text for s in route_sign_frame(view, PALETTE, HDMI_1920X440).scrolls] == ["341 to " + LONG]
+    e_paper = dataclasses.replace(view, clock=None)
+    assert route_sign_frame(e_paper, PALETTE, WAVESHARE_10IN85G).scrolls == ()

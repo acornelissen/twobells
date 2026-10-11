@@ -16,7 +16,6 @@ from departureboard.board.render import (
     fit_text,
     header_text,
     heights,
-    in_turns,
     leave_column,
     leave_heading,
     left_column_width,
@@ -27,7 +26,6 @@ from departureboard.board.render import (
     render_code,
     render_setup,
     row_layout,
-    wrap_text,
 )
 from departureboard.board.view import BoardView, CodeView, Row, Section, SetupView, Style
 from departureboard.core import words
@@ -539,18 +537,28 @@ def test_short_notice_is_shown_whole_in_the_header():
 
 
 @pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
-def test_on_a_screen_a_long_notice_takes_turns_in_the_header(panel):
-    def shown(clock):
-        view = dataclasses.replace(board(), notice=NOTICE * 2, clock=clock)
-        title, stamp, stamp_x, fonts, s = header(view, panel)
-        assert stamp == clock
-        assert 3 * s + drawn_length(fonts.bold, title) <= stamp_x - 6 * s
-        return title
+def test_on_a_screen_a_long_notice_scrolls_whole_in_the_header(panel):
+    from departureboard.board.render import board_frame
 
-    parts = {shown(f"07:03:{second:02d}") for second in range(0, 60, 5)}
-    assert len(parts) > 1
-    assert all(p.startswith("! ") for p in parts)
-    assert shown("07:03:20") == shown("07:03:24") != shown("07:03:25")
+    view = dataclasses.replace(board(), notice=NOTICE * 2, clock="07:03:20")
+    _, stamp, stamp_x, fonts, s = header(view, panel)
+    [scroll] = board_frame(view, PALETTE, panel).scrolls
+    assert scroll.text == "! " + NOTICE * 2
+    left, top, right, bottom = scroll.box
+    assert (left, top) == (3 * s, 0) and bottom == heights()[0] * s  # in the header bar
+    assert right <= stamp_x - 6 * s  # clear of the clock
+    assert scroll.strip.width > right - left
+
+
+@pytest.mark.parametrize("panel", ALL_PANELS, ids=lambda p: p.name)
+def test_on_e_paper_nothing_scrolls(panel):
+    from departureboard.board.render import board_frame
+
+    long = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom, Hattersley, Godley and Hyde Central"
+    view = dataclasses.replace(board([Row("07:12", long, "On time")]), notice=NOTICE * 2)
+    frame = board_frame(view, PALETTE, panel)
+    assert frame.scrolls == ()
+    assert frame.image.tobytes() == render(view, PALETTE, panel).tobytes()
 
 
 def test_notice_changes_what_the_header_draws():
@@ -572,13 +580,6 @@ def test_a_disruption_notice_beats_the_rain_line_in_the_header():
     assert header(view)[0] == "! Lifts out of use"
 
 
-def test_wrap_text_keeps_words_whole_and_splits_only_overlong_ones():
-    measure = len
-    assert wrap_text("one two three four", 9, measure) == ["one two", "three", "four"]
-    assert wrap_text("abcdefghijkl xy", 5, measure) == ["abcde", "fghij", "kl xy"]
-    assert wrap_text("", 5, measure) == []
-
-
 def _fit_text_one_at_a_time(text, font, width, measure=None):
     """fit_text as it was, taking off a character at a time: what it must still give."""
     measure = measure or font.getlength
@@ -587,28 +588,6 @@ def _fit_text_one_at_a_time(text, font, width, measure=None):
     while text and measure(text + "…") > width:
         text = text[:-1]
     return text.rstrip() + "…"
-
-
-def _wrap_text_one_at_a_time(text, width, measure):
-    """wrap_text as it was, shortening an overlong word a character at a time."""
-    lines, line = [], ""
-    for word in text.split():
-        candidate = f"{line} {word}" if line else word
-        if measure(candidate) <= width:
-            line = candidate
-            continue
-        if line:
-            lines.append(line)
-        while len(word) > 1 and measure(word) > width:
-            cut = len(word) - 1
-            while cut > 1 and measure(word[:cut]) > width:
-                cut -= 1
-            lines.append(word[:cut])
-            word = word[cut:]
-        line = word
-    if line:
-        lines.append(line)
-    return lines
 
 
 FIT_SAMPLES = (
@@ -623,7 +602,7 @@ FIT_SAMPLES = (
 )
 
 
-def test_fit_text_and_wrap_text_give_what_they_gave_a_character_at_a_time():
+def test_fit_text_gives_what_it_gave_a_character_at_a_time():
     from departureboard.board.dotfont import TINY, DotFont
 
     fonts = load_fonts()
@@ -639,8 +618,6 @@ def test_fit_text_and_wrap_text_give_what_they_gave_a_character_at_a_time():
         for text in FIT_SAMPLES:
             for width in (0, 1, 5, 9, 17, 40, 80, 133, 250, 400, 1300):
                 assert fit_text(text, font, width, measure) == _fit_text_one_at_a_time(text, font, width, measure)
-                if width:
-                    assert wrap_text(text, width, measure) == _wrap_text_one_at_a_time(text, width, measure)
 
 
 def test_fit_text_measures_a_long_notice_a_few_times_not_once_a_character():
@@ -653,25 +630,6 @@ def test_fit_text_measures_a_long_notice_a_few_times_not_once_a_character():
     notice = "x" * 240
     assert fit_text(notice, None, 60, measure) == "x" * 59 + "…"
     assert len(calls) <= 12  # about log2(240) halvings, not 180 one-character steps
-
-
-def test_wrap_text_splits_an_overlong_word_with_a_few_measures():
-    calls = []
-
-    def measure(text):
-        calls.append(text)
-        return len(text)
-
-    assert wrap_text("y" * 240, 100, measure) == ["y" * 100, "y" * 100, "y" * 40]
-    assert len(calls) <= 40
-
-
-def test_in_turns_follows_the_board_clock():
-    text = "one two three four five six"
-    assert in_turns(text, 100, len, "07:00:00") == text
-    first, second = in_turns(text, 12, len, "07:00:00", "! "), in_turns(text, 12, len, "07:00:05", "! ")
-    assert first == "! one two …" and second == "! three …"
-    assert all(len(in_turns(text, 12, len, f"07:00:{s:02d}", "! ")) <= 12 for s in range(60))
 
 
 def test_plain_look_shows_fewer_rows_rather_than_cut_them_off_on_the_original_phat():
@@ -1091,3 +1049,61 @@ def test_the_header_draws_the_rain_warning_beside_the_notice():
     header_h = heights()[0] * plain_scale(panel)
     plain = render(notice_only, PALETTE, panel)
     assert with_rain.crop((0, 0, panel.width, header_h)).tobytes() != plain.crop((0, 0, panel.width, header_h)).tobytes()
+
+
+# On a screen, text too long for its space scrolls, a pHAT pixel at a time, clipped to its column and row.
+
+from departureboard.board.render import board_frame  # noqa: E402
+from departureboard.board.scroll import SCROLL_PAUSE_S  # noqa: E402
+
+LONG = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom, Hattersley, Godley and Hyde Central"
+
+
+def long_on_screen():
+    trains = tuple(dataclasses.replace(r, middle=LONG) for r in STRIP_TRAINS)
+    return dataclasses.replace(on_screen(trains), notice=NOTICE)
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_on_a_screen_long_text_scrolls_in_its_column_and_row(panel):
+    layouts, where_x, fonts, s = strip_layouts(panel, tuple(dataclasses.replace(r, middle=LONG) for r in STRIP_TRAINS))
+    frame = board_frame(long_on_screen(), PALETTE, panel)
+    texts = [scroll.text for scroll in frame.scrolls]
+    assert texts.count(LONG) == 3 and "Not yet left Hadfield sidings" in texts and "! " + NOTICE in texts
+    _, label_h, row_h = heights()
+    for scroll in frame.scrolls:
+        assert scroll.step == s  # a pHAT pixel at a time
+        if scroll.text == LONG:
+            row, layout = next((r, lay) for r, lay in layouts if lay.middle_room == scroll.width and r.middle == LONG)
+            left, top, right, bottom = scroll.box
+            assert left == int(layout.middle_x) and right == left + int(layout.middle_room)
+            assert bottom - top == row_h * s  # its row, no more
+            assert right <= where_x  # clear of the where words
+        if scroll.text.startswith("Not yet"):
+            assert scroll.box[0] == int(where_x) and scroll.width == int(where_width(fonts, panel.width, s))
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_on_a_screen_text_that_fits_does_not_scroll(panel):
+    scrolling = {s.text for s in board_frame(on_screen(), PALETTE, panel).scrolls}
+    assert not scrolling & {"At Dinting", "3 stops away", "A: Hyde", "Glossop > Manchester Picc"}
+
+
+def test_on_a_screen_scrolling_text_moves_only_inside_its_box():
+    panel = HDMI_1920X440
+    frame = board_frame(long_on_screen(), PALETTE, panel)
+    still, later = frame.at(0), frame.at(SCROLL_PAUSE_S + 1)
+    assert frame.image.tobytes() == still.tobytes()  # the still board shows each from its start
+    changed = [(x, y) for y in range(panel.height) for x in range(panel.width)
+               if still.getpixel((x, y)) != later.getpixel((x, y))]
+    assert changed
+    boxes = [s.box for s in frame.scrolls]
+    assert all(any(left <= x < right and top <= y < bottom for left, top, right, bottom in boxes)
+               for x, y in changed)
+
+
+def test_on_a_screen_a_reversed_out_row_scrolls_on_its_own_paper():
+    frame = board_frame(long_on_screen(), PALETTE, HDMI_1920X440)
+    normal, _, cancelled = (s for s in frame.scrolls if s.text == LONG)
+    assert normal.strip.getpixel((0, 0)) == PALETTE.white
+    assert cancelled.strip.getpixel((0, 0)) == PALETTE.black

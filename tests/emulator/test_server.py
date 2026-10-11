@@ -310,3 +310,42 @@ def test_page_asks_the_browser_about_reduced_motion():
     page = _page().decode()
     assert 'matchMedia("(prefers-reduced-motion: reduce)")' in page
     assert "@media (prefers-reduced-motion: reduce)" in page
+
+
+# A screen's scrolling text moves once a tick, to where the board's clock has it.
+
+from departureboard.board.panel import HDMI_1920X440  # noqa: E402
+from departureboard.board.scroll import SCROLL_PAUSE_S, Frame, Scroll  # noqa: E402
+
+
+def scrolling(display):
+    """A board with one field scrolling: its text lit in its first column only."""
+    strip = Image.new("P", (200, 10), display.palette.black)
+    for y in range(10):
+        strip.putpixel((0, y), display.palette.accent)
+    board = Image.new("P", display.panel.size, display.palette.black)
+    return Frame(board, (Scroll((100, 20, 140, 30), strip, 4, "Long words"),))
+
+
+def lit_at(display, xy):
+    return Image.open(io.BytesIO(display.frame_png())).convert("RGB").getpixel(xy) != (0, 0, 0)
+
+
+def test_a_screens_scrolling_text_moves_with_the_board_clock_from_tick_to_tick():
+    display = EmulatorDisplay(accent="yellow", panel=HDMI_1920X440)
+    display.show_frame(scrolling(display), 1000)
+    assert lit_at(display, (100, 20))  # from its start
+    display.show_frame(scrolling(display), 1000 + SCROLL_PAUSE_S + 1)
+    assert not lit_at(display, (100, 20))  # moved on with the clock
+    assert display.status()["refreshes"] == 2
+
+
+def test_the_demo_screen_moves_its_scrolling_text_each_tick():
+    from departureboard.board.app import run_loop
+    from departureboard.emulator.emulation import build_emulation
+
+    em = build_emulation(demo=True, display="hdmi-1920x440")
+    frames = []
+    run_loop(em.board, {}, em.display, em.clock, 0, ticks=4, sleep=lambda s: None, prime=True,
+             on_tick=lambda now, result: frames.append(em.display.frame_png()))
+    assert len(set(frames)) == 4

@@ -2,6 +2,8 @@
 
 On the four-colour panel the amber is the panel's yellow. Meaning stays in
 the words (Exp, Cancelled, Delayed, Not updating), so nothing relies on colour.
+On a screen, text too long for its space scrolls a dot at a time, as on a real
+sign; e-paper cuts it short.
 
 The layout works in LED dots. On the pHAT a dot is one pixel; a bigger panel
 draws each dot as a block of pixels, with a dark gap between LEDs once there is room.
@@ -24,8 +26,9 @@ from .panel import (
     STRIP_COLUMN_MIN_WIDTH,
     Panel,
 )
-from .render import HEIGHT, WIDTH, Palette, apply_preview, fit_text, fitted_note
+from .render import HEIGHT, WIDTH, Palette, apply_preview, fit_text, note_text
 from .route import RouteView
+from .scroll import Frame, Scroll, frame_of
 from .view import BoardView, Row, Section, Style
 
 MARGIN = 3
@@ -52,12 +55,15 @@ class Item:
     text: str
     inverted: bool = False
     small: bool = False
+    # On a screen, text too long for its space: the space's width, in which
+    # the whole text scrolls. None for text drawn as it is.
+    box: int | None = None
 
 
 def item_size(item: Item) -> tuple[int, int]:
-    if item.small:
-        return _SMALL.getlength(item.text), TINY_HEIGHT
-    return _FONT.getlength(item.text), GLYPH_H
+    """How much room an item takes: its text's, or a scrolling item's box."""
+    font, height = (_SMALL, TINY_HEIGHT) if item.small else (_FONT, GLYPH_H)
+    return (font.getlength(item.text) if item.box is None else item.box), height
 
 
 # On a screen wide enough, where each train or bus is: the words, then a
@@ -103,9 +109,20 @@ class SignLayout:
     items: list[Item] = field(default_factory=list)
     rules: list[int] = field(default_factory=list)
     strips: list[StripMark] = field(default_factory=list)
+    # A screen, where text too long for its space scrolls; e-paper cuts it short.
+    live: bool = False
 
     def add(self, x: float, y: int, text: str, inverted: bool = False, small: bool = False) -> None:
         self.items.append(Item(x, y, text, inverted, small))
+
+    def fit(self, x: float, y: int, text: str, room: float, inverted: bool = False, small: bool = False) -> None:
+        """`text` in a space `room` dots wide from x: whole if it fits; if
+        not, scrolling in that space on a screen, cut short on e-paper."""
+        fitted = fit_text(text, _SMALL if small else _FONT, room)
+        if self.live and fitted != text and room >= 1:
+            self.items.append(Item(x, y, text, inverted, small, box=int(room)))
+        else:
+            self.add(x, y, fitted, inverted, small)
 
 
 def _w(text: str) -> int:
@@ -173,7 +190,7 @@ def _add_strip(layout: SignLayout, row: Row, where_x: float, y: int, width: int,
         return
     words_w = where_width(width)
     if row.strip.where:
-        layout.add(where_x, y, fit_text(row.strip.where, _FONT, words_w), inverted)
+        layout.fit(where_x, y, row.strip.where, words_w, inverted)
     layout.strips.append(StripMark(where_x + words_w + _COL_GAP, y, row.strip, train, inverted))
 
 
@@ -199,7 +216,7 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
             dest_end = status_x - _COL_GAP
         layout.add(MARGIN, y, _ORDINALS[index], inverted)
         layout.add(time_x, y, row.left, inverted)
-        layout.add(dest_x, y, fit_text(row.middle, _FONT, dest_end - dest_x), inverted)
+        layout.fit(dest_x, y, row.middle, dest_end - dest_x, inverted)
         if where_x is not None:
             _add_strip(layout, row, where_x, y, width, True, inverted)
         if columns.platform_x is not None and row.platform:
@@ -210,7 +227,7 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
         y += _LINE
         if section.leave and columns.leave_x is None and index == leave_for:
             # Where the real board scrolls "Calling at", say when to set off.
-            layout.add(time_x, y, fit_text(section.leave, _FONT, width - MARGIN - time_x))
+            layout.fit(time_x, y, section.leave, width - MARGIN - time_x)
             y += _LINE
     return y
 
@@ -236,10 +253,10 @@ def _buses(layout: SignLayout, section: Section, y: int, bottom: int, width: int
             dest_end = where_x - _WHERE_GAP
         else:
             dest_end = (status_x if columns.leave_x is None else columns.leave_x) - _COL_GAP
-        layout.add(MARGIN, y, fit_text(row.left, _FONT, stop_x - MARGIN - 2), inverted)
+        layout.fit(MARGIN, y, row.left, stop_x - MARGIN - 2, inverted)
         if row.stop:
             layout.add(stop_x, y, row.stop, inverted)
-        layout.add(dest_x, y, fit_text(row.middle, _FONT, dest_end - dest_x), inverted)
+        layout.fit(dest_x, y, row.middle, dest_end - dest_x, inverted)
         if where_x is not None:
             _add_strip(layout, row, where_x, y, width, False, inverted)
         if row.leave and columns.leave_x is not None:
@@ -260,17 +277,18 @@ def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> Non
     stamp = f"Updated {view.updated}"
     if view.clock and (view.notice or view.rain):
         # A screen keeps its clock on the bottom line, moved to the right, and
-        # shows the notice (or rain warning) a part at a time in the room left of it.
+        # shows the notice (or rain warning) in the room left of it, scrolling
+        # if it is too long for it.
         clock_x = free_end - _w(view.clock)
         layout.add(clock_x, height - GLYPH_H - 1, view.clock)
         note_end, shown = clock_x - _COL_GAP, view
         if view.notice and view.rain and width >= NOTES_SIDE_BY_SIDE_MIN_WIDTH:
             # Wide enough for both: the rain warning, steady, left of the
-            # clock, and the notice in its own space, a part at a time.
+            # clock, and the notice in its own space.
             rain_x = clock_x - _NOTES_GAP - _w(view.rain)
             layout.add(rain_x, height - GLYPH_H - 1, view.rain)
             note_end, shown = rain_x - _NOTES_GAP, replace(view, rain=None)
-        layout.add(MARGIN, height - GLYPH_H - 1, fitted_note(shown, note_end - MARGIN, _w, _FONT) or "")
+        layout.fit(MARGIN, height - GLYPH_H - 1, note_text(shown) or "", note_end - MARGIN)
     elif view.clock:
         # A screen shows the time centred along the bottom, like a station clock.
         layout.add((width - _w(view.clock)) // 2, height - GLYPH_H - 1, view.clock)
@@ -280,7 +298,7 @@ def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> Non
         # board stops, and the stamp is how to tell.
         stamp_x = free_end - _SMALL.getlength(stamp)
         room = stamp_x - _COL_GAP - MARGIN
-        note = fitted_note(view, room, _SMALL.getlength, _SMALL) or ""
+        note = fit_text(note_text(view) or "", _SMALL, room)
         if _SMALL.getlength(note) <= room:  # not even an ellipsis fits on a board too narrow
             layout.add(MARGIN, y, note, small=True)
         layout.add(stamp_x, y, stamp, small=True)
@@ -293,7 +311,7 @@ def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> Non
 
 def sign_layout(view: BoardView, width: int = WIDTH, height: int = HEIGHT) -> SignLayout:
     """Places the text on a board `width` x `height` dots."""
-    layout = SignLayout()
+    layout = SignLayout(live=view.clock is not None)
     trains, buses = _train_columns(view.trains, width), _bus_columns(view.buses, width)
     where_x = _where_column(view, trains, buses, width)
     y = _trains(layout, view.trains, _TOP, width, trains, where_x)
@@ -328,6 +346,12 @@ def _ink(palette: Palette) -> int:
 
 
 def render_sign(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Image.Image:
+    """The board, any scrolling text at its start."""
+    return sign_frame(view, palette, panel).image
+
+
+def sign_frame(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Frame:
+    """The board, and on a screen the text that scrolls."""
     ink = _ink(palette)
     width, height = panel.width // panel.scale, panel.height // panel.scale
     image = Image.new("P", (width, height), palette.black)
@@ -343,13 +367,35 @@ def render_sign(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Image
     for y in layout.rules:
         draw.point([(x, y) for x in range(MARGIN, width - MARGIN, 2)], fill=ink)
     for item in layout.items:
-        font = _SMALL if item.small else _FONT
-        font.draw(draw, (item.x, item.y), item.text, fill=palette.black if item.inverted else ink)
+        if item.box is None:
+            font = _SMALL if item.small else _FONT
+            font.draw(draw, (item.x, item.y), item.text, fill=palette.black if item.inverted else ink)
     for mark in layout.strips:
         draw.point(sorted(strip_dots(mark)), fill=palette.black if mark.inverted else ink)
     image = _enlarge(image, panel, palette.black, bands)
     apply_preview(image, palette)
-    return image
+    return frame_of(image, _scrolls(layout, palette, panel, width, height))
+
+
+def _scrolls(layout: SignLayout, palette: Palette, panel: Panel, width: int, height: int) -> list[Scroll]:
+    """The scrolling items, each drawn whole on its own strip of LEDs (lit
+    background in a reversed-out band) and moving a dot at a time."""
+    ink, scale = _ink(palette), panel.scale
+    # Where _enlarge puts the board on the panel.
+    left, top = (panel.width - width * scale) // 2, (panel.height - height * scale) // 2
+    scrolls = []
+    for item in layout.items:
+        if item.box is None:
+            continue
+        font, text_h = (_SMALL, TINY_HEIGHT) if item.small else (_FONT, GLYPH_H)
+        dots = Image.new("P", (font.getlength(item.text), text_h), ink if item.inverted else palette.black)
+        font.draw(ImageDraw.Draw(dots), (0, 0), item.text, fill=palette.black if item.inverted else ink)
+        strip = _blocks(dots, scale, palette.black, gaps=not item.inverted)
+        apply_preview(strip, palette)
+        x = int(item.x)
+        box = (left + x * scale, top + item.y * scale, left + (x + item.box) * scale, top + (item.y + text_h) * scale)
+        scrolls.append(Scroll(box, strip, scale, item.text))
+    return scrolls
 
 
 # The vehicle over a row's little line, pointing down at it: a bus square
@@ -412,8 +458,8 @@ _LABEL_GAP = 12  # dots between the road line and a stop name
 
 def _route_layout(view: RouteView, width: int, height: int) -> tuple[SignLayout, int, list[float]]:
     """Text items, the road line's row, and each stop's x."""
-    layout = SignLayout()
-    layout.add(MARGIN, _TOP, fit_text(view.title, _FONT, width - MARGIN * 2 - _w(view.due) - _COL_GAP))
+    layout = SignLayout(live=view.clock is not None)
+    layout.fit(MARGIN, _TOP, view.title, width - MARGIN * 2 - _w(view.due) - _COL_GAP)
     layout.add(_right(view.due, width), _TOP, view.due)
     second = _TOP + _LINE
     if view.leave:
@@ -427,16 +473,24 @@ def _route_layout(view: RouteView, width: int, height: int) -> tuple[SignLayout,
     room = int(step * 2) - _COL_GAP  # names alternate above and below, so each has two gaps
     for i, (name, x) in enumerate(zip(view.stops, xs, strict=True)):
         text = fit_text(name, _FONT, room)
-        tx = min(max(MARGIN, x - _w(text) / 2), width - MARGIN - _w(text))
+        # A name that scrolls on a screen takes the whole of its room.
+        text_w = room if layout.live and text != name else _w(text)
+        tx = min(max(MARGIN, x - text_w / 2), width - MARGIN - text_w)
         ty = road - _LABEL_GAP - GLYPH_H if i % 2 == 0 else road + _LABEL_GAP
         # Your stop, the last one, is reversed out.
-        layout.add(round(tx), ty, text, inverted=i == len(view.stops) - 1)
+        layout.fit(round(tx), ty, name, room, inverted=i == len(view.stops) - 1)
     if view.clock:
         layout.add((width - _w(view.clock)) // 2, height - GLYPH_H - 1, view.clock)
     return layout, road, xs
 
 
 def render_route_sign(view: RouteView, palette: Palette, panel: Panel = PHAT) -> Image.Image:
+    """The route page, any scrolling text at its start."""
+    return route_sign_frame(view, palette, panel).image
+
+
+def route_sign_frame(view: RouteView, palette: Palette, panel: Panel = PHAT) -> Frame:
+    """The route page, and on a screen the text that scrolls."""
     ink = _ink(palette)
     width, height = panel.width // panel.scale, panel.height // panel.scale
     image = Image.new("P", (width, height), palette.black)
@@ -463,10 +517,11 @@ def render_route_sign(view: RouteView, palette: Palette, panel: Panel = PHAT) ->
         # Drawn solid, without LED gaps, so it reads as one shape.
         solid.append((x0, y0, x0 + len(_BUS[0]) - 1, y0 + len(_BUS) - 1))
     for item in layout.items:
-        _FONT.draw(draw, (item.x, item.y), item.text, fill=palette.black if item.inverted else ink)
+        if item.box is None:
+            _FONT.draw(draw, (item.x, item.y), item.text, fill=palette.black if item.inverted else ink)
     image = _enlarge(image, panel, palette.black, solid)
     apply_preview(image, palette)
-    return image
+    return frame_of(image, _scrolls(layout, palette, panel, width, height))
 
 
 def _enlarge(image: Image.Image, panel: Panel, background: int, bands) -> Image.Image:
@@ -478,18 +533,26 @@ def _enlarge(image: Image.Image, panel: Panel, background: int, bands) -> Image.
     scale = panel.scale
     if scale == 1:
         return image
-    solid = image.resize((image.width * scale, image.height * scale), Image.Resampling.NEAREST)
-    big = solid.copy()
+    solid = _blocks(image, scale, background, gaps=False)
+    big = _blocks(image, scale, background, gaps=True)
     if scale >= 3:
-        draw = ImageDraw.Draw(big)
-        for x in range(scale - 1, big.width, scale):
-            draw.line((x, 0, x, big.height - 1), fill=background)
-        for y in range(scale - 1, big.height, scale):
-            draw.line((0, y, big.width - 1, y), fill=background)
         for x0, y0, x1, y1 in bands:
             box = (int(x0 * scale), int(y0 * scale), int((x1 + 1) * scale), int((y1 + 1) * scale))
             big.paste(solid.crop(box), box[:2])
     canvas = Image.new("P", panel.size, background)
     canvas.paste(big, ((panel.width - big.width) // 2, (panel.height - big.height) // 2))
     return canvas
+
+
+def _blocks(image: Image.Image, scale: int, background: int, gaps: bool) -> Image.Image:
+    """Each dot as a block of `scale` pixels; with `gaps`, from 3 pixels a dot,
+    a dark line between LEDs along each block's right and bottom edge."""
+    big = image.resize((image.width * scale, image.height * scale), Image.Resampling.NEAREST)
+    if gaps and scale >= 3:
+        draw = ImageDraw.Draw(big)
+        for x in range(scale - 1, big.width, scale):
+            draw.line((x, 0, x, big.height - 1), fill=background)
+        for y in range(scale - 1, big.height, scale):
+            draw.line((0, y, big.width - 1, y), fill=background)
+    return big
 

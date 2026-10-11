@@ -10,7 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 from zoneinfo import ZoneInfo
 
 from PIL.Image import Image
@@ -28,6 +28,7 @@ from .panel import Panel
 from .positions import Positions
 from .render import Palette
 from .route import RouteStrip, RouteView, locate, target, where
+from .scroll import Frame
 from .state import (
     MEMORY_ONLY,
     departure_to_dict,
@@ -54,6 +55,18 @@ class Display(Protocol):
     panel: Panel
 
     def show(self, image: Image) -> None: ...
+
+
+class ScrollingDisplay(Display, Protocol):
+    """A screen that can scroll text between redraws: it takes a Frame, and
+    `scroll` moves its scrolling fields to a time on the board's clock."""
+
+    @property
+    def scrolling(self) -> bool: ...
+
+    def show_frame(self, frame: Frame, seconds: float) -> None: ...
+
+    def scroll(self, seconds: float) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -417,12 +430,33 @@ def run_once(
                 and timedelta(0) <= now - last_at < board.min_redraw)
 
     if changed and not too_soon:
-        draw = {"code": board.theme.render_code, "route": board.theme.render_route,
-                "setup": board.theme.render_setup}.get(page, board.theme.render)
-        display.show(draw(shown, display.palette, display.panel))
+        _show(board.theme, page, shown, display, now, live)
         state["last_render"] = {"signature": key, "at": to_iso(now), "page": page}
         return RunResult(view, rendered=True, route=route, page=page)
     return RunResult(view, rendered=False, route=route, page=page)
+
+
+def board_seconds(now: datetime) -> int:
+    """The board's clock as seconds into the day: what scrolling text is timed by."""
+    return now.hour * 3600 + now.minute * 60 + now.second
+
+
+def _show(theme: Theme, page: str, shown, display: Display, now: datetime, live: bool) -> None:
+    """Draw `shown` on the display. A screen's departures and route pages
+    come as a Frame, with any text too long for its space scrolling, for a
+    display that can scroll it; any other display gets the still image."""
+    if live and page in ("departures", "route"):
+        draw_frame = theme.frame if page == "departures" else theme.route_frame
+        frame = draw_frame(shown, display.palette, display.panel)
+    else:
+        draw = {"code": theme.render_code, "route": theme.render_route,
+                "setup": theme.render_setup}.get(page, theme.render)
+        frame = Frame(draw(shown, display.palette, display.panel))
+    show_frame = getattr(display, "show_frame", None)
+    if show_frame is not None:
+        show_frame(frame, board_seconds(now))
+    else:
+        display.show(frame.image)
 
 
 def _reset_code(board: Board) -> CodeView | None:
@@ -460,12 +494,19 @@ def run_loop(
     store=None,
     prime: bool = False,
     reload: Callable[[], Board | None] | None = None,
+    frame_seconds: float | None = None,
+    wall: Callable[[], float] = time.time,
 ) -> None:
     """Tick forever (or `ticks` times). A clock with `advance()` is simulated.
     With `prime`, the first tick fetches every source so the board starts filled.
     State is written only when what was fetched changes: a screen redraws every
     second, and writing the SD card that often would wear it out. `reload`, if
-    given, is asked each tick for a new Board when the settings have changed."""
+    given, is asked each tick for a new Board when the settings have changed.
+
+    With `frame_seconds`, a display with text scrolling gets a frame that
+    often between ticks (see _frames); with nothing scrolling it waits for
+    the next tick, as without. Fetching, stale checks and saving keep to
+    the tick either way."""
     sleep = sleep or time.sleep
     count = 0
     saved, saved_at = None, None
@@ -490,7 +531,33 @@ def run_loop(
                 saved, saved_at = fetched, now
         if on_tick is not None:
             on_tick(now, result)
-        sleep(tick_seconds)
+        if frame_seconds and getattr(display, "scrolling", False):
+            _frames(cast(ScrollingDisplay, display), board_seconds(now), tick_seconds, frame_seconds, sleep, wall)
+        else:
+            sleep(tick_seconds)
         if hasattr(clock, "advance"):
             clock.advance()
         count += 1
+
+
+def _frames(display: ScrollingDisplay, base: int, tick_seconds: float, frame_seconds: float, sleep,
+            wall: Callable[[], float]) -> None:
+    """Until the next tick, a frame every `frame_seconds`, each moving the
+    scrolling text to the board's clock: the tick's time (`base`) plus which
+    frame of the tick it is. The wall clock only says which frame is due, so
+    a slow frame is skipped rather than drawn late, and the next tick (the
+    running clock) is never put off. `sleep` lines up with whole multiples
+    of what it is given, as the screen loop's does."""
+    per_tick = round(tick_seconds / frame_seconds)
+    if per_tick < 2:
+        sleep(tick_seconds)
+        return
+    display.scroll(base)  # the tick's own frame, if the board wasn't redrawn
+    last = 0
+    while True:
+        sleep(frame_seconds)
+        due = round(wall() % tick_seconds / frame_seconds) % per_tick
+        if due <= last:
+            return  # the next tick is due
+        display.scroll(base + due * frame_seconds)
+        last = due

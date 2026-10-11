@@ -1276,3 +1276,116 @@ def test_malformed_saved_departures_show_none_rather_than_stopping(saved):
     state["sources"] = {"train": dict(entry), "bus": dict(entry)}
     result = run_once(board, state, display, THU_0700)
     assert result.view.trains.rows == () and result.view.buses.rows == ()
+
+
+# --- Scrolling text on a screen: frames between ticks only while something scrolls ---
+
+from departureboard.board.app import board_seconds, run_loop  # noqa: E402
+from departureboard.board.scroll import SCROLL_FRAME_S  # noqa: E402
+
+LONG_DESTINATION = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom, Hattersley, Godley and Hyde Central"
+
+
+class ScrollingScreen(FakeScreen):
+    def __init__(self, scrolling=True):
+        super().__init__()
+        self.scrolling = scrolling
+        self.frames = []
+        self.scrolled = []
+
+    def show_frame(self, frame, seconds):
+        self.frames.append((frame, seconds))
+
+    def scroll(self, seconds):
+        self.scrolled.append(seconds)
+
+
+class WallClock:
+    """The wall clock, and a sleep that wakes at the next whole multiple of
+    what it is given, as the screen loop's does; `late` makes some wake later."""
+
+    def __init__(self, at, late=()):
+        self.at, self.late, self.sleeps = at, dict(late), []
+
+    def __call__(self):
+        return self.at
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.at = (self.at // seconds + 1) * seconds + self.late.pop(len(self.sleeps), 0)
+
+
+def test_a_screen_gets_a_frame_with_the_text_that_scrolls():
+    trains = FakeSource("train", [dataclasses.replace(train(), destination=LONG_DESTINATION)])
+    board = make_board(trains, FakeSource("bus", [bus()]))
+    screen = ScrollingScreen()
+    run_once(board, {}, screen, THU_0700 + timedelta(seconds=15))
+    [(frame, seconds)] = screen.frames
+    assert seconds == 7 * 3600 + 15  # the board's own clock
+    assert [s.text for s in frame.scrolls] == [LONG_DESTINATION]
+
+
+def test_e_paper_gets_a_still_image_with_nothing_scrolling():
+    trains = FakeSource("train", [dataclasses.replace(train(), destination=LONG_DESTINATION)])
+    board = make_board(trains, FakeSource("bus", [bus()]))
+    display = FakeDisplay()
+    run_once(board, {}, display, THU_0700)
+    [image] = display.shown
+    assert image.size == PHAT.size
+
+
+def test_board_seconds_are_the_board_clock_into_the_day():
+    assert board_seconds(datetime(2026, 10, 8, 7, 3, 15)) == 7 * 3600 + 3 * 60 + 15
+
+
+def test_while_text_scrolls_the_loop_draws_frames_between_ticks():
+    trains, buses, board, display, state = setup()
+    screen, wall = ScrollingScreen(), WallClock(1000.0)
+    times = iter([THU_0700, THU_0700 + timedelta(seconds=1)])
+    run_loop(board, state, screen, lambda: next(times), 1, ticks=2, sleep=wall.sleep,
+             frame_seconds=SCROLL_FRAME_S, wall=wall)
+    base = board_seconds(THU_0700)
+    per_second = round(1 / SCROLL_FRAME_S)
+    assert screen.scrolled == [base + k * SCROLL_FRAME_S for k in range(per_second)] + [
+        base + 1 + k * SCROLL_FRAME_S for k in range(per_second)]
+    assert wall.sleeps == [SCROLL_FRAME_S] * 2 * per_second
+    assert wall.at == 1002.0  # each tick on its whole second
+
+
+def test_with_nothing_scrolling_the_loop_goes_back_to_once_a_second():
+    trains, buses, board, display, state = setup()
+    screen, wall = ScrollingScreen(scrolling=False), WallClock(1000.0)
+    times = iter([THU_0700, THU_0700 + timedelta(seconds=1)])
+    run_loop(board, state, screen, lambda: next(times), 1, ticks=2, sleep=wall.sleep,
+             frame_seconds=SCROLL_FRAME_S, wall=wall)
+    assert screen.scrolled == []
+    assert wall.sleeps == [1, 1]
+
+
+def test_a_display_that_cannot_scroll_ticks_once_a_second():
+    trains, buses, board, display, state = setup()
+    sleeps = []
+    times = iter([THU_0700, THU_0700 + timedelta(seconds=1)])
+    run_loop(board, state, FakeScreen(), lambda: next(times), 1, ticks=2, sleep=sleeps.append,
+             frame_seconds=SCROLL_FRAME_S)
+    assert sleeps == [1, 1]
+
+
+def test_a_late_frame_is_skipped_and_the_next_tick_is_not_put_off():
+    trains, buses, board, display, state = setup()
+    # The third frame wakes three frames late.
+    screen, wall = ScrollingScreen(), WallClock(1000.0, late={3: 3 * SCROLL_FRAME_S})
+    run_loop(board, state, screen, lambda: THU_0700, 1, ticks=1, sleep=wall.sleep,
+             frame_seconds=SCROLL_FRAME_S, wall=wall)
+    base = board_seconds(THU_0700)
+    due = [round((s - base) / SCROLL_FRAME_S) for s in screen.scrolled]
+    assert due == [0, 1, 2, 6, *range(7, 16)]  # 3, 4 and 5 skipped; each placed by its own time
+    assert wall.at == 1001.0
+
+
+def test_a_tick_that_ran_long_still_ends_on_its_second():
+    trains, buses, board, display, state = setup()
+    screen, wall = ScrollingScreen(), WallClock(1000.9)  # drawing the board took most of the second
+    run_loop(board, state, screen, lambda: THU_0700, 1, ticks=1, sleep=wall.sleep,
+             frame_seconds=SCROLL_FRAME_S, wall=wall)
+    assert wall.at == 1001.0

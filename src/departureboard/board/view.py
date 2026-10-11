@@ -218,7 +218,7 @@ def build_view(
     )
 
 
-# Long enough for a message or two; a screen shows it in turns, e-paper cuts it short.
+# Long enough for a message or two; a screen scrolls it, e-paper cuts it short.
 NOTICE_LIMIT = 300
 
 

@@ -2,7 +2,9 @@
 
 Made for Waveshare's 7.9" 400x1280 screen run on its side as 1280x400, and
 an 11.3" 1920x440 bar screen. A screen redraws in a frame, so the board can
-show a running clock.
+show a running clock, and scroll text too long for its space: the whole board
+is drawn once a second, and between times only the scrolling boxes, to keep
+a Pi Zero 2 W's CPU free.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from PIL.Image import Image
 
 from ..panel import HDMI_1280X400, Panel
 from ..render import Palette
+from ..scroll import Box, Frame, Scroller
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +48,8 @@ def fit_note(frame: tuple[int, int], screen: tuple[int, int]) -> str | None:
 class Screen(Protocol):
     def blit(self, image: Image) -> None: ...
 
+    def patch(self, image: Image, at: tuple[int, int]) -> None: ...
+
 
 class PygameScreen:
     """Full screen at the display's own resolution, the frame centred on it."""
@@ -62,6 +67,7 @@ class PygameScreen:
         self._pygame = pygame
         self._surface = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
         self._noted = False  # said once, at the first frame, if it doesn't fit
+        self._origin = (0, 0)  # where the frame's top left is on the screen
 
     def blit(self, image: Image) -> None:
         pygame = self._pygame
@@ -74,8 +80,19 @@ class PygameScreen:
             if note:
                 log.warning("%s", note)
         self._surface.fill((0, 0, 0))
-        self._surface.blit(frame, ((width - image.width) // 2, (height - image.height) // 2))
+        self._origin = ((width - image.width) // 2, (height - image.height) // 2)
+        self._surface.blit(frame, self._origin)
         pygame.display.flip()
+
+    def patch(self, image: Image, at: tuple[int, int]) -> None:
+        """Part of the last frame, `image` with its top left at `at` in the
+        frame: only that part of the screen is updated."""
+        pygame = self._pygame
+        pygame.event.pump()
+        part = pygame.image.frombytes(image.tobytes(), image.size, "RGB")
+        x, y = self._origin[0] + at[0], self._origin[1] + at[1]
+        self._surface.blit(part, (x, y))
+        pygame.display.update(pygame.Rect(x, y, image.width, image.height))
 
 
 class ScreenDisplay:
@@ -94,14 +111,40 @@ class ScreenDisplay:
         self._colours = [value for rgb in colours for value in rgb]
         self._rotate = rotate
         self._screen = screen
+        self._scroller = Scroller()
+
+    @property
+    def scrolling(self) -> bool:
+        return self._scroller.scrolling
 
     def show(self, image: Image) -> None:
+        """A still board: nothing scrolls until the next Frame."""
+        self.show_frame(Frame(image), 0)
+
+    def show_frame(self, frame: Frame, seconds: float) -> None:
+        """The whole board, its scrolling text where it is at `seconds` on the board's clock."""
+        self._screen_now().blit(self._turned(self._scroller.show(frame, seconds)))
+
+    def scroll(self, seconds: float) -> None:
+        """Moves the scrolling text to `seconds`, updating only the boxes that moved."""
+        for box, patch in self._scroller.moved(seconds):
+            self._screen_now().patch(self._turned(patch), self._turned_at(box))
+
+    def _screen_now(self) -> Screen:
+        if self._screen is None:
+            self._screen = PygameScreen()
+        return self._screen
+
+    def _turned(self, image: Image) -> Image:
+        """`image` in screen colours, turned clockwise to match how the screen is mounted."""
         frame = image.copy()
         frame.putpalette(self._colours)
         frame = frame.convert("RGB")
-        if self._rotate:
-            # Clockwise, to match how the screen is mounted.
-            frame = frame.rotate(-self._rotate, expand=True)
-        if self._screen is None:
-            self._screen = PygameScreen()
-        self._screen.blit(frame)
+        return frame.rotate(-self._rotate, expand=True) if self._rotate else frame
+
+    def _turned_at(self, box: Box) -> tuple[int, int]:
+        """Where the top left of `box`, on the board, lands once the board is turned."""
+        width, height = self.panel.size
+        left, top, right, bottom = box
+        return {0: (left, top), 90: (height - bottom, left), 180: (width - right, height - bottom),
+                270: (top, width - right)}[self._rotate]

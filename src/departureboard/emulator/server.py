@@ -3,6 +3,8 @@
 The page draws the board at true physical proportions. E-paper panels show in
 e-paper colours and play the slow colour refresh, so redraw behaviour can be
 judged on a laptop; a screen shows in screen colours and swaps frames at once.
+A screen's scrolling text moves once a tick, to where it is by the board's
+clock, rather than at the screen's own frame rate.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from PIL.Image import Image
 from ..board.displays.screen import SCREEN_RGB
 from ..board.panel import PHAT, Panel
 from ..board.render import Palette
+from ..board.scroll import Frame, Scroller
 
 # Clear of ClaudeCodeBrowserX, which listens on 8765 and 8766.
 DEFAULT_PORT = 8780
@@ -59,6 +62,7 @@ class EmulatorDisplay:
         self._ticks = 0
         self._board_time: str | None = None
         self._last_tick_rendered: bool | None = None
+        self._scroller = Scroller()
 
     def _palette(self) -> list[int]:
         rgb = EPAPER if self.panel.epaper else SCREEN_RGB
@@ -76,6 +80,10 @@ class EmulatorDisplay:
         with self._lock:
             self._png = buffer.getvalue()
             self._refreshes += 1
+
+    def show_frame(self, frame: Frame, seconds: float) -> None:
+        """A screen's board with its scrolling text where it is at `seconds` on the board's clock."""
+        self.show(self._scroller.show(frame, seconds))
 
     def tick(self, now: datetime, rendered: bool) -> None:
         with self._lock:

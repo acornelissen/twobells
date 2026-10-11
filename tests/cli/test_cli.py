@@ -326,6 +326,23 @@ def test_run_loop_on_a_screen_draws_a_running_clock(tmp_path, monkeypatch):
     assert state.exists()
 
 
+@pytest.mark.parametrize("display, frames", [("hdmi-1920x440", True), ("waveshare-10in85g", False)])
+def test_a_running_screen_draws_frames_for_scrolling_text_and_e_paper_does_not(tmp_path, monkeypatch, display, frames):
+    from departureboard.board.scroll import SCROLL_FRAME_S
+    from departureboard.cli import run
+
+    seen = {}
+    monkeypatch.setattr(run, "run_loop", lambda *a, **kw: seen.update(kw))
+    config = tmp_path / "config.toml"
+    config.write_text(f'display = "{display}"\nstate_file = "{tmp_path / "state.json"}"\n'
+                      '[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    secrets = tmp_path / "secrets.env"
+    secrets.write_text("RDM_API_KEY=k\n")
+    args = ["run", "--loop", "--png", str(tmp_path / "board.png"), "--config", str(config)]
+    assert main([*args, "--secrets", str(secrets)]) == 0
+    assert seen["frame_seconds"] == (SCROLL_FRAME_S if frames else None)
+
+
 @pytest.mark.parametrize("command", [["run", "--loop"], ["emulate", "--demo", "--no-browser"]])
 @pytest.mark.parametrize("tick", ["0", "-1", "nan", "inf", "-inf", "soon"])
 def test_a_tick_must_be_a_number_of_seconds_above_nothing(command, tick, capsys):

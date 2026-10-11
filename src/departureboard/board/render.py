@@ -1,7 +1,11 @@
-"""Plain look: draws a BoardView onto a paletted image, scaled up from the pHAT design."""
+"""Plain look: draws a BoardView onto a paletted image, scaled up from the pHAT design.
+
+On a screen, text too long for its space scrolls a pHAT pixel at a time;
+e-paper cuts it short with an ellipsis."""
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import partial
@@ -14,6 +18,7 @@ from ..core import words
 from ..core.model import Strip
 from .panel import NOTES_SIDE_BY_SIDE_MIN_WIDTH, PHAT, PLATFORM_COLUMN_MIN_WIDTH, STRIP_COLUMN_MIN_WIDTH, Panel
 from .route import RouteView
+from .scroll import Frame, Scroll, frame_of
 from .view import BoardView, CodeView, Row, Section, SetupView, Style
 
 # The pHAT, which every other size is scaled up from.
@@ -105,6 +110,11 @@ class RowLayout:
     where: str | None = None
     where_x: float | None = None
     strip_x: float | None = None
+    # How wide the left, middle and where columns are: a screen scrolls text
+    # too long for them in that space, where e-paper cuts it short.
+    left_room: float = 0
+    middle_room: float = 0
+    where_room: float = 0
 
 
 _COL_GAP = 6
@@ -154,6 +164,7 @@ def row_layout(
     if platform_x is not None:
         middle_end = platform_x - gap
     where = strip_x = None
+    words_w = 0.0
     if where_x is not None:
         # Twice the gap, so the destination and the where words don't run together.
         middle_end = where_x - 2 * gap
@@ -161,10 +172,11 @@ def row_layout(
             words_w = where_width(fonts, width, scale)
             where = fit_text(row.strip.where, fonts.small, words_w, partial(drawn_length, fonts.small))
             strip_x = where_x + words_w + gap
+    left_room = middle_x - pad - 3 * scale
     return RowLayout(
         # Measured as drawn, like the right-aligned text, so a cut destination
         # doesn't run into the status.
-        left=fit_text(row.left, fonts.bold, middle_x - pad - 3 * scale, partial(drawn_length, fonts.bold)),
+        left=fit_text(row.left, fonts.bold, left_room, partial(drawn_length, fonts.bold)),
         middle=fit_text(_with_stop(row), fonts.regular, middle_end - middle_x, partial(drawn_length, fonts.regular)),
         middle_x=middle_x,
         leave_x=leave_x,
@@ -174,6 +186,9 @@ def row_layout(
         where=where or None,
         where_x=where_x if row.strip is not None else None,
         strip_x=strip_x,
+        left_room=left_room,
+        middle_room=middle_end - middle_x,
+        where_room=words_w,
     )
 
 
@@ -300,60 +315,15 @@ def fit_text(text: str, font: Measurable, width: float, measure=None) -> str:
     return text[:keep].rstrip() + "…"
 
 
-def wrap_text(text: str, width: float, measure) -> list[str]:
-    """Lines of whole words no wider than `width`; a word too long for a line is split."""
-    lines: list[str] = []
-    line = ""
-    for word in text.split():
-        candidate = f"{line} {word}" if line else word
-        if measure(candidate) <= width:
-            line = candidate
-            continue
-        if line:
-            lines.append(line)
-        while len(word) > 1 and measure(word) > width:
-            cut = _longest_fit(1, len(word) - 1, lambda n, word=word: measure(word[:n]) <= width)
-            lines.append(word[:cut])
-            word = word[cut:]
-        line = word
-    if line:
-        lines.append(line)
-    return lines
-
-
-# A message too long for a screen's line is shown a part at a time, each for this long.
-TURN_SECONDS = 5
-
-
-def in_turns(text: str, width: float, measure, clock: str, lead: str = "") -> str:
-    """The part of `lead + text` to show at `clock` (HH:MM:SS). It changes every
-    TURN_SECONDS of the board's own clock, so what is shown is predictable.
-    Every part starts with `lead`, so each reads as what it is, and a part
-    with more to come ends in an ellipsis."""
-    if measure(lead + text) <= width:
-        return lead + text
-    parts = wrap_text(text, width - measure(lead) - measure(" …"), measure)
-    hours, minutes, seconds = (int(v) for v in clock.split(":"))
-    index = ((hours * 60 + minutes) * 60 + seconds) // TURN_SECONDS % len(parts)
-    return lead + parts[index] + (" …" if index < len(parts) - 1 else "")
-
-
 NOTICE_LEAD = "! "
 
 
-def fitted_note(view: BoardView, width: float, measure, font) -> str | None:
-    """The disruption notice, or failing one the rain warning, as it fits in
-    `width`: in turns on a screen, cut short on e-paper, which can't change
-    it every few seconds."""
+def note_text(view: BoardView) -> str | None:
+    """The disruption notice, marked as one, or failing one the rain warning.
+    Too long for its space, it scrolls on a screen and is cut short on e-paper."""
     if view.notice:
-        lead, text = NOTICE_LEAD, view.notice
-    elif view.rain:
-        lead, text = "", view.rain
-    else:
-        return None
-    if view.clock:
-        return in_turns(text, width, measure, view.clock, lead)
-    return fit_text(lead + text, font, width, measure)
+        return NOTICE_LEAD + view.notice
+    return view.rain
 
 
 def plain_scale(panel: Panel) -> int:
@@ -386,21 +356,31 @@ def header_rain(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[
     return view.rain, stamp_x - 12 * scale - drawn_length(fonts.bold, view.rain)
 
 
-def header_text(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[str, str, float]:
-    """(left text, stamp, stamp x) for the header bar. The plain look has no
-    footer, so a disruption notice, or else a rain warning, takes the title's
-    place while there is one: cut short on e-paper, in turns on a screen. A
-    screen wide enough shows both, the rain warning beside (header_rain)."""
+def header_field(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[str, float]:
+    """(the header's left text in full, the room for it). The plain look has
+    no footer, so a disruption notice, or else a rain warning, takes the
+    title's place while there is one. A screen wide enough shows both, the
+    rain warning beside (header_rain)."""
     pad = _PAD * scale
     stamp = view.clock or f"Upd {view.updated}"
-    stamp_x = width - pad - drawn_length(fonts.regular, stamp)
-    room = stamp_x - pad - 6 * scale
+    room = width - pad - drawn_length(fonts.regular, stamp) - pad - 6 * scale
     rain = header_rain(view, fonts, width, scale)
     if rain is not None:
         room = rain[1] - pad - 12 * scale
         view = replace(view, rain=None)
-    note = fitted_note(view, room, partial(drawn_length, fonts.bold), fonts.bold)
-    return note or fit_text(view.title, fonts.bold, room), stamp, stamp_x
+    return note_text(view) or view.title, room
+
+
+def header_text(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[str, str, float]:
+    """(left text, stamp, stamp x) for the header bar, the left text cut
+    short if it must be (a screen scrolls it instead: see header_field)."""
+    pad = _PAD * scale
+    stamp = view.clock or f"Upd {view.updated}"
+    stamp_x = width - pad - drawn_length(fonts.regular, stamp)
+    text, room = header_field(view, fonts, width, scale)
+    if note_text(view):
+        return fit_text(text, fonts.bold, room, partial(drawn_length, fonts.bold)), stamp, stamp_x
+    return fit_text(text, fonts.bold, room), stamp, stamp_x
 
 
 def apply_preview(image: Image.Image, palette: Palette) -> None:
@@ -415,7 +395,8 @@ def apply_preview(image: Image.Image, palette: Palette) -> None:
 
 
 class _Painter:
-    def __init__(self, palette: Palette, fonts: Fonts, panel: Panel, text_size: int = TEXT_SIZE) -> None:
+    def __init__(self, palette: Palette, fonts: Fonts, panel: Panel, text_size: int = TEXT_SIZE,
+                 live: bool = False) -> None:
         self.p = palette
         self.f = fonts
         self.s = plain_scale(panel)
@@ -426,12 +407,35 @@ class _Painter:
         self.width = panel.width
         self.image = Image.new("P", panel.size, palette.white)
         self.draw = ImageDraw.Draw(self.image)
+        # A screen: text cut short for its space scrolls there instead.
+        self.live = live
+        self.scrolls: list[Scroll] = []
+
+    def field(self, xy: tuple[float, float], shown: str, whole: str, font: ImageFont.FreeTypeFont, room: float,
+              fill: int, paper: int, band: tuple[int, int]) -> None:
+        """Text in a space `room` wide from xy: `shown` is `whole` as it fits
+        there, cut short if it must be. On a screen, cut-short text scrolls
+        whole instead, clipped to the space and to `band` (top and bottom of
+        its row), on the row's `paper`."""
+        if not self.live or shown == whole or room < 1:
+            self.draw.text(xy, shown, font=font, fill=fill)
+            return
+        x, (top, bottom) = int(xy[0]), band
+        strip = Image.new("P", (max(math.ceil(drawn_length(font, whole)), int(room)), bottom - top), paper)
+        ImageDraw.Draw(strip).text((xy[0] - x, xy[1] - top), whole, font=font, fill=fill)
+        apply_preview(strip, self.p)
+        self.scrolls.append(Scroll((x, top, x + int(room), bottom), strip, self.s, whole))
+
+    def frame(self) -> Frame:
+        self.apply_preview_palette()
+        return frame_of(self.image, self.scrolls)
 
     def header(self, view: BoardView) -> None:
         s, pad = self.s, _PAD * self.s
         self.draw.rectangle((0, 0, self.width - 1, self.header_h * s - 1), fill=self.p.black)
         title, stamp, stamp_x = header_text(view, self.f, self.width, s)
-        self.draw.text((pad, s), title, font=self.f.bold, fill=self.p.white)
+        whole, room = header_field(view, self.f, self.width, s)
+        self.field((pad, s), title, whole, self.f.bold, room, self.p.white, self.p.black, (0, self.header_h * s))
         rain = header_rain(view, self.f, self.width, s)
         if rain is not None:
             self.draw.text((rain[1], s), rain[0], font=self.f.bold, fill=self.p.white)
@@ -452,9 +456,13 @@ class _Painter:
         rows = self.drawn_rows(section)
         # As on the sign, a leave time for a row that doesn't fit is left out.
         if section.leave and (section.leave_for is None or section.leave_for < len(rows)):
-            leave = fit_text(section.leave, self.f.small, self.width - pad - label_end - 8 * s)
-            x = self.width - pad - drawn_length(self.f.small, leave)
-            self.draw.text((x, y + s), leave, font=self.f.small, fill=self.p.black)
+            room = self.width - pad - label_end - 8 * s
+            leave = fit_text(section.leave, self.f.small, room)
+            # Right-aligned; if it scrolls, its space reaches back to the label.
+            scrolls = self.live and leave != section.leave
+            x = self.width - pad - (room if scrolls else drawn_length(self.f.small, leave))
+            self.field((x, y + s), leave, section.leave, self.f.small, room, self.p.black, self.p.white,
+                       (y, y + self.label_h * s))
         leave_x = leave_column(rows, self.f, self.width, s)
         heading = leave_heading(rows)
         if heading and leave_x is not None:
@@ -489,15 +497,18 @@ class _Painter:
             status_ink = self.p.accent
 
         layout = row_layout(row, self.f, self.width, s, platform_x, leave_x, where_x)
-        self.draw.text((_PAD * s, y + s), layout.left, font=self.f.bold, fill=ink)
-        self.draw.text((layout.middle_x, y + s), layout.middle, font=self.f.regular, fill=ink)
+        band = (y, y + self.row_h * s)
+        self.field((_PAD * s, y + s), layout.left, row.left, self.f.bold, layout.left_room, ink, paper, band)
+        self.field((layout.middle_x, y + s), layout.middle, _with_stop(row), self.f.regular, layout.middle_room,
+                   ink, paper, band)
         # row_layout only places a platform or leave time the row has.
         if layout.platform_x is not None and row.platform:
             self.draw.text((layout.platform_x, y + s), row.platform, font=self.f.regular, fill=ink)
         if layout.leave_x is not None and layout.leave:
             self.draw.text((layout.leave_x, y + self.small_drop * s), layout.leave, font=self.f.small, fill=ink)
-        if layout.where_x is not None and layout.where:
-            self.draw.text((layout.where_x, y + self.small_drop * s), layout.where, font=self.f.small, fill=ink)
+        if layout.where_x is not None and layout.where and row.strip is not None:
+            self.field((layout.where_x, y + self.small_drop * s), layout.where, row.strip.where, self.f.small,
+                       layout.where_room, ink, paper, band)
         if layout.strip_x is not None and row.strip is not None:
             draw_strip(self.draw, row.strip, train, layout.strip_x, y, s, self.row_h, ink, paper, yours_fill)
         self.draw.text((layout.right_x, y + s), row.right, font=self.f.bold, fill=status_ink)
@@ -511,32 +522,45 @@ class _Painter:
 
 
 def render(view: BoardView, palette: Palette, panel: Panel = PHAT, text_size: int = TEXT_SIZE) -> Image.Image:
+    """The board, any scrolling text at its start."""
+    return board_frame(view, palette, panel, text_size).image
+
+
+def board_frame(view: BoardView, palette: Palette, panel: Panel = PHAT, text_size: int = TEXT_SIZE) -> Frame:
+    """The board, and on a screen the text that scrolls."""
     s = plain_scale(panel)
-    painter = _Painter(palette, load_fonts(s, text_size), panel, text_size)
+    live = view.clock is not None
+    painter = _Painter(palette, load_fonts(s, text_size), panel, text_size, live)
     painter.header(view)
     sections = [painter.drawn_rows(view.trains), painter.drawn_rows(view.buses)]
-    where_x = where_column(sections, painter.f, panel.width, s, live=view.clock is not None)
+    where_x = where_column(sections, painter.f, panel.width, s, live)
     y = painter.section(view.trains, (painter.header_h + _SECTION_GAP) * s, where_x)
     painter.rule(y + s)
     painter.section(view.buses, y + (_SECTION_GAP + 1) * s, where_x)
-    painter.apply_preview_palette()
-    return painter.image
+    return painter.frame()
 
 
 def render_route(view: RouteView, palette: Palette, panel: Panel = PHAT, text_size: int = TEXT_SIZE) -> Image.Image:
     """The bus's position on the stops before yours, in the plain look."""
+    return route_frame(view, palette, panel, text_size).image
+
+
+def route_frame(view: RouteView, palette: Palette, panel: Panel = PHAT, text_size: int = TEXT_SIZE) -> Frame:
+    """The route page, and on a screen the text that scrolls."""
     s = plain_scale(panel)
     pad = _PAD * s
     f = load_fonts(s, text_size)
     header_h, _, row_h = heights(text_size)
-    image = Image.new("P", panel.size, palette.white)
-    draw = ImageDraw.Draw(image)
+    painter = _Painter(palette, f, panel, text_size, live=view.clock is not None)
+    draw = painter.draw
     width, height = panel.size
 
     draw.rectangle((0, 0, width - 1, header_h * s - 1), fill=palette.black)
     stamp = view.clock or ""
     stamp_x = width - pad - drawn_length(f.regular, stamp)
-    draw.text((pad, s), fit_text(view.title, f.bold, stamp_x - pad * 3), font=f.bold, fill=palette.white)
+    room = stamp_x - pad * 3
+    painter.field((pad, s), fit_text(view.title, f.bold, room), view.title, f.bold, room, palette.white,
+                  palette.black, (0, header_h * s))
     draw.text((stamp_x, s), stamp, font=f.regular, fill=palette.white)
 
     y = (header_h + 4) * s
@@ -555,19 +579,22 @@ def render_route(view: RouteView, palette: Palette, panel: Panel = PHAT, text_si
         draw.ellipse((x - r, road - r, x + r, road + r), fill=palette.black if yours else palette.white,
                      outline=palette.black, width=s)
         font = f.bold if yours else f.regular
-        text = fit_text(name, font, step * 2 - _COL_GAP * s)
-        tx = min(max(pad, x - font.getlength(text) / 2), width - pad - drawn_length(font, text))
+        room = step * 2 - _COL_GAP * s
+        text = fit_text(name, font, room)
+        if painter.live and text != name:
+            tx = min(max(pad, x - room / 2), width - pad - room)  # a scrolling name takes its whole room
+        else:
+            tx = min(max(pad, x - font.getlength(text) / 2), width - pad - drawn_length(font, text))
         # Names above the road clear the bus, which sits on the line.
         ty = road - 30 * s if i % 2 == 0 else road + 9 * s
-        draw.text((tx, ty), text, font=font, fill=palette.black)
+        painter.field((tx, ty), text, name, font, room, palette.black, palette.white, (int(ty), int(ty) + row_h * s))
     if view.bus_at is not None:
         bx = xs[0] + view.bus_at * step
         draw.rounded_rectangle((bx - 12 * s, road - 13 * s, bx + 12 * s, road - 4 * s),
                                radius=2 * s, fill=palette.black)
         for wx in range(-9, 9, 5):
             draw.rectangle((bx + wx * s, road - 11 * s, bx + (wx + 3) * s, road - 8 * s), fill=palette.white)
-    apply_preview(image, palette)
-    return image
+    return painter.frame()
 
 
 # The settings address, in pixels high, below which it is hard to read: then
