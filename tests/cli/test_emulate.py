@@ -188,7 +188,7 @@ def test_screen_demo_says_where_the_trains_and_buses_are():
         em.clock.advance()
     assert "Left Hadfield" in trains and "Not started" in words
     assert {"3 stops away", "1 stop away"} <= buses
-    assert all(len(w) <= 20 for w in words)  # a row has room for about 20 characters
+    assert all(len(w) <= 18 for w in words)  # a row has room for 18 characters
 
 
 def test_epaper_demo_asks_where_nothing_is():

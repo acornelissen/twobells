@@ -142,7 +142,7 @@ def _train_strip(details: ServiceDetails | None, now: datetime) -> Strip | None:
         found = train_position(details, now)
         if found is None:
             return None
-        # The short words: a row has room for about 20 characters.
+        # The short words: a row has room for 18 characters.
         return Strip(found.short, len(found.strip_stops), found.yours, found.train_at)
     except Exception as error:  # noqa: BLE001 - a position is never worth the board
         log.debug("train position not drawn: %s", safe_message(error))

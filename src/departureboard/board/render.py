@@ -217,7 +217,7 @@ def where_width(fonts: Fonts, width: int, scale: int) -> float:
     """How wide the where words' column is, in panel pixels, on a board `width`
     across: the room a full row leaves beside "Manchester Piccadilly" whole,
     the little line, a bus's leave time and a status, from "3 stops away" to
-    twenty letters ("Left Hadfield 07:08"), as long as they are meant to be.
+    eighteen letters ("Left Glossop 07:08"), as long as they are meant to be.
     Worked out from the width alone, so it stays put as the words change."""
     pad, gap = _PAD * scale, _COL_GAP * scale
     rest = (
@@ -226,7 +226,7 @@ def where_width(fonts: Fonts, width: int, scale: int) -> float:
         + drawn_length(fonts.bold, "Exp 00:00") + pad
     )
     least = drawn_length(fonts.small, "3 stops away")
-    most = drawn_length(fonts.small, "Leaving Hadfield now")
+    most = drawn_length(fonts.small, "Left Glossop 07:08")
     return max(least, min(most, width - rest))
 
 

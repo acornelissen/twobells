@@ -68,28 +68,35 @@ def item_size(item: Item) -> tuple[int, int]:
 
 # On a screen wide enough, where each train or bus is: the words, then a
 # little line of its stops.
-STRIP_WIDTH = 48  # eight stops, six dots apart
+STRIP_WIDTH = 42  # eight stops, five or six dots apart
 # Twice the usual gap after the destination, so it and the where words don't
 # run together into one name.
 _WHERE_GAP = 2 * _COL_GAP
-# The where words' column: at least "3 stops away", at most twenty letters
-# ("Left Hadfield 07:08"), which is as long as they are meant to be.
+# The where words' column: at least "3 stops away", at most eighteen letters
+# ("Left Glossop 07:08"), which is as long as they are meant to be.
 _WHERE_LEAST = _FONT.getlength("3 stops away")
-_WHERE_MOST = _FONT.getlength("Leaving Hadfield now")
+_WHERE_MOST = _FONT.getlength("Left Glossop 07:08")
 # What the rest of a full row needs beside the where words: ordinal and time,
-# "Manchester Piccadilly" whole, the little line, a bus's leave time and a status.
-_REST_OF_ROW = (
+# "Manchester Piccadilly" whole and the little line, then a bus's leave time
+# and status, or (where trains get a leave column) a train's platform, leave
+# time and status, whichever is wider.
+_ROW_START = (
     MARGIN + _FONT.getlength("4th") + _COL_GAP + _FONT.getlength("00:00") + _COL_GAP
     + _FONT.getlength("Manchester Piccadilly") + _WHERE_GAP + _COL_GAP + STRIP_WIDTH + _COL_GAP
-    + _FONT.getlength("Leave in 00 min") + _COL_GAP + _FONT.getlength("Exp 00:00") + MARGIN
+)
+_REST_OF_BUS_ROW = _ROW_START + _FONT.getlength("Leave in 00 min") + _COL_GAP + _FONT.getlength("Exp 00:00") + MARGIN
+_REST_OF_TRAIN_ROW = (
+    _ROW_START + _FONT.getlength("Plat 1") + 2 * _COL_GAP + _FONT.getlength("Leave in 00 min") + _COL_GAP
+    + _FONT.getlength("Cancelled") + MARGIN
 )
 
 
 def where_width(width: int) -> int:
     """How wide the where words' column is on a board `width` dots across: the
-    room a full row leaves, from "3 stops away" to twenty letters. It is
+    room a full row leaves, from "3 stops away" to eighteen letters. It is
     worked out from the width alone, so it stays put as the words change."""
-    return max(_WHERE_LEAST, min(_WHERE_MOST, width - _REST_OF_ROW))
+    rest = max(_REST_OF_BUS_ROW, _REST_OF_TRAIN_ROW) if width >= LEAVE_COLUMN_MIN_WIDTH else _REST_OF_BUS_ROW
+    return max(_WHERE_LEAST, min(_WHERE_MOST, width - rest))
 
 
 @dataclass(frozen=True)

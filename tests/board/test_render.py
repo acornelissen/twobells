@@ -983,12 +983,14 @@ def test_the_bar_screen_shows_three_buses_in_the_plain_look():
 
 
 
-def test_twenty_letters_of_where_fit_uncut_on_the_bar_screen_in_the_plain_look():
-    twenty = "Leaving Hadfield now"
-    trains = (dataclasses.replace(STRIP_TRAINS[0], strip=Strip(twenty, 4, 2, 1.0)), *STRIP_TRAINS[1:])
-    buses = (dataclasses.replace(STRIP_BUSES[0], strip=Strip(twenty, 7, 5, 2.4)), *STRIP_BUSES[1:])
+def test_eighteen_letters_of_where_fit_uncut_on_the_bar_screen_in_the_plain_look():
+    eighteen = "Left Glossop 07:08"
+    trains = (dataclasses.replace(STRIP_TRAINS[0], strip=Strip(eighteen, 4, 2, 1.0)), *STRIP_TRAINS[1:])
+    buses = (dataclasses.replace(STRIP_BUSES[0], strip=Strip(eighteen, 7, 5, 2.4)), *STRIP_BUSES[1:])
     layouts, _, _, _ = strip_layouts(HDMI_1920X440, trains, buses)
-    assert [layout.where for _, layout in layouts].count(twenty) == 2
+    assert [layout.where for _, layout in layouts].count(eighteen) == 2
+    fonts = load_fonts(3)
+    assert where_width(fonts, HDMI_1920X440.width, 3) < drawn_length(fonts.small, "Leaving Hadfield now")
 
 
 def test_the_plain_where_column_is_as_wide_whatever_the_words_and_wider_on_the_bar():

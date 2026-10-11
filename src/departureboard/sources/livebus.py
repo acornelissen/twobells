@@ -413,7 +413,7 @@ def row_strip(live: LiveDeparture, positions: dict[str, StopPosition]) -> Strip 
     words = where_words(live, found)
     if at is None:
         # Not on the strip yet: "Not yet past The Junction" is too long for a
-        # row (about 20 characters), so count the calls to your stop instead.
+        # row (18 characters), so count the calls to your stop instead.
         away = live.call_index - math.floor(live.progress.at + 0.02)
         words = "1 stop away" if away == 1 else f"{away} stops away"
     try:

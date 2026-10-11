@@ -638,9 +638,9 @@ def test_only_the_bar_screen_puts_a_trains_leave_time_on_its_row():
 def test_on_the_bar_screen_each_train_is_one_line_with_its_leave_time_in_a_column():
     items = sign_layout(screen(), *dots(HDMI_1920X440)).items
     first = texts(line_of(items, "1st"))
-    # The destination gives way to twenty letters of where words.
-    assert first[2].startswith("Manchester Picc")
-    assert first[:2] + first[3:] == ["1st", "07:12", "At Dinting", "Plat 1", "Leave in 3 min", "On time"]
+    # The destination stays whole beside eighteen letters of where words.
+    assert first == ["1st", "07:12", "Manchester Piccadilly", "At Dinting", "Plat 1", "Leave in 3 min", "On time"]
+    assert all(i.box is None for i in line_of(items, "1st"))  # nothing on the row scrolls
     # Nothing between the 1st and the 2nd: the rows are a line apart.
     assert find(items, "2nd").y - find(items, "1st").y == 11
 
@@ -861,15 +861,15 @@ def test_the_route_page_fits_the_bar_screen(bus_at):
     assert render_route_sign(route(bus_at), PALETTE, HDMI_1920X440).size == HDMI_1920X440.size
 
 
-TWENTY = "Leaving Hadfield now"  # as long as the where words are meant to be
+EIGHTEEN = "Left Glossop 07:08"  # as long as the where words are meant to be
 
 
-def test_twenty_letters_of_where_fit_uncut_on_the_bar_screen():
-    assert len(TWENTY) == 20
-    rows = [dataclasses.replace(SCREEN_TRAINS[0], strip=Strip(TWENTY, 4, 2, 1.0)), *SCREEN_TRAINS[1:]]
-    buses = [dataclasses.replace(SCREEN_BUSES[0], strip=Strip(TWENTY, 7, 5, 2.4)), *SCREEN_BUSES[1:]]
+def test_eighteen_letters_of_where_fit_uncut_on_the_bar_screen():
+    assert len(EIGHTEEN) == 18
+    rows = [dataclasses.replace(SCREEN_TRAINS[0], strip=Strip(EIGHTEEN, 4, 2, 1.0)), *SCREEN_TRAINS[1:]]
+    buses = [dataclasses.replace(SCREEN_BUSES[0], strip=Strip(EIGHTEEN, 7, 5, 2.4)), *SCREEN_BUSES[1:]]
     items = sign_layout(screen(rows, buses), *dots(HDMI_1920X440)).items
-    assert texts(items).count(TWENTY) == 2
+    assert texts(items).count(EIGHTEEN) == 2
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
@@ -886,18 +886,15 @@ def test_the_where_column_is_as_wide_whatever_the_words(panel):
 def test_the_where_column_takes_the_spare_width_on_wider_screens():
     narrow, wide = where_width(dots(HDMI_1280X400)[0]), where_width(dots(HDMI_1920X440)[0])
     assert FONT.getlength("3 stops away") <= narrow < wide
-    assert FONT.getlength(TWENTY) <= wide
+    assert FONT.getlength(EIGHTEEN) <= wide < FONT.getlength("Leaving Hadfield now")  # 18 letters, not 20
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
-def test_manchester_piccadilly_stays_whole_on_the_7_9_inch_screen_with_strips(panel):
+def test_manchester_piccadilly_stays_whole_on_either_screen_with_strips(panel):
     items = sign_layout(screen(), *dots(panel)).items
-    shown = [i.text for i in items if i.text.startswith("Manchester")]
-    if panel is HDMI_1280X400:
-        assert shown == ["Manchester Piccadilly"] * 3
-    else:
-        # The bar screen gives the where words their twenty letters first.
-        assert all(t.startswith("Manchester Picc") for t in shown)
+    shown = [i for i in items if i.text.startswith("Manchester")]
+    assert [i.text for i in shown] == ["Manchester Piccadilly"] * 3
+    assert all(i.box is None for i in shown)  # drawn whole, never scrolling
 
 
 

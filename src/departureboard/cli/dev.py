@@ -191,7 +191,7 @@ def demo_command(args) -> int:
     # Where each is, as a wide screen shows it. The cancelled train and the 61,
     # with no live position, have none; the 237 hasn't started its journey yet.
     strips = {
-        strip_key(trains[0]): Strip("Left Hadfield 07:08", 4, 2, 0.5),
+        strip_key(trains[0]): Strip("Left Hadfield", 4, 2, 0.5),
         strip_key(trains[1]): Strip("At Dinting", 4, 2, 1.0),
         strip_key(buses[0]): Strip("3 stops away", 7, 5, 2.4),
         strip_key(buses[2]): Strip("Not started", 7, 5, None),
