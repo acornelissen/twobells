@@ -477,6 +477,8 @@ class GroupForm:
             data, broken, unreadable = {}, "", str(error)
         shown = {**self._current(data), **(values or {})}
         fields = self._fields(data, shown.get("theme", ""))
+        if values is not None:  # drawn again as sent: an unticked box isn't sent, so it stays unticked
+            shown |= {f.name: values.get(f.name, "") for f in fields if f.kind == "check"}
         sections = self._sections(fields, data)
         out = [self._header(csrf)]
         if errors:

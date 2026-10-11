@@ -147,6 +147,22 @@ def test_at_least_one_view_must_be_on(store):
                      page)
 
 
+def test_a_refused_save_shows_the_view_boxes_as_sent(store):
+    # An unticked box isn't sent, so the page drawn again after a refused save
+    # must not tick it back from what is saved.
+    form = form_for(store, ("general",))
+    fields = {name: value for name, value in fields_of(form).items() if not name.startswith("view_")}
+    errors = form.save(fields)
+    assert errors
+    shown = fields_of(form.render("tok", errors=errors, values=fields))
+    assert "view_board" not in shown and "view_dashboard" not in shown
+    sent = fields | {"view_dashboard": "on", "timezone": "Not/AZone"}
+    errors = form.save(sent)
+    assert "timezone" in errors
+    shown = fields_of(form.render("tok", errors=errors, values=sent))
+    assert shown.get("view_dashboard") == "on" and "view_board" not in shown
+
+
 def test_a_view_box_sending_anything_but_on_is_refused(store):
     form = form_for(store, ("general",))
     errors = form.save(fields_of(form) | {"view_dashboard": "yes"})
