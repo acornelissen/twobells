@@ -199,12 +199,16 @@ class NotJSON(ValueError):
     """The response was empty, or not UTF-8 JSON."""
 
 
-# Seconds for a whole JSON request, redirects and all, unless the caller says otherwise.
-JSON_DEADLINE = 30.0
+# Seconds for a whole request, redirects and all, unless the caller says
+# otherwise. The board's and dashboard's fetches rely on it: a trickled answer
+# mustn't hang `run --loop`.
+DEADLINE = 30.0
+# For a big file on a slow line (a timetable zip, a NaPTAN area): long, but not for ever.
+DOWNLOAD_DEADLINE = 30 * 60.0
 
 
 def get_json_capped(url: str, headers: dict | None, max_bytes: int, timeout: float = 15.0,
-                    deadline: float | None = JSON_DEADLINE):
+                    deadline: float | None = DEADLINE):
     """Like get_json, but the body is refused if it is larger than `max_bytes`,
     and a body that isn't UTF-8 JSON (or nests too deeply to read) gives one
     plain ValueError (NotJSON; TooLarge for the size). The error text never
@@ -227,11 +231,12 @@ def get_json_capped(url: str, headers: dict | None, max_bytes: int, timeout: flo
 
 
 def get_bytes(url: str, max_bytes: int, timeout: float = 15.0, headers: dict | None = None,
-              deadline: float | None = None) -> bytes:
+              deadline: float | None = DEADLINE) -> bytes:
     """A response body, refused if it is larger than `max_bytes`. `headers`
     are added to (or replace) the default User-Agent. `timeout` is for each
-    step; with `deadline` (seconds), the whole request, redirects and all, is
-    given up after that long, however slowly the server sends."""
+    step; the whole request, redirects and all, is given up after `deadline`
+    seconds (None: no limit), however slowly the server sends. A big download
+    passes DOWNLOAD_DEADLINE."""
     # _opener opens only http and https, whatever the URL says.
     request = _TimedRequest(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
     if deadline is not None:

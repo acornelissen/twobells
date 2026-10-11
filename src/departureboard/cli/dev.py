@@ -16,7 +16,7 @@ from ..board.displays.display import DISPLAY_PANELS, PngDisplay
 from ..board.themes import theme_named
 from ..board.view import build_view
 from ..core.model import Departure, Status
-from ..core.net import get_bytes
+from ..core.net import DOWNLOAD_DEADLINE, get_bytes
 from ..core.walk import WalkTimes
 from ..emulator.emulation import build_emulation
 from ..emulator.fake import DEMO_NOTICE, DEMO_TITLE, FakeWeatherSource
@@ -123,6 +123,11 @@ def probe_command(args) -> int:
     return 2
 
 
+def _download(url: str, max_bytes: int) -> bytes:
+    """A timetable zip or a NaPTAN area: big, perhaps on a slow line."""
+    return get_bytes(url, max_bytes, timeout=300, deadline=DOWNLOAD_DEADLINE)
+
+
 def route_command(args) -> int:
     from ..core.walk import DEFAULT_STOP
     from ..settings.config import _walk
@@ -151,7 +156,7 @@ def route_command(args) -> int:
             # A generator: each download is searched before the next is fetched.
             documents = routesetup.downloaded_documents(
                 routesetup.dataset_urls(key, args.noc, args.line),
-                lambda url, limit: get_bytes(url, limit, timeout=300),
+                _download,
                 lambda url: print(f"Downloading {url}", file=sys.stderr),
             )
         found = routesetup.find_patterns(documents, args.line)
@@ -159,7 +164,7 @@ def route_command(args) -> int:
             print(f"No timetable for line {args.line} found", file=sys.stderr)
             return 1
         atcos, covered, journeys = routesetup.strip_before(found, atco, walk_minutes)
-        stops = routesetup.naptan_stops(atcos)
+        stops = routesetup.naptan_stops(atcos, http_get=_download)
         note = (
             f"Line {args.line} to stop {args.stop}: {len(atcos)} stops, about {round(covered / 60)} min "
             f"of travel (walk {walk_minutes} min + {routesetup.EXTRA_MINUTES}); pattern used by {journeys} "

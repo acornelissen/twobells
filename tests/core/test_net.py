@@ -3,6 +3,7 @@ import json
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from types import SimpleNamespace
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
@@ -240,6 +241,37 @@ def test_a_deadline_stops_a_server_that_sends_slowly(dripping, path):
     assert time.monotonic() - start < 1.0
 
 
+class FastClock:
+    """time.monotonic, but a second passes each time it is read: a long wait, quickly."""
+
+    def __init__(self):
+        self.offset = 0.0
+
+    def monotonic(self):
+        self.offset += 1.0
+        return time.monotonic() + self.offset
+
+
+@pytest.mark.parametrize("path", ["/body", "/headers", "/moved"])
+def test_get_bytes_gives_up_on_a_slow_server_unless_told_otherwise(dripping, monkeypatch, path):
+    # Bus positions, weather and bank holidays come through get_bytes: a
+    # trickled answer mustn't hang `run --loop`.
+    monkeypatch.setattr(net, "time", SimpleNamespace(monotonic=FastClock().monotonic))
+    start = time.monotonic()
+    with pytest.raises(TimeoutError):
+        net.get_bytes(dripping + path, 1_000, timeout=1.0)
+    assert time.monotonic() - start < 4.0
+
+
+def test_get_bytes_has_the_usual_deadline_unless_told_otherwise(monkeypatch):
+    seen = serve(monkeypatch, b"body")
+    before = time.monotonic()
+    net.get_bytes("https://example.test/x", 100)
+    assert before < seen["request"].deadline <= time.monotonic() + net.DEADLINE
+    net.get_bytes("https://example.test/x", 100, deadline=None)
+    assert seen["request"].deadline is None
+
+
 def test_a_request_within_its_deadline_is_answered(dripping):
     assert net.get_bytes(dripping + "/quick", 100, timeout=1.0, deadline=5.0) == b"ok"
 
@@ -257,7 +289,7 @@ def test_capped_json_has_a_deadline_unless_told_otherwise(monkeypatch):
     seen = serve(monkeypatch, b'{"ok": true}')
     before = time.monotonic()
     net.get_json_capped(SECRET_URL, None, max_bytes=100)
-    assert before < seen["request"].deadline <= time.monotonic() + net.JSON_DEADLINE
+    assert before < seen["request"].deadline <= time.monotonic() + net.DEADLINE
 
 
 

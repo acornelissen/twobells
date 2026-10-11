@@ -53,6 +53,9 @@ MAX_POSTCODE_BYTES = 100_000
 MAX_NOMINATIM_BYTES = 200_000
 MAX_OSRM_BYTES = 200_000
 MAX_NAPTAN_BYTES = 100_000_000
+# NaPTAN's API can be slow to send those few MB, so it gets longer than the
+# usual deadline, ending before the wizard stops waiting (spool WAITS "stops").
+NAPTAN_DEADLINE = 100.0
 
 # The United Kingdom with a margin, Scilly to Shetland and Northern Ireland to Kent.
 LAT_RANGE = (49.0, 61.0)
@@ -483,8 +486,12 @@ def stops_near(text: str, lat: float, lon: float, within_m: float, limit: int) -
     return [f[2] for f in found[:limit]]
 
 
+def naptan_get(url: str, max_bytes: int) -> bytes:
+    return get_bytes(url, max_bytes, deadline=NAPTAN_DEADLINE)
+
+
 def nearby_stops(lat: float, lon: float, within_m: float = 800, limit: int = 15,
-                 http_get: HttpGetBytes = get_bytes,
+                 http_get: HttpGetBytes = naptan_get,
                  grid: Mapping[tuple[int, int], Sequence[str]] | None = None) -> list[Stop]:
     """Bus stops within `within_m` metres in a straight line, closest first,
     from NaPTAN (no key needed). Only area codes are sent, never the position."""

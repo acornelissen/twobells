@@ -366,7 +366,7 @@ def test_route_prints_a_config_block_from_a_timetable_file(tmp_path, capsys, mon
 
     fixtures = FIXTURES
     naptan = (fixtures / "naptan_glossop_high_street_west.csv").read_bytes()
-    monkeypatch.setattr(routesetup, "naptan_stops", lambda atcos: routesetup.parse_naptan(naptan.decode(), set(atcos)))
+    monkeypatch.setattr(routesetup, "naptan_stops", lambda atcos, http_get: routesetup.parse_naptan(naptan.decode(), set(atcos)))
     code = main(["route", "341", "--stop", "A", "--txc", str(fixtures / "txc_glossop_synthetic.xml"), "--config", str(_route_config(tmp_path))])
     assert code == 0
     printed = capsys.readouterr().out
@@ -382,6 +382,7 @@ def test_route_searches_each_download_before_fetching_the_next(tmp_path, capsys,
     import zipfile
 
     from departureboard.cli import dev
+    from departureboard.core import net
     from departureboard.timetable import routesetup
 
     txc = (FIXTURES / "txc_glossop_synthetic.xml").read_bytes()
@@ -391,7 +392,9 @@ def test_route_searches_each_download_before_fetching_the_next(tmp_path, capsys,
         archive.writestr("b.xml", txc)
     events = []
 
-    def fake_get(url, limit, timeout):
+    def fake_get(url, limit, timeout, deadline):
+        # Big zips on a slow line: the long download deadline, not the usual one.
+        assert deadline == net.DOWNLOAD_DEADLINE
         events.append(f"download {url}")
         return buffer.getvalue()
 
@@ -399,7 +402,7 @@ def test_route_searches_each_download_before_fetching_the_next(tmp_path, capsys,
     monkeypatch.setattr(dev, "get_bytes", fake_get)
     monkeypatch.setattr(routesetup, "dataset_urls", lambda key, noc, line: ["one", "two"])
     monkeypatch.setattr(routesetup, "patterns", lambda doc, line: events.append("search") or real_patterns(doc, line))
-    monkeypatch.setattr(routesetup, "naptan_stops", lambda atcos: {a: (a, 53.4, -1.9) for a in atcos})
+    monkeypatch.setattr(routesetup, "naptan_stops", lambda atcos, http_get: {a: (a, 53.4, -1.9) for a in atcos})
     monkeypatch.setenv("BODS_API_KEY", "k")
     secrets = tmp_path / "secrets.env"
     secrets.write_text("")

@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from departureboard.core import net
 from departureboard.core.osgb import distance_m
 from departureboard.setup import lookups
 from departureboard.setup.lookups import (
@@ -30,6 +31,7 @@ from departureboard.setup.lookups import (
     stop_labels,
     walk_minutes,
 )
+from departureboard.setup.spool.folder import WAITS
 from departureboard.timetable import roads
 from tests.paths import FIXTURES
 
@@ -375,6 +377,21 @@ def test_nominatim_getter_names_the_project(monkeypatch):
     lookups.nominatim_get("https://nominatim.openstreetmap.org/search?q=x", 100)
     assert seen["User-Agent"].startswith("inky-departures/")
     assert "github.com/acornelissen/inky-departures" in seen["User-Agent"]
+
+
+def test_naptan_downloads_get_longer_than_usual_but_end_before_the_wizard_stops_waiting(monkeypatch):
+    seen = {}
+
+    def fake_get_bytes(url, max_bytes, deadline):
+        seen.update(max_bytes=max_bytes, deadline=deadline)
+        return b"ATCOCode\n"
+
+    monkeypatch.setattr(lookups, "get_bytes", fake_get_bytes)
+    assert nearby_stops(TOWN.lat, TOWN.lon, grid=GRID) == []
+    assert seen["max_bytes"] == lookups.MAX_NAPTAN_BYTES
+    # A few MB from a slow API: more than the usual deadline, but no point
+    # carrying on once the wizard has given up on the answer.
+    assert net.DEADLINE < seen["deadline"] < WAITS["stops"]
 
 
 # Rail stations.
