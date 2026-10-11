@@ -33,8 +33,18 @@ MAX_DOWNLOAD_BYTES = 300_000_000
 # One TransXChange file, uncompressed, unless an install reads less (see
 # DocumentLimits).
 MAX_XML_BYTES = 200_000_000
-MAX_UNZIPPED_BYTES = 1_000_000_000  # every file in one download, uncompressed
+# Zip-bomb guards; a zip's files are read one at a time, so these bound the
+# work, not the memory. Every file in one download, uncompressed: the largest
+# seen, BODS data set 2100 (First South Yorkshire, 2026), is 1.29 GB from a
+# 39 MB download, so this is three times that, a few minutes' unpacking on a
+# Pi Zero.
+MAX_UNZIPPED_BYTES = 4_000_000_000
 MAX_ZIP_MEMBERS = 2_000
+# The most one file in a zip may unpack to, as a multiple of what it takes of
+# the zip: by its header and as it is unpacked. Data set 2100's files are at
+# most 52 times; deflate can reach about 1,000.
+MAX_RATIO = 200
+_UNZIP_CHUNK = 65_536
 MAX_STOPS = 8  # including yours; more and the names get unreadable
 EXTRA_MINUTES = 5  # beyond your walk, so the bus shows up before you need to leave
 _DEFAULT_RUN_S = 60  # when a timing link has no run time
@@ -175,6 +185,54 @@ def strip_before(found: Iterable[Pattern], atco: str, walk_minutes: int) -> tupl
     return list(best.stops[start : index + 1]), covered, best.journeys
 
 
+class _CountedReads:
+    """A zip download that counts the bytes read from it: how much of it
+    unpacking a file really took, whatever the file's header says."""
+
+    def __init__(self, file: IO[bytes]):
+        self._file = file
+        self.count = 0
+
+    def read(self, size: int = -1) -> bytes:
+        data = self._file.read(size)
+        self.count += len(data)
+        return data
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        return self._file.seek(offset, whence)
+
+    def tell(self) -> int:
+        return self._file.tell()
+
+    def seekable(self) -> bool:
+        return True
+
+
+def _bomb(name: str) -> RouteSetupError:
+    shown = _CONTROL.sub("?", name)[:_NAME_LIMIT]
+    return RouteSetupError(f"Timetable zip file {shown} unpacks to more than {MAX_RATIO} times its size; refusing")
+
+
+def _unpacked(archive: zipfile.ZipFile, member: zipfile.ZipInfo, reads: _CountedReads, max_bytes: int) -> bytes:
+    """A file in a zip, up to one byte more than `max_bytes`, unpacked a
+    chunk at a time and refused (_bomb) once it has come to more than
+    MAX_RATIO times what was read of the zip for it. zipfile reads at most a
+    chunk ahead, so a bomb is stopped within MAX_RATIO chunks."""
+    chunks = []
+    size = 0
+    with archive.open(member) as handle:
+        start = reads.count  # after its local header
+        while size <= max_bytes:
+            chunk = handle.read(min(_UNZIP_CHUNK, max_bytes + 1 - size))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+            if size > MAX_RATIO * (reads.count - start):
+                raise _bomb(member.filename)
+    return b"".join(chunks)
+
+
 def named_documents(blob: bytes | IO[bytes], max_bytes: int = MAX_XML_BYTES, *, name: str = "the timetable file",
                     skipped: Callable[[str], None] = log_skipped) -> Iterator[tuple[str, bytes]]:
     """(name, XML) for the TransXChange in a download: one file, called
@@ -182,7 +240,8 @@ def named_documents(blob: bytes | IO[bytes], max_bytes: int = MAX_XML_BYTES, *, 
     The download can be bytes or an open file, so a big one can wait on disk
     rather than in memory. A file over `max_bytes` is skipped, told to
     `skipped` (too_big; logged unless it says otherwise), and the rest read;
-    a zip of too many files, or too much in all, is refused."""
+    a zip of too many files, too much in all, or a file unpacking to more
+    than MAX_RATIO times its size, is refused."""
     source = io.BytesIO(blob) if isinstance(blob, (bytes, bytearray)) else blob
     if not zipfile.is_zipfile(source):
         if isinstance(blob, (bytes, bytearray)):
@@ -195,7 +254,8 @@ def named_documents(blob: bytes | IO[bytes], max_bytes: int = MAX_XML_BYTES, *, 
             return
         yield name, data
         return
-    with zipfile.ZipFile(source) as archive:
+    reads = _CountedReads(source)
+    with zipfile.ZipFile(reads) as archive:
         members = [m for m in archive.infolist() if m.filename.lower().endswith(".xml")]
         if len(members) > MAX_ZIP_MEMBERS:
             raise RouteSetupError(f"Timetable zip has {len(members)} files; refusing more than {MAX_ZIP_MEMBERS}")
@@ -204,8 +264,9 @@ def named_documents(blob: bytes | IO[bytes], max_bytes: int = MAX_XML_BYTES, *, 
             if member.file_size > max_bytes:
                 skipped(too_big(member.filename, max_bytes, member.file_size))
                 continue
-            with archive.open(member) as handle:
-                data = handle.read(max_bytes + 1)
+            if member.file_size > MAX_RATIO * max(member.compress_size, 1):
+                raise _bomb(member.filename)
+            data = _unpacked(archive, member, reads, max_bytes)
             total += len(data)
             if total > MAX_UNZIPPED_BYTES:
                 raise RouteSetupError(f"Timetable zip unpacks to more than {MAX_UNZIPPED_BYTES} bytes; refusing")

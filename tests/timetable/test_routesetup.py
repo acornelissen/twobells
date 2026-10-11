@@ -2,6 +2,7 @@ import io
 import json
 import tomllib
 import zipfile
+import zlib
 
 import pytest
 
@@ -98,9 +99,9 @@ def test_names_are_escaped_for_toml():
     assert tomllib.loads(block)["bus"]["routes"]["341"]["stops"][0]["name"] == 'The "Quote" Inn'
 
 
-def _zip(files):
+def _zip(files, compression=zipfile.ZIP_STORED):
     buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as archive:
+    with zipfile.ZipFile(buffer, "w", compression) as archive:
         for name, data in files.items():
             archive.writestr(name, data)
     return buffer.getvalue()
@@ -183,6 +184,66 @@ def test_a_zip_within_the_total_is_read_whole(monkeypatch):
     monkeypatch.setattr(routesetup, "MAX_UNZIPPED_BYTES", 171)
     files = {f"{i}.xml": b"<x>" + b"a" * 50 + b"</x>" for i in range(3)}
     assert len(list(timetable_documents(_zip(files)))) == 3
+
+
+def test_a_zip_as_big_as_the_largest_real_one_is_within_the_total():
+    # BODS data set 2100 (First South Yorkshire, October 2026) unpacks to
+    # 1,293,595,148 bytes in 159 files. The total is only a zip-bomb guard:
+    # the files are read one at a time.
+    from departureboard.timetable import routesetup
+
+    assert routesetup.MAX_UNZIPPED_BYTES >= 3 * 1_293_595_148
+
+
+def test_a_big_zip_of_real_timetables_is_read_whole(monkeypatch):
+    # Data set 2100 against the total, scaled down: compressed as BODS's
+    # are, none of its files comes near the ratio refused.
+    from departureboard.timetable import routesetup
+
+    files = {f"{i}.xml": TXC for i in range(40)}
+    monkeypatch.setattr(routesetup, "MAX_UNZIPPED_BYTES", 3 * len(TXC) * len(files))
+    assert list(timetable_documents(_zip(files, zipfile.ZIP_DEFLATED))) == [TXC] * len(files)
+
+
+def test_a_zip_bomb_is_refused_before_it_is_unpacked():
+    # A megabyte of zeros deflates to about a kilobyte.
+    blob = _zip({"a.xml": TXC, "bomb.xml": bytes(1_000_000)}, zipfile.ZIP_DEFLATED)
+    documents = timetable_documents(blob)
+    assert next(documents) == TXC
+    with pytest.raises(RouteSetupError, match=r"bomb\.xml unpacks to more than 200 times its size; refusing"):
+        next(documents)
+
+
+def _understated(data: bytes, padding: int) -> bytes:
+    """A zip of `data` deflated as bomb.xml, whose header says it takes
+    `padding` more bytes of the zip than it does (junk after its deflated
+    bytes, never read), so its ratio looks small."""
+    packer = zlib.compressobj(9, zlib.DEFLATED, -15)  # raw deflate, as in a zip
+    taken = packer.compress(data) + packer.flush() + bytes(padding)
+    blob = bytearray(_zip({"bomb.xml": taken}))  # stored, then said to be deflated
+    local, central = 0, blob.index(b"PK\x01\x02")
+    assert blob[central + 46 : central + 46 + len("bomb.xml")] == b"bomb.xml"
+    for header, method, crc, size in ((local, 8, 14, 22), (central, 10, 16, 24)):
+        blob[header + method : header + method + 2] = zipfile.ZIP_DEFLATED.to_bytes(2, "little")
+        blob[header + crc : header + crc + 4] = zlib.crc32(data).to_bytes(4, "little")
+        blob[header + size : header + size + 4] = len(data).to_bytes(4, "little")
+    return bytes(blob)
+
+
+def test_a_file_unpacking_to_far_more_than_it_took_is_refused_whatever_its_header_says(monkeypatch):
+    from departureboard.timetable import routesetup
+
+    monkeypatch.setattr(routesetup, "MAX_RATIO", 20)
+    blob = _understated(bytes(2_000_000), 500_000)
+    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+        bomb = archive.getinfo("bomb.xml")
+    assert bomb.file_size <= 20 * bomb.compress_size  # its header alone passes
+    with pytest.raises(RouteSetupError, match=r"bomb\.xml unpacks to more than 20 times its size; refusing"):
+        list(timetable_documents(blob))
+
+
+def test_a_file_unpacking_to_what_it_took_is_read_whatever_its_header_says():
+    assert list(timetable_documents(_understated(TXC, 500_000))) == [TXC]
 
 
 def test_doctype_is_refused():
