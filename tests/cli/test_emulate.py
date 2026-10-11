@@ -47,7 +47,7 @@ def test_demo_outage_covers_a_morning_window():
 
 
 def test_demo_runs_headless_for_a_few_ticks():
-    code = main(["emulate", "--demo", "--no-browser", "--port", "0", "--tick", "0", "--ticks", "3"])
+    code = main(["emulate", "--demo", "--no-browser", "--port", "0", "--tick", "0.001", "--ticks", "3"])
     assert code == 0
 
 
@@ -114,7 +114,7 @@ def test_display_flag_overrides_the_config(tmp_path):
 
 
 def test_demo_screen_runs_headless_for_a_few_ticks():
-    code = main(["emulate", "--demo", "--display", "hdmi-1280x400", "--no-browser", "--port", "0", "--tick", "0", "--ticks", "3"])
+    code = main(["emulate", "--demo", "--display", "hdmi-1280x400", "--no-browser", "--port", "0", "--tick", "0.001", "--ticks", "3"])
     assert code == 0
 
 

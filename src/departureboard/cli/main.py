@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import sys
 
 from ..board.displays.display import DISPLAY_PANELS
@@ -57,6 +58,18 @@ def _port(text: str) -> int:
     return port
 
 
+def _tick(text: str) -> float:
+    """Seconds per tick: a finite number above 0. At 0 or less a running
+    board would redraw flat out; nan or inf would never tick at all."""
+    try:
+        seconds = float(text)
+    except ValueError:
+        seconds = math.nan
+    if not (math.isfinite(seconds) and seconds > 0):
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number of seconds above 0")
+    return seconds
+
+
 # Old commands kept working, unlisted, until the first public release; and
 # query, for the Pi's scripts.
 HIDDEN_COMMANDS = ("web", "dashboard", "query")
@@ -75,7 +88,7 @@ def _parser() -> argparse.ArgumentParser:
     run = with_config(sub.add_parser("run", help="one tick of the board"))
     run.add_argument("--png", help="write a PNG instead of driving the display")
     run.add_argument("--loop", action="store_true", help="keep running; needed for a screen")
-    run.add_argument("--tick", type=float, help="seconds per tick with --loop (screen 1, e-paper 60)")
+    run.add_argument("--tick", type=_tick, help="seconds per tick with --loop (screen 1, e-paper 60)")
     run.add_argument("--ticks", type=int, help=argparse.SUPPRESS)
     run.set_defaults(handler=run_command)
 
@@ -142,9 +155,9 @@ def _parser() -> argparse.ArgumentParser:
     emulate.add_argument("--fake-train", action="store_true", help="fake trains, live buses")
     emulate.add_argument("--accent", choices=["red", "yellow"], help="demo accent")
     emulate.add_argument("--display", choices=sorted(DISPLAY_PANELS), help="panel to emulate (default: config's)")
-    emulate.add_argument("--port", type=int, default=DEFAULT_PORT, help="port to serve on (default: %(default)s)")
+    emulate.add_argument("--port", type=_port, default=DEFAULT_PORT, help="port to serve on (default: %(default)s)")
     emulate.add_argument("--port-attempts", type=int, default=10, help=argparse.SUPPRESS)
-    emulate.add_argument("--tick", type=float, help="seconds per tick (e-paper: demo 2, live 60; a screen: 1)")
+    emulate.add_argument("--tick", type=_tick, help="seconds per tick (e-paper: demo 2, live 60; a screen: 1)")
     emulate.add_argument("--ticks", type=int, help=argparse.SUPPRESS)
     emulate.add_argument("--no-browser", action="store_true", help="don't open a browser")
     emulate.set_defaults(handler=emulate_command)

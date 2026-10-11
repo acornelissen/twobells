@@ -317,10 +317,28 @@ def test_run_loop_on_a_screen_draws_a_running_clock(tmp_path, monkeypatch):
     state = tmp_path / "state.json"
     config.write_text(f'display = "hdmi-1280x400"\nrotate = 90\nstate_file = "{state}"\n')
     out = tmp_path / "board.png"
-    args = ["run", "--loop", "--ticks", "2", "--tick", "0", "--png", str(out)]
+    args = ["run", "--loop", "--ticks", "2", "--tick", "0.001", "--png", str(out)]
     assert main([*args, "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
     assert Image.open(out).size == (1280, 400)
     assert state.exists()
+
+
+@pytest.mark.parametrize("command", [["run", "--loop"], ["emulate", "--demo", "--no-browser"]])
+@pytest.mark.parametrize("tick", ["0", "-1", "nan", "inf", "-inf", "soon"])
+def test_a_tick_must_be_a_number_of_seconds_above_nothing(command, tick, capsys):
+    # 0 or less would spin a core flat out; nan and inf would never tick.
+    with pytest.raises(SystemExit) as stopped:
+        main([*command, f"--tick={tick}"])
+    assert stopped.value.code == 2
+    assert "--tick" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("port", ["70000", "-1", "http"])
+def test_emulate_refuses_a_port_that_is_not_one(port, capsys):
+    with pytest.raises(SystemExit) as stopped:
+        main(["emulate", "--demo", "--no-browser", f"--port={port}"])
+    assert stopped.value.code == 2
+    assert "not a port number" in capsys.readouterr().err
 
 
 def test_sleeping_to_the_tick_lands_on_a_whole_second(monkeypatch):
@@ -1862,7 +1880,7 @@ def test_a_code_asked_for_shows_on_a_board_not_yet_set_up(tmp_path):
 
 def test_a_screen_not_yet_set_up_keeps_running(tmp_path):
     config = installed_template(tmp_path, "hdmi-1280x400")
-    assert main(first_run_args(tmp_path, config, "--loop", "--ticks", "3", "--tick", "0")) == 0
+    assert main(first_run_args(tmp_path, config, "--loop", "--ticks", "3", "--tick", "0.001")) == 0
     assert Image.open(tmp_path / "board.png").size == (1280, 400)
     assert saved_page(tmp_path / "state") == "setup"
 
@@ -1875,7 +1893,7 @@ def test_a_screen_starts_again_once_set_up(tmp_path, monkeypatch):
     monkeypatch.setattr(run, "SETUP_CHECK_S", 0)
     config = installed_template(tmp_path, "hdmi-1280x400")
     # Once, for systemd's Restart=on-failure to start the board with its settings.
-    assert main(first_run_args(tmp_path, config, "--loop", "--ticks", "10", "--tick", "0")) == run.RESTART
+    assert main(first_run_args(tmp_path, config, "--loop", "--ticks", "10", "--tick", "0.001")) == run.RESTART
     assert saved_page(tmp_path / "state") == "setup"
 
 
@@ -1976,7 +1994,7 @@ def test_a_screen_with_the_board_view_off_starts_again_once_it_is_on(tmp_path, f
     monkeypatch.setattr(run, "_board_on", lambda store: next(answers))
     monkeypatch.setattr(run, "SETUP_CHECK_S", 0)
     args = board_with_views(tmp_path, ["dashboard"], display="hdmi-1280x400")
-    assert main([*args, "--loop", "--ticks", "10", "--tick", "0"]) == run.RESTART
+    assert main([*args, "--loop", "--ticks", "10", "--tick", "0.001"]) == run.RESTART
     assert saved_page(tmp_path / "state") == "setup" and fetched == []
 
 
