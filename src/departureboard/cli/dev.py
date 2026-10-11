@@ -15,7 +15,7 @@ from ..board.app import run_loop
 from ..board.displays.display import DISPLAY_PANELS, PngDisplay
 from ..board.themes import theme_named
 from ..board.view import build_view
-from ..core.model import Departure, Status
+from ..core.model import Departure, Status, Strip, strip_key
 from ..core.net import DOWNLOAD_DEADLINE, get_bytes
 from ..core.walk import WalkTimes
 from ..emulator.emulation import build_emulation
@@ -188,6 +188,14 @@ def demo_command(args) -> int:
         Departure("bus", "61", "Buxton", "07:35", None, Status.UNKNOWN, stop="B"),
         Departure("bus", "237", "Ashton", "07:41", None, Status.ON_TIME, stop="A"),
     ]
+    # Where each is, as a wide screen shows it. The cancelled train and the 61,
+    # with no live position, have none; the 237 hasn't been seen yet.
+    strips = {
+        strip_key(trains[0]): Strip("At Dinting", 4, 2, 1.0),
+        strip_key(trains[1]): Strip("Not left Hadfield yet", 4, 2, None),
+        strip_key(buses[0]): Strip("3 stops away", 7, 5, 2.4),
+        strip_key(buses[2]): Strip("Not yet past Hollingworth", 7, 5, None),
+    }
     theme = theme_named(args.theme)
     display = PngDisplay(args.png, args.accent or theme.accent, DISPLAY_PANELS[args.display])
     walk = WalkTimes(train=5, bus={"*": 8})
@@ -200,6 +208,7 @@ def demo_command(args) -> int:
         DEMO_TITLE, trains, buses, "07:03", set(), walk, theme.wording, clock,
         notices=[DEMO_NOTICE] if args.notice else None,
         rain=rain if args.rain else None,
+        strips=strips,
     )
     display.show(theme.render(view, display.palette, display.panel))
     print(f"Wrote {args.png}")
