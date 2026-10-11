@@ -41,3 +41,7 @@ Conventional commits: `<type>(<scope>): <subject>`, in the imperative, like `fix
 - **Simple code.** Match the style around it.
 
 The [README](README.md#layout) shows where things are.
+
+## Pictures
+
+The pictures in `docs/images/` are drawn from the sample data. After a change to how the board looks, run `.venv/bin/python tools/build_doc_images.py`. For the dashboard's, `.venv/bin/python tools/serve_doc_dashboard.py` serves the page on the sample morning at <http://127.0.0.1:8931/>; take them by hand at 2x, 1280 CSS pixels wide for the page, and save them at 0.75 scale in 256 colours. Look at each picture before you commit it.
