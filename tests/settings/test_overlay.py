@@ -1,4 +1,7 @@
+import os
 import stat
+import threading
+import time
 import tomllib
 
 import pytest
@@ -178,6 +181,68 @@ def test_a_target_with_no_folder_saves_nothing(board):
     config, _ = board
     with pytest.raises(OverlayError, match="state_file"):
         save_to(Target(lambda: read_base(config), lambda base: None), CHANGES, {}, ENV)
+
+
+def test_saves_at_once_each_keep_the_others_changes(board):
+    # The threaded web server, the wizard and the CLI may save together: the
+    # second waits for the first, so neither change nor key is lost.
+    config, state = board
+    calls, second_in = [], threading.Event()
+    count = threading.Lock()
+
+    def check(data, env):
+        with count:
+            calls.append(None)
+            first = len(calls) == 1
+        if first:
+            second_in.wait(0.5)  # without a lock the second reads the same old overlay meanwhile
+        else:
+            second_in.set()
+
+    target = Target(lambda: read_base(config), lambda base: state, check)
+    saves = [({"train": {"rows": 2}}, {"BODS_API_KEY": "first-key"}),
+             ({"bus": {"rows": 3}}, {"RDM_API_KEY": "second-key"})]
+    errors = []
+
+    def save(changes, keys):
+        try:
+            save_to(target, changes, keys, ENV)
+        except OverlayError as error:
+            errors.append(error)
+
+    threads = [threading.Thread(target=save, args=args) for args in saves]
+    for thread in threads:
+        thread.start()
+        time.sleep(0.05)  # the first starts first
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    saved = tomllib.loads((state / "settings.toml").read_text())
+    assert saved["train"]["rows"] == 2 and saved["bus"]["rows"] == 3
+    assert (state / "secrets.env").read_text().splitlines() == ["BODS_API_KEY=first-key", "RDM_API_KEY=second-key"]
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes to a read-only folder")
+def test_a_save_that_cannot_write_says_so_without_the_key(board):
+    config, state = board
+    state.chmod(0o500)
+    try:
+        with pytest.raises(OverlayError, match="Not saved") as caught:
+            save_changes(config, CHANGES, {"BODS_API_KEY": "pasted-secret-789"}, ENV)
+    finally:
+        state.chmod(0o700)
+    assert "pasted-secret-789" not in str(caught.value)
+    assert (state / "settings.toml").read_text() == SAVED
+
+
+def test_a_secrets_overlay_that_is_not_text_stops_a_key_save_cleanly(board):
+    config, state = board
+    (state / "secrets.env").write_bytes(b"BODS_API_KEY=old-secret-\xff\n")
+    with pytest.raises(OverlayError, match="Not saved") as caught:
+        save_changes(config, CHANGES, {"RDM_API_KEY": "pasted-secret-789"}, ENV)
+    assert "secret" not in str(caught.value).replace("secrets.env", "")
+    assert (state / "secrets.env").read_bytes() == b"BODS_API_KEY=old-secret-\xff\n"
+    assert (state / "settings.toml").read_text() == SAVED
 
 
 def test_to_toml_round_trips_every_kind_of_value():

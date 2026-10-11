@@ -17,6 +17,10 @@ so a save drops anything else found in it. to_toml writes every kind of
 value settings carry, floats (the weather position) and route strips
 (arrays of inline tables) included.
 
+Saves take turns: each holds a lock on settings.lock in the overlay's
+folder from reading the saved settings to writing them back, so the web
+server's threads, the wizard and the CLI saving at once lose nothing.
+
 Every install has one overlay, in its store (store.Store.target), which
 the board and the dashboard share. A Target names the settings under it,
 its folder, the loader the merged settings must pass and what the saved
@@ -26,6 +30,7 @@ settings may hold.
 from __future__ import annotations
 
 import datetime as dt
+import fcntl
 import json
 import math
 import os
@@ -48,6 +53,8 @@ from .schema import KEY_VALUE, saved_keys
 
 # A saved settings file that couldn't be read, kept beside it when the page replaces it.
 BROKEN_NAME = OVERLAY_NAME + ".broken"
+# Beside them, held by every save from reading the saved settings to writing them back.
+LOCK_NAME = "settings.lock"
 HEADER = ("# Saved from the settings site and setup. Layered over config.toml, which sets everything else:\n"
           "# anything here that the page and setup don't save is ignored.")
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
@@ -193,9 +200,37 @@ def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping
     try:
         base = target.base()
         folder = target.folder(base)
-        if folder is None:
-            raise OverlayError("config.toml needs a state_file before settings can be saved")
-        settings_path, secrets_path = folder / OVERLAY_NAME, folder / SECRETS_OVERLAY_NAME
+    except (OSError, ConfigError) as error:
+        raise OverlayError(f"Not saved: the settings can't be read ({_scrub(str(error), keys)})") from None
+    if folder is None:
+        raise OverlayError("config.toml needs a state_file before settings can be saved")
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        lock = files.open_lock(folder / LOCK_NAME)
+    except OSError as error:
+        raise OverlayError(f"Not saved: the settings can't be written ({_reason(error)})") from None
+    # Held from reading the saved settings to writing them back, so saves at
+    # once (the web server's threads, the wizard, the CLI) take turns and
+    # each keeps the others' changes. The system lets go if this process dies.
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _save_locked(target, base, folder, changes, keys, env, replace)
+    except OSError as error:  # the lock's; _save_locked says what it couldn't do
+        raise OverlayError(f"Not saved: the settings can't be written ({_reason(error)})") from None
+    finally:
+        os.close(lock)
+
+
+def _reason(error: OSError) -> str:
+    """Why a file couldn't be read or written, without its path or content."""
+    return error.strerror or type(error).__name__
+
+
+def _save_locked(target: Target, base: dict, folder: Path, changes: dict, keys: Mapping[str, str],
+                 env: Mapping[str, str], replace: bool) -> dict:
+    """save_to's work, with the folder's settings lock held."""
+    settings_path, secrets_path = folder / OVERLAY_NAME, folder / SECRETS_OVERLAY_NAME
+    try:
         saved = {} if replace else read_overlay_in(folder, target.allowed)
     except (OSError, ConfigError) as error:
         raise OverlayError(f"Not saved: the settings can't be read ({_scrub(str(error), keys)})") from None
@@ -211,17 +246,25 @@ def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping
         readable = False
     if not readable:
         raise OverlayError("Not saved: some text can't be stored. Remove any unusual characters and try again.")
+    try:
+        secrets_text = _secrets_text(secrets_path, keys) if keys else ""
+    except UnicodeDecodeError:
+        raise OverlayError(f"Not saved: {SECRETS_OVERLAY_NAME} isn't text the board can read") from None
+    except OSError as error:
+        raise OverlayError(f"Not saved: {SECRETS_OVERLAY_NAME} can't be read ({_reason(error)})") from None
     if replace:
         try:
             _keep_broken(settings_path)
         except OSError as error:
-            raise OverlayError(f"Not saved: the broken settings file can't be kept aside "
-                               f"({error.strerror or type(error).__name__})") from None
-    # Keys first, so settings that need them are never saved without them.
-    if keys:
-        _write(secrets_path, _secrets_text(secrets_path, keys), 0o600)
-    if changes or replace:  # keys alone (the Keys page's) leave settings.toml as it is
-        _write(settings_path, text, 0o640)
+            raise OverlayError(f"Not saved: the broken settings file can't be kept aside ({_reason(error)})") from None
+    try:
+        # Keys first, so settings that need them are never saved without them.
+        if keys:
+            _write(secrets_path, secrets_text, 0o600)
+        if changes or replace:  # keys alone (the Keys page's) leave settings.toml as it is
+            _write(settings_path, text, 0o640)
+    except OSError as error:
+        raise OverlayError(f"Not saved: the settings can't be written ({_reason(error)})") from None
     return overlay
 
 

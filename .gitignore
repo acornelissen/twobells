@@ -29,6 +29,7 @@ keytests.json
 *.sqlite3-*
 dashboard.lock
 migrate.lock
+settings.lock
 migrated.json
 timetable.lock
 settings.toml
