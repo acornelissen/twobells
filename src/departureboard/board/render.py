@@ -5,12 +5,15 @@ e-paper cuts it short with an ellipsis."""
 
 from __future__ import annotations
 
+import functools
 import math
-from collections.abc import Callable
+import threading
+from collections import OrderedDict
+from collections.abc import Callable, Hashable
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -69,6 +72,15 @@ class Fonts:
     small: ImageFont.FreeTypeFont
 
 
+# A screen redraws every second for its clock, and FreeType hints each glyph
+# afresh every time text is measured or drawn: that was most of a plain-look
+# redraw, 85 ms on a laptop and near a second on a Pi Zero 2 W, where it held
+# up scrolling text. So the fonts, what text measures and the glyphs it draws
+# are kept between redraws, each in a bounded store: a Pi Zero has 512 MB.
+# The board is drawn on one thread, so sharing the fonts is safe.
+
+
+@functools.lru_cache(maxsize=32)
 def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(str(_FONT_DIR / name), size)
 
@@ -91,15 +103,92 @@ def heights(text_size: int = TEXT_SIZE) -> tuple[int, int, int]:
     return text_size + 4, text_size + 1, text_size + 3
 
 
+@functools.lru_cache(maxsize=2048)
+def _drawn_box(font: ImageFont.FreeTypeFont, text: str) -> tuple[float, float, float, float]:
+    """The box `text` is drawn in, as hinted for one-bit output."""
+    return font.getbbox(text, mode="1")
+
+
 def drawn_length(font: ImageFont.FreeTypeFont, text: str) -> float:
     """How far `text` reaches when drawn. The panels' images are paletted, so
     glyphs are hinted for one-bit output and can come out a few pixels wider
     than getlength() says; right-aligned text measured that way runs into the edge."""
-    return font.getbbox(text, mode="1")[2] if text else 0
+    return _drawn_box(font, text)[2] if text else 0
+
+
+@functools.lru_cache(maxsize=2048)
+def text_length(font: ImageFont.FreeTypeFont, text: str) -> float:
+    """font.getlength(text), kept between redraws."""
+    return font.getlength(text)
+
+
+class _Kept:
+    """Values by key, the least recently used dropped once they take more
+    than `most` bytes between them. A value bigger than a quarter of that
+    isn't kept: it would push out everything else."""
+
+    def __init__(self, most: int) -> None:
+        self.most = most
+        self.taken = 0
+        self._values: OrderedDict[Hashable, tuple[Any, int]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get(self, key: Hashable, make: Callable[[], tuple[Any, int]]) -> Any:
+        """The value kept for `key`, or `make`'s (value, bytes) kept and given."""
+        with self._lock:
+            if key in self._values:
+                self._values.move_to_end(key)
+                return self._values[key][0]
+        value, size = make()
+        if size > self.most // 4:
+            return value
+        with self._lock:
+            if key not in self._values:
+                self._values[key] = (value, size)
+                self.taken += size
+            while self.taken > self.most:
+                _, (_, dropped) = self._values.popitem(last=False)
+                self.taken -= dropped
+        return value
+
+
+# A board's text is a few hundred kilobytes of glyphs on the bar screen, a
+# long notice up to a few hundred more.
+_GLYPHS = _Kept(4 * 1024 * 1024)
+
+
+def _glyphs(font: ImageFont.FreeTypeFont, text: str, start: tuple[float, float]) -> tuple[Image.Image, int, int]:
+    """`text` as ImageDraw.text draws it starting `start` (fractions of a
+    pixel) along and down: a one-bit mask of its glyphs, and where the mask's
+    top left goes from the whole pixel it is drawn at."""
+    left, top, right, bottom = map(int, _drawn_box(font, text))
+    # Clear of the text's box by two pixels: starting part way into a pixel can widen it by one.
+    x, y = 2 - min(left, 0), 2 - min(top, 0)
+    mask = Image.new("1", (x + right + 2, y + bottom + 2), 0)
+    ImageDraw.Draw(mask).text((x + start[0], y + start[1]), text, font=font, fill=1)
+    return mask, -x, -y
+
+
+def draw_text(image: Image.Image, xy: tuple[float, float], text: str, font: ImageFont.FreeTypeFont,
+              fill: int) -> None:
+    """ImageDraw.text, pixel for pixel, from glyphs kept between redraws."""
+    if not text:
+        return
+    if xy[0] < 0 or xy[1] < 0:  # not expected on a board: drawn the slow way
+        ImageDraw.Draw(image).text(xy, text, font=font, fill=fill)
+        return
+    start = (math.modf(xy[0])[0], math.modf(xy[1])[0])
+
+    def make() -> tuple[tuple[Image.Image, int, int], int]:
+        glyphs = _glyphs(font, text, start)
+        return glyphs, glyphs[0].width * glyphs[0].height  # one byte a pixel, even in mode "1"
+
+    mask, dx, dy = _GLYPHS.get((font, text, start), make)
+    image.paste(fill, (int(xy[0]) + dx, int(xy[1]) + dy), mask)
 
 
 def left_column_width(fonts: Fonts, scale: int = 1) -> float:
-    return fonts.bold.getlength("00:00") + 5 * scale
+    return text_length(fonts.bold, "00:00") + 5 * scale
 
 
 @dataclass(frozen=True)
@@ -360,7 +449,8 @@ def _longest_fit(low: int, high: int, fits: Callable[[int], bool]) -> int:
 def fit_text(text: str, font: Measurable, width: float, measure=None) -> str:
     """`text`, cut short with an ellipsis if it is wider than `width`.
     `measure` overrides font.getlength, e.g. with drawn_length."""
-    measure = measure or font.getlength
+    if measure is None:
+        measure = partial(text_length, font) if isinstance(font, ImageFont.FreeTypeFont) else font.getlength
     if measure(text) <= width:
         return text
     keep = _longest_fit(0, len(text) - 1, lambda n: measure(text[:n] + "…") <= width)
@@ -470,11 +560,11 @@ class _Painter:
         whole instead, clipped to the space and to `band` (top and bottom of
         its row), on the row's `paper`."""
         if not self.live or shown == whole or room < 1:
-            self.draw.text(xy, shown, font=font, fill=fill)
+            draw_text(self.image, xy, shown, font, fill)
             return
         x, (top, bottom) = int(xy[0]), band
         strip = Image.new("P", (max(math.ceil(drawn_length(font, whole)), int(room)), bottom - top), paper)
-        ImageDraw.Draw(strip).text((xy[0] - x, xy[1] - top), whole, font=font, fill=fill)
+        draw_text(strip, (xy[0] - x, xy[1] - top), whole, font, fill)
         apply_preview(strip, self.p)
         self.scrolls.append(Scroll((x, top, x + int(room), bottom), strip, self.s, whole))
 
@@ -490,8 +580,8 @@ class _Painter:
         self.field((pad, s), title, whole, self.f.bold, room, self.p.white, self.p.black, (0, self.header_h * s))
         rain = header_rain(view, self.f, self.width, s)
         if rain is not None:
-            self.draw.text((rain[1], s), rain[0], font=self.f.bold, fill=self.p.white)
-        self.draw.text((stamp_x, s), stamp, font=self.f.regular, fill=self.p.white)
+            draw_text(self.image, (rain[1], s), rain[0], self.f.bold, self.p.white)
+        draw_text(self.image, (stamp_x, s), stamp, self.f.regular, self.p.white)
 
     def drawn_rows(self, section: Section) -> tuple[Row, ...]:
         return section.rows[: self.limits.get(section.label, 2)]
@@ -499,12 +589,12 @@ class _Painter:
     def section(self, section: Section, y: int, where_x: float | None = None) -> int:
         s, pad = self.s, _PAD * self.s
         label = section.label.upper()
-        self.draw.text((pad, y + s), label, font=self.f.small, fill=self.p.black)
-        label_end = pad + self.f.small.getlength(label)
+        draw_text(self.image, (pad, y + s), label, self.f.small, self.p.black)
+        label_end = pad + text_length(self.f.small, label)
         if section.stale:
             x = label_end + 6 * s
-            self.draw.text((x, y + s), _NOT_UPDATING, font=self.f.small, fill=self.p.accent)
-            label_end = x + self.f.small.getlength(_NOT_UPDATING)
+            draw_text(self.image, (x, y + s), _NOT_UPDATING, self.f.small, self.p.accent)
+            label_end = x + text_length(self.f.small, _NOT_UPDATING)
         rows = self.drawn_rows(section)
         # As on the sign, a leave time for a row that doesn't fit is left out.
         if section.leave and (section.leave_for is None or section.leave_for < len(rows)):
@@ -520,14 +610,14 @@ class _Painter:
         if heading and leave_x is not None:
             if leave_x - label_end >= 6 * s and leave_x + drawn_length(self.f.small, heading) <= self.width - pad:
                 # Said once, over the column, as station boards label theirs.
-                self.draw.text((leave_x, y + s), heading, font=self.f.small, fill=self.p.black)
+                draw_text(self.image, (leave_x, y + s), heading, self.f.small, self.p.black)
             else:
                 # No room beside the label (a "! NOT UPDATING" on a small panel): each row says it in full.
                 rows = tuple(replace(r, leave_at=None) for r in rows)
                 leave_x = leave_column(rows, self.f, self.width, s)
         y += self.label_h * s
         if not rows:
-            self.draw.text((pad, y + s), section.empty_text, font=self.f.regular, fill=self.p.black)
+            draw_text(self.image, (pad, y + s), section.empty_text, self.f.regular, self.p.black)
             return y + self.row_h * s
         platform_x = platform_column(rows, self.f, self.width, s)
         if not any(r.strip for r in rows):
@@ -559,15 +649,15 @@ class _Painter:
                    layout.middle_room, ink, paper, band)
         # row_layout only places a platform or leave time the row has.
         if layout.platform_x is not None and row.platform:
-            self.draw.text((layout.platform_x, y + s), row.platform, font=self.f.regular, fill=ink)
+            draw_text(self.image, (layout.platform_x, y + s), row.platform, self.f.regular, ink)
         if layout.leave_x is not None and layout.leave:
-            self.draw.text((layout.leave_x, y + self.small_drop * s), layout.leave, font=self.f.small, fill=ink)
+            draw_text(self.image, (layout.leave_x, y + self.small_drop * s), layout.leave, self.f.small, ink)
         if layout.where_x is not None and layout.where and row.strip is not None:
             self.field((layout.where_x, y + self.small_drop * s), layout.where, row.strip.where, self.f.small,
                        layout.where_room, ink, paper, band)
         if layout.strip_x is not None and row.strip is not None:
             draw_strip(self.draw, row.strip, train, layout.strip_x, y, s, self.row_h, ink, paper, yours_fill)
-        self.draw.text((layout.right_x, y + s), row.right, font=self.f.bold, fill=status_ink)
+        draw_text(self.image, (layout.right_x, y + s), row.right, self.f.bold, status_ink)
 
     def rule(self, y: int) -> None:
         pad = _PAD * self.s
@@ -617,12 +707,12 @@ def route_frame(view: RouteView, palette: Palette, panel: Panel = PHAT, text_siz
     room = stamp_x - pad * 3
     painter.field((pad, s), fit_text(view.title, f.bold, room), view.title, f.bold, room, palette.white,
                   palette.black, (0, header_h * s))
-    draw.text((stamp_x, s), stamp, font=f.regular, fill=palette.white)
+    draw_text(painter.image, (stamp_x, s), stamp, f.regular, palette.white)
 
     y = (header_h + 4) * s
     lead = f"{view.due}   {view.leave}" if view.leave else view.due
-    draw.text((pad, y), lead, font=f.bold, fill=palette.black)
-    draw.text((width - pad - drawn_length(f.bold, view.where), y), view.where, font=f.bold, fill=palette.black)
+    draw_text(painter.image, (pad, y), lead, f.bold, palette.black)
+    draw_text(painter.image, (width - pad - drawn_length(f.bold, view.where), y), view.where, f.bold, palette.black)
 
     road = (y + row_h * s + height) // 2
     left, right = pad * 3, width - pad * 3
@@ -640,7 +730,7 @@ def route_frame(view: RouteView, palette: Palette, panel: Panel = PHAT, text_siz
         if painter.live and text != name:
             tx = min(max(pad, x - room / 2), width - pad - room)  # a scrolling name takes its whole room
         else:
-            tx = min(max(pad, x - font.getlength(text) / 2), width - pad - drawn_length(font, text))
+            tx = min(max(pad, x - text_length(font, text) / 2), width - pad - drawn_length(font, text))
         # Names above the road clear the bus, which sits on the line.
         ty = road - 30 * s if i % 2 == 0 else road + 9 * s
         painter.field((tx, ty), text, name, font, room, palette.black, palette.white, (int(ty), int(ty) + row_h * s))

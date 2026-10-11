@@ -1207,3 +1207,50 @@ def test_e_paper_and_the_7_9_inch_screen_keep_the_label_in_the_plain_look(panel)
     clock = CLOCK if panel is HDMI_1280X400 else None
     labels = render(on_screen(clock=clock), PALETTE, panel)
     assert render(named_on_screen(clock=clock), PALETTE, panel).tobytes() == labels.tobytes()
+
+
+# --- Text kept between redraws ---
+
+
+@pytest.mark.parametrize("xy", [(3, 4), (12.3, 5.75), (0.984375, 0.5), (-7.6, -3.2), (240.4, 110.1), (-40, 2)])
+def test_kept_glyphs_draw_as_pillow_draws_them(xy):
+    from PIL import Image, ImageDraw
+
+    from departureboard.board.render import draw_text
+
+    for font in load_fonts(1).regular, load_fonts(4).bold:
+        for text in ("07:12", "Manchester Piccadilly", "Jy ! …", " leading space"):
+            expected = Image.new("P", (250, 122), 0)
+            ImageDraw.Draw(expected).text(xy, text, font=font, fill=2)
+            for _ in range(2):  # drawn, then from what was kept
+                image = Image.new("P", (250, 122), 0)
+                draw_text(image, xy, text, font, 2)
+                assert image.tobytes() == expected.tobytes(), (xy, text)
+
+
+def test_kept_values_stay_within_their_bytes_least_recently_used_going_first():
+    from departureboard.board.render import _Kept
+
+    kept = _Kept(100)
+    for key in "abcd":
+        assert kept.get(key, lambda key=key: (key, 25)) == key
+    assert kept.get("a", lambda: ("new a", 25)) == "a"  # kept, and now the most recently used
+    kept.get("e", lambda: ("e", 25))
+    assert kept.taken == 100
+    assert kept.get("b", lambda: ("new b", 25)) == "new b"  # the least recently used went
+    assert kept.get("a", lambda: ("newer a", 25)) == "a"
+    assert kept.get("big", lambda: ("big", 26)) == "big"  # over a quarter: given, not kept
+    assert kept.get("big", lambda: ("big again", 26)) == "big again"
+    assert kept.taken <= 100
+
+
+def test_a_screen_redrawing_every_second_keeps_its_text_within_bounds():
+    from departureboard.board import render as plain
+
+    view = dataclasses.replace(board([Row("07:12", "Manchester Piccadilly", "On time")]), notice="x " * 400)
+    for second in range(400):
+        view = dataclasses.replace(view, clock=f"07:{second // 60:02}:{second % 60:02}")
+        plain.board_frame(view, PALETTE, HDMI_1920X440)
+    assert plain._GLYPHS.taken <= plain._GLYPHS.most <= 8 * 1024 * 1024
+    for cache in (plain._drawn_box, plain.text_length, plain._font):
+        assert cache.cache_info().currsize <= cache.cache_info().maxsize <= 2048
