@@ -727,12 +727,13 @@ def stop(atco, indicator):
         (["B", "Stand 12"], ["B", "12"]),
         (["Bay C3", "stop D"], ["C3", "D"]),
         (["opp", "adj"], ["A", "B"]),
-        (["Stop A", "Stop A"], ["A", "B"]),  # not unique
-        (["Stop C", "opp"], ["A", "B"]),  # not every stop has one
+        (["Stop A", "Stop A"], ["A", "B"]),  # the nearer keeps it; the other gets a letter no sign has
+        (["Stop C", "opp"], ["C", "A"]),  # a stop without a letter doesn't take it from one with
+        (["adj", "Stop A", "opp"], ["B", "A", "C"]),  # nor the letters on the others' signs
         (["Opp", "NE-bound"], ["A", "B"]),
     ],
 )
-def test_labels_default_to_the_letter_on_the_sign_when_unique(indicators, labels):
+def test_labels_default_to_the_letter_on_the_sign(indicators, labels):
     stops = [(None, stop(f"1000DGHS{i:04d}", ind)) for i, ind in enumerate(indicators)]
     assert stop_labels(stops) == labels
 
@@ -743,6 +744,9 @@ def test_given_labels_are_kept_and_defaults_avoid_them():
     assert stop_labels(stops) == ["A", "B", "C"]
     clash = [("A", stop("1000DGHS0001", "opp")), (None, stop("1000DGHS0002", "Stop A"))]
     assert stop_labels(clash) == ["A", "B"]
+    lower = [("c", stop("1000DGHS0001", "opp")), (None, stop("1000DGHS0002", "Stop C"))]
+    assert stop_labels(lower) == ["c", "A"]  # labels are told apart whatever their case
+
 
 
 @pytest.mark.parametrize("label", ["ABCD", "a b", "A=", "../", "\n"])

@@ -24,7 +24,7 @@ import string
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib.resources import files
@@ -593,14 +593,32 @@ def walk_minutes(home: Located, destinations: Mapping[str, Located],
 # The settings for config.toml.
 
 
-def _indicator_code(indicator: str) -> str | None:
-    return sign_letter(indicator)
+# Labels for stops with no letter of their own: A to Z, then A1 to Z9.
+_SPARE_LABELS = (*string.ascii_uppercase, *(f"{a}{n}" for n in "123456789" for a in string.ascii_uppercase))
+
+
+def default_labels(stops: Sequence[Stop], taken: Collection[str] = ()) -> list[str]:
+    """A label for each stop, nearest first: the letter on its sign ("Stop A"
+    is A) unless a nearer stop or a label in `taken` has it, else the first
+    label that is on no sign here and not taken. So any of them can be picked
+    together, and a stop without a letter never takes one from a stop with."""
+    used = {label.upper() for label in taken}
+    codes = [sign_letter(stop.indicator) for stop in stops]
+    own: list[str | None] = []
+    for code in codes:
+        if code and code.upper() not in used:
+            used.add(code.upper())
+            own.append(code)
+        else:
+            own.append(None)
+    used |= {code.upper() for code in codes if code}
+    spare = (label for label in _SPARE_LABELS if label not in used)
+    return [label or next(spare) for label in own]
 
 
 def stop_labels(stops: Sequence[tuple[str | None, Stop]]) -> list[str]:
-    """A board label for each stop: the one given, else the letter on its
-    sign ("Stop A" is A) when every unlabelled stop has a different one, else
-    A, B, C in order, skipping labels already taken."""
+    """A board label for each stop: the one given, else its default label
+    (default_labels), avoiding the labels given."""
     if len(stops) > MAX_BOARD_STOPS:
         raise SetupError(f"Pick at most {MAX_BOARD_STOPS} stops")
     given = [label for label, _ in stops if label]
@@ -609,12 +627,7 @@ def stop_labels(stops: Sequence[tuple[str | None, Stop]]) -> list[str]:
             raise SetupError("A stop label is 1 to 3 letters or digits")
     if len(set(given)) != len(given):
         raise SetupError("Two stops have the same label")
-    unlabelled = [stop for label, stop in stops if not label]
-    codes = [code for stop in unlabelled if (code := _indicator_code(stop.indicator))]
-    if len(codes) == len(unlabelled) and len(set(codes)) == len(codes) and not set(codes) & set(given):
-        defaults = iter(codes)
-    else:
-        defaults = iter(c for c in string.ascii_uppercase if c not in given)
+    defaults = iter(default_labels([stop for label, stop in stops if not label], given))
     return [label or next(defaults) for label, _ in stops]
 
 

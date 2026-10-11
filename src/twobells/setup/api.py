@@ -66,7 +66,6 @@ import json
 import logging
 import math
 import re
-import string
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -418,11 +417,8 @@ def _station(station: Station) -> dict:
 
 def suggested_labels(stops: Sequence[Stop]) -> list[str]:
     """A label for each stop found, as setup.stop_labels picks them: the letter
-    on its sign when every stop has a different one, else A, B, C in order."""
-    codes = [code for stop in stops if (code := setup._indicator_code(stop.indicator))]
-    if len(codes) == len(stops) and len(set(codes)) == len(codes):
-        return codes
-    return list(string.ascii_uppercase[: len(stops)])
+    on its sign where it has one of its own, else one on no sign here."""
+    return setup.default_labels(stops)
 
 
 class SetupApi:
