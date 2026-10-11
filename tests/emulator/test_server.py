@@ -1,3 +1,4 @@
+import errno
 import io
 import json
 import math
@@ -184,6 +185,21 @@ def test_reports_port_range_when_all_attempts_are_taken():
             make_server(display, port=taken, attempts=1)
     finally:
         first.server_close()
+
+
+def test_trying_the_next_ports_stops_at_the_last_port_there_is(monkeypatch):
+    from departureboard.emulator import server as module
+
+    tried = []
+
+    def taken(address, handler):
+        tried.append(address[1])
+        raise OSError(errno.EADDRINUSE, "Address already in use")
+
+    monkeypatch.setattr(module, "ThreadingHTTPServer", taken)
+    with pytest.raises(OSError, match="Port 65534-65535 already in use"):
+        make_server(EmulatorDisplay(), port=65534, attempts=10)
+    assert tried == [65534, 65535]
 
 
 def test_default_port_avoids_claudecodebrowserx():

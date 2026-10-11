@@ -124,16 +124,16 @@ def make_server(
     port: int = DEFAULT_PORT,
     attempts: int = 10,
 ):
-    """Bind to `port`, or the next free one within `attempts` ports."""
+    """Bind to `port`, or the next free one within `attempts` ports, stopping at 65535."""
     handler = _handler(display, _page())
-    for candidate in range(port, port + attempts):
+    last = min(port + max(attempts, 1), 65536) - 1  # past the last port there is, binding raises OverflowError
+    for candidate in range(port, last + 1):
         try:
             return ThreadingHTTPServer((host, candidate), handler)
         except OSError as error:
             if error.errno != errno.EADDRINUSE:
                 raise
-    last = port + attempts - 1
-    span = str(port) if attempts == 1 else f"{port}-{last}"
+    span = str(port) if last <= port else f"{port}-{last}"
     raise OSError(errno.EADDRINUSE, f"Port {span} already in use")
 
 
