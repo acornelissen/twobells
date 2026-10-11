@@ -47,6 +47,11 @@ FAILURE_WINDOW_S = 15 * 60
 # slowed: a try waits 1 s after the last, doubling with each failure, at most MAX_SLOW_S.
 TOTAL_FAILURES = 20
 MAX_SLOW_S = 60
+# While slowed, clients take turns: a client keeps its place this long after its
+# last try (the sign-in page says to try again in a minute), and at most this many
+# wait, about what one guesser on a /24 of home addresses can hold.
+WAITING_KEEP_S = 2 * MAX_SLOW_S
+MAX_WAITING = 256
 # Each check is a scrypt run of 16 MiB and up to a second; more at once could exhaust a Pi.
 MAX_CHECKS = 2
 SCRYPT = {"n": 2**14, "r": 8, "p": 1}
@@ -468,22 +473,34 @@ class Lockout:
 
     Past TOTAL_FAILURES within the window from every client together, so a
     guesser changing address gets no more than that, everyone is slowed
-    rather than locked out: the next try waits after the last one, longer
-    with each failure past the total, at most MAX_SLOW_S. A guesser can then
-    keep the owner waiting a minute at a time, but not locked out, and the
-    reset code (which this doesn't count) and the command line still work.
+    rather than locked out: one try is let in at a time, each after a wait
+    from the last that grows with each failure past the total, at most
+    MAX_SLOW_S. Refused tries cost nothing, so clients take turns, or a
+    script polling from a few addresses would take every turn: the next turn
+    goes to the client that has waited longest, by its first refused try
+    since it was last let in. A client that stops trying for WAITING_KEEP_S
+    loses its place, so a gone one can't hold the turn for long. With N
+    clients guessing, the owner, trying again every minute or so, is let in
+    within about N + 1 turns of first trying: each at most MAX_SLOW_S, or
+    WAITING_KEEP_S where a guesser lets its turn lapse. The reset code (which
+    this doesn't count) and the command line still work.
 
     Clients with no failures left in the window are dropped, so the table
-    holds only what the limits let through in one window."""
+    holds only what the limits let through in one window. At most
+    MAX_WAITING clients wait; past that, newcomers are refused without a
+    place rather than pushing out those waiting longest."""
 
     clock: Callable[[], float] = time.time
     _failures: dict[str, list[float]] = field(default_factory=dict)
+    # Waiting clients, first come first: each one's last try.
+    _waiting: dict[str, float] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def _prune(self, now: float) -> None:
         """Keep only the failures in the window, and the clients that have
-        some. Times ahead of now are from before the clock went back: not
-        counted, so a clock set back can't stretch a lockout. Called with the lock held."""
+        some, and the waiting clients that tried lately. Times ahead of now
+        are from before the clock went back: not counted, so a clock set back
+        can't stretch a lockout or hold a turn. Called with the lock held."""
         cutoff = now - FAILURE_WINDOW_S
         kept: dict[str, list[float]] = {}
         for key, times in self._failures.items():
@@ -491,20 +508,28 @@ class Lockout:
             if recent:
                 kept[key] = recent
         self._failures = kept
+        quiet = now - WAITING_KEEP_S
+        self._waiting = {key: t for key, t in self._waiting.items() if quiet < t <= now}
 
-    def _slowed(self, now: float) -> bool:
-        """Whether everyone must wait before the next try. Called with the lock held, after _prune."""
+    def _slowed(self, now: float, key: str) -> bool:
+        """Whether this client must wait for its turn: everyone waits after the
+        last try let in, and then the turn is the longest waiter's. Called
+        with the lock held, after _prune."""
         total = sum(len(times) for times in self._failures.values())
         if total < TOTAL_FAILURES:
             return False
+        if key in self._waiting or len(self._waiting) < MAX_WAITING:
+            self._waiting[key] = now  # a new client goes last; one waiting keeps its place
         last = max(max(times) for times in self._failures.values())
-        return now < last + min(2.0 ** (total - TOTAL_FAILURES), MAX_SLOW_S)
+        if now < last + min(2.0 ** (total - TOTAL_FAILURES), MAX_SLOW_S):
+            return True
+        return next(iter(self._waiting), None) != key
 
     def admit(self, address: str) -> SignInResult | None:
         """None if this client may try a password now; else LOCKED, or SLOWED
-        while everyone waits. An admitted try counts as a failure until
-        `succeeded`, so simultaneous guesses can't slip past the limits; a
-        refused one counts for nothing."""
+        while everyone waits or until its turn. An admitted try counts as a
+        failure until `succeeded`, so simultaneous guesses can't slip past
+        the limits; a refused one counts for nothing."""
         with self._lock:
             now = self.clock()
             self._prune(now)
@@ -512,8 +537,9 @@ class Lockout:
             mine = self._failures.get(key, [])
             if len(mine) >= MAX_FAILURES:
                 return SignInResult.LOCKED
-            if self._slowed(now):
+            if self._slowed(now, key):
                 return SignInResult.SLOWED
+            self._waiting.pop(key, None)
             self._failures[key] = [*mine, now]
             return None
 

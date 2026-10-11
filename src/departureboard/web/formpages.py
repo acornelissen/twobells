@@ -68,7 +68,8 @@ WRONG_CODE = "That code isn't right, or it has run out. Ask for a new code and t
 SHUT_OUT = ("Too many wrong tries from this device, so it can't use the code that is out now. "
             "That code runs out at {until}; ask for a new one then.")
 # Signing in while every client together has had too many wrong passwords:
-# each try waits up to a minute (auth.MAX_SLOW_S) after the last.
+# each try waits up to a minute (auth.MAX_SLOW_S) after the last, and clients take
+# turns, keeping their place for two minutes (auth.WAITING_KEEP_S) after each try.
 SLOWED = ("Lots of wrong passwords have been tried lately, so signing in is slowed for everyone. "
           "Try again in a minute.")
 _LENGTH = re.compile(r"[0-9]{1,15}")

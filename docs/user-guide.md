@@ -496,7 +496,7 @@ Or set the password from the command line, even while the server runs. It asks f
 If you can't sign in:
 
 - **"That password isn't right":** after 5 wrong tries, that device is locked out for 15 minutes and sees "Too many attempts. Try again in 15 minutes." Over IPv6 the devices on one network count as one, as a device can change its IPv6 address at will, so a wrong guess on another device can lock yours out too; a device using IPv4 counts on its own.
-- **"Lots of wrong passwords have been tried lately":** after 20 wrong tries in 15 minutes from all devices together, signing in slows for everyone: each try waits a little after the last, at most a minute. Try again in a minute. If someone keeps guessing, sign in with a reset code instead (it isn't slowed), from the page's **Forgot password?** or the command line above.
+- **"Lots of wrong passwords have been tried lately":** after 20 wrong tries in 15 minutes from all devices together, signing in slows for everyone: one try at a time is let in, a little after the last, at most a minute apart, and devices take turns in the order they first tried. Try again in a minute; a device that tries again within two minutes keeps its place in the line. If someone keeps guessing, sign in with a reset code instead (it isn't slowed), from the page's **Forgot password?** or the command line above.
 - **"Busy, try again in a moment":** a few sign-ins were being checked at once; try again.
 - **"Set a password first":** no password has been set yet; claim the settings as above.
 - **"Forbidden":** the settings only answer devices on the home network, using a local name or address. They won't work over mobile data or a VPN to elsewhere.

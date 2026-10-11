@@ -14,6 +14,7 @@ from departureboard.web.auth import (
     MAX_FAILURES,
     MAX_SESSIONS,
     MAX_SLOW_S,
+    MAX_WAITING,
     MIN_PASSWORD,
     RESET_CODE_SECONDS,
     RESET_ISSUE_GAP_S,
@@ -23,6 +24,7 @@ from departureboard.web.auth import (
     SCRYPT,
     SESSION_SECONDS,
     TOTAL_FAILURES,
+    WAITING_KEEP_S,
     FormTokens,
     Lockout,
     PasswordCheck,
@@ -66,6 +68,17 @@ def test_the_password_is_hashed_with_scrypt_at_the_agreed_cost(tmp_path):
     assert len(salt) == 16
     expected = hashlib.scrypt(PASSWORD.encode(), salt=salt, dklen=32, n=2**14, r=8, p=1)
     assert record["hash"] == expected.hex()
+
+
+def test_the_password_is_compared_in_constant_time(tmp_path, monkeypatch):
+    store = PasswordStore(tmp_path / "web.json")
+    store.set(PASSWORD)
+    compared = []
+    real = hmac.compare_digest
+    monkeypatch.setattr(hmac, "compare_digest", lambda a, b: compared.append((a, b)) or real(a, b))
+    assert store.check(PASSWORD)
+    assert not store.check("wrong")
+    assert len(compared) == 2
 
 
 def test_each_save_gets_a_fresh_salt(tmp_path):
@@ -368,6 +381,169 @@ def test_the_clock_going_back_locks_no_one_out_for_long():
     clock.now -= 3600  # failures now an hour ahead: from before the clock went back, not counted
     assert lockout.admit("10.0.1.0") is None
     assert lockout.admit("10.0.2.1") is None
+
+
+def _poll(lockout, clock, addresses, seconds, owner=None):
+    """A script polling 10 times a second for `seconds`, trying its addresses
+    in turn until one is let in (a wrong password, so it stays a failure).
+    The owner, if given, tries every 30 s after the script with the right
+    password until let in, rests 5 minutes, and starts again. Returns how
+    many of the script's tries were let in, and how long each of the owner's
+    waits took from its first try, with None for one still going at the end."""
+    start = clock.now
+    let_in = 0
+    waits = []
+    began, next_try = None, 0
+    for tick in range(seconds * 10):
+        clock.now = start + tick / 10
+        for address in addresses:
+            if lockout.admit(address) is None:
+                let_in += 1
+                break
+        if owner is None or tick < next_try:
+            continue
+        if began is None:
+            began = tick
+        if lockout.admit(owner) is None:
+            lockout.succeeded(owner)
+            waits.append((tick - began) / 10)
+            began, next_try = None, tick + 3000
+        else:
+            next_try = tick + 300
+    if owner is not None and began is not None:
+        waits.append(None)
+    return let_in, waits
+
+
+@pytest.mark.parametrize("count", [6, 7])
+def test_a_script_polling_from_many_addresses_cant_keep_the_owner_out(count):
+    # The reviewer's case: before turns, 6 or more addresses took every slot.
+    script = [f"192.168.1.{10 + i}" for i in range(count)]
+    let_in = {}
+    for owner in (None, "192.168.1.2"):
+        clock = Clock()
+        lockout = Lockout(clock)
+        _poll(lockout, clock, script, 30 * 60)  # long enough to slow to under a try a minute
+        let_in[owner], waits = _poll(lockout, clock, script, 90 * 60, owner=owner)
+    # Each of the script's addresses is ahead of the owner at most once, and
+    # the owner tries every 30 s, so it gets in within count + 1 turns and a try.
+    assert len(waits) > 5
+    assert all(wait is not None and wait <= (count + 1) * MAX_SLOW_S + 30 for wait in waits), waits
+    # Turns change who tries, not how often: the script gets as many as alone.
+    assert let_in["192.168.1.2"] <= let_in[None]
+
+
+def _slowed(lockout):
+    """Just past the total: the next try waits a second after the last."""
+    for i in range(TOTAL_FAILURES):
+        assert lockout.admit(f"10.0.1.{i}") is None
+
+
+def test_a_lone_client_waits_only_for_the_slow_down():
+    clock = Clock()
+    lockout = Lockout(clock)
+    _slowed(lockout)
+    assert lockout.admit("10.0.2.1") is SignInResult.SLOWED
+    clock.now += 1
+    assert lockout.admit("10.0.2.1") is None
+    clock.now += 5  # past the next wait, of 2 s: let in at once
+    assert lockout.admit("10.0.2.2") is None
+
+
+def test_turns_go_to_whoever_has_waited_longest():
+    clock = Clock()
+    lockout = Lockout(clock)
+    _slowed(lockout)
+    for address in ("10.0.2.1", "10.0.2.2", "10.0.2.3"):
+        assert lockout.admit(address) is SignInResult.SLOWED
+    clock.now += 1  # the wait is over, and the turn is the first waiter's
+    assert lockout.admit("10.0.2.3") is SignInResult.SLOWED
+    assert lockout.admit("10.0.2.2") is SignInResult.SLOWED
+    assert lockout.admit("10.0.2.1") is None
+    clock.now += 2
+    assert lockout.admit("10.0.2.3") is SignInResult.SLOWED
+    assert lockout.admit("10.0.2.2") is None
+    clock.now += 4
+    assert lockout.admit("10.0.2.1") is SignInResult.SLOWED  # let in last time: goes behind 10.0.2.3
+    assert lockout.admit("10.0.2.3") is None
+
+
+def test_a_client_that_stops_trying_loses_its_place():
+    clock = Clock()
+    lockout = Lockout(clock)
+    assert WAITING_KEEP_S > MAX_SLOW_S  # the sign-in page says to try again in a minute
+    _slowed(lockout)
+    assert lockout.admit("10.0.2.1") is SignInResult.SLOWED  # then goes quiet
+    clock.now += 0.5
+    assert lockout.admit("10.0.2.2") is SignInResult.SLOWED
+    clock.now = 1000.0 + WAITING_KEEP_S - 0.1
+    assert lockout.admit("10.0.2.2") is SignInResult.SLOWED  # the turn is held for 10.0.2.1
+    clock.now = 1000.0 + WAITING_KEEP_S + 0.1
+    assert lockout.admit("10.0.2.2") is None
+    assert lockout.admit("10.0.2.1") is SignInResult.SLOWED  # back, at the end of the line
+    assert list(lockout._waiting) == ["10.0.2.1"]
+
+
+def test_the_waiting_line_is_bounded_and_newcomers_cant_push_out_those_waiting():
+    clock = Clock()
+    lockout = Lockout(clock)
+    _slowed(lockout)
+    assert lockout.admit("10.0.0.5") is SignInResult.SLOWED  # the owner, first
+    flood = [f"10.1.{i // 200}.{i % 200}" for i in range(2 * MAX_WAITING)]
+    for address in flood:
+        assert lockout.admit(address) is SignInResult.SLOWED
+    assert len(lockout._waiting) == MAX_WAITING
+    assert flood[-1] not in lockout._waiting  # the newest are refused a place
+    clock.now += 1
+    for address in flood:
+        assert lockout.admit(address) is SignInResult.SLOWED
+    assert lockout.admit("10.0.0.5") is None
+
+
+def test_a_locked_out_client_takes_no_turn():
+    clock = Clock()
+    lockout = Lockout(clock)
+    for _ in range(MAX_FAILURES):
+        lockout.admit("10.0.0.5")
+    for i in range(TOTAL_FAILURES - MAX_FAILURES):
+        lockout.admit(f"10.0.1.{i}")
+    assert lockout.admit("10.0.0.5") is SignInResult.LOCKED
+    assert "10.0.0.5" not in lockout._waiting
+    clock.now += 1
+    assert lockout.admit("10.0.2.1") is None
+
+
+def test_a_success_clears_only_that_clients_failures_and_place():
+    clock = Clock()
+    lockout = Lockout(clock)
+    for _ in range(3):
+        lockout.admit("10.0.0.5")
+    for _ in range(2):
+        lockout.admit("10.0.0.6")
+    for i in range(TOTAL_FAILURES - 5):
+        lockout.admit(f"10.0.1.{i}")
+    assert lockout.admit("10.0.0.5") is SignInResult.SLOWED
+    assert lockout.admit("10.0.0.6") is SignInResult.SLOWED
+    clock.now += 1
+    assert lockout.admit("10.0.0.5") is None
+    lockout.succeeded("10.0.0.5")
+    assert "10.0.0.5" not in lockout._failures and "10.0.0.5" not in lockout._waiting
+    assert len(lockout._failures["10.0.0.6"]) == 2
+    assert list(lockout._waiting) == ["10.0.0.6"]
+    # Below the total again, by the owner's failures alone: no one waits.
+    assert lockout.admit("10.0.0.6") is None
+
+
+def test_the_clock_going_back_holds_no_turn():
+    clock = Clock()
+    lockout = Lockout(clock)
+    _slowed(lockout)
+    clock.now += 0.5
+    assert lockout.admit("10.0.2.1") is SignInResult.SLOWED
+    clock.now -= 0.3  # 10.0.2.1's try is now ahead: from before the clock went back
+    assert lockout.admit("10.0.2.2") is SignInResult.SLOWED
+    clock.now = 1001.0
+    assert lockout.admit("10.0.2.2") is None
 
 
 # --- PasswordCheck ---
