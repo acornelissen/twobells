@@ -24,7 +24,11 @@ from ..sources.bods import DEFAULT_BASE_URL, redact_key
 
 NAPTAN_URL = "https://naptan.api.dft.gov.uk/v1/access-nodes"
 MAX_DOWNLOAD_BYTES = 300_000_000
-MAX_XML_BYTES = 200_000_000  # one TransXChange file, uncompressed
+# One TransXChange file, uncompressed. Unpacking one from a zip can hold it
+# twice for a moment, and that must fit a Pi's MemoryMax=256M (the timetable
+# and fetch units) beside Python itself. Parsing one takes more: see
+# build.MAX_PARSED_BYTES.
+MAX_XML_BYTES = 100_000_000
 MAX_UNZIPPED_BYTES = 1_000_000_000  # every file in one download, uncompressed
 MAX_ZIP_MEMBERS = 2_000
 MAX_STOPS = 8  # including yours; more and the names get unreadable

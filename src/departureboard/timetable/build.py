@@ -22,7 +22,8 @@ Built about once a week by a timer, the command line or the dashboard's
 upkeep, and by the setup search, never from the minutely board run: an
 operator's timetables can run to hundreds of megabytes. Each download waits
 on disk and its documents are parsed one at a time, so a Pi Zero holds one
-document in memory, never the lot.
+document in memory, never the lot, and refuses one too big to parse in its
+memory (MAX_PARSED_BYTES).
 
 One build at a time. Every build goes through build(), which holds a lock
 file in the store (LOCK_NAME) while it runs, let go by the system if the
@@ -123,6 +124,14 @@ MAX_JOURNEYS = 20_000  # far more than any town's stops see
 # before that, while they are all held at once (a Pi Zero builds this too).
 MAX_INBOUND_JOURNEYS = 10_000
 MAX_FILE_BYTES = 50_000_000
+# A document mentioning your stops is parsed whole, which takes about 8 times
+# its size: on a 32-bit Pi this must fit the timetable unit's MemoryMax=256M
+# beside Python and the journeys found so far. Those that don't mention your
+# stops are skipped unparsed, up to routesetup.MAX_XML_BYTES. Parsing it piece
+# by piece (safexml.iter_elements) would need two passes, as its journeys refer
+# to patterns and to each other, and it is held whole to look for your stops
+# anyway: a lower cap is the simpler fix.
+MAX_PARSED_BYTES = 25_000_000
 DOWNLOAD_TIMEOUT = 60.0  # seconds without data before a download is given up
 _TEXT_LIMIT = 80  # line names, destinations, codes
 _LATEST = 2 * 24 * 3600  # a journey still running two days after its service day is nonsense
@@ -556,7 +565,11 @@ def _read_document(
     """The journeys in a document calling at your stops, each with the version
     of the service it is in, and the document's stop positions. With `yours`
     (your stops' positions known so far), also its inbound-only journeys of
-    the lines calling there (see the module's notes)."""
+    the lines calling there (see the module's notes). TimetableError for one
+    larger than MAX_PARSED_BYTES."""
+    if len(xml) > MAX_PARSED_BYTES:
+        raise TimetableError(f"A timetable file for your stops is larger than {MAX_PARSED_BYTES} bytes; refusing it "
+                             "(not enough memory to read it)")
     try:
         root = safexml.fromstring(xml)
     except safexml.DoctypeError:

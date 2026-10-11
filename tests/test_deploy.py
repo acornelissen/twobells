@@ -372,6 +372,21 @@ def test_the_settings_service_has_room_for_every_connection_the_server_takes():
     assert web["MemoryMax"] == ["128M"]
 
 
+def test_the_timetable_unit_has_room_for_the_largest_document_it_reads():
+    # Read whole, a document can be held twice while it is unpacked; parsed,
+    # it takes about 8 times its size. Room is kept for Python and the
+    # journeys found so far. The fetch service reads them for the setup search.
+    from departureboard.timetable import build, routesetup
+
+    room = 40_000_000
+    for name in ("departureboard-timetable.service", "departureboard-fetch.service"):
+        memory = _unit(name)["MemoryMax"][0]
+        assert memory.endswith("M"), name
+        limit = int(memory[:-1]) * 1024 * 1024
+        assert 2 * routesetup.MAX_XML_BYTES + room <= limit, name
+        assert 8 * build.MAX_PARSED_BYTES + room <= limit, name
+
+
 def test_the_fetch_service_goes_out_and_listens_on_nothing():
     from departureboard.setup.spool.folder import RUNTIME
 

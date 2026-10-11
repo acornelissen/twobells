@@ -711,6 +711,20 @@ def test_documents_are_unpacked_one_at_a_time(tmp_path):
     assert next(documents) == ("X", b"<b/>")
 
 
+def test_a_document_too_big_to_read_in_memory_is_refused(monkeypatch):
+    monkeypatch.setattr(timetable, "MAX_PARSED_BYTES", len(TXC_61) - 1)
+    with pytest.raises(TimetableError, match="larger than"):
+        FakeBods().build()
+
+
+def test_a_big_document_that_never_mentions_your_stops_is_skipped_unread(monkeypatch):
+    biggest = max(len(TXC_341), len(TXC_237), len(TXC_61))
+    monkeypatch.setattr(timetable, "MAX_PARSED_BYTES", biggest)
+    bods = FakeBods()
+    bods.blobs[BNML_LINK] = _zip({"341.xml": TXC_341, "big.xml": ELSEWHERE + b" " * biggest})
+    assert {j.line for j in bods.build().journeys} == {"341", "61"}
+
+
 def test_no_journeys_at_your_stops_is_an_error():
     bods = FakeBods()
     bods.datasets = {"BNML": [HIPK_LINK]}
