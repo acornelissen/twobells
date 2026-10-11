@@ -57,8 +57,10 @@ past 1440 after midnight.
 
 Versions. BODS keeps an old version of a service (its ServiceCode, line and
 operator) beside the one replacing it, often open-ended, so both would run.
-As bustimes.org does, a version ends the day before a later one starts; of
-two starting the same day, the higher RevisionNumber wins.
+As bustimes.org does, a version ends the day before a later open-ended one
+starts. A later one with an end (roadworks, say) only switches the earlier
+one off while it runs, as days of non-operation, so the earlier one runs
+again after it. Of two starting the same day, the higher RevisionNumber wins.
 
 Calendars. runs_on() decides, in this order:
   1. outside the service's OperatingPeriod: no;
@@ -693,30 +695,41 @@ def _group(version: _Version, journey: Journey) -> tuple[str, str, str]:
     return version.service, journey.line, journey.operator
 
 
-def _until_replaced(version: _Version, journey: Journey, versions: Mapping[tuple, Set[tuple[date, int]]]
-                    ) -> Journey | None:
-    """The journey, ending the day before a later version of its service starts,
-    as bustimes.org does: BODS keeps an old version beside the one replacing
-    it, often open-ended, and both would run. None if a version starting the
-    same day with a higher RevisionNumber replaces it. `versions` has the
-    (start, revision) of every version of each service seen (see _group). A
-    journey whose document gives no ServiceCode is kept as it is."""
+# A version of a service as seen (see _group): its start (date.min if it gives
+# none), its end (None if open-ended) and its RevisionNumber.
+_Seen = tuple[date, date | None, int]
+
+
+def _until_replaced(version: _Version, journey: Journey, versions: Mapping[tuple, Set[_Seen]]) -> Journey | None:
+    """The journey as a later version of its service leaves it, as bustimes.org
+    does: BODS keeps an old version beside the one replacing it, often
+    open-ended, and both would run. It ends the day before the first later
+    open-ended version starts; a later version with an end only switches it
+    off from that version's start to its end (calendar.dates_off, which
+    runs_on puts first), within the journey's own period. None if a version
+    starting the same day with a higher RevisionNumber replaces it. `versions`
+    has every version of each service seen. A journey whose document gives no
+    ServiceCode is kept as it is."""
     if not version.service:
         return journey
-    start = journey.calendar.start or date.min
+    calendar = journey.calendar
+    start = calendar.start or date.min
     others = versions.get(_group(version, journey), ())
-    if any(other == start and revision > version.revision for other, revision in others):
+    if any(other == start and revision > version.revision for other, _, revision in others):
         return None
-    later = [other for other, _ in others if other > start]
-    if not later:
+    end = calendar.end
+    replaced = [other for other, other_end, _ in others if other > start and other_end is None]
+    if replaced and (end is None or min(replaced) <= end):
+        end = min(replaced) - timedelta(days=1)
+    off = tuple(sorted((other, other_end if end is None else min(other_end, end))
+                       for other, other_end, _ in others
+                       if other > start and other_end is not None and (end is None or other <= end)))
+    if end == calendar.end and not off:
         return journey
-    end = min(later) - timedelta(days=1)
-    if journey.calendar.end and journey.calendar.end <= end:
-        return journey
-    return replace(journey, calendar=replace(journey.calendar, end=end))
+    return replace(journey, calendar=replace(calendar, end=end, dates_off=calendar.dates_off + off))
 
 
-def _current(found: Iterable[tuple[_Version, Journey]], versions: Mapping[tuple, Set[tuple[date, int]]],
+def _current(found: Iterable[tuple[_Version, Journey]], versions: Mapping[tuple, Set[_Seen]],
              today: date) -> tuple[Journey, ...]:
     """The journeys still running from `today`, each until a later version of
     its service replaces it (_until_replaced), and each once: duplicates (same
@@ -825,7 +838,8 @@ def build_schedule(
     It has no roads yet: see add_roads.
 
     BODS keeps an old version of a service beside the one replacing it, so
-    each version ends the day before a later one starts (_until_replaced).
+    each version ends the day before a later open-ended one starts, and is
+    switched off while a later one with an end runs (_until_replaced).
     Journeys whose timetable ended before today are left out, and so are
     duplicates (same line, operator, calls and calendar), which live times
     couldn't tell apart. valid_until is the earliest end among the rest that
@@ -838,7 +852,7 @@ def build_schedule(
     # every version of their service has been seen (_current).
     journeys: dict[tuple, tuple[_Version, Journey]] = {}
     inbound: dict[tuple, tuple[_Version, Journey]] = {}  # inbound-only, not yet measured
-    versions: dict[tuple, set[tuple[date, int]]] = {}  # (start, revision) by _group
+    versions: dict[tuple, set[_Seen]] = {}  # by _group
     nearby: set[str] = set()
     approaches: set[str] = set()
     known: dict[str, StopPosition] = {}
@@ -852,9 +866,9 @@ def build_schedule(
         found, positions = _read_document(document, atcos, noc, yours)
         yours.update((atco, positions[atco]) for atco in atcos if atco in positions)
         for version, journey in found:
-            # Even an ended version ends the ones before it.
+            # Even an ended version ends the ones before it, if it was open-ended.
             versions.setdefault(_group(version, journey), set()).add(
-                (journey.calendar.start or date.min, version.revision))
+                (journey.calendar.start or date.min, journey.calendar.end, version.revision))
             if journey.calendar.end and journey.calendar.end < today:
                 continue
             key = (version, journey.line, journey.operator, journey.calls, journey.calendar)

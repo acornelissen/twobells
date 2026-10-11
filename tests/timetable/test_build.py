@@ -72,9 +72,10 @@ def _by_code(journeys):
 # A small TransXChange document for the cases the real samples don't show.
 
 def _txc(links, *, departure="10:00:00", profile="", journey="", pattern="", operators=None, stops="", extra="",
-         start="2026-01-01", revision=None):
+         start="2026-01-01", end=None, revision=None):
     """`links` is a list of (from, to, run time, from wait, to wait) on one pattern.
-    Its service S1 runs from `start`; `revision` is the document's RevisionNumber."""
+    Its service S1 runs from `start` until `end`, if given; `revision` is the
+    document's RevisionNumber."""
     timing = "".join(
         f'<JourneyPatternTimingLink id="l{i}"><From>{f"<WaitTime>{fw}</WaitTime>" if fw else ""}'
         f"<StopPointRef>{a}</StopPointRef></From><To>{f'<WaitTime>{tw}</WaitTime>' if tw else ''}"
@@ -91,7 +92,7 @@ def _txc(links, *, departure="10:00:00", profile="", journey="", pattern="", ope
  <Operators>{operators}</Operators>
  <Services><Service><ServiceCode>S1</ServiceCode>
   <Lines><Line id="L1"><LineName>99</LineName></Line></Lines>
-  <OperatingPeriod><StartDate>{start}</StartDate></OperatingPeriod>
+  <OperatingPeriod><StartDate>{start}</StartDate>{f"<EndDate>{end}</EndDate>" if end else ""}</OperatingPeriod>
   {profile}
   <RegisteredOperatorRef>o1</RegisteredOperatorRef>
   <StandardService><JourneyPattern id="p1">{pattern}<JourneyPatternSectionRefs>s1</JourneyPatternSectionRefs></JourneyPattern></StandardService>
@@ -665,12 +666,46 @@ def test_versions_of_the_same_revision_starting_the_same_day_are_both_kept():
     assert _departures(_versions(one, other), date(2026, 10, 25)) == ["07:42", "07:45"]
 
 
-def test_a_later_version_that_has_already_ended_still_ends_the_earlier_one():
+def test_a_temporary_version_switches_the_earlier_one_off_only_while_it_runs():
+    # Roadworks: a timetable for two weeks, then the usual one again.
+    usual = _txc(LINKS, departure="07:37:00", start="2026-01-01")  # at Stop A 07:42
+    roadworks = _txc(LINKS, departure="07:40:00", start="2026-10-20", end="2026-11-03")  # 07:45
+    schedule = _versions(usual, roadworks)
+    assert _departures(schedule, date(2026, 10, 19)) == ["07:42"]
+    assert _departures(schedule, date(2026, 10, 20)) == ["07:45"]
+    assert _departures(schedule, date(2026, 10, 25)) == ["07:45"]
+    assert _departures(schedule, date(2026, 11, 3)) == ["07:45"]
+    assert _departures(schedule, date(2026, 11, 4)) == ["07:42"]
+    assert _departures(schedule, date(2026, 11, 10)) == ["07:42"]
+    assert schedule.valid_until == date(2026, 11, 3)  # built again once the roadworks end
+
+
+def test_a_temporary_version_beats_the_earlier_one_s_own_extra_days():
+    usual = _txc(LINKS, departure="07:37:00", start="2026-01-01", profile=_profile(
+        "<RegularDayType><DaysOfWeek><MondayToFriday/></DaysOfWeek></RegularDayType>"
+        "<SpecialDaysOperation><DaysOfOperation><DateRange><StartDate>2026-10-25</StartDate></DateRange>"
+        "</DaysOfOperation></SpecialDaysOperation>"))
+    roadworks = _txc(LINKS, departure="07:40:00", start="2026-10-20", end="2026-11-03")
+    assert _departures(_versions(usual, roadworks), date(2026, 10, 25)) == ["07:45"]  # a Sunday
+
+
+def test_a_temporary_version_after_the_earlier_one_has_been_replaced_changes_nothing():
     old = _txc(LINKS, departure="07:37:00", start="2026-01-01")
-    ended = _txc(LINKS, departure="07:40:00", start="2026-06-01").replace(
-        b"<StartDate>2026-06-01</StartDate>", b"<StartDate>2026-06-01</StartDate><EndDate>2026-09-30</EndDate>")
-    with pytest.raises(TimetableError, match="No timetabled journeys"):
-        _versions(old, ended)
+    new = _txc(LINKS, departure="07:40:00", start="2026-10-20")
+    later = _txc(LINKS, departure="07:43:00", start="2026-12-01", end="2026-12-14")
+    schedule = _versions(old, new, later)
+    replaced = [j for j in schedule.journeys if j.calendar.start == date(2026, 1, 1)]
+    assert [j.calendar.end for j in replaced] == [date(2026, 10, 19)]
+    assert replaced[0].calendar.dates_off == ()  # nothing to switch off past its end
+    assert _departures(schedule, date(2026, 12, 5)) == ["07:48"]
+    assert _departures(schedule, date(2026, 12, 15)) == ["07:45"]
+
+
+def test_a_later_version_that_has_already_ended_leaves_the_earlier_one_running():
+    usual = _txc(LINKS, departure="07:37:00", start="2026-01-01")
+    ended = _txc(LINKS, departure="07:40:00", start="2026-06-01", end="2026-09-30")
+    schedule = _versions(usual, ended)
+    assert _departures(schedule, date(2026, 10, 25)) == ["07:42"]
 
 
 def test_other_services_are_not_ended_by_a_later_one():
