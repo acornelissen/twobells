@@ -38,7 +38,6 @@ from dataclasses import dataclass
 from typing import TypeGuard, TypeVar
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlsplit
-from urllib.request import Request
 
 from ..core import net
 from ..core.errors import safe_message
@@ -52,7 +51,11 @@ KEY_NAMES = ("RDM_API_KEY", "RDM_DETAILS_API_KEY", "RDM_KB_API_KEY", "BODS_API_K
 # Testing these spends one of TransportAPI's 30 free lookups for the day.
 COSTS_A_LOOKUP = frozenset({"TAPI_APP_ID", "TAPI_APP_KEY"})
 
-TIMEOUT = 10.0  # seconds per call; someone is waiting on the page
+TIMEOUT = 10.0  # seconds per step of a call; someone is waiting on the page
+# Seconds for a whole call, however slowly the service sends. Service Details
+# makes two, and both must be over before the wizard stops waiting for the
+# answer (spool WAITS "testkey"), which also covers the fetch service starting.
+CALL_DEADLINE = 15.0
 MAX_BYTES = 256 * 1024  # read no more of any answer than this
 _ERROR_BYTES = 4096  # of an error's body, to tell a wrong key from an unsubscribed one
 _MIN_REPLACED = 4  # a key shorter than this can't be told from ordinary words
@@ -107,7 +110,7 @@ _SERVICES["TAPI_APP_KEY"] = _SERVICES["TAPI_APP_ID"]
 
 def _fetch(url: str, headers: Mapping[str, str]) -> bytes:
     """An answer's body, at most MAX_BYTES of it: a test needs no more."""
-    request = Request(url, headers={"User-Agent": net.USER_AGENT, "Accept": "application/json", **headers})  # noqa: S310
+    request = net.timed_request(url, {"Accept": "application/json", **headers}, CALL_DEADLINE)
     with net.urlopen(request, timeout=TIMEOUT) as response:
         return response.read(MAX_BYTES)
 

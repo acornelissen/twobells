@@ -2,13 +2,16 @@
 
 import io
 import logging
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from departureboard.core import net
 from departureboard.setup import keytest
 from departureboard.setup.keytest import KeyResult
+from departureboard.setup.spool.folder import WAITS
 from tests.paths import FIXTURES
 
 BOARD = (FIXTURES / "ldbws_glossop_details.json").read_bytes()
@@ -389,3 +392,29 @@ def test_details_darwin_s_own_error_for_a_made_up_train_means_the_key_got_throug
     # The gateway's own failure still says the service is down.
     fake = Fake(("GetDepartureBoard", empty), ("GetServiceDetails", (500, b'{"fault":{"faultstring":"x"}}')))
     assert check("RDM_DETAILS_API_KEY", fake).state == "service_down"
+
+
+# A service sending its answer slowly.
+
+
+@pytest.mark.parametrize("path", ["/body", "/headers", "/moved"])
+def test_a_service_sending_slowly_is_given_up_at_the_deadline(drip_to, monkeypatch, path):
+    # Each read gets a byte within the per-step timeout, so only the deadline stops it.
+    monkeypatch.setattr(keytest, "CALL_DEADLINE", 0.3)
+    drip_to(path)
+    start = time.monotonic()
+    result = keytest.test_key("BODS_API_KEY", BODS_KEY, CONFIG, {})
+    assert result.state == "service_down" and "took too long" in result.message
+    assert time.monotonic() - start < 1.0
+
+
+def test_a_key_test_ends_before_the_wizard_stops_waiting(monkeypatch):
+    seen = []
+    monkeypatch.setattr(net, "urlopen", lambda request, timeout: seen.append(request) or io.BytesIO(BOARD))
+    keytest.test_key("RDM_DETAILS_API_KEY", None, CONFIG, SAVED)
+    assert len(seen) == 2  # the board for a train, then the train
+    for request in seen:
+        assert request.deadline <= time.monotonic() + keytest.CALL_DEADLINE
+    # Every call at its deadline, with room for the fetch service to start
+    # first (several seconds on a Pi Zero), within the wizard's wait.
+    assert len(seen) * keytest.CALL_DEADLINE + 10 <= WAITS["testkey"]
