@@ -44,10 +44,11 @@ class Install:
     password_command: str = ""
     reset_command: str = ""
     # The most of one bus timetable file (TransXChange) read, to look for your
-    # stops in, and parsed whole if it mentions them (about 8 times its size in
-    # memory); a bigger one is skipped (routesetup.DocumentLimits). A Pi's fit
-    # its units' MemoryMax=256M, Docker's its container's 512 MB, shared with
-    # the web server; a desktop's are the timetable's own.
+    # stops in, and parsed if it mentions them (held, with up to as much again
+    # for what is read from it); a bigger one is skipped
+    # (routesetup.DocumentLimits). A Pi's fit its units' MemoryMax=256M,
+    # Docker's its container's 512 MB, shared with the web server; a
+    # desktop's are the timetable's own.
     timetable_read_bytes: int = 200_000_000
     timetable_parse_bytes: int = 200_000_000
 
@@ -59,11 +60,11 @@ INSTALLS = {
     install.name: install
     for install in (
         Install("pi", ("board", "dashboard"), ("board",), Path("/var/lib/departureboard"), noun="board", host="0.0.0.0",  # noqa: S104 - LAN; systemd and nftables allow only the home network
-                fetch="files", network_guard=True, timetable_read_bytes=100_000_000, timetable_parse_bytes=25_000_000,
+                fetch="files", network_guard=True, timetable_read_bytes=100_000_000, timetable_parse_bytes=100_000_000,
                 log_help="On the Pi: <code>sudo journalctl -u departureboard-web</code>.",
                 password_command=f"{_PI_COMMAND} --set-password", reset_command=f"{_PI_COMMAND} --reset-code"),
         Install("docker", ("dashboard",), ("dashboard",), Path("/data"), host="0.0.0.0",  # noqa: S104 - inside the container
-                timetable_read_bytes=100_000_000, timetable_parse_bytes=40_000_000,
+                timetable_read_bytes=100_000_000, timetable_parse_bytes=100_000_000,
                 log_help=("In Docker: <code>docker logs departureboard</code>, or in Container Manager, "
                           "Container, departureboard, Log."),
                 password_command=_DOCKER_COMMAND.format("--set-password"),

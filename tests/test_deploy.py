@@ -406,8 +406,11 @@ def test_the_settings_service_has_room_for_every_connection_the_server_takes():
 
 def test_the_timetable_unit_has_room_for_the_largest_document_it_reads():
     # Read whole, a document can be held twice while it is unpacked; parsed,
-    # it takes about 8 times its size. Room is kept for Python and the
-    # journeys found so far. The fetch service reads them for the setup search.
+    # it is held with up to as much again for what is read from it: twice its
+    # size. (Measured on BODS documents read an element at a time: at most
+    # 0.76 times more, 0.37 on a 37 MB one; parsed whole, it was 8 times.)
+    # Room is kept for Python and the journeys found so far. The fetch
+    # service reads them for the setup search.
     from departureboard.cli.main import _parser
     from departureboard.settings.installs import install_named
 
@@ -420,7 +423,7 @@ def test_the_timetable_unit_has_room_for_the_largest_document_it_reads():
         assert memory.endswith("M"), name
         limit = int(memory[:-1]) * 1024 * 1024
         assert 2 * pi.timetable_read_bytes + room <= limit, name
-        assert 8 * pi.timetable_parse_bytes + room <= limit, name
+        assert 2 * pi.timetable_parse_bytes + room <= limit, name
 
 
 def test_the_container_has_room_for_the_largest_timetable_document_it_reads():
@@ -444,7 +447,7 @@ def test_the_container_has_room_for_the_largest_timetable_document_it_reads():
         assert found, name
         limit = int(found.group(1)) * 1024 * 1024
         assert 2 * docker.timetable_read_bytes + room <= limit, name
-        assert 8 * docker.timetable_parse_bytes + room <= limit, name
+        assert 2 * docker.timetable_parse_bytes + room <= limit, name
 
 
 def test_the_fetch_service_goes_out_and_listens_on_nothing():

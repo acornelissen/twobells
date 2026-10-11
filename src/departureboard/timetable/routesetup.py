@@ -52,10 +52,12 @@ class RouteSetupError(Exception):
 @dataclass(frozen=True)
 class DocumentLimits:
     """The most of one TransXChange document read, to look for your stops
-    in, and parsed whole if it mentions them; a bigger one is skipped, the
-    rest still read. Unpacking one from a zip can hold it twice for a moment;
-    parsing one takes about 8 times its size. Each install's are in its
-    table (settings/installs.py): a Pi's fit its units' MemoryMax=256M."""
+    in, and parsed if it mentions them; a bigger one is skipped, the rest
+    still read. Unpacking one from a zip can hold it twice for a moment;
+    parsing one holds it with up to as much again for what is read from it
+    (build reads it an element at a time, never as a whole tree). Each
+    install's are in its table (settings/installs.py): a Pi's fit its units'
+    MemoryMax=256M."""
 
     read: int = MAX_XML_BYTES
     parse: int = MAX_XML_BYTES
