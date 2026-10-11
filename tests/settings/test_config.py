@@ -310,6 +310,32 @@ def test_display_override_turns_the_route_page_on(tmp_path):
     assert load_config(path, BODS_ENV, display="hdmi-1280x400").board.tracker is not None
 
 
+def test_a_screen_shows_where_trains_and_buses_are(example):
+    positions = load_config(example, BODS_ENV, display="hdmi-1280x400").board.positions
+    assert positions is not None and positions.details is None  # buses only, without a details key
+
+
+def test_a_screen_with_a_details_key_asks_where_the_trains_are(example):
+    env = {**BODS_ENV, "RDM_DETAILS_API_KEY": "details"}
+    assert load_config(example, env, display="hdmi-1280x400").board.positions.details is not None
+
+
+def test_e_paper_never_asks_where_anything_is(example):
+    env = {**BODS_ENV, "RDM_DETAILS_API_KEY": "details"}
+    assert load_config(example, env, display="inky").board.positions is None
+
+
+def test_a_probe_asks_where_nothing_is(example):
+    env = {**BODS_ENV, "RDM_DETAILS_API_KEY": "details"}
+    assert load_config(example, env, only={"train"}, display="hdmi-1280x400").board.positions is None
+
+
+def test_a_details_key_that_could_split_a_header_is_refused(example):
+    env = {**BODS_ENV, "RDM_DETAILS_API_KEY": "abc\r\nX-Evil: 1"}
+    with pytest.raises(ConfigError, match="RDM_DETAILS_API_KEY"):
+        load_config(example, env, display="hdmi-1280x400")
+
+
 def test_route_stop_must_be_a_configured_stop(tmp_path):
     with pytest.raises(ConfigError, match="not one of"):
         load_config(write(tmp_path, ROUTE.replace('stop = "A"', 'stop = "Z"')), BODS_ENV)

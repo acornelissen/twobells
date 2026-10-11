@@ -25,7 +25,7 @@ All of them are free.
 |---|---|---|---|---|
 | `RDM_API_KEY` (Live Departure Board) | needed | needed | needed for trains | needed |
 | `BODS_API_KEY` (Bus Open Data Service) | – | needed | needed for buses | needed |
-| `RDM_DETAILS_API_KEY` (Service Details) | – | – | optional | needed |
+| `RDM_DETAILS_API_KEY` (Service Details) | optional on a screen | optional on a screen | optional | needed |
 | `RDM_KB_API_KEY` (Knowledgebase Incidents) | – | – | optional | needed |
 | `TAPI_APP_ID`, `TAPI_APP_KEY` (TransportAPI) | – | optional | not used | optional |
 
@@ -135,9 +135,9 @@ It lists the next trains from your station. An error mentioning 401 or 403 means
 
 ## Rail Data Marketplace: Service Details
 
-**What it unlocks:** on the dashboard, where each of the next three trains is ("Left Hadfield 22:44, on time", "At Glossop now"), and the stops before your station in each train's sheet. It doesn't change the board.
+**What it unlocks:** on the dashboard, where each of the next three trains is ("Left Hadfield 22:44, on time", "At Glossop now"), and the stops before your station in each train's sheet. On an HDMI screen, the board's rows say the same about the next three trains: the board asks for itself, during the train checking times, each train at most once a minute. It doesn't change an e-paper board, which never asks.
 
-**Needed?** No. Without it, the dashboard works as before, just without train positions.
+**Needed?** No. Without it, the dashboard and the board work as before, just without train positions.
 
 **Cost:** free, with no usage limit.
 
@@ -163,7 +163,7 @@ The **Rail Data Marketplace key for where each train is** box on the settings' *
 
 On the **Keys** page, press **Save and test** as you paste it, or **Test saved key** in the **Where each train is** form. Then open the dashboard: within a minute or two, the first train's row says where it is, and the next three trains' sheets draw them on their journeys.
 
-If they don't, look at the log (on a Pi `journalctl -u departureboard-fetch`; in Docker `docker logs departureboard`; on a desktop, the Terminal window running it) for "train positions off for 6 hours". That means the key was refused: check you copied the Service Details key, not the Live Departure Board one. Saving the right key on the Keys page starts the dashboard's feeds again; a key changed in a file of your own needs a restart (see [Replacing a key](#replacing-a-key)), or the dashboard waits the full 6 hours before trying again.
+If they don't, look at the log (on a Pi `journalctl -u departureboard-fetch`, or `journalctl -u departureboard-screen` for the screen's rows; in Docker `docker logs departureboard`; on a desktop, the Terminal window running it) for "train positions off for 6 hours". That means the key was refused: check you copied the Service Details key, not the Live Departure Board one. Saving the right key on the Keys page starts the dashboard's feeds again; a key changed in a file of your own needs a restart (see [Replacing a key](#replacing-a-key)), or the dashboard waits the full 6 hours before trying again.
 
 ---
 

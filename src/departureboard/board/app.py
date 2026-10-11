@@ -23,10 +23,20 @@ from ..core.walk import WalkTimes, leave_time
 from ..sources.bods import Vehicle
 from ..sources.weather import Hour, hours_from_dicts, hours_to_dicts, rain_line
 from ..web.auth import ResetCodes, spaced
+from . import positions as row_positions
 from .panel import Panel
+from .positions import Positions
 from .render import Palette
 from .route import RouteStrip, RouteView, locate, target, where
-from .state import departure_to_dict, departures_from_dicts, from_iso, to_iso, vehicle_to_dict, vehicles_from_dicts
+from .state import (
+    MEMORY_ONLY,
+    departure_to_dict,
+    departures_from_dicts,
+    from_iso,
+    to_iso,
+    vehicle_to_dict,
+    vehicles_from_dicts,
+)
 from .themes import THEMES, Theme
 from .view import BoardView, CodeView, SetupView, build_view
 
@@ -116,6 +126,8 @@ class Board:
     # Until the board is set up: where to do it, shown instead of departures
     # (a waiting reset code still comes first, for claiming the settings site).
     setup: SetupView | None = None
+    # Where each shown train and bus is, for a screen's rows; e-paper never asks.
+    positions: Positions | None = None
 
 
 def reset_code_page(folder: Path, timezone: str) -> Callable[[], CodeView | None]:
@@ -345,12 +357,19 @@ def run_once(
 ) -> RunResult:
     # A screen can redraw every second, so it gets a running clock and countdowns.
     live = not display.panel.epaper
+    fetched = set()
     for config in board.sources:
         before = state.get("sources", {}).get(config.source.name, {}).get("last_success")
         _poll(config, state, now, prime)
         _keep_messages(config, state, before)
+        if state.get("sources", {}).get(config.source.name, {}).get("last_success") != before:
+            fetched.add(config.source.name)
     if live and board.tracker is not None:
         _poll_vehicles(board.tracker, state, now)
+    strips = None
+    if live and board.positions is not None:
+        row_positions.poll(board.positions, board.sources, state, now, fetched)
+        strips = row_positions.strips(board.positions, board.sources, state, now)
     if board.weather is not None:
         _poll_weather(board.weather, state, now)
     entries = state.get("sources", {})
@@ -369,6 +388,7 @@ def run_once(
         clock=now.strftime("%H:%M:%S") if live else None,
         notices=_notices(board, state, now),
         rain=_rain(board, state, trains + buses, now, live),
+        strips=strips,
     )
 
     code = _reset_code(board)
@@ -421,9 +441,11 @@ _SAVE_EVERY = timedelta(minutes=5)
 
 
 def _fetched(state: dict) -> str:
-    """The part of the state worth keeping: not the last redraw, nor bus positions,
-    which change every poll and are useless a few minutes later."""
-    return json.dumps({k: v for k, v in state.items() if k not in ("last_render", "vehicles")}, sort_keys=True)
+    """The part of the state worth keeping: not the last redraw, nor bus positions
+    or row strips, which change every poll and are useless a few minutes later
+    (row strips are never saved at all: see StateStore.save)."""
+    kept = {k: v for k, v in state.items() if k not in ("last_render", "vehicles", MEMORY_ONLY)}
+    return json.dumps(kept, sort_keys=True)
 
 
 def run_loop(

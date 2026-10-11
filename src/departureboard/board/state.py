@@ -14,6 +14,11 @@ from ..sources.bods import Vehicle
 
 log = logging.getLogger(__name__)
 
+# What the board keeps in memory beside the departures and never saves: where
+# each shown train and bus is (board/positions.py). It changes every few
+# seconds, so writing it would wear the SD card, and it is useless once old.
+MEMORY_ONLY = "strips"
+
 
 def departure_to_dict(dep: Departure) -> dict:
     data = asdict(dep)
@@ -83,6 +88,7 @@ class StateStore:
         if not isinstance(state, dict):
             log.warning("Ignoring state file %s: not a JSON object", self._path)
             return {}
+        state.pop(MEMORY_ONLY, None)  # never saved; one in the file was put there by hand
         for key in ("sources", "budgets", "last_render", "vehicles"):
             if key in state and not isinstance(state[key], dict):
                 log.warning("Ignoring malformed %r in state file %s", key, self._path)
@@ -95,4 +101,5 @@ class StateStore:
         return state
 
     def save(self, state: dict) -> None:
-        files.write_atomic(self._path, json.dumps(state, indent=2), 0o640)
+        kept = {key: value for key, value in state.items() if key != MEMORY_ONLY}
+        files.write_atomic(self._path, json.dumps(kept, indent=2), 0o640)

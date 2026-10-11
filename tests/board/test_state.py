@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from departureboard.board.state import StateStore, departure_from_dict, departure_to_dict
+from departureboard.board.state import MEMORY_ONLY, StateStore, departure_from_dict, departure_to_dict
 from departureboard.core.model import Departure, Status
 
 
@@ -124,3 +124,13 @@ def test_saved_departures_that_are_not_a_list_read_as_none(items):
     from departureboard.board.state import departures_from_dicts
 
     assert departures_from_dicts(items) == []
+
+
+def test_row_strips_are_never_saved_nor_read_back(tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    state = {"sources": {}, MEMORY_ONLY: {"bus": {"items": {}}}}
+    store.save(state)
+    assert MEMORY_ONLY not in json.loads((tmp_path / "state.json").read_text())
+    assert MEMORY_ONLY in state  # still in memory
+    (tmp_path / "state.json").write_text(json.dumps({"sources": {}, MEMORY_ONLY: {"bus": {}}}))
+    assert store.load() == {"sources": {}}

@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 from ..board.app import Board, SourceConfig, Tracker, Weather, reset_code_page
 from ..board.displays.display import DISPLAY_PANELS
+from ..board.positions import Positions
 from ..board.route import RouteStop, RouteStrip
 from ..board.themes import theme_named, with_text_size
 from ..core.polling import PollPolicy, parse_window
@@ -29,7 +30,7 @@ from ..core.walk import DEFAULT_STOP, WalkTimes
 from ..sources.bods import BodsVehicleSource
 from ..sources.bodsbus import BodsBusSource
 from ..sources.darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL
-from ..sources.darwin import DarwinSource
+from ..sources.darwin import DarwinSource, ServiceDetailsClient, TrainDetails
 from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES
 from ..sources.transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
 from ..sources.transportapi import TransportApiBusSource
@@ -453,6 +454,17 @@ def _tracker(section: dict, env: Mapping[str, str], bus: PollPolicy) -> Tracker 
     return Tracker(source, strips, PollPolicy(bus.windows, interval, bus.holidays))
 
 
+def _positions(env: Mapping[str, str], trains: bool) -> Positions:
+    """Where each shown train and bus is, for a screen's rows. The buses come
+    from the bus source's own live board; the trains need Darwin's Service
+    Details, with its own optional key, which goes in a header: anything that
+    could split one is refused, without repeating the key."""
+    key = env.get("RDM_DETAILS_API_KEY", "").strip()
+    if key and (not key.isprintable() or any(c.isspace() for c in key)):
+        raise ConfigError("RDM_DETAILS_API_KEY has spaces or control characters in it")
+    return Positions(details=TrainDetails(ServiceDetailsClient(key)) if key and trains else None)
+
+
 def _coordinate(section: dict, key: str, limit: int) -> float:
     value = section.get(key)
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not -limit <= value <= limit:
@@ -575,6 +587,10 @@ def settings_from(
         # Bus positions are only drawn on a screen; e-paper never asks for them.
         if not DISPLAY_PANELS[display].epaper:
             tracker = _tracker(data["bus"], env, bus.policy)
+    # Nor where each train and bus is; nor does a probe of one source.
+    positions = None
+    if sources and only is None and not DISPLAY_PANELS[display].epaper:
+        positions = _positions(env, any(isinstance(c.source, DarwinSource) for c in sources))
     # Where the settings site leaves a reset code: beside the state file, in the store.
     folder = state_dir(data)
     board = Board(
@@ -587,6 +603,7 @@ def settings_from(
         # A probe of one source needs no forecast.
         weather=_weather(data, sources, timezone) if only is None else None,
         reset_code=reset_code_page(folder, timezone) if folder and only is None else None,
+        positions=positions,
     )
     return Settings(
         board=board,
