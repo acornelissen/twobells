@@ -21,6 +21,22 @@ def test_a_file_is_replaced_whole_with_the_mode_given_whatever_the_umask(tmp_pat
     assert os.listdir(path.parent) == ["web.json"]  # nothing left aside
 
 
+def test_a_file_can_be_written_in_parts_and_one_that_fails_part_way_leaves_the_old_one(tmp_path):
+    # As a timetable is saved, a journey at a time: never held whole.
+    path = tmp_path / "bus-timetable.json"
+    files.write_atomic(path, iter([b"{", b'"a":1', b"}"]), 0o640)
+    assert path.read_text() == '{"a":1}'
+
+    def cut_off():
+        yield b"{"
+        raise ValueError("too big")
+
+    with pytest.raises(ValueError, match="too big"):
+        files.write_atomic(path, cut_off(), 0o640)
+    assert path.read_text() == '{"a":1}'
+    assert os.listdir(tmp_path) == ["bus-timetable.json"]  # nothing left aside
+
+
 def test_it_is_on_disk_before_it_replaces_the_old_file(tmp_path, monkeypatch):
     calls = []
     replace = files.os.replace

@@ -199,3 +199,65 @@ def test_journeys_keep_no_dict_of_their_own_and_stay_frozen():
             value.extra = 1
     assert dataclasses.replace(journey, line="342").line == "342"
     assert len({journey, dataclasses.replace(journey)}) == 1
+
+
+def _as_it_was_saved(schedule):
+    """The file as Schedule.to_json wrote it whole, before it was written in parts."""
+    def plain(value):
+        if isinstance(value, dict):
+            return {k: plain(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [plain(v) for v in value]
+        if isinstance(value, (set, frozenset)):
+            return sorted(plain(v) for v in value)
+        if isinstance(value, (date, datetime)):
+            return value.isoformat()
+        return value
+
+    data = dataclasses.asdict(dataclasses.replace(schedule, shapes={}))
+    data["shapes"] = dict(schedule.shapes)
+    return json.dumps(plain(data), separators=(",", ":"), sort_keys=True)
+
+
+def _several():
+    schedule = _every_field()
+    first = schedule.journeys[0]
+    second = dataclasses.replace(first, journey_code="10621", calls=(Call("1800ANIN0K1", 400),), inbound_only=False,
+                                 calendar=Calendar(frozenset({6, 5}), bank_holidays_on=frozenset({"B", "A"})))
+    return dataclasses.replace(
+        schedule, stops={"B": "1800ANIN0K1", "A": "1000DGHS0900"}, journeys=(first, second, first),
+        positions={"1800ANIN0K1": StopPosition("Market Hall", 53.4, -1.9), **schedule.positions},
+        shapes={"Z>A": ((53.0, -1.0),), **schedule.shapes})
+
+
+def test_a_timetable_written_in_parts_is_the_file_it_always_was():
+    schedule = _several()
+    assert "".join(schedule.json_parts()) == schedule.to_json() == _as_it_was_saved(schedule)
+    empty = Schedule(datetime(2026, 10, 9, 3, 0), None, {}, ())
+    assert empty.to_json() == _as_it_was_saved(empty)
+
+
+@pytest.mark.parametrize("piece", [1, 2, 3, 7, 64])
+def test_a_timetable_read_from_a_file_a_little_at_a_time_is_read_whole(monkeypatch, piece):
+    import io
+
+    from departureboard.timetable import model
+
+    monkeypatch.setattr(model._Reader, "_PIECE", piece)
+    schedule = _several()
+    text = schedule.to_json()
+    assert Schedule.from_file(io.StringIO(text)) == schedule
+    assert Schedule.from_file(io.StringIO(json.dumps(json.loads(text), indent=2))) == schedule
+    light = Schedule.from_file(io.StringIO(text), journeys=False)
+    assert light == dataclasses.replace(schedule, journeys=(), shapes={})
+    with pytest.raises(ValueError):
+        Schedule.from_file(io.StringIO(text[:-1]))
+    with pytest.raises(ValueError):
+        Schedule.from_file(io.StringIO(text + "1"))
+
+
+def test_a_timetable_read_shares_its_journeys_equal_values():
+    back = Schedule.from_json(_several().to_json())
+    first, second, third = back.journeys
+    assert first.calendar is third.calendar and first.calls[0].atco is third.calls[0].atco
+    assert first.calls[1].atco is second.calls[0].atco and first.line is second.line

@@ -134,6 +134,7 @@ class BodsBusSource:
         if not self._operators:
             raise ValueError("No operators to read timetables for")
         now = self._clock().replace(tzinfo=None)
+        self._loaded = (None, None)  # not held beside the build; read again next time
         schedule = timetable.build(self._folder, self._stops, self._operators, now, self._api_key, force=force,
                                    limits=limits)
         self._loaded = (None, None)  # read it again next time

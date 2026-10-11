@@ -943,6 +943,22 @@ def test_saved_answers_todays_choices_with_names_and_walks_never_keys(board):
     assert RDM_KEY not in json.dumps(body) and BODS_KEY not in json.dumps(body)
 
 
+def test_saved_names_the_stops_from_a_big_timetable_without_holding_its_journeys(board):
+    # A Pi's web server has 128 MB; a timetable's journeys can take more.
+    from dataclasses import replace
+
+    from tests.timetable.test_build import _long_schedule, _peak
+
+    saved_with_a_search(board)
+    schedule = _long_schedule()
+    station_road = {"1800SB12341": StopPosition("Station Road", 53.4615, -1.9662, "Stop A")}
+    timetable.save(board.state, replace(schedule, positions={**schedule.positions, **station_road}))
+    size = (board.state / timetable.FILE_NAME).stat().st_size
+    body, peak = _peak(lambda: ok(board, "saved"))
+    assert body["stops"][0]["name"] == "Station Road"
+    assert peak < size / 5
+
+
 def test_saved_leaves_out_what_is_off_or_not_set_up(board):
     (board.state / "settings.toml").write_text(
         '[train]\nenabled = false\ncrs = "GLO"\n\n[bus]\nstops = { A = "1800SB12341", B = "CHANGE_ME" }\n')

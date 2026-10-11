@@ -35,7 +35,7 @@ from departureboard.timetable.build import (
     runs_on,
     save,
 )
-from departureboard.timetable.model import Calendar, Call, Schedule, StopPosition, metres
+from departureboard.timetable.model import Calendar, Call, Journey, Schedule, StopPosition, metres
 from departureboard.timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
 from tests.paths import FIXTURES
 from tests.sources.test_livebus import (
@@ -899,6 +899,119 @@ def test_a_timetable_just_small_enough_is_saved_and_loads(tmp_path, monkeypatch)
     monkeypatch.setattr(timetable, "MAX_FILE_BYTES", len(schedule.to_json()))
     save(tmp_path, schedule)
     assert load(tmp_path) == schedule
+
+
+def _long_schedule(count=1_000, calls=80):
+    """A timetable of `count` journeys of `calls` calls each, sharing their
+    stops, minutes and calendars as a build's do, with every stop placed and
+    a road between each two."""
+    stops = [f"3700{n:08d}" for n in range(calls + count // 10)]
+    calendars = [Calendar(frozenset({day}), date(2026, 1, 1), None,
+                          dates_off=((date(2026, 12, 25), date(2026, 12, 26)),)) for day in range(7)]
+    minutes = {}
+    journeys = tuple(
+        Journey("52", "FSYO", "Sheffield Interchange", f"vj{n}",
+                tuple(Call(stops[n // 10 + k], minutes.setdefault(360 + n + k, 360 + n + k)) for k in range(calls)),
+                calendars[n % 7], inbound_only=n % 3 == 0)
+        for n in range(count))
+    positions = {atco: StopPosition(f"Stop {n}", 53.38 + n / 10_000, -1.47, "A") for n, atco in enumerate(stops)}
+    shapes = {f"{a}>{b}": ((53.4, -1.4), (53.41, -1.41)) for a, b in pairwise(stops)}
+    return Schedule(NOW, None, {"A": stops[0]}, journeys, positions, ("FSYO",), FORMAT, shapes)
+
+
+def test_a_timetable_is_saved_a_journey_at_a_time(tmp_path):
+    # A Pi saves thousands of journeys of 80 calls, beside them: a copy of
+    # each, or the whole text, would take several times what they do
+    # (tests/test_deploy.py counts the journeys, not copies of them).
+    schedule = _long_schedule()
+    _, peak = _peak(lambda: save(tmp_path, schedule))
+    text = (tmp_path / FILE_NAME).read_text()
+    assert text == schedule.to_json()
+    assert peak < len(text) / 5  # it was 11 times its size
+
+
+def test_a_timetable_is_loaded_a_journey_at_a_time_sharing_what_its_journeys_hold(tmp_path):
+    # Read by the board every minute and before each build: never the whole
+    # text, or every journey's JSON, at once, and the journeys share their
+    # stops, minutes and calendars as a build's do, so a timetable loaded
+    # takes no more than tests/test_deploy.py counts for one being built.
+    schedule = _long_schedule()
+    save(tmp_path, schedule)
+    size = (tmp_path / FILE_NAME).stat().st_size
+    tracemalloc.start()
+    try:
+        loaded = load(tmp_path)
+        held, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert loaded == schedule
+    assert peak - held < size / 10
+    assert peak <= len(schedule.journeys) * timetable.JOURNEY_BYTES
+
+
+def test_a_timetable_read_without_its_journeys_holds_little_more_than_its_stops(tmp_path):
+    # As the settings pages read it, in a Pi's web server of 128 MB: they
+    # want its stops, not its journeys or roads.
+    schedule = _long_schedule()
+    save(tmp_path, schedule)
+    size = (tmp_path / FILE_NAME).stat().st_size
+    light, peak = _peak(lambda: load(tmp_path, journeys=False))
+    assert light == replace(schedule, journeys=(), shapes={})
+    assert peak < size / 10
+
+
+def test_a_timetable_read_without_its_journeys_is_still_unreadable_with_a_bad_journey(tmp_path):
+    # Its journeys are still each checked, so the pages never show a timetable the board can't use.
+    save(tmp_path, _schedule())
+    text = (tmp_path / FILE_NAME).read_text()
+    (tmp_path / FILE_NAME).write_text(text.replace('"inbound_only":false', '"inbound_only":"no"', 1))
+    assert load(tmp_path, journeys=False) is None and load(tmp_path) is None
+
+
+def test_a_timetable_is_read_strictly_from_its_file(tmp_path):
+    # Read a piece at a time, it is still read as json.loads would read it.
+    import json
+
+    text = _schedule().to_json()
+    spaced = json.dumps(json.loads(text), indent="\t", separators=(" ,\r\n", " : ")) + "\n"
+    for good in (spaced, f"  {text}\n"):
+        (tmp_path / FILE_NAME).write_text(good)
+        assert load(tmp_path) == _schedule()
+    for bad in (text + "{}", text[:-1], text.replace('"built"', "built"), text.replace("]", ",]", 1),
+                text.replace('"format":3', '"format":3,'), text.replace('"format"', "1", 1), "﻿" + text, ""):
+        (tmp_path / FILE_NAME).write_text(bad)
+        assert load(tmp_path) is None, bad[:40]
+
+
+def test_a_rebuild_lets_go_of_the_saved_timetable_s_journeys_while_it_builds(tmp_path, monkeypatch):
+    # A build holds the most memory there is: the last timetable's journeys
+    # mustn't be held beside it. Its stops and roads still are, for add_roads.
+    import gc
+    import weakref
+
+    save(tmp_path, _schedule(built=NOW - timedelta(days=8)))
+    loaded = []
+    real = timetable.load
+
+    def remember(folder, **options):
+        schedule = real(folder, **options)
+        loaded.append(weakref.ref(schedule))
+        return schedule
+
+    def build(*args, **options):
+        gc.collect()
+        assert [ref() for ref in loaded if ref() is not None and ref().journeys] == []
+        return _schedule(built=NOW)
+
+    monkeypatch.setattr(timetable, "load", remember)
+    assert refresh(tmp_path, STOPS, ["BNML"], NOW, "k", build=build) == _schedule(built=NOW)
+    assert loaded
+
+
+def test_a_failed_rebuild_still_gives_the_saved_timetable_whole(tmp_path):
+    save(tmp_path, _schedule(built=NOW - timedelta(days=8)))
+    schedule = refresh(tmp_path, STOPS, ["BNML"], NOW, "k", build=FakeBuild(error=TimetableError("down")))
+    assert schedule == _schedule(built=NOW - timedelta(days=8)) and schedule.journeys
 
 
 def test_load_without_a_file_or_with_a_bad_one(tmp_path):

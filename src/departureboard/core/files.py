@@ -8,6 +8,7 @@ import re
 import secrets
 import stat
 import time
+from collections.abc import Iterable
 from pathlib import Path
 
 NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)  # refuse a link at the path itself
@@ -19,13 +20,15 @@ _ASIDE = re.compile(r"\.[0-9a-f]{16}\.tmp")
 STALE_ASIDE_SECONDS = 600.0
 
 
-def write_atomic(path: Path, data: str | bytes, mode: int) -> None:
+def write_atomic(path: Path, data: str | bytes | Iterable[bytes], mode: int) -> None:
     """Replace `path` whole: written aside with `mode` (whatever the umask), on
     disk, then renamed over it, so a reader or a power cut never sees half a
     file. The file aside is new each time, under a name no one can guess, so
     writers at once (threads or processes) each land whole, the last one
     winning, and a link planted beside it is never written through. One a
-    write cut off left aside for good is cleared away by the next write."""
+    write cut off left aside for good is cleared away by the next write.
+    `data` can come in parts (bytes), written as they come, so it is never
+    held whole; if they stop with an error, the old file is kept."""
     path.parent.mkdir(parents=True, exist_ok=True)
     _clear_stale_aside(path)
     tmp = path.with_name(f"{path.name}.{secrets.token_hex(8)}.tmp")
@@ -33,7 +36,10 @@ def write_atomic(path: Path, data: str | bytes, mode: int) -> None:
     try:
         with os.fdopen(fd, "wb") as handle:
             os.fchmod(handle.fileno(), mode)
-            handle.write(data.encode("utf-8") if isinstance(data, str) else data)
+            if isinstance(data, str):
+                data = data.encode("utf-8")
+            for part in [data] if isinstance(data, bytes) else data:
+                handle.write(part)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp, path)

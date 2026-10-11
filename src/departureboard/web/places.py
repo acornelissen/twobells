@@ -4,13 +4,14 @@ settings site never connects out (a Pi's can't), so these are all it has.
 
 The timetable can be megabytes, and the pages that name stops are drawn
 on every visit, so what they need of it (when it was built, what for, and
-the names of your stops) is kept, until the file changes.
+the names of your stops) is kept, until the file changes. It is read
+without its journeys, which a Pi's small web server hasn't the memory to
+hold.
 """
 
 from __future__ import annotations
 
 import threading
-from dataclasses import replace
 from functools import cache
 from pathlib import Path
 
@@ -61,10 +62,7 @@ def schedule(folder: Path | str) -> Schedule | None:
     with _lock:
         if _kept is not None and _kept[0] == key:
             return _kept[1]
-    full = timetable.load(folder)
-    slim = None
-    if full is not None:
-        slim = replace(full, journeys=(), shapes={})
+    slim = timetable.load(folder, journeys=False)  # read a journey at a time, none kept
     with _lock:
         _kept = (key, slim)
     return slim

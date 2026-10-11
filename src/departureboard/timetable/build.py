@@ -1152,22 +1152,37 @@ def build_schedule(
 
 def save(folder: Path | str, schedule: Schedule) -> None:
     """Save the schedule beside the state file, whole or not at all, readable
-    by its owner and group only. TimetableTooBig, keeping the saved one, if
-    it is larger than load() reads."""
-    data = schedule.to_json().encode("utf-8")
-    if len(data) > MAX_FILE_BYTES:
-        raise TimetableTooBig(f"Bus timetable is larger than {MAX_FILE_BYTES} bytes ({len(data)}); not saving it")
-    files.write_atomic(Path(folder) / FILE_NAME, data, 0o640)
+    by its owner and group only. It is written a journey at a time
+    (Schedule.json_parts), never held whole or copied beside the journeys.
+    TimetableTooBig, keeping the saved one, if it is larger than load()
+    reads."""
+    files.write_atomic(Path(folder) / FILE_NAME, _at_most(schedule.json_parts(), MAX_FILE_BYTES), 0o640)
 
 
-def load(folder: Path | str) -> Schedule | None:
-    """The saved schedule, or None if there is none or it can't be read."""
+def _at_most(parts: Iterable[str], limit: int) -> Iterator[bytes]:
+    """The parts as bytes; TimetableTooBig once they come to more than `limit`."""
+    size = 0
+    for part in parts:
+        data = part.encode("utf-8")
+        size += len(data)
+        if size > limit:
+            raise TimetableTooBig(f"Bus timetable is larger than {limit} bytes; not saving it")
+        yield data
+
+
+def load(folder: Path | str, journeys: bool = True) -> Schedule | None:
+    """The saved schedule, or None if there is none or it can't be read. It
+    is read a piece at a time, holding little more than its journeys
+    (Schedule.from_file). Without `journeys`, it has neither them nor its
+    roads, and holds little more than its stops: as the settings pages
+    want it, in a Pi's small web server."""
     path = Path(folder) / FILE_NAME
     try:
-        if path.stat().st_size > MAX_FILE_BYTES:
-            log.warning("Ignoring bus timetable %s: larger than %d bytes", path, MAX_FILE_BYTES)
-            return None
-        return Schedule.from_json(path.read_text(encoding="utf-8"))
+        with path.open(encoding="utf-8") as file:
+            if os.fstat(file.fileno()).st_size > MAX_FILE_BYTES:
+                log.warning("Ignoring bus timetable %s: larger than %d bytes", path, MAX_FILE_BYTES)
+                return None
+            return Schedule.from_file(file, journeys)
     except FileNotFoundError:
         return None
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
@@ -1359,6 +1374,10 @@ def refresh(
             log.info("Bus timetable saved before all its roads were found: finding the rest")
             return _with_roads(folder, current, route, current, cancelled)
         return current
+    # Only its stops and roads are wanted from now on (add_roads keeps what
+    # it can of them): its journeys aren't held beside the build.
+    previous = replace(current, journeys=()) if current is not None else None
+    del current
     try:
         Path(folder).mkdir(parents=True, exist_ok=True)
         fresh = replace(build(stops, operators, api_key, now, lines=lines, scratch=folder, limits=limits),
@@ -1368,13 +1387,13 @@ def refresh(
         log.warning("Bus timetable not rebuilt (%s), keeping the saved one: %s", reason, safe_message(error))
         if not cancelled():  # stopped, as the setup search's Cancel does: not to wait RETRY_AFTER for
             _note_failure(folder, built_for, now)
-        return current
+        return load(folder) if previous is not None else None  # as it was: a failed build saves nothing
     _forget_failure(folder)
     calling = len(fresh.departure_journeys)
     log.info("Bus timetable rebuilt (%s): %d journeys at your stops, %d ending near them", reason, calling,
              len(fresh.journeys) - calling)
     saved(fresh)
-    return _with_roads(folder, fresh, route, current, cancelled)
+    return _with_roads(folder, fresh, route, previous, cancelled)
 
 
 def _with_roads(folder: Path | str, schedule: Schedule, route: Route, previous: Schedule | None,

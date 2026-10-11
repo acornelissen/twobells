@@ -215,6 +215,26 @@ def test_refresh_builds_with_the_board_s_stops_and_operators(tmp_path, monkeypat
     assert bus.unusable() is None
 
 
+def test_refresh_lets_go_of_the_timetable_it_has_read_while_it_builds(tmp_path, monkeypatch):
+    # The dashboard's upkeep reads it (unusable) just before: its journeys
+    # mustn't be held beside the build.
+    import gc
+    import weakref
+
+    timetable.save(tmp_path, schedule(built=datetime(2026, 9, 1, 3, 0)))
+    bus = source(tmp_path, at(3, 0))
+    assert bus.unusable() is not None  # too old: due
+    read = weakref.ref(bus._schedule())
+
+    def fake_refresh(*args, **kwargs):
+        gc.collect()
+        assert read() is None
+        return schedule()
+
+    monkeypatch.setattr(timetable, "refresh", fake_refresh)
+    assert bus.refresh_timetable() == schedule()
+
+
 def test_refresh_skips_while_another_build_holds_the_store(tmp_path, monkeypatch):
     import fcntl
 

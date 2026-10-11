@@ -636,8 +636,9 @@ class SetupApi:
 
     def _stop_names(self) -> dict[str, tuple[str, str]]:
         """{ATCO code: (name, the word on its sign)} from the bus timetable in
-        the store; empty if there is none."""
-        schedule = timetable.load(self._job_folder)
+        the store; empty if there is none. Read without its journeys, which a
+        Pi's small web server hasn't the memory to hold."""
+        schedule = timetable.load(self._job_folder, journeys=False)
         if schedule is None:
             return {}
         return {atco: (str(place.name)[:_NAME_LENGTH], str(place.indicator or "")[:_NAME_LENGTH])

@@ -415,13 +415,20 @@ def _timetable_memory(install) -> int:
     Beside either are the journeys found, from it and the documents before:
     those calling at your stops, up to the install's limit, and inbound-only
     ones, up to half that (build.inbound_limit), each taking up to
-    build.JOURNEY_BYTES."""
+    build.JOURNEY_BYTES. The timetable is saved a journey at a time, and
+    loaded so (before each build, and by the board every minute), holding
+    no more than its journeys again (tests/timetable/test_build.py checks
+    both), so neither takes what a build does. A rebuild lets go of the
+    last timetable's journeys first, keeping only its stops and roads (a
+    few MB, in Python's room below)."""
     from departureboard.timetable import build, routesetup
 
     limits = routesetup.document_limits(install)
-    journeys = limits.journeys + build.inbound_limit(limits)
+    journeys = (limits.journeys + build.inbound_limit(limits)) * build.JOURNEY_BYTES
     read = max(2 * max(limits.read, limits.parse), routesetup.MAX_NAPTAN_BYTES)
-    return read + journeys * build.JOURNEY_BYTES
+    building = read + journeys
+    saving_or_loading = journeys
+    return max(building, saving_or_loading)
 
 
 def test_the_timetable_unit_has_room_for_the_largest_document_it_reads_and_its_journeys():
@@ -433,6 +440,10 @@ def test_the_timetable_unit_has_room_for_the_largest_document_it_reads_and_its_j
     # fits, 4,732 journeys and 2,500 held inbound-only, peaked at 221 MB; one
     # with 5,816 failed cleanly at 229 MB. That was with the limit at 5,000,
     # before journeys had slots and shared their values (build.JOURNEY_BYTES).
+    # Saving and loading 10,500 journeys of 80 calls (a Pi's limit and its
+    # inbound-only ones) peaked at 92 MB on Python 3.12, 39 MB of it Python
+    # and the command line's imports; written and read whole, as they were
+    # before, 7,000 peaked at 350 MB saving and 307 MB loading.
     from departureboard.cli.main import _parser
     from departureboard.settings.installs import install_named
 
