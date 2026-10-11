@@ -494,6 +494,9 @@ class Lockout:
     _failures: dict[str, list[float]] = field(default_factory=dict)
     # Waiting clients, first come first: each one's last try.
     _waiting: dict[str, float] = field(default_factory=dict)
+    # When the last try was let in, right or wrong: a wait counts from it, so
+    # the owner signing in doesn't open the next turn at once.
+    _last_let_in: float | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def _prune(self, now: float) -> None:
@@ -510,6 +513,8 @@ class Lockout:
         self._failures = kept
         quiet = now - WAITING_KEEP_S
         self._waiting = {key: t for key, t in self._waiting.items() if quiet < t <= now}
+        if self._last_let_in is not None and self._last_let_in > now:
+            self._last_let_in = None
 
     def _slowed(self, now: float, key: str) -> bool:
         """Whether this client must wait for its turn: everyone waits after the
@@ -521,6 +526,8 @@ class Lockout:
         if key in self._waiting or len(self._waiting) < MAX_WAITING:
             self._waiting[key] = now  # a new client goes last; one waiting keeps its place
         last = max(max(times) for times in self._failures.values())
+        if self._last_let_in is not None:
+            last = max(last, self._last_let_in)
         if now < last + min(2.0 ** (total - TOTAL_FAILURES), MAX_SLOW_S):
             return True
         return next(iter(self._waiting), None) != key
@@ -541,6 +548,7 @@ class Lockout:
                 return SignInResult.SLOWED
             self._waiting.pop(key, None)
             self._failures[key] = [*mine, now]
+            self._last_let_in = now
             return None
 
     def attempt(self, address: str) -> bool:

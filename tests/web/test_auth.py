@@ -362,6 +362,23 @@ def test_a_success_takes_that_clients_failures_off_the_total():
         assert lockout.admit(f"10.0.1.{i}") is None
 
 
+def test_the_owner_signing_in_while_slowed_gives_guessers_no_extra_turn():
+    clock = Clock()
+    lockout = Lockout(clock)
+    for i in range(TOTAL_FAILURES + 3):  # guesses enough for a 8 s wait
+        clock.now += 30
+        lockout.admit(f"10.0.1.{i}")
+    clock.now += 60
+    assert lockout.admit("10.0.0.5") is None  # the owner's turn
+    lockout.succeeded("10.0.0.5")
+    # The wait still counts from the owner's try, not from the last guess.
+    assert lockout.admit("10.0.1.99") is SignInResult.SLOWED
+    clock.now += 7.5
+    assert lockout.admit("10.0.1.99") is SignInResult.SLOWED
+    clock.now += 1
+    assert lockout.admit("10.0.1.99") is None
+
+
 def test_quiet_clients_are_dropped():
     clock = Clock()
     lockout = Lockout(clock)
