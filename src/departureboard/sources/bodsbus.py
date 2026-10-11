@@ -211,7 +211,9 @@ class BodsBusSource:
 
 
 def _holiday_names(folder: Path, today: date) -> dict[date, frozenset[str]]:
-    """TransXChange bank holiday names for yesterday and today, from the cached
-    gov.uk list. Timetables say for themselves what runs on each."""
+    """TransXChange bank holiday names for yesterday, today and tomorrow (the
+    days livebus looks at), from the cached gov.uk list. Timetables say for
+    themselves what runs on each."""
     events = holidays.read_events(folder)
-    return {day: holidays.holiday_names(day, events) for day in (today - timedelta(days=1), today)}
+    days = (today - timedelta(days=1), today, today + timedelta(days=1))
+    return {day: holidays.holiday_names(day, events) for day in days}

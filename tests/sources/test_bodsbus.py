@@ -180,6 +180,21 @@ def test_bank_holidays_follow_the_timetable_s_own_rules(tmp_path):
     assert source(tmp_path, at(10, 0, day=date(2026, 4, 2)), body=OSError("offline")).fetch() != []
 
 
+def test_tomorrow_s_buses_follow_tomorrow_s_bank_holiday(tmp_path):
+    # Leaves Henry Street at 00:02, except on Good Friday (3 April 2026).
+    small_hours = Journey(
+        "341", "BNGN", "Hadfield", "4174",
+        (Call(ARUNDEL, 0), Call(HENRY_A, 2), Call(HOWARD, 3)),
+        Calendar(days=frozenset(range(7)), bank_holidays_off=frozenset({"GoodFriday"})),
+    )
+    holidays.bank_holidays(tmp_path, datetime(2026, 4, 1), fetch=lambda url, most: GOV_UK)
+    timetable.save(tmp_path, schedule(built=datetime(2026, 4, 1), journeys=(small_hours,)))
+    late_thursday = at(23, 55, day=date(2026, 4, 2))
+    assert source(tmp_path, late_thursday, body=OSError("offline")).fetch() == []
+    late_friday = at(23, 55, day=date(2026, 4, 3))
+    assert [d.scheduled for d in source(tmp_path, late_friday, body=OSError("offline")).fetch()] == ["00:02"]
+
+
 def test_refresh_needs_operators(tmp_path):
     bus = BodsBusSource(tmp_path, STOPS, "secret", LONDON, clock=lambda: at(3, 0))
     with pytest.raises(ValueError, match="operators"):

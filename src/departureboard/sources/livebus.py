@@ -266,8 +266,9 @@ def live_board(
 
     `now` must be timezone-aware in the board's zone, e.g.
     datetime.now(ZoneInfo("Europe/London")); its zone is used to read BODS times.
-    Journeys come from today's timetable and yesterday's (for buses still out
-    after midnight), as runs_on says. A bus placed before your stop is shown
+    Journeys come from today's timetable, yesterday's (for buses still out
+    after midnight) and tomorrow's (for its first buses, before midnight), as
+    runs_on says; tomorrow's are timetabled only. A bus placed before your stop is shown
     with its delay and stays on the board however late; one that has passed
     your stop is dropped. Without a placed bus the timetabled time is shown as
     UNKNOWN until a minute after it.
@@ -277,9 +278,12 @@ def live_board(
     tz = now.tzinfo
     local_now = now.replace(tzinfo=None)
     today = local_now.date()
-    days = (today - timedelta(days=1), today)
+    days = (today - timedelta(days=1), today, today + timedelta(days=1))
     running = {day: [j for j in schedule.journeys if j.calls and runs_on(j, day)] for day in days}
-    live = _live(vehicles, running, schedule.positions, tz)
+    # Buses are matched to yesterday's and today's journeys only: none is out on
+    # tomorrow's yet, and a journey code that fits tomorrow too would make
+    # today's match ambiguous.
+    live = _live(vehicles, {day: running[day] for day in days[:2]}, schedule.positions, tz)
     labels: dict[str, list[str]] = {}
     for label, atco in schedule.stops.items():
         labels.setdefault(atco, []).append(label)

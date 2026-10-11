@@ -338,6 +338,44 @@ def test_yesterday_s_journey_after_midnight_is_shown():
     assert board(at(0, 5, day=DAY), plan=schedule(NIGHT), runs_on=fridays) == []
 
 
+# Filed under Saturday's timetable: leaves Ashton at 00:05 and reaches stop A at 00:20.
+SMALL_HOURS = journey("341", [(ASHTON, 5), (ARUNDEL, 18), (HENRY_A, 20), (HADFIELD, 30)], "Hadfield", "2001")
+
+
+def saturdays(journey, day):
+    return day.weekday() == 5
+
+
+def test_tomorrow_s_journey_is_shown_before_midnight():
+    assert board(at(23, 50), plan=schedule(SMALL_HOURS), runs_on=saturdays) == [
+        ("A", "341", "00:20", None, Status.UNKNOWN)
+    ]
+
+
+def test_tomorrow_s_journey_keeps_to_twelve_hours_ahead():
+    assert board(at(12, 19), plan=schedule(SMALL_HOURS), runs_on=saturdays) == []
+    assert board(at(12, 20), plan=schedule(SMALL_HOURS), runs_on=saturdays) == [
+        ("A", "341", "00:20", None, Status.UNKNOWN)
+    ]
+
+
+def test_tomorrow_s_journey_keeps_its_own_service_day():
+    [found] = live(at(23, 50), plan=schedule(SMALL_HOURS), runs_on=saturdays)
+    assert found.service_day == SATURDAY
+    assert found.leaves == datetime(2026, 10, 10, 0, 20)
+
+
+def test_a_journey_code_that_fits_today_and_tomorrow_is_still_used():
+    # Buses aren't matched to tomorrow's journeys, so tomorrow's can't make today's match ambiguous.
+    def fridays_and_saturdays(journey, day):
+        return day.weekday() in (4, 5)
+
+    vehicle = bus(*HALFWAY, at(10, 14), origin="", ref="1175")
+    assert east(board(at(10, 14), [vehicle], runs_on=fridays_and_saturdays))[0] == (
+        "A", "341", "10:10", "10:19", Status.LATE
+    )
+
+
 def test_nothing_more_than_twelve_hours_ahead():
     # Times show without a date, so the board reads them as within 12 hours.
     lunchtime = journey("341", [(ASHTON, 720), (HENRY_A, 780), (HADFIELD, 790)], "Hadfield", "1201")
