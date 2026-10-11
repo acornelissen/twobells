@@ -16,8 +16,8 @@ services:
       - secrets.env              # the keys, from deploy/secrets.env.example; keep it readable by you only
     volumes:
       # Bus timetable, history, bank holidays, saved settings and keys, settings
-      # password. Its name is the dashboard's from before, so nothing saved is lost.
-      - dashboard-data:/data
+      # password. Named outright, so it is the same whatever the folder is called.
+      - data:/data
     read_only: true
     tmpfs:
       - /tmp:size=64m
@@ -34,4 +34,5 @@ services:
         max-file: "3"
 
 volumes:
-  dashboard-data:
+  data:
+    name: twobells-data

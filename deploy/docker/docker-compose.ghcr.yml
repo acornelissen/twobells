@@ -28,7 +28,7 @@ services:
       # Bus timetable, history, bank holidays, saved settings and keys,
       # settings password. A new named volume takes the image's owner
       # (uid 10001); a folder instead must be given to 10001 by hand.
-      - dashboard-data:/data
+      - data:/data
       # Optional: a config.toml kept by hand (for allowed_hosts, say).
       # - ./config.toml:/config/config.toml:ro
     read_only: true
@@ -47,4 +47,5 @@ services:
         max-file: "3"
 
 volumes:
-  dashboard-data:
+  data:
+    name: twobells-data

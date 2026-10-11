@@ -88,7 +88,7 @@ New here? The [user guide](docs/user-guide.md) explains what everything on the b
 ## Install
 
 - **Raspberry Pi** (the board, and the dashboard if you like): download a release tarball and its `SHA256SUMS`, check it with `sha256sum --check --ignore-missing SHA256SUMS`, unpack it and run `sudo ./deploy/pi/install.sh`. Nothing is piped from the internet into `sudo bash`. Then open `http://<pi name>.local:8090/settings`. `sudo ./deploy/pi/upgrade.sh VERSION` moves it to another release, checked the same way. See [On a Raspberry Pi](docs/user-guide.md#on-a-raspberry-pi).
-- **Docker** (a NAS, say; the dashboard): copy the folder, copy `deploy/secrets.env.example` to `secrets.env`, and `docker compose up -d --build`. The container is `twobells`, keeping its data in the `dashboard-data` volume. See [Docker](docs/user-guide.md#9-docker). From the first release, `deploy/docker/docker-compose.ghcr.yml` runs the published, signed image instead; [Docker on other NASes and on Linux](docs/docker.md) covers QNAP, Unraid, TrueNAS SCALE, and Docker or Podman.
+- **Docker** (a NAS, say; the dashboard): copy the folder, copy `deploy/secrets.env.example` to `secrets.env`, and `docker compose up -d --build`. The container is `twobells`, keeping its data in the `twobells-data` volume. See [Docker](docs/user-guide.md#9-docker). From the first release, `deploy/docker/docker-compose.ghcr.yml` runs the published, signed image instead; [Docker on other NASes and on Linux](docs/docker.md) covers QNAP, Unraid, TrueNAS SCALE, and Docker or Podman.
 - **Desktop** (a Mac or Linux laptop; the dashboard): `uv tool install twobells` or `pipx install twobells` (from PyPI from the first release), then `twobells serve`. `deploy/desktop` has a launchd agent and a systemd user service to start it at login. See [Desktop](docs/user-guide.md#10-desktop).
 
 No `config.toml` is needed: the setup wizard saves your settings in the install's store. `examples/config.example.toml` lists everything that can be set by hand.
@@ -100,7 +100,7 @@ docker exec -it twobells python -m twobells serve --set-password --state-dir /da
 docker exec -it twobells python -m twobells serve --reset-code --state-dir /data
 ```
 
-Upgrading from the separate board settings page (port 8080) or `twobells dashboard`: see [Upgrading](docs/user-guide.md#13-upgrading-from-before-the-two-views).
+Upgrading an install from before the rename to Two Bells: see [Upgrading to Two Bells](docs/user-guide.md#14-upgrading-to-two-bells). From the separate board settings page (port 8080) or `departureboard dashboard`: see [Upgrading from before the two views](docs/user-guide.md#13-upgrading-from-before-the-two-views).
 
 ## Releases
 

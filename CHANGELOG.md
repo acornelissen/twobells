@@ -18,6 +18,7 @@ The first release.
 
 ### Changed
 
+- The app is now Two Bells: the command, package, services, folders, container and image are `twobells`, and the repository is `acornelissen/twobells`. A Pi moves its install over in `update.sh`, a desktop moves its store on the first start, and Docker copies its data once into the new `twobells-data` volume; see [Upgrading to Two Bells](docs/user-guide.md#14-upgrading-to-two-bells).
 - The settings' Keys page has a small form for each key, headed by what it unlocks, with a label saying whether it is set, needed, works or was refused (and when it was tested). **Save key** saves that key alone; **Save and test** saves then tests it, so testing no longer empties the box and makes you paste the key again; **Test saved key** tests the key already saved. The last result is kept in `keytests.json` as works or refused and a time, never the key.
 - The dashboard is redesigned so departures come first. Under the place name and clock sit **Next to catch** (the countdown, how sure it is, and the next train and bus if you miss it), one line for disruption, then trains and buses side by side.
   - Trains read like a station board (Time, Destination, Plat, Expected, Leave) and buses like a bus-stop countdown sign (line, destination, stop, due, leave).

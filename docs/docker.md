@@ -82,7 +82,7 @@ Container Station 3 runs a compose file as an application.
 3. Choose **Validate YAML**, then finish the wizard.
 4. Open `http://<NAS IP address>:8090/` from the home network.
 
-Container Station can't change an application's settings in place: to update, use **Recreate** with the new image line. The data stays in the `dashboard-data` volume.
+Container Station can't change an application's settings in place: to update, use **Recreate** with the new image line. The data stays in the `twobells-data` volume.
 
 ---
 
@@ -144,7 +144,7 @@ With the version and digest checked as above:
 
 ```bash
 docker run -d --name twobells --restart unless-stopped \
-  -p 0.0.0.0:8090:8090 -v dashboard-data:/data \
+  -p 0.0.0.0:8090:8090 -v twobells-data:/data \
   --read-only --tmpfs /tmp:size=64m --cap-drop ALL \
   --security-opt no-new-privileges:true --memory 512m --pids-limit 128 \
   --log-opt max-size=1m --log-opt max-file=3 \
@@ -153,7 +153,7 @@ docker run -d --name twobells --restart unless-stopped \
 
 Or copy `deploy/docker/docker-compose.ghcr.yml` to a folder, fill it in, and run `docker compose -f docker-compose.ghcr.yml up -d` there.
 
-To update with `docker run`: check the new version, then `docker rm -f twobells` and run the command again with the new version and digest. The `dashboard-data` volume keeps everything.
+To update with `docker run`: check the new version, then `docker rm -f twobells` and run the command again with the new version and digest. The `twobells-data` volume keeps everything.
 
 **Podman** takes the same command, with `podman` in place of `docker`. Without root (rootless):
 

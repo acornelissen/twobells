@@ -65,14 +65,15 @@ def test_compose_locks_the_container_down():
         assert risky not in COMPOSE, risky
 
 
-def test_compose_runs_twobells_on_the_dashboards_old_volume():
+def test_compose_runs_twobells_on_its_named_volume():
     lines = [line.split("#")[0].strip() for line in COMPOSE.splitlines()]
     for line in ("twobells:", "image: twobells:local", "container_name: twobells",
-                 "- secrets.env", "- dashboard-data:/data", "dashboard-data:", "- \"0.0.0.0:8090:8090\""):
+                 "- secrets.env", "- data:/data", "- \"0.0.0.0:8090:8090\""):
         assert line in lines, line
     assert lines[lines.index("env_file:") + 1] == "- secrets.env"
-    # The volume keeps its name, or a NAS would start on a new, empty one.
-    assert re.search(r"^volumes:\n  dashboard-data:\n", COMPOSE, re.M)
+    # Named outright, so another folder or project name never starts it on a new, empty volume.
+    for compose in (COMPOSE, (ROOT / "deploy" / "docker" / "docker-compose.ghcr.yml").read_text()):
+        assert re.search(r"^volumes:\n  data:\n    name: twobells-data\n", compose, re.M)
     # config.toml only through the optional override, which stays out of git.
     assert "config.toml:" not in COMPOSE and "dashboard.env" not in COMPOSE
     override = (ROOT / "docker-compose.override.yml.example").read_text()
@@ -774,6 +775,27 @@ def test_an_old_install_moves_to_the_new_name_keeping_its_settings_store_and_run
     assert moved_on == ["twobells.timer", "twobells-web.service"]
 
 
+def test_the_guide_says_how_each_install_moves_to_the_new_name():
+    guide = (ROOT / "docs" / "user-guide.md").read_text()
+    upgrading = guide[guide.index("## 14. Upgrading to Two Bells"):]
+    # Docker: the data copied, read-only from the old volume, into the compose file's own volume, with its image.
+    volume = re.search(r"^  data:\n    name: (\S+)\n", COMPOSE, re.M).group(1)
+    image = re.search(r"^    image: (\S+)$", COMPOSE, re.M).group(1)
+    copy = f"docker run --rm --entrypoint cp -v departureboard_dashboard-data:/from:ro -v {volume}:/data {image}"
+    assert copy + " -a /from/. /data/" in upgrading
+    steps = [upgrading.index(step) for step in ("docker compose down", "docker compose up --no-start", copy,
+                                                "docker compose up -d --remove-orphans")]
+    assert steps == sorted(steps)
+    # The Pi: what the scripts move, as they move it.
+    [moving] = MOVE_FROM_OLD_NAME.findall(_script("update.sh"))
+    for old, new in (("/etc/departureboard", "/etc/twobells"), ("/var/lib/departureboard", "/var/lib/twobells")):
+        assert f'mv "$root{old}" "$root{new}"' in moving
+        assert f"`{old}` becomes `{new}`" in upgrading
+    # A desktop: the old login files, as the deploy files named them.
+    assert 'launchctl bootout "gui/$(id -u)/uk.departureboard.serve"' in upgrading
+    assert "uk.twobells.serve" in (ROOT / "deploy" / "desktop" / "uk.twobells.serve.plist").read_text()
+
+
 def test_a_new_install_has_nothing_to_move(tmp_path):
     run, calls, moved_on = _move_from_old_name(tmp_path, users="")
     assert (run.returncode, calls, moved_on, run.stdout.strip()) == (0, [], [], "")  # and says nothing
@@ -1158,7 +1180,7 @@ def test_the_published_image_compose_file_is_pinned_and_locked_down_as_the_built
     for line in hardening:
         assert line in published, line
     for line in ("    container_name: twobells", "    restart: unless-stopped", '      - "0.0.0.0:8090:8090"',
-                 "      - dashboard-data:/data", "volumes:", "  dashboard-data:"):
+                 "      - data:/data", "volumes:", "  data:", "    name: twobells-data"):
         assert line in published, line
     # Pinned by version and digest: the placeholder fails until both are filled in.
     assert f"    image: {IMAGE}:X.Y.Z@sha256:DIGEST" in published
@@ -1214,7 +1236,7 @@ def test_the_documented_docker_run_is_locked_down_as_compose():
     assert words[-1] == f"{IMAGE}:$VERSION@$DIGEST"
     rest = _docker_run_flags(words[5:-1])
     assert {key: rest.pop(key) for key in ("--restart", "-p", "-v")} == {
-        "--restart": "unless-stopped", "-p": "0.0.0.0:8090:8090", "-v": "dashboard-data:/data"}  # the compose file's volume
+        "--restart": "unless-stopped", "-p": "0.0.0.0:8090:8090", "-v": "twobells-data:/data"}  # the compose file's volume
     assert rest == HARDENING_FLAGS
     assert f'--certificate-identity "{_identity("v$VERSION")}"' in DOCKER_DOCS
     assert f'cosign verify "{IMAGE}@$DIGEST"' in DOCKER_DOCS
