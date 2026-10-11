@@ -422,14 +422,25 @@ def noticed(view, notice=NOTICE, clock=None):
     return dataclasses.replace(view, notice=notice, clock=clock)
 
 
-def test_notice_replaces_updated_on_the_phat_cut_to_fit():
+def test_notice_keeps_updated_on_the_phat_and_is_cut_to_fit_beside_it():
+    # A frozen e-paper panel keeps its last image: the stamp is how to tell.
     items = sign_layout(noticed(board(TRAINS, BUSES))).items
-    assert "Updated 07:03" not in texts(items)
+    updated = find(items, "Updated 07:03")
     [notice] = [i for i in items if i.text.startswith("! ")]
-    assert notice.small and notice.x == MARGIN
+    assert notice.small and updated.small and notice.y == updated.y
+    assert notice.x == MARGIN
+    assert updated.x + item_size(updated)[0] == WIDTH - MARGIN
     assert notice.text.endswith("…")
-    assert notice.x + item_size(notice)[0] <= WIDTH - MARGIN
+    assert notice.x + item_size(notice)[0] + 5 <= updated.x
     assert NOTICE.startswith(notice.text[2:-1].rstrip())
+
+
+def test_notice_updated_and_badge_share_the_phat_footer_without_overlapping():
+    items = sign_layout(noticed(board(TRAINS, BUSES, stale_trains=True, stale_buses=True))).items
+    updated, badge = find(items, "Updated 07:03"), find(items, "Not updating: trains, buses")
+    [notice] = [i for i in items if i.text.startswith("! ")]
+    assert notice.x + item_size(notice)[0] + 5 <= updated.x
+    assert updated.x + item_size(updated)[0] + 5 <= badge.x - 2
 
 
 def test_short_notice_is_shown_whole():
@@ -523,13 +534,14 @@ def test_rain_line_keeps_updated_beside_the_badge_on_the_phat():
     assert updated.x + item_size(updated)[0] + 5 <= badge.x - 2
 
 
-def test_rain_line_drops_updated_when_both_do_not_fit():
-    view = dataclasses.replace(board(stale_trains=True, stale_buses=True), rain=RAIN)
+def test_rain_line_is_cut_short_to_keep_updated_when_both_do_not_fit():
+    view = dataclasses.replace(board(stale_buses=True), rain=RAIN)
     items = sign_layout(view, 200, HEIGHT).items  # a narrower board than any panel
-    assert "Updated 07:03" not in texts(items)
+    updated, badge = find(items, "Updated 07:03"), find(items, "Not updating: buses")
     [rain] = [i for i in items if i.text.startswith("Rain")]
-    badge = find(items, "Not updating: trains, buses")
-    assert rain.x + item_size(rain)[0] + 5 <= badge.x - 2
+    assert rain.text.endswith("…")
+    assert rain.x + item_size(rain)[0] + 5 <= updated.x
+    assert updated.x + item_size(updated)[0] + 5 <= badge.x - 2
 
 
 def test_rain_line_keeps_updated_beside_a_badge_when_there_is_room():

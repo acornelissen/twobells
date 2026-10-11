@@ -142,15 +142,16 @@ def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> Non
     elif view.clock:
         # A screen shows the time centred along the bottom, like a station clock.
         layout.add((width - _w(view.clock)) // 2, height - GLYPH_H - 1, view.clock)
-    elif view.notice:
-        # As much as fits, in place of "Updated", in the footer's small print.
-        layout.add(MARGIN, y, fitted_note(view, free_end - MARGIN, _SMALL.getlength, _SMALL) or "", small=True)
-    elif view.rain and _SMALL.getlength(view.rain) + _COL_GAP + _SMALL.getlength(stamp) <= free_end - MARGIN:
-        # The rain warning on the left, keeping "Updated" on the right.
-        layout.add(MARGIN, y, view.rain, small=True)
-        layout.add(free_end - _SMALL.getlength(stamp), y, stamp, small=True)
-    elif view.rain:
-        layout.add(MARGIN, y, fitted_note(view, free_end - MARGIN, _SMALL.getlength, _SMALL) or "", small=True)
+    elif view.notice or view.rain:
+        # The notice (or rain warning) on the left, cut short if it must be,
+        # keeping "Updated" on the right: e-paper keeps its last image if the
+        # board stops, and the stamp is how to tell.
+        stamp_x = free_end - _SMALL.getlength(stamp)
+        room = stamp_x - _COL_GAP - MARGIN
+        note = fitted_note(view, room, _SMALL.getlength, _SMALL) or ""
+        if _SMALL.getlength(note) <= room:  # not even an ellipsis fits on a board too narrow
+            layout.add(MARGIN, y, note, small=True)
+        layout.add(stamp_x, y, stamp, small=True)
     else:
         layout.add(MARGIN, y, stamp, small=True)
     if badge:
