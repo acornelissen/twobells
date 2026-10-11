@@ -66,7 +66,9 @@ INSTALLS = {
     for install in (
         Install("pi", ("board", "dashboard"), ("board",), Path("/var/lib/departureboard"), noun="board", host="0.0.0.0",  # noqa: S104 - LAN; systemd and nftables allow only the home network
                 fetch="files", network_guard=True, timetable_read_bytes=50_000_000, timetable_parse_bytes=50_000_000,
-                timetable_journeys=8_500,
+                # The memory model allows about 8,500; 7,000 keeps room until a build is
+                # checked under the units' real 256M limit, and still holds Sheffield's busiest stop.
+                timetable_journeys=7_000,
                 log_help="On the Pi: <code>sudo journalctl -u departureboard-web</code>.",
                 password_command=f"{_PI_COMMAND} --set-password", reset_command=f"{_PI_COMMAND} --reset-code"),
         Install("docker", ("dashboard",), ("dashboard",), Path("/data"), host="0.0.0.0",  # noqa: S104 - inside the container

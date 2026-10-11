@@ -5,10 +5,10 @@ from departureboard.timetable import routesetup
 LARGEST_FILE = 36_904_485
 
 
-def test_a_pi_reads_50_mb_of_each_timetable_file_and_holds_8500_journeys_to_fit_its_memory():
+def test_a_pi_reads_50_mb_of_each_timetable_file_and_holds_7000_journeys_to_fit_its_memory():
     # Its units' MemoryMax=256M: see tests/test_deploy.py.
     assert routesetup.document_limits(install_named("pi")) == routesetup.DocumentLimits(
-        read=50_000_000, parse=50_000_000, journeys=8_500)
+        read=50_000_000, parse=50_000_000, journeys=7_000)
 
 
 def test_a_pi_holds_the_journeys_at_sheffield_s_busiest_stops():
