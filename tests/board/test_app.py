@@ -718,6 +718,24 @@ def test_a_failed_fetch_keeps_the_last_messages_until_the_data_ages_out():
     assert run_once(board, state, display, THU_0700 + timedelta(minutes=7)).view.notice is None
 
 
+def test_data_from_after_now_counts_as_stale_once_the_clock_goes_back():
+    # As PollPolicy.is_due does: a last success later than now (the clock went
+    # back) can't say how old the data is, so it isn't taken as fresh.
+    trains, buses, board, display, state = setup()
+    run_once(board, state, display, THU_0700 + timedelta(hours=1))
+    trains.error = OSError("network down")
+    result = run_once(board, state, display, THU_0700)
+    assert trains.calls == 2  # fetched again straight away, and failed
+    assert result.view.trains.stale
+
+
+def test_messages_from_after_now_are_not_kept_once_the_clock_goes_back():
+    trains, board, display, state = notice_setup()
+    run_once(board, state, display, THU_0700 + timedelta(hours=1))
+    trains.error = OSError("down")
+    assert run_once(board, state, display, THU_0700).view.notice is None
+
+
 def test_messages_age_out_after_the_polling_window_too():
     trains, board, display, state = notice_setup()
     run_once(board, state, display, THU_0700.replace(hour=8, minute=58))

@@ -183,11 +183,17 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False)
         entry.pop("note", None)
 
 
+def _fresh(config: SourceConfig, fetched: datetime | None, now: datetime) -> bool:
+    """Whether data from `fetched` is recent enough to trust. Data from after
+    now (the clock went back, as when summer time ends) can't say how old it
+    is, so it doesn't count (PollPolicy.is_due fetches again then, too)."""
+    return fetched is not None and fetched <= now and now - fetched <= config.stale_after
+
+
 def _is_stale(config: SourceConfig, entry: dict, now: datetime) -> bool:
     if not config.policy.is_active(now):
         return False
-    last_success = from_iso(entry.get("last_success"))
-    return last_success is None or now - last_success > config.stale_after
+    return not _fresh(config, from_iso(entry.get("last_success")), now)
 
 
 def _departures(state: dict, name: str, now: datetime) -> list[Departure]:
@@ -218,8 +224,7 @@ def _notices(board: Board, state: dict, now: datetime) -> list[str]:
     notices = []
     for config in board.sources:
         entry = state.get("sources", {}).get(config.source.name, {})
-        fetched = from_iso(entry.get("last_success"))
-        if fetched is None or now - fetched > config.stale_after:
+        if not _fresh(config, from_iso(entry.get("last_success")), now):
             continue
         messages = entry.get("messages")
         if isinstance(messages, list):
