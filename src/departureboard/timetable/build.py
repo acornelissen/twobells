@@ -54,6 +54,11 @@ last stop. Times are worked out in seconds and each call's seconds dropped
 than timetabled and half-minutes don't add up along the route. Minutes run
 past 1440 after midnight.
 
+Versions. BODS keeps an old version of a service (its ServiceCode, line and
+operator) beside the one replacing it, often open-ended, so both would run.
+As bustimes.org does, a version ends the day before a later one starts; of
+two starting the same day, the higher RevisionNumber wins.
+
 Calendars. runs_on() decides, in this order:
   1. outside the service's OperatingPeriod: no;
   2. a SpecialDaysOperation day of non-operation: no; a day of operation: yes;
@@ -285,6 +290,7 @@ def _calls(links: list[_Link], departure: int) -> tuple[Call, ...] | None:
 
 @dataclass
 class _Service:
+    code: str  # ServiceCode
     lines: dict[str, str]  # Line id -> LineName
     start: date | None
     end: date | None
@@ -311,6 +317,14 @@ class _Document:
     sections: dict[str, list[_Link]] = field(default_factory=dict)
     patterns: dict[str, _Pattern] = field(default_factory=dict)
     services: dict[str, _Service] = field(default_factory=dict)
+    revision: int = 0  # the document's RevisionNumber
+
+
+class _Version(NamedTuple):
+    """Which version of which service a journey came from (see _until_replaced)."""
+
+    service: str  # ServiceCode; "" when the document gives none
+    revision: int
 
 
 def _sign(text) -> str:
@@ -365,13 +379,14 @@ def _read_services(root, doc: _Document) -> None:
         ]
     for node in root.iterfind("t:Services/t:Service", _NS):
         service = _Service(
+            code=_text(node, "t:ServiceCode"),
             lines={line.get("id", ""): _text(line, "t:LineName") for line in node.iterfind("t:Lines/t:Line", _NS)},
             start=_date(_text(node, "t:OperatingPeriod/t:StartDate")),
             end=_date(_text(node, "t:OperatingPeriod/t:EndDate")),
             profile=node.find("t:OperatingProfile", _NS),
             operator_ref=_text(node, "t:RegisteredOperatorRef"),
         )
-        doc.services[_text(node, "t:ServiceCode")] = service
+        doc.services[service.code] = service
         for pattern in node.iterfind("t:StandardService/t:JourneyPattern", _NS):
             doc.patterns[pattern.get("id", "")] = _Pattern(
                 service,
@@ -461,9 +476,10 @@ def _pattern_links(pattern: _Pattern, doc: _Document) -> list[_Link]:
 
 def _journey(
     node, doc: _Document, atcos: Collection[str], noc: str, pattern_refs: dict, stands: Collection[str] = ()
-) -> Journey | None:
-    """The journey a VehicleJourney describes, if it calls at one of `atcos`,
-    or, marked inbound_only, if it doesn't but ends at one of `stands`."""
+) -> tuple[_Version, Journey] | None:
+    """The journey a VehicleJourney describes, with the version of the service
+    it is in, if it calls at one of `atcos`, or, marked inbound_only, if it
+    doesn't but ends at one of `stands`."""
     ref = _text(node, "t:JourneyPatternRef") or pattern_refs.get(_text(node, "t:VehicleJourneyRef"), "")
     pattern = doc.patterns.get(ref)
     if pattern is None:
@@ -506,7 +522,8 @@ def _journey(
     last = calls[-1].atco
     destination = _text(node, "t:DestinationDisplay") or pattern.destination or doc.names.get(last) or last
     code = _text(node, "t:Operational/t:TicketMachine/t:JourneyCode") or _text(node, "t:VehicleJourneyCode")
-    return Journey(line, operator, destination, code, calls, calendar, inbound_only=not calling)
+    journey = Journey(line, operator, destination, code, calls, calendar, inbound_only=not calling)
+    return _Version(service.code, doc.revision), journey
 
 
 def _stands(doc: _Document, atcos: Collection[str], yours: Mapping[str, StopPosition]) -> set[str]:
@@ -529,19 +546,21 @@ def _stands(doc: _Document, atcos: Collection[str], yours: Mapping[str, StopPosi
     return found
 
 
-def _parse_document(
+def _read_document(
     xml: bytes, atcos: Collection[str], noc: str, yours: Mapping[str, StopPosition] | None = None
-) -> tuple[list[Journey], dict[str, StopPosition]]:
-    """The journeys in a document calling at your stops, and its stop
-    positions. With `yours` (your stops' positions known so far), also its
-    inbound-only journeys of the lines calling there (see the module's notes)."""
+) -> tuple[list[tuple[_Version, Journey]], dict[str, StopPosition]]:
+    """The journeys in a document calling at your stops, each with the version
+    of the service it is in, and the document's stop positions. With `yours`
+    (your stops' positions known so far), also its inbound-only journeys of
+    the lines calling there (see the module's notes)."""
     try:
         root = safexml.fromstring(xml)
     except safexml.DoctypeError:
         raise TimetableError("Timetable file has a DOCTYPE; refusing to parse it") from None
     except SyntaxError as error:  # ElementTree.ParseError
         raise TimetableError(f"Timetable file is not XML: {error}") from None
-    doc = _Document()
+    revision = root.get("RevisionNumber", "").strip()
+    doc = _Document(revision=int(revision) if revision.isdigit() and len(revision) < 10 else 0)
     _read_stops(root, doc)
     _read_operators(root, doc)
     _read_schools(root, doc)
@@ -550,13 +569,22 @@ def _parse_document(
     pattern_refs = {_text(node, "t:VehicleJourneyCode"): _text(node, "t:JourneyPatternRef")
                     for node in vehicle_journeys}
     stands = _stands(doc, atcos, yours) if yours is not None else set()
-    journeys = []
+    found = []
     for node in vehicle_journeys:
-        journey = _journey(node, doc, atcos, noc, pattern_refs, stands)
-        if journey is not None and (journey.inbound_only or any(call.atco in atcos for call in journey.calls)):
-            journeys.append(journey)
-    lines = {(journey.line.casefold(), journey.operator) for journey in journeys if not journey.inbound_only}
-    return [j for j in journeys if not j.inbound_only or (j.line.casefold(), j.operator) in lines], doc.positions
+        read = _journey(node, doc, atcos, noc, pattern_refs, stands)
+        if read is not None and (read[1].inbound_only or any(call.atco in atcos for call in read[1].calls)):
+            found.append(read)
+    lines = {(journey.line.casefold(), journey.operator) for _, journey in found if not journey.inbound_only}
+    kept = [(v, j) for v, j in found if not j.inbound_only or (j.line.casefold(), j.operator) in lines]
+    return kept, doc.positions
+
+
+def _parse_document(
+    xml: bytes, atcos: Collection[str], noc: str, yours: Mapping[str, StopPosition] | None = None
+) -> tuple[list[Journey], dict[str, StopPosition]]:
+    """_read_document without the versions."""
+    found, positions = _read_document(xml, atcos, noc, yours)
+    return [journey for _, journey in found], positions
 
 
 def parse_journeys(xml: bytes, atcos: Collection[str], noc: str = "") -> list[Journey]:
@@ -637,6 +665,48 @@ def _documents(links: list[tuple[str, str]], fetch: Download, scratch) -> Genera
             file.seek(0)
             for document in routesetup.timetable_documents(file):
                 yield noc, document
+
+
+def _group(version: _Version, journey: Journey) -> tuple[str, str, str]:
+    """The service a journey is a version of: ServiceCode, line and operator."""
+    return version.service, journey.line, journey.operator
+
+
+def _until_replaced(version: _Version, journey: Journey, versions: Mapping[tuple, Set[tuple[date, int]]]
+                    ) -> Journey | None:
+    """The journey, ending the day before a later version of its service starts,
+    as bustimes.org does: BODS keeps an old version beside the one replacing
+    it, often open-ended, and both would run. None if a version starting the
+    same day with a higher RevisionNumber replaces it. `versions` has the
+    (start, revision) of every version of each service seen (see _group). A
+    journey whose document gives no ServiceCode is kept as it is."""
+    if not version.service:
+        return journey
+    start = journey.calendar.start or date.min
+    others = versions.get(_group(version, journey), ())
+    if any(other == start and revision > version.revision for other, revision in others):
+        return None
+    later = [other for other, _ in others if other > start]
+    if not later:
+        return journey
+    end = min(later) - timedelta(days=1)
+    if journey.calendar.end and journey.calendar.end <= end:
+        return journey
+    return replace(journey, calendar=replace(journey.calendar, end=end))
+
+
+def _current(found: Iterable[tuple[_Version, Journey]], versions: Mapping[tuple, Set[tuple[date, int]]],
+             today: date) -> tuple[Journey, ...]:
+    """The journeys still running from `today`, each until a later version of
+    its service replaces it (_until_replaced), and each once: duplicates (same
+    line, operator, calls and calendar) can't be told apart by live times."""
+    kept: dict[tuple, Journey] = {}
+    for version, journey in found:
+        current = _until_replaced(version, journey, versions)
+        if current is None or (current.calendar.end and current.calendar.end < today):
+            continue
+        kept.setdefault((current.line, current.operator, current.calls, current.calendar), current)
+    return tuple(kept.values())
 
 
 def _nearby(journey: Journey, atcos: Collection[str]) -> set[str]:
@@ -733,17 +803,21 @@ def build_schedule(
     notes). Downloads wait in `scratch` (the state folder: /tmp may be memory).
     It has no roads yet: see add_roads.
 
-    Journeys whose timetable ended before today are left out (BODS keeps an
-    old timetable beside its replacement for a while), and so are duplicates
-    (same line, operator, calls and calendar), which live times couldn't tell
-    apart. valid_until is the earliest end among the rest that call at your
-    stops. TimetableError or RouteSetupError if anything fails, or no journey
-    calls at your stops."""
+    BODS keeps an old version of a service beside the one replacing it, so
+    each version ends the day before a later one starts (_until_replaced).
+    Journeys whose timetable ended before today are left out, and so are
+    duplicates (same line, operator, calls and calendar), which live times
+    couldn't tell apart. valid_until is the earliest end among the rest that
+    call at your stops: when due() builds it again. TimetableError or
+    RouteSetupError if anything fails, or no journey calls at your stops."""
     atcos = set(stops.values())
     wanted = [atco.encode() for atco in atcos]
     today = now.date()
-    journeys: dict[tuple, Journey] = {}
-    inbound: dict[tuple, Journey] = {}  # inbound-only, not yet measured
+    # Journeys as read, by version too: which are current is known only once
+    # every version of their service has been seen (_current).
+    journeys: dict[tuple, tuple[_Version, Journey]] = {}
+    inbound: dict[tuple, tuple[_Version, Journey]] = {}  # inbound-only, not yet measured
+    versions: dict[tuple, set[tuple[date, int]]] = {}  # (start, revision) by _group
     nearby: set[str] = set()
     approaches: set[str] = set()
     known: dict[str, StopPosition] = {}
@@ -754,31 +828,35 @@ def build_schedule(
         # Skip, unparsed, the many documents of a big operator that never mention your stops.
         if not any(code in document for code in wanted):
             continue
-        found, positions = _parse_document(document, atcos, noc, yours)
+        found, positions = _read_document(document, atcos, noc, yours)
         yours.update((atco, positions[atco]) for atco in atcos if atco in positions)
-        for journey in found:
+        for version, journey in found:
+            # Even an ended version ends the ones before it.
+            versions.setdefault(_group(version, journey), set()).add(
+                (journey.calendar.start or date.min, version.revision))
             if journey.calendar.end and journey.calendar.end < today:
                 continue
-            key = (journey.line, journey.operator, journey.calls, journey.calendar)
+            key = (version, journey.line, journey.operator, journey.calls, journey.calendar)
             if not journey.inbound_only:
-                journeys.setdefault(key, journey)
+                journeys.setdefault(key, (version, journey))
                 nearby |= _nearby(journey, atcos)
             elif key in inbound or len(inbound) < MAX_INBOUND_JOURNEYS:
-                inbound.setdefault(key, journey)
+                inbound.setdefault(key, (version, journey))
                 approaches |= _approach(journey)
             else:
                 left_out += 1
         known.update((atco, position) for atco, position in positions.items() if atco in nearby or atco in approaches)
         if len(journeys) > MAX_JOURNEYS:
             raise TimetableError(f"More than {MAX_JOURNEYS} journeys call at your stops; refusing")
-    if not journeys:
+    kept = _current(journeys.values(), versions, today)
+    if not kept:
         raise TimetableError("No timetabled journeys call at your stops")
     if left_out:
         log.warning("Left out %d journeys ending near your stops: more than %d", left_out, MAX_INBOUND_JOURNEYS)
     placed = _positions(nearby | approaches, known, naptan)
-    near = tuple(journey for journey in inbound.values() if _ends_near(journey, atcos, placed))
-    needed = nearby.union(*(_approach(journey) for journey in near))
-    kept = tuple(journeys.values())
+    near = tuple(journey for journey in _current(inbound.values(), versions, today)
+                 if _ends_near(journey, atcos, placed))
+    needed = set().union(*(_nearby(journey, atcos) for journey in kept), *(_approach(journey) for journey in near))
     ends = [journey.calendar.end for journey in kept if journey.calendar.end]
     positions = {atco: position for atco, position in placed.items() if atco in needed}
     return Schedule(

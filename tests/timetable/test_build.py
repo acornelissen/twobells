@@ -71,8 +71,10 @@ def _by_code(journeys):
 
 # A small TransXChange document for the cases the real samples don't show.
 
-def _txc(links, *, departure="10:00:00", profile="", journey="", pattern="", operators=None, stops="", extra=""):
-    """`links` is a list of (from, to, run time, from wait, to wait) on one pattern."""
+def _txc(links, *, departure="10:00:00", profile="", journey="", pattern="", operators=None, stops="", extra="",
+         start="2026-01-01", revision=None):
+    """`links` is a list of (from, to, run time, from wait, to wait) on one pattern.
+    Its service S1 runs from `start`; `revision` is the document's RevisionNumber."""
     timing = "".join(
         f'<JourneyPatternTimingLink id="l{i}"><From>{f"<WaitTime>{fw}</WaitTime>" if fw else ""}'
         f"<StopPointRef>{a}</StopPointRef></From><To>{f'<WaitTime>{tw}</WaitTime>' if tw else ''}"
@@ -82,14 +84,14 @@ def _txc(links, *, departure="10:00:00", profile="", journey="", pattern="", ope
     if operators is None:
         operators = '<Operator id="o1"><NationalOperatorCode>TEST</NationalOperatorCode></Operator>'
     return f"""<?xml version="1.0" encoding="utf-8"?>
-<TransXChange xmlns="http://www.transxchange.org.uk/">
+<TransXChange xmlns="http://www.transxchange.org.uk/"{f' RevisionNumber="{revision}"' if revision is not None else ""}>
  <StopPoints>{stops}</StopPoints>
  {extra}
  <JourneyPatternSections><JourneyPatternSection id="s1">{timing}</JourneyPatternSection></JourneyPatternSections>
  <Operators>{operators}</Operators>
  <Services><Service><ServiceCode>S1</ServiceCode>
   <Lines><Line id="L1"><LineName>99</LineName></Line></Lines>
-  <OperatingPeriod><StartDate>2026-01-01</StartDate></OperatingPeriod>
+  <OperatingPeriod><StartDate>{start}</StartDate></OperatingPeriod>
   {profile}
   <RegisteredOperatorRef>o1</RegisteredOperatorRef>
   <StandardService><JourneyPattern id="p1">{pattern}<JourneyPatternSectionRefs>s1</JourneyPatternSectionRefs></JourneyPattern></StandardService>
@@ -625,6 +627,56 @@ def test_duplicate_journeys_are_kept_once():
     bods.blobs[BNML_LINK] = _zip({"341.xml": TXC_341, "341-again.xml": TXC_341})
     bods.datasets["HIPK"] = []
     assert len(bods.build().journeys) == 5
+
+
+def _versions(*documents):
+    """A schedule built from these documents, one data set of BNML's."""
+    bods = FakeBods()
+    bods.blobs[BNML_LINK] = _zip({f"{i}.xml": document for i, document in enumerate(documents)})
+    bods.datasets["HIPK"] = []
+    return bods.build()
+
+
+def _departures(schedule, day):
+    return sorted(f"{_at(j, STOP_A) // 60:02d}:{_at(j, STOP_A) % 60:02d}" for j in journeys_on(schedule, day))
+
+
+def test_a_later_version_of_a_service_replaces_the_earlier_from_the_day_it_starts():
+    # BODS keeps the old version, open-ended, beside the one replacing it.
+    old = _txc(LINKS, departure="07:37:00", start="2026-01-01")  # at Stop A 07:42
+    new = _txc(LINKS, departure="07:40:00", start="2026-10-20")  # at Stop A 07:45
+    schedule = _versions(old, new)
+    assert _departures(schedule, date(2026, 10, 25)) == ["07:45"]
+    assert _departures(schedule, date(2026, 10, 19)) == ["07:42"]
+    assert schedule.valid_until == date(2026, 10, 19)  # built again once the old one has ended
+    assert set(_versions(new, old).journeys) == set(schedule.journeys)  # whichever comes first
+
+
+def test_the_higher_revision_wins_between_versions_starting_the_same_day():
+    first = _txc(LINKS, departure="07:37:00", start="2026-10-01", revision=1)
+    second = _txc(LINKS, departure="07:40:00", start="2026-10-01", revision=2)
+    assert _departures(_versions(second, first), date(2026, 10, 25)) == ["07:45"]
+
+
+def test_versions_of_the_same_revision_starting_the_same_day_are_both_kept():
+    # One version of a service may be split across documents.
+    one = _txc(LINKS, departure="07:37:00", start="2026-10-01", revision=1)
+    other = _txc(LINKS, departure="07:40:00", start="2026-10-01", revision=1)
+    assert _departures(_versions(one, other), date(2026, 10, 25)) == ["07:42", "07:45"]
+
+
+def test_a_later_version_that_has_already_ended_still_ends_the_earlier_one():
+    old = _txc(LINKS, departure="07:37:00", start="2026-01-01")
+    ended = _txc(LINKS, departure="07:40:00", start="2026-06-01").replace(
+        b"<StartDate>2026-06-01</StartDate>", b"<StartDate>2026-06-01</StartDate><EndDate>2026-09-30</EndDate>")
+    with pytest.raises(TimetableError, match="No timetabled journeys"):
+        _versions(old, ended)
+
+
+def test_other_services_are_not_ended_by_a_later_one():
+    old = _txc(LINKS, departure="07:37:00", start="2026-01-01")
+    other = _txc(LINKS, departure="07:40:00", start="2026-10-20").replace(b"S1<", b"S2<")
+    assert _departures(_versions(old, other), date(2026, 10, 25)) == ["07:42", "07:45"]
 
 
 def test_lines_narrow_the_data_sets_and_each_link_is_fetched_once():
