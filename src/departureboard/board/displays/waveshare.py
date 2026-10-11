@@ -132,27 +132,40 @@ class GpioBus:
             pin.close()
 
 
+# How long one refresh may keep the panel busy in all: waking, then the
+# refresh itself (about 21 s). departureboard.service stops a run at
+# TimeoutStartSec=120, so this leaves the rest for fetching and drawing.
+BUSY_TIMEOUT_S = 60
+
+
 class Controller:
-    """The panel's command sequence: wake, write both halves, refresh, sleep."""
+    """The panel's command sequence: wake, write both halves, refresh, sleep.
+    One controller drives one refresh: its busy waits share `busy_timeout`,
+    counted from the first."""
 
     def __init__(
         self,
         bus: Bus,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
-        busy_timeout: float = 60,
+        busy_timeout: float = BUSY_TIMEOUT_S,
     ) -> None:
         self._bus = bus
         self._sleep = sleep
         self._clock = clock
         self._busy_timeout = busy_timeout
+        self._deadline: float | None = None
 
     def _wait(self) -> None:
         self._sleep(0.1)
-        deadline = self._clock() + self._busy_timeout
+        if self._deadline is None:
+            self._deadline = self._clock() + self._busy_timeout
         while self._bus.busy():
-            if self._clock() > deadline:
-                raise TimeoutError(f"e-paper still busy after {self._busy_timeout:.0f} s")
+            if self._clock() > self._deadline:
+                raise TimeoutError(
+                    f"The e-paper panel was still busy after {self._busy_timeout:.0f} s; "
+                    "check its cable and power"
+                )
             self._sleep(0.02)
 
     def _send(self, command: int, data: tuple[int, ...] | bytes = ()) -> None:

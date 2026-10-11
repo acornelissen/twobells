@@ -1,8 +1,11 @@
+import re
+
 import pytest
 from PIL import Image
 
 from departureboard.board.displays.waveshare import BLACK, RED, WHITE, YELLOW, Controller, WaveshareDisplay, pack
 from departureboard.board.panel import WAVESHARE_10IN85G
+from tests.paths import ROOT
 
 SIZE = WAVESHARE_10IN85G.size
 
@@ -126,6 +129,72 @@ def test_a_stuck_panel_times_out_instead_of_hanging():
     epd = Controller(bus, sleep=lambda s: None, clock=lambda: next(ticks), busy_timeout=5)
     with pytest.raises(TimeoutError):
         epd.refresh()
+
+
+class Clock:
+    """A pretend time.monotonic that only moves when the controller sleeps."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+    def __call__(self):
+        return self.now
+
+
+class SlowBus(FakeBus):
+    """A panel busy for so many seconds after a reset, power on and refresh."""
+
+    def __init__(self, clock, reset_s=0.0, power_on_s=0.0, refresh_s=0.0):
+        super().__init__()
+        self._clock = clock
+        self._busy_for = {"reset": reset_s, 0x04: power_on_s, 0x12: refresh_s}
+        self._until = 0.0
+
+    def reset(self):
+        super().reset()
+        self._until = self._clock() + self._busy_for["reset"]
+
+    def command(self, value):
+        super().command(value)
+        if value in self._busy_for:
+            self._until = self._clock() + self._busy_for[value]
+
+    def busy(self):
+        return self._clock() < self._until
+
+
+def _unit_timeout_s():
+    """departureboard.service's TimeoutStartSec, which a whole run must fit under."""
+    text = (ROOT / "deploy" / "pi" / "departureboard.service").read_text()
+    [seconds] = re.findall(r"^TimeoutStartSec=(\d+)$", text, re.MULTILINE)
+    return int(seconds)
+
+
+def slow_show(**busy):
+    clock = Clock()
+    bus = SlowBus(clock, **busy)
+    display = WaveshareDisplay(controller=lambda: Controller(bus, sleep=clock.sleep, clock=clock))
+    return display, bus, clock
+
+
+def test_a_usual_refresh_goes_through():
+    display, bus, clock = slow_show(reset_s=0.5, power_on_s=0.5, refresh_s=25)
+    display.show(image())
+    assert 0x07 in bus.commands() and bus.closed
+
+
+def test_a_slow_panel_gives_up_in_time_for_the_run_to_finish_under_the_units_timeout():
+    # Slow at every step but never quite stuck: each wait alone is under a
+    # minute, but together they must not outlast the unit and be killed.
+    display, bus, clock = slow_show(reset_s=40, power_on_s=40, refresh_s=55)
+    with pytest.raises(TimeoutError, match="e-paper"):
+        display.show(image())
+    assert 0x07 in bus.commands() and bus.closed  # still put to sleep
+    # What is left is for starting up, fetching and drawing.
+    assert clock.now <= _unit_timeout_s() - 45
 
 
 def test_sleep_powers_down_and_releases_the_bus():
