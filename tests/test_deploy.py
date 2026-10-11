@@ -409,15 +409,19 @@ def _timetable_memory(install) -> int:
     Python and its imports. Read whole, a document can be held twice while it
     is unpacked; parsed, it is held with up to as much again for what is read
     from it, but its journeys (tests/timetable/test_build.py measures both):
-    twice its size. Beside it are the journeys found, from it and the
-    documents before: those calling at your stops, up to the install's limit,
-    and inbound-only ones, up to half that (build.inbound_limit), each taking
-    up to build.JOURNEY_BYTES."""
+    twice its size. Once the documents are let go, NaPTAN's stops are read,
+    up to routesetup.MAX_NAPTAN_BYTES, decoded a little at a time
+    (tests/timetable/test_build.py and test_routesetup.py check both).
+    Beside either are the journeys found, from it and the documents before:
+    those calling at your stops, up to the install's limit, and inbound-only
+    ones, up to half that (build.inbound_limit), each taking up to
+    build.JOURNEY_BYTES."""
     from departureboard.timetable import build, routesetup
 
     limits = routesetup.document_limits(install)
     journeys = limits.journeys + build.inbound_limit(limits)
-    return 2 * max(limits.read, limits.parse) + journeys * build.JOURNEY_BYTES
+    read = max(2 * max(limits.read, limits.parse), routesetup.MAX_NAPTAN_BYTES)
+    return read + journeys * build.JOURNEY_BYTES
 
 
 def test_the_timetable_unit_has_room_for_the_largest_document_it_reads_and_its_journeys():

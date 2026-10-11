@@ -1977,3 +1977,33 @@ def test_journeys_ended_by_a_later_version_share_their_new_calendar():
     ended = [journey for journey in schedule.journeys if journey.calendar.end == date(2026, 10, 19)]
     assert len(ended) == 2
     assert ended[0].calendar is ended[1].calendar
+
+
+@pytest.mark.parametrize("last", ["used", "skipped"])
+def test_nothing_read_from_the_timetables_but_what_is_kept_is_held_while_naptan_is_asked(last):
+    # NaPTAN's response can be as big as a document (routesetup.MAX_NAPTAN_BYTES,
+    # tests/test_deploy.py), so the last document read, used or not, and
+    # everything else read from it, is let go first.
+    padding = b"<!--" + b"x" * 5_000_000 + b"-->"
+    big = TXC_341.replace(b"</TransXChange>", padding + b"</TransXChange>")
+    bods = FakeBods()
+    bods.datasets = {"BNML": [BNML_LINK, HIPK_LINK]}
+    # Plain files, read from the download into memory by the build; the
+    # skipped one too big to parse.
+    bods.blobs = {BNML_LINK: big, HIPK_LINK: TXC_61 + padding * 2} if last == "skipped" else {
+        BNML_LINK: TXC_61, HIPK_LINK: big}
+    held = []
+
+    def naptan(atcos):
+        held.append(tracemalloc.get_traced_memory()[0])
+        return {}
+
+    tracemalloc.start()
+    try:
+        schedule = build_schedule(STOPS, ["BNML"], "key", NOW, find_datasets=bods.find, fetch=bods.fetch,
+                                  naptan=naptan, limits=DocumentLimits(parse=len(TXC_341) + len(padding) + 100))
+    finally:
+        tracemalloc.stop()
+    assert {journey.line for journey in schedule.journeys} == ({"341"} if last == "skipped" else {"341", "61"})
+    assert len(held) == 1
+    assert held[0] < len(padding) / 10

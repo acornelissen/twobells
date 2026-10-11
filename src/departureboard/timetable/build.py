@@ -982,6 +982,63 @@ def add_roads(schedule: Schedule, route: Route = roadshape.segment_shapes,
     return replace(schedule, shapes={**kept, **new})
 
 
+class _Read(NamedTuple):
+    """What build_schedule keeps from the timetables (_read_timetables)."""
+
+    journeys: tuple[Journey, ...]  # those calling at your stops, current (_current)
+    inbound: tuple[Journey, ...]  # the inbound-only ones, current, not yet measured
+    stops: set[str]  # to place: on the way to your stops and after, and where inbound-only ones end and approach
+    known: dict[str, StopPosition]  # the timetables' own positions of those stops
+    left_out: int  # inbound-only journeys left out, past inbound_limit
+    inbound_limit: int
+
+
+def _read_timetables(links: list[tuple[str, str]], atcos: set[str], today: date, fetch: Download, scratch,
+                     limits: DocumentLimits) -> _Read:
+    """The journeys behind the links calling at `atcos`, and the inbound-only
+    ones of their lines, as build_schedule keeps them, with the stops to place."""
+    wanted = [atco.encode() for atco in atcos]
+    # Journeys as read, by version too: which are current is known only once
+    # every version of their service has been seen (_current).
+    journeys: dict[tuple, tuple[_Version, Journey]] = {}
+    inbound: dict[tuple, tuple[_Version, Journey]] = {}  # inbound-only, not yet measured
+    versions: dict[tuple, set[_Seen]] = {}  # by _group
+    nearby: set[str] = set()
+    approaches: set[str] = set()
+    known: dict[str, StopPosition] = {}
+    yours: dict[str, StopPosition] = {}
+    left_out = 0
+    room = _Room(limits.journeys, inbound_limit(limits))
+    for noc, name, document in _documents(links, fetch, scratch, limits.read):
+        # Skip, unparsed, the many documents of a big operator that never mention your stops.
+        if not any(code in document for code in wanted):
+            continue
+        if len(document) > limits.parse:
+            log.warning("%s", routesetup.too_big(name, limits.parse, len(document)))
+            continue
+        room.held, room.held_inbound = len(journeys), len(inbound)
+        found, positions = _read_document(document, atcos, noc, yours, room)
+        yours.update((atco, positions[atco]) for atco in atcos if atco in positions)
+        for version, journey in found:
+            # Even an ended version ends the ones before it, if it was open-ended.
+            versions.setdefault(_group(version, journey), set()).add(
+                (journey.calendar.start or date.min, journey.calendar.end, version.revision))
+            if journey.calendar.end and journey.calendar.end < today:
+                continue
+            key = (version, journey.line, journey.operator, journey.calls, journey.calendar)
+            if not journey.inbound_only:
+                journeys.setdefault(key, (version, journey))
+                nearby |= _nearby(journey, atcos)
+            elif key in inbound or len(inbound) < room.inbound:
+                inbound.setdefault(key, (version, journey))
+                approaches |= _approach(journey)
+            else:
+                left_out += 1
+        known.update((atco, position) for atco, position in positions.items() if atco in nearby or atco in approaches)
+    return _Read(_current(journeys.values(), versions, today), _current(inbound.values(), versions, today),
+                 nearby | approaches, known, left_out + room.left_out, room.inbound)
+
+
 def build_schedule(
     stops: Mapping[str, str],
     operators: Iterable[str],
@@ -1011,55 +1068,18 @@ def build_schedule(
     call at your stops: when due() builds it again. TimetableError or
     RouteSetupError if anything fails, or no journey calls at your stops."""
     atcos = set(stops.values())
-    wanted = [atco.encode() for atco in atcos]
-    today = now.date()
-    # Journeys as read, by version too: which are current is known only once
-    # every version of their service has been seen (_current).
-    journeys: dict[tuple, tuple[_Version, Journey]] = {}
-    inbound: dict[tuple, tuple[_Version, Journey]] = {}  # inbound-only, not yet measured
-    versions: dict[tuple, set[_Seen]] = {}  # by _group
-    nearby: set[str] = set()
-    approaches: set[str] = set()
-    known: dict[str, StopPosition] = {}
-    yours: dict[str, StopPosition] = {}
-    left_out = 0
-    room = _Room(limits.journeys, inbound_limit(limits))
     links = _dataset_links(operators, api_key, lines, find_datasets)
-    for noc, name, document in _documents(links, fetch, scratch, limits.read):
-        # Skip, unparsed, the many documents of a big operator that never mention your stops.
-        if not any(code in document for code in wanted):
-            continue
-        if len(document) > limits.parse:
-            log.warning("%s", routesetup.too_big(name, limits.parse, len(document)))
-            continue
-        room.held, room.held_inbound = len(journeys), len(inbound)
-        found, positions = _read_document(document, atcos, noc, yours, room)
-        yours.update((atco, positions[atco]) for atco in atcos if atco in positions)
-        for version, journey in found:
-            # Even an ended version ends the ones before it, if it was open-ended.
-            versions.setdefault(_group(version, journey), set()).add(
-                (journey.calendar.start or date.min, journey.calendar.end, version.revision))
-            if journey.calendar.end and journey.calendar.end < today:
-                continue
-            key = (version, journey.line, journey.operator, journey.calls, journey.calendar)
-            if not journey.inbound_only:
-                journeys.setdefault(key, (version, journey))
-                nearby |= _nearby(journey, atcos)
-            elif key in inbound or len(inbound) < room.inbound:
-                inbound.setdefault(key, (version, journey))
-                approaches |= _approach(journey)
-            else:
-                left_out += 1
-        known.update((atco, position) for atco, position in positions.items() if atco in nearby or atco in approaches)
-    kept = _current(journeys.values(), versions, today)
+    # Read in a function of its own: once it returns, nothing read from the
+    # timetables is held but what is kept, as NaPTAN's response can be as big
+    # as a document (routesetup.MAX_NAPTAN_BYTES).
+    read = _read_timetables(links, atcos, now.date(), fetch, scratch, limits)
+    kept = read.journeys
     if not kept:
         raise TimetableError("No timetabled journeys call at your stops")
-    left_out += room.left_out
-    if left_out:
-        log.warning("Left out %d journeys ending near your stops: more than %d", left_out, room.inbound)
-    placed = _positions(nearby | approaches, known, naptan)
-    near = tuple(journey for journey in _current(inbound.values(), versions, today)
-                 if _ends_near(journey, atcos, placed))
+    if read.left_out:
+        log.warning("Left out %d journeys ending near your stops: more than %d", read.left_out, read.inbound_limit)
+    placed = _positions(read.stops, read.known, naptan)
+    near = tuple(journey for journey in read.inbound if _ends_near(journey, atcos, placed))
     needed = set().union(*(_nearby(journey, atcos) for journey in kept), *(_approach(journey) for journey in near))
     ends = [journey.calendar.end for journey in kept if journey.calendar.end]
     positions = {atco: position for atco, position in placed.items() if atco in needed}

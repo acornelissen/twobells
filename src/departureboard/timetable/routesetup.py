@@ -29,6 +29,10 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 NAPTAN_URL = "https://naptan.api.dft.gov.uk/v1/access-nodes"
+# The most of NaPTAN's stops for your stops' areas read. A build holds it
+# beside the journeys it has kept, once it has let go of the timetables
+# (tests/test_deploy.py).
+MAX_NAPTAN_BYTES = 100_000_000
 MAX_DOWNLOAD_BYTES = 300_000_000
 # One TransXChange file, uncompressed, unless an install reads less (see
 # DocumentLimits).
@@ -336,19 +340,27 @@ def dataset_urls(api_key: str, noc: str, line: str | None = None, http_get: Http
 
 def naptan_stops(atcos: Iterable[str], http_get: HttpGetBytes = get_bytes,
                  with_indicator: bool = False) -> dict[str, tuple]:
-    """Name, latitude and longitude for each stop, from the NaPTAN API (no key needed)."""
+    """Name, latitude and longitude for each stop, from the NaPTAN API (no key
+    needed). The response is decoded a little at a time as it is read, never
+    copied whole: as one text, read as a file, it took five times its size
+    again."""
     wanted = set(atcos)
     areas = sorted({atco[:3] for atco in wanted})
     query = urlencode({"atcoAreaCodes": ",".join(areas), "dataFormat": "csv"})
-    text = http_get(f"{NAPTAN_URL}?{query}", 100_000_000).decode("utf-8-sig")
-    return parse_naptan(text, wanted, with_indicator)
+    body = http_get(f"{NAPTAN_URL}?{query}", MAX_NAPTAN_BYTES)
+    return _naptan_rows(io.TextIOWrapper(io.BytesIO(body), encoding="utf-8-sig", newline=""), wanted, with_indicator)
 
 
 def parse_naptan(text: str, wanted: set[str], with_indicator: bool = False) -> dict[str, tuple]:
     """Name, latitude and longitude for each wanted stop; with_indicator adds
     the letter or word on its sign ("Stop A", "Opp"), "" when there's none."""
+    return _naptan_rows(io.StringIO(text), wanted, with_indicator)
+
+
+def _naptan_rows(lines: IO[str], wanted: set[str], with_indicator: bool) -> dict[str, tuple]:
+    """parse_naptan over a file of NaPTAN's CSV."""
     found = {}
-    for row in csv.DictReader(io.StringIO(text)):
+    for row in csv.DictReader(lines):
         if row.get("ATCOCode") in wanted:
             place = (row["CommonName"].strip(), float(row["Latitude"]), float(row["Longitude"]))
             found[row["ATCOCode"]] = (*place, (row.get("Indicator") or "").strip()) if with_indicator else place

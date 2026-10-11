@@ -1,17 +1,20 @@
 import io
 import json
 import tomllib
+import tracemalloc
 import zipfile
 import zlib
 
 import pytest
 
 from departureboard.timetable.routesetup import (
+    MAX_NAPTAN_BYTES,
     MAX_STOPS,
     Pattern,
     RouteSetupError,
     dataset_urls,
     find_patterns,
+    naptan_stops,
     parse_naptan,
     patterns,
     route_toml,
@@ -318,3 +321,34 @@ def test_naptan_can_also_give_each_stop_s_sign_letter():
     found = parse_naptan(NAPTAN, {"1000DGHS0900"}, with_indicator=True)
     assert found["1000DGHS0900"] == ("Henry Street", 53.44384, -1.948999, "Stop A")
     assert parse_naptan(NAPTAN, {"1000DGHS0900"})["1000DGHS0900"] == ("Henry Street", 53.44384, -1.948999)
+
+
+def test_naptan_s_stops_are_read_from_the_response_as_from_its_text():
+    wanted = {"1000DGHS0900", "1000DDDV3835", "1000NOWHERE1"}
+    for body in (NAPTAN.encode(), "﻿".encode() + NAPTAN.encode(), NAPTAN.replace("\n", "\r\n").encode()):
+        asked = []
+
+        def get(url, limit, body=body, asked=asked):
+            asked.append(limit)
+            return body
+
+        for with_indicator in (False, True):
+            assert naptan_stops(wanted, http_get=get, with_indicator=with_indicator) == parse_naptan(
+                NAPTAN, wanted, with_indicator)
+        assert asked == [MAX_NAPTAN_BYTES] * 2
+
+
+def test_naptan_s_stops_are_read_without_copying_the_whole_response():
+    # A build asks for them beside the journeys it holds, with room for
+    # MAX_NAPTAN_BYTES of response (tests/test_deploy.py): decoded whole, it
+    # took five times that again.
+    header, *rows = NAPTAN.splitlines(keepends=True)
+    body = (header + "".join(rows) * (5_000_000 // len(NAPTAN))).encode()
+    tracemalloc.start()
+    try:
+        found = naptan_stops({HENRY_A}, http_get=lambda url, limit: body)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert found == {HENRY_A: ("Henry Street", 53.44384, -1.948999)}
+    assert peak < len(body) / 10
