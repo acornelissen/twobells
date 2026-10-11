@@ -18,18 +18,18 @@ from urllib.parse import urljoin
 
 import pytest
 
-from departureboard.settings.schema import keys
-from departureboard.setup import keytest
-from departureboard.setup.api import PAGE_HEADERS, static_files
 from tests.contrast import assert_contrast
 from tests.paths import FIXTURES, ROOT
+from twobells.settings.schema import keys
+from twobells.setup import keytest
+from twobells.setup.api import PAGE_HEADERS, static_files
 
-DASHBOARD = ROOT / "src" / "departureboard" / "dashboard_static"
+DASHBOARD = ROOT / "src" / "twobells" / "dashboard_static"
 
 # The wizard offers only the keys every view uses; each view's own are on its settings tab.
 KEYS = keys("general")
 
-STATIC = ROOT / "src" / "departureboard" / "wizard_static"
+STATIC = ROOT / "src" / "twobells" / "wizard_static"
 OWN = sorted(p for p in STATIC.rglob("*") if p.is_file())
 PREFIX = "http://pi.local/setup/"  # any prefix ending in a slash
 STEPS = ("home", "station", "stops", "walk", "keys", "views", "finish", "done")

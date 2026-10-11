@@ -7,10 +7,10 @@ import tomllib
 
 import pytest
 
-from departureboard.dashboard.config import dashboard_target, load_dashboard
-from departureboard.settings.installs import install_named
-from departureboard.settings.store import Store
-from departureboard.web.groupform import GroupForm
+from twobells.dashboard.config import dashboard_target, load_dashboard
+from twobells.settings.installs import install_named
+from twobells.settings.store import Store
+from twobells.web.groupform import GroupForm
 
 CONFIG = """
 title = "Glossop"
@@ -167,7 +167,7 @@ def test_position_strips_are_on_until_switched_off(form):
 
 
 def test_every_field_the_page_saves_is_read_back():
-    from departureboard.settings.schema import FIELDS, saved_keys
+    from twobells.settings.schema import FIELDS, saved_keys
 
     for f in FIELDS:
         if f.group in ("general", "dashboard"):
@@ -175,9 +175,9 @@ def test_every_field_the_page_saves_is_read_back():
 
 
 def test_everything_setup_and_the_page_save_is_read_back(form):
-    from departureboard.settings.config import read_overlay_in
-    from departureboard.settings.schema import keys
-    from departureboard.setup.api import SetupApi
+    from twobells.settings.config import read_overlay_in
+    from twobells.settings.schema import keys
+    from twobells.setup.api import SetupApi
 
     stations = (("Glossop", "GLO", 53.4445, -1.9491), ("Manchester Piccadilly", "MAN", 53.4774, -2.2309))
     store = Store.open(form.config, state_dir=form.folder)

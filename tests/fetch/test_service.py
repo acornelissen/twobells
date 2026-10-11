@@ -12,17 +12,17 @@ from typing import ClassVar
 
 import pytest
 
-from departureboard.core.walk import WalkTimes
-from departureboard.fetch import handoff
-from departureboard.fetch import service as fetch
-from departureboard.fetch.service import FetchService
-from departureboard.settings.installs import install_named
-from departureboard.settings.store import Store
-from departureboard.setup.lookups import Place
-from departureboard.setup.spool.folder import Spool
-from departureboard.setup.spool.runner import Poster, SpoolRunner
-from departureboard.setup.spool.worker import WORKER_LOCK
 from tests.setup.test_spool import read_on_the_way_out
+from twobells.core.walk import WalkTimes
+from twobells.fetch import handoff
+from twobells.fetch import service as fetch
+from twobells.fetch.service import FetchService
+from twobells.settings.installs import install_named
+from twobells.settings.store import Store
+from twobells.setup.lookups import Place
+from twobells.setup.spool.folder import Spool
+from twobells.setup.spool.runner import Poster, SpoolRunner
+from twobells.setup.spool.worker import WORKER_LOCK
 
 PI = install_named("pi")
 ON = '[app]\nviews = ["board", "dashboard"]\n'
@@ -307,7 +307,7 @@ def test_a_second_service_stops_at_once_and_runs_no_dashboard(pi):
 
 def test_stopped_by_systemd_it_stops_the_pollers_and_lets_go(tmp_path, monkeypatch, pi):
     # systemctl stop or update.sh: SIGTERM. Through the command, as the unit runs it.
-    from departureboard.cli.main import main
+    from twobells.cli.main import main
 
     store, spool = pi
     save(pi, ON)
@@ -342,8 +342,8 @@ def test_stopped_by_systemd_it_stops_the_pollers_and_lets_go(tmp_path, monkeypat
 
 
 def test_the_bus_company_search_reads_as_much_of_each_timetable_file_as_a_pi_can(pi, monkeypatch):
-    from departureboard.setup import discover
-    from departureboard.timetable import routesetup
+    from twobells.setup import discover
+    from twobells.timetable import routesetup
 
     made = []
     monkeypatch.setattr(discover, "SetupJob", lambda *args, **options: made.append(options))
@@ -355,7 +355,7 @@ def test_a_setup_search_sets_the_dashboard_s_timetable_aside_while_it_runs(pi, m
     # It builds a timetable here, beside the dashboard's pollers: the one they
     # read isn't held beside it (tests/test_deploy.py counts on it), even by
     # pollers started again meanwhile.
-    from departureboard.setup import discover
+    from twobells.setup import discover
 
     made = []
     monkeypatch.setattr(discover, "SetupJob", lambda *args, **options: made.append(options))

@@ -3,7 +3,7 @@ from datetime import timedelta
 
 import pytest
 
-from departureboard.core.model import Departure, Status, minutes_between
+from twobells.core.model import Departure, Status, minutes_between
 
 
 def make(scheduled="07:12", expected=None, status=Status.ON_TIME):
@@ -95,7 +95,7 @@ def test_a_delayed_train_without_an_estimate_is_not_gone_at_its_booked_time():
 def test_a_delayed_train_goes_in_the_end_if_no_fetch_comes():
     from datetime import datetime
 
-    from departureboard.core.model import HOLD_UNTIMED
+    from twobells.core.model import HOLD_UNTIMED
 
     fetched = datetime(2026, 10, 8, 10, 1)
     dep = make("10:00", status=Status.LATE)
@@ -121,7 +121,7 @@ def test_a_departure_needs_clock_times(field, value):
 
 
 def test_a_strip_says_where_and_draws_a_short_line_with_your_stop_on_it():
-    from departureboard.core.model import Strip
+    from twobells.core.model import Strip
 
     strip = Strip("At Dinting", stops=7, yours=5, at=3.4)
     assert (strip.where, strip.stops, strip.yours, strip.at) == ("At Dinting", 7, 5, 3.4)
@@ -136,14 +136,14 @@ def test_a_strip_says_where_and_draws_a_short_line_with_your_stop_on_it():
     {"where": "a", "stops": 3, "yours": 1, "at": -0.1}, {"where": "a", "stops": 3, "yours": 1, "at": float("nan")},
 ])
 def test_a_strip_that_cant_be_drawn_is_refused(fields):
-    from departureboard.core.model import Strip
+    from twobells.core.model import Strip
 
     with pytest.raises(ValueError):
         Strip(**fields)
 
 
 def test_a_strip_belongs_to_the_same_departure_whatever_its_live_time():
-    from departureboard.core.model import strip_key
+    from twobells.core.model import strip_key
 
     on_time = Departure("bus", "341", "Hyde", "07:20", None, Status.ON_TIME, stop="A")
     late = Departure("bus", "341", "Hyde", "07:20", "07:24", Status.LATE, stop="A")

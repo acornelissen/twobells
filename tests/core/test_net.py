@@ -9,7 +9,7 @@ from urllib.request import Request
 
 import pytest
 
-from departureboard.core import net
+from twobells.core import net
 
 
 class FakeResponse(io.BytesIO):
@@ -36,7 +36,7 @@ def test_sends_a_named_user_agent(monkeypatch):
     seen = capture(monkeypatch)
     net.get_json_capped("https://example.test/x", None, 100)
     agent = seen["request"].get_header("User-agent")
-    assert agent and agent.startswith("inky-departures/")
+    assert agent and agent.startswith("twobells/")
     assert "Python-urllib" not in agent
 
 
@@ -87,7 +87,7 @@ def test_redirect_to_another_host_drops_the_api_key(redirecting):
     assert net.get_json_capped(base + "/elsewhere", {"x-apikey": "secret"}, 100) == {"ok": True}
     sent = {name.lower(): value for name, value in seen[0].items()}
     assert "x-apikey" not in sent
-    assert sent["user-agent"].startswith("inky-departures/")
+    assert sent["user-agent"].startswith("twobells/")
 
 
 def test_redirect_on_the_same_host_keeps_headers(redirecting):
@@ -138,7 +138,7 @@ def test_capped_json_reads_a_small_body_with_the_callers_headers(monkeypatch):
     request = seen["request"]
     assert request.get_header("X-apikey") == "k"
     assert request.get_header("Accept") == "application/json"
-    assert request.get_header("User-agent").startswith("inky-departures/")
+    assert request.get_header("User-agent").startswith("twobells/")
 
 
 def test_capped_json_refuses_a_body_over_the_cap(monkeypatch):
@@ -178,8 +178,8 @@ def test_get_bytes_adds_the_callers_headers_and_may_replace_the_agent(monkeypatc
     seen = serve(monkeypatch, b"body")
     assert net.get_bytes("https://example.test/x", 100) == b"body"
     assert seen["request"].get_header("User-agent") == net.USER_AGENT
-    net.get_bytes("https://example.test/x", 100, headers={"User-Agent": "inky-departures/0.1 (+contact)"})
-    assert seen["request"].get_header("User-agent") == "inky-departures/0.1 (+contact)"
+    net.get_bytes("https://example.test/x", 100, headers={"User-Agent": "twobells/0.1 (+contact)"})
+    assert seen["request"].get_header("User-agent") == "twobells/0.1 (+contact)"
 
 
 # A deadline for the whole request.

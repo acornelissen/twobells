@@ -2,8 +2,8 @@ from datetime import datetime
 
 import pytest
 
-from departureboard.core.errors import safe_message
-from departureboard.web.status import _when
+from twobells.core.errors import safe_message
+from twobells.web.status import _when
 
 
 @pytest.mark.parametrize("text, secret", [

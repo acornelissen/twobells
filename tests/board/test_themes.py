@@ -4,14 +4,14 @@ from dataclasses import replace
 
 import pytest
 
-from departureboard.board.panel import PANELS
-from departureboard.board.render import Palette, render
-from departureboard.board.route import RouteView
-from departureboard.board.sign import render_sign
-from departureboard.board.themes import THEMES, theme_named, with_text_size
-from departureboard.board.view import PLAIN, SIGN, BoardView, CodeView, Row, Section, SetupView, Style
-from departureboard.core.model import Strip
 from tests.paths import FIXTURES
+from twobells.board.panel import PANELS
+from twobells.board.render import Palette, render
+from twobells.board.route import RouteView
+from twobells.board.sign import render_sign
+from twobells.board.themes import THEMES, theme_named, with_text_size
+from twobells.board.view import PLAIN, SIGN, BoardView, CodeView, Row, Section, SetupView, Style
+from twobells.core.model import Strip
 
 
 def test_plain_theme():

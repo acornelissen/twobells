@@ -5,10 +5,6 @@ from urllib.error import HTTPError, URLError
 
 import pytest
 
-from departureboard.setup import lookups
-from departureboard.setup.lookups import RateLimiter
-from departureboard.timetable import roads as roadshape
-from departureboard.timetable.roads import parse_route, path, segment_pairs, segment_shapes, shape_key, simplify
 from tests.paths import FIXTURES
 from tests.sources.test_livebus import (
     ARUNDEL,
@@ -25,6 +21,10 @@ from tests.sources.test_livebus import (
     WEST,
     journey,
 )
+from twobells.setup import lookups
+from twobells.setup.lookups import RateLimiter
+from twobells.timetable import roads as roadshape
+from twobells.timetable.roads import parse_route, path, segment_pairs, segment_shapes, shape_key, simplify
 
 ROAD = (FIXTURES / "osrm_route_glossop.json").read_bytes()  # Sunlaws Street to St Marys Road, hand-made
 NO_ROUTE = (FIXTURES / "osrm_route_noroute.json").read_bytes()
@@ -317,8 +317,8 @@ def test_the_default_asks_the_router_politely_through_the_capped_getter(monkeypa
     assert asked == [("https://x", 10, roadshape.TIMEOUT, {"User-Agent": roadshape.USER_AGENT},
                       roadshape.REQUEST_DEADLINE)]
     # FOSSGIS's policy: a valid user agent, saying who is asking and how to reach them.
-    assert roadshape.USER_AGENT.startswith("inky-departures/")
-    assert "https://github.com/acornelissen/inky-departures" in roadshape.USER_AGENT
+    assert roadshape.USER_AGENT.startswith("twobells/")
+    assert "https://github.com/acornelissen/twobells" in roadshape.USER_AGENT
     assert roadshape.REQUEST_DEADLINE < 30 and roadshape.REQUEST_INTERVAL >= 1.0
 
 

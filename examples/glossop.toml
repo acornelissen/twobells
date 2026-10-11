@@ -6,7 +6,7 @@
 
 title = "Glossop > Manchester Picc"
 timezone = "Europe/London"
-state_file = "/var/lib/departureboard/state.json"
+state_file = "/var/lib/twobells/state.json"
 # Never redraw more often than this, even if the data changes sooner.
 min_redraw_minutes = 2
 # "sign": amber dot-matrix station board, with a yellow accent (or red, on e-paper).
@@ -46,13 +46,13 @@ walk_minutes = 10
 
 # Buses, worked out the way bustimes.org does: from the BODS timetable for
 # these stops plus live BODS bus positions. Free (needs BODS_API_KEY), so buses
-# can be checked all day. `departureboard timetable` builds the timetable, and
-# departureboard-timetable.timer keeps it fresh (rebuilt weekly, or when the
+# can be checked all day. `twobells timetable` builds the timetable, and
+# twobells-timetable.timer keeps it fresh (rebuilt weekly, or when the
 # stops or operators change).
 [bus]
 source = "bods"
 # The bus companies serving these stops, by national operator code. The
-# setup wizard and `departureboard setup discover` find them.
+# setup wizard and `twobells setup discover` find them.
 operators = ["BNML", "HIPK"]
 rows = 3
 # Optional: only show buses whose direction contains one of these.
@@ -89,7 +89,7 @@ B = 10
 # HDMI screen only: a second page showing where the next bus you can catch is,
 # on the stops before yours. Needs BODS_API_KEY in secrets.env. Positions are
 # checked every position_interval_seconds ([bus], above) inside the bus windows.
-# `departureboard route 341 --stop A --noc BNML` prints this block with the
+# `twobells route 341 --stop A --noc BNML` prints this block with the
 # real stops and positions; the ones below only show its shape.
 # [bus.routes.341]
 # stop = "A"            # your stop's label from [bus.stops]

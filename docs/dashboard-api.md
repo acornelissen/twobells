@@ -1,6 +1,6 @@
 # Dashboard API
 
-The contract between the dashboard's server (`departureboard serve`, on every install) and its browser front end. Everything is read-only: GET and HEAD only.
+The contract between the dashboard's server (`twobells serve`, on every install) and its browser front end. Everything is read-only: GET and HEAD only.
 
 Everything under `/settings` is the settings site, not part of this API: it has its own pages, cookies (`settings_session`, `settings_form`, both `Path=/settings`) and headers (`form-action 'self'`, and `script-src 'self'` only for the setup wizard under `/settings/setup/` and for `/settings/settings.js` on a signed-in visitor's settings pages). The board's old settings addresses `/login`, `/reset` and `/setup/` redirect there. Nothing here changes because of it.
 
@@ -248,7 +248,7 @@ While the dashboard is on: 200 `ok` when the pollers are alive and the snapshot 
 ## Static files
 
 - `/`: the page.
-- `/static/<path>`: files from `src/departureboard/dashboard_static/`, from an allowlist built at start.
+- `/static/<path>`: files from `src/twobells/dashboard_static/`, from an allowlist built at start.
 - `/manifest.webmanifest`.
 
 ## Access rules (every request)

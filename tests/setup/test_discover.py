@@ -12,8 +12,9 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from departureboard.setup import discover
-from departureboard.setup.discover import (
+from tests.paths import FIXTURES
+from twobells.setup import discover
+from twobells.setup.discover import (
     Cancelled,
     Dataset,
     DiscoveryError,
@@ -22,9 +23,8 @@ from departureboard.setup.discover import (
     discover_operators,
     list_datasets,
 )
-from departureboard.timetable import build as timetable
-from departureboard.timetable.routesetup import DocumentLimits
-from tests.paths import FIXTURES
+from twobells.timetable import build as timetable
+from twobells.timetable.routesetup import DocumentLimits
 
 TXC_341 = (FIXTURES / "txc_bnml_341.xml").read_bytes()  # filed under BNML, says BNGN inside
 TXC_237 = (FIXTURES / "txc_bnml_237.xml").read_bytes()
@@ -531,7 +531,7 @@ class FakeResponse(io.BytesIO):
 def test_by_default_the_job_s_timetable_keeps_each_stop_s_sign_letter(bods, monkeypatch):
     # NaPTAN is asked for real (here, its CSV from a fake network), as the weekly build does,
     # so the timetable the wizard saves says which side of the road a stop is from the start.
-    from departureboard.core import net
+    from twobells.core import net
 
     others = set(re.findall(rb"<StopPointRef>(\w+)</StopPointRef>", TXC_341 + TXC_237 + TXC_61))
     rows = [f"{atco.decode()},Somewhere,53.44,-1.95,\n" for atco in sorted(others)]
@@ -683,7 +683,7 @@ class Router:
 
 
 def test_the_search_is_done_once_the_timetable_is_saved_and_the_roads_follow(bods, monkeypatch):
-    from departureboard.setup import lookups
+    from twobells.setup import lookups
 
     monkeypatch.setattr(lookups.ROUTER_LIMIT, "wait", lambda: None)  # a road a second would take minutes
     router = Router()
@@ -710,7 +710,7 @@ def test_the_search_is_done_once_the_timetable_is_saved_and_the_roads_follow(bod
 
 
 def test_another_search_may_start_while_the_roads_are_found_and_waits_for_them(bods, monkeypatch):
-    from departureboard.setup import lookups
+    from twobells.setup import lookups
 
     monkeypatch.setattr(lookups.ROUTER_LIMIT, "wait", lambda: None)
     monkeypatch.setattr(timetable, "LOCK_WAIT_S", 0.01)
@@ -841,9 +841,9 @@ def test_the_wizard_and_the_weekly_build_save_the_same_timetable(bods, tmp_path,
     # Both as they run for real, through the same network: BODS, NaPTAN and the road router.
     from zoneinfo import ZoneInfo
 
-    from departureboard.core import net
-    from departureboard.setup import lookups
-    from departureboard.sources.bodsbus import BodsBusSource
+    from twobells.core import net
+    from twobells.setup import lookups
+    from twobells.sources.bodsbus import BodsBusSource
 
     every = sorted(set(re.findall(rb"<StopPointRef>(\w+)</StopPointRef>", TXC_341 + TXC_237 + TXC_61)))
     rows = [f"{atco.decode()},Stop {i},{53.4 + i * 0.001:.6f},-1.95,{'Stop ' + str(i % 3)}\n"
@@ -889,9 +889,9 @@ def test_roads_stopped_with_the_process_are_found_by_the_next_upkeep(bods, monke
     # thing on starting, finds the roads it hadn't (as a Pi's hourly timer does).
     from zoneinfo import ZoneInfo
 
-    from departureboard.core import net
-    from departureboard.setup import lookups
-    from departureboard.sources.bodsbus import BodsBusSource
+    from twobells.core import net
+    from twobells.setup import lookups
+    from twobells.sources.bodsbus import BodsBusSource
 
     monkeypatch.setattr(lookups.ROUTER_LIMIT, "wait", lambda: None)
 
@@ -970,7 +970,7 @@ def cli_config(tmp_path, monkeypatch, bods):
 
 
 def test_cli_discover_prints_the_fragment(cli_config, capsys):
-    from departureboard.cli.main import main
+    from twobells.cli.main import main
 
     args, state, made = cli_config
     code = main(["setup", "discover", "--stop", f"A={STOP_A}", "--stop", f"B={STOP_B}", "--routes", *args])
@@ -988,7 +988,7 @@ def test_cli_discover_prints_the_fragment(cli_config, capsys):
 
 
 def test_cli_discover_shows_the_roads_every_25_and_the_last(cli_config, capsys, monkeypatch):
-    from departureboard.cli.main import main
+    from twobells.cli.main import main
 
     class Job:
         """Moves one step on each poll: two data sets, then 60 roads once the
@@ -1028,7 +1028,7 @@ def test_cli_discover_shows_the_roads_every_25_and_the_last(cli_config, capsys, 
 
 
 def test_cli_discover_does_not_write_config(cli_config, capsys):
-    from departureboard.cli.main import main
+    from twobells.cli.main import main
 
     args, state, _ = cli_config
     config = Path(args[1])
@@ -1039,7 +1039,7 @@ def test_cli_discover_does_not_write_config(cli_config, capsys):
 
 
 def test_cli_discover_reports_failure(cli_config, capsys):
-    from departureboard.cli.main import main
+    from twobells.cli.main import main
 
     args, _, _ = cli_config
     assert main(["setup", "discover", "--stop", "A=1000NOWHERE1", *args]) == 1
@@ -1047,7 +1047,7 @@ def test_cli_discover_reports_failure(cli_config, capsys):
 
 
 def test_cli_discover_needs_a_key(cli_config, tmp_path, capsys):
-    from departureboard.cli.main import main
+    from twobells.cli.main import main
 
     args, _, _ = cli_config
     assert main(["setup", "discover", "--stop", f"A={STOP_A}", "--config", args[1],

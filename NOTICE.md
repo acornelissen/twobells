@@ -23,13 +23,13 @@ Train times come from National Rail's Darwin via the [Rail Data Marketplace](htt
 
 ## Setup data and lookups
 
-- `src/departureboard/data/gb_stations.csv` (stations and CRS codes) and `naptan_area_grid.csv` (which NaPTAN areas have bus stops where) are built from the Department for Transport's [NaPTAN](https://naptan.api.dft.gov.uk/) by `tools/build_setup_data.py`, under the Open Government Licence v3.0. Rebuild them now and then: stations open and stops move.
+- `src/twobells/data/gb_stations.csv` (stations and CRS codes) and `naptan_area_grid.csv` (which NaPTAN areas have bus stops where) are built from the Department for Transport's [NaPTAN](https://naptan.api.dft.gov.uk/) by `tools/build_setup_data.py`, under the Open Government Licence v3.0. Rebuild them now and then: stations open and stops move.
 - Setup looks up postcodes with [postcodes.io](https://postcodes.io): Office for National Statistics data under the Open Government Licence; contains OS data © Crown copyright and database right, and Royal Mail data © Royal Mail copyright and database right.
 - Addresses come from OpenStreetMap's [Nominatim](https://nominatim.openstreetmap.org) and walk times from the OpenStreetMap [foot router](https://routing.openstreetmap.de). OpenStreetMap data © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/copyright).
 - The roads drawn on the dashboard's bus maps come from the OpenStreetMap [car router](https://routing.openstreetmap.de) when the bus timetable is built, and are kept in `bus-timetable.json`. OpenStreetMap data © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/copyright).
 
 ## Code
 
-- [Leaflet](https://leafletjs.com) 1.9.4, BSD 2-Clause: `src/departureboard/dashboard_static/vendor/leaflet-1.9.4/LICENSE`.
-- [Inter](https://rsms.me/inter/) 4.1, SIL Open Font License 1.1, subset by `tools/build_fonts.py` for the dashboard and the board's plain look: `src/departureboard/dashboard_static/vendor/inter-4.1/LICENSE` and `src/departureboard/board/fonts/LICENSE`.
-- The Waveshare 10.85" e-Paper (G) start-up sequence in `src/departureboard/board/displays/waveshare.py` follows Waveshare's MIT-licensed `epd10in85g.py` driver.
+- [Leaflet](https://leafletjs.com) 1.9.4, BSD 2-Clause: `src/twobells/dashboard_static/vendor/leaflet-1.9.4/LICENSE`.
+- [Inter](https://rsms.me/inter/) 4.1, SIL Open Font License 1.1, subset by `tools/build_fonts.py` for the dashboard and the board's plain look: `src/twobells/dashboard_static/vendor/inter-4.1/LICENSE` and `src/twobells/board/fonts/LICENSE`.
+- The Waveshare 10.85" e-Paper (G) start-up sequence in `src/twobells/board/displays/waveshare.py` follows Waveshare's MIT-licensed `epd10in85g.py` driver.

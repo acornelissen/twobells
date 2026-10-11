@@ -1,0 +1,41 @@
+[Unit]
+Description=Two Bells tick (Inky or Waveshare e-paper)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=twobells
+Group=twobells
+SupplementaryGroups=spi gpio i2c
+StateDirectory=twobells
+StateDirectoryMode=0750
+EnvironmentFile=/etc/twobells/secrets.env
+ExecStart=/opt/twobells/venv/bin/twobells run --config /etc/twobells/config.toml
+# A colour refresh takes about 20 s on the Zero W.
+TimeoutStartSec=120
+UMask=0027
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+# No PrivateDevices: the board needs the SPI, GPIO and I2C devices.
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+ProtectHostname=yes
+ProtectKernelLogs=yes
+RestrictRealtime=yes
+PrivateIPC=yes
+# No ProtectClock: it allows only the clock's devices, not SPI, GPIO and I2C.
+# No ProcSubset=pid: the panels' drivers read /proc/cpuinfo and /proc/device-tree
+# to tell which Pi this is.
+MemoryMax=256M

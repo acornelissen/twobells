@@ -19,7 +19,7 @@ from PIL import Image
 from tests.contrast import assert_contrast, contrast, luminance
 from tests.paths import FIXTURES, ROOT
 
-STATIC = ROOT / "src" / "departureboard" / "dashboard_static"
+STATIC = ROOT / "src" / "twobells" / "dashboard_static"
 VENDOR = STATIC / "vendor"
 
 OWN_FILES = [p for p in STATIC.rglob("*") if p.is_file() and VENDOR not in p.parents]
@@ -1941,7 +1941,7 @@ def test_a_timetable_only_bus_shows_its_clock_time_never_minutes():
 
 @needs_node
 def test_a_record_shows_in_the_row_only_when_it_is_notable():
-    from departureboard.dashboard.history import Stats, phrase
+    from twobells.dashboard.history import Stats, phrase
 
     def said(late, cancelled, days, day_type="weekday"):
         return phrase(Stats(days, late, cancelled, 0, days - late - cancelled, 5.0 if late else None, 9), day_type)
@@ -2572,7 +2572,7 @@ def test_the_area_map_has_real_buttons_a_credit_and_a_text_list():
 
 
 def test_the_footer_has_one_place_for_the_version_the_server_fills_in():
-    from departureboard.web.server import VERSION_SLOT
+    from twobells.web.server import VERSION_SLOT
 
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     footer = html[html.index('<footer class="foot">'):html.index("</footer>")]

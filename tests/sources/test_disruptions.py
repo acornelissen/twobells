@@ -5,12 +5,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from departureboard.core import net
-from departureboard.core.safexml import DoctypeError
-from departureboard.dashboard.collector import BUS_DISRUPTIONS_SECONDS
-from departureboard.dashboard.snapshot import row_id
-from departureboard.sources import disruptions
-from departureboard.sources.disruptions import (
+from tests.paths import FIXTURES
+from tests.sources.test_livebus import EAST, WEST, schedule
+from twobells.core import net
+from twobells.core.safexml import DoctypeError
+from twobells.dashboard.collector import BUS_DISRUPTIONS_SECONDS
+from twobells.dashboard.snapshot import row_id
+from twobells.sources import disruptions
+from twobells.sources.disruptions import (
     BusArea,
     BusDisruptionSource,
     RailArea,
@@ -24,9 +26,7 @@ from departureboard.sources.disruptions import (
     safe_link,
     train_disruptions,
 )
-from departureboard.timetable.model import StopPosition
-from tests.paths import FIXTURES
-from tests.sources.test_livebus import EAST, WEST, schedule
+from twobells.timetable.model import StopPosition
 
 SX = FIXTURES / "bods_siri_sx_glossop.xml"
 KB = FIXTURES / "kb_incidents_synthetic.xml"

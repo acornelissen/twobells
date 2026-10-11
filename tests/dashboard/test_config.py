@@ -2,20 +2,20 @@ import stat
 
 import pytest
 
-from departureboard.dashboard.config import (
+from twobells.dashboard.config import (
     DashboardOptions,
     FileWatch,
     dashboard_options,
     dashboard_target,
     load_dashboard,
 )
-from departureboard.settings.config import ConfigError
-from departureboard.settings.overlay import OverlayError, save_to
-from departureboard.settings.store import Store
-from departureboard.sources.bodsbus import BodsBusSource
-from departureboard.sources.darwin import DETAILS_BASE_URL, DarwinSource, ServiceDetailsClient
-from departureboard.sources.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource
-from departureboard.sources.weather import OpenMeteoSource
+from twobells.settings.config import ConfigError
+from twobells.settings.overlay import OverlayError, save_to
+from twobells.settings.store import Store
+from twobells.sources.bodsbus import BodsBusSource
+from twobells.sources.darwin import DETAILS_BASE_URL, DarwinSource, ServiceDetailsClient
+from twobells.sources.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource
+from twobells.sources.weather import OpenMeteoSource
 
 ENV = {"RDM_API_KEY": "rail-key", "BODS_API_KEY": "bods-key", "TAPI_APP_ID": "id", "TAPI_APP_KEY": "tapi-key"}
 
@@ -387,7 +387,7 @@ def test_saved_settings_cannot_move_the_folder_they_live_in(config, tmp_path, op
 
 
 def test_saved_settings_hold_only_what_the_settings_page_and_setup_save(config, tmp_path, opened, caplog):
-    from departureboard.sources.darwin import DEFAULT_BASE_URL
+    from twobells.sources.darwin import DEFAULT_BASE_URL
 
     folder = tmp_path / "dash"
     folder.mkdir()

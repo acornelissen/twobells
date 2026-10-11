@@ -8,10 +8,11 @@ from urllib.error import HTTPError, URLError
 
 import pytest
 
-from departureboard.core import net
-from departureboard.core.model import Status
-from departureboard.sources import darwin
-from departureboard.sources.darwin import (
+from tests.paths import FIXTURES
+from twobells.core import net
+from twobells.core.model import Status
+from twobells.sources import darwin
+from twobells.sources.darwin import (
     CallingPoint,
     DetailsError,
     DetailsUnavailable,
@@ -24,7 +25,6 @@ from departureboard.sources.darwin import (
     parse_service_details,
     train_position,
 )
-from tests.paths import FIXTURES
 
 KEY = "s3cr3t-details-key"
 

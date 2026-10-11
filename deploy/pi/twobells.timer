@@ -1,0 +1,10 @@
+[Unit]
+Description=Tick the departure board every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:05
+AccuracySec=1s
+Unit=twobells.service
+
+[Install]
+WantedBy=timers.target

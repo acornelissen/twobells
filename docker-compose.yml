@@ -3,10 +3,10 @@
 # Set it up in its settings site (/settings); a config.toml kept by hand instead goes in
 # through docker-compose.override.yml (see docker-compose.override.yml.example).
 services:
-  departureboard:
+  twobells:
     build: .
-    image: departureboard:local
-    container_name: departureboard
+    image: twobells:local
+    container_name: twobells
     restart: unless-stopped
     # IPv4 only: Docker hands IPv6 visitors on from its own network's gateway,
     # which the app would take for the home network.

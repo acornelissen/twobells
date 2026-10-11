@@ -2,9 +2,9 @@
 
     uv run python tools/build_dotfont.py
 
-Run it after changing src/departureboard/board/dotfont.py and commit the
+Run it after changing src/twobells/board/dotfont.py and commit the
 result; tests/tools/test_build_dotfont.py fails until you do. It writes, under
-src/departureboard/dashboard_static/fonts/:
+src/twobells/dashboard_static/fonts/:
 
 - DepartureboardDots.woff2: every glyph in dotfont.GLYPHS, each lit dot a
   square on the font's grid, at the widths the sign draws them (digits share
@@ -33,9 +33,9 @@ from fontTools.ttLib import TTFont
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from departureboard.board.dotfont import _GAP, GLYPHS, HEIGHT  # noqa: E402
+from twobells.board.dotfont import _GAP, GLYPHS, HEIGHT  # noqa: E402
 
-OUT = ROOT / "src" / "departureboard" / "dashboard_static" / "fonts"
+OUT = ROOT / "src" / "twobells" / "dashboard_static" / "fonts"
 FONT_FILE = "DepartureboardDots.woff2"
 FAMILY = "Departureboard Dots"
 
@@ -102,7 +102,7 @@ def font() -> TTFont:
         "fullName": f"{FAMILY} Regular",
         "version": "Version 1.000",
         "psName": FAMILY.replace(" ", "") + "-Regular",
-        "description": "Drawn for departureboard; built from src/departureboard/board/dotfont.py.",
+        "description": "Drawn for twobells; built from src/twobells/board/dotfont.py.",
         "licenseDescription": "MIT License",
     })
     builder.setupOS2(
@@ -133,7 +133,7 @@ def files() -> dict[str, bytes]:
         f"{FAMILY}\n\n"
         "The dot-matrix face of the dashboard's Board look. It is drawn for this\n"
         "project: tools/build_dotfont.py builds it from the glyphs in\n"
-        "src/departureboard/board/dotfont.py, the font the e-paper sign uses, each\n"
+        "src/twobells/board/dotfont.py, the font the e-paper sign uses, each\n"
         "lit dot a square. It comes under the project's licence, which follows.\n\n"
     )
     return {FONT_FILE: out.getvalue(), "LICENSE": (note + _licence()).encode("utf-8")}

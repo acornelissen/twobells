@@ -69,7 +69,7 @@ mise run setup        # .venv with the package and dev tools (uv sync --locked)
 mise run test         # pytest -q, in parallel (xdist); plain pytest runs serially
 mise run lint         # ruff check src tests tools (rules in pyproject.toml; S on src only)
 mise run typecheck    # pyright, basic mode
-mise run demo         # departureboard demo --png preview.png, no keys needed
+mise run demo         # twobells demo --png preview.png, no keys needed
 mise run emulate      # browser panel emulator on sample data
 mise run serve        # serve on a desktop with ./config.toml and ./secrets.env
 ```
@@ -85,7 +85,7 @@ mise run serve        # serve on a desktop with ./config.toml and ./secrets.env
 
 ## Architecture Overview
 
-One package, `src/departureboard`, with one CLI, `departureboard` (`cli/`, also `python -m departureboard`). One
+One package, `src/twobells`, with one CLI, `twobells` (`cli/`, also `python -m twobells`). One
 install is one app with two views of the same departures: the **board** (e-paper or HDMI screen on a Pi) and the
 **dashboard** (a web page). `[app] views` says which are on. `settings/installs.py` says what each install (`pi`,
 `docker`, `desktop`) offers; every difference between installs belongs in its table.
@@ -101,7 +101,7 @@ install is one app with two views of the same departures: the **board** (e-paper
   settings site at `/settings` (`web/settingsite.py`, a `web/groupform.py` tab per group, the wizard at
   `/settings/setup/` with its API in `setup/api.py`).
 - **`fetch`** (Pi only, `fetch/service.py`): outbound-only service doing the web server's internet work (the
-  wizard's lookups, the dashboard's pollers), handed over through files in `/run/departureboard-fetch`
+  wizard's lookups, the dashboard's pollers), handed over through files in `/run/twobells-fetch`
   (`setup/spool/`, `fetch/handoff.py`). The Pi's web server is LAN-only and never connects out.
 - **`run`**: the board renderer (systemd timer, or `--loop` for a screen). **`timetable`**: the BODS bus timetable.
 - `demo`, `emulate`, `probe`, `route`, `setup discover`: development and setup helpers. `web`, `dashboard`,

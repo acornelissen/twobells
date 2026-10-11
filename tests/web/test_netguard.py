@@ -7,7 +7,7 @@ import socket
 
 import pytest
 
-from departureboard.web import netguard
+from twobells.web import netguard
 
 
 def test_it_sends_to_a_documentation_address_that_is_never_routed():
@@ -91,8 +91,8 @@ def test_the_check_says_what_it_found_in_the_log(caplog, code, level, words):
     if found == netguard.OFF:
         assert "still turns away visitors outside the home network" in record.getMessage()
         # Where to look on a Pi: the guard's unit, and the set systemd puts the server in.
-        assert "journalctl -u departureboard-guard -u departureboard-web" in record.getMessage()
-        assert "`sudo nft list set inet departureboard_web web`" in record.getMessage()
+        assert "journalctl -u twobells-guard -u twobells-web" in record.getMessage()
+        assert "`sudo nft list set inet twobells_web web`" in record.getMessage()
 
 
 # IPv6, when IPv4 can't tell

@@ -2,11 +2,11 @@ from datetime import date, timedelta
 
 import pytest
 
-from departureboard.settings.config import ConfigError, load_config
-from departureboard.sources.bodsbus import BodsBusSource
-from departureboard.sources.darwin import DarwinSource
-from departureboard.sources.transportapi import TransportApiBusSource
 from tests.paths import ROOT
+from twobells.settings.config import ConfigError, load_config
+from twobells.sources.bodsbus import BodsBusSource
+from twobells.sources.darwin import DarwinSource
+from twobells.sources.transportapi import TransportApiBusSource
 
 TEMPLATE = ROOT / "examples/config.example.toml"  # the blank template, with CHANGE_ME placeholders
 GLOSSOP = ROOT / "examples" / "glossop.toml"  # the worked example, filled in
@@ -37,7 +37,7 @@ def filled_template(tmp_path):
 
 def in_tmp(tmp_path, example):
     """`example` with its store in tmp_path: no bus timetable there yet."""
-    text = example.read_text().replace("/var/lib/departureboard/state.json", str(tmp_path / "state.json"))
+    text = example.read_text().replace("/var/lib/twobells/state.json", str(tmp_path / "state.json"))
     return write(tmp_path, text)
 
 
@@ -375,7 +375,7 @@ def test_saved_settings_are_layered_over_config(tmp_path):
 
 
 def test_overlay_cannot_move_the_state_file(tmp_path):
-    from departureboard.settings.config import read_config
+    from twobells.settings.config import read_config
 
     path = _with_state(tmp_path, "")
     (tmp_path / "state").mkdir()
@@ -384,8 +384,8 @@ def test_overlay_cannot_move_the_state_file(tmp_path):
 
 
 def test_saved_settings_cannot_send_the_keys_to_another_address(tmp_path, caplog):
-    from departureboard.sources.darwin import DEFAULT_BASE_URL as DARWIN_URL
-    from departureboard.sources.transportapi import DEFAULT_BASE_URL as TAPI_URL
+    from twobells.sources.darwin import DEFAULT_BASE_URL as DARWIN_URL
+    from twobells.sources.transportapi import DEFAULT_BASE_URL as TAPI_URL
 
     path = _with_state(tmp_path, TRAIN + BUS)
     (tmp_path / "state").mkdir()
@@ -421,14 +421,14 @@ def test_broken_overlay_is_a_config_error(tmp_path):
 
 
 def test_merge_replaces_lists_and_merges_tables():
-    from departureboard.settings.config import merge
+    from twobells.settings.config import merge
 
     base = {"a": 1, "t": {"x": 1, "y": [1, 2]}, "l": [1]}
     assert merge(base, {"t": {"y": [3]}, "l": [2]}) == {"a": 1, "t": {"x": 1, "y": [3]}, "l": [2]}
 
 
 def test_merge_replaces_tables_below_the_top_level():
-    from departureboard.settings.config import merge
+    from twobells.settings.config import merge
 
     base = {"bus": {"source": "transportapi", "rows": 2, "stops": {"A": "x", "B": "y"}, "routes": {"341": {}}}}
     merged = merge(base, {"bus": {"source": "transportapi", "stops": {"A": "x"}, "walk_minutes": {}}})
@@ -490,15 +490,15 @@ def test_wrong_types_and_ranges_are_config_errors(tmp_path, text, message):
 
 
 def test_broken_config_toml_is_a_config_error_when_finding_the_overlay(tmp_path):
-    from departureboard.settings.config import overlay_paths
+    from twobells.settings.config import overlay_paths
 
     with pytest.raises(ConfigError, match=r"config\.toml"):
         overlay_paths(write(tmp_path, "title = \n"))
 
 
 def test_no_state_file_means_the_store_s_overlay_not_the_working_directory_s(tmp_path, monkeypatch):
-    from departureboard.settings.config import overlay_paths
-    from departureboard.settings.store import platform_folder
+    from twobells.settings.config import overlay_paths
+    from twobells.settings.store import platform_folder
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / "settings.toml").write_text('title = "From cwd"\n')
@@ -687,7 +687,7 @@ A = "1000DGHS0900"
 
 
 def bods_bus(tmp_path, env, extra=""):
-    from departureboard.sources.bodsbus import BodsBusSource
+    from twobells.sources.bodsbus import BodsBusSource
 
     path = write(tmp_path, BODS_BUS.format(state=tmp_path / "state" / "state.json") + extra)
     config = load_config(path, env).board.sources[0]
@@ -709,8 +709,8 @@ def test_bods_bus_falls_back_to_transportapi_when_its_keys_are_set(tmp_path):
 def test_the_stand_in_keeps_to_transportapi_s_windows_whatever_the_bus_windows(tmp_path):
     """The bus windows are all day (the Board tab saves them so); TransportAPI,
     only a backup, keeps to the commute, or its 28 hits are gone by mid-morning."""
-    from departureboard.core.polling import parse_window
-    from departureboard.settings.schema import BOARD_DEFAULTS
+    from twobells.core.polling import parse_window
+    from twobells.settings.schema import BOARD_DEFAULTS
 
     config = bods_bus(tmp_path, {**ENV, "BODS_API_KEY": "bods"})
     assert config.policy.windows == (parse_window("Mon-Sun 06:00-23:00"),)
@@ -756,7 +756,7 @@ def test_unknown_bus_source_is_reported(tmp_path):
 
 
 def test_bus_source_defaults_to_bods(tmp_path):
-    from departureboard.sources.bodsbus import BodsBusSource
+    from twobells.sources.bodsbus import BodsBusSource
 
     path = write(tmp_path, f'state_file = "{tmp_path / "s.json"}"\n[bus]\noperators = ["BNML"]\n'
                            '[bus.stops]\nA = "1000DGHS0900"\n')
@@ -782,7 +782,7 @@ def test_buses_with_no_operators_say_how_to_use_transportapi_alone(tmp_path):
 
 
 def test_bods_bus_fallback_has_its_own_windows(tmp_path):
-    from departureboard.core.polling import parse_window
+    from twobells.core.polling import parse_window
 
     path = write(tmp_path, BODS_BUS.format(state=tmp_path / "s.json").replace(
         'source = "bods"', 'source = "bods"\nfallback_windows = ["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]'))
@@ -801,8 +801,8 @@ def test_bods_bus_fallback_windows_are_checked(tmp_path):
 def test_the_board_looks_for_a_reset_code_in_the_store(tmp_path):
     import time
 
-    from departureboard.settings.store import platform_folder
-    from departureboard.web.auth import ResetCodes
+    from twobells.settings.store import platform_folder
+    from twobells.web.auth import ResetCodes
 
     elsewhere = load_config(write(tmp_path, TRAIN), ENV).board
     code = ResetCodes(platform_folder()).issue(time.time())  # no state_file: the platform's folder
@@ -819,12 +819,12 @@ def test_the_board_looks_for_a_reset_code_in_the_store(tmp_path):
 
 def installed_template(tmp_path):
     """examples/config.example.toml as install.sh copies it, its state folder under tmp_path."""
-    text = TEMPLATE.read_text().replace("/var/lib/departureboard/state.json", str(tmp_path / "state" / "state.json"))
+    text = TEMPLATE.read_text().replace("/var/lib/twobells/state.json", str(tmp_path / "state" / "state.json"))
     return write(tmp_path, text)
 
 
 def test_no_config_or_the_template_as_installed_needs_setting_up(tmp_path):
-    from departureboard.settings.config import needs_setup
+    from twobells.settings.config import needs_setup
 
     assert needs_setup(tmp_path / "missing.toml")
     assert needs_setup(installed_template(tmp_path))
@@ -833,14 +833,14 @@ def test_no_config_or_the_template_as_installed_needs_setting_up(tmp_path):
 
 @pytest.mark.parametrize("text", ["", "\n# Nothing yet\n", 'title = "Departures"\ndisplay = "inky"\n'])
 def test_a_config_with_neither_trains_nor_buses_needs_setting_up(tmp_path, text):
-    from departureboard.settings.config import needs_setup
+    from twobells.settings.config import needs_setup
 
     assert needs_setup(write(tmp_path, text))
 
 
 def test_settings_saved_without_a_config_count(tmp_path):
-    from departureboard.settings.config import needs_setup
-    from departureboard.settings.store import Store
+    from twobells.settings.config import needs_setup
+    from twobells.settings.store import Store
 
     store = Store.open(tmp_path / "missing.toml", state_dir=tmp_path / "data")
     assert needs_setup(store)
@@ -852,7 +852,7 @@ def test_settings_saved_without_a_config_count(tmp_path):
 
 
 def test_trains_and_buses_both_switched_off_need_setting_up(tmp_path):
-    from departureboard.settings.config import needs_setup
+    from twobells.settings.config import needs_setup
 
     config = write(tmp_path, '[train]\ncrs = "GLO"\nenabled = false\n[bus]\nsource = "transportapi"\nenabled = false\n')
     assert needs_setup(config)
@@ -861,14 +861,14 @@ def test_trains_and_buses_both_switched_off_need_setting_up(tmp_path):
 
 
 def test_a_filled_in_board_needs_no_setting_up(tmp_path, example):
-    from departureboard.settings.config import needs_setup
+    from twobells.settings.config import needs_setup
 
     assert not needs_setup(example)
     assert not needs_setup(filled_template(tmp_path))
 
 
 def test_setting_up_from_the_page_counts_once_every_placeholder_is_covered(tmp_path):
-    from departureboard.settings.config import needs_setup
+    from twobells.settings.config import needs_setup
 
     config = installed_template(tmp_path)
     state = tmp_path / "state"
@@ -883,7 +883,7 @@ def test_setting_up_from_the_page_counts_once_every_placeholder_is_covered(tmp_p
 
 
 def test_placeholders_in_a_section_switched_off_need_no_setting_up(tmp_path):
-    from departureboard.settings.config import needs_setup
+    from twobells.settings.config import needs_setup
 
     config = installed_template(tmp_path)
     state = tmp_path / "state"
@@ -901,7 +901,7 @@ def test_placeholders_in_a_section_switched_off_need_no_setting_up(tmp_path):
 
 @pytest.mark.parametrize("text", ["title = \n", "[train\n"])
 def test_a_broken_config_is_a_fault_to_report_not_a_first_run(tmp_path, text):
-    from departureboard.settings.config import needs_setup
+    from twobells.settings.config import needs_setup
 
     assert not needs_setup(write(tmp_path, text))
 
@@ -909,8 +909,8 @@ def test_a_broken_config_is_a_fault_to_report_not_a_first_run(tmp_path, text):
 def test_first_run_settings_use_the_templates_display_and_state_folder(tmp_path):
     import time
 
-    from departureboard.settings.config import first_run_settings
-    from departureboard.web.auth import ResetCodes
+    from twobells.settings.config import first_run_settings
+    from twobells.web.auth import ResetCodes
 
     settings = first_run_settings(installed_template(tmp_path))
     assert settings.board.sources == [] and settings.board.weather is None
@@ -922,7 +922,7 @@ def test_first_run_settings_use_the_templates_display_and_state_folder(tmp_path)
 
 
 def test_first_run_settings_keep_the_screen_and_its_turn(tmp_path):
-    from departureboard.settings.config import first_run_settings
+    from twobells.settings.config import first_run_settings
 
     text = TEMPLATE.read_text().replace('display = "inky"', 'display = "hdmi-1280x400"').replace("rotate = 0", "rotate = 90")
     settings = first_run_settings(write(tmp_path, text))
@@ -930,14 +930,14 @@ def test_first_run_settings_keep_the_screen_and_its_turn(tmp_path):
 
 
 def test_first_run_settings_fall_back_to_the_defaults(tmp_path):
-    from departureboard.settings.config import first_run_settings
-    from departureboard.settings.store import Store
+    from twobells.settings.config import first_run_settings
+    from twobells.settings.store import Store
 
     missing = first_run_settings(tmp_path / "missing.toml")
     assert (missing.display, missing.rotate) == ("inky", 0) and missing.board.reset_code is not None
     given = first_run_settings(Store.open(tmp_path / "missing.toml", state_dir=tmp_path / "state"))
     assert given.state_file == tmp_path / "state" / "state.json" and given.board.reset_code is not None
     text = TEMPLATE.read_text().replace('display = "inky"', 'display = "hdmi-1280x400"\npanel_colour = "purple"')
-    text = text.replace("/var/lib/departureboard/state.json", str(tmp_path / "state" / "state.json"))
+    text = text.replace("/var/lib/twobells/state.json", str(tmp_path / "state" / "state.json"))
     broken = first_run_settings(write(tmp_path, text))
     assert broken.display == "inky" and broken.state_file == tmp_path / "state" / "state.json"

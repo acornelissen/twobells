@@ -2,7 +2,7 @@ from xml.etree import ElementTree
 
 import pytest
 
-from departureboard.core.safexml import DoctypeError, iter_grandchildren
+from twobells.core.safexml import DoctypeError, iter_grandchildren
 
 NS = "{urn:x}"
 DOC = (b'<?xml version="1.0"?><Root xmlns="urn:x" Rev="3"><A><Item id="1"><Inner>one</Inner></Item>'

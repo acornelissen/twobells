@@ -3,9 +3,9 @@ import re
 import pytest
 from PIL import Image
 
-from departureboard.board.displays.waveshare import BLACK, RED, WHITE, YELLOW, Controller, WaveshareDisplay, pack
-from departureboard.board.panel import WAVESHARE_10IN85G
 from tests.paths import ROOT
+from twobells.board.displays.waveshare import BLACK, RED, WHITE, YELLOW, Controller, WaveshareDisplay, pack
+from twobells.board.panel import WAVESHARE_10IN85G
 
 SIZE = WAVESHARE_10IN85G.size
 
@@ -167,8 +167,8 @@ class SlowBus(FakeBus):
 
 
 def _unit_timeout_s():
-    """departureboard.service's TimeoutStartSec, which a whole run must fit under."""
-    text = (ROOT / "deploy" / "pi" / "departureboard.service").read_text()
+    """twobells.service's TimeoutStartSec, which a whole run must fit under."""
+    text = (ROOT / "deploy" / "pi" / "twobells.service").read_text()
     [seconds] = re.findall(r"^TimeoutStartSec=(\d+)$", text, re.MULTILINE)
     return int(seconds)
 
@@ -244,8 +244,8 @@ def test_rotates_for_upside_down_mounting():
 
 
 def test_renders_straight_onto_the_panel():
-    from departureboard.board.themes import THEMES
-    from departureboard.board.view import BoardView, Section
+    from twobells.board.themes import THEMES
+    from twobells.board.view import BoardView, Section
 
     display = WaveshareDisplay(accent="yellow", controller=lambda: controller(FakeBus()))
     view = BoardView("GLO > MAN", Section("Trains", (), "No trains", True), Section("Buses", (), "No buses"), "07:03")

@@ -4,7 +4,7 @@
 # Run it from the unpacked release tarball (or a copy of the repo):
 #   sudo ./deploy/pi/install.sh [--screen]
 # --screen also installs pygame for the HDMI screen; that happens anyway when
-# /etc/departureboard/config.toml already says display = "hdmi-...".
+# /etc/twobells/config.toml already says display = "hdmi-...".
 # It starts the web server (the settings site, and the dashboard when that
 # view is on) and the fetch service, and says how to start the board itself.
 set -euo pipefail
@@ -15,8 +15,8 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-PREFIX=/opt/departureboard
-CONF=/etc/departureboard
+PREFIX=/opt/twobells
+CONF=/etc/twobells
 
 screen=false
 [[ "${1:-}" == "--screen" ]] && screen=true
@@ -25,16 +25,16 @@ apt-get update
 # spidev, gpiozero and lgpio drive the Waveshare panel; the venv sees them via system site packages.
 # Pillow, numpy, smbus2 and gpiod (for inky) come from Debian rather than pip: built for the
 # Pi, patched through apt, and seen by the venv through system site packages.
-# nftables loads the web server's network guard (departureboard-web.nft).
+# nftables loads the web server's network guard (twobells-web.nft).
 apt-get install -y python3-venv python3-dev python3-spidev python3-gpiozero python3-lgpio python3-libgpiod python3-numpy python3-smbus2 python3-pil nftables
 
 # The panels need SPI; the Inky also needs I2C (the I2C bus holds the board's EEPROM for auto-detect).
 raspi-config nonint do_spi 0
 raspi-config nonint do_i2c 0
 
-id departureboard &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin departureboard
+id twobells &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin twobells
 # State, saved settings and the settings password live here.
-install -d -o departureboard -g departureboard -m 750 /var/lib/departureboard
+install -d -o twobells -g twobells -m 750 /var/lib/twobells
 
 python3 -m venv --system-site-packages "$PREFIX/venv"
 # Pinned versions, not the newest of each that day. Debian's own pip is used as
@@ -53,7 +53,7 @@ rm -rf "$build/build" "$build"/src/*.egg-info
 # The code is built with the hashed setuptools, not one fetched for the build.
 "$PREFIX/venv/bin/pip" install --require-hashes --no-deps -r "$REPO/deploy/pi/requirements-build.txt"
 "$PREFIX/venv/bin/pip" install --no-deps --no-build-isolation "$build"
-"$PREFIX/venv/bin/python" -c "import departureboard.cli.main, inky, PIL, numpy, smbus2, spidev, gpiod" \
+"$PREFIX/venv/bin/python" -c "import twobells.cli.main, inky, PIL, numpy, smbus2, spidev, gpiod" \
   || { echo "A dependency is missing; see the error above" >&2; exit 1; }
 
 install -d -m 755 "$CONF"
@@ -63,7 +63,7 @@ install -d -m 755 "$CONF"
 # Ask the app, as the services' user, about the settings in force: config.toml
 # with those saved from the settings site over it. No keys are read.
 query() {
-  runuser -u departureboard -- "$PREFIX/venv/bin/departureboard" query "$1" --install pi --config "$CONF/config.toml"
+  runuser -u twobells -- "$PREFIX/venv/bin/twobells" query "$1" --install pi --config "$CONF/config.toml"
 }
 if ! display="$(query display)" || ! views="$(query views)"; then
   echo "Fix the settings named above, then run this again" >&2
@@ -81,37 +81,37 @@ fi
 # network guard loads afresh. The fetch service restarts too if its unit
 # changed. Each as it was before this run; try-restart never starts one.
 restart_web=false
-systemctl is-active --quiet departureboard-web.service && restart_web=true
+systemctl is-active --quiet twobells-web.service && restart_web=true
 restart_fetch=false
-if systemctl is-active --quiet departureboard-fetch.service \
-    && ! cmp -s "$REPO/deploy/pi/departureboard-fetch.service" /etc/systemd/system/departureboard-fetch.service; then
+if systemctl is-active --quiet twobells-fetch.service \
+    && ! cmp -s "$REPO/deploy/pi/twobells-fetch.service" /etc/systemd/system/twobells-fetch.service; then
   restart_fetch=true
 fi
-for unit in departureboard.service departureboard.timer departureboard-screen.service departureboard-web.service \
-    departureboard-guard.service departureboard-timetable.service departureboard-timetable.timer \
-    departureboard-fetch.service departureboard-fetch.path; do
+for unit in twobells.service twobells.timer twobells-screen.service twobells-web.service \
+    twobells-guard.service twobells-timetable.service twobells-timetable.timer \
+    twobells-fetch.service twobells-fetch.path; do
   install -m 644 "$REPO/deploy/pi/$unit" /etc/systemd/system/
 done
-# The web server's network guard, which departureboard-guard.service loads as
+# The web server's network guard, which twobells-guard.service loads as
 # root: root's alone to change.
-install -m 644 -o root -g root "$REPO/deploy/pi/departureboard-web.nft" "$PREFIX/departureboard-web.nft"
+install -m 644 -o root -g root "$REPO/deploy/pi/twobells-web.nft" "$PREFIX/twobells-web.nft"
 systemctl daemon-reload
 # The guard loads at boot, before the web server. Loaded afresh now, which
 # empties its set, so a running web server restarts after it, below, and
 # systemd puts it in the set again. If it fails, the rest still goes in and
 # the end says so.
-systemctl enable departureboard-guard.service
-systemctl restart departureboard-guard.service || true
+systemctl enable twobells-guard.service
+systemctl restart twobells-guard.service || true
 # The web server can't reach the internet; the fetch service does its
 # internet work (the wizard's lookups, the dashboard's feeds). It starts at
 # boot, and the .path unit starts it whenever the server leaves it a request.
-systemctl enable --now departureboard-fetch.path departureboard-fetch.service
+systemctl enable --now twobells-fetch.path twobells-fetch.service
 if $restart_fetch; then
-  systemctl try-restart departureboard-fetch.service
+  systemctl try-restart twobells-fetch.service
 fi
-systemctl enable --now departureboard-web.service
+systemctl enable --now twobells-web.service
 if $restart_web; then
-  systemctl try-restart departureboard-web.service
+  systemctl try-restart twobells-web.service
 fi
 # Says if the network guard isn't holding the web server: that needs its
 # table in and the server's cgroup in its set, which systemd fills as the
@@ -119,8 +119,8 @@ fi
 # the board and the dashboard work without it.
 say_if_unguarded() {
   local listed version
-  systemctl is-active --quiet departureboard-web.service || return 0
-  listed="$(nft list set inet departureboard_web web 2>/dev/null)" || listed=""
+  systemctl is-active --quiet twobells-web.service || return 0
+  listed="$(nft list set inet twobells_web web 2>/dev/null)" || listed=""
   if [[ "$listed" == *"elements = "* ]]; then
     return 0
   fi
@@ -132,23 +132,23 @@ say_if_unguarded() {
     echo "This systemd ($version) can't put the web server in the guard: that needs 254 or later, as in" >&2
     echo "Raspberry Pi OS Trixie. The board and the dashboard work all the same." >&2
   else
-    echo "Why: journalctl -u departureboard-guard -u departureboard-web" >&2
+    echo "Why: journalctl -u twobells-guard -u twobells-web" >&2
   fi
 }
 say_if_unguarded
 # Bus times from the BODS timetable need it built and kept fresh.
 timetable=false
 if query needs-timetable >/dev/null; then
-  systemctl enable --now departureboard-timetable.timer
+  systemctl enable --now twobells-timetable.timer
   timetable=true
 fi
 
 # The board itself is yours to start, so it is only named here: the e-paper
 # timer, or the screen's service, by the display config.toml sets.
 if [[ "$display" == hdmi-* ]]; then
-  renderer=departureboard-screen.service
+  renderer=twobells-screen.service
 else
-  renderer=departureboard.timer
+  renderer=twobells.timer
 fi
 
 echo
@@ -170,25 +170,25 @@ cat <<EOF
   2. Open the settings site: http://$(hostname).local:8090/settings on a phone or
      computer on your home network. Claim it with the code the board shows (or
      set the password here first:
-       sudo -u departureboard $PREFIX/venv/bin/departureboard serve --install pi --set-password )
+       sudo -u twobells $PREFIX/venv/bin/twobells serve --install pi --set-password )
      and it opens the setup wizard: home, station, bus stops, walk times and
      keys, saved for you. No need to edit config.toml by hand.
 EOF
 if $timetable; then
-  echo "  3. The bus timetable is kept fresh by departureboard-timetable.timer."
+  echo "  3. The bus timetable is kept fresh by twobells-timetable.timer."
 else
   cat <<EOF
   3. If your buses come from the BODS timetable, keep it fresh (the wizard
      builds the first one):
-       sudo systemctl enable --now departureboard-timetable.timer
+       sudo systemctl enable --now twobells-timetable.timer
 EOF
 fi
 cat <<EOF
   4. Watch it:         journalctl -u ${renderer%.timer} -f
-     Check the keys:   sudo $PREFIX/venv/bin/departureboard probe train
-                       sudo $PREFIX/venv/bin/departureboard probe bus
+     Check the keys:   sudo $PREFIX/venv/bin/twobells probe train
+                       sudo $PREFIX/venv/bin/twobells probe bus
 EOF
-if [[ "$renderer" == departureboard.timer ]]; then
+if [[ "$renderer" == twobells.timer ]]; then
   cat <<EOF
 
 For an HDMI screen, set display = "hdmi-1280x400" or "hdmi-1920x440" in

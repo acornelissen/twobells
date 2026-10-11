@@ -188,50 +188,6 @@ wheels = [
 ]
 
 [[package]]
-name = "departureboard"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "pillow" },
-]
-
-[package.optional-dependencies]
-pi = [
-    { name = "inky" },
-]
-screen = [
-    { name = "pygame" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "fonttools", extra = ["woff"] },
-    { name = "pygame" },
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "pytest-xdist" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "inky", marker = "extra == 'pi'", specifier = ">=2.0" },
-    { name = "pillow", specifier = ">=10.1" },
-    { name = "pygame", marker = "extra == 'screen'", specifier = ">=2.5" },
-]
-provides-extras = ["pi", "screen"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "fonttools", extras = ["woff"], specifier = ">=4.55" },
-    { name = "pygame", specifier = ">=2.5" },
-    { name = "pyright", specifier = "==1.1.406" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-xdist", specifier = ">=3.6" },
-    { name = "ruff", specifier = "==0.16.10" },
-]
-
-[[package]]
 name = "execnet"
 version = "2.1.2"
 source = { registry = "https://pypi.org/simple" }
@@ -777,6 +733,50 @@ name = "spidev"
 version = "3.8"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/67/87/039b6eeea781598015b538691bc174cc0bf77df9d4d2d3b8bf9245c0de8c/spidev-3.8.tar.gz", hash = "sha256:2bc02fb8c6312d519ebf1f4331067427c0921d3f77b8bcaf05189a2e8b8382c0", size = 13893, upload-time = "2025-09-15T18:56:20.672Z" }
+
+[[package]]
+name = "twobells"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "pillow" },
+]
+
+[package.optional-dependencies]
+pi = [
+    { name = "inky" },
+]
+screen = [
+    { name = "pygame" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "fonttools", extra = ["woff"] },
+    { name = "pygame" },
+    { name = "pyright" },
+    { name = "pytest" },
+    { name = "pytest-xdist" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "inky", marker = "extra == 'pi'", specifier = ">=2.0" },
+    { name = "pillow", specifier = ">=10.1" },
+    { name = "pygame", marker = "extra == 'screen'", specifier = ">=2.5" },
+]
+provides-extras = ["pi", "screen"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "fonttools", extras = ["woff"], specifier = ">=4.55" },
+    { name = "pygame", specifier = ">=2.5" },
+    { name = "pyright", specifier = "==1.1.406" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "pytest-xdist", specifier = ">=3.6" },
+    { name = "ruff", specifier = "==0.16.10" },
+]
 
 [[package]]
 name = "typing-extensions"

@@ -2,11 +2,11 @@ import io
 
 import pytest
 
-from departureboard.core import net
-from departureboard.core.model import Status
-from departureboard.sources import transportapi
-from departureboard.sources.transportapi import TransportApiBusSource, parse_stop
 from tests.paths import FIXTURES
+from twobells.core import net
+from twobells.core.model import Status
+from twobells.sources import transportapi
+from twobells.sources.transportapi import TransportApiBusSource, parse_stop
 
 
 def bus(**overrides):
@@ -160,7 +160,7 @@ def test_fetch_raw_returns_payload_for_one_stop():
 
 
 def test_redact_strips_credentials_from_nested_urls():
-    from departureboard.sources.transportapi import redact_credentials
+    from twobells.sources.transportapi import redact_credentials
 
     payload = {
         "departures": {

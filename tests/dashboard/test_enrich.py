@@ -4,12 +4,6 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from departureboard.core.model import Departure, Status
-from departureboard.dashboard.enrich import bus_arrival, bus_extras, inbound, inbound_text, is_ghost, train_arrival
-from departureboard.sources.bodsbus import BusBoard
-from departureboard.sources.darwin import CallingPoint, TrainService
-from departureboard.sources.livebus import live_board
-from departureboard.timetable.model import Call
 from tests.sources.test_livebus import (
     ARUNDEL,
     ASHTON,
@@ -35,6 +29,12 @@ from tests.sources.test_livebus import (
     schedule,
     stop_at,
 )
+from twobells.core.model import Departure, Status
+from twobells.dashboard.enrich import bus_arrival, bus_extras, inbound, inbound_text, is_ghost, train_arrival
+from twobells.sources.bodsbus import BusBoard
+from twobells.sources.darwin import CallingPoint, TrainService
+from twobells.sources.livebus import live_board
+from twobells.timetable.model import Call
 
 LONDON = ZoneInfo("Europe/London")
 

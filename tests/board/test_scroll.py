@@ -1,7 +1,7 @@
 import pytest
 from PIL import Image
 
-from departureboard.board.scroll import (
+from twobells.board.scroll import (
     SCROLL_FRAME_S,
     SCROLL_PAUSE_S,
     SCROLL_STEPS_PER_S,

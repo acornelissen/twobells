@@ -8,11 +8,11 @@ import pytest
 from fontTools.pens.recordingPen import RecordingPen
 from fontTools.ttLib import TTFont
 
-from departureboard.board.dotfont import GLYPHS
 from tests.paths import ROOT
+from twobells.board.dotfont import GLYPHS
 
 _SCRIPT = ROOT / "tools" / "build_dotfont.py"
-FONTS = ROOT / "src" / "departureboard" / "dashboard_static" / "fonts"
+FONTS = ROOT / "src" / "twobells" / "dashboard_static" / "fonts"
 
 
 @pytest.fixture(scope="module")

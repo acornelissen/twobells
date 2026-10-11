@@ -1,4 +1,4 @@
-# Departure board user guide
+# Two Bells user guide
 
 The app shows the next trains from your station and the next buses from your stops, and tells you when to set off so you catch them. The examples in this guide come from Glossop, with trains to Manchester and buses from two stops in the town centre.
 
@@ -241,17 +241,17 @@ Whichever you pick, you need no `config.toml`: the [setup wizard](#4-first-run-a
 
 Raspberry Pi OS Lite (Bookworm or later), with Wi-Fi and SSH set up in Raspberry Pi Imager. A Zero W runs the board; the Waveshare panel and the HDMI screen want a Zero 2 W or better (see [Choosing a display](#choosing-a-display)). On a Pi Zero, Zero W or Pi 1, use Raspberry Pi OS Trixie: there only the network guard keeps the web server off the internet, and it needs Trixie's systemd (see **Security of the web server** under [The services](#the-services)).
 
-Install from a release (from the first release on): download its tarball and `SHA256SUMS` from the [releases page](https://github.com/acornelissen/inky-departures/releases), check the tarball against it, then run the installer from inside. On the Pi, with the version you want in the first line:
+Install from a release (from the first release on): download its tarball and `SHA256SUMS` from the [releases page](https://github.com/acornelissen/twobells/releases), check the tarball against it, then run the installer from inside. On the Pi, with the version you want in the first line:
 
 ```bash
 VERSION=0.1.0
-base="https://github.com/acornelissen/inky-departures/releases/download/v$VERSION"
-curl -fLO "$base/inky-departures-$VERSION.tar.gz"
+base="https://github.com/acornelissen/twobells/releases/download/v$VERSION"
+curl -fLO "$base/twobells-$VERSION.tar.gz"
 curl -fLO "$base/SHA256SUMS"
 curl -fLO "$base/SHA256SUMS.sigstore.json"
 sha256sum --check --ignore-missing SHA256SUMS &&
-  tar -xzf "inky-departures-$VERSION.tar.gz" &&
-  cd "inky-departures-$VERSION" &&
+  tar -xzf "twobells-$VERSION.tar.gz" &&
+  cd "twobells-$VERSION" &&
   sudo ./deploy/pi/install.sh
 ```
 
@@ -261,20 +261,20 @@ sha256sum --check --ignore-missing SHA256SUMS &&
 
 ```bash
 cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity "https://github.com/acornelissen/inky-departures/.github/workflows/release.yml@refs/tags/v$VERSION" \
+  --certificate-identity "https://github.com/acornelissen/twobells/.github/workflows/release.yml@refs/tags/v$VERSION" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
 A copy of the repo works the same way: `sudo ./deploy/pi/install.sh` from its folder.
 
-`install.sh` installs the app in `/opt/departureboard`, starts the web server and the fetch service, and prints the command that starts the board. It never starts the board itself:
+`install.sh` installs the app in `/opt/twobells`, starts the web server and the fetch service, and prints the command that starts the board. It never starts the board itself:
 
 ```bash
-sudo systemctl enable --now departureboard.timer             # e-paper
-sudo systemctl enable --now departureboard-screen.service    # the HDMI screen
+sudo systemctl enable --now twobells.timer             # e-paper
+sudo systemctl enable --now twobells-screen.service    # the HDMI screen
 ```
 
-For the HDMI screen, set `display = "hdmi-1280x400"` (or `"hdmi-1920x440"` for the 11.3" bar screen) in `/etc/departureboard/config.toml` (`install.sh` puts one there) and run `install.sh` again: it installs pygame and names the screen's service. `install.sh --screen` only installs pygame up front; which service it names still follows `display`. See [Choosing a display](#choosing-a-display).
+For the HDMI screen, set `display = "hdmi-1280x400"` (or `"hdmi-1920x440"` for the 11.3" bar screen) in `/etc/twobells/config.toml` (`install.sh` puts one there) and run `install.sh` again: it installs pygame and names the screen's service. `install.sh --screen` only installs pygame up front; which service it names still follows `display`. See [Choosing a display](#choosing-a-display).
 
 Then open `http://<pi name>.local:8090/settings` on a phone or computer on your home network, and carry on with [First run](#4-first-run-and-the-setup-wizard).
 
@@ -306,9 +306,9 @@ Where home goes: your postcode to postcodes.io (or the address you type to OpenS
 
 The wizard is the one part of the settings that needs JavaScript. The rest works without it; with it, the settings pages also mark what you have changed and ask before you leave with changes not saved.
 
-**On a Pi** the wizard's lookups run in a separate service. The web server is kept to your home network, by its own checks and by the Pi's firewall rules for it, so it can't open a connection to the internet itself. That narrows what a flaw in it could do, but it isn't a wall: the web server and the fetch service run as the same user, and the web server still tells the fetch service what to look up. The lookups, key tests and bus company search run in `departureboard-fetch.service`, which goes out to the internet and listens on nothing. The web server passes each request through a private folder in the Pi's memory (`/run/departureboard-fetch`), deleted as soon as it is read: nothing from setup, not your home's position nor a pasted key, is written to the SD card as a file. Memory itself can reach the card if the Pi swaps to it (with `dphys-swapfile`, say), as with anything else the Pi is doing. Saved keys never go that way, as the fetch service reads them itself. The bus company search runs at a lower priority than everything else, so the board and the wizard's other lookups stay quick while it works. In Docker and on a desktop, the lookups run in the server itself.
+**On a Pi** the wizard's lookups run in a separate service. The web server is kept to your home network, by its own checks and by the Pi's firewall rules for it, so it can't open a connection to the internet itself. That narrows what a flaw in it could do, but it isn't a wall: the web server and the fetch service run as the same user, and the web server still tells the fetch service what to look up. The lookups, key tests and bus company search run in `twobells-fetch.service`, which goes out to the internet and listens on nothing. The web server passes each request through a private folder in the Pi's memory (`/run/twobells-fetch`), deleted as soon as it is read: nothing from setup, not your home's position nor a pasted key, is written to the SD card as a file. Memory itself can reach the card if the Pi swaps to it (with `dphys-swapfile`, say), as with anything else the Pi is doing. Saved keys never go that way, as the fetch service reads them itself. The bus company search runs at a lower priority than everything else, so the board and the wizard's other lookups stay quick while it works. In Docker and on a desktop, the lookups run in the server itself.
 
-**By hand instead:** put the keys in `secrets.env` and replace each `CHANGE_ME` in `config.toml` (on a Pi, both are in `/etc/departureboard/`). If you don't want trains or buses, put `enabled = false` in `[train]` or `[bus]` (or remove the section); its `CHANGE_ME`s can stay. `examples/glossop.toml` in the repo is a filled-in one to compare against.
+**By hand instead:** put the keys in `secrets.env` and replace each `CHANGE_ME` in `config.toml` (on a Pi, both are in `/etc/twobells/`). If you don't want trains or buses, put `enabled = false` in `[train]` or `[bus]` (or remove the section); its `CHANGE_ME`s can stay. `examples/glossop.toml` in the repo is a filled-in one to compare against.
 
 Until it is set up, the board never fails and restarts: the e-paper timer draws the page once and leaves it, and the screen keeps it up, checking every few seconds whether setup has finished. Either way, the board shows departures within a minute of being set up (a screen restarts itself first, which takes about 10 seconds).
 
@@ -445,11 +445,11 @@ Each install keeps everything it saves in one folder, its store:
 
 | Install | Folder |
 |---|---|
-| Pi | `/var/lib/departureboard` |
+| Pi | `/var/lib/twobells` |
 | Docker | `/data`, in the `dashboard-data` volume |
-| Desktop | `~/Library/Application Support/departureboard` on a Mac; on Linux, `departureboard` in `$XDG_STATE_HOME`, else in `~/.local/state` |
+| Desktop | `~/Library/Application Support/twobells` on a Mac; on Linux, `twobells` in `$XDG_STATE_HOME`, else in `~/.local/state` |
 
-`--state-dir` names another. Without it, `state_file` or `[dashboard] state_dir` in `config.toml` can, except on a Pi, where systemd gives every service `/var/lib/departureboard` (as `$STATE_DIRECTORY`) and that wins. In Docker the container passes `--state-dir /data`. In it:
+`--state-dir` names another. Without it, `state_file` or `[dashboard] state_dir` in `config.toml` can, except on a Pi, where systemd gives every service `/var/lib/twobells` (as `$STATE_DIRECTORY`) and that wins. In Docker the container passes `--state-dir /data`. In it:
 
 - `settings.toml`: what the settings pages and the wizard save, layered over `config.toml`, which is never rewritten. It holds only the settings they manage; anything else put in it is ignored, and the log names it. Addresses (`[train]` and `[bus]` `base_url`), `state_file`, `display` and the other hand-edited settings belong in `config.toml`. A `settings.toml` that can't be read is replaced on the next save, with a copy kept as `settings.toml.broken`.
 - `secrets.env`: keys pasted in the settings or the wizard, readable by the app's user only. They win over the keys you give it in a `secrets.env` of your own.
@@ -467,7 +467,7 @@ Each install keeps everything it saves in one folder, its store:
 The settings have one password per install, at least 10 characters. Claiming them the first time, and setting a new password when you've forgotten it, both need a one-time code. The code shows:
 
 - **on the board**, while the board view is on (e-paper can take a minute to change);
-- **in the log** otherwise: on a Pi `sudo journalctl -u departureboard-web`; in Docker `docker logs departureboard`, or in Container Manager, **Container**, `departureboard`, **Log**; on a desktop, the Terminal window running it. The line reads `Settings reset code: 123 456, valid until 14:05`, in the board's time zone (**General**, **Time zone**).
+- **in the log** otherwise: on a Pi `sudo journalctl -u twobells-web`; in Docker `docker logs twobells`, or in Container Manager, **Container**, `twobells`, **Log**; on a desktop, the Terminal window running it. The line reads `Settings reset code: 123 456, valid until 14:05`, in the board's time zone (**General**, **Time zone**).
 
 To claim the settings, open them and press **Show a code on the board** (or **Put a code in the log**), then type the code with a new password. A forgotten password works the same way, from **Forgot password?** on the sign-in page; setting a new one signs every browser out.
 
@@ -478,20 +478,20 @@ Or set the password from the command line, even while the server runs. It asks f
 - **Pi:**
 
   ```bash
-  sudo -u departureboard /opt/departureboard/venv/bin/departureboard serve --install pi --set-password
-  sudo -u departureboard /opt/departureboard/venv/bin/departureboard serve --install pi --reset-code
+  sudo -u twobells /opt/twobells/venv/bin/twobells serve --install pi --set-password
+  sudo -u twobells /opt/twobells/venv/bin/twobells serve --install pi --reset-code
   ```
 
-  Run as root, it refuses, with the line `Run this as the service's user: sudo -u departureboard …`: a file root wrote in the store would be root's alone, and the services would fail on it.
+  Run as root, it refuses, with the line `Run this as the service's user: sudo -u twobells …`: a file root wrote in the store would be root's alone, and the services would fail on it.
 - **Docker**, on the NAS over SSH:
 
   ```bash
-  docker exec -it departureboard python -m departureboard serve --set-password --state-dir /data
-  docker exec -it departureboard python -m departureboard serve --reset-code --state-dir /data
+  docker exec -it twobells python -m twobells serve --set-password --state-dir /data
+  docker exec -it twobells python -m twobells serve --reset-code --state-dir /data
   ```
 
   Put `sudo` in front if Docker refuses permission. Both write only to the container's `/data` volume.
-- **Desktop:** `departureboard serve --set-password` or `departureboard serve --reset-code`, with the same `--config` and `--state-dir` as you start it with, if any.
+- **Desktop:** `twobells serve --set-password` or `twobells serve --reset-code`, with the same `--config` and `--state-dir` as you start it with, if any.
 
 If you can't sign in:
 
@@ -517,7 +517,7 @@ All are free. [Getting your keys](keys.md) walks through signing up for each one
 | `RDM_DETAILS_API_KEY` | where each train is, on the dashboard and an HDMI screen (optional) | the Keys page, while the dashboard view, or the board view on a screen, is on |
 | `RDM_KB_API_KEY` | engineering works, on the dashboard (optional) | the Keys page, while the dashboard view is on |
 
-Keys pasted in the settings are saved in the store's `secrets.env`, and need no restart. Or keep them in a file of your own, one `NAME=key` per line, from `deploy/secrets.env.example`: `/etc/departureboard/secrets.env` on a Pi, `secrets.env` next to `docker-compose.yml` in Docker, and any file you give with `--secrets` on a desktop. Keys are never shown, only whether each is set.
+Keys pasted in the settings are saved in the store's `secrets.env`, and need no restart. Or keep them in a file of your own, one `NAME=key` per line, from `deploy/secrets.env.example`: `/etc/twobells/secrets.env` on a Pi, `secrets.env` next to `docker-compose.yml` in Docker, and any file you give with `--secrets` on a desktop. Keys are never shown, only whether each is set.
 
 ---
 
@@ -527,30 +527,30 @@ Keys pasted in the settings are saved in the store's `secrets.env`, and need no 
 
 | Unit | What it does |
 |---|---|
-| `departureboard-web.service` | The web server, `departureboard serve --install pi` on port 8090: the settings at `/settings` and, while its view is on, the dashboard at `/`. Home network only, and it can't reach the internet (see **Security of the web server** below). |
-| `departureboard-guard.service` | The web server's network guard: loads its nftables rules at boot, before the web server, and removes them as it stops (see **Security of the web server** below). |
-| `departureboard-fetch.service`, `departureboard-fetch.path` | `departureboard fetch`: the web server's internet work. The wizard's lookups, key tests and bus company search, and, while the dashboard view is on, the dashboard's feeds. It goes out to the internet and listens on nothing, and hands what it finds to the web server through files in `/run/departureboard-fetch`, in memory. It starts at boot, and the `.path` unit starts it whenever the web server leaves a request. With the dashboard view off, it stops a minute after the last one. |
-| `departureboard-timetable.timer` | Builds the BODS bus timetable when one is due (see [Bus times](#bus-times)). |
-| `departureboard.timer` | The e-paper board: one `departureboard run` a minute. |
-| `departureboard-screen.service` | The HDMI screen: `departureboard run --loop`. |
+| `twobells-web.service` | The web server, `twobells serve --install pi` on port 8090: the settings at `/settings` and, while its view is on, the dashboard at `/`. Home network only, and it can't reach the internet (see **Security of the web server** below). |
+| `twobells-guard.service` | The web server's network guard: loads its nftables rules at boot, before the web server, and removes them as it stops (see **Security of the web server** below). |
+| `twobells-fetch.service`, `twobells-fetch.path` | `twobells fetch`: the web server's internet work. The wizard's lookups, key tests and bus company search, and, while the dashboard view is on, the dashboard's feeds. It goes out to the internet and listens on nothing, and hands what it finds to the web server through files in `/run/twobells-fetch`, in memory. It starts at boot, and the `.path` unit starts it whenever the web server leaves a request. With the dashboard view off, it stops a minute after the last one. |
+| `twobells-timetable.timer` | Builds the BODS bus timetable when one is due (see [Bus times](#bus-times)). |
+| `twobells.timer` | The e-paper board: one `twobells run` a minute. |
+| `twobells-screen.service` | The HDMI screen: `twobells run --loop`. |
 
 `install.sh` enables the web server, its network guard and the fetch service, and the timetable timer when buses come from BODS. It loads the guard afresh, and run again it restarts the web server if it was running, so its new unit loads and the guard holds it again, and the fetch service if it was running and its unit changed. The board's timer or screen service is yours to enable: `install.sh` prints the command and never enables it, and `update.sh` never enables or disables it either.
 
-All of them run as the `departureboard` user, with the store in `/var/lib/departureboard`. Commands that write to the store refuse to run as root and say how to run them as that user instead.
+All of them run as the `twobells` user, with the store in `/var/lib/twobells`. Commands that write to the store refuse to run as root and say how to run them as that user instead.
 
 **Security of the web server:**
 
 - Only private and link-local addresses get in, and the web server can't connect out to the internet. The server checks every visitor's address itself, and two layers in the Pi's kernel back it up, each covering both directions:
   - the unit's systemd IP firewall (`IPAddressDeny=any` with `IPAddressAllow=` the home network's ranges);
-  - the network guard: nftables rules for the web server alone, in `/opt/departureboard/departureboard-web.nft` (from `deploy/pi/departureboard-web.nft`, owned by root). `departureboard-guard.service` loads them as root at boot, before the web server starts (`nft -f`), and removes them as it stops. They match the server's own connections by its cgroup, through a set that systemd fills: the web server's unit has `NFTSet=`, so systemd puts its cgroup in the set as the server starts and takes it out as it stops. The fetch service, the same user in another cgroup, still reaches the internet. They also drop connections to port 8090 from outside the home network. `install.sh` installs `nftables` for them, and `update.sh` installs it if it's missing. `sudo nft list set inet departureboard_web web` shows the set: an element while the web server runs, none while it doesn't.
+  - the network guard: nftables rules for the web server alone, in `/opt/twobells/twobells-web.nft` (from `deploy/pi/twobells-web.nft`, owned by root). `twobells-guard.service` loads them as root at boot, before the web server starts (`nft -f`), and removes them as it stops. They match the server's own connections by its cgroup, through a set that systemd fills: the web server's unit has `NFTSet=`, so systemd puts its cgroup in the set as the server starts and takes it out as it stops. The fetch service, the same user in another cgroup, still reaches the internet. They also drop connections to port 8090 from outside the home network. `install.sh` installs `nftables` for them, and `update.sh` installs it if it's missing. `sudo nft list set inet twobells_web web` shows the set: an element while the web server runs, none while it doesn't.
 - On a Pi Zero or Pi 1, systemd can't apply its IP firewall: Raspberry Pi OS boots those with `cgroup_disable=memory`, and the BPF firewall can't be set up (the log says "Preparation of BPF allow maps failed: Cannot allocate memory" each time the web server starts). The memory cap (`MemoryMax=`) doesn't apply there either. The nftables guard doesn't need either of them, so it covers for the firewall.
 - `NFTSet=` needs systemd 254 or later. Raspberry Pi OS Trixie has it; Bookworm has systemd 252, so there the set stays empty and the guard holds nothing. On a newer Pi that is fine, as systemd's IP firewall works there, but a Pi Zero or Pi 1 on Bookworm has nothing in the kernel stopping the web server connecting out: use Raspberry Pi OS Trixie on those. `install.sh` and `update.sh` say so when it happens.
 - The guard matches the cgroup by the id systemd reads from the kernel, not by its path: nft turns a path into an id by its folder's inode number, which on a 32-bit Pi isn't the kernel's id, so a rule by path never matches there.
 - If the guard can't load (nft missing, say), the web server starts anyway, as its own address check still turns away visitors from outside. It says so: `install.sh` and `update.sh` print a warning when the guard isn't holding the running server, and so does the server's log. **Network guard**, under **On this device** in the settings' [Overview](#overview), says whether the server can connect out:
   - **On:** something stops it, the guard or the systemd firewall.
-  - **Off:** nothing stops it. This counts as a problem. The server still turns away visitors from outside your home network itself. Run `sudo systemctl restart departureboard-guard departureboard-web`, then look for the reason in `journalctl -u departureboard-guard -u departureboard-web`.
+  - **Off:** nothing stops it. This counts as a problem. The server still turns away visitors from outside your home network itself. Run `sudo systemctl restart twobells-guard twobells-web`, then look for the reason in `journalctl -u twobells-guard -u twobells-web`.
   - **Can't tell:** the check couldn't see either way, most often because there was no route out yet, over IPv4 or IPv6 (Wi-Fi still connecting, say). This isn't a problem in itself; it checks again the next time the Overview is drawn, at most once a minute.
-- The server checks this when it starts, and again whenever the Overview is drawn, at most once a minute, by sending one empty UDP packet to `192.0.2.1`, an address kept for documentation that is never routed; with no IPv4 route it tries `2001:db8::1`, IPv6's documentation address, the same way. A guard refuses it at once, and the send never waits. **Checked** gives the time of the last check. Something that flushes every nftables rule while the server runs, like `sudo nft flush ruleset` or `sudo systemctl restart nftables`, removes the guard until you run `sudo systemctl restart departureboard-guard departureboard-web` (restarting the guard alone loads an empty set: the web server must restart after it to be put back in) or the Pi restarts; the Overview says **Off** the next time it checks, unless the systemd firewall still stops it.
+- The server checks this when it starts, and again whenever the Overview is drawn, at most once a minute, by sending one empty UDP packet to `192.0.2.1`, an address kept for documentation that is never routed; with no IPv4 route it tries `2001:db8::1`, IPv6's documentation address, the same way. A guard refuses it at once, and the send never waits. **Checked** gives the time of the last check. Something that flushes every nftables rule while the server runs, like `sudo nft flush ruleset` or `sudo systemctl restart nftables`, removes the guard until you run `sudo systemctl restart twobells-guard twobells-web` (restarting the guard alone loads an empty set: the web server must restart after it to be put back in) or the Pi restarts; the Overview says **Off** the next time it checks, unless the systemd firewall still stops it.
 - Whatever the kernel does, keep the Pi behind your router with no port forwarded to 8090. Sign-in, lockout, the task limit and the two-at-a-time password checks apply either way.
 - Requests must name a local host, which stops DNS-rebinding pages.
 - A signed-in session, a form token and a same-origin check are needed to change anything.
@@ -573,7 +573,7 @@ Or get the new release onto the Pi as for installing, check it, then from its fo
 sudo ./deploy/pi/update.sh
 ```
 
-`update.sh` holds the board's timer while it works, so no tick runs half-installed code, and starts it again at the end (also if the update stops part way). It first installs what the new release needs: `nftables` if it's missing, pygame if `display` says `hdmi-…` and it's missing, and the Inky driver from PyPI at the versions and hashes the release pins (`deploy/pi/requirements-pi.txt`). It checks they all import, as `install.sh` does, and stops before touching the code if one doesn't, so the old code still runs. Then it installs the new code, checks that imports too, refreshes the systemd units, loads the network guard afresh, restarts the fetch service and the web server (if it is running), starts a bus timetable build if buses come from BODS, restarts the screen's service if it is running, and runs the e-paper board once if its timer is on. `--config FILE` and `--secrets FILE` replace `/etc/departureboard/config.toml` and `secrets.env` too (the secrets copy is shredded).
+`update.sh` holds the board's timer while it works, so no tick runs half-installed code, and starts it again at the end (also if the update stops part way). It first installs what the new release needs: `nftables` if it's missing, pygame if `display` says `hdmi-…` and it's missing, and the Inky driver from PyPI at the versions and hashes the release pins (`deploy/pi/requirements-pi.txt`). It checks they all import, as `install.sh` does, and stops before touching the code if one doesn't, so the old code still runs. Then it installs the new code, checks that imports too, refreshes the systemd units, loads the network guard afresh, restarts the fetch service and the web server (if it is running), starts a bus timetable build if buses come from BODS, restarts the screen's service if it is running, and runs the e-paper board once if its timer is on. `--config FILE` and `--secrets FILE` replace `/etc/twobells/config.toml` and `secrets.env` too (the secrets copy is shredded).
 
 ### Choosing a display
 
@@ -587,21 +587,21 @@ sudo ./deploy/pi/update.sh
 | Light at night | none | none | the screen stays lit | the screen stays lit |
 | Pi | Zero W or later | Zero 2 W or later | Zero 2 W or later (Zero needs a mini-HDMI adapter) | Zero 2 W or later (Zero needs a mini-HDMI adapter) |
 | `display =` in `config.toml` | `"inky"` | `"waveshare-10in85g"` | `"hdmi-1280x400"`, plus `rotate = 90` or `270` | `"hdmi-1920x440"` (and `rotate = 90` or `270` only if it comes up on its side) |
-| Runs as | `departureboard.timer` | `departureboard.timer` | `departureboard-screen.service` | `departureboard-screen.service` |
+| Runs as | `twobells.timer` | `twobells.timer` | `twobells-screen.service` | `twobells-screen.service` |
 
-The display is set in `/etc/departureboard/config.toml` only. It starts as `"inky"`.
+The display is set in `/etc/twobells/config.toml` only. It starts as `"inky"`.
 
 - **The Waveshare panel** needs `dtoverlay=spi0-0cs` in `/boot/firmware/config.txt`: it is two controllers side by side, and the board drives both chip selects itself. The driver follows Waveshare's `epd10in85g.py` command sequence over `spidev` and `gpiozero`. Each sign dot is 4×4 panel pixels.
 - **An original Inky pHAT** (before 2019) is smaller, 212×104, and has no chip the board can detect it by: set `display = "inky-phat-v1"` and `panel_colour = "red"`, `"yellow"` or `"black"`. It also needs `dtoverlay=spi0-0cs`. On a display that small the plain look, black on white, is the easiest to read; text size 12 makes it a little bigger and still shows 2 trains and 1 bus.
 - **The HDMI screen** is 400×1280 portrait out of the box; the board runs it on its side. It draws full screen with pygame, no desktop needed. pygame is installed only for the screen: `install.sh --screen`, or `install.sh` and `update.sh` when `config.toml` already says `hdmi-…`. To switch from e-paper:
 
   ```bash
-  sudo systemctl disable --now departureboard.timer
-  sudo systemctl enable --now departureboard-screen.service
+  sudo systemctl disable --now twobells.timer
+  sudo systemctl enable --now twobells-screen.service
   ```
 
   State is written only when new data arrives, not on every redraw, to spare the SD card. Touch isn't used yet, and the backlight stays on. Feeds are polled on the same schedule as on e-paper, so the TransportAPI budget is unchanged.
-- **The 11.3" bar screen** is set up the same way, with `display = "hdmi-1920x440"`. The board draws four pixels a dot there, one more than on the 7.9" screen, so the text is a third bigger, with one line for each train or bus (see [The 11.3" bar screen](#the-113-bar-screen)). Bar screens differ in how they come up: if the log (`journalctl -u departureboard-screen`) says the screen is 440x1920, set `rotate = 90` or `270`; if it says another size, the screen isn't telling the Pi its own, so add `video=HDMI-A-1:1920x440@60` to the end of the line in `/boot/firmware/cmdline.txt` and restart.
+- **The 11.3" bar screen** is set up the same way, with `display = "hdmi-1920x440"`. The board draws four pixels a dot there, one more than on the 7.9" screen, so the text is a third bigger, with one line for each train or bus (see [The 11.3" bar screen](#the-113-bar-screen)). Bar screens differ in how they come up: if the log (`journalctl -u twobells-screen`) says the screen is 440x1920, set `rotate = 90` or `270`; if it says another size, the screen isn't telling the Pi its own, so add `video=HDMI-A-1:1920x440@60` to the end of the line in `/boot/firmware/cmdline.txt` and restart.
 
 If the display errors about chip select, add `dtoverlay=spi0-0cs` to `/boot/firmware/config.txt` and reboot.
 
@@ -617,17 +617,17 @@ interval_minutes = 2
 windows = ["Mon-Sun 06:00-23:00"]
 ```
 
-- **The timetable** is built on the Pi by `departureboard-timetable.timer`. It checks every hour and rebuilds weekly, when a timetable in it ends, or when your stops or operators change. A build that fails is tried again 6 hours later, or at once if your stops, operators or BODS key change (a setup search cancelled while it builds hasn't failed, so doesn't wait); until then the board keeps the timetable it has. It downloads the operators' timetables from BODS and keeps only the journeys calling at your stops, with the days each runs: school-term-only journeys run only in the terms the timetable gives, and bank holidays follow the operator's own rules. A timetable file too big to read in the memory there is (on a Pi, over 50 MB; in Docker, over 100 MB; on a desktop, over 200 MB) is skipped with a warning in the log naming it, and the rest are used. The largest seen is 37 MB. For the same reason a build holds at most 7,000 journeys calling at your stops on a Pi, 8,000 in Docker and 20,000 on a desktop, and fails with a message in the log if there are more (a busy stop's week has a few thousand at most); of the journeys ending near your stop (below), it keeps at most half that number and leaves out the rest. Where BODS still has an old version of a timetable beside its replacement, the old one ends the day before the new one starts, so no bus shows twice; a temporary timetable (for roadworks, say) takes over only for its own dates, and the usual one runs again after it. It also keeps journeys of the same lines that end at a stand within 150 m of your stop without calling at it, only to spot the bus coming in to work a departure from your stop; they never show as departures. On a Pi the dashboard's feeds read this timetable and never build it; while a bus company search runs there, the dashboard shows its buses as being built and lets go of the timetable, so the search's build has the memory, and shows them again once the search is done.
+- **The timetable** is built on the Pi by `twobells-timetable.timer`. It checks every hour and rebuilds weekly, when a timetable in it ends, or when your stops or operators change. A build that fails is tried again 6 hours later, or at once if your stops, operators or BODS key change (a setup search cancelled while it builds hasn't failed, so doesn't wait); until then the board keeps the timetable it has. It downloads the operators' timetables from BODS and keeps only the journeys calling at your stops, with the days each runs: school-term-only journeys run only in the terms the timetable gives, and bank holidays follow the operator's own rules. A timetable file too big to read in the memory there is (on a Pi, over 50 MB; in Docker, over 100 MB; on a desktop, over 200 MB) is skipped with a warning in the log naming it, and the rest are used. The largest seen is 37 MB. For the same reason a build holds at most 7,000 journeys calling at your stops on a Pi, 8,000 in Docker and 20,000 on a desktop, and fails with a message in the log if there are more (a busy stop's week has a few thousand at most); of the journeys ending near your stop (below), it keeps at most half that number and leaves out the rest. Where BODS still has an old version of a timetable beside its replacement, the old one ends the day before the new one starts, so no bus shows twice; a temporary timetable (for roadworks, say) takes over only for its own dates, and the usual one runs again after it. It also keeps journeys of the same lines that end at a stand within 150 m of your stop without calling at it, only to spot the bus coming in to work a departure from your stop; they never show as departures. On a Pi the dashboard's feeds read this timetable and never build it; while a bus company search runs there, the dashboard shows its buses as being built and lets go of the timetable, so the search's build has the memory, and shows them again once the search is done.
 - **Each check**, the board asks BODS where those lines' buses are, matches each bus to its timetabled journey, and shows how late it is. A bus running early is shown on time, since buses wait at timing points. A bus without a live position shows its timetable time with `sch`.
-- **Building it now**, rather than waiting up to an hour: the service builds only when a build is due, and not within 6 hours of one that failed, so delete the old timetable, and the failed build's note, first. Use the service, which reads the keys in `/etc/departureboard/secrets.env` and writes the timetable as the app's user:
+- **Building it now**, rather than waiting up to an hour: the service builds only when a build is due, and not within 6 hours of one that failed, so delete the old timetable, and the failed build's note, first. Use the service, which reads the keys in `/etc/twobells/secrets.env` and writes the timetable as the app's user:
 
   ```bash
-  sudo rm -f /var/lib/departureboard/bus-timetable.json /var/lib/departureboard/bus-timetable-failed.json  # only to rebuild
-  sudo systemctl start departureboard-timetable.service      # a few minutes on a Zero W
-  journalctl -u departureboard-timetable -n 5
+  sudo rm -f /var/lib/twobells/bus-timetable.json /var/lib/twobells/bus-timetable-failed.json  # only to rebuild
+  sudo systemctl start twobells-timetable.service      # a few minutes on a Zero W
+  journalctl -u twobells-timetable -n 5
   ```
 
-  Run by hand with your own config and keys (on a laptop, say), `departureboard timetable --force` does both in one step.
+  Run by hand with your own config and keys (on a laptop, say), `twobells timetable --force` does both in one step.
 
 Until there's a usable timetable (none yet, built for other stops, or not rebuilt for four weeks), TransportAPI stands in on the board if its keys are set, checked every `fallback_interval_minutes` (default 12), within the daily budget, and only inside `fallback_windows`. By default those are the commute, `["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]`, which fits 28 lookups with two stops, whatever the bus windows say. Both are set in `config.toml` only. Without TransportAPI keys the board says it isn't updating buses.
 
@@ -659,20 +659,20 @@ Dates come from GOV.UK, which lists England and Wales, Scotland, and Northern Ir
 Screen only. It needs `BODS_API_KEY` and a stop list for each route you want to follow. The wizard can build them (tick the route option before saving). Or build one on a laptop:
 
 ```bash
-departureboard route 341 --stop A --noc BNML --config config.toml --secrets secrets.env
+twobells route 341 --stop A --noc BNML --config config.toml --secrets secrets.env
 ```
 
-Paste the printed `[bus.routes]` block into `config.toml`. It picks enough stops before yours to cover your walk plus 5 minutes of bus travel, at most 8. `BNML` is the operator code for Bee Network. The setup wizard and `departureboard setup discover` find your stops' operator codes, and save or print them as `[bus] operators`. Timetable downloads for a large operator can be hundreds of MB; `--txc FILE` uses one you've already downloaded instead.
+Paste the printed `[bus.routes]` block into `config.toml`. It picks enough stops before yours to cover your walk plus 5 minutes of bus travel, at most 8. `BNML` is the operator code for Bee Network. The setup wizard and `twobells setup discover` find your stops' operator codes, and save or print them as `[bus] operators`. Timetable downloads for a large operator can be hundreds of MB; `--txc FILE` uses one you've already downloaded instead.
 
 A bus that starts its journey at your stop is followed on its way in. If, say, most 341s to Hyde start at your stop, the page follows the 341 arriving from the other direction, which then turns round as your bus.
 
 ### Checking the keys and codes
 
-One live call each, as root so they can read `/etc/departureboard/secrets.env`:
+One live call each, as root so they can read `/etc/twobells/secrets.env`:
 
 ```bash
-sudo /opt/departureboard/venv/bin/departureboard probe train
-sudo /opt/departureboard/venv/bin/departureboard probe bus
+sudo /opt/twobells/venv/bin/twobells probe train
+sudo /opt/twobells/venv/bin/twobells probe bus
 ```
 
 With TransportAPI, the bus probe uses one lookup per stop from your 30 daily lookups. With BODS, build the timetable first. The bus probe tells you whether you're getting live estimates (an expected time and status `late`/`on_time`) or only timetabled times (`unknown`, shown as `sch` on the board).
@@ -681,9 +681,9 @@ With TransportAPI, the bus probe uses one lookup per stop from your 30 daily loo
 
 ## 9. Docker
 
-For a Synology NAS or any computer running Docker. It runs the dashboard and its settings in one container, `departureboard`, built here as the image `departureboard:local`. The container runs as an unprivileged user (`departureboard`, uid 10001) with a read-only system, keeps its data in the `dashboard-data` volume, and restarts by itself. Its health shows in Container Manager.
+For a Synology NAS or any computer running Docker. It runs the dashboard and its settings in one container, `twobells`, built here as the image `twobells:local`. The container runs as an unprivileged user (`twobells`, uid 10001) with a read-only system, keeps its data in the `dashboard-data` volume, and restarts by itself. Its health shows in Container Manager.
 
-1. Copy the project folder to the NAS, for example to `docker/departureboard` (File Station, or `scp`).
+1. Copy the project folder to the NAS, for example to `docker/twobells` (File Station, or `scp`).
 2. In that folder, copy `deploy/secrets.env.example` to `secrets.env`. Fill in your keys, or leave them empty and paste them in the settings later. Keep it private: in File Station, give only your own account access.
 3. In **Container Manager**, go to **Project**, then **Create**. Pick the folder; it uses the `docker-compose.yml` there. Create the project. It builds the image on the NAS and starts it. Elsewhere: `docker compose up -d --build` in the folder.
 4. Open `http://<NAS name>:8090/` or `http://<NAS IP address>:8090/` from the home network, and [set it up](#4-first-run-and-the-setup-wizard). Codes go to the container's log.
@@ -701,70 +701,70 @@ Don't publish port 8090 on your router or through QuickConnect or DSM's reverse 
 
 **Updating:** copy the new project files over the old ones, then in Container Manager choose the project, then **Action**, then **Build** (or `docker compose up -d --build`). Your history, timetable, saved settings, keys and password stay in the volume. After editing `secrets.env`, build again too: just restarting the container doesn't read it again.
 
-**The published image.** From the first release, each release also publishes a signed image, `ghcr.io/acornelissen/inky-departures`, so there is nothing to build. `deploy/docker/docker-compose.ghcr.yml` runs it with the same settings, pinned by version and digest. [Docker on other NASes and on Linux](docker.md) says how to check the image, and how to run it on QNAP, Unraid, TrueNAS SCALE, and Docker or Podman on Linux.
+**The published image.** From the first release, each release also publishes a signed image, `ghcr.io/acornelissen/twobells`, so there is nothing to build. `deploy/docker/docker-compose.ghcr.yml` runs it with the same settings, pinned by version and digest. [Docker on other NASes and on Linux](docker.md) says how to check the image, and how to run it on QNAP, Unraid, TrueNAS SCALE, and Docker or Podman on Linux.
 
 ---
 
 ## 10. Desktop
 
-On a Mac or a Linux laptop, the dashboard runs while you leave it running. It needs Python 3.11 or later, and its only dependency is Pillow: the Pi's extras (the Inky driver, pygame) aren't needed. Install it with [uv](https://docs.astral.sh/uv/) or [pipx](https://pipx.pypa.io/), which give it a virtual environment of its own and put the `departureboard` command in `~/.local/bin`. From PyPI, from the first release on:
+On a Mac or a Linux laptop, the dashboard runs while you leave it running. It needs Python 3.11 or later, and its only dependency is Pillow: the Pi's extras (the Inky driver, pygame) aren't needed. Install it with [uv](https://docs.astral.sh/uv/) or [pipx](https://pipx.pypa.io/), which give it a virtual environment of its own and put the `twobells` command in `~/.local/bin`. From PyPI, from the first release on:
 
 ```bash
-uv tool install departureboard      # or: pipx install departureboard
-departureboard serve
+uv tool install twobells      # or: pipx install twobells
+twobells serve
 ```
 
-Before the first release, run `uv tool install .` or `pipx install .` in a copy of the repo instead. To update: `uv tool upgrade departureboard` or `pipx upgrade departureboard`.
+Before the first release, run `uv tool install .` or `pipx install .` in a copy of the repo instead. To update: `uv tool upgrade twobells` or `pipx upgrade twobells`.
 
-`departureboard serve` runs as a desktop install unless told otherwise. It opens in your browser, at `http://localhost:8090/` (or the next free port), and the settings on the first run. The first build of the bus timetable takes a minute or so. Ctrl-C stops it.
+`twobells serve` runs as a desktop install unless told otherwise. It opens in your browser, at `http://localhost:8090/` (or the next free port), and the settings on the first run. The first build of the bus timetable takes a minute or so. Ctrl-C stops it.
 
 - `--lan` lets phones on the home Wi-Fi open it, at the address it prints. `--host` and `--port` pick others (a port you name is that port or nothing); `--no-browser` leaves the browser alone.
 - `--config config.toml` and `--secrets secrets.env` use files of your own, if you keep them. When either changes, or a setting is saved, it starts again by itself within a few seconds.
-- It keeps its files in its [store](#where-things-are-kept): `~/Library/Application Support/departureboard` on a Mac, and `~/.local/state/departureboard` on Linux (unless `$XDG_STATE_HOME` says otherwise). `--state-dir` names another folder.
-- To see the board without a Pi, `departureboard emulate --demo` draws it in your browser on sample data.
+- It keeps its files in its [store](#where-things-are-kept): `~/Library/Application Support/twobells` on a Mac, and `~/.local/state/twobells` on Linux (unless `$XDG_STATE_HOME` says otherwise). `--state-dir` names another folder.
+- To see the board without a Pi, `twobells emulate --demo` draws it in your browser on sample data.
 
 ### Start it when you log in
 
-The release tarball and the repo have a file for each in `deploy/desktop`. Both run `departureboard serve` from `~/.local/bin` on this computer only, at `http://localhost:8090/`, without opening the browser, and start it again if it fails. Run the commands from the tarball's or the repo's folder.
+The release tarball and the repo have a file for each in `deploy/desktop`. Both run `twobells serve` from `~/.local/bin` on this computer only, at `http://localhost:8090/`, without opening the browser, and start it again if it fails. Run the commands from the tarball's or the repo's folder.
 
 **On a Mac** (a launchd agent). The file names your home folder as `/Users/YOU`; `sed` puts yours in:
 
 ```bash
 mkdir -p ~/Library/LaunchAgents
-sed "s|/Users/YOU|$HOME|g" deploy/desktop/uk.departureboard.serve.plist \
-  > ~/Library/LaunchAgents/uk.departureboard.serve.plist
-launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/uk.departureboard.serve.plist
+sed "s|/Users/YOU|$HOME|g" deploy/desktop/uk.twobells.serve.plist \
+  > ~/Library/LaunchAgents/uk.twobells.serve.plist
+launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/uk.twobells.serve.plist
 ```
 
-It starts now and at each login. Its log, with any reset code, is `~/Library/Logs/departureboard.log`. To stop it until the next login: `launchctl bootout "gui/$(id -u)/uk.departureboard.serve"`. To stop it for good, run that and delete `~/Library/LaunchAgents/uk.departureboard.serve.plist`.
+It starts now and at each login. Its log, with any reset code, is `~/Library/Logs/twobells.log`. To stop it until the next login: `launchctl bootout "gui/$(id -u)/uk.twobells.serve"`. To stop it for good, run that and delete `~/Library/LaunchAgents/uk.twobells.serve.plist`.
 
 **On Linux** (a systemd user service):
 
 ```bash
 mkdir -p ~/.config/systemd/user
-cp deploy/desktop/departureboard.service ~/.config/systemd/user/
+cp deploy/desktop/twobells.service ~/.config/systemd/user/
 systemctl --user daemon-reload
-systemctl --user enable --now departureboard.service
+systemctl --user enable --now twobells.service
 ```
 
-It starts now and whenever you log in. Its log, with any reset code: `journalctl --user -u departureboard -f`. To stop it: `systemctl --user stop departureboard.service`; to stop it starting at login: `systemctl --user disable --now departureboard.service`.
+It starts now and whenever you log in. Its log, with any reset code: `journalctl --user -u twobells -f`. To stop it: `systemctl --user stop twobells.service`; to stop it starting at login: `systemctl --user disable --now twobells.service`.
 
-If `command -v departureboard` doesn't print `~/.local/bin/departureboard` (with your home folder), change that path in the file before copying it.
+If `command -v twobells` doesn't print `~/.local/bin/twobells` (with your home folder), change that path in the file before copying it.
 
 ---
 
 ## 11. Commands
 
-`departureboard <command> --help` lists every option, and `departureboard --version` prints the version. On a Pi, the app is `/opt/departureboard/venv/bin/departureboard`; run it as the `departureboard` user for commands that write to the store (`sudo -u departureboard …`).
+`twobells <command> --help` lists every option, and `twobells --version` prints the version. On a Pi, the app is `/opt/twobells/venv/bin/twobells`; run it as the `twobells` user for commands that write to the store (`sudo -u twobells …`).
 
-Every command but `demo` takes `--config FILE` and `--secrets FILE`, which default to `/etc/departureboard/config.toml` and `/etc/departureboard/secrets.env`. Neither has to be there.
+Every command but `demo` takes `--config FILE` and `--secrets FILE`, which default to `/etc/twobells/config.toml` and `/etc/twobells/secrets.env`. Neither has to be there.
 
 | Command | What it does | Options |
 |---|---|---|
-| `serve` | The web server: the settings at `/settings`, and the dashboard at `/` where its view is on. `departureboard-web.service` runs it on a Pi, and the container in Docker. | `--install pi`, `docker` or `desktop` (the default): what it runs on. `--state-dir DIR`, `--host` (default all addresses on a Pi and in Docker, this computer only on a desktop), `--port` (default 8090, or on a desktop the next free one), `--lan` for every address, `--no-browser`. `--set-password` or `--reset-code`: see [Password and reset codes](#6-password-and-reset-codes). |
-| `fetch` | A Pi's internet work for its web server. `departureboard-fetch.service` runs it; there's no need to run it yourself. | `--state-dir DIR`. |
-| `run` | One tick of the board: check what's due, redraw if anything changed. `departureboard.timer` runs it every minute. | `--png FILE` draws to a picture instead of the display. `--loop` keeps running, as the screen's service does; `--tick SECONDS` sets how often it ticks then (1 on a screen, 60 on e-paper). |
-| `timetable` | Builds the bus timetable for your stops from BODS, if a build is due. `departureboard-timetable.timer` runs it hourly. | `--force` builds it now. `--install pi`, `docker` or `desktop` (the default): what it runs on; a Pi reads less of each timetable file, to fit its memory. |
+| `serve` | The web server: the settings at `/settings`, and the dashboard at `/` where its view is on. `twobells-web.service` runs it on a Pi, and the container in Docker. | `--install pi`, `docker` or `desktop` (the default): what it runs on. `--state-dir DIR`, `--host` (default all addresses on a Pi and in Docker, this computer only on a desktop), `--port` (default 8090, or on a desktop the next free one), `--lan` for every address, `--no-browser`. `--set-password` or `--reset-code`: see [Password and reset codes](#6-password-and-reset-codes). |
+| `fetch` | A Pi's internet work for its web server. `twobells-fetch.service` runs it; there's no need to run it yourself. | `--state-dir DIR`. |
+| `run` | One tick of the board: check what's due, redraw if anything changed. `twobells.timer` runs it every minute. | `--png FILE` draws to a picture instead of the display. `--loop` keeps running, as the screen's service does; `--tick SECONDS` sets how often it ticks then (1 on a screen, 60 on e-paper). |
+| `timetable` | Builds the bus timetable for your stops from BODS, if a build is due. `twobells-timetable.timer` runs it hourly. | `--force` builds it now. `--install pi`, `docker` or `desktop` (the default): what it runs on; a Pi reads less of each timetable file, to fit its memory. |
 | `probe train` or `probe bus` | One live call, to check the keys, station and stops. | `--stop LABEL=ATCO` (once per stop) asks those stops instead of the settings'. `--save DIR` keeps TransportAPI's raw answers. `--details` (trains only) adds coaches and calling points. |
 | `route LINE` | Prints a `[bus.routes]` block for the screen's bus page. | `--stop LABEL` (needed), and `--noc CODE` or `--txc FILE`; see [The bus position page](#the-bus-position-page). |
 | `setup discover` | Finds the bus companies serving your stops, builds their timetable, and prints the settings to add to `config.toml`. Needs `BODS_API_KEY`. | `--stop LABEL=ATCO` (needed, once per stop). `--routes` also builds a route strip for each line. |
@@ -774,12 +774,12 @@ Every command but `demo` takes `--config FILE` and `--secrets FILE`, which defau
 Useful on a Pi:
 
 ```bash
-journalctl -u departureboard -f                 # e-paper board log
-journalctl -u departureboard-screen -f          # screen board log
-journalctl -u departureboard-web -f             # web server log: settings, dashboard, reset codes
-journalctl -u departureboard-fetch -f           # the wizard's lookups and the dashboard's feeds
-journalctl -u departureboard-timetable -n 20    # bus timetable builds
-sudo systemctl start departureboard-timetable.service   # build the bus timetable now, if due
+journalctl -u twobells -f                 # e-paper board log
+journalctl -u twobells-screen -f          # screen board log
+journalctl -u twobells-web -f             # web server log: settings, dashboard, reset codes
+journalctl -u twobells-fetch -f           # the wizard's lookups and the dashboard's feeds
+journalctl -u twobells-timetable -n 20    # bus timetable builds
+sudo systemctl start twobells-timetable.service   # build the bus timetable now, if due
 ```
 
 ---
@@ -790,20 +790,20 @@ sudo systemctl start departureboard-timetable.service   # build the bus timetabl
 |---|---|---|
 | Board says **Set me up** | Not set up yet | Open the address it shows and follow the [setup wizard](#4-first-run-and-the-setup-wizard) |
 | Board says **Board off** | The board view is off | Tick **The board** under **Views** on the General page of the settings |
-| Setup can't find a postcode, stops or bus companies | The Pi can't reach the services setup asks, or one is down | Check the Pi's internet connection; `journalctl -u departureboard-fetch -n 20` |
-| Setup says **The fetch service didn't answer in time** | The fetch service isn't being started | `sudo systemctl enable --now departureboard-fetch.path`; `systemctl status departureboard-fetch.path departureboard-fetch.service` |
-| Setup keeps saying **didn't answer in time**, and `systemctl status departureboard-fetch.path` says `failed` with `start-limit-hit` | The fetch service kept stopping at once, so systemd stopped starting it | Find why with `journalctl -u departureboard-fetch -n 30` and fix that, then `sudo systemctl reset-failed departureboard-fetch.service departureboard-fetch.path` and `sudo systemctl start departureboard-fetch.path` |
-| Setup says **The board's settings can't be read** | The fetch service can't read `/etc/departureboard/config.toml` | `journalctl -u departureboard-fetch -n 20` says why; fix `config.toml`, or delete it to use the defaults |
-| A command says `Run this as the service's user: sudo -u departureboard …` | It was run as root, on the services' store | Run it as `sudo -u departureboard /opt/departureboard/venv/bin/departureboard …` |
-| E-paper blank after install | The board isn't started, or nothing fetched yet | `sudo systemctl enable --now departureboard.timer`; wait a minute; `journalctl -u departureboard -f` |
-| `NOT UPDATING: TRAINS` | Rail key wrong, or the feed is down | Test the key on the Keys page of the settings; `departureboard probe train` |
-| `NOT UPDATING: BUSES` | No bus timetable yet and no TransportAPI keys; or TransportAPI's daily budget spent, its key wrong, or its feed down | **On the board** in the settings' Overview; `departureboard probe bus` |
+| Setup can't find a postcode, stops or bus companies | The Pi can't reach the services setup asks, or one is down | Check the Pi's internet connection; `journalctl -u twobells-fetch -n 20` |
+| Setup says **The fetch service didn't answer in time** | The fetch service isn't being started | `sudo systemctl enable --now twobells-fetch.path`; `systemctl status twobells-fetch.path twobells-fetch.service` |
+| Setup keeps saying **didn't answer in time**, and `systemctl status twobells-fetch.path` says `failed` with `start-limit-hit` | The fetch service kept stopping at once, so systemd stopped starting it | Find why with `journalctl -u twobells-fetch -n 30` and fix that, then `sudo systemctl reset-failed twobells-fetch.service twobells-fetch.path` and `sudo systemctl start twobells-fetch.path` |
+| Setup says **The board's settings can't be read** | The fetch service can't read `/etc/twobells/config.toml` | `journalctl -u twobells-fetch -n 20` says why; fix `config.toml`, or delete it to use the defaults |
+| A command says `Run this as the service's user: sudo -u twobells …` | It was run as root, on the services' store | Run it as `sudo -u twobells /opt/twobells/venv/bin/twobells …` |
+| E-paper blank after install | The board isn't started, or nothing fetched yet | `sudo systemctl enable --now twobells.timer`; wait a minute; `journalctl -u twobells -f` |
+| `NOT UPDATING: TRAINS` | Rail key wrong, or the feed is down | Test the key on the Keys page of the settings; `twobells probe train` |
+| `NOT UPDATING: BUSES` | No bus timetable yet and no TransportAPI keys; or TransportAPI's daily budget spent, its key wrong, or its feed down | **On the board** in the settings' Overview; `twobells probe bus` |
 | Every bus says `sch` | No live positions for those buses right now, or live positions failing (the Overview says so) | Usually nothing; times are from the timetable |
-| The Overview says `From TransportAPI: there is no bus timetable yet` | The timetable hasn't been built, or the build failed | `journalctl -u departureboard-timetable -n 20`; start it as in [Bus times](#bus-times) |
+| The Overview says `From TransportAPI: there is no bus timetable yet` | The timetable hasn't been built, or the build failed | `journalctl -u twobells-timetable -n 20`; start it as in [Bus times](#bus-times) |
 | The Overview says `From TransportAPI: the bus timetable is for other stops` | You changed the stops; it rebuilds within the hour | Wait, or start the timetable service |
 | Buses not updating while the Overview says `From TransportAPI` | Outside `fallback_windows`, or the daily budget is spent | Fix the timetable (see the row above); TransportAPI is only a stand-in |
 | E-paper errors about chip select | SPI chip selects in use | Add `dtoverlay=spi0-0cs` to `/boot/firmware/config.txt` and reboot |
-| Screen black | Screen service not running | `systemctl status departureboard-screen.service` |
+| Screen black | Screen service not running | `systemctl status twobells-screen.service` |
 | Screen upside down or sideways | Rotation | Change **Rotation** on the Board page of the settings |
 | No bus position page | Not a screen, outside the bus windows, no `BODS_API_KEY`, or no route set up for the next bus | Check those in that order |
 | Bus page always says `Not yet past …` | The strip is short (in town 8 stops is about 7 minutes) | Normal; the bus appears when it's close |
@@ -811,9 +811,9 @@ sudo systemctl start departureboard-timetable.service   # build the bus timetabl
 | Board quiet on a bank holiday | Weekday windows are off on bank holidays | Add a window including Sun, or choose "Ignore bank holidays" |
 | No code on the board when claiming the settings | The board isn't running | Start it, or print a code on the Pi with `--reset-code` (see [Password and reset codes](#6-password-and-reset-codes)) |
 | The dashboard's address opens the settings | The dashboard view is off, the app isn't set up, or the dashboard's settings don't load | The settings' Overview says why when it can't start; tick **The dashboard** under **Views** on the General page on a Pi |
-| The dashboard on a Pi doesn't update | The fetch service isn't running | `systemctl status departureboard-fetch.service`; `journalctl -u departureboard-fetch -n 20` |
+| The dashboard on a Pi doesn't update | The fetch service isn't running | `systemctl status twobells-fetch.service`; `journalctl -u twobells-fetch -n 20` |
 | The dashboard says there are no buses because they come from TransportAPI | It shows buses only from the BODS timetable | Run setup again to find your stops' bus companies |
-| Settings won't open | Server stopped, or you're not on the home network | `systemctl status departureboard-web.service` on a Pi; the container's state in Docker |
+| Settings won't open | Server stopped, or you're not on the home network | `systemctl status twobells-web.service` on a Pi; the container's state in Docker |
 | Settings say **Forbidden** | Opened from outside the home network, or through an unusual address | Use `http://<name>.local:8090/settings` from home Wi-Fi, or add the name to `allowed_hosts` |
 | Docker: port 8090 already in use | The old `departureboard-dashboard` container is still there | See [Upgrading](#13-upgrading-from-before-the-two-views) |
 
@@ -823,7 +823,7 @@ sudo systemctl start departureboard-timetable.service   # build the bus timetabl
 
 The board's settings page and the dashboard used to be separate programs, each with its own folder and password. They are now one app, and the old commands `web`, `dashboard` and `setup serve` are replaced by `serve` and `fetch`. The old names still work, unlisted, until the first public release. This upgrade signs you out once: sign in again, with the password you had (the store keeps it).
 
-**A NAS (Docker).** The keys file is now `secrets.env`, and the container is `departureboard`:
+**A NAS (Docker).** The keys file is now `secrets.env`, and the container is `twobells`:
 
 1. `docker compose down` in the project folder (on Synology, stop the project in Container Manager).
 2. Get the new files: `git pull`, or copy them over the old ones.
@@ -841,4 +841,4 @@ sudo ./deploy/pi/update.sh
 
 The settings moved from `http://<pi name>.local:8080/` to `http://<pi name>.local:8090/settings`, and nothing listens on 8080 any more, so old bookmarks stop working on purpose. `update.sh` replaces the old setup service with the fetch service.
 
-**A desktop.** `departureboard serve` replaces `departureboard dashboard`, with the same `--config` and `--secrets`. The dashboard's old folder (`departureboard-dashboard`) is used as it is; if a `departureboard` folder is already there, what the old one holds is copied in once and the old folder is left alone.
+**A desktop.** `twobells serve` replaces `twobells dashboard`, with the same `--config` and `--secrets`. The dashboard's old folder (`departureboard-dashboard`) is used as it is; if a `twobells` folder is already there, what the old one holds is copied in once and the old folder is left alone.

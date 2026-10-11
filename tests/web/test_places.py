@@ -1,9 +1,9 @@
 from dataclasses import replace
 
-from departureboard.timetable import build as timetable
-from departureboard.timetable.model import StopPosition
-from departureboard.web import places
 from tests.timetable.test_build import _long_schedule, _peak
+from twobells.timetable import build as timetable
+from twobells.timetable.model import StopPosition
+from twobells.web import places
 
 
 def test_the_stops_are_named_from_a_big_timetable_without_holding_its_journeys(tmp_path):

@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from departureboard.core import files
+from twobells.core import files
 
 
 def test_a_file_is_replaced_whole_with_the_mode_given_whatever_the_umask(tmp_path):

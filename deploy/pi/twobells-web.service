@@ -1,0 +1,75 @@
+[Unit]
+Description=Two Bells settings, and the dashboard if on (home network only)
+Wants=network-online.target
+After=network-online.target
+# The setup wizard's lookups and the dashboard's feeds are fetched there:
+# this service can't reach the internet.
+Wants=twobells-fetch.path
+# The network guard (deploy/pi/twobells-web.nft), loaded first so its
+# set is there for NFTSet= below. Wanted, not required: if it can't load, the
+# server starts anyway. It still turns away visitors outside the home network
+# itself, and says in its log and on the settings' Overview whether anything
+# stops it connecting out.
+Wants=twobells-guard.service
+After=twobells-guard.service
+
+[Service]
+Type=simple
+User=twobells
+Group=twobells
+StateDirectory=twobells
+StateDirectoryMode=0750
+# The spool, shared with twobells-fetch.service: in memory, never on
+# the SD card, and kept when either stops, until the Pi restarts.
+RuntimeDirectory=twobells-fetch
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+# Keys, so the page can say which are set and check settings before saving.
+EnvironmentFile=/etc/twobells/secrets.env
+ExecStart=/opt/twobells/venv/bin/twobells serve --install pi --config /etc/twobells/config.toml --port 8090
+Restart=on-failure
+RestartSec=5
+UMask=0027
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+ProtectHostname=yes
+ProtectKernelLogs=yes
+RestrictRealtime=yes
+PrivateIPC=yes
+ProtectClock=yes
+ProcSubset=pid
+RestrictSUIDSGID=yes
+ProtectProc=invisible
+# Room for Python and two password checks (16 MiB each) at once, no more.
+MemoryMax=128M
+# The server's threads: one per connection, up to web/server.py's MAX_CONNECTIONS,
+# and a few of its own.
+TasksMax=64
+# Home network only, enforced by the kernel as well as by the page. The setup
+# wizard's lookups and the dashboard's feeds go out from
+# twobells-fetch.service instead.
+IPAddressDeny=any
+IPAddressAllow=localhost link-local 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7
+# The same again in nftables, for where systemd can't apply the two lines
+# above (a Pi Zero's kernel refuses them the memory): systemd puts this
+# cgroup's id in the guard's set as the server starts, and takes it out as it
+# stops (needs systemd 254 or later).
+NFTSet=cgroup:inet:twobells_web:web
+
+[Install]
+WantedBy=multi-user.target

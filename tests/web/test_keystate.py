@@ -5,11 +5,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from departureboard.settings import keyresults
-from departureboard.settings.installs import install_named
-from departureboard.settings.store import Store
-from departureboard.web.icons import icon
-from departureboard.web.keystate import key_states, pill
+from twobells.settings import keyresults
+from twobells.settings.installs import install_named
+from twobells.settings.store import Store
+from twobells.web.icons import icon
+from twobells.web.keystate import key_states, pill
 
 CONFIG = """
 title = "Glossop"

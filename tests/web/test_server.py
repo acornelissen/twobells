@@ -9,12 +9,12 @@ import time
 
 import pytest
 
-from departureboard.core.walk import WalkTimes
-from departureboard.dashboard.snapshot import Hub
-from departureboard.settings.installs import install_named
-from departureboard.settings.store import Store
-from departureboard.web.server import DashboardApp, StaticFiles, make_server
-from departureboard.web.settingsite import SettingsSite
+from twobells.core.walk import WalkTimes
+from twobells.dashboard.snapshot import Hub
+from twobells.settings.installs import install_named
+from twobells.settings.store import Store
+from twobells.web.server import DashboardApp, StaticFiles, make_server
+from twobells.web.settingsite import SettingsSite
 
 # The contract's headers, copied from docs/dashboard-api.md rather than imported.
 SECURITY = {
@@ -343,14 +343,14 @@ def test_the_page_says_which_version_is_running_in_its_footer(tmp_path):
     (folder / "app.css").write_bytes(b"/* <!-- version --> */")
     static = StaticFiles.load(folder, version="1.2.3")
     index = static.get("index.html")
-    assert index.body == b'<footer><p>Times from here.</p>\n  <p class="version">departureboard 1.2.3</p>\n</footer>'
+    assert index.body == b'<footer><p>Times from here.</p>\n  <p class="version">twobells 1.2.3</p>\n</footer>'
     assert index.etag == f'"{hashlib.sha256(index.body).hexdigest()}"'  # the page as sent, so a new version is fetched
     assert static.get("app.css").body == b"/* <!-- version --> */"  # the page only
     assert StaticFiles.load(folder).get("index.html").body == page  # nothing to say, nothing changed
     unknown = StaticFiles.load(folder, version="unknown").get("index.html").body
-    assert b'<p class="version">departureboard, version unknown</p>' in unknown
+    assert b'<p class="version">twobells, version unknown</p>' in unknown
     odd = StaticFiles.load(folder, version="<script>1</script>").get("index.html").body
-    assert b"departureboard &lt;script&gt;1&lt;/script&gt;" in odd and b"<script>" not in odd
+    assert b"twobells &lt;script&gt;1&lt;/script&gt;" in odd and b"<script>" not in odd
 
     running = start(tmp_path / "other", static=StaticFiles.load(folder, version="1.2.3"))
     try:

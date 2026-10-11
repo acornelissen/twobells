@@ -4,14 +4,15 @@ screens, kept in memory only, and dropped rather than shown stale."""
 import json
 from datetime import datetime, timedelta
 
-from departureboard.board.app import Board, SourceConfig, run_once
-from departureboard.board.panel import HDMI_1280X400, PHAT
-from departureboard.board.positions import Positions
-from departureboard.board.render import Palette
-from departureboard.board.state import StateStore
-from departureboard.core.model import Departure, Status, Strip, strip_key
-from departureboard.core.polling import PollPolicy, parse_window
-from departureboard.sources.darwin import (
+from tests.paths import FIXTURES
+from twobells.board.app import Board, SourceConfig, run_once
+from twobells.board.panel import HDMI_1280X400, PHAT
+from twobells.board.positions import Positions
+from twobells.board.render import Palette
+from twobells.board.state import StateStore
+from twobells.core.model import Departure, Status, Strip, strip_key
+from twobells.core.polling import PollPolicy, parse_window
+from twobells.sources.darwin import (
     DetailsError,
     DetailsUnavailable,
     ServiceGone,
@@ -20,7 +21,6 @@ from departureboard.sources.darwin import (
     parse_service_details,
     train_position,
 )
-from tests.paths import FIXTURES
 
 # Friday night: the fixture board's trains leave Glossop at 22:08, 22:25, 22:38, 22:55 and 23:10.
 TONIGHT = datetime(2026, 10, 9, 22, 3)

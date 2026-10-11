@@ -11,10 +11,10 @@ import tomllib
 
 import pytest
 
-from departureboard.settings import store as stores
-from departureboard.settings.migrate import adopt_legacy
-from departureboard.settings.overlay import LOCK_NAME
-from departureboard.settings.store import Store
+from twobells.settings import store as stores
+from twobells.settings.migrate import adopt_legacy
+from twobells.settings.overlay import LOCK_NAME
+from twobells.settings.store import Store
 
 
 def mode(path):
@@ -233,8 +233,8 @@ def test_a_problem_never_stops_a_start(board, old, caplog):
 def test_dashboard_brings_the_old_folder_before_setting_a_password(tmp_path, home, monkeypatch):
     import getpass
 
-    from departureboard.cli.main import main
-    from departureboard.web.auth import PasswordStore
+    from twobells.cli.main import main
+    from twobells.web.auth import PasswordStore
 
     write(stores.platform_base() / "departureboard-dashboard" / "settings.toml", 'title = "Ours"\n')
     monkeypatch.setattr(getpass, "getpass", lambda prompt="": "a long enough password")

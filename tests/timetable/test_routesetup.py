@@ -9,9 +9,10 @@ from collections import Counter
 
 import pytest
 
-from departureboard.core import safexml
-from departureboard.timetable import routesetup
-from departureboard.timetable.routesetup import (
+from tests.paths import FIXTURES
+from twobells.core import safexml
+from twobells.timetable import routesetup
+from twobells.timetable.routesetup import (
     MAX_NAPTAN_BYTES,
     MAX_STOPS,
     Pattern,
@@ -25,7 +26,6 @@ from departureboard.timetable.routesetup import (
     strip_before,
     timetable_documents,
 )
-from tests.paths import FIXTURES
 
 TXC = (FIXTURES / "txc_glossop_synthetic.xml").read_bytes()
 NAPTAN = (FIXTURES / "naptan_glossop_high_street_west.csv").read_text()
@@ -256,7 +256,7 @@ def test_a_skipped_file_is_logged_by_default(tmp_path, caplog):
 
 
 def test_too_many_files_in_a_zip_is_refused(monkeypatch):
-    from departureboard.timetable import routesetup
+    from twobells.timetable import routesetup
 
     monkeypatch.setattr(routesetup, "MAX_ZIP_MEMBERS", 2)
     with pytest.raises(RouteSetupError, match="refusing"):
@@ -276,7 +276,7 @@ def test_a_name_from_a_zip_is_said_without_its_control_characters():
 
 
 def test_a_zip_unpacking_to_too_much_in_total_is_refused(monkeypatch):
-    from departureboard.timetable import routesetup
+    from twobells.timetable import routesetup
 
     monkeypatch.setattr(routesetup, "MAX_UNZIPPED_BYTES", 150)
     files = {f"{i}.xml": b"<x>" + b"a" * 50 + b"</x>" for i in range(3)}  # 57 bytes each
@@ -288,7 +288,7 @@ def test_a_zip_unpacking_to_too_much_in_total_is_refused(monkeypatch):
 
 
 def test_a_zip_within_the_total_is_read_whole(monkeypatch):
-    from departureboard.timetable import routesetup
+    from twobells.timetable import routesetup
 
     monkeypatch.setattr(routesetup, "MAX_UNZIPPED_BYTES", 171)
     files = {f"{i}.xml": b"<x>" + b"a" * 50 + b"</x>" for i in range(3)}
@@ -299,7 +299,7 @@ def test_a_zip_as_big_as_the_largest_real_one_is_within_the_total():
     # BODS data set 2100 (First South Yorkshire, October 2026) unpacks to
     # 1,293,595,148 bytes in 159 files. The total is only a zip-bomb guard:
     # the files are read one at a time.
-    from departureboard.timetable import routesetup
+    from twobells.timetable import routesetup
 
     assert routesetup.MAX_UNZIPPED_BYTES >= 3 * 1_293_595_148
 
@@ -307,7 +307,7 @@ def test_a_zip_as_big_as_the_largest_real_one_is_within_the_total():
 def test_a_big_zip_of_real_timetables_is_read_whole(monkeypatch):
     # Data set 2100 against the total, scaled down: compressed as BODS's
     # are, none of its files comes near the ratio refused.
-    from departureboard.timetable import routesetup
+    from twobells.timetable import routesetup
 
     files = {f"{i}.xml": TXC for i in range(40)}
     monkeypatch.setattr(routesetup, "MAX_UNZIPPED_BYTES", 3 * len(TXC) * len(files))
@@ -355,7 +355,7 @@ def _understated(data: bytes, padding: int) -> bytes:
 
 
 def test_a_file_unpacking_to_far_more_than_it_took_is_refused_whatever_its_header_says(monkeypatch):
-    from departureboard.timetable import routesetup
+    from twobells.timetable import routesetup
 
     monkeypatch.setattr(routesetup, "MAX_RATIO", 20)
     blob = _understated(bytes(2_000_000), 500_000)

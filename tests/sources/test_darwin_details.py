@@ -2,9 +2,10 @@ import json
 
 import pytest
 
-from departureboard.core.model import Status
-from departureboard.sources import darwin
-from departureboard.sources.darwin import (
+from tests.paths import FIXTURES
+from twobells.core.model import Status
+from twobells.sources import darwin
+from twobells.sources.darwin import (
     CallingPoint,
     DarwinSource,
     Message,
@@ -12,7 +13,6 @@ from departureboard.sources.darwin import (
     parse_board,
     parse_board_rich,
 )
-from tests.paths import FIXTURES
 
 
 def load_fixture(name):

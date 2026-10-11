@@ -6,8 +6,9 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from departureboard.core import net
-from departureboard.sources.weather import (
+from tests.paths import FIXTURES
+from twobells.core import net
+from twobells.sources.weather import (
     MAX_BYTES,
     WMO_TEXT,
     Current,
@@ -15,7 +16,6 @@ from departureboard.sources.weather import (
     OpenMeteoSource,
     parse_conditions,
 )
-from tests.paths import FIXTURES
 
 FIXTURE = FIXTURES / "openmeteo_conditions.json"
 

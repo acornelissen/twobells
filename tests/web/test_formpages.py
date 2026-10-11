@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from departureboard.web.auth import (
+from twobells.web.auth import (
     MAX_FAILURES,
     RESET_MAX_TRIES,
     TOTAL_FAILURES,
@@ -21,7 +21,7 @@ from departureboard.web.auth import (
     ResetCodes,
     Sessions,
 )
-from departureboard.web.formpages import (
+from twobells.web.formpages import (
     HTML,
     TEXT,
     WIZARD_TYPES,

@@ -18,7 +18,7 @@
 # One-time setup by the repo owner (none of it can be done from here):
 #   1. PyPI trusted publisher. On pypi.org (Account > Publishing > Add a new
 #      pending publisher, as the project doesn't exist yet): PyPI project name
-#      departureboard, owner acornelissen, repository inky-departures,
+#      twobells, owner acornelissen, repository twobells,
 #      workflow release.yml, environment pypi.
 #   2. GitHub environment "pypi" (Settings > Environments > New environment).
 #      Under deployment branches and tags, allow tags matching v* only.
@@ -28,7 +28,7 @@
 #      v*, restrict creation, update and deletion to admins, so only you can
 #      start a release.
 #   4. GHCR visibility. The first release creates the package
-#      ghcr.io/acornelissen/inky-departures as private. When the repo goes
+#      ghcr.io/acornelissen/twobells as private. When the repo goes
 #      public, set the package to public (Package settings > Change
 #      visibility) and check it is linked to this repository.
 #   5. Note: cosign keyless signing writes the signing identity (this repo's
@@ -36,11 +36,11 @@
 #      first release after the repo is public, or accept that the name shows.
 #
 # Verifying, as a user:
-#   cosign verify ghcr.io/acornelissen/inky-departures:0.1.0 \
-#     --certificate-identity https://github.com/acornelissen/inky-departures/.github/workflows/release.yml@refs/tags/v0.1.0 \
+#   cosign verify ghcr.io/acornelissen/twobells:0.1.0 \
+#     --certificate-identity https://github.com/acornelissen/twobells/.github/workflows/release.yml@refs/tags/v0.1.0 \
 #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
 #   cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
-#     --certificate-identity https://github.com/acornelissen/inky-departures/.github/workflows/release.yml@refs/tags/v0.1.0 \
+#     --certificate-identity https://github.com/acornelissen/twobells/.github/workflows/release.yml@refs/tags/v0.1.0 \
 #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
 #   sha256sum --check --ignore-missing SHA256SUMS
 name: Release
@@ -56,7 +56,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE: ghcr.io/acornelissen/inky-departures
+  IMAGE: ghcr.io/acornelissen/twobells
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
 
 jobs:
@@ -125,17 +125,17 @@ jobs:
           "$RUNNER_TEMP/build/bin/python" -m pip install --require-hashes -r .github/requirements-build.txt
           "$RUNNER_TEMP/build/bin/python" -m build --no-isolation --outdir dist .
           ls -l dist
-          test -f "dist/departureboard-$VERSION.tar.gz"
-          test -f "dist/departureboard-$VERSION-py3-none-any.whl"
+          test -f "dist/twobells-$VERSION.tar.gz"
+          test -f "dist/twobells-$VERSION-py3-none-any.whl"
       - name: Install the wheel into a fresh venv and check its version
         run: |
           python -m venv "$RUNNER_TEMP/try"
           "$RUNNER_TEMP/try/bin/pip" install --require-hashes --only-binary=:all: --no-deps -r deploy/docker/requirements-docker.txt
-          "$RUNNER_TEMP/try/bin/pip" install --no-deps --no-index "dist/departureboard-$VERSION-py3-none-any.whl"
+          "$RUNNER_TEMP/try/bin/pip" install --no-deps --no-index "dist/twobells-$VERSION-py3-none-any.whl"
           cd "$RUNNER_TEMP"
-          got="$("$RUNNER_TEMP/try/bin/departureboard" --version)"
-          if [[ "$got" != "departureboard $VERSION" ]]; then
-            echo "::error::The wheel says '$got', not 'departureboard $VERSION'"
+          got="$("$RUNNER_TEMP/try/bin/twobells" --version)"
+          if [[ "$got" != "twobells $VERSION" ]]; then
+            echo "::error::The wheel says '$got', not 'twobells $VERSION'"
             exit 1
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -221,15 +221,15 @@ jobs:
         # deploy/ and examples/) plus the docs; not the tests, the CI, or the
         # local issue tracker and agent files.
         run: |
-          git archive --format=tar.gz --prefix="inky-departures-$VERSION/" \
-            -o "out/inky-departures-$VERSION.tar.gz" "$GITHUB_SHA" -- . \
+          git archive --format=tar.gz --prefix="twobells-$VERSION/" \
+            -o "out/twobells-$VERSION.tar.gz" "$GITHUB_SHA" -- . \
             ':(exclude).beads' ':(exclude).claude' ':(exclude).github' \
             ':(exclude)tests' ':(exclude)CLAUDE.md'
           # Listed once, not piped to grep -q: under pipefail, tar would fail
           # writing to a grep that has already found its line and gone.
-          listing="$(tar -tzf "out/inky-departures-$VERSION.tar.gz")"
+          listing="$(tar -tzf "out/twobells-$VERSION.tar.gz")"
           for script in install.sh update.sh upgrade.sh; do
-            grep -qx "inky-departures-$VERSION/deploy/pi/$script" <<<"$listing"
+            grep -qx "twobells-$VERSION/deploy/pi/$script" <<<"$listing"
           done
       - name: Write SHA256SUMS
         working-directory: out
@@ -256,7 +256,7 @@ jobs:
     timeout-minutes: 10
     environment:
       name: pypi
-      url: https://pypi.org/project/departureboard/
+      url: https://pypi.org/project/twobells/
     permissions:
       id-token: write # trusted publishing; nothing else
     steps:
@@ -290,11 +290,11 @@ jobs:
           ## Install on a Raspberry Pi
 
           \`\`\`bash
-          curl -fLO $base/inky-departures-$VERSION.tar.gz
+          curl -fLO $base/twobells-$VERSION.tar.gz
           curl -fLO $base/SHA256SUMS
           sha256sum --check --ignore-missing SHA256SUMS &&
-            tar -xzf inky-departures-$VERSION.tar.gz &&
-            cd inky-departures-$VERSION && sudo ./deploy/pi/install.sh
+            tar -xzf twobells-$VERSION.tar.gz &&
+            cd twobells-$VERSION && sudo ./deploy/pi/install.sh
           \`\`\`
 
           A Pi installed from an earlier release moves to this one, checked the same way,

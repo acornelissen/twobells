@@ -7,11 +7,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from departureboard.timetable import build as timetable
-from departureboard.timetable.build import FORMAT
-from departureboard.timetable.model import Schedule, StopPosition
-from departureboard.web import overview
-from departureboard.web.overview import KeyTest
+from twobells.timetable import build as timetable
+from twobells.timetable.build import FORMAT
+from twobells.timetable.model import Schedule, StopPosition
+from twobells.web import overview
+from twobells.web.overview import KeyTest
 
 LONDON = ZoneInfo("Europe/London")
 NOW = datetime(2026, 10, 8, 8, 1)  # a Thursday, local time
@@ -319,8 +319,8 @@ def test_both_views_are_grouped_under_their_names():
     ("on", "pill-ok", "Network guard On Checked 07:58, 3 min ago "
                       "What it means This server can't connect out to the internet."),
     ("off", "pill-bad", "Network guard Off Checked 07:58, 3 min ago "
-                        "What to do On the Pi, restart it: sudo systemctl restart departureboard-web. If it stays "
-                        "off, sudo journalctl -u departureboard-web says why. "
+                        "What to do On the Pi, restart it: sudo systemctl restart twobells-web. If it stays "
+                        "off, sudo journalctl -u twobells-web says why. "
                         "What it means The server still refuses visitors outside your home network itself; "
                         "nothing stops it connecting out."),
     ("unknown", "pill-neutral", "Network guard Can't tell Checked 07:58, 3 min ago "

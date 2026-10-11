@@ -32,12 +32,12 @@ env = { PYRIGHT_PYTHON_IGNORE_WARNINGS = "1" }
 
 [tasks.demo]
 description = "Render sample data to preview.png"
-run = ".venv/bin/departureboard demo --png preview.png"
+run = ".venv/bin/twobells demo --png preview.png"
 
 [tasks.emulate]
 description = "Browser panel emulator with sample data"
-run = ".venv/bin/departureboard emulate --demo"
+run = ".venv/bin/twobells emulate --demo"
 
 [tasks.serve]
 description = "Serve the dashboard and settings on this computer with ./config.toml and ./secrets.env"
-run = ".venv/bin/departureboard serve --install desktop --config config.toml --secrets secrets.env"
+run = ".venv/bin/twobells serve --install desktop --config config.toml --secrets secrets.env"

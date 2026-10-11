@@ -4,7 +4,7 @@
     python tools/build_setup_data.py --rail-xml rail.xml --stops-csv naptan.csv
 
 Run it on a laptop now and then (stations open, stops move) and commit the
-result. It writes, under src/departureboard/data/:
+result. It writes, under src/twobells/data/:
 
 - gb_stations.csv: every active National Rail station with its CRS code and
   position. NaPTAN's CSV has no CRS codes; its XML does, in each station's
@@ -33,15 +33,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from departureboard.core import safexml  # noqa: E402
-from departureboard.core.net import get_bytes  # noqa: E402
-from departureboard.core.osgb import distance_m  # noqa: E402
-from departureboard.setup.lookups import BUS_STOP_TYPES, naptan_position  # noqa: E402
-from departureboard.timetable.routesetup import NAPTAN_URL  # noqa: E402
+from twobells.core import safexml  # noqa: E402
+from twobells.core.net import get_bytes  # noqa: E402
+from twobells.core.osgb import distance_m  # noqa: E402
+from twobells.setup.lookups import BUS_STOP_TYPES, naptan_position  # noqa: E402
+from twobells.timetable.routesetup import NAPTAN_URL  # noqa: E402
 
 RAIL_URL = f"{NAPTAN_URL}?dataFormat=xml&atcoAreaCodes=910"
 STOPS_URL = f"{NAPTAN_URL}?dataFormat=csv"
-OUT = ROOT / "src" / "departureboard" / "data"
+OUT = ROOT / "src" / "twobells" / "data"
 
 _NS = {"n": "http://www.naptan.org.uk/"}
 _CRS = re.compile(r"^[A-Z]{3}$")

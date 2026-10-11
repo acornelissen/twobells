@@ -1,10 +1,10 @@
 
 import pytest
 
-from departureboard.board.route import RouteStop, RouteStrip, locate, position_on, target, where
-from departureboard.core.model import Departure, Status
-from departureboard.sources.bods import Vehicle, parse_siri_vm
 from tests.paths import FIXTURES
+from twobells.board.route import RouteStop, RouteStrip, locate, position_on, target, where
+from twobells.core.model import Departure, Status
+from twobells.sources.bods import Vehicle, parse_siri_vm
 
 # Eastbound along High Street West, Glossop, to Henry Street Stop A (NaPTAN positions).
 STRIP = RouteStrip(
@@ -122,7 +122,7 @@ def test_where_says_when_positions_have_stopped():
 
 
 def test_route_view_signature_changes_as_the_bus_moves():
-    from departureboard.board.route import RouteView
+    from twobells.board.route import RouteView
 
     a = RouteView("341 to Hyde", "Exp 07:24", "Leave in 6 min", NAMES, 2.4, "3 stops away")
     b = RouteView("341 to Hyde", "Exp 07:24", "Leave in 6 min", NAMES, 2.6, "3 stops away")

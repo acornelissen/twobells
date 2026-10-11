@@ -23,7 +23,7 @@ mise run lint         # ruff
 mise run typecheck    # pyright
 ```
 
-- Tests mirror the package: the tests for `src/departureboard/<folder>/<module>.py` are in `tests/<folder>/test_<module>.py`. `tests/test_deploy.py` keeps the deploy files and the docs that describe them in step, so change them together with the code.
+- Tests mirror the package: the tests for `src/twobells/<folder>/<module>.py` are in `tests/<folder>/test_<module>.py`. `tests/test_deploy.py` keeps the deploy files and the docs that describe them in step, so change them together with the code.
 - Fixing a bug starts with a test that fails because of it. Then the fix.
 - When a test fails, fix the code, not the test. Change a test only when the intended behaviour has changed, and say so.
 - The JS behaviour tests run when `node` is on PATH.

@@ -13,10 +13,10 @@ from typing import ClassVar
 import pytest
 from PIL import Image
 
-from departureboard.cli.main import main
-from departureboard.settings.config import ConfigError, load_env_file
-from departureboard.sources import holidays
 from tests.paths import FIXTURES, ROOT
+from twobells.cli.main import main
+from twobells.settings.config import ConfigError, load_env_file
+from twobells.sources import holidays
 
 
 @pytest.fixture(autouse=True)
@@ -62,7 +62,7 @@ def test_demo_can_show_a_notice_and_a_rain_line(tmp_path, display, theme):
 
 
 def test_demo_rain_line_follows_the_rain_rule(monkeypatch, tmp_path):
-    from departureboard.cli import dev
+    from twobells.cli import dev
 
     views = []
     real = dev.build_view
@@ -75,7 +75,7 @@ def test_demo_rain_line_follows_the_rain_rule(monkeypatch, tmp_path):
 
 
 def test_demo_names_glossop_s_two_henry_street_stops(monkeypatch, tmp_path):
-    from departureboard.cli import dev
+    from twobells.cli import dev
 
     views = []
     real = dev.build_view
@@ -138,7 +138,7 @@ PAYLOADS = {
 
 @pytest.fixture
 def probe_env(tmp_path, monkeypatch):
-    from departureboard.sources.transportapi import TransportApiBusSource
+    from twobells.sources.transportapi import TransportApiBusSource
 
     calls = []
 
@@ -209,7 +209,7 @@ def test_probe_bus_works_without_rail_key(probe_env, capsys):
 def test_probe_train_reports_http_errors_on_one_line(tmp_path, monkeypatch, capsys):
     from urllib.error import HTTPError
 
-    from departureboard.sources.darwin import DarwinSource
+    from twobells.sources.darwin import DarwinSource
 
     def refuse(self):
         raise HTTPError("https://example.test", 403, "Forbidden", None, None)
@@ -232,7 +232,7 @@ def test_probe_train_reports_http_errors_on_one_line(tmp_path, monkeypatch, caps
 def train_probe(tmp_path, monkeypatch):
     """A train config, and a fake Darwin that answers with the synthetic
     detailed Glossop board and records the URLs asked for."""
-    from departureboard.sources import darwin
+    from twobells.sources import darwin
 
     board = json.loads((FIXTURES / "ldbws_glossop_details.json").read_text())
     urls = []
@@ -271,7 +271,7 @@ def test_probe_details_is_for_trains_only(probe_env, capsys):
 
 
 def test_emulate_primes_the_first_tick(monkeypatch):
-    from departureboard.cli import dev
+    from twobells.cli import dev
 
     seen = {}
     monkeypatch.setattr(dev, "run_loop", lambda *a, **kw: seen.update(kw))
@@ -282,8 +282,8 @@ def test_emulate_primes_the_first_tick(monkeypatch):
 def _run_setup(tmp_path, monkeypatch):
     from datetime import datetime
 
-    from departureboard.cli import run
-    from departureboard.sources.darwin import DarwinSource
+    from twobells.cli import run
+    from twobells.sources.darwin import DarwinSource
 
     calls = []
     monkeypatch.setattr(DarwinSource, "fetch", lambda self: calls.append(1) or [])
@@ -309,7 +309,7 @@ def test_the_first_run_primes_outside_windows_and_later_runs_respect_them(tmp_pa
 
 def test_run_loop_on_a_screen_draws_a_running_clock(tmp_path, monkeypatch, caplog):
     # A board that is set up: the loop draws departures, not the set-me-up page.
-    from departureboard.sources.darwin import DarwinSource
+    from twobells.sources.darwin import DarwinSource
 
     caplog.set_level("INFO")
     calls = []
@@ -331,8 +331,8 @@ def test_run_loop_on_a_screen_draws_a_running_clock(tmp_path, monkeypatch, caplo
 
 @pytest.mark.parametrize("display, frames", [("hdmi-1920x440", True), ("waveshare-10in85g", False)])
 def test_a_running_screen_draws_frames_for_scrolling_text_and_e_paper_does_not(tmp_path, monkeypatch, display, frames):
-    from departureboard.board.scroll import SCROLL_FRAME_S
-    from departureboard.cli import run
+    from twobells.board.scroll import SCROLL_FRAME_S
+    from twobells.cli import run
 
     seen = {}
     monkeypatch.setattr(run, "run_loop", lambda *a, **kw: seen.update(kw))
@@ -367,7 +367,7 @@ def test_emulate_refuses_a_port_that_is_not_one(port, capsys):
 
 
 def test_sleeping_to_the_tick_lands_on_a_whole_second(monkeypatch):
-    from departureboard.cli import common
+    from twobells.cli import common
 
     slept = []
     monkeypatch.setattr(common.time, "time", lambda: 1000.25)
@@ -387,7 +387,7 @@ def _route_config(tmp_path):
 def test_route_prints_a_config_block_from_a_timetable_file(tmp_path, capsys, monkeypatch):
     import tomllib
 
-    from departureboard.timetable import routesetup
+    from twobells.timetable import routesetup
 
     fixtures = FIXTURES
     naptan = (fixtures / "naptan_glossop_high_street_west.csv").read_bytes()
@@ -406,9 +406,9 @@ def test_route_searches_each_download_before_fetching_the_next(tmp_path, capsys,
     import io
     import zipfile
 
-    from departureboard.cli import dev
-    from departureboard.core import net
-    from departureboard.timetable import routesetup
+    from twobells.cli import dev
+    from twobells.core import net
+    from twobells.timetable import routesetup
 
     txc = (FIXTURES / "txc_glossop_synthetic.xml").read_bytes()
     buffer = io.BytesIO()
@@ -447,7 +447,7 @@ def test_route_needs_a_known_stop(tmp_path, capsys):
 
 
 def test_keys_saved_from_the_web_page_win_over_secrets_env(tmp_path):
-    from departureboard.cli.dev import _env
+    from twobells.cli.dev import _env
 
     config = tmp_path / "config.toml"
     config.write_text(f'state_file = "{tmp_path / "state" / "state.json"}"\n')
@@ -463,8 +463,8 @@ def test_keys_saved_from_the_web_page_win_over_secrets_env(tmp_path):
 def _watched(tmp_path, extra=""):
     import argparse
 
-    from departureboard.cli.common import load_settings
-    from departureboard.cli.run import _Watcher
+    from twobells.cli.common import load_settings
+    from twobells.cli.run import _Watcher
 
     state = tmp_path / "state"
     state.mkdir()
@@ -484,7 +484,7 @@ def test_watcher_reloads_when_saved_settings_change(tmp_path):
 
 
 def test_watcher_asks_for_a_restart_when_the_display_changes(tmp_path):
-    from departureboard.cli.run import _Restart
+    from twobells.cli.run import _Restart
 
     watcher, state = _watched(tmp_path, 'display = "hdmi-1280x400"\n')
     (state / "settings.toml").write_text("rotate = 90\n")
@@ -498,8 +498,8 @@ def test_a_running_screen_picks_up_a_newly_saved_where_each_train_is_key(tmp_pat
     (tmp_path / "state" / "secrets.env").write_text("RDM_API_KEY=rail-key-1234567\n")
     import argparse
 
-    from departureboard.cli.common import load_settings
-    from departureboard.cli.run import _Watcher
+    from twobells.cli.common import load_settings
+    from twobells.cli.run import _Watcher
 
     config = tmp_path / "config.toml"
     config.write_text(f'state_file = "{tmp_path / "state" / "state.json"}"\ndisplay = "hdmi-1280x400"\n'
@@ -521,7 +521,7 @@ def test_watcher_keeps_running_settings_when_new_ones_are_broken(tmp_path):
 
 
 def test_run_saves_state_even_when_drawing_fails(tmp_path, monkeypatch):
-    from departureboard.board.displays.display import PngDisplay
+    from twobells.board.displays.display import PngDisplay
 
     args, calls = _run_setup(tmp_path, monkeypatch)
 
@@ -542,7 +542,7 @@ def _stopped_while_drawing(monkeypatch):
     process would die there and then, skipping the cleanup."""
     import signal
 
-    from departureboard.board.displays.display import PngDisplay
+    from twobells.board.displays.display import PngDisplay
 
     def stopped(self, image):
         handler = signal.getsignal(signal.SIGTERM)
@@ -576,7 +576,7 @@ def test_a_running_screen_stopped_by_sigterm_still_saves_what_it_fetched(tmp_pat
 
 
 def test_env_without_a_readable_config_is_just_the_environment(tmp_path):
-    from departureboard.cli.dev import _env
+    from twobells.cli.dev import _env
 
     config = tmp_path / "config.toml"
     config.write_text("title = \n")
@@ -620,7 +620,7 @@ def _web_config(tmp_path):
 def test_reset_code_prints_a_code_the_page_will_take(tmp_path, capsys):
     import time
 
-    from departureboard.web.auth import ResetCodes
+    from twobells.web.auth import ResetCodes
 
     config, state = _web_config(tmp_path)
     assert main(["web", "--config", str(config), "--reset-code"]) == 0
@@ -665,7 +665,7 @@ def test_reset_code_still_comes_when_the_time_zone_setting_is_broken(tmp_path, c
 def test_reset_code_is_not_held_back_by_the_pages_limits(tmp_path, capsys):
     import time
 
-    from departureboard.web.auth import ResetCodes
+    from twobells.web.auth import ResetCodes
 
     config, state = _web_config(tmp_path)
     ResetCodes(state).issue(time.time())  # someone just pressed the page's button
@@ -714,15 +714,15 @@ def test_root_is_refused_a_store_that_belongs_to_the_services_user(root_on_their
     argv = [*command, "--config", str(config)]
     assert main(argv) == 2
     said = capsys.readouterr()
-    assert said.err.splitlines() == [f"Run this as the service's user: sudo -u {owner} departureboard {shlex.join(argv)}"]
+    assert said.err.splitlines() == [f"Run this as the service's user: sudo -u {owner} twobells {shlex.join(argv)}"]
     assert said.out == "" and list(state.iterdir()) == []
 
 
 @pytest.mark.parametrize("argv0, named", [
     # On a Pi it isn't on the PATH, so the line names it where it was run from.
-    ("/opt/departureboard/venv/bin/departureboard", "/opt/departureboard/venv/bin/departureboard"),
-    ("departureboard", "departureboard"),  # found on the PATH (or not): its name does
-    ("/usr/bin/pytest", "departureboard"),  # run some other way, as in these tests
+    ("/opt/twobells/venv/bin/twobells", "/opt/twobells/venv/bin/twobells"),
+    ("twobells", "twobells"),  # found on the PATH (or not): its name does
+    ("/usr/bin/pytest", "twobells"),  # run some other way, as in these tests
 ])
 def test_the_line_for_root_names_the_program_as_it_was_run(root_on_their_store, capsys, monkeypatch, argv0, named):
     import shlex
@@ -748,7 +748,7 @@ def test_root_may_still_run_what_only_reads_the_store(root_on_their_store, capsy
 
 
 def test_root_may_use_its_own_store_and_anyone_else_goes_ahead_as_today(root_on_their_store, monkeypatch, capsys):
-    from departureboard.settings import store
+    from twobells.settings import store
 
     config, state, _ = root_on_their_store
     monkeypatch.setattr(store, "_owner", lambda folder: 0)
@@ -763,8 +763,8 @@ def _holiday_run(tmp_path, monkeypatch, extra=""):
     """A board with a Mon-Fri train window, run at 07:00 on the August bank holiday Monday."""
     from datetime import datetime
 
-    from departureboard.cli import run
-    from departureboard.sources.darwin import DarwinSource
+    from twobells.cli import run
+    from twobells.sources.darwin import DarwinSource
 
     calls = []
     monkeypatch.setattr(DarwinSource, "fetch", lambda self: calls.append(1) or [])
@@ -831,8 +831,8 @@ def test_a_probe_never_asks_gov_uk(tmp_path, monkeypatch, gov_uk):
 def test_reloaded_settings_keep_the_bank_holidays(tmp_path, monkeypatch):
     import argparse
 
-    from departureboard.cli.common import load_settings
-    from departureboard.cli.run import _Watcher
+    from twobells.cli.common import load_settings
+    from twobells.cli.run import _Watcher
 
     args, _ = _holiday_run(tmp_path, monkeypatch)
     namespace = argparse.Namespace(config=args[1], secrets=args[3])
@@ -858,8 +858,8 @@ def bods_env(tmp_path, monkeypatch):
 
 
 def test_timetable_builds_and_reports_the_bus_timetable(bods_env, monkeypatch, capsys):
-    from departureboard.timetable import build as timetable
-    from departureboard.timetable.model import Calendar, Call, Journey, Schedule
+    from twobells.timetable import build as timetable
+    from twobells.timetable.model import Calendar, Call, Journey, Schedule
 
     args, folder = bods_env
     seen = {}
@@ -886,7 +886,7 @@ def test_timetable_builds_and_reports_the_bus_timetable(bods_env, monkeypatch, c
     (["--install", "pi"], (50_000_000, 50_000_000, 7_000)),  # the Pi's timer, to fit its unit's memory
 ])
 def test_timetable_reads_as_much_of_each_file_as_its_install_allows(bods_env, monkeypatch, install, limits):
-    from departureboard.timetable import build as timetable
+    from twobells.timetable import build as timetable
 
     args, _ = bods_env
     seen = []
@@ -896,7 +896,7 @@ def test_timetable_reads_as_much_of_each_file_as_its_install_allows(bods_env, mo
 
 
 def test_timetable_fails_when_no_timetable_could_be_built(bods_env, monkeypatch, capsys):
-    from departureboard.timetable import build as timetable
+    from twobells.timetable import build as timetable
 
     args, _ = bods_env
     monkeypatch.setattr(timetable, "refresh", lambda *a, **k: None)
@@ -912,7 +912,7 @@ def test_timetable_needs_the_bods_bus_source(probe_env, capsys):
 
 def test_timetable_with_buses_switched_off_has_nothing_to_do(bods_env, monkeypatch, capsys):
     # The wizard switches buses off for a board of trains alone; the weekly timer must still succeed.
-    from departureboard.timetable import build as timetable
+    from twobells.timetable import build as timetable
 
     args, folder = bods_env
     folder.mkdir()
@@ -926,7 +926,7 @@ def test_timetable_with_buses_switched_off_has_nothing_to_do(bods_env, monkeypat
 
 def test_timetable_builds_from_bods_set_only_in_the_saved_settings(bods_env, monkeypatch, capsys):
     # The settings site or the wizard saved source = "bods" and the operators; config.toml says neither.
-    from departureboard.timetable import build as timetable
+    from twobells.timetable import build as timetable
 
     args, folder = bods_env
     config = Path(args[1])
@@ -952,7 +952,7 @@ def test_timetable_is_skipped_while_another_build_runs(bods_env, monkeypatch, ca
     import fcntl
     import os
 
-    from departureboard.timetable import build as timetable
+    from twobells.timetable import build as timetable
 
     args, folder = bods_env
     folder.mkdir()
@@ -967,7 +967,7 @@ def test_timetable_is_skipped_while_another_build_runs(bods_env, monkeypatch, ca
 
 
 def test_timetable_fails_when_its_lock_cannot_be_opened(bods_env, capsys):
-    from departureboard.timetable import build as timetable
+    from twobells.timetable import build as timetable
 
     args, folder = bods_env
     folder.mkdir()
@@ -989,18 +989,18 @@ def test_probe_bus_with_bods_says_why_it_cannot_use_the_timetable(bods_env, caps
     assert main(["probe", "bus", *args]) == 1
     captured = capsys.readouterr()
     assert "there is no bus timetable yet" in captured.out
-    assert "departureboard timetable" in captured.out
+    assert "twobells timetable" in captured.out
 
 
 # The web dashboard
 
 
 def test_dashboard_options_parse_with_their_defaults():
-    from departureboard.cli.main import _parser
+    from twobells.cli.main import _parser
 
     args = _parser().parse_args(["dashboard"])
     assert (args.state_dir, args.host, args.port, args.lan, args.no_browser) == (None, "127.0.0.1", None, False, False)
-    assert args.config == "/etc/departureboard/config.toml"
+    assert args.config == "/etc/twobells/config.toml"
     args = _parser().parse_args([
         "dashboard", "--config", "c.toml", "--secrets", "/nonexistent", "--state-dir", "/data",
         "--host", "0.0.0.0", "--port", "8090", "--lan", "--no-browser",
@@ -1041,9 +1041,9 @@ def test_dashboard_never_moves_off_a_port_it_was_given(dashboard_config, tmp_pat
 
 
 def test_dashboard_runs_until_interrupted_and_lets_go_of_its_folder(dashboard_config, tmp_path, monkeypatch, capsys):
-    from departureboard.core import net
-    from departureboard.dashboard.config import load_dashboard
-    from departureboard.web import server as dashserver
+    from twobells.core import net
+    from twobells.dashboard.config import load_dashboard
+    from twobells.web import server as dashserver
 
     def offline(request, timeout):
         raise OSError("offline in tests")
@@ -1091,9 +1091,9 @@ def answering(port, deadline=10.0):
 
 
 def test_dashboard_starts_again_when_its_saved_settings_change(dashboard_config, tmp_path, monkeypatch, caplog):
-    from departureboard.cli import serve
-    from departureboard.core import net
-    from departureboard.dashboard.config import load_dashboard
+    from twobells.cli import serve
+    from twobells.core import net
+    from twobells.dashboard.config import load_dashboard
 
     def offline(request, timeout):
         raise OSError("offline in tests")
@@ -1125,13 +1125,13 @@ def test_dashboard_starts_again_when_its_saved_settings_change(dashboard_config,
 
 
 def test_starting_again_runs_the_same_command_on_the_same_port_without_the_browser(monkeypatch):
-    from departureboard.cli import serve
+    from twobells.cli import serve
 
     ran = []
-    monkeypatch.setattr(sys, "orig_argv", ["python3", "-m", "departureboard", "dashboard", "--lan"])
+    monkeypatch.setattr(sys, "orig_argv", ["python3", "-m", "twobells", "dashboard", "--lan"])
     monkeypatch.setattr(os, "execv", lambda path, argv: ran.append((path, argv)))
     serve._start_again(8091)
-    assert ran == [(sys.executable, [sys.executable, "-m", "departureboard", "dashboard", "--lan",
+    assert ran == [(sys.executable, [sys.executable, "-m", "twobells", "dashboard", "--lan",
                                      "--no-browser", "--port", "8091"])]
 
 
@@ -1153,9 +1153,9 @@ class Stopped:
 @pytest.fixture
 def served(monkeypatch):
     """What serve would serve, and where: make_server records it and the server stops at once."""
-    from departureboard.core import net
-    from departureboard.web import netguard
-    from departureboard.web import server as dashserver
+    from twobells.core import net
+    from twobells.web import netguard
+    from twobells.web import server as dashserver
 
     def offline(request, timeout):
         raise OSError("offline in tests")
@@ -1182,7 +1182,7 @@ def ask(app, path, fields=None):
     for real on a free port: (status, Location, body)."""
     from urllib.parse import urlencode
 
-    from departureboard.web.server import DashboardServer
+    from twobells.web.server import DashboardServer
 
     server = DashboardServer(("127.0.0.1", 0), app)
     threading.Thread(target=server.serve_forever, args=(0.05,), daemon=True).start()
@@ -1230,7 +1230,7 @@ def test_serve_tells_the_dashboard_and_the_settings_its_version(tmp_path, served
     app = served["app"]
     assert app.settings.version == wanted
     # How the footer shows it is tests/web/test_server.py's; here, that the page is given this version.
-    assert f"departureboard {wanted}" in app.static.get("index.html").body.decode()
+    assert f"twobells {wanted}" in app.static.get("index.html").body.decode()
 
 
 @pytest.mark.parametrize("argv, host, port, attempts, browser", [
@@ -1254,7 +1254,7 @@ def test_serve_listens_and_opens_the_browser_as_its_install_does(tmp_path, serve
 
 def test_serve_on_a_pi_not_set_up_shows_no_dashboard_and_hands_setup_to_the_fetch_service(tmp_path, served,
                                                                                          monkeypatch):
-    from departureboard.setup.spool.runner import SpoolRunner
+    from twobells.setup.spool.runner import SpoolRunner
 
     run = tmp_path / "run"
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
@@ -1272,7 +1272,7 @@ def test_serve_on_a_pi_not_set_up_shows_no_dashboard_and_hands_setup_to_the_fetc
 @pytest.fixture
 def pi_with_the_dashboard(tmp_path, monkeypatch, dashboard_config):
     """A Pi set up, with its spool in memory and the dashboard view on; no pollers may run in serve."""
-    from departureboard.dashboard import collector
+    from twobells.dashboard import collector
 
     monkeypatch.setattr(collector, "Collector", lambda *args, **kwargs: pytest.fail("pollers in serve"))
     run = tmp_path / "run"
@@ -1289,11 +1289,11 @@ def test_serve_on_a_pi_shows_the_dashboard_the_fetch_service_hands_over(tmp_path
                                                                          capsys):
     import fcntl
 
-    from departureboard.core.walk import WalkTimes
-    from departureboard.dashboard.history import History
-    from departureboard.dashboard.snapshot import Hub
-    from departureboard.fetch import handoff
-    from departureboard.setup.spool.folder import Spool
+    from twobells.core.walk import WalkTimes
+    from twobells.dashboard.history import History
+    from twobells.dashboard.snapshot import Hub
+    from twobells.fetch import handoff
+    from twobells.setup.spool.folder import Spool
 
     args, folder, run = pi_with_the_dashboard
     assert main(args) == 0
@@ -1366,7 +1366,7 @@ FIRST_RUNS = {
 def test_a_first_run_serves_the_settings_and_signing_in_opens_the_wizard(tmp_path, served, monkeypatch, capsys,
                                                                          install, config):
     # Docker's first start (no config.toml), a blank one, and the template as installed on a Pi.
-    from departureboard.web.auth import PasswordStore
+    from twobells.web.auth import PasswordStore
 
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))  # the Pi's spool, in memory
     path, folder = tmp_path / "config.toml", tmp_path / "data"
@@ -1392,11 +1392,11 @@ def test_a_first_run_serves_the_settings_and_signing_in_opens_the_wizard(tmp_pat
 @pytest.mark.parametrize("install", ["pi", "docker", "desktop"])
 def test_serve_on_a_pi_checks_it_cant_connect_out_for_the_overview(tmp_path, served, monkeypatch, install):
     # A Pi's web server is kept off the internet (its unit's firewall and
-    # departureboard-web.nft); Docker's and a desktop's fetch for themselves.
-    from departureboard.settings.installs import install_named
+    # twobells-web.nft); Docker's and a desktop's fetch for themselves.
+    from twobells.settings.installs import install_named
 
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
-    from departureboard.web import netguard
+    from twobells.web import netguard
 
     served["guard"] = 0  # the datagram went: nothing stops it
     assert main(["serve", "--install", install, "--config", str(tmp_path / "config.toml"), "--no-browser",
@@ -1439,10 +1439,10 @@ class Browser:
 
 def test_dockers_first_run_claims_in_the_log_sets_up_and_starts_the_dashboard_again(tmp_path, monkeypatch, caplog):
     # A new container: no config.toml, nothing saved, the key from the environment.
-    from departureboard.cli import serve
-    from departureboard.core import net
-    from departureboard.dashboard import collector
-    from departureboard.web import server as dashserver
+    from twobells.cli import serve
+    from twobells.core import net
+    from twobells.dashboard import collector
+    from twobells.web import server as dashserver
 
     def offline(request, timeout):
         raise OSError("offline in tests")
@@ -1511,8 +1511,8 @@ def test_dockers_first_run_claims_in_the_log_sets_up_and_starts_the_dashboard_ag
     assert main(argv) == 0
     assert made["app"].hub is not None and len(started) == 1
     # Its upkeep builds the bus timetable within Docker's limits, which fit the container.
-    from departureboard.settings.installs import install_named
-    from departureboard.timetable.routesetup import document_limits
+    from twobells.settings.installs import install_named
+    from twobells.timetable.routesetup import document_limits
 
     assert started[0]._timetable_limits == document_limits(install_named("docker"))
 
@@ -1529,7 +1529,7 @@ def test_serve_with_the_dashboard_view_off_runs_only_the_settings(tmp_path, serv
 
 @pytest.mark.parametrize("install", ["docker"])  # a desktop's is the dashboard command's, tested below
 def test_serve_sets_the_password_and_prints_a_code_in_the_store(tmp_path, typed, no_dashboard, capsys, install):
-    from departureboard.web.auth import PasswordStore, ResetCodes
+    from twobells.web.auth import PasswordStore, ResetCodes
 
     typed[0].extend([DASH_PASSWORD] * 2)
     folder = tmp_path / "data"
@@ -1550,15 +1550,15 @@ def test_serve_knows_only_the_installs_there_are(tmp_path, capsys):
 
 
 def listed_commands(help_text=None):
-    """The commands `departureboard --help` lists, from its {run,probe,...}."""
-    from departureboard.cli.main import _parser
+    """The commands `twobells --help` lists, from its {run,probe,...}."""
+    from twobells.cli.main import _parser
 
     help_text = _parser().format_help() if help_text is None else help_text
     return re.search(r"\{([a-z,]+)\}", help_text).group(1).split(",")
 
 
 def test_the_old_dashboard_command_is_hidden_but_works(capsys):
-    from departureboard.cli.main import _parser
+    from twobells.cli.main import _parser
 
     help_text = _parser().format_help()
     listed = listed_commands(help_text)
@@ -1569,8 +1569,8 @@ def test_the_old_dashboard_command_is_hidden_but_works(capsys):
 
 
 def test_the_fetch_service_is_listed_and_its_old_name_hidden_but_works(capsys):
-    from departureboard.cli.main import _parser
-    from departureboard.cli.serve import fetch_command
+    from twobells.cli.main import _parser
+    from twobells.cli.serve import fetch_command
 
     parser = _parser()
     assert "fetch" in listed_commands()
@@ -1578,14 +1578,14 @@ def test_the_fetch_service_is_listed_and_its_old_name_hidden_but_works(capsys):
         parser.parse_args(["setup", "--help"])
     assert "serve" not in capsys.readouterr().out
     for argv in (["fetch"], ["setup", "serve"]):
-        args = parser.parse_args([*argv, "--config", "/etc/departureboard/config.toml"])
+        args = parser.parse_args([*argv, "--config", "/etc/twobells/config.toml"])
         assert (args.handler, args.install, args.state_dir) == (fetch_command, "pi", None)
     with pytest.raises(SystemExit):
         parser.parse_args(["fetch", "--install", "docker"])  # Docker and a desktop fetch in-process
 
 
 def _query(tmp_path, what, config="", saved=""):
-    """`departureboard query` as the Pi's scripts ask it, with the board's store at tmp_path/state."""
+    """`twobells query` as the Pi's scripts ask it, with the board's store at tmp_path/state."""
     state = tmp_path / "state"
     state.mkdir(exist_ok=True)
     (tmp_path / "config.toml").write_text(f'state_file = "{state / "state.json"}"\n{config}')
@@ -1641,7 +1641,7 @@ def test_query_says_why_when_the_settings_cant_be_read(tmp_path, capsys, what, c
 
 
 def test_query_needs_no_keys_and_is_hidden(tmp_path, monkeypatch, capsys):
-    from departureboard.cli.main import _parser
+    from twobells.cli.main import _parser
 
     for name in ("RDM_API_KEY", "BODS_API_KEY", "TAPI_APP_ID", "TAPI_APP_KEY"):
         monkeypatch.delenv(name, raising=False)
@@ -1669,9 +1669,9 @@ class FakeServer:
 ])
 def test_serve_starts_again_only_when_the_dashboard_should_start_stop_or_change(
         dashboard_config, tmp_path, monkeypatch, running, saved, restarts):
-    from departureboard.cli import serve
-    from departureboard.settings.installs import install_named
-    from departureboard.settings.store import Store
+    from twobells.cli import serve
+    from twobells.settings.installs import install_named
+    from twobells.settings.store import Store
 
     monkeypatch.setattr(serve, "SETTINGS_CHECK_S", 0.02)
     folder = tmp_path / "data"
@@ -1698,11 +1698,11 @@ def test_a_pis_mirror_wakes_the_fetch_service_only_when_it_would_run_the_dashboa
         dashboard_config, tmp_path, saved, wakes):
     # A fetch service that can't load the dashboard's settings stops when idle;
     # waking it every minute for that would be a restart loop.
-    from departureboard.cli import serve
-    from departureboard.fetch.service import FetchService
-    from departureboard.settings.installs import install_named
-    from departureboard.settings.store import Store
-    from departureboard.setup.spool.runner import SpoolRunner
+    from twobells.cli import serve
+    from twobells.fetch.service import FetchService
+    from twobells.settings.installs import install_named
+    from twobells.settings.store import Store
+    from twobells.setup.spool.runner import SpoolRunner
 
     pi = install_named("pi")
     folder = tmp_path / "data"
@@ -1744,8 +1744,8 @@ def typed(monkeypatch):
 @pytest.fixture
 def no_dashboard(monkeypatch):
     """Fails the test if the dashboard itself would start."""
-    from departureboard.dashboard import config as dashconfig
-    from departureboard.web import server as dashserver
+    from twobells.dashboard import config as dashconfig
+    from twobells.web import server as dashserver
 
     def started(*args, **kwargs):
         raise AssertionError("the dashboard started")
@@ -1755,7 +1755,7 @@ def no_dashboard(monkeypatch):
 
 
 def test_dashboard_set_password_needs_only_its_folder_as_in_docker(tmp_path, typed, no_dashboard, capsys):
-    from departureboard.web.auth import PasswordStore
+    from twobells.web.auth import PasswordStore
 
     answers, prompts = typed
     answers += [DASH_PASSWORD, DASH_PASSWORD]
@@ -1772,8 +1772,8 @@ def test_dashboard_set_password_needs_only_its_folder_as_in_docker(tmp_path, typ
 
 def test_dashboard_set_password_finds_the_folder_as_the_dashboard_does(tmp_path, typed, no_dashboard,
                                                                         monkeypatch):
-    from departureboard.settings import store
-    from departureboard.web.auth import PasswordStore
+    from twobells.settings import store
+    from twobells.web.auth import PasswordStore
 
     answers, _ = typed
     config = tmp_path / "config.toml"
@@ -1792,14 +1792,14 @@ def test_dashboard_set_password_finds_the_folder_as_the_dashboard_does(tmp_path,
     answers += [DASH_PASSWORD] * 2
     assert main(["dashboard", "--config", str(config), "--set-password"]) == 0
     assert PasswordStore(store.platform_folder() / "web.json").check(DASH_PASSWORD)
-    assert store.platform_folder().name == "departureboard"
+    assert store.platform_folder().name == "twobells"
     assert str(store.platform_folder()).startswith(str(tmp_path))
 
 
 def test_dashboard_set_password_without_a_folder_or_config_uses_this_computer_s_folder(tmp_path, typed,
                                                                                       no_dashboard):
-    from departureboard.settings.store import platform_folder
-    from departureboard.web.auth import PasswordStore
+    from twobells.settings.store import platform_folder
+    from twobells.web.auth import PasswordStore
 
     typed[0].extend([DASH_PASSWORD] * 2)
     assert main(["dashboard", "--config", str(tmp_path / "missing.toml"), "--set-password"]) == 0
@@ -1807,7 +1807,7 @@ def test_dashboard_set_password_without_a_folder_or_config_uses_this_computer_s_
 
 
 def test_dashboard_set_password_uses_the_same_password_as_the_boards_page(tmp_path, typed, no_dashboard, capsys):
-    from departureboard.web.auth import PasswordStore, ResetCodes, show_in_log
+    from twobells.web.auth import PasswordStore, ResetCodes, show_in_log
 
     config, state = _web_config(tmp_path)
     typed[0].extend([DASH_PASSWORD] * 2)
@@ -1823,7 +1823,7 @@ def test_dashboard_set_password_uses_the_same_password_as_the_boards_page(tmp_pa
     (DASH_PASSWORD, "something else entirely", "Those didn't match"),
 ])
 def test_dashboard_set_password_refuses_a_bad_one(tmp_path, typed, capsys, first, again, says):
-    from departureboard.web.auth import PasswordStore
+    from twobells.web.auth import PasswordStore
 
     folder = tmp_path / "data"
     PasswordStore(folder / "web.json").set("the old password")
@@ -1834,8 +1834,8 @@ def test_dashboard_set_password_refuses_a_bad_one(tmp_path, typed, capsys, first
 
 
 def test_dashboard_set_password_works_beside_a_running_dashboard(dashboard_config, tmp_path, typed):
-    from departureboard.dashboard.config import load_dashboard
-    from departureboard.web.auth import PasswordStore
+    from twobells.dashboard.config import load_dashboard
+    from twobells.web.auth import PasswordStore
 
     folder = tmp_path / "dash"
     running = load_dashboard(dashboard_config, {"RDM_API_KEY": "k"}, folder)  # holds the folder's lock
@@ -1876,7 +1876,7 @@ def test_the_password_flags_are_one_or_the_other(tmp_path, command):
 
 
 def test_dashboard_reset_code_prints_one_code_the_settings_will_take(tmp_path, no_dashboard, capsys, caplog):
-    from departureboard.web.auth import ResetCodes, show_in_log
+    from twobells.web.auth import ResetCodes, show_in_log
 
     caplog.set_level("DEBUG")
     folder = tmp_path / "data"
@@ -1900,10 +1900,10 @@ def test_dashboard_reset_code_prints_one_code_the_settings_will_take(tmp_path, n
 ])
 def test_the_setup_wizard_is_one_page_on_every_install_in_its_own_words(dashboard_config, tmp_path, install, noun,
                                                                         offered, on, links):
-    from departureboard.cli import serve
-    from departureboard.settings.installs import install_named
-    from departureboard.settings.schema import keys
-    from departureboard.settings.store import Store
+    from twobells.cli import serve
+    from twobells.settings.installs import install_named
+    from twobells.settings.schema import keys
+    from twobells.settings.store import Store
 
     folder = tmp_path / "dash"
     folder.mkdir()
@@ -1923,7 +1923,7 @@ TEMPLATE = ROOT / "examples/config.example.toml"
 
 
 def installed_template(tmp_path, display=None):
-    text = TEMPLATE.read_text().replace("/var/lib/departureboard/state.json", str(tmp_path / "state" / "state.json"))
+    text = TEMPLATE.read_text().replace("/var/lib/twobells/state.json", str(tmp_path / "state" / "state.json"))
     if display:
         text = text.replace('display = "inky"', f'display = "{display}"')
     config = tmp_path / "config.toml"
@@ -1941,7 +1941,7 @@ def saved_page(folder):
 
 
 def test_a_template_config_shows_the_setup_page_instead_of_failing(tmp_path, monkeypatch, caplog):
-    from departureboard.cli import common
+    from twobells.cli import common
 
     caplog.set_level("INFO")
     monkeypatch.setattr(common.socket, "gethostname", lambda: "kitchen-board")
@@ -1959,7 +1959,7 @@ def test_a_template_config_shows_the_setup_page_instead_of_failing(tmp_path, mon
 
 @pytest.mark.parametrize("config", sorted(FIRST_RUNS))
 def test_a_pi_not_set_up_shows_set_me_up_with_the_settings_address(tmp_path, monkeypatch, caplog, config):
-    from departureboard.cli import common
+    from twobells.cli import common
 
     caplog.set_level("INFO")
     monkeypatch.setattr(common.socket, "gethostname", lambda: "kitchen-board")
@@ -1985,7 +1985,7 @@ def test_the_setup_page_is_drawn_for_the_configured_display(tmp_path, display, s
 def test_a_code_asked_for_shows_on_a_board_not_yet_set_up(tmp_path):
     import time
 
-    from departureboard.web.auth import ResetCodes
+    from twobells.web.auth import ResetCodes
 
     config = installed_template(tmp_path)
     assert main(first_run_args(tmp_path, config)) == 0
@@ -2002,7 +2002,7 @@ def test_a_screen_not_yet_set_up_keeps_running(tmp_path):
 
 
 def test_a_screen_starts_again_once_set_up(tmp_path, monkeypatch):
-    from departureboard.cli import run
+    from twobells.cli import run
 
     answers = iter([True, True, False])  # set up between the first tick and the second
     monkeypatch.setattr(run, "needs_setup", lambda config: next(answers))
@@ -2014,7 +2014,7 @@ def test_a_screen_starts_again_once_set_up(tmp_path, monkeypatch):
 
 
 def test_a_running_board_asks_whether_it_is_set_up_every_few_seconds(monkeypatch):
-    from departureboard.cli import run
+    from twobells.cli import run
 
     asked = []
     monkeypatch.setattr(run, "needs_setup", lambda config: asked.append(config) or True)
@@ -2049,9 +2049,9 @@ def board_with_views(tmp_path, views, display=None):
 @pytest.fixture
 def fetched(monkeypatch):
     """Every fetch the board makes: trains, TransportAPI's buses and bank holidays."""
-    from departureboard.cli import common
-    from departureboard.sources.darwin import DarwinSource
-    from departureboard.sources.transportapi import TransportApiBusSource
+    from twobells.cli import common
+    from twobells.sources.darwin import DarwinSource
+    from twobells.sources.transportapi import TransportApiBusSource
 
     calls = []
     monkeypatch.setattr(DarwinSource, "fetch", lambda self: calls.append("train") or [])
@@ -2075,7 +2075,7 @@ def test_with_the_board_view_off_the_board_says_so_and_fetches_nothing(tmp_path,
 
 
 def test_the_board_off_page_says_where_to_turn_it_on(tmp_path, fetched, monkeypatch):
-    from departureboard.cli import common, run
+    from twobells.cli import common, run
 
     shown = []
     real = run.run_once
@@ -2094,7 +2094,7 @@ def test_with_the_board_view_on_the_board_fetches_as_ever(tmp_path, fetched):
 
 
 def test_a_code_asked_for_still_shows_with_the_board_view_off(tmp_path, fetched):
-    from departureboard.web.auth import ResetCodes
+    from twobells.web.auth import ResetCodes
 
     args = board_with_views(tmp_path, ["dashboard"])
     assert main(args) == 0
@@ -2104,7 +2104,7 @@ def test_a_code_asked_for_still_shows_with_the_board_view_off(tmp_path, fetched)
 
 
 def test_a_screen_with_the_board_view_off_starts_again_once_it_is_on(tmp_path, fetched, monkeypatch):
-    from departureboard.cli import run
+    from twobells.cli import run
 
     answers = iter([False, False, False, True])  # turned on after a couple of ticks
     monkeypatch.setattr(run, "_board_on", lambda store: next(answers))
@@ -2115,8 +2115,8 @@ def test_a_screen_with_the_board_view_off_starts_again_once_it_is_on(tmp_path, f
 
 
 def test_a_screen_with_the_board_view_off_asks_every_few_seconds(tmp_path, monkeypatch):
-    from departureboard.cli import run
-    from departureboard.settings.store import Store
+    from twobells.cli import run
+    from twobells.settings.store import Store
 
     board_with_views(tmp_path, ["dashboard"])
     store = Store.open(tmp_path / "config.toml")
@@ -2134,8 +2134,8 @@ def test_a_screen_with_the_board_view_off_asks_every_few_seconds(tmp_path, monke
 def test_a_running_board_starts_again_when_its_view_is_turned_off(tmp_path, fetched):
     import argparse
 
-    from departureboard.cli.common import load_settings
-    from departureboard.cli.run import _Restart, _Watcher
+    from twobells.cli.common import load_settings
+    from twobells.cli.run import _Restart, _Watcher
 
     run = board_with_views(tmp_path, ["board"])
     args = argparse.Namespace(config=run[2], secrets=run[4])
@@ -2157,8 +2157,8 @@ def test_the_first_run_after_setting_up_fetches_everything(tmp_path, monkeypatch
 def signed_in(app, folder):
     """Set the settings password in `folder` and sign in to `app`, served for
     real on a free port: where signing in leads, and that page's status and body."""
-    from departureboard.web.auth import PasswordStore
-    from departureboard.web.server import DashboardServer
+    from twobells.web.auth import PasswordStore
+    from twobells.web.server import DashboardServer
 
     PasswordStore(folder / "web.json").set(DASH_PASSWORD)
     server = DashboardServer(("127.0.0.1", 0), app)
@@ -2175,7 +2175,7 @@ def signed_in(app, folder):
 
 
 def test_the_settings_open_the_wizard_until_the_board_is_set_up(tmp_path, monkeypatch, capsys, served):
-    from departureboard.web.settingsite import PREFIX, SETUP
+    from twobells.web.settingsite import PREFIX, SETUP
 
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
     config = installed_template(tmp_path)
@@ -2194,12 +2194,12 @@ def no_runtime_folder(tmp_path, monkeypatch):
     """No systemd RuntimeDirectory, and none left in /run: no folder in memory for the setup spool."""
 
     monkeypatch.delenv("RUNTIME_DIRECTORY", raising=False)
-    monkeypatch.setattr("departureboard.setup.spool.folder.RUNTIME", tmp_path / "no-run")
+    monkeypatch.setattr("twobells.setup.spool.folder.RUNTIME", tmp_path / "no-run")
 
 
 def test_the_pis_settings_hand_setup_to_the_fetch_service(tmp_path, monkeypatch, no_runtime_folder, served):
     # Always, now: the flag the unit still passes is taken and changes nothing.
-    from departureboard.setup.spool.runner import SpoolRunner
+    from twobells.setup.spool.runner import SpoolRunner
 
     config = installed_template(tmp_path)
     (tmp_path / "state").mkdir()  # as install.sh and systemd's StateDirectory make it
@@ -2217,7 +2217,7 @@ def test_the_pis_settings_hand_setup_to_the_fetch_service(tmp_path, monkeypatch,
 
 def test_the_fetch_service_searches_in_the_boards_state_folder(tmp_path, monkeypatch, no_runtime_folder):
     # By its old name, `setup serve`, it parses the same: see the fetch service's listing test.
-    from departureboard.setup.spool.worker import Worker
+    from twobells.setup.spool.worker import Worker
 
     ran = []
     monkeypatch.setattr(Worker, "run", lambda self, tend=None: ran.append(self) or 0)
@@ -2236,8 +2236,8 @@ def test_the_fetch_service_searches_in_the_boards_state_folder(tmp_path, monkeyp
 def test_without_a_folder_in_memory_the_setup_spool_is_refused(tmp_path, monkeypatch, capsys, no_runtime_folder,
                                                                flag):
     # Never on the SD card, where flash can keep what was deleted: a request can hold home's position or a key.
-    from departureboard.setup.spool.worker import Worker
-    from departureboard.web import server as dashserver
+    from twobells.setup.spool.worker import Worker
+    from twobells.web import server as dashserver
 
     monkeypatch.setattr(dashserver, "make_server", lambda *args, **kwargs: pytest.fail("served"))
     monkeypatch.setattr(Worker, "run", lambda self: pytest.fail("ran"))
@@ -2256,7 +2256,7 @@ def test_without_a_folder_in_memory_the_setup_spool_is_refused(tmp_path, monkeyp
 
 
 def test_the_page_and_the_fetch_service_share_systemds_folder_in_memory(tmp_path, monkeypatch, served):
-    from departureboard.setup.spool.worker import Worker
+    from twobells.setup.spool.worker import Worker
 
     run = tmp_path / "run"
     run.mkdir(mode=0o700)  # as systemd makes RuntimeDirectory=
@@ -2276,8 +2276,8 @@ def test_the_fetch_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypat
     # systemctl stop, a timeout or update.sh: SIGTERM mid-search. The page is told at once, not after a silence.
     import signal
 
-    from departureboard.setup.spool.runner import SpoolRunner
-    from departureboard.setup.spool.worker import Worker
+    from twobells.setup.spool.runner import SpoolRunner
+    from twobells.setup.spool.worker import Worker
 
     class StuckJob:
         """A discover.SetupJob that runs until cancelled."""
@@ -2305,7 +2305,7 @@ def test_the_fetch_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypat
         raise Unhandled  # SIGTERM reached the test's own handler: the service didn't take it
 
     # The fetch service makes its Worker by the name it imported.
-    monkeypatch.setattr("departureboard.fetch.service.Worker",
+    monkeypatch.setattr("twobells.fetch.service.Worker",
                         lambda *a, **kw: Worker(*a, **{**kw, "make_job": StuckJob}))
     run = tmp_path / "run"
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
@@ -2342,7 +2342,7 @@ def test_the_fetch_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypat
 
 
 def test_the_fetch_service_without_a_config_searches_in_systemds_folder(tmp_path, monkeypatch, no_runtime_folder):
-    from departureboard.setup.spool.worker import Worker
+    from twobells.setup.spool.worker import Worker
 
     ran = []
     monkeypatch.setattr(Worker, "run", lambda self, tend=None: ran.append(self) or 0)
@@ -2357,7 +2357,7 @@ def test_the_fetch_service_without_a_config_searches_in_systemds_folder(tmp_path
 
 @pytest.mark.parametrize("config", ["not toml", "a folder"])
 def test_the_fetch_service_answers_with_why_when_it_cant_read_its_config(tmp_path, monkeypatch, capsys, config):
-    from departureboard.setup.spool.worker import NO_SETTINGS, Worker
+    from twobells.setup.spool.worker import NO_SETTINGS, Worker
 
     run = tmp_path / "run"
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
@@ -2376,7 +2376,7 @@ def test_the_fetch_service_answers_with_why_when_it_cant_read_its_config(tmp_pat
 
 
 def test_without_a_config_the_settings_start_in_systemds_folder(tmp_path, monkeypatch, capsys, served):
-    from departureboard.web.settingsite import SETUP
+    from twobells.web.settingsite import SETUP
 
     folder = tmp_path / "lib"
     folder.mkdir()
@@ -2396,6 +2396,6 @@ def test_without_a_config_the_settings_start_in_systemds_folder(tmp_path, monkey
     ("", "http://raspberrypi.local:8090/settings"),
 ])
 def test_the_setup_address_is_this_pis_name(name, url):
-    from departureboard.cli.common import setup_url
+    from twobells.cli.common import setup_url
 
     assert setup_url(name) == url

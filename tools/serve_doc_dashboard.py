@@ -26,7 +26,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-STATIC = ROOT / "src" / "departureboard" / "dashboard_static"
+STATIC = ROOT / "src" / "twobells" / "dashboard_static"
 FIXTURES = ROOT / "tests" / "fixtures"
 
 

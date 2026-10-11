@@ -1,8 +1,8 @@
 import pytest
 
-from departureboard.board.view import PLAIN, SIGN, Style, build_view
-from departureboard.core.model import Departure, Status
-from departureboard.core.walk import WalkTimes
+from twobells.board.view import PLAIN, SIGN, Style, build_view
+from twobells.core.model import Departure, Status
+from twobells.core.walk import WalkTimes
 
 
 def train(scheduled="07:12", expected=None, status=Status.ON_TIME, dest="Manchester Piccadilly"):
@@ -328,7 +328,7 @@ def test_messages_become_one_notice():
 
 
 def test_notice_is_capped():
-    from departureboard.board.view import NOTICE_LIMIT
+    from twobells.board.view import NOTICE_LIMIT
 
     notice = view(notices=["x" * 300, "y" * 300]).notice
     assert len(notice) == NOTICE_LIMIT and notice.endswith("…")
@@ -339,7 +339,7 @@ def test_signature_changes_with_the_notice():
 
 
 def test_each_row_carries_where_its_train_or_bus_is():
-    from departureboard.core.model import Strip, strip_key
+    from twobells.core.model import Strip, strip_key
 
     train = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, platform="1")
     bus = Departure("bus", "341", "Hyde", "07:20", "07:24", Status.LATE, stop="A")
@@ -353,7 +353,7 @@ def test_each_row_carries_where_its_train_or_bus_is():
 
 
 def test_where_a_train_is_changes_the_view():
-    from departureboard.core.model import Strip, strip_key
+    from twobells.core.model import Strip, strip_key
 
     train = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME)
     before = build_view("Glossop", [train], [], "07:03", set(), strips={strip_key(train): Strip("At Hadfield", 3, 2)})
@@ -363,7 +363,7 @@ def test_where_a_train_is_changes_the_view():
 
 # Wide screens name each bus row's stop: the rule for what they call it.
 
-from departureboard.board.view import STOP_NAME_LIMIT, stop_names_shown  # noqa: E402
+from twobells.board.view import STOP_NAME_LIMIT, stop_names_shown  # noqa: E402
 
 
 def test_a_stop_whose_name_no_other_of_your_stops_shares_is_called_by_its_name():

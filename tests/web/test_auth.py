@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from departureboard.web.auth import (
+from twobells.web.auth import (
     FAILURE_WINDOW_S,
     FORM_PAGE_HEADERS,
     FORM_TOKEN_SECONDS,
@@ -676,7 +676,7 @@ def test_internet_addresses_are_not_private(address):
     assert not private_address(address)
 
 
-@pytest.mark.parametrize("host", ["192.168.1.20:8080", "departureboard:8080", "raspberrypi.local", "pi.lan:8080",
+@pytest.mark.parametrize("host", ["192.168.1.20:8080", "twobells:8080", "raspberrypi.local", "pi.lan:8080",
                                   "board.home.arpa", "[fe80::1]:8080", "[::1]", "localhost:8080", "my-pi", "PI.LOCAL"])
 def test_local_host_names_pass(host):
     assert local_host(host)
@@ -708,7 +708,7 @@ def test_form_pages_carry_strict_headers():
 
 def test_a_non_ascii_csrf_token_is_a_mismatch_not_a_crash():
     # hmac.compare_digest raises TypeError on non-ASCII str; a form can send anything.
-    from departureboard.web.auth import Session, csrf_matches
+    from twobells.web.auth import Session, csrf_matches
 
     session = Session(expires=0.0, csrf="abc123")
     assert csrf_matches(session, "abc12é") is False
@@ -893,7 +893,7 @@ def test_without_a_code_nothing_matches(tmp_path):
 
 
 def test_a_new_code_replaces_the_old_once_it_has_run_out(tmp_path, monkeypatch):
-    import departureboard.web.auth as auth
+    import twobells.web.auth as auth
 
     draws = iter([111111, 222222])
     monkeypatch.setattr(auth.secrets, "randbelow", lambda n: next(draws))
@@ -907,7 +907,7 @@ def test_a_new_code_replaces_the_old_once_it_has_run_out(tmp_path, monkeypatch):
 
 
 def test_codes_come_from_the_secrets_module(tmp_path, monkeypatch):
-    import departureboard.web.auth as auth
+    import twobells.web.auth as auth
 
     asked = []
     monkeypatch.setattr(auth.secrets, "randbelow", lambda n: asked.append(n) or 42)
@@ -988,7 +988,7 @@ def test_the_files_are_private_and_only_the_handover_holds_the_code(tmp_path):
 
 
 def test_each_code_gets_a_fresh_salt(tmp_path, monkeypatch):
-    import departureboard.web.auth as auth
+    import twobells.web.auth as auth
 
     monkeypatch.setattr(auth.secrets, "randbelow", lambda n: 123456)
     codes = ResetCodes(tmp_path)
@@ -1186,9 +1186,9 @@ def test_the_form_cookie_is_strict_http_only_and_scoped():
 
 
 def test_a_password_changed_elsewhere_signs_everyone_out(tmp_path):
-    # `departureboard web --set-password` runs in its own process: the page's
+    # `twobells web --set-password` runs in its own process: the page's
     # sessions must notice the new password through the file, not memory.
-    from departureboard.web.auth import PasswordStore, Sessions
+    from twobells.web.auth import PasswordStore, Sessions
 
     store = PasswordStore(tmp_path / "web.json")
     store.set("first password here")
@@ -1340,7 +1340,7 @@ def test_an_empty_form_token_never_matches():
 
 
 def test_when_the_file_cant_be_written_a_signed_out_session_cannot_come_back(tmp_path, monkeypatch):
-    from departureboard.core import files
+    from twobells.core import files
 
     clock = Clock()
     sessions = kept(tmp_path, clock)

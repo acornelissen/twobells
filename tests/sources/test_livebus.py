@@ -4,9 +4,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from departureboard.core.model import Status
-from departureboard.sources.bods import Vehicle, parse_siri_vm
-from departureboard.sources.livebus import (
+from tests.paths import FIXTURES
+from twobells.core.model import Status
+from twobells.sources.bods import Vehicle, parse_siri_vm
+from twobells.sources.livebus import (
     Progress,
     approach,
     departures,
@@ -17,8 +18,7 @@ from departureboard.sources.livebus import (
     row_strip,
     where_words,
 )
-from departureboard.timetable.model import Calendar, Call, Journey, Schedule, StopPosition
-from tests.paths import FIXTURES
+from twobells.timetable.model import Calendar, Call, Journey, Schedule, StopPosition
 
 LONDON = ZoneInfo("Europe/London")
 UTC = UTC

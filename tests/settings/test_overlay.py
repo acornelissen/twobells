@@ -6,8 +6,8 @@ import tomllib
 
 import pytest
 
-from departureboard.settings.config import ConfigError, read_base, read_config
-from departureboard.settings.overlay import OverlayError, Target, save_changes, save_to, to_toml
+from twobells.settings.config import ConfigError, read_base, read_config
+from twobells.settings.overlay import OverlayError, Target, save_changes, save_to, to_toml
 
 ENV = {"RDM_API_KEY": "rdm-secret-123", "BODS_API_KEY": "bods-secret-456"}
 
@@ -123,7 +123,7 @@ def test_a_broken_overlay_is_left_alone(board):
 
 
 def test_without_a_state_file_the_changes_go_in_the_store(tmp_path):
-    from departureboard.settings.store import Store
+    from twobells.settings.store import Store
 
     config = tmp_path / "config.toml"
     config.write_text('[train]\ncrs = "GLO"\n')

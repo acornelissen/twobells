@@ -8,11 +8,11 @@ import tomllib
 
 import pytest
 
-from departureboard.dashboard.config import load_dashboard
-from departureboard.settings.config import load_config
-from departureboard.settings.installs import Install, install_named
-from departureboard.settings.store import Store
-from departureboard.web.groupform import GroupForm
+from twobells.dashboard.config import load_dashboard
+from twobells.settings.config import load_config
+from twobells.settings.installs import Install, install_named
+from twobells.settings.store import Store
+from twobells.web.groupform import GroupForm
 
 ENV = {"RDM_API_KEY": "rail-key-1234567", "BODS_API_KEY": "bods-key-7654321"}
 
@@ -333,7 +333,7 @@ def test_two_choices_or_a_few_short_ones_sit_side_by_side(store):
         assert options(name) == "options inline", name
     for name in ("accent", "bank_holidays"):  # three or four long choices stay one to a line
         assert options(name) == "options", name
-    css = files("departureboard.web").joinpath("web.css").read_text()
+    css = files("twobells.web").joinpath("web.css").read_text()
     assert re.search(r"\.options\.inline \{[^}]*display: flex;[^}]*flex-wrap: wrap", css)
     # Each choice is a 44px target on a touch screen.
     coarse = css[css.index("@media (pointer: coarse)"):]

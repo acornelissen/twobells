@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from departureboard.settings import store as store_module
-from departureboard.settings.config import ConfigError
-from departureboard.settings.installs import install_named
-from departureboard.settings.overlay import save_to
-from departureboard.settings.schema import saved_keys
-from departureboard.settings.store import Store, find_folder, platform_folder
+from twobells.settings import store as store_module
+from twobells.settings.config import ConfigError
+from twobells.settings.installs import install_named
+from twobells.settings.overlay import save_to
+from twobells.settings.schema import saved_keys
+from twobells.settings.store import Store, find_folder, platform_folder
 
 HOME = Path("/home/me")
 ENV = {"RDM_API_KEY": "rail-key"}
@@ -27,22 +27,22 @@ def found(data=None, given=None, install="desktop", environ=None, platform="linu
 
 STATE_FILE = {"state_file": "/var/lib/board/state.json"}
 DASHBOARD_DIR = {"dashboard": {"state_dir": "/srv/dash"}}
-SYSTEMD = {"STATE_DIRECTORY": "/var/lib/departureboard:/var/lib/other"}
+SYSTEMD = {"STATE_DIRECTORY": "/var/lib/twobells:/var/lib/other"}
 
 
 @pytest.mark.parametrize("given, environ, data, install, folder", [
     # 1. --state-dir, over everything else
     ("/data", SYSTEMD, {**STATE_FILE, **DASHBOARD_DIR}, "pi", "/data"),
     # 2. systemd's StateDirectory, the first path in it
-    (None, SYSTEMD, {**STATE_FILE, **DASHBOARD_DIR}, "desktop", "/var/lib/departureboard"),
+    (None, SYSTEMD, {**STATE_FILE, **DASHBOARD_DIR}, "desktop", "/var/lib/twobells"),
     # 3. the folder of config.toml's state_file
     (None, {}, {**STATE_FILE, **DASHBOARD_DIR}, "docker", "/var/lib/board"),
     # 4. the old dashboard's [dashboard] state_dir
     (None, {}, DASHBOARD_DIR, "pi", "/srv/dash"),
     # 5. the install's own
-    (None, {}, {}, "pi", "/var/lib/departureboard"),
+    (None, {}, {}, "pi", "/var/lib/twobells"),
     (None, {}, {}, "docker", "/data"),
-    (None, {}, {}, "desktop", "/home/me/.local/state/departureboard"),
+    (None, {}, {}, "desktop", "/home/me/.local/state/twobells"),
 ])
 def test_the_first_rule_that_applies_gives_the_folder(given, environ, data, install, folder):
     assert found(data, given, install, environ) == Path(folder)
@@ -53,13 +53,13 @@ def test_config_toml_is_not_read_when_the_folder_is_given_or_from_systemd():
         raise ConfigError("config.toml: broken")
 
     assert find_folder(given="/data", config_data=unreadable, environ={}) == Path("/data")
-    assert find_folder(config_data=unreadable, environ=SYSTEMD) == Path("/var/lib/departureboard")
+    assert find_folder(config_data=unreadable, environ=SYSTEMD) == Path("/var/lib/twobells")
     with pytest.raises(ConfigError, match="broken"):
         find_folder(config_data=unreadable, environ={})
 
 
 def test_a_relative_systemd_folder_is_not_taken():
-    assert found(environ={"STATE_DIRECTORY": "relative/state"}, install="pi") == Path("/var/lib/departureboard")
+    assert found(environ={"STATE_DIRECTORY": "relative/state"}, install="pi") == Path("/var/lib/twobells")
 
 
 def test_a_relative_state_file_is_in_the_working_folder(tmp_path, monkeypatch):
@@ -98,12 +98,12 @@ def test_an_unknown_install_is_refused():
 
 def test_the_platform_folder_on_a_mac_and_elsewhere(tmp_path):
     home = tmp_path / "home"
-    assert platform_folder("darwin", {}, home) == home / "Library" / "Application Support" / "departureboard"
-    assert platform_folder("linux", {}, home) == home / ".local" / "state" / "departureboard"
+    assert platform_folder("darwin", {}, home) == home / "Library" / "Application Support" / "twobells"
+    assert platform_folder("linux", {}, home) == home / ".local" / "state" / "twobells"
     xdg = platform_folder("linux", {"XDG_STATE_HOME": "/var/state"}, home)
-    assert xdg == Path("/var/state/departureboard")
+    assert xdg == Path("/var/state/twobells")
     # A relative XDG_STATE_HOME is ignored, as its spec says.
-    assert platform_folder("linux", {"XDG_STATE_HOME": "state"}, home) == home / ".local" / "state" / "departureboard"
+    assert platform_folder("linux", {"XDG_STATE_HOME": "state"}, home) == home / ".local" / "state" / "twobells"
 
 
 @pytest.mark.parametrize("platform, base", [("darwin", "Library/Application Support"), ("linux", ".local/state")])
@@ -113,11 +113,11 @@ def test_the_dashboard_s_old_folder_is_used_in_place(tmp_path, caplog, platform,
     old = home / base / "departureboard-dashboard"
     old.mkdir(parents=True)
     assert platform_folder(platform, {}, home) == old
-    assert old.is_dir() and not (home / base / "departureboard").exists()  # not moved
+    assert old.is_dir() and not (home / base / "twobells").exists()  # not moved
     assert str(old) in caplog.text
     # Once there is a new one, it is the new one.
-    (home / base / "departureboard").mkdir()
-    assert platform_folder(platform, {}, home) == home / base / "departureboard"
+    (home / base / "twobells").mkdir()
+    assert platform_folder(platform, {}, home) == home / base / "twobells"
 
 
 def test_the_same_folder_is_found_every_time(tmp_path):
@@ -231,11 +231,11 @@ def test_a_missing_config_toml_is_no_settings_and_says_so(tmp_path, caplog):
 
 
 def test_without_config_toml_a_desktop_uses_its_own_folder(tmp_path, monkeypatch):
-    from departureboard.settings import store as stores
+    from twobells.settings import store as stores
 
     monkeypatch.setattr(stores, "_home", lambda: tmp_path / "home")
     store = Store.open(tmp_path / "missing.toml", environ={}, platform="darwin")
-    assert store.folder == tmp_path / "home" / "Library" / "Application Support" / "departureboard"
+    assert store.folder == tmp_path / "home" / "Library" / "Application Support" / "twobells"
     assert not store.folder.exists()  # found, not made
 
 
@@ -303,7 +303,7 @@ def test_a_board_save_keeps_the_dashboard_s_settings_and_a_dashboard_save_the_bo
 
 
 def test_the_target_checks_as_its_view_loads(board):
-    from departureboard.settings.overlay import OverlayError
+    from twobells.settings.overlay import OverlayError
 
     path, _ = board
     store = Store.open(path, environ={})
@@ -326,24 +326,24 @@ def test_root_is_told_to_run_as_the_stores_owner(tmp_path, as_root):
 
     me = pwd.getpwuid(os.stat(tmp_path).st_uid).pw_name  # tests never run as root
     with pytest.raises(store_module.WrongUser) as refused:
-        store_module.check_owner(tmp_path, "departureboard timetable --config /etc/departureboard/config.toml")
+        store_module.check_owner(tmp_path, "twobells timetable --config /etc/twobells/config.toml")
     assert str(refused.value) == (f"Run this as the service's user: sudo -u {me} "
-                                  "departureboard timetable --config /etc/departureboard/config.toml")
+                                  "twobells timetable --config /etc/twobells/config.toml")
 
 
 def test_an_owner_with_no_name_is_named_by_number(tmp_path, as_root, monkeypatch):
     monkeypatch.setattr(store_module, "_owner", lambda folder: 4242424)
-    with pytest.raises(store_module.WrongUser, match=r"sudo -u '#4242424' departureboard run$"):
-        store_module.check_owner(tmp_path, "departureboard run")
+    with pytest.raises(store_module.WrongUser, match=r"sudo -u '#4242424' twobells run$"):
+        store_module.check_owner(tmp_path, "twobells run")
 
 
 def test_root_may_write_its_own_store_or_make_a_new_one(tmp_path, as_root, monkeypatch):
-    store_module.check_owner(tmp_path / "not yet made", "departureboard run")
+    store_module.check_owner(tmp_path / "not yet made", "twobells run")
     monkeypatch.setattr(store_module, "_owner", lambda folder: 0)
-    store_module.check_owner(tmp_path, "departureboard run")
+    store_module.check_owner(tmp_path, "twobells run")
 
 
 def test_anyone_but_root_goes_ahead_as_today(tmp_path, monkeypatch):
     monkeypatch.setattr(os, "geteuid", lambda: 1000, raising=False)
     monkeypatch.setattr(store_module, "_owner", lambda folder: 999)
-    store_module.check_owner(tmp_path, "departureboard run")
+    store_module.check_owner(tmp_path, "twobells run")

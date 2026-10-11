@@ -1,7 +1,7 @@
 import pytest
 
-from departureboard.core import words
-from departureboard.core.model import Departure, Status
+from twobells.core import words
+from twobells.core.model import Departure, Status
 
 
 @pytest.mark.parametrize("status, expected, said", [

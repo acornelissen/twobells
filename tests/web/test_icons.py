@@ -4,10 +4,10 @@ import re
 
 import pytest
 
-from departureboard.web.icons import SHAPES, icon
 from tests.paths import ROOT
+from twobells.web.icons import SHAPES, icon
 
-ICONS_JS = ROOT / "src" / "departureboard" / "dashboard_static" / "icons.js"
+ICONS_JS = ROOT / "src" / "twobells" / "dashboard_static" / "icons.js"
 
 
 def _shapes_in_icons_js():

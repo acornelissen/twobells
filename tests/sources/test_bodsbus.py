@@ -5,12 +5,12 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from departureboard.core.model import Departure, Status, strip_key
-from departureboard.sources import holidays
-from departureboard.sources.bodsbus import BodsBusSource, unusable
-from departureboard.timetable import build as timetable
-from departureboard.timetable.model import Calendar, Call, Journey, Schedule, StopPosition
 from tests.paths import FIXTURES
+from twobells.core.model import Departure, Status, strip_key
+from twobells.sources import holidays
+from twobells.sources.bodsbus import BodsBusSource, unusable
+from twobells.timetable import build as timetable
+from twobells.timetable.model import Calendar, Call, Journey, Schedule, StopPosition
 
 LONDON = ZoneInfo("Europe/London")
 # Real NaPTAN stops on High Street West, Glossop, heading east.
@@ -128,7 +128,7 @@ def test_without_a_timetable_the_fallback_stands_in(tmp_path):
 def test_without_a_timetable_or_fallback_the_fetch_fails_saying_what_to_run(tmp_path):
     bus = source(tmp_path, at(10, 0))
     assert not bus.falling_back and bus.cost == 0
-    with pytest.raises(RuntimeError, match="departureboard timetable"):
+    with pytest.raises(RuntimeError, match="twobells timetable"):
         bus.fetch()
 
 

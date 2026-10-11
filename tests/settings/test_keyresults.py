@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from departureboard.settings import keyresults
-from departureboard.settings.keyresults import LastTest
+from twobells.settings import keyresults
+from twobells.settings.keyresults import LastTest
 
 NOW = 1_791_000_000  # October 2026
 

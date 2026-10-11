@@ -4,8 +4,8 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from departureboard.core import net
-from departureboard.settings import store
+from twobells.core import net
+from twobells.settings import store
 
 _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 

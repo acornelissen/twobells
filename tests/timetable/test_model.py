@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 import pytest
 
-from departureboard.timetable.model import Calendar, Call, Journey, Schedule, StopPosition, sign_letter
+from twobells.timetable.model import Calendar, Call, Journey, Schedule, StopPosition, sign_letter
 
 
 def test_schedule_round_trips_through_json():
@@ -129,7 +129,7 @@ def test_roads_that_arent_a_mapping_are_none():
 
 def test_the_roads_are_read_only_when_first_asked_for(monkeypatch):
     # The e-paper board reads the timetable every minute and never draws a road.
-    from departureboard.timetable import model
+    from twobells.timetable import model
 
     read = []
     real = model._point
@@ -241,7 +241,7 @@ def test_a_timetable_written_in_parts_is_the_file_it_always_was():
 def test_a_timetable_read_from_a_file_a_little_at_a_time_is_read_whole(monkeypatch, piece):
     import io
 
-    from departureboard.timetable import model
+    from twobells.timetable import model
 
     monkeypatch.setattr(model._Reader, "_PIECE", piece)
     schedule = _several()

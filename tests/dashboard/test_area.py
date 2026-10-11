@@ -2,11 +2,11 @@ import json
 from dataclasses import replace
 from datetime import date
 
-from departureboard.dashboard.area import area_view, timetable_changes
-from departureboard.sources.bodsbus import BusBoard
-from departureboard.sources.livebus import live_board
-from departureboard.timetable.model import Calendar, Call
 from tests.sources.test_livebus import EAST, HALFWAY, HENRY_A, ST_MARYS_W, WEST, at, bus, schedule
+from twobells.dashboard.area import area_view, timetable_changes
+from twobells.sources.bodsbus import BusBoard
+from twobells.sources.livebus import live_board
+from twobells.timetable.model import Calendar, Call
 
 NOW = at(10, 14, 30)
 

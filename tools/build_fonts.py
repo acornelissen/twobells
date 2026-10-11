@@ -5,7 +5,7 @@
 
 Run it when moving to a new Inter release (update INTER_URL and INTER_SHA256)
 and commit the result. It writes, under
-src/departureboard/dashboard_static/vendor/inter-4.1/:
+src/twobells/dashboard_static/vendor/inter-4.1/:
 
 - InterVariable.woff2: the upright variable font (weight and optical size
   axes), cut down to Latin text and the punctuation the page uses, with
@@ -13,7 +13,7 @@ src/departureboard/dashboard_static/vendor/inter-4.1/:
 - LICENSE: the SIL Open Font License 1.1 it comes under, as released.
 - SHA256SUMS: what tests/dashboard/test_static.py checks the files against.
 
-and, for the board's plain look, under src/departureboard/board/fonts/:
+and, for the board's plain look, under src/twobells/board/fonts/:
 
 - Inter-Regular.ttf, Inter-ExtraBold.ttf: the release's static TrueType fonts,
   hinted for small sizes on one-bit panels, cut down to the same Latin, with
@@ -39,11 +39,11 @@ from fontTools import subset
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from departureboard.core.net import get_bytes  # noqa: E402
+from twobells.core.net import get_bytes  # noqa: E402
 
 INTER_URL = "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip"
 INTER_SHA256 = "9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e"
-OUT = ROOT / "src" / "departureboard" / "dashboard_static" / "vendor" / "inter-4.1"
+OUT = ROOT / "src" / "twobells" / "dashboard_static" / "vendor" / "inter-4.1"
 
 # Basic Latin, Latin-1 (°, ·, £, accented names), the Latin Extended-A letters
 # in British and Irish place names, and the punctuation the page writes:
@@ -86,7 +86,7 @@ def build(data: bytes) -> None:
     print(f"wrote {OUT.relative_to(ROOT)}: InterVariable.woff2 {len(files['InterVariable.woff2']):,} bytes")
 
 
-BOARD_OUT = ROOT / "src" / "departureboard" / "board" / "fonts"
+BOARD_OUT = ROOT / "src" / "twobells" / "board" / "fonts"
 BOARD_FONTS = ("Inter-Regular.ttf", "Inter-ExtraBold.ttf")
 
 

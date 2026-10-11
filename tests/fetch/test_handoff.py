@@ -8,13 +8,13 @@ import time
 
 import pytest
 
-from departureboard.core.walk import WalkTimes
-from departureboard.dashboard.snapshot import Hub
-from departureboard.fetch import handoff
-from departureboard.fetch.handoff import MAX_SNAPSHOT_BYTES, SnapshotMirror, SnapshotWriter
-from departureboard.setup.spool.checks import check_request
-from departureboard.setup.spool.folder import Spool
-from departureboard.setup.spool.runner import Poster
+from twobells.core.walk import WalkTimes
+from twobells.dashboard.snapshot import Hub
+from twobells.fetch import handoff
+from twobells.fetch.handoff import MAX_SNAPSHOT_BYTES, SnapshotMirror, SnapshotWriter
+from twobells.setup.spool.checks import check_request
+from twobells.setup.spool.folder import Spool
+from twobells.setup.spool.runner import Poster
 
 BUS_ID = "4b7e000000000001"
 OLD_ID = "4b7e000000000002"

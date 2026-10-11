@@ -8,11 +8,11 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from departureboard.core import net
-from departureboard.setup import keytest
-from departureboard.setup.keytest import KeyResult
-from departureboard.setup.spool.folder import WAITS
 from tests.paths import FIXTURES
+from twobells.core import net
+from twobells.setup import keytest
+from twobells.setup.keytest import KeyResult
+from twobells.setup.spool.folder import WAITS
 
 BOARD = (FIXTURES / "ldbws_glossop_details.json").read_bytes()
 DETAILS = (FIXTURES / "ldbws_service_details_from_hadfield.json").read_bytes()

@@ -2,8 +2,8 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from departureboard.core.model import Status, minutes_between
-from departureboard.emulator.fake import FakeBusSource, FakeTrainSource, SimClock
+from twobells.core.model import Status, minutes_between
+from twobells.emulator.fake import FakeBusSource, FakeTrainSource, SimClock
 
 START = datetime(2026, 10, 8, 6, 58)
 
@@ -84,8 +84,8 @@ def test_fake_bus_reaches_your_stop_when_it_is_due():
 
     import pytest
 
-    from departureboard.board.route import position_on
-    from departureboard.emulator.fake import DEMO_STRIP, FakeVehicleSource, SimClock
+    from twobells.board.route import position_on
+    from twobells.emulator.fake import DEMO_STRIP, FakeVehicleSource, SimClock
 
     # 341s are due at :05, :25, :45; at 07:21 the 07:25 is 4 min (2 stops) out.
     [bus] = FakeVehicleSource(SimClock(datetime(2026, 10, 8, 7, 21))).fetch()
@@ -98,14 +98,14 @@ def test_fake_bus_reaches_your_stop_when_it_is_due():
 def test_fake_bus_is_off_the_strip_when_far_away():
     from datetime import datetime
 
-    from departureboard.emulator.fake import FakeVehicleSource, SimClock
+    from twobells.emulator.fake import FakeVehicleSource, SimClock
 
     # At 07:06 the next 341 is 19 min away, beyond the 10 min strip.
     assert FakeVehicleSource(SimClock(datetime(2026, 10, 8, 7, 6))).fetch() == []
 
 
 def test_fake_trains_carry_a_disruption_message_while_told_to():
-    from departureboard.emulator.fake import DEMO_NOTICE
+    from twobells.emulator.fake import DEMO_NOTICE
 
     clock = SimClock(START)
     source = FakeTrainSource(clock, notice_when=lambda now: now.minute >= 59)
@@ -123,7 +123,7 @@ def test_fake_trains_have_no_messages_by_default():
 
 
 def test_fake_forecast_covers_two_days_with_a_wet_morning_hour():
-    from departureboard.emulator.fake import FakeWeatherSource
+    from twobells.emulator.fake import FakeWeatherSource
 
     hours = FakeWeatherSource(SimClock(START)).fetch()
     assert len(hours) == 48
@@ -133,7 +133,7 @@ def test_fake_forecast_covers_two_days_with_a_wet_morning_hour():
 
 
 def test_fake_buses_say_where_each_tracked_bus_is():
-    from departureboard.core.model import strip_key
+    from twobells.core.model import strip_key
 
     source = FakeBusSource(SimClock(datetime(2026, 10, 8, 7, 6)), rows=5)
     departures = {strip_key(d): d for d in source.fetch()}
@@ -155,8 +155,8 @@ def test_fake_bus_positions_fail_with_the_bus_feed():
 
 
 def test_fake_trains_say_where_they_are():
-    from departureboard.emulator.fake import FakeServiceDetails
-    from departureboard.sources.darwin import ServiceGone, train_position
+    from twobells.emulator.fake import FakeServiceDetails
+    from twobells.sources.darwin import ServiceGone, train_position
 
     clock = SimClock(datetime(2026, 10, 8, 7, 9))
     trains = FakeTrainSource(clock)

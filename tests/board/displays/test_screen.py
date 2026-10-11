@@ -1,8 +1,8 @@
 import pytest
 from PIL import Image
 
-from departureboard.board.displays.screen import SCREEN_RGB, ScreenDisplay, fit_note
-from departureboard.board.panel import HDMI_1280X400, HDMI_1920X440
+from twobells.board.displays.screen import SCREEN_RGB, ScreenDisplay, fit_note
+from twobells.board.panel import HDMI_1280X400, HDMI_1920X440
 
 
 class FakeScreen:
@@ -93,7 +93,7 @@ def test_bad_settings_are_refused():
 def test_pygame_screen_shows_a_frame_headless(monkeypatch):
     pygame = pytest.importorskip("pygame")
     monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
-    from departureboard.board.displays.screen import PygameScreen
+    from twobells.board.displays.screen import PygameScreen
 
     screen = PygameScreen()
     try:
@@ -109,7 +109,7 @@ def test_pygame_screen_shows_a_frame_headless(monkeypatch):
 def test_without_pygame_the_error_says_how_to_install_it(monkeypatch):
     import builtins
 
-    from departureboard.board.displays.screen import PygameScreen
+    from twobells.board.displays.screen import PygameScreen
 
     real_import = builtins.__import__
 
@@ -125,7 +125,7 @@ def test_without_pygame_the_error_says_how_to_install_it(monkeypatch):
 
 # Scrolling text: the whole board once a tick, then only the boxes that move.
 
-from departureboard.board.scroll import SCROLL_FRAME_S, SCROLL_PAUSE_S, Frame, Scroll  # noqa: E402
+from twobells.board.scroll import SCROLL_FRAME_S, SCROLL_PAUSE_S, Frame, Scroll  # noqa: E402
 
 
 class PatchingScreen(FakeScreen):
@@ -196,7 +196,7 @@ def test_a_still_board_stops_the_scrolling():
 def test_pygame_screen_updates_part_of_a_frame_headless(monkeypatch):
     pygame = pytest.importorskip("pygame")
     monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
-    from departureboard.board.displays.screen import PygameScreen
+    from twobells.board.displays.screen import PygameScreen
 
     screen = PygameScreen()
     try:

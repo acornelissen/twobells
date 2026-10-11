@@ -94,11 +94,11 @@ jobs:
           "$RUNNER_TEMP/try/bin/pip" install --require-hashes --only-binary=:all: --no-deps -r deploy/docker/requirements-docker.txt
           "$RUNNER_TEMP/try/bin/pip" install --no-deps --no-index dist/*.whl
           cd "$RUNNER_TEMP"
-          "$RUNNER_TEMP/try/bin/departureboard" --help
-          "$RUNNER_TEMP/try/bin/departureboard" --version
+          "$RUNNER_TEMP/try/bin/twobells" --help
+          "$RUNNER_TEMP/try/bin/twobells" --version
           "$RUNNER_TEMP/try/bin/python" -I -c '
           from importlib.resources import files
-          d = files("departureboard")
+          d = files("twobells")
           for name in ("data/gb_stations.csv", "data/naptan_area_grid.csv", "web/web.css", "emulator/emulator.html",
                        "dashboard_static/index.html", "wizard_static/wizard.js", "board/fonts/Inter-Regular.ttf"):
               assert d.joinpath(name).is_file(), f"{name} missing from the wheel"

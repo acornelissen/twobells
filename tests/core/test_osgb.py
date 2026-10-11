@@ -1,6 +1,6 @@
 import pytest
 
-from departureboard.core.osgb import distance_m, grid_to_latlon
+from twobells.core.osgb import distance_m, grid_to_latlon
 
 
 @pytest.mark.parametrize(

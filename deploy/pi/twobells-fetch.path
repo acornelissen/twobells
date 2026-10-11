@@ -1,0 +1,18 @@
+[Unit]
+Description=Two Bells: start the fetch service when the web server asks
+# Started at boot and whenever the web server starts (its Wants=); more
+# often than this is a loop of its own.
+StartLimitIntervalSec=2min
+StartLimitBurst=10
+
+[Path]
+# The web server writes each request here: the setup wizard's, and `active`
+# while a browser uses the dashboard. systemd watches the folder and starts
+# the service, so the web server needs no sudo or access to systemd, and
+# can't choose what runs: only leave data for it. Started again whenever a
+# request is waiting after the service stops.
+DirectoryNotEmpty=/run/twobells-fetch/requests
+Unit=twobells-fetch.service
+
+[Install]
+WantedBy=paths.target

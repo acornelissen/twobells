@@ -13,7 +13,7 @@ The first release.
 - One settings site per install, at `/settings` on port 8090, with one password and a setup wizard that works from your postcode.
 - Three installs: a Raspberry Pi, Docker, and a desktop (macOS or Linux).
 - Signed releases: the package on PyPI, a signed container image on GHCR, and a signed source tarball for the Pi.
-- A network guard for the Pi's web server: nftables rules for it alone (`deploy/pi/departureboard-web.nft`), loaded at boot by `departureboard-guard.service` and matching the server by the cgroup systemd puts in their set (`NFTSet=`, systemd 254 or later, so Raspberry Pi OS Trixie on a Pi Zero or Pi 1), that keep it from connecting out to the internet and keep port 8090 to the home network. They back up the unit's systemd IP firewall, which a Pi Zero's kernel can't apply ("Preparation of BPF allow maps failed"). `install.sh` and `update.sh` install `nftables`. The server checks at start whether it can connect out, warns in its log if it can, and the settings' Overview shows **Network guard**: On, Off (a problem) or Can't tell.
+- A network guard for the Pi's web server: nftables rules for it alone (`deploy/pi/twobells-web.nft`), loaded at boot by `twobells-guard.service` and matching the server by the cgroup systemd puts in their set (`NFTSet=`, systemd 254 or later, so Raspberry Pi OS Trixie on a Pi Zero or Pi 1), that keep it from connecting out to the internet and keep port 8090 to the home network. They back up the unit's systemd IP firewall, which a Pi Zero's kernel can't apply ("Preparation of BPF allow maps failed"). `install.sh` and `update.sh` install `nftables`. The server checks at start whether it can connect out, warns in its log if it can, and the settings' Overview shows **Network guard**: On, Off (a problem) or Can't tell.
 - A wall-tablet mode for the dashboard at `/?kiosk`: one screen with no controls, the station-board look by default, a shift of a pixel or two every few minutes against burn-in, dimmed in quiet hours, a large banner when the times stop updating, and a reload at 03:30.
 
 ### Changed
@@ -53,4 +53,4 @@ The first release.
 - The example settings lead with bus times from the BODS timetable.
 - `[bus]` takes bus times from the BODS timetable unless it says `source = "transportapi"`; a config that relied on TransportAPI being the default needs that line. TransportAPI otherwise only stands in while there is no usable timetable, and then only in its own `fallback_windows` (the commute by default), never the all-day bus windows.
 
-[Unreleased]: https://github.com/acornelissen/inky-departures/commits/main
+[Unreleased]: https://github.com/acornelissen/twobells/commits/main

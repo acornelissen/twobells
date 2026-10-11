@@ -1,8 +1,8 @@
-# inky-departures
+# Two Bells
 
 **Know when to leave.** Live trains and buses for your station and stops in Great Britain, with the walk already worked out: a departure board by the door and a dashboard on your phone, from one small app you run at home.
 
-[![CI](https://github.com/acornelissen/inky-departures/actions/workflows/ci.yml/badge.svg)](https://github.com/acornelissen/inky-departures/actions/workflows/ci.yml)
+[![CI](https://github.com/acornelissen/twobells/actions/workflows/ci.yml/badge.svg)](https://github.com/acornelissen/twobells/actions/workflows/ci.yml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
 <picture>
@@ -88,23 +88,23 @@ New here? The [user guide](docs/user-guide.md) explains what everything on the b
 ## Install
 
 - **Raspberry Pi** (the board, and the dashboard if you like): download a release tarball and its `SHA256SUMS`, check it with `sha256sum --check --ignore-missing SHA256SUMS`, unpack it and run `sudo ./deploy/pi/install.sh`. Nothing is piped from the internet into `sudo bash`. Then open `http://<pi name>.local:8090/settings`. `sudo ./deploy/pi/upgrade.sh VERSION` moves it to another release, checked the same way. See [On a Raspberry Pi](docs/user-guide.md#on-a-raspberry-pi).
-- **Docker** (a NAS, say; the dashboard): copy the folder, copy `deploy/secrets.env.example` to `secrets.env`, and `docker compose up -d --build`. The container is `departureboard`, keeping its data in the `dashboard-data` volume. See [Docker](docs/user-guide.md#9-docker). From the first release, `deploy/docker/docker-compose.ghcr.yml` runs the published, signed image instead; [Docker on other NASes and on Linux](docs/docker.md) covers QNAP, Unraid, TrueNAS SCALE, and Docker or Podman.
-- **Desktop** (a Mac or Linux laptop; the dashboard): `uv tool install departureboard` or `pipx install departureboard` (from PyPI from the first release), then `departureboard serve`. `deploy/desktop` has a launchd agent and a systemd user service to start it at login. See [Desktop](docs/user-guide.md#10-desktop).
+- **Docker** (a NAS, say; the dashboard): copy the folder, copy `deploy/secrets.env.example` to `secrets.env`, and `docker compose up -d --build`. The container is `twobells`, keeping its data in the `dashboard-data` volume. See [Docker](docs/user-guide.md#9-docker). From the first release, `deploy/docker/docker-compose.ghcr.yml` runs the published, signed image instead; [Docker on other NASes and on Linux](docs/docker.md) covers QNAP, Unraid, TrueNAS SCALE, and Docker or Podman.
+- **Desktop** (a Mac or Linux laptop; the dashboard): `uv tool install twobells` or `pipx install twobells` (from PyPI from the first release), then `twobells serve`. `deploy/desktop` has a launchd agent and a systemd user service to start it at login. See [Desktop](docs/user-guide.md#10-desktop).
 
 No `config.toml` is needed: the setup wizard saves your settings in the install's store. `examples/config.example.toml` lists everything that can be set by hand.
 
 The settings password is claimed with a code shown on the board, or put in the log where there is no board. Or set it from the command line; in Docker:
 
 ```bash
-docker exec -it departureboard python -m departureboard serve --set-password --state-dir /data
-docker exec -it departureboard python -m departureboard serve --reset-code --state-dir /data
+docker exec -it twobells python -m twobells serve --set-password --state-dir /data
+docker exec -it twobells python -m twobells serve --reset-code --state-dir /data
 ```
 
-Upgrading from the separate board settings page (port 8080) or `departureboard dashboard`: see [Upgrading](docs/user-guide.md#13-upgrading-from-before-the-two-views).
+Upgrading from the separate board settings page (port 8080) or `twobells dashboard`: see [Upgrading](docs/user-guide.md#13-upgrading-from-before-the-two-views).
 
 ## Releases
 
-CI runs ruff, the tests on Python 3.11, 3.12 and 3.13, and builds the wheel and the container (amd64, arm64) on every push and pull request. A tag `vX.Y.Z` matching `pyproject.toml`'s version publishes a release: the package on PyPI, a signed container image on GHCR (`ghcr.io/acornelissen/inky-departures`), and a source tarball for the Pi with `SHA256SUMS`, signed with Sigstore. `departureboard --version` prints the installed version. See `.github/workflows/release.yml` for how to verify the signatures.
+CI runs ruff, the tests on Python 3.11, 3.12 and 3.13, and builds the wheel and the container (amd64, arm64) on every push and pull request. A tag `vX.Y.Z` matching `pyproject.toml`'s version publishes a release: the package on PyPI, a signed container image on GHCR (`ghcr.io/acornelissen/twobells`), and a source tarball for the Pi with `SHA256SUMS`, signed with Sigstore. `twobells --version` prints the installed version. See `.github/workflows/release.yml` for how to verify the signatures.
 
 ## Develop on your laptop
 
@@ -128,10 +128,10 @@ Without mise: `uv sync && uv run pytest`.
 Then, with the venv active (`. .venv/bin/activate`, or any shell where mise is activated):
 
 ```bash
-departureboard demo --png preview.png            # sample data, no keys
-departureboard demo --png big.png --display waveshare-10in85g   # or hdmi-1280x400, hdmi-1920x440
-departureboard run --png preview.png --config config.toml --secrets secrets.env
-departureboard serve --config config.toml --secrets secrets.env   # the dashboard and settings
+twobells demo --png preview.png            # sample data, no keys
+twobells demo --png big.png --display waveshare-10in85g   # or hdmi-1280x400, hdmi-1920x440
+twobells run --png preview.png --config config.toml --secrets secrets.env
+twobells serve --config config.toml --secrets secrets.env   # the dashboard and settings
 ```
 
 ## Emulator
@@ -139,16 +139,16 @@ departureboard serve --config config.toml --secrets secrets.env   # the dashboar
 A browser page that draws the panel at true proportions and logs every tick, so you can see when the board redraws and when it leaves the panel alone. E-paper panels show in e-paper colours and play the slow colour refresh; the HDMI screen swaps frames at once and ticks every second.
 
 ```bash
-departureboard emulate --demo                       # fake data, 1 simulated minute every 2 s
-departureboard emulate --fake-train \
+twobells emulate --demo                       # fake data, 1 simulated minute every 2 s
+twobells emulate --fake-train \
   --config config.toml --secrets secrets.env        # fake trains, live buses
-departureboard emulate --config config.toml --secrets secrets.env   # all live
-departureboard emulate --demo --display hdmi-1280x400                # another panel
+twobells emulate --config config.toml --secrets secrets.env   # all live
+twobells emulate --demo --display hdmi-1280x400                # another panel
 ```
 
 It opens <http://127.0.0.1:8780/>, or the next free port (`--port` picks another; `--no-browser` leaves the browser alone). Live modes emulate the `display` in your config; `--display` overrides it. Choose realistic (20 s), quick or instant refresh, and the scale (1× to 4× for the pHAT, ½× or 1× for the bigger panels); 1× is the panel's real pixel count. `--tick SECONDS` sets the tick (e-paper: 2 in the demo, 60 live; the screen: 1), and `--accent red` or `yellow` the demo's colour. The demo drops the bus feed from 07:30 to 07:52 simulated time, so the "Not updating" badge shows up.
 
-On start the emulator fetches every source once, even outside its windows, so the board fills straight away; after that it polls only inside the windows. Bus times from the BODS timetable cost nothing. Where TransportAPI gives them (`source = "transportapi"`, or standing in while there is no timetable), a live start costs one hit per bus stop; the daily budget still applies, and when it is spent the first fetch is skipped too. `departureboard run` does the same on its very first run, when there is no saved state yet. Live modes keep state in the store, so the TransportAPI budget holds across restarts.
+On start the emulator fetches every source once, even outside its windows, so the board fills straight away; after that it polls only inside the windows. Bus times from the BODS timetable cost nothing. Where TransportAPI gives them (`source = "transportapi"`, or standing in while there is no timetable), a live start costs one hit per bus stop; the daily budget still applies, and when it is spent the first fetch is skipped too. `twobells run` does the same on its very first run, when there is no saved state yet. Live modes keep state in the store, so the TransportAPI budget holds across restarts.
 
 ## The dashboard's API
 
@@ -156,11 +156,11 @@ The server and the dashboard page talk through a read-only JSON and SSE API, spe
 
 ## Layout
 
-One package, `src/departureboard`, a folder per part of the app. Each folder's `__init__.py` says what it holds.
+One package, `src/twobells`, a folder per part of the app. Each folder's `__init__.py` says what it holds.
 
 | Folder | Role |
 |---|---|
-| `cli/` | The commands, a module each (`run`, `serve`, `timetable`, `setup`, and `dev` for `demo`, `emulate`, `probe` and `route`), and the parser in `cli/main.py` (see the [user guide](docs/user-guide.md#11-commands)). `__main__.py` makes it `python -m departureboard` |
+| `cli/` | The commands, a module each (`run`, `serve`, `timetable`, `setup`, and `dev` for `demo`, `emulate`, `probe` and `route`), and the parser in `cli/main.py` (see the [user guide](docs/user-guide.md#11-commands)). `__main__.py` makes it `python -m twobells` |
 | `core/` | Shared building blocks: the provider-neutral `Departure` and lateness maths (`model.py`), when to poll (`polling.py`), the daily hit cap (`budget.py`), walk times (`walk.py`), the HTTPS helper (`net.py`), files written whole or not at all, and lock files (`files.py`), XML that refuses a DOCTYPE (`safexml.py`), grid references (`osgb.py`), and short, key-free error messages (`errors.py`) |
 | `settings/` | The store, the one folder an install saves in, layered over `config.toml` (`store.py`); every saved setting, by group and settings page, and the board's defaults (`schema.py`); loading them into the board's sources (`config.py`); the kinds of install and what differs between them (`installs.py`); saving a settings page's or the wizard's changes (`overlay.py`); bringing the old dashboard's folder in, once (`migrate.py`) |
 | `sources/` | Where departures and the rest come from, with HTTP injected so parsing is tested with fixtures: Darwin (`darwin.py`), the BODS bus source (`bodsbus.py`: timetable plus live positions, with TransportAPI standing in) and its matching (`livebus.py`), BODS positions (`bods.py`), TransportAPI (`transportapi.py`), disruptions (`disruptions.py`), weather (`weather.py`) and bank holidays (`holidays.py`) |

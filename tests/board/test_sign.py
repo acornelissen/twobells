@@ -3,11 +3,11 @@ import itertools
 
 import pytest
 
-from departureboard.board.dotfont import DotFont
-from departureboard.board.panel import HDMI_1280X400, HDMI_1920X440, WAVESHARE_10IN85G
-from departureboard.board.render import HEIGHT, WIDTH, Palette
-from departureboard.board.sign import MARGIN, item_size, render_sign, sign_layout
-from departureboard.board.view import BoardView, Row, Section, Style
+from twobells.board.dotfont import DotFont
+from twobells.board.panel import HDMI_1280X400, HDMI_1920X440, WAVESHARE_10IN85G
+from twobells.board.render import HEIGHT, WIDTH, Palette
+from twobells.board.sign import MARGIN, item_size, render_sign, sign_layout
+from twobells.board.view import BoardView, Row, Section, Style
 
 PALETTE = Palette(white=0, black=1, accent=2)
 FONT = DotFont()
@@ -275,8 +275,8 @@ def test_buses_clear_the_clock():
     assert last_bus + 9 < find(items, "07:03:15").y
 
 
-from departureboard.board.route import RouteView  # noqa: E402
-from departureboard.board.sign import _route_layout, render_route_sign  # noqa: E402
+from twobells.board.route import RouteView  # noqa: E402
+from twobells.board.sign import _route_layout, render_route_sign  # noqa: E402
 
 NAMES = ("The Junction", "Grapes Inn", "Sunlaws Street", "St Marys Road", "Arundel Street", "Henry Street")
 
@@ -559,7 +559,7 @@ def test_screen_shows_the_rain_line_left_of_the_clock():
 
 
 def test_footer_glyphs_cover_notices_and_the_rain_line():
-    from departureboard.board.dotfont import GLYPHS, TINY
+    from twobells.board.dotfont import GLYPHS, TINY
 
     for char in "!()%/'&+;…":
         assert char in TINY, char
@@ -579,7 +579,7 @@ def test_everything_fits_with_a_notice(panel, clock):
 
 
 def test_everything_fits_on_the_original_phat():
-    from departureboard.board.panel import PHAT_V1
+    from twobells.board.panel import PHAT_V1
 
     items = sign_layout(board(TRAINS, BUSES, leave="Leave by 07:05", stale_buses=True), *PHAT_V1.size).items
     for item in items:
@@ -591,13 +591,13 @@ def test_everything_fits_on_the_original_phat():
 
 # The bar screen: four pixels a dot, one line a row, and where each train or bus is.
 
-from departureboard.board.panel import (  # noqa: E402
+from twobells.board.panel import (  # noqa: E402
     LEAVE_COLUMN_MIN_WIDTH,
     PLATFORM_COLUMN_MIN_WIDTH,
     STRIP_COLUMN_MIN_WIDTH,
 )
-from departureboard.board.sign import STRIP_WIDTH, StripMark, strip_dots, where_width  # noqa: E402
-from departureboard.core.model import Strip  # noqa: E402
+from twobells.board.sign import STRIP_WIDTH, StripMark, strip_dots, where_width  # noqa: E402
+from twobells.core.model import Strip  # noqa: E402
 
 CLOCK = "07:03:15"
 # The screens wide enough for strips.
@@ -900,7 +900,7 @@ def test_manchester_piccadilly_stays_whole_on_either_screen_with_strips(panel):
 
 # The bottom line on a screen: the notice and the rain warning side by side.
 
-from departureboard.board.panel import NOTES_SIDE_BY_SIDE_MIN_WIDTH  # noqa: E402
+from twobells.board.panel import NOTES_SIDE_BY_SIDE_MIN_WIDTH  # noqa: E402
 
 
 def both(view, clock=CLOCK):
@@ -1015,9 +1015,9 @@ def test_the_footer_rule_is_drawn_dotted():
 
 # On a screen, text too long for its space scrolls, a dot at a time, inside its own box.
 
-from departureboard.board.panel import PHAT  # noqa: E402
-from departureboard.board.scroll import SCROLL_PAUSE_S, SCROLL_STEPS_PER_S  # noqa: E402
-from departureboard.board.sign import route_sign_frame, sign_frame  # noqa: E402
+from twobells.board.panel import PHAT  # noqa: E402
+from twobells.board.scroll import SCROLL_PAUSE_S, SCROLL_STEPS_PER_S  # noqa: E402
+from twobells.board.sign import route_sign_frame, sign_frame  # noqa: E402
 
 LONG = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom, Hattersley, Godley and Hyde Central"
 
@@ -1100,7 +1100,7 @@ def test_the_route_page_scrolls_a_long_title_on_a_screen():
 
 # A screen wide enough names each bus row's stop where e-paper shows its label.
 
-from departureboard.board.panel import STOP_NAME_MIN_WIDTH  # noqa: E402
+from twobells.board.panel import STOP_NAME_MIN_WIDTH  # noqa: E402
 
 GLOSSOP_STOPS = ("Henry Street A", "Henry Street B")  # both of Glossop's stops are on Henry Street
 NAMED_BUSES = [

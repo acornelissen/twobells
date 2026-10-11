@@ -3,8 +3,8 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from departureboard.sources.bods import MAX_RESPONSE_BYTES, BodsVehicleSource, parse_siri_vm, redact_key
 from tests.paths import FIXTURES
+from twobells.sources.bods import MAX_RESPONSE_BYTES, BodsVehicleSource, parse_siri_vm, redact_key
 
 FIXTURE = (FIXTURES / "bods_glossop_synthetic.xml").read_bytes()
 BOX = (-1.99, 53.43, -1.94, 53.46)
@@ -125,7 +125,7 @@ def test_redact_key():
 def test_get_bytes_refuses_an_oversized_body(monkeypatch):
     import io
 
-    from departureboard.core import net
+    from twobells.core import net
 
     class FakeResponse(io.BytesIO):
         def __enter__(self):

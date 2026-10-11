@@ -4,7 +4,8 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from departureboard.sources.weather import (
+from tests.paths import FIXTURES
+from twobells.sources.weather import (
     MAX_BYTES,
     Hour,
     OpenMeteoSource,
@@ -13,7 +14,6 @@ from departureboard.sources.weather import (
     parse_forecast,
     rain_line,
 )
-from tests.paths import FIXTURES
 
 FIXTURE = FIXTURES / "openmeteo_glossop.json"
 

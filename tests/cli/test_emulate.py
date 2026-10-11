@@ -2,10 +2,10 @@ from datetime import datetime
 
 import pytest
 
-from departureboard.cli.main import main
-from departureboard.emulator.emulation import build_emulation, demo_outage
-from departureboard.emulator.fake import FakeBusSource, FakeTrainSource
-from departureboard.sources.transportapi import TransportApiBusSource
+from twobells.cli.main import main
+from twobells.emulator.emulation import build_emulation, demo_outage
+from twobells.emulator.fake import FakeBusSource, FakeTrainSource
+from twobells.sources.transportapi import TransportApiBusSource
 
 
 def test_demo_uses_fake_sources_and_a_simulated_clock():
@@ -54,7 +54,7 @@ def test_demo_runs_headless_for_a_few_ticks():
 
 
 def test_emulate_reports_busy_port_without_traceback(capsys):
-    from departureboard.emulator.server import EmulatorDisplay, make_server
+    from twobells.emulator.server import EmulatorDisplay, make_server
 
     blocker = make_server(EmulatorDisplay(), port=0)
     port = blocker.server_address[1]
@@ -122,7 +122,7 @@ def test_demo_screen_runs_headless_for_a_few_ticks():
 
 
 def test_screen_demo_shows_the_bus_page_with_a_moving_bus():
-    from departureboard.board.app import run_once
+    from twobells.board.app import run_once
 
     em = build_emulation(demo=True, display="hdmi-1280x400")
     assert em.tick_seconds == 1
@@ -146,7 +146,7 @@ def test_epaper_demo_has_no_bus_page():
 
 
 def test_demo_shows_rain_then_a_disruption_then_neither():
-    from departureboard.board.app import run_once
+    from twobells.board.app import run_once
 
     em = build_emulation(demo=True)
     state, seen = {}, {}
@@ -162,7 +162,7 @@ def test_demo_shows_rain_then_a_disruption_then_neither():
 
 
 def test_demo_is_the_same_every_run():
-    from departureboard.board.app import run_once
+    from twobells.board.app import run_once
 
     def run():
         em = build_emulation(demo=True)
@@ -176,7 +176,7 @@ def test_demo_is_the_same_every_run():
 
 
 def test_screen_demo_says_where_the_trains_and_buses_are():
-    from departureboard.board.app import run_once
+    from twobells.board.app import run_once
 
     em = build_emulation(demo=True, display="hdmi-1280x400")
     state, trains, buses, words = {}, set(), set(), set()

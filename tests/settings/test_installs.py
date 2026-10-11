@@ -1,5 +1,5 @@
-from departureboard.settings.installs import INSTALLS, install_named
-from departureboard.timetable import build, routesetup
+from twobells.settings.installs import INSTALLS, install_named
+from twobells.timetable import build, routesetup
 
 # The largest timetable file seen: First South Yorkshire's, BODS data set 2100 (2026).
 LARGEST_FILE = 36_904_485

@@ -7,8 +7,9 @@ from pathlib import Path
 import pytest
 from fontTools.ttLib import TTFont
 
-from departureboard.board.panel import HDMI_1280X400, HDMI_1920X440, PHAT, PHAT_V1, WAVESHARE_10IN85G
-from departureboard.board.render import (
+from tests.paths import ROOT
+from twobells.board.panel import HDMI_1280X400, HDMI_1920X440, PHAT, PHAT_V1, WAVESHARE_10IN85G
+from twobells.board.render import (
     HEIGHT,
     WIDTH,
     Palette,
@@ -27,9 +28,8 @@ from departureboard.board.render import (
     render_setup,
     row_layout,
 )
-from departureboard.board.view import BoardView, CodeView, Row, Section, SetupView, Style
-from departureboard.core import words
-from tests.paths import ROOT
+from twobells.board.view import BoardView, CodeView, Row, Section, SetupView, Style
+from twobells.core import words
 
 PALETTE = Palette(white=0, black=1, accent=2)
 
@@ -104,7 +104,7 @@ def test_left_column_clears_a_bold_clock_time():
 
 # --- Fonts: Inter, as on the dashboard, from the package ---
 
-BOARD_FONTS = ROOT / "src" / "departureboard" / "board" / "fonts"
+BOARD_FONTS = ROOT / "src" / "twobells" / "board" / "fonts"
 
 
 def test_board_fonts_are_pinned_and_licensed():
@@ -349,8 +349,8 @@ def test_header_shows_the_running_clock_on_a_screen():
 
 
 def test_route_page_in_the_plain_look():
-    from departureboard.board.render import render_route
-    from departureboard.board.route import RouteView
+    from twobells.board.render import render_route
+    from twobells.board.route import RouteView
 
     names = ("The Junction", "Grapes Inn", "Sunlaws Street", "St Marys Road", "Arundel Street", "Henry Street")
 
@@ -365,9 +365,9 @@ def test_route_page_in_the_plain_look():
 
 
 def test_themes_draw_the_route_page():
-    from departureboard.board.render import render_route
-    from departureboard.board.sign import render_route_sign
-    from departureboard.board.themes import THEMES
+    from twobells.board.render import render_route
+    from twobells.board.sign import render_route_sign
+    from twobells.board.themes import THEMES
 
     assert THEMES["plain"].render_route is render_route
     assert THEMES["sign"].render_route is render_route_sign
@@ -538,7 +538,7 @@ def test_short_notice_is_shown_whole_in_the_header():
 
 @pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
 def test_on_a_screen_a_long_notice_scrolls_whole_in_the_header(panel):
-    from departureboard.board.render import board_frame
+    from twobells.board.render import board_frame
 
     view = dataclasses.replace(board(), notice=NOTICE * 2, clock="07:03:20")
     _, stamp, stamp_x, fonts, s = header(view, panel)
@@ -552,7 +552,7 @@ def test_on_a_screen_a_long_notice_scrolls_whole_in_the_header(panel):
 
 @pytest.mark.parametrize("panel", ALL_PANELS, ids=lambda p: p.name)
 def test_on_e_paper_nothing_scrolls(panel):
-    from departureboard.board.render import board_frame
+    from twobells.board.render import board_frame
 
     long = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom, Hattersley, Godley and Hyde Central"
     view = dataclasses.replace(board([Row("07:12", long, "On time")]), notice=NOTICE * 2)
@@ -602,7 +602,7 @@ FIT_SAMPLES = (
 
 
 def test_fit_text_gives_what_it_gave_a_character_at_a_time():
-    from departureboard.board.dotfont import TINY, DotFont
+    from twobells.board.dotfont import TINY, DotFont
 
     fonts = load_fonts()
     measures = [
@@ -632,7 +632,7 @@ def test_fit_text_measures_a_long_notice_a_few_times_not_once_a_character():
 
 
 def test_plain_look_shows_fewer_rows_rather_than_cut_them_off_on_the_original_phat():
-    from departureboard.board.panel import PHAT_V1
+    from twobells.board.panel import PHAT_V1
 
     trains = [Row(f"07:{m}", "Manchester Piccadilly", "On time") for m in (12, 42, 52)]
     buses = [Row("341", "A: Hyde", "07:20"), Row("61", "B: Buxton", "07:35 sch")]
@@ -653,8 +653,8 @@ def test_default_text_size_draws_exactly_as_before():
 
 
 def test_slightly_bigger_text_still_fits_the_original_phat():
-    from departureboard.board.panel import PHAT_V1
-    from departureboard.board.render import row_limits
+    from twobells.board.panel import PHAT_V1
+    from twobells.board.render import row_limits
 
     assert row_limits(PHAT_V1, text_size=12) == {"Trains": 2, "Buses": 1}
     image = render(_full_board(), PALETTE, PHAT_V1, text_size=12)
@@ -663,7 +663,7 @@ def test_slightly_bigger_text_still_fits_the_original_phat():
 
 
 def test_bigger_text_draws_more_ink():
-    from departureboard.board.panel import PHAT_V1
+    from twobells.board.panel import PHAT_V1
 
     def ink(size):
         image = render(_full_board(), PALETTE, PHAT_V1, text_size=size)
@@ -674,8 +674,8 @@ def test_bigger_text_draws_more_ink():
 
 @pytest.mark.parametrize("text_size", [11, 12, 13])
 def test_a_shortened_destination_leaves_a_gap_before_the_status(text_size):
-    from departureboard.board.panel import PHAT_V1
-    from departureboard.board.render import drawn_length
+    from twobells.board.panel import PHAT_V1
+    from twobells.board.render import drawn_length
 
     fonts = load_fonts(1, text_size)
     layout = row_layout(Row("20:22", "Manchester Piccadilly", "On time"), fonts, PHAT_V1.width, 1)
@@ -759,7 +759,7 @@ def test_the_address_is_drawn_across_the_panel(panel):
 
 
 def test_an_address_too_long_to_read_on_one_line_breaks_before_its_port():
-    from departureboard.board.render import MIN_ADDRESS_PX, _biggest_bold, address_lines
+    from twobells.board.render import MIN_ADDRESS_PX, _biggest_bold, address_lines
 
     long_url = "http://my-very-long-departure-board-name.local:8090/settings"
     one_line = _biggest_bold(long_url, 200, 40)
@@ -778,8 +778,8 @@ def test_an_address_too_long_to_read_on_one_line_breaks_before_its_port():
 @pytest.mark.parametrize("panel", PANELS)
 @pytest.mark.parametrize("off", [False, True])
 def test_the_settings_address_the_board_shows_fits_with_a_long_name(panel, off):
-    from departureboard.cli.common import setup_url
-    from departureboard.cli.run import OFF_HEADING, OFF_NOTE
+    from twobells.cli.common import setup_url
+    from twobells.cli.run import OFF_HEADING, OFF_NOTE
 
     url = setup_url("my-very-long-departure-board-name")
     assert url.endswith(":8090/settings")
@@ -834,9 +834,9 @@ def test_the_setup_page_signature_follows_its_words():
 
 # Where each train or bus is, on a screen wide enough; and the bar screen's third bus.
 
-from departureboard.board.panel import STRIP_COLUMN_MIN_WIDTH  # noqa: E402
-from departureboard.board.render import STRIP_WIDTH, row_limits, where_column, where_width  # noqa: E402
-from departureboard.core.model import Strip  # noqa: E402
+from twobells.board.panel import STRIP_COLUMN_MIN_WIDTH  # noqa: E402
+from twobells.board.render import STRIP_WIDTH, row_limits, where_column, where_width  # noqa: E402
+from twobells.core.model import Strip  # noqa: E402
 
 CLOCK = "07:03:15"
 STRIP_PANELS = [HDMI_1280X400, HDMI_1920X440]
@@ -998,7 +998,7 @@ def test_the_plain_where_column_is_as_wide_whatever_the_words_and_wider_on_the_b
 
 # The header on a screen: the notice where the title goes, the rain warning beside it.
 
-from departureboard.board.render import header_rain  # noqa: E402
+from twobells.board.render import header_rain  # noqa: E402
 
 RAIN = "Rain from 07:10 (70%)"
 
@@ -1046,8 +1046,8 @@ def test_the_header_draws_the_rain_warning_beside_the_notice():
 
 # On a screen, text too long for its space scrolls, a pHAT pixel at a time, clipped to its column and row.
 
-from departureboard.board.render import board_frame  # noqa: E402
-from departureboard.board.scroll import SCROLL_PAUSE_S  # noqa: E402
+from twobells.board.render import board_frame  # noqa: E402
+from twobells.board.scroll import SCROLL_PAUSE_S  # noqa: E402
 
 LONG = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom, Hattersley, Godley and Hyde Central"
 
@@ -1104,8 +1104,8 @@ def test_on_a_screen_a_reversed_out_row_scrolls_on_its_own_paper():
 
 # A screen wide enough names each bus row's stop where e-paper shows "A: Hyde".
 
-from departureboard.board.panel import STOP_NAME_MIN_WIDTH  # noqa: E402
-from departureboard.board.render import stop_column  # noqa: E402
+from twobells.board.panel import STOP_NAME_MIN_WIDTH  # noqa: E402
+from twobells.board.render import stop_column  # noqa: E402
 
 GLOSSOP_STOPS = ("Henry Street A", "Henry Street B")  # both of Glossop's stops are on Henry Street
 NAMED_BUSES = (
@@ -1207,7 +1207,7 @@ def test_e_paper_and_the_7_9_inch_screen_keep_the_label_in_the_plain_look(panel)
 def test_kept_glyphs_draw_as_pillow_draws_them(xy):
     from PIL import Image, ImageDraw
 
-    from departureboard.board.render import draw_text
+    from twobells.board.render import draw_text
 
     for font in load_fonts(1).regular, load_fonts(4).bold:
         for text in ("07:12", "Manchester Piccadilly", "Jy ! …", " leading space"):
@@ -1220,7 +1220,7 @@ def test_kept_glyphs_draw_as_pillow_draws_them(xy):
 
 
 def test_kept_values_stay_within_their_bytes_least_recently_used_going_first():
-    from departureboard.board.render import _Kept
+    from twobells.board.render import _Kept
 
     kept = _Kept(100)
     for key in "abcd":
@@ -1236,7 +1236,7 @@ def test_kept_values_stay_within_their_bytes_least_recently_used_going_first():
 
 
 def test_a_screen_redrawing_every_second_keeps_its_text_within_bounds():
-    from departureboard.board import render as plain
+    from twobells.board import render as plain
 
     view = dataclasses.replace(board([Row("07:12", "Manchester Piccadilly", "On time")]), notice="x " * 400)
     for second in range(400):

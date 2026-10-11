@@ -3,9 +3,9 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from departureboard.sources import holidays
-from departureboard.sources.holidays import CACHE_NAME, URL, bank_holidays, parse, read_cache
 from tests.paths import FIXTURES
+from twobells.sources import holidays
+from twobells.sources.holidays import CACHE_NAME, URL, bank_holidays, parse, read_cache
 
 BODY = (FIXTURES / "govuk_bank_holidays.json").read_bytes()
 ENGLAND_AND_WALES = frozenset(date.fromisoformat(d) for d in (

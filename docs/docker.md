@@ -2,7 +2,7 @@
 
 The [user guide's Docker section](user-guide.md#9-docker) builds the image from source on a Synology NAS. This page covers the published image instead, on QNAP, Unraid, TrueNAS SCALE, and Docker or Podman on any Linux computer.
 
-From the first release, each release publishes a signed image, `ghcr.io/acornelissen/inky-departures`, for 64-bit computers (`linux/amd64` and `linux/arm64`). There is no image for 32-bit ARM. Until the first release, build from source as in the user guide.
+From the first release, each release publishes a signed image, `ghcr.io/acornelissen/twobells`, for 64-bit computers (`linux/amd64` and `linux/arm64`). There is no image for 32-bit ARM. Until the first release, build from source as in the user guide.
 
 Contents:
 
@@ -22,14 +22,14 @@ Run the image by its version and its digest, so it can't change under you. On an
 
 ```bash
 VERSION=0.1.0
-docker pull "ghcr.io/acornelissen/inky-departures:$VERSION"    # prints "Digest: sha256:..."
+docker pull "ghcr.io/acornelissen/twobells:$VERSION"    # prints "Digest: sha256:..."
 DIGEST=sha256:...    # the digest it printed
-cosign verify "ghcr.io/acornelissen/inky-departures@$DIGEST" \
-  --certificate-identity "https://github.com/acornelissen/inky-departures/.github/workflows/release.yml@refs/tags/v$VERSION" \
+cosign verify "ghcr.io/acornelissen/twobells@$DIGEST" \
+  --certificate-identity "https://github.com/acornelissen/twobells/.github/workflows/release.yml@refs/tags/v$VERSION" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-`cosign verify` must end without an error: then that digest was built and signed by this project's release workflow for that version. Use the image as `ghcr.io/acornelissen/inky-departures:0.1.0@sha256:...`, with the digest in full.
+`cosign verify` must end without an error: then that digest was built and signed by this project's release workflow for that version. Use the image as `ghcr.io/acornelissen/twobells:0.1.0@sha256:...`, with the digest in full.
 
 `deploy/docker/docker-compose.ghcr.yml` in the project is a compose file for the published image, with the same settings as `docker-compose.yml`. Replace `X.Y.Z` and `DIGEST` in its `image:` line; until you do, compose refuses to run it.
 
@@ -65,7 +65,7 @@ allowed_hosts = ["nas.example.com"]
 
 ### First start
 
-Open `http://<NAS IP address>:8090/` and [set it up](user-guide.md#4-first-run-and-the-setup-wizard). The code to claim the settings is in the container's log. The commands that set the password or print a new code are in [Password and reset codes](user-guide.md#6-password-and-reset-codes); they name the container `departureboard`, as the files and commands here call it. If your platform names it otherwise, use that name.
+Open `http://<NAS IP address>:8090/` and [set it up](user-guide.md#4-first-run-and-the-setup-wizard). The code to claim the settings is in the container's log. The commands that set the password or print a new code are in [Password and reset codes](user-guide.md#6-password-and-reset-codes); they name the container `twobells`, as the files and commands here call it. If your platform names it otherwise, use that name.
 
 ### Updating
 
@@ -78,7 +78,7 @@ Check the new version as above, then replace the version and digest in the image
 Container Station 3 runs a compose file as an application.
 
 1. In **Container Station**, choose **Create**, then **Create Application**.
-2. Name it `departureboard`. Paste `deploy/docker/docker-compose.ghcr.yml`, with the version and digest filled in.
+2. Name it `twobells`. Paste `deploy/docker/docker-compose.ghcr.yml`, with the version and digest filled in.
 3. Choose **Validate YAML**, then finish the wizard.
 4. Open `http://<NAS IP address>:8090/` from the home network.
 
@@ -88,21 +88,21 @@ Container Station can't change an application's settings in place: to update, us
 
 ## Unraid
 
-`deploy/unraid/departureboard.xml` is a template for Unraid's **Add Container** page. It is in each release's tarball. In Unraid's terminal (or over SSH, as root), for version 0.1.0 say:
+`deploy/unraid/twobells.xml` is a template for Unraid's **Add Container** page. It is in each release's tarball. In Unraid's terminal (or over SSH, as root), for version 0.1.0 say:
 
 ```bash
 VERSION=0.1.0
 cd /tmp
-base="https://github.com/acornelissen/inky-departures/releases/download/v$VERSION"
-curl -fLO "$base/inky-departures-$VERSION.tar.gz"
+base="https://github.com/acornelissen/twobells/releases/download/v$VERSION"
+curl -fLO "$base/twobells-$VERSION.tar.gz"
 curl -fLO "$base/SHA256SUMS"
 sha256sum --check --ignore-missing SHA256SUMS &&
-  tar -xzf "inky-departures-$VERSION.tar.gz" "inky-departures-$VERSION/deploy/unraid/departureboard.xml" &&
-  sed "s/X\.Y\.Z/$VERSION/" "inky-departures-$VERSION/deploy/unraid/departureboard.xml" \
-    > /boot/config/plugins/dockerMan/templates-user/my-departureboard.xml
-mkdir -p /mnt/user/appdata/departureboard
-chown 10001:10001 /mnt/user/appdata/departureboard
-chmod 700 /mnt/user/appdata/departureboard
+  tar -xzf "twobells-$VERSION.tar.gz" "twobells-$VERSION/deploy/unraid/twobells.xml" &&
+  sed "s/X\.Y\.Z/$VERSION/" "twobells-$VERSION/deploy/unraid/twobells.xml" \
+    > /boot/config/plugins/dockerMan/templates-user/my-twobells.xml
+mkdir -p /mnt/user/appdata/twobells
+chown 10001:10001 /mnt/user/appdata/twobells
+chmod 700 /mnt/user/appdata/twobells
 ```
 
 The `sed` puts the version in the template's image tag (its **Repository**).
@@ -110,14 +110,14 @@ The `sed` puts the version in the template's image tag (its **Repository**).
 Then:
 
 1. Check the image's tag with `cosign verify`, as in [Pick a release and check it](#pick-a-release-and-check-it).
-2. In the **Docker** tab, choose **Add Container**, and pick `departureboard` from the **Template** list.
+2. In the **Docker** tab, choose **Add Container**, and pick `twobells` from the **Template** list.
 3. Check the settings and choose **Apply**.
 4. Open `http://tower:8090/` (your server's name) or its IP address, from the home network.
 
 The template sets the hardening in **Extra Parameters** (shown in the advanced view): read-only system, a 64 MB `/tmp`, no capabilities, no new privileges, and the memory, process and log limits. What it can't do as the compose file does:
 
 - **Pin a digest.** The template names a version tag. Docker on Unraid runs whatever that tag points to when it pulls, so check the tag with `cosign verify` before each **Apply**.
-- **Make the data folder's owner.** Hence the `chown` above. If a permissions tool resets `/mnt/user/appdata/departureboard` to another owner, the app can't save; run the `chown` again.
+- **Make the data folder's owner.** Hence the `chown` above. If a permissions tool resets `/mnt/user/appdata/twobells` to another owner, the app can't save; run the `chown` again.
 - **Read a keys file.** Paste the keys in the settings instead.
 
 Unraid's own autostart switch, in the Docker tab, takes the place of a restart policy.
@@ -129,7 +129,7 @@ Unraid's own autostart switch, in the Docker tab, takes the place of a restart p
 On TrueNAS SCALE 24.10 or later, apps run in Docker, and a compose file can be installed as a custom app.
 
 1. In **Apps**, choose **Discover Apps**, then **Install via YAML** from the ⋮ menu.
-2. Name it `departureboard`. Paste `deploy/docker/docker-compose.ghcr.yml`, with the version and digest filled in, and save.
+2. Name it `twobells`. Paste `deploy/docker/docker-compose.ghcr.yml`, with the version and digest filled in, and save.
 3. Open `http://<NAS IP address>:8090/` from the home network. Apps installed from YAML have no Web UI button.
 
 Use YAML rather than the guided **Custom App** form: the form, as TrueNAS documents it, has no setting for a read-only system.
@@ -143,23 +143,23 @@ The compose file keeps the data in a named volume, which works as it is. TrueNAS
 With the version and digest checked as above:
 
 ```bash
-docker run -d --name departureboard --restart unless-stopped \
+docker run -d --name twobells --restart unless-stopped \
   -p 0.0.0.0:8090:8090 -v dashboard-data:/data \
   --read-only --tmpfs /tmp:size=64m --cap-drop ALL \
   --security-opt no-new-privileges:true --memory 512m --pids-limit 128 \
   --log-opt max-size=1m --log-opt max-file=3 \
-  "ghcr.io/acornelissen/inky-departures:$VERSION@$DIGEST"
+  "ghcr.io/acornelissen/twobells:$VERSION@$DIGEST"
 ```
 
 Or copy `deploy/docker/docker-compose.ghcr.yml` to a folder, fill it in, and run `docker compose -f docker-compose.ghcr.yml up -d` there.
 
-To update with `docker run`: check the new version, then `docker rm -f departureboard` and run the command again with the new version and digest. The `dashboard-data` volume keeps everything.
+To update with `docker run`: check the new version, then `docker rm -f twobells` and run the command again with the new version and digest. The `dashboard-data` volume keeps everything.
 
 **Podman** takes the same command, with `podman` in place of `docker`. Without root (rootless):
 
 - A named volume, as above, takes the image's owner by itself.
-- A folder doesn't. Give it to the container's user through Podman's user mapping: `podman unshare chown 10001:10001 ~/departureboard-data`, then `-v ~/departureboard-data:/data`. On a system with SELinux (Fedora, say), add `:Z`: `-v ~/departureboard-data:/data:Z`.
+- A folder doesn't. Give it to the container's user through Podman's user mapping: `podman unshare chown 10001:10001 ~/twobells-data`, then `-v ~/twobells-data:/data`. On a system with SELinux (Fedora, say), add `:Z`: `-v ~/twobells-data:/data:Z`.
 - If Podman can't set `--memory` or `--pids-limit` without root, see Podman's troubleshooting guide on resource limits for rootless containers.
 - Podman doesn't start containers at boot by itself. Use a Quadlet (systemd) unit for that, as Podman's documentation describes.
 
-Codes and errors are in `docker logs departureboard` (or `podman logs departureboard`).
+Codes and errors are in `docker logs twobells` (or `podman logs twobells`).

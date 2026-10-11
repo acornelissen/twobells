@@ -6,7 +6,7 @@
 # fallback_interval_minutes and position_interval_seconds, and [dashboard]
 # allowed_hosts and state_dir are read from this file alone.
 #
-# On a Pi, install.sh copies this to /etc/departureboard/config.toml. In
+# On a Pi, install.sh copies this to /etc/twobells/config.toml. In
 # Docker, mount one with docker-compose.override.yml; on a desktop, give one
 # with --config. Keys live in secrets.env, never here.
 #
@@ -27,9 +27,9 @@
 # The zone departures and checking times are in. Also on the General tab.
 timezone = "Europe/London"
 # The store: the folder everything saved goes in, named by its state file.
-# A Pi's services use /var/lib/departureboard and Docker /data, whatever
+# A Pi's services use /var/lib/twobells and Docker /data, whatever
 # this says. Leave it out on a desktop, where the store has its own place.
-state_file = "/var/lib/departureboard/state.json"
+state_file = "/var/lib/twobells/state.json"
 # Never redraw more often than this, even if the data changes sooner.
 min_redraw_minutes = 2
 # "sign": amber dot-matrix station board, with a yellow accent (or red, on e-paper).
@@ -80,15 +80,15 @@ windows = ["Mon-Fri 06:30-09:30", "Mon-Fri 16:30-19:30"]
 
 # Buses, worked out the way bustimes.org does: from the BODS timetable for
 # your stops plus live BODS bus positions. Free (needs BODS_API_KEY), so buses
-# can be checked all day. BODS covers England only. `departureboard timetable`
-# builds the timetable, and departureboard-timetable.timer keeps it fresh
+# can be checked all day. BODS covers England only. `twobells timetable`
+# builds the timetable, and twobells-timetable.timer keeps it fresh
 # (rebuilt weekly, or when your stops or operators change).
 [bus]
 # enabled = false   # switches buses off; the rest of [bus] is kept, unread
 # The default; source = "transportapi" uses TransportAPI alone (below).
 source = "bods"
 # The bus companies whose timetables to read, by national operator code. The
-# setup wizard and `departureboard setup discover` find them for your stops;
+# setup wizard and `twobells setup discover` find them for your stops;
 # bustimes.org shows them too.
 operators = ["CHANGE_ME"]   # like ["BNML", "HIPK"] in Glossop
 rows = 3
@@ -133,7 +133,7 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # HDMI screen only: a second page showing where the next bus you can catch is,
 # on the stops before yours. Needs BODS_API_KEY in secrets.env. Positions are
 # checked every position_interval_seconds ([bus], above) inside the bus windows.
-# `departureboard route` prints this block for you; see the user guide.
+# `twobells route` prints this block for you; see the user guide.
 # [bus.routes.LINE]
 # stop = "A"            # your stop's label from [bus.stops]
 # stops = [             # in the order the bus calls; yours last
@@ -145,9 +145,9 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # All optional; the values shown are the defaults. All but state_dir and allowed_hosts
 # can be changed on the Dashboard tab too.
 # [dashboard]
-# The store, when state_file above isn't set. Default: /var/lib/departureboard
-# on a Pi, /data in Docker, ~/Library/Application Support/departureboard on a
-# Mac, else departureboard in $XDG_STATE_HOME or ~/.local/state. An old
+# The store, when state_file above isn't set. Default: /var/lib/twobells
+# on a Pi, /data in Docker, ~/Library/Application Support/twobells on a
+# Mac, else twobells in $XDG_STATE_HOME or ~/.local/state. An old
 # departureboard-dashboard folder there is used as it is.
 # state_dir = "/path/to/folder"
 # train_rows = 10                 # 1-20

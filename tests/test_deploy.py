@@ -65,9 +65,9 @@ def test_compose_locks_the_container_down():
         assert risky not in COMPOSE, risky
 
 
-def test_compose_runs_departureboard_on_the_dashboards_old_volume():
+def test_compose_runs_twobells_on_the_dashboards_old_volume():
     lines = [line.split("#")[0].strip() for line in COMPOSE.splitlines()]
-    for line in ("departureboard:", "image: departureboard:local", "container_name: departureboard",
+    for line in ("twobells:", "image: twobells:local", "container_name: twobells",
                  "- secrets.env", "- dashboard-data:/data", "dashboard-data:", "- \"0.0.0.0:8090:8090\""):
         assert line in lines, line
     assert lines[lines.index("env_file:") + 1] == "- secrets.env"
@@ -76,7 +76,7 @@ def test_compose_runs_departureboard_on_the_dashboards_old_volume():
     # config.toml only through the optional override, which stays out of git.
     assert "config.toml:" not in COMPOSE and "dashboard.env" not in COMPOSE
     override = (ROOT / "docker-compose.override.yml.example").read_text()
-    assert "services:\n  departureboard:\n    volumes:\n      - ./config.toml:/config/config.toml:ro\n" in override
+    assert "services:\n  twobells:\n    volumes:\n      - ./config.toml:/config/config.toml:ro\n" in override
     assert "docker-compose.override.yml" in (ROOT / ".gitignore").read_text().splitlines()
     assert "/config/config.toml" in _entrypoint()  # where the override puts it
 
@@ -88,8 +88,8 @@ def test_the_image_knows_its_version_without_installing_the_package():
     assert "assert v() != 'unknown'" in DOCKERFILE
 
 
-def test_the_image_runs_as_departureboard_with_the_volumes_uid():
-    assert re.search(r"useradd --system --uid 10001 .* departureboard \\$", DOCKERFILE, re.M)
+def test_the_image_runs_as_twobells_with_the_volumes_uid():
+    assert re.search(r"useradd --system --uid 10001 .* twobells \\$", DOCKERFILE, re.M)
     assert "chown 10001:10001 /data" in DOCKERFILE
 
 
@@ -99,10 +99,10 @@ def _entrypoint() -> list[str]:
 
 
 def test_the_container_serves_as_a_docker_install_in_its_one_writable_folder():
-    from departureboard.cli.main import _parser
+    from twobells.cli.main import _parser
 
     entrypoint = _entrypoint()
-    assert entrypoint[:3] == ["python", "-m", "departureboard"]
+    assert entrypoint[:3] == ["python", "-m", "twobells"]
     args = _parser().parse_args(entrypoint[3:])
     assert (args.command, args.install, args.state_dir, args.host, args.port) == ("serve", "docker", "/data",
                                                                                   "0.0.0.0", 8090)
@@ -112,8 +112,8 @@ def test_the_container_serves_as_a_docker_install_in_its_one_writable_folder():
 
 def test_the_documented_password_commands_fit_the_container():
     # Run with docker exec as the image's user, in the one writable place: /data.
-    from departureboard.cli.main import _parser
-    from departureboard.settings.installs import install_named
+    from twobells.cli.main import _parser
+    from twobells.settings.installs import install_named
 
     assert "WORKDIR /data" in DOCKERFILE
     guide, readme = (ROOT / "docs" / "user-guide.md").read_text(), (ROOT / "README.md").read_text()
@@ -122,22 +122,22 @@ def test_the_documented_password_commands_fit_the_container():
     for flag, command in (("--set-password", docker.password_command), ("--reset-code", docker.reset_command)):
         assert command in guide and command in readme, flag
         words = shlex.split(command)
-        assert words[:4] == ["docker", "exec", "-it", "departureboard"]  # the compose file's container_name
-        assert words[4:7] == ["python", "-m", "departureboard"]
+        assert words[:4] == ["docker", "exec", "-it", "twobells"]  # the compose file's container_name
+        assert words[4:7] == ["python", "-m", "twobells"]
         args = _parser().parse_args(words[7:])
         assert (args.command, args.state_dir, getattr(args, flag[2:].replace("-", "_"))) == ("serve", "/data", True)
-    assert "docker logs departureboard<" in docker.log_help and "Container, departureboard, Log" in docker.log_help
+    assert "docker logs twobells<" in docker.log_help and "Container, twobells, Log" in docker.log_help
 
 
 def test_a_desktop_says_where_its_log_is_however_it_runs():
-    from departureboard.settings.installs import install_named
+    from twobells.settings.installs import install_named
 
     desktop = install_named("desktop").log_help
     # In a terminal, or started at login by the files in deploy/desktop.
-    plist = (ROOT / "deploy" / "desktop" / "uk.departureboard.serve.plist").read_text()
-    assert "Terminal" in desktop and "~/Library/Logs/departureboard.log" in desktop
-    assert "/Library/Logs/departureboard.log" in plist
-    assert "journalctl --user -u departureboard" in desktop
+    plist = (ROOT / "deploy" / "desktop" / "uk.twobells.serve.plist").read_text()
+    assert "Terminal" in desktop and "~/Library/Logs/twobells.log" in desktop
+    assert "/Library/Logs/twobells.log" in plist
+    assert "journalctl --user -u twobells" in desktop
 
 
 def test_keys_files_are_git_ignored():
@@ -148,7 +148,7 @@ def test_keys_files_are_git_ignored():
 
 def test_one_key_template_for_the_pi_and_docker_in_groups():
     assert not (ROOT / "deploy" / "dashboard.env.example").exists()
-    from departureboard.settings import schema
+    from twobells.settings import schema
 
     template = (ROOT / "deploy" / "secrets.env.example").read_text()
     assert re.findall(r"^[A-Z_]+=.", template, re.M) == []  # every value empty
@@ -159,7 +159,7 @@ def test_one_key_template_for_the_pi_and_docker_in_groups():
         names = re.findall(r"^([A-Z_]+)=$", template[start:end], re.M)
         assert names == [name for name, _, _ in schema.keys(group)], group
     assert len(re.findall(r"^[A-Z_]+=", template, re.M)) == sum(len(schema.keys(group)) for group in groups)
-    assert "/etc/departureboard/secrets.env" in template and "next to docker-compose.yml" in template
+    assert "/etc/twobells/secrets.env" in template and "next to docker-compose.yml" in template
     install = (PI / "install.sh").read_text()
     assert '"$REPO/deploy/secrets.env.example" "$CONF/secrets.env"' in install
 
@@ -177,17 +177,17 @@ def _unit(name: str, folder: Path = PI) -> dict[str, list[str]]:
 
 
 def test_the_settings_page_stays_on_the_home_network_and_hands_its_internet_work_on():
-    web = _unit("departureboard-web.service")
+    web = _unit("twobells-web.service")
     assert web["IPAddressDeny"] == ["any"]  # with the dashboard view on too: its feeds come from the fetch service
     assert web["IPAddressAllow"] == ["localhost link-local 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7"]
-    assert "departureboard-fetch.path" in web["Wants"]
+    assert "twobells-fetch.path" in web["Wants"]
 
 
 # The second layer of the same, for where systemd can't apply IPAddressAllow= (a Pi Zero's kernel).
-GUARD = PI / "departureboard-web.nft"
-GUARD_UNIT = "departureboard-guard.service"  # loads it at boot, before the web server
-GUARD_FILE = "/opt/departureboard/departureboard-web.nft"  # where install.sh and update.sh put it
-GUARD_TABLE = "inet departureboard_web"
+GUARD = PI / "twobells-web.nft"
+GUARD_UNIT = "twobells-guard.service"  # loads it at boot, before the web server
+GUARD_FILE = "/opt/twobells/twobells-web.nft"  # where install.sh and update.sh put it
+GUARD_TABLE = "inet twobells_web"
 GUARD_SET = "web"  # the web server's cgroup, put in by systemd (the web unit's NFTSet=)
 # systemd's names in IPAddressAllow=, as systemd.resource-control(5) gives them.
 SYSTEMD_NAMES = {"localhost": ("127.0.0.0/8", "::1/128"), "link-local": ("169.254.0.0/16", "fe80::/64")}
@@ -224,7 +224,7 @@ def test_the_guard_unit_loads_the_table_as_root_at_boot_before_the_web_server():
     assert guard["ExecStart"] == [f"/usr/sbin/nft -f {GUARD_FILE}"]
     # "-": stopping never fails on a table already gone (nft flush ruleset, say).
     assert guard["ExecStop"] == [f"-/usr/sbin/nft delete table {GUARD_TABLE}"]
-    assert guard["Before"] == ["departureboard-web.service"]
+    assert guard["Before"] == ["twobells-web.service"]
     # After nftables' own rules, which begin by flushing every table, this one too.
     assert guard["After"] == ["nftables.service"]
     assert guard["WantedBy"] == ["multi-user.target"]
@@ -239,7 +239,7 @@ def test_the_guard_unit_loads_the_table_as_root_at_boot_before_the_web_server():
 
 
 def test_the_web_unit_puts_its_cgroup_in_the_guards_set_and_starts_without_it():
-    web = _unit("departureboard-web.service")
+    web = _unit("twobells-web.service")
     # systemd puts the cgroup's id, as the kernel has it, in the guard's set as
     # the server starts, and takes it out as it stops.
     assert web["NFTSet"] == [f"cgroup:{GUARD_TABLE.replace(' ', ':')}:{GUARD_SET}"]
@@ -249,7 +249,7 @@ def test_the_web_unit_puts_its_cgroup_in_the_guards_set_and_starts_without_it():
     assert GUARD_UNIT in web["Wants"] and GUARD_UNIT in web["After"]
     for binding in ("Requires", "Requisite", "BindsTo", "PartOf"):
         assert GUARD_UNIT not in " ".join(web.get(binding, [])), binding
-    assert web["User"] == ["departureboard"]  # the server itself is never root
+    assert web["User"] == ["twobells"]  # the server itself is never root
 
 
 def test_the_guide_says_how_the_guard_holds_and_how_to_bring_it_back():
@@ -258,7 +258,7 @@ def test_the_guide_says_how_the_guard_holds_and_how_to_bring_it_back():
                  # A Pi Zero or Pi 1 has neither systemd's firewall nor, on Bookworm (252), the guard.
                  "Raspberry Pi OS Trixie",
                  # Flushing the ruleset removes it; this loads it, then puts the server in its set again.
-                 f"sudo systemctl restart {GUARD_UNIT.removesuffix('.service')} departureboard-web",
+                 f"sudo systemctl restart {GUARD_UNIT.removesuffix('.service')} twobells-web",
                  f"sudo nft list set {GUARD_TABLE} {GUARD_SET}"):
         assert said in guide, said
     assert "The unit loads them as root as the server starts" not in guide
@@ -309,7 +309,7 @@ def test_the_guard_lets_the_web_server_reach_only_the_home_network():
 def test_the_guard_holds_the_same_addresses_as_the_unit():
     import ipaddress
 
-    [allowed] = _unit("departureboard-web.service")["IPAddressAllow"]
+    [allowed] = _unit("twobells-web.service")["IPAddressAllow"]
     wanted = set()
     for word in allowed.split():
         wanted |= {ipaddress.ip_network(net) for net in SYSTEMD_NAMES.get(word, (word,))}
@@ -322,9 +322,9 @@ def test_the_guard_holds_the_same_addresses_as_the_unit():
 
 
 def test_the_guard_keeps_the_units_port_to_the_home_network():
-    from departureboard.cli.main import _parser
+    from twobells.cli.main import _parser
 
-    port = _parser().parse_args(shlex.split(_unit("departureboard-web.service")["ExecStart"][0])[1:]).port
+    port = _parser().parse_args(shlex.split(_unit("twobells-web.service")["ExecStart"][0])[1:]).port
     incoming = [line.strip() for line in _block(_rules(), "chain input {").strip().splitlines()]
     assert incoming == ["type filter hook input priority filter; policy accept;",
                         f"tcp dport {port} ip saddr != @home4 drop",
@@ -334,9 +334,9 @@ def test_the_guard_keeps_the_units_port_to_the_home_network():
 @pytest.mark.parametrize("name", ["install.sh", "update.sh"])
 def test_install_and_update_put_the_guard_where_only_root_can_change_it(name):
     script = _script(name)
-    assert re.search(r"^PREFIX=/opt/departureboard$", script, re.M)
+    assert re.search(r"^PREFIX=/opt/twobells$", script, re.M)
     put = f'install -m 644 -o root -g root "$REPO/deploy/pi/{GUARD.name}" "$PREFIX/{GUARD.name}"'
-    assert put.replace("$PREFIX", "/opt/departureboard").endswith(f'"{GUARD_FILE}"')
+    assert put.replace("$PREFIX", "/opt/twobells").endswith(f'"{GUARD_FILE}"')
     assert put in script
     # In place before the guard loads it afresh, and that before the web
     # server starts, or restarts: loading the table empties its set, which
@@ -345,8 +345,8 @@ def test_install_and_update_put_the_guard_where_only_root_can_change_it(name):
     # still goes in, and it says so at the end.
     steps = [put, "\nsystemctl daemon-reload\n", f"\nsystemctl enable {GUARD_UNIT}\n",
              f"\nsystemctl restart {GUARD_UNIT} || true\n",
-             "systemctl enable --now departureboard-web.service" if name == "install.sh" else
-             "systemctl try-restart departureboard-web.service"]
+             "systemctl enable --now twobells-web.service" if name == "install.sh" else
+             "systemctl try-restart twobells-web.service"]
     places = [script.index(step) for step in steps]
     assert places == sorted(places)
     started = steps[-1]
@@ -358,7 +358,7 @@ SAY_IF_UNGUARDED = re.compile(r"^say_if_unguarded\(\) \{\n.*?^\}$", re.M | re.S)
 # What nft lists for the guard's set once systemd has put the web server in (a
 # 32-bit Pi may give the id as a number), and for one still empty.
 FILLED = (f"table {GUARD_TABLE} {{\n\tset {GUARD_SET} {{\n\t\ttype cgroupsv2\n"
-          '\t\telements = { "system.slice/departureboard-web.service" }\n\t}\n}\n')
+          '\t\telements = { "system.slice/twobells-web.service" }\n\t}\n}\n')
 EMPTY = f"table {GUARD_TABLE} {{\n\tset {GUARD_SET} {{\n\t\ttype cgroupsv2\n\t}}\n}}\n"
 
 
@@ -389,7 +389,7 @@ def test_install_and_update_say_when_the_guard_isnt_holding_the_web_server():
         said = _say_if_unguarded("install.sh", True, listed)
         assert said.stdout == "carried on\n"  # a warning, never a stop: the board and dashboard still work
         assert said.stderr.startswith("Warning:"), said.stderr
-        assert "journalctl -u departureboard-guard -u departureboard-web" in said.stderr
+        assert "journalctl -u twobells-guard -u twobells-web" in said.stderr
         assert "Trixie" not in said.stderr
 
 
@@ -400,7 +400,7 @@ def test_install_and_update_say_when_systemd_is_too_old_to_fill_the_guards_set(s
     said = _say_if_unguarded("install.sh", True, EMPTY, systemd).stderr
     assert said.startswith("Warning:"), said
     assert ("254" in said and "Trixie" in said) == old, said
-    assert ("journalctl -u departureboard-guard -u departureboard-web" in said) == (not old), said
+    assert ("journalctl -u twobells-guard -u twobells-web" in said) == (not old), said
     assert _say_if_unguarded("install.sh", True, FILLED, systemd).stderr == ""
 
 
@@ -429,11 +429,11 @@ def test_install_run_again_restarts_a_running_web_server_onto_its_new_unit_and_g
     # it may now load, and the check after it would blame the guard.
     install = _script("install.sh")
     units_go_in = install.index("for unit in ")
-    asked = "systemctl is-active --quiet departureboard-web.service && restart_web=true\n"
+    asked = "systemctl is-active --quiet twobells-web.service && restart_web=true\n"
     assert "restart_web=false\n" + asked in install
     assert install.index(asked) < units_go_in  # as it was before this run
-    started = install.index("systemctl enable --now departureboard-web.service\n")
-    restart = "if $restart_web; then\n  systemctl try-restart departureboard-web.service\nfi\n"
+    started = install.index("systemctl enable --now twobells-web.service\n")
+    restart = "if $restart_web; then\n  systemctl try-restart twobells-web.service\nfi\n"
     assert started < install.index(restart)
     # The guard loaded afresh first, so systemd puts the restarted server in its set.
     assert install.index(f"systemctl restart {GUARD_UNIT}") < install.index(restart)
@@ -442,13 +442,13 @@ def test_install_run_again_restarts_a_running_web_server_onto_its_new_unit_and_g
 
 def test_install_run_again_restarts_a_running_fetch_service_only_if_its_unit_changed():
     install = _script("install.sh")
-    changed = ("if systemctl is-active --quiet departureboard-fetch.service \\\n"
-               '    && ! cmp -s "$REPO/deploy/pi/departureboard-fetch.service" '
-               "/etc/systemd/system/departureboard-fetch.service; then\n  restart_fetch=true\nfi\n")
+    changed = ("if systemctl is-active --quiet twobells-fetch.service \\\n"
+               '    && ! cmp -s "$REPO/deploy/pi/twobells-fetch.service" '
+               "/etc/systemd/system/twobells-fetch.service; then\n  restart_fetch=true\nfi\n")
     assert "restart_fetch=false\n" + changed in install
     assert install.index(changed) < install.index("for unit in ")  # the unit as it was before this run
-    started = install.index("systemctl enable --now departureboard-fetch.path departureboard-fetch.service\n")
-    restart = "if $restart_fetch; then\n  systemctl try-restart departureboard-fetch.service\nfi\n"
+    started = install.index("systemctl enable --now twobells-fetch.path twobells-fetch.service\n")
+    restart = "if $restart_fetch; then\n  systemctl try-restart twobells-fetch.service\nfi\n"
     assert started < install.index(restart)
 
 
@@ -479,7 +479,7 @@ def test_update_installs_the_pis_pypi_packages_and_checks_they_import_before_the
     # goes in, so if one is missing the old code still runs; the new code after.
     [(_, installed)] = _import_checks("install.sh")
     (deps_at, deps), (new_at, new) = _import_checks("update.sh")
-    assert deps | new == installed and new == {"departureboard.cli.main"}
+    assert deps | new == installed and new == {"twobells.cli.main"}
     assert pi < deps_at < code < new_at
 
 
@@ -498,26 +498,26 @@ def test_update_installs_pygame_for_the_screen_before_the_new_code():
 
 
 def test_the_pi_serves_its_settings_at_8090_and_nothing_at_8080():
-    from departureboard.cli.main import _parser
-    from departureboard.settings.installs import install_named
+    from twobells.cli.main import _parser
+    from twobells.settings.installs import install_named
 
-    web = _unit("departureboard-web.service")
-    assert web["ExecStart"] == ["/opt/departureboard/venv/bin/departureboard serve --install pi "
-                                "--config /etc/departureboard/config.toml --port 8090"]
+    web = _unit("twobells-web.service")
+    assert web["ExecStart"] == ["/opt/twobells/venv/bin/twobells serve --install pi "
+                                "--config /etc/twobells/config.toml --port 8090"]
     args = _parser().parse_args(shlex.split(web["ExecStart"][0])[1:])
     assert (args.command, args.install, args.config, args.port, args.host, args.lan) == (
-        "serve", "pi", "/etc/departureboard/config.toml", 8090, None, False)
+        "serve", "pi", "/etc/twobells/config.toml", 8090, None, False)
     assert install_named("pi").host == "0.0.0.0"  # every address, kept to the home network above
     # No second listener on the old port: bookmarks to it break, on purpose.
-    assert "8080" not in (PI / "departureboard-web.service").read_text()
+    assert "8080" not in (PI / "twobells-web.service").read_text()
 
 
 def test_the_settings_service_has_room_for_every_connection_the_server_takes():
     # A thread per connection, and a few of the server's own; past TasksMax a
     # connection can't be answered at all.
-    from departureboard.web import server as dashserver
+    from twobells.web import server as dashserver
 
-    web = _unit("departureboard-web.service")
+    web = _unit("twobells-web.service")
     assert int(web["TasksMax"][0]) >= max(64, dashserver.MAX_CONNECTIONS + 8)
     assert web["MemoryMax"] == ["128M"]
 
@@ -543,7 +543,7 @@ def _timetable_memory(install) -> int:
     runs there (tests/fetch/test_service.py and
     tests/dashboard/test_collector.py check both), so it is never held
     beside the search's build: alone, it is no more than loading takes."""
-    from departureboard.timetable import build, routesetup
+    from twobells.timetable import build, routesetup
 
     limits = routesetup.document_limits(install)
     journeys = (limits.journeys + build.inbound_limit(limits)) * build.JOURNEY_BYTES
@@ -567,11 +567,11 @@ def test_the_timetable_unit_has_room_for_the_largest_document_it_reads_and_its_j
     # inbound-only ones) peaked at 92 MB on Python 3.12, 39 MB of it Python
     # and the command line's imports; written and read whole, as they were
     # before, 7,000 peaked at 350 MB saving and 307 MB loading.
-    from departureboard.cli.main import _parser
-    from departureboard.settings.installs import install_named
+    from twobells.cli.main import _parser
+    from twobells.settings.installs import install_named
 
     room = 40_000_000
-    for name in ("departureboard-timetable.service", "departureboard-fetch.service"):
+    for name in ("twobells-timetable.service", "twobells-fetch.service"):
         unit = _unit(name)
         assert _parser().parse_args(shlex.split(unit["ExecStart"][0])[1:]).install == "pi", name
         memory = unit["MemoryMax"][0]
@@ -587,14 +587,14 @@ def test_the_container_has_room_for_the_largest_timetable_document_it_reads_and_
     import re
     import xml.etree.ElementTree as ET
 
-    from departureboard.settings.installs import install_named
+    from twobells.settings.installs import install_named
 
     room = 150_000_000
-    extra = ET.parse(ROOT / "deploy" / "unraid" / "departureboard.xml").getroot().findtext("ExtraParams")
+    extra = ET.parse(ROOT / "deploy" / "unraid" / "twobells.xml").getroot().findtext("ExtraParams")
     limits = {
         "docker-compose.yml": re.search(r"^\s*mem_limit: (\d+)m$", COMPOSE, re.M),
         "docker-compose.ghcr.yml": re.search(r"^\s*mem_limit: (\d+)m$", GHCR_COMPOSE, re.M),
-        "departureboard.xml": re.search(r"--memory (\d+)m\b", extra or ""),
+        "twobells.xml": re.search(r"--memory (\d+)m\b", extra or ""),
     }
     for name, found in limits.items():
         assert found, name
@@ -611,36 +611,36 @@ def _cached_timetable(install) -> int:
     """The dashboard's own copy of the timetable, held beside a build where
     serve runs both (Docker): its poller keeps it through upkeep's weekly
     rebuild, so the buses don't blank."""
-    from departureboard.timetable import build, routesetup
+    from twobells.timetable import build, routesetup
 
     limits = routesetup.document_limits(install)
     return (limits.journeys + build.inbound_limit(limits)) * LOADED_JOURNEY_BYTES
 
 
 def test_the_fetch_service_goes_out_and_listens_on_nothing():
-    from departureboard.setup.spool.folder import RUNTIME
+    from twobells.setup.spool.folder import RUNTIME
 
-    unit = _unit("departureboard-fetch.service")
+    unit = _unit("twobells-fetch.service")
     assert "IPAddressDeny" not in unit and "IPAddressAllow" not in unit
     assert unit["SocketBindDeny"] == ["any"]
     assert unit["ExecStart"] == [
-        "/opt/departureboard/venv/bin/departureboard fetch --config /etc/departureboard/config.toml"]
-    assert unit["Type"] == ["simple"] and unit["User"] == ["departureboard"]
+        "/opt/twobells/venv/bin/twobells fetch --config /etc/twobells/config.toml"]
+    assert unit["Type"] == ["simple"] and unit["User"] == ["twobells"]
     assert unit["Restart"] == ["on-failure"] and unit["RestartSec"] == ["10"]
-    assert unit["StateDirectory"] == ["departureboard"]
-    assert unit["EnvironmentFile"] == ["/etc/departureboard/secrets.env"]
+    assert unit["StateDirectory"] == ["twobells"]
+    assert unit["EnvironmentFile"] == ["/etc/twobells/secrets.env"]
     assert unit["WantedBy"] == ["multi-user.target"]  # at boot, so the dashboard's feeds start with the Pi
     assert int(unit["TasksMax"][0]) >= 32
-    timetable = _unit("departureboard-timetable.service")
+    timetable = _unit("twobells-timetable.service")
     hardening = ("NoNewPrivileges", "CapabilityBoundingSet", "ProtectSystem", "ProtectHome", "PrivateTmp",
                  "PrivateDevices", "ProtectKernelTunables", "ProtectKernelModules", "ProtectControlGroups",
                  "RestrictAddressFamilies", "RestrictNamespaces", "RestrictSUIDSGID", "LockPersonality",
                  "MemoryDenyWriteExecute", "SystemCallFilter", "MemoryMax", "UMask")
     for setting in hardening:
         assert unit[setting] == timetable[setting], setting
-    path = _unit("departureboard-fetch.path")
+    path = _unit("twobells-fetch.path")
     assert path["DirectoryNotEmpty"] == [f"{RUNTIME}/requests"]
-    assert path["Unit"] == ["departureboard-fetch.service"]
+    assert path["Unit"] == ["twobells-fetch.service"]
 
 
 def test_the_setup_units_are_gone():
@@ -649,48 +649,48 @@ def test_the_setup_units_are_gone():
 
 
 def test_the_spool_is_in_memory_and_shared_by_both_units():
-    from departureboard.setup.spool.folder import RUNTIME
+    from twobells.setup.spool.folder import RUNTIME
 
-    spool = {"RuntimeDirectory": ["departureboard-fetch"], "RuntimeDirectoryMode": ["0700"],
+    spool = {"RuntimeDirectory": ["twobells-fetch"], "RuntimeDirectoryMode": ["0700"],
              "RuntimeDirectoryPreserve": ["yes"]}  # kept when either stops
-    web, fetch = _unit("departureboard-web.service"), _unit("departureboard-fetch.service")
+    web, fetch = _unit("twobells-web.service"), _unit("twobells-fetch.service")
     for unit in (web, fetch):
         assert {key: unit.get(key) for key in spool} == spool
-    assert web["User"] == fetch["User"] == ["departureboard"]  # so both can open the 0700 folder
+    assert web["User"] == fetch["User"] == ["twobells"]  # so both can open the 0700 folder
     assert Path("/run") / spool["RuntimeDirectory"][0] == RUNTIME
-    watched = _unit("departureboard-fetch.path")["DirectoryNotEmpty"][0]
-    assert watched.startswith("/run/departureboard-fetch/") and "/var/lib" not in watched
+    watched = _unit("twobells-fetch.path")["DirectoryNotEmpty"][0]
+    assert watched.startswith("/run/twobells-fetch/") and "/var/lib" not in watched
 
 
 def test_a_fetch_service_that_keeps_stopping_at_once_is_given_up_on_not_looped():
     # With the dashboard off, each run waits a minute for more, so ten starts in two minutes is a loop.
-    for name in ("departureboard-fetch.service", "departureboard-fetch.path"):
+    for name in ("twobells-fetch.service", "twobells-fetch.path"):
         unit = _unit(name)
         assert unit["StartLimitIntervalSec"] == ["2min"] and unit["StartLimitBurst"] == ["10"], name
     guide = (ROOT / "docs" / "user-guide.md").read_text()
-    assert "systemctl reset-failed departureboard-fetch.service departureboard-fetch.path" in guide
+    assert "systemctl reset-failed twobells-fetch.service twobells-fetch.path" in guide
 
 
 def test_install_and_update_set_up_the_fetch_service():
     install = (PI / "install.sh").read_text()
     update = (PI / "update.sh").read_text()
     for text in (install, update):
-        assert "departureboard-fetch.service" in text and "departureboard-fetch.path" in text
+        assert "twobells-fetch.service" in text and "twobells-fetch.path" in text
     assert '"$REPO/deploy/pi/departureboard-setup' not in install
-    assert "systemctl enable --now departureboard-fetch.path departureboard-fetch.service" in install
+    assert "systemctl enable --now twobells-fetch.path twobells-fetch.service" in install
     # The setup units go, the fetch units come in their place, then the old spools go.
     order = [
         "systemctl disable --now departureboard-setup.path departureboard-setup.service",
         "rm -f /etc/systemd/system/departureboard-setup.service /etc/systemd/system/departureboard-setup.path\n",
-        "systemctl enable departureboard-fetch.path departureboard-fetch.service\n",
-        "systemctl restart departureboard-fetch.path departureboard-fetch.service\n",
-        "systemctl try-restart departureboard-web.service\n",
-        "rm -rf /run/departureboard-setup /var/lib/departureboard/setup-spool\n",
+        "systemctl enable twobells-fetch.path twobells-fetch.service\n",
+        "systemctl restart twobells-fetch.path twobells-fetch.service\n",
+        "systemctl try-restart twobells-web.service\n",
+        "rm -rf /run/departureboard-setup /var/lib/twobells/setup-spool\n",
     ]
     places = [update.index(step) for step in order]
     assert places == sorted(places)
     units = re.search(r"for unit in (.*?); do", update, re.S).group(1)
-    assert "departureboard-fetch.service" in units and "departureboard-setup" not in units
+    assert "twobells-fetch.service" in units and "departureboard-setup" not in units
 
 
 SCRIPTS = ("install.sh", "update.sh")
@@ -707,13 +707,13 @@ def _run_lines(name: str) -> list[str]:
 
 
 def _query(name: str, what: str, conf: Path) -> list[str]:
-    """The departureboard command line `query WHAT` runs in the script
+    """The twobells command line `query WHAT` runs in the script
     `name`, as it would with its config folder at `conf`."""
     [body] = re.findall(r"^query\(\) \{\n  (.*)\n\}$", _script(name), re.M)
     words = shlex.split(body)
     # Asked as the services' user, not as root.
-    assert words[:4] == ["runuser", "-u", "departureboard", "--"], words
-    assert words[4] == "$PREFIX/venv/bin/departureboard"
+    assert words[:4] == ["runuser", "-u", "twobells", "--"], words
+    assert words[4] == "$PREFIX/venv/bin/twobells"
     return [what if word == "$1" else word.replace("$CONF", str(conf)) for word in words[5:]]
 
 
@@ -730,7 +730,7 @@ def test_install_and_update_ask_the_app_not_config_toml(name):
     script = _script(name)
     for grepped in ("grep -E", "[[:space:]]", "timetable --needed"):
         assert grepped not in script, grepped
-    timer = "if query needs-timetable >/dev/null; then\n  systemctl enable --now departureboard-timetable.timer\n"
+    timer = "if query needs-timetable >/dev/null; then\n  systemctl enable --now twobells-timetable.timer\n"
     assert timer in script
     assert '"$(query display)"' in script
 
@@ -745,7 +745,7 @@ def test_install_and_update_ask_the_app_not_config_toml(name):
 ])
 def test_install_and_update_keep_the_bus_timetable_only_when_the_settings_want_it(tmp_path, name, config, saved,
                                                                                     wanted):
-    from departureboard.cli.main import main
+    from twobells.cli.main import main
 
     _settings(tmp_path, config, saved)
     assert (main(_query(name, "needs-timetable", tmp_path)) == 0) == wanted
@@ -754,8 +754,8 @@ def test_install_and_update_keep_the_bus_timetable_only_when_the_settings_want_i
 def test_install_starts_the_settings_and_the_fetch_service_and_installs_every_unit():
     install = _script("install.sh")
     started = " ".join(line for line in _run_lines("install.sh") if line.startswith("systemctl enable --now "))
-    for unit in ("departureboard-web.service", "departureboard-fetch.path", "departureboard-fetch.service",
-                 "departureboard-timetable.timer"):
+    for unit in ("twobells-web.service", "twobells-fetch.path", "twobells-fetch.service",
+                 "twobells-timetable.timer"):
         assert unit in started, unit
     units = re.search(r"for unit in (.*?); do", install, re.S).group(1).replace("\\", " ").split()
     shipped = [path.name for path in PI.iterdir() if path.suffix in (".service", ".timer", ".path")]
@@ -764,7 +764,7 @@ def test_install_starts_the_settings_and_the_fetch_service_and_installs_every_un
 
 @pytest.mark.parametrize("saved, board", [("", True), ('[app]\nviews = ["dashboard"]\n', False)])
 def test_install_names_the_boards_unit_only_while_its_view_is_on(tmp_path, capsys, saved, board):
-    from departureboard.cli.main import main
+    from twobells.cli.main import main
 
     _settings(tmp_path, saved=saved)
     assert main(_query("install.sh", "views", tmp_path)) == 0
@@ -774,14 +774,14 @@ def test_install_names_the_boards_unit_only_while_its_view_is_on(tmp_path, capsy
 
 
 @pytest.mark.parametrize("display, renderer", [
-    ("", "departureboard.timer"),  # an Inky, unless config.toml says
-    ('display = "waveshare-10in85g"\n', "departureboard.timer"),
-    ('display = "hdmi-1280x400"\n', "departureboard-screen.service"),
+    ("", "twobells.timer"),  # an Inky, unless config.toml says
+    ('display = "waveshare-10in85g"\n', "twobells.timer"),
+    ('display = "hdmi-1280x400"\n', "twobells-screen.service"),
 ])
 def test_install_names_the_boards_unit_for_the_display_and_never_starts_it(tmp_path, capsys, display, renderer):
     import subprocess
 
-    from departureboard.cli.main import main
+    from twobells.cli.main import main
 
     _settings(tmp_path, display)
     assert main(_query("install.sh", "display", tmp_path)) == 0
@@ -792,36 +792,36 @@ def test_install_names_the_boards_unit_for_the_display_and_never_starts_it(tmp_p
                            capture_output=True, text=True, check=True).stdout
     assert shown == f"{renderer}\n"
     for line in _run_lines("install.sh"):  # only printed, for the owner to run
-        assert "$renderer" not in line and "departureboard.timer" not in line and "screen" not in line, line
+        assert "$renderer" not in line and "twobells.timer" not in line and "screen" not in line, line
 
 
 def test_update_never_enables_or_disables_the_board():
     for line in _run_lines("update.sh"):
         if line.startswith(("systemctl enable", "systemctl disable")):
-            assert "departureboard.timer" not in line and "departureboard-screen" not in line, line
+            assert "twobells.timer" not in line and "twobells-screen" not in line, line
 
 
 def test_update_holds_the_boards_timer_while_the_code_is_reinstalled():
-    # pip takes the departureboard command away for a moment while it puts the
+    # pip takes the twobells command away for a moment while it puts the
     # new code in; a tick the timer starts then fails. The timer is held from
     # before the code goes in until the units are in, and only one that was
     # running is started again, even when the update stops part way.
     script = _script("update.sh")
-    held = script.index("systemctl stop departureboard.timer departureboard.service")
-    assert script.index("is-active --quiet departureboard.timer") < held
+    held = script.index("systemctl stop twobells.timer twobells.service")
+    assert script.index("is-active --quiet twobells.timer") < held
     assert held < script.index('--force-reinstall "$build"') < script.index("systemctl daemon-reload")
     [trap] = [line for line in script.splitlines() if line.startswith("trap ")]
-    assert "systemctl start departureboard.timer" in trap and "timer_was_running" in trap
+    assert "systemctl start twobells.timer" in trap and "timer_was_running" in trap
 
 
 def test_update_restarts_a_running_screen_onto_the_new_code():
     # The screen's service runs for good; without a restart it keeps the old
     # code. try-restart leaves a stopped one stopped, so the board stays yours.
-    assert "systemctl try-restart departureboard-screen.service" in _run_lines("update.sh")
+    assert "systemctl try-restart twobells-screen.service" in _run_lines("update.sh")
 
 
-SERVICES = ("departureboard.service", "departureboard-screen.service", "departureboard-web.service",
-            "departureboard-timetable.service", "departureboard-fetch.service", GUARD_UNIT)
+SERVICES = ("twobells.service", "twobells-screen.service", "twobells-web.service",
+            "twobells-timetable.service", "twobells-fetch.service", GUARD_UNIT)
 
 
 @pytest.mark.parametrize("name", SERVICES)
@@ -836,20 +836,20 @@ def test_every_service_is_locked_down_as_far_as_its_work_allows(name):
     # ProtectClock allows the clock's devices only, so not where the panel's or screen's are needed.
     assert unit.get("ProtectClock") == (["yes"] if devices else None)
     # The e-paper drivers learn which Pi this is from /proc/cpuinfo and /proc/device-tree.
-    assert unit.get("ProcSubset") == (None if name == "departureboard.service" else ["pid"])
+    assert unit.get("ProcSubset") == (None if name == "twobells.service" else ["pid"])
 
 
 def test_install_and_update_give_the_settings_new_address():
-    from departureboard.settings.installs import install_named
+    from twobells.settings.installs import install_named
 
     install = (PI / "install.sh").read_text()
     update = (PI / "update.sh").read_text()
     assert "http://$(hostname).local:8090/settings" in install
     assert ":8090/settings" in update
     for text in (install, update):
-        assert ":8080" not in text and "departureboard web " not in text
+        assert ":8080" not in text and "twobells web " not in text
     # The command the settings site gives for the password, as install.sh gives it.
-    assert install_named("pi").password_command.replace("/opt/departureboard", "$PREFIX") in install
+    assert install_named("pi").password_command.replace("/opt/twobells", "$PREFIX") in install
 
 
 # Installing from a release: the Pi's tarball, upgrade.sh, the published image and the desktop files.
@@ -886,7 +886,7 @@ def _needed_on_the_pi() -> set[str]:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
     # pip builds the package from these.
     needed = {"pyproject.toml", *project["project"]["license-files"]}
-    needed |= {str(path.relative_to(ROOT)) for path in (ROOT / "src" / "departureboard").rglob("*")
+    needed |= {str(path.relative_to(ROOT)) for path in (ROOT / "src" / "twobells").rglob("*")
                if path.is_file() and "__pycache__" not in path.parts}
     for name in ("install.sh", "update.sh"):
         script = _script(name)
@@ -902,7 +902,7 @@ def test_the_release_tarball_holds_everything_the_pi_scripts_use():
     assert {"tests", ".github", ".beads", ".claude"} <= set(excludes)  # read from release.yml, not empty
     needed = _needed_on_the_pi()
     assert {"examples/config.example.toml", "deploy/secrets.env.example", "deploy/pi/requirements-pi.txt",
-            "examples/glossop.toml", "deploy/pi/departureboard-fetch.path", "LICENSE"} <= needed
+            "examples/glossop.toml", "deploy/pi/twobells-fetch.path", "LICENSE"} <= needed
     for path in sorted(needed):
         assert (ROOT / path).is_file(), path
         assert _in_tarball(path), path
@@ -960,11 +960,11 @@ def _release_folder(tmp_path: Path, sums: str | None = None) -> Path:
 
     folder = tmp_path / "download"
     folder.mkdir()
-    name = "inky-departures-0.2.0.tar.gz"
+    name = "twobells-0.2.0.tar.gz"
     (folder / name).write_bytes(b"the release")
     digest = hashlib.sha256(b"the release").hexdigest()
     wheel = hashlib.sha256(b"a wheel").hexdigest()
-    lines = f"{wheel}  departureboard-0.2.0-py3-none-any.whl\n{digest}  {name}\n"  # as release.yml writes them
+    lines = f"{wheel}  twobells-0.2.0-py3-none-any.whl\n{digest}  {name}\n"  # as release.yml writes them
     (folder / "SHA256SUMS").write_text(lines if sums is None else sums.format(digest=digest, name=name))
     return folder
 
@@ -979,19 +979,19 @@ def _check(folder: Path):
 
 def test_upgrade_accepts_a_tarball_that_matches_its_sum(tmp_path):
     done = _check(_release_folder(tmp_path))
-    assert (done.returncode, done.stdout) == (0, "inky-departures-0.2.0.tar.gz: OK\n")
+    assert (done.returncode, done.stdout) == (0, "twobells-0.2.0.tar.gz: OK\n")
 
 
 def test_upgrade_refuses_a_tarball_that_doesnt_match(tmp_path):
     folder = _release_folder(tmp_path)
-    (folder / "inky-departures-0.2.0.tar.gz").write_bytes(b"the release, changed")
+    (folder / "twobells-0.2.0.tar.gz").write_bytes(b"the release, changed")
     done = _check(folder)
     assert done.returncode == 1 and "does not match SHA256SUMS" in done.stderr
 
 
 @pytest.mark.parametrize("sums", [
     "",  # nothing for it
-    "{digest}  inky-departures-0.1.0.tar.gz\n",  # another release's
+    "{digest}  twobells-0.1.0.tar.gz\n",  # another release's
     "{digest}  {name}.old\n",
     "{digest}  {name}\n{digest}  {name}\n",  # twice: not one sum
     "{digest}0  {name}\n",
@@ -1015,7 +1015,7 @@ def test_upgrade_downloads_the_releases_files_over_https_only_and_cleans_up():
     assert script.index('check_tarball "$work" "$version"') < script.index("tar -xzf")
     assert 'bash "$unpacked/deploy/pi/update.sh" "$@"' in script
     # The release's own names for the tarball, its folder and the signature, and its signing identity.
-    assert '-o "out/inky-departures-$VERSION.tar.gz"' in RELEASE and '--prefix="inky-departures-$VERSION/"' in RELEASE
+    assert '-o "out/twobells-$VERSION.tar.gz"' in RELEASE and '--prefix="twobells-$VERSION/"' in RELEASE
     assert "--bundle SHA256SUMS.sigstore.json SHA256SUMS" in RELEASE
     identity = re.search(r"^IDENTITY=(\S+)$", script, re.M).group(1)
     assert f"{identity}@refs/tags/v$version" == _identity("v$version")
@@ -1025,13 +1025,13 @@ def test_upgrade_downloads_the_releases_files_over_https_only_and_cleans_up():
 def test_the_guide_installs_a_pi_from_a_checked_release():
     block = re.search(r"```bash\nVERSION=0\.1\.0\n(.*?)```", GUIDE, re.S).group(1)
     assert f'base="https://github.com/{REPO}/releases/download/v$VERSION"' in block
-    for name in ("inky-departures-$VERSION.tar.gz", "SHA256SUMS", "SHA256SUMS.sigstore.json"):
+    for name in ("twobells-$VERSION.tar.gz", "SHA256SUMS", "SHA256SUMS.sigstore.json"):
         assert f'curl -fLO "$base/{name}"' in block
     # Nothing is unpacked or run unless the sum is right, even pasted as a block.
     last = block[block.rindex("sha256sum "):]
     steps = [step.strip() for step in last.split("&&")]
-    assert steps == ["sha256sum --check --ignore-missing SHA256SUMS", 'tar -xzf "inky-departures-$VERSION.tar.gz"',
-                     'cd "inky-departures-$VERSION"', "sudo ./deploy/pi/install.sh"]
+    assert steps == ["sha256sum --check --ignore-missing SHA256SUMS", 'tar -xzf "twobells-$VERSION.tar.gz"',
+                     'cd "twobells-$VERSION"', "sudo ./deploy/pi/install.sh"]
     assert f'--certificate-identity "{_identity("v$VERSION")}"' in GUIDE
     assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in GUIDE
     assert "sudo ./deploy/pi/upgrade.sh 0.2.0" in GUIDE
@@ -1051,7 +1051,7 @@ def test_the_published_image_compose_file_is_pinned_and_locked_down_as_the_built
     assert len(hardening) > 10
     for line in hardening:
         assert line in published, line
-    for line in ("    container_name: departureboard", "    restart: unless-stopped", '      - "0.0.0.0:8090:8090"',
+    for line in ("    container_name: twobells", "    restart: unless-stopped", '      - "0.0.0.0:8090:8090"',
                  "      - dashboard-data:/data", "volumes:", "  dashboard-data:"):
         assert line in published, line
     # Pinned by version and digest: the placeholder fails until both are filled in.
@@ -1081,9 +1081,9 @@ HARDENING_FLAGS = {"--read-only": "", "--tmpfs": "/tmp:size=64m", "--cap-drop": 
 def test_unraids_template_runs_the_published_image_locked_down():
     import xml.etree.ElementTree as ET
 
-    root = ET.parse(ROOT / "deploy" / "unraid" / "departureboard.xml").getroot()
+    root = ET.parse(ROOT / "deploy" / "unraid" / "twobells.xml").getroot()
     assert (root.tag, root.get("version")) == ("Container", "2")
-    assert root.findtext("Name") == "departureboard"
+    assert root.findtext("Name") == "twobells"
     assert root.findtext("Repository") == f"{IMAGE}:X.Y.Z"
     assert (root.findtext("Network"), root.findtext("Privileged")) == ("bridge", "false")
     extra = shlex.split(root.findtext("ExtraParams"))
@@ -1095,16 +1095,16 @@ def test_unraids_template_runs_the_published_image_locked_down():
     assert set(configs) == {"8090", "/data"}
     assert (configs["8090"].get("Type"), configs["8090"].get("Mode")) == ("Port", "tcp")
     data = configs["/data"]
-    assert (data.get("Type"), data.get("Mode"), data.text) == ("Path", "rw", "/mnt/user/appdata/departureboard")
+    assert (data.get("Type"), data.get("Mode"), data.text) == ("Path", "rw", "/mnt/user/appdata/twobells")
     # A folder, not a volume: the guide gives it to the image's user first.
-    assert "chown 10001:10001 /mnt/user/appdata/departureboard" in DOCKER_DOCS
-    assert 's/X\\.Y\\.Z/$VERSION/' in DOCKER_DOCS and "templates-user/my-departureboard.xml" in DOCKER_DOCS
+    assert "chown 10001:10001 /mnt/user/appdata/twobells" in DOCKER_DOCS
+    assert 's/X\\.Y\\.Z/$VERSION/' in DOCKER_DOCS and "templates-user/my-twobells.xml" in DOCKER_DOCS
 
 
 def test_the_documented_docker_run_is_locked_down_as_compose():
     command = re.search(r"```bash\n(docker run .*?)\n```", DOCKER_DOCS, re.S).group(1)
     words = shlex.split(command.replace("\\\n", " "))
-    assert words[:5] == ["docker", "run", "-d", "--name", "departureboard"]
+    assert words[:5] == ["docker", "run", "-d", "--name", "twobells"]
     assert words[-1] == f"{IMAGE}:$VERSION@$DIGEST"
     rest = _docker_run_flags(words[5:-1])
     assert {key: rest.pop(key) for key in ("--restart", "-p", "-v")} == {
@@ -1133,12 +1133,12 @@ def test_docker_publishes_its_port_on_ipv4_only():
     # gateway, a private IPv4 address, so the app would take anyone reaching
     # it over IPv6 for the home network. Published on an IPv4 address only,
     # the app sees each visitor's own address.
-    root = ET.parse(ROOT / "deploy" / "unraid" / "departureboard.xml").getroot()
+    root = ET.parse(ROOT / "deploy" / "unraid" / "twobells.xml").getroot()
     published = {
         "docker-compose.yml": _compose_ports(COMPOSE),
         "docker-compose.ghcr.yml": _compose_ports(GHCR_COMPOSE),
         # Unraid passes a Port setting to docker run as -p VALUE:TARGET/MODE.
-        "departureboard.xml": [f"{value}:{config.get('Target')}" for config in root.findall("Config")
+        "twobells.xml": [f"{value}:{config.get('Target')}" for config in root.findall("Config")
                                if config.get("Type") == "Port" for value in (config.text, config.get("Default"))],
         "docker.md": re.findall(r"(?:-p |\"|`)([^\s\"`]*:\d+:\d+)", DOCKER_DOCS),
     }
@@ -1158,8 +1158,8 @@ def test_docker_publishes_its_port_on_ipv4_only():
 
 
 def _desktop_serve(argv: list[str]) -> None:
-    from departureboard.cli.main import _parser
-    from departureboard.settings.installs import install_named
+    from twobells.cli.main import _parser
+    from twobells.settings.installs import install_named
 
     args = _parser().parse_args(argv)
     assert (args.command, args.install, args.lan, args.host, args.port, args.no_browser) == (
@@ -1170,37 +1170,37 @@ def _desktop_serve(argv: list[str]) -> None:
 def test_the_mac_login_agent_runs_serve_on_this_computer_only():
     import plistlib
 
-    path = ROOT / "deploy" / "desktop" / "uk.departureboard.serve.plist"
+    path = ROOT / "deploy" / "desktop" / "uk.twobells.serve.plist"
     agent = plistlib.loads(path.read_bytes())
-    assert agent["Label"] == path.stem == "uk.departureboard.serve"
+    assert agent["Label"] == path.stem == "uk.twobells.serve"
     program = agent["ProgramArguments"]
-    assert program[0] == "/Users/YOU/.local/bin/departureboard"
+    assert program[0] == "/Users/YOU/.local/bin/twobells"
     _desktop_serve(program[1:])
     assert agent["RunAtLoad"] is True
     assert agent["KeepAlive"] == {"SuccessfulExit": False}  # again if it fails, not when stopped
     for key in ("StandardOutPath", "StandardErrorPath"):
-        assert agent[key] == "/Users/YOU/Library/Logs/departureboard.log"
+        assert agent[key] == "/Users/YOU/Library/Logs/twobells.log"
     # The guide's sed puts the home folder in every path.
     assert set(re.findall(r"/Users/\w+", path.read_text())) == {"/Users/YOU"}
-    assert 'sed "s|/Users/YOU|$HOME|g" deploy/desktop/uk.departureboard.serve.plist' in GUIDE
-    assert 'launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/uk.departureboard.serve.plist' in GUIDE
-    assert 'launchctl bootout "gui/$(id -u)/uk.departureboard.serve"' in GUIDE
+    assert 'sed "s|/Users/YOU|$HOME|g" deploy/desktop/uk.twobells.serve.plist' in GUIDE
+    assert 'launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/uk.twobells.serve.plist' in GUIDE
+    assert 'launchctl bootout "gui/$(id -u)/uk.twobells.serve"' in GUIDE
 
 
 def test_the_linux_login_service_runs_serve_on_this_computer_only():
-    unit = _unit("departureboard.service", ROOT / "deploy" / "desktop")
+    unit = _unit("twobells.service", ROOT / "deploy" / "desktop")
     [start] = unit["ExecStart"]
     words = shlex.split(start)
-    assert words[0] == "%h/.local/bin/departureboard"
+    assert words[0] == "%h/.local/bin/twobells"
     _desktop_serve(words[1:])
     assert unit["Restart"] == ["on-failure"] and unit["WantedBy"] == ["default.target"]
     assert "User" not in unit and "Group" not in unit  # a user service runs as that user
     for setting in ("NoNewPrivileges", "LockPersonality", "RestrictRealtime", "RestrictSUIDSGID"):
         assert unit[setting] == ["yes"], setting
     assert unit["UMask"] == ["0077"]
-    for command in ("cp deploy/desktop/departureboard.service ~/.config/systemd/user/",
-                    "systemctl --user enable --now departureboard.service",
-                    "journalctl --user -u departureboard -f"):
+    for command in ("cp deploy/desktop/twobells.service ~/.config/systemd/user/",
+                    "systemctl --user enable --now twobells.service",
+                    "journalctl --user -u twobells -f"):
         assert command in GUIDE, command
 
 
@@ -1211,4 +1211,4 @@ def test_the_desktop_needs_pillow_only():
     names = {re.split(r"[<>=!~ ;\[]", spec, maxsplit=1)[0].lower() for spec in project["dependencies"]}
     assert names == {"pillow"}
     assert any(spec.startswith("inky") for spec in project["optional-dependencies"]["pi"])  # the Pi's, as an extra
-    assert "uv tool install departureboard" in GUIDE and "pipx install departureboard" in GUIDE
+    assert "uv tool install twobells" in GUIDE and "pipx install twobells" in GUIDE

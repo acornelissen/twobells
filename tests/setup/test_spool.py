@@ -10,13 +10,13 @@ from typing import ClassVar
 
 import pytest
 
-from departureboard.settings.overlay import board_target
-from departureboard.setup import discover
-from departureboard.setup.api import RateLimit, SetupApi
-from departureboard.setup.keytest import KeyResult
-from departureboard.setup.lookups import Place, SetupError, Stop
-from departureboard.setup.spool.checks import REQUEST_MAX_AGE_S, Refused, check_status
-from departureboard.setup.spool.folder import (
+from twobells.settings.overlay import board_target
+from twobells.setup import discover
+from twobells.setup.api import RateLimit, SetupApi
+from twobells.setup.keytest import KeyResult
+from twobells.setup.lookups import Place, SetupError, Stop
+from twobells.setup.spool.checks import REQUEST_MAX_AGE_S, Refused, check_status
+from twobells.setup.spool.folder import (
     MAX_REPLY_BYTES,
     MAX_REQUEST_BYTES,
     RUNTIME,
@@ -25,7 +25,7 @@ from departureboard.setup.spool.folder import (
     SpoolError,
     spool_folder,
 )
-from departureboard.setup.spool.runner import (
+from twobells.setup.spool.runner import (
     ACTIVE_EVERY_S,
     NO_ANSWER,
     SILENT_S,
@@ -35,7 +35,7 @@ from departureboard.setup.spool.runner import (
     SpoolRunner,
     new_id,
 )
-from departureboard.setup.spool.worker import HEARTBEAT_S, NO_SETTINGS, SEARCH_NICE, WORKER_LOCK, Worker
+from twobells.setup.spool.worker import HEARTBEAT_S, NO_SETTINGS, SEARCH_NICE, WORKER_LOCK, Worker
 
 HOME = {"lat": 53.461964, "lon": -1.965633}
 HOME_PLACE = Place(HOME["lat"], HOME["lon"], "SK13 1AH", "England", "High Peak")
@@ -105,7 +105,7 @@ def board(tmp_path):
 
     def test_key(name, value, settings, env):
         calls.append(("testkey", name, value, dict(env)))
-        logging.getLogger("departureboard.setup.keytest").info("Tested %s: %s", name, "wrong_key")
+        logging.getLogger("twobells.setup.keytest").info("Tested %s: %s", name, "wrong_key")
         return KeyResult("wrong_key", f"It refused {value or env.get(name)}")
 
     worker = Worker(
@@ -696,7 +696,7 @@ def test_the_spool_is_private_and_never_a_link(tmp_path):
 
 def test_the_spool_is_systemds_folder_in_memory_and_never_on_disk(tmp_path, monkeypatch):
     run = tmp_path / "run"
-    monkeypatch.setattr("departureboard.setup.spool.folder.RUNTIME", tmp_path / "no-run")
+    monkeypatch.setattr("twobells.setup.spool.folder.RUNTIME", tmp_path / "no-run")
     assert spool_folder({"RUNTIME_DIRECTORY": str(run)}) == run
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
     assert spool_folder() == run
@@ -706,7 +706,7 @@ def test_the_spool_is_systemds_folder_in_memory_and_never_on_disk(tmp_path, monk
     # Run by hand: the units' folder if it's there, and never one on the SD card instead.
     with pytest.raises(SpoolError, match="RUNTIME_DIRECTORY"):
         spool_folder({})
-    monkeypatch.setattr("departureboard.setup.spool.folder.RUNTIME", run)
+    monkeypatch.setattr("twobells.setup.spool.folder.RUNTIME", run)
     run.mkdir()
     assert spool_folder({}) == run
 
@@ -714,9 +714,9 @@ def test_the_spool_is_systemds_folder_in_memory_and_never_on_disk(tmp_path, monk
 def test_the_spool_is_the_fetch_services_and_the_messages_name_it():
     from pathlib import Path
 
-    assert Path("/run/departureboard-fetch") == RUNTIME
-    assert "departureboard-fetch.path" in NO_ANSWER
-    assert "journalctl -u departureboard-fetch " in NO_SETTINGS
+    assert Path("/run/twobells-fetch") == RUNTIME
+    assert "twobells-fetch.path" in NO_ANSWER
+    assert "journalctl -u twobells-fetch " in NO_SETTINGS
 
 
 def read_on_the_way_out(worker, runner, ids) -> dict:

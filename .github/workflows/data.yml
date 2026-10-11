@@ -47,12 +47,12 @@ jobs:
       - name: Keep it only if the data changed
         id: diff
         run: |
-          if git diff --quiet -I '^# ' -- src/departureboard/data; then
+          if git diff --quiet -I '^# ' -- src/twobells/data; then
             echo "No change beyond the header; nothing to propose."
-            git checkout -- src/departureboard/data
+            git checkout -- src/twobells/data
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            git diff --stat -- src/departureboard/data
+            git diff --stat -- src/twobells/data
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
       - name: Test against the new data
@@ -68,7 +68,7 @@ jobs:
         with:
           branch: data/naptan-refresh
           delete-branch: true
-          add-paths: src/departureboard/data/*.csv
+          add-paths: src/twobells/data/*.csv
           sign-commits: true
           commit-message: |
             chore(data): refresh setup data from NaPTAN
@@ -76,7 +76,7 @@ jobs:
             Monthly rebuild by tools/build_setup_data.py (data.yml).
           title: "chore(data): refresh setup data from NaPTAN"
           body: |
-            Monthly rebuild of `src/departureboard/data/` from NaPTAN by
+            Monthly rebuild of `src/twobells/data/` from NaPTAN by
             `tools/build_setup_data.py`. The test suite passed against it in
             the workflow run.
 

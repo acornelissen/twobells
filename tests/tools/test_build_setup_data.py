@@ -5,8 +5,8 @@ import importlib.util
 
 import pytest
 
-from departureboard.core.osgb import distance_m
 from tests.paths import ROOT
+from twobells.core.osgb import distance_m
 
 _SCRIPT = ROOT / "tools" / "build_setup_data.py"
 

@@ -5,11 +5,11 @@ from collections import Counter
 
 import pytest
 
-from departureboard.board.displays.display import DISPLAY_PANELS
-from departureboard.board.themes import THEMES
-from departureboard.settings import schema
-from departureboard.settings.config import ConfigError
-from departureboard.settings.installs import INSTALLS, install_named
+from twobells.board.displays.display import DISPLAY_PANELS
+from twobells.board.themes import THEMES
+from twobells.settings import schema
+from twobells.settings.config import ConfigError
+from twobells.settings.installs import INSTALLS, install_named
 
 
 def every_form():
@@ -198,7 +198,7 @@ def test_the_knowledgebase_field_takes_a_raildata_address(raw):
 
 
 def test_the_knowledgebase_field_left_empty_keeps_engineering_works_off():
-    from departureboard.sources.disruptions import kb_url_is_placeholder
+    from twobells.sources.disruptions import kb_url_is_placeholder
 
     assert kb_url_is_placeholder(schema.https_feed("  "))
 
@@ -285,7 +285,7 @@ def test_views_that_are_not_a_list_of_views_are_a_config_error(data, words):
 
 
 def test_the_board_s_loader_refuses_malformed_views_too(tmp_path):
-    from departureboard.settings.config import settings_from
+    from twobells.settings.config import settings_from
 
     with pytest.raises(ConfigError, match="views"):
         settings_from({"state_file": str(tmp_path / "state.json"), "app": {"views": ["tv"]}}, {})
@@ -299,7 +299,7 @@ STOPS = {"A": "1000DGHS0900"}
 
 
 def parsed(windows):
-    from departureboard.core.polling import parse_window
+    from twobells.core.polling import parse_window
 
     return tuple(parse_window(w) for w in windows)
 
@@ -307,7 +307,7 @@ def parsed(windows):
 def test_the_board_loads_with_the_schema_s_defaults(tmp_path):
     from datetime import timedelta
 
-    from departureboard.settings.config import settings_from
+    from twobells.settings.config import settings_from
 
     data = {"state_file": str(tmp_path / "state.json"), "train": {"crs": "GLO"}, "bus": {"source": "transportapi", "stops": STOPS}}
     settings = settings_from(data, ENV)
@@ -328,7 +328,7 @@ def test_the_board_loads_with_the_schema_s_defaults(tmp_path):
 def test_buses_from_bods_load_with_the_schema_s_defaults(tmp_path):
     from datetime import timedelta
 
-    from departureboard.settings.config import settings_from
+    from twobells.settings.config import settings_from
 
     data = {"state_file": str(tmp_path / "state.json"),
             "bus": {"stops": STOPS, "source": "bods", "operators": ["BNML"]}}
@@ -352,8 +352,8 @@ def test_the_board_s_fields_show_the_loader_s_defaults():
 
 
 def test_the_dashboard_s_fields_show_dashboard_options_defaults():
-    from departureboard.dashboard.config import DashboardOptions
-    from departureboard.sources.disruptions import kb_url_is_placeholder
+    from twobells.dashboard.config import DashboardOptions
+    from twobells.sources.disruptions import kb_url_is_placeholder
 
     options = DashboardOptions()
     for f in schema.FIELDS:
@@ -370,9 +370,9 @@ def test_the_dashboard_s_fields_show_dashboard_options_defaults():
 
 def test_with_only_general_settings_saved_each_view_loads_with_its_defaults(tmp_path):
     # What setup saves: the station and stops, walk times and where home is; nothing of either view's own.
-    from departureboard.dashboard.config import DashboardOptions, load_dashboard
-    from departureboard.settings.config import load_config
-    from departureboard.settings.store import Store
+    from twobells.dashboard.config import DashboardOptions, load_dashboard
+    from twobells.settings.config import load_config
+    from twobells.settings.store import Store
 
     folder = tmp_path / "store"
     folder.mkdir()

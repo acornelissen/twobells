@@ -3,7 +3,7 @@
     .venv/bin/python tools/build_doc_images.py
 
 Run it after a change to how the board looks, then look at each picture and
-commit them. The departures pictures are `departureboard demo`; the pHAT ones
+commit them. The departures pictures are `twobells demo`; the pHAT ones
 are scaled up three times, dot for dot, so they read on a web page. The bus
 position page is drawn here, as the board draws it, for the demo's 341 with
 the emulator's stops and the bus three stops away.
@@ -20,14 +20,14 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from departureboard.board.displays.display import DISPLAY_PANELS, PngDisplay  # noqa: E402
-from departureboard.board.route import RouteView, where  # noqa: E402
-from departureboard.board.themes import theme_named  # noqa: E402
-from departureboard.board.view import build_view  # noqa: E402
-from departureboard.cli.main import main  # noqa: E402
-from departureboard.core.model import Departure, Status  # noqa: E402
-from departureboard.core.walk import WalkTimes  # noqa: E402
-from departureboard.emulator.fake import DEMO_STRIP, DEMO_TITLE  # noqa: E402
+from twobells.board.displays.display import DISPLAY_PANELS, PngDisplay  # noqa: E402
+from twobells.board.route import RouteView, where  # noqa: E402
+from twobells.board.themes import theme_named  # noqa: E402
+from twobells.board.view import build_view  # noqa: E402
+from twobells.cli.main import main  # noqa: E402
+from twobells.core.model import Departure, Status  # noqa: E402
+from twobells.core.walk import WalkTimes  # noqa: E402
+from twobells.emulator.fake import DEMO_STRIP, DEMO_TITLE  # noqa: E402
 
 IMAGES = ROOT / "docs" / "images"
 

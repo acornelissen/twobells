@@ -15,21 +15,21 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from departureboard.core.walk import WalkTimes
-from departureboard.dashboard.snapshot import Hub
-from departureboard.settings import schema
-from departureboard.settings.installs import install_named
-from departureboard.settings.store import Store
-from departureboard.setup.api import PAGE_HEADERS, RateLimit, SetupApi, TooSoon, static_files
-from departureboard.setup.keytest import KeyResult
-from departureboard.setup.lookups import SetupError
-from departureboard.web import netguard, settingsite
-from departureboard.web.auth import FAILURE_WINDOW_S, MAX_FAILURES, PasswordStore, Sessions
-from departureboard.web.icons import icon
-from departureboard.web.server import DashboardApp, StaticFiles, make_server
-from departureboard.web.settingsite import SettingsSite
 from tests.contrast import assert_contrast
 from tests.paths import ROOT
+from twobells.core.walk import WalkTimes
+from twobells.dashboard.snapshot import Hub
+from twobells.settings import schema
+from twobells.settings.installs import install_named
+from twobells.settings.store import Store
+from twobells.setup.api import PAGE_HEADERS, RateLimit, SetupApi, TooSoon, static_files
+from twobells.setup.keytest import KeyResult
+from twobells.setup.lookups import SetupError
+from twobells.web import netguard, settingsite
+from twobells.web.auth import FAILURE_WINDOW_S, MAX_FAILURES, PasswordStore, Sessions
+from twobells.web.icons import icon
+from twobells.web.server import DashboardApp, StaticFiles, make_server
+from twobells.web.settingsite import SettingsSite
 
 PASSWORD = "correct horse battery"
 NEW_PASSWORD = "a brand new password"
@@ -390,8 +390,8 @@ def test_the_sessions_are_built_on_the_stores_one_password(dash):
 
 
 def test_without_a_password_the_page_says_how_to_set_one(make):
-    for install, command in (("pi", "departureboard serve --install pi --set-password"),
-                             ("docker", "departureboard serve --set-password --state-dir /data")):
+    for install, command in (("pi", "twobells serve --install pi --set-password"),
+                             ("docker", "twobells serve --set-password --state-dir /data")):
         running = make(install=install)
         _, text = running("GET", "/settings/login")
         assert command in text, install
@@ -582,8 +582,8 @@ def test_the_overview_says_when_the_bus_timetable_was_saved_and_how_its_roads_ar
     from datetime import datetime
     from zoneinfo import ZoneInfo
 
-    from departureboard.timetable import build as timetable
-    from departureboard.timetable.model import Schedule
+    from twobells.timetable import build as timetable
+    from twobells.timetable.model import Schedule
 
     docker = make(install="docker")  # whose dashboard starts again on saving: this page says how far they got
     cookie = docker.session()
@@ -624,7 +624,7 @@ def _health(page):
 def test_the_overview_says_how_the_dashboards_feeds_are_doing(dash):
     from datetime import datetime
 
-    from departureboard.dashboard.snapshot import status_block
+    from twobells.dashboard.snapshot import status_block
 
     dash.site.hub = dash.app.hub
     cookie = dash.session()
@@ -743,17 +743,17 @@ def test_every_page_says_which_version_is_running_in_its_footer(pi):
     wanted = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
     for path in ("/settings", "/settings/board", "/settings/general"):
         page = pi("GET", path, cookie=cookie)[1]
-        assert f'<footer class="foot"><p>Running departureboard {wanted}.</p></footer>' in page, path
+        assert f'<footer class="foot"><p>Running twobells {wanted}.</p></footer>' in page, path
         assert page.index("</form>" if path != "/settings" else "</section>") < page.index("<footer"), path
-    assert "Running departureboard" not in pi("GET", "/settings/login")[1]
+    assert "Running twobells" not in pi("GET", "/settings/login")[1]
 
 
 def test_the_footer_says_plainly_when_the_version_is_unknown(pi):
     cookie = pi.session()
     pi.site.version = "unknown"
-    assert "<p>Running departureboard, version unknown.</p>" in pi("GET", "/settings", cookie=cookie)[1]
+    assert "<p>Running twobells, version unknown.</p>" in pi("GET", "/settings", cookie=cookie)[1]
     pi.site.version = "<b>1</b>"
-    assert "Running departureboard &lt;b&gt;1&lt;/b&gt;." in pi("GET", "/settings", cookie=cookie)[1]
+    assert "Running twobells &lt;b&gt;1&lt;/b&gt;." in pi("GET", "/settings", cookie=cookie)[1]
 
 
 def test_the_overview_says_why_the_dashboard_isnt_running(dash):
@@ -1733,7 +1733,7 @@ def test_a_forgotten_password_is_reset_with_a_code_from_the_log(signed, caplog):
     old, _ = signed.sign_in()
     form_cookie = ask_for_code(signed)
     _, page = signed("GET", "/settings/reset?asked", cookie=form_cookie)
-    assert "docker logs departureboard<" in page and "Container Manager" in page
+    assert "docker logs twobells<" in page and "Container Manager" in page
     assert "Code from the log" in page
     code = code_from_the_log(caplog)
     response, _ = reset(signed, form_cookie, f"{code[:3]} {code[3:]}")
@@ -1766,7 +1766,7 @@ def test_a_wrong_code_from_the_log_changes_nothing(signed, caplog):
 def test_the_first_claim_in_docker_needs_a_code_from_the_log(dash, caplog):
     _, page = dash("GET", "/settings/login")
     assert "Claim this dashboard" in page and 'action="/settings/reset"' in page
-    assert "docker exec -it departureboard python" in page
+    assert "docker exec -it twobells python" in page
     assert dash("POST", "/settings/login", {"password": NEW_PASSWORD})[0].status == 403
     form_cookie, _ = dash.form()
     assert reset(dash, form_cookie, "000000")[0].status == 401
@@ -1808,7 +1808,7 @@ def test_with_the_board_view_off_a_pis_codes_go_to_the_log_and_its_pages_say_so(
     pi.clock.now += 61
     form_cookie = ask_for_code(pi)
     page = pi("GET", "/settings/reset?asked", cookie=form_cookie)[1]
-    assert "Code from the log" in page and "journalctl -u departureboard-web" in page and "Look at the board" not in page
+    assert "Code from the log" in page and "journalctl -u twobells-web" in page and "Look at the board" not in page
     assert not (pi.folder / "reset-display.json").exists()  # the board's code is void
     code = code_from_the_log(caplog)
     assert reset(pi, form_cookie, code)[0].status == 303
@@ -1832,7 +1832,7 @@ def test_asking_for_a_code_from_the_log_needs_this_browsers_form_token(signed, c
 def test_a_password_set_from_the_command_line_signs_every_browser_out(signed, monkeypatch, capsys):
     import getpass
 
-    from departureboard.cli.main import main
+    from twobells.cli.main import main
 
     old, _ = signed.sign_in()
     assert signed("GET", "/settings", cookie=old)[0].status == 200
@@ -1847,7 +1847,7 @@ def test_a_password_set_from_the_command_line_signs_every_browser_out(signed, mo
 
 
 def test_a_code_from_the_command_line_claims_the_running_server(dash, capsys, caplog):
-    from departureboard.cli.main import main
+    from twobells.cli.main import main
 
     assert main(["dashboard", "--reset-code", "--state-dir", str(dash.folder)]) == 0
     code = re.search(r"Settings reset code: (\d{3} \d{3})", capsys.readouterr().out).group(1)
@@ -2132,11 +2132,11 @@ def test_settings_pages_allow_their_own_forms_and_only_settings_js(make):
             assert response.getheader("X-Content-Type-Options") == "nosniff"
             assert response.getheader("Cache-Control") == "no-store"
             assert response.getheader("Referrer-Policy") == "same-origin"  # no-referrer would send Origin: null
-            assert response.getheader("Server") == "departureboard"
+            assert response.getheader("Server") == "twobells"
             assert len(response.getheaders()) == len({k.lower() for k, _ in response.getheaders()}), path
 
 
-SETTINGS_JS = ROOT / "src" / "departureboard" / "web" / "settings.js"
+SETTINGS_JS = ROOT / "src" / "twobells" / "web" / "settings.js"
 LOADS_IT = '<script src="/settings/settings.js" defer></script>'
 
 
@@ -2214,7 +2214,7 @@ def test_the_package_ships_settings_js():
     import tomllib
 
     data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert "*.js" in data["tool"]["setuptools"]["package-data"]["departureboard.web"]
+    assert "*.js" in data["tool"]["setuptools"]["package-data"]["twobells.web"]
 
 
 def test_the_wizard_runs_its_own_scripts_under_its_own_headers(pi):
@@ -2260,7 +2260,7 @@ def test_http_servers_own_errors_carry_the_headers_and_no_html(pi, data, status)
     head = reply.split("\r\n\r\n", 1)[0]
     assert head.startswith(f"HTTP/1.0 {status}")
     assert "Content-Security-Policy: default-src 'none'" in head and "X-Frame-Options: DENY" in head
-    assert "script-src" not in head and "Server: departureboard\r\n" in head
+    assert "script-src" not in head and "Server: twobells\r\n" in head
     assert "<html" not in reply.lower() and "python" not in reply.lower()
 
 
@@ -2293,13 +2293,13 @@ def test_outsiders_are_refused_before_the_settings(make):
 
 
 def test_slow_clients_are_dropped():
-    from departureboard.web.server import _Handler
+    from twobells.web.server import _Handler
 
     assert _Handler.timeout and _Handler.timeout <= 10  # a client that stalls lets go of its thread
 
 
 def test_a_client_hanging_up_early_is_not_reported(capsys, caplog):
-    from departureboard.web.server import DashboardServer
+    from twobells.web.server import DashboardServer
 
     server = DashboardServer.__new__(DashboardServer)
     try:
@@ -2343,8 +2343,8 @@ def test_settings_with_a_slash_goes_to_settings(pi):
 # The look: the dashboard's colours, Inter and icons
 
 
-WEB_CSS = ROOT / "src" / "departureboard" / "web" / "web.css"
-DASHBOARD_STATIC = ROOT / "src" / "departureboard" / "dashboard_static"
+WEB_CSS = ROOT / "src" / "twobells" / "web" / "web.css"
+DASHBOARD_STATIC = ROOT / "src" / "twobells" / "dashboard_static"
 
 
 def _palette(path, name):

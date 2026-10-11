@@ -1,0 +1,28 @@
+# Starts the departures dashboard when you log in on Linux (a systemd user
+# service): twobells serve, on this computer only, at
+# http://localhost:8090/. It starts again if it fails, not when you stop it.
+# Installed by `uv tool install` or `pipx install` in ~/.local/bin; see
+# docs/user-guide.md (Desktop) for the commands that install and start it.
+[Unit]
+Description=Two Bells dashboard and settings, on this computer only
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/twobells serve --install desktop --port 8090 --no-browser
+# Its addresses reach the log as they are printed, not when it stops.
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=10
+# Hardening a user service can have without root: these work through
+# seccomp and no-new-privileges, not the namespaces root's units use.
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0077
+
+[Install]
+WantedBy=default.target

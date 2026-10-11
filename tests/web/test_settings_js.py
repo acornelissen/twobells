@@ -10,18 +10,18 @@ import subprocess
 
 import pytest
 
-from departureboard.settings.installs import install_named
-from departureboard.settings.store import Store
-from departureboard.setup.keytest import KeyResult
-from departureboard.web.keyspage import KeysPage
 from tests.paths import FIXTURES, ROOT
 from tests.setup.test_wizard import _Tree
 from tests.web.test_groupform import fields_of
 from tests.web.test_groupform_board import CONFIG, ENV, board_form
+from twobells.settings.installs import install_named
+from twobells.settings.store import Store
+from twobells.setup.keytest import KeyResult
+from twobells.web.keyspage import KeysPage
 
 NODE = shutil.which("node")
 pytestmark = pytest.mark.skipif(NODE is None, reason="node isn't installed: settings.js's behaviour tests need it")
-SCRIPT = ROOT / "src" / "departureboard" / "web" / "settings.js"
+SCRIPT = ROOT / "src" / "twobells" / "web" / "settings.js"
 
 # The page's body on a fake DOM, a window that keeps its listeners, timers
 # run only by flush(), then settings.js.

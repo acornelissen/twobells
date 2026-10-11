@@ -8,8 +8,8 @@
 # The temporary folder is removed when it ends, whatever happens.
 set -euo pipefail
 
-RELEASES=https://github.com/acornelissen/inky-departures/releases/download
-IDENTITY=https://github.com/acornelissen/inky-departures/.github/workflows/release.yml
+RELEASES=https://github.com/acornelissen/twobells/releases/download
+IDENTITY=https://github.com/acornelissen/twobells/.github/workflows/release.yml
 ISSUER=https://token.actions.githubusercontent.com
 
 usage() {
@@ -26,7 +26,7 @@ valid_version() {
 # exactly one line must name it, and the SHA-256 must match that line.
 check_tarball() {
   local dir="$1" version="$2"
-  local name="inky-departures-$version.tar.gz"
+  local name="twobells-$version.tar.gz"
   local expected actual
   expected="$(awk -v name="$name" '$2 == name { print $1 }' "$dir/SHA256SUMS")"
   # No line or several lines for it fail here too: the pattern is one sum.
@@ -68,7 +68,7 @@ main() {
   work="$(mktemp -d)"
   trap 'rm -rf "$work"' EXIT
   local base="$RELEASES/v$version"
-  local name="inky-departures-$version.tar.gz"
+  local name="twobells-$version.tar.gz"
   echo "Downloading release $version"
   fetch "$base/$name" "$work/$name"
   fetch "$base/SHA256SUMS" "$work/SHA256SUMS"
@@ -89,7 +89,7 @@ main() {
   fi
 
   tar -xzf "$work/$name" -C "$work" --no-same-owner
-  local unpacked="$work/inky-departures-$version"
+  local unpacked="$work/twobells-$version"
   if [[ ! -f "$unpacked/deploy/pi/update.sh" ]]; then
     echo "$name has no deploy/pi/update.sh. Nothing was installed." >&2
     exit 1

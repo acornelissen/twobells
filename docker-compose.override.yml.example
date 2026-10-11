@@ -4,6 +4,6 @@
 # docker-compose.yml. config.toml is mounted read-only; the settings site
 # saves over it in the data volume, never into it.
 services:
-  departureboard:
+  twobells:
     volumes:
       - ./config.toml:/config/config.toml:ro

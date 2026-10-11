@@ -5,9 +5,9 @@ import re
 
 import pytest
 
-from departureboard.core.polling import parse_window
-from departureboard.settings import schema
-from departureboard.web.windowrows import anchor, days_spec, read, render
+from twobells.core.polling import parse_window
+from twobells.settings import schema
+from twobells.web.windowrows import anchor, days_spec, read, render
 
 FIELDS = {f.name: f for f in schema.FIELDS}
 TRAINS = FIELDS["train_windows"]
@@ -222,7 +222,7 @@ def test_every_control_has_a_label_and_each_row_and_its_days_a_legend():
 def test_the_days_sit_side_by_side_each_a_44px_target_on_a_touch_screen():
     from importlib.resources import files
 
-    css = files("departureboard.web").joinpath("web.css").read_text()
+    css = files("twobells.web").joinpath("web.css").read_text()
     assert re.search(r"\.day-boxes \{[^}]*display: flex;[^}]*flex-wrap: wrap", css)
     coarse = css[css.index("@media (pointer: coarse)"):]
     assert re.search(r"\.day \{ min-height: 2\.75rem;", coarse)

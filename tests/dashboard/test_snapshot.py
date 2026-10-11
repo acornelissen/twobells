@@ -8,26 +8,6 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from departureboard.core.model import Departure, Status
-from departureboard.core.walk import WalkTimes
-from departureboard.dashboard.snapshot import (
-    Hub,
-    bus_observations,
-    bus_row,
-    buses_part,
-    clock_at,
-    row_id,
-    status_block,
-    status_spoken,
-    status_text,
-    timetable_block,
-    train_observations,
-    trains_part,
-    weather_part,
-)
-from departureboard.sources.bodsbus import BusBoard
-from departureboard.sources.darwin import parse_board_rich, parse_service_details
-from departureboard.sources.weather import parse_conditions
 from tests.paths import FIXTURES
 from tests.sources.test_livebus import (
     EAST,
@@ -42,6 +22,26 @@ from tests.sources.test_livebus import (
     live,
     schedule,
 )
+from twobells.core.model import Departure, Status
+from twobells.core.walk import WalkTimes
+from twobells.dashboard.snapshot import (
+    Hub,
+    bus_observations,
+    bus_row,
+    buses_part,
+    clock_at,
+    row_id,
+    status_block,
+    status_spoken,
+    status_text,
+    timetable_block,
+    train_observations,
+    trains_part,
+    weather_part,
+)
+from twobells.sources.bodsbus import BusBoard
+from twobells.sources.darwin import parse_board_rich, parse_service_details
+from twobells.sources.weather import parse_conditions
 
 LONDON = ZoneInfo("Europe/London")
 HEX16 = re.compile(r"[0-9a-f]{16}")
@@ -100,9 +100,9 @@ def bus_part(now, vehicles=(), walk=WALK):
 
 def extras_part(now, no_shows=None, vehicles_ok=True):
     """Buses at 10:14 with WEST's bus coming in on INTO_A, 9 min late, and EAST's bus live."""
-    from departureboard.sources.livebus import live_board
     from tests.dashboard.test_enrich import INTO_A, LEFT_JUNCTION
     from tests.sources.test_livebus import every_day
+    from twobells.sources.livebus import live_board
 
     plan = schedule(EAST, WEST, INTO_A)
     vehicles = [bus(*HALFWAY, now), bus(*HALFWAY, now, line="237", origin=JUNCTION, aimed=LEFT_JUNCTION)]
@@ -693,7 +693,7 @@ def test_export_has_the_snapshot_its_lookups_and_the_area_taken_together():
 
 
 def test_the_hub_is_a_snapshot_source():
-    from departureboard.dashboard.snapshot import SnapshotSource
+    from twobells.dashboard.snapshot import SnapshotSource
 
     h: SnapshotSource = hub()
     for name in ("current", "wait", "lookup", "get", "touch", "active", "age", "close"):
@@ -717,8 +717,8 @@ def test_touch_and_age_follow_the_clock():
 def test_rain_already_falling_is_said_as_now_not_an_hour_gone_by():
     from datetime import datetime
 
-    from departureboard.dashboard.snapshot import rain_sentence
-    from departureboard.sources.weather import Hour
+    from twobells.dashboard.snapshot import rain_sentence
+    from twobells.sources.weather import Hour
 
     hours = [Hour(datetime(2026, 10, 9, 22), 92, 0.4), Hour(datetime(2026, 10, 9, 23), 80, 0.3)]
     now = datetime(2026, 10, 9, 22, 39)
@@ -729,8 +729,8 @@ def test_rain_already_falling_is_said_as_now_not_an_hour_gone_by():
 
 
 def test_calling_point_words_become_times_or_flags():
-    from departureboard.dashboard.snapshot import calling_point
-    from departureboard.sources.darwin import CallingPoint
+    from twobells.dashboard.snapshot import calling_point
+    from twobells.sources.darwin import CallingPoint
 
     on_time = calling_point(CallingPoint("Dinting", "DGT", "07:15", "On time", None, False, None))
     assert (on_time["expected"], on_time["cancelled"]) == ("07:15", False)
@@ -747,13 +747,13 @@ def test_calling_point_words_become_times_or_flags():
 def real_disruptions():
     """The disruptions section from the trimmed SIRI-SX capture and the
     synthetic Knowledgebase fixture, as the collector makes it."""
-    from departureboard.sources.disruptions import (
+    from tests.sources.test_disruptions import DINTING_LANE, KB, RAIL, area, situations
+    from twobells.sources.disruptions import (
         bus_disruptions,
         disruptions_part,
         parse_kb_incidents,
         train_disruptions,
     )
-    from tests.sources.test_disruptions import DINTING_LANE, KB, RAIL, area, situations
 
     captured = datetime(2026, 10, 9, 23, 14, tzinfo=LONDON)
     bus = bus_disruptions(situations(), area(**DINTING_LANE), captured)
@@ -766,10 +766,10 @@ def real_timetable_changes():
     later from Sunday 25 October."""
     from dataclasses import replace as changed
 
-    from departureboard.dashboard.area import timetable_changes
-    from departureboard.timetable.model import Calendar, Call
     from tests.sources.test_livebus import EAST, WEST
     from tests.sources.test_livebus import schedule as plan
+    from twobells.dashboard.area import timetable_changes
+    from twobells.timetable.model import Calendar, Call
 
     old = changed(EAST, calendar=Calendar(days=frozenset(range(7)), end=date(2026, 10, 24)))
     new = changed(EAST, calls=tuple(Call(c.atco, c.minute + 5) for c in EAST.calls),
@@ -818,8 +818,8 @@ def test_the_snapshot_is_stamped_in_the_board_s_zone_not_the_host_s():
 def test_inbound_only_journeys_are_not_counted_nor_observed():
     from dataclasses import replace
 
-    from departureboard.sources.livebus import live_board
     from tests.sources.test_livebus import every_day
+    from twobells.sources.livebus import live_board
 
     only = replace(EAST, inbound_only=True)
     plan = schedule(only, WEST)
@@ -834,7 +834,7 @@ def test_inbound_only_journeys_are_not_counted_nor_observed():
 def test_a_stop_has_the_letter_on_its_sign():
     from dataclasses import replace as swap
 
-    from departureboard.dashboard.snapshot import stop_details
+    from twobells.dashboard.snapshot import stop_details
 
     lettered = swap(schedule(), positions={**POSITIONS, HENRY_A: swap(POSITIONS[HENRY_A], indicator="Stop A")})
     found = stop_details({"A": HENRY_A, "Z": "nowhere"}, lettered, WALK)
@@ -847,8 +847,8 @@ def test_a_stop_has_the_letter_on_its_sign():
 def test_two_stops_that_share_a_name_are_told_apart_by_the_stop_after():
     from dataclasses import replace as swap
 
-    from departureboard.dashboard.snapshot import stop_details
     from tests.sources.test_livebus import ASHTON_INT, GEORGE, ST_MARYS_E, journey
+    from twobells.dashboard.snapshot import stop_details
 
     # St Marys Road both ways, no letters: east goes on to Arundel Street,
     # west to Ashton Interchange (positioned here), twice to once over George Street.
@@ -866,8 +866,8 @@ def test_two_stops_that_share_a_name_are_told_apart_by_the_stop_after():
 def test_the_stop_after_never_has_the_stop_s_own_name_and_inbound_journeys_do_not_count():
     from dataclasses import replace as swap
 
-    from departureboard.dashboard.snapshot import stop_details
     from tests.sources.test_livebus import GEORGE, HOWARD, MARKET_HALL, journey
+    from twobells.dashboard.snapshot import stop_details
 
     # Two poles of one stop in a row, and a journey kept only for the inbound bus.
     twin = journey("61", [(HENRY_A, 600), (MARKET_HALL, 601), (GEORGE, 602)], "Glossop", "4")

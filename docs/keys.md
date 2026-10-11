@@ -45,7 +45,7 @@ The easiest way is to paste them in the settings, at `/settings` on your install
 | `RDM_DETAILS_API_KEY` | the **Keys** page (only while the dashboard view, or the board view on an HDMI screen, is on) |
 | `RDM_KB_API_KEY` | the **Keys** page (only while the dashboard view is on) |
 
-Keys pasted there are saved in `secrets.env` in the install's store (`/var/lib/departureboard` on a Pi, the `/data` volume in Docker; see [Where things are kept](user-guide.md#where-things-are-kept)), readable only by the app. They win over keys in a file of your own, and need no restart.
+Keys pasted there are saved in `secrets.env` in the install's store (`/var/lib/twobells` on a Pi, the `/data` volume in Docker; see [Where things are kept](user-guide.md#where-things-are-kept)), readable only by the app. They win over keys in a file of your own, and need no restart.
 
 **The Keys page** has a small form for each key, headed by what it unlocks (**Trains**, **Buses**, **Where each train is** and so on), with a label saying how the key stands: **Not set**, **Needed for trains** (or whatever is switched on without it), **Saved, not tested**, **Works, tested 10 Oct 10:42**, or **Refused, tested …**. Each form has its own buttons, and saves its own key only:
 
@@ -65,9 +65,9 @@ RDM_API_KEY=0a1b2c3d4e5f...
 
 | Install | File | Notes |
 |---|---|---|
-| A Pi | `/etc/departureboard/secrets.env` | Edit with `sudo nano /etc/departureboard/secrets.env`, then restart the services (see [Replacing a key](#replacing-a-key)). |
+| A Pi | `/etc/twobells/secrets.env` | Edit with `sudo nano /etc/twobells/secrets.env`, then restart the services (see [Replacing a key](#replacing-a-key)). |
 | Docker (a Synology NAS, say) | `secrets.env`, next to `docker-compose.yml` | Copied from `deploy/secrets.env.example`. |
-| A desktop | any file, given with `--secrets` | For example `departureboard serve --secrets secrets.env`. |
+| A desktop | any file, given with `--secrets` | For example `twobells serve --secrets secrets.env`. |
 
 Never put a key in `config.toml`. That file holds settings, gets copied about, and anyone on the Pi can read it.
 
@@ -125,10 +125,10 @@ In the wizard, press **Test this key**; on the **Keys** page, **Save and test** 
 Or on the Pi:
 
 ```bash
-sudo /opt/departureboard/venv/bin/departureboard probe train
+sudo /opt/twobells/venv/bin/twobells probe train
 ```
 
-On a desktop: `departureboard probe train`, with the same `--config` and `--secrets` as you start it with, if any.
+On a desktop: `twobells probe train`, with the same `--config` and `--secrets` as you start it with, if any.
 
 It lists the next trains from your station. An error mentioning 401 or 403 means the key is wrong, or isn't for Live Departure Board. If you've only just subscribed, give it a few minutes and try again.
 
@@ -164,7 +164,7 @@ The **Rail Data Marketplace key for where each train is** box on the settings' *
 
 On the **Keys** page, press **Save and test** as you paste it, or **Test saved key** in the **Where each train is** form. Then open the dashboard: within a minute or two, the first train's row says where it is, and the next three trains' sheets draw them on their journeys. A running screen picks the saved key up too, without a restart.
 
-If they don't, look at the log (on a Pi `journalctl -u departureboard-fetch`, or `journalctl -u departureboard-screen` for the screen's rows; in Docker `docker logs departureboard`; on a desktop, the Terminal window running it) for "train positions off for 6 hours". That means the key was refused: check you copied the Service Details key, not the Live Departure Board one. Saving the right key on the Keys page starts the dashboard's feeds again; a key changed in a file of your own needs a restart (see [Replacing a key](#replacing-a-key)), or the dashboard waits the full 6 hours before trying again.
+If they don't, look at the log (on a Pi `journalctl -u twobells-fetch`, or `journalctl -u twobells-screen` for the screen's rows; in Docker `docker logs twobells`; on a desktop, the Terminal window running it) for "train positions off for 6 hours". That means the key was refused: check you copied the Service Details key, not the Live Departure Board one. Saving the right key on the Keys page starts the dashboard's feeds again; a key changed in a file of your own needs a restart (see [Replacing a key](#replacing-a-key)), or the dashboard waits the full 6 hours before trying again.
 
 ---
 
@@ -255,13 +255,13 @@ In the wizard, press **Test this key**; on the **Keys** page, **Save and test** 
 Or build the bus timetable. On the Pi:
 
 ```bash
-sudo systemctl start departureboard-timetable.service
-journalctl -u departureboard-timetable -n 5
+sudo systemctl start twobells-timetable.service
+journalctl -u twobells-timetable -n 5
 ```
 
-On a desktop: `departureboard timetable`, with the same `--config` and `--secrets` as you start it with, if any.
+On a desktop: `twobells timetable`, with the same `--config` and `--secrets` as you start it with, if any.
 
-Either way, it ends with `Bus timetable: … journeys at your stops`. If it builds a timetable, the key works. Then `departureboard probe bus` (with `sudo /opt/departureboard/venv/bin/` in front on the Pi) lists the next buses. If every bus shows `sch` for a long time, **On the board** on the settings' **Overview** says whether live positions are failing.
+Either way, it ends with `Bus timetable: … journeys at your stops`. If it builds a timetable, the key works. Then `twobells probe bus` (with `sudo /opt/twobells/venv/bin/` in front on the Pi) lists the next buses. If every bus shows `sch` for a long time, **On the board** on the settings' **Overview** says whether live positions are failing.
 
 ---
 
@@ -284,7 +284,7 @@ Your account starts with one app. Open it to see its credentials: an **app_id** 
 
 ### Put them in
 
-The **TransportAPI app ID** and **TransportAPI app key** boxes on the settings' **Keys** page, while the board view is on. Or `TAPI_APP_ID` and `TAPI_APP_KEY` in `/etc/departureboard/secrets.env`.
+The **TransportAPI app ID** and **TransportAPI app key** boxes on the settings' **Keys** page, while the board view is on. Or `TAPI_APP_ID` and `TAPI_APP_KEY` in `/etc/twobells/secrets.env`.
 
 ### Check it works
 
@@ -292,7 +292,7 @@ The app ID and app key share the **Buses from TransportAPI** form on the **Keys*
 
 **On the board** on the settings' **Overview** shows how many of today's TransportAPI lookups are used, and the last error if a lookup failed. While the BODS timetable is working, TransportAPI isn't used at all, so there's nothing to see.
 
-With `source = "transportapi"` under `[bus]`, `departureboard probe bus` checks it directly. That uses one lookup per stop from today's 30.
+With `source = "transportapi"` under `[bus]`, `twobells probe bus` checks it directly. That uses one lookup per stop from today's 30.
 
 ---
 
@@ -316,7 +316,7 @@ A key is like a password for your account with that service. Anyone who has it c
 
 - **Never paste a key into a chat, an email, a forum post, a GitHub issue, or a screenshot.** If someone is helping you, describe the error instead; the board's own messages never include keys.
 - **Keep the key files private.**
-  - On the Pi, the installer makes `/etc/departureboard/secrets.env` readable only by the system. If you made the file yourself, run `sudo chmod 600 /etc/departureboard/secrets.env`.
+  - On the Pi, the installer makes `/etc/twobells/secrets.env` readable only by the system. If you made the file yourself, run `sudo chmod 600 /etc/twobells/secrets.env`.
   - On a desktop: `chmod 600 secrets.env`.
   - On a NAS: in File Station, give only your own account access to `secrets.env`.
 - **Keys stay off GitHub.** `secrets.env` and `dashboard.env` (its old name in Docker) are already left out of the project's git repository and its Docker image. Don't rename them to something that isn't.
@@ -335,7 +335,7 @@ Replace a key when it stops working, when you've made a new one, or if it might 
    - **The settings:** paste the new key into its box on the settings' **Keys** page and press **Save key** (or **Save and test**) in that key's form, or paste it on the wizard's **Keys** step. Each form saves its own key only, so the others stay as they are. A key saved in the settings wins over one in a file of your own, so if you've ever pasted that key there, replace it there. Nothing needs restarting.
    - **A `secrets.env` of your own:** change the text after `NAME=` and save the file. Keep it to one line, with no spaces or quotes.
 3. **Restart what uses it**, only after changing a file of your own:
-   - On a Pi: the e-paper board and the timetable timer pick it up on their next run. Restart the rest: `sudo systemctl restart departureboard-web.service departureboard-fetch.service departureboard-screen.service` (leave out the screen if you don't use it).
+   - On a Pi: the e-paper board and the timetable timer pick it up on their next run. Restart the rest: `sudo systemctl restart twobells-web.service twobells-fetch.service twobells-screen.service` (leave out the screen if you don't use it).
    - On a desktop: it notices the changed file and starts again by itself within a few seconds.
    - In Docker: in **Container Manager**, choose the project, then **Action**, then **Build** (or `docker compose up -d`). Just restarting the container doesn't read `secrets.env` again.
 4. **Check it works**, with the check from that key's section above.

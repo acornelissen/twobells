@@ -3,7 +3,7 @@ import string
 import pytest
 from PIL import Image, ImageDraw
 
-from departureboard.board.dotfont import GLYPHS, HEIGHT, DotFont
+from twobells.board.dotfont import GLYPHS, HEIGHT, DotFont
 
 FONT = DotFont()
 NEEDED = string.ascii_letters + string.digits + " :.,-+'&()/!?*>…"
@@ -50,14 +50,14 @@ def test_descenders_draw_below_the_baseline():
 
 
 def test_works_with_fit_text():
-    from departureboard.board.render import fit_text
+    from twobells.board.render import fit_text
 
     fitted = fit_text("Manchester Piccadilly", FONT, 60)
     assert fitted.endswith("…") and FONT.getlength(fitted) <= 60
 
 
 def test_tiny_font_covers_the_footer_text():
-    from departureboard.board.dotfont import TINY, TINY_HEIGHT
+    from twobells.board.dotfont import TINY, TINY_HEIGHT
 
     tiny = DotFont(TINY)
     for text in ("Updated 07:03", "Not updating: trains, buses"):
@@ -66,14 +66,14 @@ def test_tiny_font_covers_the_footer_text():
 
 
 def test_tiny_font_draws_lowercase_as_small_capitals():
-    from departureboard.board.dotfont import TINY
+    from twobells.board.dotfont import TINY
 
     tiny = DotFont(TINY)
     assert tiny.getlength("updated") == tiny.getlength("UPDATED")
 
 
 def test_tiny_glyphs_are_rectangular():
-    from departureboard.board.dotfont import TINY
+    from twobells.board.dotfont import TINY
 
     for char, rows in TINY.items():
         assert len({len(r) for r in rows}) == 1, char

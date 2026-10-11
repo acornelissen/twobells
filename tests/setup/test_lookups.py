@@ -7,10 +7,11 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from departureboard.core import net
-from departureboard.core.osgb import distance_m
-from departureboard.setup import lookups
-from departureboard.setup.lookups import (
+from tests.paths import FIXTURES
+from twobells.core import net
+from twobells.core.osgb import distance_m
+from twobells.setup import lookups
+from twobells.setup.lookups import (
     AnswerCache,
     Place,
     RateLimiter,
@@ -31,9 +32,8 @@ from departureboard.setup.lookups import (
     stop_labels,
     walk_minutes,
 )
-from departureboard.setup.spool.folder import WAITS
-from departureboard.timetable import roads
-from tests.paths import FIXTURES
+from twobells.setup.spool.folder import WAITS
+from twobells.timetable import roads
 
 NAPTAN = (FIXTURES / "naptan_setup_glossop.csv").read_bytes()
 
@@ -375,8 +375,8 @@ def test_nominatim_getter_names_the_project(monkeypatch):
 
     monkeypatch.setattr(lookups, "get_bytes", fake_get_bytes)
     lookups.nominatim_get("https://nominatim.openstreetmap.org/search?q=x", 100)
-    assert seen["User-Agent"].startswith("inky-departures/")
-    assert "github.com/acornelissen/inky-departures" in seen["User-Agent"]
+    assert seen["User-Agent"].startswith("twobells/")
+    assert "github.com/acornelissen/twobells" in seen["User-Agent"]
 
 
 def test_naptan_downloads_get_longer_than_usual_but_end_before_the_wizard_stops_waiting(monkeypatch):

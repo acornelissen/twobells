@@ -4,9 +4,9 @@
 #
 # Pin the release by version and digest, as below, so the image can't change
 # under you. On any computer with Docker and cosign, for version X.Y.Z:
-#   docker pull ghcr.io/acornelissen/inky-departures:X.Y.Z    # prints "Digest: sha256:..."
-#   cosign verify ghcr.io/acornelissen/inky-departures@sha256:<digest> \
-#     --certificate-identity https://github.com/acornelissen/inky-departures/.github/workflows/release.yml@refs/tags/vX.Y.Z \
+#   docker pull ghcr.io/acornelissen/twobells:X.Y.Z    # prints "Digest: sha256:..."
+#   cosign verify ghcr.io/acornelissen/twobells@sha256:<digest> \
+#     --certificate-identity https://github.com/acornelissen/twobells/.github/workflows/release.yml@refs/tags/vX.Y.Z \
 #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
 # then put the version and the digest in image: below. Until then compose
 # refuses the placeholder, so nothing unpinned runs. See docs/docker.md.
@@ -14,9 +14,9 @@
 # Keys: paste them in the settings (kept in the volume, readable by the app
 # only), or uncomment env_file with a secrets.env next to this file.
 services:
-  departureboard:
-    image: ghcr.io/acornelissen/inky-departures:X.Y.Z@sha256:DIGEST
-    container_name: departureboard
+  twobells:
+    image: ghcr.io/acornelissen/twobells:X.Y.Z@sha256:DIGEST
+    container_name: twobells
     restart: unless-stopped
     # IPv4 only: Docker hands IPv6 visitors on from its own network's gateway,
     # which the app would take for the home network.

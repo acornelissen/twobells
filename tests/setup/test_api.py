@@ -7,21 +7,21 @@ from typing import ClassVar
 
 import pytest
 
-from departureboard.settings import keyresults
-from departureboard.settings.config import load_config, needs_setup, read_base, read_config
-from departureboard.settings.installs import INSTALLS, Install
-from departureboard.settings.overlay import Target, board_target
-from departureboard.settings.schema import keys as schema_keys
-from departureboard.settings.store import Store
-from departureboard.setup import api as setupapi
-from departureboard.setup import discover
-from departureboard.setup.api import Invalid, RateLimit, SetupApi, decode, suggested_labels
-from departureboard.setup.keytest import KeyResult
-from departureboard.setup.lookups import Place, SetupError, Station, Stop
-from departureboard.timetable import build as timetable
-from departureboard.timetable.model import Schedule, StopPosition
-from departureboard.web.groupform import check_views
 from tests.paths import ROOT
+from twobells.settings import keyresults
+from twobells.settings.config import load_config, needs_setup, read_base, read_config
+from twobells.settings.installs import INSTALLS, Install
+from twobells.settings.overlay import Target, board_target
+from twobells.settings.schema import keys as schema_keys
+from twobells.settings.store import Store
+from twobells.setup import api as setupapi
+from twobells.setup import discover
+from twobells.setup.api import Invalid, RateLimit, SetupApi, decode, suggested_labels
+from twobells.setup.keytest import KeyResult
+from twobells.setup.lookups import Place, SetupError, Station, Stop
+from twobells.timetable import build as timetable
+from twobells.timetable.model import Schedule, StopPosition
+from twobells.web.groupform import check_views
 
 # Home, near Hadfield station, to more places than anything written may show.
 HOME = {"lat": 53.461964, "lon": -1.965633}
@@ -417,7 +417,7 @@ TEMPLATE = ROOT / "examples/config.example.toml"
 def template(board):
     """The board's fixture on examples/config.example.toml as installed: CHANGE_ME
     placeholders for the station and stops, and nothing saved yet."""
-    text = TEMPLATE.read_text().replace("/var/lib/departureboard/state.json", str(board.state / "state.json"))
+    text = TEMPLATE.read_text().replace("/var/lib/twobells/state.json", str(board.state / "state.json"))
     board.config.write_text(text)
     (board.state / "settings.toml").unlink()
     return board
