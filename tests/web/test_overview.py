@@ -316,23 +316,26 @@ def test_both_views_are_grouped_under_their_names():
 
 
 @pytest.mark.parametrize("found, pill, said", [
-    ("on", "pill-ok", "Network guard On Checked When the web server started "
+    ("on", "pill-ok", "Network guard On Checked 07:58, 3 min ago "
                       "What it means This server can't connect out to the internet."),
-    ("off", "pill-bad", "Network guard Off Checked When the web server started "
+    ("off", "pill-bad", "Network guard Off Checked 07:58, 3 min ago "
                         "What to do On the Pi, restart it: sudo systemctl restart departureboard-web. If it stays "
                         "off, sudo journalctl -u departureboard-web says why. "
                         "What it means The server still refuses visitors outside your home network itself; "
                         "nothing stops it connecting out."),
-    ("unknown", "pill-neutral", "Network guard Can't tell Checked When the web server started "
-                                "What it means There was no route to the internet to check with, so whether "
-                                "anything stops this server connecting out can't be told."),
+    ("unknown", "pill-neutral", "Network guard Can't tell Checked 07:58, 3 min ago "
+                                "What it means The check couldn't see whether anything stops this server "
+                                "connecting out, most often as there was no route out yet. It looks again when "
+                                "this page is drawn, at most once a minute."),
 ])
 def test_the_network_guard_says_whether_the_server_can_connect_out(found, pill, said):
-    page = overview.render_health([("On this device", [overview.guard_feed(found)])], NOW, "/settings")
+    checked = NOW - timedelta(minutes=3)
+    page = overview.render_health([("On this device", [overview.guard_feed(found, checked, NOW)])], NOW,
+                                  "/settings")
     assert feed(page, "Network guard") == said
     item = re.search(r'<li class="feed[^"]*">(.*?)</li>', page).group(1)
     assert f'class="pill {pill}"' in item
-    assert "Last update" not in item and "Checking now" not in item  # a check at start, not a feed
+    assert "Last update" not in item and "Checking now" not in item  # a check, not a feed
 
 
 @pytest.mark.parametrize("found, line, folded", [
@@ -342,7 +345,7 @@ def test_the_network_guard_says_whether_the_server_can_connect_out(found, pill, 
 ])
 def test_the_guard_off_is_a_problem_and_cant_tell_is_not(found, line, folded):
     page = overview.render_health([("On the dashboard", overview.dashboard_feeds(snapshot(), NOW, LONDON)),
-                                   ("On this device", [overview.guard_feed(found)])], NOW, "/settings")
+                                   ("On this device", [overview.guard_feed(found, NOW, NOW)])], NOW, "/settings")
     assert line in text_of(re.search(r'<p class="health-line">(.*?)</p>', page).group(1))
     assert ("<details" in page) is folded
     assert page.index("<h3>On the dashboard</h3>") < page.index("<h3>On this device</h3>")

@@ -56,17 +56,16 @@ MEANINGS = {
     "updates": "The dashboard shows what it last had until they start again. Restarting the device usually helps.",
     "budget": "The board checks for buses again after midnight.",
 }
-# The web server's network guard (netguard.py), checked as it starts on a Pi:
-# its state, pill and what it means.
+# The web server's network guard (netguard.py), checked on a Pi as it starts
+# and again as the Overview is drawn: its state, pill and what it means.
 GUARD = {
     "on": ("ok", ("pill-ok", "check", "On"), "This server can't connect out to the internet."),
     "off": ("problem", ("pill-bad", "x", "Off"),
             "The server still refuses visitors outside your home network itself; nothing stops it connecting out."),
     "unknown": ("waiting", ("pill-neutral", "info", "Can't tell"),
-                "There was no route to the internet to check with, so whether anything stops this server "
-                "connecting out can't be told."),
+                "The check couldn't see whether anything stops this server connecting out, most often as "
+                "there was no route out yet. It looks again when this page is drawn, at most once a minute."),
 }
-_GUARD_CHECKED = ("Checked", "When the web server started")
 _GUARD_FIX = ("What to do", "On the Pi, restart it: sudo systemctl restart departureboard-web. If it stays off, "
               "sudo journalctl -u departureboard-web says why.")
 # A Host header as the server let it in: a name or an address, and a port.
@@ -283,11 +282,13 @@ def _budget(data: dict, state: dict, now: datetime) -> tuple[tuple[tuple[str, st
     return (("TransportAPI lookups today", f"{used} of {limit}"),), used >= limit
 
 
-def guard_feed(found: str) -> Feed:
-    """The network guard's line in the health, from netguard.probe(): On is
-    working, Off a problem, and Can't tell neither."""
+def guard_feed(found: str, checked: datetime, now: datetime) -> Feed:
+    """The network guard's line in the health, from netguard.probe() when it
+    was `checked` (local, as `now`): On is working, Off a problem, and Can't
+    tell neither."""
     state, pill, meaning = GUARD.get(found, GUARD["unknown"])
-    extra = (_GUARD_CHECKED, _GUARD_FIX) if state == "problem" else (_GUARD_CHECKED,)
+    when = ("Checked", _when(checked, now))
+    extra = (when, _GUARD_FIX) if state == "problem" else (when,)
     return Feed("Network guard", state, "", "", meaning=meaning, extra=extra, pill=pill)
 
 

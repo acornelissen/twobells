@@ -1,6 +1,7 @@
 """The settings site, end to end through the one server (dashserver), on a
 Pi (codes on the board) and in Docker (codes in the log)."""
 
+import errno
 import http.client
 import json
 import re
@@ -22,7 +23,7 @@ from departureboard.settings.store import Store
 from departureboard.setup.api import PAGE_HEADERS, RateLimit, SetupApi, TooSoon, static_files
 from departureboard.setup.keytest import KeyResult
 from departureboard.setup.lookups import SetupError
-from departureboard.web import settingsite
+from departureboard.web import netguard, settingsite
 from departureboard.web.auth import FAILURE_WINDOW_S, MAX_FAILURES, PasswordStore, Sessions
 from departureboard.web.icons import icon
 from departureboard.web.server import DashboardApp, StaticFiles, make_server
@@ -661,14 +662,37 @@ def test_on_a_pi_the_overview_says_whether_the_web_server_can_connect_out(pi):
     assert pi.site.network_guard is None  # until serve has checked
     health = _health(pi("GET", "/settings", cookie=pi.session())[1])
     assert "Network guard" not in health and "On this device" not in health
-    for found, pill, problem in (("on", "On", False), ("off", "Off", True), ("unknown", "Can&#x27;t tell", False)):
-        pi.site.network_guard = found
+    for found, code, pill, problem in (("on", errno.EPERM, "On", False), ("off", 0, "Off", True),
+                                       ("unknown", errno.ENETUNREACH, "Can&#x27;t tell", False)):
+        pi.site.network_guard = netguard.Guard(lambda to, code=code: code)
         health = _health(pi("GET", "/settings", cookie=pi.session())[1])
         assert health.index("<h3>On the board</h3>") < health.index("<h3>On this device</h3>")
         guard = re.search(r'<li class="feed[^"]*"><p class="feed-name"><strong>Network guard</strong>(.*?)</li>',
                           health).group(1)
         assert re.search(rf"</svg> {pill}</span>", guard), found
         assert ("1 problem" in health) is problem, found
+
+
+def test_the_overview_checks_the_guard_again_as_it_is_drawn_and_says_when_in_the_boards_zone(pi):
+    # At start Wi-Fi had no route yet; a minute on it has, and the guard is found on.
+    codes, sent = [errno.ENETUNREACH], []
+    clock = [datetime(2026, 10, 8, 6, 58, tzinfo=ZoneInfo("UTC")).timestamp()]  # 07:58 in London
+    guard = netguard.Guard(lambda to: sent.append(to) or codes[0], lambda: clock[0])
+    assert guard.check() == netguard.UNKNOWN
+    pi.site.network_guard = guard
+    codes[0] = errno.EPERM
+    cookie = pi.session()
+    health = _health(pi("GET", "/settings", cookie=cookie)[1])
+    assert "Can&#x27;t tell" in health  # under a minute since: nothing sent
+    assert re.search(r"<dt>Checked</dt><dd>[^<]*07:58", health)
+    checks = len(sent)
+    clock[0] += 60
+    health = _health(pi("GET", "/settings", cookie=cookie)[1])
+    assert re.search(r"</svg> On</span>", health)
+    assert re.search(r"<dt>Checked</dt><dd>[^<]*07:59", health)
+    assert sent[checks:] == [netguard.PROBE_ADDRESS]  # one send, to the documentation address
+    _health(pi("GET", "/settings", cookie=cookie)[1])
+    assert len(sent) == checks + 1  # drawn again within the minute: nothing more
 
 
 @pytest.mark.parametrize("saved, said", [

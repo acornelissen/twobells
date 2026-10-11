@@ -1,3 +1,4 @@
+import errno
 import http.client
 import json
 import os
@@ -1158,13 +1159,13 @@ def served(monkeypatch):
         made.update(app=app, host=host, port=port, attempts=attempts)
         return Stopped()
 
-    def check_guard():
-        made["guard_checks"] = made.get("guard_checks", 0) + 1
-        return made.get("guard", netguard.ON)
+    def send(address):
+        made.setdefault("guard_sends", []).append(address)
+        return made.get("guard", errno.EPERM)
 
     monkeypatch.setattr(net, "urlopen", offline)
     monkeypatch.setattr(dashserver, "make_server", make_server)
-    monkeypatch.setattr(netguard, "check", check_guard)  # nothing sent from the tests
+    monkeypatch.setattr(netguard, "_send", send)  # nothing sent from the tests
     monkeypatch.setattr("webbrowser.open", lambda url: made.setdefault("opened", []).append(url))
     return made
 
@@ -1389,13 +1390,16 @@ def test_serve_on_a_pi_checks_it_cant_connect_out_for_the_overview(tmp_path, ser
     from departureboard.settings.installs import install_named
 
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
-    served["guard"] = "off"
+    from departureboard.web import netguard
+
+    served["guard"] = 0  # the datagram went: nothing stops it
     assert main(["serve", "--install", install, "--config", str(tmp_path / "config.toml"), "--no-browser",
                  "--secrets", str(tmp_path / "none.env"), "--state-dir", str(tmp_path / "data")]) == 0
     guarded = install == "pi"
     assert install_named(install).network_guard is guarded
-    assert served.get("guard_checks", 0) == (1 if guarded else 0)
-    assert served["app"].settings.network_guard == ("off" if guarded else None)
+    assert served.get("guard_sends", []) == ([netguard.PROBE_ADDRESS] if guarded else [])
+    guard = served["app"].settings.network_guard
+    assert (guard.last[0] if guard is not None else None) == ("off" if guarded else None)
 
 
 class Browser:

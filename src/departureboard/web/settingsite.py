@@ -104,6 +104,7 @@ if TYPE_CHECKING:
     from ..dashboard.snapshot import SnapshotSource
     from ..settings.installs import Install
     from ..settings.store import Store
+    from .netguard import Guard
 
 log = logging.getLogger(__name__)
 
@@ -281,9 +282,9 @@ class SettingsSite:
     `version` (by default the package's) is what it says is running.
     `hub` is where the dashboard's snapshot is (serve sets it, with
     `healthy()` saying whether its pollers are working), for the
-    Overview's health; and on a Pi, `network_guard` is whether the server
-    can connect out, as serve found at start (netguard.probe), None until
-    it has looked."""
+    Overview's health; and on a Pi, `network_guard` says whether the server
+    can connect out (a netguard.Guard serve checked at start, which the
+    Overview asks again), None until it has looked."""
 
     def __init__(self, store: Store, install: Install, setup: SetupSteps, *,
                  dashboard_on: Callable[[], bool] = lambda: False, stylesheet: bytes | None = None,
@@ -296,7 +297,7 @@ class SettingsSite:
         self.problem = ""
         self.hub: SnapshotSource | None = None
         self.healthy: Callable[[], bool] = lambda: True
-        self.network_guard: str | None = None
+        self.network_guard: Guard | None = None
         self.setup = setup
         self._dashboard_on = dashboard_on
         self.password = PasswordStore(store.password_file)
@@ -536,7 +537,11 @@ class SettingsSite:
         if running:
             groups.append(("On the dashboard", view.dashboard_feeds(self._snapshot(), now, zone, self._updating())))
         if self.network_guard is not None:
-            groups.append(("On this device", [view.guard_feed(self.network_guard)]))
+            # One send that never waits, at most once a minute: Wi-Fi may have
+            # had no route at start, or the rules been flushed since.
+            found, at = self.network_guard.latest()
+            checked = datetime.fromtimestamp(at, zone).replace(tzinfo=None)
+            groups.append(("On this device", [view.guard_feed(found, checked, now)]))
         out.append(view.render_health(groups, now, PREFIX, problems=1 if self.problem else 0, note=note))
         out.append(view.render_place(data, self.store.folder, now, zone))
         out.append(view.render_keys(data, views, self._secrets(), TAB_PATHS["keys"], self._key_tests(zone)))

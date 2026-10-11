@@ -385,8 +385,10 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
             return 2, None
         port = server.server_address[1]
         if install.network_guard:
-            # Whether the kernel really keeps this server off the internet; in the log and on the Overview.
-            site.network_guard = netguard.check()
+            # Whether the kernel really keeps this server off the internet; in the log and on the Overview,
+            # which asks again as it is drawn.
+            site.network_guard = netguard.Guard()
+            site.network_guard.check()
         if collector is not None:
             collector.start()
         if mirror is not None:
