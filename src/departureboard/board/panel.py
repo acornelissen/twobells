@@ -18,12 +18,15 @@ PLATFORM_COLUMN_MIN_WIDTH = 300
 # Piccadilly" is 105), beside them, the platform, a bus's "Leave in 12 min" and
 # the status; at 400 a train's would be down to 80. The 7.9" screen's 426 is
 # in; the 10.85" e-paper's 340 is not, and e-paper never shows them anyway.
+# A wider screen gives its spare room to the where words first, up to twenty
+# letters, so they aren't cut short when there's room (see where_width).
 STRIP_COLUMN_MIN_WIDTH = 420
 
 # A sign board at least this wide gives a train's "Leave in 3 min" a column on
-# its row rather than a line of its own under it: one line a row. As for the
-# strips, a destination keeps about 100 dots from 460; on the 7.9" screen's
-# 426 it would keep 74, about 13 letters, so only the bar screen's 480 does it.
+# its row rather than a line of its own under it: one line a row. On the bar
+# screen's 480 a destination still keeps 94 dots, 17 letters, beside twenty
+# letters of where words; on the 7.9" screen's 426 it would keep 64, about 11,
+# so only the bar screen does it.
 LEAVE_COLUMN_MIN_WIDTH = 460
 
 

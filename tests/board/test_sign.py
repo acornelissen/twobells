@@ -607,7 +607,7 @@ from departureboard.board.panel import (  # noqa: E402
     PLATFORM_COLUMN_MIN_WIDTH,
     STRIP_COLUMN_MIN_WIDTH,
 )
-from departureboard.board.sign import STRIP_WIDTH, WHERE_WIDTH, StripMark, strip_dots  # noqa: E402
+from departureboard.board.sign import STRIP_WIDTH, StripMark, strip_dots, where_width  # noqa: E402
 from departureboard.core.model import Strip  # noqa: E402
 
 CLOCK = "07:03:15"
@@ -615,7 +615,7 @@ CLOCK = "07:03:15"
 STRIP_PANELS = [HDMI_1280X400, HDMI_1920X440]
 SCREEN_TRAINS = [
     dataclasses.replace(TRAINS[0], platform="Plat 1", strip=Strip("At Dinting", 4, 2, 1.0)),
-    dataclasses.replace(TRAINS[1], platform="Plat 1", strip=Strip("Not left Hadfield yet", 4, 2, None)),
+    dataclasses.replace(TRAINS[1], platform="Plat 1", strip=Strip("Not yet left Hadfield sidings", 4, 2, None)),
     dataclasses.replace(TRAINS[2], platform="Plat 2"),  # cancelled: nowhere to be
 ]
 SCREEN_BUSES = [
@@ -648,8 +648,10 @@ def test_only_the_bar_screen_puts_a_trains_leave_time_on_its_row():
 
 def test_on_the_bar_screen_each_train_is_one_line_with_its_leave_time_in_a_column():
     items = sign_layout(screen(), *dots(HDMI_1920X440)).items
-    first = line_of(items, "1st")
-    assert texts(first) == ["1st", "07:12", "Manchester Piccadilly", "At Dinting", "Plat 1", "Leave in 3 min", "On time"]
+    first = texts(line_of(items, "1st"))
+    # The destination gives way to twenty letters of where words.
+    assert first[2].startswith("Manchester Picc")
+    assert first[:2] + first[3:] == ["1st", "07:12", "At Dinting", "Plat 1", "Leave in 3 min", "On time"]
     # Nothing between the 1st and the 2nd: the rows are a line apart.
     assert find(items, "2nd").y - find(items, "1st").y == 11
 
@@ -699,7 +701,7 @@ def test_wide_screens_say_where_each_train_and_bus_is(panel):
     assert "At Dinting" in texts(line_of(items, "1st"))
     assert {(m.y, m.strip.where, m.train) for m in layout.strips} == {
         (find(items, "1st").y, "At Dinting", True),
-        (find(items, "2nd").y, "Not left Hadfield yet", True),
+        (find(items, "2nd").y, "Not yet left Hadfield sidings", True),
         (find(items, "341").y, "3 stops away", False),
         (find(items, "237").y, "1 stop away", False),
     }
@@ -736,9 +738,9 @@ def test_a_rows_columns_never_overlap(panel, leave_for):
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
 def test_long_where_words_are_cut_to_their_column(panel):
     items = sign_layout(screen(), *dots(panel)).items
-    where = next(i for i in items if i.text.startswith("Not left"))
+    where = next(i for i in items if i.text.startswith("Not yet left"))
     assert where.text.endswith("…")
-    assert FONT.getlength(where.text) <= WHERE_WIDTH
+    assert FONT.getlength(where.text) <= where_width(dots(panel)[0])
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
@@ -753,14 +755,14 @@ def test_the_destination_gives_way_to_the_strip(panel):
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
 def test_every_destination_keeps_room_beside_the_strip(panel):
-    # The threshold's promise: a long destination keeps about 18 letters.
+    # A long destination keeps about 16 letters, giving way to the where words.
     long = "Stepping Hill Hospital via Marple and Romiley"
     trains = [dataclasses.replace(r, middle=long) for r in SCREEN_TRAINS]
     buses = [dataclasses.replace(r, middle=long) for r in SCREEN_BUSES]
     items = sign_layout(screen(trains, buses), *dots(panel)).items
     shown = [i for i in items if i.text.startswith("Stepping")]
     assert len(shown) == 6
-    assert all(FONT.getlength(i.text) >= 95 for i in shown)
+    assert all(FONT.getlength(i.text) >= 85 for i in shown)
 
 
 def test_the_strip_threshold_lets_in_both_screens_and_not_the_e_paper():
@@ -868,3 +870,42 @@ def test_the_route_page_fits_the_bar_screen(bus_at):
     assert find(layout.items, "Leave in 6 min").y + 9 < road - 8
     assert all(find(layout.items, name).y + 9 <= road - 2 for name in NAMES[::2])
     assert render_route_sign(route(bus_at), PALETTE, HDMI_1920X440).size == HDMI_1920X440.size
+
+
+TWENTY = "Leaving Hadfield now"  # as long as the where words are meant to be
+
+
+def test_twenty_letters_of_where_fit_uncut_on_the_bar_screen():
+    assert len(TWENTY) == 20
+    rows = [dataclasses.replace(SCREEN_TRAINS[0], strip=Strip(TWENTY, 4, 2, 1.0)), *SCREEN_TRAINS[1:]]
+    buses = [dataclasses.replace(SCREEN_BUSES[0], strip=Strip(TWENTY, 7, 5, 2.4)), *SCREEN_BUSES[1:]]
+    items = sign_layout(screen(rows, buses), *dots(HDMI_1920X440)).items
+    assert texts(items).count(TWENTY) == 2
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_the_where_column_is_as_wide_whatever_the_words(panel):
+    width, height = dots(panel)
+    short = [dataclasses.replace(r, strip=Strip("At Dinting", 4, 2, 1.0)) for r in SCREEN_TRAINS]
+    for view in (screen(), screen(short)):
+        layout = sign_layout(view, width, height)
+        for mark in layout.strips:
+            where = max((i for i in layout.items if i.y == mark.y and i.x < mark.x), key=lambda i: i.x)
+            assert mark.x - where.x == where_width(width) + 5
+
+
+def test_the_where_column_takes_the_spare_width_on_wider_screens():
+    narrow, wide = where_width(dots(HDMI_1280X400)[0]), where_width(dots(HDMI_1920X440)[0])
+    assert FONT.getlength("3 stops away") <= narrow < wide
+    assert FONT.getlength(TWENTY) <= wide
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_manchester_piccadilly_stays_whole_on_the_7_9_inch_screen_with_strips(panel):
+    items = sign_layout(screen(), *dots(panel)).items
+    shown = [i.text for i in items if i.text.startswith("Manchester")]
+    if panel is HDMI_1280X400:
+        assert shown == ["Manchester Piccadilly"] * 3
+    else:
+        # The bar screen gives the where words their twenty letters first.
+        assert all(t.startswith("Manchester Picc") for t in shown)

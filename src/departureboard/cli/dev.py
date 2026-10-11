@@ -189,12 +189,12 @@ def demo_command(args) -> int:
         Departure("bus", "237", "Ashton", "07:41", None, Status.ON_TIME, stop="A"),
     ]
     # Where each is, as a wide screen shows it. The cancelled train and the 61,
-    # with no live position, have none; the 237 hasn't been seen yet.
+    # with no live position, have none; the 237 hasn't started its journey yet.
     strips = {
-        strip_key(trains[0]): Strip("At Dinting", 4, 2, 1.0),
-        strip_key(trains[1]): Strip("Not left Hadfield yet", 4, 2, None),
+        strip_key(trains[0]): Strip("Left Hadfield 07:08", 4, 2, 0.5),
+        strip_key(trains[1]): Strip("At Dinting", 4, 2, 1.0),
         strip_key(buses[0]): Strip("3 stops away", 7, 5, 2.4),
-        strip_key(buses[2]): Strip("Not yet past Hollingworth", 7, 5, None),
+        strip_key(buses[2]): Strip("Not started", 7, 5, None),
     }
     theme = theme_named(args.theme)
     display = PngDisplay(args.png, args.accent or theme.accent, DISPLAY_PANELS[args.display])

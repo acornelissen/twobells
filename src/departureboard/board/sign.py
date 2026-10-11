@@ -49,13 +49,30 @@ def item_size(item: Item) -> tuple[int, int]:
     return _FONT.getlength(item.text), GLYPH_H
 
 
-# On a screen wide enough, where each train or bus is: the words, cut to fit
-# WHERE_WIDTH ("3 stops away" fits), then a little line of its stops.
-WHERE_WIDTH = 66
+# On a screen wide enough, where each train or bus is: the words, then a
+# little line of its stops.
 STRIP_WIDTH = 48  # eight stops, six dots apart
 # Twice the usual gap after the destination, so it and the where words don't
 # run together into one name.
 _WHERE_GAP = 2 * _COL_GAP
+# The where words' column: at least "3 stops away", at most twenty letters
+# ("Left Hadfield 07:08"), which is as long as they are meant to be.
+_WHERE_LEAST = _FONT.getlength("3 stops away")
+_WHERE_MOST = _FONT.getlength("Leaving Hadfield now")
+# What the rest of a full row needs beside the where words: ordinal and time,
+# "Manchester Piccadilly" whole, the little line, a bus's leave time and a status.
+_REST_OF_ROW = (
+    MARGIN + _FONT.getlength("4th") + _COL_GAP + _FONT.getlength("00:00") + _COL_GAP
+    + _FONT.getlength("Manchester Piccadilly") + _WHERE_GAP + _COL_GAP + STRIP_WIDTH + _COL_GAP
+    + _FONT.getlength("Leave in 00 min") + _COL_GAP + _FONT.getlength("Exp 00:00") + MARGIN
+)
+
+
+def where_width(width: int) -> int:
+    """How wide the where words' column is on a board `width` dots across: the
+    room a full row leaves, from "3 stops away" to twenty letters. It is
+    worked out from the width alone, so it stays put as the words change."""
+    return max(_WHERE_LEAST, min(_WHERE_MOST, width - _REST_OF_ROW))
 
 
 @dataclass(frozen=True)
@@ -136,16 +153,17 @@ def _where_column(view: BoardView, trains: _Columns, buses: _Columns, width: int
     so it stays put as the words change."""
     if view.clock is None or width < STRIP_COLUMN_MIN_WIDTH:
         return None
-    return min(trains.end, buses.end) - _COL_GAP - STRIP_WIDTH - _COL_GAP - WHERE_WIDTH
+    return min(trains.end, buses.end) - _COL_GAP - STRIP_WIDTH - _COL_GAP - where_width(width)
 
 
-def _add_strip(layout: SignLayout, row: Row, where_x: float, y: int, train: bool, inverted: bool) -> None:
+def _add_strip(layout: SignLayout, row: Row, where_x: float, y: int, width: int, train: bool, inverted: bool) -> None:
     # A row without one leaves the space blank.
     if row.strip is None:
         return
+    words_w = where_width(width)
     if row.strip.where:
-        layout.add(where_x, y, fit_text(row.strip.where, _FONT, WHERE_WIDTH), inverted)
-    layout.strips.append(StripMark(where_x + WHERE_WIDTH + _COL_GAP, y, row.strip, train, inverted))
+        layout.add(where_x, y, fit_text(row.strip.where, _FONT, words_w), inverted)
+    layout.strips.append(StripMark(where_x + words_w + _COL_GAP, y, row.strip, train, inverted))
 
 
 def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _Columns,
@@ -172,7 +190,7 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
         layout.add(time_x, y, row.left, inverted)
         layout.add(dest_x, y, fit_text(row.middle, _FONT, dest_end - dest_x), inverted)
         if where_x is not None:
-            _add_strip(layout, row, where_x, y, True, inverted)
+            _add_strip(layout, row, where_x, y, width, True, inverted)
         if columns.platform_x is not None and row.platform:
             layout.add(columns.platform_x, y, row.platform, inverted)
         if columns.leave_x is not None and section.leave and index == leave_for:
@@ -212,7 +230,7 @@ def _buses(layout: SignLayout, section: Section, y: int, bottom: int, width: int
             layout.add(stop_x, y, row.stop, inverted)
         layout.add(dest_x, y, fit_text(row.middle, _FONT, dest_end - dest_x), inverted)
         if where_x is not None:
-            _add_strip(layout, row, where_x, y, False, inverted)
+            _add_strip(layout, row, where_x, y, width, False, inverted)
         if row.leave and columns.leave_x is not None:
             layout.add(columns.leave_x, y, row.leave, inverted)
         layout.add(status_x, y, row.right, inverted)
@@ -326,7 +344,7 @@ def strip_dots(mark: StripMark) -> set[tuple[int, int]]:
     words beside it say where the vehicle is."""
     strip = mark.strip
     line_y = mark.y + _STRIP_LINE
-    left, right = round(mark.x) + 3, round(mark.x) + mark.width - 4  # room for your stop at either end
+    left, right = round(mark.x) + 2, round(mark.x) + mark.width - 3  # room for your stop at either end
     step = (right - left) / (strip.stops - 1)
     xs = [round(left + i * step) for i in range(strip.stops)]
     yours = xs[strip.yours]

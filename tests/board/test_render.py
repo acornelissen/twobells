@@ -886,7 +886,7 @@ def test_the_setup_page_signature_follows_its_words():
 # Where each train or bus is, on a screen wide enough; and the bar screen's third bus.
 
 from departureboard.board.panel import STRIP_COLUMN_MIN_WIDTH  # noqa: E402
-from departureboard.board.render import STRIP_WIDTH, WHERE_WIDTH, row_limits, where_column  # noqa: E402
+from departureboard.board.render import STRIP_WIDTH, row_limits, where_column, where_width  # noqa: E402
 from departureboard.core.model import Strip  # noqa: E402
 
 CLOCK = "07:03:15"
@@ -894,7 +894,7 @@ STRIP_PANELS = [HDMI_1280X400, HDMI_1920X440]
 STRIP_TRAINS = (
     Row("07:12", "Manchester Piccadilly", "On time", platform="Plat 1", strip=Strip("At Dinting", 4, 2, 1.0)),
     Row("07:42", "Manchester Piccadilly", "Exp 07:49", Style.ALERT, platform="Plat 1",
-        strip=Strip("Not left Hadfield yet", 4, 2, None)),
+        strip=Strip("Not yet left Hadfield sidings", 4, 2, None)),
     Row("08:12", "Manchester Piccadilly", "Cancelled", Style.INVERTED, platform="Plat 2"),
 )
 STRIP_BUSES = (
@@ -927,12 +927,12 @@ def test_wide_screens_say_where_each_train_and_bus_is_in_a_column(panel):
     assert where_x is not None
     shown = {row.left: layout.where for row, layout in layouts}
     assert shown["07:12"] == "At Dinting" and shown["341"] == "3 stops away" and shown["237"] == "1 stop away"
-    assert shown["07:42"].startswith("Not left") and shown["07:42"].endswith("…")
+    assert shown["07:42"].startswith("Not yet left") and shown["07:42"].endswith("…")
     for row, layout in layouts:
         if row.strip:
             assert layout.where_x == where_x
-            assert drawn_length(fonts.small, layout.where) <= WHERE_WIDTH * s
-            assert layout.strip_x == where_x + (WHERE_WIDTH + 6) * s
+            assert drawn_length(fonts.small, layout.where) <= where_width(fonts, panel.width, s)
+            assert layout.strip_x == where_x + where_width(fonts, panel.width, s) + 6 * s
         else:
             # Left blank, but the destination still stops where the others' do.
             assert layout.where is None and layout.strip_x is None
@@ -943,7 +943,7 @@ def test_a_rows_columns_never_overlap_in_the_plain_look(panel):
     layouts, where_x, fonts, s = strip_layouts(panel)
     for _, layout in layouts:
         assert layout.middle_x + drawn_length(fonts.regular, layout.middle) + 6 * s <= where_x
-        strip_end = where_x + (WHERE_WIDTH + 6 + STRIP_WIDTH) * s
+        strip_end = where_x + where_width(fonts, panel.width, s) + (6 + STRIP_WIDTH) * s
         for later in (layout.platform_x, layout.leave_x, layout.right_x):
             if later is not None:
                 assert strip_end + 6 * s <= later
@@ -990,9 +990,9 @@ def bus_rows_top(panel):
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
 def test_the_little_line_is_drawn_with_the_vehicle_where_it_is(panel):
-    _, where_x, _, s = strip_layouts(panel)
+    _, where_x, fonts, s = strip_layouts(panel)
     top, row_h = bus_rows_top(panel)
-    strip_x = where_x + (WHERE_WIDTH + 6) * s
+    strip_x = where_x + where_width(fonts, panel.width, s) + 6 * s
     right = strip_x + STRIP_WIDTH * s
     drawn = render(on_screen(), PALETTE, panel)
     assert ink_in(drawn, (strip_x, top, right, top + row_h)) > 0
@@ -1006,9 +1006,9 @@ def test_the_little_line_is_drawn_with_the_vehicle_where_it_is(panel):
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
 def test_your_stop_is_in_the_accent_colour(panel):
-    _, where_x, _, s = strip_layouts(panel)
+    _, where_x, fonts, s = strip_layouts(panel)
     top, row_h = bus_rows_top(panel)
-    strip_x = where_x + (WHERE_WIDTH + 6) * s
+    strip_x = where_x + where_width(fonts, panel.width, s) + 6 * s
     drawn = render(on_screen(), PALETTE, panel)
     assert ink_in(drawn, (strip_x, top, strip_x + STRIP_WIDTH * s, top + row_h), PALETTE.accent) > 0
 
@@ -1022,3 +1022,23 @@ def test_the_bar_screen_shows_three_buses_in_the_plain_look():
     top, row_h = bus_rows_top(HDMI_1920X440)
     assert top + 3 * row_h <= HDMI_1920X440.height
     assert ink_in(image, (0, top + 2 * row_h, 200, top + 3 * row_h)) > 0  # the 237
+
+
+
+def test_twenty_letters_of_where_fit_uncut_on_the_bar_screen_in_the_plain_look():
+    twenty = "Leaving Hadfield now"
+    trains = (dataclasses.replace(STRIP_TRAINS[0], strip=Strip(twenty, 4, 2, 1.0)), *STRIP_TRAINS[1:])
+    buses = (dataclasses.replace(STRIP_BUSES[0], strip=Strip(twenty, 7, 5, 2.4)), *STRIP_BUSES[1:])
+    layouts, _, _, _ = strip_layouts(HDMI_1920X440, trains, buses)
+    assert [layout.where for _, layout in layouts].count(twenty) == 2
+
+
+def test_the_plain_where_column_is_as_wide_whatever_the_words_and_wider_on_the_bar():
+    fonts = load_fonts(3)
+    narrow, wide = where_width(fonts, HDMI_1280X400.width, 3), where_width(fonts, HDMI_1920X440.width, 3)
+    assert drawn_length(fonts.small, "3 stops away") <= narrow < wide
+    short = tuple(dataclasses.replace(r, strip=Strip("At Dinting", 4, 2, 1.0)) for r in STRIP_TRAINS)
+    for panel in STRIP_PANELS:
+        a = strip_layouts(panel)[0][0][1]
+        b = strip_layouts(panel, short)[0][0][1]
+        assert a.strip_x - a.where_x == b.strip_x - b.where_x

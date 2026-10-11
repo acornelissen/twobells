@@ -108,9 +108,8 @@ class RowLayout:
 
 
 _COL_GAP = 6
-# On a screen wide enough, in pHAT pixels: the where words in the small type
-# ("3 stops away" fits), then a little line of stops.
-WHERE_WIDTH = 60
+# On a screen wide enough, in pHAT pixels: the where words in the small type,
+# then a little line of stops.
 STRIP_WIDTH = 48
 
 
@@ -159,8 +158,9 @@ def row_layout(
         # Twice the gap, so the destination and the where words don't run together.
         middle_end = where_x - 2 * gap
         if row.strip is not None:
-            where = fit_text(row.strip.where, fonts.small, WHERE_WIDTH * scale, partial(drawn_length, fonts.small))
-            strip_x = where_x + WHERE_WIDTH * scale + gap
+            words_w = where_width(fonts, width, scale)
+            where = fit_text(row.strip.where, fonts.small, words_w, partial(drawn_length, fonts.small))
+            strip_x = where_x + words_w + gap
     return RowLayout(
         # Measured as drawn, like the right-aligned text, so a cut destination
         # doesn't run into the status.
@@ -198,6 +198,23 @@ def leave_column(rows, fonts: Fonts, width: int, scale: int) -> float | None:
     return width - _PAD * scale - right_w - _COL_GAP * scale - leave_w
 
 
+def where_width(fonts: Fonts, width: int, scale: int) -> float:
+    """How wide the where words' column is, in panel pixels, on a board `width`
+    across: the room a full row leaves beside "Manchester Piccadilly" whole,
+    the little line, a bus's leave time and a status, from "3 stops away" to
+    twenty letters ("Left Hadfield 07:08"), as long as they are meant to be.
+    Worked out from the width alone, so it stays put as the words change."""
+    pad, gap = _PAD * scale, _COL_GAP * scale
+    rest = (
+        pad + left_column_width(fonts, scale) + drawn_length(fonts.regular, "Manchester Piccadilly")
+        + 3 * gap + STRIP_WIDTH * scale + gap + drawn_length(fonts.small, "Leave in 00 min") + gap
+        + drawn_length(fonts.bold, "Exp 00:00") + pad
+    )
+    least = drawn_length(fonts.small, "3 stops away")
+    most = drawn_length(fonts.small, "Leaving Hadfield now")
+    return max(least, min(most, width - rest))
+
+
 def where_column(sections, fonts: Fonts, width: int, scale: int, live: bool) -> float | None:
     """Where the where words start, with the little lines after them: one
     column down the board, clear of every section's platform, leave and
@@ -211,7 +228,7 @@ def where_column(sections, fonts: Fonts, width: int, scale: int, live: bool) -> 
         ends.append(width - _PAD * scale - max(drawn_length(fonts.bold, r.right) for r in rows))
         ends += [x for x in (platform_column(rows, fonts, width, scale), leave_column(rows, fonts, width, scale))
                  if x is not None]
-    return min(ends) - (_COL_GAP * 2 + STRIP_WIDTH + WHERE_WIDTH) * scale
+    return min(ends) - (_COL_GAP * 2 + STRIP_WIDTH) * scale - where_width(fonts, width, scale)
 
 
 def draw_strip(draw: ImageDraw.ImageDraw, strip: Strip, train: bool, x: float, y: int, scale: int, row_h: int,
