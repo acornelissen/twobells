@@ -17,7 +17,7 @@ import { setUpMap } from "./map.js";
 import { markBusRows, renderDisruptions } from "./disruptions.js";
 import { renderArea, setUpArea } from "./area.js";
 import { icon } from "./icons.js";
-import { pill, placeName } from "./header.js";
+import { noteConnection, pill, placeName } from "./header.js";
 import { applyDim, drawBanner, isKiosk, startKiosk } from "./kiosk.js";
 
 const kiosk = isKiosk();
@@ -63,6 +63,7 @@ function renderConnection() {
   $("connection").dataset.state = state;
   $("connection-glyph").replaceChildren(icon(name));
   setText($("connection-text"), words);
+  noteConnection(state, words);
   if (kiosk) drawBanner(state, words);
 }
 

@@ -1167,6 +1167,46 @@ def test_the_status_pill_follows_the_trains_and_buses_only():
 
 
 @needs_node
+def test_the_status_pill_s_changes_are_announced_once_each():
+    # WCAG 4.1.3: the pill changes without focus moving, so each new state is
+    # said through the live region; its words ticking on ("2 min ago") are not.
+    found = run_js("""
+        import { noteConnection } from "./header.js";
+        const live = document.createElement("div");
+        live.setAttribute("id", "live");
+        document.body.append(live);
+        globalThis.requestAnimationFrame = (fn) => fn();
+        const timers = [];
+        globalThis.setTimeout = (fn) => { timers.push(fn); return timers.length; };
+        const said = [];
+        const step = (state, words) => {
+          noteConnection(state, words);
+          while (timers.length) timers.shift()();
+          said.push(live.textContent);
+          live.textContent = "";
+        };
+        step("connecting", "Connecting…");
+        step("live", "Live");
+        step("stale", "Not updated since 06:40");
+        step("stale", "Not updated since 06:45");
+        step("live", "Live");
+        step("reconnecting", "Reconnecting…, last update 1 min ago");
+        step("reconnecting", "Reconnecting…, last update 2 min ago");
+        step("offline", "Offline, last update 3 min ago");
+        step("polling", "Updating every 30 s");
+        console.log(JSON.stringify(said));
+    """)
+    assert found == ["", "", "Not updated since 06:40.", "", "Live again.",
+                     "Reconnecting, last update 1 min ago.", "", "Offline, last update 3 min ago.",
+                     "Updating every 30 s."]
+
+
+def test_the_page_announces_the_status_pill_s_changes():
+    main = (STATIC / "main.js").read_text(encoding="utf-8")
+    assert "noteConnection(state, words)" in main
+
+
+@needs_node
 def test_a_section_has_its_own_status_line_only_when_it_is_behind():
     found = run_js(_boards() + """
         import { renderWeather } from "./weather.js";

@@ -6,7 +6,8 @@
 // your stops), once. The disruption summary line itself is never spoken.
 // Station notices (a closed ticket office, lifts out of use) are not
 // disruption and are never spoken. The hero says when the departure to catch
-// changes (announce()). Countdowns and clocks never go through it. While a
+// changes, and the header when its status pill does (announce()). Countdowns
+// and clocks never go through it. While a
 // dialog is open the region sits inside it (dom.js openDialog), as the page
 // behind a modal dialog is inert.
 

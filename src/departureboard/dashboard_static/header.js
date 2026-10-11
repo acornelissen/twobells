@@ -6,6 +6,7 @@
 import { str, obj } from "./dom.js";
 import { STATE } from "./api.js";
 import { age, hhmm, parseAt } from "./time.js";
+import { announce } from "./live.js";
 
 const DEFAULT_TITLE = "Departures";
 
@@ -58,4 +59,18 @@ export function pill(state, snapshot, lastOk, nowMs) {
   const [name, words] = CONNECTION[state] || CONNECTION[STATE.offline];
   const since = state !== STATE.live && lastOk ? `, last update ${age((nowMs - lastOk) / 1000)}` : "";
   return [CONNECTION[state] ? state : STATE.offline, name, words + since];
+}
+
+let lastState; // the pill's state when last noted: undefined before the first
+
+// Says a change of the pill's state (from pill()) through the live region,
+// as the pill changes with nothing focused on it. Its words ticking on ("2
+// min ago") are not a change, nor are connecting and the first connection.
+export function noteConnection(state, words) {
+  const before = lastState;
+  lastState = state;
+  if (before === undefined || state === before || state === STATE.connecting) return;
+  if (before === STATE.connecting && (state === STATE.live || state === STATE.polling)) return;
+  const text = state === STATE.live ? "Live again" : words.replace("…", "");
+  announce("connection", `${text}.`);
 }
