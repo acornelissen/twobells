@@ -204,6 +204,10 @@ class TimetableBusy(TimetableError):
     """Another build holds the lock, so this one didn't run."""
 
 
+class TimetableTooBig(TimetableError):
+    """A timetable larger than load() reads (MAX_FILE_BYTES), so not saved."""
+
+
 # Reading TransXChange.
 
 
@@ -892,8 +896,12 @@ def build_schedule(
 
 def save(folder: Path | str, schedule: Schedule) -> None:
     """Save the schedule beside the state file, whole or not at all, readable
-    by its owner and group only."""
-    files.write_atomic(Path(folder) / FILE_NAME, schedule.to_json(), 0o640)
+    by its owner and group only. TimetableTooBig, keeping the saved one, if
+    it is larger than load() reads."""
+    data = schedule.to_json().encode("utf-8")
+    if len(data) > MAX_FILE_BYTES:
+        raise TimetableTooBig(f"Bus timetable is larger than {MAX_FILE_BYTES} bytes ({len(data)}); not saving it")
+    files.write_atomic(Path(folder) / FILE_NAME, data, 0o640)
 
 
 def load(folder: Path | str) -> Schedule | None:
@@ -1109,12 +1117,23 @@ def refresh(
 def _with_roads(folder: Path | str, schedule: Schedule, route: Route, previous: Schedule | None,
                 cancelled: Callable[[], bool]) -> Schedule:
     """The saved `schedule` with its roads (add_roads), saved again: still
-    pending if `cancelled()` by the end. As it was if they can't be saved."""
+    pending if `cancelled()` by the end. As it was if they can't be saved;
+    without them for good if they would make it too big to load, or they
+    would be asked for again by every refresh."""
     progress = RoadsProgress(folder)
     try:
         routed = add_roads(schedule, route, previous, progress)
         routed = replace(routed, roads_pending=cancelled())
         save(folder, routed)
+    except TimetableTooBig as error:
+        log.warning("Bus map roads left out, drawing straight lines: %s", error)
+        straight = replace(schedule, roads_pending=False)
+        try:
+            save(folder, straight)
+        except Exception as again:  # noqa: BLE001 - the timetable is saved, its roads pending
+            log.warning("Bus timetable not saved without its roads: %s", safe_message(again))
+            return schedule
+        return straight
     except Exception as error:  # noqa: BLE001 - the timetable is saved; the maps draw straight lines
         log.warning("Bus map roads not saved, drawing straight lines: %s", safe_message(error))
         return schedule

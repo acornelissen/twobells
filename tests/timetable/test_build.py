@@ -774,6 +774,24 @@ def test_save_and_load_round_trip(tmp_path):
     assert not (tmp_path / "state" / "bus-timetable.tmp").exists()
 
 
+def test_a_timetable_too_big_to_load_is_not_saved_and_the_old_one_is_kept(tmp_path, monkeypatch):
+    old = _schedule()
+    save(tmp_path, old)
+    big = replace(old, built=NOW + timedelta(days=1))
+    monkeypatch.setattr(timetable, "MAX_FILE_BYTES", len(big.to_json()) - 1)
+    with pytest.raises(TimetableError, match="larger than"):
+        save(tmp_path, big)
+    monkeypatch.undo()
+    assert load(tmp_path) == old
+
+
+def test_a_timetable_just_small_enough_is_saved_and_loads(tmp_path, monkeypatch):
+    schedule = _schedule()
+    monkeypatch.setattr(timetable, "MAX_FILE_BYTES", len(schedule.to_json()))
+    save(tmp_path, schedule)
+    assert load(tmp_path) == schedule
+
+
 def test_load_without_a_file_or_with_a_bad_one(tmp_path):
     assert load(tmp_path) is None
     (tmp_path / FILE_NAME).write_text("{ not json")
@@ -1301,6 +1319,23 @@ def test_refresh_saves_the_timetable_before_asking_for_its_roads(tmp_path):
     schedule = refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", build=_road_build, route=route)
     assert saved_when_asked[0] is not None and saved_when_asked[0].shapes == {}
     assert len(schedule.shapes) == 6 and load(tmp_path) == schedule
+
+
+def test_roads_that_would_make_the_timetable_too_big_to_load_are_left_out_for_good(tmp_path, monkeypatch, caplog):
+    unrouted = replace(_road_build(None, None, None, NOW), roads_pending=False)
+    monkeypatch.setattr(timetable, "MAX_FILE_BYTES", len(unrouted.to_json()) + 1)
+    asked = []
+
+    def route(pairs, progress):
+        asked.append(pairs)
+        return {pair: [(53.44351, -1.95562)] * 50 for pair in pairs}
+
+    schedule = refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW, "k", build=_road_build, route=route)
+    assert schedule.shapes == {} and not schedule.roads_pending
+    assert load(tmp_path) == schedule
+    assert "larger than" in caplog.text
+    refresh(tmp_path, {"A": STOP_A}, ["BNML"], NOW + timedelta(hours=1), "k", build=_road_build, route=route)
+    assert len(asked) == 1  # not asked again every hour
 
 
 def test_a_timetable_is_kept_when_finding_its_roads_is_stopped(tmp_path):
