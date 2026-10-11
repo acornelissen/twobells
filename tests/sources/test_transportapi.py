@@ -1,6 +1,10 @@
+import io
+
 import pytest
 
+from departureboard.core import net
 from departureboard.core.model import Status
+from departureboard.sources import transportapi
 from departureboard.sources.transportapi import TransportApiBusSource, parse_stop
 from tests.paths import FIXTURES
 
@@ -216,3 +220,45 @@ def test_odd_text_fields_are_left_blank_not_raised():
     entry = bus(line_name={"x": 1}, line=None, direction=["Hyde"], date=20261009)
     [dep] = parse_stop(stop(entry))
     assert (dep.service, dep.destination) == ("", "")
+
+
+# Fetching: capped, and given up after a deadline, so a runaway or trickled
+# answer can't use up a Pi Zero's memory or hang `run --loop`.
+
+
+class Response(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+def serve(monkeypatch, body):
+    seen = []
+
+    def fake_urlopen(request, timeout):
+        seen.append(request)
+        return Response(body)
+
+    monkeypatch.setattr(net, "urlopen", fake_urlopen)
+    return seen
+
+
+def test_an_oversized_answer_is_refused_and_the_request_has_a_deadline(monkeypatch):
+    seen = serve(monkeypatch, b" " * (transportapi.MAX_BYTES + 1))
+    with pytest.raises(ValueError, match="larger than"):
+        TransportApiBusSource("id", "key", {"A": "1000DGHS0900"}).fetch()
+    assert seen[0].deadline is not None
+
+
+def test_deeply_nested_json_is_a_bad_answer_like_any_other(monkeypatch):
+    serve(monkeypatch, b"[" * 100_000 + b"]" * 100_000)
+    with pytest.raises(ValueError, match="not valid JSON"):
+        TransportApiBusSource("id", "key", {"A": "1000DGHS0900"}).fetch()
+
+
+def test_a_real_sized_answer_is_read_through_the_capped_request(monkeypatch):
+    serve(monkeypatch, (FIXTURES / "tapi_henry_street_a_late_evening.json").read_bytes())
+    [dep] = TransportApiBusSource("id", "key", {"A": "1000DGHS0900"}).fetch()
+    assert (dep.service, dep.scheduled) == ("237", "23:41")

@@ -331,6 +331,5 @@ def test_detailed_source_uses_a_size_capped_request_by_default(monkeypatch):
     monkeypatch.setattr(
         darwin, "get_json_capped", lambda url, headers, max_bytes: seen.append(max_bytes) or {}
     )
-    monkeypatch.setattr(darwin, "get_json", lambda url, headers: pytest.fail("uncapped request"))
     assert DarwinSource(api_key="k", crs="GLO", with_details=True).fetch_board().services == []
     assert seen == [darwin.DETAILS_MAX_BYTES]

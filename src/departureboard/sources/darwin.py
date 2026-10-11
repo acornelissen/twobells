@@ -12,7 +12,7 @@ from urllib.parse import quote, urlencode
 
 from ..core.errors import safe_message
 from ..core.model import Departure, Status, minutes_between
-from ..core.net import NotJSON, get_json, get_json_capped
+from ..core.net import NotJSON, get_json_capped
 
 DEFAULT_BASE_URL = "https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120"
 # The Rail Data Marketplace's "Service Details" product: one train's whole journey.
@@ -416,7 +416,9 @@ def parse_board_rich(board) -> TrainBoard:
 
 
 # The detailed board is a few KB per train; this leaves plenty of room for a
-# long board and still stops a runaway response.
+# long board and still stops a runaway response. The plain board and one
+# train's details are smaller, so they are read with the same cap.
+# get_json_capped also gives up on the whole request after its deadline.
 DETAILS_MAX_BYTES = 512 * 1024
 
 
@@ -457,7 +459,7 @@ class DarwinSource:
         return f"{self._base_url}/{method}/{self._crs}?{urlencode(params)}"
 
     def _get(self) -> dict:
-        http_get = self._http_get or (_get_details if self.with_details else get_json)
+        http_get = self._http_get or _get_details  # capped, either board
         return http_get(self._url(), {"x-apikey": self._api_key})
 
     def fetch_board(self) -> TrainBoard:

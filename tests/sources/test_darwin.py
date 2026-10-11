@@ -1,6 +1,11 @@
+import io
+import json
+
 import pytest
 
+from departureboard.core import net
 from departureboard.core.model import Status
+from departureboard.sources import darwin
 from departureboard.sources.darwin import DarwinSource, parse_board
 from tests.paths import FIXTURES
 
@@ -288,3 +293,48 @@ def test_a_single_service_not_in_a_list_is_read():
 def test_services_of_the_wrong_shape_are_skipped():
     assert parse_board(board("07:12", None, [service()])) == []
     assert parse_board({"trainServices": "07:12"}) == []
+
+
+# Fetching: capped, and given up after a deadline, so a runaway or trickled
+# answer can't use up a Pi Zero's memory or hang `run --loop`.
+
+
+class Response(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+def serve(monkeypatch, body):
+    seen = []
+
+    def fake_urlopen(request, timeout):
+        seen.append(request)
+        return Response(body)
+
+    monkeypatch.setattr(net, "urlopen", fake_urlopen)
+    return seen
+
+
+@pytest.mark.parametrize("with_details", [False, True])
+def test_either_board_refuses_an_oversized_answer_and_has_a_deadline(monkeypatch, with_details):
+    seen = serve(monkeypatch, b" " * (darwin.DETAILS_MAX_BYTES + 1))
+    with pytest.raises(ValueError, match="larger than"):
+        DarwinSource(api_key="k", crs="GLO", with_details=with_details).fetch()
+    assert seen[0].deadline is not None
+    assert seen[0].get_header("X-apikey") == "k"
+
+
+@pytest.mark.parametrize("with_details", [False, True])
+def test_deeply_nested_json_is_a_bad_answer_like_any_other(monkeypatch, with_details):
+    serve(monkeypatch, b"[" * 100_000 + b"]" * 100_000)
+    with pytest.raises(ValueError, match="not valid JSON"):
+        DarwinSource(api_key="k", crs="GLO", with_details=with_details).fetch()
+
+
+def test_a_real_sized_board_is_read_through_the_capped_request(monkeypatch):
+    payload = (FIXTURES / "ldbws_glossop_unfiltered.json").read_bytes()
+    serve(monkeypatch, payload)
+    assert DarwinSource(api_key="k", crs="GLO").fetch() == parse_board(json.loads(payload))

@@ -8,11 +8,19 @@ from typing import Any
 from urllib.parse import urlencode
 
 from ..core.model import Departure, Status, is_clock, minutes_between
-from ..core.net import get_json
+from ..core.net import get_json_capped
 
 DEFAULT_BASE_URL = "https://transportapi.com/v3"
+# A departure is a KB or so, and a stop is asked for a few dozen at most; this
+# leaves plenty of room and still stops a runaway response.
+MAX_BYTES = 512 * 1024
 
 HttpGet = Callable[[str, dict], dict]
+
+
+def _get_capped(url: str, headers: dict) -> dict:
+    # get_json_capped also gives up on the whole request after its deadline.
+    return get_json_capped(url, headers, MAX_BYTES)
 
 _CREDENTIAL = re.compile(r"\b(app_id|app_key)=[^&\s\"']*")
 
@@ -112,7 +120,7 @@ class TransportApiBusSource:
         rows: int = 2,
         directions: list[str] | None = None,
         base_url: str = DEFAULT_BASE_URL,
-        http_get: HttpGet = get_json,
+        http_get: HttpGet = _get_capped,
     ) -> None:
         if not stops:
             raise ValueError("At least one stop is required")

@@ -227,7 +227,6 @@ def train_probe(tmp_path, monkeypatch):
 
     board = json.loads((FIXTURES / "ldbws_glossop_details.json").read_text())
     urls = []
-    monkeypatch.setattr(darwin, "get_json", lambda url, headers: urls.append(url) or board)
     monkeypatch.setattr(darwin, "get_json_capped", lambda url, headers, max_bytes: urls.append(url) or board)
     config = tmp_path / "config.toml"
     config.write_text('[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')

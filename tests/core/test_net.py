@@ -244,6 +244,22 @@ def test_a_request_within_its_deadline_is_answered(dripping):
     assert net.get_bytes(dripping + "/quick", 100, timeout=1.0, deadline=5.0) == b"ok"
 
 
+@pytest.mark.parametrize("path", ["/body", "/headers", "/moved"])
+def test_capped_json_gives_up_on_a_server_that_sends_slowly(dripping, path):
+    start = time.monotonic()
+    with pytest.raises(OSError):
+        net.get_json_capped(dripping + path, None, 1_000, timeout=1.0, deadline=0.3)
+    assert time.monotonic() - start < 1.0
+
+
+def test_capped_json_has_a_deadline_unless_told_otherwise(monkeypatch):
+    # The board's fetches rely on it: a trickled answer mustn't hang `run --loop`.
+    seen = serve(monkeypatch, b'{"ok": true}')
+    before = time.monotonic()
+    net.get_json_capped(SECRET_URL, None, max_bytes=100)
+    assert before < seen["request"].deadline <= time.monotonic() + net.JSON_DEADLINE
+
+
 
 @pytest.mark.parametrize("url", ["file:///etc/hosts", "ftp://example.test/x", "data:,hello"])
 def test_only_http_and_https_are_opened(url):

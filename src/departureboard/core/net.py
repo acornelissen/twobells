@@ -199,15 +199,22 @@ class NotJSON(ValueError):
     """The response was empty, or not UTF-8 JSON."""
 
 
-def get_json_capped(url: str, headers: dict | None, max_bytes: int, timeout: float = 15.0):
+# Seconds for a whole JSON request, redirects and all, unless the caller says otherwise.
+JSON_DEADLINE = 30.0
+
+
+def get_json_capped(url: str, headers: dict | None, max_bytes: int, timeout: float = 15.0,
+                    deadline: float | None = JSON_DEADLINE):
     """Like get_json, but the body is refused if it is larger than `max_bytes`,
     and a body that isn't UTF-8 JSON (or nests too deeply to read) gives one
     plain ValueError (NotJSON; TooLarge for the size). The error text never
-    repeats the URL or the headers."""
-    request = Request(  # noqa: S310 - _opener opens only http and https
-        url,
-        headers={"Accept": "application/json", "User-Agent": USER_AGENT, **(headers or {})},
-    )
+    repeats the URL or the headers. `timeout` is for each step; the whole
+    request is given up after `deadline` seconds (None: no limit), however
+    slowly the server sends."""
+    # _opener opens only http and https, whatever the URL says.
+    request = _TimedRequest(url, headers={"Accept": "application/json", "User-Agent": USER_AGENT, **(headers or {})})
+    if deadline is not None:
+        request.deadline = time.monotonic() + deadline
     with urlopen(request, timeout=timeout) as response:
         body = response.read(max_bytes + 1)
     if len(body) > max_bytes:
