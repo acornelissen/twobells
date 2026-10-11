@@ -588,7 +588,8 @@ def outsider(address: str, host: str | None) -> bool:
 # use up the day's codes while one is showing.
 #
 # Guessing: 5 wrong tries from one client address shut that address out of the
-# code, so a guesser can't void the owner's code; 10 from all addresses
+# code, so a guesser can't void the owner's code (asking again from there
+# says so, and when the code runs out); 10 from all addresses
 # together void it, so changing address buys no more than that. At most 10
 # codes are issued a day, so a guesser on the network gets 100 tries in a
 # million a day, and every code it asks for shows on the board for the owner
@@ -605,6 +606,16 @@ _CODE = re.compile(r"^[0-9]{6}$")
 
 class ResetLimited(Exception):
     """A code was issued too recently, or too many today."""
+
+
+class ResetShutOut(Exception):
+    """The address asking has had RESET_MAX_TRIES wrong tries at the code
+    that still stands; `until` is when it runs out, as HH:MM in the zone
+    given, after which a new code can be asked for."""
+
+    def __init__(self, until: str) -> None:
+        super().__init__(until)
+        self.until = until
 
 
 @dataclass(frozen=True)
@@ -637,6 +648,14 @@ def _code_hash(salt: bytes, code: str) -> str:
     return hashlib.sha256(salt + code.encode()).hexdigest()
 
 
+def _tries_by(current: dict, client: str) -> int:
+    """The wrong tries the address `client` has had at the saved code `current`; 0 if they can't be read."""
+    try:
+        return int(current.get("by_client", {}).get(client, 0))
+    except (TypeError, ValueError, AttributeError):
+        return 0
+
+
 class ResetCodes:
     """One-time codes that prove someone can see the board (or the log, or the
     command line). See the notes above for the files and why.
@@ -660,19 +679,23 @@ class ResetCodes:
         self._to_board = to_board
         self._zone = zone
 
-    def issue(self, now: float, limit: bool = True) -> str | None:
+    def issue(self, now: float, limit: bool = True, client: str = "") -> str | None:
         """A new code, valid for RESET_CODE_SECONDS, passed to `show`. With
         `limit` (the page; not the command line, which proves access by
         running at all) a code that is still live where codes go now stands:
-        None, and nothing spent. Otherwise it raises ResetLimited within
-        RESET_ISSUE_GAP_S of the last code, or after RESET_ISSUES_PER_DAY in a
-        day. Without `limit` the new code replaces any before it."""
+        None, and nothing spent; or ResetShutOut if the address `client` has
+        had its RESET_MAX_TRIES wrong tries at it. Otherwise it raises
+        ResetLimited within RESET_ISSUE_GAP_S of the last code, or after
+        RESET_ISSUES_PER_DAY in a day. Without `limit` the new code replaces
+        any before it."""
         with self._locked():
             record = self._load()
             expires = self._still_shown(record["code"], now)
             if limit and expires is not None:
                 until = clock_time(expires, self._zone())
                 log.warning("Settings reset code asked for again: the last one still stands, valid until %s", until)
+                if _tries_by(record["code"], client) >= RESET_MAX_TRIES:
+                    raise ResetShutOut(until)
                 return None
             # Times ahead of now are from before the clock went back: not counted.
             recent = [t for t in record["issued"] if 0 <= now - t < _DAY_S]

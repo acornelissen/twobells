@@ -418,7 +418,7 @@ class SettingsSite:
         if path == PREFIX + "/login":
             return self._pages.sign_in(fields, headers, client)
         if path == PREFIX + "/forgot":
-            return self._pages.ask_for_code(fields, headers)
+            return self._pages.ask_for_code(fields, headers, client)
         if path == PREFIX + "/reset":
             return self._pages.reset(fields, headers, client)
         if path == PREFIX + "/logout":

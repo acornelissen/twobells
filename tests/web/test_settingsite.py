@@ -1738,6 +1738,26 @@ def test_the_first_claim_in_docker_needs_a_code_from_the_log(dash, caplog):
     assert_only_in_the_log(code, dash, caplog)
 
 
+def test_reset_code_times_are_in_the_boards_time_zone_not_the_processs(make, caplog):
+    kolkata = ZoneInfo("Asia/Kolkata")  # never the zone a test machine or Docker runs in
+    dash = make(install="docker", dashboard=True, config='timezone = "Asia/Kolkata"\n' + CONFIG)
+    dash.site.password.set(PASSWORD)
+    form_cookie = ask_for_code(dash)
+    until = datetime.fromtimestamp(dash.clock.now + 600, kolkata).strftime("%H:%M")
+    assert any(r.getMessage().endswith(f"valid until {until}") for r in caplog.records)
+    code = code_from_the_log(caplog)
+    wrong = f"{(int(code) + 1) % 10**6:06d}"
+    for _ in range(5):
+        assert reset(dash, form_cookie, wrong)[0].status == 401
+    caplog.clear()
+    form_cookie, token = dash.form(cookie=form_cookie)
+    response, page = dash("POST", "/settings/forgot", {"form": token}, cookie=form_cookie)
+    assert response.status == 429
+    assert re.search(r'<p class="error" role="alert" id="reset-error">Too many wrong tries from this device[^<]*'
+                     f"runs out at {until}; ask for a new one then.</p>", page)
+    assert any("still stands" in r.getMessage() and until in r.getMessage() for r in caplog.records)
+
+
 def test_with_the_board_view_off_a_pis_codes_go_to_the_log_and_its_pages_say_so(pi_signed, caplog):
     pi = pi_signed
     form_cookie = ask_for_code(pi)

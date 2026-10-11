@@ -7,10 +7,19 @@ import json
 import logging
 import re
 from email.message import Message
+from zoneinfo import ZoneInfo
 
 import pytest
 
-from departureboard.web.auth import MAX_FAILURES, FormTokens, Lockout, PasswordStore, ResetCodes, Sessions
+from departureboard.web.auth import (
+    MAX_FAILURES,
+    RESET_MAX_TRIES,
+    FormTokens,
+    Lockout,
+    PasswordStore,
+    ResetCodes,
+    Sessions,
+)
 from departureboard.web.formpages import (
     HTML,
     TEXT,
@@ -217,7 +226,8 @@ class Host:
                                  password=self.password)
         self.lockout = Lockout(self.clock)
         self.shown = []
-        self.codes = ResetCodes(folder, show=lambda code, expires: self.shown.append(code))
+        self.codes = ResetCodes(folder, show=lambda code, expires: self.shown.append(code),
+                                zone=lambda: ZoneInfo("Asia/Kolkata"))
         forms = FormTokens(self.clock, cookie_name="widget_form", cookie_path="/area")
         self.steps = FakeSteps()
         self.pages = FormPages(self.page, self.password, self.sessions, self.lockout, self.codes, forms,
@@ -343,31 +353,51 @@ def test_asking_for_a_code_needs_this_browsers_form_token(host):
     cookie, token = host.pre_session()
     _, other = host.pre_session()
     for fields, sent in [({"form": token}, None), ({}, cookie), ({"form": other}, cookie)]:
-        reply = host.pages.ask_for_code(fields, headers(sent))
+        reply = host.pages.ask_for_code(fields, headers(sent), CLIENT)
         assert reply.status == 403 and WIDGET.no_code_made in reply.body.decode()
     assert host.shown == []
-    reply = host.pages.ask_for_code({"form": token}, headers(cookie))
+    reply = host.pages.ask_for_code({"form": token}, headers(cookie), CLIENT)
     assert reply.status == 303 and reply.headers["Location"] == "/area/reset?asked"
     assert len(host.shown) == 1
 
 
 def test_asking_again_too_soon_reads_the_same_and_keeps_the_code(host):
     cookie, token = host.pre_session()
-    first = host.pages.ask_for_code({"form": token}, headers(cookie))
-    again = host.pages.ask_for_code({"form": token}, headers(cookie))
+    first = host.pages.ask_for_code({"form": token}, headers(cookie), CLIENT)
+    again = host.pages.ask_for_code({"form": token}, headers(cookie), CLIENT)
     assert first == again and len(host.shown) == 1
 
 
 def test_asking_again_while_a_code_is_live_keeps_it_and_spends_none_of_the_allowance(host):
     cookie, token = host.pre_session()
     for _ in range(30):  # a neighbour pressing the button over and over
-        assert host.pages.ask_for_code({"form": token}, headers(cookie)).status == 303
+        assert host.pages.ask_for_code({"form": token}, headers(cookie), CLIENT).status == 303
         host.clock.now += 15
     assert len(host.shown) == 1  # one code, shown once, never replaced while it lasts
     assert host.reset(host.shown[0]).status == 303
     host.clock.now += 60
-    host.pages.ask_for_code({"form": token}, headers(cookie))
+    host.pages.ask_for_code({"form": token}, headers(cookie), CLIENT)
     assert len(host.shown) == 2  # once used, a new one
+
+
+def test_a_device_shut_out_of_the_code_is_told_when_it_runs_out(host):
+    cookie, token = host.pre_session()
+    host.pages.ask_for_code({"form": token}, headers(cookie), CLIENT)
+    code = host.shown[-1]
+    wrong = f"{(int(code) + 1) % 10**6:06d}"
+    fields = {"form": token, "code": wrong, "password": NEW_PASSWORD, "again": NEW_PASSWORD}
+    for _ in range(RESET_MAX_TRIES):
+        assert host.pages.reset(fields, headers(cookie), "192.168.1.66").status == 401
+    reply = host.pages.ask_for_code({"form": token}, headers(cookie), "192.168.1.66")
+    assert reply.status == 429
+    # Said as the page's other errors are, with the time in the board's zone (03:53 in Kolkata).
+    assert ('<p class="error" role="alert" id="reset-error">Too many wrong tries from this device, so it '
+            "can't use the code that is out now. That code runs out at 03:53; ask for a new one then.</p>"
+            in reply.body.decode())
+    assert len(host.shown) == 1  # the owner's code stands
+    reply = host.pages.ask_for_code({"form": token}, headers(cookie), CLIENT)
+    assert reply.status == 303 and reply.headers["Location"] == "/area/reset?asked"  # as before for the owner
+    assert host.reset(code).status == 303
 
 
 def test_wrong_codes_from_another_address_leave_the_owners_code_working(host):

@@ -28,6 +28,7 @@ from departureboard.web.auth import (
     PendingCode,
     ResetCodes,
     ResetLimited,
+    ResetShutOut,
     Session,
     Sessions,
     SignInResult,
@@ -456,6 +457,45 @@ def test_wrong_tries_from_many_addresses_void_the_code(tmp_path):
 
 # T0 + RESET_CODE_SECONDS is 08:10 UTC, 08:10 in London (winter) and 13:40 in Kolkata.
 KOLKATA = ZoneInfo("Asia/Kolkata")
+
+
+def test_asking_again_from_a_shut_out_address_says_so_and_when_the_code_runs_out(tmp_path):
+    codes = ResetCodes(tmp_path, zone=lambda: KOLKATA)
+    code = codes.issue(T0)
+    for _ in range(RESET_MAX_TRIES):
+        assert not codes.verify(wrong(code), T0 + 1, GUESSER)
+    with pytest.raises(ResetShutOut) as shut:
+        codes.issue(T0 + 2, client=GUESSER)
+    assert shut.value.until == "13:40"  # in the board's time zone, not the process's
+    assert displayed(tmp_path)["code"] == code  # no one can swap or void the owner's code
+    assert codes.issue(T0 + 3, client=OWNER) is None  # another address: the code still stands
+    assert codes.verify(code, T0 + 4, OWNER)
+
+
+def test_an_address_with_tries_left_is_not_shut_out_by_asking_again(tmp_path):
+    codes = ResetCodes(tmp_path)
+    code = codes.issue(T0)
+    for _ in range(RESET_MAX_TRIES - 1):
+        assert not codes.verify(wrong(code), T0 + 1, GUESSER)
+    assert codes.issue(T0 + 2, client=GUESSER) is None
+    assert codes.verify(code, T0 + 3, GUESSER)
+
+
+def test_a_shut_out_address_can_ask_for_a_new_code_once_the_last_runs_out(tmp_path):
+    codes = ResetCodes(tmp_path)
+    code = codes.issue(T0)
+    for _ in range(RESET_MAX_TRIES):
+        codes.verify(wrong(code), T0 + 1, GUESSER)
+    code = codes.issue(T0 + RESET_CODE_SECONDS, client=GUESSER)
+    assert code is not None and codes.verify(code, T0 + RESET_CODE_SECONDS + 1, GUESSER)
+
+
+def test_the_command_line_is_never_shut_out(tmp_path):
+    codes = ResetCodes(tmp_path)
+    code = codes.issue(T0)
+    for _ in range(RESET_MAX_TRIES):
+        codes.verify(wrong(code), T0 + 1)
+    assert codes.verify(codes.issue(T0 + 2, limit=False), T0 + 3)
 
 
 def test_a_code_in_the_log_runs_out_at_a_time_in_the_boards_zone(tmp_path, caplog):

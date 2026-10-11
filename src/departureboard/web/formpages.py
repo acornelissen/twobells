@@ -40,6 +40,7 @@ from .auth import (
     PasswordStore,
     ResetCodes,
     ResetLimited,
+    ResetShutOut,
     Sessions,
     SignInResult,
     csrf_matches,
@@ -62,6 +63,10 @@ WIZARD_TYPES = {
 # The same words whether the code was wrong, used, run out, voided or never
 # issued, so a guesser learns nothing about whether there is one.
 WRONG_CODE = "That code isn't right, or it has run out. Ask for a new code and try again."
+# Asking again from an address with no tries left at the code that stands:
+# it can't use that code, so it is told when it may ask for a new one.
+SHUT_OUT = ("Too many wrong tries from this device, so it can't use the code that is out now. "
+            "That code runs out at {until}; ask for a new one then.")
 _LENGTH = re.compile(r"[0-9]{1,15}")
 # A setup wizard step's name, as it comes in the path.
 _STEP_NAME = re.compile(r"[a-z]{1,20}")
@@ -396,14 +401,17 @@ class FormPages:
             return self.login_page(401, headers, "That password isn't right.", to_setup, step)
         return self._signed_in(to_setup, step)
 
-    def ask_for_code(self, fields: dict[str, str], headers: Headers) -> Reply:
+    def ask_for_code(self, fields: dict[str, str], headers: Headers, client: str) -> Reply:
         """Issue a reset code, if this browser's form token is good. The reply
         is the same whether a code was issued, one still live stands, or it
-        was limited or failed."""
+        was limited or failed; but `client`'s address, shut out of the code
+        that stands by its wrong tries, is told so and when it runs out."""
         if not self._form_token_ok(fields, headers):
             return self.reset_page(403, headers, self._wording().no_code_made)
         try:
-            self._codes.issue(self._clock())
+            self._codes.issue(self._clock(), client=client)
+        except ResetShutOut as shut:
+            return self.reset_page(429, headers, SHUT_OUT.format(until=shut.until))
         except ResetLimited:
             pass  # the code already out stands; the page reads the same either way
         except OSError as error:

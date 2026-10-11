@@ -456,11 +456,11 @@ Each install keeps everything it saves in one folder, its store:
 The settings have one password per install, at least 10 characters. Claiming them the first time, and setting a new password when you've forgotten it, both need a one-time code. The code shows:
 
 - **on the board**, while the board view is on (e-paper can take a minute to change);
-- **in the log** otherwise: on a Pi `sudo journalctl -u departureboard-web`; in Docker `docker logs departureboard`, or in Container Manager, **Container**, `departureboard`, **Log**; on a desktop, the Terminal window running it. The line reads `Settings reset code: 123 456, valid until 14:05`.
+- **in the log** otherwise: on a Pi `sudo journalctl -u departureboard-web`; in Docker `docker logs departureboard`, or in Container Manager, **Container**, `departureboard`, **Log**; on a desktop, the Terminal window running it. The line reads `Settings reset code: 123 456, valid until 14:05`, in the board's time zone (**General**, **Time zone**).
 
 To claim the settings, open them and press **Show a code on the board** (or **Put a code in the log**), then type the code with a new password. A forgotten password works the same way, from **Forgot password?** on the sign-in page; setting a new one signs every browser out.
 
-A code lasts 10 minutes and works once. Asking again while it lasts shows the same code (in the log, a line says the last one still stands) and uses up none of the limits. Five wrong tries from one device shut that device out of the code, so no one else can spoil yours; ten in all, from any devices, void it. A new code can be made once the last is used or runs out, at most once a minute and 10 times a day.
+A code lasts 10 minutes and works once. Asking again while it lasts shows the same code (in the log, a line says the last one still stands) and uses up none of the limits. Five wrong tries from one device shut that device out of the code, so no one else can spoil yours; asking again from that device says so, and the time the code runs out, after which it can ask for a new one. Ten in all, from any devices, void it. A new code can be made once the last is used or runs out, at most once a minute and 10 times a day.
 
 Or set the password from the command line, even while the server runs. It asks for the new password twice and doesn't show it as you type; every browser signed in is signed out. `--reset-code` prints a new code straight to you instead (no limits, and it replaces any code already out), to type on the sign-in page under **Forgot password?**, or on the claim page the first time.
 
