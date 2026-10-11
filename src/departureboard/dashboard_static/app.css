@@ -721,6 +721,9 @@ dialog.dialog {
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow);
+  /* A control tabbed to scrolls clear of the sticky head (.dialog-head): its
+     padding and a 2.75rem button, with room for the focus ring. */
+  scroll-padding-top: 5rem;
 }
 dialog.dialog-wide, dialog.sheet[data-mode="bus"] { width: min(60rem, calc(100vw - 1rem)); }
 /* The departure sheet (sheet.js): Remind me under the facts, punctuality last. */

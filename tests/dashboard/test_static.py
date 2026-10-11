@@ -1356,6 +1356,17 @@ def test_sections_are_plain_only_the_hero_and_dialogs_are_raised():
     assert any("box-shadow: var(--shadow)" in body for body in _css_rules("dialog.dialog"))
 
 
+def test_a_dialog_s_sticky_head_never_hides_the_focused_control():
+    # WCAG 2.4.11: a control tabbed to under the sticky head scrolls clear of
+    # it. The head is at least its padding (1rem above, 0.75rem below) and a
+    # 2.75rem button tall.
+    head = "".join(_css_rules(".dialog-head"))
+    assert "position: sticky" in head and "padding: var(--s-4) 0 var(--s-3)" in head
+    padding = [re.search(r"scroll-padding-top:\s*([\d.]+)rem", body) for body in _css_rules("dialog.dialog")]
+    found = [float(m.group(1)) for m in padding if m]
+    assert found and min(found) >= 1 + 0.75 + 2.75
+
+
 # --- The train dialog's journey line ---
 
 
