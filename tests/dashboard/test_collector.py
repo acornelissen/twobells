@@ -207,6 +207,18 @@ def test_a_failing_job_never_runs_more_often_than_its_interval():
     assert Poller("x", job, 200, random=lambda: 0.5).step() == 300  # backs off up to five minutes
 
 
+def test_a_job_failing_for_days_on_end_still_backs_off_and_its_poller_lives():
+    def job():
+        raise RuntimeError("down")
+
+    for interval in (30, 30.0):  # 2**1030 is beyond a float, so a float interval once overflowed here
+        poller = Poller("x", job, interval, random=lambda: 0.5)
+        poller.failures = 1029
+        assert poller.step() == 300
+        assert poller.failures == 1030
+    assert Poller("weather", job, 1800.0, random=lambda: 0.5).step() == 1800
+
+
 def test_a_quiet_poller_does_not_run_its_job():
     calls = []
     poller = Poller("x", lambda: calls.append(1), 60, quiet=lambda: True, random=lambda: 0.5)

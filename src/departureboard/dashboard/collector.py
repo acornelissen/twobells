@@ -77,6 +77,9 @@ DETAILS_OFF = 6 * 3600.0  # seconds without details after the key is refused
 BUS_DISRUPTIONS_SECONDS = 600.0
 TRAIN_INCIDENTS_SECONDS = 1800.0
 _JITTER = 0.1  # intervals vary by this fraction either way, so jobs drift apart
+# Doublings of the interval a failing job's wait counts at most: far past any
+# backoff cap, and short of a float's range, which days of failures would pass.
+_MOST_DOUBLINGS = 32
 
 
 class Poller:
@@ -114,7 +117,8 @@ class Poller:
         except Exception as error:  # noqa: BLE001 - logged and retried; the job keeps its last data
             self.failures += 1
             log.warning("dashboard %s failed (%d in a row): %s", self.name, self.failures, safe_message(error))
-            delay = max(self._interval, min(self._interval * 2**self.failures, self._max_backoff))
+            doubled = self._interval * 2 ** min(self.failures, _MOST_DOUBLINGS)
+            delay = max(self._interval, min(doubled, self._max_backoff))
         else:
             self.failures = 0
             delay = self._interval
