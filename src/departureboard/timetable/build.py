@@ -1027,29 +1027,30 @@ def due(
     return None
 
 
-def _built_for(stops: Mapping[str, str], operators: Iterable[str]) -> str:
-    """A digest of the stops and operators a build is for, so a failed build's
-    record (FAILED_FILE) says what it was for without keeping them."""
-    plain = json.dumps([sorted(dict(stops).items()), sorted(set(operators))], separators=(",", ":"))
+def _built_for(stops: Mapping[str, str], operators: Iterable[str], api_key: str) -> str:
+    """A digest of the stops, operators and BODS key a build is for, so a
+    failed build's record (FAILED_FILE) says what it was for without keeping
+    them: a refused key fails every build, and saving the right one should
+    build at once. The key goes in only as its own digest."""
+    key = hashlib.sha256(api_key.encode()).hexdigest()
+    plain = json.dumps([sorted(dict(stops).items()), sorted(set(operators)), key], separators=(",", ":"))
     return hashlib.sha256(plain.encode()).hexdigest()
 
 
-def _note_failure(folder: Path | str, stops: Mapping[str, str], operators: Iterable[str], now: datetime) -> None:
-    """Keep when a build failed and what for, in FAILED_FILE (see refresh)."""
+def _note_failure(folder: Path | str, built_for: str, now: datetime) -> None:
+    """Keep when a build failed and what for (_built_for), in FAILED_FILE (see refresh)."""
     try:
-        files.write_atomic(Path(folder) / FAILED_FILE,
-                           json.dumps({"at": now.isoformat(), "for": _built_for(stops, operators)}), 0o640)
+        files.write_atomic(Path(folder) / FAILED_FILE, json.dumps({"at": now.isoformat(), "for": built_for}), 0o640)
     except OSError as error:
         log.warning("Can't keep when the bus timetable build failed: %s", error.strerror or error)
 
 
-def _failed_lately(folder: Path | str, stops: Mapping[str, str], operators: Iterable[str],
-                   now: datetime) -> datetime | None:
-    """When the last build failed, if it was for these stops and operators
-    less than RETRY_AFTER ago; None otherwise, or if FAILED_FILE can't be
-    read. A failure the clock puts in the future doesn't count."""
+def _failed_lately(folder: Path | str, built_for: str, now: datetime) -> datetime | None:
+    """When the last build failed, if it was for the same (_built_for) less
+    than RETRY_AFTER ago; None otherwise, or if FAILED_FILE can't be read. A
+    failure the clock puts in the future doesn't count."""
     data = _small_json(Path(folder) / FAILED_FILE, _FAILED_FILE_BYTES)
-    if data is None or data.get("for") != _built_for(stops, operators) or not isinstance(data.get("at"), str):
+    if data is None or data.get("for") != built_for or not isinstance(data.get("at"), str):
         return None
     try:
         at = datetime.fromisoformat(data["at"])
@@ -1085,9 +1086,10 @@ def refresh(
     again first if it is due (see due: weekly, or when the stops or operators
     change) or `force`d. A failed build keeps the saved one, and is kept in
     FAILED_FILE: it isn't tried again for RETRY_AFTER (each try downloads
-    every timetable again), unless `force`d or the stops or operators
-    change. With nothing due this only reads the saved file, unless its
-    roads are still to be found.
+    every timetable again), unless `force`d or the stops, operators or key
+    change. A build that fails once `cancelled()` says so was stopped, not
+    failed, and isn't kept. With nothing due this only reads the saved file,
+    unless its roads are still to be found.
 
     A new timetable is saved before its roads are asked for, marked
     roads_pending, and `saved(schedule)` is told; then it is saved again
@@ -1102,7 +1104,8 @@ def refresh(
     current = load(folder)
     operators = list(operators)
     reason = "asked to" if force else due(current, stops, now, operators)
-    failed = _failed_lately(folder, stops, operators, now) if reason and not force else None
+    built_for = _built_for(stops, operators, api_key)
+    failed = _failed_lately(folder, built_for, now) if reason and not force else None
     if failed is not None:
         log.info("Bus timetable due (%s), but building it failed at %s: trying again after %s", reason,
                  f"{failed:%H:%M}", f"{failed + RETRY_AFTER:%H:%M}")
@@ -1118,7 +1121,8 @@ def refresh(
         save(folder, fresh)
     except Exception as error:  # noqa: BLE001 - any failure keeps the last good schedule
         log.warning("Bus timetable not rebuilt (%s), keeping the saved one: %s", reason, safe_message(error))
-        _note_failure(folder, stops, operators, now)
+        if not cancelled():  # stopped, as the setup search's Cancel does: not to wait RETRY_AFTER for
+            _note_failure(folder, built_for, now)
         return current
     _forget_failure(folder)
     calling = len(fresh.departure_journeys)

@@ -550,6 +550,7 @@ def test_cancelling_while_the_timetable_builds(bods):
     job.start()
     assert _finish(job)["message"] == "Cancelled"
     assert timetable.load(bods.scratch) is None
+    assert not (bods.scratch / timetable.FAILED_FILE).exists()  # the weekly build isn't held back
 
 
 def _spaced(atcos):  # every stop 111 m from the last, so each pair is asked about

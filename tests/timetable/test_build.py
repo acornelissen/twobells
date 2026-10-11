@@ -952,6 +952,29 @@ def test_a_failed_build_is_tried_again_at_once_when_forced_or_the_stops_or_opera
     assert len(build.calls) == 2
 
 
+def test_a_failed_build_is_tried_again_at_once_with_another_key(tmp_path):
+    # A refused key fails the build; saving the right one mustn't wait 6 hours.
+    build = FakeBuild(error=TimetableError("no"))
+    refresh(tmp_path, STOPS, ["BNML"], NOW, "wrong-key", build=build)
+    refresh(tmp_path, STOPS, ["BNML"], NOW + timedelta(minutes=5), "wrong-key", build=build)
+    assert len(build.calls) == 1
+    refresh(tmp_path, STOPS, ["BNML"], NOW + timedelta(minutes=10), "right-key", build=build)
+    assert len(build.calls) == 2
+    assert "key" not in (tmp_path / timetable.FAILED_FILE).read_text()  # only a digest
+
+
+def test_a_cancelled_build_is_not_kept_as_failed(tmp_path):
+    old = _schedule(built=NOW - timedelta(days=8))
+    save(tmp_path, old)
+    build = FakeBuild(error=TimetableError("Cancelled"))
+    assert refresh(tmp_path, STOPS, ["BNML"], NOW, "k", build=build, cancelled=lambda: True) == old
+    assert not (tmp_path / timetable.FAILED_FILE).exists()
+    build.error = None
+    assert refresh(tmp_path, STOPS, ["BNML"], NOW + timedelta(minutes=5), "k", build=build).built == NOW + timedelta(
+        minutes=5)
+    assert len(build.calls) == 2
+
+
 def test_a_failure_recorded_when_the_clock_was_ahead_does_not_hold_back_a_build(tmp_path):
     build = FakeBuild(error=TimetableError("no"))
     refresh(tmp_path, STOPS, ["BNML"], NOW + timedelta(days=30), "k", build=build)
