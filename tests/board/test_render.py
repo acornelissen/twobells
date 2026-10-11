@@ -1042,3 +1042,52 @@ def test_the_plain_where_column_is_as_wide_whatever_the_words_and_wider_on_the_b
         a = strip_layouts(panel)[0][0][1]
         b = strip_layouts(panel, short)[0][0][1]
         assert a.strip_x - a.where_x == b.strip_x - b.where_x
+
+
+
+# The header on a screen: the notice where the title goes, the rain warning beside it.
+
+from departureboard.board.render import header_rain  # noqa: E402
+
+RAIN = "Rain from 07:10 (70%)"
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_a_screen_header_shows_the_notice_and_the_rain_warning_before_the_clock(panel):
+    view = dataclasses.replace(board(), notice=NOTICE, rain=RAIN, clock=CLOCK)
+    title, stamp, stamp_x, fonts, s = header(view, panel)
+    rain, rain_x = header_rain(view, fonts, panel.width, s)
+    assert rain == RAIN and stamp == CLOCK
+    assert title.startswith("! ")
+    assert 3 * s + drawn_length(fonts.bold, title) + 12 * s <= rain_x
+    assert rain_x + drawn_length(fonts.bold, rain) + 6 * s <= stamp_x
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_the_header_rain_warning_stays_put_as_the_notice_turns(panel):
+    s = plain_scale(panel)
+    fonts = load_fonts(s)
+    xs = {header_rain(dataclasses.replace(board(), notice=NOTICE * 2, rain=RAIN, clock=f"07:03:{sec:02d}"),
+                      fonts, panel.width, s)[1] for sec in range(0, 60, 5)}
+    assert len(xs) == 1
+
+
+@pytest.mark.parametrize("panel", ALL_PANELS, ids=lambda p: p.name)
+def test_e_paper_and_a_lone_warning_keep_the_header_as_it_was(panel):
+    s = plain_scale(panel)
+    fonts = load_fonts(s)
+    e_paper = dataclasses.replace(board(), notice=NOTICE, rain=RAIN)
+    assert header_rain(e_paper, fonts, panel.width, s) is None
+    assert header(e_paper, panel)[0].startswith("! Disruption")
+    rain_only = dataclasses.replace(board(), rain=RAIN, clock=CLOCK)
+    assert header_rain(rain_only, fonts, panel.width, s) is None
+    assert header(rain_only, panel)[0] == RAIN
+
+
+def test_the_header_draws_the_rain_warning_beside_the_notice():
+    panel = HDMI_1920X440
+    notice_only = dataclasses.replace(board(), notice="Lifts out of use", clock=CLOCK)
+    with_rain = render(dataclasses.replace(notice_only, rain=RAIN), PALETTE, panel)
+    header_h = heights()[0] * plain_scale(panel)
+    plain = render(notice_only, PALETTE, panel)
+    assert with_rain.crop((0, 0, panel.width, header_h)).tobytes() != plain.crop((0, 0, panel.width, header_h)).tobytes()

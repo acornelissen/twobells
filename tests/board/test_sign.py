@@ -149,7 +149,7 @@ def test_trains_and_buses_have_breathing_room_around_the_divider():
     layout = sign_layout(board(TRAINS, BUSES, leave="Leave by 07:05"))
     last_train_bottom = find(layout.items, "3rd").y + 9
     first_bus_top = find(layout.items, "341").y
-    [rule] = layout.rules
+    rule = layout.rules[0]  # the divider; a second rule may sit over the footer
     assert rule - last_train_bottom >= 8
     assert first_bus_top - rule >= 10
 
@@ -238,7 +238,7 @@ def test_big_dots_have_a_dark_gap_between_leds():
     image = render_sign(board(), PALETTE, panel)
     x0, y0 = _origin(panel)
     # The divider is every other dot from the margin.
-    [rule] = sign_layout(board(), *dots(panel)).rules
+    rule = sign_layout(board(), *dots(panel)).rules[0]
     x, y = x0 + MARGIN * 3, y0 + rule * 3
     assert image.getpixel((x, y)) == image.getpixel((x + 1, y + 1)) == PALETTE.accent
     assert image.getpixel((x + 2, y)) == PALETTE.black  # gap column
@@ -909,3 +909,122 @@ def test_manchester_piccadilly_stays_whole_on_the_7_9_inch_screen_with_strips(pa
     else:
         # The bar screen gives the where words their twenty letters first.
         assert all(t.startswith("Manchester Picc") for t in shown)
+
+
+
+# The bottom line on a screen: the notice and the rain warning side by side.
+
+from departureboard.board.panel import NOTES_SIDE_BY_SIDE_MIN_WIDTH  # noqa: E402
+
+
+def both(view, clock=CLOCK):
+    return dataclasses.replace(view, notice=NOTICE, rain=RAIN, clock=clock)
+
+
+def footer_line(items, height):
+    return sorted((i for i in items if i.y == height - 10), key=lambda i: i.x)
+
+
+def test_both_screens_are_wide_enough_for_notice_and_rain_side_by_side():
+    for panel in STRIP_PANELS:
+        assert dots(panel)[0] >= NOTES_SIDE_BY_SIDE_MIN_WIDTH
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+@pytest.mark.parametrize("stale", [False, True])
+def test_a_screen_shows_the_notice_then_the_rain_warning_then_the_clock(panel, stale):
+    width, height = dots(panel)
+    items = sign_layout(both(screen(stale_buses=stale)), width, height).items
+    notice, rain, clock = footer_line(items, height)
+    assert notice.text.startswith("! ") and notice.x == MARGIN
+    assert rain.text == RAIN and clock.text == CLOCK
+    assert notice.x + FONT.getlength(notice.text) + 10 <= rain.x
+    assert rain.x + FONT.getlength(RAIN) + 5 <= clock.x
+    if stale:
+        badge = find(items, "Not updating: buses")
+        assert clock.x + FONT.getlength(CLOCK) + 5 <= badge.x - 2
+        assert badge.x + item_size(badge)[0] <= width - MARGIN
+    else:
+        assert clock.x + FONT.getlength(CLOCK) == width - MARGIN
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_beside_the_rain_warning_the_notice_still_takes_turns_in_its_own_space(panel):
+    width, height = dots(panel)
+    parts = set()
+    for second in range(0, 60, 5):
+        view = both(screen(), clock=f"07:03:{second:02d}")
+        notice, rain, _ = footer_line(sign_layout(view, width, height).items, height)
+        assert notice.x + FONT.getlength(notice.text) + 10 <= rain.x
+        parts.add(notice.text)
+    assert len(parts) > 1 and all(p.startswith("! ") for p in parts)
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_the_rain_warning_stays_put_as_the_notice_turns(panel):
+    width, height = dots(panel)
+    xs = {find(sign_layout(both(screen(), clock=f"07:03:{s:02d}"), width, height).items, RAIN).x
+          for s in range(0, 60, 5)}
+    assert len(xs) == 1
+
+
+def test_e_paper_still_shows_only_the_notice():
+    for width, height in ((WIDTH, HEIGHT), dots(WAVESHARE_10IN85G)):
+        items = texts(sign_layout(both(board(), clock=None), width, height).items)
+        assert RAIN not in items and any(t.startswith("! ") for t in items)
+
+
+# A rule over the bottom line, like the divider between trains and buses.
+
+
+def footer_rule(layout):
+    return layout.rules[1] if len(layout.rules) > 1 else None
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+@pytest.mark.parametrize("notice", [None, NOTICE])
+def test_a_screen_has_a_rule_over_its_bottom_line_with_even_gaps(panel, notice):
+    width, height = dots(panel)
+    layout = sign_layout(screen(notice=notice), width, height)
+    rule = footer_rule(layout)
+    assert rule is not None
+    last_bus_bottom = find(layout.items, "237").y + 8
+    footer_top = height - 10
+    above, below = rule - last_bus_bottom - 1, footer_top - rule - 1
+    assert above >= 3 and below >= 3 and abs(above - below) <= 1
+
+
+def test_the_bar_screen_keeps_three_buses_under_its_footer_rule():
+    width, height = dots(HDMI_1920X440)
+    layout = sign_layout(screen(buses=SCREEN_BUSES * 2), width, height)
+    assert sum(i.text in ("341", "61", "237") for i in layout.items) == 3
+    assert max(i.y for i in layout.items if i.text in ("341", "61", "237")) + 9 < footer_rule(layout)
+
+
+def test_e_paper_has_the_footer_rule_where_it_costs_no_row():
+    layout = sign_layout(board(TRAINS, BUSES, leave="Leave by 07:05"))
+    rule = footer_rule(layout)
+    assert rule is not None
+    last_bus_bottom = max(i.y for i in layout.items if i.text in ("341", "394")) + 8
+    footer_top = find(layout.items, "Updated 07:03").y
+    above, below = rule - last_bus_bottom - 1, footer_top - rule - 1
+    assert above >= 3 and below >= 3 and abs(above - below) <= 1
+
+
+def test_e_paper_leaves_the_footer_rule_off_rather_than_lose_a_row():
+    width, height = dots(WAVESHARE_10IN85G)
+    buses = [*BUSES, Row("237", "Ashton", "07:41", leave="Leave by 07:34", stop="A"),
+             Row("61", "Buxton", "07:50", leave="Leave by 07:43", stop="B")]
+    with_rule_room = sign_layout(board(TRAINS, buses, leave="Leave by 07:05"), width, height)
+    assert footer_rule(with_rule_room) is None
+    assert "61" in texts(with_rule_room.items)  # the fourth bus is still there
+
+
+def test_the_footer_rule_is_drawn_dotted():
+    panel = HDMI_1920X440
+    layout = sign_layout(screen(), *dots(panel))
+    image = render_sign(screen(), PALETTE, panel)
+    x0, y0 = _origin(panel)
+    y = y0 + footer_rule(layout) * panel.scale
+    assert image.getpixel((x0 + MARGIN * panel.scale, y)) == PALETTE.accent
+    assert image.getpixel((x0 + (MARGIN + 1) * panel.scale, y)) == PALETTE.black

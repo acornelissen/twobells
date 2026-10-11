@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from ..core import words
 from ..core.model import Strip
-from .panel import PHAT, PLATFORM_COLUMN_MIN_WIDTH, STRIP_COLUMN_MIN_WIDTH, Panel
+from .panel import NOTES_SIDE_BY_SIDE_MIN_WIDTH, PHAT, PLATFORM_COLUMN_MIN_WIDTH, STRIP_COLUMN_MIN_WIDTH, Panel
 from .route import RouteView
 from .view import BoardView, CodeView, Row, Section, SetupView, Style
 
@@ -375,14 +375,30 @@ def row_limits(panel: Panel, text_size: int = TEXT_SIZE) -> dict[str, int]:
     return {"Trains": min(_MAX_ROWS["Trains"], rows - buses), "Buses": buses}
 
 
+def header_rain(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[str, float] | None:
+    """(rain warning, its x) when a screen's header shows it beside a
+    disruption notice, left of the clock: only on a screen wide enough, with
+    both. Otherwise the notice takes the title's place alone, as on e-paper."""
+    if not (view.clock and view.notice and view.rain) or width / scale < NOTES_SIDE_BY_SIDE_MIN_WIDTH:
+        return None
+    stamp_x = width - _PAD * scale - drawn_length(fonts.regular, view.clock)
+    # Twice the usual gap either side, so the notice, the warning and the clock read as three.
+    return view.rain, stamp_x - 12 * scale - drawn_length(fonts.bold, view.rain)
+
+
 def header_text(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[str, str, float]:
     """(left text, stamp, stamp x) for the header bar. The plain look has no
     footer, so a disruption notice, or else a rain warning, takes the title's
-    place while there is one: cut short on e-paper, in turns on a screen."""
+    place while there is one: cut short on e-paper, in turns on a screen. A
+    screen wide enough shows both, the rain warning beside (header_rain)."""
     pad = _PAD * scale
     stamp = view.clock or f"Upd {view.updated}"
     stamp_x = width - pad - drawn_length(fonts.regular, stamp)
     room = stamp_x - pad - 6 * scale
+    rain = header_rain(view, fonts, width, scale)
+    if rain is not None:
+        room = rain[1] - pad - 12 * scale
+        view = replace(view, rain=None)
     note = fitted_note(view, room, partial(drawn_length, fonts.bold), fonts.bold)
     return note or fit_text(view.title, fonts.bold, room), stamp, stamp_x
 
@@ -416,6 +432,9 @@ class _Painter:
         self.draw.rectangle((0, 0, self.width - 1, self.header_h * s - 1), fill=self.p.black)
         title, stamp, stamp_x = header_text(view, self.f, self.width, s)
         self.draw.text((pad, s), title, font=self.f.bold, fill=self.p.white)
+        rain = header_rain(view, self.f, self.width, s)
+        if rain is not None:
+            self.draw.text((rain[1], s), rain[0], font=self.f.bold, fill=self.p.white)
         self.draw.text((stamp_x, s), stamp, font=self.f.regular, fill=self.p.white)
 
     def drawn_rows(self, section: Section) -> tuple[Row, ...]:

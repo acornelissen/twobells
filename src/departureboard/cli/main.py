@@ -123,7 +123,8 @@ def _parser() -> argparse.ArgumentParser:
     demo.add_argument("--accent", choices=["red", "yellow"], help="defaults to the theme's")
     demo.add_argument("--display", default="inky", choices=sorted(DISPLAY_PANELS), help="panel to draw for")
     demo.add_argument("--notice", action="store_true", help="show a sample disruption notice")
-    demo.add_argument("--rain", action="store_true", help="show a sample rain warning (a notice takes its place)")
+    demo.add_argument("--rain", action="store_true",
+                      help="show a sample rain warning (beside a notice on a screen; on e-paper a notice hides it)")
     demo.set_defaults(handler=demo_command)
 
     route = with_config(sub.add_parser("route", help="print a [bus.routes] block for the screen's bus page"))

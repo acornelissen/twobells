@@ -29,6 +29,14 @@ STRIP_COLUMN_MIN_WIDTH = 420
 # so only the bar screen does it.
 LEAVE_COLUMN_MIN_WIDTH = 460
 
+# A screen at least this wide shows a disruption notice and the rain warning
+# side by side on its bottom line (the plain look: in its header), rather than
+# the notice hiding the rain. At 400 the notice keeps about 230 dots, some 40
+# letters a part, beside the rain warning and the clock; with the "Not
+# updating" badge too, still about 25. Both HDMI screens are wider; e-paper,
+# which can't show a notice in turns, keeps the notice alone.
+NOTES_SIDE_BY_SIDE_MIN_WIDTH = 400
+
 
 @dataclass(frozen=True)
 class Panel:

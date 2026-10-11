@@ -202,7 +202,7 @@ def demo_command(args) -> int:
     # A screen preview shows what a screen adds: a running clock and countdowns.
     clock = None if display.panel.epaper else "07:03:15"
     now = datetime(2026, 10, 8, 7, 3, 15)
-    # Rain likely through the 07:00 hour, before you'd reach the 07:12; a notice takes its place.
+    # Rain likely through the 07:00 hour, before you'd reach the 07:12; on e-paper a notice takes its place.
     rain = rain_line(FakeWeatherSource(lambda: now).fetch(), now, now.replace(minute=12), 50, live=bool(clock))
     view = build_view(
         DEMO_TITLE, trains, buses, "07:03", set(), walk, theme.wording, clock,

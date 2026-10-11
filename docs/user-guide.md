@@ -80,7 +80,7 @@ Each line reads: *route*, *stop*, *destination*, *when to leave*, *when it goes*
 | `UPDATED 07:03` | When the board last changed. The e-paper only redraws when something changes, so this can be a few minutes ago. |
 | `NOT UPDATING: BUSES`, highlighted | No new bus information has arrived for a while. What's shown is the last known, and may be out of date. The same applies to trains. |
 | `RAIN FROM 07:00 (70%)` | Rain is likely (here a 70% chance) before you'd reach your next train or bus. Only shown when rain is likely; nothing on dry days. |
-| `! DISRUPTION …` | A National Rail incident notice for the station. It sits on the left while it lasts, with `UPDATED` kept on the right, and goes when the notice is withdrawn. Where it doesn't fit, it's cut short with `…`. A rain warning sits there the same way. |
+| `! DISRUPTION …` | A National Rail incident notice for the station. It sits on the left while it lasts, with `UPDATED` kept on the right, and goes when the notice is withdrawn. Where it doesn't fit, it's cut short with `…`. A rain warning sits there the same way; while there's a notice, the notice takes its place. |
 
 ![A rain warning at the bottom](images/phat-rain.png)
 
@@ -101,7 +101,7 @@ The differences:
 | `Leave by` once, next to BUSES, over a column of leave times (`07:16`), so the destinations have more room | `Leave by 07:16` on each bus line |
 | `Cancelled` on a black bar | `Cancelled` on a highlighted bar |
 | `! NOT UPDATING` in the accent colour, next to TRAINS or BUSES | `NOT UPDATING: …` at the bottom |
-| A rain warning or disruption notice in the top bar, in place of the title | At the bottom |
+| A rain warning or disruption notice in the top bar, in place of the title (on a screen, both, the rain warning beside the clock) | At the bottom |
 
 The plain look shows 3 trains and 2 buses (3 buses on the 11.3" bar screen, which has the room).
 
@@ -122,7 +122,7 @@ The screen can redraw every second, so it shows a bit more:
 - On the screen, a bus you can no longer reach on foot loses its leave time, rather than saying "Leave now".
 - **Platforms**, as on the bigger e-paper display.
 - **Where each train or bus is**, after its destination: in words (`At Dinting`, `3 stops away`, cut short with `…` if they don't fit), then a little line of its stops, as on the dashboard. The line is solid up to your stop, which is the bigger one, and dotted after it; the train or bus is drawn over the line where it is, and not at all while the board doesn't know. The words say it all; the line only backs them up. A row the board knows nothing for, like a cancelled train or a bus with no live position, leaves the space blank.
-- A rain warning or disruption notice sits at the bottom left and the clock moves to the right. A notice too long for one line is shown a part at a time, changing every 5 seconds; each part starts with `!` and all but the last end with `…`.
+- A rain warning or disruption notice sits at the bottom left and the clock moves to the right. With both, they sit side by side: the notice on the left, the rain warning beside the clock. A notice too long for its space is shown a part at a time, changing every 5 seconds; each part starts with `!` and all but the last end with `…`. A dotted rule sets the bottom line off from the buses, as between trains and buses.
 
 #### The 11.3" bar screen
 
@@ -760,7 +760,7 @@ Every command but `demo` takes `--config FILE` and `--secrets FILE`, which defau
 | `probe train` or `probe bus` | One live call, to check the keys, station and stops. | `--stop LABEL=ATCO` (once per stop) asks those stops instead of the settings'. `--save DIR` keeps TransportAPI's raw answers. `--details` (trains only) adds coaches and calling points. |
 | `route LINE` | Prints a `[bus.routes]` block for the screen's bus page. | `--stop LABEL` (needed), and `--noc CODE` or `--txc FILE`; see [The bus position page](#the-bus-position-page). |
 | `setup discover` | Finds the bus companies serving your stops, builds their timetable, and prints the settings to add to `config.toml`. Needs `BODS_API_KEY`. | `--stop LABEL=ATCO` (needed, once per stop). `--routes` also builds a route strip for each line. |
-| `demo` | Draws a sample board (a Glossop morning) to a picture, with no keys. | `--png FILE` (default `preview.png`), `--display` (default `inky`), `--theme sign` or `plain`, `--accent red` or `yellow`, `--notice` for a sample disruption notice, `--rain` for a sample rain warning. |
+| `demo` | Draws a sample board (a Glossop morning) to a picture, with no keys. | `--png FILE` (default `preview.png`), `--display` (default `inky`), `--theme sign` or `plain`, `--accent red` or `yellow`, `--notice` for a sample disruption notice, `--rain` for a sample rain warning (both together show side by side on a screen). |
 | `emulate` | Runs the board against a panel drawn in your browser (see the README). | `--demo` for sample data on a fast clock, `--fake-train` for fake trains and live buses, `--display`, `--accent red` or `yellow` (demo only), `--tick SECONDS`, `--port` (default 8780), `--no-browser`. |
 
 Useful on a Pi:

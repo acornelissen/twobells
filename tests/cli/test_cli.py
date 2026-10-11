@@ -53,7 +53,10 @@ def test_demo_can_show_a_notice_and_a_rain_line(tmp_path, display, theme):
 
     plain, notice, rain, both = demo(), demo("--notice"), demo("--rain"), demo("--notice", "--rain")
     assert len({plain, notice, rain}) == 3
-    assert both == notice  # a disruption notice takes the rain line's place
+    if display.startswith("hdmi"):
+        assert len({notice, rain, both}) == 3  # a screen shows them side by side
+    else:
+        assert both == notice  # on e-paper a disruption notice takes the rain line's place
 
 
 def test_demo_rain_line_follows_the_rain_rule(monkeypatch, tmp_path):

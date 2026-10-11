@@ -9,14 +9,21 @@ draws each dot as a block of pixels, with a dark gap between LEDs once there is 
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from PIL import Image, ImageDraw
 
 from ..core.model import Strip
 from .dotfont import HEIGHT as GLYPH_H
 from .dotfont import TINY, TINY_HEIGHT, DotFont
-from .panel import LEAVE_COLUMN_MIN_WIDTH, PHAT, PLATFORM_COLUMN_MIN_WIDTH, STRIP_COLUMN_MIN_WIDTH, Panel
+from .panel import (
+    LEAVE_COLUMN_MIN_WIDTH,
+    NOTES_SIDE_BY_SIDE_MIN_WIDTH,
+    PHAT,
+    PLATFORM_COLUMN_MIN_WIDTH,
+    STRIP_COLUMN_MIN_WIDTH,
+    Panel,
+)
 from .render import HEIGHT, WIDTH, Palette, apply_preview, fit_text, fitted_note
 from .route import RouteView
 from .view import BoardView, Row, Section, Style
@@ -28,6 +35,10 @@ _TOP = 6
 _ABOVE_RULE = 8
 _BELOW_RULE = 11
 _COL_GAP = 5
+# The least space either side of the rule over the bottom line.
+_FOOTER_GAP = 3
+# Either side of the rain warning beside a notice, so the three read as three.
+_NOTES_GAP = 2 * _COL_GAP
 _ORDINALS = ("1st", "2nd", "3rd", "4th")
 _MAX_TRAINS = 3
 _FONT = DotFont()
@@ -252,7 +263,14 @@ def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> Non
         # shows the notice (or rain warning) a part at a time in the room left of it.
         clock_x = free_end - _w(view.clock)
         layout.add(clock_x, height - GLYPH_H - 1, view.clock)
-        layout.add(MARGIN, height - GLYPH_H - 1, fitted_note(view, clock_x - _COL_GAP - MARGIN, _w, _FONT) or "")
+        note_end, shown = clock_x - _COL_GAP, view
+        if view.notice and view.rain and width >= NOTES_SIDE_BY_SIDE_MIN_WIDTH:
+            # Wide enough for both: the rain warning, steady, left of the
+            # clock, and the notice in its own space, a part at a time.
+            rain_x = clock_x - _NOTES_GAP - _w(view.rain)
+            layout.add(rain_x, height - GLYPH_H - 1, view.rain)
+            note_end, shown = rain_x - _NOTES_GAP, replace(view, rain=None)
+        layout.add(MARGIN, height - GLYPH_H - 1, fitted_note(shown, note_end - MARGIN, _w, _FONT) or "")
     elif view.clock:
         # A screen shows the time centred along the bottom, like a station clock.
         layout.add((width - _w(view.clock)) // 2, height - GLYPH_H - 1, view.clock)
@@ -281,10 +299,27 @@ def sign_layout(view: BoardView, width: int = WIDTH, height: int = HEIGHT) -> Si
     y = _trains(layout, view.trains, _TOP, width, trains, where_x)
     rule = y + _ABOVE_RULE - 2  # each line already carries 2 dots of leading
     layout.rules.append(rule)
-    footer_top = height - (GLYPH_H if view.clock else TINY_HEIGHT) - 3
-    _buses(layout, view.buses, rule + _BELOW_RULE, footer_top, width, buses, where_x)
+    footer_y = height - (GLYPH_H if view.clock else TINY_HEIGHT) - 1  # the bottom line's top
+    buses_top = rule + _BELOW_RULE
+    # A rule over the bottom line, as between trains and buses. A screen always
+    # has one; e-paper only when it costs no bus, as it can on a full board.
+    lines = max(1, len(view.buses.rows))  # "No buses" is a line too
+    without = min(lines, _rows_that_fit(buses_top, footer_y - 2))
+    with_rule = min(lines, _rows_that_fit(buses_top, footer_y - 2 * _FOOTER_GAP - 1))
+    footer_rule = with_rule > 0 and (view.clock is not None or with_rule == without)
+    bottom = footer_y - 2 * _FOOTER_GAP - 1 if footer_rule else footer_y - 2
+    _buses(layout, view.buses, buses_top, bottom, width, buses, where_x)
+    if footer_rule:
+        # Halfway between the last bus and the bottom line, so the gaps match.
+        last_bottom = buses_top + (with_rule - 1) * _LINE + GLYPH_H - 1
+        layout.rules.append(last_bottom + (footer_y - last_bottom) // 2)
     _footer(layout, view, width, height)
     return layout
+
+
+def _rows_that_fit(top: int, bottom: int) -> int:
+    """How many lines from `top` fit above `bottom`, as _buses draws them."""
+    return max(0, (bottom - GLYPH_H - top) // _LINE + 1)
 
 
 def _ink(palette: Palette) -> int:
