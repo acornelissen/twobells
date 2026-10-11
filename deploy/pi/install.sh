@@ -21,6 +21,61 @@ CONF=/etc/twobells
 screen=false
 [[ "${1:-}" == "--screen" ]] && screen=true
 
+# Until it was Two Bells the app was departureboard: its user, folders,
+# units and the guard's table had that name. Moves an install made then over,
+# once, or the rest of a move cut short: the old units stopped and removed, the old table dropped, the user
+# and its group renamed (the uid stays, so who owns what does too), the
+# settings and the store moved, and a fresh venv for the new code, which
+# goes in after as on any install. config.toml's paths into the old store
+# follow it. Each unit that was enabled goes in moved_on, to be enabled
+# again under its new name. $1 is the root: empty on a Pi.
+moved_on=()
+move_from_old_name() {
+  local root="$1" old folder
+  if [[ ! -d "$root/etc/departureboard" && ! -d "$root/var/lib/departureboard" && ! -d "$root/opt/departureboard" ]]; then
+    return 0
+  fi
+  # A move cut short is carried on with; a folder under both names is left to you.
+  for folder in etc var/lib; do
+    if [[ -d "$root/$folder/departureboard" && -e "$root/$folder/twobells" ]]; then
+      echo "Both /$folder/departureboard and /$folder/twobells are here, so nothing was moved. Keep the one you" >&2
+      echo "want, remove the other, and run this again." >&2
+      return 1
+    fi
+  done
+  echo "Moving this install from its old name, departureboard, to twobells"
+  for old in departureboard.timer departureboard.service departureboard-screen.service \
+      departureboard-timetable.timer departureboard-timetable.service departureboard-web.service \
+      departureboard-fetch.path departureboard-fetch.service departureboard-guard.service; do
+    if systemctl is-enabled --quiet "$old" 2>/dev/null; then
+      moved_on+=("${old/departureboard/twobells}")
+    fi
+    systemctl disable --now "$old" 2>/dev/null || true
+    rm -f "$root/etc/systemd/system/$old"
+  done
+  nft delete table inet departureboard_web 2>/dev/null || true
+  if id departureboard &>/dev/null && ! id twobells &>/dev/null; then
+    usermod --login twobells departureboard
+    groupmod --new-name twobells departureboard
+  fi
+  if [[ -d "$root/etc/departureboard" ]]; then
+    mv "$root/etc/departureboard" "$root/etc/twobells"
+    if [[ -f "$root/etc/twobells/config.toml" ]]; then
+      sed -i.old 's|/var/lib/departureboard/|/var/lib/twobells/|g' "$root/etc/twobells/config.toml"
+      rm -f "$root/etc/twobells/config.toml.old"
+    fi
+  fi
+  if [[ -d "$root/var/lib/departureboard" ]]; then
+    mv "$root/var/lib/departureboard" "$root/var/lib/twobells"
+  fi
+  # A venv can't move: its scripts name its folder. Built afresh instead.
+  rm -rf "$root/opt/departureboard"
+  if [[ ! -x "$root/opt/twobells/venv/bin/python" ]]; then
+    python3 -m venv --system-site-packages "$root/opt/twobells/venv"
+  fi
+}
+move_from_old_name ""
+
 apt-get update
 # spidev, gpiozero and lgpio drive the Waveshare panel; the venv sees them via system site packages.
 # Pillow, numpy, smbus2 and gpiod (for inky) come from Debian rather than pip: built for the
@@ -96,6 +151,10 @@ done
 # root: root's alone to change.
 install -m 644 -o root -g root "$REPO/deploy/pi/twobells-web.nft" "$PREFIX/twobells-web.nft"
 systemctl daemon-reload
+# What ran under the old name runs again under the new one.
+for moved in "${moved_on[@]}"; do
+  systemctl enable --now "$moved"
+done
 # The guard loads at boot, before the web server. Loaded afresh now, which
 # empties its set, so a running web server restarts after it, below, and
 # systemd puts it in the set again. If it fails, the rest still goes in and
