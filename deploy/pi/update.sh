@@ -32,9 +32,16 @@ if [[ -n "$secrets" ]]; then
   shred -u "$secrets"
 fi
 
-# The web server's network guard needs nft; installed before the new code
-# goes in, so if it fails nothing has changed.
-dpkg -s nftables &>/dev/null || apt-get install -y nftables
+# The web server's network guard needs nft, where its unit runs it (a package
+# removed but not purged still passes dpkg -s). The package lists are
+# refreshed first, as an installed Pi's may name versions long gone from the
+# mirror. Installed before the new code goes in, so if it fails the old code
+# still runs. An if, not || { a && b; }: set -e doesn't stop on a failing
+# apt-get update inside an && list.
+if [[ ! -x /usr/sbin/nft ]]; then
+  apt-get update
+  apt-get install -y nftables
+fi
 
 # Build from a clean copy: pip builds in the source tree, and as root that
 # leaves root-owned build/ and *.egg-info behind (and a stale build/ can leak

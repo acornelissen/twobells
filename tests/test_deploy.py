@@ -296,8 +296,13 @@ def test_install_and_update_install_nftables():
     [packages] = [line for line in install.splitlines() if line.startswith("apt-get install -y python3-venv")]
     assert "nftables" in packages.split()
     update = _script("update.sh")
-    needed = "dpkg -s nftables &>/dev/null || apt-get install -y nftables\n"
-    # Before the new code goes in, so a failed install changes nothing.
+    # Looked for where the unit runs it (a package removed but not purged still
+    # passes dpkg -s), and the package lists refreshed first: an installed Pi's
+    # may be months old, naming versions the mirror no longer has.
+    nft = shlex.split(_unit("departureboard-web.service")["ExecStartPre"][0].lstrip("-+"))[0]
+    # An if block: set -e ignores a failing apt-get update inside an && list.
+    needed = f"if [[ ! -x {nft} ]]; then\n  apt-get update\n  apt-get install -y nftables\nfi\n"
+    # Before the new code goes in, so if it fails the old code still runs.
     assert update.index(needed) < update.index('"$PREFIX/venv/bin/pip" install')
 
 
