@@ -1,5 +1,6 @@
 import os
 import stat
+import threading
 
 import pytest
 
@@ -28,14 +29,58 @@ def test_it_is_on_disk_before_it_replaces_the_old_file(tmp_path, monkeypatch):
     assert calls == ["fsync", "replace"]
 
 
-@pytest.mark.skipif(not files.NOFOLLOW, reason="needs O_NOFOLLOW")
-def test_a_link_put_where_the_file_is_written_aside_is_refused(tmp_path):
+def test_a_link_put_where_a_file_might_be_written_aside_is_never_written_through(tmp_path):
+    # The file aside has a new, unguessable name each time and must be new:
+    # links planted at the names it might take are left alone.
     target = tmp_path / "elsewhere"
     target.write_text("keep")
     (tmp_path / "secrets.env.tmp").symlink_to(target)
-    with pytest.raises(OSError):
-        files.write_atomic(tmp_path / "secrets.env", "KEY=x", 0o600)
+    files.write_atomic(tmp_path / "secrets.env", "KEY=x", 0o600)
     assert target.read_text() == "keep"
+    assert (tmp_path / "secrets.env").read_text() == "KEY=x"
+    assert (tmp_path / "secrets.env.tmp").is_symlink()
+
+
+def test_writes_at_once_to_one_file_each_land_whole(tmp_path):
+    # As the threaded web server, the wizard and the CLI may: none fails, and
+    # the file is always one writer's content, never two spliced.
+    path = tmp_path / "settings.toml"
+    contents = [(str(n) * 50_000).encode() for n in range(8)]
+    start = threading.Barrier(len(contents))
+    errors, spliced = [], []
+
+    def write(data: bytes) -> None:
+        start.wait()
+        for _ in range(30):
+            try:
+                files.write_atomic(path, data, 0o640)
+            except OSError as error:
+                errors.append(error)
+            if path.read_bytes() not in contents:
+                spliced.append(data[:1])
+
+    threads = [threading.Thread(target=write, args=(data,)) for data in contents]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == [] and spliced == []
+    assert path.read_bytes() in contents
+    assert os.listdir(tmp_path) == ["settings.toml"]  # nothing left aside
+
+
+def test_a_write_that_fails_leaves_the_old_file_and_nothing_aside(tmp_path, monkeypatch):
+    path = tmp_path / "secrets.env"
+    files.write_atomic(path, "KEY=old", 0o600)
+
+    def full(fd):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(files.os, "fsync", full)
+    with pytest.raises(OSError):
+        files.write_atomic(path, "KEY=new", 0o600)
+    assert path.read_text() == "KEY=old"
+    assert os.listdir(tmp_path) == ["secrets.env"]
 
 
 @pytest.mark.skipif(not files.NOFOLLOW, reason="needs O_NOFOLLOW")
