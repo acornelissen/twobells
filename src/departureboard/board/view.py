@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
@@ -48,6 +49,10 @@ class Row:
     style: Style = Style.NORMAL
     leave: str | None = None
     stop: str | None = None
+    # What a screen wide enough calls the stop, in place of its label
+    # ("Henry Street", or "Henry Street A": see stop_names_shown); None when
+    # the name isn't known, and then it shows the label.
+    stop_name: str | None = None
     # "Plat 1"; only boards wide enough for a platform column draw it.
     platform: str | None = None
     # The leave time alone ("07:16") when `leave` is a clock time, for a look
@@ -65,6 +70,9 @@ class Section:
     stale: bool = False
     leave: str | None = None
     leave_for: int | None = None  # index of the row the leave time is for
+    # Every name a screen wide enough calls your stops by, shown or not, so
+    # the column they are drawn in is as wide whatever buses are shown.
+    stop_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -167,6 +175,30 @@ def _bus_row(dep: Departure, walk: WalkTimes | None, clock: str | None) -> Row:
     return Row(dep.service, dep.destination, right, _style(dep), leave_text, dep.stop, leave_at=leave_at)
 
 
+# A stop's name from the bus timetable is feed data: kept to one line of
+# printable text, and this long at most (a screen scrolls a long one).
+STOP_NAME_LIMIT = 60
+
+
+def _stop_name(name: object) -> str | None:
+    if not isinstance(name, str):
+        return None
+    # Whitespace first, so a tab or newline still parts two words.
+    text = "".join(c for c in " ".join(name.split()) if c.isprintable())
+    return text[:STOP_NAME_LIMIT].rstrip() or None
+
+
+def stop_names_shown(names: Mapping[str, object]) -> dict[str, str]:
+    """What a wide screen's bus rows call each of your stops, by label, from
+    the bus timetable's names: the name alone ("Henry Street"), or the name
+    and the label ("Henry Street A") when two or more of your stops share it,
+    so each row still says which. A stop whose name isn't known is left out:
+    its rows show the label."""
+    cleaned = {label: name for label, raw in names.items() if isinstance(label, str) and (name := _stop_name(raw))}
+    counts = Counter(name.casefold() for name in cleaned.values())
+    return {label: f"{name} {label}" if counts[name.casefold()] > 1 else name for label, name in cleaned.items()}
+
+
 def _leave(departures, walk: WalkTimes | None, now: str, wording: Wording, clock: str | None):
     """(text, row index) for the next departure in reach, or (None, None)."""
     found = leave_by(departures, walk, now) if walk else None
@@ -176,15 +208,19 @@ def _leave(departures, walk: WalkTimes | None, now: str, wording: Wording, clock
     return wording.leave(_leave_words(leave, clock), _target(dep)), departures.index(dep)
 
 
-def _section(label, departures, to_row, now, empty_text, stale, walk, wording, clock, strips) -> Section:
+def _section(label, departures, to_row, now, empty_text, stale, walk, wording, clock, strips,
+             stop_names: Mapping[str, str]) -> Section:
     upcoming = [d for d in departures if not d.is_gone(now)]
-    rows = tuple(replace(to_row(d, walk, clock), strip=strips.get(strip_key(d))) for d in upcoming)
+    rows = tuple(
+        replace(to_row(d, walk, clock), strip=strips.get(strip_key(d)), stop_name=stop_names.get(d.stop or ""))
+        for d in upcoming
+    )
     # Rows that carry their own leave time make a header summary redundant.
     if any(r.leave for r in rows):
         text, index = None, None
     else:
         text, index = _leave(upcoming, walk, now, wording, clock)
-    return Section(label, rows, empty_text, stale, text, index)
+    return Section(label, rows, empty_text, stale, text, index, tuple(sorted(set(stop_names.values()))))
 
 
 def build_view(
@@ -199,18 +235,21 @@ def build_view(
     notices: list[str] | None = None,
     rain: str | None = None,
     strips: Mapping[tuple[str, str, str, str], Strip] | None = None,
+    stop_names: Mapping[str, str] | None = None,
 ) -> BoardView:
     """`clock` (HH:MM:SS, matching `now`) is for screens: it is shown, and
     leave times count down instead of giving a clock time. `notices` are the
     station's disruption messages, shown one after another as one notice;
     `rain` is the rain warning, if there is one. `strips` say where each
-    departure's train or bus is, by strip_key."""
+    departure's train or bus is, by strip_key. `stop_names` are what a wide
+    screen calls your bus stops, by label (see stop_names_shown)."""
     strips = strips or {}
     return BoardView(
         title=title,
         trains=_section("Trains", trains, _train_row, now, "No trains", "train" in stale, walk, wording, clock,
-                        strips),
-        buses=_section("Buses", buses, _bus_row, now, "No buses", "bus" in stale, walk, wording, clock, strips),
+                        strips, {}),
+        buses=_section("Buses", buses, _bus_row, now, "No buses", "bus" in stale, walk, wording, clock, strips,
+                       stop_names or {}),
         updated=now,
         clock=clock,
         notice=_notice(notices or []),

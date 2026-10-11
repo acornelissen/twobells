@@ -37,6 +37,18 @@ LEAVE_COLUMN_MIN_WIDTH = 460
 # e-paper, which can't scroll a notice, keeps the notice alone.
 NOTES_SIDE_BY_SIDE_MIN_WIDTH = 400
 
+# A screen at least this wide calls each bus row's stop by its name ("Henry
+# Street A") where e-paper shows its label ("A"). Train rows don't change: the
+# where column stays where "Manchester Piccadilly" whole puts it, so the name
+# comes out of the bus destination's room. On the bar screen's 480 a sign
+# destination keeps 54 dots, 10 letters, beside "Henry Street A" and 46, 8,
+# beside a name the column's full sixteen letters wide; the plain look's 640
+# keeps over 200 pixels. On the 7.9" screen's 426 the sign look would keep
+# nearly as much (50 and 42), but the plain look's would be down to 27
+# pixels, 4 letters, beside "Henry Street A" and 11, next to nothing, beside a
+# long name, so only the bar screen does it.
+STOP_NAME_MIN_WIDTH = 460
+
 
 @dataclass(frozen=True)
 class Panel:

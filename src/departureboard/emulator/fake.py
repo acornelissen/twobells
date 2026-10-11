@@ -134,6 +134,9 @@ _BUS_ROUTES = (
     ("61", "Buxton", "B", 60, 35),
     ("393", "Hadfield", "B", 30, 8),
 )
+# The stops' names, as the bus timetable gives them: Glossop's two are both
+# Henry Street, on either side of the road, so a wide screen says which.
+DEMO_STOP_NAMES = {"A": "Henry Street", "B": "Henry Street"}
 
 
 class FakeBusSource(_FakeSource):
@@ -141,6 +144,10 @@ class FakeBusSource(_FakeSource):
 
     def __init__(self, clock, seed: int = 1, rows: int = 2, failing_when=None) -> None:
         super().__init__(clock, seed, rows, failing_when)
+
+    def stop_names(self) -> dict[str, str]:
+        """The stops' names by label, as BodsBusSource gives them from its timetable."""
+        return dict(DEMO_STOP_NAMES)
 
     def live_strips(self, reuse: bool = False) -> dict[tuple[str, str, str, str], Strip]:
         """Where each bus with a tracker is, as BodsBusSource says it: along the

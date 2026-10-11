@@ -14,12 +14,12 @@ from pathlib import Path
 from ..board.app import run_loop
 from ..board.displays.display import DISPLAY_PANELS, PngDisplay
 from ..board.themes import theme_named
-from ..board.view import build_view
+from ..board.view import build_view, stop_names_shown
 from ..core.model import Departure, Status, Strip, strip_key
 from ..core.net import DOWNLOAD_DEADLINE, get_bytes
 from ..core.walk import WalkTimes
 from ..emulator.emulation import build_emulation
-from ..emulator.fake import DEMO_NOTICE, DEMO_TITLE, FakeWeatherSource
+from ..emulator.fake import DEMO_NOTICE, DEMO_STOP_NAMES, DEMO_TITLE, FakeWeatherSource
 from ..emulator.server import make_server
 from ..settings.config import ConfigError, load_env_file
 from ..settings.store import Store
@@ -209,6 +209,8 @@ def demo_command(args) -> int:
         notices=[DEMO_NOTICE] if args.notice else None,
         rain=rain if args.rain else None,
         strips=strips,
+        # Glossop's stops share a name, so a screen wide enough says "Henry Street A".
+        stop_names=stop_names_shown(DEMO_STOP_NAMES),
     )
     display.show(theme.render(view, display.palette, display.panel))
     print(f"Wrote {args.png}")

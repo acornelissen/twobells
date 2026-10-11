@@ -72,6 +72,17 @@ def test_demo_rain_line_follows_the_rain_rule(monkeypatch, tmp_path):
     assert views[2].notice.startswith("Disruption between Glossop")
 
 
+def test_demo_names_glossop_s_two_henry_street_stops(monkeypatch, tmp_path):
+    from departureboard.cli import dev
+
+    views = []
+    real = dev.build_view
+    monkeypatch.setattr(dev, "build_view", lambda *a, **k: views.append(real(*a, **k)) or views[-1])
+    main(["demo", "--png", str(tmp_path / "a.png"), "--display", "hdmi-1920x440"])
+    assert views[0].buses.stop_names == ("Henry Street A", "Henry Street B")
+    assert [r.stop_name for r in views[0].buses.rows] == ["Henry Street A", "Henry Street B", "Henry Street A"]
+
+
 def test_load_env_file_parses_assignments(tmp_path):
     path = tmp_path / "secrets.env"
     path.write_text('# comment\nRDM_API_KEY=abc\n\nTAPI_APP_ID = "id"\nTAPI_APP_KEY=\'k=1\'\n')

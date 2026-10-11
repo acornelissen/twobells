@@ -39,7 +39,7 @@ from .state import (
     vehicles_from_dicts,
 )
 from .themes import THEMES, Theme
-from .view import BoardView, CodeView, SetupView, build_view
+from .view import BoardView, CodeView, SetupView, build_view, stop_names_shown
 
 log = logging.getLogger(__name__)
 
@@ -356,6 +356,22 @@ def _route_view(board: Board, state: dict, view: BoardView, now: datetime, clock
     )
 
 
+def _stop_names(board: Board) -> dict[str, str]:
+    """What a screen's bus rows call your stops, by label, from the bus
+    source's timetable (sources/bodsbus.py); none when it has none to give,
+    and the rows show their labels."""
+    for config in board.sources:
+        names = getattr(config.source, "stop_names", None)
+        if names is None:
+            continue
+        try:
+            return stop_names_shown(names())
+        except Exception as error:  # noqa: BLE001 - a name is never worth the board
+            log.debug("bus stop names not shown: %s", safe_message(error))
+            return {}
+    return {}
+
+
 def _render_key(shown: BoardView | RouteView | CodeView | SetupView, theme: Theme, display: Display) -> str:
     """What is on the panel: the words, and how they are drawn. A new look, accent
     or rotation has to reach e-paper even when the words have not changed."""
@@ -402,6 +418,8 @@ def run_once(
         notices=_notices(board, state, now),
         rain=_rain(board, state, trains + buses, now, live),
         strips=strips,
+        # Only a screen wide enough draws them; e-paper never asks.
+        stop_names=_stop_names(board) if live else None,
     )
 
     code = _reset_code(board)

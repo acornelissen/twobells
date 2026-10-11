@@ -1096,3 +1096,131 @@ def test_the_route_page_scrolls_a_long_title_on_a_screen():
     assert [s.text for s in route_sign_frame(view, PALETTE, HDMI_1920X440).scrolls] == ["341 to " + LONG]
     e_paper = dataclasses.replace(view, clock=None)
     assert route_sign_frame(e_paper, PALETTE, WAVESHARE_10IN85G).scrolls == ()
+
+
+# A screen wide enough names each bus row's stop where e-paper shows its label.
+
+from departureboard.board.panel import STOP_NAME_MIN_WIDTH  # noqa: E402
+
+GLOSSOP_STOPS = ("Henry Street A", "Henry Street B")  # both of Glossop's stops are on Henry Street
+NAMED_BUSES = [
+    dataclasses.replace(SCREEN_BUSES[0], stop_name="Henry Street A"),
+    dataclasses.replace(SCREEN_BUSES[1], stop_name="Henry Street B"),
+    dataclasses.replace(SCREEN_BUSES[2], stop_name="Henry Street A"),
+]
+
+
+def named(buses=NAMED_BUSES, stop_names=GLOSSOP_STOPS, clock=CLOCK, **changes):
+    view = screen(buses=buses, **changes)
+    return dataclasses.replace(view, clock=clock, buses=dataclasses.replace(view.buses, stop_names=stop_names))
+
+
+def test_only_the_bar_screen_is_wide_enough_for_stop_names():
+    assert dots(HDMI_1920X440)[0] >= STOP_NAME_MIN_WIDTH > dots(HDMI_1280X400)[0]
+
+
+def test_the_bar_screen_names_each_bus_row_s_stop_where_the_label_was():
+    items = sign_layout(named(), *dots(HDMI_1920X440)).items
+    assert texts(line_of(items, "341")) == ["341", "Henry Street A", "Hyde", "3 stops away", "Leave in 12 min",
+                                           "Exp 07:24"]
+    assert texts(line_of(items, "61"))[:3] == ["61", "Henry Street B", "Buxton"]
+    assert "A" not in texts(items) and "B" not in texts(items)
+
+
+def test_stop_names_and_destinations_line_up_down_the_bus_rows():
+    items = sign_layout(named(), *dots(HDMI_1920X440)).items
+    assert len({line_of(items, first)[1].x for first in ("341", "61", "237")}) == 1
+    destinations = [find(items, d) for d in ("Hyde", "Buxton", "Ashton")]
+    assert len({d.x for d in destinations}) == 1
+    # Twice the usual gap after the name, so it and the destination don't read as one.
+    assert destinations[0].x == find(items, "Henry Street B").x + FONT.getlength("Henry Street B") + 10
+
+
+def test_the_stop_column_is_as_wide_whatever_buses_are_shown():
+    # From all your stops' names, not the rows': B's longer name keeps its room with no bus from B.
+    width, height = dots(HDMI_1920X440)
+    names = ("Henry Street", "Norfolk Square")
+    from_a = [dataclasses.replace(r, stop="A", stop_name="Henry Street") for r in SCREEN_BUSES]
+    from_b = dataclasses.replace(SCREEN_BUSES[1], stop_name="Norfolk Square")
+    only_a = sign_layout(named(from_a, names), width, height).items
+    both_stops = sign_layout(named([from_a[0], from_b], names), width, height).items
+    assert find(only_a, "Hyde").x == find(both_stops, "Hyde").x
+    assert find(only_a, "Hyde").x == line_of(only_a, "341")[1].x + FONT.getlength("Norfolk Square") + 10
+
+
+def test_a_long_stop_name_scrolls_in_a_column_about_sixteen_letters_wide():
+    long = "Glossop Norfolk Street Bus Station Stand 3"
+    buses = [dataclasses.replace(NAMED_BUSES[0], stop_name=long), *NAMED_BUSES[1:]]
+    items = sign_layout(named(buses, (long, "Henry Street B")), *dots(HDMI_1920X440)).items
+    stop = find(items, long)
+    assert stop.box is not None  # scrolling in its space
+    assert FONT.getlength("Henry Street B") < stop.box <= FONT.getlength("Norfolk Square W")
+    assert stop.x + stop.box + 10 <= find(items, "Hyde").x
+    assert find(items, "Henry Street B").box is None  # a name that fits stays still
+
+
+def test_a_stop_whose_name_isn_t_known_shows_its_label_in_the_column():
+    buses = [NAMED_BUSES[0], dataclasses.replace(NAMED_BUSES[1], stop_name=None), NAMED_BUSES[2]]
+    items = sign_layout(named(buses, ("Henry Street A",)), *dots(HDMI_1920X440)).items
+    assert texts(line_of(items, "61"))[:3] == ["61", "B", "Buxton"]
+    assert find(items, "B").x == line_of(items, "341")[1].x == line_of(items, "237")[1].x
+    assert find(items, "Buxton").x == find(items, "Hyde").x
+
+
+@pytest.mark.parametrize("leave_for", [0, 1])
+def test_a_named_bus_row_s_columns_never_overlap(leave_for):
+    layout = sign_layout(named(leave_for=leave_for), *dots(HDMI_1920X440))
+    for first in ("341", "61", "237"):
+        line = line_of(layout.items, first)
+        marks = [(m.x, m.x + m.width) for m in layout.strips if m.y == line[0].y]
+        boxes = sorted([(i.x, i.x + item_size(i)[0]) for i in line] + marks)
+        for (_, end), (start, _) in itertools.pairwise(boxes):
+            assert end + 4 <= start, line
+
+
+def test_bus_destinations_keep_room_beside_stop_names():
+    # A long destination scrolls in what the name leaves it: eight letters at least.
+    long = "Stepping Hill Hospital via Marple and Romiley"
+    buses = [dataclasses.replace(r, middle=long) for r in NAMED_BUSES]
+    items = sign_layout(named(buses), *dots(HDMI_1920X440)).items
+    shown = [i for i in items if i.text == long]
+    assert len(shown) == 3
+    assert all(i.box is not None and i.box >= FONT.getlength("Stepping") for i in shown)
+
+
+def test_stop_names_leave_the_train_rows_as_they_were():
+    width, height = dots(HDMI_1920X440)
+    before, after = sign_layout(screen(), width, height).items, sign_layout(named(), width, height).items
+    first_bus = find(before, "341").y
+    assert [i for i in before if i.y < first_bus] == [i for i in after if i.y < first_bus]
+    assert [i.text for i in after if i.text.startswith("Manchester")] == ["Manchester Piccadilly"] * 3
+
+
+@pytest.mark.parametrize("panel", [HDMI_1280X400, WAVESHARE_10IN85G], ids=lambda p: p.name)
+def test_narrower_boards_keep_the_label(panel):
+    view = named(clock=None if panel.epaper else CLOCK)
+    items = sign_layout(view, *dots(panel)).items
+    assert texts(line_of(items, "341"))[:3] == ["341", "A", "Hyde"]
+    assert not any(i.text.startswith("Henry Street") for i in items)
+
+
+def test_without_a_clock_the_bar_screen_s_width_keeps_the_label():
+    items = sign_layout(named(clock=None), *dots(HDMI_1920X440)).items
+    assert texts(line_of(items, "341"))[:3] == ["341", "A", "Hyde"]
+
+
+@pytest.mark.parametrize("panel", [None, WAVESHARE_10IN85G, HDMI_1280X400], ids=lambda p: p.name if p else "inky-phat")
+def test_e_paper_and_the_7_9_inch_screen_are_unchanged_by_stop_names(panel):
+    kwargs = {"panel": panel} if panel else {}
+    clock = CLOCK if panel is HDMI_1280X400 else None
+    labels = render_sign(dataclasses.replace(screen(), clock=clock), PALETTE, **kwargs)
+    assert render_sign(named(clock=clock), PALETTE, **kwargs).tobytes() == labels.tobytes()
+
+
+def test_everything_fits_on_the_bar_screen_with_stop_names():
+    width, height = dots(HDMI_1920X440)
+    layout = sign_layout(named(stale_buses=True, notice=NOTICE), width, height)
+    for item in layout.items:
+        w, h = item_size(item)
+        assert item.x >= 0 and item.x + w <= width
+        assert item.y >= 0 and item.y + h <= height

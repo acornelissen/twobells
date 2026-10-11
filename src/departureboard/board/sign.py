@@ -23,6 +23,7 @@ from .panel import (
     NOTES_SIDE_BY_SIDE_MIN_WIDTH,
     PHAT,
     PLATFORM_COLUMN_MIN_WIDTH,
+    STOP_NAME_MIN_WIDTH,
     STRIP_COLUMN_MIN_WIDTH,
     Panel,
 )
@@ -89,6 +90,14 @@ _REST_OF_TRAIN_ROW = (
     _ROW_START + _FONT.getlength("Plat 1") + 2 * _COL_GAP + _FONT.getlength("Leave in 00 min") + _COL_GAP
     + _FONT.getlength("Cancelled") + MARGIN
 )
+
+
+# On a screen wide enough, a bus row's stop by its name: a column as wide as
+# the longest of your stops' names, at most sixteen letters; a longer name
+# scrolls in it. Twice the usual gap after it, so it and the destination
+# don't read as one name.
+STOP_NAME_MOST = _FONT.getlength("Norfolk Square W")
+_STOP_GAP = 2 * _COL_GAP
 
 
 def where_width(width: int) -> int:
@@ -201,6 +210,17 @@ def _add_strip(layout: SignLayout, row: Row, where_x: float, y: int, width: int,
     layout.strips.append(StripMark(where_x + words_w + _COL_GAP, y, row.strip, train, inverted))
 
 
+def _stop_column(section: Section, width: int, live: bool) -> int | None:
+    """How wide the bus rows' stop names are drawn, or None where they show
+    their labels: e-paper, a board too narrow, no names known. From all your
+    stops' names, not the rows shown, so the destinations stay put; a row
+    whose stop has no name shows its label there."""
+    if not live or width < STOP_NAME_MIN_WIDTH or not section.stop_names:
+        return None
+    labels = [r.stop for r in section.rows if r.stop and not r.stop_name]
+    return min(STOP_NAME_MOST, max(map(_w, [*section.stop_names, *labels])))
+
+
 def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _Columns,
             where_x: float | None) -> int:
     time_x = MARGIN + _w(_ORDINALS[-1]) + _COL_GAP
@@ -248,9 +268,13 @@ def _buses(layout: SignLayout, section: Section, y: int, bottom: int, width: int
     if not any(r.strip for r in rows):
         where_x = None
     stop_x = MARGIN + _w("000") + _COL_GAP - 1
-    stops = [r.stop for r in rows if r.stop]
-    # Room for the widest stop label, and at least a "W" so one-letter stops line up.
-    dest_x = stop_x + (max(map(_w, [*stops, "W"])) + _COL_GAP - 1 if stops else 0)
+    names_w = _stop_column(section, width, layout.live)
+    if names_w is not None:
+        dest_x = stop_x + names_w + _STOP_GAP
+    else:
+        stops = [r.stop for r in rows if r.stop]
+        # Room for the widest stop label, and at least a "W" so one-letter stops line up.
+        dest_x = stop_x + (max(map(_w, [*stops, "W"])) + _COL_GAP - 1 if stops else 0)
     for row in rows:
         if y + GLYPH_H > bottom:
             break
@@ -261,7 +285,10 @@ def _buses(layout: SignLayout, section: Section, y: int, bottom: int, width: int
         else:
             dest_end = (status_x if columns.leave_x is None else columns.leave_x) - _COL_GAP
         layout.fit(MARGIN, y, row.left, stop_x - MARGIN - 2, inverted)
-        if row.stop:
+        if names_w is not None:
+            if row.stop_name or row.stop:
+                layout.fit(stop_x, y, row.stop_name or row.stop or "", names_w, inverted)
+        elif row.stop:
             layout.add(stop_x, y, row.stop, inverted)
         layout.fit(dest_x, y, row.middle, dest_end - dest_x, inverted)
         if where_x is not None:

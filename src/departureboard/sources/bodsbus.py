@@ -220,6 +220,18 @@ class BodsBusSource:
                 found[strip_key(live.departure)] = strip
         return found
 
+    def stop_names(self) -> dict[str, str]:
+        """Your stops' names by label, from the timetable, as NaPTAN gives
+        them: for a wide screen to call each row's stop by (the board cleans
+        them, and tells apart stops that share one). A stop the timetable has
+        no position for has none, and there are none while it can't be used:
+        those rows show their labels, as they do from TransportAPI."""
+        schedule = self._schedule()
+        if schedule is None or unusable(schedule, self._stops, self._clock().replace(tzinfo=None)) is not None:
+            return {}
+        positions = schedule.positions
+        return {label: positions[atco].name for label, atco in schedule.stops.items() if atco in positions}
+
     def fetch_live(self, rows: int | None = None) -> BusBoard:
         """The next `rows` buses (the board's number if not given) with their
         journeys and live buses, from the timetable only: there is no fallback,

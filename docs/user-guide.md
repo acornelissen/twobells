@@ -129,6 +129,8 @@ The screen can redraw every second, so it shows a bit more:
 
 The bar screen shows the same as the 7.9" screen with text a third bigger, and one line for each train or bus: `Leave in 3 min` sits on its train's line, between the platform and the status, rather than on a line of its own under it. That makes room for 3 trains, 3 buses and the clock.
 
+Each bus line also names its stop where other boards show its label: `341 Henry Street A Hyde` rather than `341 A Hyde` (in the plain look, rather than `A: Hyde`). The name comes from the bus timetable. It shows alone when none of your other stops has the same name, and with the label when two or more do, as Glossop's two Henry Street stops do. The names line up in a column as wide as the longest of your stops' names, up to about 16 letters; a longer name scrolls. While the board doesn't know a stop's name (buses from TransportAPI, or before the timetable is built), that line shows the label, as before. The 7.9" screen keeps the label: a name there would leave too little room for the destination.
+
 ![Departures on the 11.3 inch bar screen](images/screen-bar.png)
 
 #### Where the next bus is

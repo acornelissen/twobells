@@ -1389,3 +1389,46 @@ def test_a_tick_that_ran_long_still_ends_on_its_second():
     run_loop(board, state, screen, lambda: THU_0700, 1, ticks=1, sleep=wall.sleep,
              frame_seconds=SCROLL_FRAME_S, wall=wall)
     assert wall.at == 1001.0
+
+
+# A wide screen names each bus row's stop, from the bus source's timetable.
+
+
+class NamedBusSource(FakeSource):
+    def __init__(self, names):
+        super().__init__("bus", [
+            Departure("bus", "341", "Hyde", "07:20", None, Status.ON_TIME, stop="A"),
+            Departure("bus", "61", "Buxton", "07:35", None, Status.ON_TIME, stop="B"),
+            Departure("bus", "237", "Ashton", "07:41", None, Status.ON_TIME, stop="C"),
+        ])
+        self.names = names
+
+    def stop_names(self):
+        if isinstance(self.names, Exception):
+            raise self.names
+        return self.names
+
+
+def named_board(names):
+    return make_board(FakeSource("train", [train()]), NamedBusSource(names))
+
+
+def test_a_screen_s_bus_rows_carry_their_stops_names_told_apart_when_they_share_one():
+    board = named_board({"A": "Henry Street", "B": "Henry Street"})
+    view = run_once(board, {}, FakeScreen(), THU_0700).view
+    assert [(r.stop, r.stop_name) for r in view.buses.rows] == [
+        ("A", "Henry Street A"), ("B", "Henry Street B"), ("C", None),
+    ]
+    assert view.buses.stop_names == ("Henry Street A", "Henry Street B")
+
+
+def test_e_paper_never_asks_for_stop_names():
+    board = named_board(AssertionError("asked"))
+    view = run_once(board, {}, FakeDisplay(), THU_0700).view
+    assert all(r.stop_name is None for r in view.buses.rows) and view.buses.stop_names == ()
+
+
+def test_a_fault_reading_stop_names_leaves_the_labels():
+    view = run_once(named_board(OSError("timetable unreadable")), {}, FakeScreen(), THU_0700).view
+    assert [r.stop for r in view.buses.rows] == ["A", "B", "C"]
+    assert all(r.stop_name is None for r in view.buses.rows)

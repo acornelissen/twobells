@@ -144,6 +144,10 @@ def test_fake_buses_say_where_each_tracked_bus_is():
     assert (next_bus.where, next_bus.at, next_bus.yours) == ("1 stop away", 4.0, 5)
 
 
+def test_fake_buses_name_both_stops_henry_street_as_glossop_s_are():
+    assert FakeBusSource(SimClock(START)).stop_names() == {"A": "Henry Street", "B": "Henry Street"}
+
+
 def test_fake_bus_positions_fail_with_the_bus_feed():
     source = FakeBusSource(SimClock(START), failing_when=lambda now: True)
     with pytest.raises(OSError):

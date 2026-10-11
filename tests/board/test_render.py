@@ -1109,3 +1109,101 @@ def test_on_a_screen_a_reversed_out_row_scrolls_on_its_own_paper():
     normal, _, cancelled = (s for s in frame.scrolls if s.text == LONG)
     assert normal.strip.getpixel((0, 0)) == PALETTE.white
     assert cancelled.strip.getpixel((0, 0)) == PALETTE.black
+
+
+# A screen wide enough names each bus row's stop where e-paper shows "A: Hyde".
+
+from departureboard.board.panel import STOP_NAME_MIN_WIDTH  # noqa: E402
+from departureboard.board.render import stop_column  # noqa: E402
+
+GLOSSOP_STOPS = ("Henry Street A", "Henry Street B")  # both of Glossop's stops are on Henry Street
+NAMED_BUSES = (
+    dataclasses.replace(STRIP_BUSES[0], stop_name="Henry Street A"),
+    dataclasses.replace(STRIP_BUSES[1], stop_name="Henry Street B"),
+    dataclasses.replace(STRIP_BUSES[2], stop_name="Henry Street A"),
+)
+
+
+def named_on_screen(buses=NAMED_BUSES, stop_names=GLOSSOP_STOPS, clock=CLOCK):
+    view = on_screen(buses=buses, clock=clock)
+    return dataclasses.replace(view, buses=dataclasses.replace(view.buses, stop_names=stop_names))
+
+
+def named_layouts(panel, buses=NAMED_BUSES, stop_names=GLOSSOP_STOPS):
+    """Each bus row's layout, as the painter places it, and the stop column's width."""
+    s = plain_scale(panel)
+    fonts = load_fonts(s)
+    where_x = where_column([STRIP_TRAINS, buses], fonts, panel.width, s, live=True)
+    leave_x = leave_column(buses, fonts, panel.width, s)
+    room = stop_column(buses, stop_names, fonts, panel.width, s, live=True)
+    layouts = [(row, row_layout(row, fonts, panel.width, s, None, leave_x, where_x, room)) for row in buses]
+    return layouts, room, where_x, fonts, s
+
+
+def test_only_the_bar_screen_is_wide_enough_for_stop_names_in_the_plain_look():
+    bar, small = HDMI_1920X440, HDMI_1280X400
+    assert bar.width / plain_scale(bar) >= STOP_NAME_MIN_WIDTH > small.width / plain_scale(small)
+    fonts = load_fonts(3)
+    assert stop_column(NAMED_BUSES, GLOSSOP_STOPS, fonts, small.width, 3, live=True) is None
+    assert stop_column(NAMED_BUSES, GLOSSOP_STOPS, fonts, bar.width, 3, live=False) is None  # e-paper never
+    assert stop_column(STRIP_BUSES, (), fonts, bar.width, 3, live=True) is None  # no names known
+
+
+def test_the_bar_screen_names_each_bus_row_s_stop_in_a_column_before_the_destination():
+    layouts, room, where_x, fonts, s = named_layouts(HDMI_1920X440)
+    assert room == drawn_length(fonts.regular, "Henry Street A")
+    assert [(lay.stop, lay.middle) for _, lay in layouts] == [
+        ("Henry Street A", "Hyde"), ("Henry Street B", "Buxton"), ("Henry Street A", "Ashton"),
+    ]
+    assert len({lay.stop_x for _, lay in layouts}) == 1 and len({lay.middle_x for _, lay in layouts}) == 1
+    first = layouts[0][1]
+    assert first.stop_x == 3 * s + left_column_width(fonts, s)  # where the destination starts without names
+    # Twice the usual gap after the name, so it and the destination don't read as one.
+    assert first.middle_x == first.stop_x + room + 12 * s
+    assert first.middle_x + first.middle_room + 12 * s <= where_x
+
+
+def test_the_plain_stop_column_is_as_wide_whatever_buses_are_shown():
+    fonts = load_fonts(3)
+    names = ("Henry Street", "Norfolk Square")
+    only_a = tuple(dataclasses.replace(r, stop_name="Henry Street") for r in STRIP_BUSES)
+    room = stop_column(only_a, names, fonts, HDMI_1920X440.width, 3, live=True)
+    assert room == drawn_length(fonts.regular, "Norfolk Square")
+
+
+def test_a_long_stop_name_scrolls_in_a_plain_column_about_sixteen_letters_wide():
+    long = "Glossop Norfolk Street Bus Station Stand 3"
+    buses = (dataclasses.replace(NAMED_BUSES[0], stop_name=long), *NAMED_BUSES[1:])
+    layouts, room, _, fonts, s = named_layouts(HDMI_1920X440, buses, (long, "Henry Street B"))
+    assert drawn_length(fonts.regular, "Henry Street B") < room <= drawn_length(fonts.regular, "Norfolk Square W")
+    assert layouts[0][1].stop.endswith("…") and layouts[1][1].stop == "Henry Street B"
+    frame = board_frame(named_on_screen(buses, (long, "Henry Street B")), PALETTE, HDMI_1920X440)
+    [scroll] = [sc for sc in frame.scrolls if sc.text == long]
+    assert scroll.box[0] == int(layouts[0][1].stop_x) and scroll.width == int(room)
+
+
+def test_a_stop_whose_name_isn_t_known_shows_its_label_in_the_plain_column():
+    buses = (NAMED_BUSES[0], dataclasses.replace(NAMED_BUSES[1], stop_name=None), NAMED_BUSES[2])
+    layouts, _, _, _, _ = named_layouts(HDMI_1920X440, buses, ("Henry Street A",))
+    assert [(lay.stop, lay.middle) for _, lay in layouts][1] == ("B", "Buxton")
+    assert len({lay.middle_x for _, lay in layouts}) == 1
+
+
+def test_the_plain_bar_screen_draws_the_names():
+    labels = render(on_screen(), PALETTE, HDMI_1920X440)
+    assert render(named_on_screen(), PALETTE, HDMI_1920X440).tobytes() != labels.tobytes()
+    frame = board_frame(named_on_screen(), PALETTE, HDMI_1920X440)
+    assert not {sc.text for sc in frame.scrolls} & {"Henry Street A", "Henry Street B", "Hyde"}
+
+
+def test_stop_names_leave_the_plain_train_rows_whole():
+    layouts, where_x, fonts, s = strip_layouts(HDMI_1920X440, buses=NAMED_BUSES)
+    trains = [lay for row, lay in layouts if row in STRIP_TRAINS]
+    assert [lay.middle for lay in trains] == ["Manchester Piccadilly"] * 3
+
+
+@pytest.mark.parametrize("panel", [PHAT, WAVESHARE_10IN85G, HDMI_1280X400], ids=lambda p: p.name)
+def test_e_paper_and_the_7_9_inch_screen_keep_the_label_in_the_plain_look(panel):
+    clock = CLOCK if panel is HDMI_1280X400 else None
+    labels = render(on_screen(clock=clock), PALETTE, panel)
+    assert render(named_on_screen(clock=clock), PALETTE, panel).tobytes() == labels.tobytes()

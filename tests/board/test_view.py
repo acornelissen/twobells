@@ -359,3 +359,61 @@ def test_where_a_train_is_changes_the_view():
     before = build_view("Glossop", [train], [], "07:03", set(), strips={strip_key(train): Strip("At Hadfield", 3, 2)})
     after = build_view("Glossop", [train], [], "07:03", set(), strips={strip_key(train): Strip("At Dinting", 3, 2)})
     assert before.signature() != after.signature()
+
+
+# Wide screens name each bus row's stop: the rule for what they call it.
+
+from departureboard.board.view import STOP_NAME_LIMIT, stop_names_shown  # noqa: E402
+
+
+def test_a_stop_whose_name_no_other_of_your_stops_shares_is_called_by_its_name():
+    assert stop_names_shown({"A": "Henry Street", "B": "Howard Arms"}) == {"A": "Henry Street", "B": "Howard Arms"}
+
+
+def test_stops_sharing_a_name_are_told_apart_by_their_labels():
+    names = {"A": "Henry Street", "B": "Henry Street", "C": "Howard Arms"}
+    assert stop_names_shown(names) == {"A": "Henry Street A", "B": "Henry Street B", "C": "Howard Arms"}
+
+
+def test_names_differing_only_in_case_or_spacing_are_the_same_name():
+    assert stop_names_shown({"A": "Henry Street", "B": " henry  STREET "}) == {
+        "A": "Henry Street A", "B": "henry STREET B",
+    }
+
+
+def test_a_stop_without_a_name_is_left_out_and_shares_none():
+    # Its rows show the label, as today; and with one name left, that name alone says which.
+    names = {"A": "Henry Street", "B": None, "C": "", "D": "\x00\x07", "E": 5}
+    assert stop_names_shown(names) == {"A": "Henry Street"}
+
+
+def test_a_stop_name_is_feed_data_kept_to_one_short_printable_line():
+    shown = stop_names_shown({"A": "Henry\x1b Street\n\tWest", "B": "x" * 500})
+    assert shown["A"] == "Henry Street West"
+    assert len(shown["B"]) == STOP_NAME_LIMIT
+
+
+def test_no_names_none_shown():
+    assert stop_names_shown({}) == {}
+
+
+def test_bus_rows_carry_their_stop_s_name_beside_its_label():
+    v = view(trains=[train()], buses=[bus(stop="A"), bus("61", stop="B"), bus("237", stop="C"), bus("6")],
+             stop_names={"A": "Henry Street A", "B": "Henry Street B"})
+    assert [(r.stop, r.stop_name) for r in v.buses.rows] == [
+        ("A", "Henry Street A"), ("B", "Henry Street B"), ("C", None), (None, None),
+    ]
+    assert v.trains.rows[0].stop_name is None
+
+
+def test_the_bus_section_has_every_stop_s_name_not_only_the_shown_rows():
+    # So the column a screen draws them in is as wide whatever buses are shown.
+    v = view(buses=[bus(stop="A")], stop_names={"A": "Henry Street", "B": "Norfolk Square"})
+    assert v.buses.stop_names == ("Henry Street", "Norfolk Square")
+    assert v.trains.stop_names == ()
+    assert view(buses=[bus(stop="A")]).buses.stop_names == ()
+
+
+def test_stop_names_change_the_view():
+    named = view(buses=[bus(stop="A")], stop_names={"A": "Henry Street"})
+    assert view(buses=[bus(stop="A")]).signature() != named.signature()

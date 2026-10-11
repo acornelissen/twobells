@@ -16,7 +16,14 @@ from PIL import Image, ImageDraw, ImageFont
 
 from ..core import words
 from ..core.model import Strip
-from .panel import NOTES_SIDE_BY_SIDE_MIN_WIDTH, PHAT, PLATFORM_COLUMN_MIN_WIDTH, STRIP_COLUMN_MIN_WIDTH, Panel
+from .panel import (
+    NOTES_SIDE_BY_SIDE_MIN_WIDTH,
+    PHAT,
+    PLATFORM_COLUMN_MIN_WIDTH,
+    STOP_NAME_MIN_WIDTH,
+    STRIP_COLUMN_MIN_WIDTH,
+    Panel,
+)
 from .route import RouteView
 from .scroll import Frame, Scroll, frame_of
 from .view import BoardView, CodeView, Row, Section, SetupView, Style
@@ -115,6 +122,12 @@ class RowLayout:
     left_room: float = 0
     middle_room: float = 0
     where_room: float = 0
+    # On a screen wide enough, the stop's name (or its label, if the name
+    # isn't known) as drawn, in a column of its own before the destination,
+    # which is then the destination alone; None on other boards.
+    stop: str | None = None
+    stop_x: float | None = None
+    stop_room: float = 0
 
 
 _COL_GAP = 6
@@ -125,6 +138,12 @@ STRIP_WIDTH = 48
 
 def _with_stop(row: Row) -> str:
     return f"{row.stop}: {row.middle}" if row.stop else row.middle
+
+
+def middle_text(row: Row, layout: RowLayout) -> str:
+    """The row's middle text in full: the destination, after its stop's
+    label ("A: Hyde") unless the stop has a column of its own."""
+    return row.middle if layout.stop_x is not None else _with_stop(row)
 
 
 def _leave_text(row: Row) -> str | None:
@@ -144,15 +163,26 @@ def row_layout(
     platform_x: float | None = None,
     leave_x: float | None = None,
     where_x: float | None = None,
+    stop_room: float | None = None,
 ) -> RowLayout:
     """Column positions for a row. The destination gives way so times stay whole.
     `platform_x` and `leave_x` are where a section's platform and leave
     columns start, if it has them; without `leave_x` a leave time sits just
     left of the row's own status. `where_x` is where the where words start,
-    with the little line after them, on a board with that column."""
+    with the little line after them, on a board with that column.
+    `stop_room` is how wide a bus row's stop names are, on a board that
+    names them (stop_column)."""
     pad, gap = _PAD * scale, _COL_GAP * scale
     right_x = width - pad - drawn_length(fonts.bold, row.right)
     middle_x = pad + left_column_width(fonts, scale)
+    left_room = middle_x - pad - 3 * scale
+    stop = stop_x = None
+    if stop_room is not None:
+        stop_x, whole_stop = middle_x, row.stop_name or row.stop
+        if whole_stop:
+            stop = fit_text(whole_stop, fonts.regular, stop_room, partial(drawn_length, fonts.regular))
+        # Twice the gap, so the stop and the destination don't read as one name.
+        middle_x = stop_x + stop_room + 2 * gap
     leave = _leave_text(row)
     middle_end = right_x - 4 * scale
     if leave:
@@ -172,12 +202,12 @@ def row_layout(
             words_w = where_width(fonts, width, scale)
             where = fit_text(row.strip.where, fonts.small, words_w, partial(drawn_length, fonts.small))
             strip_x = where_x + words_w + gap
-    left_room = middle_x - pad - 3 * scale
+    middle = row.middle if stop_x is not None else _with_stop(row)
     return RowLayout(
         # Measured as drawn, like the right-aligned text, so a cut destination
         # doesn't run into the status.
         left=fit_text(row.left, fonts.bold, left_room, partial(drawn_length, fonts.bold)),
-        middle=fit_text(_with_stop(row), fonts.regular, middle_end - middle_x, partial(drawn_length, fonts.regular)),
+        middle=fit_text(middle, fonts.regular, middle_end - middle_x, partial(drawn_length, fonts.regular)),
         middle_x=middle_x,
         leave_x=leave_x,
         right_x=right_x,
@@ -189,6 +219,9 @@ def row_layout(
         left_room=left_room,
         middle_room=middle_end - middle_x,
         where_room=words_w,
+        stop=stop,
+        stop_x=stop_x,
+        stop_room=stop_room or 0,
     )
 
 
@@ -211,6 +244,25 @@ def leave_column(rows, fonts: Fonts, width: int, scale: int) -> float | None:
     right_w = max(drawn_length(fonts.bold, r.right) for r in rows)
     leave_w = max(drawn_length(fonts.small, text) for text in leaves)
     return width - _PAD * scale - right_w - _COL_GAP * scale - leave_w
+
+
+# On a screen wide enough, a bus row's stop by its name, in a column as wide
+# as the longest of your stops' names, at most about sixteen letters; a
+# longer name scrolls in it.
+_STOP_NAME_MOST = "Norfolk Square W"
+
+
+def stop_column(rows, stop_names, fonts: Fonts, width: int, scale: int, live: bool) -> float | None:
+    """How wide a section's stop names are drawn, in panel pixels, or None
+    where its rows show their labels ("A: Hyde"): e-paper (not `live`), a
+    board too narrow, no names known. From all your stops' names
+    (`stop_names`), not the rows shown, so the destinations stay put; a row
+    whose stop has no name shows its label in the column."""
+    if not live or width / scale < STOP_NAME_MIN_WIDTH or not stop_names:
+        return None
+    labels = [r.stop for r in rows if r.stop and not r.stop_name]
+    widest = max(drawn_length(fonts.regular, text) for text in [*stop_names, *labels])
+    return min(drawn_length(fonts.regular, _STOP_NAME_MOST), widest)
 
 
 def where_width(fonts: Fonts, width: int, scale: int) -> float:
@@ -480,13 +532,14 @@ class _Painter:
         platform_x = platform_column(rows, self.f, self.width, s)
         if not any(r.strip for r in rows):
             where_x = None  # no room kept for strips that none of them has
+        stop_room = stop_column(rows, section.stop_names, self.f, self.width, s, self.live)
         for row in rows:
-            self.row(row, y, platform_x, leave_x, where_x, train=section.label == "Trains")
+            self.row(row, y, platform_x, leave_x, where_x, train=section.label == "Trains", stop_room=stop_room)
             y += self.row_h * s
         return y
 
     def row(self, row: Row, y: int, platform_x: float | None = None, leave_x: float | None = None,
-            where_x: float | None = None, train: bool = True) -> None:
+            where_x: float | None = None, train: bool = True, stop_room: float | None = None) -> None:
         s = self.s
         ink, status_ink, paper, yours_fill = self.p.black, self.p.black, self.p.white, self.p.accent
         if row.style is Style.INVERTED:
@@ -496,11 +549,14 @@ class _Painter:
         elif row.style is Style.ALERT:
             status_ink = self.p.accent
 
-        layout = row_layout(row, self.f, self.width, s, platform_x, leave_x, where_x)
+        layout = row_layout(row, self.f, self.width, s, platform_x, leave_x, where_x, stop_room)
         band = (y, y + self.row_h * s)
         self.field((_PAD * s, y + s), layout.left, row.left, self.f.bold, layout.left_room, ink, paper, band)
-        self.field((layout.middle_x, y + s), layout.middle, _with_stop(row), self.f.regular, layout.middle_room,
-                   ink, paper, band)
+        if layout.stop_x is not None and layout.stop:
+            self.field((layout.stop_x, y + s), layout.stop, row.stop_name or row.stop or "", self.f.regular,
+                       layout.stop_room, ink, paper, band)
+        self.field((layout.middle_x, y + s), layout.middle, middle_text(row, layout), self.f.regular,
+                   layout.middle_room, ink, paper, band)
         # row_layout only places a platform or leave time the row has.
         if layout.platform_x is not None and row.platform:
             self.draw.text((layout.platform_x, y + s), row.platform, font=self.f.regular, fill=ink)

@@ -345,3 +345,26 @@ def test_live_strips_raise_without_a_usable_timetable(tmp_path):
         bus.live_strips()
     bus.fetch()  # from TransportAPI, which knows nothing of where buses are
     assert bus.live_strips(reuse=True) == {}
+
+
+HENRY_B = "1000DGHS0901"
+
+
+def test_stop_names_come_from_the_timetable_by_label(tmp_path):
+    stops = {"A": HENRY_A, "B": HENRY_B}
+    positions = {**POSITIONS, HENRY_B: StopPosition("Henry Street", 53.4437, -1.9489)}
+    timetable.save(tmp_path, schedule(stops=stops, positions=positions))
+    assert source(tmp_path, at(10, 0), stops=stops).stop_names() == {"A": "Henry Street", "B": "Henry Street"}
+
+
+def test_a_stop_missing_from_the_timetable_s_positions_has_no_name(tmp_path):
+    stops = {"A": HENRY_A, "B": HENRY_B}
+    timetable.save(tmp_path, schedule(stops=stops))
+    assert source(tmp_path, at(10, 0), stops=stops).stop_names() == {"A": "Henry Street"}
+
+
+def test_no_stop_names_without_a_usable_timetable(tmp_path):
+    # Nor while TransportAPI stands in: its rows show the labels.
+    assert source(tmp_path, at(10, 0), fallback=Fallback()).stop_names() == {}
+    timetable.save(tmp_path, schedule(stops={"A": HOWARD}))  # a timetable for other stops
+    assert source(tmp_path, at(10, 0)).stop_names() == {}
