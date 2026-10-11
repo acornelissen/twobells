@@ -182,15 +182,6 @@ def urlopen(request: Request, timeout: float):
     return _opener.open(request, timeout=timeout)
 
 
-def get_json(url: str, headers: dict | None = None, timeout: float = 15.0) -> dict:
-    request = Request(  # noqa: S310 - _opener opens only http and https
-        url,
-        headers={"Accept": "application/json", "User-Agent": USER_AGENT, **(headers or {})},
-    )
-    with urlopen(request, timeout=timeout) as response:
-        return json.load(response)
-
-
 class TooLarge(ValueError):
     """The response was bigger than the caller allowed."""
 
@@ -209,9 +200,11 @@ DOWNLOAD_DEADLINE = 30 * 60.0
 
 def get_json_capped(url: str, headers: dict | None, max_bytes: int, timeout: float = 15.0,
                     deadline: float | None = DEADLINE):
-    """Like get_json, but the body is refused if it is larger than `max_bytes`,
-    and a body that isn't UTF-8 JSON (or nests too deeply to read) gives one
-    plain ValueError (NotJSON; TooLarge for the size). The error text never
+    """JSON from `url`, asked for with the caller's `headers` added to (or
+    replacing) the defaults. The body is refused if it is larger than
+    `max_bytes`, and a body that isn't UTF-8 JSON (or nests too deeply to
+    read) gives one plain ValueError (NotJSON; TooLarge for the size). The
+    error text never
     repeats the URL or the headers. `timeout` is for each step; the whole
     request is given up after `deadline` seconds (None: no limit), however
     slowly the server sends."""

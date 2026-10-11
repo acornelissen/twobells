@@ -34,7 +34,7 @@ def capture(monkeypatch):
 def test_sends_a_named_user_agent(monkeypatch):
     # The Rail Data Marketplace gateway returns 403 to urllib's default agent.
     seen = capture(monkeypatch)
-    net.get_json("https://example.test/x")
+    net.get_json_capped("https://example.test/x", None, 100)
     agent = seen["request"].get_header("User-agent")
     assert agent and agent.startswith("inky-departures/")
     assert "Python-urllib" not in agent
@@ -42,7 +42,7 @@ def test_sends_a_named_user_agent(monkeypatch):
 
 def test_keeps_caller_headers_and_asks_for_json(monkeypatch):
     seen = capture(monkeypatch)
-    assert net.get_json("https://example.test/x", {"x-apikey": "k"}) == {"ok": True}
+    assert net.get_json_capped("https://example.test/x", {"x-apikey": "k"}, 100) == {"ok": True}
     request = seen["request"]
     assert request.get_header("X-apikey") == "k"
     assert request.get_header("Accept") == "application/json"
@@ -84,7 +84,7 @@ def redirecting():
 
 def test_redirect_to_another_host_drops_the_api_key(redirecting):
     base, seen = redirecting
-    assert net.get_json(base + "/elsewhere", {"x-apikey": "secret"}) == {"ok": True}
+    assert net.get_json_capped(base + "/elsewhere", {"x-apikey": "secret"}, 100) == {"ok": True}
     sent = {name.lower(): value for name, value in seen[0].items()}
     assert "x-apikey" not in sent
     assert sent["user-agent"].startswith("inky-departures/")
@@ -92,7 +92,7 @@ def test_redirect_to_another_host_drops_the_api_key(redirecting):
 
 def test_redirect_on_the_same_host_keeps_headers(redirecting):
     base, seen = redirecting
-    assert net.get_json(base + "/same", {"x-apikey": "secret"}) == {"ok": True}
+    assert net.get_json_capped(base + "/same", {"x-apikey": "secret"}, 100) == {"ok": True}
     assert {name.lower(): value for name, value in seen[0].items()}["x-apikey"] == "secret"
 
 
