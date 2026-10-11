@@ -972,7 +972,7 @@ table.history thead th { border-top: 0; color: var(--muted); }
    Trains are markers on the rail (drawing only) and listed under it in words;
    the stations' own train lists and the between items are for the line
    down the page. */
-@container area (min-width: 40rem) {
+@container area (min-width: 48rem) {
   .line-track {
     --label-room: calc(var(--longest, 0) * 0.34rem + 1rem);
     --rail-y: calc(var(--label-room) + 0.875rem);
