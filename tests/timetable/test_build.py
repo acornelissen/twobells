@@ -33,6 +33,7 @@ from departureboard.timetable.build import (
     save,
 )
 from departureboard.timetable.model import Calendar, Call, Schedule, StopPosition, metres
+from departureboard.timetable.routesetup import DocumentLimits
 from tests.paths import FIXTURES
 from tests.sources.test_livebus import (
     ARUNDEL,
@@ -742,22 +743,38 @@ def test_documents_are_unpacked_one_at_a_time(tmp_path):
 
     blob = _zip({"a.xml": b"<a/>", "b.xml": b"<b/>"})
     documents = _documents([("X", "https://x/1")], lambda url, file: file.write(blob), tmp_path)
-    assert next(documents) == ("X", b"<a/>")
-    assert next(documents) == ("X", b"<b/>")
+    assert next(documents) == ("X", "a.xml", b"<a/>")
+    assert next(documents) == ("X", "b.xml", b"<b/>")
 
 
-def test_a_document_too_big_to_read_in_memory_is_refused(monkeypatch):
-    monkeypatch.setattr(timetable, "MAX_PARSED_BYTES", len(TXC_61) - 1)
-    with pytest.raises(TimetableError, match="larger than"):
-        FakeBods().build()
+def test_a_document_for_your_stops_too_big_to_parse_is_skipped_and_the_rest_built(caplog):
+    # The 61's document is the smallest.
+    limit = len(TXC_341) - 1
+    assert len(TXC_61) <= limit < len(TXC_237)
+    schedule = FakeBods().build(limits=DocumentLimits(parse=limit))
+    assert {j.line for j in schedule.journeys} == {"61"}
+    assert f"Skipped 341.xml: {len(TXC_341):,} bytes, more than the {limit:,} bytes this install can read" in caplog.text
 
 
-def test_a_big_document_that_never_mentions_your_stops_is_skipped_unread(monkeypatch):
+def test_a_document_too_big_to_read_is_skipped_and_the_rest_built(caplog):
+    bods = FakeBods()
+    big = TXC_237 + b" " * len(TXC_341)
+    bods.blobs[BNML_LINK] = _zip({"341.xml": TXC_341, "big.xml": big})
+    schedule = bods.build(limits=DocumentLimits(read=len(TXC_341)))
+    assert {j.line for j in schedule.journeys} == {"341", "61"}
+    assert f"Skipped big.xml: {len(big):,} bytes" in caplog.text
+
+
+def test_a_build_with_every_document_for_your_stops_skipped_fails():
+    with pytest.raises(TimetableError, match="No timetabled journeys"):
+        FakeBods().build(limits=DocumentLimits(parse=100))
+
+
+def test_a_big_document_that_never_mentions_your_stops_is_skipped_unread():
     biggest = max(len(TXC_341), len(TXC_237), len(TXC_61))
-    monkeypatch.setattr(timetable, "MAX_PARSED_BYTES", biggest)
     bods = FakeBods()
     bods.blobs[BNML_LINK] = _zip({"341.xml": TXC_341, "big.xml": ELSEWHERE + b" " * biggest})
-    assert {j.line for j in bods.build().journeys} == {"341", "61"}
+    assert {j.line for j in bods.build(limits=DocumentLimits(parse=biggest)).journeys} == {"341", "61"}
 
 
 def test_no_journeys_at_your_stops_is_an_error():
@@ -867,7 +884,15 @@ def test_refresh_builds_when_there_is_none(tmp_path):
     build = FakeBuild()
     schedule = refresh(tmp_path, STOPS, ["BNML"], NOW, "k", lines=["341"], build=build)
     assert schedule == load(tmp_path)
-    assert build.calls == [(STOPS, ["BNML"], "k", NOW, {"lines": ["341"], "scratch": tmp_path})]
+    assert build.calls == [(STOPS, ["BNML"], "k", NOW,
+                            {"lines": ["341"], "scratch": tmp_path, "limits": DocumentLimits()})]
+
+
+def test_refresh_builds_within_the_limits_it_is_given(tmp_path):
+    build = FakeBuild()
+    limits = DocumentLimits(read=100, parse=25)
+    refresh(tmp_path, STOPS, ["BNML"], NOW, "k", build=build, limits=limits)
+    assert build.calls[0][4]["limits"] == limits
 
 
 def test_refresh_keeps_a_fresh_schedule_without_building(tmp_path):
@@ -1585,7 +1610,8 @@ def test_build_refreshes_holding_the_lock_and_lets_go(tmp_path):
     fake = FakeBuild()
     schedule = build(tmp_path, STOPS, ["BNML"], NOW, "k", lines=["341"], build=fake)
     assert schedule == load(tmp_path)
-    assert fake.calls == [(STOPS, ["BNML"], "k", NOW, {"lines": ["341"], "scratch": tmp_path})]
+    assert fake.calls == [(STOPS, ["BNML"], "k", NOW,
+                           {"lines": ["341"], "scratch": tmp_path, "limits": DocumentLimits()})]
     build(tmp_path, STOPS, ["BNML"], NOW, "k", force=True, build=fake)  # let go: free for the next
     assert len(fake.calls) == 2
 

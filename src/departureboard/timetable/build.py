@@ -22,8 +22,9 @@ Built about once a week by a timer, the command line or the dashboard's
 upkeep, and by the setup search, never from the minutely board run: an
 operator's timetables can run to hundreds of megabytes. Each download waits
 on disk and its documents are parsed one at a time, so a Pi Zero holds one
-document in memory, never the lot, and refuses one too big to parse in its
-memory (MAX_PARSED_BYTES).
+document in memory, never the lot. One too big for the install to read or
+parse (routesetup.DocumentLimits, smaller on a Pi) is skipped with a warning
+naming it, and the rest are read.
 
 One build at a time. Every build goes through build(), which holds a lock
 file in the store (LOCK_NAME) while it runs, let go by the system if the
@@ -95,9 +96,11 @@ from urllib.parse import urlsplit
 
 from ..core import files, net, safexml
 from ..core.errors import safe_message
+from ..sources.bods import redact_key
 from . import roads as roadshape
 from . import routesetup
 from .model import NEAR_M, Calendar, Call, DateRange, Journey, Schedule, StopPosition, metres
+from .routesetup import DEFAULT_LIMITS, DocumentLimits
 
 log = logging.getLogger(__name__)
 
@@ -126,14 +129,6 @@ MAX_JOURNEYS = 20_000  # far more than any town's stops see
 # before that, while they are all held at once (a Pi Zero builds this too).
 MAX_INBOUND_JOURNEYS = 10_000
 MAX_FILE_BYTES = 50_000_000
-# A document mentioning your stops is parsed whole, which takes about 8 times
-# its size: on a 32-bit Pi this must fit the timetable unit's MemoryMax=256M
-# beside Python and the journeys found so far. Those that don't mention your
-# stops are skipped unparsed, up to routesetup.MAX_XML_BYTES. Parsing it piece
-# by piece (safexml.iter_elements) would need two passes, as its journeys refer
-# to patterns and to each other, and it is held whole to look for your stops
-# anyway: a lower cap is the simpler fix.
-MAX_PARSED_BYTES = 25_000_000
 DOWNLOAD_TIMEOUT = 60.0  # seconds without data before a download is given up
 _TEXT_LIMIT = 80  # line names, destinations, codes
 _LATEST = 2 * 24 * 3600  # a journey still running two days after its service day is nonsense
@@ -571,11 +566,11 @@ def _read_document(
     """The journeys in a document calling at your stops, each with the version
     of the service it is in, and the document's stop positions. With `yours`
     (your stops' positions known so far), also its inbound-only journeys of
-    the lines calling there (see the module's notes). TimetableError for one
-    larger than MAX_PARSED_BYTES."""
-    if len(xml) > MAX_PARSED_BYTES:
-        raise TimetableError(f"A timetable file for your stops is larger than {MAX_PARSED_BYTES} bytes; refusing it "
-                             "(not enough memory to read it)")
+    the lines calling there (see the module's notes). It is parsed whole:
+    the caller keeps to routesetup.DocumentLimits.parse. Parsing it piece by
+    piece (safexml.iter_elements) would need two passes, as its journeys
+    refer to patterns and to each other, and it is held whole to look for
+    your stops anyway."""
     try:
         root = safexml.fromstring(xml)
     except safexml.DoctypeError:
@@ -678,16 +673,21 @@ def _dataset_links(operators: Iterable[str], api_key: str, lines, find_datasets:
     return [(noc, url) for url, noc in links.items()]
 
 
-def _documents(links: list[tuple[str, str]], fetch: Download, scratch) -> Generator[tuple[str, bytes], None, None]:
-    """(operator code, document) for every TransXChange document behind the
-    links. Each download waits in a temporary file, gone once its documents
-    have been used; each document is unpacked only when wanted."""
+def _documents(
+    links: list[tuple[str, str]], fetch: Download, scratch, max_bytes: int = routesetup.MAX_XML_BYTES,
+    skipped: Callable[[str], None] = routesetup.log_skipped,
+) -> Generator[tuple[str, str, bytes], None, None]:
+    """(operator code, name, document) for every TransXChange document behind
+    the links: one over `max_bytes` is skipped and told to `skipped`
+    (routesetup.named_documents). Each download waits in a temporary file,
+    gone once its documents have been used; each document is unpacked only
+    when wanted."""
     for noc, url in links:
         with tempfile.TemporaryFile(dir=scratch) as file:
             fetch(url, file)
             file.seek(0)
-            for document in routesetup.timetable_documents(file):
-                yield noc, document
+            for name, document in routesetup.named_documents(file, max_bytes, name=redact_key(url), skipped=skipped):
+                yield noc, name, document
 
 
 def _group(version: _Version, journey: Journey) -> tuple[str, str, str]:
@@ -827,6 +827,7 @@ def build_schedule(
     *,
     lines: Iterable[str] | None = None,
     scratch: Path | str | None = None,
+    limits: DocumentLimits = DEFAULT_LIMITS,
     find_datasets: FindDatasets = routesetup.dataset_urls,
     fetch: Download = download,
     naptan: Naptan = routesetup.naptan_stop_details,
@@ -835,7 +836,8 @@ def build_schedule(
     to ATCO codes), from the BODS timetables of `operators` (national operator
     codes), and the inbound-only journeys of their lines (see the module's
     notes). Downloads wait in `scratch` (the state folder: /tmp may be memory).
-    It has no roads yet: see add_roads.
+    A document bigger than `limits` allow (the install's) is skipped with a
+    warning naming it. It has no roads yet: see add_roads.
 
     BODS keeps an old version of a service beside the one replacing it, so
     each version ends the day before a later open-ended one starts, and is
@@ -859,9 +861,12 @@ def build_schedule(
     yours: dict[str, StopPosition] = {}
     left_out = 0
     links = _dataset_links(operators, api_key, lines, find_datasets)
-    for noc, document in _documents(links, fetch, scratch):
+    for noc, name, document in _documents(links, fetch, scratch, limits.read):
         # Skip, unparsed, the many documents of a big operator that never mention your stops.
         if not any(code in document for code in wanted):
+            continue
+        if len(document) > limits.parse:
+            log.warning("%s", routesetup.too_big(name, limits.parse, len(document)))
             continue
         found, positions = _read_document(document, atcos, noc, yours)
         yours.update((atco, positions[atco]) for atco in atcos if atco in positions)
@@ -1081,6 +1086,7 @@ def refresh(
     route: Route = roadshape.segment_shapes,
     saved: Callable[[Schedule], None] = lambda schedule: None,
     cancelled: Callable[[], bool] = lambda: False,
+    limits: DocumentLimits = DEFAULT_LIMITS,
 ) -> Schedule | None:
     """The schedule to use, from `folder` (the state folder). It is built
     again first if it is due (see due: weekly, or when the stops or operators
@@ -1089,7 +1095,8 @@ def refresh(
     every timetable again), unless `force`d or the stops, operators or key
     change. A build that fails once `cancelled()` says so was stopped, not
     failed, and isn't kept. With nothing due this only reads the saved file,
-    unless its roads are still to be found.
+    unless its roads are still to be found. It is built within `limits`,
+    the install's (see build_schedule).
 
     A new timetable is saved before its roads are asked for, marked
     roads_pending, and `saved(schedule)` is told; then it is saved again
@@ -1117,7 +1124,8 @@ def refresh(
         return current
     try:
         Path(folder).mkdir(parents=True, exist_ok=True)
-        fresh = replace(build(stops, operators, api_key, now, lines=lines, scratch=folder), roads_pending=True)
+        fresh = replace(build(stops, operators, api_key, now, lines=lines, scratch=folder, limits=limits),
+                        roads_pending=True)
         save(folder, fresh)
     except Exception as error:  # noqa: BLE001 - any failure keeps the last good schedule
         log.warning("Bus timetable not rebuilt (%s), keeping the saved one: %s", reason, safe_message(error))
@@ -1203,7 +1211,7 @@ def build(
     **options,
 ) -> Schedule | None:
     """The one way to build the timetable: refresh (with `options`: lines,
-    force, build, route, saved) while holding the store's lock, so two
+    force, build, route, saved, limits) while holding the store's lock, so two
     builds never run at once, in this process or another, and its roads are
     found under it too. Without `wait`, TimetableBusy if another build is
     running; with it, wait for that one (see _lock). `cancelled()` stops the

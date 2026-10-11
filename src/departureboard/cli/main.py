@@ -105,6 +105,8 @@ def _parser() -> argparse.ArgumentParser:
 
     tt = with_config(sub.add_parser("timetable", help="build the BODS bus timetable for your stops, if due"))
     tt.add_argument("--force", action="store_true", help="build it now, as after changing operators")
+    tt.add_argument("--install", choices=list(INSTALLS), default=DEFAULT_INSTALL,
+                    help="what this runs on: a Pi reads less of each timetable file, to fit its memory")
     tt.set_defaults(handler=timetable_command)
 
     # For install.sh and update.sh, so they ask the app rather than read config.toml. Hidden.

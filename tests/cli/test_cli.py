@@ -839,6 +839,20 @@ def test_timetable_builds_and_reports_the_bus_timetable(bods_env, monkeypatch, c
     assert (folder / "bank-holidays.json").exists()  # its holiday names come from here
 
 
+@pytest.mark.parametrize("install, limits", [
+    ([], (200_000_000, 200_000_000)),  # a desktop's, as the docs say to run it there
+    (["--install", "pi"], (100_000_000, 25_000_000)),  # the Pi's timer, to fit its unit's memory
+])
+def test_timetable_reads_as_much_of_each_file_as_its_install_allows(bods_env, monkeypatch, install, limits):
+    from departureboard.timetable import build as timetable
+
+    args, _ = bods_env
+    seen = []
+    monkeypatch.setattr(timetable, "refresh", lambda *a, **k: seen.append(k["limits"]))
+    main(["timetable", *args, *install])
+    assert [(given.read, given.parse) for given in seen] == [limits]
+
+
 def test_timetable_fails_when_no_timetable_could_be_built(bods_env, monkeypatch, capsys):
     from departureboard.timetable import build as timetable
 
@@ -2242,7 +2256,7 @@ def test_the_fetch_service_stopped_by_systemd_says_cancelled(tmp_path, monkeypat
 
     # The fetch service makes its Worker by the name it imported.
     monkeypatch.setattr("departureboard.fetch.service.Worker",
-                        lambda *a, **kw: Worker(*a, make_job=StuckJob, **kw))
+                        lambda *a, **kw: Worker(*a, **{**kw, "make_job": StuckJob}))
     run = tmp_path / "run"
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))
     config = installed_template(tmp_path)

@@ -128,14 +128,21 @@ def test_a_download_can_be_read_from_a_file(tmp_path):
         assert list(timetable_documents(file)) == [TXC]
 
 
-def test_an_oversized_plain_file_is_refused(tmp_path, monkeypatch):
-    from departureboard.timetable import routesetup
-
-    monkeypatch.setattr(routesetup, "MAX_XML_BYTES", 10)
+def test_an_oversized_plain_file_is_skipped_and_said(tmp_path):
     plain = tmp_path / "plain"
     plain.write_bytes(TXC)
-    with open(plain, "rb") as file, pytest.raises(RouteSetupError, match="refusing"):
-        list(timetable_documents(file))
+    said = []
+    with open(plain, "rb") as file:
+        assert list(timetable_documents(file, 10, name="https://x/1", skipped=said.append)) == []
+    assert said == ["Skipped https://x/1: more than the 10 bytes this install can read"]
+
+
+def test_a_skipped_file_is_logged_by_default(tmp_path, caplog):
+    plain = tmp_path / "plain"
+    plain.write_bytes(TXC)
+    with open(plain, "rb") as file:
+        assert list(timetable_documents(file, 10)) == []
+    assert "Skipped the timetable file: more than the 10 bytes" in caplog.text
 
 
 def test_too_many_files_in_a_zip_is_refused(monkeypatch):
@@ -146,12 +153,16 @@ def test_too_many_files_in_a_zip_is_refused(monkeypatch):
         list(timetable_documents(_zip({f"{i}.xml": b"<x/>" for i in range(3)})))
 
 
-def test_oversized_file_in_a_zip_is_refused(monkeypatch):
-    from departureboard.timetable import routesetup
+def test_an_oversized_file_in_a_zip_is_skipped_and_the_rest_read(caplog):
+    blob = _zip({"a.xml": b"<a/>", "big.xml": b"<x>" + b"a" * 100 + b"</x>", "b.xml": b"<b/>"})
+    assert list(timetable_documents(blob, 10)) == [b"<a/>", b"<b/>"]
+    assert "Skipped big.xml: 107 bytes, more than the 10 bytes this install can read" in caplog.text
 
-    monkeypatch.setattr(routesetup, "MAX_XML_BYTES", 10)
-    with pytest.raises(RouteSetupError, match="refusing"):
-        list(timetable_documents(_zip({"big.xml": b"<x>" + b"a" * 100 + b"</x>"})))
+
+def test_a_name_from_a_zip_is_said_without_its_control_characters():
+    said = []
+    list(timetable_documents(_zip({"evil\nline.xml": b"<x>" + b"a" * 100 + b"</x>"}), 10, skipped=said.append))
+    assert said == ["Skipped evil?line.xml: 107 bytes, more than the 10 bytes this install can read"]
 
 
 def test_a_zip_unpacking_to_too_much_in_total_is_refused(monkeypatch):

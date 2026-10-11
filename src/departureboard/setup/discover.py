@@ -44,7 +44,7 @@ from ..sources.bods import DEFAULT_BASE_URL, redact_key
 from ..timetable import build as timetable
 from ..timetable import roads as roadshape
 from ..timetable import routesetup
-from ..timetable.routesetup import Pattern
+from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits, Pattern
 from .lookups import in_uk
 
 log = logging.getLogger(__name__)
@@ -237,13 +237,15 @@ def discover_operators(
     max_download_bytes: int = routesetup.MAX_DOWNLOAD_BYTES,
     time_budget: float = TIME_BUDGET_S,
     clock: Callable[[], float] = time.monotonic,
+    limits: DocumentLimits = DEFAULT_LIMITS,
 ) -> Discovery:
     """The operators and lines whose timetabled journeys call at your `stops`
     (labels to ATCO codes), searching every BODS data set in their admin
     areas. `progress(done, total)` follows the data sets; `cancelled()` is
     asked often. With `with_patterns`, each line's journey patterns are kept
     for route strips. A data set that can't be read is skipped and noted in
-    `notes`, as is any beyond `max_datasets`; running out of bytes or time,
+    `notes`, as are a document bigger than `limits` allow (the install's)
+    and any data set beyond `max_datasets`; running out of bytes or time,
     being cancelled, or finding nothing raises DiscoveryError."""
     labels: dict[str, list[str]] = defaultdict(list)
     for label, atco in stops.items():
@@ -255,13 +257,13 @@ def discover_operators(
     atcos = set(labels)
     wanted = [atco.encode() for atco in atcos]
     today = today or date.today()
-    limits = _Limits(max_total_bytes, max_download_bytes, time_budget, clock, cancelled)
-    fetch = _metered(fetch, limits)
+    budget = _Limits(max_total_bytes, max_download_bytes, time_budget, clock, cancelled)
+    fetch = _metered(fetch, budget)
     Path(scratch_dir).mkdir(parents=True, exist_ok=True)
 
     datasets: dict[str, Dataset] = {}
     for area in sorted({atco[:3] for atco in atcos}):
-        limits.check()
+        budget.check()
         # One more than will be searched, to tell whether any were left out.
         for dataset in find(api_key, area, max_datasets + 1 - len(datasets)):
             datasets.setdefault(dataset.url, dataset)
@@ -278,17 +280,26 @@ def discover_operators(
     patterns: dict[str, list[Pattern]] = defaultdict(list)
     unreadable = 0
     journeys_found = 0
+
+    def skip(message: str) -> None:
+        log.warning("%s", message)
+        notes.append(message)
+
     progress(0, len(found))
     for done, dataset in enumerate(found, 1):
-        limits.check()
+        budget.check()
         fallback = dataset.nocs[0] if dataset.nocs else ""
         try:
             # Closed whatever happens, so its temporary file goes at once.
-            with closing(timetable._documents([(fallback, dataset.url)], fetch, scratch_dir)) as documents:
-                for _, document in documents:
-                    limits.check()
+            with closing(timetable._documents([(fallback, dataset.url)], fetch, scratch_dir, limits.read,
+                                              skip)) as documents:
+                for _, name, document in documents:
+                    budget.check()
                     # Skip, unparsed, the many documents that never mention your stops.
                     if not any(code in document for code in wanted):
+                        continue
+                    if len(document) > limits.parse:
+                        skip(routesetup.too_big(name, limits.parse, len(document)))
                         continue
                     try:
                         journeys, _ = timetable._parse_document(document, atcos, fallback)
@@ -401,7 +412,8 @@ class SetupJob:
     its result holds the [bus] settings to add, for the caller to show and
     save. With `nice`, its thread runs that much nicer on Linux, so it gives
     way to the caller's other work (the Pi's fetch service answering the
-    wizard's lookups)."""
+    wizard's lookups). `limits` are how much of each timetable document the
+    search and the timetable read: the install's (routesetup.document_limits)."""
 
     def __init__(
         self,
@@ -419,6 +431,7 @@ class SetupJob:
         router: roadshape.Fetch = roadshape.router_get,
         discover_options: Mapping | None = None,
         nice: int = 0,
+        limits: DocumentLimits = DEFAULT_LIMITS,
     ) -> None:
         self._folder = Path(folder)
         self._stops = dict(stops)
@@ -433,6 +446,7 @@ class SetupJob:
         self._router = router
         self._options = dict(discover_options or {})
         self._nice = nice
+        self._limits = limits
         self._cancel = threading.Event()
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -513,7 +527,8 @@ class SetupJob:
         found = discover_operators(
             self._stops, self._api_key, self._folder, find=self._find, fetch=self._fetch,
             progress=lambda done, total: self._set(done=done, total=total),
-            cancelled=self._cancel.is_set, with_patterns=self._routes, today=self._now().date(), **self._options,
+            cancelled=self._cancel.is_set, with_patterns=self._routes, today=self._now().date(),
+            limits=self._limits, **self._options,
         )
         self._set(step=STEP_TIMETABLE, done=0, total=1)
         self._timetable(found.operators, lambda schedule: self._done(found, schedule))
@@ -559,13 +574,13 @@ class SetupJob:
         def ready(schedule):
             told.append(schedule)
             saved(schedule)
-        limits = _Limits(sys.maxsize, routesetup.MAX_DOWNLOAD_BYTES, math.inf, time.monotonic, self._cancel.is_set)
+        budget = _Limits(sys.maxsize, routesetup.MAX_DOWNLOAD_BYTES, math.inf, time.monotonic, self._cancel.is_set)
 
         def build(*args, **options):
             self._set(step=STEP_TIMETABLE, done=0, total=1)  # the lock is ours now
             try:
                 return timetable.build_schedule(*args, find_datasets=self._find_datasets,
-                                                fetch=_metered(self._fetch, limits), naptan=self._naptan, **options)
+                                                fetch=_metered(self._fetch, budget), naptan=self._naptan, **options)
             except Exception as error:
                 failures.append(error)
                 raise
@@ -585,7 +600,7 @@ class SetupJob:
             timetable.build(self._folder, self._stops, operators, self._now(), self._api_key, force=True,
                             wait=True, cancelled=self._cancel.is_set,
                             waiting=lambda: self._set(step=STEP_WAITING, done=0, total=0),
-                            build=build, route=roads, saved=ready)
+                            build=build, route=roads, saved=ready, limits=self._limits)
         except timetable.TimetableBusy:
             raise Cancelled("Cancelled") from None  # while waiting: it only gives up when cancelled
         except timetable.TimetableError as error:  # the lock file can't be opened

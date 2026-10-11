@@ -13,6 +13,7 @@ import threading
 import time
 import webbrowser
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -214,7 +215,9 @@ def _settings_site(store: Store, install: Install, running: bool, runner=None):
     both saving into the store, checked as each view that is on loads.
     `running`: whether serve runs the dashboard, for the links to it.
     `runner` does the wizard's internet work, if another service does it."""
+    from ..setup import discover
     from ..setup.api import SetupApi
+    from ..timetable.routesetup import document_limits
     from ..web.groupform import check_views
     from ..web.settingsite import PREFIX, SettingsSite
 
@@ -223,6 +226,7 @@ def _settings_site(store: Store, install: Install, running: bool, runner=None):
     view_links = {"dashboard": ("The dashboard", "/")} if "dashboard" in install.offered else {}
     setup = SetupApi(
         target, store.env, store.folder,
+        make_job=partial(discover.SetupJob, limits=document_limits(install)),
         install=install,
         links=[("Settings", PREFIX)],
         view_links=view_links,

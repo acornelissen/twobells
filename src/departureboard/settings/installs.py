@@ -4,8 +4,8 @@ A Pi runs the board from systemd, Docker runs the dashboard in a container,
 and a desktop (a Mac or a Linux laptop) runs the dashboard by hand. Every
 difference between them belongs in this table and nowhere else: the views
 each can run, where each keeps its store (see store.find_folder), how
-`departureboard serve` runs there, and what the settings pages tell the
-owner about it.
+`departureboard serve` runs there, how much of each bus timetable file it
+reads, and what the settings pages tell the owner about it.
 """
 
 from __future__ import annotations
@@ -43,6 +43,12 @@ class Install:
     # The commands that set the settings password, or print a reset code, there.
     password_command: str = ""
     reset_command: str = ""
+    # The most of one bus timetable file (TransXChange) read, to look for your
+    # stops in, and parsed whole if it mentions them (about 8 times its size in
+    # memory); a bigger one is skipped (routesetup.DocumentLimits). A Pi's fit
+    # its units' MemoryMax=256M; elsewhere they are the timetable's own.
+    timetable_read_bytes: int = 200_000_000
+    timetable_parse_bytes: int = 200_000_000
 
 
 _PI_COMMAND = "sudo -u departureboard /opt/departureboard/venv/bin/departureboard serve --install pi"
@@ -52,7 +58,7 @@ INSTALLS = {
     install.name: install
     for install in (
         Install("pi", ("board", "dashboard"), ("board",), Path("/var/lib/departureboard"), noun="board", host="0.0.0.0",  # noqa: S104 - LAN; systemd and nftables allow only the home network
-                fetch="files", network_guard=True,
+                fetch="files", network_guard=True, timetable_read_bytes=100_000_000, timetable_parse_bytes=25_000_000,
                 log_help="On the Pi: <code>sudo journalctl -u departureboard-web</code>.",
                 password_command=f"{_PI_COMMAND} --set-password", reset_command=f"{_PI_COMMAND} --reset-code"),
         Install("docker", ("dashboard",), ("dashboard",), Path("/data"), host="0.0.0.0",  # noqa: S104 - inside the container

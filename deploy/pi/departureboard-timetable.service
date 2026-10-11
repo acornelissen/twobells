@@ -10,7 +10,7 @@ Group=departureboard
 StateDirectory=departureboard
 StateDirectoryMode=0750
 EnvironmentFile=/etc/departureboard/secrets.env
-ExecStart=/opt/departureboard/venv/bin/departureboard timetable --config /etc/departureboard/config.toml
+ExecStart=/opt/departureboard/venv/bin/departureboard timetable --install pi --config /etc/departureboard/config.toml
 # Downloading and reading the operators' timetables takes minutes on a Zero W;
 # the board's own tick comes first.
 TimeoutStartSec=30min

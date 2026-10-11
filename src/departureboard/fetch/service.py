@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -43,8 +44,10 @@ from ..settings.config import ConfigError, needs_setup
 from ..settings.installs import Install
 from ..settings.schema import views
 from ..settings.store import Store
+from ..setup import discover
 from ..setup.spool.folder import Spool
 from ..setup.spool.worker import Worker
+from ..timetable.routesetup import document_limits
 from . import handoff
 
 log = logging.getLogger(__name__)
@@ -83,6 +86,8 @@ class FetchService:
             except (OSError, ConfigError, ValueError, TypeError):
                 return {}  # a key test then asks about Glossop
 
+        # The bus company search reads as much of each timetable file as the install can.
+        worker_options.setdefault("make_job", partial(discover.SetupJob, limits=document_limits(install)))
         self.worker = Worker(folder, job_folder=store.folder, load_secrets=store.env, settings=settings,
                              stop=self.stop, on_active=self._active, **worker_options)
         self._watch: FileWatch | None = None

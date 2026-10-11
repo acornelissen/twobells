@@ -6,9 +6,11 @@ import sys
 from datetime import datetime
 
 from ..settings.config import is_enabled
+from ..settings.installs import install_named
 from ..sources.bodsbus import BodsBusSource
 from ..sources.holidays import bank_holidays
 from ..timetable.build import TimetableBusy, TimetableError
+from ..timetable.routesetup import document_limits
 from .common import as_owner, load_settings, open_store
 
 
@@ -33,7 +35,7 @@ def timetable_command(args) -> int:
     # Wales: BODS timetables are England's.
     bank_holidays(settings.state_file.parent, datetime.now())
     try:
-        schedule = source.refresh_timetable(force=args.force)
+        schedule = source.refresh_timetable(force=args.force, limits=document_limits(install_named(args.install)))
     except TimetableBusy:
         # Not a fault: the timer and the setup search may meet. The other build saves it.
         print("Another bus timetable build is running, so this one is skipped")

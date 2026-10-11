@@ -335,3 +335,13 @@ def test_stopped_by_systemd_it_stops_the_pollers_and_lets_go(tmp_path, monkeypat
         signal.signal(signal.SIGTERM, previous)
     assert FakeCollector.made[0].stopped and lock_free(store)
     assert handoff.snapshot_path(spool.folder).exists()  # kept, going stale: the view is still on
+
+
+def test_the_bus_company_search_reads_as_much_of_each_timetable_file_as_a_pi_can(pi, monkeypatch):
+    from departureboard.setup import discover
+    from departureboard.timetable import routesetup
+
+    made = []
+    monkeypatch.setattr(discover, "SetupJob", lambda *args, **options: made.append(options))
+    service(pi).worker._make_job("folder", {"A": "1000DGHS0900"}, "k", routes=False, walk_minutes={}, nice=5)
+    assert made[0]["limits"] == routesetup.document_limits(PI)

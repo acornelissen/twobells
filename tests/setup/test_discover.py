@@ -23,6 +23,7 @@ from departureboard.setup.discover import (
     list_datasets,
 )
 from departureboard.timetable import build as timetable
+from departureboard.timetable.routesetup import DocumentLimits
 from tests.paths import FIXTURES
 
 TXC_341 = (FIXTURES / "txc_bnml_341.xml").read_bytes()  # filed under BNML, says BNGN inside
@@ -230,6 +231,24 @@ def test_a_download_larger_than_allowed_is_skipped(bods):
     assert "larger than" in found.notes[0]
 
 
+def test_a_document_for_your_stops_too_big_to_parse_is_skipped_and_noted(bods):
+    # The 61's document is the smallest.
+    limit = len(TXC_341) - 1
+    assert len(TXC_61) <= limit < len(TXC_237)
+    found = bods.discover(limits=DocumentLimits(parse=limit))
+    assert found.operators == ["HIPK"]
+    assert found.notes == [f"Skipped {name}: {len(xml):,} bytes, more than the {limit:,} bytes this install can read"
+                           for name, xml in (("341.xml", TXC_341), ("237.xml", TXC_237))]
+
+
+def test_a_document_too_big_to_read_is_skipped_and_noted(bods):
+    bods.blobs[_link(1)] = _zip({"341.xml": TXC_341, "big.xml": b"<x>" + b"a" * len(TXC_341) + b"</x>"})
+    found = bods.discover(limits=DocumentLimits(read=len(TXC_341)))
+    assert found.lines == {"BNML": ["341"], "HIPK": ["61"]}
+    assert found.notes == [f"Skipped big.xml: {len(TXC_341) + 7:,} bytes, more than the {len(TXC_341):,} bytes "
+                           "this install can read"]
+
+
 def test_all_downloads_together_are_capped(bods):
     with pytest.raises(DiscoveryError, match="Gave up after downloading"):
         bods.discover(max_total_bytes=len(bods.blobs[_link(1)]) + 10)
@@ -408,6 +427,27 @@ def test_the_job_finds_operators_builds_the_timetable_and_returns_the_settings(b
     assert timetable.due(saved, STOPS, SUMMER_NOW, ["BNML", "HIPK"]) is None
     assert sorted(p.name for p in bods.scratch.iterdir()) == sorted(
         [discover.LOCK_NAME, timetable.LOCK_NAME, timetable.FILE_NAME])
+
+
+def test_the_job_searches_and_builds_within_its_limits(bods, monkeypatch):
+    limits = DocumentLimits(read=10_000_000, parse=5_000_000)
+    searched, built = [], []
+    search, build = discover.discover_operators, timetable.build_schedule
+
+    def discover_operators(*args, **options):
+        searched.append(options["limits"])
+        return search(*args, **options)
+
+    def build_schedule(*args, **options):
+        built.append(options["limits"])
+        return build(*args, **options)
+
+    monkeypatch.setattr(discover, "discover_operators", discover_operators)
+    monkeypatch.setattr(timetable, "build_schedule", build_schedule)
+    job = _job(bods, limits=limits)
+    job.start()
+    assert _finish(job)["state"] == "done"
+    assert searched == built == [limits]
 
 
 def test_the_job_reports_its_progress(bods):

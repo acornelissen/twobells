@@ -10,25 +10,29 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
 import re
 import zipfile
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
-from typing import IO
+from typing import IO, TYPE_CHECKING
 from urllib.parse import urlencode
 
 from ..core import safexml
 from ..core.net import get_bytes
 from ..sources.bods import DEFAULT_BASE_URL, redact_key
 
+if TYPE_CHECKING:
+    from ..settings.installs import Install
+
+log = logging.getLogger(__name__)
+
 NAPTAN_URL = "https://naptan.api.dft.gov.uk/v1/access-nodes"
 MAX_DOWNLOAD_BYTES = 300_000_000
-# One TransXChange file, uncompressed. Unpacking one from a zip can hold it
-# twice for a moment, and that must fit a Pi's MemoryMax=256M (the timetable
-# and fetch units) beside Python itself. Parsing one takes more: see
-# build.MAX_PARSED_BYTES.
-MAX_XML_BYTES = 100_000_000
+# One TransXChange file, uncompressed, unless an install reads less (see
+# DocumentLimits).
+MAX_XML_BYTES = 200_000_000
 MAX_UNZIPPED_BYTES = 1_000_000_000  # every file in one download, uncompressed
 MAX_ZIP_MEMBERS = 2_000
 MAX_STOPS = 8  # including yours; more and the names get unreadable
@@ -43,6 +47,43 @@ HttpGetBytes = Callable[[str, int], bytes]
 
 class RouteSetupError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class DocumentLimits:
+    """The most of one TransXChange document read, to look for your stops
+    in, and parsed whole if it mentions them; a bigger one is skipped, the
+    rest still read. Unpacking one from a zip can hold it twice for a moment;
+    parsing one takes about 8 times its size. Each install's are in its
+    table (settings/installs.py): a Pi's fit its units' MemoryMax=256M."""
+
+    read: int = MAX_XML_BYTES
+    parse: int = MAX_XML_BYTES
+
+
+DEFAULT_LIMITS = DocumentLimits()  # the timetable's own, as Docker's and a desktop's are
+
+
+def document_limits(install: Install) -> DocumentLimits:
+    """The DocumentLimits of an install, from its table."""
+    return DocumentLimits(install.timetable_read_bytes, install.timetable_parse_bytes)
+
+
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+_NAME_LIMIT = 120
+
+
+def too_big(name: str, limit: int, size: int | None = None) -> str:
+    """What to say of a timetable file skipped for its size: `size` if it is
+    known, else only that it is over `limit`. A zip's names are its maker's,
+    so they are cut short and lose their control characters."""
+    shown = _CONTROL.sub("?", name)[:_NAME_LIMIT]
+    known = f"{size:,} bytes, " if size is not None else ""
+    return f"Skipped {shown}: {known}more than the {limit:,} bytes this install can read"
+
+
+def log_skipped(message: str) -> None:
+    log.warning("%s", message)
 
 
 @dataclass(frozen=True)
@@ -132,20 +173,25 @@ def strip_before(found: Iterable[Pattern], atco: str, walk_minutes: int) -> tupl
     return list(best.stops[start : index + 1]), covered, best.journeys
 
 
-def timetable_documents(blob: bytes | IO[bytes]) -> Iterator[bytes]:
-    """The TransXChange XML in a download: one file, or every .xml in a zip,
-    unpacked one at a time. The download can be bytes or an open file, so a
-    big one can wait on disk rather than in memory."""
+def named_documents(blob: bytes | IO[bytes], max_bytes: int = MAX_XML_BYTES, *, name: str = "the timetable file",
+                    skipped: Callable[[str], None] = log_skipped) -> Iterator[tuple[str, bytes]]:
+    """(name, XML) for the TransXChange in a download: one file, called
+    `name`, or every .xml in a zip by its own name, unpacked one at a time.
+    The download can be bytes or an open file, so a big one can wait on disk
+    rather than in memory. A file over `max_bytes` is skipped, told to
+    `skipped` (too_big; logged unless it says otherwise), and the rest read;
+    a zip of too many files, or too much in all, is refused."""
     source = io.BytesIO(blob) if isinstance(blob, (bytes, bytearray)) else blob
     if not zipfile.is_zipfile(source):
         if isinstance(blob, (bytes, bytearray)):
-            yield blob
+            yield name, bytes(blob)
             return
         source.seek(0)
-        data = source.read(MAX_XML_BYTES + 1)
-        if len(data) > MAX_XML_BYTES:
-            raise RouteSetupError(f"Timetable file is larger than {MAX_XML_BYTES} bytes; refusing")
-        yield data
+        data = source.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            skipped(too_big(name, max_bytes))
+            return
+        yield name, data
         return
     with zipfile.ZipFile(source) as archive:
         members = [m for m in archive.infolist() if m.filename.lower().endswith(".xml")]
@@ -153,16 +199,25 @@ def timetable_documents(blob: bytes | IO[bytes]) -> Iterator[bytes]:
             raise RouteSetupError(f"Timetable zip has {len(members)} files; refusing more than {MAX_ZIP_MEMBERS}")
         total = 0
         for member in members:
-            if member.file_size > MAX_XML_BYTES:
-                raise RouteSetupError(f"{member.filename} unpacks to {member.file_size} bytes; refusing")
+            if member.file_size > max_bytes:
+                skipped(too_big(member.filename, max_bytes, member.file_size))
+                continue
             with archive.open(member) as handle:
-                data = handle.read(MAX_XML_BYTES + 1)
-            if len(data) > MAX_XML_BYTES:
-                raise RouteSetupError(f"{member.filename} is larger than it claims; refusing")
+                data = handle.read(max_bytes + 1)
             total += len(data)
             if total > MAX_UNZIPPED_BYTES:
                 raise RouteSetupError(f"Timetable zip unpacks to more than {MAX_UNZIPPED_BYTES} bytes; refusing")
-            yield data
+            if len(data) > max_bytes:  # larger than it claims
+                skipped(too_big(member.filename, max_bytes))
+                continue
+            yield member.filename, data
+
+
+def timetable_documents(blob: bytes | IO[bytes], max_bytes: int = MAX_XML_BYTES, *, name: str = "the timetable file",
+                        skipped: Callable[[str], None] = log_skipped) -> Iterator[bytes]:
+    """named_documents without the names."""
+    for _, data in named_documents(blob, max_bytes, name=name, skipped=skipped):
+        yield data
 
 
 def downloaded_documents(
