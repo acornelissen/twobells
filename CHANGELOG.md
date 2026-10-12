@@ -11,6 +11,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 ### Fixed
 
 - A Pi reads bus timetable files up to 61 MB, up from 50 MB: First Bus's largest is now 48 MB, and a bigger one was skipped.
+- A Pi holds 8,500 bus journeys while it builds its timetable, up from 7,000, so two of a city's busiest stops no longer fail to build.
 - On a Pi, the network guard also keeps connections off the fetch service, where systemd can't apply its `SocketBindDeny=` (a Pi Zero W).
 - `update.sh` stops before changing anything where the app isn't installed.
 - The docs say which cosign checks a release: 2.5 or later for `SHA256SUMS`, 3.0 or later for the image.
