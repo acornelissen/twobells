@@ -704,14 +704,19 @@ OLD_UNITS = ["departureboard.timer", "departureboard.service", "departureboard-s
 def _move_from_old_name(root: Path, enabled: tuple[str, ...] = (), users: str = "departureboard"):
     """Runs the scripts' move_from_old_name on `root`, under set -euo pipefail,
     with the system's tools stood in for and each call logged: `enabled` are
-    the old units systemctl says are enabled, `users` the users id knows.
-    Returns the run, the calls, and moved_on as the script left it."""
+    the old units systemctl says are enabled, `users` the users id knows. As
+    on a Pi, the tick and the timetable build are static, which is-enabled
+    also answers with success. Returns the run, the calls, and moved_on as
+    the script left it."""
     import subprocess
 
     [function] = MOVE_FROM_OLD_NAME.findall(_script("install.sh"))
     stubs = (
         'log() { echo "$*" >> "$LOG"; }\n'
-        'systemctl() { log systemctl "$@"; if [[ "$1" == is-enabled ]]; then [[ " $ENABLED " == *" $3 "* ]]; fi; }\n'
+        'systemctl() {\n  log systemctl "$@"\n  [[ "$1" == is-enabled ]] || return 0\n  local unit="${@: -1}" state=disabled\n'
+        '  if [[ " $ENABLED " == *" $unit "* ]]; then state=enabled\n'
+        '  elif [[ "$unit" == departureboard.service || "$unit" == departureboard-timetable.service ]]; then state=static; fi\n'
+        '  [[ "$2" == --quiet ]] || echo "$state"\n  [[ "$state" != disabled ]]\n}\n'
         'nft() { log nft "$@"; }\n'
         'id() { [[ " $USERS " == *" $1 "* ]]; }\n'
         'usermod() { log usermod "$@"; }\n'
@@ -752,6 +757,10 @@ def test_install_and_update_move_an_install_from_the_old_name_the_same_way():
         # Each unit that was on is on again once the new units are in.
         again = script.index('for moved in "${moved_on[@]}"; do\n  systemctl enable --now "$moved"\ndone')
         assert script.index('"$PREFIX/twobells-web.nft"\nsystemctl daemon-reload') < again, name
+    # The venv a move leaves is empty until the new code goes in: update.sh doesn't ask it anything before then.
+    update = _script("update.sh")
+    asked = update.index('if [[ -x "$PREFIX/venv/bin/twobells" ]]; then\n  display="$(query display)" || display=""\nfi')
+    assert update.index('move_from_old_name ""') < asked < update.index('--force-reinstall "$build"')
 
 
 def test_an_old_install_moves_to_the_new_name_keeping_its_settings_store_and_running_units(tmp_path):

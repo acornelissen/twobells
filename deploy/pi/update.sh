@@ -50,7 +50,8 @@ move_from_old_name() {
   for old in departureboard.timer departureboard.service departureboard-screen.service \
       departureboard-timetable.timer departureboard-timetable.service departureboard-web.service \
       departureboard-fetch.path departureboard-fetch.service departureboard-guard.service; do
-    if systemctl is-enabled --quiet "$old" 2>/dev/null; then
+    # Enabled only: is-enabled answers static units (the tick, the timetable build) with success too.
+    if [[ "$(systemctl is-enabled "$old" 2>/dev/null || true)" == enabled ]]; then
       moved_on+=("${old/departureboard/twobells}")
     fi
     systemctl disable --now "$old" 2>/dev/null || true
@@ -107,7 +108,11 @@ query() {
 # Switched to the HDMI screen since installing? It needs pygame, looked for
 # where Debian's python3-pygame puts it, and installed as nftables is above.
 # (Settings that can't be read say why here; the board says so too.)
-display="$(query display)" || display=""
+# (Nothing to ask when the venv is new and empty, as after moving from the old name.)
+display=""
+if [[ -x "$PREFIX/venv/bin/twobells" ]]; then
+  display="$(query display)" || display=""
+fi
 if [[ "$display" == hdmi-* && ! -f /usr/lib/python3/dist-packages/pygame/__init__.py ]]; then
   apt-get update
   apt-get install -y python3-pygame
