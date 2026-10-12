@@ -581,6 +581,10 @@ def test_the_timetable_unit_has_room_for_the_largest_document_it_reads_and_its_j
     # inbound-only ones) peaked at 92 MB on Python 3.12, 39 MB of it Python
     # and the command line's imports; written and read whole, as they were
     # before, 7,000 peaked at 350 MB saving and 307 MB loading.
+    # Again in October 2026, with slots and sharing, on data set 2100 grown to
+    # all of First Bus (largest file 48 MB): 11,691 journeys at ten busy
+    # Sheffield stops and 3,222 inbound-only held peaked at 205 MiB, built,
+    # saved and loaded, under a 256 MiB cgroup with no swap.
     from twobells.cli.main import _parser
     from twobells.settings.installs import install_named
 

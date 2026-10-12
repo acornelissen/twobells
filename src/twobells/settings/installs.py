@@ -51,7 +51,7 @@ class Install:
     # (routesetup.DocumentLimits). A Pi's fit its units' MemoryMax=256M,
     # Docker's its container's 512 MB, shared with the web server
     # (tests/test_deploy.py); a desktop's are the timetable's own. The
-    # largest file seen is 37 MB, and a busy stop's week low thousands of
+    # largest file seen is 48 MB, and a busy stop's week low thousands of
     # journeys.
     timetable_read_bytes: int = 200_000_000
     timetable_parse_bytes: int = 200_000_000
@@ -65,10 +65,10 @@ INSTALLS = {
     install.name: install
     for install in (
         Install("pi", ("board", "dashboard"), ("board",), Path("/var/lib/twobells"), noun="board", host="0.0.0.0",  # noqa: S104 - LAN; systemd and nftables allow only the home network
-                fetch="files", network_guard=True, timetable_read_bytes=50_000_000, timetable_parse_bytes=50_000_000,
-                # The memory model allows about 8,500 (saving and loading the timetable take
-                # less than building it); 7,000 keeps room until a build is checked under the
-                # units' real 256M limit, and still holds Sheffield's busiest stop.
+                fetch="files", network_guard=True, timetable_read_bytes=61_000_000, timetable_parse_bytes=61_000_000,
+                # 61 MB leaves a quarter more than the largest file seen (48 MB). With it, the
+                # memory model allows 7,000 journeys, which still holds Sheffield's busiest
+                # stop; a real build held twice that under the units' 256M (tests/test_deploy.py).
                 timetable_journeys=7_000,
                 log_help="On the Pi: <code>sudo journalctl -u twobells-web</code>.",
                 password_command=f"{_PI_COMMAND} --set-password", reset_command=f"{_PI_COMMAND} --reset-code"),

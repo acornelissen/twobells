@@ -1,14 +1,14 @@
 from twobells.settings.installs import INSTALLS, install_named
 from twobells.timetable import build, routesetup
 
-# The largest timetable file seen: First South Yorkshire's, BODS data set 2100 (2026).
-LARGEST_FILE = 36_904_485
+# The largest timetable file seen: First Bus's 75/76 in South Yorkshire, BODS data set 2100 (October 2026).
+LARGEST_FILE = 48_094_105
 
 
-def test_a_pi_reads_50_mb_of_each_timetable_file_and_holds_7000_journeys_to_fit_its_memory():
+def test_a_pi_reads_61_mb_of_each_timetable_file_and_holds_7000_journeys_to_fit_its_memory():
     # Its units' MemoryMax=256M: see tests/test_deploy.py.
     assert routesetup.document_limits(install_named("pi")) == routesetup.DocumentLimits(
-        read=50_000_000, parse=50_000_000, journeys=7_000)
+        read=61_000_000, parse=61_000_000, journeys=7_000)
 
 
 def test_a_pi_holds_the_journeys_at_sheffield_s_busiest_stops():
