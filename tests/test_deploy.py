@@ -425,6 +425,19 @@ def test_install_and_update_install_nftables():
     assert update.index(needed) < update.index('"$PREFIX/venv/bin/pip" install')
 
 
+def test_update_refuses_where_nothing_is_installed_before_changing_anything():
+    # Run by mistake on a Pi without the app (upgrade.sh from a fresh download,
+    # say), it must stop before it writes /etc/twobells or installs packages.
+    update = _script("update.sh")
+    needed = 'if [[ ! -x "$PREFIX/venv/bin/twobells" ]]; then\n'
+    assert needed in update
+    check = update.index(needed)
+    for change in ('install -m 644 "$config"', "apt-get update", '"$PREFIX/venv/bin/pip" install'):
+        assert check < update.index(change), change
+    block = update[check:update.index("fi\n", check)]
+    assert "install.sh" in block and "exit 1" in block  # says what to run instead
+
+
 def test_install_run_again_restarts_a_running_web_server_onto_its_new_unit_and_guard():
     # enable --now leaves a running service on its old unit, without the guard
     # it may now load, and the check after it would blame the guard.

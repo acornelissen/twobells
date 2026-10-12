@@ -24,6 +24,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Only an installed board is updated: on a Pi without the app, stop before
+# writing anything or installing packages.
+if [[ ! -x "$PREFIX/venv/bin/twobells" ]]; then
+  echo "There's no install in $PREFIX to update. To install, run sudo ./deploy/pi/install.sh" >&2
+  exit 1
+fi
+
 if [[ -n "$config" ]]; then
   install -m 644 "$config" "$CONF/config.toml"
 fi
