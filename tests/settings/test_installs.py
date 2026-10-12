@@ -5,15 +5,23 @@ from twobells.timetable import build, routesetup
 LARGEST_FILE = 48_094_105
 
 
-def test_a_pi_reads_61_mb_of_each_timetable_file_and_holds_7000_journeys_to_fit_its_memory():
+def test_a_pi_reads_61_mb_of_each_timetable_file_and_holds_8500_journeys_to_fit_its_memory():
     # Its units' MemoryMax=256M: see tests/test_deploy.py.
     assert routesetup.document_limits(install_named("pi")) == routesetup.DocumentLimits(
-        read=61_000_000, parse=61_000_000, journeys=7_000)
+        read=61_000_000, parse=61_000_000, journeys=8_500)
 
 
 def test_a_pi_holds_the_journeys_at_sheffield_s_busiest_stops():
     # 5,816 from First South Yorkshire alone (BODS data set 2100, 2026).
     assert routesetup.document_limits(install_named("pi")).journeys >= 5_816
+
+
+def test_a_pi_holds_two_of_sheffield_s_busiest_stops_while_it_reads():
+    # Arundel Gate/Furnival Street and Wicker/Blonk Street, from BODS data set
+    # 2100 (all of First Bus, October 2026): 5,581 journeys once built, but
+    # more while each document's replaced versions are still held, refused
+    # at 7,000 and built at 7,500.
+    assert routesetup.document_limits(install_named("pi")).journeys >= 7_500
 
 
 def test_docker_reads_100_mb_of_each_timetable_file_and_holds_8000_journeys_to_fit_its_container():

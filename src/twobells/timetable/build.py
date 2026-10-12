@@ -138,9 +138,12 @@ MAX_INBOUND_JOURNEYS = 10_000
 # each on Python 3.11 and 14.6 KB on 3.12, before journeys had slots and
 # shared what they have in common (_Shared). Journeys made up as long, with
 # the same holidays off and a calendar each, took 13.4 and 12.7 KB then, and
-# take 7.5 and 7.4 KB now; with the 2.2 KB more each real one took, about
-# 9.7 KB. Most share a calendar, which saves another 2.6 KB.
-JOURNEY_BYTES = 10_000
+# take 7.5 and 7.4 KB now. Real ones share more than those: in October
+# 2026, data set 2100 (by then all of First Bus) held at Sheffield's busiest
+# stops took 3.7 to 4.5 KB each on Python 3.11, at 63 to 73 calls on
+# average and up to 134. 8 KB covers the made-up ones, each with a calendar
+# of its own, and twice the real ones.
+JOURNEY_BYTES = 8_000
 # The most a journey takes in the saved file (save, a journey at a time):
 # one of 80 calls with school terms, bank holidays and Christmas off takes
 # 3.9 KB (tests/timetable/test_build.py). Its stops and roads take a few MB
