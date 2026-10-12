@@ -1,6 +1,6 @@
 # The departures dashboard and its settings (`twobells serve --install
 # docker`) for a NAS or any Docker host. Build and run it with
-# docker-compose.yml; see docs/user-guide.md. It runs as uid 10001, the
+# docker-compose.yml; see docs/docker.md. It runs as uid 10001, the
 # owner of the data volume since the first image, whatever its name.
 FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 

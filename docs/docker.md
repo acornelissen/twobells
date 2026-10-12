@@ -1,12 +1,16 @@
-# Docker on other NASes and on Linux
+# Docker
 
-The [user guide's Docker section](user-guide.md#9-docker) builds the image from source on a Synology NAS. This page covers the published image instead, on QNAP, Unraid, TrueNAS SCALE, and Docker or Podman on any Linux computer.
+The dashboard and its settings in one container, `twobells`, on a NAS or any always-on computer. The container runs as an unprivileged user (uid 10001) with a read-only system, keeps its data in the `twobells-data` volume, and restarts by itself.
 
-From the first release, each release publishes a signed image, `ghcr.io/acornelissen/twobells`, for 64-bit computers (`linux/amd64` and `linux/arm64`). There is no image for 32-bit ARM. Until the first release, build from source as in the user guide.
+There are two ways to run it:
+
+- **The published image**, `ghcr.io/acornelissen/twobells`: signed, for 64-bit computers (`linux/amd64` and `linux/arm64`), with nothing to build. `deploy/docker/docker-compose.ghcr.yml` runs it. Every platform below but Synology uses it. There is no image for 32-bit ARM.
+- **Built from source** with `docker-compose.yml` at the top of the project, as on [Synology](#synology-build-from-source).
 
 Contents:
 
 - [Every platform](#every-platform): pick a release, check it, and keep it on the home network.
+- [Synology (build from source)](#synology-build-from-source)
 - [QNAP (Container Station)](#qnap-container-station)
 - [Unraid](#unraid)
 - [TrueNAS SCALE](#truenas-scale)
@@ -48,12 +52,16 @@ The dashboard and the settings only answer when the address in the browser is on
 - a name with no dots (such as `nas` or `tower`),
 - a name ending `.local`, `.lan` or `.home.arpa` (such as `tower.local`).
 
-For any other name, such as `nas.example.com`, add it to a `config.toml` and mount that file read-only at `/config/config.toml`:
+For any other name, such as `nas.example.com`, add it to a [`config.toml` of your own](#a-configtoml-of-your-own):
 
 ```toml
 [dashboard]
 allowed_hosts = ["nas.example.com"]
 ```
+
+### A config.toml of your own
+
+No `config.toml` is needed. To keep one by hand (for `allowed_hosts`, say), mount it read-only at `/config/config.toml`. The settings save over it in the volume, never into it. The compose files show how: uncomment the line in `deploy/docker/docker-compose.ghcr.yml`, or, building from source, copy `docker-compose.override.yml.example` to `docker-compose.override.yml` next to `config.toml`. [Settings by hand](configuration.md) says what goes in it.
 
 ### Keep it on the home network
 
@@ -65,11 +73,26 @@ allowed_hosts = ["nas.example.com"]
 
 ### First start
 
-Open `http://<NAS IP address>:8090/` and [set it up](user-guide.md#4-first-run-and-the-setup-wizard). The code to claim the settings is in the container's log. The commands that set the password or print a new code are in [Password and reset codes](user-guide.md#6-password-and-reset-codes); they name the container `twobells`, as the files and commands here call it. If your platform names it otherwise, use that name.
+Open `http://<NAS IP address>:8090/` and [set it up](setup-wizard.md). The code to claim the settings is in the container's log. The commands that set the password or print a new code are in [Password and reset codes](password.md); they name the container `twobells`, as the files and commands here call it. If your platform names it otherwise, use that name.
 
 ### Updating
 
-Check the new version as above, then replace the version and digest in the image line and start the container again from the new image. Your settings, keys, password, history and timetable stay in `/data`.
+Check the new version as above, then replace the version and digest in the image line and start the container again from the new image. Your settings, keys, password, history and timetable stay in `/data`. Building from source, see [Synology](#synology-build-from-source).
+
+---
+
+## Synology (build from source)
+
+On a Synology NAS, Container Manager builds the image from the project's own `docker-compose.yml`, as the image `twobells:local`. Its health shows in Container Manager. Elsewhere, `docker compose up -d --build` in the folder does the same.
+
+1. Copy the project folder to the NAS, for example to `docker/twobells` (File Station, or `scp`).
+2. In that folder, copy `deploy/secrets.env.example` to `secrets.env`. Fill in your keys, or leave them empty and paste them in the settings later. Keep it private: in File Station, give only your own account access.
+3. In **Container Manager**, go to **Project**, then **Create**. Pick the folder; it uses the `docker-compose.yml` there. Create the project. It builds the image on the NAS and starts it.
+4. Open `http://<NAS name>:8090/` or `http://<NAS IP address>:8090/` from the home network, and [set it up](setup-wizard.md). Codes go to the container's log, under **Container**, `twobells`, **Log**.
+
+Don't publish port 8090 through QuickConnect or DSM's reverse proxy (see [Keep it on the home network](#keep-it-on-the-home-network)). For extra safety, add a DSM firewall rule that allows 8090 only from your home network's addresses.
+
+**Updating:** copy the new project files over the old ones, then in Container Manager choose the project, then **Action**, then **Build** (or `docker compose up -d --build`). Your history, timetable, saved settings, keys and password stay in the volume. After editing `secrets.env`, build again too: just restarting the container doesn't read it again.
 
 ---
 
@@ -134,7 +157,7 @@ On TrueNAS SCALE 24.10 or later, apps run in Docker, and a compose file can be i
 
 Use YAML rather than the guided **Custom App** form: the form, as TrueNAS documents it, has no setting for a read-only system.
 
-The compose file keeps the data in a named volume, which works as it is. TrueNAS recommends a dataset for data that should last. To use one, create the dataset, give user ID 10001 read and write access in its permissions, and replace `- dashboard-data:/data` with `- /mnt/<pool>/<dataset>:/data` (and remove the `volumes:` block at the end).
+The compose file keeps the data in a named volume, which works as it is. TrueNAS recommends a dataset for data that should last. To use one, create the dataset, give user ID 10001 read and write access in its permissions, and replace `- data:/data` with `- /mnt/<pool>/<dataset>:/data` (and remove the `volumes:` block at the end).
 
 ---
 

@@ -36,7 +36,7 @@ All of them are free.
 
 ## Where keys go
 
-The easiest way is to paste them in the settings, at `/settings` on your install's address (see [The settings](user-guide.md#5-the-settings)). Each key has a box in one place:
+The easiest way is to paste them in the settings, at `/settings` on your install's address (see [The settings](settings.md#keys)). Each key has a box in one place:
 
 | Key | Pasted on |
 |---|---|
@@ -45,11 +45,11 @@ The easiest way is to paste them in the settings, at `/settings` on your install
 | `RDM_DETAILS_API_KEY` | the **Keys** page (only while the dashboard view, or the board view on an HDMI screen, is on) |
 | `RDM_KB_API_KEY` | the **Keys** page (only while the dashboard view is on) |
 
-Keys pasted there are saved in `secrets.env` in the install's store (`/var/lib/twobells` on a Pi, the `/data` volume in Docker; see [Where things are kept](user-guide.md#where-things-are-kept)), readable only by the app. They win over keys in a file of your own, and need no restart.
+Keys pasted there are saved in `secrets.env` in the install's store (`/var/lib/twobells` on a Pi, the `/data` volume in Docker; see [Where things are kept](configuration.md#where-things-are-kept)), readable only by the app. They win over keys in a file of your own, and need no restart.
 
 **The Keys page** has a small form for each key, headed by what it unlocks (**Trains**, **Buses**, **Where each train is** and so on), with a label saying how the key stands: **Not set**, **Needed for trains** (or whatever is switched on without it), **Saved, not tested**, **Works, tested 10 Oct 10:42**, or **Refused, tested …**. Each form has its own buttons, and saves its own key only:
 
-- **Save key** saves the key you pasted. Pressing Enter in the box does the same.
+- **Save key** saves the key you pasted. Pressing Enter in the box does the same. The page then names the key it saved, never the key itself. If the key isn't pasted right, nothing is saved and a box at the top says so: paste it again.
 - **Save and test** saves it, then tests it straight away, so you don't paste it twice.
 - **Test saved key**, while the box is empty, tests the key already saved.
 
@@ -213,7 +213,7 @@ The key and the address share the **Engineering works** form on the **Keys** pag
 
 **What it unlocks:**
 
-- Bus times on the board and the dashboard, worked out from each bus company's timetable plus where the buses are right now (`source = "bods"` under `[bus]`, which the setup wizard sets; see [Bus times](user-guide.md#bus-times)).
+- Bus times on the board and the dashboard, worked out from each bus company's timetable plus where the buses are right now (`source = "bods"` under `[bus]`, which the setup wizard sets; see [Bus times](buses.md)).
 - The bus position page on the HDMI screen.
 - On the dashboard: where each bus is, its strip of stops and map, and bus disruption notices.
 
@@ -246,7 +246,7 @@ The Bus Open Data Service (BODS) is run by the Department for Transport.
 
 The **Bus data key** box in the setup wizard or on the settings' **Keys** page. Or `BODS_API_KEY` in a `secrets.env` of your own.
 
-Buses also need your stops and their bus companies, which the setup wizard finds; see [Bus times](user-guide.md#bus-times).
+Buses also need your stops and their bus companies, which the setup wizard finds; see [Bus times](buses.md).
 
 ### Check it works
 
@@ -271,7 +271,7 @@ Either way, it ends with `Bus timetable: … journeys at your stops`. If it buil
 
 **Needed?** No. Most people can skip it. The dashboard never uses it.
 
-**Cost:** the **Free** plan gives 30 lookups ("hits") a day, for free. Each check costs one lookup per bus stop, so the board keeps to a daily budget; see [The bus budget](user-guide.md#the-bus-budget). Paid plans allow more.
+**Cost:** the **Free** plan gives 30 lookups ("hits") a day, for free. Each check costs one lookup per bus stop, so the board keeps to a daily budget; see [The bus budget](buses.md#the-bus-budget). Paid plans allow more.
 
 ### Make an account
 
@@ -337,5 +337,5 @@ Replace a key when it stops working, when you've made a new one, or if it might 
 3. **Restart what uses it**, only after changing a file of your own:
    - On a Pi: the e-paper board and the timetable timer pick it up on their next run. Restart the rest: `sudo systemctl restart twobells-web.service twobells-fetch.service twobells-screen.service` (leave out the screen if you don't use it).
    - On a desktop: it notices the changed file and starts again by itself within a few seconds.
-   - In Docker: in **Container Manager**, choose the project, then **Action**, then **Build** (or `docker compose up -d`). Just restarting the container doesn't read `secrets.env` again.
+   - In Docker, built from source: in **Container Manager**, choose the project, then **Action**, then **Build** (or `docker compose up -d --build`). Just restarting the container doesn't read `secrets.env` again.
 4. **Check it works**, with the check from that key's section above.

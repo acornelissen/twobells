@@ -5,7 +5,7 @@
   agent): twobells serve, on this computer only, at
   http://localhost:8090/. It starts again if it fails, not when you stop it.
   /Users/YOU is a placeholder for your home folder; the commands in
-  docs/user-guide.md (Desktop) put yours in and load it.
+  docs/desktop.md put yours in and load it.
 -->
 <plist version="1.0">
 <dict>

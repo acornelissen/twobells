@@ -110,7 +110,9 @@ install is one app with two views of the same departures: the **board** (e-paper
   file and pinned requirements; `deploy/desktop/`, `deploy/unraid/`, `deploy/secrets.env.example`. `Dockerfile` and
   `docker-compose.yml` are at the root. `examples/`: `config.example.toml` (the template) and `glossop.toml`.
   `.github/workflows/`: CI and the tagged release (PyPI, signed GHCR image, signed Pi tarball).
-  `docs/`: user guide, Docker, keys, dashboard API.
+  `docs/`: one page per topic, indexed by `docs/user-guide.md` (also PyPI's Documentation link);
+  `docs/architecture.md` is the code layout. `tests/test_docs.py` checks every link and anchor, and the wizard's
+  links to `docs/keys.md` headings, so keep those headings.
 
 ## Conventions & Patterns
 

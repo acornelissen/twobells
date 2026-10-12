@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Changed
+
+- The user guide is a page per topic, indexed by `docs/user-guide.md`; the Docker pages are one, and the code layout is in `docs/architecture.md`.
+
 ## [0.1.0] - 2026-10-12
 
 The first release.

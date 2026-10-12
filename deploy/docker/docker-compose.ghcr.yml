@@ -1,6 +1,6 @@
 # The departures dashboard from a published release image, for Docker on any
-# computer or NAS: no source folder and nothing to build. Published from the
-# first release on; docker-compose.yml builds from source instead.
+# computer or NAS: no source folder and nothing to build. docker-compose.yml
+# builds from source instead.
 #
 # Pin the release by version and digest, as below, so the image can't change
 # under you. On any computer with Docker and cosign, for version X.Y.Z:

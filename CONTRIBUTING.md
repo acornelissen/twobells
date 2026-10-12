@@ -1,6 +1,15 @@
 # Contributing
 
-Thanks for helping. Bug reports and small, focused changes are the easiest to take.
+Thanks for helping. Bug reports and small, focused changes are the easiest to take. To report a vulnerability, see [SECURITY.md](SECURITY.md) instead.
+
+- [Set up](#set-up)
+- [Run it](#run-it)
+- [The emulator](#the-emulator)
+- [Checks](#checks)
+- [Commits](#commits)
+- [How the code is written](#how-the-code-is-written)
+- [Pictures](#pictures)
+- [Releases](#releases)
 
 ## Set up
 
@@ -11,7 +20,43 @@ mise install          # the pinned tools
 mise run setup        # .venv with the package and its dev tools, as uv.lock pins them
 ```
 
-`mise tasks` lists the rest. Without mise: `uv sync --locked`.
+`mise tasks` lists the rest. Without mise: `uv sync --locked`, then `uv run pytest`.
+
+## Run it
+
+```bash
+mise run demo         # sample board to preview.png, no keys
+mise run emulate      # the browser panel emulator on sample data
+mise run serve        # the dashboard and settings, with ./config.toml and ./secrets.env
+```
+
+Or with the venv active (`. .venv/bin/activate`, or any shell where mise is activated):
+
+```bash
+twobells demo --png preview.png            # sample data, no keys
+twobells demo --png big.png --display waveshare-10in85g   # or hdmi-1280x400, hdmi-1920x440
+twobells run --png preview.png --config config.toml --secrets secrets.env
+twobells serve --config config.toml --secrets secrets.env   # the dashboard and settings
+```
+
+Every command and its options are in [Commands](docs/commands.md).
+
+## The emulator
+
+A browser page that draws the panel at true proportions and logs every tick, so you can see when the board redraws and when it leaves the panel alone. E-paper panels show in e-paper colours and play the slow colour refresh; the HDMI screen swaps frames at once and ticks every second.
+
+```bash
+twobells emulate --demo                       # fake data, 1 simulated minute every 2 s
+twobells emulate --fake-train \
+  --config config.toml --secrets secrets.env        # fake trains, live buses
+twobells emulate --config config.toml --secrets secrets.env   # all live
+twobells emulate --demo --display hdmi-1280x400                # another panel
+```
+
+- **Where:** it opens <http://127.0.0.1:8780/>, or the next free port (`--port` picks another; `--no-browser` leaves the browser alone).
+- **Panel:** live modes emulate the `display` in your config; `--display` overrides it. Choose realistic (20 s), quick or instant refresh, and the scale (1× to 4× for the pHAT, ½× or 1× for the bigger panels); 1× is the panel's real pixel count.
+- **Clock:** `--tick SECONDS` sets the tick (e-paper: 2 in the demo, 60 live; the screen: 1), and `--accent red` or `yellow` the demo's colour. The demo drops the bus feed from 07:30 to 07:52 simulated time, so the "Not updating" badge shows up.
+- **What it fetches:** on start it fetches every source once, even outside its windows, so the board fills straight away; after that it polls only inside the windows. Bus times from the BODS timetable cost nothing. Where TransportAPI gives them, a live start costs one lookup per bus stop, within the daily budget; `twobells run` does the same on its very first run. Live modes keep state in the store, so the budget holds across restarts.
 
 ## Checks
 
@@ -40,8 +85,14 @@ Conventional commits: `<type>(<scope>): <subject>`, in the imperative, like `fix
 - **Plain British English** in code, UI text and docs. Short sentences, active voice, no emoji.
 - **Simple code.** Match the style around it.
 
-The [README](README.md#layout) shows where things are.
+[Architecture](docs/architecture.md) shows where things are, and [Dashboard API](docs/dashboard-api.md) is the contract between the server and the dashboard page.
 
 ## Pictures
 
 The pictures in `docs/images/` are drawn from the sample data. After a change to how the board looks, run `.venv/bin/python tools/build_doc_images.py`. For the dashboard's, `.venv/bin/python tools/serve_doc_dashboard.py` serves the page on the sample morning at <http://127.0.0.1:8931/>; take them by hand at 2x, 1280 CSS pixels wide for the page, and save them at 0.75 scale in 256 colours. Look at each picture before you commit it.
+
+## Releases
+
+CI runs ruff, pyright, the tests on Python 3.11, 3.12 and 3.13, and builds the wheel and the container (amd64, arm64) on every push and pull request.
+
+A tag `vX.Y.Z` matching `pyproject.toml`'s version publishes a release: the package on PyPI, a signed container image on GHCR (`ghcr.io/acornelissen/twobells`), and a source tarball for the Pi with `SHA256SUMS`, signed with Sigstore. Add the release to [CHANGELOG.md](CHANGELOG.md) first. How to check the signatures is in [Install on a Raspberry Pi](docs/install-pi.md#install-from-a-release) and [Docker](docs/docker.md#pick-a-release-and-check-it).

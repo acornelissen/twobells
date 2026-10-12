@@ -6,8 +6,8 @@ After=network-online.target
 # leaves a request. With the dashboard view off, each run lasts at least the
 # minute it waits for more, so ten starts in two minutes means it keeps
 # stopping at once with a request waiting. systemd then stops starting it,
-# and the .path unit fails, rather than loop; see the user guide's
-# troubleshooting (systemctl reset-failed).
+# and the .path unit fails, rather than loop; see docs/troubleshooting.md
+# (systemctl reset-failed).
 StartLimitIntervalSec=2min
 StartLimitBurst=10
 

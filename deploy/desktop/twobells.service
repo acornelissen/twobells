@@ -2,7 +2,7 @@
 # service): twobells serve, on this computer only, at
 # http://localhost:8090/. It starts again if it fails, not when you stop it.
 # Installed by `uv tool install` or `pipx install` in ~/.local/bin; see
-# docs/user-guide.md (Desktop) for the commands that install and start it.
+# docs/desktop.md for the commands that install and start it.
 [Unit]
 Description=Two Bells dashboard and settings, on this computer only
 

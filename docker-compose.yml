@@ -1,5 +1,5 @@
 # The departures dashboard on a NAS. On Synology: Container Manager > Project >
-# Create, pick this folder, and it builds the image here. See docs/user-guide.md.
+# Create, pick this folder, and it builds the image here. See docs/docker.md.
 # Set it up in its settings site (/settings); a config.toml kept by hand instead goes in
 # through docker-compose.override.yml (see docker-compose.override.yml.example).
 services:

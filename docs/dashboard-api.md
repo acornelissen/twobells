@@ -2,7 +2,7 @@
 
 The contract between the dashboard's server (`twobells serve`, on every install) and its browser front end. Everything is read-only: GET and HEAD only.
 
-Everything under `/settings` is the settings site, not part of this API: it has its own pages, cookies (`settings_session`, `settings_form`, both `Path=/settings`) and headers (`form-action 'self'`, and `script-src 'self'` only for the setup wizard under `/settings/setup/` and for `/settings/settings.js` on a signed-in visitor's settings pages). The board's old settings addresses `/login`, `/reset` and `/setup/` redirect there. Nothing here changes because of it.
+Everything under `/settings` is the settings site, not part of this API: it has its own pages, cookies (`settings_session`, `settings_form`, both `Path=/settings`) and headers (`form-action 'self'`, and `script-src 'self'` only for the setup wizard under `/settings/setup/` and for `/settings/settings.js` on a signed-in visitor's settings pages). Nothing here changes because of it.
 
 The API is there only while the dashboard is on: its view is on (`[app] views`), the app is set up, and its settings load. While it is off, `/` redirects (303) to `/settings`, `/healthz` answers 200 `ok` so a container's health check still hears the server, and everything else here (`/api/…`, `/static/…`, `/manifest.webmanifest`) is 404. Responses then carry the settings site's security headers rather than those below.
 
@@ -10,6 +10,12 @@ Rules for every response:
 - **Times:** `*_at` fields are ISO 8601 with the board's UTC offset (`2026-10-10T07:12:00+01:00`). `HH:MM` fields are for display only. The browser counts down from `*_at` against the server clock (`generated_at` plus its own offset), so the server never pushes every second.
 - **Text** is plain text from the feeds; the browser must set it with `textContent`, never as HTML.
 - **`id`** values are 16 lowercase hex characters, opaque, and stable for the same departure across snapshots. Raw Darwin service IDs and bus keys never reach the browser.
+
+Contents:
+
+- The snapshot: [`GET /api/snapshot`](#get-apisnapshot) ([Fields](#fields), [Row extras](#row-extras)), [`disruptions`](#snapshot-disruptions), [`timetable_changes`](#snapshot-timetable_changes)
+- Other endpoints: [`GET /api/events`](#get-apievents), [`GET /api/bus/<id>`](#get-apibusid), [`GET /api/history/<id>`](#get-apihistoryid), [`GET /api/area`](#get-apiarea), [`GET /healthz`](#get-healthz), [Static files](#static-files)
+- Rules: [Access rules](#access-rules-every-request), [Security headers](#security-headers-every-response-while-the-dashboard-is-on)
 
 ## `GET /api/snapshot`
 
@@ -193,6 +199,69 @@ Best guesses added on top of a row (worked out in `enrich.py`). They never chang
 - **`history.phrase`** (null when there's nothing to say): how this departure ran on recent days of the same kind, like "Late 4 of the last 10 weekdays (avg 6 min)", the same words as `/api/history/<id>`. The page shows it in the row only when it is notable, as "Often late: 4 of 10" (at least 3 days, and at least a third of them, late or cancelled). It reads those counts from the words, so a change to their wording in `history.py` needs `recordNote` in `board.js` to follow; `tests/dashboard/test_static.py` checks the two agree.
 - **`history.no_show_phrase`** (buses only; null when there's nothing to say): how often this departure had no tracker before it left, like "No tracker on 3 of the last 10 weekdays", over the same days as `phrase`. It is null with fewer than 3 days recorded or when every day had a tracker. Train rows' `history` has `phrase` only.
 
+## Snapshot: `disruptions`
+
+A top-level key of `/api/snapshot`, after `weather`. It is `null` when neither source is set up (no buses, and no `RDM_KB_API_KEY`).
+
+```json
+"disruptions": {
+  "status": {
+    "bus": {"last_success": "…", "stale": false, "error": null, "note": null},
+    "train": null
+  },
+  "items": [{
+    "id": "5d0e…",
+    "mode": "bus",
+    "title": "Station Road, Hadfield - Roadworks",
+    "summary": "Due to roadworks on Station Road, service 237 will divert…",
+    "reason": "Roadworks",
+    "from_at": "2026-10-12T08:00:00+01:00", "to_at": "2026-10-30T16:00:00+00:00",
+    "periods": [{"from_at": "2026-10-12T08:00:00+01:00", "to_at": "2026-10-30T16:00:00+00:00"}],
+    "planned": true,
+    "lines": ["237"],
+    "stops": [],
+    "places": ["Station Road"],
+    "severity": "normal",
+    "relevance": "line",
+    "link": null
+  }]
+}
+```
+
+- **Sources:**
+  - `bus`: BODS SIRI-SX (the buses' `BODS_API_KEY`), polled every 10 minutes. `null` without buses. `note` is "Waiting for the bus timetable" until the timetable says which lines and stops are ours.
+  - `train`: the National Rail Knowledgebase's incidents through the Rail Data Marketplace (`RDM_KB_API_KEY`, at `[dashboard] kb_incidents_url`), polled every 30 minutes. `null` without the key or without the address (the settings site and the log say which). `note` is "Waiting for the train board" until a board names our operators.
+- **Which are kept** (see `disruptions.py`): valid now or in the next 7 days, and:
+  - buses, by `relevance`:
+    - `your_stop`: at one of our own stops, whatever its lines;
+    - `nearby`: at a positioned stop our journeys use near our stops, if that part of the notice names one of our lines or no lines at all;
+    - `line`: on our line *with* the operator our timetable has for it, or "all lines" of one of our operators, with an affected stop inside our area (about 1 km around the positioned stops); or on our line with no stops named at all (a withdrawn or curtailed service).
+    - Nothing else: a notice on our line whose stops are all outside our area (roadworks at the far end of the route), and "all lines" with no affected stop in our area, are left out. Only the parts of a notice in our area give its `lines` and `places`.
+  - trains: names one of the operators running our trains, and mentions one of our stations (ours, the filter station, or any our trains call at) by name or three-letter code. `relevance` is `your_stop` when it mentions our own station, else `line`.
+- **Items:** buses first, then trains, each most relevant first, then those in force now, then the most severe (`unknown` counts as `normal`), then the soonest; at most 30 of each.
+  - `id` is 16 hex characters, stable for the same notice; the feed's own number stays on the server.
+  - `title`, `summary` (at most 500 characters) and `reason` are plain text, with any HTML in the feed dropped.
+  - `periods` are the notice's validity periods that touch now to 7 days ahead, in order (at most 14). `from_at` and `to_at` repeat the first. `to_at` is `null` when open-ended.
+  - `planned` is the feed's own word: engineering works and booked roadworks are planned.
+  - `lines` are our lines it affects (bus only); `stops` our stop labels it names, as in `buses.stops` (bus only); `places` stop or station names, in words.
+  - `severity` is `slight`, `normal`, `severe` or `unknown`; always shown in words.
+  - `relevance` is `your_stop`, `nearby` or `line`, most relevant first (see above).
+  - `link` is `null` unless the feed gave an https link on a known operator's site (`disruptions.LINK_HOSTS`).
+- **On the page:** one line under the hero names the first item in force at or near our stops (`your_stop` or `nearby`), or a rail service message, and how many more there are; opening it lists them all, in force first, then coming up (folded), each most relevant first, in words. Rail service `messages` join it. A bus row whose line or stop an item names, during one of its periods, gets a "Disruption" link that opens the line at it.
+
+## Snapshot: `timetable_changes`
+
+A top-level key of `/api/snapshot`, after `disruptions`: the bus lines whose timetable changes in the next 28 days. `null` without buses or a usable timetable; `[]` when nothing changes.
+
+```json
+"timetable_changes": [{"line": "341", "operator": "BNML", "from": "2026-10-25"}]
+```
+
+- **The rule** (`area.timetable_changes`): the bus timetable keeps journeys whose calendar starts in the future (they never run before their start). A day D in the next 28 days is looked at if a journey starts on D or ended the day before. A line (with its operator) changes on D when the set of its journeys running on D, by their stops and times, differs from the set that ran on the same weekday a week before: new journeys, ended ones, or new times. Each line is listed once, at its first change, soonest first; at most 20. Bank holidays aren't counted. Journeys kept only to find an inbound bus give no departures, so they don't count either.
+- It is worked out again only when the timetable is read again or the day changes.
+- `from` is `YYYY-MM-DD`, the first day of the new timetable.
+- **On the page:** a notice above the bus table, such as "New 341 timetable from Sun 25 Oct."
+
 ## `GET /api/events`
 
 Server-sent events (`text/event-stream`):
@@ -256,7 +325,7 @@ While the dashboard is on: 200 `ok` when the pollers are alive and the snapshot 
 Checked in this order, before anything else. Each refusal has a plain-text body and the security headers below.
 
 - **403** unless the client's address is private, loopback or link-local, the request has exactly one `Host` header, and that host is local or in `[dashboard] allowed_hosts`. Local means a private IP address, a name without dots, or a name ending `.local`, `.lan` or `.home.arpa`. This stops DNS rebinding.
-- Then everything under `/settings`, and the old `/login`, `/reset` and `/setup/`, goes to the settings site, which has its own rules (see the top of this page).
+- Then everything under `/settings` goes to the settings site, which has its own rules (see the top of this page).
 - **405** with `Allow: GET, HEAD` for any other method.
 - **404** when the request target is over 512 characters, doesn't start with `/`, or holds `..`, a backslash, or an encoded dot, slash, backslash or NUL (`%2e`, `%2f`, `%5c`, `%00`, in any case).
 - While the dashboard is off, the rest is answered as at the top of this page.
@@ -274,69 +343,6 @@ Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
 ```
 
 `img-src data:` is there for Leaflet's inline marker images. No inline scripts or styles: style changes are made from JS through the CSSOM (`el.style.x = …`), which CSP allows.
-
-## Snapshot: `disruptions`
-
-A top-level key of `/api/snapshot`, after `weather`. It is `null` when neither source is set up (no buses, and no `RDM_KB_API_KEY`).
-
-```json
-"disruptions": {
-  "status": {
-    "bus": {"last_success": "…", "stale": false, "error": null, "note": null},
-    "train": null
-  },
-  "items": [{
-    "id": "5d0e…",
-    "mode": "bus",
-    "title": "Station Road, Hadfield - Roadworks",
-    "summary": "Due to roadworks on Station Road, service 237 will divert…",
-    "reason": "Roadworks",
-    "from_at": "2026-10-12T08:00:00+01:00", "to_at": "2026-10-30T16:00:00+00:00",
-    "periods": [{"from_at": "2026-10-12T08:00:00+01:00", "to_at": "2026-10-30T16:00:00+00:00"}],
-    "planned": true,
-    "lines": ["237"],
-    "stops": [],
-    "places": ["Station Road"],
-    "severity": "normal",
-    "relevance": "line",
-    "link": null
-  }]
-}
-```
-
-- **Sources:**
-  - `bus`: BODS SIRI-SX (the buses' `BODS_API_KEY`), polled every 10 minutes. `null` without buses. `note` is "Waiting for the bus timetable" until the timetable says which lines and stops are ours.
-  - `train`: the National Rail Knowledgebase's incidents through the Rail Data Marketplace (`RDM_KB_API_KEY`, at `[dashboard] kb_incidents_url`), polled every 30 minutes. `null` without the key or without the address (the settings site and the log say which). `note` is "Waiting for the train board" until a board names our operators.
-- **Which are kept** (see `disruptions.py`): valid now or in the next 7 days, and:
-  - buses, by `relevance`:
-    - `your_stop`: at one of our own stops, whatever its lines;
-    - `nearby`: at a positioned stop our journeys use near our stops, if that part of the notice names one of our lines or no lines at all;
-    - `line`: on our line *with* the operator our timetable has for it, or "all lines" of one of our operators, with an affected stop inside our area (about 1 km around the positioned stops); or on our line with no stops named at all (a withdrawn or curtailed service).
-    - Nothing else: a notice on our line whose stops are all outside our area (roadworks at the far end of the route), and "all lines" with no affected stop in our area, are left out. Only the parts of a notice in our area give its `lines` and `places`.
-  - trains: names one of the operators running our trains, and mentions one of our stations (ours, the filter station, or any our trains call at) by name or three-letter code. `relevance` is `your_stop` when it mentions our own station, else `line`.
-- **Items:** buses first, then trains, each most relevant first, then those in force now, then the most severe (`unknown` counts as `normal`), then the soonest; at most 30 of each.
-  - `id` is 16 hex characters, stable for the same notice; the feed's own number stays on the server.
-  - `title`, `summary` (at most 500 characters) and `reason` are plain text, with any HTML in the feed dropped.
-  - `periods` are the notice's validity periods that touch now to 7 days ahead, in order (at most 14). `from_at` and `to_at` repeat the first. `to_at` is `null` when open-ended.
-  - `planned` is the feed's own word: engineering works and booked roadworks are planned.
-  - `lines` are our lines it affects (bus only); `stops` our stop labels it names, as in `buses.stops` (bus only); `places` stop or station names, in words.
-  - `severity` is `slight`, `normal`, `severe` or `unknown`; always shown in words.
-  - `relevance` is `your_stop`, `nearby` or `line`, most relevant first (see above).
-  - `link` is `null` unless the feed gave an https link on a known operator's site (`disruptions.LINK_HOSTS`).
-- **On the page:** one line under the hero names the first item in force at or near our stops (`your_stop` or `nearby`), or a rail service message, and how many more there are; opening it lists them all, in force first, then coming up (folded), each most relevant first, in words. Rail service `messages` join it. A bus row whose line or stop an item names, during one of its periods, gets a "Disruption" link that opens the line at it.
-
-## Snapshot: `timetable_changes`
-
-A top-level key of `/api/snapshot`, after `disruptions`: the bus lines whose timetable changes in the next 28 days. `null` without buses or a usable timetable; `[]` when nothing changes.
-
-```json
-"timetable_changes": [{"line": "341", "operator": "BNML", "from": "2026-10-25"}]
-```
-
-- **The rule** (`area.timetable_changes`): the bus timetable keeps journeys whose calendar starts in the future (they never run before their start). A day D in the next 28 days is looked at if a journey starts on D or ended the day before. A line (with its operator) changes on D when the set of its journeys running on D, by their stops and times, differs from the set that ran on the same weekday a week before: new journeys, ended ones, or new times. Each line is listed once, at its first change, soonest first; at most 20. Bank holidays aren't counted. Journeys kept only to find an inbound bus give no departures, so they don't count either.
-- It is worked out again only when the timetable is read again or the day changes.
-- `from` is `YYYY-MM-DD`, the first day of the new timetable.
-- **On the page:** a notice above the bus table, such as "New 341 timetable from Sun 25 Oct."
 
 ## `GET /api/area`
 

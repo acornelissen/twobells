@@ -117,7 +117,7 @@ def test_the_documented_password_commands_fit_the_container():
     from twobells.settings.installs import install_named
 
     assert "WORKDIR /data" in DOCKERFILE
-    guide, readme = (ROOT / "docs" / "user-guide.md").read_text(), (ROOT / "README.md").read_text()
+    guide, readme = (ROOT / "docs" / "password.md").read_text(), (ROOT / "README.md").read_text()
     docker = install_named("docker")
     # What the settings pages tell the owner to run, as the docs give it.
     for flag, command in (("--set-password", docker.password_command), ("--reset-code", docker.reset_command)):
@@ -254,7 +254,7 @@ def test_the_web_unit_puts_its_cgroup_in_the_guards_set_and_starts_without_it():
 
 
 def test_the_guide_says_how_the_guard_holds_and_how_to_bring_it_back():
-    guide = (ROOT / "docs" / "user-guide.md").read_text()
+    guide = (ROOT / "docs" / "security.md").read_text()
     for said in (f"`{GUARD_UNIT}`", "`NFTSet=`", "systemd 254",
                  # A Pi Zero or Pi 1 has neither systemd's firewall nor, on Bookworm (252), the guard.
                  "Raspberry Pi OS Trixie",
@@ -668,7 +668,7 @@ def test_a_fetch_service_that_keeps_stopping_at_once_is_given_up_on_not_looped()
     for name in ("twobells-fetch.service", "twobells-fetch.path"):
         unit = _unit(name)
         assert unit["StartLimitIntervalSec"] == ["2min"] and unit["StartLimitBurst"] == ["10"], name
-    guide = (ROOT / "docs" / "user-guide.md").read_text()
+    guide = (ROOT / "docs" / "troubleshooting.md").read_text()
     assert "systemctl reset-failed twobells-fetch.service twobells-fetch.path" in guide
 
 
@@ -854,7 +854,8 @@ def test_install_and_update_give_the_settings_new_address():
 RELEASE = (ROOT / ".github" / "workflows" / "release.yml").read_text()
 IMAGE = re.search(r"^  IMAGE: (\S+)$", RELEASE, re.M).group(1)
 REPO = IMAGE.removeprefix("ghcr.io/")
-GUIDE = (ROOT / "docs" / "user-guide.md").read_text()
+PI_GUIDE = (ROOT / "docs" / "install-pi.md").read_text()
+DESKTOP_GUIDE = (ROOT / "docs" / "desktop.md").read_text()
 DOCKER_DOCS = (ROOT / "docs" / "docker.md").read_text()
 GHCR_COMPOSE = (ROOT / "deploy" / "docker" / "docker-compose.ghcr.yml").read_text()
 
@@ -1030,7 +1031,7 @@ def test_upgrade_downloads_the_releases_files_over_https_only_and_cleans_up():
 
 
 def test_the_guide_installs_a_pi_from_a_checked_release():
-    block = re.search(r"```bash\nVERSION=0\.1\.0\n(.*?)```", GUIDE, re.S).group(1)
+    block = re.search(r"```bash\nVERSION=0\.1\.0\n(.*?)```", PI_GUIDE, re.S).group(1)
     assert f'base="https://github.com/{REPO}/releases/download/v$VERSION"' in block
     for name in ("twobells-$VERSION.tar.gz", "SHA256SUMS", "SHA256SUMS.sigstore.json"):
         assert f'curl -fLO "$base/{name}"' in block
@@ -1039,10 +1040,10 @@ def test_the_guide_installs_a_pi_from_a_checked_release():
     steps = [step.strip() for step in last.split("&&")]
     assert steps == ["sha256sum --check --ignore-missing SHA256SUMS", 'tar -xzf "twobells-$VERSION.tar.gz"',
                      'cd "twobells-$VERSION"', "sudo ./deploy/pi/install.sh"]
-    assert f'--certificate-identity "{_identity("v$VERSION")}"' in GUIDE
-    assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in GUIDE
-    assert "sudo ./deploy/pi/upgrade.sh 0.2.0" in GUIDE
-    assert "| sudo bash" not in GUIDE
+    assert f'--certificate-identity "{_identity("v$VERSION")}"' in PI_GUIDE
+    assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in PI_GUIDE
+    assert "sudo ./deploy/pi/upgrade.sh 0.2.0" in PI_GUIDE
+    assert "| sudo bash" not in PI_GUIDE
 
 
 # The published image: the same lock-down as docker-compose.yml, wherever it runs.
@@ -1189,9 +1190,9 @@ def test_the_mac_login_agent_runs_serve_on_this_computer_only():
         assert agent[key] == "/Users/YOU/Library/Logs/twobells.log"
     # The guide's sed puts the home folder in every path.
     assert set(re.findall(r"/Users/\w+", path.read_text())) == {"/Users/YOU"}
-    assert 'sed "s|/Users/YOU|$HOME|g" deploy/desktop/uk.twobells.serve.plist' in GUIDE
-    assert 'launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/uk.twobells.serve.plist' in GUIDE
-    assert 'launchctl bootout "gui/$(id -u)/uk.twobells.serve"' in GUIDE
+    assert 'sed "s|/Users/YOU|$HOME|g" deploy/desktop/uk.twobells.serve.plist' in DESKTOP_GUIDE
+    assert 'launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/uk.twobells.serve.plist' in DESKTOP_GUIDE
+    assert 'launchctl bootout "gui/$(id -u)/uk.twobells.serve"' in DESKTOP_GUIDE
 
 
 def test_the_linux_login_service_runs_serve_on_this_computer_only():
@@ -1208,7 +1209,7 @@ def test_the_linux_login_service_runs_serve_on_this_computer_only():
     for command in ("cp deploy/desktop/twobells.service ~/.config/systemd/user/",
                     "systemctl --user enable --now twobells.service",
                     "journalctl --user -u twobells -f"):
-        assert command in GUIDE, command
+        assert command in DESKTOP_GUIDE, command
 
 
 def test_the_desktop_needs_pillow_only():
@@ -1218,4 +1219,4 @@ def test_the_desktop_needs_pillow_only():
     names = {re.split(r"[<>=!~ ;\[]", spec, maxsplit=1)[0].lower() for spec in project["dependencies"]}
     assert names == {"pillow"}
     assert any(spec.startswith("inky") for spec in project["optional-dependencies"]["pi"])  # the Pi's, as an extra
-    assert "uv tool install twobells" in GUIDE and "pipx install twobells" in GUIDE
+    assert "uv tool install twobells" in DESKTOP_GUIDE and "pipx install twobells" in DESKTOP_GUIDE

@@ -22,7 +22,7 @@
 # (Open-Meteo) works anywhere.
 
 # The heading on the dashboard and the board's plain look, like
-# "Glossop > Manchester Picc". Defaults to "Departures". Also on the General tab.
+# "Glossop > Manchester Picc". Defaults to "Departures". Also on the Trains and buses tab.
 # title = "Departures"
 # The zone departures and checking times are in. Also on the General tab.
 timezone = "Europe/London"
@@ -133,7 +133,7 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # HDMI screen only: a second page showing where the next bus you can catch is,
 # on the stops before yours. Needs BODS_API_KEY in secrets.env. Positions are
 # checked every position_interval_seconds ([bus], above) inside the bus windows.
-# `twobells route` prints this block for you; see the user guide.
+# `twobells route` prints this block for you; see docs/displays.md.
 # [bus.routes.LINE]
 # stop = "A"            # your stop's label from [bus.stops]
 # stops = [             # in the order the bus calls; yours last
@@ -142,8 +142,8 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # ]
 
 # The dashboard view only; the board ignores this.
-# All optional; the values shown are the defaults. All but state_dir and allowed_hosts
-# can be changed on the Dashboard tab too.
+# All optional; the values shown are the defaults. All but state_dir, allowed_hosts
+# and kb_incidents_url can be changed on the Dashboard tab too.
 # [dashboard]
 # The store, when state_file above isn't set. Default: /var/lib/twobells
 # on a Pi, /data in Docker, ~/Library/Application Support/twobells on a
@@ -162,7 +162,7 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # allowed_hosts = []              # extra host names the dashboard and settings answer to, like ["ds.home"]
 # Rail engineering works: the Knowledgebase Incidents address from the RDM
 # product page. Until it is set, they stay off, even with RDM_KB_API_KEY. The
-# Dashboard tab takes an address at raildata.org.uk; any other goes here.
+# Keys tab takes an address at raildata.org.uk; any other goes here.
 # kb_incidents_url = "https://..."
 
 # Optional: a rain warning from Open-Meteo's forecast (free, no key). The board
