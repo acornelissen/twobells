@@ -12,7 +12,7 @@
 
 One install is one app with two views of the same departures:
 
-- **The board:** a Raspberry Pi with a four-colour Inky pHAT (250x122), a Waveshare 10.85" e-Paper (G) (1360x480), a Waveshare 7.9" HDMI screen (1280x400, on its side), or an 11.3" HDMI bar screen (1920x440).
+- **The board:** a Raspberry Pi with a four-colour Inky pHAT (250x122). The app also draws for a Waveshare 10.85" e-Paper (G) (1360x480), a Waveshare 7.9" HDMI screen (1280x400, on its side) and an 11.3" HDMI bar screen (1920x440); those are tested in software but not yet on the hardware.
 - **The dashboard:** a web page for a phone or computer at home, with the next 10 trains and buses, calling points, bus strips and maps, the weather, disruptions and punctuality history.
 
 A Pi can run either view or both; Docker and a desktop run the dashboard. Each install has one settings site, at `/settings` on port 8090, with one password and a setup wizard that finds your station, stops, walk times and bus companies from your postcode. The examples use Glossop, with trains to Manchester and buses from two nearby stops (`examples/glossop.toml`).
@@ -24,7 +24,7 @@ A Pi can run either view or both; Docker and a desktop run the dashboard. Each i
 - **Live buses, for free, all day.** Worked out the way [bustimes.org](https://bustimes.org) does it, from the BODS timetable plus live bus positions. A strip under each bus shows how many stops away it is.
 - **The things that change your plan.** Disruptions on your journeys, rain on its way, a new timetable starting soon, and which trains are *often late*.
 - **Yours, at home.** It runs on a Pi, a NAS or a laptop on your own network, with free API keys and no cloud account. The Pi's web server never connects to the internet, and releases are signed.
-- **Easy to read for everyone.** It meets WCAG 2.2 AA, works with a keyboard and a screen reader, and always says what it means in words. Colour only backs the words up.
+- **Easy to read for everyone.** It is built to WCAG 2.2 AA, for the keyboard and screen readers, and always says what it means in words. Colour only backs the words up.
 
 ## The dashboard
 
@@ -53,11 +53,11 @@ An e-paper board needs no attention: it redraws only when what it shows changes.
 
 ![The station board look on the Inky pHAT, scaled up: the next three trains with the 08:12 cancelled, and three buses with when to leave for each](docs/images/phat-sign.png)
 
-On the 10.85" e-paper there is room for platforms:
+On the 10.85" e-paper there is room for platforms (as the app draws it; not yet run on the panel itself):
 
 ![The station board look on the 10.85 inch e-paper](docs/images/epaper-10in85.png)
 
-An HDMI screen redraws every second, with a running clock and countdowns, and a page showing where your next bus is:
+An HDMI screen redraws every second, with a running clock and countdowns, and a page showing where your next bus is (again as the app draws it, not yet tried on a real screen):
 
 ![The bus position page: the 341 to Hyde three stops from Henry Street, leave in 3 min](docs/images/screen-bus.png)
 
@@ -180,6 +180,10 @@ One package, `src/twobells`, a folder per part of the app. Each folder's `__init
 Tests mirror the package: `tests/<folder>/test_<module>.py`, with `tests/test_deploy.py` keeping the deploy files and their docs in step. `deploy/` holds the Pi's units and scripts (`pi/`), the published image's compose file and the image's pinned requirements (`docker/`), the desktop's login files (`desktop/`), the Unraid template (`unraid/`) and `secrets.env.example`; `Dockerfile` and `docker-compose.yml` stay at the top, where `docker compose` looks.
 
 To add a provider, implement `fetch() -> list[Departure]` with a `name` and add it to `settings/config.py`.
+
+## Security
+
+Found a vulnerability? Please report it privately, as [SECURITY.md](SECURITY.md) says.
 
 ## Licence
 
