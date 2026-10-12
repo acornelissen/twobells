@@ -7,7 +7,7 @@ DNS rebinding from outside websites; API calls from another site's page
 are refused too. Connections and event streams are capped so a
 misbehaving client can't use up the threads.
 
-Everything under /settings (and the board's old settings addresses) goes
+Everything under /settings goes
 to the settings site (web/settingsite.py): it signs the owner in, takes POSTs
 (same-origin, with a CSRF token, bodies capped) and has its own security
 headers, with scripts only on the setup wizard's pages.

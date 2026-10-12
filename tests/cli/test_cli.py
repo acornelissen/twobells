@@ -2207,7 +2207,6 @@ def test_the_pis_settings_hand_setup_to_the_fetch_service(tmp_path, monkeypatch,
 
 
 def test_the_fetch_service_searches_in_the_boards_state_folder(tmp_path, monkeypatch, no_runtime_folder):
-    # By its old name, `setup serve`, it parses the same: see the fetch service's listing test.
     from twobells.setup.spool.worker import Worker
 
     ran = []

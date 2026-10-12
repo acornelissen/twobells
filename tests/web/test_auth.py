@@ -1186,7 +1186,7 @@ def test_the_form_cookie_is_strict_http_only_and_scoped():
 
 
 def test_a_password_changed_elsewhere_signs_everyone_out(tmp_path):
-    # `twobells web --set-password` runs in its own process: the page's
+    # `twobells serve --set-password` runs in its own process: the page's
     # sessions must notice the new password through the file, not memory.
     from twobells.web.auth import PasswordStore, Sessions
 

@@ -1,7 +1,7 @@
 """The settings site: everything under /settings, on every install.
 
 The one server (web/server.py) hands it every request under /settings,
-and the old addresses that moved here, once it has let the request in
+once it has let the request in
 (from the home network, naming a local host). The rest of the server is
 the read-only dashboard; this part changes what the board and the
 dashboard run on, so it needs signing in. The machinery is web/auth.py's, and
