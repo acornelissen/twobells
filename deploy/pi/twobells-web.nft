@@ -1,5 +1,6 @@
 # The web server's network guard: home network only, and nothing out to the
-# internet. twobells-guard.service loads it at boot, before the web
+# internet. It also keeps anyone from connecting to the fetch service, which
+# listens on nothing. twobells-guard.service loads it at boot, before the web
 # server starts, and removes it as it stops (nft -f, as root). It is the
 # second layer under the web unit's IPAddressAllow=, which systemd can't apply
 # on some Pis (a Pi Zero's kernel refuses it the memory it needs), and holds
@@ -10,9 +11,14 @@
 # id in as the server starts and takes it out as it stops. Not by a cgroup
 # path here: nft turns a path into an id by the folder's inode number, which
 # on a 32-bit kernel isn't the kernel's id (that has more in its high bits),
-# so such a rule never matches there. Loading this again empties the set, so
-# the web server must restart after it. The fetch service, the same user in
-# another cgroup, still reaches the internet.
+# so such a rule never matches there. Loading this again empties the sets, so
+# the web server and the fetch service must restart after it. The fetch
+# service, the same user in another cgroup, still reaches the internet.
+#
+# The fetch service's unit has SocketBindDeny=any, which systemd can't apply
+# where it was built without BPF (a Pi Zero W's): its own NFTSet= puts its
+# cgroup in the set fetch, and the input rule drops new connections to any
+# socket of it. Only new ones, so the replies to its requests still come in.
 
 # Made if it isn't there, so there is always one to delete: loading this
 # twice replaces the rules, in one go, rather than adding them again.
@@ -40,6 +46,11 @@ table inet twobells_web {
 		type cgroupsv2
 	}
 
+	# The fetch service's cgroup, the same way (its unit's NFTSet=).
+	set fetch {
+		type cgroupsv2
+	}
+
 	# Whatever the web server sends: to the home network, or refused at once.
 	chain output {
 		type filter hook output priority filter; policy accept;
@@ -52,10 +63,11 @@ table inet twobells_web {
 		reject with icmpx admin-prohibited
 	}
 
-	# Its port, from the home network only.
+	# Its port, from the home network only; and nothing to the fetch service.
 	chain input {
 		type filter hook input priority filter; policy accept;
 		tcp dport 8090 ip saddr != @home4 drop
 		tcp dport 8090 ip6 saddr != @home6 drop
+		ct state new socket cgroupv2 level 2 @fetch drop
 	}
 }

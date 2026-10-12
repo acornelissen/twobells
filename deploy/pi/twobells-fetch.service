@@ -2,6 +2,10 @@
 Description=Two Bells: the web server's internet work (the setup wizard's lookups, the dashboard's feeds)
 Wants=network-online.target
 After=network-online.target
+# The network guard, loaded first so its set is there for NFTSet= below.
+# Wanted, not required: it starts anyway if the guard can't load.
+Wants=twobells-guard.service
+After=twobells-guard.service
 # Started at boot, and by twobells-fetch.path whenever the web server
 # leaves a request. With the dashboard view off, each run lasts at least the
 # minute it waits for more, so ten starts in two minutes means it keeps
@@ -70,6 +74,10 @@ TasksMax=32
 # Outbound only: no IPAddressDeny, unlike the web server, and it listens on
 # nothing, so it may bind no socket.
 SocketBindDeny=any
+# The same again in nftables, for where systemd can't apply the line above
+# (built without BPF, as on a Pi Zero W): the guard drops new connections to
+# this cgroup's sockets (needs systemd 254 or later).
+NFTSet=cgroup:inet:twobells_web:fetch
 
 [Install]
 WantedBy=multi-user.target

@@ -78,15 +78,13 @@ fi
 
 # Run again, the web server may be running already on the old unit, and
 # enable --now leaves it so: it restarts below, onto the new unit, after its
-# network guard loads afresh. The fetch service restarts too if its unit
-# changed. Each as it was before this run; try-restart never starts one.
+# network guard loads afresh. The fetch service too: loading the guard
+# empties its set as well. Each as it was before this run; try-restart never
+# starts one.
 restart_web=false
 systemctl is-active --quiet twobells-web.service && restart_web=true
 restart_fetch=false
-if systemctl is-active --quiet twobells-fetch.service \
-    && ! cmp -s "$REPO/deploy/pi/twobells-fetch.service" /etc/systemd/system/twobells-fetch.service; then
-  restart_fetch=true
-fi
+systemctl is-active --quiet twobells-fetch.service && restart_fetch=true
 for unit in twobells.service twobells.timer twobells-screen.service twobells-web.service \
     twobells-guard.service twobells-timetable.service twobells-timetable.timer \
     twobells-fetch.service twobells-fetch.path; do

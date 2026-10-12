@@ -190,6 +190,7 @@ GUARD_UNIT = "twobells-guard.service"  # loads it at boot, before the web server
 GUARD_FILE = "/opt/twobells/twobells-web.nft"  # where install.sh and update.sh put it
 GUARD_TABLE = "inet twobells_web"
 GUARD_SET = "web"  # the web server's cgroup, put in by systemd (the web unit's NFTSet=)
+FETCH_SET = "fetch"  # the fetch service's, the same way: it listens on nothing
 # systemd's names in IPAddressAllow=, as systemd.resource-control(5) gives them.
 SYSTEMD_NAMES = {"localhost": ("127.0.0.0/8", "::1/128"), "link-local": ("169.254.0.0/16", "fe80::/64")}
 
@@ -219,13 +220,13 @@ def _guard_set(name: str) -> set:
     return {ipaddress.ip_network(element.strip()) for element in elements.split(",")}
 
 
-def test_the_guard_unit_loads_the_table_as_root_at_boot_before_the_web_server():
+def test_the_guard_unit_loads_the_table_as_root_at_boot_before_the_services_it_holds():
     guard = _unit(GUARD_UNIT)
     assert guard["Type"] == ["oneshot"] and guard["RemainAfterExit"] == ["yes"]
     assert guard["ExecStart"] == [f"/usr/sbin/nft -f {GUARD_FILE}"]
     # "-": stopping never fails on a table already gone (nft flush ruleset, say).
     assert guard["ExecStop"] == [f"-/usr/sbin/nft delete table {GUARD_TABLE}"]
-    assert guard["Before"] == ["twobells-web.service"]
+    assert guard["Before"] == ["twobells-web.service twobells-fetch.service"]
     # After nftables' own rules, which begin by flushing every table, this one too.
     assert guard["After"] == ["nftables.service"]
     assert guard["WantedBy"] == ["multi-user.target"]
@@ -253,13 +254,24 @@ def test_the_web_unit_puts_its_cgroup_in_the_guards_set_and_starts_without_it():
     assert web["User"] == ["twobells"]  # the server itself is never root
 
 
+def test_the_fetch_unit_puts_its_cgroup_in_the_guards_other_set_and_starts_without_it():
+    # Where systemd can't apply SocketBindDeny= (built without BPF, as on a Pi
+    # Zero W), the guard refuses connections to anything it listens on.
+    fetch = _unit("twobells-fetch.service")
+    assert fetch["NFTSet"] == [f"cgroup:{GUARD_TABLE.replace(' ', ':')}:{FETCH_SET}"]
+    assert GUARD_UNIT in fetch["Wants"] and GUARD_UNIT in fetch["After"]
+    for binding in ("Requires", "Requisite", "BindsTo", "PartOf"):
+        assert GUARD_UNIT not in " ".join(fetch.get(binding, [])), binding
+    assert fetch["SocketBindDeny"] == ["any"]  # still the first layer, where systemd can
+
+
 def test_the_guide_says_how_the_guard_holds_and_how_to_bring_it_back():
     guide = (ROOT / "docs" / "security.md").read_text()
     for said in (f"`{GUARD_UNIT}`", "`NFTSet=`", "systemd 254",
                  # A Pi Zero or Pi 1 has neither systemd's firewall nor, on Bookworm (252), the guard.
                  "Raspberry Pi OS Trixie",
                  # Flushing the ruleset removes it; this loads it, then puts the server in its set again.
-                 f"sudo systemctl restart {GUARD_UNIT.removesuffix('.service')} twobells-web",
+                 f"sudo systemctl restart {GUARD_UNIT.removesuffix('.service')} twobells-web twobells-fetch",
                  f"sudo nft list set {GUARD_TABLE} {GUARD_SET}"):
         assert said in guide, said
     assert "The unit loads them as root as the server starts" not in guide
@@ -326,10 +338,22 @@ def test_the_guard_keeps_the_units_port_to_the_home_network():
     from twobells.cli.main import _parser
 
     port = _parser().parse_args(shlex.split(_unit("twobells-web.service")["ExecStart"][0])[1:]).port
-    incoming = [line.strip() for line in _block(_rules(), "chain input {").strip().splitlines()]
-    assert incoming == ["type filter hook input priority filter; policy accept;",
-                        f"tcp dport {port} ip saddr != @home4 drop",
-                        f"tcp dport {port} ip6 saddr != @home6 drop"]
+    incoming = [line.strip() for line in _block(_rules(), "chain input {").strip().splitlines()
+                if line.strip() and not line.strip().startswith("#")]
+    assert incoming[:3] == ["type filter hook input priority filter; policy accept;",
+                            f"tcp dport {port} ip saddr != @home4 drop",
+                            f"tcp dport {port} ip6 saddr != @home6 drop"]
+
+
+def test_the_guard_refuses_new_connections_to_the_fetch_service():
+    rules = _rules()
+    incoming = [line.strip() for line in _block(rules, "chain input {").strip().splitlines()
+                if line.strip() and not line.strip().startswith("#")]
+    # Only new connections: the replies to its own requests are established, and still come in.
+    assert incoming[3:] == [f"ct state new socket cgroupv2 level 2 @{FETCH_SET} drop"]
+    # Empty as loaded: what is in it is systemd's to say.
+    assert [line.strip() for line in _block(rules, f"set {FETCH_SET} {{").strip().splitlines()] == [
+        "type cgroupsv2"]
 
 
 @pytest.mark.parametrize("name", ["install.sh", "update.sh"])
@@ -454,16 +478,23 @@ def test_install_run_again_restarts_a_running_web_server_onto_its_new_unit_and_g
     assert install.index(restart) < install.index("\nsay_if_unguarded\n")
 
 
-def test_install_run_again_restarts_a_running_fetch_service_only_if_its_unit_changed():
+def test_install_run_again_restarts_a_running_fetch_service_onto_its_new_unit_and_guard():
+    # Loading the guard afresh empties its sets, so a running fetch service
+    # restarts after it, for systemd to put it in again, as the web server does.
     install = _script("install.sh")
-    changed = ("if systemctl is-active --quiet twobells-fetch.service \\\n"
-               '    && ! cmp -s "$REPO/deploy/pi/twobells-fetch.service" '
-               "/etc/systemd/system/twobells-fetch.service; then\n  restart_fetch=true\nfi\n")
-    assert "restart_fetch=false\n" + changed in install
-    assert install.index(changed) < install.index("for unit in ")  # the unit as it was before this run
+    asked = "systemctl is-active --quiet twobells-fetch.service && restart_fetch=true\n"
+    assert "restart_fetch=false\n" + asked in install
+    assert install.index(asked) < install.index("for unit in ")  # as it was before this run
     started = install.index("systemctl enable --now twobells-fetch.path twobells-fetch.service\n")
     restart = "if $restart_fetch; then\n  systemctl try-restart twobells-fetch.service\nfi\n"
     assert started < install.index(restart)
+    assert install.index(f"systemctl restart {GUARD_UNIT}") < install.index(restart)
+
+
+def test_update_restarts_the_fetch_service_after_loading_the_guard():
+    update = _script("update.sh")
+    assert update.index(f"systemctl restart {GUARD_UNIT}") < update.index(
+        "systemctl restart twobells-fetch.path twobells-fetch.service")
 
 
 def test_install_never_starts_a_service_by_restarting_it_but_the_guard():

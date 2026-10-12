@@ -1,16 +1,17 @@
 [Unit]
 Description=Two Bells web server's network guard (nftables)
-# The web server's unit puts its cgroup in this table's set (NFTSet=) as the
-# server starts, so the table must be there first. After nftables' own rules,
-# which begin by flushing every table, this one too.
-Before=twobells-web.service
+# The web server's and the fetch service's units put their cgroups in this
+# table's sets (NFTSet=) as they start, so the table must be there first.
+# After nftables' own rules, which begin by flushing every table, this one too.
+Before=twobells-web.service twobells-fetch.service
 After=nftables.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 # Loaded as root, and removed as this stops. Loading it again empties the
-# set, so the web server must restart after: install.sh and update.sh do.
+# sets, so the web server and the fetch service must restart after:
+# install.sh and update.sh do.
 ExecStart=/usr/sbin/nft -f /opt/twobells/twobells-web.nft
 ExecStop=-/usr/sbin/nft delete table inet twobells_web
 # nft needs CAP_NET_ADMIN and a netlink socket, nothing more. Not in a network
