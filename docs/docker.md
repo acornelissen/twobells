@@ -4,13 +4,13 @@ The dashboard and its settings in one container, `twobells`, on a NAS or any alw
 
 There are two ways to run it:
 
-- **The published image**, `ghcr.io/acornelissen/twobells`: signed, for 64-bit computers (`linux/amd64` and `linux/arm64`), with nothing to build. `deploy/docker/docker-compose.ghcr.yml` runs it. Every platform below but Synology uses it. There is no image for 32-bit ARM.
-- **Built from source** with `docker-compose.yml` at the top of the project, as on [Synology](#synology-build-from-source).
+- **The published image**, `ghcr.io/acornelissen/twobells`: signed, for 64-bit computers (`linux/amd64` and `linux/arm64`), with nothing to build. `deploy/docker/docker-compose.ghcr.yml` runs it. Every platform below can use it. There is no image for 32-bit ARM.
+- **Built from source** with `docker-compose.yml` at the top of the project, as on [Synology](#built-from-source).
 
 Contents:
 
 - [Every platform](#every-platform): pick a release, check it, and keep it on the home network.
-- [Synology (build from source)](#synology-build-from-source)
+- [Synology (Container Manager)](#synology-container-manager)
 - [QNAP (Container Station)](#qnap-container-station)
 - [Unraid](#unraid)
 - [TrueNAS SCALE](#truenas-scale)
@@ -22,7 +22,7 @@ Contents:
 
 ### Pick a release and check it
 
-Run the image by its version and its digest, so it can't change under you. On any computer with Docker and [cosign](https://docs.sigstore.dev/cosign/system_config/installation/), for version 0.1.0 say:
+Run the image by its version and its digest, so it can't change under you. On any computer with Docker and [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) 3.0 or later, for version 0.1.0 say:
 
 ```bash
 VERSION=0.1.0
@@ -33,7 +33,7 @@ cosign verify "ghcr.io/acornelissen/twobells@$DIGEST" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-`cosign verify` must end without an error: then that digest was built and signed by this project's release workflow for that version. Use the image as `ghcr.io/acornelissen/twobells:0.1.0@sha256:...`, with the digest in full.
+`cosign verify` must end without an error: then that digest was built and signed by this project's release workflow for that version. Use the image as `ghcr.io/acornelissen/twobells:0.1.0@sha256:...`, with the digest in full. An older cosign says `no signatures found`: the release signs with cosign 3, which older versions can't find.
 
 `deploy/docker/docker-compose.ghcr.yml` in the project is a compose file for the published image, with the same settings as `docker-compose.yml`. Replace `X.Y.Z` and `DIGEST` in its `image:` line; until you do, compose refuses to run it.
 
@@ -77,22 +77,38 @@ Open `http://<NAS IP address>:8090/` and [set it up](setup-wizard.md). The code 
 
 ### Updating
 
-Check the new version as above, then replace the version and digest in the image line and start the container again from the new image. Your settings, keys, password, history and timetable stay in `/data`. Building from source, see [Synology](#synology-build-from-source).
+Check the new version as above, then replace the version and digest in the image line and start the container again from the new image. Your settings, keys, password, history and timetable stay in `/data`. Building from source, see [Built from source](#built-from-source).
 
 ---
 
-## Synology (build from source)
+## Synology (Container Manager)
 
-On a Synology NAS, Container Manager builds the image from the project's own `docker-compose.yml`, as the image `twobells:local`. Its health shows in Container Manager. Elsewhere, `docker compose up -d --build` in the folder does the same.
+Either run the published image, or let Container Manager build the image from the project's own `docker-compose.yml`. Both keep the data in the `twobells-data` volume, so you can move from one to the other. Their health shows in Container Manager.
+
+### The published image
+
+1. Make a folder on the NAS, for example `docker/twobells` (File Station).
+2. Copy `deploy/docker/docker-compose.ghcr.yml` into it as `docker-compose.yml`, with the version and digest filled in, as in [Pick a release and check it](#pick-a-release-and-check-it).
+3. For keys in a file rather than the settings, copy `deploy/secrets.env.example` there as `secrets.env` and uncomment the `env_file:` lines in the compose file. Keep it private: in File Station, give only your own account access.
+4. In **Container Manager**, go to **Project**, then **Create**. Pick the folder; it uses the `docker-compose.yml` there. Create the project. It pulls the image and starts it.
+5. Open `http://<NAS name>:8090/` or `http://<NAS IP address>:8090/` from the home network, and [set it up](setup-wizard.md). Codes go to the container's log, under **Container**, `twobells`, **Log**.
+
+To update, put the new version and digest in the compose file, then run `docker compose up -d` in the folder over SSH (Container Manager's **Action**, then **Build**, does the same from the project).
+
+### Built from source
+
+Elsewhere, `docker compose up -d --build` in the folder does the same as these steps.
 
 1. Copy the project folder to the NAS, for example to `docker/twobells` (File Station, or `scp`).
 2. In that folder, copy `deploy/secrets.env.example` to `secrets.env`. Fill in your keys, or leave them empty and paste them in the settings later. Keep it private: in File Station, give only your own account access.
 3. In **Container Manager**, go to **Project**, then **Create**. Pick the folder; it uses the `docker-compose.yml` there. Create the project. It builds the image on the NAS and starts it.
 4. Open `http://<NAS name>:8090/` or `http://<NAS IP address>:8090/` from the home network, and [set it up](setup-wizard.md). Codes go to the container's log, under **Container**, `twobells`, **Log**.
 
-Don't publish port 8090 through QuickConnect or DSM's reverse proxy (see [Keep it on the home network](#keep-it-on-the-home-network)). For extra safety, add a DSM firewall rule that allows 8090 only from your home network's addresses.
-
 **Updating:** copy the new project files over the old ones, then in Container Manager choose the project, then **Action**, then **Build** (or `docker compose up -d --build`). Your history, timetable, saved settings, keys and password stay in the volume. After editing `secrets.env`, build again too: just restarting the container doesn't read it again.
+
+### On any Synology
+
+Don't publish port 8090 through QuickConnect or DSM's reverse proxy (see [Keep it on the home network](#keep-it-on-the-home-network)). For extra safety, add a DSM firewall rule that allows 8090 only from your home network's addresses.
 
 ---
 

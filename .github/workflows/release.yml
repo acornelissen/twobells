@@ -305,7 +305,8 @@ jobs:
 
           ## Verify
 
-          SHA256SUMS covers every file here and is signed with Sigstore (keyless):
+          SHA256SUMS covers every file here and is signed with Sigstore (keyless). Check it with
+          cosign 2.5 or later, and the image with cosign 3.0 or later:
 
           \`\`\`bash
           cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \\

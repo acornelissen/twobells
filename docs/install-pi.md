@@ -31,7 +31,7 @@ sha256sum --check --ignore-missing SHA256SUMS &&
 
 `sha256sum` must say `OK`. If it doesn't, nothing after it runs: delete the download and don't run anything from it. Nothing is ever piped from the internet into `sudo bash`.
 
-`SHA256SUMS` is signed too, so you can check who made it. With [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) installed, run this after the downloads and before the `sha256sum` line. It must say `Verified OK`:
+`SHA256SUMS` is signed too, so you can check who made it. With [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) 2.5 or later installed (older ones can't read the signature), run this after the downloads and before the `sha256sum` line. It must say `Verified OK`:
 
 ```bash
 cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
@@ -62,7 +62,7 @@ To move to another release, run `upgrade.sh` with its version, from the folder o
 sudo ./deploy/pi/upgrade.sh 0.2.0
 ```
 
-It downloads that release's tarball and `SHA256SUMS` over https into a temporary folder, and stops unless the tarball's SHA-256 matches. With `cosign` installed it checks the signature of `SHA256SUMS` first. Then it unpacks the release and runs its `deploy/pi/update.sh`, and removes the temporary folder. Options after the version go to `update.sh`.
+It downloads that release's tarball and `SHA256SUMS` over https into a temporary folder, and stops unless the tarball's SHA-256 matches. With `cosign` installed (2.5 or later) it checks the signature of `SHA256SUMS` first. Then it unpacks the release and runs its `deploy/pi/update.sh`, and removes the temporary folder. Options after the version go to `update.sh`.
 
 Or get the new release onto the Pi as for installing, check it, then from its folder:
 

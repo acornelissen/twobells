@@ -3,7 +3,8 @@
 # builds from source instead.
 #
 # Pin the release by version and digest, as below, so the image can't change
-# under you. On any computer with Docker and cosign, for version X.Y.Z:
+# under you. On any computer with Docker and cosign 3.0 or later (older ones
+# say "no signatures found"), for version X.Y.Z:
 #   docker pull ghcr.io/acornelissen/twobells:X.Y.Z    # prints "Digest: sha256:..."
 #   cosign verify ghcr.io/acornelissen/twobells@sha256:<digest> \
 #     --certificate-identity https://github.com/acornelissen/twobells/.github/workflows/release.yml@refs/tags/vX.Y.Z \

@@ -77,7 +77,7 @@ main() {
     fetch "$base/SHA256SUMS.sigstore.json" "$work/SHA256SUMS.sigstore.json"
     if ! cosign verify-blob "$work/SHA256SUMS" --bundle "$work/SHA256SUMS.sigstore.json" \
         --certificate-identity "$IDENTITY@refs/tags/v$version" --certificate-oidc-issuer "$ISSUER"; then
-      echo "SHA256SUMS's signature doesn't check out. Nothing was installed." >&2
+      echo "SHA256SUMS's signature doesn't check out (it needs cosign 2.5 or later). Nothing was installed." >&2
       exit 1
     fi
   else
