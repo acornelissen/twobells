@@ -8,6 +8,13 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 - The user guide is a page per topic, indexed by `docs/user-guide.md`; the Docker pages are one, and the code layout is in `docs/architecture.md`.
 
+### Fixed
+
+- A Pi reads bus timetable files up to 61 MB, up from 50 MB: First Bus's largest is now 48 MB, and a bigger one was skipped.
+- On a Pi, the network guard also keeps connections off the fetch service, where systemd can't apply its `SocketBindDeny=` (a Pi Zero W).
+- `update.sh` stops before changing anything where the app isn't installed.
+- The docs say which cosign checks a release: 2.5 or later for `SHA256SUMS`, 3.0 or later for the image.
+
 ## [0.1.0] - 2026-10-12
 
 The first release.
