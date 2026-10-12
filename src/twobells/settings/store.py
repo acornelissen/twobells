@@ -41,10 +41,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 FOLDER_NAME = "twobells"
-# The store's folder until the app was Two Bells; one there is moved to the new name.
-RENAMED_FOLDER_NAME = "departureboard"
-# The dashboard's own folder before the store; one already there is used in place.
-OLD_FOLDER_NAME = "departureboard-dashboard"
 STATE_NAME = "state.json"
 PASSWORD_NAME = "web.json"  # noqa: S105 - the file the password hash is kept in
 SESSIONS_NAME = "sessions.json"  # hashes of the settings' session tokens (web/auth.py, Sessions)
@@ -73,24 +69,8 @@ def platform_base(platform: str = sys.platform, environ: Mapping[str, str] | Non
 
 def platform_folder(platform: str = sys.platform, environ: Mapping[str, str] | None = None,
                     home: Path | None = None) -> Path:
-    """A desktop's store when nothing else says: twobells in the
-    platform's folder for state. If that isn't there, the store from before
-    the rename (departureboard) is moved to it; failing that, the
-    dashboard's old folder is used in place."""
-    base = platform_base(platform, environ, home)
-    new, old = base / FOLDER_NAME, base / OLD_FOLDER_NAME
-    renamed = base / RENAMED_FOLDER_NAME
-    if not os.path.lexists(new) and renamed.is_dir():
-        try:
-            os.rename(renamed, new)
-            log.info("Moved the store from %s to %s, the app's new name", renamed, new)
-        except FileNotFoundError:
-            pass  # another start moved it first
-        return new
-    if not os.path.lexists(new) and old.is_dir():
-        log.info("Using %s, the dashboard's folder, as it is", old)
-        return old
-    return new
+    """A desktop's store when nothing else says: twobells in the platform's folder for state."""
+    return platform_base(platform, environ, home) / FOLDER_NAME
 
 
 def find_folder(*, given: Path | str | None = None, config_data: Callable[[], dict],

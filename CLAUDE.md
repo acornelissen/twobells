@@ -104,8 +104,8 @@ install is one app with two views of the same departures: the **board** (e-paper
   wizard's lookups, the dashboard's pollers), handed over through files in `/run/twobells-fetch`
   (`setup/spool/`, `fetch/handoff.py`). The Pi's web server is LAN-only and never connects out.
 - **`run`**: the board renderer (systemd timer, or `--loop` for a screen). **`timetable`**: the BODS bus timetable.
-- `demo`, `emulate`, `probe`, `route`, `setup discover`: development and setup helpers. `web`, `dashboard`,
-  `setup serve` are hidden aliases until the first public release; `query` is hidden, for the deploy scripts.
+- `demo`, `emulate`, `probe`, `route`, `setup discover`: development and setup helpers. `query` is hidden, for the
+  deploy scripts.
 - `deploy/pi/`: systemd units and install/update/upgrade scripts; `deploy/docker/`: the published image's compose
   file and pinned requirements; `deploy/desktop/`, `deploy/unraid/`, `deploy/secrets.env.example`. `Dockerfile` and
   `docker-compose.yml` are at the root. `examples/`: `config.example.toml` (the template) and `glossop.toml`.

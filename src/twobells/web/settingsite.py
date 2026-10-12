@@ -137,9 +137,6 @@ _STEP_BODY_REFUSED = {
 SETUP_STEPS = ("stops", "station")
 # The largest snapshot the overview reads, as a Pi's handoff allows.
 MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024
-# Where the board's old settings page had these, until the first public release.
-_MOVED = {"/login": PREFIX + "/login", "/reset": PREFIX + "/reset", "/setup": SETUP}
-
 _SHARED = {
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
@@ -154,16 +151,9 @@ SCRIPT = PREFIX + "/settings.js"
 WIZARD_HEADERS = {**{k: v for k, v in setupapi.PAGE_HEADERS.items() if k != "Cache-Control"}, **_SHARED}
 
 
-def moved(path: str) -> str | None:
-    """Where an old address of the board's settings site is now, or None."""
-    if path.startswith("/setup/"):
-        return SETUP
-    return _MOVED.get(path)
-
-
 def owns(path: str) -> bool:
-    """Whether a request path is the settings site's: under /settings, or an old address."""
-    return path == PREFIX or path.startswith(PREFIX + "/") or moved(path) is not None
+    """Whether a request path is the settings site's: under /settings."""
+    return path == PREFIX or path.startswith(PREFIX + "/")
 
 
 def headers_for(path: str) -> dict[str, str]:
@@ -380,11 +370,6 @@ class SettingsSite:
         """The reply to one request the server has already let in: from the home
         network, naming a local host, with a path the site owns. A POST's
         body is read from `stream` only once its origin is known to be ours."""
-        where = moved(path)
-        if where is not None:
-            if method in ("GET", "HEAD"):
-                return redirect(where)
-            return Reply(405, b"Method Not Allowed", headers={"Allow": "GET, HEAD"})
         if path.startswith(SETUP_API):
             refused = self._pages.wizard_cross_site(headers)
             if refused is not None:

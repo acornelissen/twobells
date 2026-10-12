@@ -1838,7 +1838,7 @@ def test_a_password_set_from_the_command_line_signs_every_browser_out(signed, mo
     assert signed("GET", "/settings", cookie=old)[0].status == 200
     monkeypatch.setattr(getpass, "getpass", lambda prompt="": NEW_PASSWORD)
     # Another process, as `docker exec … dashboard --set-password --state-dir /data` is.
-    assert main(["dashboard", "--set-password", "--state-dir", str(signed.folder)]) == 0
+    assert main(["serve", "--set-password", "--state-dir", str(signed.folder)]) == 0
     response, _ = signed("GET", "/settings", cookie=old)
     assert response.status == 303 and response.getheader("Location") == "/settings/login"
     assert signed("POST", "/settings/login", {"password": PASSWORD})[0].status == 401
@@ -1849,7 +1849,7 @@ def test_a_password_set_from_the_command_line_signs_every_browser_out(signed, mo
 def test_a_code_from_the_command_line_claims_the_running_server(dash, capsys, caplog):
     from twobells.cli.main import main
 
-    assert main(["dashboard", "--reset-code", "--state-dir", str(dash.folder)]) == 0
+    assert main(["serve", "--reset-code", "--state-dir", str(dash.folder)]) == 0
     code = re.search(r"Settings reset code: (\d{3} \d{3})", capsys.readouterr().out).group(1)
     assert code.replace(" ", "") not in caplog.text  # printed, not put in the log
     form_cookie, _ = dash.form()
@@ -2111,8 +2111,7 @@ def test_a_reply_that_is_not_strict_json_is_never_sent(pi):
 
 
 TAB_PAGES = ["/settings", "/settings/keys", "/settings/trains-and-buses?saved", "/settings/general"]
-NO_SCRIPT = ["/settings/login", "/settings/reset", "/settings/style.css", "/settings/settings.js", "/settings/nowhere",
-             "/login", "/setup/"]
+NO_SCRIPT = ["/settings/login", "/settings/reset", "/settings/style.css", "/settings/settings.js", "/settings/nowhere"]
 
 
 def test_settings_pages_allow_their_own_forms_and_only_settings_js(make):
@@ -2322,17 +2321,9 @@ def test_one_host_header_only(pi):
 # Where things are
 
 
-@pytest.mark.parametrize("old, new", [
-    ("/login", "/settings/login"),
-    ("/login?next=setup", "/settings/login"),
-    ("/reset", "/settings/reset"),
-    ("/setup", "/settings/setup/"),
-    ("/setup/", "/settings/setup/"),
-    ("/setup/wizard_static/wizard.js", "/settings/setup/"),
-])
-def test_the_board_pages_old_addresses_go_to_their_new_ones(pi, old, new):
-    response, _ = pi("GET", old)
-    assert response.status == 303 and response.getheader("Location") == new
+@pytest.mark.parametrize("old", ["/login", "/reset", "/setup", "/setup/", "/setup/wizard_static/wizard.js"])
+def test_the_board_pages_addresses_from_before_the_first_release_are_not_found(pi, old):
+    assert pi("GET", old)[0].status == 404
 
 
 def test_settings_with_a_slash_goes_to_settings(pi):

@@ -319,7 +319,7 @@ A key is like a password for your account with that service. Anyone who has it c
   - On the Pi, the installer makes `/etc/twobells/secrets.env` readable only by the system. If you made the file yourself, run `sudo chmod 600 /etc/twobells/secrets.env`.
   - On a desktop: `chmod 600 secrets.env`.
   - On a NAS: in File Station, give only your own account access to `secrets.env`.
-- **Keys stay off GitHub.** `secrets.env` and `dashboard.env` (its old name in Docker) are already left out of the project's git repository and its Docker image. Don't rename them to something that isn't.
+- **Keys stay off GitHub.** `secrets.env` is already left out of the project's git repository and its Docker image. Don't rename them to something that isn't.
 - **The settings never show a key.** Each key's form only says whether it is set and how its last test went. You can paste a new key in, but nobody can read one out, even with the settings password.
 - **The settings use plain HTTP**, so paste keys into them only from your home network.
 - **You only need the Consumer key** from the Rail Data Marketplace. Leave the **Consumer secret** where it is.

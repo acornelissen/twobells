@@ -606,7 +606,7 @@ def test_settings_page_starts_even_when_saved_settings_are_broken(tmp_path, monk
     config = tmp_path / "config.toml"
     config.write_text(f'state_file = "{state / "state.json"}"\n')
     monkeypatch.setattr(getpass, "getpass", lambda prompt="": "a long enough password")
-    assert main(["web", "--config", str(config), "--set-password"]) == 0
+    assert main(["serve", "--install", "pi", "--config", str(config), "--set-password"]) == 0
     assert (state / "web.json").exists()
 
 
@@ -623,7 +623,7 @@ def test_reset_code_prints_a_code_the_page_will_take(tmp_path, capsys):
     from twobells.web.auth import ResetCodes
 
     config, state = _web_config(tmp_path)
-    assert main(["web", "--config", str(config), "--reset-code"]) == 0
+    assert main(["serve", "--install", "pi", "--config", str(config), "--reset-code"]) == 0
     out = capsys.readouterr().out
     code = re.search(r"Settings reset code: (\d{3}) (\d{3})", out)
     assert code and "valid until" in out
@@ -648,7 +648,7 @@ def test_reset_code_gives_its_expiry_in_the_boards_time_zone(tmp_path, capsys, p
     config, _ = _web_config(tmp_path)
     config.write_text(config.read_text() + 'timezone = "Asia/Tokyo"\n')
     before = datetime.now(ZoneInfo("Asia/Tokyo"))
-    assert main(["web", "--config", str(config), "--reset-code"]) == 0
+    assert main(["serve", "--install", "pi", "--config", str(config), "--reset-code"]) == 0
     after = datetime.now(ZoneInfo("Asia/Tokyo"))
     until = re.search(r"valid until (\d\d:\d\d)", capsys.readouterr().out).group(1)
     # Ten minutes on, in Tokyo's time (9 hours ahead of the process's UTC).
@@ -658,7 +658,7 @@ def test_reset_code_gives_its_expiry_in_the_boards_time_zone(tmp_path, capsys, p
 def test_reset_code_still_comes_when_the_time_zone_setting_is_broken(tmp_path, capsys, process_in_utc):
     config, _ = _web_config(tmp_path)
     config.write_text(config.read_text() + 'timezone = "../../etc/passwd"\n')
-    assert main(["web", "--config", str(config), "--reset-code"]) == 0
+    assert main(["serve", "--install", "pi", "--config", str(config), "--reset-code"]) == 0
     assert "valid until" in capsys.readouterr().out
 
 
@@ -669,8 +669,8 @@ def test_reset_code_is_not_held_back_by_the_pages_limits(tmp_path, capsys):
 
     config, state = _web_config(tmp_path)
     ResetCodes(state).issue(time.time())  # someone just pressed the page's button
-    assert main(["web", "--config", str(config), "--reset-code"]) == 0
-    assert main(["web", "--config", str(config), "--reset-code"]) == 0
+    assert main(["serve", "--install", "pi", "--config", str(config), "--reset-code"]) == 0
+    assert main(["serve", "--install", "pi", "--config", str(config), "--reset-code"]) == 0
     assert capsys.readouterr().out.count("Settings reset code:") == 2
 
 
@@ -700,12 +700,7 @@ def root_on_their_store(tmp_path, monkeypatch):
     ["serve", "--install", "pi"],
     ["serve", "--set-password"],
     ["serve", "--reset-code"],
-    ["web"],
-    ["web", "--reset-code"],
-    ["dashboard", "--no-browser"],
-    ["dashboard", "--set-password"],
     ["fetch"],
-    ["setup", "serve"],
 ])
 def test_root_is_refused_a_store_that_belongs_to_the_services_user(root_on_their_store, capsys, command):
     import shlex
@@ -752,10 +747,10 @@ def test_root_may_use_its_own_store_and_anyone_else_goes_ahead_as_today(root_on_
 
     config, state, _ = root_on_their_store
     monkeypatch.setattr(store, "_owner", lambda folder: 0)
-    assert main(["web", "--config", str(config), "--reset-code"]) == 0
+    assert main(["serve", "--install", "pi", "--config", str(config), "--reset-code"]) == 0
     monkeypatch.setattr(store, "_owner", lambda folder: 999)
     monkeypatch.setattr(os, "geteuid", lambda: 1000, raising=False)
-    assert main(["web", "--config", str(config), "--reset-code"]) == 0
+    assert main(["serve", "--install", "pi", "--config", str(config), "--reset-code"]) == 0
     assert capsys.readouterr().out.count("Settings reset code:") == 2
 
 
@@ -995,14 +990,15 @@ def test_probe_bus_with_bods_says_why_it_cannot_use_the_timetable(bods_env, caps
 # The web dashboard
 
 
-def test_dashboard_options_parse_with_their_defaults():
+def test_serve_options_parse_with_their_defaults():
     from twobells.cli.main import _parser
 
-    args = _parser().parse_args(["dashboard"])
-    assert (args.state_dir, args.host, args.port, args.lan, args.no_browser) == (None, "127.0.0.1", None, False, False)
+    args = _parser().parse_args(["serve"])
+    assert (args.install, args.state_dir, args.host, args.port, args.lan, args.no_browser) == (
+        "desktop", None, None, None, False, False)  # the host and port follow the install, when serving
     assert args.config == "/etc/twobells/config.toml"
     args = _parser().parse_args([
-        "dashboard", "--config", "c.toml", "--secrets", "/nonexistent", "--state-dir", "/data",
+        "serve", "--config", "c.toml", "--secrets", "/nonexistent", "--state-dir", "/data",
         "--host", "0.0.0.0", "--port", "8090", "--lan", "--no-browser",
     ])
     assert (args.config, args.secrets, args.state_dir, args.host, args.port, args.lan, args.no_browser) == (
@@ -1010,10 +1006,10 @@ def test_dashboard_options_parse_with_their_defaults():
     )
 
 
-def test_dashboard_refuses_a_port_that_is_not_one(capsys):
+def test_serve_refuses_a_port_that_is_not_one(capsys):
     # The same check as emulate's, whose test covers each kind of bad port.
     with pytest.raises(SystemExit):
-        main(["dashboard", "--port", "http"])
+        main(["serve", "--port", "http"])
     assert "port number" in capsys.readouterr().err
 
 
@@ -1033,7 +1029,7 @@ def test_dashboard_never_moves_off_a_port_it_was_given(dashboard_config, tmp_pat
         blocker.bind(("127.0.0.1", 0))
         blocker.listen()
         port = blocker.getsockname()[1]
-        code = main(["dashboard", "--config", str(dashboard_config), "--secrets", str(tmp_path / "nonexistent"),
+        code = main(["serve", "--config", str(dashboard_config), "--secrets", str(tmp_path / "nonexistent"),
                      "--state-dir", str(tmp_path / "dash"), "--port", str(port), "--no-browser"])
     assert code == 2
     err = capsys.readouterr().err
@@ -1056,7 +1052,7 @@ def test_dashboard_runs_until_interrupted_and_lets_go_of_its_folder(dashboard_co
     monkeypatch.setattr(dashserver.DashboardServer, "serve_forever", interrupted)
     monkeypatch.setattr("webbrowser.open", opened.append)
     folder = tmp_path / "dash"
-    code = main(["dashboard", "--config", str(dashboard_config), "--secrets", str(tmp_path / "nonexistent"),
+    code = main(["serve", "--config", str(dashboard_config), "--secrets", str(tmp_path / "nonexistent"),
                  "--state-dir", str(folder), "--port", "0", "--lan"])
     assert code == 0
     out = capsys.readouterr().out
@@ -1115,7 +1111,7 @@ def test_dashboard_starts_again_when_its_saved_settings_change(dashboard_config,
 
     helper = threading.Thread(target=owner, daemon=True)
     helper.start()
-    code = main(["dashboard", "--config", str(dashboard_config), "--secrets", str(tmp_path / "nonexistent"),
+    code = main(["serve", "--config", str(dashboard_config), "--secrets", str(tmp_path / "nonexistent"),
                  "--state-dir", str(folder), "--port", str(port), "--no-browser"])
     helper.join(timeout=5)
     assert code == 0 and started_again == [port]
@@ -1239,8 +1235,6 @@ def test_serve_tells_the_dashboard_and_the_settings_its_version(tmp_path, served
     (["serve"], "127.0.0.1", 8090, 10, True),  # a desktop: the next free port, and the browser
     (["serve", "--install", "desktop", "--lan", "--no-browser"], "0.0.0.0", 8090, 10, False),
     (["serve", "--install", "desktop", "--port", "8095", "--host", "192.168.1.5"], "192.168.1.5", 8095, 1, True),
-    (["dashboard"], "127.0.0.1", 8090, 10, True),
-    (["dashboard", "--lan", "--no-browser", "--port", "8090"], "0.0.0.0", 8090, 1, False),
 ])
 def test_serve_listens_and_opens_the_browser_as_its_install_does(tmp_path, served, dashboard_config, argv, host,
                                                                   port, attempts, browser):
@@ -1336,7 +1330,7 @@ def test_a_pi_with_broken_settings_serves_them_without_a_word_about_a_dashboard(
     monkeypatch.setenv("STATE_DIRECTORY", str(tmp_path / "lib"))
     config = tmp_path / "config.toml"
     config.write_text("display = [\n")
-    assert main(["web", "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
+    assert main(["serve", "--install", "pi", "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
     assert "dashboard" not in capsys.readouterr().err.lower()
     assert served["app"].settings.problem == "" and not served["app"].dashboard_on()
 
@@ -1557,18 +1551,16 @@ def listed_commands(help_text=None):
     return re.search(r"\{([a-z,]+)\}", help_text).group(1).split(",")
 
 
-def test_the_old_dashboard_command_is_hidden_but_works(capsys):
+def test_the_commands_from_before_the_first_release_are_gone(capsys):
     from twobells.cli.main import _parser
 
-    help_text = _parser().format_help()
-    listed = listed_commands(help_text)
-    assert "serve" in listed and "dashboard" not in listed
-    assert not re.search(r"^ +dashboard ", help_text, re.M)
-    args = _parser().parse_args(["dashboard", "--state-dir", "/data", "--set-password"])
-    assert (args.install, args.state_dir, args.set_password) == ("desktop", "/data", True)
+    for argv in (["dashboard"], ["web"], ["setup", "serve"]):
+        with pytest.raises(SystemExit):
+            _parser().parse_args(argv)
+    assert "query" not in listed_commands()  # the one command left unlisted, for the Pi's scripts
 
 
-def test_the_fetch_service_is_listed_and_its_old_name_hidden_but_works(capsys):
+def test_the_fetch_service_is_listed(capsys):
     from twobells.cli.main import _parser
     from twobells.cli.serve import fetch_command
 
@@ -1577,9 +1569,8 @@ def test_the_fetch_service_is_listed_and_its_old_name_hidden_but_works(capsys):
     with pytest.raises(SystemExit):
         parser.parse_args(["setup", "--help"])
     assert "serve" not in capsys.readouterr().out
-    for argv in (["fetch"], ["setup", "serve"]):
-        args = parser.parse_args([*argv, "--config", "/etc/twobells/config.toml"])
-        assert (args.handler, args.install, args.state_dir) == (fetch_command, "pi", None)
+    args = parser.parse_args(["fetch", "--config", "/etc/twobells/config.toml"])
+    assert (args.handler, args.install, args.state_dir) == (fetch_command, "pi", None)
     with pytest.raises(SystemExit):
         parser.parse_args(["fetch", "--install", "docker"])  # Docker and a desktop fetch in-process
 
@@ -1761,7 +1752,7 @@ def test_dashboard_set_password_needs_only_its_folder_as_in_docker(tmp_path, typ
     answers += [DASH_PASSWORD, DASH_PASSWORD]
     folder = tmp_path / "data"
     # As `docker exec … dashboard --set-password --state-dir /data`: no config.toml or secrets.env there.
-    assert main(["dashboard", "--set-password", "--state-dir", str(folder)]) == 0
+    assert main(["serve", "--set-password", "--state-dir", str(folder)]) == 0
     assert prompts == ["New dashboard settings password: ", "Again: "]
     assert PasswordStore(folder / "web.json").check(DASH_PASSWORD)
     assert (folder.stat().st_mode & 0o777, (folder / "web.json").stat().st_mode & 0o777) == (0o700, 0o600)
@@ -1779,18 +1770,18 @@ def test_dashboard_set_password_finds_the_folder_as_the_dashboard_does(tmp_path,
     config = tmp_path / "config.toml"
     config.write_text(f'[train]\ncrs = "GLO"\n[dashboard]\nstate_dir = "{tmp_path / "named"}"\n')
     answers += [DASH_PASSWORD] * 2
-    assert main(["dashboard", "--config", str(config), "--set-password"]) == 0
+    assert main(["serve", "--config", str(config), "--set-password"]) == 0
     assert PasswordStore(tmp_path / "named" / "web.json").check(DASH_PASSWORD)
     # --state-dir wins over [dashboard] state_dir, as when running.
     answers += [DASH_PASSWORD] * 2
-    assert main(["dashboard", "--config", str(config), "--set-password", "--state-dir", str(tmp_path / "given")]) == 0
+    assert main(["serve", "--config", str(config), "--set-password", "--state-dir", str(tmp_path / "given")]) == 0
     assert (tmp_path / "given" / "web.json").exists()
     # Neither: this computer's own folder.
     monkeypatch.setattr(store, "_home", lambda: tmp_path / "home")
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
     config.write_text('[train]\ncrs = "GLO"\n')
     answers += [DASH_PASSWORD] * 2
-    assert main(["dashboard", "--config", str(config), "--set-password"]) == 0
+    assert main(["serve", "--config", str(config), "--set-password"]) == 0
     assert PasswordStore(store.platform_folder() / "web.json").check(DASH_PASSWORD)
     assert store.platform_folder().name == "twobells"
     assert str(store.platform_folder()).startswith(str(tmp_path))
@@ -1802,7 +1793,7 @@ def test_dashboard_set_password_without_a_folder_or_config_uses_this_computer_s_
     from twobells.web.auth import PasswordStore
 
     typed[0].extend([DASH_PASSWORD] * 2)
-    assert main(["dashboard", "--config", str(tmp_path / "missing.toml"), "--set-password"]) == 0
+    assert main(["serve", "--config", str(tmp_path / "missing.toml"), "--set-password"]) == 0
     assert PasswordStore(platform_folder() / "web.json").check(DASH_PASSWORD)
 
 
@@ -1811,9 +1802,9 @@ def test_dashboard_set_password_uses_the_same_password_as_the_boards_page(tmp_pa
 
     config, state = _web_config(tmp_path)
     typed[0].extend([DASH_PASSWORD] * 2)
-    assert main(["dashboard", "--config", str(config), "--set-password"]) == 0
+    assert main(["serve", "--config", str(config), "--set-password"]) == 0
     assert PasswordStore(state / "web.json").check(DASH_PASSWORD)  # what `web` checks
-    assert main(["web", "--config", str(config), "--reset-code"]) == 0
+    assert main(["serve", "--install", "pi", "--config", str(config), "--reset-code"]) == 0
     code = "".join(re.search(r"Settings reset code: (\d{3}) (\d{3})", capsys.readouterr().out).groups())
     assert ResetCodes(state, show=show_in_log).verify(code, time.time())  # and the dashboard's codes
 
@@ -1828,7 +1819,7 @@ def test_dashboard_set_password_refuses_a_bad_one(tmp_path, typed, capsys, first
     folder = tmp_path / "data"
     PasswordStore(folder / "web.json").set("the old password")
     typed[0].extend([first, again])
-    assert main(["dashboard", "--set-password", "--state-dir", str(folder)]) == 1
+    assert main(["serve", "--set-password", "--state-dir", str(folder)]) == 1
     assert says in capsys.readouterr().err
     assert PasswordStore(folder / "web.json").check("the old password")
 
@@ -1841,7 +1832,7 @@ def test_dashboard_set_password_works_beside_a_running_dashboard(dashboard_confi
     running = load_dashboard(dashboard_config, {"RDM_API_KEY": "k"}, folder)  # holds the folder's lock
     try:
         typed[0].extend([DASH_PASSWORD] * 2)
-        assert main(["dashboard", "--config", str(dashboard_config), "--set-password", "--state-dir", str(folder)]) == 0
+        assert main(["serve", "--config", str(dashboard_config), "--set-password", "--state-dir", str(folder)]) == 0
     finally:
         running.close()
     assert PasswordStore(folder / "web.json").check(DASH_PASSWORD)
@@ -1859,8 +1850,8 @@ def test_dashboard_password_and_code_write_only_in_the_state_folder(tmp_path, ty
     root.chmod(0o500)
     try:
         typed[0].extend([DASH_PASSWORD] * 2)
-        assert main(["dashboard", "--set-password", "--state-dir", str(data)]) == 0
-        assert main(["dashboard", "--reset-code", "--state-dir", str(data)]) == 0
+        assert main(["serve", "--set-password", "--state-dir", str(data)]) == 0
+        assert main(["serve", "--reset-code", "--state-dir", str(data)]) == 0
     finally:
         root.chmod(0o700)
     assert sorted(p.name for p in root.iterdir()) == ["data"]
@@ -1882,7 +1873,7 @@ def test_dashboard_reset_code_prints_one_code_the_settings_will_take(tmp_path, n
     folder = tmp_path / "data"
     ResetCodes(folder, show=show_in_log).issue(time.time())  # someone just asked for one on the page
     caplog.clear()
-    assert main(["dashboard", "--reset-code", "--state-dir", str(folder)]) == 0  # no page limits here
+    assert main(["serve", "--reset-code", "--state-dir", str(folder)]) == 0  # no page limits here
     captured = capsys.readouterr()
     codes = re.findall(r"Settings reset code: (\d{3}) (\d{3})", captured.out)
     assert len(codes) == 1 and "valid until" in captured.out and "/settings/reset" in captured.out
@@ -2179,7 +2170,7 @@ def test_the_settings_open_the_wizard_until_the_board_is_set_up(tmp_path, monkey
 
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
     config = installed_template(tmp_path)
-    assert main(["web", "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
+    assert main(["serve", "--install", "pi", "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
     assert "opens the setup wizard" in capsys.readouterr().err
     where, status, page = signed_in(served["app"], tmp_path / "state")
     assert (where, status) == (SETUP, 200) and "<title>Setup</title>" in page  # the wizard's own page
@@ -2205,7 +2196,7 @@ def test_the_pis_settings_hand_setup_to_the_fetch_service(tmp_path, monkeypatch,
     (tmp_path / "state").mkdir()  # as install.sh and systemd's StateDirectory make it
     run = tmp_path / "run"
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))  # as systemd gives it
-    assert main(["web", "--config", str(config), "--secrets", str(tmp_path / "none.env"), "--setup-via-spool"]) == 0
+    assert main(["serve", "--install", "pi", "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
     assert (served["host"], served["port"], served["attempts"]) == ("0.0.0.0", 8090, 1)  # the old 8080 no more
     site = served["app"].settings
     assert site.install.name == "pi" and not served["app"].dashboard_on()
@@ -2232,9 +2223,7 @@ def test_the_fetch_service_searches_in_the_boards_state_folder(tmp_path, monkeyp
     assert isinstance(worker._settings(), dict)
 
 
-@pytest.mark.parametrize("flag", [[], ["--setup-via-spool"]])
-def test_without_a_folder_in_memory_the_setup_spool_is_refused(tmp_path, monkeypatch, capsys, no_runtime_folder,
-                                                               flag):
+def test_without_a_folder_in_memory_the_setup_spool_is_refused(tmp_path, monkeypatch, capsys, no_runtime_folder):
     # Never on the SD card, where flash can keep what was deleted: a request can hold home's position or a key.
     from twobells.setup.spool.worker import Worker
     from twobells.web import server as dashserver
@@ -2244,11 +2233,7 @@ def test_without_a_folder_in_memory_the_setup_spool_is_refused(tmp_path, monkeyp
     config = installed_template(tmp_path)
     (tmp_path / "state").mkdir()
     none = str(tmp_path / "none.env")
-    assert main(["web", "--config", str(config), "--secrets", none, *flag]) == 2
-    assert "RUNTIME_DIRECTORY" in capsys.readouterr().err
     assert main(["serve", "--install", "pi", "--config", str(config), "--secrets", none]) == 2
-    assert "RUNTIME_DIRECTORY" in capsys.readouterr().err
-    assert main(["setup", "serve", "--config", str(config), "--secrets", none]) == 2
     assert "RUNTIME_DIRECTORY" in capsys.readouterr().err
     assert main(["fetch", "--config", str(config), "--secrets", none]) == 2
     assert "RUNTIME_DIRECTORY" in capsys.readouterr().err
@@ -2266,7 +2251,7 @@ def test_the_page_and_the_fetch_service_share_systemds_folder_in_memory(tmp_path
     config = installed_template(tmp_path)
     (tmp_path / "state").mkdir()
     none = str(tmp_path / "none.env")
-    assert main(["web", "--config", str(config), "--secrets", none, "--setup-via-spool"]) == 0
+    assert main(["serve", "--install", "pi", "--config", str(config), "--secrets", none]) == 0
     assert main(["fetch", "--config", str(config), "--secrets", none]) == 0
     assert served["app"].settings.setup._runner.spool.folder == run and ran[0].spool.folder == run
     assert (run / "requests").is_dir() and not (tmp_path / "state" / "setup-spool").exists()  # the spool's old home
@@ -2369,7 +2354,7 @@ def test_the_fetch_service_answers_with_why_when_it_cant_read_its_config(tmp_pat
     else:
         path.mkdir()  # as Docker makes one for a file to mount that isn't there
     # A clean stop once each request has its answer, so systemd doesn't start it again and again.
-    assert main(["setup", "serve", "--config", str(path), "--secrets", str(tmp_path / "none.env")]) == 0
+    assert main(["fetch", "--config", str(path), "--secrets", str(tmp_path / "none.env")]) == 0
     [worker] = ran
     assert worker.spool.folder == run and worker._unavailable == NO_SETTINGS
     assert "Traceback" not in capsys.readouterr().err
@@ -2382,7 +2367,7 @@ def test_without_a_config_the_settings_start_in_systemds_folder(tmp_path, monkey
     folder.mkdir()
     monkeypatch.setenv("STATE_DIRECTORY", str(folder))
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(tmp_path / "run"))
-    assert main(["web", "--config", str(tmp_path / "missing.toml"), "--secrets", str(tmp_path / "none.env")]) == 0
+    assert main(["serve", "--install", "pi", "--config", str(tmp_path / "missing.toml"), "--secrets", str(tmp_path / "none.env")]) == 0
     assert "opens the setup wizard" in capsys.readouterr().err
     site = served["app"].settings
     assert site.setup._job_folder == folder and site.store.folder == folder

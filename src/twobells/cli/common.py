@@ -18,8 +18,7 @@ from ..settings.config import ConfigError, holiday_division, load_config
 from ..settings.store import Store, check_owner
 from ..sources.holidays import bank_holidays
 
-# The settings' port on a Pi, as twobells-web.service serves them
-# (and the old `web` command's). Nothing listens on the old 8080.
+# The settings' port on a Pi, as twobells-web.service serves them.
 WEB_PORT = 8090
 
 

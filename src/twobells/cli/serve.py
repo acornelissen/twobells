@@ -17,7 +17,6 @@ from functools import partial
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from ..settings import migrate
 from ..settings.config import ConfigError, needs_setup
 from ..settings.installs import Install, install_named
 from ..settings.schema import views
@@ -26,14 +25,6 @@ from .common import as_owner
 
 # How often serve looks for changed settings files, where it runs the dashboard itself.
 SETTINGS_CHECK_S = 2.0
-
-
-def _adopt(args, store: Store, install: str = "desktop") -> None:
-    """Bring the old dashboard's folder into the store, once (see settings/migrate.py).
-    A folder given with --state-dir was the old dashboard's own, so then
-    there is nothing to bring."""
-    if not getattr(args, "state_dir", None):
-        migrate.adopt_legacy(store, install)
 
 
 def fetch_command(args) -> int:
@@ -254,7 +245,6 @@ def serve_command(args) -> int:
     # not stop the page that fixes it.
     store = Store.open(args.config, args.secrets, state_dir=args.state_dir, install=install.name)
     as_owner(args, store)  # --set-password and --reset-code write there too
-    _adopt(args, store, install.name)
     if args.set_password or args.reset_code:
         return _password(args, store, install)
     store.make()

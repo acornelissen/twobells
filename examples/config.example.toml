@@ -147,8 +147,7 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # [dashboard]
 # The store, when state_file above isn't set. Default: /var/lib/twobells
 # on a Pi, /data in Docker, ~/Library/Application Support/twobells on a
-# Mac, else twobells in $XDG_STATE_HOME or ~/.local/state. An old
-# departureboard-dashboard folder there is used as it is.
+# Mac, else twobells in $XDG_STATE_HOME or ~/.local/state.
 # state_dir = "/path/to/folder"
 # train_rows = 10                 # 1-20
 # bus_rows = 10                   # 1-20

@@ -16,10 +16,7 @@
   twobells serve --set-password | --reset-code
                           set the settings password, or print a code for a new one, and exit
 
-`web` (the board's old settings page: serve on a Pi, now on port 8090),
-`dashboard` (serve on a desktop) and `setup serve` (fetch) are the old
-commands, with their old flags. They still work, unlisted, until the
-first public release. `query` (unlisted) answers install.sh and update.sh.
+`query` (unlisted) answers install.sh and update.sh.
 """
 
 from __future__ import annotations
@@ -37,7 +34,6 @@ from ..settings.installs import DEFAULT as DEFAULT_INSTALL
 from ..settings.installs import INSTALLS
 from ..settings.store import WrongUser
 from ..version import package_version
-from .common import WEB_PORT
 from .dev import demo_command, emulate_command, probe_command, route_command
 from .run import run_command
 from .serve import fetch_command, serve_command
@@ -70,9 +66,8 @@ def _tick(text: str) -> float:
     return seconds
 
 
-# Old commands kept working, unlisted, until the first public release; and
-# query, for the Pi's scripts.
-HIDDEN_COMMANDS = ("web", "dashboard", "query")
+# Unlisted: query, for the Pi's scripts.
+HIDDEN_COMMANDS = ("query",)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -142,10 +137,6 @@ def _parser() -> argparse.ArgumentParser:
                           help="a stop to search for, e.g. A=1000DGHS0900; repeat for each")
     discover.add_argument("--routes", action="store_true", help="also build a route strip for each line")
     discover.set_defaults(handler=discover_command)
-    # The fetch service's old name, kept working, unlisted, until the first public release.
-    old_fetch = with_config(setup_sub.add_parser("serve"))
-    old_fetch.set_defaults(handler=fetch_command, install="pi", state_dir=None)
-    setup_sub.metavar = "{discover}"
 
     fetch = with_config(sub.add_parser(
         "fetch", help="do a Pi's internet work for its web server; twobells-fetch.service runs this"))
@@ -179,27 +170,6 @@ def _parser() -> argparse.ArgumentParser:
     _password_flags(serve)
     serve.set_defaults(handler=serve_command)
 
-    # The dashboard's old command, serve on a desktop, with its own flags: the
-    # documented Docker password commands run it. Hidden (no help, and left
-    # out of the list); going before the first release.
-    dashboard = with_config(sub.add_parser("dashboard"))
-    dashboard.add_argument("--state-dir")
-    dashboard.add_argument("--host", default="127.0.0.1")
-    dashboard.add_argument("--port", type=_port)
-    dashboard.add_argument("--lan", action="store_true")
-    dashboard.add_argument("--no-browser", action="store_true")
-    _password_flags(dashboard)
-    dashboard.set_defaults(handler=serve_command, install="desktop")
-
-    # The board's old settings page, which twobells-web.service ran: serve
-    # on a Pi, on the settings' port there. Its setup always goes through
-    # twobells-fetch.service, so --setup-via-spool is taken and changes nothing.
-    web = with_config(sub.add_parser("web"))
-    web.add_argument("--host", default="0.0.0.0")  # noqa: S104 - the hidden alias keeps its old default
-    web.add_argument("--port", type=_port, default=WEB_PORT)
-    web.add_argument("--setup-via-spool", action="store_true")
-    _password_flags(web)
-    web.set_defaults(handler=serve_command, install="pi", state_dir=None, lan=False, no_browser=True)
     sub.metavar = "{" + ",".join(name for name in sub.choices if name not in HIDDEN_COMMANDS) + "}"
     return parser
 

@@ -677,157 +677,17 @@ def test_install_and_update_set_up_the_fetch_service():
     update = (PI / "update.sh").read_text()
     for text in (install, update):
         assert "twobells-fetch.service" in text and "twobells-fetch.path" in text
-    assert '"$REPO/deploy/pi/departureboard-setup' not in install
     assert "systemctl enable --now twobells-fetch.path twobells-fetch.service" in install
-    # The setup units go, the fetch units come in their place, then the old spools go.
+    # The fetch units go in, then restart onto the new code, and the web server after them.
     order = [
-        "systemctl disable --now departureboard-setup.path departureboard-setup.service",
-        "rm -f /etc/systemd/system/departureboard-setup.service /etc/systemd/system/departureboard-setup.path\n",
         "systemctl enable twobells-fetch.path twobells-fetch.service\n",
         "systemctl restart twobells-fetch.path twobells-fetch.service\n",
         "systemctl try-restart twobells-web.service\n",
-        "rm -rf /run/departureboard-setup /var/lib/twobells/setup-spool\n",
     ]
     places = [update.index(step) for step in order]
     assert places == sorted(places)
     units = re.search(r"for unit in (.*?); do", update, re.S).group(1)
-    assert "twobells-fetch.service" in units and "departureboard-setup" not in units
-
-
-MOVE_FROM_OLD_NAME = re.compile(r"^moved_on=\(\)\nmove_from_old_name\(\) \{\n.*?^\}$", re.M | re.S)
-# The old units, as systemctl is asked about them, and those enabled in the test's install.
-OLD_UNITS = ["departureboard.timer", "departureboard.service", "departureboard-screen.service",
-             "departureboard-timetable.timer", "departureboard-timetable.service", "departureboard-web.service",
-             "departureboard-fetch.path", "departureboard-fetch.service", "departureboard-guard.service"]
-
-
-def _move_from_old_name(root: Path, enabled: tuple[str, ...] = (), users: str = "departureboard"):
-    """Runs the scripts' move_from_old_name on `root`, under set -euo pipefail,
-    with the system's tools stood in for and each call logged: `enabled` are
-    the old units systemctl says are enabled, `users` the users id knows. As
-    on a Pi, the tick and the timetable build are static, which is-enabled
-    also answers with success. Returns the run, the calls, and moved_on as
-    the script left it."""
-    import subprocess
-
-    [function] = MOVE_FROM_OLD_NAME.findall(_script("install.sh"))
-    stubs = (
-        'log() { echo "$*" >> "$LOG"; }\n'
-        'systemctl() {\n  log systemctl "$@"\n  [[ "$1" == is-enabled ]] || return 0\n  local unit="${@: -1}" state=disabled\n'
-        '  if [[ " $ENABLED " == *" $unit "* ]]; then state=enabled\n'
-        '  elif [[ "$unit" == departureboard.service || "$unit" == departureboard-timetable.service ]]; then state=static; fi\n'
-        '  [[ "$2" == --quiet ]] || echo "$state"\n  [[ "$state" != disabled ]]\n}\n'
-        'nft() { log nft "$@"; }\n'
-        'id() { [[ " $USERS " == *" $1 "* ]]; }\n'
-        'usermod() { log usermod "$@"; }\n'
-        'groupmod() { log groupmod "$@"; }\n'
-        'python3() { log python3 "$@"; mkdir -p "$4/bin"; touch "$4/bin/python"; chmod +x "$4/bin/python"; }\n'
-    )
-    log = root / "calls.log"
-    env = {"PATH": "/usr/bin:/bin", "LOG": str(log), "ENABLED": " ".join(enabled), "USERS": users}
-    run = subprocess.run(["bash", "-c", f'set -euo pipefail\n{stubs}{function}\nmove_from_old_name "$1"\n'
-                          'printf "%s\\n" ${moved_on[@]+"${moved_on[@]}"}', "bash", str(root)],
-                         capture_output=True, text=True, env=env)
-    calls = log.read_text().splitlines() if log.exists() else []
-    return run, calls, [line for line in run.stdout.splitlines() if line.startswith("twobells")]
-
-
-def _old_install(root: Path) -> None:
-    """A Pi set up before the rename: settings, keys, the store and a venv under the old name."""
-    (root / "etc/departureboard").mkdir(parents=True)
-    (root / "etc/departureboard/config.toml").write_text('state_file = "/var/lib/departureboard/state.json"\n')
-    (root / "etc/departureboard/secrets.env").write_text("RDM_API_KEY=k\n")
-    (root / "var/lib/departureboard").mkdir(parents=True)
-    (root / "var/lib/departureboard/web.json").write_text("{}")
-    (root / "opt/departureboard/venv/bin").mkdir(parents=True)
-    (root / "etc/systemd/system").mkdir(parents=True)
-    for unit in OLD_UNITS:
-        (root / "etc/systemd/system" / unit).write_text("[Unit]\n")
-
-
-def test_install_and_update_move_an_install_from_the_old_name_the_same_way():
-    [moving] = MOVE_FROM_OLD_NAME.findall(_script("install.sh"))
-    assert MOVE_FROM_OLD_NAME.findall(_script("update.sh")) == [moving]
-    for name in SCRIPTS:
-        script = _script(name)
-        # Before anything uses the new names: the user, the settings folder, the venv.
-        moved = script.index('move_from_old_name ""')
-        first_use = min(script.index(use) for use in ('"$CONF', "useradd", '"$PREFIX/venv/bin/pip"') if use in script)
-        assert moved < first_use, name
-        # Each unit that was on is on again once the new units are in.
-        again = script.index('for moved in "${moved_on[@]}"; do\n  systemctl enable --now "$moved"\ndone')
-        assert script.index('"$PREFIX/twobells-web.nft"\nsystemctl daemon-reload') < again, name
-    # The venv a move leaves is empty until the new code goes in: update.sh doesn't ask it anything before then.
-    update = _script("update.sh")
-    asked = update.index('if [[ -x "$PREFIX/venv/bin/twobells" ]]; then\n  display="$(query display)" || display=""\nfi')
-    assert update.index('move_from_old_name ""') < asked < update.index('--force-reinstall "$build"')
-
-
-def test_an_old_install_moves_to_the_new_name_keeping_its_settings_store_and_running_units(tmp_path):
-    _old_install(tmp_path)
-    run, calls, moved_on = _move_from_old_name(tmp_path, enabled=("departureboard.timer", "departureboard-web.service"))
-    assert run.returncode == 0, run.stderr
-    # The settings, keys and store are where the new units look, the store's path in config.toml with them.
-    assert (tmp_path / "etc/twobells/config.toml").read_text() == 'state_file = "/var/lib/twobells/state.json"\n'
-    assert (tmp_path / "etc/twobells/secrets.env").read_text() == "RDM_API_KEY=k\n"
-    assert (tmp_path / "var/lib/twobells/web.json").read_text() == "{}"
-    for old in ("etc/departureboard", "var/lib/departureboard", "opt/departureboard"):
-        assert not (tmp_path / old).exists(), old
-    assert (tmp_path / "opt/twobells/venv/bin/python").exists()  # a fresh venv for the new code
-    # The old units are stopped and gone, the old table dropped, the user renamed with its uid.
-    assert not any((tmp_path / "etc/systemd/system" / unit).exists() for unit in OLD_UNITS)
-    assert [f"systemctl disable --now {unit}" for unit in OLD_UNITS] == [c for c in calls if " disable " in c]
-    assert "nft delete table inet departureboard_web" in calls
-    assert "usermod --login twobells departureboard" in calls and "groupmod --new-name twobells departureboard" in calls
-    assert not any(c.startswith(("useradd", "userdel", "chown")) for c in calls)
-    # What was on is turned on again, under its new name.
-    assert moved_on == ["twobells.timer", "twobells-web.service"]
-
-
-def test_the_guide_says_how_each_install_moves_to_the_new_name():
-    guide = (ROOT / "docs" / "user-guide.md").read_text()
-    upgrading = guide[guide.index("## 14. Upgrading to Two Bells"):]
-    # Docker: the data copied, read-only from the old volume, into the compose file's own volume, with its image.
-    volume = re.search(r"^  data:\n    name: (\S+)\n", COMPOSE, re.M).group(1)
-    image = re.search(r"^    image: (\S+)$", COMPOSE, re.M).group(1)
-    copy = f"docker run --rm --entrypoint cp -v departureboard_dashboard-data:/from:ro -v {volume}:/data {image}"
-    assert copy + " -a /from/. /data/" in upgrading
-    steps = [upgrading.index(step) for step in ("docker compose down", "docker compose up --no-start", copy,
-                                                "docker compose up -d --remove-orphans")]
-    assert steps == sorted(steps)
-    # The Pi: what the scripts move, as they move it.
-    [moving] = MOVE_FROM_OLD_NAME.findall(_script("update.sh"))
-    for old, new in (("/etc/departureboard", "/etc/twobells"), ("/var/lib/departureboard", "/var/lib/twobells")):
-        assert f'mv "$root{old}" "$root{new}"' in moving
-        assert f"`{old}` becomes `{new}`" in upgrading
-    # A desktop: the old login files, as the deploy files named them.
-    assert 'launchctl bootout "gui/$(id -u)/uk.departureboard.serve"' in upgrading
-    assert "uk.twobells.serve" in (ROOT / "deploy" / "desktop" / "uk.twobells.serve.plist").read_text()
-
-
-def test_a_new_install_has_nothing_to_move(tmp_path):
-    run, calls, moved_on = _move_from_old_name(tmp_path, users="")
-    assert (run.returncode, calls, moved_on, run.stdout.strip()) == (0, [], [], "")  # and says nothing
-
-
-def test_a_folder_under_both_names_stops_the_move_before_anything_changes(tmp_path):
-    _old_install(tmp_path)
-    (tmp_path / "etc/twobells").mkdir()
-    run, calls, _ = _move_from_old_name(tmp_path, enabled=("departureboard.timer",))
-    assert run.returncode == 1
-    assert "Both /etc/departureboard and /etc/twobells are here, so nothing was moved" in run.stderr
-    assert calls == []
-    assert (tmp_path / "etc/departureboard/config.toml").exists() and (tmp_path / "var/lib/departureboard").is_dir()
-
-
-def test_a_move_cut_short_is_carried_on_with(tmp_path):
-    # The settings and the user moved, then it stopped: the store is still to go.
-    _old_install(tmp_path)
-    (tmp_path / "etc/departureboard").rename(tmp_path / "etc/twobells")
-    run, calls, _ = _move_from_old_name(tmp_path, users="twobells")
-    assert run.returncode == 0, run.stderr
-    assert (tmp_path / "var/lib/twobells/web.json").exists() and not (tmp_path / "var/lib/departureboard").exists()
-    assert not any(c.startswith(("usermod", "groupmod")) for c in calls)  # renamed already
+    assert "twobells-fetch.service" in units
 
 
 SCRIPTS = ("install.sh", "update.sh")

@@ -24,62 +24,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Until it was Two Bells the app was departureboard: its user, folders,
-# units and the guard's table had that name. Moves an install made then over,
-# once, or the rest of a move cut short: the old units stopped and removed, the old table dropped, the user
-# and its group renamed (the uid stays, so who owns what does too), the
-# settings and the store moved, and a fresh venv for the new code, which
-# goes in after as on any install. config.toml's paths into the old store
-# follow it. Each unit that was enabled goes in moved_on, to be enabled
-# again under its new name. $1 is the root: empty on a Pi.
-moved_on=()
-move_from_old_name() {
-  local root="$1" old folder
-  if [[ ! -d "$root/etc/departureboard" && ! -d "$root/var/lib/departureboard" && ! -d "$root/opt/departureboard" ]]; then
-    return 0
-  fi
-  # A move cut short is carried on with; a folder under both names is left to you.
-  for folder in etc var/lib; do
-    if [[ -d "$root/$folder/departureboard" && -e "$root/$folder/twobells" ]]; then
-      echo "Both /$folder/departureboard and /$folder/twobells are here, so nothing was moved. Keep the one you" >&2
-      echo "want, remove the other, and run this again." >&2
-      return 1
-    fi
-  done
-  echo "Moving this install from its old name, departureboard, to twobells"
-  for old in departureboard.timer departureboard.service departureboard-screen.service \
-      departureboard-timetable.timer departureboard-timetable.service departureboard-web.service \
-      departureboard-fetch.path departureboard-fetch.service departureboard-guard.service; do
-    # Enabled only: is-enabled answers static units (the tick, the timetable build) with success too.
-    if [[ "$(systemctl is-enabled "$old" 2>/dev/null || true)" == enabled ]]; then
-      moved_on+=("${old/departureboard/twobells}")
-    fi
-    systemctl disable --now "$old" 2>/dev/null || true
-    rm -f "$root/etc/systemd/system/$old"
-  done
-  nft delete table inet departureboard_web 2>/dev/null || true
-  if id departureboard &>/dev/null && ! id twobells &>/dev/null; then
-    usermod --login twobells departureboard
-    groupmod --new-name twobells departureboard
-  fi
-  if [[ -d "$root/etc/departureboard" ]]; then
-    mv "$root/etc/departureboard" "$root/etc/twobells"
-    if [[ -f "$root/etc/twobells/config.toml" ]]; then
-      sed -i.old 's|/var/lib/departureboard/|/var/lib/twobells/|g' "$root/etc/twobells/config.toml"
-      rm -f "$root/etc/twobells/config.toml.old"
-    fi
-  fi
-  if [[ -d "$root/var/lib/departureboard" ]]; then
-    mv "$root/var/lib/departureboard" "$root/var/lib/twobells"
-  fi
-  # A venv can't move: its scripts name its folder. Built afresh instead.
-  rm -rf "$root/opt/departureboard"
-  if [[ ! -x "$root/opt/twobells/venv/bin/python" ]]; then
-    python3 -m venv --system-site-packages "$root/opt/twobells/venv"
-  fi
-}
-move_from_old_name ""
-
 if [[ -n "$config" ]]; then
   install -m 644 "$config" "$CONF/config.toml"
 fi
@@ -108,11 +52,7 @@ query() {
 # Switched to the HDMI screen since installing? It needs pygame, looked for
 # where Debian's python3-pygame puts it, and installed as nftables is above.
 # (Settings that can't be read say why here; the board says so too.)
-# (Nothing to ask when the venv is new and empty, as after moving from the old name.)
-display=""
-if [[ -x "$PREFIX/venv/bin/twobells" ]]; then
-  display="$(query display)" || display=""
-fi
+display="$(query display)" || display=""
 if [[ "$display" == hdmi-* && ! -f /usr/lib/python3/dist-packages/pygame/__init__.py ]]; then
   apt-get update
   apt-get install -y python3-pygame
@@ -152,10 +92,6 @@ rm -rf "$build/build" "$build"/src/*.egg-info
 "$PREFIX/venv/bin/python" -c "import twobells.cli.main" \
   || { echo "A dependency is missing; see the error above" >&2; exit 1; }
 
-# The setup service is now the fetch service, which also runs the
-# dashboard's feeds: the old units go.
-systemctl disable --now departureboard-setup.path departureboard-setup.service 2>/dev/null || true
-rm -f /etc/systemd/system/departureboard-setup.service /etc/systemd/system/departureboard-setup.path
 for unit in twobells.service twobells.timer twobells-screen.service twobells-web.service \
     twobells-guard.service twobells-timetable.service twobells-timetable.timer \
     twobells-fetch.service twobells-fetch.path; do
@@ -165,10 +101,6 @@ done
 # root: root's alone to change.
 install -m 644 -o root -g root "$REPO/deploy/pi/twobells-web.nft" "$PREFIX/twobells-web.nft"
 systemctl daemon-reload
-# What ran under the old name runs again under the new one.
-for moved in "${moved_on[@]}"; do
-  systemctl enable --now "$moved"
-done
 # The guard loads at boot, before the web server. Loaded afresh now, which
 # empties its set, so a running web server restarts after it, below, and
 # systemd puts it in the set again. If it fails, the rest still goes in and
@@ -176,13 +108,10 @@ done
 systemctl enable twobells-guard.service
 systemctl restart twobells-guard.service || true
 # The web server hands its internet work to the fetch service, started at
-# boot and by the .path unit when asked. Both restart onto the new code and
-# the spool folder in memory; then the old spool folders, in memory and on
-# the SD card, go.
+# boot and by the .path unit when asked. Both restart onto the new code.
 systemctl enable twobells-fetch.path twobells-fetch.service
 systemctl restart twobells-fetch.path twobells-fetch.service
 systemctl try-restart twobells-web.service
-rm -rf /run/departureboard-setup /var/lib/twobells/setup-spool
 # Says if the network guard isn't holding the web server: that needs its
 # table in and the server's cgroup in its set, which systemd fills as the
 # server starts (NFTSet=, systemd 254 or later). A warning, never a stop:
@@ -226,7 +155,5 @@ if systemctl is-enabled --quiet twobells.timer; then
   journalctl -u twobells.service -n 12 --no-pager -o cat
 fi
 
-# The web server moved from 8080 in this version, and nothing listens there
-# now: say so, last, where it is seen.
 echo
-echo "The settings site moved to :8090/settings: http://$(hostname).local:8090/settings"
+echo "The settings site: http://$(hostname).local:8090/settings"

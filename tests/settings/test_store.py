@@ -106,45 +106,6 @@ def test_the_platform_folder_on_a_mac_and_elsewhere(tmp_path):
     assert platform_folder("linux", {"XDG_STATE_HOME": "state"}, home) == home / ".local" / "state" / "twobells"
 
 
-@pytest.mark.parametrize("platform, base", [("darwin", "Library/Application Support"), ("linux", ".local/state")])
-def test_the_dashboard_s_old_folder_is_used_in_place(tmp_path, caplog, platform, base):
-    caplog.set_level(logging.INFO)
-    home = tmp_path / "home"
-    old = home / base / "departureboard-dashboard"
-    old.mkdir(parents=True)
-    assert platform_folder(platform, {}, home) == old
-    assert old.is_dir() and not (home / base / "twobells").exists()  # not moved
-    assert str(old) in caplog.text
-    # Once there is a new one, it is the new one.
-    (home / base / "twobells").mkdir()
-    assert platform_folder(platform, {}, home) == home / base / "twobells"
-
-
-@pytest.mark.parametrize("platform, base", [("darwin", "Library/Application Support"), ("linux", ".local/state")])
-def test_the_store_from_before_the_rename_is_moved_to_the_new_name(tmp_path, caplog, platform, base):
-    # Until it was Two Bells the app kept its store in a departureboard folder.
-    caplog.set_level(logging.INFO)
-    home = tmp_path / "home"
-    old = home / base / "departureboard"
-    (old / "web.json").parent.mkdir(parents=True)
-    (old / "web.json").write_text("{}")
-    (home / base / "departureboard-dashboard").mkdir()  # older still: the pre-rename store comes first
-    new = home / base / "twobells"
-    assert platform_folder(platform, {}, home) == new
-    assert (new / "web.json").read_text() == "{}" and not old.exists()
-    assert str(old) in caplog.text and str(new) in caplog.text
-    # A twobells folder already there is used, and the old one is left alone.
-    old.mkdir()
-    assert platform_folder(platform, {}, home) == new and old.is_dir()
-
-
-def test_the_same_folder_is_found_every_time(tmp_path):
-    home = tmp_path / "home"
-    (home / ".local" / "state" / "departureboard-dashboard").mkdir(parents=True)
-    folders = {platform_folder("linux", {}, home) for _ in range(3)}
-    assert folders == {home / ".local" / "state" / "departureboard-dashboard"}
-
-
 # The store's files
 
 

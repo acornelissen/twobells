@@ -23,8 +23,6 @@ Contents:
 10. [Desktop](#10-desktop)
 11. [Commands](#11-commands)
 12. [Troubleshooting](#12-troubleshooting)
-13. [Upgrading from before the two views](#13-upgrading-from-before-the-two-views)
-14. [Upgrading to Two Bells](#14-upgrading-to-two-bells)
 
 Developer details (code layout, tests, the emulator) are in the [README](../README.md).
 
@@ -816,62 +814,3 @@ sudo systemctl start twobells-timetable.service   # build the bus timetable now,
 | The dashboard says there are no buses because they come from TransportAPI | It shows buses only from the BODS timetable | Run setup again to find your stops' bus companies |
 | Settings won't open | Server stopped, or you're not on the home network | `systemctl status twobells-web.service` on a Pi; the container's state in Docker |
 | Settings say **Forbidden** | Opened from outside the home network, or through an unusual address | Use `http://<name>.local:8090/settings` from home Wi-Fi, or add the name to `allowed_hosts` |
-| Docker: port 8090 already in use | The old `departureboard-dashboard` container is still there | See [Upgrading](#13-upgrading-from-before-the-two-views) |
-
----
-
-## 13. Upgrading from before the two views
-
-The board's settings page and the dashboard used to be separate programs, each with its own folder and password. They are now one app, and the old commands `web`, `dashboard` and `setup serve` are replaced by `serve` and `fetch`. The old names still work, unlisted, until the first public release. This upgrade signs you out once: sign in again, with the password you had (the store keeps it).
-
-**A NAS (Docker).** The keys file is now `secrets.env`, and the container is `twobells`:
-
-1. `docker compose down` in the project folder (on Synology, stop the project in Container Manager).
-2. Get the new files: `git pull`, or copy them over the old ones.
-3. `mv dashboard.env secrets.env`
-4. Only if you mounted a `config.toml` of your own: `cp docker-compose.override.yml.example docker-compose.override.yml`. Without one, the app uses what you saved in the settings.
-5. `docker compose up -d --build --remove-orphans` (on Synology: **Project**, then **Action**, then **Build**, after renaming).
-
-Without `down` or `--remove-orphans`, the old `departureboard-dashboard` container keeps port 8090 and the new one can't start; on Synology, stop and delete it under **Container**, then build again. Your history, timetable, saved settings, keys and password stay in the old `dashboard-data` volume: before step 5, copy them to the new one as [Upgrading to Two Bells](#14-upgrading-to-two-bells) says.
-
-**A Pi.** Get the new release (or copy of the repo) onto the Pi, then from its folder:
-
-```bash
-sudo ./deploy/pi/update.sh
-```
-
-The settings moved from `http://<pi name>.local:8080/` to `http://<pi name>.local:8090/settings`, and nothing listens on 8080 any more, so old bookmarks stop working on purpose. `update.sh` replaces the old setup service with the fetch service.
-
-**A desktop.** `twobells serve` replaces `twobells dashboard`, with the same `--config` and `--secrets`. The dashboard's old folder (`departureboard-dashboard`) is used as it is; if a `twobells` folder is already there, what the old one holds is copied in once and the old folder is left alone.
-
-## 14. Upgrading to Two Bells
-
-Until October 2026 the app was called departureboard, and its repository inky-departures. The command, the services, the folders and the Docker container are now `twobells`, and the repository is [acornelissen/twobells](https://github.com/acornelissen/twobells) (old links lead there). Your settings, keys, password, timetable and history come with you.
-
-**A Pi.** Update as usual: get the new release (or a copy of the repo) onto the Pi, and from its folder run `sudo ./deploy/pi/update.sh`. Before anything else it moves the install to the new name, once:
-
-- the services stop and come back as `twobells`, `twobells-web` and so on (so `journalctl -u twobells-web`), and the board runs again if it was running;
-- `/etc/departureboard` becomes `/etc/twobells` and `/var/lib/departureboard` becomes `/var/lib/twobells`, and a `state_file` in `config.toml` that pointed into the old folder follows it;
-- the `departureboard` user becomes `twobells`, keeping its user ID, and the code goes into a fresh `/opt/twobells`.
-
-If it finds a folder under both names, it stops before changing anything: keep the one you want, remove the other, and run it again. If it stops part way for another reason, run it again and it carries on. The settings site's address doesn't change.
-
-**Docker.** Docker can't rename a volume, so your data is copied once into the new `twobells-data` volume, using the new image: nothing else is downloaded. Over SSH, in the project folder:
-
-1. Find the old volume with `docker volume ls`: its name ends in `_dashboard-data`, such as `departureboard_dashboard-data`.
-2. Stop the old container while the old files are still there: `docker compose down` (on Synology, stop the project in Container Manager).
-3. Get the new files (`git pull`, or copy them over the old ones), then build and create the new container without starting it: `docker compose build`, then `docker compose up --no-start`.
-4. Copy, with your old volume's name:
-
-   ```bash
-   docker run --rm --entrypoint cp -v departureboard_dashboard-data:/from:ro -v twobells-data:/data twobells:local -a /from/. /data/
-   ```
-
-5. Start it: `docker compose up -d --remove-orphans`, and sign in to the settings to check.
-
-Once it all works, remove the old volume: `docker volume rm departureboard_dashboard-data`. On Unraid, stop the container and rename its folder, `mv /mnt/user/appdata/departureboard /mnt/user/appdata/twobells`, or point **Data** at the old folder.
-
-**A desktop.** The store moves by itself the first time it starts: the `departureboard` folder in `~/Library/Application Support` on a Mac, or in `~/.local/state` on Linux, becomes `twobells`. If it starts at login, swap the old login file for the new one, then set it up as in [Desktop](#10-desktop):
-
-- Mac: `launchctl bootout "gui/$(id -u)/uk.departureboard.serve"`, then `rm ~/Library/LaunchAgents/uk.departureboard.serve.plist`. The old log, `~/Library/Logs/departureboard.log`, can go too.
-- Linux: `systemctl --user disable --now departureboard.service`, then `rm ~/.config/systemd/user/departureboard.service`.

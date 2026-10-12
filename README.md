@@ -100,7 +100,6 @@ docker exec -it twobells python -m twobells serve --set-password --state-dir /da
 docker exec -it twobells python -m twobells serve --reset-code --state-dir /data
 ```
 
-Upgrading an install from before the rename to Two Bells: see [Upgrading to Two Bells](docs/user-guide.md#14-upgrading-to-two-bells). From the separate board settings page (port 8080) or `departureboard dashboard`: see [Upgrading from before the two views](docs/user-guide.md#13-upgrading-from-before-the-two-views).
 
 ## Releases
 
