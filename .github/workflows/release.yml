@@ -10,7 +10,8 @@
 #   pypi     sdist and wheel to PyPI by trusted publishing (no stored token);
 #            runs after everything else built, as a PyPI version is permanent
 #   release  the GitHub release with the tarball, SHA256SUMS, its signature
-#            bundle, and the sdist and wheel
+#            bundle, and the wheel (the sdist is on PyPI only: it would share
+#            the Pi tarball's name, twobells-X.Y.Z.tar.gz, which upgrade.sh fetches)
 #
 # Cutting a release: set version in pyproject.toml, merge to main, then
 #   git tag -s v0.1.0 -m v0.1.0 && git push origin v0.1.0
@@ -219,8 +220,10 @@ jobs:
       - name: Archive the tagged source
         # What the Pi's scripts in deploy/pi/ need (pyproject.toml, LICENSE, src/,
         # deploy/ and examples/) plus the docs; not the tests, the CI, or the
-        # local issue tracker and agent files.
+        # local issue tracker and agent files. It takes the name upgrade.sh
+        # fetches, which is also the sdist's: the sdist goes to PyPI only.
         run: |
+          rm "out/twobells-$VERSION.tar.gz"  # the sdist, from dist
           git archive --format=tar.gz --prefix="twobells-$VERSION/" \
             -o "out/twobells-$VERSION.tar.gz" "$GITHUB_SHA" -- . \
             ':(exclude).beads' ':(exclude).claude' ':(exclude).github' \

@@ -894,6 +894,16 @@ def _needed_on_the_pi() -> set[str]:
     return needed
 
 
+def test_the_release_holds_the_pi_tarball_under_the_name_upgrade_fetches_not_the_sdist():
+    # The sdist and the Pi's tarball share a name, twobells-X.Y.Z.tar.gz. The
+    # release keeps the tarball, the one upgrade.sh fetches and unpacks, and
+    # drops the sdist (it is on PyPI) before the archive takes its place.
+    job = RELEASE[RELEASE.index("  tarball:"):RELEASE.index("  pypi:")]
+    dropped = job.index('rm "out/twobells-$VERSION.tar.gz"  # the sdist, from dist')
+    assert job.index("name: dist") < dropped < job.index('-o "out/twobells-$VERSION.tar.gz"')
+    assert 'local name="twobells-$version.tar.gz"' in _script("upgrade.sh")
+
+
 def test_the_release_tarball_holds_everything_the_pi_scripts_use():
     excludes = _tarball_excludes()
     assert {"tests", ".github", ".beads", ".claude"} <= set(excludes)  # read from release.yml, not empty
