@@ -107,7 +107,8 @@ def extras_part(now, no_shows=None, vehicles_ok=True):
     from twobells.sources.livebus import live_board
 
     plan = schedule(EAST, WEST, INTO_A)
-    vehicles = [bus(*HALFWAY, now), bus(*HALFWAY, now, line="237", origin=JUNCTION, aimed=LEFT_JUNCTION)]
+    east = dataclasses.replace(bus(*HALFWAY, now), fleet_number="3017", registration="AB25 CDE")
+    vehicles = [east, bus(*HALFWAY, now, line="237", origin=JUNCTION, aimed=LEFT_JUNCTION)]
     rows, placed = live_board(plan, now, vehicles if vehicles_ok else [], every_day, 10)
     board = BusBoard(rows, plan, vehicles_ok, None, placed)
     kwargs = {"no_shows": no_shows} if no_shows else {}
@@ -545,7 +546,8 @@ def test_a_live_late_bus():
         "late", "Exp 10:19", 9, True,
     )
     assert row["status_spoken"] == "Expected 10:19"
-    assert row["vehicle"] == {"age_s": 0, "recorded_at": "2026-10-09T10:14:00+01:00", "bearing": 90.0}
+    assert row["vehicle"] == {"age_s": 0, "recorded_at": "2026-10-09T10:14:00+01:00", "bearing": 90.0,
+                              "fleet_number": None, "registration": None}
     strip = row["strip"]
     assert strip["stops"][strip["yours"]] == "Henry Street"
     assert strip["bus_at"] == pytest.approx(2.5, abs=0.05)  # halfway Sunlaws Street to St Marys Road
@@ -589,6 +591,17 @@ def test_a_timetable_only_bus():
     assert row["vehicle"] is None and row["minutes_late"] is None
     assert row["strip"]["bus_at"] is None and row["strip"]["where"] == "No live position"
     assert lookups[row["id"]]["bus"]["vehicle"] is None
+
+
+def test_a_live_bus_says_its_fleet_number_and_registration_but_not_its_ref():
+    vehicle = dataclasses.replace(bus(*HALFWAY, at(10, 14)), vehicle_ref="3017_-_AB25_CDE",
+                                  fleet_number="3017", registration="AB25 CDE")
+    part, lookups, _ = bus_part(at(10, 14), [vehicle])
+    row = by(part["rows"], line="341", stop="A")
+    assert (row["vehicle"]["fleet_number"], row["vehicle"]["registration"]) == ("3017", "AB25 CDE")
+    found = lookups[row["id"]]["bus"]["vehicle"]
+    assert (found["fleet_number"], found["registration"]) == ("3017", "AB25 CDE")
+    assert "3017_-_AB25_CDE" not in json.dumps(part) + json.dumps(lookups[row["id"]]["bus"])
 
 
 def test_the_bus_map_has_the_positioned_stops_and_the_bus():

@@ -106,7 +106,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "live": true,
       "walk_min": 10,
       "leave_at": "…",
-      "vehicle": {"age_s": 40, "recorded_at": "…", "bearing": 95.0},
+      "vehicle": {"age_s": 40, "recorded_at": "…", "bearing": 95.0, "fleet_number": "3017", "registration": "AB25 CDE"},
       "strip": {"stops": ["Mill Lane", "Park Road", "Church Street", "Market Place"], "yours": 2, "bus_at": 0.6, "where": "2 stops away"},
       "history": {"phrase": null, "no_show_phrase": null},
       "arrives": {"name": "Hyde Bus Station", "at": "08:02", "at_iso": "…", "minutes": 38},
@@ -215,6 +215,9 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `yours` is the index of your stop.
   - `bus_at` is the bus's position in stop units along `stops` (0 is the first). It is null when the bus isn't on the strip yet, and when there's no live bus.
   - `where` is a sentence for screen readers and the row.
+- **Bus `vehicle`** (null without a live position): `age_s` is how old its last report was, `recorded_at` when it was made, and `bearing` the way it faces in degrees, or null.
+  - `fleet_number` and `registration` say which bus it is, read from BODS's `VehicleRef`: a fleet number of 1 to 6 digits ("3017"), and a registration spaced as on the plate ("AB25 CDE"). Each is null when the ref doesn't give one. Around Glossop it comes as `3017_-_AB25_CDE`, `AB25CDE`, `AB25_CDE` or `3017`; anything else, or longer than 32 characters, gives neither, and the ref itself is never sent.
+  - **On the page:** the sheet's **Bus** fact says "3017 (AB25 CDE)", or either alone. With a registration it links to `https://bustimes.org/search?q=AB25CDE` (bustimes.org's own search finds a vehicle by its registration; there is no stable address for one operator's fleet number), with `rel="noopener noreferrer"` and words saying it leaves the app. Rows and the board don't show it.
 - **`status.stale`** is true when nothing new has arrived for longer than expected. `error` is a short message with any keys removed.
 - **`positions`** says how asking where the vehicles are is going, in the same shape as `status`; the settings site's Overview shows it, and the page doesn't use it.
   - `trains.positions` is for Darwin's Service Details (`RDM_DETAILS_API_KEY`): `last_success` is when a train's details last came, `error` the last failure, and `note` is "Not asked again for 6 hours" while a refused key has turned them off. It is null without the key.
@@ -324,14 +327,15 @@ The map for one bus row; 404 if the id is unknown (as when it's gone from the bo
     {"name": "Church Street", "lat": 53.4435, "lon": -1.9590, "time": "07:20", "yours": true}
   ],
   "path": [[53.4433, -1.9625], [53.44345, -1.9610], [53.4436, -1.9598], [53.4435, -1.9590]],
-  "vehicle": {"lat": 53.4438, "lon": -1.9648, "bearing": 95.0, "recorded_at": "…", "age_s": 40},
+  "vehicle": {"lat": 53.4438, "lon": -1.9648, "bearing": 95.0, "recorded_at": "…", "age_s": 40,
+              "fleet_number": "3017", "registration": "AB25 CDE"},
   "where": "2 stops away"
 }
 ```
 
 - `stops` are the journey's positioned calls: up to 20 before yours, yours, and one after, in order. `time` is the timetabled time.
 - `path` is the road through those stops, first to last, as `[lat, lon]` pairs: each stop, then the road to the next. The roads come from the OpenStreetMap car router when the timetable is built (`timetable/roads.py`), never when the map is asked for; where it had none, the path goes straight from one stop to the next. It has as many points as `stops` at least, so `[]` when `stops` is empty.
-- `vehicle` is null when the bus has no live position.
+- `vehicle` is null when the bus has no live position. Its `fleet_number` and `registration` are as in the snapshot's rows.
 
 ## `GET /api/history/<id>`
 

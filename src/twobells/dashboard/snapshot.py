@@ -423,6 +423,9 @@ def _vehicle(live: LiveDeparture, now: datetime, with_position: bool) -> dict | 
         "age_s": max(0, int((now - recorded).total_seconds())) if recorded else None,
         "recorded_at": iso(recorded),
         "bearing": _bearing(vehicle.bearing),
+        # Checked as read (bods.fleet_and_registration); the raw VehicleRef never goes out.
+        "fleet_number": vehicle.fleet_number or None,
+        "registration": vehicle.registration or None,
     }
     if with_position:
         found = {"lat": vehicle.lat, "lon": vehicle.lon, **found}

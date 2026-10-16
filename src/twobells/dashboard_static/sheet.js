@@ -58,6 +58,25 @@ export function lastBusFact(row, buses, stops) {
   return `${str(last.scheduled)}${from}${num(last.remaining) === 0 ? ", gone" : ""}`;
 }
 
+const FLEET_NUMBER = /^[0-9]{1,6}$/;
+const REGISTRATION = /^[A-Z0-9]{1,4} [A-Z0-9]{1,4}$/;
+
+// Which bus it is, from its live position: "3017 (AB25 CDE)", the fleet
+// number or the registration alone, or "" when the feed doesn't say. With a
+// registration, a link to look the bus up on bustimes.org, whose search finds
+// a vehicle by its registration.
+export function busFact(row) {
+  const vehicle = obj(row.vehicle);
+  if (!vehicle) return "";
+  const fleet = FLEET_NUMBER.test(str(vehicle.fleet_number)) ? str(vehicle.fleet_number) : "";
+  const reg = REGISTRATION.test(str(vehicle.registration)) ? str(vehicle.registration) : "";
+  if (!fleet && !reg) return "";
+  const text = fleet && reg ? `${fleet} (${reg})` : fleet || reg;
+  if (!reg) return text;
+  const href = `https://bustimes.org/search?q=${encodeURIComponent(reg.replace(" ", ""))}`;
+  return [text, " ", h("a", { href, rel: "noopener noreferrer" }, "Look it up on bustimes.org (leaves this app)")];
+}
+
 // A bus's status, the warning when it may not be running, its facts, and
 // where it is now on the strip.
 function busSummary(row) {
@@ -76,6 +95,7 @@ function busSummary(row) {
       fact("Arrives", arrivesFact(row)),
       fact("Bus coming in", inboundText(row)),
       fact("Tracker", noShowPhrase(row)),
+      fact("Bus", busFact(row)),
       fact("Last bus", lastBusFact(row, context.lastBuses || [], context.stops)),
     ),
     h("h3", {}, "Where it is now"),

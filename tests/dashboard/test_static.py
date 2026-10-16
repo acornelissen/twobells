@@ -570,6 +570,14 @@ def row_id(value):
     return isinstance(value, str) and bool(ID.match(value))
 
 
+def fleet_number(value):
+    return isinstance(value, str) and bool(re.fullmatch(r"[0-9]{1,6}", value))
+
+
+def registration(value):
+    return isinstance(value, str) and bool(re.fullmatch(r"[A-Z0-9]{1,4} [A-Z0-9]{1,4}", value))
+
+
 def one_of(*choices):
     return lambda value: value in choices
 
@@ -645,7 +653,8 @@ BUS_ROW = {
     "scheduled": hhmm, "scheduled_at": at, "expected": Opt(hhmm), "expected_at": Opt(at),
     "status": ROW_STATUS, "status_text": str, "status_spoken": str, "minutes_late": Opt(integer),
     "live": bool, "walk_min": Opt(integer), "leave_at": Opt(at),
-    "vehicle": Opt({"age_s": integer, "recorded_at": at, "bearing": Opt(number)}),
+    "vehicle": Opt({"age_s": integer, "recorded_at": at, "bearing": Opt(number),
+                    "fleet_number": Opt(fleet_number), "registration": Opt(registration)}),
     "strip": Opt({"stops": [str], "yours": integer, "bus_at": Opt(number), "where": str}),
     "history": BUS_HISTORY,
     "arrives": Opt(ARRIVES),
@@ -720,7 +729,8 @@ BUS_DETAIL = {
     "id": row_id, "line": str, "destination": str, "stop": str, "stop_name": str,
     "stops": [{"name": str, "lat": number, "lon": number, "time": Opt(hhmm), "yours": bool}],
     "path": [lat_lon],
-    "vehicle": Opt({"lat": number, "lon": number, "bearing": Opt(number), "recorded_at": at, "age_s": integer}),
+    "vehicle": Opt({"lat": number, "lon": number, "bearing": Opt(number), "recorded_at": at, "age_s": integer,
+                    "fleet_number": Opt(fleet_number), "registration": Opt(registration)}),
     "where": Opt(str),
 }
 AREA = {
@@ -1586,6 +1596,38 @@ def test_a_bus_sheet_says_when_the_last_bus_of_its_line_goes():
         "This is the last today",
         "21:00, gone",
         "",  # no last bus for that line and destination: no fact
+    ]
+
+
+@needs_node
+def test_a_bus_sheet_says_which_bus_it_is_and_links_only_a_registration():
+    found = run_js("""
+        import { h } from "./dom.js";
+        import { busFact } from "./sheet.js";
+        const shown = (vehicle) => {
+          const dd = h("dd", {}, busFact({ vehicle }));
+          const link = dd.querySelector("a");
+          return [spoken(dd), link && link.getAttribute("href"), link && link.getAttribute("rel")];
+        };
+        console.log(JSON.stringify([
+          shown({ fleet_number: "3017", registration: "AB25 CDE" }),
+          shown({ fleet_number: null, registration: "AB74 FGH" }),
+          shown({ fleet_number: "4021", registration: null }),
+          shown({ fleet_number: null, registration: null }),
+          shown(null),
+          shown({ fleet_number: "40<b>21", registration: "AB25 CDE&q=x" }),
+          shown({ fleet_number: 4021, registration: ["AB25 CDE"] }),
+        ]));
+    """)
+    leaves = "Look it up on bustimes.org (leaves this app)"
+    assert found == [
+        [f"3017 (AB25 CDE) {leaves}", "https://bustimes.org/search?q=AB25CDE", "noopener noreferrer"],
+        [f"AB74 FGH {leaves}", "https://bustimes.org/search?q=AB74FGH", "noopener noreferrer"],
+        ["4021", None, None],  # a fleet number alone: bustimes.org can't search one operator's
+        ["", None, None],
+        ["", None, None],
+        ["", None, None],  # anything that isn't one is left out, not shown as sent
+        ["", None, None],
     ]
 
 

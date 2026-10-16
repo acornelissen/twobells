@@ -1299,7 +1299,9 @@
         "vehicle": {
           "age_s": 40,
           "recorded_at": "2026-10-10T07:00:50+01:00",
-          "bearing": 250.0
+          "bearing": 250.0,
+          "fleet_number": "3017",
+          "registration": "AB25 CDE"
         },
         "strip": {
           "stops": [
@@ -1397,7 +1399,9 @@
         "vehicle": {
           "age_s": 75,
           "recorded_at": "2026-10-10T07:00:15+01:00",
-          "bearing": 95.0
+          "bearing": 95.0,
+          "fleet_number": null,
+          "registration": "AB74 FGH"
         },
         "strip": {
           "stops": [
@@ -1478,7 +1482,9 @@
         "vehicle": {
           "age_s": 12,
           "recorded_at": "2026-10-10T07:01:18+01:00",
-          "bearing": 180.0
+          "bearing": 180.0,
+          "fleet_number": "4021",
+          "registration": null
         },
         "strip": {
           "stops": [

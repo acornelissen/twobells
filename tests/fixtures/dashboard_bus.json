@@ -73,7 +73,9 @@
     "lon": -1.9632,
     "bearing": 250.0,
     "recorded_at": "2026-10-10T07:00:50+01:00",
-    "age_s": 40
+    "age_s": 40,
+    "fleet_number": "3017",
+    "registration": "AB25 CDE"
   },
   "where": "2 stops away",
   "stop_name": "Henry Street (Stop A)"
