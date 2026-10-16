@@ -99,14 +99,17 @@ def bus_part(now, vehicles=(), walk=WALK):
     return part, lookups, found
 
 
-def extras_part(now, no_shows=None, vehicles_ok=True):
-    """Buses at 10:14 with WEST's bus coming in on INTO_A, 9 min late, and EAST's bus live."""
+def extras_part(now, no_shows=None, vehicles_ok=True, blocks=False):
+    """Buses at 10:14 with WEST's bus coming in on INTO_A, 9 min late, and EAST's bus live.
+    With `blocks`, the two are in one block, so WEST's bus is followed in."""
     from tests.dashboard.test_enrich import INTO_A, LEFT_JUNCTION
     from tests.sources.test_livebus import every_day
     from twobells.sources.lastbus import day_groups, last_buses
     from twobells.sources.livebus import live_board
 
     plan = schedule(EAST, WEST, INTO_A)
+    if blocks:
+        plan = schedule(EAST, dataclasses.replace(WEST, block="T122"), dataclasses.replace(INTO_A, block="T122"))
     east = dataclasses.replace(bus(*HALFWAY, now), fleet_number="3017", registration="AB25 CDE")
     vehicles = [east, bus(*HALFWAY, now, line="237", origin=JUNCTION, aimed=LEFT_JUNCTION)]
     rows, placed = live_board(plan, now, vehicles if vehicles_ok else [], every_day, 10)
@@ -708,15 +711,33 @@ def test_bus_rows_carry_arrivals_the_inbound_bus_and_ghosts():
     west_a = by(part["rows"], line="237", stop="A")
     assert west_a["inbound"] == {
         "from": "The Junction", "due": "10:19", "late_min": 9, "where": "3 stops away",
-        "text": "Bus arriving from The Junction, 9 min late (due 10:19)",
+        "text": "Bus arriving from The Junction, 9 min late (due 10:19)", "followed": False,
     }
-    # The inbound bus is due after this one leaves, yet the departure keeps its timetabled time and words.
+    # A guess, due after this one leaves, yet the departure keeps its timetabled time and words.
     assert (west_a["status_text"], west_a["expected"], west_a["live"]) == ("Timetable only", None, False)
     assert west_a["ghost"] is False  # a tracked bus is on its way to work it
     west_b = by(part["rows"], line="237", stop="B")
     assert west_b["inbound"] is None and west_b["ghost"] is True  # due 10:18, nothing tracked
     assert west_b["arrives"]["at"] == "11:00"
     assert west_b["history"] == {"phrase": None, "no_show_phrase": None}
+
+
+def test_a_bus_followed_in_by_its_block_makes_its_row_live():
+    part, lookups = extras_part(at(10, 14), blocks=True)
+    west_a = by(part["rows"], line="237", stop="A")
+    assert (west_a["live"], west_a["status"], west_a["status_text"], west_a["status_spoken"]) == (
+        True, "late", "Exp 10:21", "Expected 10:21")  # in at 10:19, 9 min late, then two minutes to turn round
+    assert (west_a["expected"], west_a["minutes_late"]) == ("10:21", 6)
+    assert west_a["vehicle"]["recorded_at"] == "2026-10-09T10:14:00+01:00"  # the bus followed in
+    assert (west_a["strip"]["where"], west_a["strip"]["bus_at"]) == ("Bus on its way, due in 5 min", None)
+    assert west_a["inbound"]["followed"] is True and west_a["inbound"]["due"] == "10:19"
+    assert west_a["ghost"] is False
+    seen = lookups[west_a["id"]]["bus"]
+    assert (seen["vehicle"]["lat"], seen["vehicle"]["lon"]) == HALFWAY
+    assert seen["where"] == "Bus on its way, due in 5 min"
+    # Stop B is on the same journey, but not where it starts: timetable only.
+    west_b = by(part["rows"], line="237", stop="B")
+    assert (west_b["live"], west_b["vehicle"], west_b["inbound"]) == (False, None, None)
 
 
 def test_no_ghosts_when_live_positions_failed():

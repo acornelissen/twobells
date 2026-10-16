@@ -14,24 +14,15 @@ booked time is wrong and the right one unknown, so there is no arrival then,
 nor for a cancelled train or stop. A bus arrives at its journey's last call
 at the timetabled time plus the delay it has now.
 
-Inbound buses. BODS does send real block numbers (BlockRef: one bus ran
-block T122 from its inbound 237 into the 21:35 from Henry Street A), but the
-timetable doesn't keep TransXChange's, so there is nothing to follow them
-with. Instead, as bustimes.org does without blocks, a departure whose
-journey starts at your stop is paired with a journey of the same line that
-ends at your stop (or
-at a stop within NEAR_M of it) up to INBOUND_WINDOW before it leaves. The
-timetable keeps journeys that end at such a stop without calling at yours
-(inbound-only ones) for this alone. Only
-journeys with a live bus placed on them count, and only when exactly one
-fits: two is a guess too far. A bus that would sooner work an earlier
-departure of the same line from the same stop is left to that one.
-
-The inbound bus is shown as a line of its own ("Bus arriving from Ashton, 4
-min late (due 23:29)"). It never changes the departure's expected time or
-status words, even when it is due after the departure: it is an inference,
-drivers make up time on layovers, and another bus may take the journey. The
-facts in the line (where that bus is, how late it is) come from its tracker.
+Inbound buses. For a departure that starts at your stop, the bus coming in
+to work it (livebus.Inbound, found there: followed by the timetable's
+block, or else guessed by line) is shown as a line of its own ("Bus
+arriving from Ashton, 4 min late (due 23:29)"), with the facts from its
+tracker: where it is and how late. A bus followed by its block makes the
+departure live, and livebus carries its lateness on to the departure's
+time. A guess never changes the departure's expected time or status
+words, even when the bus is due after the departure: drivers make up time
+on layovers, and another bus may take the journey.
 
 Ghost buses. A bus due within GHOST_WITHIN with no live bus placed on its
 journey is flagged, since trackers usually show up well before then. Not
@@ -43,16 +34,14 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import datetime, time, timedelta, tzinfo
+from datetime import datetime, timedelta, tzinfo
 
 from ..core.model import Status, iso
 from ..sources.bodsbus import BusBoard
 from ..sources.darwin import CallingPoint, TrainService
 from ..sources.livebus import LiveDeparture, LiveJourney
-from ..timetable.model import NEAR_M, StopPosition, metres
+from ..timetable.model import StopPosition
 
-# An inbound bus arrives at most this long before the departure it works.
-INBOUND_WINDOW = timedelta(minutes=30)
 # A bus due this soon with no tracker gets the warning.
 GHOST_WITHIN = timedelta(minutes=5)
 # A journey longer than this is a mistake in the times, not a long journey.
@@ -135,28 +124,6 @@ def bus_arrival(live: LiveDeparture, tz: tzinfo | None) -> dict | None:
     return _arrival(live.journey.destination, at.replace(tzinfo=tz), minutes)
 
 
-def _same(a: str, b: str) -> bool:
-    return a.strip().casefold() == b.strip().casefold()
-
-
-def _ends_at(journey_end: str, stop: str, positions: dict[str, StopPosition]) -> bool:
-    """Whether a journey ending at `journey_end` ends at `stop`, or within NEAR_M of it."""
-    if journey_end == stop:
-        return True
-    a, b = positions.get(journey_end), positions.get(stop)
-    return a is not None and b is not None and metres(a, b) <= NEAR_M
-
-
-def _arrives(placed: LiveJourney) -> datetime:
-    """When the journey reaches its last call, by the timetable (board-local, no zone)."""
-    return datetime.combine(placed.service_day, time()) + timedelta(minutes=placed.journey.calls[-1].minute)
-
-
-def _late_minutes(delay: float) -> int:
-    """Whole minutes late, rounding halves up; early counts as on time (as livebus does)."""
-    return math.floor(max(delay, 0.0) / 60 + 0.5)
-
-
 def _clean(text: str) -> str | None:
     """A place name from a feed as plain text: BODS's underscores as spaces,
     on one line, printable, cut short."""
@@ -188,49 +155,23 @@ def _where(placed: LiveJourney, stop: str, positions: dict[str, StopPosition]) -
     return f"At {positions[end].name}"
 
 
-def _taken_earlier(arrives: datetime, live: LiveDeparture, rows: list[LiveDeparture], stop: str) -> bool:
-    """Whether a departure of the same line from the same stop leaves between
-    the inbound bus arriving and `live`: that one is the bus's next working."""
-    return any(
-        other is not live
-        and other.call_index == 0
-        and other.journey.calls[0].atco == stop
-        and _same(other.journey.line, live.journey.line)
-        and arrives <= other.leaves < live.leaves
-        for other in rows
-    )
-
-
-def inbound(live: LiveDeparture, rows: list[LiveDeparture], placed: list[LiveJourney],
-            positions: dict[str, StopPosition]) -> dict | None:
-    """The bus probably coming to work a departure that starts at your stop,
-    or None (see the module's notes). `rows` are the board's departures and
-    `placed` every journey with a live bus on it."""
-    if live.call_index != 0:
+def inbound(live: LiveDeparture, positions: dict[str, StopPosition]) -> dict | None:
+    """The bus coming in to work a departure that starts at your stop, as
+    livebus found it, or None (see the module's notes). `followed` says
+    whether it was followed by the timetable's block, making the departure
+    live, rather than guessed."""
+    coming = live.inbound
+    if coming is None:
         return None
-    stop = live.journey.calls[0].atco
-    found = [
-        p for p in placed
-        if not (p.journey is live.journey and p.service_day == live.service_day)
-        and _same(p.journey.line, live.journey.line)
-        and _ends_at(p.journey.calls[-1].atco, stop, positions)
-        and timedelta(0) <= live.leaves - _arrives(p) <= INBOUND_WINDOW
-    ]
-    if len(found) != 1:
-        return None  # none, or more than one: a guess too far
-    bus = found[0]
-    arrives = _arrives(bus)
-    if _taken_earlier(arrives, live, rows, stop):
-        return None
-    late = _late_minutes(bus.progress.delay)
-    origin = _origin(bus, positions)
-    due = (arrives + timedelta(minutes=late)).strftime("%H:%M")
+    origin = _origin(coming.bus, positions)
+    due = coming.arrives.strftime("%H:%M")
     return {
         "from": origin,
         "due": due,
-        "late_min": late,
-        "where": _where(bus, stop, positions),
-        "text": inbound_text(origin, late, due),
+        "late_min": coming.late,
+        "where": _where(coming.bus, live.journey.origin.atco, positions),
+        "text": inbound_text(origin, coming.late, due),
+        "followed": coming.followed,
     }
 
 
@@ -245,14 +186,14 @@ def is_ghost(live: LiveDeparture, now: datetime, vehicles_ok: bool, coming: dict
     """A bus due within GHOST_WITHIN (or just gone its time) with no live bus
     placed on it, while live positions are working and no inbound bus is on
     its way. `now` is aware, in the board's zone."""
-    if live.progress is not None or not vehicles_ok or coming is not None:
+    if live.live or not vehicles_ok or coming is not None:
         return False
     return live.expected - now.replace(tzinfo=None) <= GHOST_WITHIN
 
 
 def bus_extras(live: LiveDeparture, board: BusBoard, now: datetime) -> dict:
     """The extra fields of a bus row: arrives, inbound and ghost."""
-    coming = inbound(live, board.departures, board.journeys, board.schedule.positions)
+    coming = inbound(live, board.schedule.positions)
     return {
         "arrives": bus_arrival(live, now.tzinfo),
         "inbound": coming,

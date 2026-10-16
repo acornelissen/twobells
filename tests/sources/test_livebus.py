@@ -1,6 +1,6 @@
 import math
 from dataclasses import replace
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -54,6 +54,8 @@ POSITIONS = {
     ST_MARYS_W: StopPosition("St Marys Road", 53.44343, -1.955353),
 }
 EVERY_DAY = Calendar(days=frozenset(range(7)))
+# Board-local, without a zone, as the departures' times are: for words that count down.
+NOW = datetime(2026, 10, 9, 10, 0)
 
 
 def journey(line, calls, destination, code, operator="BNML"):
@@ -724,50 +726,197 @@ def test_approach_without_a_bus():
 
 def test_a_row_strip_says_where_the_bus_is_as_the_dashboard_does():
     late = row(live(at(10, 14), [bus(*HALFWAY, at(10, 14))]), "A", "341")
-    found = row_strip(late, POSITIONS)
+    found = row_strip(late, POSITIONS, NOW)
     assert (found.where, found.stops, found.yours) == ("3 stops away", 7, 5)
     assert found.at == pytest.approx(2.5, abs=0.02)
-    assert found.where == where_words(late, approach(late, POSITIONS))  # the dashboard row's words
+    assert found.where == where_words(late, approach(late, POSITIONS), NOW)  # the dashboard row's words
 
 
 def test_a_row_strip_with_the_bus_not_yet_on_it():
     coming = replace(row(live(at(10, 0)), "A", "341"), progress=Progress(0.5, 0.0))
-    found = row_strip(coming, POSITIONS)
+    found = row_strip(coming, POSITIONS, NOW)
     # Counted in calls, short for a row; the dashboard says "Not yet past The Junction".
     assert found.where == "6 stops away" and found.at is None
-    assert where_words(coming, approach(coming, POSITIONS)) == "Not yet past The Junction"
+    assert where_words(coming, approach(coming, POSITIONS), NOW) == "Not yet past The Junction"
 
 
 def test_a_row_strip_s_words_fit_its_20_characters():
     rows = [replace(row(live(at(10, 0)), "A", "341"), progress=Progress(at_, 0.0))
             for at_ in (0.5, 3.5, 5.5, 6.0)]
-    found = [row_strip(r, POSITIONS).where for r in rows]
+    found = [row_strip(r, POSITIONS, NOW).where for r in rows]
     assert found == ["6 stops away", "3 stops away", "1 stop away", "At your stop"]
     assert all(len(words) <= 20 for words in found)
 
 
 def test_a_row_strip_with_the_bus_at_your_stop():
     passing = replace(row(live(at(10, 10)), "A", "341"), progress=Progress(6.05, 0.0))
-    found = row_strip(passing, without(HOWARD))  # your stop is the strip's last
+    found = row_strip(passing, without(HOWARD), NOW)  # your stop is the strip's last
     assert found.where == "At your stop" and found.at == 5
 
 
 def test_no_row_strip_without_a_live_bus_or_your_stop_s_position():
     timetabled = row(live(at(10, 0)), "A", "341")
-    assert row_strip(timetabled, POSITIONS) is None
+    assert row_strip(timetabled, POSITIONS, NOW) is None
     placed = replace(timetabled, progress=Progress(3.0, 0.0))
-    assert row_strip(placed, without(HENRY_A)) is None
+    assert row_strip(placed, without(HENRY_A), NOW) is None
 
 
 def test_no_row_strip_rather_than_a_bad_one():
     beyond = replace(row(live(at(10, 10)), "A", "341"), progress=Progress(6.5, 0.0))
-    assert row_strip(beyond, without(HOWARD)) is None  # past your stop: no row should have it
+    assert row_strip(beyond, without(HOWARD), NOW) is None  # past your stop: no row should have it
     lonely = {HENRY_A: POSITIONS[HENRY_A]}  # a strip of one stop can't be drawn
-    assert row_strip(replace(beyond, progress=Progress(5.0, 0.0)), lonely) is None
+    assert row_strip(replace(beyond, progress=Progress(5.0, 0.0)), lonely, NOW) is None
 
 
 def test_where_words_without_a_bus_or_a_strip():
     timetabled = row(live(at(10, 0)), "A", "341")
-    assert where_words(timetabled, approach(timetabled, POSITIONS)) == "No live position"
+    assert where_words(timetabled, approach(timetabled, POSITIONS), NOW) == "No live position"
     placed = replace(timetabled, progress=Progress(3.0, 0.0))
-    assert where_words(placed, None) == "Live position known"
+    assert where_words(placed, None, NOW) == "Live position known"
+
+
+# Following a bus in by its block
+
+# INTO_A and WEST in one block: the bus into stop A at 10:10 works WEST, leaving there at 10:15.
+IN_T122 = replace(INTO_A, block="T122")
+WEST_T122 = replace(WEST, block="T122")
+
+
+def coming_in(recorded, where=HALFWAY, **kwargs):
+    """A bus on INTO_A, between Sunlaws Street and St Marys Road (due 10:05) unless told otherwise."""
+    return bus(*where, recorded, line="237", origin=JUNCTION, **{"aimed": LEFT_JUNCTION, **kwargs})
+
+
+def west_a(now, vehicles=(), plan=None):
+    return row(live(now, vehicles, plan=plan or schedule(EAST, WEST_T122, IN_T122)), "A", "237")
+
+
+def test_a_departure_s_bus_is_followed_in_on_the_journey_before_in_its_block():
+    found = west_a(at(10, 5), [coming_in(at(10, 5))])  # on time: in at 10:10
+    assert found.live and found.progress is None and found.vehicle is None
+    assert found.inbound.followed and found.inbound.bus.journey is IN_T122
+    assert found.tracked is found.inbound.bus.vehicle
+    assert (found.departure.status, found.departure.expected, found.expected) == (
+        Status.ON_TIME, None, datetime(2026, 10, 9, 10, 15))
+    words = where_words(found, approach(found, POSITIONS), datetime(2026, 10, 9, 10, 5))
+    assert words == "Bus on its way, due in 5 min"
+    strip = row_strip(found, POSITIONS, datetime(2026, 10, 9, 10, 5))
+    assert (strip.where, strip.at) == ("On its way, 5 min", None)  # not on the strip yet
+    # Only from the stop its journey starts at: the same journey at stop B is timetabled.
+    later = row(live(at(10, 5), [coming_in(at(10, 5))], plan=schedule(EAST, WEST_T122, IN_T122)), "B", "237")
+    assert (later.live, later.inbound, later.departure.status) == (False, None, Status.UNKNOWN)
+
+
+@pytest.mark.parametrize("seen, late, status, expected", [
+    ((10, 3), 0, Status.ON_TIME, None),  # early counts as on time, and it never leaves early
+    ((10, 7), 2, Status.ON_TIME, None),  # in at 10:12: turned round by 10:14
+    ((10, 14), 9, Status.LATE, "10:21"),  # in at 10:19, out two minutes later
+])
+def test_a_late_inbound_bus_makes_its_departure_late(seen, late, status, expected):
+    found = west_a(at(*seen), [coming_in(at(*seen))])
+    assert found.inbound.late == late
+    assert (found.departure.status, found.departure.expected) == (status, expected)
+
+
+def test_a_departure_followed_in_stays_until_a_minute_after_it_is_expected():
+    vehicle = coming_in(at(10, 14))  # 9 min late: expected 10:21
+    assert west_a(at(10, 17), [vehicle]).departure.expected == "10:21"
+    guessed = live(at(10, 17), [vehicle], plan=schedule(EAST, WEST, INTO_A))  # not followed: gone at 10:16
+    assert not [l for l in guessed if (l.departure.stop, l.departure.service) == ("A", "237")]
+
+
+def test_a_bus_in_at_the_end_of_the_journey_before_leaves_on_time_or_any_minute():
+    henry = (POSITIONS[HENRY_A].lat, POSITIONS[HENRY_A].lon)
+    found = west_a(at(10, 13), [coming_in(at(10, 13), where=henry)])  # 3 min late in, still in time
+    assert found.inbound.is_in
+    assert (found.departure.status, found.departure.expected) == (Status.ON_TIME, None)
+    assert where_words(found, None, datetime(2026, 10, 9, 10, 13)) == "Bus in, waiting to leave"
+    assert row_strip(found, POSITIONS, datetime(2026, 10, 9, 10, 13)).where == "Bus in, waiting"
+    # Still in after its time: it goes any minute, and stays on the board meanwhile.
+    found = west_a(at(10, 18), [coming_in(at(10, 18), where=henry)])
+    assert (found.departure.status, found.departure.expected) == (Status.LATE, "10:18")
+
+
+def test_where_words_count_down_to_the_bus_getting_in():
+    found = west_a(at(10, 5), [coming_in(at(10, 5))])
+    for now, full, short in (
+        (datetime(2026, 10, 9, 10, 5, 59), "Bus on its way, due in 4 min", "On its way, 4 min"),
+        (datetime(2026, 10, 9, 10, 9, 1), "Bus on its way, due now", "On its way, due"),
+        (datetime(2026, 10, 9, 10, 12), "Bus on its way, due now", "On its way, due"),
+        (datetime(2026, 10, 9, 8, 30), "Bus on its way, due in 100 min", "On its way, 100 min"),
+    ):
+        assert where_words(found, None, now) == full
+        assert row_strip(found, POSITIONS, now).where == short
+
+
+def _block_variants():
+    in_between = journey("237", [(JUNCTION, 611), (GRAPES, 613)], "Glossop", "1179")  # 10:11 to 10:13, elsewhere
+    early = replace(IN_T122, calls=tuple(Call(c.atco, c.minute - 26) for c in IN_T122.calls))  # in 31 min before
+    elsewhere = replace(IN_T122, calls=(*IN_T122.calls[:-1], Call(GEORGE, 610)))  # about 200 m from stop A
+    return {
+        "no block": schedule(EAST, WEST, IN_T122),
+        "another block": schedule(EAST, replace(WEST, block="T123"), IN_T122),
+        "another operator": schedule(EAST, WEST_T122, replace(IN_T122, operator="HIPK")),
+        "ends 200 m off": schedule(EAST, WEST_T122, elsewhere),
+        "another journey between": schedule(EAST, WEST_T122, IN_T122, replace(in_between, block="T122")),
+        "two at once": schedule(EAST, WEST_T122, IN_T122, replace(WEST_T122, journey_code="1190")),
+        "in too early": schedule(EAST, WEST_T122, early),
+    }
+
+
+@pytest.mark.parametrize("case", list(_block_variants()))
+def test_a_block_that_fails_its_checks_is_not_followed(case):
+    shift = timedelta(minutes=26 if case == "in too early" else 0)
+    now = at(10, 5) - shift
+    rows, placed = live_board(_block_variants()[case], now, [coming_in(now, aimed=LEFT_JUNCTION - shift)],
+                              every_day, 10)
+    assert len(placed) == 1  # its bus is placed on the journey before every time
+    found = [l for l in rows if (l.departure.stop, l.departure.service, l.departure.scheduled) == ("A", "237", "10:15")]
+    assert found and all(not l.live and l.departure.status is Status.UNKNOWN for l in found)
+    assert all(l.inbound is None or not l.inbound.followed for l in found)
+
+
+def test_without_a_block_a_bus_coming_in_is_a_guess_that_leaves_the_times_alone():
+    found = west_a(at(10, 14), [coming_in(at(10, 14))], plan=schedule(EAST, WEST, INTO_A))
+    assert found.inbound is not None and not found.inbound.followed
+    assert not found.live and found.tracked is None
+    assert (found.departure.status, found.departure.expected) == (Status.UNKNOWN, None)
+    assert where_words(found, None, NOW) == "No live position"
+    assert row_strip(found, POSITIONS, NOW) is None
+
+
+def test_a_block_whose_bus_is_not_seen_stays_timetable_only_with_no_guess():
+    # Another 237 comes in to stop A at 10:06, on a block of its own: a guess
+    # would take it, but WEST's block says its bus is IN_T122's, not seen.
+    other = replace(INTO_A, journey_code="1170", block="T121",
+                    calls=tuple(Call(c.atco, c.minute - 4) for c in INTO_A.calls))
+    vehicle = stop_at(ARUNDEL, at(10, 4), line="237", origin=JUNCTION, aimed=LEFT_JUNCTION - timedelta(minutes=4))
+    rows, placed = live_board(schedule(EAST, WEST_T122, IN_T122, other), at(10, 4), [vehicle], every_day, 10)
+    assert [p.journey for p in placed] == [other]
+    found = row(rows, "A", "237")
+    assert (found.live, found.inbound, found.departure.status) == (False, None, Status.UNKNOWN)
+    # Without blocks, that bus is the guess.
+    rows, _ = live_board(schedule(EAST, WEST, INTO_A, replace(other, block="")), at(10, 4), [vehicle], every_day, 10)
+    assert row(rows, "A", "237").inbound.bus.journey.journey_code == "1170"
+
+
+def _block_ref(recorded, block="T122", operator="BNML", where=HALFWAY):
+    """A bus no journey matches (it says nothing of where it started), sending its block."""
+    return replace(bus(*where, recorded, line="237", operator=operator, origin=""), block=block)
+
+
+def test_a_bus_sending_the_block_as_its_block_ref_is_followed_in():
+    found = west_a(at(10, 14), [_block_ref(at(10, 14))])
+    assert found.live and found.inbound.followed and found.departure.expected == "10:21"
+    assert found.inbound.bus.journey is IN_T122
+
+
+@pytest.mark.parametrize("vehicles", [
+    [_block_ref(at(10, 5), block="T123")],
+    [_block_ref(at(10, 5), operator="HIPK")],
+    [_block_ref(at(10, 5)), _block_ref(at(10, 5), where=(POSITIONS[ARUNDEL].lat, POSITIONS[ARUNDEL].lon))],  # two
+    [_block_ref(at(9, 30))],  # 35 min early: on an earlier journey along the same road
+])
+def test_a_block_ref_is_followed_only_from_one_bus_of_that_operator_placed_in_time(vehicles):
+    found = west_a(at(10, 5), vehicles)
+    assert not found.live and found.inbound is None

@@ -752,7 +752,7 @@ HISTORY = {"phrase": Opt(str)}
 BUS_HISTORY = {"phrase": Opt(str), "no_show_phrase": Opt(str)}
 # Row extras (dashboard/enrich.py): when it gets there, and the bus coming to work a departure.
 ARRIVES = {"name": str, "at": hhmm, "at_iso": at, "minutes": integer}
-INBOUND = {"from": Opt(str), "due": hhmm, "late_min": integer, "where": str, "text": str}
+INBOUND = {"from": Opt(str), "due": hhmm, "late_min": integer, "where": str, "text": str, "followed": bool}
 
 CALLING_POINT = {
     "name": str, "crs": Opt(str), "scheduled": Opt(hhmm), "expected": Opt(hhmm),

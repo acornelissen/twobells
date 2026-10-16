@@ -1395,7 +1395,8 @@
           "due": "07:16",
           "late_min": 4,
           "where": "4 stops away",
-          "text": "Bus arriving from Buxton Market Place, 4 min late (due 07:16)"
+          "text": "Bus arriving from Buxton Market Place, 4 min late (due 07:16)",
+          "followed": false
         },
         "ghost": false,
         "stop_name": "Henry Street (Stop A)"

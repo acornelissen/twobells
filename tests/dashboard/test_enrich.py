@@ -176,23 +176,23 @@ def test_a_bus_arrival_across_midnight():
 
 def test_inbound_exactly_one_bus_coming_to_work_it():
     board = make_board(at(10, 9), [inbound_bus(at(10, 9))])  # due at Sunlaws/St Marys 10:05: 4 min late
-    found = inbound(row(board, "237"), board.departures, board.journeys, board.schedule.positions)
+    found = inbound(row(board, "237"), board.schedule.positions)
     assert found == {
         "from": "The Junction", "due": "10:14", "late_min": 4, "where": "3 stops away",
-        "text": "Bus arriving from The Junction, 4 min late (due 10:14)",
+        "text": "Bus arriving from The Junction, 4 min late (due 10:14)", "followed": False,
     }
     # Only departures that start at your stop are worked by an inbound bus.
-    assert inbound(row(board, "237", "B"), board.departures, board.journeys, board.schedule.positions) is None
-    assert inbound(row(board, "341"), board.departures, board.journeys, board.schedule.positions) is None
+    assert inbound(row(board, "237", "B"), board.schedule.positions) is None
+    assert inbound(row(board, "341"), board.schedule.positions) is None
 
 
 def test_no_inbound_without_a_placed_bus():
     board = make_board(at(10, 9))
-    assert inbound(row(board, "237"), board.departures, board.journeys, board.schedule.positions) is None
+    assert inbound(row(board, "237"), board.schedule.positions) is None
     off_the_road = inbound_bus(at(10, 9), where=(53.445897, -1.970527))
     board = make_board(at(10, 9), [off_the_road])
     assert board.journeys == []
-    assert inbound(row(board, "237"), board.departures, board.journeys, board.schedule.positions) is None
+    assert inbound(row(board, "237"), board.schedule.positions) is None
 
 
 def test_two_buses_that_could_work_it_are_a_guess_too_far():
@@ -203,9 +203,9 @@ def test_two_buses_that_could_work_it_are_a_guess_too_far():
                                                 aimed=LEFT_JUNCTION - timedelta(minutes=4))]
     board = make_board(at(10, 9), both, plan=plan)
     assert len(board.journeys) == 2
-    assert inbound(row(board, "237"), board.departures, board.journeys, board.schedule.positions) is None
+    assert inbound(row(board, "237"), board.schedule.positions) is None
     one = make_board(at(10, 9), both[:1], plan=plan)
-    assert inbound(row(one, "237"), one.departures, one.journeys, one.schedule.positions)["from"] == "The Junction"
+    assert inbound(row(one, "237"), one.schedule.positions)["from"] == "The Junction"
 
 
 def test_an_inbound_bus_must_arrive_up_to_half_an_hour_before():
@@ -215,7 +215,7 @@ def test_an_inbound_bus_must_arrive_up_to_half_an_hour_before():
         recorded = at(10, 0) + timedelta(minutes=arrives - 610 + 6)  # on time, between Sunlaws and St Marys
         board = make_board(recorded, [inbound_bus(recorded, aimed=aimed)], plan=schedule(EAST, WEST, into))
         assert len(board.journeys) == 1  # placed every time: only the time decides
-        found = inbound(row(board, "237"), board.departures, board.journeys, board.schedule.positions)
+        found = inbound(row(board, "237"), board.schedule.positions)
         assert (found is not None) == works, arrives
 
 
@@ -224,7 +224,7 @@ def test_an_inbound_bus_of_another_line_does_not_count():
     vehicle = bus(*HALFWAY, at(10, 9), line="236", origin=JUNCTION, aimed=LEFT_JUNCTION)
     board = make_board(at(10, 9), [vehicle], plan=schedule(EAST, WEST, other))
     assert len(board.journeys) == 1
-    assert inbound(row(board, "237"), board.departures, board.journeys, board.schedule.positions) is None
+    assert inbound(row(board, "237"), board.schedule.positions) is None
 
 
 def test_a_journey_ending_near_your_stop_counts_and_one_further_off_does_not():
@@ -233,7 +233,7 @@ def test_a_journey_ending_near_your_stop_counts_and_one_further_off_does_not():
         into = replace(INTO_A, calls=(*INTO_A.calls[:-1], Call(end, 610)))
         board = make_board(at(10, 9), [inbound_bus(at(10, 9))], plan=schedule(EAST, WEST, into))
         assert len(board.journeys) == 1
-        found = inbound(row(board, "237"), board.departures, board.journeys, board.schedule.positions)
+        found = inbound(row(board, "237"), board.schedule.positions)
         assert (found is not None) == counts, end
 
 
@@ -242,26 +242,26 @@ def test_an_inbound_bus_works_the_first_departure_after_it_arrives():
     board = make_board(at(10, 9), [inbound_bus(at(10, 9))], plan=schedule(EAST, WEST, later, INTO_A))
     first, second = [l for l in board.departures if l.departure.service == "237" and l.departure.stop == "A"]
     assert (first.departure.scheduled, second.departure.scheduled) == ("10:15", "10:30")
-    assert inbound(first, board.departures, board.journeys, board.schedule.positions) is not None
-    assert inbound(second, board.departures, board.journeys, board.schedule.positions) is None
+    assert inbound(first, board.schedule.positions) is not None
+    assert inbound(second, board.schedule.positions) is None
 
 
 def test_where_the_inbound_bus_is_and_where_it_came_from():
     at_your_stop = inbound_bus(at(10, 12), where=(POSITIONS[HENRY_A].lat, POSITIONS[HENRY_A].lon))
     board = make_board(at(10, 12), [at_your_stop])
-    found = inbound(row(board, "237"), board.departures, board.journeys, board.schedule.positions)
+    found = inbound(row(board, "237"), board.schedule.positions)
     assert (found["where"], found["late_min"], found["due"]) == ("At your stop", 2, "10:12")
     # From a stop the timetable has no position for: the name the tracker sends, tidied.
     from_ashton = replace(INTO_A, calls=((Call(ASHTON, 540), *INTO_A.calls[1:])))
     vehicle = replace(inbound_bus(at(10, 9), origin=ASHTON, aimed=LEFT_JUNCTION - timedelta(hours=1)),
                       origin_name="Ashton_under_Lyne_‮Interchange")
     board = make_board(at(10, 9), [vehicle], plan=schedule(EAST, WEST, from_ashton))
-    found = inbound(row(board, "237"), board.departures, board.journeys, board.schedule.positions)
+    found = inbound(row(board, "237"), board.schedule.positions)
     assert found["from"] == "Ashton under Lyne Interchange"
     assert found["text"].startswith("Bus arriving from Ashton under Lyne Interchange, ")
     nameless = replace(vehicle, origin_name="")
     board = make_board(at(10, 9), [nameless], plan=schedule(EAST, WEST, from_ashton))
-    found = inbound(row(board, "237"), board.departures, board.journeys, board.schedule.positions)
+    found = inbound(row(board, "237"), board.schedule.positions)
     assert found["from"] is None and found["text"].startswith("Bus arriving, ")
 
 

@@ -357,6 +357,18 @@ def test_live_strips_say_where_each_row_s_bus_is(tmp_path):
     assert found.at == pytest.approx(0.5, abs=0.02)
 
 
+def test_a_bus_followed_in_makes_its_departure_live_and_its_strip_says_so(tmp_path):
+    # EAST's bus goes on to work OUT from Henry Street: one block, as TransXChange's BlockNumber says.
+    out = Journey("341", "BNGN", "Hyde", "4174", (Call(HENRY_A, 610), Call(ARUNDEL, 612)), EAST.calendar, block="B1")
+    timetable.save(tmp_path, schedule(journeys=(replace(EAST, block="B1"), out)))
+    bus = source(tmp_path, at(10, 4, 30))
+    late, followed = bus.fetch()  # EAST's bus is 3 min late: in at Howard Arms, by Henry Street, at 10:06
+    assert late == Departure("bus", "341", "Hadfield", "10:02", "10:05", Status.LATE, stop="A")
+    assert followed == Departure("bus", "341", "Hyde", "10:10", None, Status.ON_TIME, stop="A")
+    strip = bus.live_strips(reuse=True)[strip_key(followed)]
+    assert (strip.where, strip.at, strip.stops, strip.yours) == ("On its way, 1 min", None, 2, 0)
+
+
 def test_live_strips_can_reuse_the_last_fetch_s_live_board(tmp_path):
     timetable.save(tmp_path, schedule())
     bus = source(tmp_path, at(10, 4, 30))

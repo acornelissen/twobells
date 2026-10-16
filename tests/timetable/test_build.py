@@ -1404,7 +1404,7 @@ def test_the_bus_coming_in_to_the_stand_is_the_inbound_bus_and_never_a_departure
         ("A", "out", "10:15")
     ]
     assert [(p.journey.journey_code, p.vehicle) for p in placed] == [("in", vehicle)]
-    found = inbound(rows[0], rows, placed, schedule.positions)
+    found = inbound(rows[0], schedule.positions)
     assert {key: found[key] for key in ("from", "due", "late_min", "where")} == {
         "from": "The Junction", "due": "10:14", "late_min": 4, "where": "3 stops away"}
     observed = bus_observations(BusBoard(rows, schedule, True, None, placed))

@@ -430,8 +430,9 @@ def _bearing(value: float | None) -> float | None:
 
 
 def _vehicle(live: LiveDeparture, now: datetime, with_position: bool) -> dict | None:
-    vehicle = live.vehicle
-    if vehicle is None or live.progress is None:
+    """The bus tracked for the departure: its own, or the one followed in to work it."""
+    vehicle = live.tracked
+    if vehicle is None or not live.live:
         return None
     recorded = _recorded(vehicle.recorded_at, now.tzinfo)
     found = {
@@ -447,14 +448,15 @@ def _vehicle(live: LiveDeparture, now: datetime, with_position: bool) -> dict | 
     return found
 
 
-def _strip(live: LiveDeparture, positions: dict[str, StopPosition]) -> dict | None:
+def _strip(live: LiveDeparture, positions: dict[str, StopPosition], now: datetime) -> dict | None:
     found = approach(live, positions)
     if found is None:
         return None
     names = [stop.name for stop in found.stops]
     bus_at = round(found.bus_at, 3) if found.bus_at is not None else None
     # The words are livebus's, so a screen's row says the same (livebus.row_strip).
-    return {"stops": names, "yours": found.yours, "bus_at": bus_at, "where": where_words(live, found)}
+    return {"stops": names, "yours": found.yours, "bus_at": bus_at,
+            "where": where_words(live, found, now.replace(tzinfo=None))}
 
 
 def _call_time(minute: int) -> str:
@@ -486,7 +488,7 @@ def bus_map(row: dict, live: LiveDeparture, positions: dict[str, StopPosition], 
         "stops": stops,
         "path": path([calls[i].atco for i in picked], positions, shapes),
         "vehicle": _vehicle(live, now, with_position=True),
-        "where": strip["where"] if strip else where_words(live, None),
+        "where": strip["where"] if strip else where_words(live, None, now.replace(tzinfo=None)),
     }
 
 
@@ -500,7 +502,7 @@ def bus_row(live: LiveDeparture, positions: dict[str, StopPosition], now: dateti
     dep = live.departure
     tz = now.tzinfo
     scheduled_at = live.leaves.replace(tzinfo=tz)
-    expected_at = live.expected.replace(tzinfo=tz) if live.progress is not None else None
+    expected_at = live.expected.replace(tzinfo=tz) if live.live else None
     late = dep.status is Status.LATE
     history = _history_entry("bus", bus_route(live), dep.scheduled,
                              f"{dep.scheduled} {dep.service} to {dep.destination}", live.leaves.date(), phrases)
@@ -518,11 +520,11 @@ def bus_row(live: LiveDeparture, positions: dict[str, StopPosition], now: dateti
         "status_text": status_text(dep),
         "status_spoken": status_spoken(dep),
         "minutes_late": round((live.expected - live.leaves).total_seconds() / 60) if late else None,
-        "live": live.progress is not None,
+        "live": live.live,
         "walk_min": walk.minutes(dep),
         "leave_at": iso(leave_at(dep, scheduled_at, expected_at, walk)),
         "vehicle": _vehicle(live, now, with_position=False),
-        "strip": _strip(live, positions),
+        "strip": _strip(live, positions, now),
         "history": {
             "phrase": history["phrase"],
             "no_show_phrase": no_shows(history["route"], dep.scheduled, live.leaves.date()),
@@ -633,7 +635,7 @@ def bus_observations(board: BusBoard) -> list[Observed]:
     found = []
     for live in board.departures:
         dep = live.departure
-        placed = live.progress is not None
+        placed = live.live
         found.append(Observed(
             route=bus_route(live),
             scheduled=dep.scheduled,

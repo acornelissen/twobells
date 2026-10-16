@@ -220,14 +220,16 @@ class BodsBusSource:
         """Where each row's bus is, for a screen, by core.model.strip_key: the
         dashboard row's words and strip. With `reuse`, from the last fetch's
         live board (none after the fallback) instead of asking BODS again.
-        Buses without a live position have none. Raises as fetch_live does."""
+        Buses without a live position have none; a bus followed in has
+        words, and no bus on its strip yet. Raises as fetch_live does."""
         board = self.board if reuse else self.fetch_live()
         if board is None:
             return {}
         positions = board.schedule.positions
+        now = self._clock().astimezone(self._tz).replace(tzinfo=None)
         found = {}
         for live in board.departures:
-            strip = livebus.row_strip(live, positions)
+            strip = livebus.row_strip(live, positions, now)
             if strip is not None:
                 found[strip_key(live.departure)] = strip
         return found
