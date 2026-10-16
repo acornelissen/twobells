@@ -4,6 +4,7 @@ For everyone in the house: what each line on the board means.
 
 - [The station board look](#the-station-board-look)
 - [The plain look](#the-plain-look)
+- [The TFT look](#the-tft-look)
 - [The bigger e-paper display](#the-bigger-e-paper-display)
 - [The HDMI screen](#the-hdmi-screen)
 - [When it checks](#when-it-checks)
@@ -83,6 +84,20 @@ The differences:
 | A rain warning or disruption notice in the top bar, in place of the title (on a screen, both, the rain warning beside the clock) | At the bottom |
 
 The plain look shows 3 trains and 2 buses (3 buses on the 11.3" bar screen, which has the room).
+
+## The TFT look
+
+On an HDMI screen only: white and yellow on black, like the newer station screens. It is the plain look's layout and words, with the times in bold yellow and each status in a coloured pill. Someone may have switched to it on the [Board page](settings.md#board) of the settings; e-paper doesn't offer it.
+
+![The TFT look on the 7.9 inch HDMI screen](images/screen-tft.png)
+
+- `On time` in a green pill, `Exp 07:49` or `Delayed` in a yellow one, and `Cancelled` in a red one. A cancelled train isn't on a highlighted bar: its pill says it. A bus running to time shows its time in white, with no pill, as does `07:35 sch`.
+- The title in white and the running clock in yellow at the top, with a yellow line under them.
+- `! NOT UPDATING` in yellow next to TRAINS or BUSES, a rain warning or disruption notice in place of the title, and everything else the [HDMI screen](#the-hdmi-screen) shows, as in the plain look.
+
+The colours only back up the words: every pill says what it means.
+
+![The TFT look on the 11.3 inch bar screen](images/screen-bar-tft.png)
 
 ## The bigger e-paper display
 
