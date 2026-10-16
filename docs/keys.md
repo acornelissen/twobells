@@ -136,9 +136,9 @@ It lists the next trains from your station. An error mentioning 401 or 403 means
 
 ## Rail Data Marketplace: Service Details
 
-**What it unlocks:** on the dashboard, where each of the next three trains is ("Left Hadfield 22:44, on time", "At Glossop now"), and the stops before your station in each train's sheet. On an HDMI screen, the board's rows say the same about the next three trains: the board asks for itself, during the train checking times, each train at most once a minute. It doesn't change an e-paper board, which never asks.
+**What it unlocks:** on the dashboard, where each of the next three trains is ("Left Hadfield 22:44, on time", "At Glossop now"), and the stops before your station in each train's sheet. On an HDMI screen, the board's rows say the same about the next three trains: the board asks for itself, during the train checking times, each train at most once a minute. It doesn't change an e-paper board, which never asks. With a filter station, the dashboard's [Delay Repay](dashboard.md#delay-repay) list also uses it for the time each train reached the filter station, as Darwin reports it.
 
-**Needed?** No. Without it, the dashboard and the board work as before, just without train positions.
+**Needed?** No. Without it, the dashboard and the board work as before, just without train positions, and Delay Repay takes each train's last estimate from the filter station's arrival board.
 
 **Cost:** free, with no usage limit.
 

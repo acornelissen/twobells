@@ -988,6 +988,13 @@ table.measures tr.total th, table.measures tr.total td { font-weight: 600; }
 .perf-terms { margin: 0 0 var(--s-4); }
 .perf-terms dt { margin-top: var(--s-3); font-weight: 600; }
 .perf-terms dd { margin: 0; color: var(--muted); }
+/* Delay Repay's trains: one table, sized by what is in it. */
+@media (min-width: 48rem) {
+  .performance table.repay { table-layout: auto; }
+  .performance table.repay thead th:first-child { width: auto; }
+}
+table.repay td { white-space: nowrap; }
+table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
 
 /* --- Map --- */
 

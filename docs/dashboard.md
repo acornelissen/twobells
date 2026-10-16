@@ -29,7 +29,7 @@ It is at the install's address, port 8090: `http://<pi name>.local:8090/` on a P
 - **Weather:** now (temperature, feels like, wind, and the next sunrise or sunset), the rain warning, and the next 4 hours in a row (the hour it is now as **Now**), each with a bar for the chance of rain (written out from 30%). **More hours** shows the rest of the next 12.
 - **Disruption:** one line under Next to catch. When something affects your journeys now (at or near your stops, or a National Rail message about your trains), it leads, in amber, or red when severe: "Roadworks at Henry Street A (your stop) until 20:00 today · 2 more this week". Otherwise it says "No disruption on your journeys". Select it to see every notice, in force now first; **Coming up this week** opens the rest. Screen readers hear a new one once, never the line itself. Nothing shows without disruption checks. See [Disruptions and engineering works](#disruptions-and-engineering-works).
 
-Nothing on the page can change anything: it only shows, and needs no password. Changes go through the [settings](settings.md), which do. It checks for new times every minute (trains) and 30 seconds (buses), and stops from 01:00 to 05:00 unless someone has it open.
+Nothing on the page can change anything: it only shows, and needs no password. Changes go through the [settings](settings.md), which do. It checks for new times every minute (trains) and 30 seconds (buses), and stops from 01:00 to 05:00 unless someone has it open. With a filter station, the train check also follows trains that have left until they reach it, for [Delay Repay](#delay-repay).
 
 The dashboard shows buses only from the BODS timetable (see [Bus times](buses.md)). If your bus times come from TransportAPI, it shows trains and the weather, with a note saying why there are no buses.
 
@@ -46,6 +46,14 @@ For trains it gives the measures the rail industry reports:
 Buses get **On time** (under the bus late threshold, 2 minutes unless you change **Count buses as late from** on the Dashboard settings page; early counts as on time) and **T-15**. Bus data never says a bus was cancelled, so there's no column for it.
 
 Each figure is a count with its percentage, "Right Time 62% (31 of 50)", out of the departures whose outcome is known. Those that left with no time to tell how late (a train shown only as "Delayed", a bus with no live tracker) are counted on their own as **Not known** or **No tracker**. The figures are measured at your station, not at the end of the journey, so they won't match a train company's own. A span with fewer than 3 days recorded says **Not enough days yet**. The figures are plain tables, readable with a keyboard and a screen reader, in both looks.
+
+### Delay Repay
+
+With a filter station (**Only trains calling at** on the settings' Trains and buses page), the page also lists the trains that reached it 15 or more minutes late in the last 28 days, the thresholds train companies pay Delay Repay from: the date, the train, its booked and actual arrival there, how many minutes late, **15 to 29 min** or **30 min or more**, and the operator, with a link to [National Rail's compensation page](https://www.nationalrail.co.uk/help-and-assistance/compensation-and-refunds/), which links to each company's claim form. Without a filter station the section says it is off and why.
+
+- **How it knows:** while a train is on the board, its time at the filter station comes with it. Once it has left, the dashboard keeps asking about it until it gets there, but only while it is due there (from 10 minutes before), only when it checks for trains anyway (never in the quiet hours unless someone has the page open), and never without a filter station. With a [Service Details key](keys.md#rail-data-marketplace-service-details) it asks for that train's journey, which gives the time Darwin reports it arrived; without one it asks once for the filter station's arrival board, with your Live Departure Board key, and takes the train's last estimate as it got there, shown as **estimated**.
+- **What's left out:** trains cancelled there, rail replacement buses (their times are rough, and each company treats them its own way), and any train nobody saw arrive, such as one that got there while the dashboard was stopped.
+- Check the times with the train company before you claim: its own records decide.
 
 ## Disruptions and engineering works
 

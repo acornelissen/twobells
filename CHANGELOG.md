@@ -14,6 +14,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 - Platform changes: a train whose platform isn't the one it was given earlier says `Plat 2 (changed)` on the bigger boards and screens (in the accent colour in the plain and TFT looks), and "2 (changed)" on the dashboard, where it also counts when it isn't the platform the train usually leaves from, and screen readers hear it once. A rail replacement bus is never a platform change.
 - The dashboard's sheet says which platform a train usually leaves from ("Usually: Platform 1"), once its punctuality history has a few days to go on.
 - National Rail's route words after a destination ("via Guide Bridge"): under the destination on the dashboard, and after it on the bigger boards and screens.
+- Delay Repay on the Performance page: with a filter station (**Only trains calling at**), the trains that reached it 15 or more, or 30 or more, minutes late in the last 28 days, with the date, train, booked and actual arrival, minutes late and operator, and a link to National Rail's compensation page. The dashboard follows each train that has left until it gets there, only while it is due and never in the quiet hours: with Service Details if `RDM_DETAILS_API_KEY` is set, else one arrival board at the filter station per train check. The punctuality history moves to version 2, keeping everything already in it; `GET /api/performance` has the list as `delay_repay`.
 
 ### Changed
 

@@ -756,7 +756,15 @@ PERFORMANCE_PART = {
     "all": {"periods": [FIGURES]},
     "routes": [{"label": str, "stop": Opt(str), "periods": [FIGURES]}],
 }
-PERFORMANCE = {"generated_at": at, "trains": PERFORMANCE_PART, "buses": PERFORMANCE_PART}
+DELAY_REPAY = {
+    "station": Opt(lambda v: isinstance(v, str) and bool(re.fullmatch(r"[A-Z]{3}", v))),
+    "station_name": Opt(str), "since": day, "least_minutes": one_of(15), "off": Opt(one_of("no_filter", "no_trains")),
+    "trains": [{
+        "day": day, "scheduled": hhmm, "destination": str, "operator": str, "booked": hhmm, "arrived": hhmm,
+        "minutes_late": integer, "band": one_of(15, 30), "reported": bool,
+    }],
+}
+PERFORMANCE = {"generated_at": at, "trains": PERFORMANCE_PART, "buses": PERFORMANCE_PART, "delay_repay": DELAY_REPAY}
 
 
 def _fixture(name):
@@ -886,6 +894,13 @@ def test_performance_fixture_follows_the_contract():
     assert any(not any(p["enough"] for p in r["periods"]) for r in trains)
     assert any(not r["periods"][0]["enough"] and r["periods"][1]["enough"] for r in buses)
     assert all(r["stop"] for r in buses) and not any(r["stop"] for r in trains)
+    # Delay Repay: both bands, an estimated arrival, and one there after midnight; newest first.
+    repay = report["delay_repay"]["trains"]
+    assert {t["band"] for t in repay} == {15, 30} and not all(t["reported"] for t in repay)
+    assert any(t["arrived"] < t["booked"] for t in repay)
+    assert [t["day"] for t in repay] == sorted((t["day"] for t in repay), reverse=True)
+    for train in repay:
+        assert train["band"] == (30 if train["minutes_late"] >= 30 else 15) and train["minutes_late"] >= 15
 
 
 def test_shape_checker_rejects_wrong_shapes():
@@ -2758,7 +2773,7 @@ import { renderReport } from "./performance.js";
 const REPORT = JSON.parse(readFileSync(%r, "utf-8"));
 const part = (key) => h("section", { id: `perf-${key}`, hidden: true }, h("div", { id: `perf-${key}-body` }));
 document.body.append(h("h1", { id: "title" }), h("p", { id: "perf-status" }), part("trains"), part("buses"),
-  h("span", { id: "perf-bus-late" }, "2 minutes"));
+  part("repay"), h("span", { id: "perf-bus-late" }, "2 minutes"));
 const $ = (id) => document.getElementById(id);
 const said = (el) => spoken(el).replace(/\\s+/g, " ").trim();
 const tables = (key) => elements($(`perf-${key}-body`)).filter((el) => el.nodeName === "TABLE")
@@ -2855,6 +2870,80 @@ def test_the_performance_page_never_trusts_the_report():
     assert found["buses"] == ["<b>341</b> from Stop constructor", "100% (10 of 10)", "0% (0 of 10)", "0", "6"]
     assert found["trains"][0] == ["Hadfield", "No times known yet"]
     assert len(found["trains"]) == 2  # nothing drawn for the rows that aren't routes
+
+
+@needs_node
+def test_the_performance_page_lists_the_delay_repay_trains():
+    found = run_js(_performance_page() + """
+        renderReport(REPORT, names);
+        const body = $("perf-repay-body");
+        const link = elements(body).find((el) => el.nodeName === "A");
+        console.log(JSON.stringify({
+          hidden: $("perf-repay").hidden, said: said(body.childNodes[0]), rows: tables("repay"),
+          link: [link.getAttribute("href"), link.getAttribute("rel"), said(link)],
+          region: elements(body).find((el) => el.getAttribute("role") === "region").getAttribute("aria-label"),
+        }));
+    """)
+    assert found["hidden"] is False
+    assert found["said"] == ("Trains that reached Manchester Piccadilly 15 or more minutes late in the last 28 days. "
+                             "Claim from the company you travelled with: National Rail's compensation page links to "
+                             "each one's Delay Repay.")
+    assert found["link"] == ["https://www.nationalrail.co.uk/help-and-assistance/compensation-and-refunds/",
+                             "noopener noreferrer", "National Rail's compensation page"]
+    assert found["region"] == "Trains 15 or more minutes late at Manchester Piccadilly"
+    [rows] = found["rows"]
+    assert rows == [
+        ["Date", "Train", "Booked", "Arrived", "Late", "Delay Repay", "Operator"],
+        ["Thu 8 Oct", "17:25 to Hadfield", "17:57", "18:31", "34 min", "30 min or more", "Northern"],
+        ["Tue 6 Oct", "07:42 to Manchester Piccadilly", "08:14", "08:31 estimated", "17 min", "15 to 29 min",
+         "Northern"],
+        ["Tue 22 Sept", "23:40 to Manchester Piccadilly", "23:58", "00:16", "18 min", "15 to 29 min", "Northern"],
+    ]
+
+
+@needs_node
+def test_the_delay_repay_section_says_why_it_is_off_or_empty():
+    found = run_js(_performance_page() + """
+        const said_with = (repay) => {
+          renderReport({ ...REPORT, delay_repay: repay });
+          return [$("perf-repay").hidden, said($("perf-repay-body"))];
+        };
+        const repay = REPORT.delay_repay;
+        console.log(JSON.stringify([
+          said_with({ ...repay, station: null, station_name: null, off: "no_filter", trains: [] }),
+          said_with({ ...repay, station: "SHF", station_name: null, trains: [] }),
+          said_with({ ...repay, station: null, off: "no_trains", trains: [] })[0],
+          said_with(undefined)[0],
+        ]));
+    """)
+    assert found == [
+        [False, "Delay Repay needs to know where your journeys end. Set Only trains calling at on the Trains and "
+                "buses settings page, and the dashboard starts noting when your trains get there."],
+        [False, "No train reached SHF 15 or more minutes late in the last 28 days."],
+        True,
+        True,
+    ]
+
+
+@needs_node
+def test_the_delay_repay_section_never_trusts_the_report():
+    found = run_js(_performance_page() + """
+        const odd = structuredClone(REPORT);
+        const good = odd.delay_repay.trains[0];
+        odd.delay_repay.station_name = "<b>Manchester</b>";
+        odd.delay_repay.trains = [
+          { ...good, destination: "<img src=x>", operator: 7 },
+          { ...good, minutes_late: 9 }, { ...good, minutes_late: "34" }, { ...good, booked: "25:00" },
+          { ...good, day: "yesterday" }, { ...good, scheduled: null }, "not a train", null,
+          ...Array.from({ length: 120 }, () => good),
+        ];
+        renderReport(odd, names);
+        const [rows] = tables("repay");
+        console.log(JSON.stringify({ first: rows[1], count: rows.length - 1, said: said($("perf-repay-body").childNodes[0]) }));
+    """)
+    assert found["first"] == ["Thu 8 Oct", "17:25 to <img src=x>", "17:57", "18:31", "34 min", "30 min or more", ""]
+    assert found["count"] == 100
+    assert found["said"].startswith("Trains that reached <b>Manchester</b> 15 or more")
 
 
 @needs_node

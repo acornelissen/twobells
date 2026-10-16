@@ -6,21 +6,16 @@ import { $, h, vh, fill, str, num, list, obj, own, validId } from "./dom.js";
 import { getJSON } from "./api.js";
 import { statusBadge } from "./board.js";
 import { bySpan, fitTables, scrolling, spanRows } from "./measures.js";
+import { dayText } from "./time.js";
 
 const WORDS = { on_time: "On time", late: "Late", cancelled: "Cancelled", unknown: "Unknown" };
 const DAY_TYPES = { weekday: "weekdays", saturday: "Saturdays", sunday: "Sundays and bank holidays" };
-const dateFormat = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 
 let request = 0;
 
 // Stops a load still on its way from filling in a sheet that has moved on.
 export function closeHistory() {
   request++;
-}
-
-function dayText(day) {
-  const m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(str(day));
-  return m ? dateFormat.format(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) : str(day);
 }
 
 function dayRow(d) {

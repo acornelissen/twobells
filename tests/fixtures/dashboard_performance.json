@@ -229,5 +229,47 @@
         ]
       }
     ]
+  },
+  "delay_repay": {
+    "station": "MAN",
+    "station_name": "Manchester Piccadilly",
+    "since": "2026-09-13",
+    "least_minutes": 15,
+    "off": null,
+    "trains": [
+      {
+        "day": "2026-10-08",
+        "scheduled": "17:25",
+        "destination": "Hadfield",
+        "operator": "Northern",
+        "booked": "17:57",
+        "arrived": "18:31",
+        "minutes_late": 34,
+        "band": 30,
+        "reported": true
+      },
+      {
+        "day": "2026-10-06",
+        "scheduled": "07:42",
+        "destination": "Manchester Piccadilly",
+        "operator": "Northern",
+        "booked": "08:14",
+        "arrived": "08:31",
+        "minutes_late": 17,
+        "band": 15,
+        "reported": false
+      },
+      {
+        "day": "2026-09-22",
+        "scheduled": "23:40",
+        "destination": "Manchester Piccadilly",
+        "operator": "Northern",
+        "booked": "23:58",
+        "arrived": "00:16",
+        "minutes_late": 18,
+        "band": 15,
+        "reported": true
+      }
+    ]
   }
 }

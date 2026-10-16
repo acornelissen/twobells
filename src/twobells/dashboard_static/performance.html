@@ -44,9 +44,10 @@
     <div id="perf-buses-body"></div>
   </section>
 
-  <!-- Delay Repay (bead inky-departures-2ir.6) goes here: its own
-       <section class="panel perf-part" aria-labelledby="…"> after the buses
-       and before "What the figures mean", drawn by performance.js. -->
+  <section id="perf-repay" class="panel perf-part" aria-labelledby="perf-repay-heading" hidden>
+    <h2 id="perf-repay-heading">Delay Repay</h2>
+    <div id="perf-repay-body"></div>
+  </section>
 
   <section id="perf-about" class="panel perf-part" aria-labelledby="perf-about-heading">
     <h2 id="perf-about-heading">What the figures mean</h2>
@@ -59,6 +60,8 @@
       <dd>Shown as cancelled on the board when it was due. A cancelled train misses every other measure, as the industry counts it.</dd>
       <dt>On time (buses)</dt>
       <dd>Left under the bus late threshold after its timetabled time (<span id="perf-bus-late">2 minutes</span>, set on the Dashboard settings page). Early counts as on time.</dd>
+      <dt>Delay Repay</dt>
+      <dd>Trains that reached your filter station 15 or more, or 30 or more, minutes after their booked time there: train companies pay Delay Repay from one or the other. The time is when Darwin reported the train there, or its last estimate as it got there, marked "estimated". Rail replacement buses aren't listed. Check with the train company before you claim.</dd>
       <dt>Not known, No tracker</dt>
       <dd>Gone with no time to tell how late it was: a train shown only as "Delayed", or a bus with no live tracker. These are left out of the percentages.</dd>
     </dl>

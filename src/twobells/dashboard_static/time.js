@@ -52,6 +52,16 @@ export function hhmm(iso) {
   return m ? `${m[1]}:${m[2]}` : "";
 }
 
+const DAY = /^(\d{4})-(\d\d)-(\d\d)$/;
+const dayFormat = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+
+// "Fri 9 Oct" from a day as "2026-10-09"; anything else as it is, or "".
+export function dayText(day) {
+  const text = typeof day === "string" ? day : "";
+  const m = DAY.exec(text);
+  return m ? dayFormat.format(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) : text;
+}
+
 // The board's wall-clock time now, as "07:12".
 export function clockText() {
   const shift = (boardOffsetMin ?? -new Date().getTimezoneOffset()) * 60000;
