@@ -309,10 +309,10 @@ def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> Non
     if badge:
         free_end -= _SMALL.getlength(badge) + 2 + _COL_GAP  # the badge's band reaches 2 dots left
     stamp = f"Updated {view.updated}"
-    if view.clock and (view.notice or view.rain):
+    if view.clock and note_text(view):
         # A screen keeps its clock on the bottom line, moved to the right, and
-        # shows the notice (or rain warning) in the room left of it, scrolling
-        # if it is too long for it.
+        # shows the notice (or rain warning, or last bus) in the room left of
+        # it, scrolling if it is too long for it.
         clock_x = free_end - _w(view.clock)
         layout.add(clock_x, height - GLYPH_H - 1, view.clock)
         note_end, shown = clock_x - _COL_GAP, view
@@ -326,7 +326,7 @@ def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> Non
     elif view.clock:
         # A screen shows the time centred along the bottom, like a station clock.
         layout.add((width - _w(view.clock)) // 2, height - GLYPH_H - 1, view.clock)
-    elif view.notice or view.rain:
+    elif note_text(view):
         # The notice (or rain warning) on the left, cut short if it must be,
         # keeping "Updated" on the right: e-paper keeps its last image if the
         # board stops, and the stamp is how to tell.

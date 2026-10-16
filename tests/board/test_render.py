@@ -1294,3 +1294,11 @@ def test_a_screen_redrawing_every_second_keeps_its_text_within_bounds():
     assert plain._GLYPHS.taken <= plain._GLYPHS.most <= 8 * 1024 * 1024
     for cache in (plain._drawn_box, plain.text_length, plain._font):
         assert cache.cache_info().currsize <= cache.cache_info().maxsize <= 2048
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_on_a_screen_the_last_bus_takes_the_titles_place_after_any_notice_or_rain(panel):
+    view = dataclasses.replace(board(), last_bus="Last bus 23:05", clock="22:10:15")
+    assert header(view, panel)[0] == "Last bus 23:05"
+    assert header(dataclasses.replace(view, rain="Rain from 22:30 (70%)"), panel)[0] == "Rain from 22:30 (70%)"
+    assert header(dataclasses.replace(view, notice="Lifts out of use"), panel)[0] == "! Lifts out of use"

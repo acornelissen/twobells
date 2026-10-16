@@ -1432,3 +1432,47 @@ def test_a_fault_reading_stop_names_leaves_the_labels():
     view = run_once(named_board(OSError("timetable unreadable")), {}, FakeScreen(), THU_0700).view
     assert [r.stop for r in view.buses.rows] == ["A", "B", "C"]
     assert all(r.stop_name is None for r in view.buses.rows)
+
+
+class LastBusSource(FakeSource):
+    """Buses, and the last bus of each line as BodsBusSource gives them."""
+
+    def __init__(self, last):
+        super().__init__("bus", [bus()])
+        self.last = last
+        self.asked = []
+
+    def last_buses(self, now=None):
+        self.asked.append(now)
+        if isinstance(self.last, Exception):
+            raise self.last
+        return self.last
+
+
+def last_bus_board(last):
+    from twobells.sources.lastbus import LastBus
+
+    found = [LastBus(line, "Hyde", "A", THU_0700.date(), THU_0700.replace(hour=hh, minute=mm), left)
+             for line, hh, mm, left in last] if isinstance(last, list) else last
+    return make_board(FakeSource("train", [train()]), LastBusSource(found))
+
+
+def test_a_screen_says_the_last_bus_in_its_last_hour():
+    board = last_bus_board([("341", 22, 0, 1), ("237", 23, 5, 3)])
+    evening = THU_0700.replace(hour=22, minute=4)
+    assert run_once(board, {}, FakeScreen(), evening).view.last_bus is None  # 61 minutes before
+    assert run_once(board, {}, FakeScreen(), evening + timedelta(minutes=1)).view.last_bus == "Last bus 23:05"
+
+
+def test_no_last_bus_once_it_has_gone_or_on_e_paper():
+    gone = last_bus_board([("341", 22, 0, 0)])
+    assert run_once(gone, {}, FakeScreen(), THU_0700.replace(hour=22, minute=30)).view.last_bus is None
+    board = last_bus_board([("341", 23, 0, 1)])
+    assert run_once(board, {}, FakeDisplay(), THU_0700.replace(hour=22, minute=30)).view.last_bus is None
+    assert board.sources[1].source.asked == []  # e-paper never asks
+
+
+def test_a_fault_finding_the_last_bus_costs_only_the_last_bus():
+    board = last_bus_board(OSError("timetable unreadable"))
+    view = run_once(board, {}, FakeScreen(), THU_0700).view
+    assert view.last_bus is None and view.buses.rows

@@ -21,6 +21,7 @@ from ..core.model import Departure, minutes_between
 from ..core.polling import PollPolicy
 from ..core.walk import WalkTimes, leave_time
 from ..sources.bods import Vehicle
+from ..sources.lastbus import screen_line
 from ..sources.weather import Hour, hours_from_dicts, hours_to_dicts, rain_line
 from ..web.auth import ResetCodes, spaced
 from . import positions as row_positions
@@ -372,6 +373,22 @@ def _stop_names(board: Board) -> dict[str, str]:
     return {}
 
 
+def _last_bus(board: Board, now: datetime) -> str | None:
+    """"Last bus 23:05" for a screen in the hour before the last bus of all
+    goes, from the bus source's timetable (sources/bodsbus.py); None
+    otherwise, and from a source without one."""
+    for config in board.sources:
+        find = getattr(config.source, "last_buses", None)
+        if find is None:
+            continue
+        try:
+            return screen_line(find(now), now.replace(tzinfo=None))
+        except Exception as error:  # noqa: BLE001 - the last bus is never worth the board
+            log.debug("last bus not shown: %s", safe_message(error))
+            return None
+    return None
+
+
 def _render_key(shown: BoardView | RouteView | CodeView | SetupView, theme: Theme, display: Display) -> str:
     """What is on the panel: the words, and how they are drawn. A new look, accent
     or rotation has to reach e-paper even when the words have not changed."""
@@ -420,6 +437,7 @@ def run_once(
         strips=strips,
         # Only a screen wide enough draws them; e-paper never asks.
         stop_names=_stop_names(board) if live else None,
+        last_bus=_last_bus(board, now) if live else None,
     )
 
     code = _reset_code(board)

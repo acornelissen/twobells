@@ -98,6 +98,8 @@ class BoardView:
     notice: str | None = None
     # "Rain from 07:10 (70%)" when rain is likely before you would reach your train or bus.
     rain: str | None = None
+    # "Last bus 23:05" on a screen in the hour before the last bus of all goes.
+    last_bus: str | None = None
 
     def signature(self) -> str:
         content = asdict(self)
@@ -251,13 +253,15 @@ def build_view(
     rain: str | None = None,
     strips: Mapping[tuple[str, str, str, str], Strip] | None = None,
     stop_names: Mapping[str, str] | None = None,
+    last_bus: str | None = None,
 ) -> BoardView:
     """`clock` (HH:MM:SS, matching `now`) is for screens: it is shown, and
     leave times count down instead of giving a clock time. `notices` are the
     station's disruption messages, shown one after another as one notice;
     `rain` is the rain warning, if there is one. `strips` say where each
     departure's train or bus is, by strip_key. `stop_names` are what a wide
-    screen calls your bus stops, by label (see stop_names_shown)."""
+    screen calls your bus stops, by label (see stop_names_shown). `last_bus`
+    is when the last bus goes, for a screen in its last hour."""
     strips = strips or {}
     return BoardView(
         title=title,
@@ -269,6 +273,7 @@ def build_view(
         clock=clock,
         notice=_notice(notices or []),
         rain=rain,
+        last_bus=last_bus,
     )
 
 

@@ -472,11 +472,12 @@ NOTICE_LEAD = "! "
 
 
 def note_text(view: BoardView) -> str | None:
-    """The disruption notice, marked as one, or failing one the rain warning.
-    Too long for its space, it scrolls on a screen and is cut short on e-paper."""
+    """The disruption notice, marked as one, or failing one the rain warning,
+    or failing both when the last bus goes. Too long for its space, it
+    scrolls on a screen and is cut short on e-paper."""
     if view.notice:
         return NOTICE_LEAD + view.notice
-    return view.rain
+    return view.rain or view.last_bus
 
 
 def plain_scale(panel: Panel) -> int:
@@ -511,8 +512,8 @@ def header_rain(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[
 
 def header_field(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[str, float]:
     """(the header's left text in full, the room for it). The plain look has
-    no footer, so a disruption notice, or else a rain warning, takes the
-    title's place while there is one. A screen wide enough shows both, the
+    no footer, so a disruption notice, or else a rain warning, or else the
+    last bus, takes the title's place while there is one. A screen wide enough shows both, the
     rain warning beside (header_rain)."""
     pad = _PAD * scale
     stamp = view.clock or f"Upd {view.updated}"

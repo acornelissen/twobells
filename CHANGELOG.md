@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Added
+
+- The last bus of each line and destination today, from the bus timetable: under the buses on the dashboard from 19:00 or once few are left ("Last 341 to Hyde 23:05"), in every bus's sheet, and on the HDMI screen's bottom line in the last hour ("Last bus 23:05"). It follows the timetable's days, bank holidays and buses after midnight.
+
 ### Changed
 
 - The user guide is a page per topic, indexed by `docs/user-guide.md`; the Docker pages are one, and the code layout is in `docs/architecture.md`.

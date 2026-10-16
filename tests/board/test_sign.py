@@ -574,6 +574,25 @@ def test_screen_shows_the_rain_line_left_of_the_clock():
     assert rain.x + FONT.getlength(RAIN) + 5 <= clock.x
 
 
+def test_screen_shows_the_last_bus_left_of_the_clock():
+    width, height = dots(HDMI_1280X400)
+    view = dataclasses.replace(board(TRAINS, BUSES), last_bus="Last bus 23:05", clock="22:10:15")
+    items = sign_layout(view, width, height).items
+    last, clock = find(items, "Last bus 23:05"), find(items, "22:10:15")
+    assert last.x == MARGIN and last.y == clock.y == height - 10
+    assert clock.x + FONT.getlength("22:10:15") == width - MARGIN
+    assert last.x + FONT.getlength(last.text) + 5 <= clock.x
+
+
+def test_a_disruption_notice_and_the_rain_line_beat_the_last_bus():
+    width, height = dots(HDMI_1280X400)
+    view = dataclasses.replace(board(), last_bus="Last bus 23:05", rain=RAIN, clock="22:10:15")
+    items = texts(sign_layout(view, width, height).items)
+    assert RAIN in items and "Last bus 23:05" not in items
+    items = texts(sign_layout(noticed(view, "Lifts out of use", clock="22:10:15"), width, height).items)
+    assert "Last bus 23:05" not in items
+
+
 def test_footer_glyphs_cover_notices_and_the_rain_line():
     from twobells.board.dotfont import GLYPHS, TINY
 

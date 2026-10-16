@@ -246,11 +246,13 @@ class BodsBusSource:
 
     def last_buses(self, now: datetime | None = None) -> list[lastbus.LastBus]:
         """Each line and destination's last bus today from your stops, as
-        lastbus.last_buses gives them, at `now` (aware; the clock if not
-        given). Only the timetable's: none while it can't be used, as from
-        TransportAPI. The day's groups are worked out once a day, or when the
-        timetable changes, so a screen can ask every second."""
-        local = (now or self._clock()).astimezone(self._tz).replace(tzinfo=None)
+        lastbus.last_buses gives them, at `now` (aware, or board-local
+        without a zone as the board keeps time; the clock if not given). Only
+        the timetable's: none while it can't be used, as from TransportAPI.
+        The day's groups are worked out once a day, or when the timetable
+        changes, so a screen can ask every second."""
+        now = now or self._clock()
+        local = now.astimezone(self._tz).replace(tzinfo=None) if now.tzinfo else now
         schedule = self._schedule()
         if schedule is None or unusable(schedule, self._stops, local) is not None:
             return []
