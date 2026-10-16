@@ -13,14 +13,15 @@ vehicles, so nothing reads the clock or the network.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from itertools import pairwise
 
-from ..board.route import RouteStop, RouteStrip, position_on, where
+from ..board.route import MAX_HEADING_OFF, MAX_OFF_ROUTE_M, MAX_OVERSHOOT_M, where
 from ..core.model import Departure, Status, Strip
 from ..timetable.model import Call, Journey, Schedule, StopPosition
+from ..timetable.roads import shape_key
 from .bods import Vehicle
 
 RunsOn = Callable[[Journey, date], bool]
@@ -85,19 +86,6 @@ def _recorded(vehicle: Vehicle) -> datetime | None:
     return recorded if recorded.tzinfo is not None else recorded.replace(tzinfo=UTC)
 
 
-def _runs(calls: tuple[Call, ...], positions: dict[str, StopPosition]) -> list[range]:
-    """Stretches of two or more consecutive calls whose stops have known positions."""
-    runs, start = [], None
-    for i, call in enumerate((*calls, None)):
-        if call is not None and call.atco in positions:
-            start = i if start is None else start
-            continue
-        if start is not None and i - start >= 2:
-            runs.append(range(start, i))
-        start = None
-    return runs
-
-
 def _minute_at(calls: tuple[Call, ...], at: float) -> float:
     """Timetabled minute at a point along the calls, assuming steady progress between stops."""
     i = min(int(at), len(calls) - 1)
@@ -106,33 +94,112 @@ def _minute_at(calls: tuple[Call, ...], at: float) -> float:
     return calls[i].minute + (at - i) * (calls[i + 1].minute - calls[i].minute)
 
 
+# Placing a bus. Each pair of consecutive calls whose stops have positions is a
+# leg: the road the timetable saved between the two stops (timetable/roads.py),
+# or a straight line where it saved none. A bus is on a leg when it is near
+# enough to the road and heading along it, as route.position_on has it for a
+# strip. Of the legs it is on, the nearest wins; where others are about as near
+# (a road the journey takes twice, or both ways), the one nearest the
+# timetable does. Nearest first, so a bus on a parallel road, or late by just
+# the time to a road further on, isn't placed there.
+
+# A saved road is the road itself, to within a few metres, so a bus this far
+# from it is somewhere else; the rest allows for a poor GPS fix, as on
+# bustimes.org. A straight line is close only to a straight road, so it keeps
+# route.MAX_OFF_ROUTE_M: a bus on a bending road with no saved road is left
+# unplaced rather than guessed at.
+ROAD_TOLERANCE_M = 300
+# A leg this much further from the bus than the nearest is as likely as it.
+TIE_M = 50
+_M_PER_DEG = 111_320
+_NO_ROADS: Mapping[str, Sequence[tuple[float, float]]] = {}
+
+
+def _on_road(
+    vehicle: Vehicle, road: list[tuple[float, float]], tolerance: float, first: bool, last: bool
+) -> tuple[float, float] | None:
+    """How far a bus is from a road ((lat, lon) points in order), in metres,
+    and how far along the road the nearest point is, from 0 to 1 by distance.
+    None if it is further than `tolerance`, or heading more than
+    MAX_HEADING_OFF from the road's direction there. Before the start of the
+    `first` road of a stretch, or past the end of the `last`, it has not got
+    there yet or has gone, so only MAX_OVERSHOOT_M counts there."""
+    # A flat grid in metres with the bus at (0, 0): fine over a few kilometres.
+    across = _M_PER_DEG * math.cos(math.radians(vehicle.lat))
+    grid = [((lon - vehicle.lon) * across, (lat - vehicle.lat) * _M_PER_DEG) for lat, lon in road]
+    # The same point twice has no direction to check a heading against.
+    pieces = [(a, b) for a, b in pairwise(grid) if a != b]
+    final = len(pieces) - 1
+    best = None  # (metres off, metres along, the road's bearing there)
+    length = 0.0
+    for i, ((ax, ay), (bx, by)) in enumerate(pieces):
+        dx, dy = bx - ax, by - ay
+        piece = math.hypot(dx, dy)
+        raw = -(ax * dx + ay * dy) / (piece * piece)
+        t = max(0.0, min(1.0, raw))
+        off = math.hypot(ax + t * dx, ay + t * dy)
+        overshoot = (first and i == 0 and raw < 0) or (last and i == final and raw > 1)
+        if off <= (MAX_OVERSHOOT_M if overshoot else tolerance) and (best is None or off < best[0]):
+            best = (off, length + t * piece, math.degrees(math.atan2(dx, dy)) % 360)
+        length += piece
+    if best is None:
+        return None
+    off, along, bearing = best
+    if vehicle.bearing is not None and abs((vehicle.bearing - bearing + 180) % 360 - 180) > MAX_HEADING_OFF:
+        return None
+    return off, along / length
+
+
+def _fits(
+    vehicle: Vehicle,
+    calls: tuple[Call, ...],
+    positions: Mapping[str, StopPosition],
+    shapes: Mapping[str, Sequence[tuple[float, float]]],
+) -> list[tuple[float, float]]:
+    """Each leg of the calls the bus is on: how far it is from the road, in
+    metres, and where it is along the calls (2.5 is halfway along the third leg)."""
+    fits = []
+    for k, (a, b) in enumerate(pairwise(calls)):
+        if a.atco not in positions or b.atco not in positions:
+            continue
+        saved = shapes.get(shape_key((a.atco, b.atco)), ())
+        start, end = positions[a.atco], positions[b.atco]
+        road = [(start.lat, start.lon), *saved, (end.lat, end.lon)]
+        first = k == 0 or calls[k - 1].atco not in positions
+        last = k + 2 == len(calls) or calls[k + 2].atco not in positions
+        found = _on_road(vehicle, road, ROAD_TOLERANCE_M if saved else MAX_OFF_ROUTE_M, first, last)
+        if found is not None:
+            fits.append((found[0], k + found[1]))
+    return fits
+
+
 def progress(
     vehicle: Vehicle,
     journey: Journey,
-    positions: dict[str, StopPosition],
+    positions: Mapping[str, StopPosition],
     service_day: date,
     tz: tzinfo,
+    shapes: Mapping[str, Sequence[tuple[float, float]]] = _NO_ROADS,
 ) -> Progress | None:
     """Place a bus on its journey and say how late it is there.
 
-    Only the stretches of the journey whose stops have positions can place it,
-    using route.position_on (within 150 m of the road, heading the right way).
-    None if it is not on any of them, or its report time can't be read. If it
-    fits more than one stretch, as on a loop, the one nearest the timetable wins.
+    Only the legs of the journey between stops with positions can place it,
+    along `shapes`, the timetable's saved roads (see above). None if it is on
+    none of them, or its report time can't be read.
     """
     recorded = _recorded(vehicle)
     if recorded is None:
         return None
+    fits = _fits(vehicle, journey.calls, positions, shapes)
+    if not fits:
+        return None
     seen = recorded.astimezone(tz).replace(tzinfo=None)
     midnight = datetime.combine(service_day, time())
+    nearest = min(off for off, _ in fits)
     best = None
-    for run in _runs(journey.calls, positions):
-        places = [positions[call.atco] for call in journey.calls[run.start : run.stop]]
-        strip = RouteStrip(journey.line, "", tuple(RouteStop(p.name, p.lat, p.lon) for p in places))
-        along = position_on(strip, vehicle)
-        if along is None:
+    for off, at in fits:
+        if off > nearest + TIE_M:
             continue
-        at = run.start + along
         due = midnight + timedelta(minutes=_minute_at(journey.calls, at))
         delay = (seen - due).total_seconds()
         if at <= 0 and delay < 0:
@@ -158,18 +225,20 @@ def _late_minutes(delay: float) -> int:
 def _live(
     vehicles: Iterable[Vehicle],
     running: dict[date, list[Journey]],
-    positions: dict[str, StopPosition],
+    positions: Mapping[str, StopPosition],
     tz: tzinfo,
+    shapes: Mapping[str, Sequence[tuple[float, float]]] = _NO_ROADS,
 ) -> dict[tuple[date, int], tuple[Progress, Vehicle]]:
     """Where the bus is on each journey a vehicle could be matched to and placed
-    on, and the bus itself, keyed by (service day, id of the journey)."""
+    on (along `shapes`, the saved roads), and the bus itself, keyed by
+    (service day, id of the journey)."""
     live: dict[tuple[date, int], tuple[datetime, Progress, Vehicle]] = {}
     for vehicle in vehicles:
         hits = [(day, j) for day, journeys in running.items() if (j := match(vehicle, journeys, day, tz))]
         if len(hits) != 1:
             continue  # unmatched, or could be yesterday's journey or today's
         day, journey = hits[0]
-        placed = progress(vehicle, journey, positions, day, tz)
+        placed = progress(vehicle, journey, positions, day, tz, shapes)
         recorded = _recorded(vehicle)  # readable whenever progress places the bus
         if placed is None or recorded is None:
             continue
@@ -285,7 +354,7 @@ def live_board(
     # Buses are matched to yesterday's and today's journeys only: none is out on
     # tomorrow's yet, and a journey code that fits tomorrow too would make
     # today's match ambiguous.
-    live = _live(vehicles, {day: running[day] for day in days[:2]}, schedule.positions, tz)
+    live = _live(vehicles, {day: running[day] for day in days[:2]}, schedule.positions, tz, schedule.shapes)
     labels: dict[str, list[str]] = {}
     for label, atco in schedule.stops.items():
         labels.setdefault(atco, []).append(label)

@@ -123,10 +123,11 @@ class Schedule:
     operators: tuple[str, ...] = ()
     # Which version of the builder made it; files from before this was kept are 1.
     format: int = 1
-    # The road between consecutive positioned stops, for the dashboard's maps:
-    # (lat, lon) points between the two stops, not including them, keyed
-    # "ATCO_A>ATCO_B" in the order the bus calls (roadshape.shape_key). A pair
-    # left out is drawn straight; empty in a file saved before they were kept.
+    # The road between consecutive positioned stops, for the dashboard's maps
+    # and placing live buses (sources/livebus.py): (lat, lon) points between
+    # the two stops, not including them, keyed "ATCO_A>ATCO_B" in the order the
+    # bus calls (roadshape.shape_key). A pair left out is straight; empty in a
+    # file saved before they were kept.
     # From a file, a SavedRoads: read when first used.
     shapes: Mapping[str, tuple[tuple[float, float], ...]] = field(default_factory=dict)
     # Saved before its roads were found, or while they were stopped part way:
@@ -203,9 +204,10 @@ class Schedule:
 class SavedRoads(Mapping):
     """A timetable file's roads (Schedule.shapes), read only when first used:
     a file can hold thousands of points, and the e-paper board, reading it
-    every minute on a Pi Zero, never draws them. Read strictly: if any road
-    isn't a list of finite (lat, lon) pairs, none is kept, and the maps draw
-    straight lines; the timetable is still used."""
+    every minute on a Pi Zero, never draws them: it reads them only to place
+    a live bus matched to a journey. Read strictly: if any road isn't a list
+    of finite (lat, lon) pairs, none is kept, and the maps draw (and buses are
+    placed on) straight lines; the timetable is still used."""
 
     def __init__(self, saved):
         self._saved = saved  # as json.loads gave it

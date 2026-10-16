@@ -1,3 +1,4 @@
+import math
 from dataclasses import replace
 from datetime import UTC, date, datetime, time
 from zoneinfo import ZoneInfo
@@ -222,6 +223,108 @@ def test_a_bus_off_the_known_road_is_not_placed():
 
 def test_a_bus_heading_the_other_way_is_not_placed():
     assert progress(bus(*HALFWAY, at(10, 5), bearing=270.0), EAST, POSITIONS, DAY, LONDON) is None
+
+
+# Placing on the saved roads. A made-up town on a flat grid in metres: West
+# Gate and East Gate are a kilometre apart, and the road between them bends
+# 220 m north around a park; North Road is a straight road 200 m north of
+# Cross Street, running the same way.
+
+
+def spot(east_m, north_m):
+    """(lat, lon) of a point this far east and north of West Gate."""
+    return 53.0 + north_m / 111_320, -2.0 + east_m / (111_320 * math.cos(math.radians(53.0)))
+
+
+ROAD_STOPS = {
+    "WEST_GATE": StopPosition("West Gate", *spot(0, 0)),
+    "EAST_GATE": StopPosition("East Gate", *spot(1000, 0)),
+    "CROSS_W": StopPosition("Cross Street West", *spot(1000, -1000)),
+    "CROSS_E": StopPosition("Cross Street East", *spot(2000, -1000)),
+    "NORTH_W": StopPosition("North Road West", *spot(1000, -800)),
+    "NORTH_E": StopPosition("North Road East", *spot(2000, -800)),
+}
+# Round the park: north-east, east, then south-east.
+PARK_ROAD = {"WEST_GATE>EAST_GATE": (spot(250, 220), spot(750, 220))}
+# Out round the park, then along Cross Street.
+ROUND = journey(
+    "99", [("WEST_GATE", 600), ("EAST_GATE", 610), ("CROSS_W", 620), ("CROSS_E", 630)], "Cross Street", "1"
+)
+
+
+def placed_on(plan, vehicle, shapes=PARK_ROAD):
+    return progress(vehicle, plan, ROAD_STOPS, DAY, LONDON, shapes)
+
+
+def test_a_bus_on_a_bending_road_far_from_the_straight_line_is_placed():
+    in_the_park_road = bus(*spot(500, 200), at(10, 8), line="99", bearing=90.0)  # 20 m off the road
+    placed = placed_on(ROUND, in_the_park_road)
+    assert placed.at == pytest.approx(0.5, abs=0.02)  # halfway along the road, not the straight line
+    assert placed.delay == pytest.approx(180, abs=3)  # due there at 10:05
+
+
+def test_along_a_bending_road_is_measured_along_the_road():
+    # The first bend is 333 m of the road's 1,166 m, though only a quarter of the way east.
+    at_the_bend = bus(*spot(250, 220), at(10, 3), line="99", bearing=60.0)
+    assert placed_on(ROUND, at_the_bend).at == pytest.approx(333 / 1166, abs=0.01)
+
+
+def test_a_bus_within_300_m_of_a_saved_road_is_placed_and_further_is_not():
+    assert placed_on(ROUND, bus(*spot(500, 500), at(10, 5), line="99", bearing=90.0)) is not None  # 280 m
+    assert placed_on(ROUND, bus(*spot(500, 540), at(10, 5), line="99", bearing=90.0)) is None  # 320 m
+
+
+def test_a_bus_on_a_parallel_road_heading_the_other_way_is_not_placed():
+    # 200 m north of the park road, heading west on a road of its own.
+    assert placed_on(ROUND, bus(*spot(500, 420), at(10, 5), line="99", bearing=270.0)) is None
+    # A bus without a bearing can't be told apart from one on the park road.
+    assert placed_on(ROUND, bus(*spot(500, 420), at(10, 5), line="99", bearing=None)) is not None
+
+
+def test_without_a_saved_road_the_straight_line_is_used():
+    near_the_line = bus(*spot(500, 100), at(10, 8), line="99", bearing=90.0)
+    assert placed_on(ROUND, near_the_line, shapes={}).at == pytest.approx(0.5, abs=0.02)
+    # Off the straight line by more than 150 m: without the road, it could be anywhere.
+    assert placed_on(ROUND, bus(*spot(500, 200), at(10, 8), line="99", bearing=90.0), shapes={}) is None
+
+
+def test_a_saved_road_for_another_pair_of_stops_changes_nothing():
+    elsewhere = {"EAST_GATE>WEST_GATE": PARK_ROAD["WEST_GATE>EAST_GATE"]}
+    assert placed_on(ROUND, bus(*spot(500, 200), at(10, 8), line="99", bearing=90.0), shapes=elsewhere) is None
+
+
+def test_the_nearest_road_wins_over_one_nearer_the_timetable():
+    # Along Cross Street, then back west, and east again along North Road.
+    there_and_back = journey(
+        "99",
+        [("CROSS_W", 600), ("CROSS_E", 610), ("NORTH_W", 620), ("NORTH_E", 630)],
+        "North Road",
+        "2",
+    )
+    # North Road's saved road puts the bus within 300 m of it too, where it is due now.
+    north_road = {"NORTH_W>NORTH_E": (spot(1500, -800),)}
+    on_cross_street = bus(*spot(1500, -990), at(10, 25), line="99", bearing=90.0)  # 20 min late there
+    placed = placed_on(there_and_back, on_cross_street, north_road)
+    assert placed.at == pytest.approx(0.5, abs=0.02)
+    assert placed.delay == pytest.approx(20 * 60, abs=3)
+
+
+def test_on_a_road_taken_twice_the_pass_nearer_the_timetable_wins():
+    twice = journey(
+        "99",
+        [("WEST_GATE", 600), ("EAST_GATE", 610), ("CROSS_W", 620), ("WEST_GATE", 630), ("EAST_GATE", 640)],
+        "East Gate",
+        "3",
+    )
+    in_the_park_road = bus(*spot(500, 210), at(10, 36), line="99", bearing=90.0)
+    assert placed_on(twice, in_the_park_road).at == pytest.approx(3.5, abs=0.02)  # due 10:35, not 10:05
+
+
+def test_the_board_places_buses_on_the_timetable_s_saved_roads():
+    plan = Schedule(datetime(2026, 10, 9, 3, 0), None, {"X": "CROSS_W"}, (ROUND,), ROAD_STOPS, shapes=PARK_ROAD)
+    in_the_park_road = bus(*spot(500, 200), at(10, 8), line="99", origin="WEST_GATE",
+                           aimed=datetime(2026, 10, 9, 9, 0, tzinfo=UTC), bearing=90.0)
+    assert board(at(10, 8), [in_the_park_road], plan=plan) == [("X", "99", "10:20", "10:23", Status.LATE)]
 
 
 # Departures
