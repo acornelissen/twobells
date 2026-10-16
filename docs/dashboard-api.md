@@ -52,6 +52,16 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "platform": "1",
       "replacement_bus": false,
       "length": 3,
+      "formation": {
+        "coaches": [
+          {"number": "1", "class": "first", "toilet": null, "toilet_out_of_order": false, "loading": 45, "busy": "Busy"},
+          {"number": "2", "class": "standard", "toilet": "accessible", "toilet_out_of_order": false, "loading": 62, "busy": "Busy"},
+          {"number": "3", "class": "standard", "toilet": "standard", "toilet_out_of_order": false, "loading": 18, "busy": "Quiet"}
+        ],
+        "loading_text": "Quietest at the back",
+        "detach_text": null,
+        "reverse": false
+      },
       "cancel_reason": null,
       "delay_reason": "This train has been delayed by a broken down train",
       "walk_min": 10,
@@ -151,13 +161,18 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
 - **`leave_at`:** when to set off on foot (`expected_at` or else `scheduled_at`, minus `walk_min`). It is null when cancelled or no walk time is set.
 - **Missing data:**
   - A section can be `null` when it isn't configured (`trains`, `buses`, `weather`).
-  - `now`, `sun`, `rain`, `strip`, `vehicle` and `position` can each be null.
+  - `now`, `sun`, `rain`, `strip`, `vehicle`, `position` and `formation` can each be null.
   - `calling_points` and `previous_points` can be `[]`.
 - **Train `messages`** (National Rail's own messages for the station, at most 3, plain text):
   - `category` is Darwin's, when it sends one: `train`, `station`, `connections`, `system`, `misc`, `prior_trains` or `prior_other`; else null. `severity` likewise: `normal`, `minor`, `major` or `severe`, or null.
   - `kind` is `station` for a notice about the station's facilities (ticket office, ticket machines, lifts, toilets, waiting rooms, car park, help points, step-free access), else `service`. Darwin's category decides when it is sent (`station` is a station notice); without one, the words do (`darwin.message_kind`). Words about the trains (delays, cancellations, no trains, replacement buses, a closed station) always make it `service`, so a station notice never hides disruption.
   - **On the page:** `service` messages are the "Disruption" panel and are announced once in the live region; `station` ones are a quiet "Station information" line in the trains section and are never announced. An older server's plain strings are taken as `service`.
 - **`replacement_bus`:** true for a rail replacement bus, which Darwin lists apart from the trains (`busServices`, `serviceType` "bus") and the server merges in with them by time; false for a train. A replacement bus has `platform: null` and `length: null`, and its punctuality is kept apart from the train it stands in for. The page says "Bus" in its Platform column and "Replacement bus" under its destination and in its sheet.
+- **`formation`:** the train's coaches, for its sheet, where the operator sends them to Darwin; many don't, and then it is null and the sheet has the coach count (`length`) alone. A replacement bus always has null. The board's rows and the e-paper board use `length` only.
+  - `coaches` are in Darwin's order, from the front of the train; it can be `[]` when Darwin sends only its flags. Each has its `number` as on the coach ("A", "12"; at most 2 letters or digits, else null), `class` (`first`, `standard`, `mixed` or null), `toilet` (`standard`, `accessible`, or null for none or not known), `toilet_out_of_order`, `loading` (how full, 0 to 100, or null) and `busy`, that loading in words: "Quiet" under 35, "Busy", or "Very busy" from 70.
+  - `loading_text` says where to sit: "Quietest at the front", "Quietest in the middle", "Quietest at the back" (each end is a third of the train, rounded up, read from the coaches' loadings when at least half have one), "Much the same all along the train" (the ends within 15 of each other), or, from Darwin's average alone, "Quiet overall" and the like. It is null when Darwin gives no loading.
+  - `detach_text` is "Front 2 coaches detach here" when Darwin says the front of the train detaches at this station (`detachFront`), with the count only when the train is shorter at its next stop; else null. `reverse` is Darwin's `isReverseFormation`: the train runs the other way round from usual.
+  - The server reads Darwin's `formation` as hostile like the rest: a coach that isn't an object, or more than 30 coaches, leaves the whole formation out, and a field of the wrong type or out of range is null.
 - **Calling points:** `calling_points` are the stops after this station, `previous_points` the ones before it, both in journey order. Times are `HH:MM` or null; `actual` is set once the train has been there. A cancelled stop has `cancelled: true` and null times.
 - **Train `position`** (from Darwin's Service Details, which needs its own key, `RDM_DETAILS_API_KEY`):
   - It is known for the first 3 trains on the board that aren't cancelled, refreshed at most once a minute. Other rows have `position: null` and `previous_points: []`, unless the server still holds their details from earlier.

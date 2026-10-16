@@ -370,6 +370,85 @@ def test_a_train_and_its_replacement_bus_are_told_apart_in_the_history():
     assert len({r["id"] for r in part["rows"]}) == 2
 
 
+# A train's coaches, for its sheet: from the front, with where it is quietest.
+
+
+def coaches(*loadings, **extra):
+    return {"coaches": [{"number": str(i + 1), "coachClass": "First" if i == 0 else "Standard",
+                         "toilet": {"value": "Accessible" if i == 1 else "None", "status": "InService"},
+                         "loading": load} for i, load in enumerate(loadings)], **extra}
+
+
+def formation_of(**extra):
+    [row] = trains(train(**extra))[0]["rows"]
+    return row["formation"]
+
+
+def test_a_train_s_coaches_from_the_front_with_how_busy_each_is():
+    found = formation_of(formation=coaches(80, 50, 10))
+    assert found == {
+        "coaches": [
+            {"number": "1", "class": "first", "toilet": None, "toilet_out_of_order": False, "loading": 80,
+             "busy": "Very busy"},
+            {"number": "2", "class": "standard", "toilet": "accessible", "toilet_out_of_order": False,
+             "loading": 50, "busy": "Busy"},
+            {"number": "3", "class": "standard", "toilet": None, "toilet_out_of_order": False, "loading": 10,
+             "busy": "Quiet"},
+        ],
+        "loading_text": "Quietest at the back",
+        "detach_text": None,
+        "reverse": False,
+    }
+
+
+@pytest.mark.parametrize("loadings, words", [
+    ((10, 80), "Quietest at the front"),
+    ((60, 70, 20, 65, 70), "Quietest in the middle"),
+    ((60, 50, 40, 30, 20, 10, 5, 0), "Quietest at the back"),
+    ((40, 45, 50), "Much the same all along the train"),
+    ((40, None, None, None), None),  # too few coaches say
+    ((40,), None),  # one coach has no quieter end
+])
+def test_where_it_is_quietest_in_words(loadings, words):
+    found = formation_of(formation=coaches(*loadings))
+    assert found["loading_text"] == words
+
+
+def test_without_each_coach_s_loading_the_average_says_how_busy_overall():
+    assert formation_of(formation={"avgLoading": 80})["loading_text"] == "Very busy overall"
+    assert formation_of(formation={"avgLoading": 10})["coaches"] == []
+    assert formation_of(formation=coaches(None, None, avgLoading=40))["loading_text"] == "Busy overall"
+
+
+def test_the_front_detaching_here_is_said_with_the_count_when_darwin_shows_it():
+    after = {"subsequentCallingPoints": [{"callingPoint": [
+        {"locationName": "Dinting", "crs": "DTG", "st": "07:15", "et": "On time", "length": 2}]}]}
+    assert formation_of(detachFront=True, length=6, **after)["detach_text"] == "Front 4 coaches detach here"
+    assert formation_of(detachFront=True, length=3, **after)["detach_text"] == "Front 1 coach detaches here"
+    assert formation_of(detachFront=True, length=2, **after)["detach_text"] == "Front coaches detach here"
+    found = formation_of(detachFront=True)
+    assert found == {"coaches": [], "loading_text": None, "detach_text": "Front coaches detach here", "reverse": False}
+
+
+def test_a_reverse_formation_is_said():
+    assert formation_of(isReverseFormation=True)["reverse"] is True
+
+
+def test_most_trains_say_nothing_of_their_coaches():
+    # Many operators send no formation: the row keeps its coach count alone.
+    part, _ = trains(train())
+    [row] = part["rows"]
+    assert row["formation"] is None and row["length"] == 3
+    assert formation_of(detachFront=False, isReverseFormation=False, formation={"coaches": []}) is None
+
+
+def test_a_replacement_bus_never_has_coaches():
+    board = parse_board_rich({"busServices": [replacement(formation=coaches(10, 20), detachFront=True)]})
+    part, _ = trains_part(board, datetime(2026, 10, 10, 7, 0, tzinfo=LONDON), status_block(), "GLO", "MAN",
+                          WALK, "GLO>MAN")
+    assert part["rows"][0]["formation"] is None
+
+
 # Status words
 
 

@@ -1,8 +1,8 @@
 // A train's parts of the departure sheet (sheet.js): everything the board
-// knows about it, then where it is now and its journey (the stops before this
+// knows about it, then its coaches, where it is now and its journey (the stops before this
 // station, this station, and the stops after) as one ordered list.
 
-import { h, s, vh, str, num, list, obj } from "./dom.js";
+import { h, s, vh, str, num, list, obj, own } from "./dom.js";
 import { hhmm } from "./time.js";
 import { statusBadge } from "./board.js";
 import { arrivesFact, fact } from "./extras.js";
@@ -142,11 +142,63 @@ export function trainSummary(row) {
   ];
 }
 
-// Where it is now, and the journey. `station` is the board's station, named
-// in the journey.
+const CLASSES = { first: "First Class", standard: "Standard", mixed: "First and Standard" };
+const TOILETS = { accessible: "accessible toilet", standard: "toilet" };
+
+// One coach, in words: its number, then "First Class, accessible toilet,
+// quiet". Its loading bar and the number's box are drawing only; the words
+// say it all.
+function coachItem(coach) {
+  const number = str(coach.number);
+  const toilet = own(TOILETS, coach.toilet);
+  const loading = num(coach.loading);
+  const words = [
+    own(CLASSES, coach.class),
+    toilet && coach.toilet_out_of_order === true ? `${toilet} out of order` : toilet,
+    str(coach.busy).toLowerCase(),
+  ].filter(Boolean).join(", ");
+  const item = h("li", { class: ["coach", coach.class === "first" ? "coach-first" : null] },
+    h("span", { class: "coach-no" }, number ? [vh("Coach "), number] : [vh("Coach"), h("span", { "aria-hidden": "true" }, "–")]),
+    words ? [vh(": "), h("span", { class: "coach-words" }, words[0].toUpperCase() + words.slice(1))] : null);
+  if (loading !== null && loading >= 0 && loading <= 100) {
+    const bar = h("span", { class: "coach-load", "aria-hidden": "true" }, h("span", { class: "coach-load-fill" }));
+    // How full, for the CSS; the CSP allows the CSSOM.
+    bar.style.setProperty("--load", (loading / 100).toFixed(2));
+    item.append(bar);
+  }
+  return item;
+}
+
+// The train's coaches from the front, where Darwin knows them, with where
+// it is quietest and whether the front detaches here; nothing for a train
+// it says nothing about, or a replacement bus.
+function formationPart(row) {
+  const formation = row.replacement_bus === true ? null : obj(row.formation);
+  if (!formation) return [];
+  const coaches = list(formation.coaches).filter(obj);
+  const notes = [
+    str(formation.detach_text),
+    formation.reverse === true ? "Running in reverse formation, the other way round from usual" : "",
+    str(formation.loading_text),
+  ].filter(Boolean);
+  if (!coaches.length && !notes.length) return [];
+  return [
+    h("h3", {}, "Coaches"),
+    notes.map((note) => h("p", { class: "formation-note" }, note)),
+    coaches.length ? [
+      h("p", { class: "muted formation-front" }, "Front of the train first"),
+      // role=list: Safari drops list semantics when the numbers are styled away.
+      h("ol", { class: "formation", role: "list" }, coaches.map(coachItem)),
+    ] : null,
+  ];
+}
+
+// The coaches, where it is now, and the journey. `station` is the board's
+// station, named in the journey.
 export function trainJourney(row, station = "") {
   const where = str(obj(row.position)?.where);
   return [
+    formationPart(row),
     h("h3", {}, "Where it is now"),
     h("p", { class: where ? null : "muted" }, where || "No live position"),
     h("h3", {}, "Journey"),

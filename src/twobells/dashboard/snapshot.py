@@ -27,7 +27,16 @@ from ..core import words
 from ..core.model import Departure, Status, iso, minutes_between
 from ..core.walk import WalkTimes
 from ..sources.bodsbus import BusBoard
-from ..sources.darwin import CallingPoint, Message, ServiceDetails, TrainBoard, TrainService, train_position
+from ..sources.darwin import (
+    CallingPoint,
+    Coach,
+    Formation,
+    Message,
+    ServiceDetails,
+    TrainBoard,
+    TrainService,
+    train_position,
+)
 from ..sources.lastbus import LastBus
 from ..sources.livebus import LiveDeparture, approach, where_words
 from ..sources.weather import Conditions, Hour, rain_line
@@ -191,6 +200,7 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
         "platform": dep.platform,
         "replacement_bus": dep.replacement_bus,
         "length": service.length,
+        "formation": formation_block(service),
         "cancel_reason": service.cancel_reason,
         "delay_reason": service.delay_reason,
         "walk_min": walk.minutes(dep),
@@ -226,6 +236,86 @@ def calling_point(point: CallingPoint) -> dict:
         "expected": None if cancelled else _clock_or_none(point.expected, point.scheduled),
         "actual": None if cancelled else _clock_or_none(point.actual, point.scheduled),
         "cancelled": cancelled,
+    }
+
+
+# How full a coach is, in words: Darwin's loading is 0 to 100.
+QUIET_BELOW = 35
+VERY_BUSY_FROM = 70
+# The ends of a train must differ by this much loading to name the quietest.
+LOADING_SPREAD = 15
+QUIETEST = {"front": "Quietest at the front", "middle": "Quietest in the middle", "back": "Quietest at the back"}
+
+
+def busy_word(loading: int) -> str:
+    if loading < QUIET_BELOW:
+        return "Quiet"
+    return "Very busy" if loading >= VERY_BUSY_FROM else "Busy"
+
+
+def _section_loadings(coaches: tuple[Coach, ...]) -> dict[str, float]:
+    """The mean loading of the front, middle and back of the train, from the
+    coaches that have one: each end is a third of the train, rounded up, so
+    two coaches are a front and a back."""
+    end = math.ceil(len(coaches) / 3)
+    parts = {"front": coaches[:end], "middle": coaches[end:len(coaches) - end], "back": coaches[len(coaches) - end:]}
+    means = {}
+    for name, part in parts.items():
+        known = [c.loading for c in part if c.loading is not None]
+        if known:
+            means[name] = sum(known) / len(known)
+    return means
+
+
+def loading_text(formation: Formation) -> str | None:
+    """Where to sit, in words: "Quietest at the back", "Much the same all
+    along", or how busy it is overall from Darwin's average; None when Darwin
+    doesn't say. The front is the front in Darwin's order of the coaches."""
+    coaches = formation.coaches
+    known = sum(c.loading is not None for c in coaches)
+    if len(coaches) >= 2 and known * 2 >= len(coaches):
+        means = _section_loadings(coaches)
+        if len(means) >= 2:
+            if max(means.values()) - min(means.values()) < LOADING_SPREAD:
+                return "Much the same all along the train"
+            return QUIETEST[min(means, key=lambda name: means[name])]
+    if formation.average_loading is not None:
+        return f"{busy_word(formation.average_loading)} overall"
+    return None
+
+
+def detach_text(service: TrainService) -> str | None:
+    """"Front 2 coaches detach here" when Darwin says the front detaches at
+    this station; the count only when the train is shorter at its next stop."""
+    if not service.detach_front:
+        return None
+    after = service.calling_points[0].length if service.calling_points else None
+    if service.length is not None and after is not None and after < service.length:
+        count = service.length - after
+        return f"Front {count} {'coach detaches' if count == 1 else 'coaches detach'} here"
+    return "Front coaches detach here"
+
+
+def formation_block(service: TrainService) -> dict | None:
+    """The train's coaches for its sheet, from the front, with where it is
+    quietest and Darwin's flags in words; None when Darwin says nothing of
+    them, as many operators don't. A replacement bus never has one."""
+    if service.departure.replacement_bus:
+        return None
+    formation = service.formation
+    detach = detach_text(service)
+    if formation is None and detach is None and not service.reverse_formation:
+        return None
+    coaches = formation.coaches if formation is not None else ()
+    return {
+        "coaches": [{
+            "number": c.number, "class": c.coach_class, "toilet": c.toilet,
+            "toilet_out_of_order": c.toilet_out_of_order, "loading": c.loading,
+            "busy": busy_word(c.loading) if c.loading is not None else None,
+        } for c in coaches],
+        "loading_text": loading_text(formation) if formation is not None else None,
+        "detach_text": detach,
+        "reverse": service.reverse_formation,
     }
 
 

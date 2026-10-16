@@ -830,6 +830,34 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 @supports (top: 1lh) {
   .calling.journey { --dot-y: calc(0.625rem + 0.5lh); }
 }
+/* The train's coaches (train.js), front first, one to a line: the number in
+   a box (filled for First Class), the words, and a bar for how full it is.
+   The words say it all; the box and the bar back them up. */
+.formation-note { margin: 0 0 0.5rem; }
+.formation-front { margin: 0 0 0.25rem; font-size: var(--t-sm); }
+.formation { margin: 0 0 var(--s-4); padding: 0; list-style: none; }
+.coach {
+  display: grid;
+  grid-template-columns: 2.25rem 1fr 4rem;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.coach-no {
+  display: grid;
+  place-items: center;
+  min-height: 1.75rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-sm);
+  color: var(--fg);
+  background: var(--surface-2);
+  font-weight: 600;
+}
+.coach-first .coach-no { color: var(--badge-fg); background: var(--badge-bg); border-color: var(--badge-bg); }
+.coach-words { grid-column: 2; }
+.coach-load { grid-column: 3; height: 0.5rem; border: 1px solid var(--edge); border-radius: 999px; overflow: hidden; }
+.coach-load-fill { display: block; width: calc(var(--load, 0) * 100%); height: 100%; background: var(--fg); }
 .phrase { font-size: var(--t-lg); font-weight: 600; }
 .scroll { overflow-x: auto; }
 table.history { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
@@ -1087,6 +1115,7 @@ table.measures tr.total th, table.measures tr.total td { font-weight: 600; }
   .cp-train-wheels { stroke: Canvas; }
   .line-station::after { border-color: CanvasText; background: Canvas; }
   .line-station.yours::after { background: Highlight; }
+  .coach-load-fill { forced-color-adjust: none; background: CanvasText; }
   .line-marker { forced-color-adjust: none; border-color: Canvas; color: Canvas; background: CanvasText; }
 }
 .area-list { margin: 0 0 0.5rem; padding-left: 1.25rem; }

@@ -505,11 +505,17 @@ CALLING_POINT = {
     "name": str, "crs": Opt(str), "scheduled": Opt(hhmm), "expected": Opt(hhmm),
     "actual": Opt(hhmm), "cancelled": bool,
 }
+COACH = {
+    "number": Opt(str), "class": Opt(one_of("first", "standard", "mixed")),
+    "toilet": Opt(one_of("standard", "accessible")), "toilet_out_of_order": bool,
+    "loading": Opt(lambda v: integer(v) and 0 <= v <= 100), "busy": Opt(one_of("Quiet", "Busy", "Very busy")),
+}
+FORMATION = {"coaches": [COACH], "loading_text": Opt(str), "detach_text": Opt(str), "reverse": bool}
 TRAIN_ROW = {
     "id": row_id, "service": str, "destination": str, "origin": Opt(str),
     "scheduled": hhmm, "scheduled_at": at, "expected": Opt(hhmm), "expected_at": Opt(at),
     "status": ROW_STATUS, "status_text": str, "status_spoken": str, "minutes_late": Opt(integer),
-    "platform": Opt(str), "replacement_bus": bool, "length": Opt(integer),
+    "platform": Opt(str), "replacement_bus": bool, "length": Opt(integer), "formation": Opt(FORMATION),
     "cancel_reason": Opt(str), "delay_reason": Opt(str), "walk_min": Opt(integer), "leave_at": Opt(at),
     "calling_points": [CALLING_POINT],
     "previous_points": [CALLING_POINT],
@@ -650,6 +656,10 @@ def test_snapshot_fixture_follows_the_contract():
     # The cases the page has to draw are all here.
     assert any(r["status"] == "cancelled" and r["cancel_reason"] and r["leave_at"] is None for r in trains)
     assert any(r["status"] == "late" and r["delay_reason"] for r in trains)
+    # A train with its coaches, one with Darwin's words alone, and most with neither.
+    assert any(r["formation"] and len(r["formation"]["coaches"]) == r["length"] for r in trains)
+    assert any(r["formation"] and not r["formation"]["coaches"] and r["formation"]["detach_text"] for r in trains)
+    assert any(r["formation"] is None for r in trains)
     # A disruption message and a station notice, which the page shows differently.
     assert {m["kind"] for m in snapshot["trains"]["messages"]} == {"service", "station"}
     assert any(r["live"] and r["strip"] and r["strip"]["bus_at"] is not None for r in buses)
@@ -1543,6 +1553,25 @@ def test_the_train_dialog_draws_the_journey_as_a_route_line():
         assert "animation" not in body and "transition" not in body
 
 
+def _token(selector, prop):
+    """The colour token an app.css rule gives prop, like "edge" for "1px solid var(--edge)"."""
+    found = re.search(r"var\(--([\w-]+)\)", _css_value(selector, prop))
+    assert found, f"{selector} {prop} isn't a colour token"
+    return found.group(1)
+
+
+@pytest.mark.parametrize("theme", THEMES)
+def test_the_coach_list_is_readable_in_every_look(theme):
+    # The coach numbers sit in boxes, First Class's filled: their words at
+    # 4.5:1 on their box, and the box and the loading bar's edge at 3:1 on
+    # the sheet, in the light and dark looks and the Board look.
+    text = [(_token(sel, "color"), _token(sel, "background")) for sel in (".coach-no", ".coach-first .coach-no")]
+    edges = [(_token(".coach-no", "border"), "surface"), (_token(".coach-load", "border"), "surface")]
+    assert_contrast(theme, _palettes()[theme], [*text, ("fg", "surface"), ("muted", "surface")], edges)
+    for body in _css_rules(".coach") + _css_rules(".formation"):
+        assert "animation" not in body and "transition" not in body
+
+
 def _css_block(at_rule):
     """The rules inside an at-rule of app.css, as {selector: declarations}."""
     css = re.sub(r"/\*.*?\*/", "", (STATIC / "app.css").read_text(encoding="utf-8"), flags=re.S)
@@ -2365,6 +2394,86 @@ def test_the_sheet_and_reminders_call_a_replacement_bus_one():
     assert found["describe"] == "the 07:20 replacement bus to Manchester Piccadilly"
     assert found["train"] == ["07:20 to Manchester Piccadilly", [True],
                               "the 07:20 train to Manchester Piccadilly, platform 2"]
+
+
+FORMATION_ROW = """
+const coach = (number, cls, toilet, loading, busy, out = false) =>
+  ({ number, class: cls, toilet, toilet_out_of_order: out, loading, busy });
+const formed = (formation) => ({ ...train(1), length: 3, formation });
+const coachList = () => elements(body).find((el) => el.nodeName === "OL" && el.getAttribute("class") === "formation");
+const coachesSaid = () => coachList().childNodes.map((li) => spoken(li).replace(/\\s+/g, " ").trim());
+const headings = () => elements(body).filter((el) => el.nodeName === "H3").map(spoken);
+const notes = () => byClass(body, "formation-note").map(spoken);
+"""
+
+
+@needs_node
+def test_the_sheet_lists_a_train_s_coaches_from_the_front_in_words():
+    found = run_js(_sheet() + FORMATION_ROW + """
+        openTrain(formed({
+          coaches: [coach("1", "first", null, 80, "Very busy"), coach("2", "standard", "accessible", 50, "Busy"),
+                    coach("3", "standard", "standard", 10, "Quiet", true)],
+          loading_text: "Quietest at the back", detach_text: "Front 1 coach detaches here", reverse: true,
+        }));
+        const list = coachList();
+        console.log(JSON.stringify({
+          headings: headings(), notes: notes(), said: coachesSaid(), role: list.getAttribute("role"),
+          first: list.childNodes.map((li) => li.getAttribute("class")),
+          bars: byClass(list, "coach-load").map((el) => [el.getAttribute("aria-hidden"), el.style.getPropertyValue("--load")]),
+          front: byClass(body, "formation-front").map(spoken),
+        }));
+    """)
+    assert found["headings"] == ["Coaches", "Where it is now", "Journey"]
+    assert found["notes"] == ["Front 1 coach detaches here",
+                              "Running in reverse formation, the other way round from usual", "Quietest at the back"]
+    assert found["front"] == ["Front of the train first"]
+    # A list a screen reader counts, each coach said in full; the bars and
+    # the boxes only back the words up.
+    assert found["role"] == "list"
+    assert found["said"] == [
+        "Coach 1: First Class, very busy",
+        "Coach 2: Standard, accessible toilet, busy",
+        "Coach 3: Standard, toilet out of order, quiet",
+    ]
+    assert found["first"] == ["coach coach-first", "coach", "coach"]
+    assert found["bars"] == [["true", "0.80"], ["true", "0.50"], ["true", "0.10"]]
+
+
+@needs_node
+def test_a_train_darwin_says_nothing_of_keeps_its_coach_count_alone():
+    found = run_js(_sheet() + FORMATION_ROW + """
+        openTrain({ ...train(1), length: 3, formation: null });
+        const facts = elements(summary).filter((el) => el.nodeName === "DD" || el.nodeName === "DT").map(spoken);
+        const none = { headings: headings(), list: !!coachList(), facts };
+        openTrain(formed({ coaches: [], loading_text: null, detach_text: "Front coaches detach here", reverse: false }));
+        const wordsOnly = { headings: headings(), notes: notes(), list: !!coachList() };
+        openTrain({ ...formed({ coaches: [coach("1", "first", null, 10, "Quiet")], loading_text: null,
+                                detach_text: null, reverse: false }), replacement_bus: true });
+        console.log(JSON.stringify({ none, wordsOnly, bus: headings() }));
+    """)
+    assert found["none"]["headings"] == ["Where it is now", "Journey"] and not found["none"]["list"]
+    coaches = found["none"]["facts"].index("Coaches")
+    assert found["none"]["facts"][coaches + 1] == "3 coaches"
+    assert found["wordsOnly"] == {"headings": ["Coaches", "Where it is now", "Journey"],
+                                  "notes": ["Front coaches detach here"], "list": False}
+    assert found["bus"] == ["Where it is now", "Journey"]
+
+
+@needs_node
+def test_odd_coach_values_never_reach_the_sheet():
+    found = run_js(_sheet() + FORMATION_ROW + """
+        openTrain(formed({
+          coaches: [coach("<b>", "constructor", "__proto__", 500, 7), coach(null, null, null, null, null), "x", null],
+          loading_text: 3, detach_text: ["x"], reverse: "yes",
+        }));
+        console.log(JSON.stringify({
+          said: coachesSaid(), notes: notes(),
+          bars: byClass(coachList(), "coach-load").length,
+        }));
+    """)
+    assert found["said"] == ["Coach <b>", "Coach"]
+    assert found["notes"] == []
+    assert found["bars"] == 0
 
 
 @needs_node

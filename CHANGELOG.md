@@ -8,6 +8,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 - The last bus of each line and destination today, from the bus timetable: under the buses on the dashboard from 19:00 or once few are left ("Last 341 to Hyde 23:05"), in every bus's sheet, and on the HDMI screen's bottom line in the last hour ("Last bus 23:05"). It follows the timetable's days, bank holidays and buses after midnight.
 - A Performance page on the dashboard (`/performance`, linked from its header): how the trains and buses ran over the last 7 and 28 days, all together and route by route, by the rail industry's measures (Right Time, T-3, T-15, cancellations; buses on time by the bus late threshold), as counts with percentages in plain tables. Each departure's sheet shows its route's figures too. The API is `GET /api/performance`, and `GET /api/history/<id>` has the route's figures as `route`.
+- A train's sheet on the dashboard lists its coaches from the front, where the operator sends them to Darwin: number, First Class or Standard, toilets, how busy each is and where it is quietest ("Quietest at the back"), and "Front 2 coaches detach here" when Darwin says so. Without them the sheet keeps the coach count; the board is unchanged.
 
 ### Changed
 

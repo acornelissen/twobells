@@ -35,7 +35,7 @@ The next trains and buses side by side, each with its walk, its countdown and wh
 Open a train for its whole journey, or the area map for every bus on your lines:
 
 <p>
-  <img width="40%" alt="The 07:12 to Manchester Piccadilly: expected 07:19 after a broken down train, leave by 07:09, arriving 07:55, and its journey with the train at Hadfield" src="docs/images/dashboard-train.png">
+  <img width="40%" alt="The 07:12 to Manchester Piccadilly: expected 07:19 after a broken down train, leave by 07:09, arriving 07:55, its three coaches from the front, quietest at the back, and its journey with the train at Hadfield" src="docs/images/dashboard-train.png">
   <img width="59%" alt="The area map of Glossop with three live buses on their routes past Henry Street and St Marys Road, and the same buses listed in words" src="docs/images/dashboard-map.png">
 </p>
 
