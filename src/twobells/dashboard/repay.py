@@ -22,8 +22,8 @@ ArrivalWatch.poll:
 A key that is refused turns following off for six hours; anything else
 that fails is tried again on the next poll.
 
-Rail replacement buses are left out: Darwin's times for them are rough, and
-the train company's Delay Repay rules for a bus vary.
+Rail replacement buses and ferries are left out: Darwin's times for them
+are rough, and the train company's Delay Repay rules for them vary.
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ def watched(board: TrainBoard, fetched: datetime, route_prefix: str, station: st
     found = []
     for service in board.services:
         dep = service.departure
-        if dep.replacement_bus:
+        if not dep.is_train:
             continue
         point = next((p for p in service.calling_points if p.crs == station), None)
         if point is None:

@@ -133,22 +133,34 @@ def _history_entry(mode: str, route: str, scheduled: str, label: str, day: date,
 # Trains
 
 
-def train_route(prefix: str, destination: str, replacement_bus: bool = False) -> str:
+def train_route(prefix: str, destination: str, replacement_bus: bool = False, ferry: bool = False) -> str:
     """The history's name for a regular train, like "GLO>MAN|Manchester Piccadilly".
     A rail replacement bus is kept apart from the train it stands in for:
-    "GLO>MAN bus|Manchester Piccadilly". No train's name can be one, as the
-    prefix comes from the settings and the destination after it."""
-    return f"{prefix} bus|{destination}" if replacement_bus else f"{prefix}|{destination}"
+    "GLO>MAN bus|Manchester Piccadilly", and a ferry likewise: "PMH
+    ferry|Ryde Pier Head". No train's name can be one, as the prefix comes
+    from the settings and the destination after it."""
+    if replacement_bus:
+        return f"{prefix} bus|{destination}"
+    return f"{prefix} ferry|{destination}" if ferry else f"{prefix}|{destination}"
 
 
 def _train_route(prefix: str, departure: Departure) -> str:
-    return train_route(prefix, departure.destination, departure.replacement_bus)
+    return train_route(prefix, departure.destination, departure.replacement_bus, departure.ferry)
+
+
+def _train_noun(departure: Departure) -> str:
+    """What a departure in the trains is: "train", "replacement bus" or "ferry"."""
+    if departure.replacement_bus:
+        return words.REPLACEMENT_BUS.lower()
+    return words.FERRY.lower() if departure.ferry else "train"
 
 
 def _train_label(departure: Departure) -> str:
-    """"07:12 to Manchester Piccadilly", or "07:12 replacement bus to ..."."""
-    bus = f" {words.REPLACEMENT_BUS.lower()}" if departure.replacement_bus else ""
-    return f"{departure.scheduled}{bus} to {departure.destination}"
+    """"07:12 to Manchester Piccadilly", or "07:12 replacement bus to ..."
+    or "07:12 ferry to ..."."""
+    noun = _train_noun(departure)
+    kind = "" if noun == "train" else f" {noun}"
+    return f"{departure.scheduled}{kind} to {departure.destination}"
 
 
 def _train_times(service: TrainService, fetched: datetime) -> tuple[datetime, datetime | None]:
@@ -162,10 +174,11 @@ def _train_times(service: TrainService, fetched: datetime) -> tuple[datetime, da
 
 
 def _train_id(service: TrainService) -> str:
-    """A train's row id; a replacement bus's is never a train's, even at the same time."""
+    """A train's row id; a replacement bus's or a ferry's is never a train's,
+    even at the same time."""
     dep = service.departure
     identity = service.service_id or f"{dep.scheduled}+{dep.destination}"
-    return row_id("replacement bus" if dep.replacement_bus else "train", identity)
+    return row_id(_train_noun(dep), identity)
 
 
 def _minutes_late(departure: Departure) -> int | None:
@@ -195,7 +208,7 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
     scheduled_at, expected_at = _train_times(service, fetched)
     route = _train_route(route_prefix, dep)
     history = _history_entry("train", route, dep.scheduled, _train_label(dep), scheduled_at.date(), phrases)
-    usual = None if dep.replacement_bus else platforms(route, dep.scheduled)
+    usual = platforms(route, dep.scheduled) if dep.is_train else None
     changed = dep.platform is not None and (dep.platform_changed or (usual is not None and dep.platform != usual))
     row = {
         "id": _train_id(service),
@@ -215,6 +228,7 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
         "usual_platform": usual,
         "via": dep.via,
         "replacement_bus": dep.replacement_bus,
+        "ferry": dep.ferry,
         "length": service.length,
         "formation": formation_block(service),
         "cancel_reason": service.cancel_reason,
@@ -316,8 +330,8 @@ def detach_text(service: TrainService) -> str | None:
 def formation_block(service: TrainService) -> dict | None:
     """The train's coaches for its sheet, from the front, with where it is
     quietest and Darwin's flags in words; None when Darwin says nothing of
-    them, as many operators don't. A replacement bus never has one."""
-    if service.departure.replacement_bus:
+    them, as many operators don't. A replacement bus or a ferry never has one."""
+    if not service.departure.is_train:
         return None
     formation = service.formation
     detach = detach_text(service)

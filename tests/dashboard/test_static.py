@@ -769,7 +769,7 @@ TRAIN_ROW = {
     "scheduled": hhmm, "scheduled_at": at, "expected": Opt(hhmm), "expected_at": Opt(at),
     "status": ROW_STATUS, "status_text": str, "status_spoken": str, "minutes_late": Opt(integer),
     "platform": Opt(str), "platform_changed": bool, "usual_platform": Opt(str), "via": Opt(str),
-    "replacement_bus": bool, "length": Opt(integer), "formation": Opt(FORMATION),
+    "replacement_bus": bool, "ferry": bool, "length": Opt(integer), "formation": Opt(FORMATION),
     "cancel_reason": Opt(str), "delay_reason": Opt(str), "walk_min": Opt(integer), "leave_at": Opt(at),
     "calling_at": Opt(str),
     "calling_points": [CALLING_POINT],
@@ -2178,6 +2178,30 @@ observeSnapshot(snapshot.generated_at);""")
 
 
 @needs_node
+def test_a_ferry_in_the_trains_says_so_in_words():
+    script = _boards().replace("observeSnapshot(snapshot.generated_at);", """
+snapshot.trains.rows[0] = { ...snapshot.trains.rows[0], ferry: true, platform: null, platform_changed: true,
+                            length: null, destination: "Ryde Pier Head" };
+observeSnapshot(snapshot.generated_at);""")
+    assert script != _boards()
+    found = run_js(script + """
+        const [ferry, train] = bodyRows("trains-board");
+        const open = (tr) => byClass(tr, "open").map(said);
+        console.log(JSON.stringify({
+          platform: [said(cell(ferry, "c-plat")), shown(cell(ferry, "c-plat")), byClass(ferry, "plat-changed").length],
+          open: open(ferry),
+          replacement: byClass(ferry, "replacement").length,
+          train: [said(cell(train, "c-plat")), open(train)],
+        }));
+    """)
+    assert found["platform"] == ["Ferry", "PlatFerry", 0]
+    assert found["open"] == ["More about the 07:12 ferry to Ryde Pier Head"]
+    assert found["replacement"] == 0  # a ferry is no stand-in for a train
+    assert found["train"][0] == "1"
+    assert found["train"][1][0].startswith("More about the 07:42 to ")
+
+
+@needs_node
 def test_a_changed_platform_and_the_via_words_are_in_the_row():
     script = _boards().replace("observeSnapshot(snapshot.generated_at);", """
 snapshot.trains.rows[0] = { ...snapshot.trains.rows[0], platform: "2", platform_changed: true, via: "via Guide Bridge" };
@@ -2801,6 +2825,26 @@ def test_the_sheet_and_reminders_call_a_replacement_bus_one():
                               "the 07:20 train to Manchester Piccadilly, platform 2"]
 
 
+@needs_node
+def test_the_sheet_and_reminders_call_a_ferry_one():
+    found = run_js(_sheet() + """
+        import { describe } from "./alerts.js";
+        const ferry = { ...train(1), ferry: true, platform: null, usual_platform: "1", destination: "Ryde Pier Head",
+                        formation: { coaches: [], loading_text: null, detach_text: "Front coaches detach here",
+                                     reverse: false } };
+        openTrain(ferry);
+        const facts = elements(summary).filter((el) => el.nodeName === "DD" || el.nodeName === "DT").map(spoken);
+        const words = byClass(summary, "replacement").map((el) => el.hasAttribute("hidden"));
+        console.log(JSON.stringify({ title: spoken(title), facts, words, describe: describe(ferry, "train") }));
+    """)
+    assert found["title"] == "07:20 ferry to Ryde Pier Head"
+    platform = found["facts"].index("Platform")
+    assert found["facts"][platform + 1] == "Ferry"
+    assert "Usually" not in found["facts"] and "Coaches" not in found["facts"]
+    assert found["words"] == [True]
+    assert found["describe"] == "the 07:20 ferry to Ryde Pier Head"
+
+
 FORMATION_ROW = """
 const coach = (number, cls, toilet, loading, busy, out = false) =>
   ({ number, class: cls, toilet, toilet_out_of_order: out, loading, busy });
@@ -2933,6 +2977,9 @@ def test_a_changed_platform_is_announced_once():
         // A replacement bus is never a platform change, whatever it says.
         noteSnapshot(snapshot, rows(row("a", "2", true), row("e", null, false, { replacement_bus: true })));
         noteSnapshot(snapshot, rows(row("a", "2", true), row("e", "1", true, { replacement_bus: true })));
+        // Nor a ferry.
+        noteSnapshot(snapshot, rows(row("a", "2", true), row("f", "1", false, { ferry: true })));
+        noteSnapshot(snapshot, rows(row("a", "2", true), row("f", "2", true, { ferry: true })));
         const repeated = queued;
         // A second change is news too.
         noteSnapshot(snapshot, rows(row("a", "3", true)));
@@ -3391,6 +3438,16 @@ def test_the_hero_calls_a_replacement_bus_one():
     """)
     assert found == ["07:25 replacement bus to Manchester Piccadilly · 12 min walk",
                      "Then: 07:55 replacement bus (leave 07:43)"]
+
+
+@needs_node
+def test_the_hero_calls_a_ferry_one():
+    found = run_js(HERO + """
+        const ferry = { ferry: true, platform: null };
+        draw(rows(train(1, "07:25", "07:13", ferry), train(2, "07:55", "07:43", ferry)));
+        console.log(JSON.stringify([shown($("leave-what")), shown($("leave-then"))]));
+    """)
+    assert found == ["07:25 ferry to Manchester Piccadilly · 12 min walk", "Then: 07:55 ferry (leave 07:43)"]
 
 
 @needs_node

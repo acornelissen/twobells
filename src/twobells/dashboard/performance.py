@@ -43,15 +43,18 @@ class Outcomes(Protocol):
 def route_parts(mode: str, route: str) -> tuple[str, str | None]:
     """(label, stop) for a route as the history names it (snapshot.train_route,
     snapshot.bus_route): "GLO>MAN|Manchester Piccadilly" is ("Manchester
-    Piccadilly", None), and its rail replacement buses' "GLO>MAN bus|Manchester
-    Piccadilly" is ("Manchester Piccadilly (replacement bus)", None);
+    Piccadilly", None), its rail replacement buses' "GLO>MAN bus|Manchester
+    Piccadilly" is ("Manchester Piccadilly (replacement bus)", None), and a
+    ferry's "PMH ferry|Ryde Pier Head" is ("Ryde Pier Head (ferry)", None);
     "A|341|Hyde Bus Station" is ("341 to Hyde Bus Station", "A"). Anything
     else is its own label."""
     if mode == "train":
         prefix, bar, destination = route.partition("|")
         if not (bar and destination):
             return route, None
-        return (f"{destination} (replacement bus)" if prefix.endswith(" bus") else destination), None
+        if prefix.endswith(" bus"):
+            return f"{destination} (replacement bus)", None
+        return (f"{destination} (ferry)" if prefix.endswith(" ferry") else destination), None
     parts = route.split("|", 2)
     if len(parts) == 3 and parts[1] and parts[2]:
         stop, line, destination = parts

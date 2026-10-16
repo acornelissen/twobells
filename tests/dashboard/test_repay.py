@@ -122,6 +122,13 @@ def test_rail_replacement_buses_are_left_out():
     assert [r.identity for r in rows] == [SECOND]
 
 
+def test_ferries_are_left_out():
+    raw = json.loads((FIXTURES / "ldbws_glossop_details.json").read_text())
+    raw["ferryServices"] = [{**raw["trainServices"].pop(1), "serviceType": "ferry"}]
+    rows = watched(parse_board_rich(raw), naive("22:20"), PREFIX, "MAN")
+    assert [r.identity for r in rows] == [SECOND]
+
+
 def test_followed_with_service_details_only_once_it_has_left_and_is_due(history):
     details = Details()
     watch = _watch(history, details)

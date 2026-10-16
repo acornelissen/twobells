@@ -84,8 +84,9 @@ export function noteSnapshot(snapshot, rowsById) {
       // Not on the first snapshot, nor for a row that is new to the board.
       if (before) queue(`ghost:${id}`, `${what} has no tracker yet and may not be running.`);
     }
-    // A replacement bus has no platform to change.
-    const changed = mode === "train" && row.platform_changed === true && row.replacement_bus !== true;
+    // A replacement bus or a ferry has no platform to change.
+    const changed = mode === "train" && row.platform_changed === true && row.replacement_bus !== true
+      && row.ferry !== true;
     const platform = changed ? str(row.platform) : "";
     if (platform && !platformsSeen.has(`${id}|${platform}`)) {
       platformsSeen.add(`${id}|${platform}`);

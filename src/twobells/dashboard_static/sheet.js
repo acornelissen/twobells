@@ -8,7 +8,7 @@ import { $, h, fill, patch, setText, str, num, obj, openDialog, setUpDialog } fr
 import { hhmm, parseAt } from "./time.js";
 import { lastBusFor, statusBadge, stopText } from "./board.js";
 import { trainJourney, trainSummary } from "./train.js";
-import { arrivesFact, fact, ghostBadge, inboundText, noShowPhrase } from "./extras.js";
+import { arrivesFact, fact, ghostBadge, inboundText, noShowPhrase, trainNoun } from "./extras.js";
 import { renderStrip } from "./strip.js";
 import { closeMap, refreshMap, showBus } from "./map.js";
 import { closeHistory, loadHistory } from "./history.js";
@@ -45,7 +45,8 @@ function title(row) {
   const destination = str(row.destination);
   if (openMode === "bus") return `${scheduled} ${str(row.line)} to ${destination}`;
   const via = str(row.via) ? ` ${str(row.via)}` : "";
-  return row.replacement_bus === true ? `${scheduled} replacement bus to ${destination}${via}` : `${scheduled} to ${destination}${via}`;
+  const noun = trainNoun(row);
+  return `${scheduled}${noun === "train" ? "" : ` ${noun}`} to ${destination}${via}`;
 }
 
 // When the last bus of the row's line and destination goes today: "23:05",

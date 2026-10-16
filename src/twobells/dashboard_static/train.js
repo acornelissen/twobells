@@ -5,7 +5,7 @@
 import { h, s, vh, str, num, list, obj, own } from "./dom.js";
 import { hhmm } from "./time.js";
 import { statusBadge } from "./board.js";
-import { arrivesFact, fact } from "./extras.js";
+import { arrivesFact, fact, platformWord } from "./extras.js";
 
 // Where the train is along the journey (previous points, this station,
 // calling points, numbered from 0): { at } at a stop, { gap, part } on the
@@ -123,9 +123,11 @@ export function trainSummary(row) {
   const expected = str(row.expected);
   const walk = num(row.walk_min);
   const bus = row.replacement_bus === true;
+  // "Bus" or "Ferry" for one with no platform, else "".
+  const word = platformWord(row);
   const platform = str(row.platform);
   const changed = platform && row.platform_changed === true ? " (changed)" : "";
-  const usual = bus ? "" : str(row.usual_platform);
+  const usual = word ? "" : str(row.usual_platform);
   return [
     h("p", { class: "dialog-status" }, statusBadge(row.status, row.status_text, row.status_spoken)),
     h("p", { class: "replacement", hidden: !bus }, "Replacement bus, running in place of the train"),
@@ -136,7 +138,7 @@ export function trainSummary(row) {
       fact("From", str(row.origin)),
       fact("Scheduled", str(row.scheduled)),
       fact("Expected", expected && expected !== str(row.scheduled) ? expected : ""),
-      fact("Platform", bus ? "Bus" : platform ? `${platform}${changed}` : "Not yet known"),
+      fact("Platform", word || (platform ? `${platform}${changed}` : "Not yet known")),
       // From the punctuality history, once it has a few days to go on.
       fact("Usually", usual ? `Platform ${usual}` : ""),
       fact("Coaches", length ? `${length} ${length === 1 ? "coach" : "coaches"}` : ""),
@@ -176,9 +178,9 @@ function coachItem(coach) {
 
 // The train's coaches from the front, where Darwin knows them, with where
 // it is quietest and whether the front detaches here; nothing for a train
-// it says nothing about, or a replacement bus.
+// it says nothing about, or a replacement bus or a ferry.
 function formationPart(row) {
-  const formation = row.replacement_bus === true ? null : obj(row.formation);
+  const formation = platformWord(row) ? null : obj(row.formation);
   if (!formation) return [];
   const coaches = list(formation.coaches).filter(obj);
   const notes = [

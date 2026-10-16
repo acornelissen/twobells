@@ -17,7 +17,7 @@
 
 import { h, vh, setText, str, num, list, obj, own, store, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
-import { arrivesLine, busStatusExtras } from "./extras.js";
+import { arrivesLine, busStatusExtras, platformWord, trainNoun } from "./extras.js";
 import { applyFlaps, flapText } from "./flap.js";
 import { icon } from "./icons.js";
 import { isKiosk } from "./kiosk.js";
@@ -285,13 +285,15 @@ export function toggleCalling(button) {
   for (const line of document.querySelectorAll("#trains-board .calling-at")) line.classList.toggle("paused", paused);
 }
 
-// The Plat cell: "1", "Bus" for a replacement bus, "–" until it's known, or
-// "2 (changed)" on the late colours when it isn't the platform the train was
-// given before, or usually has. The words say it; the colour backs them up.
+// The Plat cell: "1", "Bus" for a replacement bus or "Ferry" for a ferry, "–"
+// until it's known, or "2 (changed)" on the late colours when it isn't the
+// platform the train was given before, or usually has. The words say it; the
+// colour backs them up.
 function platformCell(row) {
   const platform = str(row.platform);
+  const word = platformWord(row);
   let shown = [h("span", { "aria-hidden": "true" }, "–"), vh("not yet known")];
-  if (row.replacement_bus === true) shown = "Bus";
+  if (word) shown = word;
   else if (platform && row.platform_changed === true) shown = h("span", { class: "plat-changed" }, `${platform} (changed)`);
   else if (platform) shown = platform;
   return td("c-plat", "Plat", shown);
@@ -303,6 +305,7 @@ function trainRow(row, first, later, alerts, flap) {
   const destination = str(row.destination);
   const via = str(row.via);
   const bus = row.replacement_bus === true;
+  const noun = trainNoun(row);
   const cancelled = row.status === "cancelled";
   const position = obj(row.position);
   const where = str(position?.where);
@@ -315,7 +318,7 @@ function trainRow(row, first, later, alerts, flap) {
     h("th", { scope: "row", role: "rowheader", class: "c-time" },
       h("span", { class: "time", dataset: { flap: flap("time") } }, scheduled)),
     td("c-dest", null,
-      openButton(id, `the ${scheduled}${bus ? " replacement bus" : ""} to `, destination, flap("destination")),
+      openButton(id, `the ${scheduled}${noun === "train" ? "" : ` ${noun}`} to `, destination, flap("destination")),
       via ? h("span", { class: "sub via" }, via) : null,
       bus ? h("span", { class: "sub replacement" }, "Replacement bus") : null,
       arrivesLine(row),

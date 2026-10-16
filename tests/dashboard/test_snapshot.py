@@ -372,6 +372,46 @@ def test_a_train_and_its_replacement_bus_are_told_apart_in_the_history():
     assert len({r["id"] for r in part["rows"]}) == 2
 
 
+# Ferries: in the trains, said to be ferries, kept apart in the history.
+
+
+def ferry(std="07:12", etd="On time", **extra):
+    return train(std, etd, **{"serviceType": "ferry", "platform": None, "length": 0, "operator": "Wightlink",
+                              "destination": [{"locationName": "Ryde Pier Head", "crs": "RYP"}], **extra})
+
+
+def test_a_ferry_has_a_row_that_says_so_and_a_history_of_its_own():
+    board = parse_board_rich({"trainServices": [train("07:12")], "ferryServices": [ferry("07:12")],
+                              "locationName": "Portsmouth Harbour"})
+    part, lookups = trains_part(board, datetime(2026, 10, 10, 7, 0, tzinfo=LONDON), status_block(), "PMH", None,
+                                WALK, "PMH")
+    the_train, the_ferry = part["rows"]
+    assert (the_ferry["ferry"], the_ferry["replacement_bus"]) == (True, False)
+    assert the_train["ferry"] is False
+    assert (the_ferry["destination"], the_ferry["platform"], the_ferry["length"], the_ferry["formation"]) == (
+        "Ryde Pier Head", None, None, None,
+    )
+    assert the_ferry["id"] != the_train["id"]
+    history = lookups[the_ferry["id"]]["history"]
+    assert history["mode"] == "train"
+    assert history["route"] == "PMH ferry|Ryde Pier Head"
+    assert history["label"] == "07:12 ferry to Ryde Pier Head"
+    seen = train_observations(board, datetime(2026, 10, 10, 7, 0, tzinfo=LONDON), "PMH")
+    assert sorted(o.route for o in seen) == ["PMH ferry|Ryde Pier Head", "PMH|Manchester Piccadilly"]
+
+
+def test_a_ferry_has_no_usual_platform_and_never_a_changed_one():
+    asked = []
+    board = parse_board_rich({"ferryServices": [ferry(formation=coaches(10, 20))]})
+    part, _ = trains_part(board, datetime(2026, 10, 10, 7, 0, tzinfo=LONDON), status_block(), "PMH", None, WALK,
+                          "PMH", platforms=lambda route, scheduled: asked.append(route) or "1")
+    [row] = part["rows"]
+    assert asked == []
+    assert (row["platform"], row["usual_platform"], row["platform_changed"], row["formation"]) == (
+        None, None, False, None,
+    )
+
+
 # A train's coaches, for its sheet: from the front, with where it is quietest.
 
 
