@@ -13,7 +13,7 @@ What each display can do, and how to set it up on a Pi. What the board shows on 
 | Size | 250×122 | 1360×480 | 1280×400 (on its side) | 1920×440 |
 | Colours | black, white, red or yellow | black, white, red, yellow | full colour | full colour |
 | Redraw | about 20 s, on change only | about 21 s, on change only | instant, every second | instant, every second |
-| Clock, countdowns, bus page | no | no | yes | yes |
+| Clock, countdowns, bus page, clock page | no | no | yes | yes |
 | Where each train or bus is, on its row | no | no | yes | yes |
 | Light at night | none | none | the screen stays lit | the screen stays lit |
 | Pi | Zero W or later | Zero 2 W or later | Zero 2 W or later (Zero needs a mini-HDMI adapter) | Zero 2 W or later (Zero needs a mini-HDMI adapter) |

@@ -52,6 +52,8 @@ bank_holidays = true
 bank_holiday_division = "england-and-wales"
 # The plain look's text size, 9-16 (11 is standard); bigger shows fewer departures on a small display.
 # text_size = 12
+# An HDMI screen only: a platform clock page between the departures. Also on the Board tab.
+# clock_page = true
 # Degrees to turn the board clockwise to suit how it is mounted.
 # E-paper: 0 or 180. The 7.9" screen is portrait out of the box: 90 or 270.
 rotate = 0

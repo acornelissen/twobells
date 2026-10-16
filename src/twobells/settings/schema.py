@@ -291,6 +291,7 @@ BOARD_DEFAULTS: dict = {
     "display": "inky",
     "rotate": 0,
     "text_size": 11,
+    "clock_page": False,
     "bank_holidays": True,
     "train": {
         "rows": 3,
@@ -470,6 +471,9 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               hint="Degrees clockwise, to suit how the display is mounted.",
               options=tuple((r, f"{r}°") for r in rotations), default=board["rotate"],
               page="board", heading="Display"),
+        Field("clock_page", "board", None, "clock_page", "Clock page", on_off, "radios",
+              hint="HDMI screens only. 10 seconds of a platform clock after the departures (and the bus page).",
+              options=_ON_OFF, default=board["clock_page"], page="board", heading="Display"),
         Field("accent", "board", None, "accent", "Accent colour", _accent(accents), "radios", default="",
               hint="Only reinforces meaning; the words always carry it. The station board look uses amber, "
                    "the TFT look uses yellow and the plain look uses red; a colour too faint on the look's background "

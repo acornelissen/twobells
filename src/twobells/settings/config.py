@@ -607,6 +607,7 @@ def settings_from(
         weather=_weather(data, sources, timezone) if only is None else None,
         reset_code=reset_code_page(folder, timezone) if folder and only is None else None,
         positions=positions,
+        clock_page=_flag(data, "clock_page", BOARD_DEFAULTS["clock_page"]),
     )
     return Settings(
         board=board,

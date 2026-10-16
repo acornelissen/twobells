@@ -496,6 +496,47 @@ def test_no_bus_page_outside_the_bus_windows():
     assert positions.calls == 0
 
 
+def pages(board, state, display, start, seconds):
+    return [run_once(board, state, display, start + timedelta(seconds=s)).page for s in seconds]
+
+
+def test_the_clock_page_is_off_unless_asked_for():
+    trains, buses, board, display, state = setup()
+    assert board.clock_page is False
+    assert set(pages(board, state, FakeScreen(), THU_0700, range(60))) == {"departures"}
+
+
+def test_a_screen_shows_the_clock_for_10_s_after_the_departures():
+    trains, buses, board, display, state = setup()
+    board = dataclasses.replace(board, clock_page=True)
+    shown = pages(board, state, FakeScreen(), THU_0700, range(50))
+    assert shown == (["departures"] * 15 + ["clock"] * 10) * 2
+    clock = FakeScreen()
+    result = run_once(board, state, clock, THU_0700 + timedelta(seconds=15))
+    assert result.rendered and clock.shown[-1].size == (1280, 400)
+    # A new second, a new picture: the seconds hand moves.
+    assert run_once(board, state, clock, THU_0700 + timedelta(seconds=16)).rendered
+
+
+def test_with_a_bus_to_follow_the_clock_comes_after_the_bus_page():
+    board, _, state = tracked_setup([bus_on("341", "07:20")], [vehicle_at(2)])
+    board = dataclasses.replace(board, clock_page=True)
+    shown = pages(board, state, FakeScreen(), THU_0700, range(35))
+    assert shown == ["departures"] * 15 + ["route"] * 10 + ["clock"] * 10
+
+
+def test_e_paper_never_shows_the_clock_page():
+    trains, buses, board, display, state = setup()
+    board = dataclasses.replace(board, clock_page=True)
+    assert run_once(board, state, display, THU_0700 + timedelta(seconds=20)).page == "departures"
+
+
+def test_the_code_page_beats_the_clock_page():
+    trains, buses, board, display, state = setup()
+    board = dataclasses.replace(board, clock_page=True, reset_code=Waiting(CODE))
+    assert run_once(board, state, FakeScreen(), THU_0700 + timedelta(seconds=20)).page == "code"
+
+
 def test_positions_are_polled_on_their_own_interval():
     board, positions, state = tracked_setup([bus_on("341", "07:20")])
     for second in range(0, 61, 5):

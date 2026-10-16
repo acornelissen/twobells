@@ -16,7 +16,7 @@ The board can run on three kinds of display. They all show the same information:
 |---|---|---|
 | Inky pHAT e-paper | small, 2.13" | Redraws only when something changes, at most every 2 minutes. Each redraw takes about 20 seconds and flickers. That's normal. |
 | Waveshare e-paper | wide, 10.85" | Same as the pHAT, just bigger. |
-| HDMI screen | wide, 7.9" or 11.3" | Updates every second, with a running clock, countdowns, where each train and bus is, and a second page showing where your bus is. |
+| HDMI screen | wide, 7.9" or 11.3" | Updates every second, with a running clock, countdowns, where each train and bus is, a second page showing where your bus is, and a platform clock page if you want one. |
 
 The words always carry the meaning. Colour and highlighting only back them up, so the board reads the same in black and white or to someone who is colour-blind.
 
@@ -134,7 +134,7 @@ Each bus line also names its stop where other boards show its label: `341 Henry 
 
 ### Where the next bus is
 
-If it's set up (see [The bus position page](displays.md#the-bus-position-page)), the screen switches every 25 seconds: 15 seconds of departures, then 10 seconds of this page.
+If it's set up (see [The bus position page](displays.md#the-bus-position-page)), the screen switches every 25 seconds: 15 seconds of departures, then 10 seconds of this page (then 10 of [the clock page](#the-clock-page), if it's on).
 
 ![The bus position page on the HDMI screen, with sample data](images/screen-bus.png)
 
@@ -151,6 +151,14 @@ It also says:
 | `Position not updating` | Live positions have stopped arriving. Use the departure times instead. |
 
 The page only appears when the board is checking buses (see [When it checks](#when-it-checks)) and there's a tracked bus you can still catch.
+
+### The clock page
+
+Off unless you switch it on: **Clock page** on the [Board page](settings.md#board) of the settings, or `clock_page = true` in `config.toml`. Then, after the departures (and the bus page, when it shows), the screen shows a platform clock for 10 seconds: the screen goes round every 25 seconds, or 35 with the bus page too.
+
+![The clock page on the HDMI screen](images/screen-clock.png)
+
+It is drawn after the classic British platform clock, the same in every look: a white face with black batons for the hours and minutes, black hands, and a red seconds hand that moves on each second. Beside it are the time, like `07:24`, and the date, like `Friday 16 October`, in words. E-paper doesn't show it.
 
 ## When it checks
 

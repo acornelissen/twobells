@@ -26,6 +26,7 @@ from ..sources.weather import Hour, hours_from_dicts, hours_to_dicts, rain_line
 from ..web.auth import ResetCodes, spaced
 from . import positions as row_positions
 from .panel import Panel
+from .platformclock import ClockView, clock_view, render_clock
 from .positions import Positions
 from .render import Palette
 from .route import RouteStrip, RouteView, locate, target, where
@@ -119,9 +120,10 @@ class Weather:
 _RAIN_LOOKAHEAD = timedelta(minutes=60)
 
 
-# A screen with a route page shows departures for 15 s, then the bus for 10 s.
-_PAGE_CYCLE_S = 25
+# A screen shows departures for 15 s, then each other page it has for 10 s:
+# the bus page while there is a bus to follow, and the clock page if it is on.
 _DEPARTURES_S = 15
+_PAGE_S = 10
 
 
 @dataclass(frozen=True)
@@ -142,6 +144,8 @@ class Board:
     setup: SetupView | None = None
     # Where each shown train and bus is, for a screen's rows; e-paper never asks.
     positions: Positions | None = None
+    # A screen's platform clock page, between the departures; e-paper never shows it.
+    clock_page: bool = False
 
 
 def reset_code_page(folder: Path, timezone: str) -> Callable[[], CodeView | None]:
@@ -391,7 +395,22 @@ def _last_bus(board: Board, now: datetime) -> str | None:
     return None
 
 
-def _render_key(shown: BoardView | RouteView | CodeView | SetupView, theme: Theme, display: Display) -> str:
+def _screen_page(seconds: int, route: bool, clock: bool) -> str:
+    """Which page a screen shows `seconds` into the hour: the departures for
+    _DEPARTURES_S, then the bus page and the clock page, those it has, for
+    _PAGE_S each, and round again."""
+    pages = [("departures", _DEPARTURES_S)]
+    pages += [(page, _PAGE_S) for page, on in (("route", route), ("clock", clock)) if on]
+    at = seconds % sum(length for _, length in pages)
+    for page, length in pages:
+        if at < length:
+            return page
+        at -= length
+    return "departures"
+
+
+def _render_key(shown: BoardView | RouteView | CodeView | SetupView | ClockView, theme: Theme,
+                display: Display) -> str:
     """What is on the panel: the words, and how they are drawn. A new look, accent
     or rotation has to reach e-paper even when the words have not changed."""
     # The display classes keep their rotation private; a public `rotate` wins if there is one.
@@ -445,13 +464,17 @@ def run_once(
     code = _reset_code(board)
     departures_page = code is None and board.setup is None
     route = _route_view(board, state, view, now, view.clock) if live and departures_page else None
-    seconds = now.minute * 60 + now.second
+    clock = live and departures_page and board.clock_page
+    page = _screen_page(now.minute * 60 + now.second, route is not None, clock) if live else "departures"
+    shown: BoardView | RouteView | CodeView | SetupView | ClockView
     if code is not None:
         page, shown = "code", code
     elif board.setup is not None:
         page, shown = "setup", board.setup
-    elif route and seconds % _PAGE_CYCLE_S >= _DEPARTURES_S:
-        page, shown = "route", route
+    elif page == "route" and route is not None:
+        shown = route
+    elif page == "clock":
+        shown = clock_view(now)
     else:
         page, shown = "departures", view
 
@@ -482,13 +505,14 @@ def board_seconds(now: datetime) -> int:
 def _show(theme: Theme, page: str, shown, display: Display, now: datetime, live: bool) -> None:
     """Draw `shown` on the display. A screen's departures and route pages
     come as a Frame, with any text too long for its space scrolling, for a
-    display that can scroll it; any other display gets the still image."""
+    display that can scroll it; any other display gets the still image. The
+    clock page is the same in every look."""
     if live and page in ("departures", "route"):
         draw_frame = theme.frame if page == "departures" else theme.route_frame
         frame = draw_frame(shown, display.palette, display.panel)
     else:
         draw = {"code": theme.render_code, "route": theme.render_route,
-                "setup": theme.render_setup}.get(page, theme.render)
+                "setup": theme.render_setup, "clock": render_clock}.get(page, theme.render)
         frame = Frame(draw(shown, display.palette, display.panel))
     show_frame = getattr(display, "show_frame", None)
     if show_frame is not None:

@@ -337,6 +337,7 @@ def test_the_board_loads_with_the_schema_s_defaults(tmp_path):
         top["title"], top["timezone"], top["display"], top["rotate"])
     assert settings.board.min_redraw == timedelta(minutes=top["min_redraw_minutes"])
     assert (settings.board.theme.name, settings.board.theme.text_size) == (top["theme"], top["text_size"])
+    assert settings.board.clock_page is top["clock_page"] is False
     train, bus = settings.board.sources
     for config, defaults in ((train, top["train"]), (bus, top["bus"])):
         assert config.source._rows == defaults["rows"]

@@ -55,6 +55,7 @@ How the board is doing is on the [Overview](#overview), under **On the board**: 
 - **Display**
   - **Look:** station board or plain, and on an HDMI screen also TFT, white and yellow on black (see [Reading the board](reading-the-board.md#the-tft-look)). E-paper isn't offered the TFT look, and refuses it in `config.toml` (`theme = "tft"`).
   - **Rotation:** if the display is mounted upside down (or, for the screen, on its side).
+  - **Clock page:** on or off, off unless you switch it on. HDMI screens only: 10 seconds of a platform clock after the departures and the bus page (see [The clock page](reading-the-board.md#the-clock-page)). E-paper ignores it.
   - **Display:** which display `config.toml` sets. Changing it means switching services, so it's set there only.
   - Advanced: **Accent colour**, the look's own (amber for the station board, yellow for TFT, red for plain) or another that stays readable on the look's background (a colour too faint on the background isn't offered); **Redraw at most every** so many minutes, e-paper only (lower means fresher but more wear and flicker; 2 is a good balance); **Text size**, the plain look only, 9 to 16 (11 is standard; bigger shows fewer departures on a small display).
 - **Trains** and **Buses**, each:

@@ -681,6 +681,15 @@ def test_text_size_sets_the_plain_look_and_is_checked(tmp_path):
             load_config(write(tmp_path, bad + base), ENV)
 
 
+def test_the_clock_page_is_off_unless_switched_on_and_is_checked(tmp_path):
+    base = 'display = "hdmi-1280x400"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n'
+    assert load_config(write(tmp_path, base), ENV).board.clock_page is False
+    assert load_config(write(tmp_path, "clock_page = true\n" + base), ENV).board.clock_page is True
+    for bad in ('clock_page = "yes"\n', "clock_page = 1\n"):
+        with pytest.raises(ConfigError, match="clock_page must be true or false"):
+            load_config(write(tmp_path, bad + base), ENV)
+
+
 def test_panel_colour_is_separate_from_the_accent(tmp_path):
     base = 'display = "inky-phat-v1"\ntheme = "plain"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n'
     settings = load_config(write(tmp_path, 'panel_colour = "yellow"\n' + base), ENV)

@@ -6,13 +6,14 @@ Run it after a change to how the board looks, then look at each picture and
 commit them. The departures pictures are `twobells demo`; the pHAT ones
 are scaled up three times, dot for dot, so they read on a web page. The bus
 position page is drawn here, as the board draws it, for the demo's 341 with
-the emulator's stops and the bus three stops away.
+the emulator's stops and the bus three stops away, and so is the clock page.
 """
 
 from __future__ import annotations
 
 import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 from PIL import Image
@@ -21,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from twobells.board.displays.display import DISPLAY_PANELS, PngDisplay  # noqa: E402
+from twobells.board.platformclock import clock_view, render_clock  # noqa: E402
 from twobells.board.route import RouteView, where  # noqa: E402
 from twobells.board.themes import theme_named  # noqa: E402
 from twobells.board.view import build_view  # noqa: E402
@@ -76,6 +78,12 @@ def draw_bus_page(drawn: Path) -> None:
     display.show(theme.render_route(route, display.palette, display.panel))
 
 
+def draw_clock_page(drawn: Path) -> None:
+    """The clock page on the screen, on a Friday morning."""
+    display = PngDisplay(drawn, theme_named("sign").accent, DISPLAY_PANELS["hdmi-1280x400"])
+    display.show(render_clock(clock_view(datetime(2026, 10, 16, 7, 12, 40)), display.palette, display.panel))
+
+
 def run() -> None:
     with tempfile.TemporaryDirectory() as scratch:
         for name, (options, scale) in DEMOS.items():
@@ -84,6 +92,9 @@ def run() -> None:
             keep(drawn, scale)
         drawn = Path(scratch) / "screen-bus.png"
         draw_bus_page(drawn)
+        keep(drawn)
+        drawn = Path(scratch) / "screen-clock.png"
+        draw_clock_page(drawn)
         keep(drawn)
 
 

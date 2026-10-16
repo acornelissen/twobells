@@ -344,6 +344,16 @@ def test_a_screen_can_turn_a_quarter(tmp_path):
     assert load_config(config, ENV).rotate == 270
 
 
+def test_the_clock_page_is_off_until_switched_on_and_saves(tmp_path):
+    form = _form_for(tmp_path, 'theme = "sign"\ndisplay = "hdmi-1280x400"')
+    page = form.render("tok")
+    assert "Clock page" in page and "HDMI screens only." in page
+    assert fields_of(form)["clock_page"] == "false"
+    assert form.save(fields_of(form) | {"clock_page": "true"}) == {}
+    assert load_config(tmp_path / "config.toml", ENV).board.clock_page is True
+    assert "clock_page" in form.save(fields_of(form) | {"clock_page": "sometimes"})
+
+
 def test_removing_a_stop_takes_effect(setup):
     form, config, *_ = setup
     assert form.save(fields_of(form) | {"bus_stops": "A = 1000DGHS0900"}) == {}  # B's walk box is still sent
