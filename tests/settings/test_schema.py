@@ -5,9 +5,10 @@ from collections import Counter
 
 import pytest
 
+from twobells.board.app import Board
 from twobells.board.displays.display import DISPLAY_PANELS
 from twobells.board.themes import THEMES
-from twobells.settings import schema
+from twobells.settings import schema, show
 from twobells.settings.config import ConfigError
 from twobells.settings.installs import INSTALLS, install_named
 
@@ -338,7 +339,7 @@ def test_the_board_loads_with_the_schema_s_defaults(tmp_path):
         top["title"], top["timezone"], top["display"], top["rotate"])
     assert settings.board.min_redraw == timedelta(minutes=top["min_redraw_minutes"])
     assert (settings.board.theme.name, settings.board.theme.text_size) == (top["theme"], top["text_size"])
-    assert settings.board.clock_page is top["clock_page"] is False
+    assert settings.board.show == show.default("board")  # everything but the clock page
     train, bus = settings.board.sources
     for config, defaults in ((train, top["train"]), (bus, top["bus"])):
         assert config.source._rows == defaults["rows"]
@@ -370,6 +371,9 @@ def test_the_board_s_fields_show_the_loader_s_defaults():
     for f in schema.FIELDS:
         if f.group != "board" or f.name == "accent":  # the accent's default is the look's own
             continue
+        if f.kind == "show":  # the show list's is settings/show.py's
+            assert f.default == show.ordered("board", Board(title="", sources=[]).show), f.name
+            continue
         defaults = board if f.section is None else board[f.section]
         assert f.default == defaults[f.key], f.name
 
@@ -387,6 +391,8 @@ def test_the_dashboard_s_fields_show_dashboard_options_defaults():
             assert parsed(f.default) == loaded
         elif f.key == "kb_incidents_url":
             assert f.default == "" and kb_url_is_placeholder(loaded)  # shown empty: engineering works are off
+        elif f.kind == "show":
+            assert f.default == show.ordered("dashboard", loaded), f.name
         else:
             assert f.default == loaded, f.name
 

@@ -6,6 +6,7 @@ The [setup wizard](setup-wizard.md) and the [settings](settings.md) cover nearly
 - [Without the wizard](#without-the-wizard)
 - [Where things are kept](#where-things-are-kept)
 - [The dashboard's settings](#the-dashboards-settings)
+- [What each view shows](#what-each-view-shows)
 - [Rain warning set-up](#rain-warning-set-up)
 - [Bank holidays](#bank-holidays)
 
@@ -59,9 +60,29 @@ The Dashboard page's settings can also go under `[dashboard]` in `config.toml`. 
 | `late_minutes_train`, `late_minutes_bus` | 3, 2 | How late counts as late in the history (1 to 60) |
 | `history_days` | 90 | How many days of history to keep and show (1 to 3650) |
 | `row_strips` | `true` | Each row's small drawing of its stops, with the train or bus on it (never on a wall tablet) |
+| `show` | everything | What the dashboard shows beside the departures: see [What each view shows](#what-each-view-shows) |
 | `kb_incidents_url` | a placeholder | The engineering works address from the RDM Knowledgebase Incidents product page |
 | `allowed_hosts` | `[]` | Extra names the dashboard and settings answer to (`config.toml` only) |
 | `state_dir` | see [Where things are kept](#where-things-are-kept) | Where the app keeps its files (`config.toml` only) |
+
+## What each view shows
+
+**What to show** on the [Board](settings.md#board) and [Dashboard](settings.md#dashboard) pages saves a list for each view, `[board] show` and `[dashboard] show`, which can go in `config.toml` too. Each names what that view shows beside the departures' times, which always show; anything left out isn't drawn. A list naming anything else isn't loaded, and the page says why.
+
+```toml
+[board]
+show = ["platforms", "where", "disruption", "rain", "last_bus", "bus_page"]
+
+[dashboard]
+show = ["next_to_catch", "where", "disruptions", "weather", "last_buses", "area_map", "remind"]
+```
+
+| View | Items, in the order the settings list them |
+|---|---|
+| Board | `platforms`, `where`, `disruption`, `rain`, `last_bus`, `bus_page`, `calling_at`, `clock_page` |
+| Dashboard | `next_to_catch`, `where`, `disruptions`, `weather`, `last_buses`, `area_map`, `remind`, `calling_at`, `coaches`, `punctuality`, `performance`, `fleet_numbers`, `announce` |
+
+The example above is The usual preset; `show = []` is Just the times (the dashboard's adds `next_to_catch`), and every item is Everything. Without a list, a view shows everything, except the board's clock page, which shows only with the older `clock_page = true`. Once the board has a list, `clock_page` is ignored: the list says.
 
 ## Rain warning set-up
 

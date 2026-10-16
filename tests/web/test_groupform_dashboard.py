@@ -166,6 +166,28 @@ def test_position_strips_are_on_until_switched_off(form):
     assert fields_of(form)["row_strips"] == "false"
 
 
+def test_the_dashboard_shows_everything_until_its_list_is_saved(form):
+    from twobells.settings import show
+
+    shown = fields_of(form)
+    assert [key for key in show.keys("dashboard") if shown.get(f"dashboard_show-{key}") == "on"] == list(
+        show.keys("dashboard"))
+    page = form.render("tok")
+    assert '<legend class="vh">What to show</legend>' in page and '"board_show' not in page
+    sent = {k: v for k, v in shown.items() if k not in ("dashboard_show-weather", "dashboard_show-announce")}
+    assert form.save(sent) == {}
+    written = tomllib.loads((form.folder / "settings.toml").read_text())["dashboard"]["show"]
+    assert written == [key for key in show.keys("dashboard") if key not in ("weather", "announce")]
+    assert load_dashboard(form.config, ENV, form.folder, lock=False).options.show == set(written)
+
+
+def test_the_dashboard_s_presets_fill_its_list(form):
+    assert form.save(fields_of(form) | {"dashboard_show_preset": "times"}) == {}
+    assert tomllib.loads((form.folder / "settings.toml").read_text())["dashboard"]["show"] == ["next_to_catch"]
+    shown = fields_of(form)
+    assert shown["dashboard_show-next_to_catch"] == "on" and "dashboard_show-weather" not in shown
+
+
 def test_every_field_the_page_saves_is_read_back():
     from twobells.settings.schema import FIELDS, saved_keys
 

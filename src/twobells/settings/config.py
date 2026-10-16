@@ -35,6 +35,7 @@ from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES
 from ..sources.transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
 from ..sources.transportapi import TransportApiBusSource
 from ..sources.weather import OpenMeteoSource
+from . import show
 from .schema import BOARD_DEFAULTS, CRS, DEFAULT_BUS_SOURCE, NOC, bus_defaults, refused, saved_keys, views
 
 if TYPE_CHECKING:
@@ -521,6 +522,21 @@ def _rotate(data: dict, epaper: bool) -> int:
     return rotate
 
 
+# What [board] may hold: what the board shows (settings/show.py).
+_BOARD_KEYS = {"show"}
+
+
+def _board_show(data: dict) -> frozenset[str]:
+    """What the board shows: [board] show, or without it everything, the
+    clock page only if the older clock_page = true says so."""
+    board = _table(data, "board", "[board]")
+    unknown = sorted(set(board) - _BOARD_KEYS)
+    if unknown:
+        raise ConfigError(f"[board] has unknown settings: {', '.join(map(str, unknown))}")
+    _flag(data, show.OLDER_CLOCK_PAGE, False)
+    return show.shown(data, "board")
+
+
 def load_config(
     store: Store | Path | str,
     env: Mapping[str, str],
@@ -612,7 +628,7 @@ def settings_from(
         weather=_weather(data, sources, timezone) if only is None else None,
         reset_code=reset_code_page(folder, timezone) if folder and only is None else None,
         positions=positions,
-        clock_page=_flag(data, "clock_page", BOARD_DEFAULTS["clock_page"]),
+        show=_board_show(data),
     )
     return Settings(
         board=board,

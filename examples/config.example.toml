@@ -52,11 +52,16 @@ bank_holidays = true
 bank_holiday_division = "england-and-wales"
 # The plain look's text size, 9-16 (11 is standard); bigger shows fewer departures on a small display.
 # text_size = 12
-# An HDMI screen only: a platform clock page between the departures. Also on the Board tab.
-# clock_page = true
 # Degrees to turn the board clockwise to suit how it is mounted.
 # E-paper: 0 or 180. The 7.9" screen is portrait out of the box: 90 or 270.
 rotate = 0
+
+# What the board shows beside the departures' times, which always show:
+# "platforms", "where", "disruption", "rain", "last_bus", "bus_page",
+# "calling_at" and "clock_page" (the last five on an HDMI screen only). Also
+# What to show on the Board tab. Without it, everything but the clock page.
+# [board]
+# show = ["platforms", "where", "disruption", "rain", "last_bus", "bus_page"]
 
 # Which views are on: "board" (a Pi only), "dashboard", or both. The setup
 # wizard and the General tab set it. Default: the board on a Pi, the
@@ -161,6 +166,10 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # late_minutes_bus = 2            # 1-60
 # history_days = 90               # 1-3650: days of history kept and shown
 # row_strips = true               # each row's small drawing of its stops; never on a wall tablet
+# What the page shows beside the departures' times (default: everything): "next_to_catch", "where",
+# "disruptions", "weather", "last_buses", "area_map", "remind", "calling_at", "coaches", "punctuality",
+# "performance", "fleet_numbers" and "announce". Also What to show on the Dashboard tab.
+# show = ["next_to_catch", "where", "disruptions", "weather", "last_buses", "area_map", "remind"]
 # allowed_hosts = []              # extra host names the dashboard and settings answer to, like ["ds.home"]
 # Rail engineering works: the Knowledgebase Incidents address from the RDM
 # product page. Until it is set, they stay off, even with RDM_KB_API_KEY. The

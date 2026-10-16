@@ -20,6 +20,7 @@ from ..core.errors import safe_message
 from ..core.model import Departure, mark_platform_changes, minutes_between
 from ..core.polling import PollPolicy
 from ..core.walk import WalkTimes, leave_time
+from ..settings import show as show_items
 from ..sources.bods import Vehicle
 from ..sources.lastbus import screen_line
 from ..sources.weather import Hour, hours_from_dicts, hours_to_dicts, rain_line
@@ -146,8 +147,10 @@ class Board:
     setup: SetupView | None = None
     # Where each shown train and bus is, for a screen's rows; e-paper never asks.
     positions: Positions | None = None
-    # A screen's platform clock page, between the departures; e-paper never shows it.
-    clock_page: bool = False
+    # What the board shows of what it can leave out ([board] show, settings/show.py):
+    # by default all of it but the clock page. E-paper leaves out what only a
+    # screen draws, whatever this says.
+    show: frozenset[str] = field(default_factory=lambda: show_items.default("board"))
 
 
 def reset_code_page(folder: Path, timezone: str) -> Callable[[], CodeView | None]:
@@ -460,13 +463,15 @@ def run_once(
         strips=strips,
         # Only a screen wide enough draws them; e-paper never asks.
         stop_names=_stop_names(board) if live else None,
-        last_bus=_last_bus(board, now) if live else None,
+        last_bus=_last_bus(board, now) if live and "last_bus" in board.show else None,
+        show=board.show,
     )
 
     code = _reset_code(board)
     departures_page = code is None and board.setup is None
-    route = _route_view(board, state, view, now, view.clock) if live and departures_page else None
-    clock = live and departures_page and board.clock_page
+    route = (_route_view(board, state, view, now, view.clock)
+             if live and departures_page and "bus_page" in board.show else None)
+    clock = live and departures_page and "clock_page" in board.show
     page = _screen_page(now.minute * 60 + now.second, route is not None, clock) if live else "departures"
     shown: BoardView | RouteView | CodeView | SetupView | ClockView
     if code is not None:

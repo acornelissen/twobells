@@ -126,7 +126,7 @@ The 10.85" display shows the same board with bigger dots and more room, so long 
 
 ## The HDMI screen
 
-The screen can redraw every second, so it shows a bit more:
+The screen can redraw every second, so it shows a bit more. **What to show** on the [Board page](settings.md#board) of the settings can leave any of it out but the times, and the board then draws the rest with no gap where it was: platforms, where each train and bus is, the calling-at line, disruption notices, the rain warning, the last bus, the bus page and the clock page.
 
 ![Departures on the 7.9 inch HDMI screen](images/screen-departures.png)
 
@@ -170,7 +170,7 @@ The page only appears when the board is checking buses (see [When it checks](#wh
 
 ### The clock page
 
-Off unless you switch it on: **Clock page** on the [Board page](settings.md#board) of the settings, or `clock_page = true` in `config.toml`. Then, after the departures (and the bus page, when it shows), the screen shows a platform clock for 10 seconds: the screen goes round every 25 seconds, or 35 with the bus page too.
+Off unless you tick it: **Clock page** under **What to show** on the [Board page](settings.md#board) of the settings, or `"clock_page"` in `[board] show` in `config.toml` (see [What each view shows](configuration.md#what-each-view-shows)). Then, after the departures (and the bus page, when it shows), the screen shows a platform clock for 10 seconds: the screen goes round every 25 seconds, or 35 with the bus page too.
 
 ![The clock page on the HDMI screen](images/screen-clock.png)
 

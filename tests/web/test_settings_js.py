@@ -268,6 +268,44 @@ def test_day_buttons_tick_a_rows_days_and_count_as_its_change(board_page):
     assert found["rows"] == found["windows"] > 0
 
 
+def test_a_show_list_s_presets_become_buttons_that_tick_its_boxes(board_page):
+    found = run(board_page, """
+        const list = document.querySelector(".show-list");
+        const choice = list.querySelector(".show-presets");
+        const buttons = list.querySelectorAll(".show-preset-buttons button");
+        const named = buttons.map((b) => [b.textContent, b.getAttribute("type")]);
+        const ticks = () => list.querySelectorAll('input[type="checkbox"]').filter((b) => b.checked).map((b) => b.id.slice(11));
+        const before = ticks();
+        fire(buttons[0], "click");
+        const times = ticks();
+        fire(buttons[2], "click");
+        const everything = ticks();
+        flush();
+        const counted = said();
+        fire(buttons[1], "click");
+        const usual = ticks();
+        flush();
+        console.log(JSON.stringify({
+          named, before, times, everything, usual, counted, after: said(),
+          legend: choice.querySelector("legend").textContent,
+          // The buttons sit under the choice's legend; its radios are hidden, left on None.
+          inside: buttons[0].closest(".show-presets") === choice,
+          hidden: choice.querySelector(".options").hidden === true,
+          none: list.querySelector('input[type="radio"]:checked').getAttribute("value"),
+        }));
+    """)
+    assert found["named"] == [["Just the times", "button"], ["The usual", "button"], ["Everything", "button"]]
+    usual = ["platforms", "where", "disruption", "rain", "last_bus", "bus_page"]
+    assert found["before"] == [*usual, "calling_at"]  # no list saved: all but the clock page
+    assert found["times"] == []
+    assert found["everything"] == [*usual, "calling_at", "clock_page"]
+    assert found["usual"] == usual
+    assert found["counted"] == "1 unsaved change"  # the clock page's box
+    assert found["after"] == "1 unsaved change"  # the calling-at box
+    assert found["legend"] == "Fill in from a preset" and found["inside"] and found["hidden"]
+    assert found["none"] == ""
+
+
 def test_each_key_form_counts_and_is_sent_on_its_own(keys_page):
     found = run(keys_page, """
         const forms = document.querySelectorAll("form.keyform");

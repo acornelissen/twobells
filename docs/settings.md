@@ -55,9 +55,20 @@ How the board is doing is on the [Overview](#overview), under **On the board**: 
 - **Display**
   - **Look:** station board or plain, and on an HDMI screen also TFT, white and yellow on black (see [Reading the board](reading-the-board.md#the-tft-look)), and split-flap, white letters on flipping tiles (see [Reading the board](reading-the-board.md#the-split-flap-look)). E-paper isn't offered either, and refuses them in `config.toml` (`theme = "tft"` or `"flap"`).
   - **Rotation:** if the display is mounted upside down (or, for the screen, on its side).
-  - **Clock page:** on or off, off unless you switch it on. HDMI screens only: 10 seconds of a platform clock after the departures and the bus page (see [The clock page](reading-the-board.md#the-clock-page)). E-paper ignores it.
   - **Display:** which display `config.toml` sets. Changing it means switching services, so it's set there only.
   - Advanced: **Accent colour**, the look's own (amber for the station board, yellow for TFT and split-flap, red for plain) or another that stays readable on the look's background (a colour too faint on the background isn't offered); **Redraw at most every** so many minutes, e-paper only (lower means fresher but more wear and flicker; 2 is a good balance); **Text size**, the plain look only, 9 to 16 (11 is standard; bigger shows fewer departures on a small display).
+- **What to show:** a tickbox for each thing the board can show beside the departures' times, which always show. Anything unticked isn't drawn, and leaves no gap. Those marked **Screens only** show only on an HDMI screen; e-paper ignores them.
+  - **Platforms:** each train's platform, a changed one marked, and its via words, on a display wide enough for a platform column.
+  - **Where it is:** where each train and bus is, in words and a small strip (screens only).
+  - **Disruption:** the station's disruption notices.
+  - **Rain warning:** when rain is likely before you'd reach your train or bus.
+  - **Last bus:** when the last bus goes, in its last hour (screens only).
+  - **Bus page:** a page following the next bus in on its route, where setup has its stops (screens only).
+  - **Calling at:** the first train's stops, scrolling under it (screens only).
+  - **Clock page:** 10 seconds of a platform clock after the departures and the bus page (screens only; see [The clock page](reading-the-board.md#the-clock-page)).
+  - **Fill in from a preset** ticks the boxes at once: **Just the times** (none of them), **The usual** (all but Calling at and the clock page) or **Everything**. Nothing changes until you save. Without JavaScript the presets are a choice, which saving applies in place of the ticks.
+
+  Until you save this list, the board shows everything but the clock page, as it did before the list; a clock page switched on before (`clock_page = true`) stays on, and is ticked here.
 - **Trains** and **Buses**, each:
   - **Trains shown** or **Buses shown**.
   - **When to check for trains** and **When to check for buses:** each checking time is a row of its own: tick its days, and give it a **From** and a **To** time, 24-hour like `06:30`. A To earlier than its From runs past midnight: Friday from 22:00 to 01:00 runs from Friday night into Saturday morning. Two empty rows follow the saved ones for new times; leave a row empty to remove it. Outside these times the board shows what it last knew, without saying "not updating". In `config.toml` the same times are written like `Mon-Fri 06:30-09:30`: days can be `Mon-Sun`, `Sat,Sun`, `Mon-Fri`, or wrap round the week like `Fri-Mon`, and `Fri 22:00-01:00` runs past midnight. A saved time the page can't show as days and times is shown as it is, and has to be removed before the page saves.
@@ -67,8 +78,25 @@ How the board is doing is on the [Overview](#overview), under **On the board**: 
 
 - **Departures**
   - **Most trains listed** and **Most buses listed:** the first 5 show; the rest are behind **Show later departures**. A wall tablet shows 4.
-  - **Position strips in each row:** on or off. On, each departure row has a small drawing of its stops with the train or bus where it is; off, the rows keep their words without it. A wall tablet never shows them.
+  - **Position strips in each row:** on or off. On, each departure row has a small drawing of its stops with the train or bus where it is; off, the rows keep their words without it. Neither shows while **What to show** leaves out **Where it is**. A wall tablet never shows them.
   - Advanced: **Check for trains every** and **Check for buses every** so many seconds; **Check the forecast every** so many minutes; **Count trains as late from** and **Count buses as late from** so many minutes, for the punctuality history; **Keep punctuality history for** so many days (1 to 3650).
+- **What to show:** a tickbox for each thing the dashboard can show beside the departures' times, which always show. Anything unticked isn't drawn, on a wall tablet too, and leaves no gap; the punctuality history keeps recording whatever is shown.
+  - **Next to catch:** the departure to leave for next, with its countdown.
+  - **Where it is:** where each train and bus is, in its row (with its strip while **Position strips in each row** is on).
+  - **Disruption:** disruption on your journeys, under Next to catch, its links on bus rows, and its announcements to screen readers.
+  - **Weather:** the forecast, and the rain sentence under Next to catch.
+  - **Last buses:** when each line's last bus goes, under the buses and in a bus's details.
+  - **Around here:** trains on the line, and the map of buses nearby.
+  - **Remind me:** reminders to leave, from Next to catch and a departure's details.
+  - **Calling at:** the first train's stops, under its row.
+  - **Coaches:** a train's coaches, in its details.
+  - **Punctuality:** "Often late" in a row, and a departure's punctuality and tracker record in its details.
+  - **Performance:** the link to the [Performance page](dashboard.md#performance), with Delay Repay. Its address still works, and says it is left out.
+  - **Fleet numbers:** which bus it is, in a live bus's details.
+  - **Announcements:** **Announce** in a train's details, and a wall tablet's own station announcements.
+  - **Fill in from a preset** ticks the boxes at once: **Just the times** (Next to catch alone), **The usual** (also Where it is, Disruption, Weather, Last buses, Around here and Remind me) or **Everything**. Nothing changes until you save. Without JavaScript the presets are a choice, which saving applies in place of the ticks.
+
+  Until you save this list, the dashboard shows everything.
 - **Quiet hours**
   - **When to stop checking:** rows of days and times, as for the board's checking times; 01:00 to 05:00 every day unless you change it. The dashboard stops checking for departures and the weather then, unless a browser has it open: a wall tablet keeps it checking, and dims to a [platform clock](dashboard.md#wall-tablet-kiosk). Leave every row empty to check all the time.
 

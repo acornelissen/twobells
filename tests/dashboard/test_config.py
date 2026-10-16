@@ -9,6 +9,7 @@ from twobells.dashboard.config import (
     dashboard_target,
     load_dashboard,
 )
+from twobells.settings import show
 from twobells.settings.config import ConfigError
 from twobells.settings.overlay import OverlayError, save_to
 from twobells.settings.store import Store
@@ -76,6 +77,7 @@ def test_defaults_without_a_dashboard_table():
     assert (options.late_minutes_train, options.late_minutes_bus, options.history_days) == (3, 2, 90)
     assert options.allowed_hosts == frozenset()
     assert options.row_strips is True
+    assert options.show == set(show.keys("dashboard"))  # everything, without a list
     [window] = options.quiet_windows
     assert window.days == frozenset(range(7))
     assert (str(window.start), str(window.end)) == ("01:00:00", "05:00:00")
@@ -87,8 +89,10 @@ def test_reads_every_setting():
         "bus_interval_seconds": 15, "weather_interval_minutes": 10, "quiet_windows": ["Mon-Fri 00:30-05:30"],
         "late_minutes_train": 5, "late_minutes_bus": 1, "history_days": 30,
         "allowed_hosts": ["Departures.Example.com", "nas"], "row_strips": False,
+        "show": ["next_to_catch", "weather"],
     }})
     assert options.state_dir == "/data"
+    assert options.show == {"next_to_catch", "weather"}
     assert options.row_strips is False
     assert (options.train_rows, options.bus_rows) == (20, 1)
     assert options.quiet_windows[0].days == frozenset(range(5))
@@ -119,6 +123,9 @@ def test_reads_every_setting():
     ("allowed_hosts", [""], "not a host name"),
     ("row_strips", "off", "row_strips must be true or false"),
     ("row_strips", 0, "row_strips must be true or false"),
+    ("show", "weather", "show must be a list"),
+    ("show", ["weather", "clock_page"], "'clock_page' is not something the dashboard shows"),
+    ("show", ["weather", "weather"], "more than once"),
     ("train_details", "auto", "unknown settings: train_details"),
 ])
 def test_bad_settings_are_named(key, value, words):

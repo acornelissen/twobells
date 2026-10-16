@@ -353,14 +353,118 @@ def test_a_screen_can_turn_a_quarter(tmp_path):
     assert load_config(config, ENV).rotate == 270
 
 
-def test_the_clock_page_is_off_until_switched_on_and_saves(tmp_path):
+def test_the_clock_page_is_off_until_ticked_and_saves_in_the_show_list(tmp_path):
     form = _form_for(tmp_path, 'theme = "sign"\ndisplay = "hdmi-1280x400"')
     page = form.render("tok")
-    assert "Clock page" in page and "HDMI screens only." in page
-    assert fields_of(form)["clock_page"] == "false"
-    assert form.save(fields_of(form) | {"clock_page": "true"}) == {}
-    assert load_config(tmp_path / "config.toml", ENV).board.clock_page is True
-    assert "clock_page" in form.save(fields_of(form) | {"clock_page": "sometimes"})
+    assert '<label for="board_show-clock_page">Clock page</label>' in page and "Screens only." in page
+    assert "clock_page" not in fields_of(form) and "board_show-clock_page" not in fields_of(form)
+    assert form.save(fields_of(form) | {"board_show-clock_page": "on"}) == {}
+    assert "clock_page" in load_config(tmp_path / "config.toml", ENV).board.show
+    assert "board_show" in form.save(fields_of(form) | {"board_show-clock_page": "sometimes"})
+
+
+def test_the_older_clock_page_setting_shows_ticked_and_moves_into_the_list(tmp_path):
+    form = _form_for(tmp_path, 'theme = "sign"\ndisplay = "hdmi-1280x400"\nclock_page = true')
+    assert fields_of(form)["board_show-clock_page"] == "on"
+    # Saved with the list unchanged, nothing is written: the older setting still says it.
+    assert form.save(fields_of(form)) == {}
+    assert "board" not in tomllib.loads(_saved_text(form))
+    # Changed, the list is saved, the clock page in it as it was.
+    assert form.save(fields_of(form) | {"board_show-calling_at": ""}) == {}
+    written = tomllib.loads(_saved_text(form))["board"]["show"]
+    assert written == ["platforms", "where", "disruption", "rain", "last_bus", "bus_page", "clock_page"]
+    assert load_config(tmp_path / "config.toml", ENV).board.show == set(written)
+
+
+def _saved_text(form):
+    path = form._store.settings_file
+    return path.read_text() if path.exists() else ""
+
+
+def test_the_board_s_show_list_is_a_labelled_group_of_tickboxes_with_presets(tmp_path):
+    form = _form_for(tmp_path, 'theme = "sign"\ndisplay = "hdmi-1280x400"')
+    page = form.render("tok")
+    group = page[page.index('<fieldset class="field show-list"'):]
+    group = group[:group.index('<div class="savebar">')]
+    # One group, named by its (visually hidden) legend and described by its hint.
+    assert group.startswith('<fieldset class="field show-list" aria-describedby="board_show-hint">'
+                            '<legend class="vh">What to show</legend>')
+    # The presets first, as a choice of their own, with none picked.
+    presets = re.findall(r'<input type="radio" id="[\w-]+" name="board_show_preset" value="(\w*)"( checked)?', group)
+    assert presets == [("", " checked"), ("times", ""), ("usual", ""), ("everything", "")]
+    assert "<legend>Fill in from a preset</legend>" in group
+    # Then a tickbox each, its label beside it, saying which presets include it.
+    boxes = re.findall(r'<div class="field check" data-presets="([\w ]+)"><input id="board_show-(\w+)" '
+                       r'name="board_show-\w+" type="checkbox" value="on"( checked)? '
+                       r'aria-describedby="board_show-\w+-hint"><label for="board_show-(\w+)">', group)
+    assert [(key, label_for) for _, key, _, label_for in boxes] == [(k, k) for k in BOARD_ITEMS]
+    assert [presets for presets, *_ in boxes] == ["usual everything"] * 6 + ["everything"] * 2
+    assert [bool(on) for _, _, on, _ in boxes] == [True] * 7 + [False]  # all but the clock page
+
+
+BOARD_ITEMS = ["platforms", "where", "disruption", "rain", "last_bus", "bus_page", "calling_at", "clock_page"]
+
+
+def test_unticking_items_saves_the_board_s_show_list(tmp_path):
+    form = _form_for(tmp_path, 'theme = "sign"\ndisplay = "hdmi-1280x400"')
+    changed = []
+    sent = fields_of(form) | {"board_show-rain": "", "board_show-where": ""}
+    assert form.save({k: v for k, v in sent.items() if v}, changed) == {}
+    assert tomllib.loads(_saved_text(form))["board"]["show"] == [
+        "platforms", "disruption", "last_bus", "bus_page", "calling_at"]
+    assert "What to show" in changed
+    shown = fields_of(form)
+    assert "board_show-rain" not in shown and shown["board_show-platforms"] == "on"
+
+
+@pytest.mark.parametrize("preset, expected", [
+    ("times", []),
+    ("usual", ["platforms", "where", "disruption", "rain", "last_bus", "bus_page"]),
+    ("everything", BOARD_ITEMS),
+])
+def test_a_preset_picked_on_saving_replaces_the_ticks(tmp_path, preset, expected):
+    form = _form_for(tmp_path, 'theme = "sign"\ndisplay = "hdmi-1280x400"')
+    # Without JavaScript the boxes stay as they were; the preset says what shows.
+    assert form.save(fields_of(form) | {"board_show_preset": preset, "board_show-calling_at": ""}) == {}
+    assert tomllib.loads(_saved_text(form))["board"]["show"] == expected
+    assert fields_of(form)["board_show_preset"] == ""  # drawn again with no preset picked
+
+
+@pytest.mark.parametrize("sent", [{"board_show_preset": "most"}, {"board_show-weather": "on"},
+                                  {"board_show-rain": "yes"}])
+def test_a_show_list_takes_only_what_the_form_offers(tmp_path, sent):
+    form = _form_for(tmp_path, 'theme = "sign"\ndisplay = "hdmi-1280x400"')
+    errors = form.save(fields_of(form) | sent)
+    if "board_show-weather" in sent:  # a box the form doesn't draw isn't read
+        assert errors == {}
+        assert "board" not in tomllib.loads(_saved_text(form))
+        return
+    assert set(errors) == {"board_show"}
+    assert not _saved_text(form)
+    page = form.render("tok", errors=errors, values=fields_of(form) | sent)
+    assert '<a href="#board_show-platforms">What to show:' in page
+    assert 'class="field show-list has-error"' in page
+
+
+def test_a_refused_save_draws_the_ticks_again_as_sent(tmp_path):
+    form = _form_for(tmp_path, 'theme = "sign"\ndisplay = "hdmi-1280x400"')
+    sent = {k: v for k, v in fields_of(form).items() if k != "board_show-rain"} | {"title": ""}
+    errors = form.save(sent)
+    assert "title" in errors
+    page = form.render("tok", errors=errors, values=sent)
+    assert 'id="board_show-rain" name="board_show-rain" type="checkbox" value="on" aria' in page
+    assert 'id="board_show-platforms" name="board_show-platforms" type="checkbox" value="on" checked' in page
+    assert '<fieldset class="field show-list" aria-describedby="board_show-hint" data-unsaved>' in page
+
+
+def test_a_broken_show_list_shows_the_default_and_saving_says_what_is_wrong(tmp_path):
+    form = _form_for(tmp_path, 'theme = "sign"\ndisplay = "hdmi-1280x400"')
+    (tmp_path / "config.toml").write_text((tmp_path / "config.toml").read_text() + '[board]\nshow = ["weather"]\n')
+    assert fields_of(form)["board_show-platforms"] == "on"
+    errors = form.save(fields_of(form))
+    assert "weather" in errors["_form"]
+    assert form.save(fields_of(form) | {"board_show-rain": ""}) == {}  # a new list replaces it
+    assert "rain" not in load_config(tmp_path / "config.toml", ENV).board.show
 
 
 def test_removing_a_stop_takes_effect(setup):

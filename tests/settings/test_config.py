@@ -706,12 +706,49 @@ def test_text_size_sets_the_plain_look_and_is_checked(tmp_path):
 
 
 def test_the_clock_page_is_off_unless_switched_on_and_is_checked(tmp_path):
+    # The older setting, from before [board] show: read while there is no list.
     base = 'display = "hdmi-1280x400"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n'
-    assert load_config(write(tmp_path, base), ENV).board.clock_page is False
-    assert load_config(write(tmp_path, "clock_page = true\n" + base), ENV).board.clock_page is True
+    assert "clock_page" not in load_config(write(tmp_path, base), ENV).board.show
+    assert "clock_page" in load_config(write(tmp_path, "clock_page = true\n" + base), ENV).board.show
     for bad in ('clock_page = "yes"\n', "clock_page = 1\n"):
         with pytest.raises(ConfigError, match="clock_page must be true or false"):
             load_config(write(tmp_path, bad + base), ENV)
+
+
+BOARD_BASE = 'display = "hdmi-1280x400"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n'
+
+
+def test_without_a_show_list_the_board_shows_everything_but_the_clock_page(tmp_path):
+    shown = load_config(write(tmp_path, BOARD_BASE), ENV).board.show
+    assert shown == {"platforms", "where", "disruption", "rain", "last_bus", "bus_page", "calling_at"}
+
+
+def test_the_board_shows_just_what_its_list_names(tmp_path):
+    board = load_config(write(tmp_path, BOARD_BASE + '[board]\nshow = ["platforms", "clock_page"]\n'), ENV).board
+    assert board.show == {"platforms", "clock_page"}
+    assert load_config(write(tmp_path, BOARD_BASE + "[board]\nshow = []\n"), ENV).board.show == set()
+
+
+def test_a_show_list_wins_over_the_older_clock_page(tmp_path):
+    text = "clock_page = true\n" + BOARD_BASE + '[board]\nshow = ["rain"]\n'
+    assert load_config(write(tmp_path, text), ENV).board.show == {"rain"}
+
+
+@pytest.mark.parametrize("board, match", [
+    ('show = ["platforms", "weather"]', r"\[board\] show: 'weather' is not something the board shows"),
+    ('show = "platforms"', r"\[board\] show must be a list"),
+    ("show = [1]", r"\[board\] show must be a list"),
+    ('show = ["rain", "rain"]', "more than once"),
+    ("rows = 3", r"\[board\] has unknown settings: rows"),
+])
+def test_a_board_show_list_is_checked(tmp_path, board, match):
+    with pytest.raises(ConfigError, match=match):
+        load_config(write(tmp_path, BOARD_BASE + f"[board]\n{board}\n"), ENV)
+
+
+def test_board_must_be_a_table(tmp_path):
+    with pytest.raises(ConfigError, match=r"\[board\] must be a table"):
+        load_config(write(tmp_path, 'board = "everything"\n' + BOARD_BASE), ENV)
 
 
 def test_panel_colour_is_separate_from_the_accent(tmp_path):

@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..board.displays.display import DISPLAY_PANELS
-from ..settings import schema
+from ..settings import schema, show
 from ..settings.config import ConfigError, merge, settings_from
 from ..settings.overlay import BROKEN_NAME, OverlayError, save_to
 from ..settings.schema import Field, Invalid
@@ -51,6 +51,8 @@ NOTES: dict[tuple[str, str], str] = {
     ("trains_buses", "Buses"): "Departures from your stops.",
     ("trains_buses", "Weather"): "A rain warning beside the departures, and the dashboard's forecast.",
     ("board", "Display"): "How the board looks.",
+    ("board", "What to show"): "What the board shows beside the departures.",
+    ("dashboard", "What to show"): "What the dashboard shows beside the departures.",
     ("board", "Trains"): "How many trains the board shows, and when it checks for them.",
     ("board", "Buses"): "How many buses the board shows, and when it checks for them.",
     ("dashboard", "Departures"): "How many departures the dashboard lists, and how often it checks.",
@@ -265,6 +267,9 @@ class GroupForm:
                 values |= walks
                 values[f.name] = _walk_text({box[len(f.name) + 1:]: value for box, value in walks.items()})
                 continue
+            if f.kind == "show":
+                values |= _show_shown(f, data)
+                continue
             source = data if f.section is None else data.get(f.section, {})
             value = source.get(f.key) if isinstance(source, dict) else None
             if value is None:
@@ -308,6 +313,9 @@ class GroupForm:
                 continue  # not set up: setup or config.toml adds it
             if f.kind == "per_stop":
                 errors |= self._save_walks(f, data, fields, shown, f.needs in off, changes)
+                continue
+            if f.kind == "show":
+                errors |= _save_show(f, fields, shown, changes)
                 continue
             if (f.needs in off and f.key != "enabled" and not rows.get(f.name)
                     and not edited(fields.get(f.name, ""), shown[f.name])):
@@ -357,7 +365,7 @@ class GroupForm:
             same = not edited(old, new) if f.kind in ("text", "area", "windows", "per_stop") else old == new
             if same:
                 continue
-            if f.kind in ("text", "area", "windows", "per_stop"):
+            if f.kind in ("text", "area", "windows", "per_stop", "show"):
                 said.append(f.label)
             else:
                 said.append(f"{f.label}, {_words(f, old)} to {_words(f, new)}")
@@ -480,6 +488,7 @@ class GroupForm:
         unsaved: set[str] = set()
         if values is not None:  # drawn again as sent: an unticked box isn't sent, so it stays unticked
             shown |= {f.name: values.get(f.name, "") for f in fields if f.kind == "check"}
+            shown |= {box: values.get(box, "") for f in fields if f.kind == "show" for box in _show_boxes(f)}
             unsaved = self._unsaved(fields, data, values)
         sections = self._sections(fields, data)
         out = [self._header(csrf)]
@@ -583,6 +592,8 @@ class GroupForm:
             drawn = windowrows.render(f, shown, errors)
         elif f.kind == "per_stop":
             drawn = self._walks(f, data, shown, errors)
+        elif f.kind == "show":
+            drawn = _show_list(f, shown, errors.get(f.name))
         else:
             drawn = self._field(f, data, shown.get(f.name, ""), errors.get(f.name))
         if f.name in unsaved and drawn:
@@ -601,6 +612,9 @@ class GroupForm:
                 differs = bool(mistakes) or edited(text, was)
             elif f.kind == "per_stop":
                 differs = any(edited(values.get(box, ""), current.get(box, "")) for box, _ in self._walk_boxes(f, data))
+            elif f.kind == "show":
+                differs = bool(values.get(_preset_name(f))) or any(
+                    values.get(box, "") != current.get(box, "") for box in _show_boxes(f))
             elif f.kind in ("text", "number", "area"):
                 differs = edited(values.get(f.name, ""), was)
             else:
@@ -670,6 +684,8 @@ class GroupForm:
                     anchors[name], names[name] = windowrows.anchor(f.name, name), windowrows.said(f, name)
             if f.kind == "per_stop":
                 names |= {box: f"{f.heading} – {f.label}, {words}" for box, words in self._walk_boxes(f, data)}
+            if f.kind == "show" and f.name in errors:
+                anchors[f.name] = _show_boxes(f)[0]
         items = "".join(
             f'<li><a href="#{e(anchors.get(name, name))}">{e(names.get(name, name))}: {e(text)}</a></li>'
             if name != "_form" else f"<li>{e(text)}</li>"
@@ -700,6 +716,80 @@ def _described(name: str, hint: str, error: str | None, also: str = "") -> tuple
     if error:
         attrs += ' aria-invalid="true"'
     return attrs, "".join(parts)
+
+
+# A view's show list (settings/show.py): a tickbox for each item, named
+# "<field>-<item>", and the presets as a choice, "<field>_preset", that
+# saving applies in place of the ticks. settings.js swaps the choice for
+# buttons that tick the boxes at once.
+
+_NO_PRESET = "None: as ticked below"
+_PRESET_HINT = "Saving with a preset picked shows just what it includes, whatever is ticked."
+_SCREENS_ONLY = "Screens only."
+
+
+def _preset_name(f: Field) -> str:
+    return f"{f.name}_preset"
+
+
+def _show_boxes(f: Field) -> list[str]:
+    """The names of a show list's tickboxes, one an item, in order."""
+    return [f"{f.name}-{key}" for key in show.keys(f.group)]
+
+
+def _show_shown(f: Field, data: dict) -> dict[str, str]:
+    """What a show list shows for settings `data`: each item's box ticked
+    ("on") or not, no preset picked, and the list itself as its keys
+    separated by spaces, to tell whether it changed. A list that doesn't
+    load shows the view's default; saving says what is wrong."""
+    try:
+        on = show.shown(data, f.group)
+    except ConfigError:
+        on = show.default(f.group, data)
+    values = {f"{f.name}-{key}": "on" if key in on else "" for key in show.keys(f.group)}
+    values[f.name] = " ".join(show.ordered(f.group, on))
+    values[_preset_name(f)] = ""
+    return values
+
+
+def _save_show(f: Field, fields: Mapping[str, str], shown: Mapping[str, str], changes: dict) -> dict[str, str]:
+    """A show list into `changes`, from its preset if one was picked, else
+    from its ticks; or its error. A list left as shown isn't written, so a
+    view without one keeps showing whatever it shows by default."""
+    names = tuple(name for name, _ in show.PRESETS)
+    try:
+        picked = fields.get(_preset_name(f), "")
+        if picked:
+            keys: tuple[str, ...] | list[str] = show.preset(f.group, schema.choice(names)(picked))
+        else:
+            keys = [key for key in show.keys(f.group) if schema.ticked(fields.get(f"{f.name}-{key}", ""))]
+        value = show.check(f.group)(" ".join(keys))  # f.check, typed
+    except Invalid as error:
+        return {f.name: str(error)}
+    if " ".join(value) != shown.get(f.name):
+        changes.setdefault(f.section, {})[f.key] = value
+    return {}
+
+
+def _show_list(f: Field, shown: Mapping[str, str], error: str | None) -> str:
+    """A show list: a group of its own, under the field's label, with the
+    presets first, then a tickbox for each item with what it is. Each box
+    says which presets include it (data-presets), for settings.js."""
+    e = html.escape
+    attrs, notes = _described(f.name, f.hint, error)
+    attrs = attrs.replace(' aria-invalid="true"', "")  # a fieldset takes none: the error says it of the group
+    hidden = ' class="vh"' if f.label == f.heading else ""
+    presets = replace(f, name=_preset_name(f), label="Fill in from a preset", kind="radios", hint=_PRESET_HINT,
+                      options=(("", _NO_PRESET), *show.PRESETS))
+    boxes = []
+    for item in show.items(f.group):
+        hint = f"{item.hint} {_SCREENS_ONLY}" if item.screen else item.hint
+        box = replace(f, name=f"{f.name}-{item.key}", label=item.label, kind="check", hint=hint)
+        boxes.append(_checkbox(box, shown.get(box.name, ""), None, f' data-presets="{e(" ".join(item.presets))}"'))
+    choice = _radios(presets, shown.get(presets.name, ""), None).replace("field radios", "field radios show-presets", 1)
+    return (f'<fieldset class="field show-list{" has-error" if error else ""}"{attrs}>'
+            f"<legend{hidden}>{e(f.label)}</legend>{notes}{choice}"
+            f'<div class="show-items">{"".join(boxes)}</div></fieldset>')
 
 
 def _label(f: Field) -> str:
@@ -757,13 +847,14 @@ def _radios(f: Field, value: str, error: str | None) -> str:
             f'{notes}<div class="options{inline}">{"".join(options)}</div></fieldset>')
 
 
-def _checkbox(f: Field, value: str, error: str | None) -> str:
-    """A checkbox, its label beside it and its hint and error below."""
+def _checkbox(f: Field, value: str, error: str | None, extra: str = "") -> str:
+    """A checkbox, its label beside it and its hint and error below.
+    `extra` is more attributes for the box's field."""
     e = html.escape
     attrs, notes = _described(f.name, f.hint, error)
     checked = " checked" if value == "on" else ""
     return (
-        f'<div class="field check{" has-error" if error else ""}">'
+        f'<div class="field check{" has-error" if error else ""}"{extra}>'
         f'<input id="{f.name}" name="{f.name}" type="checkbox" value="on"{checked}{attrs}>'
         f'<label for="{f.name}">{e(f.label)}</label>{notes}</div>'
     )

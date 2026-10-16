@@ -209,6 +209,8 @@ input.w-20 { width: 22em; max-width: 100%; }
 .check { display: grid; grid-template-columns: auto 1fr; column-gap: var(--s-3); align-items: start; }
 .check input { grid-row: 1 / span 3; width: 1.5rem; height: 1.5rem; min-height: 0; margin: 0.125rem 0 0; }
 .check label, .check .hint, .check .error { grid-column: 2; margin-bottom: var(--s-1); }
+/* A show list's items (groupform.py): a tickbox each, closer together than fields. */
+.show-items .field { margin-bottom: var(--s-3); }
 .error { color: var(--bad-fg); font-weight: 600; margin: 0 0 var(--s-2); }
 .tag { font-weight: 600; }
 /* What a page shows but can't change, and where it is changed instead. */
@@ -303,9 +305,9 @@ button.primary:hover { background: var(--accent); filter: brightness(1.08); }
 .savebar .unsaved { margin-left: auto; }
 .savebar .unsaved + button { margin-left: 0; }
 .key-actions .unsaved { align-self: center; }
-/* Ticking a time window's days at once (settings.js). */
-.presets { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-2) 0 var(--s-1); }
-.presets button { min-height: 2rem; padding: var(--s-1) var(--s-3); font-size: var(--t-sm); }
+/* Ticking a time window's days, or a show list's items, at once (settings.js). */
+.presets, .show-preset-buttons { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-2) 0 var(--s-1); }
+.presets button, .show-preset-buttons button { min-height: 2rem; padding: var(--s-1) var(--s-3); font-size: var(--t-sm); }
 
 /* Messages: red for what went wrong, green only as words. */
 .summary {
@@ -377,7 +379,7 @@ code { font-family: var(--mono); font-size: 0.9375em; overflow-wrap: anywhere; }
   .option label { padding: var(--s-2) 0; }
   .day { min-height: 2.75rem; }
   .day label { padding: var(--s-2) var(--s-2) var(--s-2) 0; }
-  .presets button { min-height: 2.75rem; }
+  .presets button, .show-preset-buttons button { min-height: 2.75rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }

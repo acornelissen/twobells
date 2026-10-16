@@ -311,7 +311,7 @@ def test_every_control_has_a_label_and_every_group_a_legend(store):
     ids = set(re.findall(r'<(?:input|select|textarea)[^>]* id="([\w-]+)"', page))
     assert {"theme", "theme-1", "text_size", "title", "timezone", "train_windows-1-mon", "quiet_windows-3-to"} <= ids
     assert ids <= set(re.findall(r'<label for="([\w-]+)"', page))
-    assert page.count("<fieldset") == page.count("<legend>") == page.count("</fieldset>")
+    assert page.count("<fieldset") == len(re.findall(r"<legend[ >]", page)) == page.count("</fieldset>")
 
 
 def test_a_label_its_section_heading_already_shows_is_said_but_not_shown_again(store):

@@ -497,3 +497,102 @@ def test_the_bus_section_has_every_stop_s_name_not_only_the_shown_rows():
 def test_stop_names_change_the_view():
     named = view(buses=[bus(stop="A")], stop_names={"A": "Henry Street"})
     assert view(buses=[bus(stop="A")]).signature() != named.signature()
+
+
+# What the board shows ([board] show, settings/show.py): an item left out is
+# left out of the view, as if the feeds had never given it, so no look draws
+# it or keeps room for it.
+
+
+def _full_trains(plain=False):
+    first = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, "2",
+                      platform_changed=True, via="via Guide Bridge", calling_at=CALLING)
+    second = Departure("train", "Northern", "Hadfield", "07:42", None, Status.ON_TIME, "1")
+    if plain:
+        first = dataclasses.replace(first, platform=None, platform_changed=False, via=None)
+        second = dataclasses.replace(second, platform=None)
+    return [first, second]
+
+
+def _full(show=None, **without):
+    from twobells.core.model import Strip, strip_key
+
+    trains = without.pop("trains", _full_trains())
+    buses = [bus(stop="A")]
+    strips = {strip_key(trains[0]): Strip("At Dinting", 4, 2, 1.0), strip_key(buses[0]): Strip("3 stops away", 6, 5, 2.0)}
+    given = {"notices": ["Lifts out of use."], "rain": "Rain from 07:10 (70%)", "strips": strips,
+             "last_bus": "Last bus 23:05", "clock": "07:00:10"}
+    return view(trains=trains, buses=buses, walk=WalkTimes(train=5, bus={"*": 8}), show=show, **(given | without))
+
+
+SHOWN = ("platforms", "where", "disruption", "rain", "last_bus", "bus_page", "calling_at", "clock_page")
+# Each item as if never given.
+NEVER_GIVEN = {
+    "platforms": {"trains": _full_trains(plain=True)},
+    "where": {"strips": {}},
+    "disruption": {"notices": None},
+    "rain": {"rain": None},
+    "last_bus": {"last_bus": None},
+    "calling_at": {"trains": [dataclasses.replace(t, calling_at=None) for t in _full_trains()]},
+}
+
+
+def test_without_a_show_list_the_view_has_everything():
+    full = _full()
+    assert full == _full(show=SHOWN)
+    first = full.trains.rows[0]
+    assert (first.platform, first.via, first.calling) == ("Plat 2 (changed)", "via Guide Bridge", CALLING)
+    assert first.strip is not None and full.buses.rows[0].strip is not None
+    assert (full.notice, full.rain, full.last_bus) == ("Lifts out of use.", "Rain from 07:10 (70%)", "Last bus 23:05")
+
+
+@pytest.mark.parametrize("item", sorted(NEVER_GIVEN))
+def test_an_item_left_out_is_as_if_it_was_never_given(item):
+    left_out = _full(show=set(SHOWN) - {item})
+    assert left_out == _full(**NEVER_GIVEN[item])
+    assert left_out != _full()
+
+
+def test_without_platforms_a_replacement_bus_says_so_before_its_destination():
+    replacement = Departure("train", "Northern", "Hadfield", "07:42", None, Status.ON_TIME, replacement_bus=True)
+    rows = _full(show=set(SHOWN) - {"platforms"}, trains=[*_full_trains(), replacement]).trains.rows
+    assert [row.platform for row in rows] == [None, None, None]
+    assert rows[0].platform_changed is False
+    assert destination_text(rows[2], platform_column=False, wide=True) == "Bus: Hadfield"
+
+
+def test_with_nothing_shown_the_rows_keep_their_times_and_words():
+    bare = _full(show=())
+    first = bare.trains.rows[0]
+    assert (first.left, first.middle, first.right) == ("07:12", "Manchester Piccadilly", "On time")
+    assert bare.buses.rows[0].leave is not None  # when to leave is part of the times
+    assert (bare.notice, bare.rain, bare.last_bus) == (None, None, None)
+
+
+def _pages():
+    from twobells.board.panel import PANELS
+    from twobells.board.render import SCREEN_PALETTE, Palette
+    from twobells.board.themes import THEMES, theme_named
+
+    for look in sorted(THEMES):
+        for panel in PANELS.values():
+            screen = not panel.epaper
+            if THEMES[look].screen_only and not screen:
+                continue
+            palette = SCREEN_PALETTE if screen else Palette(white=0, black=1, accent=2)
+            yield f"{look}/{panel.name}", theme_named(look), palette, panel
+
+
+@pytest.mark.parametrize("look, theme, palette, panel", list(_pages()), ids=[name for name, *_ in _pages()])
+def test_every_look_draws_the_board_without_each_item(look, theme, palette, panel):
+    clock = None if panel.epaper else "07:00:10"
+    for item in (*NEVER_GIVEN, None):
+        shown = set(SHOWN) if item is None else set(SHOWN) - {item}
+        for show in (shown, ()):
+            frame = theme.frame(_full(show=show, clock=clock), palette, panel)
+            assert frame.image.size == (panel.width, panel.height)
+    # Left out, it is drawn exactly as if never given: no gap where it was.
+    for item, given in NEVER_GIVEN.items():
+        left_out = theme.frame(_full(show=set(SHOWN) - {item}, clock=clock), palette, panel).image
+        never = theme.frame(_full(clock=clock, **given), palette, panel).image
+        assert left_out.tobytes() == never.tobytes(), item

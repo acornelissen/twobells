@@ -7,13 +7,15 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
+from functools import partial
 
 from ..core import words
 from ..core.model import Departure, Status, Strip, minutes_between, strip_key
 from ..core.walk import WalkTimes, leave_by, leave_time
+from ..settings import show as show_items
 
 
 class Style(str, Enum):
@@ -181,18 +183,24 @@ def _style(dep: Departure) -> Style:
     return Style.ALERT if dep.status is Status.LATE else Style.NORMAL
 
 
-def _train_row(dep: Departure, walk: WalkTimes | None, clock: str | None) -> Row:
-    changed = dep.platform_changed and dep.is_train and dep.platform is not None
-    if dep.replacement_bus:
+def _train_row(dep: Departure, walk: WalkTimes | None, clock: str | None, platforms: bool = True,
+               calling: bool = True) -> Row:
+    """A train's row. Without `platforms` it has no platform, via words or
+    changed mark (a replacement bus or a ferry still says what it is, before
+    its destination); without `calling`, no "Calling at" line."""
+    changed = platforms and dep.platform_changed and dep.is_train and dep.platform is not None
+    if not platforms:
+        platform = None
+    elif dep.replacement_bus:
         platform = words.BUS
     elif dep.ferry:
         platform = words.FERRY
     else:
         platform = words.platform(dep.platform, changed) if dep.platform else None
     return Row(dep.scheduled, dep.destination, words.status(dep), _style(dep), platform=platform,
-               platform_changed=changed, via=dep.via, replacement_bus=dep.replacement_bus,
+               platform_changed=changed, via=dep.via if platforms else None, replacement_bus=dep.replacement_bus,
                ferry=dep.ferry,
-               calling=_cut(dep.calling_at, CALLING_LIMIT) if clock and dep.calling_at else None)
+               calling=_cut(dep.calling_at, CALLING_LIMIT) if calling and clock and dep.calling_at else None)
 
 
 def _bus_row(dep: Departure, walk: WalkTimes | None, clock: str | None) -> Row:
@@ -276,6 +284,7 @@ def build_view(
     strips: Mapping[tuple[str, str, str, str], Strip] | None = None,
     stop_names: Mapping[str, str] | None = None,
     last_bus: str | None = None,
+    show: Collection[str] | None = None,
 ) -> BoardView:
     """`clock` (HH:MM:SS, matching `now`) is for screens: it is shown, leave
     times count down instead of giving a clock time, and trains have their
@@ -284,19 +293,27 @@ def build_view(
     `rain` is the rain warning, if there is one. `strips` say where each
     departure's train or bus is, by strip_key. `stop_names` are what a wide
     screen calls your bus stops, by label (see stop_names_shown). `last_bus`
-    is when the last bus goes, for a screen in its last hour."""
-    strips = strips or {}
+    is when the last bus goes, for a screen in its last hour.
+
+    `show` is what the board shows of what it can leave out (settings/show.py),
+    None for all of it. What it leaves out is left out of the view, so no look
+    draws it or keeps room for it: platforms (with their via words and
+    changed marks), where each train and bus is, the "Calling at" line, the
+    disruption notice, the rain warning and the last bus."""
+    shown = set(show_items.keys("board") if show is None else show)
+    strips = (strips or {}) if "where" in shown else {}
+    to_train = partial(_train_row, platforms="platforms" in shown, calling="calling_at" in shown)
     return BoardView(
         title=title,
-        trains=_section("Trains", trains, _train_row, now, "No trains", "train" in stale, walk, wording, clock,
+        trains=_section("Trains", trains, to_train, now, "No trains", "train" in stale, walk, wording, clock,
                         strips, {}),
         buses=_section("Buses", buses, _bus_row, now, "No buses", "bus" in stale, walk, wording, clock, strips,
                        stop_names or {}),
         updated=now,
         clock=clock,
-        notice=_notice(notices or []),
-        rain=rain,
-        last_bus=last_bus,
+        notice=_notice(notices or []) if "disruption" in shown else None,
+        rain=rain if "rain" in shown else None,
+        last_bus=last_bus if "last_bus" in shown else None,
     )
 
 

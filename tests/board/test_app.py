@@ -502,13 +502,13 @@ def pages(board, state, display, start, seconds):
 
 def test_the_clock_page_is_off_unless_asked_for():
     trains, buses, board, display, state = setup()
-    assert board.clock_page is False
+    assert "clock_page" not in board.show
     assert set(pages(board, state, FakeScreen(), THU_0700, range(60))) == {"departures"}
 
 
 def test_a_screen_shows_the_clock_for_10_s_after_the_departures():
     trains, buses, board, display, state = setup()
-    board = dataclasses.replace(board, clock_page=True)
+    board = dataclasses.replace(board, show=board.show | {"clock_page"})
     shown = pages(board, state, FakeScreen(), THU_0700, range(50))
     assert shown == (["departures"] * 15 + ["clock"] * 10) * 2
     clock = FakeScreen()
@@ -520,20 +520,20 @@ def test_a_screen_shows_the_clock_for_10_s_after_the_departures():
 
 def test_with_a_bus_to_follow_the_clock_comes_after_the_bus_page():
     board, _, state = tracked_setup([bus_on("341", "07:20")], [vehicle_at(2)])
-    board = dataclasses.replace(board, clock_page=True)
+    board = dataclasses.replace(board, show=board.show | {"clock_page"})
     shown = pages(board, state, FakeScreen(), THU_0700, range(35))
     assert shown == ["departures"] * 15 + ["route"] * 10 + ["clock"] * 10
 
 
 def test_e_paper_never_shows_the_clock_page():
     trains, buses, board, display, state = setup()
-    board = dataclasses.replace(board, clock_page=True)
+    board = dataclasses.replace(board, show=board.show | {"clock_page"})
     assert run_once(board, state, display, THU_0700 + timedelta(seconds=20)).page == "departures"
 
 
 def test_the_code_page_beats_the_clock_page():
     trains, buses, board, display, state = setup()
-    board = dataclasses.replace(board, clock_page=True, reset_code=Waiting(CODE))
+    board = dataclasses.replace(board, show=board.show | {"clock_page"}, reset_code=Waiting(CODE))
     assert run_once(board, state, FakeScreen(), THU_0700 + timedelta(seconds=20)).page == "code"
 
 
@@ -1550,3 +1550,35 @@ def test_a_fault_finding_the_last_bus_costs_only_the_last_bus():
     board = last_bus_board(OSError("timetable unreadable"))
     view = run_once(board, {}, FakeScreen(), THU_0700).view
     assert view.last_bus is None and view.buses.rows
+
+
+# What the board shows ([board] show, settings/show.py)
+
+
+def test_without_the_bus_page_a_screen_stays_on_the_departures():
+    board, _, state = tracked_setup([bus_on("341", "07:20")], [vehicle_at(2)])
+    board = dataclasses.replace(board, show=board.show - {"bus_page"})
+    result = run_once(board, state, FakeScreen(), ROUTE_TIME)
+    assert (result.page, result.route) == ("departures", None)
+
+
+def test_without_the_bus_page_the_clock_page_follows_the_departures():
+    board, _, state = tracked_setup([bus_on("341", "07:20")], [vehicle_at(2)])
+    board = dataclasses.replace(board, show=(board.show - {"bus_page"}) | {"clock_page"})
+    shown = pages(board, state, FakeScreen(), THU_0700, range(25))
+    assert shown == ["departures"] * 15 + ["clock"] * 10
+
+
+def test_without_the_last_bus_a_screen_never_says_it():
+    board = last_bus_board([("341", 22, 0, 1), ("237", 23, 5, 3)])
+    board = dataclasses.replace(board, show=board.show - {"last_bus"})
+    evening = THU_0700.replace(hour=22, minute=5)
+    assert run_once(board, {}, FakeScreen(), evening).view.last_bus is None
+
+
+def test_without_disruption_the_station_s_messages_are_kept_but_not_shown():
+    trains, board, display, state = notice_setup()
+    board = dataclasses.replace(board, show=board.show - {"disruption"})
+    result = run_once(board, state, display, THU_0700)
+    assert state["sources"]["train"]["messages"] == ["Lifts out of use."]
+    assert result.view.notice is None

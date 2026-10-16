@@ -788,7 +788,7 @@ def test_sections_are_fieldsets_headed_in_their_legends_with_an_index_when_there
     assert page.index("<h1>") < page.index('class="index"') < page.index('<form method="post" action="/settings/t')
     # Three sections or fewer need no index.
     page = signed("GET", "/settings/dashboard", cookie=signed.session())[1]
-    assert 'class="index"' not in page and page.count('<fieldset class="card">') == 2
+    assert 'class="index"' not in page and page.count('<fieldset class="card">') == 3
 
 
 def test_a_section_switched_off_says_so_with_its_fields_still_there(signed):

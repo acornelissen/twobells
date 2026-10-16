@@ -9,7 +9,8 @@
 // one field. The form's save bar (or a key form's buttons) says "2 unsaved
 // changes" in a polite live region, once typing stops. Leaving the page asks
 // first while any form has changes, until that form is sent. A time
-// window's days get Weekdays, Weekends and Every day buttons.
+// window's days get Weekdays, Weekends and Every day buttons, and a show
+// list its presets' buttons (Just the times, The usual, Everything).
 //
 // The pages work as well without it: Save is never disabled. It never
 // fetches, stores or logs anything. A key box is read only to tell whether
@@ -148,6 +149,47 @@
     boxes.after(holder);
   }
 
+  // A show list's presets (web/groupform.py): the page draws them as a choice
+  // that saving applies; here its options become buttons, under the same
+  // legend, that tick the boxes at once, each box saying which presets
+  // include it (data-presets). The choice is left on "None", hidden, so
+  // saving takes the ticks.
+  function showPresets(list, form) {
+    const choice = list.querySelector(".show-presets");
+    const options = choice && choice.querySelector(".options");
+    if (!options) return;
+    const tick = (name) => {
+      for (const field of list.querySelectorAll("[data-presets]")) {
+        const box = field.querySelector('input[type="checkbox"]');
+        if (box) box.checked = (field.getAttribute("data-presets") || "").split(" ").includes(name);
+      }
+    };
+    const holder = document.createElement("div");
+    holder.setAttribute("class", "show-preset-buttons");
+    for (const radio of options.querySelectorAll('input[type="radio"]')) {
+      const name = radio.getAttribute("value") || "";
+      if (!name) continue;
+      const label = options.querySelector(`label[for="${radio.id}"]`);
+      const button = document.createElement("button");
+      button.setAttribute("type", "button");
+      button.textContent = label ? label.textContent : name;
+      button.addEventListener("click", () => {
+        tick(name);
+        update(form);
+      });
+      holder.append(button);
+    }
+    // One picked already (a refused save drawn again) ticks its boxes now.
+    const picked = options.querySelector('input[type="radio"]:checked');
+    const none = options.querySelector('input[type="radio"][value=""]');
+    if (picked && picked !== none) tick(picked.getAttribute("value") || "");
+    if (none) none.checked = true;
+    const hint = choice.querySelector(".hint");
+    if (hint) hint.textContent = "Each ticks what it includes and unticks the rest. Nothing changes until you save.";
+    options.hidden = true;
+    options.after(holder);
+  }
+
   for (const form of forms) {
     const bar = form.querySelector(".savebar, .key-actions");
     if (bar) {
@@ -160,6 +202,7 @@
       said.set(form, region);
     }
     for (const row of form.querySelectorAll(".window")) presets(row, form);
+    for (const list of form.querySelectorAll(".show-list")) showPresets(list, form);
     form.addEventListener("input", () => update(form));
     form.addEventListener("change", () => update(form));
     form.addEventListener("submit", () => {

@@ -33,6 +33,7 @@ from ..board.displays.display import DISPLAY_PANELS
 from ..board.themes import THEMES, themes_for
 from ..core.polling import parse_window
 from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES
+from . import show
 
 if TYPE_CHECKING:
     from .installs import Install
@@ -292,7 +293,6 @@ BOARD_DEFAULTS: dict = {
     "display": "inky",
     "rotate": 0,
     "text_size": 11,
-    "clock_page": False,
     "bank_holidays": True,
     "train": {
         "rows": 3,
@@ -342,8 +342,9 @@ class Field:
     label: str
     check: Callable[[str], object]
     # text, number, radios (2 to 4 choices), select (more), area, check; windows: time windows as rows
-    # of days and times (web/windowrows.py), each row called `item`; or per_stop: a number box for each
-    # bus stop, saved as a table by stop label
+    # of days and times (web/windowrows.py), each row called `item`; per_stop: a number box for each
+    # bus stop, saved as a table by stop label; or show: a view's show list (settings/show.py), a
+    # tickbox for each item, with its presets
     kind: str = "text"
     hint: str = ""
     options: tuple[tuple[str, str], ...] = ()  # a choice's (value, words); a text box's suggestions
@@ -472,9 +473,6 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               hint="Degrees clockwise, to suit how the display is mounted.",
               options=tuple((r, f"{r}°") for r in rotations), default=board["rotate"],
               page="board", heading="Display"),
-        Field("clock_page", "board", None, "clock_page", "Clock page", on_off, "radios",
-              hint="HDMI screens only. 10 seconds of a platform clock after the departures (and the bus page).",
-              options=_ON_OFF, default=board["clock_page"], page="board", heading="Display"),
         Field("accent", "board", None, "accent", "Accent colour", _accent(accents), "radios", default="",
               hint="Only reinforces meaning; the words always carry it. The station board look uses amber, "
                    "the TFT and split-flap looks use yellow and the plain look uses red; a colour too faint on the "
@@ -491,6 +489,10 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               options=tuple((s, f"{s} ({_TEXT_SIZE_NAMES[s]})" if s in _TEXT_SIZE_NAMES else s)
                             for s in _TEXT_SIZES),
               default=board["text_size"], page="board", heading="Display", tier="advanced"),
+        Field("board_show", "board", "board", "show", "What to show", show.check("board"), "show",
+              default=show.ordered("board", show.default("board")),
+              hint="The departures' times always show. What says “Screens only” shows only on an HDMI screen.",
+              page="board", heading="What to show"),
         Field("board_train_rows", "board", "train", "rows", "Trains shown", number(1, 6), "number",
               default=train["rows"], needs="train", page="board", heading="Trains", width="2"),
         Field("train_windows", "board", "train", "windows", "When to check for trains", windows, "windows",
@@ -529,9 +531,12 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               "number", hint=_LISTED, default=10, needs="bus", page="dashboard", heading="Departures",
               width="2"),
         Field("row_strips", "dashboard", "dashboard", "row_strips", "Position strips in each row", on_off, "radios",
-              hint="A small drawing of the stops in each departure row, with the train or bus where it is. "
-                   "Never on a wall tablet.",
+              hint="A small drawing of the stops in each departure row, with the train or bus where it is, while "
+                   "What to show has Where it is. Never on a wall tablet.",
               options=_ON_OFF, default=True, page="dashboard", heading="Departures"),
+        Field("dashboard_show", "dashboard", "dashboard", "show", "What to show", show.check("dashboard"), "show",
+              default=show.ordered("dashboard", show.default("dashboard")),
+              hint="The departures' times always show.", page="dashboard", heading="What to show"),
         Field("train_interval_seconds", "dashboard", "dashboard", "train_interval_seconds",
               "Check for trains every", number(30, 3600), "number", default=60, needs="train",
               page="dashboard", heading="Departures", tier="advanced", width="4", unit="seconds"),
@@ -615,8 +620,11 @@ def keys_used(views: tuple[str, ...] | list[str], display: str) -> tuple[tuple[s
 
 
 # What setup saves that no field shows: the bus companies and route strips
-# its search finds, home's position for the weather, and the views.
+# its search finds, home's position for the weather, and the views. And
+# the Clock page setting from before the show lists, which the board still
+# reads until its show list is saved (settings/show.py).
 MANAGED: dict[str | None, frozenset[str]] = {
+    None: frozenset({show.OLDER_CLOCK_PAGE}),
     "app": frozenset({"views"}),
     "train": frozenset({"enabled"}),
     "bus": frozenset({"enabled", "source", "operators", "routes"}),

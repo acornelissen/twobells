@@ -41,6 +41,7 @@ from urllib.parse import urlsplit
 from ..core import files
 from ..core.polling import Window, parse_window
 from ..core.walk import WalkTimes
+from ..settings import show as show_items
 from ..settings.config import ConfigError, _flag, _table, _texts, _whole, settings_from, switched_on
 from ..settings.schema import bus_source
 from ..sources.bodsbus import BodsBusSource, BusBoard
@@ -74,6 +75,7 @@ _KEYS = {
     "allowed_hosts",
     "kb_incidents_url",
     "row_strips",
+    "show",
 }
 _MAX_ROWS = 20
 # Why there are no buses on the dashboard when the board's come from TransportAPI.
@@ -106,6 +108,9 @@ class DashboardOptions:
     # Each row's small drawing of its stops, with the train or bus on it.
     # The page leaves them out when this is off, and always on a wall tablet.
     row_strips: bool = True
+    # What the page shows of what it can leave out ([dashboard] show,
+    # settings/show.py): everything unless the settings say otherwise.
+    show: frozenset[str] = field(default_factory=lambda: show_items.default("dashboard"))
 
 
 def _ranged(section: dict, key: str, default: int, low: int, high: int) -> int:
@@ -180,6 +185,7 @@ def dashboard_options(data: dict) -> DashboardOptions:
         allowed_hosts=frozenset(_host(h) for h in _texts(section, "allowed_hosts", _WHERE)),
         kb_incidents_url=_feed_url(section, "kb_incidents_url", KB_URL_PLACEHOLDER),
         row_strips=_flag(section, "row_strips", True, _WHERE),
+        show=show_items.shown(data, "dashboard"),
     )
 
 
