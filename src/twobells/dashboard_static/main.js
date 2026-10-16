@@ -6,7 +6,7 @@
 import { $, setText, store, str, obj, focusKey, refocus } from "./dom.js";
 import { connect, STATE } from "./api.js";
 import { clockText, parseAt } from "./time.js";
-import { applyRowStrips, renderBuses, renderTrains, stopNames, tickBoards, toggleMore } from "./board.js";
+import { applyRowStrips, lastBuses, renderBuses, renderTrains, stopNames, tickBoards, toggleMore } from "./board.js";
 import { tickStrips } from "./strip.js";
 import { renderWeather } from "./weather.js";
 import { noteSnapshot } from "./live.js";
@@ -28,11 +28,13 @@ let connection = null;
 let connectionState = STATE.connecting;
 
 // What the departure sheet needs beyond a row: the board's station, named in
-// a train's journey, the names of your stops, and when the snapshot was made.
+// a train's journey, the names of your stops, when the snapshot was made, and
+// the last buses.
 const sheetContext = () => ({
   station: str(obj(snapshot?.trains)?.station),
   stops: stopNames(obj(snapshot?.buses)?.stops),
   generatedMs: parseAt(snapshot?.generated_at),
+  lastBuses: lastBuses(obj(snapshot?.buses)),
 });
 
 // What the hero needs beyond the rows: your stops' names and the rain sentence.

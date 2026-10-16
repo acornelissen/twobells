@@ -102,6 +102,7 @@ def extras_part(now, no_shows=None, vehicles_ok=True):
     """Buses at 10:14 with WEST's bus coming in on INTO_A, 9 min late, and EAST's bus live."""
     from tests.dashboard.test_enrich import INTO_A, LEFT_JUNCTION
     from tests.sources.test_livebus import every_day
+    from twobells.sources.lastbus import day_groups, last_buses
     from twobells.sources.livebus import live_board
 
     plan = schedule(EAST, WEST, INTO_A)
@@ -109,8 +110,23 @@ def extras_part(now, no_shows=None, vehicles_ok=True):
     rows, placed = live_board(plan, now, vehicles if vehicles_ok else [], every_day, 10)
     board = BusBoard(rows, plan, vehicles_ok, None, placed)
     kwargs = {"no_shows": no_shows} if no_shows else {}
+    local = now.replace(tzinfo=None)
+    last = last_buses({local.date(): day_groups(plan, local.date())}, local)
     return buses_part(board, now, status_block(), timetable_block("ready", plan, LONDON),
-                      {"A": HENRY_A, "B": ST_MARYS_W}, WALK, **kwargs)
+                      {"A": HENRY_A, "B": ST_MARYS_W}, WALK, last=last, **kwargs)
+
+
+def test_a_last_bus_shows_under_the_buses_in_the_evening_or_once_few_are_left():
+    from twobells.dashboard.snapshot import last_bus
+    from twobells.sources.lastbus import LastBus
+
+    late = LastBus("341", "Hadfield", "A", date(2026, 10, 9), datetime(2026, 10, 10, 0, 20), 5)
+    assert last_bus(late, at(18, 59)) == {
+        "line": "341", "destination": "Hadfield", "stop": "A", "scheduled": "00:20",
+        "scheduled_at": "2026-10-10T00:20:00+01:00", "remaining": 5, "show": False,
+    }
+    assert last_bus(late, at(19, 0))["show"] is True
+    assert last_bus(LastBus("341", "Hadfield", "A", date(2026, 10, 9), datetime(2026, 10, 9, 13, 0), 3), at(12, 0))["show"]
 
 
 def by(rows, **match):
@@ -844,6 +860,7 @@ def test_what_the_server_sends_is_what_the_page_was_built_for():
     assert any(r["inbound"] for r in sent_buses) and any(r["ghost"] for r in sent_buses)
     assert all(r["arrives"] and r["history"]["no_show_phrase"] for r in sent_buses)
     assert {i["mode"] for i in sent["disruptions"]["items"]} == {"bus", "train"}
+    assert sent["buses"]["last_buses"]
     check(sent, SNAPSHOT)
     live_row = by(bparts["rows"], line="341", stop="A")
     check(lookups[live_row["id"]]["bus"], BUS_DETAIL)

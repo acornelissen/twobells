@@ -467,7 +467,38 @@ export function renderBuses(snapshot, alerts) {
     empty: tt.state === "building" ? "Bus times will show once the timetable is built." : "No buses are listed right now.",
     columns: [["Bus", "c-line"], ["Destination", "c-dest"], ["Stop", "c-stop"], ["Due", "c-due"], ["Leave", "c-leave"]],
   }, rows, (row, i, later) => busRow(row, later, names, alerts));
+  renderLastBuses(buses);
   return rows;
+}
+
+// --- Last buses ---
+
+// Each line and destination's last bus today, from the buses part: those
+// that have a line, a destination and a time.
+export function lastBuses(buses) {
+  return list(obj(buses)?.last_buses).filter(obj)
+    .filter((b) => str(b.line) && str(b.destination) && /^\d\d:\d\d$/.test(str(b.scheduled)));
+}
+
+// "Last 341 to Hyde Bus Station 23:05", and ", gone" once it has.
+export function lastBusText(bus) {
+  const gone = num(bus.remaining) === 0 ? ", gone" : "";
+  return `Last ${str(bus.line)} to ${str(bus.destination)} ${str(bus.scheduled)}${gone}`;
+}
+
+// The last bus for a bus row's line and destination, or null.
+export function lastBusFor(row, buses) {
+  return buses.find((b) => str(b.line) === str(row.line) && str(b.destination) === str(row.destination)) || null;
+}
+
+// Under the buses, the last buses the server says to show now: in the
+// evening, or once few of a line's are left.
+function renderLastBuses(buses) {
+  const el = document.getElementById("last-buses");
+  const shown = lastBuses(buses).filter((b) => b.show === true);
+  el.hidden = !shown.length;
+  el.replaceChildren(...shown.map((b) => h("li", { class: num(b.remaining) === 0 ? "gone" : null },
+    h("span", { class: "glyph", "aria-hidden": "true" }, icon("moon")), " ", lastBusText(b))));
 }
 
 // The station's messages as { text, kind, severity }: "station" ones are

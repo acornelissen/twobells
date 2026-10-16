@@ -1561,6 +1561,35 @@
         "ghost": false,
         "stop_name": "Henry Street (Stop A)"
       }
+    ],
+    "last_buses": [
+      {
+        "line": "61",
+        "destination": "Buxton Market Place",
+        "stop": "A",
+        "scheduled": "18:50",
+        "scheduled_at": "2026-10-10T18:50:00+01:00",
+        "remaining": 12,
+        "show": false
+      },
+      {
+        "line": "341",
+        "destination": "Hyde Bus Station",
+        "stop": "A",
+        "scheduled": "23:09",
+        "scheduled_at": "2026-10-10T23:09:00+01:00",
+        "remaining": 34,
+        "show": false
+      },
+      {
+        "line": "237",
+        "destination": "Ashton Bus Station",
+        "stop": "B",
+        "scheduled": "23:35",
+        "scheduled_at": "2026-10-10T23:35:00+01:00",
+        "remaining": 18,
+        "show": false
+      }
     ]
   },
   "weather": {

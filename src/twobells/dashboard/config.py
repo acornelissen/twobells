@@ -32,6 +32,7 @@ import os
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Protocol
 from urllib.parse import urlsplit
@@ -45,6 +46,7 @@ from ..sources.bodsbus import BodsBusSource, BusBoard
 from ..sources.darwin import DarwinSource, ServiceDetails, ServiceDetailsClient, TrainBoard
 from ..sources.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource, kb_url_is_placeholder
 from ..sources.holidays import ENGLAND_AND_WALES
+from ..sources.lastbus import LastBus
 from ..sources.weather import Conditions, OpenMeteoSource
 from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
 
@@ -192,6 +194,8 @@ class BusSource(Protocol):
     def unusable(self) -> str | None: ...
 
     def fetch_live(self, rows: int | None = None) -> BusBoard: ...
+
+    def last_buses(self, now: datetime | None = None) -> list[LastBus]: ...
 
     def let_go(self) -> None: ...
 

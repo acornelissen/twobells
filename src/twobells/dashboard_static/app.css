@@ -919,6 +919,12 @@ table.history thead th { border-top: 0; color: var(--muted); }
   font-weight: 500;
 }
 
+/* The last buses, under the bus board in the evening. One that has gone
+   says so in words; the quieter colour only backs that up. */
+.last-buses { margin: 0.75rem 0 0; padding: 0; list-style: none; }
+.last-buses li { margin: 0.25rem 0; font-weight: 500; }
+.last-buses li.gone { color: var(--muted); }
+
 /* --- Around here: the line of stations, and the area map --- */
 
 /* The section is a container: the line runs across the page when the

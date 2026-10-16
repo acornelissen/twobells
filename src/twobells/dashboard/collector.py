@@ -48,6 +48,7 @@ from ..core.errors import safe_message
 from ..sources import holidays as _holidays
 from ..sources.darwin import DetailsUnavailable, ServiceGone, TrainBoard, TrainDetails
 from ..sources.disruptions import BusArea, RailArea, bus_disruptions, disruptions_part, train_disruptions
+from ..sources.lastbus import LastBus
 from ..timetable.build import TimetableBusy
 from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
 from .area import area_view, timetable_changes
@@ -225,6 +226,8 @@ class Collector:
         self._disruptions_lock = threading.Lock()
         self._situations, self._incidents = _Feed(), _Feed()
         self._bus_area: BusArea | None = None
+        # The last buses today, as the bus poller last found them; the bus poller's alone.
+        self._last_buses: list[LastBus] = []
         self._area_schedule = None  # the schedule _bus_area came from; the bus poller's alone
         self._changes_for: tuple | None = None  # (schedule, day) the timetable changes were worked out for
         self._rail_area: RailArea | None = None
@@ -279,7 +282,8 @@ class Collector:
             timetable = timetable_block("ready", board.schedule, self._tz)
         part, lookups = buses_part(board, self._clock(), self._buses.status(), timetable,
                                    self._settings.bus_stops, self._settings.walk, self._phrases,
-                                   self._bus_no_shows, self._bus_positions.status())
+                                   self._bus_no_shows, self._bus_positions.status(),
+                                   self._last_buses if board is not None else ())
         self._hub.publish("buses", part, lookups)
 
     def _publish_bus_note(self) -> None:
@@ -470,10 +474,21 @@ class Collector:
         else:
             self._bus_positions.error = board.note or "Live positions failed"
         self._buses.worked(board, now, board.note)
+        self._last_buses = self._find_last_buses(source, now)
         self._publish_buses()
         self._hub.put("area", area_view(board, now))
         self._note_schedule(board)
         self._publish_changes(board.schedule, now.date())
+
+    @staticmethod
+    def _find_last_buses(source, now: datetime) -> list[LastBus]:
+        """The last buses today, from the timetable; none if that fails,
+        since the departures matter more."""
+        try:
+            return source.last_buses(now)
+        except Exception as error:  # noqa: BLE001 - never worth the bus rows
+            log.warning("bus: last buses not worked out: %s", safe_message(error))
+            return []
 
     def _publish_changes(self, schedule, day) -> None:
         """The timetable changes coming up, worked out again only when the

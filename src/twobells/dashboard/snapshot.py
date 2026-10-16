@@ -19,7 +19,7 @@ import re
 import threading
 import time
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from typing import Protocol
 
@@ -28,6 +28,7 @@ from ..core.model import Departure, Status, iso, minutes_between
 from ..core.walk import WalkTimes
 from ..sources.bodsbus import BusBoard
 from ..sources.darwin import CallingPoint, Message, ServiceDetails, TrainBoard, TrainService, train_position
+from ..sources.lastbus import LastBus
 from ..sources.livebus import LiveDeparture, approach, where_words
 from ..sources.weather import Conditions, Hour, rain_line
 from ..timetable.model import Schedule, StopPosition, sign_letter
@@ -462,13 +463,27 @@ def stop_name(place: StopPosition | None, label: str | None) -> str:
     return f"{place.name} ({place.indicator})" if place.indicator else place.name
 
 
+def last_bus(last: LastBus, now: datetime) -> dict:
+    """A line and destination's last bus today, for the page (see
+    sources/lastbus.py). `now` is aware, in the board's zone."""
+    return {
+        "line": last.line,
+        "destination": last.destination,
+        "stop": last.stop,
+        "scheduled": last.leaves.strftime("%H:%M"),
+        "scheduled_at": iso(last.leaves.replace(tzinfo=now.tzinfo)),
+        "remaining": last.remaining,
+        "show": last.shown(now.replace(tzinfo=None)),
+    }
+
+
 def buses_part(board: BusBoard | None, now: datetime, status: dict, timetable: dict,
                stops: dict[str, str], walk: WalkTimes,
                phrases: Phrases = no_history, no_shows: NoShows = no_no_shows,
-               positions: dict | None = None) -> tuple[dict, dict[str, dict]]:
+               positions: dict | None = None, last: Iterable[LastBus] = ()) -> tuple[dict, dict[str, dict]]:
     """The buses section and its lookups by row id. `stops` are labels to ATCO
     codes. `positions` is how asking where the buses are is going (a status
-    block), None where none are asked for."""
+    block), None where none are asked for. `last` are the last buses today."""
     rows, lookups = [], {}
     schedule = board.schedule if board is not None else None
     if board is not None:
@@ -483,6 +498,7 @@ def buses_part(board: BusBoard | None, now: datetime, status: dict, timetable: d
         "timetable": timetable,
         "stops": stop_details(stops, schedule, walk),
         "rows": rows,
+        "last_buses": [last_bus(found, now) for found in last],
     }, lookups
 
 

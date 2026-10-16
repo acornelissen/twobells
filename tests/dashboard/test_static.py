@@ -510,6 +510,11 @@ BUS_ROW = {
     "inbound": Opt(INBOUND),
     "ghost": bool,
 }
+# A line and destination's last bus today (sources/lastbus.py).
+LAST_BUS = {
+    "line": str, "destination": str, "stop": str, "scheduled": hhmm, "scheduled_at": at, "remaining": integer,
+    "show": bool,
+}
 WEATHER = {
     "status": STATUS,
     "rain": Opt(str),
@@ -559,6 +564,7 @@ SNAPSHOT = {
         },
         "stops": MapOf(BUS_STOP),
         "rows": [BUS_ROW],
+        "last_buses": [LAST_BUS],
     }),
     "weather": Opt(WEATHER),
     "disruptions": Opt(DISRUPTIONS),
@@ -637,6 +643,11 @@ def test_snapshot_fixture_follows_the_contract():
     assert all(r["walk_min"] == snapshot["walk"]["train"] for r in trains)
     assert all(r["walk_min"] == stops[r["stop"]]["walk_min"] for r in buses)
     assert stops["A"]["name"] == stops["B"]["name"] and stops["A"]["letter"] != stops["B"]["letter"]
+    # Each line and destination's last bus, none shown under the buses on a morning.
+    last = snapshot["buses"]["last_buses"]
+    assert {(b["line"], b["destination"]) for b in last} == {(r["line"], r["destination"]) for r in buses}
+    assert not any(b["show"] for b in last)
+    assert [b["scheduled_at"] for b in last] == sorted(b["scheduled_at"] for b in last)
     # Trains: the first few have a position; the rest don't.
     assert [bool(r["position"]) for r in trains[:3]] == [True, False, True]  # the second is cancelled
     assert any(r["position"]["strip"]["train_at"] is not None for r in trains if r["position"])
@@ -1327,6 +1338,61 @@ def test_a_section_has_its_own_status_line_only_when_it_is_behind():
                       "Problem: timed out. Showing the forecast from 06:49."]
 
 
+@needs_node
+def test_the_last_buses_show_under_the_buses_when_the_server_says():
+    found = run_js(_boards() + """
+        const list = document.getElementById("last-buses");
+        const morning = [list.hidden, list.childNodes.length];
+        const evening = structuredClone(snapshot);
+        const [buxton, hyde] = evening.buses.last_buses;
+        buxton.show = true; buxton.remaining = 0;
+        hyde.show = true; hyde.remaining = 9;
+        renderBuses(evening, alerts);
+        console.log(JSON.stringify({
+          morning,
+          hidden: list.hidden,
+          items: list.childNodes.map((li) => [said(li), li.getAttribute("class")]),
+          icons: list.childNodes.map((li) => byClass(li, "glyph")[0].getAttribute("aria-hidden")),
+        }));
+    """)
+    assert found["morning"] == [True, 0]
+    assert found["hidden"] is False
+    # In the order sent (soonest first); the gone one says so in words.
+    assert found["items"] == [
+        ["Last 61 to Buxton Market Place 18:50, gone", "gone"],
+        ["Last 341 to Hyde Bus Station 23:09", None],
+    ]
+    assert found["icons"] == ["true", "true"]
+
+
+@needs_node
+def test_a_bus_sheet_says_when_the_last_bus_of_its_line_goes():
+    found = run_js("""
+        import { lastBusFact } from "./sheet.js";
+        const buses = [
+          { line: "341", destination: "Hyde", stop: "A", scheduled: "23:05", scheduled_at: "2026-10-10T23:05:00+01:00", remaining: 4 },
+          { line: "237", destination: "Ashton", stop: "B", scheduled: "23:35", scheduled_at: "2026-10-10T23:35:00+01:00", remaining: 2 },
+          { line: "6", destination: "Hadfield", stop: "A", scheduled: "21:00", scheduled_at: "2026-10-10T21:00:00+01:00", remaining: 0 },
+        ];
+        const stops = { A: "Henry Street A", B: "St Marys Road" };
+        const row = (line, destination, stop, at) => ({ line, destination, stop, scheduled_at: at });
+        console.log(JSON.stringify([
+          lastBusFact(row("341", "Hyde", "A", "2026-10-10T07:09:00+01:00"), buses, stops),
+          lastBusFact(row("237", "Ashton", "A", "2026-10-10T07:05:00+01:00"), buses, stops),
+          lastBusFact(row("341", "Hyde", "A", "2026-10-10T23:05:00+01:00"), buses, stops),
+          lastBusFact(row("6", "Hadfield", "A", "2026-10-10T21:00:00+01:00"), [{ ...buses[2], scheduled_at: "" }], stops),
+          lastBusFact(row("341", "Glossop", "A", "2026-10-10T07:09:00+01:00"), buses, stops),
+        ]));
+    """)
+    assert found == [
+        "23:05",
+        "23:35 from St Marys Road",  # it leaves from your other stop
+        "This is the last today",
+        "21:00, gone",
+        "",  # no last bus for that line and destination: no fact
+    ]
+
+
 def test_the_board_look_keeps_the_hero_soon_and_now_edges():
     css = (STATIC / "app.css").read_text(encoding="utf-8")
     # A board-look border for every hero would outrank .leave.soon and .leave.now.
@@ -1550,7 +1616,8 @@ const status = (id) => h("span", { id });
 document.body.append(
   h("section", { id: "trains" }, h("span", { id: "trains-walk" }), status("trains-status"), h("div", { id: "station-info" }),
     h("div", { id: "trains-board" })),
-  h("section", { id: "buses" }, status("buses-status"), h("div", { id: "buses-board" })));
+  h("section", { id: "buses" }, status("buses-status"), h("div", { id: "buses-board" }),
+    h("ul", { id: "last-buses", hidden: true })));
 const snapshot = JSON.parse(readFileSync(%r, "utf-8"));
 observeSnapshot(snapshot.generated_at);
 const alerts = { isOn: () => false };

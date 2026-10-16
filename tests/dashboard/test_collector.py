@@ -20,6 +20,7 @@ from twobells.sources.darwin import (
     parse_board_rich,
     parse_service_details,
 )
+from twobells.sources.lastbus import day_groups, last_buses
 from twobells.sources.livebus import live_board
 from twobells.sources.weather import parse_conditions
 from twobells.timetable.routesetup import DocumentLimits
@@ -89,6 +90,7 @@ class Buses:
         self.limits = []
         self.on_refresh = None
         self.let_go_calls = 0
+        self.last_error = None
 
     def unusable(self):
         return self.reason
@@ -100,6 +102,13 @@ class Buses:
         note = None if self.vehicles_ok else "Timetabled times only; live positions failed: down"
         found, placed = live_board(schedule(), self.clock(), vehicles, lambda journey, day: True, 10)
         return BusBoard(found, schedule(), self.vehicles_ok, note, placed, vehicles)
+
+    def last_buses(self, now=None):
+        if self.last_error:
+            raise self.last_error
+        local = (now or self.clock()).replace(tzinfo=None)
+        days = (local.date() - timedelta(days=1), local.date())
+        return last_buses({day: day_groups(schedule(), day) for day in days}, local)
 
     def let_go(self):
         self.let_go_calls += 1
@@ -455,6 +464,36 @@ def test_buses_are_published_and_observed(tmp_path):
     assert setup.history.late_minutes == 2
     lookup = setup.hub.lookup(row["id"])
     assert lookup["bus"]["vehicle"]["lat"] == HALFWAY[0]
+
+
+def test_the_buses_say_when_the_last_bus_of_each_line_goes(tmp_path):
+    setup = Setup(tmp_path)
+    assert setup.snapshot()["buses"]["last_buses"] == []  # not polled yet
+    setup.collector.poll_buses()
+    assert setup.snapshot()["buses"]["last_buses"] == [
+        # Gone at 10:14: no more today, so it shows under the buses.
+        {"line": "341", "destination": "Hadfield", "stop": "A", "scheduled": "10:10",
+         "scheduled_at": "2026-10-09T10:10:00+01:00", "remaining": 0, "show": True},
+        {"line": "237", "destination": "Ashton", "stop": "B", "scheduled": "10:18",
+         "scheduled_at": "2026-10-09T10:18:00+01:00", "remaining": 2, "show": True},
+    ]
+
+
+def test_the_last_buses_failing_costs_only_them(tmp_path, caplog):
+    setup = Setup(tmp_path)
+    setup.buses.last_error = OSError("disk I/O error")
+    setup.collector.poll_buses()
+    buses = setup.snapshot()["buses"]
+    assert buses["rows"] and buses["last_buses"] == []
+    assert "last buses not worked out" in caplog.text
+
+
+def test_no_last_buses_without_a_usable_timetable(tmp_path):
+    setup = Setup(tmp_path)
+    setup.collector.poll_buses()
+    setup.buses.reason = "the bus timetable is for other stops"
+    setup.collector.poll_buses()
+    assert setup.snapshot()["buses"]["last_buses"] == []
 
 
 def test_bus_rows_say_how_often_they_had_no_tracker(tmp_path):

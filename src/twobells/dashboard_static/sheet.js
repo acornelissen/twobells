@@ -6,7 +6,7 @@
 
 import { $, h, fill, patch, setText, str, num, obj, openDialog, setUpDialog } from "./dom.js";
 import { hhmm, parseAt } from "./time.js";
-import { statusBadge, stopText } from "./board.js";
+import { lastBusFor, statusBadge, stopText } from "./board.js";
 import { trainJourney, trainSummary } from "./train.js";
 import { arrivesFact, fact, ghostBadge, inboundText, noShowPhrase } from "./extras.js";
 import { renderStrip } from "./strip.js";
@@ -19,8 +19,8 @@ const dialog = () => $("sheet");
 let openId = null;
 let openMode = "";
 let openRow = null;
-// What the rows don't say: { station, stops (stopNames), generatedMs }.
-let context = { station: "", stops: {}, generatedMs: null };
+// What the rows don't say: { station, stops (stopNames), generatedMs, lastBuses }.
+let context = { station: "", stops: {}, generatedMs: null, lastBuses: [] };
 let onRemind = () => {};
 
 // `remindChanged` runs when Remind me turns a reminder on or off.
@@ -47,6 +47,16 @@ function title(row) {
   return row.replacement_bus === true ? `${scheduled} replacement bus to ${destination}` : `${scheduled} to ${destination}`;
 }
 
+// When the last bus of the row's line and destination goes today: "23:05",
+// with its stop when it leaves from another of yours, or that this is it.
+export function lastBusFact(row, buses, stops) {
+  const last = lastBusFor(row, buses);
+  if (!last) return "";
+  if (str(last.scheduled_at) && str(last.scheduled_at) === str(row.scheduled_at)) return "This is the last today";
+  const from = str(last.stop) && str(last.stop) !== str(row.stop) ? ` from ${stopText(last, stops)}` : "";
+  return `${str(last.scheduled)}${from}${num(last.remaining) === 0 ? ", gone" : ""}`;
+}
+
 // A bus's status, the warning when it may not be running, its facts, and
 // where it is now on the strip.
 function busSummary(row) {
@@ -65,6 +75,7 @@ function busSummary(row) {
       fact("Arrives", arrivesFact(row)),
       fact("Bus coming in", inboundText(row)),
       fact("Tracker", noShowPhrase(row)),
+      fact("Last bus", lastBusFact(row, context.lastBuses || [], context.stops)),
     ),
     h("h3", {}, "Where it is now"),
     renderStrip(row, context.generatedMs),

@@ -120,6 +120,14 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "inbound": {"from": "The Junction", "due": "07:29", "late_min": 4, "where": "4 stops away",
                   "text": "Bus arriving from The Junction, 4 min late (due 07:29)"},
       "ghost": false
+    }],
+    "last_buses": [{
+      "line": "341",
+      "destination": "Hyde Bus Station",
+      "stop": "A",
+      "scheduled": "23:05", "scheduled_at": "…",
+      "remaining": 34,
+      "show": false
     }]
   },
   "weather": {
@@ -169,6 +177,12 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `towards`: the name of the stop buses call at next, the one most timetabled journeys from this stop go on to (a next stop with this stop's own name doesn't count), or null.
   - `walk_min`: the walk to it in whole minutes, as on its rows, or null.
   - The page names each row's stop in its Stop column with its walk, telling stops of the same name apart by `letter`, else `towards`, else the label: "Church Street A · 10 min walk", "Victoria Street towards Market Hall".
+- **`buses.last_buses`:** each line and destination's last bus today from your stops, from the timetable (`sources/lastbus.py`), soonest first; `[]` while there is no usable timetable. Line and destination are as the rows say them, and only the board's `directions` count.
+  - A day is the timetable's service day: a bus at 00:20 on a journey that started the evening before is that evening's last bus. After midnight a line shows the evening's last bus while it is still to come, then today's. Bank holidays and days of the week follow the timetable's own rules.
+  - `stop` is the label of your stop the last bus leaves from; `scheduled` and `scheduled_at` its timetabled time.
+  - `remaining` counts that line and destination's buses still to come that service day, the last included (a bus counts until a minute after its time, as rows do); 0 once the last has gone.
+  - `show` is true from 19:00, or once `remaining` is 3 or fewer.
+  - **On the page:** those with `show` true are listed under the bus table, "Last 341 to Hyde Bus Station 23:05", with ", gone" when `remaining` is 0. A bus's sheet always says when its line and destination's last bus goes, under **Last bus**: its time, the stop when it leaves from another of yours, or "This is the last today".
 - **`walk`:** the walk times as set, by mode and stop label (`*` for any stop). The page reads `walk.train` for the trains' walk line; `walk_min` on rows and stops supersedes the rest.
 - **`quiet`:** true while one of the dashboard's quiet windows (`quiet_windows`, bank holidays counted as Sundays) is on, else false. It is worked out once a minute, so it can be up to a minute behind the window. The wall-tablet page (`/?kiosk`) dims while it is true.
 - **`row_strips`:** whether the page draws each row's position strip (`[dashboard] row_strips`, **Position strips in each row** in the settings). When false, rows keep their words without the drawing, and only the first train row says where its train is. A snapshot without it, from an older server, counts as true. The wall-tablet page never draws them.
