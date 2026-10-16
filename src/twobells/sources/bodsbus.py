@@ -35,7 +35,9 @@ log = logging.getLogger(__name__)
 MAX_AGE = timedelta(days=28)
 # Live positions are asked for in a box around the stops the schedule places
 # buses by, this much (in degrees, about a kilometre) wider on each side. They
-# include the way into stands near your stops, so inbound buses are seen.
+# include the way into stands near your stops, and the whole of each journey
+# whose bus turns round at your stop (timetable/build.py), so inbound buses are
+# seen all the way in.
 _MARGIN = 0.01
 
 

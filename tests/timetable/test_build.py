@@ -630,11 +630,10 @@ def test_positions_cover_the_stretch_before_your_stops_and_the_stop_after():
     schedule = bods.build()
     into = next(j for j in schedule.journeys if j.journey_code == "1007")  # 23 calls, ending at Stop A
     out = next(j for j in schedule.journeys if j.journey_code == "1012")  # starting at Stop A
-    assert {c.atco for c in into.calls[-21:]} <= bods.naptan_asked  # Stop A and the 20 before it
-    assert into.calls[0].atco not in bods.naptan_asked and into.calls[1].atco not in bods.naptan_asked
-    assert out.calls[1].atco in bods.naptan_asked  # the stop after yours
-    assert out.calls[2].atco not in bods.naptan_asked
-    assert set(schedule.positions) == bods.naptan_asked
+    # The 341 turns round at Stop A, so the journey bringing its bus in is placed all the way.
+    assert {c.atco for c in into.calls} <= set(schedule.positions)
+    assert out.calls[1].atco in schedule.positions  # the stop after yours
+    assert set(schedule.positions) <= bods.naptan_asked
     # NaPTAN's position where it has one, else the timetable's own.
     assert schedule.positions[STOP_A] == StopPosition("Henry Street", 53.44384, -1.948999)
     assert schedule.positions[STOP_B] == StopPosition("Glossop, Henry Street (Stop B)", 53.443841, -1.94921)
@@ -644,7 +643,7 @@ def test_without_naptan_the_timetables_positions_are_used(caplog):
     bods = FakeBods()
     bods.naptan_error = OSError("naptan down")
     schedule = bods.build()
-    assert set(schedule.positions) == bods.naptan_asked
+    assert set(schedule.positions) <= bods.naptan_asked  # asked too for stops of journeys that may end near
     assert schedule.positions[STOP_A] == StopPosition("Henry Street", 53.44384, -1.948999)
     assert schedule.positions["1000DGHSW936"].name == "Market Hall"
     assert "naptan down" in caplog.text
@@ -1454,15 +1453,63 @@ def test_only_lines_leaving_your_stops_count():
     assert _codes(schedule) == [("out", False)]
 
 
-def test_positions_cover_the_stretch_before_the_stand():
-    way_in = [f"1000DGXX{n:04d}" for n in range(24)]
-    places = {**PLACES, **{atco: StopPosition(atco, 53.40 + n / 1000, -1.95) for n, atco in enumerate(way_in)}}
-    document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD]),
-                     ("in", "237", "09:00:00", [*way_in, MARKET_HALL])], places={})
-    schedule, asked = _build(document, naptan=places)
-    assert _codes(schedule) == [("out", False), ("in", True)]
-    assert set(way_in[-20:]) | {MARKET_HALL} <= set(schedule.positions)  # the stand and the 20 before it
-    assert not set(way_in[:-20]) & asked
+WAY_IN = [f"1000DGXX{n:04d}" for n in range(24)]  # from 16 km south of Stop A, 550 m apart
+WAY_IN_PLACES = {**PLACES, **{atco: StopPosition(atco, 53.30 + n / 200, -1.95) for n, atco in enumerate(WAY_IN)}}
+
+
+def _box_holds(schedule, atco):
+    from twobells.sources.bodsbus import _box
+
+    box = _box(schedule)
+    assert box is not None
+    west, south, east, north = box
+    place = WAY_IN_PLACES[atco]
+    return west <= place.lon <= east and south <= place.lat <= north
+
+
+@pytest.mark.parametrize("end", [STOP_A, MARKET_HALL])  # calling at your stop, or inbound-only to the stand
+def test_a_bus_turning_round_at_your_stop_is_placed_all_the_way_in(end):
+    # The 237 leaves from Stop A, so the bus coming in to work it is out on the
+    # journey before for most of the time before it leaves: every stop of that
+    # journey is placed, and BODS asked for buses around them all.
+    document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD]), ("in", "237", "09:00:00", [*WAY_IN, end])],
+                    places={})
+    schedule, asked = _build(document, naptan=WAY_IN_PLACES)
+    assert _codes(schedule) == [("out", False), ("in", end == MARKET_HALL)]
+    assert {*WAY_IN, end} <= set(schedule.positions)
+    assert _box_holds(schedule, WAY_IN[0])
+    assert set(WAY_IN) <= asked
+
+
+@pytest.mark.parametrize("end", [STOP_A, MARKET_HALL])
+def test_a_bus_not_turning_round_at_your_stop_is_placed_only_on_the_stretch_before_it(end):
+    # The 237 only passes Stop A, and the 236 coming in turns round as no
+    # departure: only the 20 stops before the end are placed.
+    document = _doc([("out", "237", "10:15:00", [JUNCTION, STOP_A, HOWARD]),
+                     ("in", "237", "09:00:00", [*WAY_IN, end]),
+                     ("other", "236", "11:00:00", [STOP_A, HOWARD])], places={})
+    schedule, _ = _build(document, naptan=WAY_IN_PLACES)
+    assert set(_codes(schedule)) == {("out", False), ("in", end == MARKET_HALL), ("other", False)}
+    assert set(WAY_IN[-20:]) | {end} <= set(schedule.positions)
+    assert not set(WAY_IN[:-20]) & set(schedule.positions)
+    assert not _box_holds(schedule, WAY_IN[0])
+
+
+@pytest.mark.parametrize("places", [{}, WAY_IN_PLACES])  # placed by NaPTAN, or by the timetable too
+def test_a_journey_through_your_stop_to_a_stand_near_it_is_placed_all_the_way(places):
+    way = [*WAY_IN, STOP_A, MARKET_HALL]
+    document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD]), ("through", "237", "09:00:00", way)], places)
+    schedule, _ = _build(document, naptan=WAY_IN_PLACES)
+    assert set(way) <= set(schedule.positions)
+
+
+def test_a_journey_ending_far_from_your_stop_is_not_placed_all_the_way():
+    # Its bus turns round 400 m away, not at your stop: nothing to follow in.
+    way = [*WAY_IN, STOP_A, FAR_STAND]
+    document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD]), ("through", "237", "09:00:00", way)], places={})
+    schedule, _ = _build(document, naptan={**WAY_IN_PLACES, FAR_STAND: FAR})
+    assert set(WAY_IN[-20:]) <= set(schedule.positions)
+    assert not set(WAY_IN[:-20]) & set(schedule.positions)
 
 
 def test_inbound_only_journeys_are_capped(monkeypatch, caplog):

@@ -18,6 +18,19 @@ your stops; when they can't tell, it is held for NaPTAN to measure only if
 its last stop is in the same ATCO area (the first three characters) as one
 of yours.
 
+Positions. The stops a journey calls at on its way to your stops (the
+CALLS_BEFORE before each, and the one after) are placed, by NaPTAN or the
+timetables' own positions, so livebus can place its bus there; so are those
+an inbound-only journey calls at on its way in. A bus that turns round at
+your stop, though, is out on the journey before for most of the time before
+it leaves, often further out than that. So a journey that ends at one of
+your stops, or within NEAR_M of one, on a line (and operator) with
+departures starting there, has every stop it calls at placed (_turning).
+The BODS request's box is drawn round them all (bodsbus), so it grows to
+match. While reading, before NaPTAN has placed them, every stop of a
+journey that may end near one of yours (_may_be_near) is held, and those
+of journeys that don't are let go once it has.
+
 Built about once a week by a timer, the command line or the dashboard's
 upkeep, and by the setup search, never from the minutely board run: an
 operator's timetables can run to hundreds of megabytes. Each download waits
@@ -131,6 +144,8 @@ FORMAT = 4
 MAX_AGE = timedelta(days=7)
 # Positions are kept for this many calls before each of your stops, and the one
 # after: livebus places buses along that stretch and sees them pass your stop.
+# A journey whose bus turns round at your stop has all its calls placed
+# (see the module's notes).
 CALLS_BEFORE = 20
 CALLS_AFTER = 1
 # Inbound-only journeys kept, at most, and no more than half the install's
@@ -152,7 +167,10 @@ MAX_INBOUND_JOURNEYS = 10_000
 # average and up to 134. 8 KB covers the made-up ones, each with a calendar
 # of its own, and twice the real ones. Keeping each journey's block (format
 # 4) added 8 bytes a journey, and its block numbers, shared: about 50 with
-# one of its own each, so this stands.
+# one of its own each, so this stands. Placing every stop of the journeys
+# whose bus turns round at your stop (_turning) holds a position per stop,
+# not per journey: Glossop's build held 38 KB more for its 531 journeys
+# (from 117 stops placed to 316), and its peak was unchanged.
 JOURNEY_BYTES = 8_000
 # The most a journey takes in the saved file (save, a journey at a time):
 # one of 80 calls with school terms, bank holidays and Christmas off takes
@@ -614,24 +632,27 @@ def _journey(
     return _Version(service.code, doc.revision), journey
 
 
+def _may_be_near(
+    atco: str, positions: Mapping[str, StopPosition], atcos: Collection[str], yours: Mapping[str, StopPosition]
+) -> bool:
+    """Whether a stop may be one of your stops or within NEAR_M of one: by the
+    timetables' positions (a document's `positions`; `yours` are those known
+    from earlier documents), or, while that can't be told, if it is in the
+    same ATCO area as one, to be measured once NaPTAN has placed it (see the
+    module's notes)."""
+    if atco in atcos:
+        return True
+    placed = {**yours, **{stop: positions[stop] for stop in atcos if stop in positions}}
+    here = positions.get(atco)
+    near = here is not None and any(metres(here, there) <= NEAR_M for there in placed.values())
+    unplaced = (here is None or len(placed) < len(atcos)) and atco[:3] in {stop[:3] for stop in atcos}
+    return near or unplaced
+
+
 def _stands(doc: _Document, atcos: Collection[str], yours: Mapping[str, StopPosition]) -> set[str]:
     """The stops in a document where a journey that doesn't call at your
-    stops may end near one: within NEAR_M of one by the timetables' positions
-    (`yours` are those known from earlier documents), or, while that can't be
-    told, in the same ATCO area as one, to be measured once NaPTAN has placed
-    it (see the module's notes)."""
-    placed = {**yours, **{atco: doc.positions[atco] for atco in atcos if atco in doc.positions}}
-    areas = {atco[:3] for atco in atcos}
-    found = set()
-    for atco in doc.names:
-        if atco in atcos:
-            continue
-        here = doc.positions.get(atco)
-        near = here is not None and any(metres(here, there) <= NEAR_M for there in placed.values())
-        unplaced = (here is None or len(placed) < len(atcos)) and atco[:3] in areas
-        if near or unplaced:
-            found.add(atco)
-    return found
+    stops may end near one (_may_be_near)."""
+    return {atco for atco in doc.names if atco not in atcos and _may_be_near(atco, doc.positions, atcos, yours)}
 
 
 _TXC = "{" + _NS["t"] + "}"  # as in an element's tag
@@ -1002,6 +1023,29 @@ def _approach(journey: Journey) -> set[str]:
     return {call.atco for call in journey.calls[-(CALLS_BEFORE + 1) :]}
 
 
+def _all_calls(journey: Journey) -> set[str]:
+    return {call.atco for call in journey.calls}
+
+
+def _turning(journeys: Iterable[Journey], atcos: Collection[str], positions: Mapping[str, StopPosition]) -> set[str]:
+    """Every stop of each journey whose bus may turn round at your stop: it
+    ends at one of `atcos`, or within NEAR_M of one by `positions`, and a
+    journey of its line and operator not inbound-only starts there."""
+    journeys = list(journeys)
+    starts = {(_line(j), j.calls[0].atco) for j in journeys if not j.inbound_only and j.calls[0].atco in atcos}
+    found: set[str] = set()
+    for journey in journeys:
+        end, here = journey.calls[-1].atco, positions.get(journey.calls[-1].atco)
+        for line, stop in starts:
+            if line != _line(journey):
+                continue
+            there = positions.get(stop)
+            if end == stop or (here is not None and there is not None and metres(here, there) <= NEAR_M):
+                found |= _all_calls(journey)
+                break
+    return found
+
+
 def _ends_near(journey: Journey, atcos: Collection[str], positions: Mapping[str, StopPosition]) -> bool:
     """Whether a journey ends within NEAR_M of one of `atcos`, by `positions`."""
     end = positions.get(journey.calls[-1].atco)
@@ -1069,7 +1113,9 @@ class _Read(NamedTuple):
 
     journeys: tuple[Journey, ...]  # those calling at your stops, current (_current)
     inbound: tuple[Journey, ...]  # the inbound-only ones, current, not yet measured
-    stops: set[str]  # to place: on the way to your stops and after, and where inbound-only ones end and approach
+    # To place: on the way to your stops and after, where inbound-only ones end
+    # and approach, and every stop of journeys that may end near your stops.
+    stops: set[str]
     known: dict[str, StopPosition]  # the timetables' own positions of those stops
     left_out: int  # inbound-only journeys left out, past inbound_limit
     inbound_limit: int
@@ -1087,6 +1133,7 @@ def _read_timetables(links: list[tuple[str, str]], atcos: set[str], today: date,
     versions: dict[tuple, set[_Seen]] = {}  # by _group
     nearby: set[str] = set()
     approaches: set[str] = set()
+    turning: set[str] = set()  # every stop of journeys that may end near yours, until NaPTAN tells (_turning)
     known: dict[str, StopPosition] = {}
     yours: dict[str, StopPosition] = {}
     left_out = 0
@@ -1110,14 +1157,18 @@ def _read_timetables(links: list[tuple[str, str]], atcos: set[str], today: date,
             if not journey.inbound_only:
                 journeys.setdefault(key, (version, journey))
                 nearby |= _nearby(journey, atcos)
+                if _may_be_near(journey.calls[-1].atco, positions, atcos, yours):
+                    turning |= _all_calls(journey)
             elif key in inbound or len(inbound) < room.inbound:
                 inbound.setdefault(key, (version, journey))
                 approaches |= _approach(journey)
+                turning |= _all_calls(journey)
             else:
                 left_out += 1
-        known.update((atco, position) for atco, position in positions.items() if atco in nearby or atco in approaches)
+        known.update((atco, position) for atco, position in positions.items()
+                     if atco in nearby or atco in approaches or atco in turning)
     return _Read(_current(journeys.values(), versions, today), _current(inbound.values(), versions, today),
-                 nearby | approaches, known, left_out + room.left_out, room.inbound)
+                 nearby | approaches | turning, known, left_out + room.left_out, room.inbound)
 
 
 def build_schedule(
@@ -1161,7 +1212,8 @@ def build_schedule(
         log.warning("Left out %d journeys ending near your stops: more than %d", read.left_out, read.inbound_limit)
     placed = _positions(read.stops, read.known, naptan)
     near = tuple(journey for journey in read.inbound if _ends_near(journey, atcos, placed))
-    needed = set().union(*(_nearby(journey, atcos) for journey in kept), *(_approach(journey) for journey in near))
+    needed = set().union(*(_nearby(journey, atcos) for journey in kept), *(_approach(journey) for journey in near),
+                         _turning(kept + near, atcos, placed))
     ends = [journey.calendar.end for journey in kept if journey.calendar.end]
     positions = {atco: position for atco, position in placed.items() if atco in needed}
     return Schedule(
