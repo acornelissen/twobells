@@ -25,6 +25,14 @@ MAX_AGE = timedelta(minutes=10)
 
 _NS = {"siri": "http://www.siri.org.uk/siri"}
 _API_KEY = re.compile(r"\bapi_key=[^&\s\"']*")
+# VehicleRef is the operator's own name for a bus. Around Glossop it comes as a
+# fleet number ("3017"), a registration ("CD25EFG", "CD25_EFG"), or both
+# ("3017_-_AB25_CDE"); anything else gives neither.
+_MAX_VEHICLE_REF = 32
+_FLEET_NUMBER = re.compile(r"[0-9]{1,6}")
+_FLEET_AND_REG = re.compile(r"([0-9]{1,6})_-_(.+)")
+_CURRENT_REG = re.compile(r"([A-Z]{2}[0-9]{2})[ _]?([A-Z]{3})")  # since 2001: "AB25 CDE"
+_OTHER_REG = re.compile(r"[A-Z0-9]{1,4}[ _][A-Z0-9]{1,4}")  # older ones, spaced: "R123 ABC", "ABC 123D"
 
 HttpGetBytes = Callable[[str, int], bytes]
 
@@ -50,6 +58,9 @@ class Vehicle:
     journey_ref: str = ""  # DatedVehicleJourneyRef, the ticket machine's journey code
     block: str = ""
     origin_name: str = ""  # OriginName, as sent: often with underscores for spaces
+    # From vehicle_ref, checked (fleet_and_registration); "" when it doesn't say.
+    fleet_number: str = ""  # "3017"
+    registration: str = ""  # "AB25 CDE", spaced as on the number plate
 
 
 def _text(node, path: str) -> str:
@@ -86,6 +97,30 @@ def _degrees(text: str, limit: float) -> float | None:
     return degrees if math.isfinite(degrees) and -limit <= degrees <= limit else None
 
 
+def _registration(text: str) -> str:
+    """A number plate as written on one ("AB25 CDE"), or "" if text isn't one.
+    Unspaced, only the current style is read: older ones can't be split safely."""
+    text = text.upper()
+    if found := _CURRENT_REG.fullmatch(text):
+        return f"{found[1]} {found[2]}"
+    if _OTHER_REG.fullmatch(text) and any(c.isdigit() for c in text) and any(c.isalpha() for c in text):
+        return text.replace("_", " ")
+    return ""
+
+
+def fleet_and_registration(vehicle_ref: str) -> tuple[str, str]:
+    """The fleet number and the registration a VehicleRef gives, each "" when
+    it doesn't give one: "3017_-_AB25_CDE" is ("3017", "AB25 CDE"), "CD25EFG"
+    ("", "CD25 EFG"), "10234" ("10234", ""). Anything long or odd gives neither."""
+    if len(vehicle_ref) > _MAX_VEHICLE_REF:
+        return "", ""
+    if _FLEET_NUMBER.fullmatch(vehicle_ref):
+        return vehicle_ref, ""
+    if found := _FLEET_AND_REG.fullmatch(vehicle_ref):
+        return found[1], _registration(found[2])
+    return "", _registration(vehicle_ref)
+
+
 def parse_siri_vm(body: bytes) -> list[Vehicle]:
     """Vehicles from a SIRI-VM document. Activities missing a position, or
     with one that isn't on the map, are skipped."""
@@ -99,6 +134,8 @@ def parse_siri_vm(body: bytes) -> list[Vehicle]:
         lon = _degrees(_text(journey, "siri:VehicleLocation/siri:Longitude"), 180)
         if lat is None or lon is None:
             continue
+        vehicle_ref = _text(journey, "siri:VehicleRef")
+        fleet_number, registration = fleet_and_registration(vehicle_ref)
         vehicles.append(
             Vehicle(
                 line=_text(journey, "siri:PublishedLineName") or _text(journey, "siri:LineRef"),
@@ -108,13 +145,15 @@ def parse_siri_vm(body: bytes) -> list[Vehicle]:
                 lon=lon,
                 recorded_at=_text(activity, "siri:RecordedAtTime"),
                 bearing=_bearing(_text(journey, "siri:Bearing")),
-                vehicle_ref=_text(journey, "siri:VehicleRef"),
+                vehicle_ref=vehicle_ref,
                 operator=_text(journey, "siri:OperatorRef"),
                 origin_ref=_text(journey, "siri:OriginRef"),
                 origin_aimed=_aware_time(_text(journey, "siri:OriginAimedDepartureTime")),
                 journey_ref=_text(journey, "siri:FramedVehicleJourneyRef/siri:DatedVehicleJourneyRef"),
                 block=_text(journey, "siri:BlockRef"),
                 origin_name=_text(journey, "siri:OriginName"),
+                fleet_number=fleet_number,
+                registration=registration,
             )
         )
     return vehicles

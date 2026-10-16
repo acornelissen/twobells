@@ -4,7 +4,13 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from tests.paths import FIXTURES
-from twobells.sources.bods import MAX_RESPONSE_BYTES, BodsVehicleSource, parse_siri_vm, redact_key
+from twobells.sources.bods import (
+    MAX_RESPONSE_BYTES,
+    BodsVehicleSource,
+    fleet_and_registration,
+    parse_siri_vm,
+    redact_key,
+)
 
 FIXTURE = (FIXTURES / "bods_glossop_synthetic.xml").read_bytes()
 BOX = (-1.99, 53.43, -1.94, 53.46)
@@ -18,6 +24,48 @@ def test_parses_vehicles_with_a_position():
     assert (first.lat, first.lon, first.bearing) == (53.443502, -1.957392, 90.0)
     assert first.recorded_at == "2026-10-08T07:12:31+01:00"
     assert first.vehicle_ref == "BNML-1001"
+
+
+@pytest.mark.parametrize(
+    ("ref", "fleet", "registration"),
+    [
+        ("3017_-_AB25_CDE", "3017", "AB25 CDE"),  # High Peak: fleet number and plate
+        ("290_-_AB51_BUS", "290", "AB51 BUS"),
+        ("CD25EFG", "", "CD25 EFG"),  # Bee Network: the plate, unspaced
+        ("CD25_EFH", "", "CD25 EFH"),  # or with an underscore for the space
+        ("cd25efg", "", "CD25 EFG"),
+        ("4021", "4021", ""),  # a fleet number alone
+        ("10234", "10234", ""),
+        ("R123_ABC", "", "R123 ABC"),  # an older plate, spaced
+        ("12_-_ABC_123D", "12", "ABC 123D"),
+        ("12_-_NOT A PLATE", "12", ""),  # the fleet number is still worth having
+    ],
+)
+def test_reads_a_fleet_number_and_registration_from_the_vehicle_ref(ref, fleet, registration):
+    assert fleet_and_registration(ref) == (fleet, registration)
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "", "TSDUMMY", "BNML-1001", "1234567", "R123ABC",  # no fleet number, no plate it can be sure of
+        "DUMMY_BUS", "1234_5678", "AB25_CDE_X", "AB25  CDE", "<b>AB25CDE</b>", "AB25CDE\n", "AB25\u00a0CDE",
+        "\uff21\uff2225CDE",  # full-width letters
+        "3017_-_" + "A" * 40,  # too long to be either
+    ],
+)
+def test_an_odd_vehicle_ref_gives_neither(ref):
+    assert fleet_and_registration(ref) == ("", "")
+
+
+def test_parses_the_fleet_number_and_registration_of_each_vehicle():
+    body = FIXTURE.replace(b"<VehicleRef>BNML-1001</VehicleRef>", b"<VehicleRef>3017_-_AB25_CDE</VehicleRef>")
+    body = body.replace(b"<VehicleRef>BNML-1002</VehicleRef>", b"<VehicleRef>TSDUMMY</VehicleRef>")
+    vehicles = parse_siri_vm(body)
+    assert (vehicles[0].vehicle_ref, vehicles[0].fleet_number, vehicles[0].registration) == (
+        "3017_-_AB25_CDE", "3017", "AB25 CDE",
+    )
+    assert (vehicles[1].fleet_number, vehicles[1].registration) == ("", "")
 
 
 @pytest.mark.parametrize("bearing", [b"north", b"nan", b"inf", b"-inf", b"1e400"])
