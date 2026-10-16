@@ -640,6 +640,7 @@ TRAIN_ROW = {
     "platform": Opt(str), "platform_changed": bool, "usual_platform": Opt(str), "via": Opt(str),
     "replacement_bus": bool, "length": Opt(integer), "formation": Opt(FORMATION),
     "cancel_reason": Opt(str), "delay_reason": Opt(str), "walk_min": Opt(integer), "leave_at": Opt(at),
+    "calling_at": Opt(str),
     "calling_points": [CALLING_POINT],
     "previous_points": [CALLING_POINT],
     "position": Opt({"where": str, "strip": {"stops": [str], "yours": integer, "train_at": Opt(number)}}),
@@ -1925,8 +1926,10 @@ def test_the_train_board_reads_like_a_station_screen():
     assert first["time"] == "07:12"
     # Row 1 alone says where it calls; it says where it is, as does a later
     # row whose train has a position strip to draw (the 08:12).
-    assert first["calling"][0].startswith("Calling at Dinting, Broadbottom, Hattersley")
-    assert first["calling"][0].endswith("Manchester Piccadilly")
+    # In the server's words (calling_at), the station board's line.
+    assert first["calling"] == ["Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, "
+                                "Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. "
+                                "This train is formed of 3 coaches."]
     assert first["where"] == ["Not started yet: leaves Hadfield at 07:11"]
     assert found["calling"] == [0] * 9
     assert found["where"] == ["", "Left Hadfield 08:04, on time"] + [""] * 7
@@ -1942,6 +1945,73 @@ def test_the_train_board_reads_like_a_station_screen():
     # screen reader has the header.
     assert found["platform"] == ["1", "not yet known", "Plat–"]
     assert found["walk"] == "10 min walk to Glossop."
+
+
+def _calling_page():
+    """The boards' page with the trains section's Pause button and a browser's storage."""
+    script = _boards().replace('h("div", { id: "station-info" }),', '''h("div", { id: "station-info" }),
+    h("button", { id: "calling-pause", type: "button", "aria-pressed": "false", hidden: true }, "Pause scrolling"),''')
+    script = script.replace("const snapshot =", """const saved = {};
+globalThis.localStorage = { getItem: (k) => saved[k] ?? null, setItem: (k, v) => { saved[k] = v; } };
+const snapshot =""")
+    assert script.count("calling-pause") == 1 and "globalThis.localStorage" in script
+    return script
+
+
+@needs_node
+def test_the_calling_at_line_can_be_paused_and_stays_paused():
+    found = run_js(_calling_page() + """
+        import { toggleCalling } from "./board.js";
+        const pause = board("calling-pause");
+        const line = () => byClass(bodyRows("trains-board")[0], "calling-at")[0];
+        const state = () => [pause.hidden, pause.getAttribute("aria-pressed"), line().getAttribute("class")];
+        const text = byClass(line(), "calling-text")[0];
+        const before = state();
+        toggleCalling(pause);
+        const paused = [...state(), saved["dashboard.calling"]];
+        renderTrains(snapshot, alerts);  // a new snapshot keeps it paused
+        const redrawn = state();
+        toggleCalling(pause);
+        console.log(JSON.stringify({
+          before, paused, redrawn, running: [...state(), saved["dashboard.calling"]],
+          timing: [text.style.getPropertyValue("--calling-s"), text.style.getPropertyValue("--calling-delay")],
+        }));
+    """)
+    assert found["before"] == [False, "false", "sub calling-at"]
+    assert found["paused"] == [False, "true", "sub calling-at paused", "paused"]
+    assert found["redrawn"] == [False, "true", "sub calling-at paused"]
+    assert found["running"] == [False, "false", "sub calling-at", "running"]
+    seconds, delay = found["timing"]
+    # One pass at a steady pace for its length, started where the wall clock says it has got to.
+    assert re.fullmatch(r"\d+s", seconds) and int(seconds[:-1]) >= 8
+    assert re.fullmatch(r"-\d+\.\d\ds", delay) and 0 <= -float(delay[:-1]) < int(seconds[:-1])
+
+
+@needs_node
+def test_without_a_calling_at_line_there_is_nothing_to_pause():
+    script = _calling_page().replace("observeSnapshot(snapshot.generated_at);", """
+snapshot.trains.rows[0] = { ...snapshot.trains.rows[0], calling_at: null };
+observeSnapshot(snapshot.generated_at);""")
+    found = run_js(script + """
+        console.log(JSON.stringify([board("calling-pause").hidden, byClass(board("trains-board"), "calling-at").length]));
+    """)
+    assert found == [True, 0]
+
+
+def test_the_calling_at_line_scrolls_only_in_the_board_looks_and_never_with_reduced_motion():
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    motion = css[css.index("@media (prefers-reduced-motion: no-preference)"):]
+    motion = motion[:motion.index("\n}\n")]
+    # The animation, and the Pause button, are only inside the motion query.
+    assert "animation: calling-scroll" in motion and css.count("animation: calling-scroll") == 1
+    assert ".calling-pause:not([hidden])" in motion and "display: inline-flex" in motion
+    assert re.search(r"(?m)^\.calling-pause \{ display: none; \}", css)
+    for selector in re.findall(r"(?m)^\s*(:root[^{]*calling[^{]*)\{", motion):
+        assert selector.startswith(':root:is([data-theme="board"], [data-theme="tft"])'), selector
+    # The button is outside the table, so a row keeps its one control.
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert page.index('id="calling-pause"') < page.index('id="trains-board"')
+    assert 'aria-pressed="false"' in page[page.index('id="calling-pause"') - 80:page.index('id="calling-pause"') + 200]
 
 
 @needs_node

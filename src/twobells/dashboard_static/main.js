@@ -6,7 +6,9 @@
 import { $, setText, str, obj, focusKey, refocus } from "./dom.js";
 import { connect, STATE } from "./api.js";
 import { clockParts, clockText, parseAt } from "./time.js";
-import { applyRowStrips, lastBuses, renderBuses, renderTrains, stopNames, tickBoards, toggleMore } from "./board.js";
+import {
+  applyRowStrips, lastBuses, renderBuses, renderTrains, stopNames, tickBoards, toggleCalling, toggleMore,
+} from "./board.js";
 import { tickStrips } from "./strip.js";
 import { renderWeather } from "./weather.js";
 import { noteSnapshot } from "./live.js";
@@ -136,6 +138,7 @@ $("main").addEventListener("click", (event) => {
   if (button) {
     if (button.dataset.action === "open") open(button);
     else if (button.dataset.action === "more") toggleMore(button);
+    else if (button.dataset.action === "calling") toggleCalling(button);
     return;
   }
   // A click anywhere else on a row opens its sheet too, unless it lands on a

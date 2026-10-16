@@ -221,6 +221,7 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
         "delay_reason": service.delay_reason,
         "walk_min": walk.minutes(dep),
         "leave_at": iso(leave_at(dep, scheduled_at, expected_at, walk)),
+        "calling_at": dep.calling_at,
         "calling_points": [calling_point(p) for p in service.calling_points],
         "previous_points": [calling_point(p) for p in details.previous] if details else [],
         "position": position_block(details, now or fetched),
@@ -246,7 +247,7 @@ def message(found: Message) -> dict:
 
 def calling_point(point: CallingPoint) -> dict:
     """One calling point for the train dialog, times as HH:MM or null."""
-    cancelled = point.cancelled or point.expected == "Cancelled" or point.actual == "Cancelled"
+    cancelled = point.skipped
     return {
         "name": point.name, "crs": point.crs, "scheduled": point.scheduled,
         "expected": None if cancelled else _clock_or_none(point.expected, point.scheduled),

@@ -1277,6 +1277,38 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
 :root[data-theme="tft"] .badge.st-late { color: var(--pill-ink); background: var(--pill-late); }
 :root[data-theme="tft"] .badge.st-cancelled { color: var(--pill-bad-ink); background: var(--pill-bad); }
 
+/* --- The first train's "Calling at" line (board.js): wrapped, as any line
+   under a destination. The board looks scroll it along one line instead, as
+   a station's screen does, in from the right, and show the trains section's
+   Pause button (#calling-pause), which stops it and wraps it again; never
+   with reduced motion, nor on a wall tablet, which hides the line. The
+   window's width is 0 so the long line doesn't widen the table: it takes
+   the room the column has. --- */
+
+.calling-pause { display: none; }
+@keyframes calling-scroll { to { transform: translateX(-100%); } }
+@media (prefers-reduced-motion: no-preference) {
+  :root:is([data-theme="board"], [data-theme="tft"]) .calling-at:not(.paused) .calling-window {
+    display: block;
+    width: 0;
+    min-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  :root:is([data-theme="board"], [data-theme="tft"]) .calling-at:not(.paused) .calling-text {
+    display: inline-block;
+    padding-left: 100%;
+    animation: calling-scroll var(--calling-s, 30s) linear var(--calling-delay, 0s) infinite;
+  }
+  :root:is([data-theme="board"], [data-theme="tft"]):not([data-kiosk]) .calling-pause:not([hidden]) {
+    display: inline-flex;
+    min-height: 2rem;
+    margin-bottom: var(--s-2);
+    padding: 0 var(--s-3);
+    font-size: var(--t-sm);
+  }
+}
+
 /* --- The stale banner: a wall tablet's (kiosk.js), when the page is behind
    or can't reach the server. Full width and reversed out, to be seen across
    a room. --- */
@@ -1331,6 +1363,7 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
 :root[data-kiosk] .station-info,
 :root[data-kiosk] .tt-changes,
 :root[data-kiosk] .calling-at,
+:root[data-kiosk] .calling-pause,
 :root[data-kiosk] .record,
 :root[data-kiosk] .inbound,
 :root[data-kiosk] #weather-hours-heading,

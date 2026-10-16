@@ -13,7 +13,7 @@
 // Rows draw their position strips unless the settings turned them off
 // (applyRowStrips marks <html data-row-strips="off">) or the page is on a wall tablet.
 
-import { h, vh, setText, str, num, list, obj, own, validId } from "./dom.js";
+import { h, vh, setText, str, num, list, obj, own, store, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
 import { arrivesLine, busStatusExtras } from "./extras.js";
 import { icon } from "./icons.js";
@@ -233,11 +233,46 @@ function whereLine(where, kind, strip, at) {
   return h("span", { class: ["sub", "where", drawing ? "has-strip" : null] }, drawing, where);
 }
 
-// The first row's stops, as on a station's screen: "Calling at Dinting,
-// Hattersley, Manchester Piccadilly". Cancelled stops are left out.
+// The first row's "Calling at" line, in the server's words (core/calling.py):
+// "Calling at: Dinting, Broadbottom and Manchester Piccadilly. This train is
+// formed of 3 coaches." The board looks (Dot matrix, TFT) scroll it along one
+// line, as a station's screen does; the trains section's Pause button
+// (#calling-pause, outside the table, so a row keeps its one control) stops
+// it. Paused, with reduced motion, and in the Standard look it wraps (app.css).
+const CALLING_KEY = "dashboard.calling";
+const callingPaused = () => store.get(CALLING_KEY) === "paused";
+
+// Seconds for one pass: a steady pace, whatever the line's length.
+export const callingSeconds = (text) => Math.round(8 + 0.2 * text.length);
+
 function callingAt(row) {
-  const names = list(row.calling_points).filter((p) => obj(p) && p.cancelled !== true).map((p) => str(p.name)).filter(Boolean);
-  return names.length ? h("span", { class: "sub calling-at" }, `Calling at ${names.join(", ")}`) : null;
+  const said = str(row.calling_at);
+  if (!said) return null;
+  const text = h("span", { class: "calling-text" }, said);
+  // Each pass is timed by the wall clock, not from when the row was drawn, so
+  // a new snapshot redrawing the board leaves the line where it was.
+  const seconds = callingSeconds(said);
+  text.style.setProperty("--calling-s", `${seconds}s`);
+  text.style.setProperty("--calling-delay", `${-((Date.now() / 1000) % seconds).toFixed(2)}s`);
+  return h("span", { class: ["sub", "calling-at", callingPaused() ? "paused" : null] },
+    h("span", { class: "calling-window" }, text));
+}
+
+// The Pause button: there while the board has a calling-at line, pressed
+// while it is paused. CSS shows it only where the line scrolls.
+function showCallingPause() {
+  const button = document.getElementById("calling-pause");
+  if (!button) return;
+  button.hidden = !document.querySelector("#trains-board .calling-at");
+  button.setAttribute("aria-pressed", String(callingPaused()));
+}
+
+// Stops or starts the calling-at line, and remembers it in this browser.
+export function toggleCalling(button) {
+  const paused = !callingPaused();
+  store.set(CALLING_KEY, paused ? "paused" : "running");
+  button.setAttribute("aria-pressed", String(paused));
+  for (const line of document.querySelectorAll("#trains-board .calling-at")) line.classList.toggle("paused", paused);
 }
 
 // The Plat cell: "1", "Bus" for a replacement bus, "–" until it's known, or
@@ -339,6 +374,7 @@ export function renderTrains(snapshot, alerts) {
     columns: [["Time", "c-time"], ["Destination", "c-dest"], ["Plat", "c-plat", "Platform"], ["Expected", "c-status"],
       ["Leave", "c-leave"]],
   }, rows, (row, i, later) => trainRow(row, i === 0, later, alerts));
+  showCallingPause();
   renderMessages(trains);
   return rows;
 }

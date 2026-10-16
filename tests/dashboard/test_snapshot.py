@@ -508,6 +508,13 @@ def test_a_row_carries_its_via_words():
     assert row["via"] is None
 
 
+def test_a_row_carries_its_calling_at_line():
+    tparts, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO")
+    to_manchester = tparts["rows"][1]
+    assert to_manchester["calling_at"].startswith("Calling at: Dinting, Broadbottom, Hattersley")
+    assert to_manchester["calling_at"].endswith("and Manchester Piccadilly. This train is formed of 2 coaches.")
+
+
 # Status words
 
 

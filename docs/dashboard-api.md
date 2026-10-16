@@ -69,6 +69,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "delay_reason": "This train has been delayed by a broken down train",
       "walk_min": 10,
       "leave_at": "…",
+      "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.",
       "calling_points": [
         {"name": "Dinting", "crs": "DGT", "scheduled": "07:15", "expected": "07:22", "actual": null, "cancelled": false}
       ],
@@ -165,7 +166,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
 - **Missing data:**
   - A section can be `null` when it isn't configured (`trains`, `buses`, `weather`).
   - `now`, `sun`, `rain`, `strip`, `vehicle`, `position` and `formation` can each be null.
-  - `calling_points` and `previous_points` can be `[]`.
+  - `calling_points` and `previous_points` can be `[]`, and `calling_at` null.
 - **Train `messages`** (National Rail's own messages for the station, at most 3, plain text):
   - `category` is Darwin's, when it sends one: `train`, `station`, `connections`, `system`, `misc`, `prior_trains` or `prior_other`; else null. `severity` likewise: `normal`, `minor`, `major` or `severe`, or null.
   - `kind` is `station` for a notice about the station's facilities (ticket office, ticket machines, lifts, toilets, waiting rooms, car park, help points, step-free access), else `service`. Darwin's category decides when it is sent (`station` is a station notice); without one, the words do (`darwin.message_kind`). Words about the trains (delays, cancellations, no trains, replacement buses, a closed station) always make it `service`, so a station notice never hides disruption.
@@ -182,6 +183,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `platform_changed` is true when `platform` isn't the one the server's last fetch gave the same train (it stays true while the train keeps its new platform), or isn't `usual_platform`. A platform appearing or going is no change, and a replacement bus is never one. The page says "2 (changed)" in the Plat column, on the late colours, says "Usually: Platform 1" in the sheet, and announces each change once in the live region.
 - **`via`:** Darwin's words on the train's route, after its destination, like "via Guide Bridge", or null. The page shows it under the destination and in the sheet's title.
 - **Calling points:** `calling_points` are the stops after this station, `previous_points` the ones before it, both in journey order. Times are `HH:MM` or null; `actual` is set once the train has been there. A cancelled stop has `cancelled: true` and null times.
+- **`calling_at`:** the station board's "Calling at" line, in words, from `calling_points` and `length` (or else the coaches in `formation`): "Calling at: Dinting and Manchester Piccadilly." ("Calling at: Manchester Piccadilly only." for one stop, from `calling_points` less those cancelled), then "Does not call at Hattersley or Godley." for stops cancelled, then "This train is formed of 3 coaches." when the length is known, or "This is a replacement bus." It is null for a cancelled train and when Darwin gives no calling points. The board's screens scroll the same line under their first train. **On the page:** the first row shows it under the destination; the Dot matrix and TFT looks scroll it along one line, in from the right, with a **Pause scrolling** button above the trains table (`aria-pressed`, remembered in the browser) that stops it and wraps it. With reduced motion it never scrolls, and the button isn't shown; a wall tablet leaves the line out.
 - **Train `position`** (from Darwin's Service Details, which needs its own key, `RDM_DETAILS_API_KEY`):
   - It is known for the first 3 trains on the board that aren't cancelled, refreshed at most once a minute. Other rows have `position: null` and `previous_points: []`, unless the server still holds their details from earlier.
   - Without the key, or while the key is refused (the server stops asking for 6 hours), every row has `position: null` and `previous_points: []`.

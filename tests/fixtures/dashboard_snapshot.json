@@ -95,6 +95,7 @@
         "delay_reason": "This train has been delayed by a broken down train",
         "walk_min": 10,
         "leave_at": "2026-10-10T07:09:00+01:00",
+        "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.",
         "calling_points": [
           {
             "name": "Dinting",
@@ -233,6 +234,7 @@
         "delay_reason": null,
         "walk_min": 10,
         "leave_at": null,
+        "calling_at": null,
         "calling_points": [
           {
             "name": "Dinting",
@@ -351,6 +353,7 @@
         "delay_reason": null,
         "walk_min": 10,
         "leave_at": "2026-10-10T08:02:00+01:00",
+        "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 6 coaches.",
         "calling_points": [
           {
             "name": "Dinting",
@@ -489,6 +492,7 @@
         "delay_reason": "This train has been delayed by signalling problems",
         "walk_min": 10,
         "leave_at": "2026-10-10T08:32:00+01:00",
+        "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.",
         "calling_points": [
           {
             "name": "Dinting",
@@ -602,6 +606,7 @@
         "delay_reason": null,
         "walk_min": 10,
         "leave_at": "2026-10-10T09:02:00+01:00",
+        "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.",
         "calling_points": [
           {
             "name": "Dinting",
@@ -720,6 +725,7 @@
         "delay_reason": null,
         "walk_min": 10,
         "leave_at": "2026-10-10T09:35:00+01:00",
+        "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.",
         "calling_points": [
           {
             "name": "Dinting",
@@ -838,6 +844,7 @@
         "delay_reason": null,
         "walk_min": 10,
         "leave_at": "2026-10-10T10:02:00+01:00",
+        "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 2 coaches.",
         "calling_points": [
           {
             "name": "Dinting",
@@ -956,6 +963,7 @@
         "delay_reason": null,
         "walk_min": 10,
         "leave_at": "2026-10-10T10:32:00+01:00",
+        "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.",
         "calling_points": [
           {
             "name": "Dinting",
@@ -1074,6 +1082,7 @@
         "delay_reason": null,
         "walk_min": 10,
         "leave_at": "2026-10-10T11:02:00+01:00",
+        "calling_at": null,
         "calling_points": [],
         "previous_points": [],
         "position": null,
@@ -1106,6 +1115,7 @@
         "delay_reason": null,
         "walk_min": 10,
         "leave_at": "2026-10-10T11:32:00+01:00",
+        "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.",
         "calling_points": [
           {
             "name": "Dinting",
