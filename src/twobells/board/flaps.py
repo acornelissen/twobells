@@ -47,7 +47,8 @@ def _turns(old: str, new: str, steps: int) -> list[str]:
     frames = min(max(distance, 1), steps)
     shown = []
     for frame in range(1, frames):
-        letter = DRUM[(start + round(frame * distance / frames)) % len(DRUM)]
+        # Evenly round the drum, halves rounded up (as the dashboard's flap.js does).
+        letter = DRUM[(start + (2 * frame * distance + frames) // (2 * frames)) % len(DRUM)]
         shown.append(letter.lower() if new.islower() else letter)
     return [*shown, new]
 
