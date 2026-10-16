@@ -163,7 +163,8 @@ def _looks():
 
 @pytest.mark.parametrize("name", PAGES)
 def test_the_look_picker_is_a_labelled_list_of_every_look_in_the_header(name):
-    assert _look_options(name) == [("modern", "Standard"), ("board", "Dot matrix"), ("tft", "TFT")]
+    assert _look_options(name) == [("modern", "Standard"), ("board", "Dot matrix"), ("tft", "TFT"),
+                                   ("flap", "Split-flap")]
     page = _page(name)
     header = next(i for i, (tag, _) in enumerate(page.elements) if tag == "header")
     main = next(i for i, (tag, _) in enumerate(page.elements) if tag == "main")
@@ -471,9 +472,10 @@ def test_no_text_glyphs_stand_in_for_icons():
 
 
 # The looks, and a wall tablet's dimmed ones for its quiet windows.
-THEMES = ["modern-light", "modern-dark", "board", "tft", "kiosk-dim", "kiosk-dim-board", "kiosk-dim-tft"]
+THEMES = ["modern-light", "modern-dark", "board", "tft", "flap", "kiosk-dim", "kiosk-dim-board", "kiosk-dim-tft",
+          "kiosk-dim-flap"]
 # A dark look's dimmed palette, which overrides that look on a wall tablet.
-DIMMED = {"kiosk-dim-board": "board", "kiosk-dim-tft": "tft"}
+DIMMED = {"kiosk-dim-board": "board", "kiosk-dim-tft": "tft", "kiosk-dim-flap": "flap"}
 
 
 def _palettes():
@@ -533,6 +535,135 @@ def test_the_tft_look_puts_times_in_yellow_and_each_status_in_its_own_pill():
         assert _css_value(selector, "border-radius") == "999px"
     # The status words are still in each badge: the pill only backs them up.
     assert "badge-text" in (STATIC / "board.js").read_text(encoding="utf-8")
+
+
+# The Split-flap look's own: the letters on its tiles, a late status's amber
+# ones, and a cancelled one's black on amber tiles.
+FLAP_PAIRS = [("tile-fg", "tile"), ("late-fg", "tile"), ("tile-bad-fg", "tile-bad")]
+
+
+@pytest.mark.parametrize("theme", ["flap", "kiosk-dim-flap"])
+def test_the_split_flap_looks_tiles_are_readable(theme):
+    assert_contrast(theme, _palettes()[theme], FLAP_PAIRS, [])
+
+
+def test_the_split_flap_look_draws_each_tile_split_across_the_middle():
+    assert _css_value(':root[data-theme="flap"] .flap-tile', "background") == "var(--tile)"
+    assert _css_value(':root[data-theme="flap"] .flap-tile', "color") == "var(--tile-fg)"
+    assert _css_value(':root[data-theme="flap"] .flap-tile::after', "top") == "50%"
+    assert _css_value(':root[data-theme="flap"] .flap-word', "white-space") == "nowrap"
+    assert _css_value(':root[data-theme="flap"] .badge.st-cancelled .flap-tile', "background") == "var(--tile-bad)"
+    # It flips by script, a frame at a time, which reduced motion turns off: no CSS animation to stop.
+    for body in _css_rules(".flap-"):
+        assert "animation" not in body and "transition" not in body
+
+
+@needs_node
+def test_the_split_flap_letters_flip_as_the_hdmi_boards_do():
+    from twobells.board.flaps import DRUM, FLAP_STEPS, flap_frames
+
+    pairs = [("07:12", "07:42"), ("Exp 07:49", "Cancelled"), ("On time", "Exp 07:49"), ("Hyde", "Manchester"),
+             ("Manchester Piccadilly", "Hyde"), ("12 min", "11 min"), ("Glossop", "Glössop"), ("A", "a"), ("", "61")]
+    found = run_js("""
+        import { DRUM, FLAP_STEPS, FLAP_MS, flapFrames } from "./flap.js";
+        console.log(JSON.stringify({ drum: DRUM, steps: FLAP_STEPS, ms: FLAP_MS,
+          frames: %s.map(([a, b]) => flapFrames(a, b)), same: flapFrames("07:12", "07:12") }));
+    """ % json.dumps(pairs))
+    assert (found["drum"], found["steps"]) == (DRUM, FLAP_STEPS)
+    assert found["frames"] == [flap_frames(a, b) for a, b in pairs]
+    assert found["same"] == []
+    assert found["steps"] * found["ms"] < 1000  # a change is over in under a second
+
+
+# A board drawn in the Split-flap look on the fake page, its first train's
+# status then changed and drawn again, with the page's timers run by hand:
+# `frames` is what its tiles show at each step, `said` what a screen reader
+# hears then, `delays` how long each step waited.
+FLIP = """
+const timers = [];
+globalThis.setTimeout = (fn, ms) => { timers.push([fn, ms]); return timers.length; };
+const statusCell = () => cell(bodyRows("trains-board")[0], "c-status");
+const tiles = () => byClass(statusCell(), "flap-tile").map((el) => el.textContent).join("");
+const flip = () => {
+  snapshot.trains.rows[0] = { ...snapshot.trains.rows[0], status_text: "Exp 07:25", status_spoken: "Expected 07:25" };
+  renderTrains(snapshot, alerts);
+  const frames = [tiles()], said = [spoken(statusCell()).trim()], delays = [];
+  while (timers.length) {
+    const [fn, ms] = timers.shift();
+    delays.push(ms);
+    fn();
+    frames.push(tiles());
+    said.push(spoken(statusCell()).trim());
+  }
+  return { frames, said, delays };
+};
+"""
+
+
+def _flap_boards(reduce=False):
+    look = 'document.documentElement = { dataset: { theme: "flap" } };\n'
+    if reduce:
+        look += "globalThis.matchMedia = (query) => ({ matches: query === '(prefers-reduced-motion: reduce)' });\n"
+    script = _boards().replace("observeSnapshot(snapshot.generated_at);", look + "observeSnapshot(snapshot.generated_at);")
+    assert script != _boards()
+    return script + FLIP
+
+
+@needs_node
+def test_the_split_flap_look_puts_each_field_on_tiles_and_says_the_same_words():
+    rows = """
+        const words = () => ["trains-board", "buses-board"].flatMap((id) => bodyRows(id).map(said));
+        const first = bodyRows("trains-board")[0];
+        const hidden = byClass(first, "flap-tiles").map((el) => el.getAttribute("aria-hidden"));
+        const onTiles = ["time", "open", "c-status"].map((cls) => shown(cell(first, cls)).trim());
+    """
+    flap = run_js(_flap_boards() + rows + "console.log(JSON.stringify({ words: words(), hidden, onTiles }));")
+    plain = run_js(_boards() + rows + "console.log(JSON.stringify({ words: words(), hidden, onTiles }));")
+    # A screen reader hears every row just as in the other looks: the tiles are hidden beside the words.
+    assert flap["words"] == plain["words"] and flap["words"]
+    assert flap["hidden"] == ["true"] * 3 and plain["hidden"] == []
+    assert flap["onTiles"] == ["07:12", "Manchester Piccadilly", "Exp 07:19"]
+
+
+@needs_node
+def test_a_changed_status_flips_to_its_new_letters_in_under_a_second():
+    found = run_js(_flap_boards() + "console.log(JSON.stringify(flip()));")
+    frames, delays = found["frames"], found["delays"]
+    assert frames[0] != "Exp 07:25" and frames[-1] == "Exp 07:25"
+    assert 2 <= len(frames) <= 8 and len(set(frames)) == len(frames)  # a new frame each step
+    assert all(frame.startswith("Exp 07:") for frame in frames)  # only the changed letters turn
+    assert set(delays) == {60} and sum(delays) < 1000
+    # Screen readers hear the new words at once, never the letters on their way.
+    assert set(found["said"]) == {"Expected 07:25"}
+
+
+@needs_node
+def test_with_reduced_motion_the_new_letters_show_at_once():
+    found = run_js(_flap_boards(reduce=True) + "console.log(JSON.stringify(flip()));")
+    assert found == {"frames": ["Exp 07:25"], "said": ["Expected 07:25"], "delays": []}
+
+
+@needs_node
+def test_choosing_another_look_takes_the_fields_off_their_tiles():
+    found = run_js(_flap_boards() + """
+        import { applyFlaps, flapText } from "./flap.js";
+        const before = byClass(board("trains-board"), "flap-tile").length;
+        document.documentElement.dataset.theme = "tft";
+        applyFlaps();
+        const time = byClass(bodyRows("trains-board")[0], "time")[0];
+        const after = [byClass(board("trains-board"), "flap-tile").length, time.childNodes.length, time.textContent];
+        // A countdown set between drawings: plain text in another look, tiles in this one.
+        const due = byClass(board("buses-board"), "due")[0];
+        flapText(due, "3 min");
+        const plain = [due.textContent, byClass(due, "flap-tile").length];
+        document.documentElement.dataset.theme = "flap";
+        flapText(due, "2 min");
+        console.log(JSON.stringify({ before, after, plain, tiled: [said(due), byClass(due, "flap-tile").length] }));
+    """)
+    assert found["before"] > 0
+    assert found["after"] == [0, 1, "07:12"]
+    assert found["plain"] == ["3 min", 0]
+    assert found["tiled"] == ["2 min", 5]
 
 
 # --- The contract fixtures (docs/dashboard-api.md), for both sides to share ---

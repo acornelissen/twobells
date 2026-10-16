@@ -6,7 +6,7 @@
 {
   // The looks: the values of the Look picker's options in index.html, each
   // with its palette in app.css. "modern" is the Standard look.
-  const LOOKS = ["modern", "board", "tft"];
+  const LOOKS = ["modern", "board", "tft", "flap"];
   const root = document.documentElement;
   const kiosk = new URLSearchParams(location.search).has("kiosk");
   if (kiosk) root.dataset.kiosk = "on";

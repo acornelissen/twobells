@@ -22,6 +22,7 @@ import { icon } from "./icons.js";
 import { noteConnection, pill, placeName } from "./header.js";
 import { applyDim, drawBanner, drawNightClock, isKiosk, startKiosk } from "./kiosk.js";
 import { setUpLook } from "./look.js";
+import { applyFlaps } from "./flap.js";
 
 const kiosk = isKiosk();
 
@@ -46,9 +47,11 @@ const heroContext = () => ({
   rain: str(obj(snapshot?.weather)?.rain),
 });
 
-// --- The look: the Look picker (look.js).
+// --- The look: the Look picker (look.js). The boards' fields go on tiles,
+// or come off them, with the Split-flap look (flap.js).
 
 setUpLook();
+$("look").addEventListener("change", () => applyFlaps());
 
 // --- The status pill: live or not, and whether the trains and buses are current.
 

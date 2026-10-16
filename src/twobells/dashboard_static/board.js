@@ -12,10 +12,13 @@
 // tablet (kiosk.js) there are no controls: 4 rows, the destination as text.
 // Rows draw their position strips unless the settings turned them off
 // (applyRowStrips marks <html data-row-strips="off">) or the page is on a wall tablet.
+// A row's time, destination and status carry a data-flap key, its board,
+// place and field ("train:0:time"), for the Split-flap look (flap.js).
 
 import { h, vh, setText, str, num, list, obj, own, store, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
 import { arrivesLine, busStatusExtras } from "./extras.js";
+import { applyFlaps, flapText } from "./flap.js";
 import { icon } from "./icons.js";
 import { isKiosk } from "./kiosk.js";
 import { rowStrip } from "./strip.js";
@@ -36,16 +39,17 @@ const lowerFirst = (text) => text.charAt(0).toLowerCase() + text.slice(1);
 // Status as words, with an icon for the exceptions; the colour comes from the
 // class and only reinforces the words. `spoken` is the words in full
 // ("Expected 07:19") where the shown ones are short ("Exp 07:19"): screen
-// readers get that instead.
-export function statusBadge(status, text, spoken) {
+// readers get that instead. `flap` is the words' data-flap key on a board.
+export function statusBadge(status, text, spoken, flap = null) {
   const key = statusKey(status);
   const shown = str(text) || WORDS[key];
   const said = str(spoken);
+  const dataset = flap ? { flap } : {};
   return h("span", { class: ["badge", `st-${key}`] },
     ICON[key] ? h("span", { class: "glyph", "aria-hidden": "true" }, icon(ICON[key])) : null,
     said && said !== shown
-      ? [h("span", { class: "badge-text", "aria-hidden": "true" }, shown), vh(said)]
-      : h("span", { class: "badge-text" }, shown));
+      ? [h("span", { class: "badge-text", "aria-hidden": "true", dataset }, shown), vh(said)]
+      : h("span", { class: "badge-text", dataset }, shown));
 }
 
 // A label shown beside a cell's value only in the narrow layout, where the
@@ -123,9 +127,9 @@ function leaveCell(row, id, alerts) {
 // The row's one control: its destination, as a button that opens the
 // departure sheet. Its name says which departure, ending with the words it
 // shows: `lead` "the 07:12 to " makes "More about the 07:12 to Manchester
-// Piccadilly". On a wall tablet it is plain text.
-function openButton(id, lead, destination) {
-  const dest = h("span", { class: "dest" }, destination);
+// Piccadilly". On a wall tablet it is plain text. `flap` is its data-flap key.
+function openButton(id, lead, destination, flap) {
+  const dest = h("span", { class: "dest", dataset: { flap } }, destination);
   if (!id || isKiosk()) return dest;
   return h("button", {
     type: "button", class: "open", dataset: { action: "open", id, focusKey: `open:${id}` },
@@ -189,13 +193,19 @@ function drawBoard(mode, el, { caption, quiet, columns, cls, empty }, rows, draw
     h("table", { role: "table", class: ["board", cls], id: board.table },
       h("caption", { class: quiet ? "vh" : null }, caption),
       headRow(columns),
-      h("tbody", { role: "rowgroup" }, drawn.map((row, i) => drawRow(row, i, i >= SHOWN ? mode : null)))),
+      h("tbody", { role: "rowgroup" }, drawn.map((row, i) => drawRow(row, i, i >= SHOWN ? mode : null, flapKey(mode, i))))),
     later > 0 ? h("button", {
       type: "button", class: "more", "aria-expanded": String(board.more), "aria-controls": board.table,
       dataset: { action: "more", mode, focusKey: `more:${mode}` },
     }, h("span", { class: "glyph", "aria-hidden": "true" }, icon("chevron-down")), "Show later departures") : null,
   ].filter(Boolean));
+  applyFlaps(el);
 }
+
+// A row's fields' data-flap keys, by its place on its board: in the
+// Split-flap look, when the rows move up, each place's letters flip over
+// to its new departure's, as a station's flap board does.
+const flapKey = (mode, i) => (field) => `${mode}:${i}:${field}`;
 
 // "Just missed 07:40 to Manchester Piccadilly"; a bus says its line too.
 function justMissed(row, mode) {
@@ -287,7 +297,7 @@ function platformCell(row) {
   return td("c-plat", "Plat", shown);
 }
 
-function trainRow(row, first, later, alerts) {
+function trainRow(row, first, later, alerts, flap) {
   const id = validId(row.id) ? row.id : null;
   const scheduled = str(row.scheduled);
   const destination = str(row.destination);
@@ -302,9 +312,10 @@ function trainRow(row, first, later, alerts) {
   const placed = where && (first || (strip && drawsStrips()))
     ? whereLine(where, "train", strip, num(strip?.train_at)) : null;
   return h("tr", rowAttrs(row, id, later),
-    h("th", { scope: "row", role: "rowheader", class: "c-time" }, h("span", { class: "time" }, scheduled)),
+    h("th", { scope: "row", role: "rowheader", class: "c-time" },
+      h("span", { class: "time", dataset: { flap: flap("time") } }, scheduled)),
     td("c-dest", null,
-      openButton(id, `the ${scheduled}${bus ? " replacement bus" : ""} to `, destination),
+      openButton(id, `the ${scheduled}${bus ? " replacement bus" : ""} to `, destination, flap("destination")),
       via ? h("span", { class: "sub via" }, via) : null,
       bus ? h("span", { class: "sub replacement" }, "Replacement bus") : null,
       arrivesLine(row),
@@ -313,7 +324,7 @@ function trainRow(row, first, later, alerts) {
       cancelled && str(row.cancel_reason) ? h("span", { class: "reason" }, str(row.cancel_reason)) : null,
       recordChip(row)),
     platformCell(row),
-    td("c-status", null, statusBadge(row.status, row.status_text, row.status_spoken)),
+    td("c-status", null, statusBadge(row.status, row.status_text, row.status_spoken, flap("status"))),
     leaveCell(row, id, alerts),
   );
 }
@@ -373,7 +384,7 @@ export function renderTrains(snapshot, alerts) {
     caption, cls: "trains", empty: "No trains are listed right now.",
     columns: [["Time", "c-time"], ["Destination", "c-dest"], ["Plat", "c-plat", "Platform"], ["Expected", "c-status"],
       ["Leave", "c-leave"]],
-  }, rows, (row, i, later) => trainRow(row, i === 0, later, alerts));
+  }, rows, (row, i, later, flap) => trainRow(row, i === 0, later, alerts, flap));
   showCallingPause();
   renderMessages(trains);
   return rows;
@@ -451,26 +462,28 @@ export function dueText(ms) {
 // When the bus comes. A live bus counts down in minutes, with a quiet live
 // mark; a bus known only from the timetable shows its clock time and
 // "sched.", never minutes that would look live. Cancelled is reversed out,
-// with the time struck through.
-function dueCell(row) {
+// with the time struck through. The time or the countdown is the row's
+// "due" field (`flap`), so one turning into the other flips.
+function dueCell(row, flap) {
   const scheduled = str(row.scheduled);
+  const due = flap("due");
   if (row.status === "cancelled") {
-    return td("c-due", null, h("span", { class: "time" }, scheduled), " ",
-      statusBadge(row.status, row.status_text, row.status_spoken));
+    return td("c-due", null, h("span", { class: "time", dataset: { flap: due } }, scheduled), " ",
+      statusBadge(row.status, row.status_text, row.status_spoken, flap("status")));
   }
   const iso = str(row.expected_at) || str(row.scheduled_at);
   const at = parseAt(iso);
   if (row.live === true && at !== null) {
     return td("c-due", null,
-      h("span", { class: "due", dataset: { dueAt: iso } }, dueText(at - now())),
+      h("span", { class: "due", dataset: { dueAt: iso, flap: due } }, dueText(at - now())),
       h("span", { class: "live-mark", "aria-hidden": "true" }, icon("circle")),
       vh(`, live, ${lowerFirst(str(row.status_spoken) || str(row.status_text) || "on time")}`));
   }
-  return td("c-due", null, h("span", { class: "time" }, scheduled),
+  return td("c-due", null, h("span", { class: "time", dataset: { flap: due } }, scheduled),
     h("span", { class: "sched", "aria-hidden": "true" }, "sched."), vh(", timetable only"));
 }
 
-function busRow(row, later, names, alerts) {
+function busRow(row, later, names, alerts, flap) {
   const id = validId(row.id) ? row.id : null;
   const scheduled = str(row.scheduled);
   const line = str(row.line);
@@ -484,14 +497,15 @@ function busRow(row, later, names, alerts) {
   // goes, nothing more: "237 to Ashton-under-Lyne Interchange". The rest is
   // in the destination's own cell.
   return h("tr", rowAttrs(row, id, later),
-    h("th", { scope: "row", role: "rowheader", class: "c-line" }, h("span", { class: "line" }, line), vh(` to ${destination}`)),
+    h("th", { scope: "row", role: "rowheader", class: "c-line" },
+      h("span", { class: "line", dataset: { flap: flap("line") } }, line), vh(` to ${destination}`)),
     td("c-dest", null,
-      openButton(id, `the ${scheduled} ${line} to `, destination),
+      openButton(id, `the ${scheduled} ${line} to `, destination, flap("destination")),
       where ? whereLine(where, "bus", strip, num(strip?.bus_at)) : null,
       busStatusExtras(row),
       recordChip(row)),
     stopCell(stopText(row, names), walk),
-    dueCell(row),
+    dueCell(row, flap),
     leaveCell(row, id, alerts),
   );
 }
@@ -515,7 +529,7 @@ export function renderBuses(snapshot, alerts) {
     caption: "Next buses", quiet: true, cls: "buses",
     empty: tt.state === "building" ? "Bus times will show once the timetable is built." : "No buses are listed right now.",
     columns: [["Bus", "c-line"], ["Destination", "c-dest"], ["Stop", "c-stop"], ["Due", "c-due"], ["Leave", "c-leave"]],
-  }, rows, (row, i, later) => busRow(row, later, names, alerts));
+  }, rows, (row, i, later, flap) => busRow(row, later, names, alerts, flap));
   renderLastBuses(buses);
   return rows;
 }
@@ -583,7 +597,7 @@ export function tickBoards() {
   }
   for (const el of document.querySelectorAll(".due[data-due-at]")) {
     const at = parseAt(el.dataset.dueAt);
-    if (at !== null) setText(el, dueText(at - t));
+    if (at !== null) flapText(el, dueText(at - t));
   }
   return Object.values(boards).some((board) => board.drawn !== arrangement(board.rows, t));
 }

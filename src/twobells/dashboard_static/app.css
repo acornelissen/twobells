@@ -1,7 +1,8 @@
 /* Departures dashboard. A look on <html data-theme>, as the Look picker
    (index.html, theme.js) chooses: "modern", the Standard look (light and
-   dark from the system), "board", the Dot matrix look (amber on black), and
-   "tft" (white and yellow on black). A new look is an option there, its
+   dark from the system), "board", the Dot matrix look (amber on black),
+   "tft" (white and yellow on black) and "flap", the Split-flap look (white
+   letters on dark tiles, flap.js). A new look is an option there, its
    name in theme.js, and a palette here with its kiosk-dim one. Every colour
    is a token below; tests/dashboard/test_static.py checks the text pairs
    reach 4.5:1 and the outlines 3:1 in every palette. Status is always words
@@ -173,10 +174,44 @@
   color-scheme: dark;
 }
 
+/* The Split-flap look: white letters on dark grey tiles (--tile), each split
+   across the middle, like a Solari board; a late status in amber letters, a
+   cancelled one black on amber tiles. */
+/* theme: flap */
+:root[data-theme="flap"] {
+  --bg: #000000;
+  --surface: #0b0b0b;
+  --surface-2: #1c1c1c;
+  --fg: #ffffff;
+  --muted: #c2c2c2;
+  --line: #333333;
+  --edge: #8c8c8c;
+  --accent: #ffb81c;
+  --accent-fg: #000000;
+  --focus: #ffffff;
+  --ok-fg: #4cd98a;
+  --ok-bg: #0c2616;
+  --late-fg: #ffb81c;
+  --late-bg: #2b2000;
+  --bad-fg: #ff7a6b;
+  --bad-bg: #2e0d09;
+  --unk-fg: #c2c2c2;
+  --unk-bg: #1c1c1c;
+  --leave-fg: #ffffff;
+  --leave-bg: #0b0b0b;
+  --badge-fg: #000000;
+  --badge-bg: #ffffff;
+  --tile: #282828;
+  --tile-fg: #ffffff;
+  --tile-bad: #ffb81c;
+  --tile-bad-fg: #000000;
+  color-scheme: dark;
+}
+
 /* A wall tablet (/?kiosk) dims in the quiet windows (kiosk.js): black, with
    the words at about half their light and still 4.5:1. A palette for each
-   look: the Standard look's, light or dark, the Dot matrix look's and the
-   TFT look's. */
+   look: the Standard look's, light or dark, the Dot matrix look's, the
+   TFT look's and the Split-flap look's. */
 /* theme: kiosk-dim */
 :root[data-kiosk][data-dim][data-theme="modern"] {
   --bg: #000000;
@@ -260,6 +295,36 @@
   --pill-late: #a3861a;
   --pill-bad: #9c1818;
   --pill-bad-ink: #d9d9d9;
+}
+
+/* theme: kiosk-dim-flap */
+:root[data-kiosk][data-dim][data-theme="flap"] {
+  --bg: #000000;
+  --surface: #000000;
+  --surface-2: #111111;
+  --fg: #a6a6a6;
+  --muted: #808080;
+  --line: #1a1a1a;
+  --edge: #5c5c5c;
+  --accent: #b38200;
+  --accent-fg: #000000;
+  --focus: #999999;
+  --ok-fg: #3f9e66;
+  --ok-bg: #08160d;
+  --late-fg: #b38200;
+  --late-bg: #140f00;
+  --bad-fg: #bf6a60;
+  --bad-bg: #1c0806;
+  --unk-fg: #808080;
+  --unk-bg: #111111;
+  --leave-fg: #a6a6a6;
+  --leave-bg: #000000;
+  --badge-fg: #000000;
+  --badge-bg: #a6a6a6;
+  --tile: #141414;
+  --tile-fg: #a6a6a6;
+  --tile-bad: #b38200;
+  --tile-bad-fg: #000000;
 }
 
 /* --- Base --- */
@@ -1308,6 +1373,43 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
     font-size: var(--t-sm);
   }
 }
+
+/* --- Split-flap look flourishes: a board's times, destinations and
+   statuses a letter a tile (flap.js), each tile split across the middle;
+   a word's tiles stay together on a line. The tiles are aria-hidden: a
+   hidden copy beside them gives screen readers the words. --- */
+
+:root[data-theme="flap"] .flap-word { white-space: nowrap; }
+:root[data-theme="flap"] .flap-tile {
+  display: inline-block;
+  position: relative;
+  min-width: 0.85em;
+  margin: 1px 2px 1px 0;
+  padding: 0.05em 0.08em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+  text-align: center;
+  white-space: pre;
+  color: var(--tile-fg);
+  background: var(--tile);
+  border-radius: 2px;
+}
+:root[data-theme="flap"] .flap-tile::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--bg);
+}
+:root[data-theme="flap"] tr.row-cancelled .time { text-decoration: none; }
+/* A bus's line is tiles too, not a badge round them. */
+:root[data-theme="flap"] table.board .line { min-width: 0; padding: 0; background: transparent; }
+:root[data-theme="flap"] .badge { padding-inline: 0; background: transparent; }
+:root[data-theme="flap"] .badge.st-late .flap-tile { color: var(--late-fg); }
+:root[data-theme="flap"] .badge.st-cancelled { color: var(--fg); }
+:root[data-theme="flap"] .badge.st-cancelled .flap-tile { color: var(--tile-bad-fg); background: var(--tile-bad); }
 
 /* --- The stale banner: a wall tablet's (kiosk.js), when the page is behind
    or can't reach the server. Full width and reversed out, to be seen across
