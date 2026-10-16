@@ -45,6 +45,8 @@ DEMOS = {
     "screen-bar.png": (["--display", "hdmi-1920x440", "--theme", "sign"], 1),
     "screen-tft.png": (["--display", "hdmi-1280x400", "--theme", "tft"], 1),
     "screen-bar-tft.png": (["--display", "hdmi-1920x440", "--theme", "tft"], 1),
+    "screen-flap.png": (["--display", "hdmi-1280x400", "--theme", "flap"], 1),
+    "screen-bar-flap.png": (["--display", "hdmi-1920x440", "--theme", "flap"], 1),
 }
 
 

@@ -11,6 +11,8 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 - A train's sheet on the dashboard lists its coaches from the front, where the operator sends them to Darwin: number, First Class or Standard, toilets, how busy each is and where it is quietest ("Quietest at the back"), and "Front 2 coaches detach here" when Darwin says so. Without them the sheet keeps the coach count; the board is unchanged.
 - A TFT look for the board on an HDMI screen (`theme = "tft"`): white and yellow on black, like the newer station screens, with times in bold yellow and each status in a coloured pill backed by its words. E-paper isn't offered it.
 - The dashboard's TFT look, in the same colours.
+- A split-flap look for the board on an HDMI screen (`theme = "flap"`): white letters on dark tiles split across the middle, like a Solari board. When a row's time, destination, platform or status changes, its tiles flip through to the new letters in half a second, drawing only what changed. E-paper isn't offered it.
+- The dashboard's Split-flap look: its boards' times, destinations and statuses on tiles that flip when they change, at once with reduced motion; screen readers hear the words as in any other look.
 - Platform changes: a train whose platform isn't the one it was given earlier says `Plat 2 (changed)` on the bigger boards and screens (in the accent colour in the plain and TFT looks), and "2 (changed)" on the dashboard, where it also counts when it isn't the platform the train usually leaves from, and screen readers hear it once. A rail replacement bus is never a platform change.
 - The dashboard's sheet says which platform a train usually leaves from ("Usually: Platform 1"), once its punctuality history has a few days to go on.
 - National Rail's route words after a destination ("via Guide Bridge"): under the destination on the dashboard, and after it on the bigger boards and screens.
@@ -23,7 +25,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 ### Changed
 
 - Live buses are placed along the road the timetable saved between two stops (the bus maps' roads), up to 300 m from it, so a bus on a road that bends away from the straight line between its stops is tracked. Between stops with no saved road the straight line and its 150 m stay. Where a bus is near more than one part of its journey, the nearest wins, and only parts about as near are settled by which fits the timetable best, so a bus on a parallel road further on isn't placed there.
-- The dashboard's **Board look** button is now a **Look** list, on the Performance page too: Standard, Dot matrix (the old Board look) and TFT. A browser that had the Board look keeps it.
+- The dashboard's **Board look** button is now a **Look** list, on the Performance page too: Standard, Dot matrix (the old Board look), TFT and Split-flap. A browser that had the Board look keeps it.
 - The user guide is a page per topic, indexed by `docs/user-guide.md`; the Docker pages are one, and the code layout is in `docs/architecture.md`.
 
 ### Fixed

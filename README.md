@@ -43,7 +43,7 @@ Where there is room, the line runs across the page with each train placed on it:
 
 ![The line from Manchester Piccadilly to Hadfield with Glossop marked as this station and the 07:12 waiting at Hadfield](docs/images/dashboard-line.png)
 
-Light, dark, the amber Dot matrix look or the white and yellow TFT look, at any size from a phone to a wall tablet (`/?kiosk`):
+Light, dark, the amber Dot matrix look, the white and yellow TFT look or the Split-flap look, at any size from a phone to a wall tablet (`/?kiosk`):
 
 ![The dashboard on a phone in the light look, the dark look and the amber Dot matrix look](docs/images/dashboard-looks.png)
 

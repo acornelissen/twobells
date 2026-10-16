@@ -5,6 +5,7 @@ For everyone in the house: what each line on the board means.
 - [The station board look](#the-station-board-look)
 - [The plain look](#the-plain-look)
 - [The TFT look](#the-tft-look)
+- [The split-flap look](#the-split-flap-look)
 - [The bigger e-paper display](#the-bigger-e-paper-display)
 - [The HDMI screen](#the-hdmi-screen)
 - [When it checks](#when-it-checks)
@@ -98,6 +99,19 @@ On an HDMI screen only: white and yellow on black, like the newer station screen
 The colours only back up the words: every pill says what it means.
 
 ![The TFT look on the 11.3 inch bar screen](images/screen-bar-tft.png)
+
+## The split-flap look
+
+On an HDMI screen only: white letters on dark grey tiles, each split across the middle, like the old flap boards at big stations. It is the plain look's layout and words, with the title, the clock and each row's time, destination, platform and status a letter a tile. The small words (TRAINS, BUSES, leave times, where a train is) stay in plain type between them. Someone may have switched to it on the [Board page](settings.md#board) of the settings; e-paper doesn't offer it.
+
+![The split-flap look on the 7.9 inch HDMI screen](images/screen-flap.png)
+
+- `Exp 07:49` and `Delayed` in amber letters, and `Cancelled` in black on amber tiles. A cancelled train isn't on a highlighted bar: its tiles say it.
+- When a row's time, destination, platform or status changes, its tiles flip through to the new letters, as a flap board's do, in half a second. When the first train goes and the rows move up, each row flips to its new departure. The clock and the title change at once.
+- On the 7.9" screen a destination keeps 16 letters beside where its train is; a longer one, such as Manchester Piccadilly, scrolls, as a long notice does. The 11.3" bar screen keeps it whole.
+- `! NOT UPDATING` in amber next to TRAINS or BUSES, a rain warning or disruption notice in place of the title, and everything else the [HDMI screen](#the-hdmi-screen) shows, as in the plain look.
+
+![The split-flap look on the 11.3 inch bar screen](images/screen-bar-flap.png)
 
 ## The bigger e-paper display
 
