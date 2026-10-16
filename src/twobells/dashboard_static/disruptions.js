@@ -10,6 +10,7 @@ import { now, parseAt } from "./time.js";
 import { icon } from "./icons.js";
 import { stopNames, trainMessages } from "./board.js";
 import { isKiosk } from "./kiosk.js";
+import { shows } from "./show.js";
 
 const MODE = { bus: "Bus", train: "Train" };
 // The server's relevance tiers, most relevant first: at one of our stops, at a
@@ -237,7 +238,8 @@ export function renderDisruptions(snapshot) {
   const section = $("disruptions");
   const part = obj(snapshot.disruptions);
   const messages = serviceMessages(snapshot);
-  section.hidden = !part && !messages.length;
+  // Not drawn at all when the settings leave it out (show.js).
+  section.hidden = !shows("disruptions") || (!part && !messages.length);
   if (section.hidden) return;
   const t = now();
   const today = dayOf(snapshot.generated_at);
@@ -294,7 +296,7 @@ function follow(event) {
 // tablet has nowhere to go, so no links.
 export function markBusRows(snapshot, rowsById) {
   const found = items(snapshot).filter((i) => i.mode === "bus");
-  if (!found.length || isKiosk()) return;
+  if (!found.length || isKiosk() || !shows("disruptions")) return;
   for (const tr of document.querySelectorAll("#buses-board tr[data-id]")) {
     const entryFor = rowsById.get(tr.dataset.id);
     if (!entryFor || entryFor.mode !== "bus") continue;

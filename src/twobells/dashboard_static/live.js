@@ -16,6 +16,7 @@ import { $, str } from "./dom.js";
 import { now as clockNow, parseAt } from "./time.js";
 import { describe } from "./alerts.js";
 import { inForceNow } from "./disruptions.js";
+import { shows } from "./show.js";
 
 const GAP_MS = 30_000;
 const MOVE_MS = 2 * 60_000;
@@ -72,7 +73,9 @@ export function unannounce(key) {
 // Compares a new snapshot's rows with the last one's. rowsById maps id to
 // { row, mode }. The first snapshot only sets the baseline.
 export function noteSnapshot(snapshot, rowsById) {
-  const disruption = new Map(inForceNow(snapshot, clockNow()).map((d) => [d.key, d.text]));
+  // Disruption left out of the page (show.js) is never spoken either.
+  const found = shows("disruptions") ? inForceNow(snapshot, clockNow()) : [];
+  const disruption = new Map(found.map((d) => [d.key, d.text]));
   const next = new Map();
   for (const [id, { row, mode }] of rowsById) {
     const now = { status: row.status, expectedMs: expectedMs(row) };

@@ -182,7 +182,8 @@ class FetchService:
             except Exception as error:  # noqa: BLE001 - the departures matter more than the history
                 log.warning("The punctuality history can't be opened: %s", type(error).__name__)
         try:
-            hub = Hub(dash.title, dash.walk, tz=ZoneInfo(dash.timezone), row_strips=dash.options.row_strips)
+            hub = Hub(dash.title, dash.walk, tz=ZoneInfo(dash.timezone), row_strips=dash.options.row_strips,
+                      show=dash.options.show)
             collector = self._make_collector(dash, hub, self._history)
             writer = handoff.SnapshotWriter(hub, self._spool, collector.healthy)
         except BaseException:

@@ -11,6 +11,21 @@
   },
   "quiet": false,
   "row_strips": true,
+  "show": [
+    "next_to_catch",
+    "where",
+    "disruptions",
+    "weather",
+    "last_buses",
+    "area_map",
+    "remind",
+    "calling_at",
+    "coaches",
+    "punctuality",
+    "performance",
+    "fleet_numbers",
+    "announce"
+  ],
   "trains": {
     "station": "Glossop",
     "filter": "MAN",

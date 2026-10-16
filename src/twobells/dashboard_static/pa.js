@@ -8,6 +8,7 @@
 // depart, a few minutes before it goes, a cancellation and a platform
 // alteration, each once, and never in a quiet window. Browsers play no sound
 // until the page has been touched, so the tablet asks for one tap, on screen.
+// When the settings leave announcements out (show.js), neither happens.
 //
 // The chime is our own, three tones made with Web Audio; the words go through
 // the browser's speech synthesis, in a British English voice where there is
@@ -17,6 +18,7 @@
 
 import { $, setText, str, list, obj } from "./dom.js";
 import { parseAt } from "./time.js";
+import { shows } from "./show.js";
 
 // The chime: three tones, each [Hz, seconds after the first], ringing out.
 export const CHIME = [[523.25, 0], [659.25, 0.45], [783.99, 0.9]]; // C5, E5, G5
@@ -236,7 +238,11 @@ export function startAnnouncements() {
 // Each second: says what is due of the train rows, once the tablet has been
 // tapped; in a quiet window, stops.
 export function tickAnnouncements(snapshot, rows, nowMs) {
-  if (!unlocked) return;
+  // Left out by the settings (show.js): the tablet says nothing, nor asks for a tap.
+  const on = shows("announce");
+  $("pa").hidden = !on;
+  if (!on && busy()) hush();
+  if (!on || !unlocked) return;
   const quiet = snapshot?.quiet === true;
   if (quiet && busy()) hush();
   forget(said, new Set(list(rows).map((row) => str(row?.id))));

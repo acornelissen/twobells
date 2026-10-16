@@ -15,6 +15,7 @@ import { GO_MS, stopText } from "./board.js";
 import { announce, unannounce } from "./live.js";
 import { icon } from "./icons.js";
 import { isKiosk } from "./kiosk.js";
+import { shows } from "./show.js";
 
 const NOW_MS = 60_000; // "Leave now" from the last minute until the row drops (GO_MS)
 const SECONDS_MS = 2 * 60_000; // seconds shown below this
@@ -120,8 +121,9 @@ function thenLine(options) {
 function drawRemind() {
   const button = $("leave-remind");
   const note = $("notify-note");
-  // A wall tablet has no controls: no Remind me.
-  const id = shown && validId(shown.row.id) && !isKiosk() ? shown.row.id : "";
+  // A wall tablet has no controls: no Remind me. Nor has a page whose
+  // settings leave reminders out (show.js).
+  const id = shown && validId(shown.row.id) && !isKiosk() && shows("remind") ? shown.row.id : "";
   // Hidden while focused, the focus would fall to nowhere: the hero's heading takes it.
   if (!id && !button.hidden && document.activeElement === button) $("leave-heading").focus({ preventScroll: true });
   button.hidden = !id;
@@ -171,9 +173,16 @@ function noteTarget(id, next, t) {
 // Draws the hero. rowsById maps id to { row, mode }; `context` is
 // { stops (board.js stopNames), rain (the weather's rain sentence) }.
 export function renderHero(rowsById, context) {
+  const banner = $("leave");
+  // Left out by the settings (show.js): not drawn, and never announced.
+  banner.hidden = !shows("next_to_catch");
+  if (banner.hidden) {
+    shown = null;
+    drawRemind();
+    return;
+  }
   const t = now();
   const next = nextCatchable(rowsById, t);
-  const banner = $("leave");
   const id = next ? str(next.row.id) || null : null;
   noteTarget(id, next, t);
   shown = next;

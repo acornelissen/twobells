@@ -12,6 +12,8 @@
 // tablet (kiosk.js) there are no controls: 4 rows, the destination as text.
 // Rows draw their position strips unless the settings turned them off
 // (applyRowStrips marks <html data-row-strips="off">) or the page is on a wall tablet.
+// What the settings leave out (show.js) isn't drawn: where each train and bus
+// is, the calling-at line, the punctuality note, a reminder's bell, the last buses.
 // A row's time, destination and status carry a data-flap key, its board,
 // place and field ("train:0:time"), for the Split-flap look (flap.js).
 
@@ -21,6 +23,7 @@ import { arrivesLine, busStatusExtras, platformWord, trainNoun } from "./extras.
 import { applyFlaps, flapText } from "./flap.js";
 import { icon } from "./icons.js";
 import { isKiosk } from "./kiosk.js";
+import { shows } from "./show.js";
 import { rowStrip } from "./strip.js";
 
 export const SHOWN = 5; // rows before "Show later departures"
@@ -118,7 +121,7 @@ function leaveCell(row, id, alerts) {
   const ms = at - now();
   return td("c-leave", "Leave",
     h("span", { class: ["countdown", ms < 60_000 ? "go" : null], dataset: { leaveAt: row.leave_at } }, leaveText(ms)),
-    id && alerts.isOn(id)
+    id && alerts.isOn(id) && shows("remind")
       ? h("span", { class: "reminder" }, h("span", { class: "glyph", "aria-hidden": "true" }, icon("bell-ring")), vh(", reminder set"))
       : null,
     " ", h("span", { class: "leave-at" }, vh("at "), hhmm(row.leave_at)));
@@ -153,6 +156,7 @@ export function recordNote(phrase) {
 
 // The short note in the row; screen readers get the whole phrase.
 function recordChip(row) {
+  if (!shows("punctuality")) return null;
   const phrase = str(obj(row.history)?.phrase);
   const note = recordNote(phrase);
   if (!note) return null;
@@ -312,7 +316,7 @@ function trainRow(row, first, later, alerts, flap) {
   const strip = obj(position?.strip);
   // Row 1 always says where its train is; a later row does when it has a
   // strip to draw.
-  const placed = where && (first || (strip && drawsStrips()))
+  const placed = where && shows("where") && (first || (strip && drawsStrips()))
     ? whereLine(where, "train", strip, num(strip?.train_at)) : null;
   return h("tr", rowAttrs(row, id, later),
     h("th", { scope: "row", role: "rowheader", class: "c-time" },
@@ -322,7 +326,7 @@ function trainRow(row, first, later, alerts, flap) {
       via ? h("span", { class: "sub via" }, via) : null,
       bus ? h("span", { class: "sub replacement" }, "Replacement bus") : null,
       arrivesLine(row),
-      first && !cancelled ? callingAt(row) : null,
+      first && !cancelled && shows("calling_at") ? callingAt(row) : null,
       placed,
       cancelled && str(row.cancel_reason) ? h("span", { class: "reason" }, str(row.cancel_reason)) : null,
       recordChip(row)),
@@ -504,7 +508,7 @@ function busRow(row, later, names, alerts, flap) {
       h("span", { class: "line", dataset: { flap: flap("line") } }, line), vh(` to ${destination}`)),
     td("c-dest", null,
       openButton(id, `the ${scheduled} ${line} to `, destination, flap("destination")),
-      where ? whereLine(where, "bus", strip, num(strip?.bus_at)) : null,
+      where && shows("where") ? whereLine(where, "bus", strip, num(strip?.bus_at)) : null,
       busStatusExtras(row),
       recordChip(row)),
     stopCell(stopText(row, names), walk),
@@ -561,7 +565,7 @@ export function lastBusFor(row, buses) {
 // evening, or once few of a line's are left.
 function renderLastBuses(buses) {
   const el = document.getElementById("last-buses");
-  const shown = lastBuses(buses).filter((b) => b.show === true);
+  const shown = shows("last_buses") ? lastBuses(buses).filter((b) => b.show === true) : [];
   el.hidden = !shown.length;
   el.replaceChildren(...shown.map((b) => h("li", { class: num(b.remaining) === 0 ? "gone" : null },
     h("span", { class: "glyph", "aria-hidden": "true" }, icon("moon")), " ", lastBusText(b))));

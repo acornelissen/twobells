@@ -11,6 +11,7 @@ import { getJSON } from "./api.js";
 import { age, now, parseAt } from "./time.js";
 import { busPin, loadLeaflet, roadLine, TILES } from "./map.js";
 import { icon } from "./icons.js";
+import { shows } from "./show.js";
 
 const AREA_EVERY_MS = 25_000; // the summary asks for the area at most this often
 const MAX_VEHICLES = 80;
@@ -358,10 +359,16 @@ export function renderChanges(snapshot) {
 }
 
 // Called with each snapshot: the line, the summary, and the open map.
+// Left out by the settings (show.js), none of it is drawn or fetched; the
+// bus timetable changes, in the buses section, still are.
 export async function renderArea(snapshot) {
-  renderLine(snapshot);
   renderChanges(snapshot);
   const section = $("area");
+  if (!shows("area_map")) {
+    section.hidden = true;
+    return;
+  }
+  renderLine(snapshot);
   section.hidden = !obj(snapshot.trains) && !obj(snapshot.buses);
   const buses = !!obj(snapshot.buses);
   $("area-buses").hidden = !buses;

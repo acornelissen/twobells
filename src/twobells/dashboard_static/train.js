@@ -6,6 +6,7 @@ import { h, s, vh, str, num, list, obj, own } from "./dom.js";
 import { hhmm } from "./time.js";
 import { statusBadge } from "./board.js";
 import { arrivesFact, fact, platformWord } from "./extras.js";
+import { shows } from "./show.js";
 
 // Where the train is along the journey (previous points, this station,
 // calling points, numbered from 0): { at } at a stop, { gap, part } on the
@@ -141,7 +142,7 @@ export function trainSummary(row) {
       fact("Platform", word || (platform ? `${platform}${changed}` : "Not yet known")),
       // From the punctuality history, once it has a few days to go on.
       fact("Usually", usual ? `Platform ${usual}` : ""),
-      fact("Coaches", length ? `${length} ${length === 1 ? "coach" : "coaches"}` : ""),
+      fact("Coaches", length && shows("coaches") ? `${length} ${length === 1 ? "coach" : "coaches"}` : ""),
       fact("Walk", walk !== null ? `${walk} min to the station` : ""),
       fact("Leave by", hhmm(row.leave_at)),
       fact("Arrives", arrivesFact(row)),
@@ -178,9 +179,10 @@ function coachItem(coach) {
 
 // The train's coaches from the front, where Darwin knows them, with where
 // it is quietest and whether the front detaches here; nothing for a train
-// it says nothing about, or a replacement bus or a ferry.
+// it says nothing about, or a replacement bus or a ferry, or when the
+// settings leave the coaches out (show.js).
 function formationPart(row) {
-  const formation = platformWord(row) ? null : obj(row.formation);
+  const formation = platformWord(row) || !shows("coaches") ? null : obj(row.formation);
   if (!formation) return [];
   const coaches = list(formation.coaches).filter(obj);
   const notes = [

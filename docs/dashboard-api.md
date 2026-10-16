@@ -29,6 +29,8 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   "walk": {"train": 10, "bus": {"A": 10, "B": 10}},
   "quiet": false,
   "row_strips": true,
+  "show": ["next_to_catch", "where", "disruptions", "weather", "last_buses", "area_map", "remind", "calling_at",
+           "coaches", "punctuality", "performance", "fleet_numbers", "announce"],
   "trains": {
     "station": "Glossop",
     "filter": "MAN",
@@ -225,6 +227,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
 - **`walk`:** the walk times as set, by mode and stop label (`*` for any stop). The page reads `walk.train` for the trains' walk line; `walk_min` on rows and stops supersedes the rest.
 - **`quiet`:** true while one of the dashboard's quiet windows (`quiet_windows`, bank holidays counted as Sundays) is on, else false. It is worked out once a minute, so it can be up to a minute behind the window. The wall-tablet page (`/?kiosk`) dims while it is true.
 - **`row_strips`:** whether the page draws each row's position strip (`[dashboard] row_strips`, **Position strips in each row** in the settings). When false, rows keep their words without the drawing, and only the first train row says where its train is. A snapshot without it, from an older server, counts as true. The wall-tablet page never draws them.
+- **`show`:** what the page shows beside the departures' times (`[dashboard] show`, **What to show** in the settings; see [What each view shows](configuration.md#what-each-view-shows)), each named once, in this order: `next_to_catch` (the hero), `where` (each row's where-words and strip), `disruptions` (the summary, the bus rows' links and their announcements), `weather` (the panel and the hero's rain sentence), `last_buses` (the list under the buses and a bus sheet's **Last bus**), `area_map` (Around here: the line and the buses nearby, which isn't fetched then), `remind` (Remind me, a row's bell and the reminders), `calling_at` (the first train's line), `coaches` (a train sheet's coaches and count), `punctuality` (a row's "Often late", the sheet's punctuality, which isn't fetched then, and a bus sheet's **Tracker**), `performance` (the header's link; `/performance` says it is left out), `fleet_numbers` (a bus sheet's **Bus**), `announce` (a train sheet's **Announce** and the wall tablet's announcements). The page leaves out whatever isn't named, on the wall tablet too, and leaves no gap. A snapshot without it, from an older server, shows everything. The rest of the snapshot is the same whatever it says.
 - **`stop_name`:** the stop's name from the stop data with the letter on its sign when known ("Church Street (Stop A)"); "Stop A" from the board's label when the stop has no data. Show this rather than the label.
 - **`strip`:**
   - `stops` are the stop names before yours, then yours, then possibly the next one.

@@ -2,7 +2,9 @@
 // It holds the status, reasons and facts; Remind me; the journey for a train,
 // or the strip, map and stops for a bus; and the departure's punctuality,
 // loaded when it opens. A new snapshot updates it in place (dom.js patch), so
-// a screen reader's place in it stays put.
+// a screen reader's place in it stays put. What the settings leave out
+// (show.js) isn't there: Remind me, Announce, the punctuality, and a bus's
+// fleet number, tracker record and last bus.
 
 import { $, h, fill, patch, setText, str, num, obj, openDialog, setUpDialog } from "./dom.js";
 import { hhmm, parseAt } from "./time.js";
@@ -15,6 +17,7 @@ import { closeHistory, loadHistory } from "./history.js";
 import { isOn, remindNote, toggle } from "./alerts.js";
 import { announcementText, hush, say, unlock } from "./pa.js";
 import { icon } from "./icons.js";
+import { shows } from "./show.js";
 
 const dialog = () => $("sheet");
 let openId = null;
@@ -71,7 +74,7 @@ function showAnnouncement(words) {
 function drawAnnounce(row) {
   const button = $("sheet-announce");
   // While it speaks it stays, to be stopped, though the train has gone.
-  const hide = !announcing && !(openMode === "train" && !!row && announcementText(row) !== "");
+  const hide = !announcing && !(openMode === "train" && !!row && shows("announce") && announcementText(row) !== "");
   // Hiding the focused button would drop the focus out of the dialog.
   if (hide && document.activeElement === button) $("sheet-title").focus();
   button.hidden = hide;
@@ -133,9 +136,9 @@ function busSummary(row) {
       fact("Leave by", hhmm(row.leave_at)),
       fact("Arrives", arrivesFact(row)),
       fact("Bus coming in", inboundText(row)),
-      fact("Tracker", noShowPhrase(row)),
-      fact("Bus", busFact(row)),
-      fact("Last bus", lastBusFact(row, context.lastBuses || [], context.stops)),
+      fact("Tracker", shows("punctuality") ? noShowPhrase(row) : ""),
+      fact("Bus", shows("fleet_numbers") ? busFact(row) : ""),
+      fact("Last bus", shows("last_buses") ? lastBusFact(row, context.lastBuses || [], context.stops) : ""),
     ),
     h("h3", {}, "Where it is now"),
     renderStrip(row, context.generatedMs),
@@ -146,7 +149,7 @@ function busSummary(row) {
 // with no walk time has none.
 function drawRemind(row) {
   const button = $("sheet-remind");
-  const can = !!row && parseAt(row.leave_at) !== null;
+  const can = !!row && parseAt(row.leave_at) !== null && shows("remind");
   const on = can && isOn(openId);
   // Hiding the focused button would drop the focus out of the dialog.
   if (!can && document.activeElement === button) $("sheet-title").focus();
@@ -155,7 +158,7 @@ function drawRemind(row) {
   fill(button, h("span", { class: "glyph", "aria-hidden": "true" }, icon(on ? "bell-ring" : "bell")), "Remind me");
   let note = "";
   if (can) note = remindNote();
-  else if (row && row.status !== "cancelled") note = "Set a walk time in the settings for a reminder.";
+  else if (row && row.status !== "cancelled" && shows("remind")) note = "Set a walk time in the settings for a reminder.";
   setText($("remind-note"), note);
 }
 
@@ -187,9 +190,13 @@ export function openSheet(entry, opener, ctx) {
   $("sheet-train").hidden = openMode !== "train";
   $("sheet-bus").hidden = openMode !== "bus";
   draw(row);
+  // Punctuality left out by the settings (show.js) isn't loaded at all.
+  const punctuality = shows("punctuality");
+  const history = $("sheet-history");
+  if (history) history.hidden = !punctuality;
   openDialog(sheet, opener);
   if (openMode === "bus") showBus(openId);
-  loadHistory(openId, ctx?.stops);
+  if (punctuality) loadHistory(openId, ctx?.stops);
 }
 
 // Called with each new snapshot: updates the open sheet from its row.

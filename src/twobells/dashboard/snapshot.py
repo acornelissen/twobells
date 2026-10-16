@@ -26,6 +26,7 @@ from typing import Protocol
 from ..core import announce, words
 from ..core.model import Departure, Status, iso, minutes_between
 from ..core.walk import WalkTimes
+from ..settings import show as show_items
 from ..sources.bodsbus import BusBoard
 from ..sources.darwin import (
     CallingPoint,
@@ -788,16 +789,18 @@ class Hub:
 
     def __init__(self, title: str, walk: WalkTimes, clock: Callable[[], datetime] | None = None,
                  monotonic: Callable[[], float] = time.monotonic, tz: tzinfo | None = None,
-                 row_strips: bool = True) -> None:
+                 row_strips: bool = True, show: Iterable[str] | None = None) -> None:
         # The board's zone, not the host's: a container's clock is in UTC.
         self._clock = clock or (lambda: datetime.now(tz) if tz else datetime.now().astimezone())
         self._monotonic = monotonic
         self._lock = threading.Lock()
         self._changed = threading.Condition(self._lock)
         # `quiet` says whether a quiet window is on; the collector's heartbeat sets it.
-        # `row_strips` says whether the page draws each row's position strip.
+        # `row_strips` says whether the page draws each row's position strip,
+        # and `show` what it shows of what it can leave out ([dashboard] show).
+        shown = show_items.default("dashboard") if show is None else show
         self._static = {"title": title, "walk": {"train": walk.train, "bus": dict(walk.bus)}, "quiet": False,
-                        "row_strips": row_strips}
+                        "row_strips": row_strips, "show": show_items.ordered("dashboard", shown)}
         self._parts: dict[str, dict | list | None] = dict.fromkeys(PARTS)
         self._part_lookups: dict[str, dict[str, dict]] = {part: {} for part in PARTS}
         self._lookups: dict[str, dict] = {}

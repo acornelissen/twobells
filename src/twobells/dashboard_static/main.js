@@ -25,6 +25,7 @@ import { applyDim, drawBanner, drawNightClock, isKiosk, startKiosk } from "./kio
 import { setUpLook } from "./look.js";
 import { applyFlaps } from "./flap.js";
 import { startAnnouncements, tickAnnouncements, wantsAnnouncements } from "./pa.js";
+import { applyShow, shows } from "./show.js";
 
 const kiosk = isKiosk();
 const announcing = kiosk && wantsAnnouncements();
@@ -44,10 +45,11 @@ const sheetContext = () => ({
   lastBuses: lastBuses(obj(snapshot?.buses)),
 });
 
-// What the hero needs beyond the rows: your stops' names and the rain sentence.
+// What the hero needs beyond the rows: your stops' names and the rain
+// sentence, which goes with the weather when that is left out.
 const heroContext = () => ({
   stops: stopNames(obj(snapshot?.buses)?.stops),
-  rain: str(obj(snapshot?.weather)?.rain),
+  rain: shows("weather") ? str(obj(snapshot?.weather)?.rain) : "",
 });
 
 // --- The look: the Look picker (look.js). The boards' fields go on tiles,
@@ -108,6 +110,8 @@ function render(data) {
   document.title = title;
   if (kiosk) applyDim(document.documentElement, data);
   applyRowStrips(document.documentElement, data);
+  applyShow(document.documentElement, data);
+  $("performance-link").hidden = !shows("performance");
   drawBoards();
   attempt("weather", () => renderWeather(data));
   attempt("disruptions", () => { renderDisruptions(data); markBusRows(data, rowsById); });
@@ -128,7 +132,7 @@ function tick() {
   if (tickBoards()) redrawBoards();
   tickStrips(new Map([...rowsById].map(([id, e]) => [id, e.row])), parseAt(snapshot.generated_at));
   attempt("next to catch", () => renderHero(rowsById, heroContext()));
-  if (!kiosk) tickAlerts(rowsById);
+  if (!kiosk && shows("remind")) tickAlerts(rowsById);
   if (announcing) {
     const trains = [...rowsById.values()].filter((e) => e.mode === "train").map((e) => e.row);
     attempt("station announcements", () => tickAnnouncements(snapshot, trains, now()));

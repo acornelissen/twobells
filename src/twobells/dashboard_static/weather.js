@@ -6,6 +6,7 @@ import { $, h, fill, patch, setText, vh, str, num, list, obj } from "./dom.js";
 import { hhmm, now, parseAt } from "./time.js";
 import { icon } from "./icons.js";
 import { isKiosk } from "./kiosk.js";
+import { shows } from "./show.js";
 
 const HOURS = 12;
 const SHOWN = 4; // hours in the strip before "More hours"
@@ -161,7 +162,8 @@ function renderHours(hours) {
 
 export function renderWeather(snapshot) {
   const section = $("weather");
-  const weather = obj(snapshot.weather);
+  // Not drawn at all when the settings leave it out (show.js).
+  const weather = shows("weather") ? obj(snapshot.weather) : null;
   section.hidden = !weather;
   if (!weather) return;
   const status = obj(weather.status) || {};

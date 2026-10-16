@@ -5,7 +5,8 @@
 // page brings them up to date. The snapshot gives the page its place and
 // the stops' names. Its header has the dashboard's Look picker (look.js)
 // and links. After the buses, the trains that reached the filter station
-// late enough for Delay Repay (renderRepay), or why that is off.
+// late enough for Delay Repay (renderRepay), or why that is off. When the
+// settings leave Performance out, the page says so in place of the figures.
 
 import { $, h, fill, setText, str, num, obj, list } from "./dom.js";
 import { setUpLook } from "./look.js";
@@ -161,7 +162,10 @@ async function context() {
     const snapshot = obj(await getJSON("/api/snapshot"));
     if (!snapshot) return {};
     const place = placeName(str(snapshot.title), obj(snapshot.trains)?.station);
-    return { place: place === "Departures" ? "" : place, names: stopNames(obj(snapshot.buses)?.stops) };
+    // The settings may leave the page out ([dashboard] show; show.js): it is
+    // still there by its address, saying so. An older server's snapshot doesn't say.
+    const off = Array.isArray(snapshot.show) && !snapshot.show.includes("performance");
+    return { place: place === "Departures" ? "" : place, names: stopNames(obj(snapshot.buses)?.stops), off };
   } catch {
     return {};
   }
@@ -175,6 +179,10 @@ export async function load() {
   if (more.place) {
     setText($("title"), `Performance at ${more.place}`);
     document.title = `Performance · ${more.place}`;
+  }
+  if (more.off) {
+    setText($("perf-status"), "Performance is left out on the Dashboard settings page, under What to show.");
+    return;
   }
   if (!found) {
     setText($("perf-status"), "The figures couldn't be loaded. Reload the page to try again.");

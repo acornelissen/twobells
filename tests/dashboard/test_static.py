@@ -134,7 +134,8 @@ def _header_links(name):
 
 
 def test_the_header_links_to_the_performance_page_and_the_settings():
-    assert _header_links("index.html") == [{"class": "top-link", "href": "/performance"},
+    # The Performance link has an id: the page hides it when the settings leave Performance out.
+    assert _header_links("index.html") == [{"class": "top-link", "id": "performance-link", "href": "/performance"},
                                            {"class": "top-link", "href": "/settings"}]
 
 
@@ -829,6 +830,9 @@ DISRUPTION = {
     "link": Opt(lambda v: isinstance(v, str) and v.startswith("https://")),
 }
 DISRUPTIONS = {"status": {"bus": Opt(STATUS), "train": Opt(STATUS)}, "items": [DISRUPTION]}
+# What the page can leave out ([dashboard] show), as docs/dashboard-api.md lists them.
+SHOWABLE = ("next_to_catch", "where", "disruptions", "weather", "last_buses", "area_map", "remind", "calling_at",
+            "coaches", "punctuality", "performance", "fleet_numbers", "announce")
 SNAPSHOT = {
     "version": integer,
     "generated_at": at,
@@ -836,6 +840,7 @@ SNAPSHOT = {
     "walk": {"train": Opt(integer), "bus": MapOf(integer)},
     "quiet": bool,
     "row_strips": bool,
+    "show": [one_of(*SHOWABLE)],
     "trains": Opt({
         "station": str, "filter": Opt(str), "status": STATUS, "positions": Opt(STATUS), "messages": [MESSAGE],
         "rows": [TRAIN_ROW],
@@ -4576,3 +4581,246 @@ def test_a_wall_tablet_speaks_only_once_tapped_and_never_in_a_quiet_window():
     assert found["shown"] == [False, "A is next."]
     assert found["spoken"] == ["A is next."]
     assert found["once"] == ["A is next."] and found["cleared"] is True
+
+
+# --- What the settings leave out ([dashboard] show; show.js) ---
+
+
+def _hiding(*items):
+    """The page marked as a snapshot leaving `items` out marks it, before anything is drawn."""
+    shown = [item for item in SHOWABLE if item not in items]
+    return (f'import {{ applyShow }} from "./show.js";\ndocument.documentElement = {{ dataset: {{}} }};\n'
+            f"applyShow(document.documentElement, {json.dumps({'show': shown})});\n")
+
+
+def test_the_page_knows_every_item_the_server_can_leave_out():
+    from twobells.settings import show
+
+    text = (STATIC / "show.js").read_text(encoding="utf-8")
+    listed = re.search(r"export const ITEMS = \[(.*?)\];", text, re.S).group(1)
+    assert tuple(re.findall(r'"(\w+)"', listed)) == SHOWABLE == show.keys("dashboard")
+
+
+@needs_node
+def test_the_page_is_marked_with_what_the_snapshot_leaves_out():
+    found = run_js("""
+        import { applyShow, shows, ITEMS } from "./show.js";
+        const root = { dataset: {} };
+        document.documentElement = root;
+        const marks = [];
+        for (const snapshot of [{ show: ITEMS.filter((item) => item !== "weather") }, {}, { show: [] },
+                                { show: "weather" }, null, { show: ITEMS }]) {
+          applyShow(root, snapshot);
+          marks.push([root.dataset.hide ?? null, shows("weather"), shows("coaches")]);
+        }
+        console.log(JSON.stringify(marks));
+    """)
+    every = " ".join(SHOWABLE)
+    assert found == [
+        ["weather", False, True],
+        [None, True, True],  # an older server says nothing: everything shows
+        [every, False, False],
+        [None, True, True],  # anything but a list is as if unsaid
+        [None, True, True],
+        [None, True, True],
+    ]
+
+
+# The class each item draws in the rows, counted on both boards.
+ROW_ITEMS = {"where": "where", "calling_at": "calling-at", "punctuality": "record", "remind": "reminder"}
+
+
+@needs_node
+@pytest.mark.parametrize("item", [None, *ROW_ITEMS])
+def test_rows_leave_out_what_the_settings_leave_out_and_keep_the_rest(item):
+    found = run_js((_hiding(item) if item else "") + _boards() + """
+        const reminding = { isOn: () => true };
+        renderTrains(snapshot, reminding);
+        renderBuses(snapshot, reminding);
+        const count = (cls) => byClass(board("trains-board"), cls).length + byClass(board("buses-board"), cls).length;
+        console.log(JSON.stringify({ counts: Object.fromEntries(CLASSES.map((cls) => [cls, count(cls)])),
+                                     rows: bodyRows("trains-board").length + bodyRows("buses-board").length,
+                                     time: said(bodyRows("trains-board")[0].childNodes[0]) }));
+    """.replace("CLASSES", json.dumps(list(ROW_ITEMS.values()))))
+    for key, cls in ROW_ITEMS.items():
+        assert (found["counts"][cls] == 0) is (key == item), cls
+    # The departures and their times are all there, whatever is left out.
+    assert found["rows"] == 19 and found["time"] == "07:12"
+
+
+@needs_node
+def test_the_last_buses_are_left_out_when_the_settings_say():
+    found = run_js(_hiding("last_buses") + _boards() + """
+        const evening = structuredClone(snapshot);
+        for (const bus of evening.buses.last_buses) bus.show = true;
+        renderBuses(evening, alerts);
+        const list = document.getElementById("last-buses");
+        console.log(JSON.stringify([list.hidden, list.childNodes.length]));
+    """)
+    assert found == [True, 0]
+
+
+@needs_node
+def test_the_hero_is_left_out_and_never_announced_when_the_settings_say():
+    found = run_js(_hiding("next_to_catch") + HERO + """
+        draw(rows(bus(1, "07:20", "07:15")));
+        clock("07:01:00");
+        draw(rows(train(2, "07:10", "06:58"), bus(1, "07:20", "07:15")));
+        await wait();
+        console.log(JSON.stringify({ hidden: hero.hidden, time: $("leave-time").textContent,
+                                     remind: $("leave-remind").hidden, announced: announced.filter(Boolean) }));
+    """)
+    assert found == {"hidden": True, "time": "", "remind": True, "announced": []}
+
+
+@needs_node
+def test_the_hero_has_no_remind_me_when_the_settings_leave_reminders_out():
+    found = run_js(_hiding("remind") + HERO + """
+        draw(rows(bus(1, "07:20", "07:15")));
+        console.log(JSON.stringify({ hidden: hero.hidden, remind: $("leave-remind").hidden,
+                                     time: shown($("leave-time")) }));
+    """)
+    assert found == {"hidden": False, "remind": True, "time": "Leave in 15 min"}
+
+
+@needs_node
+def test_the_weather_is_left_out_when_the_settings_say():
+    found = run_js(_hiding("weather") + _weather_panel() + """
+        renderWeather(snapshot);
+        console.log(JSON.stringify([document.getElementById("weather").hidden, hours.childNodes.length]));
+    """)
+    assert found == [True, 0]
+
+
+@needs_node
+def test_disruption_is_left_out_drawn_linked_and_spoken_when_the_settings_say():
+    found = run_js(_hiding("disruptions") + DISRUPTION_PAGE + """
+        import { noteSnapshot } from "./live.js";
+        const live = h("div", { id: "live" });
+        document.body.append(live);
+        globalThis.requestAnimationFrame = (fn) => fn();
+        const bus = item("cccccccccccccccc", "your_stop", { lines: ["341"] });
+        const snapshot = at({ disruptions: { status: {}, items: [bus] } });
+        renderDisruptions(snapshot);
+        const table = h("table", { id: "buses-board" },
+          h("tr", { dataset: { id: "0123456789abcdef" } }, h("td", { class: "c-dest" })));
+        document.body.append(table);
+        const rowsById = new Map([["0123456789abcdef", { mode: "bus",
+          row: { line: "341", stop: "A", scheduled: "07:20", scheduled_at: "2026-10-10T07:20:00+01:00" } }]]);
+        markBusRows(snapshot, rowsById);
+        noteSnapshot(at({ disruptions: { status: {}, items: [] } }), new Map());
+        noteSnapshot(snapshot, new Map());
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        console.log(JSON.stringify({ section: $("disruptions").hidden, links: byClass(table, "dis-mark").length,
+                                     spoken: live.textContent }));
+    """)
+    assert found == {"section": True, "links": 0, "spoken": ""}
+
+
+SHOW_TRAIN = """
+const formed = { ...train(1), length: 3, leave_at: "2026-10-10T07:08:00+01:00",
+  formation: { coaches: [{ number: "1", class: "standard", toilet: null, loading: 20, busy: "Quiet" }],
+               loading_text: "Quietest at the front", detach_text: null, reverse: false },
+  announce: [{ kind: "next", text: "The next train will be the 07:20." }] };
+setUpSheet(() => {});
+openTrain(formed);
+await new Promise((resolve) => setTimeout(resolve, 0));
+const facts = () => byClass(summary, "facts")[0].childNodes.map((div) => spoken(div.childNodes[0]));
+console.log(JSON.stringify({
+  facts: facts(), headings: elements(body).filter((el) => el.nodeName === "H3").map(spoken),
+  remind: remind.hidden ?? false, announce: announceButton.hidden, history: history.childNodes.length,
+}));
+"""
+
+
+@needs_node
+@pytest.mark.parametrize("item", [None, "coaches", "remind", "announce", "punctuality"])
+def test_a_train_s_sheet_leaves_out_what_the_settings_leave_out(item):
+    found = run_js((_hiding(item) if item else "") + _sheet() + SHOW_TRAIN)
+    assert ("Coaches" in found["facts"]) is (item != "coaches")
+    assert ("Coaches" in found["headings"]) is (item != "coaches")
+    assert found["remind"] is (item == "remind")
+    assert found["announce"] is (item == "announce")
+    assert (found["history"] == 0) is (item == "punctuality")  # not even loaded
+    assert {"Where it is now", "Journey"} <= set(found["headings"])  # the journey always shows
+
+
+SHOW_BUS = """
+const bus = { id: "not-a-row-id", scheduled: "07:20", line: "341", destination: "Hyde", stop: "A",
+  scheduled_at: "2026-10-10T07:20:00+01:00", status: "on_time", status_text: "On time",
+  vehicle: { fleet_number: "3017", registration: "AB25 CDE" },
+  history: { phrase: null, no_show_phrase: "No tracker on 3 of the last 10 weekdays" } };
+const lastBuses = [{ line: "341", destination: "Hyde", stop: "A", scheduled: "23:05",
+  scheduled_at: "2026-10-10T23:05:00+01:00", remaining: 4 }];
+openSheet({ row: bus, mode: "bus" }, null, { ...ctx, lastBuses });
+const facts = byClass(summary, "facts")[0].childNodes.map((div) => spoken(div.childNodes[0]));
+console.log(JSON.stringify(facts));
+"""
+
+
+@needs_node
+@pytest.mark.parametrize("item, fact", [(None, None), ("fleet_numbers", "Bus"), ("last_buses", "Last bus"),
+                                        ("punctuality", "Tracker")])
+def test_a_bus_s_sheet_leaves_out_what_the_settings_leave_out(item, fact):
+    found = run_js((_hiding(item) if item else "") + _sheet() + SHOW_BUS)
+    for each in ("Bus", "Last bus", "Tracker"):
+        assert (each in found) is (each != fact), each
+
+
+@needs_node
+def test_the_area_is_left_out_and_never_fetched_when_the_settings_say():
+    found = run_js(_hiding("area_map") + """
+        import { h } from "./dom.js";
+        import { renderArea } from "./area.js";
+        let fetched = 0;
+        globalThis.fetch = async () => { fetched += 1; throw new Error("no network here"); };
+        document.body.append(h("section", { id: "area" }), h("ul", { id: "timetable-changes", hidden: true }));
+        await renderArea({ generated_at: "2026-10-10T07:00:00+01:00", trains: { rows: [] }, buses: { rows: [] },
+                           timetable_changes: [{ line: "341", operator: "HIPK", from: "2026-10-12" }] });
+        console.log(JSON.stringify({ area: document.getElementById("area").hidden, fetched,
+                                     changes: document.getElementById("timetable-changes").hidden }));
+    """)
+    # The buses' timetable changes are the buses', and still show.
+    assert found == {"area": True, "fetched": 0, "changes": False}
+
+
+@needs_node
+def test_a_wall_tablet_says_nothing_nor_asks_for_a_tap_when_the_settings_leave_announcements_out():
+    found = run_js(_hiding("announce") + FAKE_SPEECH + PA_ROWS + """
+        import { h } from "./dom.js";
+        import { startAnnouncements, tickAnnouncements } from "./pa.js";
+        const listeners = [];
+        document.addEventListener = (type, fn) => listeners.push([type, fn]);
+        document.removeEventListener = () => {};
+        const pa = h("div", { id: "pa" }, h("p", { id: "pa-note" }), h("p", { id: "pa-words" }));
+        document.body.append(pa);
+        const rows = [row("a", 3, { announce: [{ kind: "next", text: "A is next." }] })];
+        startAnnouncements();
+        listeners.find(([type]) => type === "click")[1]();
+        tickAnnouncements({ quiet: false }, rows, T0);
+        await settle();
+        console.log(JSON.stringify({ hidden: pa.hidden, said: spokenWords.filter((u) => u.text).length }));
+    """)
+    assert found == {"hidden": True, "said": 0}
+
+
+@needs_node
+@pytest.mark.parametrize("show, off", [(None, False), (list(SHOWABLE), False),
+                                       ([i for i in SHOWABLE if i != "performance"], True)])
+def test_the_performance_page_says_when_the_settings_leave_it_out(show, off):
+    snapshot = {"title": "Glossop", "trains": None, "buses": None} | ({"show": show} if show is not None else {})
+    found = run_js(f"""
+        import {{ h }} from "./dom.js";
+        import {{ load }} from "./performance.js";
+        const SNAPSHOT = {json.dumps(snapshot)};
+        globalThis.fetch = async (path) => ({{
+          status: 200, ok: true, json: async () => (path === "/api/snapshot" ? SNAPSHOT : null),
+          headers: {{ get: (name) => (name === "Content-Type" ? "application/json" : null) }},
+        }});
+        document.body.append(h("h1", {{ id: "title" }}), h("p", {{ id: "perf-status" }}),
+          h("section", {{ id: "perf-repay", hidden: true }}, h("div", {{ id: "perf-repay-body" }})));
+        await load();
+        console.log(JSON.stringify(document.getElementById("perf-status").textContent));
+    """)
+    left_out = "Performance is left out on the Dashboard settings page, under What to show."
+    assert (found == left_out) is off

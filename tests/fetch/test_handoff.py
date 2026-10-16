@@ -12,6 +12,7 @@ from twobells.core.walk import WalkTimes
 from twobells.dashboard.snapshot import Hub
 from twobells.fetch import handoff
 from twobells.fetch.handoff import MAX_SNAPSHOT_BYTES, SnapshotMirror, SnapshotWriter
+from twobells.settings import show
 from twobells.setup.spool.checks import check_request
 from twobells.setup.spool.folder import Spool
 from twobells.setup.spool.runner import Poster
@@ -199,6 +200,24 @@ def test_until_the_first_file_the_mirror_says_whether_rows_draw_their_strips(spo
     assert json.loads(mirror_of(spool, row_strips=False).current()[1])["row_strips"] is False
 
 
+def test_what_the_page_shows_comes_through_and_an_older_fetch_service_may_leave_it_out(spool):
+    hub = Hub("Glossop", WalkTimes(train=10, bus={"A": 8}), show={"weather", "next_to_catch"})
+    SnapshotWriter(hub, spool, lambda: True).write()
+    mirror = mirror_of(spool)
+    assert mirror.check() is True and json.loads(mirror.current()[1])["show"] == ["next_to_catch", "weather"]
+    older = json.loads(handoff.snapshot_path(spool.folder).read_bytes())
+    del older["snapshot"]["show"]
+    older["made"] += 1
+    put(spool, older)
+    # The page takes a snapshot without it as showing everything.
+    assert mirror.check() is True and "show" not in json.loads(mirror.current()[1])
+
+
+def test_until_the_first_file_the_mirror_says_what_the_page_shows(spool):
+    assert json.loads(mirror_of(spool).current()[1])["show"] == list(show.keys("dashboard"))
+    assert json.loads(mirror_of(spool, show=["announce"]).current()[1])["show"] == ["announce"]
+
+
 def test_lookups_previous_and_the_area_come_through(spool):
     good_file(spool)
     mirror = mirror_of(spool)
@@ -307,6 +326,9 @@ REFUSED = {
     "quiet not true or false": lambda d: _with(d, snapshot={**d["snapshot"], "quiet": "yes"}),
     "row_strips not true or false": lambda d: _with(d, snapshot={**d["snapshot"], "row_strips": 0}),
     "row_strips null": lambda d: _with(d, snapshot={**d["snapshot"], "row_strips": None}),
+    "show not a list": lambda d: _with(d, snapshot={**d["snapshot"], "show": "weather"}),
+    "show naming what the page has no item for": lambda d: _with(d, snapshot={**d["snapshot"], "show": ["clock_page"]}),
+    "show naming one twice": lambda d: _with(d, snapshot={**d["snapshot"], "show": ["weather", "weather"]}),
     "lookup id in the wrong form": lambda d: _with(d, lookups={"../../etc/passwd": {}}),
     "lookup id in capitals": lambda d: _with(d, lookups={BUS_ID.upper(): {}}),
     "previous id too long": lambda d: _with(d, previous={BUS_ID + "0": {}}),
