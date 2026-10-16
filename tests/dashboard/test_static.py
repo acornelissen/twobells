@@ -488,7 +488,7 @@ TRAIN_ROW = {
     "id": row_id, "service": str, "destination": str, "origin": Opt(str),
     "scheduled": hhmm, "scheduled_at": at, "expected": Opt(hhmm), "expected_at": Opt(at),
     "status": ROW_STATUS, "status_text": str, "status_spoken": str, "minutes_late": Opt(integer),
-    "platform": Opt(str), "length": Opt(integer),
+    "platform": Opt(str), "replacement_bus": bool, "length": Opt(integer),
     "cancel_reason": Opt(str), "delay_reason": Opt(str), "walk_min": Opt(integer), "leave_at": Opt(at),
     "calling_points": [CALLING_POINT],
     "previous_points": [CALLING_POINT],
@@ -1621,6 +1621,29 @@ def test_the_train_board_reads_like_a_station_screen():
 
 
 @needs_node
+def test_a_replacement_bus_in_the_trains_says_so_in_words():
+    script = _boards().replace("observeSnapshot(snapshot.generated_at);", """
+snapshot.trains.rows[0] = { ...snapshot.trains.rows[0], replacement_bus: true, platform: null, length: null };
+observeSnapshot(snapshot.generated_at);""")
+    assert script != _boards()
+    found = run_js(script + """
+        const [bus, train] = bodyRows("trains-board");
+        const open = (tr) => byClass(tr, "open").map(said);
+        console.log(JSON.stringify({
+          platform: [said(cell(bus, "c-plat")), shown(cell(bus, "c-plat"))],
+          words: byClass(bus, "replacement").map(said),
+          open: open(bus),
+          train: [said(cell(train, "c-plat")), byClass(train, "replacement").length, open(train)],
+        }));
+    """)
+    assert found["platform"] == ["Bus", "PlatBus"]
+    assert found["words"] == ["Replacement bus"]
+    assert found["open"] == ["More about the 07:12 replacement bus to Manchester Piccadilly"]
+    assert found["train"][:2] == ["1", 0]
+    assert found["train"][2][0].startswith("More about the 07:42 to ")
+
+
+@needs_node
 def test_the_bus_board_caption_is_for_screen_readers_only():
     # The section's "Buses" heading says it on screen; the table keeps its name.
     found = run_js(_boards() + """
@@ -2127,6 +2150,31 @@ def test_patch_keeps_matching_nodes_and_replaces_the_rest():
 
 
 @needs_node
+def test_the_sheet_and_reminders_call_a_replacement_bus_one():
+    found = run_js(_sheet() + """
+        import { describe } from "./alerts.js";
+        const bus = { ...train(1), replacement_bus: true, platform: null };
+        openTrain(bus);
+        const facts = elements(summary).filter((el) => el.nodeName === "DD" || el.nodeName === "DT").map(spoken);
+        const words = byClass(summary, "replacement").map((el) => [spoken(el), el.hasAttribute("hidden")]);
+        const busTitle = spoken(title);
+        openTrain({ ...train(1), platform: "2" });
+        console.log(JSON.stringify({
+          title: busTitle, facts, words, describe: describe(bus, "train"),
+          train: [spoken(title), byClass(summary, "replacement").map((el) => el.hasAttribute("hidden")),
+                  describe({ ...train(1), platform: "2" }, "train")],
+        }));
+    """)
+    assert found["title"] == "07:20 replacement bus to Manchester Piccadilly"
+    assert found["words"] == [["Replacement bus, running in place of the train", False]]
+    platform = found["facts"].index("Platform")
+    assert found["facts"][platform + 1] == "Bus"
+    assert found["describe"] == "the 07:20 replacement bus to Manchester Piccadilly"
+    assert found["train"] == ["07:20 to Manchester Piccadilly", [True],
+                              "the 07:20 train to Manchester Piccadilly, platform 2"]
+
+
+@needs_node
 def test_the_open_sheet_says_when_its_train_has_gone():
     found = run_js(_sheet() + """
         openTrain(train(1));
@@ -2358,6 +2406,17 @@ def test_then_offers_the_next_train_and_the_next_bus():
     assert found["trainFirst"] == [False, "Then: 07:27 341 (leave 07:22)", "Then: 07:27 341 bus (leave 07:22)",
                                    "07:25"]
     assert found["none"][:2] == [True, ""]
+
+
+@needs_node
+def test_the_hero_calls_a_replacement_bus_one():
+    found = run_js(HERO + """
+        const replacement = { replacement_bus: true, platform: null };
+        draw(rows(train(1, "07:25", "07:13", replacement), train(2, "07:55", "07:43", replacement)));
+        console.log(JSON.stringify([shown($("leave-what")), shown($("leave-then"))]));
+    """)
+    assert found == ["07:25 replacement bus to Manchester Piccadilly · 12 min walk",
+                     "Then: 07:55 replacement bus (leave 07:43)"]
 
 
 @needs_node

@@ -122,8 +122,10 @@ export function trainSummary(row) {
   const length = num(row.length);
   const expected = str(row.expected);
   const walk = num(row.walk_min);
+  const bus = row.replacement_bus === true;
   return [
     h("p", { class: "dialog-status" }, statusBadge(row.status, row.status_text, row.status_spoken)),
+    h("p", { class: "replacement", hidden: !bus }, "Replacement bus, running in place of the train"),
     h("p", { class: "reason", hidden: !str(row.cancel_reason) }, str(row.cancel_reason)),
     h("p", { class: "reason", hidden: !str(row.delay_reason) }, str(row.delay_reason)),
     h("dl", { class: "facts" },
@@ -131,7 +133,7 @@ export function trainSummary(row) {
       fact("From", str(row.origin)),
       fact("Scheduled", str(row.scheduled)),
       fact("Expected", expected && expected !== str(row.scheduled) ? expected : ""),
-      fact("Platform", str(row.platform) || "Not yet known"),
+      fact("Platform", bus ? "Bus" : str(row.platform) || "Not yet known"),
       fact("Coaches", length ? `${length} ${length === 1 ? "coach" : "coaches"}` : ""),
       fact("Walk", walk !== null ? `${walk} min to the station` : ""),
       fact("Leave by", hhmm(row.leave_at)),

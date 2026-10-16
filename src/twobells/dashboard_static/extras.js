@@ -82,6 +82,10 @@ export function busStatusExtras(row) {
   ];
 }
 
+// What a row in the trains is: "train", or "replacement bus" for a rail
+// replacement bus, which Darwin lists with them.
+export const trainNoun = (row) => (row?.replacement_bus === true ? "replacement bus" : "train");
+
 // One term and value for the departure sheet's facts list, or nothing when
 // there's no value.
 export function fact(term, value) {

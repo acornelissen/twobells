@@ -314,6 +314,46 @@ def test_train_observations_for_the_history():
     assert seen[0].identity == "0712GLSP____" and seen[0].live
 
 
+# Rail replacement buses: in the trains, said to be buses, kept apart in the history.
+
+
+def replacement(std="07:12", etd="On time", **extra):
+    return train(std, etd, serviceType="bus", platform="BUS", length=0, **extra)
+
+
+def test_a_board_of_replacement_buses_alone_has_rows_that_say_so():
+    board = parse_board_rich({"busServices": [replacement(), replacement("07:42")], "locationName": "Glossop"})
+    part, lookups = trains_part(board, datetime(2026, 10, 10, 7, 0, tzinfo=LONDON), status_block(), "GLO", "MAN",
+                                WALK, "GLO>MAN")
+    first, second = part["rows"]
+    assert first["replacement_bus"] is True and second["replacement_bus"] is True
+    assert (first["scheduled"], first["destination"], first["platform"], first["length"]) == (
+        "07:12", "Manchester Piccadilly", None, None,
+    )
+    assert first["leave_at"] == "2026-10-10T07:02:00+01:00"  # walked to like a train
+    history = lookups[first["id"]]["history"]
+    assert history["mode"] == "train"
+    assert history["route"] == "GLO>MAN bus|Manchester Piccadilly"
+    assert history["label"] == "07:12 replacement bus to Manchester Piccadilly"
+
+
+def test_trains_are_not_replacement_buses():
+    part, lookups = trains(train())
+    [row] = part["rows"]
+    assert row["replacement_bus"] is False
+    assert lookups[row["id"]]["history"]["route"] == "GLO>MAN|Manchester Piccadilly"
+
+
+def test_a_train_and_its_replacement_bus_are_told_apart_in_the_history():
+    board = parse_board_rich({"trainServices": [train("07:12")], "busServices": [replacement("07:12")]})
+    seen = train_observations(board, datetime(2026, 10, 10, 7, 0, tzinfo=LONDON), "GLO>MAN")
+    assert sorted(o.route for o in seen) == ["GLO>MAN bus|Manchester Piccadilly", "GLO>MAN|Manchester Piccadilly"]
+    assert {o.platform for o in seen} == {"1", None}
+    part, _ = trains_part(board, datetime(2026, 10, 10, 7, 0, tzinfo=LONDON), status_block(), "GLO", "MAN", WALK,
+                          "GLO>MAN")
+    assert len({r["id"] for r in part["rows"]}) == 2
+
+
 # Status words
 
 

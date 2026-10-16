@@ -10,7 +10,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ### Fixed
 
-- Rail replacement buses show. Darwin lists them apart from the trains (`busServices`), and they were left out, so on engineering works days the board and dashboard showed no trains. They are now in time order with the trains, with `Bus` in the board's platform column (or `Bus:` before the destination where the board has no platform column).
+- Rail replacement buses show. Darwin lists them apart from the trains (`busServices`), and they were left out, so on engineering works days the board and dashboard showed no trains. They are now in time order with the trains: `Bus` in the platform column (or `Bus:` before the destination where the board has no platform column), "Replacement bus" on the dashboard's row and sheet, and a punctuality record of their own.
 - A Pi reads bus timetable files up to 61 MB, up from 50 MB: First Bus's largest is now 48 MB, and a bigger one was skipped.
 - A Pi holds 8,500 bus journeys while it builds its timetable, up from 7,000, so two of a city's busiest stops no longer fail to build.
 - On a Pi, the network guard also keeps connections off the fetch service, where systemd can't apply its `SocketBindDeny=` (a Pi Zero W).

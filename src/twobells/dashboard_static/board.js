@@ -245,6 +245,7 @@ function trainRow(row, first, later, alerts) {
   const scheduled = str(row.scheduled);
   const destination = str(row.destination);
   const platform = str(row.platform);
+  const bus = row.replacement_bus === true;
   const cancelled = row.status === "cancelled";
   const position = obj(row.position);
   const where = str(position?.where);
@@ -256,13 +257,14 @@ function trainRow(row, first, later, alerts) {
   return h("tr", rowAttrs(row, id, later),
     h("th", { scope: "row", role: "rowheader", class: "c-time" }, h("span", { class: "time" }, scheduled)),
     td("c-dest", null,
-      openButton(id, `the ${scheduled} to `, destination),
+      openButton(id, `the ${scheduled}${bus ? " replacement bus" : ""} to `, destination),
+      bus ? h("span", { class: "sub replacement" }, "Replacement bus") : null,
       arrivesLine(row),
       first && !cancelled ? callingAt(row) : null,
       placed,
       cancelled && str(row.cancel_reason) ? h("span", { class: "reason" }, str(row.cancel_reason)) : null,
       recordChip(row)),
-    td("c-plat", "Plat", platform || [h("span", { "aria-hidden": "true" }, "–"), vh("not yet known")]),
+    td("c-plat", "Plat", bus ? "Bus" : platform || [h("span", { "aria-hidden": "true" }, "–"), vh("not yet known")]),
     td("c-status", null, statusBadge(row.status, row.status_text, row.status_spoken)),
     leaveCell(row, id, alerts),
   );

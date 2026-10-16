@@ -3,6 +3,7 @@
 
 import { $, h, setText, store, str, num, obj } from "./dom.js";
 import { now, parseAt } from "./time.js";
+import { trainNoun } from "./extras.js";
 
 const KEY = "dashboard.alerts";
 const LEAD_MS = 60_000; // an alert fires when it is a minute to leaving time
@@ -49,8 +50,9 @@ export function remindNote() {
   return "A minute before you need to leave, the page shows a reminder, and a notification if you allow them.";
 }
 
-// What a row is called in an alert: "the 07:12 train to Manchester Piccadilly",
-// plus ", platform 1" or " from Henry Street (Stop A)" when `where` is set.
+// What a row is called in an alert: "the 07:12 train to Manchester Piccadilly"
+// (or "replacement bus"), plus ", platform 1" or " from Henry Street (Stop A)"
+// when `where` is set.
 export function describe(row, mode, where = true) {
   const scheduled = str(row.scheduled);
   const dest = str(row.destination);
@@ -59,7 +61,7 @@ export function describe(row, mode, where = true) {
     return `the ${scheduled} ${str(row.line)} bus to ${dest}${where && stop ? ` from ${stop}` : ""}`;
   }
   const platform = str(row.platform);
-  return `the ${scheduled} train to ${dest}${where && platform ? `, platform ${platform}` : ""}`;
+  return `the ${scheduled} ${trainNoun(row)} to ${dest}${where && platform ? `, platform ${platform}` : ""}`;
 }
 
 // Turns a row's reminder on or off. Runs inside the click, so the browser lets

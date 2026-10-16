@@ -50,6 +50,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "status_spoken": "Expected 07:19",
       "minutes_late": 7,
       "platform": "1",
+      "replacement_bus": false,
       "length": 3,
       "cancel_reason": null,
       "delay_reason": "This train has been delayed by a broken down train",
@@ -148,6 +149,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `category` is Darwin's, when it sends one: `train`, `station`, `connections`, `system`, `misc`, `prior_trains` or `prior_other`; else null. `severity` likewise: `normal`, `minor`, `major` or `severe`, or null.
   - `kind` is `station` for a notice about the station's facilities (ticket office, ticket machines, lifts, toilets, waiting rooms, car park, help points, step-free access), else `service`. Darwin's category decides when it is sent (`station` is a station notice); without one, the words do (`darwin.message_kind`). Words about the trains (delays, cancellations, no trains, replacement buses, a closed station) always make it `service`, so a station notice never hides disruption.
   - **On the page:** `service` messages are the "Disruption" panel and are announced once in the live region; `station` ones are a quiet "Station information" line in the trains section and are never announced. An older server's plain strings are taken as `service`.
+- **`replacement_bus`:** true for a rail replacement bus, which Darwin lists apart from the trains (`busServices`, `serviceType` "bus") and the server merges in with them by time; false for a train. A replacement bus has `platform: null` and `length: null`, and its punctuality is kept apart from the train it stands in for. The page says "Bus" in its Platform column and "Replacement bus" under its destination and in its sheet.
 - **Calling points:** `calling_points` are the stops after this station, `previous_points` the ones before it, both in journey order. Times are `HH:MM` or null; `actual` is set once the train has been there. A cancelled stop has `cancelled: true` and null times.
 - **Train `position`** (from Darwin's Service Details, which needs its own key, `RDM_DETAILS_API_KEY`):
   - It is known for the first 3 trains on the board that aren't cancelled, refreshed at most once a minute. Other rows have `position: null` and `previous_points: []`, unless the server still holds their details from earlier.

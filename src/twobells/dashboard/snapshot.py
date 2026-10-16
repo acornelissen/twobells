@@ -114,9 +114,22 @@ def _history_entry(mode: str, route: str, scheduled: str, label: str, day: date,
 # Trains
 
 
-def train_route(prefix: str, destination: str) -> str:
-    """The history's name for a regular train, like "GLO>MAN|Manchester Piccadilly"."""
-    return f"{prefix}|{destination}"
+def train_route(prefix: str, destination: str, replacement_bus: bool = False) -> str:
+    """The history's name for a regular train, like "GLO>MAN|Manchester Piccadilly".
+    A rail replacement bus is kept apart from the train it stands in for:
+    "GLO>MAN bus|Manchester Piccadilly". No train's name can be one, as the
+    prefix comes from the settings and the destination after it."""
+    return f"{prefix} bus|{destination}" if replacement_bus else f"{prefix}|{destination}"
+
+
+def _train_route(prefix: str, departure: Departure) -> str:
+    return train_route(prefix, departure.destination, departure.replacement_bus)
+
+
+def _train_label(departure: Departure) -> str:
+    """"07:12 to Manchester Piccadilly", or "07:12 replacement bus to ..."."""
+    bus = f" {words.REPLACEMENT_BUS.lower()}" if departure.replacement_bus else ""
+    return f"{departure.scheduled}{bus} to {departure.destination}"
 
 
 def _train_times(service: TrainService, fetched: datetime) -> tuple[datetime, datetime | None]:
@@ -129,9 +142,11 @@ def _train_times(service: TrainService, fetched: datetime) -> tuple[datetime, da
     return scheduled_at, None
 
 
-def _train_identity(service: TrainService) -> str:
+def _train_id(service: TrainService) -> str:
+    """A train's row id; a replacement bus's is never a train's, even at the same time."""
     dep = service.departure
-    return service.service_id or f"{dep.scheduled}+{dep.destination}"
+    identity = service.service_id or f"{dep.scheduled}+{dep.destination}"
+    return row_id("replacement bus" if dep.replacement_bus else "train", identity)
 
 
 def _minutes_late(departure: Departure) -> int | None:
@@ -157,10 +172,10 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
     the board was fetched) and the stops it calls at before this station."""
     dep = service.departure
     scheduled_at, expected_at = _train_times(service, fetched)
-    history = _history_entry("train", train_route(route_prefix, dep.destination), dep.scheduled,
-                             f"{dep.scheduled} to {dep.destination}", scheduled_at.date(), phrases)
+    history = _history_entry("train", _train_route(route_prefix, dep), dep.scheduled, _train_label(dep),
+                             scheduled_at.date(), phrases)
     row = {
-        "id": row_id("train", _train_identity(service)),
+        "id": _train_id(service),
         "service": dep.service,
         "destination": dep.destination,
         "origin": service.origin,
@@ -173,6 +188,7 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
         "status_spoken": status_spoken(dep),
         "minutes_late": _minutes_late(dep),
         "platform": dep.platform,
+        "replacement_bus": dep.replacement_bus,
         "length": service.length,
         "cancel_reason": service.cancel_reason,
         "delay_reason": service.delay_reason,
@@ -248,7 +264,7 @@ def train_observations(board: TrainBoard, fetched: datetime, route_prefix: str) 
         scheduled_at, expected_at = _train_times(service, fetched)
         departs = scheduled_at if dep.status is Status.CANCELLED else (expected_at or scheduled_at)
         found.append(Observed(
-            route=train_route(route_prefix, dep.destination),
+            route=_train_route(route_prefix, dep),
             scheduled=dep.scheduled,
             day=scheduled_at.date(),
             departs_at=departs.replace(tzinfo=None),

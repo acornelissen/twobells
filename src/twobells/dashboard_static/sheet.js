@@ -43,7 +43,8 @@ export function setUpSheet(remindChanged) {
 function title(row) {
   const scheduled = str(row.scheduled);
   const destination = str(row.destination);
-  return openMode === "bus" ? `${scheduled} ${str(row.line)} to ${destination}` : `${scheduled} to ${destination}`;
+  if (openMode === "bus") return `${scheduled} ${str(row.line)} to ${destination}`;
+  return row.replacement_bus === true ? `${scheduled} replacement bus to ${destination}` : `${scheduled} to ${destination}`;
 }
 
 // A bus's status, the warning when it may not be running, its facts, and

@@ -10,6 +10,7 @@
 import { $, h, patch, setText, vh, str, num, obj, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
 import { describe, isOn, remindNote, toggle } from "./alerts.js";
+import { trainNoun } from "./extras.js";
 import { GO_MS, stopText } from "./board.js";
 import { announce, unannounce } from "./live.js";
 import { icon } from "./icons.js";
@@ -99,7 +100,7 @@ function whatLine(row, mode, stops) {
     const stop = stopText(row, stops);
     if (stop) parts.push(stop);
   } else {
-    parts.push([time(str(row.scheduled)), ` train to ${str(row.destination)}`]);
+    parts.push([time(str(row.scheduled)), ` ${trainNoun(row)} to ${str(row.destination)}`]);
     if (str(row.platform)) parts.push(`Platform ${str(row.platform)}`);
   }
   if (walk !== null) parts.push(`${walk} min walk`);
@@ -111,7 +112,7 @@ function thenLine(options) {
   if (!options.length) return [];
   return ["Then: ", options.flatMap(({ row, mode }, i) => [
     i ? sep() : null,
-    time(str(row.scheduled)), " ", mode === "bus" ? badge(str(row.line)) : "train",
+    time(str(row.scheduled)), " ", mode === "bus" ? badge(str(row.line)) : trainNoun(row),
     " (leave ", time(hhmm(row.leave_at)), ")",
   ])];
 }
