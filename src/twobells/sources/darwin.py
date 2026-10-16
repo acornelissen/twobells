@@ -5,13 +5,14 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from html.parser import HTMLParser
 from typing import Protocol
 from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
 
+from ..core import calling
 from ..core.errors import safe_message
 from ..core.model import Departure, Status, minutes_between
 from ..core.net import NotJSON, get_json_capped
@@ -240,6 +241,12 @@ class CallingPoint:
     actual: str | None  # the same, once the train has been there
     cancelled: bool
     length: int | None  # coaches from here, when Darwin knows
+
+    @property
+    def skipped(self) -> bool:
+        """The train no longer calls here: Darwin flags the stop cancelled,
+        or gives "Cancelled" for its time."""
+        return self.cancelled or self.expected == "Cancelled" or self.actual == "Cancelled"
 
 
 @dataclass(frozen=True)
@@ -474,6 +481,17 @@ def _calling_points(service: dict, destinations: list[dict]) -> tuple[CallingPoi
     return lists[0]
 
 
+def _calling_line(departure: Departure, points: tuple[CallingPoint, ...], length: int | None,
+                  formation: Formation | None) -> str | None:
+    """The train's "Calling at" line (core/calling.py): none for a train
+    cancelled here. Its length is Darwin's, or else its coaches counted."""
+    if departure.status is Status.CANCELLED:
+        return None
+    coaches = length if length is not None else (len(formation.coaches) if formation and formation.coaches else None)
+    return calling.line([p.name for p in points if not p.skipped], [p.name for p in points if p.skipped],
+                        coaches, departure.replacement_bus)
+
+
 def _rich_service(service, bus: bool = False) -> TrainService | None:
     """One train from the rich board, or None if it lacks a departure time.
     The Departure is built by _parse_service from checked values only, so the
@@ -496,17 +514,21 @@ def _rich_service(service, bus: bool = False) -> TrainService | None:
         "platform": service.get("platform"),
         "replacement_bus": bus_service,
     }
+    departure = _parse_service(checked)
+    points = _calling_points(service, destinations)
+    length = _coaches(service.get("length"))
+    # A rail replacement bus has no coaches to draw.
+    formation = None if bus_service else _formation(service.get("formation"))
     return TrainService(
-        departure=_parse_service(checked),
+        departure=replace(departure, calling_at=_calling_line(departure, points, length, formation)),
         service_id=_matching(_SERVICE_ID, service.get("serviceID")),
         origin=" & ".join(o["locationName"] for o in _locations(service.get("origin"))),
         operator_code=_matching(_OPERATOR_CODE, service.get("operatorCode")) or "",
-        length=_coaches(service.get("length")),
+        length=length,
         cancel_reason=_reason(service.get("cancelReason")),
         delay_reason=_reason(service.get("delayReason")),
-        calling_points=_calling_points(service, destinations),
-        # A rail replacement bus has no coaches to draw.
-        formation=None if bus_service else _formation(service.get("formation")),
+        calling_points=points,
+        formation=formation,
         detach_front=service.get("detachFront") is True and not bus_service,
         reverse_formation=service.get("isReverseFormation") is True and not bus_service,
     )

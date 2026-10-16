@@ -513,3 +513,45 @@ def test_a_failed_fetch_keeps_the_last_services():
     with pytest.raises(OSError):
         source.fetch()
     assert len(source.services) == 5
+
+
+# The "Calling at" line (core/calling.py), carried with the departure so the
+# board can save it and a screen scroll it.
+
+
+def test_each_train_has_its_calling_at_line():
+    board = parse_board_rich(load_fixture("ldbws_glossop_details.json"))
+    assert board.services[1].departure.calling_at == (
+        "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, "
+        "Ashburys and Manchester Piccadilly. This train is formed of 2 coaches."
+    )
+    assert board.services[0].departure.calling_at == "Calling at: Hadfield only. This train is formed of 2 coaches."
+
+
+def test_stops_no_longer_called_at_are_said_apart():
+    train = one(subsequentCallingPoints=[{"callingPoint": [
+        point(), point("Hattersley", "22:30", isCancelled=True), point("Godley", "22:32", et="Cancelled"),
+        point("Manchester Piccadilly", "22:54", crs="MAN"),
+    ]}])
+    assert [p.skipped for p in train.calling_points] == [False, True, True, False]
+    assert train.departure.calling_at == (
+        "Calling at: Dinting and Manchester Piccadilly. Does not call at Hattersley or Godley. "
+        "This train is formed of 3 coaches."
+    )
+
+
+def test_without_a_length_the_coaches_are_counted_or_left_unsaid():
+    assert one(length=None).departure.calling_at == "Calling at: Dinting and Manchester Piccadilly."
+    coaches = {"coaches": [coach("1"), coach("2"), coach("3"), coach("4")]}
+    assert one(length=None, formation=coaches).departure.calling_at.endswith("formed of 4 coaches.")
+
+
+def test_a_cancelled_train_or_one_without_calling_points_has_no_line():
+    assert one(etd="Cancelled", isCancelled=True).departure.calling_at is None
+    assert one(subsequentCallingPoints=None).departure.calling_at is None
+    assert parse_board({"trainServices": [service(subsequentCallingPoints=None)]})[0].calling_at is None
+
+
+def test_a_replacement_bus_says_it_is_one():
+    [found] = parse_board_rich({"busServices": [bus(subsequentCallingPoints=[{"callingPoint": [point()]}])]}).services
+    assert found.departure.calling_at == "Calling at: Dinting only. This is a replacement bus."

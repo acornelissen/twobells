@@ -44,6 +44,17 @@ def test_via_and_a_changed_platform_round_trip_and_older_saved_trains_have_neith
     assert (departure_from_dict(older).via, departure_from_dict(older).platform_changed) == (None, False)
 
 
+def test_the_calling_at_line_round_trips_and_older_saved_trains_have_none():
+    dep = Departure("train", "Northern", "Manchester", "07:12", None, Status.ON_TIME, "1",
+                    calling_at="Calling at: Manchester only.")
+    assert departure_from_dict(departure_to_dict(dep)) == dep
+    older = departure_to_dict(Departure("train", "Northern", "Manchester", "07:12", None, Status.ON_TIME, "1"))
+    del older["calling_at"]
+    assert departure_from_dict(older).calling_at is None
+    with pytest.raises(TypeError):
+        departure_from_dict({**older, "calling_at": ["Manchester"]})
+
+
 def test_undecodable_state_file_loads_empty(tmp_path, caplog):
     path = tmp_path / "state.json"
     path.write_bytes(b'{"sources": "\xff\xfe"}')

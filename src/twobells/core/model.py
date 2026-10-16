@@ -65,6 +65,9 @@ class Departure:
     via: str | None = None
     # Its platform has changed since an earlier fetch: see mark_platform_changes.
     platform_changed: bool = False
+    # A train's "Calling at" line (core/calling.py), from Darwin's calling
+    # points; None without them, and for a bus.
+    calling_at: str | None = None
 
     def __post_init__(self) -> None:
         # Every time is worked out from these, so one that isn't HH:MM would
@@ -78,7 +81,7 @@ class Departure:
         for name in ("mode", "service", "destination"):
             if not isinstance(getattr(self, name), str):
                 raise TypeError(f"{name} is not text")
-        for name in ("platform", "stop", "via"):
+        for name in ("platform", "stop", "via", "calling_at"):
             if getattr(self, name) is not None and not isinstance(getattr(self, name), str):
                 raise TypeError(f"{name} is not text")
         for name in ("replacement_bus", "platform_changed"):
