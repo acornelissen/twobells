@@ -142,7 +142,9 @@ def progress(
     return best
 
 
-def _heading_to(destination: str, directions: Iterable[str] | None) -> bool:
+def heading_to(destination: str, directions: Iterable[str] | None) -> bool:
+    """Whether a bus to `destination` goes one of the board's `directions`
+    (any, without them): the rows and the last buses keep only those."""
     if not directions:
         return True
     return any(d.lower() in destination.lower() for d in directions)
@@ -292,7 +294,7 @@ def live_board(
     for day, journeys in running.items():
         midnight = datetime.combine(day, time())
         for journey in journeys:
-            if journey.inbound_only or not _heading_to(journey.destination, directions):
+            if journey.inbound_only or not heading_to(journey.destination, directions):
                 continue  # inbound-only journeys are there for enrich.inbound, never as rows
             placed, vehicle = live.get((day, id(journey)), (None, None))
             for k, call in enumerate(journey.calls[:-1]):  # the last call is where it terminates

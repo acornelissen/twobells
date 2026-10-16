@@ -24,7 +24,7 @@ from ..core.net import get_bytes
 from ..timetable import build as timetable
 from ..timetable.model import Journey, Schedule
 from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
-from . import holidays, livebus
+from . import holidays, lastbus, livebus
 from .bods import DEFAULT_BASE_URL, BodsVehicleSource, HttpGetBytes, Vehicle
 from .livebus import LiveDeparture, LiveJourney
 
@@ -106,6 +106,7 @@ class BodsBusSource:
         self._fallback = fallback
         self._base_url = base_url
         self._http_get = http_get
+        self._tz = tz
         self._clock = clock or (lambda: datetime.now(tz))
         self._loaded: tuple[tuple[int, int] | None, Schedule | None] = (None, None)
         # How the last fetch fell short, for the settings site; None if it didn't.
@@ -113,6 +114,10 @@ class BodsBusSource:
         # The last fetch's live board, so a screen's row strips can use it
         # rather than ask again; None after a failure or the fallback.
         self.board: BusBoard | None = None
+        # The last buses' day groups for yesterday and today (lastbus.day_groups),
+        # with the timetable file and the day they were worked out for: once a
+        # day, not on every look. They hold none of the timetable.
+        self._last_days: tuple[tuple[int, int] | None, date, dict[date, lastbus.DayGroups]] | None = None
 
     def _schedule(self) -> Schedule | None:
         """The saved timetable, read again only when the file changes (the board
@@ -238,6 +243,25 @@ class BodsBusSource:
             return {}
         positions = schedule.positions
         return {label: positions[atco].name for label, atco in schedule.stops.items() if atco in positions}
+
+    def last_buses(self, now: datetime | None = None) -> list[lastbus.LastBus]:
+        """Each line and destination's last bus today from your stops, as
+        lastbus.last_buses gives them, at `now` (aware; the clock if not
+        given). Only the timetable's: none while it can't be used, as from
+        TransportAPI. The day's groups are worked out once a day, or when the
+        timetable changes, so a screen can ask every second."""
+        local = (now or self._clock()).astimezone(self._tz).replace(tzinfo=None)
+        schedule = self._schedule()
+        if schedule is None or unusable(schedule, self._stops, local) is not None:
+            return []
+        today = local.date()
+        cached = self._last_days
+        if cached is None or cached[0] != self._loaded[0] or cached[1] != today:
+            names = _holiday_names(self._folder, today)
+            days = (today - timedelta(days=1), today)
+            groups = {day: lastbus.day_groups(schedule, day, names, self._directions) for day in days}
+            self._last_days = cached = (self._loaded[0], today, groups)
+        return lastbus.last_buses(cached[2], local)
 
     def fetch_live(self, rows: int | None = None) -> BusBoard:
         """The next `rows` buses (the board's number if not given) with their

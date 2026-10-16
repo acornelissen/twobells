@@ -405,3 +405,40 @@ def test_no_stop_names_without_a_usable_timetable(tmp_path):
     assert source(tmp_path, at(10, 0), fallback=Fallback()).stop_names() == {}
     timetable.save(tmp_path, schedule(stops={"A": HOWARD}))  # a timetable for other stops
     assert source(tmp_path, at(10, 0)).stop_names() == {}
+
+
+def test_the_last_buses_come_from_the_timetable_with_its_bank_holidays(tmp_path):
+    good_friday = date(2026, 4, 3)
+    holidays.bank_holidays(tmp_path, datetime(2026, 4, 1), fetch=lambda url, most: GOV_UK)
+    # Leaves Henry Street at 23:02, except on Good Friday.
+    late = replace(EAST, journey_code="4175", calls=tuple(replace(c, minute=c.minute + 13 * 60) for c in EAST.calls),
+                   calendar=Calendar(days=frozenset(range(7)), bank_holidays_off=frozenset({"GoodFriday"})))
+    timetable.save(tmp_path, schedule(built=datetime(2026, 4, 1), journeys=(EAST, late)))
+    thursday = source(tmp_path, at(12, 0, day=date(2026, 4, 2)))
+    assert [(b.line, b.stop, b.leaves.strftime("%H:%M")) for b in thursday.last_buses()] == [("341", "A", "23:02")]
+    friday = source(tmp_path, at(12, 0, day=good_friday))
+    assert [b.leaves.strftime("%H:%M") for b in friday.last_buses()] == ["10:02"]
+    assert thursday.asked == [] and friday.asked == []  # the timetable alone: no calls
+
+
+def test_the_last_buses_are_grouped_once_a_day(tmp_path, monkeypatch):
+    from twobells.sources import lastbus
+
+    timetable.save(tmp_path, schedule())
+    worked = []
+    day_groups = lastbus.day_groups
+    monkeypatch.setattr(lastbus, "day_groups", lambda *args: worked.append(args[1]) or day_groups(*args))
+    bus = source(tmp_path, at(9, 0))
+    for minute in range(3):
+        assert [b.remaining for b in bus.last_buses(at(9, minute))] == [1]
+    assert [b.remaining for b in bus.last_buses(at(10, 4))] == [0]
+    assert worked == [date(2026, 10, 8), date(2026, 10, 9)]
+    bus.last_buses(at(0, 5, day=date(2026, 10, 10)))  # a new day
+    assert worked[2:] == [date(2026, 10, 9), date(2026, 10, 10)]
+
+
+def test_no_last_buses_without_a_usable_timetable(tmp_path):
+    # Nor while TransportAPI stands in.
+    assert source(tmp_path, at(12, 0), fallback=Fallback()).last_buses() == []
+    timetable.save(tmp_path, schedule(stops={"A": HOWARD}))
+    assert source(tmp_path, at(12, 0)).last_buses() == []
