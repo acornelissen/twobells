@@ -105,7 +105,7 @@ The 10.85" display shows the same board with bigger dots and more room, so long 
 
 | You see | It means |
 |---|---|
-| `Plat 2 (changed)` | The train's platform has changed since the board last checked: it was given another one before. It stays until the train goes. The plain look draws it in the accent colour too. |
+| `Plat 2 (changed)` | The train's platform has changed since the board last checked: it was given another one before. It stays until the train goes. The plain and TFT looks draw it in the accent colour too. |
 
 ![The station board look on the 10.85 inch e-paper](images/epaper-10in85.png)
 

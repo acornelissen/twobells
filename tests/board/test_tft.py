@@ -174,3 +174,49 @@ def test_without_a_screens_colours_on_time_has_no_pill_and_cancelled_takes_the_a
     assert pill_colours(TRAINS[2], P) == (P.red, P.white)
     assert pill_colours(Row("61", "Buxton", "07:35 sch"), P) is None
     assert pill_colours(Row("07:12", "Hyde", "No report"), P) is None
+
+
+# A changed platform and the via words, as the plain look has them.
+
+CHANGED = (
+    Row("07:12", "Hadfield", "On time", platform="Plat 2 (changed)", platform_changed=True, via="via Dinting"),
+    Row("07:42", "Manchester Piccadilly", "Exp 07:49", Style.ALERT, platform="Plat 1"),
+    Row("08:12", "Manchester Piccadilly", "Cancelled", Style.INVERTED, platform="Plat 3 (changed)",
+        platform_changed=True),
+)
+
+
+def platform_box(panel, index):
+    fonts, s = fonts_for(panel)
+    platform_x = platform_column(CHANGED, fonts, panel.width, s)
+    top, bottom = row_box(panel, "trains", index)
+    return (int(platform_x), top, int(platform_x + drawn_length(fonts.regular, CHANGED[index].platform)), bottom)
+
+
+@pytest.mark.parametrize("panel", SCREENS, ids=lambda p: p.name)
+def test_a_changed_platform_is_in_the_accent_and_an_unchanged_one_in_white(panel):
+    image = render_tft(board(trains=CHANGED), P, panel)
+    assert colours_in(image, platform_box(panel, 0)) == {P.black, P.accent}
+    assert colours_in(image, platform_box(panel, 1)) == {P.black, P.white}
+    # A cancelled row isn't reversed out in this look, so it keeps the accent too.
+    assert colours_in(image, platform_box(panel, 2)) == {P.black, P.accent}
+
+
+def test_the_accent_on_black_is_legible():
+    from tests.contrast import contrast
+    from twobells.board.displays.screen import SCREEN_RGB
+
+    # The TFT look's own accent, amber, behind a changed platform's words.
+    assert contrast("#%02x%02x%02x" % SCREEN_RGB["yellow"], "#000000") >= 4.5
+
+
+@pytest.mark.parametrize("panel", SCREENS, ids=lambda p: p.name)
+def test_the_via_words_follow_the_destination(panel):
+    fonts, s = fonts_for(panel)
+    layout = row_layout(CHANGED[0], fonts, panel.width, s, platform_column(CHANGED, fonts, panel.width, s))
+    assert layout.middle == "Hadfield via Dinting"
+    texts = [scroll.text for scroll in tft_frame(board(trains=(dataclasses.replace(
+        CHANGED[0], middle="Manchester Piccadilly", via="via Guide Bridge, Hyde Central and Woodley " * 3),)),
+        P, panel).scrolls]
+    # Too long for its space: the whole of it scrolls, via words and all.
+    assert any(text.startswith("Manchester Piccadilly via Guide Bridge") for text in texts)

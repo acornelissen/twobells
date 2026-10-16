@@ -712,8 +712,9 @@ class Painter:
                    layout.middle_room, ink, paper, band)
         # row_layout only places a platform or leave time the row has.
         if layout.platform_x is not None and row.platform:
-            # A changed platform says so in words; the accent only backs them up.
-            platform_ink = self.p.accent if row.platform_changed and row.style is not Style.INVERTED else ink
+            # A changed platform says so in words; the accent only backs them up,
+            # on any row not reversed out.
+            platform_ink = self.p.accent if row.platform_changed and paper == self.paper else ink
             draw_text(self.image, (layout.platform_x, y + s), row.platform, self.f.regular, platform_ink)
         if layout.leave_x is not None and layout.leave:
             draw_text(self.image, (layout.leave_x, y + self.small_drop * s), layout.leave, self.f.small, ink)
