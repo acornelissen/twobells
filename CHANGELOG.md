@@ -24,6 +24,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ### Changed
 
+- The bus timetable keeps each journey's block number (timetable format 4), so it is built again once after updating. It takes 8 bytes more per journey held, and its block numbers, shared: the journey limits are unchanged.
 - Live buses are placed along the road the timetable saved between two stops (the bus maps' roads), up to 300 m from it, so a bus on a road that bends away from the straight line between its stops is tracked. Between stops with no saved road the straight line and its 150 m stay. Where a bus is near more than one part of its journey, the nearest wins, and only parts about as near are settled by which fits the timetable best, so a bus on a parallel road further on isn't placed there.
 - The dashboard's **Board look** button is now a **Look** list, on the Performance page too: Standard, Dot matrix (the old Board look), TFT and Split-flap. A browser that had the Board look keeps it.
 - The user guide is a page per topic, indexed by `docs/user-guide.md`; the Docker pages are one, and the code layout is in `docs/architecture.md`.

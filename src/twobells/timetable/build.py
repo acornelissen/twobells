@@ -56,6 +56,13 @@ last stop. Times are worked out in seconds and each call's seconds dropped
 than timetabled and half-minutes don't add up along the route. Minutes run
 past 1440 after midnight.
 
+Blocks. A VehicleJourney's Operational/Block/BlockNumber, where the
+operator gives one, is kept (Journey.block): the journeys one bus works in
+a day share it, so sources/livebus.py can follow a bus from the journey
+that brings it to your stop to the one it leaves on. Many operators give
+none (Bee Network's and High Peak's timetables, in October 2026); then
+"" is kept.
+
 Versions. BODS keeps an old version of a service (its ServiceCode, line and
 operator) beside the one replacing it, often open-ended, so both would run.
 As bustimes.org does, a version ends the day before a later open-ended one
@@ -119,7 +126,8 @@ _FAILED_FILE_BYTES = 200
 # The builder's version, saved in the file: an older one is rebuilt (see due).
 # 2: stops keep the letter on their sign.
 # 3: the roads between stops, for the dashboard's maps (shapes).
-FORMAT = 3
+# 4: the block each journey is worked in (Journey.block), to follow its bus.
+FORMAT = 4
 MAX_AGE = timedelta(days=7)
 # Positions are kept for this many calls before each of your stops, and the one
 # after: livebus places buses along that stretch and sees them pass your stop.
@@ -142,7 +150,9 @@ MAX_INBOUND_JOURNEYS = 10_000
 # 2026, data set 2100 (by then all of First Bus) held at Sheffield's busiest
 # stops took 3.7 to 4.5 KB each on Python 3.11, at 63 to 73 calls on
 # average and up to 134. 8 KB covers the made-up ones, each with a calendar
-# of its own, and twice the real ones.
+# of its own, and twice the real ones. Keeping each journey's block (format
+# 4) added 8 bytes a journey, and its block numbers, shared: about 50 with
+# one of its own each, so this stands.
 JOURNEY_BYTES = 8_000
 # The most a journey takes in the saved file (save, a journey at a time):
 # one of 80 calls with school terms, bank holidays and Christmas off takes
@@ -333,6 +343,7 @@ class _Shared(dict):
         return self(version), replace(
             journey, line=self(journey.line), operator=self(journey.operator),
             destination=self(journey.destination), calls=self(journey.calls), calendar=self(journey.calendar),
+            block=self(journey.block),
         )
 
 
@@ -598,7 +609,8 @@ def _journey(
     last = calls[-1].atco
     destination = _text(node, "t:DestinationDisplay") or pattern.destination or doc.names.get(last) or last
     code = _text(node, "t:Operational/t:TicketMachine/t:JourneyCode") or _text(node, "t:VehicleJourneyCode")
-    journey = Journey(line, operator, destination, code, calls, calendar, inbound_only=not calling)
+    block = _text(node, "t:Operational/t:Block/t:BlockNumber")
+    journey = Journey(line, operator, destination, code, calls, calendar, inbound_only=not calling, block=block)
     return _Version(service.code, doc.revision), journey
 
 

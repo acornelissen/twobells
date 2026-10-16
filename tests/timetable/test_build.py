@@ -252,6 +252,29 @@ def test_journey_code_falls_back_to_the_vehicle_journey_code():
     assert _one(_txc(LINKS, journey=ticket)).journey_code == "1735"
 
 
+def test_a_journey_keeps_its_block_number():
+    # The journeys one bus works in a day share it, so livebus can follow the
+    # bus from one to the next. Bee Network's and High Peak's give none.
+    block = ("<Operational><TicketMachine><JourneyCode>1735</JourneyCode></TicketMachine>"
+             "<Block><Description>Glossop 22</Description><BlockNumber> T122 </BlockNumber></Block></Operational>")
+    found = _one(_txc(LINKS, journey=block))
+    assert (found.block, found.journey_code) == ("T122", "1735")
+    assert _one(_txc(LINKS)).block == ""
+    assert _one(_txc(LINKS, journey="<Operational><Block><Description>22</Description></Block></Operational>")).block == ""
+    long = f"<Operational><Block><BlockNumber>{'9' * 500}</BlockNumber></Block></Operational>"
+    assert _one(_txc(LINKS, journey=long)).block == "9" * 80
+
+
+def test_journeys_of_one_block_share_its_number_and_keep_it_through_a_save(tmp_path):
+    first = _txc(LINKS, journey="<Operational><Block><BlockNumber>T122</BlockNumber></Block></Operational>")
+    xml = _with_journey(first, "vj2", "11:00:00")
+    one, two = timetable._parse_document(xml, OURS, "NOC")[0]
+    assert one.block == two.block == "T122" and one.block is two.block
+    schedule = replace(_schedule(), journeys=(one, two))
+    save(tmp_path, schedule)
+    assert [journey.block for journey in load(tmp_path).journeys] == ["T122", "T122"]
+
+
 def test_operator_comes_from_the_journey_then_the_document_then_the_dataset():
     two = (
         '<Operator id="o1"><NationalOperatorCode>AAAA</NationalOperatorCode></Operator>'
@@ -1008,7 +1031,7 @@ def test_a_timetable_is_read_strictly_from_its_file(tmp_path):
         (tmp_path / FILE_NAME).write_text(good)
         assert load(tmp_path) == _schedule()
     for bad in (text + "{}", text[:-1], text.replace('"built"', "built"), text.replace("]", ",]", 1),
-                text.replace('"format":3', '"format":3,'), text.replace('"format"', "1", 1), "﻿" + text, ""):
+                text.replace(f'"format":{FORMAT}', f'"format":{FORMAT},'), text.replace('"format"', "1", 1), "﻿" + text, ""):
         (tmp_path / FILE_NAME).write_text(bad)
         assert load(tmp_path) is None, bad[:40]
 
@@ -2075,14 +2098,17 @@ PROFILE = ("<OperatingProfile><RegularDayType><DaysOfWeek><MondayToFriday/></Day
 def _long_route(calls, journeys):
     """A document of `journeys` journeys of `calls` stops each, all on one
     pattern, each with an operating profile and a ticket machine code of its
-    own, as BODS's are."""
+    own, as BODS's are, and a block number shared by a bus's eight a day,
+    as the operators that give them do."""
     stops = [f"370{n:09d}" for n in range(calls)]
     links = [(a, b, "PT1M30S", "", "") for a, b in pairwise(stops)]
     one = (f"<VehicleJourney>{PROFILE}<VehicleJourneyCode>vj{{n}}</VehicleJourneyCode>"
-           "<Operational><TicketMachine><JourneyCode>{code}</JourneyCode></TicketMachine></Operational>"
+           "<Operational><TicketMachine><JourneyCode>{code}</JourneyCode></TicketMachine>"
+           "<Block><BlockNumber>{block}</BlockNumber></Block></Operational>"
            "<ServiceRef>S1</ServiceRef><LineRef>L1</LineRef><JourneyPatternRef>p1</JourneyPatternRef>"
            "<DepartureTime>{hour:02d}:{minute:02d}:00</DepartureTime></VehicleJourney>")
-    many = "".join(one.format(n=n, code=1000 + n, hour=5 + n // 60 % 18, minute=n % 60) for n in range(journeys))
+    many = "".join(one.format(n=n, code=1000 + n, block=f"FS{n // 8:04d}", hour=5 + n // 60 % 18, minute=n % 60)
+                   for n in range(journeys))
     xml = _txc(links).decode()
     start, end = xml.index("<VehicleJourneys>"), xml.index("</VehicleJourneys>")
     return (xml[:start] + "<VehicleJourneys>" + many + xml[end:]).encode(), stops[calls // 2]

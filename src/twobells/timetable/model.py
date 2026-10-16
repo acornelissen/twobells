@@ -75,6 +75,11 @@ class Journey:
     # ends at a stand near one of your stops without calling at any of them,
     # so it never gives a departure of its own. False in older files.
     inbound_only: bool = False
+    # The operator's block (running board) number, TransXChange's BlockNumber:
+    # the journeys one bus works in a day share it, so it says which journey
+    # brings in the bus for a departure from your stop (sources/livebus.py). ""
+    # where the timetable gives none, and in older files.
+    block: str = ""
 
     @property
     def origin(self) -> Call:
@@ -403,7 +408,7 @@ def _calendar(data: dict) -> Calendar:
 
 def _journey(data: dict, one: Callable = lambda value: value) -> Journey:
     """A journey as saved, holding `one` of each of its stops, minutes,
-    calendar and names (never of inbound_only: True would be taken for 1)."""
+    calendar, names and blocks (never of inbound_only: True would be taken for 1)."""
     return Journey(
         line=one(data["line"]),
         operator=one(data["operator"]),
@@ -412,6 +417,7 @@ def _journey(data: dict, one: Callable = lambda value: value) -> Journey:
         calls=tuple(Call(one(c["atco"]), one(c["minute"])) for c in data["calls"]),
         calendar=one(_calendar(data["calendar"])),
         inbound_only=_flag(data.get("inbound_only", False)),
+        block=one(_string(data.get("block", ""))),
     )
 
 
@@ -426,6 +432,12 @@ def _point(pair) -> tuple[float, float]:
     if not (math.isfinite(lat) and math.isfinite(lon)):
         raise ValueError("A road point must be two finite numbers")
     return lat, lon
+
+
+def _string(value) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"Expected text, not {value!r}")
+    return value
 
 
 def _flag(value) -> bool:

@@ -158,13 +158,14 @@ def _every_field():
         not_on_school_days=((date(2026, 10, 26), date(2026, 10, 30)),),
     )
     journey = Journey("341", "BNML", "Hyde", "10620", (Call("1000DGHS0900", 380), Call("1800ANIN0K1", 1460)),
-                      calendar, inbound_only=True)
+                      calendar, inbound_only=True, block="T122")
     return Schedule(datetime(2026, 10, 9, 3, 0), date(2027, 1, 3), {"A": "1000DGHS0900"}, (journey,),
-                    {"1000DGHS0900": StopPosition("Henry Street", 53.44384, -1.948999, "A")}, ("BNML",), 3,
+                    {"1000DGHS0900": StopPosition("Henry Street", 53.44384, -1.948999, "A")}, ("BNML",), 4,
                     {"1000DGHS0900>1800ANIN0K1": ((53.44, -1.95),)}, True)
 
 
-# A timetable file with every field, as saved before journeys took slots.
+# A timetable file with every field, as saved before journeys took slots
+# (and before they kept their block, format 3).
 _SAVED = (
     '{"built":"2026-10-09T03:00:00","format":3,"journeys":[{"calendar":{"bank_holidays_off":["BoxingDay",'
     '"ChristmasDay"],"bank_holidays_on":["MayDay"],"dates_off":[["2026-12-25","2026-12-26"]],"dates_on":'
@@ -177,10 +178,24 @@ _SAVED = (
 )
 
 
+def _with_block(saved):
+    """`saved` as format 4 saves it: each journey with its block."""
+    return saved.replace('"format":3', '"format":4').replace('"journeys":[{', '"journeys":[{"block":"T122",')
+
+
 def test_a_timetable_is_saved_as_it_always_was_and_older_files_load():
+    # Format 4 added each journey's block, and nothing else.
     schedule = _every_field()
-    assert schedule.to_json() == _SAVED
-    assert Schedule.from_json(_SAVED) == schedule
+    assert schedule.to_json() == _with_block(_SAVED)
+    assert Schedule.from_json(_with_block(_SAVED)) == schedule
+    assert Schedule.from_json(_SAVED) == dataclasses.replace(
+        schedule, format=3, journeys=tuple(dataclasses.replace(j, block="") for j in schedule.journeys))
+
+
+@pytest.mark.parametrize("block", ["null", "122", "true", '["T122"]'])
+def test_a_block_that_isnt_text_makes_the_file_unreadable(block):
+    with pytest.raises(TypeError):
+        Schedule.from_json(_with_block(_SAVED).replace('"block":"T122"', f'"block":{block}'))
 
 
 def test_journeys_keep_no_dict_of_their_own_and_stay_frozen():
