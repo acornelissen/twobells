@@ -18,11 +18,9 @@ Inbound buses. For a departure that starts at your stop, the bus coming in
 to work it (livebus.Inbound, found there: followed by the timetable's
 block, or else guessed by line) is shown as a line of its own ("Bus
 arriving from Ashton, 4 min late (due 23:29)"), with the facts from its
-tracker: where it is and how late. A bus followed by its block makes the
-departure live, and livebus carries its lateness on to the departure's
-time. A guess never changes the departure's expected time or status
-words, even when the bus is due after the departure: drivers make up time
-on layovers, and another bus may take the journey.
+tracker: where it is and how late. Either way the departure is live, and
+livebus carries the bus's lateness on to the departure's time; `followed`
+tells the API which it was.
 
 Ghost buses. A bus due within GHOST_WITHIN with no live bus placed on its
 journey is flagged, since trackers usually show up well before then. Not
@@ -158,8 +156,8 @@ def _where(placed: LiveJourney, stop: str, positions: dict[str, StopPosition]) -
 def inbound(live: LiveDeparture, positions: dict[str, StopPosition]) -> dict | None:
     """The bus coming in to work a departure that starts at your stop, as
     livebus found it, or None (see the module's notes). `followed` says
-    whether it was followed by the timetable's block, making the departure
-    live, rather than guessed."""
+    whether it was followed by the timetable's block rather than guessed by
+    line; either makes the departure live."""
     coming = live.inbound
     if coming is None:
         return None

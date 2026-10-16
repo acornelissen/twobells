@@ -274,14 +274,16 @@ def test_inbound_wording_gives_the_inbound_bus_s_lateness_never_a_new_departure_
     assert inbound_text(origin, late, due) == words
 
 
-def test_a_late_inbound_bus_leaves_the_departure_s_own_times_alone():
+def test_a_late_inbound_bus_guessed_by_line_makes_the_departure_late():
     very_late = inbound_bus(at(10, 14))  # 9 min late, due at A 10:19: after WEST leaves at 10:15
     board = make_board(at(10, 14), [very_late])
     west = row(board, "237")
     extras = bus_extras(west, board, at(10, 14))
     assert extras["inbound"]["due"] == "10:19" and extras["inbound"]["late_min"] == 9
+    assert extras["inbound"]["followed"] is False  # no block to follow: a guess by line
+    # Live, as one followed by its block: two minutes to turn round once in.
     assert (west.departure.status, west.departure.expected, west.expected) == (
-        Status.UNKNOWN, None, datetime(2026, 10, 9, 10, 15),
+        Status.LATE, "10:21", datetime(2026, 10, 9, 10, 21),
     )
 
 

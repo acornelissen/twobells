@@ -21,14 +21,19 @@ one just before it in the block, and end at the departure's first stop, or
 within NEAR_M of it, up to INBOUND_WINDOW before it leaves. If that bus
 isn't seen, the departure stays timetable only.
 
-Without a block to follow (none given, or one that fails those checks), a
-bus is guessed at as bustimes.org does without blocks: a journey of the same
-line ending there up to INBOUND_WINDOW before the departure leaves, with a
-live bus placed on it, if exactly one fits and no earlier departure of that
-line from that stop would sooner take it. The timetable keeps journeys that
-end near your stop without calling at it (inbound-only ones) for both. A
-guess is only that: the dashboard shows it as a line of its own
-(dashboard/enrich.py), never as a time for the departure.
+Without a block to follow (none given, or one that fails those checks), the
+bus is guessed by line, as bustimes.org does without blocks. Each bus placed
+on a journey goes to the earliest departure it can make: of the same line
+and operator, from your stop where that journey ends (or within NEAR_M of
+it), on the same service day, leaving up to INBOUND_WINDOW after the
+journey is due in, with no bus of its own and no block to follow. A
+departure with exactly one bus coming to it this way is live, marked
+inbound, the same as one followed by its block, with the same words: the
+rider sees no difference, only Inbound.followed tells them apart. With two,
+or two departures leaving at once, it is too much of a guess and none is
+made. The timetable keeps journeys that end near your stop without calling
+at it (inbound-only ones), and every stop of those that turn round there,
+for both.
 
 Everything here is pure: the caller passes the time, the timetable and the
 vehicles, so nothing reads the clock or the network.
@@ -37,8 +42,8 @@ vehicles, so nothing reads the clock or the network.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Iterable, Mapping, Sequence, Set
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from itertools import pairwise
 
@@ -296,8 +301,8 @@ class Inbound:
     on the journey before (see the module's notes)."""
 
     bus: LiveJourney
-    # By the block: the same bus, so the departure is live. False for a guess
-    # by line, which leaves the departure's times alone.
+    # By the block: the same bus. False for a guess by line. Either makes the
+    # departure live, with the same words.
     followed: bool
 
     @property
@@ -343,12 +348,12 @@ class LiveDeparture:
     @property
     def live(self) -> bool:
         """Whether its bus is tracked: placed on its journey, or followed in on the one before."""
-        return self.progress is not None or (self.inbound is not None and self.inbound.followed)
+        return self.progress is not None or self.inbound is not None
 
     @property
     def tracked(self) -> Vehicle | None:
         """The bus tracked for it, if it is live: its own, or the one followed in."""
-        if self.progress is not None or self.inbound is None or not self.inbound.followed:
+        if self.progress is not None or self.inbound is None:
             return self.vehicle
         return self.inbound.bus.vehicle
 
@@ -438,8 +443,7 @@ def live_board(
     placed = {(day, i): LiveJourney(by_id[i], day, found, bus) for (day, i), (found, bus) in live.items()}
     used = {id(bus) for _, bus in live.values()}
     follow = _Follow(
-        {day: _blocks(running[day]) for day in days[:2]}, placed, [v for v in vehicles if id(v) not in used],
-        schedule, tz,
+        {day: running[day] for day in days[:2]}, placed, [v for v in vehicles if id(v) not in used], schedule, tz
     )
     labels: dict[str, list[str]] = {}
     for label, atco in schedule.stops.items():
@@ -464,7 +468,7 @@ def live_board(
                 for label in labels.get(call.atco, ()):
                     found.append(_departure(journey, day, k, leaves, progress, vehicle, label, inbound, local_now))
     found.sort(key=lambda live: (live.expected, live.leaves, live.departure.stop, live.journey.line))
-    return [follow.guess(live, found) for live in found[:rows]], list(placed.values())
+    return found[:rows], list(placed.values())
 
 
 def _blocks(journeys: Iterable[Journey]) -> dict[tuple[str, str], list[Journey]]:
@@ -502,17 +506,19 @@ class _Follow:
 
     def __init__(
         self,
-        blocks: Mapping[date, Mapping[tuple[str, str], list[Journey]]],
+        running: Mapping[date, Sequence[Journey]],
         placed: Mapping[tuple[date, int], LiveJourney],
         spare: list[Vehicle],
         schedule: Schedule,
         tz: tzinfo,
     ) -> None:
-        self._blocks = blocks  # by service day, as _blocks gives them
+        # The journeys running on each service day buses are placed on, and their blocks.
+        self._blocks = {day: _blocks(journeys) for day, journeys in running.items()}
         self._placed = placed  # each journey a bus was matched to and placed on, by (service day, id)
         self._spare = spare  # the buses that weren't
         self._schedule = schedule
         self._tz = tz
+        self._guessed = self._guesses(running)  # by (service day, id of the departure's journey)
 
     def journey_before(self, journey: Journey, day: date) -> Journey | None:
         """The journey just before `journey` in its block on `day`, if its bus
@@ -531,10 +537,11 @@ class _Follow:
         return before if _comes_in(before, journey, self._schedule.positions) else None
 
     def bus_in(self, journey: Journey, day: date) -> Inbound | None:
-        """The bus followed in to work `journey`, if it is seen."""
+        """The bus coming in to work `journey`, if it is seen: followed by
+        its block, or without one to follow, guessed by line."""
         before = self.journey_before(journey, day)
         if before is None:
-            return None
+            return self._guessed.get((day, id(journey)))
         bus = self._placed.get((day, id(before))) or self._by_block_ref(before, day)
         return Inbound(bus, followed=True) if bus is not None else None
 
@@ -551,40 +558,37 @@ class _Follow:
                 found.append(LiveJourney(before, day, placed, vehicle))
         return found[0] if len(found) == 1 else None
 
-    def guess(self, live: LiveDeparture, rows: list[LiveDeparture]) -> LiveDeparture:
-        """`live` with the bus guessed to be coming in to work it, by line
-        (see the module's notes), if it starts at your stop with no bus of
-        its own and no block to follow. `rows` are every departure found, to
-        see whether an earlier one would sooner take that bus."""
-        journey = live.journey
-        if live.call_index != 0 or live.progress is not None or live.inbound is not None:
-            return live
-        if self.journey_before(journey, live.service_day) is not None:
-            return live  # its block says which bus works it, and that bus isn't seen
-        found = [
-            Inbound(bus, followed=False) for (day, journey_id), bus in self._placed.items()
-            if not (journey_id == id(journey) and day == live.service_day)
-            and _same(bus.journey.line, journey.line)
-            and _ends_at(bus.journey, journey.origin.atco, self._schedule.positions)
-        ]
-        found = [inbound for inbound in found if timedelta(0) <= live.leaves - inbound.due <= INBOUND_WINDOW]
-        if len(found) != 1 or _taken_earlier(found[0].due, live, rows):
-            return live  # none, more than one (a guess too far), or an earlier departure's bus
-        return replace(live, inbound=found[0])
+    def _guesses(self, running: Mapping[date, Sequence[Journey]]) -> dict[tuple[date, int], Inbound]:
+        """The bus guessed to be coming in to work each departure from your
+        stop with no bus of its own and no block to follow, out of `running`:
+        each placed bus goes to the earliest it can make, and a departure two
+        buses go to gets neither (see the module's notes)."""
+        yours = set(self._schedule.stops.values())
+        going: dict[tuple[date, int], list[Inbound]] = {}
+        for bus in self._placed.values():
+            day = bus.service_day
+            makes = [journey for journey in running.get(day, ()) if self._may_work(bus, journey, day, yours)]
+            if not makes:
+                continue
+            first = min(journey.origin.minute for journey in makes)
+            earliest = [journey for journey in makes if journey.origin.minute == first]
+            if len(earliest) == 1:  # two leaving at once: either could be its
+                going.setdefault((day, id(earliest[0])), []).append(Inbound(bus, followed=False))
+        return {key: found[0] for key, found in going.items() if len(found) == 1}
 
-
-def _taken_earlier(arrives: datetime, live: LiveDeparture, rows: list[LiveDeparture]) -> bool:
-    """Whether a departure of the same line from the same stop leaves between
-    the inbound bus arriving and `live`: that one is the bus's next working."""
-    stop = live.journey.origin.atco
-    return any(
-        other is not live
-        and other.call_index == 0
-        and other.journey.origin.atco == stop
-        and _same(other.journey.line, live.journey.line)
-        and arrives <= other.leaves < live.leaves
-        for other in rows
-    )
+    def _may_work(self, bus: LiveJourney, journey: Journey, day: date, yours: Set[str]) -> bool:
+        """Whether the bus placed on `bus.journey` could, by line, work
+        `journey` next, a departure from your stop on the same service day."""
+        return (
+            journey is not bus.journey
+            and not journey.inbound_only
+            and journey.origin.atco in yours
+            and _same(journey.line, bus.journey.line)
+            and _same(journey.operator, bus.journey.operator)
+            and (day, id(journey)) not in self._placed
+            and _comes_in(bus.journey, journey, self._schedule.positions)
+            and self.journey_before(journey, day) is None
+        )
 
 
 def _expected(leaves: datetime, placed: Progress | None, inbound: Inbound | None, now: datetime) -> datetime:
@@ -594,7 +598,7 @@ def _expected(leaves: datetime, placed: Progress | None, inbound: Inbound | None
     gone, any minute `now` (board-local)."""
     if placed is not None:
         return leaves + timedelta(minutes=_late_minutes(placed.delay))
-    if inbound is None or not inbound.followed:
+    if inbound is None:
         return leaves
     if inbound.is_in:
         return max(leaves, now.replace(second=0, microsecond=0))
@@ -615,7 +619,7 @@ def _departure(
     """A board row for the k-th call of a journey, and what it came from, at
     `now` (board-local)."""
     expected = _expected(leaves, placed, inbound, now)
-    if placed is None and (inbound is None or not inbound.followed):
+    if placed is None and inbound is None:
         status = Status.UNKNOWN
     else:
         status = Status.LATE if expected > leaves else Status.ON_TIME
@@ -694,7 +698,7 @@ def where_words(live: LiveDeparture, found: Approach | None, now: datetime) -> s
     in is (inbound_words). `found` is its approach; `now` is board-local
     without a zone."""
     if live.progress is None:
-        if live.inbound is not None and live.inbound.followed:
+        if live.inbound is not None:
             return inbound_words(live.inbound, now)
         return "No live position"
     if found is None:
@@ -707,7 +711,7 @@ def row_strip(live: LiveDeparture, positions: dict[str, StopPosition], now: date
     """Where the bus is, for a screen's row: the dashboard row's words and
     strip, or for a bus followed in, inbound_words short, with no bus on the
     strip yet. None without a placed or followed bus or your stop's position,
-    and for anything a row can't draw (Strip refuses it): never a guess.
+    and for anything a row can't draw (Strip refuses it).
     `now` is board-local without a zone."""
     found = approach(live, positions)
     if not live.live or found is None:

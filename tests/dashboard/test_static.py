@@ -2259,11 +2259,13 @@ def test_a_row_with_a_position_draws_its_strip_small_beside_its_words():
     assert found["trains"] == [[1, "true", 0, "Not started yet: leaves Hadfield at 07:11"], None,
                                [1, "true", 1, "Left Hadfield 08:04, on time"]] + [None] * 7
     # Every bus with stops to draw, live or not, as before the rows were
-    # redesigned: a timetable-only bus shows its stops and yours with no bus
-    # on them, and says so. The 07:05 has gone (just missed).
-    assert found["buses"] == [[1, "true", 1, "2 stops away"], [1, "true", 0, "No live position"],
+    # redesigned: a timetable-only bus (the 07:50) shows its stops and yours
+    # with no bus on them, and says so, as does one whose bus is coming in to
+    # work it (the 07:20) until it turns round. The 07:05 has gone (just missed).
+    assert found["buses"] == [[1, "true", 1, "2 stops away"], [1, "true", 0, "Bus on its way, due in 14 min"],
                               [1, "true", 1, "4 stops away"], None,
-                              [1, "true", 0, "Not on the route yet"], None, None, None, None]
+                              [1, "true", 0, "Not on the route yet"], [1, "true", 0, "No live position"],
+                              None, None, None]
 
 
 @needs_node
@@ -2292,7 +2294,7 @@ def test_rows_draw_their_strips_when_the_setting_is_on_or_unsaid(setting):
     # A snapshot from an older server has no row_strips: they are on.
     found = run_js(_row_strips(setting) + _boards() + ROW_WHERE)
     assert [n for n, _ in found["trains"]] == [1, 0, 1] + [0] * 7
-    assert [n for n, _ in found["buses"]] == [1, 1, 1, 0, 1, 0, 0, 0, 0]
+    assert [n for n, _ in found["buses"]] == [1, 1, 1, 0, 1, 1, 0, 0, 0]
 
 
 @needs_node
@@ -2301,8 +2303,8 @@ def test_with_the_setting_off_rows_draw_no_strips_and_row_1_still_says_where():
     # As on a wall tablet: no drawings; row 1 says where its train is in
     # words, a later train row says nothing, and a bus row keeps its words.
     assert found["trains"] == [[0, "Not started yet: leaves Hadfield at 07:11"]] + [[0, ""]] * 9
-    assert found["buses"] == [[0, "2 stops away"], [0, "No live position"], [0, "4 stops away"], [0, ""],
-                              [0, "Not on the route yet"], [0, ""], [0, ""], [0, ""], [0, ""]]
+    assert found["buses"] == [[0, "2 stops away"], [0, "Bus on its way, due in 14 min"], [0, "4 stops away"],
+                              [0, ""], [0, "Not on the route yet"], [0, "No live position"], [0, ""], [0, ""], [0, ""]]
 
 
 @needs_node

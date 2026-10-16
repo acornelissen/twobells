@@ -1430,16 +1430,22 @@
         "stop": "A",
         "scheduled": "07:20",
         "scheduled_at": "2026-10-10T07:20:00+01:00",
-        "expected": null,
-        "expected_at": null,
-        "status": "unknown",
-        "status_text": "Timetable only",
-        "status_spoken": "Timetable only",
+        "expected": "07:20",
+        "expected_at": "2026-10-10T07:20:00+01:00",
+        "status": "on_time",
+        "status_text": "On time",
+        "status_spoken": "On time",
         "minutes_late": null,
-        "live": false,
+        "live": true,
         "walk_min": 8,
         "leave_at": "2026-10-10T07:12:00+01:00",
-        "vehicle": null,
+        "vehicle": {
+          "age_s": 25,
+          "recorded_at": "2026-10-10T07:01:05+01:00",
+          "bearing": 310.0,
+          "fleet_number": "288",
+          "registration": null
+        },
         "strip": {
           "stops": [
             "Hollins Lane",
@@ -1450,7 +1456,7 @@
           ],
           "yours": 3,
           "bus_at": null,
-          "where": "No live position"
+          "where": "Bus on its way, due in 14 min"
         },
         "history": {
           "phrase": null,
@@ -1624,7 +1630,18 @@
         "walk_min": 8,
         "leave_at": "2026-10-10T07:42:00+01:00",
         "vehicle": null,
-        "strip": null,
+        "strip": {
+          "stops": [
+            "Hollins Lane",
+            "Primary School",
+            "Tesco Petrol",
+            "Henry Street",
+            "The Centurion"
+          ],
+          "yours": 3,
+          "bus_at": null,
+          "where": "No live position"
+        },
         "history": {
           "phrase": null,
           "no_show_phrase": null

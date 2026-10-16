@@ -821,8 +821,10 @@ def test_a_late_inbound_bus_makes_its_departure_late(seen, late, status, expecte
 def test_a_departure_followed_in_stays_until_a_minute_after_it_is_expected():
     vehicle = coming_in(at(10, 14))  # 9 min late: expected 10:21
     assert west_a(at(10, 17), [vehicle]).departure.expected == "10:21"
-    guessed = live(at(10, 17), [vehicle], plan=schedule(EAST, WEST, INTO_A))  # not followed: gone at 10:16
-    assert not [l for l in guessed if (l.departure.stop, l.departure.service) == ("A", "237")]
+    guessed = live(at(10, 17), [vehicle], plan=schedule(EAST, WEST, INTO_A))  # by line, the same
+    assert row(guessed, "A", "237").departure.expected == "10:21"
+    alone = live(at(10, 17), [], plan=schedule(EAST, WEST, INTO_A))  # no bus seen: gone at 10:16
+    assert not [l for l in alone if (l.departure.stop, l.departure.service) == ("A", "237")]
 
 
 def test_a_bus_in_at_the_end_of_the_journey_before_leaves_on_time_or_any_minute():
@@ -864,6 +866,10 @@ def _block_variants():
     }
 
 
+# Without a block to follow, the bus is guessed by line where one fits; the rest fit no guess either.
+_GUESSED = {"no block", "another block", "another journey between"}
+
+
 @pytest.mark.parametrize("case", list(_block_variants()))
 def test_a_block_that_fails_its_checks_is_not_followed(case):
     shift = timedelta(minutes=26 if case == "in too early" else 0)
@@ -872,17 +878,78 @@ def test_a_block_that_fails_its_checks_is_not_followed(case):
                               every_day, 10)
     assert len(placed) == 1  # its bus is placed on the journey before every time
     found = [l for l in rows if (l.departure.stop, l.departure.service, l.departure.scheduled) == ("A", "237", "10:15")]
-    assert found and all(not l.live and l.departure.status is Status.UNKNOWN for l in found)
-    assert all(l.inbound is None or not l.inbound.followed for l in found)
+    assert found and all(l.inbound is None or not l.inbound.followed for l in found)
+    if case in _GUESSED:
+        assert all(l.live and l.inbound is not None for l in found)
+    else:
+        assert all(not l.live and l.departure.status is Status.UNKNOWN for l in found)
 
 
-def test_without_a_block_a_bus_coming_in_is_a_guess_that_leaves_the_times_alone():
-    found = west_a(at(10, 14), [coming_in(at(10, 14))], plan=schedule(EAST, WEST, INTO_A))
+# Guessing the bus in by line, without a block
+
+
+def guessed(now, vehicles, *journeys):
+    """The rows at `now` for EAST and the given journeys, with every bus placed on them."""
+    return live_board(schedule(EAST, *journeys), now, list(vehicles), every_day, 10)
+
+
+def test_without_a_block_the_bus_coming_in_is_guessed_by_line_and_counts_as_live():
+    found = west_a(at(10, 14), [coming_in(at(10, 14))], plan=schedule(EAST, WEST, INTO_A))  # 9 min late
     assert found.inbound is not None and not found.inbound.followed
-    assert not found.live and found.tracked is None
-    assert (found.departure.status, found.departure.expected) == (Status.UNKNOWN, None)
-    assert where_words(found, None, NOW) == "No live position"
-    assert row_strip(found, POSITIONS, NOW) is None
+    assert found.inbound.bus.journey is INTO_A
+    assert found.live and found.progress is None and found.tracked is found.inbound.bus.vehicle
+    # As one followed by its block: in at 10:19, out two minutes later.
+    assert (found.departure.status, found.departure.expected) == (Status.LATE, "10:21")
+    now = datetime(2026, 10, 9, 10, 14)
+    assert where_words(found, approach(found, POSITIONS), now) == "Bus on its way, due in 5 min"
+    strip = row_strip(found, POSITIONS, now)
+    assert (strip.where, strip.at) == ("On its way, 5 min", None)
+
+
+def test_a_guessed_bus_goes_to_the_earliest_departure_it_can_make():
+    later = replace(WEST, journey_code="1190", calls=tuple(Call(c.atco, c.minute + 15) for c in WEST.calls))
+    rows, _ = guessed(at(10, 5), [coming_in(at(10, 5))], WEST, later, INTO_A)
+    first, second = (l for l in rows if (l.departure.stop, l.departure.service) == ("A", "237"))
+    assert (first.departure.scheduled, second.departure.scheduled) == ("10:15", "10:30")
+    assert first.live and first.inbound.bus.journey is INTO_A
+    assert not second.live and second.inbound is None and second.departure.status is Status.UNKNOWN
+
+
+def test_a_guessed_bus_skips_a_departure_with_a_bus_of_its_own():
+    later = replace(WEST, journey_code="1190", calls=tuple(Call(c.atco, c.minute + 15) for c in WEST.calls))
+    left = datetime(2026, 10, 9, 9, 15, tzinfo=UTC)  # WEST's bus, waiting at stop A to leave at 10:15
+    waiting = stop_at(HENRY_A, at(10, 5), line="237", origin=HENRY_A, aimed=left, bearing=240.0)
+    rows, _ = guessed(at(10, 5), [coming_in(at(10, 5)), waiting], WEST, later, INTO_A)
+    first, second = (l for l in rows if (l.departure.stop, l.departure.service) == ("A", "237"))
+    assert first.progress is not None and first.inbound is None
+    assert second.live and second.inbound.bus.journey is INTO_A
+
+
+def test_two_buses_coming_in_for_one_departure_is_too_much_of_a_guess():
+    other = replace(INTO_A, journey_code="1170", calls=tuple(Call(c.atco, c.minute - 4) for c in INTO_A.calls))
+    second = stop_at(ARUNDEL, at(10, 4), line="237", origin=JUNCTION, aimed=LEFT_JUNCTION - timedelta(minutes=4))
+    rows, placed = guessed(at(10, 4), [coming_in(at(10, 4)), second], WEST, INTO_A, other)
+    assert len(placed) == 2
+    found = row(rows, "A", "237")
+    assert (found.live, found.inbound, found.departure.status) == (False, None, Status.UNKNOWN)
+
+
+def test_a_bus_of_another_operator_is_not_guessed():
+    theirs = replace(INTO_A, operator="HIPK")
+    rows, placed = guessed(at(10, 5), [coming_in(at(10, 5), operator="HIPK")], WEST, theirs)
+    assert [p.journey for p in placed] == [theirs]
+    assert row(rows, "A", "237").inbound is None
+
+
+@pytest.mark.parametrize("minutes", [-31, 6])  # in 31 min before the departure, or after it
+def test_a_bus_due_in_too_early_or_too_late_is_not_guessed(minutes):
+    moved = replace(INTO_A, calls=tuple(Call(c.atco, c.minute + 5 + minutes) for c in INTO_A.calls))
+    shift = timedelta(minutes=5 + minutes)
+    now = at(10, 5) + shift
+    rows, placed = guessed(now, [coming_in(now, aimed=LEFT_JUNCTION + shift)], WEST, moved)
+    assert [p.journey for p in placed] == [moved]
+    found = [l for l in rows if (l.departure.stop, l.departure.service, l.departure.scheduled) == ("A", "237", "10:15")]
+    assert all(l.inbound is None and not l.live for l in found)
 
 
 def test_a_block_whose_bus_is_not_seen_stays_timetable_only_with_no_guess():

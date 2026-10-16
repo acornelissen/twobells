@@ -761,8 +761,10 @@ def test_bus_rows_carry_arrivals_the_inbound_bus_and_ghosts():
         "from": "The Junction", "due": "10:19", "late_min": 9, "where": "3 stops away",
         "text": "Bus arriving from The Junction, 9 min late (due 10:19)", "followed": False,
     }
-    # A guess, due after this one leaves, yet the departure keeps its timetabled time and words.
-    assert (west_a["status_text"], west_a["expected"], west_a["live"]) == ("Timetable only", None, False)
+    # Guessed by line, it counts as live, the same to the rider as one followed by its block.
+    assert (west_a["status_text"], west_a["expected"], west_a["live"]) == ("Exp 10:21", "10:21", True)
+    assert (west_a["strip"]["where"], west_a["strip"]["bus_at"]) == ("Bus on its way, due in 5 min", None)
+    assert west_a["vehicle"]["recorded_at"] == "2026-10-09T10:14:00+01:00"  # the bus guessed to be coming in
     assert west_a["ghost"] is False  # a tracked bus is on its way to work it
     west_b = by(part["rows"], line="237", stop="B")
     assert west_b["inbound"] is None and west_b["ghost"] is True  # due 10:18, nothing tracked
