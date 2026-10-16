@@ -80,6 +80,13 @@ class Outcomes:
             raise self.error
         return [row for row in self.rows if mode == "train" and route in (None, row[0])]
 
+    def arrivals(self, station, since):
+        """History.arrivals: one train to Manchester that got there 22 minutes late."""
+        return [{"day": "2026-10-08", "scheduled": "07:42", "route": "GLO>MAN|Manchester Piccadilly",
+                 "station_name": "Manchester Piccadilly", "operator": "Northern",
+                 "destination": "Manchester Piccadilly", "booked": "2026-10-08T08:05:00",
+                 "arrived": "2026-10-08T08:27:00", "reported": True}] if station == "MAN" else []
+
 
 def figures(**overrides):
     """The figures of three days' trains: one of three late."""
@@ -174,7 +181,7 @@ def make_app(static_dir, **overrides):
         "healthy": lambda: True,
         "recent": Recent(),
         "performance": Performance(Outcomes(), lambda: datetime(2026, 10, 9, 18, 0, tzinfo=UTC),
-                                   {"train": 3, "bus": 2}),
+                                   {"train": 3, "bus": 2}, station="MAN", trains=True),
         "history_days": 90,
         "allowed_hosts": frozenset({"departures.example.com"}),
         "heartbeat": 0.2,
@@ -526,6 +533,11 @@ def test_the_performance_figures(server):
                    "routes": [{"label": "Manchester Piccadilly", "stop": None, "periods": periods}]},
         "buses": {"late_minutes": 2, "routes": [], "all": {"periods": [
             {"span": 7, "since": "2026-10-03", **NOTHING}, {"span": 28, "since": "2026-09-12", **NOTHING}]}},
+        "delay_repay": {"station": "MAN", "station_name": "Manchester Piccadilly", "since": "2026-09-12",
+                        "least_minutes": 15, "off": None, "trains": [{
+                            "day": "2026-10-08", "scheduled": "07:42", "destination": "Manchester Piccadilly",
+                            "operator": "Northern", "booked": "08:05", "arrived": "08:27", "minutes_late": 22,
+                            "band": 15, "reported": True}]},
     }
     assert server.request("/api/performance", headers={"Sec-Fetch-Site": "cross-site"})[0].status == 403
     assert server.request("/api/performance", host="evil.example")[0].status == 403

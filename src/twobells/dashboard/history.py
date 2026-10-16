@@ -19,6 +19,17 @@ list, or filtered out) stays undecided. If nobody saw it near its time
 Final rows never change. Times are naive local time, as everywhere on the
 board, stored as ISO text so they sort as they compare. One connection is
 shared by the dashboard's threads, guarded by a lock.
+
+It also keeps when trains reached the filter station, for the Performance
+page's Delay Repay watch (dashboard/repay.py): one row per train per day in
+`arrival`, kept up to date (watch(), report()) until it has arrived:
+  1. Darwin reports the time it got there, or that it was cancelled there;
+  2. or its estimate is ARRIVED old, having been seen within WATCHED of it:
+     it got there then, as near as anyone can tell;
+  3. or it is still undecided an hour after its estimate, or was only ever
+     "Delayed": nobody saw it arrive, so it is deleted (settle()).
+
+Version 1 had only `outcome`; opening one adds `arrival` and keeps every row.
 """
 
 from __future__ import annotations
@@ -37,7 +48,7 @@ from ..core import files
 from ..core.model import iso
 
 FILE_NAME = "history.sqlite3"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 MODES = ("train", "bus")
 STATUSES = ("on_time", "late", "cancelled", "unknown")
@@ -50,10 +61,17 @@ WATCHED = {"train": timedelta(minutes=5), "bus": timedelta(minutes=3)}
 _LEFT = timedelta(minutes=1)
 # Still undecided this long after its time: take the last sighting.
 _STALE = timedelta(minutes=30)
+# Trains due at the filter station this soon, or overdue, are looked for.
+FOLLOW_AHEAD = timedelta(minutes=10)
+# An arrival's estimate this old, seen within WATCHED["train"] of it, is when it got there.
+ARRIVED = timedelta(minutes=2)
+# Still undecided this long after its estimate: nobody saw it arrive.
+_ARRIVAL_STALE = timedelta(hours=1)
 # Text from the feeds is kept short; nobody needs more on a dashboard.
 _MAX_TEXT = 200
 
 _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+_CRS = re.compile(r"[A-Z]{3}")
 
 _SCHEMA = """
 CREATE TABLE outcome (
@@ -76,6 +94,62 @@ CREATE TABLE outcome (
     PRIMARY KEY (mode, day, route, scheduled)
 );
 CREATE INDEX outcome_route ON outcome (mode, route, scheduled, final, day);
+"""
+
+# Version 2: when each train reached the filter station. `scheduled` is when
+# it was booked to leave your station, `booked` when to get there; `expected`
+# is the latest estimate (`known` 0 while it is only "Delayed"), `actual`
+# what Darwin reported. All three are ISO local times.
+_ARRIVALS = """
+CREATE TABLE arrival (
+    day TEXT NOT NULL,
+    scheduled TEXT NOT NULL,
+    route TEXT NOT NULL,
+    station TEXT NOT NULL,
+    station_name TEXT NOT NULL,
+    identity TEXT,
+    operator TEXT NOT NULL,
+    destination TEXT NOT NULL,
+    booked TEXT NOT NULL,
+    expected TEXT NOT NULL,
+    known INTEGER NOT NULL,
+    actual TEXT,
+    cancelled INTEGER NOT NULL,
+    last_seen TEXT NOT NULL,
+    final INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, route, scheduled, station)
+);
+CREATE INDEX arrival_open ON arrival (final, expected);
+CREATE INDEX arrival_day ON arrival (station, final, day);
+"""
+
+# What takes a file from each version to the next.
+_MIGRATIONS = {1: _ARRIVALS}
+
+_ARRIVAL_UPSERT = """
+INSERT INTO arrival (day, scheduled, route, station, station_name, identity, operator, destination,
+                     booked, expected, known, actual, cancelled, last_seen, final)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (day, route, scheduled, station) DO UPDATE SET
+    station_name = excluded.station_name,
+    identity = excluded.identity,
+    operator = excluded.operator,
+    destination = excluded.destination,
+    booked = excluded.booked,
+    expected = CASE WHEN excluded.known THEN excluded.expected ELSE arrival.expected END,
+    known = excluded.known,
+    actual = excluded.actual,
+    cancelled = excluded.cancelled,
+    last_seen = excluded.last_seen,
+    final = excluded.final
+WHERE arrival.final = 0
+"""
+
+_ARRIVAL_REPORT = """
+UPDATE arrival SET
+    expected = CASE WHEN ? THEN ? ELSE expected END,
+    known = ?, actual = ?, cancelled = ?, last_seen = ?, final = ?
+WHERE day = ? AND route = ? AND scheduled = ? AND station = ? AND final = 0
 """
 
 _UPSERT = """
@@ -112,6 +186,44 @@ class Observed(NamedTuple):
     platform: str | None
     reason: str | None
     identity: str | None
+
+
+class Watched(NamedTuple):
+    """A train that calls at the filter station, as a train poll showed it:
+    when it is due there, and when it got there if Darwin has said."""
+
+    route: str  # as Observed's
+    scheduled: str  # "HH:MM", booked to leave your station
+    day: date  # the local date it was booked to leave
+    station: str  # the filter station's CRS code
+    station_name: str
+    identity: str | None  # Darwin's service ID
+    operator: str
+    destination: str
+    booked: datetime  # booked to get there
+    expected: datetime | None  # the estimate; None if not known ("Delayed")
+    actual: datetime | None  # when it got there, if reported
+    cancelled: bool  # cancelled there, or at your station
+
+
+class Following(NamedTuple):
+    """A train not yet known to have reached the filter station (History.following)."""
+
+    day: date
+    route: str
+    scheduled: str
+    station: str
+    identity: str | None
+    booked: datetime
+    expected: datetime
+
+
+class Report(NamedTuple):
+    """What a later look said about a train being followed, as Watched's."""
+
+    expected: datetime | None
+    actual: datetime | None
+    cancelled: bool
 
 
 class Stats(NamedTuple):
@@ -217,6 +329,26 @@ def _row(mode: str, row: Observed, polled_at: str) -> tuple:
     )
 
 
+def _watched(row: Watched, polled_at: str) -> tuple:
+    """The values to upsert for one watched train. ValueError if it doesn't make sense."""
+    if not isinstance(row.day, date) or isinstance(row.day, datetime):
+        raise ValueError("day must be a date")
+    if not isinstance(row.scheduled, str) or not _HHMM.match(row.scheduled):
+        raise ValueError(f"scheduled must be HH:MM, not {row.scheduled!r}")
+    if not isinstance(row.station, str) or not _CRS.fullmatch(row.station):
+        raise ValueError(f"station must be a CRS code, not {row.station!r}")
+    booked = iso(_naive(row.booked, "booked"))
+    expected = iso(_naive(row.expected, "expected")) if row.expected is not None else booked
+    actual = iso(_naive(row.actual, "actual")) if row.actual is not None else None
+    cancelled = bool(row.cancelled)
+    return (
+        row.day.isoformat(), row.scheduled, _text(row.route), row.station, _text(row.station_name) or row.station,
+        _text(row.identity), _text(row.operator) or "", _text(row.destination) or "",
+        booked, expected, int(row.expected is not None), actual, int(cancelled), polled_at,
+        int(cancelled or actual is not None),
+    )
+
+
 def _create(path: Path) -> None:
     """Create the file if need be, readable by its owner and group only, as
     timetable.save does. SQLite gives its -wal and -shm files the same mode."""
@@ -243,9 +375,13 @@ class History:
             self._db.execute("PRAGMA synchronous=NORMAL")
             version = self._db.execute("PRAGMA user_version").fetchone()[0]
             if version == 0:
-                self._db.executescript(f"BEGIN; {_SCHEMA} PRAGMA user_version={SCHEMA_VERSION}; COMMIT;")
-            elif version != SCHEMA_VERSION:
+                schema = _SCHEMA + "".join(_MIGRATIONS[step] for step in range(1, SCHEMA_VERSION))
+                self._db.executescript(f"BEGIN; {schema} PRAGMA user_version={SCHEMA_VERSION}; COMMIT;")
+            elif version > SCHEMA_VERSION:
                 raise sqlite3.DatabaseError(f"{path} has history version {version}, not {SCHEMA_VERSION}")
+            for step in range(version or SCHEMA_VERSION, SCHEMA_VERSION):
+                # A version at a time, each in a transaction of its own: the rows already there are kept.
+                self._db.executescript(f"BEGIN; {_MIGRATIONS[step]} PRAGMA user_version={step + 1}; COMMIT;")
         except Exception:
             self._db.close()
             raise
@@ -303,7 +439,8 @@ class History:
 
     def sweep(self, now: datetime) -> None:
         """Decide anything still undecided half an hour after its time: a
-        "Delayed" that never got a time, or one that left while the board was off."""
+        "Delayed" that never got a time, or one that left while the board was
+        off. The arrivals that can be are settled too."""
         stale = iso(_naive(now, "now") - _STALE)
         with self._lock, self._db:
             rows = self._db.execute(
@@ -312,6 +449,7 @@ class History:
                 (stale,),
             ).fetchall()
             self._finalise(rows)
+        self.settle(now)
 
     def _finalise(self, rows: list[tuple]) -> None:
         """Make each row final with its last sighting, or delete it if that
@@ -327,6 +465,86 @@ class History:
                 self._db.execute(
                     "UPDATE outcome SET final = 1 WHERE mode = ? AND day = ? AND route = ? AND scheduled = ?", key
                 )
+
+    # Arrivals at the filter station, for the Delay Repay watch.
+
+    def watch(self, rows: list[Watched], polled_at: datetime) -> None:
+        """Record the trains a successful train poll showed calling at the filter station."""
+        now = iso(_naive(polled_at, "polled_at"))
+        values = [_watched(row, now) for row in rows]  # all checked before any is written
+        with self._lock, self._db:
+            self._db.executemany(_ARRIVAL_UPSERT, values)
+
+    def following(self, now: datetime) -> list[Following]:
+        """The trains not yet known to have arrived that are due within
+        FOLLOW_AHEAD of `now`, or overdue: the ones to look for, soonest first."""
+        cut = iso(_naive(now, "now") + FOLLOW_AHEAD)
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT day, route, scheduled, station, identity, booked, expected FROM arrival"
+                " WHERE final = 0 AND expected <= ? ORDER BY expected",
+                (cut,),
+            ).fetchall()
+        return [
+            Following(date.fromisoformat(day), route, scheduled, station, identity,
+                      datetime.fromisoformat(booked), datetime.fromisoformat(expected))
+            for day, route, scheduled, station, identity, booked, expected in rows
+        ]
+
+    def report(self, train: Following, found: Report, seen_at: datetime) -> None:
+        """What a later look at `seen_at` said about `train`: its estimate, or when it got there."""
+        now = iso(_naive(seen_at, "seen_at"))
+        expected = iso(_naive(found.expected, "expected")) if found.expected is not None else None
+        actual = iso(_naive(found.actual, "actual")) if found.actual is not None else None
+        cancelled = bool(found.cancelled)
+        with self._lock, self._db:
+            self._db.execute(_ARRIVAL_REPORT, (
+                expected is not None, expected, int(expected is not None), actual, int(cancelled), now,
+                int(cancelled or actual is not None),
+                train.day.isoformat(), train.route, train.scheduled, train.station,
+            ))
+
+    def settle(self, now: datetime) -> None:
+        """Decide the arrivals that can be: an estimate ARRIVED old that was
+        seen within WATCHED of it is when the train got there; one an hour
+        old that wasn't, or was only "Delayed", is deleted, as nobody knows."""
+        local = _naive(now, "now")
+        with self._lock, self._db:
+            rows = self._db.execute(
+                "SELECT day, route, scheduled, station, expected, known, last_seen FROM arrival"
+                " WHERE final = 0 AND expected <= ?",
+                (iso(local - ARRIVED),),
+            ).fetchall()
+            for day, route, scheduled, station, expected, known, last_seen in rows:
+                key = (day, route, scheduled, station)
+                at = datetime.fromisoformat(expected)
+                if known and at - datetime.fromisoformat(last_seen) <= WATCHED["train"]:
+                    self._db.execute("UPDATE arrival SET final = 1"
+                                     " WHERE day = ? AND route = ? AND scheduled = ? AND station = ?", key)
+                elif local - at >= _ARRIVAL_STALE:
+                    self._db.execute("DELETE FROM arrival"
+                                     " WHERE day = ? AND route = ? AND scheduled = ? AND station = ?", key)
+
+    def arrivals(self, station: str, since: date) -> list[dict]:
+        """Every train that reached `station` on a day on or after `since`
+        (the day it left your station), newest first, cancelled ones left
+        out. `arrived` is when it got there: Darwin's report, else its last
+        estimate (`reported` false). Times are ISO local times."""
+        if not isinstance(since, date) or isinstance(since, datetime):
+            raise ValueError("since must be a date")
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT day, scheduled, route, station_name, operator, destination, booked, expected, actual"
+                " FROM arrival WHERE station = ? AND final = 1 AND cancelled = 0 AND day >= ?"
+                " ORDER BY day DESC, booked DESC",
+                (station, since.isoformat()),
+            ).fetchall()
+        return [
+            {"day": day, "scheduled": scheduled, "route": route, "station_name": station_name,
+             "operator": operator, "destination": destination, "booked": booked,
+             "arrived": actual or expected, "reported": actual is not None}
+            for day, scheduled, route, station_name, operator, destination, booked, expected, actual in rows
+        ]
 
     def stats(
         self,
@@ -456,10 +674,11 @@ class History:
         oldest = (_naive(now, "now").date() - timedelta(days=days)).isoformat()
         with self._lock, self._db:
             self._db.execute("DELETE FROM outcome WHERE day < ?", (oldest,))
+            self._db.execute("DELETE FROM arrival WHERE day < ?", (oldest,))
 
 
 class HistoryReader:
-    """History.recent and History.outcomes from the history another process
+    """History.recent, outcomes and arrivals from the history another process
     writes (the fetch service, on a Pi), opened read-only the first time it is there."""
 
     def __init__(self, folder: Path | str) -> None:
@@ -482,6 +701,11 @@ class HistoryReader:
         """As History.outcomes; nothing while there is no history yet."""
         history = self._opened()
         return [] if history is None else history.outcomes(mode, since, route)
+
+    def arrivals(self, station: str, since: date) -> list[dict]:
+        """As History.arrivals; nothing while there is no history yet."""
+        history = self._opened()
+        return [] if history is None else history.arrivals(station, since)
 
     def close(self) -> None:
         with self._lock:

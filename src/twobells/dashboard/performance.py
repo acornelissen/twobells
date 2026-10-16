@@ -4,7 +4,9 @@ How each regular route, and all the trains or all the buses together, ran
 over the last 7 and 28 days (today included), by the measures the rail
 industry reports: Right Time, T-3, T-15 and cancellations (history.measure()).
 Buses get the same, with on time meaning under the bus late threshold.
-Each departure's sheet gets its route's figures too (route()).
+Each departure's sheet gets its route's figures too (route()). And the
+Delay Repay watch: the trains that reached the filter station 15 or more
+minutes late over the last 28 days (repay.py), or why it is off.
 
 Worked out from the punctuality history each time it is asked for; nothing
 is kept. A span with fewer than ENOUGH_DAYS days in it says so instead.
@@ -18,10 +20,12 @@ from typing import Protocol
 
 from ..core.model import iso
 from .history import measure
+from .repay import LEAST, band
 
 SPANS = (7, 28)
 ENOUGH_DAYS = 3  # as the history's phrases: fewer days than this say nothing
 MAX_ROUTES = 50  # per mode, the busiest; a page of tables is long enough
+MAX_LISTED = 100  # Delay Repay trains, the latest
 _PARTS = {"train": "trains", "bus": "buses"}
 
 Outcome = tuple[str, str, str, int | None]  # (route, day, status, delay_min), as History.outcomes
@@ -31,6 +35,8 @@ class Outcomes(Protocol):
     """History or HistoryReader."""
 
     def outcomes(self, mode: str, since: date, route: str | None = None) -> list[Outcome]: ...
+
+    def arrivals(self, station: str, since: date) -> list[dict]: ...
 
 
 def route_parts(mode: str, route: str) -> tuple[str, str | None]:
@@ -63,14 +69,42 @@ def periods(outcomes: list[Outcome], today: date, late_minutes: int) -> list[dic
     return found
 
 
+def _hhmm(moment: datetime) -> str:
+    return moment.strftime("%H:%M")
+
+
+def delay_repay(arrivals: list[dict]) -> list[dict]:
+    """The trains of History.arrivals that got there LEAST or more minutes
+    late, newest first, at most MAX_LISTED, each with its band."""
+    found = []
+    for arrival in arrivals:
+        if len(found) >= MAX_LISTED:
+            break
+        booked, arrived = datetime.fromisoformat(arrival["booked"]), datetime.fromisoformat(arrival["arrived"])
+        late = int((arrived - booked) / timedelta(minutes=1))
+        if late < LEAST:
+            continue
+        found.append({
+            "day": arrival["day"], "scheduled": arrival["scheduled"], "destination": arrival["destination"],
+            "operator": arrival["operator"], "booked": _hhmm(booked), "arrived": _hhmm(arrived),
+            "minutes_late": late, "band": band(late), "reported": arrival["reported"],
+        })
+    return found
+
+
 class Performance:
     """The figures from `source`, as of `now()` (an aware local datetime),
-    late from `late_minutes` by mode ("train", "bus")."""
+    late from `late_minutes` by mode ("train", "bus"). `station` is the
+    filter station, for the Delay Repay list; without one, `trains` says
+    whether that is because there are no trains."""
 
-    def __init__(self, source: Outcomes, now: Callable[[], datetime], late_minutes: Mapping[str, int]) -> None:
+    def __init__(self, source: Outcomes, now: Callable[[], datetime], late_minutes: Mapping[str, int],
+                 station: str | None = None, trains: bool = False) -> None:
         self._source = source
         self._now = now
         self._late = dict(late_minutes)
+        self._station = station
+        self._trains = trains
 
     def _since(self, today: date) -> date:
         return today - timedelta(days=max(SPANS) - 1)
@@ -93,7 +127,21 @@ class Performance:
                 routes.append({"label": label, "stop": stop, "periods": periods(found, today, late)})
             routes.sort(key=lambda row: (row["label"].casefold(), row["stop"] or ""))
             body[part] = {"late_minutes": late, "all": {"periods": periods(outcomes, today, late)}, "routes": routes}
+        body["delay_repay"] = self._delay_repay(today)
         return body
+
+    def _delay_repay(self, today: date) -> dict:
+        since = self._since(today)
+        found: dict = {"station": self._station, "station_name": None, "since": since.isoformat(),
+                       "least_minutes": LEAST, "off": None, "trains": []}
+        if self._station is None:
+            found["off"] = "no_filter" if self._trains else "no_trains"
+            return found
+        arrivals = self._source.arrivals(self._station, since)
+        if arrivals:
+            found["station_name"] = arrivals[0]["station_name"]
+        found["trains"] = delay_repay(arrivals)
+        return found
 
     def route(self, mode: str, route: str) -> dict:
         """One route's figures, for its departures' sheets."""

@@ -8,7 +8,9 @@ with live positions, and Open-Meteo. TransportAPI keys are dropped so no
 fallback is ever built, and buses from TransportAPI aren't shown: the
 dashboard says so (BUS_NOTE) rather than refusing to start.
 Darwin's Service Details, which places each train on its route, is used
-only when its own key, RDM_DETAILS_API_KEY, is set. Bus disruptions come
+only when its own key, RDM_DETAILS_API_KEY, is set. With a filter station,
+the Delay Repay watch follows trains there with Service Details if it can,
+else with the filter station's arrival board, on the board's own key. Bus disruptions come
 from BODS SIRI-SX with the buses' own key; rail engineering works from the
 National Rail Knowledgebase only when RDM_KB_API_KEY is set, at the address
 in [dashboard] kb_incidents_url.
@@ -42,7 +44,9 @@ from ..core.polling import Window, parse_window
 from ..core.walk import WalkTimes
 from ..settings.config import ConfigError, _flag, _table, _texts, _whole, settings_from, switched_on
 from ..settings.schema import bus_source
+from ..sources.arrivalboard import ArrivalBoard
 from ..sources.bodsbus import BodsBusSource, BusBoard
+from ..sources.darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL
 from ..sources.darwin import DarwinSource, ServiceDetails, ServiceDetailsClient, TrainBoard
 from ..sources.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource, kb_url_is_placeholder
 from ..sources.holidays import ENGLAND_AND_WALES
@@ -225,6 +229,9 @@ class DashboardSettings:
     train_filter: str | None = None
     # Service details for the trains' positions; None without RDM_DETAILS_API_KEY.
     train_details: DetailsSource | None = None
+    # The filter station's arrival board, for the Delay Repay watch (dashboard/repay.py)
+    # when there is no Service Details key; None without a filter station.
+    train_arrivals: ArrivalBoard | None = None
     bus: BusSource | None = None
     # Why there are no buses, when [bus] is set up but can't be shown here.
     bus_note: str | None = None
@@ -368,6 +375,10 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
         else:
             incidents = TrainIncidentSource(kb_key, options.kb_incidents_url)
     bus_key = env.get("BODS_API_KEY", "").strip()
+    train_filter = (str(train_section.get("filter_crs") or "").strip().upper() or None) if train else None
+    # The board's own key and address (settings_from has checked both are there).
+    arrivals = (ArrivalBoard(env.get("RDM_API_KEY", "").strip(), str(train_section.get("base_url", DARWIN_BASE_URL)))
+                if train is not None and train_filter else None)
 
     return DashboardSettings(
         title=settings.board.title,
@@ -377,8 +388,9 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
         options=options,
         train=train,
         train_crs=str(train_section.get("crs", "")).strip().upper() if train else "",
-        train_filter=(str(train_section.get("filter_crs") or "").strip().upper() or None) if train else None,
+        train_filter=train_filter,
         train_details=ServiceDetailsClient(details_key) if train is not None and details_key else None,
+        train_arrivals=arrivals,
         bus=bus,
         bus_note=bus_note,
         bus_upkeep=copy.copy(bus) if bus is not None else None,

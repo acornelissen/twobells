@@ -8,10 +8,11 @@ import pytest
 
 from tests.paths import FIXTURES
 from tests.sources.test_livebus import HALFWAY, HENRY_A, at, bus, schedule
+from twobells.core.polling import parse_window
 from twobells.core.walk import WalkTimes
 from twobells.dashboard.collector import Collector, Poller
 from twobells.dashboard.config import DashboardOptions, DashboardSettings
-from twobells.dashboard.history import Stats
+from twobells.dashboard.history import History, Stats
 from twobells.dashboard.snapshot import Hub
 from twobells.sources.bodsbus import BusBoard
 from twobells.sources.darwin import (
@@ -161,6 +162,17 @@ class FakeHistory:
 
     def purge(self, now, days=90):
         self.purged.append((now, days))
+
+    # The Delay Repay watch's; its own tests are in test_repay.py.
+
+    def watch(self, rows, polled_at):
+        pass
+
+    def settle(self, now):
+        pass
+
+    def following(self, now):
+        return []
 
 
 class Setup:
@@ -490,6 +502,82 @@ def test_no_details_are_asked_for_when_the_board_fails(tmp_path):
     with pytest.raises(RuntimeError):
         setup.collector.poll_trains()
     assert setup.details.asked == []
+
+
+# The Delay Repay watch
+
+
+class ArrivalBoard:
+    def __init__(self):
+        self.asked = []
+
+    def arrivals(self, crs, from_crs):
+        self.asked.append((crs, from_crs))
+        return []
+
+
+def watching(tmp_path, now=TONIGHT, train_filter="MAN", options=None):
+    """A collector with a real history, the arrival board, and `train_filter`."""
+    setup = Setup(tmp_path, now=now, options=options)
+    setup.arrivals = ArrivalBoard()
+    setup.settings.train_filter, setup.settings.train_arrivals = train_filter, setup.arrivals
+    history = History(tmp_path / "history")
+    collector = Collector(setup.settings, setup.hub, history, clock=setup.clock, fetch_holidays=setup._holidays,
+                          random=lambda: 0.5, monotonic=setup.monotonic)
+    return setup, history, collector
+
+
+def leave_first_train(setup):
+    """The 22:25 leaves: it is gone from the board."""
+    setup.trains.payload["trainServices"] = [s for s in setup.trains.payload["trainServices"]
+                                             if s["serviceID"] != IDS[1]]
+
+
+def test_each_train_poll_watches_the_trains_to_the_filter_station(tmp_path):
+    setup, history, collector = watching(tmp_path)
+    collector.poll_trains()
+    assert [t.scheduled for t in history.following(datetime(2026, 10, 9, 23, 30))] == ["22:25", "22:55"]
+    assert setup.arrivals.asked == []  # nothing due yet
+    leave_first_train(setup)
+    setup.clock.now = datetime(2026, 10, 9, 22, 50, tzinfo=LONDON)
+    collector.poll_trains()
+    assert setup.arrivals.asked == [("MAN", "GLO")]  # the 22:25, due at 22:57
+    history.close()
+
+
+def test_the_watch_asks_nothing_in_a_quiet_window(tmp_path):
+    late = DashboardOptions(quiet_windows=(parse_window("Mon-Sun 22:30-23:59"),))
+    setup, history, collector = watching(tmp_path, options=late)
+    collector.poll_trains()
+    leave_first_train(setup)
+    setup.clock.now = datetime(2026, 10, 9, 22, 50, tzinfo=LONDON)
+    # It runs only in the trains' poller, which a quiet window holds; it has none of its own.
+    pollers = collector.pollers()
+    assert set(pollers) == {"trains", "buses", "weather", "upkeep", "heartbeat"}
+    assert pollers["trains"].step() == 5.0
+    assert setup.arrivals.asked == []
+    pollers["upkeep"].step()  # which settles arrivals, asking nothing
+    assert setup.arrivals.asked == []
+    history.close()
+
+
+def test_without_a_filter_station_nothing_is_watched_or_asked(tmp_path):
+    setup, history, collector = watching(tmp_path, train_filter=None)
+    collector.poll_trains()
+    leave_first_train(setup)
+    setup.clock.now = datetime(2026, 10, 9, 22, 50, tzinfo=LONDON)
+    collector.poll_trains()
+    assert setup.arrivals.asked == [] and history.following(datetime(2026, 10, 10, 9, 0)) == []
+    history.close()
+
+
+def test_a_broken_watch_never_holds_up_the_trains(tmp_path, caplog):
+    setup, history, collector = watching(tmp_path)
+    history.close()  # every write now fails
+    with caplog.at_level("WARNING", logger="twobells.dashboard.collector"):
+        collector.poll_trains()
+    assert setup.snapshot()["trains"]["rows"]
+    assert "arrivals not saved" in caplog.text
 
 
 # Buses

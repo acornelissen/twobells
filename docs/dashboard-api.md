@@ -360,7 +360,7 @@ The punctuality history of a train or bus row (same ids as the snapshot); 404 if
 
 ## `GET /api/performance`
 
-The Performance page's figures: how each regular route, and all the trains or all the buses together, ran over the last 7 and 28 days, today included. Worked out from the punctuality history each time it is asked for; 404 when the server has no history to read, 503 when it can't read it. Same [access rules](#access-rules-every-request) and headers as the rest of the API.
+The Performance page's figures: how each regular route, and all the trains or all the buses together, ran over the last 7 and 28 days, today included, and the trains that reached the filter station late enough for Delay Repay. Worked out from the punctuality history each time it is asked for; 404 when the server has no history to read, 503 when it can't read it. Same [access rules](#access-rules-every-request) and headers as the rest of the API.
 
 ```json
 {
@@ -379,6 +379,14 @@ The Performance page's figures: how each regular route, and all the trains or al
     "late_minutes": 2,
     "all": {"periods": ["…"]},
     "routes": [{"label": "341 to Hyde Bus Station", "stop": "A", "periods": ["…"]}]
+  },
+  "delay_repay": {
+    "station": "MAN", "station_name": "Manchester Piccadilly", "since": "2026-09-13", "least_minutes": 15,
+    "off": null,
+    "trains": [
+      {"day": "2026-10-08", "scheduled": "07:42", "destination": "Manchester Piccadilly", "operator": "Northern",
+       "booked": "08:05", "arrived": "08:38", "minutes_late": 33, "band": 30, "reported": true}
+    ]
   }
 }
 ```
@@ -386,8 +394,9 @@ The Performance page's figures: how each regular route, and all the trains or al
 - **Routes** are the history's regular departures without their times: a train's destination (`stop` null; rail replacement buses apart, as "Manchester Piccadilly (replacement bus)"), or a bus's line and destination from one of your stops (`stop` is its label, as in the snapshot's `buses.stops`). At most 50 per mode, the busiest, listed by name. `all` counts every departure, listed or not.
 - **`periods`**: one per span, in order: `span` days (7, then 28) from `since` to today. Only departures whose outcome is final count (see `dashboard/history.py`).
 - **The counts:** `days` with any departure recorded; `unknown`, gone with no time to tell how late (a train shown only as "Delayed", a bus with no tracker), left out of the rest; `counted`, the others, cancelled ones included, which every measure is out of. `right_time` left at or before its booked time; `within_3` (T-3) and `within_15` (T-15) under 3 and under 15 minutes late (whole minutes: 2 and 14 or less); `on_time` under `late_minutes` late (`[dashboard] late_minutes_train` or `late_minutes_bus`); `cancelled`. Early counts as right time.
+- **`delay_repay`**: the trains that reached the filter station (`[train] filter_crs`, `station`; `station_name` as Darwin names it, null until one is recorded) at least `least_minutes` (15) late over the 28 days from `since`, newest first, at most 100. `day` and `scheduled` are when it was booked to leave your station; `booked` and `arrived` are HH:MM at the filter station (the next day for one there after midnight); `minutes_late` is whole minutes; `band` is 30 for 30 minutes or more, else 15, the thresholds train companies pay Delay Repay from. `reported` is true when Darwin reported the arrival time, false when it is the last estimate before the train got there. Cancelled trains and rail replacement buses aren't listed. `off` says why there is no list: `"no_filter"` (trains, but no filter station) or `"no_trains"`; null when it is on. How the arrivals are found is in `dashboard/repay.py`: from the board's calling point while the train is on it, then, only while it is due there, from Service Details (with `RDM_DETAILS_API_KEY`) or else one arrival board at the filter station per train poll, on the board's own key.
 - **`enough`** is false with fewer than 3 `days`: the page says "Not enough days yet" rather than a percentage.
-- **On the page** (`/performance`, linked from the dashboard's header, not in the kiosk): for each mode a table per span, the total first, then each route. Each cell is the share of `counted` with the count, "62% (31 of 50)", rounded, but never to 100% or 0% unless all or none. Trains show Right Time, T-3, T-15, Cancelled and Not known; buses show On time, T-15 and No tracker, as bus data never says a bus was cancelled. Each departure's sheet shows its `route` the same way.
+- **On the page** (`/performance`, linked from the dashboard's header, not in the kiosk): for each mode a table per span, the total first, then each route. Each cell is the share of `counted` with the count, "62% (31 of 50)", rounded, but never to 100% or 0% unless all or none. Trains show Right Time, T-3, T-15, Cancelled and Not known; buses show On time, T-15 and No tracker, as bus data never says a bus was cancelled. Each departure's sheet shows its `route` the same way. Then **Delay Repay**: a table of `delay_repay.trains` (date, train, booked and arrival times, minutes late, band, operator) with a link to National Rail's compensation page, or why it is off.
 
 ## `GET /healthz`
 

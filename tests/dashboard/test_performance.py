@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from twobells.dashboard import performance
-from twobells.dashboard.history import History, Observed
+from twobells.dashboard.history import History, Observed, Watched
 from twobells.dashboard.performance import Performance, route_parts
 
 LONDON = ZoneInfo("Europe/London")
@@ -125,3 +125,61 @@ def test_only_the_busiest_routes_are_listed(history, monkeypatch):
     # Beta (3) and Alpha (2) are the busiest, listed by name; all of them count in the total.
     assert [r["label"] for r in trains["routes"]] == ["Alpha", "Beta"]
     assert trains["all"]["periods"][0]["counted"] == 6
+
+
+# Delay Repay
+
+
+def _arrived(history, day, scheduled, booked, arrived, reported=True, operator="Northern", station="MAN"):
+    """A train that reached `station` at `arrived`, as reported (or, if not, by its estimate)."""
+    def moment(hhmm):
+        at = datetime.combine(day, datetime.min.time()) + timedelta(hours=int(hhmm[:2]), minutes=int(hhmm[3:]))
+        return at if hhmm >= scheduled else at + timedelta(days=1)  # there after midnight
+
+    row = Watched(MANCHESTER, scheduled, day, station, "Manchester Piccadilly", None, operator,
+                  "Manchester Piccadilly", moment(booked), moment(arrived), moment(arrived) if reported else None,
+                  False)
+    history.watch([row], moment(arrived))
+    history.settle(moment(arrived) + timedelta(minutes=2))
+
+
+def _repay(history, **options):
+    return Performance(history, lambda: NOW, {"train": 3, "bus": 2}, **options).report()["delay_repay"]
+
+
+def test_delay_repay_lists_trains_15_or_more_minutes_late_there(history):
+    _arrived(history, FRIDAY, "07:42", "08:05", "08:19")  # 14 minutes: not listed
+    _arrived(history, FRIDAY, "08:42", "09:05", "09:20", reported=False)  # 15, by its estimate
+    _arrived(history, FRIDAY - timedelta(days=2), "07:42", "08:05", "08:40", operator="TransPennine Express")
+    _arrived(history, FRIDAY - timedelta(days=30), "07:42", "08:05", "09:05")  # before the 28 days
+    _arrived(history, FRIDAY, "09:42", "10:05", "11:00", station="HDF")  # not the filter station
+    assert _repay(history, station="MAN", trains=True) == {
+        "station": "MAN", "station_name": "Manchester Piccadilly", "since": "2026-09-12", "least_minutes": 15,
+        "off": None,
+        "trains": [
+            {"day": "2026-10-09", "scheduled": "08:42", "destination": "Manchester Piccadilly", "operator": "Northern",
+             "booked": "09:05", "arrived": "09:20", "minutes_late": 15, "band": 15, "reported": False},
+            {"day": "2026-10-07", "scheduled": "07:42", "destination": "Manchester Piccadilly",
+             "operator": "TransPennine Express", "booked": "08:05", "arrived": "08:40", "minutes_late": 35,
+             "band": 30, "reported": True},
+        ],
+    }
+
+
+def test_delay_repay_after_midnight_and_at_most_so_many(history, monkeypatch):
+    _arrived(history, FRIDAY - timedelta(days=1), "23:30", "23:55", "00:20")  # there the next day
+    [train] = _repay(history, station="MAN", trains=True)["trains"]
+    assert (train["day"], train["booked"], train["arrived"], train["minutes_late"]) == ("2026-10-08", "23:55",
+                                                                                         "00:20", 25)
+    monkeypatch.setattr(performance, "MAX_LISTED", 1)
+    _arrived(history, FRIDAY, "07:42", "08:05", "08:40")
+    assert len(_repay(history, station="MAN", trains=True)["trains"]) == 1  # the latest
+
+
+def test_delay_repay_says_why_it_is_off(history):
+    _arrived(history, FRIDAY, "08:42", "09:05", "09:40")
+    no_filter = _repay(history, trains=True)
+    assert (no_filter["off"], no_filter["station"], no_filter["trains"]) == ("no_filter", None, [])
+    assert _repay(history)["off"] == "no_trains"
+    nothing = _repay(history, station="SHF", trains=True)
+    assert (nothing["off"], nothing["station_name"], nothing["trains"]) == (None, None, [])

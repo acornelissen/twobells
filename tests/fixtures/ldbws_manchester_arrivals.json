@@ -1,0 +1,67 @@
+{
+  "_comment": "Synthetic test data, shaped like a National Rail Darwin LDBWS GetArrBoardWithDetails answer (filterCrs GLO, filterType from) from the Rail Data Marketplace. Station names and CRS codes are real; times and service IDs are made up, matching ldbws_glossop_details.json.",
+  "generatedAt": "2026-10-09T22:50:00.0000000+01:00",
+  "locationName": "Manchester Piccadilly",
+  "crs": "MAN",
+  "filterLocationName": "Glossop",
+  "filtercrs": "GLO",
+  "filterType": "from",
+  "platformAvailable": true,
+  "areServicesAvailable": true,
+  "trainServices": [
+    {
+      "previousCallingPoints": [
+        {
+          "callingPoint": [
+            {"locationName": "Hadfield", "crs": "HDF", "st": "22:19", "at": "22:21", "isCancelled": false},
+            {"locationName": "Glossop", "crs": "GLO", "st": "22:25", "at": "22:41", "isCancelled": false},
+            {"locationName": "Guide Bridge", "crs": "GUI", "st": "22:44", "at": "23:00", "isCancelled": false},
+            {"locationName": "Ashburys", "crs": "ABY", "st": "22:51", "et": "23:08", "isCancelled": false}
+          ]
+        }
+      ],
+      "sta": "22:57",
+      "eta": "23:14",
+      "platform": "1",
+      "operator": "Northern",
+      "operatorCode": "NT",
+      "isCancelled": false,
+      "serviceType": "train",
+      "length": 2,
+      "origin": [{"locationName": "Hadfield", "crs": "HDF"}],
+      "destination": [{"locationName": "Manchester Piccadilly", "crs": "MAN"}],
+      "serviceID": "9000002GLSP____"
+    },
+    {
+      "previousCallingPoints": [
+        {
+          "callingPoint": [
+            {"locationName": "Hadfield", "crs": "HDF", "st": "22:49", "et": "On time", "isCancelled": false},
+            {"locationName": "Glossop", "crs": "GLO", "st": "22:55", "et": "On time", "isCancelled": false}
+          ]
+        }
+      ],
+      "sta": "23:27",
+      "eta": "On time",
+      "operator": "Northern",
+      "operatorCode": "NT",
+      "isCancelled": false,
+      "serviceType": "train",
+      "origin": [{"locationName": "Hadfield", "crs": "HDF"}],
+      "destination": [{"locationName": "Manchester Piccadilly", "crs": "MAN"}],
+      "serviceID": "9000004GLSP____"
+    },
+    {
+      "previousCallingPoints": {
+        "callingPoint": {"locationName": "Glossop", "crs": "GLO", "st": "23:10", "et": "Cancelled", "isCancelled": true}
+      },
+      "sta": "23:42",
+      "eta": "Cancelled",
+      "operator": "Northern",
+      "isCancelled": true,
+      "serviceID": "9000005GLSP____"
+    },
+    {"sta": "25:00", "eta": "On time", "serviceID": "9000006GLSP____"},
+    "not a service"
+  ]
+}

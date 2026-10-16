@@ -12,6 +12,10 @@ browser has used the dashboard in the last ten minutes.
 
 With a Service Details key, each train poll also asks where the first few
 trains are (see _refresh_details); a refused key turns that off for a while.
+With a filter station and a history, each train poll also feeds the Delay
+Repay watch (repay.ArrivalWatch), which follows trains that have left until
+they reach the filter station; it asks Darwin only from the train poller, so
+never in a quiet window, and never without a filter station.
 
 Disruptions (see sources/disruptions.py) are polled on their own threads: bus
 situations every 10 minutes, rail incidents every 30. Which are ours
@@ -55,6 +59,7 @@ from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
 from .area import area_view, timetable_changes
 from .config import DashboardSettings
 from .history import History, day_type, no_show_phrase, phrase
+from .repay import ArrivalWatch
 from .snapshot import (
     Hub,
     bus_observations,
@@ -224,6 +229,12 @@ class Collector:
         # Where the first few trains are: their service details, asked for at
         # most once a minute each (sources.darwin.TrainDetails has the rules).
         self._details = TrainDetails(settings.train_details, monotonic) if settings.train_details else None
+        # When trains reached the filter station, for the Performance page's Delay Repay list.
+        self._arrival_watch = None
+        if history is not None and settings.train is not None and filter_crs:
+            self._arrival_watch = ArrivalWatch(history, crs, filter_crs, self._route_prefix,
+                                               details=settings.train_details, arrivals=settings.train_arrivals,
+                                               monotonic=monotonic)
         self._build_timetable = build_timetable
         # The most of each timetable file upkeep reads and parses: the install's (settings/installs.py).
         self._timetable_limits = timetable_limits
@@ -389,7 +400,20 @@ class Collector:
             # After the board is out, so slow details never hold it up.
             self._refresh_details(board)
             self._publish_trains()
+        self._watch_arrivals(board, now)
         self._note_stations(board)
+
+    def _watch_arrivals(self, board: TrainBoard, now: datetime) -> None:
+        """Feed the Delay Repay watch; its trouble never holds up the departures."""
+        if self._arrival_watch is None:
+            return
+        try:
+            errors = self._arrival_watch.poll(board, now)
+        except Exception as error:  # noqa: BLE001 - the departures matter more than the history
+            log.warning("dashboard arrivals not saved: %s", safe_message(error))
+            return
+        for error in errors:
+            log.warning("dashboard arrival not followed: %s", safe_message(error))
 
     def _note_stations(self, board: TrainBoard) -> None:
         """Our train operators and stations, for the rail incidents: this

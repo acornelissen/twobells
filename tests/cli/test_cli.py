@@ -1323,7 +1323,21 @@ def test_serve_on_a_pi_shows_the_dashboard_the_fetch_service_hands_over(tmp_path
     assert json.loads(ask(app, "/api/history/9f1c000000000002")[2])["days"] == []  # no history yet
     History(folder).close()  # the fetch service starts one
     assert ask(app, "/api/history/9f1c000000000002")[0] == 200
+    # No filter station: the Delay Repay list says why it is off.
+    assert json.loads(ask(app, "/api/performance")[2])["delay_repay"]["off"] == "no_filter"
     assert os.listdir(run / "requests")  # the browser was said to the fetch service
+
+
+def test_serve_gives_the_performance_page_the_filter_station_for_delay_repay(tmp_path, served, pi_with_the_dashboard,
+                                                                             dashboard_config):
+    from twobells.dashboard.history import History
+
+    args, folder, _ = pi_with_the_dashboard
+    dashboard_config.write_text('title = "Glossop"\n[train]\ncrs = "GLO"\nfilter_crs = "MAN"\n')
+    History(folder).close()
+    assert main(args) == 0
+    repay = json.loads(ask(served["app"], "/api/performance")[2])["delay_repay"]
+    assert (repay["station"], repay["off"], repay["trains"]) == ("MAN", None, [])
 
 
 def test_a_pi_turns_its_dashboard_on_and_off_without_starting_again(tmp_path, served, pi_with_the_dashboard):

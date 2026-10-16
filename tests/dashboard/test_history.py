@@ -7,10 +7,13 @@ import pytest
 
 from twobells.dashboard.history import (
     FILE_NAME,
+    Following,
     History,
     Measures,
     Observed,
+    Report,
     Stats,
+    Watched,
     day_type,
     measure,
     no_show_phrase,
@@ -222,7 +225,9 @@ def test_the_file_is_owner_and_group_only(tmp_path):
 def test_the_schema(tmp_path):
     History(tmp_path).close()
     with sqlite3.connect(tmp_path / FILE_NAME) as db:
-        assert db.execute("PRAGMA user_version").fetchone() == (1,)
+        assert db.execute("PRAGMA user_version").fetchone() == (2,)
+        tables = {name for (name,) in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        assert tables == {"outcome", "arrival"}
         assert db.execute("PRAGMA journal_mode").fetchone() == ("wal",)
         with pytest.raises(sqlite3.IntegrityError):
             db.execute("INSERT INTO outcome (mode, day, scheduled, route, service, destination, status, live,"
@@ -232,8 +237,8 @@ def test_the_schema(tmp_path):
 def test_refuses_a_newer_schema(tmp_path):
     History(tmp_path).close()
     with sqlite3.connect(tmp_path / FILE_NAME) as db:
-        db.execute("PRAGMA user_version=2")
-    with pytest.raises(sqlite3.DatabaseError, match="version 2"):
+        db.execute("PRAGMA user_version=3")
+    with pytest.raises(sqlite3.DatabaseError, match="version 3"):
         History(tmp_path)
 
 
@@ -538,3 +543,195 @@ def test_usual_platform_leaves_out_undecided_days(history):
     history.observe("train", [_train(day=FRIDAY + timedelta(days=1))._replace(platform="1")],
                     _at("07:41", FRIDAY + timedelta(days=1)))
     assert history.usual_platform("train", TRAIN, "07:42") is None
+
+
+# Version 1, as it was made: the outcomes alone.
+
+VERSION_1 = """
+CREATE TABLE outcome (
+    mode TEXT NOT NULL CHECK (mode IN ('train', 'bus')),
+    day TEXT NOT NULL,
+    scheduled TEXT NOT NULL,
+    route TEXT NOT NULL,
+    identity TEXT,
+    service TEXT NOT NULL,
+    destination TEXT NOT NULL,
+    platform TEXT,
+    status TEXT NOT NULL,
+    delay_min INTEGER,
+    live INTEGER NOT NULL,
+    reason TEXT,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    departs_at TEXT NOT NULL,
+    final INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (mode, day, route, scheduled)
+);
+CREATE INDEX outcome_route ON outcome (mode, route, scheduled, final, day);
+"""
+
+
+def _version_1(folder):
+    """A version 1 history, in WAL mode as History left it, with two outcomes: one final, one not."""
+    db = sqlite3.connect(folder / FILE_NAME)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.executescript(VERSION_1 + "PRAGMA user_version=1;")
+    with db:
+        db.executemany(
+            "INSERT INTO outcome VALUES ('train', '2026-10-08', ?, ?, 'C1', 'Northern', 'Manchester Piccadilly',"
+            " '1', ?, ?, 1, NULL, ?, ?, ?, ?)",
+            [("07:42", TRAIN, "late", 6, "2026-10-08T07:30:00", "2026-10-08T07:47:00", "2026-10-08T07:48:00", 1),
+             ("08:42", TRAIN, "on_time", 0, "2026-10-08T08:30:00", "2026-10-08T08:40:00", "2026-10-08T08:42:00", 0)],
+        )
+    db.close()
+
+
+def test_a_version_1_history_gains_arrivals_and_keeps_its_rows(tmp_path):
+    _version_1(tmp_path)
+    before = _rows(tmp_path)
+    assert len(before) == 2
+    assert History.reader(tmp_path) is None  # a reader waits for the writer to bring it up to date
+    history = History(tmp_path)
+    assert _rows(tmp_path) == before
+    assert history.recent("train", TRAIN, "07:42") == [
+        {"day": "2026-10-08", "status": "late", "delay_min": 6, "live": True, "reason": None}]
+    # The undecided one is decided as before; arrivals are kept now.
+    history.sweep(_at("09:30", date(2026, 10, 8)))
+    assert [row["final"] for row in _rows(tmp_path)] == [1, 1]
+    history.watch([_arriving()], _at("07:40"))
+    assert len(_arrival_rows(tmp_path)) == 1
+    history.close()
+    with sqlite3.connect(tmp_path / FILE_NAME) as db:
+        assert db.execute("PRAGMA user_version").fetchone() == (2,)
+    reader = History.reader(tmp_path)
+    assert reader is not None and reader.recent("train", TRAIN, "07:42")[0]["delay_min"] == 6
+    reader.close()
+    History(tmp_path).close()  # and opening it again changes nothing
+    assert len(_rows(tmp_path)) == 2 and len(_arrival_rows(tmp_path)) == 1
+
+
+# Arrivals at the filter station, for the Delay Repay watch.
+
+
+def _arriving(scheduled="07:42", booked="08:05", expected="08:05", actual=None, cancelled=False, day=FRIDAY,
+              identity="C12345"):
+    return Watched(TRAIN, scheduled, day, "MAN", "Manchester Piccadilly", identity, "Northern",
+                   "Manchester Piccadilly", _at(booked, day), expected and _at(expected, day),
+                   actual and _at(actual, day), cancelled)
+
+
+def _arrival_rows(folder):
+    with sqlite3.connect(folder / FILE_NAME) as db:
+        db.row_factory = sqlite3.Row
+        return [dict(row) for row in db.execute("SELECT * FROM arrival ORDER BY day, scheduled")]
+
+
+def _following(history, now):
+    return [(f.scheduled, f.expected.strftime("%H:%M")) for f in history.following(now)]
+
+
+def test_a_train_on_the_board_is_watched_and_looked_for_when_due(history, tmp_path):
+    history.watch([_arriving(expected="08:21")], _at("07:40"))
+    [row] = _arrival_rows(tmp_path)
+    assert (row["booked"], row["expected"], row["known"], row["final"]) == (
+        "2026-10-09T08:05:00", "2026-10-09T08:21:00", 1, 0)
+    assert (row["station"], row["station_name"], row["operator"]) == ("MAN", "Manchester Piccadilly", "Northern")
+    # Looked for once it is due within 10 minutes, and not before.
+    assert _following(history, _at("08:10")) == []
+    assert history.following(_at("08:11")) == [
+        Following(FRIDAY, TRAIN, "07:42", "MAN", "C12345", _at("08:05"), _at("08:21"))]
+
+
+def test_a_reported_arrival_is_final_at_once(history, tmp_path):
+    history.watch([_arriving(expected="08:21")], _at("07:40"))
+    [train] = history.following(_at("08:15"))
+    history.report(train, Report(_at("08:24"), _at("08:24"), False), _at("08:25"))
+    [row] = _arrival_rows(tmp_path)
+    assert (row["actual"], row["final"]) == ("2026-10-09T08:24:00", 1)
+    assert history.following(_at("08:25")) == []
+    # Final rows never change.
+    history.report(train, Report(None, _at("08:40"), False), _at("08:41"))
+    history.watch([_arriving(actual="08:50")], _at("08:51"))
+    assert _arrival_rows(tmp_path)[0]["actual"] == "2026-10-09T08:24:00"
+    assert history.arrivals("MAN", FRIDAY) == [{
+        "day": "2026-10-09", "scheduled": "07:42", "route": TRAIN, "station_name": "Manchester Piccadilly",
+        "operator": "Northern", "destination": "Manchester Piccadilly", "booked": "2026-10-09T08:05:00",
+        "arrived": "2026-10-09T08:24:00", "reported": True}]
+
+
+def test_an_estimate_seen_near_its_time_is_the_arrival_once_it_has_passed(history, tmp_path):
+    history.watch([_arriving(expected="08:21")], _at("07:40"))
+    [train] = history.following(_at("08:15"))
+    history.report(train, Report(_at("08:23"), None, False), _at("08:20"))
+    history.settle(_at("08:24"))  # only a minute past it: not yet
+    assert _arrival_rows(tmp_path)[0]["final"] == 0
+    history.settle(_at("08:25"))
+    [arrived] = history.arrivals("MAN", FRIDAY)
+    assert (arrived["arrived"], arrived["reported"]) == ("2026-10-09T08:23:00", False)
+
+
+def test_an_arrival_nobody_saw_near_its_time_is_deleted(history, tmp_path):
+    # Last seen as it left your station at 07:42, due at 08:21: nobody saw it get there.
+    history.watch([_arriving(expected="08:21")], _at("07:42"))
+    history.settle(_at("08:30"))
+    assert _arrival_rows(tmp_path)[0]["final"] == 0  # it may still be reported
+    history.settle(_at("09:21"))
+    assert _arrival_rows(tmp_path) == []
+
+
+def test_delayed_with_no_time_is_never_taken_as_the_arrival(history, tmp_path):
+    history.watch([_arriving(expected="08:21")], _at("07:40"))
+    [train] = history.following(_at("08:15"))
+    history.report(train, Report(None, None, False), _at("08:20"))  # "Delayed"
+    [row] = _arrival_rows(tmp_path)
+    assert (row["expected"], row["known"]) == ("2026-10-09T08:21:00", 0)  # the last time is kept
+    history.settle(_at("08:30"))
+    assert _arrival_rows(tmp_path)[0]["final"] == 0
+    assert _following(history, _at("08:30")) == [("07:42", "08:21")]  # still looked for
+    history.sweep(_at("09:22"))  # upkeep settles them too
+    assert _arrival_rows(tmp_path) == []
+
+
+def test_cancelled_there_is_final_and_never_listed(history, tmp_path):
+    history.watch([_arriving(cancelled=True, expected=None)], _at("07:40"))
+    assert _arrival_rows(tmp_path)[0]["final"] == 1
+    assert history.following(_at("08:05")) == [] and history.arrivals("MAN", FRIDAY) == []
+
+
+def test_arrivals_are_newest_first_for_one_station_since_a_day(history):
+    history.watch([_arriving(actual="08:05", day=FRIDAY - timedelta(days=d)) for d in (0, 1, 40)]
+                  + [_arriving(scheduled="06:42", booked="07:05", actual="07:30")], _at("08:10"))
+    history.watch([_arriving()._replace(station="HDF", actual=_at("08:06"))], _at("08:10"))
+    found = history.arrivals("MAN", FRIDAY - timedelta(days=28))
+    assert [(a["day"], a["scheduled"]) for a in found] == [
+        ("2026-10-09", "07:42"), ("2026-10-09", "06:42"), ("2026-10-08", "07:42")]
+    assert len(history.arrivals("HDF", FRIDAY)) == 1
+    history.purge(_at("08:10"), 3)  # the one 40 days back goes
+    assert len(history.arrivals("MAN", date(2026, 1, 1))) == 3
+    with pytest.raises(ValueError):
+        history.arrivals("MAN", _at("07:00"))
+
+
+@pytest.mark.parametrize("change", [
+    {"scheduled": "7:42"},
+    {"station": "man"},
+    {"station": "MAN|x"},
+    {"booked": datetime(2026, 10, 9, 8, 5, tzinfo=UTC)},
+    {"day": datetime(2026, 10, 9)},
+])
+def test_watch_refuses_nonsense_and_writes_nothing(history, tmp_path, change):
+    with pytest.raises(ValueError):
+        history.watch([_arriving(scheduled="06:42"), _arriving()._replace(**change)], _at("07:40"))
+    assert _arrival_rows(tmp_path) == []
+
+
+def test_the_history_reader_reads_arrivals(tmp_path):
+    from twobells.dashboard.history import HistoryReader
+
+    reader = HistoryReader(tmp_path)
+    assert reader.arrivals("MAN", FRIDAY) == []
+    history = History(tmp_path)
+    history.watch([_arriving(actual="08:30")], _at("08:31"))
+    assert reader.arrivals("MAN", FRIDAY)[0]["arrived"] == "2026-10-09T08:30:00"
+    reader.close()
+    history.close()
