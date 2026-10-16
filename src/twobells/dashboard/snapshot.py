@@ -73,6 +73,15 @@ def no_no_shows(route: str, scheduled: str, day: date) -> str | None:
     return None
 
 
+# (route, scheduled "HH:MM") -> the platform a train usually leaves from, or None, from the history.
+UsualPlatforms = Callable[[str, str], "str | None"]
+
+
+def no_usual_platform(route: str, scheduled: str) -> str | None:
+    """Usual platforms when there is no history to ask."""
+    return None
+
+
 def row_id(kind: str, identity: str) -> str:
     """The opaque id of a row: 16 hex characters, the same every time for the same departure."""
     return hashlib.sha256(f"{kind}|{identity}".encode()).hexdigest()[:16]
@@ -176,14 +185,18 @@ def position_block(details: ServiceDetails | None, now: datetime) -> dict | None
 
 def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_prefix: str,
               phrases: Phrases = no_history, details: ServiceDetails | None = None,
-              now: datetime | None = None) -> tuple[dict, dict]:
+              now: datetime | None = None, platforms: UsualPlatforms = no_usual_platform) -> tuple[dict, dict]:
     """A train's row and its server-side lookup (the history key). With the
     train's service details, the row says where it is at `now` (else when
-    the board was fetched) and the stops it calls at before this station."""
+    the board was fetched) and the stops it calls at before this station.
+    Its platform has changed when the last fetch gave another (the
+    Departure says so) or it isn't the one `platforms` says it usually is."""
     dep = service.departure
     scheduled_at, expected_at = _train_times(service, fetched)
-    history = _history_entry("train", _train_route(route_prefix, dep), dep.scheduled, _train_label(dep),
-                             scheduled_at.date(), phrases)
+    route = _train_route(route_prefix, dep)
+    history = _history_entry("train", route, dep.scheduled, _train_label(dep), scheduled_at.date(), phrases)
+    usual = None if dep.replacement_bus else platforms(route, dep.scheduled)
+    changed = dep.platform is not None and (dep.platform_changed or (usual is not None and dep.platform != usual))
     row = {
         "id": _train_id(service),
         "service": dep.service,
@@ -198,6 +211,9 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
         "status_spoken": status_spoken(dep),
         "minutes_late": _minutes_late(dep),
         "platform": dep.platform,
+        "platform_changed": changed,
+        "usual_platform": usual,
+        "via": dep.via,
         "replacement_bus": dep.replacement_bus,
         "length": service.length,
         "formation": formation_block(service),
@@ -322,18 +338,20 @@ def formation_block(service: TrainService) -> dict | None:
 def trains_part(board: TrainBoard | None, fetched: datetime | None, status: dict, station: str,
                 filter_crs: str | None, walk: WalkTimes, route_prefix: str,
                 phrases: Phrases = no_history, details: Mapping[str, ServiceDetails] | None = None,
-                now: datetime | None = None, positions: dict | None = None) -> tuple[dict, dict[str, dict]]:
+                now: datetime | None = None, positions: dict | None = None,
+                platforms: UsualPlatforms = no_usual_platform) -> tuple[dict, dict[str, dict]]:
     """The trains section and its lookups by row id. `fetched` is when the
     board was fetched (aware), which its HH:MM times are read against.
     `details` are the service details known, by Darwin service ID; `now` is
     when to place the trains (else `fetched`). `positions` is how asking
-    where the trains are is going (a status block), None without its key."""
+    where the trains are is going (a status block), None without its key.
+    `platforms` gives the platform each usually leaves from."""
     rows, lookups = [], {}
     details = details or {}
     if board is not None and fetched is not None:
         for service in board.services:
             found = details.get(service.service_id) if service.service_id else None
-            row, lookup = train_row(service, fetched, walk, route_prefix, phrases, found, now)
+            row, lookup = train_row(service, fetched, walk, route_prefix, phrases, found, now, platforms)
             row["arrives"] = train_arrival(service, filter_crs, *_train_times(service, fetched))
             rows.append(row)
             lookups[row["id"]] = lookup

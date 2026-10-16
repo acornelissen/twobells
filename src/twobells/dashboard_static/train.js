@@ -123,6 +123,9 @@ export function trainSummary(row) {
   const expected = str(row.expected);
   const walk = num(row.walk_min);
   const bus = row.replacement_bus === true;
+  const platform = str(row.platform);
+  const changed = platform && row.platform_changed === true ? " (changed)" : "";
+  const usual = bus ? "" : str(row.usual_platform);
   return [
     h("p", { class: "dialog-status" }, statusBadge(row.status, row.status_text, row.status_spoken)),
     h("p", { class: "replacement", hidden: !bus }, "Replacement bus, running in place of the train"),
@@ -133,7 +136,9 @@ export function trainSummary(row) {
       fact("From", str(row.origin)),
       fact("Scheduled", str(row.scheduled)),
       fact("Expected", expected && expected !== str(row.scheduled) ? expected : ""),
-      fact("Platform", bus ? "Bus" : str(row.platform) || "Not yet known"),
+      fact("Platform", bus ? "Bus" : platform ? `${platform}${changed}` : "Not yet known"),
+      // From the punctuality history, once it has a few days to go on.
+      fact("Usually", usual ? `Platform ${usual}` : ""),
       fact("Coaches", length ? `${length} ${length === 1 ? "coach" : "coaches"}` : ""),
       fact("Walk", walk !== null ? `${walk} min to the station` : ""),
       fact("Leave by", hhmm(row.leave_at)),

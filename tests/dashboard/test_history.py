@@ -493,3 +493,48 @@ def test_the_history_reader_reads_outcomes_once_there_is_a_history(tmp_path):
     assert reader.outcomes("train", FRIDAY) == [(TRAIN, "2026-10-09", "late", 4)]
     reader.close()
     history.close()
+
+
+# The platform a train usually leaves from.
+
+
+def _days_at(history, platforms, start=FRIDAY):
+    """One final day per platform given (None for none known), the last given the newest."""
+    for back, platform in enumerate(reversed(platforms)):
+        day = start - timedelta(days=back)
+        history.observe("train", [_train(day=day)._replace(platform=platform)], _at("07:41", day))
+        history.observe("train", [], _at("07:43", day))
+
+
+def test_usual_platform_is_the_one_used_on_most_days(history):
+    _days_at(history, ["1", "2", "1", "1"])
+    assert history.usual_platform("train", TRAIN, "07:42") == "1"
+
+
+def test_usual_platform_needs_a_few_days(history):
+    _days_at(history, ["1", "1"])
+    assert history.usual_platform("train", TRAIN, "07:42") is None
+    _days_at(history, ["1", "1", "1"])
+    assert history.usual_platform("train", TRAIN, "07:42") == "1"
+
+
+def test_usual_platform_needs_one_platform_on_more_than_half_the_days(history):
+    _days_at(history, ["1", "2", "1", "2", "3", "1"])
+    assert history.usual_platform("train", TRAIN, "07:42") is None
+
+
+def test_usual_platform_counts_only_days_with_a_platform_known(history):
+    _days_at(history, [None, None, "2", None, "2", "2"])
+    assert history.usual_platform("train", TRAIN, "07:42") == "2"
+
+
+def test_usual_platform_goes_by_the_last_ten_days(history):
+    _days_at(history, ["1"] * 8 + ["2"] * 6)
+    assert history.usual_platform("train", TRAIN, "07:42") == "2"
+
+
+def test_usual_platform_leaves_out_undecided_days(history):
+    _days_at(history, ["1", "1"])
+    history.observe("train", [_train(day=FRIDAY + timedelta(days=1))._replace(platform="1")],
+                    _at("07:41", FRIDAY + timedelta(days=1)))
+    assert history.usual_platform("train", TRAIN, "07:42") is None

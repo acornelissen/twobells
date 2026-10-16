@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -150,6 +151,11 @@ class FakeHistory:
             raise self.no_shows_error
         return (3, 10) if (mode, route) == ("bus", "A|237|Ashton") else (0, 10)
 
+    usual = None  # every train's usual platform
+
+    def usual_platform(self, mode, route, scheduled, n=10):
+        return self.usual
+
     def sweep(self, now):
         self.swept.append(now)
 
@@ -289,6 +295,45 @@ def test_an_error_keeps_the_last_trains_and_marks_them_stale(tmp_path):
     setup.trains.error = None
     setup.collector.poll_trains()
     assert setup.snapshot()["trains"]["status"]["stale"] is False
+
+
+def platforms(setup):
+    return [(row["platform"], row["platform_changed"]) for row in setup.snapshot()["trains"]["rows"]]
+
+
+def test_a_platform_unlike_the_last_polls_is_marked_changed(tmp_path):
+    setup = Setup(tmp_path, now=datetime(2026, 10, 9, 22, 3, tzinfo=LONDON))
+    setup.collector.poll_trains()
+    assert platforms(setup)[:2] == [("2", False), ("2", False)]
+    setup.trains.payload["trainServices"][1]["platform"] = "1"
+    setup.clock.now += timedelta(minutes=1)
+    setup.collector.poll_trains()
+    assert platforms(setup)[:2] == [("2", False), ("1", True)]
+    # It stays marked, and the history is told the platform it leaves from.
+    setup.clock.now += timedelta(minutes=1)
+    setup.collector.poll_trains()
+    assert platforms(setup)[:2] == [("2", False), ("1", True)]
+    assert setup.history.observed[-1][1][1].platform == "1"
+
+
+def test_a_platform_unlike_the_usual_one_is_marked_changed(tmp_path):
+    setup = Setup(tmp_path, now=datetime(2026, 10, 9, 22, 3, tzinfo=LONDON))
+    setup.history.usual = "1"
+    setup.collector.poll_trains()
+    rows = setup.snapshot()["trains"]["rows"]
+    assert {(row["platform"], row["usual_platform"], row["platform_changed"]) for row in rows} == {("2", "1", True)}
+
+
+def test_an_unreadable_history_gives_no_usual_platform(tmp_path):
+    setup = Setup(tmp_path, now=datetime(2026, 10, 9, 22, 3, tzinfo=LONDON))
+
+    def broken(*args, **kwargs):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    setup.history.usual_platform = broken
+    setup.collector.poll_trains()
+    rows = setup.snapshot()["trains"]["rows"]
+    assert len(rows) == 5 and {row["usual_platform"] for row in rows} == {None}
 
 
 def test_an_error_before_any_data_is_stale_with_no_rows(tmp_path):

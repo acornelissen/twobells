@@ -44,7 +44,8 @@ function title(row) {
   const scheduled = str(row.scheduled);
   const destination = str(row.destination);
   if (openMode === "bus") return `${scheduled} ${str(row.line)} to ${destination}`;
-  return row.replacement_bus === true ? `${scheduled} replacement bus to ${destination}` : `${scheduled} to ${destination}`;
+  const via = str(row.via) ? ` ${str(row.via)}` : "";
+  return row.replacement_bus === true ? `${scheduled} replacement bus to ${destination}${via}` : `${scheduled} to ${destination}${via}`;
 }
 
 // When the last bus of the row's line and destination goes today: "23:05",

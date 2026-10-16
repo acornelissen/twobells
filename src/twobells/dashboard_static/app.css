@@ -623,6 +623,14 @@ button.open:hover:not(:disabled) { background: none; text-decoration: underline;
   color: var(--late-fg);
   background: var(--late-bg);
 }
+/* A changed platform: "2 (changed)". The words say it; the colours back them up. */
+.plat-changed {
+  padding: 0 var(--s-2);
+  border-radius: var(--r-sm);
+  font-weight: 600;
+  color: var(--late-fg);
+  background: var(--late-bg);
+}
 .cell-label { display: none; }
 /* The dot between a stop and its walk, shown only where they share a line. */
 .walk-sep { display: none; }

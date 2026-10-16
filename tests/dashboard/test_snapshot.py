@@ -1,3 +1,4 @@
+import dataclasses
 import hashlib
 import json
 import re
@@ -447,6 +448,63 @@ def test_a_replacement_bus_never_has_coaches():
     part, _ = trains_part(board, datetime(2026, 10, 10, 7, 0, tzinfo=LONDON), status_block(), "GLO", "MAN",
                           WALK, "GLO>MAN")
     assert part["rows"][0]["formation"] is None
+
+
+# Platform changes, the usual platform and via words.
+
+
+def platforms_part(*services, usual=None):
+    """The trains part, with `usual` as the platform every train usually leaves from."""
+    asked = []
+
+    def platforms(route, scheduled):
+        asked.append((route, scheduled))
+        return usual
+
+    board = parse_board_rich({"trainServices": [s for s in services if s.get("serviceType") != "bus"],
+                              "busServices": [s for s in services if s.get("serviceType") == "bus"]})
+    part, _ = trains_part(board, datetime(2026, 10, 10, 7, 0, tzinfo=LONDON), status_block(), "GLO", "MAN", WALK,
+                          "GLO>MAN", platforms=platforms)
+    return part["rows"], asked
+
+
+def test_a_row_says_its_usual_platform_and_whether_this_is_it():
+    [row], asked = platforms_part(train(platform="1"), usual="1")
+    assert asked == [("GLO>MAN|Manchester Piccadilly", "07:12")]
+    assert (row["platform"], row["usual_platform"], row["platform_changed"]) == ("1", "1", False)
+    [row], _ = platforms_part(train(platform="2"), usual="1")
+    assert (row["platform"], row["usual_platform"], row["platform_changed"]) == ("2", "1", True)
+
+
+def test_no_usual_platform_and_no_platform_is_no_change():
+    [row], _ = platforms_part(train(platform="2"))
+    assert (row["usual_platform"], row["platform_changed"]) == (None, False)
+    [row], _ = platforms_part(train(platform=None), usual="1")
+    assert (row["platform"], row["platform_changed"]) == (None, False)
+
+
+def test_a_change_since_the_last_fetch_is_a_change_whatever_the_history():
+    board = parse_board_rich({"trainServices": [train(platform="1")]})
+    [service] = board.services
+    changed = dataclasses.replace(service, departure=dataclasses.replace(service.departure, platform_changed=True))
+    marked = dataclasses.replace(board, services=[changed])
+    part, _ = trains_part(marked,datetime(2026, 10, 10, 7, 0, tzinfo=LONDON), status_block(), "GLO", "MAN",
+                          WALK, "GLO>MAN", platforms=lambda route, scheduled: "1")
+    assert part["rows"][0]["platform_changed"] is True
+
+
+def test_a_replacement_bus_has_no_usual_platform_and_never_a_changed_one():
+    [row], asked = platforms_part(replacement(), usual="1")
+    assert asked == []
+    assert (row["platform"], row["usual_platform"], row["platform_changed"]) == (None, None, False)
+
+
+def test_a_row_carries_its_via_words():
+    dests = [{"locationName": "Manchester Piccadilly", "crs": "MAN", "via": "via Guide Bridge"}]
+    [row], _ = platforms_part(train(destination=dests))
+    assert (row["destination"], row["via"]) == ("Manchester Piccadilly", "via Guide Bridge")
+    [row], _ = platforms_part(train())
+    assert row["via"] is None
 
 
 # Status words

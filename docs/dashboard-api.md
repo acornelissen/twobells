@@ -50,6 +50,9 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "status_spoken": "Expected 07:19",
       "minutes_late": 7,
       "platform": "1",
+      "platform_changed": false,
+      "usual_platform": "1",
+      "via": "via Guide Bridge",
       "replacement_bus": false,
       "length": 3,
       "formation": {
@@ -173,6 +176,11 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `loading_text` says where to sit: "Quietest at the front", "Quietest in the middle", "Quietest at the back" (each end is a third of the train, rounded up, read from the coaches' loadings when at least half have one), "Much the same all along the train" (the ends within 15 of each other), or, from Darwin's average alone, "Quiet overall" and the like. It is null when Darwin gives no loading.
   - `detach_text` is "Front 2 coaches detach here" when Darwin says the front of the train detaches at this station (`detachFront`), with the count only when the train is shorter at its next stop; else null. `reverse` is Darwin's `isReverseFormation`: the train runs the other way round from usual.
   - The server reads Darwin's `formation` as hostile like the rest: a coach that isn't an object, or more than 30 coaches, leaves the whole formation out, and a field of the wrong type or out of range is null.
+- **Platforms:**
+  - `platform` is Darwin's, like "1" or "2A", or null until it is known.
+  - `usual_platform` is the platform the train left from on most of its last 10 days in the punctuality history with a platform known: one used on more than half of them, and at least 3. It is null with less history than that, with no one platform used most, for a replacement bus, and without a history.
+  - `platform_changed` is true when `platform` isn't the one the server's last fetch gave the same train (it stays true while the train keeps its new platform), or isn't `usual_platform`. A platform appearing or going is no change, and a replacement bus is never one. The page says "2 (changed)" in the Plat column, on the late colours, says "Usually: Platform 1" in the sheet, and announces each change once in the live region.
+- **`via`:** Darwin's words on the train's route, after its destination, like "via Guide Bridge", or null. The page shows it under the destination and in the sheet's title.
 - **Calling points:** `calling_points` are the stops after this station, `previous_points` the ones before it, both in journey order. Times are `HH:MM` or null; `actual` is set once the train has been there. A cancelled stop has `cancelled: true` and null times.
 - **Train `position`** (from Darwin's Service Details, which needs its own key, `RDM_DETAILS_API_KEY`):
   - It is known for the first 3 trains on the board that aren't cancelled, refreshed at most once a minute. Other rows have `position: null` and `previous_points: []`, unless the server still holds their details from earlier.

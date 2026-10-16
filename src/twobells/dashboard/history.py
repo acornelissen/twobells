@@ -28,6 +28,7 @@ import re
 import sqlite3
 import stat
 import threading
+from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
@@ -402,6 +403,24 @@ class History:
                 if _day_type(date.fromisoformat(day), holidays) == day_type:
                     found.append((status, delay_min, bool(live)))
         return found
+
+    def usual_platform(self, mode: str, route: str, scheduled: str, n: int = 10) -> str | None:
+        """The platform `route` at `scheduled` left from on most of its last
+        `n` final days with a platform known, any kind of day: one used on
+        more than half of them, and at least three. None without that much
+        to go on, or with no one platform used most."""
+        _mode(mode)
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT platform FROM outcome WHERE mode = ? AND route = ? AND scheduled = ? AND final = 1"
+                " AND platform IS NOT NULL ORDER BY day DESC LIMIT ?",
+                (mode, route, scheduled, n),
+            ).fetchall()
+        counts = Counter(platform for (platform,) in rows)
+        if not counts:
+            return None
+        platform, used = counts.most_common(1)[0]
+        return platform if used >= _ENOUGH and used * 2 > len(rows) else None
 
     def recent(self, mode: str, route: str, scheduled: str, days: int = 90) -> list[dict]:
         """The outcomes of `route` at `scheduled` on its last `days` final days,

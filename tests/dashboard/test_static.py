@@ -629,7 +629,8 @@ TRAIN_ROW = {
     "id": row_id, "service": str, "destination": str, "origin": Opt(str),
     "scheduled": hhmm, "scheduled_at": at, "expected": Opt(hhmm), "expected_at": Opt(at),
     "status": ROW_STATUS, "status_text": str, "status_spoken": str, "minutes_late": Opt(integer),
-    "platform": Opt(str), "replacement_bus": bool, "length": Opt(integer), "formation": Opt(FORMATION),
+    "platform": Opt(str), "platform_changed": bool, "usual_platform": Opt(str), "via": Opt(str),
+    "replacement_bus": bool, "length": Opt(integer), "formation": Opt(FORMATION),
     "cancel_reason": Opt(str), "delay_reason": Opt(str), "walk_min": Opt(integer), "leave_at": Opt(at),
     "calling_points": [CALLING_POINT],
     "previous_points": [CALLING_POINT],
@@ -1910,6 +1911,29 @@ observeSnapshot(snapshot.generated_at);""")
 
 
 @needs_node
+def test_a_changed_platform_and_the_via_words_are_in_the_row():
+    script = _boards().replace("observeSnapshot(snapshot.generated_at);", """
+snapshot.trains.rows[0] = { ...snapshot.trains.rows[0], platform: "2", platform_changed: true, via: "via Guide Bridge" };
+snapshot.trains.rows[1] = { ...snapshot.trains.rows[1], replacement_bus: true, platform: null, platform_changed: true };
+observeSnapshot(snapshot.generated_at);""")
+    assert script != _boards()
+    found = run_js(script + """
+        const [changed, bus, plain] = bodyRows("trains-board");
+        console.log(JSON.stringify({
+          changed: [said(cell(changed, "c-plat")), shown(cell(changed, "c-plat")), byClass(changed, "plat-changed").length],
+          via: byClass(changed, "via").map(said),
+          bus: [said(cell(bus, "c-plat")), byClass(bus, "plat-changed").length],
+          plain: [said(cell(plain, "c-plat")), byClass(plain, "plat-changed").length, byClass(plain, "via").length],
+        }));
+    """)
+    # The words say it; the class only colours them.
+    assert found["changed"] == ["2 (changed)", "Plat2 (changed)", 1]
+    assert found["via"] == ["via Guide Bridge"]
+    assert found["bus"] == ["Bus", 0]
+    assert found["plain"][1:] == [0, 0]
+
+
+@needs_node
 def test_the_bus_board_caption_is_for_screen_readers_only():
     # The section's "Buses" heading says it on screen; the table keeps its name.
     found = run_js(_boards() + """
@@ -2588,6 +2612,68 @@ def test_odd_coach_values_never_reach_the_sheet():
     assert found["said"] == ["Coach <b>", "Coach"]
     assert found["notes"] == []
     assert found["bars"] == 0
+
+
+@needs_node
+def test_the_sheet_says_a_changed_platform_the_usual_one_and_the_via():
+    found = run_js(_sheet() + """
+        const facts = () => elements(summary).filter((el) => el.nodeName === "DD" || el.nodeName === "DT").map(spoken);
+        openTrain({ ...train(1), platform: "2", platform_changed: true, usual_platform: "1", via: "via Guide Bridge" });
+        const changed = [spoken(title), facts()];
+        openTrain({ ...train(1), platform: "1", usual_platform: "1" });
+        const usual = facts();
+        openTrain({ ...train(1), platform: "1" });
+        const unknown = facts();
+        openTrain({ ...train(1), replacement_bus: true, platform: null, usual_platform: "1" });
+        console.log(JSON.stringify({ changed, usual, unknown, bus: facts() }));
+    """)
+    title, facts = found["changed"]
+    assert title == "07:20 to Manchester Piccadilly via Guide Bridge"
+    platform = facts.index("Platform")
+    assert facts[platform:platform + 4] == ["Platform", "2 (changed)", "Usually", "Platform 1"]
+    usual = found["usual"]
+    assert usual[usual.index("Platform"):usual.index("Platform") + 4] == ["Platform", "1", "Usually", "Platform 1"]
+    # Without a few days of history, or for a replacement bus, nothing is said.
+    assert "Usually" not in found["unknown"] and "Usually" not in found["bus"]
+
+
+@needs_node
+def test_a_changed_platform_is_announced_once():
+    found = run_js("""
+        import { noteSnapshot } from "./live.js";
+        const live = document.createElement("div");
+        live.setAttribute("id", "live");
+        document.body.append(live);
+        globalThis.requestAnimationFrame = (fn) => fn();
+        const snapshot = { generated_at: "2026-10-10T07:00:00+01:00", disruptions: { status: {}, items: [] } };
+        const row = (id, platform, changed, extra = {}) => ({
+          id, scheduled: "07:12", destination: "Manchester Piccadilly", status: "on_time",
+          platform, platform_changed: changed, ...extra,
+        });
+        const rows = (...list) => new Map(list.map((r) => [r.id, { row: r, mode: "train" }]));
+        const wait = () => new Promise((resolve) => setTimeout(resolve, 20));
+        // Changed already when the page opens: not spoken, nor ever after.
+        noteSnapshot(snapshot, rows(row("a", "1", false), row("c", "3", true)));
+        noteSnapshot(snapshot, rows(row("a", "2", true), row("c", "3", true),
+                                    row("d", "4", true, { scheduled: "07:42" })));
+        await wait();
+        const spokenOnce = live.textContent;
+        // The same again, snapshot after snapshot: nothing more is queued.
+        let queued = 0;
+        globalThis.setTimeout = () => { queued += 1; return 1; };
+        noteSnapshot(snapshot, rows(row("a", "2", true), row("c", "3", true), row("d", "4", true)));
+        noteSnapshot(snapshot, rows(row("a", "2", true), row("c", "3", true), row("d", "4", true)));
+        // A replacement bus is never a platform change, whatever it says.
+        noteSnapshot(snapshot, rows(row("a", "2", true), row("e", null, false, { replacement_bus: true })));
+        noteSnapshot(snapshot, rows(row("a", "2", true), row("e", "1", true, { replacement_bus: true })));
+        const repeated = queued;
+        // A second change is news too.
+        noteSnapshot(snapshot, rows(row("a", "3", true)));
+        console.log(JSON.stringify([spokenOnce, repeated, queued]));
+    """)
+    assert found[0] == "The 07:12 train to Manchester Piccadilly now leaves from platform 2."
+    assert found[1] == 0
+    assert found[2] == 1
 
 
 @needs_node

@@ -39,12 +39,13 @@ import random as _random
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from ..core.errors import safe_message
+from ..core.model import mark_platform_changes
 from ..sources import holidays as _holidays
 from ..sources.darwin import DetailsUnavailable, ServiceGone, TrainBoard, TrainDetails
 from ..sources.disruptions import BusArea, RailArea, bus_disruptions, disruptions_part, train_disruptions
@@ -171,6 +172,19 @@ class _Feed:
         self.error = safe_message(error)
 
 
+def _with_platform_changes(before: TrainBoard | None, fetched: datetime | None, board: TrainBoard,
+                           now: datetime) -> TrainBoard:
+    """`board` with each train whose platform isn't the one the last board
+    (`before`, fetched at `fetched`) gave it marked so (mark_platform_changes)."""
+    earlier = []
+    if before is not None and fetched is not None:
+        earlier = [s.departure for s in before.services if not s.departure.has_left(now, fetched)]
+    marked = mark_platform_changes(earlier, [s.departure for s in board.services])
+    services = [s if s.departure is dep else replace(s, departure=dep)
+                for s, dep in zip(board.services, marked, strict=True)]
+    return replace(board, services=services)
+
+
 def _sentence(text: str) -> str:
     return text[:1].upper() + text[1:]
 
@@ -260,6 +274,16 @@ class Collector:
             return None
         return no_show_phrase(without, days, kind)
 
+    def _usual_platform(self, route: str, scheduled: str) -> str | None:
+        """The platform a train usually leaves from, from the history, or None."""
+        if self._history is None:
+            return None
+        try:
+            return self._history.usual_platform("train", route, scheduled)
+        except Exception as error:  # noqa: BLE001 - the departures matter more than the history
+            log.warning("dashboard history unreadable: %s", safe_message(error))
+            return None
+
     def _publish_trains(self) -> None:
         settings = self._settings
         details = self._details.known() if self._details is not None else {}
@@ -268,6 +292,7 @@ class Collector:
             settings.train_filter, settings.walk, self._route_prefix, self._phrases,
             details=details, now=self._clock(),
             positions=self._train_positions.status() if settings.train_details is not None else None,
+            platforms=self._usual_platform,
         )
         self._hub.publish("trains", part, lookups)
 
@@ -356,6 +381,7 @@ class Collector:
             self._trains.failed(error)
             self._publish_trains()
             raise
+        board = _with_platform_changes(self._trains.data, self._trains.fetched, board, now)
         self._observe("train", train_observations(board, now, self._route_prefix), now)
         self._trains.worked(board, now)
         self._publish_trains()

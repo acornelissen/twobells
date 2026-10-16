@@ -240,11 +240,23 @@ function callingAt(row) {
   return names.length ? h("span", { class: "sub calling-at" }, `Calling at ${names.join(", ")}`) : null;
 }
 
+// The Plat cell: "1", "Bus" for a replacement bus, "–" until it's known, or
+// "2 (changed)" on the late colours when it isn't the platform the train was
+// given before, or usually has. The words say it; the colour backs them up.
+function platformCell(row) {
+  const platform = str(row.platform);
+  let shown = [h("span", { "aria-hidden": "true" }, "–"), vh("not yet known")];
+  if (row.replacement_bus === true) shown = "Bus";
+  else if (platform && row.platform_changed === true) shown = h("span", { class: "plat-changed" }, `${platform} (changed)`);
+  else if (platform) shown = platform;
+  return td("c-plat", "Plat", shown);
+}
+
 function trainRow(row, first, later, alerts) {
   const id = validId(row.id) ? row.id : null;
   const scheduled = str(row.scheduled);
   const destination = str(row.destination);
-  const platform = str(row.platform);
+  const via = str(row.via);
   const bus = row.replacement_bus === true;
   const cancelled = row.status === "cancelled";
   const position = obj(row.position);
@@ -258,13 +270,14 @@ function trainRow(row, first, later, alerts) {
     h("th", { scope: "row", role: "rowheader", class: "c-time" }, h("span", { class: "time" }, scheduled)),
     td("c-dest", null,
       openButton(id, `the ${scheduled}${bus ? " replacement bus" : ""} to `, destination),
+      via ? h("span", { class: "sub via" }, via) : null,
       bus ? h("span", { class: "sub replacement" }, "Replacement bus") : null,
       arrivesLine(row),
       first && !cancelled ? callingAt(row) : null,
       placed,
       cancelled && str(row.cancel_reason) ? h("span", { class: "reason" }, str(row.cancel_reason)) : null,
       recordChip(row)),
-    td("c-plat", "Plat", bus ? "Bus" : platform || [h("span", { "aria-hidden": "true" }, "–"), vh("not yet known")]),
+    platformCell(row),
     td("c-status", null, statusBadge(row.status, row.status_text, row.status_spoken)),
     leaveCell(row, id, alerts),
   );
