@@ -97,6 +97,16 @@
         "walk_min": 10,
         "leave_at": "2026-10-10T07:09:00+01:00",
         "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.",
+        "announce": [
+          {
+            "kind": "delayed",
+            "text": "We are sorry to announce that the 07:12 Northern service to Manchester Piccadilly is delayed by approximately 7 minutes. This is due to a broken down train."
+          },
+          {
+            "kind": "next",
+            "text": "The next train to depart from platform 1 will be the delayed 07:12 Northern service to Manchester Piccadilly. Calling at Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches."
+          }
+        ],
         "calling_points": [
           {
             "name": "Dinting",
@@ -237,6 +247,12 @@
         "walk_min": 10,
         "leave_at": null,
         "calling_at": null,
+        "announce": [
+          {
+            "kind": "cancelled",
+            "text": "We are sorry to announce that the 07:42 Northern service to Manchester Piccadilly has been cancelled. This is due to a shortage of train crew."
+          }
+        ],
         "calling_points": [
           {
             "name": "Dinting",
@@ -357,6 +373,12 @@
         "walk_min": 10,
         "leave_at": "2026-10-10T08:02:00+01:00",
         "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 6 coaches.",
+        "announce": [
+          {
+            "kind": "departs",
+            "text": "The 08:12 Northern service to Manchester Piccadilly will depart from platform 1. Calling at Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 6 coaches."
+          }
+        ],
         "calling_points": [
           {
             "name": "Dinting",
@@ -497,6 +519,16 @@
         "walk_min": 10,
         "leave_at": "2026-10-10T08:32:00+01:00",
         "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.",
+        "announce": [
+          {
+            "kind": "delayed",
+            "text": "We are sorry to announce that the 08:42 Northern service to Manchester Piccadilly is delayed. This is due to signalling problems."
+          },
+          {
+            "kind": "departs",
+            "text": "The delayed 08:42 Northern service to Manchester Piccadilly is due to depart. Calling at Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches."
+          }
+        ],
         "calling_points": [
           {
             "name": "Dinting",
@@ -612,6 +644,12 @@
         "walk_min": 10,
         "leave_at": "2026-10-10T09:02:00+01:00",
         "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.",
+        "announce": [
+          {
+            "kind": "departs",
+            "text": "The 09:12 Northern service to Manchester Piccadilly will depart from platform 1. Calling at Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches."
+          }
+        ],
         "calling_points": [
           {
             "name": "Dinting",
@@ -732,6 +770,16 @@
         "walk_min": 10,
         "leave_at": "2026-10-10T09:35:00+01:00",
         "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.",
+        "announce": [
+          {
+            "kind": "delayed",
+            "text": "We are sorry to announce that the 09:42 Northern service to Manchester Piccadilly is delayed by approximately 3 minutes."
+          },
+          {
+            "kind": "departs",
+            "text": "The delayed 09:42 Northern service to Manchester Piccadilly will depart from platform 1. Calling at Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches."
+          }
+        ],
         "calling_points": [
           {
             "name": "Dinting",
@@ -852,6 +900,12 @@
         "walk_min": 10,
         "leave_at": "2026-10-10T10:02:00+01:00",
         "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 2 coaches.",
+        "announce": [
+          {
+            "kind": "departs",
+            "text": "The 10:12 Northern service to Manchester Piccadilly will depart from platform 2. Calling at Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 2 coaches."
+          }
+        ],
         "calling_points": [
           {
             "name": "Dinting",
@@ -972,6 +1026,12 @@
         "walk_min": 10,
         "leave_at": "2026-10-10T10:32:00+01:00",
         "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.",
+        "announce": [
+          {
+            "kind": "departs",
+            "text": "The 10:42 Northern service to Manchester Piccadilly will depart from platform 1. Calling at Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches."
+          }
+        ],
         "calling_points": [
           {
             "name": "Dinting",
@@ -1092,6 +1152,12 @@
         "walk_min": 10,
         "leave_at": "2026-10-10T11:02:00+01:00",
         "calling_at": null,
+        "announce": [
+          {
+            "kind": "departs",
+            "text": "The 11:12 Northern service to Manchester Piccadilly is due to depart."
+          }
+        ],
         "calling_points": [],
         "previous_points": [],
         "position": null,
@@ -1126,6 +1192,12 @@
         "walk_min": 10,
         "leave_at": "2026-10-10T11:32:00+01:00",
         "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.",
+        "announce": [
+          {
+            "kind": "departs",
+            "text": "The 11:42 Northern service to Manchester Piccadilly will depart from platform 1. Calling at Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches."
+          }
+        ],
         "calling_points": [
           {
             "name": "Dinting",

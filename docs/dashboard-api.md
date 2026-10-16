@@ -71,6 +71,10 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
       "walk_min": 10,
       "leave_at": "…",
       "calling_at": "Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, Gorton, Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.",
+      "announce": [
+        {"kind": "delayed", "text": "We are sorry to announce that the 07:12 Northern service to Manchester Piccadilly via Guide Bridge is delayed by approximately 7 minutes. This is due to a broken down train."},
+        {"kind": "next", "text": "The next train to depart from platform 1 will be the delayed 07:12 Northern service to Manchester Piccadilly via Guide Bridge. Calling at Dinting, … and Manchester Piccadilly. This train is formed of 3 coaches."}
+      ],
       "calling_points": [
         {"name": "Dinting", "crs": "DGT", "scheduled": "07:15", "expected": "07:22", "actual": null, "cancelled": false}
       ],
@@ -186,6 +190,12 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
 - **`via`:** Darwin's words on the train's route, after its destination, like "via Guide Bridge", or null. The page shows it under the destination and in the sheet's title.
 - **Calling points:** `calling_points` are the stops after this station, `previous_points` the ones before it, both in journey order. Times are `HH:MM` or null; `actual` is set once the train has been there. A cancelled stop has `cancelled: true` and null times.
 - **`calling_at`:** the station board's "Calling at" line, in words, from `calling_points` and `length` (or else the coaches in `formation`): "Calling at: Dinting and Manchester Piccadilly." ("Calling at: Manchester Piccadilly only." for one stop, from `calling_points` less those cancelled), then "Does not call at Hattersley or Godley." for stops cancelled, then "This train is formed of 3 coaches." when the length is known, or "This is a replacement bus." or "This is a ferry." It is null for a cancelled train and when Darwin gives no calling points. The board's screens scroll the same line under their first train. **On the page:** the first row shows it under the destination; the Dot matrix and TFT looks scroll it along one line, in from the right, with a **Pause scrolling** button above the trains table (`aria-pressed`, remembered in the browser) that stops it and wraps it. With reduced motion it never scrolls, and the button isn't shown; a wall tablet leaves the line out.
+- **`announce`:** what a station's public address would say about the train, as `{"kind", "text"}` in the order to say them, worded by `core/announce.py`. A cancelled train has `cancelled` alone: "We are sorry to announce that the 07:42 Northern service to Manchester Piccadilly has been cancelled. This is due to a shortage of train crew." Any other train has, in this order:
+  - `platform` when `platform_changed` is true and the platform is known: "Platform alteration: the 07:12 … will now depart from platform 2."
+  - `delayed` when it is late: "… is delayed by approximately 7 minutes.", or "… is delayed." with no expected time, then the reason.
+  - `next` for the next train to depart (the first row not cancelled): "The next train to depart from platform 1 will be the 07:12 Northern service to Manchester Piccadilly.", with "the delayed 07:12" when late, "from platform 1" left out until it is known, and "The next service" and "replacement bus service" for a rail replacement bus. Then "Calling at Dinting and Manchester Piccadilly." ("… only." for one stop), "Does not call at Hattersley." for stops cancelled, and "This train is formed of 3 coaches." when the length is known.
+  - `departs` for any later train: "The 08:12 Northern service to Manchester Piccadilly will depart from platform 1.", or "… is due to depart." without a platform, then the same stops and length.
+  - Darwin's reasons are whole sentences, "This train has been cancelled because of a shortage of train crew"; they are said as a station says them, "This is due to a shortage of train crew." A reason in any other shape is said as Darwin gives it.
 - **Train `position`** (from Darwin's Service Details, which needs its own key, `RDM_DETAILS_API_KEY`):
   - It is known for the first 3 trains on the board that aren't cancelled, refreshed at most once a minute. Other rows have `position: null` and `previous_points: []`, unless the server still holds their details from earlier.
   - Without the key, or while the key is refused (the server stops asking for 6 hours), every row has `position: null` and `previous_points: []`.

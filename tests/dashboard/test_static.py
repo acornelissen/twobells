@@ -764,6 +764,7 @@ COACH = {
     "loading": Opt(lambda v: integer(v) and 0 <= v <= 100), "busy": Opt(one_of("Quiet", "Busy", "Very busy")),
 }
 FORMATION = {"coaches": [COACH], "loading_text": Opt(str), "detach_text": Opt(str), "reverse": bool}
+ANNOUNCEMENT = {"kind": one_of("platform", "cancelled", "delayed", "next", "departs"), "text": str}
 TRAIN_ROW = {
     "id": row_id, "service": str, "destination": str, "origin": Opt(str),
     "scheduled": hhmm, "scheduled_at": at, "expected": Opt(hhmm), "expected_at": Opt(at),
@@ -772,6 +773,7 @@ TRAIN_ROW = {
     "replacement_bus": bool, "ferry": bool, "length": Opt(integer), "formation": Opt(FORMATION),
     "cancel_reason": Opt(str), "delay_reason": Opt(str), "walk_min": Opt(integer), "leave_at": Opt(at),
     "calling_at": Opt(str),
+    "announce": [ANNOUNCEMENT],
     "calling_points": [CALLING_POINT],
     "previous_points": [CALLING_POINT],
     "position": Opt({"where": str, "strip": {"stops": [str], "yours": integer, "train_at": Opt(number)}}),

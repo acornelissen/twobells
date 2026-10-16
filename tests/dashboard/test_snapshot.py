@@ -558,6 +558,43 @@ def test_a_row_carries_its_calling_at_line():
     assert to_manchester["calling_at"].endswith("and Manchester Piccadilly. This train is formed of 2 coaches.")
 
 
+def test_the_first_train_not_cancelled_is_announced_as_the_next():
+    tparts, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO")
+    first, second = tparts["rows"][:2]
+    assert first["announce"] == [{"kind": "next", "text": (
+        "The next train to depart from platform 2 will be the 22:08 Northern service to Hadfield. "
+        "Calling at Hadfield only. This train is formed of 2 coaches.")}]
+    assert [item["kind"] for item in second["announce"]] == ["departs"]
+    assert second["announce"][0]["text"].startswith(
+        "The 22:25 Northern service to Manchester Piccadilly will depart from platform 2. Calling at Dinting, ")
+
+
+def test_a_cancelled_or_late_train_is_announced_with_its_reason():
+    part, _ = trains(
+        train("07:12", "Cancelled", isCancelled=True,
+              cancelReason="This train has been cancelled because of a shortage of train crew"),
+        train("07:20", "07:30", platform="2", delayReason="This train has been delayed by a broken down train"),
+    )
+    cancelled, late = part["rows"]
+    assert cancelled["announce"] == [{"kind": "cancelled", "text": (
+        "We are sorry to announce that the 07:12 Northern service to Manchester Piccadilly has been cancelled. "
+        "This is due to a shortage of train crew.")}]
+    # The cancelled train isn't the next to depart; the late one is.
+    assert [item["kind"] for item in late["announce"]] == ["delayed", "next"]
+    assert late["announce"][0]["text"] == (
+        "We are sorry to announce that the 07:20 Northern service to Manchester Piccadilly is delayed by "
+        "approximately 10 minutes. This is due to a broken down train.")
+    assert late["announce"][1]["text"] == (
+        "The next train to depart from platform 2 will be the delayed 07:20 Northern service to Manchester "
+        "Piccadilly. This train is formed of 3 coaches.")
+
+
+def test_a_changed_platform_is_announced_as_an_alteration():
+    [row], _ = platforms_part(train(platform="2"), usual="1")
+    assert row["announce"][0] == {"kind": "platform", "text": (
+        "Platform alteration: the 07:12 Northern service to Manchester Piccadilly will now depart from platform 2.")}
+
+
 # Status words
 
 

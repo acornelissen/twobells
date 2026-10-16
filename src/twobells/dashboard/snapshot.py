@@ -23,7 +23,7 @@ from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from typing import Protocol
 
-from ..core import words
+from ..core import announce, words
 from ..core.model import Departure, Status, iso, minutes_between
 from ..core.walk import WalkTimes
 from ..sources.bodsbus import BusBoard
@@ -196,14 +196,38 @@ def position_block(details: ServiceDetails | None, now: datetime) -> dict | None
             "strip": {"stops": list(found.strip_stops), "yours": found.yours, "train_at": found.train_at}}
 
 
+def announcement_block(service: TrainService, platform_changed: bool, is_next: bool) -> list[dict]:
+    """What a station would announce for the train (core/announce.py), as
+    [{"kind", "text"}] in the order to say them. `is_next` says it is the
+    next train to depart, not a later one."""
+    dep = service.departure
+    formation = service.formation
+    coaches = service.length if service.length is not None else (
+        len(formation.coaches) if formation is not None and formation.coaches else None)
+    train = announce.Train(
+        time=dep.scheduled, destination=dep.destination, operator=dep.service, via=dep.via, platform=dep.platform,
+        replacement_bus=dep.replacement_bus,
+        calling=tuple(p.name for p in service.calling_points if not p.skipped),
+        skipped=tuple(p.name for p in service.calling_points if p.skipped),
+        coaches=coaches,
+    )
+    said = announce.announcements(
+        train, is_cancelled=dep.status is Status.CANCELLED, late=dep.status is Status.LATE,
+        minutes_late=_minutes_late(dep), platform_changed=platform_changed,
+        cancel_reason=service.cancel_reason, delay_reason=service.delay_reason, is_next=is_next)
+    return [{"kind": kind, "text": text} for kind, text in said]
+
+
 def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_prefix: str,
               phrases: Phrases = no_history, details: ServiceDetails | None = None,
-              now: datetime | None = None, platforms: UsualPlatforms = no_usual_platform) -> tuple[dict, dict]:
+              now: datetime | None = None, platforms: UsualPlatforms = no_usual_platform,
+              is_next: bool = False) -> tuple[dict, dict]:
     """A train's row and its server-side lookup (the history key). With the
     train's service details, the row says where it is at `now` (else when
     the board was fetched) and the stops it calls at before this station.
     Its platform has changed when the last fetch gave another (the
-    Departure says so) or it isn't the one `platforms` says it usually is."""
+    Departure says so) or it isn't the one `platforms` says it usually is.
+    `is_next` says it is the next train to depart, for its announcements."""
     dep = service.departure
     scheduled_at, expected_at = _train_times(service, fetched)
     route = _train_route(route_prefix, dep)
@@ -236,6 +260,7 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
         "walk_min": walk.minutes(dep),
         "leave_at": iso(leave_at(dep, scheduled_at, expected_at, walk)),
         "calling_at": dep.calling_at,
+        "announce": announcement_block(service, changed, is_next),
         "calling_points": [calling_point(p) for p in service.calling_points],
         "previous_points": [calling_point(p) for p in details.previous] if details else [],
         "position": position_block(details, now or fetched),
@@ -364,9 +389,13 @@ def trains_part(board: TrainBoard | None, fetched: datetime | None, status: dict
     rows, lookups = [], {}
     details = details or {}
     if board is not None and fetched is not None:
+        # The next train to depart is the first not cancelled, as the board lists them by time.
+        next_found = False
         for service in board.services:
             found = details.get(service.service_id) if service.service_id else None
-            row, lookup = train_row(service, fetched, walk, route_prefix, phrases, found, now, platforms)
+            is_next = not next_found and service.departure.status is not Status.CANCELLED
+            next_found = next_found or is_next
+            row, lookup = train_row(service, fetched, walk, route_prefix, phrases, found, now, platforms, is_next)
             row["arrives"] = train_arrival(service, filter_crs, *_train_times(service, fetched))
             rows.append(row)
             lookups[row["id"]] = lookup
