@@ -5,7 +5,17 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from twobells.dashboard.history import FILE_NAME, History, Observed, Stats, day_type, no_show_phrase, phrase
+from twobells.dashboard.history import (
+    FILE_NAME,
+    History,
+    Measures,
+    Observed,
+    Stats,
+    day_type,
+    measure,
+    no_show_phrase,
+    phrase,
+)
 
 FRIDAY = date(2026, 10, 9)
 TRAIN = "train|GLO>MAN|Manchester Piccadilly"
@@ -426,3 +436,60 @@ def test_no_shows_ignore_undecided_days_and_follow_bank_holidays(history):
 ])
 def test_no_show_phrase(without, days, kind, words):
     assert no_show_phrase(without, days, kind) == words
+
+
+# The industry's measures, for the Performance page.
+
+
+def test_measure_counts_the_industry_s_measures():
+    outcomes = [
+        ("2026-10-07", "on_time", 0),  # right time
+        ("2026-10-07", "on_time", -1),  # early: right time too
+        ("2026-10-08", "late", 2),  # T-3, not right time
+        ("2026-10-08", "late", 3),  # T-15, not T-3
+        ("2026-10-09", "late", 14),
+        ("2026-10-09", "late", 15),  # misses every measure
+        ("2026-10-09", "cancelled", None),  # counted, and misses every measure
+        ("2026-10-09", "late", None),  # "Delayed", no time: not counted
+        ("2026-10-09", "unknown", None),
+    ]
+    assert measure(outcomes, late_minutes=3) == Measures(
+        days=3, counted=7, right_time=2, within_3=3, within_15=5, on_time=3, cancelled=1, unknown=2)
+    assert measure(outcomes, late_minutes=15).on_time == 5  # on time by the dashboard's own threshold
+    assert measure([], late_minutes=3) == Measures(0, 0, 0, 0, 0, 0, 0, 0)
+
+
+def test_outcomes_are_final_departures_since_a_day(history):
+    for back in range(10):
+        _record(history, FRIDAY - timedelta(days=back), "late" if back else "on_time", delay=back)
+    _record(history, FRIDAY, "late", delay=5, scheduled="08:42")
+    history.observe("train", [_train(day=FRIDAY + timedelta(days=3))], _at("07:40", FRIDAY + timedelta(days=3)))
+    other = Observed("train|GLO|Hadfield", "09:00", FRIDAY, _at("09:00"), "on_time", 0, True, "Northern",
+                     "Hadfield", "2", None, None)
+    history.observe("train", [other], _at("08:59"))
+    history.observe("train", [], _at("09:01"))
+    _record_bus(history, FRIDAY, live=False)
+
+    found = history.outcomes("train", FRIDAY - timedelta(days=2))
+    assert sorted(found) == [
+        (TRAIN, "2026-10-07", "late", 2), (TRAIN, "2026-10-08", "late", 1), (TRAIN, "2026-10-09", "late", 5),
+        (TRAIN, "2026-10-09", "on_time", 0), ("train|GLO|Hadfield", "2026-10-09", "on_time", 0),
+    ]
+    assert len(history.outcomes("train", FRIDAY - timedelta(days=2), TRAIN)) == 4
+    assert history.outcomes("bus", FRIDAY) == [(BUS, "2026-10-09", "unknown", None)]
+    with pytest.raises(ValueError):
+        history.outcomes("tram", FRIDAY)
+    with pytest.raises(ValueError):
+        history.outcomes("train", _at("07:00"))
+
+
+def test_the_history_reader_reads_outcomes_once_there_is_a_history(tmp_path):
+    from twobells.dashboard.history import HistoryReader
+
+    reader = HistoryReader(tmp_path)
+    assert reader.outcomes("train", FRIDAY) == []
+    history = History(tmp_path)
+    _record(history, FRIDAY, "late", delay=4)
+    assert reader.outcomes("train", FRIDAY) == [(TRAIN, "2026-10-09", "late", 4)]
+    reader.close()
+    history.close()

@@ -1,6 +1,7 @@
 """How punctual each regular train and bus has been, kept in SQLite.
 
-So the dashboard can say "Late 4 of the last 10 weekdays (avg 6 min)". The
+So the dashboard can say "Late 4 of the last 10 weekdays (avg 6 min)", and
+its Performance page "Right Time 62% (31 of 50)" (measure()). The
 dashboard's pollers call observe() after each successful fetch with what the
 board showed; a failed fetch calls nothing, so nothing is decided from it.
 
@@ -123,6 +124,50 @@ class Stats(NamedTuple):
     on_time: int
     avg_late: float | None
     worst: int | None
+
+
+class Measures(NamedTuple):
+    """How departures ran, the way the rail industry counts it, over some days.
+
+    A departure whose delay isn't known (no time given, or a bus with no
+    tracker) is `unknown` and left out of the rest; `counted` are the
+    others, cancelled ones included, which the measures are out of, as the
+    industry counts a cancelled train as one that missed every measure.
+    Delays are whole minutes, so "under 3 minutes late" is 2 or less."""
+
+    days: int  # days with at least one outcome
+    counted: int  # cancelled, or with a known delay
+    right_time: int  # left at or before its booked time
+    within_3: int  # T-3: under 3 minutes late
+    within_15: int  # T-15: under 15 minutes late
+    on_time: int  # under late_minutes late: the dashboard's own "on time"
+    cancelled: int
+    unknown: int
+
+
+def measure(outcomes: list[tuple[str, str, int | None]], late_minutes: int) -> Measures:
+    """Measures of (day, status, delay_min) outcomes; on time is under `late_minutes` late."""
+    right_time = within_3 = within_15 = on_time = cancelled = unknown = 0
+    for _, status, delay_min in outcomes:
+        if status == "cancelled":
+            cancelled += 1
+        elif delay_min is None:
+            unknown += 1
+        else:
+            right_time += delay_min <= 0
+            within_3 += delay_min < 3
+            within_15 += delay_min < 15
+            on_time += delay_min < late_minutes
+    return Measures(
+        days=len({day for day, _, _ in outcomes}),
+        counted=len(outcomes) - unknown,
+        right_time=right_time,
+        within_3=within_3,
+        within_15=within_15,
+        on_time=on_time,
+        cancelled=cancelled,
+        unknown=unknown,
+    )
 
 
 def day_type(day: date, holidays: frozenset[date] = frozenset()) -> str:
@@ -373,6 +418,20 @@ class History:
             for day, status, delay_min, live, reason in rows
         ]
 
+    def outcomes(self, mode: str, since: date, route: str | None = None) -> list[tuple[str, str, str, int | None]]:
+        """(route, day, status, delay_min) of every final departure of `mode`
+        on or after `since`, of `route` only if given, for measure()."""
+        _mode(mode)
+        if not isinstance(since, date) or isinstance(since, datetime):
+            raise ValueError("since must be a date")
+        query = "SELECT route, day, status, delay_min FROM outcome WHERE mode = ? AND final = 1 AND day >= ?"
+        values: tuple = (mode, since.isoformat())
+        if route is not None:
+            query += " AND route = ?"
+            values += (route,)
+        with self._lock:
+            return self._db.execute(query, values).fetchall()
+
     def purge(self, now: datetime, days: int = 90) -> None:
         """Forget departures from more than `days` days before `now`."""
         oldest = (_naive(now, "now").date() - timedelta(days=days)).isoformat()
@@ -381,21 +440,29 @@ class History:
 
 
 class HistoryReader:
-    """History.recent from the history another process writes (the fetch
-    service, on a Pi), opened read-only the first time it is there."""
+    """History.recent and History.outcomes from the history another process
+    writes (the fetch service, on a Pi), opened read-only the first time it is there."""
 
     def __init__(self, folder: Path | str) -> None:
         self._folder = Path(folder)
         self._lock = threading.Lock()
         self._history: History | None = None
 
-    def recent(self, mode: str, route: str, scheduled: str, days: int = 90) -> list[dict]:
-        """As History.recent; nothing while there is no history yet."""
+    def _opened(self) -> History | None:
         with self._lock:
             if self._history is None:
                 self._history = History.reader(self._folder)
-            history = self._history
+            return self._history
+
+    def recent(self, mode: str, route: str, scheduled: str, days: int = 90) -> list[dict]:
+        """As History.recent; nothing while there is no history yet."""
+        history = self._opened()
         return [] if history is None else history.recent(mode, route, scheduled, days)
+
+    def outcomes(self, mode: str, since: date, route: str | None = None) -> list[tuple[str, str, str, int | None]]:
+        """As History.outcomes; nothing while there is no history yet."""
+        history = self._opened()
+        return [] if history is None else history.outcomes(mode, since, route)
 
     def close(self) -> None:
         with self._lock:
