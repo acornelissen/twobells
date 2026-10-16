@@ -507,20 +507,10 @@ def test_no_details_are_asked_for_when_the_board_fails(tmp_path):
 # The Delay Repay watch
 
 
-class ArrivalBoard:
-    def __init__(self):
-        self.asked = []
-
-    def arrivals(self, crs, from_crs):
-        self.asked.append((crs, from_crs))
-        return []
-
-
-def watching(tmp_path, now=TONIGHT, train_filter="MAN", options=None):
-    """A collector with a real history, the arrival board, and `train_filter`."""
-    setup = Setup(tmp_path, now=now, options=options)
-    setup.arrivals = ArrivalBoard()
-    setup.settings.train_filter, setup.settings.train_arrivals = train_filter, setup.arrivals
+def watching(tmp_path, now=TONIGHT, train_filter="MAN", options=None, details=True):
+    """A collector with a real history, `train_filter`, and a Service Details key if `details`."""
+    setup = Setup(tmp_path, now=now, options=options, details=details)
+    setup.settings.train_filter = train_filter
     history = History(tmp_path / "history")
     collector = Collector(setup.settings, setup.hub, history, clock=setup.clock, fetch_holidays=setup._holidays,
                           random=lambda: 0.5, monotonic=setup.monotonic)
@@ -533,15 +523,21 @@ def leave_first_train(setup):
                                              if s["serviceID"] != IDS[1]]
 
 
+def asked_after_it_left(setup):
+    """How many times the 22:25's details were asked for once it had left: by the watch alone,
+    as the trains' positions ask only about trains on the board."""
+    return setup.details.asked.count(IDS[1]) - 1  # the positions asked once while it was on the board
+
+
 def test_each_train_poll_watches_the_trains_to_the_filter_station(tmp_path):
     setup, history, collector = watching(tmp_path)
     collector.poll_trains()
     assert [t.scheduled for t in history.following(datetime(2026, 10, 9, 23, 30))] == ["22:25", "22:55"]
-    assert setup.arrivals.asked == []  # nothing due yet
+    assert asked_after_it_left(setup) == 0
     leave_first_train(setup)
     setup.clock.now = datetime(2026, 10, 9, 22, 50, tzinfo=LONDON)
     collector.poll_trains()
-    assert setup.arrivals.asked == [("MAN", "GLO")]  # the 22:25, due at 22:57
+    assert asked_after_it_left(setup) == 1  # the 22:25, due at 22:57
     history.close()
 
 
@@ -551,23 +547,26 @@ def test_the_watch_asks_nothing_in_a_quiet_window(tmp_path):
     collector.poll_trains()
     leave_first_train(setup)
     setup.clock.now = datetime(2026, 10, 9, 22, 50, tzinfo=LONDON)
+    asked = len(setup.details.asked)
     # It runs only in the trains' poller, which a quiet window holds; it has none of its own.
     pollers = collector.pollers()
     assert set(pollers) == {"trains", "buses", "weather", "upkeep", "heartbeat"}
     assert pollers["trains"].step() == 5.0
-    assert setup.arrivals.asked == []
     pollers["upkeep"].step()  # which settles arrivals, asking nothing
-    assert setup.arrivals.asked == []
+    assert len(setup.details.asked) == asked
     history.close()
 
 
-def test_without_a_filter_station_nothing_is_watched_or_asked(tmp_path):
-    setup, history, collector = watching(tmp_path, train_filter=None)
+@pytest.mark.parametrize("train_filter, details", [(None, True), ("MAN", False)])
+def test_without_a_filter_station_or_a_details_key_there_is_no_watch(tmp_path, train_filter, details):
+    setup, history, collector = watching(tmp_path, train_filter=train_filter, details=details)
     collector.poll_trains()
     leave_first_train(setup)
     setup.clock.now = datetime(2026, 10, 9, 22, 50, tzinfo=LONDON)
     collector.poll_trains()
-    assert setup.arrivals.asked == [] and history.following(datetime(2026, 10, 10, 9, 0)) == []
+    assert history.following(datetime(2026, 10, 10, 9, 0)) == []  # nothing recorded either
+    if details:
+        assert asked_after_it_left(setup) == 0
     history.close()
 
 

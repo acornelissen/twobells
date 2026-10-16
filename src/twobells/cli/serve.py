@@ -355,9 +355,10 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
             history,
             lambda: datetime.now(zone) if zone is not None else datetime.now().astimezone(),
             {"train": options.late_minutes_train, "bus": options.late_minutes_bus},
-            # The Delay Repay list's station: the filter station, if there are trains and one.
+            # The Delay Repay list: the filter station, followed there with Service Details.
             station=dash.train_filter if dash is not None and dash.train is not None else None,
             trains=dash is not None and dash.train is not None,
+            details=dash is not None and dash.train_details is not None,
         )
 
     watch = None

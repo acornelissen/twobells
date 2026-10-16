@@ -6,7 +6,8 @@ industry reports: Right Time, T-3, T-15 and cancellations (history.measure()).
 Buses get the same, with on time meaning under the bus late threshold.
 Each departure's sheet gets its route's figures too (route()). And the
 Delay Repay watch: the trains that reached the filter station 15 or more
-minutes late over the last 28 days (repay.py), or why it is off.
+minutes late over the last 28 days (repay.py), or why it is off: no
+trains, no filter station, or no Service Details key to follow them with.
 
 Worked out from the punctuality history each time it is asked for; nothing
 is kept. A span with fewer than ENOUGH_DAYS days in it says so instead.
@@ -94,17 +95,18 @@ def delay_repay(arrivals: list[dict]) -> list[dict]:
 
 class Performance:
     """The figures from `source`, as of `now()` (an aware local datetime),
-    late from `late_minutes` by mode ("train", "bus"). `station` is the
-    filter station, for the Delay Repay list; without one, `trains` says
-    whether that is because there are no trains."""
+    late from `late_minutes` by mode ("train", "bus"). For the Delay Repay
+    list: `trains`, whether there are any; `station`, the filter station;
+    `details`, whether there is a Service Details key, which it needs."""
 
     def __init__(self, source: Outcomes, now: Callable[[], datetime], late_minutes: Mapping[str, int],
-                 station: str | None = None, trains: bool = False) -> None:
+                 station: str | None = None, trains: bool = False, details: bool = False) -> None:
         self._source = source
         self._now = now
         self._late = dict(late_minutes)
         self._station = station
         self._trains = trains
+        self._details = details
 
     def _since(self, today: date) -> date:
         return today - timedelta(days=max(SPANS) - 1)
@@ -134,10 +136,16 @@ class Performance:
         since = self._since(today)
         found: dict = {"station": self._station, "station_name": None, "since": since.isoformat(),
                        "least_minutes": LEAST, "off": None, "trains": []}
-        if self._station is None:
-            found["off"] = "no_filter" if self._trains else "no_trains"
+        station = self._station
+        if not self._trains:
+            found["off"] = "no_trains"
+        elif station is None:
+            found["off"] = "no_filter"
+        elif not self._details:
+            found["off"] = "no_details_key"
+        if found["off"] is not None or station is None:
             return found
-        arrivals = self._source.arrivals(self._station, since)
+        arrivals = self._source.arrivals(station, since)
         if arrivals:
             found["station_name"] = arrivals[0]["station_name"]
         found["trains"] = delay_repay(arrivals)

@@ -12,10 +12,11 @@ browser has used the dashboard in the last ten minutes.
 
 With a Service Details key, each train poll also asks where the first few
 trains are (see _refresh_details); a refused key turns that off for a while.
-With a filter station and a history, each train poll also feeds the Delay
-Repay watch (repay.ArrivalWatch), which follows trains that have left until
-they reach the filter station; it asks Darwin only from the train poller, so
-never in a quiet window, and never without a filter station.
+With a filter station, a Service Details key and a history, each train
+poll also feeds the Delay Repay watch (repay.ArrivalWatch), which follows
+trains that have left until they reach the filter station; it asks Darwin
+only from the train poller, so never in a quiet window, and without all
+three there is no watch.
 
 Disruptions (see sources/disruptions.py) are polled on their own threads: bus
 situations every 10 minutes, rail incidents every 30. Which are ours
@@ -231,9 +232,8 @@ class Collector:
         self._details = TrainDetails(settings.train_details, monotonic) if settings.train_details else None
         # When trains reached the filter station, for the Performance page's Delay Repay list.
         self._arrival_watch = None
-        if history is not None and settings.train is not None and filter_crs:
-            self._arrival_watch = ArrivalWatch(history, crs, filter_crs, self._route_prefix,
-                                               details=settings.train_details, arrivals=settings.train_arrivals,
+        if history is not None and settings.train is not None and filter_crs and settings.train_details:
+            self._arrival_watch = ArrivalWatch(history, filter_crs, self._route_prefix, settings.train_details,
                                                monotonic=monotonic)
         self._build_timetable = build_timetable
         # The most of each timetable file upkeep reads and parses: the install's (settings/installs.py).

@@ -18,6 +18,8 @@ import { bySpan, cells, fitTables, headRow, lateMinutes, scrolling, spanName } f
 const MAX_ROUTES = 50;
 const MAX_REPAY = 100;
 const COMPENSATION = "https://www.nationalrail.co.uk/help-and-assistance/compensation-and-refunds/";
+// The guide to the Service Details key; tests/test_docs.py checks the heading is there.
+const DETAILS_GUIDE = "https://github.com/acornelissen/twobells/blob/main/docs/keys.md#rail-data-marketplace-service-details";
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DAY = /^\d{4}-\d\d-\d\d$/;
 const PARTS = [
@@ -99,6 +101,13 @@ export function renderRepay(part) {
     return;
   }
   const where = str(repay.station_name) || str(repay.station);
+  if (repay.off !== null) {
+    // "no_details_key", or anything else that says it is off.
+    fill(body, h("p", {}, `Delay Repay needs a Service Details key, to follow each train to ${where} after it `
+      + "leaves your station. Add one on the Keys settings page: ",
+      h("a", { href: DETAILS_GUIDE, rel: "noopener noreferrer" }, "how to get a Service Details key"), "."));
+    return;
+  }
   const trains = list(repay.trains).map(repayTrain).filter(Boolean).slice(0, MAX_REPAY);
   if (!trains.length) {
     fill(body, h("p", {}, `No train reached ${where} 15 or more minutes late in the last 28 days.`));

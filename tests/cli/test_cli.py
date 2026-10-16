@@ -1328,16 +1328,22 @@ def test_serve_on_a_pi_shows_the_dashboard_the_fetch_service_hands_over(tmp_path
     assert os.listdir(run / "requests")  # the browser was said to the fetch service
 
 
+@pytest.mark.parametrize("details_key, off", [("details-key", None), (None, "no_details_key")])
 def test_serve_gives_the_performance_page_the_filter_station_for_delay_repay(tmp_path, served, pi_with_the_dashboard,
-                                                                             dashboard_config):
+                                                                             dashboard_config, monkeypatch,
+                                                                             details_key, off):
     from twobells.dashboard.history import History
 
+    if details_key:
+        monkeypatch.setenv("RDM_DETAILS_API_KEY", details_key)
+    else:
+        monkeypatch.delenv("RDM_DETAILS_API_KEY", raising=False)
     args, folder, _ = pi_with_the_dashboard
     dashboard_config.write_text('title = "Glossop"\n[train]\ncrs = "GLO"\nfilter_crs = "MAN"\n')
     History(folder).close()
     assert main(args) == 0
     repay = json.loads(ask(served["app"], "/api/performance")[2])["delay_repay"]
-    assert (repay["station"], repay["off"], repay["trains"]) == ("MAN", None, [])
+    assert (repay["station"], repay["off"], repay["trains"]) == ("MAN", off, [])
 
 
 def test_a_pi_turns_its_dashboard_on_and_off_without_starting_again(tmp_path, served, pi_with_the_dashboard):

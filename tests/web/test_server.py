@@ -181,7 +181,7 @@ def make_app(static_dir, **overrides):
         "healthy": lambda: True,
         "recent": Recent(),
         "performance": Performance(Outcomes(), lambda: datetime(2026, 10, 9, 18, 0, tzinfo=UTC),
-                                   {"train": 3, "bus": 2}, station="MAN", trains=True),
+                                   {"train": 3, "bus": 2}, station="MAN", trains=True, details=True),
         "history_days": 90,
         "allowed_hosts": frozenset({"departures.example.com"}),
         "heartbeat": 0.2,

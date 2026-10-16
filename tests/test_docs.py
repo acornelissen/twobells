@@ -86,6 +86,14 @@ def test_the_wizards_key_guides_point_at_headings_that_exist():
         assert anchor.removeprefix("#") in anchors(DOCS / "keys.md"), name
 
 
+def test_the_performance_page_s_key_guide_points_at_a_heading_that_exists():
+    from twobells.setup.api import KEY_DOCS
+
+    script = (ROOT / "src" / "twobells" / "dashboard_static" / "performance.js").read_text()
+    [anchor] = re.findall(re.escape(KEY_DOCS) + r"#([a-z0-9-]+)", script)
+    assert anchor in anchors(DOCS / "keys.md")
+
+
 def test_the_package_points_at_the_guide():
     urls = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["urls"]
     assert urls["Documentation"].endswith("/blob/main/docs/user-guide.md")

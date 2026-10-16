@@ -153,7 +153,7 @@ def test_delay_repay_lists_trains_15_or_more_minutes_late_there(history):
     _arrived(history, FRIDAY - timedelta(days=2), "07:42", "08:05", "08:40", operator="TransPennine Express")
     _arrived(history, FRIDAY - timedelta(days=30), "07:42", "08:05", "09:05")  # before the 28 days
     _arrived(history, FRIDAY, "09:42", "10:05", "11:00", station="HDF")  # not the filter station
-    assert _repay(history, station="MAN", trains=True) == {
+    assert _repay(history, station="MAN", trains=True, details=True) == {
         "station": "MAN", "station_name": "Manchester Piccadilly", "since": "2026-09-12", "least_minutes": 15,
         "off": None,
         "trains": [
@@ -168,18 +168,21 @@ def test_delay_repay_lists_trains_15_or_more_minutes_late_there(history):
 
 def test_delay_repay_after_midnight_and_at_most_so_many(history, monkeypatch):
     _arrived(history, FRIDAY - timedelta(days=1), "23:30", "23:55", "00:20")  # there the next day
-    [train] = _repay(history, station="MAN", trains=True)["trains"]
+    [train] = _repay(history, station="MAN", trains=True, details=True)["trains"]
     assert (train["day"], train["booked"], train["arrived"], train["minutes_late"]) == ("2026-10-08", "23:55",
                                                                                          "00:20", 25)
     monkeypatch.setattr(performance, "MAX_LISTED", 1)
     _arrived(history, FRIDAY, "07:42", "08:05", "08:40")
-    assert len(_repay(history, station="MAN", trains=True)["trains"]) == 1  # the latest
+    assert len(_repay(history, station="MAN", trains=True, details=True)["trains"]) == 1  # the latest
 
 
 def test_delay_repay_says_why_it_is_off(history):
     _arrived(history, FRIDAY, "08:42", "09:05", "09:40")
-    no_filter = _repay(history, trains=True)
+    no_filter = _repay(history, trains=True, details=True)
     assert (no_filter["off"], no_filter["station"], no_filter["trains"]) == ("no_filter", None, [])
     assert _repay(history)["off"] == "no_trains"
-    nothing = _repay(history, station="SHF", trains=True)
+    # Only Service Details can say when a train that has left got there.
+    no_key = _repay(history, station="MAN", trains=True)
+    assert (no_key["off"], no_key["station"], no_key["trains"]) == ("no_details_key", "MAN", [])
+    nothing = _repay(history, station="SHF", trains=True, details=True)
     assert (nothing["off"], nothing["station_name"], nothing["trains"]) == (None, None, [])

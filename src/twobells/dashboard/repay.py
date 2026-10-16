@@ -2,6 +2,12 @@
 Performance page can list those that got there 15 or more, or 30 or more,
 minutes late, the thresholds train companies pay Delay Repay from.
 
+It needs a filter station and a Service Details key (RDM_DETAILS_API_KEY):
+once a train has left your station, only its service details say when it
+got there. (The arrival boards are another RDM product, which the Live
+Departure Board key can't ask.) Without either, it isn't built, nothing is
+asked, and the Performance page says why it is off.
+
 Each train poll (Collector.poll_trains, so inside the dashboard's own hours:
 never in a quiet window nobody is using it in) hands its board to
 ArrivalWatch.poll:
@@ -9,15 +15,12 @@ ArrivalWatch.poll:
      with its booked time there and Darwin's estimate (History.watch), from
      the rich board's calling point. That costs nothing extra.
   2. A train that has left the board is followed until it gets there, only
-     while it is due there within FOLLOW_AHEAD or overdue: with a Service
-     Details key, by asking for that train's details (one ask per train);
-     otherwise by one ask for the filter station's arrival board of trains
-     from your station (sources/arrivalboard.py), whichever trains are due.
+     while it is due there within FOLLOW_AHEAD or overdue, by asking for its
+     service details: one ask per train due, per poll.
   3. History.settle decides each arrival: Darwin's reported time, or else
      its last estimate once that has passed (history.py has the rules).
 A key that is refused turns following off for six hours; anything else
-that fails is tried again on the next poll. With no filter station there
-is nothing to watch, and nothing is asked.
+that fails is tried again on the next poll.
 
 Rail replacement buses are left out: Darwin's times for them are rough, and
 the train company's Delay Repay rules for a bus vary.
@@ -30,7 +33,6 @@ from collections.abc import Callable
 from datetime import datetime
 
 from ..core.model import Status
-from ..sources.arrivalboard import Arrival, ArrivalBoard, ArrivalsRefused
 from ..sources.darwin import _CLOCK, CallingPoint, DetailsSource, DetailsUnavailable, TrainBoard
 from .history import Following, History, Report, Watched
 from .snapshot import clock_at, train_route
@@ -98,28 +100,16 @@ def _point_there(points: tuple[CallingPoint, ...], station: str) -> CallingPoint
     return next((p for p in points if p.crs == station), None)
 
 
-def _on_board(train: Following, arrivals: list[Arrival]) -> Arrival | None:
-    """The train on the arrival board: by its service ID, else by when it left your station."""
-    if train.identity:
-        found = next((a for a in arrivals if a.service_id == train.identity), None)
-        if found is not None:
-            return found
-    return next((a for a in arrivals if a.departs == train.scheduled), None)
-
-
 class ArrivalWatch:
-    """Records and follows the trains that call at `station` (the filter
-    station) from `crs` (yours), in `history`."""
+    """Records the trains that call at `station` (the filter station) in
+    `history`, and follows them there with `details`."""
 
-    def __init__(self, history: History, crs: str, station: str, route_prefix: str, *,
-                 details: DetailsSource | None = None, arrivals: ArrivalBoard | None = None,
+    def __init__(self, history: History, station: str, route_prefix: str, details: DetailsSource, *,
                  monotonic: Callable[[], float] = time.monotonic) -> None:
         self._history = history
-        self._crs = crs
         self._station = station
         self._prefix = route_prefix
         self._details = details
-        self._arrivals = arrivals
         self._monotonic = monotonic
         self._off_until: float | None = None
 
@@ -138,33 +128,20 @@ class ArrivalWatch:
         self._history.settle(local)
         return errors
 
-    def _off(self) -> bool:
-        return self._off_until is not None and self._monotonic() < self._off_until
-
-    def _refused(self, error: Exception) -> list[Exception]:
-        self._off_until = self._monotonic() + OFF_FOR
-        return [error]
-
     def _follow(self, due: list[Following], now: datetime) -> list[Exception]:
-        if self._off():
-            return []
-        if self._details is not None:
-            return self._by_details(self._details, due, now)
-        if self._arrivals is not None:
-            return self._by_arrivals(self._arrivals, due, now)
-        return []
-
-    def _by_details(self, client: DetailsSource, due: list[Following], now: datetime) -> list[Exception]:
         """One ask per train due, for its journey; a train Darwin no longer
         knows is left to History.settle."""
+        if self._off_until is not None and self._monotonic() < self._off_until:
+            return []
         errors: list[Exception] = []
         for train in due:
             if not train.identity:
                 continue
             try:
-                found = client.details(train.identity)
+                found = self._details.details(train.identity)
             except DetailsUnavailable as error:
-                return errors + self._refused(error)
+                self._off_until = self._monotonic() + OFF_FOR
+                return [*errors, error]
             except Exception as error:  # noqa: BLE001 - this train is tried again next poll
                 errors.append(error)
                 continue
@@ -173,18 +150,3 @@ class ArrivalWatch:
                 report = _report(train.booked, point.expected, point.actual, point.cancelled)
                 self._history.report(train, report, now)
         return errors
-
-    def _by_arrivals(self, source: ArrivalBoard, due: list[Following], now: datetime) -> list[Exception]:
-        """One ask for the arrival board, for every train due; one no longer
-        on it is left to History.settle."""
-        try:
-            board = source.arrivals(self._station, self._crs)
-        except ArrivalsRefused as error:
-            return self._refused(error)
-        except Exception as error:  # noqa: BLE001 - asked again next poll
-            return [error]
-        for train in due:
-            found = _on_board(train, board)
-            if found is not None:
-                self._history.report(train, _report(train.booked, found.eta, found.ata, found.cancelled), now)
-        return []

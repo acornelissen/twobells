@@ -758,7 +758,7 @@ PERFORMANCE_PART = {
 }
 DELAY_REPAY = {
     "station": Opt(lambda v: isinstance(v, str) and bool(re.fullmatch(r"[A-Z]{3}", v))),
-    "station_name": Opt(str), "since": day, "least_minutes": one_of(15), "off": Opt(one_of("no_filter", "no_trains")),
+    "station_name": Opt(str), "since": day, "least_minutes": one_of(15), "off": Opt(one_of("no_filter", "no_trains", "no_details_key")),
     "trains": [{
         "day": day, "scheduled": hhmm, "destination": str, "operator": str, "booked": hhmm, "arrived": hhmm,
         "minutes_late": integer, "band": one_of(15, 30), "reported": bool,
@@ -2912,6 +2912,11 @@ def test_the_delay_repay_section_says_why_it_is_off_or_empty():
         console.log(JSON.stringify([
           said_with({ ...repay, station: null, station_name: null, off: "no_filter", trains: [] }),
           said_with({ ...repay, station: "SHF", station_name: null, trains: [] }),
+          said_with({ ...repay, off: "no_details_key", trains: [] }),
+          (() => {
+            const link = elements($("perf-repay-body")).find((el) => el.nodeName === "A");
+            return [link.getAttribute("href"), link.getAttribute("rel")];
+          })(),
           said_with({ ...repay, station: null, off: "no_trains", trains: [] })[0],
           said_with(undefined)[0],
         ]));
@@ -2920,6 +2925,10 @@ def test_the_delay_repay_section_says_why_it_is_off_or_empty():
         [False, "Delay Repay needs to know where your journeys end. Set Only trains calling at on the Trains and "
                 "buses settings page, and the dashboard starts noting when your trains get there."],
         [False, "No train reached SHF 15 or more minutes late in the last 28 days."],
+        [False, "Delay Repay needs a Service Details key, to follow each train to Manchester Piccadilly after it "
+                "leaves your station. Add one on the Keys settings page: how to get a Service Details key."],
+        ["https://github.com/acornelissen/twobells/blob/main/docs/keys.md#rail-data-marketplace-service-details",
+         "noopener noreferrer"],
         True,
         True,
     ]

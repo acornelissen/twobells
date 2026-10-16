@@ -12,9 +12,7 @@ from twobells.dashboard.config import (
 from twobells.settings.config import ConfigError
 from twobells.settings.overlay import OverlayError, save_to
 from twobells.settings.store import Store
-from twobells.sources.arrivalboard import ArrivalBoard
 from twobells.sources.bodsbus import BodsBusSource
-from twobells.sources.darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL
 from twobells.sources.darwin import DETAILS_BASE_URL, DarwinSource, ServiceDetailsClient
 from twobells.sources.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource
 from twobells.sources.weather import OpenMeteoSource
@@ -303,26 +301,6 @@ def test_no_details_client_without_trains(tmp_path, opened):
     path.write_text('title = "Weather only"\n[weather]\nlat = 53.4\nlon = -1.9\n')
     dash = load(path, tmp_path / "dash", env={"RDM_DETAILS_API_KEY": "details-key"}, opened=opened)
     assert dash.train_details is None
-    assert dash.train_arrivals is None
-
-
-# The filter station's arrival board, for the Delay Repay watch
-
-
-def test_a_filter_station_builds_the_arrival_board_with_the_board_s_key_and_address(config, tmp_path, opened):
-    dash = load(config, tmp_path / "dash", opened=opened)
-    assert dash.train_filter == "MAN"
-    assert isinstance(dash.train_arrivals, ArrivalBoard)
-    assert (dash.train_arrivals._api_key, dash.train_arrivals._base_url) == ("rail-key", DARWIN_BASE_URL)
-    config.write_text(config.read_text().replace('rows = 3\n', 'rows = 3\nbase_url = "https://example.org/ldb/"\n', 1))
-    elsewhere = load(config, tmp_path / "dash2", opened=opened)
-    assert elsewhere.train_arrivals is not None and elsewhere.train_arrivals._base_url == "https://example.org/ldb"
-
-
-def test_no_arrival_board_without_a_filter_station(config, tmp_path, opened):
-    config.write_text(config.read_text().replace('filter_crs = "man"\n', ""))
-    dash = load(config, tmp_path / "dash", opened=opened)
-    assert (dash.train_filter, dash.train_arrivals) == (None, None)
 
 
 @pytest.mark.parametrize("key", ["abc\r\nX-Evil: 1", "abc def", "abc\x00def", "abc def"])
