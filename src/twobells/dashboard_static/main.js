@@ -1,11 +1,11 @@
 // Wires the page together: the connection, each snapshot's render, the
 // one-second tick, the Look picker, and the row buttons. On a wall tablet
-// (kiosk.js) there are no buttons, reminders or area map, and the page dims,
-// shifts, warns and reloads by itself.
+// (kiosk.js) there are no buttons, reminders or area map, and the page dims
+// to a platform clock, shifts, warns and reloads by itself.
 
 import { $, setText, str, obj, focusKey, refocus } from "./dom.js";
 import { connect, STATE } from "./api.js";
-import { clockText, parseAt } from "./time.js";
+import { clockParts, clockText, parseAt } from "./time.js";
 import { applyRowStrips, lastBuses, renderBuses, renderTrains, stopNames, tickBoards, toggleMore } from "./board.js";
 import { tickStrips } from "./strip.js";
 import { renderWeather } from "./weather.js";
@@ -18,7 +18,7 @@ import { markBusRows, renderDisruptions } from "./disruptions.js";
 import { renderArea, setUpArea } from "./area.js";
 import { icon } from "./icons.js";
 import { noteConnection, pill, placeName } from "./header.js";
-import { applyDim, drawBanner, isKiosk, startKiosk } from "./kiosk.js";
+import { applyDim, drawBanner, drawNightClock, isKiosk, startKiosk } from "./kiosk.js";
 import { setUpLook } from "./look.js";
 
 const kiosk = isKiosk();
@@ -114,6 +114,7 @@ function render(data) {
 
 function tick() {
   setText($("clock"), clockText());
+  if (kiosk) drawNightClock(document.documentElement, clockParts());
   renderConnection();
   if (!snapshot) return;
   if (tickBoards()) redrawBoards();

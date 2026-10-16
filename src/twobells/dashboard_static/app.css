@@ -1403,6 +1403,41 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
 :root[data-kiosk] .dis-line { list-style: none; cursor: auto; pointer-events: none; }
 :root[data-kiosk] .dis-line::-webkit-details-marker { display: none; }
 
+/* --- The night clock: a wall tablet's in its quiet windows (kiosk.js,
+   platformclock.js), large in place of the departures, with the time in
+   words under it. The classic platform clock's white face, black batons and
+   hands and red seconds hand, dimmed as the page is, the same in every look;
+   it shifts with the page against burn-in. The hands turn by the custom
+   properties platformclock.js sets; the seconds hand sweeps by a transition,
+   which reduced motion (below) turns off, so it ticks. --- */
+
+.night-clock { display: none; }
+:root[data-kiosk][data-dim] main,
+:root[data-kiosk][data-dim] .top .clock { display: none; }
+:root[data-kiosk][data-dim] .night-clock {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-4);
+  min-height: 0;
+  padding: var(--s-4);
+  --pc-face: #999999;
+  --pc-ink: #000000;
+  --pc-red: #8c1c13;
+}
+.night-clock .platform-clock { flex: 0 1 auto; width: auto; height: min(70dvh, 80vw); min-height: 0; aspect-ratio: 1; }
+.pc-face { fill: var(--pc-face); }
+.pc-rim { stroke: var(--pc-ink); }
+.pc-ink { fill: var(--pc-ink); }
+.pc-red { fill: var(--pc-red); }
+.pc-hand { transform-box: view-box; transform-origin: 100px 100px; }
+.pc-hour { transform: rotate(var(--pc-hour, 0deg)); }
+.pc-minute { transform: rotate(var(--pc-minute, 0deg)); }
+.pc-second { transform: rotate(var(--pc-second, 0deg)); transition: transform 1s linear; }
+.night-time { margin: 0; font-size: 3rem; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; color: var(--fg); }
+
 /* --- Motion --- */
 
 @media (prefers-reduced-motion: reduce) {

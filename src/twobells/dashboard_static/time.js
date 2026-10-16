@@ -62,10 +62,19 @@ export function dayText(day) {
   return m ? dayFormat.format(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) : text;
 }
 
-// The board's wall-clock time now, as "07:12".
-export function clockText() {
+// The board's wall clock now, as a Date whose UTC fields read it.
+function boardDate() {
   const shift = (boardOffsetMin ?? -new Date().getTimezoneOffset()) * 60000;
-  return new Date(now() + shift).toISOString().slice(11, 16);
+  return new Date(now() + shift);
+}
+
+// The board's wall-clock time now, as "07:12".
+export const clockText = () => boardDate().toISOString().slice(11, 16);
+
+// The board's wall-clock time now, as [hour, minute, second].
+export function clockParts() {
+  const at = boardDate();
+  return [at.getUTCHours(), at.getUTCMinutes(), at.getUTCSeconds()];
 }
 
 // "in 5 min", "in 1 h 5 min", "now", or "2 min ago". Whole minutes rounded

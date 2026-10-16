@@ -70,7 +70,7 @@ How the board is doing is on the [Overview](#overview), under **On the board**: 
   - **Position strips in each row:** on or off. On, each departure row has a small drawing of its stops with the train or bus where it is; off, the rows keep their words without it. A wall tablet never shows them.
   - Advanced: **Check for trains every** and **Check for buses every** so many seconds; **Check the forecast every** so many minutes; **Count trains as late from** and **Count buses as late from** so many minutes, for the punctuality history; **Keep punctuality history for** so many days (1 to 3650).
 - **Quiet hours**
-  - **When to stop checking:** rows of days and times, as for the board's checking times; 01:00 to 05:00 every day unless you change it. The dashboard stops checking for departures and the weather then, unless a browser has it open: a wall tablet keeps it checking, and dims. Leave every row empty to check all the time.
+  - **When to stop checking:** rows of days and times, as for the board's checking times; 01:00 to 05:00 every day unless you change it. The dashboard stops checking for departures and the weather then, unless a browser has it open: a wall tablet keeps it checking, and dims to a [platform clock](dashboard.md#wall-tablet-kiosk). Leave every row empty to check all the time.
 
 The same settings can go under `[dashboard]` in `config.toml`: see [The dashboard's settings](configuration.md#the-dashboards-settings).
 

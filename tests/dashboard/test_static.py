@@ -3855,6 +3855,89 @@ def test_a_wall_tablet_dims_while_the_snapshot_says_a_quiet_window_is_on():
         assert f':root[data-kiosk][data-dim][data-theme="{look}"] {{' in css
 
 
+NIGHT_CLOCK = """
+import { h } from "./dom.js";
+import { drawNightClock } from "./kiosk.js";
+const root = { dataset: { kiosk: "on" } };
+const box = h("div", { id: "night-clock", class: "night-clock" });
+document.body.append(box);
+const face = () => box.childNodes[0];
+const hands = () => ["--pc-hour", "--pc-minute", "--pc-second"].map((name) => face().style.getPropertyValue(name));
+"""
+
+
+@needs_node
+def test_a_wall_tablet_shows_a_platform_clock_while_it_is_dimmed():
+    found = run_js(NIGHT_CLOCK + """
+        drawNightClock(root, [7, 24, 13]);
+        const before = box.childNodes.length;
+        root.dataset.dim = "on";
+        drawNightClock(root, [7, 24, 13]);
+        const first = { hands: hands(), said: spoken(box).trim(), datetime: byClass(box, "night-time")[0].childNodes[1].getAttribute("datetime") };
+        drawNightClock(root, [7, 24, 14]);
+        const built = face();
+        drawNightClock(root, [7, 24, 15]);
+        console.log(JSON.stringify({
+          before, first, next: hands(), same: face() === built, parts: box.childNodes.map((el) => el.nodeName),
+          drawing: [face().getAttribute("aria-hidden"), face().getAttribute("viewBox")],
+          seconds: byClass(face(), "pc-second").length, red: byClass(face(), "pc-red").length,
+          batons: face().childNodes.filter((el) => el.getAttribute("class") === "pc-ink").length,
+        }));
+    """)
+    # Nothing until the page dims; then the face, built once, and the time in words.
+    assert found["before"] == 0
+    assert found["parts"] == ["svg", "P"] and found["same"] is True
+    assert found["first"]["said"] == "Time now: 07:24" and found["first"]["datetime"] == "07:24"
+    # 07:24:13: the hour hand past 7, the minute hand past 24, the seconds hand at 13.
+    assert found["first"]["hands"] == ["222.11deg", "145.3deg", "78deg"]
+    assert found["next"] == ["222.13deg", "145.5deg", "90deg"]
+    # Hidden from screen readers (the words say it); 12 hour and 48 minute batons.
+    assert found["drawing"] == ["true", "0 0 200 200"]
+    assert found["seconds"] == 1 and found["red"] == 2 and found["batons"] == 60
+
+
+@needs_node
+def test_the_platform_clock_s_seconds_hand_only_ever_goes_forwards():
+    found = run_js(NIGHT_CLOCK + """
+        import { onwards } from "./platformclock.js";
+        root.dataset.dim = "on";
+        const seen = [];
+        for (const second of [58, 59, 0, 1]) {
+          drawNightClock(root, [6, 59 + (second < 30 ? 1 : 0), second]);
+          seen.push(hands()[2]);
+        }
+        console.log(JSON.stringify({ seen, wraps: [onwards(null, 6), onwards(354, 0), onwards(714, 12), onwards(10, 10)] }));
+    """)
+    # From 59 s to 0 s it sweeps on 6 degrees, not 354 back round the face.
+    assert found["seen"] == ["348deg", "354deg", "360deg", "366deg"]
+    assert found["wraps"] == [6, 360, 732, 10]
+
+
+def test_the_night_clock_takes_the_departures_place_dimmed_and_ticks_with_reduced_motion():
+    # While dimmed, the clock in place of the departures (and the header's
+    # own clock); otherwise never shown.
+    assert _css_value(".night-clock", "display") == "none"
+    assert "display: none" in " ".join(_css_rules(":root[data-kiosk][data-dim] main"))
+    assert _css_value(":root[data-kiosk][data-dim] .top .clock", "display") == "none"
+    assert _css_value(":root[data-kiosk][data-dim] .night-clock", "display") == "flex"
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert re.search(r'</main>\s*<div id="night-clock" class="night-clock"></div>', html)
+    # It is in the body, so it shifts with the page against burn-in.
+    assert "translate(var(--shift-x, 0px), var(--shift-y, 0px))" in " ".join(_css_rules(":root[data-kiosk] body"))
+    # The seconds hand sweeps by a transition, which reduced motion turns off: it ticks.
+    assert _css_value(".pc-second", "transition") == "transform 1s linear"
+    assert "animation" not in " ".join(_css_rules(".pc-"))
+    motion = re.search(r"@media \(prefers-reduced-motion: reduce\) \{\s*\*, \*::before, \*::after \{([^}]*)\}",
+                       (STATIC / "app.css").read_text(encoding="utf-8"))
+    assert motion and "transition: none !important" in motion.group(1)
+    # Dimmed: a grey face, not white, at no more light than the dimmed words;
+    # the batons and hands stand out on it, and the time is in the page's words.
+    face, ink, red = (_css_value(":root[data-kiosk][data-dim] .night-clock", f"--pc-{name}") for name in ("face", "ink", "red"))
+    assert luminance(face) <= luminance(_palettes()["kiosk-dim"]["fg"])
+    assert contrast(face, ink) >= 4.5 and contrast(face, red) >= 3
+    assert _css_value(".night-time", "color") == "var(--fg)"
+
+
 STALE_BANNER = """
 import { h } from "./dom.js";
 import { STATE } from "./api.js";

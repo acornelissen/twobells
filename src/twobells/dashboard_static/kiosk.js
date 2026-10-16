@@ -3,14 +3,16 @@
 // control and fits the page to one screen, and the modules leave their
 // controls out (board.js, hero.js, disruptions.js, weather.js). This module
 // does what a wall screen needs over days: a 1-2 px shift every few minutes
-// against burn-in, dimming in the quiet windows, a banner when the page is
-// behind, and a reload once a day to pick up a new version.
+// against burn-in, dimming in the quiet windows with a platform clock large
+// in place of the departures, a banner when the page is behind, and a reload
+// once a day to pick up a new version.
 //
 // The Screen Wake Lock API needs a secure context, which the LAN's plain
 // http isn't, so the tablet's own screen-sleep setting keeps it on.
 
-import { $, h, patch } from "./dom.js";
+import { $, h, patch, setText } from "./dom.js";
 import { icon } from "./icons.js";
+import { clockFace, setClock } from "./platformclock.js";
 
 export const SHIFT_MS = 3 * 60_000;
 // Where the page sits, in px, a step at a time round a small diamond: no
@@ -36,6 +38,26 @@ export function applyShift(root, step) {
 export function applyDim(root, snapshot) {
   if (snapshot?.quiet === true) root.dataset.dim = "on";
   else delete root.dataset.dim;
+}
+
+// In a quiet window, the platform clock (platformclock.js) at `parts`
+// ([hour, minute, second] on the board's clock), with the time in words
+// under it. app.css shows it in place of the departures while the page is
+// dimmed; it dims and shifts with the page. Drawn every second, and only
+// while dimmed: the face is built the first time.
+export function drawNightClock(root, [hour, minute, second]) {
+  if (root.dataset.dim !== "on") return;
+  const box = $("night-clock");
+  if (!box) return;
+  if (!box.firstChild) {
+    box.append(clockFace(), h("p", { class: "night-time" }, h("span", { class: "vh" }, "Time now: "),
+                              h("time", { id: "night-time" })));
+  }
+  setClock(box.firstChild, hour, minute, second);
+  const words = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  const time = $("night-time");
+  setText(time, words);
+  if (time.getAttribute("datetime") !== words) time.setAttribute("datetime", words);
 }
 
 // The banner's words for the status pill (header.js pill()): its own words

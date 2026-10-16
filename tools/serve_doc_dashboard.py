@@ -12,7 +12,8 @@ area map's buses, sampled the day before, are moved to the same morning.
 
 It listens on 127.0.0.1 only. Open http://127.0.0.1:8931/ and take the
 pictures by hand; ?kiosk gives the wall tablet's page, and /performance the
-Performance page.
+Performance page. With --quiet the snapshot says a quiet window is on, so
+the wall tablet's page dims to its night clock.
 """
 
 from __future__ import annotations
@@ -92,8 +93,10 @@ class Handler(SimpleHTTPRequestHandler):
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--port", type=int, default=8931)
+    parser.add_argument("--quiet", action="store_true", help="in a quiet window: a wall tablet dims")
     args = parser.parse_args()
     snapshot = sample_snapshot()
+    snapshot["quiet"] = args.quiet
     Handler.snapshot = json.dumps(snapshot).encode()
     Handler.area = json.dumps(sample_area(snapshot["generated_at"])).encode()
     Handler.started_at = datetime.fromisoformat(snapshot["generated_at"]).timestamp()
