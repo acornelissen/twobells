@@ -206,7 +206,7 @@ def announcement_block(service: TrainService, platform_changed: bool, is_next: b
         len(formation.coaches) if formation is not None and formation.coaches else None)
     train = announce.Train(
         time=dep.scheduled, destination=dep.destination, operator=dep.service, via=dep.via, platform=dep.platform,
-        replacement_bus=dep.replacement_bus,
+        replacement_bus=dep.replacement_bus, ferry=dep.ferry,
         calling=tuple(p.name for p in service.calling_points if not p.skipped),
         skipped=tuple(p.name for p in service.calling_points if p.skipped),
         coaches=coaches,

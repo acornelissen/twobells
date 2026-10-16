@@ -415,6 +415,17 @@ def test_a_ferry_has_no_usual_platform_and_never_a_changed_one():
     )
 
 
+def test_a_ferry_is_announced_as_the_next_ferry():
+    board = parse_board_rich({"ferryServices": [ferry("07:12", platform="3", length=2)]})
+    part, _ = trains_part(board, datetime(2026, 10, 10, 7, 0, tzinfo=LONDON), status_block(), "PMH", None, WALK,
+                          "PMH")
+    [row] = part["rows"]
+    [said] = row["announce"]
+    assert said["kind"] == "next"
+    assert said["text"].startswith("The next ferry to depart will be the 07:12 Wightlink service to Ryde Pier Head.")
+    assert "platform" not in said["text"] and "coach" not in said["text"]
+
+
 # A train's coaches, for its sheet: from the front, with where it is quietest.
 
 

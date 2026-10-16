@@ -55,9 +55,26 @@ def test_a_later_train_is_not_called_the_next():
 def test_a_replacement_bus_is_a_service_with_no_platform_or_coaches():
     bus = Train(time="08:12", destination="Glossop", operator="Northern", platform="1", replacement_bus=True,
                 calling=("Dinting", "Glossop"), coaches=3)
-    assert next_train(bus) == ("The next service to depart will be the 08:12 Northern replacement bus service "
-                               "to Glossop. Calling at Dinting and Glossop.")
+    assert next_train(bus) == ("The next service to depart will be the 08:12 Northern service to Glossop. "
+                               "Calling at Dinting and Glossop. This is a replacement bus.")
+    assert departs(bus) == ("The 08:12 Northern service to Glossop is due to depart. "
+                            "Calling at Dinting and Glossop. This is a replacement bus.")
+    assert cancelled(bus) == ("We are sorry to announce that the 08:12 Northern replacement bus service to Glossop "
+                              "has been cancelled.")
     assert platform_alteration(bus) is None
+
+
+def test_a_ferry_is_the_next_ferry_with_no_platform_or_coaches():
+    ferry = Train(time="07:12", destination="Ryde Pier Head", operator="Wightlink", platform="3", ferry=True,
+                  calling=("Ryde Pier Head",), coaches=2)
+    assert next_train(ferry) == ("The next ferry to depart will be the 07:12 Wightlink service to Ryde Pier Head. "
+                                 "Calling at Ryde Pier Head only.")
+    assert departs(ferry) == ("The 07:12 Wightlink service to Ryde Pier Head is due to depart. "
+                              "Calling at Ryde Pier Head only. This is a ferry.")
+    assert delayed(ferry, 5) == ("We are sorry to announce that the 07:12 Wightlink ferry service to Ryde Pier Head "
+                                 "is delayed by approximately 5 minutes.")
+    assert platform_alteration(ferry) is None
+    assert [kind for kind, _ in announcements(ferry, platform_changed=True, is_next=True)] == ["next"]
 
 
 def test_a_cancellation_with_darwin_s_reason_says_what_it_is_due_to():
