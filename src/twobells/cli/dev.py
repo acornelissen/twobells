@@ -197,6 +197,10 @@ def demo_command(args) -> int:
         strip_key(buses[2]): Strip("Not started", 7, 5, None),
     }
     theme = theme_named(args.theme)
+    if theme.screen_only and DISPLAY_PANELS[args.display].epaper:
+        print(f"The {theme.name} look is for a screen: pass --display hdmi-1280x400 or hdmi-1920x440.",
+              file=sys.stderr)
+        return 2
     display = PngDisplay(args.png, args.accent or theme.accent, DISPLAY_PANELS[args.display])
     walk = WalkTimes(train=5, bus={"*": 8})
     # A screen preview shows what a screen adds: a running clock and countdowns.

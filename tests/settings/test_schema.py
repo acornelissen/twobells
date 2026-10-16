@@ -18,6 +18,27 @@ def every_form():
             yield schema.fields(display, theme)
 
 
+def _look(display):
+    return next(f for f in schema.fields(display, "sign") if f.name == "theme")
+
+
+@pytest.mark.parametrize("display", [d for d, panel in DISPLAY_PANELS.items() if not panel.epaper])
+def test_a_screen_offers_every_look_by_its_label(display):
+    look = _look(display)
+    assert look.options == tuple((name, theme.label) for name, theme in THEMES.items())
+    assert [look.check(name) for name in THEMES] == list(THEMES)
+
+
+@pytest.mark.parametrize("display", [d for d, panel in DISPLAY_PANELS.items() if panel.epaper])
+def test_e_paper_refuses_the_tft_look(display):
+    look = _look(display)
+    assert [name for name, _ in look.options] == ["sign", "plain"]
+    with pytest.raises(schema.Invalid, match="for a screen"):
+        look.check("tft")
+    with pytest.raises(schema.Invalid, match="options"):
+        look.check("neon")
+
+
 def test_every_field_is_in_exactly_one_known_group():
     for form in every_form():
         for f in form:

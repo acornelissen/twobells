@@ -15,7 +15,7 @@ from typing import Protocol
 from PIL.Image import Image
 
 from ..panel import HDMI_1280X400, Panel
-from ..render import Palette
+from ..render import PILL_RGB, SCREEN_PALETTE, Palette
 from ..scroll import Box, Frame, Scroller
 
 log = logging.getLogger(__name__)
@@ -28,6 +28,21 @@ SCREEN_RGB = {
     "yellow": (255, 170, 0),  # dot-matrix amber
     "red": (200, 30, 30),
 }
+
+
+def panel_colours(palette: Palette, accent: str, rgb: dict[str, tuple[int, int, int]] = SCREEN_RGB) -> list[int]:
+    """A panel's palette in `rgb`'s colours (a screen's, or the emulator's
+    e-paper), flat for putpalette, with the accent's colour, and on a screen
+    (SCREEN_PALETTE) the TFT look's green and red (PILL_RGB)."""
+    colours = [(0, 0, 0)] * 256
+    colours[palette.white] = rgb["white"]
+    colours[palette.black] = rgb["black"]
+    colours[palette.accent] = rgb[accent]
+    for name in ("green", "red"):
+        index = getattr(palette, name)
+        if index is not None:
+            colours[index] = PILL_RGB[name]
+    return [value for colour in colours for value in colour]
 
 
 def fit_note(frame: tuple[int, int], screen: tuple[int, int]) -> str | None:
@@ -103,12 +118,8 @@ class ScreenDisplay:
         if rotate not in (0, 90, 180, 270):
             raise ValueError(f"rotate must be 0, 90, 180 or 270, not {rotate!r}")
         self.panel = panel
-        self.palette = Palette(white=0, black=1, accent=2)
-        colours = [(0, 0, 0)] * 256
-        colours[self.palette.white] = SCREEN_RGB["white"]
-        colours[self.palette.black] = SCREEN_RGB["black"]
-        colours[self.palette.accent] = SCREEN_RGB[accent]
-        self._colours = [value for rgb in colours for value in rgb]
+        self.palette = SCREEN_PALETTE
+        self._colours = panel_colours(self.palette, accent)
         self._rotate = rotate
         self._screen = screen
         self._scroller = Scroller()

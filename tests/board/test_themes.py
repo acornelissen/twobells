@@ -6,10 +6,11 @@ import pytest
 
 from tests.paths import FIXTURES
 from twobells.board.panel import PANELS
-from twobells.board.render import Palette, render
+from twobells.board.render import SCREEN_PALETTE, Palette, render
 from twobells.board.route import RouteView
 from twobells.board.sign import render_sign
-from twobells.board.themes import THEMES, theme_named, with_text_size
+from twobells.board.tft import render_tft
+from twobells.board.themes import THEMES, theme_named, themes_for, with_text_size
 from twobells.board.view import PLAIN, SIGN, BoardView, CodeView, Row, Section, SetupView, Style
 from twobells.core.model import Strip
 
@@ -24,13 +25,27 @@ def test_sign_theme_uses_yellow_as_amber():
     assert (theme.wording, theme.render, theme.accent) == (SIGN, render_sign, "yellow")
 
 
+def test_tft_theme_is_the_plain_wording_in_yellow_for_screens_only():
+    theme = theme_named("tft")
+    assert (theme.wording, theme.render, theme.accent, theme.screen_only) == (PLAIN, render_tft, "yellow", True)
+
+
 def test_unknown_theme_lists_the_choices():
-    with pytest.raises(ValueError, match=r"plain.*sign|sign.*plain"):
+    with pytest.raises(ValueError, match=r"plain, sign, tft"):
         theme_named("neon")
 
 
 def test_registry_names_match():
     assert all(theme.name == name for name, theme in THEMES.items())
+
+
+def test_every_look_has_a_label_for_the_settings():
+    assert all(theme.label for theme in THEMES.values())
+
+
+def test_e_paper_is_offered_every_look_but_the_screen_only_ones():
+    assert themes_for(epaper=False) == ("sign", "plain", "tft")
+    assert themes_for(epaper=True) == ("sign", "plain")
 
 
 # --- Every page, pixel for pixel as recorded ---
@@ -70,11 +85,12 @@ def _buses(leaves, leave_ats=(None, None, None)):
 
 def demo_page(look, screen):
     """The demo's Glossop morning, with a notice and the rain warning, as each look's view of it."""
+    plain = THEMES[look].wording is PLAIN  # says which train beside the section's label
     if screen:
-        trains = _trains("Leave in 3 min (07:12)" if look == "plain" else "Leave in 3 min")
+        trains = _trains("Leave in 3 min (07:12)" if plain else "Leave in 3 min")
         buses = _buses(("Leave in 12 min", "Leave in 23 min", "Leave in 29 min"))
     else:
-        trains = _trains("Leave by 07:07 (07:12)" if look == "plain" else "Leave by 07:07")
+        trains = _trains("Leave by 07:07 (07:12)" if plain else "Leave by 07:07")
         buses = _buses(("Leave by 07:16", "Leave by 07:27", "Leave by 07:33"), ("07:16", "07:27", "07:33"))
     return BoardView("Glossop > Manchester Picc", trains, buses, "07:03", CLOCK if screen else None, NOTICE,
                      "Rain from 07:03 (70%)")
@@ -110,28 +126,36 @@ ROUTE_PAGE = RouteView("341 to Hyde via Glossop Norfolk Street, Hadfield, Padfie
 
 def drawn_pages():
     """(name, image) for each page each look draws on each panel; a screen's
-    pages also with their text part way through scrolling."""
+    pages also with their text part way through scrolling. A screen-only
+    look on screens alone, and a screen's pages in a screen's palette."""
     for look in sorted(THEMES):
         for panel in PANELS.values():
             screen = not panel.epaper
+            if THEMES[look].screen_only and not screen:
+                continue
+            palette = SCREEN_PALETTE if screen else PALETTE
             themes = [("", theme_named(look))]
             if look == "plain":
                 themes.append(("-text13", with_text_size(theme_named(look), 13)))
             for size, theme in themes:
                 pages = {"demo": demo_page(look, screen), "crowded": crowded_page(screen), "empty": empty_page(screen)}
                 for page, view in pages.items():
-                    frame = theme.frame(view, PALETTE, panel)
+                    frame = theme.frame(view, palette, panel)
                     yield f"{look}{size}/{panel.name}/{page}", frame.image
                     if frame.scrolls:
                         for seconds in (2.5, 7.0, 30.0):
                             yield f"{look}{size}/{panel.name}/{page}@{seconds}", frame.at(seconds)
                 route = replace(ROUTE_PAGE, clock=CLOCK if screen else None)
-                yield f"{look}{size}/{panel.name}/route", theme.route_frame(route, PALETTE, panel).at(5.0)
+                yield f"{look}{size}/{panel.name}/route", theme.route_frame(route, palette, panel).at(5.0)
             theme = theme_named(look)
-            yield f"{look}/{panel.name}/code", theme.render_code(CodeView("123 456", "23:52", 1.0), PALETTE, panel)
+            yield f"{look}/{panel.name}/code", theme.render_code(CodeView("123 456", "23:52", 1.0), palette, panel)
             setup = SetupView("http://raspberrypi.local:8090/settings")
-            yield f"{look}/{panel.name}/setup", theme.render_setup(setup, PALETTE, panel)
-        yield f"{look}/preview", theme_named(look).render(demo_page(look, False), PALETTE.with_preview("red"))
+            yield f"{look}/{panel.name}/setup", theme.render_setup(setup, palette, panel)
+        if THEMES[look].screen_only:  # in a screen's colours, the TFT look's green and red too
+            yield f"{look}/preview", theme_named(look).render(demo_page(look, True), SCREEN_PALETTE.with_preview(
+                "yellow"), PANELS["hdmi-1280x400"])
+        else:
+            yield f"{look}/preview", theme_named(look).render(demo_page(look, False), PALETTE.with_preview("red"))
 
 
 def digest(image):

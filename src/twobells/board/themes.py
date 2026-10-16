@@ -1,4 +1,7 @@
-"""Board looks: wording plus a renderer, and the accent colour each expects."""
+"""Board looks: wording plus a renderer, and the accent colour each expects.
+
+A look is one entry in THEMES; the settings' Look offers them in this order,
+by their labels, leaving out a screen-only look while the display is e-paper."""
 
 from __future__ import annotations
 
@@ -13,6 +16,7 @@ from .render import TEXT_SIZE, Palette, board_frame, render, render_code, render
 from .route import RouteView
 from .scroll import Frame
 from .sign import render_route_sign, render_sign, route_sign_frame, sign_frame
+from .tft import render_route_tft, render_tft, route_tft_frame, tft_frame
 from .view import PLAIN, SIGN, BoardView, CodeView, SetupView, Wording
 
 
@@ -31,19 +35,34 @@ class Theme:
     render_code: Callable[[CodeView, Palette, Panel], Image] = render_code
     # Until the board is set up: where to do it, drawn as the code page is.
     render_setup: Callable[[SetupView, Palette, Panel], Image] = render_setup
+    # What the settings' Look calls it.
+    label: str = ""
+    # Only for a screen: e-paper isn't offered it, and refuses it.
+    screen_only: bool = False
 
+
+_DARK_CODE = partial(render_code, dark=True)
+_DARK_SETUP = partial(render_setup, dark=True)
 
 THEMES = {
-    "plain": Theme("plain", PLAIN, render, accent="red", render_route=render_route, frame=board_frame,
-                   route_frame=route_frame),
     "sign": Theme("sign", SIGN, render_sign, accent="yellow", render_route=render_route_sign, frame=sign_frame,
-                  route_frame=route_sign_frame, render_code=partial(render_code, dark=True),
-                  render_setup=partial(render_setup, dark=True)),
+                  route_frame=route_sign_frame, render_code=_DARK_CODE, render_setup=_DARK_SETUP,
+                  label="Station board (amber dot matrix)"),
+    "plain": Theme("plain", PLAIN, render, accent="red", render_route=render_route, frame=board_frame,
+                   route_frame=route_frame, label="Plain (black on white)"),
+    "tft": Theme("tft", PLAIN, render_tft, accent="yellow", render_route=render_route_tft, frame=tft_frame,
+                 route_frame=route_tft_frame, render_code=_DARK_CODE, render_setup=_DARK_SETUP,
+                 label="TFT screen (white and yellow on black)", screen_only=True),
 }
 
 
+def themes_for(epaper: bool) -> tuple[str, ...]:
+    """The looks a display can show, by name, in the order THEMES has them."""
+    return tuple(name for name, theme in THEMES.items() if not (epaper and theme.screen_only))
+
+
 def with_text_size(theme: Theme, text_size: int) -> Theme:
-    """The plain look drawn with bigger or smaller text; the sign look as it is."""
+    """The plain look drawn with bigger or smaller text; the other looks as they are."""
     if theme.name != "plain" or text_size == TEXT_SIZE:
         return theme
     return replace(

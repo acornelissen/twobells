@@ -285,6 +285,29 @@ def test_the_sign_look_on_e_paper_offers_both_accents(setup):
     assert "amber" in form.render("tok") and "plain look uses red" in form.render("tok")
 
 
+def _looks(page):
+    return re.findall(r'<input type="radio" id="[\w-]+" name="theme" value="([^"]*)"', page)
+
+
+def test_a_screen_is_offered_the_tft_look_and_saves_it(tmp_path):
+    form = _form_for(tmp_path, 'theme = "sign"\ndisplay = "hdmi-1280x400"')
+    page = form.render("tok")
+    assert _looks(page) == ["sign", "plain", "tft"] and "TFT screen (white and yellow on black)" in page
+    assert form.save(fields_of(form) | {"theme": "tft", "accent": ""}) == {}
+    config = tmp_path / "config.toml"
+    assert load_config(config, ENV).board.theme.name == "tft"
+    assert _accents(form.render("tok")) == ["", "yellow"]  # red is too dim on its black
+    assert "accent" in form.save(fields_of(form) | {"accent": "red"})
+
+
+def test_e_paper_is_not_offered_the_tft_look_and_refuses_it(setup):
+    form, config, state, _ = setup
+    assert _looks(form.render("tok")) == ["sign", "plain"]
+    errors = form.save(fields_of(form) | {"theme": "tft"})
+    assert errors["theme"] == "That look is for a screen; pick one for e-paper"
+    assert not (state / "settings.toml").exists()
+
+
 def test_outlined_buttons_have_a_border_that_stands_out():
     from importlib.resources import files
 

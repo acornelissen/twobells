@@ -24,7 +24,7 @@ from ..board.app import Board, SourceConfig, Tracker, Weather, reset_code_page
 from ..board.displays.display import DISPLAY_PANELS
 from ..board.positions import Positions
 from ..board.route import RouteStop, RouteStrip
-from ..board.themes import theme_named, with_text_size
+from ..board.themes import theme_named, themes_for, with_text_size
 from ..core.polling import PollPolicy, parse_window
 from ..core.walk import DEFAULT_STOP, WalkTimes
 from ..sources.bods import BodsVehicleSource
@@ -560,6 +560,9 @@ def settings_from(
     display = _text(data, "display", BOARD_DEFAULTS["display"])
     if display not in DISPLAY_PANELS:
         raise ConfigError(f"Unknown display {display!r}; choose from {', '.join(sorted(DISPLAY_PANELS))}")
+    if theme.screen_only and DISPLAY_PANELS[display].epaper:
+        raise ConfigError(f"The {theme.name} look is for a screen; choose from "
+                          f"{', '.join(themes_for(epaper=True))} for this display")
     rotate = _rotate(data, DISPLAY_PANELS[display].epaper)
     accent = data.get("accent") or theme.accent  # "" is the page's "the look's own"
     if accent not in ("red", "yellow"):

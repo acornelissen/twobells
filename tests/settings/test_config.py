@@ -220,6 +220,21 @@ def test_plain_theme_defaults_to_red(tmp_path):
     assert (settings.board.theme.name, settings.accent) == ("plain", "red")
 
 
+def test_the_tft_look_on_a_screen_defaults_to_yellow(tmp_path):
+    path = write(tmp_path, 'theme = "tft"\ndisplay = "hdmi-1920x440"\n[train]\ncrs = "GLO"\n'
+                           'windows = ["Mon-Fri 06:30-09:30"]\n')
+    settings = load_config(path, ENV)
+    assert (settings.board.theme.name, settings.accent) == ("tft", "yellow")
+
+
+@pytest.mark.parametrize("display", ["inky", "inky-phat-v1", "waveshare-10in85g"])
+def test_the_tft_look_on_e_paper_is_a_config_error(tmp_path, display):
+    path = write(tmp_path, f'theme = "tft"\ndisplay = "{display}"\n[train]\ncrs = "GLO"\n'
+                           'windows = ["Mon-Fri 06:30-09:30"]\n')
+    with pytest.raises(ConfigError, match="tft look is for a screen; choose from sign, plain"):
+        load_config(path, ENV)
+
+
 def test_explicit_accent_wins(tmp_path):
     path = write(tmp_path, 'accent = "red"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
     assert load_config(path, ENV).accent == "red"

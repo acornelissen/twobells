@@ -30,7 +30,7 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, available_timezones
 
 from ..board.displays.display import DISPLAY_PANELS
-from ..board.themes import THEMES
+from ..board.themes import THEMES, themes_for
 from ..core.polling import parse_window
 from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES
 
@@ -251,13 +251,24 @@ def https_feed(raw: str) -> str:
 
 def _accents(display: str, theme: str) -> tuple[str, ...]:
     """Accents that stand out on the look's background: yellow is too faint on
-    the plain look's white (1.9:1), red too dim on the sign's black on a screen
-    (about 3.6:1)."""
+    the plain look's white (1.9:1), red too dim on black on a screen (about
+    3.6:1), in the sign look there and always in the TFT look."""
     if theme == "plain":
         return ("red",)
-    if theme == "sign" and not DISPLAY_PANELS.get(display, DISPLAY_PANELS["inky"]).epaper:
+    if theme == "tft" or (theme == "sign" and not DISPLAY_PANELS.get(display, DISPLAY_PANELS["inky"]).epaper):
         return ("yellow",)
     return ("yellow", "red")
+
+
+def _look(allowed: tuple[str, ...]) -> Callable[[str], str]:
+    """One of the looks the display can show (themes_for)."""
+    def check(raw: str) -> str:
+        if raw in allowed:
+            return raw
+        if raw in THEMES:
+            raise Invalid("That look is for a screen; pick one for e-paper")
+        raise Invalid("Pick one of the options")
+    return check
 
 
 def _accent(allowed: tuple[str, ...]) -> Callable[[str], str]:
@@ -406,9 +417,10 @@ _CHECKING = ("Outside these times the board shows what it last knew, without say
 
 
 def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
-    """Every field, in the order the pages show them. The accents and turns
-    offered depend on the display and the look."""
+    """Every field, in the order the pages show them. The looks, accents and
+    turns offered depend on the display and the look."""
     epaper = DISPLAY_PANELS.get(display, DISPLAY_PANELS["inky"]).epaper
+    looks = themes_for(epaper)
     rotations = ("0", "180") if epaper else ("0", "90", "180", "270")
     accents = _accents(display, theme)
     board, train, bus = BOARD_DEFAULTS, BOARD_DEFAULTS["train"], BOARD_DEFAULTS["bus"]
@@ -451,16 +463,17 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               hint="50 means warn when rain is more likely than not.", default=50, needs="weather",
               page="trains_buses", heading="Weather", width="3", unit="%"),
         # The board's own.
-        Field("theme", "board", None, "theme", "Look", choice(tuple(THEMES)), "radios", default=board["theme"],
-              options=(("sign", "Station board (amber dot matrix)"), ("plain", "Plain (black on white)")),
+        Field("theme", "board", None, "theme", "Look", _look(looks), "radios", default=board["theme"],
+              options=tuple((name, THEMES[name].label) for name in looks),
               page="board", heading="Display"),
         Field("rotate", "board", None, "rotate", "Rotation", whole_choice(rotations), "radios",
               hint="Degrees clockwise, to suit how the display is mounted.",
               options=tuple((r, f"{r}°") for r in rotations), default=board["rotate"],
               page="board", heading="Display"),
         Field("accent", "board", None, "accent", "Accent colour", _accent(accents), "radios", default="",
-              hint="Only reinforces meaning; the words always carry it. The station board look uses amber "
-                   "and the plain look uses red; a colour too faint on the look's background isn't offered.",
+              hint="Only reinforces meaning; the words always carry it. The station board look uses amber, "
+                   "the TFT look uses yellow and the plain look uses red; a colour too faint on the look's background "
+                   "isn't offered.",
               options=(("", "The look's own"),
                        *((v, t) for v, t in (("yellow", "Yellow / amber"), ("red", "Red")) if v in accents)),
               page="board", heading="Display", tier="advanced"),

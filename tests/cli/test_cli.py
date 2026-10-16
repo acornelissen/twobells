@@ -61,6 +61,20 @@ def test_demo_can_show_a_notice_and_a_rain_line(tmp_path, display, theme):
         assert both == notice  # on e-paper a disruption notice takes the rain line's place
 
 
+@pytest.mark.parametrize("display", ["hdmi-1280x400", "hdmi-1920x440"])
+def test_demo_draws_the_tft_look_on_a_screen(tmp_path, display):
+    out = tmp_path / "demo.png"
+    assert main(["demo", "--png", str(out), "--display", display, "--theme", "tft"]) == 0
+    colours = {colour for _, colour in Image.open(out).getcolors(maxcolors=256)}
+    assert (0, 0, 0) in colours and (40, 180, 90) in colours  # black, and a green "On time" pill
+
+
+def test_demo_refuses_the_tft_look_on_e_paper(tmp_path, capsys):
+    out = tmp_path / "demo.png"
+    assert main(["demo", "--png", str(out), "--theme", "tft"]) == 2
+    assert "for a screen" in capsys.readouterr().err and not out.exists()
+
+
 def test_demo_rain_line_follows_the_rain_rule(monkeypatch, tmp_path):
     from twobells.cli import dev
 

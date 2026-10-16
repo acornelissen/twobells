@@ -7,7 +7,7 @@ from pathlib import Path
 from PIL.Image import Image
 
 from ..panel import HDMI_1280X400, HDMI_1920X440, PHAT, PHAT_V1, WAVESHARE_10IN85G, Panel
-from ..render import Palette
+from ..render import SCREEN_PALETTE, Palette
 
 # What each `display` setting draws on. An Inky reports its own size once opened.
 DISPLAY_PANELS = {
@@ -88,7 +88,9 @@ class PngDisplay:
     def __init__(self, path: Path | str, accent: str = "red", panel: Panel = PHAT) -> None:
         self._path = Path(path)
         self.panel = panel
-        self.palette = Palette(white=0, black=1, accent=2).with_preview(accent)
+        # A screen's has the TFT look's green and red too.
+        palette = Palette(white=0, black=1, accent=2) if panel.epaper else SCREEN_PALETTE
+        self.palette = palette.with_preview(accent)
 
     def show(self, image: Image) -> None:
         image.convert("RGB").save(self._path)

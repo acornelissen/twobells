@@ -245,6 +245,19 @@ def test_screen_frames_use_screen_colours():
     assert shown.getpixel((1, 0)) == SCREEN_RGB["black"]
 
 
+def test_screen_frames_show_the_tft_looks_green_and_red():
+    from twobells.board.panel import HDMI_1920X440
+    from twobells.board.render import PILL_RGB
+
+    display = EmulatorDisplay(accent="yellow", panel=HDMI_1920X440)
+    image = Image.new("P", HDMI_1920X440.size, display.palette.black)
+    image.putpixel((0, 0), display.palette.green)
+    image.putpixel((1, 0), display.palette.red)
+    display.show(image)
+    shown = Image.open(io.BytesIO(display.frame_png())).convert("RGB")
+    assert (shown.getpixel((0, 0)), shown.getpixel((1, 0))) == (PILL_RGB["green"], PILL_RGB["red"])
+
+
 def test_screen_board_time_has_seconds():
     from twobells.board.panel import HDMI_1280X400
 

@@ -20,9 +20,9 @@ from urllib.parse import urlparse
 
 from PIL.Image import Image
 
-from ..board.displays.screen import SCREEN_RGB
+from ..board.displays.screen import SCREEN_RGB, panel_colours
 from ..board.panel import PHAT, Panel
-from ..board.render import Palette
+from ..board.render import SCREEN_PALETTE, Palette
 from ..board.scroll import Frame, Scroller
 
 # Clear of ClaudeCodeBrowserX, which listens on 8765 and 8766.
@@ -52,7 +52,8 @@ FRAMES_MM = {
 
 class EmulatorDisplay:
     def __init__(self, accent: str = "red", mode: str = "live", panel: Panel = PHAT) -> None:
-        self.palette = Palette(white=0, black=1, accent=2)
+        # A screen's has the TFT look's green and red too.
+        self.palette = Palette(white=0, black=1, accent=2) if panel.epaper else SCREEN_PALETTE
         self.panel = panel
         self._accent = accent
         self._mode = mode
@@ -65,12 +66,7 @@ class EmulatorDisplay:
         self._scroller = Scroller()
 
     def _palette(self) -> list[int]:
-        rgb = EPAPER if self.panel.epaper else SCREEN_RGB
-        colours = [(0, 0, 0)] * 256
-        colours[self.palette.white] = rgb["white"]
-        colours[self.palette.black] = rgb["black"]
-        colours[self.palette.accent] = rgb[self._accent]
-        return [value for rgb in colours for value in rgb]
+        return panel_colours(self.palette, self._accent, EPAPER if self.panel.epaper else SCREEN_RGB)
 
     def show(self, image: Image) -> None:
         frame = image.copy()

@@ -36,7 +36,7 @@ WIDTH, HEIGHT = PHAT.size
 
 # Below the header, and either side of the rule between sections.
 _SECTION_GAP = 6
-_PAD = 3
+PAD = 3
 _MAX_ROWS = {"Trains": 3, "Buses": 2}
 # A screen with the room (the bar screen) shows one more bus; e-paper keeps its two.
 _SCREEN_MAX_BUSES = 3
@@ -290,7 +290,7 @@ def row_layout(
     with the little line after them, on a board with that column.
     `stop_room` is how wide a bus row's stop names are, on a board that
     names them (stop_column)."""
-    pad, gap = _PAD * scale, _COL_GAP * scale
+    pad, gap = PAD * scale, _COL_GAP * scale
     right_x = width - pad - fonts.pill - drawn_length(fonts.bold, row.right)
     status_x = right_x - fonts.pill  # where the status starts, with its pill
     middle_x = pad + left_column_width(fonts, scale)
@@ -351,7 +351,7 @@ def platform_column(rows, fonts: Fonts, width: int, scale: int) -> float | None:
         return None
     right_w = max(status_width(fonts, r.right) for r in rows)
     platform_w = max(drawn_length(fonts.regular, r.platform) for r in rows if r.platform)
-    return width - _PAD * scale - right_w - _COL_GAP * scale - platform_w
+    return width - PAD * scale - right_w - _COL_GAP * scale - platform_w
 
 
 def leave_column(rows, fonts: Fonts, width: int, scale: int) -> float | None:
@@ -362,7 +362,7 @@ def leave_column(rows, fonts: Fonts, width: int, scale: int) -> float | None:
         return None
     right_w = max(status_width(fonts, r.right) for r in rows)
     leave_w = max(drawn_length(fonts.small, text) for text in leaves)
-    return width - _PAD * scale - right_w - _COL_GAP * scale - leave_w
+    return width - PAD * scale - right_w - _COL_GAP * scale - leave_w
 
 
 # On a screen wide enough, a bus row's stop by its name, in a column as wide
@@ -390,7 +390,7 @@ def where_width(fonts: Fonts, width: int, scale: int) -> float:
     the little line, a bus's leave time and a status, from "3 stops away" to
     eighteen letters ("Left Glossop 07:08"), as long as they are meant to be.
     Worked out from the width alone, so it stays put as the words change."""
-    pad, gap = _PAD * scale, _COL_GAP * scale
+    pad, gap = PAD * scale, _COL_GAP * scale
     rest = (
         pad + left_column_width(fonts, scale) + drawn_length(fonts.regular, "Manchester Piccadilly")
         + 3 * gap + STRIP_WIDTH * scale + gap + drawn_length(fonts.small, "Leave in 00 min") + gap
@@ -411,7 +411,7 @@ def where_column(sections, fonts: Fonts, width: int, scale: int, live: bool) -> 
         return None
     ends: list[float] = []
     for rows in (rows for rows in sections if rows):
-        ends.append(width - _PAD * scale - max(status_width(fonts, r.right) for r in rows))
+        ends.append(width - PAD * scale - max(status_width(fonts, r.right) for r in rows))
         ends += [x for x in (platform_column(rows, fonts, width, scale), leave_column(rows, fonts, width, scale))
                  if x is not None]
     return min(ends) - (_COL_GAP * 2 + STRIP_WIDTH) * scale - where_width(fonts, width, scale)
@@ -524,7 +524,7 @@ def header_rain(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[
     both. Otherwise the notice takes the title's place alone, as on e-paper."""
     if not (view.clock and view.notice and view.rain) or width / scale < NOTES_SIDE_BY_SIDE_MIN_WIDTH:
         return None
-    stamp_x = width - _PAD * scale - drawn_length(fonts.regular, view.clock)
+    stamp_x = width - PAD * scale - drawn_length(fonts.regular, view.clock)
     # Twice the usual gap either side, so the notice, the warning and the clock read as three.
     return view.rain, stamp_x - 12 * scale - drawn_length(fonts.bold, view.rain)
 
@@ -534,7 +534,7 @@ def header_field(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple
     no footer, so a disruption notice, or else a rain warning, or else the
     last bus, takes the title's place while there is one. A screen wide enough shows both, the
     rain warning beside (header_rain)."""
-    pad = _PAD * scale
+    pad = PAD * scale
     stamp = view.clock or f"Upd {view.updated}"
     room = width - pad - drawn_length(fonts.regular, stamp) - pad - 6 * scale
     rain = header_rain(view, fonts, width, scale)
@@ -547,7 +547,7 @@ def header_field(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple
 def header_text(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[str, str, float]:
     """(left text, stamp, stamp x) for the header bar, the left text cut
     short if it must be (a screen scrolls it instead: see header_field)."""
-    pad = _PAD * scale
+    pad = PAD * scale
     stamp = view.clock or f"Upd {view.updated}"
     stamp_x = width - pad - drawn_length(fonts.regular, stamp)
     text, room = header_field(view, fonts, width, scale)
@@ -623,7 +623,7 @@ class Painter:
         """The header bar, reversed out: the title (or notice) on the left,
         `shown` as it fits `room`, the rain warning if `rain` places it, and
         the stamp (the clock, on a screen) on the right."""
-        s, pad = self.s, _PAD * self.s
+        s, pad = self.s, PAD * self.s
         bottom = self.header_h * s
         self.draw.rectangle((0, 0, self.width - 1, bottom - 1), fill=self.ink)
         self.field((pad, s), shown, whole, self.f.bold, room, self.paper, self.ink, (0, bottom))
@@ -635,7 +635,7 @@ class Painter:
         return section.rows[: self.limits.get(section.label, 2)]
 
     def section(self, section: Section, y: int, where_x: float | None = None) -> int:
-        s, pad = self.s, _PAD * self.s
+        s, pad = self.s, PAD * self.s
         label = section.label.upper()
         draw_text(self.image, (pad, y + s), label, self.f.small, self.ink)
         label_end = pad + text_length(self.f.small, label)
@@ -697,7 +697,7 @@ class Painter:
         in `time_ink` if given, and the strip's stop in `yours_fill`."""
         s = self.s
         band = (y, y + self.row_h * s)
-        self.field((_PAD * s, y + s), layout.left, row.left, self.f.bold, layout.left_room,
+        self.field((PAD * s, y + s), layout.left, row.left, self.f.bold, layout.left_room,
                    ink if time_ink is None else time_ink, paper, band)
         if layout.stop_x is not None and layout.stop:
             self.field((layout.stop_x, y + s), layout.stop, row.stop_name or row.stop or "", self.f.regular,
@@ -716,7 +716,7 @@ class Painter:
             draw_strip(self.draw, row.strip, train, layout.strip_x, y, s, self.row_h, ink, paper, yours_fill)
 
     def rule(self, y: int) -> None:
-        pad = _PAD * self.s
+        pad = PAD * self.s
         self.draw.line((pad, y, self.width - pad, y), fill=self.ink, width=self.s)
 
     def apply_preview_palette(self) -> None:
@@ -762,7 +762,7 @@ def route_frame(view: RouteView, palette: Palette, panel: Panel = PHAT, text_siz
 def paint_route(painter: Painter, view: RouteView, panel: Panel) -> Frame:
     """The route page as `painter` draws it."""
     s, f, draw = painter.s, painter.f, painter.draw
-    pad = _PAD * s
+    pad = PAD * s
     ink, paper = painter.ink, painter.paper
     width, height = panel.size
 
@@ -840,7 +840,7 @@ def render_code(view: CodeView, palette: Palette, panel: Panel = PHAT, dark: boo
     until when above and below it. `dark` draws it light on black, as the sign
     look does; on a mono panel that is white."""
     s = plain_scale(panel)
-    pad = _PAD * s
+    pad = PAD * s
     width, height = panel.size
     if dark:
         background = palette.black
@@ -874,7 +874,7 @@ def render_setup(view: SetupView, palette: Palette, panel: Panel = PHAT, dark: b
     heading ("Set me up") big, then the note saying what to do, then the
     settings site's address as big as it fits. `dark` as for render_code."""
     s = plain_scale(panel)
-    pad = _PAD * s
+    pad = PAD * s
     width, height = panel.size
     if dark:
         background = palette.black

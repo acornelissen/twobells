@@ -1,8 +1,10 @@
 import pytest
 from PIL import Image
 
+from tests.contrast import contrast
 from twobells.board.displays.screen import SCREEN_RGB, ScreenDisplay, fit_note
 from twobells.board.panel import HDMI_1280X400, HDMI_1920X440
+from twobells.board.render import PILL_RGB
 
 
 class FakeScreen:
@@ -40,6 +42,24 @@ def test_red_accent():
     display = ScreenDisplay(accent="red", screen=screen)
     display.show(board_image(display))
     assert screen.frames[0].getpixel((0, 0)) == SCREEN_RGB["red"]
+
+
+def test_a_screen_also_shows_the_tft_looks_green_and_red():
+    screen = FakeScreen()
+    display = ScreenDisplay(accent="yellow", screen=screen)
+    image = board_image(display)
+    image.putpixel((1, 0), display.palette.green)
+    image.putpixel((2, 0), display.palette.red)
+    display.show(image)
+    assert [screen.frames[0].getpixel((x, 0)) for x in range(3)] == [SCREEN_RGB["yellow"], PILL_RGB["green"],
+                                                                      PILL_RGB["red"]]
+
+
+def test_the_tft_looks_pills_keep_their_words_readable():
+    hexes = {name: "#%02x%02x%02x" % rgb for name, rgb in {**SCREEN_RGB, **PILL_RGB}.items()}
+    assert contrast(hexes["green"], hexes["black"]) >= 4.5  # On time
+    assert contrast(hexes["yellow"], hexes["black"]) >= 4.5  # Exp 07:49
+    assert contrast(hexes["red"], hexes["white"]) >= 4.5  # Cancelled
 
 
 @pytest.mark.parametrize(
