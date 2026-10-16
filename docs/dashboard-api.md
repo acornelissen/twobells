@@ -360,7 +360,7 @@ The Performance page's figures: how each regular route, and all the trains or al
 }
 ```
 
-- **Routes** are the history's regular departures without their times: a train's destination (`stop` null), or a bus's line and destination from one of your stops (`stop` is its label, as in the snapshot's `buses.stops`). At most 50 per mode, the busiest, listed by name. `all` counts every departure, listed or not.
+- **Routes** are the history's regular departures without their times: a train's destination (`stop` null; rail replacement buses apart, as "Manchester Piccadilly (replacement bus)"), or a bus's line and destination from one of your stops (`stop` is its label, as in the snapshot's `buses.stops`). At most 50 per mode, the busiest, listed by name. `all` counts every departure, listed or not.
 - **`periods`**: one per span, in order: `span` days (7, then 28) from `since` to today. Only departures whose outcome is final count (see `dashboard/history.py`).
 - **The counts:** `days` with any departure recorded; `unknown`, gone with no time to tell how late (a train shown only as "Delayed", a bus with no tracker), left out of the rest; `counted`, the others, cancelled ones included, which every measure is out of. `right_time` left at or before its booked time; `within_3` (T-3) and `within_15` (T-15) under 3 and under 15 minutes late (whole minutes: 2 and 14 or less); `on_time` under `late_minutes` late (`[dashboard] late_minutes_train` or `late_minutes_bus`); `cancelled`. Early counts as right time.
 - **`enough`** is false with fewer than 3 `days`: the page says "Not enough days yet" rather than a percentage.

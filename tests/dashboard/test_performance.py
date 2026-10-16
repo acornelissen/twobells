@@ -38,6 +38,7 @@ def _figures(history, late=None):
 @pytest.mark.parametrize("mode, route, parts", [
     ("train", "GLO>MAN|Manchester Piccadilly", ("Manchester Piccadilly", None)),
     ("train", "GLO|Hadfield", ("Hadfield", None)),
+    ("train", "GLO>MAN bus|Manchester Piccadilly", ("Manchester Piccadilly (replacement bus)", None)),
     ("train", "GLO", ("GLO", None)),
     ("bus", "A|341|Hyde Bus Station", ("341 to Hyde Bus Station", "A")),
     ("bus", "|341|Hyde Bus Station", ("341 to Hyde Bus Station", None)),  # a stop with no label
