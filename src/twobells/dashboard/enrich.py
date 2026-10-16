@@ -14,9 +14,12 @@ booked time is wrong and the right one unknown, so there is no arrival then,
 nor for a cancelled train or stop. A bus arrives at its journey's last call
 at the timetabled time plus the delay it has now.
 
-Inbound buses. BODS sends no block numbers here (its BlockRef is just the
-line), so, as bustimes.org does, a departure whose journey starts at your
-stop is paired with a journey of the same line that ends at your stop (or
+Inbound buses. BODS does send real block numbers (BlockRef: one bus ran
+block T122 from its inbound 237 into the 21:35 from Henry Street A), but the
+timetable doesn't keep TransXChange's, so there is nothing to follow them
+with. Instead, as bustimes.org does without blocks, a departure whose
+journey starts at your stop is paired with a journey of the same line that
+ends at your stop (or
 at a stop within NEAR_M of it) up to INBOUND_WINDOW before it leaves. The
 timetable keeps journeys that end at such a stop without calling at yours
 (inbound-only ones) for this alone. Only

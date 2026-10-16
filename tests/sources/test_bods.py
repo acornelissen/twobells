@@ -141,16 +141,26 @@ def test_get_bytes_refuses_an_oversized_body(monkeypatch):
     assert net.get_bytes("https://example.invalid/", max_bytes=10) == b"x" * 10
 
 
-def test_positions_not_updated_for_five_minutes_are_dropped():
+def test_positions_not_updated_for_ten_minutes_are_dropped():
     from datetime import datetime
 
     # The fixture's vehicles report between 07:12:20 and 07:12:35 BST (06:12 UTC).
-    fresh = datetime(2026, 10, 8, 6, 15, 0, tzinfo=UTC)
-    later = datetime(2026, 10, 8, 6, 17, 32, tzinfo=UTC)
+    fresh = datetime(2026, 10, 8, 6, 22, 0, tzinfo=UTC)
+    later = datetime(2026, 10, 8, 6, 22, 32, tzinfo=UTC)
     source = BodsVehicleSource("k", BOX, {"341", "237"}, http_get=lambda u, m: FIXTURE, now=lambda: fresh)
     assert len(source.fetch()) == 4
     source = BodsVehicleSource("k", BOX, {"341", "237"}, http_get=lambda u, m: FIXTURE, now=lambda: later)
-    assert [v.vehicle_ref for v in source.fetch()] == ["BNML-1003"]  # 07:12:35, the only one under 5 min old
+    assert [v.vehicle_ref for v in source.fetch()] == ["BNML-1003"]  # 07:12:35, the only one under 10 min old
+
+
+def test_lines_are_kept_whatever_their_case():
+    from datetime import datetime
+
+    # Operators write a line's letters either way: "X1" in the timetable, "x1" on the bus.
+    body = FIXTURE.replace(b"<PublishedLineName>237</PublishedLineName>", b"<PublishedLineName>x1</PublishedLineName>")
+    now = datetime(2026, 10, 8, 6, 13, tzinfo=UTC)
+    source = BodsVehicleSource("k", BOX, {"X1"}, http_get=lambda u, m: body, now=lambda: now)
+    assert [(v.line, v.vehicle_ref) for v in source.fetch()] == [("x1", "BNML-2001")]
 
 
 def test_positions_with_an_unreadable_time_are_dropped():

@@ -451,7 +451,7 @@ The area map: every live bus on our lines around our stops, from the bus poller'
 ```
 
 - `fetched_at` is when the buses were last checked; `age_s` is a report's age then, so the page works ages out from `recorded_at`.
-- `box` is west, south, east, north around the timetable's positioned stops (about 1 km wider), or `null`. Only buses inside it, on lines our timetable has, reported in the last 5 minutes, are sent; at most 80.
+- `box` is west, south, east, north around the timetable's positioned stops (about 1 km wider), or `null`. Only buses inside it, on lines our timetable has, reported in the last 10 minutes, are sent; at most 80.
 - `destination` is the timetabled journey's when the bus was matched to one, else the bus's own. `next_stop` is the next positioned stop on that journey, or `null` when it wasn't matched or the stop isn't positioned. `bearing` and `recorded_at` can be `null`.
 - `stops` are our stops that have a position, by label.
 - `routes`: for each line and destination, `path`: the road through the positioned stops of its longest journey, in order, as `[lat, lon]` pairs (at least two, every stop among them), as for `/api/bus/<id>`: straight between stops the timetable has no road for. At most 40. Only journeys calling at your stops are drawn, not those kept only to find an inbound bus.

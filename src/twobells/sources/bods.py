@@ -21,7 +21,7 @@ DEFAULT_BASE_URL = "https://data.bus-data.dft.gov.uk/api/v1"
 MAX_RESPONSE_BYTES = 2_000_000
 # BODS keeps sending a vehicle's last position long after it stops reporting
 # (parked overnight, tracker off), so anything older than this is ignored.
-MAX_AGE = timedelta(minutes=5)
+MAX_AGE = timedelta(minutes=10)
 
 _NS = {"siri": "http://www.siri.org.uk/siri"}
 _API_KEY = re.compile(r"\bapi_key=[^&\s\"']*")
@@ -136,7 +136,7 @@ class BodsVehicleSource:
     ) -> None:
         self._api_key = api_key
         self._box = box
-        self._lines = set(lines)
+        self._lines = {_line_key(line) for line in lines}
         self._base_url = base_url.rstrip("/")
         self._http_get = http_get
         self._now = now
@@ -154,7 +154,12 @@ class BodsVehicleSource:
         except Exception as error:  # noqa: BLE001 - re-raised without the key
             raise RuntimeError(redact_key(str(error))) from None
         now = self._now()
-        return [v for v in parse_siri_vm(body) if v.line in self._lines and _fresh(v, now)]
+        return [v for v in parse_siri_vm(body) if _line_key(v.line) in self._lines and _fresh(v, now)]
+
+
+def _line_key(line: str) -> str:
+    """A line as compared: "X1" and "x1" are one line, as livebus.match has them."""
+    return line.strip().casefold()
 
 
 def _fresh(vehicle: Vehicle, now: datetime) -> bool:
