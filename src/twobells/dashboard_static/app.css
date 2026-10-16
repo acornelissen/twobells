@@ -1,9 +1,13 @@
-/* Departures dashboard. Two themes on <html data-theme>: "modern" (light and
-   dark from the system) and "board" (amber on black). Every colour is a token
-   below; tests/dashboard/test_static.py checks the text pairs reach 4.5:1 and
-   the outlines 3:1 in all three palettes. Status is always words plus an
-   icon; colour only reinforces it, and only exceptions (late, cancelled,
-   disruption) get colour at all. One accent, blue, marks what you can act on.
+/* Departures dashboard. A look on <html data-theme>, as the Look picker
+   (index.html, theme.js) chooses: "modern", the Standard look (light and
+   dark from the system), "board", the Dot matrix look (amber on black), and
+   "tft" (white and yellow on black). A new look is an option there, its
+   name in theme.js, and a palette here with its kiosk-dim one. Every colour
+   is a token below; tests/dashboard/test_static.py checks the text pairs
+   reach 4.5:1 and the outlines 3:1 in every palette. Status is always words
+   plus an icon; colour only reinforces it, and only exceptions (late,
+   cancelled, disruption) get colour at all, but the TFT look puts on time
+   in a pill too. One accent, blue, marks what you can act on.
 
    Sizes come from three scales: type (--t-*), spacing (--s-*, on a 4px
    grid) and radius (--r-*). Weights are 400, 500 and 600 only. */
@@ -15,7 +19,7 @@
   font-style: normal;
   font-display: swap;
 }
-/* The Board look's dot-matrix face: the e-paper sign's own glyphs, built by
+/* The Dot matrix look's face: the e-paper sign's own glyphs, built by
    tools/build_dotfont.py from board/dotfont.py. */
 @font-face {
   font-family: "Departureboard Dots";
@@ -73,7 +77,7 @@
 
 /* theme: modern-dark */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="board"]) {
+  :root[data-theme="modern"] {
     --bg: #0f1114;
     --surface: #171a1f;
     --surface-2: #1f232a;
@@ -133,11 +137,48 @@
   color-scheme: dark;
 }
 
+/* The TFT look: white and yellow on black, like the newer station screens.
+   Times are yellow (--time), and each status sits in a pill (--pill-*)
+   that backs up its words. */
+/* theme: tft */
+:root[data-theme="tft"] {
+  --bg: #000000;
+  --surface: #0b0b0b;
+  --surface-2: #1c1c1c;
+  --fg: #ffffff;
+  --muted: #c2c2c2;
+  --line: #333333;
+  --edge: #8c8c8c;
+  --accent: #ffd21f;
+  --accent-fg: #000000;
+  --focus: #ffffff;
+  --ok-fg: #4cd98a;
+  --ok-bg: #0c2616;
+  --late-fg: #ffd21f;
+  --late-bg: #2b2300;
+  --bad-fg: #ff7a6b;
+  --bad-bg: #2e0d09;
+  --unk-fg: #c2c2c2;
+  --unk-bg: #1c1c1c;
+  --leave-fg: #ffffff;
+  --leave-bg: #0b0b0b;
+  --badge-fg: #000000;
+  --badge-bg: #ffffff;
+  --time: #ffd21f;
+  --pill-ink: #000000;
+  --pill-ok: #28b45a;
+  --pill-late: #ffd21f;
+  --pill-bad: #c81e1e;
+  --pill-bad-ink: #ffffff;
+  color-scheme: dark;
+}
+
 /* A wall tablet (/?kiosk) dims in the quiet windows (kiosk.js): black, with
-   the words at about half their light and still 4.5:1. One palette for the
-   modern look, light or dark, and one for the Board look. */
+   the words at about half their light and still 4.5:1. A palette for each
+   look: the Standard look's, light or dark, the Dot matrix look's and the
+   TFT look's. */
 /* theme: kiosk-dim */
-:root[data-kiosk][data-dim]:not([data-theme="board"]) {
+:root[data-kiosk][data-dim][data-theme="modern"] {
   --bg: #000000;
   --surface: #000000;
   --surface-2: #111317;
@@ -187,6 +228,38 @@
   --leave-bg: #000000;
   --badge-fg: #000000;
   --badge-bg: #b37b00;
+}
+
+/* theme: kiosk-dim-tft */
+:root[data-kiosk][data-dim][data-theme="tft"] {
+  --bg: #000000;
+  --surface: #000000;
+  --surface-2: #111111;
+  --fg: #a6a6a6;
+  --muted: #808080;
+  --line: #1a1a1a;
+  --edge: #5c5c5c;
+  --accent: #a3861a;
+  --accent-fg: #000000;
+  --focus: #999999;
+  --ok-fg: #3f9e66;
+  --ok-bg: #08160d;
+  --late-fg: #a3861a;
+  --late-bg: #141000;
+  --bad-fg: #bf6a60;
+  --bad-bg: #1c0806;
+  --unk-fg: #808080;
+  --unk-bg: #111111;
+  --leave-fg: #a6a6a6;
+  --leave-bg: #000000;
+  --badge-fg: #000000;
+  --badge-bg: #a6a6a6;
+  --time: #a3861a;
+  --pill-ink: #000000;
+  --pill-ok: #1f8a46;
+  --pill-late: #a3861a;
+  --pill-bad: #9c1818;
+  --pill-bad-ink: #d9d9d9;
 }
 
 /* --- Base --- */
@@ -310,7 +383,20 @@ button.link:hover:not(:disabled) { background: none; text-decoration-thickness: 
 .connection[data-state="polling"],
 .connection[data-state="stale"] { color: var(--late-fg); background: var(--late-bg); }
 .connection[data-state="offline"] { color: var(--bad-fg); background: var(--bad-bg); }
-#theme-toggle[aria-pressed="true"] { color: var(--accent-fg); background: var(--accent); border-color: var(--accent); }
+/* The Look picker: the browser's own list, with its label, at the size of
+   the quiet buttons beside it. */
+.look { display: inline-flex; align-items: center; gap: var(--s-2); font-weight: 500; }
+.look select {
+  min-height: 2.75rem;
+  padding: var(--s-2) var(--s-3);
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+.look select:hover { background: var(--surface-2); }
 /* Looks like the quiet buttons beside it, with their target size. */
 .top-link {
   display: inline-flex;
@@ -1162,6 +1248,20 @@ table.measures tr.total th, table.measures tr.total td { font-weight: 600; }
 :root[data-theme="board"] .badge { padding-left: 0; padding-right: 0; background: transparent; }
 :root[data-theme="board"] .badge.st-cancelled { padding-left: var(--s-2); padding-right: var(--s-2); background: var(--bad-fg); }
 
+/* --- TFT look flourishes: Inter as everywhere, the times bold in yellow,
+   and on time, late and cancelled each in a pill of its own colour, which
+   only backs up the words in it. --- */
+
+:root[data-theme="tft"] .clock,
+:root[data-theme="tft"] table.board .time,
+:root[data-theme="tft"] table.board .due { color: var(--time); font-weight: 600; }
+:root[data-theme="tft"] .badge.st-on_time,
+:root[data-theme="tft"] .badge.st-late,
+:root[data-theme="tft"] .badge.st-cancelled { padding-inline: var(--s-2); border-radius: 999px; font-weight: 600; }
+:root[data-theme="tft"] .badge.st-on_time { color: var(--pill-ink); background: var(--pill-ok); }
+:root[data-theme="tft"] .badge.st-late { color: var(--pill-ink); background: var(--pill-late); }
+:root[data-theme="tft"] .badge.st-cancelled { color: var(--pill-bad-ink); background: var(--pill-bad); }
+
 /* --- The stale banner: a wall tablet's (kiosk.js), when the page is behind
    or can't reach the server. Full width and reversed out, to be seen across
    a room. --- */
@@ -1200,7 +1300,7 @@ table.measures tr.total th, table.measures tr.total td { font-weight: 600; }
 }
 /* Every control, and what only a control would show. */
 :root[data-kiosk] .skip,
-:root[data-kiosk] #theme-toggle,
+:root[data-kiosk] .look,
 :root[data-kiosk] .top-link,
 :root[data-kiosk] .leave-remind,
 :root[data-kiosk] .alert-banner,

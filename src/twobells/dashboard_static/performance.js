@@ -3,13 +3,15 @@
 // together and route by route, from GET /api/performance, as tables
 // (measures.js). It loads once, as the figures change slowly; reloading the
 // page brings them up to date. The snapshot gives the page its place and
-// the stops' names. Its header has the dashboard's Board look and links.
+// the stops' names. Its header has the dashboard's Look picker (look.js)
+// and links.
 //
 // Delay Repay (bead inky-departures-2ir.6) comes after the buses: its section
 // goes where performance.html's comment says, drawn by a function of its own
 // that renderReport calls with the same report.
 
-import { $, h, fill, setText, store, str, obj, list } from "./dom.js";
+import { $, h, fill, setText, str, obj, list } from "./dom.js";
+import { setUpLook } from "./look.js";
 import { getJSON } from "./api.js";
 import { hhmm } from "./time.js";
 import { placeName } from "./header.js";
@@ -21,22 +23,6 @@ const PARTS = [
   ["train", "trains", "All trains"],
   ["bus", "buses", "All buses"],
 ];
-
-// --- Theme: "modern" (default) or "board", as on the dashboard (main.js).
-
-function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme;
-  $("theme-toggle").setAttribute("aria-pressed", String(theme === "board"));
-}
-
-export function setUpTheme() {
-  $("theme-toggle").addEventListener("click", () => {
-    const next = document.documentElement.dataset.theme === "board" ? "modern" : "board";
-    store.set("dashboard.theme", next);
-    applyTheme(next);
-  });
-  applyTheme(document.documentElement.dataset.theme === "board" ? "board" : "modern");
-}
 
 // --- The figures.
 
@@ -129,6 +115,6 @@ export async function load() {
 }
 
 if (document.getElementById("perf-status")) {
-  setUpTheme();
+  setUpLook();
   load();
 }

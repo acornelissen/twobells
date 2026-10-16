@@ -1,9 +1,9 @@
 // Wires the page together: the connection, each snapshot's render, the
-// one-second tick, the theme toggle, and the row buttons. On a wall tablet
+// one-second tick, the Look picker, and the row buttons. On a wall tablet
 // (kiosk.js) there are no buttons, reminders or area map, and the page dims,
 // shifts, warns and reloads by itself.
 
-import { $, setText, store, str, obj, focusKey, refocus } from "./dom.js";
+import { $, setText, str, obj, focusKey, refocus } from "./dom.js";
 import { connect, STATE } from "./api.js";
 import { clockText, parseAt } from "./time.js";
 import { applyRowStrips, lastBuses, renderBuses, renderTrains, stopNames, tickBoards, toggleMore } from "./board.js";
@@ -19,6 +19,7 @@ import { renderArea, setUpArea } from "./area.js";
 import { icon } from "./icons.js";
 import { noteConnection, pill, placeName } from "./header.js";
 import { applyDim, drawBanner, isKiosk, startKiosk } from "./kiosk.js";
+import { setUpLook } from "./look.js";
 
 const kiosk = isKiosk();
 
@@ -43,19 +44,9 @@ const heroContext = () => ({
   rain: str(obj(snapshot?.weather)?.rain),
 });
 
-// --- Theme: "modern" (default) or "board"; theme.js applied it before paint.
+// --- The look: the Look picker (look.js).
 
-function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme;
-  $("theme-toggle").setAttribute("aria-pressed", String(theme === "board"));
-}
-
-$("theme-toggle").addEventListener("click", () => {
-  const next = document.documentElement.dataset.theme === "board" ? "modern" : "board";
-  store.set("dashboard.theme", next);
-  applyTheme(next);
-});
-applyTheme(document.documentElement.dataset.theme === "board" ? "board" : "modern");
+setUpLook();
 
 // --- The status pill: live or not, and whether the trains and buses are current.
 

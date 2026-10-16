@@ -23,7 +23,14 @@
     <span id="connection-glyph" class="glyph" aria-hidden="true"></span>
     <span id="connection-text">Connecting…</span>
   </p>
-  <button type="button" id="theme-toggle" class="quiet" aria-pressed="false">Board look</button>
+  <div class="look">
+    <label for="look">Look</label>
+    <select id="look">
+      <option value="modern">Standard</option>
+      <option value="board">Dot matrix</option>
+      <option value="tft">TFT</option>
+    </select>
+  </div>
   <a class="top-link" href="/performance">Performance</a>
   <a class="top-link" href="/settings">Settings</a>
 </header>

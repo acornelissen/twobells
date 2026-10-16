@@ -141,11 +141,98 @@ def test_the_header_links_to_the_performance_page_and_the_settings():
 def test_the_performance_page_header_links_back_to_the_departures_and_the_settings():
     assert _header_links("performance.html") == [{"class": "top-link", "href": "/"},
                                                  {"class": "top-link", "href": "/settings"}]
-    # The same Board look switch as the dashboard's, its look set before the first paint.
-    page = _page("performance.html")
-    toggle = {"type": "button", "id": "theme-toggle", "class": "quiet", "aria-pressed": "false"}
-    assert ("button", toggle) in page.elements
-    assert ("script", {"src": "/static/theme.js"}) in page.elements
+    # The same Look picker as the dashboard's, its look set before the first paint.
+    assert _look_options("performance.html") == _look_options("index.html")
+    assert ("script", {"src": "/static/theme.js"}) in _page("performance.html").elements
+
+
+# --- The Look picker ---
+
+
+def _look_options(name="index.html"):
+    """A page's Look picker's options, as (value, words)."""
+    html = (STATIC / name).read_text(encoding="utf-8")
+    picker = re.search(r'<label for="look">Look</label>\s*<select id="look">(.*?)</select>', html, re.S)
+    assert picker, "a <select id=look> with its own visible label"
+    return re.findall(r'<option value="([\w-]+)">([^<]+)</option>', picker.group(1))
+
+
+def _looks():
+    return [value for value, _ in _look_options()]
+
+
+@pytest.mark.parametrize("name", PAGES)
+def test_the_look_picker_is_a_labelled_list_of_every_look_in_the_header(name):
+    assert _look_options(name) == [("modern", "Standard"), ("board", "Dot matrix"), ("tft", "TFT")]
+    page = _page(name)
+    header = next(i for i, (tag, _) in enumerate(page.elements) if tag == "header")
+    main = next(i for i, (tag, _) in enumerate(page.elements) if tag == "main")
+    assert ("select", {"id": "look"}) in page.elements[header:main]
+    # Nothing left of the old toggle button.
+    assert 'id="theme-toggle"' not in (STATIC / name).read_text(encoding="utf-8")
+
+
+def test_theme_js_knows_every_look_the_picker_offers():
+    js = (STATIC / "theme.js").read_text(encoding="utf-8")
+    known = re.search(r"const LOOKS = \[([^\]]*)\];", js)
+    assert known and re.findall(r'"([\w-]+)"', known.group(1)) == _looks()
+
+
+def test_every_look_has_a_palette_and_a_dimmed_one():
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    for look in _looks():
+        if look != "modern":  # the Standard look's is the page's own, light and dark
+            assert f'/* theme: {look} */\n:root[data-theme="{look}"] {{' in css, look
+        assert f':root[data-kiosk][data-dim][data-theme="{look}"] {{' in css, look
+    # The Standard look's dark palette is its own, not every other look's.
+    assert '  :root[data-theme="modern"] {' in css and ':not([data-theme=' not in css
+
+
+def test_the_look_picker_is_easy_to_use_by_keyboard_and_touch_and_kept_per_browser():
+    # The browser's own list: Tab reaches it and the arrow keys choose, and
+    # the page's focus ring shows on it. It is as big a target as the buttons.
+    assert _css_value(".look select", "min-height") == "2.75rem"
+    assert _css_value(":focus-visible", "outline") == "2px solid var(--focus)"
+    css = re.sub(r"/\*.*?\*/", "", (STATIC / "app.css").read_text(encoding="utf-8"), flags=re.S)
+    for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        if ".look" in selectors or "select" in selectors:
+            assert "outline" not in body, selectors
+    for name in ("main.js", "performance.js"):
+        assert "setUpLook();" in (STATIC / name).read_text(encoding="utf-8"), name
+    # A wall tablet has nothing to press: the picker is left out.
+    assert "display: none" in " ".join(_css_rules(":root[data-kiosk] .look"))
+
+
+@needs_node
+def test_choosing_a_look_shows_it_and_keeps_it_for_this_browser():
+    found = run_js("""
+        import { setUpLook } from "./look.js";
+        const saved = {};
+        globalThis.localStorage = { getItem: (k) => saved[k] ?? null, setItem: (k, v) => { saved[k] = v; } };
+        const run = (shown, picks) => {
+          const root = { dataset: { theme: shown } };
+          let change;
+          const look = {
+            value: "", options: ["modern", "board", "tft"].map((value) => ({ value })),
+            addEventListener: (type, fn) => { if (type === "change") change = fn; },
+          };
+          document.documentElement = root;
+          document.getElementById = (id) => (id === "look" ? look : null);
+          setUpLook();
+          const seen = [[root.dataset.theme, look.value]];
+          for (const pick of picks) {
+            look.value = pick;
+            change();
+            seen.push([root.dataset.theme, look.value, saved["dashboard.theme"] ?? null]);
+          }
+          return seen;
+        };
+        console.log(JSON.stringify([run("board", ["tft", "modern"]), run("neon", [])]));
+    """)
+    assert found == [
+        [["board", "board"], ["tft", "tft", "tft"], ["modern", "modern", "modern"]],
+        [["modern", "modern"]],  # not a look: the Standard one
+    ]
 
 
 IMPORT = re.compile(
@@ -384,7 +471,9 @@ def test_no_text_glyphs_stand_in_for_icons():
 
 
 # The looks, and a wall tablet's dimmed ones for its quiet windows.
-THEMES = ["modern-light", "modern-dark", "board", "kiosk-dim", "kiosk-dim-board"]
+THEMES = ["modern-light", "modern-dark", "board", "tft", "kiosk-dim", "kiosk-dim-board", "kiosk-dim-tft"]
+# A dark look's dimmed palette, which overrides that look on a wall tablet.
+DIMMED = {"kiosk-dim-board": "board", "kiosk-dim-tft": "tft"}
 
 
 def _palettes():
@@ -394,9 +483,9 @@ def _palettes():
         match = re.search(r"/\* theme: %s \*/[^{]*\{(?:[^{}]*\{)?([^{}]*)\}" % name, css)
         assert match, name
         palettes[name] = dict(re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6})\b", match.group(1)))
-    # The dark and board palettes override the light one; a wall tablet's
-    # dimmed Board look overrides the Board look.
-    base = {"kiosk-dim-board": {**palettes["modern-light"], **palettes["board"]}}
+    # The dark looks override the light one; a wall tablet's dimmed Dot
+    # matrix or TFT look overrides that look.
+    base = {dim: {**palettes["modern-light"], **palettes[look]} for dim, look in DIMMED.items()}
     return {name: {**base.get(name, palettes["modern-light"]), **tokens} for name, tokens in palettes.items()}
 
 
@@ -419,6 +508,31 @@ OUTLINE_PAIRS = [("focus", "bg"), ("focus", "surface"), ("edge", "surface"), ("e
 @pytest.mark.parametrize("theme", THEMES)
 def test_theme_contrast(theme):
     assert_contrast(theme, _palettes()[theme], TEXT_PAIRS, OUTLINE_PAIRS)
+
+
+# The TFT look's own: its yellow times on the boards and the clock, and the
+# words in its status pills.
+TFT_PAIRS = [("time", "bg"), ("time", "surface"), ("time", "surface-2"), ("pill-ink", "pill-ok"),
+             ("pill-ink", "pill-late"), ("pill-bad-ink", "pill-bad")]
+
+
+@pytest.mark.parametrize("theme", ["tft", "kiosk-dim-tft"])
+def test_the_tft_looks_times_and_pills_are_readable(theme):
+    assert_contrast(theme, _palettes()[theme], TFT_PAIRS, [])
+
+
+def test_the_tft_look_puts_times_in_yellow_and_each_status_in_its_own_pill():
+    for selector in (":root[data-theme=\"tft\"] table.board .time", ":root[data-theme=\"tft\"] table.board .due",
+                     ":root[data-theme=\"tft\"] .clock"):
+        assert _css_value(selector, "color") == "var(--time)", selector
+    for status, fill, ink in (("on_time", "ok", "pill-ink"), ("late", "late", "pill-ink"),
+                              ("cancelled", "bad", "pill-bad-ink")):
+        selector = f':root[data-theme="tft"] .badge.st-{status}'
+        assert _css_value(selector, "background") == f"var(--pill-{fill})"
+        assert _css_value(selector, "color") == f"var(--{ink})"
+        assert _css_value(selector, "border-radius") == "999px"
+    # The status words are still in each badge: the pill only backs them up.
+    assert "badge-text" in (STATIC / "board.js").read_text(encoding="utf-8")
 
 
 # --- The contract fixtures (docs/dashboard-api.md), for both sides to share ---
@@ -3323,6 +3437,7 @@ def test_kiosk_mode_and_its_board_look_are_set_before_the_first_paint_from_the_a
         console.log(JSON.stringify([
           run("", null), run("", "board"), run("?kiosk", null), run("?kiosk", "modern"), run("?kiosk", "board"),
           run("?kiosk", "blocked"), run("?from=home&kiosk=1", null), run("?kiosks", null),
+          run("", "tft"), run("?kiosk", "tft"), run("", "neon"), run("?kiosk", "constructor"),
         ]));
     """)
     assert found == [
@@ -3334,6 +3449,10 @@ def test_kiosk_mode_and_its_board_look_are_set_before_the_first_paint_from_the_a
         ["on", "board"],  # storage blocked: still a wall tablet
         ["on", "board"],
         [None, "modern"],
+        [None, "tft"],  # the TFT look, kept per browser like the others
+        ["on", "tft"],
+        [None, "modern"],  # a saved value that is no look is ignored
+        ["on", "board"],
     ]
     # theme.js is a classic script in <head>, so it runs before the page is
     # drawn; the modules run after parsing.
@@ -3550,13 +3669,15 @@ def test_a_wall_tablet_dims_while_the_snapshot_says_a_quiet_window_is_on():
     # Dimmed is darker: black, with the words at most 60% of the light they
     # have in the look's own dark palette. test_theme_contrast keeps them legible.
     palettes = _palettes()
-    for dim, look in (("kiosk-dim", "modern-dark"), ("kiosk-dim-board", "board")):
+    for dim, look in (("kiosk-dim", "modern-dark"), *DIMMED.items()):
         assert luminance(palettes[dim]["fg"]) <= 0.6 * luminance(palettes[look]["fg"])
         assert palettes[dim]["bg"] == "#000000"
-    # Only on a wall tablet, in a quiet window.
+        if "time" in palettes[look]:  # the TFT look's yellow times dim too
+            assert luminance(palettes[dim]["time"]) <= 0.6 * luminance(palettes[look]["time"])
+    # Only on a wall tablet, in a quiet window, each look with its own.
     css = (STATIC / "app.css").read_text(encoding="utf-8")
-    assert ':root[data-kiosk][data-dim]:not([data-theme="board"]) {' in css
-    assert ':root[data-kiosk][data-dim][data-theme="board"] {' in css
+    for look in _looks():
+        assert f':root[data-kiosk][data-dim][data-theme="{look}"] {{' in css
 
 
 STALE_BANNER = """

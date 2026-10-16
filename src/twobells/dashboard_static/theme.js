@@ -1,9 +1,12 @@
-// Applies the saved theme, and kiosk mode ("/?kiosk", for a wall tablet),
+// Applies the saved look, and kiosk mode ("/?kiosk", for a wall tablet),
 // before the first paint. It is a classic script in <head> because module
 // scripts run after parsing (and the CSP allows no inline script), so the
-// page would otherwise flash the other theme or its controls. Kiosk mode
-// takes the Board look unless this browser has a saved choice.
+// page would otherwise flash the other look or its controls. Kiosk mode
+// takes the Dot matrix look ("board") unless this browser has a saved choice.
 {
+  // The looks: the values of the Look picker's options in index.html, each
+  // with its palette in app.css. "modern" is the Standard look.
+  const LOOKS = ["modern", "board", "tft"];
   const root = document.documentElement;
   const kiosk = new URLSearchParams(location.search).has("kiosk");
   if (kiosk) root.dataset.kiosk = "on";
@@ -11,6 +14,6 @@
   try {
     theme = localStorage.getItem("dashboard.theme");
   } catch { /* storage blocked: keep the default */ }
-  if (theme === "board" || theme === "modern") root.dataset.theme = theme;
+  if (LOOKS.includes(theme)) root.dataset.theme = theme;
   else if (kiosk) root.dataset.theme = "board";
 }
