@@ -21,6 +21,9 @@ SCHEDULED = "sch"
 BUS = "Bus"
 # The same in full, on the dashboard.
 REPLACEMENT_BUS = "Replacement bus"
+# A ferry listed with the trains: likewise in the platform column, or before
+# its destination.
+FERRY = "Ferry"
 # After a platform that isn't the one the train was given before: "Plat 2 (changed)".
 CHANGED = "(changed)"
 

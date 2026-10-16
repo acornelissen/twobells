@@ -68,6 +68,8 @@ class Row:
     # A rail replacement bus in the trains: its platform is words.BUS, and a
     # board with no platform column says so before the destination.
     replacement_bus: bool = False
+    # A ferry in the trains: the same, with words.FERRY.
+    ferry: bool = False
     # The train's "Calling at" line (core/calling.py), on a screen only: it
     # scrolls the first train's under its row. E-paper can't scroll it.
     calling: str | None = None
@@ -75,13 +77,16 @@ class Row:
 
 def destination_text(row: Row, platform_column: bool, wide: bool = False) -> str:
     """A train row's destination as drawn: after "Bus: " for a replacement bus
-    on a board with no platform column to say "Bus" in, and followed by its
-    via words on a board `wide` enough for a platform column."""
+    (or "Ferry: " for a ferry) on a board with no platform column to say so
+    in, and followed by its via words on a board `wide` enough for a
+    platform column."""
     text = row.middle
     if wide and row.via:
         text = f"{text} {row.via}"
     if row.replacement_bus and not platform_column:
         return f"{words.BUS}: {text}"
+    if row.ferry and not platform_column:
+        return f"{words.FERRY}: {text}"
     return text
 
 
@@ -177,13 +182,16 @@ def _style(dep: Departure) -> Style:
 
 
 def _train_row(dep: Departure, walk: WalkTimes | None, clock: str | None) -> Row:
-    changed = dep.platform_changed and not dep.replacement_bus and dep.platform is not None
+    changed = dep.platform_changed and dep.is_train and dep.platform is not None
     if dep.replacement_bus:
         platform = words.BUS
+    elif dep.ferry:
+        platform = words.FERRY
     else:
         platform = words.platform(dep.platform, changed) if dep.platform else None
     return Row(dep.scheduled, dep.destination, words.status(dep), _style(dep), platform=platform,
                platform_changed=changed, via=dep.via, replacement_bus=dep.replacement_bus,
+               ferry=dep.ferry,
                calling=_cut(dep.calling_at, CALLING_LIMIT) if clock and dep.calling_at else None)
 
 

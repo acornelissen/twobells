@@ -201,6 +201,20 @@ def test_a_replacement_bus_is_never_a_platform_change():
     assert not mark_platform_changes([bus], [bus])[0].platform_changed
 
 
+def test_a_ferry_is_never_a_platform_change_nor_the_train_at_its_time():
+    ferry = dataclasses.replace(at("1"), ferry=True)
+    assert not mark_platform_changes([at("2")], [ferry])[0].platform_changed
+    assert not mark_platform_changes([ferry], [dataclasses.replace(ferry, platform="2")])[0].platform_changed
+
+
+def test_a_departure_is_a_ferry_only_when_it_says_so_and_never_a_bus_too():
+    assert at("1").ferry is False
+    with pytest.raises(TypeError):
+        at("1", ferry="yes")
+    with pytest.raises(ValueError):
+        at("1", ferry=True, replacement_bus=True)
+
+
 def test_via_and_platform_changed_must_be_the_right_types():
     with pytest.raises(TypeError):
         at("1", via=3)

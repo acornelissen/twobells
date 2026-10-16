@@ -520,6 +520,28 @@ def test_with_a_platform_column_a_replacement_bus_says_bus_there(panel):
     assert middle_text(REPLACEMENT_BUS, layout) == "Manchester Piccadilly"
 
 
+FERRY = Row("07:12", "Ryde Pier Head", "On time", platform="Ferry", ferry=True)
+
+
+def test_without_a_platform_column_a_ferry_says_so_before_its_destination():
+    fonts = load_fonts()
+    assert platform_column([FERRY], fonts, WIDTH, 1) is None
+    layout = row_layout(FERRY, fonts, WIDTH, 1)
+    assert layout.middle.startswith("Ferry: Ryde")
+    assert middle_text(FERRY, layout) == "Ferry: Ryde Pier Head"
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_with_a_platform_column_a_ferry_says_ferry_there(panel):
+    s = plain_scale(panel)
+    fonts = load_fonts(s)
+    platform_x = platform_column([FERRY], fonts, panel.width, s)
+    assert platform_x is not None
+    layout = row_layout(FERRY, fonts, panel.width, s, platform_x)
+    assert layout.platform_x == platform_x
+    assert middle_text(FERRY, layout) == "Ryde Pier Head"
+
+
 VIA = Row("07:12", "Hadfield", "On time", platform="Plat 1", via="via Dinting")
 
 

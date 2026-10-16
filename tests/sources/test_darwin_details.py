@@ -344,6 +344,77 @@ def test_replacement_buses_are_checked_like_trains():
     assert parse_board_rich({"busServices": bus()}).services[0].departure.replacement_bus is True
 
 
+# Ferries: Darwin lists them under ferryServices, shaped like its trains but
+# with serviceType "ferry" and no coaches. A ferry is a connection of its
+# own, not a replacement for a train.
+
+
+def ferry(**overrides):
+    base = service(serviceType="ferry", length=0, platform="", serviceID="9000010PMH_____",
+                   operator="Wightlink", operatorCode="WL", origin=[{"locationName": "Portsmouth Harbour"}],
+                   destination=[{"locationName": "Ryde Pier Head", "crs": "RYP"}],
+                   subsequentCallingPoints=[{"callingPoint": [point("Ryde Pier Head", "22:44", crs="RYP")]}])
+    base.update(overrides)
+    return base
+
+
+def test_a_board_of_ferries_alone_has_them():
+    board = parse_board_rich({"locationName": "Portsmouth Harbour", "ferryServices": [ferry(), ferry(std="23:15")]})
+    assert [s.departure.scheduled for s in board.services] == ["22:22", "23:15"]
+    first = board.services[0]
+    assert first.departure.mode == "train"  # listed with the trains, in the train section
+    assert first.departure.ferry is True
+    assert first.departure.replacement_bus is False  # a connection, not a stand-in
+    assert first.departure.destination == "Ryde Pier Head"
+    assert first.departure.service == "Wightlink"
+    assert first.departure.platform is None
+    assert first.length is None
+    assert first.service_id == "9000010PMH_____"
+
+
+def test_a_ferry_has_no_platform_whatever_darwin_puts_there():
+    assert parse_board_rich({"ferryServices": [ferry(platform="2")]}).services[0].departure.platform is None
+
+
+def test_the_plain_board_reads_ferries_too():
+    [dep] = parse_board({"ferryServices": [ferry(etd="22:30")]})
+    assert dep.ferry is True
+    assert dep.status is Status.LATE and dep.expected == "22:30"
+
+
+def test_trains_and_replacement_buses_are_not_ferries():
+    assert one().departure.ferry is False
+    assert parse_board_rich({"busServices": [bus()]}).services[0].departure.ferry is False
+
+
+def test_a_service_darwin_calls_a_ferry_is_one_whichever_list_it_is_in():
+    assert one(serviceType="ferry").departure.ferry is True
+    assert one(serviceType=["ferry"]).departure.ferry is False
+    [found] = parse_board_rich({"busServices": [bus(serviceType="ferry")]}).services
+    assert (found.departure.ferry, found.departure.replacement_bus) == (True, False)
+    [found] = parse_board_rich({"ferryServices": [ferry(serviceType="bus")]}).services
+    assert (found.departure.ferry, found.departure.replacement_bus) == (False, True)
+
+
+def test_trains_buses_and_ferries_are_merged_by_time():
+    board = parse_board_rich({
+        "trainServices": [service(std="22:08"), service(std="22:38")],
+        "busServices": [bus(std="22:52")],
+        "ferryServices": [ferry(std="22:22")],
+    })
+    kinds = [(s.departure.scheduled, s.departure.replacement_bus, s.departure.ferry) for s in board.services]
+    assert kinds == [("22:08", False, False), ("22:22", False, True), ("22:38", False, False),
+                     ("22:52", True, False)]
+
+
+def test_ferries_are_checked_like_trains():
+    board = parse_board_rich({"ferryServices": [ferry(std="22:2"), None, ferry(operator=["Wightlink"])]})
+    [only] = board.services
+    assert only.departure.service == ""
+    assert parse_board_rich({"ferryServices": "22:22"}).services == []
+    assert parse_board_rich({"ferryServices": ferry()}).services[0].departure.ferry is True
+
+
 # A train's formation (LDBWS FormationData), which some operators send:
 # its coaches from the front, each with its class, toilet and loading.
 
@@ -428,6 +499,13 @@ def test_flags_must_be_true_not_merely_truthy():
 def test_a_replacement_bus_has_no_formation():
     board = parse_board_rich({"busServices": [bus(formation={"coaches": [coach()]}, detachFront=True,
                                                   isReverseFormation=True)]})
+    [found] = board.services
+    assert found.formation is None and found.detach_front is False and found.reverse_formation is False
+
+
+def test_a_ferry_has_no_formation():
+    board = parse_board_rich({"ferryServices": [ferry(formation={"coaches": [coach()]}, detachFront=True,
+                                                      isReverseFormation=True)]})
     [found] = board.services
     assert found.formation is None and found.detach_front is False and found.reverse_formation is False
 
@@ -555,3 +633,8 @@ def test_a_cancelled_train_or_one_without_calling_points_has_no_line():
 def test_a_replacement_bus_says_it_is_one():
     [found] = parse_board_rich({"busServices": [bus(subsequentCallingPoints=[{"callingPoint": [point()]}])]}).services
     assert found.departure.calling_at == "Calling at: Dinting only. This is a replacement bus."
+
+
+def test_a_ferry_says_it_is_one_and_never_counts_coaches():
+    [found] = parse_board_rich({"ferryServices": [ferry(length=3)]}).services
+    assert found.departure.calling_at == "Calling at: Ryde Pier Head only. This is a ferry."

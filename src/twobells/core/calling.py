@@ -38,22 +38,26 @@ def not_calling_at(names: Sequence[str]) -> str | None:
     return f"Does not call at {stop_list(names, 'or')}." if names else None
 
 
-def formed_of(coaches: int | None, replacement_bus: bool = False) -> str | None:
+def formed_of(coaches: int | None, replacement_bus: bool = False, ferry: bool = False) -> str | None:
     """"This train is formed of 3 coaches.", or for a rail replacement bus
-    "This is a replacement bus."; None when the length isn't known."""
+    "This is a replacement bus." and for a ferry "This is a ferry."; None
+    when the length isn't known."""
     if replacement_bus:
         return "This is a replacement bus."
+    if ferry:
+        return "This is a ferry."
     if coaches is None or coaches < 1:
         return None
     return f"This train is formed of {coaches} {'coach' if coaches == 1 else 'coaches'}."
 
 
 def line(calling: Sequence[str], skipped: Sequence[str] = (), coaches: int | None = None,
-         replacement_bus: bool = False) -> str | None:
+         replacement_bus: bool = False, ferry: bool = False) -> str | None:
     """The whole line: where it calls, where it no longer does, and how long
     it is. None when it calls nowhere: a train cancelled, or one whose stops
     aren't known, has no line."""
     first = calling_at(calling)
     if first is None:
         return None
-    return " ".join(part for part in (first, not_calling_at(skipped), formed_of(coaches, replacement_bus)) if part)
+    parts = (first, not_calling_at(skipped), formed_of(coaches, replacement_bus, ferry))
+    return " ".join(part for part in parts if part)

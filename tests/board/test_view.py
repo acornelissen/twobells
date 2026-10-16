@@ -322,6 +322,19 @@ def test_a_replacement_bus_says_bus_in_the_platform_column():
     assert row.replacement_bus is False
 
 
+def test_a_ferry_says_ferry_in_the_platform_column():
+    ferry = Departure("train", "Wightlink", "Ryde Pier Head", "07:12", None, Status.ON_TIME, ferry=True,
+                      platform_changed=True)
+    [row] = view(trains=[ferry]).trains.rows
+    assert (row.platform, row.platform_changed) == ("Ferry", False)
+    assert row.ferry is True and row.replacement_bus is False
+    assert row.middle == "Ryde Pier Head"
+    assert destination_text(row, platform_column=False) == "Ferry: Ryde Pier Head"
+    assert destination_text(row, platform_column=True) == "Ryde Pier Head"
+    [row] = view(trains=[train()]).trains.rows
+    assert row.ferry is False
+
+
 def test_a_changed_platform_says_so_in_words():
     changed = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, "2",
                         platform_changed=True)

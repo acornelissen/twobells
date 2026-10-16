@@ -61,6 +61,9 @@ class Departure:
     stop: str | None = None
     # A rail replacement bus, run in a train's place: Darwin's serviceType "bus".
     replacement_bus: bool = False
+    # A ferry listed with the trains, a connection of its own: Darwin's
+    # serviceType "ferry". Never a replacement bus too.
+    ferry: bool = False
     # Darwin's words on the route, like "via Guide Bridge"; None for most.
     via: str | None = None
     # Its platform has changed since an earlier fetch: see mark_platform_changes.
@@ -84,9 +87,17 @@ class Departure:
         for name in ("platform", "stop", "via", "calling_at"):
             if getattr(self, name) is not None and not isinstance(getattr(self, name), str):
                 raise TypeError(f"{name} is not text")
-        for name in ("replacement_bus", "platform_changed"):
+        for name in ("replacement_bus", "ferry", "platform_changed"):
             if not isinstance(getattr(self, name), bool):
                 raise TypeError(f"{name} is not true or false")
+        if self.replacement_bus and self.ferry:
+            raise ValueError("a departure is a replacement bus or a ferry, not both")
+
+    @property
+    def is_train(self) -> bool:
+        """A train proper: not a bus, nor a replacement bus or ferry listed
+        with the trains, which have no platform or coaches."""
+        return self.mode == "train" and not (self.replacement_bus or self.ferry)
 
     @property
     def departs_at(self) -> str:
@@ -126,8 +137,8 @@ class Departure:
         return leaves < now.replace(second=0, microsecond=0)
 
 
-def _same_train(dep: Departure) -> tuple[str, str, str, str, bool]:
-    return dep.mode, dep.service, dep.scheduled, dep.destination, dep.replacement_bus
+def _same_train(dep: Departure) -> tuple[str, str, str, str, bool, bool]:
+    return dep.mode, dep.service, dep.scheduled, dep.destination, dep.replacement_bus, dep.ferry
 
 
 def mark_platform_changes(before: list[Departure], after: list[Departure]) -> list[Departure]:
@@ -135,12 +146,12 @@ def mark_platform_changes(before: list[Departure], after: list[Departure]) -> li
     platform isn't the one `before` (the last fetch, less what has left
     since) gave it, and kept while it stays on the new one. Only a platform
     given both times counts: one appearing, or going, is no change, and a
-    replacement bus has none."""
+    replacement bus or ferry has none."""
     previous = {_same_train(dep): dep for dep in before}
     marked = []
     for dep in after:
         old = previous.get(_same_train(dep))
-        changed = (old is not None and dep.platform is not None and old.platform is not None
+        changed = (dep.is_train and old is not None and dep.platform is not None and old.platform is not None
                    and (old.platform != dep.platform or old.platform_changed))
         marked.append(replace(dep, platform_changed=changed) if changed != dep.platform_changed else dep)
     return marked

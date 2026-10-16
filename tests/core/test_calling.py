@@ -46,6 +46,11 @@ def test_a_replacement_bus_says_so_rather_than_coaches():
     )
 
 
+def test_a_ferry_says_so_rather_than_coaches():
+    assert line(["Ryde Pier Head"], coaches=3, ferry=True) == "Calling at: Ryde Pier Head only. This is a ferry."
+    assert formed_of(None, ferry=True) == "This is a ferry."
+
+
 def test_a_train_calling_nowhere_has_no_line():
     assert line([]) is None
     assert line([], ["Dinting", "Manchester Piccadilly"], 3) is None

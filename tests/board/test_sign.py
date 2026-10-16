@@ -422,6 +422,22 @@ def test_with_a_platform_column_a_replacement_bus_says_bus_there(panel):
     assert texts([i for i in items if i.y == first.y]) == ["1st", "07:12", "Manchester Piccadilly", "Bus", "On time"]
 
 
+FERRY = Row("07:12", "Ryde Pier Head", "On time", platform="Ferry", ferry=True)
+
+
+def test_without_a_platform_column_a_ferry_says_so_before_its_destination():
+    items = sign_layout(board([FERRY])).items
+    assert texts([i for i in items if i.y == find(items, "1st").y])[2] == "Ferry: Ryde Pier Head"
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_with_a_platform_column_a_ferry_says_ferry_there(panel):
+    width, height = dots(panel)
+    items = sign_layout(board([FERRY]), width, height).items
+    first = find(items, "1st")
+    assert texts([i for i in items if i.y == first.y]) == ["1st", "07:12", "Ryde Pier Head", "Ferry", "On time"]
+
+
 VIA = Row("07:12", "Hadfield", "On time", platform="Plat 1", via="via Dinting")
 
 

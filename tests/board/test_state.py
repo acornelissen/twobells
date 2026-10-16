@@ -35,6 +35,14 @@ def test_a_replacement_bus_round_trips_and_older_saved_trains_are_not_one():
     assert departure_from_dict(older).replacement_bus is False
 
 
+def test_a_ferry_round_trips_and_older_saved_trains_are_not_one():
+    dep = Departure("train", "Wightlink", "Ryde Pier Head", "07:12", None, Status.ON_TIME, ferry=True)
+    assert departure_from_dict(departure_to_dict(dep)) == dep
+    older = departure_to_dict(Departure("train", "Northern", "Manchester", "07:12", None, Status.ON_TIME))
+    del older["ferry"]
+    assert departure_from_dict(older).ferry is False
+
+
 def test_via_and_a_changed_platform_round_trip_and_older_saved_trains_have_neither():
     dep = Departure("train", "Northern", "Manchester", "07:12", None, Status.ON_TIME, "2",
                     via="via Guide Bridge", platform_changed=True)
@@ -123,6 +131,7 @@ def test_a_saved_departure_whose_time_is_not_a_clock_time_is_rejected(field, val
 @pytest.mark.parametrize("field, value", [
     ("mode", None), ("service", 341), ("destination", ["Hyde"]), ("platform", 1), ("stop", {"a": 1}),
     ("replacement_bus", "yes"), ("replacement_bus", 1),
+    ("ferry", "yes"), ("ferry", 1),
 ])
 def test_a_saved_departure_with_a_field_of_the_wrong_type_is_rejected(field, value):
     good = departure_to_dict(Departure("bus", "341", "Hyde", "07:20", None, Status.ON_TIME, stop="A"))
