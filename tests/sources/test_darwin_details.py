@@ -344,6 +344,94 @@ def test_replacement_buses_are_checked_like_trains():
     assert parse_board_rich({"busServices": bus()}).services[0].departure.replacement_bus is True
 
 
+# A train's formation (LDBWS FormationData), which some operators send:
+# its coaches from the front, each with its class, toilet and loading.
+
+
+def coach(number="1", **overrides):
+    base = {"number": number, "coachClass": "Standard", "toilet": {"value": "Standard", "status": "InService"},
+            "loading": 20, "loadingSpecified": True}
+    base.update(overrides)
+    return base
+
+
+def test_reads_the_coaches_of_a_train_from_the_front():
+    train = one(formation={"coaches": [
+        coach("A", coachClass="First", toilet={"value": "None", "status": "Unknown"}, loading=12),
+        coach("B", toilet={"value": "Accessible", "status": "InService"}, loading=55),
+        coach("C", coachClass="Mixed", toilet={"value": "Standard", "status": "NotInService"}, loading=90),
+    ]}, detachFront=True, isReverseFormation=True)
+    assert train.formation == darwin.Formation(coaches=(
+        darwin.Coach("A", "first", None, False, 12),
+        darwin.Coach("B", "standard", "accessible", False, 55),
+        darwin.Coach("C", "mixed", "standard", True, 90),
+    ), average_loading=None)
+    assert train.detach_front is True and train.reverse_formation is True
+
+
+def test_a_train_without_a_formation_has_none():
+    train = one()
+    assert train.formation is None
+    assert train.detach_front is False and train.reverse_formation is False
+    for empty in (None, {}, {"coaches": []}, {"coaches": None}, {"loadingCategory": {"code": "1"}}):
+        assert one(formation=empty).formation is None, empty
+
+
+def test_darwin_s_words_are_read_in_any_case_and_other_shapes_too():
+    train = one(formation={"coaches": {"coach": [coach(coachClass=" FIRST ", toilet="accessible")]}})
+    [found] = train.formation.coaches
+    assert (found.coach_class, found.toilet, found.toilet_out_of_order) == ("first", "accessible", False)
+    single = one(formation={"coaches": coach(toilet={"Value": "Standard", "Status": "notinservice"})})
+    assert single.formation.coaches[0].toilet == "standard" and single.formation.coaches[0].toilet_out_of_order
+    assert one(formation={"avgLoading": 40}).formation == darwin.Formation((), 40)
+
+
+@pytest.mark.parametrize("field, bad", [
+    ("number", "ABC"), ("number", 1), ("number", "<b"), ("number", ""),
+    ("coachClass", "Premium"), ("coachClass", ["First"]), ("coachClass", "constructor"),
+    ("toilet", {"value": "Bucket", "status": "InService"}), ("toilet", ["Accessible"]), ("toilet", 3),
+    ("loading", 101), ("loading", -1), ("loading", "50"), ("loading", 50.5), ("loading", True),
+])
+def test_odd_coach_fields_are_left_out_not_raised(field, bad):
+    [found] = one(formation={"coaches": [coach(**{field: bad})]}).formation.coaches
+    expected = {"number": "1", "coach_class": "standard", "toilet": "standard", "loading": 20}
+    expected[{"coachClass": "coach_class"}.get(field, field)] = None
+    assert (found.number, found.coach_class, found.toilet, found.loading) == tuple(expected.values())
+
+
+def test_a_loading_darwin_says_isn_t_there_is_not_read():
+    [found] = one(formation={"coaches": [coach(loading=0, loadingSpecified=False)]}).formation.coaches
+    assert found.loading is None
+
+
+def test_a_toilet_with_no_type_is_never_out_of_order():
+    [found] = one(formation={"coaches": [coach(toilet={"value": "Unknown", "status": "NotInService"})]}).formation.coaches
+    assert found.toilet is None and found.toilet_out_of_order is False
+
+
+def test_a_formation_with_a_coach_that_isn_t_one_is_left_out():
+    # A gap would put every coach after it in the wrong place.
+    for odd in ("Coach 2", 7, None, ["x"]):
+        assert one(formation={"coaches": [coach("1"), odd, coach("3")]}).formation is None, odd
+    assert one(formation={"coaches": [coach(str(i)) for i in range(31)]}).formation is None
+    assert len(one(formation={"coaches": [coach(str(i)) for i in range(30)]}).formation.coaches) == 30
+    for odd in ("formation", 7, ["x"], {"coaches": "x"}, {"avgLoading": 101}, {"avgLoading": "40"}):
+        assert one(formation=odd).formation is None, odd
+
+
+def test_flags_must_be_true_not_merely_truthy():
+    for odd in ("true", 1, [True], {"x": 1}):
+        train = one(detachFront=odd, isReverseFormation=odd)
+        assert train.detach_front is False and train.reverse_formation is False, odd
+
+
+def test_a_replacement_bus_has_no_formation():
+    board = parse_board_rich({"busServices": [bus(formation={"coaches": [coach()]}, detachFront=True,
+                                                  isReverseFormation=True)]})
+    [found] = board.services
+    assert found.formation is None and found.detach_front is False and found.reverse_formation is False
+
+
 # The source.
 
 

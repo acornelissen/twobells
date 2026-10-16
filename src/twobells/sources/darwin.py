@@ -241,6 +241,26 @@ class CallingPoint:
 
 
 @dataclass(frozen=True)
+class Coach:
+    """One coach of a train's formation, as the operator gave it."""
+
+    number: str | None  # as on the coach: "A", "12"
+    coach_class: str | None  # "first", "standard" or "mixed"
+    toilet: str | None  # "standard" or "accessible"; None for none, or not known
+    toilet_out_of_order: bool
+    loading: int | None  # how full, 0 to 100
+
+
+@dataclass(frozen=True)
+class Formation:
+    """A train's coaches from the front, in Darwin's order, and how full it
+    is on average where Darwin gives that."""
+
+    coaches: tuple[Coach, ...]
+    average_loading: int | None
+
+
+@dataclass(frozen=True)
 class TrainService:
     departure: Departure
     service_id: str | None
@@ -250,6 +270,12 @@ class TrainService:
     cancel_reason: str | None
     delay_reason: str | None
     calling_points: tuple[CallingPoint, ...]
+    # Its coaches, where the operator sends them, and Darwin's flags for
+    # this station: the front units detach here, and it runs the other way
+    # round from its usual formation.
+    formation: Formation | None = None
+    detach_front: bool = False
+    reverse_formation: bool = False
 
 
 @dataclass(frozen=True)
@@ -290,6 +316,69 @@ def _coaches(value) -> int | None:
     if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= _MAX_COACHES:
         return value
     return None
+
+
+# A train's formation (LDBWS FormationData), which some operators send:
+# coach numbers of at most two letters or digits, loadings as whole
+# percentages, and Darwin's words in any case. Anything else is left out.
+_COACH_NUMBER = re.compile(r"[0-9A-Za-z]{1,2}")
+_COACH_CLASSES = {"first": "first", "standard": "standard", "mixed": "mixed"}
+_TOILET_TYPES = {"standard": "standard", "accessible": "accessible"}
+
+
+def _word(value, known: dict[str, str]) -> str | None:
+    if isinstance(value, str) and value.strip().lower() in known:
+        return known[value.strip().lower()]
+    return None
+
+
+def _loading(value) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 100:
+        return value
+    return None
+
+
+def _coach(raw) -> Coach | None:
+    if not isinstance(raw, dict):
+        return None
+    toilet = raw.get("toilet")
+    if isinstance(toilet, dict):  # {"value": "Accessible", "status": "InService"}
+        kind = _word(toilet.get("value", toilet.get("Value")), _TOILET_TYPES)
+        status = toilet.get("status", toilet.get("Status"))
+    else:
+        kind, status = _word(toilet, _TOILET_TYPES), None
+    out_of_order = kind is not None and isinstance(status, str) and status.strip().lower() == "notinservice"
+    # The answer may say no loading was given; then whatever is there isn't one.
+    loading = None if raw.get("loadingSpecified") is False else _loading(raw.get("loading"))
+    return Coach(
+        number=_matching(_COACH_NUMBER, raw.get("number")),
+        coach_class=_word(raw.get("coachClass"), _COACH_CLASSES),
+        toilet=kind,
+        toilet_out_of_order=out_of_order,
+        loading=loading,
+    )
+
+
+def _formation(value) -> Formation | None:
+    """The train's coaches, or None when the operator sends none. One coach
+    that isn't a coach leaves the whole formation out, as a gap would put the
+    rest in the wrong places; so does a train longer than any real one."""
+    if not isinstance(value, dict):
+        return None
+    raw = value.get("coaches")
+    if isinstance(raw, dict) and "coach" in raw:  # {"coach": [...]}, as XML turned to JSON nests it
+        raw = raw["coach"]
+    raw = _as_list(raw)
+    if len(raw) > _MAX_COACHES:
+        return None
+    coaches = [_coach(c) for c in raw]
+    checked = tuple(c for c in coaches if c is not None)
+    if len(checked) != len(coaches):
+        return None
+    average = _loading(value.get("avgLoading"))
+    if not checked and average is None:
+        return None
+    return Formation(coaches=checked, average_loading=average)
 
 
 def _reason(value) -> str | None:
@@ -383,6 +472,7 @@ def _rich_service(service, bus: bool = False) -> TrainService | None:
     if std is None:
         return None
     destinations = _locations(service.get("destination"))
+    bus_service = bus or service.get("serviceType") == "bus"
     checked = {
         "std": std,
         # An estimate that is neither a time nor a known word reads as unknown.
@@ -391,7 +481,7 @@ def _rich_service(service, bus: bool = False) -> TrainService | None:
         "operator": _name(service.get("operator")) or "",
         "destination": destinations,
         "platform": service.get("platform"),
-        "replacement_bus": bus or service.get("serviceType") == "bus",
+        "replacement_bus": bus_service,
     }
     return TrainService(
         departure=_parse_service(checked),
@@ -402,6 +492,10 @@ def _rich_service(service, bus: bool = False) -> TrainService | None:
         cancel_reason=_reason(service.get("cancelReason")),
         delay_reason=_reason(service.get("delayReason")),
         calling_points=_calling_points(service, destinations),
+        # A rail replacement bus has no coaches to draw.
+        formation=None if bus_service else _formation(service.get("formation")),
+        detach_front=service.get("detachFront") is True and not bus_service,
+        reverse_formation=service.get("isReverseFormation") is True and not bus_service,
     )
 
 
