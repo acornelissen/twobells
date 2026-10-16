@@ -625,13 +625,20 @@ class Painter:
         whole instead, clipped to the space and to `band` (top and bottom of
         its row), on the row's `paper`."""
         if not self.live or shown == whole or room < 1:
-            draw_text(self.image, xy, shown, font, fill)
+            self.text(xy, shown, font, fill)
             return
         x, (top, bottom) = int(xy[0]), band
         strip = Image.new("P", (max(math.ceil(drawn_length(font, whole)), int(room)), bottom - top), paper)
-        draw_text(strip, (xy[0] - x, xy[1] - top), whole, font, fill)
+        self.text((xy[0] - x, xy[1] - top), whole, font, fill, strip)
         apply_preview(strip, self.p)
         self.scrolls.append(Scroll((x, top, x + int(room), bottom), strip, self.s, whole))
+
+    def text(self, xy: tuple[float, float], text: str, font: ImageFont.FreeTypeFont, fill: int,
+             image: Image.Image | None = None) -> None:
+        """`text` drawn from `xy` on the board, or on `image` (a scrolling
+        field's strip): every word a page draws goes through here, so a look
+        can draw its letters its own way (the split-flap look, board/flap.py)."""
+        draw_text(self.image if image is None else image, xy, text, font, fill)
 
     def frame(self) -> Frame:
         self.apply_preview_palette()
@@ -653,8 +660,8 @@ class Painter:
         self.draw.rectangle((0, 0, self.width - 1, bottom - 1), fill=self.ink)
         self.field((pad, s), shown, whole, self.f.bold, room, self.paper, self.ink, (0, bottom))
         if rain is not None:
-            draw_text(self.image, (rain[1], s), rain[0], self.f.bold, self.paper)
-        draw_text(self.image, (stamp_x, s), stamp, self.f.regular, self.paper)
+            self.text((rain[1], s), rain[0], self.f.bold, self.paper)
+        self.text((stamp_x, s), stamp, self.f.regular, self.paper)
 
     def drawn_rows(self, section: Section) -> tuple[Row, ...]:
         return section.rows[: self.limits.get(section.label, 2)]
@@ -662,11 +669,11 @@ class Painter:
     def section(self, section: Section, y: int, where_x: float | None = None) -> int:
         s, pad = self.s, PAD * self.s
         label = section.label.upper()
-        draw_text(self.image, (pad, y + s), label, self.f.small, self.ink)
+        self.text((pad, y + s), label, self.f.small, self.ink)
         label_end = pad + text_length(self.f.small, label)
         if section.stale:
             x = label_end + 6 * s
-            draw_text(self.image, (x, y + s), _NOT_UPDATING, self.f.small, self.p.accent)
+            self.text((x, y + s), _NOT_UPDATING, self.f.small, self.p.accent)
             label_end = x + text_length(self.f.small, _NOT_UPDATING)
         rows = self.drawn_rows(section)
         # As on the sign, a leave time for a row that doesn't fit is left out.
@@ -683,14 +690,14 @@ class Painter:
         if heading and leave_x is not None:
             if leave_x - label_end >= 6 * s and leave_x + drawn_length(self.f.small, heading) <= self.width - pad:
                 # Said once, over the column, as station boards label theirs.
-                draw_text(self.image, (leave_x, y + s), heading, self.f.small, self.ink)
+                self.text((leave_x, y + s), heading, self.f.small, self.ink)
             else:
                 # No room beside the label (a "! NOT UPDATING" on a small panel): each row says it in full.
                 rows = tuple(replace(r, leave_at=None) for r in rows)
                 leave_x = leave_column(rows, self.f, self.width, s)
         y += self.label_h * s
         if not rows:
-            draw_text(self.image, (pad, y + s), section.empty_text, self.f.regular, self.ink)
+            self.text((pad, y + s), section.empty_text, self.f.regular, self.ink)
             return y + self.row_h * s
         platform_x = platform_column(rows, self.f, self.width, s)
         if not any(r.strip for r in rows):
@@ -730,7 +737,7 @@ class Painter:
             status_ink = self.p.accent
         layout = row_layout(row, self.f, self.width, s, platform_x, leave_x, where_x, stop_room)
         self.row_text(row, layout, y, train, ink, paper, yours_fill)
-        draw_text(self.image, (layout.right_x, y + s), row.right, self.f.bold, status_ink)
+        self.text((layout.right_x, y + s), row.right, self.f.bold, status_ink)
 
     def row_text(self, row: Row, layout: RowLayout, y: int, train: bool, ink: int, paper: int, yours_fill: int,
                  time_ink: int | None = None) -> None:
@@ -750,9 +757,9 @@ class Painter:
             # A changed platform says so in words; the accent only backs them up,
             # on any row not reversed out.
             platform_ink = self.p.accent if row.platform_changed and paper == self.paper else ink
-            draw_text(self.image, (layout.platform_x, y + s), row.platform, self.f.regular, platform_ink)
+            self.text((layout.platform_x, y + s), row.platform, self.f.regular, platform_ink)
         if layout.leave_x is not None and layout.leave:
-            draw_text(self.image, (layout.leave_x, y + self.small_drop * s), layout.leave, self.f.small, ink)
+            self.text((layout.leave_x, y + self.small_drop * s), layout.leave, self.f.small, ink)
         if layout.where_x is not None and layout.where and row.strip is not None:
             self.field((layout.where_x, y + self.small_drop * s), layout.where, row.strip.where, self.f.small,
                        layout.where_room, ink, paper, band)
@@ -819,8 +826,8 @@ def paint_route(painter: Painter, view: RouteView, panel: Panel) -> Frame:
 
     y = (painter.header_h + 4) * s
     lead = f"{view.due}   {view.leave}" if view.leave else view.due
-    draw_text(painter.image, (pad, y), lead, f.bold, ink)
-    draw_text(painter.image, (width - pad - drawn_length(f.bold, view.where), y), view.where, f.bold, ink)
+    painter.text((pad, y), lead, f.bold, ink)
+    painter.text((width - pad - drawn_length(f.bold, view.where), y), view.where, f.bold, ink)
 
     row_h = painter.row_h
     road = (y + row_h * s + height) // 2
