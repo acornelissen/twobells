@@ -36,6 +36,7 @@ Each line reads: *which train*, *scheduled time*, *destination*, *status*.
 | `Delayed` | Late, but no expected time yet. It stays on the board past its time until National Rail stops listing it. |
 | `Cancelled`, on a highlighted bar | It isn't running. |
 | `No report` | No live report for this train yet. Like `Delayed`, it stays until National Rail stops listing it. |
+| `Bus: Manchester Piccadilly` | A rail replacement bus, running in place of the train during engineering works, in time order with the trains. Where the board shows platforms, it says `Bus` there instead, before the destination. |
 | `Leave by 07:07` | Set off at 07:07 to walk to the station and catch the train above it. It sits under the first train you can still reach, so if the 1st is too soon, it moves down to the 2nd. |
 
 **Buses (bottom half)**
@@ -85,7 +86,7 @@ The plain look shows 3 trains and 2 buses (3 buses on the 11.3" bar screen, whic
 
 ## The bigger e-paper display
 
-The 10.85" display shows the same board with bigger dots and more room, so long destinations fit, and each train's platform shows (`Plat 1`). Platforms aren't shown on the small display, where there isn't room.
+The 10.85" display shows the same board with bigger dots and more room, so long destinations fit, and each train's platform shows (`Plat 1`). A rail replacement bus says `Bus` where the platform goes. Platforms aren't shown on the small display, where there isn't room.
 
 ![The station board look on the 10.85 inch e-paper](images/epaper-10in85.png)
 

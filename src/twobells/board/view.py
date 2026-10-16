@@ -60,6 +60,17 @@ class Row:
     leave_at: str | None = None
     # Where its train or bus is; only screens wide enough draw it.
     strip: Strip | None = None
+    # A rail replacement bus in the trains: its platform is words.BUS, and a
+    # board with no platform column says so before the destination.
+    replacement_bus: bool = False
+
+
+def destination_text(row: Row, platform_column: bool) -> str:
+    """A train row's destination as drawn: after "Bus: " for a replacement bus
+    on a board with no platform column to say "Bus" in."""
+    if row.replacement_bus and not platform_column:
+        return f"{words.BUS}: {row.middle}"
+    return row.middle
 
 
 @dataclass(frozen=True)
@@ -152,8 +163,12 @@ def _style(dep: Departure) -> Style:
 
 
 def _train_row(dep: Departure, walk: WalkTimes | None, clock: str | None) -> Row:
-    platform = f"Plat {dep.platform}" if dep.platform else None
-    return Row(dep.scheduled, dep.destination, words.status(dep), _style(dep), platform=platform)
+    if dep.replacement_bus:
+        platform = words.BUS
+    else:
+        platform = f"Plat {dep.platform}" if dep.platform else None
+    return Row(dep.scheduled, dep.destination, words.status(dep), _style(dep), platform=platform,
+               replacement_bus=dep.replacement_bus)
 
 
 def _bus_row(dep: Departure, walk: WalkTimes | None, clock: str | None) -> Row:

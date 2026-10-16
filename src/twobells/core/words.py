@@ -16,6 +16,11 @@ NO_REPORT = "No report"
 TIMETABLE_ONLY = "Timetable only"
 # The same, after the bus's time on the board, where there is less room: "07:35 sch".
 SCHEDULED = "sch"
+# A rail replacement bus, run in a train's place: in a train's platform column
+# on the board, and before its destination where there is no such column.
+BUS = "Bus"
+# The same in full, on the dashboard.
+REPLACEMENT_BUS = "Replacement bus"
 
 
 def expected(time: str) -> str:

@@ -309,6 +309,17 @@ def test_train_row_names_its_platform():
     assert row.platform is None
 
 
+def test_a_replacement_bus_says_bus_in_the_platform_column():
+    replacement = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME,
+                            replacement_bus=True)
+    [row] = view(trains=[replacement]).trains.rows
+    assert row.platform == "Bus"
+    assert row.replacement_bus is True
+    assert row.middle == "Manchester Piccadilly"
+    [row] = view(trains=[train()]).trains.rows
+    assert row.replacement_bus is False
+
+
 def test_signature_changes_when_the_platform_changes():
     one = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, "1")
     two = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, "2")

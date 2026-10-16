@@ -406,6 +406,22 @@ def test_the_phat_has_no_room_for_platforms_and_is_unchanged():
     assert with_platforms.tobytes() == without.tobytes()
 
 
+REPLACEMENT_BUS = Row("07:12", "Manchester Piccadilly", "On time", platform="Bus", replacement_bus=True)
+
+
+def test_without_a_platform_column_a_replacement_bus_says_so_before_its_destination():
+    items = sign_layout(board([REPLACEMENT_BUS])).items
+    assert texts([i for i in items if i.y == find(items, "1st").y])[2] == "Bus: Manchester Piccadilly"
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_with_a_platform_column_a_replacement_bus_says_bus_there(panel):
+    width, height = dots(panel)
+    items = sign_layout(board([REPLACEMENT_BUS]), width, height).items
+    first = find(items, "1st")
+    assert texts([i for i in items if i.y == first.y]) == ["1st", "07:12", "Manchester Piccadilly", "Bus", "On time"]
+
+
 @pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
 def test_platforms_fit_on_a_bigger_board(panel):
     width, height = dots(panel)

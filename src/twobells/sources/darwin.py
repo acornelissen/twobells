@@ -48,9 +48,12 @@ def _platform(value) -> str | None:
 
 
 def _parse_service(service: dict) -> Departure:
-    """A Departure from a service whose fields _rich_service has checked."""
+    """A Departure from a service whose fields _rich_service has checked. A
+    rail replacement bus is in the train section, but has no platform: Darwin
+    may put "BUS" there, which isn't one."""
     status, expected = _status_and_expected(service)
     destinations = service.get("destination") or []
+    bus = service.get("replacement_bus") is True
     return Departure(
         mode="train",
         service=service.get("operator") or "",
@@ -58,13 +61,14 @@ def _parse_service(service: dict) -> Departure:
         scheduled=service["std"],
         expected=expected,
         status=status,
-        platform=_platform(service.get("platform")),
+        platform=None if bus else _platform(service.get("platform")),
+        replacement_bus=bus,
     )
 
 
 def parse_board(board: dict) -> list[Departure]:
     """The departures alone, read with the rich board's checks (below): a
-    train without a clock time to leave at is skipped."""
+    train or replacement bus without a clock time to leave at is skipped."""
     return [s.departure for s in parse_board_rich(board).services]
 
 
@@ -368,10 +372,11 @@ def _calling_points(service: dict, destinations: list[dict]) -> tuple[CallingPoi
     return lists[0]
 
 
-def _rich_service(service) -> TrainService | None:
+def _rich_service(service, bus: bool = False) -> TrainService | None:
     """One train from the rich board, or None if it lacks a departure time.
     The Departure is built by _parse_service from checked values only, so the
-    plain board's rules (status, platform) apply unchanged."""
+    plain board's rules (status, platform) apply unchanged. `bus` says it came
+    in busServices; one Darwin calls a bus anywhere else is one too."""
     if not isinstance(service, dict):
         return None
     std = _matching(_CLOCK, service.get("std"))
@@ -386,6 +391,7 @@ def _rich_service(service) -> TrainService | None:
         "operator": _name(service.get("operator")) or "",
         "destination": destinations,
         "platform": service.get("platform"),
+        "replacement_bus": bus or service.get("serviceType") == "bus",
     }
     return TrainService(
         departure=_parse_service(checked),
@@ -399,18 +405,31 @@ def _rich_service(service) -> TrainService | None:
     )
 
 
+def _by_time(services: list[TrainService]) -> list[TrainService]:
+    """Trains and replacement buses in the order they leave: each time is
+    read against the first one's, so 00:05 comes after 23:50. Ties keep
+    Darwin's order."""
+    if not services:
+        return services
+    first = services[0].departure.scheduled
+    return sorted(services, key=lambda s: minutes_between(first, s.departure.scheduled))
+
+
 def parse_board_rich(board) -> TrainBoard:
     """The board from GetDepBoardWithDetails (or GetDepartureBoard, which
-    just has no calling points). Raises ValueError only if it isn't a board."""
+    just has no calling points). Rail replacement buses, in busServices, are
+    merged in with the trains by time. Raises ValueError only if it isn't a
+    board."""
     if not isinstance(board, dict):
         raise ValueError("Darwin sent something other than a departure board")
     services = []
-    for raw in _as_list(board.get("trainServices")):
-        service = _rich_service(raw)
-        if service is not None:
-            services.append(service)
+    for key, bus in (("trainServices", False), ("busServices", True)):
+        for raw in _as_list(board.get(key)):
+            service = _rich_service(raw, bus)
+            if service is not None:
+                services.append(service)
     return TrainBoard(
-        services=services,
+        services=_by_time(services),
         messages=parse_messages(board),
         generated_at=_matching(_GENERATED_AT, board.get("generatedAt")),
         location=_name(board.get("locationName")),

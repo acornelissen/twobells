@@ -21,6 +21,7 @@ from twobells.board.render import (
     leave_heading,
     left_column_width,
     load_fonts,
+    middle_text,
     plain_scale,
     platform_column,
     render,
@@ -495,6 +496,28 @@ def test_the_phat_has_no_platform_column_and_is_unchanged():
     assert platform_column(TRAINS_WITH_PLATFORMS, load_fonts(), WIDTH, 1) is None
     plain = [dataclasses.replace(r, platform=None) for r in TRAINS_WITH_PLATFORMS]
     assert render(board(TRAINS_WITH_PLATFORMS), PALETTE).tobytes() == render(board(plain), PALETTE).tobytes()
+
+
+REPLACEMENT_BUS = Row("07:12", "Manchester Piccadilly", "On time", platform="Bus", replacement_bus=True)
+
+
+def test_without_a_platform_column_a_replacement_bus_says_so_before_its_destination():
+    fonts = load_fonts()
+    assert platform_column([REPLACEMENT_BUS], fonts, WIDTH, 1) is None
+    layout = row_layout(REPLACEMENT_BUS, fonts, WIDTH, 1)
+    assert layout.middle.startswith("Bus: Manc")
+    assert middle_text(REPLACEMENT_BUS, layout) == "Bus: Manchester Piccadilly"
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_with_a_platform_column_a_replacement_bus_says_bus_there(panel):
+    s = plain_scale(panel)
+    fonts = load_fonts(s)
+    platform_x = platform_column([REPLACEMENT_BUS], fonts, panel.width, s)
+    assert platform_x is not None
+    layout = row_layout(REPLACEMENT_BUS, fonts, panel.width, s, platform_x)
+    assert layout.platform_x == platform_x
+    assert middle_text(REPLACEMENT_BUS, layout) == "Manchester Piccadilly"
 
 
 @pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)

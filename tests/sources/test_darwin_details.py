@@ -280,6 +280,70 @@ def test_board_level_oddities():
             parse_board_rich(odd)
 
 
+# Rail replacement buses: Darwin lists them under busServices, shaped like
+# its trains but with serviceType "bus" and no coaches.
+
+
+def bus(**overrides):
+    base = service(serviceType="bus", length=0, platform="BUS", serviceID="9000009GLSP____",
+                   subsequentCallingPoints=None)
+    base.update(overrides)
+    return base
+
+
+def test_a_board_of_replacement_buses_alone_has_them():
+    board = parse_board_rich({"locationName": "Glossop", "busServices": [bus(), bus(std="22:52")]})
+    assert [s.departure.scheduled for s in board.services] == ["22:22", "22:52"]
+    first = board.services[0]
+    assert first.departure.mode == "train"  # it stands in for a train, in the train section
+    assert first.departure.replacement_bus is True
+    assert first.departure.destination == "Manchester Piccadilly"
+    assert first.departure.status is Status.ON_TIME
+    assert first.departure.platform is None  # a bus has no platform; "BUS" isn't one
+    assert first.length is None
+    assert first.service_id == "9000009GLSP____"
+
+
+def test_the_plain_board_reads_replacement_buses_too():
+    [dep] = parse_board({"busServices": [bus(etd="22:30")]})
+    assert dep.replacement_bus is True
+    assert dep.status is Status.LATE and dep.expected == "22:30"
+
+
+def test_trains_are_not_replacement_buses():
+    assert one().departure.replacement_bus is False
+
+
+def test_a_service_darwin_calls_a_bus_is_one_whichever_list_it_is_in():
+    assert one(serviceType="bus").departure.replacement_bus is True
+    assert one(serviceType=["bus"]).departure.replacement_bus is False
+
+
+def test_trains_and_replacement_buses_are_merged_by_time():
+    board = parse_board_rich({
+        "trainServices": [service(std="22:08"), service(std="22:38")],
+        "busServices": [bus(std="22:22"), bus(std="22:52")],
+    })
+    times = [(s.departure.scheduled, s.departure.replacement_bus) for s in board.services]
+    assert times == [("22:08", False), ("22:22", True), ("22:38", False), ("22:52", True)]
+
+
+def test_the_merge_keeps_times_after_midnight_after_those_before():
+    board = parse_board_rich({
+        "trainServices": [service(std="23:50"), service(std="00:20")],
+        "busServices": [bus(std="00:05")],
+    })
+    assert [s.departure.scheduled for s in board.services] == ["23:50", "00:05", "00:20"]
+
+
+def test_replacement_buses_are_checked_like_trains():
+    board = parse_board_rich({"busServices": [bus(std=None), "x", 7, bus(operator={"name": "Northern"})]})
+    [only] = board.services
+    assert only.departure.service == ""
+    assert parse_board_rich({"busServices": "22:22"}).services == []
+    assert parse_board_rich({"busServices": bus()}).services[0].departure.replacement_bus is True
+
+
 # The source.
 
 

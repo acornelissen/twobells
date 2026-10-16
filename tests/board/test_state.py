@@ -27,6 +27,14 @@ def test_departure_round_trips_through_dict():
     assert departure_from_dict(departure_to_dict(dep)) == dep
 
 
+def test_a_replacement_bus_round_trips_and_older_saved_trains_are_not_one():
+    dep = Departure("train", "Northern", "Manchester", "07:12", None, Status.ON_TIME, replacement_bus=True)
+    assert departure_from_dict(departure_to_dict(dep)) == dep
+    older = departure_to_dict(Departure("train", "Northern", "Manchester", "07:12", None, Status.ON_TIME))
+    del older["replacement_bus"]
+    assert departure_from_dict(older).replacement_bus is False
+
+
 def test_undecodable_state_file_loads_empty(tmp_path, caplog):
     path = tmp_path / "state.json"
     path.write_bytes(b'{"sources": "\xff\xfe"}')
@@ -94,6 +102,7 @@ def test_a_saved_departure_whose_time_is_not_a_clock_time_is_rejected(field, val
 
 @pytest.mark.parametrize("field, value", [
     ("mode", None), ("service", 341), ("destination", ["Hyde"]), ("platform", 1), ("stop", {"a": 1}),
+    ("replacement_bus", "yes"), ("replacement_bus", 1),
 ])
 def test_a_saved_departure_with_a_field_of_the_wrong_type_is_rejected(field, value):
     good = departure_to_dict(Departure("bus", "341", "Hyde", "07:20", None, Status.ON_TIME, stop="A"))

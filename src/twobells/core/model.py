@@ -59,6 +59,8 @@ class Departure:
     status: Status
     platform: str | None = None
     stop: str | None = None
+    # A rail replacement bus, run in a train's place: Darwin's serviceType "bus".
+    replacement_bus: bool = False
 
     def __post_init__(self) -> None:
         # Every time is worked out from these, so one that isn't HH:MM would
@@ -75,6 +77,8 @@ class Departure:
         for name in ("platform", "stop"):
             if getattr(self, name) is not None and not isinstance(getattr(self, name), str):
                 raise TypeError(f"{name} is not text")
+        if not isinstance(self.replacement_bus, bool):
+            raise TypeError("replacement_bus is not true or false")
 
     @property
     def departs_at(self) -> str:

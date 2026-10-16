@@ -29,7 +29,7 @@ from .panel import (
 )
 from .route import RouteView
 from .scroll import Frame, Scroll, frame_of
-from .view import BoardView, CodeView, Row, Section, SetupView, Style
+from .view import BoardView, CodeView, Row, Section, SetupView, Style, destination_text
 
 # The pHAT, which every other size is scaled up from.
 WIDTH, HEIGHT = PHAT.size
@@ -233,10 +233,17 @@ def _with_stop(row: Row) -> str:
     return f"{row.stop}: {row.middle}" if row.stop else row.middle
 
 
+def _middle(row: Row, stop_column: bool, platform_column: bool) -> str:
+    if stop_column:
+        return row.middle
+    return _with_stop(row) if row.stop else destination_text(row, platform_column)
+
+
 def middle_text(row: Row, layout: RowLayout) -> str:
     """The row's middle text in full: the destination, after its stop's
-    label ("A: Hyde") unless the stop has a column of its own."""
-    return row.middle if layout.stop_x is not None else _with_stop(row)
+    label ("A: Hyde") unless the stop has a column of its own, or after
+    "Bus: " for a replacement bus with no platform column to say so."""
+    return _middle(row, layout.stop_x is not None, layout.platform_x is not None)
 
 
 def _leave_text(row: Row) -> str | None:
@@ -295,7 +302,7 @@ def row_layout(
             words_w = where_width(fonts, width, scale)
             where = fit_text(row.strip.where, fonts.small, words_w, partial(drawn_length, fonts.small))
             strip_x = where_x + words_w + gap
-    middle = row.middle if stop_x is not None else _with_stop(row)
+    middle = _middle(row, stop_x is not None, platform_x is not None and bool(row.platform))
     return RowLayout(
         # Measured as drawn, like the right-aligned text, so a cut destination
         # doesn't run into the status.
