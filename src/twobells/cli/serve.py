@@ -313,7 +313,9 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
     import sqlite3
 
     from ..dashboard.collector import Collector
+    from ..dashboard.config import DashboardOptions
     from ..dashboard.history import History, HistoryReader
+    from ..dashboard.performance import Performance
     from ..dashboard.snapshot import Hub
     from ..timetable.routesetup import document_limits
     from ..web import netguard
@@ -344,6 +346,17 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
         # is (a save on a Pi doesn't start serve again).
         return "dashboard" in site.views() and (mirror is None or not needs_setup(store))
 
+    performance = None
+    if history is not None:
+        # The Performance page's days are the board's local days, as the history's are.
+        options = dash.options if dash is not None else DashboardOptions()
+        zone = ZoneInfo(dash.timezone) if dash is not None else None
+        performance = Performance(
+            history,
+            lambda: datetime.now(zone) if zone is not None else datetime.now().astimezone(),
+            {"train": options.late_minutes_train, "bus": options.late_minutes_bus},
+        )
+
     watch = None
     try:
         site = _settings_site(store, install, hub is not None, runner)
@@ -357,6 +370,7 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
             site,
             dashboard_on=dashboard_on,
             recent=history.recent if history is not None else None,
+            performance=performance,
             history_days=dash.options.history_days if dash is not None else 90,
             allowed_hosts=dash.options.allowed_hosts if dash is not None else _allowed_hosts(store),
         )

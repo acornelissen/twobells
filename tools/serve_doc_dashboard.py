@@ -11,7 +11,8 @@ and the 08:12, whose sample position is an hour early, isn't placed. The
 area map's buses, sampled the day before, are moved to the same morning.
 
 It listens on 127.0.0.1 only. Open http://127.0.0.1:8931/ and take the
-pictures by hand; ?kiosk gives the wall tablet's page.
+pictures by hand; ?kiosk gives the wall tablet's page, and /performance the
+Performance page.
 """
 
 from __future__ import annotations
@@ -71,9 +72,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json((FIXTURES / "dashboard_bus.json").read_bytes())
         if path.startswith("/api/history/"):
             return self._json((FIXTURES / "dashboard_history.json").read_bytes())
+        if path == "/api/performance":
+            return self._json((FIXTURES / "dashboard_performance.json").read_bytes())
         if path.startswith("/api/"):  # /api/events: the page falls back to polling
             return self.send_error(404)
-        self.path = "/index.html" if path == "/" else path.removeprefix("/static")
+        pages = {"/": "/index.html", "/performance": "/performance.html"}
+        self.path = pages.get(path) or path.removeprefix("/static")
         return super().do_GET()
 
     def _json(self, body: bytes) -> None:

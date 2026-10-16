@@ -14,9 +14,10 @@ headers, with scripts only on the setup wizard's pages.
 
 The dashboard is the rest, while it is on (DashboardApp.dashboard_on): read
 only, with no password: only GET and HEAD, only files from an allowlist read
-into memory at start. While it is off (its view is off, the settings aren't
-set up or don't load), / goes to the settings, /healthz is still answered,
-and its page, files and API are not found. Every response, errors
+into memory at start. Its two pages, / and /performance, are files from
+it. While it is off (its view is off, the settings aren't set up or don't
+load), / goes to the settings, /healthz is still answered, and its pages,
+files and API are not found. Every response, errors
 included, carries the security headers: the dashboard's while it is on,
 else the settings site's.
 """
@@ -47,6 +48,7 @@ from . import settingsite
 from .auth import local_host, private_address
 
 if TYPE_CHECKING:
+    from ..dashboard.performance import Performance
     from .settingsite import SettingsSite
 
 log = logging.getLogger(__name__)
@@ -95,8 +97,9 @@ _ID = re.compile(r"[0-9a-f]{16}")
 _STATIC_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*")
 _EVENT_ID = re.compile(r"[0-9]{1,15}")
 
-# Where index.html's footer says which version is running, filled in at start.
+# Where each page's footer says which version is running, filled in at start.
 VERSION_SLOT = b"<!-- version -->"
+PAGES = ("index.html", "performance.html")
 
 NOT_BUILT = (
     b'<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><title>Departures</title></head>'
@@ -123,7 +126,7 @@ class StaticFiles:
     def load(cls, folder: Path | str | None, version: str | None = None) -> StaticFiles:
         """Every file under `folder` with a known extension, skipping hidden
         files, symlinks, odd names and anything too big. With `version`,
-        index.html's VERSION_SLOT says it, escaped, in a line of its own."""
+        each page's VERSION_SLOT says it, escaped, in a line of its own."""
         if folder is None or not Path(folder).is_dir():
             return cls({}, False)
         root = Path(folder)
@@ -140,7 +143,7 @@ class StaticFiles:
                     log.warning("Not serving %s: larger than %d bytes", relative, MAX_STATIC_BYTES)
                     continue
                 body = path.read_bytes()
-                if relative == "index.html" and version is not None:
+                if relative in PAGES and version is not None:
                     line = f'<p class="version">{html.escape(about(version))}</p>'
                     body = body.replace(VERSION_SLOT, line.encode("utf-8"))
                 found[relative] = StaticFile(body, content_type, f'"{hashlib.sha256(body).hexdigest()}"')
@@ -170,6 +173,7 @@ class DashboardApp:
     settings: SettingsSite
     dashboard_on: Callable[[], bool] = lambda: True
     recent: Recent | None = None  # History.recent, or None without a history
+    performance: Performance | None = None  # the Performance page's figures, or None without a history
     history_days: int = 90
     allowed_hosts: frozenset[str] = frozenset()
     client_allowed: Callable[[str], bool] = private_address
@@ -330,6 +334,8 @@ class _Handler(BaseHTTPRequestHandler):
     def _route(self, path: str) -> None:
         if path == "/":
             self._static("index.html")
+        elif path == "/performance":
+            self._static("performance.html")
         elif path == "/manifest.webmanifest":
             self._static("manifest.webmanifest")
         elif path.startswith("/static/"):
@@ -344,6 +350,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._history(path[len("/api/history/"):])
         elif path == "/api/area":
             self._area()
+        elif path == "/api/performance":
+            self._performance()
         elif path == "/healthz":
             if self.app.healthy():
                 self._send(200, b"ok")
@@ -409,14 +417,16 @@ class _Handler(BaseHTTPRequestHandler):
         if found is None:
             self._error(404)
             return
-        days = []
-        if self.app.recent is not None:
-            try:
+        days, figures = [], None
+        try:
+            if self.app.recent is not None:
                 days = self.app.recent(found["mode"], found["route"], found["scheduled"], self.app.history_days)
-            except Exception as error:  # noqa: BLE001 - one unreadable history isn't the server's end
-                log.warning("Dashboard history unreadable: %s", type(error).__name__)
-                self._error(503)
-                return
+            if self.app.performance is not None:
+                figures = self.app.performance.route(found["mode"], found["route"])
+        except Exception as error:  # noqa: BLE001 - one unreadable history isn't the server's end
+            log.warning("Dashboard history unreadable: %s", type(error).__name__)
+            self._error(503)
+            return
         self._json({
             "id": row_id,
             "mode": found["mode"],
@@ -424,7 +434,21 @@ class _Handler(BaseHTTPRequestHandler):
             "day_type": found["day_type"],
             "phrase": found["phrase"],
             "days": days,
+            "route": figures,
         })
+
+    def _performance(self) -> None:
+        """The Performance page's figures: 404 without a history to read them from."""
+        if self.app.performance is None:
+            self._error(404)
+            return
+        try:
+            report = self.app.performance.report()
+        except Exception as error:  # noqa: BLE001 - one unreadable history isn't the server's end
+            log.warning("Dashboard history unreadable: %s", type(error).__name__)
+            self._error(503)
+            return
+        self._json(report)
 
     # The settings site
 

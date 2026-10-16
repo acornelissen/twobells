@@ -841,6 +841,32 @@ table.history thead th { border-top: 0; color: var(--muted); }
   table.history th, table.history td { padding: 0.375rem 0.25rem; }
 }
 
+/* --- Punctuality measures: the Performance page, and a route's in its sheet --- */
+
+table.measures { margin: 0 0 var(--s-5); }
+/* Where there's room, the 7 and 28 day tables line their columns up. */
+@media (min-width: 48rem) {
+  .performance table.measures { table-layout: fixed; }
+  .performance table.measures thead th:first-child { width: 24%; }
+}
+table.measures thead th { vertical-align: bottom; font-weight: 500; }
+table.measures thead .sub { font-size: var(--t-xs); font-weight: 400; }
+table.measures tbody th { font-weight: 500; }
+table.measures tbody .sub { font-weight: 400; }
+table.measures .of { color: var(--muted); white-space: nowrap; }
+table.measures tr.total th, table.measures tr.total td { font-weight: 600; }
+/* The Performance page reads top to bottom at every width, not in the
+   dashboard's wide grid. */
+@media (min-width: 75rem) {
+  :root:not([data-kiosk]) main.performance { display: block; }
+}
+.perf-intro { margin: 0 0 var(--s-1); }
+.perf-part { margin-top: var(--s-6); }
+.perf-part h3 { margin-top: var(--s-5); }
+.perf-terms { margin: 0 0 var(--s-4); }
+.perf-terms dt { margin-top: var(--s-3); font-weight: 600; }
+.perf-terms dd { margin: 0; color: var(--muted); }
+
 /* --- Map --- */
 
 .map-tools { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: 0 0 var(--s-3); }

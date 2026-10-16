@@ -5,12 +5,13 @@ The dashboard is the board's big sibling: a web page with the next trains and bu
 It is at the install's address, port 8090: `http://<pi name>.local:8090/` on a Pi, `http://<NAS name>:8090/` in Docker, `http://localhost:8090/` on a desktop. While the dashboard view is off, or before the app is set up, that address opens the settings instead.
 
 - [What's on it](#whats-on-it)
+- [Performance](#performance)
 - [Disruptions and engineering works](#disruptions-and-engineering-works)
 - [Wall tablet (kiosk)](#wall-tablet-kiosk)
 
 ## What's on it
 
-- **At the top:** the place ("Glossop" from a title of "Glossop > Manchester Picc"), the time, and one status word: **Live**, **Reconnecting…**, or "Not updated since 17:42" when the trains or buses have fallen behind. The weather and the disruption checks say their own problems in their sections. A section has its own line only when it has a problem or a note. Screen readers hear when the status word changes, never its "last update" time ticking on.
+- **At the top:** the place ("Glossop" from a title of "Glossop > Manchester Picc"), the time, links to [Performance](#performance) and the settings, and one status word: **Live**, **Reconnecting…**, or "Not updated since 17:42" when the trains or buses have fallen behind. The weather and the disruption checks say their own problems in their sections. A section has its own line only when it has a problem or a note. Screen readers hear when the status word changes, never its "last update" time ticking on.
 - **The order:** Next to catch, then the disruption line, then the trains and buses, then Around here and the weather. On a wide screen the weather sits beside Next to catch and the trains and buses side by side under them; screen readers and the Tab key still meet the weather last.
 - **Next to catch:** the next train or bus you can still reach on foot, and how long until you need to leave: "Leave in 6 min", with the seconds only in the last 2 minutes ("Leave in 1:53"), amber from 3 minutes, then **Leave now** in red in the last minute. Under it, one line says which departure it is, from where and how far ("17:55 237 Ashton-under-Lyne Interchange · Henry Street A · 5 min walk"), and how sure it is: **Live** (a train on the live board, or a bus with a live position), **Timetable only** (a bus with no live position), or **May not be running** (a bus due with no tracker). If that bus may not be running and a live train or bus leaves within 5 minutes after it, the live one is shown instead. **Then:** offers what to catch instead, the next train and the next bus with their leave times. The rain warning shows here too, and **Remind me** works as in a departure's sheet. Screen readers hear when the departure changes and the change has held for half a minute, never the countdown.
 - **Trains:** time, destination (with when it gets there, "arr 18:25 · 33 min"), platform ("–" until it's known; "Bus" for a rail replacement bus, which also says "Replacement bus" under its destination), expected ("On time", "Exp 18:56", "Delayed", or "Cancelled" with the reason), and when to leave. The first train also lists where it calls and, with the Service Details key below, where it is now; a train placed on its journey has a small strip before those words, its stops with the train drawn where it is. With **Position strips in each row** off, no row has a strip and only the first train says where it is.
@@ -20,7 +21,7 @@ It is at the install's address, port 8090: `http://<pi name>.local:8090/` on a P
 - **5 of each:** the next 5 trains and 5 buses; **Show later departures** shows the rest, up to the number set in the settings.
 - **More about a departure:** select its destination (or anywhere on its row) to open its sheet: the status and reasons, the facts (operator, coaches, platform, the stop and its walk, when to leave, when it arrives), and **Remind me**. A rail replacement bus's sheet says so ("Replacement bus, running in place of the train"). A train's sheet shows its whole journey with the stops it has passed and where it is; a bus's shows the stops before yours with the bus drawn where it is, the full route on a street map, and its stops.
 - **Where the train is** (optional): with a key for the Rail Data Marketplace's **Service Details** product in `RDM_DETAILS_API_KEY`, the next three trains are placed on their journeys ("Left Hadfield 22:44, on time", "At Glossop now"), in words and a small strip in their rows, and their sheets list the stops before Glossop too. Without it, everything else works as before.
-- **Punctuality:** each sheet ends with how that departure ran on recent days of the same kind (weekdays, Saturdays, Sundays), such as "Late 4 of the last 10 weekdays (avg 6 min)", day by day. Late means 3 minutes or more for trains and 2 for buses. A rail replacement bus keeps its own record, apart from the train it stands in for. It needs a few days of running before it says anything. When at least a third of the days (and at least 3) went wrong, the row says so too, as "Often late: 4 of 10".
+- **Punctuality:** each sheet ends with how that departure ran on recent days of the same kind (weekdays, Saturdays, Sundays), such as "Late 4 of the last 10 weekdays (avg 6 min)", day by day. Late means 3 minutes or more for trains and 2 for buses. A rail replacement bus keeps its own record, apart from the train it stands in for. It needs a few days of running before it says anything. When at least a third of the days (and at least 3) went wrong, the row says so too, as "Often late: 4 of 10". Under the phrase, a small table gives the figures for every departure on that route, whatever its time, over the last 7 and 28 days, as on the [Performance](#performance) page.
 - **Remind me:** a reminder a minute before you need to leave. On a desktop (the address starts `http://localhost`) the browser can show a notification as well. Anywhere else on plain `http://`, such as a phone on your home network, the reminder shows only on the page, while it's open; the sheet says which. If a sheet or the area map is open when it is due, it shows there too.
 - **Board look:** switches to the station-board style, amber on black, with the times, destinations and status in the same dot-matrix lettering as the e-paper board. A destination too long for its column is cut short with "…" on one line; its sheet has the whole name. The rest stays in plain type so it's easy to read. It's remembered per browser.
 - **Weather:** now (temperature, feels like, wind, and the next sunrise or sunset), the rain warning, and the next 4 hours in a row (the hour it is now as **Now**), each with a bar for the chance of rain (written out from 30%). **More hours** shows the rest of the next 12.
@@ -29,6 +30,20 @@ It is at the install's address, port 8090: `http://<pi name>.local:8090/` on a P
 Nothing on the page can change anything: it only shows, and needs no password. Changes go through the [settings](settings.md), which do. It checks for new times every minute (trains) and 30 seconds (buses), and stops from 01:00 to 05:00 unless someone has it open.
 
 The dashboard shows buses only from the BODS timetable (see [Bus times](buses.md)). If your bus times come from TransportAPI, it shows trains and the weather, with a note saying why there are no buses.
+
+## Performance
+
+**Performance** in the dashboard's header opens a page of how your trains and buses have run over the last 7 and 28 days, today included: all of them together, then route by route (a train's destination; a bus's line and destination from one of your stops). It's at `/performance` on the dashboard's address, needs no password, and isn't on the wall tablet.
+
+For trains it gives the measures the rail industry reports:
+
+- **Right Time:** left at or before its booked time.
+- **T-3** and **T-15:** left under 3 minutes, or under 15 minutes, late.
+- **Cancelled:** shown as cancelled when it was due. A cancelled train misses every other measure, as the industry counts it.
+
+Buses get **On time** (under the bus late threshold, 2 minutes unless you change **Count buses as late from** on the Dashboard settings page; early counts as on time) and **T-15**. Bus data never says a bus was cancelled, so there's no column for it.
+
+Each figure is a count with its percentage, "Right Time 62% (31 of 50)", out of the departures whose outcome is known. Those that left with no time to tell how late (a train shown only as "Delayed", a bus with no live tracker) are counted on their own as **Not known** or **No tracker**. The figures are measured at your station, not at the end of the journey, so they won't match a train company's own. A span with fewer than 3 days recorded says **Not enough days yet**. The figures are plain tables, readable with a keyboard and a screen reader, in both looks.
 
 ## Disruptions and engineering works
 

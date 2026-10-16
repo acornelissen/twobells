@@ -6,10 +6,12 @@ import os
 import socket
 import threading
 import time
+from datetime import UTC, datetime
 
 import pytest
 
 from twobells.core.walk import WalkTimes
+from twobells.dashboard.performance import Performance
 from twobells.dashboard.snapshot import Hub
 from twobells.settings.installs import install_named
 from twobells.settings.store import Store
@@ -34,6 +36,7 @@ BUS_ID = "4b7e000000000001"
 TRAIN_ID = "9f1c000000000002"
 STATIC = {
     "index.html": b"<!doctype html><title>Departures</title>",
+    "performance.html": b"<!doctype html><title>Performance</title>",
     "app.css": b"body{}",
     "main.js": b"import './x.mjs';",
     "x.mjs": b"export {};",
@@ -57,6 +60,36 @@ class Recent:
         if self.error:
             raise self.error
         return [{"day": "2026-10-09", "status": "late", "delay_min": 7, "live": True, "reason": None}]
+
+
+class Outcomes:
+    """History.outcomes, from a list: a train to Manchester late once in three days."""
+
+    def __init__(self):
+        self.asked = []
+        self.error = None
+        self.rows = [
+            ("GLO>MAN|Manchester Piccadilly", "2026-10-07", "on_time", 0),
+            ("GLO>MAN|Manchester Piccadilly", "2026-10-08", "late", 4),
+            ("GLO>MAN|Manchester Piccadilly", "2026-10-09", "on_time", 0),
+        ]
+
+    def outcomes(self, mode, since, route=None):
+        self.asked.append((mode, since, route))
+        if self.error:
+            raise self.error
+        return [row for row in self.rows if mode == "train" and route in (None, row[0])]
+
+
+def figures(**overrides):
+    """The figures of three days' trains: one of three late."""
+    found = {"enough": True, "days": 3, "counted": 3, "right_time": 2, "within_3": 2, "within_15": 3,
+             "on_time": 2, "cancelled": 0, "unknown": 0}
+    return {**found, **overrides}
+
+
+NOTHING = {"enough": False, "days": 0, "counted": 0, "right_time": 0, "within_3": 0, "within_15": 0, "on_time": 0,
+           "cancelled": 0, "unknown": 0}
 
 
 @pytest.fixture
@@ -140,6 +173,8 @@ def make_app(static_dir, **overrides):
         "static": StaticFiles.load(static_dir),
         "healthy": lambda: True,
         "recent": Recent(),
+        "performance": Performance(Outcomes(), lambda: datetime(2026, 10, 9, 18, 0, tzinfo=UTC),
+                                   {"train": 3, "bus": 2}),
         "history_days": 90,
         "allowed_hosts": frozenset({"departures.example.com"}),
         "heartbeat": 0.2,
@@ -411,15 +446,33 @@ def test_a_bus_s_map(server):
 
 
 def test_a_row_s_history(server):
+    # With its route's figures: every train to Manchester Piccadilly, whatever its time.
     response, body = server.request(f"/api/history/{TRAIN_ID}")
     assert response.status == 200
     assert json.loads(body) == {
         "id": TRAIN_ID, "mode": "train", "label": "07:12 to Manchester Piccadilly", "day_type": "weekday",
         "phrase": "Late 4 of the last 10 weekdays (avg 6 min)",
         "days": [{"day": "2026-10-09", "status": "late", "delay_min": 7, "live": True, "reason": None}],
+        "route": {"label": "Manchester Piccadilly", "stop": None, "late_minutes": 3, "periods": [
+            {"span": 7, "since": "2026-10-03", **figures()},
+            {"span": 28, "since": "2026-09-12", **figures()},
+        ]},
     }
     assert server.app.recent.asked == [("train", "GLO>MAN|Manchester Piccadilly", "07:12", 90)]
-    assert server.request(f"/api/history/{BUS_ID}")[0].status == 200
+    response, body = server.request(f"/api/history/{BUS_ID}")
+    assert response.status == 200
+    route = json.loads(body)["route"]
+    assert (route["label"], route["stop"], route["late_minutes"]) == ("341 to Hyde", "A", 2)
+    assert [period["enough"] for period in route["periods"]] == [False, False]
+
+
+def test_a_row_s_history_without_figures(static_dir):
+    running = start(static_dir, performance=None)
+    try:
+        response, body = running.request(f"/api/history/{TRAIN_ID}")
+        assert response.status == 200 and json.loads(body)["route"] is None
+    finally:
+        running.close()
 
 
 @pytest.mark.parametrize("path", [
@@ -434,6 +487,58 @@ def test_a_broken_history_is_unavailable_not_a_crash(server):
     server.app.recent.error = RuntimeError("database is locked")
     response, body = server.request(f"/api/history/{TRAIN_ID}")
     assert response.status == 503 and b"locked" not in body
+    server.app.recent.error = None
+    server.app.performance._source.error = RuntimeError("database is locked")
+    for path in (f"/api/history/{TRAIN_ID}", "/api/performance"):
+        response, body = server.request(path)
+        assert response.status == 503 and b"locked" not in body, path
+        assert_secure(response)
+
+
+# The Performance page
+
+
+def test_the_performance_page_is_a_page_of_the_dashboard(server):
+    # Served as the dashboard's page is: its headers, its caching, its host checks.
+    response, body = server.request("/performance")
+    assert response.status == 200 and body == STATIC["performance.html"]
+    assert response.getheader("Content-Type") == "text/html; charset=utf-8"
+    assert response.getheader("Cache-Control") == "no-cache"
+    assert_secure(response)
+    etag = response.getheader("ETag")
+    assert server.request("/performance", headers={"If-None-Match": etag})[0].status == 304
+    assert server.request("/performance", host="evil.example")[0].status == 403
+    assert server.request("/performance", method="POST")[0].status == 405
+    for path in ("/performance/", "/performance.html", "/static/../performance.html"):
+        assert server.request(path)[0].status == 404, path
+
+
+def test_the_performance_figures(server):
+    response, body = server.request("/api/performance")
+    assert response.status == 200
+    assert response.getheader("Content-Type") == "application/json"
+    assert response.getheader("Cache-Control") == "no-store"
+    assert_secure(response)
+    periods = [{"span": 7, "since": "2026-10-03", **figures()}, {"span": 28, "since": "2026-09-12", **figures()}]
+    assert json.loads(body) == {
+        "generated_at": "2026-10-09T18:00:00+00:00",
+        "trains": {"late_minutes": 3, "all": {"periods": periods},
+                   "routes": [{"label": "Manchester Piccadilly", "stop": None, "periods": periods}]},
+        "buses": {"late_minutes": 2, "routes": [], "all": {"periods": [
+            {"span": 7, "since": "2026-10-03", **NOTHING}, {"span": 28, "since": "2026-09-12", **NOTHING}]}},
+    }
+    assert server.request("/api/performance", headers={"Sec-Fetch-Site": "cross-site"})[0].status == 403
+    assert server.request("/api/performance", host="evil.example")[0].status == 403
+    assert server.request("/api/performance/x")[0].status == 404
+
+
+def test_without_a_history_there_are_no_figures(static_dir):
+    running = start(static_dir, performance=None)
+    try:
+        assert running.request("/api/performance")[0].status == 404
+        assert running.request("/performance")[0].status == 200  # the page says so
+    finally:
+        running.close()
 
 
 # Health
@@ -466,7 +571,7 @@ def test_with_the_dashboard_off_only_the_settings_and_the_health_check_answer(st
         response, _ = running.request("/")
         assert response.status == 303 and response.getheader("Location") == "/settings"
         for path in ("/api/snapshot", "/api/events", "/api/area", f"/api/bus/{BUS_ID}", f"/api/history/{TRAIN_ID}",
-                     "/static/app.css", "/manifest.webmanifest", "/nowhere"):
+                     "/api/performance", "/performance", "/static/app.css", "/manifest.webmanifest", "/nowhere"):
             response, body = running.request(path)
             assert response.status == 404 and b"Glossop" not in body, path
         response, body = running.request("/healthz")

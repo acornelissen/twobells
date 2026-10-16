@@ -127,7 +127,7 @@ export function openSheet(entry, opener, ctx) {
   draw(row);
   openDialog(sheet, opener);
   if (openMode === "bus") showBus(openId);
-  loadHistory(openId);
+  loadHistory(openId, ctx?.stops);
 }
 
 // Called with each new snapshot: updates the open sheet from its row.

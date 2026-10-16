@@ -215,5 +215,38 @@
       "live": true,
       "reason": "Broken down train"
     }
-  ]
+  ],
+  "route": {
+    "label": "Manchester Piccadilly",
+    "stop": null,
+    "late_minutes": 3,
+    "periods": [
+      {
+        "span": 7,
+        "since": "2026-10-04",
+        "enough": true,
+        "days": 6,
+        "counted": 100,
+        "right_time": 50,
+        "within_3": 74,
+        "within_15": 87,
+        "on_time": 74,
+        "cancelled": 3,
+        "unknown": 2
+      },
+      {
+        "span": 28,
+        "since": "2026-09-13",
+        "enough": true,
+        "days": 27,
+        "counted": 442,
+        "right_time": 255,
+        "within_3": 353,
+        "within_15": 413,
+        "on_time": 353,
+        "cancelled": 13,
+        "unknown": 17
+      }
+    ]
+  }
 }

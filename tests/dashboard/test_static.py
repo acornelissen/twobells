@@ -66,14 +66,18 @@ class _Page(HTMLParser):
             self.inline_script = True
 
 
-def _page():
+PAGES = ["index.html", "performance.html"]
+
+
+def _page(name="index.html"):
     parser = _Page()
-    parser.feed((STATIC / "index.html").read_text(encoding="utf-8"))
+    parser.feed((STATIC / name).read_text(encoding="utf-8"))
     return parser
 
 
-def test_index_has_no_inline_script_style_or_handlers():
-    page = _page()
+@pytest.mark.parametrize("name", PAGES)
+def test_pages_have_no_inline_script_style_or_handlers(name):
+    page = _page(name)
     assert not page.inline_script
     tags = [tag for tag, _ in page.elements]
     assert "style" not in tags
@@ -85,8 +89,9 @@ def test_index_has_no_inline_script_style_or_handlers():
             assert attrs.get("src"), "every script must be an external file"
 
 
-def test_index_is_british_english():
-    html = [attrs for tag, attrs in _page().elements if tag == "html"]
+@pytest.mark.parametrize("name", PAGES)
+def test_pages_are_british_english(name):
+    html = [attrs for tag, attrs in _page(name).elements if tag == "html"]
     assert html == [{"lang": "en-GB", "data-theme": "modern"}]
 
 
@@ -100,31 +105,47 @@ def test_index_has_one_polite_live_region():
 
 def _served(url):
     """The file the server answers a same-origin URL with, per the contract."""
-    if url == "/manifest.webmanifest":
-        return STATIC / "manifest.webmanifest"
+    pages = {"/": "index.html", "/performance": "performance.html", "/manifest.webmanifest": "manifest.webmanifest"}
+    if url in pages:
+        return STATIC / pages[url]
     assert url.startswith("/static/"), f"unexpected path {url}"
     return STATIC / url.removeprefix("/static/")
 
 
-def test_index_references_resolve():
+@pytest.mark.parametrize("name", PAGES)
+def test_page_references_resolve(name):
     refs = []
-    for _tag, attrs in _page().elements:
-        for name in ("href", "src"):
-            value = attrs.get(name)
+    for _tag, attrs in _page(name).elements:
+        for attr in ("href", "src"):
+            value = attrs.get(attr)
             # /settings is the server's own settings area, not a file.
             if value and not value.startswith(("#", "https://")) and value != "/settings":
                 refs.append(value)
-    assert "/static/main.js" in refs
+    assert {"index.html": "/static/main.js", "performance.html": "/static/performance.js"}[name] in refs
     for ref in refs:
         assert _served(ref).is_file(), ref
 
 
-def test_the_header_links_to_the_settings():
-    page = _page()
+def _header_links(name):
+    page = _page(name)
     header = [i for i, (tag, attrs) in enumerate(page.elements) if tag == "header"]
     main = [i for i, (tag, _) in enumerate(page.elements) if tag == "main"]
-    links = [attrs for tag, attrs in page.elements[header[0]:main[0]] if tag == "a"]
-    assert {"class": "top-link", "href": "/settings"} in links
+    return [attrs for tag, attrs in page.elements[header[0]:main[0]] if tag == "a"]
+
+
+def test_the_header_links_to_the_performance_page_and_the_settings():
+    assert _header_links("index.html") == [{"class": "top-link", "href": "/performance"},
+                                           {"class": "top-link", "href": "/settings"}]
+
+
+def test_the_performance_page_header_links_back_to_the_departures_and_the_settings():
+    assert _header_links("performance.html") == [{"class": "top-link", "href": "/"},
+                                                 {"class": "top-link", "href": "/settings"}]
+    # The same Board look switch as the dashboard's, its look set before the first paint.
+    page = _page("performance.html")
+    toggle = {"type": "button", "id": "theme-toggle", "class": "quiet", "aria-pressed": "false"}
+    assert ("button", toggle) in page.elements
+    assert ("script", {"src": "/static/theme.js"}) in page.elements
 
 
 IMPORT = re.compile(
@@ -591,14 +612,30 @@ AREA = {
     "stops": [{"label": str, "name": str, "lat": number, "lon": number}],
     "routes": [{"line": str, "destination": str, "path": [lat_lon]}],
 }
+def day(value):
+    return isinstance(value, str) and bool(DAY.match(value))
+
+
+FIGURES = {
+    "span": integer, "since": day, "enough": bool, "days": integer, "counted": integer, "right_time": integer,
+    "within_3": integer, "within_15": integer, "on_time": integer, "cancelled": integer, "unknown": integer,
+}
+ROUTE_FIGURES = {"label": str, "stop": Opt(str), "late_minutes": integer, "periods": [FIGURES]}
 HISTORY_DETAIL = {
     "id": row_id, "mode": one_of("train", "bus"), "label": str,
     "day_type": one_of("weekday", "saturday", "sunday"), "phrase": Opt(str),
     "days": [{
-        "day": lambda v: isinstance(v, str) and bool(DAY.match(v)), "status": ROW_STATUS,
+        "day": day, "status": ROW_STATUS,
         "delay_min": Opt(integer), "live": bool, "reason": Opt(str),
     }],
+    "route": Opt(ROUTE_FIGURES),
 }
+PERFORMANCE_PART = {
+    "late_minutes": integer,
+    "all": {"periods": [FIGURES]},
+    "routes": [{"label": str, "stop": Opt(str), "periods": [FIGURES]}],
+}
+PERFORMANCE = {"generated_at": at, "trains": PERFORMANCE_PART, "buses": PERFORMANCE_PART}
 
 
 def _fixture(name):
@@ -705,6 +742,25 @@ def test_history_fixture_follows_the_contract():
     check(history, HISTORY_DETAIL)
     days = [d["day"] for d in history["days"]]
     assert days == sorted(days, reverse=True) and len(days) <= 90
+    assert [p["span"] for p in history["route"]["periods"]] == [7, 28]
+
+
+def test_performance_fixture_follows_the_contract():
+    report = _fixture("dashboard_performance.json")
+    check(report, PERFORMANCE)
+    for part in ("trains", "buses"):
+        rows = [report[part]["all"], *report[part]["routes"]]
+        for row in rows:
+            assert [p["span"] for p in row["periods"]] == [7, 28]
+            for p in row["periods"]:
+                assert p["enough"] == (p["days"] >= 3)
+                assert max(p["right_time"], p["within_3"], p["within_15"], p["on_time"], p["cancelled"]) <= p["counted"]
+                assert p["right_time"] <= p["within_3"] <= p["within_15"]
+    # The cases the page has to draw: a route with too few days, in one span or both, and a bus stop.
+    trains, buses = report["trains"]["routes"], report["buses"]["routes"]
+    assert any(not any(p["enough"] for p in r["periods"]) for r in trains)
+    assert any(not r["periods"][0]["enough"] and r["periods"][1]["enough"] for r in buses)
+    assert all(r["stop"] for r in buses) and not any(r["stop"] for r in trains)
 
 
 def test_shape_checker_rejects_wrong_shapes():
@@ -2166,6 +2222,76 @@ def test_the_journey_says_where_the_train_is_once():
 
 
 @needs_node
+@needs_node
+def test_the_sheet_shows_its_route_s_figures():
+    found = run_js(_sheet() + """
+        openTrain(train(1));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const table = elements(history).find((el) => (el.getAttribute("class") || "").includes("measures"));
+        const rows = elements(table).filter((el) => el.nodeName === "TR").map((tr) => tr.childNodes.map(spoken));
+        const caption = spoken(elements(table).find((el) => el.nodeName === "CAPTION"));
+        const region = table.parentNode;
+        console.log(JSON.stringify({ caption, rows, region: [region.getAttribute("role"), region.getAttribute("aria-label")] }));
+    """)
+    assert found["caption"] == "Every train to Manchester Piccadilly"
+    assert found["region"] == ["region", "Every train to Manchester Piccadilly"]
+    route = _fixture("dashboard_history.json")["route"]["periods"]
+    week, month = route
+    # A row per measure, a column per span: narrow enough for the sheet.
+    assert found["rows"] == [
+        ["Measure", "Last 7 days", "Last 28 days"],
+        ["Right Time at or before its time", _cell(week, "right_time"), _cell(month, "right_time")],
+        ["T-3 under 3 min late", _cell(week, "within_3"), _cell(month, "within_3")],
+        ["T-15 under 15 min late", _cell(week, "within_15"), _cell(month, "within_15")],
+        ["Cancelled", _cell(week, "cancelled"), _cell(month, "cancelled")],
+        ["Not known no time given", str(week["unknown"]), str(month["unknown"])],
+        ["Days", str(week["days"]), str(month["days"])],
+    ]
+
+
+@needs_node
+def test_a_span_without_figures_says_why_once_down_its_column():
+    found = run_js("""
+        import { spanRows } from "./measures.js";
+        const [head, body] = spanRows("bus", 2, [[7, { enough: false, days: 2 }], [28, { enough: true, days: 3,
+          counted: 4, on_time: 3, within_15: 4, unknown: 1 }]]);
+        const said = (el) => spoken(el).replace(/\\s+/g, " ").trim();
+        console.log(JSON.stringify([head.childNodes.map(said), body.map((tr) => tr.childNodes.map(said)),
+          body[0].childNodes[1].getAttribute("rowspan")]));
+    """)
+    head, body, rowspan = found
+    assert head == ["Measure", "Last 7 days", "Last 28 days"]
+    assert body == [
+        ["On time under 2 min late", "Not enough days yet", "75% (3 of 4)"],
+        ["T-15 under 15 min late", "100% (4 of 4)"],
+        ["No tracker not counted", "1"],
+        ["Days", "3"],
+    ]
+    assert rowspan == "4"
+
+
+@needs_node
+def test_a_bus_sheet_names_its_stop_and_its_late_threshold():
+    found = run_js(_sheet() + """
+        import { routeCaption } from "./history.js";
+        import { columns } from "./measures.js";
+        console.log(JSON.stringify([
+          routeCaption("bus", { label: "341 to Hyde Bus Station", stop: "A" }, { A: "Henry Street A" }),
+          routeCaption("bus", { label: "341 to Hyde Bus Station", stop: "C" }, { A: "Henry Street A" }),
+          routeCaption("bus", { label: "341 to Hyde", stop: "constructor" }, {}),
+          columns("bus", 4).map(([key, heading, sub]) => `${key}:${heading}:${sub}`),
+          columns("bus", "4").map(([, , sub]) => sub)[0],
+        ]));
+    """)
+    assert found == [
+        "Every 341 to Hyde Bus Station from Henry Street A",
+        "Every 341 to Hyde Bus Station from stop C",
+        "Every 341 to Hyde from stop constructor",
+        ["on_time:On time:under 4 min late", "within_15:T-15:under 15 min late"],
+        "under 2 min late",  # not a whole number from the feed: the default
+    ]
+
+
 def test_a_new_snapshot_updates_the_open_sheet_in_place():
     # Rebuilding it would move a screen reader's place: what's there stays,
     # and only what changed is changed.
@@ -2271,7 +2397,7 @@ def test_the_history_never_reads_inherited_keys_as_words():
         HISTORY.days = HISTORY.days.map((d) => ({ ...d, status: "toString" }));
         openTrain(train(1));
         await new Promise((resolve) => setTimeout(resolve, 0));
-        const caption = elements(history).find((el) => el.nodeName === "CAPTION");
+        const caption = elements(history).filter((el) => el.nodeName === "CAPTION").at(-1);
         console.log(JSON.stringify([spoken(caption), byClass(history, "badge-text").map((el) => el.textContent)[0]]));
     """)
     assert found[0].endswith(" days, newest first") and found[1] == "Unknown"
@@ -2289,7 +2415,8 @@ def test_the_sheet_holds_the_history_and_remind_me():
         const before = [remind.hidden, remind.getAttribute("aria-pressed"), spoken(remind), spoken(note)];
         await new Promise((resolve) => setTimeout(resolve, 0));
         const phrase = byClass(history, "phrase").map(spoken);
-        const days = elements(history).filter((el) => el.nodeName === "TR").length;
+        const table = elements(history).filter((el) => el.nodeName === "TABLE").at(-1);
+        const days = elements(table).filter((el) => el.nodeName === "TR").length;
         const click = remind.listeners.find(([type]) => type === "click")[1];
         click();
         const on = remind.getAttribute("aria-pressed");
@@ -2308,6 +2435,127 @@ def test_the_sheet_holds_the_history_and_remind_me():
     assert found["days"] == len(history["days"]) + 1  # and the header row
     # A cancelled train has nothing to leave for, so no reminder.
     assert found["cancelled"] == [True, ""]
+
+
+# --- The Performance page ---
+
+
+# The page's parts on a fake document, and its report from the fixture.
+# `tables(key)` reads each of a section's tables as rows of cells, as said.
+PERFORMANCE_PAGE = """
+import { readFileSync } from "node:fs";
+import { h } from "./dom.js";
+import { renderReport } from "./performance.js";
+const REPORT = JSON.parse(readFileSync(%r, "utf-8"));
+const part = (key) => h("section", { id: `perf-${key}`, hidden: true }, h("div", { id: `perf-${key}-body` }));
+document.body.append(h("h1", { id: "title" }), h("p", { id: "perf-status" }), part("trains"), part("buses"),
+  h("span", { id: "perf-bus-late" }, "2 minutes"));
+const $ = (id) => document.getElementById(id);
+const said = (el) => spoken(el).replace(/\\s+/g, " ").trim();
+const tables = (key) => elements($(`perf-${key}-body`)).filter((el) => el.nodeName === "TABLE")
+  .map((table) => elements(table).filter((el) => el.nodeName === "TR").map((tr) => tr.childNodes.map(said)));
+const names = { A: "Henry Street A", B: "Henry Street B" };
+"""
+
+
+def _performance_page():
+    return PERFORMANCE_PAGE % str(FIXTURES / "dashboard_performance.json")
+
+
+def _cell(period, key):
+    return f"{round(100 * period[key] / period['counted'])}% ({period[key]} of {period['counted']})"
+
+
+@needs_node
+def test_the_performance_page_lists_the_measures_route_by_route():
+    found = run_js(_performance_page() + """
+        renderReport(REPORT, names);
+        const headings = elements($("perf-trains-body")).filter((el) => el.nodeName === "H3").map(said);
+        const regions = elements($("perf-trains-body")).filter((el) => el.getAttribute("role") === "region")
+          .map((el) => el.getAttribute("aria-label"));
+        console.log(JSON.stringify({
+          status: said($("perf-status")), shown: [$("perf-trains").hidden, $("perf-buses").hidden],
+          headings, regions, trains: tables("trains"), buses: tables("buses"), late: said($("perf-bus-late")),
+        }));
+    """)
+    report = _fixture("dashboard_performance.json")
+    assert found["status"] == "Figures at 07:01."
+    assert found["shown"] == [False, False]
+    assert found["headings"] == ["Last 7 days", "Last 28 days"]
+    assert found["regions"] == ["Last 7 days, trains", "Last 28 days, trains"]
+    week = found["trains"][0]
+    assert week[0] == ["Route", "Right Time at or before its time", "T-3 under 3 min late", "T-15 under 15 min late",
+                       "Cancelled", "Not known no time given", "Days"]
+    total = report["trains"]["all"]["periods"][0]
+    assert week[1] == ["All trains", _cell(total, "right_time"), _cell(total, "within_3"), _cell(total, "within_15"),
+                       _cell(total, "cancelled"), str(total["unknown"]), str(total["days"])]
+    # Routes by name; one with too few days says so, in one cell across the row.
+    assert week[2] == ["Hadfield", "Not enough days yet"]
+    manchester = report["trains"]["routes"][1]["periods"][0]
+    assert week[3][:2] == ["Manchester Piccadilly", _cell(manchester, "right_time")]
+    # Buses: on time by the bus late threshold, and no cancellations; each route says its stop.
+    week, month = found["buses"]
+    assert week[0] == ["Route", "On time under 2 min late", "T-15 under 15 min late", "No tracker not counted", "Days"]
+    assert [row[0] for row in week[1:]] == ["All buses", "237 to Ashton Bus Station from Henry Street B",
+                                            "341 to Hyde Bus Station from Henry Street A",
+                                            "61 to Buxton Market Place from Henry Street A"]
+    assert week[4][1:] == ["Not enough days yet"]
+    buxton = report["buses"]["routes"][2]["periods"][1]
+    assert month[4][1:] == [_cell(buxton, "on_time"), _cell(buxton, "within_15"), str(buxton["unknown"]), "3"]
+    assert found["late"] == "2 minutes"
+
+
+@needs_node
+def test_the_performance_page_says_when_there_is_nothing_to_show():
+    found = run_js(_performance_page() + """
+        renderReport(null);
+        const none = said($("perf-status"));
+        const empty = structuredClone(REPORT);
+        for (const key of ["trains", "buses"]) {
+          empty[key].routes = [];
+          for (const p of empty[key].all.periods) Object.assign(p, { days: 0, counted: 0, enough: false });
+        }
+        empty.buses.late_minutes = 1;
+        renderReport(empty);
+        console.log(JSON.stringify([none, said($("perf-trains-body")), said($("perf-buses-body")),
+          said($("perf-bus-late"))]));
+    """)
+    assert found == [
+        "There's no punctuality history yet. It starts once the dashboard has seen departures leave.",
+        "No trains recorded in the last 28 days.",
+        "No buses recorded in the last 28 days.",
+        "1 minute",
+    ]
+
+
+@needs_node
+def test_the_performance_page_never_trusts_the_report():
+    # Feed words never reach a lookup's inherited keys, nor any count past
+    # what was counted; times nobody knows say so rather than "NaN%".
+    found = run_js(_performance_page() + """
+        const odd = structuredClone(REPORT);
+        const route = odd.buses.routes[0];
+        route.stop = "constructor";
+        route.label = "<b>341</b>";
+        Object.assign(route.periods[0], { right_time: 99, on_time: 500, within_15: -4, counted: 10, unknown: "x" });
+        odd.trains.routes[0].periods[0] = { span: 7, enough: true, days: 3, counted: 0, unknown: 4 };
+        odd.trains.routes.push("not a route", { label: "" });
+        renderReport(odd, names);
+        console.log(JSON.stringify({ buses: tables("buses")[0][2], trains: tables("trains")[0].slice(2) }));
+    """)
+    assert found["buses"] == ["<b>341</b> from Stop constructor", "100% (10 of 10)", "0% (0 of 10)", "0", "6"]
+    assert found["trains"][0] == ["Hadfield", "No times known yet"]
+    assert len(found["trains"]) == 2  # nothing drawn for the rows that aren't routes
+
+
+@needs_node
+def test_percentages_are_never_rounded_to_all_or_none():
+    found = run_js("""
+        import { percent } from "./measures.js";
+        console.log(JSON.stringify([percent(199, 200), percent(1, 300), percent(0, 5), percent(5, 5), percent(31, 50),
+          percent(1, 0)]));
+    """)
+    assert found == ["99%", "1%", "0%", "100%", "62%", ""]
 
 
 # --- Next to catch ---
@@ -2697,12 +2945,15 @@ def test_the_area_map_has_real_buttons_a_credit_and_a_text_list():
     assert "OpenStreetMap contributors" in dialog[:dialog.index("</dialog>")]
 
 
-def test_the_footer_has_one_place_for_the_version_the_server_fills_in():
+@pytest.mark.parametrize("name", PAGES)
+def test_the_footer_has_one_place_for_the_version_the_server_fills_in(name):
+    from twobells.web.server import PAGES as SERVED_PAGES
     from twobells.web.server import VERSION_SLOT
 
-    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    html = (STATIC / name).read_text(encoding="utf-8")
     footer = html[html.index('<footer class="foot">'):html.index("</footer>")]
     assert html.count(VERSION_SLOT.decode()) == 1 and VERSION_SLOT.decode() in footer
+    assert name in SERVED_PAGES
 
 
 def test_every_map_credit_links_to_fix_the_map():

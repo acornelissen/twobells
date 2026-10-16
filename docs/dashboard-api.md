@@ -4,7 +4,7 @@ The contract between the dashboard's server (`twobells serve`, on every install)
 
 Everything under `/settings` is the settings site, not part of this API: it has its own pages, cookies (`settings_session`, `settings_form`, both `Path=/settings`) and headers (`form-action 'self'`, and `script-src 'self'` only for the setup wizard under `/settings/setup/` and for `/settings/settings.js` on a signed-in visitor's settings pages). Nothing here changes because of it.
 
-The API is there only while the dashboard is on: its view is on (`[app] views`), the app is set up, and its settings load. While it is off, `/` redirects (303) to `/settings`, `/healthz` answers 200 `ok` so a container's health check still hears the server, and everything else here (`/api/…`, `/static/…`, `/manifest.webmanifest`) is 404. Responses then carry the settings site's security headers rather than those below.
+The API is there only while the dashboard is on: its view is on (`[app] views`), the app is set up, and its settings load. While it is off, `/` redirects (303) to `/settings`, `/healthz` answers 200 `ok` so a container's health check still hears the server, and everything else here (`/performance`, `/api/…`, `/static/…`, `/manifest.webmanifest`) is 404. Responses then carry the settings site's security headers rather than those below.
 
 Rules for every response:
 - **Times:** `*_at` fields are ISO 8601 with the board's UTC offset (`2026-10-10T07:12:00+01:00`). `HH:MM` fields are for display only. The browser counts down from `*_at` against the server clock (`generated_at` plus its own offset), so the server never pushes every second.
@@ -14,7 +14,7 @@ Rules for every response:
 Contents:
 
 - The snapshot: [`GET /api/snapshot`](#get-apisnapshot) ([Fields](#fields), [Row extras](#row-extras)), [`disruptions`](#snapshot-disruptions), [`timetable_changes`](#snapshot-timetable_changes)
-- Other endpoints: [`GET /api/events`](#get-apievents), [`GET /api/bus/<id>`](#get-apibusid), [`GET /api/history/<id>`](#get-apihistoryid), [`GET /api/area`](#get-apiarea), [`GET /healthz`](#get-healthz), [Static files](#static-files)
+- Other endpoints: [`GET /api/events`](#get-apievents), [`GET /api/bus/<id>`](#get-apibusid), [`GET /api/history/<id>`](#get-apihistoryid), [`GET /api/performance`](#get-apiperformance), [`GET /api/area`](#get-apiarea), [`GET /healthz`](#get-healthz), [Static files](#static-files)
 - Rules: [Access rules](#access-rules-every-request), [Security headers](#security-headers-every-response-while-the-dashboard-is-on)
 
 ## `GET /api/snapshot`
@@ -320,11 +320,51 @@ The punctuality history of a train or bus row (same ids as the snapshot); 404 if
   "label": "07:12 to Manchester Piccadilly",
   "day_type": "weekday",
   "phrase": "Late 4 of the last 10 weekdays (avg 6 min)",
-  "days": [{"day": "2026-10-09", "status": "late", "delay_min": 7, "live": true, "reason": null}]
+  "days": [{"day": "2026-10-09", "status": "late", "delay_min": 7, "live": true, "reason": null}],
+  "route": {
+    "label": "Manchester Piccadilly", "stop": null, "late_minutes": 3,
+    "periods": [
+      {"span": 7, "since": "2026-10-04", "enough": true, "days": 6, "counted": 100, "right_time": 51,
+       "within_3": 75, "within_15": 88, "on_time": 75, "cancelled": 3, "unknown": 2},
+      {"span": 28, "since": "2026-09-13", "enough": true, "days": 27, "counted": 442, "…": "…"}
+    ]
+  }
 }
 ```
 
-`days` are newest first, at most `[dashboard] history_days` of them (1 to 3650, default 90).
+- `days` are newest first, at most `[dashboard] history_days` of them (1 to 3650, default 90).
+- `route` is the figures of every departure on the row's route, whatever its time (every train to Manchester Piccadilly; every 341 to Hyde Bus Station from stop A), as one route in [`GET /api/performance`](#get-apiperformance), with the mode's `late_minutes`. `null` when the server has no history to read.
+
+## `GET /api/performance`
+
+The Performance page's figures: how each regular route, and all the trains or all the buses together, ran over the last 7 and 28 days, today included. Worked out from the punctuality history each time it is asked for; 404 when the server has no history to read, 503 when it can't read it. Same [access rules](#access-rules-every-request) and headers as the rest of the API.
+
+```json
+{
+  "generated_at": "2026-10-10T07:01:30+01:00",
+  "trains": {
+    "late_minutes": 3,
+    "all": {"periods": [{"span": 7, "since": "2026-10-04", "enough": true, "days": 6, "counted": 102,
+                          "right_time": 52, "within_3": 76, "within_15": 89, "on_time": 76, "cancelled": 3,
+                          "unknown": 2}, {"span": 28, "…": "…"}]},
+    "routes": [
+      {"label": "Hadfield", "stop": null, "periods": [{"span": 7, "enough": false, "days": 2, "…": "…"}, {"span": 28, "…": "…"}]},
+      {"label": "Manchester Piccadilly", "stop": null, "periods": ["…"]}
+    ]
+  },
+  "buses": {
+    "late_minutes": 2,
+    "all": {"periods": ["…"]},
+    "routes": [{"label": "341 to Hyde Bus Station", "stop": "A", "periods": ["…"]}]
+  }
+}
+```
+
+- **Routes** are the history's regular departures without their times: a train's destination (`stop` null), or a bus's line and destination from one of your stops (`stop` is its label, as in the snapshot's `buses.stops`). At most 50 per mode, the busiest, listed by name. `all` counts every departure, listed or not.
+- **`periods`**: one per span, in order: `span` days (7, then 28) from `since` to today. Only departures whose outcome is final count (see `dashboard/history.py`).
+- **The counts:** `days` with any departure recorded; `unknown`, gone with no time to tell how late (a train shown only as "Delayed", a bus with no tracker), left out of the rest; `counted`, the others, cancelled ones included, which every measure is out of. `right_time` left at or before its booked time; `within_3` (T-3) and `within_15` (T-15) under 3 and under 15 minutes late (whole minutes: 2 and 14 or less); `on_time` under `late_minutes` late (`[dashboard] late_minutes_train` or `late_minutes_bus`); `cancelled`. Early counts as right time.
+- **`enough`** is false with fewer than 3 `days`: the page says "Not enough days yet" rather than a percentage.
+- **On the page** (`/performance`, linked from the dashboard's header, not in the kiosk): for each mode a table per span, the total first, then each route. Each cell is the share of `counted` with the count, "62% (31 of 50)", rounded, but never to 100% or 0% unless all or none. Trains show Right Time, T-3, T-15, Cancelled and Not known; buses show On time, T-15 and No tracker, as bus data never says a bus was cancelled. Each departure's sheet shows its `route` the same way.
 
 ## `GET /healthz`
 
@@ -332,7 +372,8 @@ While the dashboard is on: 200 `ok` when the pollers are alive and the snapshot 
 
 ## Static files
 
-- `/`: the page.
+- `/`: the page (`index.html`).
+- `/performance`: the Performance page (`performance.html`), with the same headers and caching.
 - `/static/<path>`: files from `src/twobells/dashboard_static/`, from an allowlist built at start.
 - `/manifest.webmanifest`.
 

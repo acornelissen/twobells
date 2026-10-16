@@ -1,0 +1,233 @@
+{
+  "generated_at": "2026-10-10T07:01:30+01:00",
+  "trains": {
+    "late_minutes": 3,
+    "all": {
+      "periods": [
+        {
+          "span": 7,
+          "since": "2026-10-04",
+          "enough": true,
+          "days": 6,
+          "counted": 102,
+          "right_time": 52,
+          "within_3": 76,
+          "within_15": 89,
+          "on_time": 76,
+          "cancelled": 3,
+          "unknown": 2
+        },
+        {
+          "span": 28,
+          "since": "2026-09-13",
+          "enough": true,
+          "days": 27,
+          "counted": 444,
+          "right_time": 257,
+          "within_3": 355,
+          "within_15": 415,
+          "on_time": 355,
+          "cancelled": 13,
+          "unknown": 17
+        }
+      ]
+    },
+    "routes": [
+      {
+        "label": "Hadfield",
+        "stop": null,
+        "periods": [
+          {
+            "span": 7,
+            "since": "2026-10-04",
+            "enough": false,
+            "days": 2,
+            "counted": 2,
+            "right_time": 2,
+            "within_3": 2,
+            "within_15": 2,
+            "on_time": 2,
+            "cancelled": 0,
+            "unknown": 0
+          },
+          {
+            "span": 28,
+            "since": "2026-09-13",
+            "enough": false,
+            "days": 2,
+            "counted": 2,
+            "right_time": 2,
+            "within_3": 2,
+            "within_15": 2,
+            "on_time": 2,
+            "cancelled": 0,
+            "unknown": 0
+          }
+        ]
+      },
+      {
+        "label": "Manchester Piccadilly",
+        "stop": null,
+        "periods": [
+          {
+            "span": 7,
+            "since": "2026-10-04",
+            "enough": true,
+            "days": 6,
+            "counted": 100,
+            "right_time": 50,
+            "within_3": 74,
+            "within_15": 87,
+            "on_time": 74,
+            "cancelled": 3,
+            "unknown": 2
+          },
+          {
+            "span": 28,
+            "since": "2026-09-13",
+            "enough": true,
+            "days": 27,
+            "counted": 442,
+            "right_time": 255,
+            "within_3": 353,
+            "within_15": 413,
+            "on_time": 353,
+            "cancelled": 13,
+            "unknown": 17
+          }
+        ]
+      }
+    ]
+  },
+  "buses": {
+    "late_minutes": 2,
+    "all": {
+      "periods": [
+        {
+          "span": 7,
+          "since": "2026-10-04",
+          "enough": true,
+          "days": 6,
+          "counted": 79,
+          "right_time": 24,
+          "within_3": 55,
+          "within_15": 79,
+          "on_time": 43,
+          "cancelled": 0,
+          "unknown": 18
+        },
+        {
+          "span": 28,
+          "since": "2026-09-13",
+          "enough": true,
+          "days": 27,
+          "counted": 360,
+          "right_time": 122,
+          "within_3": 265,
+          "within_15": 360,
+          "on_time": 221,
+          "cancelled": 0,
+          "unknown": 75
+        }
+      ]
+    },
+    "routes": [
+      {
+        "label": "237 to Ashton Bus Station",
+        "stop": "B",
+        "periods": [
+          {
+            "span": 7,
+            "since": "2026-10-04",
+            "enough": true,
+            "days": 6,
+            "counted": 39,
+            "right_time": 9,
+            "within_3": 27,
+            "within_15": 39,
+            "on_time": 19,
+            "cancelled": 0,
+            "unknown": 9
+          },
+          {
+            "span": 28,
+            "since": "2026-09-13",
+            "enough": true,
+            "days": 27,
+            "counted": 181,
+            "right_time": 60,
+            "within_3": 130,
+            "within_15": 181,
+            "on_time": 109,
+            "cancelled": 0,
+            "unknown": 35
+          }
+        ]
+      },
+      {
+        "label": "341 to Hyde Bus Station",
+        "stop": "A",
+        "periods": [
+          {
+            "span": 7,
+            "since": "2026-10-04",
+            "enough": true,
+            "days": 6,
+            "counted": 39,
+            "right_time": 15,
+            "within_3": 28,
+            "within_15": 39,
+            "on_time": 24,
+            "cancelled": 0,
+            "unknown": 9
+          },
+          {
+            "span": 28,
+            "since": "2026-09-13",
+            "enough": true,
+            "days": 27,
+            "counted": 176,
+            "right_time": 62,
+            "within_3": 135,
+            "within_15": 176,
+            "on_time": 112,
+            "cancelled": 0,
+            "unknown": 40
+          }
+        ]
+      },
+      {
+        "label": "61 to Buxton Market Place",
+        "stop": "A",
+        "periods": [
+          {
+            "span": 7,
+            "since": "2026-10-04",
+            "enough": false,
+            "days": 1,
+            "counted": 1,
+            "right_time": 0,
+            "within_3": 0,
+            "within_15": 1,
+            "on_time": 0,
+            "cancelled": 0,
+            "unknown": 0
+          },
+          {
+            "span": 28,
+            "since": "2026-09-13",
+            "enough": true,
+            "days": 3,
+            "counted": 3,
+            "right_time": 0,
+            "within_3": 0,
+            "within_15": 3,
+            "on_time": 0,
+            "cancelled": 0,
+            "unknown": 0
+          }
+        ]
+      }
+    ]
+  }
+}
