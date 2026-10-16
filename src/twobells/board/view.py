@@ -68,6 +68,9 @@ class Row:
     # A rail replacement bus in the trains: its platform is words.BUS, and a
     # board with no platform column says so before the destination.
     replacement_bus: bool = False
+    # The train's "Calling at" line (core/calling.py), on a screen only: it
+    # scrolls the first train's under its row. E-paper can't scroll it.
+    calling: str | None = None
 
 
 def destination_text(row: Row, platform_column: bool, wide: bool = False) -> str:
@@ -180,7 +183,8 @@ def _train_row(dep: Departure, walk: WalkTimes | None, clock: str | None) -> Row
     else:
         platform = words.platform(dep.platform, changed) if dep.platform else None
     return Row(dep.scheduled, dep.destination, words.status(dep), _style(dep), platform=platform,
-               platform_changed=changed, via=dep.via, replacement_bus=dep.replacement_bus)
+               platform_changed=changed, via=dep.via, replacement_bus=dep.replacement_bus,
+               calling=_cut(dep.calling_at, CALLING_LIMIT) if clock and dep.calling_at else None)
 
 
 def _bus_row(dep: Departure, walk: WalkTimes | None, clock: str | None) -> Row:
@@ -265,8 +269,9 @@ def build_view(
     stop_names: Mapping[str, str] | None = None,
     last_bus: str | None = None,
 ) -> BoardView:
-    """`clock` (HH:MM:SS, matching `now`) is for screens: it is shown, and
-    leave times count down instead of giving a clock time. `notices` are the
+    """`clock` (HH:MM:SS, matching `now`) is for screens: it is shown, leave
+    times count down instead of giving a clock time, and trains have their
+    "Calling at" lines. `notices` are the
     station's disruption messages, shown one after another as one notice;
     `rain` is the rain warning, if there is one. `strips` say where each
     departure's train or bus is, by strip_key. `stop_names` are what a wide
@@ -291,8 +296,14 @@ def build_view(
 NOTICE_LIMIT = 300
 
 
+# A long journey's "Calling at" line is several hundred letters; a hand-edited
+# saved state could hold far more, and its scrolling strip would be huge.
+CALLING_LIMIT = 1000
+
+
+def _cut(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
 def _notice(messages: list[str]) -> str | None:
-    text = " / ".join(m for m in messages if m)
-    if len(text) <= NOTICE_LIMIT:
-        return text or None
-    return text[: NOTICE_LIMIT - 1].rstrip() + "…"
+    return _cut(" / ".join(m for m in messages if m), NOTICE_LIMIT) or None

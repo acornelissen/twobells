@@ -19,7 +19,7 @@ from ..core.model import Departure, Status, Strip, strip_key
 from ..core.net import DOWNLOAD_DEADLINE, get_bytes
 from ..core.walk import WalkTimes
 from ..emulator.emulation import build_emulation
-from ..emulator.fake import DEMO_NOTICE, DEMO_STOP_NAMES, DEMO_TITLE, FakeWeatherSource
+from ..emulator.fake import DEMO_CALLING, DEMO_NOTICE, DEMO_STOP_NAMES, DEMO_TITLE, FakeWeatherSource
 from ..emulator.server import make_server
 from ..settings.config import ConfigError, load_env_file
 from ..settings.store import Store
@@ -179,8 +179,10 @@ def route_command(args) -> int:
 
 def demo_command(args) -> int:
     trains = [
-        Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, "1"),
-        Departure("train", "Northern", "Manchester Piccadilly", "07:42", "07:49", Status.LATE, "1"),
+        Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, "1",
+                  calling_at=DEMO_CALLING),
+        Departure("train", "Northern", "Manchester Piccadilly", "07:42", "07:49", Status.LATE, "1",
+                  calling_at=DEMO_CALLING),
         Departure("train", "Northern", "Manchester Piccadilly", "08:12", None, Status.CANCELLED, "2"),
     ]
     buses = [

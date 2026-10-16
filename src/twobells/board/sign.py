@@ -221,6 +221,14 @@ def _stop_column(section: Section, width: int, live: bool) -> int | None:
     return min(STOP_NAME_MOST, max(map(_w, [*section.stop_names, *labels])))
 
 
+def calling_line(section: Section, live: bool) -> str | None:
+    """The first train's "Calling at" line, on a screen (`live`), which
+    scrolls it under the train's row; None on e-paper, which can't."""
+    if not live or not section.rows:
+        return None
+    return section.rows[0].calling
+
+
 def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _Columns,
             where_x: float | None) -> int:
     time_x = MARGIN + _w(_ORDINALS[-1]) + _COL_GAP
@@ -253,8 +261,12 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
             layout.add(columns.leave_x, y, section.leave, inverted)
         layout.add(status_x, y, row.right, inverted)
         y += _LINE
+        if index == 0 and calling_line(section, layout.live):
+            # As on the real board: under the first train, where it calls, scrolling.
+            layout.fit(time_x, y, row.calling or "", width - MARGIN - time_x)
+            y += _LINE
         if section.leave and columns.leave_x is None and index == leave_for:
-            # Where the real board scrolls "Calling at", say when to set off.
+            # Under its train, as the "Calling at" line is, say when to set off.
             layout.fit(time_x, y, section.leave, width - MARGIN - time_x)
             y += _LINE
     return y
@@ -355,11 +367,14 @@ def sign_layout(view: BoardView, width: int = WIDTH, height: int = HEIGHT) -> Si
     footer_y = height - (GLYPH_H if view.clock else TINY_HEIGHT) - 1  # the bottom line's top
     buses_top = rule + _BELOW_RULE
     # A rule over the bottom line, as between trains and buses. A screen always
-    # has one; e-paper only when it costs no bus, as it can on a full board.
+    # has one, unless the "Calling at" line has left it room for the rule or a
+    # bus, not both (the bar screen's third); e-paper only when it costs no
+    # bus, as it can on a full board.
     lines = max(1, len(view.buses.rows))  # "No buses" is a line too
     without = min(lines, _rows_that_fit(buses_top, footer_y - 2))
     with_rule = min(lines, _rows_that_fit(buses_top, footer_y - 2 * _FOOTER_GAP - 1))
-    footer_rule = with_rule > 0 and (view.clock is not None or with_rule == without)
+    screen_rule = view.clock is not None and not calling_line(view.trains, layout.live)
+    footer_rule = with_rule > 0 and (screen_rule or with_rule == without)
     bottom = footer_y - 2 * _FOOTER_GAP - 1 if footer_rule else footer_y - 2
     _buses(layout, view.buses, buses_top, bottom, width, buses, where_x)
     if footer_rule:

@@ -1332,3 +1332,57 @@ def test_on_a_screen_the_last_bus_takes_the_titles_place_after_any_notice_or_rai
     assert header(view, panel)[0] == "Last bus 23:05"
     assert header(dataclasses.replace(view, rain="Rain from 22:30 (70%)"), panel)[0] == "Rain from 22:30 (70%)"
     assert header(dataclasses.replace(view, notice="Lifts out of use"), panel)[0] == "! Lifts out of use"
+
+
+# The first train's "Calling at" line, scrolling under its row on a screen.
+
+CALLING = ("Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, "
+           "Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.")
+
+
+def calling_on_screen(clock=CLOCK, text=CALLING):
+    trains = (dataclasses.replace(STRIP_TRAINS[0], calling=text), *STRIP_TRAINS[1:])
+    return on_screen(trains, clock=clock)
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_a_screen_scrolls_the_calling_at_line_under_the_first_train(panel):
+    s = plain_scale(panel)
+    [scroll] = [sc for sc in board_frame(calling_on_screen(), PALETTE, panel).scrolls if sc.text == CALLING]
+    header_h, label_h, row_h = heights()
+    first_row_bottom = (header_h + 6 + label_h + row_h) * s
+    # In the destinations' column, to the right edge, between the first and second rows.
+    x = 3 * s + left_column_width(load_fonts(s), s)
+    assert scroll.box == (int(x), first_row_bottom, int(x) + int(panel.width - 3 * s - x), first_row_bottom + 10 * s)
+    assert scroll.strip.width > scroll.width
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_the_calling_at_line_costs_neither_hdmi_screen_a_row(panel):
+    from twobells.board.render import row_limits
+
+    assert row_limits(panel, calling=True) == row_limits(panel)
+
+
+def test_with_bigger_text_the_calling_at_line_takes_a_bus_s_room():
+    from twobells.board.render import row_limits
+
+    assert row_limits(HDMI_1920X440, text_size=14) == {"Trains": 3, "Buses": 2}
+    assert row_limits(HDMI_1920X440, text_size=14, calling=True) == {"Trains": 3, "Buses": 1}
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_the_rows_under_the_calling_at_line_move_down_by_its_height(panel):
+    s = plain_scale(panel)
+    header_h, label_h, row_h = heights()
+    second_row = (header_h + 6 + label_h + row_h) * s
+    with_line, without = render(calling_on_screen(), PALETTE, panel), render(on_screen(), PALETTE, panel)
+    moved = second_row + 10 * s
+    assert with_line.crop((0, moved, panel.width, moved + row_h * s)).tobytes() == (
+        without.crop((0, second_row, panel.width, second_row + row_h * s)).tobytes())
+
+
+def test_e_paper_has_no_calling_at_line():
+    view = calling_on_screen(clock=None)
+    assert render(view, PALETTE, WAVESHARE_10IN85G).tobytes() == render(on_screen(clock=None), PALETTE,
+                                                                          WAVESHARE_10IN85G).tobytes()

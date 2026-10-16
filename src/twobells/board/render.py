@@ -511,13 +511,30 @@ def plain_scale(panel: Panel) -> int:
     return max(1, min(panel.scale, panel.height // HEIGHT))
 
 
-def row_limits(panel: Panel, text_size: int = TEXT_SIZE) -> dict[str, int]:
+def calling_height(text_size: int = TEXT_SIZE) -> int:
+    """How tall a screen's "Calling at" line is, in pHAT pixels: a line of
+    the small type, a pixel less than the text size, so both HDMI screens
+    keep every row they show without it."""
+    return text_size - 1
+
+
+def calling_line(section: Section, live: bool) -> str | None:
+    """The first train's "Calling at" line, on a screen (`live`), which
+    scrolls it under the train's row; None on e-paper, which can't."""
+    if not live or section.label != "Trains" or not section.rows:
+        return None
+    return section.rows[0].calling
+
+
+def row_limits(panel: Panel, text_size: int = TEXT_SIZE, calling: bool = False) -> dict[str, int]:
     """Rows each section shows: 3 trains and 2 buses on the pHAT's 122 rows,
     fewer on a shorter panel (the original pHAT has 104) or with bigger text,
-    rather than cut off."""
+    rather than cut off. `calling` makes room for the "Calling at" line."""
     s = plain_scale(panel)
     header_h, label_h, row_h = heights(text_size)
     fixed = header_h + _SECTION_GAP + label_h + 1 + _SECTION_GAP + label_h
+    if calling:
+        fixed += calling_height(text_size)
     rows = max(2, (panel.height // s - fixed) // row_h)
     most_buses = _MAX_ROWS["Buses"] if panel.epaper else _SCREEN_MAX_BUSES
     buses = max(1, min(most_buses, rows - _MAX_ROWS["Trains"]))
@@ -586,8 +603,10 @@ class Painter:
         self.p = palette
         self.f = fonts
         self.s = plain_scale(panel)
+        self.text_size = text_size
         self.limits = row_limits(panel, text_size)
         self.header_h, self.label_h, self.row_h = heights(text_size)
+        self.calling_h = calling_height(text_size)
         # Smaller type sits on the same baseline as the row text.
         self.small_drop = 3
         self.width = panel.width
@@ -677,10 +696,26 @@ class Painter:
         if not any(r.strip for r in rows):
             where_x = None  # no room kept for strips that none of them has
         stop_room = stop_column(rows, section.stop_names, self.f, self.width, s, self.live)
-        for row in rows:
+        calling = calling_line(section, self.live)
+        for index, row in enumerate(rows):
             self.row(row, y, platform_x, leave_x, where_x, train=section.label == "Trains", stop_room=stop_room)
             y += self.row_h * s
+            if index == 0 and calling:
+                y = self.calling(calling, y)
         return y
+
+    def calling(self, text: str, y: int) -> int:
+        """The "Calling at" line at `y`, under the first train: in the small
+        type from the destinations' column to the edge, scrolling when it is
+        too long for that. Returns where the next row starts."""
+        s, pad = self.s, PAD * self.s
+        x = pad + left_column_width(self.f, s)
+        room = self.width - pad - x
+        shown = fit_text(text, self.f.small, room, partial(drawn_length, self.f.small))
+        # A pixel up, so the small type's capitals and descenders fit its line.
+        bottom = y + self.calling_h * s
+        self.field((x, y - s), shown, text, self.f.small, room, self.ink, self.paper, (y, bottom))
+        return bottom
 
     def row(self, row: Row, y: int, platform_x: float | None = None, leave_x: float | None = None,
             where_x: float | None = None, train: bool = True, stop_room: float | None = None) -> None:
@@ -747,6 +782,8 @@ def board_frame(view: BoardView, palette: Palette, panel: Panel = PHAT, text_siz
 def paint_board(painter: Painter, view: BoardView, panel: Panel) -> Frame:
     """The board as `painter` draws it: the header, the trains, a rule and the buses."""
     s = painter.s
+    if calling_line(view.trains, painter.live):
+        painter.limits = row_limits(panel, painter.text_size, calling=True)
     painter.header(view)
     sections = [painter.drawn_rows(view.trains), painter.drawn_rows(view.buses)]
     where_x = where_column(sections, painter.f, panel.width, s, painter.live)

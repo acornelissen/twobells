@@ -340,6 +340,22 @@ def test_e_paper_never_asks_where_anything_is(example):
     assert load_config(example, env, display="inky").board.positions is None
 
 
+def trains_source(settings):
+    [source] = [c.source for c in settings.board.sources if isinstance(c.source, DarwinSource)]
+    return source
+
+
+@pytest.mark.parametrize("display", ["hdmi-1280x400", "hdmi-1920x440"])
+def test_a_screen_asks_for_the_board_with_calling_points(example, display):
+    # For the first train's "Calling at" line, which a screen scrolls.
+    assert trains_source(load_config(example, BODS_ENV, display=display)).with_details is True
+
+
+@pytest.mark.parametrize("display", ["inky", "waveshare-10in85g"])
+def test_e_paper_asks_for_the_plain_board(example, display):
+    assert trains_source(load_config(example, BODS_ENV, display=display)).with_details is False
+
+
 def test_a_probe_asks_where_nothing_is(example):
     env = {**BODS_ENV, "RDM_DETAILS_API_KEY": "details"}
     assert load_config(example, env, only={"train"}, display="hdmi-1280x400").board.positions is None

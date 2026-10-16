@@ -220,3 +220,16 @@ def test_the_via_words_follow_the_destination(panel):
         P, panel).scrolls]
     # Too long for its space: the whole of it scrolls, via words and all.
     assert any(text.startswith("Manchester Piccadilly via Guide Bridge") for text in texts)
+
+
+@pytest.mark.parametrize("panel", SCREENS, ids=lambda p: p.name)
+def test_the_calling_at_line_scrolls_under_the_first_train_in_the_tft_look(panel):
+    calling = ("Calling at: Dinting, Broadbottom, Hattersley, Godley, Newton for Hyde, Flowery Field, Guide Bridge, "
+               "Ashburys and Manchester Piccadilly. This train is formed of 3 coaches.")
+    trains = (dataclasses.replace(TRAINS[0], calling=calling), *TRAINS[1:])
+    frame = tft_frame(board(trains=trains), P, panel)
+    [scroll] = [s for s in frame.scrolls if s.text == calling]
+    top, bottom = row_box(panel, "trains", 0)
+    assert scroll.box[1] == bottom  # under the first row
+    # White on black, as the destinations are.
+    assert colours_in(scroll.strip, (0, 0, scroll.strip.width, scroll.strip.height)) == {P.black, P.white}

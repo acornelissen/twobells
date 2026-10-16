@@ -381,6 +381,30 @@ def test_signature_changes_with_the_notice():
     assert view().signature() != view(notices=["Lifts out of use."]).signature()
 
 
+CALLING = "Calling at: Dinting and Manchester Piccadilly. This train is formed of 3 coaches."
+
+
+def test_a_screen_s_trains_carry_their_calling_at_lines():
+    first = dataclasses.replace(train(), calling_at=CALLING)
+    rows = view(trains=[first, train("07:42")], clock="07:00:10").trains.rows
+    assert [row.calling for row in rows] == [CALLING, None]
+
+
+def test_e_paper_has_no_calling_at_line_as_it_cannot_scroll_one():
+    first = dataclasses.replace(train(), calling_at=CALLING)
+    assert view(trains=[first]).trains.rows[0].calling is None
+    # So a change to it never costs e-paper a redraw.
+    assert view(trains=[first]).signature() == view(trains=[train()]).signature()
+
+
+def test_a_calling_at_line_too_long_to_be_real_is_cut():
+    from twobells.board.view import CALLING_LIMIT
+
+    first = dataclasses.replace(train(), calling_at="Calling at: " + "Dinting, " * 500)
+    [row] = view(trains=[first], clock="07:00:10").trains.rows
+    assert row.calling is not None and len(row.calling) == CALLING_LIMIT and row.calling.endswith("…")
+
+
 def test_each_row_carries_where_its_train_or_bus_is():
     from twobells.core.model import Strip, strip_key
 

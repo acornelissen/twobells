@@ -1283,3 +1283,65 @@ def test_everything_fits_on_the_bar_screen_with_stop_names():
         w, h = item_size(item)
         assert item.x >= 0 and item.x + w <= width
         assert item.y >= 0 and item.y + h <= height
+
+
+# The first train's "Calling at" line, scrolling under its row on a screen.
+
+CALLING = ("Calling at: Dinting, Broadbottom, Hattersley, Godley and Manchester Piccadilly. "
+           "This train is formed of 3 coaches.")
+
+
+def calling(view=None, text=CALLING):
+    view = view or screen()
+    first = dataclasses.replace(view.trains.rows[0], calling=text)
+    return dataclasses.replace(view, trains=dataclasses.replace(view.trains, rows=(first, *view.trains.rows[1:])))
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_a_screen_scrolls_the_calling_at_line_under_the_first_train(panel):
+    items = sign_layout(calling(), *dots(panel)).items
+    line = find(items, CALLING)
+    assert find(items, "1st").y < line.y < find(items, "2nd").y
+    assert line.x == find(items, "07:12").x  # under the times, as the leave line is
+    assert line.box is not None and line.x + line.box == dots(panel)[0] - MARGIN  # scrolling to the edge
+
+
+def test_the_calling_at_line_comes_before_the_leave_line():
+    items = sign_layout(calling(), *dots(HDMI_1280X400)).items
+    assert find(items, "1st").y < find(items, CALLING).y < find(items, "Leave in 3 min").y < find(items, "2nd").y
+
+
+def test_a_short_calling_at_line_stands_still():
+    items = sign_layout(calling(text="Calling at: Dinting only."), *dots(HDMI_1280X400)).items
+    assert find(items, "Calling at: Dinting only.").box is None
+
+
+def test_only_the_first_train_has_a_calling_at_line():
+    view = screen()
+    second = dataclasses.replace(view.trains.rows[1], calling=CALLING)
+    view = dataclasses.replace(view, trains=dataclasses.replace(view.trains, rows=(view.trains.rows[0], second,
+                                                                                    *view.trains.rows[2:])))
+    assert CALLING not in texts(sign_layout(view, *dots(HDMI_1280X400)).items)
+
+
+def test_e_paper_has_no_calling_at_line():
+    view = calling(dataclasses.replace(screen(), clock=None))
+    assert CALLING not in texts(sign_layout(view, *dots(WAVESHARE_10IN85G)).items)
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_with_the_calling_at_line_a_screen_keeps_its_three_buses(panel):
+    width, height = dots(panel)
+    layout = sign_layout(calling(), width, height)
+    assert {"341", "61", "237"} <= set(texts(layout.items))
+    for item in layout.items:
+        w, h = item_size(item)
+        assert item.x >= 0 and item.x + w <= width and item.y >= 0 and item.y + h <= height
+
+
+def test_the_bar_screen_gives_up_its_footer_rule_for_the_calling_at_line_not_a_bus():
+    width, height = dots(HDMI_1920X440)
+    assert footer_rule(sign_layout(screen(), width, height)) is not None
+    assert footer_rule(sign_layout(calling(), width, height)) is None
+    # The 7.9" screen has room for both.
+    assert footer_rule(sign_layout(calling(), *dots(HDMI_1280X400))) is not None

@@ -30,6 +30,19 @@ def test_fake_trains_run_half_hourly_to_manchester():
     assert {d.destination for d in deps} == {"Manchester Piccadilly"}
 
 
+def test_fake_trains_call_where_their_calling_points_say_unless_cancelled():
+    sources = [FakeTrainSource(SimClock(START), seed=seed, rows=6) for seed in range(20)]
+    found = [pair for source in sources for pair in zip(source.fetch(), source.services, strict=True)]
+    assert {dep.status for dep, _ in found} >= {Status.CANCELLED, Status.ON_TIME}
+    for dep, service in found:
+        if dep.status is Status.CANCELLED:
+            assert dep.calling_at is None and all(p.skipped for p in service.calling_points)
+        else:
+            names = [p.name for p in service.calling_points]
+            assert dep.calling_at == f"Calling at: {', '.join(names[:-1])} and {names[-1]}. " \
+                                     "This train is formed of 3 coaches."
+
+
 def test_fake_data_is_deterministic_for_a_seed():
     a = FakeTrainSource(SimClock(START), seed=7).fetch()
     b = FakeTrainSource(SimClock(START), seed=7).fetch()

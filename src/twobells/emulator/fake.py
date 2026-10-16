@@ -16,6 +16,7 @@ import random
 from datetime import datetime, timedelta
 
 from ..board.route import RouteStop, RouteStrip, where
+from ..core import calling
 from ..core.model import Departure, Status, Strip, minutes_between, shift, strip_key
 from ..sources.bods import Vehicle
 from ..sources.darwin import CallingPoint, ServiceDetails, ServiceGone, StationCall, TrainService
@@ -102,7 +103,8 @@ class FakeTrainSource(_FakeSource):
         departures = super().fetch()
         self.messages = [DEMO_NOTICE] if self._notice_when and self._notice_when(self._clock()) else []
         self.services = [
-            TrainService(dep, f"FAKE{dep.scheduled.replace(':', '')}GLO", "Hadfield", "NT", 3, None, None, ())
+            TrainService(dep, f"FAKE{dep.scheduled.replace(':', '')}GLO", "Hadfield", "NT", 3, None, None,
+                         _calling_points(dep))
             for dep in departures
         ]
         return departures
@@ -121,10 +123,18 @@ class FakeTrainSource(_FakeSource):
                 status, expected = Status.LATE, _hhmm(scheduled + timedelta(minutes=late))
             else:
                 status, expected = Status.ON_TIME, None
+            calling = None if status is Status.CANCELLED else DEMO_CALLING
             departures.append(
-                Departure("train", "Northern", "Manchester Piccadilly", std, expected, status, "1")
+                Departure("train", "Northern", "Manchester Piccadilly", std, expected, status, "1", calling_at=calling)
             )
         return departures
+
+
+def _calling_points(dep: Departure) -> tuple[CallingPoint, ...]:
+    """The stops after Glossop, as the board with calling points lists them."""
+    cancelled = dep.status is Status.CANCELLED
+    return tuple(CallingPoint(name, crs, shift(dep.scheduled, minutes), None, None, cancelled, 3)
+                 for name, crs, minutes in _AFTER)
 
 
 _BUS_ROUTES = (
@@ -197,6 +207,8 @@ class FakeBusSource(_FakeSource):
 _BEFORE = (("Hadfield", "HDF", -8), ("Dinting", "DTG", -4))
 _AFTER = (("Dinting", "DTG", 3), ("Broadbottom", "BDB", 7), ("Hattersley", "HTY", 10), ("Godley", "GDL", 12),
           ("Manchester Piccadilly", "MAN", 32))
+# Their "Calling at" line, as Darwin's calling points make it.
+DEMO_CALLING = calling.line([name for name, _, _ in _AFTER], coaches=3)
 
 
 class FakeServiceDetails:

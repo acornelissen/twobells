@@ -594,6 +594,11 @@ def settings_from(
     positions = None
     if sources and only is None and not DISPLAY_PANELS[display].epaper:
         positions = _positions(env, any(isinstance(c.source, DarwinSource) for c in sources))
+        # A screen scrolls the first train's "Calling at" line: the board
+        # with calling points, the same call with more in its answer.
+        for config in sources:
+            if isinstance(config.source, DarwinSource):
+                config.source.with_details = True
     # Where the settings site leaves a reset code: beside the state file, in the store.
     folder = state_dir(data)
     board = Board(
