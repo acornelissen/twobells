@@ -1,6 +1,8 @@
+import dataclasses
+
 import pytest
 
-from twobells.board.view import PLAIN, SIGN, Style, build_view
+from twobells.board.view import PLAIN, SIGN, Style, build_view, destination_text
 from twobells.core.model import Departure, Status
 from twobells.core.walk import WalkTimes
 
@@ -318,6 +320,36 @@ def test_a_replacement_bus_says_bus_in_the_platform_column():
     assert row.middle == "Manchester Piccadilly"
     [row] = view(trains=[train()]).trains.rows
     assert row.replacement_bus is False
+
+
+def test_a_changed_platform_says_so_in_words():
+    changed = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, "2",
+                        platform_changed=True)
+    [row] = view(trains=[changed]).trains.rows
+    assert row.platform == "Plat 2 (changed)"
+    assert row.platform_changed is True
+    [row] = view(trains=[dataclasses.replace(changed, platform_changed=False)]).trains.rows
+    assert (row.platform, row.platform_changed) == ("Plat 2", False)
+
+
+def test_a_replacement_bus_is_never_shown_as_a_platform_change():
+    bus = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME,
+                    replacement_bus=True, platform_changed=True)
+    [row] = view(trains=[bus]).trains.rows
+    assert (row.platform, row.platform_changed) == ("Bus", False)
+
+
+def test_a_train_row_carries_its_via_words():
+    via = Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME,
+                    via="via Guide Bridge")
+    [row] = view(trains=[via]).trains.rows
+    assert row.via == "via Guide Bridge"
+    assert row.middle == "Manchester Piccadilly"
+    # Only a board wide enough for a platform column says it.
+    assert destination_text(row, platform_column=False) == "Manchester Piccadilly"
+    assert destination_text(row, platform_column=False, wide=True) == "Manchester Piccadilly via Guide Bridge"
+    bus = dataclasses.replace(row, replacement_bus=True)
+    assert destination_text(bus, platform_column=False, wide=True) == "Bus: Manchester Piccadilly via Guide Bridge"
 
 
 def test_signature_changes_when_the_platform_changes():

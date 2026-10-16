@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import TypeGuard, overload
@@ -61,6 +61,10 @@ class Departure:
     stop: str | None = None
     # A rail replacement bus, run in a train's place: Darwin's serviceType "bus".
     replacement_bus: bool = False
+    # Darwin's words on the route, like "via Guide Bridge"; None for most.
+    via: str | None = None
+    # Its platform has changed since an earlier fetch: see mark_platform_changes.
+    platform_changed: bool = False
 
     def __post_init__(self) -> None:
         # Every time is worked out from these, so one that isn't HH:MM would
@@ -74,11 +78,12 @@ class Departure:
         for name in ("mode", "service", "destination"):
             if not isinstance(getattr(self, name), str):
                 raise TypeError(f"{name} is not text")
-        for name in ("platform", "stop"):
+        for name in ("platform", "stop", "via"):
             if getattr(self, name) is not None and not isinstance(getattr(self, name), str):
                 raise TypeError(f"{name} is not text")
-        if not isinstance(self.replacement_bus, bool):
-            raise TypeError("replacement_bus is not true or false")
+        for name in ("replacement_bus", "platform_changed"):
+            if not isinstance(getattr(self, name), bool):
+                raise TypeError(f"{name} is not true or false")
 
     @property
     def departs_at(self) -> str:
@@ -117,6 +122,25 @@ class Departure:
         leaves = fetched + timedelta(minutes=minutes_between(fetched.strftime("%H:%M"), self._leaves))
         return leaves < now.replace(second=0, microsecond=0)
 
+
+def _same_train(dep: Departure) -> tuple[str, str, str, str, bool]:
+    return dep.mode, dep.service, dep.scheduled, dep.destination, dep.replacement_bus
+
+
+def mark_platform_changes(before: list[Departure], after: list[Departure]) -> list[Departure]:
+    """`after`, a new fetch, with platform_changed set on each departure whose
+    platform isn't the one `before` (the last fetch, less what has left
+    since) gave it, and kept while it stays on the new one. Only a platform
+    given both times counts: one appearing, or going, is no change, and a
+    replacement bus has none."""
+    previous = {_same_train(dep): dep for dep in before}
+    marked = []
+    for dep in after:
+        old = previous.get(_same_train(dep))
+        changed = (old is not None and dep.platform is not None and old.platform is not None
+                   and (old.platform != dep.platform or old.platform_changed))
+        marked.append(replace(dep, platform_changed=changed) if changed != dep.platform_changed else dep)
+    return marked
 
 
 # The most stops a row's strip draws: the dashboard's five before yours, yours

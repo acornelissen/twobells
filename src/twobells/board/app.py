@@ -17,7 +17,7 @@ from PIL.Image import Image
 
 from ..core.budget import DailyBudget
 from ..core.errors import safe_message
-from ..core.model import Departure, minutes_between
+from ..core.model import Departure, mark_platform_changes, minutes_between
 from ..core.polling import PollPolicy
 from ..core.walk import WalkTimes, leave_time
 from ..sources.bods import Vehicle
@@ -197,6 +197,8 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False)
         log.warning("%s: fetch failed: %s", name, message)
         entry["last_error"] = {"at": to_iso(now), "message": message}
         return
+    # A train whose platform isn't the one the last fetch gave says so.
+    departures = mark_platform_changes(_departures(state, name, now), departures)
     entry["departures"] = [departure_to_dict(d) for d in departures]
     entry["last_success"] = to_iso(now)
     entry.pop("last_error", None)

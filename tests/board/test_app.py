@@ -171,6 +171,39 @@ def test_state_survives_a_round_trip_through_disk(tmp_path):
     assert [r.left for r in result.view.trains.rows] == ["07:12"]
 
 
+def at_platform(platform, scheduled="08:30"):
+    return dataclasses.replace(train(scheduled), platform=platform)
+
+
+def test_a_platform_unlike_the_last_fetchs_is_marked_changed_across_runs(tmp_path):
+    trains, buses, board, display, state = setup()
+    store = StateStore(tmp_path / "state.json")
+    trains.departures = [at_platform("1")]
+    result = run_once(board, state, display, THU_0700)
+    assert result.view.trains.rows[0].platform == "Plat 1"
+    # The board's timer starts afresh each run: what was fetched comes from the file.
+    store.save(state)
+    state = store.load()
+    trains.departures = [at_platform("2")]
+    result = run_once(board, state, display, THU_0700 + timedelta(minutes=2))
+    assert result.view.trains.rows[0].platform == "Plat 2 (changed)"
+    store.save(state)
+    state = store.load()
+    # Still marked while it stays on its new platform.
+    result = run_once(board, state, display, THU_0700 + timedelta(minutes=4))
+    assert result.view.trains.rows[0].platform == "Plat 2 (changed)"
+
+
+def test_a_platform_is_never_compared_with_yesterdays_train():
+    trains, buses, board, display, state = setup()
+    trains.departures = [at_platform("1")]
+    run_once(board, state, display, THU_0700)
+    # The same time next morning is another train.
+    trains.departures = [at_platform("2")]
+    result = run_once(board, state, display, THU_0700 + timedelta(days=1))
+    assert result.view.trains.rows[0].platform == "Plat 2"
+
+
 def test_run_loop_ticks_and_advances_a_simulated_clock():
     from twobells.board.app import run_loop
     from twobells.emulator.fake import SimClock

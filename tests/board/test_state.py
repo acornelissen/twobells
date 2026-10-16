@@ -35,6 +35,15 @@ def test_a_replacement_bus_round_trips_and_older_saved_trains_are_not_one():
     assert departure_from_dict(older).replacement_bus is False
 
 
+def test_via_and_a_changed_platform_round_trip_and_older_saved_trains_have_neither():
+    dep = Departure("train", "Northern", "Manchester", "07:12", None, Status.ON_TIME, "2",
+                    via="via Guide Bridge", platform_changed=True)
+    assert departure_from_dict(departure_to_dict(dep)) == dep
+    older = departure_to_dict(Departure("train", "Northern", "Manchester", "07:12", None, Status.ON_TIME, "2"))
+    del older["via"], older["platform_changed"]
+    assert (departure_from_dict(older).via, departure_from_dict(older).platform_changed) == (None, False)
+
+
 def test_undecodable_state_file_loads_empty(tmp_path, caplog):
     path = tmp_path / "state.json"
     path.write_bytes(b'{"sources": "\xff\xfe"}')

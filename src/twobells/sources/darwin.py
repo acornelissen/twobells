@@ -54,6 +54,7 @@ def _parse_service(service: dict) -> Departure:
     status, expected = _status_and_expected(service)
     destinations = service.get("destination") or []
     bus = service.get("replacement_bus") is True
+    vias = [d["via"] for d in destinations if d.get("via")]
     return Departure(
         mode="train",
         service=service.get("operator") or "",
@@ -63,6 +64,7 @@ def _parse_service(service: dict) -> Departure:
         status=status,
         platform=None if bus else _platform(service.get("platform")),
         replacement_bus=bus,
+        via=" & ".join(vias) or None,
     )
 
 
@@ -391,15 +393,26 @@ def _reason(value) -> str | None:
     return plain_text(value, REASON_LIMIT) or None
 
 
+def _via(value) -> str | None:
+    """Darwin's words on a destination's route, like "via Guide Bridge",
+    checked as a name is. Darwin starts them with "via"; any that don't
+    are given it, so they still read as a route."""
+    text = _name(value)
+    if text is None:
+        return None
+    return text if text.casefold().startswith("via ") else _name(f"via {text}")
+
+
 def _locations(value) -> list[dict]:
-    """[{"locationName": ..., "crs": ...}] with each name checked; others dropped."""
+    """[{"locationName": ..., "crs": ..., "via": ...}] with each name and via checked; others dropped."""
     if not isinstance(value, list):
         return []
     places = []
     for item in value[:_MAX_ENDS]:
         name = _name(item.get("locationName")) if isinstance(item, dict) else None
         if name:
-            places.append({"locationName": name, "crs": _matching(_CRS, item.get("crs"))})
+            places.append({"locationName": name, "crs": _matching(_CRS, item.get("crs")),
+                           "via": _via(item.get("via"))})
     return places
 
 

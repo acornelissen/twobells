@@ -53,8 +53,13 @@ class Row:
     # ("Henry Street", or "Henry Street A": see stop_names_shown); None when
     # the name isn't known, and then it shows the label.
     stop_name: str | None = None
-    # "Plat 1"; only boards wide enough for a platform column draw it.
+    # "Plat 1", or "Plat 2 (changed)"; only boards wide enough for a platform column draw it.
     platform: str | None = None
+    # The platform isn't the one the train was given before: the words say
+    # so, and a look with an accent colour draws them in it as well.
+    platform_changed: bool = False
+    # "via Guide Bridge", after the destination on a board wide enough.
+    via: str | None = None
     # The leave time alone ("07:16") when `leave` is a clock time, for a look
     # that says words.LEAVE_BY once, over the column, rather than on every row.
     leave_at: str | None = None
@@ -65,12 +70,16 @@ class Row:
     replacement_bus: bool = False
 
 
-def destination_text(row: Row, platform_column: bool) -> str:
+def destination_text(row: Row, platform_column: bool, wide: bool = False) -> str:
     """A train row's destination as drawn: after "Bus: " for a replacement bus
-    on a board with no platform column to say "Bus" in."""
+    on a board with no platform column to say "Bus" in, and followed by its
+    via words on a board `wide` enough for a platform column."""
+    text = row.middle
+    if wide and row.via:
+        text = f"{text} {row.via}"
     if row.replacement_bus and not platform_column:
-        return f"{words.BUS}: {row.middle}"
-    return row.middle
+        return f"{words.BUS}: {text}"
+    return text
 
 
 @dataclass(frozen=True)
@@ -165,12 +174,13 @@ def _style(dep: Departure) -> Style:
 
 
 def _train_row(dep: Departure, walk: WalkTimes | None, clock: str | None) -> Row:
+    changed = dep.platform_changed and not dep.replacement_bus and dep.platform is not None
     if dep.replacement_bus:
         platform = words.BUS
     else:
-        platform = f"Plat {dep.platform}" if dep.platform else None
+        platform = words.platform(dep.platform, changed) if dep.platform else None
     return Row(dep.scheduled, dep.destination, words.status(dep), _style(dep), platform=platform,
-               replacement_bus=dep.replacement_bus)
+               platform_changed=changed, via=dep.via, replacement_bus=dep.replacement_bus)
 
 
 def _bus_row(dep: Departure, walk: WalkTimes | None, clock: str | None) -> Row:

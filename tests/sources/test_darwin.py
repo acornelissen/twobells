@@ -338,3 +338,49 @@ def test_a_real_sized_board_is_read_through_the_capped_request(monkeypatch):
     payload = (FIXTURES / "ldbws_glossop_unfiltered.json").read_bytes()
     serve(monkeypatch, payload)
     assert DarwinSource(api_key="k", crs="GLO").fetch() == parse_board(json.loads(payload))
+
+
+# --- Via text on the destination ---
+
+
+def test_via_text_is_read_from_the_destination():
+    dests = [{"locationName": "Manchester Piccadilly", "crs": "MAN", "via": "via Guide Bridge"}]
+    [dep] = parse_board(board(service(destination=dests)))
+    assert dep.destination == "Manchester Piccadilly"
+    assert dep.via == "via Guide Bridge"
+
+
+def test_no_via_is_none():
+    [dep] = parse_board(board(service()))
+    assert dep.via is None
+
+
+def test_via_text_is_checked_like_a_name():
+    def via(value):
+        dests = [{"locationName": "Manchester Piccadilly", "via": value}]
+        [dep] = parse_board(board(service(destination=dests)))
+        return dep.via
+
+    # Bad shapes are left out, never raised.
+    for odd in (None, "", "   ", 7, True, ["via Guide Bridge"], {"value": "via Guide Bridge"}):
+        assert via(odd) is None
+    # On one printable line, cut to a name's length.
+    assert via("via\nGuide Bridge\x07") == "via Guide Bridge"
+    assert len(via("via " + "x" * 500)) == darwin.NAME_LIMIT
+    # Darwin starts it with "via"; one that doesn't is given it.
+    assert via("Guide Bridge") == "via Guide Bridge"
+    assert via("Via Stockport") == "Via Stockport"
+
+
+def test_a_dividing_trains_vias_are_joined():
+    dests = [{"locationName": "Hadfield", "via": "via Dinting"}, {"locationName": "Glossop"},
+             {"locationName": "Rose Hill", "via": "via Bredbury"}]
+    [dep] = parse_board(board(service(destination=dests)))
+    assert dep.via == "via Dinting & via Bredbury"
+
+
+def test_a_replacement_bus_keeps_its_via():
+    dests = [{"locationName": "Manchester Piccadilly", "via": "via Hyde"}]
+    [dep] = parse_board(board(service(destination=dests, serviceType="bus", platform="BUS")))
+    assert dep.replacement_bus and dep.platform is None
+    assert dep.via == "via Hyde"

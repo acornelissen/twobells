@@ -243,7 +243,8 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
             dest_end = status_x - _COL_GAP
         layout.add(MARGIN, y, _ORDINALS[index], inverted)
         layout.add(time_x, y, row.left, inverted)
-        layout.fit(dest_x, y, destination_text(row, columns.platform_x is not None), dest_end - dest_x, inverted)
+        destination = destination_text(row, columns.platform_x is not None, width >= PLATFORM_COLUMN_MIN_WIDTH)
+        layout.fit(dest_x, y, destination, dest_end - dest_x, inverted)
         if where_x is not None:
             _add_strip(layout, row, where_x, y, width, True, inverted)
         if columns.platform_x is not None and row.platform:

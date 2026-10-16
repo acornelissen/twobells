@@ -520,6 +520,36 @@ def test_with_a_platform_column_a_replacement_bus_says_bus_there(panel):
     assert middle_text(REPLACEMENT_BUS, layout) == "Manchester Piccadilly"
 
 
+VIA = Row("07:12", "Hadfield", "On time", platform="Plat 1", via="via Dinting")
+
+
+def test_the_phat_leaves_the_via_words_off():
+    layout = row_layout(VIA, load_fonts(), WIDTH, 1)
+    assert middle_text(VIA, layout) == "Hadfield"
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_a_wide_board_says_the_via_words_after_the_destination(panel):
+    s = plain_scale(panel)
+    fonts = load_fonts(s)
+    layout = row_layout(VIA, fonts, panel.width, s, platform_column([VIA], fonts, panel.width, s))
+    assert middle_text(VIA, layout) == "Hadfield via Dinting"
+    assert layout.middle == "Hadfield via Dinting"  # it fits whole
+
+
+CHANGED = Row("07:12", "Manchester Piccadilly", "On time", platform="Plat 2 (changed)", platform_changed=True)
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_a_changed_platform_is_drawn_in_the_accent(panel):
+    unchanged = dataclasses.replace(CHANGED, platform_changed=False)
+    assert PALETTE.accent in colours(render(board([CHANGED]), PALETTE, panel))
+    assert PALETTE.accent not in colours(render(board([unchanged]), PALETTE, panel))
+    # On a cancelled train's black bar it stays white, as the rest of the row.
+    cancelled = dataclasses.replace(CHANGED, right="Cancelled", style=Style.INVERTED)
+    assert PALETTE.accent not in colours(render(board([cancelled]), PALETTE, panel))
+
+
 @pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
 def test_wide_panels_put_the_platform_between_destination_and_status(panel):
     s = plain_scale(panel)

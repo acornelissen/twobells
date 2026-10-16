@@ -101,7 +101,11 @@ The colours only back up the words: every pill says what it means.
 
 ## The bigger e-paper display
 
-The 10.85" display shows the same board with bigger dots and more room, so long destinations fit, and each train's platform shows (`Plat 1`). A rail replacement bus says `Bus` where the platform goes. Platforms aren't shown on the small display, where there isn't room.
+The 10.85" display shows the same board with bigger dots and more room, so long destinations fit, and each train's platform shows (`Plat 1`). A rail replacement bus says `Bus` where the platform goes. Platforms aren't shown on the small display, where there isn't room. Nor are National Rail's route words, which the bigger boards show after the destination (`Manchester Piccadilly via Guide Bridge`).
+
+| You see | It means |
+|---|---|
+| `Plat 2 (changed)` | The train's platform has changed since the board last checked: it was given another one before. It stays until the train goes. The plain look draws it in the accent colour too. |
 
 ![The station board look on the 10.85 inch e-paper](images/epaper-10in85.png)
 

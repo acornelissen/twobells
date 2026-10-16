@@ -239,6 +239,9 @@ class RowLayout:
     stop: str | None = None
     stop_x: float | None = None
     stop_room: float = 0
+    # A board wide enough for a platform column, where a train's via words
+    # follow its destination.
+    wide: bool = False
 
 
 _COL_GAP = 6
@@ -251,17 +254,18 @@ def _with_stop(row: Row) -> str:
     return f"{row.stop}: {row.middle}" if row.stop else row.middle
 
 
-def _middle(row: Row, stop_column: bool, platform_column: bool) -> str:
+def _middle(row: Row, stop_column: bool, platform_column: bool, wide: bool) -> str:
     if stop_column:
         return row.middle
-    return _with_stop(row) if row.stop else destination_text(row, platform_column)
+    return _with_stop(row) if row.stop else destination_text(row, platform_column, wide)
 
 
 def middle_text(row: Row, layout: RowLayout) -> str:
     """The row's middle text in full: the destination, after its stop's
     label ("A: Hyde") unless the stop has a column of its own, or after
-    "Bus: " for a replacement bus with no platform column to say so."""
-    return _middle(row, layout.stop_x is not None, layout.platform_x is not None)
+    "Bus: " for a replacement bus with no platform column to say so, and
+    a train's via words after it on a board wide enough."""
+    return _middle(row, layout.stop_x is not None, layout.platform_x is not None, layout.wide)
 
 
 def _leave_text(row: Row) -> str | None:
@@ -321,7 +325,8 @@ def row_layout(
             words_w = where_width(fonts, width, scale)
             where = fit_text(row.strip.where, fonts.small, words_w, partial(drawn_length, fonts.small))
             strip_x = where_x + words_w + gap
-    middle = _middle(row, stop_x is not None, platform_x is not None and bool(row.platform))
+    wide = width / scale >= PLATFORM_COLUMN_MIN_WIDTH
+    middle = _middle(row, stop_x is not None, platform_x is not None and bool(row.platform), wide)
     return RowLayout(
         # Measured as drawn, like the right-aligned text, so a cut destination
         # doesn't run into the status.
@@ -341,6 +346,7 @@ def row_layout(
         stop=stop,
         stop_x=stop_x,
         stop_room=stop_room or 0,
+        wide=wide,
     )
 
 
@@ -706,7 +712,9 @@ class Painter:
                    layout.middle_room, ink, paper, band)
         # row_layout only places a platform or leave time the row has.
         if layout.platform_x is not None and row.platform:
-            draw_text(self.image, (layout.platform_x, y + s), row.platform, self.f.regular, ink)
+            # A changed platform says so in words; the accent only backs them up.
+            platform_ink = self.p.accent if row.platform_changed and row.style is not Style.INVERTED else ink
+            draw_text(self.image, (layout.platform_x, y + s), row.platform, self.f.regular, platform_ink)
         if layout.leave_x is not None and layout.leave:
             draw_text(self.image, (layout.leave_x, y + self.small_drop * s), layout.leave, self.f.small, ink)
         if layout.where_x is not None and layout.where and row.strip is not None:

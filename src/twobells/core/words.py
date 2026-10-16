@@ -21,6 +21,13 @@ SCHEDULED = "sch"
 BUS = "Bus"
 # The same in full, on the dashboard.
 REPLACEMENT_BUS = "Replacement bus"
+# After a platform that isn't the one the train was given before: "Plat 2 (changed)".
+CHANGED = "(changed)"
+
+
+def platform(number: str, changed: bool = False) -> str:
+    """A train's platform on the board: "Plat 1", or "Plat 2 (changed)"."""
+    return f"Plat {number} {CHANGED}" if changed else f"Plat {number}"
 
 
 def expected(time: str) -> str:

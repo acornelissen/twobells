@@ -149,3 +149,61 @@ def test_a_strip_belongs_to_the_same_departure_whatever_its_live_time():
     late = Departure("bus", "341", "Hyde", "07:20", "07:24", Status.LATE, stop="A")
     other = Departure("bus", "341", "Hyde", "07:20", None, Status.ON_TIME, stop="B")
     assert strip_key(on_time) == strip_key(late) != strip_key(other)
+
+
+# --- Platform changes from one fetch to the next ---
+
+from twobells.core.model import mark_platform_changes  # noqa: E402
+
+
+def at(platform, scheduled="07:12", **fields):
+    return dataclasses.replace(make(scheduled), platform=platform, **fields)
+
+
+def test_a_platform_unlike_the_last_fetchs_is_changed():
+    [dep] = mark_platform_changes([at("1")], [at("2")])
+    assert dep.platform_changed
+
+
+def test_the_same_platform_is_no_change():
+    [dep] = mark_platform_changes([at("1")], [at("1")])
+    assert not dep.platform_changed
+
+
+def test_a_change_stays_marked_while_the_train_keeps_its_new_platform():
+    first = mark_platform_changes([at("1")], [at("2")])
+    [dep] = mark_platform_changes(first, [at("2")])
+    assert dep.platform_changed
+    # And a second change is a change too.
+    [dep] = mark_platform_changes(first, [at("3")])
+    assert dep.platform_changed
+
+
+def test_a_platform_appearing_or_going_is_no_change():
+    assert not mark_platform_changes([at(None)], [at("2")])[0].platform_changed
+    assert not mark_platform_changes([at("1")], [at(None)])[0].platform_changed
+    # Nor is a train the last fetch didn't have.
+    assert not mark_platform_changes([], [at("2")])[0].platform_changed
+
+
+def test_only_the_same_train_is_compared():
+    before = [at("1", "07:12"), at("3", "07:42")]
+    marked = mark_platform_changes(before, [at("1", "07:12"), at("2", "08:12")])
+    assert [d.platform_changed for d in marked] == [False, False]
+    elsewhere = dataclasses.replace(at("2"), destination="Hadfield")
+    assert not mark_platform_changes([at("1")], [elsewhere])[0].platform_changed
+
+
+def test_a_replacement_bus_is_never_a_platform_change():
+    train = at("1")
+    bus = dataclasses.replace(make(), replacement_bus=True)
+    assert not mark_platform_changes([train], [bus])[0].platform_changed
+    assert not mark_platform_changes([bus], [bus])[0].platform_changed
+
+
+def test_via_and_platform_changed_must_be_the_right_types():
+    with pytest.raises(TypeError):
+        at("1", via=3)
+    with pytest.raises(TypeError):
+        at("1", platform_changed="yes")
+    assert at("1", via="via Guide Bridge").via == "via Guide Bridge"

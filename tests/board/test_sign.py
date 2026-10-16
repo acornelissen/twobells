@@ -422,6 +422,30 @@ def test_with_a_platform_column_a_replacement_bus_says_bus_there(panel):
     assert texts([i for i in items if i.y == first.y]) == ["1st", "07:12", "Manchester Piccadilly", "Bus", "On time"]
 
 
+VIA = Row("07:12", "Hadfield", "On time", platform="Plat 1", via="via Dinting")
+
+
+def test_the_phat_leaves_the_via_words_off():
+    items = sign_layout(board([VIA])).items
+    assert texts([i for i in items if i.y == find(items, "1st").y]) == ["1st", "07:12", "Hadfield", "On time"]
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_a_wide_board_says_the_via_words_after_the_destination(panel):
+    width, height = dots(panel)
+    items = sign_layout(board([VIA]), width, height).items
+    first = find(items, "1st")
+    assert texts([i for i in items if i.y == first.y]) == ["1st", "07:12", "Hadfield via Dinting", "Plat 1", "On time"]
+
+
+@pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
+def test_a_changed_platform_says_so_in_words(panel):
+    width, height = dots(panel)
+    changed = Row("07:12", "Hadfield", "On time", platform="Plat 2 (changed)", platform_changed=True)
+    items = sign_layout(board([changed, TRAINS[1]]), width, height).items
+    assert "Plat 2 (changed)" in texts(items)
+
+
 @pytest.mark.parametrize("panel", BIG_PANELS, ids=lambda p: p.name)
 def test_platforms_fit_on_a_bigger_board(panel):
     width, height = dots(panel)
