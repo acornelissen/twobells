@@ -88,7 +88,7 @@ class PngDisplay:
     def __init__(self, path: Path | str, accent: str = "red", panel: Panel = PHAT) -> None:
         self._path = Path(path)
         self.panel = panel
-        # A screen's has the TFT look's green and red too.
+        # A screen's has the TFT look's green and red and the split-flap look's tiles too.
         palette = Palette(white=0, black=1, accent=2) if panel.epaper else SCREEN_PALETTE
         self.palette = palette.with_preview(accent)
 

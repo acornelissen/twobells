@@ -16,6 +16,7 @@ from .render import TEXT_SIZE, Palette, board_frame, render, render_code, render
 from .route import RouteView
 from .scroll import Frame
 from .sign import render_route_sign, render_sign, route_sign_frame, sign_frame
+from .splitflap import render_route_split_flap, render_split_flap, route_split_flap_frame, split_flap_frame
 from .tft import render_route_tft, render_tft, route_tft_frame, tft_frame
 from .view import PLAIN, SIGN, BoardView, CodeView, SetupView, Wording
 
@@ -53,6 +54,9 @@ THEMES = {
     "tft": Theme("tft", PLAIN, render_tft, accent="yellow", render_route=render_route_tft, frame=tft_frame,
                  route_frame=route_tft_frame, render_code=_DARK_CODE, render_setup=_DARK_SETUP,
                  label="TFT screen (white and yellow on black)", screen_only=True),
+    "flap": Theme("flap", PLAIN, render_split_flap, accent="yellow", render_route=render_route_split_flap,
+                  frame=split_flap_frame, route_frame=route_split_flap_frame, render_code=_DARK_CODE,
+                  render_setup=_DARK_SETUP, label="Split-flap (white letters on flipping tiles)", screen_only=True),
 }
 
 

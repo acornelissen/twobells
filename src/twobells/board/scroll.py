@@ -14,8 +14,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from PIL import Image
+
+if TYPE_CHECKING:
+    from .flaps import Flap
 
 # How long text holds still at its start and again at its end.
 SCROLL_PAUSE_S = 2.0
@@ -76,10 +80,12 @@ class Scroll:
 @dataclass(frozen=True)
 class Frame:
     """A board as a screen draws it: the still image, every scrolling field
-    at its start, and those fields."""
+    at its start, and those fields; in the split-flap look, also the fields
+    whose tiles turn over when they change (board/flaps.py)."""
 
     image: Image.Image
     scrolls: tuple[Scroll, ...] = ()
+    flaps: tuple[Flap, ...] = ()
 
     def at(self, seconds: float) -> Image.Image:
         """The board with every field `seconds` into its scroll."""

@@ -2,9 +2,9 @@
 
 Made for Waveshare's 7.9" 400x1280 screen run on its side as 1280x400, and
 an 11.3" 1920x440 bar screen. A screen redraws in a frame, so the board can
-show a running clock, and scroll text too long for its space: the whole board
-is drawn once a second, and between times only the scrolling boxes, to keep
-a Pi Zero 2 W's CPU free.
+show a running clock, scroll text too long for its space, and turn the
+split-flap look's tiles over: the whole board is drawn once a second, and
+between times only the boxes that move, to keep a Pi Zero 2 W's CPU free.
 """
 
 from __future__ import annotations
@@ -14,8 +14,9 @@ from typing import Protocol
 
 from PIL.Image import Image
 
+from ..flaps import Flapper
 from ..panel import HDMI_1280X400, Panel
-from ..render import PILL_RGB, SCREEN_PALETTE, Palette
+from ..render import SCREEN_ONLY_RGB, SCREEN_PALETTE, Palette
 from ..scroll import Box, Frame, Scroller
 
 log = logging.getLogger(__name__)
@@ -33,15 +34,16 @@ SCREEN_RGB = {
 def panel_colours(palette: Palette, accent: str, rgb: dict[str, tuple[int, int, int]] = SCREEN_RGB) -> list[int]:
     """A panel's palette in `rgb`'s colours (a screen's, or the emulator's
     e-paper), flat for putpalette, with the accent's colour, and on a screen
-    (SCREEN_PALETTE) the TFT look's green and red (PILL_RGB)."""
+    (SCREEN_PALETTE) the TFT look's green and red and the split-flap look's
+    tiles (SCREEN_ONLY_RGB)."""
     colours = [(0, 0, 0)] * 256
     colours[palette.white] = rgb["white"]
     colours[palette.black] = rgb["black"]
     colours[palette.accent] = rgb[accent]
-    for name in ("green", "red"):
+    for name, colour in SCREEN_ONLY_RGB.items():
         index = getattr(palette, name)
         if index is not None:
-            colours[index] = PILL_RGB[name]
+            colours[index] = colour
     return [value for colour in colours for value in colour]
 
 
@@ -123,22 +125,27 @@ class ScreenDisplay:
         self._rotate = rotate
         self._screen = screen
         self._scroller = Scroller()
+        self._flapper = Flapper()
 
     @property
     def scrolling(self) -> bool:
-        return self._scroller.scrolling
+        """Whether anything moves between redraws: text scrolling, or tiles turning over."""
+        return self._scroller.scrolling or self._flapper.flapping
 
     def show(self, image: Image) -> None:
         """A still board: nothing scrolls until the next Frame."""
         self.show_frame(Frame(image), 0)
 
     def show_frame(self, frame: Frame, seconds: float) -> None:
-        """The whole board, its scrolling text where it is at `seconds` on the board's clock."""
-        self._screen_now().blit(self._turned(self._scroller.show(frame, seconds)))
+        """The whole board, its scrolling text and turning tiles where they are at `seconds` on the board's clock."""
+        image = self._scroller.show(frame, seconds)
+        for box, patch in self._flapper.show(frame.flaps, seconds):
+            image.paste(patch, box[:2])
+        self._screen_now().blit(self._turned(image))
 
     def scroll(self, seconds: float) -> None:
-        """Moves the scrolling text to `seconds`, updating only the boxes that moved."""
-        for box, patch in self._scroller.moved(seconds):
+        """Moves the scrolling text and turning tiles to `seconds`, updating only the boxes that moved."""
+        for box, patch in [*self._scroller.moved(seconds), *self._flapper.moved(seconds)]:
             self._screen_now().patch(self._turned(patch), self._turned_at(box))
 
     def _screen_now(self) -> Screen:

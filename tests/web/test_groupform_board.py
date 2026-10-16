@@ -292,11 +292,20 @@ def _looks(page):
 def test_a_screen_is_offered_the_tft_look_and_saves_it(tmp_path):
     form = _form_for(tmp_path, 'theme = "sign"\ndisplay = "hdmi-1280x400"')
     page = form.render("tok")
-    assert _looks(page) == ["sign", "plain", "tft"] and "TFT screen (white and yellow on black)" in page
+    assert _looks(page) == ["sign", "plain", "tft", "flap"] and "TFT screen (white and yellow on black)" in page
     assert form.save(fields_of(form) | {"theme": "tft", "accent": ""}) == {}
     config = tmp_path / "config.toml"
     assert load_config(config, ENV).board.theme.name == "tft"
     assert _accents(form.render("tok")) == ["", "yellow"]  # red is too dim on its black
+    assert "accent" in form.save(fields_of(form) | {"accent": "red"})
+
+
+def test_a_screen_is_offered_the_split_flap_look_in_yellow_and_saves_it(tmp_path):
+    form = _form_for(tmp_path, 'theme = "sign"\ndisplay = "hdmi-1920x440"')
+    assert "Split-flap (white letters on flipping tiles)" in form.render("tok")
+    assert form.save(fields_of(form) | {"theme": "flap", "accent": ""}) == {}
+    assert load_config(tmp_path / "config.toml", ENV).board.theme.name == "flap"
+    assert _accents(form.render("tok")) == ["", "yellow"]  # red is too dim on its grey tiles
     assert "accent" in form.save(fields_of(form) | {"accent": "red"})
 
 

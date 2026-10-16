@@ -230,3 +230,58 @@ def test_pygame_screen_updates_part_of_a_frame_headless(monkeypatch):
         assert tuple(surface.get_at((left + 60, top + 20)))[:3] == SCREEN_RGB["black"]
     finally:
         pygame.display.quit()
+
+
+# The split-flap look: a changed field's tiles turn over a frame at a time.
+
+from twobells.board.flaps import FLAP_FRAME_S, FLAP_STEPS, flap_frames  # noqa: E402
+from twobells.board.render import SCREEN_ONLY_RGB, SCREEN_PALETTE  # noqa: E402
+from twobells.board.splitflap import split_flap_frame  # noqa: E402
+from twobells.board.view import BoardView, Row, Section  # noqa: E402
+
+
+def flap_board(time, clock="07:03:15"):
+    trains = Section("Trains", (Row(time, "Hadfield", "On time"),), "No trains")
+    return BoardView("GLO > MAN", trains, Section("Buses", (), "No buses"), "07:03", clock)
+
+
+@pytest.mark.parametrize("panel", [HDMI_1280X400, HDMI_1920X440], ids=lambda p: p.name)
+def test_a_changed_time_turns_over_in_a_few_frames_then_the_screen_rests(panel):
+    screen = PatchingScreen()
+    display = ScreenDisplay(screen=screen, panel=panel)
+    display.show_frame(split_flap_frame(flap_board("07:12"), SCREEN_PALETTE, panel), 100)
+    assert not display.scrolling  # nothing to move: the loop sleeps until the next tick
+    frame = split_flap_frame(flap_board("07:42", "07:03:16"), SCREEN_PALETTE, panel)
+    display.show_frame(frame, 101)
+    assert display.scrolling  # the loop draws frames between ticks while it turns
+    k = 0
+    while display.scrolling:
+        k += 1
+        display.scroll(101 + k * FLAP_FRAME_S)
+    turns = flap_frames("07:12", "07:42")
+    assert k == len(turns) - 1 and len(turns) <= FLAP_STEPS and k * FLAP_FRAME_S < 1
+    [box] = {flap.box for flap in frame.flaps if flap.text == "07:42"}
+    assert {at for _, at in screen.patches} == {box[:2]}  # only the time's tiles are drawn again
+    # The last frame leaves the time just as the whole board draws it.
+    whole = FakeScreen()
+    ScreenDisplay(screen=whole, panel=panel).show_frame(frame, 101)
+    last, at = screen.patches[-1]
+    assert last.tobytes() == whole.frames[0].crop((*at, at[0] + last.width, at[1] + last.height)).tobytes()
+
+
+def test_the_split_flap_looks_tiles_keep_their_letters_readable():
+    tile = "#%02x%02x%02x" % SCREEN_ONLY_RGB["tile"]
+    hexes = {name: "#%02x%02x%02x" % rgb for name, rgb in SCREEN_RGB.items()}
+    assert contrast(hexes["white"], tile) >= 4.5  # the letters
+    assert contrast(hexes["yellow"], tile) >= 4.5  # a late status
+    assert contrast(hexes["black"], hexes["yellow"]) >= 4.5  # Cancelled, on amber tiles
+    assert contrast(hexes["red"], tile) < 4.5  # why the look offers no red accent
+
+
+def test_a_screen_shows_the_split_flap_looks_tiles():
+    screen = FakeScreen()
+    display = ScreenDisplay(screen=screen)
+    image = board_image(display)
+    image.putpixel((1, 0), display.palette.tile)
+    display.show(image)
+    assert screen.frames[0].getpixel((1, 0)) == SCREEN_ONLY_RGB["tile"]

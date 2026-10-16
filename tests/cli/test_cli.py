@@ -69,9 +69,18 @@ def test_demo_draws_the_tft_look_on_a_screen(tmp_path, display):
     assert (0, 0, 0) in colours and (40, 180, 90) in colours  # black, and a green "On time" pill
 
 
-def test_demo_refuses_the_tft_look_on_e_paper(tmp_path, capsys):
+@pytest.mark.parametrize("display", ["hdmi-1280x400", "hdmi-1920x440"])
+def test_demo_draws_the_split_flap_look_on_a_screen(tmp_path, display):
     out = tmp_path / "demo.png"
-    assert main(["demo", "--png", str(out), "--theme", "tft"]) == 2
+    assert main(["demo", "--png", str(out), "--display", display, "--theme", "flap"]) == 0
+    colours = {colour for _, colour in Image.open(out).getcolors(maxcolors=256)}
+    assert (0, 0, 0) in colours and (40, 40, 40) in colours  # black, and the grey tiles
+
+
+@pytest.mark.parametrize("look", ["tft", "flap"])
+def test_demo_refuses_a_screen_only_look_on_e_paper(tmp_path, capsys, look):
+    out = tmp_path / "demo.png"
+    assert main(["demo", "--png", str(out), "--theme", look]) == 2
     assert "for a screen" in capsys.readouterr().err and not out.exists()
 
 

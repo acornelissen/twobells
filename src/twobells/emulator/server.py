@@ -52,7 +52,7 @@ FRAMES_MM = {
 
 class EmulatorDisplay:
     def __init__(self, accent: str = "red", mode: str = "live", panel: Panel = PHAT) -> None:
-        # A screen's has the TFT look's green and red too.
+        # A screen's has the TFT look's green and red and the split-flap look's tiles too.
         self.palette = Palette(white=0, black=1, accent=2) if panel.epaper else SCREEN_PALETTE
         self.panel = panel
         self._accent = accent

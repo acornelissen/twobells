@@ -30,11 +30,12 @@ def test_a_screen_offers_every_look_by_its_label(display):
 
 
 @pytest.mark.parametrize("display", [d for d, panel in DISPLAY_PANELS.items() if panel.epaper])
-def test_e_paper_refuses_the_tft_look(display):
+@pytest.mark.parametrize("screen_only", ["tft", "flap"])
+def test_e_paper_refuses_the_screen_only_looks(display, screen_only):
     look = _look(display)
     assert [name for name, _ in look.options] == ["sign", "plain"]
     with pytest.raises(schema.Invalid, match="for a screen"):
-        look.check("tft")
+        look.check(screen_only)
     with pytest.raises(schema.Invalid, match="options"):
         look.check("neon")
 

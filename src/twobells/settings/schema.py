@@ -252,10 +252,11 @@ def https_feed(raw: str) -> str:
 def _accents(display: str, theme: str) -> tuple[str, ...]:
     """Accents that stand out on the look's background: yellow is too faint on
     the plain look's white (1.9:1), red too dim on black on a screen (about
-    3.6:1), in the sign look there and always in the TFT look."""
+    3.6:1), in the sign look there and always in the TFT and split-flap looks
+    (on the split-flap's grey tiles, 2.6:1)."""
     if theme == "plain":
         return ("red",)
-    if theme == "tft" or (theme == "sign" and not DISPLAY_PANELS.get(display, DISPLAY_PANELS["inky"]).epaper):
+    if theme in ("tft", "flap") or (theme == "sign" and not DISPLAY_PANELS.get(display, DISPLAY_PANELS["inky"]).epaper):
         return ("yellow",)
     return ("yellow", "red")
 
@@ -476,8 +477,8 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               options=_ON_OFF, default=board["clock_page"], page="board", heading="Display"),
         Field("accent", "board", None, "accent", "Accent colour", _accent(accents), "radios", default="",
               hint="Only reinforces meaning; the words always carry it. The station board look uses amber, "
-                   "the TFT look uses yellow and the plain look uses red; a colour too faint on the look's background "
-                   "isn't offered.",
+                   "the TFT and split-flap looks use yellow and the plain look uses red; a colour too faint on the "
+                   "look's background isn't offered.",
               options=(("", "The look's own"),
                        *((v, t) for v, t in (("yellow", "Yellow / amber"), ("red", "Red")) if v in accents)),
               page="board", heading="Display", tier="advanced"),

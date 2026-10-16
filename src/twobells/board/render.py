@@ -53,12 +53,17 @@ _PREVIEW_ACCENTS = {"red": (200, 30, 30), "yellow": (230, 180, 0)}
 # The colours a screen has that e-paper lacks, for the TFT look's status
 # pills: black words on the green (7.8:1), white on the red (5.7:1).
 PILL_RGB = {"green": (40, 180, 90), "red": (200, 30, 30)}
+# And the split-flap look's tiles: dark grey, so its white letters on them are
+# 14:1, amber 7:1, and the black between the tiles still shows.
+TILE_RGB = (40, 40, 40)
+# Every colour only a screen has, by its Palette name.
+SCREEN_ONLY_RGB = {**PILL_RGB, "tile": TILE_RGB}
 
 
 @dataclass(frozen=True)
 class Palette:
     """Panel palette indices. `preview` adds real RGB values for PNG output.
-    `green` and `red` are a screen's own (PILL_RGB): None on e-paper."""
+    `green`, `red` and `tile` are a screen's own (SCREEN_ONLY_RGB): None on e-paper."""
 
     white: int
     black: int
@@ -66,13 +71,14 @@ class Palette:
     preview: str | None = None
     green: int | None = None
     red: int | None = None
+    tile: int | None = None
 
     def with_preview(self, accent_name: str) -> Palette:
         return replace(self, preview=accent_name)
 
 
-# A screen's palette: e-paper's three colours, and the two only a screen has.
-SCREEN_PALETTE = Palette(white=0, black=1, accent=2, green=3, red=4)
+# A screen's palette: e-paper's three colours, and those only a screen has.
+SCREEN_PALETTE = Palette(white=0, black=1, accent=2, green=3, red=4, tile=5)
 
 
 @dataclass(frozen=True)
@@ -587,16 +593,17 @@ def apply_preview(image: Image.Image, palette: Palette) -> None:
     colours[palette.white] = (255, 255, 255)
     colours[palette.black] = (0, 0, 0)
     colours[palette.accent] = _PREVIEW_ACCENTS[palette.preview]
-    for name in ("green", "red"):
+    for name, rgb in SCREEN_ONLY_RGB.items():
         index = getattr(palette, name)
         if index is not None:
-            colours[index] = PILL_RGB[name]
+            colours[index] = rgb
     image.putpalette([v for rgb in colours for v in rgb])
 
 
 class Painter:
     """Draws the plain look's pages. `dark` draws them light on black, for a
-    look built on this one (the TFT look, board/tft.py)."""
+    look built on this one (the TFT and split-flap looks, board/tft.py and
+    board/splitflap.py)."""
 
     def __init__(self, palette: Palette, fonts: Fonts, panel: Panel, text_size: int = TEXT_SIZE,
                  live: bool = False, dark: bool = False) -> None:

@@ -9,6 +9,7 @@ from twobells.board.panel import PANELS
 from twobells.board.render import SCREEN_PALETTE, Palette, render
 from twobells.board.route import RouteView
 from twobells.board.sign import render_sign
+from twobells.board.splitflap import render_split_flap
 from twobells.board.tft import render_tft
 from twobells.board.themes import THEMES, theme_named, themes_for, with_text_size
 from twobells.board.view import PLAIN, SIGN, BoardView, CodeView, Row, Section, SetupView, Style
@@ -30,8 +31,14 @@ def test_tft_theme_is_the_plain_wording_in_yellow_for_screens_only():
     assert (theme.wording, theme.render, theme.accent, theme.screen_only) == (PLAIN, render_tft, "yellow", True)
 
 
+def test_split_flap_theme_is_the_plain_wording_in_yellow_for_screens_only():
+    theme = theme_named("flap")
+    assert (theme.wording, theme.render, theme.accent, theme.screen_only) == (PLAIN, render_split_flap, "yellow",
+                                                                              True)
+
+
 def test_unknown_theme_lists_the_choices():
-    with pytest.raises(ValueError, match=r"plain, sign, tft"):
+    with pytest.raises(ValueError, match=r"flap, plain, sign, tft"):
         theme_named("neon")
 
 
@@ -44,7 +51,7 @@ def test_every_look_has_a_label_for_the_settings():
 
 
 def test_e_paper_is_offered_every_look_but_the_screen_only_ones():
-    assert themes_for(epaper=False) == ("sign", "plain", "tft")
+    assert themes_for(epaper=False) == ("sign", "plain", "tft", "flap")
     assert themes_for(epaper=True) == ("sign", "plain")
 
 
@@ -151,7 +158,7 @@ def drawn_pages():
             yield f"{look}/{panel.name}/code", theme.render_code(CodeView("123 456", "23:52", 1.0), palette, panel)
             setup = SetupView("http://raspberrypi.local:8090/settings")
             yield f"{look}/{panel.name}/setup", theme.render_setup(setup, palette, panel)
-        if THEMES[look].screen_only:  # in a screen's colours, the TFT look's green and red too
+        if THEMES[look].screen_only:  # in a screen's colours, with the TFT look's green and red and the tiles
             yield f"{look}/preview", theme_named(look).render(demo_page(look, True), SCREEN_PALETTE.with_preview(
                 "yellow"), PANELS["hdmi-1280x400"])
         else:

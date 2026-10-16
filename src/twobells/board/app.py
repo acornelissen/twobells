@@ -61,7 +61,9 @@ class Display(Protocol):
 
 class ScrollingDisplay(Display, Protocol):
     """A screen that can scroll text between redraws: it takes a Frame, and
-    `scroll` moves its scrolling fields to a time on the board's clock."""
+    `scroll` moves its scrolling fields, and the split-flap look's turning
+    tiles, to a time on the board's clock. `scrolling` says whether
+    anything is moving."""
 
     @property
     def scrolling(self) -> bool: ...
@@ -565,8 +567,9 @@ def run_loop(
     second, and writing the SD card that often would wear it out. `reload`, if
     given, is asked each tick for a new Board when the settings have changed.
 
-    With `frame_seconds`, a display with text scrolling gets a frame that
-    often between ticks (see _frames); with nothing scrolling it waits for
+    With `frame_seconds`, a display with text scrolling (or tiles turning
+    over, in the split-flap look) gets a frame that often between ticks
+    (see _frames); with nothing moving it waits for
     the next tick, as without. Fetching, stale checks and saving keep to
     the tick either way."""
     sleep = sleep or time.sleep
