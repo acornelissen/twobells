@@ -50,19 +50,29 @@ _FONT_DIR = Path(__file__).with_name("fonts")
 _REGULAR = "Inter-Regular.ttf"
 _BOLD = "Inter-ExtraBold.ttf"
 _PREVIEW_ACCENTS = {"red": (200, 30, 30), "yellow": (230, 180, 0)}
+# The colours a screen has that e-paper lacks, for the TFT look's status
+# pills: black words on the green (7.8:1), white on the red (5.7:1).
+PILL_RGB = {"green": (40, 180, 90), "red": (200, 30, 30)}
 
 
 @dataclass(frozen=True)
 class Palette:
-    """Panel palette indices. `preview` adds real RGB values for PNG output."""
+    """Panel palette indices. `preview` adds real RGB values for PNG output.
+    `green` and `red` are a screen's own (PILL_RGB): None on e-paper."""
 
     white: int
     black: int
     accent: int
     preview: str | None = None
+    green: int | None = None
+    red: int | None = None
 
     def with_preview(self, accent_name: str) -> Palette:
         return replace(self, preview=accent_name)
+
+
+# A screen's palette: e-paper's three colours, and the two only a screen has.
+SCREEN_PALETTE = Palette(white=0, black=1, accent=2, green=3, red=4)
 
 
 @dataclass(frozen=True)
@@ -70,6 +80,9 @@ class Fonts:
     regular: ImageFont.FreeTypeFont
     bold: ImageFont.FreeTypeFont
     small: ImageFont.FreeTypeFont
+    # Room either side of a row's status, in panel pixels, for a look that
+    # draws it in a pill (the TFT look); none in the plain look.
+    pill: int = 0
 
 
 # A screen redraws every second for its clock, and FreeType hints each glyph
@@ -118,6 +131,11 @@ def drawn_length(font: ImageFont.FreeTypeFont, text: str) -> float:
     glyphs are hinted for one-bit output and can come out a few pixels wider
     than getlength() says; right-aligned text measured that way runs into the edge."""
     return _drawn_box(font, text)[2] if text else 0
+
+
+def status_width(fonts: Fonts, text: str) -> float:
+    """How wide a row's status is drawn: its words, and its pill if it has one."""
+    return drawn_length(fonts.bold, text) + 2 * fonts.pill
 
 
 @functools.lru_cache(maxsize=2048)
@@ -273,7 +291,8 @@ def row_layout(
     `stop_room` is how wide a bus row's stop names are, on a board that
     names them (stop_column)."""
     pad, gap = _PAD * scale, _COL_GAP * scale
-    right_x = width - pad - drawn_length(fonts.bold, row.right)
+    right_x = width - pad - fonts.pill - drawn_length(fonts.bold, row.right)
+    status_x = right_x - fonts.pill  # where the status starts, with its pill
     middle_x = pad + left_column_width(fonts, scale)
     left_room = middle_x - pad - 3 * scale
     stop = stop_x = None
@@ -284,10 +303,10 @@ def row_layout(
         # Twice the gap, so the stop and the destination don't read as one name.
         middle_x = stop_x + stop_room + 2 * gap
     leave = _leave_text(row)
-    middle_end = right_x - 4 * scale
+    middle_end = status_x - 4 * scale
     if leave:
         if leave_x is None:
-            leave_x = right_x - gap - drawn_length(fonts.small, leave)
+            leave_x = status_x - gap - drawn_length(fonts.small, leave)
         middle_end = leave_x - gap
     else:
         leave_x = None
@@ -330,7 +349,7 @@ def platform_column(rows, fonts: Fonts, width: int, scale: int) -> float | None:
     for one, and only if some row has a platform."""
     if width / scale < PLATFORM_COLUMN_MIN_WIDTH or not any(r.platform for r in rows):
         return None
-    right_w = max(drawn_length(fonts.bold, r.right) for r in rows)
+    right_w = max(status_width(fonts, r.right) for r in rows)
     platform_w = max(drawn_length(fonts.regular, r.platform) for r in rows if r.platform)
     return width - _PAD * scale - right_w - _COL_GAP * scale - platform_w
 
@@ -341,7 +360,7 @@ def leave_column(rows, fonts: Fonts, width: int, scale: int) -> float | None:
     leaves = [text for text in map(_leave_text, rows) if text]
     if not leaves:
         return None
-    right_w = max(drawn_length(fonts.bold, r.right) for r in rows)
+    right_w = max(status_width(fonts, r.right) for r in rows)
     leave_w = max(drawn_length(fonts.small, text) for text in leaves)
     return width - _PAD * scale - right_w - _COL_GAP * scale - leave_w
 
@@ -375,7 +394,7 @@ def where_width(fonts: Fonts, width: int, scale: int) -> float:
     rest = (
         pad + left_column_width(fonts, scale) + drawn_length(fonts.regular, "Manchester Piccadilly")
         + 3 * gap + STRIP_WIDTH * scale + gap + drawn_length(fonts.small, "Leave in 00 min") + gap
-        + drawn_length(fonts.bold, "Exp 00:00") + pad
+        + status_width(fonts, "Exp 00:00") + pad
     )
     least = drawn_length(fonts.small, "3 stops away")
     most = drawn_length(fonts.small, "Left Glossop 07:08")
@@ -392,7 +411,7 @@ def where_column(sections, fonts: Fonts, width: int, scale: int, live: bool) -> 
         return None
     ends: list[float] = []
     for rows in (rows for rows in sections if rows):
-        ends.append(width - _PAD * scale - max(drawn_length(fonts.bold, r.right) for r in rows))
+        ends.append(width - _PAD * scale - max(status_width(fonts, r.right) for r in rows))
         ends += [x for x in (platform_column(rows, fonts, width, scale), leave_column(rows, fonts, width, scale))
                  if x is not None]
     return min(ends) - (_COL_GAP * 2 + STRIP_WIDTH) * scale - where_width(fonts, width, scale)
@@ -545,12 +564,19 @@ def apply_preview(image: Image.Image, palette: Palette) -> None:
     colours[palette.white] = (255, 255, 255)
     colours[palette.black] = (0, 0, 0)
     colours[palette.accent] = _PREVIEW_ACCENTS[palette.preview]
+    for name in ("green", "red"):
+        index = getattr(palette, name)
+        if index is not None:
+            colours[index] = PILL_RGB[name]
     image.putpalette([v for rgb in colours for v in rgb])
 
 
-class _Painter:
+class Painter:
+    """Draws the plain look's pages. `dark` draws them light on black, for a
+    look built on this one (the TFT look, board/tft.py)."""
+
     def __init__(self, palette: Palette, fonts: Fonts, panel: Panel, text_size: int = TEXT_SIZE,
-                 live: bool = False) -> None:
+                 live: bool = False, dark: bool = False) -> None:
         self.p = palette
         self.f = fonts
         self.s = plain_scale(panel)
@@ -559,7 +585,9 @@ class _Painter:
         # Smaller type sits on the same baseline as the row text.
         self.small_drop = 3
         self.width = panel.width
-        self.image = Image.new("P", panel.size, palette.white)
+        # What the board is drawn on, and in.
+        self.paper, self.ink = (palette.black, palette.white) if dark else (palette.white, palette.black)
+        self.image = Image.new("P", panel.size, self.paper)
         self.draw = ImageDraw.Draw(self.image)
         # A screen: text cut short for its space scrolls there instead.
         self.live = live
@@ -585,15 +613,23 @@ class _Painter:
         return frame_of(self.image, self.scrolls)
 
     def header(self, view: BoardView) -> None:
-        s, pad = self.s, _PAD * self.s
-        self.draw.rectangle((0, 0, self.width - 1, self.header_h * s - 1), fill=self.p.black)
+        s = self.s
         title, stamp, stamp_x = header_text(view, self.f, self.width, s)
         whole, room = header_field(view, self.f, self.width, s)
-        self.field((pad, s), title, whole, self.f.bold, room, self.p.white, self.p.black, (0, self.header_h * s))
-        rain = header_rain(view, self.f, self.width, s)
+        self.banner(title, whole, room, stamp, stamp_x, header_rain(view, self.f, self.width, s))
+
+    def banner(self, shown: str, whole: str, room: float, stamp: str, stamp_x: float,
+               rain: tuple[str, float] | None = None) -> None:
+        """The header bar, reversed out: the title (or notice) on the left,
+        `shown` as it fits `room`, the rain warning if `rain` places it, and
+        the stamp (the clock, on a screen) on the right."""
+        s, pad = self.s, _PAD * self.s
+        bottom = self.header_h * s
+        self.draw.rectangle((0, 0, self.width - 1, bottom - 1), fill=self.ink)
+        self.field((pad, s), shown, whole, self.f.bold, room, self.paper, self.ink, (0, bottom))
         if rain is not None:
-            draw_text(self.image, (rain[1], s), rain[0], self.f.bold, self.p.white)
-        draw_text(self.image, (stamp_x, s), stamp, self.f.regular, self.p.white)
+            draw_text(self.image, (rain[1], s), rain[0], self.f.bold, self.paper)
+        draw_text(self.image, (stamp_x, s), stamp, self.f.regular, self.paper)
 
     def drawn_rows(self, section: Section) -> tuple[Row, ...]:
         return section.rows[: self.limits.get(section.label, 2)]
@@ -601,7 +637,7 @@ class _Painter:
     def section(self, section: Section, y: int, where_x: float | None = None) -> int:
         s, pad = self.s, _PAD * self.s
         label = section.label.upper()
-        draw_text(self.image, (pad, y + s), label, self.f.small, self.p.black)
+        draw_text(self.image, (pad, y + s), label, self.f.small, self.ink)
         label_end = pad + text_length(self.f.small, label)
         if section.stale:
             x = label_end + 6 * s
@@ -615,21 +651,21 @@ class _Painter:
             # Right-aligned; if it scrolls, its space reaches back to the label.
             scrolls = self.live and leave != section.leave
             x = self.width - pad - (room if scrolls else drawn_length(self.f.small, leave))
-            self.field((x, y + s), leave, section.leave, self.f.small, room, self.p.black, self.p.white,
+            self.field((x, y + s), leave, section.leave, self.f.small, room, self.ink, self.paper,
                        (y, y + self.label_h * s))
         leave_x = leave_column(rows, self.f, self.width, s)
         heading = leave_heading(rows)
         if heading and leave_x is not None:
             if leave_x - label_end >= 6 * s and leave_x + drawn_length(self.f.small, heading) <= self.width - pad:
                 # Said once, over the column, as station boards label theirs.
-                draw_text(self.image, (leave_x, y + s), heading, self.f.small, self.p.black)
+                draw_text(self.image, (leave_x, y + s), heading, self.f.small, self.ink)
             else:
                 # No room beside the label (a "! NOT UPDATING" on a small panel): each row says it in full.
                 rows = tuple(replace(r, leave_at=None) for r in rows)
                 leave_x = leave_column(rows, self.f, self.width, s)
         y += self.label_h * s
         if not rows:
-            draw_text(self.image, (pad, y + s), section.empty_text, self.f.regular, self.p.black)
+            draw_text(self.image, (pad, y + s), section.empty_text, self.f.regular, self.ink)
             return y + self.row_h * s
         platform_x = platform_column(rows, self.f, self.width, s)
         if not any(r.strip for r in rows):
@@ -642,18 +678,27 @@ class _Painter:
 
     def row(self, row: Row, y: int, platform_x: float | None = None, leave_x: float | None = None,
             where_x: float | None = None, train: bool = True, stop_room: float | None = None) -> None:
+        """A row, a cancelled one reversed out and a late one's status in the accent."""
         s = self.s
-        ink, status_ink, paper, yours_fill = self.p.black, self.p.black, self.p.white, self.p.accent
+        ink, status_ink, paper, yours_fill = self.ink, self.ink, self.paper, self.p.accent
         if row.style is Style.INVERTED:
-            self.draw.rectangle((0, y, self.width - 1, y + self.row_h * s - 1), fill=self.p.black)
-            ink = status_ink = yours_fill = self.p.white
-            paper = self.p.black
+            self.draw.rectangle((0, y, self.width - 1, y + self.row_h * s - 1), fill=self.ink)
+            ink = status_ink = yours_fill = self.paper
+            paper = self.ink
         elif row.style is Style.ALERT:
             status_ink = self.p.accent
-
         layout = row_layout(row, self.f, self.width, s, platform_x, leave_x, where_x, stop_room)
+        self.row_text(row, layout, y, train, ink, paper, yours_fill)
+        draw_text(self.image, (layout.right_x, y + s), row.right, self.f.bold, status_ink)
+
+    def row_text(self, row: Row, layout: RowLayout, y: int, train: bool, ink: int, paper: int, yours_fill: int,
+                 time_ink: int | None = None) -> None:
+        """Everything in a row but its status: in `ink` on `paper`, its time
+        in `time_ink` if given, and the strip's stop in `yours_fill`."""
+        s = self.s
         band = (y, y + self.row_h * s)
-        self.field((_PAD * s, y + s), layout.left, row.left, self.f.bold, layout.left_room, ink, paper, band)
+        self.field((_PAD * s, y + s), layout.left, row.left, self.f.bold, layout.left_room,
+                   ink if time_ink is None else time_ink, paper, band)
         if layout.stop_x is not None and layout.stop:
             self.field((layout.stop_x, y + s), layout.stop, row.stop_name or row.stop or "", self.f.regular,
                        layout.stop_room, ink, paper, band)
@@ -669,11 +714,10 @@ class _Painter:
                        layout.where_room, ink, paper, band)
         if layout.strip_x is not None and row.strip is not None:
             draw_strip(self.draw, row.strip, train, layout.strip_x, y, s, self.row_h, ink, paper, yours_fill)
-        draw_text(self.image, (layout.right_x, y + s), row.right, self.f.bold, status_ink)
 
     def rule(self, y: int) -> None:
         pad = _PAD * self.s
-        self.draw.line((pad, y, self.width - pad, y), fill=self.p.black, width=self.s)
+        self.draw.line((pad, y, self.width - pad, y), fill=self.ink, width=self.s)
 
     def apply_preview_palette(self) -> None:
         apply_preview(self.image, self.p)
@@ -687,11 +731,16 @@ def render(view: BoardView, palette: Palette, panel: Panel = PHAT, text_size: in
 def board_frame(view: BoardView, palette: Palette, panel: Panel = PHAT, text_size: int = TEXT_SIZE) -> Frame:
     """The board, and on a screen the text that scrolls."""
     s = plain_scale(panel)
-    live = view.clock is not None
-    painter = _Painter(palette, load_fonts(s, text_size), panel, text_size, live)
+    painter = Painter(palette, load_fonts(s, text_size), panel, text_size, live=view.clock is not None)
+    return paint_board(painter, view, panel)
+
+
+def paint_board(painter: Painter, view: BoardView, panel: Panel) -> Frame:
+    """The board as `painter` draws it: the header, the trains, a rule and the buses."""
+    s = painter.s
     painter.header(view)
     sections = [painter.drawn_rows(view.trains), painter.drawn_rows(view.buses)]
-    where_x = where_column(sections, painter.f, panel.width, s, live)
+    where_x = where_column(sections, painter.f, panel.width, s, painter.live)
     y = painter.section(view.trains, (painter.header_h + _SECTION_GAP) * s, where_x)
     painter.rule(y + s)
     painter.section(view.buses, y + (_SECTION_GAP + 1) * s, where_x)
@@ -706,36 +755,37 @@ def render_route(view: RouteView, palette: Palette, panel: Panel = PHAT, text_si
 def route_frame(view: RouteView, palette: Palette, panel: Panel = PHAT, text_size: int = TEXT_SIZE) -> Frame:
     """The route page, and on a screen the text that scrolls."""
     s = plain_scale(panel)
+    painter = Painter(palette, load_fonts(s, text_size), panel, text_size, live=view.clock is not None)
+    return paint_route(painter, view, panel)
+
+
+def paint_route(painter: Painter, view: RouteView, panel: Panel) -> Frame:
+    """The route page as `painter` draws it."""
+    s, f, draw = painter.s, painter.f, painter.draw
     pad = _PAD * s
-    f = load_fonts(s, text_size)
-    header_h, _, row_h = heights(text_size)
-    painter = _Painter(palette, f, panel, text_size, live=view.clock is not None)
-    draw = painter.draw
+    ink, paper = painter.ink, painter.paper
     width, height = panel.size
 
-    draw.rectangle((0, 0, width - 1, header_h * s - 1), fill=palette.black)
     stamp = view.clock or ""
     stamp_x = width - pad - drawn_length(f.regular, stamp)
     room = stamp_x - pad * 3
-    painter.field((pad, s), fit_text(view.title, f.bold, room), view.title, f.bold, room, palette.white,
-                  palette.black, (0, header_h * s))
-    draw_text(painter.image, (stamp_x, s), stamp, f.regular, palette.white)
+    painter.banner(fit_text(view.title, f.bold, room), view.title, room, stamp, stamp_x)
 
-    y = (header_h + 4) * s
+    y = (painter.header_h + 4) * s
     lead = f"{view.due}   {view.leave}" if view.leave else view.due
-    draw_text(painter.image, (pad, y), lead, f.bold, palette.black)
-    draw_text(painter.image, (width - pad - drawn_length(f.bold, view.where), y), view.where, f.bold, palette.black)
+    draw_text(painter.image, (pad, y), lead, f.bold, ink)
+    draw_text(painter.image, (width - pad - drawn_length(f.bold, view.where), y), view.where, f.bold, ink)
 
+    row_h = painter.row_h
     road = (y + row_h * s + height) // 2
     left, right = pad * 3, width - pad * 3
     step = (right - left) / (len(view.stops) - 1)
     xs = [left + i * step for i in range(len(view.stops))]
-    draw.line((xs[0], road, xs[-1], road), fill=palette.black, width=2 * s)
+    draw.line((xs[0], road, xs[-1], road), fill=ink, width=2 * s)
     for i, (name, x) in enumerate(zip(view.stops, xs, strict=True)):
         yours = i == len(xs) - 1
         r = (5 if yours else 3) * s
-        draw.ellipse((x - r, road - r, x + r, road + r), fill=palette.black if yours else palette.white,
-                     outline=palette.black, width=s)
+        draw.ellipse((x - r, road - r, x + r, road + r), fill=ink if yours else paper, outline=ink, width=s)
         font = f.bold if yours else f.regular
         room = step * 2 - _COL_GAP * s
         text = fit_text(name, font, room)
@@ -745,13 +795,12 @@ def route_frame(view: RouteView, palette: Palette, panel: Panel = PHAT, text_siz
             tx = min(max(pad, x - text_length(font, text) / 2), width - pad - drawn_length(font, text))
         # Names above the road clear the bus, which sits on the line.
         ty = road - 30 * s if i % 2 == 0 else road + 9 * s
-        painter.field((tx, ty), text, name, font, room, palette.black, palette.white, (int(ty), int(ty) + row_h * s))
+        painter.field((tx, ty), text, name, font, room, ink, paper, (int(ty), int(ty) + row_h * s))
     if view.bus_at is not None:
         bx = xs[0] + view.bus_at * step
-        draw.rounded_rectangle((bx - 12 * s, road - 13 * s, bx + 12 * s, road - 4 * s),
-                               radius=2 * s, fill=palette.black)
+        draw.rounded_rectangle((bx - 12 * s, road - 13 * s, bx + 12 * s, road - 4 * s), radius=2 * s, fill=ink)
         for wx in range(-9, 9, 5):
-            draw.rectangle((bx + wx * s, road - 11 * s, bx + (wx + 3) * s, road - 8 * s), fill=palette.white)
+            draw.rectangle((bx + wx * s, road - 11 * s, bx + (wx + 3) * s, road - 8 * s), fill=paper)
     return painter.frame()
 
 
