@@ -263,7 +263,7 @@ function callingAt(row) {
   // a new snapshot redrawing the board leaves the line where it was.
   const seconds = callingSeconds(said);
   text.style.setProperty("--calling-s", `${seconds}s`);
-  text.style.setProperty("--calling-delay", `${-((Date.now() / 1000) % seconds).toFixed(2)}s`);
+  text.style.setProperty("--calling-delay", `-${((Date.now() / 1000) % seconds).toFixed(2)}s`);
   return h("span", { class: ["sub", "calling-at", callingPaused() ? "paused" : null] },
     h("span", { class: "calling-window" }, text));
 }

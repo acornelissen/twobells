@@ -2119,6 +2119,15 @@ def test_the_calling_at_line_can_be_paused_and_stays_paused():
 
 
 @needs_node
+def test_the_calling_at_delay_keeps_its_decimals_on_a_whole_second():
+    found = run_js("Date.now = () => 0;\n" + _calling_page() + """
+        const line = byClass(bodyRows("trains-board")[0], "calling-text")[0];
+        console.log(JSON.stringify(line.style.getPropertyValue("--calling-delay")));
+    """)
+    assert found == "-0.00s"
+
+
+@needs_node
 def test_without_a_calling_at_line_there_is_nothing_to_pause():
     script = _calling_page().replace("observeSnapshot(snapshot.generated_at);", """
 snapshot.trains.rows[0] = { ...snapshot.trains.rows[0], calling_at: null };
