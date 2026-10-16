@@ -2636,9 +2636,11 @@ const title = h("h2", { id: "sheet-title" });
 const summary = h("div", { id: "sheet-summary" });
 const remind = h("button", { id: "sheet-remind" });
 const note = h("p", { id: "remind-note" });
+const announceButton = h("button", { id: "sheet-announce", hidden: true }, "Announce");
+const announceWords = h("p", { id: "announce-words", hidden: true });
 const body = h("div", { id: "sheet-train" });
 const history = h("div", { id: "history-body" });
-dialog.append(title, summary, remind, note, body, h("div", { id: "sheet-bus" }), history);
+dialog.append(title, summary, remind, note, announceButton, announceWords, body, h("div", { id: "sheet-bus" }), history);
 document.body.append(dialog);
 const ctx = { station: "Glossop", stops: {}, generatedMs: null };
 const openTrain = (row) => openSheet({ row, mode: "train" }, null, ctx);
@@ -4335,3 +4337,240 @@ def test_a_wall_tablet_reloads_once_a_day_at_half_three_when_the_server_answers(
     # again every 5 min, then reloads, once.
     assert found["delays"] == [13.5 * hour, found["retry"], found["retry"], None]
     assert found["retry"] == 5 * 60_000 and found["reloads"] == 1
+
+
+# --- Station announcements (pa.js) ---
+
+# Train rows at 07:00 (the server's clock), each with its announcements as
+# the server words them: row(id, minutes ahead, changes).
+PA_ROWS = """
+import { due, forget, announcements, announcementText } from "./pa.js";
+const T0 = Date.parse("2026-10-10T07:00:00+01:00");
+const at = (minutes) => new Date(T0 + minutes * 60_000).toISOString();
+const row = (id, minutes, extra = {}) => ({
+  id, status: "on_time", platform: "1", scheduled_at: at(minutes), expected_at: at(minutes),
+  announce: [{ kind: "departs", text: `Train ${id} will depart.` }], ...extra,
+});
+const keys = (found) => found.map((item) => item.key);
+const texts = (found) => found.map((item) => item.text);
+"""
+
+
+@needs_node
+def test_a_wall_tablet_announces_each_cancellation_alteration_and_next_train_once():
+    found = run_js(PA_ROWS + """
+        const rows = [
+          row("a", 10, { announce: [{ kind: "delayed", text: "A is late." }, { kind: "next", text: "A is next." }] }),
+          row("b", 20, { platform: "2", announce: [{ kind: "platform", text: "B moved." }, { kind: "departs", text: "B departs." }] }),
+          row("c", 30, { status: "cancelled", expected_at: null, announce: [{ kind: "cancelled", text: "C is cancelled." }] }),
+          row("d", 120, { status: "cancelled", expected_at: null, announce: [{ kind: "cancelled", text: "D is cancelled." }] }),
+        ];
+        const said = new Set();
+        const first = due(rows, T0, said);
+        const again = due(rows, T0 + 1000, said);
+        const nextIn = due(rows, T0 + 7 * 60_000, said);
+        const nextAgain = due(rows, T0 + 8 * 60_000, said);
+        rows[1].platform = "3";
+        const movedAgain = due(rows, T0 + 8 * 60_000, said);
+        const later = due(rows, T0 + 61 * 60_000, said);
+        console.log(JSON.stringify({ first: texts(first), again, next: texts(nextIn), nextAgain, movedAgain: keys(movedAgain),
+                                     later: texts(later) }));
+    """)
+    # Cancellations and alterations within the hour at once; the next train a few minutes before it goes.
+    assert found["first"] == ["B moved.", "C is cancelled."]
+    assert found["again"] == []
+    assert found["next"] == ["A is late. A is next."]
+    assert found["nextAgain"] == []
+    assert found["movedAgain"] == ["platform:b:3"]  # a second change is a new alteration
+    # D comes within the hour once A, B and C have gone.
+    assert found["later"] == ["D is cancelled."]
+
+
+@needs_node
+def test_the_next_train_is_the_first_still_to_go_and_not_cancelled():
+    found = run_js(PA_ROWS + """
+        const rows = [
+          row("gone", -1),
+          row("off", 1, { status: "cancelled", expected_at: null, announce: [] }),
+          row("untimed", -5, { status: "late", expected_at: null }),
+          row("next", 3),
+          row("after", 4),
+        ];
+        const said = new Set();
+        const now = due(rows, T0, said);
+        rows.splice(3, 1);  // the next has gone from the board
+        forget(said, new Set(rows.map((r) => r.id)));
+        const then = due(rows, T0 + 60_000, said);
+        console.log(JSON.stringify([keys(now), keys(then), [...said]]));
+    """)
+    assert found == [["next:next"], ["next:after"], ["next:after"]]
+
+
+@needs_node
+def test_nothing_is_announced_in_a_quiet_window_or_kept_back_for_after():
+    found = run_js(PA_ROWS + """
+        const rows = [row("a", 2), row("c", 30, { status: "cancelled", expected_at: null,
+                                                  announce: [{ kind: "cancelled", text: "C is cancelled." }] })];
+        const said = new Set();
+        const quiet = due(rows, T0, said, true);
+        const size = said.size;
+        const after = due(rows, T0, said, false);
+        console.log(JSON.stringify([quiet, size, keys(after)]));
+    """)
+    assert found == [[], 0, ["next:a", "cancelled:c"]]
+
+
+@needs_node
+def test_only_well_formed_announcements_are_said():
+    found = run_js(PA_ROWS + """
+        const odd = { announce: [
+          { kind: "next", text: "  Said.  " }, { kind: "shout", text: "Not a kind." }, { kind: "departs", text: 42 },
+          { kind: "departs", text: "   " }, { kind: "departs", text: "x".repeat(2001) }, "next", null,
+          { kind: "platform", text: "Also said." },
+        ] };
+        console.log(JSON.stringify([announcements(odd), announcementText(odd), announcementText({ announce: "next" }),
+                                    announcementText(null)]));
+    """)
+    assert found == [
+        [{"kind": "next", "text": "Said."}, {"kind": "platform", "text": "Also said."}],
+        "Said. Also said.", "", "",
+    ]
+
+
+@needs_node
+def test_the_voice_is_british_where_there_is_one():
+    found = run_js("""
+        import { pickVoice } from "./pa.js";
+        const v = (name, lang, localService = true) => ({ name, lang, localService });
+        console.log(JSON.stringify([
+          pickVoice([v("us", "en-US"), v("net", "en-GB", false), v("local", "en-GB")])?.name,
+          pickVoice([v("us", "en-US"), v("android", "en_GB")])?.name,
+          pickVoice([v("us", "en-US")]), pickVoice(undefined),
+        ]));
+    """)
+    assert found == ["local", "android", None, None]
+
+
+@needs_node
+def test_the_chime_is_three_rising_tones_of_our_own():
+    found = run_js("""
+        import { chime, CHIME_S } from "./pa.js";
+        const made = [];
+        const param = () => ({ setValueAtTime() {}, exponentialRampToValueAtTime() {} });
+        const context = {
+          currentTime: 10, destination: {},
+          createOscillator: () => {
+            const tone = { connect() {}, start(at) { this.at = at; }, stop(at) { this.end = at; } };
+            tone.frequency = { setValueAtTime: (hz) => { tone.hz = hz; } };
+            made.push(tone);
+            return tone;
+          },
+          createGain: () => ({ gain: param(), connect() {} }),
+        };
+        const takes = chime(context);
+        console.log(JSON.stringify({ takes, total: CHIME_S, none: chime(null),
+                                     tones: made.map((t) => [Math.round(t.hz), +(t.at - 10).toFixed(2), t.end > t.at]) }));
+    """)
+    fundamentals = [t for t in found["tones"] if t[0] < 1000]
+    assert [hz for hz, _, _ in fundamentals] == [523, 659, 784]  # C, E, G: three tones, rising
+    assert [at for _, at, _ in fundamentals] == sorted(at for _, at, _ in fundamentals)
+    assert all(stops for _, _, stops in found["tones"])
+    assert found["none"] == 0 and found["takes"] >= found["total"] > 2
+
+
+# A fake speech synthesis that records what it is asked to say.
+FAKE_SPEECH = """
+const spokenWords = [];
+globalThis.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+globalThis.speechSynthesis = {
+  getVoices: () => [{ name: "Daniel", lang: "en-GB", localService: true }],
+  speak(u) { spokenWords.push(u); },
+  cancel() { this.cancelled = (this.cancelled || 0) + 1; },
+};
+const settle = () => new Promise((done) => setTimeout(done, 5));
+const finishSpeaking = () => spokenWords.filter((u) => u.onend).forEach((u) => u.onend());
+"""
+
+
+@needs_node
+def test_a_train_s_sheet_announces_it_with_its_words_shown_and_can_stop():
+    found = run_js(FAKE_SPEECH + _sheet() + """
+        const click = () => announceButton.listeners.find(([type]) => type === "click")[1]();
+        const state = () => [announceButton.hidden, announceButton.textContent, announceWords.hidden,
+                             announceWords.textContent];
+        setUpSheet(() => {});
+        const text = "The next train will be the 07:20. Calling at Broadbottom only.";
+        openTrain({ ...train(null), announce: [{ kind: "next", text }] });
+        const shown = state();
+        click();
+        await settle();
+        const speaking = state();
+        const utterances = spokenWords.filter((u) => u.text).map((u) => [u.text, u.lang, u.voice?.name]);
+        finishSpeaking();
+        const after = state();
+        click();
+        await settle();
+        click();  // stop
+        const stopped = [...state(), speechSynthesis.cancelled > 0];
+        openTrain({ ...train(null), announce: [] });
+        const none = announceButton.hidden;
+        console.log(JSON.stringify({ shown, speaking, said: utterances, after, stopped, none }));
+    """)
+    assert found["shown"][:2] == [False, "Announce"]
+    text = "The next train will be the 07:20. Calling at Broadbottom only."
+    # The words are shown while said, and the button stops them.
+    assert found["speaking"] == [False, "Stop announcement", False, text]
+    # A sentence an utterance, in a British voice.
+    assert found["said"] == [["The next train will be the 07:20.", "en-GB", "Daniel"],
+                             ["Calling at Broadbottom only.", "en-GB", "Daniel"]]
+    assert found["after"] == [False, "Announce", True, ""]
+    assert found["stopped"] == [False, "Announce", True, "", True]
+    assert found["none"] is True
+
+
+@needs_node
+def test_a_wall_tablet_speaks_only_once_tapped_and_never_in_a_quiet_window():
+    found = run_js(FAKE_SPEECH + PA_ROWS + """
+        import { h } from "./dom.js";
+        import { startAnnouncements, tickAnnouncements } from "./pa.js";
+        const listeners = [];
+        document.addEventListener = (type, fn) => listeners.push([type, fn]);
+        document.removeEventListener = (type, fn) => {
+          const i = listeners.findIndex(([t, f]) => t === type && f === fn);
+          if (i >= 0) listeners.splice(i, 1);
+        };
+        const pa = h("div", { id: "pa" });
+        const note = h("p", { id: "pa-note" });
+        const words = h("p", { id: "pa-words" });
+        pa.hidden = true;
+        pa.append(note, words);
+        document.body.append(pa);
+        const said = () => spokenWords.filter((u) => u.text).map((u) => u.text);
+        const rows = [row("a", 3, { announce: [{ kind: "next", text: "A is next." }] })];
+        startAnnouncements();
+        const asking = [pa.hidden, note.textContent, note.hidden ?? false];
+        tickAnnouncements({ quiet: false }, rows, T0);
+        await settle();
+        const before = said();
+        listeners.find(([type]) => type === "click")[1]();
+        const tapped = [note.hidden, listeners.length];
+        tickAnnouncements({ quiet: true }, rows, T0);
+        await settle();
+        const quiet = said();
+        tickAnnouncements({ quiet: false }, rows, T0);
+        await settle();
+        const shown = [words.hidden, words.textContent];
+        const first = said();
+        finishSpeaking();
+        tickAnnouncements({ quiet: false }, rows, T0 + 1000);
+        await settle();
+        console.log(JSON.stringify({ asking, before, tapped, quiet, shown, spoken: first, once: said(),
+                                     cleared: words.hidden }));
+    """)
+    assert found["asking"] == [False, "Tap the screen once to turn on station announcements.", False]
+    assert found["before"] == []  # no sound until a tap
+    assert found["tapped"] == [True, 0]
+    assert found["quiet"] == []
+    assert found["shown"] == [False, "A is next."]
+    assert found["spoken"] == ["A is next."]
+    assert found["once"] == ["A is next."] and found["cleared"] is True

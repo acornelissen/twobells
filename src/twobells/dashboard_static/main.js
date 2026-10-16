@@ -1,11 +1,12 @@
 // Wires the page together: the connection, each snapshot's render, the
 // one-second tick, the Look picker, and the row buttons. On a wall tablet
 // (kiosk.js) there are no buttons, reminders or area map, and the page dims
-// to a platform clock, shifts, warns and reloads by itself.
+// to a platform clock, shifts, warns and reloads by itself; with "&announce"
+// it makes station announcements too (pa.js).
 
 import { $, setText, str, obj, focusKey, refocus } from "./dom.js";
 import { connect, STATE } from "./api.js";
-import { clockParts, clockText, parseAt } from "./time.js";
+import { clockParts, clockText, now, parseAt } from "./time.js";
 import {
   applyRowStrips, lastBuses, renderBuses, renderTrains, stopNames, tickBoards, toggleCalling, toggleMore,
 } from "./board.js";
@@ -23,8 +24,10 @@ import { noteConnection, pill, placeName } from "./header.js";
 import { applyDim, drawBanner, drawNightClock, isKiosk, startKiosk } from "./kiosk.js";
 import { setUpLook } from "./look.js";
 import { applyFlaps } from "./flap.js";
+import { startAnnouncements, tickAnnouncements, wantsAnnouncements } from "./pa.js";
 
 const kiosk = isKiosk();
+const announcing = kiosk && wantsAnnouncements();
 
 let snapshot = null;
 let rowsById = new Map(); // id -> { row, mode }
@@ -126,6 +129,10 @@ function tick() {
   tickStrips(new Map([...rowsById].map(([id, e]) => [id, e.row])), parseAt(snapshot.generated_at));
   attempt("next to catch", () => renderHero(rowsById, heroContext()));
   if (!kiosk) tickAlerts(rowsById);
+  if (announcing) {
+    const trains = [...rowsById.values()].filter((e) => e.mode === "train").map((e) => e.row);
+    attempt("station announcements", () => tickAnnouncements(snapshot, trains, now()));
+  }
 }
 
 // --- Row buttons, by delegation so re-rendered rows need no rewiring.
@@ -171,3 +178,4 @@ connection = connect({
 tick();
 setInterval(tick, 1000);
 if (kiosk) startKiosk();
+if (announcing) startAnnouncements();

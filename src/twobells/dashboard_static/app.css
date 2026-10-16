@@ -889,6 +889,10 @@ dialog.dialog-wide, dialog.sheet[data-mode="bus"] { width: min(60rem, calc(100vw
 .sheet-remind { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); margin: var(--s-3) 0; }
 .sheet-remind .note { flex: 1 1 16rem; margin: 0; font-size: var(--t-sm); color: var(--muted); }
 #sheet-remind[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+/* Announce (pa.js), with the words as they are said under it. */
+.sheet-announce { margin: var(--s-3) 0; }
+.sheet-announce .pa-words { margin: var(--s-2) 0 0; }
+.pa-words { padding: var(--s-2) var(--s-3); border-left: 3px solid var(--edge); color: var(--fg); }
 .sheet-history { margin-top: var(--s-5); padding-top: var(--s-1); border-top: 1px solid var(--line); }
 dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .dialog-inner { padding: 0 var(--s-5) var(--s-5); }
@@ -1410,6 +1414,15 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
 :root[data-theme="flap"] .badge.st-late .flap-tile { color: var(--late-fg); }
 :root[data-theme="flap"] .badge.st-cancelled { color: var(--fg); }
 :root[data-theme="flap"] .badge.st-cancelled .flap-tile { color: var(--tile-bad-fg); background: var(--tile-bad); }
+
+/* --- Station announcements on a wall tablet at /?kiosk&announce (pa.js):
+   the note asking for the tap that lets it speak, then the words as they
+   are said, under the departures, big enough to read across a room. --- */
+
+.pa { flex: none; margin: 0; padding: 0 var(--s-4); font-size: var(--t-lg); text-align: center; }
+.pa p { margin: var(--s-2) 0; }
+.pa .pa-note { color: var(--muted); }
+.pa .pa-words { border-left: 0; font-size: var(--t-xl); font-weight: 600; line-height: 1.25; }
 
 /* --- The stale banner: a wall tablet's (kiosk.js), when the page is behind
    or can't reach the server. Full width and reversed out, to be seen across

@@ -126,6 +126,11 @@
 
 <div id="night-clock" class="night-clock"></div>
 
+<div id="pa" class="pa" hidden>
+  <p id="pa-note" class="pa-note"></p>
+  <p id="pa-words" class="pa-words" hidden></p>
+</div>
+
 <footer class="foot">
   <p id="osm-credit" hidden>Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>. <a href="https://www.openstreetmap.org/fixthemap">Fix the map</a>.</p>
   <p>Times from National Rail Enquiries, Bus Open Data and Open-Meteo.</p>
@@ -145,6 +150,10 @@
     <div class="sheet-remind">
       <button type="button" id="sheet-remind" class="quiet" aria-pressed="false">Remind me</button>
       <p id="remind-note" class="note"></p>
+    </div>
+    <div class="sheet-announce">
+      <button type="button" id="sheet-announce" class="quiet" hidden>Announce</button>
+      <p id="announce-words" class="pa-words" hidden></p>
     </div>
     <div id="sheet-train"></div>
     <div id="sheet-bus" hidden>

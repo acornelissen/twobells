@@ -13,6 +13,7 @@ import { renderStrip } from "./strip.js";
 import { closeMap, refreshMap, showBus } from "./map.js";
 import { closeHistory, loadHistory } from "./history.js";
 import { isOn, remindNote, toggle } from "./alerts.js";
+import { announcementText, hush, say, unlock } from "./pa.js";
 import { icon } from "./icons.js";
 
 const dialog = () => $("sheet");
@@ -22,6 +23,7 @@ let openRow = null;
 // What the rows don't say: { station, stops (stopNames), generatedMs, lastBuses }.
 let context = { station: "", stops: {}, generatedMs: null, lastBuses: [] };
 let onRemind = () => {};
+let announcing = false; // the sheet's Announce is speaking
 
 // `remindChanged` runs when Remind me turns a reminder on or off.
 export function setUpSheet(remindChanged) {
@@ -29,6 +31,7 @@ export function setUpSheet(remindChanged) {
   setUpDialog(dialog(), () => {
     openId = null;
     openRow = null;
+    if (announcing) hush();
     closeMap();
     closeHistory();
   });
@@ -38,6 +41,41 @@ export function setUpSheet(remindChanged) {
     drawRemind(openRow);
     onRemind();
   });
+  $("sheet-announce").addEventListener("click", () => {
+    if (announcing) {
+      hush();
+      return;
+    }
+    const text = openMode === "train" ? announcementText(openRow) : "";
+    if (!text) return;
+    unlock(); // in the press, as browsers want
+    hush(); // a wall tablet's own, or another sheet's
+    announcing = true;
+    drawAnnounce(openRow);
+    say(text, showAnnouncement);
+  });
+}
+
+// Announce: says the train's announcements (pa.js), its words shown under
+// the button while they are said. Pressed again while it speaks, it stops.
+function showAnnouncement(words) {
+  const el = $("announce-words");
+  setText(el, words);
+  el.hidden = !words;
+  if (!words) {
+    announcing = false;
+    drawAnnounce(openRow);
+  }
+}
+
+function drawAnnounce(row) {
+  const button = $("sheet-announce");
+  // While it speaks it stays, to be stopped, though the train has gone.
+  const hide = !announcing && !(openMode === "train" && !!row && announcementText(row) !== "");
+  // Hiding the focused button would drop the focus out of the dialog.
+  if (hide && document.activeElement === button) $("sheet-title").focus();
+  button.hidden = hide;
+  setText(button, announcing ? "Stop announcement" : "Announce");
 }
 
 function title(row) {
@@ -127,12 +165,14 @@ function draw(row) {
     patch($("sheet-summary"), h("p", {}, `This ${openMode === "bus" ? "bus" : "train"} has left the board.`));
     patch($("sheet-train"));
     drawRemind(null);
+    drawAnnounce(null);
     return;
   }
   setText($("sheet-title"), title(row));
   patch($("sheet-summary"), openMode === "bus" ? busSummary(row) : trainSummary(row));
   if (openMode === "train") patch($("sheet-train"), trainJourney(row, context.station));
   drawRemind(row);
+  drawAnnounce(row);
 }
 
 // Opens the sheet for entry { row, mode }, from the button `opener`.
