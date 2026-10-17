@@ -1452,6 +1452,9 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
    hidden copy beside them gives screen readers the words. --- */
 
 :root[data-theme="flap"] .flap-word { white-space: nowrap; }
+/* Tiles at the body size: a size up, a long destination's space tile
+   wraps onto a line of its own. */
+:root[data-theme="flap"] table.board .dest { font-size: var(--t-md); }
 :root[data-theme="flap"] .flap-tile {
   display: inline-block;
   position: relative;
