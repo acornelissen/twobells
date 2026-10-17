@@ -53,7 +53,12 @@ def test_a_ferry_says_so_rather_than_coaches():
 
 def test_a_train_calling_nowhere_has_no_line():
     assert line([]) is None
-    assert line([], ["Dinting", "Manchester Piccadilly"], 3) is None
+    assert line([], coaches=3) is None
+
+
+def test_a_train_whose_every_later_stop_is_cancelled_says_so():
+    assert line([], ["Dinting", "Manchester Piccadilly"], 3) == (
+        "Does not call at Dinting or Manchester Piccadilly. This train is formed of 3 coaches.")
 
 
 def test_a_list_of_names_for_an_announcement():

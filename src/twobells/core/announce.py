@@ -111,7 +111,7 @@ def _calling(train: Train, say_ferry: bool = True) -> list[str]:
     if train.calling:
         stops = stop_list(train.calling)
         said.append(f"Calling at {stops} only." if len(train.calling) == 1 else f"Calling at {stops}.")
-        said.append(not_calling_at(train.skipped))
+    said.append(not_calling_at(train.skipped))
     said.append(formed_of(train.coaches if _is_train(train) else None, train.replacement_bus,
                           train.ferry and say_ferry))
     return [part for part in said if part]

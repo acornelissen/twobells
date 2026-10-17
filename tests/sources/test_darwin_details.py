@@ -230,6 +230,13 @@ def test_odd_calling_point_shapes_are_empty_not_errors():
     assert [p.name for p in single.calling_points] == ["Dinting"]
 
 
+def test_a_train_whose_every_later_stop_is_cancelled_says_it_no_longer_calls_there():
+    points = [point(isCancelled=True), point("Manchester Piccadilly", "22:54", crs="MAN", et="Cancelled")]
+    train = one(subsequentCallingPoints=[{"callingPoint": points}])
+    assert train.departure.calling_at == (
+        "Does not call at Dinting or Manchester Piccadilly. This train is formed of 3 coaches.")
+
+
 def test_a_dividing_train_calls_at_every_part_s_stops_in_time_order():
     to_hadfield = [point("Dinting", "22:25"), point("Hadfield", "22:31", crs="HDF")]
     to_glossop = [point("Dinting", "22:25"), point("Glossop", "22:29", crs="GLO")]

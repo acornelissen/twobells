@@ -45,6 +45,15 @@ def test_route_words_cancelled_stops_and_a_delay_are_said():
     )
 
 
+def test_a_train_whose_every_later_stop_is_cancelled_says_so():
+    train = Train(time="08:12", destination="Manchester Piccadilly", operator="Northern", platform="2",
+                  skipped=("Dinting", "Manchester Piccadilly"), coaches=3)
+    assert next_train(train) == (
+        "The next train to depart from platform 2 will be the 08:12 Northern service to Manchester Piccadilly. "
+        "Does not call at Dinting or Manchester Piccadilly. This train is formed of 3 coaches.")
+    assert departs(train).endswith(" Does not call at Dinting or Manchester Piccadilly. This train is formed of 3 coaches.")
+
+
 def test_a_later_train_is_not_called_the_next():
     assert departs(TRAIN) == (
         "The 08:12 Northern service to Manchester Piccadilly will depart from platform 1. "

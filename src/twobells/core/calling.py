@@ -54,10 +54,10 @@ def formed_of(coaches: int | None, replacement_bus: bool = False, ferry: bool = 
 def line(calling: Sequence[str], skipped: Sequence[str] = (), coaches: int | None = None,
          replacement_bus: bool = False, ferry: bool = False) -> str | None:
     """The whole line: where it calls, where it no longer does, and how long
-    it is. None when it calls nowhere: a train cancelled, or one whose stops
-    aren't known, has no line."""
-    first = calling_at(calling)
-    if first is None:
+    it is; a train whose every later stop is cancelled has the stops it no
+    longer calls at alone. None with no stops: a train cancelled, or one
+    whose stops aren't known, has no line."""
+    if not calling and not skipped:
         return None
-    parts = (first, not_calling_at(skipped), formed_of(coaches, replacement_bus, ferry))
+    parts = (calling_at(calling), not_calling_at(skipped), formed_of(coaches, replacement_bus, ferry))
     return " ".join(part for part in parts if part)
