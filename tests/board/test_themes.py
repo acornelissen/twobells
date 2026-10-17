@@ -5,15 +5,20 @@ from dataclasses import replace
 import pytest
 
 from tests.paths import FIXTURES
-from twobells.board.panel import PANELS
-from twobells.board.render import SCREEN_PALETTE, Palette, render
+from twobells.board.dotfont import HEIGHT as GLYPH_H
+from twobells.board.dotfont import TINY_HEIGHT
+from twobells.board.panel import PANELS, most_modes
+from twobells.board.render import SCREEN_PALETTE, Painter, Palette, render
 from twobells.board.route import RouteView
-from twobells.board.sign import render_sign
+from twobells.board.sign import item_size, render_sign, sign_layout
 from twobells.board.splitflap import render_split_flap
 from twobells.board.tft import render_tft
 from twobells.board.themes import THEMES, theme_named, themes_for, with_text_size
-from twobells.board.view import PLAIN, SIGN, BoardView, CodeView, Row, Section, SetupView, Style
-from twobells.core.model import Strip
+from twobells.board.view import PLAIN, SIGN, BoardView, CodeView, Row, Section, SetupView, Style, build_view
+from twobells.core.model import Departure, Status, Strip
+from twobells.core.walk import WalkTimes
+from twobells.emulator.fake import DEMO_CALLING, DEMO_TITLE
+from twobells.settings.modes import KEYS
 
 
 def test_plain_theme():
@@ -181,3 +186,93 @@ def test_every_page_draws_pixel_for_pixel_as_recorded():
         drawn = {name: digest(image) for name, image in drawn_pages()}
         assert drawn.keys() == recorded.keys()
         assert [name for name in drawn if drawn[name] != recorded[name]] == []
+
+
+# --- As many modes as the display has room for, in every look ---
+#
+# Trains, buses and trams with walking times, so the trains and the trams
+# each have leave words (the station board look draws them on a line under
+# their train), on every panel in every look, with as many modes as the panel
+# has room for in that look: every section keeps a row and its leave words,
+# and nothing runs into the bottom line (the clock, or "Updated") or off the
+# bottom of the panel.
+
+def _room_view(look, panel, calling):
+    trains = [
+        Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, "1",
+                  calling_at=DEMO_CALLING if calling else None),
+        Departure("train", "Northern", "Manchester Piccadilly", "07:42", "07:49", Status.LATE, "1"),
+        Departure("train", "Northern", "Manchester Piccadilly", "08:12", None, Status.ON_TIME, "1"),
+    ]
+    buses = [
+        Departure("bus", "341", "Hyde", "07:20", "07:24", Status.LATE, stop="A"),
+        Departure("bus", "61", "Buxton", "07:35", None, Status.UNKNOWN, stop="B"),
+        Departure("bus", "237", "Ashton", "07:41", None, Status.ON_TIME, stop="A"),
+    ]
+    trams = [
+        Departure("metro", "Purple Line", "Altrincham", "07:14", None, Status.UNKNOWN, stop="T"),
+        Departure("metro", "Blue Line", "Bury", "07:17", None, Status.UNKNOWN, stop="T"),
+        Departure("metro", "Blue Line", "Ashton", "07:20", None, Status.UNKNOWN, stop="T"),
+    ]
+    found = {"train": trains, "bus": buses, "metro": trams}
+    shown = {mode: found[mode] for mode in KEYS[:most_modes(panel, look)]}
+    return build_view(DEMO_TITLE, shown, "07:03", set(), WalkTimes(train=5, bus={"*": 8}, metro={"T": 6}),
+                      theme_named(look).wording, None if panel.epaper else CLOCK)
+
+
+_ROOM_CASES = [(panel, look, calling) for panel in PANELS.values() for look in themes_for(panel.epaper)
+               for calling in ((False,) if panel.epaper else (True, False))]
+
+
+def _sign_room(view, panel):
+    """(rows drawn of each section, the words drawn, the lowest any of them
+    reach, how low they may reach), from the sign look's layout."""
+    width, height = panel.width // panel.scale, panel.height // panel.scale
+    layout = sign_layout(view, width, height)
+    bottom_line = {view.clock, f"Updated {view.updated}"}
+    drawn = [item for item in layout.items if item.text not in bottom_line]
+    rows = [sum(item.text in {row.left for row in section.rows} for item in drawn) for section in view.sections]
+    lowest = max(item.y + item_size(item)[1] for item in drawn)
+    bottom_line_top = height - (GLYPH_H if view.clock else TINY_HEIGHT) - 1
+    # Above the rule over the bottom line where there is one (a rule more than
+    # the sections have between them), and clear of the bottom line anyway.
+    limit = layout.rules[-1] if len(layout.rules) == len(view.sections) else bottom_line_top - 1
+    return rows, {item.text for item in drawn}, lowest, limit
+
+
+def _painted_room(view, panel, look, monkeypatch):
+    """The same from the plain look's painter, which the TFT and split-flap looks build on."""
+    rows, words, ends = [], set(), []
+    real_rows, real_field, real_section = Painter.drawn_rows, Painter.field, Painter.section
+
+    def drawn_rows(self, section):
+        found = real_rows(self, section)
+        rows.append(len(found))
+        return found
+
+    def field(self, xy, shown, whole, *args):
+        words.add(whole)
+        return real_field(self, xy, shown, whole, *args)
+
+    def section(self, section, y, where_x=None):
+        ends.append(real_section(self, section, y, where_x))
+        return ends[-1]
+
+    monkeypatch.setattr(Painter, "drawn_rows", drawn_rows)
+    monkeypatch.setattr(Painter, "field", field)
+    monkeypatch.setattr(Painter, "section", section)
+    theme_named(look).frame(view, PALETTE if panel.epaper else SCREEN_PALETTE, panel)
+    return rows, words, max(ends), panel.height
+
+
+@pytest.mark.parametrize(("panel", "look", "calling"), _ROOM_CASES,
+                         ids=[f"{p.name}-{look}-{'calling' if c else 'plain'}" for p, look, c in _ROOM_CASES])
+def test_every_section_keeps_a_row_and_its_leave_words_clear_of_the_bottom_line(panel, look, calling, monkeypatch):
+    view = _room_view(look, panel, calling)
+    room = _sign_room(view, panel) if look == "sign" else _painted_room(view, panel, look, monkeypatch)
+    rows, words, lowest, limit = room
+    assert all(count >= 1 for count in rows), rows
+    leaves = [section.leave for section in view.sections if section.kind == "train"]
+    assert None not in leaves
+    assert [leave for leave in leaves if leave not in words] == []
+    assert lowest <= limit

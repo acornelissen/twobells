@@ -88,14 +88,16 @@ PANELS = {p.name: p for p in (PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400, H
 # row in every look the panel has, at every text size the plain look offers.
 # The type is sized to the panel's height, so it is height that counts, not
 # inches. Each section takes a heading (the sign look: a dotted rule) as well
-# as its rows.
+# as its rows, and its leave words: the plain looks put them in the heading,
+# the sign look on a line of their own under the train or tram they are for
+# (on the bar screen, a column on its row).
 #
 # - The pHATs: 2. With 3, the plain look has room for 1 row each at the
 #   standard size and none for the third from text size 13 (122 rows); the
 #   original's 104 has none for it even at the standard size.
 # - The 10.85" e-paper: 3. 160 pHAT rows in the plain look: 3 trains, 2 buses
 #   and 1 tram at the standard size, a row each at the biggest; the sign look
-#   (120 dots) 3, 1 and 1.
+#   (120 dots) 2, 1 and 1, with a leave line under the first train and tram.
 # - The 7.9" screen: 2. At 3 pixels a dot it is 133 tall, little more than the
 #   pHAT, and a screen's "Calling at" line takes a row: 1 row each at the
 #   standard size, none for the third mode from text size 13.
@@ -109,10 +111,11 @@ PANELS = {p.name: p for p in (PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400, H
 MOST_MODES = {PHAT.name: 2, PHAT_V1.name: 2, WAVESHARE_10IN85G.name: 3, HDMI_1280X400.name: 2, HDMI_1920X440.name: 2}
 
 # The HDMI screens have room for one mode more in the looks that keep it a
-# whole row too: the station board look (its dots are fixed), the TFT and
-# split-flap looks (drawn at the standard text size, 11), and the plain look
-# up to the biggest text size that does, given here. Bigger than that, the
-# plain look keeps MOST_MODES.
+# whole row too: the station board look (its dots are fixed; on the 7.9"
+# screen 2 trains with their "Calling at" and leave lines, a bus, and a tram
+# with its leave line), the TFT and split-flap looks (drawn at the standard
+# text size, 11), and the plain look up to the biggest text size that does,
+# given here. Bigger than that, the plain look keeps MOST_MODES.
 #
 # - The 7.9" screen: up to 12, with a row each for 3 modes at 12 and 2 rows
 #   for the first two; at 13 the third has none.

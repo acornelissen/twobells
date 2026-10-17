@@ -1,6 +1,8 @@
 import pytest
 
 from twobells.board import sign
+from twobells.board.dotfont import HEIGHT as GLYPH_H
+from twobells.board.dotfont import TINY_HEIGHT
 from twobells.board.panel import (
     HDMI_1280X400,
     HDMI_1920X440,
@@ -63,23 +65,35 @@ def _section(mode, screen):
     hour = KEYS.index(mode) + 7
     rows = tuple(Row(f"{hour:02d}:1{i}", "Manchester Piccadilly", "On time", platform="Plat 1",
                      calling=_CALLING if screen and i == 0 else None) for i in range(3))
-    return Section(mode, rows, "None", leave="Leave by 07:05", leave_for=0, mode=mode)
+    return Section(mode, rows, "None", leave=f"Leave by {hour:02d}:05", leave_for=0, mode=mode)
 
 
-def _sign_rows(panel, modes):
-    """The rows the sign look draws of each mode's section."""
+def _sign_fits(panel, modes):
+    """Whether the sign look draws a row of each mode's section, and a
+    train's or tram's leave words with it, all clear of the bottom line and
+    of the rule over it."""
     screen = not panel.epaper
     view = BoardView("Glossop > Manchester", tuple(_section(m, screen) for m in modes), "07:03",
                      "07:03:15" if screen else None)
-    layout = sign.sign_layout(view, panel.width // panel.scale, panel.height // panel.scale)
-    return [len({item.y for item in layout.items if item.text in {r.left for r in s.rows}}) for s in view.sections]
+    width, height = panel.width // panel.scale, panel.height // panel.scale
+    layout = sign.sign_layout(view, width, height)
+    drawn = [item for item in layout.items if item.text not in {view.clock, f"Updated {view.updated}"}]
+    words = {item.text for item in drawn}
+    rows = [len({item.y for item in drawn if item.text in {r.left for r in s.rows}}) for s in view.sections]
+    leaves = [s.leave for s in view.sections if s.leave]
+    bottom = height - (GLYPH_H if screen else TINY_HEIGHT) - 1
+    if len(layout.rules) == len(view.sections):  # a rule over the bottom line
+        bottom = layout.rules[-1]
+    return min(rows) >= 1 and all(leave in words for leave in leaves) and all(
+        item.y + sign.item_size(item)[1] <= bottom for item in drawn)
 
 
 def _fits_in(panel, count, look, size):
     """Whether `count` modes each keep a whole row in `look` at text size
-    `size` (the plain look's; the others draw at their own)."""
+    `size` (the plain look's; the others draw at their own), with their
+    leave words: the sign look draws a train's on a line of its own."""
     if look == "sign":
-        return min(_sign_rows(panel, KEYS[:count])) >= 1
+        return _sign_fits(panel, KEYS[:count])
     return rows_room(panel, count, size if look == "plain" else 11, calling=not panel.epaper) >= count
 
 

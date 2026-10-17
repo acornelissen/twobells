@@ -1413,6 +1413,36 @@ def test_each_section_but_the_last_leaves_a_line_for_those_after_it():
     assert "No trams or metro" not in drawn
 
 
+def _rows_drawn(layout, section):
+    return [find(layout.items, row.left).y for row in section.rows if row.left in texts(layout.items)]
+
+
+def test_a_leave_line_that_would_not_fit_costs_a_train_from_the_section_with_the_most():
+    # The 10.85" e-paper: 3 trains and their leave line, a bus, and a tram
+    # with its leave line under it make a line too many. The trams are down
+    # to one, so the trains, with the most, give one up.
+    trams = dataclasses.replace(TRAMS, leave="Leave by 07:09", leave_for=0)
+    base = board(TRAINS, BUSES, leave="Leave by 07:07")
+    view = dataclasses.replace(base, sections=(*base.sections, trams))
+    width, height = dots(WAVESHARE_10IN85G)
+    layout = sign_layout(view, width, height)
+    assert [len(_rows_drawn(layout, s)) for s in view.sections] == [2, 1, 1]
+    leave = find(layout.items, "Leave by 07:09")
+    assert leave.y == find(layout.items, "07:15").y + 11  # under its tram
+    assert leave.y + 9 <= layout.rules[-1] < height - 6  # above the rule over "Updated"
+
+
+def test_leave_words_for_a_tram_there_is_no_room_for_go_with_it():
+    # The leave words are for the second tram: with no room for it and them,
+    # the trams show one tram and no leave line.
+    trams = dataclasses.replace(TRAMS, leave="Leave by 07:20", leave_for=1)
+    base = board(TRAINS, BUSES, leave="Leave by 07:07")
+    view = dataclasses.replace(base, sections=(*base.sections, trams))
+    layout = sign_layout(view, *dots(WAVESHARE_10IN85G))
+    assert len(_rows_drawn(layout, trams)) == 1
+    assert "Leave by 07:20" not in texts(layout.items)
+
+
 def test_a_board_of_trains_alone_takes_the_room_of_the_buses():
     rows = [Row(f"07:{m}", "Manchester Piccadilly", "On time") for m in (10, 20, 30, 40, 50)]
     view = dataclasses.replace(board(rows), sections=(board(rows).sections[0],))
