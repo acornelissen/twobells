@@ -31,6 +31,7 @@ from tests.sources.test_livebus import (
 from twobells.core import safexml
 from twobells.sources.holidays import Event, holiday_names
 from twobells.timetable import build as timetable
+from twobells.timetable import routesetup
 from twobells.timetable.build import (
     FILE_NAME,
     FORMAT,
@@ -647,6 +648,53 @@ def test_without_naptan_the_timetables_positions_are_used(caplog):
     assert schedule.positions[STOP_A] == StopPosition("Henry Street", 53.44384, -1.948999)
     assert schedule.positions["1000DGHSW936"].name == "Market Hall"
     assert "naptan down" in caplog.text
+
+
+def _peak_bytes(work) -> int:
+    """The most memory `work()` held at once, by tracemalloc."""
+    tracemalloc.start()
+    try:
+        work()
+        return tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+
+def test_a_timetable_zip_listing_too_many_files_is_refused_before_they_are_read(tmp_path):
+    # zipfile holds every file a zip lists before any is read: 20,000 empty
+    # ones, from a download of a couple of MB, would take megabytes more,
+    # and 500,000 hundreds. Whatever they are called, not only .xml.
+    bods = FakeBods()
+    bods.blobs[BNML_LINK] = _zip({"341.xml": TXC_341, **{str(i): b"" for i in range(20_000)}})
+    bods.datasets["HIPK"] = []
+    failed = []
+
+    def build():
+        try:
+            bods.build(scratch=tmp_path)
+        except routesetup.RouteSetupError as error:
+            failed.append(str(error))
+
+    assert _peak_bytes(build) < 1_000_000
+    assert failed == [f"Timetable zip lists more than {routesetup.MAX_ZIP_MEMBERS} files; refusing"]
+
+
+def test_naptan_s_rows_after_an_over_long_line_are_read_and_the_line_never_held_whole():
+    # A hostile response's one line can be as long as the response.
+    header, *rows = (FIXTURES / "naptan_glossop_high_street_west.csv").read_text().splitlines(keepends=True)
+    body = (header + "x" * 20_000_000 + "\n" + "".join(rows)).encode()
+    bods = FakeBods()
+    bods.datasets["HIPK"] = []
+    found = []
+
+    def build():
+        found.append(build_schedule(STOPS, ["BNML"], "k", NOW, find_datasets=bods.find, fetch=bods.fetch,
+                                    naptan=lambda atcos: routesetup.naptan_stops(
+                                        atcos, http_get=lambda url, limit: body, with_indicator=True)))
+
+    assert _peak_bytes(build) < 5_000_000
+    # NaPTAN's, with its sign letter; the timetable's own has none.
+    assert found[0].positions[STOP_A] == StopPosition("Henry Street", 53.44384, -1.948999, "Stop A")
 
 
 def test_duplicate_journeys_are_kept_once():

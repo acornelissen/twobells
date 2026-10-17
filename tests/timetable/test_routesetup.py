@@ -263,6 +263,14 @@ def test_too_many_files_in_a_zip_is_refused(monkeypatch):
         list(timetable_documents(_zip({f"{i}.xml": b"<x/>" for i in range(3)})))
 
 
+def test_a_zip_listing_as_many_files_as_may_be_with_names_as_long_as_bods_s_is_read():
+    # The most files seen in one data set is 814, named in up to 65 characters.
+    assert routesetup.MAX_ZIP_MEMBERS >= 5 * 814
+    files = {f"BNML_874_BNMLPC207342818010478874_20260328_20260829_{i:08d}.xml": b"<x/>"
+             for i in range(routesetup.MAX_ZIP_MEMBERS)}
+    assert len(list(timetable_documents(_zip(files)))) == routesetup.MAX_ZIP_MEMBERS
+
+
 def test_an_oversized_file_in_a_zip_is_skipped_and_the_rest_read(caplog):
     blob = _zip({"a.xml": b"<a/>", "big.xml": b"<x>" + b"a" * 100 + b"</x>", "b.xml": b"<b/>"})
     assert list(timetable_documents(blob, 10)) == [b"<a/>", b"<b/>"]

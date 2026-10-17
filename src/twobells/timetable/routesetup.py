@@ -20,7 +20,7 @@ from typing import IO, TYPE_CHECKING
 from urllib.parse import urlencode
 from xml.etree.ElementTree import Element
 
-from ..core import safexml
+from ..core import bounded, safexml
 from ..core.net import get_bytes
 from ..sources.bods import DEFAULT_BASE_URL, redact_key
 
@@ -46,7 +46,15 @@ MAX_JOURNEYS = 20_000
 # 39 MB download, so this is three times that, a few minutes' unpacking on a
 # Pi Zero.
 MAX_UNZIPPED_BYTES = 4_000_000_000
-MAX_ZIP_MEMBERS = 2_000
+# Files one zip lists, whatever they are, and the bytes of its list: zipfile
+# holds every one listed before any is read, so these bound the memory, and
+# are checked first (bounded.open_zip). The most seen, in nine data sets of
+# BNML's and HIPK's (2026), is 814 files in 89 KB of list (data set 2100 has
+# 159); a list takes about 110 bytes a file.
+MAX_ZIP_MEMBERS = 5_000
+MAX_ZIP_LIST_BYTES = 1_000_000
+# A line of NaPTAN's CSV: real ones are under 600 characters.
+MAX_NAPTAN_LINE = 4096
 # The most one file in a zip may unpack to, as a multiple of what it takes of
 # the zip: by its header and as it is unpacked. Data set 2100's files are at
 # most 52 times; deflate can reach about 1,000.
@@ -295,10 +303,12 @@ def named_documents(blob: bytes | IO[bytes], max_bytes: int = MAX_XML_BYTES, *, 
         yield name, data
         return
     reads = _CountedReads(source)
-    with zipfile.ZipFile(reads) as archive:
+    try:
+        archive = bounded.open_zip(reads, MAX_ZIP_MEMBERS, MAX_ZIP_LIST_BYTES)
+    except bounded.ZipTooBig:
+        raise RouteSetupError(f"Timetable zip lists more than {MAX_ZIP_MEMBERS} files; refusing") from None
+    with archive:
         members = [m for m in archive.infolist() if m.filename.lower().endswith(".xml")]
-        if len(members) > MAX_ZIP_MEMBERS:
-            raise RouteSetupError(f"Timetable zip has {len(members)} files; refusing more than {MAX_ZIP_MEMBERS}")
         total = 0
         for member in members:
             if member.compress_type not in _PACKINGS:
@@ -390,9 +400,10 @@ def parse_naptan(text: str, wanted: set[str], with_indicator: bool = False) -> d
 
 
 def _naptan_rows(lines: IO[str], wanted: set[str], with_indicator: bool) -> dict[str, tuple]:
-    """parse_naptan over a file of NaPTAN's CSV."""
+    """parse_naptan over a file of NaPTAN's CSV, a line at a time: one longer
+    than MAX_NAPTAN_LINE is left out, never held whole."""
     found = {}
-    for row in csv.DictReader(lines):
+    for row in csv.DictReader(bounded.lines(lines, MAX_NAPTAN_LINE)):
         if row.get("ATCOCode") in wanted:
             place = (row["CommonName"].strip(), float(row["Latitude"]), float(row["Longitude"]))
             found[row["ATCOCode"]] = (*place, (row.get("Indicator") or "").strip()) if with_indicator else place

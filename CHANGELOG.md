@@ -16,6 +16,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 - On a Pi, `install.sh` and `update.sh` turn `twobells-timetable.timer` on whatever the settings, not only when buses came from BODS at the time, so bus or tram stops set up later are built within the hour; it builds nothing until a timetable is due. `twobells timetable` with buses from TransportAPI now has nothing to do and says so, rather than failing.
 - A board with only trains, or only buses, set up no longer draws an empty "No buses" or "No trains" section: the mode it shows takes the room. E-paper redraws once after updating.
 
+### Fixed
+
+- A bus timetable download listing too many files is refused before the list is read. Python's zip reader holds every file a zip lists before reading any, so a download of a few MB listing hundreds of thousands of empty files could fill a Pi's memory; one listing 20,000 took 11 MB, and now takes under 0.1 MB. A zip may now list up to 5,000 files of any kind, in up to 1 MB of names (it was 2,000 .xml files, counted only after the list was read); the most seen in a real BODS data set is 814. The setup search and `twobells route` read timetables the same way. NaPTAN's stop list, read when a bus timetable is built, is now read a line at a time, never more than 4,096 characters of a line at once. Before, one very long line was held whole and then lost every stop's NaPTAN name and position; now that line is left out and the rest are read. The tram timetable's reader makes the same checks in the same shared code, without relying on Python's private zip code.
+
 ## [0.2.3] - 2026-10-17
 
 Quieter bus rows on the dashboard.
