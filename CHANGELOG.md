@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-17
+
+Quieter bus rows on the dashboard.
+
 ### Changed
 
 - A bus known only from the timetable is quieter in the dashboard's rows. It used to say "No live position" under every one, with an empty strip, beside the "sched." that already said it. Now it shows only its time and "sched." until 10 minutes before you'd need to leave for it (before its time, with no walk set), then "Not tracked yet" on one quiet line, and once it is due the "May not be running: no tracker yet" warning, as before. Live buses, and buses whose bus is coming in, keep their strips and words; the bus's sheet still draws its stops, and screen readers still hear "timetable only" with its time. The snapshot's fields are unchanged.
@@ -103,7 +107,8 @@ The first release.
 - A network guard for the Pi's web server: nftables rules for it alone (`deploy/pi/twobells-web.nft`), loaded at boot by `twobells-guard.service` and matching the server by the cgroup systemd puts in their set (`NFTSet=`, systemd 254 or later, so Raspberry Pi OS Trixie on a Pi Zero or Pi 1), that keep it from connecting out to the internet and keep port 8090 to the home network. They back up the unit's systemd IP firewall, which a Pi Zero's kernel can't apply ("Preparation of BPF allow maps failed"). `install.sh` and `update.sh` install `nftables`. The server checks at start whether it can connect out, warns in its log if it can, and the settings' Overview shows **Network guard**: On, Off (a problem) or Can't tell.
 - A wall-tablet mode for the dashboard at `/?kiosk`: one screen with no controls, the station-board look by default, a shift of a pixel or two every few minutes against burn-in, dimmed in quiet hours, a large banner when the times stop updating, and a reload at 03:30.
 
-[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.2.2...main
+[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.2.3...main
+[0.2.3]: https://github.com/acornelissen/twobells/releases/tag/v0.2.3
 [0.2.2]: https://github.com/acornelissen/twobells/releases/tag/v0.2.2
 [0.2.1]: https://github.com/acornelissen/twobells/releases/tag/v0.2.1
 [0.2.0]: https://github.com/acornelissen/twobells/releases/tag/v0.2.0
