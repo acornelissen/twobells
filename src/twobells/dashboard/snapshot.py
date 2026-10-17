@@ -655,17 +655,27 @@ def buses_part(board: BusBoard | None, now: datetime, status: dict, timetable: d
     }, lookups
 
 
-def bus_observations(board: BusBoard, zone: tzinfo) -> list[Observed]:
-    """What a bus poll showed, for the punctuality history: its board-local
-    times in `zone`, the board's."""
+def _bus_time(local: datetime, zone: tzinfo, polled: datetime) -> datetime:
+    """A bus board's time (board-local, naive) in `zone`. The board counts on
+    the clock from when it was polled, so in the hour the clocks go back,
+    which comes twice, it is the pass that many clock minutes from `polled`."""
+    clock_now = polled.astimezone(zone).replace(tzinfo=None)
+    meant = real(polled) + (local - clock_now)
+    passes = [local.replace(tzinfo=zone, fold=fold) for fold in (0, 1)]  # the same but in that hour
+    return min(passes, key=lambda moment: abs(real(moment) - meant))
+
+
+def bus_observations(board: BusBoard, zone: tzinfo, polled: datetime) -> list[Observed]:
+    """What a bus poll at `polled` (aware) showed, for the punctuality
+    history: its board-local times in `zone`, the board's."""
     found = []
     for live in board.departures:
         dep = live.departure
         placed = live.live
         found.append(Observed(
             route=bus_route(live),
-            leaves=live.leaves.replace(tzinfo=zone),
-            departs_at=live.expected.replace(tzinfo=zone),
+            leaves=_bus_time(live.leaves, zone, polled),
+            departs_at=_bus_time(live.expected, zone, polled),
             status=dep.status.value,
             # A bus only waiting in says nothing of when it goes: no delay is seen.
             delay_min=round((live.expected - live.leaves).total_seconds() / 60) if live.observed else None,

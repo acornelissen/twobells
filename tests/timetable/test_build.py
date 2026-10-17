@@ -1408,7 +1408,7 @@ def test_the_bus_coming_in_to_the_stand_is_the_inbound_bus_and_never_a_departure
     found = inbound(rows[0], schedule.positions)
     assert {key: found[key] for key in ("from", "due", "late_min", "where")} == {
         "from": "The Junction", "due": "10:14", "late_min": 4, "where": "3 stops away"}
-    observed = bus_observations(BusBoard(rows, schedule, True, None, placed), ZoneInfo("Europe/London"))
+    observed = bus_observations(BusBoard(rows, schedule, True, None, placed), ZoneInfo("Europe/London"), at(10, 9))
     assert [o.identity for o in observed] == [rows[0].key]
 
 

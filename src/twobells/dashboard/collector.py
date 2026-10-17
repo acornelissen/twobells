@@ -555,7 +555,7 @@ class Collector:
             self._publish_buses()
             raise
         if board.vehicles_ok:  # timetabled times alone say nothing about punctuality
-            self._observe("bus", bus_observations(board, self._tz), now)
+            self._observe("bus", bus_observations(board, self._tz, now), now)
             self._bus_positions.worked(None, now)
         else:
             self._bus_positions.error = board.note or "Live positions failed"

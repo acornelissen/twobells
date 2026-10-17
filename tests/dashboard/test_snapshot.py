@@ -4,7 +4,7 @@ import json
 import re
 import threading
 import time
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -908,7 +908,7 @@ def test_a_board_s_trains_arrive_at_their_last_stop_without_a_filter():
 
 def test_bus_observations_for_the_history():
     found = live(at(10, 14), [bus(*HALFWAY, at(10, 14))])
-    seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, schedule(), True, None), LONDON)}
+    seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, schedule(), True, None), LONDON, at(10, 14))}
     late = seen["A|341|Hadfield", "10:10"]
     assert (late.status, late.delay_min, late.live, late.departs_at, late.day) == (
         "late", 9, True, datetime(2026, 10, 9, 10, 19, tzinfo=LONDON), date(2026, 10, 9),
@@ -926,14 +926,31 @@ def test_no_delay_is_recorded_for_a_bus_only_waiting_in():
     waiting = bus(POSITIONS[HENRY_A].lat, POSITIONS[HENRY_A].lon, at(10, 30), line="237",
                   origin=INTO_A.origin.atco, aimed=LEFT_JUNCTION)
     found = live(at(10, 30), [waiting], plan=plan)
-    seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, plan, True, None), LONDON)}
+    seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, plan, True, None), LONDON, at(10, 30))}
     west = seen["A|237|Ashton", "10:15"]
     assert (west.status, west.delay_min, west.live) == ("late", None, True)
     # On its way in, late, its delay is observed: in at 10:19, out at 10:21.
     coming = bus(*HALFWAY, at(10, 14), line="237", origin=INTO_A.origin.atco, aimed=LEFT_JUNCTION)
     found = live(at(10, 14), [coming], plan=plan)
-    seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, plan, True, None), LONDON)}
+    seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, plan, True, None), LONDON, at(10, 14))}
     assert seen["A|237|Ashton", "10:15"].delay_min == 6
+
+
+def test_a_bus_in_the_hour_that_comes_twice_is_the_pass_the_board_counted_it_from():
+    # The bus board counts on the clock from when it was polled: 01:40 seen at
+    # 01:05 GMT (the second pass) is 35 minutes off, not 25 minutes gone.
+    found = live(at(10, 14), [bus(*HALFWAY, at(10, 14))])
+    row = dataclasses.replace(found[0], leaves=datetime(2026, 10, 25, 1, 40), expected=datetime(2026, 10, 25, 1, 45))
+    board = BusBoard([row], schedule(), True, None)
+
+    def seen_at(polled):
+        [seen] = bus_observations(board, LONDON, polled)
+        return seen.leaves.astimezone(UTC).strftime("%H:%M"), seen.departs_at.astimezone(UTC).strftime("%H:%M")
+
+    assert seen_at(datetime(2026, 10, 25, 1, 5, tzinfo=UTC)) == ("01:40", "01:45")  # 01:05 GMT: the second pass
+    assert seen_at(datetime(2026, 10, 24, 23, 50, tzinfo=UTC)) == ("00:40", "00:45")  # 00:50 BST: the first
+    assert seen_at(datetime(2026, 10, 25, 2, 5, tzinfo=UTC)) == ("01:40", "01:45")  # late, still listed at 02:05 GMT
+    assert seen_at(datetime(2026, 10, 25, 0, 55, tzinfo=UTC)) == ("00:40", "00:45")  # 01:55 BST, 15 minutes late
 
 
 # Weather
@@ -1258,7 +1275,7 @@ def test_inbound_only_journeys_are_not_counted_nor_observed():
     assert timetable_block("ready", plan, LONDON)["journeys"] == 1
     rows, placed = live_board(plan, at(10, 14), [bus(*HALFWAY, at(10, 14))], every_day, 10)
     assert placed  # its bus is placed, for the inbound line
-    seen = bus_observations(BusBoard(rows, plan, True, None, placed), LONDON)
+    seen = bus_observations(BusBoard(rows, plan, True, None, placed), LONDON, at(10, 14))
     assert {o.route for o in seen} == {"A|237|Ashton", "B|237|Ashton"}
 
 
