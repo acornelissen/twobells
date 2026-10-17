@@ -162,6 +162,8 @@ main:focus { outline: none; }
 /* Text */
 
 .hint { color: var(--muted); margin: 0 0 var(--s-2); font-size: var(--t-sm); }
+/* A step's intro: set apart from its first field, whose own hint sits closer. */
+h2 + .hint { margin-bottom: var(--s-4); }
 .note {
   margin: 0 0 var(--s-4);
   padding: var(--s-3) var(--s-4);
