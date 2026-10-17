@@ -20,6 +20,12 @@ export const state = {
   askShow: false, // whether there is a step for it
   showPicked: {}, // view -> the preset picked (or "keep"), kept while moving between steps
   chosenShow: {}, // view -> the preset to save, when leaving the step; a view kept as it is isn't in it
+  // Modes of transport, from begin: those setup sets up, [{name, label}], and
+  // for each view offered {most, says, now}: how many it has room for (null:
+  // all), why in words, and the modes its list names now (null without one).
+  modes: { offered: [], views: {} },
+  modesTicked: {}, // view -> the mode names ticked, kept while moving between steps
+  chosenModes: {}, // view -> the mode names to save, when leaving the step; a view not asked isn't in it
   links: [],
   only: "", // a shortcut's part, "station" or "stops" (the page's ?step=); "" for the whole wizard
   back: "", // where Back on a shortcut's first step goes, a path like /settings, from begin
@@ -44,6 +50,13 @@ export const state = {
   saving: false,
   step: "",
 };
+
+// The modes this run of the wizard sets up: trains with a station, buses with
+// stops, in the order begin offers them.
+export function pickedModes() {
+  const picked = { train: Boolean(state.station), bus: state.chosen.length > 0 };
+  return state.modes.offered.filter((mode) => picked[mode.name]);
+}
 
 export const homeKey = () => (state.home ? `${state.home.lat},${state.home.lon}` : "");
 

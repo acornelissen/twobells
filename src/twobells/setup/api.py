@@ -51,6 +51,16 @@ the views on, saved as [board] show or [dashboard] show through the
 settings form's check; a view left out keeps its list, except that on a new
 install a view without one gets The usual.
 
+Modes of transport. `begin` also gives the modes setup sets up (trains
+from a station, buses from stops: SETUP_MODES), and for each view offered
+how many it has room for (the board's display; the dashboard has room for
+them all), why, in words, and the modes its list names now (None without
+one). `finish` takes, for any of the views on, the modes it shows, each one
+of those this finish sets up, saved as [board] modes or [dashboard] modes
+through the settings form's check: at least one, and no more than there is
+room for. A view left out keeps its list; one naming none of the modes set
+up shows every mode set up (settings/modes.py).
+
 Shortcuts. The page can start at the station or the stops step instead of
 home ("Change station only", "Change stops only"), filled in with today's
 choices: `saved` answers them from the settings in force and local files
@@ -84,7 +94,7 @@ from pathlib import Path
 from typing import Protocol, overload
 
 from ..core.errors import safe_message
-from ..settings import keyresults, schema, show
+from ..settings import keyresults, modes, schema, show
 from ..settings.config import ConfigError, still_to_set_up
 from ..settings.installs import INSTALLS, Install
 from ..settings.overlay import OverlayError, Target, save_to
@@ -148,7 +158,7 @@ _NAME_LENGTH = 100  # a stop's name from the timetable, as the page shows it
 # or for one part of it, the rest kept as saved.
 PARTS = ("station", "stops")
 _FINISH_FIELDS = {
-    None: (("home", "stops", "walk"), ("station_crs", "filter_crs", "keys", "views", "show")),
+    None: (("home", "stops", "walk"), ("station_crs", "filter_crs", "keys", "views", "show", "modes")),
     "station": (("only", "walk"), ("station_crs", "filter_crs", "keys")),
     "stops": (("only", "stops", "walk"), ("keys",)),
 }
@@ -156,6 +166,8 @@ _FINISH_FIELDS = {
 
 # What begin says to start a view's What to show at when its show list is no preset's.
 KEEP = "keep"
+# The modes setup sets up, a step each: trains from the station, buses from the stops.
+SETUP_MODES = ("train", "bus")
 
 
 class Invalid(Exception):
@@ -447,6 +459,48 @@ def show_choices(offered: Sequence[str], data: Mapping, new: bool) -> dict:
     return {"presets": [{"name": name, "label": label} for name, label in show.PRESETS], "views": views}
 
 
+def mode_choices(offered: Sequence[str], data: Mapping) -> dict:
+    """The modes setup sets up, and for each view offered how many it has
+    room for (None for as many as there are), why, and the modes its list
+    names now (None without one, or with one that doesn't load), by
+    settings `data`."""
+    display = str(data.get("display", schema.BOARD_DEFAULTS["display"]))
+    views = {}
+    for view in offered:
+        try:
+            now = modes.listed(data, view)
+        except ConfigError:
+            now = None
+        if view == "board":
+            most, says = schema.board_room(display)[0], schema.room_words(display)
+        else:
+            most, says = None, "The dashboard lists them one after another."
+        views[view] = {"now": list(now) if now is not None else None, "most": most, "says": says}
+    return {"offered": [{"name": key, "label": modes.mode(key).label} for key in SETUP_MODES if modes.mode(key).ready],
+            "views": views}
+
+
+def _modes(value, on: Sequence[str], picked: Sequence[str], display: str) -> dict[str, list[str]]:
+    """The modes to show: for any of the views `on`, at least one of those
+    `picked` (this finish sets up), and no more than the view has room for."""
+    if not isinstance(value, dict) or any(view not in on for view in value):
+        raise Invalid("Say which modes to show only for the views on", "modes")
+    chosen = {}
+    for view in on:
+        if view not in value:
+            continue
+        keys = value[view]
+        if (not isinstance(keys, list) or len(keys) > len(modes.KEYS)
+                or not all(isinstance(key, str) and key in picked for key in keys)):
+            raise Invalid("Pick only the modes being set up", "modes")
+        check = modes.check(*schema.board_room(display)) if view == "board" else modes.check()
+        try:
+            chosen[view] = check(" ".join(keys))
+        except schema.Invalid as error:
+            raise Invalid(str(error), "modes") from None
+    return chosen
+
+
 def saved_message(install: Install, views: Sequence[str]) -> str:
     """What happens once setup saves, with `views` on, on `install`."""
     said = ["Saved."]
@@ -666,6 +720,7 @@ class SetupApi:
         return {"title": self._title, "noun": self._noun, "keys": keys,
                 "views": {"offered": view_choices(self._install.offered), "on": list(on)},
                 "show": show_choices(self._install.offered, data, new),
+                "modes": mode_choices(self._install.offered, data),
                 "links": self._links_for(on), "back": self._back, "job": self._job_status()}
 
     def saved(self, payload) -> dict:
@@ -969,6 +1024,11 @@ class SetupApi:
         views = _views(fields["views"], self._install.offered) if "views" in fields else None
         on = tuple(views) if views is not None else self._views_now()
         presets = _show(fields["show"], on) if "show" in fields else {}
+        picked = [key for key, chosen in (("train", station), ("bus", stops)) if chosen]
+        shown_modes = {}
+        if "modes" in fields:
+            display = str(self._settings().get("display", schema.BOARD_DEFAULTS["display"]))
+            shown_modes = _modes(fields["modes"], on, picked, display)
 
         changes = setup.config_fragment(home, station, [(label, self._stop(atco)) for label, atco in stops.items()],
                                         walk)
@@ -1007,6 +1067,8 @@ class SetupApi:
                     presets[view] = show.NEW_INSTALL
         for view, name in presets.items():
             changes.setdefault(view, {})["show"] = show_list(view, name)
+        for view, chosen in shown_modes.items():
+            changes.setdefault(view, {})["modes"] = chosen
         env = dict(self._load_secrets())
         save_to(self._target, changes, keys, env)
         keyresults.forget(self._job_folder, keys)  # a test of the old key says nothing of the new

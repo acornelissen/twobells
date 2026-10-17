@@ -1209,6 +1209,72 @@ def test_a_shortcuts_save_takes_only_its_part(board, payload, field):
     assert (board.state / "settings.toml").read_text() == before
 
 
+# Modes of transport: which each view on shows.
+
+
+def test_begin_offers_the_modes_setup_sets_up_and_each_view_s_room(both):
+    offered = ok(both, "begin")["modes"]
+    assert offered["offered"] == [{"name": "train", "label": "Trains"}, {"name": "bus", "label": "Buses"}]
+    board, dashboard = offered["views"]["board"], offered["views"]["dashboard"]
+    assert (board["most"], board["now"]) == (2, None)
+    assert board["says"].startswith("The 7.9-inch screen has room for 2: each takes a section")  # its display
+    assert (dashboard["most"], dashboard["now"]) == (None, None)
+    (both.state / "settings.toml").write_text(SET_UP + '[board]\nmodes = ["bus"]\n[dashboard]\nmodes = "x"\n')
+    views = ok(both, "begin")["modes"]["views"]
+    assert (views["board"]["now"], views["dashboard"]["now"]) == (["bus"], None)  # one that doesn't load: none
+
+
+def _both_modes(api, **finish):
+    ok(api, "start", {"stops": {"A": "1800SB12341"}, "routes": False})
+    FakeJob.made[-1].finish(False)
+    payload = {"home": HOME, "station_crs": "GLO", "stops": {"A": "1800SB12341"}, "walk": {}, **finish}
+    return api.handle("finish", payload)
+
+
+def test_finishing_saves_the_modes_each_view_shows(both):
+    status, body = _both_modes(both, views=["board", "dashboard"], modes={"board": ["bus"],
+                                                                         "dashboard": ["bus", "train"]})
+    assert status == 200, body
+    saved = _saved(both)
+    assert saved["board"]["modes"] == ["bus"] and saved["dashboard"]["modes"] == ["train", "bus"]
+
+
+def test_a_view_whose_modes_are_not_sent_keeps_its_list(both):
+    (both.state / "settings.toml").write_text(SET_UP + '[dashboard]\nmodes = ["train"]\n')
+    status, body = _both_modes(both, views=["board", "dashboard"], modes={"board": ["train"]})
+    assert status == 200, body
+    assert _saved(both)["dashboard"]["modes"] == ["train"]
+
+
+@pytest.mark.parametrize("modes", [
+    ["bus"],
+    {"board": []},
+    {"board": "bus"},
+    {"board": ["metro"]},  # not set up here
+    {"board": ["bus", "bus"]},
+    {"board": [1]},
+    {"dashboard": ["bus"]},  # not on
+    {"__proto__": ["bus"]},
+])
+def test_finishing_takes_only_the_modes_being_set_up_for_a_view_on(both, modes):
+    before = (both.state / "settings.toml").read_text()
+    status, body = _both_modes(both, views=["board"], modes=modes)
+    assert status == 400 and body["field"] == "modes", body
+    assert (both.state / "settings.toml").read_text() == before
+
+
+def test_a_mode_not_picked_this_time_cannot_be_shown(both):
+    status, body = both.handle("finish", {**TRAINS_ONLY, "views": ["board"], "modes": {"board": ["train", "bus"]}})
+    assert status == 400 and body == {"error": "Pick only the modes being set up", "field": "modes"}
+
+
+def test_a_shortcut_cannot_change_the_modes(board):
+    saved_with_a_search(board)
+    status, body = board.handle("finish", {"only": "station", "station_crs": "GLO", "walk": {},
+                                           "modes": {"board": ["train"]}})
+    assert status == 400 and body["field"] == "modes"
+
+
 def test_a_shortcut_cannot_leave_nothing_to_show(board):
     ok(board, "finish", {"home": HOME, "station_crs": "GLO", "stops": {}, "walk": {}})  # trains only
     status, body = board.handle("finish", {"only": "station", "walk": {}})

@@ -32,6 +32,7 @@ import { leaveWalk } from "./walk.js";
 const NOUN = /^[a-z]{1,20}$/;
 const VIEW = /^[a-z]{1,20}$/;
 const PRESET = /^[a-z]{1,20}$/;
+const MODE = /^[a-z]{1,20}$/;
 const PATH = /^\/(?!\/)[A-Za-z0-9._~/-]*$/; // a plain path on this site, like /settings
 const CRS = /^[A-Za-z]{3}$/;
 const LABEL = /^[A-Za-z0-9]{1,3}$/;
@@ -88,6 +89,31 @@ function readShow(data) {
     };
   }
   return { presets, views };
+}
+
+// The modes of transport, from begin, checked: those setup sets up, and for
+// each view offered that begin says anything of, how many it has room for,
+// why, and the modes its list names now.
+function readModes(data) {
+  const modes = obj(data) || {};
+  const offered = list(modes.offered).map(obj)
+    .filter((m) => m && MODE.test(str(m.name)))
+    .map((m) => ({ name: m.name, label: str(m.label) || m.name }))
+    .filter((m, i, all) => all.findIndex((n) => n.name === m.name) === i);
+  const names = offered.map((m) => m.name);
+  const given = obj(modes.views) || {};
+  const views = {};
+  for (const view of state.views) {
+    const one = obj(own(given, view.name));
+    if (!one) continue;
+    const most = num(one.most);
+    views[view.name] = {
+      most: most !== null && Number.isInteger(most) && most >= 1 ? most : null,
+      says: str(one.says),
+      now: Array.isArray(one.now) ? one.now.map(str).filter((name) => names.includes(name)) : null,
+    };
+  }
+  return { offered, views };
 }
 
 // Today's choices as where the steps start: the station picked and where
@@ -147,6 +173,7 @@ async function begin() {
     // What to show: asked where the host offers presets (an older one doesn't).
     state.show = readShow(data.show);
     state.askShow = state.show.presets.length > 0 && Object.keys(state.show.views).length > 0;
+    state.modes = readModes(data.modes);
     state.only = shortcut(window.location.search);
     if (state.only) {
       state.title = SHORTCUTS[state.only];

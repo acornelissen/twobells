@@ -1154,6 +1154,90 @@ def test_with_one_view_offered_the_show_step_follows_the_keys():
     assert found["fieldsets"] == ["show-dashboard"]
 
 
+# Modes of transport: with a station and stops, which each view shows.
+
+MODES = {"offered": [{"name": "train", "label": "Trains"}, {"name": "bus", "label": "Buses"}],
+         "views": {"board": {"most": 2, "says": "The Inky pHAT has room for 2.", "now": None},
+                   "dashboard": {"most": None, "says": "The dashboard lists them one after another.", "now": None}}}
+BEGIN_MODES = {**BEGIN_SHOW, "modes": MODES}
+SEARCHED = {"job": {"state": "done", "step": "Search finished", "found": {}}}
+WITH_STOPS = """
+state.chosen = [{ label: "A", atco: "1800SB12341", name: "Station Road", indicator: "Stop A" }];
+"""
+MODE_BOXES = """
+const boxes = (view) => [...$(`modes-${view}`).querySelectorAll('input[type="checkbox"]')]
+  .map((b) => [b.value, b.checked, $(`modes-${view}`).querySelector(`label[for="${b.id}"]`).textContent]);
+"""
+
+
+def test_the_modes_are_a_labelled_group_of_tickboxes_for_each_view_with_their_room_and_error_described():
+    draw = _js("presets.js")
+    group = _between(draw, "function modesGroup", "const firstBox")
+    assert 'type: "checkbox", id, value: mode.name' in group and 'h("label", { for: id }, mode.label)' in group
+    assert '"aria-describedby": `${says ? `${name}-hint ` : ""}${name}-error`' in group
+    assert 'h("legend", {}, `Modes of transport on ${lower(view.label)}`)' in group
+
+
+@needs_node
+def test_with_a_station_and_stops_each_view_says_which_modes_it_shows_and_saves_them():
+    found = run_wizard(WITH_STOPS + TO_SHOW + MODE_BOXES + """
+        const before = { board: boxes("board"), dashboard: boxes("dashboard"),
+                         legends: [...$("show-list").querySelectorAll("legend")].map((l) => l.textContent),
+                         hint: $("modes-board-hint").textContent };
+        $("modes-board-bus").checked = false;
+        click("show-next");
+        await settle();
+        const summary = $("summary").textContent;
+        click("save");
+        await settle();
+        console.log(JSON.stringify({ ...before, summary, saved: asked("finish") }));
+    """, begin=BEGIN_MODES, start=SEARCHED)
+    assert found["legends"] == ["Modes of transport on the board", "What the board shows",
+                                "Modes of transport on the dashboard", "What the dashboard shows"]
+    assert found["board"] == found["dashboard"] == [["train", True, "Trains"], ["bus", True, "Buses"]]
+    assert found["hint"] == "The Inky pHAT has room for 2."
+    assert "The board: Trains" in found["summary"] and "The dashboard: Trains and Buses" in found["summary"]
+    assert found["saved"][0]["modes"] == {"board": ["train"], "dashboard": ["train", "bus"]}
+
+
+@needs_node
+def test_a_view_needs_a_mode_ticked_and_no_more_than_it_has_room_for():
+    modes = {**MODES, "views": {**MODES["views"], "board": {"most": 1, "says": "Room for 1.", "now": ["bus"]}}}
+    found = run_wizard(WITH_STOPS + TO_SHOW + MODE_BOXES + """
+        const start = boxes("board");
+        $("modes-board-train").checked = true;
+        click("show-next");
+        await settle();
+        const many = { shown: shown(), error: $("modes-board-error").textContent, focus: document.activeElement.id };
+        $("modes-dashboard-train").checked = false;
+        $("modes-dashboard-bus").checked = false;
+        $("modes-board-train").checked = false;
+        click("show-next");
+        await settle();
+        const none = { shown: shown(), error: $("modes-dashboard-error").textContent };
+        console.log(JSON.stringify({ start, many, none }));
+    """, begin={**BEGIN_MODES, "modes": modes})
+    # It starts from the list saved, as far as there is room.
+    assert found["start"] == [["train", False, "Trains"], ["bus", True, "Buses"]]
+    assert found["many"] == {"shown": ["step-show"], "error": "Error: Room for 1. Untick 1.",
+                             "focus": "modes-board-train"}
+    assert found["none"] == {"shown": ["step-show"],
+                             "error": "Error: Tick at least one, or no departures show on the dashboard."}
+
+
+@needs_node
+def test_with_one_mode_picked_there_is_no_choice_of_modes():
+    found = run_wizard(TO_SHOW + """
+        click("show-next");
+        await settle();
+        click("save");
+        await settle();
+        console.log(JSON.stringify({ groups: [$("modes-board"), $("modes-dashboard")].filter(Boolean).length,
+                                     saved: asked("finish") }));
+    """, begin=BEGIN_MODES)
+    assert found["groups"] == 0 and "modes" not in found["saved"][0]
+
+
 @needs_node
 def test_a_shortcut_never_asks_or_saves_what_to_show():
     found = run_wizard("""

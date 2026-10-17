@@ -2,7 +2,7 @@
 
 import { $, h, fill, str, num, list, obj, own } from "../dashboard_static/dom.js";
 import { ApiError, POLL_FAILURES, POLL_MS, call, sleep } from "./api.js";
-import { showViews } from "./presets.js";
+import { modeViews, showViews } from "./presets.js";
 import { followRoads, setUpRoads } from "./roads.js";
 import { say, setError, shout } from "./say.js";
 import { state, stopName } from "./state.js";
@@ -62,6 +62,11 @@ export function enterFinish() {
     summaryRow("Keys to save", keys.length ? keys.join(", ") : "None; the keys already set stay"),
     state.askViews ? summaryRow("Show the departures on", state.views
       .filter((view) => state.chosenViews.includes(view.name)).map((view) => view.label).join(", ")) : null,
+    state.askShow && modeViews().length ? summaryRow("Modes of transport", h("ul", {}, modeViews().map((view) => {
+      const names = own(state.chosenModes, view.name) || [];
+      const labels = state.modes.offered.filter((m) => names.includes(m.name)).map((m) => m.label);
+      return h("li", {}, `${view.label}: ${labels.join(" and ")}`);
+    }))) : null,
     state.askShow ? summaryRow("What to show", h("ul", {}, showViews().map((view) => {
       const preset = state.show.presets.find((p) => p.name === own(state.chosenShow, view.name));
       return h("li", {}, `${view.label}: ${preset ? preset.label : "as it is now"}`);
@@ -146,6 +151,7 @@ function payload() {
   if (Object.keys(keys).length) body.keys = keys;
   if (state.chosenViews.length) body.views = state.chosenViews;
   if (state.askShow) body.show = state.chosenShow;
+  if (state.askShow && Object.keys(state.chosenModes).length) body.modes = state.chosenModes;
   return body;
 }
 
