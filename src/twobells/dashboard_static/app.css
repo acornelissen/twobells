@@ -1347,8 +1347,9 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
 :root[data-theme="tft"] .badge.st-cancelled { color: var(--pill-bad-ink); background: var(--pill-bad); }
 
 /* --- The first train's "Calling at" line (board.js): wrapped, as any line
-   under a destination. The board looks scroll it along one line instead, as
-   a station's screen does, in from the right, and show the trains section's
+   under a destination. The Dot matrix, TFT and Split-flap looks scroll it
+   along one line instead, as the board's screen does in every look, in from
+   the right, and show the trains section's
    Pause button (#calling-pause), which stops it and wraps it again; never
    with reduced motion, nor on a wall tablet, which hides the line. The
    window's width is 0 so the long line doesn't widen the table: it takes
@@ -1357,19 +1358,19 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
 .calling-pause { display: none; }
 @keyframes calling-scroll { to { transform: translateX(-100%); } }
 @media (prefers-reduced-motion: no-preference) {
-  :root:is([data-theme="board"], [data-theme="tft"]) .calling-at:not(.paused) .calling-window {
+  :root:is([data-theme="board"], [data-theme="tft"], [data-theme="flap"]) .calling-at:not(.paused) .calling-window {
     display: block;
     width: 0;
     min-width: 100%;
     overflow: hidden;
     white-space: nowrap;
   }
-  :root:is([data-theme="board"], [data-theme="tft"]) .calling-at:not(.paused) .calling-text {
+  :root:is([data-theme="board"], [data-theme="tft"], [data-theme="flap"]) .calling-at:not(.paused) .calling-text {
     display: inline-block;
     padding-left: 100%;
     animation: calling-scroll var(--calling-s, 30s) linear var(--calling-delay, 0s) infinite;
   }
-  :root:is([data-theme="board"], [data-theme="tft"]):not([data-kiosk]) .calling-pause:not([hidden]) {
+  :root:is([data-theme="board"], [data-theme="tft"], [data-theme="flap"]):not([data-kiosk]) .calling-pause:not([hidden]) {
     display: inline-flex;
     min-height: 2rem;
     margin-bottom: var(--s-2);

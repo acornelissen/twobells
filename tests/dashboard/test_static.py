@@ -2145,7 +2145,7 @@ observeSnapshot(snapshot.generated_at);""")
     assert found == [True, 0]
 
 
-def test_the_calling_at_line_scrolls_only_in_the_board_looks_and_never_with_reduced_motion():
+def test_the_calling_at_line_scrolls_in_every_look_but_standard_and_never_with_reduced_motion():
     css = (STATIC / "app.css").read_text(encoding="utf-8")
     motion = css[css.index("@media (prefers-reduced-motion: no-preference)"):]
     motion = motion[:motion.index("\n}\n")]
@@ -2153,8 +2153,12 @@ def test_the_calling_at_line_scrolls_only_in_the_board_looks_and_never_with_redu
     assert "animation: calling-scroll" in motion and css.count("animation: calling-scroll") == 1
     assert ".calling-pause:not([hidden])" in motion and "display: inline-flex" in motion
     assert re.search(r"(?m)^\.calling-pause \{ display: none; \}", css)
-    for selector in re.findall(r"(?m)^\s*(:root[^{]*calling[^{]*)\{", motion):
-        assert selector.startswith(':root:is([data-theme="board"], [data-theme="tft"])'), selector
+    # Dot matrix, TFT and Split-flap scroll it, as the HDMI screen does in every look; Standard wraps it.
+    selectors = re.findall(r"(?m)^\s*(:root[^{]*calling[^{]*)\{", motion)
+    assert len(selectors) == 3
+    for selector in selectors:
+        assert selector.startswith(':root:is([data-theme="board"], [data-theme="tft"], [data-theme="flap"])'), \
+            selector
     # The button is outside the table, so a row keeps its one control.
     page = (STATIC / "index.html").read_text(encoding="utf-8")
     assert page.index('id="calling-pause"') < page.index('id="trains-board"')

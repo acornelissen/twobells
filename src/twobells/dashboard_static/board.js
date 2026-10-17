@@ -249,8 +249,8 @@ function whereLine(where, kind, strip, at) {
 
 // The first row's "Calling at" line, in the server's words (core/calling.py):
 // "Calling at: Dinting, Broadbottom and Manchester Piccadilly. This train is
-// formed of 3 coaches." The board looks (Dot matrix, TFT) scroll it along one
-// line, as a station's screen does; the trains section's Pause button
+// formed of 3 coaches." Every look but Standard (Dot matrix, TFT, Split-flap)
+// scrolls it along one line, as a station's screen does; the trains section's Pause button
 // (#calling-pause, outside the table, so a row keeps its one control) stops
 // it. Paused, with reduced motion, and in the Standard look it wraps (app.css).
 const CALLING_KEY = "dashboard.calling";
