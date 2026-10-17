@@ -1,7 +1,8 @@
-"""Builds the two data files the setup wizard reads, from NaPTAN.
+"""Builds the three data files the setup wizard reads, from NaPTAN.
 
     python tools/build_setup_data.py            # downloads about 130 MB
     python tools/build_setup_data.py --rail-xml rail.xml --stops-csv naptan.csv
+    python tools/build_setup_data.py --trams-only --stops-csv area940.csv
 
 Run it on a laptop now and then (stations open, stops move) and commit the
 result. It writes, under src/twobells/data/:
@@ -13,6 +14,12 @@ result. It writes, under src/twobells/data/:
   ATCO code) have bus stops in each 0.1 by 0.1 degree cell. Setup uses it
   to download only the areas near a home, without sending NaPTAN the
   home's position.
+- metrolink_stops.csv: every active Manchester Metrolink stop, with its
+  NaPTAN code (9400ZZMA and the three letters TfGM calls it by, like
+  9400ZZMAGMX) and position, from the stop's own entry (StopType MET; its
+  platforms are PLT). NaPTAN's tram and metro area is 940; --trams-only
+  writes this file alone, from a CSV of that area
+  (naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv&atcoAreaCodes=940).
 
 NaPTAN is published by the Department for Transport under the Open
 Government Licence v3.0; both files say so in their header.
@@ -49,6 +56,9 @@ _CRS = re.compile(r"^[A-Z]{3}$")
 # their few bus bays are rail replacement stops at stations.
 _AREA = re.compile(r"^[0-8]\d{2}$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+# A Metrolink stop's own NaPTAN entry: 9400ZZMA and its three letters.
+_METROLINK = re.compile(r"^9400ZZMA[A-Z]{3}$")
+TRAMS_URL = f"{NAPTAN_URL}?dataFormat=csv&atcoAreaCodes=940"
 # A station's NaPTAN entries (platform groups, low and high level) sit
 # within a few hundred metres; further apart means a wrong CRS somewhere.
 MAX_SPREAD_M = 2_000
@@ -124,6 +134,32 @@ def area_grid(text: str) -> dict[tuple[int, int], set[str]]:
     return cells
 
 
+def tram_stops(text: str) -> list[tuple[str, str, float, float]]:
+    """(name, code, lat, lon) for each active Metrolink stop, by code. NaPTAN
+    names each "Deansgate-Castlefield (Manchester Metrolink)": the name is
+    kept without the part in brackets."""
+    rows = {}
+    for row in csv.DictReader(io.StringIO(text)):
+        code = (row.get("ATCOCode") or "").strip()
+        if row.get("Status") != "active" or row.get("StopType") != "MET" or not _METROLINK.match(code):
+            continue
+        position = naptan_position(row)
+        name = re.sub(r"\s*\(Manchester Metrolink\)$", "", _clean(row.get("CommonName") or ""))
+        if position and name:
+            rows[code] = (name, code, *position)
+    return sorted(rows.values(), key=lambda r: r[1])
+
+
+def write_tram_stops(rows: list[tuple[str, str, float, float]], path: Path) -> None:
+    out = io.StringIO()
+    out.write("# Manchester Metrolink stops, with their NaPTAN codes (9400ZZMA and TfGM's three letters).\n")
+    out.writelines(f"# {line}\n" for line in LICENCE)
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(["name", "code", "lat", "lon"])
+    writer.writerows((name, code, f"{lat:.5f}", f"{lon:.5f}") for name, code, lat, lon in rows)
+    path.write_text(out.getvalue(), encoding="utf-8")
+
+
 def write_stations(rows: list[tuple[str, str, float, float]], path: Path) -> None:
     out = io.StringIO()
     out.write("# National Rail stations in Great Britain, with their CRS codes.\n")
@@ -149,20 +185,33 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--rail-xml", type=Path, help="NaPTAN XML for area 910, already downloaded")
     parser.add_argument("--stops-csv", type=Path, help="national NaPTAN CSV, already downloaded")
+    parser.add_argument("--trams-only", action="store_true",
+                        help="write metrolink_stops.csv alone, from --stops-csv or NaPTAN's area 940")
     parser.add_argument("--out", type=Path, default=OUT)
     args = parser.parse_args(argv)
+    args.out.mkdir(parents=True, exist_ok=True)
+
+    if args.trams_only:
+        blob = args.stops_csv.read_bytes() if args.stops_csv else get_bytes(TRAMS_URL, 50_000_000, timeout=120)
+        trams = tram_stops(blob.decode("utf-8-sig"))
+        print(f"{len(trams)} Metrolink stops")
+        write_tram_stops(trams, args.out / "metrolink_stops.csv")
+        return
 
     xml = args.rail_xml.read_bytes() if args.rail_xml else get_bytes(RAIL_URL, 200_000_000, timeout=120)
     stations = station_rows(xml)
     print(f"{len(stations)} stations")
 
     blob = args.stops_csv.read_bytes() if args.stops_csv else get_bytes(STOPS_URL, 500_000_000, timeout=300)
-    cells = area_grid(blob.decode("utf-8-sig"))
+    text = blob.decode("utf-8-sig")
+    cells = area_grid(text)
     print(f"{len(cells)} cells, {len({a for v in cells.values() for a in v})} areas")
+    trams = tram_stops(text)
+    print(f"{len(trams)} Metrolink stops")
 
-    args.out.mkdir(parents=True, exist_ok=True)
     write_stations(stations, args.out / "gb_stations.csv")
     write_grid(cells, args.out / "naptan_area_grid.csv")
+    write_tram_stops(trams, args.out / "metrolink_stops.csv")
 
 
 if __name__ == "__main__":

@@ -112,3 +112,26 @@ def test_area_grid_converts_grid_references_and_keeps_local_bus_areas(build):
     ])
 
     assert build.area_grid(text) == {(lat10, lon10): {"554"}, (520, -8): {"149"}}
+
+
+def test_tram_stops_are_each_metrolink_stop_s_own_entry_named_without_the_network(build):
+    text = "\n".join([
+        "ATCOCode,Status,StopType,CommonName,Easting,Northing,Latitude,Longitude",
+        "9400ZZMAGMX,active,MET,Deansgate-Castlefield (Manchester Metrolink),,,53.47479,-2.25036",
+        "9400ZZMAGMX1,active,PLT,Deansgate-Castlefield (Manchester Metrolink),,,53.47481,-2.25035",  # a platform
+        "9400ZZMAOLD,inactive,MET,Old Stop (Manchester Metrolink),,,53.4,-2.2",  # not active
+        "9400ZZNOTRAM,active,MET,Nottingham Station (Nottingham Express Transit),,,52.9,-1.1",  # another network
+        "9400ZZMAPIC,active,MET,Piccadilly (Manchester Metrolink),,,53.47707,-2.23065",
+    ])
+    assert build.tram_stops(text) == [("Deansgate-Castlefield", "9400ZZMAGMX", 53.47479, -2.25036),
+                                      ("Piccadilly", "9400ZZMAPIC", 53.47707, -2.23065)]
+
+
+def test_trams_only_writes_the_tram_stops_alone(build, tmp_path):
+    source = tmp_path / "area940.csv"
+    source.write_text("ATCOCode,Status,StopType,CommonName,Easting,Northing,Latitude,Longitude\n"
+                      "9400ZZMAPIC,active,MET,Piccadilly (Manchester Metrolink),,,53.47707,-2.23065\n")
+    build.main(["--trams-only", "--stops-csv", str(source), "--out", str(tmp_path / "out")])
+    assert [p.name for p in (tmp_path / "out").iterdir()] == ["metrolink_stops.csv"]
+    text = (tmp_path / "out" / "metrolink_stops.csv").read_text()
+    assert "Open Government Licence" in text and text.endswith("name,code,lat,lon\nPiccadilly,9400ZZMAPIC,53.47707,-2.23065\n")

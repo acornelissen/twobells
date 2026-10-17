@@ -6,9 +6,9 @@ everything that comes back before using it.
 
 Where a home's position goes, and only at setup: a postcode to postcodes.io,
 or typed address text to OpenStreetMap's Nominatim; then its coordinates,
-once, to the OpenStreetMap foot router for walk times. Stations come from a
-file bundled with the board and bus stops from NaPTAN by area code, so
-neither learns where home is. Nothing here logs a postcode, an address or a
+once, to the OpenStreetMap foot router for walk times. Stations and
+Metrolink tram stops come from files bundled with the board and bus stops
+from NaPTAN by area code, so none of them learns where home is. Nothing here logs a postcode, an address or a
 coordinate, and error messages never repeat a URL.
 """
 
@@ -81,6 +81,8 @@ BEARINGS = frozenset({"N", "NE", "E", "SE", "S", "SW", "W", "NW"})
 
 _POSTCODE = re.compile(r"^[A-Z]{1,2}[0-9][A-Z0-9]?[0-9][A-Z]{2}$")
 _CRS = re.compile(r"^[A-Z]{3}$")
+# A Metrolink stop's NaPTAN code: 9400ZZMA and the three letters TfGM calls it by.
+TRAM_STOP = re.compile(r"^9400ZZMA[A-Z]{3}$")
 _ATCO = re.compile(r"^[0-9]{3}[0-9A-Za-z]{1,9}$")
 _AREA = re.compile(r"^[0-8][0-9]{2}$")
 _LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")  # as the settings site allows
@@ -124,6 +126,17 @@ class Place:
 class Station:
     name: str
     crs: str
+    lat: float
+    lon: float
+    distance_m: int  # straight line from home
+
+
+@dataclass(frozen=True)
+class TramStop:
+    """A Manchester Metrolink stop: all its platforms, both ways."""
+
+    code: str  # its NaPTAN code, like 9400ZZMAGMX
+    name: str
     lat: float
     lon: float
     distance_m: int  # straight line from home
@@ -409,6 +422,48 @@ def nearby_stations(lat: float, lon: float, limit: int = 5, within_km: float = 1
         metres = distance_m(lat, lon, slat, slon)
         if metres <= within_km * 1000:
             found.append((metres, crs, Station(name, crs, slat, slon, round(metres))))
+    found.sort(key=lambda f: (f[0], f[1]))
+    return [f[2] for f in found[:limit]]
+
+
+# Metrolink tram stops, from the bundled list (tools/build_setup_data.py).
+MAX_TRAM_STOPS = 20
+TRAM_STOPS_WITHIN_KM = 5
+
+
+def parse_tram_stops(text: str) -> tuple[tuple[str, str, float, float], ...]:
+    """(name, code, lat, lon) rows of a tram stop list, bad rows skipped."""
+    rows = []
+    for row in _data_rows(text):
+        name, code = _text(row.get("name"), 80), row.get("code") or ""
+        position = _position(row.get("lat"), row.get("lon"), strings=True)
+        if name and TRAM_STOP.match(code) and position:
+            rows.append((name, code, *position))
+    return tuple(rows)
+
+
+@lru_cache(maxsize=1)
+def bundled_tram_stops() -> tuple[tuple[str, str, float, float], ...]:
+    return parse_tram_stops(files("twobells").joinpath("data/metrolink_stops.csv").read_text("utf-8"))
+
+
+def tram_stop_names() -> dict[str, str]:
+    """{code: name} of every Metrolink stop, from the bundled list."""
+    return {code: name for name, code, _, _ in bundled_tram_stops()}
+
+
+def nearby_tram_stops(lat: float, lon: float, limit: int = 5, within_km: float = TRAM_STOPS_WITHIN_KM,
+                      stops: Sequence[tuple[str, str, float, float]] | None = None) -> list[TramStop]:
+    """The nearest Metrolink stops, closest first, by straight line. Works
+    offline: the list is bundled. None at all for a home far from Manchester."""
+    _check_point(lat, lon)
+    if not 1 <= limit <= MAX_TRAM_STOPS or not 0 < within_km <= MAX_STATION_KM:
+        raise SetupError(f"Ask for 1 to {MAX_TRAM_STOPS} tram stops within {MAX_STATION_KM} km")
+    found = []
+    for name, code, slat, slon in bundled_tram_stops() if stops is None else stops:
+        metres = distance_m(lat, lon, slat, slon)
+        if metres <= within_km * 1000:
+            found.append((metres, code, TramStop(code, name, slat, slon, round(metres))))
     found.sort(key=lambda f: (f[0], f[1]))
     return [f[2] for f in found[:limit]]
 

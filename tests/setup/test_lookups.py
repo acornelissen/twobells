@@ -441,6 +441,45 @@ def test_bundled_station_list_finds_hadfield_first():
     assert all(re.fullmatch("[A-Z]{3}", s.crs) for s in found)
 
 
+# Metrolink tram stops, from the bundled list.
+
+TRAM_STOPS_CSV = """# made up
+name,code,lat,lon
+Piccadilly,9400ZZMAPIC,53.47707,-2.23065
+Deansgate-Castlefield,9400ZZMAGMX,53.47479,-2.25036
+Bad code,9400ZZMAPIC1,53.47,-2.23
+Nowhere,9400ZZMANOW,,
+Altrincham,9400ZZMAALT,53.38728,-2.34759
+"""
+# Manchester Piccadilly station, a public place, standing in for a home in town.
+TOWN_CENTRE = Place(53.4774, -2.2309, "Manchester Piccadilly")
+
+
+def test_tram_stop_list_skips_bad_rows():
+    assert [row[1] for row in lookups.parse_tram_stops(TRAM_STOPS_CSV)] == ["9400ZZMAPIC", "9400ZZMAGMX",
+                                                                             "9400ZZMAALT"]
+
+
+def test_nearby_tram_stops_are_the_nearest_within_reach():
+    stops = lookups.parse_tram_stops(TRAM_STOPS_CSV)
+    found = lookups.nearby_tram_stops(TOWN_CENTRE.lat, TOWN_CENTRE.lon, stops=stops)
+    assert [s.code for s in found] == ["9400ZZMAPIC", "9400ZZMAGMX"]  # Altrincham is over 5 km away
+    assert found[0].name == "Piccadilly" and found[0].distance_m < 100
+    assert lookups.nearby_tram_stops(HOME.lat, HOME.lon, stops=stops) == []  # Hadfield: no trams
+    with pytest.raises(SetupError):
+        lookups.nearby_tram_stops(TOWN_CENTRE.lat, TOWN_CENTRE.lon, limit=0, stops=stops)
+
+
+def test_bundled_tram_stop_list_is_every_metrolink_stop_once():
+    rows = lookups.bundled_tram_stops()
+    assert 95 <= len(rows) <= 120
+    assert len({row[1] for row in rows}) == len(rows)
+    names = lookups.tram_stop_names()
+    assert names["9400ZZMAPIC"] == "Piccadilly" and names["9400ZZMAGMX"] == "Deansgate-Castlefield"
+    found = lookups.nearby_tram_stops(TOWN_CENTRE.lat, TOWN_CENTRE.lon, limit=2)
+    assert found[0].code == "9400ZZMAPIC"
+
+
 def test_bundled_station_list_is_whole_and_unique():
     rows = lookups.bundled_stations()
     assert len(rows) > 2500
