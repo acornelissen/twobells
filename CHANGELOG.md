@@ -12,6 +12,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 ### Changed
 
 - With Next to catch left out, or nothing to point at (no departure you can still reach, or none with a walk time), the dashboard shows the time in its place, as large as the countdown, with the date, the weather now and the rain sentence; the header's clock and the weather section's now line and rain sentence make way for it. Before, the place said "Nothing to leave for", or was left empty.
+- The README opens on busy places: made-up mornings at Manchester Piccadilly, Bank and Greenwich, with real stations, stops and lines and invented times, on the dashboard, the 11.3" bar screen and the 10.85" e-paper, each with three modes. Glossop's pictures still tell the live bus story further down. `tools/serve_doc_dashboard.py --scene` and `tools/build_doc_images.py` draw them (see [Pictures](CONTRIBUTING.md#pictures)).
 - A walk the setup wizard finds to be over an hour, like one to a tram stop found by name in another town, is left empty and marked **Over an hour**, so no time to leave is shown for it. It was set to 60 minutes.
 
 ### Fixed

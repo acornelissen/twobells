@@ -6,16 +6,33 @@
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/dashboard-dark.png">
-  <img alt="The dashboard on a Glossop morning: Leave now for the 07:09 341 bus, then the 07:12 train, with the weather, a disruption at your stop, and the train and bus departures" src="docs/images/dashboard-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/dashboard-piccadilly-dark.png">
+  <img alt="The dashboard at Manchester Piccadilly at 07:31: Leave now for the 07:38 train to Manchester Airport from platform 14, then a tram, a 192 bus and another train; light rain from 08:00; disruption between Piccadilly and Buxton; the trains with their platforms and the 07:41 to Liverpool Lime Street expected 07:45; buses from Piccadilly Gardens with the 50 two stops away" src="docs/images/dashboard-piccadilly-light.png">
 </picture>
+
+A made-up morning at Manchester Piccadilly. In every picture here the stations, stops and lines are real and the times invented.
 
 One install is one app with two views of the same departures:
 
 - **The board:** a Raspberry Pi with a four-colour Inky pHAT (250x122). The app also draws for a Waveshare 10.85" e-Paper (G) (1360x480), a Waveshare 7.9" HDMI screen (1280x400, on its side) and an 11.3" HDMI bar screen (1920x440); those are tested in software but not yet on the hardware.
 - **The dashboard:** a web page for a phone or computer at home, with the next 10 trains and 15 buses (and 10 trams), calling points and coaches, bus strips and maps, the weather, disruptions, punctuality history, a Performance page with Delay Repay, and station announcements.
 
-A Pi can run either view or both; Docker and a desktop run the dashboard. Each install has one settings site, at `/settings` on port 8090, with one password and a setup wizard that finds your station, bus and tram stops, walk times and bus companies from your postcode. Each view shows the modes of transport you choose. The examples use Glossop, with trains to Manchester and buses from two nearby stops (`examples/glossop.toml`).
+A Pi can run either view or both; Docker and a desktop run the dashboard. Each install has one settings site, at `/settings` on port 8090, with one password and a setup wizard that finds your station, bus and tram stops, walk times and bus companies from your postcode. Each view shows the modes of transport you choose. The examples, and the pictures from [The dashboard](#the-dashboard) on, use Glossop, with trains to Manchester and buses from two nearby stops (`examples/glossop.toml`).
+
+## Busy places, every mode at once
+
+In London the Underground, DLR, river buses and cable car come live from TfL, beside the buses and trains: at Bank the Underground, the DLR and London's buses, and at Greenwich trains, buses, the river bus and the cable car's status.
+
+<p>
+  <img width="49%" alt="The dashboard at Bank: Leave now for the 07:35 Northern line train to Edgware from platform 4; minor delays on the Central line; London buses from Bank and Monument, the 21 three stops away; the Metro section with the Northern, Waterloo and City, Central, DLR and District lines, each with its platform and where it is; and a lift at Bank out of service" src="docs/images/dashboard-bank.png">
+  <img width="49%" alt="The dashboard at Greenwich: Leave now for the 07:37 RB1 river bus to Battersea Power Station Pier from Greenwich Pier; the cable car suspended in high winds; Southeastern and Thameslink trains, the 07:43 to Luton expected 07:47 and the 07:49 cancelled; buses from Greenwich Church Street and Cutty Sark" src="docs/images/dashboard-greenwich.png">
+</p>
+
+By the door, an 11.3" bar screen shares the same departures between three modes, here in the station board and split-flap looks (as the app draws them; not yet run on the screen itself):
+
+![The station board look on the 11.3 inch bar screen at Manchester Piccadilly: Leave now for the 07:38 to Manchester Airport from platform 14 with its calling-at line, the 07:41 to Liverpool Lime Street expected 07:45, the 192 bus, the tram to Eccles and the disruption to Buxton](docs/images/screen-bar-piccadilly.png)
+
+![The split-flap look on the 11.3 inch bar screen at Greenwich: the cable car suspended, the 07:40 to London Cannon Street, the 07:43 to Luton expected 07:47, the 188 bus two stops away and the RB1 river bus to Battersea Power Station Pier](docs/images/screen-bar-flap-greenwich.png)
 
 ## Why it's worth a place by your door
 
@@ -33,9 +50,7 @@ The next trains and buses side by side, each with its walk, its countdown and wh
 
 ![The train and bus boards: the 07:12 waiting at Hadfield and often late, the 07:42 cancelled, and buses with strips, the 341 two stops away and the 61's bus on its way](docs/images/dashboard-boards.png)
 
-Manchester's trams have a section too, wherever home is; in London the Underground and DLR come live, with each line's colour and where each train is now:
-
-![London's Metro section for Bank: the Northern line to Edgware in 2 min between Borough and London Bridge, the Central line to Epping, the DLR to Lewisham, each with its platform, walk and when to leave, and a lift out of service at Bank](docs/images/dashboard-london.png)
+Manchester's trams have a section too, wherever home is; in London the Underground and DLR come live, with each line's colour and where each train is now, as at [Bank](#busy-places-every-mode-at-once).
 
 Open a train for its whole journey, or the area map for every bus on your lines:
 
@@ -58,9 +73,9 @@ An e-paper board needs no attention: it redraws only when what it shows changes.
 
 ![The station board look on the Inky pHAT, scaled up: the next three trains with the 08:12 cancelled, and three buses with when to leave for each](docs/images/phat-sign.png)
 
-On the 10.85" e-paper there is room for platforms (as the app draws it; not yet run on the panel itself):
+On the 10.85" e-paper there is room for platforms and three modes (as the app draws it; not yet run on the panel itself):
 
-![The station board look on the 10.85 inch e-paper](docs/images/epaper-10in85.png)
+![The station board look on the 10.85 inch e-paper at Manchester Piccadilly: the 07:38 to Manchester Airport from platform 14, leave by 07:32, the 07:41 to Liverpool Lime Street expected 07:45, the 192 bus, the tram to Eccles and the disruption to Buxton](docs/images/epaper-10in85-piccadilly.png)
 
 An HDMI screen redraws every second, with a running clock and countdowns, two more looks (`tft`, white and yellow on black, and `flap`, a split-flap board whose tiles turn), and if you want them the first train's calling points, a platform clock page and station announcements through a speaker. It also has a page showing where your next bus is (again as the app draws it, not yet tried on a real screen):
 
