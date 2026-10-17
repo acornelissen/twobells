@@ -1,5 +1,6 @@
 import dataclasses
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -39,6 +40,20 @@ def test_late_departure_reports_minutes_late():
 
 def test_lateness_unknown_without_expected_time():
     assert make(status=Status.LATE).minutes_late is None
+
+
+def test_minutes_late_across_the_clocks_changing_are_the_minutes_that_pass():
+    london = ZoneInfo("Europe/London")
+    # 25 October 2026: booked 01:50 BST, expected 01:10 GMT, seen at 01:05 GMT: 20 minutes, not 40 early.
+    back = make("01:50", "01:10", Status.LATE)
+    assert back.minutes_late_at(datetime(2026, 10, 25, 1, 5, tzinfo=UTC).astimezone(london)) == 20
+    # 29 March 2026: booked 00:50 GMT, expected 02:10 BST: 20 minutes, not 80.
+    forward = make("00:50", "02:10", Status.LATE)
+    assert forward.minutes_late_at(datetime(2026, 3, 29, 0, 55, tzinfo=london)) == 20
+    # Any other day, as on the clock; none without an expected time, none for on time.
+    assert make("07:12", "07:19", Status.LATE).minutes_late_at(datetime(2026, 10, 9, 7, tzinfo=london)) == 7
+    assert make(status=Status.LATE).minutes_late_at(datetime(2026, 10, 9, 7, tzinfo=london)) is None
+    assert make().minutes_late_at(datetime(2026, 10, 9, 7, tzinfo=london)) == 0
 
 
 def test_departs_at_prefers_expected_time():

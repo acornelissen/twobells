@@ -27,7 +27,7 @@ from datetime import datetime, timedelta
 
 from ..core import announce
 from ..core.errors import safe_message
-from ..core.model import Departure, Status, minutes_between
+from ..core.model import Departure, Status, clock_at, real
 
 log = logging.getLogger(__name__)
 
@@ -69,9 +69,9 @@ def _train(dep: Departure) -> announce.Train:
 
 
 def _ahead(now: datetime, clock: str) -> timedelta:
-    """How long from `now` until `clock` (HH:MM), within 12 hours either way."""
-    minute = now.replace(second=0, microsecond=0)
-    return minute + timedelta(minutes=minutes_between(now.strftime("%H:%M"), clock)) - now
+    """How long from `now` until `clock` (HH:MM), within 12 hours either way,
+    in the time that passes."""
+    return real(clock_at(clock, now)) - real(now)
 
 
 def _said_of(items: Sequence[tuple[str, str]], kinds: Sequence[str]) -> str:
@@ -105,7 +105,7 @@ def due(trains: Sequence[Departure], now: datetime, said: set[Said], quiet: bool
         next_found = next_found or is_next
         items = announce.announcements(
             _train(dep), is_cancelled=cancelled, late=dep.status is Status.LATE,
-            minutes_late=dep.minutes_late if dep.status is Status.LATE else None,
+            minutes_late=dep.minutes_late_at(now) if dep.status is Status.LATE else None,
             platform_changed=dep.platform_changed, is_next=is_next)
         # Late with no time to go by: it could go any moment, so it stays.
         untimed = not cancelled and dep.status is Status.LATE and dep.expected is None

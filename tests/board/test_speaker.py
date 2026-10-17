@@ -3,7 +3,8 @@
 import logging
 import subprocess
 import threading
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from twobells.board.speaker import (
     ARGS,
@@ -99,6 +100,19 @@ def test_a_train_gone_but_still_listed_is_not_the_next():
     # The 06:59 has gone by 07:00:30 though the board still lists it: the 07:03 is the next.
     assert due([train("06:59"), train("07:03")], NOW, set()) == [
         "The next train to depart from platform 1 will be the 07:03 Northern service to Manchester Piccadilly."]
+
+
+def test_across_the_clocks_going_back_the_delay_and_the_wait_are_the_minutes_that_pass():
+    # 25 October 2026, 01:07 GMT: booked 01:50 BST (17 minutes ago), now expected 01:10 GMT.
+    now = datetime(2026, 10, 25, 1, 7, tzinfo=UTC).astimezone(ZoneInfo("Europe/London"))
+    late = train("01:50", "01:10", Status.LATE)
+    assert due([late], now, set()) == [
+        "We are sorry to announce that the 01:50 Northern service to Manchester Piccadilly is delayed by "
+        "approximately 20 minutes. The next train to depart from platform 1 will be the delayed 01:50 Northern "
+        "service to Manchester Piccadilly."]
+    # 01:58 BST, the first pass: the 02:01 (GMT) is 63 minutes off, not 3, so not yet.
+    first_pass = datetime(2026, 10, 25, 0, 58, tzinfo=UTC).astimezone(ZoneInfo("Europe/London"))
+    assert due([train("02:01")], first_pass, set()) == []
 
 
 def test_gone_trains_and_buses_are_never_announced():

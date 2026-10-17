@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from enum import Enum
 from typing import TypeGuard, overload
 
@@ -60,6 +60,17 @@ def clock_at(hhmm: str, near: datetime) -> datetime:
     now = near.astimezone(UTC)
     passes = [local.replace(tzinfo=near.tzinfo, fold=fold) for fold in (0, 1)]  # the same but in that hour
     return min(passes, key=lambda moment: abs(moment.astimezone(UTC) - now))
+
+
+def zoned(local: datetime, zone: tzinfo, near: datetime) -> datetime:
+    """A board-local `local` (naive, with its date) in `zone`, counted on the
+    clock from `near` (aware), as a bus board counts its times: in the hour
+    the clocks go back, which comes twice, the pass that many clock minutes
+    from `near`."""
+    clock_now = near.astimezone(zone).replace(tzinfo=None)
+    meant = real(near) + (local - clock_now)
+    passes = [local.replace(tzinfo=zone, fold=fold) for fold in (0, 1)]  # the same but in that hour
+    return min(passes, key=lambda moment: abs(real(moment) - meant))
 
 
 def real(moment: datetime) -> datetime:
@@ -130,11 +141,23 @@ class Departure:
 
     @property
     def minutes_late(self) -> int | None:
+        """How late on the clock; minutes_late_at for the minutes that pass."""
         if self.status is Status.ON_TIME:
             return 0
         if self.expected is None:
             return None
         return minutes_between(self.scheduled, self.expected)
+
+    def minutes_late_at(self, near: datetime) -> int | None:
+        """How late, in the minutes that pass, its times read as nearest
+        `near` (times): across the clocks changing too, where booked at
+        01:50 BST and expected at 01:10 GMT is 20 minutes late."""
+        if self.status is Status.ON_TIME:
+            return 0
+        if self.expected is None:
+            return None
+        scheduled_at = clock_at(self.scheduled, near)
+        return minutes_apart(scheduled_at, clock_at(self.expected, scheduled_at))
 
     def times(self, near: datetime) -> tuple[datetime, datetime | None]:
         """When it is booked to leave, read as the time nearest `near`, and

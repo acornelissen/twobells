@@ -102,6 +102,21 @@ def test_arrival_across_midnight():
     assert (found["at_iso"], found["minutes"]) == ("2026-10-10T00:24:00+01:00", 19)
 
 
+def test_arrival_across_the_clocks_changing_is_the_minutes_that_pass():
+    # 25 October 2026: leaves 01:50 BST, gets in at 01:10 GMT, 20 minutes on.
+    back = (point("Manchester Piccadilly", "MAN", "01:10", "On time"),)
+    leaves = datetime(2026, 10, 25, 1, 50, tzinfo=LONDON)
+    found = train_arrival(service("01:50", points=back), "MAN", leaves, leaves)
+    assert found == {
+        "name": "Manchester Piccadilly", "at": "01:10", "at_iso": "2026-10-25T01:10:00+00:00", "minutes": 20,
+    }
+    # 29 March 2026: leaves 00:50 GMT, gets in at 02:10 BST, 20 minutes on.
+    forward = (point("Manchester Piccadilly", "MAN", "02:10", "On time"),)
+    leaves = datetime(2026, 3, 29, 0, 50, tzinfo=LONDON)
+    found = train_arrival(service("00:50", points=forward), "MAN", leaves, leaves)
+    assert (found["at_iso"], found["minutes"]) == ("2026-03-29T02:10:00+01:00", 20)
+
+
 def test_words_in_place_of_a_time():
     no_report = (point("Manchester Piccadilly", "MAN", "07:48", "No report"),)
     assert train_arrival(service(points=no_report), "MAN", *times())["at"] == "07:48"
@@ -156,22 +171,36 @@ def row(board, line, stop="A"):
 
 def test_a_bus_arrives_at_its_last_call_with_the_delay_it_has_now():
     board = make_board(at(10, 14), [bus(*HALFWAY, at(10, 14))])  # EAST, 9 min late
-    assert bus_arrival(row(board, "341"), LONDON) == {
+    assert bus_arrival(row(board, "341"), at(10, 14)) == {
         "name": "Hadfield", "at": "10:34", "at_iso": "2026-10-09T10:34:00+01:00", "minutes": 15,
     }
-    on_time = bus_arrival(row(board, "237"), LONDON)  # WEST, no bus yet: the timetable
+    on_time = bus_arrival(row(board, "237"), at(10, 14))  # WEST, no bus yet: the timetable
     assert (on_time["name"], on_time["at"], on_time["minutes"]) == ("Ashton", "11:00", 45)
 
 
 def test_a_bus_arrival_across_midnight():
     board = make_board(at(0, 5, day=SATURDAY), plan=schedule(NIGHT), runs_on=fridays)
-    assert bus_arrival(board.departures[0], LONDON) == {
+    assert bus_arrival(board.departures[0], at(0, 5, day=SATURDAY)) == {
         "name": "Hadfield", "at": "00:20", "at_iso": "2026-10-10T00:20:00+01:00", "minutes": 10,
     }
     left_ashton = datetime(2026, 10, 9, 22, 30, tzinfo=UTC)
     late = stop_at(ARUNDEL, at(0, 13, day=SATURDAY), aimed=left_ashton)  # due there 00:08
     board = make_board(at(0, 13, day=SATURDAY), [late], plan=schedule(NIGHT), runs_on=fridays)
-    assert bus_arrival(board.departures[0], LONDON)["at"] == "00:25"
+    assert bus_arrival(board.departures[0], at(0, 13, day=SATURDAY))["at"] == "00:25"
+
+
+def test_a_bus_arrival_across_the_clocks_changing_is_its_run_time_after_it_leaves():
+    board = make_board(at(10, 14), [bus(*HALFWAY, at(10, 14))])
+    east = row(board, "341")  # 15 minutes to Hadfield
+    # 25 October 2026, polled at 01:40 BST: leaves 01:50 BST, there 15 minutes later at 01:05 GMT.
+    back = replace(east, leaves=datetime(2026, 10, 25, 1, 50), expected=datetime(2026, 10, 25, 1, 50))
+    assert bus_arrival(back, datetime(2026, 10, 25, 0, 40, tzinfo=UTC).astimezone(LONDON)) == {
+        "name": "Hadfield", "at": "01:05", "at_iso": "2026-10-25T01:05:00+00:00", "minutes": 15,
+    }
+    # 29 March 2026: leaves 00:50 GMT, there at 02:05 BST.
+    forward = replace(east, leaves=datetime(2026, 3, 29, 0, 50), expected=datetime(2026, 3, 29, 0, 50))
+    found = bus_arrival(forward, datetime(2026, 3, 29, 0, 40, tzinfo=LONDON))
+    assert (found["at"], found["at_iso"], found["minutes"]) == ("02:05", "2026-03-29T02:05:00+01:00", 15)
 
 
 def test_inbound_exactly_one_bus_coming_to_work_it():

@@ -32,9 +32,9 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import datetime, timedelta, tzinfo
+from datetime import datetime, timedelta
 
-from ..core.model import Status, iso
+from ..core.model import Status, clock_at, iso, minutes_apart, real, zoned
 from ..sources.bodsbus import BusBoard
 from ..sources.darwin import CallingPoint, TrainService
 from ..sources.livebus import LiveDeparture, LiveJourney
@@ -44,7 +44,6 @@ from ..timetable.model import StopPosition
 GHOST_WITHIN = timedelta(minutes=5)
 # A journey longer than this is a mistake in the times, not a long journey.
 _LONGEST = 12 * 60
-_DAY = 24 * 60
 _NAME_LIMIT = 80
 _CLOCK = re.compile(r"([01][0-9]|2[0-3]):[0-5][0-9]")
 
@@ -79,11 +78,6 @@ def _point_time(point: CallingPoint) -> str | None:
     return point.scheduled
 
 
-def _minute_of_day(hhmm: str) -> int:
-    hours, minutes = hhmm.split(":")
-    return int(hours) * 60 + int(minutes)
-
-
 def train_arrival(service: TrainService, filter_crs: str | None, scheduled_at: datetime,
                   expected_at: datetime | None) -> dict | None:
     """Where and when the train arrives, and the minutes from leaving here,
@@ -99,27 +93,33 @@ def train_arrival(service: TrainService, filter_crs: str | None, scheduled_at: d
     if arrives is None:
         return None
     leaves = (expected_at or scheduled_at).replace(second=0, microsecond=0)
-    minutes = (_minute_of_day(arrives) - (leaves.hour * 60 + leaves.minute)) % _DAY
+    # Within 12 hours of leaving, in the minutes that pass, across the clocks changing too.
+    at = clock_at(arrives, leaves)
+    minutes = minutes_apart(leaves, at)
     if not 0 < minutes <= _LONGEST:
         return None  # arrives before it leaves: Darwin's times disagree
-    at = (leaves.replace(tzinfo=None) + timedelta(minutes=minutes)).replace(tzinfo=leaves.tzinfo)
     return _arrival(point.name, at, minutes)
 
 
 # Buses
 
 
-def bus_arrival(live: LiveDeparture, tz: tzinfo | None) -> dict | None:
-    """When the bus reaches its journey's last call: the timetabled time plus
-    the delay it has now. None if your stop is its last call."""
+def bus_arrival(live: LiveDeparture, now: datetime) -> dict | None:
+    """When the bus reaches its journey's last call: the timetable's time
+    from your stop after it leaves, with the delay it has now, in the time
+    that passes. `now` is when the board was worked out, in the board's zone.
+    None if your stop is its last call."""
     calls = live.journey.calls
     if live.call_index >= len(calls) - 1:
         return None
     minutes = calls[-1].minute - calls[live.call_index].minute
     if not 0 < minutes <= _LONGEST:
         return None
-    at = live.expected + timedelta(minutes=minutes)
-    return _arrival(live.journey.destination, at.replace(tzinfo=tz), minutes)
+    if now.tzinfo is None:
+        return _arrival(live.journey.destination, live.expected + timedelta(minutes=minutes), minutes)
+    leaves = zoned(live.expected, now.tzinfo, now)
+    at = (real(leaves) + timedelta(minutes=minutes)).astimezone(now.tzinfo)
+    return _arrival(live.journey.destination, at, minutes)
 
 
 def _clean(text: str) -> str | None:
@@ -193,7 +193,7 @@ def bus_extras(live: LiveDeparture, board: BusBoard, now: datetime) -> dict:
     """The extra fields of a bus row: arrives, inbound and ghost."""
     coming = inbound(live, board.schedule.positions)
     return {
-        "arrives": bus_arrival(live, now.tzinfo),
+        "arrives": bus_arrival(live, now),
         "inbound": coming,
         "ghost": is_ghost(live, now, board.vehicles_ok, coming),
     }
