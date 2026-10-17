@@ -18,6 +18,7 @@ Only Metrolink is read. TfGM lists the replacement buses it runs when part of th
 ## Setting it up
 
 The [setup wizard](setup-wizard.md#the-steps) asks for your tram stops after the bus stops. It lists the Metrolink stops within 5 km of home, and **Find a stop by name** finds any other, however far away, from a list that comes with the app (from NaPTAN), so nothing is sent anywhere to find them. Tick up to 4. Each gets a label, T, U, V and W, and a walk time, as the bus stops do; a stop over an hour's walk away gets none, so the board gives no time to leave for it.
+The [setup wizard](setup-wizard.md#the-steps) asks for your tram stops after the bus stops, but only where home is near some: it lists the 5 Metrolink stops nearest home, within 5 km as the crow flies, from a list that comes with the app (from NaPTAN), so nothing is sent anywhere to find them. Tick up to 4. Each gets a label, T, U, V and W, and a walk time, as the bus stops do.
 
 In `config.toml` it looks like this:
 
@@ -34,11 +35,11 @@ A stop's code is `9400ZZMA` and its three letters, as NaPTAN has it; `src/twobel
 
 ## How the timetable is kept
 
-- **Built** by the same hands as the bus timetable: on a Pi by `twobells-timetable.timer`, which checks every hour; in Docker and on a desktop by the dashboard, every hour; only while a view that is on shows trams. It is built again weekly, when your tram stops change, or, after a build fails, not for 6 hours (each try downloads the whole file). Until the first build, within the hour of setting up, the trams say there is no tram timetable yet.
-- **Small:** the download is about 45 MB, and its stop times about 170 MB unzipped, so it is never held whole: it is read a line at a time and only Metrolink's departures from your stops are kept, a few thousand over the weeks the file covers, in `tram-timetable.json` in the store. It took about 20 seconds on a laptop for two busy stops; a Pi Zero takes longer, well within the timer's half hour.
+- **Built** by the same hands as the bus timetable: on a Pi by `twobells-timetable.timer`, which checks every hour; in Docker and on a desktop by the dashboard, every hour; only while a view that is on shows trams. It is built again weekly and when your tram stops change; after a build fails, not for 6 hours (each try downloads the whole file), and the old one is used meanwhile, until it is 4 weeks old. Until the first build, within the hour or so of setting up, the board's Trams section says `No trams` and the dashboard's says there is no tram timetable yet ("Building the tram timetable…" while the dashboard builds it); the [Overview](settings.md#overview) says when it is built.
+- **Small:** the download is about 45 MB, and its stop times about 170 MB unzipped, so it is never held whole: it is read a line at a time and only Metrolink's departures from your stops are kept, a few thousand a stop over the weeks the file covers, in `tram-timetable.json` in the store. It took about 20 seconds on a laptop for two busy stops; a Pi Zero takes longer, well within the half hour the timer gives the bus and tram timetables together.
 - **Checked:** every field is checked as it is read, and a row that isn't what the timetable format says is left out. Each part of the file may unzip to no more than it should, a line longer than 4,096 characters is read past a piece at a time and left out, and a file listing more than 100 parts is refused before they are read, so a broken or hostile file can't fill the memory or the card.
 - **Read** every minute through the trams' day, 05:00 to midnight by default, which costs nothing. The timetable's own days and dates decide which trams run, bank holidays included.
-- **Building it now:** as for the bus timetable (see [Bus times](buses.md#how-bus-times-are-worked-out)), delete the old one, and the failed build's note, first:
+- **Building it now:** on a Pi, as for the bus timetable (see [Bus times](buses.md#how-bus-times-are-worked-out)), delete the old one, and the failed build's note, first:
 
   ```bash
   sudo rm -f /var/lib/twobells/tram-timetable.json /var/lib/twobells/tram-timetable-failed.json
@@ -50,3 +51,5 @@ A stop's code is `9400ZZMA` and its three letters, as NaPTAN has it; `src/twobel
 
 - **On the board:** each tram's booked time, where it goes, and `sch` where a train's status goes, as a bus known only from the timetable says; with two or more tram stops, the stop's label before the destination ("T: Bury"). The section says when to leave for the next tram you can reach, by its stop's walk. See [Reading the board](reading-the-board.md).
 - **On the dashboard:** a **Trams** section with each tram's time marked "sched.", its line (like "Blue Line") under the destination, its stop where there are several, and when to leave. Next to catch takes trams as it does buses known only from the timetable, saying **Timetable only**. A tram's sheet has its line, stop, booked time and leave time, and says why there is no expected time. See [The dashboard](dashboard.md#whats-on-it).
+
+![The dashboard's Trams section, 3 minutes' walk from Piccadilly: the 07:05 to Altrincham on the Purple Line with Go now, the 07:08 to Bury, a replacement bus to Etihad Campus at 07:11, and two more, each time marked sched. and each with when to leave](images/dashboard-trams.png)
