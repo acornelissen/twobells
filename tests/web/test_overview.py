@@ -328,8 +328,9 @@ def test_both_views_are_grouped_under_their_names():
     ("on", "pill-ok", "Network guard On Checked 07:58, 3 min ago "
                       "What it means This server can't connect out to the internet."),
     ("off", "pill-bad", "Network guard Off Checked 07:58, 3 min ago "
-                        "What to do On the Pi, restart it: sudo systemctl restart twobells-web. If it stays "
-                        "off, sudo journalctl -u twobells-web says why. "
+                        "What to do On the Pi, load the guard again and restart the services it holds: "
+                        "sudo systemctl restart twobells-guard twobells-web twobells-fetch. If it stays off, "
+                        "sudo journalctl -u twobells-guard -u twobells-web says why. "
                         "What it means The server still refuses visitors outside your home network itself; "
                         "nothing stops it connecting out."),
     ("unknown", "pill-neutral", "Network guard Can't tell Checked 07:58, 3 min ago "

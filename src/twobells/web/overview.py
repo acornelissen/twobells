@@ -72,8 +72,10 @@ GUARD = {
                 "The check couldn't see whether anything stops this server connecting out, most often as "
                 "there was no route out yet. It looks again when this page is drawn, at most once a minute."),
 }
-_GUARD_FIX = ("What to do", "On the Pi, restart it: sudo systemctl restart twobells-web. If it stays off, "
-              "sudo journalctl -u twobells-web says why.")
+# Loading the guard again empties its sets, so the services it holds restart after it (docs/security.md).
+_GUARD_FIX = ("What to do", "On the Pi, load the guard again and restart the services it holds: sudo systemctl "
+              "restart twobells-guard twobells-web twobells-fetch. If it stays off, sudo journalctl "
+              "-u twobells-guard -u twobells-web says why.")
 # A Host header as the server let it in: a name or an address, and a port.
 _HOST = re.compile(r"(?:\[[0-9A-Fa-f:.]{2,45}\]|[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)(?::[0-9]{1,5})?")
 # Optional keys, by what they add.
