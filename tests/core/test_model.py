@@ -194,6 +194,15 @@ def test_only_the_same_train_is_compared():
     assert not mark_platform_changes([at("1")], [elsewhere])[0].platform_changed
 
 
+def test_a_cancelled_train_is_never_a_platform_change():
+    # It leaves from no platform, so a new one is nothing to tell anyone.
+    cancelled = at("2", status=Status.CANCELLED)
+    assert not mark_platform_changes([at("1")], [cancelled])[0].platform_changed
+    # Nor does a change marked before it was cancelled stay.
+    first = mark_platform_changes([at("1")], [at("2")])
+    assert not mark_platform_changes(first, [cancelled])[0].platform_changed
+
+
 def test_a_replacement_bus_is_never_a_platform_change():
     train = at("1")
     bus = dataclasses.replace(make(), replacement_bus=True)

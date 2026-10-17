@@ -146,12 +146,13 @@ def mark_platform_changes(before: list[Departure], after: list[Departure]) -> li
     platform isn't the one `before` (the last fetch, less what has left
     since) gave it, and kept while it stays on the new one. Only a platform
     given both times counts: one appearing, or going, is no change, and a
-    replacement bus or ferry has none."""
+    replacement bus or ferry has none, nor has a train cancelled."""
     previous = {_same_train(dep): dep for dep in before}
     marked = []
     for dep in after:
         old = previous.get(_same_train(dep))
-        changed = (dep.is_train and old is not None and dep.platform is not None and old.platform is not None
+        changed = (dep.is_train and dep.status is not Status.CANCELLED and old is not None
+                   and dep.platform is not None and old.platform is not None
                    and (old.platform != dep.platform or old.platform_changed))
         marked.append(replace(dep, platform_changed=changed) if changed != dep.platform_changed else dep)
     return marked

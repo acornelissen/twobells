@@ -2,9 +2,9 @@
 // once every 30 s: a departure newly cancelled, an expected time moving by
 // 2 min or more, a bus newly flagged as having no tracker (once per
 // departure, however often the flag comes and goes), a train's platform
-// newly changed (once per departure and platform), and disruption newly in
-// force on your journeys (a train board message, or roadworks at or near
-// your stops), once. The disruption summary line itself is never spoken.
+// newly changed (once per departure and platform; never a cancelled
+// one's), and disruption newly in force on your journeys (a train board
+// message, or roadworks at or near your stops), once. The disruption summary line itself is never spoken.
 // Station notices (a closed ticket office, lifts out of use) are not
 // disruption and are never spoken. The hero says when the departure to catch
 // changes, and the header when its status pill does (announce()). Countdowns
@@ -87,9 +87,9 @@ export function noteSnapshot(snapshot, rowsById) {
       // Not on the first snapshot, nor for a row that is new to the board.
       if (before) queue(`ghost:${id}`, `${what} has no tracker yet and may not be running.`);
     }
-    // A replacement bus or a ferry has no platform to change.
+    // A replacement bus or a ferry has no platform to change, nor has a train cancelled.
     const changed = mode === "train" && row.platform_changed === true && row.replacement_bus !== true
-      && row.ferry !== true;
+      && row.ferry !== true && row.status !== "cancelled";
     const platform = changed ? str(row.platform) : "";
     if (platform && !platformsSeen.has(`${id}|${platform}`)) {
       platformsSeen.add(`${id}|${platform}`);

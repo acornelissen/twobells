@@ -549,6 +549,19 @@ def test_a_change_since_the_last_fetch_is_a_change_whatever_the_history():
     assert part["rows"][0]["platform_changed"] is True
 
 
+def test_a_cancelled_train_never_has_a_changed_platform():
+    cancelled = train(etd="Cancelled", isCancelled=True, platform="2")
+    [row], _ = platforms_part(cancelled, usual="1")
+    assert (row["platform"], row["usual_platform"], row["platform_changed"]) == ("2", "1", False)
+    assert [item["kind"] for item in row["announce"]] == ["cancelled"]
+    board = parse_board_rich({"trainServices": [cancelled]})
+    [service] = board.services
+    changed = dataclasses.replace(service, departure=dataclasses.replace(service.departure, platform_changed=True))
+    part, _ = trains_part(dataclasses.replace(board, services=[changed]), datetime(2026, 10, 10, 7, 0, tzinfo=LONDON),
+                          status_block(), "GLO", "MAN", WALK, "GLO>MAN")
+    assert part["rows"][0]["platform_changed"] is False
+
+
 def test_a_replacement_bus_has_no_usual_platform_and_never_a_changed_one():
     [row], asked = platforms_part(replacement(), usual="1")
     assert asked == []

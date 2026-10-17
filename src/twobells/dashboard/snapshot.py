@@ -227,14 +227,16 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
     train's service details, the row says where it is at `now` (else when
     the board was fetched) and the stops it calls at before this station.
     Its platform has changed when the last fetch gave another (the
-    Departure says so) or it isn't the one `platforms` says it usually is.
+    Departure says so) or it isn't the one `platforms` says it usually is;
+    a train cancelled leaves from none, so never.
     `is_next` says it is the next train to depart, for its announcements."""
     dep = service.departure
     scheduled_at, expected_at = _train_times(service, fetched)
     route = _train_route(route_prefix, dep)
     history = _history_entry("train", route, dep.scheduled, _train_label(dep), scheduled_at.date(), phrases)
     usual = platforms(route, dep.scheduled) if dep.is_train else None
-    changed = dep.platform is not None and (dep.platform_changed or (usual is not None and dep.platform != usual))
+    changed = (dep.status is not Status.CANCELLED and dep.platform is not None
+               and (dep.platform_changed or (usual is not None and dep.platform != usual)))
     row = {
         "id": _train_id(service),
         "service": dep.service,

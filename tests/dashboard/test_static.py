@@ -3002,6 +3002,28 @@ def test_a_changed_platform_is_announced_once():
 
 
 @needs_node
+def test_a_cancelled_train_s_platform_is_never_announced():
+    found = run_js("""
+        import { noteSnapshot } from "./live.js";
+        const live = document.createElement("div");
+        live.setAttribute("id", "live");
+        document.body.append(live);
+        globalThis.requestAnimationFrame = (fn) => fn();
+        const snapshot = { generated_at: "2026-10-10T07:00:00+01:00", disruptions: { status: {}, items: [] } };
+        const row = (status, platform, changed) => ({
+          id: "a", scheduled: "07:12", destination: "Manchester Piccadilly", status, platform, platform_changed: changed,
+        });
+        const rows = (r) => new Map([[r.id, { row: r, mode: "train" }]]);
+        noteSnapshot(snapshot, rows(row("on_time", "1", false)));
+        // An older server, or a stale mark: cancelled on another platform is still only cancelled.
+        noteSnapshot(snapshot, rows(row("cancelled", "2", true)));
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        console.log(JSON.stringify(live.textContent));
+    """)
+    assert found == "The 07:12 train to Manchester Piccadilly is now cancelled."
+
+
+@needs_node
 def test_the_open_sheet_says_when_its_train_has_gone():
     found = run_js(_sheet() + """
         openTrain(train(1));
