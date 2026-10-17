@@ -957,13 +957,28 @@ def cli_config(tmp_path, monkeypatch, bods):
     secrets.write_text(f"BODS_API_KEY={KEY}\n")
     monkeypatch.delenv("BODS_API_KEY", raising=False)
     made = []
-    real = SetupJob
+
+    class Looked(SetupJob):
+        """Finds nothing until the command line has looked at it once: a real
+        search's first download takes seconds, so it always looks while the
+        search runs, whatever else this machine is doing."""
+
+        looked: threading.Event
+
+        def status(self):
+            self.looked.set()
+            return super().status()
+
+    def find(job, *args):
+        assert job.looked.wait(5)
+        return bods.find(*args)
 
     def job(folder, stops, api_key, **options):
         made.append((folder, stops, api_key, options))
-        return real(folder, stops, api_key, find=bods.find, fetch=bods.fetch,
-                    find_datasets=_find_by_noc(bods), naptan=_naptan,
-                    **{**options, "now": lambda: SUMMER_NOW})
+        found = Looked(folder, stops, api_key, find=lambda *args: find(found, *args), fetch=bods.fetch,
+                       find_datasets=_find_by_noc(bods), naptan=_naptan, **{**options, "now": lambda: SUMMER_NOW})
+        found.looked = threading.Event()
+        return found
 
     monkeypatch.setattr(discover, "SetupJob", job)
     return ["--config", str(config), "--secrets", str(secrets)], state, made
