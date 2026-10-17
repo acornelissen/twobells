@@ -642,6 +642,21 @@ def test_a_cancelled_or_late_train_is_announced_with_its_reason():
         "Piccadilly. This train is formed of 3 coaches.")
 
 
+def test_a_dividing_train_is_announced_calling_at_every_part_s_stops():
+    def stop(name, crs, st):
+        return {"locationName": name, "crs": crs, "st": st, "et": "On time"}
+
+    part, _ = trains(train(
+        "07:12",
+        destination=[{"locationName": "Hadfield", "crs": "HDF"}, {"locationName": "Glossop", "crs": "GLO"}],
+        subsequentCallingPoints=[
+            {"callingPoint": [stop("Dinting", "DTG", "07:17"), stop("Hadfield", "HDF", "07:21")]},
+            {"callingPoint": [stop("Dinting", "DTG", "07:17"), stop("Glossop", "GLO", "07:20")]},
+        ]))
+    [said] = part["rows"][0]["announce"]
+    assert "Calling at Dinting, Glossop and Hadfield." in said["text"]
+
+
 def test_a_changed_platform_is_announced_as_an_alteration():
     [row], _ = platforms_part(train(platform="2"), usual="1")
     assert row["announce"][0] == {"kind": "platform", "text": (

@@ -466,21 +466,23 @@ def _point_lists(value) -> list[tuple[CallingPoint, ...]]:
     return lists
 
 
-def _calling_points(service: dict, destinations: list[dict]) -> tuple[CallingPoint, ...]:
+def _calling_points(service: dict) -> tuple[CallingPoint, ...]:
     """The stops after this station. A train that divides has one list per
-    part; we keep the one that ends at a destination on the board (the first
-    such, by crs or else by name), and otherwise the first list, which is the
-    main train in Darwin's order."""
+    part, each repeating the stops before it divides: they are merged in
+    time order (read from the first stop, so past midnight too), each stop
+    once, so every part's stops are named. One list is kept as Darwin gives it."""
     lists = _point_lists(service.get("subsequentCallingPoints"))
-    if not lists:
-        return ()
-    crs_codes = {d["crs"] for d in destinations if d["crs"]}
-    names = {d["locationName"] for d in destinations}
+    if len(lists) <= 1:
+        return lists[0] if lists else ()
+    start = lists[0][0].scheduled
+    merged, seen = [], set()
     for points in lists:
-        last = points[-1]
-        if (last.crs and last.crs in crs_codes) or last.name in names:
-            return points
-    return lists[0]
+        for point in points:
+            if (point.name, point.scheduled) not in seen:
+                seen.add((point.name, point.scheduled))
+                merged.append(point)
+    merged.sort(key=lambda point: minutes_between(start, point.scheduled))
+    return tuple(merged[:_MAX_CALLING_POINTS])
 
 
 def _calling_line(departure: Departure, points: tuple[CallingPoint, ...], length: int | None,
@@ -523,7 +525,7 @@ def _rich_service(service, kind: str = "train") -> TrainService | None:
         "kind": kind,
     }
     departure = _parse_service(checked)
-    points = _calling_points(service, destinations)
+    points = _calling_points(service)
     # A rail replacement bus or a ferry has no coaches to count or draw.
     train = departure.is_train
     length = _coaches(service.get("length")) if train else None
@@ -711,7 +713,7 @@ def parse_service_details(raw) -> ServiceDetails:
     previous = _point_lists(raw.get("previousCallingPoints"))
     return ServiceDetails(
         previous=previous[0] if previous else (),
-        subsequent=_calling_points(raw, []),
+        subsequent=_calling_points(raw),
         here=here,
         cancel_reason=_reason(raw.get("cancelReason")),
         delay_reason=_reason(raw.get("delayReason")),

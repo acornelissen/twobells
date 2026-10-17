@@ -230,21 +230,28 @@ def test_odd_calling_point_shapes_are_empty_not_errors():
     assert [p.name for p in single.calling_points] == ["Dinting"]
 
 
-def test_a_dividing_train_keeps_the_part_going_to_the_destination():
+def test_a_dividing_train_calls_at_every_part_s_stops_in_time_order():
     to_hadfield = [point("Dinting", "22:25"), point("Hadfield", "22:31", crs="HDF")]
     to_glossop = [point("Dinting", "22:25"), point("Glossop", "22:29", crs="GLO")]
-    parts = [{"callingPoint": to_glossop}, {"callingPoint": to_hadfield}]
+    parts = [{"callingPoint": to_hadfield}, {"callingPoint": to_glossop}]
     train = one(
-        destination=[{"locationName": "Hadfield", "crs": "HDF"}],
+        destination=[{"locationName": "Hadfield", "crs": "HDF"}, {"locationName": "Glossop", "crs": "GLO"}],
         subsequentCallingPoints=parts,
     )
-    assert train.calling_points[-1].name == "Hadfield"
-    # Matched by name when Darwin leaves off the code.
-    by_name = one(destination=[{"locationName": "Hadfield"}], subsequentCallingPoints=parts)
-    assert by_name.calling_points[-1].name == "Hadfield"
-    # With no part ending at the destination, the first part is kept.
-    neither = one(destination=[{"locationName": "Buxton", "crs": "BUX"}], subsequentCallingPoints=parts)
-    assert neither.calling_points[-1].name == "Glossop"
+    # Each destination's stops are named, the shared ones once.
+    assert [p.name for p in train.calling_points] == ["Dinting", "Glossop", "Hadfield"]
+    assert train.departure.calling_at == "Calling at: Dinting, Glossop and Hadfield. This train is formed of 3 coaches."
+
+
+def test_a_dividing_train_s_stops_are_merged_across_midnight_and_one_part_is_kept_as_it_is():
+    before = [point("Dinting", "23:55"), point("Hadfield", "00:05", crs="HDF")]
+    after = [point("Dinting", "23:55"), point("Glossop", "23:59", crs="GLO"), point("Padfield", "00:02")]
+    train = one(std="23:50", subsequentCallingPoints=[{"callingPoint": before}, {"callingPoint": after}])
+    assert [p.name for p in train.calling_points] == ["Dinting", "Glossop", "Padfield", "Hadfield"]
+    # One part is Darwin's order, whatever its times say.
+    odd = [point("Godley", "22:40"), point("Dinting", "22:25")]
+    assert [p.name for p in one(subsequentCallingPoints=[{"callingPoint": odd}]).calling_points] == [
+        "Godley", "Dinting"]
 
 
 def test_services_without_a_booked_time_are_skipped():
