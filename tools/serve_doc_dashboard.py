@@ -23,6 +23,11 @@ morning, with a line's status and a lift out of order. --leave bus has
 Next to catch pick from the buses alone, and --leave none leaves it out, for
 the pictures of the time and the weather in its place.
 
+--scene piccadilly (or bank, or greenwich) serves a made-up morning at a
+busy place instead of Glossop's, for the README's pictures: its trains,
+buses and trams or London's metro, as tools/doc_scenes.py has them. Its
+clock starts at 07:31:30, and it has no area map.
+
 --phone also serves /frame: a page holding the dashboard in a frame 390
 CSS pixels wide and 844 high, a phone's, for the phone-width pictures from
 a browser window that can't be made that narrow; --frame 1280x800 gives
@@ -40,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
@@ -49,6 +55,11 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tools"))
+
+from doc_scenes import SCENES, scene_snapshot  # noqa: E402
+
 STATIC = ROOT / "src" / "twobells" / "dashboard_static"
 FIXTURES = ROOT / "tests" / "fixtures"
 
@@ -245,8 +256,11 @@ def main() -> None:
     parser.add_argument("--london", action="store_true", help="a made-up section of London's metro instead")
     parser.add_argument("--leave", metavar="MODES",
                         help="the modes Next to catch picks from, separated by commas, or none")
+    parser.add_argument("--scene", choices=sorted(SCENES), help="a made-up morning at a busy place instead")
     args = parser.parse_args()
-    snapshot = sample_snapshot()
+    if args.scene and (args.trams or args.london):
+        parser.error("--scene has its own trams or metro: leave out --trams and --london")
+    snapshot = scene_snapshot(SCENES[args.scene]) if args.scene else sample_snapshot()
     snapshot["quiet"] = args.quiet
     if args.trams:
         snapshot["metro"] = sample_trams(snapshot["generated_at"])

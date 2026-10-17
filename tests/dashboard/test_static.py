@@ -1005,6 +1005,40 @@ def test_the_picture_tool_s_made_up_metro_follows_the_contract():
     check(tool.sample_trams(generated_at), TRAMS_PART)
 
 
+def test_the_picture_tool_s_busy_places_follow_the_contract():
+    import importlib.util
+
+    from tests.paths import ROOT
+
+    spec = importlib.util.spec_from_file_location("serve_doc_dashboard", ROOT / "tools" / "serve_doc_dashboard.py")
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    snapshots = {name: tool.scene_snapshot(scene) for name, scene in tool.SCENES.items()}
+    assert set(snapshots) == {"piccadilly", "bank", "greenwich"}
+    for snapshot in snapshots.values():
+        check(snapshot, SNAPSHOT)
+        assert "area_map" not in snapshot["show"]  # the sample's map is Glossop's
+    # Manchester Piccadilly: a busy main-line board, with trams and buses too.
+    piccadilly = snapshots["piccadilly"]
+    trains = piccadilly["trains"]["rows"]
+    assert piccadilly["leave_modes"] == ["train", "bus", "metro"] and piccadilly["metro"]["label"] == "Trams"
+    assert {r["service"] for r in trains} == {"Avanti West Coast", "TransPennine Express", "Northern", "CrossCountry"}
+    assert any(r["status"] == "cancelled" and r["cancel_reason"] for r in trains)
+    assert any(r["platform_changed"] for r in trains)
+    assert any(r["via"] for r in trains) and all(r["length"] for r in trains)
+    assert {r["platform"] for r in trains} >= {"13", "14"}
+    # Bank: the Underground and the DLR, a line's status and a lift out of service, and buses.
+    bank = snapshots["bank"]
+    assert bank["trains"] is None and bank["buses"]["rows"]
+    assert {r["line_id"] for r in bank["metro"]["rows"]} >= {"central", "northern", "waterloo-city", "dlr"}
+    assert {m["kind"] for m in bank["metro"]["messages"]} == {"service", "station"}
+    # Greenwich: trains, the DLR, river buses, the cable car's status, and buses.
+    greenwich = snapshots["greenwich"]
+    assert greenwich["trains"]["rows"] and greenwich["buses"]["rows"]
+    assert {r["kind"] for r in greenwich["metro"]["rows"]} == {"dlr", "river-bus"}
+    assert any(m["text"].startswith("IFS Cloud Cable Car") for m in greenwich["metro"]["messages"])
+
+
 def test_snapshot_fixture_follows_the_contract():
     snapshot = _fixture("dashboard_snapshot.json")
     check(snapshot, SNAPSHOT)

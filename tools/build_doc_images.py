@@ -7,7 +7,9 @@ commit them. The departures pictures are `twobells demo`; the pHAT ones
 are scaled up three times, dot for dot, so they read on a web page. The bus
 position page is drawn here, as the board draws it, for the demo's 341 with
 the emulator's stops and the bus three stops away, and so is the clock page,
-and a screen with trams too, for three modes of transport.
+and a screen with trams too, for three modes of transport. The README's
+pictures of busy places are drawn here too, from tools/doc_scenes.py: each
+is named for its scene, like screen-bar-piccadilly.png.
 """
 
 from __future__ import annotations
@@ -21,6 +23,16 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "tools"))
+
+from doc_scenes import (  # noqa: E402
+    SCENES,
+    Scene,
+    board_departures,
+    board_labels,
+    board_notices,
+    board_strips,
+)
 
 from twobells.board.displays.display import DISPLAY_PANELS, PngDisplay  # noqa: E402
 from twobells.board.platformclock import clock_view, render_clock  # noqa: E402
@@ -48,6 +60,13 @@ DEMOS = {
     "screen-bar-tft.png": (["--display", "hdmi-1920x440", "--theme", "tft"], 1),
     "screen-flap.png": (["--display", "hdmi-1280x400", "--theme", "flap"], 1),
     "screen-bar-flap.png": (["--display", "hdmi-1920x440", "--theme", "flap"], 1),
+}
+
+# name: (scene, display, look), for the README
+SCENE_PICTURES = {
+    "epaper-10in85-piccadilly.png": ("piccadilly", "waveshare-10in85g", "sign"),
+    "screen-bar-piccadilly.png": ("piccadilly", "hdmi-1920x440", "sign"),
+    "screen-bar-flap-greenwich.png": ("greenwich", "hdmi-1920x440", "flap"),
 }
 
 
@@ -112,6 +131,21 @@ def draw_three_modes(drawn: Path) -> None:
     display.show(theme.render(view, display.palette, display.panel))
 
 
+def draw_scene(drawn: Path, scene: Scene, display_name: str, look: str) -> None:
+    """A busy place's departures, with every mode it has: a screen with its
+    running clock and where each live bus is, e-paper as it redraws. The bus
+    rows say their stops' letters: a stop's whole name, as a wide screen
+    shows it, is cut short at "Piccadilly Garden"."""
+    theme = theme_named(look)
+    display = PngDisplay(drawn, theme.accent, DISPLAY_PANELS[display_name])
+    clock = None if display.panel.epaper else scene.now.strftime("%H:%M:%S")
+    view = build_view(scene.title, board_departures(scene), scene.now.strftime("%H:%M"), set(), scene.walk(),
+                      theme.wording, clock, notices=board_notices(scene),
+                      strips=board_strips(scene) if clock else None,
+                      labels=board_labels(scene))
+    display.show(theme.render(view, display.palette, display.panel))
+
+
 def run() -> None:
     with tempfile.TemporaryDirectory() as scratch:
         for name, (options, scale) in DEMOS.items():
@@ -127,6 +161,10 @@ def run() -> None:
         drawn = Path(scratch) / "screen-trams.png"
         draw_three_modes(drawn)
         keep(drawn)
+        for name, (scene, display_name, look) in SCENE_PICTURES.items():
+            drawn = Path(scratch) / name
+            draw_scene(drawn, SCENES[scene], display_name, look)
+            keep(drawn)
 
 
 if __name__ == "__main__":
