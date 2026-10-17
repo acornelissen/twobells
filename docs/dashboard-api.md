@@ -219,7 +219,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `walk_min`: the walk to it in whole minutes, as on its rows, or null.
   - The page names each row's stop in its Stop column with its walk, telling stops of the same name apart by `letter`, else `towards`, else the label: "Church Street A · 10 min walk", "Victoria Street towards Market Hall".
 - **`buses.last_buses`:** each line and destination's last bus today from your stops, from the timetable (`sources/lastbus.py`), soonest first; `[]` while there is no usable timetable. Line and destination are as the rows say them, and only the board's `directions` count.
-  - A day is the timetable's service day: a bus at 00:20 on a journey that started the evening before is that evening's last bus. After midnight a line shows the evening's last bus while it is still to come, then today's. Bank holidays and days of the week follow the timetable's own rules.
+  - A day is the timetable's service day: a bus at 00:20 on a journey that started the evening before is that evening's last bus, and so is one before 03:00 that the timetable gives the next day. After midnight a line shows the evening's last bus while it is still to come, then today's. Bank holidays and days of the week follow the timetable's own rules.
   - `stop` is the label of your stop the last bus leaves from; `scheduled` and `scheduled_at` its timetabled time.
   - `remaining` counts that line and destination's buses still to come that service day, the last included (a bus counts until a minute after its time, as rows do); 0 once the last has gone.
   - `show` is true from 19:00, or once `remaining` is 3 or fewer.

@@ -2,9 +2,11 @@
 board shows them, the last departure of the day, from the BODS timetable.
 
 A day here is a service day (timetable/model.py): a bus at 00:20 on a
-journey that started the evening before is that evening's last bus. So just
-after midnight a line whose evening buses are still to come shows the last
-of them, and once that has gone, tonight's. Which journeys run on a day is
+journey that started the evening before is that evening's last bus. So is
+one before NIGHT_ENDS that the timetable gives the next day rather than
+running on past midnight, as many do: it is the night's, not the next
+day's. So just after midnight a line whose evening buses are still to come
+shows the last of them, and once that has gone, tonight's. Which journeys run on a day is
 timetable.build.runs_on's to say, bank holidays and days of the week as the
 timetable gives them.
 
@@ -31,6 +33,9 @@ EVENING = time(19, 0)
 FEW_LEFT = 3
 # A screen shows the last bus of all on its bottom line this long before it goes.
 SCREEN_AHEAD = timedelta(hours=1)
+# A call before this many minutes after midnight belongs to the night before.
+NIGHT_ENDS = 3 * 60
+_DAY = 24 * 60
 
 
 @dataclass(frozen=True)
@@ -73,23 +78,30 @@ def day_groups(
     """Departures from your stops on service day `day`, by line and
     destination, as live_board finds them: journeys that run that day (by
     runs_on, with each day's bank holiday names), calling at one of your
-    stops before their last call, heading in one of `directions` if given."""
+    stops before their last call, heading in one of `directions` if given.
+    A call before NIGHT_ENDS is the night before's: one on the next day's
+    journeys counts, a day on, and one on the day's own doesn't."""
     labels: dict[str, list[str]] = {}
     for label, atco in sorted(schedule.stops.items()):
         labels.setdefault(atco, []).append(label)
-    running: dict[int, bool] = {}  # by calendar, which a timetable's journeys share
+    running: dict[tuple[int, date], bool] = {}  # by calendar, which a timetable's journeys share, and day
+    tomorrow = day + timedelta(days=1)
     found: dict[tuple[str, str], list[tuple[int, str]]] = {}
     for journey in schedule.journeys:
         if journey.inbound_only or not heading_to(journey.destination, directions):
             continue
         calendar = journey.calendar
-        if id(calendar) not in running:
-            running[id(calendar)] = runs_on(calendar, day, holiday_names)
-        if not running[id(calendar)]:
-            continue
         for call in journey.calls[:-1]:  # the last call is where it terminates
-            for label in labels.get(call.atco, ()):
-                found.setdefault((journey.line, journey.destination), []).append((call.minute, label))
+            here = labels.get(call.atco, ())
+            if not here:
+                continue
+            on, minute = (tomorrow, call.minute + _DAY) if call.minute < NIGHT_ENDS else (day, call.minute)
+            if (id(calendar), on) not in running:
+                running[id(calendar), on] = runs_on(calendar, on, holiday_names)
+            if not running[id(calendar), on]:
+                continue
+            for label in here:
+                found.setdefault((journey.line, journey.destination), []).append((minute, label))
     return {
         key: DayGroup(tuple(sorted(minute for minute, _ in items)), min(items, key=lambda i: (-i[0], i[1]))[1])
         for key, items in found.items()

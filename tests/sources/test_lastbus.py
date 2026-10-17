@@ -95,6 +95,27 @@ def test_the_last_bus_after_midnight_is_the_evening_s():
     assert after[0].remaining == 2
 
 
+def test_a_bus_after_midnight_the_timetable_gives_the_next_day_is_tonight_s():
+    # Saturday's 22:00 and 23:10, and a 00:05 the timetable puts on Sunday,
+    # not as Saturday's journey running past midnight: it is Saturday night's
+    # last bus all the same, and not Sunday's.
+    saturdays = Calendar(days=frozenset({5}))
+    plan = schedule(east(22 * 60, calendar=saturdays), east(23 * 60 + 10, calendar=saturdays),
+                    east(5, calendar=SUNDAYS), east(9 * 60, calendar=SUNDAYS), east(18 * 60, calendar=SUNDAYS))
+    evening = found(plan, local(SATURDAY, 23, 5))
+    assert said(evening) == [("341", "Hadfield", "A", "00:05", 2)]
+    assert evening[0].service_day == SATURDAY and evening[0].leaves == local(SUNDAY, 0, 5)
+    assert screen_line(evening, local(SATURDAY, 23, 5)) == "Last bus 00:05"
+    assert said(found(plan, local(SATURDAY, 23, 30))) == [("341", "Hadfield", "A", "00:05", 1)]
+    small_hours = found(plan, local(SUNDAY, 0, 1))
+    assert small_hours[0].service_day == SATURDAY and small_hours[0].remaining == 1
+    # Once it has gone, Sunday's own: its 00:05 was Saturday night's.
+    assert said(found(plan, local(SUNDAY, 0, 10))) == [("341", "Hadfield", "A", "18:00", 2)]
+    # A Sunday the 00:05 doesn't run (Saturdays only, say), Saturday's own last bus stays.
+    alone = schedule(east(22 * 60, calendar=saturdays), east(23 * 60 + 10, calendar=saturdays))
+    assert said(found(alone, local(SATURDAY, 23, 5))) == [("341", "Hadfield", "A", "23:10", 1)]
+
+
 def test_a_last_bus_gone_last_night_is_dropped_when_none_runs_today():
     plan = schedule(east(23 * 60, calendar=Calendar(days=frozenset({4}))))  # Fridays only
     assert said(found(plan, local(FRIDAY, 23, 30))) == [("341", "Hadfield", "A", "23:00", 0)]
