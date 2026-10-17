@@ -61,6 +61,8 @@
   --t-lg: 1.25rem;
   --t-xl: 1.75rem;
   --t-hero: clamp(3rem, 7vw, 4.5rem);
+  /* The header's clock: the time is what a glance at the page is for. */
+  --t-clock: clamp(2.25rem, 4.5vw, 3rem);
   --s-1: 0.25rem;
   --s-2: 0.5rem;
   --s-3: 0.75rem;
@@ -379,6 +381,19 @@ h3 { font-size: var(--t-md); margin: var(--s-4) 0 var(--s-2); }
 .muted { color: var(--muted); }
 .nobreak { white-space: nowrap; }
 
+/* Remind (hero.js, sheet.js): a small bell button, quieter than the rest;
+   2rem tall, its target is still well over 24px. Pressed, it rings in the
+   accent. */
+button.remind {
+  min-height: 2rem;
+  min-width: 0;
+  gap: var(--s-1);
+  padding: 0 var(--s-3);
+  font-size: var(--t-sm);
+}
+button.remind .icon { width: 1.125em; height: 1.125em; }
+button.remind[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+
 /* A button is quiet unless it is the one thing to do: .primary fills it. */
 button {
   display: inline-flex;
@@ -428,7 +443,9 @@ button.link:hover:not(:disabled) { background: none; text-decoration-thickness: 
 }
 /* The place: it wraps onto a second line rather than lose a word. */
 .top h1 { flex: 1 1 12rem; margin: 0; font-size: var(--t-xl); text-wrap: balance; }
-.clock { margin: 0; font-size: var(--t-xl); font-weight: 600; }
+.clock { margin: 0; font-size: var(--t-clock); font-weight: 600; }
+/* Set tight, so the bigger clock doesn't make the header taller than it needs. */
+:root:not([data-kiosk]) .top .clock { line-height: 1.1; }
 .connection {
   display: inline-flex;
   align-items: center;
@@ -448,8 +465,8 @@ button.link:hover:not(:disabled) { background: none; text-decoration-thickness: 
 .connection[data-state="polling"],
 .connection[data-state="stale"] { color: var(--late-fg); background: var(--late-bg); }
 .connection[data-state="offline"] { color: var(--bad-fg); background: var(--bad-bg); }
-/* The Look picker: the browser's own list, with its label, at the size of
-   the quiet buttons beside it. */
+/* The Look picker, in the footer: the browser's own list, with its label,
+   at the size of the quiet buttons. */
 .look { display: inline-flex; align-items: center; gap: var(--s-2); font-weight: 500; }
 .look select {
   min-height: 2.75rem;
@@ -462,19 +479,6 @@ button.link:hover:not(:disabled) { background: none; text-decoration-thickness: 
   cursor: pointer;
 }
 .look select:hover { background: var(--surface-2); }
-/* Looks like the quiet buttons beside it, with their target size. */
-.top-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.75rem;
-  padding: var(--s-2) var(--s-4);
-  color: var(--fg);
-  font-weight: 500;
-  text-decoration: none;
-  border: 1px solid var(--edge);
-  border-radius: var(--r-md);
-}
-.top-link:hover { background: var(--surface-2); }
 
 main { max-width: 84rem; margin: 0 auto; padding: 0 var(--s-4) var(--s-6); }
 main:focus { outline: none; }
@@ -493,7 +497,11 @@ main:focus { outline: none; }
 .leave.soon { border-left-color: var(--late-fg); }
 .leave.soon .leave-time { color: var(--late-fg); }
 .leave.now { color: var(--bad-fg); background: var(--bad-bg); border-color: var(--bad-fg); }
+/* The label, with Remind at the right on its line. */
+.leave-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2) var(--s-4); }
 .leave-label { margin: 0; font-size: var(--t-sm); font-weight: 500; color: var(--muted); }
+/* Pulled into the label's line, so the countdown sits where it would without it. */
+.leave-head .remind { margin-block: calc(var(--s-2) * -1); }
 .leave.now .leave-label { color: inherit; }
 .leave-time { margin: var(--s-1) 0; font-size: var(--t-hero); font-weight: 600; line-height: 1.05; letter-spacing: -0.02em; }
 .leave-what { margin: 0; font-size: var(--t-md); }
@@ -504,9 +512,7 @@ main:focus { outline: none; }
 .sure-live .icon { width: 0.5rem; height: 0.5rem; fill: currentColor; }
 .sure-timetable { color: var(--muted); }
 .sure-ghost { color: var(--late-fg); }
-.leave-remind { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); margin-top: var(--s-3); }
-.leave .note { flex: 1 1 16rem; margin: 0; font-size: var(--t-sm); color: var(--muted); }
-#leave-remind[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.leave .note { margin: var(--s-2) 0 0; font-size: var(--t-sm); color: var(--muted); }
 /* Leave now: every word in the one red, on its tint. */
 .leave.now .leave-then, .leave.now .leave-rain, .leave.now .sure, .leave.now .note,
 .leave.now #leave-remind { color: inherit; }
@@ -868,6 +874,32 @@ table.board .badge.ghost { margin-top: var(--s-1); font-size: var(--t-sm); }
 
 .foot { max-width: 84rem; margin: 0 auto; padding: 0 var(--s-4) var(--s-6); color: var(--muted); font-size: var(--t-sm); }
 .foot p { margin: 0.25rem 0; }
+/* The other pages and the Look picker, on a line of their own above the
+   credits: what you set once, out of the way of the departures. */
+.foot-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2) var(--s-5);
+  margin-bottom: var(--s-3);
+  padding: var(--s-2) 0;
+  font-size: var(--t-md);
+  color: var(--fg);
+  border-block: 1px solid var(--line);
+}
+.foot-nav ul { display: flex; flex-wrap: wrap; gap: 0 var(--s-5); margin: 0; padding: 0; list-style: none; }
+.foot-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  color: var(--fg);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--edge);
+  text-underline-offset: 0.3em;
+}
+.foot-link:hover { text-decoration-color: currentColor; text-decoration-thickness: 2px; }
 
 /* --- Dialogs --- */
 
@@ -888,7 +920,6 @@ dialog.dialog-wide, dialog.sheet[data-mode="bus"] { width: min(60rem, calc(100vw
 /* The departure sheet (sheet.js): Remind me under the facts, punctuality last. */
 .sheet-remind { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); margin: var(--s-3) 0; }
 .sheet-remind .note { flex: 1 1 16rem; margin: 0; font-size: var(--t-sm); color: var(--muted); }
-#sheet-remind[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 /* Announce (pa.js), with the words as they are said under it. */
 .sheet-announce { margin: var(--s-3) 0; }
 .sheet-announce .pa-words { margin: var(--s-2) 0 0; }
@@ -1299,7 +1330,7 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
    smaller. Everything else stays in Inter. The face has one weight and its
    own spacing: no faux bold, no letter-spacing. --- */
 
-:root[data-theme="board"] .clock { font-family: var(--dots); font-size: var(--t-xl); }
+:root[data-theme="board"] .clock { font-family: var(--dots); font-size: var(--t-clock); }
 :root[data-theme="board"] .leave-time { font-family: var(--dots); font-size: var(--t-hero); }
 /* Times a size up, as the dots read lighter than Inter at the same size. */
 :root[data-theme="board"] table.board .time,
@@ -1455,8 +1486,8 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
 /* Every control, and what only a control would show. */
 :root[data-kiosk] .skip,
 :root[data-kiosk] .look,
-:root[data-kiosk] .top-link,
-:root[data-kiosk] .leave-remind,
+:root[data-kiosk] #leave-remind,
+:root[data-kiosk] #notify-note,
 :root[data-kiosk] .alert-banner,
 :root[data-kiosk] .dis-body,
 :root[data-kiosk] button.more,
@@ -1483,6 +1514,8 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
 :root[data-kiosk] .top h1 { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :root[data-kiosk] .top .clock,
 :root[data-kiosk] .top .connection { flex: none; white-space: nowrap; }
+/* The wall tablet sizes its own clock, as before the dashboard's grew. */
+:root[data-kiosk] { --t-clock: var(--t-xl); }
 :root[data-kiosk] main {
   display: grid;
   flex: 1 1 auto;

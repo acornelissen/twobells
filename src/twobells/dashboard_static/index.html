@@ -23,32 +23,21 @@
     <span id="connection-glyph" class="glyph" aria-hidden="true"></span>
     <span id="connection-text">Connecting…</span>
   </p>
-  <div class="look">
-    <label for="look">Look</label>
-    <select id="look">
-      <option value="modern">Standard</option>
-      <option value="board">Dot matrix</option>
-      <option value="tft">TFT</option>
-      <option value="flap">Split-flap</option>
-    </select>
-  </div>
-  <a class="top-link" id="performance-link" href="/performance">Performance</a>
-  <a class="top-link" href="/settings">Settings</a>
 </header>
 <p id="stale-banner" class="stale-banner" hidden></p>
 
 <main id="main" tabindex="-1">
   <section id="leave" class="leave" aria-labelledby="leave-heading">
-    <h2 id="leave-heading" class="leave-label" tabindex="-1">Next to catch</h2>
+    <div class="leave-head">
+      <h2 id="leave-heading" class="leave-label" tabindex="-1">Next to catch</h2>
+      <button type="button" id="leave-remind" class="remind" aria-pressed="false" hidden>Remind</button>
+    </div>
     <p class="leave-time" id="leave-time">Waiting for departures…</p>
     <p class="leave-what" id="leave-what"></p>
     <p class="leave-sure" id="leave-sure" hidden></p>
     <p class="leave-then" id="leave-then" hidden></p>
     <p class="leave-rain" id="leave-rain" hidden></p>
-    <div class="leave-remind">
-      <button type="button" id="leave-remind" class="quiet" aria-pressed="false" hidden>Remind me</button>
-      <p class="note" id="notify-note" hidden></p>
-    </div>
+    <p class="leave-note note" id="notify-note" hidden></p>
   </section>
 
   <div id="alert-banner" class="alert-banner" role="alert"></div>
@@ -130,6 +119,23 @@
 </div>
 
 <footer class="foot">
+  <div class="foot-bar">
+    <nav class="foot-nav" aria-label="Other pages">
+      <ul>
+        <li><a class="foot-link" id="performance-link" href="/performance">Performance</a></li>
+        <li><a class="foot-link" href="/settings">Settings</a></li>
+      </ul>
+    </nav>
+    <div class="look">
+      <label for="look">Look</label>
+      <select id="look">
+        <option value="modern">Standard</option>
+        <option value="board">Dot matrix</option>
+        <option value="tft">TFT</option>
+        <option value="flap">Split-flap</option>
+      </select>
+    </div>
+  </div>
   <p id="osm-credit" hidden>Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>. <a href="https://www.openstreetmap.org/fixthemap">Fix the map</a>.</p>
   <p>Times from National Rail Enquiries, Bus Open Data and Open-Meteo.</p>
   <!-- version -->
@@ -146,7 +152,7 @@
     <div class="alert-banner" data-alerts role="alert"></div>
     <div id="sheet-summary"></div>
     <div class="sheet-remind">
-      <button type="button" id="sheet-remind" class="quiet" aria-pressed="false">Remind me</button>
+      <button type="button" id="sheet-remind" class="remind" aria-pressed="false">Remind me</button>
       <p id="remind-note" class="note"></p>
     </div>
     <div class="sheet-announce">

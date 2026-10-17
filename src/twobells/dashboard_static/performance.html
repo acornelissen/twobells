@@ -18,17 +18,6 @@
 
 <header class="top">
   <h1 id="title">Performance</h1>
-  <div class="look">
-    <label for="look">Look</label>
-    <select id="look">
-      <option value="modern">Standard</option>
-      <option value="board">Dot matrix</option>
-      <option value="tft">TFT</option>
-      <option value="flap">Split-flap</option>
-    </select>
-  </div>
-  <a class="top-link" href="/">Departures</a>
-  <a class="top-link" href="/settings">Settings</a>
 </header>
 
 <main id="main" class="performance" tabindex="-1">
@@ -71,6 +60,23 @@
 </main>
 
 <footer class="foot">
+  <div class="foot-bar">
+    <nav class="foot-nav" aria-label="Other pages">
+      <ul>
+        <li><a class="foot-link" href="/">Departures</a></li>
+        <li><a class="foot-link" href="/settings">Settings</a></li>
+      </ul>
+    </nav>
+    <div class="look">
+      <label for="look">Look</label>
+      <select id="look">
+        <option value="modern">Standard</option>
+        <option value="board">Dot matrix</option>
+        <option value="tft">TFT</option>
+        <option value="flap">Split-flap</option>
+      </select>
+    </div>
+  </div>
   <p>Times from National Rail Enquiries and Bus Open Data.</p>
   <!-- version -->
 </footer>

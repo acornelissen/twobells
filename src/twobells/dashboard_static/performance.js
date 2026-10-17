@@ -3,7 +3,7 @@
 // together and route by route, from GET /api/performance, as tables
 // (measures.js). It loads once, as the figures change slowly; reloading the
 // page brings them up to date. The snapshot gives the page its place and
-// the stops' names. Its header has the dashboard's Look picker (look.js)
+// the stops' names. Its footer has the dashboard's Look picker (look.js)
 // and links. After the buses, the trains that reached the filter station
 // late enough for Delay Repay (renderRepay), or why that is off. When the
 // settings leave Performance out, the page says so in place of the figures.

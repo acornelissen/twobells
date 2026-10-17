@@ -1,4 +1,4 @@
-// The Look picker in a page's header (index.html, performance.html): one
+// The Look picker in a page's footer (index.html, performance.html): one
 // of its options, "modern" (the Standard look) by default, kept per browser
 // under "dashboard.theme". theme.js applied the saved look before paint;
 // this keeps the picker and the page in step as it changes.

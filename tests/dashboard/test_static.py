@@ -126,22 +126,38 @@ def test_page_references_resolve(name):
         assert _served(ref).is_file(), ref
 
 
-def _header_links(name):
+def _part(name, tag):
+    """The elements of a page's <header>, or <footer>, as (tag, attrs)."""
     page = _page(name)
-    header = [i for i, (tag, attrs) in enumerate(page.elements) if tag == "header"]
-    main = [i for i, (tag, _) in enumerate(page.elements) if tag == "main"]
-    return [attrs for tag, attrs in page.elements[header[0]:main[0]] if tag == "a"]
+    start = next(i for i, (t, _) in enumerate(page.elements) if t == tag)
+    # The header ends where <main> starts; the footer where the live region does, or with the page.
+    ends = {"header": lambda t, attrs: t == "main", "footer": lambda t, attrs: attrs.get("id") == "live"}[tag]
+    end = next((i for i in range(start + 1, len(page.elements)) if ends(*page.elements[i])), len(page.elements))
+    return page.elements[start:end]
 
 
-def test_the_header_links_to_the_performance_page_and_the_settings():
+def _footer_links(name):
+    return [attrs for tag, attrs in _part(name, "footer") if tag == "a" and "foot-link" in attrs.get("class", "")]
+
+
+@pytest.mark.parametrize("name", PAGES)
+def test_the_header_holds_only_the_place_the_time_and_the_connection(name):
+    # Look, Performance and Settings are in the footer: the header is for a glance.
+    tags = {tag for tag, _ in _part(name, "header")}
+    assert not tags & {"a", "select", "button", "nav"}
+
+
+def test_the_footer_links_to_the_performance_page_and_the_settings():
     # The Performance link has an id: the page hides it when the settings leave Performance out.
-    assert _header_links("index.html") == [{"class": "top-link", "id": "performance-link", "href": "/performance"},
-                                           {"class": "top-link", "href": "/settings"}]
+    assert _footer_links("index.html") == [{"class": "foot-link", "id": "performance-link", "href": "/performance"},
+                                           {"class": "foot-link", "href": "/settings"}]
+    assert ("nav", {"class": "foot-nav", "aria-label": "Other pages"}) in _part("index.html", "footer")
 
 
-def test_the_performance_page_header_links_back_to_the_departures_and_the_settings():
-    assert _header_links("performance.html") == [{"class": "top-link", "href": "/"},
-                                                 {"class": "top-link", "href": "/settings"}]
+def test_the_performance_page_footer_links_back_to_the_departures_and_the_settings():
+    assert _footer_links("performance.html") == [{"class": "foot-link", "href": "/"},
+                                                 {"class": "foot-link", "href": "/settings"}]
+    assert ("nav", {"class": "foot-nav", "aria-label": "Other pages"}) in _part("performance.html", "footer")
     # The same Look picker as the dashboard's, its look set before the first paint.
     assert _look_options("performance.html") == _look_options("index.html")
     assert ("script", {"src": "/static/theme.js"}) in _page("performance.html").elements
@@ -163,13 +179,10 @@ def _looks():
 
 
 @pytest.mark.parametrize("name", PAGES)
-def test_the_look_picker_is_a_labelled_list_of_every_look_in_the_header(name):
+def test_the_look_picker_is_a_labelled_list_of_every_look_in_the_footer(name):
     assert _look_options(name) == [("modern", "Standard"), ("board", "Dot matrix"), ("tft", "TFT"),
                                    ("flap", "Split-flap")]
-    page = _page(name)
-    header = next(i for i, (tag, _) in enumerate(page.elements) if tag == "header")
-    main = next(i for i, (tag, _) in enumerate(page.elements) if tag == "main")
-    assert ("select", {"id": "look"}) in page.elements[header:main]
+    assert ("select", {"id": "look"}) in _part(name, "footer")
     # Nothing left of the old toggle button.
     assert 'id="theme-toggle"' not in (STATIC / name).read_text(encoding="utf-8")
 
@@ -355,7 +368,8 @@ def test_the_page_uses_the_vendored_inter_with_tabular_times():
 
 
 # The type scale's sizes of 20px and up: --t-lg is 1.25rem, the others larger.
-LARGE_SIZES = {"var(--t-lg)", "var(--t-xl)", "var(--t-hero)"}
+# --t-clock is at least --t-xl: 2.25rem and up, and --t-xl itself on a wall tablet.
+LARGE_SIZES = {"var(--t-lg)", "var(--t-xl)", "var(--t-hero)", "var(--t-clock)"}
 
 
 def test_the_board_look_uses_the_dot_face_only_at_20px_and_up():
@@ -3630,6 +3644,47 @@ def test_a_focused_remind_me_hidden_hands_the_focus_to_the_hero_s_heading():
         console.log(JSON.stringify({ gone, elsewhere: document.activeElement.id }));
     """)
     assert found == {"gone": [True, "leave-heading"], "elsewhere": "leave-time"}
+
+
+@needs_node
+def test_the_hero_s_remind_shows_a_bell_and_one_word_and_says_the_rest():
+    found = run_js(HERO + """
+        setUpHero(() => {});
+        draw(rows(bus(1, "07:20", "07:15")));
+        const button = $("leave-remind");
+        const seen = (node) => node.nodeType === 3 ? node.nodeValue
+          : (node.getAttribute("class") || "").split(" ").includes("vh") ? "" : node.childNodes.map(seen).join("");
+        const bell = () => button.childNodes[0].getAttribute("aria-hidden");
+        const first = [seen(button).trim(), bell(), spoken(button).trim()];
+        button.listeners.find(([type]) => type === "click")[1]();
+        console.log(JSON.stringify({ first, on: [seen(button).trim(), button.getAttribute("aria-pressed")] }));
+    """)
+    # The visible word starts its name (WCAG 2.5.3), which says which departure it is for.
+    assert found["first"] == ["Remind", "true", "Remind me for the 07:20 237 bus to Ashton-under-Lyne Interchange"]
+    assert found["on"] == ["Remind", "true"]
+
+
+def test_remind_sits_at_the_right_of_the_hero_s_label_small_but_a_full_target():
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
+    head = page[page.index('<div class="leave-head">'):page.index('id="leave-time"')]
+    assert head.index('id="leave-heading"') < head.index('id="leave-remind"')  # read in the order it is seen
+    assert re.search(r'<button type="button" id="leave-remind" class="remind"[^>]*>Remind</button>', page)
+    assert re.search(r'<button type="button" id="sheet-remind" class="remind"[^>]*>Remind me</button>', page)
+    assert _css_value(".leave-head", "justify-content") == "space-between"
+    # Smaller than the page's other buttons, still well over WCAG 2.5.8's 24 by 24 CSS pixels.
+    assert _css_value("button.remind", "min-height") == "2rem" and _css_value("button", "min-height") == "2.75rem"
+    assert _css_value("button.remind", "font-size") == "var(--t-sm)"
+    assert _css_value('button.remind[aria-pressed="true"]', "color") == "var(--accent)"
+    # No control on a wall tablet.
+    assert "display: none" in _kiosk_rule("#leave-remind")
+
+
+def test_the_dashboard_clock_is_bigger_than_the_place_but_not_on_a_wall_tablet():
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    assert _css_value(".clock", "font-size") == "var(--t-clock)"
+    assert _css_value(".top h1", "font-size") == "var(--t-xl)"
+    assert re.search(r"--t-xl: 1\.75rem;", css) and re.search(r"--t-clock: clamp\(2\.25rem, [^;]+\);", css)
+    assert _css_value(":root[data-kiosk]", "--t-clock") == "var(--t-xl)"  # the wall tablet's own sizing, as before
 
 
 # --- Reminders while a dialog is open ---
