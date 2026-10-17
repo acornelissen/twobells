@@ -1,6 +1,6 @@
 # Two Bells user guide
 
-The app shows the next trains from your station and the next buses from your stops, and tells you when to set off so you catch them. The examples in this guide come from Glossop, with trains to Manchester and buses from two stops in the town centre.
+The app shows the next trains from your station and the next buses (and trams) from your stops, and tells you when to set off so you catch them. The examples in this guide come from Glossop, with trains to Manchester and buses from two stops in the town centre.
 
 One install is one app with two views of the same departures:
 
@@ -14,6 +14,7 @@ A Pi can run either view or both. Docker (on a NAS, say) and a desktop computer 
 - **Trains:** anywhere in Great Britain. Times come from National Rail (Darwin).
 - **Buses:** England only. The timetable and live positions come from the Bus Open Data Service (BODS), which covers England's buses.
 - **Trams:** Manchester's Metrolink, from TfGM's timetable: booked times only.
+- **London:** the Underground, DLR, trams, cable car and river buses, live from TfL.
 - **Rain warning:** anywhere. The forecast comes from Open-Meteo.
 - **Bank holidays:** England and Wales, Scotland, or Northern Ireland, from GOV.UK.
 
@@ -33,7 +34,7 @@ Pick one:
 Then:
 
 - [First run and the setup wizard](setup-wizard.md): claim the settings and find your station, stops and walk times. No `config.toml` is needed.
-- [Getting your keys](keys.md): the free keys for trains and buses, step by step.
+- [Getting your keys](keys.md): the free keys for trains and buses, and TfL's optional one, step by step.
 
 ## Set it up
 
