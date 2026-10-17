@@ -25,7 +25,7 @@ Where `config.toml` is: `/etc/twobells/config.toml` on a Pi; in Docker, a file y
 
 ## Without the wizard
 
-Put the keys in `secrets.env` (see [Getting your keys](keys.md#where-keys-go)) and replace each `CHANGE_ME` in `config.toml` (on a Pi, both are in `/etc/twobells/`). If you don't want trains or buses, put `enabled = false` in `[train]` or `[bus]` (or remove the section); its `CHANGE_ME`s can stay. `examples/glossop.toml` in the repo is a filled-in one to compare against.
+Put the keys in `secrets.env` (see [Getting your keys](keys.md#where-keys-go)) and replace each `CHANGE_ME` in `config.toml` (on a Pi, both are in `/etc/twobells/`). If you don't want trains or buses, put `enabled = false` in `[train]` or `[bus]` (or remove the section); its `CHANGE_ME`s can stay. Trams are in `[metro]`, left out unless you want them (see [Tram times](trams.md) and [London](london.md)). `examples/glossop.toml` in the repo is a filled-in one to compare against.
 
 ## Where things are kept
 
@@ -55,7 +55,7 @@ The Dashboard page's settings can also go under `[dashboard]` in `config.toml`. 
 
 | Setting | Default | What it does |
 |---|---|---|
-| `train_rows`, `bus_rows` | 10, 15 | How many of each to list (1 to 20) |
+| `train_rows`, `bus_rows`, `metro_rows` | 10, 15, 10 | How many trains, buses and trams to list (1 to 20) |
 | `train_interval_seconds` | 60 | How often to check trains (at least 30) |
 | `bus_interval_seconds` | 30 | How often to check buses (at least 15) |
 | `weather_interval_minutes` | 30 | How often to check the forecast (at least 10) |
@@ -103,7 +103,7 @@ The rest, such as the calling points, coaches and the last buses, comes with the
 
 ## Modes of transport
 
-**Modes of transport** on the [Board](settings.md#board) and [Dashboard](settings.md#dashboard) pages saves which of trains and buses each view shows, `[board] modes` and `[dashboard] modes`, which can go in `config.toml` too:
+**Modes of transport** on the [Board](settings.md#board) and [Dashboard](settings.md#dashboard) pages saves which of trains, buses and trams each view shows, `[board] modes` and `[dashboard] modes`, which can go in `config.toml` too:
 
 ```toml
 [board]
@@ -113,7 +113,7 @@ modes = ["bus"]           # the board shows buses alone
 modes = ["train", "bus"]  # the dashboard lists both
 ```
 
-The modes are `train`, `bus` and `metro` (trams, metro and underground: Manchester's Metrolink trams, or London's Underground, DLR, trams, cable car and river buses live from TfL, set up by `[metro]`, and called Trams; see [Tram times](trams.md) and [London](london.md)). Each view shows them in that order, a section each, and checks only for those it shows. Without a list, a view shows every mode set up: one whose table is there and not switched off with `enabled = false`. A mode a list names that isn't set up is left out, and a list that names none of those set up is as if there were none, so switching buses off never leaves a board showing buses alone with nothing. A list that isn't one (`modes = "bus"`, a mode named twice, `modes = []`) stops the view loading, and says why.
+The modes are `train`, `bus` and `metro` (trams, metro and underground: Manchester's Metrolink trams, or London's Underground, DLR, trams, cable car and river buses live from TfL, set up by `[metro]`, and called Trams in the settings; London's section on the board and the dashboard is named for its stops, like Underground; see [Tram times](trams.md) and [London](london.md)). Each view shows them in that order, a section each, and checks only for those it shows. Without a list, a view shows every mode set up: one whose table is there and not switched off with `enabled = false`. A mode a list names that isn't set up is left out, and a list that names none of those set up is as if there were none, so switching buses off never leaves a board showing buses alone with nothing. A list that isn't one (`modes = "bus"`, a mode named twice, `modes = []`) stops the view loading, and says why.
 
 The dashboard lists every mode it shows. The board has the room its display gives it, in its look and text size, and a `[board] modes` naming more modes than that stops the board loading (the dashboard, with no display, loads all the same), saying how many fit: `[board] modes: The Inky pHAT has room for 2 modes at most, each with its own section, not 3`. Without a list it shows the first of those set up that fit. Each mode needs a section with its heading (in the station board look, a dotted rule) and at least one whole row; the board's text is sized to the display's height, so it is height that counts, not inches. E-paper has the same room in every look and at every text size:
 
@@ -131,7 +131,7 @@ An HDMI screen has room for 3 in the looks that keep a whole row for each, and 2
 
 So a screen showing three modes refuses a look and text size without room for them: `[board] modes: The 7.9-inch screen in the plain look at text size 14 has room for 2 modes at most, each with its own section, not 3; name fewer, or choose text size 12 or smaller, or another look`. While `[board] modes` names three, the [Board](settings.md#board) page offers only the text sizes with room for them, and the plain look only at one of those; changing the look or text size later is checked again before it is saved.
 
-Trains and buses have always shared every display, so each has room for at least those two. Sharing the board, each mode has a row, then the first modes take theirs first, up to 3 trains and 2 buses on e-paper (3 on a screen), as before; a mode alone takes all the rows there are.
+Trains and buses have always shared every display, so each has room for at least those two. Sharing the board, each mode has a row, then the first modes take theirs first, up to 3 trains and 2 buses on e-paper (3 on a screen), as before, and up to 3 trams; a mode alone takes all the rows there are.
 
 ## Rain warning set-up
 
@@ -144,7 +144,7 @@ lon = -1.95
 threshold_percent = 50
 ```
 
-`enabled = false` in `[weather]` switches the warning and the dashboard's forecast off and keeps the location, as **Show the weather: Off** on the Trains and buses page does. The board checks the forecast every 30 minutes, only while it is checking trains or buses, and only while it shows the rain warning (see [What each view shows](#what-each-view-shows)). If it can't be fetched, the last forecast is used for up to 3 hours.
+`enabled = false` in `[weather]` switches the warning and the dashboard's forecast off and keeps the location, as **Show the weather: Off** on the Trains and buses page does. The board checks the forecast every 30 minutes, only while it is checking trains, buses or trams, and only while it shows the rain warning (see [What each view shows](#what-each-view-shows)). If it can't be fetched, the last forecast is used for up to 3 hours.
 
 ## Bank holidays
 
