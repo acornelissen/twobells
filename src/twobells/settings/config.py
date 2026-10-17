@@ -45,6 +45,7 @@ from .schema import (
     board_room,
     bus_defaults,
     refused,
+    room_other,
     saved_keys,
     views,
 )
@@ -551,10 +552,14 @@ _BOARD_KEYS = {"show", "modes"}
 
 def board_modes(data: dict) -> tuple[str, ...]:
     """The modes the board shows by settings `data`, as many as its display
-    has room for (schema.board_room). ConfigError for a [board] modes that
-    isn't a list of modes, or names more than that."""
-    most, room = board_room(_text(data, "display", BOARD_DEFAULTS["display"]))
-    return mode_list.shown(data, "board", most, room)
+    has room for in its look and text size (schema.board_room). ConfigError
+    for a [board] modes that isn't a list of modes, or names more than that.
+    The look and text size are checked before this is asked."""
+    display = _text(data, "display", BOARD_DEFAULTS["display"])
+    look = _text(data, "theme", BOARD_DEFAULTS["theme"])
+    text_size = data.get("text_size", BOARD_DEFAULTS["text_size"])
+    return mode_list.shown(data, "board", *board_room(display, look, text_size),
+                           other=room_other(display, look, text_size))
 
 
 def _board_show(data: dict) -> frozenset[str]:

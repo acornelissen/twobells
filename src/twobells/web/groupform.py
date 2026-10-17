@@ -34,8 +34,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..board.displays.display import DISPLAY_PANELS
+from ..board.themes import THEMES
 from ..settings import modes, schema, show
-from ..settings.config import ConfigError, merge, settings_from
+from ..settings.config import ConfigError, board_modes, merge, settings_from
 from ..settings.overlay import BROKEN_NAME, OverlayError, save_to
 from ..settings.schema import Field, Invalid
 from . import places, windowrows
@@ -221,13 +222,23 @@ class GroupForm:
         except ConfigError as error:
             return base, str(error)
 
-    def _fields(self, data: dict, theme: str) -> list[Field]:
+    def _fields(self, data: dict, theme: str, text_size: object = None) -> list[Field]:
         """The fields on the form: those of its pages, while the view that uses
-        each is on. The TransportAPI allowance only while TransportAPI is used."""
+        each is on. The TransportAPI allowance only while TransportAPI is used.
+        The board's room for modes goes by `theme` and `text_size` (as sent,
+        or as saved when either is empty or no choice)."""
         display = data.get("display", schema.BOARD_DEFAULTS["display"])
         on = self._views_on(data)
+        theme = theme if theme in THEMES else str(data.get("theme", schema.BOARD_DEFAULTS["theme"]))
+        size = _text_size(text_size)
+        if size is None:
+            size = _text_size(data.get("text_size", schema.BOARD_DEFAULTS["text_size"]))
+        try:
+            chosen = len(modes.listed(data, "board") or ())
+        except ConfigError:
+            chosen = 0  # saving says what is wrong
         found = []
-        for f in schema.fields(str(display), theme):
+        for f in schema.fields(str(display), theme, size, chosen):
             if f.page not in self._pages or (f.group != "general" and f.group not in on):
                 continue
             if f.kind == "check" and (not self._choosing_views() or f.name.removeprefix("view_")
@@ -299,7 +310,7 @@ class GroupForm:
             data, broken = self._read()
         except (OSError, ConfigError) as error:
             return {"_form": f"Not saved: the settings can't be read ({error})"}
-        form = self._fields(data, fields.get("theme", ""))
+        form = self._fields(data, fields.get("theme", ""), fields.get("text_size"))
         # A section switched off keeps what is saved for it, for switching it back on:
         # a field left as shown is left alone, unchecked (it may be the template's
         # placeholder), and one changed is checked and saved, as with it on.
@@ -497,7 +508,7 @@ class GroupForm:
         except (OSError, ConfigError) as error:
             data, broken, unreadable = {}, "", str(error)
         shown = {**self._current(data), **(values or {})}
-        fields = self._fields(data, shown.get("theme", ""))
+        fields = self._fields(data, shown.get("theme", ""), shown.get("text_size"))
         unsaved: set[str] = set()
         if values is not None:  # drawn again as sent: an unticked box isn't sent, so it stays unticked
             shown |= {f.name: values.get(f.name, "") for f in fields if f.kind == "check"}
@@ -815,6 +826,15 @@ def _show_list(f: Field, shown: Mapping[str, str], error: str | None) -> str:
 # named "<field>-<mode>", in modes.MODES' order.
 
 
+def _text_size(value: object) -> int | None:
+    """A text size as saved or sent, if it is one of the choices; else None."""
+    if isinstance(value, str) and value.isdigit():
+        value = int(value)
+    if isinstance(value, bool) or not isinstance(value, int) or not 9 <= value <= 16:
+        return None
+    return value
+
+
 def _mode_boxes(f: Field, data: dict) -> list[str]:
     """The names of a modes list's tickboxes, one a mode set up, in order."""
     return [f"{f.name}-{key}" for key in modes.set_up(data)]
@@ -826,7 +846,7 @@ def _modes_shown(f: Field, data: dict) -> dict[str, str]:
     separated by spaces, to tell whether it changed. A list that doesn't
     load shows every mode set up; saving says what is wrong."""
     try:
-        on = modes.shown(data, f.group)
+        on = board_modes(data) if f.group == "board" else modes.shown(data, f.group)
     except ConfigError:
         on = modes.set_up(data)
     values = {f"{f.name}-{key}": "on" if key in on else "" for key in modes.set_up(data)}
@@ -838,13 +858,20 @@ def _save_modes(f: Field, data: dict, fields: Mapping[str, str], shown: Mapping[
                 changes: dict) -> dict[str, str]:
     """A modes list into `changes`, from its ticks; or its error. A list
     left as shown isn't written, so a view without one keeps showing every
-    mode set up, a mode set up later included."""
+    mode set up, a mode set up later included; one the view has is checked
+    as it stands, as the look or text size sent may leave less room."""
     try:
         ticked = [key for key in modes.set_up(data) if schema.ticked(fields.get(f"{f.name}-{key}", ""))]
-        value = f.check(" ".join(ticked))  # the ticks, in modes.MODES' order as set_up gives them
+        try:
+            kept = modes.listed(data, f.group)
+        except ConfigError:
+            kept = None
+        changed = " ".join(ticked) != shown.get(f.name)
+        # The ticks, in modes.MODES' order as set_up gives them; or the list kept.
+        value = f.check(" ".join(ticked if changed or kept is None else kept))
     except Invalid as error:
         return {f.name: str(error)}
-    if " ".join(ticked) != shown.get(f.name):
+    if changed:
         changes.setdefault(f.section, {})[f.key] = value
     return {}
 

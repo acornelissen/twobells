@@ -1067,16 +1067,26 @@ def test_a_board_showing_more_modes_than_its_display_has_room_for_is_refused(tmp
     text = BOTH + '[board]\nmodes = ["train", "bus", "metro"]\n'
     with pytest.raises(ConfigError, match=r"\[board\] modes: The Inky pHAT has room for 2 modes at most"):
         load_config(write(tmp_path, text), ENV)
-    with pytest.raises(ConfigError, match=r"The 11\.3-inch bar screen has room for 2"):
-        load_config(write(tmp_path, 'display = "hdmi-1920x440"\n' + text), ENV)
-    # The 10.85" e-paper has room for three; trams aren't set up, so trains and buses show.
-    settings = load_config(write(tmp_path, 'display = "waveshare-10in85g"\n' + text), ENV)
+    # A screen has room for three in the plain look up to a text size, and says what would give it room.
+    plain = 'display = "hdmi-1920x440"\ntheme = "plain"\ntext_size = 14\n'
+    with pytest.raises(ConfigError, match=r"\[board\] modes: The 11\.3-inch bar screen in the plain look at text "
+                                          r"size 14 has room for 2 modes at most, each with its own section, not 3; "
+                                          r"name fewer, or choose text size 13 or smaller, or another look"):
+        load_config(write(tmp_path, plain + text), ENV)
+    # The 10.85" e-paper has room for three, as a screen has in the station board look; trams aren't set up,
+    # so trains and buses show.
+    for display in ("waveshare-10in85g", "hdmi-1920x440"):
+        settings = load_config(write(tmp_path, f'display = "{display}"\n' + text), ENV)
+        assert settings.board.modes == ("train", "bus")
+    settings = load_config(write(tmp_path, plain.replace("14", "13") + text), ENV)
     assert settings.board.modes == ("train", "bus")
 
 
 def test_the_display_override_sets_the_room_too(tmp_path):
-    path = write(tmp_path, 'display = "waveshare-10in85g"\n' + BOTH + '[board]\nmodes = ["train", "bus", "metro"]\n')
-    with pytest.raises(ConfigError, match=r"The 7\.9-inch screen has room for 2"):
+    path = write(tmp_path, 'display = "waveshare-10in85g"\ntheme = "plain"\ntext_size = 13\n' + BOTH
+                 + '[board]\nmodes = ["train", "bus", "metro"]\n')
+    load_config(path, ENV)
+    with pytest.raises(ConfigError, match=r"The 7\.9-inch screen in the plain look at text size 13 has room for 2"):
         load_config(path, ENV, display="hdmi-1280x400")
 
 

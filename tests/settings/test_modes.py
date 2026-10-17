@@ -110,3 +110,85 @@ def test_each_display_says_how_many_modes_it_has_room_for_and_why():
 def test_the_lists_are_saved_settings():
     saved = schema.saved_keys()
     assert "modes" in saved["board"] and "modes" in saved["dashboard"]
+
+
+# A screen's room in its look and text size (board/panel.py: most_modes).
+
+
+def test_a_screen_says_its_room_in_its_look_and_text_size():
+    assert schema.board_room("hdmi-1280x400", "sign", 16) == (3, "the 7.9-inch screen in the station board look")
+    assert schema.board_room("hdmi-1280x400", "tft", 16) == (3, "the 7.9-inch screen in the TFT look")
+    assert schema.board_room("hdmi-1920x440", "plain", 13) == (3, "the 11.3-inch bar screen in the plain look at "
+                                                                  "text size 13")
+    assert schema.board_room("hdmi-1920x440", "plain", 14) == (2, "the 11.3-inch bar screen in the plain look at "
+                                                                  "text size 14")
+    # E-paper's room is the same in every look, so it says no look.
+    assert schema.board_room("inky", "plain", 9) == (2, "the Inky pHAT")
+    assert schema.board_room("waveshare-10in85g", "sign", 11) == (3, "the 10.85-inch e-paper panel")
+
+
+def test_a_screen_says_what_would_give_it_room_for_one_more():
+    assert schema.room_other("hdmi-1280x400", "plain", 13) == "text size 12 or smaller, or another look"
+    assert schema.room_other("hdmi-1280x400", "plain", 12) == ""
+    assert schema.room_other("hdmi-1280x400", "sign", 16) == ""
+    assert schema.room_other("inky", "plain", 16) == ""
+    assert schema.room_words("hdmi-1280x400", "plain", 14) == (
+        "The 7.9-inch screen in the plain look at text size 14 has room for 2, and for 3 with text size 12 or "
+        "smaller, or another look: each takes a section with its own heading, and the board's text is sized to "
+        "the display's height.")
+    assert schema.room_words("hdmi-1920x440", "plain", 11).startswith(
+        "The 11.3-inch bar screen in the plain look at text size 11 has room for 3, and for 2 from text size 14: ")
+    assert schema.room_words("hdmi-1280x400", "flap", 11).startswith(
+        "The 7.9-inch screen in the split-flap look has room for 3: ")
+
+
+def test_the_form_check_says_what_else_would_give_room():
+    with pytest.raises(Invalid) as refused:
+        modes.check(2, "the 7.9-inch screen in the plain look at text size 14",
+                    "text size 12 or smaller, or another look")("train bus metro")
+    assert str(refused.value) == ("The 7.9-inch screen in the plain look at text size 14 has room for 2 modes at most, "
+                                  "each with its own section, not 3. Untick 1, or choose text size 12 or smaller, "
+                                  "or another look.")
+
+
+def test_while_the_board_names_three_modes_a_screen_offers_only_the_text_sizes_with_room_for_them():
+    def field(name, *args):
+        return next(f for f in schema.fields(*args) if f.name == name)
+
+    sizes = [value for value, _ in field("text_size", "hdmi-1280x400", "plain", 11, 3).options]
+    assert sizes == ["9", "10", "11", "12"]
+    assert field("text_size", "hdmi-1280x400", "plain", 11, 3).hint.endswith(
+        "With 3 modes, the 7.9-inch screen has room for text up to size 12.")
+    assert [value for value, _ in field("text_size", "hdmi-1920x440", "sign", 11, 3).options][-1] == "13"
+    # Without a list, or with two, or on e-paper: every size.
+    for args in (("hdmi-1280x400", "plain", 11, 0), ("hdmi-1280x400", "plain", 11, 2), ("inky", "plain", 11, 2),
+                 ("waveshare-10in85g", "plain", 16, 3)):
+        assert len(field("text_size", *args).options) == 8, args
+    # The size in force always shows, so the page never changes it unasked.
+    assert [value for value, _ in field("text_size", "hdmi-1280x400", "sign", 14, 3).options][-1] == "14"
+
+
+def test_while_the_board_names_three_modes_a_screen_offers_the_plain_look_only_at_a_size_with_room():
+    looks = schema.fields("hdmi-1280x400", "sign", 14, 3)
+    theme = next(f for f in looks if f.name == "theme")
+    assert [value for value, _ in theme.options] == ["sign", "tft", "flap"]
+    assert theme.hint == ("The plain look isn't offered: at text size 14, the 7.9-inch screen has room for 2 modes, "
+                          "and the board shows 3. Choose text size 12 or smaller first, under Advanced, or fewer "
+                          "modes.")
+    theme = next(f for f in schema.fields("hdmi-1280x400", "sign", 12, 3) if f.name == "theme")
+    assert [value for value, _ in theme.options] == ["sign", "plain", "tft", "flap"] and theme.hint == ""
+    # The look in force always shows.
+    theme = next(f for f in schema.fields("hdmi-1280x400", "plain", 14, 3) if f.name == "theme")
+    assert "plain" in [value for value, _ in theme.options]
+
+
+def test_the_board_s_modes_check_goes_by_the_look_and_text_size():
+    def check(*args):
+        return next(f for f in schema.fields(*args) if f.name == "board_modes").check
+
+    assert check("hdmi-1280x400", "sign", 16)("train bus metro") == ["train", "bus", "metro"]
+    assert check("hdmi-1280x400", "plain", 12)("train bus metro") == ["train", "bus", "metro"]
+    with pytest.raises(Invalid, match="Untick 1, or choose text size 12 or smaller, or another look"):
+        check("hdmi-1280x400", "plain", 13)("train bus metro")
+    with pytest.raises(Invalid, match="The Inky pHAT has room for 2 modes at most"):
+        check("inky", "sign", 11)("train bus metro")

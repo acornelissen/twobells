@@ -4,11 +4,13 @@ from twobells.board import sign
 from twobells.board.panel import (
     HDMI_1280X400,
     HDMI_1920X440,
+    MORE_MODES_UP_TO,
     MOST_MODES,
     PANELS,
     PHAT,
     WAVESHARE_10IN85G,
     Panel,
+    biggest_text_for,
     most_modes,
     panel_name,
 )
@@ -57,7 +59,9 @@ def _section(mode, screen):
     if mode == "bus":
         rows = tuple(Row(f"34{i}", "Hyde", f"07:2{i}", stop="A", leave=f"Leave by 07:1{i}") for i in range(3))
         return Section("Buses", rows, "No buses", mode="bus")
-    rows = tuple(Row(f"07:1{i}", "Manchester Piccadilly", "On time", platform="Plat 1",
+    # Each mode its own times, so the rows drawn are counted a section at a time.
+    hour = KEYS.index(mode) + 7
+    rows = tuple(Row(f"{hour:02d}:1{i}", "Manchester Piccadilly", "On time", platform="Plat 1",
                      calling=_CALLING if screen and i == 0 else None) for i in range(3))
     return Section(mode, rows, "None", leave="Leave by 07:05", leave_for=0, mode=mode)
 
@@ -71,17 +75,18 @@ def _sign_rows(panel, modes):
     return [len({item.y for item in layout.items if item.text in {r.left for r in s.rows}}) for s in view.sections]
 
 
+def _fits_in(panel, count, look, size):
+    """Whether `count` modes each keep a whole row in `look` at text size
+    `size` (the plain look's; the others draw at their own)."""
+    if look == "sign":
+        return min(_sign_rows(panel, KEYS[:count])) >= 1
+    return rows_room(panel, count, size if look == "plain" else 11, calling=not panel.epaper) >= count
+
+
 def _fits(panel, count):
     """Whether `count` modes each keep a whole row in every look the panel has."""
-    for look in themes_for(panel.epaper):
-        if look == "sign":
-            if min(_sign_rows(panel, KEYS[:count])) < 1:
-                return False
-            continue
-        for size in _TEXT_SIZES if look == "plain" else (11,):
-            if rows_room(panel, count, size, calling=not panel.epaper) < count:
-                return False
-    return True
+    return all(_fits_in(panel, count, look, size) for look in themes_for(panel.epaper)
+               for size in (_TEXT_SIZES if look == "plain" else (11,)))
 
 
 @pytest.mark.parametrize("panel", PANELS.values(), ids=lambda p: p.name)
@@ -112,3 +117,41 @@ def test_a_short_display_has_no_row_for_a_third_mode_from_a_bigger_text_size(pan
     # The plain look: a screen with its "Calling at" line.
     assert rows_room(panel, 3, size - 1, calling=not panel.epaper) >= 3
     assert rows_room(panel, 3, size, calling=not panel.epaper) < 3
+
+
+# In a given look and text size (most_modes with a look): the HDMI screens
+# have room for a third mode where it keeps a whole row too.
+
+
+@pytest.mark.parametrize("panel", PANELS.values(), ids=lambda p: p.name)
+def test_each_look_and_text_size_has_room_for_the_modes_that_keep_a_row_each(panel):
+    for look in themes_for(panel.epaper):
+        for size in _TEXT_SIZES:
+            most = most_modes(panel, look, size)
+            assert most >= most_modes(panel)  # never less than in any look
+            if most > most_modes(panel):  # the room in any look is measured above
+                assert _fits_in(panel, most, look, size), (look, size)
+            if panel.name in MORE_MODES_UP_TO and most < len(KEYS):
+                assert not _fits_in(panel, most + 1, look, size), (look, size)
+
+
+def test_the_screens_have_room_for_three_modes_in_the_station_board_tft_and_split_flap_looks():
+    for panel in (HDMI_1280X400, HDMI_1920X440):
+        for look in ("sign", "tft", "flap"):
+            assert [most_modes(panel, look, size) for size in _TEXT_SIZES] == [3] * len(_TEXT_SIZES)
+
+
+def test_the_screens_have_room_for_three_in_the_plain_look_up_to_the_biggest_text_that_fits():
+    assert MORE_MODES_UP_TO == {"hdmi-1280x400": 12, "hdmi-1920x440": 13}
+    assert [most_modes(HDMI_1280X400, "plain", size) for size in _TEXT_SIZES] == [3, 3, 3, 3, 2, 2, 2, 2]
+    assert [most_modes(HDMI_1920X440, "plain", size) for size in _TEXT_SIZES] == [3, 3, 3, 3, 3, 2, 2, 2]
+    assert most_modes(HDMI_1280X400, "plain") == 3  # the standard size
+    assert (biggest_text_for(HDMI_1280X400, 3), biggest_text_for(HDMI_1920X440, 3)) == (12, 13)
+    assert biggest_text_for(HDMI_1280X400, 2) is None
+
+
+def test_e_paper_has_the_same_room_in_every_look():
+    for panel in (PHAT, WAVESHARE_10IN85G):
+        for look in themes_for(True):
+            assert {most_modes(panel, look, size) for size in _TEXT_SIZES} == {most_modes(panel)}
+        assert biggest_text_for(panel, 3) is None

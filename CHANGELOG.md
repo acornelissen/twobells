@@ -10,6 +10,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ### Changed
 
+- An HDMI screen has room for three modes of transport where its look and text size keep a whole row for each: the station board, TFT and split-flap looks, and the plain look up to text size 12 on the 7.9" screen and 13 on the bar screen. The Board settings page offers only the looks and text sizes with room for the modes the board shows, and says why; a `config.toml` without room says what would give it.
 - A board with only trains, or only buses, set up no longer draws an empty "No buses" or "No trains" section: the mode it shows takes the room. E-paper redraws once after updating.
 
 ## [0.2.3] - 2026-10-17

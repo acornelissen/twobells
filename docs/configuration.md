@@ -115,14 +115,21 @@ modes = ["train", "bus"]  # the dashboard lists both
 
 The modes are `train`, `bus` and `metro` (trams, metro and underground, which has no source yet, so it is never set up). Each view shows them in that order, a section each, and checks only for those it shows. Without a list, a view shows every mode set up: one whose table is there and not switched off with `enabled = false`. A mode a list names that isn't set up is left out, and a list that names none of those set up is as if there were none, so switching buses off never leaves a board showing buses alone with nothing. A list that isn't one (`modes = "bus"`, a mode named twice, `modes = []`) stops the view loading, and says why.
 
-The dashboard lists every mode it shows. The board has the room its display gives it, and a `[board] modes` naming more modes than that stops it loading, saying how many fit: `[board] modes: The Inky pHAT has room for 2 modes at most, each with its own section, not 3`. Without a list it shows the first of those set up that fit. Each mode needs a section with its heading (in the station board look, a dotted rule) and at least one whole row, in every look the display has and at every text size; the board's text is sized to the display's height, so it is height that counts, not inches:
+The dashboard lists every mode it shows. The board has the room its display gives it, in its look and text size, and a `[board] modes` naming more modes than that stops it loading, saying how many fit: `[board] modes: The Inky pHAT has room for 2 modes at most, each with its own section, not 3`. Without a list it shows the first of those set up that fit. Each mode needs a section with its heading (in the station board look, a dotted rule) and at least one whole row; the board's text is sized to the display's height, so it is height that counts, not inches. E-paper has the same room in every look and at every text size:
 
 | Display | Room for | Why |
 |---|---|---|
 | Inky pHAT, original Inky pHAT | 2 | With 3, the plain look has room for a row each at the standard text size and none for the third from size 13; the original pHAT has none for it even then |
 | Waveshare 10.85" e-paper | 3 | The plain look has 3 trains, 2 buses and a tram at the standard size, a row each at the biggest |
-| 7.9" HDMI screen | 2 | 133 dots tall, little more than the pHAT, and a screen's "Calling at" line takes a row: a row each at the standard size, none for the third from size 13 |
-| 11.3" HDMI bar screen | 2 | A row each beside the "Calling at" line at the standard size, none for the third from size 14 |
+
+An HDMI screen has room for 3 in the looks that keep a whole row for each, and 2 otherwise. A screen's "Calling at" line takes a row, and the plain look's text size (`text_size`) sets how tall each row is; the TFT and split-flap looks always draw at the standard size, 11:
+
+| Display | Room for 3 | Room for 2 |
+|---|---|---|
+| 7.9" HDMI screen | The station board, TFT and split-flap looks, and the plain look at text size 12 or smaller | The plain look from text size 13: 133 dots tall, little more than the pHAT, so the third mode has no row |
+| 11.3" HDMI bar screen | The station board, TFT and split-flap looks, and the plain look at text size 13 or smaller | The plain look from text size 14 |
+
+So a screen showing three modes refuses a look and text size without room for them: `[board] modes: The 7.9-inch screen in the plain look at text size 14 has room for 2 modes at most, each with its own section, not 3; name fewer, or choose text size 12 or smaller, or another look`. While `[board] modes` names three, the [Board](settings.md#board) page offers only the text sizes with room for them, and the plain look only at one of those; changing the look or text size later is checked again before it is saved.
 
 Trains and buses have always shared every display, so each has room for at least those two. Sharing the board, each mode has a row, then the first modes take theirs first, up to 3 trains and 2 buses on e-paper (3 on a screen), as before; a mode alone takes all the rows there are.
 

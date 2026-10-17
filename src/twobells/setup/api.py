@@ -53,8 +53,8 @@ install a view without one gets The usual.
 
 Modes of transport. `begin` also gives the modes setup sets up (trains
 from a station, buses from stops: SETUP_MODES), and for each view offered
-how many it has room for (the board's display; the dashboard has room for
-them all), why, in words, and the modes its list names now (None without
+how many it has room for (the board's display, in its look and text size;
+the dashboard has room for them all), why, in words, and the modes its list names now (None without
 one). `finish` takes, for any of the views on, the modes it shows, each one
 of those this finish sets up, saved as [board] modes or [dashboard] modes
 through the settings form's check: at least one, and no more than there is
@@ -464,7 +464,6 @@ def mode_choices(offered: Sequence[str], data: Mapping) -> dict:
     room for (None for as many as there are), why, and the modes its list
     names now (None without one, or with one that doesn't load), by
     settings `data`."""
-    display = str(data.get("display", schema.BOARD_DEFAULTS["display"]))
     views = {}
     for view in offered:
         try:
@@ -472,7 +471,8 @@ def mode_choices(offered: Sequence[str], data: Mapping) -> dict:
         except ConfigError:
             now = None
         if view == "board":
-            most, says = schema.board_room(display)[0], schema.room_words(display)
+            look = _board_look(data)
+            most, says = schema.board_room(*look)[0], schema.room_words(*look)
         else:
             most, says = None, "The dashboard lists them one after another."
         views[view] = {"now": list(now) if now is not None else None, "most": most, "says": says}
@@ -480,7 +480,18 @@ def mode_choices(offered: Sequence[str], data: Mapping) -> dict:
             "views": views}
 
 
-def _modes(value, on: Sequence[str], picked: Sequence[str], display: str) -> dict[str, list[str]]:
+def _board_look(data: Mapping) -> tuple[str, str | None, int | None]:
+    """(display, look, text size) of the board by settings `data`, which
+    say how many modes it has room for (schema.board_room); a look or text
+    size that isn't one counts as none, for the loader to refuse."""
+    display = str(data.get("display", schema.BOARD_DEFAULTS["display"]))
+    look = data.get("theme", schema.BOARD_DEFAULTS["theme"])
+    size = data.get("text_size", schema.BOARD_DEFAULTS["text_size"])
+    return (display, look if isinstance(look, str) else None,
+            size if isinstance(size, int) and not isinstance(size, bool) else None)
+
+
+def _modes(value, on: Sequence[str], picked: Sequence[str], data: Mapping) -> dict[str, list[str]]:
     """The modes to show: for any of the views `on`, at least one of those
     `picked` (this finish sets up), and no more than the view has room for."""
     if not isinstance(value, dict) or any(view not in on for view in value):
@@ -493,7 +504,11 @@ def _modes(value, on: Sequence[str], picked: Sequence[str], display: str) -> dic
         if (not isinstance(keys, list) or len(keys) > len(modes.KEYS)
                 or not all(isinstance(key, str) and key in picked for key in keys)):
             raise Invalid("Pick only the modes being set up", "modes")
-        check = modes.check(*schema.board_room(display)) if view == "board" else modes.check()
+        if view == "board":
+            look = _board_look(data)
+            check = modes.check(*schema.board_room(*look), other=schema.room_other(*look))
+        else:
+            check = modes.check()
         try:
             chosen[view] = check(" ".join(keys))
         except schema.Invalid as error:
@@ -1027,8 +1042,7 @@ class SetupApi:
         picked = [key for key, chosen in (("train", station), ("bus", stops)) if chosen]
         shown_modes = {}
         if "modes" in fields:
-            display = str(self._settings().get("display", schema.BOARD_DEFAULTS["display"]))
-            shown_modes = _modes(fields["modes"], on, picked, display)
+            shown_modes = _modes(fields["modes"], on, picked, self._settings())
 
         changes = setup.config_fragment(home, station, [(label, self._stop(atco)) for label, atco in stops.items()],
                                         walk)

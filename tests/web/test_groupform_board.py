@@ -920,3 +920,43 @@ def test_with_one_mode_set_up_there_is_nothing_to_choose(tmp_path):
     config.write_text(CONFIG.format(state=state / "state.json").replace("[bus]\n", "[bus]\nenabled = false\n"))
     page = board_form(config, lambda: dict(ENV)).render("tok")
     assert "board_modes" not in page and "Modes of transport" not in page
+
+
+# A screen's room for modes goes by its look and text size (board/panel.py: most_modes).
+
+
+def _screen_form(tmp_path, extra=""):
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    text = CONFIG.format(state=state / "state.json").replace(
+        'theme = "sign"\n', 'theme = "sign"\ndisplay = "hdmi-1280x400"\n' + extra)
+    config.write_text(text + '\n[board]\nmodes = ["train", "bus", "metro"]\n')
+    return board_form(config, lambda: dict(ENV)), config
+
+
+def test_a_screen_naming_three_modes_offers_only_the_text_sizes_with_room_for_them(tmp_path):
+    form, _ = _screen_form(tmp_path)
+    page = form.render("tok")
+    select = page[page.index('<select id="text_size"'):]
+    select = select[:select.index("</select>")]
+    assert re.findall(r'<option value="(\d+)"', select) == ["9", "10", "11", "12"]
+    assert "With 3 modes, the 7.9-inch screen has room for text up to size 12." in page
+    assert "The 7.9-inch screen in the station board look has room for 3: each takes a section" in page
+
+
+def test_a_screen_refuses_a_look_and_text_size_without_room_for_the_modes_named(tmp_path):
+    form, config = _screen_form(tmp_path)
+    errors = form.save(fields_of(form) | {"theme": "plain", "accent": "", "text_size": "13"})
+    assert errors == {"board_modes": "The 7.9-inch screen in the plain look at text size 13 has room for 2 modes at "
+                                     "most, each with its own section, not 3. Untick 1, or choose text size 12 or "
+                                     "smaller, or another look."}
+    assert form.save(fields_of(form) | {"theme": "plain", "accent": "", "text_size": "12"}) == {}
+    assert load_config(config, ENV).board.theme.text_size == 12
+
+
+def test_a_screen_naming_three_modes_at_a_big_text_size_offers_no_plain_look(tmp_path):
+    form, _ = _screen_form(tmp_path, "text_size = 14\n")
+    page = form.render("tok")
+    assert 'value="plain"' not in page
+    assert "The plain look isn&#x27;t offered: at text size 14, the 7.9-inch screen has room for 2 modes" in page
+    assert form.save(fields_of(form)) == {}  # as it is, in the station board look, it saves

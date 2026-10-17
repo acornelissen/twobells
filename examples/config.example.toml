@@ -73,8 +73,10 @@ rotate = 0
 # show = ["platforms", "where", "disruption", "rain", "last_bus", "bus_page"]
 # Which modes of transport the board shows, a section each: "train" and "bus"
 # ("metro" has no source yet). Also Modes of transport on the Board tab.
-# Without it, every mode set up. The 10.85" e-paper has room for 3, every
-# other display for 2; naming more stops the board loading.
+# Without it, every mode set up. The 10.85" e-paper has room for 3, the Inky
+# pHATs for 2, and an HDMI screen for 3 in the station board, TFT and
+# split-flap looks and in the plain look up to text_size 12 (the 7.9") or 13
+# (the bar screen), 2 above it; naming more stops the board loading.
 # modes = ["train", "bus"]
 
 # Which views are on: "board" (a Pi only), "dashboard", or both. The setup

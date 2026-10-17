@@ -18,9 +18,9 @@ out, and a list that leaves none is as if there were none, so switching a
 mode off never leaves a view empty.
 
 The dashboard lists every mode it shows, one after another. The board has
-the room its display gives it (board/panel.py: Panel.most_modes): a list
-naming more than that is refused, and without a list it shows the first
-of those set up that fit.
+the room its display gives it in its look and text size (board/panel.py:
+most_modes): a list naming more than that is refused, and without a list
+it shows the first of those set up that fit.
 
 This module imports nothing of the app's, so the board, the dashboard and
 the settings can all use it.
@@ -126,17 +126,20 @@ def too_many(count: int, most: int, room: str) -> str:
             f"not {count}")
 
 
-def shown(data: Mapping, view: str, most: int | None = None, room: str = "this display") -> tuple[str, ...]:
+def shown(data: Mapping, view: str, most: int | None = None, room: str = "this display",
+          other: str = "") -> tuple[str, ...]:
     """The modes `view` shows by settings `data`, in MODES' order: those
     its list names that are set up; without a list, or with one naming none
     set up, every mode set up, the first `most` of them if `most` says how
     many fit. ConfigError for a list that isn't one, or names more than
-    `most` (`room` says where, for the words)."""
+    `most` (`room` says where, for the words, and `other` what else would
+    give room for more: "text size 12 or smaller, or another look")."""
     from .config import ConfigError
 
     named = listed(data, view)
     if named is not None and most is not None and len(named) > most:
-        raise ConfigError(f"[{view}] modes: {too_many(len(named), most, room)}")
+        fix = f"; name fewer, or choose {other}" if other else ""
+        raise ConfigError(f"[{view}] modes: {too_many(len(named), most, room)}{fix}")
     ready = set_up(data)
     chosen = ordered([key for key in named if key in ready]) if named is not None else ()
     if not chosen:
@@ -144,10 +147,11 @@ def shown(data: Mapping, view: str, most: int | None = None, room: str = "this d
     return chosen
 
 
-def check(most: int | None = None, room: str = "") -> Callable[[str], list[str]]:
+def check(most: int | None = None, room: str = "", other: str = "") -> Callable[[str], list[str]]:
     """A settings form's check of a view's ticked modes, sent as their keys
     separated by spaces: the list to save, in MODES' order. schema.Invalid
-    for none, a key that is no mode, or more than `most` (`room` says where)."""
+    for none, a key that is no mode, or more than `most` (`room` says where,
+    and `other` what else would give room for more)."""
     from .schema import Invalid
 
     def check_list(raw: str) -> list[str]:
@@ -157,6 +161,7 @@ def check(most: int | None = None, room: str = "") -> Callable[[str], list[str]]
         if any(key not in KEYS for key in keys) or len(set(keys)) != len(keys):
             raise Invalid("Tick only the modes listed")
         if most is not None and len(keys) > most:
-            raise Invalid(f"{too_many(len(keys), most, room)}. Untick {len(keys) - most}.")
+            fix = f", or choose {other}" if other else ""
+            raise Invalid(f"{too_many(len(keys), most, room)}. Untick {len(keys) - most}{fix}.")
         return list(ordered(keys))
     return check_list

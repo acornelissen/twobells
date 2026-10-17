@@ -16,7 +16,8 @@ dashconfig.DashboardOptions, and its fields show the same values.
 
 [app] views says which views are on (views()), and each view's modes list
 which modes it shows (settings/modes.py); the board's display has room for
-so many (board_room). The checks the fields use,
+so many (board_room), more on a screen in some looks and text sizes. The
+checks the fields use,
 and the patterns setup and its spool check against, are defined once here.
 """
 
@@ -32,7 +33,7 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, available_timezones
 
 from ..board.displays.display import DISPLAY_PANELS
-from ..board.panel import most_modes, panel_name
+from ..board.panel import biggest_text_for, most_modes, panel_name
 from ..board.themes import THEMES, themes_for
 from ..core.polling import parse_window
 from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES
@@ -253,18 +254,66 @@ def https_feed(raw: str) -> str:
     return value
 
 
-def board_room(display: str) -> tuple[int, str]:
+# The looks by name, in a sentence: "the 7.9-inch screen in the plain look".
+_LOOK_NAMES = {"sign": "the station board look", "plain": "the plain look", "tft": "the TFT look",
+               "flap": "the split-flap look"}
+
+
+def _panel_of(display: str):
+    return DISPLAY_PANELS.get(display, DISPLAY_PANELS["inky"])
+
+
+def _sized(theme: str | None, text_size: int | None) -> bool:
+    """Whether the room depends on the text size: only in the plain look."""
+    return theme == "plain" and text_size is not None
+
+
+def board_room(display: str, theme: str | None = None, text_size: int | None = None) -> tuple[int, str]:
     """(how many modes the board's `display` has room for, the display in
-    words), from board/panel.py: (2, "the Inky pHAT")."""
-    panel = DISPLAY_PANELS.get(display, DISPLAY_PANELS["inky"])
-    return most_modes(panel), panel_name(panel)
+    words), from board/panel.py: (2, "the Inky pHAT"). Given the look
+    (`theme`) and the plain look's `text_size`, in that look, which on a
+    screen has room for more in some: (3, "the 7.9-inch screen in the
+    station board look")."""
+    panel = _panel_of(display)
+    room = panel_name(panel)
+    if theme is None or most_modes(panel, theme, 9) == most_modes(panel):
+        return most_modes(panel), room  # the same in every look
+    where = f"{room} in {_LOOK_NAMES.get(theme, 'this look')}"
+    if _sized(theme, text_size):
+        where += f" at text size {text_size}"
+    return most_modes(panel, theme, text_size), where
 
 
-def room_words(display: str) -> str:
+def room_other(display: str, theme: str | None = None, text_size: int | None = None) -> str:
+    """What gives the board room for one mode more where the plain look's
+    text size takes it away, in words ("text size 12 or smaller, or another
+    look"); empty elsewhere."""
+    panel = _panel_of(display)
+    if theme is None or most_modes(panel, theme, text_size) == most_modes(panel, "sign"):
+        return ""
+    biggest = biggest_text_for(panel, most_modes(panel, "sign"))
+    return f"text size {biggest} or smaller, or another look" if biggest is not None else ""
+
+
+def room_words(display: str, theme: str | None = None, text_size: int | None = None) -> str:
     """Why the board shows only so many modes, in words, for the settings and setup."""
-    most, room = board_room(display)
-    return (f"{room[:1].upper()}{room[1:]} has room for {most}: each takes a section with its own heading, and "
-            "the board's text is sized to the display's height.")
+    most, room = board_room(display, theme, text_size)
+    said = f"{room[:1].upper()}{room[1:]} has room for {most}"
+    other = room_other(display, theme, text_size)
+    panel = _panel_of(display)
+    biggest = biggest_text_for(panel, most)
+    if other:
+        said += f", and for {most + 1} with {other}"
+    elif _sized(theme, text_size) and biggest is not None:
+        said += f", and for {most - 1} from text size {biggest + 1}"
+    return f"{said}: each takes a section with its own heading, and the board's text is sized to the display's height."
+
+
+def text_sizes_for(display: str, chosen: int) -> int | None:
+    """The biggest text size the plain look may take while the board's list
+    names `chosen` modes, where the display has room for them only up to
+    one; None where any size does."""
+    return biggest_text_for(_panel_of(display), chosen) if chosen else None
 
 
 def _accents(display: str, theme: str) -> tuple[str, ...]:
@@ -439,11 +488,31 @@ _CHECKING = ("Outside these times the board shows what it last knew, without say
              "count as Sundays, unless the General page says to ignore them.")
 
 
-def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
+def fields(display: str = "inky", theme: str = "sign", text_size: int | None = None,
+           chosen: int = 0) -> tuple[Field, ...]:
     """Every field, in the order the pages show them. The looks, accents and
-    turns offered depend on the display and the look."""
-    epaper = DISPLAY_PANELS.get(display, DISPLAY_PANELS["inky"]).epaper
+    turns offered depend on the display and the look; the modes the board
+    has room for on the look and `text_size` too. While the board's modes
+    list names `chosen` modes (0: it has none), the looks and text sizes
+    offered are those with room for them, and the look and text size in
+    force, so a field always shows what is saved."""
+    panel = DISPLAY_PANELS.get(display, DISPLAY_PANELS["inky"])
+    epaper = panel.epaper
+    size = text_size if text_size is not None else BOARD_DEFAULTS["text_size"]
     looks = themes_for(epaper)
+    offered_looks = tuple(look for look in looks
+                          if look == theme or not chosen or most_modes(panel, look, size) >= chosen)
+    look_hint = ""
+    if offered_looks != looks:
+        most = most_modes(panel, "plain", size)
+        look_hint = (f"The plain look isn't offered: at text size {size}, {panel_name(panel)} has room for {most} "
+                     f"modes, and the board shows {chosen}. Choose text size {text_sizes_for(display, chosen)} or "
+                     "smaller first, under Advanced, or fewer modes.")
+    biggest = text_sizes_for(display, chosen)
+    sizes = tuple(s for s in _TEXT_SIZES if biggest is None or int(s) <= biggest or int(s) == size)
+    size_hint = "The plain look only. Bigger text shows fewer departures on a small display."
+    if biggest is not None:
+        size_hint += f" With {chosen} modes, {panel_name(panel)} has room for text up to size {biggest}."
     rotations = ("0", "180") if epaper else ("0", "90", "180", "270")
     accents = _accents(display, theme)
     board, train, bus = BOARD_DEFAULTS, BOARD_DEFAULTS["train"], BOARD_DEFAULTS["bus"]
@@ -487,7 +556,7 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               page="trains_buses", heading="Weather", width="3", unit="%"),
         # The board's own.
         Field("theme", "board", None, "theme", "Look", _look(looks), "radios", default=board["theme"],
-              options=tuple((name, THEMES[name].label) for name in looks),
+              options=tuple((name, THEMES[name].label) for name in offered_looks), hint=look_hint,
               page="board", heading="Display"),
         Field("rotate", "board", None, "rotate", "Rotation", whole_choice(rotations), "radios",
               hint="Degrees clockwise, to suit how the display is mounted.",
@@ -505,12 +574,12 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               default=board["min_redraw_minutes"], page="board", heading="Display", tier="advanced",
               width="3", unit="minutes"),
         Field("text_size", "board", None, "text_size", "Text size", whole_choice(_TEXT_SIZES), "select",
-              hint="The plain look only. Bigger text shows fewer departures on a small display.",
-              options=tuple((s, f"{s} ({_TEXT_SIZE_NAMES[s]})" if s in _TEXT_SIZE_NAMES else s)
-                            for s in _TEXT_SIZES),
+              hint=size_hint,
+              options=tuple((s, f"{s} ({_TEXT_SIZE_NAMES[s]})" if s in _TEXT_SIZE_NAMES else s) for s in sizes),
               default=board["text_size"], page="board", heading="Display", tier="advanced"),
-        Field("board_modes", "board", "board", "modes", "Modes of transport", modes.check(*board_room(display)),
-              "modes", hint=f"{_MODES} {room_words(display)}", page="board", heading="Modes of transport"),
+        Field("board_modes", "board", "board", "modes", "Modes of transport",
+              modes.check(*board_room(display, theme, size), other=room_other(display, theme, size)), "modes",
+              hint=f"{_MODES} {room_words(display, theme, size)}", page="board", heading="Modes of transport"),
         Field("board_show", "board", "board", "show", "What to show", show.check("board"), "show",
               default=show.ordered("board", show.default("board")),
               hint="The departures' times always show. What says “Screens only” shows only on an HDMI screen.",

@@ -84,10 +84,11 @@ HDMI_1920X440 = Panel("hdmi-1920x440", 1920, 440, scale=4, epaper=False)
 PANELS = {p.name: p for p in (PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400, HDMI_1920X440)}
 
 # How many modes (settings/modes.py) each panel has room for, a section
-# each: as many as keep every one of them at least one whole row in every
-# look the panel has, at every text size the plain look offers. The type is
-# sized to the panel's height, so it is height that counts, not inches. Each
-# section takes a heading (the sign look: a dotted rule) as well as its rows.
+# each, in any look: as many as keep every one of them at least one whole
+# row in every look the panel has, at every text size the plain look offers.
+# The type is sized to the panel's height, so it is height that counts, not
+# inches. Each section takes a heading (the sign look: a dotted rule) as well
+# as its rows.
 #
 # - The pHATs: 2. With 3, the plain look has room for 1 row each at the
 #   standard size and none for the third from text size 13 (122 rows); the
@@ -106,6 +107,21 @@ PANELS = {p.name: p for p in (PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400, H
 # fewer than 2 (the original pHAT's biggest text cuts its last row short).
 # tests/board/test_panel.py measures these against the looks' layouts.
 MOST_MODES = {PHAT.name: 2, PHAT_V1.name: 2, WAVESHARE_10IN85G.name: 3, HDMI_1280X400.name: 2, HDMI_1920X440.name: 2}
+
+# The HDMI screens have room for one mode more in the looks that keep it a
+# whole row too: the station board look (its dots are fixed), the TFT and
+# split-flap looks (drawn at the standard text size, 11), and the plain look
+# up to the biggest text size that does, given here. Bigger than that, the
+# plain look keeps MOST_MODES.
+#
+# - The 7.9" screen: up to 12, with a row each for 3 modes at 12 and 2 rows
+#   for the first two; at 13 the third has none.
+# - The 11.3" bar screen: up to 13, a row each at 13; at 14 the third has none.
+#
+# The e-paper panels keep MOST_MODES whatever the look, so changing the look
+# on e-paper never changes how many modes fit. tests/board/test_panel.py
+# measures these too.
+MORE_MODES_UP_TO = {HDMI_1280X400.name: 12, HDMI_1920X440.name: 13}
 # What the settings call each panel, in a sentence: "The Inky pHAT has room for 2".
 PANEL_NAMES = {
     PHAT.name: "the Inky pHAT",
@@ -116,10 +132,28 @@ PANEL_NAMES = {
 }
 
 
-def most_modes(panel: Panel) -> int:
-    """How many modes `panel` has room for (MOST_MODES); 2 for a panel of
-    another size, as an Inky the library detects can be."""
-    return MOST_MODES.get(panel.name, 2)
+def most_modes(panel: Panel, look: str | None = None, text_size: int | None = None) -> int:
+    """How many modes `panel` has room for: in any look (MOST_MODES), or,
+    given the `look` by name, in that look, with `text_size` the plain look's
+    text size (None: the standard). 2 for a panel of another size, as an Inky
+    the library detects can be."""
+    most = MOST_MODES.get(panel.name, 2)
+    biggest = MORE_MODES_UP_TO.get(panel.name)
+    if look is None or biggest is None:
+        return most
+    if look == "plain" and text_size is not None and text_size > biggest:
+        return most
+    return most + 1
+
+
+def biggest_text_for(panel: Panel, count: int) -> int | None:
+    """The biggest plain-look text size at which `panel` has room for
+    `count` modes, where only some sizes do; None where every size does, or
+    none (most_modes says which)."""
+    biggest = MORE_MODES_UP_TO.get(panel.name)
+    if biggest is None or count <= MOST_MODES.get(panel.name, 2):
+        return None
+    return biggest
 
 
 def panel_name(panel: Panel) -> str:

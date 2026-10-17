@@ -1217,11 +1217,20 @@ def test_begin_offers_the_modes_setup_sets_up_and_each_view_s_room(both):
     assert offered["offered"] == [{"name": "train", "label": "Trains"}, {"name": "bus", "label": "Buses"}]
     board, dashboard = offered["views"]["board"], offered["views"]["dashboard"]
     assert (board["most"], board["now"]) == (2, None)
-    assert board["says"].startswith("The 7.9-inch screen has room for 2: each takes a section")  # its display
+    # Its display, in its look and text size: the plain look at 13.
+    assert board["says"].startswith("The 7.9-inch screen in the plain look at text size 13 has room for 2, and for 3 "
+                                    "with text size 12 or smaller, or another look: each takes a section")
     assert (dashboard["most"], dashboard["now"]) == (None, None)
     (both.state / "settings.toml").write_text(SET_UP + '[board]\nmodes = ["bus"]\n[dashboard]\nmodes = "x"\n')
     views = ok(both, "begin")["modes"]["views"]
     assert (views["board"]["now"], views["dashboard"]["now"]) == (["bus"], None)  # one that doesn't load: none
+
+
+def test_a_screen_has_room_for_three_modes_in_the_station_board_look(both):
+    (both.state / "settings.toml").write_text('theme = "sign"\n' + SET_UP)
+    board = ok(both, "begin")["modes"]["views"]["board"]
+    assert board["most"] == 3
+    assert board["says"].startswith("The 7.9-inch screen in the station board look has room for 3: each takes")
 
 
 def _both_modes(api, **finish):
