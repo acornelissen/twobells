@@ -166,13 +166,13 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
 
 - **Status:**
   - `status` is one of `on_time`, `late`, `cancelled`, `unknown`.
-  - `status_text` is always words, the same words the board uses: "On time", "Exp 07:19" (late, expected at 07:19), "Delayed" (late, no expected time yet), "Cancelled", "No report" (a train with no live report), "Timetable only" (a bus with no live position). Colour only reinforces it.
+  - `status_text` is always words, the same words the board uses: "On time", "Exp 07:19" (late, expected at 07:19), "Delayed" (late, no expected time yet), "Cancelled", "No report" (a train with no live report), "Timetable only" (a bus with no live position, and every Metrolink tram), "Live" (every London row). Colour only reinforces it.
   - `status_spoken` is `status_text` with nothing shortened ("Expected 07:19"), for screen readers. It is the same as `status_text` unless that is abbreviated.
   - `minutes_late` is null unless the status is late with a known time.
-- **`walk_min`:** the walk to the station or to the row's stop, in whole minutes, as set for the board (`walk.train`, or `walk.bus` for the stop, else its `*`). It is null when no walk time is set. A cancelled row still has it.
+- **`walk_min`:** the walk to the station or to the row's stop, in whole minutes, as set for the board (`walk.train`, or `walk.bus` or `walk.metro` for the stop, else its `*`). It is null when no walk time is set. A cancelled row still has it.
 - **`leave_at`:** when to set off on foot (`expected_at` or else `scheduled_at`, minus `walk_min`). It is null when cancelled or no walk time is set.
 - **Missing data:**
-  - A section can be `null` when it isn't configured (`trains`, `buses`, `metro`, `weather`).
+  - A section can be `null` when it isn't configured or is switched off (`trains`, `buses`, `metro`, `weather`), and `trains`, `buses` and `metro` when `[dashboard] modes` leaves their mode out.
   - `now`, `sun`, `rain`, `strip`, `vehicle`, `position` and `formation` can each be null.
   - `calling_points` and `previous_points` can be `[]`, and `calling_at` null.
 - **Train `messages`** (National Rail's own messages for the station, at most 3, plain text):
@@ -273,7 +273,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `label` is `Underground`, `DLR`, `Trams`, `Cable car` or `River buses` for stops all of one kind, else `Metro`. `live` is true and `timetable` null: there is nothing to build.
   - `stops` as for Metrolink's, `name` from the bundled list of London's stops ("Bank DLR" for a DLR station).
   - Every row is live: TfL gives when it is expected and no booked time, so `scheduled` and `scheduled_at` are the expected time too, `status` is always `on_time`, and there is no history (`GET /api/history/<id>` doesn't know them). `line` is the line as said ("Central line", "DLR", "RB1"), `line_id` TfL's id for it, `kind` one of `tube`, `dlr`, `tram`, `cable-car` or `river-bus`. `via`, `platform`, `bound` ("Eastbound") and `where` (TfL's words for where it is now) can each be null.
-  - `messages` are as the trains' are: `service` for a line at your stops not running well, from TfL's line status every 5 minutes (each line's status older than 30 minutes is dropped); `station` for a lift, escalator or step-free access at one of your stations. `category` is always null.
+  - `messages` are as the trains' are: `service` for a line at your stops not running well, from TfL's line status every 5 minutes; `station` for a lift, escalator or step-free access at one of your stations, from the same check. Up to 6 `service` and 3 `station` messages; all of them are dropped once the last check that worked is over 30 minutes old. `category` is always null.
   - **On the page:** the section takes `label` as its heading; each row counts down with the live mark, says its line (with the line's colour beside it), which way and its platform, and where it is; Next to catch takes them as live. `service` messages join the disruption line under the hero, headed by `label`; `station` ones are a quiet "Station information" line in the section.
 - **`walk`:** the walk times as set, by mode and stop label (`*` for any stop): `train`, `bus` and `metro` (the tram stops, or London's). The page reads `walk.train` for the trains' walk line; `walk_min` on rows and stops supersedes the rest.
 - **`quiet`:** true while one of the dashboard's quiet windows (`quiet_windows`, bank holidays counted as Sundays) is on, else false. It is worked out once a minute, so it can be up to a minute behind the window. The wall-tablet page (`/?kiosk`) dims while it is true.
