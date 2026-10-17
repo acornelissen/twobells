@@ -31,8 +31,9 @@ export const state = {
   back: "", // where Back on a shortcut's first step goes, a path like /settings, from begin
   // Today's choices, from saved: {home: {lat, lon} | null, to about a kilometre,
   // station: {crs, name, walk} | null, filter: {crs, name} | null,
-  // stops: [{label, atco, name, indicator, walk}]}; walk is minutes or null.
-  saved: { home: null, station: null, filter: null, stops: [] },
+  // stops: [{label, atco, name, indicator, walk}], trams: [{label, code, name, walk}]};
+  // walk is minutes or null.
+  saved: { home: null, station: null, filter: null, stops: [], trams: [] },
   home: null, // {lat, lon, label, country}; exact, so it stays in this page and the server's memory
   stations: [],
   stationsFor: "",
@@ -43,6 +44,14 @@ export const state = {
   stopsFor: "",
   labels: new Map(), // atco -> label typed, for stops ticked
   chosen: [], // [{label, atco, name, indicator}], when leaving the stops step
+  // Tram stops: those near home (and today's), [{code, name, distance_m}];
+  // whether there are any, so a step for them; the codes ticked; and
+  // [{label, code, name}] when leaving the step.
+  trams: [],
+  tramsFor: "",
+  askTrams: false,
+  tramsTicked: new Set(),
+  chosenTrams: [],
   walk: [], // [{key, what, minutes, source}]
   walkFor: "",
   walkMinutes: {}, // key -> minutes, when leaving the walk step
@@ -52,9 +61,9 @@ export const state = {
 };
 
 // The modes this run of the wizard sets up: trains with a station, buses with
-// stops, in the order begin offers them.
+// stops, trams with tram stops, in the order begin offers them.
 export function pickedModes() {
-  const picked = { train: Boolean(state.station), bus: state.chosen.length > 0 };
+  const picked = { train: Boolean(state.station), bus: state.chosen.length > 0, metro: state.chosenTrams.length > 0 };
   return state.modes.offered.filter((mode) => picked[mode.name]);
 }
 

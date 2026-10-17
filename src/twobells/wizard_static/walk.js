@@ -47,6 +47,7 @@ function drawWalk() {
 // station's while it is the same station, and each stop's still ticked.
 function keepSavedWalks() {
   const saved = new Map(state.saved.stops.map((stop) => [stop.atco, stop.walk]));
+  for (const tram of state.saved.trams) saved.set(tram.code, tram.walk);
   if (state.saved.station) saved.set(state.saved.station.crs, state.saved.station.walk);
   for (const walk of state.walk) {
     const minutes = saved.get(walk.key);
@@ -59,11 +60,13 @@ export async function enterWalk() {
   // A shortcut asks only about its own part.
   const station = state.only === "stops" ? null : state.station;
   const stops = state.only === "station" ? [] : state.chosen;
-  const key = JSON.stringify([homeKey(), station && station.crs, stops.map((s) => s.atco)]);
+  const trams = state.only ? [] : state.chosenTrams;
+  const key = JSON.stringify([homeKey(), station && station.crs, stops.map((s) => s.atco), trams.map((t) => t.code)]);
   if (state.walkFor === key) return; // keep what was typed
   state.walk = [];
   if (station) state.walk.push({ key: station.crs, what: `${station.name} station` });
   for (const stop of stops) state.walk.push({ key: stop.atco, what: `stop ${stop.label}, ${stopName(stop)}` });
+  for (const tram of trams) state.walk.push({ key: tram.code, what: `${tram.name} tram stop` });
   for (const walk of state.walk) Object.assign(walk, { minutes: null, source: "none" });
   if (state.only) keepSavedWalks();
   const asking = state.walk.filter((walk) => walk.source === "none").map((walk) => walk.key);
@@ -75,6 +78,7 @@ export async function enterWalk() {
         home: { lat: state.home.lat, lon: state.home.lon },
         station_crs: station && asking.includes(station.crs) ? station.crs : null,
         stop_atcos: stops.map((s) => s.atco).filter((atco) => asking.includes(atco)),
+        ...(trams.length ? { tram_codes: trams.map((t) => t.code).filter((code) => asking.includes(code)) } : {}),
       });
       const found = obj(data.walk) || {};
       for (const walk of state.walk) {

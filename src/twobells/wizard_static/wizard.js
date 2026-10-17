@@ -26,6 +26,7 @@ import { state } from "./state.js";
 import { enterStation, setUpStation } from "./station.js";
 import { LEAVE, go, numberSteps } from "./steps.js";
 import { enterStops, setUpStops } from "./stops.js";
+import { setUpTrams } from "./trams.js";
 import { leaveViews } from "./views.js";
 import { leaveWalk } from "./walk.js";
 
@@ -37,6 +38,7 @@ const PATH = /^\/(?!\/)[A-Za-z0-9._~/-]*$/; // a plain path on this site, like /
 const CRS = /^[A-Za-z]{3}$/;
 const LABEL = /^[A-Za-z0-9]{1,3}$/;
 const ATCO = /^[0-9]{3}[0-9A-Za-z]{1,9}$/;
+const TRAM = /^9400ZZMA[A-Z]{3}$/;
 const MAX_WALK = 60;
 // The shortcuts a link may ask for with ?step=, and their page titles.
 // Anything else starts the whole wizard at home.
@@ -64,6 +66,8 @@ function readSaved(data) {
     filter: filter && CRS.test(str(filter.crs)) ? { crs: filter.crs, name: str(filter.name) || filter.crs } : null,
     stops: list(data.stops).map(obj).filter((s) => s && LABEL.test(str(s.label)) && ATCO.test(str(s.atco)))
       .map((s) => ({ label: s.label, atco: s.atco, name: str(s.name), indicator: str(s.indicator), walk: minutes(s.walk) })),
+    trams: list(data.trams).map(obj).filter((t) => t && LABEL.test(str(t.label)) && TRAM.test(str(t.code)))
+      .map((t) => ({ label: t.label, code: t.code, name: str(t.name), walk: minutes(t.walk) })),
   };
 }
 
@@ -122,6 +126,7 @@ function readModes(data) {
 function startFromSaved() {
   const { saved } = state;
   if (saved.station) state.stationChoice = saved.station.crs;
+  state.tramsTicked = new Set(saved.trams.map((tram) => tram.code));
   $("filter").value = saved.filter ? saved.filter.crs : "";
   if (!state.only) return;
   if (!saved.station) state.stationChoice = "none";
@@ -144,6 +149,7 @@ function setUpSteps() {
   setUpHome();
   setUpStation();
   setUpStops();
+  setUpTrams();
   $("walk-next").addEventListener("click", leaveWalk);
   $("keys-next").addEventListener("click", leaveKeys);
   $("views-next").addEventListener("click", leaveViews);

@@ -32,10 +32,10 @@ KEYS = keys("general")
 STATIC = ROOT / "src" / "twobells" / "wizard_static"
 OWN = sorted(p for p in STATIC.rglob("*") if p.is_file())
 PREFIX = "http://pi.local/setup/"  # any prefix ending in a slash
-STEPS = ("home", "station", "stops", "walk", "keys", "views", "show", "finish", "done")
+STEPS = ("home", "station", "stops", "trams", "walk", "keys", "views", "show", "finish", "done")
 SCRIPTS = ("api.js", "finish.js", "home.js", "keys.js", "maps.js", "presets.js", "roads.js", "say.js", "state.js",
            "station.js",
-           "steps.js", "stops.js", "views.js", "walk.js", "wizard.js")
+           "steps.js", "stops.js", "trams.js", "views.js", "walk.js", "wizard.js")
 
 
 class _Page(HTMLParser):
@@ -190,7 +190,7 @@ STATIC_IMPORT = re.compile(r"""^\s*import\s+(?:[^"'();]*?\s+from\s+)?["']([^"']+
 def test_leaflet_loads_only_when_a_map_opens():
     assert STATIC_IMPORT.findall(_js("wizard.js")) == [
         "../dashboard_static/dom.js", "./api.js", "./finish.js", "./home.js", "./keys.js", "./presets.js", "./say.js",
-        "./state.js", "./station.js", "./steps.js", "./stops.js", "./views.js", "./walk.js",
+        "./state.js", "./station.js", "./steps.js", "./stops.js", "./trams.js", "./views.js", "./walk.js",
     ]
     # No module loads Leaflet up front: maps.js imports it when the first map opens.
     for name in SCRIPTS:
@@ -355,7 +355,8 @@ def test_the_steps_are_numbered_for_those_shown():
         assert ids[f"{step}-number"][0] == "span"
     text = _js("steps.js")
     number = _between(text, "function numberSteps", "// One action at a time")
-    assert 'STEPS.filter((step) => (step !== "views" || state.askViews) && (step !== "show" || state.askShow))' in text
+    assert 'STEPS.filter((step) => (step !== "views" || state.askViews) && (step !== "show" || state.askShow)' in text
+    assert '(step !== "trams" || state.askTrams)' in text
     assert "item.hidden = !counted.includes(item.dataset.step);" in number
     assert "fill($(`${step}-number`), `Step ${i + 1} of ${counted.length}:`)" in number
     # Each Back goes to the step before among those shown: past the views step
@@ -754,7 +755,7 @@ NEAR_STATIONS = [{"crs": "HDF", "name": "Hadfield", "lat": 53.46, "lon": -1.96, 
 def run_wizard(script, search="", **answers):
     """The page at ?SEARCH, its API answering from BEGIN, SAVED_NOW and `answers`."""
     answers = {"begin": BEGIN, "saved": SAVED_NOW, "stops": {"stops": NEAR_STOPS},
-               "stations": {"stations": NEAR_STATIONS}, "walk": {"walk": {}},
+               "stations": {"stations": NEAR_STATIONS}, "trams": {"trams": []}, "walk": {"walk": {}},
                "finish": {"saved": True, "message": "Saved.", "links": []}, **answers}
     prelude = WIZARD_PAGE.replace("FAKE_DOM", (FIXTURES / "fake_dom.mjs").as_uri())
     prelude = prelude.replace("TREE", json.dumps(_body_tree())).replace("SEARCH", json.dumps(search))
@@ -999,6 +1000,7 @@ def test_stops_refused_are_marked_invalid_until_the_error_goes():
         for (const box of $("stops-list").querySelectorAll('input[type="checkbox"]')) box.checked = false;
         state.labels.clear();
         click("stops-next");
+        await settle();  // after looking for tram stops near home, which might have given something to show
         const first = $("stops-list").querySelector('input[type="checkbox"]');
         const refused = [document.activeElement === first, first.getAttribute("aria-invalid")];
         first.checked = true;
@@ -1267,3 +1269,91 @@ def test_what_to_show_from_begin_is_checked_as_anything_from_the_server_is():
     assert found["show"] == {"presets": [{"name": "usual", "label": "The usual"}],
                              "views": {"board": {"now": "keep", "says": {"usual": ""}},
                                        "dashboard": {"now": "keep", "says": {"usual": ""}}}}
+
+
+# Tram stops: a step only where home is near Manchester's Metrolink.
+
+NEAR_TRAMS = [{"code": "9400ZZMAPIC", "name": "Piccadilly", "lat": 53.477, "lon": -2.2307, "distance_m": 300},
+              {"code": "9400ZZMAPGD", "name": "Piccadilly Gardens", "lat": 53.4805, "lon": -2.2369, "distance_m": 700}]
+# Where trains must call, checked with the station lookup as the page leaves the station step.
+FILTER_MAN = {"station": {"crs": "MAN", "name": "Manchester Piccadilly", "lat": 53.47, "lon": -2.23, "distance_m": 0}}
+TO_TRAMS = """
+state.home = { lat: 53.477, lon: -2.23, label: "M1 2AB", country: "" };
+click("home-next");
+await settle();
+click("station-next");
+await settle();
+click("stops-next");
+await settle();
+"""
+
+
+@needs_node
+def test_near_tram_stops_the_wizard_asks_which_with_their_walks():
+    found = run_wizard(TO_TRAMS + """
+        const step = { shown: shown(), progress: progress(), number: $("trams-number").textContent,
+                       listed: $("trams-list").textContent, focus: document.activeElement.id };
+        const boxes = [...$("trams-list").querySelectorAll('input[type="checkbox"]')];
+        boxes[1].checked = true;
+        for (const [type, fn] of boxes[1].listeners) if (type === "change") fn({ currentTarget: boxes[1] });
+        click("trams-next");
+        await settle();
+        const walked = asked("walk").at(-1);
+        console.log(JSON.stringify({ step, after: shown(), walked, walks: $("walk-list").textContent,
+                                     back: back("walk").to, chosen: state.chosenTrams }));
+    """, trams={"trams": NEAR_TRAMS}, station=FILTER_MAN)
+    step = found["step"]
+    assert step["shown"] == ["step-trams"] and step["focus"] == "trams-heading"
+    assert step["progress"] == ["home", "station", "stops", "trams", "walk", "keys", "views", "finish"]
+    assert step["number"] == "Step 4 of 8:"
+    assert "Piccadilly tram stop" in step["listed"] and "300 m away" in step["listed"]
+    assert found["after"] == ["step-walk"] and found["back"] == "trams"
+    assert found["chosen"] == [{"label": "T", "code": "9400ZZMAPGD", "name": "Piccadilly Gardens"}]
+    assert found["walked"]["tram_codes"] == ["9400ZZMAPGD"]
+    assert "Minutes to walk to Piccadilly Gardens tram stop" in found["walks"]
+
+
+@needs_node
+def test_far_from_tram_stops_there_is_no_tram_step():
+    found = run_wizard(TO_TRAMS + """
+        console.log(JSON.stringify({ shown: shown(), progress: progress(), back: back("walk").to }));
+    """, station=FILTER_MAN)
+    assert found["shown"] == ["step-walk"]
+    assert "trams" not in found["progress"] and found["back"] == "stops"
+
+
+@needs_node
+def test_the_tram_stops_picked_are_saved_and_listed_before_saving():
+    found = run_wizard(TO_TRAMS + """
+        const box = $("trams-list").querySelector('input[type="checkbox"]');
+        box.checked = true;
+        for (const [type, fn] of box.listeners) if (type === "change") fn({ currentTarget: box });
+        click("trams-next");
+        await settle();
+        click("walk-next");
+        await settle();
+        click("keys-next");
+        await settle();
+        click("views-next");
+        await settle();
+        const summary = $("summary").textContent;
+        click("save");
+        await settle();
+        console.log(JSON.stringify({ summary, finish: asked("finish").at(-1) }));
+    """, trams={"trams": NEAR_TRAMS}, station=FILTER_MAN, saved={**SAVED_NOW, "stops": []})  # no bus search
+    assert "Tram stopsT: Piccadilly" in found["summary"]
+    assert found["finish"]["trams"] == {"T": "9400ZZMAPIC"}
+
+
+@needs_node
+def test_at_most_four_tram_stops_can_be_ticked():
+    many = [{**NEAR_TRAMS[0], "code": f"9400ZZMAA{c}A", "name": f"Stop {c}"} for c in "ABCDE"]
+    found = run_wizard(TO_TRAMS + """
+        const boxes = [...$("trams-list").querySelectorAll('input[type="checkbox"]')];
+        for (const box of boxes) {
+          box.checked = true;
+          for (const [type, fn] of box.listeners) if (type === "change") fn({ currentTarget: box });
+        }
+        console.log(JSON.stringify({ ticked: boxes.filter((b) => b.checked).length, error: $("trams-error").textContent }));
+    """, trams={"trams": many}, station=FILTER_MAN)
+    assert found["ticked"] == 4 and "Pick at most 4 tram stops." in found["error"]

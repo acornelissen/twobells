@@ -59,6 +59,9 @@ export function enterFinish() {
     shows("stops") ? summaryRow("Bus stops", state.chosen.length
       ? h("ul", {}, state.chosen.map((s) => h("li", {}, `${s.label}: ${stopName(s)}, ${minutesText(s.atco)}`)))
       : "No buses") : null,
+    !state.only && state.askTrams ? summaryRow("Tram stops", state.chosenTrams.length
+      ? h("ul", {}, state.chosenTrams.map((t) => h("li", {}, `${t.label}: ${t.name}, ${minutesText(t.code)}`)))
+      : "No trams") : null,
     summaryRow("Keys to save", keys.length ? keys.join(", ") : "None; the keys already set stay"),
     state.askViews ? summaryRow("Show the departures on", state.views
       .filter((view) => state.chosenViews.includes(view.name)).map((view) => view.label).join(", ")) : null,
@@ -145,6 +148,7 @@ function payload() {
       home: { lat: state.home.lat, lon: state.home.lon, ...(state.home.country ? { country: state.home.country } : {}) },
       ...station,
       ...stops,
+      trams: Object.fromEntries(state.chosenTrams.map((t) => [t.label, t.code])),
       walk: state.walkMinutes,
     };
   }

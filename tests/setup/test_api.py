@@ -1091,6 +1091,7 @@ def test_saved_answers_todays_choices_with_names_and_walks_never_keys(board):
         "station": {"crs": "GLO", "name": "Glossop", "walk": 6},
         "filter": {"crs": "MAN", "name": "Manchester Piccadilly"},
         "stops": [{"label": "A", "atco": "1800SB12341", "name": "Station Road", "indicator": "Stop A", "walk": 3}],
+        "trams": [],
     }
     assert RDM_KEY not in json.dumps(body) and BODS_KEY not in json.dumps(body)
 
@@ -1118,11 +1119,12 @@ def test_saved_leaves_out_what_is_off_or_not_set_up(board):
         "home": None, "station": None, "filter": None,
         # No timetable, so no names; a stop not shaped as one is left out.
         "stops": [{"label": "A", "atco": "1800SB12341", "name": "", "indicator": "", "walk": None}],
+        "trams": [],
     }
 
 
 def test_saved_reads_the_template_as_nothing_chosen(template):
-    assert ok(template, "saved") == {"home": None, "station": None, "filter": None, "stops": []}
+    assert ok(template, "saved") == {"home": None, "station": None, "filter": None, "stops": [], "trams": []}
 
 
 def test_saved_takes_nothing_and_asks_no_runner(ran):
@@ -1214,7 +1216,8 @@ def test_a_shortcuts_save_takes_only_its_part(board, payload, field):
 
 def test_begin_offers_the_modes_setup_sets_up_and_each_view_s_room(both):
     offered = ok(both, "begin")["modes"]
-    assert offered["offered"] == [{"name": "train", "label": "Trains"}, {"name": "bus", "label": "Buses"}]
+    assert offered["offered"] == [{"name": "train", "label": "Trains"}, {"name": "bus", "label": "Buses"},
+                                  {"name": "metro", "label": "Trams"}]
     board, dashboard = offered["views"]["board"], offered["views"]["dashboard"]
     assert (board["most"], board["now"]) == (2, None)
     # Its display, in its look and text size: the plain look at 13.
@@ -1291,3 +1294,69 @@ def test_a_shortcut_cannot_leave_nothing_to_show(board):
     ok(board, "finish", {"only": "stops", "stops": {}, "walk": {}})  # the station is still there
     status, body = board.handle("finish", {"only": "station", "walk": {}})
     assert status == 400 and body["field"] == "station_crs"
+
+
+# Trams: Metrolink's stops near home, from the bundled list.
+
+PICCADILLY = {"lat": 53.4774, "lon": -2.2309}  # Manchester Piccadilly station, standing in for a home in town
+
+
+def test_the_tram_stops_near_home_are_found_offline(board):
+    found = ok(board, "trams", PICCADILLY)["trams"]
+    assert found[0]["code"] == "9400ZZMAPIC" and found[0]["name"] == "Piccadilly" and len(found) == 5
+    assert ok(board, "trams", HOME)["trams"] == []  # Hadfield: no trams near
+    assert board.calls == []  # nothing asked of anyone
+
+
+def test_walk_times_for_tram_stops_by_their_codes(board):
+    walk = ok(board, "walk", {"home": PICCADILLY, "tram_codes": ["9400ZZMAPIC"]})
+    assert walk["walk"] == {"9400ZZMAPIC": {"minutes": 2, "source": "estimate"}}
+    _, _, places = board.calls[-1]
+    assert places["9400ZZMAPIC"].name == "Piccadilly"
+    for codes in (["1800SB12341"], ["9400ZZMAXXX"], "9400ZZMAPIC", ["9400ZZMAPIC"] * 5):
+        status, body = board.handle("walk", {"home": PICCADILLY, "tram_codes": codes})
+        assert status == 400 and body["field"] == "tram_codes", codes
+
+
+def test_finishing_with_tram_stops_saves_them_with_their_walks(board):
+    payload = {**TRAINS_ONLY, "trams": {"T": "9400ZZMAPIC"}, "walk": {"9400ZZMAPIC": 4}}
+    ok(board, "finish", payload)
+    assert _saved(board)["metro"] == {"stops": {"T": "9400ZZMAPIC"}, "enabled": True, "walk_minutes": {"T": 4}}
+    assert ok(board, "saved")["trams"] == [{"label": "T", "code": "9400ZZMAPIC", "name": "Piccadilly", "walk": 4}]
+    # Run again without them, trams are switched off, kept for switching back on.
+    ok(board, "finish", TRAINS_ONLY)
+    assert _saved(board)["metro"]["enabled"] is False
+    assert ok(board, "saved")["trams"] == []
+
+
+def test_tram_stops_alone_are_enough_to_finish(board):
+    ok(board, "finish", {"home": HOME, "stops": {}, "trams": {"T": "9400ZZMAGMX"}, "walk": {}})
+    saved = _saved(board)
+    assert saved["metro"]["stops"] == {"T": "9400ZZMAGMX"} and saved["train"] == {"enabled": False}
+
+
+def test_finishing_without_trams_where_there_were_none_writes_none(board):
+    ok(board, "finish", TRAINS_ONLY)
+    assert "metro" not in _saved(board)
+
+
+@pytest.mark.parametrize("trams", [
+    {"T": "1800SB12341"},
+    {"T": "9400ZZMAXXX"},  # no such stop
+    {"Stop T": "9400ZZMAPIC"},
+    {"T": "9400ZZMAPIC", "U": "9400ZZMAPIC"},
+    dict.fromkeys("TUVWX", "9400ZZMAPIC"),
+    ["9400ZZMAPIC"],
+])
+def test_finishing_takes_only_metrolink_stops(board, trams):
+    before = (board.state / "settings.toml").read_text()
+    status, body = board.handle("finish", {**TRAINS_ONLY, "trams": trams})
+    assert status == 400 and body["field"] == "trams", body
+    assert (board.state / "settings.toml").read_text() == before
+
+
+def test_a_shortcut_cannot_change_the_trams(board):
+    saved_with_a_search(board)
+    status, body = board.handle("finish", {"only": "station", "station_crs": "GLO", "walk": {},
+                                           "trams": {"T": "9400ZZMAPIC"}})
+    assert status == 400 and body["field"] == "trams"

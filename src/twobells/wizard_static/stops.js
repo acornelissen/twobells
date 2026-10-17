@@ -5,7 +5,8 @@ import { call } from "./api.js";
 import { L, addHome, fit, isOpen, mapFor, pin, setUpMapToggle } from "./maps.js";
 import { note, refuse, say, setError, shout } from "./say.js";
 import { distance, homeKey, state, stopName } from "./state.js";
-import { go } from "./steps.js";
+import { go, once } from "./steps.js";
+import { afterStops } from "./trams.js";
 import { enterWalk } from "./walk.js";
 
 const LABEL = /^[A-Za-z0-9]{1,3}$/;
@@ -134,7 +135,7 @@ export async function enterStops() {
   drawStops();
 }
 
-function leaveStops() {
+async function leaveStops(button) {
   setError("stops", "");
   const chosen = [];
   const seen = new Set();
@@ -149,17 +150,25 @@ function leaveStops() {
     chosen.push({ label, atco: stop.atco, name: stop.name, indicator: stop.indicator });
   }
   if (chosen.length > MAX_STOPS) return refuse("stops", `Pick at most ${MAX_STOPS} stops.`, $("stops-list").querySelector("input"));
-  if (!chosen.length && !state.station) {
-    const first = $("stops-list").querySelector("input");
-    return refuse("stops", `Pick at least one stop: with no station and no stops, the ${state.noun} has nothing to show.`,
-      first || $("stops-heading"));
-  }
   state.chosen = chosen;
-  enterWalk();
-  return true;
+  if (state.only) {
+    if (!chosen.length && !state.station) return refuseNoStops();
+    enterWalk(); // a shortcut leaves the trams as they are
+    return true;
+  }
+  // Tram stops next, where home is near some; with nothing picked yet, there must be.
+  let went = true;
+  await once(button, async () => { went = await afterStops(!chosen.length && !state.station); });
+  return went || refuseNoStops();
+}
+
+function refuseNoStops() {
+  const first = $("stops-list").querySelector("input");
+  return refuse("stops", `Pick at least one stop: with no station and no stops, the ${state.noun} has nothing to show.`,
+    first || $("stops-heading"));
 }
 
 export function setUpStops() {
   setUpMapToggle("stops", drawStopsMap);
-  $("stops-next").addEventListener("click", leaveStops);
+  $("stops-next").addEventListener("click", (event) => leaveStops(event.currentTarget));
 }

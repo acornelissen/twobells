@@ -115,6 +115,10 @@ STATIONS_SHOWN = 5
 STATIONS_WITHIN_KM = 40
 STOPS_SHOWN = 15
 STOPS_WITHIN_M = 1000
+TRAM_STOPS_SHOWN = 5
+MAX_TRAM_STOPS = schema.MAX_TRAM_STOPS
+# Labels for the tram stops picked, in order: T is for tram.
+TRAM_LABELS = ("T", "U", "V", "W")
 MAX_BOARD_STOPS = setup.MAX_BOARD_STOPS
 MAX_WALK_MINUTES = 60
 _CACHED_STOPS = 200
@@ -158,7 +162,7 @@ _NAME_LENGTH = 100  # a stop's name from the timetable, as the page shows it
 # or for one part of it, the rest kept as saved.
 PARTS = ("station", "stops")
 _FINISH_FIELDS = {
-    None: (("home", "stops", "walk"), ("station_crs", "filter_crs", "keys", "views", "show", "modes")),
+    None: (("home", "stops", "walk"), ("station_crs", "filter_crs", "trams", "keys", "views", "show", "modes")),
     "station": (("only", "walk"), ("station_crs", "filter_crs", "keys")),
     "stops": (("only", "stops", "walk"), ("keys",)),
 }
@@ -166,8 +170,9 @@ _FINISH_FIELDS = {
 
 # What begin says to start a view's What to show at when its show list is no preset's.
 KEEP = "keep"
-# The modes setup sets up, a step each: trains from the station, buses from the stops.
-SETUP_MODES = ("train", "bus")
+# The modes setup sets up, a step each: trains from the station, buses from
+# the stops, trams from the tram stops (Manchester's Metrolink, where home is near one).
+SETUP_MODES = ("train", "bus", "metro")
 
 
 class Invalid(Exception):
@@ -289,7 +294,7 @@ def static_files() -> dict[str, Path]:
     wizard, dashboard = root / "wizard_static", root / "dashboard_static"
     leaflet, inter = "vendor/leaflet-1.9.4", "vendor/inter-4.1/InterVariable.woff2"
     # wizard.js and the modules it imports, each named: anything else is a 404.
-    scripts = ("wizard", "api", "say", "state", "steps", "maps", "home", "station", "stops", "walk", "keys",
+    scripts = ("wizard", "api", "say", "state", "steps", "maps", "home", "station", "stops", "trams", "walk", "keys",
                "views", "presets", "finish", "roads")
     return {
         "": wizard / "index.html",
@@ -373,6 +378,22 @@ def _stops(value, field: str = "stops", least: int = 0) -> dict[str, str]:
     if len(set(stops.values())) != len(stops):
         raise Invalid("Each stop must be a different stop", field)
     return stops
+
+
+def _trams(value, field: str = "trams") -> dict[str, str]:
+    """{label: tram stop code}: Metrolink stops, each once, labelled as the settings site allows."""
+    if not isinstance(value, dict) or len(value) > MAX_TRAM_STOPS:
+        raise Invalid(f"Pick at most {MAX_TRAM_STOPS} tram stops", field)
+    trams = {}
+    for label, code in value.items():
+        if not _LABEL.match(label):
+            raise Invalid("A tram stop label is 1 to 3 letters or digits", field)
+        if not isinstance(code, str) or not setup.TRAM_STOP.match(code) or code not in setup.tram_stop_names():
+            raise Invalid(f"Tram stop {label} needs a Metrolink stop code", field)
+        trams[label] = code
+    if len({label.upper() for label in trams}) != len(trams) or len(set(trams.values())) != len(trams):
+        raise Invalid("Pick each tram stop once, with a label of its own", field)
+    return trams
 
 
 def _key(value, field: str) -> str:
@@ -664,6 +685,7 @@ class SetupApi:
             "stations": self.stations,
             "station": self.station,
             "stops": self.stops,
+            "trams": self.trams,
             "walk": self.walk,
             "start": self.start,
             "job": self.job,
@@ -751,7 +773,7 @@ class SetupApi:
         data = self._settings()
         train, bus, weather = (_table(data, name) for name in ("train", "bus", "weather"))
         names = {code: name for name, code, _, _ in self._stations()}
-        out: dict = {"home": None, "station": None, "filter": None, "stops": []}
+        out: dict = {"home": None, "station": None, "filter": None, "stops": [], "trams": []}
         lat, lon = _saved_number(weather.get("lat")), _saved_number(weather.get("lon"))
         if lat is not None and lon is not None and setup.in_uk(lat, lon):
             out["home"] = {"lat": round(lat, 2), "lon": round(lon, 2)}
@@ -761,6 +783,12 @@ class SetupApi:
             towards = train.get("filter_crs")
             if isinstance(towards, str) and towards.upper() in names:
                 out["filter"] = {"crs": towards.upper(), "name": names[towards.upper()]}
+        metro = _table(data, "metro")
+        names = setup.tram_stop_names()
+        walks = _table(metro, "walk_minutes")
+        for label, code in _saved_trams(metro).items():
+            out["trams"].append({"label": label, "code": code, "name": names.get(code, ""),
+                                 "walk": _saved_minutes(walks.get(label))})
         stops = _saved_stops(bus)
         if stops:
             walks = _table(bus, "walk_minutes")
@@ -848,11 +876,21 @@ class SetupApi:
             for s, label in zip(found, labels, strict=True)
         ]}
 
+    def trams(self, payload) -> dict:
+        """The Metrolink tram stops nearest home, from the bundled list (no
+        network): none for a home far from Manchester, and then the page
+        skips the step. Each with the label it would have."""
+        home = _point(_fields(payload, ("lat", "lon")))
+        found = setup.nearby_tram_stops(home.lat, home.lon, limit=TRAM_STOPS_SHOWN)
+        return {"trams": [{"code": s.code, "name": s.name, "lat": s.lat, "lon": s.lon, "distance_m": s.distance_m}
+                          for s in found]}
+
     def walk(self, payload) -> dict:
-        """Minutes from home to the station and each stop: {key: {minutes,
-        source}} by CRS or ATCO code, source "route" or "estimate". A stop
-        this setup hasn't found is left out, for the person to type."""
-        fields = _fields(payload, ("home",), ("station_crs", "stop_atcos"))
+        """Minutes from home to the station, each stop and each tram stop:
+        {key: {minutes, source}} by CRS, ATCO or tram stop code, source
+        "route" or "estimate". A stop this setup hasn't found is left out,
+        for the person to type."""
+        fields = _fields(payload, ("home",), ("station_crs", "stop_atcos", "tram_codes"))
         home = _point(fields["home"])
         places: dict = {}
         if fields.get("station_crs") is not None:
@@ -868,6 +906,15 @@ class SetupApi:
                 stop = self._found_stops.get(atco)
             if stop is not None:
                 places[atco] = stop
+        codes = fields.get("tram_codes", [])
+        if not isinstance(codes, list) or len(codes) > MAX_TRAM_STOPS:
+            raise Invalid(f"Ask about at most {MAX_TRAM_STOPS} tram stops", "tram_codes")
+        trams = {code: (name, lat, lon) for name, code, lat, lon in setup.bundled_tram_stops()}
+        for code in codes:
+            if not isinstance(code, str) or code not in trams:
+                raise Invalid("A tram stop is its Metrolink stop code", "tram_codes")
+            name, lat, lon = trams[code]
+            places[code] = setup.TramStop(code, name, lat, lon, 0)
         found = self._walk_minutes(home, places)
         return {"walk": {key: {"minutes": minutes, "source": source} for key, (minutes, source) in found.items()}}
 
@@ -1021,17 +1068,18 @@ class SetupApi:
             if station is None:
                 raise Invalid("Pick a station before saying where you go from it", "filter_crs")
         stops = _stops(fields["stops"]) if only != "station" else {}
+        trams = _trams(fields["trams"]) if fields.get("trams") is not None else {}
         current = self._settings() if only is not None else {}
         if only == "station" and station is None and not _saved_stops(_table(current, "bus")):
             raise Invalid("Pick a station: with no bus stops either, there is nothing to show", "station_crs")
         if only == "stops" and not stops and not _saved_station(_table(current, "train")):
             raise Invalid("Pick at least one stop: with no station either, there is nothing to show", "stops")
-        if only is None and station is None and not stops:
-            raise Invalid("Pick a station or at least one bus stop", "stops")
+        if only is None and station is None and not stops and not trams:
+            raise Invalid("Pick a station, a bus stop or a tram stop", "stops")
         walk = fields["walk"]
         if not isinstance(walk, dict):
             raise Invalid("Walk times are by station code and stop code", "walk")
-        allowed = set(stops.values()) | ({station.crs} if station else set())
+        allowed = set(stops.values()) | set(trams.values()) | ({station.crs} if station else set())
         if set(walk) - allowed:
             raise Invalid("Walk times are only for your station and stops", "walk")
         walk = {key: (_minutes(m, "walk"), "given") for key, m in walk.items()}
@@ -1039,7 +1087,7 @@ class SetupApi:
         views = _views(fields["views"], self._install.offered) if "views" in fields else None
         on = tuple(views) if views is not None else self._views_now()
         presets = _show(fields["show"], on) if "show" in fields else {}
-        picked = [key for key, chosen in (("train", station), ("bus", stops)) if chosen]
+        picked = [key for key, chosen in (("train", station), ("bus", stops), ("metro", trams)) if chosen]
         shown_modes = {}
         if "modes" in fields:
             shown_modes = _modes(fields["modes"], on, picked, self._settings())
@@ -1066,6 +1114,14 @@ class SetupApi:
                 changes["bus"]["enabled"] = True
             else:
                 changes["bus"] = {"enabled": False}
+        if only is None:
+            # Trams: switched off rather than removed, as trains and buses are, when there were some.
+            if trams:
+                metro: dict = {"stops": trams, "enabled": True,
+                               "walk_minutes": {label: walk[code][0] for label, code in trams.items() if code in walk}}
+                changes["metro"] = metro
+            elif "metro" in self._settings():
+                changes["metro"] = {"enabled": False}
         if home is not None:
             division = setup.bank_holiday_division(home.country)
             if division:
@@ -1154,6 +1210,17 @@ def _saved_stops(bus: Mapping) -> dict[str, str]:
     found = [(label, atco) for label, atco in stops.items()
              if isinstance(label, str) and _LABEL.match(label) and isinstance(atco, str) and _ATCO.match(atco)]
     return dict(found[:MAX_BOARD_STOPS])
+
+
+def _saved_trams(metro: Mapping) -> dict[str, str]:
+    """[metro] stops, {label: tram stop code}, if trams are on: only those
+    shaped as the wizard saves them, at most MAX_TRAM_STOPS."""
+    stops = metro.get("stops")
+    if metro.get("enabled") is False or not isinstance(stops, dict):
+        return {}
+    found = [(label, code) for label, code in stops.items() if isinstance(label, str) and _LABEL.match(label)
+             and isinstance(code, str) and setup.TRAM_STOP.match(code)]
+    return dict(found[:MAX_TRAM_STOPS])
 
 
 def _saved_minutes(value) -> int | None:
