@@ -379,7 +379,8 @@ The punctuality history of a train or bus row (same ids as the snapshot, with th
 }
 ```
 
-- `days` are newest first, at most `[dashboard] history_days` of them (1 to 3650, default 90).
+- `day_type` is `weekday`, `saturday` or `sunday`, a bank holiday counting as a Sunday; `phrase` and `days` are the departure's record on days of that kind.
+- `days` are newest first, at most `[dashboard] history_days` of them (1 to 3650, default 90). Each has `day` (YYYY-MM-DD), `status` (`on_time`, `late`, `cancelled` or `unknown`), `delay_min` (whole minutes, or null), `live` (whether a live report or position was seen) and `reason` (Darwin's delay or cancellation reason, or null).
 - `route` is the figures of every departure on the row's route, whatever its time (every train to Manchester Piccadilly; every 341 to Hyde Bus Station from stop A), as one route in [`GET /api/performance`](#get-apiperformance), with the mode's `late_minutes`. `null` when the server has no history to read: a desktop or Docker install whose dashboard isn't set up. A Pi always has one, as the fetch service writes it; before it has, the figures are all zero.
 
 ## `GET /api/performance`
