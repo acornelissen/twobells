@@ -39,6 +39,9 @@ def test_parses_vehicles_with_a_position():
         ("R123_ABC", "", "R123 ABC"),  # an older plate, spaced
         ("12_-_ABC_123D", "12", "ABC 123D"),
         ("12_-_NOT A PLATE", "12", ""),  # the fleet number is still worth having
+        ("ABC 123D", "", "ABC 123D"),  # older plates as they are written, a space and all
+        ("X_1", "", "X 1"),  # a dateless plate
+        ("12_-_AB25\ufb00E", "12", ""),  # "ff" as one letter is no plate, even if it reads as "FF" in capitals
     ],
 )
 def test_reads_a_fleet_number_and_registration_from_the_vehicle_ref(ref, fleet, registration):
@@ -51,6 +54,7 @@ def test_reads_a_fleet_number_and_registration_from_the_vehicle_ref(ref, fleet, 
         "", "TSDUMMY", "BNML-1001", "1234567", "R123ABC",  # no fleet number, no plate it can be sure of
         "DUMMY_BUS", "1234_5678", "AB25_CDE_X", "AB25  CDE", "<b>AB25CDE</b>", "AB25CDE\n", "AB25\u00a0CDE",
         "\uff21\uff2225CDE",  # full-width letters
+        "AB25\ufb00E", "R123 \ufb00I",  # a ligature, "FF" once in capitals
         "3017_-_" + "A" * 40,  # too long to be either
     ],
 )

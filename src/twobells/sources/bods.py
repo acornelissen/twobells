@@ -27,7 +27,8 @@ _NS = {"siri": "http://www.siri.org.uk/siri"}
 _API_KEY = re.compile(r"\bapi_key=[^&\s\"']*")
 # VehicleRef is the operator's own name for a bus. Around Glossop it comes as a
 # fleet number ("3017"), a registration ("CD25EFG", "CD25_EFG"), or both
-# ("3017_-_AB25_CDE"); anything else gives neither.
+# ("3017_-_AB25_CDE"). An older plate is read only with its space ("R123 ABC",
+# "ABC 123D", "X 1"); anything else gives neither.
 _MAX_VEHICLE_REF = 32
 _FLEET_NUMBER = re.compile(r"[0-9]{1,6}")
 _FLEET_AND_REG = re.compile(r"([0-9]{1,6})_-_(.+)")
@@ -99,7 +100,10 @@ def _degrees(text: str, limit: float) -> float | None:
 
 def _registration(text: str) -> str:
     """A number plate as written on one ("AB25 CDE"), or "" if text isn't one.
-    Unspaced, only the current style is read: older ones can't be split safely."""
+    Unspaced, only the current style is read: older ones can't be split safely.
+    Plain ASCII only: upper() turns some letters into others ("\ufb00" to "FF")."""
+    if not text.isascii():
+        return ""
     text = text.upper()
     if found := _CURRENT_REG.fullmatch(text):
         return f"{found[1]} {found[2]}"
