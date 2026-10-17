@@ -21,7 +21,7 @@
 # Bus times and positions from BODS cover England only. The rain warning
 # (Open-Meteo) works anywhere.
 
-# The heading on the dashboard and the board's plain look, like
+# The heading on the dashboard and the board's plain, TFT and split-flap looks, like
 # "Glossop > Manchester Picc". Defaults to "Departures". Also on the Trains and buses tab.
 # title = "Departures"
 # The zone departures and checking times are in. Also on the General tab.
@@ -30,10 +30,12 @@ timezone = "Europe/London"
 # A Pi's services use /var/lib/twobells and Docker /data, whatever
 # this says. Leave it out on a desktop, where the store has its own place.
 state_file = "/var/lib/twobells/state.json"
-# Never redraw more often than this, even if the data changes sooner.
+# E-paper only: never redraw more often than this, even if the data changes sooner.
 min_redraw_minutes = 2
 # "sign": amber dot-matrix station board, with a yellow accent (or red, on e-paper).
 # "plain": white board with bold type and a red accent.
+# On an HDMI screen also "tft", white and yellow on black, and "flap", white
+# letters on split-flap tiles; e-paper refuses them.
 theme = "sign"
 # Defaults to the theme's colour. Only reinforces meaning; text always carries it.
 # accent = "yellow"
@@ -51,8 +53,8 @@ bank_holidays = true
 # Whose bank holidays: "england-and-wales", "scotland" or "northern-ireland".
 bank_holiday_division = "england-and-wales"
 # Text too long for its line scrolls: the dashboard's calling-at line (in every
-# look but Standard) and long text on an HDMI screen. false wraps the
-# dashboard's and cuts the screen's short with "…", as e-paper does. Also on the General tab.
+# look but Standard) and long text on an HDMI screen. false cuts the
+# dashboard's to two lines and the screen's short with "…", as e-paper does. Also on the General tab.
 # scrolling = true
 # The plain look's text size, 9-16 (11 is standard); bigger shows fewer departures on a small display.
 # text_size = 12
@@ -62,8 +64,11 @@ rotate = 0
 
 # What the board shows beside the departures' times, which always show:
 # "platforms", "where", "disruption", "rain", "last_bus", "bus_page",
-# "calling_at" and "clock_page" (the last five on an HDMI screen only). Also
-# What to show on the Board tab. Without it, everything but the clock page.
+# "calling_at", "clock_page" and "announce_speaker" (all but the first four on
+# an HDMI screen only). "announce_speaker" is station announcements through
+# the screen's speaker, with espeak-ng, never in [dashboard] quiet_windows; no
+# preset has it. Also What to show on the Board tab. Without it, everything
+# but the clock page (unless the older clock_page = true) and announcements.
 # [board]
 # show = ["platforms", "where", "disruption", "rain", "last_bus", "bus_page"]
 
@@ -165,7 +170,7 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # train_interval_seconds = 60     # at least 30
 # bus_interval_seconds = 30       # at least 15
 # weather_interval_minutes = 30   # at least 10
-# quiet_windows = ["Mon-Sun 01:00-05:00"]   # no checks then, unless the page is open
+# quiet_windows = ["Mon-Sun 01:00-05:00"]   # no checks then, unless the page is open; [] never quiet
 # late_minutes_train = 3          # 1-60: how late counts as late in the history
 # late_minutes_bus = 2            # 1-60
 # history_days = 90               # 1-3650: days of history kept and shown
@@ -173,6 +178,8 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # What the page shows beside the departures' times (default: everything): "next_to_catch", "where",
 # "disruptions", "weather", "last_buses", "area_map", "remind", "calling_at", "coaches", "punctuality",
 # "performance", "fleet_numbers" and "announce". Also What to show on the Dashboard tab.
+# "performance" also has the dashboard follow trains to the filter station for
+# Delay Repay, with RDM_DETAILS_API_KEY.
 # show = ["next_to_catch", "where", "disruptions", "weather", "last_buses", "area_map", "remind"]
 # allowed_hosts = []              # extra host names the dashboard and settings answer to, like ["ds.home"]
 # Rail engineering works: the Knowledgebase Incidents address from the RDM
@@ -183,10 +190,11 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # Optional: a rain warning from Open-Meteo's forecast (free, no key). The board
 # says "Rain from 07:10 (70%)" when rain is likely before you would reach the
 # next train or bus you can still catch (or within the hour, without walk
-# times). Polled every 30 minutes, only inside the train and bus windows.
+# times). Polled every 30 minutes, only inside the train and bus windows,
+# and only while [board] show has "rain" (the dashboard's "weather" has its own).
 # Two decimal places is plenty; that is all that is sent.
 # [weather]
-# enabled = true   # false switches the warning off; the location is kept, unread
+# enabled = true   # false switches the warning and the dashboard's forecast off; the location is kept, unread
 # lat = CHANGE_ME   # like 53.44 in Glossop
 # lon = CHANGE_ME   # like -1.95
 # threshold_percent = 50   # chance of rain, 1-100, worth a warning

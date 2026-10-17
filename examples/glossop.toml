@@ -11,6 +11,8 @@ state_file = "/var/lib/twobells/state.json"
 min_redraw_minutes = 2
 # "sign": amber dot-matrix station board, with a yellow accent (or red, on e-paper).
 # "plain": white board with bold type and a red accent.
+# On an HDMI screen also "tft", white and yellow on black, and "flap", white
+# letters on split-flap tiles; e-paper refuses them.
 theme = "sign"
 # Defaults to the theme's colour. Only reinforces meaning; text always carries it.
 # accent = "yellow"
@@ -102,7 +104,8 @@ B = 10
 # Optional: a rain warning from Open-Meteo's forecast (free, no key). The board
 # says "Rain from 07:10 (70%)" when rain is likely before you would reach the
 # next train or bus you can still catch (or within the hour, without walk
-# times). Polled every 30 minutes, only inside the train and bus windows.
+# times). Polled every 30 minutes, only inside the train and bus windows,
+# and only while [board] show has "rain" (the dashboard's "weather" has its own).
 # Two decimal places is plenty; that is all that is sent.
 # [weather]
 # lat = 53.44
