@@ -851,7 +851,8 @@ def test_codes_and_zones_get_the_keyboard_they_need(signed):
 def test_the_display_is_shown_read_only_as_set_in_config_toml(pi):
     page = pi("GET", "/settings/board", cookie=pi.session())[1]
     shown = re.search(r'<dl class="readonly"><div><dt>Display</dt><dd>(.*?)</dd></div></dl>', page).group(1)
-    assert shown.startswith("inky (250×122)") and "Set in config.toml</span>" in shown
+    assert shown == "inky (250×122)"
+    assert "so it is set in config.toml." in page
     assert 'name="display"' not in page and "disabled" not in page
 
 

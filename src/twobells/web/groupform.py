@@ -652,12 +652,11 @@ class GroupForm:
     def _readonly(self, page: str, heading: str, data: dict) -> str:
         """What a section shows but can't change: where it is set instead."""
         e = html.escape
-        tag = f' <span class="pill pill-neutral">{icon("info")} Set in config.toml</span>'
         if (page, heading) == ("board", "Display"):
             display = str(data.get("display", schema.BOARD_DEFAULTS["display"]))
             panel = DISPLAY_PANELS.get(display)
             size = f" ({panel.width}×{panel.height})" if panel is not None else ""
-            return (f'<dl class="readonly"><div><dt>Display</dt><dd>{e(display)}{size}{tag}</dd></div></dl>'
+            return (f'<dl class="readonly"><div><dt>Display</dt><dd>{e(display)}{size}</dd></div></dl>'
                     '<p class="hint">Changing the display means switching services, so it is set in '
                     "config.toml.</p>")
         if (page, heading) == ("trains_buses", "Weather") and isinstance(data.get("weather"), dict):
