@@ -51,7 +51,8 @@ NOTES: dict[tuple[str, str], str] = {
     ("trains_buses", "Title"): "What the board and the dashboard are called.",
     ("trains_buses", "Trains"): "Departures from your station.",
     ("trains_buses", "Buses"): "Departures from your stops.",
-    ("trains_buses", "Trams"): "Metrolink departures from your tram stops, from TfGM's timetable.",
+    ("trains_buses", "Trams"): "Metrolink departures from your tram stops, from TfGM's timetable; or London's "
+                               "Underground, DLR, trams and river buses, live from TfL.",
     ("trains_buses", "Weather"): "A rain warning beside the departures, and the dashboard's forecast.",
     ("board", "Display"): "How the board looks.",
     ("board", "Modes of transport"): "Which departures the board shows, each in a section of its own.",

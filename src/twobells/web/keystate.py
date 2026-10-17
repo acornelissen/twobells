@@ -55,6 +55,9 @@ FORMS = (
             ("RDM_DETAILS_API_KEY",)),
     KeyForm("RDM_KB_API_KEY", "Engineering works",
             "Optional: planned engineering works on your trains' lines, on the dashboard.", ("RDM_KB_API_KEY",)),
+    KeyForm("TFL_APP_KEY", "London's live times",
+            "Optional: more calls a minute to TfL, for the Underground, DLR, trams and river buses. "
+            "They work without one.", ("TFL_APP_KEY",)),
 )
 STATES = ("not_set", "needed", "not_tested", "works", "refused")
 # Each state's pill: its colour and icon, which only repeat its words.
@@ -103,7 +106,7 @@ def pill(state: KeyState) -> str:
 def forms_for(views: tuple[str, ...], data: Mapping) -> tuple[KeyForm, ...]:
     """The forms of the keys the views on use, with the display the settings `data` give."""
     display = str(data.get("display", schema.BOARD_DEFAULTS["display"]))
-    names = {name for name, _, _ in schema.keys_used(views, display)}
+    names = {name for name, _, _ in schema.keys_used(views, display, data)}
     return tuple(form for form in FORMS if set(form.boxes) <= names)
 
 

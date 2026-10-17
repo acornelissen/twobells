@@ -979,7 +979,7 @@ def test_trams_have_sections_only_while_set_up(setup, tmp_path):
     form, _ = _tram_form(tmp_path)
     page = form.render("tok")
     assert page.count('id="section-trams"') == 2  # Trains and buses, and the board's
-    assert "Metrolink departures from your tram stops, from TfGM&#x27;s timetable." in page
+    assert "Metrolink departures from your tram stops, from TfGM&#x27;s timetable; or London&#x27;s" in page
     assert fields_of(form)["metro_walk_minutes_T"] == "4"
     assert '<label for="metro_walk_minutes_T">Piccadilly (T)' in page  # named from the bundled stop list
 

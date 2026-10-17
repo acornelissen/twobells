@@ -25,6 +25,7 @@ from pathlib import Path
 from ..core.errors import safe_message
 from ..core.polling import PollPolicy
 from ..settings import schema
+from ..sources import tfl
 from ..timetable import build as timetable
 from ..timetable import trams
 from . import places
@@ -47,6 +48,8 @@ MEANINGS = {
     "board_bus": "The board's bus times may be out of date.",
     "board_metro": "The board's tram times may be missing: they come from the tram timetable.",
     "trams": "The dashboard shows no trams until there is a tram timetable.",
+    "board_metro_live": "The board's London times may be out of date: they come live from TfL.",
+    "trams_live": "The dashboard's London times may be out of date: they come live from TfL.",
     "board_vehicles": "The board's bus times are from the timetable only, without live positions.",
     "trains": "The dashboard's train times may be out of date.",
     "train_positions": "The dashboard lists trains without saying where each one is.",
@@ -74,7 +77,8 @@ _GUARD_FIX = ("What to do", "On the Pi, restart it: sudo systemctl restart twobe
 # A Host header as the server let it in: a name or an address, and a port.
 _HOST = re.compile(r"(?:\[[0-9A-Fa-f:.]{2,45}\]|[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)(?::[0-9]{1,5})?")
 # Optional keys, by what they add.
-_OPTIONAL = {"RDM_DETAILS_API_KEY": "where each train is", "RDM_KB_API_KEY": "engineering works"}
+_OPTIONAL = {"RDM_DETAILS_API_KEY": "where each train is", "RDM_KB_API_KEY": "engineering works",
+             "TFL_APP_KEY": "more calls a minute to TfL"}
 # A saved key test's result, in words: the Keys page keeps works or refused
 # (settings/keyresults.py); a keytest state says the same.
 _TESTED = {"works": ("pill-ok", "check", "Works"), "refused": ("pill-bad", "x", "Refused"),
@@ -175,7 +179,11 @@ def dashboard_feeds(snapshot: Mapping | None, now: datetime, zone: tzinfo | None
         found.extend(_bus_feeds(buses, now, zone, checking, quiet))
     trams = snapshot.get("metro")
     if isinstance(trams, Mapping):
-        add("Trams", trams.get("status"), MEANINGS["trams"])
+        live = trams.get("live") is True
+        # London's heading ("Underground"), one of those TfL's source gives; anything else is "Trams".
+        label = trams.get("label")
+        name = label if live and label in (*tfl.LABELS.values(), tfl.MIXED) else "Trams"
+        add(str(name), trams.get("status"), MEANINGS["trams_live" if live else "trams"])
     weather = snapshot.get("weather")
     if isinstance(weather, Mapping):
         add("Weather", weather.get("status"), MEANINGS["weather"])
@@ -238,8 +246,8 @@ def board_feeds(data: dict, state: dict | None, now: datetime,
         extra, over = (), False
         if name == "bus" and schema.bus_source(data.get("bus")) == "transportapi":
             extra, over = _budget(data, state, now)
-        found.append(_board_feed(heading, _dict(entries.get(name)), policy, stale_after, now,
-                                 MEANINGS[f"board_{name}"], extra, over))
+        meaning = MEANINGS["board_metro_live" if name == "metro" and schema.london_metro(data) else f"board_{name}"]
+        found.append(_board_feed(heading, _dict(entries.get(name)), policy, stale_after, now, meaning, extra, over))
     vehicles = _dict(state.get("vehicles"))
     if vehicles and not _switched_off(data, "bus"):
         # Saved only alongside fetched departures, so too old to judge "not updating" by.
@@ -454,6 +462,8 @@ def _tram_rows(metro: dict, folder: Path, now: datetime, zone: tzinfo) -> list[s
     rows = [_row("Tram stops", f'<ul class="stops">{items}</ul>{off}')]
     if _off(metro):
         return rows
+    if schema.london_metro({"metro": metro}):
+        return [*rows, _row("Times", "Live from TfL: no timetable to build.")]
     try:
         saved = datetime.fromtimestamp((folder / trams.FILE_NAME).stat().st_mtime, zone).replace(tzinfo=None)
     except OSError:
@@ -521,7 +531,7 @@ def render_keys(data: dict, views: Sequence[str], env: Mapping[str, str], keys_p
     tested = tested or {}
     rows = []
     display = str(data.get("display", schema.BOARD_DEFAULTS["display"]))
-    for name, label, _ in schema.keys_used(tuple(views), display):
+    for name, label, _ in schema.keys_used(tuple(views), display, data):
         if str(env.get(name, "")).strip():
             test = tested.get(name)
             if test is not None and test.state in _TESTED:

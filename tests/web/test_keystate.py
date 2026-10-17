@@ -47,6 +47,13 @@ def test_each_key_of_the_views_on_has_a_state(store):
     assert list(states(store, "pi")) == ["RDM_API_KEY", "BODS_API_KEY", "TAPI_APP_KEY"]
 
 
+def test_tfl_s_key_is_offered_only_while_the_metro_is_london_s(store):
+    store.config_path.write_text(CONFIG + '[metro]\n[metro.stops]\nT = "940GZZLUBNK"\n')
+    assert states(store)["TFL_APP_KEY"] == ("not_set", "Not set")  # optional: never needed
+    store.config_path.write_text(CONFIG + '[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n')
+    assert "TFL_APP_KEY" not in states(store)
+
+
 def test_a_screen_boards_where_each_train_is_key_has_a_state_on_a_board_only_install(store):
     store.config_path.write_text('display = "hdmi-1280x400"\n' + CONFIG)
     assert states(store, "pi") == {

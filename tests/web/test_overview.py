@@ -539,3 +539,27 @@ def test_trams_switched_off_say_so_without_their_timetable(tmp_path):
 def test_the_dashboard_s_trams_are_a_feed():
     page = health(overview.dashboard_feeds(snapshot(metro={"status": block()}), NOW, LONDON))
     assert "Trams" in feed(page, "Trams")
+
+
+# London's metro, live from TfL: no timetable, and its own words.
+
+
+def test_london_s_stops_say_their_times_come_live_with_no_timetable(tmp_path):
+    from twobells.web.overview import render_place
+
+    data = {"metro": {"stops": {"T": "940GZZLUBNK", "U": "940GZZDLBNK"}, "walk_minutes": {"T": 3}}}
+    page = render_place(data, tmp_path, datetime(2026, 10, 19, 8, 0), ZoneInfo("Europe/London"))
+    assert "T: Bank" in page and "U: Bank DLR" in page
+    assert "Live from TfL: no timetable to build." in page and "Tram timetable" not in page
+
+
+def test_the_dashboard_s_london_feed_goes_by_its_heading():
+    from twobells.web.overview import dashboard_feeds
+
+    status = {"last_success": "2026-10-19T07:30:00+01:00", "stale": True, "error": None, "note": None}
+    now = datetime(2026, 10, 19, 8, 0)
+    for label, name in (("Underground", "Underground"), ("<b>Mine</b>", "Trams")):
+        snapshot = {"metro": {"label": label, "live": True, "status": status}}
+        [feed] = [f for f in dashboard_feeds(snapshot, now, ZoneInfo("Europe/London")) if f.name in ("Underground", "Trams")]
+        assert feed.name == name and "live from TfL" in feed.meaning
+
