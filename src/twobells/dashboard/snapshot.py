@@ -182,6 +182,21 @@ def _train_id(service: TrainService) -> str:
     return row_id(_train_noun(dep), identity)
 
 
+def _can_be_next(service: TrainService, fetched: datetime, now: datetime) -> bool:
+    """Whether a train can be the next to depart at `now`: not cancelled,
+    not late with no time to go by (it could go at any moment, or not for
+    long), and not gone by its expected time, or else its booked one. The
+    wall tablet (pa.js due()) reads a row's times the same way, and trusts
+    the "next" announcement this decides."""
+    dep = service.departure
+    if dep.status is Status.CANCELLED:
+        return False
+    scheduled_at, expected_at = _train_times(service, fetched)
+    if dep.status is Status.LATE and expected_at is None:
+        return False
+    return (expected_at or scheduled_at) >= now
+
+
 def _minutes_late(departure: Departure) -> int | None:
     if departure.status is Status.LATE and departure.expected:
         return departure.minutes_late
@@ -392,11 +407,11 @@ def trains_part(board: TrainBoard | None, fetched: datetime | None, status: dict
     rows, lookups = [], {}
     details = details or {}
     if board is not None and fetched is not None:
-        # The next train to depart is the first not cancelled, as the board lists them by time.
+        # The next train to depart is the first that can be, as the board lists them by time.
         next_found = False
         for service in board.services:
             found = details.get(service.service_id) if service.service_id else None
-            is_next = not next_found and service.departure.status is not Status.CANCELLED
+            is_next = not next_found and _can_be_next(service, fetched, now or fetched)
             next_found = next_found or is_next
             row, lookup = train_row(service, fetched, walk, route_prefix, phrases, found, now, platforms, is_next)
             row["arrives"] = train_arrival(service, filter_crs, *_train_times(service, fetched))

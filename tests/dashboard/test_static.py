@@ -4416,29 +4416,45 @@ def test_a_wall_tablet_announces_each_cancellation_alteration_and_next_train_onc
 
 
 @needs_node
-def test_the_next_train_is_the_first_still_to_go_and_not_cancelled():
+def test_the_next_train_is_the_one_the_server_words_as_next():
+    # The server says which is next (snapshot.py), by the same rule: the first
+    # not cancelled, not gone and not late with no time to go by.
     found = run_js(PA_ROWS + """
+        const late = (id, minutes) => row(id, minutes, { status: "late", expected_at: null, announce: [
+          { kind: "delayed", text: `${id} is delayed.` }, { kind: "departs", text: `${id} will depart.` }] });
         const rows = [
-          row("gone", -1),
+          row("gone", -1, { announce: [{ kind: "next", text: "Gone is next." }] }),
           row("off", 1, { status: "cancelled", expected_at: null, announce: [] }),
-          row("untimed", -5, { status: "late", expected_at: null }),
-          row("next", 3),
+          late("untimed", -5),
+          late("untimedLater", 10),
+          row("next", 3, { announce: [{ kind: "next", text: "Next is next." }] }),
           row("after", 4),
         ];
         const said = new Set();
         const now = due(rows, T0, said);
-        rows.splice(3, 1);  // the next has gone from the board
+        rows.splice(4, 1);  // the next has gone from the board
         forget(said, new Set(rows.map((r) => r.id)));
+        const stale = due(rows, T0 + 60_000, said);
+        // The next snapshot words the following train as next.
+        rows[4].announce = [{ kind: "next", text: "After is next." }];
         const then = due(rows, T0 + 60_000, said);
-        console.log(JSON.stringify([keys(now), keys(then), [...said]]));
+        const later = due(rows, T0 + 6 * 60_000, said);
+        console.log(JSON.stringify([texts(now), stale, keys(then), keys(later)]));
     """)
-    assert found == [["next:next"], ["next:after"], ["next:after"]]
+    # A train late with no time to go by has its delay said a few minutes
+    # before it was due; it isn't the next train, which has its own words.
+    assert found[0] == ["untimed is delayed.", "Next is next."]
+    # A later train is never said as departing, however soon it goes.
+    assert found[1] == []
+    assert found[2] == ["next:after"]
+    assert found[3] == ["delayed:untimedLater"]
 
 
 @needs_node
 def test_nothing_is_announced_in_a_quiet_window_or_kept_back_for_after():
     found = run_js(PA_ROWS + """
-        const rows = [row("a", 2), row("c", 30, { status: "cancelled", expected_at: null,
+        const rows = [row("a", 2, { announce: [{ kind: "next", text: "A is next." }] }),
+                      row("c", 30, { status: "cancelled", expected_at: null,
                                                   announce: [{ kind: "cancelled", text: "C is cancelled." }] })];
         const said = new Set();
         const quiet = due(rows, T0, said, true);

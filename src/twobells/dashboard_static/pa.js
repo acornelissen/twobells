@@ -5,8 +5,10 @@
 //
 // A train's sheet has Announce, which says its announcements at once. A wall
 // tablet at "/?kiosk&announce" says some by itself (due()): the next train to
-// depart, a few minutes before it goes, a cancellation and a platform
-// alteration, each once, and never in a quiet window. Browsers play no sound
+// depart, a few minutes before it goes, the delay of a train late with no time
+// to go by, a cancellation and a platform alteration, each once, and never in
+// a quiet window. Which train is next is the server's to say (its "next"
+// announcement), so the tablet and a train's sheet never disagree. Browsers play no sound
 // until the page has been touched, so the tablet asks for one tap, on screen.
 // When the settings leave announcements out (show.js), neither happens.
 //
@@ -33,7 +35,7 @@ export const CHANGE_AHEAD_MS = 60 * 60_000;
 const KINDS = ["platform", "cancelled", "delayed", "next", "departs"];
 const MOST_CHARS = 2000; // far beyond any announcement; anything longer isn't one
 // What the next-train announcement says: the delay first, when there is one.
-const LEAVING = ["delayed", "next", "departs"];
+const LEAVING = ["delayed", "next"];
 
 // A row's announcements, [{ kind, text }] in the order to say them, with
 // anything that isn't one left out.
@@ -57,7 +59,9 @@ export function pickVoice(voices) {
 // order), at `nowMs` on the server's clock, as [{ key, text }]. `said` is a
 // Set of the keys already said, added to here, so each is said once: a
 // cancellation, a platform alteration (again if the platform changes again),
-// and the next train's announcement. Nothing in a quiet window.
+// the next train's announcement (the row the server words as next, while it
+// is still to go), and the delay of a train late with no time to go by, a
+// few minutes before it was due. Nothing in a quiet window.
 export function due(rows, nowMs, said, quiet = false) {
   if (quiet) return [];
   const found = [];
@@ -66,7 +70,6 @@ export function due(rows, nowMs, said, quiet = false) {
     said.add(key);
     found.push({ key, text });
   };
-  let nextSeen = false;
   for (const row of list(rows)) {
     const id = str(row?.id);
     if (!id) continue;
@@ -84,9 +87,9 @@ export function due(rows, nowMs, said, quiet = false) {
       add(`cancelled:${id}`, text(["cancelled"]));
       add(`platform:${id}:${str(row.platform)}`, text(["platform"]));
     }
-    if (cancelled || untimed || nextSeen) continue;
-    nextSeen = true; // the first train still to go is the next
-    if (ahead <= NEXT_AHEAD_MS) add(`next:${id}`, text(LEAVING));
+    if (cancelled || ahead > NEXT_AHEAD_MS) continue;
+    if (untimed) add(`delayed:${id}`, text(["delayed"])); // never the next: it has no time to go by
+    else if (items.some((item) => item.kind === "next")) add(`next:${id}`, text(LEAVING));
   }
   return found;
 }

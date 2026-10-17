@@ -594,6 +594,34 @@ def test_the_first_train_not_cancelled_is_announced_as_the_next():
         "The 22:25 Northern service to Manchester Piccadilly will depart from platform 2. Calling at Dinting, ")
 
 
+def test_the_next_train_is_the_first_still_to_go_with_a_time_to_go_by():
+    # Late with no estimate, it could go at any moment: the next train to
+    # depart is the first with a time to go by, as the wall tablet reads it.
+    part, _ = trains(train("07:01", "Delayed"), train("07:03", "On time", platform="2"))
+    untimed, timed = part["rows"]
+    assert [item["kind"] for item in untimed["announce"]] == ["delayed", "departs"]
+    assert untimed["announce"][0]["text"] == (
+        "We are sorry to announce that the 07:01 Northern service to Manchester Piccadilly is delayed.")
+    assert [item["kind"] for item in timed["announce"]] == ["next"]
+    assert timed["announce"][0]["text"].startswith("The next train to depart from platform 2 will be the 07:03 ")
+
+
+def test_a_train_that_has_left_is_not_the_next():
+    board = parse_board_rich({"trainServices": [train("07:12"), train("07:20", "07:24")]})
+    fetched = datetime(2026, 10, 10, 7, 0, tzinfo=LONDON)
+
+    def kinds(now):
+        part, _ = trains_part(board, fetched, status_block(), "GLO", "MAN", WALK, "GLO>MAN", now=now)
+        return [[item["kind"] for item in row["announce"]] for row in part["rows"]]
+
+    assert kinds(fetched) == [["next"], ["delayed", "departs"]]
+    assert kinds(datetime(2026, 10, 10, 7, 12, tzinfo=LONDON)) == [["next"], ["delayed", "departs"]]
+    # Gone by the time the trains are placed, before the next fetch: the 07:20 is next.
+    assert kinds(datetime(2026, 10, 10, 7, 12, 1, tzinfo=LONDON)) == [["departs"], ["delayed", "next"]]
+    # A late train goes by its expected time.
+    assert kinds(datetime(2026, 10, 10, 7, 25, tzinfo=LONDON)) == [["departs"], ["delayed", "departs"]]
+
+
 def test_a_cancelled_or_late_train_is_announced_with_its_reason():
     part, _ = trains(
         train("07:12", "Cancelled", isCancelled=True,
