@@ -871,6 +871,9 @@ table.board .badge.ghost { margin-top: var(--s-1); font-size: var(--t-sm); }
 .wx-now .wx-text { font-size: var(--t-lg); }
 .wx-detail { margin: var(--s-1) 0; color: var(--muted); }
 .wx-rain-line { margin: var(--s-2) 0; font-weight: 500; }
+/* "Next hours" labels the strip, as the hero's label does its countdown:
+   quiet, so the hours themselves are what you see. */
+.weather h3 { margin: var(--s-4) 0 var(--s-2); font-size: var(--t-sm); font-weight: 500; color: var(--muted); }
 /* The hours: one row of fixed columns that never wraps; where it doesn't fit
    it scrolls sideways, a column at a time. */
 .wx-strip {
@@ -898,11 +901,12 @@ table.board .badge.ghost { margin-top: var(--s-1); font-size: var(--t-sm); }
 .wx-hours .wx-temp { font-size: var(--t-md); font-weight: 500; }
 .wx-rain { display: flex; flex-direction: column; align-items: center; gap: var(--s-1); align-self: stretch; }
 /* The rain bar: a hairline track with the chance drawn along it. The fill is
-   a border, not a background, so it still shows in forced colours. */
+   a border, not a background, so it still shows in forced colours. In the
+   quiet colour, not the accent, which is for what you can act on. */
 .wx-bar { display: block; align-self: stretch; height: 4px; border-radius: 999px; background: var(--line); overflow: hidden; }
-.wx-bar-fill { display: block; width: var(--rain, 0%); height: 0; border-top: 4px solid var(--accent); }
+.wx-bar-fill { display: block; width: var(--rain, 0%); height: 0; border-top: 4px solid var(--muted); }
 .wx-pct { font-size: var(--t-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
-.wx-more { margin-top: var(--s-1); }
+.wx-more { margin-top: 0; }
 .wx-more summary { width: fit-content; padding: var(--s-2) 0; color: var(--accent); cursor: pointer; }
 .wx-more[open] summary { margin-bottom: var(--s-2); }
 @media (pointer: coarse) {
