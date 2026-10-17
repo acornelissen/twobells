@@ -6,8 +6,9 @@ from __future__ import annotations
 import sys
 from datetime import datetime
 
-from ..settings.config import is_enabled, metrolink_on
+from ..settings.config import is_enabled, metrolink_on, needs_timetable
 from ..settings.installs import install_named
+from ..settings.schema import bus_source
 from ..sources.bodsbus import BodsBusSource
 from ..sources.holidays import bank_holidays
 from ..sources.trams import TramTimetableSource
@@ -19,12 +20,28 @@ from .common import as_owner, load_settings, open_store
 def timetable_command(args) -> int:
     as_owner(args, open_store(args))
     data = open_store(args).data()
-    trams = metrolink_on(data)  # London's come live from TfL: nothing to build
+    install = install_named(args.install)
+    # Not a fault to have nothing to build: a Pi's hourly timer runs whatever the settings.
+    trams = needs_timetable(data, "metro", install)  # London's come live from TfL: nothing to build
     codes = [_trams(args)] if trams else []
-    # With trams alone, nothing need be said of buses.
-    if not trams or "bus" in data:
+    if not trams and metrolink_on(data):
+        print("No view that is on shows trams, so there's no tram timetable to build")
+    if needs_timetable(data, "bus", install):
         codes.append(_buses(args))
-    return max(codes)
+    elif not trams or "bus" in data:  # with trams alone, nothing need be said of buses
+        print(f"{_why_no_buses(data)}, so there's no bus timetable to build")
+    return max(codes, default=0)
+
+
+def _why_no_buses(data: dict) -> str:
+    """Why needs_timetable said there's no bus timetable to build."""
+    if "bus" not in data:
+        return "There are no buses on this board"
+    if not is_enabled(data, "bus"):
+        return "Buses are switched off"
+    if bus_source(data["bus"]) != "bods":
+        return "Bus times come from TransportAPI"
+    return "No view that is on shows buses"
 
 
 def _trams(args) -> int:
@@ -53,15 +70,7 @@ def _buses(args) -> int:
     settings = load_settings(args, only={"bus"})
     source = next((c.source for c in settings.board.sources if c.source.name == "bus"), None)
     if not isinstance(source, BodsBusSource):
-        # Not a fault: a Pi's hourly timer runs whatever the settings, for trams or BODS set up later.
-        data = open_store(args).data()
-        if "bus" not in data:
-            print("There are no buses on this board, so there's no bus timetable to build")
-        elif not is_enabled(data, "bus"):
-            print("Buses are switched off, so there's no bus timetable to build")
-        else:
-            print("Bus times come from TransportAPI, so there's no bus timetable to build")
-        return 0
+        return 0  # needs_timetable said BODS: not after all
     # The timetable's bank holiday names come from this list, so keep it fresh
     # whatever bank_holidays says about checking times. Always England and
     # Wales: BODS timetables are England's.

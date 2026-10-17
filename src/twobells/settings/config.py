@@ -51,6 +51,7 @@ from .schema import (
     TRAM_STOP,
     board_room,
     bus_defaults,
+    bus_source,
     refused,
     room_other,
     saved_keys,
@@ -58,6 +59,7 @@ from .schema import (
 )
 
 if TYPE_CHECKING:
+    from .installs import Install
     from .store import Store
 
 log = logging.getLogger(__name__)
@@ -334,6 +336,20 @@ def metrolink_on(data: dict) -> bool:
     stops = metro.get("stops")
     codes = stops.values() if isinstance(stops, dict) else ()
     return not any(isinstance(code, str) and LONDON_STOP.match(code) for code in codes)
+
+
+def needs_timetable(data: dict, mode: str, install: Install | None = None) -> bool:
+    """Whether `mode` ("bus" or "metro") has a timetable to build: its times
+    come from one (buses from BODS, Metrolink's trams from TfGM's) and a view
+    that is on shows it ([app] views, or `install`'s default ones). The bus
+    and tram timetables both go by this. ConfigError for settings that say
+    neither, as their loaders do."""
+    if mode == "metro":
+        timetabled = metrolink_on(data)
+    else:
+        bus = data.get("bus")
+        timetabled = isinstance(bus, dict) and is_enabled(data, "bus") and bus_source(bus) == "bods"
+    return timetabled and any(mode in mode_list.shown(data, view) for view in views(data, install))
 
 
 def switched_on(data: dict) -> dict:

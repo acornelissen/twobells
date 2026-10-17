@@ -7,9 +7,9 @@ import sys
 from typing import cast
 
 from ..board.displays.display import DISPLAY_PANELS
-from ..settings.config import ConfigError, is_enabled, metrolink_on
-from ..settings.installs import install_named
-from ..settings.schema import BOARD_DEFAULTS, bus_source, views
+from ..settings.config import ConfigError, needs_timetable
+from ..settings.installs import Install, install_named
+from ..settings.schema import BOARD_DEFAULTS, views
 from ..settings.store import Store
 from .common import as_owner, local_now, open_store, parse_stops
 
@@ -74,15 +74,12 @@ def discover_command(args) -> int:
     return 0
 
 
-def _wants_timetable(store: Store) -> bool:
-    """Whether the board's buses are on and come from the BODS timetable, or
-    its Metrolink trams are on (they come from TfGM's timetable alone; London's
-    come live from TfL), in config.toml with the settings saved from the page over it."""
+def _wants_timetable(store: Store, install: Install) -> bool:
+    """Whether a view that is on shows buses from the BODS timetable, or
+    Metrolink's trams (from TfGM's timetable alone; London's come live from
+    TfL), in config.toml with the settings saved from the page over it."""
     data = store.data()
-    bus = data.get("bus")
-    if metrolink_on(data):
-        return True
-    return isinstance(bus, dict) and is_enabled(data, "bus") and bus_source(bus) == "bods"
+    return needs_timetable(data, "bus", install) or needs_timetable(data, "metro", install)
 
 
 def query_command(args) -> int:
@@ -91,15 +88,15 @@ def query_command(args) -> int:
     keys are read and nothing is written.
       views            each view switched on (none: no lines)
       display          the display config.toml sets (it alone may)
-      needs-timetable  yes or no: whether buses come from the BODS timetable,
-                       or trams from TfGM's;
+      needs-timetable  yes or no: whether a view that is on shows buses from
+                       the BODS timetable, or trams from TfGM's;
                        exits 0 for yes and 1 for no, for `if`
     Settings that can't be read exit 2, saying why."""
     install = install_named(args.install)
     try:
         store = Store.open(args.config, None, state_dir=args.state_dir, install=install.name)
         if args.what == "needs-timetable":
-            wanted = _wants_timetable(store)
+            wanted = _wants_timetable(store, install)
             print("yes" if wanted else "no")
             return 0 if wanted else 1
         data = store.data()

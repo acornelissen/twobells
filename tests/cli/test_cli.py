@@ -1699,6 +1699,16 @@ def test_query_display_prints_the_display_config_toml_sets(tmp_path, capsys, con
     ('[train]\ncrs = "GLO"\n', "", False),  # no buses at all
     ('[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n', "", True),  # Metrolink: TfGM's timetable
     ('[metro]\n[metro.stops]\nT = "940GZZLUBNK"\n', "", False),  # London: live from TfL
+    # Set up, but no view that is on shows them: nothing to build.
+    ('[train]\ncrs = "GLO"\n[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n',
+     '[board]\nmodes = ["train"]\n[dashboard]\nmodes = ["train"]\n', False),
+    ('[train]\ncrs = "GLO"\n[bus]\nsource = "bods"\n', '[board]\nmodes = ["train"]\n', False),
+    # Shown by the dashboard, switched on, but not by the board.
+    ('[train]\ncrs = "GLO"\n[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n',
+     '[app]\nviews = ["board", "dashboard"]\n[board]\nmodes = ["train"]\n', True),
+    # Shown by the board, which is switched off.
+    ('[train]\ncrs = "GLO"\n[bus]\nsource = "bods"\n',
+     '[app]\nviews = ["dashboard"]\n[dashboard]\nmodes = ["train"]\n', False),
 ])
 def test_query_needs_timetable_says_yes_or_no_and_exits_so(tmp_path, capsys, config, saved, wanted):
     assert _query(tmp_path, "needs-timetable", config, saved) == (0 if wanted else 1)
@@ -2517,6 +2527,24 @@ def test_timetable_builds_trams_set_up_beside_buses_from_transportapi(probe_env,
     monkeypatch.setattr(trams, "refresh", fake_trams)
     assert main(["timetable", *args]) == 0
     assert "Tram timetable: 4 departures at your tram stops" in capsys.readouterr().out
+
+
+def test_timetable_builds_nothing_no_view_that_is_on_shows(bods_env, monkeypatch, capsys):
+    # Trams and BODS buses set up, but each view that is on shows trains alone: no 45 MB download weekly.
+    from twobells.timetable import build as timetable
+    from twobells.timetable import trams
+
+    args, folder = bods_env
+    config = Path(args[1])
+    config.write_text(config.read_text() + '[train]\ncrs = "GLO"\n[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n')
+    folder.mkdir()
+    (folder / "settings.toml").write_text('[app]\nviews = ["board", "dashboard"]\n'
+                                          '[board]\nmodes = ["train"]\n[dashboard]\nmodes = ["train"]\n')
+    monkeypatch.setattr(trams, "refresh", lambda *a, **k: pytest.fail("built the tram timetable"))
+    monkeypatch.setattr(timetable, "refresh", lambda *a, **k: pytest.fail("built the bus timetable"))
+    assert main(["timetable", *args, "--install", "pi"]) == 0
+    assert capsys.readouterr().out == ("No view that is on shows trams, so there's no tram timetable to build\n"
+                                       "No view that is on shows buses, so there's no bus timetable to build\n")
 
 
 def test_timetable_with_trams_alone_says_nothing_of_buses(tmp_path, monkeypatch, capsys):
