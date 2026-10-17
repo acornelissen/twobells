@@ -162,6 +162,47 @@ def test_a_train_darwin_forgets_is_left_to_its_last_estimate(history):
     assert (arrived["arrived"], arrived["reported"]) == ("2026-10-09T21:59:00+00:00", False)
 
 
+def test_darwin_is_asked_when_it_got_there_before_its_estimate_is_taken(history):
+    # Booked at Manchester at 22:57, estimated at 23:11, there at 23:13: 16 minutes late, not 14.
+    details = Details()
+    watch = _watch(history, details)
+    watch.poll(glossop(et="23:11"), at("22:20"))
+    details.manchester = {"et": "23:11"}
+    watch.poll(glossop(without=[FIRST]), at("23:08"))
+    watch.poll(glossop(without=[FIRST]), at("23:12"))
+    details.manchester = {"et": "23:11", "at": "23:13"}
+    watch.poll(glossop(without=[FIRST]), at("23:13"))
+    [arrived] = history.arrivals("MAN", FRIDAY)
+    assert (arrived["arrived"], arrived["reported"]) == ("2026-10-09T22:13:00+00:00", True)
+
+
+def test_a_followed_train_waits_for_darwin_while_it_still_knows_the_train(history):
+    details = Details()
+    watch = _watch(history, details)
+    watch.poll(glossop([SECOND], et="23:11"), at("22:20"))
+    details.manchester = {"et": "23:11"}
+    for minute in ("23:08", "23:14", "23:20"):
+        watch.poll(glossop([FIRST, SECOND]), at(minute))
+    history.sweep(at("23:30"))  # upkeep doesn't take its estimate either
+    assert history.arrivals("MAN", FRIDAY) == []
+    details.manchester = {"et": "23:11", "at": "23:16"}
+    watch.poll(glossop([FIRST, SECOND]), at("23:31"))
+    [arrived] = history.arrivals("MAN", FRIDAY)
+    assert (arrived["arrived"], arrived["reported"]) == ("2026-10-09T22:16:00+00:00", True)
+
+
+def test_a_failed_ask_after_its_estimate_lets_the_estimate_stand(history):
+    details = Details()
+    watch = _watch(history, details)
+    watch.poll(glossop(et="23:11"), at("22:20"))
+    details.manchester = {"et": "23:11"}
+    watch.poll(glossop(without=[FIRST]), at("23:08"))
+    details.error = DetailsError("down")
+    assert watch.poll(glossop(without=[FIRST]), at("23:13")) == [details.error]
+    [arrived] = history.arrivals("MAN", FRIDAY)
+    assert (arrived["arrived"], arrived["reported"]) == ("2026-10-09T22:11:00+00:00", False)
+
+
 def test_a_train_darwin_no_longer_knows_is_not_asked_about_again(history):
     details = Details()
     watch = _watch(history, details)

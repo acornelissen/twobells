@@ -18,8 +18,11 @@ ArrivalWatch.poll:
      while it is due there within FOLLOW_AHEAD or overdue, by asking for its
      service details: at most once a minute per train. One Darwin no longer
      knows (ServiceGone) isn't asked about again.
-  3. History.settle decides each arrival: Darwin's reported time, or else
-     its last estimate once that has passed (history.py has the rules).
+  3. History.settle decides each arrival, after the asking: Darwin's
+     reported time, or else its last estimate once that has passed. A train
+     Darwin has answered for waits for Darwin's time, until Darwin no longer
+     knows it or asking about it fails (History.let_go); history.py has the
+     rules.
 A key that is refused turns following off for six hours; anything else
 that fails is tried again a minute later, and given to be logged once
 while it repeats.
@@ -135,17 +138,17 @@ class ArrivalWatch:
         doesn't stop for them; anything the history raises is raised."""
         rows = watched(board, now, self._prefix, self._station)
         self._history.watch(rows, now)
-        self._history.settle(now)
         here = {(row.route, row.leaves.astimezone(UTC)) for row in rows}
         due = [train for train in self._history.following(now) if (train.route, train.leaves) not in here]
         errors = self._follow(due, now) if due else []
-        self._history.settle(now)
+        self._history.settle(now)  # after asking: Darwin's time, not the estimate, where it has one
         return errors
 
     def _follow(self, due: list[Following], now: datetime) -> list[Exception]:
         """Ask about each train due, for its journey, at most once every
-        ASK_EVERY; a train Darwin no longer knows is left to History.settle,
-        and not asked about again. The failures not given last time."""
+        ASK_EVERY; a train Darwin no longer knows, or whose ask fails, is let
+        go, to be settled from its estimate, and one Darwin no longer knows
+        isn't asked about again. The failures not given last time."""
         ids = {train.identity for train in due if train.identity}
         self._asked = {key: asked for key, asked in self._asked.items() if key in ids}
         self._gone &= ids
@@ -163,18 +166,23 @@ class ArrivalWatch:
             except DetailsUnavailable as error:
                 self._off_until = self._monotonic() + OFF_FOR
                 errors.append(error)
+                self._history.let_go(train)
                 break
             except ServiceGone:
                 self._gone.add(identity)
+                self._history.let_go(train)
                 continue
             except Exception as error:  # noqa: BLE001 - this train is tried again in a minute
                 errors.append(error)
+                self._history.let_go(train)
                 continue
             point = _point_there(found.subsequent, self._station)
-            if point is not None:
-                booked = train.booked.astimezone(now.tzinfo)  # its HH:MM are the board's
-                report = _report(booked, now, point.expected, point.actual, point.cancelled)
-                self._history.report(train, report, now)
+            if point is None:  # no longer calls there, as far as Darwin says
+                self._history.let_go(train)
+                continue
+            booked = train.booked.astimezone(now.tzinfo)  # its HH:MM are the board's
+            report = _report(booked, now, point.expected, point.actual, point.cancelled)
+            self._history.report(train, report, now)
         return self._news(errors)
 
     def _may_ask(self, identity: str, now: datetime) -> bool:

@@ -31,9 +31,13 @@ It also keeps when trains reached the filter station, for the Performance
 page's Delay Repay watch (dashboard/repay.py): one row per train per day in
 `arrival`, kept up to date (watch(), report()) until it has arrived:
   1. Darwin reports the time it got there, or that it was cancelled there;
-  2. or its estimate is ARRIVED old, having been seen within WATCHED of it:
-     it got there then, as near as anyone can tell;
-  3. or it is still undecided an hour after its estimate, or was only ever
+  2. or its estimate is ARRIVED old, having been seen within WATCHED of it,
+     and Darwin can't say more: the train isn't followed (report()), or
+     was let go (let_go(): Darwin no longer knows it, or asking failed).
+     It got there then, as near as anyone can tell;
+  3. or a train still followed is still undecided an hour after its
+     estimate: its last estimate is taken then;
+  4. or it is still undecided an hour after its estimate, or was only ever
      "Delayed": nobody saw it arrive, so it is deleted (settle()).
 
 Version 1 had only `outcome`, and version 2 added `arrival`; both kept
@@ -117,6 +121,8 @@ CREATE TABLE outcome (
 # When each train reached the filter station. `leaves` is when it was booked
 # to leave your station, `booked` when to get there; `expected` is the latest
 # estimate (`known` 0 while it is only "Delayed"), `actual` what Darwin reported.
+# `followed` is 1 while Darwin's service details answer for it, so it waits
+# for Darwin's time rather than taking its estimate.
 _ARRIVAL = """
 CREATE TABLE arrival (
     day TEXT NOT NULL,
@@ -135,6 +141,7 @@ CREATE TABLE arrival (
     cancelled INTEGER NOT NULL,
     last_seen TEXT NOT NULL,
     final INTEGER NOT NULL DEFAULT 0,
+    followed INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (route, leaves, station)
 )"""
 
@@ -178,7 +185,7 @@ WHERE arrival.final = 0
 _ARRIVAL_REPORT = """
 UPDATE arrival SET
     expected = CASE WHEN ? THEN ? ELSE expected END,
-    known = ?, actual = ?, cancelled = ?, last_seen = ?, final = ?
+    known = ?, actual = ?, cancelled = ?, last_seen = ?, final = ?, followed = 1
 WHERE route = ? AND leaves = ? AND station = ? AND final = 0
 """
 
@@ -632,7 +639,9 @@ class History:
         ]
 
     def report(self, train: Following, found: Report, seen_at: datetime) -> None:
-        """What a later look at `seen_at` said about `train`: its estimate, or when it got there."""
+        """What Darwin's service details said about `train` at `seen_at`: its
+        estimate, or when it got there. Until let go, it waits for Darwin's
+        time rather than taking its estimate."""
         now = _stamp(seen_at, "seen_at")
         expected = _stamp(found.expected, "expected") if found.expected is not None else None
         actual = _stamp(found.actual, "actual") if found.actual is not None else None
@@ -644,24 +653,34 @@ class History:
                 train.route, _stamp(train.leaves, "leaves"), train.station,
             ))
 
+    def let_go(self, train: Following) -> None:
+        """Darwin can't say when `train` got there: it no longer knows it, or
+        asking failed. Its estimate may be taken now (settle)."""
+        with self._lock, self._db:
+            self._db.execute("UPDATE arrival SET followed = 0 WHERE route = ? AND leaves = ? AND station = ?",
+                             (train.route, _stamp(train.leaves, "leaves"), train.station))
+
     def settle(self, now: datetime) -> None:
         """Decide the arrivals that can be: an estimate ARRIVED old that was
-        seen within WATCHED of it is when the train got there; one an hour
-        old that wasn't, or was only "Delayed", is deleted, as nobody knows."""
+        seen within WATCHED of it is when the train got there, unless Darwin
+        is still asked about it (report), until it is an hour old; one an
+        hour old that wasn't seen near it, or was only "Delayed", is
+        deleted, as nobody knows."""
         utc = _utc(now, "now")
         with self._lock, self._db:
             rows = self._db.execute(
-                "SELECT route, leaves, station, expected, known, last_seen FROM arrival"
+                "SELECT route, leaves, station, expected, known, last_seen, followed FROM arrival"
                 " WHERE final = 0 AND expected <= ?",
                 (iso(utc - ARRIVED),),
             ).fetchall()
-            for route, leaves, station, expected, known, last_seen in rows:
+            for route, leaves, station, expected, known, last_seen, followed in rows:
                 key = (route, leaves, station)
                 at = datetime.fromisoformat(expected)
-                if known and at - datetime.fromisoformat(last_seen) <= WATCHED["train"]:
+                stale = utc - at >= _ARRIVAL_STALE
+                if known and at - datetime.fromisoformat(last_seen) <= WATCHED["train"] and (stale or not followed):
                     self._db.execute("UPDATE arrival SET final = 1 WHERE route = ? AND leaves = ? AND station = ?",
                                      key)
-                elif utc - at >= _ARRIVAL_STALE:
+                elif stale:
                     self._db.execute("DELETE FROM arrival WHERE route = ? AND leaves = ? AND station = ?", key)
 
     def arrivals(self, station: str, since: date) -> list[dict]:

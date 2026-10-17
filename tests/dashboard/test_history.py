@@ -687,7 +687,7 @@ def test_a_version_2_history_is_moved_on_and_keeps_every_row(tmp_path):
          **{name: _kept(row[name]) for name in ("first_seen", "last_seen", "departs_at")}}
         for row in outcomes]
     assert _arrival_rows(tmp_path) == [
-        {**row, "leaves": _kept(f"{row['day']}T{row['scheduled']}"),
+        {**row, "leaves": _kept(f"{row['day']}T{row['scheduled']}"), "followed": 0,
          **{name: _kept(row[name]) for name in ("booked", "expected", "actual", "last_seen")}}
         for row in arrivals]
     assert _rows(tmp_path)[1]["leaves"] == "2026-10-08T06:42:00+00:00"  # 07:42 BST
@@ -794,12 +794,34 @@ def test_a_reported_arrival_is_final_at_once(history, tmp_path):
 
 
 def test_an_estimate_seen_near_its_time_is_the_arrival_once_it_has_passed(history, tmp_path):
+    history.watch([_arriving(expected="08:21")], _at("08:18"))  # still on the board, not followed
+    history.settle(_at("08:22"))  # only a minute past it: not yet
+    assert _arrival_rows(tmp_path)[0]["final"] == 0
+    history.settle(_at("08:23"))
+    [arrived] = history.arrivals("MAN", FRIDAY)
+    assert (arrived["arrived"], arrived["reported"]) == ("2026-10-09T07:21:00+00:00", False)
+
+
+def test_a_followed_train_waits_for_darwin_until_let_go(history, tmp_path):
+    history.watch([_arriving(expected="08:21")], _at("07:40"))
+    [train] = history.following(_at("08:15"))
+    history.report(train, Report(_at("08:23"), None, False), _at("08:20"))  # Darwin answers for it
+    history.settle(_at("08:40"))
+    assert _arrival_rows(tmp_path)[0]["final"] == 0  # Darwin may yet say when it got there
+    history.let_go(train)  # Darwin no longer knows it, or asking failed
+    history.settle(_at("08:41"))
+    [arrived] = history.arrivals("MAN", FRIDAY)
+    assert (arrived["arrived"], arrived["reported"]) == ("2026-10-09T07:23:00+00:00", False)
+
+
+def test_a_followed_train_takes_its_estimate_after_an_hour(history, tmp_path):
     history.watch([_arriving(expected="08:21")], _at("07:40"))
     [train] = history.following(_at("08:15"))
     history.report(train, Report(_at("08:23"), None, False), _at("08:20"))
-    history.settle(_at("08:24"))  # only a minute past it: not yet
+    history.report(train, Report(_at("08:23"), None, False), _at("09:20"))  # still no time from Darwin
+    history.sweep(_at("09:22"))
     assert _arrival_rows(tmp_path)[0]["final"] == 0
-    history.settle(_at("08:25"))
+    history.sweep(_at("09:23"))
     [arrived] = history.arrivals("MAN", FRIDAY)
     assert (arrived["arrived"], arrived["reported"]) == ("2026-10-09T07:23:00+00:00", False)
 
