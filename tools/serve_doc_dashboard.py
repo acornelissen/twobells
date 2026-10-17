@@ -19,7 +19,9 @@ so the light pictures can be taken from a browser set to dark. --trams adds
 a Trams section, made up (Glossop has none): the timetable's trams from
 Piccadilly that morning, for the pictures of trams. --london adds London's
 instead, live from TfL, made up too: Bank's Underground and DLR that
-morning, with a line's status and a lift out of order.
+morning, with a line's status and a lift out of order. --leave bus has
+Next to catch pick from the buses alone, and --leave none leaves it out, for
+the pictures of the time and the weather in its place.
 
 --phone also serves /frame: a page holding the dashboard in a frame 390
 CSS pixels wide and 844 high, a phone's, for the phone-width pictures from
@@ -241,6 +243,8 @@ def main() -> None:
                         help="/frame's frame moved up this far, to show a part lower down")
     parser.add_argument("--trams", action="store_true", help="a made-up Trams section too")
     parser.add_argument("--london", action="store_true", help="a made-up section of London's metro instead")
+    parser.add_argument("--leave", metavar="MODES",
+                        help="the modes Next to catch picks from, separated by commas, or none")
     args = parser.parse_args()
     snapshot = sample_snapshot()
     snapshot["quiet"] = args.quiet
@@ -250,6 +254,8 @@ def main() -> None:
     if args.london:
         snapshot["metro"] = sample_london(snapshot["generated_at"])
         snapshot["walk"]["metro"] = dict(_LONDON_WALK)
+    if args.leave is not None:
+        snapshot["leave_modes"] = [] if args.leave == "none" else args.leave.split(",")
     Handler.snapshot = json.dumps(snapshot).encode()
     Handler.area = json.dumps(sample_area(snapshot["generated_at"])).encode()
     Handler.started_at = datetime.fromisoformat(snapshot["generated_at"]).timestamp()

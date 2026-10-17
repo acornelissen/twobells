@@ -296,10 +296,11 @@ def test_a_show_list_s_presets_become_buttons_that_tick_its_boxes(board_page):
     """)
     assert found["named"] == [["Just the times", "button"], ["The usual", "button"], ["Everything", "button"]]
     usual = ["platforms", "where", "disruption", "rain", "last_bus", "bus_page"]
-    assert found["before"] == [*usual, "calling_at"]  # no list saved: all but the clock page
-    assert found["times"] == []
-    assert found["everything"] == [*usual, "calling_at", "clock_page"]
-    assert found["usual"] == usual
+    leave = ["leave-train", "leave-bus"]  # When to leave: every preset ticks each mode
+    assert found["before"] == [*leave, *usual, "calling_at"]  # no list saved: all but the clock page
+    assert found["times"] == leave
+    assert found["everything"] == [*leave, *usual, "calling_at", "clock_page"]
+    assert found["usual"] == [*leave, *usual]
     assert found["counted"] == "1 unsaved change"  # the clock page's box
     assert found["after"] == "1 unsaved change"  # the calling-at box
     assert found["legend"] == "Fill in from a preset" and found["inside"] and found["hidden"]

@@ -193,3 +193,28 @@ def test_the_board_s_modes_check_goes_by_the_look_and_text_size():
         check("hdmi-1280x400", "plain", 13)("train bus metro")
     with pytest.raises(Invalid, match="The Inky pHAT has room for 2 modes at most"):
         check("inky", "sign", 11)("train bus metro")
+
+
+# When to leave: [view] leave_modes.
+
+
+@pytest.mark.parametrize("view", modes.VIEWS)
+def test_without_a_leave_list_a_view_gives_every_mode_set_up_leave_times(view):
+    assert modes.leave(BOTH, view) == ("train", "bus")
+    assert modes.leave({"bus": BOTH["bus"]}, view) == ("bus",)
+
+
+def test_a_leave_list_names_the_modes_set_up_that_get_leave_times_or_none():
+    assert modes.leave({**BOTH, "board": {"leave_modes": ["bus"]}}, "board") == ("bus",)
+    assert modes.leave({**BOTH, "dashboard": {"leave_modes": ["bus", "train"]}}, "dashboard") == ("train", "bus")
+    assert modes.leave({**BOTH, "board": {"leave_modes": []}}, "board") == ()  # none: unlike a modes list
+    assert modes.leave({**BOTH, "board": {"leave_modes": ["metro"]}}, "board") == ()  # trams not set up
+    # Each view its own.
+    data = {**BOTH, "board": {"leave_modes": ["train"]}}
+    assert (modes.leave(data, "board"), modes.leave(data, "dashboard")) == (("train",), ("train", "bus"))
+
+
+@pytest.mark.parametrize("value", ["bus", ["ferry"], ["bus", "bus"], [1], {"bus": True}])
+def test_a_leave_list_that_isn_t_one_is_refused(value):
+    with pytest.raises(ConfigError, match=r"\[board\] leave_modes"):
+        modes.leave({**BOTH, "board": {"leave_modes": value}}, "board")

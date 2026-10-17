@@ -337,6 +337,7 @@ def build_view(
     show: Collection[str] | None = None,
     scroll: bool = True,
     labels: Mapping[str, tuple[str, str]] | None = None,
+    leave: Collection[str] | None = None,
 ) -> BoardView:
     """A section for each mode in `departures`, in its order: its departures
     (settings/modes.py), each drawn as its mode's rows are. `clock`
@@ -351,6 +352,8 @@ def build_view(
     `scroll`, a screen cuts text too long for its space short, as e-paper does.
     `labels` give a mode's section its own (heading, empty words) in place of
     its mode's: London's metro is "Underground", "DLR" and the like.
+    `leave` are the modes it says when to leave for, None for all of them:
+    a mode left out has no "Leave by" or "Leave in" words.
 
     `show` is what the board shows of what it can leave out (settings/show.py),
     None for all of it. What it leaves out is left out of the view, so no look
@@ -369,7 +372,8 @@ def build_view(
         if mode == "metro":
             to_row = partial(_tram_row, several=len({d.stop for d in found}) > 1,
                              lines=len({d.service for d in found}) > 1, platforms="platforms" in shown)
-        sections.append(_section(mode, list(found), to_row, now, mode in stale, walk, wording, clock, strips, names,
+        walks = walk if leave is None or mode in leave else None
+        sections.append(_section(mode, list(found), to_row, now, mode in stale, walks, wording, clock, strips, names,
                                  (labels or {}).get(mode)))
     return BoardView(
         title=title,

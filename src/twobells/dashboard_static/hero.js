@@ -1,14 +1,20 @@
 // The hero, "Next to catch": the departure to leave for next, a countdown to
 // its leaving time, how sure that departure is, what to catch instead, the
-// rain sentence, and its own Remind me.
+// rain sentence, and its own Remind me. It picks from the modes the settings
+// give leave times for ([dashboard] leave_modes, the snapshot's leave_modes).
+//
+// When it has nothing to point at, or the settings leave it out, the time
+// and the weather now take its place, large: the page is then a clock
+// first. The header's small clock and the weather section's own "now" line
+// make way for it (<html data-now>), so neither is said twice.
 //
 // It is drawn every second, so the countdown is deliberately not a live
 // region: the announcer (live.js) is told only when the departure it points
 // at changes and the change has held for 30 s, so a bus whose tracker comes
 // and goes doesn't flip the announcement back and forth.
 
-import { $, h, patch, setText, vh, str, num, obj, validId } from "./dom.js";
-import { hhmm, now, parseAt, relative } from "./time.js";
+import { $, h, patch, setText, vh, str, num, obj, list, validId } from "./dom.js";
+import { clockText, dateText, hhmm, now, parseAt, relative } from "./time.js";
 import { describe, isOn, remindNote, toggle } from "./alerts.js";
 import { trainNoun } from "./extras.js";
 import { GO_MS, stopText, tramNoun, tramStopText } from "./board.js";
@@ -16,6 +22,7 @@ import { announce, unannounce } from "./live.js";
 import { icon } from "./icons.js";
 import { isKiosk } from "./kiosk.js";
 import { shows } from "./show.js";
+import { nowLine } from "./weather.js";
 
 const NOW_MS = 60_000; // "Leave now" from the last minute until the row drops (GO_MS)
 const SECONDS_MS = 2 * 60_000; // seconds shown below this
@@ -179,33 +186,69 @@ function noteTarget(id, next, t) {
   pointing = null;
 }
 
+// The departures of the modes Next to catch picks from: `modes` from the
+// snapshot's leave_modes, or every one in a snapshot without it.
+export function pickable(rowsById, modes) {
+  if (!Array.isArray(modes)) return rowsById;
+  const wanted = list(modes);
+  return new Map([...rowsById].filter(([, e]) => wanted.includes(e.mode)));
+}
+
+// The time and the weather now, large, in the hero's place.
+function drawNow(context) {
+  setText($("now-clock"), clockText());
+  setText($("now-date"), dateText());
+  const weather = obj(context?.weather);
+  const current = obj(weather?.now);
+  patch($("now-weather"), current ? nowLine(current) : null);
+  const rain = str(weather?.rain);
+  setText($("now-rain"), rain);
+  $("now-rain").hidden = !rain;
+}
+
+// Shows the hero, or the time and weather in its place (`clock`). Focus in
+// the one going goes to the other's heading, so it isn't lost.
+function showClock(clock) {
+  const banner = $("leave"), stand = $("now");
+  const going = clock ? banner : stand;
+  if (!going.hidden && going.contains(document.activeElement)) {
+    $(clock ? "now-heading" : "leave-heading").focus({ preventScroll: true });
+  }
+  banner.hidden = clock;
+  stand.hidden = !clock;
+  const root = document.documentElement;
+  if (root && clock) root.dataset.now = "";
+  else if (root) delete root.dataset.now;
+}
+
 // Draws the hero. rowsById maps id to { row, mode }; `context` is
-// { stops (board.js stopNames), rain (the weather's rain sentence) }.
+// { stops (board.js stopNames), tramStops, rain (the weather's rain
+// sentence), weather (the snapshot's, while the page shows it), leaveModes
+// (the snapshot's leave_modes) }.
 export function renderHero(rowsById, context) {
   const banner = $("leave");
-  // Left out by the settings (show.js): not drawn, and never announced.
-  banner.hidden = !shows("next_to_catch");
-  if (banner.hidden) {
+  // Left out by the settings (show.js), or with no mode to pick from: never announced.
+  const modes = context?.leaveModes;
+  const on = shows("next_to_catch") && !(Array.isArray(modes) && !modes.length);
+  const t = now();
+  const next = on ? nextCatchable(pickable(rowsById, modes), t) : null;
+  if (on) noteTarget(next ? str(next.row.id) || null : null, next, t);
+  shown = next;
+  if (!next) {
+    // Nothing to leave for: the time and the weather instead.
     shown = null;
+    banner.classList.remove("soon", "now");
+    showClock(true);
     drawRemind();
+    drawNow(context);
     return;
   }
-  const t = now();
-  const next = nextCatchable(rowsById, t);
-  const id = next ? str(next.row.id) || null : null;
-  noteTarget(id, next, t);
-  shown = next;
+  showClock(false);
   const rain = str(obj(context)?.rain);
   setText($("leave-rain"), rain);
   $("leave-rain").hidden = !rain;
-  for (const part of ["leave-sure", "leave-then"]) $(part).hidden = !next;
+  for (const part of ["leave-sure", "leave-then"]) $(part).hidden = false;
   drawRemind();
-  if (!next) {
-    banner.classList.remove("soon", "now");
-    setText($("leave-time"), "Nothing to leave for");
-    setText($("leave-what"), "No departure with a walk time is coming up.");
-    return;
-  }
   const ms = next.leave - t;
   banner.classList.toggle("now", ms <= NOW_MS);
   banner.classList.toggle("soon", ms > NOW_MS && ms <= SOON_MS);
@@ -216,7 +259,7 @@ export function renderHero(rowsById, context) {
   const [name, text] = SURE[sure];
   patch($("leave-sure"), h("span", { class: ["sure", `sure-${sure}`] },
     h("span", { class: "glyph", "aria-hidden": "true" }, icon(name)), text));
-  const then = thenLine(thenOptions(rowsById, next, t));
+  const then = thenLine(thenOptions(pickable(rowsById, modes), next, t));
   patch($("leave-then"), then);
   $("leave-then").hidden = !then.length;
 }

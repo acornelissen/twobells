@@ -433,6 +433,18 @@ def test_a_preset_picked_on_saving_replaces_the_ticks(tmp_path, preset, expected
     assert fields_of(form)["board_show_preset"] == ""  # drawn again with no preset picked
 
 
+def test_the_board_says_when_to_leave_for_the_modes_ticked(tmp_path):
+    form = _form_for(tmp_path, 'theme = "sign"\ndisplay = "hdmi-1280x400"')
+    page = form.render("tok")
+    assert "<legend>When to leave</legend>" in page
+    assert page.index('id="board_show-leave-train"') < page.index('id="board_show-platforms"')  # first in the list
+    assert form.save(fields_of(form) | {"board_show-leave-train": ""}) == {}
+    assert tomllib.loads(_saved_text(form))["board"]["leave_modes"] == ["bus"]
+    assert fields_of(form)["board_show-leave-bus"] == "on" and "board_show-leave-train" not in fields_of(form)
+    # Every preset ticks them all: the board has no item for them to follow.
+    assert form.save(fields_of(form) | {"board_show_preset": "times"}) == {}
+    assert tomllib.loads(_saved_text(form))["board"]["leave_modes"] == ["train", "bus"]
+
 @pytest.mark.parametrize("sent", [{"board_show_preset": "most"}, {"board_show-weather": "on"},
                                   {"board_show-rain": "yes"}])
 def test_a_show_list_takes_only_what_the_form_offers(tmp_path, sent):
@@ -445,7 +457,7 @@ def test_a_show_list_takes_only_what_the_form_offers(tmp_path, sent):
     assert set(errors) == {"board_show"}
     assert not _saved_text(form)
     page = form.render("tok", errors=errors, values=fields_of(form) | sent)
-    assert '<a href="#board_show-platforms">What to show:' in page
+    assert '<a href="#board_show-leave-train">What to show:' in page  # its first box: When to leave's first
     assert 'class="field show-list has-error"' in page
 
 

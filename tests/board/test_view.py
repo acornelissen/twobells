@@ -169,6 +169,16 @@ def test_each_bus_row_has_its_own_leave_time():
     assert [r.leave for r in rows] == ["Leave by 07:14", "Leave by 07:32"]
 
 
+def test_a_mode_left_out_of_the_leave_list_says_nothing_about_leaving():
+    trains, buses = [train("07:12")], [bus("341", "07:20", stop="A")]
+    v = view(trains=trains, buses=buses, now="07:00", walk=WALK, leave=("bus",))
+    assert v.section("train").leave is None
+    assert [r.leave for r in v.section("bus").rows] == ["Leave by 07:14"]
+    v = view(trains=trains, buses=buses, now="07:00", walk=WALK, leave=())
+    assert v.section("train").leave is None and [r.leave for r in v.section("bus").rows] == [None]
+    # Without a list, every mode.
+    assert view(trains=trains, now="07:00", walk=WALK).section("train").leave == "Leave by 07:05 (07:12)"
+
 def test_e_paper_bus_rows_also_give_the_leave_time_alone():
     # For the plain look, which says "Leave by" once, over the column.
     rows = view(buses=[bus("341", "07:20", stop="A")], now="07:00", walk=WALK).section("bus").rows

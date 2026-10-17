@@ -735,6 +735,15 @@ def test_the_board_shows_just_what_its_list_names(tmp_path):
     assert load_config(write(tmp_path, BOARD_BASE + "[board]\nshow = []\n"), ENV).board.show == set()
 
 
+def test_the_board_says_when_to_leave_for_the_modes_its_leave_list_names(tmp_path):
+    both = BOARD_BASE + '[metro]\nstops = { T = "9400ZZMAPIC" }\n'
+    assert load_config(write(tmp_path, both), ENV).board.leave == ("train", "metro")
+    board = load_config(write(tmp_path, both + '[board]\nleave_modes = ["metro", "bus"]\n'), ENV).board
+    assert board.leave == ("metro",)  # buses aren't set up
+    assert load_config(write(tmp_path, both + "[board]\nleave_modes = []\n"), ENV).board.leave == ()
+    with pytest.raises(ConfigError, match="leave_modes"):
+        load_config(write(tmp_path, both + '[board]\nleave_modes = ["ferry"]\n'), ENV)
+
 def test_a_speaking_screen_keeps_the_quiet_hours(tmp_path):
     from twobells.core.polling import parse_window
 

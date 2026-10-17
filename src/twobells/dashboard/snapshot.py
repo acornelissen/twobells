@@ -896,7 +896,8 @@ class Hub:
 
     def __init__(self, title: str, walk: WalkTimes, clock: Callable[[], datetime] | None = None,
                  monotonic: Callable[[], float] = time.monotonic, tz: tzinfo | None = None,
-                 row_strips: bool = True, show: Iterable[str] | None = None, scrolling: bool = True) -> None:
+                 row_strips: bool = True, show: Iterable[str] | None = None, scrolling: bool = True,
+                 leave: Iterable[str] | None = None) -> None:
         # The board's zone, not the host's: a container's clock is in UTC.
         self._clock = clock or (lambda: datetime.now(tz) if tz else datetime.now().astimezone())
         self._monotonic = monotonic
@@ -905,12 +906,14 @@ class Hub:
         # `quiet` says whether a quiet window is on; the collector's heartbeat sets it.
         # `row_strips` says whether the page draws each row's position strip,
         # `scrolling` whether the calling-at line may scroll (the scrolling
-        # setting), and `show` what it shows of what it can leave out ([dashboard] show).
+        # setting), `show` what it shows of what it can leave out ([dashboard] show),
+        # and `leave` the modes Next to catch picks from ([dashboard] leave_modes).
         shown = show_items.default("dashboard") if show is None else show
         self._static = {"title": title, "walk": {"train": walk.train, "bus": dict(walk.bus),
                                                  "metro": dict(walk.metro)}, "quiet": False,
                         "row_strips": row_strips, "scrolling": scrolling,
-                        "show": show_items.ordered("dashboard", shown)}
+                        "show": show_items.ordered("dashboard", shown),
+                        "leave_modes": list(mode_list.ordered(mode_list.KEYS if leave is None else list(leave)))}
         self._parts: dict[str, dict | list | None] = dict.fromkeys(PARTS)
         self._part_lookups: dict[str, dict[str, dict]] = {part: {} for part in PARTS}
         self._lookups: dict[str, dict] = {}

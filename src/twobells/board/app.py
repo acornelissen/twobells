@@ -162,6 +162,9 @@ class Board:
     # The modes it shows, a section each, in order ([board] modes,
     # settings/modes.py); each has a source in `sources`.
     modes: tuple[str, ...] = ("train", "bus")
+    # The modes it says when to leave for ([board] leave_modes,
+    # settings/modes.py); None for every one.
+    leave: tuple[str, ...] | None = None
 
 
 def reset_code_page(folder: Path, timezone: str) -> Callable[[], CodeView | None]:
@@ -493,6 +496,7 @@ def run_once(
         show=board.show,
         scroll=board.scrolling,
         labels=_labels(board),
+        leave=board.leave,
     )
 
     code = _reset_code(board)

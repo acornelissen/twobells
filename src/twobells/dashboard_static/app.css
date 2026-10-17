@@ -348,7 +348,7 @@ body {
 }
 /* Times and counts in tabular figures, so they line up and don't jitter as
    they tick. Not the whole page: Inter's tnum widens hyphens too. */
-time, .time, .clock, .c-time, .leave-time, .leave-at, .countdown, .due, .cp-time, .wx-hour, .wx-temp, .line,
+time, .time, .clock, .c-time, .leave-time, .now-time, .leave-at, .countdown, .due, .cp-time, .wx-hour, .wx-temp, .line,
 table.history td { font-variant-numeric: tabular-nums; }
 a { color: var(--accent); }
 h1, h2, h3 { line-height: 1.2; font-weight: 600; }
@@ -540,6 +540,33 @@ main:focus { outline: none; }
 /* The banner's own colour would hide the usual focus ring. */
 .leave :focus-visible { outline-color: currentColor; }
 
+/* The time and the weather now, in Next to catch's place while it has
+   nothing to point at or the settings leave it out (hero.js): the time as
+   large as a countdown, the date under it, and the weather beside them,
+   under them where there is no room. The header's clock and the weather
+   section's own "now" line make way for it, so neither is said twice. */
+.now {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3) var(--s-7);
+  margin: 0 0 var(--s-5);
+  padding: var(--s-5);
+  color: var(--leave-fg);
+  background: var(--leave-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.now-time { margin: 0; font-size: var(--t-hero); font-weight: 600; line-height: 1.05; letter-spacing: -0.02em; }
+.now-date { margin: var(--s-1) 0 0; font-size: var(--t-lg); color: var(--muted); }
+.now-weather .wx-now { margin: 0; }
+.now-weather .wx-temp { font-size: var(--t-clock); }
+.now-rain { margin: var(--s-1) 0 0; font-size: var(--t-sm); color: var(--muted); }
+:root[data-now] .top .clock,
+:root[data-now] #weather-now .wx-now,
+:root[data-now] #weather-rain { display: none; }
+
 .alert-banner:empty { display: none; }
 .alert-item {
   display: flex;
@@ -657,7 +684,7 @@ main:focus { outline: none; }
     align-items: start;
   }
   .sections, .extras { display: contents; }
-  .leave { grid-area: hero; }
+  .leave, .now { grid-area: hero; }
   #alert-banner { grid-area: alert; }
   .disruptions { grid-area: dis; }
   /* Two boards side by side; a third (the trams) wraps under them, full width,
@@ -1399,7 +1426,8 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
    own spacing: no faux bold, no letter-spacing. --- */
 
 :root[data-theme="board"] .clock { font-family: var(--dots); font-size: var(--t-clock); }
-:root[data-theme="board"] .leave-time { font-family: var(--dots); font-size: var(--t-hero); }
+:root[data-theme="board"] .leave-time,
+:root[data-theme="board"] .now-time { font-family: var(--dots); font-size: var(--t-hero); }
 /* Times a size up, as the dots read lighter than Inter at the same size. */
 :root[data-theme="board"] table.board .time,
 :root[data-theme="board"] table.board .due { font-family: var(--dots); font-size: var(--t-xl); }
@@ -1408,6 +1436,7 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
 :root[data-theme="board"] table.board .c-due .badge-text { font-family: var(--dots); font-size: var(--t-lg); }
 :root[data-theme="board"] .clock,
 :root[data-theme="board"] .leave-time,
+:root[data-theme="board"] .now-time,
 :root[data-theme="board"] table.board .time,
 :root[data-theme="board"] table.board .due,
 :root[data-theme="board"] table.board .dest,
@@ -1436,6 +1465,7 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
    only backs up the words in it. --- */
 
 :root[data-theme="tft"] .clock,
+:root[data-theme="tft"] .now-time,
 :root[data-theme="tft"] table.board .time,
 :root[data-theme="tft"] table.board .due { color: var(--time); font-weight: 600; }
 :root[data-theme="tft"] .badge.st-on_time,
@@ -1602,7 +1632,8 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
 }
 :root[data-kiosk] .sections,
 :root[data-kiosk] .extras { display: contents; }
-:root[data-kiosk] .leave { grid-area: hero; margin: 0; padding: var(--s-3) var(--s-4); }
+:root[data-kiosk] .leave,
+:root[data-kiosk] .now { grid-area: hero; margin: 0; padding: var(--s-3) var(--s-4); }
 /* Landscape, the hero is as tall as the weather beside it: its quiet line
    goes to the foot, rather than leave a band of nothing there. */
 :root[data-kiosk] .leave { display: flex; flex-direction: column; }

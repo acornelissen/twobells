@@ -28,6 +28,11 @@
     "fleet_numbers",
     "announce"
   ],
+  "leave_modes": [
+    "train",
+    "bus",
+    "metro"
+  ],
   "trains": {
     "station": "Glossop",
     "filter": "MAN",

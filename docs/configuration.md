@@ -65,6 +65,7 @@ The Dashboard page's settings can also go under `[dashboard]` in `config.toml`. 
 | `row_strips` | `true` | Each row's small drawing of its stops, with the train or bus on it (never on a wall tablet) |
 | `show` | everything | What the dashboard shows beside the departures: see [What each view shows](#what-each-view-shows) |
 | `modes` | every mode set up | Which modes of transport the dashboard lists: see [Modes of transport](#modes-of-transport) |
+| `leave_modes` | every mode set up | Which modes Next to catch picks from, like `["bus"]`; `[]` for none, which leaves it out. `[board] leave_modes` is which modes the board says when to leave for. Both are **What to show** in the settings |
 | `kb_incidents_url` | a placeholder | The engineering works address from the RDM Knowledgebase Incidents product page |
 | `allowed_hosts` | `[]` | Extra names the dashboard and settings answer to (`config.toml` only) |
 | `state_dir` | see [Where things are kept](#where-things-are-kept) | Where the app keeps its files (`config.toml` only) |

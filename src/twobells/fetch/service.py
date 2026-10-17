@@ -183,7 +183,7 @@ class FetchService:
                 log.warning("The punctuality history can't be opened: %s", type(error).__name__)
         try:
             hub = Hub(dash.title, dash.walk, tz=ZoneInfo(dash.timezone), row_strips=dash.options.row_strips,
-                      show=dash.options.show, scrolling=dash.scrolling)
+                      show=dash.options.show, scrolling=dash.scrolling, leave=dash.options.leave_modes)
             collector = self._make_collector(dash, hub, self._history)
             writer = handoff.SnapshotWriter(hub, self._spool, collector.healthy)
         except BaseException:

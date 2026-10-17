@@ -73,17 +73,21 @@ function detailLine(current, sun) {
     vh(parts.map(([, said]) => said).join(" ")));
 }
 
+// "[icon] 12° Light rain": the weather now, for its section and for the
+// clock that stands in for Next to catch (hero.js).
+export function nowLine(current) {
+  const temp = num(current.temperature);
+  return h("p", { class: "wx-now" },
+    wxIcon(num(current.code), current.is_day),
+    h("span", { class: "wx-temp" }, temp !== null ? `${Math.round(temp)}°` : ""),
+    " ",
+    h("span", { class: "wx-text" }, str(current.text)));
+}
+
 function renderNow(current, sun) {
   const el = $("weather-now");
   if (!current) { el.replaceChildren(h("p", {}, "No current conditions.")); return; }
-  const temp = num(current.temperature);
-  fill(el,
-    h("p", { class: "wx-now" },
-      wxIcon(num(current.code), current.is_day),
-      h("span", { class: "wx-temp" }, temp !== null ? `${Math.round(temp)}°` : ""),
-      " ",
-      h("span", { class: "wx-text" }, str(current.text))),
-    detailLine(current, sun));
+  fill(el, nowLine(current), detailLine(current, sun));
 }
 
 // One column of the strip: the hour, an icon, the temperature and a rain bar,

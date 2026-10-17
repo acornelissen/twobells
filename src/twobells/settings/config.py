@@ -635,7 +635,7 @@ def _rotate(data: dict, epaper: bool) -> int:
 
 # What [board] may hold: what the board shows (settings/show.py) and its
 # modes (settings/modes.py).
-_BOARD_KEYS = {"show", "modes"}
+_BOARD_KEYS = {"show", "modes", "leave_modes"}
 
 
 def board_modes(data: dict) -> tuple[str, ...]:
@@ -781,6 +781,7 @@ def settings_from(
         quiet=_quiet_hours(data) if speaks else (),
         scrolling=_flag(data, "scrolling", BOARD_DEFAULTS["scrolling"]),
         modes=shown_modes,
+        leave=mode_list.leave(data, "board"),
     )
     return Settings(
         board=board,

@@ -1041,11 +1041,12 @@ def test_the_first_snapshot_has_every_section_empty():
     h = hub()
     body = snapshot(h)
     assert list(body) == ["version", "generated_at", "title", "walk", "quiet", "row_strips", "scrolling", "show",
-                          "trains", "buses", "metro", "weather", "disruptions", "timetable_changes"]
+                          "leave_modes", "trains", "buses", "metro", "weather", "disruptions", "timetable_changes"]
     assert body["version"] == 1 and body["title"] == "Glossop"
     assert body["walk"] == {"train": 10, "bus": {"A": 8, "B": 6}, "metro": {}}
     assert body["quiet"] is False and body["row_strips"] is True and body["scrolling"] is True
     assert body["show"] == list(show.keys("dashboard"))  # everything, without a list
+    assert body["leave_modes"] == ["train", "bus", "metro"]  # every mode, without a list
     assert body["trains"] is body["buses"] is body["metro"] is body["weather"] is body["disruptions"] is None
     assert body["timetable_changes"] is None
 

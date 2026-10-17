@@ -53,6 +53,8 @@ const heroContext = () => ({
   stops: stopNames(obj(snapshot?.buses)?.stops),
   tramStops: obj(obj(snapshot?.metro)?.stops) || {},
   rain: shows("weather") ? str(obj(snapshot?.weather)?.rain) : "",
+  weather: shows("weather") ? obj(snapshot?.weather) : null,
+  leaveModes: snapshot?.leave_modes,
 });
 
 // --- The look: the Look picker (look.js). The boards' fields go on tiles,

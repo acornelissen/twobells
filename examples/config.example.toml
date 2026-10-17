@@ -78,6 +78,10 @@ rotate = 0
 # split-flap looks and in the plain look up to text_size 12 (the 7.9") or 13
 # (the bar screen), 2 above it; naming more stops the board loading.
 # modes = ["train", "bus"]
+# Which modes the board says when to leave for ("Leave by 07:05"): [] for
+# none. Also When to leave, under What to show on the Board tab. Without it,
+# every mode set up.
+# leave_modes = ["train", "bus"]
 
 # Which views are on: "board" (a Pi only), "dashboard", or both. The setup
 # wizard and the General tab set it. Default: the board on a Pi, the
@@ -212,6 +216,7 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # Delay Repay, with RDM_DETAILS_API_KEY.
 # show = ["next_to_catch", "where", "disruptions", "weather", "last_buses", "area_map", "remind"]
 # modes = ["train", "bus"]        # which modes of transport it lists (default: every mode set up)
+# leave_modes = ["bus"]           # which modes Next to catch picks from; [] leaves it out (default: every mode set up)
 # allowed_hosts = []              # extra host names the dashboard and settings answer to, like ["ds.home"]
 # Rail engineering works: the Knowledgebase Incidents address from the RDM
 # product page. Until it is set, they stay off, even with RDM_KB_API_KEY. The

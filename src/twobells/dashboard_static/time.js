@@ -71,6 +71,11 @@ function boardDate() {
 // The board's wall-clock time now, as "07:12".
 export const clockText = () => boardDate().toISOString().slice(11, 16);
 
+const longDayFormat = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+
+// The board's date today, as "Friday 17 October".
+export const dateText = () => longDayFormat.format(boardDate());
+
 // The board's wall-clock time now, as [hour, minute, second].
 export function clockParts() {
   const at = boardDate();

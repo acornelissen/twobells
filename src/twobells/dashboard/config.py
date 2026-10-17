@@ -84,6 +84,7 @@ _KEYS = {
     "row_strips",
     "show",
     "modes",
+    "leave_modes",
 }
 _MAX_ROWS = 20
 # Why there are no buses on the dashboard when the board's come from TransportAPI.
@@ -120,6 +121,9 @@ class DashboardOptions:
     # What the page shows of what it can leave out ([dashboard] show,
     # settings/show.py): everything unless the settings say otherwise.
     show: frozenset[str] = field(default_factory=lambda: show_items.default("dashboard"))
+    # The modes Next to catch picks from ([dashboard] leave_modes,
+    # settings/modes.py); None for every mode.
+    leave_modes: tuple[str, ...] | None = None
 
 
 def _ranged(section: dict, key: str, default: int, low: int, high: int) -> int:
@@ -196,6 +200,7 @@ def dashboard_options(data: dict) -> DashboardOptions:
         kb_incidents_url=_feed_url(section, "kb_incidents_url", KB_URL_PLACEHOLDER),
         row_strips=_flag(section, "row_strips", True, _WHERE),
         show=show_items.shown(data, "dashboard"),
+        leave_modes=mode_list.leave(data, "dashboard") if "leave_modes" in section else None,
     )
 
 

@@ -899,6 +899,7 @@ SNAPSHOT = {
     "row_strips": bool,
     "scrolling": bool,
     "show": [one_of(*SHOWABLE)],
+    "leave_modes": [one_of("train", "bus", "metro")],
     "trains": Opt({
         "station": str, "filter": Opt(str), "status": STATUS, "positions": Opt(STATUS), "messages": [MESSAGE],
         "rows": [TRAIN_ROW],
@@ -3515,8 +3516,10 @@ import { renderHero, setUpHero } from "./hero.js";
 const p = (id) => h("p", { id });
 const hero = h("section", { id: "leave" }, h("h2", { id: "leave-heading" }), p("leave-time"), p("leave-what"),
   p("leave-sure"), p("leave-then"), p("leave-rain"), h("button", { id: "leave-remind" }), p("notify-note"));
+const stand = h("section", { id: "now", hidden: true }, h("h2", { id: "now-heading" }), p("now-clock"), p("now-date"),
+  h("div", { id: "now-weather" }), p("now-rain"));
 const live = h("div", { id: "live" });
-document.body.append(hero, live);
+document.body.append(hero, stand, live);
 const announced = [];
 globalThis.requestAnimationFrame = (fn) => { fn(); announced.push(live.textContent); };
 const at = (hms) => `2026-10-10T${hms}+01:00`;
@@ -3810,22 +3813,24 @@ def test_the_hero_has_its_own_remind_me_and_the_rain():
 
 
 @needs_node
-def test_a_focused_remind_me_hidden_hands_the_focus_to_the_hero_s_heading():
-    # WCAG 2.4.3: with nothing left to leave for, Remind me hides; if it had the
-    # focus, the focus goes to the hero's heading rather than to nowhere.
+def test_a_focused_remind_me_hidden_hands_the_focus_to_the_clock_s_heading():
+    # WCAG 2.4.3: with nothing left to leave for, the time and weather take the
+    # hero's place; if Remind me had the focus, the focus goes to their heading
+    # rather than to nowhere, and comes back to the hero's when it returns.
     found = run_js(HERO + """
         setUpHero(() => {});
         draw(rows(bus(1, "07:20", "07:15")));
         $("leave-remind").focus();
         draw(rows());
-        const gone = [$("leave-remind").hidden, document.activeElement.id];
-        // Not focused: hiding it leaves the focus alone.
+        const gone = [$("leave-remind").hidden, hero.hidden, document.activeElement.id];
         draw(rows(bus(2, "07:30", "07:25")));
-        $("leave-time").focus();
+        const back = document.activeElement.id;
+        // Focus elsewhere is left alone.
+        live.focus();
         draw(rows());
-        console.log(JSON.stringify({ gone, elsewhere: document.activeElement.id }));
+        console.log(JSON.stringify({ gone, back, elsewhere: document.activeElement.id }));
     """)
-    assert found == {"gone": [True, "leave-heading"], "elsewhere": "leave-time"}
+    assert found == {"gone": [True, True, "now-heading"], "back": "leave-heading", "elsewhere": "live"}
 
 
 @needs_node
@@ -4954,6 +4959,51 @@ def test_the_hero_is_left_out_and_never_announced_when_the_settings_say():
     """)
     assert found == {"hidden": True, "time": "", "remind": True, "announced": []}
 
+
+WEATHER_NOW = '{ now: { temperature: 11.6, code: 61, is_day: true, text: "Light rain" }, rain: "Rain likely from 08:00." }'
+
+
+@needs_node
+def test_the_time_and_weather_take_the_hero_s_place_when_the_settings_leave_it_out():
+    found = run_js(_hiding("next_to_catch") + HERO + f"""
+        draw(rows(bus(1, "07:20", "07:15")), {{ weather: {WEATHER_NOW} }});
+        console.log(JSON.stringify({{ hero: hero.hidden, stand: stand.hidden, flag: "now" in document.documentElement.dataset,
+          time: $("now-clock").textContent, date: $("now-date").textContent, weather: shown($("now-weather")).trim(),
+          rain: [$("now-rain").textContent, $("now-rain").hidden], announced: announced.filter(Boolean) }}));
+    """)
+    assert found["hero"] is True and found["stand"] is False and found["flag"] is True
+    assert re.fullmatch(r"\d\d:\d\d", found["time"]) and found["date"].endswith(" 10 October")
+    assert found["weather"] == "12° Light rain"
+    assert found["rain"] == ["Rain likely from 08:00.", False] and found["announced"] == []
+
+
+@needs_node
+def test_with_nothing_to_catch_the_time_stands_in_until_there_is():
+    found = run_js(_hiding() + HERO + """
+        draw(rows());
+        const none = [hero.hidden, stand.hidden, "now" in document.documentElement.dataset, $("now-weather").textContent];
+        draw(rows(bus(1, "07:20", "07:15")));
+        const back = [hero.hidden, stand.hidden, "now" in document.documentElement.dataset, shown($("leave-time"))];
+        console.log(JSON.stringify({ none, back }));
+    """)
+    assert found["none"] == [True, False, True, ""]  # no weather on show: the time alone
+    assert found["back"] == [False, True, False, "Leave in 15 min"]
+
+
+@needs_node
+def test_next_to_catch_picks_only_from_the_modes_the_settings_give_leave_times():
+    found = run_js(HERO + """
+        const map = rows(train(1, "07:30", "07:18"), bus(2, "07:40", "07:35"));
+        draw(map);
+        const all = shown($("leave-what")).slice(0, 5);
+        draw(map, { leaveModes: ["bus"] });
+        const buses = [shown($("leave-what")).slice(0, 5), shown($("leave-then"))];
+        draw(map, { leaveModes: [] });
+        console.log(JSON.stringify({ all, buses, none: [hero.hidden, stand.hidden] }));
+    """)
+    assert found["all"] == "07:30"
+    assert found["buses"][0] == "07:40" and "train" not in found["buses"][1]
+    assert found["none"] == [True, False]
 
 @needs_node
 def test_the_hero_has_no_remind_me_when_the_settings_leave_reminders_out():

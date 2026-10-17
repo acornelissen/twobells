@@ -78,6 +78,7 @@ def test_defaults_without_a_dashboard_table():
     assert options.allowed_hosts == frozenset()
     assert options.row_strips is True
     assert options.show == set(show.keys("dashboard"))  # everything, without a list
+    assert options.leave_modes is None  # every mode, without a list
     [window] = options.quiet_windows
     assert window.days == frozenset(range(7))
     assert (str(window.start), str(window.end)) == ("01:00:00", "05:00:00")
@@ -89,10 +90,11 @@ def test_reads_every_setting():
         "bus_interval_seconds": 15, "weather_interval_minutes": 10, "quiet_windows": ["Mon-Fri 00:30-05:30"],
         "late_minutes_train": 5, "late_minutes_bus": 1, "history_days": 30,
         "allowed_hosts": ["Departures.Example.com", "nas"], "row_strips": False,
-        "show": ["next_to_catch", "weather"],
+        "show": ["next_to_catch", "weather"], "leave_modes": ["bus"],
     }})
     assert options.state_dir == "/data"
     assert options.show == {"next_to_catch", "weather"}
+    assert options.leave_modes == ()  # read, and buses aren't set up here: none (test_modes has the rest)
     assert options.row_strips is False
     assert (options.train_rows, options.bus_rows) == (20, 1)
     assert options.quiet_windows[0].days == frozenset(range(5))

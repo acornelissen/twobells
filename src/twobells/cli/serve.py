@@ -305,6 +305,7 @@ def _mirror(store: Store, install: Install, runner, dash):
         row_strips=dash.options.row_strips if dash is not None else True,
         show=dash.options.show if dash is not None else None,
         scrolling=dash.scrolling if dash is not None else True,
+        leave=dash.options.leave_modes if dash is not None else None,
     )
 
 
@@ -336,7 +337,7 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
             print(f"Can't open the punctuality history in {dash.state_dir}: {error}", file=sys.stderr)
             return 2, None
         hub = Hub(dash.title, dash.walk, tz=ZoneInfo(dash.timezone), row_strips=dash.options.row_strips,
-                  show=dash.options.show, scrolling=dash.scrolling)
+                  show=dash.options.show, scrolling=dash.scrolling, leave=dash.options.leave_modes)
         collector = Collector(dash, hub, history, timetable_limits=document_limits(install))
 
     def healthy() -> bool:

@@ -231,6 +231,19 @@ def test_what_the_page_shows_comes_through_and_an_older_fetch_service_may_leave_
     assert mirror.check() is True and "show" not in json.loads(mirror.current()[1])
 
 
+def test_the_modes_next_to_catch_picks_from_come_through_and_an_older_fetch_service_may_leave_them_out(spool):
+    hub = Hub("Glossop", WalkTimes(train=10, bus={"A": 8}), leave=["bus"])
+    SnapshotWriter(hub, spool, lambda: True).write()
+    mirror = mirror_of(spool)
+    assert mirror.check() is True and json.loads(mirror.current()[1])["leave_modes"] == ["bus"]
+    older = json.loads(handoff.snapshot_path(spool.folder).read_bytes())
+    del older["snapshot"]["leave_modes"]
+    older["made"] += 1
+    put(spool, older)
+    # The page takes a snapshot without them as picking from every mode.
+    assert mirror.check() is True and "leave_modes" not in json.loads(mirror.current()[1])
+
+
 def test_until_the_first_file_the_mirror_says_what_the_page_shows(spool):
     assert json.loads(mirror_of(spool).current()[1])["show"] == list(show.keys("dashboard"))
     assert json.loads(mirror_of(spool, show=["announce"]).current()[1])["show"] == ["announce"]
@@ -348,6 +361,8 @@ REFUSED = {
     "show not a list": lambda d: _with(d, snapshot={**d["snapshot"], "show": "weather"}),
     "show naming what the page has no item for": lambda d: _with(d, snapshot={**d["snapshot"], "show": ["clock_page"]}),
     "show naming one twice": lambda d: _with(d, snapshot={**d["snapshot"], "show": ["weather", "weather"]}),
+    "leave_modes not a list": lambda d: _with(d, snapshot={**d["snapshot"], "leave_modes": "bus"}),
+    "leave_modes naming no mode": lambda d: _with(d, snapshot={**d["snapshot"], "leave_modes": ["ferry"]}),
     "lookup id in the wrong form": lambda d: _with(d, lookups={"../../etc/passwd": {}}),
     "lookup id in capitals": lambda d: _with(d, lookups={BUS_ID.upper(): {}}),
     "previous id too long": lambda d: _with(d, previous={BUS_ID + "0": {}}),

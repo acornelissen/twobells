@@ -51,6 +51,7 @@ from zoneinfo import ZoneInfo
 from ..core.walk import WalkTimes
 from ..dashboard.collector import HEALTHY_AGE
 from ..dashboard.snapshot import PARTS, Hub, _encode
+from ..settings import modes as mode_list
 from ..settings import show as show_items
 from ..setup.spool.checks import CLOCK_SKEW_S, Refused, check_dict, check_int, check_num, check_obj, check_str, parse
 from ..setup.spool.folder import Spool
@@ -74,6 +75,8 @@ _SNAPSHOT_FIELDS = ("version", "generated_at", "title", "walk", *(p for p in PAR
 _OPTIONAL_FLAGS = ("quiet", "row_strips", "scrolling")
 # What the page shows ([dashboard] show): a list of the dashboard's items.
 _SHOW = "show"
+# The modes Next to catch picks from ([dashboard] leave_modes): a list of modes.
+_LEAVE = "leave_modes"
 _HISTORY_FIELDS = ("mode", "route", "scheduled", "label", "day_type", "phrase")
 _HEX16 = re.compile(r"[0-9a-f]{16}")
 
@@ -111,8 +114,8 @@ def check(data, now: float) -> dict:
     if check_num(top["made"], "made") > now + CLOCK_SKEW_S:
         raise Refused("made is in the future")
     check_int(top["version"], "version", 0, 2**53)
-    # An older fetch service, mid-upgrade, sends no `quiet`, `row_strips`, `scrolling` or `show`.
-    snapshot = check_obj(top["snapshot"], _SNAPSHOT_FIELDS, (*_OPTIONAL_FLAGS, _SHOW, *_LATER_PARTS))
+    # An older fetch service, mid-upgrade, sends no `quiet`, `row_strips`, `scrolling`, `show` or `leave_modes`.
+    snapshot = check_obj(top["snapshot"], _SNAPSHOT_FIELDS, (*_OPTIONAL_FLAGS, _SHOW, _LEAVE, *_LATER_PARTS))
     for name in _OPTIONAL_FLAGS:
         if name in snapshot and not isinstance(snapshot[name], bool):
             raise Refused(f"{name} isn't true or false")
@@ -121,6 +124,11 @@ def check(data, now: float) -> dict:
             show_items.checked("dashboard", snapshot[_SHOW], "")
         except ValueError:
             raise Refused("show isn't a list of what the dashboard shows") from None
+    if _LEAVE in snapshot:
+        try:
+            mode_list.leave_checked(snapshot[_LEAVE], "")
+        except ValueError:
+            raise Refused("leave_modes isn't a list of modes") from None
     for name in ("lookups", "previous"):
         for key, value in check_dict(top[name], name, MAX_LOOKUPS).items():
             if not _HEX16.fullmatch(key):
@@ -196,7 +204,7 @@ class SnapshotMirror:
     """The fetch service's snapshot, read from the spool, for the web server
     on a Pi: a snapshot.SnapshotSource, as the Hub is elsewhere. Until the
     first good file it shows an empty snapshot with `title`, `walk`,
-    `row_strips`, `scrolling` and `show`.
+    `row_strips`, `scrolling`, `show` and `leave`.
 
     `poster` tells the fetch service a browser is using the dashboard
     (touch), which also starts it if it has stopped; and while `wanted()`
@@ -207,7 +215,7 @@ class SnapshotMirror:
     def __init__(self, folder: Path | str, title: str, walk: WalkTimes, poster: Poster | None, *,
                  wanted: Callable[[], bool] = lambda: True, timezone: str | None = None,
                  row_strips: bool = True, show: Iterable[str] | None = None, scrolling: bool = True,
-                 every: float = READ_EVERY_S,
+                 leave: Iterable[str] | None = None, every: float = READ_EVERY_S,
                  clock: Callable[[], float] = time.time,
                  monotonic: Callable[[], float] = time.monotonic) -> None:
         self._path = snapshot_path(folder)
@@ -219,7 +227,7 @@ class SnapshotMirror:
         self._lock = threading.Lock()
         self._changed = threading.Condition(self._lock)
         placeholder = Hub(title, walk, tz=ZoneInfo(timezone) if timezone else None, row_strips=row_strips,
-                          show=show, scrolling=scrolling)
+                          show=show, scrolling=scrolling, leave=leave)
         self._version, self._body = placeholder.current()
         self._lookups: dict[str, dict] = {}
         self._previous: dict[str, dict] = {}

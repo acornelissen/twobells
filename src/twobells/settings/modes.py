@@ -166,3 +166,41 @@ def check(most: int | None = None, room: str = "", other: str = "") -> Callable[
             raise Invalid(f"{too_many(len(keys), most, room)}. Untick {len(keys) - most}{fix}.")
         return list(ordered(keys))
     return check_list
+
+
+# When to leave. Each view has a leave list, [board] leave_modes and
+# [dashboard] leave_modes: the modes it gives leave times for, the board's
+# "Leave by" and "Leave in" words and the dashboard's Next to catch.
+# Without one, every mode set up; an empty one, none.
+
+
+def leave_checked(value: object, where: str) -> tuple[str, ...]:
+    """A leave list as settings hold it, checked: a list of modes, each
+    named once, perhaps none. ValueError, naming `where`, otherwise."""
+    if not isinstance(value, list) or len(value) > _MOST or not all(isinstance(key, str) for key in value):
+        raise ValueError(f'{where}leave_modes must be a list of modes, like ["train", "bus"], not {value!r}')
+    for key in value:
+        if key not in KEYS:
+            raise ValueError(f"{where}leave_modes: {key[:40]!r} is not a mode; use {', '.join(map(repr, KEYS))}")
+    if len(set(value)) != len(value):
+        raise ValueError(f"{where}leave_modes names a mode more than once")
+    return tuple(value)
+
+
+def leave(data: Mapping, view: str) -> tuple[str, ...]:
+    """The modes `view` gives leave times for by settings `data`, in MODES'
+    order: those its leave list names that are set up, or without a list,
+    every mode set up. ConfigError for a list that isn't one."""
+    from .config import ConfigError
+
+    if view not in VIEWS:
+        raise ValueError(f"Unknown view {view!r}")
+    section = data.get(view)
+    if not isinstance(section, dict) or "leave_modes" not in section:
+        return set_up(data)
+    try:
+        named = leave_checked(section["leave_modes"], f"[{view}] ")
+    except ValueError as error:
+        raise ConfigError(str(error)) from None
+    ready = set(set_up(data))
+    return ordered([key for key in named if key in ready])

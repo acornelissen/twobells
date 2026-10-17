@@ -206,8 +206,10 @@ def test_the_dashboard_shows_everything_until_its_list_is_saved(form):
     from twobells.settings import show
 
     shown = fields_of(form)
+    # Next to catch is a tickbox for each mode set up, all ticked; the rest one each.
     assert [key for key in show.keys("dashboard") if shown.get(f"dashboard_show-{key}") == "on"] == list(
-        show.keys("dashboard"))
+        show.keys("dashboard"))[1:]
+    assert shown["dashboard_show-leave-train"] == shown["dashboard_show-leave-bus"] == "on"
     page = form.render("tok")
     assert '<legend class="vh">What to show</legend>' in page and '"board_show' not in page
     sent = {k: v for k, v in shown.items() if k not in ("dashboard_show-weather", "dashboard_show-announce")}
@@ -221,8 +223,32 @@ def test_the_dashboard_s_presets_fill_its_list(form):
     assert form.save(fields_of(form) | {"dashboard_show_preset": "times"}) == {}
     assert tomllib.loads((form.folder / "settings.toml").read_text())["dashboard"]["show"] == ["next_to_catch"]
     shown = fields_of(form)
-    assert shown["dashboard_show-next_to_catch"] == "on" and "dashboard_show-weather" not in shown
+    assert shown["dashboard_show-leave-train"] == "on" and "dashboard_show-weather" not in shown
 
+
+def test_next_to_catch_is_a_tickbox_for_each_mode_and_none_leaves_it_out(form):
+    saved = lambda: tomllib.loads((form.folder / "settings.toml").read_text())["dashboard"]  # noqa: E731
+    options = lambda: load_dashboard(form.config, ENV, form.folder, lock=False).options  # noqa: E731
+    page = form.render("tok")
+    assert '<legend>Next to catch</legend>' in page and 'id="dashboard_show-next_to_catch"' not in page
+    # Buses only: on, picking from the buses.
+    assert form.save(fields_of(form) | {"dashboard_show-leave-train": ""}) == {}
+    assert saved()["leave_modes"] == ["bus"] and "show" not in saved()  # the list itself as it was
+    assert options().leave_modes == ("bus",) and "next_to_catch" in options().show
+    # None: left out, and shown with no mode ticked.
+    assert form.save(fields_of(form) | {"dashboard_show-leave-bus": ""}) == {}
+    assert saved()["leave_modes"] == [] and "next_to_catch" not in saved()["show"]
+    assert "next_to_catch" not in options().show and options().leave_modes == ()
+    shown = fields_of(form)
+    assert "dashboard_show-leave-train" not in shown and "dashboard_show-leave-bus" not in shown
+    # A preset with it ticks every mode again.
+    assert form.save(fields_of(form) | {"dashboard_show_preset": "usual"}) == {}
+    assert saved()["leave_modes"] == ["train", "bus"] and "next_to_catch" in options().show
+
+
+def test_leave_modes_left_as_shown_are_not_written(form):
+    assert form.save(fields_of(form) | {"dashboard_show-weather": ""}) == {}
+    assert "leave_modes" not in tomllib.loads((form.folder / "settings.toml").read_text())["dashboard"]
 
 def test_every_field_the_page_saves_is_read_back():
     from twobells.settings.schema import FIELDS, saved_keys

@@ -343,7 +343,7 @@ class GroupForm:
                 errors |= self._save_walks(f, data, fields, shown, f.needs in off, changes)
                 continue
             if f.kind == "show":
-                errors |= _save_show(f, fields, shown, changes)
+                errors |= _save_show(f, data, fields, shown, changes)
                 continue
             if f.kind == "modes":
                 errors |= _save_modes(f, data, fields, shown, changes)
@@ -529,7 +529,8 @@ class GroupForm:
         unsaved: set[str] = set()
         if values is not None:  # drawn again as sent: an unticked box isn't sent, so it stays unticked
             shown |= {f.name: values.get(f.name, "") for f in fields if f.kind == "check"}
-            shown |= {box: values.get(box, "") for f in fields if f.kind == "show" for box in _show_boxes(f)}
+            shown |= {box: values.get(box, "") for f in fields if f.kind == "show"
+                      for box in (*_leave_boxes(f, data), *_show_boxes(f, data))}
             shown |= {box: values.get(box, "") for f in fields if f.kind == "modes" for box in _mode_boxes(f, data)}
             unsaved = self._unsaved(fields, data, values)
         sections = self._sections(fields, data)
@@ -640,7 +641,7 @@ class GroupForm:
         elif f.kind == "per_stop":
             drawn = self._walks(f, data, shown, errors)
         elif f.kind == "show":
-            drawn = _show_list(f, shown, errors.get(f.name))
+            drawn = _show_list(f, data, shown, errors.get(f.name))
         elif f.kind == "modes":
             drawn = _modes_list(f, data, shown, errors.get(f.name))
         else:
@@ -662,8 +663,9 @@ class GroupForm:
             elif f.kind == "per_stop":
                 differs = any(edited(values.get(box, ""), current.get(box, "")) for box, _ in self._walk_boxes(f, data))
             elif f.kind == "show":
+                boxes = (*_leave_boxes(f, data), *_show_boxes(f, data))
                 differs = bool(values.get(_preset_name(f))) or any(
-                    values.get(box, "") != current.get(box, "") for box in _show_boxes(f))
+                    values.get(box, "") != current.get(box, "") for box in boxes)
             elif f.kind == "modes":
                 differs = any(values.get(box, "") != current.get(box, "") for box in _mode_boxes(f, data))
             elif f.kind in ("text", "number", "area"):
@@ -735,7 +737,7 @@ class GroupForm:
             if f.kind == "per_stop":
                 names |= {box: f"{f.heading} – {f.label}, {words}" for box, words in self._walk_boxes(f, data)}
             if f.kind == "show" and f.name in errors:
-                anchors[f.name] = _show_boxes(f)[0]
+                anchors[f.name] = [*_leave_boxes(f, data), *_show_boxes(f, data)][0]
             if f.kind == "modes" and f.name in errors and _mode_boxes(f, data):
                 anchors[f.name] = _mode_boxes(f, data)[0]
         items = "".join(
@@ -784,49 +786,108 @@ def _preset_name(f: Field) -> str:
     return f"{f.name}_preset"
 
 
-def _show_boxes(f: Field) -> list[str]:
-    """The names of a show list's tickboxes, one an item, in order."""
-    return [f"{f.name}-{key}" for key in show.keys(f.group)]
+# When to leave, in a show list: a tickbox for each mode set up, saved as
+# [view] leave_modes (settings/modes.py). On the dashboard they stand for
+# Next to catch's one tickbox, which is on while any is ticked; the board
+# has no such item, so its group comes first. Every preset ticks them all
+# where it has the item (the board's has no item: always).
+_LEAVE_ITEM = {"board": None, "dashboard": "next_to_catch"}
+_BOARD_LEAVE = ("When to leave",
+                "“Leave by” and “Leave in”, for the modes ticked. Untick them all for none.")
+_DASHBOARD_LEAVE = ("From the modes ticked. With none ticked, or nothing to catch, the time and the weather "
+                    "take its place.")
+
+
+def _leave_boxes(f: Field, data: dict) -> list[str]:
+    """The names of a show list's leave tickboxes, one a mode set up, in order."""
+    return [f"{f.name}-leave-{key}" for key in modes.set_up(data)]
+
+
+def _leave_item(f: Field, data: dict) -> str | None:
+    """The show list's item its leave tickboxes stand for, while there are any."""
+    return _LEAVE_ITEM[f.group] if _leave_boxes(f, data) else None
+
+
+def _show_boxes(f: Field, data: dict) -> list[str]:
+    """The names of a show list's item tickboxes, in order: not the one its
+    leave tickboxes stand for."""
+    replaced = _leave_item(f, data)
+    return [f"{f.name}-{key}" for key in show.keys(f.group) if key != replaced]
 
 
 def _show_shown(f: Field, data: dict) -> dict[str, str]:
     """What a show list shows for settings `data`: each item's box ticked
-    ("on") or not, no preset picked, and the list itself as its keys
-    separated by spaces, to tell whether it changed. A list that doesn't
-    load shows the view's default; saving says what is wrong."""
+    ("on") or not, each leave box ticked while the view gives that mode
+    leave times, no preset picked, and the list and the leave modes
+    themselves as their keys separated by spaces, to tell whether they
+    changed. A list that doesn't load shows the view's default; saving says
+    what is wrong."""
     try:
         on = show.shown(data, f.group)
     except ConfigError:
         on = show.default(f.group, data)
+    try:
+        leave = modes.leave(data, f.group)
+    except ConfigError:
+        leave = modes.set_up(data)
+    item = _LEAVE_ITEM[f.group]
+    if item is not None and item not in on:
+        leave = ()  # Next to catch left out: no mode ticked
     values = {f"{f.name}-{key}": "on" if key in on else "" for key in show.keys(f.group)}
+    values |= {f"{f.name}-leave-{key}": "on" if key in leave else "" for key in modes.set_up(data)}
     values[f.name] = " ".join(show.ordered(f.group, on))
+    values[f"{f.name}-leave"] = " ".join(leave)
     values[_preset_name(f)] = ""
     return values
 
 
-def _save_show(f: Field, fields: Mapping[str, str], shown: Mapping[str, str], changes: dict) -> dict[str, str]:
+def _save_show(f: Field, data: dict, fields: Mapping[str, str], shown: Mapping[str, str],
+               changes: dict) -> dict[str, str]:
     """A show list into `changes`, from its preset if one was picked, else
-    from its ticks; or its error. A list left as shown isn't written, so a
-    view without one keeps showing whatever it shows by default."""
+    from its ticks; and its leave modes; or its error. A list left as shown
+    isn't written, so a view without one keeps showing whatever it shows by
+    default; nor are leave modes left as shown."""
     names = tuple(name for name, _ in show.PRESETS)
+    boxes = _leave_boxes(f, data)
+    item = _leave_item(f, data)
+    ready = modes.set_up(data)
     try:
         picked = fields.get(_preset_name(f), "")
         if picked:
             keys: tuple[str, ...] | list[str] = show.preset(f.group, schema.choice(names)(picked))
+            leave = list(ready) if item is None or item in keys else []
         else:
-            keys = [key for key in show.keys(f.group) if schema.ticked(fields.get(f"{f.name}-{key}", ""))]
+            leave = [key for key in ready if schema.ticked(fields.get(f"{f.name}-leave-{key}", ""))]
+            keys = [key for key in show.keys(f.group)
+                    if (bool(leave) if key == item else schema.ticked(fields.get(f"{f.name}-{key}", "")))]
         value = show.check(f.group)(" ".join(keys))  # f.check, typed
     except Invalid as error:
         return {f.name: str(error)}
     if " ".join(value) != shown.get(f.name):
         changes.setdefault(f.section, {})[f.key] = value
+    if boxes and " ".join(leave) != shown.get(f"{f.name}-leave"):
+        changes.setdefault(f.section, {})["leave_modes"] = leave
     return {}
 
 
-def _show_list(f: Field, shown: Mapping[str, str], error: str | None) -> str:
+def _leave_group(f: Field, data: dict, shown: Mapping[str, str], label: str, hint: str, presets: str) -> str:
+    """The leave tickboxes: a group of their own in the show list, a box a
+    mode set up, each saying which presets tick it (data-presets)."""
+    e = html.escape
+    hint_id = f"{f.name}-leave-hint"
+    boxes = "".join(
+        _checkbox(replace(f, name=name, label=modes.mode(key).label, kind="check", hint=""), shown.get(name, ""),
+                  None, f' data-presets="{e(presets)}"')
+        for key, name in zip(modes.set_up(data), _leave_boxes(f, data), strict=True))
+    return (f'<fieldset class="field leave-modes" aria-describedby="{hint_id}"><legend>{e(label)}</legend>'
+            f'<p class="hint" id="{hint_id}">{e(hint)}</p><div class="options inline">{boxes}</div></fieldset>')
+
+
+def _show_list(f: Field, data: dict, shown: Mapping[str, str], error: str | None) -> str:
     """A show list: a group of its own, under the field's label, with the
-    presets first, then a tickbox for each item with what it is. Each box
-    says which presets include it (data-presets), for settings.js."""
+    presets first, then a tickbox for each item with what it is, and the
+    leave tickboxes (_LEAVE_ITEM). Each box says which presets include it
+    (data-presets), for settings.js."""
     e = html.escape
     attrs, notes = _described(f.name, f.hint, error)
     attrs = attrs.replace(' aria-invalid="true"', "")  # a fieldset takes none: the error says it of the group
@@ -834,8 +895,14 @@ def _show_list(f: Field, shown: Mapping[str, str], error: str | None) -> str:
     presets = replace(f, name=_preset_name(f), label="Fill in from a preset", kind="radios", hint=_PRESET_HINT,
                       options=(("", _NO_PRESET), *show.PRESETS))
     boxes = []
+    replaced = _leave_item(f, data)
+    if _leave_boxes(f, data) and replaced is None:
+        boxes.append(_leave_group(f, data, shown, *_BOARD_LEAVE, " ".join(name for name, _ in show.PRESETS)))
     for item in show.items(f.group):
         hint = f"{item.hint} {_SCREENS_ONLY}" if item.screen else item.hint
+        if item.key == replaced:
+            boxes.append(_leave_group(f, data, shown, item.label, f"{hint} {_DASHBOARD_LEAVE}", " ".join(item.presets)))
+            continue
         box = replace(f, name=f"{f.name}-{item.key}", label=item.label, kind="check", hint=hint)
         boxes.append(_checkbox(box, shown.get(box.name, ""), None, f' data-presets="{e(" ".join(item.presets))}"'))
     choice = _radios(presets, shown.get(presets.name, ""), None).replace("field radios", "field radios show-presets", 1)
