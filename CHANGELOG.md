@@ -41,6 +41,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 - On a wide screen the disruption line sits under Next to catch, beside the weather, rather than across the page under both, so the trains and buses start sooner. Screen readers and the Tab key meet it where they did, after Next to catch.
 - The trains and buses start sooner: the walk to the station sits beside the Trains heading, and station information and the bus timetable changes coming up are quiet notes under their boards, no longer boxes that looked like buttons above them.
 - The dashboard's rows are calmer: destinations a size larger, everything under them one quiet size, the first train's calling points two lines in every look (one scrolling line in the station looks while they scroll) and a bus coming in one line, each cut short with the rest in the sheet, and "Often late" and a bus's **Disruption** link as amber words rather than pills.
+- The settings site and setup wizard are tidier: each section's intro stands apart from its first field, read-only lists line up in one column, the current tab leads the others, the display's row on the Board tab says where it is set once, a bus stop's distance sits under its name, and a done setup step shows its tick in place of its number, so the steps no longer wrap as you go.
 - The user guide is a page per topic, indexed by `docs/user-guide.md`; the Docker pages are one, and the code layout is in `docs/architecture.md`.
 
 ### Fixed
