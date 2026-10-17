@@ -2754,6 +2754,9 @@ def test_a_bus_sheet_names_its_stop_and_its_late_threshold():
           routeCaption("bus", { label: "341 to Hyde", stop: "constructor" }, {}),
           columns("bus", 4).map(([key, heading, sub]) => `${key}:${heading}:${sub}`),
           columns("bus", "4").map(([, , sub]) => sub)[0],
+          routeCaption("train", { label: "Manchester Piccadilly" }),
+          routeCaption("train", { label: "Manchester Piccadilly (replacement bus)" }),
+          routeCaption("train", { label: "Ryde Pier Head (ferry)" }),
         ]));
     """)
     assert found == [
@@ -2762,6 +2765,9 @@ def test_a_bus_sheet_names_its_stop_and_its_late_threshold():
         "Every 341 to Hyde from stop constructor",
         ["on_time:On time:under 4 min late", "within_15:T-15:under 15 min late"],
         "under 2 min late",  # not a whole number from the feed: the default
+        "Every train to Manchester Piccadilly",
+        "Every replacement bus to Manchester Piccadilly",
+        "Every ferry to Ryde Pier Head",
     ]
 
 
@@ -3230,11 +3236,25 @@ def test_the_performance_page_lists_the_delay_repay_trains():
     [rows] = found["rows"]
     assert rows == [
         ["Date", "Train", "Booked", "Arrived", "Late", "Delay Repay", "Operator"],
-        ["Thu 8 Oct", "17:25 to Hadfield", "17:57", "18:31", "34 min", "30 min or more", "Northern"],
+        ["Thu 8 Oct", "17:25 to Hadfield", "17:57", "18:31", "34 min", "30 to 59 min", "Northern"],
         ["Tue 6 Oct", "07:42 to Manchester Piccadilly", "08:14", "08:31 estimated", "17 min", "15 to 29 min",
          "Northern"],
         ["Tue 22 Sept", "23:40 to Manchester Piccadilly", "23:58", "00:16", "18 min", "15 to 29 min", "Northern"],
     ]
+
+
+@needs_node
+def test_the_delay_repay_bands_go_to_two_hours():
+    found = run_js(_performance_page() + """
+        const odd = structuredClone(REPORT);
+        const good = odd.delay_repay.trains[0];
+        odd.delay_repay.trains = [15, 29, 30, 59, 60, 119, 120, 300].map((late) => ({ ...good, minutes_late: late }));
+        renderReport(odd, names);
+        const [rows] = tables("repay");
+        console.log(JSON.stringify(rows.slice(1).map((row) => row[5])));
+    """)
+    assert found == ["15 to 29 min", "15 to 29 min", "30 to 59 min", "30 to 59 min", "60 to 119 min",
+                     "60 to 119 min", "120 min or more", "120 min or more"]
 
 
 @needs_node
@@ -3286,7 +3306,7 @@ def test_the_delay_repay_section_never_trusts_the_report():
         const [rows] = tables("repay");
         console.log(JSON.stringify({ first: rows[1], count: rows.length - 1, said: said($("perf-repay-body").childNodes[0]) }));
     """)
-    assert found["first"] == ["Thu 8 Oct", "17:25 to <img src=x>", "17:57", "18:31", "34 min", "30 min or more", ""]
+    assert found["first"] == ["Thu 8 Oct", "17:25 to <img src=x>", "17:57", "18:31", "34 min", "30 to 59 min", ""]
     assert found["count"] == 100
     assert found["said"].startswith("Trains that reached <b>Manchester</b> 15 or more")
 

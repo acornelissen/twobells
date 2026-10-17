@@ -1,5 +1,5 @@
 """The Delay Repay watch: when trains reached the filter station, so the
-Performance page can list those that got there 15 or more, or 30 or more,
+Performance page can list those that got there 15, 30, 60 or 120 or more
 minutes late, the thresholds train companies pay Delay Repay from.
 
 It needs a filter station and a Service Details key (RDM_DETAILS_API_KEY):
@@ -42,7 +42,7 @@ from ..sources.darwin import _CLOCK, CallingPoint, DetailsSource, DetailsUnavail
 from .history import Following, History, Report, Watched
 from .snapshot import clock_at, train_route
 
-BANDS = (30, 15)  # minutes late at the filter station, most first
+BANDS = (120, 60, 30, 15)  # minutes late at the filter station, most first
 LEAST = BANDS[-1]
 OFF_FOR = 6 * 3600.0  # seconds without following after a refused key
 ASK_EVERY = timedelta(minutes=1)  # the least time between asks about one train
@@ -50,7 +50,7 @@ ASK_EVERY = timedelta(minutes=1)  # the least time between asks about one train
 
 def band(minutes_late: int) -> int | None:
     """The Delay Repay band a train that got there `minutes_late` late is
-    in, 30 or 15, or None under 15 minutes."""
+    in, 120, 60, 30 or 15, or None under 15 minutes."""
     return next((least for least in BANDS if minutes_late >= least), None)
 
 

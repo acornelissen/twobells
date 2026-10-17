@@ -85,6 +85,19 @@ def test_each_route_and_all_of_them_over_7_and_28_days(history):
     ]}}
 
 
+def test_all_trains_are_trains_alone(history):
+    # Rail replacement buses and ferries have route rows of their own, but aren't trains.
+    for back in range(3):
+        _record(history, "train", MANCHESTER, FRIDAY - timedelta(days=back))
+        _record(history, "train", "GLO>MAN bus|Manchester Piccadilly", FRIDAY - timedelta(days=back), "late", 20)
+        _record(history, "train", "PMH ferry|Ryde Pier Head", FRIDAY - timedelta(days=back), "cancelled", None)
+    trains = _figures(history).report()["trains"]
+    week = trains["all"]["periods"][0]
+    assert (week["counted"], week["right_time"], week["cancelled"]) == (3, 3, 0)
+    assert [r["label"] for r in trains["routes"]] == [
+        "Manchester Piccadilly", "Manchester Piccadilly (replacement bus)", "Ryde Pier Head (ferry)"]
+
+
 def test_too_few_days_are_not_enough(history):
     _record(history, "train", MANCHESTER, FRIDAY)
     _record(history, "train", MANCHESTER, FRIDAY, scheduled="08:42")

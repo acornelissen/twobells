@@ -78,7 +78,10 @@ def _watch(history, details, monotonic=None):
     return ArrivalWatch(history, "MAN", PREFIX, details, monotonic=monotonic or Monotonic())
 
 
-@pytest.mark.parametrize("minutes, found", [(0, None), (14, None), (15, 15), (29, 15), (30, 30), (95, 30), (-3, None)])
+@pytest.mark.parametrize("minutes, found", [
+    (0, None), (14, None), (15, 15), (29, 15), (30, 30), (59, 30), (60, 60), (95, 60), (119, 60), (120, 120),
+    (300, 120), (-3, None),
+])
 def test_the_delay_repay_bands(minutes, found):
     assert band(minutes) == found
 

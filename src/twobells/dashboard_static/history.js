@@ -10,6 +10,7 @@ import { dayText } from "./time.js";
 
 const WORDS = { on_time: "On time", late: "Late", cancelled: "Cancelled", unknown: "Unknown" };
 const DAY_TYPES = { weekday: "weekdays", saturday: "Saturdays", sunday: "Sundays and bank holidays" };
+const TRAIN_KINDS = [[" (replacement bus)", "replacement bus"], [" (ferry)", "ferry"]];
 
 let request = 0;
 
@@ -29,10 +30,15 @@ function dayRow(d) {
 }
 
 // Who the route's figures are about: "Every train to Manchester Piccadilly",
-// "Every 341 to Hyde Bus Station from Henry Street A".
+// "Every replacement bus to Manchester Piccadilly", "Every ferry to Ryde Pier
+// Head", "Every 341 to Hyde Bus Station from Henry Street A".
 export function routeCaption(mode, route, stops) {
   const label = str(route.label);
-  if (mode !== "bus") return `Every train to ${label}`;
+  if (mode !== "bus") {
+    // A rail replacement bus's or a ferry's route says so after its destination (performance.route_parts).
+    const [ending, noun] = TRAIN_KINDS.find(([end]) => label.endsWith(end)) || ["", "train"];
+    return `Every ${noun} to ${label.slice(0, label.length - ending.length)}`;
+  }
   const stop = str(route.stop);
   const name = str(own(obj(stops) || {}, stop)) || (stop ? `stop ${stop}` : "");
   return `Every ${label}${name ? ` from ${name}` : ""}`;

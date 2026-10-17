@@ -76,6 +76,10 @@ function repayTrain(t) {
   return { ...train, minutes_late: late };
 }
 
+// The Delay Repay band, most first, as repay.BANDS: "30 to 59 min".
+const BANDS = [[120, "120 min or more"], [60, "60 to 119 min"], [30, "30 to 59 min"], [15, "15 to 29 min"]];
+const bandText = (late) => BANDS.find(([least]) => late >= least)[1];
+
 function repayRow(train) {
   const what = `${train.scheduled} to ${str(train.destination) || "its destination"}`;
   return h("tr", {},
@@ -84,7 +88,7 @@ function repayRow(train) {
     h("td", {}, train.booked),
     h("td", {}, train.arrived, train.reported === true ? null : h("span", { class: "sub" }, " estimated")),
     h("td", {}, `${train.minutes_late} min`),
-    h("td", {}, train.minutes_late >= 30 ? "30 min or more" : "15 to 29 min"),
+    h("td", {}, bandText(train.minutes_late)),
     h("td", {}, str(train.operator)));
 }
 

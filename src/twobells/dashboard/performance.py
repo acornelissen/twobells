@@ -1,12 +1,13 @@
 """The Performance page's figures (GET /api/performance, docs/dashboard-api.md).
 
-How each regular route, and all the trains or all the buses together, ran
-over the last 7 and 28 days (today included), by the measures the rail
+How each regular route, and all the trains (not their rail replacement
+buses, nor ferries) or all the buses together, ran over the last 7 and 28
+days (today included), by the measures the rail
 industry reports: Right Time, T-3, T-15 and cancellations (history.measure()).
 Buses get the same, with on time meaning under the bus late threshold.
 Each departure's sheet gets its route's figures too (route()). And the
 Delay Repay watch: the trains that reached the filter station 15 or more
-minutes late over the last 28 days (repay.py), or why it is off: no
+minutes late over the last 28 days, by band (repay.py), or why it is off: no
 trains, no filter station, or no Service Details key to follow them with.
 
 Worked out from the punctuality history each time it is asked for; nothing
@@ -60,6 +61,13 @@ def route_parts(mode: str, route: str) -> tuple[str, str | None]:
         stop, line, destination = parts
         return f"{line} to {destination}", stop or None
     return route, None
+
+
+def is_train(route: str) -> bool:
+    """Whether a train route (as route_parts reads it) is trains, not its
+    rail replacement buses or a ferry, which have routes of their own."""
+    prefix = route.partition("|")[0]
+    return not prefix.endswith((" bus", " ferry"))
 
 
 def periods(outcomes: list[Outcome], today: date, late_minutes: int) -> list[dict]:
@@ -143,7 +151,9 @@ class Performance:
                 label, stop = route_parts(mode, route)
                 routes.append({"label": label, "stop": stop, "periods": periods(found, today, late)})
             routes.sort(key=lambda row: (row["label"].casefold(), row["stop"] or ""))
-            body[part] = {"late_minutes": late, "all": {"periods": periods(outcomes, today, late)}, "routes": routes}
+            # All trains are trains: rail replacement buses and ferries have their own routes only.
+            every = [outcome for outcome in outcomes if mode != "train" or is_train(outcome[0])]
+            body[part] = {"late_minutes": late, "all": {"periods": periods(every, today, late)}, "routes": routes}
         body["delay_repay"] = self._delay_repay(now, setup)
         return body
 
