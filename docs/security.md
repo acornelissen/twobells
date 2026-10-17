@@ -13,7 +13,7 @@ What protects the settings site and the dashboard, and, on a Pi, what keeps the 
 - **Home network only.** Only private and link-local addresses get in, and requests must name a local host, which stops DNS-rebinding pages. In Docker, the firewall matters too: see [Keep it on the home network](docker.md#keep-it-on-the-home-network).
 - **Keep it behind your router,** with no port forwarded to 8090. The settings use plain HTTP on your home network, so use a password you don't use anywhere else.
 - **Changing anything** needs a signed-in session, a form token and a same-origin check. The dashboard itself only shows, and needs no password; its rules are in [the dashboard API](dashboard-api.md#access-rules-every-request).
-- **Scripts.** The wizard under `/settings/setup/` is the only part that needs JavaScript. It serves a fixed list of files with set content types, and its JSON API needs the session, its form token in an `X-CSRF-Token` header, a same-origin request and a body under 16 kB. Its pages, and a signed-in visitor's settings pages, are the only ones whose Content-Security-Policy allows a script (`script-src 'self'`): on the settings pages that is `/settings/settings.js` alone, which marks unsaved changes and connects to nothing. The sign-in, reset and first-claim pages allow none.
+- **Scripts.** The wizard under `/settings/setup/` is the only part of the settings that needs JavaScript. It serves a fixed list of files with set content types, and its JSON API needs the session, its form token in an `X-CSRF-Token` header, a same-origin request and a body under 16 kB. Its pages, and a signed-in visitor's settings pages, are the only settings pages whose Content-Security-Policy allows a script (`script-src 'self'`), as the dashboard's does for its own files: on the settings pages that is `/settings/settings.js` alone, which marks unsaved changes and connects to nothing. The sign-in, reset and first-claim pages allow none.
 - **Guessing the password.** Five wrong passwords lock an address out for 15 minutes (an IPv6 address by its /64, as a device can take any address in it). Twenty from all addresses together slow every sign-in after them, down to one try a minute, so changing address gains a guesser nothing. Being on the network is not enough to set a password: that needs a [one-time code](password.md).
 - **Keys** are never shown, not even in the settings. See [Keeping keys safe](keys.md#keeping-keys-safe).
 
@@ -22,7 +22,7 @@ What protects the settings site and the dashboard, and, on a Pi, what keeps the 
 The server checks every visitor's address itself, and two layers in the Pi's kernel back it up, each covering both directions:
 
 - **The unit's systemd IP firewall:** `IPAddressDeny=any`, with `IPAddressAllow=` the home network's ranges.
-- **The network guard:** nftables rules for the web server alone (below).
+- **The network guard:** nftables rules for the web server and the fetch service (below).
 
 Sign-in, lockout, the task limit and the two-at-a-time password checks apply whatever the kernel does.
 

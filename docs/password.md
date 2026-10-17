@@ -9,7 +9,7 @@
 The settings have one password per install, at least 10 characters. Claiming them the first time, and setting a new password when you've forgotten it, both need a one-time code. The code shows:
 
 - **on the board**, while the board view is on (e-paper can take a minute to change);
-- **in the log** otherwise: on a Pi `sudo journalctl -u twobells-web`; in Docker `docker logs twobells`, or in Container Manager, **Container**, `twobells`, **Log**; on a desktop, the Terminal window running it. The line reads `Settings reset code: 123 456, valid until 14:05`, in the board's time zone (**General**, **Time zone**).
+- **in the log** otherwise: on a Pi `sudo journalctl -u twobells-web`; in Docker `docker logs twobells`, or in Container Manager, **Container**, `twobells`, **Log**; on a desktop, the Terminal window running it, or, started at login, `~/Library/Logs/twobells.log` on a Mac and `journalctl --user -u twobells` on Linux. The line reads `Settings reset code: 123 456, valid until 14:05`, in the board's time zone (**General**, **Time zone**).
 
 To claim the settings, open them and press **Show a code on the board** (or **Put a code in the log**), then type the code with a new password. A forgotten password works the same way, from **Forgot password?** on the sign-in page; setting a new one signs every browser out.
 
@@ -42,7 +42,6 @@ You can set the password from the command line, even while the server runs. It a
 - **"That password isn't right":** after 5 wrong tries, that device is locked out for 15 minutes and sees "Too many attempts. Try again in 15 minutes." Over IPv6 the devices on one network count as one, as a device can change its IPv6 address at will, so a wrong guess on another device can lock yours out too; a device using IPv4 counts on its own.
 - **"Lots of wrong passwords have been tried lately":** after 20 wrong tries in 15 minutes from all devices together, signing in slows for everyone: one try at a time is let in, a little after the last, at most a minute apart, and devices take turns in the order they first tried. Try again in a minute; a device that tries again within two minutes keeps its place in the line. If someone keeps guessing, sign in with a reset code instead (it isn't slowed), from the page's **Forgot password?** or the command line above.
 - **"Busy, try again in a moment":** a few sign-ins were being checked at once; try again.
-- **"Set a password first":** no password has been set yet; claim the settings as above.
 - **"Forbidden":** the settings only answer devices on the home network, using a local name or address. They won't work over mobile data or a VPN to elsewhere.
 
 The settings use plain HTTP on your home network. Use a password you don't use anywhere else, and don't forward port 8090 on your router. See [How the web server is kept safe](security.md).
