@@ -148,7 +148,10 @@ main:focus { outline: none; }
 .progress li::before { content: counter(step) ". "; }
 /* A done step's tick and its words (steps.js), shown once it is done. */
 .progress li:not(.done) .icon, .progress li:not(.done) .vh { display: none; }
-.progress .icon { margin-left: var(--s-1); }
+/* In place of its number, so the list keeps its width and doesn't wrap as steps are done. */
+.progress li.done { display: inline-flex; align-items: center; gap: 0.3em; }
+.progress li.done::before { content: none; }
+.progress li.done .icon { order: -1; }
 .progress li[aria-current="step"] {
   color: var(--fg);
   font-weight: 600;
