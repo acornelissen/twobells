@@ -27,7 +27,9 @@ it leaves, often further out than that. So a journey that ends at one of
 your stops, or within NEAR_M of one, on a line (and operator) with
 departures starting there, has every stop it calls at placed (_turning).
 The BODS request's box is drawn round them all (bodsbus), so it grows to
-match. While reading, before NaPTAN has placed them, every stop of a
+match. Those placed only for that (Schedule.turning_only) are marked apart:
+they are not near your stops, so a disruption there isn't counted as
+nearby (sources/disruptions.py). While reading, before NaPTAN has placed them, every stop of a
 journey that may end near one of yours (_may_be_near) is held, and those
 of journeys that don't are let go once it has.
 
@@ -140,7 +142,8 @@ _FAILED_FILE_BYTES = 200
 # 2: stops keep the letter on their sign.
 # 3: the roads between stops, for the dashboard's maps (shapes).
 # 4: the block each journey is worked in (Journey.block), to follow its bus.
-FORMAT = 4
+# 5: the stops placed only for a bus turning round (Schedule.turning_only).
+FORMAT = 5
 MAX_AGE = timedelta(days=7)
 # Positions are kept for this many calls before each of your stops, and the one
 # after: livebus places buses along that stretch and sees them pass your stop.
@@ -170,7 +173,9 @@ MAX_INBOUND_JOURNEYS = 10_000
 # one of its own each, so this stands. Placing every stop of the journeys
 # whose bus turns round at your stop (_turning) holds a position per stop,
 # not per journey: Glossop's build held 38 KB more for its 531 journeys
-# (from 117 stops placed to 316), and its peak was unchanged.
+# (from 117 stops placed to 316), and its peak was unchanged. Marking those
+# placed only for that (format 5) holds a set of their codes, sharing the
+# positions' own: under 10 KB for Glossop's 199.
 JOURNEY_BYTES = 8_000
 # The most a journey takes in the saved file (save, a journey at a time):
 # one of 80 calls with school terms, bank holidays and Christmas off takes
@@ -1212,8 +1217,8 @@ def build_schedule(
         log.warning("Left out %d journeys ending near your stops: more than %d", read.left_out, read.inbound_limit)
     placed = _positions(read.stops, read.known, naptan)
     near = tuple(journey for journey in read.inbound if _ends_near(journey, atcos, placed))
-    needed = set().union(*(_nearby(journey, atcos) for journey in kept), *(_approach(journey) for journey in near),
-                         _turning(kept + near, atcos, placed))
+    approach = set().union(*(_nearby(journey, atcos) for journey in kept), *(_approach(journey) for journey in near))
+    needed = approach | _turning(kept + near, atcos, placed)
     ends = [journey.calendar.end for journey in kept if journey.calendar.end]
     positions = {atco: position for atco, position in placed.items() if atco in needed}
     return Schedule(
@@ -1224,6 +1229,7 @@ def build_schedule(
         positions=positions,
         operators=tuple(sorted(set(operators))),
         format=FORMAT,
+        turning_only=frozenset(atco for atco in positions if atco not in approach),
     )
 
 

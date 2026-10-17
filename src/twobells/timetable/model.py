@@ -138,6 +138,11 @@ class Schedule:
     # Saved before its roads were found, or while they were stopped part way:
     # the next build finds the rest (timetable.refresh). False in older files.
     roads_pending: bool = False
+    # The positioned stops placed only to follow in a bus that turns round at
+    # your stop (timetable/build.py's _turning), out to its journey's far end:
+    # not on the way to your stops, so not what is near them
+    # (sources/disruptions.py). Empty in older files.
+    turning_only: frozenset[str] = frozenset()
 
     @property
     def departure_journeys(self) -> tuple[Journey, ...]:
@@ -193,16 +198,18 @@ class Schedule:
             else:
                 data[key] = reader.value()
         reader.end()
+        positions = {k: StopPosition(**v) for k, v in data.get("positions", {}).items()}
         return cls(
             built=datetime.fromisoformat(data["built"]),
             valid_until=date.fromisoformat(data["valid_until"]) if data.get("valid_until") else None,
             stops=dict(data["stops"]),
             journeys=data["journeys"],
-            positions={k: StopPosition(**v) for k, v in data.get("positions", {}).items()},
+            positions=positions,
             operators=tuple(data.get("operators", ())),
             format=int(data.get("format", 1)),
             shapes=SavedRoads(data.get("shapes", {})) if journeys else {},
             roads_pending=data.get("roads_pending") is True,
+            turning_only=_turning_only(data.get("turning_only", []), positions),
         )
 
 
@@ -419,6 +426,16 @@ def _journey(data: dict, one: Callable = lambda value: value) -> Journey:
         inbound_only=_flag(data.get("inbound_only", False)),
         block=one(_string(data.get("block", ""))),
     )
+
+
+def _turning_only(saved, positions: Mapping[str, StopPosition]) -> frozenset[str]:
+    """The stops placed only for a bus turning round, as saved: a list of
+    text. One without a position is left out; the rest hold the positions'
+    own keys, not a copy of each."""
+    if not isinstance(saved, list):
+        raise TypeError("The stops placed for a bus turning round must be a list")
+    wanted = {_string(atco) for atco in saved}
+    return frozenset(atco for atco in positions if atco in wanted)
 
 
 def _roads(saved) -> dict[str, tuple[tuple[float, float], ...]]:

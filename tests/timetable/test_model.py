@@ -100,6 +100,29 @@ def test_roads_still_to_find_round_trip_and_older_files_have_none_to_find():
     assert Schedule.from_json(json.dumps(old)).roads_pending is False
 
 
+def test_stops_placed_only_for_a_bus_turning_round_round_trip_and_older_files_have_none():
+    henry, market = StopPosition("Henry Street", 53.44384, -1.948999), StopPosition("Market Hall", 53.4, -1.9)
+    schedule = Schedule(datetime(2026, 10, 9, 3, 0), None, {"A": "1000DGHS0900"}, (),
+                        positions={"1000DGHS0900": henry, "1800ANIN0K1": market},
+                        turning_only=frozenset({"1800ANIN0K1"}))
+    text = schedule.to_json()
+    assert '"turning_only":["1800ANIN0K1"]' in text
+    assert Schedule.from_json(text) == schedule
+    old = json.loads(text)
+    del old["turning_only"]  # saved before they were marked (format 4 and older)
+    assert Schedule.from_json(json.dumps(old)).turning_only == frozenset()
+    old["turning_only"] = ["1800ANIN0K1", "nowhere"]  # a stop without a position is no stop to leave out
+    assert Schedule.from_json(json.dumps(old)).turning_only == frozenset({"1800ANIN0K1"})
+
+
+@pytest.mark.parametrize("turning", ["null", '"1800ANIN0K1"', "[1]", "{}"])
+def test_turning_only_stops_that_arent_a_list_of_text_make_the_file_unreadable(turning):
+    data = json.loads(Schedule(datetime(2026, 10, 9, 3, 0), None, {}, ()).to_json())
+    data["turning_only"] = json.loads(turning)
+    with pytest.raises(TypeError):
+        Schedule.from_json(json.dumps(data))
+
+
 GOOD_ROAD = [[53.4436, -1.9563]]
 
 
@@ -160,7 +183,7 @@ def _every_field():
     journey = Journey("341", "BNML", "Hyde", "10620", (Call("1000DGHS0900", 380), Call("1800ANIN0K1", 1460)),
                       calendar, inbound_only=True, block="T122")
     return Schedule(datetime(2026, 10, 9, 3, 0), date(2027, 1, 3), {"A": "1000DGHS0900"}, (journey,),
-                    {"1000DGHS0900": StopPosition("Henry Street", 53.44384, -1.948999, "A")}, ("BNML",), 4,
+                    {"1000DGHS0900": StopPosition("Henry Street", 53.44384, -1.948999, "A")}, ("BNML",), 5,
                     {"1000DGHS0900>1800ANIN0K1": ((53.44, -1.95),)}, True)
 
 
@@ -183,11 +206,18 @@ def _with_block(saved):
     return saved.replace('"format":3', '"format":4').replace('"journeys":[{', '"journeys":[{"block":"T122",')
 
 
+def _with_turning(saved):
+    """`saved` as format 5 saves it: with the stops placed only for a bus turning round, none here."""
+    return saved.replace('"format":4', '"format":5').replace('"valid_until"', '"turning_only":[],"valid_until"')
+
+
 def test_a_timetable_is_saved_as_it_always_was_and_older_files_load():
-    # Format 4 added each journey's block, and nothing else.
+    # Format 4 added each journey's block, format 5 the stops placed only for
+    # a bus turning round, and nothing else.
     schedule = _every_field()
-    assert schedule.to_json() == _with_block(_SAVED)
-    assert Schedule.from_json(_with_block(_SAVED)) == schedule
+    assert schedule.to_json() == _with_turning(_with_block(_SAVED))
+    assert Schedule.from_json(_with_turning(_with_block(_SAVED))) == schedule
+    assert Schedule.from_json(_with_block(_SAVED)) == dataclasses.replace(schedule, format=4)
     assert Schedule.from_json(_SAVED) == dataclasses.replace(
         schedule, format=3, journeys=tuple(dataclasses.replace(j, block="") for j in schedule.journeys))
 

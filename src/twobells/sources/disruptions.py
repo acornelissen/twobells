@@ -351,7 +351,9 @@ def parse_siri_sx(chunks: Iterable[bytes]) -> list[Situation]:
 class BusArea:
     """Our lines and stops, from the bus timetable. Its positioned stops
     include the way into a stand near one of ours (inbound-only journeys):
-    trouble there holds up the bus that will work a departure from our stop."""
+    trouble there holds up the bus that will work a departure from our stop.
+    They leave out the stops placed only to follow a bus in from the far end
+    of its line (Schedule.turning_only): those are nowhere near."""
 
     lines: Mapping[tuple[str, str], str]  # (line, operator), case-folded -> the line as shown
     stops: Mapping[str, str]  # our stop labels -> ATCO codes
@@ -361,13 +363,14 @@ class BusArea:
     @classmethod
     def from_schedule(cls, schedule: Schedule) -> BusArea:
         lines = {(j.line.casefold(), j.operator.casefold()): j.line for j in schedule.journeys}
-        places = list(schedule.positions.values())
+        positioned = {atco: p for atco, p in schedule.positions.items() if atco not in schedule.turning_only}
+        places = list(positioned.values())
         box = None
         if places:
             lats, lons = [p.lat for p in places], [p.lon for p in places]
             box = (min(lons) - AREA_MARGIN, min(lats) - AREA_MARGIN, max(lons) + AREA_MARGIN,
                    max(lats) + AREA_MARGIN)
-        return cls(lines, dict(schedule.stops), dict(schedule.positions), box)
+        return cls(lines, dict(schedule.stops), positioned, box)
 
     @property
     def operators(self) -> frozenset[str]:

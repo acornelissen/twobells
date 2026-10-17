@@ -1479,6 +1479,9 @@ def test_a_bus_turning_round_at_your_stop_is_placed_all_the_way_in(end):
     assert {*WAY_IN, end} <= set(schedule.positions)
     assert _box_holds(schedule, WAY_IN[0])
     assert set(WAY_IN) <= asked
+    # Those before the 20 on the way in are there only for that bus, not for
+    # what is near your stop (sources/disruptions.py).
+    assert schedule.turning_only == frozenset(WAY_IN[:-20])
 
 
 @pytest.mark.parametrize("end", [STOP_A, MARKET_HALL])
@@ -1493,6 +1496,7 @@ def test_a_bus_not_turning_round_at_your_stop_is_placed_only_on_the_stretch_befo
     assert set(WAY_IN[-20:]) | {end} <= set(schedule.positions)
     assert not set(WAY_IN[:-20]) & set(schedule.positions)
     assert not _box_holds(schedule, WAY_IN[0])
+    assert schedule.turning_only == frozenset()
 
 
 @pytest.mark.parametrize("places", [{}, WAY_IN_PLACES])  # placed by NaPTAN, or by the timetable too

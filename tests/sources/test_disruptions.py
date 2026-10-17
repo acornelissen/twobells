@@ -114,6 +114,18 @@ def test_a_notice_on_our_line_at_a_stop_on_our_routes_is_nearby():
     assert found[0].relevance == "nearby"
 
 
+def test_stops_placed_only_for_a_bus_turning_round_are_not_our_area():
+    # The timetable places every stop of a journey whose bus turns round at
+    # our stop, out to its far end, only to follow that bus in: trouble there
+    # isn't nearby, and they don't stretch the area.
+    plan = our_schedule()
+    far = {"1000DDSL4374": StopPosition("Brookfield", 53.452107, -1.979437), **DINTING_LANE}
+    turning = replace(plan, positions={**plan.positions, **far}, turning_only=frozenset(far))
+    found = BusArea.from_schedule(turning)
+    assert found == BusArea.from_schedule(plan)
+    assert bus_disruptions(situations(), found, CAPTURED) == []
+
+
 def test_a_line_must_be_run_by_our_operator_for_it():
     found = {d.key: d for d in bus_disruptions(situations(), area(), CAPTURED)}
     assert KIRKLEES_393 not in found  # line 393, but ESTS's
