@@ -14,16 +14,18 @@ The board and dashboard use, and the tests include recorded samples of, these op
 
 Contains public sector information licensed under the Open Government Licence v3.0. Weather data by Open-Meteo.com. Map data © OpenStreetMap contributors.
 
-Train times come from National Rail's Darwin via the [Rail Data Marketplace](https://raildata.org.uk), under that product's licence. Bus times can also come from [TransportAPI](https://www.transportapi.com) under its terms. The tests' Darwin and TransportAPI answers (`tests/fixtures/ldbws_*.json`, `tests/fixtures/tapi_*.json`) are synthetic: made up in the shape those services send, with real station and stop names. So are these:
+Train times come from National Rail's Darwin via the [Rail Data Marketplace](https://raildata.org.uk), under that product's licence. London's Underground, DLR, tram, cable car and river bus times and line status come from [Transport for London's Unified API](https://api.tfl.gov.uk): Powered by TfL Open Data. Contains OS data © Crown copyright and database rights 2016 and Geomni UK Map data © and database rights 2019. Bus times can also come from [TransportAPI](https://www.transportapi.com) under its terms. The tests' Darwin and TransportAPI answers (`tests/fixtures/ldbws_*.json`, `tests/fixtures/tapi_*.json`) are synthetic: made up in the shape those services send, with real station and stop names. So are these:
 
 - `tests/fixtures/kb_incidents_synthetic.xml`: National Rail Knowledgebase incidents, written by hand; the names, numbers and times are made up.
 - `tests/fixtures/bods_datasets_synthetic.json`: pages of BODS's data set list, trimmed and made up.
 - `tests/fixtures/bods_glossop_synthetic.xml` and `tests/fixtures/txc_glossop_synthetic.xml`: BODS live positions and a TransXChange timetable built for the tests, with real NaPTAN stop codes and positions in Glossop and invented vehicles, journeys and times.
+- `tests/fixtures/tfl_*_synthetic.json`: TfL's arrivals, line status and station notices, made up in the shape the Unified API sends, with real station and line names and invented trains and times.
 - `tests/fixtures/dashboard_*.json`: the dashboard API's answers ([docs/dashboard-api.md](docs/dashboard-api.md)), made up for both sides of it to test against, with real place names.
 
 ## Setup data and lookups
 
 - `src/twobells/data/gb_stations.csv` (stations and CRS codes) and `naptan_area_grid.csv` (which NaPTAN areas have bus stops where) are built from the Department for Transport's [NaPTAN](https://naptan.api.dft.gov.uk/) by `tools/build_setup_data.py`, under the Open Government Licence v3.0. Rebuild them now and then: stations open and stops move.
+- `src/twobells/data/london_stops.csv` (London's Underground, DLR, tram, cable car and river bus stops) is built by `tools/build_setup_data.py` from NaPTAN's names and positions, under the Open Government Licence v3.0, and the TfL lines calling at each from TfL's Unified API: Powered by TfL Open Data.
 - Setup looks up postcodes with [postcodes.io](https://postcodes.io): Office for National Statistics data under the Open Government Licence; contains OS data © Crown copyright and database right, and Royal Mail data © Royal Mail copyright and database right.
 - Addresses come from OpenStreetMap's [Nominatim](https://nominatim.openstreetmap.org) and walk times from the OpenStreetMap [foot router](https://routing.openstreetmap.de). OpenStreetMap data © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/copyright).
 - The roads drawn on the dashboard's bus maps come from the OpenStreetMap [car router](https://routing.openstreetmap.de) when the bus timetable is built, and are kept in `bus-timetable.json`. OpenStreetMap data © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/copyright).

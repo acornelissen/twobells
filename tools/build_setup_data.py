@@ -1,8 +1,9 @@
-"""Builds the three data files the setup wizard reads, from NaPTAN.
+"""Builds the data files the setup wizard reads, from NaPTAN (and TfL, for London).
 
     python tools/build_setup_data.py            # downloads about 130 MB
     python tools/build_setup_data.py --rail-xml rail.xml --stops-csv naptan.csv
     python tools/build_setup_data.py --trams-only --stops-csv area940.csv
+    python tools/build_setup_data.py --london-only --stops-csv area940.csv --piers-csv area930.csv
 
 Run it on a laptop now and then (stations open, stops move) and commit the
 result. It writes, under src/twobells/data/:
@@ -20,9 +21,18 @@ result. It writes, under src/twobells/data/:
   platforms are PLT). NaPTAN's tram and metro area is 940; --trams-only
   writes this file alone, from a CSV of that area
   (naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv&atcoAreaCodes=940).
+- london_stops.csv: every London Underground, DLR and London Trams stop,
+  the cable car's two stations and the river buses' piers, by TfL's code
+  for them (940GZZLUBNK, 930GWMR), with their kind (tube, dlr, tram,
+  cable-car, river-bus), the TfL lines that call there and their position.
+  Which stops and lines there are comes from TfL's Unified API (about 20
+  calls, no key: each line's stops); names and positions from NaPTAN's
+  entries for them, areas 940 and 930 (ferry). --london-only writes this
+  file alone, from --stops-csv (area 940) and --piers-csv (area 930).
 
 NaPTAN is published by the Department for Transport under the Open
-Government Licence v3.0; both files say so in their header.
+Government Licence v3.0; every file says so in its header, and the London
+list says it is powered by TfL Open Data too.
 """
 
 from __future__ import annotations
@@ -41,7 +51,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from twobells.core import safexml  # noqa: E402
-from twobells.core.net import get_bytes  # noqa: E402
+from twobells.core.net import get_bytes, get_json_capped  # noqa: E402
 from twobells.core.osgb import distance_m  # noqa: E402
 from twobells.setup.lookups import BUS_STOP_TYPES, naptan_position  # noqa: E402
 from twobells.timetable.routesetup import NAPTAN_URL  # noqa: E402
@@ -59,6 +69,16 @@ _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 # A Metrolink stop's own NaPTAN entry: 9400ZZMA and its three letters.
 _METROLINK = re.compile(r"^9400ZZMA[A-Z]{3}$")
 TRAMS_URL = f"{NAPTAN_URL}?dataFormat=csv&atcoAreaCodes=940"
+PIERS_URL = f"{NAPTAN_URL}?dataFormat=csv&atcoAreaCodes=930"
+# London's stops for the TfL modes the board shows (sources/tfl.py), by TfL's
+# code: its stop area's, 940G for NaPTAN's 9400 entry and 930G for 9300.
+TFL_URL = "https://api.tfl.gov.uk"
+TFL_MODES = ("tube", "dlr", "tram", "cable-car", "river-bus")
+_LONDON = re.compile(r"^(?:940GZZ(?:LU|DL|CR|AL)[A-Z]{3}|930G[A-Z]{3,4})$")
+_LINE_ID = re.compile(r"^[a-z0-9-]{1,40}$")
+_KINDS = {"LU": "tube", "DL": "dlr", "CR": "tram", "AL": "cable-car"}
+# NaPTAN's names end with what they are, which the kind already says.
+_LONDON_SUFFIX = re.compile(r"\s*(?:-Underground| Underground Station| DLR Station| Tram Stop)$")
 # A station's NaPTAN entries (platform groups, low and high level) sit
 # within a few hundred metres; further apart means a wrong CRS somewhere.
 MAX_SPREAD_M = 2_000
@@ -150,6 +170,64 @@ def tram_stops(text: str) -> list[tuple[str, str, float, float]]:
     return sorted(rows.values(), key=lambda r: r[1])
 
 
+def london_kind(code: str) -> str:
+    """tube, dlr, tram, cable-car or river-bus, from a London stop's code."""
+    return "river-bus" if code.startswith("930G") else _KINDS[code[6:8]]
+
+
+def tfl_lines(get_json=None) -> dict[str, set[str]]:
+    """{stop code: line ids} for every stop TfL's lines of TFL_MODES call at,
+    from the Unified API: the lines, then each line's stops."""
+    get = get_json or (lambda url: get_json_capped(url, None, 20_000_000, timeout=60))
+    lines = get(f"{TFL_URL}/Line/Mode/{','.join(TFL_MODES)}")
+    found: dict[str, set[str]] = defaultdict(set)
+    for line in lines:
+        line_id = str(line.get("id", ""))
+        if not _LINE_ID.match(line_id):
+            continue
+        for stop in get(f"{TFL_URL}/Line/{line_id}/StopPoints"):
+            code = str(stop.get("naptanId", ""))
+            if _LONDON.match(code):
+                found[code].add(line_id)
+    return dict(found)
+
+
+def london_stops(metro: str, piers: str, lines: dict[str, set[str]]) -> list[tuple[str, str, str, str, float, float]]:
+    """(name, code, kind, lines, lat, lon) for each stop in `lines` (TfL's
+    code: its lines) that NaPTAN has active, from its own entry in area 940
+    (`metro`, MET) or 930 (`piers`, FER). `lines` is separated by spaces."""
+    entries = {}
+    for text, stop_type in ((metro, "MET"), (piers, "FER")):
+        for row in csv.DictReader(io.StringIO(text)):
+            atco = (row.get("ATCOCode") or "").strip()
+            if row.get("Status") == "active" and row.get("StopType") == stop_type:
+                entries[atco] = row
+    rows = []
+    for code, ids in sorted(lines.items()):
+        row = entries.get(("9400" if code.startswith("940G") else "9300") + code[4:])
+        if row is None:
+            print(f"NaPTAN has no active entry for {code}; left out")
+            continue
+        position = naptan_position(row)
+        name = _LONDON_SUFFIX.sub("", _clean(row.get("CommonName") or ""))
+        if position and name:
+            rows.append((name, code, london_kind(code), " ".join(sorted(ids)), *position))
+    return rows
+
+
+def write_london_stops(rows: list[tuple[str, str, str, str, float, float]], path: Path) -> None:
+    out = io.StringIO()
+    out.write("# London's Underground, DLR, tram, cable car and river bus stops, by TfL's codes for them.\n")
+    out.write("# Which stops and lines: Powered by TfL Open Data. Contains OS data (c) Crown copyright and\n")
+    out.write("# database rights 2016, and Geomni UK Map data (c) and database rights 2019.\n")
+    out.writelines(f"# {line}\n" for line in LICENCE)
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(["name", "code", "kind", "lines", "lat", "lon"])
+    writer.writerows((name, code, kind, lines, f"{lat:.5f}", f"{lon:.5f}")
+                     for name, code, kind, lines, lat, lon in rows)
+    path.write_text(out.getvalue(), encoding="utf-8")
+
+
 def write_tram_stops(rows: list[tuple[str, str, float, float]], path: Path) -> None:
     out = io.StringIO()
     out.write("# Manchester Metrolink stops, with their NaPTAN codes (9400ZZMA and TfGM's three letters).\n")
@@ -187,9 +265,20 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--stops-csv", type=Path, help="national NaPTAN CSV, already downloaded")
     parser.add_argument("--trams-only", action="store_true",
                         help="write metrolink_stops.csv alone, from --stops-csv or NaPTAN's area 940")
+    parser.add_argument("--piers-csv", type=Path, help="NaPTAN CSV for area 930 (ferry), already downloaded")
+    parser.add_argument("--london-only", action="store_true",
+                        help="write london_stops.csv alone, from --stops-csv (area 940) and --piers-csv")
     parser.add_argument("--out", type=Path, default=OUT)
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
+
+    if args.london_only:
+        metro = args.stops_csv.read_bytes() if args.stops_csv else get_bytes(TRAMS_URL, 50_000_000, timeout=120)
+        piers = args.piers_csv.read_bytes() if args.piers_csv else get_bytes(PIERS_URL, 50_000_000, timeout=120)
+        london = london_stops(metro.decode("utf-8-sig"), piers.decode("utf-8-sig"), tfl_lines())
+        print(f"{len(london)} London stops")
+        write_london_stops(london, args.out / "london_stops.csv")
+        return
 
     if args.trams_only:
         blob = args.stops_csv.read_bytes() if args.stops_csv else get_bytes(TRAMS_URL, 50_000_000, timeout=120)
@@ -208,10 +297,13 @@ def main(argv: list[str] | None = None) -> None:
     print(f"{len(cells)} cells, {len({a for v in cells.values() for a in v})} areas")
     trams = tram_stops(text)
     print(f"{len(trams)} Metrolink stops")
+    london = london_stops(text, text, tfl_lines())  # the national CSV has areas 940 and 930
+    print(f"{len(london)} London stops")
 
     write_stations(stations, args.out / "gb_stations.csv")
     write_grid(cells, args.out / "naptan_area_grid.csv")
     write_tram_stops(trams, args.out / "metrolink_stops.csv")
+    write_london_stops(london, args.out / "london_stops.csv")
 
 
 if __name__ == "__main__":

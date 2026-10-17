@@ -135,3 +135,35 @@ def test_trams_only_writes_the_tram_stops_alone(build, tmp_path):
     assert [p.name for p in (tmp_path / "out").iterdir()] == ["metrolink_stops.csv"]
     text = (tmp_path / "out" / "metrolink_stops.csv").read_text()
     assert "Open Government Licence" in text and text.endswith("name,code,lat,lon\nPiccadilly,9400ZZMAPIC,53.47707,-2.23065\n")
+
+
+def test_london_stops_are_tfl_s_stops_named_and_placed_from_naptan(build):
+    metro = "\n".join([
+        "ATCOCode,Status,StopType,CommonName,Easting,Northing,Latitude,Longitude",
+        "9400ZZLUBNK,active,MET,Bank Underground Station,,,51.51342,-0.08895",
+        "9400ZZLUBNK1,active,PLT,Bank Underground Station,,,51.51342,-0.08895",  # a platform
+        "9400ZZDLBNK,active,MET,Bank DLR Station,,,51.51323,-0.08851",
+        "9400ZZLUPAH,active,MET,Paddington (H&C Line)-Underground,,,51.51819,-0.17831",
+        "9400ZZLUOLD,inactive,MET,Old Underground Station,,,51.5,-0.1",
+    ])
+    piers = "ATCOCode,Status,StopType,CommonName,Easting,Northing,Latitude,Longitude\n" \
+            "9300WMR,active,FER,Westminster Pier,,,51.50156,-0.12374\n"
+    lines = {"940GZZLUBNK": {"northern", "central"}, "940GZZDLBNK": {"dlr"}, "940GZZLUPAH": {"circle"},
+             "930GWMR": {"rb1"}, "940GZZLUOLD": {"central"}}
+    assert build.london_stops(metro, piers, lines) == [
+        ("Westminster Pier", "930GWMR", "river-bus", "rb1", 51.50156, -0.12374),
+        ("Bank", "940GZZDLBNK", "dlr", "dlr", 51.51323, -0.08851),
+        ("Bank", "940GZZLUBNK", "tube", "central northern", 51.51342, -0.08895),
+        ("Paddington (H&C Line)", "940GZZLUPAH", "tube", "circle", 51.51819, -0.17831),
+    ]
+
+
+def test_tfl_lines_are_each_line_s_stops_of_the_kinds_shown(build):
+    answers = {
+        "https://api.tfl.gov.uk/Line/Mode/tube,dlr,tram,cable-car,river-bus": [
+            {"id": "central"}, {"id": "rb1"}, {"id": "../etc"}],
+        "https://api.tfl.gov.uk/Line/central/StopPoints": [
+            {"naptanId": "940GZZLUBNK"}, {"naptanId": "910GLIVST"}, {"naptanId": "HUBBAN"}],
+        "https://api.tfl.gov.uk/Line/rb1/StopPoints": [{"naptanId": "930GWMR"}, {"naptanId": "9300WMR1"}],
+    }
+    assert build.tfl_lines(answers.__getitem__) == {"940GZZLUBNK": {"central"}, "930GWMR": {"rb1"}}

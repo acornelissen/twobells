@@ -6,8 +6,9 @@ everything that comes back before using it.
 
 Where a home's position goes, and only at setup: a postcode to postcodes.io,
 or typed address text to OpenStreetMap's Nominatim; then its coordinates,
-once, to the OpenStreetMap foot router for walk times. Stations and
-Metrolink tram stops come from files bundled with the board and bus stops
+once, to the OpenStreetMap foot router for walk times. Stations,
+Metrolink tram stops and London's Underground, DLR, tram, cable car and
+river bus stops come from files bundled with the board and bus stops
 from NaPTAN by area code, so none of them learns where home is. Nothing here logs a postcode, an address or a
 coordinate, and error messages never repeat a URL.
 """
@@ -83,6 +84,12 @@ _POSTCODE = re.compile(r"^[A-Z]{1,2}[0-9][A-Z0-9]?[0-9][A-Z]{2}$")
 _CRS = re.compile(r"^[A-Z]{3}$")
 # A Metrolink stop's NaPTAN code: 9400ZZMA and the three letters TfGM calls it by.
 TRAM_STOP = re.compile(r"^9400ZZMA[A-Z]{3}$")
+# A London stop TfL's live times are for, by TfL's code for it: an
+# Underground (LU), DLR (DL), London Trams (CR) or cable car (AL) station,
+# or a river bus pier (930G and its three or four letters).
+LONDON_STOP = re.compile(r"^(?:940GZZ(?:LU|DL|CR|AL)[A-Z]{3}|930G[A-Z]{3,4})$")
+LONDON_KINDS = ("tube", "dlr", "tram", "cable-car", "river-bus")
+_LINE_ID = re.compile(r"^[a-z0-9-]{1,40}$")
 _ATCO = re.compile(r"^[0-9]{3}[0-9A-Za-z]{1,9}$")
 _AREA = re.compile(r"^[0-8][0-9]{2}$")
 _LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")  # as the settings site allows
@@ -133,13 +140,16 @@ class Station:
 
 @dataclass(frozen=True)
 class TramStop:
-    """A Manchester Metrolink stop: all its platforms, both ways."""
+    """A Manchester Metrolink stop, or a London stop TfL's live times are
+    for: all its platforms, both ways."""
 
-    code: str  # its NaPTAN code, like 9400ZZMAGMX
+    code: str  # its NaPTAN code, like 9400ZZMAGMX, or TfL's, like 940GZZLUBNK
     name: str
     lat: float
     lon: float
     distance_m: int  # straight line from home
+    # "metrolink", or a London stop's kind: one of LONDON_KINDS.
+    kind: str = "metrolink"
 
 
 @dataclass(frozen=True)
@@ -448,8 +458,11 @@ def bundled_tram_stops() -> tuple[tuple[str, str, float, float], ...]:
 
 
 def tram_stop_names() -> dict[str, str]:
-    """{code: name} of every Metrolink stop, from the bundled list."""
-    return {code: name for name, code, _, _ in bundled_tram_stops()}
+    """{code: name} of every Metrolink stop and every London stop, from the
+    bundled lists: a London stop's name as the views say it (stop_title)."""
+    names = {code: name for name, code, _, _ in bundled_tram_stops()}
+    names.update((stop.code, stop_title(stop.name, stop.kind)) for stop in bundled_london_stops())
+    return names
 
 
 def nearby_tram_stops(lat: float, lon: float, limit: int = 5, within_km: float = TRAM_STOPS_WITHIN_KM,
@@ -464,6 +477,67 @@ def nearby_tram_stops(lat: float, lon: float, limit: int = 5, within_km: float =
         metres = distance_m(lat, lon, slat, slon)
         if metres <= within_km * 1000:
             found.append((metres, code, TramStop(code, name, slat, slon, round(metres))))
+    found.sort(key=lambda f: (f[0], f[1]))
+    return [f[2] for f in found[:limit]]
+
+
+# London's stops for TfL's live times, from the bundled list
+# (tools/build_setup_data.py): each with its kind and the TfL lines calling there.
+LONDON_STOPS_WITHIN_KM = 5
+
+
+@dataclass(frozen=True)
+class LondonStop:
+    name: str  # NaPTAN's, without what it is: "Bank", "Westminster Pier"
+    code: str  # TfL's, like 940GZZLUBNK
+    kind: str  # one of LONDON_KINDS
+    lines: tuple[str, ...]  # TfL's line ids, like ("central", "northern")
+    lat: float
+    lon: float
+
+
+def stop_title(name: str, kind: str) -> str:
+    """A stop's name as the views say it: a DLR station's says so ("Bank
+    DLR"), as most share a name with the Underground station beside them."""
+    return f"{name} DLR" if kind == "dlr" else name
+
+
+def parse_london_stops(text: str) -> tuple[LondonStop, ...]:
+    """The rows of a London stop list, bad rows skipped."""
+    rows = []
+    for row in _data_rows(text):
+        name, code, kind = _text(row.get("name"), 80), row.get("code") or "", row.get("kind") or ""
+        lines = tuple(str(row.get("lines") or "").split())
+        position = _position(row.get("lat"), row.get("lon"), strings=True)
+        if (name and LONDON_STOP.match(code) and kind in LONDON_KINDS and position and len(lines) <= 20
+                and all(_LINE_ID.match(line) for line in lines)):
+            rows.append(LondonStop(name, code, kind, lines, *position))
+    return tuple(rows)
+
+
+@lru_cache(maxsize=1)
+def bundled_london_stops() -> tuple[LondonStop, ...]:
+    return parse_london_stops(files("twobells").joinpath("data/london_stops.csv").read_text("utf-8"))
+
+
+def london_stops_by_code() -> dict[str, LondonStop]:
+    return {stop.code: stop for stop in bundled_london_stops()}
+
+
+def nearby_london_stops(lat: float, lon: float, limit: int = 8, within_km: float = LONDON_STOPS_WITHIN_KM,
+                        stops: Sequence[LondonStop] | None = None) -> list[TramStop]:
+    """The nearest London stops TfL's live times are for, closest first, by
+    straight line. Works offline: the list is bundled. None at all for a
+    home far from London."""
+    _check_point(lat, lon)
+    if not 1 <= limit <= MAX_TRAM_STOPS or not 0 < within_km <= MAX_STATION_KM:
+        raise SetupError(f"Ask for 1 to {MAX_TRAM_STOPS} stops within {MAX_STATION_KM} km")
+    found = []
+    for stop in bundled_london_stops() if stops is None else stops:
+        metres = distance_m(lat, lon, stop.lat, stop.lon)
+        if metres <= within_km * 1000:
+            found.append((metres, stop.code, TramStop(stop.code, stop.name, stop.lat, stop.lon, round(metres),
+                                                      stop.kind)))
     found.sort(key=lambda f: (f[0], f[1]))
     return [f[2] for f in found[:limit]]
 

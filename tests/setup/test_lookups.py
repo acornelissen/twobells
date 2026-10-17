@@ -480,6 +480,41 @@ def test_bundled_tram_stop_list_is_every_metrolink_stop_once():
     assert found[0].code == "9400ZZMAPIC"
 
 
+# London's stops for TfL's live times, from the bundled list.
+
+LONDON_CSV = """# made up
+name,code,kind,lines,lat,lon
+Bank,940GZZLUBNK,tube,central northern waterloo-city,51.51342,-0.08895
+Bank,940GZZDLBNK,dlr,dlr,51.51323,-0.08851
+Westminster Pier,930GWMR,river-bus,rb1 rb6,51.50156,-0.12374
+Bad kind,940GZZLUXXX,overground,x,51.5,-0.1
+Bad line,940GZZLUYYY,tube,Central Line,51.5,-0.1
+Bad code,940GZZOVBNK,tube,central,51.5,-0.1
+"""
+
+
+def test_london_stop_list_skips_bad_rows_and_finds_the_nearest():
+    stops = lookups.parse_london_stops(LONDON_CSV)
+    assert [(s.code, s.kind, s.lines) for s in stops] == [
+        ("940GZZLUBNK", "tube", ("central", "northern", "waterloo-city")), ("940GZZDLBNK", "dlr", ("dlr",)),
+        ("930GWMR", "river-bus", ("rb1", "rb6"))]
+    # The Bank of England, a public place, standing in for a home in the City.
+    found = lookups.nearby_london_stops(51.5142, -0.0885, stops=stops)
+    assert [(s.code, s.kind) for s in found] == [("940GZZLUBNK", "tube"), ("940GZZDLBNK", "dlr"),
+                                                 ("930GWMR", "river-bus")]
+    assert lookups.nearby_london_stops(HOME.lat, HOME.lon, stops=stops) == []  # Hadfield: not London
+
+
+def test_bundled_london_list_has_every_kind_and_names_dlr_stations_apart():
+    stops = lookups.bundled_london_stops()
+    assert 300 <= len(stops) <= 500 and len({s.code for s in stops}) == len(stops)
+    assert {s.kind for s in stops} == set(lookups.LONDON_KINDS)
+    names = lookups.tram_stop_names()
+    assert names["940GZZLUBNK"] == "Bank" and names["940GZZDLBNK"] == "Bank DLR"
+    assert names["930GWMR"] == "Westminster Pier" and names["9400ZZMAPIC"] == "Piccadilly"
+    assert lookups.london_stops_by_code()["940GZZLUBNK"].lines == ("central", "northern", "waterloo-city")
+
+
 def test_bundled_station_list_is_whole_and_unique():
     rows = lookups.bundled_stations()
     assert len(rows) > 2500

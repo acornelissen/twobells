@@ -1,0 +1,389 @@
+# London's Underground, DLR, tram, cable car and river bus stops, by TfL's codes for them.
+# Which stops and lines: Powered by TfL Open Data. Contains OS data (c) Crown copyright and
+# database rights 2016, and Geomni UK Map data (c) and database rights 2019.
+# Source: National Public Transport Access Nodes (NaPTAN), Department for Transport,
+# https://naptan.api.dft.gov.uk/ , downloaded 2026-10-17.
+# Contains public sector information licensed under the Open Government Licence v3.0:
+# https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/
+# Built by tools/build_setup_data.py; rebuild rather than edit by hand.
+name,code,kind,lines,lat,lon
+Blackfriars Pier,930GBFR,river-bus,rb1 rb6,51.51064,-0.10094
+Barking Riverside Pier,930GBRVS,river-bus,rb1 rb6,51.51630,0.11755
+Cadogan Pier,930GBSE,river-bus,rb6,51.48326,-0.16652
+Battersea Power Station Pier,930GBSP,river-bus,rb1 rb6,51.48392,-0.14595
+Canary Wharf Pier,930GCAW,river-bus,rb1 rb4 rb6,51.50569,-0.02848
+Chelsea Harbour Pier,930GCHP,river-bus,rb6,51.47415,-0.18033
+Embankment Pier,930GEMB,river-bus,rb1 rb6,51.50739,-0.12143
+Greenland Surrey Quays Pier,930GGLP,river-bus,rb1 rb6,51.49469,-0.03276
+Greenwich Pier,930GGNW,river-bus,rb1 rb6,51.48362,-0.00966
+London Bridge City Pier,930GLBR,river-bus,rb1 rb6,51.50660,-0.08476
+Millbank Pier,930GMBK,river-bus,rb1 rb6,51.49178,-0.12470
+Masthouse Terrace Pier,930GMHT,river-bus,rb1 rb6,51.48750,-0.02194
+North Greenwich Pier,930GMIL,river-bus,rb1 rb6,51.50209,0.00877
+Rotherhithe Pier,930GNEL,river-bus,rb4,51.50464,-0.03135
+St Mary’s Wandsworth Pier,930GPLW,river-bus,rb6,51.46705,-0.18247
+Putney Pier,930GPUT,river-bus,rb6,51.46708,-0.21577
+Vauxhall St George Wharf Pier,930GSGW,river-bus,rb1 rb6,51.48631,-0.12726
+Bankside Pier,930GSWK,river-bus,rb1 rb6,51.50839,-0.09638
+Tower Pier,930GTMP,river-bus,rb1 rb6,51.50781,-0.07909
+Woolwich Arsenal Pier,930GWAS,river-bus,rb1 rb6,51.49516,0.07057
+London Eye Waterloo Pier,930GWMP,river-bus,rb1 rb6,51.50361,-0.11944
+Westminster Pier,930GWMR,river-bus,rb1 rb6,51.50156,-0.12374
+Royal Wharf Pier,930GWRF,river-bus,rb1 rb6,51.49755,0.02490
+Wandsworth Riverside Quarter Pier,930GWRQ,river-bus,rb6,51.46362,-0.19904
+Woolwich Ferry North Pier,930GWWC,river-bus,woolwich-ferry,51.49776,0.06078
+Woolwich Ferry South Pier,930GWWS,river-bus,woolwich-ferry,51.49517,0.06208
+Greenwich Peninsula,940GZZALGWP,cable-car,london-cable-car,51.49957,0.00834
+Royal Docks,940GZZALRDK,cable-car,london-cable-car,51.50778,0.01765
+Addiscombe,940GZZCRADD,tram,tram,51.37981,-0.07324
+Addington Village,940GZZCRADV,tram,tram,51.35624,-0.03269
+Ampere Way,940GZZCRAMP,tram,tram,51.38230,-0.12365
+Arena,940GZZCRARA,tram,tram,51.39152,-0.05835
+Avenue Road,940GZZCRAVE,tram,tram,51.40680,-0.04948
+Beddington Lane,940GZZCRBED,tram,tram,51.38924,-0.14217
+Beckenham Junction,940GZZCRBEK,tram,tram,51.41073,-0.02640
+Belgrave Walk,940GZZCRBGV,tram,tram,51.40096,-0.17851
+Birkbeck,940GZZCRBIR,tram,tram,51.40377,-0.05579
+Blackhorse Lane,940GZZCRBLA,tram,tram,51.38476,-0.07056
+Beckenham Road,940GZZCRBRD,tram,tram,51.40953,-0.04342
+George Street,940GZZCRCEN,tram,tram,51.37398,-0.09875
+Church Street,940GZZCRCHR,tram,tram,51.37371,-0.10436
+Coombe Lane,940GZZCRCOO,tram,tram,51.35979,-0.05956
+Centrale,940GZZCRCTR,tram,tram,51.37577,-0.10392
+Dundonald Road,940GZZCRDDR,tram,tram,51.41755,-0.20768
+East Croydon,940GZZCRECR,tram,tram,51.37486,-0.09242
+Elmers End,940GZZCRELM,tram,tram,51.39847,-0.04956
+Fieldway,940GZZCRFLD,tram,tram,51.35132,-0.02453
+Gravel Hill,940GZZCRGRA,tram,tram,51.35455,-0.04315
+Harrington Road,940GZZCRHAR,tram,tram,51.39979,-0.06073
+King Henry's Drive,940GZZCRKGH,tram,tram,51.34537,-0.02029
+Lebanon Road,940GZZCRLEB,tram,tram,51.37520,-0.08500
+Lloyd Park,940GZZCRLOY,tram,tram,51.36428,-0.08077
+Mitcham,940GZZCRMCH,tram,tram,51.39749,-0.17090
+Morden Road,940GZZCRMDN,tram,tram,51.40887,-0.19283
+Mitcham Junction,940GZZCRMJT,tram,tram,51.39287,-0.15826
+Merton Park,940GZZCRMTP,tram,tram,51.41359,-0.20122
+New Addington,940GZZCRNWA,tram,tram,51.34259,-0.01741
+Phipps Bridge,940GZZCRPHI,tram,tram,51.40338,-0.18231
+Reeves Corner,940GZZCRRVC,tram,tram,51.37528,-0.10641
+Sandilands,940GZZCRSAN,tram,tram,51.37502,-0.07804
+Therapia Lane,940GZZCRTPA,tram,tram,51.38570,-0.12905
+Waddon Marsh,940GZZCRWAD,tram,tram,51.37708,-0.11802
+Wandle Park,940GZZCRWAN,tram,tram,51.37340,-0.11328
+West Croydon,940GZZCRWCR,tram,tram,51.37897,-0.10170
+Wellesley Road,940GZZCRWEL,tram,tram,51.37537,-0.09755
+Wimbledon,940GZZCRWMB,tram,tram,51.42105,-0.20582
+Woodside,940GZZCRWOD,tram,tram,51.38710,-0.06536
+Abbey Road,940GZZDLABR,dlr,dlr,51.53193,0.00374
+All Saints,940GZZDLALL,dlr,dlr,51.51100,-0.01314
+Beckton,940GZZDLBEC,dlr,dlr,51.51436,0.06145
+Blackwall,940GZZDLBLA,dlr,dlr,51.50799,-0.00697
+Bank,940GZZDLBNK,dlr,dlr,51.51323,-0.08851
+Bow Church,940GZZDLBOW,dlr,dlr,51.52786,-0.02094
+Beckton Park,940GZZDLBPK,dlr,dlr,51.50879,0.05493
+Canary Wharf,940GZZDLCAN,dlr,dlr,51.50484,-0.02100
+Canning Town,940GZZDLCGT,dlr,dlr,51.51413,0.00810
+Crossharbour,940GZZDLCLA,dlr,dlr,51.49573,-0.01461
+Custom House (for ExCel),940GZZDLCUS,dlr,dlr,51.50972,0.02670
+Cutty Sark (for Maritime Greenwich),940GZZDLCUT,dlr,dlr,51.48167,-0.01081
+Cyprus,940GZZDLCYP,dlr,dlr,51.50847,0.06392
+Deptford Bridge,940GZZDLDEP,dlr,dlr,51.47422,-0.02244
+Devons Road,940GZZDLDEV,dlr,dlr,51.52267,-0.01762
+East India,940GZZDLEIN,dlr,dlr,51.50936,-0.00233
+Elverson Road,940GZZDLELV,dlr,dlr,51.46907,-0.01673
+Gallions Reach,940GZZDLGAL,dlr,dlr,51.50894,0.07156
+Greenwich,940GZZDLGRE,dlr,dlr,51.47809,-0.01367
+Heron Quays,940GZZDLHEQ,dlr,dlr,51.50338,-0.02142
+Island Gardens,940GZZDLISL,dlr,dlr,51.48781,-0.01014
+King George V,940GZZDLKGV,dlr,dlr,51.50200,0.06262
+London City Airport,940GZZDLLCA,dlr,dlr,51.50342,0.04874
+Langdon Park,940GZZDLLDP,dlr,dlr,51.51517,-0.01415
+Lewisham,940GZZDLLEW,dlr,dlr,51.46467,-0.01287
+Limehouse,940GZZDLLIM,dlr,dlr,51.51239,-0.03981
+Mudchute,940GZZDLMUD,dlr,dlr,51.49070,-0.01474
+Pontoon Dock,940GZZDLPDK,dlr,dlr,51.50221,0.03212
+Poplar,940GZZDLPOP,dlr,dlr,51.50774,-0.01738
+Prince Regent,940GZZDLPRE,dlr,dlr,51.50926,0.03416
+Pudding Mill Lane,940GZZDLPUD,dlr,dlr,51.53430,-0.01276
+Royal Albert,940GZZDLRAL,dlr,dlr,51.50836,0.04593
+Royal Victoria,940GZZDLRVC,dlr,dlr,51.50934,0.01850
+Shadwell,940GZZDLSHA,dlr,dlr,51.51169,-0.05664
+Stratford High Street,940GZZDLSHS,dlr,dlr,51.53820,-0.00108
+Stratford International,940GZZDLSIT,dlr,dlr,51.54527,-0.00964
+South Quay,940GZZDLSOQ,dlr,dlr,51.50005,-0.01613
+Stratford,940GZZDLSTD,dlr,dlr,51.54176,-0.00329
+Star Lane,940GZZDLSTL,dlr,dlr,51.52079,0.00416
+Tower Gateway,940GZZDLTWG,dlr,dlr,51.51062,-0.07482
+Westferry,940GZZDLWFE,dlr,dlr,51.50943,-0.02675
+West Ham,940GZZDLWHM,dlr,dlr,51.52789,0.00448
+West India Quay,940GZZDLWIQ,dlr,dlr,51.50703,-0.02031
+Woolwich Arsenal,940GZZDLWLA,dlr,dlr,51.49001,0.06913
+West Silvertown,940GZZDLWSV,dlr,dlr,51.50284,0.02246
+Acton Town,940GZZLUACT,tube,district piccadilly,51.50306,-0.28046
+Archway,940GZZLUACY,tube,northern,51.56548,-0.13482
+Aldgate East,940GZZLUADE,tube,district hammersmith-city,51.51504,-0.07238
+Angel,940GZZLUAGL,tube,northern,51.53262,-0.10590
+Aldgate,940GZZLUALD,tube,circle metropolitan,51.51425,-0.07569
+Alperton,940GZZLUALP,tube,piccadilly,51.54063,-0.29961
+Amersham,940GZZLUAMS,tube,metropolitan,51.67413,-0.60771
+Arnos Grove,940GZZLUASG,tube,piccadilly,51.61645,-0.13306
+Arsenal,940GZZLUASL,tube,piccadilly,51.55866,-0.10746
+Bromley-by-Bow,940GZZLUBBB,tube,district hammersmith-city,51.52484,-0.01154
+Barbican,940GZZLUBBN,tube,circle hammersmith-city metropolitan,51.52028,-0.09799
+Bounds Green,940GZZLUBDS,tube,piccadilly,51.60703,-0.12423
+Becontree,940GZZLUBEC,tube,district,51.54033,0.12702
+Barkingside,940GZZLUBKE,tube,central,51.58569,0.08858
+Blackfriars,940GZZLUBKF,tube,circle district,51.51158,-0.10366
+Barking,940GZZLUBKG,tube,district hammersmith-city,51.53932,0.08105
+Buckhurst Hill,940GZZLUBKH,tube,central,51.62660,0.04676
+Bethnal Green,940GZZLUBLG,tube,central,51.52722,-0.05551
+Balham,940GZZLUBLM,tube,northern,51.44329,-0.15300
+Blackhorse Road,940GZZLUBLR,tube,victoria,51.58692,-0.04115
+Bermondsey,940GZZLUBMY,tube,jubilee,51.49795,-0.06377
+Bond Street,940GZZLUBND,tube,central jubilee,51.51430,-0.14972
+Bank,940GZZLUBNK,tube,central northern waterloo-city,51.51342,-0.08895
+Borough,940GZZLUBOR,tube,northern,51.50120,-0.09337
+Boston Manor,940GZZLUBOS,tube,piccadilly,51.49563,-0.32494
+Barons Court,940GZZLUBSC,tube,district piccadilly,51.49031,-0.21343
+Baker Street,940GZZLUBST,tube,bakerloo circle hammersmith-city jubilee metropolitan,51.52288,-0.15713
+Burnt Oak,940GZZLUBTK,tube,northern,51.60277,-0.26405
+Brent Cross,940GZZLUBTX,tube,northern,51.57665,-0.21362
+Bow Road,940GZZLUBWR,tube,district hammersmith-city,51.52694,-0.02513
+Bayswater,940GZZLUBWT,tube,circle district,51.51228,-0.18794
+Brixton,940GZZLUBXN,tube,victoria,51.46262,-0.11489
+Belsize Park,940GZZLUBZP,tube,northern,51.55031,-0.16465
+Chalfont & Latimer,940GZZLUCAL,tube,metropolitan,51.66798,-0.56069
+Caledonian Road,940GZZLUCAR,tube,piccadilly,51.54852,-0.11849
+Chalk Farm,940GZZLUCFM,tube,northern,51.54412,-0.15339
+Covent Garden,940GZZLUCGN,tube,piccadilly,51.51309,-0.12444
+Canning Town,940GZZLUCGT,tube,jubilee,51.51358,0.00832
+Chancery Lane,940GZZLUCHL,tube,central,51.51825,-0.11158
+Charing Cross,940GZZLUCHX,tube,bakerloo northern,51.50741,-0.12728
+Cockfosters,940GZZLUCKS,tube,piccadilly,51.65152,-0.14917
+Colindale,940GZZLUCND,tube,northern,51.59542,-0.24992
+Clapham Common,940GZZLUCPC,tube,northern,51.46174,-0.13832
+Canons Park,940GZZLUCPK,tube,jubilee,51.60770,-0.29469
+Clapham North,940GZZLUCPN,tube,northern,51.46514,-0.13002
+Clapham South,940GZZLUCPS,tube,northern,51.45265,-0.14758
+Colliers Wood,940GZZLUCSD,tube,northern,51.41816,-0.17809
+Chesham,940GZZLUCSM,tube,metropolitan,51.70524,-0.61112
+Cannon Street,940GZZLUCST,tube,circle district,51.51151,-0.09043
+Camden Town,940GZZLUCTN,tube,northern,51.53929,-0.14274
+Chigwell,940GZZLUCWL,tube,central,51.61792,0.07504
+Chiswick Park,940GZZLUCWP,tube,district,51.49463,-0.26797
+Canada Water,940GZZLUCWR,tube,jubilee,51.49795,-0.04972
+Croxley,940GZZLUCXY,tube,metropolitan,51.64704,-0.44172
+Chorleywood,940GZZLUCYD,tube,metropolitan,51.65436,-0.51846
+Canary Wharf,940GZZLUCYF,tube,jubilee,51.50349,-0.01825
+Debden,940GZZLUDBN,tube,central,51.64539,0.08378
+Dagenham East,940GZZLUDGE,tube,district,51.54410,0.16602
+Dagenham Heathway,940GZZLUDGY,tube,district,51.54164,0.14753
+Dollis Hill,940GZZLUDOH,tube,jubilee,51.55195,-0.23907
+Elephant & Castle,940GZZLUEAC,tube,bakerloo northern,51.49454,-0.10061
+Eastcote,940GZZLUEAE,tube,metropolitan piccadilly,51.57651,-0.39737
+East Acton,940GZZLUEAN,tube,central,51.51661,-0.24725
+Ealing Broadway,940GZZLUEBY,tube,central district,51.51502,-0.30146
+Ealing Common,940GZZLUECM,tube,district piccadilly,51.51014,-0.28827
+Earl's Court,940GZZLUECT,tube,district piccadilly,51.49206,-0.19338
+East Finchley,940GZZLUEFY,tube,northern,51.58713,-0.16501
+Edgware,940GZZLUEGW,tube,northern,51.61365,-0.27493
+East Ham,940GZZLUEHM,tube,district hammersmith-city,51.53895,0.05119
+Embankment,940GZZLUEMB,tube,bakerloo circle district northern,51.50706,-0.12267
+Epping,940GZZLUEPG,tube,central,51.69368,0.11377
+Elm Park,940GZZLUEPK,tube,district,51.54978,0.19864
+East Putney,940GZZLUEPY,tube,district,51.45920,-0.21100
+Edgware Road (Bakerloo),940GZZLUERB,tube,bakerloo,51.52030,-0.17015
+Edgware Road (Circle Line),940GZZLUERC,tube,circle district hammersmith-city,51.51986,-0.16783
+Euston Square,940GZZLUESQ,tube,circle hammersmith-city metropolitan,51.52560,-0.13583
+Euston,940GZZLUEUS,tube,northern victoria,51.52800,-0.13378
+Fulham Broadway,940GZZLUFBY,tube,district,51.48008,-0.19542
+Farringdon,940GZZLUFCN,tube,circle hammersmith-city metropolitan,51.52025,-0.10491
+Fairlop,940GZZLUFLP,tube,central,51.59562,0.09100
+Finsbury Park,940GZZLUFPK,tube,piccadilly victoria,51.56416,-0.10682
+Finchley Central,940GZZLUFYC,tube,northern,51.60092,-0.19253
+Finchley Road,940GZZLUFYR,tube,jubilee metropolitan,51.54682,-0.17985
+Gunnersbury,940GZZLUGBY,tube,district,51.49180,-0.27527
+Goodge Street,940GZZLUGDG,tube,northern,51.52060,-0.13436
+Greenford,940GZZLUGFD,tube,central,51.54242,-0.34605
+Grange Hill,940GZZLUGGH,tube,central,51.61338,0.09207
+Golders Green,940GZZLUGGN,tube,northern,51.57226,-0.19404
+Goldhawk Road,940GZZLUGHK,tube,circle hammersmith-city,51.50200,-0.22672
+Green Park,940GZZLUGPK,tube,jubilee piccadilly victoria,51.50695,-0.14279
+Great Portland Street,940GZZLUGPS,tube,circle hammersmith-city metropolitan,51.52384,-0.14426
+Gants Hill,940GZZLUGTH,tube,central,51.57654,0.06618
+Gloucester Road,940GZZLUGTR,tube,circle district piccadilly,51.49432,-0.18266
+Highbury & Islington,940GZZLUHAI,tube,victoria,51.54635,-0.10332
+Harrow & Wealdstone,940GZZLUHAW,tube,bakerloo,51.59227,-0.33522
+Holborn,940GZZLUHBN,tube,central piccadilly,51.51758,-0.12047
+High Barnet,940GZZLUHBT,tube,northern,51.65054,-0.19430
+Hornchurch,940GZZLUHCH,tube,district,51.55409,0.21912
+Hendon Central,940GZZLUHCL,tube,northern,51.58330,-0.22642
+Hillingdon,940GZZLUHGD,tube,metropolitan piccadilly,51.55371,-0.44983
+Hanger Lane,940GZZLUHGR,tube,central,51.53018,-0.29270
+Highgate,940GZZLUHGT,tube,northern,51.57753,-0.14586
+Hainault,940GZZLUHLT,tube,central,51.60366,0.09348
+Hatton Cross,940GZZLUHNX,tube,piccadilly,51.46675,-0.42319
+Harrow-on-the-Hill,940GZZLUHOH,tube,metropolitan,51.57919,-0.33723
+Hyde Park Corner,940GZZLUHPC,tube,piccadilly,51.50303,-0.15244
+Holland Park,940GZZLUHPK,tube,central,51.50714,-0.20568
+Heathrow Terminals 2 & 3,940GZZLUHRC,tube,piccadilly,51.47123,-0.45227
+Hammersmith (H&C Line),940GZZLUHSC,tube,circle hammersmith-city,51.49354,-0.22501
+Hammersmith (Dist&Picc Line),940GZZLUHSD,tube,district piccadilly,51.49230,-0.22362
+High Street Kensington,940GZZLUHSK,tube,circle district,51.50106,-0.19279
+Harlesden,940GZZLUHSN,tube,bakerloo,51.53631,-0.25788
+Hampstead,940GZZLUHTD,tube,northern,51.55663,-0.17849
+Hounslow Central,940GZZLUHWC,tube,piccadilly,51.47130,-0.36658
+Hounslow East,940GZZLUHWE,tube,piccadilly,51.47321,-0.35647
+Hounslow West,940GZZLUHWT,tube,piccadilly,51.47347,-0.38654
+Holloway Road,940GZZLUHWY,tube,piccadilly,51.55270,-0.11324
+Ickenham,940GZZLUICK,tube,metropolitan piccadilly,51.56199,-0.44200
+Kilburn,940GZZLUKBN,tube,jubilee,51.54680,-0.20410
+Kingsbury,940GZZLUKBY,tube,jubilee,51.58484,-0.27879
+Kenton,940GZZLUKEN,tube,bakerloo,51.58176,-0.31691
+Knightsbridge,940GZZLUKNB,tube,piccadilly,51.50167,-0.16051
+Kennington,940GZZLUKNG,tube,northern,51.48834,-0.10596
+Kensington (Olympia),940GZZLUKOY,tube,district,51.49762,-0.21001
+Kilburn Park,940GZZLUKPK,tube,bakerloo,51.53498,-0.19423
+Kentish Town,940GZZLUKSH,tube,northern,51.55031,-0.14073
+Kensal Green,940GZZLUKSL,tube,bakerloo,51.53054,-0.22502
+King's Cross St. Pancras,940GZZLUKSX,tube,circle hammersmith-city metropolitan northern piccadilly victoria,51.53066,-0.12319
+Kew Gardens,940GZZLUKWG,tube,district,51.47706,-0.28524
+Ladbroke Grove,940GZZLULAD,tube,circle hammersmith-city,51.51745,-0.21039
+Lambeth North,940GZZLULBN,tube,bakerloo,51.49881,-0.11231
+Loughton,940GZZLULGN,tube,central,51.64144,0.05548
+Lancaster Gate,940GZZLULGT,tube,central,51.51172,-0.17549
+London Bridge,940GZZLULNB,tube,jubilee northern,51.50572,-0.08887
+Latimer Road,940GZZLULRD,tube,circle hammersmith-city,51.51339,-0.21780
+Leicester Square,940GZZLULSQ,tube,northern piccadilly,51.51139,-0.12843
+Liverpool Street,940GZZLULVT,tube,central circle hammersmith-city metropolitan,51.51737,-0.08318
+Leyton,940GZZLULYN,tube,central,51.55659,-0.00552
+Leytonstone,940GZZLULYS,tube,central,51.56832,0.00819
+Marble Arch,940GZZLUMBA,tube,central,51.51342,-0.15895
+Morden,940GZZLUMDN,tube,northern,51.40214,-0.19484
+Mile End,940GZZLUMED,tube,central district hammersmith-city,51.52512,-0.03364
+Moorgate,940GZZLUMGT,tube,circle hammersmith-city metropolitan northern,51.51818,-0.08832
+Mill Hill East,940GZZLUMHL,tube,northern,51.60823,-0.20999
+Monument,940GZZLUMMT,tube,circle district,51.51070,-0.08597
+Moor Park,940GZZLUMPK,tube,metropolitan,51.62984,-0.43245
+Manor House,940GZZLUMRH,tube,piccadilly,51.57074,-0.09612
+Mansion House,940GZZLUMSH,tube,circle district,51.51212,-0.09401
+Mornington Crescent,940GZZLUMTC,tube,northern,51.53468,-0.13879
+Maida Vale,940GZZLUMVL,tube,bakerloo,51.52978,-0.18576
+Marylebone,940GZZLUMYB,tube,bakerloo,51.52232,-0.16321
+North Acton,940GZZLUNAN,tube,central,51.52352,-0.25975
+Newbury Park,940GZZLUNBP,tube,central,51.57573,0.09000
+Neasden,940GZZLUNDN,tube,jubilee,51.55399,-0.24984
+North Ealing,940GZZLUNEN,tube,piccadilly,51.51750,-0.28887
+Northfields,940GZZLUNFD,tube,piccadilly,51.49932,-0.31472
+North Greenwich,940GZZLUNGW,tube,jubilee,51.50047,0.00429
+North Harrow,940GZZLUNHA,tube,metropolitan,51.58487,-0.36241
+Notting Hill Gate,940GZZLUNHG,tube,central circle district,51.50913,-0.19610
+Northolt,940GZZLUNHT,tube,central,51.54824,-0.36870
+Northwick Park,940GZZLUNKP,tube,metropolitan,51.57848,-0.31806
+Northwood,940GZZLUNOW,tube,metropolitan,51.61105,-0.42383
+Northwood Hills,940GZZLUNWH,tube,metropolitan,51.60057,-0.40946
+North Wembley,940GZZLUNWY,tube,bakerloo,51.56255,-0.30400
+Oakwood,940GZZLUOAK,tube,piccadilly,51.64773,-0.13217
+Old Street,940GZZLUODS,tube,northern,51.52586,-0.08777
+Osterley,940GZZLUOSY,tube,piccadilly,51.48127,-0.35222
+Oval,940GZZLUOVL,tube,northern,51.48185,-0.11244
+Oxford Circus,940GZZLUOXC,tube,bakerloo central victoria,51.51522,-0.14190
+Paddington,940GZZLUPAC,tube,bakerloo circle district,51.51658,-0.17569
+Paddington (H&C Line),940GZZLUPAH,tube,circle hammersmith-city,51.51819,-0.17831
+Piccadilly Circus,940GZZLUPCC,tube,bakerloo piccadilly,51.51005,-0.13380
+Pimlico,940GZZLUPCO,tube,victoria,51.48910,-0.13376
+Park Royal,940GZZLUPKR,tube,piccadilly,51.52712,-0.28434
+Plaistow,940GZZLUPLW,tube,district hammersmith-city,51.53134,0.01745
+Pinner,940GZZLUPNR,tube,metropolitan,51.59290,-0.38116
+Preston Road,940GZZLUPRD,tube,metropolitan,51.57197,-0.29511
+Parsons Green,940GZZLUPSG,tube,district,51.47528,-0.20117
+Perivale,940GZZLUPVL,tube,central,51.53672,-0.32345
+Putney Bridge,940GZZLUPYB,tube,district,51.46826,-0.20873
+Queensbury,940GZZLUQBY,tube,jubilee,51.59419,-0.28622
+Queen's Park,940GZZLUQPS,tube,bakerloo,51.53416,-0.20457
+Queensway,940GZZLUQWY,tube,central,51.51031,-0.18715
+Redbridge,940GZZLURBG,tube,central,51.57624,0.04536
+Regent's Park,940GZZLURGP,tube,bakerloo,51.52334,-0.14644
+Rickmansworth,940GZZLURKW,tube,metropolitan,51.64021,-0.47370
+Richmond,940GZZLURMD,tube,district,51.46324,-0.30134
+Ruislip Gardens,940GZZLURSG,tube,central,51.56074,-0.41071
+Ruislip Manor,940GZZLURSM,tube,metropolitan piccadilly,51.57320,-0.41297
+Ruislip,940GZZLURSP,tube,metropolitan piccadilly,51.57135,-0.42190
+Russell Square,940GZZLURSQ,tube,piccadilly,51.52307,-0.12429
+Ravenscourt Park,940GZZLURVP,tube,district,51.49412,-0.23588
+Roding Valley,940GZZLURVY,tube,central,51.61720,0.04365
+Rayners Lane,940GZZLURYL,tube,metropolitan piccadilly,51.57515,-0.37113
+Royal Oak,940GZZLURYO,tube,circle hammersmith-city,51.51911,-0.18875
+Shepherd's Bush (Central),940GZZLUSBC,tube,central,51.50438,-0.21881
+Shepherd's Bush Market,940GZZLUSBM,tube,circle hammersmith-city,51.50558,-0.22637
+South Ealing,940GZZLUSEA,tube,piccadilly,51.50100,-0.30742
+Stamford Brook,940GZZLUSFB,tube,district,51.49492,-0.24570
+Southfields,940GZZLUSFS,tube,district,51.44507,-0.20660
+Stepney Green,940GZZLUSGN,tube,district hammersmith-city,51.52186,-0.04660
+Stonebridge Park,940GZZLUSGP,tube,bakerloo,51.54396,-0.27589
+Southgate,940GZZLUSGT,tube,piccadilly,51.63232,-0.12782
+South Harrow,940GZZLUSHH,tube,piccadilly,51.56489,-0.35249
+St. James's Park,940GZZLUSJP,tube,circle district,51.49954,-0.13361
+St. John's Wood,940GZZLUSJW,tube,jubilee,51.53452,-0.17395
+South Kensington,940GZZLUSKS,tube,circle district piccadilly,51.49409,-0.17414
+South Kenton,940GZZLUSKT,tube,bakerloo,51.57023,-0.30843
+Stockwell,940GZZLUSKW,tube,northern victoria,51.47218,-0.12264
+Snaresbrook,940GZZLUSNB,tube,central,51.58068,0.02144
+St. Paul's,940GZZLUSPU,tube,central,51.51494,-0.09757
+South Ruislip,940GZZLUSRP,tube,central,51.55685,-0.39892
+Sloane Square,940GZZLUSSQ,tube,circle district,51.49227,-0.15638
+Stratford,940GZZLUSTD,tube,central jubilee,51.54181,-0.00346
+Stanmore,940GZZLUSTM,tube,jubilee,51.61984,-0.30327
+Sudbury Hill,940GZZLUSUH,tube,piccadilly,51.55695,-0.33644
+Sudbury Town,940GZZLUSUT,tube,piccadilly,51.55081,-0.31574
+Seven Sisters,940GZZLUSVS,tube,victoria,51.58333,-0.07258
+Swiss Cottage,940GZZLUSWC,tube,jubilee,51.54368,-0.17489
+South Woodford,940GZZLUSWF,tube,central,51.59191,0.02734
+Southwark,940GZZLUSWK,tube,jubilee,51.50398,-0.10494
+South Wimbledon,940GZZLUSWN,tube,northern,51.41531,-0.19201
+Totteridge & Whetstone,940GZZLUTAW,tube,northern,51.63060,-0.17921
+Tooting Bec,940GZZLUTBC,tube,northern,51.43568,-0.15974
+Tooting Broadway,940GZZLUTBY,tube,northern,51.42763,-0.16837
+Tottenham Court Road,940GZZLUTCR,tube,central northern,51.51643,-0.13041
+Tufnell Park,940GZZLUTFP,tube,northern,51.55682,-0.13843
+Theydon Bois,940GZZLUTHB,tube,central,51.67176,0.10309
+Tottenham Hale,940GZZLUTMH,tube,victoria,51.58811,-0.06024
+Temple,940GZZLUTMP,tube,circle district,51.51101,-0.11426
+Turnham Green,940GZZLUTNG,tube,district piccadilly,51.49515,-0.25455
+Turnpike Lane,940GZZLUTPN,tube,piccadilly,51.59027,-0.10295
+Tower Hill,940GZZLUTWH,tube,circle district,51.50997,-0.07655
+Upminster Bridge,940GZZLUUPB,tube,district,51.55856,0.23581
+Upton Park,940GZZLUUPK,tube,district hammersmith-city,51.53534,0.03526
+Upminster,940GZZLUUPM,tube,district,51.55906,0.25088
+Upney,940GZZLUUPY,tube,district,51.53837,0.10153
+Uxbridge,940GZZLUUXB,tube,metropolitan piccadilly,51.54657,-0.47795
+Victoria,940GZZLUVIC,tube,circle district victoria,51.49636,-0.14310
+Vauxhall,940GZZLUVXL,tube,victoria,51.48574,-0.12420
+Watford,940GZZLUWAF,tube,metropolitan,51.65745,-0.41738
+West Brompton,940GZZLUWBN,tube,district,51.48727,-0.19560
+White City,940GZZLUWCY,tube,central,51.51196,-0.22430
+West Finchley,940GZZLUWFN,tube,northern,51.60943,-0.18836
+West Ham,940GZZLUWHM,tube,district hammersmith-city jubilee,51.52814,0.00506
+West Hampstead,940GZZLUWHP,tube,jubilee,51.54664,-0.19106
+West Harrow,940GZZLUWHW,tube,metropolitan,51.57971,-0.35340
+Willesden Green,940GZZLUWIG,tube,jubilee metropolitan,51.54915,-0.22154
+Wimbledon,940GZZLUWIM,tube,district,51.42121,-0.20657
+Wimbledon Park,940GZZLUWIP,tube,district,51.43457,-0.19972
+Willesden Junction,940GZZLUWJN,tube,bakerloo,51.53226,-0.24428
+Warwick Avenue,940GZZLUWKA,tube,bakerloo,51.52326,-0.18378
+West Kensington,940GZZLUWKN,tube,district,51.49046,-0.20664
+Wood Lane,940GZZLUWLA,tube,circle hammersmith-city,51.50967,-0.22453
+Waterloo,940GZZLUWLO,tube,bakerloo jubilee northern waterloo-city,51.50330,-0.11478
+Woodford,940GZZLUWOF,tube,central,51.60690,0.03397
+Wood Green,940GZZLUWOG,tube,piccadilly,51.59748,-0.10989
+Woodside Park,940GZZLUWOP,tube,northern,51.61801,-0.18542
+Whitechapel,940GZZLUWPL,tube,district hammersmith-city,51.51952,-0.05997
+West Ruislip,940GZZLUWRP,tube,central,51.56969,-0.43789
+Warren Street,940GZZLUWRR,tube,northern victoria,51.52495,-0.13832
+Wanstead,940GZZLUWSD,tube,central,51.57550,0.02853
+Westminster,940GZZLUWSM,tube,circle district jubilee,51.50132,-0.12486
+Westbourne Park,940GZZLUWSP,tube,circle hammersmith-city,51.52111,-0.20107
+West Acton,940GZZLUWTA,tube,central,51.51800,-0.28098
+Walthamstow Central,940GZZLUWWL,tube,victoria,51.58296,-0.01989
+Wembley Central,940GZZLUWYC,tube,bakerloo,51.55230,-0.29685
+Wembley Park,940GZZLUWYP,tube,jubilee metropolitan,51.56320,-0.27926
