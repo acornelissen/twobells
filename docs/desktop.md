@@ -9,7 +9,7 @@ twobells serve
 
 To update: `uv tool upgrade twobells` or `pipx upgrade twobells`. From a copy of the repo, `uv tool install .` or `pipx install .` instead. After updating, the bus timetable is built again once if the new release keeps it differently, as 0.2.0 and 0.2.2 do (see [Bus times](buses.md#how-bus-times-are-worked-out)). Going back to 0.1.0, it stops at the start if a newer version moved the punctuality history on: with it stopped, copy `history.sqlite3.v1` in its store (below) over `history.sqlite3`, the copy kept from before, and delete `history.sqlite3-wal` and `history.sqlite3-shm` if they are there. What was recorded since is lost.
 
-`twobells serve` runs as a desktop install unless told otherwise. It opens in your browser, at `http://localhost:8090/` (or the next free port), and the settings on the first run. The first build of the bus timetable takes a minute or so. Ctrl-C stops it.
+`twobells serve` runs as a desktop install unless told otherwise. It opens in your browser, at `http://localhost:8090/` (or the next free port), and the settings on the first run. The first build of the bus timetable takes a minute or so, and of Metrolink's tram timetable, where you have tram stops, about 20 seconds more. Ctrl-C stops it.
 
 - `--lan` lets phones on the home Wi-Fi open it, at the address it prints. `--host` and `--port` pick others (a port you name is that port or nothing); `--no-browser` leaves the browser alone.
 - `--config config.toml` and `--secrets secrets.env` use files of your own, if you keep them. When either changes, or a setting is saved, it starts again by itself within a few seconds.

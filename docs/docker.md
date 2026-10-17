@@ -41,7 +41,7 @@ cosign verify "ghcr.io/acornelissen/twobells@$DIGEST" \
 
 - **Port 8090**, for the dashboard at `/` and the settings at `/settings`, published on IPv4 only (`0.0.0.0:8090:8090`; see [Keep it on the home network](#keep-it-on-the-home-network)).
 - **A data folder at `/data`** that its user, uid 10001, can write to. A new named volume takes that owner from the image by itself. A folder on the NAS doesn't: give it to 10001 first (each platform below says how).
-- **Nothing else.** It runs as uid 10001 with a read-only system, no Linux capabilities, no new privileges, 512 MB of memory and 128 processes at most, and a 64 MB `/tmp` in memory. Keep those settings wherever the platform allows them. The bus timetable's build fits in that memory beside the dashboard: a timetable file over 100 MB is skipped with a warning in the log, and a build with more than 8,000 journeys calling at your stops fails, saying so in the log.
+- **Nothing else.** It runs as uid 10001 with a read-only system, no Linux capabilities, no new privileges, 512 MB of memory and 128 processes at most, and a 64 MB `/tmp` in memory. Keep those settings wherever the platform allows them. The bus timetable's build fits in that memory beside the dashboard: a timetable file over 100 MB is skipped with a warning in the log, and a build with more than 8,000 journeys calling at your stops fails, saying so in the log. Metrolink's tram timetable, about 45 MB, is read a line at a time, so it fits too.
 - **Keys:** paste them in the settings, which keep them in `/data`, readable by the app only. No environment variables are needed.
 
 ### Addresses it answers to
