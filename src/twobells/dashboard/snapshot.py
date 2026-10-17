@@ -526,8 +526,9 @@ def bus_row(live: LiveDeparture, positions: dict[str, StopPosition], now: dateti
     buses_part."""
     dep = live.departure
     tz = now.tzinfo
-    scheduled_at = live.leaves.replace(tzinfo=tz)
-    expected_at = live.expected.replace(tzinfo=tz) if live.live else None
+    # As the bus board counted them from now: in the hour the clocks go back, its pass.
+    scheduled_at = zoned(live.leaves, tz, now) if tz is not None else live.leaves
+    expected_at = (zoned(live.expected, tz, now) if tz is not None else live.expected) if live.live else None
     late = dep.status is Status.LATE
     history = _history_entry("bus", bus_route(live), dep.scheduled,
                              f"{dep.scheduled} {dep.service} to {dep.destination}", live.leaves.date(), phrases)

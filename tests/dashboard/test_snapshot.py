@@ -936,6 +936,19 @@ def test_no_delay_is_recorded_for_a_bus_only_waiting_in():
     assert seen["A|237|Ashton", "10:15"].delay_min == 6
 
 
+def test_a_bus_row_in_the_hour_that_comes_twice_is_the_pass_the_board_counted_it_from():
+    found = live(at(10, 14), [bus(*HALFWAY, at(10, 14))])
+    tracked = next(row for row in found if row.live)
+    row = dataclasses.replace(tracked, leaves=datetime(2026, 10, 25, 1, 40), expected=datetime(2026, 10, 25, 1, 45))
+    # Polled at 01:05 GMT, the second pass: the 01:40 is 35 minutes off, in GMT.
+    now = datetime(2026, 10, 25, 1, 5, tzinfo=UTC).astimezone(LONDON)
+    part, _ = bus_row(row, POSITIONS, now, WALK)
+    assert (part["scheduled_at"], part["expected_at"]) == ("2026-10-25T01:40:00+00:00", "2026-10-25T01:45:00+00:00")
+    # Polled at 00:50 BST, before the clocks go back: the first pass.
+    part, _ = bus_row(row, POSITIONS, datetime(2026, 10, 25, 0, 50, tzinfo=LONDON), WALK)
+    assert (part["scheduled_at"], part["expected_at"]) == ("2026-10-25T01:40:00+01:00", "2026-10-25T01:45:00+01:00")
+
+
 def test_a_bus_in_the_hour_that_comes_twice_is_the_pass_the_board_counted_it_from():
     # The bus board counts on the clock from when it was polled: 01:40 seen at
     # 01:05 GMT (the second pass) is 35 minutes off, not 25 minutes gone.
