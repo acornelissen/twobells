@@ -7,6 +7,7 @@ import pytest
 from tests.paths import FIXTURES
 from twobells.dashboard import repay
 from twobells.dashboard.history import History
+from twobells.dashboard.performance import Performance, Setup
 from twobells.dashboard.repay import ArrivalWatch, band, watched
 from twobells.sources.darwin import (
     DetailsError,
@@ -29,17 +30,15 @@ def at(hhmm):
     return datetime(2026, 10, 9, hours, minutes, tzinfo=LONDON)
 
 
-def naive(hhmm):
-    return at(hhmm).replace(tzinfo=None)
-
-
-def glossop(without=(), **changes):
-    """The Glossop board, less the trains in `without`, with the 22:25's calling point at Manchester changed."""
+def glossop(without=(), std=None, **changes):
+    """The Glossop board, less the trains in `without`, with the 22:25's calling point at Manchester
+    changed, and its time to leave if `std`."""
     raw = json.loads((FIXTURES / "ldbws_glossop_details.json").read_text())
     raw["trainServices"] = [s for s in raw["trainServices"] if s["serviceID"] not in without]
     for service in raw["trainServices"]:
         if service["serviceID"] == FIRST:
             service["subsequentCallingPoints"][0]["callingPoint"][-1].update(changes)
+            service["std"] = std or service["std"]
     return parse_board_rich(raw)
 
 
@@ -85,16 +84,16 @@ def test_the_delay_repay_bands(minutes, found):
 
 
 def test_the_trains_on_the_board_that_call_there():
-    rows = watched(glossop(et="23:05"), naive("22:20"), PREFIX, "MAN")
+    rows = watched(glossop(et="23:05"), at("22:20"), PREFIX, "MAN")
     assert [(r.scheduled, r.identity, r.booked, r.expected) for r in rows] == [
-        ("22:25", FIRST, naive("22:57"), naive("23:05")),
-        ("22:55", SECOND, naive("23:27"), naive("23:27")),  # "On time"
+        ("22:25", FIRST, at("22:57"), at("23:05")),
+        ("22:55", SECOND, at("23:27"), at("23:27")),  # "On time"
     ]
     first = rows[0]
     assert (first.route, first.day, first.station, first.station_name, first.operator, first.destination) == (
         MANCHESTER, FRIDAY, "MAN", "Manchester Piccadilly", "Northern", "Manchester Piccadilly")
     assert (first.actual, first.cancelled) == (None, False)
-    assert watched(glossop(), naive("22:20"), PREFIX, "SHF") == []  # none of them call there
+    assert watched(glossop(), at("22:20"), PREFIX, "SHF") == []  # none of them call there
 
 
 @pytest.mark.parametrize("changes, expected, cancelled", [
@@ -105,27 +104,27 @@ def test_the_trains_on_the_board_that_call_there():
     ({"isCancelled": True}, None, True),
 ])
 def test_what_the_board_says_about_its_time_there(changes, expected, cancelled):
-    first = watched(glossop(**changes), naive("22:20"), PREFIX, "MAN")[0]
+    first = watched(glossop(**changes), at("22:20"), PREFIX, "MAN")[0]
     assert (first.expected, first.cancelled) == (expected, cancelled)
 
 
 def test_a_train_due_after_midnight_keeps_the_day_it_left():
-    rows = watched(glossop(st="00:05", et="00:20"), naive("22:20"), PREFIX, "MAN")
-    assert (rows[0].day, rows[0].booked, rows[0].expected) == (FRIDAY, datetime(2026, 10, 10, 0, 5),
-                                                               datetime(2026, 10, 10, 0, 20))
+    rows = watched(glossop(st="00:05", et="00:20"), at("22:20"), PREFIX, "MAN")
+    assert (rows[0].day, rows[0].booked, rows[0].expected) == (
+        FRIDAY, datetime(2026, 10, 10, 0, 5, tzinfo=LONDON), datetime(2026, 10, 10, 0, 20, tzinfo=LONDON))
 
 
 def test_rail_replacement_buses_are_left_out():
     raw = json.loads((FIXTURES / "ldbws_glossop_details.json").read_text())
     raw["busServices"] = [raw["trainServices"].pop(1)]
-    rows = watched(parse_board_rich(raw), naive("22:20"), PREFIX, "MAN")
+    rows = watched(parse_board_rich(raw), at("22:20"), PREFIX, "MAN")
     assert [r.identity for r in rows] == [SECOND]
 
 
 def test_ferries_are_left_out():
     raw = json.loads((FIXTURES / "ldbws_glossop_details.json").read_text())
     raw["ferryServices"] = [{**raw["trainServices"].pop(1), "serviceType": "ferry"}]
-    rows = watched(parse_board_rich(raw), naive("22:20"), PREFIX, "MAN")
+    rows = watched(parse_board_rich(raw), at("22:20"), PREFIX, "MAN")
     assert [r.identity for r in rows] == [SECOND]
 
 
@@ -140,13 +139,13 @@ def test_followed_with_service_details_only_once_it_has_left_and_is_due(history)
     watch.poll(glossop(without=[FIRST, SECOND]), at("22:50"))
     assert details.asked == [FIRST]  # gone, and due: one ask a poll
     # Now due at 23:30: not asked about again until 10 minutes before.
-    assert history.following(naive("23:19")) == []
-    assert history.following(naive("23:20"))[0].expected == naive("23:30")
+    assert history.following(at("23:19")) == []
+    assert history.following(at("23:20"))[0].expected == at("23:30")
     details.manchester = {"et": "23:30", "at": "23:31"}
     watch.poll(glossop(without=[FIRST, SECOND]), at("23:31"))
     [arrived] = history.arrivals("MAN", FRIDAY)
     assert (arrived["scheduled"], arrived["booked"], arrived["arrived"], arrived["reported"]) == (
-        "22:25", "2026-10-09T22:57:00", "2026-10-09T23:31:00", True)
+        "22:25", "2026-10-09T21:57:00+00:00", "2026-10-09T22:31:00+00:00", True)
     watch.poll(glossop(without=[FIRST, SECOND]), at("23:32"))
     assert details.asked == [FIRST, FIRST]  # done with
 
@@ -160,7 +159,7 @@ def test_a_train_darwin_forgets_is_left_to_its_last_estimate(history):
     details.error = ServiceGone("gone")
     assert watch.poll(glossop(without=[FIRST]), at("23:01")) == []
     [arrived] = history.arrivals("MAN", FRIDAY)
-    assert (arrived["arrived"], arrived["reported"]) == ("2026-10-09T22:59:00", False)
+    assert (arrived["arrived"], arrived["reported"]) == ("2026-10-09T21:59:00+00:00", False)
 
 
 def test_a_train_darwin_no_longer_knows_is_not_asked_about_again(history):
@@ -241,6 +240,47 @@ def test_a_train_nobody_saw_arrive_is_dropped(history):
     watch.poll(glossop(without=[SECOND], et="23:00"), at("22:20"))
     watch.poll(glossop(without=[FIRST, SECOND]), at("23:02"))
     assert history.arrivals("MAN", FRIDAY) == []  # seen at 22:20, due at 23:00: nobody saw it get there
-    assert [train.scheduled for train in history.following(naive("23:59"))] == ["22:25"]
+    assert [train.scheduled for train in history.following(at("23:59"))] == ["22:25"]
     watch.poll(glossop(without=[FIRST, SECOND]), at("00:00").replace(day=10))
-    assert history.following(naive("23:59")) == [] and history.arrivals("MAN", FRIDAY) == []
+    assert history.following(at("23:59")) == [] and history.arrivals("MAN", FRIDAY) == []
+
+
+# The clocks changing: minutes late are the minutes that passed.
+
+GOING_BACK = date(2026, 10, 25)  # 01:00 to 01:59 comes twice: in BST, then in GMT
+GOING_FORWARD = date(2026, 3, 29)  # 01:00 GMT is 02:00 BST
+
+
+def on(day, hhmm, fold=0):
+    hours, minutes = map(int, hhmm.split(":"))
+    return datetime(day.year, day.month, day.day, hours, minutes, fold=fold, tzinfo=LONDON)
+
+
+def _listed(history, now):
+    setup = Setup({"train": 3, "bus": 2}, station="MAN", trains=True, details=True)
+    found = Performance(history, lambda: now, lambda: setup).report()["delay_repay"]["trains"]
+    return [(t["day"], t["booked"], t["arrived"], t["minutes_late"], t["band"]) for t in found]
+
+
+def test_late_across_the_clocks_going_back(history):
+    # Left at 01:20 BST, due at Manchester at 01:50 BST, there at 01:10 GMT: 20 minutes late, not 40 early.
+    details = Details()
+    watch = _watch(history, details)
+    watch.poll(glossop([SECOND], std="01:20", st="01:50", et="01:58"), on(GOING_BACK, "01:05"))
+    details.manchester = {"st": "01:50", "et": "01:10"}
+    watch.poll(glossop([FIRST, SECOND]), on(GOING_BACK, "01:45"))
+    details.manchester = {"st": "01:50", "et": "01:10", "at": "01:10"}
+    watch.poll(glossop([FIRST, SECOND]), on(GOING_BACK, "01:11", fold=1))
+    assert _listed(history, on(GOING_BACK, "09:00")) == [("2026-10-25", "01:50", "01:10", 20, 15)]
+
+
+def test_late_across_the_clocks_going_forward(history):
+    # Left at 00:20 GMT, due at Manchester at 00:50 GMT, there at 02:10 BST: 20 minutes late, not 80.
+    details = Details()
+    watch = _watch(history, details)
+    watch.poll(glossop([SECOND], std="00:20", st="00:50", et="00:55"), on(GOING_FORWARD, "00:15"))
+    details.manchester = {"st": "00:50", "et": "02:10"}
+    watch.poll(glossop([FIRST, SECOND]), on(GOING_FORWARD, "00:45"))
+    details.manchester = {"st": "00:50", "et": "02:10", "at": "02:10"}
+    watch.poll(glossop([FIRST, SECOND]), on(GOING_FORWARD, "02:11"))
+    assert _listed(history, on(GOING_FORWARD, "09:00")) == [("2026-03-29", "00:50", "02:10", 20, 15)]

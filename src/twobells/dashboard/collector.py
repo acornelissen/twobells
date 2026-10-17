@@ -411,7 +411,7 @@ class Collector:
         if self._history is None:
             return
         try:
-            self._history.observe(mode, rows, now.replace(tzinfo=None))
+            self._history.observe(mode, rows, now)
         except Exception as error:  # noqa: BLE001 - the departures matter more than the history
             log.warning("dashboard history not saved: %s", safe_message(error))
 
@@ -555,7 +555,7 @@ class Collector:
             self._publish_buses()
             raise
         if board.vehicles_ok:  # timetabled times alone say nothing about punctuality
-            self._observe("bus", bus_observations(board), now)
+            self._observe("bus", bus_observations(board, self._tz), now)
             self._bus_positions.worked(None, now)
         else:
             self._bus_positions.error = board.note or "Live positions failed"
@@ -630,7 +630,8 @@ class Collector:
     def upkeep(self) -> None:
         """Hourly: bank holidays (refreshed weekly), the bus timetable (rebuilt
         when due, with build_timetable), and the history's sweep and purge."""
-        local = self._clock().replace(tzinfo=None)
+        now = self._clock()
+        local = now.replace(tzinfo=None)
         errors: list[Exception] = []
         try:
             found = self._fetch_holidays(self._settings.state_dir, local,
@@ -658,8 +659,8 @@ class Collector:
                 self._pollers["buses"].wake()  # show the new timetable, or why there is none
         if self._history is not None:
             try:
-                self._history.sweep(local)
-                self._history.purge(local, self._options.history_days)
+                self._history.sweep(now)
+                self._history.purge(now, self._options.history_days)
             except Exception as error:  # noqa: BLE001
                 errors.append(error)
         if errors:

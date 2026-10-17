@@ -282,7 +282,7 @@ def test_trains_are_published_and_observed(tmp_path):
     assert trains["status"] == {"last_success": "2026-10-09T22:03:00+01:00", "stale": False, "error": None,
                                 "note": None}
     mode, rows, polled_at = setup.history.observed[0]
-    assert mode == "train" and polled_at == datetime(2026, 10, 9, 22, 3)
+    assert mode == "train" and polled_at == datetime(2026, 10, 9, 22, 3, tzinfo=LONDON)
     assert rows[0].route == "GLO>MAN|Hadfield"
     assert trains["rows"][0]["history"]["phrase"] == "Late 4 of the last 10 weekdays (avg 6 min)"
     assert setup.history.late_minutes == 3
@@ -532,7 +532,7 @@ def asked_after_it_left(setup):
 def test_each_train_poll_watches_the_trains_to_the_filter_station(tmp_path):
     setup, history, collector = watching(tmp_path)
     collector.poll_trains()
-    assert [t.scheduled for t in history.following(datetime(2026, 10, 9, 23, 30))] == ["22:25", "22:55"]
+    assert [t.scheduled for t in history.following(datetime(2026, 10, 9, 23, 30, tzinfo=LONDON))] == ["22:25", "22:55"]
     assert asked_after_it_left(setup) == 0
     leave_first_train(setup)
     setup.clock.now = datetime(2026, 10, 9, 22, 50, tzinfo=LONDON)
@@ -564,7 +564,7 @@ def test_without_a_filter_station_or_a_details_key_there_is_no_watch(tmp_path, t
     leave_first_train(setup)
     setup.clock.now = datetime(2026, 10, 9, 22, 50, tzinfo=LONDON)
     collector.poll_trains()
-    assert history.following(datetime(2026, 10, 10, 9, 0)) == []  # nothing recorded either
+    assert history.following(datetime(2026, 10, 10, 9, 0, tzinfo=LONDON)) == []  # nothing recorded either
     if details:
         assert asked_after_it_left(setup) == 0
     history.close()
@@ -827,8 +827,8 @@ def test_upkeep_refreshes_holidays_timetable_and_history(tmp_path):
     setup.collector.upkeep()
     assert setup.holiday_calls == [(tmp_path, datetime(2026, 10, 9, 10, 14), "england-and-wales")]
     assert setup.upkeep_buses.refreshes == [False]  # never forced: rebuilt only when due
-    assert setup.history.swept == [datetime(2026, 10, 9, 10, 14)]
-    assert setup.history.purged == [(datetime(2026, 10, 9, 10, 14), 30)]
+    assert setup.history.swept == [datetime(2026, 10, 9, 10, 14, tzinfo=LONDON)]
+    assert setup.history.purged == [(datetime(2026, 10, 9, 10, 14, tzinfo=LONDON), 30)]
 
 
 def test_upkeep_builds_the_timetable_within_the_limits_it_was_given(tmp_path):
@@ -1196,5 +1196,5 @@ def test_trains_that_have_left_are_followed_only_for_the_performance_page(tmp_pa
     # The 22:25, due at the filter station at 22:57, is asked about once it has left only by the watch.
     asked_on_the_board = 1 if item == "where" else 0
     assert setup.details.asked.count(IDS[1]) - asked_on_the_board == (1 if watched else 0)
-    assert bool(history.following(datetime(2026, 10, 9, 23, 30))) == watched
+    assert bool(history.following(datetime(2026, 10, 9, 23, 30, tzinfo=LONDON))) == watched
     history.close()

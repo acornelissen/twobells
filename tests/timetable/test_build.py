@@ -1388,6 +1388,8 @@ def test_a_journey_ending_at_a_stand_near_your_stop_is_kept_inbound_only():
 
 
 def test_the_bus_coming_in_to_the_stand_is_the_inbound_bus_and_never_a_departure(tmp_path):
+    from zoneinfo import ZoneInfo
+
     from twobells.dashboard.enrich import inbound
     from twobells.dashboard.snapshot import bus_observations
     from twobells.sources.bodsbus import BusBoard
@@ -1406,7 +1408,7 @@ def test_the_bus_coming_in_to_the_stand_is_the_inbound_bus_and_never_a_departure
     found = inbound(rows[0], schedule.positions)
     assert {key: found[key] for key in ("from", "due", "late_min", "where")} == {
         "from": "The Junction", "due": "10:14", "late_min": 4, "where": "3 stops away"}
-    observed = bus_observations(BusBoard(rows, schedule, True, None, placed))
+    observed = bus_observations(BusBoard(rows, schedule, True, None, placed), ZoneInfo("Europe/London"))
     assert [o.identity for o in observed] == [rows[0].key]
 
 

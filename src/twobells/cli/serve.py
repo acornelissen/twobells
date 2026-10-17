@@ -330,7 +330,7 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
         history = HistoryReader(store.folder)
     elif install.fetch == "process" and dash is not None:
         try:
-            history = History(dash.state_dir)
+            history = History(dash.state_dir, ZoneInfo(dash.timezone))
         except sqlite3.Error as error:
             print(f"Can't open the punctuality history in {dash.state_dir}: {error}", file=sys.stderr)
             return 2, None

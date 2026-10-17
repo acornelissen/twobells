@@ -16,7 +16,7 @@ is kept. A span with fewer than ENOUGH_DAYS days in it says so instead.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from typing import NamedTuple, Protocol
 
 from ..core.model import iso
@@ -77,9 +77,11 @@ def _hhmm(moment: datetime) -> str:
     return moment.strftime("%H:%M")
 
 
-def delay_repay(arrivals: list[dict]) -> list[dict]:
+def delay_repay(arrivals: list[dict], zone: tzinfo) -> list[dict]:
     """The trains of History.arrivals that got there LEAST or more minutes
-    late, newest first, at most MAX_LISTED, each with its band."""
+    late, newest first, at most MAX_LISTED, each with its band, and its
+    times as clock times in `zone`. Minutes late are the minutes that passed
+    (the history's times are UTC), across the clocks changing too."""
     found = []
     for arrival in arrivals:
         if len(found) >= MAX_LISTED:
@@ -90,7 +92,8 @@ def delay_repay(arrivals: list[dict]) -> list[dict]:
             continue
         found.append({
             "day": arrival["day"], "scheduled": arrival["scheduled"], "destination": arrival["destination"],
-            "operator": arrival["operator"], "booked": _hhmm(booked), "arrived": _hhmm(arrived),
+            "operator": arrival["operator"], "booked": _hhmm(booked.astimezone(zone)),
+            "arrived": _hhmm(arrived.astimezone(zone)),
             "minutes_late": late, "band": band(late), "reported": arrival["reported"],
         })
     return found
@@ -141,11 +144,11 @@ class Performance:
                 routes.append({"label": label, "stop": stop, "periods": periods(found, today, late)})
             routes.sort(key=lambda row: (row["label"].casefold(), row["stop"] or ""))
             body[part] = {"late_minutes": late, "all": {"periods": periods(outcomes, today, late)}, "routes": routes}
-        body["delay_repay"] = self._delay_repay(today, setup)
+        body["delay_repay"] = self._delay_repay(now, setup)
         return body
 
-    def _delay_repay(self, today: date, setup: Setup) -> dict:
-        since = self._since(today)
+    def _delay_repay(self, now: datetime, setup: Setup) -> dict:
+        since = self._since(now.date())
         found: dict = {"station": setup.station, "station_name": None, "since": since.isoformat(),
                        "least_minutes": LEAST, "off": None, "trains": []}
         station = setup.station
@@ -160,7 +163,7 @@ class Performance:
         arrivals = self._source.arrivals(station, since)
         if arrivals:
             found["station_name"] = arrivals[0]["station_name"]
-        found["trains"] = delay_repay(arrivals)
+        found["trains"] = delay_repay(arrivals, now.tzinfo or UTC)
         return found
 
     def route(self, mode: str, route: str) -> dict:

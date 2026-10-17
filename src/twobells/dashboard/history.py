@@ -16,9 +16,16 @@ A departure that drops off earlier than that (pushed off the end of the
 list, or filtered out) stays undecided. If nobody saw it near its time
 (within WATCHED of it), its outcome isn't known and it is deleted instead.
 
-Final rows never change. Times are naive local time, as everywhere on the
-board, stored as ISO text so they sort as they compare. One connection is
-shared by the dashboard's threads, guarded by a lock.
+Final rows never change. One connection is shared by the dashboard's
+threads, guarded by a lock.
+
+Times come in aware and are kept in UTC, as ISO text, so they sort as they
+compare and the time between two is the time that passed, across the
+clocks changing too: booked at 01:50 BST and there at 01:10 GMT is 20
+minutes late. `day` and `scheduled` are the board's local date and clock
+time, as labels to look a departure up by. Each departure is keyed by when
+it was booked to leave (`leaves`), so in the hour the clocks go back, which
+comes twice, the 01:20 of each pass has a row of its own.
 
 It also keeps when trains reached the filter station, for the Performance
 page's Delay Repay watch (dashboard/repay.py): one row per train per day in
@@ -29,9 +36,12 @@ page's Delay Repay watch (dashboard/repay.py): one row per train per day in
   3. or it is still undecided an hour after its estimate, or was only ever
      "Delayed": nobody saw it arrive, so it is deleted (settle()).
 
-Version 1 had only `outcome`; opening one adds `arrival` and keeps every row.
-An older release refuses a newer version, so before moving a file on, a copy
-of it as it was is kept beside it, once (history.sqlite3.v1), to put back.
+Version 1 had only `outcome`, and version 2 added `arrival`; both kept
+naive local times, keyed by day and clock time. Opening one moves it on to
+version 3 and keeps every row, reading its times in the board's zone (the
+first pass, for a time in the hour that comes twice). An older release
+refuses a newer version, so before moving a file on, a copy of it as it
+was is kept beside it, once (history.sqlite3.v1, or .v2), to put back.
 """
 
 from __future__ import annotations
@@ -42,15 +52,20 @@ import sqlite3
 import stat
 import threading
 from collections import Counter
-from datetime import date, datetime, timedelta
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import NamedTuple
+from zoneinfo import ZoneInfo
 
 from ..core import files
 from ..core.model import iso
 
 FILE_NAME = "history.sqlite3"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+# The board's zone unless told otherwise, as the settings' default.
+LONDON = ZoneInfo("Europe/London")
 
 MODES = ("train", "bus")
 STATUSES = ("on_time", "late", "cancelled", "unknown")
@@ -72,14 +87,17 @@ _ARRIVAL_STALE = timedelta(hours=1)
 # Text from the feeds is kept short; nobody needs more on a dashboard.
 _MAX_TEXT = 200
 
-_HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _CRS = re.compile(r"[A-Z]{3}")
 
-_SCHEMA = """
+# `leaves` is when it was booked to leave your station; `departs_at` when it
+# was expected to (booked, if cancelled); `first_seen` and `last_seen` the
+# polls that showed it.
+_OUTCOME = """
 CREATE TABLE outcome (
     mode TEXT NOT NULL CHECK (mode IN ('train', 'bus')),
     day TEXT NOT NULL,
     scheduled TEXT NOT NULL,
+    leaves TEXT NOT NULL,
     route TEXT NOT NULL,
     identity TEXT,
     service TEXT NOT NULL,
@@ -93,19 +111,17 @@ CREATE TABLE outcome (
     last_seen TEXT NOT NULL,
     departs_at TEXT NOT NULL,
     final INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (mode, day, route, scheduled)
-);
-CREATE INDEX outcome_route ON outcome (mode, route, scheduled, final, day);
-"""
+    PRIMARY KEY (mode, route, leaves)
+)"""
 
-# Version 2: when each train reached the filter station. `scheduled` is when
-# it was booked to leave your station, `booked` when to get there; `expected`
-# is the latest estimate (`known` 0 while it is only "Delayed"), `actual`
-# what Darwin reported. All three are ISO local times.
-_ARRIVALS = """
+# When each train reached the filter station. `leaves` is when it was booked
+# to leave your station, `booked` when to get there; `expected` is the latest
+# estimate (`known` 0 while it is only "Delayed"), `actual` what Darwin reported.
+_ARRIVAL = """
 CREATE TABLE arrival (
     day TEXT NOT NULL,
     scheduled TEXT NOT NULL,
+    leaves TEXT NOT NULL,
     route TEXT NOT NULL,
     station TEXT NOT NULL,
     station_name TEXT NOT NULL,
@@ -119,20 +135,32 @@ CREATE TABLE arrival (
     cancelled INTEGER NOT NULL,
     last_seen TEXT NOT NULL,
     final INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (day, route, scheduled, station)
-);
-CREATE INDEX arrival_open ON arrival (final, expected);
-CREATE INDEX arrival_day ON arrival (station, final, day);
+    PRIMARY KEY (route, leaves, station)
+)"""
+
+_INDEXES = (
+    "CREATE INDEX outcome_route ON outcome (mode, route, scheduled, final, day)",
+    "CREATE INDEX arrival_open ON arrival (final, expected)",
+    "CREATE INDEX arrival_day ON arrival (station, final, day)",
+)
+
+# Moving an older version on: its rows, with `leaves` and the times in UTC.
+_MOVE_OUTCOME = """
+INSERT OR IGNORE INTO outcome (mode, day, scheduled, leaves, route, identity, service, destination, platform,
+                               status, delay_min, live, reason, first_seen, last_seen, departs_at, final)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+_MOVE_ARRIVAL = """
+INSERT OR IGNORE INTO arrival (day, scheduled, leaves, route, station, station_name, identity, operator, destination,
+                               booked, expected, known, actual, cancelled, last_seen, final)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
-# What takes a file from each version to the next.
-_MIGRATIONS = {1: _ARRIVALS}
-
 _ARRIVAL_UPSERT = """
-INSERT INTO arrival (day, scheduled, route, station, station_name, identity, operator, destination,
+INSERT INTO arrival (day, scheduled, leaves, route, station, station_name, identity, operator, destination,
                      booked, expected, known, actual, cancelled, last_seen, final)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT (day, route, scheduled, station) DO UPDATE SET
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (route, leaves, station) DO UPDATE SET
     station_name = excluded.station_name,
     identity = excluded.identity,
     operator = excluded.operator,
@@ -151,14 +179,14 @@ _ARRIVAL_REPORT = """
 UPDATE arrival SET
     expected = CASE WHEN ? THEN ? ELSE expected END,
     known = ?, actual = ?, cancelled = ?, last_seen = ?, final = ?
-WHERE day = ? AND route = ? AND scheduled = ? AND station = ? AND final = 0
+WHERE route = ? AND leaves = ? AND station = ? AND final = 0
 """
 
 _UPSERT = """
-INSERT INTO outcome (mode, day, scheduled, route, identity, service, destination, platform,
+INSERT INTO outcome (mode, day, scheduled, leaves, route, identity, service, destination, platform,
                      status, delay_min, live, reason, first_seen, last_seen, departs_at, final)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-ON CONFLICT (mode, day, route, scheduled) DO UPDATE SET
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+ON CONFLICT (mode, route, leaves) DO UPDATE SET
     identity = excluded.identity,
     service = excluded.service,
     destination = excluded.destination,
@@ -177,9 +205,8 @@ class Observed(NamedTuple):
     """One departure as a poll showed it."""
 
     route: str  # a regular departure, e.g. "train|GLO>MAN|Manchester Piccadilly"
-    scheduled: str  # "HH:MM"
-    day: date  # the local date of the scheduled departure
-    departs_at: datetime  # expected, else scheduled; scheduled if cancelled
+    leaves: datetime  # booked to leave, aware, in the board's zone
+    departs_at: datetime  # expected, else booked; booked if cancelled. Aware
     status: str  # one of STATUSES
     delay_min: int | None  # None if not known
     live: bool
@@ -189,14 +216,24 @@ class Observed(NamedTuple):
     reason: str | None
     identity: str | None
 
+    @property
+    def scheduled(self) -> str:
+        """Its booked time, "HH:MM"."""
+        return self.leaves.strftime("%H:%M")
+
+    @property
+    def day(self) -> date:
+        """The local date it was booked to leave."""
+        return self.leaves.date()
+
 
 class Watched(NamedTuple):
     """A train that calls at the filter station, as a train poll showed it:
-    when it is due there, and when it got there if Darwin has said."""
+    when it is due there, and when it got there if Darwin has said. Times
+    are aware."""
 
     route: str  # as Observed's
-    scheduled: str  # "HH:MM", booked to leave your station
-    day: date  # the local date it was booked to leave
+    leaves: datetime  # booked to leave your station, in the board's zone
     station: str  # the filter station's CRS code
     station_name: str
     identity: str | None  # Darwin's service ID
@@ -207,13 +244,26 @@ class Watched(NamedTuple):
     actual: datetime | None  # when it got there, if reported
     cancelled: bool  # cancelled there, or at your station
 
+    @property
+    def scheduled(self) -> str:
+        """Its booked time to leave your station, "HH:MM"."""
+        return self.leaves.strftime("%H:%M")
+
+    @property
+    def day(self) -> date:
+        """The local date it was booked to leave."""
+        return self.leaves.date()
+
 
 class Following(NamedTuple):
-    """A train not yet known to have reached the filter station (History.following)."""
+    """A train not yet known to have reached the filter station
+    (History.following). Times are aware, in UTC; `day` and `scheduled` are
+    the local date and time it was booked to leave."""
 
     day: date
     route: str
     scheduled: str
+    leaves: datetime
     station: str
     identity: str | None
     booked: datetime
@@ -221,7 +271,7 @@ class Following(NamedTuple):
 
 
 class Report(NamedTuple):
-    """What a later look said about a train being followed, as Watched's."""
+    """What a later look said about a train being followed, as Watched's (aware)."""
 
     expected: datetime | None
     actual: datetime | None
@@ -296,10 +346,22 @@ def day_type(day: date, holidays: frozenset[date] = frozenset()) -> str:
 _day_type = day_type  # stats() has a parameter of the same name
 
 
-def _naive(moment: datetime, name: str) -> datetime:
-    if not isinstance(moment, datetime) or moment.tzinfo is not None:
-        raise ValueError(f"{name} must be a naive local datetime")
+def _aware(moment: datetime, name: str) -> datetime:
+    if not isinstance(moment, datetime) or moment.utcoffset() is None:
+        raise ValueError(f"{name} must be an aware datetime")
     return moment
+
+
+def _utc(moment: datetime, name: str) -> datetime:
+    """`moment` in UTC, where arithmetic and comparing are the time that
+    passed: between two in one zone they go by the clock, the hour the
+    clocks go back counted twice."""
+    return _aware(moment, name).astimezone(UTC)
+
+
+def _stamp(moment: datetime, name: str) -> str:
+    """`moment` as kept: UTC ISO text, to the second."""
+    return iso(_utc(moment, name))
 
 
 def _mode(mode: str) -> str:
@@ -313,41 +375,34 @@ def _text(value: str | None) -> str | None:
 
 
 def _row(mode: str, row: Observed, polled_at: str) -> tuple:
-    """The values to upsert for one observation. ValueError if it doesn't make sense."""
-    if not isinstance(row.day, date) or isinstance(row.day, datetime):
-        raise ValueError("day must be a date")
-    if not isinstance(row.scheduled, str) or not _HHMM.match(row.scheduled):
-        raise ValueError(f"scheduled must be HH:MM, not {row.scheduled!r}")
+    """The values to upsert for one observation, in _UPSERT's order. ValueError if it doesn't make sense."""
+    leaves = _aware(row.leaves, "leaves")
     if row.status not in STATUSES:
         raise ValueError(f"Unknown status {row.status!r}")
     if row.delay_min is not None and (isinstance(row.delay_min, bool) or not isinstance(row.delay_min, int)):
         raise ValueError("delay_min must be a whole number of minutes or None")
-    departs_at = _naive(row.departs_at, "departs_at")
     return (
-        mode, row.day.isoformat(), row.scheduled, _text(row.route), _text(row.identity),
+        mode, row.day.isoformat(), row.scheduled, _stamp(leaves, "leaves"), _text(row.route), _text(row.identity),
         _text(row.service) or "", _text(row.destination) or "", _text(row.platform),
         row.status, row.delay_min, int(bool(row.live)), _text(row.reason),
-        polled_at, polled_at, iso(departs_at),
+        polled_at, polled_at, _stamp(row.departs_at, "departs_at"),
     )
 
 
 def _watched(row: Watched, polled_at: str) -> tuple:
-    """The values to upsert for one watched train. ValueError if it doesn't make sense."""
-    if not isinstance(row.day, date) or isinstance(row.day, datetime):
-        raise ValueError("day must be a date")
-    if not isinstance(row.scheduled, str) or not _HHMM.match(row.scheduled):
-        raise ValueError(f"scheduled must be HH:MM, not {row.scheduled!r}")
+    """The values to upsert for one watched train, in _ARRIVAL_UPSERT's order. ValueError if it doesn't make sense."""
+    leaves = _aware(row.leaves, "leaves")
     if not isinstance(row.station, str) or not _CRS.fullmatch(row.station):
         raise ValueError(f"station must be a CRS code, not {row.station!r}")
-    booked = iso(_naive(row.booked, "booked"))
-    expected = iso(_naive(row.expected, "expected")) if row.expected is not None else booked
-    actual = iso(_naive(row.actual, "actual")) if row.actual is not None else None
+    booked = _stamp(row.booked, "booked")
+    expected = _stamp(row.expected, "expected") if row.expected is not None else booked
+    actual = _stamp(row.actual, "actual") if row.actual is not None else None
     cancelled = bool(row.cancelled)
     return (
-        row.day.isoformat(), row.scheduled, _text(row.route), row.station, _text(row.station_name) or row.station,
-        _text(row.identity), _text(row.operator) or "", _text(row.destination) or "",
-        booked, expected, int(row.expected is not None), actual, int(cancelled), polled_at,
-        int(cancelled or actual is not None),
+        row.day.isoformat(), row.scheduled, _stamp(leaves, "leaves"), _text(row.route), row.station,
+        _text(row.station_name) or row.station, _text(row.identity), _text(row.operator) or "",
+        _text(row.destination) or "", booked, expected, int(row.expected is not None), actual, int(cancelled),
+        polled_at, int(cancelled or actual is not None),
     )
 
 
@@ -388,10 +443,68 @@ def _keep_copy(db: sqlite3.Connection, path: Path) -> None:
         raise
 
 
-class History:
-    """Punctuality history in `folder`/history.sqlite3. Safe to share between threads."""
+@contextmanager
+def _transaction(db: sqlite3.Connection) -> Iterator[None]:
+    """One transaction for all done inside, tables made or dropped too,
+    undone if anything fails."""
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+    except BaseException:
+        db.rollback()
+        raise
+    db.commit()
 
-    def __init__(self, folder: Path | str) -> None:
+
+def _make_tables(db: sqlite3.Connection) -> None:
+    for statement in (_OUTCOME, _ARRIVAL, *_INDEXES):
+        db.execute(statement)
+
+
+def _move_on(db: sqlite3.Connection, version: int, zone: tzinfo) -> None:
+    """Move a version 1 or 2 history on to this version, keeping every row:
+    its naive local times are read in `zone` (the first pass, for one in
+    the hour that comes twice) and kept in UTC, and each row is keyed by
+    when it was booked to leave. Call in a transaction."""
+
+    def utc(text: str | None) -> str | None:
+        return None if text is None else iso(datetime.fromisoformat(text).replace(tzinfo=zone).astimezone(UTC))
+
+    old_tables = ("outcome", "arrival") if version >= 2 else ("outcome",)
+    for table in old_tables:
+        db.execute(f"ALTER TABLE {table} RENAME TO old_{table}")
+    for index in ("outcome_route", "arrival_open", "arrival_day"):
+        db.execute(f"DROP INDEX IF EXISTS {index}")
+    _make_tables(db)
+    outcomes = db.execute(
+        "SELECT mode, day, scheduled, route, identity, service, destination, platform, status, delay_min, live,"
+        " reason, first_seen, last_seen, departs_at, final FROM old_outcome").fetchall()
+    db.executemany(_MOVE_OUTCOME, [
+        (mode, day, scheduled, utc(f"{day}T{scheduled}"), route, identity, service, destination, platform, status,
+         delay_min, live, reason, utc(first_seen), utc(last_seen), utc(departs_at), final)
+        for (mode, day, scheduled, route, identity, service, destination, platform, status, delay_min, live,
+             reason, first_seen, last_seen, departs_at, final) in outcomes
+    ])
+    if version >= 2:
+        arrivals = db.execute(
+            "SELECT day, scheduled, route, station, station_name, identity, operator, destination, booked,"
+            " expected, known, actual, cancelled, last_seen, final FROM old_arrival").fetchall()
+        db.executemany(_MOVE_ARRIVAL, [
+            (day, scheduled, utc(f"{day}T{scheduled}"), route, station, station_name, identity, operator,
+             destination, utc(booked), utc(expected), known, utc(actual), cancelled, utc(last_seen), final)
+            for (day, scheduled, route, station, station_name, identity, operator, destination, booked, expected,
+                 known, actual, cancelled, last_seen, final) in arrivals
+        ])
+    for table in old_tables:
+        db.execute(f"DROP TABLE old_{table}")
+
+
+class History:
+    """Punctuality history in `folder`/history.sqlite3. Safe to share between
+    threads. `zone` is the board's time zone, which an older version's local
+    times are read in as it is moved on."""
+
+    def __init__(self, folder: Path | str, zone: tzinfo = LONDON) -> None:
         path = Path(folder) / FILE_NAME
         _create(path)
         self._lock = threading.Lock()
@@ -401,16 +514,18 @@ class History:
             # Safe with WAL (a power cut loses at most the last poll) and kinder to an SD card.
             self._db.execute("PRAGMA synchronous=NORMAL")
             version = self._db.execute("PRAGMA user_version").fetchone()[0]
-            if version == 0:
-                schema = _SCHEMA + "".join(_MIGRATIONS[step] for step in range(1, SCHEMA_VERSION))
-                self._db.executescript(f"BEGIN; {schema} PRAGMA user_version={SCHEMA_VERSION}; COMMIT;")
-            elif version > SCHEMA_VERSION:
+            if version > SCHEMA_VERSION:
                 raise sqlite3.DatabaseError(f"{path} has history version {version}, not {SCHEMA_VERSION}")
-            elif version < SCHEMA_VERSION:
+            if 0 < version < SCHEMA_VERSION:
                 _keep_copy(self._db, path.with_name(f"{FILE_NAME}.v{version}"))
-            for step in range(version or SCHEMA_VERSION, SCHEMA_VERSION):
-                # A version at a time, each in a transaction of its own: the rows already there are kept.
-                self._db.executescript(f"BEGIN; {_MIGRATIONS[step]} PRAGMA user_version={step + 1}; COMMIT;")
+            if version < SCHEMA_VERSION:
+                # In one transaction: all of it, or the file as it was.
+                with _transaction(self._db):
+                    if version == 0:
+                        _make_tables(self._db)
+                    else:
+                        _move_on(self._db, version, zone)
+                    self._db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         except Exception:
             self._db.close()
             raise
@@ -450,19 +565,19 @@ class History:
         """Record what a successful poll of `mode` showed at `polled_at`, and
         decide the outcome of anything that has left since the last one."""
         _mode(mode)
-        now = iso(_naive(polled_at, "polled_at"))
+        now = _stamp(polled_at, "polled_at")
         values = [_row(mode, row, now) for row in rows]  # all checked before any is written
-        seen = {(value[1], value[3], value[2]) for value in values}  # (day, route, scheduled)
-        left = iso(polled_at + _LEFT)
+        seen = {(value[4], value[3]) for value in values}  # (route, leaves)
+        left = iso(_utc(polled_at, "polled_at") + _LEFT)
         with self._lock, self._db:
             self._db.executemany(_UPSERT, values)
             gone = [
                 row for row in self._db.execute(
-                    "SELECT mode, day, route, scheduled, last_seen, departs_at FROM outcome"
+                    "SELECT mode, route, leaves, last_seen, departs_at FROM outcome"
                     " WHERE mode = ? AND final = 0 AND departs_at <= ?",
                     (mode, left),
                 )
-                if (row[1], row[2], row[3]) not in seen
+                if (row[1], row[2]) not in seen
             ]
             self._finalise(gone)
 
@@ -470,10 +585,10 @@ class History:
         """Decide anything still undecided half an hour after its time: a
         "Delayed" that never got a time, or one that left while the board was
         off. The arrivals that can be are settled too."""
-        stale = iso(_naive(now, "now") - _STALE)
+        stale = iso(_utc(now, "now") - _STALE)
         with self._lock, self._db:
             rows = self._db.execute(
-                "SELECT mode, day, route, scheduled, last_seen, departs_at FROM outcome"
+                "SELECT mode, route, leaves, last_seen, departs_at FROM outcome"
                 " WHERE final = 0 AND departs_at < ?",
                 (stale,),
             ).fetchall()
@@ -483,23 +598,19 @@ class History:
     def _finalise(self, rows: list[tuple]) -> None:
         """Make each row final with its last sighting, or delete it if that
         was too long before it left. Call with the lock held, in a transaction."""
-        for mode, day, route, scheduled, last_seen, departs_at in rows:
-            key = (mode, day, route, scheduled)
+        for mode, route, leaves, last_seen, departs_at in rows:
+            key = (mode, route, leaves)
             unwatched = datetime.fromisoformat(departs_at) - datetime.fromisoformat(last_seen) > WATCHED[mode]
             if unwatched:
-                self._db.execute(
-                    "DELETE FROM outcome WHERE mode = ? AND day = ? AND route = ? AND scheduled = ?", key
-                )
+                self._db.execute("DELETE FROM outcome WHERE mode = ? AND route = ? AND leaves = ?", key)
             else:
-                self._db.execute(
-                    "UPDATE outcome SET final = 1 WHERE mode = ? AND day = ? AND route = ? AND scheduled = ?", key
-                )
+                self._db.execute("UPDATE outcome SET final = 1 WHERE mode = ? AND route = ? AND leaves = ?", key)
 
     # Arrivals at the filter station, for the Delay Repay watch.
 
     def watch(self, rows: list[Watched], polled_at: datetime) -> None:
         """Record the trains a successful train poll showed calling at the filter station."""
-        now = iso(_naive(polled_at, "polled_at"))
+        now = _stamp(polled_at, "polled_at")
         values = [_watched(row, now) for row in rows]  # all checked before any is written
         with self._lock, self._db:
             self._db.executemany(_ARRIVAL_UPSERT, values)
@@ -507,58 +618,57 @@ class History:
     def following(self, now: datetime) -> list[Following]:
         """The trains not yet known to have arrived that are due within
         FOLLOW_AHEAD of `now`, or overdue: the ones to look for, soonest first."""
-        cut = iso(_naive(now, "now") + FOLLOW_AHEAD)
+        cut = iso(_utc(now, "now") + FOLLOW_AHEAD)
         with self._lock:
             rows = self._db.execute(
-                "SELECT day, route, scheduled, station, identity, booked, expected FROM arrival"
+                "SELECT day, route, scheduled, leaves, station, identity, booked, expected FROM arrival"
                 " WHERE final = 0 AND expected <= ? ORDER BY expected",
                 (cut,),
             ).fetchall()
         return [
-            Following(date.fromisoformat(day), route, scheduled, station, identity,
+            Following(date.fromisoformat(day), route, scheduled, datetime.fromisoformat(leaves), station, identity,
                       datetime.fromisoformat(booked), datetime.fromisoformat(expected))
-            for day, route, scheduled, station, identity, booked, expected in rows
+            for day, route, scheduled, leaves, station, identity, booked, expected in rows
         ]
 
     def report(self, train: Following, found: Report, seen_at: datetime) -> None:
         """What a later look at `seen_at` said about `train`: its estimate, or when it got there."""
-        now = iso(_naive(seen_at, "seen_at"))
-        expected = iso(_naive(found.expected, "expected")) if found.expected is not None else None
-        actual = iso(_naive(found.actual, "actual")) if found.actual is not None else None
+        now = _stamp(seen_at, "seen_at")
+        expected = _stamp(found.expected, "expected") if found.expected is not None else None
+        actual = _stamp(found.actual, "actual") if found.actual is not None else None
         cancelled = bool(found.cancelled)
         with self._lock, self._db:
             self._db.execute(_ARRIVAL_REPORT, (
                 expected is not None, expected, int(expected is not None), actual, int(cancelled), now,
                 int(cancelled or actual is not None),
-                train.day.isoformat(), train.route, train.scheduled, train.station,
+                train.route, _stamp(train.leaves, "leaves"), train.station,
             ))
 
     def settle(self, now: datetime) -> None:
         """Decide the arrivals that can be: an estimate ARRIVED old that was
         seen within WATCHED of it is when the train got there; one an hour
         old that wasn't, or was only "Delayed", is deleted, as nobody knows."""
-        local = _naive(now, "now")
+        utc = _utc(now, "now")
         with self._lock, self._db:
             rows = self._db.execute(
-                "SELECT day, route, scheduled, station, expected, known, last_seen FROM arrival"
+                "SELECT route, leaves, station, expected, known, last_seen FROM arrival"
                 " WHERE final = 0 AND expected <= ?",
-                (iso(local - ARRIVED),),
+                (iso(utc - ARRIVED),),
             ).fetchall()
-            for day, route, scheduled, station, expected, known, last_seen in rows:
-                key = (day, route, scheduled, station)
+            for route, leaves, station, expected, known, last_seen in rows:
+                key = (route, leaves, station)
                 at = datetime.fromisoformat(expected)
                 if known and at - datetime.fromisoformat(last_seen) <= WATCHED["train"]:
-                    self._db.execute("UPDATE arrival SET final = 1"
-                                     " WHERE day = ? AND route = ? AND scheduled = ? AND station = ?", key)
-                elif local - at >= _ARRIVAL_STALE:
-                    self._db.execute("DELETE FROM arrival"
-                                     " WHERE day = ? AND route = ? AND scheduled = ? AND station = ?", key)
+                    self._db.execute("UPDATE arrival SET final = 1 WHERE route = ? AND leaves = ? AND station = ?",
+                                     key)
+                elif utc - at >= _ARRIVAL_STALE:
+                    self._db.execute("DELETE FROM arrival WHERE route = ? AND leaves = ? AND station = ?", key)
 
     def arrivals(self, station: str, since: date) -> list[dict]:
         """Every train that reached `station` on a day on or after `since`
         (the day it left your station), newest first, cancelled ones left
         out. `arrived` is when it got there: Darwin's report, else its last
-        estimate (`reported` false). Times are ISO local times."""
+        estimate (`reported` false). `booked` and `arrived` are UTC ISO text."""
         if not isinstance(since, date) or isinstance(since, datetime):
             raise ValueError("since must be a date")
         with self._lock:
@@ -699,8 +809,9 @@ class History:
             return self._db.execute(query, values).fetchall()
 
     def purge(self, now: datetime, days: int = 90) -> None:
-        """Forget departures from more than `days` days before `now`."""
-        oldest = (_naive(now, "now").date() - timedelta(days=days)).isoformat()
+        """Forget departures from more than `days` days before `now` (aware,
+        in the board's zone, whose date it goes by)."""
+        oldest = (_aware(now, "now").date() - timedelta(days=days)).isoformat()
         with self._lock, self._db:
             self._db.execute("DELETE FROM outcome WHERE day < ?", (oldest,))
             self._db.execute("DELETE FROM arrival WHERE day < ?", (oldest,))

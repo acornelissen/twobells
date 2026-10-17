@@ -294,6 +294,28 @@ def test_times_carry_the_offset_of_their_own_day():
     assert row["scheduled_at"] == "2026-10-25T23:10:00+00:00"
 
 
+def test_a_time_in_the_hour_that_comes_twice_is_the_one_nearer():
+    # 25 October 2026: 01:00 to 01:59 comes twice, in BST and then in GMT.
+    first = datetime(2026, 10, 25, 1, 20, tzinfo=LONDON)
+    second = datetime(2026, 10, 25, 1, 11, fold=1, tzinfo=LONDON)
+    assert clock_at("01:50", first).isoformat() == "2026-10-25T01:50:00+01:00"
+    assert clock_at("01:10", second).isoformat() == "2026-10-25T01:10:00+00:00"
+    assert clock_at("01:50", second).isoformat() == "2026-10-25T01:50:00+01:00"  # 21 minutes ago, not 39 on
+    assert clock_at("01:50", second.replace(minute=40)).isoformat() == "2026-10-25T01:50:00+00:00"
+    assert clock_at("00:50", second).isoformat() == "2026-10-25T00:50:00+01:00"
+
+
+def test_late_across_the_clocks_going_back_is_the_minutes_that_passed():
+    # Booked at 01:50 BST, expected at 01:10 GMT: 20 minutes late, not 40 early.
+    fetched = datetime(2026, 10, 25, 1, 5, fold=1, tzinfo=LONDON)
+    row = trains(train("01:50", "01:10"), fetched=fetched)[0]["rows"][0]
+    assert (row["scheduled_at"], row["expected_at"], row["minutes_late"]) == (
+        "2026-10-25T01:50:00+01:00", "2026-10-25T01:10:00+00:00", 20)
+    assert row["leave_at"] == "2026-10-25T01:00:00+00:00"  # a 10 minute walk, not 70
+    [seen] = train_observations(parse_board_rich({"trainServices": [train("01:50", "01:10")]}), fetched, "GLO>MAN")
+    assert (seen.status, seen.delay_min) == ("late", 20)
+
+
 def test_history_phrases_come_from_the_history():
     asked = []
 
@@ -327,12 +349,13 @@ def test_train_observations_for_the_history():
     fetched = datetime(2026, 10, 10, 7, 0, tzinfo=LONDON)
     seen = train_observations(board, fetched, "GLO>MAN")
     assert [(o.scheduled, o.status, o.delay_min, o.departs_at, o.reason) for o in seen] == [
-        ("07:12", "late", 7, datetime(2026, 10, 10, 7, 19), "Signals"),
-        ("07:42", "cancelled", None, datetime(2026, 10, 10, 7, 42), None),
-        ("08:12", "on_time", 0, datetime(2026, 10, 10, 8, 12), None),
-        ("08:42", "late", None, datetime(2026, 10, 10, 8, 42), None),
+        ("07:12", "late", 7, datetime(2026, 10, 10, 7, 19, tzinfo=LONDON), "Signals"),
+        ("07:42", "cancelled", None, datetime(2026, 10, 10, 7, 42, tzinfo=LONDON), None),
+        ("08:12", "on_time", 0, datetime(2026, 10, 10, 8, 12, tzinfo=LONDON), None),
+        ("08:42", "late", None, datetime(2026, 10, 10, 8, 42, tzinfo=LONDON), None),
     ]
     assert seen[0].route == "GLO>MAN|Manchester Piccadilly" and seen[0].day == date(2026, 10, 10)
+    assert seen[0].leaves == datetime(2026, 10, 10, 7, 12, tzinfo=LONDON)
     assert seen[0].identity == "0712GLSP____" and seen[0].live
 
 
@@ -886,10 +909,10 @@ def test_a_board_s_trains_arrive_at_their_last_stop_without_a_filter():
 
 def test_bus_observations_for_the_history():
     found = live(at(10, 14), [bus(*HALFWAY, at(10, 14))])
-    seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, schedule(), True, None))}
+    seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, schedule(), True, None), LONDON)}
     late = seen["A|341|Hadfield", "10:10"]
     assert (late.status, late.delay_min, late.live, late.departs_at, late.day) == (
-        "late", 9, True, datetime(2026, 10, 9, 10, 19), date(2026, 10, 9),
+        "late", 9, True, datetime(2026, 10, 9, 10, 19, tzinfo=LONDON), date(2026, 10, 9),
     )
     timetabled = seen["B|237|Ashton", "10:18"]
     assert (timetabled.status, timetabled.delay_min, timetabled.live) == ("unknown", None, False)
@@ -904,13 +927,13 @@ def test_no_delay_is_recorded_for_a_bus_only_waiting_in():
     waiting = bus(POSITIONS[HENRY_A].lat, POSITIONS[HENRY_A].lon, at(10, 30), line="237",
                   origin=INTO_A.origin.atco, aimed=LEFT_JUNCTION)
     found = live(at(10, 30), [waiting], plan=plan)
-    seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, plan, True, None))}
+    seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, plan, True, None), LONDON)}
     west = seen["A|237|Ashton", "10:15"]
     assert (west.status, west.delay_min, west.live) == ("late", None, True)
     # On its way in, late, its delay is observed: in at 10:19, out at 10:21.
     coming = bus(*HALFWAY, at(10, 14), line="237", origin=INTO_A.origin.atco, aimed=LEFT_JUNCTION)
     found = live(at(10, 14), [coming], plan=plan)
-    seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, plan, True, None))}
+    seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, plan, True, None), LONDON)}
     assert seen["A|237|Ashton", "10:15"].delay_min == 6
 
 
@@ -1236,7 +1259,7 @@ def test_inbound_only_journeys_are_not_counted_nor_observed():
     assert timetable_block("ready", plan, LONDON)["journeys"] == 1
     rows, placed = live_board(plan, at(10, 14), [bus(*HALFWAY, at(10, 14))], every_day, 10)
     assert placed  # its bus is placed, for the inbound line
-    seen = bus_observations(BusBoard(rows, plan, True, None, placed))
+    seen = bus_observations(BusBoard(rows, plan, True, None, placed), LONDON)
     assert {o.route for o in seen} == {"A|237|Ashton", "B|237|Ashton"}
 
 

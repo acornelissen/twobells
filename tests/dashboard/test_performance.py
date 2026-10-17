@@ -24,9 +24,10 @@ def history(tmp_path):
 
 def _record(history, mode, route, day, status="on_time", delay=0, scheduled="07:42"):
     """A departure seen just before it left, then gone: a final outcome."""
-    leaves = datetime.combine(day, datetime.min.time()) + timedelta(hours=int(scheduled[:2]),
-                                                                    minutes=int(scheduled[3:]) + (delay or 0))
-    row = Observed(route, scheduled, day, leaves, status, delay, delay is not None, "Northern", "x", None, None, None)
+    booked = datetime.combine(day, datetime.min.time(), tzinfo=LONDON) + timedelta(hours=int(scheduled[:2]),
+                                                                                minutes=int(scheduled[3:]))
+    leaves = booked + timedelta(minutes=delay or 0)
+    row = Observed(route, booked, leaves, status, delay, delay is not None, "Northern", "x", None, None, None)
     history.observe(mode, [row], leaves - timedelta(minutes=1))
     history.observe(mode, [], leaves + timedelta(minutes=1))
 
@@ -134,10 +135,11 @@ def test_only_the_busiest_routes_are_listed(history, monkeypatch):
 def _arrived(history, day, scheduled, booked, arrived, reported=True, operator="Northern", station="MAN"):
     """A train that reached `station` at `arrived`, as reported (or, if not, by its estimate)."""
     def moment(hhmm):
-        at = datetime.combine(day, datetime.min.time()) + timedelta(hours=int(hhmm[:2]), minutes=int(hhmm[3:]))
+        at = datetime.combine(day, datetime.min.time(), tzinfo=LONDON) + timedelta(hours=int(hhmm[:2]),
+                                                                                minutes=int(hhmm[3:]))
         return at if hhmm >= scheduled else at + timedelta(days=1)  # there after midnight
 
-    row = Watched(MANCHESTER, scheduled, day, station, "Manchester Piccadilly", None, operator,
+    row = Watched(MANCHESTER, moment(scheduled), station, "Manchester Piccadilly", None, operator,
                   "Manchester Piccadilly", moment(booked), moment(arrived), moment(arrived) if reported else None,
                   False)
     history.watch([row], moment(arrived))

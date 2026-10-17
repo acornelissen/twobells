@@ -84,8 +84,8 @@ class Outcomes:
         """History.arrivals: one train to Manchester that got there 22 minutes late."""
         return [{"day": "2026-10-08", "scheduled": "07:42", "route": "GLO>MAN|Manchester Piccadilly",
                  "station_name": "Manchester Piccadilly", "operator": "Northern",
-                 "destination": "Manchester Piccadilly", "booked": "2026-10-08T08:05:00",
-                 "arrived": "2026-10-08T08:27:00", "reported": True}] if station == "MAN" else []
+                 "destination": "Manchester Piccadilly", "booked": "2026-10-08T08:05:00+00:00",
+                 "arrived": "2026-10-08T08:27:00+00:00", "reported": True}] if station == "MAN" else []
 
 
 def figures(**overrides):

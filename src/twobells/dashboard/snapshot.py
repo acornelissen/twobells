@@ -94,10 +94,28 @@ def status_block(last_success: datetime | None = None, stale: bool = False,
 
 
 def clock_at(hhmm: str, near: datetime) -> datetime:
-    """The time `hhmm` nearest to `near` (within 12 hours either way), in near's zone."""
-    base = near.replace(second=0, microsecond=0, tzinfo=None)
+    """The time `hhmm` nearest to `near` (within 12 hours either way), in
+    near's zone. In the hour the clocks go back, which comes twice, it is
+    the pass nearer to `near` in the time that passes."""
+    base = near.replace(second=0, microsecond=0, tzinfo=None, fold=0)
     local = base + timedelta(minutes=minutes_between(base.strftime("%H:%M"), hhmm))
-    return local.replace(tzinfo=near.tzinfo)
+    if near.tzinfo is None:
+        return local
+    real = near.astimezone(UTC)
+    passes = [local.replace(tzinfo=near.tzinfo, fold=fold) for fold in (0, 1)]  # the same but in that hour
+    return min(passes, key=lambda moment: abs(moment.astimezone(UTC) - real))
+
+
+def _real(moment: datetime) -> datetime:
+    """An aware `moment` in UTC, to compare or work out a difference in the
+    time that passes: between two aware times in one zone, Python goes by
+    the clock, the hour the clocks go back counted twice. Naive, as it is."""
+    return moment.astimezone(UTC) if moment.tzinfo is not None else moment
+
+
+def minutes_apart(start: datetime, end: datetime) -> int:
+    """Whole minutes from `start` to `end` as they pass, across the clocks changing too."""
+    return round((_real(end) - _real(start)) / timedelta(minutes=1))
 
 
 def status_text(departure: Departure) -> str:
@@ -121,7 +139,10 @@ def leave_at(departure: Departure, scheduled_at: datetime, expected_at: datetime
     minutes = walk.minutes(departure)
     if minutes is None or departure.status is Status.CANCELLED:
         return None
-    return (expected_at or scheduled_at) - timedelta(minutes=minutes)
+    leaves = expected_at or scheduled_at
+    if leaves.tzinfo is None:
+        return leaves - timedelta(minutes=minutes)
+    return (_real(leaves) - timedelta(minutes=minutes)).astimezone(leaves.tzinfo)
 
 
 def _history_entry(mode: str, route: str, scheduled: str, label: str, day: date,
@@ -194,13 +215,15 @@ def _can_be_next(service: TrainService, fetched: datetime, now: datetime) -> boo
     scheduled_at, expected_at = _train_times(service, fetched)
     if dep.status is Status.LATE and expected_at is None:
         return False
-    return (expected_at or scheduled_at) >= now
+    return _real(expected_at or scheduled_at) >= _real(now)
 
 
-def _minutes_late(departure: Departure) -> int | None:
-    if departure.status is Status.LATE and departure.expected:
-        return departure.minutes_late
-    return None
+def _minutes_late(service: TrainService, fetched: datetime) -> int | None:
+    """How late a train late with a time is to leave, in the minutes that pass."""
+    scheduled_at, expected_at = _train_times(service, fetched)
+    if service.departure.status is not Status.LATE or expected_at is None:
+        return None
+    return minutes_apart(scheduled_at, expected_at)
 
 
 def position_block(details: ServiceDetails | None, now: datetime) -> dict | None:
@@ -212,7 +235,8 @@ def position_block(details: ServiceDetails | None, now: datetime) -> dict | None
             "strip": {"stops": list(found.strip_stops), "yours": found.yours, "train_at": found.train_at}}
 
 
-def announcement_block(service: TrainService, platform_changed: bool, is_next: bool) -> list[dict]:
+def announcement_block(service: TrainService, platform_changed: bool, is_next: bool,
+                       minutes_late: int | None) -> list[dict]:
     """What a station would announce for the train (core/announce.py), as
     [{"kind", "text"}] in the order to say them. `is_next` says it is the
     next train to depart, not a later one."""
@@ -229,7 +253,7 @@ def announcement_block(service: TrainService, platform_changed: bool, is_next: b
     )
     said = announce.announcements(
         train, is_cancelled=dep.status is Status.CANCELLED, late=dep.status is Status.LATE,
-        minutes_late=_minutes_late(dep), platform_changed=platform_changed,
+        minutes_late=minutes_late, platform_changed=platform_changed,
         cancel_reason=service.cancel_reason, delay_reason=service.delay_reason, is_next=is_next)
     return [{"kind": kind, "text": text} for kind, text in said]
 
@@ -247,6 +271,7 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
     `is_next` says it is the next train to depart, for its announcements."""
     dep = service.departure
     scheduled_at, expected_at = _train_times(service, fetched)
+    late = _minutes_late(service, fetched)
     route = _train_route(route_prefix, dep)
     history = _history_entry("train", route, dep.scheduled, _train_label(dep), scheduled_at.date(), phrases)
     usual = platforms(route, dep.scheduled) if dep.is_train else None
@@ -264,7 +289,7 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
         "status": dep.status.value,
         "status_text": status_text(dep),
         "status_spoken": status_spoken(dep),
-        "minutes_late": _minutes_late(dep),
+        "minutes_late": late,
         "platform": dep.platform,
         "platform_changed": changed,
         "usual_platform": usual,
@@ -278,7 +303,7 @@ def train_row(service: TrainService, fetched: datetime, walk: WalkTimes, route_p
         "walk_min": walk.minutes(dep),
         "leave_at": iso(leave_at(dep, scheduled_at, expected_at, walk)),
         "calling_at": dep.calling_at,
-        "announce": announcement_block(service, changed, is_next),
+        "announce": announcement_block(service, changed, is_next, late),
         "calling_points": [calling_point(p) for p in service.calling_points],
         "previous_points": [calling_point(p) for p in details.previous] if details else [],
         "position": position_block(details, now or fetched),
@@ -428,7 +453,7 @@ def trains_part(board: TrainBoard | None, fetched: datetime | None, status: dict
 
 
 def train_observations(board: TrainBoard, fetched: datetime, route_prefix: str) -> list[Observed]:
-    """What a train poll showed, for the punctuality history (naive local times)."""
+    """What a train poll showed, for the punctuality history (aware times, in fetched's zone)."""
     found = []
     for service in board.services:
         dep = service.departure
@@ -436,11 +461,10 @@ def train_observations(board: TrainBoard, fetched: datetime, route_prefix: str) 
         departs = scheduled_at if dep.status is Status.CANCELLED else (expected_at or scheduled_at)
         found.append(Observed(
             route=_train_route(route_prefix, dep),
-            scheduled=dep.scheduled,
-            day=scheduled_at.date(),
-            departs_at=departs.replace(tzinfo=None),
+            leaves=scheduled_at,
+            departs_at=departs,
             status=dep.status.value,
-            delay_min=0 if dep.status is Status.ON_TIME else _minutes_late(dep),
+            delay_min=0 if dep.status is Status.ON_TIME else _minutes_late(service, fetched),
             live=dep.status is not Status.UNKNOWN,
             service=dep.service,
             destination=dep.destination,
@@ -677,17 +701,17 @@ def buses_part(board: BusBoard | None, now: datetime, status: dict, timetable: d
     }, lookups
 
 
-def bus_observations(board: BusBoard) -> list[Observed]:
-    """What a bus poll showed, for the punctuality history (naive local times)."""
+def bus_observations(board: BusBoard, zone: tzinfo) -> list[Observed]:
+    """What a bus poll showed, for the punctuality history: its board-local
+    times in `zone`, the board's."""
     found = []
     for live in board.departures:
         dep = live.departure
         placed = live.live
         found.append(Observed(
             route=bus_route(live),
-            scheduled=dep.scheduled,
-            day=live.leaves.date(),
-            departs_at=live.expected,
+            leaves=live.leaves.replace(tzinfo=zone),
+            departs_at=live.expected.replace(tzinfo=zone),
             status=dep.status.value,
             # A bus only waiting in says nothing of when it goes: no delay is seen.
             delay_min=round((live.expected - live.leaves).total_seconds() / 60) if live.observed else None,

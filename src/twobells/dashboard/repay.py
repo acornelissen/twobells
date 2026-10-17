@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from ..core.model import Status
 from ..sources.darwin import _CLOCK, CallingPoint, DetailsSource, DetailsUnavailable, ServiceGone, TrainBoard
@@ -51,25 +51,29 @@ def band(minutes_late: int) -> int | None:
     return next((least for least in BANDS if minutes_late >= least), None)
 
 
-def _clock_or_word(value: str | None, booked: datetime) -> datetime | None:
-    """A time Darwin gave as HH:MM, or "On time" (the booked time), near
-    `booked`; None for anything else ("Delayed", "No report", nothing)."""
+def _clock_or_word(value: str | None, booked: datetime, now: datetime) -> datetime | None:
+    """A time Darwin gave as HH:MM, the one nearest `now`, when it was
+    given, or "On time" (`booked`); None for anything else ("Delayed",
+    "No report", nothing). Nearest `now`, not `booked`, as an estimate or
+    an arrival is near when it is given: in the hour the clocks go back,
+    which comes twice, an arrival an hour late is told from one on time."""
     if value == "On time":
         return booked
     if value is not None and _CLOCK.fullmatch(value):
-        return clock_at(value, booked)
+        return clock_at(value, now)
     return None
 
 
-def _report(booked: datetime, expected: str | None, actual: str | None, cancelled: bool) -> Report:
+def _report(booked: datetime, now: datetime, expected: str | None, actual: str | None, cancelled: bool) -> Report:
     if cancelled or "Cancelled" in (expected, actual):
         return Report(None, None, True)
-    return Report(_clock_or_word(expected, booked), _clock_or_word(actual, booked), False)
+    return Report(_clock_or_word(expected, booked, now), _clock_or_word(actual, booked, now), False)
 
 
 def watched(board: TrainBoard, fetched: datetime, route_prefix: str, station: str) -> list[Watched]:
     """The trains on `board` that call at `station`, from their calling
-    points there (naive local times; `fetched` is when the board came)."""
+    points there. `fetched` is when the board came, aware, in the board's
+    zone, as the times are."""
     found = []
     for service in board.services:
         dep = service.departure
@@ -80,12 +84,11 @@ def watched(board: TrainBoard, fetched: datetime, route_prefix: str, station: st
             continue
         leaves = clock_at(dep.scheduled, fetched)
         booked = clock_at(point.scheduled, leaves)
-        report = _report(booked, point.expected, point.actual,
+        report = _report(booked, fetched, point.expected, point.actual,
                          point.cancelled or dep.status is Status.CANCELLED)
         found.append(Watched(
             route=train_route(route_prefix, dep.destination),
-            scheduled=dep.scheduled,
-            day=leaves.date(),
+            leaves=leaves,
             station=station,
             station_name=point.name,
             identity=service.service_id,
@@ -120,25 +123,23 @@ class ArrivalWatch:
         self._monotonic = monotonic
         self._off_until: float | None = None
         # By Darwin service ID, of the trains being followed: when each was
-        # last asked about, and those Darwin no longer knows.
+        # last asked about (UTC), and those Darwin no longer knows.
         self._asked: dict[str, datetime] = {}
         self._gone: set[str] = set()
         # The failures given the last time anything was asked, each given once while it repeats.
         self._failing: set[str] = set()
 
     def poll(self, board: TrainBoard, now: datetime) -> list[Exception]:
-        """Take in a train poll's board at `now` (aware or naive local), and
-        follow the trains that are due. The errors from following, which
+        """Take in a train poll's board at `now` (aware, in the board's zone),
+        and follow the trains that are due. The errors from following, which
         doesn't stop for them; anything the history raises is raised."""
-        local = now.replace(tzinfo=None)
-        rows = watched(board, local, self._prefix, self._station)
-        self._history.watch(rows, local)
-        self._history.settle(local)
-        here = {(row.day, row.route, row.scheduled) for row in rows}
-        due = [train for train in self._history.following(local)
-               if (train.day, train.route, train.scheduled) not in here]
-        errors = self._follow(due, local) if due else []
-        self._history.settle(local)
+        rows = watched(board, now, self._prefix, self._station)
+        self._history.watch(rows, now)
+        self._history.settle(now)
+        here = {(row.route, row.leaves.astimezone(UTC)) for row in rows}
+        due = [train for train in self._history.following(now) if (train.route, train.leaves) not in here]
+        errors = self._follow(due, now) if due else []
+        self._history.settle(now)
         return errors
 
     def _follow(self, due: list[Following], now: datetime) -> list[Exception]:
@@ -156,7 +157,7 @@ class ArrivalWatch:
             return []
         errors: list[Exception] = []
         for train, identity in asking:
-            self._asked[identity] = now
+            self._asked[identity] = now.astimezone(UTC)
             try:
                 found = self._details.details(identity)
             except DetailsUnavailable as error:
@@ -171,15 +172,16 @@ class ArrivalWatch:
                 continue
             point = _point_there(found.subsequent, self._station)
             if point is not None:
-                report = _report(train.booked, point.expected, point.actual, point.cancelled)
+                booked = train.booked.astimezone(now.tzinfo)  # its HH:MM are the board's
+                report = _report(booked, now, point.expected, point.actual, point.cancelled)
                 self._history.report(train, report, now)
         return self._news(errors)
 
     def _may_ask(self, identity: str, now: datetime) -> bool:
         """Whether ASK_EVERY has passed since the train was last asked about,
-        or the clocks have gone back since."""
+        or the computer's clock has been set back since."""
         asked = self._asked.get(identity)
-        return asked is None or not timedelta(0) <= now - asked < ASK_EVERY
+        return asked is None or not timedelta(0) <= now.astimezone(UTC) - asked < ASK_EVERY
 
     def _news(self, errors: list[Exception]) -> list[Exception]:
         """`errors` less those given the last time anything was asked: a

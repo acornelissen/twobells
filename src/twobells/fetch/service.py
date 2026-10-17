@@ -178,7 +178,7 @@ class FetchService:
     def _start_dashboard(self, dash: DashboardSettings) -> None:
         if self._history is None:
             try:
-                self._history = History(dash.state_dir)
+                self._history = History(dash.state_dir, ZoneInfo(dash.timezone))
             except Exception as error:  # noqa: BLE001 - the departures matter more than the history
                 log.warning("The punctuality history can't be opened: %s", type(error).__name__)
         try:
