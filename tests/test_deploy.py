@@ -1155,7 +1155,11 @@ def test_upgrade_downloads_the_releases_files_over_https_only_and_cleans_up():
 
 
 def test_the_guide_installs_a_pi_from_a_checked_release():
-    block = re.search(r"```bash\nVERSION=0\.1\.0\n(.*?)```", PI_GUIDE, re.S).group(1)
+    import tomllib
+
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
+    # The guide's example is the release this checkout is.
+    block = re.search(rf"```bash\nVERSION={re.escape(version)}\n(.*?)```", PI_GUIDE, re.S).group(1)
     assert f'base="https://github.com/{REPO}/releases/download/v$VERSION"' in block
     for name in ("twobells-$VERSION.tar.gz", "SHA256SUMS", "SHA256SUMS.sigstore.json"):
         assert f'curl -fLO "$base/{name}"' in block

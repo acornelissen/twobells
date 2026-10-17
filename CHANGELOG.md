@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-17
+
+More of what a station board says, how the trains have run, more buses tracked live, new looks, station announcements, and a choice of what each view shows.
+
 ### Added
 
 - **What to show**, on the Board and Dashboard tabs: a tickbox for each thing a view can show beside the departures' times, which always show, with presets that tick them for you: **Just the times**, **The usual** and **Everything**. The board can leave out platforms, where each train and bus is, the calling-at line, disruption notices, the rain warning, the last bus, the bus page and the clock page; the dashboard Next to catch, where each is, disruption, the weather, the last buses, Around here, Remind me, the calling-at line, coaches, punctuality, the Performance link, fleet numbers and announcements, on a wall tablet too. What is left out isn't drawn and leaves no gap. They are saved as `[board] show` and `[dashboard] show`, which `config.toml` can set too, and the dashboard API sends its list as `show`. Without a list a view shows everything, as before, so nothing changes until you save one. What no view shows isn't fetched: the forecast, the disruption checks, Service Details for where each train is and for Delay Repay, and the bus positions for the board's strips and bus page each stop when nothing they are for is ticked; the departures, and the punctuality history recorded from them, carry on.
@@ -73,5 +77,6 @@ The first release.
 - A network guard for the Pi's web server: nftables rules for it alone (`deploy/pi/twobells-web.nft`), loaded at boot by `twobells-guard.service` and matching the server by the cgroup systemd puts in their set (`NFTSet=`, systemd 254 or later, so Raspberry Pi OS Trixie on a Pi Zero or Pi 1), that keep it from connecting out to the internet and keep port 8090 to the home network. They back up the unit's systemd IP firewall, which a Pi Zero's kernel can't apply ("Preparation of BPF allow maps failed"). `install.sh` and `update.sh` install `nftables`. The server checks at start whether it can connect out, warns in its log if it can, and the settings' Overview shows **Network guard**: On, Off (a problem) or Can't tell.
 - A wall-tablet mode for the dashboard at `/?kiosk`: one screen with no controls, the station-board look by default, a shift of a pixel or two every few minutes against burn-in, dimmed in quiet hours, a large banner when the times stop updating, and a reload at 03:30.
 
-[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.1.0...main
+[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.2.0...main
+[0.2.0]: https://github.com/acornelissen/twobells/releases/tag/v0.2.0
 [0.1.0]: https://github.com/acornelissen/twobells/releases/tag/v0.1.0
