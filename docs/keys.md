@@ -290,7 +290,7 @@ The **TransportAPI app ID** and **TransportAPI app key** boxes on the settings' 
 
 The app ID and app key share the **Buses from TransportAPI** form on the **Keys** page. Paste both, then press **Save and test** (or, with both boxes empty, **Test saved key**). It tests the two together, and uses one of today's 30 lookups, as the note by the buttons says. The board doesn't count that lookup in its own daily budget, which leaves 2 spare by default.
 
-**On the board** on the settings' **Overview** shows how many of today's TransportAPI lookups are used, and the last error if a lookup failed. While the BODS timetable is working, TransportAPI isn't used at all, so there's nothing to see.
+With `source = "transportapi"` under `[bus]`, **On the board** on the settings' **Overview** shows how many of today's TransportAPI lookups are used, and the last error if a lookup failed. Standing in for the BODS timetable, it says `From TransportAPI: …` and why on the buses' line; while the timetable is working, TransportAPI isn't used at all, so there's nothing to see.
 
 With `source = "transportapi"` under `[bus]`, `twobells probe bus` checks it directly. That uses one lookup per stop from today's 30.
 
