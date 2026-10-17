@@ -154,6 +154,8 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .field { margin-bottom: var(--s-5); }
 label, .field > legend { display: block; font-weight: 500; margin-bottom: var(--s-1); padding: 0; }
 .hint { color: var(--muted); margin: 0 0 var(--s-2); font-size: var(--t-sm); }
+/* A card's or a page's intro: set apart from the first field, whose own hint sits closer. */
+.hint.lead { margin-bottom: var(--s-4); }
 input, select, textarea {
   display: block;
   width: 100%;
