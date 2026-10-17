@@ -248,6 +248,9 @@ class DashboardSettings:
     rain_threshold: int = 50
     bank_holidays: bool = True
     bank_holiday_division: str = ENGLAND_AND_WALES
+    # Whether the page scrolls the first train's calling-at line in the looks
+    # that do (the scrolling setting, which the board's screen follows too).
+    scrolling: bool = True
     lock: IO | None = None
 
     def close(self) -> None:
@@ -398,4 +401,5 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
         rain_threshold=weather.threshold if weather is not None else 50,
         bank_holidays=_flag(data, "bank_holidays", True),
         bank_holiday_division=settings.bank_holiday_division,
+        scrolling=settings.board.scrolling,
     )

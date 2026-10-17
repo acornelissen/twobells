@@ -294,6 +294,7 @@ BOARD_DEFAULTS: dict = {
     "rotate": 0,
     "text_size": 11,
     "bank_holidays": True,
+    "scrolling": True,
     "train": {
         "rows": 3,
         "interval_minutes": 2,
@@ -571,6 +572,11 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               hint="Departures on the e-paper or screen board.", page="general", heading="Views"),
         Field("view_dashboard", "general", "app", "views", "The dashboard", ticked, "check",
               hint="Departures, maps and the weather in a web browser.", page="general", heading="Views"),
+        Field("scrolling", "general", None, "scrolling", "Scrolling text", on_off, "radios",
+              hint="Text too long for its line scrolls along it: the dashboard's calling-at line (in every look but "
+                   "Standard) and long words on a board's HDMI screen. Off, the dashboard wraps it and the screen "
+                   "cuts it short with “…”, as e-paper does.",
+              options=_ON_OFF, default=BOARD_DEFAULTS["scrolling"], page="general", heading="Long text"),
         Field("bank_holidays", "general", None, "bank_holidays", "Bank holidays", holidays, "radios",
               hint="Trains and buses run Sunday times on bank holidays, so only checking times that include "
                    "Sun apply then. Each part of the UK has its own; the dates come from GOV.UK.",

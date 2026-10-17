@@ -9,7 +9,7 @@ They are in pages by task, one tab each:
 - **[Board](#board)** (`/settings/board`): the board's own settings. Only while the board view is on.
 - **[Dashboard](#dashboard)** (`/settings/dashboard`): the dashboard's own. Only while the dashboard view is on.
 - **[Keys](#keys)** (`/settings/keys`): the keys, each in a small form of its own, saved and tested on its own.
-- **[General](#general)** (`/settings/general`): the views and bank holidays, and the time zone.
+- **[General](#general)** (`/settings/general`): the views, scrolling text and bank holidays, and the time zone.
 
 A setting is on one page only. Each page's settings are in sections; a page with more than three lists them at the top, to jump to. The settings most people never change wait under **Advanced** at the end of their section: open it to see them. A section that is switched off says **Off** by its heading, and keeps its settings for turning it back on; one that isn't set up yet says **Not set up**, with a link to the [setup wizard](setup-wizard.md). Numbers have their unit beside the box; something set in `config.toml` only, like the display, is shown with **Set in config.toml** and can't be changed here (see [Settings by hand](configuration.md)).
 
@@ -112,6 +112,7 @@ Each key has a small form of its own, headed by what it unlocks, with a label sa
 ## General
 
 - **Views** (a Pi only): the board, the dashboard, or both. At least one stays on.
+- **Scrolling text:** On, text too long for its line scrolls along it: the dashboard's calling-at line in the Dot matrix, TFT and Split-flap looks, and a destination, the calling-at line, where a train or bus is, a disruption notice or a rain warning on a board's HDMI screen. Off, the dashboard wraps the calling-at line and the screen cuts long text short with `…`, as e-paper always does. The split-flap look's tiles still turn. With reduced motion set on a device, the dashboard never scrolls whatever this says.
 - **Bank holidays:** trains and buses run Sunday times on bank holidays, so only checking times that include `Sun` apply then. Pick the part of the UK whose bank holidays to follow (England and Wales, Scotland, or Northern Ireland), or ignore them. Dates come from GOV.UK.
 - Advanced: **Time zone**, like `Europe/London`, with every zone suggested as you type. Departures and checking times are in this zone.
 

@@ -166,6 +166,18 @@ def test_position_strips_are_on_until_switched_off(form):
     assert fields_of(form)["row_strips"] == "false"
 
 
+def test_scrolling_text_is_on_until_switched_off_and_saved_for_every_view(form):
+    from twobells.settings.config import load_config
+
+    assert fields_of(form)["scrolling"] == "true"
+    assert form.save(fields_of(form) | {"scrolling": "false"}) == {}
+    written = tomllib.loads((form.folder / "settings.toml").read_text())
+    assert written["scrolling"] is False  # at the top level: the board's screen follows it too
+    assert load_dashboard(form.config, ENV, form.folder, lock=False).scrolling is False
+    assert load_config(Store.open(form.config, state_dir=form.folder), ENV).board.scrolling is False
+    assert fields_of(form)["scrolling"] == "false"
+
+
 def test_the_dashboard_shows_everything_until_its_list_is_saved(form):
     from twobells.settings import show
 

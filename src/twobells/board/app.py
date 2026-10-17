@@ -156,6 +156,9 @@ class Board:
     # The quiet hours ([dashboard] quiet_windows), when a screen's speaker
     # says nothing; read only while it is on.
     quiet: tuple[Window, ...] = ()
+    # Whether a screen scrolls text too long for its space (the scrolling
+    # setting); off, it cuts it short with "…", as e-paper always does.
+    scrolling: bool = True
 
 
 def reset_code_page(folder: Path, timezone: str) -> Callable[[], CodeView | None]:
@@ -370,6 +373,7 @@ def _route_view(board: Board, state: dict, view: BoardView, now: datetime, clock
         bus_at=bus_at,
         where=where(names, bus_at, stale),
         clock=clock,
+        scroll=board.scrolling,
     )
 
 
@@ -474,6 +478,7 @@ def run_once(
         stop_names=_stop_names(board) if live else None,
         last_bus=_last_bus(board, now) if live and "last_bus" in board.show else None,
         show=board.show,
+        scroll=board.scrolling,
     )
 
     code = _reset_code(board)

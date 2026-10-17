@@ -115,6 +115,7 @@ class RouteView:
     bus_at: float | None  # stops along from the first; None if not on the strip
     where: str  # "3 stops away", "At your stop", ...
     clock: str | None = None
+    scroll: bool = True  # on a screen, whether a name too long for its space scrolls; off, it is cut short
 
     def signature(self) -> str:
         return hashlib.sha256(json.dumps(asdict(self), sort_keys=True).encode()).hexdigest()

@@ -58,6 +58,7 @@ NOTES: dict[tuple[str, str], str] = {
     ("dashboard", "Departures"): "How many departures the dashboard lists, and how often it checks.",
     ("dashboard", "Quiet hours"): "When the dashboard rests, overnight say.",
     ("general", "Views"): "Where your departures show. At least one is on.",
+    ("general", "Long text"): "What happens to text too long for its line, on the dashboard and a board's screen.",
     ("general", "Dates and times"): "Bank holidays, and the time zone.",
 }
 # What a section whose fields all need something not set up says: the words,

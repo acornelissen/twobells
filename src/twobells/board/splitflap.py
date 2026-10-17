@@ -137,11 +137,11 @@ def status_colours(row: Row, palette: Palette) -> tuple[int, int]:
 
 
 class SplitFlapPainter(Painter):
-    def __init__(self, palette: Palette, panel: Panel, live: bool) -> None:
+    def __init__(self, palette: Palette, panel: Panel, live: bool, scroll: bool = True) -> None:
         s = plain_scale(panel)
         tiles = tile_font(s)
         fonts = Fonts(regular=tiles, bold=tiles, small=load_fonts(s).small)
-        super().__init__(palette, fonts, panel, TEXT_SIZE, live, dark=True)
+        super().__init__(palette, fonts, panel, TEXT_SIZE, live, dark=True, scroll=scroll)
         self.tiles = tiles
         self.tile_fill = palette.black if palette.tile is None else palette.tile
         self.flaps: list[Flap] = []
@@ -228,7 +228,7 @@ def render_split_flap(view: BoardView, palette: Palette, panel: Panel = PHAT) ->
 
 def split_flap_frame(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Frame:
     """The board, and on a screen the text that scrolls and the fields that turn over."""
-    return paint_board(SplitFlapPainter(palette, panel, live=view.clock is not None), view, panel)
+    return paint_board(SplitFlapPainter(palette, panel, live=view.clock is not None, scroll=view.scroll), view, panel)
 
 
 def render_route_split_flap(view: RouteView, palette: Palette, panel: Panel = PHAT) -> Image.Image:
@@ -238,4 +238,4 @@ def render_route_split_flap(view: RouteView, palette: Palette, panel: Panel = PH
 
 def route_split_flap_frame(view: RouteView, palette: Palette, panel: Panel = PHAT) -> Frame:
     """The route page, and on a screen the text that scrolls."""
-    return paint_route(SplitFlapPainter(palette, panel, live=view.clock is not None), view, panel)
+    return paint_route(SplitFlapPainter(palette, panel, live=view.clock is not None, scroll=view.scroll), view, panel)

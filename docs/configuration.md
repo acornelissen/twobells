@@ -9,6 +9,7 @@ The [setup wizard](setup-wizard.md) and the [settings](settings.md) cover nearly
 - [What each view shows](#what-each-view-shows)
 - [Rain warning set-up](#rain-warning-set-up)
 - [Bank holidays](#bank-holidays)
+- [Scrolling text](#scrolling-text)
 
 ## What only config.toml sets
 
@@ -114,3 +115,7 @@ threshold_percent = 50
 ## Bank holidays
 
 Dates come from GOV.UK, which lists England and Wales, Scotland, and Northern Ireland separately. The app uses England and Wales unless told otherwise: choose another under **Bank holidays** on the General page of the settings, or set `bank_holiday_division = "scotland"` or `"northern-ireland"` in `config.toml`. All three lists are kept for a week in the store. If GOV.UK can't be reached, the app keeps the dates it has and tries again in 6 hours. To ignore bank holidays for the checking windows, choose **Ignore them** there, or set `bank_holidays = false`. Bus times from the timetable always follow the operators' own bank holiday rules.
+
+## Scrolling text
+
+`scrolling = true`, the default, scrolls text too long for its line: the dashboard's calling-at line in the Dot matrix, TFT and Split-flap looks, and long text on a board's HDMI screen. `scrolling = false` wraps the dashboard's line and has the screen cut long text short with `…`, as e-paper always does. It is **Scrolling text** on the General page of the settings. A device set to reduce motion never scrolls the dashboard's line.

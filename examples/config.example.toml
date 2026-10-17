@@ -50,6 +50,10 @@ display = "inky"
 bank_holidays = true
 # Whose bank holidays: "england-and-wales", "scotland" or "northern-ireland".
 bank_holiday_division = "england-and-wales"
+# Text too long for its line scrolls: the dashboard's calling-at line (in every
+# look but Standard) and long text on an HDMI screen. false wraps the
+# dashboard's and cuts the screen's short with "…", as e-paper does. Also on the General tab.
+# scrolling = true
 # The plain look's text size, 9-16 (11 is standard); bigger shows fewer departures on a small display.
 # text_size = 12
 # Degrees to turn the board clockwise to suit how it is mounted.

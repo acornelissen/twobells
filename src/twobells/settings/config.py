@@ -655,6 +655,7 @@ def settings_from(
         positions=positions,
         show=shown,
         quiet=_quiet_hours(data) if speaks else (),
+        scrolling=_flag(data, "scrolling", BOARD_DEFAULTS["scrolling"]),
     )
     return Settings(
         board=board,

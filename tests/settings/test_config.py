@@ -521,6 +521,7 @@ BUS = '[bus]\nsource = "transportapi"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.s
         ('display = "hdmi-1280x400"\n' + BUS + '[bus.routes.341]\nstop = "A"\nstops = "Arundel Street"\n', "341"),
         ("title = \n", "config.toml"),
         ('bank_holidays = "yes"\n' + TRAIN, "bank_holidays"),
+        ('scrolling = "off"\n' + TRAIN, "scrolling"),
     ],
 )
 def test_wrong_types_and_ranges_are_config_errors(tmp_path, text, message):
@@ -559,6 +560,11 @@ def test_bank_holidays_can_be_ignored(tmp_path):
     path = write(tmp_path, "bank_holidays = false\n" + TRAIN + BUS)
     settings = load_config(path, ENV, holidays=frozenset({HOLIDAY}))
     assert [c.policy.holidays for c in settings.board.sources] == [frozenset(), frozenset()]
+
+
+def test_a_screen_scrolls_long_text_unless_scrolling_is_off(tmp_path):
+    assert load_config(write(tmp_path, TRAIN), ENV).board.scrolling is True
+    assert load_config(write(tmp_path, "scrolling = false\n" + TRAIN), ENV).board.scrolling is False
 
 
 def test_without_known_holidays_policies_have_none(tmp_path):

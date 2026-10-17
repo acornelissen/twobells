@@ -17,7 +17,7 @@
 // A row's time, destination and status carry a data-flap key, its board,
 // place and field ("train:0:time"), for the Split-flap look (flap.js).
 
-import { h, vh, setText, str, num, list, obj, own, store, validId } from "./dom.js";
+import { h, vh, setText, str, num, list, obj, own, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
 import { arrivesLine, busStatusExtras, platformWord, trainNoun } from "./extras.js";
 import { applyFlaps, flapText } from "./flap.js";
@@ -247,14 +247,19 @@ function whereLine(where, kind, strip, at) {
   return h("span", { class: ["sub", "where", drawing ? "has-strip" : null] }, drawing, where);
 }
 
+// Marks the page with whether the settings turned scrolling text off
+// (data-scrolling="off"). A snapshot from an older server doesn't say: it is on.
+export function applyScrolling(root, snapshot) {
+  if (snapshot?.scrolling === false) root.dataset.scrolling = "off";
+  else delete root.dataset.scrolling;
+}
+
 // The first row's "Calling at" line, in the server's words (core/calling.py):
 // "Calling at: Dinting, Broadbottom and Manchester Piccadilly. This train is
 // formed of 3 coaches." Every look but Standard (Dot matrix, TFT, Split-flap)
-// scrolls it along one line, as a station's screen does; the trains section's Pause button
-// (#calling-pause, outside the table, so a row keeps its one control) stops
-// it. Paused, with reduced motion, and in the Standard look it wraps (app.css).
-const CALLING_KEY = "dashboard.calling";
-const callingPaused = () => store.get(CALLING_KEY) === "paused";
+// scrolls it along one line, as a station's screen does. With scrolling off
+// in the settings (applyScrolling), with reduced motion, and in the Standard
+// look it wraps (app.css).
 
 // Seconds for one pass: a steady pace, whatever the line's length.
 export const callingSeconds = (text) => Math.round(8 + 0.2 * text.length);
@@ -268,25 +273,7 @@ function callingAt(row) {
   const seconds = callingSeconds(said);
   text.style.setProperty("--calling-s", `${seconds}s`);
   text.style.setProperty("--calling-delay", `-${((Date.now() / 1000) % seconds).toFixed(2)}s`);
-  return h("span", { class: ["sub", "calling-at", callingPaused() ? "paused" : null] },
-    h("span", { class: "calling-window" }, text));
-}
-
-// The Pause button: there while the board has a calling-at line, pressed
-// while it is paused. CSS shows it only where the line scrolls.
-function showCallingPause() {
-  const button = document.getElementById("calling-pause");
-  if (!button) return;
-  button.hidden = !document.querySelector("#trains-board .calling-at");
-  button.setAttribute("aria-pressed", String(callingPaused()));
-}
-
-// Stops or starts the calling-at line, and remembers it in this browser.
-export function toggleCalling(button) {
-  const paused = !callingPaused();
-  store.set(CALLING_KEY, paused ? "paused" : "running");
-  button.setAttribute("aria-pressed", String(paused));
-  for (const line of document.querySelectorAll("#trains-board .calling-at")) line.classList.toggle("paused", paused);
+  return h("span", { class: ["sub", "calling-at"] }, h("span", { class: "calling-window" }, text));
 }
 
 // The Plat cell: "1", "Bus" for a replacement bus or "Ferry" for a ferry, "–"
@@ -392,7 +379,6 @@ export function renderTrains(snapshot, alerts) {
     columns: [["Time", "c-time"], ["Destination", "c-dest"], ["Plat", "c-plat", "Platform"], ["Expected", "c-status"],
       ["Leave", "c-leave"]],
   }, rows, (row, i, later, flap) => trainRow(row, i === 0, later, alerts, flap));
-  showCallingPause();
   renderMessages(trains);
   return rows;
 }

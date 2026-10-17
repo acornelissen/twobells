@@ -1419,6 +1419,19 @@ def test_a_screen_gets_a_frame_with_the_text_that_scrolls():
     assert [s.text for s in frame.scrolls] == [LONG_DESTINATION]
 
 
+def test_with_scrolling_off_a_screen_gets_a_still_frame_and_redraws_when_it_changes():
+    trains = FakeSource("train", [dataclasses.replace(train(), destination=LONG_DESTINATION)])
+    board = dataclasses.replace(make_board(trains, FakeSource("bus", [bus()])), scrolling=False)
+    screen = ScrollingScreen()
+    state: dict = {}
+    run_once(board, state, screen, THU_0700 + timedelta(seconds=15))
+    [(frame, _)] = screen.frames
+    assert frame.scrolls == ()
+    # Turned back on, the board redraws at once, scrolling.
+    run_once(dataclasses.replace(board, scrolling=True), state, screen, THU_0700 + timedelta(seconds=15))
+    assert [s.text for s in screen.frames[-1][0].scrolls] == [LONG_DESTINATION]
+
+
 def test_e_paper_gets_a_still_image_with_nothing_scrolling():
     trains = FakeSource("train", [dataclasses.replace(train(), destination=LONG_DESTINATION)])
     board = make_board(trains, FakeSource("bus", [bus()]))

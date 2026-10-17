@@ -840,6 +840,7 @@ SNAPSHOT = {
     "walk": {"train": Opt(integer), "bus": MapOf(integer)},
     "quiet": bool,
     "row_strips": bool,
+    "scrolling": bool,
     "show": [one_of(*SHOWABLE)],
     "trains": Opt({
         "station": str, "filter": Opt(str), "status": STATUS, "positions": Opt(STATUS), "messages": [MESSAGE],
@@ -2085,40 +2086,17 @@ def test_the_train_board_reads_like_a_station_screen():
     assert found["walk"] == "10 min walk to Glossop."
 
 
-def _calling_page():
-    """The boards' page with the trains section's Pause button and a browser's storage."""
-    script = _boards().replace('h("div", { id: "station-info" }),', '''h("div", { id: "station-info" }),
-    h("button", { id: "calling-pause", type: "button", "aria-pressed": "false", hidden: true }, "Pause scrolling"),''')
-    script = script.replace("const snapshot =", """const saved = {};
-globalThis.localStorage = { getItem: (k) => saved[k] ?? null, setItem: (k, v) => { saved[k] = v; } };
-const snapshot =""")
-    assert script.count("calling-pause") == 1 and "globalThis.localStorage" in script
-    return script
-
-
 @needs_node
-def test_the_calling_at_line_can_be_paused_and_stays_paused():
-    found = run_js(_calling_page() + """
-        import { toggleCalling } from "./board.js";
-        const pause = board("calling-pause");
-        const line = () => byClass(bodyRows("trains-board")[0], "calling-at")[0];
-        const state = () => [pause.hidden, pause.getAttribute("aria-pressed"), line().getAttribute("class")];
-        const text = byClass(line(), "calling-text")[0];
-        const before = state();
-        toggleCalling(pause);
-        const paused = [...state(), saved["dashboard.calling"]];
-        renderTrains(snapshot, alerts);  // a new snapshot keeps it paused
-        const redrawn = state();
-        toggleCalling(pause);
+def test_the_calling_at_line_is_timed_by_the_wall_clock():
+    found = run_js(_boards() + """
+        const line = byClass(bodyRows("trains-board")[0], "calling-at")[0];
+        const text = byClass(line, "calling-text")[0];
         console.log(JSON.stringify({
-          before, paused, redrawn, running: [...state(), saved["dashboard.calling"]],
+          classes: line.getAttribute("class"),
           timing: [text.style.getPropertyValue("--calling-s"), text.style.getPropertyValue("--calling-delay")],
         }));
     """)
-    assert found["before"] == [False, "false", "sub calling-at"]
-    assert found["paused"] == [False, "true", "sub calling-at paused", "paused"]
-    assert found["redrawn"] == [False, "true", "sub calling-at paused"]
-    assert found["running"] == [False, "false", "sub calling-at", "running"]
+    assert found["classes"] == "sub calling-at"
     seconds, delay = found["timing"]
     # One pass at a steady pace for its length, started where the wall clock says it has got to.
     assert re.fullmatch(r"\d+s", seconds) and int(seconds[:-1]) >= 8
@@ -2127,7 +2105,7 @@ def test_the_calling_at_line_can_be_paused_and_stays_paused():
 
 @needs_node
 def test_the_calling_at_delay_keeps_its_decimals_on_a_whole_second():
-    found = run_js("Date.now = () => 0;\n" + _calling_page() + """
+    found = run_js("Date.now = () => 0;\n" + _boards() + """
         const line = byClass(bodyRows("trains-board")[0], "calling-text")[0];
         console.log(JSON.stringify(line.style.getPropertyValue("--calling-delay")));
     """)
@@ -2135,34 +2113,39 @@ def test_the_calling_at_delay_keeps_its_decimals_on_a_whole_second():
 
 
 @needs_node
-def test_without_a_calling_at_line_there_is_nothing_to_pause():
-    script = _calling_page().replace("observeSnapshot(snapshot.generated_at);", """
-snapshot.trains.rows[0] = { ...snapshot.trains.rows[0], calling_at: null };
-observeSnapshot(snapshot.generated_at);""")
-    found = run_js(script + """
-        console.log(JSON.stringify([board("calling-pause").hidden, byClass(board("trains-board"), "calling-at").length]));
+def test_the_page_is_marked_only_while_scrolling_text_is_off():
+    found = run_js("""
+        import { applyScrolling } from "./board.js";
+        const root = { dataset: {} };
+        const marks = [];
+        for (const snapshot of [{ scrolling: false }, { scrolling: true }, { scrolling: false }, {},
+                                { scrolling: "false" }, null]) {
+          applyScrolling(root, snapshot);
+          marks.push(root.dataset.scrolling ?? null);
+        }
+        console.log(JSON.stringify(marks));
     """)
-    assert found == [True, 0]
+    # Only a real false turns it off; anything else, an older server's snapshot too, leaves it on.
+    assert found == ["off", None, "off", None, None, None]
 
 
-def test_the_calling_at_line_scrolls_in_every_look_but_standard_and_never_with_reduced_motion():
+def test_the_calling_at_line_scrolls_in_every_look_but_standard_while_scrolling_is_on():
     css = (STATIC / "app.css").read_text(encoding="utf-8")
     motion = css[css.index("@media (prefers-reduced-motion: no-preference)"):]
     motion = motion[:motion.index("\n}\n")]
-    # The animation, and the Pause button, are only inside the motion query.
+    # The animation is only inside the motion query: never with reduced motion.
     assert "animation: calling-scroll" in motion and css.count("animation: calling-scroll") == 1
-    assert ".calling-pause:not([hidden])" in motion and "display: inline-flex" in motion
-    assert re.search(r"(?m)^\.calling-pause \{ display: none; \}", css)
-    # Dot matrix, TFT and Split-flap scroll it, as the HDMI screen does in every look; Standard wraps it.
+    # Dot matrix, TFT and Split-flap scroll it, as the HDMI screen does in every look; Standard wraps it,
+    # and so does every look with scrolling text off in the settings.
     selectors = re.findall(r"(?m)^\s*(:root[^{]*calling[^{]*)\{", motion)
-    assert len(selectors) == 3
+    assert len(selectors) == 2
     for selector in selectors:
-        assert selector.startswith(':root:is([data-theme="board"], [data-theme="tft"], [data-theme="flap"])'), \
-            selector
-    # The button is outside the table, so a row keeps its one control.
+        assert selector.startswith(':root:is([data-theme="board"], [data-theme="tft"], [data-theme="flap"])'
+                                   ':not([data-scrolling="off"]) '), selector
+    # The settings say whether it scrolls: the page has no button of its own for it, nor remembers one.
     page = (STATIC / "index.html").read_text(encoding="utf-8")
-    assert page.index('id="calling-pause"') < page.index('id="trains-board"')
-    assert 'aria-pressed="false"' in page[page.index('id="calling-pause"') - 80:page.index('id="calling-pause"') + 200]
+    assert "calling-pause" not in page and "calling-pause" not in css
+    assert "dashboard.calling" not in (STATIC / "board.js").read_text(encoding="utf-8")
 
 
 @needs_node

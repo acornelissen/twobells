@@ -195,6 +195,24 @@ def test_row_strips_come_through_and_an_older_fetch_service_may_leave_them_out(s
     assert mirror.check() is True and "row_strips" not in json.loads(mirror.current()[1])
 
 
+def test_scrolling_comes_through_and_an_older_fetch_service_may_leave_it_out(spool):
+    hub = Hub("Glossop", WalkTimes(train=10, bus={"A": 8}), scrolling=False)
+    SnapshotWriter(hub, spool, lambda: True).write()
+    mirror = mirror_of(spool)
+    assert mirror.check() is True and json.loads(mirror.current()[1])["scrolling"] is False
+    older = json.loads(handoff.snapshot_path(spool.folder).read_bytes())
+    del older["snapshot"]["scrolling"]
+    older["made"] += 1
+    put(spool, older)
+    # The page takes a snapshot without it as on.
+    assert mirror.check() is True and "scrolling" not in json.loads(mirror.current()[1])
+
+
+def test_until_the_first_file_the_mirror_says_whether_text_scrolls(spool):
+    assert json.loads(mirror_of(spool).current()[1])["scrolling"] is True
+    assert json.loads(mirror_of(spool, scrolling=False).current()[1])["scrolling"] is False
+
+
 def test_until_the_first_file_the_mirror_says_whether_rows_draw_their_strips(spool):
     assert json.loads(mirror_of(spool).current()[1])["row_strips"] is True
     assert json.loads(mirror_of(spool, row_strips=False).current()[1])["row_strips"] is False
@@ -326,6 +344,7 @@ REFUSED = {
     "quiet not true or false": lambda d: _with(d, snapshot={**d["snapshot"], "quiet": "yes"}),
     "row_strips not true or false": lambda d: _with(d, snapshot={**d["snapshot"], "row_strips": 0}),
     "row_strips null": lambda d: _with(d, snapshot={**d["snapshot"], "row_strips": None}),
+    "scrolling not true or false": lambda d: _with(d, snapshot={**d["snapshot"], "scrolling": "off"}),
     "show not a list": lambda d: _with(d, snapshot={**d["snapshot"], "show": "weather"}),
     "show naming what the page has no item for": lambda d: _with(d, snapshot={**d["snapshot"], "show": ["clock_page"]}),
     "show naming one twice": lambda d: _with(d, snapshot={**d["snapshot"], "show": ["weather", "weather"]}),

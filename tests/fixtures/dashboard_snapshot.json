@@ -11,6 +11,7 @@
   },
   "quiet": false,
   "row_strips": true,
+  "scrolling": true,
   "show": [
     "next_to_catch",
     "where",

@@ -783,7 +783,7 @@ class Hub:
 
     def __init__(self, title: str, walk: WalkTimes, clock: Callable[[], datetime] | None = None,
                  monotonic: Callable[[], float] = time.monotonic, tz: tzinfo | None = None,
-                 row_strips: bool = True, show: Iterable[str] | None = None) -> None:
+                 row_strips: bool = True, show: Iterable[str] | None = None, scrolling: bool = True) -> None:
         # The board's zone, not the host's: a container's clock is in UTC.
         self._clock = clock or (lambda: datetime.now(tz) if tz else datetime.now().astimezone())
         self._monotonic = monotonic
@@ -791,10 +791,12 @@ class Hub:
         self._changed = threading.Condition(self._lock)
         # `quiet` says whether a quiet window is on; the collector's heartbeat sets it.
         # `row_strips` says whether the page draws each row's position strip,
-        # and `show` what it shows of what it can leave out ([dashboard] show).
+        # `scrolling` whether the calling-at line may scroll (the scrolling
+        # setting), and `show` what it shows of what it can leave out ([dashboard] show).
         shown = show_items.default("dashboard") if show is None else show
         self._static = {"title": title, "walk": {"train": walk.train, "bus": dict(walk.bus)}, "quiet": False,
-                        "row_strips": row_strips, "show": show_items.ordered("dashboard", shown)}
+                        "row_strips": row_strips, "scrolling": scrolling,
+                        "show": show_items.ordered("dashboard", shown)}
         self._parts: dict[str, dict | list | None] = dict.fromkeys(PARTS)
         self._part_lookups: dict[str, dict[str, dict]] = {part: {} for part in PARTS}
         self._lookups: dict[str, dict] = {}

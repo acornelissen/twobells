@@ -209,3 +209,15 @@ def test_the_route_page_is_drawn_on_tiles(panel):
     image = render_route_split_flap(route, P, panel)
     counts = {colour: count for count, colour in image.getcolors(maxcolors=256)}
     assert max(counts, key=lambda c: counts[c]) == P.black and {P.white, P.tile} <= set(counts)
+
+
+@pytest.mark.parametrize("panel", SCREENS, ids=lambda p: p.name)
+def test_with_scrolling_off_nothing_scrolls_but_the_tiles_still_turn(panel):
+    notice = "Disruption between Glossop and Manchester Piccadilly: trains may be cancelled. " * 2
+    long = Row("07:12", "Manchester Piccadilly via Hadfield, Dinting, Broadbottom, Godley, Newton for Hyde, "
+               "Flowery Field, Guide Bridge, Ashburys and Ardwick", "On time")
+    frame = split_flap_frame(board(trains=(long,), notice=notice, scroll=False), P, panel)
+    assert frame.scrolls == ()
+    assert frame.at(30.0).tobytes() == frame.image.tobytes()
+    turning = {flap.text for flap in frame.flaps}
+    assert "07:12" in turning and any(text.startswith("Manchester") and text.endswith("…") for text in turning)

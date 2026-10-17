@@ -221,6 +221,22 @@ def test_a_saved_position_strips_setting_reaches_the_snapshot(pi):
         running.stop()
 
 
+def test_a_saved_scrolling_setting_reaches_the_snapshot(pi):
+    _, spool = pi
+    save(pi, ON)
+    running = Running(service(pi))
+    path = handoff.snapshot_path(spool.folder)
+    handed = lambda: json.loads(path.read_bytes())["snapshot"]  # noqa: E731
+    try:
+        wait_for(path.exists)
+        assert handed()["scrolling"] is True
+        save(pi, "scrolling = false\n" + ON)
+        wait_for(lambda: len(FakeCollector.made) == 2)
+        wait_for(lambda: path.exists() and handed()["scrolling"] is False)
+    finally:
+        running.stop()
+
+
 class PollersOnly(FakeCollector):
     """The real collector's pollers for the settings, never started."""
 

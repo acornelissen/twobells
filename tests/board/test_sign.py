@@ -1361,3 +1361,23 @@ def test_the_bar_screen_gives_up_its_footer_rule_for_the_calling_at_line_not_a_b
     assert footer_rule(sign_layout(calling(), width, height)) is None
     # The 7.9" screen has room for both.
     assert footer_rule(sign_layout(calling(), *dots(HDMI_1280X400))) is not None
+
+
+# With scrolling off (the scrolling setting), a screen cuts long text short, as e-paper does.
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_with_scrolling_off_a_screen_cuts_long_text_short_and_nothing_scrolls(panel):
+    view = dataclasses.replace(calling(long_screen()), scroll=False)
+    assert sign_frame(view, PALETTE, panel).scrolls == ()
+    items = sign_layout(view, *dots(panel)).items
+    assert all(i.box is None for i in items)
+    assert any(i.text.startswith("Manchester") and i.text.endswith("…") for i in items)
+    assert any(i.text.startswith("! ") and i.text.endswith("…") for i in items)
+    assert any(i.text.startswith("Calling at: ") and i.text.endswith("…") for i in items)  # still under the train
+
+
+def test_with_scrolling_off_the_route_page_cuts_a_long_title_short():
+    view = RouteView("341 to " + LONG, "Exp 07:24", "Leave in 6 min", NAMES, 1.0, "2 stops away", CLOCK, scroll=False)
+    assert route_sign_frame(view, PALETTE, HDMI_1920X440).scrolls == ()
+    layout, _, _ = _route_layout(view, *dots(HDMI_1920X440))
+    assert any(i.text.startswith("341 to ") and i.text.endswith("…") for i in layout.items)

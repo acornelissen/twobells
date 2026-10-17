@@ -606,7 +606,7 @@ class Painter:
     board/splitflap.py)."""
 
     def __init__(self, palette: Palette, fonts: Fonts, panel: Panel, text_size: int = TEXT_SIZE,
-                 live: bool = False, dark: bool = False) -> None:
+                 live: bool = False, dark: bool = False, scroll: bool = True) -> None:
         self.p = palette
         self.f = fonts
         self.s = plain_scale(panel)
@@ -621,17 +621,19 @@ class Painter:
         self.paper, self.ink = (palette.black, palette.white) if dark else (palette.white, palette.black)
         self.image = Image.new("P", panel.size, self.paper)
         self.draw = ImageDraw.Draw(self.image)
-        # A screen: text cut short for its space scrolls there instead.
+        # A screen; with `scroll` (the scrolling setting), text cut short for
+        # its space scrolls there instead.
         self.live = live
+        self.scroll = live and scroll
         self.scrolls: list[Scroll] = []
 
     def field(self, xy: tuple[float, float], shown: str, whole: str, font: ImageFont.FreeTypeFont, room: float,
               fill: int, paper: int, band: tuple[int, int]) -> None:
         """Text in a space `room` wide from xy: `shown` is `whole` as it fits
-        there, cut short if it must be. On a screen, cut-short text scrolls
-        whole instead, clipped to the space and to `band` (top and bottom of
+        there, cut short if it must be. On a screen that scrolls, cut-short
+        text scrolls whole instead, clipped to the space and to `band` (top and bottom of
         its row), on the row's `paper`."""
-        if not self.live or shown == whole or room < 1:
+        if not self.scroll or shown == whole or room < 1:
             self.text(xy, shown, font, fill)
             return
         x, (top, bottom) = int(xy[0]), band
@@ -688,7 +690,7 @@ class Painter:
             room = self.width - pad - label_end - 8 * s
             leave = fit_text(section.leave, self.f.small, room)
             # Right-aligned; if it scrolls, its space reaches back to the label.
-            scrolls = self.live and leave != section.leave
+            scrolls = self.scroll and leave != section.leave
             x = self.width - pad - (room if scrolls else drawn_length(self.f.small, leave))
             self.field((x, y + s), leave, section.leave, self.f.small, room, self.ink, self.paper,
                        (y, y + self.label_h * s))
@@ -789,7 +791,8 @@ def render(view: BoardView, palette: Palette, panel: Panel = PHAT, text_size: in
 def board_frame(view: BoardView, palette: Palette, panel: Panel = PHAT, text_size: int = TEXT_SIZE) -> Frame:
     """The board, and on a screen the text that scrolls."""
     s = plain_scale(panel)
-    painter = Painter(palette, load_fonts(s, text_size), panel, text_size, live=view.clock is not None)
+    painter = Painter(palette, load_fonts(s, text_size), panel, text_size, live=view.clock is not None,
+                      scroll=view.scroll)
     return paint_board(painter, view, panel)
 
 
@@ -815,7 +818,8 @@ def render_route(view: RouteView, palette: Palette, panel: Panel = PHAT, text_si
 def route_frame(view: RouteView, palette: Palette, panel: Panel = PHAT, text_size: int = TEXT_SIZE) -> Frame:
     """The route page, and on a screen the text that scrolls."""
     s = plain_scale(panel)
-    painter = Painter(palette, load_fonts(s, text_size), panel, text_size, live=view.clock is not None)
+    painter = Painter(palette, load_fonts(s, text_size), panel, text_size, live=view.clock is not None,
+                      scroll=view.scroll)
     return paint_route(painter, view, panel)
 
 
@@ -849,7 +853,7 @@ def paint_route(painter: Painter, view: RouteView, panel: Panel) -> Frame:
         font = f.bold if yours else f.regular
         room = step * 2 - _COL_GAP * s
         text = fit_text(name, font, room)
-        if painter.live and text != name:
+        if painter.scroll and text != name:
             tx = min(max(pad, x - room / 2), width - pad - room)  # a scrolling name takes its whole room
         else:
             tx = min(max(pad, x - text_length(font, text) / 2), width - pad - drawn_length(font, text))

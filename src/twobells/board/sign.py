@@ -125,17 +125,23 @@ class SignLayout:
     items: list[Item] = field(default_factory=list)
     rules: list[int] = field(default_factory=list)
     strips: list[StripMark] = field(default_factory=list)
-    # A screen, where text too long for its space scrolls; e-paper cuts it short.
+    # A screen, where text too long for its space scrolls (with `scroll`, the
+    # scrolling setting); e-paper cuts it short, as a screen does without it.
     live: bool = False
+    scroll: bool = True
+
+    @property
+    def scrolls(self) -> bool:
+        return self.live and self.scroll
 
     def add(self, x: float, y: int, text: str, inverted: bool = False, small: bool = False) -> None:
         self.items.append(Item(x, y, text, inverted, small))
 
     def fit(self, x: float, y: int, text: str, room: float, inverted: bool = False, small: bool = False) -> None:
         """`text` in a space `room` dots wide from x: whole if it fits; if
-        not, scrolling in that space on a screen, cut short on e-paper."""
+        not, scrolling in that space on a screen that scrolls, cut short otherwise."""
         fitted = fit_text(text, _SMALL if small else _FONT, room)
-        if self.live and fitted != text and room >= 1:
+        if self.scrolls and fitted != text and room >= 1:
             self.items.append(Item(x, y, text, inverted, small, box=int(room)))
         else:
             self.add(x, y, fitted, inverted, small)
@@ -358,7 +364,7 @@ def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> Non
 
 def sign_layout(view: BoardView, width: int = WIDTH, height: int = HEIGHT) -> SignLayout:
     """Places the text on a board `width` x `height` dots."""
-    layout = SignLayout(live=view.clock is not None)
+    layout = SignLayout(live=view.clock is not None, scroll=view.scroll)
     trains, buses = _train_columns(view.trains, width), _bus_columns(view.buses, width)
     where_x = _where_column(view, trains, buses, width)
     y = _trains(layout, view.trains, _TOP, width, trains, where_x)
@@ -508,7 +514,7 @@ _LABEL_GAP = 12  # dots between the road line and a stop name
 
 def _route_layout(view: RouteView, width: int, height: int) -> tuple[SignLayout, int, list[float]]:
     """Text items, the road line's row, and each stop's x."""
-    layout = SignLayout(live=view.clock is not None)
+    layout = SignLayout(live=view.clock is not None, scroll=view.scroll)
     layout.fit(MARGIN, _TOP, view.title, width - MARGIN * 2 - _w(view.due) - _COL_GAP)
     layout.add(_right(view.due, width), _TOP, view.due)
     second = _TOP + _LINE
@@ -524,7 +530,7 @@ def _route_layout(view: RouteView, width: int, height: int) -> tuple[SignLayout,
     for i, (name, x) in enumerate(zip(view.stops, xs, strict=True)):
         text = fit_text(name, _FONT, room)
         # A name that scrolls on a screen takes the whole of its room.
-        text_w = room if layout.live and text != name else _w(text)
+        text_w = room if layout.scrolls and text != name else _w(text)
         tx = min(max(MARGIN, x - text_w / 2), width - MARGIN - text_w)
         ty = road - _LABEL_GAP - GLYPH_H if i % 2 == 0 else road + _LABEL_GAP
         # Your stop, the last one, is reversed out.

@@ -1027,11 +1027,11 @@ def snapshot(h):
 def test_the_first_snapshot_has_every_section_empty():
     h = hub()
     body = snapshot(h)
-    assert list(body) == ["version", "generated_at", "title", "walk", "quiet", "row_strips", "show", "trains",
-                          "buses", "weather", "disruptions", "timetable_changes"]
+    assert list(body) == ["version", "generated_at", "title", "walk", "quiet", "row_strips", "scrolling", "show",
+                          "trains", "buses", "weather", "disruptions", "timetable_changes"]
     assert body["version"] == 1 and body["title"] == "Glossop"
     assert body["walk"] == {"train": 10, "bus": {"A": 8, "B": 6}}
-    assert body["quiet"] is False and body["row_strips"] is True
+    assert body["quiet"] is False and body["row_strips"] is True and body["scrolling"] is True
     assert body["show"] == list(show.keys("dashboard"))  # everything, without a list
     assert body["trains"] is body["buses"] is body["weather"] is body["disruptions"] is None
     assert body["timetable_changes"] is None
@@ -1048,6 +1048,13 @@ def test_the_version_goes_up_only_when_the_content_changes():
     assert h.version == 3
     with pytest.raises(ValueError):
         h.publish("ferries", {})
+
+
+def test_the_snapshot_says_whether_the_calling_at_line_may_scroll():
+    assert snapshot(hub(scrolling=False))["scrolling"] is False
+    h = hub(scrolling=False)
+    h.publish("trains", {"rows": []})
+    assert snapshot(h)["scrolling"] is False  # it stays as the settings said
 
 
 def test_the_snapshot_says_whether_rows_draw_their_position_strips():

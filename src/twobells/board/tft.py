@@ -55,10 +55,10 @@ def pill_colours(row: Row, palette: Palette) -> tuple[int, int] | None:
 
 
 class TftPainter(Painter):
-    def __init__(self, palette: Palette, panel: Panel, live: bool) -> None:
+    def __init__(self, palette: Palette, panel: Panel, live: bool, scroll: bool = True) -> None:
         s = plain_scale(panel)
         fonts = replace(load_fonts(s), pill=PILL_PAD * s)
-        super().__init__(palette, fonts, panel, TEXT_SIZE, live, dark=True)
+        super().__init__(palette, fonts, panel, TEXT_SIZE, live, dark=True, scroll=scroll)
 
     def banner(self, shown: str, whole: str, room: float, stamp: str, stamp_x: float,
                rain: tuple[str, float] | None = None) -> None:
@@ -98,7 +98,7 @@ def render_tft(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Image.
 
 def tft_frame(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Frame:
     """The board, and on a screen the text that scrolls."""
-    return paint_board(TftPainter(palette, panel, live=view.clock is not None), view, panel)
+    return paint_board(TftPainter(palette, panel, live=view.clock is not None, scroll=view.scroll), view, panel)
 
 
 def render_route_tft(view: RouteView, palette: Palette, panel: Panel = PHAT) -> Image.Image:
@@ -108,4 +108,4 @@ def render_route_tft(view: RouteView, palette: Palette, panel: Panel = PHAT) -> 
 
 def route_tft_frame(view: RouteView, palette: Palette, panel: Panel = PHAT) -> Frame:
     """The route page, and on a screen the text that scrolls."""
-    return paint_route(TftPainter(palette, panel, live=view.clock is not None), view, panel)
+    return paint_route(TftPainter(palette, panel, live=view.clock is not None, scroll=view.scroll), view, panel)

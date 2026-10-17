@@ -8,7 +8,7 @@ import { $, setText, str, obj, focusKey, refocus } from "./dom.js";
 import { connect, STATE } from "./api.js";
 import { clockParts, clockText, now, parseAt } from "./time.js";
 import {
-  applyRowStrips, lastBuses, renderBuses, renderTrains, stopNames, tickBoards, toggleCalling, toggleMore,
+  applyRowStrips, applyScrolling, lastBuses, renderBuses, renderTrains, stopNames, tickBoards, toggleMore,
 } from "./board.js";
 import { tickStrips } from "./strip.js";
 import { renderWeather } from "./weather.js";
@@ -110,6 +110,7 @@ function render(data) {
   document.title = title;
   if (kiosk) applyDim(document.documentElement, data);
   applyRowStrips(document.documentElement, data);
+  applyScrolling(document.documentElement, data);
   applyShow(document.documentElement, data);
   $("performance-link").hidden = !shows("performance");
   drawBoards();
@@ -152,7 +153,6 @@ $("main").addEventListener("click", (event) => {
   if (button) {
     if (button.dataset.action === "open") open(button);
     else if (button.dataset.action === "more") toggleMore(button);
-    else if (button.dataset.action === "calling") toggleCalling(button);
     return;
   }
   // A click anywhere else on a row opens its sheet too, unless it lands on a

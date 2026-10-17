@@ -1408,3 +1408,47 @@ def test_e_paper_has_no_calling_at_line():
     view = calling_on_screen(clock=None)
     assert render(view, PALETTE, WAVESHARE_10IN85G).tobytes() == render(on_screen(clock=None), PALETTE,
                                                                           WAVESHARE_10IN85G).tobytes()
+
+
+# With scrolling off (the scrolling setting), a screen cuts long text short, as e-paper does.
+
+def drawn_texts(monkeypatch):
+    """Every text the plain look draws from now on."""
+    import twobells.board.render as render_module
+
+    drawn = []
+    real = render_module.draw_text
+
+    def draw(image, xy, text, *rest):
+        drawn.append(text)
+        real(image, xy, text, *rest)
+
+    monkeypatch.setattr(render_module, "draw_text", draw)
+    return drawn
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_with_scrolling_off_a_screen_cuts_long_text_short_and_nothing_moves(panel, monkeypatch):
+    drawn = drawn_texts(monkeypatch)
+    trains = calling_on_screen().trains
+    rows = tuple(dataclasses.replace(r, middle=LONG) for r in trains.rows)
+    view = dataclasses.replace(long_on_screen(), trains=dataclasses.replace(trains, rows=rows), scroll=False)
+    frame = board_frame(view, PALETTE, panel)
+    assert frame.scrolls == ()
+    assert frame.at(SCROLL_PAUSE_S + 5).tobytes() == frame.image.tobytes()
+    cut = [text for text in drawn if text.endswith("…")]
+    assert any(text.startswith("! ") for text in cut)  # the notice
+    assert any(text.startswith("Manchester Picc") for text in cut)  # a destination
+    assert any(text.startswith("Calling at: Dinting") for text in cut)  # the calling-at line still shows
+    assert LONG not in drawn and CALLING not in drawn
+
+
+def test_with_scrolling_off_the_route_page_cuts_a_long_title_short():
+    from twobells.board.render import route_frame
+    from twobells.board.route import RouteView
+
+    title = "341 to " + LONG + " and " + LONG
+    view = RouteView(title, "Exp 07:24", "Leave in 6 min", ("Norfolk St", "Henry St", "Your stop"), 1.0,
+                     "2 stops away", CLOCK)
+    assert [s.text for s in route_frame(view, PALETTE, HDMI_1920X440).scrolls] == [title]
+    assert route_frame(dataclasses.replace(view, scroll=False), PALETTE, HDMI_1920X440).scrolls == ()

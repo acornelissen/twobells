@@ -119,6 +119,9 @@ class BoardView:
     rain: str | None = None
     # "Last bus 23:05" on a screen in the hour before the last bus of all goes.
     last_bus: str | None = None
+    # On a screen, whether text too long for its space scrolls (the
+    # scrolling setting); off, it is cut short with "…", as on e-paper.
+    scroll: bool = True
 
     def signature(self) -> str:
         content = asdict(self)
@@ -285,6 +288,7 @@ def build_view(
     stop_names: Mapping[str, str] | None = None,
     last_bus: str | None = None,
     show: Collection[str] | None = None,
+    scroll: bool = True,
 ) -> BoardView:
     """`clock` (HH:MM:SS, matching `now`) is for screens: it is shown, leave
     times count down instead of giving a clock time, and trains have their
@@ -293,7 +297,8 @@ def build_view(
     `rain` is the rain warning, if there is one. `strips` say where each
     departure's train or bus is, by strip_key. `stop_names` are what a wide
     screen calls your bus stops, by label (see stop_names_shown). `last_bus`
-    is when the last bus goes, for a screen in its last hour.
+    is when the last bus goes, for a screen in its last hour. Without
+    `scroll`, a screen cuts text too long for its space short, as e-paper does.
 
     `show` is what the board shows of what it can leave out (settings/show.py),
     None for all of it. What it leaves out is left out of the view, so no look
@@ -314,6 +319,7 @@ def build_view(
         notice=_notice(notices or []) if "disruption" in shown else None,
         rain=rain if "rain" in shown else None,
         last_bus=last_bus if "last_bus" in shown else None,
+        scroll=scroll,
     )
 
 

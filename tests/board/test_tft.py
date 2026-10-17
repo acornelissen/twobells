@@ -233,3 +233,13 @@ def test_the_calling_at_line_scrolls_under_the_first_train_in_the_tft_look(panel
     assert scroll.box[1] == bottom  # under the first row
     # White on black, as the destinations are.
     assert colours_in(scroll.strip, (0, 0, scroll.strip.width, scroll.strip.height)) == {P.black, P.white}
+
+
+@pytest.mark.parametrize("panel", SCREENS, ids=lambda p: p.name)
+def test_with_scrolling_off_nothing_scrolls_in_the_tft_look(panel):
+    notice = "Disruption between Glossop and Manchester Piccadilly: trains may be cancelled. " * 2
+    long = Row("07:12", "Manchester Piccadilly via Hadfield, Dinting, Broadbottom, Godley, Newton for Hyde, "
+               "Flowery Field, Guide Bridge, Ashburys and Ardwick", "On time")
+    frame = tft_frame(board(trains=(long,), notice=notice, scroll=False), P, panel)
+    assert frame.scrolls == ()
+    assert frame.at(30.0).tobytes() == frame.image.tobytes()
