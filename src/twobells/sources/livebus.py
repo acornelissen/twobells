@@ -28,7 +28,9 @@ bus is guessed by line, as bustimes.org does without blocks. Each bus placed
 on a journey goes to the earliest departure it can make: of the same line
 and operator, from your stop where that journey ends (or within NEAR_M of
 it), on the same service day, leaving up to INBOUND_WINDOW after the
-journey is due in, with no bus of its own and no block to follow. A
+journey is due in, with no bus of its own and no block to follow. A bus
+whose block goes on to another journey is that journey's, and a departure
+first in its block has its bus come out of the depot: neither is guessed. A
 departure with exactly one bus coming to it this way is live, marked
 inbound, the same as one followed by its block, with the same words: the
 rider sees no difference, only Inbound.followed tells them apart. With two,
@@ -533,13 +535,17 @@ class _Follow:
         self._tz = tz
         self._guessed = self._guesses(running)  # by (service day, id of the departure's journey)
 
+    def _block(self, journey: Journey, day: date) -> list[Journey]:
+        """The journeys of `journey`'s block on `day`, in the order they start; none without a block."""
+        if not journey.block:
+            return []
+        return self._blocks.get(day, {}).get((journey.operator.casefold(), journey.block.casefold()), [])
+
     def journey_before(self, journey: Journey, day: date) -> Journey | None:
         """The journey just before `journey` in its block on `day`, if its bus
         can work `journey` next (_comes_in); None without a block, or with one
         that says otherwise."""
-        if not journey.block:
-            return None
-        block = self._blocks.get(day, {}).get((journey.operator.casefold(), journey.block.casefold()), [])
+        block = self._block(journey, day)
         earlier = [other for other in block if other.origin.minute < journey.origin.minute]
         if not earlier:
             return None  # the first in its block
@@ -580,6 +586,8 @@ class _Follow:
         going: dict[tuple[date, int], list[Inbound]] = {}
         for bus in self._placed.values():
             day = bus.service_day
+            if any(other.origin.minute > bus.journey.origin.minute for other in self._block(bus.journey, day)):
+                continue  # its block says which journey its bus works next
             makes = [journey for journey in running.get(day, ()) if self._may_work(bus, journey, day, yours)]
             if not makes:
                 continue
@@ -601,7 +609,14 @@ class _Follow:
             and (day, id(journey)) not in self._placed
             and _comes_in(bus.journey, journey, self._schedule.positions)
             and self.journey_before(journey, day) is None
+            and not self._first_in_block(journey, day)
         )
+
+    def _first_in_block(self, journey: Journey, day: date) -> bool:
+        """Whether `journey` is the first of its block on `day`: its bus
+        comes out of the depot, not off the journey before."""
+        block = self._block(journey, day)
+        return bool(block) and all(other.origin.minute >= journey.origin.minute for other in block)
 
 
 def _expected(leaves: datetime, placed: Progress | None, inbound: Inbound | None, now: datetime) -> datetime:

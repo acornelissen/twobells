@@ -883,8 +883,10 @@ def _block_variants():
     }
 
 
-# Without a block to follow, the bus is guessed by line where one fits; the rest fit no guess either.
-_GUESSED = {"no block", "another block", "another journey between"}
+# Without a block to follow, the bus is guessed by line where one fits; the rest fit no guess either. With
+# another block, WEST is the first in its block, out of the depot; with another journey between, IN_T122's bus
+# goes on to that journey by its block.
+_GUESSED = {"no block"}
 
 
 @pytest.mark.parametrize("case", list(_block_variants()))
@@ -940,6 +942,35 @@ def test_a_guessed_bus_skips_a_departure_with_a_bus_of_its_own():
     first, second = (l for l in rows if (l.departure.stop, l.departure.service) == ("A", "237"))
     assert first.progress is not None and first.inbound is None
     assert second.live and second.inbound.bus.journey is INTO_A
+
+
+LATER = replace(WEST, journey_code="1190", calls=tuple(Call(c.atco, c.minute + 15) for c in WEST.calls))  # 10:30
+
+
+def test_a_bus_followed_by_its_block_is_not_also_guessed_onto_another_departure():
+    # IN_T122's bus works WEST by its block; LATER, first in a block of its
+    # own, comes out of the depot, so the same bus is not guessed onto it too.
+    rows, _ = guessed(at(10, 5), [coming_in(at(10, 5))], WEST_T122, replace(LATER, block="T200"), IN_T122)
+    first, second = (l for l in rows if (l.departure.stop, l.departure.service) == ("A", "237"))
+    assert first.live and first.inbound.followed and first.inbound.bus.journey is IN_T122
+    assert (second.live, second.inbound, second.departure.status) == (False, None, Status.UNKNOWN)
+
+
+def test_a_bus_whose_block_goes_on_elsewhere_is_not_guessed():
+    # IN_T122's block goes on to a 999 from stop A at 10:15, so its bus is
+    # that one's, not a guess for WEST, which gives no block.
+    other = replace(WEST, line="999", journey_code="1191", destination="Elsewhere", block="T122")
+    rows, _ = guessed(at(10, 5), [coming_in(at(10, 5))], WEST, other, IN_T122)
+    assert row(rows, "A", "999").inbound.followed
+    found = row(rows, "A", "237")
+    assert (found.live, found.inbound, found.departure.status) == (False, None, Status.UNKNOWN)
+
+
+def test_a_departure_first_in_its_block_is_not_guessed():
+    # Its bus comes out of the depot, not off the journey before.
+    rows, _ = guessed(at(10, 5), [coming_in(at(10, 5))], replace(WEST, block="T300"), INTO_A)
+    found = row(rows, "A", "237")
+    assert (found.live, found.inbound, found.departure.status) == (False, None, Status.UNKNOWN)
 
 
 def test_two_buses_coming_in_for_one_departure_is_too_much_of_a_guess():
