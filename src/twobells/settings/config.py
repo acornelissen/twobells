@@ -341,7 +341,8 @@ def metrolink_on(data: dict) -> bool:
 def needs_timetable(data: dict, mode: str, install: Install | None = None) -> bool:
     """Whether `mode` ("bus" or "metro") has a timetable to build: its times
     come from one (buses from BODS, Metrolink's trams from TfGM's) and a view
-    that is on shows it ([app] views, or `install`'s default ones). The bus
+    that is on shows it ([app] views, or `install`'s default ones): the
+    board as many modes as its display has room for (board_modes). The bus
     and tram timetables both go by this. ConfigError for settings that say
     neither, as their loaders do."""
     if mode == "metro":
@@ -349,7 +350,19 @@ def needs_timetable(data: dict, mode: str, install: Install | None = None) -> bo
     else:
         bus = data.get("bus")
         timetabled = isinstance(bus, dict) and is_enabled(data, "bus") and bus_source(bus) == "bods"
-    return timetabled and any(mode in mode_list.shown(data, view) for view in views(data, install))
+    return timetabled and any(mode in _shown_by(data, view) for view in views(data, install))
+
+
+def _shown_by(data: dict, view: str) -> tuple[str, ...]:
+    """The modes `view` shows: the board as many as its display has room
+    for, or, where its settings don't load, those its list names (its
+    loader says what is wrong); the dashboard all it names."""
+    if view == "board":
+        try:
+            return board_modes(data)
+        except ConfigError:
+            pass
+    return mode_list.shown(data, view)
 
 
 def switched_on(data: dict) -> dict:
@@ -641,13 +654,22 @@ _BOARD_KEYS = {"show", "modes", "leave_modes"}
 def board_modes(data: dict) -> tuple[str, ...]:
     """The modes the board shows by settings `data`, as many as its display
     has room for in its look and text size (schema.board_room). ConfigError
-    for a [board] modes that isn't a list of modes, or names more than that.
-    The look and text size are checked before this is asked."""
+    for a [board] modes that isn't a list of modes, or names more than that,
+    or a text size that isn't one; the board's loader checks the look and
+    the display."""
     display = _text(data, "display", BOARD_DEFAULTS["display"])
     look = _text(data, "theme", BOARD_DEFAULTS["theme"])
-    text_size = data.get("text_size", BOARD_DEFAULTS["text_size"])
+    text_size = _text_size(data)
     return mode_list.shown(data, "board", *board_room(display, look, text_size),
                            other=room_other(display, look, text_size))
+
+
+def _text_size(data: dict) -> int:
+    """The plain look's text size, checked: a whole number from 9 to 16."""
+    text_size = data.get("text_size", BOARD_DEFAULTS["text_size"])
+    if isinstance(text_size, bool) or not isinstance(text_size, int) or not 9 <= text_size <= 16:
+        raise ConfigError(f"text_size must be a whole number from 9 to 16, not {text_size!r}")
+    return text_size
 
 
 def _board_show(data: dict) -> frozenset[str]:
@@ -707,10 +729,7 @@ def settings_from(
         theme = theme_named(_text(data, "theme", BOARD_DEFAULTS["theme"]))
     except ValueError as error:
         raise ConfigError(str(error)) from error
-    text_size = data.get("text_size", BOARD_DEFAULTS["text_size"])
-    if isinstance(text_size, bool) or not isinstance(text_size, int) or not 9 <= text_size <= 16:
-        raise ConfigError(f"text_size must be a whole number from 9 to 16, not {text_size!r}")
-    theme = with_text_size(theme, text_size)
+    theme = with_text_size(theme, _text_size(data))
     display = _text(data, "display", BOARD_DEFAULTS["display"])
     if display not in DISPLAY_PANELS:
         raise ConfigError(f"Unknown display {display!r}; choose from {', '.join(sorted(DISPLAY_PANELS))}")

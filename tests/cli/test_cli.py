@@ -1709,6 +1709,12 @@ def test_query_display_prints_the_display_config_toml_sets(tmp_path, capsys, con
     # Shown by the board, which is switched off.
     ('[train]\ncrs = "GLO"\n[bus]\nsource = "bods"\n',
      '[app]\nviews = ["dashboard"]\n[dashboard]\nmodes = ["train"]\n', False),
+    # No modes list: the board shows the first modes set up that its display has room for. The pHAT
+    # has room for trains and buses alone; the 10.85" e-paper for the trams too.
+    ('[train]\ncrs = "GLO"\n[bus]\nsource = "transportapi"\n[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n',
+     '[app]\nviews = ["board"]\n', False),
+    ('display = "waveshare-10in85g"\n[train]\ncrs = "GLO"\n[bus]\nsource = "transportapi"\n'
+     '[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n', '[app]\nviews = ["board"]\n', True),
 ])
 def test_query_needs_timetable_says_yes_or_no_and_exits_so(tmp_path, capsys, config, saved, wanted):
     assert _query(tmp_path, "needs-timetable", config, saved) == (0 if wanted else 1)
