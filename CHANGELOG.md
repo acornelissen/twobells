@@ -4,9 +4,19 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Added
+
+- Choose which modes get leave times. Under **What to show**, the Board page has a **When to leave** tickbox for each mode set up, for the board's "Leave by" and "Leave in", and the Dashboard page's **Next to catch** becomes a tickbox for each mode, for those it picks from; the dashboard's rows keep their leave times. They are saved as `[board] leave_modes` and `[dashboard] leave_modes`, which `config.toml` can set too: without a list, every mode, as before; `[]`, none. The dashboard API sends its list as `leave_modes`. See [What each view shows](docs/configuration.md#what-each-view-shows).
+- Tram stops wherever home is. The setup wizard's tram step always shows, with **Find a stop by name** over the Metrolink and London stops that come with the app, so nothing is sent anywhere: 2 or more letters of a name list up to 10 stops with it in their names, however far away. The Trains and buses page's **Trams** section shows before trams are set up, with **Tram stop codes**: typing codes there sets them up.
+
+### Changed
+
+- With Next to catch left out, or nothing to point at (no departure you can still reach, or none with a walk time), the dashboard shows the time in its place, as large as the countdown, with the date, the weather now and the rain sentence; the header's clock and the weather section's now line and rain sentence make way for it. Before, the place said "Nothing to leave for", or was left empty.
+- A walk the setup wizard finds to be over an hour, like one to a tram stop found by name in another town, is left empty and marked **Over an hour**, so no time to leave is shown for it. It was set to 60 minutes.
+
 ### Fixed
 
-- The setup wizard's **Find a stop by name** box is as big as its other boxes. The browser drew it at its own size, about half the height a target needs.
+- The setup wizard's **Find a stop by name** box is as big as its other boxes. The browser drew it at its own size, half as tall as the others and under the 24 px a target needs.
 
 - A bus timetable download that isn't a zip is read a chunk at a time. It was read in one go with room for the most an install reads, 200 MB on a desktop, however small the file; a file of a few KB now takes under 1 MB.
 - The setup wizard's stop search reads NaPTAN's stop list a line at a time, never more than 4,096 characters of a line at once, as the timetable build does, and decodes it as it reads. Before, one very long line was held whole, or refused the whole list; now that line is left out and the rest are read.
