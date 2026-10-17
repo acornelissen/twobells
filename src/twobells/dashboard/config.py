@@ -93,7 +93,7 @@ class DashboardOptions:
 
     state_dir: str | None = None
     train_rows: int = 10
-    bus_rows: int = 10
+    bus_rows: int = 15  # about half an hour across five stops
     train_interval_seconds: int = 60
     bus_interval_seconds: int = 30
     weather_interval_minutes: int = 30
@@ -174,7 +174,7 @@ def dashboard_options(data: dict) -> DashboardOptions:
     return DashboardOptions(
         state_dir=state_dir,
         train_rows=_ranged(section, "train_rows", 10, 1, _MAX_ROWS),
-        bus_rows=_ranged(section, "bus_rows", 10, 1, _MAX_ROWS),
+        bus_rows=_ranged(section, "bus_rows", 15, 1, _MAX_ROWS),
         train_interval_seconds=_whole(section, "train_interval_seconds", 60, _WHERE, least=30),
         bus_interval_seconds=_whole(section, "bus_interval_seconds", 30, _WHERE, least=15),
         weather_interval_minutes=_whole(section, "weather_interval_minutes", 30, _WHERE, least=10),

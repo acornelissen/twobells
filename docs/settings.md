@@ -78,7 +78,7 @@ How the board is doing is on the [Overview](#overview), under **On the board**: 
 ## Dashboard
 
 - **Departures**
-  - **Most trains listed** and **Most buses listed:** the first 5 show; the rest are behind **Show later departures**. A wall tablet shows 4.
+  - **Most trains listed** and **Most buses listed:** 10 trains and 15 buses at first, 1 to 20 of each. The first 5 show; the rest are behind **Show later departures**. A wall tablet shows 4.
   - **Position strips in each row:** on or off. On, each departure row has a small drawing of its stops with the train or bus where it is; off, the rows keep their words without it. Neither shows while **What to show** leaves out **Where it is**. A wall tablet never shows them.
   - Advanced: **Check for trains every** and **Check for buses every** so many seconds; **Check the forecast every** so many minutes; **Count trains as late from** and **Count buses as late from** so many minutes, for the punctuality history; **Keep punctuality history for** so many days (1 to 3650).
 - **What to show:** a tickbox for each thing the dashboard can show beside the departures' times, which always show. Anything unticked isn't drawn, on a wall tablet too, and leaves no gap; the punctuality history keeps recording whatever is shown.

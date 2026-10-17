@@ -70,7 +70,7 @@ def load(config, folder, env=ENV, opened=None):
 def test_defaults_without_a_dashboard_table():
     options = dashboard_options({})
     assert options == DashboardOptions()
-    assert (options.train_rows, options.bus_rows) == (10, 10)
+    assert (options.train_rows, options.bus_rows) == (10, 15)  # 15 buses: about half an hour across five stops
     assert (options.train_interval_seconds, options.bus_interval_seconds, options.weather_interval_minutes) == (
         60, 30, 30,
     )
@@ -153,7 +153,7 @@ def test_loads_the_free_sources_with_the_dashboard_s_rows(config, tmp_path, open
     assert "GetDepBoardWithDetails/GLO?numRows=10&filterCrs=man" in dash.train._url()
     assert (dash.train_crs, dash.train_filter) == ("GLO", "MAN")
     assert isinstance(dash.bus, BodsBusSource)
-    assert dash.bus._rows == 10
+    assert dash.bus._rows == 15
     assert dash.bus_stops == {"A": "1000DGHS0900"}
     assert isinstance(dash.weather, OpenMeteoSource)
     assert dash.rain_threshold == 60
@@ -377,7 +377,7 @@ def test_settings_saved_in_the_dashboard_s_folder_are_layered_over_config_toml(c
     dash = load(config, folder, opened=opened)
     assert dash.title == "Our house" and dash.train_crs == "MAN"
     assert dash.train_filter == "MAN"  # the rest of [train] is still config.toml's
-    assert dash.options.train_rows == 4 and dash.options.bus_rows == 10
+    assert dash.options.train_rows == 4 and dash.options.bus_rows == 15
     assert dash.bus._api_key == "saved-bods-key"  # saved keys win over the environment
     assert isinstance(dash.train_details, ServiceDetailsClient)
     assert not (tmp_path / "board").exists()  # nothing written beside config.toml or the board
@@ -461,6 +461,16 @@ def test_the_dashboard_target_saves_only_what_the_dashboard_loads(config, tmp_pa
     with pytest.raises(OverlayError, match="train_rows"):
         save_to(target, {"dashboard": {"train_rows": 50}}, {}, ENV)
     assert target.current()["dashboard"] == {"bus_rows": 3}
+
+
+def test_a_saved_bus_rows_is_kept_after_the_default_went_up_to_15(config, tmp_path):
+    # Saved as 10 when that was the default: it stays 10, saved or not.
+    folder = tmp_path / "dash"
+    folder.mkdir()
+    (folder / "settings.toml").write_text("[dashboard]\nbus_rows = 10\n")
+    assert load(config, folder).options.bus_rows == 10
+    (folder / "settings.toml").write_text("[dashboard]\ntrain_rows = 4\n")
+    assert load(config, folder).options.bus_rows == 15
 
 
 def test_the_files_to_watch_are_the_store_s(config, tmp_path):

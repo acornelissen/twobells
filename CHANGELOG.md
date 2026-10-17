@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Changed
+
+- The dashboard lists up to 15 buses by default, up from 10: about half an hour across five stops. An install with **Most buses listed** (`[dashboard] bus_rows`) saved keeps its number, and a wall tablet still shows 4.
+
 ### Fixed
 
 - Saturday buses on High Peak's 393 show again. BODS has its timetable in two parts with the same revision number, Saturdays from September 2024 and weekdays from January 2026, and the app took the weekdays for a replacement, so it ended the Saturdays the day before they started: no Saturday 393 since. As bustimes.org does, a version of a timetable is now replaced only by one with a higher revision number; parts of the same revision all run. The bus timetable is built again once after updating (timetable format 6).

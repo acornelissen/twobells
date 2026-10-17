@@ -529,7 +529,7 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               "number", hint=_LISTED, default=10, needs="train", page="dashboard", heading="Departures",
               width="2"),
         Field("dashboard_bus_rows", "dashboard", "dashboard", "bus_rows", "Most buses listed", number(1, 20),
-              "number", hint=_LISTED, default=10, needs="bus", page="dashboard", heading="Departures",
+              "number", hint=_LISTED, default=15, needs="bus", page="dashboard", heading="Departures",
               width="2"),
         Field("row_strips", "dashboard", "dashboard", "row_strips", "Position strips in each row", on_off, "radios",
               hint="A small drawing of the stops in each departure row, with the train or bus where it is, while "

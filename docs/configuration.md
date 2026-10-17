@@ -55,7 +55,7 @@ The Dashboard page's settings can also go under `[dashboard]` in `config.toml`. 
 
 | Setting | Default | What it does |
 |---|---|---|
-| `train_rows`, `bus_rows` | 10 | How many of each to list (1 to 20) |
+| `train_rows`, `bus_rows` | 10, 15 | How many of each to list (1 to 20) |
 | `train_interval_seconds` | 60 | How often to check trains (at least 30) |
 | `bus_interval_seconds` | 30 | How often to check buses (at least 15) |
 | `weather_interval_minutes` | 30 | How often to check the forecast (at least 10) |
