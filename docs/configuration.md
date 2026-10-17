@@ -99,7 +99,7 @@ leave_modes = ["train", "bus"]  # no leave time for the trams
 leave_modes = ["bus"]           # Next to catch picks from the buses alone
 ```
 
-The modes are `train`, `bus` and `metro`, as for [Modes of transport](#modes-of-transport). Without it, every mode set up; `[]` for none, which on the dashboard leaves Next to catch out, as a `show` without `next_to_catch` does, and the time and the weather take its place. A mode named that isn't set up is left out; a mode named twice, or a word that isn't a mode, stops the view loading and says why. The settings pages' presets tick every mode; the setup wizard's leave the lists as they are.
+The modes are `train`, `bus` and `metro`, as for [Modes of transport](#modes-of-transport). Without it, every mode set up; `[]` for none, which on the dashboard leaves Next to catch out, as a `show` without `next_to_catch` does, and the time and the weather take its place. A mode named that isn't set up is left out; a mode named twice, or a word that isn't a mode, stops the view loading and says why. A preset, picked on the settings pages or in the setup wizard, gives every mode leave times again.
 
 What no view shows isn't fetched either, so leaving things out saves calls to the feeds and their daily limits. Each view fetches for itself, and a change takes effect on its next check, without a restart:
 

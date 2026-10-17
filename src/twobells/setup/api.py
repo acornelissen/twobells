@@ -1158,8 +1158,15 @@ class SetupApi:
             for view in on:
                 if view not in presets and new and not _has_show_list(data, view):
                     presets[view] = show.NEW_INSTALL
+        before = self._settings()
         for view, name in presets.items():
             changes.setdefault(view, {})["show"] = show_list(view, name)
+            # A preset gives every mode leave times again, as the settings form's
+            # do: where Next to catch is in it, which is every preset so far.
+            section = before.get(view)
+            if isinstance(section, dict) and "leave_modes" in section:
+                keep = view == "board" or "next_to_catch" in show.preset(view, name)
+                changes[view]["leave_modes"] = list(modes.KEYS) if keep else []
         for view, chosen in shown_modes.items():
             changes.setdefault(view, {})["modes"] = chosen
         env = dict(self._load_secrets())

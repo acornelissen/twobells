@@ -876,6 +876,21 @@ def test_finishing_saves_the_presets_picked_as_the_settings_form_does(both, pres
             assert "show" not in saved.get(view, {})  # kept as it is: still no list
 
 
+def test_a_preset_picked_gives_every_mode_leave_times_again_as_the_settings_form_does(both):
+    (both.state / "settings.toml").write_text(
+        SET_UP + "[board]\nleave_modes = []\n[dashboard]\nshow = [\"weather\"]\nleave_modes = []\n")
+    ok(both, "finish", {**TRAINS_ONLY, "views": ["board", "dashboard"], "show": {"dashboard": "usual"}})
+    saved = _saved(both)
+    assert saved["dashboard"]["leave_modes"] == ["train", "bus", "metro"]  # Next to catch back, from every mode
+    assert saved["board"]["leave_modes"] == []  # no preset picked for it: kept as it is
+
+
+def test_a_preset_writes_no_leave_modes_where_there_were_none(both):
+    (both.state / "settings.toml").write_text(SET_UP)
+    ok(both, "finish", {**TRAINS_ONLY, "views": ["board", "dashboard"], "show": {"board": "usual", "dashboard": "times"}})
+    saved = _saved(both)
+    assert "leave_modes" not in saved["board"] and "leave_modes" not in saved["dashboard"]
+
 def test_a_view_left_out_keeps_its_list(both):
     (both.state / "settings.toml").write_text(SET_UP + '[dashboard]\nshow = ["weather"]\n')
     ok(both, "finish", {**TRAINS_ONLY, "views": ["board", "dashboard"], "show": {"board": "times"}})
