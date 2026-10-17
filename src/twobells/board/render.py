@@ -19,6 +19,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from ..core import words
 from ..core.model import Strip
+from ..settings import modes as mode_list
 from .panel import (
     NOTES_SIDE_BY_SIDE_MIN_WIDTH,
     PHAT,
@@ -37,9 +38,6 @@ WIDTH, HEIGHT = PHAT.size
 # Below the header, and either side of the rule between sections.
 _SECTION_GAP = 6
 PAD = 3
-_MAX_ROWS = {"Trains": 3, "Buses": 2}
-# A screen with the room (the bar screen) shows one more bus; e-paper keeps its two.
-_SCREEN_MAX_BUSES = 3
 # Beside a section's label when its feed has stopped, in the sign look's words.
 _NOT_UPDATING = "! NOT UPDATING"
 
@@ -527,24 +525,49 @@ def calling_height(text_size: int = TEXT_SIZE) -> int:
 def calling_line(section: Section, live: bool) -> str | None:
     """The first train's "Calling at" line, on a screen (`live`), which
     scrolls it under the train's row; None on e-paper, which can't."""
-    if not live or section.label != "Trains" or not section.rows:
+    if not live or section.kind != "train" or not section.rows:
         return None
     return section.rows[0].calling
 
 
-def row_limits(panel: Panel, text_size: int = TEXT_SIZE, calling: bool = False) -> dict[str, int]:
-    """Rows each section shows: 3 trains and 2 buses on the pHAT's 122 rows,
-    fewer on a shorter panel (the original pHAT has 104) or with bigger text,
-    rather than cut off. `calling` makes room for the "Calling at" line."""
+def calling_section(sections: tuple[Section, ...], live: bool) -> str | None:
+    """The mode whose first train has its "Calling at" line drawn under it:
+    the first section with one. A board has room for one."""
+    return next((section.mode for section in sections if calling_line(section, live)), None)
+
+
+def share_rows(rows: int, modes: tuple[str, ...], epaper: bool) -> dict[str, int]:
+    """`rows` shared among the sections of `modes`, in order: a row each,
+    then each in turn as many more as it takes at most while it shares the
+    board (modes.Mode.most_rows), the first first. A mode alone takes them all."""
+    if len(modes) == 1:
+        return {modes[0]: rows}
+    shared = dict.fromkeys(modes, 1)
+    left = rows - len(modes)
+    for mode in modes:
+        more = max(0, min(mode_list.mode(mode).most_rows[0 if epaper else 1] - 1, left))
+        shared[mode] += more
+        left -= more
+    return shared
+
+
+def row_limits(panel: Panel, text_size: int = TEXT_SIZE, calling: bool = False,
+               modes: tuple[str, ...] = ("train", "bus")) -> dict[str, int]:
+    """Rows each mode's section shows: 3 trains and 2 buses on the pHAT's
+    122 rows, fewer on a shorter panel (the original pHAT has 104) or with
+    bigger text, rather than cut off; at least one each. `calling` makes
+    room for the "Calling at" line."""
+    if not modes:
+        return {}
     s = plain_scale(panel)
     header_h, label_h, row_h = heights(text_size)
-    fixed = header_h + _SECTION_GAP + label_h + 1 + _SECTION_GAP + label_h
+    count = len(modes)
+    # A label for each section, and a rule with a gap each side between them.
+    fixed = header_h + _SECTION_GAP + count * label_h + (count - 1) * (1 + _SECTION_GAP)
     if calling:
         fixed += calling_height(text_size)
-    rows = max(2, (panel.height // s - fixed) // row_h)
-    most_buses = _MAX_ROWS["Buses"] if panel.epaper else _SCREEN_MAX_BUSES
-    buses = max(1, min(most_buses, rows - _MAX_ROWS["Trains"]))
-    return {"Trains": min(_MAX_ROWS["Trains"], rows - buses), "Buses": buses}
+    rows = max(count, (panel.height // s - fixed) // row_h)
+    return share_rows(rows, modes, panel.epaper)
 
 
 def header_rain(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[str, float] | None:
@@ -612,6 +635,8 @@ class Painter:
         self.s = plain_scale(panel)
         self.text_size = text_size
         self.limits = row_limits(panel, text_size)
+        # The mode whose first train's "Calling at" line is drawn, if any (calling_section).
+        self.calling_for: str | None = None
         self.header_h, self.label_h, self.row_h = heights(text_size)
         self.calling_h = calling_height(text_size)
         # Smaller type sits on the same baseline as the row text.
@@ -673,7 +698,7 @@ class Painter:
         self.text((stamp_x, s), stamp, self.f.regular, self.paper)
 
     def drawn_rows(self, section: Section) -> tuple[Row, ...]:
-        return section.rows[: self.limits.get(section.label, 2)]
+        return section.rows[: self.limits.get(section.mode, 1)]
 
     def section(self, section: Section, y: int, where_x: float | None = None) -> int:
         s, pad = self.s, PAD * self.s
@@ -712,9 +737,9 @@ class Painter:
         if not any(r.strip for r in rows):
             where_x = None  # no room kept for strips that none of them has
         stop_room = stop_column(rows, section.stop_names, self.f, self.width, s, self.live)
-        calling = calling_line(section, self.live)
+        calling = calling_line(section, self.live) if section.mode == self.calling_for else None
         for index, row in enumerate(rows):
-            self.row(row, y, platform_x, leave_x, where_x, train=section.label == "Trains", stop_room=stop_room)
+            self.row(row, y, platform_x, leave_x, where_x, train=section.kind == "train", stop_room=stop_room)
             y += self.row_h * s
             if index == 0 and calling:
                 y = self.calling(calling, y)
@@ -797,16 +822,21 @@ def board_frame(view: BoardView, palette: Palette, panel: Panel = PHAT, text_siz
 
 
 def paint_board(painter: Painter, view: BoardView, panel: Panel) -> Frame:
-    """The board as `painter` draws it: the header, the trains, a rule and the buses."""
+    """The board as `painter` draws it: the header, then each mode's
+    section, a rule between each and the next."""
     s = painter.s
-    if calling_line(view.trains, painter.live):
-        painter.limits = row_limits(panel, painter.text_size, calling=True)
+    painter.calling_for = calling_section(view.sections, painter.live)
+    painter.limits = row_limits(panel, painter.text_size, calling=painter.calling_for is not None,
+                                modes=tuple(section.mode for section in view.sections))
     painter.header(view)
-    sections = [painter.drawn_rows(view.trains), painter.drawn_rows(view.buses)]
-    where_x = where_column(sections, painter.f, panel.width, s, painter.live)
-    y = painter.section(view.trains, (painter.header_h + _SECTION_GAP) * s, where_x)
-    painter.rule(y + s)
-    painter.section(view.buses, y + (_SECTION_GAP + 1) * s, where_x)
+    drawn = [painter.drawn_rows(section) for section in view.sections]
+    where_x = where_column(drawn, painter.f, panel.width, s, painter.live)
+    y = (painter.header_h + _SECTION_GAP) * s
+    for index, section in enumerate(view.sections):
+        if index:
+            painter.rule(y + s)
+            y += (_SECTION_GAP + 1) * s
+        y = painter.section(section, y, where_x)
     return painter.frame()
 
 

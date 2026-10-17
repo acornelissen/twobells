@@ -182,9 +182,9 @@ def test_screen_demo_says_where_the_trains_and_buses_are():
     state, trains, buses, words = {}, set(), set(), set()
     for _ in range(12 * 15):  # 15 simulated minutes at 5 s a tick
         view = run_once(em.board, state, em.display, em.clock(), prime=not state).view
-        trains |= {r.strip.where for r in view.trains.rows if r.strip and r.strip.at is not None}
-        buses |= {r.strip.where for r in view.buses.rows if r.strip and r.strip.at is not None}
-        words |= {r.strip.where for r in (*view.trains.rows, *view.buses.rows) if r.strip}
+        trains |= {r.strip.where for r in view.section("train").rows if r.strip and r.strip.at is not None}
+        buses |= {r.strip.where for r in view.section("bus").rows if r.strip and r.strip.at is not None}
+        words |= {r.strip.where for r in (*view.section("train").rows, *view.section("bus").rows) if r.strip}
         em.clock.advance()
     assert "Left Hadfield" in trains and "Not started" in words
     assert {"3 stops away", "1 stop away"} <= buses

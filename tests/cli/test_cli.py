@@ -104,8 +104,8 @@ def test_demo_names_glossop_s_two_henry_street_stops(monkeypatch, tmp_path):
     real = dev.build_view
     monkeypatch.setattr(dev, "build_view", lambda *a, **k: views.append(real(*a, **k)) or views[-1])
     main(["demo", "--png", str(tmp_path / "a.png"), "--display", "hdmi-1920x440"])
-    assert views[0].buses.stop_names == ("Henry Street A", "Henry Street B")
-    assert [r.stop_name for r in views[0].buses.rows] == ["Henry Street A", "Henry Street B", "Henry Street A"]
+    assert views[0].section("bus").stop_names == ("Henry Street A", "Henry Street B")
+    assert [r.stop_name for r in views[0].section("bus").rows] == ["Henry Street A", "Henry Street B", "Henry Street A"]
 
 
 def test_load_env_file_parses_assignments(tmp_path):

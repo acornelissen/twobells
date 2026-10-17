@@ -7,7 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 from functools import partial
@@ -15,6 +15,7 @@ from functools import partial
 from ..core import words
 from ..core.model import Departure, Status, Strip, minutes_between, strip_key
 from ..core.walk import WalkTimes, leave_by, leave_time
+from ..settings import modes as mode_list
 from ..settings import show as show_items
 
 
@@ -103,13 +104,20 @@ class Section:
     # Every name a screen wide enough calls your stops by, shown or not, so
     # the column they are drawn in is as wide whatever buses are shown.
     stop_names: tuple[str, ...] = ()
+    # Its mode (settings/modes.py): "train", "bus" or "metro".
+    mode: str = "train"
+
+    @property
+    def kind(self) -> str:
+        """How its rows are drawn: "train" or "bus" (modes.Mode.rows)."""
+        return mode_list.mode(self.mode).rows
 
 
 @dataclass(frozen=True)
 class BoardView:
     title: str
-    trains: Section
-    buses: Section
+    # A section for each mode the board shows, in order (settings/modes.py).
+    sections: tuple[Section, ...]
     updated: str = field(compare=False)
     # A running HH:MM:SS clock, for screens that can redraw every second.
     clock: str | None = None
@@ -122,6 +130,17 @@ class BoardView:
     # On a screen, whether text too long for its space scrolls (the
     # scrolling setting); off, it is cut short with "…", as on e-paper.
     scroll: bool = True
+
+    def section(self, mode: str) -> Section:
+        """The section of `mode`; KeyError if the board doesn't show it."""
+        for section in self.sections:
+            if section.mode == mode:
+                return section
+        raise KeyError(mode)
+
+    def with_section(self, section: Section) -> BoardView:
+        """The view with `section` in place of its mode's."""
+        return replace(self, sections=tuple(section if s.mode == section.mode else s for s in self.sections))
 
     def signature(self) -> str:
         content = asdict(self)
@@ -258,7 +277,7 @@ def _leave(departures, walk: WalkTimes | None, now: str, wording: Wording, clock
     return wording.leave(_leave_words(leave, clock), _target(dep)), departures.index(dep)
 
 
-def _section(label, departures, to_row, now, empty_text, stale, walk, wording, clock, strips,
+def _section(mode: str, departures, to_row, now, stale, walk, wording, clock, strips,
              stop_names: Mapping[str, str]) -> Section:
     upcoming = [d for d in departures if not d.is_gone(now)]
     rows = tuple(
@@ -270,13 +289,13 @@ def _section(label, departures, to_row, now, empty_text, stale, walk, wording, c
         text, index = None, None
     else:
         text, index = _leave(upcoming, walk, now, wording, clock)
-    return Section(label, rows, empty_text, stale, text, index, tuple(sorted(set(stop_names.values()))))
+    item = mode_list.mode(mode)
+    return Section(item.label, rows, item.empty, stale, text, index, tuple(sorted(set(stop_names.values()))), mode)
 
 
 def build_view(
     title: str,
-    trains: list[Departure],
-    buses: list[Departure],
+    departures: Mapping[str, Sequence[Departure]],
     now: str,
     stale: set[str],
     walk: WalkTimes | None = None,
@@ -290,7 +309,9 @@ def build_view(
     show: Collection[str] | None = None,
     scroll: bool = True,
 ) -> BoardView:
-    """`clock` (HH:MM:SS, matching `now`) is for screens: it is shown, leave
+    """A section for each mode in `departures`, in its order: its departures
+    (settings/modes.py), each drawn as its mode's rows are. `clock`
+    (HH:MM:SS, matching `now`) is for screens: it is shown, leave
     times count down instead of giving a clock time, and trains have their
     "Calling at" lines. `notices` are the
     station's disruption messages, shown one after another as one notice;
@@ -308,12 +329,16 @@ def build_view(
     shown = set(show_items.keys("board") if show is None else show)
     strips = (strips or {}) if "where" in shown else {}
     to_train = partial(_train_row, platforms="platforms" in shown, calling="calling_at" in shown)
+    to_rows = {"train": to_train, "bus": _bus_row}
+    sections = []
+    for mode, found in departures.items():
+        kind = mode_list.mode(mode).rows
+        names = (stop_names or {}) if kind == "bus" else {}
+        sections.append(_section(mode, list(found), to_rows[kind], now, mode in stale, walk, wording, clock, strips,
+                                 names))
     return BoardView(
         title=title,
-        trains=_section("Trains", trains, to_train, now, "No trains", "train" in stale, walk, wording, clock,
-                        strips, {}),
-        buses=_section("Buses", buses, _bus_row, now, "No buses", "bus" in stale, walk, wording, clock, strips,
-                       stop_names or {}),
+        sections=tuple(sections),
         updated=now,
         clock=clock,
         notice=_notice(notices or []) if "disruption" in shown else None,

@@ -211,7 +211,7 @@ def demo_command(args) -> int:
     # Rain likely through the 07:00 hour, before you'd reach the 07:12; on e-paper a notice takes its place.
     rain = rain_line(FakeWeatherSource(lambda: now).fetch(), now, now.replace(minute=12), 50, live=bool(clock))
     view = build_view(
-        DEMO_TITLE, trains, buses, "07:03", set(), walk, theme.wording, clock,
+        DEMO_TITLE, {"train": trains, "bus": buses}, "07:03", set(), walk, theme.wording, clock,
         notices=[DEMO_NOTICE] if args.notice else None,
         rain=rain if args.rain else None,
         strips=strips,

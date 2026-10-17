@@ -16,8 +16,10 @@ FONT = DotFont()
 def board(trains=(), buses=(), leave=None, leave_for=0, stale_trains=False, stale_buses=False):
     return BoardView(
         title="Glossop > Manchester Picc",
-        trains=Section("Trains", tuple(trains), "No trains", stale_trains, leave, leave_for if leave else None),
-        buses=Section("Buses", tuple(buses), "No buses", stale_buses),
+        sections=(
+            Section("Trains", tuple(trains), "No trains", stale_trains, leave, leave_for if leave else None),
+            Section("Buses", tuple(buses), "No buses", stale_buses, mode="bus"),
+        ),
         updated="07:03",
     )
 
@@ -1187,7 +1189,7 @@ NAMED_BUSES = [
 
 def named(buses=NAMED_BUSES, stop_names=GLOSSOP_STOPS, clock=CLOCK, **changes):
     view = screen(buses=buses, **changes)
-    return dataclasses.replace(view, clock=clock, buses=dataclasses.replace(view.buses, stop_names=stop_names))
+    return dataclasses.replace(view.with_section(dataclasses.replace(view.section("bus"), stop_names=stop_names)), clock=clock)
 
 
 def test_only_the_bar_screen_is_wide_enough_for_stop_names():
@@ -1309,8 +1311,8 @@ CALLING = ("Calling at: Dinting, Broadbottom, Hattersley, Godley and Manchester 
 
 def calling(view=None, text=CALLING):
     view = view or screen()
-    first = dataclasses.replace(view.trains.rows[0], calling=text)
-    return dataclasses.replace(view, trains=dataclasses.replace(view.trains, rows=(first, *view.trains.rows[1:])))
+    first = dataclasses.replace(view.section("train").rows[0], calling=text)
+    return view.with_section(dataclasses.replace(view.section("train"), rows=(first, *view.section("train").rows[1:])))
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
@@ -1334,9 +1336,9 @@ def test_a_short_calling_at_line_stands_still():
 
 def test_only_the_first_train_has_a_calling_at_line():
     view = screen()
-    second = dataclasses.replace(view.trains.rows[1], calling=CALLING)
-    view = dataclasses.replace(view, trains=dataclasses.replace(view.trains, rows=(view.trains.rows[0], second,
-                                                                                    *view.trains.rows[2:])))
+    second = dataclasses.replace(view.section("train").rows[1], calling=CALLING)
+    trains = view.section("train")
+    view = view.with_section(dataclasses.replace(trains, rows=(trains.rows[0], second, *trains.rows[2:])))
     assert CALLING not in texts(sign_layout(view, *dots(HDMI_1280X400)).items)
 
 

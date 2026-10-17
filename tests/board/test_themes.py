@@ -87,7 +87,7 @@ def _buses(leaves, leave_ats=(None, None, None)):
         Row("61", "Buxton", "07:35 sch", leave=leaves[1], stop="B", stop_name="Henry Street B", leave_at=leave_ats[1]),
         Row("237", "Ashton", "07:41", leave=leaves[2], stop="A", stop_name="Henry Street A", leave_at=leave_ats[2],
             strip=Strip("Not started", 7, 5, None)),
-    ), "No buses", stop_names=("Henry Street A", "Henry Street B"))
+    ), "No buses", stop_names=("Henry Street A", "Henry Street B"), mode="bus")
 
 
 def demo_page(look, screen):
@@ -99,7 +99,7 @@ def demo_page(look, screen):
     else:
         trains = _trains("Leave by 07:07 (07:12)" if plain else "Leave by 07:07")
         buses = _buses(("Leave by 07:16", "Leave by 07:27", "Leave by 07:33"), ("07:16", "07:27", "07:33"))
-    return BoardView("Glossop > Manchester Picc", trains, buses, "07:03", CLOCK if screen else None, NOTICE,
+    return BoardView("Glossop > Manchester Picc", (trains, buses), "07:03", CLOCK if screen else None, NOTICE,
                      "Rain from 07:03 (70%)")
 
 
@@ -115,14 +115,14 @@ def crowded_page(screen):
         Row("X57A", "Sheffield Interchange via Snake Pass and Ladybower", "Exp 23:58", Style.INVERTED,
             "Leave in 1 min", "C", long_stop, strip=Strip("Leaving Glossop Norfolk Street", 5, 4, 0.0)),
         Row("6", "Glossop Circular", "Due", stop="D", leave_at="23:50", leave="Leave by 23:50"),
-    ), "No buses", stop_names=(long_stop, "Henry Street B"))
-    return BoardView("Glossop > Sheffield and everywhere in between", trains, buses, "23:47",
+    ), "No buses", stop_names=(long_stop, "Henry Street B"), mode="bus")
+    return BoardView("Glossop > Sheffield and everywhere in between", (trains, buses), "23:47",
                      "23:47:59" if screen else None, None, ("Heavy rain from 23:50 (95%) until the morning, with thunder and hail over the Pennines "
                       "and flooding on the Snake Pass"))
 
 
 def empty_page(screen):
-    return BoardView("GLO > MAN", Section("Trains", (), "No trains"), Section("Buses", (), "No buses", stale=True),
+    return BoardView("GLO > MAN", (Section("Trains", (), "No trains"), Section("Buses", (), "No buses", stale=True, mode="bus")),
                      "07:03", CLOCK if screen else None)
 
 

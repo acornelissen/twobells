@@ -42,9 +42,9 @@ BUSES = (
 
 
 def board(trains=TRAINS, buses=BUSES, clock=CLOCK, **extra):
-    return BoardView("GLO > MAN", Section("Trains", tuple(trains), "No trains", leave="Leave in 3 min (07:12)",
-                                          leave_for=0),
-                     Section("Buses", tuple(buses), "No buses"), "07:03", clock, **extra)
+    return BoardView("GLO > MAN", (Section("Trains", tuple(trains), "No trains", leave="Leave in 3 min (07:12)",
+                                           leave_for=0),
+                                   Section("Buses", tuple(buses), "No buses", mode="bus")), "07:03", clock, **extra)
 
 
 def row_top(panel, section, index):

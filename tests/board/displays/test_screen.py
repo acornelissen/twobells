@@ -242,7 +242,7 @@ from twobells.board.view import BoardView, Row, Section  # noqa: E402
 
 def flap_board(time, clock="07:03:15"):
     trains = Section("Trains", (Row(time, "Hadfield", "On time"),), "No trains")
-    return BoardView("GLO > MAN", trains, Section("Buses", (), "No buses"), "07:03", clock)
+    return BoardView("GLO > MAN", (trains, Section("Buses", (), "No buses", mode="bus")), "07:03", clock)
 
 
 @pytest.mark.parametrize("panel", [HDMI_1280X400, HDMI_1920X440], ids=lambda p: p.name)

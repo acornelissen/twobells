@@ -16,6 +16,7 @@ from dataclasses import dataclass, field, replace
 from PIL import Image, ImageDraw
 
 from ..core.model import Strip
+from ..settings import modes as mode_list
 from .dotfont import HEIGHT as GLYPH_H
 from .dotfont import TINY, TINY_HEIGHT, DotFont
 from .panel import (
@@ -43,7 +44,9 @@ _COL_GAP = 5
 _FOOTER_GAP = 3
 # Either side of the rain warning beside a notice, so the three read as three.
 _NOTES_GAP = 2 * _COL_GAP
-_ORDINALS = ("1st", "2nd", "3rd", "4th")
+_ORDINALS = ("1st", "2nd", "3rd", "4th", "5th", "6th")
+# The ordinals' column is as wide as a board of four trains needs.
+_ORDINAL_W = "4th"
 _MAX_TRAINS = 3
 _FONT = DotFont()
 _SMALL = DotFont(TINY)
@@ -165,10 +168,10 @@ class _Columns:
     platform_x: float | None = None
 
 
-def _train_columns(section: Section, width: int) -> _Columns:
+def _train_columns(section: Section, width: int, most: int = _MAX_TRAINS) -> _Columns:
     """From the right, each column left-aligned clear of the widest one after
-    it, so it lines up."""
-    rows = section.rows[:_MAX_TRAINS]
+    it, so it lines up, for the first `most` rows."""
+    rows = section.rows[:most]
     if not rows:
         return _Columns(width - MARGIN)
     end = width - MARGIN - max(_w(r.right) for r in rows)
@@ -195,15 +198,20 @@ def _bus_columns(section: Section, width: int) -> _Columns:
     return _Columns(leave_x, leave_x)
 
 
-def _where_column(view: BoardView, trains: _Columns, buses: _Columns, width: int) -> float | None:
+def _columns(section: Section, width: int, most: int) -> _Columns:
+    """A section's columns, as its mode's rows are drawn (modes.Mode.rows)."""
+    return _train_columns(section, width, most) if section.kind == "train" else _bus_columns(section, width)
+
+
+def _where_column(view: BoardView, columns: list[_Columns], width: int) -> float | None:
     """Where the where words start, with the little lines after them: one
     column down the board, clear of both sections' other columns. Only on a
     screen wide enough: a strip changes every few seconds, so e-paper, which
     redraws slowly and only on change, never shows one. It has a fixed width,
     so it stays put as the words change."""
-    if view.clock is None or width < STRIP_COLUMN_MIN_WIDTH:
+    if view.clock is None or width < STRIP_COLUMN_MIN_WIDTH or not columns:
         return None
-    return min(trains.end, buses.end) - _COL_GAP - STRIP_WIDTH - _COL_GAP - where_width(width)
+    return min(c.end for c in columns) - _COL_GAP - STRIP_WIDTH - _COL_GAP - where_width(width)
 
 
 def _add_strip(layout: SignLayout, row: Row, where_x: float, y: int, width: int, train: bool, inverted: bool) -> None:
@@ -230,16 +238,19 @@ def _stop_column(section: Section, width: int, live: bool) -> int | None:
 def calling_line(section: Section, live: bool) -> str | None:
     """The first train's "Calling at" line, on a screen (`live`), which
     scrolls it under the train's row; None on e-paper, which can't."""
-    if not live or not section.rows:
+    if not live or section.kind != "train" or not section.rows:
         return None
     return section.rows[0].calling
 
 
 def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _Columns,
-            where_x: float | None) -> int:
-    time_x = MARGIN + _w(_ORDINALS[-1]) + _COL_GAP
+            where_x: float | None, most: int = _MAX_TRAINS, bottom: int | None = None,
+            calling: bool = True) -> int:
+    """A train section's rows from `y`, the first `most`, while they fit
+    above `bottom`; with `calling`, the first one's "Calling at" line under it."""
+    time_x = MARGIN + _w(_ORDINAL_W) + _COL_GAP
     dest_x = time_x + _w("00:00") + _COL_GAP
-    rows = section.rows[:_MAX_TRAINS]
+    rows = section.rows[:most]
     if not rows:
         layout.add(MARGIN, y, section.empty_text)
         return y + _LINE
@@ -247,6 +258,8 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
         where_x = None  # no room kept for strips that none of them has
     leave_for = section.leave_for or 0
     for index, row in enumerate(rows):
+        if bottom is not None and index and y + GLYPH_H > bottom:
+            break
         inverted = row.style is Style.INVERTED
         status_x = _right(row.right, width)
         if where_x is not None:
@@ -267,7 +280,7 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
             layout.add(columns.leave_x, y, section.leave, inverted)
         layout.add(status_x, y, row.right, inverted)
         y += _LINE
-        if index == 0 and calling_line(section, layout.live):
+        if index == 0 and calling and calling_line(section, layout.live):
             # As on the real board: under the first train, where it calls, scrolling.
             layout.fit(time_x, y, row.calling or "", width - MARGIN - time_x)
             y += _LINE
@@ -279,8 +292,8 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
 
 
 def _buses(layout: SignLayout, section: Section, y: int, bottom: int, width: int, columns: _Columns,
-           where_x: float | None) -> int:
-    rows = list(section.rows)
+           where_x: float | None, most: int | None = None) -> int:
+    rows = list(section.rows[:most])
     if not rows:
         layout.add(MARGIN, y, section.empty_text)
         return y + _LINE
@@ -321,7 +334,7 @@ def _buses(layout: SignLayout, section: Section, y: int, bottom: int, width: int
 
 def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> None:
     y = height - TINY_HEIGHT - 1
-    stale = [name for name, s in (("trains", view.trains), ("buses", view.buses)) if s.stale]
+    stale = [mode_list.mode(s.mode).noun for s in view.sections if s.stale]
     badge = "Not updating: " + ", ".join(stale) if stale else None
     # Where the free part of the bottom line ends: before the badge, if there is one.
     free_end = width - MARGIN
@@ -362,33 +375,86 @@ def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> Non
         layout.add(width - MARGIN - _SMALL.getlength(badge), y, badge, inverted=True, small=True)
 
 
+# From the top of a section's last line to the top of the next section's
+# first: the line, then the dotted rule with its space either side.
+_NEXT_SECTION = _LINE + _ABOVE_RULE - 2 + _BELOW_RULE
+
+
+def _most_rows(section: Section, alone: bool, epaper: bool) -> int:
+    """The most rows a section draws: a train section 3 while it shares the
+    board, as many as there are ordinals alone; any other its mode's most
+    while it shares the board (modes.Mode.most_rows)."""
+    if section.kind == "train":
+        return len(_ORDINALS) if alone else _MAX_TRAINS
+    return mode_list.mode(section.mode).most_rows[0 if epaper else 1]
+
+
+def _lines(section: Section, most: int, live: bool) -> int:
+    """How many lines a section takes, drawn whole: its rows ("No buses" is
+    a line too), and a train's "Calling at" and leave lines."""
+    rows = max(1, min(most, len(section.rows)))
+    if section.kind != "train":
+        return rows
+    return rows + bool(calling_line(section, live)) + bool(section.leave and (section.leave_for or 0) < rows)
+
+
 def sign_layout(view: BoardView, width: int = WIDTH, height: int = HEIGHT) -> SignLayout:
-    """Places the text on a board `width` x `height` dots."""
+    """Places the text on a board `width` x `height` dots: each mode's
+    section, a dotted rule between each and the next, and the bottom line.
+    Each section but the last draws its most rows (_most_rows), leaving the
+    sections after it a line each; the last has the rest of the room."""
     layout = SignLayout(live=view.clock is not None, scroll=view.scroll)
-    trains, buses = _train_columns(view.trains, width), _bus_columns(view.buses, width)
-    where_x = _where_column(view, trains, buses, width)
-    y = _trains(layout, view.trains, _TOP, width, trains, where_x)
-    rule = y + _ABOVE_RULE - 2  # each line already carries 2 dots of leading
-    layout.rules.append(rule)
+    sections = view.sections
+    alone = len(sections) == 1
+    epaper = view.clock is None
+    calling_for = next((s.mode for s in sections if calling_line(s, layout.live)), None)
+    columns = [_columns(s, width, _most_rows(s, alone, epaper)) for s in sections]
+    where_x = _where_column(view, columns, width)
     footer_y = height - (GLYPH_H if view.clock else TINY_HEIGHT) - 1  # the bottom line's top
-    buses_top = rule + _BELOW_RULE
-    # A rule over the bottom line, as between trains and buses. A screen always
-    # has one, unless the "Calling at" line has left it room for the rule or a
-    # bus, not both (the bar screen's third); e-paper only when it costs no
-    # bus, as it can on a full board.
-    lines = max(1, len(view.buses.rows))  # "No buses" is a line too
-    without = min(lines, _rows_that_fit(buses_top, footer_y - 2))
-    with_rule = min(lines, _rows_that_fit(buses_top, footer_y - 2 * _FOOTER_GAP - 1))
-    screen_rule = view.clock is not None and not calling_line(view.trains, layout.live)
-    footer_rule = with_rule > 0 and (screen_rule or with_rule == without)
-    bottom = footer_y - 2 * _FOOTER_GAP - 1 if footer_rule else footer_y - 2
-    _buses(layout, view.buses, buses_top, bottom, width, buses, where_x)
-    if footer_rule:
-        # Halfway between the last bus and the bottom line, so the gaps match.
-        last_bottom = buses_top + (with_rule - 1) * _LINE + GLYPH_H - 1
-        layout.rules.append(last_bottom + (footer_y - last_bottom) // 2)
+    y = _TOP
+    for index, (section, cols) in enumerate(zip(sections, columns, strict=True)):
+        if index:
+            rule = y + _ABOVE_RULE - 2  # each line already carries 2 dots of leading
+            layout.rules.append(rule)
+            y = rule + _BELOW_RULE
+        calling = section.mode == calling_for
+        if index < len(sections) - 1:
+            # Room for a line of each section after it, above the bottom line.
+            bottom = footer_y - 2 - (len(sections) - 1 - index) * _NEXT_SECTION
+            most = _most_rows(section, alone, epaper)
+            if section.kind == "train":
+                y = _trains(layout, section, y, width, cols, where_x, most, bottom, calling)
+            else:
+                y = _buses(layout, section, y, bottom, width, cols, where_x, most)
+            continue
+        _last(layout, view, section, cols, y, footer_y, width, where_x, calling_for, alone, calling)
     _footer(layout, view, width, height)
     return layout
+
+
+def _last(layout: SignLayout, view: BoardView, section: Section, columns: _Columns, top: int, footer_y: int,
+          width: int, where_x: float | None, calling_for: str | None, alone: bool, calling: bool) -> None:
+    """The last section, from `top`, with all the room down to the bottom
+    line, and a rule over that line if there is room for it, as between
+    sections. A screen always has one, unless the "Calling at" line has
+    left it room for the rule or a bus, not both (the bar screen's third);
+    e-paper only when it costs no row, as it can on a full board."""
+    train = section.kind == "train"
+    most = _most_rows(section, alone, view.clock is None) if train else len(section.rows)
+    lines = _lines(section, most, layout.live) if train else max(1, len(section.rows))
+    without = min(lines, _rows_that_fit(top, footer_y - 2))
+    with_rule = min(lines, _rows_that_fit(top, footer_y - 2 * _FOOTER_GAP - 1))
+    screen_rule = view.clock is not None and calling_for is None
+    footer_rule = with_rule > 0 and (screen_rule or with_rule == without)
+    bottom = footer_y - 2 * _FOOTER_GAP - 1 if footer_rule else footer_y - 2
+    if train:
+        _trains(layout, section, top, width, columns, where_x, most, bottom, calling)
+    else:
+        _buses(layout, section, top, bottom, width, columns, where_x)
+    if footer_rule:
+        # Halfway between the last line and the bottom line, so the gaps match.
+        last_bottom = top + (with_rule - 1) * _LINE + GLYPH_H - 1
+        layout.rules.append(last_bottom + (footer_y - last_bottom) // 2)
 
 
 def _rows_that_fit(top: int, bottom: int) -> int:

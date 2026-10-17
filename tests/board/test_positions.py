@@ -124,7 +124,7 @@ class Setup:
 
 
 def train_strip(view, index=0):
-    return view.trains.rows[index].strip
+    return view.section("train").rows[index].strip
 
 
 # Buses
@@ -133,7 +133,7 @@ def train_strip(view, index=0):
 def test_a_screen_s_bus_rows_say_where_the_bus_is():
     setup = Setup()
     view = setup.tick().view
-    assert view.buses.rows[0].strip == WHERE
+    assert view.section("bus").rows[0].strip == WHERE
 
 
 def test_the_live_board_of_a_departures_fetch_is_used_without_asking_again():
@@ -156,19 +156,19 @@ def test_a_failure_gives_no_bus_strip_rather_than_the_last_one():
     setup = Setup()
     setup.tick()
     setup.buses.error = RuntimeError("there is no bus timetable yet")
-    assert setup.tick(30).view.buses.rows[0].strip is None
+    assert setup.tick(30).view.section("bus").rows[0].strip is None
     setup.buses.error = None
-    assert setup.tick(60).view.buses.rows[0].strip == WHERE
+    assert setup.tick(60).view.section("bus").rows[0].strip == WHERE
 
 
 def test_bus_strips_older_than_two_minutes_are_dropped():
     setup = Setup(bus_windows=EVENINGS)  # the bus windows close at 22:10
     first = TONIGHT.replace(minute=9, second=50)
-    assert run_once(setup.board, setup.state, setup.display, first).view.buses.rows[0].strip == WHERE
+    assert run_once(setup.board, setup.state, setup.display, first).view.section("bus").rows[0].strip == WHERE
     later = first + timedelta(minutes=2)
-    assert run_once(setup.board, setup.state, setup.display, later).view.buses.rows[0].strip == WHERE
+    assert run_once(setup.board, setup.state, setup.display, later).view.section("bus").rows[0].strip == WHERE
     gone = later + timedelta(seconds=1)
-    assert run_once(setup.board, setup.state, setup.display, gone).view.buses.rows[0].strip is None
+    assert run_once(setup.board, setup.state, setup.display, gone).view.section("bus").rows[0].strip is None
     assert setup.buses.asked == [True]  # nothing asked once the windows closed
 
 
@@ -178,13 +178,13 @@ def test_without_where_it_is_nothing_is_asked_where_the_trains_and_buses_are():
     view = setup.run(90)
     assert setup.trains.calls == 1  # the departures are still fetched
     assert setup.details.asked == [] and setup.buses.asked == []
-    assert all(r.strip is None for r in view.trains.rows + view.buses.rows)
+    assert all(r.strip is None for r in view.section("train").rows + view.section("bus").rows)
 
 
 def test_anything_but_a_strip_is_dropped():
     setup = Setup()
     setup.buses.strips = {strip_key(BUS): {"where": "At your stop"}}
-    assert setup.tick().view.buses.rows[0].strip is None
+    assert setup.tick().view.section("bus").rows[0].strip is None
 
 
 # Trains
@@ -197,7 +197,7 @@ def test_a_screen_s_train_rows_say_where_the_train_is():
                            TONIGHT)
     assert found.where == "At Glossop now"  # the dashboard's words
     assert train_strip(view) == Strip("At Glossop", len(found.strip_stops), found.yours, found.train_at)
-    assert [r.strip is not None for r in view.trains.rows] == [True, True, True, False, False]
+    assert [r.strip is not None for r in view.section("train").rows] == [True, True, True, False, False]
     assert setup.details.asked == IDS[:3]
 
 
@@ -235,7 +235,7 @@ def test_a_refused_key_stops_asking():
     setup.details.errors["*"] = DetailsUnavailable("Service details refused the key (HTTP 403)")
     view = setup.run(300)
     assert setup.details.asked == [IDS[0]]
-    assert all(r.strip is None for r in view.trains.rows)
+    assert all(r.strip is None for r in view.section("train").rows)
 
 
 def test_train_details_older_than_two_minutes_are_dropped():
@@ -250,14 +250,14 @@ def test_trains_are_only_asked_about_in_the_train_windows():
     setup = Setup(train_windows=(parse_window("Mon-Fri 06:30-09:30"),))
     result = run_once(setup.board, setup.state, setup.display, TONIGHT, prime=True)  # fetched, out of hours
     assert setup.trains.calls == 1 and setup.details.asked == []
-    assert all(r.strip is None for r in result.view.trains.rows)
+    assert all(r.strip is None for r in result.view.section("train").rows)
 
 
 def test_no_train_strips_without_a_details_key():
     setup = Setup(details=False)
     view = setup.tick().view
-    assert all(r.strip is None for r in view.trains.rows)
-    assert view.buses.rows[0].strip == WHERE
+    assert all(r.strip is None for r in view.section("train").rows)
+    assert view.section("bus").rows[0].strip == WHERE
 
 
 # E-paper and the SD card
@@ -267,7 +267,7 @@ def test_e_paper_never_asks_where_anything_is():
     setup = Setup(panel=PHAT)
     view = setup.run(300)
     assert setup.buses.asked == [] and setup.details.asked == []
-    assert all(r.strip is None for r in (*view.trains.rows, *view.buses.rows))
+    assert all(r.strip is None for r in (*view.section("train").rows, *view.section("bus").rows))
     assert "strips" not in setup.state
 
 

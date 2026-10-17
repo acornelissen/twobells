@@ -75,7 +75,7 @@ def test_first_run_fetches_everything_and_renders():
     assert (trains.calls, buses.calls) == (1, 1)
     assert result.rendered
     assert len(display.shown) == 1
-    assert [r.left for r in result.view.trains.rows] == ["07:12"]
+    assert [r.left for r in result.view.section("train").rows] == ["07:12"]
 
 
 def test_unchanged_data_within_interval_neither_fetches_nor_renders():
@@ -99,7 +99,7 @@ def test_changed_data_triggers_render():
     trains.departures = [train(expected="07:19", status=Status.LATE)]
     result = run_once(board, state, display, THU_0700 + timedelta(minutes=2))
     assert result.rendered
-    assert result.view.trains.rows[0].right == "Exp 07:19"
+    assert result.view.section("train").rows[0].right == "Exp 07:19"
 
 
 def test_unchanged_data_never_redraws_however_long_it_has_been():
@@ -133,8 +133,8 @@ def test_failed_fetch_keeps_previous_departures():
     run_once(board, state, display, THU_0700)
     trains.error = OSError("network down")
     result = run_once(board, state, display, THU_0700 + timedelta(minutes=2))
-    assert [r.left for r in result.view.trains.rows] == ["08:30"]
-    assert not result.view.trains.stale
+    assert [r.left for r in result.view.section("train").rows] == ["08:30"]
+    assert not result.view.section("train").stale
 
 
 def test_source_marked_stale_when_failures_outlast_threshold():
@@ -145,7 +145,7 @@ def test_source_marked_stale_when_failures_outlast_threshold():
     result = None
     for minutes in (2, 4, 6, 8):
         result = run_once(board, state, display, THU_0700 + timedelta(minutes=minutes))
-    assert result.view.trains.stale
+    assert result.view.section("train").stale
     assert result.rendered
 
 
@@ -154,7 +154,7 @@ def test_nothing_fetched_outside_windows():
     saturday = datetime(2026, 10, 10, 7, 0)
     result = run_once(board, state, display, saturday)
     assert (trains.calls, buses.calls) == (0, 0)
-    assert not result.view.trains.stale
+    assert not result.view.section("train").stale
 
 
 def test_state_survives_a_round_trip_through_disk(tmp_path):
@@ -168,7 +168,7 @@ def test_state_survives_a_round_trip_through_disk(tmp_path):
 
     assert (trains.calls, buses.calls) == (1, 1)
     assert not result.rendered
-    assert [r.left for r in result.view.trains.rows] == ["07:12"]
+    assert [r.left for r in result.view.section("train").rows] == ["07:12"]
 
 
 def at_platform(platform, scheduled="08:30"):
@@ -180,18 +180,18 @@ def test_a_platform_unlike_the_last_fetchs_is_marked_changed_across_runs(tmp_pat
     store = StateStore(tmp_path / "state.json")
     trains.departures = [at_platform("1")]
     result = run_once(board, state, display, THU_0700)
-    assert result.view.trains.rows[0].platform == "Plat 1"
+    assert result.view.section("train").rows[0].platform == "Plat 1"
     # The board's timer starts afresh each run: what was fetched comes from the file.
     store.save(state)
     state = store.load()
     trains.departures = [at_platform("2")]
     result = run_once(board, state, display, THU_0700 + timedelta(minutes=2))
-    assert result.view.trains.rows[0].platform == "Plat 2 (changed)"
+    assert result.view.section("train").rows[0].platform == "Plat 2 (changed)"
     store.save(state)
     state = store.load()
     # Still marked while it stays on its new platform.
     result = run_once(board, state, display, THU_0700 + timedelta(minutes=4))
-    assert result.view.trains.rows[0].platform == "Plat 2 (changed)"
+    assert result.view.section("train").rows[0].platform == "Plat 2 (changed)"
 
 
 def test_a_platform_is_never_compared_with_yesterdays_train():
@@ -201,7 +201,7 @@ def test_a_platform_is_never_compared_with_yesterdays_train():
     # The same time next morning is another train.
     trains.departures = [at_platform("2")]
     result = run_once(board, state, display, THU_0700 + timedelta(days=1))
-    assert result.view.trains.rows[0].platform == "Plat 2"
+    assert result.view.section("train").rows[0].platform == "Plat 2"
 
 
 def test_run_loop_ticks_and_advances_a_simulated_clock():
@@ -258,7 +258,7 @@ def test_changes_within_two_minutes_of_a_redraw_are_held_back():
     trains.departures = [train(expected="07:19", status=Status.LATE)]
     held = run_once(board, state, display, THU_0700 + timedelta(minutes=1))
     assert trains.calls == 2
-    assert held.view.trains.rows[0].right == "Exp 07:19"
+    assert held.view.section("train").rows[0].right == "Exp 07:19"
     assert not held.rendered
     assert len(display.shown) == 1
 
@@ -287,8 +287,8 @@ def test_board_walk_times_produce_leave_text():
     trains, buses, board, display, state = setup()
     board = dataclasses.replace(board, walk=WalkTimes(train=7, bus={"*": 5}))
     result = run_once(board, state, display, THU_0700)
-    assert result.view.trains.leave == "Leave by 07:05 (07:12)"
-    assert result.view.buses.rows[0].leave == "Leave by 07:15"
+    assert result.view.section("train").leave == "Leave by 07:05 (07:12)"
+    assert result.view.section("bus").rows[0].leave == "Leave by 07:15"
 
 
 def test_board_theme_picks_wording_and_renderer():
@@ -298,7 +298,7 @@ def test_board_theme_picks_wording_and_renderer():
     trains.departures = [train(status=Status.CANCELLED)]
     board = dataclasses.replace(board, theme=theme_named("sign"))
     result = run_once(board, state, display, THU_0700)
-    assert result.view.trains.rows[0].right == "Cancelled"
+    assert result.view.section("train").rows[0].right == "Cancelled"
     counts = {c: n for n, c in display.shown[0].getcolors()}
     assert counts[display.palette.black] > counts.get(display.palette.white, 0)
 
@@ -311,7 +311,7 @@ def test_prime_fetches_every_source_outside_its_windows():
     trains.departures = [train("12:30")]
     result = run_once(board, state, display, SATURDAY, prime=True)
     assert (trains.calls, buses.calls) == (1, 1)
-    assert result.view.trains.rows
+    assert result.view.section("train").rows
 
 
 def test_prime_still_respects_the_daily_bus_budget():
@@ -614,9 +614,9 @@ def test_morning_departures_do_not_come_back_in_the_evening():
     run_once(board, state, display, THU_0700.replace(hour=8, minute=30))
     # 08:40 is within 12 hours of 20:41 on the clock, but it was this morning.
     result = run_once(board, state, display, THU_0700.replace(hour=20, minute=41))
-    assert result.view.trains.rows == ()
-    assert result.view.buses.rows == ()
-    assert not result.view.buses.stale
+    assert result.view.section("train").rows == ()
+    assert result.view.section("bus").rows == ()
+    assert not result.view.section("bus").stale
 
 
 def test_departures_after_midnight_stay_until_they_leave():
@@ -625,8 +625,8 @@ def test_departures_after_midnight_stay_until_they_leave():
     buses.departures = [bus("00:20")]
     run_once(board, state, display, THU_0700.replace(hour=23, minute=50), prime=True)
     friday = THU_0700 + timedelta(days=1)
-    assert [r.left for r in run_once(board, state, display, friday.replace(hour=0, minute=10)).view.buses.rows] == ["341"]
-    assert run_once(board, state, display, friday.replace(hour=12, minute=30)).view.buses.rows == ()
+    assert [r.left for r in run_once(board, state, display, friday.replace(hour=0, minute=10)).view.section("bus").rows] == ["341"]
+    assert run_once(board, state, display, friday.replace(hour=12, minute=30)).view.section("bus").rows == ()
 
 
 # --- A failed draw keeps what was fetched (oz5.3) ---
@@ -661,7 +661,7 @@ def test_malformed_saved_departures_are_skipped():
     run_once(board, state, display, THU_0700)
     state["sources"]["train"]["departures"].append({"mode": "train", "unexpected": True})
     result = run_once(board, state, display, THU_0700 + timedelta(minutes=1))
-    assert [r.left for r in result.view.trains.rows] == ["07:12"]
+    assert [r.left for r in result.view.section("train").rows] == ["07:12"]
 
 
 # --- How the board is drawn counts as a change (oz5.12) ---
@@ -812,7 +812,7 @@ def test_data_from_after_now_counts_as_stale_once_the_clock_goes_back():
     trains.error = OSError("network down")
     result = run_once(board, state, display, THU_0700)
     assert trains.calls == 2  # fetched again straight away, and failed
-    assert result.view.trains.stale
+    assert result.view.section("train").stale
 
 
 def test_messages_from_after_now_are_not_kept_once_the_clock_goes_back():
@@ -1351,15 +1351,15 @@ def test_a_delayed_train_stays_on_the_board_until_a_fetch_drops_it():
     trains, buses, board, display, state = setup()
     trains.departures = [train("07:00", status=Status.LATE), train("07:30")]
     result = run_once(board, state, display, THU_0700 + timedelta(minutes=1))
-    assert [r.left for r in result.view.trains.rows] == ["07:00", "07:30"]
-    assert result.view.trains.rows[0].right == "Delayed"
+    assert [r.left for r in result.view.section("train").rows] == ["07:00", "07:30"]
+    assert result.view.section("train").rows[0].right == "Delayed"
 
     result = run_once(board, state, display, THU_0700 + timedelta(minutes=2))
-    assert [r.left for r in result.view.trains.rows] == ["07:00", "07:30"]
+    assert [r.left for r in result.view.section("train").rows] == ["07:00", "07:30"]
 
     trains.departures = [train("07:30")]
     result = run_once(board, state, display, THU_0700 + timedelta(minutes=3))
-    assert [r.left for r in result.view.trains.rows] == ["07:30"]
+    assert [r.left for r in result.view.section("train").rows] == ["07:30"]
 
 
 @pytest.mark.parametrize("saved", ["07:12", 5, None])
@@ -1369,7 +1369,7 @@ def test_malformed_saved_departures_show_none_rather_than_stopping(saved):
     entry = {"last_success": "2026-10-08T06:58:00", "departures": saved}
     state["sources"] = {"train": dict(entry), "bus": dict(entry)}
     result = run_once(board, state, display, THU_0700)
-    assert result.view.trains.rows == () and result.view.buses.rows == ()
+    assert result.view.section("train").rows == () and result.view.section("bus").rows == ()
 
 
 # --- Scrolling text on a screen: frames between ticks only while something scrolls ---
@@ -1523,22 +1523,22 @@ def named_board(names):
 def test_a_screen_s_bus_rows_carry_their_stops_names_told_apart_when_they_share_one():
     board = named_board({"A": "Henry Street", "B": "Henry Street"})
     view = run_once(board, {}, FakeScreen(), THU_0700).view
-    assert [(r.stop, r.stop_name) for r in view.buses.rows] == [
+    assert [(r.stop, r.stop_name) for r in view.section("bus").rows] == [
         ("A", "Henry Street A"), ("B", "Henry Street B"), ("C", None),
     ]
-    assert view.buses.stop_names == ("Henry Street A", "Henry Street B")
+    assert view.section("bus").stop_names == ("Henry Street A", "Henry Street B")
 
 
 def test_e_paper_never_asks_for_stop_names():
     board = named_board(AssertionError("asked"))
     view = run_once(board, {}, FakeDisplay(), THU_0700).view
-    assert all(r.stop_name is None for r in view.buses.rows) and view.buses.stop_names == ()
+    assert all(r.stop_name is None for r in view.section("bus").rows) and view.section("bus").stop_names == ()
 
 
 def test_a_fault_reading_stop_names_leaves_the_labels():
     view = run_once(named_board(OSError("timetable unreadable")), {}, FakeScreen(), THU_0700).view
-    assert [r.stop for r in view.buses.rows] == ["A", "B", "C"]
-    assert all(r.stop_name is None for r in view.buses.rows)
+    assert [r.stop for r in view.section("bus").rows] == ["A", "B", "C"]
+    assert all(r.stop_name is None for r in view.section("bus").rows)
 
 
 class LastBusSource(FakeSource):
@@ -1582,7 +1582,7 @@ def test_no_last_bus_once_it_has_gone_or_on_e_paper():
 def test_a_fault_finding_the_last_bus_costs_only_the_last_bus():
     board = last_bus_board(OSError("timetable unreadable"))
     view = run_once(board, {}, FakeScreen(), THU_0700).view
-    assert view.last_bus is None and view.buses.rows
+    assert view.last_bus is None and view.section("bus").rows
 
 
 # What the board shows ([board] show, settings/show.py)

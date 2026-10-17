@@ -68,9 +68,9 @@ def draw_bus_page(drawn: Path) -> None:
     """The second page on the screen, a little after the departures picture."""
     clock = "07:12:40"
     bus = Departure("bus", "341", "Hyde", "07:20", "07:24", Status.LATE, stop="A")
-    view = build_view(DEMO_TITLE, [], [bus], clock[:5], set(), WalkTimes(train=5, bus={"*": 8}),
+    view = build_view(DEMO_TITLE, {"train": [], "bus": [bus]}, clock[:5], set(), WalkTimes(train=5, bus={"*": 8}),
                       theme_named("sign").wording, clock)
-    row = view.buses.rows[0]
+    row = view.section("bus").rows[0]
     stops = tuple(s.name for s in DEMO_STRIP.stops)
     bus_at = 2.45  # between Grapes Inn and Sunlaws Street
     route = RouteView(f"{bus.service} to {bus.destination}", row.right, row.leave, stops, bus_at,

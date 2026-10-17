@@ -38,8 +38,10 @@ PALETTE = Palette(white=0, black=1, accent=2)
 def board(train_rows=(), bus_rows=(), stale_trains=False, train_leave=None):
     return BoardView(
         title="GLO > MAN",
-        trains=Section("Trains", tuple(train_rows), "No trains", stale_trains, train_leave),
-        buses=Section("Buses", tuple(bus_rows), "No buses"),
+        sections=(
+            Section("Trains", tuple(train_rows), "No trains", stale_trains, train_leave),
+            Section("Buses", tuple(bus_rows), "No buses", mode="bus"),
+        ),
         updated="07:03",
     )
 
@@ -297,7 +299,7 @@ def test_short_bus_destinations_are_whole_on_every_e_paper_panel():
 
 def buses_only(stale=False):
     rows = tuple(dataclasses.replace(r, style=Style.NORMAL, right="07:20") for r in e_paper_bus_rows())
-    return BoardView("GLO > MAN", Section("Trains", (), "No trains"), Section("Buses", rows, "No buses", stale), "07:03")
+    return BoardView("GLO > MAN", (Section("Trains", (), "No trains"), Section("Buses", rows, "No buses", stale, mode="bus")), "07:03")
 
 
 def bus_label_band(image):
@@ -330,7 +332,7 @@ def test_the_leave_heading_never_touches_not_updating(panel, text_size):
 def test_the_leave_heading_is_drawn_beside_buses(panel):
     top, bottom, _ = bus_label_band(render(buses_only(stale=True), PALETTE, panel))
     s = plain_scale(panel)
-    leave_x = leave_column(buses_only().buses.rows, load_fonts(s), panel.width, s)
+    leave_x = leave_column(buses_only().section("bus").rows, load_fonts(s), panel.width, s)
     assert black_right_of(render(buses_only(), PALETTE, panel), top, bottom, int(leave_x) - 1)
 
 
@@ -404,8 +406,8 @@ def test_no_leave_text_for_a_train_that_is_not_drawn():
     # Only three trains fit; a leave time for the fourth would point at nothing.
     rows = [Row(f"07:{m}", "Manchester", "On time") for m in (12, 20, 31, 42)]
     view = board(rows)
-    for_fourth = dataclasses.replace(view, trains=dataclasses.replace(view.trains, leave="Leave by 07:35 (07:42)", leave_for=3))
-    for_third = dataclasses.replace(for_fourth, trains=dataclasses.replace(for_fourth.trains, leave_for=2))
+    for_fourth = view.with_section(dataclasses.replace(view.section("train"), leave="Leave by 07:35 (07:42)", leave_for=3))
+    for_third = for_fourth.with_section(dataclasses.replace(for_fourth.section("train"), leave_for=2))
     assert ink_in_right_half_of_train_label_row(render(for_fourth, PALETTE)) == 0
     assert ink_in_right_half_of_train_label_row(render(for_third, PALETTE)) > 30
 
@@ -757,7 +759,7 @@ def test_slightly_bigger_text_still_fits_the_original_phat():
     from twobells.board.panel import PHAT_V1
     from twobells.board.render import row_limits
 
-    assert row_limits(PHAT_V1, text_size=12) == {"Trains": 2, "Buses": 1}
+    assert row_limits(PHAT_V1, text_size=12) == {"train": 2, "bus": 1}
     image = render(_full_board(), PALETTE, PHAT_V1, text_size=12)
     bottom = [image.getpixel((x, y)) for x in range(PHAT_V1.width) for y in range(PHAT_V1.height - 2, PHAT_V1.height)]
     assert PALETTE.black not in bottom
@@ -1064,10 +1066,10 @@ def test_your_stop_is_in_the_accent_colour(panel):
 
 
 def test_the_bar_screen_shows_three_buses_in_the_plain_look():
-    assert row_limits(HDMI_1920X440) == {"Trains": 3, "Buses": 3}
+    assert row_limits(HDMI_1920X440) == {"train": 3, "bus": 3}
     # E-paper and the 7.9" screen keep what they had: there's no room for more there.
     for panel in (PHAT, WAVESHARE_10IN85G, HDMI_1280X400):
-        assert row_limits(panel)["Buses"] == 2, panel.name
+        assert row_limits(panel)["bus"] == 2, panel.name
     image = render(on_screen(), PALETTE, HDMI_1920X440)
     top, row_h = bus_rows_top(HDMI_1920X440)
     assert top + 3 * row_h <= HDMI_1920X440.height
@@ -1218,7 +1220,7 @@ NAMED_BUSES = (
 
 def named_on_screen(buses=NAMED_BUSES, stop_names=GLOSSOP_STOPS, clock=CLOCK):
     view = on_screen(buses=buses, clock=clock)
-    return dataclasses.replace(view, buses=dataclasses.replace(view.buses, stop_names=stop_names))
+    return view.with_section(dataclasses.replace(view.section("bus"), stop_names=stop_names))
 
 
 def named_layouts(panel, buses=NAMED_BUSES, stop_names=GLOSSOP_STOPS):
@@ -1389,8 +1391,8 @@ def test_the_calling_at_line_costs_neither_hdmi_screen_a_row(panel):
 def test_with_bigger_text_the_calling_at_line_takes_a_bus_s_room():
     from twobells.board.render import row_limits
 
-    assert row_limits(HDMI_1920X440, text_size=14) == {"Trains": 3, "Buses": 2}
-    assert row_limits(HDMI_1920X440, text_size=14, calling=True) == {"Trains": 3, "Buses": 1}
+    assert row_limits(HDMI_1920X440, text_size=14) == {"train": 3, "bus": 2}
+    assert row_limits(HDMI_1920X440, text_size=14, calling=True) == {"train": 3, "bus": 1}
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
@@ -1430,9 +1432,9 @@ def drawn_texts(monkeypatch):
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
 def test_with_scrolling_off_a_screen_cuts_long_text_short_and_nothing_moves(panel, monkeypatch):
     drawn = drawn_texts(monkeypatch)
-    trains = calling_on_screen().trains
+    trains = calling_on_screen().section("train")
     rows = tuple(dataclasses.replace(r, middle=LONG) for r in trains.rows)
-    view = dataclasses.replace(long_on_screen(), trains=dataclasses.replace(trains, rows=rows), scroll=False)
+    view = dataclasses.replace(long_on_screen().with_section(dataclasses.replace(trains, rows=rows)), scroll=False)
     frame = board_frame(view, PALETTE, panel)
     assert frame.scrolls == ()
     assert frame.at(SCROLL_PAUSE_S + 5).tobytes() == frame.image.tobytes()

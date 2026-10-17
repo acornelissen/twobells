@@ -159,6 +159,9 @@ class Board:
     # Whether a screen scrolls text too long for its space (the scrolling
     # setting); off, it cuts it short with "…", as e-paper always does.
     scrolling: bool = True
+    # The modes it shows, a section each, in order ([board] modes,
+    # settings/modes.py); each has a source in `sources`.
+    modes: tuple[str, ...] = ("train", "bus")
 
 
 def reset_code_page(folder: Path, timezone: str) -> Callable[[], CodeView | None]:
@@ -342,7 +345,7 @@ def _poll_vehicles(tracker: Tracker, state: dict, now: datetime) -> None:
 def _route_view(board: Board, state: dict, view: BoardView, now: datetime, clock: str | None) -> RouteView | None:
     """The page for the next bus you can catch that has a route strip, if any."""
     tracker = board.tracker
-    if tracker is None or not tracker.policy.is_active(now):
+    if tracker is None or "bus" not in board.modes or not tracker.policy.is_active(now):
         return None
     hhmm = now.strftime("%H:%M")
     upcoming = [d for d in _departures(state, "bus", now) if not d.is_gone(hhmm)]
@@ -357,7 +360,7 @@ def _route_view(board: Board, state: dict, view: BoardView, now: datetime, clock
     chosen = next((d for d in upcoming if catchable(d)), None)
     if chosen is None:
         return None
-    row = view.buses.rows[upcoming.index(chosen)]
+    row = view.section("bus").rows[upcoming.index(chosen)]
     strip = tracker.routes[chosen.service]
     entry = state.get("vehicles", {})
     last_success = from_iso(entry.get("last_success"))
@@ -461,18 +464,17 @@ def run_once(
     stale = {
         c.source.name for c in board.sources if _is_stale(c, entries.get(c.source.name, {}), now)
     }
-    trains, buses = _departures(state, "train", now), _departures(state, "bus", now)
+    departures = {mode: _departures(state, mode, now) for mode in board.modes}
     view = build_view(
         title=board.title,
-        trains=trains,
-        buses=buses,
+        departures=departures,
         now=now.strftime("%H:%M"),
         stale=stale,
         walk=board.walk,
         wording=board.theme.wording,
         clock=now.strftime("%H:%M:%S") if live else None,
         notices=_notices(board, state, now),
-        rain=_rain(board, state, trains + buses, now, live),
+        rain=_rain(board, state, [d for found in departures.values() for d in found], now, live),
         strips=strips,
         # Only a screen wide enough draws them; e-paper never asks.
         stop_names=_stop_names(board) if live else None,

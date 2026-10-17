@@ -248,6 +248,6 @@ def test_renders_straight_onto_the_panel():
     from twobells.board.view import BoardView, Section
 
     display = WaveshareDisplay(accent="yellow", controller=lambda: controller(FakeBus()))
-    view = BoardView("GLO > MAN", Section("Trains", (), "No trains", True), Section("Buses", (), "No buses"), "07:03")
+    view = BoardView("GLO > MAN", (Section("Trains", (), "No trains", True), Section("Buses", (), "No buses", mode="bus")), "07:03")
     for theme in THEMES.values():
         display.show(theme.render(view, display.palette, display.panel))
