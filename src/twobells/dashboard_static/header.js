@@ -22,10 +22,10 @@ export function placeName(title, station) {
   return str(station).trim() || place || text.slice(at + 1).trim() || DEFAULT_TITLE;
 }
 
-// The departures' status in the snapshot: the trains' and the buses'.
+// The departures' status in the snapshot: the trains', the buses' and the trams'.
 function statuses(snapshot) {
   const s = obj(snapshot) || {};
-  return [obj(s.trains)?.status, obj(s.buses)?.status].map(obj).filter(Boolean);
+  return [obj(s.trains)?.status, obj(s.buses)?.status, obj(s.metro)?.status].map(obj).filter(Boolean);
 }
 
 // "Not updated since 17:42" when the trains or buses are stale or failing,

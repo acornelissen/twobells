@@ -1854,7 +1854,9 @@ def test_from_75rem_the_weather_sits_beside_the_hero_over_the_boards():
                            (".boards", "boards"), (".area", "area"), ("#alert-banner", "alert")):
         assert f"grid-area: {area};" in wide[selector], selector
     # Trains and buses side by side.
-    assert "display: flex" in wide[".boards"] and "flex: 1 1 0" in wide[".boards > *"]
+    # Trains and buses side by side, as wide each; a third board (the trams) wraps under them.
+    assert "display: flex" in wide[".boards"] and "flex-wrap: wrap" in wide[".boards"]
+    assert "flex: 1 1 32rem" in wide[".boards > *"]
     # The page reads as it did: departures first, the weather, a sidebar here, last.
     ids = [attrs.get("id") for _, attrs in _page().elements]
     assert _inside("main", "trains") and ids.index("buses") < ids.index("area") < ids.index("weather")
@@ -5050,3 +5052,68 @@ def test_the_performance_page_says_when_the_settings_leave_it_out(show, off):
     """)
     left_out = "Performance is left out on the Dashboard settings page, under What to show."
     assert (found == left_out) is off
+
+
+# Trams, from TfGM's timetable alone (snapshot.metro_part).
+
+TRAMS = """
+import { h } from "./dom.js";
+import { observe } from "./time.js";
+import { renderTrams } from "./board.js";
+import { describe } from "./alerts.js";
+import { nextCatchable, confidence } from "./hero.js";
+document.body.append(h("section", { id: "metro" }, h("h2", { id: "metro-heading" }, "Trams"),
+  h("p", { id: "metro-walk" }), h("p", { id: "metro-status" }), h("div", { id: "metro-board" })),
+  h("p", { id: "tfgm-credit", hidden: true }));
+const at = (hm) => `2026-10-10T${hm}:00+01:00`;
+const row = (id, time, dest, extra = {}) => ({
+  id, line: "Blue Line", destination: dest, stop: "T", stop_name: "Piccadilly", scheduled: time,
+  scheduled_at: at(time), expected: null, expected_at: null, status: "unknown", status_text: "Timetable only",
+  status_spoken: "Timetable only", live: false, replacement_bus: false, walk_min: 5, leave_at: at("07:1" + time[4]),
+  ...extra });
+const stops = %s;
+const snapshot = { metro: { label: "Trams", status: { last_success: at("07:00"), stale: false, error: null, note: null },
+  timetable: { state: "ready", built: at("03:00") }, stops,
+  rows: [row("aaaaaaaaaaaaaaa1", "07:15", "Bury"),
+         row("aaaaaaaaaaaaaaa2", "07:18", "Altrincham", { replacement_bus: true, line: "Replacement Bus",
+                                                         stop: "U", stop_name: null })] } };
+observe(Date.parse(at("07:01")));
+const rows = renderTrams(snapshot, { isOn: () => false });
+const board = document.getElementById("metro-board");
+const said = (el) => spoken(el).replace(/\\s+/g, " ").trim();
+const body = elements(board).filter((el) => el.nodeName === "TR" && el.parentNode.nodeName === "TBODY");
+const head = elements(board).filter((el) => el.nodeName === "TH" && el.getAttribute("scope") === "col");
+const map = new Map(rows.map((r) => [r.id, { row: r, mode: "metro" }]));
+const next = nextCatchable(map, Date.parse(at("07:01")));
+console.log(JSON.stringify({
+  head: head.map(said), rows: body.map(said), walk: said(document.getElementById("metro-walk")),
+  walkHidden: document.getElementById("metro-walk").hidden, credit: document.getElementById("tfgm-credit").hidden,
+  next: next.row.id, sure: confidence(next.row, next.mode),
+  describe: [describe(rows[0], "metro"), describe(rows[1], "metro", false)],
+}));
+"""
+
+
+@needs_node
+def test_trams_are_their_booked_times_marked_as_the_timetable_s():
+    found = run_js(TRAMS % '{ T: { name: "Piccadilly", code: "9400ZZMAPIC", walk_min: 5 } }')
+    assert found["head"] == ["Time", "Destination", "Leave"]  # one tram stop: no Stop column
+    # Said: the time is the timetable's ("sched." on screen), then the line under the destination.
+    assert found["rows"][0].startswith("07:15, timetable onlyMore about the 07:15 tram to BuryBlue Linein ")
+    assert found["rows"][0].endswith(" min at 07:15")
+    assert "the 07:18 replacement bus to AltrinchamReplacement bus" in found["rows"][1]
+    assert (found["walk"], found["walkHidden"]) == ("5 min walk to Piccadilly.", False)
+    assert found["credit"] is False  # the ODbL's attribution, while trams show
+    # The hero takes a tram as it does a bus known only from the timetable.
+    assert (found["next"], found["sure"]) == ("aaaaaaaaaaaaaaa1", "timetable")
+    assert found["describe"] == ["the 07:15 tram to Bury from Piccadilly", "the 07:18 replacement bus to Altrincham"]
+
+
+@needs_node
+def test_with_several_tram_stops_each_row_says_its_stop():
+    found = run_js(TRAMS % ('{ T: { name: "Piccadilly", code: "9400ZZMAPIC", walk_min: 5 }, '
+                            'U: { name: "Deansgate-Castlefield", code: "9400ZZMAGMX", walk_min: null } }'))
+    assert found["head"] == ["Time", "Destination", "Stop", "Leave"]
+    assert "Blue LinePiccadilly, 5 min walk" in found["rows"][0]
+    assert "Deansgate-Castlefield" in found["rows"][1]
+    assert found["walkHidden"] is True

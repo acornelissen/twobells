@@ -1,6 +1,9 @@
-// The train and bus boards, laid out like the signs: trains like a station's
+// The train, bus and tram boards, laid out like the signs: trains like a station's
 // departure screen (Time, Destination, Plat, Expected, Leave), buses like a
-// stop's countdown sign (Bus, Destination, Stop, Due, Leave). Each is a real
+// stop's countdown sign (Bus, Destination, Stop, Due, Leave), trams by their
+// booked times (Time, Destination, Stop where there are several, Leave), as
+// TfGM's timetable gives them: each marked "sched.", as a bus known only
+// from the timetable is. Each is a real
 // <table> with a caption and scoped headers; on narrow screens CSS folds each
 // row into two lines, and the explicit ARIA roles keep the table semantics
 // that some browsers drop when a table's display changes.
@@ -104,11 +107,12 @@ function arrangement(mode, rows, t) {
   return `${shown.map(key).join(" ")}|${missed ? str(missed.id) : ""}`;
 }
 
-// Per board: the rows last drawn, how they were arranged, and whether the
+// Per board: the rows last drawn, how they were arranged (no rows: "|"), and whether the
 // later departures are open.
 const boards = {
-  train: { rows: [], drawn: "", more: false, table: "trains-table" },
-  bus: { rows: [], drawn: "", more: false, table: "buses-table" },
+  train: { rows: [], drawn: "|", more: false, table: "trains-table" },
+  bus: { rows: [], drawn: "|", more: false, table: "buses-table" },
+  metro: { rows: [], drawn: "|", more: false, table: "trams-table" },
 };
 
 // --- Cells shared by both boards ---
@@ -551,6 +555,78 @@ export function renderBuses(snapshot, alerts) {
     columns: [["Bus", "c-line"], ["Destination", "c-dest"], ["Stop", "c-stop"], ["Due", "c-due"], ["Leave", "c-leave"]],
   }, rows, (row, i, later, flap) => busRow(row, later, names, alerts, flap));
   renderLastBuses(buses);
+  return rows;
+}
+
+// --- Trams ---
+
+// What a tram row is: "tram", or "replacement bus" for one standing in.
+export const tramNoun = (row) => (row?.replacement_bus === true ? "replacement bus" : "tram");
+
+// The tram's booked time, marked as the timetable's: trams come from it alone.
+function tramTime(row, flap) {
+  return h("th", { scope: "row", role: "rowheader", class: "c-time" },
+    h("span", { class: "time", dataset: { flap: flap("time") } }, str(row.scheduled)),
+    h("span", { class: "sched", "aria-hidden": "true" }, "sched."), vh(", timetable only"));
+}
+
+// A tram stop's name for a row: from the trams part's stops, else the row's, else its label.
+export function tramStopText(row, stops) {
+  const stop = obj(obj(stops)?.[str(row.stop)]);
+  return str(stop?.name) || str(row.stop_name) || (str(row.stop) ? `Stop ${str(row.stop)}` : "");
+}
+
+function tramRow(row, later, several, stops, alerts, flap) {
+  const id = validId(row.id) ? row.id : null;
+  const scheduled = str(row.scheduled);
+  const noun = tramNoun(row);
+  const line = noun === "tram" ? str(row.line) : "Replacement bus";
+  const walk = num(row.walk_min);
+  return h("tr", rowAttrs(row, id, later),
+    tramTime(row, flap),
+    td("c-dest", null,
+      openButton(id, `the ${scheduled} ${noun} to `, str(row.destination), flap("destination")),
+      line ? h("span", { class: ["sub", noun === "tram" ? "tram-line" : "replacement"] }, line) : null),
+    several ? stopCell(tramStopText(row, stops), walk) : null,
+    leaveCell(row, id, alerts),
+  );
+}
+
+// Draws the trams; returns every row, shown or not, for the rest of the page.
+export function renderTrams(snapshot, alerts) {
+  const section = document.getElementById("metro");
+  const trams = obj(snapshot.metro);
+  section.hidden = !trams;
+  const credit = document.getElementById("tfgm-credit");
+  if (credit) credit.hidden = !trams;
+  if (!trams) {
+    remember("metro", [], now());
+    return [];
+  }
+  setText(document.getElementById("metro-heading"), str(trams.label) || "Trams");
+  const rows = list(trams.rows).filter(obj).slice(0, MAX_ROWS);
+  const stops = obj(trams.stops) || {};
+  const labels = Object.keys(stops);
+  const several = labels.length > 1;
+  const tt = obj(trams.timetable) || {};
+  const extra = tt.state === "building" ? ["Building the tram timetable…"]
+    : tt.state === "missing" && !str(obj(trams.status)?.note) ? ["There is no tram timetable yet."] : [];
+  statusLine(document.getElementById("metro-status"), trams.status, extra);
+  // With one tram stop, its name and walk go under the heading, as the trains' walk does.
+  const one = several ? null : obj(stops[labels[0]]);
+  const walk = one ? num(one.walk_min) : null;
+  const walkEl = document.getElementById("metro-walk");
+  const name = one ? str(one.name) || "the tram stop" : "";
+  setText(walkEl, one ? `${walk !== null ? `${walk} min walk to ` : "From "}${name}.` : "");
+  walkEl.hidden = !one;
+  const columns = [["Time", "c-time"], ["Destination", "c-dest"], ...(several ? [["Stop", "c-stop"]] : []),
+    ["Leave", "c-leave"]];
+  drawBoard("metro", document.getElementById("metro-board"), {
+    caption: `Next trams${one ? ` from ${name}` : ""}, from the timetable`, quiet: true, cls: "trams",
+    empty: tt.state === "building" ? "Tram times will show once the timetable is built."
+      : "No trams are listed right now.",
+    columns,
+  }, rows, (row, i, later, flap) => tramRow(row, later, several, stops, alerts, flap));
   return rows;
 }
 

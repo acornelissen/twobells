@@ -15,7 +15,9 @@ pictures by hand; ?kiosk gives the wall tablet's page, and /performance the
 Performance page. With --quiet the snapshot says a quiet window is on, so
 the wall tablet's page dims to its night clock. --scheme light (or dark)
 serves the pages with that scheme's colours whatever the browser prefers,
-so the light pictures can be taken from a browser set to dark.
+so the light pictures can be taken from a browser set to dark. --trams adds
+a Trams section, made up (Glossop has none): the timetable's trams from
+Piccadilly that morning, for the pictures of trams.
 
 --phone also serves /frame: a page holding the dashboard in a frame 390
 CSS pixels wide and 844 high, a phone's, for the phone-width pictures from
@@ -72,6 +74,31 @@ def sample_area(generated_at: str) -> dict:
     for vehicle in area["vehicles"]:
         vehicle["recorded_at"] = (at - timedelta(seconds=vehicle["age_s"])).isoformat()
     return area
+
+
+# A made-up morning at Piccadilly's tram stop, as TfGM's timetable would give it.
+_TRAMS = (("07:05", "Purple Line", "Altrincham", False), ("07:08", "Blue Line", "Bury", False),
+          ("07:11", "Replacement Bus", "Etihad Campus", True), ("07:14", "Purple Line", "Altrincham", False),
+          ("07:17", "Blue Line", "Ashton-under-Lyne", False), ("07:20", "Blue Line", "Bury", False))
+_TRAM_WALK = 3
+
+
+def sample_trams(generated_at: str) -> dict:
+    day = generated_at[:10]
+    zone = generated_at[-6:]
+    rows = []
+    for i, (time_, line, destination, bus) in enumerate(_TRAMS):
+        leaves = datetime.fromisoformat(f"{day}T{time_}:00{zone}")
+        rows.append({
+            "id": f"{i + 1:016x}", "line": line, "destination": destination, "stop": "T", "stop_name": "Piccadilly",
+            "scheduled": time_, "scheduled_at": leaves.isoformat(), "expected": None, "expected_at": None,
+            "status": "unknown", "status_text": "Timetable only", "status_spoken": "Timetable only", "live": False,
+            "replacement_bus": bus, "walk_min": _TRAM_WALK,
+            "leave_at": (leaves - timedelta(minutes=_TRAM_WALK)).isoformat(),
+        })
+    return {"label": "Trams", "status": {"last_success": generated_at, "stale": False, "error": None, "note": None},
+            "timetable": {"state": "ready", "built": f"{day}T03:00:00{zone}"},
+            "stops": {"T": {"name": "Piccadilly", "code": "9400ZZMAPIC", "walk_min": _TRAM_WALK}}, "rows": rows}
 
 
 # A phone's viewport, in CSS pixels.
@@ -159,9 +186,13 @@ def main() -> None:
                         help="also serve /frame, the page in a phone-sized frame")
     parser.add_argument("--frame", type=frame_size, metavar="WIDTHxHEIGHT",
                         help="also serve /frame, the page in a frame this size")
+    parser.add_argument("--trams", action="store_true", help="a made-up Trams section too")
     args = parser.parse_args()
     snapshot = sample_snapshot()
     snapshot["quiet"] = args.quiet
+    if args.trams:
+        snapshot["metro"] = sample_trams(snapshot["generated_at"])
+        snapshot["walk"]["metro"] = {"T": _TRAM_WALK}
     Handler.snapshot = json.dumps(snapshot).encode()
     Handler.area = json.dumps(sample_area(snapshot["generated_at"])).encode()
     Handler.started_at = datetime.fromisoformat(snapshot["generated_at"]).timestamp()

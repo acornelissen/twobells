@@ -84,6 +84,15 @@
         <ul id="last-buses" class="last-buses" aria-label="Last buses today" hidden></ul>
         <ul id="timetable-changes" class="tt-changes notes" aria-label="Timetable changes" hidden></ul>
       </section>
+
+      <section id="metro" class="panel" aria-labelledby="metro-heading" hidden>
+        <div class="panel-head">
+          <h2 id="metro-heading">Trams</h2>
+          <p id="metro-walk" class="section-meta" hidden></p>
+        </div>
+        <p id="metro-status" class="section-meta section-status" hidden></p>
+        <div id="metro-board"><p class="empty">Loading…</p></div>
+      </section>
     </div>
 
     <div class="extras">
@@ -144,6 +153,7 @@
   </div>
   <p id="osm-credit" hidden>Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>. <a href="https://www.openstreetmap.org/fixthemap">Fix the map</a>.</p>
   <p>Times from National Rail Enquiries, Bus Open Data and Open-Meteo.</p>
+  <p id="tfgm-credit" hidden>Tram times contain Transport for Greater Manchester data, under the <a href="https://opendatacommons.org/licenses/odbl/1-0/">Open Database License</a>.</p>
   <!-- version -->
 </footer>
 

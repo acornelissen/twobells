@@ -11,7 +11,7 @@ import { $, h, patch, setText, vh, str, num, obj, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
 import { describe, isOn, remindNote, toggle } from "./alerts.js";
 import { trainNoun } from "./extras.js";
-import { GO_MS, stopText } from "./board.js";
+import { GO_MS, stopText, tramNoun, tramStopText } from "./board.js";
 import { announce, unannounce } from "./live.js";
 import { icon } from "./icons.js";
 import { isKiosk } from "./kiosk.js";
@@ -44,8 +44,8 @@ export function leaveWords(ms) {
 }
 
 // How sure the departure is: "live" (a train on the live board, or a bus with
-// a live position), "timetable" (a bus without), "ghost" (a bus due with no
-// tracker, which may not be running).
+// a live position), "timetable" (a bus without, and every tram), "ghost" (a
+// bus due with no tracker, which may not be running).
 export function confidence(row, mode) {
   if (row.ghost === true) return "ghost";
   return mode === "train" || row.live === true ? "live" : "timetable";
@@ -83,7 +83,7 @@ export function nextCatchable(rowsById, t = now()) {
 // mode included, soonest first.
 export function thenOptions(rowsById, chosen, t = now()) {
   const after = catchable(rowsById, t).filter((e) => e.row !== chosen.row && e.leave >= chosen.leave);
-  return ["train", "bus"].map((mode) => after.find((e) => e.mode === mode)).filter(Boolean)
+  return ["train", "bus", "metro"].map((mode) => after.find((e) => e.mode === mode)).filter(Boolean)
     .sort((a, b) => a.leave - b.leave);
 }
 
@@ -92,13 +92,18 @@ const badge = (line) => [h("span", { class: "line" }, line), vh(" bus")];
 const sep = () => [h("span", { "aria-hidden": "true" }, " · "), vh(", ")];
 
 // "17:55 [237] Ashton-under-Lyne Interchange · Henry Street A · 5 min walk",
-// or "18:22 train to Manchester Piccadilly · Platform 1 · 12 min walk".
-function whatLine(row, mode, stops) {
+// "18:22 train to Manchester Piccadilly · Platform 1 · 12 min walk", or
+// "18:25 tram to Bury · Piccadilly · 6 min walk".
+function whatLine(row, mode, stops, tramStops) {
   const walk = num(row.walk_min);
   const parts = [];
   if (mode === "bus") {
     parts.push([time(str(row.scheduled)), " ", badge(str(row.line)), vh(" to"), " ", str(row.destination)]);
     const stop = stopText(row, stops);
+    if (stop) parts.push(stop);
+  } else if (mode === "metro") {
+    parts.push([time(str(row.scheduled)), ` ${tramNoun(row)} to ${str(row.destination)}`]);
+    const stop = tramStopText(row, tramStops);
     if (stop) parts.push(stop);
   } else {
     parts.push([time(str(row.scheduled)), ` ${trainNoun(row)} to ${str(row.destination)}`]);
@@ -113,7 +118,7 @@ function thenLine(options) {
   if (!options.length) return [];
   return ["Then: ", options.flatMap(({ row, mode }, i) => [
     i ? sep() : null,
-    time(str(row.scheduled)), " ", mode === "bus" ? badge(str(row.line)) : trainNoun(row),
+    time(str(row.scheduled)), " ", mode === "bus" ? badge(str(row.line)) : mode === "metro" ? tramNoun(row) : trainNoun(row),
     " (leave ", time(hhmm(row.leave_at)), ")",
   ])];
 }
@@ -203,7 +208,7 @@ export function renderHero(rowsById, context) {
   banner.classList.toggle("soon", ms > NOW_MS && ms <= SOON_MS);
   const [words, said] = leaveWords(ms);
   patch($("leave-time"), said === words ? words : [h("span", { "aria-hidden": "true" }, words), vh(said)]);
-  patch($("leave-what"), whatLine(next.row, next.mode, obj(context?.stops) || {}));
+  patch($("leave-what"), whatLine(next.row, next.mode, obj(context?.stops) || {}, obj(context?.tramStops) || {}));
   const sure = confidence(next.row, next.mode);
   const [name, text] = SURE[sure];
   patch($("leave-sure"), h("span", { class: ["sure", `sure-${sure}`] },

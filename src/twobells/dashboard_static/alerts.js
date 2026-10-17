@@ -60,6 +60,11 @@ export function describe(row, mode, where = true) {
     const stop = str(row.stop_name) || (str(row.stop) ? `Stop ${str(row.stop)}` : "");
     return `the ${scheduled} ${str(row.line)} bus to ${dest}${where && stop ? ` from ${stop}` : ""}`;
   }
+  if (mode === "metro") {
+    const stop = str(row.stop_name);
+    const noun = row.replacement_bus === true ? "replacement bus" : "tram";
+    return `the ${scheduled} ${noun} to ${dest}${where && stop ? ` from ${stop}` : ""}`;
+  }
   const platform = str(row.platform);
   return `the ${scheduled} ${trainNoun(row)} to ${dest}${where && platform ? `, platform ${platform}` : ""}`;
 }

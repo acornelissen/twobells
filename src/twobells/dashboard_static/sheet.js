@@ -8,7 +8,7 @@
 
 import { $, h, fill, patch, setText, str, num, obj, openDialog, setUpDialog } from "./dom.js";
 import { hhmm, parseAt } from "./time.js";
-import { lastBusFor, statusBadge, stopText } from "./board.js";
+import { lastBusFor, statusBadge, stopText, tramNoun, tramStopText } from "./board.js";
 import { trainJourney, trainSummary } from "./train.js";
 import { arrivesFact, fact, ghostBadge, inboundText, noShowPhrase, trainNoun } from "./extras.js";
 import { renderStrip } from "./strip.js";
@@ -85,6 +85,7 @@ function title(row) {
   const scheduled = str(row.scheduled);
   const destination = str(row.destination);
   if (openMode === "bus") return `${scheduled} ${str(row.line)} to ${destination}`;
+  if (openMode === "metro") return `${scheduled} ${tramNoun(row)} to ${destination}`;
   const via = str(row.via) ? ` ${str(row.via)}` : "";
   const noun = trainNoun(row);
   return `${scheduled}${noun === "train" ? "" : ` ${noun}`} to ${destination}${via}`;
@@ -145,6 +146,24 @@ function busSummary(row) {
   ];
 }
 
+// A tram's facts: from TfGM's timetable alone, so its time is the booked one
+// and there is no punctuality to show.
+function tramSummary(row) {
+  const walk = num(row.walk_min);
+  const stop = tramStopText(row, context.tramStops);
+  return [
+    h("p", { class: "dialog-status" }, statusBadge(row.status, row.status_text, row.status_spoken)),
+    h("dl", { class: "facts" },
+      fact("Line", tramNoun(row) === "tram" ? str(row.line) : "Replacement bus"),
+      fact("Stop", stop && walk !== null ? `${stop}, ${walk} min walk` : stop),
+      fact("Scheduled", str(row.scheduled)),
+      fact("Leave by", hhmm(row.leave_at)),
+    ),
+    h("p", { class: "note" }, "From TfGM's timetable: Metrolink's live tram times aren't open to new users, "
+      + "so trams have no expected times, and no punctuality to show."),
+  ];
+}
+
 // Remind me, for a row with a time to leave; a cancelled departure or one
 // with no walk time has none.
 function drawRemind(row) {
@@ -165,14 +184,16 @@ function drawRemind(row) {
 function draw(row) {
   openRow = row;
   if (!row) {
-    patch($("sheet-summary"), h("p", {}, `This ${openMode === "bus" ? "bus" : "train"} has left the board.`));
+    const noun = { bus: "bus", metro: "tram" }[openMode] || "train";
+    patch($("sheet-summary"), h("p", {}, `This ${noun} has left the board.`));
     patch($("sheet-train"));
     drawRemind(null);
     drawAnnounce(null);
     return;
   }
   setText($("sheet-title"), title(row));
-  patch($("sheet-summary"), openMode === "bus" ? busSummary(row) : trainSummary(row));
+  const summary = { bus: busSummary, metro: tramSummary }[openMode] || trainSummary;
+  patch($("sheet-summary"), summary(row));
   if (openMode === "train") patch($("sheet-train"), trainJourney(row, context.station));
   drawRemind(row);
   drawAnnounce(row);
@@ -183,15 +204,16 @@ export function openSheet(entry, opener, ctx) {
   const row = obj(entry?.row);
   if (!row) return;
   openId = str(row.id);
-  openMode = entry.mode === "bus" ? "bus" : "train";
+  openMode = ["bus", "metro"].includes(entry.mode) ? entry.mode : "train";
   context = ctx;
   const sheet = dialog();
   sheet.dataset.mode = openMode;
   $("sheet-train").hidden = openMode !== "train";
   $("sheet-bus").hidden = openMode !== "bus";
   draw(row);
-  // Punctuality left out by the settings (show.js) isn't loaded at all.
-  const punctuality = shows("punctuality");
+  // Punctuality left out by the settings (show.js) isn't loaded at all, nor
+  // a tram's, which comes from the timetable alone.
+  const punctuality = shows("punctuality") && openMode !== "metro";
   const history = $("sheet-history");
   if (history) history.hidden = !punctuality;
   openDialog(sheet, opener);

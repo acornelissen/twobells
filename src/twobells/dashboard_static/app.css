@@ -660,8 +660,10 @@ main:focus { outline: none; }
   .leave { grid-area: hero; }
   #alert-banner { grid-area: alert; }
   .disruptions { grid-area: dis; }
-  .boards { grid-area: boards; display: flex; gap: var(--s-7); align-items: flex-start; }
-  .boards > * { flex: 1 1 0; }
+  /* Two boards side by side; a third (the trams) wraps under them, full width,
+     as three would leave too little room for each one's columns. */
+  .boards { grid-area: boards; display: flex; flex-wrap: wrap; gap: var(--s-7); align-items: flex-start; }
+  .boards > * { flex: 1 1 32rem; }
   .weather { grid-area: weather; }
   /* Its column ends as the hero's does, on the disruption line's margin. */
   :root:not([data-kiosk]) .weather { margin-bottom: var(--s-5); }
@@ -851,6 +853,12 @@ table.board .badge.ghost { margin-top: var(--s-1); font-size: var(--t-sm); }
   table.board.buses tr {
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas: "line dest due" "line stop leave";
+  }
+  /* 18:25 sched.  Bury                 in 9 min
+                   Blue Line                     */
+  table.board.trams tr {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "time dest leave" "time stop leave";
   }
   table.board th, table.board td { display: block; width: auto; padding: 0; border: 0; }
   table.board .c-time { grid-area: time; }

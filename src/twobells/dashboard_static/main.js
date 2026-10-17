@@ -8,7 +8,8 @@ import { $, setText, str, obj, focusKey, refocus } from "./dom.js";
 import { connect, STATE } from "./api.js";
 import { clockParts, clockText, now, parseAt } from "./time.js";
 import {
-  applyRowStrips, applyScrolling, lastBuses, renderBuses, renderTrains, stopNames, tickBoards, toggleMore,
+  applyRowStrips, applyScrolling, lastBuses, renderBuses, renderTrains, renderTrams, stopNames, tickBoards,
+  toggleMore,
 } from "./board.js";
 import { tickStrips } from "./strip.js";
 import { renderWeather } from "./weather.js";
@@ -43,12 +44,14 @@ const sheetContext = () => ({
   stops: stopNames(obj(snapshot?.buses)?.stops),
   generatedMs: parseAt(snapshot?.generated_at),
   lastBuses: lastBuses(obj(snapshot?.buses)),
+  tramStops: obj(obj(snapshot?.metro)?.stops) || {},
 });
 
-// What the hero needs beyond the rows: your stops' names and the rain
-// sentence, which goes with the weather when that is left out.
+// What the hero needs beyond the rows: your stops' and tram stops' names
+// and the rain sentence, which goes with the weather when that is left out.
 const heroContext = () => ({
   stops: stopNames(obj(snapshot?.buses)?.stops),
+  tramStops: obj(obj(snapshot?.metro)?.stops) || {},
   rain: shows("weather") ? str(obj(snapshot?.weather)?.rain) : "",
 });
 
@@ -72,10 +75,11 @@ function renderConnection() {
 
 // --- Snapshots.
 
-function indexRows(trains, buses) {
+function indexRows(trains, buses, trams) {
   const map = new Map();
   for (const row of trains) if (str(row.id)) map.set(row.id, { row, mode: "train" });
   for (const row of buses) if (str(row.id)) map.set(row.id, { row, mode: "bus" });
+  for (const row of trams) if (str(row.id)) map.set(row.id, { row, mode: "metro" });
   return map;
 }
 
@@ -84,13 +88,14 @@ function attempt(what, fn, fallback) {
   try { return fn(); } catch (error) { console.error(`Couldn't render ${what}:`, error); return fallback; }
 }
 
-// The train and bus boards, and the disruption links on bus rows. Every row
+// The train, bus and tram boards, and the disruption links on bus rows. Every row
 // is indexed, shown or not, for the sheet, the announcer and the alerts.
 function drawBoards() {
   const alerts = { isOn };
   const trains = attempt("trains", () => renderTrains(snapshot, alerts), []);
   const buses = attempt("buses", () => renderBuses(snapshot, alerts), []);
-  rowsById = indexRows(trains, buses);
+  const trams = attempt("trams", () => renderTrams(snapshot, alerts), []);
+  rowsById = indexRows(trains, buses, trams);
 }
 
 // Draws the boards again between snapshots (a row dropped out, a reminder
