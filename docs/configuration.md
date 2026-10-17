@@ -84,6 +84,19 @@ show = ["next_to_catch", "where", "disruptions", "weather", "last_buses", "area_
 
 The example above is The usual preset; `show = []` is Just the times (the dashboard's adds `next_to_catch`), and every item is Everything. Without a list, a view shows everything, except the board's clock page, which shows only with the older `clock_page = true`. Once the board has a list, `clock_page` is ignored: the list says.
 
+What no view shows isn't fetched either, so leaving things out saves calls to the feeds and their daily limits. Each view fetches for itself, and a change takes effect on its next check, without a restart:
+
+| Fetched | For |
+|---|---|
+| The departures | Always, whatever the lists say. The punctuality history keeps recording from them, so it is there if you tick Punctuality or Performance again |
+| The forecast (Open-Meteo) | The board's `rain`; the dashboard's `weather` |
+| Disruption checks (BODS situations, engineering works) | The dashboard's `disruptions`. The board's `disruption` notices come with its train times, at no extra cost |
+| Where each train is (Service Details) | The board's `where`; the dashboard's `where` or `area_map` |
+| Where trains that have left are (Service Details) | The dashboard's `performance`, for the Delay Repay list |
+| The bus positions between departure checks | The board's `where`, and its `bus_page` for the bus position page. The dashboard's come with its bus times |
+
+The rest, such as the calling points, coaches and the last buses, comes with the departures or from the bus timetable, so leaving it out saves no calls. `enabled = false` in `[weather]` still switches the forecast off altogether, whatever the lists say.
+
 ## Rain warning set-up
 
 The forecast comes from [Open-Meteo](https://open-meteo.com) (free, no key), and works anywhere. The setup wizard sets the location from home. To set it by hand, add it to `config.toml`, rounded to two decimal places (about 1 km); the app rounds it again before sending it:
@@ -95,7 +108,7 @@ lon = -1.95
 threshold_percent = 50
 ```
 
-`enabled = false` in `[weather]` switches the warning off and keeps the location, as **Show the weather: Off** on the Trains and buses page does. The board checks the forecast every 30 minutes, only while it is checking trains or buses. If it can't be fetched, the last forecast is used for up to 3 hours.
+`enabled = false` in `[weather]` switches the warning off and keeps the location, as **Show the weather: Off** on the Trains and buses page does. The board checks the forecast every 30 minutes, only while it is checking trains or buses, and only while it shows the rain warning (see [What each view shows](#what-each-view-shows)). If it can't be fetched, the last forecast is used for up to 3 hours.
 
 ## Bank holidays
 

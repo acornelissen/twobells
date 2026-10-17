@@ -1126,3 +1126,75 @@ def test_timetable_changes_are_worked_out_once_per_timetable_and_day(tmp_path, m
     setup.buses.reason = "the bus timetable has run out"
     setup.collector.poll_buses()
     assert setup.snapshot()["timetable_changes"] is None
+
+
+# What the dashboard shows: a feed it shows nothing from isn't fetched
+
+
+def showing(tmp_path, *shown, history=None):
+    """A collector over every feed, with a Service Details key and a filter
+    station, for a dashboard showing only `shown`; `history` if given."""
+    from twobells.sources.disruptions import parse_kb_incidents, parse_siri_sx
+
+    setup = Setup(tmp_path, now=TONIGHT, options=DashboardOptions(show=frozenset(shown)), details=True)
+    setup.situations = Feed(parse_siri_sx, FIXTURES / "bods_siri_sx_glossop.xml")
+    setup.incidents = Feed(parse_kb_incidents, FIXTURES / "kb_incidents_synthetic.xml")
+    setup.settings.bus_disruptions, setup.settings.train_incidents = setup.situations, setup.incidents
+    setup.collector = Collector(setup.settings, setup.hub, history or setup.history, clock=setup.clock,
+                                fetch_holidays=setup._holidays, random=lambda: 0.5, monotonic=setup.monotonic)
+    return setup
+
+
+def test_just_the_times_fetches_only_the_departures_and_their_history_still_records(tmp_path):
+    setup = showing(tmp_path, "next_to_catch")
+    pollers = setup.collector.pollers()
+    assert set(pollers) == {"trains", "buses", "upkeep", "heartbeat"}
+    for poller in pollers.values():
+        assert poller.step() > 0 and poller.failures == 0
+    assert setup.details.asked == []
+    assert (setup.situations.calls, setup.incidents.calls) == (0, 0)
+    body = setup.snapshot()
+    assert body["weather"] is None and body["disruptions"] is None and body["trains"]["positions"] is None
+    assert body["trains"]["rows"] and body["buses"]["rows"]
+    assert all(row["position"] is None for row in body["trains"]["rows"])
+    assert [mode for mode, _, _ in setup.history.observed] == ["train", "bus"]
+
+
+def test_the_weather_is_fetched_while_the_dashboard_shows_it(tmp_path):
+    setup = showing(tmp_path, "weather")
+    assert set(setup.collector.pollers()) == {"trains", "buses", "weather", "upkeep", "heartbeat"}
+    setup.collector.poll_weather()
+    assert setup.snapshot()["weather"]["now"]["text"] == "Light rain"
+
+
+def test_the_disruptions_are_fetched_while_the_dashboard_shows_them(tmp_path):
+    setup = showing(tmp_path, "disruptions")
+    pollers = setup.collector.pollers()
+    assert {"bus-disruptions", "train-incidents"} <= set(pollers) and "weather" not in pollers
+    pollers["bus-disruptions"].step()
+    pollers["train-incidents"].step()
+    assert (setup.situations.calls, setup.incidents.calls) == (1, 1)
+    assert setup.snapshot()["disruptions"] is not None
+
+
+@pytest.mark.parametrize("item", ["where", "area_map"])
+def test_where_the_trains_are_is_asked_for_where_it_is_and_around_here(tmp_path, item):
+    setup = showing(tmp_path, item)
+    setup.collector.poll_trains()
+    assert setup.details.asked == IDS[:3]
+    assert positions(setup)[0]["where"] == "At Glossop now"
+
+
+@pytest.mark.parametrize("item, watched", [("performance", True), ("where", False)])
+def test_trains_that_have_left_are_followed_only_for_the_performance_page(tmp_path, item, watched):
+    history = History(tmp_path / "history")
+    setup = showing(tmp_path, item, history=history)
+    setup.collector.poll_trains()
+    leave_first_train(setup)
+    setup.clock.now = datetime(2026, 10, 9, 22, 50, tzinfo=LONDON)
+    setup.collector.poll_trains()
+    # The 22:25, due at the filter station at 22:57, is asked about once it has left only by the watch.
+    asked_on_the_board = 1 if item == "where" else 0
+    assert setup.details.asked.count(IDS[1]) - asked_on_the_board == (1 if watched else 0)
+    assert bool(history.following(datetime(2026, 10, 9, 23, 30))) == watched
+    history.close()

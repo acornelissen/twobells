@@ -23,6 +23,14 @@ situations every 10 minutes, rail incidents every 30. Which are ours
 depends on the bus timetable and the train board, so when either changes
 the disruptions are filtered again; that state is shared, under its lock.
 
+A feed the dashboard's show list ([dashboard] show, settings/show.py)
+leaves nothing to show from isn't fetched at all (see _fetched_for): the
+weather, the disruptions, where the trains are and the Delay Repay watch.
+The collector runs only while the dashboard view is on, and starts afresh
+when the settings change, so it never fetches for an item no view that is
+on shows. The departures are always fetched, and the punctuality history
+records from them whatever the list says.
+
 Threads: each feed's state below is only touched by its own poller's
 thread, except the disruptions' (see _disruptions_lock) and the buses' when
 the timetable is set aside (see set_timetable_aside). The bus poller and the upkeep thread each have their own
@@ -191,6 +199,31 @@ def _with_platform_changes(before: TrainBoard | None, fetched: datetime | None, 
     return replace(board, services=services)
 
 
+# The dashboard's items each feed it can leave out is fetched for: with
+# none of them shown, it isn't fetched. Service Details is asked where the
+# trains on the board are for the rows and Around here, and where trains
+# that have left are for the Delay Repay list on the Performance page.
+WEATHER_FOR = frozenset({"weather"})
+DISRUPTIONS_FOR = frozenset({"disruptions"})
+POSITIONS_FOR = frozenset({"where", "area_map"})
+ARRIVALS_FOR = frozenset({"performance"})
+
+
+def _fetched_for(settings: DashboardSettings) -> DashboardSettings:
+    """`settings` without the feeds the dashboard shows nothing from, as if
+    they weren't set up; the Delay Repay watch is decided apart (Collector).
+    The copy holds no lock: the caller's settings keep it."""
+    show = settings.options.show
+    return replace(
+        settings,
+        lock=None,
+        weather=settings.weather if show & WEATHER_FOR else None,
+        bus_disruptions=settings.bus_disruptions if show & DISRUPTIONS_FOR else None,
+        train_incidents=settings.train_incidents if show & DISRUPTIONS_FOR else None,
+        train_details=settings.train_details if show & POSITIONS_FOR else None,
+    )
+
+
 def _sentence(text: str) -> str:
     return text[:1].upper() + text[1:]
 
@@ -211,7 +244,8 @@ class Collector:
         build_timetable: bool = True,
         timetable_limits: DocumentLimits = DEFAULT_LIMITS,
     ) -> None:
-        self._settings = settings
+        # Only the feeds the dashboard shows something from.
+        self._settings = _fetched_for(settings)
         self._options = settings.options
         self._hub = hub
         self._history = history
@@ -229,10 +263,12 @@ class Collector:
         self._train_positions, self._bus_positions = _Feed(), _Feed()
         # Where the first few trains are: their service details, asked for at
         # most once a minute each (sources.darwin.TrainDetails has the rules).
-        self._details = TrainDetails(settings.train_details, monotonic) if settings.train_details else None
+        details = self._settings.train_details
+        self._details = TrainDetails(details, monotonic) if details else None
         # When trains reached the filter station, for the Performance page's Delay Repay list.
         self._arrival_watch = None
-        if history is not None and settings.train is not None and filter_crs and settings.train_details:
+        if (history is not None and settings.train is not None and filter_crs and settings.train_details
+                and settings.options.show & ARRIVALS_FOR):
             self._arrival_watch = ArrivalWatch(history, filter_crs, self._route_prefix, settings.train_details,
                                                monotonic=monotonic)
         self._build_timetable = build_timetable

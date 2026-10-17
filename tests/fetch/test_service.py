@@ -16,7 +16,7 @@ from tests.setup.test_spool import read_on_the_way_out
 from twobells.core.walk import WalkTimes
 from twobells.fetch import handoff
 from twobells.fetch import service as fetch
-from twobells.fetch.service import FetchService
+from twobells.fetch.service import FetchService, make_collector
 from twobells.settings.installs import install_named
 from twobells.settings.store import Store
 from twobells.setup.lookups import Place
@@ -215,6 +215,28 @@ def test_a_saved_position_strips_setting_reaches_the_snapshot(pi):
         save(pi, ON + "[dashboard]\nrow_strips = false\n")
         wait_for(lambda: len(FakeCollector.made) == 2)
         wait_for(lambda: path.exists() and handed()["row_strips"] is False)
+    finally:
+        running.stop()
+
+
+class PollersOnly(FakeCollector):
+    """The real collector's pollers for the settings, never started."""
+
+    def __init__(self, dash, hub, history):
+        super().__init__(dash, hub, history)
+        self.pollers = set(make_collector(dash, hub, history).pollers())
+
+
+def test_a_saved_show_list_stops_fetching_what_it_leaves_out_without_a_restart(pi):
+    weather = '[weather]\nlat = 53.44\nlon = -1.95\n'
+    save(pi, ON + weather)
+    running = Running(service(pi, collector=PollersOnly))
+    try:
+        wait_for(lambda: FakeCollector.made)
+        assert "weather" in FakeCollector.made[0].pollers
+        save(pi, ON + weather + '[dashboard]\nshow = ["next_to_catch"]\n')
+        wait_for(lambda: len(FakeCollector.made) == 2)
+        assert FakeCollector.made[1].pollers == {"trains", "upkeep", "heartbeat"}
     finally:
         running.stop()
 
