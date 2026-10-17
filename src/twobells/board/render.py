@@ -559,15 +559,20 @@ def row_limits(panel: Panel, text_size: int = TEXT_SIZE, calling: bool = False,
     room for the "Calling at" line."""
     if not modes:
         return {}
+    rows = max(len(modes), rows_room(panel, len(modes), text_size, calling))
+    return share_rows(rows, modes, panel.epaper)
+
+
+def rows_room(panel: Panel, sections: int, text_size: int = TEXT_SIZE, calling: bool = False) -> int:
+    """How many whole rows fit on `panel` beside the header and `sections`
+    sections' labels, with the rule and its gaps between each two, and with
+    `calling` the "Calling at" line."""
     s = plain_scale(panel)
     header_h, label_h, row_h = heights(text_size)
-    count = len(modes)
-    # A label for each section, and a rule with a gap each side between them.
-    fixed = header_h + _SECTION_GAP + count * label_h + (count - 1) * (1 + _SECTION_GAP)
+    fixed = header_h + _SECTION_GAP + sections * label_h + (sections - 1) * (1 + _SECTION_GAP)
     if calling:
         fixed += calling_height(text_size)
-    rows = max(count, (panel.height // s - fixed) // row_h)
-    return share_rows(rows, modes, panel.epaper)
+    return (panel.height // s - fixed) // row_h
 
 
 def header_rain(view: BoardView, fonts: Fonts, width: int, scale: int) -> tuple[str, float] | None:

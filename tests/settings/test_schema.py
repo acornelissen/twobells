@@ -374,6 +374,8 @@ def test_the_board_s_fields_show_the_loader_s_defaults():
         if f.kind == "show":  # the show list's is settings/show.py's
             assert f.default == show.ordered("board", Board(title="", sources=[]).show), f.name
             continue
+        if f.kind == "modes":  # every mode set up, whatever that is: tests/settings/test_modes.py
+            continue
         defaults = board if f.section is None else board[f.section]
         assert f.default == defaults[f.key], f.name
 
@@ -384,7 +386,7 @@ def test_the_dashboard_s_fields_show_dashboard_options_defaults():
 
     options = DashboardOptions()
     for f in schema.FIELDS:
-        if f.group != "dashboard":
+        if f.group != "dashboard" or f.kind == "modes":
             continue
         loaded = getattr(options, f.key)
         if f.key == "quiet_windows":

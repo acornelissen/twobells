@@ -78,6 +78,16 @@ def test_first_run_fetches_everything_and_renders():
     assert [r.left for r in result.view.section("train").rows] == ["07:12"]
 
 
+def test_the_board_draws_a_section_for_each_of_its_modes_in_order():
+    trains, buses, board, display, state = setup()
+    view = run_once(board, state, display, THU_0700).view
+    assert [(s.mode, s.label) for s in view.sections] == [("train", "Trains"), ("bus", "Buses")]
+    buses_alone = dataclasses.replace(board, sources=board.sources[1:], modes=("bus",))
+    view = run_once(buses_alone, {}, FakeDisplay(), THU_0700).view
+    assert [s.mode for s in view.sections] == ["bus"]
+    assert [r.left for r in view.section("bus").rows] == ["341"]
+
+
 def test_unchanged_data_within_interval_neither_fetches_nor_renders():
     trains, buses, board, display, state = setup()
     run_once(board, state, display, THU_0700)

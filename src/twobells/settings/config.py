@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import re
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -35,8 +35,19 @@ from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES
 from ..sources.transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
 from ..sources.transportapi import TransportApiBusSource
 from ..sources.weather import OpenMeteoSource
+from . import modes as mode_list
 from . import show
-from .schema import BOARD_DEFAULTS, CRS, DEFAULT_BUS_SOURCE, NOC, bus_defaults, refused, saved_keys, views
+from .schema import (
+    BOARD_DEFAULTS,
+    CRS,
+    DEFAULT_BUS_SOURCE,
+    NOC,
+    board_room,
+    bus_defaults,
+    refused,
+    saved_keys,
+    views,
+)
 
 if TYPE_CHECKING:
     from .store import Store
@@ -186,8 +197,8 @@ def _has_placeholder(value) -> bool:
 
 def needs_setup(store: Store | Path | str) -> bool:
     """Whether the install is still to be set up: config.toml and the saved
-    settings together switch on neither trains nor buses (none there, a
-    blank one, or both switched off), or they still have one of the
+    settings together switch on no mode (none there, a blank one, or each
+    switched off), or they still have one of the
     template's CHANGE_ME placeholders outside a section switched off. A
     config.toml that can't be read or parsed is not a first run but a
     fault, for the loaders to report."""
@@ -208,7 +219,7 @@ def still_to_set_up(data: dict) -> bool:
         data = switched_on(data)
     except ConfigError:
         return False
-    if "train" not in data and "bus" not in data:
+    if not any(mode.key in data for mode in mode_list.MODES if mode.ready):
         return True
     return _has_placeholder(data)
 
@@ -293,7 +304,7 @@ def _flag(section: dict, key: str, default: bool, where: str = "") -> bool:
 # Sections that enabled = false switches off. The settings site and setup do
 # that, rather than remove one, as a saved overlay can't remove what
 # config.toml has; and what's in it is kept for switching it back on.
-SWITCHABLE = ("train", "bus", "weather")
+SWITCHABLE = (*mode_list.KEYS, "weather")
 
 
 def is_enabled(data: dict, name: str) -> bool:
@@ -533,8 +544,17 @@ def _rotate(data: dict, epaper: bool) -> int:
     return rotate
 
 
-# What [board] may hold: what the board shows (settings/show.py).
-_BOARD_KEYS = {"show"}
+# What [board] may hold: what the board shows (settings/show.py) and its
+# modes (settings/modes.py).
+_BOARD_KEYS = {"show", "modes"}
+
+
+def board_modes(data: dict) -> tuple[str, ...]:
+    """The modes the board shows by settings `data`, as many as its display
+    has room for (schema.board_room). ConfigError for a [board] modes that
+    isn't a list of modes, or names more than that."""
+    most, room = board_room(_text(data, "display", BOARD_DEFAULTS["display"]))
+    return mode_list.shown(data, "board", most, room)
 
 
 def _board_show(data: dict) -> frozenset[str]:
@@ -582,9 +602,12 @@ def load_config(
 
 
 def settings_from(
-    data: dict, env: Mapping[str, str], only: set[str] | None = None, holidays: frozenset[date] = frozenset()
+    data: dict, env: Mapping[str, str], only: set[str] | None = None, holidays: frozenset[date] = frozenset(),
+    modes: Sequence[str] | None = None,
 ) -> Settings:
-    """Settings from already-read config data; the web page checks a change with this before saving."""
+    """Settings from already-read config data; the web page checks a change with this before saving.
+    Sources are built for the modes the board shows, or for `modes` (the
+    dashboard's), or for those in `only` alone (a probe's)."""
     data = switched_on(data)
     views(data)  # checked here too, so a malformed [app] views is never saved
     try:
@@ -617,9 +640,10 @@ def settings_from(
     # On by default: services run a Sunday timetable on bank holidays.
     holidays = frozenset(holidays) if _flag(data, "bank_holidays", BOARD_DEFAULTS["bank_holidays"]) else frozenset()
     division = holiday_division(data)
+    shown_modes = board_modes(data)
     sources = []
     tracker = None
-    wanted = only or {"train", "bus"}
+    wanted = set(only or (shown_modes if modes is None else modes))
     if "train" in data and "train" in wanted:
         sources.append(_train(_table(data, "train", "[train]"), env, holidays))
     if "bus" in data and "bus" in wanted:
@@ -656,6 +680,7 @@ def settings_from(
         show=shown,
         quiet=_quiet_hours(data) if speaks else (),
         scrolling=_flag(data, "scrolling", BOARD_DEFAULTS["scrolling"]),
+        modes=shown_modes,
     )
     return Settings(
         board=board,

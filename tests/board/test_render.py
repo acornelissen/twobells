@@ -1454,3 +1454,48 @@ def test_with_scrolling_off_the_route_page_cuts_a_long_title_short():
                      "2 stops away", CLOCK)
     assert [s.text for s in route_frame(view, PALETTE, HDMI_1920X440).scrolls] == [title]
     assert route_frame(dataclasses.replace(view, scroll=False), PALETTE, HDMI_1920X440).scrolls == ()
+
+
+# The board's modes (settings/modes.py): a section each, sharing the rows.
+
+TRAMS = Section("Trams and metro", (Row("07:15", "Altrincham", "Due"), Row("07:27", "Bury", "On time")),
+                "No trams or metro", mode="metro")
+
+
+def test_the_rows_are_shared_a_row_each_then_the_first_modes_first():
+    from twobells.board.render import share_rows
+
+    assert share_rows(5, ("train", "bus"), epaper=True) == {"train": 3, "bus": 2}
+    assert share_rows(4, ("train", "bus"), epaper=True) == {"train": 3, "bus": 1}
+    assert share_rows(6, ("train", "bus", "metro"), epaper=True) == {"train": 3, "bus": 2, "metro": 1}
+    assert share_rows(3, ("train", "bus", "metro"), epaper=True) == {"train": 1, "bus": 1, "metro": 1}
+    assert share_rows(9, ("train", "bus", "metro"), epaper=False) == {"train": 3, "bus": 3, "metro": 3}
+
+
+def test_a_mode_alone_takes_every_row_there_is():
+    from twobells.board.render import row_limits
+
+    assert row_limits(PHAT, modes=("train",)) == {"train": 6}
+    assert row_limits(PHAT, modes=("bus",)) == {"bus": 6}
+
+
+def test_three_modes_on_the_10in85_e_paper_each_have_a_section(monkeypatch):
+    from twobells.board.render import row_limits
+
+    drawn = drawn_texts(monkeypatch)
+    trains = Section("Trains", tuple(Row(f"07:{m}", "Manchester", "On time") for m in (12, 20, 31)), "No trains")
+    buses = Section("Buses", (Row("341", "Hyde", "07:20", stop="A"), Row("61", "Buxton", "07:35", stop="B")),
+                    "No buses", mode="bus")
+    render(BoardView("GLO > MAN", (trains, buses, TRAMS), "07:03"), PALETTE, WAVESHARE_10IN85G)
+    assert [t for t in drawn if t in ("TRAINS", "BUSES", "TRAMS AND METRO")] == ["TRAINS", "BUSES", "TRAMS AND METRO"]
+    assert {"07:12", "07:20", "07:31", "341", "61", "07:15"} <= set(drawn)
+    assert "07:27" not in drawn  # 3 trains, 2 buses and 1 tram: as many as fit
+    assert row_limits(WAVESHARE_10IN85G, modes=("train", "bus", "metro")) == {"train": 3, "bus": 2, "metro": 1}
+
+
+def test_a_board_of_buses_alone_has_no_trains_section(monkeypatch):
+    drawn = drawn_texts(monkeypatch)
+    buses = Section("Buses", tuple(Row(str(n), "Hyde", "07:20", stop="A") for n in range(1, 6)), "No buses", mode="bus")
+    render(BoardView("Glossop", (buses,), "07:03"), PALETTE)
+    assert "TRAINS" not in drawn and "No trains" not in drawn
+    assert [t for t in drawn if t in "12345"] == ["1", "2", "3", "4", "5"]  # 5 buses, where 2 shared the board

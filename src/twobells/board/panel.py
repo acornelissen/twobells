@@ -82,3 +82,46 @@ HDMI_1280X400 = Panel.sized("hdmi-1280x400", 1280, 400, epaper=False)
 HDMI_1920X440 = Panel("hdmi-1920x440", 1920, 440, scale=4, epaper=False)
 
 PANELS = {p.name: p for p in (PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400, HDMI_1920X440)}
+
+# How many modes (settings/modes.py) each panel has room for, a section
+# each: as many as keep every one of them at least one whole row in every
+# look the panel has, at every text size the plain look offers. The type is
+# sized to the panel's height, so it is height that counts, not inches. Each
+# section takes a heading (the sign look: a dotted rule) as well as its rows.
+#
+# - The pHATs: 2. With 3, the plain look has room for 1 row each at the
+#   standard size and none for the third from text size 13 (122 rows); the
+#   original's 104 has none for it even at the standard size.
+# - The 10.85" e-paper: 3. 160 pHAT rows in the plain look: 3 trains, 2 buses
+#   and 1 tram at the standard size, a row each at the biggest; the sign look
+#   (120 dots) 3, 1 and 1.
+# - The 7.9" screen: 2. At 3 pixels a dot it is 133 tall, little more than the
+#   pHAT, and a screen's "Calling at" line takes a row: 1 row each at the
+#   standard size, none for the third mode from text size 13.
+# - The 11.3" bar screen: 2. 146 rows in the plain look and 110 dots in the
+#   sign look: with the "Calling at" line, 2 trains, 1 bus and 1 tram at the
+#   standard size, and none for the third from text size 14.
+#
+# Trains and buses have always shared every display, so none has room for
+# fewer than 2 (the original pHAT's biggest text cuts its last row short).
+# tests/board/test_panel.py measures these against the looks' layouts.
+MOST_MODES = {PHAT.name: 2, PHAT_V1.name: 2, WAVESHARE_10IN85G.name: 3, HDMI_1280X400.name: 2, HDMI_1920X440.name: 2}
+# What the settings call each panel, in a sentence: "The Inky pHAT has room for 2".
+PANEL_NAMES = {
+    PHAT.name: "the Inky pHAT",
+    PHAT_V1.name: "the original Inky pHAT",
+    WAVESHARE_10IN85G.name: "the 10.85-inch e-paper panel",
+    HDMI_1280X400.name: "the 7.9-inch screen",
+    HDMI_1920X440.name: "the 11.3-inch bar screen",
+}
+
+
+def most_modes(panel: Panel) -> int:
+    """How many modes `panel` has room for (MOST_MODES); 2 for a panel of
+    another size, as an Inky the library detects can be."""
+    return MOST_MODES.get(panel.name, 2)
+
+
+def panel_name(panel: Panel) -> str:
+    """The panel in words, for a sentence: "the Inky pHAT"."""
+    return PANEL_NAMES.get(panel.name, "this display")

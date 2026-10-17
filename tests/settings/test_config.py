@@ -1033,6 +1033,58 @@ def test_first_run_settings_use_the_templates_display_and_state_folder(tmp_path)
     assert settings.board.reset_code().code == f"{code[:3]} {code[3:]}"  # to claim the settings site
 
 
+# Which modes the board shows: [board] modes (settings/modes.py).
+
+BOTH = '''
+[train]
+crs = "GLO"
+[bus]
+source = "transportapi"
+[bus.stops]
+A = "1000DGHS0900"
+'''
+
+
+def test_the_board_shows_trains_and_buses_while_both_are_set_up(tmp_path):
+    settings = load_config(write(tmp_path, BOTH), ENV)
+    assert settings.board.modes == ("train", "bus")
+    assert [c.source.name for c in settings.board.sources] == ["train", "bus"]
+
+
+def test_the_board_fetches_only_the_modes_it_shows(tmp_path):
+    settings = load_config(write(tmp_path, BOTH + '[board]\nmodes = ["bus"]\n'), {"TAPI_APP_ID": "id",
+                                                                                  "TAPI_APP_KEY": "key"})
+    assert settings.board.modes == ("bus",)
+    assert [c.source.name for c in settings.board.sources] == ["bus"]  # no rail key needed
+
+
+def test_a_board_with_one_mode_set_up_shows_that_one_alone(tmp_path):
+    settings = load_config(write(tmp_path, '[train]\ncrs = "GLO"\n'), ENV)
+    assert settings.board.modes == ("train",)
+
+
+def test_a_board_showing_more_modes_than_its_display_has_room_for_is_refused(tmp_path):
+    text = BOTH + '[board]\nmodes = ["train", "bus", "metro"]\n'
+    with pytest.raises(ConfigError, match=r"\[board\] modes: The Inky pHAT has room for 2 modes at most"):
+        load_config(write(tmp_path, text), ENV)
+    with pytest.raises(ConfigError, match=r"The 11\.3-inch bar screen has room for 2"):
+        load_config(write(tmp_path, 'display = "hdmi-1920x440"\n' + text), ENV)
+    # The 10.85" e-paper has room for three; trams aren't set up, so trains and buses show.
+    settings = load_config(write(tmp_path, 'display = "waveshare-10in85g"\n' + text), ENV)
+    assert settings.board.modes == ("train", "bus")
+
+
+def test_the_display_override_sets_the_room_too(tmp_path):
+    path = write(tmp_path, 'display = "waveshare-10in85g"\n' + BOTH + '[board]\nmodes = ["train", "bus", "metro"]\n')
+    with pytest.raises(ConfigError, match=r"The 7\.9-inch screen has room for 2"):
+        load_config(path, ENV, display="hdmi-1280x400")
+
+
+def test_a_board_modes_list_that_is_not_one_is_a_config_error(tmp_path):
+    with pytest.raises(ConfigError, match=r"\[board\] modes must be a list of modes"):
+        load_config(write(tmp_path, BOTH + '[board]\nmodes = "bus"\n'), ENV)
+
+
 def test_first_run_settings_keep_the_screen_and_its_turn(tmp_path):
     from twobells.settings.config import first_run_settings
 

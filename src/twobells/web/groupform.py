@@ -11,7 +11,8 @@ A page's fields are drawn in sections, one per heading the fields give
 h2, with its advanced fields in a closed Advanced disclosure, opened when
 one of them has an error. A field shows only while the view that uses it
 is on, and while what it needs is set up; a section with nothing set up
-says so, with a link to setup.
+says so, with a link to setup. A view's modes list shows only while there
+are two modes or more to choose from.
 
 Saved values go to settings.toml in the store (layered over config.toml),
 merged into what is there (overlay.save_to), so settings the form doesn't
@@ -33,7 +34,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..board.displays.display import DISPLAY_PANELS
-from ..settings import schema, show
+from ..settings import modes, schema, show
 from ..settings.config import ConfigError, merge, settings_from
 from ..settings.overlay import BROKEN_NAME, OverlayError, save_to
 from ..settings.schema import Field, Invalid
@@ -51,11 +52,12 @@ NOTES: dict[tuple[str, str], str] = {
     ("trains_buses", "Buses"): "Departures from your stops.",
     ("trains_buses", "Weather"): "A rain warning beside the departures, and the dashboard's forecast.",
     ("board", "Display"): "How the board looks.",
+    ("board", "Modes of transport"): "Which departures the board shows, each in a section of its own.",
     ("board", "What to show"): "What the board shows beside the departures.",
     ("dashboard", "What to show"): "What the dashboard shows beside the departures.",
     ("board", "Trains"): "How many trains the board shows, and when it checks for them.",
     ("board", "Buses"): "How many buses the board shows, and when it checks for them.",
-    ("dashboard", "Departures"): "How many departures the dashboard lists, and how often it checks.",
+    ("dashboard", "Departures"): "Which departures the dashboard lists, how many, and how often it checks.",
     ("dashboard", "Quiet hours"): "When the dashboard rests, overnight say.",
     ("general", "Views"): "Where your departures show. At least one is on.",
     ("general", "Long text"): "What happens to text too long for its line, on the dashboard and a board's screen.",
@@ -233,6 +235,8 @@ class GroupForm:
                 continue
             if f.name == "bus_daily_budget" and not self._transportapi(data):
                 continue
+            if f.kind == "modes" and len(modes.set_up(data)) < 2:
+                continue  # nothing to choose between
             found.append(f)
         return found
 
@@ -270,6 +274,9 @@ class GroupForm:
                 continue
             if f.kind == "show":
                 values |= _show_shown(f, data)
+                continue
+            if f.kind == "modes":
+                values |= _modes_shown(f, data)
                 continue
             source = data if f.section is None else data.get(f.section, {})
             value = source.get(f.key) if isinstance(source, dict) else None
@@ -318,6 +325,9 @@ class GroupForm:
             if f.kind == "show":
                 errors |= _save_show(f, fields, shown, changes)
                 continue
+            if f.kind == "modes":
+                errors |= _save_modes(f, data, fields, shown, changes)
+                continue
             if (f.needs in off and f.key != "enabled" and not rows.get(f.name)
                     and not edited(fields.get(f.name, ""), shown[f.name])):
                 continue
@@ -362,11 +372,13 @@ class GroupForm:
             return []
         said = []
         for f in form:
+            if f.kind == "modes" and f.name not in after:
+                continue  # a mode switched off leaves nothing to choose between: the list itself is as it was
             old, new = before.get(f.name, ""), after.get(f.name, "")
             same = not edited(old, new) if f.kind in ("text", "area", "windows", "per_stop") else old == new
             if same:
                 continue
-            if f.kind in ("text", "area", "windows", "per_stop", "show"):
+            if f.kind in ("text", "area", "windows", "per_stop", "show", "modes"):
                 said.append(f.label)
             else:
                 said.append(f"{f.label}, {_words(f, old)} to {_words(f, new)}")
@@ -490,6 +502,7 @@ class GroupForm:
         if values is not None:  # drawn again as sent: an unticked box isn't sent, so it stays unticked
             shown |= {f.name: values.get(f.name, "") for f in fields if f.kind == "check"}
             shown |= {box: values.get(box, "") for f in fields if f.kind == "show" for box in _show_boxes(f)}
+            shown |= {box: values.get(box, "") for f in fields if f.kind == "modes" for box in _mode_boxes(f, data)}
             unsaved = self._unsaved(fields, data, values)
         sections = self._sections(fields, data)
         out = [self._header(csrf)]
@@ -595,6 +608,8 @@ class GroupForm:
             drawn = self._walks(f, data, shown, errors)
         elif f.kind == "show":
             drawn = _show_list(f, shown, errors.get(f.name))
+        elif f.kind == "modes":
+            drawn = _modes_list(f, data, shown, errors.get(f.name))
         else:
             drawn = self._field(f, data, shown.get(f.name, ""), errors.get(f.name))
         if f.name in unsaved and drawn:
@@ -616,6 +631,8 @@ class GroupForm:
             elif f.kind == "show":
                 differs = bool(values.get(_preset_name(f))) or any(
                     values.get(box, "") != current.get(box, "") for box in _show_boxes(f))
+            elif f.kind == "modes":
+                differs = any(values.get(box, "") != current.get(box, "") for box in _mode_boxes(f, data))
             elif f.kind in ("text", "number", "area"):
                 differs = edited(values.get(f.name, ""), was)
             else:
@@ -686,6 +703,8 @@ class GroupForm:
                 names |= {box: f"{f.heading} – {f.label}, {words}" for box, words in self._walk_boxes(f, data)}
             if f.kind == "show" and f.name in errors:
                 anchors[f.name] = _show_boxes(f)[0]
+            if f.kind == "modes" and f.name in errors and _mode_boxes(f, data):
+                anchors[f.name] = _mode_boxes(f, data)[0]
         items = "".join(
             f'<li><a href="#{e(anchors.get(name, name))}">{e(names.get(name, name))}: {e(text)}</a></li>'
             if name != "_form" else f"<li>{e(text)}</li>"
@@ -790,6 +809,60 @@ def _show_list(f: Field, shown: Mapping[str, str], error: str | None) -> str:
     return (f'<fieldset class="field show-list{" has-error" if error else ""}"{attrs}>'
             f"<legend{hidden}>{e(f.label)}</legend>{notes}{choice}"
             f'<div class="show-items">{"".join(boxes)}</div></fieldset>')
+
+
+# A view's modes list (settings/modes.py): a tickbox for each mode set up,
+# named "<field>-<mode>", in modes.MODES' order.
+
+
+def _mode_boxes(f: Field, data: dict) -> list[str]:
+    """The names of a modes list's tickboxes, one a mode set up, in order."""
+    return [f"{f.name}-{key}" for key in modes.set_up(data)]
+
+
+def _modes_shown(f: Field, data: dict) -> dict[str, str]:
+    """What a modes list shows for settings `data`: each mode set up ticked
+    ("on") while the view shows it, and the list itself as its keys
+    separated by spaces, to tell whether it changed. A list that doesn't
+    load shows every mode set up; saving says what is wrong."""
+    try:
+        on = modes.shown(data, f.group)
+    except ConfigError:
+        on = modes.set_up(data)
+    values = {f"{f.name}-{key}": "on" if key in on else "" for key in modes.set_up(data)}
+    values[f.name] = " ".join(key for key in modes.set_up(data) if key in on)
+    return values
+
+
+def _save_modes(f: Field, data: dict, fields: Mapping[str, str], shown: Mapping[str, str],
+                changes: dict) -> dict[str, str]:
+    """A modes list into `changes`, from its ticks; or its error. A list
+    left as shown isn't written, so a view without one keeps showing every
+    mode set up, a mode set up later included."""
+    try:
+        ticked = [key for key in modes.set_up(data) if schema.ticked(fields.get(f"{f.name}-{key}", ""))]
+        value = f.check(" ".join(ticked))  # the ticks, in modes.MODES' order as set_up gives them
+    except Invalid as error:
+        return {f.name: str(error)}
+    if " ".join(ticked) != shown.get(f.name):
+        changes.setdefault(f.section, {})[f.key] = value
+    return {}
+
+
+def _modes_list(f: Field, data: dict, shown: Mapping[str, str], error: str | None) -> str:
+    """A modes list: a group of its own, under the field's label, with a
+    tickbox for each mode set up."""
+    e = html.escape
+    attrs, notes = _described(f.name, f.hint, error)
+    attrs = attrs.replace(' aria-invalid="true"', "")  # a fieldset takes none: the error says it of the group
+    hidden = ' class="vh"' if f.label == f.heading else ""
+    boxes = []
+    for key in modes.set_up(data):
+        box = replace(f, name=f"{f.name}-{key}", label=modes.mode(key).label, kind="check", hint="")
+        boxes.append(_checkbox(box, shown.get(box.name, ""), None))
+    return (f'<fieldset class="field modes-list{" has-error" if error else ""}"{attrs}>'
+            f"<legend{hidden}>{e(f.label)}</legend>{notes}"
+            f'<div class="options inline">{"".join(boxes)}</div></fieldset>')
 
 
 def _label(f: Field) -> str:

@@ -14,7 +14,9 @@ The board's defaults (BOARD_DEFAULTS) are here too, for its loader
 (settings/config.py) and the board's fields; the dashboard's stay in
 dashconfig.DashboardOptions, and its fields show the same values.
 
-[app] views says which views are on (views()). The checks the fields use,
+[app] views says which views are on (views()), and each view's modes list
+which modes it shows (settings/modes.py); the board's display has room for
+so many (board_room). The checks the fields use,
 and the patterns setup and its spool check against, are defined once here.
 """
 
@@ -30,10 +32,11 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, available_timezones
 
 from ..board.displays.display import DISPLAY_PANELS
+from ..board.panel import most_modes, panel_name
 from ..board.themes import THEMES, themes_for
 from ..core.polling import parse_window
 from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES
-from . import show
+from . import modes, show
 
 if TYPE_CHECKING:
     from .installs import Install
@@ -250,6 +253,20 @@ def https_feed(raw: str) -> str:
     return value
 
 
+def board_room(display: str) -> tuple[int, str]:
+    """(how many modes the board's `display` has room for, the display in
+    words), from board/panel.py: (2, "the Inky pHAT")."""
+    panel = DISPLAY_PANELS.get(display, DISPLAY_PANELS["inky"])
+    return most_modes(panel), panel_name(panel)
+
+
+def room_words(display: str) -> str:
+    """Why the board shows only so many modes, in words, for the settings and setup."""
+    most, room = board_room(display)
+    return (f"{room[:1].upper()}{room[1:]} has room for {most}: each takes a section with its own heading, and "
+            "the board's text is sized to the display's height.")
+
+
 def _accents(display: str, theme: str) -> tuple[str, ...]:
     """Accents that stand out on the look's background: yellow is too faint on
     the plain look's white (1.9:1), red too dim on black on a screen (about
@@ -344,8 +361,9 @@ class Field:
     check: Callable[[str], object]
     # text, number, radios (2 to 4 choices), select (more), area, check; windows: time windows as rows
     # of days and times (web/windowrows.py), each row called `item`; per_stop: a number box for each
-    # bus stop, saved as a table by stop label; or show: a view's show list (settings/show.py), a
-    # tickbox for each item, with its presets
+    # bus stop, saved as a table by stop label; show: a view's show list (settings/show.py), a
+    # tickbox for each item, with its presets; or modes: a view's modes list (settings/modes.py), a
+    # tickbox for each mode set up
     kind: str = "text"
     hint: str = ""
     options: tuple[tuple[str, str], ...] = ()  # a choice's (value, words); a text box's suggestions
@@ -416,6 +434,7 @@ _TEXT_SIZES = tuple(str(size) for size in range(9, 17))
 _TEXT_SIZE_NAMES = {"9": "smallest", "11": "standard", "16": "biggest"}
 _KEPT = "The settings below are kept for turning them back on."
 _LISTED = "The first 5 show; the rest are behind Show later departures. A wall tablet shows 4."
+_MODES = "Each has a section of its own. Only modes switched on, on the Trains and buses page, are listed."
 _CHECKING = ("Outside these times the board shows what it last knew, without saying “not updating”. Bank holidays "
              "count as Sundays, unless the General page says to ignore them.")
 
@@ -490,6 +509,8 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               options=tuple((s, f"{s} ({_TEXT_SIZE_NAMES[s]})" if s in _TEXT_SIZE_NAMES else s)
                             for s in _TEXT_SIZES),
               default=board["text_size"], page="board", heading="Display", tier="advanced"),
+        Field("board_modes", "board", "board", "modes", "Modes of transport", modes.check(*board_room(display)),
+              "modes", hint=f"{_MODES} {room_words(display)}", page="board", heading="Modes of transport"),
         Field("board_show", "board", "board", "show", "What to show", show.check("board"), "show",
               default=show.ordered("board", show.default("board")),
               hint="The departures' times always show. What says “Screens only” shows only on an HDMI screen.",
@@ -525,6 +546,9 @@ def fields(display: str = "inky", theme: str = "sign") -> tuple[Field, ...]:
               width="4", unit="lookups"),
         # The dashboard's own, in its [dashboard] table; the defaults are
         # dashconfig.DashboardOptions' (test_schema checks they agree).
+        Field("dashboard_modes", "dashboard", "dashboard", "modes", "Modes of transport", modes.check(), "modes",
+              hint=f"{_MODES} The dashboard lists them one after another.", page="dashboard",
+              heading="Departures"),
         Field("dashboard_train_rows", "dashboard", "dashboard", "train_rows", "Most trains listed", number(1, 20),
               "number", hint=_LISTED, default=10, needs="train", page="dashboard", heading="Departures",
               width="2"),

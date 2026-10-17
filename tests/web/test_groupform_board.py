@@ -873,3 +873,50 @@ def test_the_page_can_still_clear_a_field_setup_filled(tmp_path):
     data = read_config(config)
     assert data["train"]["walk_minutes"] == "" and data["train"]["filter_crs"] == ""
     assert load_config(config, ENV).board.walk.train is None
+
+
+# The board's modes: [board] modes (settings/modes.py).
+
+
+def test_the_board_s_modes_are_a_tickbox_each_saying_how_many_the_display_has_room_for(setup):
+    form, *_ = setup
+    page = form.render("tok")
+    section = page[page.index('<h2 id="section-modes-of-transport">'):]
+    section = section[:section.index("</fieldset></fieldset>")]
+    assert "Which departures the board shows, each in a section of its own." in section
+    assert '<legend class="vh">Modes of transport</legend>' in section
+    assert "The Inky pHAT has room for 2: each takes a section with its own heading" in section
+    boxes = re.findall(r'<input id="board_modes-(\w+)" name="board_modes-\w+" type="checkbox" value="on"( checked)?'
+                       r'><label for="board_modes-\w+">(\w+)</label>', section)
+    assert boxes == [("train", " checked", "Trains"), ("bus", " checked", "Buses")]
+    assert page.index('id="section-display"') < page.index('id="section-modes-of-transport"') < page.index(
+        'id="section-what-to-show"')
+
+
+def test_unticking_buses_shows_trains_alone_on_the_board_and_saves_the_list(setup):
+    form, config, *_ = setup
+    assert form.save(fields_of(form)) == {}
+    assert "modes" not in read_overlay_in(config.parent / "state").get("board", {})  # as it was: nothing saved
+    changed = []
+    sent = {k: v for k, v in fields_of(form).items() if k != "board_modes-bus"}
+    assert form.save(sent, changed) == {}
+    assert changed == ["Modes of transport"]
+    assert read_overlay_in(config.parent / "state")["board"]["modes"] == ["train"]
+    settings = load_config(config, ENV)
+    assert settings.board.modes == ("train",) and [c.source.name for c in settings.board.sources] == ["train"]
+    # Buses stay set up: the page still offers them, unticked.
+    assert "board_modes-bus" not in fields_of(form) and fields_of(form)["board_modes-train"] == "on"
+
+
+def test_the_board_needs_a_mode_ticked(setup):
+    form, *_ = setup
+    sent = {k: v for k, v in fields_of(form).items() if not k.startswith("board_modes-")}
+    assert form.save(sent) == {"board_modes": "Tick at least one, or the departures show nowhere here"}
+
+
+def test_with_one_mode_set_up_there_is_nothing_to_choose(tmp_path):
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    config.write_text(CONFIG.format(state=state / "state.json").replace("[bus]\n", "[bus]\nenabled = false\n"))
+    page = board_form(config, lambda: dict(ENV)).render("tok")
+    assert "board_modes" not in page and "Modes of transport" not in page

@@ -1383,3 +1383,47 @@ def test_with_scrolling_off_the_route_page_cuts_a_long_title_short():
     assert route_sign_frame(view, PALETTE, HDMI_1920X440).scrolls == ()
     layout, _, _ = _route_layout(view, *dots(HDMI_1920X440))
     assert any(i.text.startswith("341 to ") and i.text.endswith("…") for i in layout.items)
+
+
+# The board's modes (settings/modes.py): a section each, a dotted rule between each two.
+
+TRAMS = Section("Trams and metro", (Row("07:15", "Altrincham", "Due"), Row("07:27", "Bury", "On time")),
+                "No trams or metro", mode="metro")
+
+
+def test_three_modes_on_the_10in85_e_paper_each_have_a_section():
+    view = dataclasses.replace(board(TRAINS, BUSES), sections=(*board(TRAINS, BUSES).sections, TRAMS))
+    layout = sign_layout(view, *dots(WAVESHARE_10IN85G))
+    assert len(layout.rules) >= 2  # between trains and buses, and buses and trams
+    drawn = texts(layout.items)
+    assert {"07:12", "08:12", "341", "07:15"} <= set(drawn)
+    # Trams last, below the second rule; a tram is drawn like a train, with its ordinal.
+    tram = find(layout.items, "07:15")
+    assert tram.y > layout.rules[1] and tram.y > find(layout.items, "341").y
+    assert any(i.text == "1st" and i.y == tram.y for i in layout.items)
+
+
+def test_each_section_but_the_last_leaves_a_line_for_those_after_it():
+    many = [Row(f"07:{m}", "Manchester Piccadilly", "On time") for m in (10, 20, 30)]
+    buses = [Row(str(n), "Hyde", "07:20", stop="A") for n in range(341, 345)]
+    view = dataclasses.replace(board(many, buses), sections=(*board(many, buses).sections, TRAMS))
+    layout = sign_layout(view, *dots(WAVESHARE_10IN85G))
+    drawn = texts(layout.items)
+    assert "07:15" in drawn  # the trams keep a line
+    assert "No trams or metro" not in drawn
+
+
+def test_a_board_of_trains_alone_takes_the_room_of_the_buses():
+    rows = [Row(f"07:{m}", "Manchester Piccadilly", "On time") for m in (10, 20, 30, 40, 50)]
+    view = dataclasses.replace(board(rows), sections=(board(rows).sections[0],))
+    layout = sign_layout(view)
+    drawn = texts(layout.items)
+    assert "No buses" not in drawn
+    assert [t for t in drawn if t.endswith(("st", "nd", "rd", "th"))][:5] == ["1st", "2nd", "3rd", "4th", "5th"]
+
+
+def test_the_not_updating_badge_names_each_mode_stalled():
+    stale = dataclasses.replace(TRAMS, stale=True)
+    view = dataclasses.replace(board(TRAINS, BUSES, stale_trains=True), sections=(
+        *board(TRAINS, BUSES, stale_trains=True).sections, stale))
+    assert "Not updating: trains, trams and metro" in texts(sign_layout(view, *dots(WAVESHARE_10IN85G)).items)

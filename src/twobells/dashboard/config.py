@@ -41,6 +41,7 @@ from urllib.parse import urlsplit
 from ..core import files
 from ..core.polling import Window, parse_window
 from ..core.walk import WalkTimes
+from ..settings import modes as mode_list
 from ..settings import show as show_items
 from ..settings.config import ConfigError, _flag, _table, _texts, _whole, settings_from, switched_on
 from ..settings.schema import bus_source
@@ -76,6 +77,7 @@ _KEYS = {
     "kb_incidents_url",
     "row_strips",
     "show",
+    "modes",
 }
 _MAX_ROWS = 20
 # Why there are no buses on the dashboard when the board's come from TransportAPI.
@@ -343,11 +345,13 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
     """The settings from already-read, already-layered data, without the lock."""
     data = switched_on(copy.deepcopy(data))  # [train] or [bus] with enabled = false is ignored, as the board does
     options = dashboard_options(data)
+    # The modes it shows ([dashboard] modes): only those are fetched here.
+    modes = mode_list.shown(data, "dashboard")
 
     if "train" in data:
         _table(data, "train", "[train]")["rows"] = options.train_rows
     bus_note = None
-    if "bus" in data:
+    if "bus" in data and "bus" in modes:
         bus = _table(data, "bus", "[bus]")
         if bus_source(bus) == "bods":
             bus["rows"] = options.bus_rows
@@ -357,7 +361,7 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
     # In the store, whatever the data says: the bus timetable and holidays live there.
     data["state_file"] = str(folder / "state.json")
     free_env = {key: value for key, value in env.items() if not key.startswith("TAPI_")}
-    settings = settings_from(data, free_env)
+    settings = settings_from(data, free_env, modes=modes)
 
     train = bus = None
     for config in settings.board.sources:

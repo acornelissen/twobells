@@ -215,6 +215,32 @@ def test_sections_switched_off_are_none_whatever_is_in_them(tmp_path, opened):
     assert dash.walk.train is None and dash.walk.bus == {}
 
 
+def test_the_dashboard_fetches_only_the_modes_it_shows(config, tmp_path, opened):
+    config.write_text(config.read_text() + '[dashboard]\nmodes = ["bus"]\n')
+    dash = load(config, tmp_path / "dash", opened=opened)
+    assert dash.train is None and dash.train_incidents is None
+    assert isinstance(dash.bus, BodsBusSource)
+
+
+def test_the_dashboard_s_modes_are_its_own_not_the_board_s(config, tmp_path, opened):
+    config.write_text(config.read_text() + '[board]\nmodes = ["train"]\n')
+    dash = load(config, tmp_path / "dash", opened=opened)
+    assert isinstance(dash.train, DarwinSource) and isinstance(dash.bus, BodsBusSource)
+
+
+def test_buses_left_off_the_dashboard_need_no_note_about_their_source(tmp_path, opened):
+    path = tmp_path / "config.toml"
+    text = CONFIG.format(board=tmp_path / "board").replace('source = "bods"', 'source = "transportapi"')
+    path.write_text(text + '[dashboard]\nmodes = ["train"]\n')
+    assert load(path, tmp_path / "dash", opened=opened).bus_note is None
+
+
+def test_a_dashboard_modes_list_that_is_not_one_is_a_config_error(config, tmp_path):
+    config.write_text(config.read_text() + '[dashboard]\nmodes = ["trains"]\n')
+    with pytest.raises(ConfigError, match=r"\[dashboard\] modes: 'trains' is not a mode"):
+        load_dashboard(config, ENV, tmp_path / "dash", lock=False)
+
+
 def test_enabled_must_be_true_or_false(config, tmp_path):
     config.write_text(config.read_text().replace("[bus]\n", '[bus]\nenabled = "off"\n'))
     with pytest.raises(ConfigError, match=r"\[bus\] enabled must be true or false"):

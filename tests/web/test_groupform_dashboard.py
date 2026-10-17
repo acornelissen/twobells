@@ -178,6 +178,30 @@ def test_scrolling_text_is_on_until_switched_off_and_saved_for_every_view(form):
     assert fields_of(form)["scrolling"] == "false"
 
 
+def test_the_dashboard_shows_every_mode_until_its_modes_are_saved(form):
+    shown = fields_of(form)
+    assert (shown["dashboard_modes-train"], shown["dashboard_modes-bus"]) == ("on", "on")
+    page = form.render("tok")
+    group = page[page.index('<fieldset class="field modes-list"'):]
+    group = group[:group.index("</fieldset>")]
+    assert "<legend>Modes of transport</legend>" in group and "The dashboard lists them one after another." in group
+    assert "has room for" not in group  # the dashboard has room for them all
+    assert form.save(shown) == {}
+    assert "modes" not in tomllib.loads((form.folder / "settings.toml").read_text()).get("dashboard", {})
+    sent = {k: v for k, v in shown.items() if k != "dashboard_modes-train"}
+    assert form.save(sent) == {}
+    assert tomllib.loads((form.folder / "settings.toml").read_text())["dashboard"]["modes"] == ["bus"]
+    dash = load_dashboard(form.config, ENV, form.folder, lock=False)
+    assert dash.train is None and dash.bus is not None
+
+
+def test_the_dashboard_s_modes_need_one_ticked(form):
+    sent = {k: v for k, v in fields_of(form).items() if not k.startswith("dashboard_modes-")}
+    assert form.save(sent) == {"dashboard_modes": "Tick at least one, or the departures show nowhere here"}
+    page = form.render("tok", errors={"dashboard_modes": "Tick at least one"}, values=sent)
+    assert '<a href="#dashboard_modes-train">Departures – Modes of transport: Tick at least one</a>' in page
+
+
 def test_the_dashboard_shows_everything_until_its_list_is_saved(form):
     from twobells.settings import show
 
