@@ -2,6 +2,7 @@ import json
 import logging
 import math
 import re
+import tracemalloc
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlsplit
 
@@ -603,7 +604,38 @@ def test_stop_search_refuses_silly_limits(kwargs):
         nearby_stops(HOME.lat, HOME.lon, http_get=refuse, grid=GRID, **kwargs)
 
 
-@pytest.mark.parametrize("body", [b"ATCOCode\n\"unterminated" + b"x" * 200_000, b"\xff\xfe\x00bad"])
+def _with_line(line: str) -> str:
+    """The NaPTAN fixture with `line` after its first stop."""
+    header, first, *rest = NAPTAN.decode().splitlines(keepends=True)
+    return header + first + line + "\n" + "".join(rest)
+
+
+def test_a_very_long_naptan_line_is_left_out_and_the_rest_read():
+    # A quoted field longer than csv allows used to refuse the whole file.
+    text = _with_line('"' + "x" * 200_000 + '"')
+    expected = lookups.stops_near(NAPTAN.decode(), TOWN.lat, TOWN.lon, 800, 15)
+    assert lookups.stops_near(text, TOWN.lat, TOWN.lon, 800, 15) == expected
+
+
+def test_a_very_long_naptan_line_is_never_held_whole():
+    # A line of empty fields was one row of millions, held as a list and again as the row's extras.
+    body = _with_line("," * 5_000_000).encode()
+    expected = nearby_stops(TOWN.lat, TOWN.lon, http_get=Getter(NAPTAN), grid=GRID)
+    tracemalloc.start()
+    try:
+        found = nearby_stops(TOWN.lat, TOWN.lon, http_get=Getter(body), grid=GRID)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert found == expected
+    assert peak < 1_000_000
+
+
+# A quoted field that never ends, over many short lines: more than csv allows in one field.
+UNENDING = b"ATCOCode\n\"unterminated" + (b"x" * 100 + b"\n") * 2000
+
+
+@pytest.mark.parametrize("body", [UNENDING, b"\xff\xfe\x00bad", b"ATCOCode\n" + b"x" * 100_000 + b"\xff"])
 def test_unreadable_naptan_file_is_refused(body):
     with pytest.raises(SetupError, match="NaPTAN"):
         nearby_stops(HOME.lat, HOME.lon, http_get=Getter(body), grid=GRID)

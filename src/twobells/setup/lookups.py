@@ -29,15 +29,16 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib.resources import files
-from typing import Protocol
+from typing import IO, Protocol
 from urllib.parse import quote, urlencode
 
+from ..core import bounded
 from ..core.errors import safe_message
 from ..core.net import get_bytes
 from ..core.osgb import distance_m, grid_to_latlon
 from ..sources.holidays import ENGLAND_AND_WALES
 from ..timetable.model import sign_letter
-from ..timetable.routesetup import NAPTAN_URL
+from ..timetable.routesetup import MAX_NAPTAN_LINE, NAPTAN_URL
 
 log = logging.getLogger(__name__)
 
@@ -594,9 +595,15 @@ def naptan_position(row: Mapping[str, str | None]) -> tuple[float, float] | None
 
 def stops_near(text: str, lat: float, lon: float, within_m: float, limit: int) -> list[Stop]:
     """Active bus stops in a NaPTAN CSV within `within_m` of a point, closest first."""
+    return _stops_in(io.StringIO(text), lat, lon, within_m, limit)
+
+
+def _stops_in(lines: IO[str], lat: float, lon: float, within_m: float, limit: int) -> list[Stop]:
+    """stops_near over a file of NaPTAN's CSV, a line at a time: one longer
+    than MAX_NAPTAN_LINE is left out, never held whole."""
     found = []
     try:
-        for row in csv.DictReader(io.StringIO(text)):
+        for row in csv.DictReader(bounded.lines(lines, MAX_NAPTAN_LINE)):
             atco = row.get("ATCOCode") or ""
             if row.get("Status") != "active" or row.get("StopType") not in BUS_STOP_TYPES or not _ATCO.match(atco):
                 continue
@@ -618,6 +625,8 @@ def stops_near(text: str, lat: float, lon: float, within_m: float, limit: int) -
             found.append((metres, atco, stop))
     except csv.Error:
         raise SetupError("NaPTAN sent a file that isn't readable CSV") from None
+    except UnicodeDecodeError:
+        raise SetupError("NaPTAN sent a file that isn't UTF-8") from None
     found.sort(key=lambda f: (f[0], f[1]))
     return [f[2] for f in found[:limit]]
 
@@ -639,11 +648,9 @@ def nearby_stops(lat: float, lon: float, within_m: float = 800, limit: int = 15,
         return []
     query = urlencode({"dataFormat": "csv", "atcoAreaCodes": ",".join(areas)})
     body = _fetch(http_get, f"{NAPTAN_URL}?{query}", MAX_NAPTAN_BYTES, "NaPTAN download")
-    try:
-        text = body.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        raise SetupError("NaPTAN sent a file that isn't UTF-8") from None
-    return stops_near(text, lat, lon, within_m, limit)
+    # Decoded as it is read, never as a whole.
+    lines = io.TextIOWrapper(io.BytesIO(body), encoding="utf-8-sig", newline="")
+    return _stops_in(lines, lat, lon, within_m, limit)
 
 
 # Walk times, from the OpenStreetMap foot router (OSRM). It is FOSSGIS's
