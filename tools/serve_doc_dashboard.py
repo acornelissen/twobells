@@ -16,6 +16,15 @@ Performance page. With --quiet the snapshot says a quiet window is on, so
 the wall tablet's page dims to its night clock. --scheme light (or dark)
 serves the pages with that scheme's colours whatever the browser prefers,
 so the light pictures can be taken from a browser set to dark.
+
+--phone also serves /frame: a page holding the dashboard in a frame 390
+CSS pixels wide and 844 high, a phone's, for the phone-width pictures from
+a browser window that can't be made that narrow; --frame 1280x800 gives
+the frame another size, such as a wall tablet's. The frame is its own
+viewport, so the page's media queries answer to its size. /frame?kiosk
+frames /?kiosk, and so on. Choose the look on / first: the frame shares
+its storage. Only this tool frames the page; the app's own server forbids
+it (frame-ancestors 'none').
 """
 
 from __future__ import annotations
@@ -26,6 +35,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from functools import partial
+from html import escape
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -64,19 +74,47 @@ def sample_area(generated_at: str) -> dict:
     return area
 
 
+# A phone's viewport, in CSS pixels.
+PHONE = (390, 844)
+
+
+def frame_size(raw: str) -> tuple[int, int]:
+    """WIDTHxHEIGHT in CSS pixels, like 1280x800."""
+    width, sep, height = raw.partition("x")
+    if not (sep and width.isdigit() and height.isdigit() and 100 <= int(width) <= 4000
+            and 100 <= int(height) <= 4000):
+        raise argparse.ArgumentTypeError(f"{raw!r} isn't WIDTHxHEIGHT, like 1280x800")
+    return int(width), int(height)
+
+
+def frame_page(query: str, size: tuple[int, int]) -> bytes:
+    """The /frame page: the dashboard, with `query`, in a frame of `size`
+    at the top left, so a screenshot crops to it."""
+    width, height = size
+    src = "/?" + query if query else "/"
+    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{width} by {height}</title>'
+            f"<style>body{{margin:0;background:#808080}}iframe{{display:block;border:0;"
+            f"width:{width}px;height:{height}px}}</style></head>"
+            f'<body><iframe src="{escape(src)}" title="The dashboard, {width} by {height}"></iframe></body></html>'
+            ).encode()
+
+
 class Handler(SimpleHTTPRequestHandler):
     snapshot: bytes = b""
     area: bytes = b""
     started_at: float = 0.0  # the sample's time, in seconds since the epoch
     started: float = 0.0  # time.monotonic() when this server started
     scheme: str | None = None  # "light" or "dark" whatever the browser prefers; None: as it prefers
+    frame: tuple[int, int] | None = None  # serve /frame, this size
 
     def date_time_string(self, timestamp=None):
         now = self.started_at + time.monotonic() - self.started
         return format_datetime(datetime.fromtimestamp(now, UTC), usegmt=True)
 
     def do_GET(self):
-        path = self.path.split("?", 1)[0]
+        path, _, query = self.path.partition("?")
+        if self.frame and path == "/frame":
+            return self._send(frame_page(query, self.frame), "text/html; charset=utf-8")
         answers = {
             "/api/snapshot": lambda: self.snapshot,
             "/api/area": lambda: self.area,
@@ -117,6 +155,10 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8931)
     parser.add_argument("--quiet", action="store_true", help="in a quiet window: a wall tablet dims")
     parser.add_argument("--scheme", choices=("light", "dark"), help="these colours, whatever the browser prefers")
+    parser.add_argument("--phone", action="store_const", const=PHONE, dest="frame",
+                        help="also serve /frame, the page in a phone-sized frame")
+    parser.add_argument("--frame", type=frame_size, metavar="WIDTHxHEIGHT",
+                        help="also serve /frame, the page in a frame this size")
     args = parser.parse_args()
     snapshot = sample_snapshot()
     snapshot["quiet"] = args.quiet
@@ -125,8 +167,11 @@ def main() -> None:
     Handler.started_at = datetime.fromisoformat(snapshot["generated_at"]).timestamp()
     Handler.started = time.monotonic()
     Handler.scheme = args.scheme
+    Handler.frame = args.frame
     server = ThreadingHTTPServer(("127.0.0.1", args.port), partial(Handler, directory=str(STATIC)))
     print(f"The sample dashboard is on http://127.0.0.1:{args.port}/")
+    if args.frame:
+        print(f"In a frame {args.frame[0]} by {args.frame[1]} on http://127.0.0.1:{args.port}/frame")
     server.serve_forever()
 
 
