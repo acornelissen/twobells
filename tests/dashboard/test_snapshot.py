@@ -99,17 +99,19 @@ def bus_part(now, vehicles=(), walk=WALK):
     return part, lookups, found
 
 
-def extras_part(now, no_shows=None, vehicles_ok=True, blocks=False):
+def extras_part(now, no_shows=None, vehicles_ok=True, blocks=False, more=()):
     """Buses at 10:14 with WEST's bus coming in on INTO_A, 9 min late, and EAST's bus live.
-    With `blocks`, the two are in one block, so WEST's bus is followed in."""
+    With `blocks`, the two are in one block, so WEST's bus is followed in. `more`
+    journeys join them."""
     from tests.dashboard.test_enrich import INTO_A, LEFT_JUNCTION
     from tests.sources.test_livebus import every_day
     from twobells.sources.lastbus import day_groups, last_buses
     from twobells.sources.livebus import live_board
 
-    plan = schedule(EAST, WEST, INTO_A)
+    plan = schedule(EAST, WEST, INTO_A, *more)
     if blocks:
-        plan = schedule(EAST, dataclasses.replace(WEST, block="T122"), dataclasses.replace(INTO_A, block="T122"))
+        plan = schedule(EAST, dataclasses.replace(WEST, block="T122"), dataclasses.replace(INTO_A, block="T122"),
+                        *more)
     east = dataclasses.replace(bus(*HALFWAY, now), fleet_number="3017", registration="AB25 CDE")
     vehicles = [east, bus(*HALFWAY, now, line="237", origin=JUNCTION, aimed=LEFT_JUNCTION)]
     rows, placed = live_board(plan, now, vehicles if vehicles_ok else [], every_day, 10)
@@ -845,9 +847,13 @@ def test_bus_rows_carry_arrivals_the_inbound_bus_and_ghosts():
     assert (west_a["strip"]["where"], west_a["strip"]["bus_at"]) == ("Bus on its way, due in 5 min", None)
     assert west_a["vehicle"]["recorded_at"] == "2026-10-09T10:14:00+01:00"  # the bus guessed to be coming in
     assert west_a["ghost"] is False  # a tracked bus is on its way to work it
+    # Stop B, later on the same journey: the same bus, three minutes on by the timetable.
     west_b = by(part["rows"], line="237", stop="B")
-    assert west_b["inbound"] is None and west_b["ghost"] is True  # due 10:18, nothing tracked
-    assert west_b["arrives"]["at"] == "11:00"
+    assert west_b["inbound"]["text"] == "Bus arriving at Henry Street from The Junction, 9 min late (due 10:19)"
+    assert (west_b["status_text"], west_b["expected"], west_b["live"], west_b["ghost"]) == (
+        "Exp 10:24", "10:24", True, False)
+    assert west_b["strip"]["where"] == "Bus on its way, due in 10 min"
+    assert west_b["arrives"]["at"] == "11:06"  # leaves 10:24, 42 minutes to Ashton
     assert west_b["history"] == {"phrase": None, "no_show_phrase": None}
 
 
@@ -864,9 +870,10 @@ def test_a_bus_followed_in_by_its_block_makes_its_row_live():
     seen = lookups[west_a["id"]]["bus"]
     assert (seen["vehicle"]["lat"], seen["vehicle"]["lon"]) == HALFWAY
     assert seen["where"] == "Bus on its way, due in 5 min"
-    # Stop B is on the same journey, but not where it starts: timetable only.
+    # Stop B is later on the same journey: the same bus, with its own time there.
     west_b = by(part["rows"], line="237", stop="B")
-    assert (west_b["live"], west_b["vehicle"], west_b["inbound"]) == (False, None, None)
+    assert (west_b["live"], west_b["expected"], west_b["vehicle"]) == (True, "10:24", west_a["vehicle"])
+    assert west_b["inbound"]["followed"] is True and west_b["inbound"]["due"] == "10:19"
 
 
 def test_no_ghosts_when_live_positions_failed():
@@ -929,11 +936,17 @@ def test_no_delay_is_recorded_for_a_bus_only_waiting_in():
     seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, plan, True, None), LONDON, at(10, 30))}
     west = seen["A|237|Ashton", "10:15"]
     assert (west.status, west.delay_min, west.live) == ("late", None, True)
+    # Nor at stop B, later on the same journey: the same bus, only waiting in.
+    later = seen["B|237|Ashton", "10:18"]
+    assert (later.status, later.delay_min, later.live) == ("late", None, True)
+    assert later.departs_at == datetime(2026, 10, 9, 10, 33, tzinfo=LONDON)
+    assert later.identity != west.identity
     # On its way in, late, its delay is observed: in at 10:19, out at 10:21.
     coming = bus(*HALFWAY, at(10, 14), line="237", origin=INTO_A.origin.atco, aimed=LEFT_JUNCTION)
     found = live(at(10, 14), [coming], plan=plan)
     seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, plan, True, None), LONDON, at(10, 14))}
     assert seen["A|237|Ashton", "10:15"].delay_min == 6
+    assert seen["B|237|Ashton", "10:18"].delay_min == 6  # the same delay, once at each stop of yours
 
 
 def test_a_bus_row_in_the_hour_that_comes_twice_is_the_pass_the_board_counted_it_from():
@@ -1257,7 +1270,11 @@ def test_what_the_server_sends_is_what_the_page_was_built_for():
     tparts, _ = trains_part(glossop(), FETCHED, status_block(), "GLO", None, WALK, "GLO",
                             details=details, now=DETAILS_AT.replace(minute=49))
     h.publish("trains", tparts)
-    bparts, lookups = extras_part(at(10, 14), lambda route, scheduled, day: "No tracker on 3 of the last 10 weekdays")
+    from tests.sources.test_livebus import ASHTON_INT, journey
+
+    untracked = journey("236", [(ST_MARYS_W, 617), (ASHTON_INT, 660)], "Ashton", "1300")  # a ghost: due, no tracker
+    bparts, lookups = extras_part(at(10, 14), lambda route, scheduled, day: "No tracker on 3 of the last 10 weekdays",
+                                  more=(untracked,))
     h.publish("buses", bparts)
     h.publish("weather", weather_part(conditions(), datetime(2026, 10, 9, 8, 20, tzinfo=LONDON), status_block(), 50))
     h.publish("disruptions", real_disruptions())

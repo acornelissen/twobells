@@ -210,8 +210,11 @@ def test_inbound_exactly_one_bus_coming_to_work_it():
         "from": "The Junction", "due": "10:14", "late_min": 4, "where": "3 stops away",
         "text": "Bus arriving from The Junction, 4 min late (due 10:14)", "followed": False,
     }
-    # Only departures that start at your stop are worked by an inbound bus.
-    assert inbound(row(board, "237", "B"), board.schedule.positions) is None
+    # At the journey's later stops it is the same bus, arriving where the journey starts.
+    assert inbound(row(board, "237", "B"), board.schedule.positions) == {
+        "from": "The Junction", "due": "10:14", "late_min": 4, "where": "3 stops away",
+        "text": "Bus arriving at Henry Street from The Junction, 4 min late (due 10:14)", "followed": False,
+    }
     assert inbound(row(board, "341"), board.schedule.positions) is None
 
 
@@ -280,6 +283,9 @@ def test_where_the_inbound_bus_is_and_where_it_came_from():
     board = make_board(at(10, 12), [at_your_stop])
     found = inbound(row(board, "237"), board.schedule.positions)
     assert (found["where"], found["late_min"], found["due"]) == ("At your stop", 2, "10:12")
+    # At stop B, later on the journey, the stop it is at is named: it isn't yours.
+    found = inbound(row(board, "237", "B"), board.schedule.positions)
+    assert (found["where"], found["due"]) == ("At Henry Street", "10:12")
     # From a stop the timetable has no position for: the name the tracker sends, tidied.
     from_ashton = replace(INTO_A, calls=((Call(ASHTON, 540), *INTO_A.calls[1:])))
     vehicle = replace(inbound_bus(at(10, 9), origin=ASHTON, aimed=LEFT_JUNCTION - timedelta(hours=1)),
@@ -294,13 +300,16 @@ def test_where_the_inbound_bus_is_and_where_it_came_from():
     assert found["from"] is None and found["text"].startswith("Bus arriving, ")
 
 
-@pytest.mark.parametrize("origin, late, due, words", [
-    ("Ashton", 4, "23:29", "Bus arriving from Ashton, 4 min late (due 23:29)"),
-    ("Ashton", 0, "23:25", "Bus arriving from Ashton, on time (due 23:25)"),
-    (None, 1, "07:01", "Bus arriving, 1 min late (due 07:01)"),
+@pytest.mark.parametrize("origin, late, due, start, words", [
+    ("Ashton", 4, "23:29", None, "Bus arriving from Ashton, 4 min late (due 23:29)"),
+    ("Ashton", 0, "23:25", None, "Bus arriving from Ashton, on time (due 23:25)"),
+    (None, 1, "07:01", None, "Bus arriving, 1 min late (due 07:01)"),
+    # At a later stop of the journey: where it arrives, the journey's first stop.
+    ("Ashton", 4, "23:29", "Henry Street", "Bus arriving at Henry Street from Ashton, 4 min late (due 23:29)"),
+    (None, 0, "07:01", "Henry Street", "Bus arriving at Henry Street, on time (due 07:01)"),
 ])
-def test_inbound_wording_gives_the_inbound_bus_s_lateness_never_a_new_departure_time(origin, late, due, words):
-    assert inbound_text(origin, late, due) == words
+def test_inbound_wording_gives_the_inbound_bus_s_lateness_never_a_new_departure_time(origin, late, due, start, words):
+    assert inbound_text(origin, late, due, start) == words
 
 
 def test_a_late_inbound_bus_guessed_by_line_makes_the_departure_late():

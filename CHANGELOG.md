@@ -7,6 +7,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 ### Fixed
 
 - Saturday buses on High Peak's 393 show again. BODS has its timetable in two parts with the same revision number, Saturdays from September 2024 and weekdays from January 2026, and the app took the weekdays for a replacement, so it ended the Saturdays the day before they started: no Saturday 393 since. As bustimes.org does, a version of a timetable is now replaced only by one with a higher revision number; parts of the same revision all run. The bus timetable is built again once after updating (timetable format 6).
+- A bus coming in to work a journey that starts at your stop now counts at that journey's later stops of yours too, not only the first: the 61 at stop I at 16:30 was "Bus on its way" and the same journey at stop A at 16:31 "No live position". Each later stop is expected the timetable's time from the first stop after the bus is expected to leave there, never before its time, says "Bus on its way, due in 9 min" (counting down to the bus getting to that stop) and then "Bus waiting to start" (`Waiting to start` on a screen's row), and goes when the first stop's does. The dashboard's line under it names where the bus arrives ("Bus arriving at Henry Street from Ashton, ..."). The history records each stop's row once, with no delay for a bus only waiting in.
 
 ## [0.2.1] - 2026-10-17
 

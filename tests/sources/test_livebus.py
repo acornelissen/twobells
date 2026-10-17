@@ -802,9 +802,6 @@ def test_a_departure_s_bus_is_followed_in_on_the_journey_before_in_its_block():
     assert words == "Bus on its way, due in 5 min"
     strip = row_strip(found, POSITIONS, datetime(2026, 10, 9, 10, 5))
     assert (strip.where, strip.at) == ("On its way, 5 min", None)  # not on the strip yet
-    # Only from the stop its journey starts at: the same journey at stop B is timetabled.
-    later = row(live(at(10, 5), [coming_in(at(10, 5))], plan=schedule(EAST, WEST_T122, IN_T122)), "B", "237")
-    assert (later.live, later.inbound, later.departure.status) == (False, None, Status.UNKNOWN)
 
 
 @pytest.mark.parametrize("seen, late, status, expected", [
@@ -866,6 +863,82 @@ def test_where_words_count_down_to_the_bus_getting_in():
     ):
         assert where_words(found, None, now) == full
         assert row_strip(found, POSITIONS, now).where == short
+
+
+# The bus coming in, at the journey's later stops of yours
+
+FOLLOWED_OR_GUESSED = pytest.mark.parametrize("plan", [
+    schedule(EAST, WEST_T122, IN_T122),  # followed by its block
+    schedule(EAST, WEST, INTO_A),  # guessed by line
+], ids=["followed", "guessed"])
+
+
+def west_b(now, vehicles, plan):
+    return row(live(now, vehicles, plan=plan), "B", "237")
+
+
+@FOLLOWED_OR_GUESSED
+def test_the_bus_coming_in_is_carried_to_the_journey_s_later_stops(plan):
+    # The reviewer's case: the 61 at stop I 16:30 was "Bus on its way", the
+    # same journey at stop A 16:31 "No live position". Here WEST leaves stop A
+    # at 10:15 and calls at stop B at 10:18, three minutes on by the timetable.
+    rows = live(at(10, 5), [coming_in(at(10, 5))], plan=plan)
+    first, later = row(rows, "A", "237"), row(rows, "B", "237")
+    assert later.live and later.progress is None and later.call_index == 3
+    assert later.inbound is first.inbound and later.tracked is first.tracked
+    assert (later.departure.status, later.departure.expected, later.expected) == (
+        Status.ON_TIME, None, datetime(2026, 10, 9, 10, 18))
+    assert later.observed
+    # "Due in" counts to the bus getting to your stop: 10:18 here.
+    now = datetime(2026, 10, 9, 10, 5)
+    assert where_words(later, approach(later, POSITIONS), now) == "Bus on its way, due in 13 min"
+    strip = row_strip(later, POSITIONS, now)
+    assert (strip.where, strip.at) == ("On its way, 13 min", None)
+
+
+@FOLLOWED_OR_GUESSED
+def test_a_late_bus_coming_in_makes_the_later_stops_as_late(plan):
+    # 9 min late: in at stop A 10:19, out at 10:21, at stop B three minutes later.
+    first = row(live(at(10, 14), [coming_in(at(10, 14))], plan=plan), "A", "237")
+    later = west_b(at(10, 14), [coming_in(at(10, 14))], plan)
+    assert (first.departure.expected, later.departure.expected) == ("10:21", "10:24")
+    assert later.departure.status is Status.LATE and later.expected == datetime(2026, 10, 9, 10, 24)
+    assert where_words(later, None, datetime(2026, 10, 9, 10, 14)) == "Bus on its way, due in 10 min"
+
+
+@FOLLOWED_OR_GUESSED
+def test_a_bus_in_at_the_first_stop_is_waiting_to_start_at_the_later_ones(plan):
+    henry = (POSITIONS[HENRY_A].lat, POSITIONS[HENRY_A].lon)
+    later = west_b(at(10, 13), [coming_in(at(10, 13), where=henry)], plan)
+    assert later.inbound.is_in and not later.observed
+    assert (later.departure.status, later.departure.expected) == (Status.ON_TIME, None)  # never before its time
+    now = datetime(2026, 10, 9, 10, 13)
+    # Not "Bus in": it is in at the stop its journey starts at, not this one.
+    assert where_words(later, None, now) == "Bus waiting to start, due in 5 min"
+    assert row_strip(later, POSITIONS, now).where == "Waiting to start"
+    # Still in after the first stop's time: any minute there, so three minutes on here.
+    later = west_b(at(10, 18), [coming_in(at(10, 18), where=henry)], plan)
+    assert (later.departure.status, later.departure.expected) == (Status.LATE, "10:21")
+    assert where_words(later, None, datetime(2026, 10, 9, 10, 18)) == "Bus waiting to start, due in 3 min"
+
+
+@FOLLOWED_OR_GUESSED
+def test_a_bus_left_waiting_at_the_stand_lets_the_later_stops_go_too(plan):
+    # Let go 30 minutes after the first stop's time, at every stop at once.
+    henry = (POSITIONS[HENRY_A].lat, POSITIONS[HENRY_A].lon)
+    later = west_b(at(10, 45), [coming_in(at(10, 45), where=henry)], plan)
+    assert later.inbound.is_in and later.departure.expected == "10:48"
+    for now in (at(10, 46), at(11, 30)):
+        rows = live(now, [coming_in(now, where=henry)], plan=plan)
+        assert not [l for l in rows if l.departure.service == "237" and l.departure.scheduled in ("10:15", "10:18")]
+
+
+def test_a_journey_starting_at_none_of_your_stops_is_not_followed_in():
+    # Starting at Market Hall, under 100 m from stop A: its block follows the
+    # bus in there, but the first stop isn't yours, so nothing is carried on.
+    elsewhere = replace(WEST_T122, calls=WEST_T122.calls[1:])
+    later = west_b(at(10, 5), [coming_in(at(10, 5))], schedule(EAST, elsewhere, IN_T122))
+    assert (later.live, later.inbound, later.departure.status) == (False, None, Status.UNKNOWN)
 
 
 def _block_variants():

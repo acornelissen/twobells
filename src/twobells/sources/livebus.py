@@ -14,10 +14,14 @@ bus. If that bus is placed (matched to that journey, or sending the same
 block as its BlockRef), the departure is live too, marked inbound ("Bus on
 its way, due in 6 min"): expected when that bus gets in plus TURNAROUND,
 never before its time; once in, on time, or, that gone, any minute. Only
-a departure from the journey's first stop is followed in: the bus's words
-count down to there. A bus still in INBOUND_WINDOW after the departure's
-time, still on the journey before, has laid over or gone out of service:
-it is let go, and the departure goes as one with no bus seen would. The block is a hint, never trusted blindly: the
+a journey whose first stop is yours is followed in, and the same bus goes
+with it to its later stops of yours until it is placed on the journey:
+expected at each the timetable's run time from the first stop after it
+is expected to leave there, so never before its time either. Its words
+count down to the bus getting to your stop. A bus still in INBOUND_WINDOW
+after the time at the first stop, still on the journey before, has laid
+over or gone out of service: it is let go at every stop, and the departure
+goes as one with no bus seen would. The block is a hint, never trusted blindly: the
 journey before must be the same operator's, on the same service day, the
 one just before it in the block, and end at the departure's first stop, or
 within NEAR_M of it, up to INBOUND_WINDOW before it leaves. If that bus
@@ -301,8 +305,9 @@ class LiveJourney:
 
 @dataclass(frozen=True)
 class Inbound:
-    """The bus coming in to work a departure that starts at your stop, placed
-    on the journey before (see the module's notes)."""
+    """The bus coming in to work a journey that starts at your stop, placed
+    on the journey before (see the module's notes). Its times are at the
+    end of the journey before, the departure's first stop."""
 
     bus: LiveJourney
     # By the block: the same bus. False for a guess by line. Either makes the
@@ -345,8 +350,8 @@ class LiveDeparture:
     expected: datetime  # leaves plus any lateness, board-local without a zone
     progress: Progress | None  # None when no bus was placed on the journey
     vehicle: Vehicle | None  # the bus behind progress
-    # The bus coming in to work it, for a departure from its journey's first
-    # stop with no bus placed on that journey (see the module's notes).
+    # The bus coming in to work it, for a journey starting at your stop with
+    # no bus placed on it, at that stop and its later ones (see the module's notes).
     inbound: Inbound | None = None
 
     @property
@@ -437,7 +442,8 @@ def live_board(
     with its delay and stays on the board however late; one that has passed
     your stop is dropped. A departure whose bus is followed in (see the
     module's notes) is shown as late as that bus makes it, until a minute
-    after then, or, once in, until INBOUND_WINDOW after its time. Without
+    after then, or, once in, until INBOUND_WINDOW after its journey's time
+    at the first stop. Without
     either, the timetabled time is shown as UNKNOWN until a minute after it.
     """
     if now.tzinfo is None:
@@ -469,19 +475,24 @@ def live_board(
             if journey.inbound_only or not heading_to(journey.destination, directions):
                 continue  # inbound-only journeys are there to find buses coming in, never as rows
             progress, vehicle = live.get((day, id(journey)), (None, None))
+            starts = midnight + timedelta(minutes=journey.origin.minute)
+            inbound = None
+            if progress is None and journey.origin.atco in labels:
+                inbound = follow.bus_in(journey, day)
+                if inbound is not None and inbound.is_in and local_now > starts + INBOUND_WINDOW:
+                    inbound = None  # still in long after its time: laid over or out of service
             for k, call in enumerate(journey.calls[:-1]):  # the last call is where it terminates
                 leaves = midnight + timedelta(minutes=call.minute)
                 if progress is not None and progress.at > k + PASSED_MARGIN:
                     continue  # the bus has been past this stop
-                inbound = follow.bus_in(journey, day) if k == 0 and progress is None else None
-                if inbound is not None and inbound.is_in and local_now > leaves + INBOUND_WINDOW:
-                    inbound = None  # still in long after its time: laid over or out of service
-                if progress is None and _expected(leaves, None, inbound, local_now) < local_now - GRACE:
+                if progress is None and _expected(leaves, None, inbound, local_now, starts) < local_now - GRACE:
                     continue
                 if leaves > local_now + HORIZON:
                     continue
                 for label in labels.get(call.atco, ()):
-                    found.append(_departure(journey, day, k, leaves, progress, vehicle, label, inbound, local_now))
+                    found.append(
+                        _departure(journey, day, k, leaves, progress, vehicle, label, inbound, local_now, starts)
+                    )
     found.sort(key=lambda live: (live.expected, live.leaves, live.departure.stop, live.journey.line))
     return found[:rows], list(placed.values())
 
@@ -619,18 +630,23 @@ class _Follow:
         return bool(block) and all(other.origin.minute >= journey.origin.minute for other in block)
 
 
-def _expected(leaves: datetime, placed: Progress | None, inbound: Inbound | None, now: datetime) -> datetime:
+def _expected(
+    leaves: datetime, placed: Progress | None, inbound: Inbound | None, now: datetime, starts: datetime
+) -> datetime:
     """When a departure is expected: as late as its bus is, or, followed in,
     TURNAROUND after its bus gets in; never before its time. A bus already
     in is no later, however long it has waited: it leaves on time, or, that
-    gone, any minute `now` (board-local)."""
+    gone, any minute `now` (board-local). `starts` is when the journey
+    leaves its first stop: a bus followed in is expected at a later stop the
+    timetable's run time from there after it is expected to leave."""
     if placed is not None:
         return leaves + timedelta(minutes=_late_minutes(placed.delay))
     if inbound is None:
         return leaves
+    run = leaves - starts
     if inbound.is_in:
-        return max(leaves, now.replace(second=0, microsecond=0))
-    return max(leaves, inbound.arrives + TURNAROUND)
+        return max(starts, now.replace(second=0, microsecond=0)) + run
+    return max(starts, inbound.arrives + TURNAROUND) + run
 
 
 def _departure(
@@ -643,10 +659,11 @@ def _departure(
     label: str,
     inbound: Inbound | None,
     now: datetime,
+    starts: datetime,
 ) -> LiveDeparture:
     """A board row for the k-th call of a journey, and what it came from, at
-    `now` (board-local)."""
-    expected = _expected(leaves, placed, inbound, now)
+    `now` (board-local); `starts` is when the journey leaves its first stop."""
+    expected = _expected(leaves, placed, inbound, now, starts)
     if placed is None and inbound is None:
         status = Status.UNKNOWN
     else:
@@ -707,14 +724,27 @@ def _along(picked: list[int], at: float) -> float | None:
     return len(picked) - 1 + (at - picked[-1])
 
 
-def inbound_words(inbound: Inbound, now: datetime, short: bool = False) -> str:
-    """A bus followed in, in words: "Bus on its way, due in 6 min" at the end
-    of the journey before, then "Bus in, waiting to leave"; `short` for a
-    board's row, which has room for eighteen letters: "On its way, 6 min".
-    `now` is board-local without a zone, as the departure's times are."""
-    if inbound.is_in:
+def inbound_words(live: LiveDeparture, now: datetime, short: bool = False) -> str:
+    """The bus followed in for a departure, in words, "due" counting down to
+    it getting to your stop. At the stop its journey starts: "Bus on its
+    way, due in 6 min" at the end of the journey before, then "Bus in,
+    waiting to leave". At a later stop: "Bus on its way, due in 9 min", when
+    the departure is expected there, then, in at the first stop, "Bus
+    waiting to start, due in 4 min". `short` for a board's row, which has
+    room for eighteen letters: "On its way, 6 min", "Bus in, waiting",
+    "Waiting to start". `now` is board-local without a zone, as the
+    departure's times are."""
+    inbound = live.inbound
+    if inbound is None:
+        return "No live position"
+    first = live.call_index == 0
+    if inbound.is_in and first:
         return "Bus in, waiting" if short else "Bus in, waiting to leave"
-    minutes = int((inbound.arrives - now).total_seconds() // 60)
+    minutes = int(((inbound.arrives if first else live.expected) - now).total_seconds() // 60)
+    if inbound.is_in:
+        if short:
+            return "Waiting to start"
+        return f"Bus waiting to start, due in {minutes} min" if minutes >= 1 else "Bus waiting to start, due now"
     if short:
         return f"On its way, {minutes} min" if minutes >= 1 else "On its way, due"
     return f"Bus on its way, due in {minutes} min" if minutes >= 1 else "Bus on its way, due now"
@@ -726,9 +756,7 @@ def where_words(live: LiveDeparture, found: Approach | None, now: datetime) -> s
     in is (inbound_words). `found` is its approach; `now` is board-local
     without a zone."""
     if live.progress is None:
-        if live.inbound is not None:
-            return inbound_words(live.inbound, now)
-        return "No live position"
+        return inbound_words(live, now)
     if found is None:
         return "Live position known"
     names = tuple(stop.name for stop in found.stops)
@@ -745,11 +773,10 @@ def row_strip(live: LiveDeparture, positions: dict[str, StopPosition], now: date
     if not live.live or found is None:
         return None
     if live.progress is None:
-        inbound = live.inbound
-        if inbound is None:
+        if live.inbound is None:
             return None
         try:
-            return Strip(inbound_words(inbound, now, short=True), len(found.stops), found.yours, None)
+            return Strip(inbound_words(live, now, short=True), len(found.stops), found.yours, None)
         except ValueError:
             return None
     last = len(found.stops) - 1

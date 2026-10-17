@@ -20,7 +20,9 @@ block, or else guessed by line) is shown as a line of its own ("Bus
 arriving from Ashton, 4 min late (due 23:29)"), with the facts from its
 tracker: where it is and how late. Either way the departure is live, and
 livebus carries the bus's lateness on to the departure's time; `followed`
-tells the API which it was.
+tells the API which it was. The same journey's later stops of yours have
+the same bus, named arriving where the journey starts ("Bus arriving at
+Henry Street from Ashton, ...").
 
 Ghost buses. A bus due within GHOST_WITHIN with no live bus placed on its
 journey is flagged, since trackers usually show up well before then. Not
@@ -139,8 +141,10 @@ def _origin(placed: LiveJourney, positions: dict[str, StopPosition]) -> str | No
     return _clean(placed.vehicle.origin_name)
 
 
-def _where(placed: LiveJourney, stop: str, positions: dict[str, StopPosition]) -> str:
-    """Where the inbound bus is, as the route strip says it: "4 stops away"."""
+def _where(placed: LiveJourney, live: LiveDeparture, positions: dict[str, StopPosition]) -> str:
+    """Where the inbound bus is, as the route strip says it: "4 stops away"
+    from the end of its journey, then "At your stop", or, for a later stop
+    of the departure's journey, at the stop it is in at ("At Henry Street")."""
     calls = placed.journey.calls
     away = (len(calls) - 1) - math.floor(placed.progress.at + 0.02)
     if away == 1:
@@ -148,35 +152,42 @@ def _where(placed: LiveJourney, stop: str, positions: dict[str, StopPosition]) -
     if away > 1:
         return f"{away} stops away"
     end = calls[-1].atco
-    if end == stop or end not in positions:
+    if live.call_index == 0 and (end == live.journey.origin.atco or end not in positions):
         return "At your stop"
-    return f"At {positions[end].name}"
+    for atco in (end, live.journey.origin.atco):
+        if atco in positions:
+            return f"At {positions[atco].name}"
+    return "Waiting to start"
 
 
 def inbound(live: LiveDeparture, positions: dict[str, StopPosition]) -> dict | None:
-    """The bus coming in to work a departure that starts at your stop, as
-    livebus found it, or None (see the module's notes). `followed` says
-    whether it was followed by the timetable's block rather than guessed by
-    line; either makes the departure live."""
+    """The bus coming in to work a departure that starts at your stop, or a
+    later stop of yours on the same journey, as livebus found it, or None
+    (see the module's notes). `followed` says whether it was followed by
+    the timetable's block rather than guessed by line; either makes the
+    departure live."""
     coming = live.inbound
     if coming is None:
         return None
     origin = _origin(coming.bus, positions)
     due = coming.arrives.strftime("%H:%M")
+    start = positions.get(live.journey.origin.atco) if live.call_index > 0 else None
     return {
         "from": origin,
         "due": due,
         "late_min": coming.late,
-        "where": _where(coming.bus, live.journey.origin.atco, positions),
-        "text": inbound_text(origin, coming.late, due),
+        "where": _where(coming.bus, live, positions),
+        "text": inbound_text(origin, coming.late, due, start.name if start is not None else None),
         "followed": coming.followed,
     }
 
 
-def inbound_text(origin: str | None, late: int, due: str) -> str:
+def inbound_text(origin: str | None, late: int, due: str, start: str | None = None) -> str:
     """The inbound bus in words for the row: "Bus arriving from Ashton, 4 min
-    late (due 23:29)". Its own lateness and time, never a time for the departure."""
-    coming = f"Bus arriving from {origin}" if origin else "Bus arriving"
+    late (due 23:29)". Its own lateness and time, never a time for the
+    departure. `start` names the stop it arrives at, the journey's first, for
+    a row at a later stop: "Bus arriving at Henry Street from Ashton, ..."."""
+    coming = "Bus arriving" + (f" at {start}" if start else "") + (f" from {origin}" if origin else "")
     return f"{coming}, {f'{late} min late' if late else 'on time'} (due {due})"
 
 
