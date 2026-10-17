@@ -45,7 +45,7 @@ Where there is room, the line runs across the page with each train placed on it:
 
 Light, dark, the amber Dot matrix look, the white and yellow TFT look or the Split-flap look, at any size from a phone to a wall tablet (`/?kiosk`):
 
-![The dashboard on a phone in the light look, the dark look and the amber Dot matrix look](docs/images/dashboard-looks.png)
+![The dashboard on a phone at 07:03, Leave now for the 07:09 341 bus: the Standard look, light and dark, and the amber Dot matrix look](docs/images/dashboard-looks.png)
 
 ## The board
 
