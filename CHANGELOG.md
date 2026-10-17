@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Fixed
+
+- Saturday buses on High Peak's 393 show again. BODS has its timetable in two parts with the same revision number, Saturdays from September 2024 and weekdays from January 2026, and the app took the weekdays for a replacement, so it ended the Saturdays the day before they started: no Saturday 393 since. As bustimes.org does, a version of a timetable is now replaced only by one with a higher revision number; parts of the same revision all run. The bus timetable is built again once after updating (timetable format 6).
+
 ## [0.2.1] - 2026-10-17
 
 A fix for engineering works, and the user guide brought up to date.

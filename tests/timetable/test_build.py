@@ -670,13 +670,50 @@ def _departures(schedule, day):
 
 def test_a_later_version_of_a_service_replaces_the_earlier_from_the_day_it_starts():
     # BODS keeps the old version, open-ended, beside the one replacing it.
-    old = _txc(LINKS, departure="07:37:00", start="2026-01-01")  # at Stop A 07:42
-    new = _txc(LINKS, departure="07:40:00", start="2026-10-20")  # at Stop A 07:45
+    old = _txc(LINKS, departure="07:37:00", start="2026-01-01", revision=3)  # at Stop A 07:42
+    new = _txc(LINKS, departure="07:40:00", start="2026-10-20", revision=4)  # at Stop A 07:45
     schedule = _versions(old, new)
     assert _departures(schedule, date(2026, 10, 25)) == ["07:45"]
     assert _departures(schedule, date(2026, 10, 19)) == ["07:42"]
     assert schedule.valid_until == date(2026, 10, 19)  # built again once the old one has ended
     assert set(_versions(new, old).journeys) == set(schedule.journeys)  # whichever comes first
+
+
+ON_SATURDAYS = _profile("<RegularDayType><DaysOfWeek><Saturday/></DaysOfWeek></RegularDayType>")
+ON_WEEKDAYS = _profile("<RegularDayType><DaysOfWeek><MondayToFriday/></DaysOfWeek></RegularDayType>")
+
+
+def test_a_later_version_of_the_same_revision_replaces_nothing():
+    # High Peak's 393 in October 2026: one ServiceCode, both RevisionNumber 25,
+    # neither with an end, the Saturdays from 2024 and the weekdays from 2026.
+    # They are halves of one timetable, so both run.
+    saturdays = _txc(LINKS, departure="16:24:00", start="2024-09-02", profile=ON_SATURDAYS, revision=25)
+    weekdays = _txc(LINKS, departure="07:37:00", start="2026-01-05", profile=ON_WEEKDAYS, revision=25)
+    schedule = _versions(saturdays, weekdays)
+    assert _departures(schedule, date(2026, 10, 24)) == ["16:29"]  # a Saturday
+    assert _departures(schedule, date(2026, 10, 26)) == ["07:42"]  # a Monday
+    assert schedule.valid_until is None
+
+
+def test_a_later_version_of_a_higher_revision_replaces_the_earlier_on_every_day():
+    # A true replacement, shaped as the 393's pair: the Saturdays end though
+    # the new version runs only on weekdays.
+    saturdays = _txc(LINKS, departure="16:24:00", start="2024-09-02", profile=ON_SATURDAYS, revision=25)
+    weekdays = _txc(LINKS, departure="07:37:00", start="2026-10-19", profile=ON_WEEKDAYS, revision=26)
+    schedule = _versions(saturdays, weekdays)
+    assert _departures(schedule, date(2026, 10, 17)) == ["16:29"]
+    assert _departures(schedule, date(2026, 10, 24)) == []
+    assert schedule.valid_until == date(2026, 10, 18)
+
+
+def test_a_higher_revision_running_switches_a_later_lower_one_off():
+    # As bustimes.org does: a version runs only while no version of a higher
+    # revision does, whichever starts first.
+    newer = _txc(LINKS, departure="07:37:00", start="2026-01-01", revision=2)
+    stale = _txc(LINKS, departure="07:40:00", start="2026-10-20", revision=1)
+    schedule = _versions(newer, stale)
+    assert _departures(schedule, date(2026, 10, 25)) == ["07:42"]
+    assert all(journey.calendar.start == date(2026, 1, 1) for journey in schedule.journeys)
 
 
 def test_the_higher_revision_wins_between_versions_starting_the_same_day():
@@ -694,8 +731,8 @@ def test_versions_of_the_same_revision_starting_the_same_day_are_both_kept():
 
 def test_a_temporary_version_switches_the_earlier_one_off_only_while_it_runs():
     # Roadworks: a timetable for two weeks, then the usual one again.
-    usual = _txc(LINKS, departure="07:37:00", start="2026-01-01")  # at Stop A 07:42
-    roadworks = _txc(LINKS, departure="07:40:00", start="2026-10-20", end="2026-11-03")  # 07:45
+    usual = _txc(LINKS, departure="07:37:00", start="2026-01-01", revision=3)  # at Stop A 07:42
+    roadworks = _txc(LINKS, departure="07:40:00", start="2026-10-20", end="2026-11-03", revision=4)  # 07:45
     schedule = _versions(usual, roadworks)
     assert _departures(schedule, date(2026, 10, 19)) == ["07:42"]
     assert _departures(schedule, date(2026, 10, 20)) == ["07:45"]
@@ -710,15 +747,15 @@ def test_a_temporary_version_beats_the_earlier_one_s_own_extra_days():
     usual = _txc(LINKS, departure="07:37:00", start="2026-01-01", profile=_profile(
         "<RegularDayType><DaysOfWeek><MondayToFriday/></DaysOfWeek></RegularDayType>"
         "<SpecialDaysOperation><DaysOfOperation><DateRange><StartDate>2026-10-25</StartDate></DateRange>"
-        "</DaysOfOperation></SpecialDaysOperation>"))
-    roadworks = _txc(LINKS, departure="07:40:00", start="2026-10-20", end="2026-11-03")
+        "</DaysOfOperation></SpecialDaysOperation>"), revision=3)
+    roadworks = _txc(LINKS, departure="07:40:00", start="2026-10-20", end="2026-11-03", revision=4)
     assert _departures(_versions(usual, roadworks), date(2026, 10, 25)) == ["07:45"]  # a Sunday
 
 
 def test_a_temporary_version_after_the_earlier_one_has_been_replaced_changes_nothing():
-    old = _txc(LINKS, departure="07:37:00", start="2026-01-01")
-    new = _txc(LINKS, departure="07:40:00", start="2026-10-20")
-    later = _txc(LINKS, departure="07:43:00", start="2026-12-01", end="2026-12-14")
+    old = _txc(LINKS, departure="07:37:00", start="2026-01-01", revision=3)
+    new = _txc(LINKS, departure="07:40:00", start="2026-10-20", revision=4)
+    later = _txc(LINKS, departure="07:43:00", start="2026-12-01", end="2026-12-14", revision=5)
     schedule = _versions(old, new, later)
     replaced = [j for j in schedule.journeys if j.calendar.start == date(2026, 1, 1)]
     assert [j.calendar.end for j in replaced] == [date(2026, 10, 19)]
@@ -728,8 +765,8 @@ def test_a_temporary_version_after_the_earlier_one_has_been_replaced_changes_not
 
 
 def test_a_later_version_that_has_already_ended_leaves_the_earlier_one_running():
-    usual = _txc(LINKS, departure="07:37:00", start="2026-01-01")
-    ended = _txc(LINKS, departure="07:40:00", start="2026-06-01", end="2026-09-30")
+    usual = _txc(LINKS, departure="07:37:00", start="2026-01-01", revision=3)
+    ended = _txc(LINKS, departure="07:40:00", start="2026-06-01", end="2026-09-30", revision=4)
     schedule = _versions(usual, ended)
     assert _departures(schedule, date(2026, 10, 25)) == ["07:42"]
 
@@ -821,8 +858,8 @@ def test_journeys_that_have_already_ended_are_not_counted_against_the_limit():
 def test_an_ended_version_not_counted_against_the_limit_still_switches_the_earlier_one_off():
     # As a temporary version does while it runs (_until_replaced): seen,
     # though it isn't kept.
-    usual = _txc(LINKS, departure="07:37:00", start="2026-01-01")
-    roadworks = _txc(LINKS, departure="07:40:00", start="2026-09-01", end="2026-10-05")
+    usual = _txc(LINKS, departure="07:37:00", start="2026-01-01", revision=3)
+    roadworks = _txc(LINKS, departure="07:40:00", start="2026-09-01", end="2026-10-05", revision=4)
     bods = FakeBods()
     bods.blobs[BNML_LINK] = _zip({"0.xml": usual, "1.xml": roadworks})
     bods.datasets["HIPK"] = []
@@ -2229,8 +2266,8 @@ def test_journeys_kept_from_a_document_share_what_they_have_in_common():
 
 
 def test_journeys_ended_by_a_later_version_share_their_new_calendar():
-    old = _with_journey(_txc(LINKS, departure="07:37:00", start="2026-01-01"), "vj2", "08:37:00")
-    new = _txc(LINKS, departure="07:40:00", start="2026-10-20")
+    old = _with_journey(_txc(LINKS, departure="07:37:00", start="2026-01-01", revision=3), "vj2", "08:37:00")
+    new = _txc(LINKS, departure="07:40:00", start="2026-10-20", revision=4)
     schedule = _versions(old, new)
     ended = [journey for journey in schedule.journeys if journey.calendar.end == date(2026, 10, 19)]
     assert len(ended) == 2

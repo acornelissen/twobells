@@ -81,10 +81,13 @@ none (Bee Network's and High Peak's timetables, in October 2026); then
 
 Versions. BODS keeps an old version of a service (its ServiceCode, line and
 operator) beside the one replacing it, often open-ended, so both would run.
-As bustimes.org does, a version ends the day before a later open-ended one
-starts. A later one with an end (roadworks, say) only switches the earlier
-one off while it runs, as days of non-operation, so the earlier one runs
-again after it. Of two starting the same day, the higher RevisionNumber wins.
+As bustimes.org decides, only a higher RevisionNumber replaces: a version
+ends the day before one of a higher revision, open-ended, starts (or never
+runs, if that one starts first). One of a higher revision with an end
+(roadworks, say) only switches it off while it runs, as days of
+non-operation, so it runs again after. Versions of the same revision are
+halves of one timetable, each with a start of its own (High Peak's 393 in
+October 2026: Saturdays from 2024, weekdays from 2026), and all run.
 
 Calendars. runs_on() decides, in this order:
   1. outside the service's OperatingPeriod: no;
@@ -144,7 +147,9 @@ _FAILED_FILE_BYTES = 200
 # 3: the roads between stops, for the dashboard's maps (shapes).
 # 4: the block each journey is worked in (Journey.block), to follow its bus.
 # 5: the stops placed only for a bus turning round (Schedule.turning_only).
-FORMAT = 5
+# 6: only a higher RevisionNumber replaces a version (_until_replaced); no
+#    more is held, so the memory below stands.
+FORMAT = 6
 MAX_AGE = timedelta(days=7)
 # Positions are kept for this many calls before each of your stops, and the one
 # after: livebus places buses along that stretch and sees them pass your stop.
@@ -776,7 +781,7 @@ def _journeys_kept(
 
     A journey whose timetable ended before `today` is let go as it is read,
     uncounted, its version noted in `versions` (an ended version still
-    switches the ones before it off, _until_replaced). An inbound-only
+    switches those of a lower revision off, _until_replaced). An inbound-only
     journey of a line with no journey calling at your stops is let go at
     the end. If the room for inbound-only ones fills first,
     `calling_lines()` (the document's lines calling at your stops, read
@@ -970,29 +975,34 @@ _Seen = tuple[date, date | None, int]
 
 def _until_replaced(version: _Version, journey: Journey, versions: Mapping[tuple, Set[_Seen]],
                     shared: _Shared | None = None) -> Journey | None:
-    """The journey as a later version of its service leaves it, as bustimes.org
-    does: BODS keeps an old version beside the one replacing it, often
-    open-ended, and both would run. It ends the day before the first later
-    open-ended version starts; a later version with an end only switches it
-    off from that version's start to its end (calendar.dates_off, which
-    runs_on puts first), within the journey's own period. None if a version
-    starting the same day with a higher RevisionNumber replaces it. `versions`
-    has every version of each service seen. A journey whose document gives no
-    ServiceCode is kept as it is. A new calendar is from `shared`, if given."""
+    """The journey as the versions of its service with a higher RevisionNumber
+    leave it, as bustimes.org decides (Route.active_on): BODS keeps an old
+    version beside the one replacing it, often open-ended, and both would
+    run. It runs only on days no version of a higher revision runs, whichever
+    starts first. It ends the day before the first open-ended one starts
+    (None if that is on or before its own start); one with an end only
+    switches it off from that one's start to its end (calendar.dates_off,
+    which runs_on puts first), within the journey's own period. A version of
+    the same revision replaces nothing: one timetable can be split across
+    documents with starts of their own (Saturdays from one date, weekdays
+    from another). `versions` has every version of each service seen. A
+    journey whose document gives no ServiceCode is kept as it is. A new
+    calendar is from `shared`, if given."""
     if not version.service:
         return journey
     calendar = journey.calendar
     start = calendar.start or date.min
-    others = versions.get(_group(version, journey), ())
-    if any(other == start and revision > version.revision for other, _, revision in others):
+    higher = [(other, other_end) for other, other_end, revision in versions.get(_group(version, journey), ())
+              if revision > version.revision]
+    replaced = [other for other, other_end in higher if other_end is None]
+    if replaced and min(replaced) <= start:
         return None
     end = calendar.end
-    replaced = [other for other, other_end, _ in others if other > start and other_end is None]
     if replaced and (end is None or min(replaced) <= end):
         end = min(replaced) - timedelta(days=1)
-    off = tuple(sorted((other, other_end if end is None else min(other_end, end))
-                       for other, other_end, _ in others
-                       if other > start and other_end is not None and (end is None or other <= end)))
+    off = tuple(sorted((max(other, start), other_end if end is None else min(other_end, end))
+                       for other, other_end in higher
+                       if other_end is not None and other_end >= start and (end is None or other <= end)))
     if end == calendar.end and not off:
         return journey
     calendar = replace(calendar, end=end, dates_off=calendar.dates_off + off)
@@ -1001,10 +1011,11 @@ def _until_replaced(version: _Version, journey: Journey, versions: Mapping[tuple
 
 def _current(found: Iterable[tuple[_Version, Journey]], versions: Mapping[tuple, Set[_Seen]],
              today: date) -> tuple[Journey, ...]:
-    """The journeys still running from `today`, each until a later version of
-    its service replaces it (_until_replaced), and each once: duplicates (same
-    line, operator, calls and calendar) can't be told apart by live times.
-    Those a version ends the same way share their new calendar."""
+    """The journeys still running from `today`, each until a version of its
+    service of a higher revision replaces it (_until_replaced), and each
+    once: duplicates (same line, operator, calls and calendar) can't be told
+    apart by live times. Those a version ends the same way share their new
+    calendar."""
     kept: dict[tuple, Journey] = {}
     calendars = _Shared()
     for version, journey in found:
@@ -1155,7 +1166,7 @@ def _read_timetables(links: list[tuple[str, str]], atcos: set[str], today: date,
         found, positions = _read_document(document, atcos, noc, yours, room, today=today, versions=versions)
         yours.update((atco, positions[atco]) for atco in atcos if atco in positions)
         # Those that ended before today were let go as they were read, their
-        # versions noted: even an ended version switches the ones before it off.
+        # versions noted: even an ended version switches lower revisions off.
         for version, journey in found:
             group, seen = _seen(version, journey)
             versions.setdefault(group, set()).add(seen)
@@ -1198,8 +1209,9 @@ def build_schedule(
     warning naming it. It has no roads yet: see add_roads.
 
     BODS keeps an old version of a service beside the one replacing it, so
-    each version ends the day before a later open-ended one starts, and is
-    switched off while a later one with an end runs (_until_replaced).
+    each version ends the day before an open-ended one of a higher
+    RevisionNumber starts, and is switched off while one of a higher
+    revision with an end runs (_until_replaced).
     Journeys whose timetable ended before today are left out, and so are
     duplicates (same line, operator, calls and calendar), which live times
     couldn't tell apart. valid_until is the earliest end among the rest that
