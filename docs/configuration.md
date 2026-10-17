@@ -82,7 +82,7 @@ show = ["next_to_catch", "where", "disruptions", "weather", "last_buses", "area_
 | Board | `platforms`, `where`, `disruption`, `rain`, `last_bus`, `bus_page`, `calling_at`, `clock_page` |
 | Dashboard | `next_to_catch`, `where`, `disruptions`, `weather`, `last_buses`, `area_map`, `remind`, `calling_at`, `coaches`, `punctuality`, `performance`, `fleet_numbers`, `announce` |
 
-The example above is The usual preset; `show = []` is Just the times (the dashboard's adds `next_to_catch`), and every item is Everything. Without a list, a view shows everything, except the board's clock page, which shows only with the older `clock_page = true`. Once the board has a list, `clock_page` is ignored: the list says.
+The example above is The usual preset; `show = []` is Just the times (the dashboard's adds `next_to_catch`), and every item is Everything. The [setup wizard](setup-wizard.md) saves one of the presets for each view, The usual unless you pick another. Without a list, a view shows everything, except the board's clock page, which shows only with the older `clock_page = true`. Once the board has a list, `clock_page` is ignored: the list says.
 
 What no view shows isn't fetched either, so leaving things out saves calls to the feeds and their daily limits. Each view fetches for itself, and a change takes effect on its next check, without a restart:
 

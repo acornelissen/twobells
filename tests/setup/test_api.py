@@ -9,7 +9,7 @@ from typing import ClassVar
 import pytest
 
 from tests.paths import ROOT
-from twobells.settings import keyresults
+from twobells.settings import keyresults, show
 from twobells.settings.config import load_config, needs_setup, read_base, read_config
 from twobells.settings.installs import INSTALLS, Install
 from twobells.settings.overlay import Target, board_target
@@ -809,6 +809,144 @@ def test_where_serve_starts_again_the_finished_page_says_so(board):
     assert body["links"] == [{"label": "The dashboard", "href": "/"}, {"label": "Settings", "href": "/settings"}]
 
 
+# What to show: a preset for each view on.
+
+
+def _saved(api):
+    return tomllib.loads((api.state / "settings.toml").read_text())
+
+
+SET_UP = '[train]\ncrs = "GLO"\n'
+NEW = 'theme = "plain"\n'  # nothing set up yet: neither trains nor buses
+
+
+def test_begin_offers_the_presets_for_each_view_with_what_each_shows_there(both):
+    offered = ok(both, "begin")["show"]
+    assert offered["presets"] == [{"name": "times", "label": "Just the times"}, {"name": "usual", "label": "The usual"},
+                                  {"name": "everything", "label": "Everything"}]
+    assert set(offered["views"]) == {"board", "dashboard"}
+    board, dashboard = offered["views"]["board"]["says"], offered["views"]["dashboard"]["says"]
+    assert board["times"] == "The departures' times only."
+    assert dashboard["times"] == "The departures' times, and Next to catch."
+    # Each preset from the one before, by the items' names on the settings pages.
+    assert board["usual"].startswith("Just the times, and also Platforms, Where it is,")
+    assert board["everything"] == "The usual, and also Calling at and Clock page."
+    assert "Announcements" in dashboard["everything"] and "Announcements" not in dashboard["usual"]
+
+
+def test_a_new_install_starts_at_the_usual(both):
+    (both.state / "settings.toml").write_text(NEW)
+    views = ok(both, "begin")["show"]["views"]
+    assert views["board"]["now"] == views["dashboard"]["now"] == show.NEW_INSTALL == "usual"
+
+
+def test_an_install_set_up_starts_at_the_preset_its_list_matches_or_at_keeping_it(both):
+    # Set up without lists: each shows what it always has, so the page offers to keep it.
+    (both.state / "settings.toml").write_text(SET_UP)
+    views = ok(both, "begin")["show"]["views"]
+    assert views["board"]["now"] == views["dashboard"]["now"] == "keep"
+    # A list a preset gives starts at that preset; one chosen item by item, at keeping it.
+    times = show.preset("board", "times")
+    (both.state / "settings.toml").write_text(SET_UP + f'[board]\nshow = {list(times)!r}\n'.replace("'", '"')
+                                              + '[dashboard]\nshow = ["weather"]\n')
+    views = ok(both, "begin")["show"]["views"]
+    assert (views["board"]["now"], views["dashboard"]["now"]) == ("times", "keep")
+
+
+def test_a_new_install_with_a_list_in_config_toml_starts_from_it(both):
+    (both.state / "settings.toml").write_text(NEW)
+    both.config.write_text(both.config.read_text() + '\n[dashboard]\nshow = []\n')
+    views = ok(both, "begin")["show"]["views"]
+    assert (views["board"]["now"], views["dashboard"]["now"]) == ("usual", "keep")
+
+
+@pytest.mark.parametrize("presets", [
+    {"board": "times"},
+    {"board": "everything", "dashboard": "times"},
+    {"dashboard": "usual", "board": "usual"},
+])
+def test_finishing_saves_the_presets_picked_as_the_settings_form_does(both, presets):
+    (both.state / "settings.toml").write_text(SET_UP)
+    ok(both, "finish", {**TRAINS_ONLY, "views": ["board", "dashboard"], "show": presets})
+    saved = _saved(both)
+    for view in ("board", "dashboard"):
+        if view in presets:
+            assert saved[view]["show"] == show.check(view)(" ".join(show.preset(view, presets[view])))
+        else:
+            assert "show" not in saved.get(view, {})  # kept as it is: still no list
+
+
+def test_a_view_left_out_keeps_its_list(both):
+    (both.state / "settings.toml").write_text(SET_UP + '[dashboard]\nshow = ["weather"]\n')
+    ok(both, "finish", {**TRAINS_ONLY, "views": ["board", "dashboard"], "show": {"board": "times"}})
+    saved = _saved(both)
+    assert saved["dashboard"]["show"] == ["weather"] and saved["board"]["show"] == list(show.preset("board", "times"))
+
+
+def test_a_new_install_that_says_nothing_of_what_to_show_gets_the_usual(both):
+    (both.state / "settings.toml").write_text(NEW)
+    ok(both, "finish", {**TRAINS_ONLY, "views": ["board", "dashboard"]})
+    saved = _saved(both)
+    assert saved["board"]["show"] == list(show.preset("board", "usual"))
+    assert saved["dashboard"]["show"] == list(show.preset("dashboard", "usual"))
+
+
+def test_a_new_install_gets_the_usual_only_for_the_views_on_and_without_a_list(both):
+    (both.state / "settings.toml").write_text(NEW)
+    both.config.write_text(both.config.read_text() + '\n[board]\nshow = ["platforms"]\n')
+    ok(both, "finish", {**TRAINS_ONLY, "views": ["board"], "show": {}})
+    saved = _saved(both)
+    assert "board" not in saved and "dashboard" not in saved  # config.toml's list stands; the dashboard is off
+
+
+def test_the_template_as_installed_is_a_new_install(template):
+    assert ok(template, "begin")["show"]["views"]["board"]["now"] == "usual"
+    ok(template, "finish", {"home": HOME, "station_crs": "GLO", "stops": {}, "walk": {}})
+    assert _saved(template)["board"]["show"] == list(show.preset("board", "usual"))
+
+
+def test_an_install_set_up_before_the_lists_keeps_showing_what_it_did(both):
+    (both.state / "settings.toml").write_text(SET_UP)
+    ok(both, "finish", {**TRAINS_ONLY, "views": ["board", "dashboard"]})
+    saved = _saved(both)
+    assert "board" not in saved and "dashboard" not in saved
+
+
+@pytest.mark.parametrize("presets", [
+    ["usual"],
+    "usual",
+    None,
+    {"board": "keep"},
+    {"board": "Usual"},
+    {"board": ["usual"]},
+    {"board": 1},
+    {"screen": "usual"},
+    {"dashboard": "usual"},  # not on
+    {"__proto__": "usual"},
+])
+def test_finishing_takes_only_a_preset_for_a_view_on(both, presets):
+    before = (both.state / "settings.toml").read_text()
+    status, body = both.handle("finish", {**TRAINS_ONLY, "views": ["board"], "show": presets})
+    assert status == 400 and body["field"] == "show", body
+    assert (both.state / "settings.toml").read_text() == before
+
+
+def test_what_to_show_is_for_the_views_on_now_when_none_are_sent(both):
+    (both.state / "settings.toml").write_text(SET_UP + '[app]\nviews = ["dashboard"]\n')
+    status, body = both.handle("finish", {**TRAINS_ONLY, "show": {"board": "times"}})
+    assert status == 400 and body["field"] == "show"
+    ok(both, "finish", {**TRAINS_ONLY, "show": {"dashboard": "times"}})
+    assert _saved(both)["dashboard"]["show"] == list(show.preset("dashboard", "times"))
+
+
+def test_the_settings_are_checked_with_the_lists_before_anything_is_saved(both):
+    # The dashboard can't start with its other settings wrong, so its list isn't saved either.
+    both.config.write_text(both.config.read_text() + "\n[dashboard]\ntrain_rows = 50\n")
+    before = (both.state / "settings.toml").read_text()
+    status, _ = both.handle("finish", {**TRAINS_ONLY, "views": ["dashboard"], "show": {"dashboard": "times"}})
+    assert status == 422 and (both.state / "settings.toml").read_text() == before
+
+
 @pytest.mark.parametrize("options", [
     {"view_links": {"screen": ("Screen", "/")}},
     {"view_links": {"dashboard": ("The dashboard", "javascript:alert(1)")}},
@@ -1058,6 +1196,7 @@ def test_the_same_stops_again_need_no_search(board):
     ({"only": "station", "station_crs": "GLO", "stops": {}, "walk": {}}, "stops"),
     ({"only": "station", "station_crs": "GLO", "walk": {"1800SB12341": 3}}, "walk"),
     ({"only": "station", "station_crs": "GLO", "walk": {}, "views": ["board"]}, "views"),
+    ({"only": "station", "station_crs": "GLO", "walk": {}, "show": {"board": "times"}}, "show"),
     ({"only": "stops", "stops": {"A": "1800SB12341"}, "station_crs": "GLO", "walk": {}}, "station_crs"),
     ({"only": "stops", "stops": {"A": "1800SB12341"}, "walk": {"GLO": 3}}, "walk"),
     ({"only": "stops", "walk": {}}, "stops"),

@@ -32,8 +32,9 @@ KEYS = keys("general")
 STATIC = ROOT / "src" / "twobells" / "wizard_static"
 OWN = sorted(p for p in STATIC.rglob("*") if p.is_file())
 PREFIX = "http://pi.local/setup/"  # any prefix ending in a slash
-STEPS = ("home", "station", "stops", "walk", "keys", "views", "finish", "done")
-SCRIPTS = ("api.js", "finish.js", "home.js", "keys.js", "maps.js", "roads.js", "say.js", "state.js", "station.js",
+STEPS = ("home", "station", "stops", "walk", "keys", "views", "show", "finish", "done")
+SCRIPTS = ("api.js", "finish.js", "home.js", "keys.js", "maps.js", "presets.js", "roads.js", "say.js", "state.js",
+           "station.js",
            "steps.js", "stops.js", "views.js", "walk.js", "wizard.js")
 
 
@@ -188,8 +189,8 @@ STATIC_IMPORT = re.compile(r"""^\s*import\s+(?:[^"'();]*?\s+from\s+)?["']([^"']+
 
 def test_leaflet_loads_only_when_a_map_opens():
     assert STATIC_IMPORT.findall(_js("wizard.js")) == [
-        "../dashboard_static/dom.js", "./api.js", "./finish.js", "./home.js", "./keys.js", "./say.js", "./state.js",
-        "./station.js", "./steps.js", "./stops.js", "./views.js", "./walk.js",
+        "../dashboard_static/dom.js", "./api.js", "./finish.js", "./home.js", "./keys.js", "./presets.js", "./say.js",
+        "./state.js", "./station.js", "./steps.js", "./stops.js", "./views.js", "./walk.js",
     ]
     # No module loads Leaflet up front: maps.js imports it when the first map opens.
     for name in SCRIPTS:
@@ -345,7 +346,7 @@ def test_each_step_is_a_section_with_a_focusable_heading():
 
 
 def test_the_steps_are_numbered_for_those_shown():
-    # Six steps, or seven where there are views to choose: the headings and
+    # Seven steps, or eight where there are views to choose: the headings and
     # the progress list are numbered for the steps shown.
     ids = _ids()
     numbered = [step for step in STEPS if step != "done"]
@@ -354,13 +355,13 @@ def test_the_steps_are_numbered_for_those_shown():
         assert ids[f"{step}-number"][0] == "span"
     text = _js("steps.js")
     number = _between(text, "function numberSteps", "// One action at a time")
-    assert 'STEPS.filter((step) => step !== "views" || state.askViews)' in text
+    assert 'STEPS.filter((step) => (step !== "views" || state.askViews) && (step !== "show" || state.askShow))' in text
     assert "item.hidden = !counted.includes(item.dataset.step);" in number
     assert "fill($(`${step}-number`), `Step ${i + 1} of ${counted.length}:`)" in number
     # Each Back goes to the step before among those shown: past the views step
     # when it isn't asked (see the behaviour tests below).
     assert "back.dataset.back = i ? counted[i - 1] : LEAVE;" in number
-    assert ids["finish-back"][1]["data-back"] == "keys"
+    assert ids["finish-back"][1]["data-back"] == "show"
     begin = _between(_js("wizard.js"), "async function begin", "begin();")
     assert begin.index("numberSteps();") < begin.index('go("home"')
 
@@ -1007,3 +1008,178 @@ def test_stops_refused_are_marked_invalid_until_the_error_goes():
     """, station={"station": {"crs": "MAN", "name": "Manchester Piccadilly", "lat": 53.47, "lon": -2.23,
                                "distance_m": 0}})
     assert found == {"refused": [True, "true"], "after": None, "error": True}
+
+
+# What to show: a preset for each view on, after the views.
+
+SAYS = {"times": "Times only.", "usual": "Just the times, and also more.", "everything": "The usual, and also the rest."}
+SHOW = {"presets": [{"name": "times", "label": "Just the times"}, {"name": "usual", "label": "The usual"},
+                    {"name": "everything", "label": "Everything"}],
+        "views": {"board": {"now": "usual", "says": SAYS}, "dashboard": {"now": "usual", "says": SAYS}}}
+BEGIN_SHOW = {**BEGIN, "show": SHOW}
+
+# The whole wizard from the keys on, home already found: onto the views,
+# both ticked, then what to show.
+TO_SHOW = """
+state.home = { lat: 53.46, lon: -1.97, label: "SK13 1AH", country: "" };
+state.station = { crs: "GLO", name: "Glossop" };
+click("keys-next");
+await settle();
+$("view-dashboard").checked = true;
+click("views-next");
+await settle();
+const radios = (view) => [...$(`show-${view}`).querySelectorAll('input[type="radio"]')]
+  .map((r) => [r.value, r.checked, r.getAttribute("name")]);
+// One radio of a group at a time, as a browser does, and its change said.
+const pick = (view, name) => {
+  for (const r of $(`show-${view}`).querySelectorAll('input[type="radio"]')) r.checked = r.value === name;
+  for (const [type, fn] of $(`show-${view}-${name}`).listeners) if (type === "change") fn();
+};
+const goBack = (step) => {
+  for (const [type, fn] of $(`step-${step}`).querySelector("[data-back]").listeners) if (type === "click") fn();
+};
+"""
+
+
+def test_the_show_step_is_a_group_of_radios_for_each_view_with_what_each_preset_shows():
+    draw = _js("presets.js")
+    option = _between(draw, "function option", "// Drawn each time")
+    # A real radio each, grouped by view, labelled, with what the preset shows described.
+    assert 'type: "radio", name: `show-${view.name}`, id, value: name' in option
+    assert 'h("label", { for: id }, label)' in option
+    assert '"aria-describedby": says ? `${id}-hint` : null' in option
+    assert "innerHTML" not in draw
+    # One fieldset per view, its legend naming the view.
+    assert 'h("fieldset", { id: `show-${view.name}` },' in draw
+    assert 'h("legend", {}, `What ${lower(view.label)} shows`)' in draw
+    ids = _ids()
+    assert ids["show-next"][0] == "button" and ids["show-list"][0] == "div"
+    # The line saying where the full checklists are.
+    assert "to choose item by item, use What to show on" in (STATIC / "index.html").read_text(encoding="utf-8")
+
+
+@needs_node
+def test_the_show_step_comes_after_the_views_and_starts_where_begin_says():
+    found = run_wizard(TO_SHOW + """
+        console.log(JSON.stringify({ shown: shown(), focus: document.activeElement.id, progress: progress(),
+                                     board: radios("board"), dashboard: radios("dashboard"),
+                                     legends: [...$("show-list").querySelectorAll("legend")].map((l) => l.textContent),
+                                     pages: $("show-pages").textContent, back: back("show").to,
+                                     next: $("views-next").textContent, list: $("show-list").textContent }));
+    """, begin=BEGIN_SHOW)
+    assert found["progress"] == ["home", "station", "stops", "walk", "keys", "views", "show", "finish"]
+    assert found["shown"] == ["step-show"] and found["focus"] == "show-heading"
+    assert found["next"] == "Next: what to show" and found["back"] == "views"
+    assert found["legends"] == ["What the board shows", "What the dashboard shows"]
+    assert found["board"] == [["times", False, "show-board"], ["usual", True, "show-board"],
+                              ["everything", False, "show-board"]]
+    assert found["dashboard"] == [[v, v == "usual", "show-dashboard"] for v in ("times", "usual", "everything")]
+    assert "Just the times, and also more." in found["list"] and "Keep" not in found["list"]
+    assert found["pages"] == "the settings' Board and Dashboard pages"
+
+
+@needs_node
+def test_the_presets_picked_are_summed_up_and_saved():
+    found = run_wizard(TO_SHOW + """
+        pick("board", "everything");
+        pick("dashboard", "times");
+        click("show-next");
+        await settle();
+        const summary = $("summary").textContent;
+        click("save");
+        await settle();
+        console.log(JSON.stringify({ summary, saved: asked("finish") }));
+    """, begin=BEGIN_SHOW)
+    assert "What to show" in found["summary"]
+    assert "The board: Everything" in found["summary"] and "The dashboard: Just the times" in found["summary"]
+    [saved] = found["saved"]
+    assert saved["views"] == ["board", "dashboard"]
+    assert saved["show"] == {"board": "everything", "dashboard": "times"}
+
+
+@needs_node
+def test_a_view_kept_as_it_is_is_left_out_of_what_is_saved():
+    show = {**SHOW, "views": {"board": {"now": "keep", "says": SAYS}, "dashboard": {"now": "everything", "says": SAYS}}}
+    found = run_wizard(TO_SHOW + """
+        const board = radios("board"), keepHint = $("show-board-keep-hint").textContent;
+        click("show-next");
+        await settle();
+        const summary = $("summary").textContent;
+        click("save");
+        await settle();
+        console.log(JSON.stringify({ board, keepHint, summary, saved: asked("finish") }));
+    """, begin={**BEGIN_SHOW, "show": show})
+    # Keep comes first, and is picked: the board shows what it does now.
+    assert found["board"][0] == ["keep", True, "show-board"] and [r[1] for r in found["board"][1:]] == [False] * 3
+    assert found["keepHint"] == "Change it item by item on the settings' Board page."
+    assert "The board: as it is now" in found["summary"]
+    assert found["saved"][0]["show"] == {"dashboard": "everything"}
+
+
+@needs_node
+def test_only_the_views_turned_on_are_asked_about_and_a_pick_stays_picked_going_back():
+    found = run_wizard(TO_SHOW + """
+        pick("board", "times");
+        goBack("show");
+        await settle();
+        $("view-dashboard").checked = false;
+        click("views-next");
+        await settle();
+        const after = { dashboard: $("show-dashboard"), board: radios("board"), pages: $("show-pages").textContent };
+        click("show-next");
+        await settle();
+        click("save");
+        await settle();
+        console.log(JSON.stringify({ ...after, saved: asked("finish") }));
+    """, begin=BEGIN_SHOW)
+    assert found["dashboard"] is None and found["pages"] == "the settings' Board page"
+    assert [r[1] for r in found["board"]] == [True, False, False]
+    assert found["saved"][0]["views"] == ["board"] and found["saved"][0]["show"] == {"board": "times"}
+
+
+@needs_node
+def test_with_one_view_offered_the_show_step_follows_the_keys():
+    one = {**BEGIN_SHOW, "views": {"offered": [{"name": "dashboard", "label": "The dashboard"}], "on": []}}
+    found = run_wizard("""
+        state.home = { lat: 53.46, lon: -1.97, label: "SK13 1AH", country: "" };
+        state.station = { crs: "GLO", name: "Glossop" };
+        click("keys-next");
+        await settle();
+        console.log(JSON.stringify({ shown: shown(), progress: progress(), back: back("show").to,
+                                     fieldsets: [...$("show-list").querySelectorAll("fieldset")].map((f) => f.id),
+                                     next: $("keys-next").textContent }));
+    """, begin=one)
+    assert found["shown"] == ["step-show"] and found["back"] == "keys" and found["next"] == "Next: what to show"
+    assert found["progress"] == ["home", "station", "stops", "walk", "keys", "show", "finish"]
+    assert found["fieldsets"] == ["show-dashboard"]
+
+
+@needs_node
+def test_a_shortcut_never_asks_or_saves_what_to_show():
+    found = run_wizard("""
+        click("station-next");
+        await settle();
+        click("walk-next");
+        await settle();
+        click("save");
+        await settle();
+        console.log(JSON.stringify({ progress: progress(), saved: asked("finish") }));
+    """, "?step=station", begin=BEGIN_SHOW)
+    assert found["progress"] == ["station", "walk", "finish"]
+    assert "show" not in found["saved"][0]
+
+
+@needs_node
+def test_what_to_show_from_begin_is_checked_as_anything_from_the_server_is():
+    show = {"presets": [{"name": "usual", "label": "The usual"}, {"name": "keep", "label": "Sneaky"},
+                        {"name": "<b>", "label": "x"}, {"name": "usual", "label": "Again"}, "times", None],
+            "views": {"board": {"now": "<b>", "says": {"usual": 5}}, "dashboard": {"now": "constructor"},
+                      "__proto__": {"now": "usual"}, "screen": {"now": "usual"}}}
+    found = run_wizard("""
+        console.log(JSON.stringify({ show: state.show, ask: state.askShow }));
+    """, begin={**BEGIN_SHOW, "show": show})
+    assert found["ask"] is True
+    # Only the presets that fit, each once; only the views offered; anything odd kept as it is.
+    assert found["show"] == {"presets": [{"name": "usual", "label": "The usual"}],
+                             "views": {"board": {"now": "keep", "says": {"usual": ""}},
+                                       "dashboard": {"now": "keep", "says": {"usual": ""}}}}

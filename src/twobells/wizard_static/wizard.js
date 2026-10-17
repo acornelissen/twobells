@@ -1,5 +1,5 @@
-// The first-run setup wizard: from home to saved settings in six steps, or
-// seven where the install offers more than one view to turn on. Two
+// The first-run setup wizard: from home to saved settings in seven steps, or
+// eight where the install offers more than one view to turn on. Two
 // shortcuts start part way, at the station or the stops (?step=station,
 // ?step=stops), from today's choices, and save only that part.
 //
@@ -15,11 +15,12 @@
 // finish.js, and roads.js for the wait after the search), beside the
 // helpers they share: api.js, say.js, state.js, steps.js and maps.js.
 
-import { $, fill, str, num, list, obj } from "../dashboard_static/dom.js";
+import { $, fill, str, num, list, obj, own } from "../dashboard_static/dom.js";
 import { call, signIn } from "./api.js";
 import { setUpFinish } from "./finish.js";
 import { setUpHome } from "./home.js";
 import { leaveKeys } from "./keys.js";
+import { KEEP, leaveShow } from "./presets.js";
 import { note } from "./say.js";
 import { state } from "./state.js";
 import { enterStation, setUpStation } from "./station.js";
@@ -30,6 +31,7 @@ import { leaveWalk } from "./walk.js";
 
 const NOUN = /^[a-z]{1,20}$/;
 const VIEW = /^[a-z]{1,20}$/;
+const PRESET = /^[a-z]{1,20}$/;
 const PATH = /^\/(?!\/)[A-Za-z0-9._~/-]*$/; // a plain path on this site, like /settings
 const CRS = /^[A-Za-z]{3}$/;
 const LABEL = /^[A-Za-z0-9]{1,3}$/;
@@ -64,6 +66,30 @@ function readSaved(data) {
   };
 }
 
+// What to show, from begin, checked: the presets, and for each view offered
+// that begin says anything of, the one to start at (a preset or KEEP; KEEP
+// for anything else, so nothing changes unasked) and what each shows there.
+function readShow(data) {
+  const show = obj(data) || {};
+  const presets = list(show.presets).map(obj)
+    .filter((p) => p && PRESET.test(str(p.name)) && p.name !== KEEP)
+    .map((p) => ({ name: p.name, label: str(p.label) || p.name }))
+    .filter((p, i, all) => all.findIndex((q) => q.name === p.name) === i);
+  const names = presets.map((p) => p.name);
+  const given = obj(show.views) || {};
+  const views = {};
+  for (const view of state.views) {
+    const one = obj(own(given, view.name));
+    if (!one) continue;
+    const says = obj(one.says) || {};
+    views[view.name] = {
+      now: [KEEP, ...names].includes(one.now) ? one.now : KEEP,
+      says: Object.fromEntries(names.map((name) => [name, str(own(says, name))])),
+    };
+  }
+  return { presets, views };
+}
+
 // Today's choices as where the steps start: the station picked and where
 // trains must call; the stops are ticked as each is found (stops.js). A
 // shortcut starts with home as roughly saved, and the other part as it is.
@@ -95,6 +121,7 @@ function setUpSteps() {
   $("walk-next").addEventListener("click", leaveWalk);
   $("keys-next").addEventListener("click", leaveKeys);
   $("views-next").addEventListener("click", leaveViews);
+  $("show-next").addEventListener("click", leaveShow);
   setUpFinish();
 }
 
@@ -117,12 +144,16 @@ async function begin() {
     // older host): no views are sent, and the host keeps those it has.
     state.askViews = state.views.length > 1;
     state.chosenViews = state.views.length === 1 ? [state.views[0].name] : [];
+    // What to show: asked where the host offers presets (an older one doesn't).
+    state.show = readShow(data.show);
+    state.askShow = state.show.presets.length > 0 && Object.keys(state.show.views).length > 0;
     state.only = shortcut(window.location.search);
     if (state.only) {
       state.title = SHORTCUTS[state.only];
-      // A shortcut leaves the views as they are.
+      // A shortcut leaves the views, and what they show, as they are.
       state.askViews = false;
       state.chosenViews = [];
+      state.askShow = false;
     }
     fill($("title"), state.title);
     // Without today's choices, the steps start from nothing, as on a first run.

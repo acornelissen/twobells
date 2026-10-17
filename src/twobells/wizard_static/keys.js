@@ -7,6 +7,7 @@ import { call } from "./api.js";
 import { enterFinish, pastedKeys } from "./finish.js";
 import { note, refuse, setError } from "./say.js";
 import { state } from "./state.js";
+import { enterShow } from "./presets.js";
 import { go, once } from "./steps.js";
 import { enterViews } from "./views.js";
 
@@ -146,6 +147,7 @@ export function leaveKeys() {
     }
   }
   if (state.askViews) enterViews();
+  else if (state.askShow) enterShow();
   else enterFinish();
   return true;
 }

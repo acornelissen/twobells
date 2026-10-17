@@ -194,8 +194,19 @@ def needs_setup(store: Store | Path | str) -> bool:
     from .store import Store
 
     try:
-        data = switched_on(Store.of(store).data())
+        data = Store.of(store).data()
     except (OSError, ConfigError):
+        return False
+    return still_to_set_up(data)
+
+
+def still_to_set_up(data: dict) -> bool:
+    """needs_setup for settings `data` already read, config.toml and the
+    saved settings together. A section's enabled that isn't true or false
+    is a fault, for the loaders to report, not a first run."""
+    try:
+        data = switched_on(data)
+    except ConfigError:
         return False
     if "train" not in data and "bus" not in data:
         return True

@@ -1,7 +1,8 @@
-// Step 7: check, search and save.
+// Step 8: check, search and save.
 
-import { $, h, fill, str, num, list, obj } from "../dashboard_static/dom.js";
+import { $, h, fill, str, num, list, obj, own } from "../dashboard_static/dom.js";
 import { ApiError, POLL_FAILURES, POLL_MS, call, sleep } from "./api.js";
+import { showViews } from "./presets.js";
 import { followRoads, setUpRoads } from "./roads.js";
 import { say, setError, shout } from "./say.js";
 import { state, stopName } from "./state.js";
@@ -60,7 +61,11 @@ export function enterFinish() {
       : "No buses") : null,
     summaryRow("Keys to save", keys.length ? keys.join(", ") : "None; the keys already set stay"),
     state.askViews ? summaryRow("Show the departures on", state.views
-      .filter((view) => state.chosenViews.includes(view.name)).map((view) => view.label).join(", ")) : null);
+      .filter((view) => state.chosenViews.includes(view.name)).map((view) => view.label).join(", ")) : null,
+    state.askShow ? summaryRow("What to show", h("ul", {}, showViews().map((view) => {
+      const preset = state.show.presets.find((p) => p.name === own(state.chosenShow, view.name));
+      return h("li", {}, `${view.label}: ${preset ? preset.label : "as it is now"}`);
+    }))) : null);
   $("only-hint").hidden = !state.only;
   const buses = searching();
   $("routes-box").hidden = !buses;
@@ -140,6 +145,7 @@ function payload() {
   }
   if (Object.keys(keys).length) body.keys = keys;
   if (state.chosenViews.length) body.views = state.chosenViews;
+  if (state.askShow) body.show = state.chosenShow;
   return body;
 }
 

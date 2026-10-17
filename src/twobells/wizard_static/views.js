@@ -3,6 +3,7 @@
 
 import { $, h, fill } from "../dashboard_static/dom.js";
 import { enterFinish } from "./finish.js";
+import { enterShow } from "./presets.js";
 import { refuse, setError } from "./say.js";
 import { state } from "./state.js";
 import { go } from "./steps.js";
@@ -38,6 +39,7 @@ export function leaveViews() {
     return refuse("views", "Tick at least one view, or the departures show nowhere.", firstView());
   }
   state.chosenViews = chosen;
-  enterFinish();
+  if (state.askShow) enterShow();
+  else enterFinish();
   return true;
 }

@@ -16,7 +16,8 @@ held in memory on the Pi, never on the SD card, and deleted as soon as the
 fetch service reads it (setup/spool/). Finishing
 writes only what setup.config_fragment allows: the weather position rounded
 to 2 places (about a kilometre), the station, the stops and walk times, the
-bank holiday list, and [bus] source, operators and routes from the search.
+bank holiday list, and [bus] source, operators and routes from the search;
+and the views and what each shows.
 
 Keys are write-only: the API says which are set, never their values, and
 no error repeats one. `testkey` tries one key, saved or pasted, with one
@@ -40,6 +41,15 @@ views the install offers with those on now. Only those keys can be saved
 or tested through it. `finish` takes the views to turn on, at least one
 and only those offered, saves them as [app] views, and the settings are
 checked as each of those views loads them before anything is saved.
+
+What to show. `begin` also offers show.PRESETS for each view offered, with
+what each preset shows there and the one to start at: the preset a saved
+show list matches; "keep" for a list that matches none, or for an install
+already set up without one (it shows what it always has); The usual
+(show.NEW_INSTALL) for a new install. `finish` takes a preset for any of
+the views on, saved as [board] show or [dashboard] show through the
+settings form's check; a view left out keeps its list, except that on a new
+install a view without one gets The usual.
 
 Shortcuts. The page can start at the station or the stops step instead of
 home ("Change station only", "Change stops only"), filled in with today's
@@ -74,8 +84,8 @@ from pathlib import Path
 from typing import Protocol, overload
 
 from ..core.errors import safe_message
-from ..settings import keyresults, schema
-from ..settings.config import ConfigError
+from ..settings import keyresults, schema, show
+from ..settings.config import ConfigError, still_to_set_up
 from ..settings.installs import INSTALLS, Install
 from ..settings.overlay import OverlayError, Target, save_to
 from ..settings.schema import ATCO as _ATCO
@@ -138,10 +148,14 @@ _NAME_LENGTH = 100  # a stop's name from the timetable, as the page shows it
 # or for one part of it, the rest kept as saved.
 PARTS = ("station", "stops")
 _FINISH_FIELDS = {
-    None: (("home", "stops", "walk"), ("station_crs", "filter_crs", "keys", "views")),
+    None: (("home", "stops", "walk"), ("station_crs", "filter_crs", "keys", "views", "show")),
     "station": (("only", "walk"), ("station_crs", "filter_crs", "keys")),
     "stops": (("only", "stops", "walk"), ("keys",)),
 }
+
+
+# What begin says to start a view's What to show at when its show list is no preset's.
+KEEP = "keep"
 
 
 class Invalid(Exception):
@@ -264,7 +278,7 @@ def static_files() -> dict[str, Path]:
     leaflet, inter = "vendor/leaflet-1.9.4", "vendor/inter-4.1/InterVariable.woff2"
     # wizard.js and the modules it imports, each named: anything else is a 404.
     scripts = ("wizard", "api", "say", "state", "steps", "maps", "home", "station", "stops", "walk", "keys",
-               "views", "finish", "roads")
+               "views", "presets", "finish", "roads")
     return {
         "": wizard / "index.html",
         **{f"wizard_static/{name}.js": wizard / f"{name}.js" for name in scripts},
@@ -376,6 +390,61 @@ def view_choices(offered: Sequence[str]) -> list[dict]:
     fields = {f.name: f for f in schema.FIELDS}
     return [{"name": view, "label": fields[f"view_{view}"].label, "hint": fields[f"view_{view}"].hint}
             for view in offered]
+
+
+def _show(value, on: Sequence[str]) -> dict[str, str]:
+    """What to show: a preset's name for any of the views `on`."""
+    names = [name for name, _ in show.PRESETS]
+    if not isinstance(value, dict):
+        raise Invalid("Send what to show as a preset for each view", "show")
+    if any(view not in on for view in value):
+        raise Invalid("Say what to show only for the views on", "show")
+    if any(name not in names for name in value.values()):
+        raise Invalid("Pick Just the times, The usual or Everything", "show")
+    return {view: value[view] for view in on if view in value}
+
+
+def show_list(view: str, name: str) -> list[str]:
+    """Preset `name`'s show list for `view`, checked as the settings form checks it."""
+    return show.check(view)(" ".join(show.preset(view, name)))
+
+
+def preset_words(view: str, name: str) -> str:
+    """What preset `name` shows in `view`, from the one before it:
+    "The usual, and also Calling at and Clock page."."""
+    names = [preset for preset, _ in show.PRESETS]
+    at = names.index(name)
+    before = set(show.preset(view, names[at - 1])) if at else set()
+    added = [item.label for item in show.items(view) if item.key in show.preset(view, name) and item.key not in before]
+    if not at:
+        return f"The departures' times, and {_listed(added)}." if added else "The departures' times only."
+    start = dict(show.PRESETS)[names[at - 1]]
+    return f"{start}, and also {_listed(added)}." if added else f"The same as {start}."
+
+
+def _listed(words: Sequence[str]) -> str:
+    return words[0] if len(words) == 1 else f"{', '.join(words[:-1])} and {words[-1]}"
+
+
+def _has_show_list(data: Mapping, view: str) -> bool:
+    section = data.get(view)
+    return isinstance(section, dict) and "show" in section
+
+
+def show_choices(offered: Sequence[str], data: Mapping, new: bool) -> dict:
+    """The presets, and for each view offered what each shows there and the
+    one to start at (`now`), by settings `data`; `new` if the install is
+    still to be set up."""
+    views = {}
+    for view in offered:
+        now = show.NEW_INSTALL if new else KEEP
+        if _has_show_list(data, view):
+            try:
+                now = show.preset_of(view, show.shown(data, view)) or KEEP
+            except ConfigError:
+                now = KEEP
+        views[view] = {"now": now, "says": {name: preset_words(view, name) for name, _ in show.PRESETS}}
+    return {"presets": [{"name": name, "label": label} for name, label in show.PRESETS], "views": views}
 
 
 def saved_message(install: Install, views: Sequence[str]) -> str:
@@ -593,8 +662,10 @@ class SetupApi:
         keys = [{"name": name, "label": label, "hint": hint, "set": bool(str(env.get(name, "")).strip()),
                  "doc": KEY_DOCS + _KEY_ANCHORS.get(name, "")} for name, label, hint in self._keys]
         on = self._views_now()
+        data, new = self._settings_now()
         return {"title": self._title, "noun": self._noun, "keys": keys,
                 "views": {"offered": view_choices(self._install.offered), "on": list(on)},
+                "show": show_choices(self._install.offered, data, new),
                 "links": self._links_for(on), "back": self._back, "job": self._job_status()}
 
     def saved(self, payload) -> dict:
@@ -639,6 +710,15 @@ class SetupApi:
             return {}
         return {atco: (str(place.name)[:_NAME_LENGTH], str(place.indicator or "")[:_NAME_LENGTH])
                 for atco, place in schedule.positions.items()}
+
+    def _settings_now(self) -> tuple[dict, bool]:
+        """The settings in force, and whether the install is still to be set
+        up; ({}, False) if they don't read, so nothing is taken as new."""
+        try:
+            data = self._target.current()
+        except (OSError, ConfigError):
+            return {}, False
+        return data, still_to_set_up(data)
 
     def _views_now(self) -> tuple[str, ...]:
         """The views on in the settings in force; the install's defaults if they don't read."""
@@ -855,7 +935,8 @@ class SetupApi:
         there, and any pasted keys into the secrets overlay. With `only`,
         "station" or "stops", save that part alone (a shortcut's): the
         station, where trains must call and its walk, or the stops and their
-        walks; home, the views and the other part stay as saved."""
+        walks; home, the views, what they show and the other part stay as
+        saved."""
         only = payload.get("only") if isinstance(payload, dict) else None
         if only is not None and only not in PARTS:
             raise Invalid("Save the station or the stops", "only")
@@ -886,6 +967,8 @@ class SetupApi:
         walk = {key: (_minutes(m, "walk"), "given") for key, m in walk.items()}
         keys = _keys(fields.get("keys", {}), self._key_names)
         views = _views(fields["views"], self._install.offered) if "views" in fields else None
+        on = tuple(views) if views is not None else self._views_now()
+        presets = _show(fields["show"], on) if "show" in fields else {}
 
         changes = setup.config_fragment(home, station, [(label, self._stop(atco)) for label, atco in stops.items()],
                                         walk)
@@ -916,12 +999,19 @@ class SetupApi:
         if views is not None:
             # The target checks the settings as each of these views loads them.
             changes["app"] = {"views": views}
+        if only is None:
+            # A new install the page said nothing for (an older page, say) gets The usual.
+            data, new = self._settings_now()
+            for view in on:
+                if view not in presets and new and not _has_show_list(data, view):
+                    presets[view] = show.NEW_INSTALL
+        for view, name in presets.items():
+            changes.setdefault(view, {})["show"] = show_list(view, name)
         env = dict(self._load_secrets())
         save_to(self._target, changes, keys, env)
         keyresults.forget(self._job_folder, keys)  # a test of the old key says nothing of the new
         with self._lock:
             self._found_stops.clear()
-        on = tuple(views) if views is not None else self._views_now()
         message = self._saved_message or saved_message(self._install, on)
         return {"saved": True, "message": message, "links": self._links_for(on)}
 

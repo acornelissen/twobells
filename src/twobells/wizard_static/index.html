@@ -21,6 +21,7 @@
       <li data-step="walk">Walk times</li>
       <li data-step="keys">Keys</li>
       <li data-step="views">Views</li>
+      <li data-step="show">What to show</li>
       <li data-step="finish">Finish</li>
     </ol>
   </nav>
@@ -32,7 +33,7 @@
 
   <!-- 1. Home -->
   <section id="step-home" class="step" aria-labelledby="home-heading" hidden>
-    <h2 id="home-heading" tabindex="-1"><span id="home-number">Step 1 of 7:</span> Where is home?</h2>
+    <h2 id="home-heading" tabindex="-1"><span id="home-number">Step 1 of 8:</span> Where is home?</h2>
     <p class="hint">Used to find the stations and bus stops near you and how long the walk is. The <span data-noun>board</span> keeps only a rough position, to about a kilometre, for the rain warning.</p>
 
     <form id="postcode-form" class="row-form" novalidate>
@@ -78,7 +79,7 @@
 
   <!-- 2. Station -->
   <section id="step-station" class="step" aria-labelledby="station-heading" hidden>
-    <h2 id="station-heading" tabindex="-1"><span id="station-number">Step 2 of 7:</span> Your railway station</h2>
+    <h2 id="station-heading" tabindex="-1"><span id="station-number">Step 2 of 8:</span> Your railway station</h2>
     <p id="station-status" class="note" hidden></p>
     <fieldset id="station-set" aria-describedby="station-error">
       <legend>Which station do you leave from?</legend>
@@ -125,7 +126,7 @@
 
   <!-- 3. Bus stops -->
   <section id="step-stops" class="step" aria-labelledby="stops-heading" hidden>
-    <h2 id="stops-heading" tabindex="-1"><span id="stops-number">Step 3 of 7:</span> Your bus stops</h2>
+    <h2 id="stops-heading" tabindex="-1"><span id="stops-number">Step 3 of 8:</span> Your bus stops</h2>
     <p class="hint">Tick the stops you use, up to 10. Each gets a short label on the <span data-noun>board</span>, like A; the letter on the stop's sign is suggested when it has one. Tick none for no buses.</p>
     <p id="stops-near" class="hint" hidden>These are the stops near roughly where home is, as saved for the weather, to about a kilometre. To look from home exactly, run the <a href="./">full setup</a>.</p>
     <p id="stops-status" class="note" hidden></p>
@@ -153,7 +154,7 @@
 
   <!-- 4. Walk times -->
   <section id="step-walk" class="step" aria-labelledby="walk-heading" hidden>
-    <h2 id="walk-heading" tabindex="-1"><span id="walk-number">Step 4 of 7:</span> How long is the walk?</h2>
+    <h2 id="walk-heading" tabindex="-1"><span id="walk-number">Step 4 of 8:</span> How long is the walk?</h2>
     <p class="hint">The <span data-noun>board</span> uses these to say when to leave. Change any that are wrong; leave one empty for none.</p>
     <p id="walk-status" class="note" hidden></p>
     <div id="walk-list"></div>
@@ -165,18 +166,18 @@
 
   <!-- 5. Keys -->
   <section id="step-keys" class="step" aria-labelledby="keys-heading" hidden>
-    <h2 id="keys-heading" tabindex="-1"><span id="keys-number">Step 5 of 7:</span> Keys</h2>
+    <h2 id="keys-heading" tabindex="-1"><span id="keys-number">Step 5 of 8:</span> Keys</h2>
     <p class="hint">Train and bus times come from free services that give you a key. Keys are never shown here: paste one to save it, or leave a box empty to keep the key you have.</p>
     <div id="keys-list"></div>
     <div class="actions">
       <button type="button" data-back="walk">Back</button>
-      <button type="button" id="keys-next" class="primary">Next: check and save</button>
+      <button type="button" id="keys-next" class="primary">Next: views</button>
     </div>
   </section>
 
   <!-- 6. Views: asked only where the install offers more than one -->
   <section id="step-views" class="step" aria-labelledby="views-heading" hidden>
-    <h2 id="views-heading" tabindex="-1"><span id="views-number">Step 6 of 7:</span> Which views?</h2>
+    <h2 id="views-heading" tabindex="-1"><span id="views-number">Step 6 of 8:</span> Which views?</h2>
     <fieldset id="views-set" aria-describedby="views-hint views-error">
       <legend>Show the departures on</legend>
       <p class="hint" id="views-hint">Each view shows the same departures. Tick one or both; you can change this later on the settings site.</p>
@@ -185,13 +186,24 @@
     </fieldset>
     <div class="actions">
       <button type="button" data-back="keys">Back</button>
-      <button type="button" id="views-next" class="primary">Next: check and save</button>
+      <button type="button" id="views-next" class="primary">Next: what to show</button>
     </div>
   </section>
 
-  <!-- 7. Finish -->
+  <!-- 7. What to show: a preset for each view on -->
+  <section id="step-show" class="step" aria-labelledby="show-heading" hidden>
+    <h2 id="show-heading" tabindex="-1"><span id="show-number">Step 7 of 8:</span> What to show</h2>
+    <p class="hint" id="show-hint">The departures' times always show. Pick how much else each view shows; to choose item by item, use What to show on <span id="show-pages">its settings page</span>, now or later.</p>
+    <div id="show-list"></div>
+    <div class="actions">
+      <button type="button" data-back="views">Back</button>
+      <button type="button" id="show-next" class="primary">Next: check and save</button>
+    </div>
+  </section>
+
+  <!-- 8. Finish -->
   <section id="step-finish" class="step" aria-labelledby="finish-heading" hidden>
-    <h2 id="finish-heading" tabindex="-1"><span id="finish-number">Step 7 of 7:</span> Check and save</h2>
+    <h2 id="finish-heading" tabindex="-1"><span id="finish-number">Step 8 of 8:</span> Check and save</h2>
     <dl id="summary" class="summary-list"></dl>
     <p class="hint" id="only-hint" hidden>Only this changes. Everything else stays as it is.</p>
     <div class="option" id="routes-box">
@@ -221,7 +233,7 @@
     </div>
 
     <div class="actions" id="finish-actions">
-      <button type="button" id="finish-back" data-back="keys">Back</button>
+      <button type="button" id="finish-back" data-back="show">Back</button>
       <button type="button" id="save" class="primary">Save</button>
     </div>
   </section>

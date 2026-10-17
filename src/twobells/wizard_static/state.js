@@ -13,6 +13,13 @@ export const state = {
   askViews: false, // whether there is a choice, so a step for it
   chosenViews: [], // names, when leaving the views step (or the one offered)
   viewsDrawn: false,
+  // What to show, from begin: the presets, [{name, label}], and for each
+  // view offered {now, says}: the preset to start at (or "keep" for what it
+  // shows now) and what each preset shows there.
+  show: { presets: [], views: {} },
+  askShow: false, // whether there is a step for it
+  showPicked: {}, // view -> the preset picked (or "keep"), kept while moving between steps
+  chosenShow: {}, // view -> the preset to save, when leaving the step; a view kept as it is isn't in it
   links: [],
   only: "", // a shortcut's part, "station" or "stops" (the page's ?step=); "" for the whole wizard
   back: "", // where Back on a shortcut's first step goes, a path like /settings, from begin
