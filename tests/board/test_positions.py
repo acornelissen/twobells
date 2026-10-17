@@ -2,6 +2,7 @@
 screens, kept in memory only, and dropped rather than shown stale."""
 
 import json
+from dataclasses import replace
 from datetime import datetime, timedelta
 
 from tests.paths import FIXTURES
@@ -169,6 +170,15 @@ def test_bus_strips_older_than_two_minutes_are_dropped():
     gone = later + timedelta(seconds=1)
     assert run_once(setup.board, setup.state, setup.display, gone).view.buses.rows[0].strip is None
     assert setup.buses.asked == [True]  # nothing asked once the windows closed
+
+
+def test_without_where_it_is_nothing_is_asked_where_the_trains_and_buses_are():
+    setup = Setup()
+    setup.board = replace(setup.board, show=setup.board.show - {"where"})
+    view = setup.run(90)
+    assert setup.trains.calls == 1  # the departures are still fetched
+    assert setup.details.asked == [] and setup.buses.asked == []
+    assert all(r.strip is None for r in view.trains.rows + view.buses.rows)
 
 
 def test_anything_but_a_strip_is_dropped():

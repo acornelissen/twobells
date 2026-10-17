@@ -149,7 +149,8 @@ class Board:
     positions: Positions | None = None
     # What the board shows of what it can leave out ([board] show, settings/show.py):
     # by default all of it but the clock page. E-paper leaves out what only a
-    # screen draws, whatever this says.
+    # screen draws, whatever this says. The positions and the forecast are
+    # asked for only while it shows what they are for (run_once).
     show: frozenset[str] = field(default_factory=lambda: show_items.default("board"))
 
 
@@ -436,13 +437,17 @@ def run_once(
         _keep_messages(config, state, before)
         if state.get("sources", {}).get(config.source.name, {}).get("last_success") != before:
             fetched.add(config.source.name)
-    if live and board.tracker is not None:
+    # What the board doesn't show isn't asked for: the bus page's positions,
+    # the rows' strips (where each is) and the forecast (the rain warning).
+    if "bus_page" not in board.show:
+        state.pop("vehicles", None)  # nor said to be, on the settings site
+    elif live and board.tracker is not None:
         _poll_vehicles(board.tracker, state, now)
     strips = None
-    if live and board.positions is not None:
+    if live and board.positions is not None and "where" in board.show:
         row_positions.poll(board.positions, board.sources, state, now, fetched)
         strips = row_positions.strips(board.positions, board.sources, state, now)
-    if board.weather is not None:
+    if board.weather is not None and "rain" in board.show:
         _poll_weather(board.weather, state, now)
     entries = state.get("sources", {})
     stale = {

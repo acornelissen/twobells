@@ -544,6 +544,18 @@ def test_positions_are_polled_on_their_own_interval():
     assert positions.calls == 3  # at 0, 30 and 60 s
 
 
+def test_without_the_bus_page_its_positions_are_not_asked_for():
+    board, positions, state = tracked_setup([bus_on("341", "07:20")], [vehicle_at(2)])
+    run_once(board, state, FakeScreen(), THU_0700)  # with the bus page, they are
+    assert positions.calls == 1 and "vehicles" in state
+    board = dataclasses.replace(board, show=board.show - {"bus_page"})
+    for second in range(0, 121, 5):
+        result = run_once(board, state, FakeScreen(), ROUTE_TIME + timedelta(seconds=second))
+        assert result.route is None
+    assert positions.calls == 1
+    assert "vehicles" not in state  # nor does the settings site say how asking for them goes
+
+
 def test_positions_are_not_written_to_disk():
     from twobells.board.app import _fetched
 
@@ -903,6 +915,14 @@ def test_weather_is_polled_every_30_minutes_inside_the_windows_only():
     assert weather.calls == 2
     run_once(board, state, display, at("09:30"))  # windows closed
     assert weather.calls == 2
+
+
+def test_without_the_rain_warning_the_forecast_is_not_asked_for():
+    weather, board, display, state = weather_setup(trains=[train("08:12")])
+    board = dataclasses.replace(board, show=board.show - {"rain"})
+    for minute in range(0, 60, 5):
+        assert run_once(board, state, display, at(f"07:{minute:02}")).view.rain is None
+    assert weather.calls == 0 and "weather" not in state
 
 
 def test_rain_before_you_reach_the_train_is_shown():
