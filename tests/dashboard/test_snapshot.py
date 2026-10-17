@@ -23,14 +23,13 @@ from tests.sources.test_livebus import (
     live,
     schedule,
 )
-from twobells.core.model import Departure, Status
+from twobells.core.model import Departure, Status, clock_at
 from twobells.core.walk import WalkTimes
 from twobells.dashboard.snapshot import (
     Hub,
     bus_observations,
     bus_row,
     buses_part,
-    clock_at,
     row_id,
     status_block,
     status_spoken,

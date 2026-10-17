@@ -24,7 +24,7 @@ from datetime import UTC, date, datetime, timedelta, tzinfo
 from typing import Protocol
 
 from ..core import announce, words
-from ..core.model import Departure, Status, iso, minutes_between
+from ..core.model import Departure, Status, iso, minutes_apart, real
 from ..core.walk import WalkTimes
 from ..settings import show as show_items
 from ..sources.bodsbus import BusBoard
@@ -93,31 +93,6 @@ def status_block(last_success: datetime | None = None, stale: bool = False,
     return {"last_success": iso(last_success), "stale": stale, "error": error, "note": note}
 
 
-def clock_at(hhmm: str, near: datetime) -> datetime:
-    """The time `hhmm` nearest to `near` (within 12 hours either way), in
-    near's zone. In the hour the clocks go back, which comes twice, it is
-    the pass nearer to `near` in the time that passes."""
-    base = near.replace(second=0, microsecond=0, tzinfo=None, fold=0)
-    local = base + timedelta(minutes=minutes_between(base.strftime("%H:%M"), hhmm))
-    if near.tzinfo is None:
-        return local
-    real = near.astimezone(UTC)
-    passes = [local.replace(tzinfo=near.tzinfo, fold=fold) for fold in (0, 1)]  # the same but in that hour
-    return min(passes, key=lambda moment: abs(moment.astimezone(UTC) - real))
-
-
-def _real(moment: datetime) -> datetime:
-    """An aware `moment` in UTC, to compare or work out a difference in the
-    time that passes: between two aware times in one zone, Python goes by
-    the clock, the hour the clocks go back counted twice. Naive, as it is."""
-    return moment.astimezone(UTC) if moment.tzinfo is not None else moment
-
-
-def minutes_apart(start: datetime, end: datetime) -> int:
-    """Whole minutes from `start` to `end` as they pass, across the clocks changing too."""
-    return round((_real(end) - _real(start)) / timedelta(minutes=1))
-
-
 def status_text(departure: Departure) -> str:
     """The status in words, so colour is never the only clue: the board's
     words (core.words), so "Exp 07:19" reads the same on both."""
@@ -142,7 +117,7 @@ def leave_at(departure: Departure, scheduled_at: datetime, expected_at: datetime
     leaves = expected_at or scheduled_at
     if leaves.tzinfo is None:
         return leaves - timedelta(minutes=minutes)
-    return (_real(leaves) - timedelta(minutes=minutes)).astimezone(leaves.tzinfo)
+    return (real(leaves) - timedelta(minutes=minutes)).astimezone(leaves.tzinfo)
 
 
 def _history_entry(mode: str, route: str, scheduled: str, label: str, day: date,
@@ -186,13 +161,7 @@ def _train_label(departure: Departure) -> str:
 
 
 def _train_times(service: TrainService, fetched: datetime) -> tuple[datetime, datetime | None]:
-    dep = service.departure
-    scheduled_at = clock_at(dep.scheduled, fetched)
-    if dep.status is Status.ON_TIME:
-        return scheduled_at, scheduled_at
-    if dep.status is Status.LATE and dep.expected:
-        return scheduled_at, clock_at(dep.expected, scheduled_at)
-    return scheduled_at, None
+    return service.departure.times(fetched)
 
 
 def _train_id(service: TrainService) -> str:
@@ -201,21 +170,6 @@ def _train_id(service: TrainService) -> str:
     dep = service.departure
     identity = service.service_id or f"{dep.scheduled}+{dep.destination}"
     return row_id(_train_noun(dep), identity)
-
-
-def _can_be_next(service: TrainService, fetched: datetime, now: datetime) -> bool:
-    """Whether a train can be the next to depart at `now`: not cancelled,
-    not late with no time to go by (it could go at any moment, or not for
-    long), and not gone by its expected time, or else its booked one. The
-    wall tablet (pa.js due()) reads a row's times the same way, and trusts
-    the "next" announcement this decides."""
-    dep = service.departure
-    if dep.status is Status.CANCELLED:
-        return False
-    scheduled_at, expected_at = _train_times(service, fetched)
-    if dep.status is Status.LATE and expected_at is None:
-        return False
-    return _real(expected_at or scheduled_at) >= _real(now)
 
 
 def _minutes_late(service: TrainService, fetched: datetime) -> int | None:
@@ -436,7 +390,7 @@ def trains_part(board: TrainBoard | None, fetched: datetime | None, status: dict
         next_found = False
         for service in board.services:
             found = details.get(service.service_id) if service.service_id else None
-            is_next = not next_found and _can_be_next(service, fetched, now or fetched)
+            is_next = not next_found and service.departure.can_be_next(fetched, now or fetched)
             next_found = next_found or is_next
             row, lookup = train_row(service, fetched, walk, route_prefix, phrases, found, now, platforms, is_next)
             row["arrives"] = train_arrival(service, filter_crs, *_train_times(service, fetched))

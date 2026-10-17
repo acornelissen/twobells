@@ -37,10 +37,10 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
-from ..core.model import Status
+from ..core.model import Status, clock_at
 from ..sources.darwin import _CLOCK, CallingPoint, DetailsSource, DetailsUnavailable, ServiceGone, TrainBoard
 from .history import Following, History, Report, Watched
-from .snapshot import clock_at, train_route
+from .snapshot import train_route
 
 BANDS = (120, 60, 30, 15)  # minutes late at the filter station, most first
 LEAST = BANDS[-1]

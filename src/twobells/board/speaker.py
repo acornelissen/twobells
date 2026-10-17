@@ -1,9 +1,11 @@
 """Station announcements through an HDMI screen's speaker, with espeak-ng.
 
 The words are core/announce.py's, as the dashboard's; the rules for when are
-its wall tablet's (dashboard_static/pa.js, due()): the next train to depart,
-NEXT_AHEAD before it goes, and a cancellation or a platform alteration of a
-train due within CHANGE_AHEAD, each said once, and nothing in a quiet window.
+its wall tablet's (dashboard_static/pa.js, due()): the next train to depart
+(by the dashboard's rule, Departure.can_be_next), NEXT_AHEAD before it goes,
+the delay of a train late with no time to go by, NEXT_AHEAD before it was
+due, and a cancellation or a platform alteration of a train due within
+CHANGE_AHEAD, each said once, and nothing in a quiet window.
 The board's departures carry no stops, coaches or reasons, so it says less
 than the tablet: "The next train to depart from platform 1 will be the 08:12
 Northern service to Manchester Piccadilly."
@@ -35,7 +37,7 @@ NEXT_AHEAD = timedelta(minutes=4)
 CHANGE_AHEAD = timedelta(minutes=60)
 
 # What the next-train announcement says: the delay first, when there is one.
-_LEAVING = (announce.DELAYED, announce.NEXT, announce.DEPARTS)
+_LEAVING = (announce.DELAYED, announce.NEXT)
 
 # espeak-ng, in a British English voice a little slower than its default,
 # reading the words from its standard input: nothing said is ever an argument.
@@ -81,8 +83,9 @@ def due(trains: Sequence[Departure], now: datetime, said: set[Said], quiet: bool
     """What to say now of the board's departures (in its order), as the wall
     tablet's due() decides it. `said` holds what has been said, and is added
     to here, so each is said once: a cancellation, a platform alteration
-    (again if the platform changes again), and the next train's
-    announcement. Nothing when `quiet`."""
+    (again if the platform changes again), the next train's announcement,
+    and the delay of a train late with no time to go by. Nothing when
+    `quiet`."""
     if quiet:
         return []
     found = []
@@ -92,13 +95,13 @@ def due(trains: Sequence[Departure], now: datetime, said: set[Said], quiet: bool
             said.add(key)
             found.append(text)
 
-    next_found = next_seen = False
+    next_found = False
     for dep in trains:
         if dep.mode != "train":
             continue
         cancelled = dep.status is Status.CANCELLED
-        # As the dashboard words it: the next train is the first not cancelled.
-        is_next = not next_found and not cancelled
+        # As the dashboard decides it: the first that can be the next, still to go.
+        is_next = not next_found and dep.can_be_next(now, now)
         next_found = next_found or is_next
         items = announce.announcements(
             _train(dep), is_cancelled=cancelled, late=dep.status is Status.LATE,
@@ -113,10 +116,11 @@ def due(trains: Sequence[Departure], now: datetime, said: set[Said], quiet: bool
         if ahead <= CHANGE_AHEAD:
             add((announce.CANCELLED, train, ""), _said_of(items, [announce.CANCELLED]))
             add((announce.PLATFORM, train, dep.platform or ""), _said_of(items, [announce.PLATFORM]))
-        if cancelled or untimed or next_seen:
+        if cancelled or ahead > NEXT_AHEAD:
             continue
-        next_seen = True  # the first train still to go is the next
-        if ahead <= NEXT_AHEAD:
+        if untimed:  # never the next: it has no time to go by
+            add((announce.DELAYED, train, ""), _said_of(items, [announce.DELAYED]))
+        elif is_next:
             add((announce.NEXT, train, ""), _said_of(items, _LEAVING))
     return found
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import TypeGuard, overload
 
@@ -47,6 +47,31 @@ def minutes_between(start: str, end: str) -> int:
     """Signed minutes from start to end, assuming they are within 12 hours."""
     diff = (_to_minutes(end) - _to_minutes(start)) % _DAY
     return diff - _DAY if diff > _HALF_DAY else diff
+
+
+def clock_at(hhmm: str, near: datetime) -> datetime:
+    """The time `hhmm` nearest to `near` (within 12 hours either way), in
+    near's zone. In the hour the clocks go back, which comes twice, it is
+    the pass nearer to `near` in the time that passes."""
+    base = near.replace(second=0, microsecond=0, tzinfo=None, fold=0)
+    local = base + timedelta(minutes=minutes_between(base.strftime("%H:%M"), hhmm))
+    if near.tzinfo is None:
+        return local
+    now = near.astimezone(UTC)
+    passes = [local.replace(tzinfo=near.tzinfo, fold=fold) for fold in (0, 1)]  # the same but in that hour
+    return min(passes, key=lambda moment: abs(moment.astimezone(UTC) - now))
+
+
+def real(moment: datetime) -> datetime:
+    """An aware `moment` in UTC, to compare or work out a difference in the
+    time that passes: between two aware times in one zone, Python goes by
+    the clock, the hour the clocks go back counted twice. Naive, as it is."""
+    return moment.astimezone(UTC) if moment.tzinfo is not None else moment
+
+
+def minutes_apart(start: datetime, end: datetime) -> int:
+    """Whole minutes from `start` to `end` as they pass, across the clocks changing too."""
+    return round((real(end) - real(start)) / timedelta(minutes=1))
 
 
 @dataclass(frozen=True)
@@ -110,6 +135,31 @@ class Departure:
         if self.expected is None:
             return None
         return minutes_between(self.scheduled, self.expected)
+
+    def times(self, near: datetime) -> tuple[datetime, datetime | None]:
+        """When it is booked to leave, read as the time nearest `near`, and
+        when it is expected to (nearest the booked time); None when late
+        with no time, cancelled, or not known."""
+        scheduled_at = clock_at(self.scheduled, near)
+        if self.status is Status.ON_TIME:
+            return scheduled_at, scheduled_at
+        if self.status is Status.LATE and self.expected:
+            return scheduled_at, clock_at(self.expected, scheduled_at)
+        return scheduled_at, None
+
+    def can_be_next(self, near: datetime, now: datetime) -> bool:
+        """Whether a train can be the next to depart at `now`, its times read
+        as nearest `near`: not cancelled, not late with no time to go by (it
+        could go at any moment, or not for long), and not gone by its
+        expected time, or else its booked one. The dashboard's rows, the wall
+        tablet (pa.js due(), which trusts the "next" announcement this
+        decides) and a screen's speaker all go by it."""
+        if self.status is Status.CANCELLED:
+            return False
+        scheduled_at, expected_at = self.times(near)
+        if self.status is Status.LATE and expected_at is None:
+            return False
+        return real(expected_at or scheduled_at) >= real(now)
 
     @property
     def _leaves(self) -> str:

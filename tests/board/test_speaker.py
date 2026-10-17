@@ -80,8 +80,25 @@ def test_a_late_train_with_no_time_stays_but_is_never_the_next():
     untimed = train("06:50", None, Status.LATE, platform="2", changed=True)
     found = due([untimed, train("07:03")], NOW, said)
     assert found[0].startswith("Platform alteration: the 06:50")  # still to go, so its alteration is said
-    # The first not cancelled is worded as the next, as the dashboard does; the one said as next is the 07:03.
-    assert found[1] == ("The 07:03 Northern service to Manchester Piccadilly will depart from platform 1.")
+    # Its delay is said by itself, as the wall tablet does; the next train is the 07:03, worded as next.
+    assert found[1:] == ["We are sorry to announce that the 06:50 Northern service to Manchester Piccadilly "
+                         "is delayed.",
+                         "The next train to depart from platform 1 will be the 07:03 Northern service to "
+                         "Manchester Piccadilly."]
+    assert due([untimed, train("07:03")], NOW, said) == []  # once
+
+
+def test_an_untimed_delay_is_said_a_few_minutes_before_it_was_due_not_sooner():
+    untimed = train("07:10", None, Status.LATE)
+    assert due([untimed], NOW, set()) == []  # 9.5 minutes off
+    assert due([untimed], NOW + timedelta(minutes=6), set()) == [
+        "We are sorry to announce that the 07:10 Northern service to Manchester Piccadilly is delayed."]
+
+
+def test_a_train_gone_but_still_listed_is_not_the_next():
+    # The 06:59 has gone by 07:00:30 though the board still lists it: the 07:03 is the next.
+    assert due([train("06:59"), train("07:03")], NOW, set()) == [
+        "The next train to depart from platform 1 will be the 07:03 Northern service to Manchester Piccadilly."]
 
 
 def test_gone_trains_and_buses_are_never_announced():
