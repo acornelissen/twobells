@@ -340,7 +340,9 @@ def _buses(layout: SignLayout, section: Section, y: int, bottom: int, width: int
 
 def _footer(layout: SignLayout, view: BoardView, width: int, height: int) -> None:
     y = height - TINY_HEIGHT - 1
-    stale = [mode_list.mode(s.mode).noun for s in view.sections if s.stale]
+    # Each by its section's heading, as London's metro is "Underground" or
+    # "DLR": the small print draws it in capitals.
+    stale = [s.label.lower() for s in view.sections if s.stale]
     badge = "Not updating: " + ", ".join(stale) if stale else None
     # Where the free part of the bottom line ends: before the badge, if there is one.
     free_end = width - MARGIN
