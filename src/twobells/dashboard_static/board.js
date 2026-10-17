@@ -258,8 +258,8 @@ export function applyScrolling(root, snapshot) {
 // "Calling at: Dinting, Broadbottom and Manchester Piccadilly. This train is
 // formed of 3 coaches." Every look but Standard (Dot matrix, TFT, Split-flap)
 // scrolls it along one line, as a station's screen does. With scrolling off
-// in the settings (applyScrolling), with reduced motion, and in the Standard
-// look it wraps (app.css).
+// in the settings (applyScrolling) and with reduced motion it wraps; the
+// Standard look shows two lines of it, cut short (app.css).
 
 // Seconds for one pass: a steady pace, whatever the line's length.
 export const callingSeconds = (text) => Math.round(8 + 0.2 * text.length);

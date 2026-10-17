@@ -59,6 +59,9 @@
   --t-sm: 0.875rem;
   --t-md: 1rem;
   --t-lg: 1.25rem;
+  /* A board's destinations, a step over the body: on a sign the place is
+     the word you look for. */
+  --t-row: 1.125rem;
   --t-xl: 1.75rem;
   --t-hero: clamp(3rem, 7vw, 4.5rem);
   /* The header's clock: the time is what a glance at the page is for. */
@@ -610,13 +613,9 @@ main:focus { outline: none; }
   gap: 0.25rem;
   width: fit-content;
   min-height: 1.75rem;
-  margin-top: 0.25rem;
-  padding: 0.125rem 0.5rem;
-  border-radius: 999px;
   font-size: var(--t-sm);
   font-weight: 500;
   color: var(--late-fg);
-  background: var(--late-bg);
   text-underline-offset: 0.15em;
 }
 @media (pointer: coarse) {
@@ -695,8 +694,24 @@ button.open {
 }
 button.open:hover:not(:disabled) { background: none; text-decoration: underline; text-underline-offset: 0.15em; }
 .dest { font-weight: 500; }
-.sub { display: block; color: var(--muted); font-size: var(--t-sm); }
-.reason { display: block; margin-top: var(--s-1); color: var(--muted); font-size: var(--t-sm); }
+table.board .dest { font-size: var(--t-row); line-height: 1.3; }
+/* Everything under a destination is one quiet size, one rhythm. */
+.sub { display: block; margin-top: 0.125rem; color: var(--muted); font-size: var(--t-sm); line-height: 1.4; }
+.reason { display: block; margin-top: 0.125rem; color: var(--muted); font-size: var(--t-sm); line-height: 1.4; }
+/* The bus coming in to work a departure: one line in the row, cut short;
+   its sheet says it all, under Bus coming in. Its width is 0 so the long
+   line doesn't widen the table: it takes the room the column has. */
+table.board .inbound { width: 0; min-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* In the Standard look the first train's calling points show two lines,
+   cut short; the train's sheet has its whole journey and its coaches.
+   The station looks scroll it, or show it whole with scrolling off. */
+:root[data-theme="modern"] .calling-at {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
 .line {
   display: inline-block;
   min-width: 3ch;
@@ -707,17 +722,16 @@ button.open:hover:not(:disabled) { background: none; text-decoration: underline;
   color: var(--badge-fg);
   background: var(--badge-bg);
 }
-/* Only a notable record shows in a row: "Often late: 4 of 10". */
+/* Only a notable record shows in a row: "Often late: 4 of 10", in the
+   late colour's words, with no box: a box is for a line number or a
+   cancelled status. */
 .record {
   display: block;
   width: fit-content;
-  margin-top: var(--s-1);
-  padding: 0 var(--s-2);
-  border-radius: 999px;
-  font-size: var(--t-xs);
+  margin-top: 0.125rem;
+  font-size: var(--t-sm);
   font-weight: 500;
   color: var(--late-fg);
-  background: var(--late-bg);
 }
 /* A changed platform: "2 (changed)". The words say it; the colours back them up. */
 .plat-changed {
@@ -1391,7 +1405,7 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
 :root[data-theme="tft"] .badge.st-cancelled { color: var(--pill-bad-ink); background: var(--pill-bad); }
 
 /* --- The first train's "Calling at" line (board.js): wrapped, as any line
-   under a destination. The Dot matrix, TFT and Split-flap looks scroll it
+   under a destination, and two lines at most in the Standard look. The Dot matrix, TFT and Split-flap looks scroll it
    along one line instead, as the board's screen does in every look, in from
    the right; never with scrolling text off in the settings
    (data-scrolling="off"), nor with reduced motion, nor on a wall tablet,

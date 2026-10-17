@@ -39,6 +39,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 - The dashboard's status is quiet words while all is well (**Live**, or **Updating every 30 s** without a ticking age), and fills in amber or red only when something is wrong.
 - Next to catch reads as one statement: the countdown, which departure in the rows' size, then one quiet line for how sure it is, what to catch instead and the rain, which a wide screen leaves to the weather beside it. On a wall tablet that line sits at the foot of the hero.
 - The trains and buses start sooner: the walk to the station sits beside the Trains heading, and station information and the bus timetable changes coming up are quiet notes under their boards, no longer boxes that looked like buttons above them.
+- The dashboard's rows are calmer: destinations a size larger, everything under them one quiet size, the first train's calling points two lines in the Standard look and a bus coming in one line, each cut short with the rest in the sheet, and "Often late" and a bus's **Disruption** link as amber words rather than pills.
 - The user guide is a page per topic, indexed by `docs/user-guide.md`; the Docker pages are one, and the code layout is in `docs/architecture.md`.
 
 ### Fixed
