@@ -25,7 +25,8 @@ clocks changing too: booked at 01:50 BST and there at 01:10 GMT is 20
 minutes late. `day` and `scheduled` are the board's local date and clock
 time, as labels to look a departure up by. Each departure is keyed by when
 it was booked to leave (`leaves`), so in the hour the clocks go back, which
-comes twice, the 01:20 of each pass has a row of its own.
+comes twice, the 01:20 of each pass has a row of its own; what counts days
+(stats, no_shows, recent, usual_platform) takes the later pass's for the day.
 
 It also keeps when trains reached the filter station, for the Performance
 page's Delay Repay watch (dashboard/repay.py): one row per train per day in
@@ -56,9 +57,10 @@ import sqlite3
 import stat
 import threading
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta, tzinfo
+from itertools import islice
 from pathlib import Path
 from typing import NamedTuple
 from zoneinfo import ZoneInfo
@@ -770,10 +772,10 @@ class History:
         with self._lock:
             cursor = self._db.execute(
                 "SELECT day, status, delay_min, live FROM outcome"
-                " WHERE mode = ? AND route = ? AND scheduled = ? AND final = 1 ORDER BY day DESC",
+                " WHERE mode = ? AND route = ? AND scheduled = ? AND final = 1 ORDER BY day DESC, leaves DESC",
                 (mode, route, scheduled),
             )
-            for day, status, delay_min, live in cursor:
+            for day, status, delay_min, live in _one_a_day(cursor):
                 if len(found) >= n:
                     break
                 if _day_type(date.fromisoformat(day), holidays) == day_type:
@@ -787,12 +789,13 @@ class History:
         to go on, or with no one platform used most."""
         _mode(mode)
         with self._lock:
-            rows = self._db.execute(
-                "SELECT platform FROM outcome WHERE mode = ? AND route = ? AND scheduled = ? AND final = 1"
-                " AND platform IS NOT NULL ORDER BY day DESC LIMIT ?",
-                (mode, route, scheduled, n),
-            ).fetchall()
-        counts = Counter(platform for (platform,) in rows)
+            cursor = self._db.execute(
+                "SELECT day, platform FROM outcome WHERE mode = ? AND route = ? AND scheduled = ? AND final = 1"
+                " AND platform IS NOT NULL ORDER BY day DESC, leaves DESC",
+                (mode, route, scheduled),
+            )
+            rows = list(islice(_one_a_day(cursor), n))
+        counts = Counter(platform for _, platform in rows)
         if not counts:
             return None
         platform, used = counts.most_common(1)[0]
@@ -803,11 +806,12 @@ class History:
         newest first. day is ISO text ("2026-10-09"), ready for JSON."""
         _mode(mode)
         with self._lock:
-            rows = self._db.execute(
+            cursor = self._db.execute(
                 "SELECT day, status, delay_min, live, reason FROM outcome"
-                " WHERE mode = ? AND route = ? AND scheduled = ? AND final = 1 ORDER BY day DESC LIMIT ?",
-                (mode, route, scheduled, days),
-            ).fetchall()
+                " WHERE mode = ? AND route = ? AND scheduled = ? AND final = 1 ORDER BY day DESC, leaves DESC",
+                (mode, route, scheduled),
+            )
+            rows = list(islice(_one_a_day(cursor), days))
         return [
             {"day": day, "status": status, "delay_min": delay_min, "live": bool(live), "reason": reason}
             for day, status, delay_min, live, reason in rows
@@ -834,6 +838,17 @@ class History:
         with self._lock, self._db:
             self._db.execute("DELETE FROM outcome WHERE day < ?", (oldest,))
             self._db.execute("DELETE FROM arrival WHERE day < ?", (oldest,))
+
+
+def _one_a_day(rows: Iterable[tuple]) -> Iterator[tuple]:
+    """The first of `rows` (each starting with its day, sorted by it) on each
+    day: a departure's later pass, where the hour the clocks go back gave the
+    day two, sorted by when it leaves too, newest first."""
+    last = None
+    for row in rows:
+        if row[0] != last:
+            last = row[0]
+            yield row
 
 
 class HistoryReader:

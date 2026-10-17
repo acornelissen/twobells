@@ -189,11 +189,26 @@ def test_the_hour_the_clocks_go_back_keeps_both_passes(history, tmp_path):
     assert [outcome["status"] for outcome in history.recent("train", TRAIN, "01:45")] == ["on_time"]
     history.observe("train", [again], _at("01:34", sunday, fold=1))
     history.observe("train", [], _at("01:36", sunday, fold=1))
-    assert sorted((o["day"], o["status"], o["delay_min"]) for o in history.recent("train", TRAIN, "01:30")) == [
-        ("2026-10-25", "late", 5), ("2026-10-25", "on_time", 0)]
     assert sorted((row["scheduled"], row["leaves"]) for row in _rows(tmp_path) if row["scheduled"] == "01:30") == [
         ("01:30", "2026-10-25T00:30:00+00:00"), ("01:30", "2026-10-25T01:30:00+00:00")]
+    # One day, though: what the day did is the later pass's.
+    assert [(o["day"], o["status"], o["delay_min"]) for o in history.recent("train", TRAIN, "01:30")] == [
+        ("2026-10-25", "late", 5)]
     assert day_type(sunday) == "sunday"
+
+
+def test_the_day_the_clocks_go_back_counts_once(history):
+    sunday = date(2026, 10, 25)
+    _record(history, sunday - timedelta(days=7), scheduled="01:20")
+    for fold in (0, 1):  # the 01:20 of each pass, both on time
+        leaves = _at("01:20", sunday, fold).astimezone(UTC)  # to count in the time that passes
+        history.observe("train", [_train("01:20", sunday, fold=fold)], leaves - timedelta(minutes=1))
+        history.observe("train", [], leaves + timedelta(minutes=1))
+    stats = history.stats("train", TRAIN, "01:20", "sunday", late_minutes=3)
+    assert (stats.days, stats.on_time) == (2, 2)  # two Sundays, not three
+    assert history.stats("train", TRAIN, "01:20", "sunday", n=2, late_minutes=3).days == 2
+    assert history.no_shows("train", TRAIN, "01:20", "sunday") == (0, 2)
+    assert [o["day"] for o in history.recent("train", TRAIN, "01:20", days=2)] == ["2026-10-25", "2026-10-18"]
 
 
 def test_left_and_unwatched_go_by_the_time_that_passed(history, tmp_path):
