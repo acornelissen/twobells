@@ -16,11 +16,13 @@ ArrivalWatch.poll:
      the rich board's calling point. That costs nothing extra.
   2. A train that has left the board is followed until it gets there, only
      while it is due there within FOLLOW_AHEAD or overdue, by asking for its
-     service details: one ask per train due, per poll.
+     service details: at most once a minute per train. One Darwin no longer
+     knows (ServiceGone) isn't asked about again.
   3. History.settle decides each arrival: Darwin's reported time, or else
      its last estimate once that has passed (history.py has the rules).
 A key that is refused turns following off for six hours; anything else
-that fails is tried again on the next poll.
+that fails is tried again a minute later, and given to be logged once
+while it repeats.
 
 Rail replacement buses and ferries are left out: Darwin's times for them
 are rough, and the train company's Delay Repay rules for them vary.
@@ -30,16 +32,17 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ..core.model import Status
-from ..sources.darwin import _CLOCK, CallingPoint, DetailsSource, DetailsUnavailable, TrainBoard
+from ..sources.darwin import _CLOCK, CallingPoint, DetailsSource, DetailsUnavailable, ServiceGone, TrainBoard
 from .history import Following, History, Report, Watched
 from .snapshot import clock_at, train_route
 
 BANDS = (30, 15)  # minutes late at the filter station, most first
 LEAST = BANDS[-1]
 OFF_FOR = 6 * 3600.0  # seconds without following after a refused key
+ASK_EVERY = timedelta(minutes=1)  # the least time between asks about one train
 
 
 def band(minutes_late: int) -> int | None:
@@ -96,6 +99,10 @@ def watched(board: TrainBoard, fetched: datetime, route_prefix: str, station: st
     return found
 
 
+def _said(error: Exception) -> str:
+    return f"{type(error).__name__}: {error}"
+
+
 def _point_there(points: tuple[CallingPoint, ...], station: str) -> CallingPoint | None:
     return next((p for p in points if p.crs == station), None)
 
@@ -112,6 +119,12 @@ class ArrivalWatch:
         self._details = details
         self._monotonic = monotonic
         self._off_until: float | None = None
+        # By Darwin service ID, of the trains being followed: when each was
+        # last asked about, and those Darwin no longer knows.
+        self._asked: dict[str, datetime] = {}
+        self._gone: set[str] = set()
+        # The failures given the last time anything was asked, each given once while it repeats.
+        self._failing: set[str] = set()
 
     def poll(self, board: TrainBoard, now: datetime) -> list[Exception]:
         """Take in a train poll's board at `now` (aware or naive local), and
@@ -129,24 +142,49 @@ class ArrivalWatch:
         return errors
 
     def _follow(self, due: list[Following], now: datetime) -> list[Exception]:
-        """One ask per train due, for its journey; a train Darwin no longer
-        knows is left to History.settle."""
+        """Ask about each train due, for its journey, at most once every
+        ASK_EVERY; a train Darwin no longer knows is left to History.settle,
+        and not asked about again. The failures not given last time."""
+        ids = {train.identity for train in due if train.identity}
+        self._asked = {key: asked for key, asked in self._asked.items() if key in ids}
+        self._gone &= ids
         if self._off_until is not None and self._monotonic() < self._off_until:
             return []
+        asking = [(train, train.identity) for train in due
+                  if train.identity and train.identity not in self._gone and self._may_ask(train.identity, now)]
+        if not asking:
+            return []
         errors: list[Exception] = []
-        for train in due:
-            if not train.identity:
-                continue
+        for train, identity in asking:
+            self._asked[identity] = now
             try:
-                found = self._details.details(train.identity)
+                found = self._details.details(identity)
             except DetailsUnavailable as error:
                 self._off_until = self._monotonic() + OFF_FOR
-                return [*errors, error]
-            except Exception as error:  # noqa: BLE001 - this train is tried again next poll
+                errors.append(error)
+                break
+            except ServiceGone:
+                self._gone.add(identity)
+                continue
+            except Exception as error:  # noqa: BLE001 - this train is tried again in a minute
                 errors.append(error)
                 continue
             point = _point_there(found.subsequent, self._station)
             if point is not None:
                 report = _report(train.booked, point.expected, point.actual, point.cancelled)
                 self._history.report(train, report, now)
-        return errors
+        return self._news(errors)
+
+    def _may_ask(self, identity: str, now: datetime) -> bool:
+        """Whether ASK_EVERY has passed since the train was last asked about,
+        or the clocks have gone back since."""
+        asked = self._asked.get(identity)
+        return asked is None or not timedelta(0) <= now - asked < ASK_EVERY
+
+    def _news(self, errors: list[Exception]) -> list[Exception]:
+        """`errors` less those given the last time anything was asked: a
+        failure is given once while it repeats, and again after it stops."""
+        said = {_said(error) for error in errors}
+        news = [error for error in errors if _said(error) not in self._failing]
+        self._failing = said
+        return news

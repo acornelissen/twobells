@@ -163,6 +163,53 @@ def test_a_train_darwin_forgets_is_left_to_its_last_estimate(history):
     assert (arrived["arrived"], arrived["reported"]) == ("2026-10-09T22:59:00", False)
 
 
+def test_a_train_darwin_no_longer_knows_is_not_asked_about_again(history):
+    details = Details()
+    watch = _watch(history, details)
+    watch.poll(glossop(et="23:10"), at("22:20"))
+    details.error = ServiceGone("gone")
+    # Not a failure to report, and not asked about again while it waits to be settled.
+    assert watch.poll(glossop(without=[FIRST]), at("22:50")) == []
+    for minute in ("22:52", "23:00", "23:20", "23:40"):
+        assert watch.poll(glossop(without=[FIRST]), at(minute)) == []
+    assert details.asked == [FIRST]
+
+
+def test_each_train_is_asked_about_at_most_once_a_minute(history):
+    details = Details()
+    watch = _watch(history, details)
+    details.manchester = {"et": "22:59"}
+    watch.poll(glossop(et="22:59"), at("22:20"))
+    board = glossop(without=[FIRST])
+    watch.poll(board, at("22:50"))
+    watch.poll(board, at("22:50").replace(second=30))
+    assert details.asked == [FIRST]
+    watch.poll(board, at("22:51"))
+    assert details.asked == [FIRST, FIRST]
+    # The clock set back doesn't hold it up until it catches up.
+    watch.poll(board, at("22:50"))
+    assert details.asked == [FIRST, FIRST, FIRST]
+
+
+def test_a_failure_that_repeats_is_given_once(history):
+    details = Details()
+    watch = _watch(history, details)
+    details.manchester = {"et": "22:59"}
+    watch.poll(glossop(et="22:59"), at("22:20"))
+    board = glossop(without=[FIRST])
+    details.error = DetailsError("down")
+    assert watch.poll(board, at("22:50")) == [details.error]
+    assert watch.poll(board, at("22:51")) == []
+    assert watch.poll(board, at("22:52")) == []
+    other = details.error = DetailsError("timed out")
+    assert watch.poll(board, at("22:53")) == [other]
+    details.error = None
+    assert watch.poll(board, at("22:54")) == []
+    again = details.error = DetailsError("timed out")
+    assert watch.poll(board, at("22:55")) == [again]  # after it worked, it is news again
+    assert len(details.asked) == 6
+
+
 def test_a_refused_key_stops_following_for_six_hours(history):
     details, monotonic = Details(), Monotonic()
     watch = _watch(history, details, monotonic)
