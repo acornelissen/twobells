@@ -505,8 +505,23 @@ main:focus { outline: none; }
 .leave-head .remind { margin-block: calc(var(--s-2) * -1); }
 .leave.now .leave-label { color: inherit; }
 .leave-time { margin: var(--s-1) 0; font-size: var(--t-hero); font-weight: 600; line-height: 1.05; letter-spacing: -0.02em; }
-.leave-what { margin: 0; font-size: var(--t-md); }
-.leave-sure, .leave-then, .leave-rain { margin: var(--s-2) 0 0; font-size: var(--t-sm); }
+/* The hero says one thing: the countdown, then which departure in the
+   row's own size, then one quiet line under a hairline for how sure it is,
+   what's next and the rain, each wrapping whole onto a line of its own
+   where they don't fit side by side. With nothing to catch, the rain is
+   a line of its own. */
+.leave-what { margin: 0; font-size: var(--t-lg); line-height: 1.35; }
+.leave-foot { margin-top: var(--s-2); }
+.leave-foot:has(> .leave-sure:not([hidden])) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-5);
+  margin-top: var(--s-4);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line);
+}
+.leave-sure, .leave-then, .leave-rain { margin: 0; font-size: var(--t-sm); }
 .leave-then, .leave-rain { color: var(--muted); }
 .sure { display: inline-flex; align-items: center; gap: var(--s-1); font-weight: 500; }
 .sure-live { color: var(--ok-fg); }
@@ -517,7 +532,7 @@ main:focus { outline: none; }
 /* Leave now: every word in the one red, on its tint. */
 .leave.now .leave-then, .leave.now .leave-rain, .leave.now .sure, .leave.now .note,
 .leave.now #leave-remind { color: inherit; }
-.leave.now #leave-remind { border-color: currentColor; }
+.leave.now #leave-remind, .leave.now .leave-foot { border-color: currentColor; }
 :root[data-theme="board"] .leave:not(.soon):not(.now) { border-color: var(--fg); }
 /* The banner's own colour would hide the usual focus ring. */
 .leave :focus-visible { outline-color: currentColor; }
@@ -637,6 +652,8 @@ main:focus { outline: none; }
   .boards > * { flex: 1 1 0; }
   .weather { grid-area: weather; }
   .area { grid-area: area; margin-top: var(--s-7); }
+  /* The weather beside the hero says the same rain sentence. */
+  :root:not([data-kiosk]) .leave-rain { display: none; }
 }
 
 /* --- Boards, wide layout: trains like a station's departure screen, buses
@@ -1532,6 +1549,11 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
 :root[data-kiosk] .sections,
 :root[data-kiosk] .extras { display: contents; }
 :root[data-kiosk] .leave { grid-area: hero; margin: 0; padding: var(--s-3) var(--s-4); }
+/* Landscape, the hero is as tall as the weather beside it: its quiet line
+   goes to the foot, rather than leave a band of nothing there. */
+:root[data-kiosk] .leave { display: flex; flex-direction: column; }
+:root[data-kiosk] .leave-what { margin-bottom: var(--s-3); }
+:root[data-kiosk] .leave-foot { margin-top: auto; }
 :root[data-kiosk] .disruptions { grid-area: dis; margin: 0; }
 :root[data-kiosk] .boards { display: grid; grid-area: boards; gap: var(--s-4); align-content: start; min-height: 0; overflow: hidden; }
 :root[data-kiosk] .weather { grid-area: weather; }

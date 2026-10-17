@@ -37,6 +37,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 - The dashboard's **Board look** button is now a **Look** list, on the Performance page too: Standard, Dot matrix (the old Board look), TFT and Split-flap. A browser that had the Board look keeps it.
 - The dashboard's header keeps the place, a larger clock and the status; **Look**, **Performance** and **Settings** move to a footer, on the Performance page too. Next to catch's **Remind me** is a small bell saying **Remind** at the top right, beside its label, and the departure sheet's is smaller.
 - The dashboard's status is quiet words while all is well (**Live**, or **Updating every 30 s** without a ticking age), and fills in amber or red only when something is wrong.
+- Next to catch reads as one statement: the countdown, which departure in the rows' size, then one quiet line for how sure it is, what to catch instead and the rain, which a wide screen leaves to the weather beside it. On a wall tablet that line sits at the foot of the hero.
 - The user guide is a page per topic, indexed by `docs/user-guide.md`; the Docker pages are one, and the code layout is in `docs/architecture.md`.
 
 ### Fixed
