@@ -33,7 +33,7 @@ The next trains and buses side by side, each with its walk, its countdown and wh
 
 ![The train and bus boards: the 07:12 waiting at Hadfield and often late, the 07:42 cancelled, and buses with strips, the 341 two stops away and the 61's bus on its way](docs/images/dashboard-boards.png)
 
-Near a tram stop the trams have a section too; in London the Underground and DLR come live, with each line's colour and where each train is now:
+Manchester's trams have a section too, wherever home is; in London the Underground and DLR come live, with each line's colour and where each train is now:
 
 ![London's Metro section for Bank: the Northern line to Edgware in 2 min between Borough and London Bridge, the Central line to Epping, the DLR to Lewisham, each with its platform, walk and when to leave, and a lift out of service at Bank](docs/images/dashboard-london.png)
 
@@ -68,11 +68,11 @@ An HDMI screen redraws every second, with a running clock and countdowns, two mo
 
 ## Set up in a few minutes
 
-No config files to write. Give the setup wizard your postcode or address: it finds your nearest stations, bus stops and tram stops, works out the walk to each along real streets, finds your bus companies and builds their timetable.
+No config files to write. Give the setup wizard your postcode or address: it finds your nearest stations, bus stops and tram stops (or any tram stop by name), works out the walk to each along real streets, finds your bus companies and builds their timetable.
 
 <p>
   <img width="49%" alt="Setup step 2: the five nearest stations with their distances, Glossop chosen, and trains filtered to those calling at Manchester (MAN)" src="docs/images/setup-station.png">
-  <img width="49%" alt="Setup step 4: walk times to Glossop station and two bus stops, each worked out along streets and paths" src="docs/images/setup-walk.png">
+  <img width="49%" alt="Setup step 5: walk times to Glossop station and two bus stops, each worked out along streets and paths" src="docs/images/setup-walk.png">
 </p>
 
 Everything else is on the settings site, in plain words, behind one password:

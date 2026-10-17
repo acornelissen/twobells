@@ -19,6 +19,8 @@ Only Metrolink is read. TfGM lists the replacement buses it runs when part of th
 
 The [setup wizard](setup-wizard.md#the-steps) asks for your tram stops after the bus stops. It lists the 5 Metrolink stops nearest home, within 5 km as the crow flies, and **Find a stop by name** finds any other, however far away, from a list that comes with the app (from NaPTAN), so nothing is sent anywhere to find them. Tick up to 4. Each gets a label, T, U, V and W, and a walk time, as the bus stops do; a stop over an hour's walk away gets none, so the board gives no time to leave for it.
 
+![Setup's tram step for a home in Glossop, with no tram stops near it: a search for Piccadilly has listed Piccadilly and Piccadilly Gardens tram stops, 19 km away, and Piccadilly Circus Underground station, 248 km away, each with a tickbox, over the Find a stop by name box](images/setup-trams.png)
+
 In `config.toml` it looks like this:
 
 ```toml
@@ -48,7 +50,7 @@ A stop's code is `9400ZZMA` and its three letters, as NaPTAN has it; `src/twobel
 
 ## What the trams show
 
-- **On the board:** each tram's booked time, where it goes, and `sch` where a train's status goes, as a bus known only from the timetable says; with two or more tram stops, the stop's label before the destination ("T: Bury"). The section says when to leave for the next tram you can reach, by its stop's walk. See [Reading the board](reading-the-board.md).
-- **On the dashboard:** a **Trams** section with each tram's time marked "sched.", its line (like "Blue Line") under the destination, its stop where there are several, and when to leave. Next to catch takes trams as it does buses known only from the timetable, saying **Timetable only**. A tram's sheet has its line, stop, booked time and leave time, and says why there is no expected time. See [The dashboard](dashboard.md#whats-on-it).
+- **On the board:** each tram's booked time, where it goes, and `sch` where a train's status goes, as a bus known only from the timetable says; with two or more tram stops, the stop's label before the destination ("T: Bury"). The section says when to leave for the next tram you can reach, by its stop's walk, while **Trams** is ticked under **When to leave** on the Board page. See [Reading the board](reading-the-board.md).
+- **On the dashboard:** a **Trams** section with each tram's time marked "sched.", its line (like "Blue Line") under the destination, its stop where there are several, and when to leave. Next to catch takes trams as it does buses known only from the timetable, saying **Timetable only**, while **Trams** is ticked for it under **What to show**. A tram's sheet has its line, stop, booked time and leave time, and says why there is no expected time. See [The dashboard](dashboard.md#whats-on-it).
 
 ![The dashboard's Trams section, 3 minutes' walk from Piccadilly: the 07:05 to Altrincham on the Purple Line with Go now, the 07:08 to Bury, a replacement bus to Etihad Campus at 07:11, and two more, each time marked sched. and each with when to leave](images/dashboard-trams.png)

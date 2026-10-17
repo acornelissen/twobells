@@ -173,7 +173,9 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # weekly by twobells timetable; or London's Underground, DLR, trams, cable car
 # and river buses, live from TfL (free; TFL_APP_KEY in secrets.env, optional,
 # raises TfL's allowance), each check a call to TfL for each stop. Not both:
-# all the stops are Metrolink's or all London's. Setup finds the stops near home.
+# all the stops are Metrolink's or all London's. Setup finds the stops, near
+# home or by name; or type their codes in Tram stop codes on the Trains and
+# buses tab.
 # [metro]
 # enabled = true          # false switches trams off; the stops are kept
 # rows = 3                # trams the board shows
