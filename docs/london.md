@@ -18,8 +18,7 @@ TfL's [Unified API](https://api.tfl.gov.uk) gives the predictions its own statio
 
 ## Setting it up
 
-The [setup wizard](setup-wizard.md#the-steps) asks for your stops after the bus stops: where home is within 5 km of one, it lists the 8 nearest Underground and DLR stations, tram stops, cable car stations and piers, and **Find a stop by name** finds any of them from anywhere, from a list that comes with the app, so nothing is sent anywhere to find them. Tick up to 4. Each gets a label, T, U, V and W, and a walk time. Once you have ticked some, the **Keys** step offers TfL's key, which you can leave empty.
-The [setup wizard](setup-wizard.md#the-steps) asks for your stops after the bus stops, where home is within 5 km of one: it lists the 8 nearest Underground and DLR stations, tram stops, cable car stations and piers, from a list that comes with the app, so nothing is sent anywhere to find them. Tick up to 4. Each gets a label, T, U, V and W, and a walk time. Once you have ticked some, or if a key is already saved, the **Keys** step offers TfL's key, which you can leave empty.
+The [setup wizard](setup-wizard.md#the-steps) asks for your stops after the bus stops: where home is within 5 km of one, it lists the 8 nearest Underground and DLR stations, tram stops, cable car stations and piers, and **Find a stop by name** finds any of them from anywhere, from a list that comes with the app, so nothing is sent anywhere to find them. Tick up to 4. Each gets a label, T, U, V and W, and a walk time. Once you have ticked some, or if a key is already saved, the **Keys** step offers TfL's key, which you can leave empty.
 
 In `config.toml` it looks like this:
 

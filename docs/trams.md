@@ -17,8 +17,7 @@ Only Metrolink is read. TfGM lists the replacement buses it runs when part of th
 
 ## Setting it up
 
-The [setup wizard](setup-wizard.md#the-steps) asks for your tram stops after the bus stops. It lists the Metrolink stops within 5 km of home, and **Find a stop by name** finds any other, however far away, from a list that comes with the app (from NaPTAN), so nothing is sent anywhere to find them. Tick up to 4. Each gets a label, T, U, V and W, and a walk time, as the bus stops do; a stop over an hour's walk away gets none, so the board gives no time to leave for it.
-The [setup wizard](setup-wizard.md#the-steps) asks for your tram stops after the bus stops, but only where home is near some: it lists the 5 Metrolink stops nearest home, within 5 km as the crow flies, from a list that comes with the app (from NaPTAN), so nothing is sent anywhere to find them. Tick up to 4. Each gets a label, T, U, V and W, and a walk time, as the bus stops do.
+The [setup wizard](setup-wizard.md#the-steps) asks for your tram stops after the bus stops. It lists the 5 Metrolink stops nearest home, within 5 km as the crow flies, and **Find a stop by name** finds any other, however far away, from a list that comes with the app (from NaPTAN), so nothing is sent anywhere to find them. Tick up to 4. Each gets a label, T, U, V and W, and a walk time, as the bus stops do; a stop over an hour's walk away gets none, so the board gives no time to leave for it.
 
 In `config.toml` it looks like this:
 
