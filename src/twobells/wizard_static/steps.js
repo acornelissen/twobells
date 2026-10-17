@@ -28,8 +28,8 @@ export const LEAVE = "settings";
 
 const keySet = (name) => state.keys.some((key) => key.name === name && key.set);
 
-// The steps shown, in order: the tram stops only where home is near some
-// (trams.js), the views step only where there is a choice, what to show
+// The steps shown, in order: the tram stops unless their lists can't be
+// read (trams.js), the views step only where there is a choice, what to show
 // only where the host offers its presets, and on a shortcut only its own.
 export function shownSteps() {
   if (state.only) return SHORTCUTS[state.only].filter((step) => step !== "keys" || !keySet(NEEDS[state.only]));

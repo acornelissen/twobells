@@ -780,7 +780,7 @@ def test_only_the_two_shortcuts_start_part_way_anything_else_starts_at_home(sear
     found = run_wizard(START, search)
     assert found["shown"] == ["step-home"] and found["focus"] is None  # as ever: focus isn't moved on load
     assert found["only"] == "" and found["title"] == "Set up your departures"
-    assert found["progress"] == ["home", "station", "stops", "walk", "keys", "views", "finish"]
+    assert found["progress"] == ["home", "station", "stops", "trams", "walk", "keys", "views", "finish"]
     assert found["asked"] == ["begin", "saved"]
 
 
@@ -831,7 +831,7 @@ def test_the_whole_wizards_back_buttons_go_one_step_back_past_the_views_when_not
     script = """
         console.log(JSON.stringify(["station", "stops", "walk", "keys", "views", "finish"].map((s) => back(s).to)));
     """
-    assert run_wizard(script) == ["home", "station", "stops", "walk", "keys", "views"]
+    assert run_wizard(script) == ["home", "station", "trams", "walk", "keys", "views"]
     one_view = {**BEGIN, "views": {"offered": [{"name": "dashboard", "label": "The dashboard"}], "on": []}}
     assert run_wizard(script, begin=one_view)[-1] == "keys"
 
@@ -1000,7 +1000,7 @@ def test_stops_refused_are_marked_invalid_until_the_error_goes():
         for (const box of $("stops-list").querySelectorAll('input[type="checkbox"]')) box.checked = false;
         state.labels.clear();
         click("stops-next");
-        await settle();  // after looking for tram stops near home, which might have given something to show
+        await settle();  // after the tram stops' lists, unreadable here, so no tram step to pick from
         const first = $("stops-list").querySelector('input[type="checkbox"]');
         const refused = [document.activeElement === first, first.getAttribute("aria-invalid")];
         first.checked = true;
@@ -1008,7 +1008,7 @@ def test_stops_refused_are_marked_invalid_until_the_error_goes():
         console.log(JSON.stringify({ refused, after: first.getAttribute("aria-invalid"),
                                      error: $("stops-error").hidden }));
     """, station={"station": {"crs": "MAN", "name": "Manchester Piccadilly", "lat": 53.47, "lon": -2.23,
-                               "distance_m": 0}})
+                               "distance_m": 0}}, trams=None)
     assert found == {"refused": [True, "true"], "after": None, "error": True}
 
 
@@ -1069,7 +1069,7 @@ def test_the_show_step_comes_after_the_views_and_starts_where_begin_says():
                                      pages: $("show-pages").textContent, back: back("show").to,
                                      next: $("views-next").textContent, list: $("show-list").textContent }));
     """, begin=BEGIN_SHOW)
-    assert found["progress"] == ["home", "station", "stops", "walk", "keys", "views", "show", "finish"]
+    assert found["progress"] == ["home", "station", "stops", "trams", "walk", "keys", "views", "show", "finish"]
     assert found["shown"] == ["step-show"] and found["focus"] == "show-heading"
     assert found["next"] == "Next: what to show" and found["back"] == "views"
     assert found["legends"] == ["What the board shows", "What the dashboard shows"]
@@ -1152,7 +1152,7 @@ def test_with_one_view_offered_the_show_step_follows_the_keys():
                                      next: $("keys-next").textContent }));
     """, begin=one)
     assert found["shown"] == ["step-show"] and found["back"] == "keys" and found["next"] == "Next: what to show"
-    assert found["progress"] == ["home", "station", "stops", "walk", "keys", "show", "finish"]
+    assert found["progress"] == ["home", "station", "stops", "trams", "walk", "keys", "show", "finish"]
     assert found["fieldsets"] == ["show-dashboard"]
 
 
@@ -1315,12 +1315,100 @@ def test_near_tram_stops_the_wizard_asks_which_with_their_walks():
 
 
 @needs_node
-def test_far_from_tram_stops_there_is_no_tram_step():
+def test_far_from_tram_stops_the_step_says_so_and_offers_the_search():
     found = run_wizard(TO_TRAMS + """
-        console.log(JSON.stringify({ shown: shown(), progress: progress(), back: back("walk").to }));
+        console.log(JSON.stringify({ shown: shown(), progress: progress(), back: back("walk").to,
+                                     list: $("trams-set").hidden, legend: $("trams-legend").textContent,
+                                     hint: $("trams-hint").textContent, find: $("trams-find").hidden === true }));
     """, station=FILTER_MAN)
-    assert found["shown"] == ["step-walk"]
-    assert "trams" not in found["progress"] and found["back"] == "stops"
+    assert found["shown"] == ["step-trams"] and "trams" in found["progress"] and found["back"] == "trams"
+    assert found["list"] is True and found["find"] is False
+    assert "no tram stops near home" in found["hint"] and "find Manchester Metrolink or London stops" in found["hint"]
+
+
+FOUND_LONDON = [{"code": "940GZZLUVIC", "name": "Victoria", "kind": "tube", "lat": 51.4965, "lon": -0.1447,
+                 "distance_m": 243_000},
+                {"code": "940GZZLUVXL", "name": "Vauxhall", "kind": "tube", "lat": 51.4859, "lon": -0.1238,
+                 "distance_m": 244_000}]
+FIND_TRAMS = """
+const find = (query) => {
+  $("trams-query").value = query;
+  for (const [type, fn] of $("trams-find").listeners) if (type === "submit") fn({ preventDefault() {} });
+};
+const tick = (i) => {
+  const box = $("trams-list").querySelectorAll('input[type="checkbox"]')[i];
+  box.checked = true;
+  for (const [type, fn] of box.listeners) if (type === "change") fn({ currentTarget: box });
+};
+"""
+
+
+@needs_node
+def test_far_from_tram_stops_they_are_found_by_name_and_saved():
+    found = run_wizard(TO_TRAMS + FIND_TRAMS + """
+        answers.trams = { trams: FOUND };
+        find("vic");
+        await settle();
+        const listed = { list: $("trams-set").hidden, text: $("trams-list").textContent,
+                         focus: document.activeElement.id, asked: asked("trams").at(-1) };
+        tick(0);
+        click("trams-next");
+        await settle();
+        console.log(JSON.stringify({ listed, chosen: state.chosenTrams, walks: $("walk-list").textContent,
+                                     walk: $("walk-0").value }));
+    """.replace("FOUND", json.dumps(FOUND_LONDON)), station=FILTER_MAN,
+        walk={"walk": {"940GZZLUVIC": {"minutes": 3050, "source": "estimate"}}})
+    listed = found["listed"]
+    assert listed["asked"] == {"lat": 53.477, "lon": -2.23, "query": "vic"}
+    assert listed["list"] is False and listed["focus"] == "tram-0"
+    assert "Victoria Underground station" in listed["text"] and "243 km away" in listed["text"]
+    assert found["chosen"] == [{"label": "T", "code": "940GZZLUVIC", "name": "Victoria", "kind": "tube",
+                                "place": "Victoria Underground station"}]
+    assert "Minutes to walk to Victoria Underground station" in found["walks"]
+    # Over an hour away: no walk, so no time to leave, unless one is typed.
+    assert found["walk"] == "" and "Too far to walk" in found["walks"]
+
+
+@needs_node
+def test_a_search_too_short_or_finding_nothing_is_refused_by_the_box():
+    found = run_wizard(TO_TRAMS + FIND_TRAMS + """
+        find("v");
+        await settle();
+        const short = { error: $("trams-query-error").textContent, invalid: $("trams-query").getAttribute("aria-invalid"),
+                        asked: asked("trams").length };
+        find("zz");
+        await settle();
+        const none = $("trams-query-error").textContent;
+        console.log(JSON.stringify({ short, none, focus: document.activeElement.id }));
+    """, trams={"trams": []}, station=FILTER_MAN)
+    assert "at least 2 letters" in found["short"]["error"] and found["short"]["invalid"] == "true"
+    assert found["short"]["asked"] == 1  # only the stops near home
+    assert "No Metrolink or London stop" in found["none"] and found["focus"] == "trams-query"
+
+
+@needs_node
+def test_with_nothing_picked_and_no_tram_stops_listed_the_search_box_says_why():
+    found = run_wizard("""
+        state.home = { lat: 53.462, lon: -1.966, label: "SK13 1AH", country: "" };
+        click("home-next");
+        await settle();
+        $("station-GLO").checked = false;
+        $("station-none").checked = true;
+        $("filter").value = "";
+        click("station-next");
+        await settle();
+        for (const box of $("stops-list").querySelectorAll('input[type="checkbox"]')) box.checked = false;
+        state.labels.clear();
+        click("stops-next");
+        await settle();
+        const step = shown();
+        click("trams-next");
+        await settle();
+        console.log(JSON.stringify({ step, after: shown(), error: $("trams-query-error").textContent,
+                                     focus: document.activeElement.id }));
+    """)
+    assert found["step"] == ["step-trams"] and found["after"] == ["step-trams"]
+    assert "Pick at least one" in found["error"] and found["focus"] == "trams-query"
 
 
 @needs_node

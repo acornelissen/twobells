@@ -44,12 +44,13 @@ export const state = {
   stopsFor: "",
   labels: new Map(), // atco -> label typed, for stops ticked
   chosen: [], // [{label, atco, name, indicator}], when leaving the stops step
-  // Tram stops: those near home (and today's), [{code, name, kind, distance_m}];
-  // whether there are any, so a step for them; the codes ticked; and
-  // [{label, code, name, kind, place}] when leaving the step.
+  // Tram stops: those near home, today's and those found by name, [{code,
+  // name, kind, distance_m, found}]; whether there is a step for them (not
+  // when their lists can't be read); the codes ticked; and [{label, code,
+  // name, kind, place}] when leaving the step.
   trams: [],
   tramsFor: "",
-  askTrams: false,
+  askTrams: true,
   tramsTicked: new Set(),
   chosenTrams: [],
   walk: [], // [{key, what, minutes, source}]
@@ -76,5 +77,6 @@ export function stopName(stop) {
 export function distance(metres) {
   const m = num(metres);
   if (m === null) return "";
-  return m < 1000 ? `${Math.max(10, Math.round(m / 10) * 10)} m` : `${(m / 1000).toFixed(1)} km`;
+  if (m < 1000) return `${Math.max(10, Math.round(m / 10) * 10)} m`;
+  return m < 10_000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m / 1000)} km`; // a stop found far away
 }

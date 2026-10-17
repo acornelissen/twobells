@@ -1308,6 +1308,19 @@ def test_the_tram_stops_near_home_are_found_offline(board):
     assert board.calls == []  # nothing asked of anyone
 
 
+
+def test_tram_stops_far_from_home_are_found_by_name(board):
+    found = ok(board, "trams", {**HOME, "query": "Piccadilly"})["trams"]
+    assert {"9400ZZMAPIC", "9400ZZMAPGD"} <= {s["code"] for s in found}
+    assert found[0]["name"] == "Piccadilly" and found[0]["kind"] == "metrolink" and found[0]["distance_m"] > 10_000
+    found = ok(board, "trams", {**HOME, "query": "bank"})["trams"]
+    assert {(s["code"], s["kind"]) for s in found} >= {("940GZZLUBNK", "tube"), ("940GZZDLBNK", "dlr")}
+    assert ok(board, "trams", {**HOME, "query": "nowhere at all"})["trams"] == []
+    assert board.calls == []  # nothing asked of anyone
+    for query in ("x", "x" * 41, 7, "bad\x00"):
+        status, body = board.handle("trams", {**HOME, "query": query})
+        assert status == 400 and body["field"] == "query", query
+
 def test_walk_times_for_tram_stops_by_their_codes(board):
     walk = ok(board, "walk", {"home": PICCADILLY, "tram_codes": ["9400ZZMAPIC"]})
     assert walk["walk"] == {"9400ZZMAPIC": {"minutes": 2, "source": "estimate"}}

@@ -543,6 +543,35 @@ def nearby_london_stops(lat: float, lon: float, limit: int = 8, within_km: float
     return [f[2] for f in found[:limit]]
 
 
+# A search for tram stops by name, for those who want trams far from home.
+MAX_TRAM_QUERY = 40
+
+
+def _plain(name: str) -> str:
+    """A name to compare: lower case, no apostrophes or dots, one space between words."""
+    return " ".join(name.casefold().replace("'", "").replace("’", "").replace(".", "").split())
+
+
+def find_tram_stops(query: str, lat: float, lon: float, limit: int = 10,
+                    trams: Sequence[tuple[str, str, float, float]] | None = None,
+                    london: Sequence[LondonStop] | None = None) -> list[TramStop]:
+    """The Metrolink and London stops with `query` in their names, wherever
+    they are: those whose names start with it first, then by name. Each with
+    its distance from home. Works offline: the lists are bundled."""
+    _check_point(lat, lon)
+    wanted = _plain(query)
+    if not 1 <= limit <= MAX_TRAM_STOPS or not 2 <= len(wanted) <= MAX_TRAM_QUERY:
+        raise SetupError(f"Search for 2 to {MAX_TRAM_QUERY} letters, for 1 to {MAX_TRAM_STOPS} stops")
+    found = [TramStop(code, name, slat, slon, round(distance_m(lat, lon, slat, slon)))
+             for name, code, slat, slon in (bundled_tram_stops() if trams is None else trams)
+             if wanted in _plain(name)]
+    found += [TramStop(stop.code, stop.name, stop.lat, stop.lon, round(distance_m(lat, lon, stop.lat, stop.lon)),
+                       stop.kind)
+              for stop in (bundled_london_stops() if london is None else london) if wanted in _plain(stop.name)]
+    found.sort(key=lambda s: (not _plain(s.name).startswith(wanted), _plain(s.name), s.kind, s.code))
+    return found[:limit]
+
+
 # Bus stops, from NaPTAN. Its API serves whole areas (the first three digits
 # of an ATCO code) and has no "near here" search, so a bundled grid says which
 # areas have stops near home, and only those are downloaded. That also keeps

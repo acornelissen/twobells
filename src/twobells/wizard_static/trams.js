@@ -1,15 +1,15 @@
-// The tram stops step, only where home is near Manchester's Metrolink, or
-// near London's Underground, DLR, trams, cable car or river buses (whose
-// times come live from TfL). They come from lists bundled with the app, so
+// The tram stops step: Manchester's Metrolink, or London's Underground, DLR,
+// trams, cable car or river buses (whose times come live from TfL). It lists
+// those near home, and finds any of them by name, for those who want trams
+// they don't live near. They come from lists bundled with the app, so
 // finding them sends home nowhere. Each ticked stop gets a label on the
-// board, T then U, V and W, in the order listed. With none near home (and
-// none saved), the step isn't there at all, and the walk times come next.
+// board, T then U, V and W, in the order listed.
 
 import { $, h, fill, str, num, list, obj } from "../dashboard_static/dom.js";
 import { call } from "./api.js";
 import { note, refuse, say, setError, shout } from "./say.js";
 import { distance, homeKey, state } from "./state.js";
-import { go, numberSteps } from "./steps.js";
+import { go, numberSteps, once } from "./steps.js";
 import { enterWalk } from "./walk.js";
 
 // A Metrolink stop's code, or TfL's for a London one.
@@ -28,9 +28,11 @@ export const MAX_TRAMS = LABELS.length;
 const ticked = () => state.trams.filter((stop) => state.tramsTicked.has(stop.code));
 
 // The tram stops near home, once for each home; and today's, so a stop
-// chosen before is listed even when it isn't among the nearest.
+// chosen before is listed even when it isn't among the nearest. Those found
+// by name and ticked stay too.
 async function findTrams() {
   if (state.tramsFor === homeKey()) return;
+  const kept = state.trams.filter((stop) => stop.found && state.tramsTicked.has(stop.code));
   state.trams = [];
   if (state.home) {
     const data = await call("trams", { lat: state.home.lat, lon: state.home.lon });
@@ -43,14 +45,19 @@ async function findTrams() {
       state.trams.push({ code: saved.code, name: saved.name || saved.code, kind: tramKind(saved.kind), distance_m: null });
     }
   }
+  for (const stop of kept) if (!state.trams.some((s) => s.code === stop.code)) state.trams.push(stop);
   state.tramsFor = homeKey();
 }
 
-// The step's words for the stops it lists: Manchester's, London's, or both.
+// The step's words for the stops near home: Manchester's, London's, both, or none.
 function sayWhere() {
-  const london = state.trams.some((stop) => LONDON.test(stop.code));
-  const metrolink = state.trams.some((stop) => METROLINK.test(stop.code));
-  const [legend, hint] = london && !metrolink
+  const near = state.trams.filter((stop) => !stop.found);
+  const london = near.some((stop) => LONDON.test(stop.code));
+  const metrolink = near.some((stop) => METROLINK.test(stop.code));
+  const [legend, hint] = !near.length
+    ? ["Tram stops", "There are no tram stops near home. To show trams all the same, find Manchester Metrolink "
+      + "or London stops by name below, up to 4; or go on with none."]
+    : london && !metrolink
     ? ["London stops near home", "Home is near London's Underground, DLR, trams or river buses. Tick the stations "
       + "and piers you use, up to 4, or none. Their times come live from TfL."]
     : london
@@ -61,7 +68,44 @@ function sayWhere() {
   $("trams-hint").textContent = hint;
 }
 
+// Stops found by name, added to those listed. Ticked ones stay; the last
+// search's unticked ones make way for this one's.
+async function findByName(event) {
+  event.preventDefault();
+  const query = $("trams-query").value.trim();
+  setError("trams-query", "");
+  if (query.length < 2) return refuse("trams-query", "Type at least 2 letters of the stop's name.");
+  await once(event.submitter || $("trams-find").querySelector("button"), async () => {
+    let found = [];
+    try {
+      const data = await call("trams", { lat: state.home.lat, lon: state.home.lon, query });
+      found = list(data.trams).map(obj).filter((s) => s && TRAM_CODE.test(str(s.code)));
+    } catch (error) {
+      refuse("trams-query", error.message);
+      shout(error.message);
+      return;
+    }
+    if (!found.length) {
+      refuse("trams-query", "No Metrolink or London stop has that in its name.");
+      return;
+    }
+    state.trams = state.trams.filter((stop) => !stop.found || state.tramsTicked.has(stop.code));
+    for (const s of found) {
+      if (state.trams.some((stop) => stop.code === s.code)) continue;
+      state.trams.push({ code: s.code, name: str(s.name) || s.code, kind: tramKind(s.kind), distance_m: num(s.distance_m),
+                         found: true });
+    }
+    drawTrams();
+    // Focus on the first found, which may have been listed already.
+    const box = $(`tram-${state.trams.findIndex((stop) => stop.code === found[0].code)}`);
+    say(`${found.length} ${found.length === 1 ? "stop" : "stops"} found and listed.`);
+    if (box) box.focus();
+  });
+  return true;
+}
+
 function drawTrams() {
+  $("trams-set").hidden = !state.trams.length;
   fill($("trams-list"), state.trams.map((stop, i) => {
     const id = `tram-${i}`;
     const about = stop.distance_m === null ? "One of your stops now" : `${distance(stop.distance_m)} away`;
@@ -91,18 +135,19 @@ function enterTrams() {
   drawTrams();
 }
 
-// After the bus stops: the tram step where there are tram stops to offer,
-// else on to the walk times. With nothing picked yet (no station, no stops),
+// After the bus stops: the tram step, else, where the bundled lists can't be
+// read, on to the walk times. With nothing picked yet (no station, no stops),
 // there must be tram stops to pick from: false, and why, if there are none.
 export async function afterStops(nothingYet) {
+  state.askTrams = true;
   try {
     await findTrams();
   } catch (error) {
     // The list is bundled, so this is rare; the step is left out, and trams can be set up later.
     note("stops-status", `${error.message} Tram stops aren't offered.`);
     state.trams = [];
+    state.askTrams = false;
   }
-  state.askTrams = state.trams.length > 0;
   numberSteps();
   if (!state.askTrams) {
     state.chosenTrams = [];
@@ -116,6 +161,7 @@ export async function afterStops(nothingYet) {
 
 function leaveTrams() {
   setError("trams", "");
+  setError("trams-query", "");
   const chosen = ticked().map((stop, i) => ({
     label: LABELS[i], code: stop.code, name: stop.name, kind: stop.kind, place: `${stop.name}${NOUNS[stop.kind]}`,
   }));
@@ -124,9 +170,10 @@ function leaveTrams() {
     return refuse("trams", "Pick Metrolink stops or London ones, not both.", first || $("trams-heading"));
   }
   if (!chosen.length && !state.station && !state.chosen.length) {
-    const first = $("trams-list").querySelector("input");
-    return refuse("trams", `Pick at least one: with no station, bus stops or tram stops, the ${state.noun} has nothing to show.`,
-      first || $("trams-heading"));
+    const why = `Pick at least one: with no station, bus stops or tram stops, the ${state.noun} has nothing to show.`;
+    // With none listed, the list is hidden: the error goes by the search.
+    if (!state.trams.length) return refuse("trams-query", why);
+    return refuse("trams", why, $("trams-list").querySelector("input"));
   }
   state.chosenTrams = chosen;
   say(chosen.length ? `${chosen.length} tram ${chosen.length === 1 ? "stop" : "stops"} picked.` : "No trams.");
@@ -135,5 +182,6 @@ function leaveTrams() {
 }
 
 export function setUpTrams() {
+  $("trams-find").addEventListener("submit", findByName);
   $("trams-next").addEventListener("click", leaveTrams);
 }

@@ -506,6 +506,29 @@ def test_london_stop_list_skips_bad_rows_and_finds_the_nearest():
     assert lookups.nearby_london_stops(HOME.lat, HOME.lon, stops=stops) == []  # Hadfield: not London
 
 
+
+def test_tram_stops_are_found_by_name_wherever_home_is():
+    trams, london = lookups.parse_tram_stops(TRAM_STOPS_CSV), lookups.parse_london_stops(LONDON_CSV)
+    found = lookups.find_tram_stops("bank", HOME.lat, HOME.lon, trams=trams, london=london)
+    assert [(s.code, s.kind) for s in found] == [("940GZZDLBNK", "dlr"), ("940GZZLUBNK", "tube")]
+    assert found[0].distance_m > 200_000  # Hadfield to the City
+    # Names starting with it come first; case, apostrophes and spaces don't matter.
+    found = lookups.find_tram_stops("  PIER ", HOME.lat, HOME.lon, trams=trams, london=london)
+    assert [s.code for s in found] == ["930GWMR"]
+    found = lookups.find_tram_stops("castle", HOME.lat, HOME.lon, trams=trams, london=london)
+    assert [s.code for s in found] == ["9400ZZMAGMX"] and found[0].kind == "metrolink"
+    assert lookups.find_tram_stops("zz", HOME.lat, HOME.lon, trams=trams, london=london) == []
+    for query in ("b", " ", "x" * 41):
+        with pytest.raises(SetupError):
+            lookups.find_tram_stops(query, HOME.lat, HOME.lon, trams=trams, london=london)
+
+
+def test_a_search_puts_names_starting_with_it_first_and_stops_at_the_limit():
+    found = lookups.find_tram_stops("kings cross", HOME.lat, HOME.lon)
+    assert found and all("kings cross" in s.name.casefold().replace("'", "") for s in found)
+    found = lookups.find_tram_stops("st", HOME.lat, HOME.lon, limit=3)
+    assert len(found) == 3 and all(s.name.casefold().startswith("st") for s in found)
+
 def test_bundled_london_list_has_every_kind_and_names_dlr_stations_apart():
     stops = lookups.bundled_london_stops()
     assert 300 <= len(stops) <= 500 and len({s.code for s in stops}) == len(stops)

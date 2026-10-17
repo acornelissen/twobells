@@ -153,7 +153,7 @@
     </div>
   </section>
 
-  <!-- Tram stops: only where home is near Manchester's Metrolink or London's metro -->
+  <!-- Tram stops: Manchester's Metrolink or London's metro, near home or found by name -->
   <section id="step-trams" class="step" aria-labelledby="trams-heading" hidden>
     <h2 id="trams-heading" tabindex="-1"><span id="trams-number">Step 4 of 9:</span> Your tram stops</h2>
     <p class="hint" id="trams-hint">Home is near Manchester's Metrolink. Tick the tram stops you use, up to 4, or none for no trams. Tram times come from TfGM's timetable, as live tram times aren't open to new users.</p>
@@ -162,6 +162,15 @@
       <p class="error" id="trams-error" hidden></p>
       <ol id="trams-list" class="stop-list"></ol>
     </fieldset>
+    <form id="trams-find" class="row-form" novalidate>
+      <div class="field">
+        <label for="trams-query">Find a stop by name</label>
+        <p class="hint" id="trams-query-hint">Any Metrolink stop, or a London Underground, DLR, tram, cable car or river bus stop, like Victoria.</p>
+        <p class="error" id="trams-query-error" hidden></p>
+        <input id="trams-query" name="trams-query" type="search" spellcheck="false" maxlength="40" aria-describedby="trams-query-hint trams-query-error">
+      </div>
+      <button type="submit">Find stops</button>
+    </form>
     <div class="actions">
       <button type="button" data-back="stops">Back</button>
       <button type="button" id="trams-next" class="primary" data-next="walk">Next: walk times</button>

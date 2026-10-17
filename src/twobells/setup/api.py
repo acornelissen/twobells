@@ -118,6 +118,8 @@ STOPS_WITHIN_M = 1000
 TRAM_STOPS_SHOWN = 5
 # London's stations are close together, on many lines: a few more of them.
 LONDON_STOPS_SHOWN = 8
+# The most stops a search by name lists.
+TRAM_STOPS_FOUND = 10
 MAX_TRAM_STOPS = schema.MAX_TRAM_STOPS
 # Labels for the tram stops picked, in order: T is for tram.
 TRAM_LABELS = ("T", "U", "V", "W")
@@ -886,10 +888,19 @@ class SetupApi:
     def trams(self, payload) -> dict:
         """The Metrolink tram stops nearest home, or London's Underground,
         DLR, tram, cable car and river bus stops, from the bundled lists (no
-        network): none for a home far from both, and then the page skips
-        the step. Each with its kind: "metrolink", or a London one's
-        (setup.LONDON_KINDS)."""
-        home = _point(_fields(payload, ("lat", "lon")))
+        network): none for a home far from both. With `query`, those with it
+        in their names instead, wherever they are. Each with its kind:
+        "metrolink", or a London one's (setup.LONDON_KINDS)."""
+        fields = _fields(payload, ("lat", "lon"), ("query",))
+        home = _point({"lat": fields["lat"], "lon": fields["lon"]})
+        if "query" in fields:
+            query = _text(fields["query"], "query", 2, setup.MAX_TRAM_QUERY)
+            try:
+                found = setup.find_tram_stops(query, home.lat, home.lon, limit=TRAM_STOPS_FOUND)
+            except SetupError as error:
+                raise Invalid(str(error), "query") from None
+            return {"trams": [{"code": s.code, "name": s.name, "kind": s.kind, "lat": s.lat, "lon": s.lon,
+                               "distance_m": s.distance_m} for s in found]}
         found = [*setup.nearby_tram_stops(home.lat, home.lon, limit=TRAM_STOPS_SHOWN),
                  *setup.nearby_london_stops(home.lat, home.lon, limit=LONDON_STOPS_SHOWN)]
         found.sort(key=lambda s: (s.distance_m, s.code))

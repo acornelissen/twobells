@@ -17,6 +17,7 @@ const SOURCES = {
   edited: ["Yours", "Changed by you."],
   saved: ["Saved", "As it is now."],
   rough: ["Estimate", "Worked out from roughly where home is; check it."],
+  far: ["Over an hour", "Too far to walk, so no time to leave is shown. Type one if you like."],
 };
 
 function sourceNote(source) {
@@ -84,8 +85,10 @@ export async function enterWalk() {
       for (const walk of state.walk) {
         const answer = asking.includes(walk.key) ? obj(found[walk.key]) : null;
         const minutes = answer ? num(answer.minutes) : null;
-        if (minutes !== null && Number.isInteger(minutes) && minutes >= 0) {
-          walk.minutes = Math.min(minutes, MAX_WALK);
+        if (minutes !== null && Number.isInteger(minutes) && minutes > MAX_WALK) {
+          walk.source = "far"; // somewhere visited, not walked to: no time to leave
+        } else if (minutes !== null && Number.isInteger(minutes) && minutes >= 0) {
+          walk.minutes = minutes;
           if (state.only) walk.source = "rough"; // a shortcut's home is only roughly where it is
           else walk.source = answer.source === "route" ? "route" : "estimate";
         }
