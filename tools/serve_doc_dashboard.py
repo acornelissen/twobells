@@ -28,7 +28,10 @@ the frame another size, such as a wall tablet's. The frame is its own
 viewport, so the page's media queries answer to its size. /frame?kiosk
 frames /?kiosk, and so on. Choose the look on / first: the frame shares
 its storage. Only this tool frames the page; the app's own server forbids
-it (frame-ancestors 'none').
+it (frame-ancestors 'none'). --offset 1200 moves the frame up 1200 CSS
+pixels, so a part far down the page, like the Trams section, shows at the
+top of a browser window that won't scroll; make the frame tall enough to
+hold the whole page (--frame 1376x2400).
 """
 
 from __future__ import annotations
@@ -160,14 +163,15 @@ def frame_size(raw: str) -> tuple[int, int]:
     return int(width), int(height)
 
 
-def frame_page(query: str, size: tuple[int, int]) -> bytes:
+def frame_page(query: str, size: tuple[int, int], offset: int = 0) -> bytes:
     """The /frame page: the dashboard, with `query`, in a frame of `size`
-    at the top left, so a screenshot crops to it."""
+    at the top left, so a screenshot crops to it, moved up `offset` CSS
+    pixels."""
     width, height = size
     src = "/?" + query if query else "/"
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{width} by {height}</title>'
-            f"<style>body{{margin:0;background:#808080}}iframe{{display:block;border:0;"
-            f"width:{width}px;height:{height}px}}</style></head>"
+            f"<style>body{{margin:0;background:#808080;overflow:hidden}}iframe{{display:block;border:0;"
+            f"position:relative;top:-{offset}px;width:{width}px;height:{height}px}}</style></head>"
             f'<body><iframe src="{escape(src)}" title="The dashboard, {width} by {height}"></iframe></body></html>'
             ).encode()
 
@@ -179,6 +183,7 @@ class Handler(SimpleHTTPRequestHandler):
     started: float = 0.0  # time.monotonic() when this server started
     scheme: str | None = None  # "light" or "dark" whatever the browser prefers; None: as it prefers
     frame: tuple[int, int] | None = None  # serve /frame, this size
+    offset: int = 0  # /frame's frame moved up this many CSS pixels
 
     def date_time_string(self, timestamp=None):
         now = self.started_at + time.monotonic() - self.started
@@ -187,7 +192,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path, _, query = self.path.partition("?")
         if self.frame and path == "/frame":
-            return self._send(frame_page(query, self.frame), "text/html; charset=utf-8")
+            return self._send(frame_page(query, self.frame, self.offset), "text/html; charset=utf-8")
         answers = {
             "/api/snapshot": lambda: self.snapshot,
             "/api/area": lambda: self.area,
@@ -232,6 +237,8 @@ def main() -> None:
                         help="also serve /frame, the page in a phone-sized frame")
     parser.add_argument("--frame", type=frame_size, metavar="WIDTHxHEIGHT",
                         help="also serve /frame, the page in a frame this size")
+    parser.add_argument("--offset", type=int, default=0, choices=range(4001), metavar="PIXELS",
+                        help="/frame's frame moved up this far, to show a part lower down")
     parser.add_argument("--trams", action="store_true", help="a made-up Trams section too")
     parser.add_argument("--london", action="store_true", help="a made-up section of London's metro instead")
     args = parser.parse_args()
@@ -249,6 +256,7 @@ def main() -> None:
     Handler.started = time.monotonic()
     Handler.scheme = args.scheme
     Handler.frame = args.frame
+    Handler.offset = args.offset
     server = ThreadingHTTPServer(("127.0.0.1", args.port), partial(Handler, directory=str(STATIC)))
     print(f"The sample dashboard is on http://127.0.0.1:{args.port}/")
     if args.frame:
