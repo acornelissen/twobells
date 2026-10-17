@@ -1,0 +1,90 @@
+[
+ {
+  "$type": "Tfl.Api.Presentation.Entities.Line, Tfl.Api.Presentation.Entities",
+  "id": "central",
+  "name": "Central",
+  "modeName": "tube",
+  "disruptions": [],
+  "created": "2026-10-14T12:00:00Z",
+  "modified": "2026-10-14T12:00:00Z",
+  "lineStatuses": [
+   {
+    "id": 0,
+    "statusSeverity": 9,
+    "statusSeverityDescription": "Minor Delays",
+    "reason": "Central Line: Minor delays between White City and Liverpool Street while we fix a signal failure at Bank. Tickets are valid on buses.",
+    "created": "0001-01-01T00:00:00",
+    "validityPeriods": [],
+    "disruption": {
+     "category": "RealTime"
+    }
+   }
+  ],
+  "routeSections": [],
+  "serviceTypes": [],
+  "crowding": {}
+ },
+ {
+  "$type": "Tfl.Api.Presentation.Entities.Line, Tfl.Api.Presentation.Entities",
+  "id": "northern",
+  "name": "Northern",
+  "modeName": "tube",
+  "disruptions": [],
+  "created": "2026-10-14T12:00:00Z",
+  "modified": "2026-10-14T12:00:00Z",
+  "lineStatuses": [
+   {
+    "id": 0,
+    "statusSeverity": 10,
+    "statusSeverityDescription": "Good Service",
+    "created": "0001-01-01T00:00:00",
+    "validityPeriods": []
+   }
+  ],
+  "routeSections": [],
+  "serviceTypes": [],
+  "crowding": {}
+ },
+ {
+  "$type": "Tfl.Api.Presentation.Entities.Line, Tfl.Api.Presentation.Entities",
+  "id": "waterloo-city",
+  "name": "Waterloo & City",
+  "modeName": "tube",
+  "disruptions": [],
+  "created": "2026-10-14T12:00:00Z",
+  "modified": "2026-10-14T12:00:00Z",
+  "lineStatuses": [
+   {
+    "id": 0,
+    "statusSeverity": 20,
+    "statusSeverityDescription": "Service Closed",
+    "created": "0001-01-01T00:00:00",
+    "validityPeriods": []
+   }
+  ],
+  "routeSections": [],
+  "serviceTypes": [],
+  "crowding": {}
+ },
+ {
+  "$type": "Tfl.Api.Presentation.Entities.Line, Tfl.Api.Presentation.Entities",
+  "id": "victoria",
+  "name": "Victoria",
+  "modeName": "tube",
+  "disruptions": [],
+  "created": "2026-10-14T12:00:00Z",
+  "modified": "2026-10-14T12:00:00Z",
+  "lineStatuses": [
+   {
+    "id": 0,
+    "statusSeverity": 6,
+    "statusSeverityDescription": "Severe Delays",
+    "reason": "Victoria Line: Severe delays.",
+    "validityPeriods": []
+   }
+  ],
+  "routeSections": [],
+  "serviceTypes": [],
+  "crowding": {}
+ }
+]

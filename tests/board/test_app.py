@@ -1671,3 +1671,37 @@ def test_the_speaker_says_nothing_unless_chosen_on_e_paper_or_before_setup():
     assert speaker_run(speaking_board(), FakeDisplay(), [THU_0700]) == []
     setup_page = SetupView("http://twobells.local:8090/settings/setup/")
     assert speaker_run(speaking_board(setup=setup_page), FakeScreen(), [THU_0700]) == []
+
+
+# London's metro, live from TfL: its section is named for its stops, and a
+# fetch without its lines' status keeps the notice it had.
+
+
+class LondonSource(FakeSource):
+    label = "Underground"
+    empty = "No trains"
+
+    def __init__(self, departures, messages):
+        super().__init__("metro", departures)
+        self.next_messages = messages
+        self.messages = []
+
+    def fetch(self):
+        found = super().fetch()
+        self.messages = self.next_messages
+        return found
+
+
+def test_london_s_section_has_its_own_heading_and_keeps_its_notice_without_a_status():
+    tubes = LondonSource([Departure("metro", "Central", "Epping", "07:04", None, Status.ON_TIME, stop="T")],
+                         ["Central line: Minor delays."])
+    board = Board(title="Bank", sources=[SourceConfig(tubes, morning(1), stale_after=timedelta(minutes=10))],
+                  modes=("metro",))
+    state = {}
+    result = run_once(board, state, FakeDisplay(), THU_0700)
+    section = result.view.section("metro")
+    assert (section.label, section.empty_text, section.rows[0].right) == ("Underground", "No trains", "Live")
+    assert result.view.notice == "Central line: Minor delays."
+    tubes.next_messages = None  # the status couldn't be had this time
+    result = run_once(board, state, FakeDisplay(), THU_0700 + timedelta(minutes=1))
+    assert result.view.notice == "Central line: Minor delays."

@@ -1,0 +1,38 @@
+[
+ {
+  "$type": "Tfl.Api.Presentation.Entities.DisruptedPoint, Tfl.Api.Presentation.Entities",
+  "atcoCode": "940GZZLUBNK",
+  "stationAtcoCode": "940GZZLUBNK",
+  "commonName": "Bank Underground Station",
+  "type": "Information",
+  "mode": "tube",
+  "appearance": "RealTime",
+  "fromDate": "2026-10-19T05:00:00Z",
+  "toDate": "2026-10-20T00:29:00Z",
+  "description": "Bank: The lift between the street and the Northern line is not working today. Use Monument for step-free access."
+ },
+ {
+  "atcoCode": "940GZZLUBNK",
+  "stationAtcoCode": "940GZZLUBNK",
+  "type": "Information",
+  "fromDate": "2026-10-10T05:00:00Z",
+  "toDate": "2026-10-11T00:29:00Z",
+  "description": "Bank: Escalator 3 is out of service."
+ },
+ {
+  "atcoCode": "940GZZLUBNK",
+  "stationAtcoCode": "940GZZLUBNK",
+  "type": "Information",
+  "fromDate": "2026-10-19T05:00:00Z",
+  "toDate": "2026-10-20T00:29:00Z",
+  "description": "Bank: The ticket office is closed."
+ },
+ {
+  "atcoCode": "940GZZLUWLO",
+  "stationAtcoCode": "940GZZLUWLO",
+  "type": "Information",
+  "fromDate": "2026-10-19T05:00:00Z",
+  "toDate": "2026-10-20T00:29:00Z",
+  "description": "Waterloo: The lift to the Jubilee line is out of service."
+ }
+]

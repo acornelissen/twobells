@@ -52,6 +52,10 @@ LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")
 ATCO = re.compile(r"^[0-9]{3}[0-9A-Za-z]{1,9}$")
 # A Metrolink tram stop's NaPTAN code: 9400ZZMA and the three letters TfGM calls it by.
 TRAM_STOP = re.compile(r"^9400ZZMA[A-Z]{3}$")
+# A London stop for TfL's live times, by TfL's code: an Underground, DLR,
+# London Trams or cable car station (940GZZ and LU, DL, CR or AL and three
+# letters), or a river bus pier (930G and three or four letters).
+LONDON_STOP = re.compile(r"^(?:940GZZ(?:LU|DL|CR|AL)[A-Z]{3}|930G[A-Z]{3,4})$")
 # The most tram stops a board has (timetable/trams.py reads no more).
 MAX_TRAM_STOPS = 4
 # National operator codes: a few letters or digits, like BNML.
@@ -184,8 +188,9 @@ def stops(raw: str) -> dict[str, object]:
 
 
 def _tram_stop(raw: str) -> str:
-    if not TRAM_STOP.fullmatch(raw):
-        raise Invalid("A tram stop code is 9400ZZMA and the stop's three letters, like 9400ZZMAPIC")
+    if not (TRAM_STOP.fullmatch(raw) or LONDON_STOP.fullmatch(raw)):
+        raise Invalid("A stop code is a Metrolink stop's, like 9400ZZMAPIC, or TfL's for a London station or pier, "
+                      "like 940GZZLUBNK")
     return raw
 
 
@@ -195,7 +200,15 @@ def tram_stops(raw: str) -> dict[str, object]:
         raise Invalid("Add at least one tram stop, like T = 9400ZZMAPIC")
     if len(found) > MAX_TRAM_STOPS:
         raise Invalid(f"Add at most {MAX_TRAM_STOPS} tram stops")
+    if len({is_london(str(code)) for code in found.values()}) > 1:
+        raise Invalid("Use Metrolink stops or London ones, not both")
     return found
+
+
+def is_london(code: str) -> bool:
+    """Whether a [metro] stop code is a London one, for TfL's live times,
+    rather than a Metrolink stop's."""
+    return LONDON_STOP.fullmatch(code) is not None
 
 
 def walk_per_stop(raw: str) -> dict[str, object] | int:
@@ -395,8 +408,8 @@ BOARD_DEFAULTS: dict = {
         "daily_budget": 28,
         "windows": ("Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"),
     },
-    # Trams from the timetable, which costs nothing to read: every minute,
-    # through the trams' day.
+    # Trams from the timetable, which costs nothing to read, or London's live
+    # from TfL, a call a stop: every minute, through the trams' day.
     "metro": {
         "rows": 3,
         "interval_minutes": 1,
@@ -581,11 +594,13 @@ def fields(display: str = "inky", theme: str = "sign", text_size: int | None = N
               "per_stop", hint="Shows when to leave. Leave a box empty for none.", needs="metro",
               page="trains_buses", heading="Trams", width="3", unit="minutes"),
         Field("metro_directions", "general", "metro", "directions", "Only trams heading to", directions,
-              hint="Optional, separated by commas, like Bury, Altrincham. Leave it empty to show every tram.",
+              hint="Optional, separated by commas, like Bury, Altrincham. Leave it empty to show every tram "
+                   "(or train, in London).",
               needs="metro", page="trains_buses", heading="Trams"),
         Field("metro_stops", "general", "metro", "stops", "Tram stop codes", tram_stops, "area",
-              hint="One per line, LABEL = stop code, like T = 9400ZZMAPIC; up to 4. Setup finds the Metrolink "
-                   "stops near home.", needs="metro", page="trains_buses", heading="Trams", tier="advanced"),
+              hint="One per line, LABEL = stop code, like T = 9400ZZMAPIC for Metrolink or T = 940GZZLUBNK for "
+                   "London; up to 4. Setup finds the stops near home.", needs="metro", page="trains_buses",
+              heading="Trams", tier="advanced"),
         Field("weather_enabled", "general", "weather", "enabled", "Show the weather", on_off, "radios",
               hint="A warning when rain is likely before you'd reach your next train or bus, and the "
                    "dashboard's forecast, from Open-Meteo.",
@@ -656,9 +671,9 @@ def fields(display: str = "inky", theme: str = "sign", text_size: int | None = N
         Field("board_metro_rows", "board", "metro", "rows", "Trams shown", number(1, 6), "number",
               default=metro["rows"], needs="metro", page="board", heading="Trams", width="2"),
         Field("metro_windows", "board", "metro", "windows", "When to check for trams", windows, "windows",
-              hint="Tram times come from the timetable, which costs nothing to read. Outside these times the "
-                   "board shows what it last knew.", default=metro["windows"], needs="metro", page="board",
-              heading="Trams", item="Checking time"),
+              hint="Metrolink's times come from the timetable, which costs nothing to read; London's come live "
+                   "from TfL. Outside these times the board shows what it last knew.", default=metro["windows"],
+              needs="metro", page="board", heading="Trams", item="Checking time"),
         Field("metro_interval_minutes", "board", "metro", "interval_minutes", "Check every", number(1, 60),
               "number", default=metro["interval_minutes"], needs="metro", page="board", heading="Trams",
               tier="advanced", width="3", unit="minutes"),

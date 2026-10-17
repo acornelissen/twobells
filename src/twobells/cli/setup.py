@@ -7,7 +7,7 @@ import sys
 from typing import cast
 
 from ..board.displays.display import DISPLAY_PANELS
-from ..settings.config import ConfigError, is_enabled
+from ..settings.config import ConfigError, is_enabled, metrolink_on
 from ..settings.installs import install_named
 from ..settings.schema import BOARD_DEFAULTS, bus_source, views
 from ..settings.store import Store
@@ -76,11 +76,11 @@ def discover_command(args) -> int:
 
 def _wants_timetable(store: Store) -> bool:
     """Whether the board's buses are on and come from the BODS timetable, or
-    its trams are on (they come from TfGM's timetable alone), in config.toml
-    with the settings saved from the page over it."""
+    its Metrolink trams are on (they come from TfGM's timetable alone; London's
+    come live from TfL), in config.toml with the settings saved from the page over it."""
     data = store.data()
-    bus, metro = data.get("bus"), data.get("metro")
-    if isinstance(metro, dict) and is_enabled(data, "metro"):
+    bus = data.get("bus")
+    if metrolink_on(data):
         return True
     return isinstance(bus, dict) and is_enabled(data, "bus") and bus_source(bus) == "bods"
 

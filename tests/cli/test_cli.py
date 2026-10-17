@@ -1694,6 +1694,8 @@ def test_query_display_prints_the_display_config_toml_sets(tmp_path, capsys, con
     ('[bus]\nsource = "bods"\n', "[bus]\nsource = \"transportapi\"\nenabled = false\n", False),  # buses switched off since
     ("[bus]\nsource = \"transportapi\"\n", "", False),  # TransportAPI
     ('[train]\ncrs = "GLO"\n', "", False),  # no buses at all
+    ('[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n', "", True),  # Metrolink: TfGM's timetable
+    ('[metro]\n[metro.stops]\nT = "940GZZLUBNK"\n', "", False),  # London: live from TfL
 ])
 def test_query_needs_timetable_says_yes_or_no_and_exits_so(tmp_path, capsys, config, saved, wanted):
     assert _query(tmp_path, "needs-timetable", config, saved) == (0 if wanted else 1)
@@ -2510,3 +2512,14 @@ def test_timetable_with_trams_alone_says_nothing_of_buses(tmp_path, monkeypatch,
     captured = capsys.readouterr()
     assert captured.err == "Tram timetable not built: The tram timetable isn't a GTFS file\n"
     assert "bus" not in captured.out
+
+
+def test_timetable_builds_nothing_for_london_s_stops(tmp_path, monkeypatch, capsys):
+    from twobells.timetable import trams
+
+    config = tmp_path / "config.toml"
+    config.write_text(f'state_file = "{tmp_path / "state" / "state.json"}"\n[metro]\n[metro.stops]\nT = "940GZZLUBNK"\n')
+    monkeypatch.setattr(trams, "refresh", lambda *args, **kwargs: pytest.fail("no tram timetable for London"))
+    monkeypatch.setattr("twobells.cli.timetable._buses", lambda args: 0)
+    assert main(["timetable", "--config", str(config)]) == 0
+    assert "Tram timetable" not in capsys.readouterr().out

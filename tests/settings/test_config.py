@@ -1150,3 +1150,31 @@ def test_trams_load_from_their_stops_with_their_own_walks(tmp_path):
 def test_tram_stops_that_aren_t_metrolink_stops_are_refused(tmp_path, stops, says):
     with pytest.raises(ConfigError, match=says):
         load_config(write(tmp_path, f"[metro]\n[metro.stops]\n{stops}\n"), ENV)
+
+
+# London's metro: [metro] with TfL's codes, live from TfL (sources/tfl.py).
+
+
+def test_london_stops_come_live_from_tfl_with_their_lines_and_key(tmp_path):
+    from twobells.sources.tfl import TflSource
+
+    text = '[metro]\n[metro.stops]\nT = "940GZZLUBNK"\nU = "940GZZDLBNK"\n'
+    settings = load_config(write(tmp_path, text), {**ENV, "TFL_APP_KEY": "abc123"})
+    [config] = settings.board.sources
+    source = config.source
+    assert isinstance(source, TflSource) and source.stops == {"T": "940GZZLUBNK", "U": "940GZZDLBNK"}
+    assert source.label == "Metro" and source.lines[:3] == ["central", "northern", "waterloo-city"]
+    assert "dlr" in source.lines
+    assert source._app_key == "abc123"
+    assert load_config(write(tmp_path, text), ENV).board.sources[0].source._app_key == ""  # optional
+
+
+@pytest.mark.parametrize(("stops", "env", "says"), [
+    ('T = "940GZZLUBNK"\nU = "9400ZZMAPIC"', {}, "Metrolink stops and London ones"),
+    ('T = "940GZZOVBNK"', {}, "set a Metrolink stop code"),  # Overground: Darwin's
+    ('T = "930G"', {}, "set a Metrolink stop code"),
+    ('T = "940GZZLUBNK"', {"TFL_APP_KEY": "abc\r\nX-Other: 1"}, "TFL_APP_KEY in secrets.env isn't a key"),
+])
+def test_london_stops_and_keys_that_aren_t_right_are_refused(tmp_path, stops, env, says):
+    with pytest.raises(ConfigError, match=says):
+        load_config(write(tmp_path, f"[metro]\n[metro.stops]\n{stops}\n"), {**ENV, **env})

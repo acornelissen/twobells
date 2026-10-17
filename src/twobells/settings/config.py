@@ -27,11 +27,13 @@ from ..board.route import RouteStop, RouteStrip
 from ..board.themes import theme_named, themes_for, with_text_size
 from ..core.polling import PollPolicy, parse_window
 from ..core.walk import DEFAULT_STOP, WalkTimes
+from ..setup.lookups import london_stops_by_code
 from ..sources.bods import BodsVehicleSource
 from ..sources.bodsbus import BodsBusSource
 from ..sources.darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL
 from ..sources.darwin import DarwinSource, ServiceDetailsClient, TrainDetails
 from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES
+from ..sources.tfl import TflSource
 from ..sources.trams import TramTimetableSource
 from ..sources.transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
 from ..sources.transportapi import TransportApiBusSource
@@ -43,6 +45,7 @@ from .schema import (
     CRS,
     DEFAULT_BUS_SOURCE,
     LABEL,
+    LONDON_STOP,
     MAX_TRAM_STOPS,
     NOC,
     TRAM_STOP,
@@ -321,6 +324,18 @@ def is_enabled(data: dict, name: str) -> bool:
     return _flag(section, "enabled", True, f"[{name}] ")
 
 
+def metrolink_on(data: dict) -> bool:
+    """Whether [metro] is on with Metrolink's stops, whose times come from
+    TfGM's timetable, which must be built; London's come live from TfL.
+    ConfigError if enabled isn't true or false."""
+    metro = data.get("metro")
+    if not isinstance(metro, dict) or not is_enabled(data, "metro"):
+        return False
+    stops = metro.get("stops")
+    codes = stops.values() if isinstance(stops, dict) else ()
+    return not any(isinstance(code, str) and LONDON_STOP.match(code) for code in codes)
+
+
 def switched_on(data: dict) -> dict:
     """`data` without the sections switched off, so every loader ignores a
     section with enabled = false as if it weren't there."""
@@ -456,23 +471,42 @@ def _tram_stops(section: dict) -> dict[str, str]:
     for label, code in stops.items():
         if not isinstance(label, str) or not LABEL.match(label):
             raise ConfigError(f"[metro.stops] label {str(label)[:20]!r} must be 1 to 3 letters or digits")
-        if not isinstance(code, str) or not TRAM_STOP.match(code):
+        if not isinstance(code, str) or not (TRAM_STOP.match(code) or LONDON_STOP.match(code)):
             raise ConfigError(f"[metro.stops] {label} is {str(code)[:40]!r}; set a Metrolink stop code in quotes, "
-                              'like "9400ZZMAPIC"')
+                              'like "9400ZZMAPIC", or TfL\'s for a London station or pier, like "940GZZLUBNK"')
+    if len({bool(LONDON_STOP.match(code)) for code in stops.values()}) > 1:
+        raise ConfigError("[metro.stops] has Metrolink stops and London ones; a board has one or the other")
     return stops
 
 
-def _metro(section: dict, holidays: frozenset[date], folder: Path, timezone: str) -> SourceConfig:
-    """Manchester Metrolink's trams, from TfGM's timetable kept in the store."""
+# A key as TfL gives one: letters and digits. It goes in a header, so nothing else is let through.
+_TFL_KEY = re.compile(r"^[A-Za-z0-9._~+/=-]{1,200}$")
+
+
+def _tfl_key(env: Mapping[str, str]) -> str:
+    """TFL_APP_KEY, optional: without one TfL allows fewer calls a minute."""
+    key = env.get("TFL_APP_KEY", "").strip()
+    if key and not _TFL_KEY.match(key):
+        raise ConfigError("TFL_APP_KEY in secrets.env isn't a key: paste it again from TfL's API portal")
+    return key
+
+
+def _metro(section: dict, env: Mapping[str, str], holidays: frozenset[date], folder: Path,
+           timezone: str) -> SourceConfig:
+    """Manchester Metrolink's trams, from TfGM's timetable kept in the store;
+    or, for London stops, live times from TfL."""
     where = "[metro] "
     defaults = BOARD_DEFAULTS["metro"]
-    source = TramTimetableSource(
-        folder,
-        _tram_stops(section),
-        ZoneInfo(timezone),
-        rows=_whole(section, "rows", defaults["rows"], where),
-        directions=_texts(section, "directions", where) or None,
-    )
+    stops = _tram_stops(section)
+    rows = _whole(section, "rows", defaults["rows"], where)
+    directions = _texts(section, "directions", where) or None
+    source: TramTimetableSource | TflSource
+    if any(LONDON_STOP.match(code) for code in stops.values()):
+        known = london_stops_by_code()
+        source = TflSource(stops, ZoneInfo(timezone), app_key=_tfl_key(env), rows=rows, directions=directions,
+                           lines={code: known[code].lines for code in stops.values() if code in known})
+    else:
+        source = TramTimetableSource(folder, stops, ZoneInfo(timezone), rows=rows, directions=directions)
     stale_after = timedelta(minutes=_whole(section, "stale_after_minutes", defaults["stale_after_minutes"], where))
     return SourceConfig(source, _policy(section, defaults, where, holidays), stale_after)
 
@@ -690,7 +724,7 @@ def settings_from(
     if "train" in data and "train" in wanted:
         sources.append(_train(_table(data, "train", "[train]"), env, holidays))
     if "metro" in data and "metro" in wanted:
-        sources.append(_metro(_table(data, "metro", "[metro]"), holidays, Path(state_file).parent, timezone))
+        sources.append(_metro(_table(data, "metro", "[metro]"), env, holidays, Path(state_file).parent, timezone))
     if "bus" in data and "bus" in wanted:
         bus = _bus(_table(data, "bus", "[bus]"), env, holidays, Path(state_file).parent, timezone)
         sources.append(bus)

@@ -244,15 +244,31 @@ def _bus_row(dep: Departure, walk: WalkTimes | None, clock: str | None) -> Row:
     return Row(dep.service, dep.destination, right, _style(dep), leave_text, dep.stop, leave_at=leave_at)
 
 
-def _tram_row(dep: Departure, walk: WalkTimes | None, clock: str | None, several: bool = False) -> Row:
-    """A tram's row, drawn as a train's: its time, where it goes and, where
-    a train's status goes, words.SCHEDULED, as a bus known only from the
-    timetable says (trams come from the timetable alone). A replacement bus
-    says so where a train's would. With `several` tram stops, each row
-    names its stop by label first ("T: Bury")."""
-    destination = f"{dep.stop}: {dep.destination}" if several and dep.stop else dep.destination
-    return Row(dep.scheduled, destination, words.SCHEDULED, Style.NORMAL,
-               platform=words.BUS if dep.replacement_bus else None, replacement_bus=dep.replacement_bus)
+def _tram_row(dep: Departure, walk: WalkTimes | None, clock: str | None, several: bool = False,
+              lines: bool = False, platforms: bool = True) -> Row:
+    """A tram's row, drawn as a train's: its time, where it goes, and where a
+    train's status goes, how sure the time is. A Metrolink tram, from the
+    timetable alone (Status.UNKNOWN), says words.SCHEDULED, as a bus known
+    only from the timetable does; a replacement bus says so where a train's
+    would. A London one, live from TfL, counts down on a screen ("3 min",
+    "Due") and says words.LIVE on e-paper, which never redraws for a
+    countdown, and has its platform. With `several` tram stops each row
+    names its stop by label first ("T: Bury"); a London one with `lines`
+    (more than one line among the rows) names its line instead ("Central: Epping").
+    Without `platforms`, it has no platform or via words."""
+    if dep.status is Status.UNKNOWN:
+        destination = f"{dep.stop}: {dep.destination}" if several and dep.stop else dep.destination
+        return Row(dep.scheduled, destination, words.SCHEDULED, Style.NORMAL,
+                   platform=words.BUS if dep.replacement_bus else None, replacement_bus=dep.replacement_bus)
+    if lines and dep.service:
+        destination = f"{dep.service}: {dep.destination}"
+    elif several and dep.stop:
+        destination = f"{dep.stop}: {dep.destination}"
+    else:
+        destination = dep.destination
+    right = words.due_in(max(0, minutes_between(clock[:5], dep.scheduled))) if clock else words.LIVE
+    return Row(dep.scheduled, destination, right, Style.NORMAL, via=dep.via if platforms else None,
+               platform=words.platform(dep.platform) if dep.platform and platforms else None)
 
 
 # A stop's name from the bus timetable is feed data: kept to one line of
@@ -289,7 +305,7 @@ def _leave(departures, walk: WalkTimes | None, now: str, wording: Wording, clock
 
 
 def _section(mode: str, departures, to_row, now, stale, walk, wording, clock, strips,
-             stop_names: Mapping[str, str]) -> Section:
+             stop_names: Mapping[str, str], words_for: tuple[str, str] | None = None) -> Section:
     upcoming = [d for d in departures if not d.is_gone(now)]
     rows = tuple(
         replace(to_row(d, walk, clock), strip=strips.get(strip_key(d)), stop_name=stop_names.get(d.stop or ""))
@@ -301,7 +317,8 @@ def _section(mode: str, departures, to_row, now, stale, walk, wording, clock, st
     else:
         text, index = _leave(upcoming, walk, now, wording, clock)
     item = mode_list.mode(mode)
-    return Section(item.label, rows, item.empty, stale, text, index, tuple(sorted(set(stop_names.values()))), mode)
+    label, empty = words_for or (item.label, item.empty)
+    return Section(label, rows, empty, stale, text, index, tuple(sorted(set(stop_names.values()))), mode)
 
 
 def build_view(
@@ -319,6 +336,7 @@ def build_view(
     last_bus: str | None = None,
     show: Collection[str] | None = None,
     scroll: bool = True,
+    labels: Mapping[str, tuple[str, str]] | None = None,
 ) -> BoardView:
     """A section for each mode in `departures`, in its order: its departures
     (settings/modes.py), each drawn as its mode's rows are. `clock`
@@ -331,6 +349,8 @@ def build_view(
     screen calls your bus stops, by label (see stop_names_shown). `last_bus`
     is when the last bus goes, for a screen in its last hour. Without
     `scroll`, a screen cuts text too long for its space short, as e-paper does.
+    `labels` give a mode's section its own (heading, empty words) in place of
+    its mode's: London's metro is "Underground", "DLR" and the like.
 
     `show` is what the board shows of what it can leave out (settings/show.py),
     None for all of it. What it leaves out is left out of the view, so no look
@@ -347,8 +367,10 @@ def build_view(
         names = (stop_names or {}) if kind == "bus" else {}
         to_row = to_rows[kind]
         if mode == "metro":
-            to_row = partial(_tram_row, several=len({d.stop for d in found}) > 1)
-        sections.append(_section(mode, list(found), to_row, now, mode in stale, walk, wording, clock, strips, names))
+            to_row = partial(_tram_row, several=len({d.stop for d in found}) > 1,
+                             lines=len({d.service for d in found}) > 1, platforms="platforms" in shown)
+        sections.append(_section(mode, list(found), to_row, now, mode in stale, walk, wording, clock, strips, names,
+                                 (labels or {}).get(mode)))
     return BoardView(
         title=title,
         sections=tuple(sections),

@@ -380,6 +380,17 @@ def _route_view(board: Board, state: dict, view: BoardView, now: datetime, clock
     )
 
 
+def _labels(board: Board) -> dict[str, tuple[str, str]]:
+    """A section's own heading and empty words, by mode, where its source
+    has them: London's metro is "Underground", "DLR" and the like."""
+    found = {}
+    for config in board.sources:
+        label, empty = getattr(config.source, "label", None), getattr(config.source, "empty", None)
+        if isinstance(label, str) and isinstance(empty, str):
+            found[config.source.name] = (label, empty)
+    return found
+
+
 def _stop_names(board: Board) -> dict[str, str]:
     """What a screen's bus rows call your stops, by label, from the bus
     source's timetable (sources/bodsbus.py); none when it has none to give,
@@ -481,6 +492,7 @@ def run_once(
         last_bus=_last_bus(board, now) if live and "last_bus" in board.show else None,
         show=board.show,
         scroll=board.scrolling,
+        labels=_labels(board),
     )
 
     code = _reset_code(board)

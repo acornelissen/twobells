@@ -6,7 +6,7 @@ from __future__ import annotations
 import sys
 from datetime import datetime
 
-from ..settings.config import is_enabled
+from ..settings.config import is_enabled, metrolink_on
 from ..settings.installs import install_named
 from ..sources.bodsbus import BodsBusSource
 from ..sources.holidays import bank_holidays
@@ -19,7 +19,7 @@ from .common import as_owner, load_settings, open_store
 def timetable_command(args) -> int:
     as_owner(args, open_store(args))
     data = open_store(args).data()
-    trams = isinstance(data.get("metro"), dict) and is_enabled(data, "metro")
+    trams = metrolink_on(data)  # London's come live from TfL: nothing to build
     codes = [_trams(args)] if trams else []
     # With trams alone, nothing need be said of buses.
     if not trams or "bus" in data:

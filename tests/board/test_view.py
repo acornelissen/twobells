@@ -631,3 +631,38 @@ def test_trams_say_when_to_leave_for_the_next_in_reach_by_their_own_walks():
     section = tram_view([tram("07:04"), tram("07:14")], walk=walk, wording=SIGN).section("metro")
     assert (section.leave, section.leave_for) == ("Leave by 07:08", 1)
     assert tram_view([tram("07:04")], walk=walk, wording=SIGN).section("metro").leave is None
+
+
+# London's, live from TfL (sources/tfl.py): their time is when they are expected.
+
+
+def tube(expected="07:04", dest="Epping", line="Central", stop="T", platform="6", via=None):
+    return Departure("metro", line, dest, expected, None, Status.ON_TIME, platform=platform, stop=stop, via=via)
+
+
+def test_a_live_row_says_live_on_e_paper_and_counts_down_on_a_screen():
+    section = tram_view([tube(), tube("07:00", "Ealing Broadway", platform="5")]).section("metro")
+    assert [(r.left, r.middle, r.right, r.platform) for r in section.rows] == [
+        ("07:04", "Epping", "Live", "Plat 6"), ("07:00", "Ealing Broadway", "Live", "Plat 5")]
+    screen = tram_view([tube(), tube("07:00")], clock="07:00:30").section("metro")
+    assert [r.right for r in screen.rows] == ["4 min", "Due"]
+
+
+def test_live_rows_from_several_lines_name_their_line_and_keep_their_via_words():
+    rows = tram_view([tube(), tube("07:05", "Edgware", "Northern", via="via Bank"),
+                      tube("07:06", "Bank", "DLR", stop="U", platform=None)]).section("metro").rows
+    assert [r.middle for r in rows] == ["Central: Epping", "Northern: Edgware", "DLR: Bank"]
+    assert rows[1].via == "via Bank" and rows[2].platform is None
+    # One line at two stops: each row names its stop instead.
+    rows = tram_view([tube(), tube("07:05", stop="U")]).section("metro").rows
+    assert [r.middle for r in rows] == ["T: Epping", "U: Epping"]
+
+
+def test_a_live_row_leaves_out_its_platform_when_the_board_does():
+    [row] = tram_view([tube(via="via Bank")], show=["disruption"]).section("metro").rows
+    assert row.platform is None and row.via is None
+
+
+def test_a_mode_s_section_can_have_its_own_heading_and_empty_words():
+    section = tram_view([], labels={"metro": ("Underground", "No trains")}).section("metro")
+    assert (section.label, section.empty_text) == ("Underground", "No trains")

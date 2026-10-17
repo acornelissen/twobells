@@ -16,6 +16,9 @@ NO_REPORT = "No report"
 TIMETABLE_ONLY = "Timetable only"
 # The same, after the bus's time on the board, where there is less room: "07:35 sch".
 SCHEDULED = "sch"
+# A London train or tram, live from TfL, on e-paper, where its time is when it is
+# expected and there is no booked time to be on time for. A screen counts down instead (due_in).
+LIVE = "Live"
 # A rail replacement bus, run in a train's place: in a train's platform column
 # on the board, and before its destination where there is no such column.
 BUS = "Bus"
@@ -53,6 +56,11 @@ def status(dep: Departure) -> str:
     if dep.status is Status.LATE:
         return expected(dep.expected) if dep.expected else DELAYED
     return NO_REPORT
+
+
+def due_in(minutes: int) -> str:
+    """How soon a live departure is due, as a countdown sign says it: "3 min", or "Due" in its last minute."""
+    return "Due" if minutes < 1 else f"{minutes} min"
 
 
 # Before a clock time to set off; on its own, the plain look's heading over its bus leave times.
