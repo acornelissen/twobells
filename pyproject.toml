@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "twobells"
-version = "0.2.0"
+version = "0.2.1"
 description = "Two Bells: know when to leave. Train and bus departures for Great Britain, on an e-paper or HDMI board on a Raspberry Pi and on a web dashboard, installed on a Pi, in Docker or on a desktop"
 readme = "README.md"
 requires-python = ">=3.11"
