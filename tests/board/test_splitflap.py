@@ -1,5 +1,6 @@
 import pytest
 
+from twobells.board.flaps import Flapper
 from twobells.board.panel import HDMI_1280X400, HDMI_1920X440
 from twobells.board.render import (
     SCREEN_PALETTE,
@@ -158,6 +159,27 @@ def test_the_same_field_keeps_its_key_when_its_text_changes(panel):
     status = {flap.key: flap.text for flap in after.flaps}
     changed = [flap.key for flap in before.flaps if status.get(flap.key) != flap.text]
     assert len(changed) == 1 and status[changed[0]] == "Exp 07:20"
+
+
+@pytest.mark.parametrize("panel", SCREENS, ids=lambda p: p.name)
+def test_rows_under_the_calling_at_line_turn_over_when_it_goes(panel):
+    # The first train leaves and the next has no "Calling at" line: every row
+    # moves up by the line's height, yet each still turns over to its new
+    # letters, as a Solari board's rows do, rather than changing at once.
+    calling = "Calling at: Dinting and Manchester Piccadilly."
+    before = (Row("07:12", "Glossop", "On time", platform="Plat 1", calling=calling), *TRAINS[1:])
+    after = (*TRAINS[1:], Row("08:42", "Glossop", "On time", platform="Plat 2"))
+    assert before[0].calling and after[0].calling is None
+    flapper = Flapper()
+    flapper.show(split_flap_frame(board(trains=before), P, panel).flaps, 0.0)
+    later = split_flap_frame(board(trains=after), P, panel).flaps
+    boxes = {box for box, _ in flapper.show(later, 1.0)}
+    turning = [flap.text for flap in later if flap.box in boxes]
+    # Each changed field of the three trains (Plat 1 to Plat 2 is one step of
+    # the drum, a single frame); the buses moved up too, but haven't changed.
+    assert turning == ["07:42", "Hadfield", "Exp 07:49",
+                       "08:12", "Cancelled",
+                       "08:42", "Glossop", "On time"]
 
 
 def test_text_that_scrolls_doesnt_turn_and_e_paper_never_does():

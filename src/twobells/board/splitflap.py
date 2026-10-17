@@ -39,7 +39,7 @@ from .render import (
 )
 from .route import RouteView
 from .scroll import Frame
-from .view import BoardView, Row, Style
+from .view import BoardView, Row, Section, Style
 
 # In pHAT pixels: tiles this far apart, with this much black between them,
 # this tall, and the letters on them this big. Tiles take more room than
@@ -145,8 +145,12 @@ class SplitFlapPainter(Painter):
         self.tiles = tiles
         self.tile_fill = palette.black if palette.tile is None else palette.tile
         self.flaps: list[Flap] = []
-        # The top of the row being drawn, whose fields turn over when they change.
-        self._row: int | None = None
+        # The section being drawn and how many of its rows are drawn so far.
+        self._section: str | None = None
+        self._index = 0
+        # The row being drawn, whose fields turn over when they change: its
+        # section and place in it, not its top, which the "Calling at" line moves.
+        self._row: tuple[str, int] | None = None
 
     def text(self, xy: tuple[float, float], text: str, font: ImageFont.FreeTypeFont, fill: int,
              image: Image.Image | None = None) -> None:
@@ -168,13 +172,13 @@ class SplitFlapPainter(Painter):
                 right: bool = False) -> None:
         """`text` on tiles. A field of the row being drawn, on the board
         itself and not scrolling, turns over when it changes: its key is the
-        row's top and where the field starts, or `right` for the status,
-        which is lined up on the right."""
+        row's section and place in it, and where the field starts, or `right`
+        for the status, which is lined up on the right."""
         draw_tiles(self.image if image is None else image, xy, text, self.tiles, ink, fill, self.paper)
         if image is not None or self._row is None or not self.live or not text:
             return
         x, y = int(xy[0]), int(xy[1])
-        key = (self._row, "right" if right else x)
+        key = (*self._row, "right" if right else x)
         box = (x, y, x + self.tiles.width(text), y + self.tiles.tile_height)
         paint = partial(tiles_image, font=self.tiles, ink=ink, fill=fill, paper=self.paper, palette=self.p)
         self.flaps.append(Flap(key, box, text, paint, right))
@@ -189,12 +193,22 @@ class SplitFlapPainter(Painter):
             self.letters((rain[1], s), rain[0], self.p.accent, self.tile_fill)
         self.letters((stamp_x, s), stamp, self.ink, self.tile_fill)
 
+    def section(self, section: Section, y: int, where_x: float | None = None) -> int:
+        """As the plain look's, counting the section's rows for their fields' keys."""
+        self._section, self._index = section.label, 0
+        try:
+            return super().section(section, y, where_x)
+        finally:
+            self._section = None
+
     def row(self, row: Row, y: int, platform_x: float | None = None, leave_x: float | None = None,
             where_x: float | None = None, train: bool = True, stop_room: float | None = None) -> None:
         """A row on tiles, its status coloured as status_colours says. A
         cancelled row isn't reversed out: its amber tiles say it."""
         layout = row_layout(row, self.f, self.width, self.s, platform_x, leave_x, where_x, stop_room)
-        self._row = y
+        if self._section is not None:
+            self._row = (self._section, self._index)
+            self._index += 1
         try:
             self.row_text(row, layout, y, train, self.ink, self.paper, self.p.accent)
             ink, fill = status_colours(row, self.p)
