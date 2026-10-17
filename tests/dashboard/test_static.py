@@ -2030,6 +2030,16 @@ def _css_block(at_rule):
     return rules
 
 
+def test_a_wall_tablet_s_board_too_narrow_for_its_columns_folds_its_rows_as_a_narrow_screen_does():
+    # Three boards side by side on a landscape wall tablet leave each about 420 px
+    # at 1376 px, too narrow for its columns, which ran into the next board's.
+    # Each board is a container there, and one narrower than 30rem takes the
+    # narrow screen's rows: the same rules, so they can't drift apart.
+    narrow = _css_block("@media (max-width: 64rem)")
+    assert "table.board.buses tr" in narrow  # the narrow screen's rows, not another 64rem block
+    assert _css_block("@container board (max-width: 30rem)") == narrow
+    assert "container: board / inline-size" in _css_rules(":root[data-kiosk] .boards > .panel")[0]
+
 def test_the_journey_line_keeps_its_shapes_in_forced_colours():
     # Forced colours (Windows High Contrast) drop backgrounds, which draw the
     # filled dots, the solid rail and the train; system colours draw them then.

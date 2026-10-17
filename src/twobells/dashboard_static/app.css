@@ -1671,10 +1671,68 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
   :root[data-kiosk] table.board th,
   :root[data-kiosk] table.board td { padding-block: var(--s-1); }
   :root[data-kiosk] table.board .c-stop .walk,
+  :root[data-kiosk] table.board .c-stop:not(:has(.towards)) .walk-sep,
   :root[data-kiosk] table.board .c-stop .more-sep { display: none; }
 }
 @media (max-width: 64rem) {
   :root[data-kiosk] table.board tr { padding-block: var(--s-1); }
+}
+/* Three boards side by side on a landscape wall tablet leave each too
+   narrow for its columns, which ran into the next board's. Each board is a
+   container there, and one narrower than 30rem folds its rows as a narrow
+   screen does: the rules of the narrow screens' block above, word for word
+   (test_static checks they stay so). Only the wall tablet's boards are
+   containers: elsewhere a board is never that narrow beside another. */
+:root[data-kiosk] .boards > .panel { container: board / inline-size; }
+@container board (max-width: 30rem) {
+  table.board, table.board tbody, table.board caption { display: block; }
+  table.board thead {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+  }
+  table.board tr {
+    display: grid;
+    gap: 0 var(--s-3);
+    align-items: start;
+    margin: 0;
+    padding: var(--s-2) 0;
+    border-top: 1px solid var(--line);
+  }
+  /* 18:20   Manchester Piccadilly     On time
+     Plat 1  arr 18:53 · 33 min      in 26 min */
+  table.board.trains tr {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "time dest status" "plat dest leave";
+  }
+  /* [237] Ashton-under-Lyne             4 min
+           Henry Street A · 8 min walk   in 2 min */
+  table.board.buses tr {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "line dest due" "line stop leave";
+  }
+  /* 18:25 sched.  Bury                 in 9 min
+                   Blue Line                     */
+  table.board.trams tr {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "time dest leave" "time stop leave";
+  }
+  table.board th, table.board td { display: block; width: auto; padding: 0; border: 0; }
+  table.board .c-time { grid-area: time; }
+  table.board .c-line { grid-area: line; }
+  table.board .c-dest { grid-area: dest; }
+  table.board .c-plat { grid-area: plat; font-size: var(--t-sm); color: var(--muted); }
+  table.board .c-status { grid-area: status; text-align: right; }
+  table.board .c-stop { grid-area: stop; font-size: var(--t-sm); }
+  table.board .c-due { grid-area: due; text-align: right; }
+  table.board .c-leave { grid-area: leave; text-align: right; }
+  table.board .c-stop .sub, table.board .c-stop .walk-sep { display: inline; }
+  /* The countdown says it; the clock time is in the sheet. */
+  table.board .leave-at { display: none; }
+  .cell-label { display: inline; margin-right: var(--s-1); font-size: var(--t-xs); color: var(--muted); }
+  .c-leave:has(.go) .cell-label { display: none; }
 }
 /* Nothing that looks as if it could be pressed. */
 :root[data-kiosk] table.board tbody tr[data-id] { cursor: auto; }
