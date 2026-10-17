@@ -247,6 +247,30 @@ def test_an_oversized_plain_file_is_skipped_and_said(tmp_path):
     assert said == ["Skipped https://x/1: more than the 10 bytes this install can read"]
 
 
+def test_a_plain_file_is_read_without_room_for_the_most_it_may_be(tmp_path):
+    # Reading it whole at once took room for the cap (200 MB) for a file of a few KB.
+    plain = tmp_path / "plain"
+    plain.write_bytes(TXC)
+    with open(plain, "rb") as file:
+        tracemalloc.start()
+        try:
+            found = list(timetable_documents(file))
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+    assert found == [TXC]
+    assert peak < 1_000_000
+
+
+def test_a_plain_file_exactly_at_the_cap_is_read(tmp_path):
+    plain = tmp_path / "plain"
+    plain.write_bytes(TXC)
+    with open(plain, "rb") as file:
+        assert list(timetable_documents(file, len(TXC))) == [TXC]
+    with open(plain, "rb") as file:
+        assert list(timetable_documents(file, len(TXC) - 1, skipped=lambda message: None)) == []
+
+
 def test_a_skipped_file_is_logged_by_default(tmp_path, caplog):
     plain = tmp_path / "plain"
     plain.write_bytes(TXC)

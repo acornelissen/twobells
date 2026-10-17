@@ -280,6 +280,21 @@ def _unpacked(archive: zipfile.ZipFile, member: zipfile.ZipInfo, reads: _Counted
     return b"".join(chunks)
 
 
+def _read_up_to(file: IO[bytes], max_bytes: int) -> bytes:
+    """A file, up to one byte more than `max_bytes`, read a chunk at a time:
+    one read of that many would take room for them all, however small the
+    file."""
+    chunks = []
+    size = 0
+    while size <= max_bytes:
+        chunk = file.read(min(_UNZIP_CHUNK, max_bytes + 1 - size))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        size += len(chunk)
+    return b"".join(chunks)
+
+
 def named_documents(blob: bytes | IO[bytes], max_bytes: int = MAX_XML_BYTES, *, name: str = "the timetable file",
                     skipped: Callable[[str], None] = log_skipped) -> Iterator[tuple[str, bytes]]:
     """(name, XML) for the TransXChange in a download: one file, called
@@ -296,7 +311,7 @@ def named_documents(blob: bytes | IO[bytes], max_bytes: int = MAX_XML_BYTES, *, 
             yield name, bytes(blob)
             return
         source.seek(0)
-        data = source.read(max_bytes + 1)
+        data = _read_up_to(source, max_bytes)
         if len(data) > max_bytes:
             skipped(too_big(name, max_bytes))
             return

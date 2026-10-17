@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Fixed
+
+- A bus timetable download that isn't a zip is read a chunk at a time. It was read in one go with room for the most an install reads, 200 MB on a desktop, however small the file; a file of a few KB now takes under 1 MB.
+
 ## [0.3.0] - 2026-10-17
 
 Trams and the Underground: Manchester's Metrolink from TfGM's timetable and London's metro live from TfL, with a choice of which modes each view shows.
