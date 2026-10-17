@@ -1660,6 +1660,19 @@ def test_the_fetch_service_is_listed(capsys):
         parser.parse_args(["fetch", "--install", "docker"])  # Docker and a desktop fetch in-process
 
 
+def test_the_timetable_command_says_it_builds_the_tram_timetable_too(capsys):
+    from twobells.cli import main as cli
+
+    parser = cli._parser()
+    listed = " ".join(parser.format_help().split())
+    assert "the bus timetable for your stops and the tram timetable for your tram stops, each if due" in listed
+    with pytest.raises(SystemExit):
+        parser.parse_args(["timetable", "--help"])
+    said = " ".join(capsys.readouterr().out.split())
+    assert "--force build each now, even within 6 hours of a failed build" in said
+    assert "the Metrolink tram timetable for your tram stops" in " ".join(cli.__doc__.split())
+
+
 def _query(tmp_path, what, config="", saved=""):
     """`twobells query` as the Pi's scripts ask it, with the board's store at tmp_path/state."""
     state = tmp_path / "state"

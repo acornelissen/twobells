@@ -7,7 +7,8 @@
   twobells demo     render sample data (a Glossop morning) to a PNG, no keys needed
   twobells emulate  run the board against a browser-based panel emulator
   twobells route    print a [bus.routes] block for the screen's bus page (run on a laptop)
-  twobells timetable  build the BODS bus timetable for your stops, if due
+  twobells timetable  build the BODS bus timetable for your stops and the Metrolink tram
+                          timetable for your tram stops, each if due
   twobells setup discover  find the bus operators serving your stops and print their settings
   twobells fetch    a Pi's internet work for its web server: the setup wizard's lookups and the
                           dashboard's pollers (twobells-fetch.service)
@@ -98,8 +99,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     probe.set_defaults(handler=probe_command)
 
-    tt = with_config(sub.add_parser("timetable", help="build the BODS bus timetable for your stops, if due"))
-    tt.add_argument("--force", action="store_true", help="build it now, as after changing operators")
+    tt = with_config(sub.add_parser(
+        "timetable", help="build the bus timetable for your stops and the tram timetable for your tram stops, "
+                          "each if due"))
+    tt.add_argument("--force", action="store_true",
+                    help="build each now, even within 6 hours of a failed build, as after changing operators")
     tt.add_argument("--install", choices=list(INSTALLS), default=DEFAULT_INSTALL,
                     help="what this runs on: a Pi reads less of each timetable file, to fit its memory")
     tt.set_defaults(handler=timetable_command)
