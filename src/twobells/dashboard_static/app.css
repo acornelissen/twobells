@@ -626,9 +626,11 @@ main:focus { outline: none; }
 /* --- Sections: plain on the page, no boxes. Narrow, one column: trains,
    buses, around here, the weather. From 75rem the weather sits beside Next
    to catch, which would otherwise leave half the width empty, as a wall
-   tablet's does; trains and buses side by side under them, and around here
-   last. The page's order stays as it reads narrow, departures first and the
-   weather, a sidebar there, last. --- */
+   tablet's does, with the alerts and the disruption line under the hero in
+   its column, so the weather's height isn't a band of nothing there; trains
+   and buses side by side under them, and around here last. The page's order
+   stays as it reads narrow, departures first and the weather, a sidebar
+   there, last. --- */
 
 .sections { display: grid; gap: var(--s-7); }
 .boards, .extras { display: grid; gap: var(--s-7); }
@@ -642,11 +644,15 @@ main:focus { outline: none; }
 .empty { margin: var(--s-2) 0; color: var(--muted); }
 @media (min-width: 75rem) {
   /* No gap between rows: an empty alert row or a hidden disruption line
-     would still leave its gap. The margins space them. */
+     would still leave its gap. The margins space them. The empty 1fr row
+     under the disruption line takes whatever height the weather has over
+     the hero's column, so the hero, the alerts and the line stay together
+     at its top. */
   :root:not([data-kiosk]) main {
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    grid-template-areas: "hero weather" "alert alert" "dis dis" "boards boards" "area area";
+    grid-template-rows: auto auto auto 1fr auto auto;
+    grid-template-areas: "hero weather" "alert weather" "dis weather" ". weather" "boards boards" "area area";
     gap: 0 var(--s-7);
     align-items: start;
   }
@@ -657,6 +663,8 @@ main:focus { outline: none; }
   .boards { grid-area: boards; display: flex; gap: var(--s-7); align-items: flex-start; }
   .boards > * { flex: 1 1 0; }
   .weather { grid-area: weather; }
+  /* Its column ends as the hero's does, on the disruption line's margin. */
+  :root:not([data-kiosk]) .weather { margin-bottom: var(--s-5); }
   .area { grid-area: area; margin-top: var(--s-7); }
   /* The weather beside the hero says the same rain sentence. */
   :root:not([data-kiosk]) .leave-rain { display: none; }
@@ -702,10 +710,10 @@ table.board .dest { font-size: var(--t-row); line-height: 1.3; }
    its sheet says it all, under Bus coming in. Its width is 0 so the long
    line doesn't widen the table: it takes the room the column has. */
 table.board .inbound { width: 0; min-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-/* In the Standard look the first train's calling points show two lines,
-   cut short; the train's sheet has its whole journey and its coaches.
-   The station looks scroll it, or show it whole with scrolling off. */
-:root[data-theme="modern"] .calling-at {
+/* The first train's calling points show two lines, cut short with "…", in
+   every look; the train's sheet has its whole journey and its coaches.
+   While the station looks scroll it (below), it is one line instead. */
+.calling-window {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -1422,13 +1430,14 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
 :root[data-theme="tft"] .badge.st-late { color: var(--pill-ink); background: var(--pill-late); }
 :root[data-theme="tft"] .badge.st-cancelled { color: var(--pill-bad-ink); background: var(--pill-bad); }
 
-/* --- The first train's "Calling at" line (board.js): wrapped, as any line
-   under a destination, and two lines at most in the Standard look. The Dot matrix, TFT and Split-flap looks scroll it
-   along one line instead, as the board's screen does in every look, in from
-   the right; never with scrolling text off in the settings
+/* --- The first train's "Calling at" line (board.js): two lines at most,
+   cut short, in every look. The Dot matrix, TFT and Split-flap looks scroll
+   it along one line instead, as the board's screen does in every look, in
+   from the right; never with scrolling text off in the settings
    (data-scrolling="off"), nor with reduced motion, nor on a wall tablet,
-   which hides the line. The window's width is 0 so the long line doesn't
-   widen the table: it takes the room the column has. --- */
+   which hides the line. Scrolling, the window is a block, not the clamp's
+   box, and its width is 0 so the long line doesn't widen the table: it
+   takes the room the column has. --- */
 
 @keyframes calling-scroll { to { transform: translateX(-100%); } }
 @media (prefers-reduced-motion: no-preference) {

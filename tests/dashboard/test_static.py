@@ -1823,8 +1823,16 @@ def test_from_75rem_the_weather_sits_beside_the_hero_over_the_boards():
     assert "display: grid" in main
     areas = re.search(r'grid-template-areas:\s*((?:"[^"]*"\s*)+);', main).group(1)
     rows = [row.split() for row in re.findall(r'"([^"]*)"', areas)]
-    assert rows[0] == ["hero", "weather"]
-    assert rows.index(["dis", "dis"]) < rows.index(["boards", "boards"]) < [r[0] for r in rows].index("area")
+    # The hero's column: Next to catch, the alerts and the disruption line, with the weather beside them all,
+    # and an empty row under them taking the weather's extra height, so no band of nothing opens under the hero.
+    assert rows[:4] == [["hero", "weather"], ["alert", "weather"], ["dis", "weather"], [".", "weather"]]
+    assert rows[4:] == [["boards", "boards"], ["area", "area"]]
+    heights = re.search(r"grid-template-rows:\s*([^;]+);", main).group(1).split()
+    assert heights == ["auto", "auto", "auto", "1fr", "auto", "auto"]
+    # Its column ends on the disruption line's margin, but not on a wall tablet, which fits one screen.
+    assert _css_value(".disruptions", "margin") == "0 0 var(--s-5)"
+    assert "margin-bottom: var(--s-5)" in wide[":root:not([data-kiosk]) .weather"]
+    assert "margin" not in wide[".weather"]
     # The wrappers step aside, so their sections are the grid's own items.
     assert "display: contents" in wide[".sections"] and "display: contents" in wide[".extras"]
     for selector, area in ((".leave", "hero"), (".weather", "weather"), (".disruptions", "dis"),
@@ -2159,10 +2167,26 @@ def test_the_calling_at_line_scrolls_in_every_look_but_standard_while_scrolling_
     for selector in selectors:
         assert selector.startswith(':root:is([data-theme="board"], [data-theme="tft"], [data-theme="flap"])'
                                    ':not([data-scrolling="off"]) '), selector
+    # Scrolling, the window is one line, not the clamp's two (see below).
+    window = re.search(r"\.calling-window\s*\{([^}]*)\}", motion).group(1)
+    assert "display: block;" in window and "white-space: nowrap;" in window
     # The settings say whether it scrolls: the page has no button of its own for it, nor remembers one.
     page = (STATIC / "index.html").read_text(encoding="utf-8")
     assert "calling-pause" not in page and "calling-pause" not in css
     assert "dashboard.calling" not in (STATIC / "board.js").read_text(encoding="utf-8")
+
+
+def test_the_calling_at_line_is_two_lines_cut_short_in_every_look_unless_it_scrolls():
+    # Standard, and every look with scrolling text off or reduced motion: two lines, then "…"; the sheet has
+    # the whole journey. The rule is for every look, not one of them.
+    window = ".calling-window"
+    assert _css_value(window, "display") == "-webkit-box"
+    assert _css_value(window, "-webkit-box-orient") == "vertical"
+    assert _css_value(window, "-webkit-line-clamp") == "2" and _css_value(window, "line-clamp") == "2"
+    assert _css_value(window, "overflow") == "hidden"
+    css = re.sub(r"/\*.*?\*/", "", (STATIC / "app.css").read_text(encoding="utf-8"), flags=re.S)
+    themed = [s for s, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css) if "calling" in s and "line-clamp" in body]
+    assert [s.strip() for s in themed] == [window]
 
 
 @needs_node

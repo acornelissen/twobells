@@ -257,9 +257,9 @@ export function applyScrolling(root, snapshot) {
 // The first row's "Calling at" line, in the server's words (core/calling.py):
 // "Calling at: Dinting, Broadbottom and Manchester Piccadilly. This train is
 // formed of 3 coaches." Every look but Standard (Dot matrix, TFT, Split-flap)
-// scrolls it along one line, as a station's screen does. With scrolling off
-// in the settings (applyScrolling) and with reduced motion it wraps; the
-// Standard look shows two lines of it, cut short (app.css).
+// scrolls it along one line, as a station's screen does. The Standard look,
+// and every look with scrolling off in the settings (applyScrolling) or with
+// reduced motion, shows two lines of it, cut short (app.css).
 
 // Seconds for one pass: a steady pace, whatever the line's length.
 export const callingSeconds = (text) => Math.round(8 + 0.2 * text.length);

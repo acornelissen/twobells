@@ -118,4 +118,4 @@ Dates come from GOV.UK, which lists England and Wales, Scotland, and Northern Ir
 
 ## Scrolling text
 
-`scrolling = true`, the default, scrolls text too long for its line: the dashboard's calling-at line in the Dot matrix, TFT and Split-flap looks, and long text on a board's HDMI screen. `scrolling = false` wraps the dashboard's line and has the screen cut long text short with `…`, as e-paper always does. It is **Scrolling text** on the General page of the settings. A device set to reduce motion never scrolls the dashboard's line.
+`scrolling = true`, the default, scrolls text too long for its line: the dashboard's calling-at line in the Dot matrix, TFT and Split-flap looks, and long text on a board's HDMI screen. `scrolling = false` cuts the dashboard's line to two lines with `…` and has the screen cut long text short with `…`, as e-paper always does. It is **Scrolling text** on the General page of the settings. A device set to reduce motion never scrolls the dashboard's line.
