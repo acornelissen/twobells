@@ -64,15 +64,15 @@ rotate = 0
 
 # What the board shows beside the departures' times, which always show:
 # "platforms", "where", "disruption", "rain", "last_bus", "bus_page",
-# "calling_at", "clock_page" and "announce_speaker" (all but the first four on
-# an HDMI screen only). "announce_speaker" is station announcements through
+# "calling_at", "clock_page" and "announce_speaker" (all but "platforms",
+# "disruption" and "rain" on an HDMI screen only). "announce_speaker" is station announcements through
 # the screen's speaker, with espeak-ng, never in [dashboard] quiet_windows; no
 # preset has it. Also What to show on the Board tab. Without it, everything
 # but the clock page (unless the older clock_page = true) and announcements.
 # [board]
 # show = ["platforms", "where", "disruption", "rain", "last_bus", "bus_page"]
 # Which modes of transport the board shows, a section each: "train", "bus"
-# and "metro" (Manchester's trams, from [metro]). Also Modes of transport on the Board tab.
+# and "metro" (Manchester's trams or London's metro, from [metro]). Also Modes of transport on the Board tab.
 # Without it, every mode set up. The 10.85" e-paper has room for 3, the Inky
 # pHATs for 2, and an HDMI screen for 3 in the station board, TFT and
 # split-flap looks and in the plain look up to text_size 12 (the 7.9") or 13
@@ -165,17 +165,24 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # ]
 
 # Optional: Manchester's Metrolink trams, from TfGM's timetable (free, no key;
-# booked times only, as live tram times aren't open to new users). Setup finds
-# the stops near home. Built hourly if due, weekly, by twobells timetable.
+# booked times only, as live tram times aren't open to new users), built
+# weekly by twobells timetable; or London's Underground, DLR, trams, cable car
+# and river buses, live from TfL (free; TFL_APP_KEY in secrets.env, optional,
+# raises TfL's allowance), each check a call to TfL for each stop. Not both:
+# all the stops are Metrolink's or all London's. Setup finds the stops near home.
 # [metro]
 # enabled = true          # false switches trams off; the stops are kept
 # rows = 3                # trams the board shows
 # directions = []         # only trams heading to these, like ["Bury"]
-# interval_minutes = 1    # reading the timetable costs nothing
+# interval_minutes = 1    # reading the timetable costs nothing; well within TfL's allowance
 # stale_after_minutes = 10
 # windows = ["Mon-Sun 05:00-23:59"]
-# [metro.stops]           # up to 4: label = 9400ZZMA and the stop's three letters
+# [metro.stops]           # up to 4: label = 9400ZZMA and the stop's three letters,
 # T = "9400ZZMAPIC"       # Piccadilly
+#                         # or TfL's code: 940GZZLU (Underground), 940GZZDL (DLR),
+#                         # 940GZZCR (trams) or 940GZZAL (cable car) and three
+#                         # letters, or 930G and a pier's three or four, like
+# T = "940GZZLUBNK"       # Bank, Underground, in place of Piccadilly
 # [metro.walk_minutes]
 # T = 6
 
