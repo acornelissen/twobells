@@ -925,7 +925,7 @@ DELAY_REPAY = {
     "station_name": Opt(str), "since": day, "least_minutes": one_of(15), "off": Opt(one_of("no_filter", "no_trains", "no_details_key")),
     "trains": [{
         "day": day, "scheduled": hhmm, "destination": str, "operator": str, "booked": hhmm, "arrived": hhmm,
-        "minutes_late": integer, "band": one_of(15, 30), "reported": bool,
+        "minutes_late": integer, "band": one_of(15, 30, 60, 120), "reported": bool,
     }],
 }
 PERFORMANCE = {"generated_at": at, "trains": PERFORMANCE_PART, "buses": PERFORMANCE_PART, "delay_repay": DELAY_REPAY}
