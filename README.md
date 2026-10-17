@@ -1,6 +1,6 @@
 # Two Bells
 
-**Know when to leave.** Live trains and buses for your station and stops in Great Britain, with the walk already worked out: a departure board by the door and a dashboard on your phone, from one small app you run at home.
+**Know when to leave.** Live trains and buses for your station and stops in Great Britain, and Manchester's trams or London's Underground where you have them, with the walk already worked out: a departure board by the door and a dashboard on your phone, from one small app you run at home.
 
 [![CI](https://github.com/acornelissen/twobells/actions/workflows/ci.yml/badge.svg)](https://github.com/acornelissen/twobells/actions/workflows/ci.yml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
@@ -13,15 +13,16 @@
 One install is one app with two views of the same departures:
 
 - **The board:** a Raspberry Pi with a four-colour Inky pHAT (250x122). The app also draws for a Waveshare 10.85" e-Paper (G) (1360x480), a Waveshare 7.9" HDMI screen (1280x400, on its side) and an 11.3" HDMI bar screen (1920x440); those are tested in software but not yet on the hardware.
-- **The dashboard:** a web page for a phone or computer at home, with the next 10 trains and buses, calling points and coaches, bus strips and maps, the weather, disruptions, punctuality history, a Performance page with Delay Repay, and station announcements.
+- **The dashboard:** a web page for a phone or computer at home, with the next 10 trains and 15 buses (and 10 trams), calling points and coaches, bus strips and maps, the weather, disruptions, punctuality history, a Performance page with Delay Repay, and station announcements.
 
-A Pi can run either view or both; Docker and a desktop run the dashboard. Each install has one settings site, at `/settings` on port 8090, with one password and a setup wizard that finds your station, stops, walk times and bus companies from your postcode. The examples use Glossop, with trains to Manchester and buses from two nearby stops (`examples/glossop.toml`).
+A Pi can run either view or both; Docker and a desktop run the dashboard. Each install has one settings site, at `/settings` on port 8090, with one password and a setup wizard that finds your station, bus and tram stops, walk times and bus companies from your postcode. Each view shows the modes of transport you choose. The examples use Glossop, with trains to Manchester and buses from two nearby stops (`examples/glossop.toml`).
 
 ## Why it's worth a place by your door
 
 - **It tells you when to leave, not just when it goes.** Every train and bus comes with your walk to its stop, so the page says *Leave now*, *Leave in 4 min* or *Go now*, and can remind you a minute before.
 - **Live trains, properly.** National Rail Darwin gives the platform, coaches, delays and their reasons, every calling point, and where the train is right now.
 - **Live buses, for free, all day.** Worked out the way [bustimes.org](https://bustimes.org) does it, from the BODS timetable plus live bus positions. A strip under each bus shows how many stops away it is.
+- **Trams and the Underground too.** Manchester's Metrolink from TfGM's own timetable, and London's Underground, DLR, trams, cable car and river buses live from TfL, each in a section of its own with its walk and when to leave.
 - **The things that change your plan.** Disruptions on your journeys, rain on its way, a new timetable starting soon, and which trains are *often late*.
 - **Yours, at home.** It runs on a Pi, a NAS or a laptop on your own network, with free API keys and no cloud account. The Pi's web server never connects to the internet, and releases are signed.
 - **Easy to read for everyone.** It is built to WCAG 2.2 AA, for the keyboard and screen readers, and always says what it means in words. Colour only backs the words up.
@@ -31,6 +32,10 @@ A Pi can run either view or both; Docker and a desktop run the dashboard. Each i
 The next trains and buses side by side, each with its walk, its countdown and where it is now:
 
 ![The train and bus boards: the 07:12 waiting at Hadfield and often late, the 07:42 cancelled, and buses with strips, the 341 two stops away and the 61's bus on its way](docs/images/dashboard-boards.png)
+
+Near a tram stop the trams have a section too; in London the Underground and DLR come live, with each line's colour and where each train is now:
+
+![London's Metro section for Bank: the Northern line to Edgware in 2 min between Borough and London Bridge, the Central line to Epping, the DLR to Lewisham, each with its platform, walk and when to leave, and a lift out of service at Bank](docs/images/dashboard-london.png)
 
 Open a train for its whole journey, or the area map for every bus on your lines:
 
@@ -63,7 +68,7 @@ An HDMI screen redraws every second, with a running clock and countdowns, two mo
 
 ## Set up in a few minutes
 
-No config files to write. Give the setup wizard your postcode or address: it finds your nearest stations and bus stops, works out the walk to each along real streets, finds your bus companies and builds their timetable.
+No config files to write. Give the setup wizard your postcode or address: it finds your nearest stations, bus stops and tram stops, works out the walk to each along real streets, finds your bus companies and builds their timetable.
 
 <p>
   <img width="49%" alt="Setup step 2: the five nearest stations with their distances, Glossop chosen, and trains filtered to those calling at Manchester (MAN)" src="docs/images/setup-station.png">
@@ -76,9 +81,10 @@ Everything else is on the settings site, in plain words, behind one password:
 
 ## What it covers
 
-- **Where it works:** trains anywhere in Great Britain. Bus times and positions from BODS cover England only. The rain warning works anywhere. Bank holidays follow England and Wales, Scotland or Northern Ireland.
+- **Where it works:** trains anywhere in Great Britain. Bus times and positions from BODS cover England only. Trams: Manchester's Metrolink and London's metro. The rain warning works anywhere. Bank holidays follow England and Wales, Scotland or Northern Ireland.
 - **Trains:** National Rail Darwin, via the Rail Data Marketplace. Free.
 - **Buses:** worked out the way [bustimes.org](https://bustimes.org) does, from the DfT's Bus Open Data Service (BODS) timetable for your stops plus live bus positions, free and checked all day. On the board, TransportAPI (free plan: 30 lookups a day) can stand in while there is no usable timetable.
+- **Trams:** Manchester's Metrolink from the timetable TfGM publishes each night (booked times, no key), and London's Underground, DLR, trams, cable car and river buses live from TfL's Unified API (free; an optional key raises TfL's allowance).
 - **Meaning is always in text** (`On time`, `Exp 07:49`, `Delayed`, `Cancelled`, `No report`, `sch`, `Not updating`). Colour only reinforces it, so both views work for colour-blind viewers, and the board works on a mono panel.
 
 ## Install
