@@ -1041,12 +1041,12 @@ def test_the_first_snapshot_has_every_section_empty():
     h = hub()
     body = snapshot(h)
     assert list(body) == ["version", "generated_at", "title", "walk", "quiet", "row_strips", "scrolling", "show",
-                          "trains", "buses", "weather", "disruptions", "timetable_changes"]
+                          "trains", "buses", "metro", "weather", "disruptions", "timetable_changes"]
     assert body["version"] == 1 and body["title"] == "Glossop"
-    assert body["walk"] == {"train": 10, "bus": {"A": 8, "B": 6}}
+    assert body["walk"] == {"train": 10, "bus": {"A": 8, "B": 6}, "metro": {}}
     assert body["quiet"] is False and body["row_strips"] is True and body["scrolling"] is True
     assert body["show"] == list(show.keys("dashboard"))  # everything, without a list
-    assert body["trains"] is body["buses"] is body["weather"] is body["disruptions"] is None
+    assert body["trains"] is body["buses"] is body["metro"] is body["weather"] is body["disruptions"] is None
     assert body["timetable_changes"] is None
 
 
@@ -1279,7 +1279,9 @@ def test_what_the_server_sends_is_what_the_page_was_built_for():
     h.publish("weather", weather_part(conditions(), datetime(2026, 10, 9, 8, 20, tzinfo=LONDON), status_block(), 50))
     h.publish("disruptions", real_disruptions())
     h.publish("timetable_changes", real_timetable_changes())
+    h.publish("metro", real_metro())
     sent = snapshot(h)
+    assert sent["metro"]["rows"] and any(r["replacement_bus"] for r in sent["metro"]["rows"])
     assert sent["trains"]["rows"] and sent["buses"]["rows"] and sent["weather"]["now"]
     positions = [r["position"] for r in sent["trains"]["rows"] if r["position"]]
     assert len(positions) == 3 and any(isinstance(p["strip"]["train_at"], float) for p in positions)
@@ -1373,3 +1375,35 @@ def test_bus_rows_and_maps_name_the_stop_with_its_sign_letter():
     assert lookup["bus"]["stop_name"] == "Henry Street (Stop A)"
     plain, _ = bus_row(next(l for l in found if l.departure.stop == "A"), POSITIONS, at(10, 14), WALK)
     assert plain["stop_name"] == "Henry Street"
+
+
+# Trams, from the timetable alone.
+
+
+def real_metro():
+    from tests.timetable.test_trams import NOW, read
+    from twobells.dashboard.snapshot import metro_part, tram_timetable_block
+    from twobells.timetable.trams import TramCall
+
+    timetable = read()
+    leaving = [(at.replace(tzinfo=LONDON), call) for at, call in timetable.leaving(NOW, 10)]
+    leaving.append((NOW.replace(hour=9, tzinfo=LONDON), TramCall("U", 540, "Pink Line", "East Didsbury", "WK")))
+    return metro_part(leaving, status_block(), tram_timetable_block("ready", timetable.built.replace(tzinfo=LONDON)),
+                      {"A": "9400ZZMAPIC", "U": "9400ZZMAGMX"}, {"9400ZZMAPIC": "Piccadilly"},
+                      WalkTimes(metro={"A": 5}))
+
+
+def test_trams_are_rows_from_the_timetable_alone_with_their_stops_and_walks():
+    part = real_metro()
+    assert part["label"] == "Trams"
+    assert part["stops"] == {"A": {"name": "Piccadilly", "code": "9400ZZMAPIC", "walk_min": 5},
+                             "U": {"name": None, "code": "9400ZZMAGMX", "walk_min": None}}
+    first = part["rows"][0]
+    assert (first["scheduled"], first["destination"], first["line"], first["replacement_bus"]) == (
+        "08:05", "Altrincham", "Replacement Bus", True)
+    assert (first["status"], first["status_text"], first["live"], first["expected"]) == (
+        "unknown", "Timetable only", False, None)
+    assert (first["stop_name"], first["walk_min"], first["leave_at"]) == ("Piccadilly", 5, "2026-10-19T08:00:00+01:00")
+    last = part["rows"][-1]
+    assert (last["stop"], last["stop_name"], last["walk_min"], last["leave_at"]) == ("U", None, None, None)
+    assert len({r["id"] for r in part["rows"]}) == len(part["rows"])

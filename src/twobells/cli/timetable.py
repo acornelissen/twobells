@@ -1,4 +1,5 @@
-"""The `timetable` command: build the BODS bus timetable for the board's stops, if due."""
+"""The `timetable` command: build the BODS bus timetable for the board's
+stops, and the Metrolink tram timetable for its tram stops, each if due."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ from ..settings.config import is_enabled
 from ..settings.installs import install_named
 from ..sources.bodsbus import BodsBusSource
 from ..sources.holidays import bank_holidays
+from ..sources.trams import TramTimetableSource
 from ..timetable.build import TimetableBusy, TimetableError
 from ..timetable.routesetup import document_limits
 from .common import as_owner, load_settings, open_store
@@ -16,6 +18,38 @@ from .common import as_owner, load_settings, open_store
 
 def timetable_command(args) -> int:
     as_owner(args, open_store(args))
+    data = open_store(args).data()
+    trams = isinstance(data.get("metro"), dict) and is_enabled(data, "metro")
+    codes = [_trams(args)] if trams else []
+    # With trams alone, nothing need be said of buses.
+    if not trams or "bus" in data:
+        codes.append(_buses(args))
+    return max(codes)
+
+
+def _trams(args) -> int:
+    """Build the tram timetable, if due: 0 built or not due, 1 failed."""
+    settings = load_settings(args, only={"metro"})
+    source = next((c.source for c in settings.board.sources if c.source.name == "metro"), None)
+    if not isinstance(source, TramTimetableSource):
+        return 0  # trams not on after all: nothing to build
+    try:
+        found = source.refresh_timetable(force=args.force)
+    except TimetableBusy:
+        print("Another tram timetable build is running, so this one is skipped")
+        return 0
+    except TimetableError as error:
+        print(f"Tram timetable not built: {error}", file=sys.stderr)
+        return 1
+    reason = source.unusable()
+    if found is None or reason:
+        print(f"No usable tram timetable: {reason}", file=sys.stderr)
+        return 1
+    print(f"Tram timetable: {len(found.calls)} departures at your tram stops, built {found.built:%a %d %b %H:%M}")
+    return 0
+
+
+def _buses(args) -> int:
     settings = load_settings(args, only={"bus"})
     source = next((c.source for c in settings.board.sources if c.source.name == "bus"), None)
     if not isinstance(source, BodsBusSource):

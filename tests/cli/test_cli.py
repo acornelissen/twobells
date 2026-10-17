@@ -2465,3 +2465,48 @@ def test_the_setup_address_is_this_pis_name(name, url):
     from twobells.cli.common import setup_url
 
     assert setup_url(name) == url
+
+
+# The tram timetable, built by the same command and timer.
+
+
+def test_timetable_builds_the_tram_timetable_too(bods_env, monkeypatch, capsys):
+    from tests.timetable.test_trams import read
+    from twobells.timetable import build as timetable
+    from twobells.timetable import trams
+
+    args, folder = bods_env
+    config = Path(args[1])
+    config.write_text(config.read_text() + '[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n')
+    seen = []
+
+    def fake_trams(folder, stops, now, force=False):
+        seen.append((stops, force))
+        made = read(stops=stops)
+        trams.save(folder, made)
+        return made
+
+    monkeypatch.setattr(trams, "refresh", fake_trams)
+    monkeypatch.setattr(timetable, "refresh", lambda *a, **k: None)  # no bus timetable to be had
+    assert main(["timetable", *args, "--force"]) == 1  # the buses' failure counts
+    out = capsys.readouterr()
+    assert seen == [({"T": "9400ZZMAPIC"}, True)]
+    assert "Tram timetable: 4 departures at your tram stops, built" in out.out
+    assert "No usable bus timetable" in out.err
+
+
+def test_timetable_with_trams_alone_says_nothing_of_buses(tmp_path, monkeypatch, capsys):
+    from twobells.timetable import trams
+    from twobells.timetable.build import TimetableError
+
+    config = tmp_path / "config.toml"
+    config.write_text(f'state_file = "{tmp_path / "state" / "state.json"}"\n[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n')
+
+    def fails(*args, **kwargs):
+        raise TimetableError("The tram timetable isn't a GTFS file")
+
+    monkeypatch.setattr(trams, "refresh", fails)
+    assert main(["timetable", "--config", str(config)]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == "Tram timetable not built: The tram timetable isn't a GTFS file\n"
+    assert "bus" not in captured.out

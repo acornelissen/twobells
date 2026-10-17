@@ -1,5 +1,5 @@
 [Unit]
-Description=Two Bells: build the BODS bus timetable if due
+Description=Two Bells: build the BODS bus timetable and the Metrolink tram timetable if due
 Wants=network-online.target
 After=network-online.target
 

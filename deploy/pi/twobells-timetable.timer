@@ -1,5 +1,5 @@
 [Unit]
-Description=Check hourly whether the bus timetable needs building (weekly, or when your stops change)
+Description=Check hourly whether the bus and tram timetables need building (weekly, or when your stops change)
 
 [Timer]
 OnBootSec=3min

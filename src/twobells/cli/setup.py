@@ -75,10 +75,13 @@ def discover_command(args) -> int:
 
 
 def _wants_timetable(store: Store) -> bool:
-    """Whether the board's buses are on and come from the BODS timetable,
-    in config.toml with the settings saved from the page over it."""
+    """Whether the board's buses are on and come from the BODS timetable, or
+    its trams are on (they come from TfGM's timetable alone), in config.toml
+    with the settings saved from the page over it."""
     data = store.data()
-    bus = data.get("bus")
+    bus, metro = data.get("bus"), data.get("metro")
+    if isinstance(metro, dict) and is_enabled(data, "metro"):
+        return True
     return isinstance(bus, dict) and is_enabled(data, "bus") and bus_source(bus) == "bods"
 
 
@@ -88,7 +91,8 @@ def query_command(args) -> int:
     keys are read and nothing is written.
       views            each view switched on (none: no lines)
       display          the display config.toml sets (it alone may)
-      needs-timetable  yes or no: whether buses come from the BODS timetable;
+      needs-timetable  yes or no: whether buses come from the BODS timetable,
+                       or trams from TfGM's;
                        exits 0 for yes and 1 for no, for `if`
     Settings that can't be read exit 2, saying why."""
     install = install_named(args.install)

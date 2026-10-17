@@ -58,6 +58,11 @@ class TramTimetableSource:
             self._loaded = (stamp, timetable.load(self._folder) if stamp else None)
         return self._loaded[1]
 
+    def built(self) -> datetime | None:
+        """When the saved timetable was built, in the board's zone; None without one."""
+        found = self._timetable()
+        return found.built.replace(tzinfo=self._zone) if found is not None else None
+
     def unusable(self) -> str | None:
         """Why the timetable can't be used right now, or None."""
         return timetable.unusable(self._timetable(), self._stops, self._clock().replace(tzinfo=None))

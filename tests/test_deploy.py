@@ -814,6 +814,8 @@ def test_install_and_update_ask_the_app_not_config_toml(name):
     ('[bus]\nsource = "bods"\n', "[bus]\nsource = \"transportapi\"\nenabled = false\n", False),  # buses switched off since
     ("[bus]\nsource = \"transportapi\"\n", "", False),  # TransportAPI
     ('[train]\ncrs = "GLO"\n', "", False),  # no buses at all
+    ('[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n', "", True),  # trams, from TfGM's timetable
+    ('[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n', "[metro]\nenabled = false\n", False),  # switched off
 ])
 def test_install_and_update_keep_the_bus_timetable_only_when_the_settings_want_it(tmp_path, name, config, saved,
                                                                                     wanted):

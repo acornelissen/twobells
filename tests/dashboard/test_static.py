@@ -810,6 +810,14 @@ BUS_ROW = {
     "inbound": Opt(INBOUND),
     "ghost": bool,
 }
+# One of your tram stops, by label, and a tram (or a replacement bus) from the timetable alone.
+TRAM_STOP = {"name": Opt(str), "code": str, "walk_min": Opt(integer)}
+TRAM_ROW = {
+    "id": row_id, "line": str, "destination": str, "stop": str, "stop_name": Opt(str),
+    "scheduled": hhmm, "scheduled_at": at, "expected": Opt(hhmm), "expected_at": Opt(at),
+    "status": ROW_STATUS, "status_text": str, "status_spoken": str, "live": bool, "replacement_bus": bool,
+    "walk_min": Opt(integer), "leave_at": Opt(at),
+}
 # A line and destination's last bus today (sources/lastbus.py).
 LAST_BUS = {
     "line": str, "destination": str, "stop": str, "scheduled": hhmm, "scheduled_at": at, "remaining": integer,
@@ -851,7 +859,7 @@ SNAPSHOT = {
     "version": integer,
     "generated_at": at,
     "title": str,
-    "walk": {"train": Opt(integer), "bus": MapOf(integer)},
+    "walk": {"train": Opt(integer), "bus": MapOf(integer), "metro": MapOf(integer)},
     "quiet": bool,
     "row_strips": bool,
     "scrolling": bool,
@@ -870,6 +878,13 @@ SNAPSHOT = {
         "stops": MapOf(BUS_STOP),
         "rows": [BUS_ROW],
         "last_buses": [LAST_BUS],
+    }),
+    "metro": Opt({
+        "label": str,
+        "status": STATUS,
+        "timetable": {"state": one_of("ready", "building", "missing"), "built": Opt(at)},
+        "stops": MapOf(TRAM_STOP),
+        "rows": [TRAM_ROW],
     }),
     "weather": Opt(WEATHER),
     "disruptions": Opt(DISRUPTIONS),

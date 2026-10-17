@@ -7,7 +7,8 @@
     "bus": {
       "A": 8,
       "B": 6
-    }
+    },
+    "metro": {}
   },
   "quiet": false,
   "row_strips": true,
@@ -1799,6 +1800,7 @@
       }
     ]
   },
+  "metro": null,
   "weather": {
     "status": {
       "last_success": "2026-10-10T06:49:30+01:00",

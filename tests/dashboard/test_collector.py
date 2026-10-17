@@ -1198,3 +1198,61 @@ def test_trains_that_have_left_are_followed_only_for_the_performance_page(tmp_pa
     assert setup.details.asked.count(IDS[1]) - asked_on_the_board == (1 if watched else 0)
     assert bool(history.following(datetime(2026, 10, 9, 23, 30, tzinfo=LONDON))) == watched
     history.close()
+
+
+# Trams, from the tram timetable (sources/trams.py).
+
+
+def _tram_collector(tmp_path, build_timetable=True, saved=True):
+    from dataclasses import replace
+
+    from tests.timetable.test_trams import NOW, STOPS, read
+    from twobells.sources.trams import TramTimetableSource
+    from twobells.timetable import trams
+
+    if saved:
+        trams.save(tmp_path, read())
+    clock = Clock(NOW.replace(tzinfo=LONDON))
+    source = TramTimetableSource(tmp_path, STOPS, LONDON, rows=10, clock=clock)
+    setup = Setup(tmp_path, train=False, buses=False, weather=False)
+    settings = replace(setup.settings, metro=source, metro_upkeep=source, metro_stops=STOPS,
+                       walk=WalkTimes(metro={"A": 5}))
+    hub = Hub("Glossop", settings.walk, clock=clock, monotonic=setup.monotonic)
+    collector = Collector(settings, hub, None, clock=clock, fetch_holidays=setup._holidays, random=lambda: 0.5,
+                          monotonic=setup.monotonic, build_timetable=build_timetable)
+    return collector, hub
+
+
+def test_trams_are_polled_every_minute_from_the_timetable(tmp_path):
+    collector, hub = _tram_collector(tmp_path)
+    assert collector.pollers()["trams"].step() == 60
+    part = json.loads(hub.current()[1])["metro"]
+    assert part["label"] == "Trams" and part["timetable"]["state"] == "ready"
+    assert part["timetable"]["built"] == "2026-10-19T07:55:00+01:00"
+    assert [(r["scheduled"], r["destination"]) for r in part["rows"]] == [
+        ("08:05", "Altrincham"), ("08:09", "Bury"), ("00:10", "Bury")]
+    assert part["stops"]["A"] == {"name": "Piccadilly", "code": "9400ZZMAPIC", "walk_min": 5}
+
+
+def test_without_a_tram_timetable_the_trams_say_why(tmp_path):
+    collector, hub = _tram_collector(tmp_path, build_timetable=False, saved=False)
+    collector.poll_trams()
+    part = json.loads(hub.current()[1])["metro"]
+    assert part["rows"] == [] and part["timetable"]["state"] == "missing"
+    assert part["status"]["note"] == "There is no tram timetable yet"
+    collector, hub = _tram_collector(tmp_path, saved=False)
+    collector.poll_trams()
+    assert json.loads(hub.current()[1])["metro"]["timetable"]["state"] == "building"  # until upkeep has tried
+
+
+def test_upkeep_builds_the_tram_timetable_and_only_with_build_timetable(tmp_path, monkeypatch):
+    from twobells.timetable import trams
+
+    built = []
+    monkeypatch.setattr(trams, "refresh", lambda folder, stops, now, force=False: built.append(stops))
+    collector, _ = _tram_collector(tmp_path, build_timetable=False)
+    collector.upkeep()
+    assert built == []
+    collector, _ = _tram_collector(tmp_path)
+    collector.upkeep()
+    assert built == [{"A": "9400ZZMAPIC"}]

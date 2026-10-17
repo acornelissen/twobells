@@ -1,6 +1,6 @@
 """The dashboard's pollers: fetch each feed on its own interval and publish it to the Hub.
 
-One thread per job (trains, buses, weather, upkeep, and a heartbeat that
+One thread per job (trains, buses, trams, weather, upkeep, and a heartbeat that
 keeps the snapshot's clock fresh and says whether a quiet window is on). A job that fails keeps the last good data
 on show, marked stale with a short error that never carries a key, and tries
 again later and later (up to five minutes apart, or its own interval if that
@@ -40,7 +40,11 @@ replaced whole, and the poller reads it again when it changes.
 
 The bus timetable is built by upkeep only with build_timetable (Docker and
 a desktop). Without it (the Pi, where its timer and the setup search build
-it) upkeep never downloads one, and the poller reads what they save. Either
+it) upkeep never downloads one, and the poller reads what they save. The
+tram timetable (timetable/trams.py) likewise: upkeep builds it with
+build_timetable, and on a Pi the timetable timer does. The trams come from
+it alone, booked times, so they are never recorded in the punctuality
+history. Either
 way a build that finds another running in the store is skipped
 (timetable.build) and tried again next hour.
 """
@@ -59,6 +63,7 @@ from zoneinfo import ZoneInfo
 
 from ..core.errors import safe_message
 from ..core.model import mark_platform_changes
+from ..setup.lookups import tram_stop_names
 from ..sources import holidays as _holidays
 from ..sources.darwin import DetailsUnavailable, ServiceGone, TrainBoard, TrainDetails
 from ..sources.disruptions import BusArea, RailArea, bus_disruptions, disruptions_part, train_disruptions
@@ -73,10 +78,12 @@ from .snapshot import (
     Hub,
     bus_observations,
     buses_part,
+    metro_part,
     status_block,
     timetable_block,
     train_observations,
     trains_part,
+    tram_timetable_block,
     weather_part,
 )
 
@@ -90,6 +97,7 @@ HEARTBEAT_SECONDS = 60.0
 HEALTHY_AGE = 180.0  # /healthz wants a snapshot rebuilt this recently
 BUS_DISRUPTIONS_SECONDS = 600.0
 TRAIN_INCIDENTS_SECONDS = 1800.0
+TRAMS_SECONDS = 60.0  # the tram timetable costs nothing to read
 _JITTER = 0.1  # intervals vary by this fraction either way, so jobs drift apart
 # Doublings of the interval a failing job's wait counts at most: far past any
 # backoff cap, and short of a float's range, which days of failures would pass.
@@ -259,6 +267,9 @@ class Collector:
         crs, filter_crs = settings.train_crs, settings.train_filter
         self._route_prefix = f"{crs}>{filter_crs}" if filter_crs else crs
         self._trains, self._buses, self._weather = _Feed(), _Feed(), _Feed()
+        self._trams = _Feed()  # data: the trams leaving, with when; fetched: when the timetable was built
+        self._tram_names = tram_stop_names()
+        self._trams_tried = not build_timetable  # has upkeep tried to build the tram timetable
         # How asking where the trains and the buses are is going, for the settings' Overview.
         self._train_positions, self._bus_positions = _Feed(), _Feed()
         # Where the first few trains are: their service details, asked for at
@@ -367,6 +378,16 @@ class Collector:
                                    {}, self._settings.walk)
         self._hub.publish("buses", part, lookups)
 
+    def _publish_trams(self, state: str | None = None) -> None:
+        settings = self._settings
+        built = self._trams.fetched
+        if state is None:
+            state = "ready" if built else "missing" if self._trams_tried else "building"
+        timetable = tram_timetable_block(state, built)
+        part = metro_part(self._trams.data or [], self._trams.status(), timetable, settings.metro_stops,
+                          self._tram_names, settings.walk)
+        self._hub.publish("metro", part)
+
     def _publish_weather(self) -> None:
         part = weather_part(self._weather.data, self._clock(), self._weather.status(), self._settings.rain_threshold)
         self._hub.publish("weather", part)
@@ -402,6 +423,8 @@ class Collector:
             self._publish_buses()
         elif self._settings.bus_note is not None:
             self._publish_bus_note()
+        if self._settings.metro is not None:
+            self._publish_trams()
         if self._settings.weather is not None:
             self._publish_weather()
         with self._disruptions_lock:
@@ -594,6 +617,28 @@ class Collector:
             self._bus_area = BusArea.from_schedule(board.schedule)
             self._publish_disruptions()
 
+    def poll_trams(self) -> None:
+        """The next trams from the tram timetable, which costs nothing to read."""
+        source = self._settings.metro
+        if source is None:  # pollers() only polls the feeds there are
+            return
+        reason = source.unusable()
+        if reason is not None:
+            # Nothing to show until a timetable is built; not an error to back off from.
+            self._trams.data, self._trams.fetched, self._trams.error = None, None, None
+            self._trams.note = _sentence(reason)
+            self._publish_trams()
+            return
+        try:
+            leaving = source.leaving()
+        except Exception as error:
+            self._trams.failed(error)
+            self._publish_trams()
+            raise
+        self._trams.worked(leaving, self._clock())
+        self._trams.fetched = source.built()
+        self._publish_trams("ready")
+
     def poll_weather(self) -> None:
         source = self._settings.weather
         if source is None:  # pollers() only polls the feeds there are
@@ -640,6 +685,17 @@ class Collector:
                 self._holidays = frozenset(found)
         except Exception as error:  # noqa: BLE001 - bank_holidays keeps the last list
             errors.append(error)
+        upkeep_trams = self._settings.metro_upkeep if self._build_timetable else None
+        if upkeep_trams is not None:
+            try:
+                upkeep_trams.refresh_timetable()
+            except TimetableBusy:
+                log.info("dashboard upkeep: another tram timetable build is running; trying again next hour")
+            except Exception as error:  # noqa: BLE001 - the saved timetable is kept
+                errors.append(error)
+            self._trams_tried = True
+            if "trams" in self._pollers:
+                self._pollers["trams"].wake()
         upkeep_bus = self._settings.bus_upkeep if self._build_timetable else None
         if upkeep_bus is not None:
             self._building = upkeep_bus.unusable() is not None
@@ -694,6 +750,8 @@ class Collector:
             add("trains", self.poll_trains, options.train_interval_seconds)
         if self._settings.bus is not None:
             add("buses", self.poll_buses, options.bus_interval_seconds)
+        if self._settings.metro is not None:
+            add("trams", self.poll_trams, TRAMS_SECONDS)
         if self._settings.weather is not None:
             add("weather", self.poll_weather, options.weather_interval_minutes * 60)
         if self._settings.bus_disruptions is not None:

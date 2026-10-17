@@ -68,7 +68,9 @@ STALE_S = 2 * HEARTBEAT_S  # older than this, the fetch service may have stopped
 READ_EVERY_S = 0.5  # how often the mirror looks at the file
 
 _FIELDS = ("v", "run", "made", "version", "snapshot", "lookups", "previous", "area", "healthy")
-_SNAPSHOT_FIELDS = ("version", "generated_at", "title", "walk", *PARTS)
+# The trams came later: an older fetch service, mid-upgrade, sends no "metro".
+_LATER_PARTS = ("metro",)
+_SNAPSHOT_FIELDS = ("version", "generated_at", "title", "walk", *(p for p in PARTS if p not in _LATER_PARTS))
 _OPTIONAL_FLAGS = ("quiet", "row_strips", "scrolling")
 # What the page shows ([dashboard] show): a list of the dashboard's items.
 _SHOW = "show"
@@ -110,7 +112,7 @@ def check(data, now: float) -> dict:
         raise Refused("made is in the future")
     check_int(top["version"], "version", 0, 2**53)
     # An older fetch service, mid-upgrade, sends no `quiet`, `row_strips`, `scrolling` or `show`.
-    snapshot = check_obj(top["snapshot"], _SNAPSHOT_FIELDS, (*_OPTIONAL_FLAGS, _SHOW))
+    snapshot = check_obj(top["snapshot"], _SNAPSHOT_FIELDS, (*_OPTIONAL_FLAGS, _SHOW, *_LATER_PARTS))
     for name in _OPTIONAL_FLAGS:
         if name in snapshot and not isinstance(snapshot[name], bool):
             raise Refused(f"{name} isn't true or false")

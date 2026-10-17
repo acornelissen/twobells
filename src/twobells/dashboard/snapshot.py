@@ -26,6 +26,7 @@ from typing import Protocol
 from ..core import announce, words
 from ..core.model import Departure, Status, iso, minutes_apart, real, zoned
 from ..core.walk import WalkTimes
+from ..settings import modes as mode_list
 from ..settings import show as show_items
 from ..sources.bodsbus import BusBoard
 from ..sources.darwin import (
@@ -40,13 +41,15 @@ from ..sources.darwin import (
 )
 from ..sources.lastbus import LastBus
 from ..sources.livebus import LiveDeparture, approach, where_words
+from ..sources.trams import departure as tram_departure
 from ..sources.weather import Conditions, Hour, rain_line
 from ..timetable.model import Schedule, StopPosition, sign_letter
 from ..timetable.roads import path
+from ..timetable.trams import TramCall
 from .enrich import bus_extras, train_arrival
 from .history import Observed, day_type
 
-PARTS = ("trains", "buses", "weather", "disruptions", "timetable_changes")
+PARTS = ("trains", "buses", "metro", "weather", "disruptions", "timetable_changes")
 TIMETABLE_STATES = ("ready", "building", "missing")
 # Positioned stops shown on a bus's map before yours.
 MAP_STOPS_BEFORE = 20
@@ -653,6 +656,57 @@ def buses_part(board: BusBoard | None, now: datetime, status: dict, timetable: d
     }, lookups
 
 
+# Trams, from TfGM's timetable alone (sources/trams.py): booked times, so
+# each row is "timetable only", as a bus with no live position is, and has
+# no punctuality history.
+
+
+def tram_row(leaves: datetime, call: TramCall, walk: WalkTimes, names: Mapping[str, str | None]) -> dict:
+    """A tram's row (or a replacement bus's). `leaves` is aware, in the board's zone."""
+    dep = tram_departure(leaves, call)
+    return {
+        "id": row_id("tram", f"{call.stop}|{iso(leaves)}|{call.line}|{call.destination}|{int(call.bus)}"),
+        "line": call.line,
+        "destination": call.destination,
+        "stop": call.stop,
+        "stop_name": names.get(call.stop),
+        "scheduled": dep.scheduled,
+        "scheduled_at": iso(leaves),
+        "expected": None,
+        "expected_at": None,
+        "status": dep.status.value,
+        "status_text": words.TIMETABLE_ONLY,
+        "status_spoken": words.TIMETABLE_ONLY,
+        "live": False,
+        "replacement_bus": call.bus,
+        "walk_min": walk.minutes(dep),
+        "leave_at": iso(leave_at(dep, leaves, None, walk)),
+    }
+
+
+def tram_timetable_block(state: str, built: datetime | None) -> dict:
+    """How the tram timetable stands: "ready" (built when), "building" or "missing"."""
+    if state not in TIMETABLE_STATES:
+        raise ValueError(f"Unknown timetable state {state!r}")
+    return {"state": state, "built": iso(built)}
+
+
+def metro_part(leaving: Iterable[tuple[datetime, TramCall]], status: dict, timetable: dict,
+               stops: Mapping[str, str], names: Mapping[str, str], walk: WalkTimes) -> dict:
+    """The trams section: its words (Trams), how its timetable stands, each
+    tram stop with its name and walk by label, and the rows. `stops` are
+    labels to stop codes, `names` stop codes to names."""
+    by_label = {label: names.get(code) for label, code in stops.items()}
+    return {
+        "label": mode_list.mode("metro").label,
+        "status": status,
+        "timetable": timetable,
+        "stops": {label: {"name": by_label[label], "code": code, "walk_min": walk.tram_stop(label)}
+                  for label, code in stops.items()},
+        "rows": [tram_row(leaves, call, walk, by_label) for leaves, call in leaving],
+    }
+
+
 def bus_observations(board: BusBoard, zone: tzinfo, polled: datetime) -> list[Observed]:
     """What a bus poll at `polled` (aware) showed, for the punctuality
     history: its board-local times in `zone`, the board's."""
@@ -794,7 +848,8 @@ class Hub:
         # `scrolling` whether the calling-at line may scroll (the scrolling
         # setting), and `show` what it shows of what it can leave out ([dashboard] show).
         shown = show_items.default("dashboard") if show is None else show
-        self._static = {"title": title, "walk": {"train": walk.train, "bus": dict(walk.bus)}, "quiet": False,
+        self._static = {"title": title, "walk": {"train": walk.train, "bus": dict(walk.bus),
+                                                 "metro": dict(walk.metro)}, "quiet": False,
                         "row_strips": row_strips, "scrolling": scrolling,
                         "show": show_items.ordered("dashboard", shown)}
         self._parts: dict[str, dict | list | None] = dict.fromkeys(PARTS)
