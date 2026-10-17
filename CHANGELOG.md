@@ -4,13 +4,17 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-17
+
+More buses shown live, and the Saturday 393 on the board. The bus timetable is built again once after updating.
+
 ### Changed
 
 - The dashboard lists up to 15 buses by default, up from 10: about half an hour across five stops. An install with **Most buses listed** (`[dashboard] bus_rows`) saved keeps its number, and a wall tablet still shows 4.
 
 ### Fixed
 
-- Saturday buses on High Peak's 393 show again. BODS has its timetable in two parts with the same revision number, Saturdays from September 2024 and weekdays from January 2026, and the app took the weekdays for a replacement, so it ended the Saturdays the day before they started: no Saturday 393 since. As bustimes.org does, a version of a timetable is now replaced only by one with a higher revision number; parts of the same revision all run. The bus timetable is built again once after updating (timetable format 6).
+- Saturday buses on High Peak's 393 now show. BODS has its timetable in two parts with the same revision number, Saturdays from September 2024 and weekdays from January 2026, and the app took the weekdays for a replacement, so it ended the Saturdays the day before they started: no Saturday 393 since. As bustimes.org does, a version of a timetable is now replaced only by one with a higher revision number; parts of the same revision all run. The bus timetable is built again once after updating (timetable format 6).
 - A bus coming in to work a journey that starts at your stop now counts at that journey's later stops of yours too, not only the first: the 61 at stop I at 16:30 was "Bus on its way" and the same journey at stop A at 16:31 "No live position". Each later stop is expected the timetable's time from the first stop after the bus is expected to leave there, never before its time, says "Bus on its way, due in 9 min" (counting down to the bus getting to that stop) and then "Bus waiting to start" (`Waiting to start` on a screen's row), and goes when the first stop's does. The dashboard's line under it names where the bus arrives ("Bus arriving at Henry Street from Ashton, ..."). The history records each stop's row once, with no delay for a bus only waiting in.
 
 ## [0.2.1] - 2026-10-17
@@ -95,7 +99,8 @@ The first release.
 - A network guard for the Pi's web server: nftables rules for it alone (`deploy/pi/twobells-web.nft`), loaded at boot by `twobells-guard.service` and matching the server by the cgroup systemd puts in their set (`NFTSet=`, systemd 254 or later, so Raspberry Pi OS Trixie on a Pi Zero or Pi 1), that keep it from connecting out to the internet and keep port 8090 to the home network. They back up the unit's systemd IP firewall, which a Pi Zero's kernel can't apply ("Preparation of BPF allow maps failed"). `install.sh` and `update.sh` install `nftables`. The server checks at start whether it can connect out, warns in its log if it can, and the settings' Overview shows **Network guard**: On, Off (a problem) or Can't tell.
 - A wall-tablet mode for the dashboard at `/?kiosk`: one screen with no controls, the station-board look by default, a shift of a pixel or two every few minutes against burn-in, dimmed in quiet hours, a large banner when the times stop updating, and a reload at 03:30.
 
-[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.2.1...main
+[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.2.2...main
+[0.2.2]: https://github.com/acornelissen/twobells/releases/tag/v0.2.2
 [0.2.1]: https://github.com/acornelissen/twobells/releases/tag/v0.2.1
 [0.2.0]: https://github.com/acornelissen/twobells/releases/tag/v0.2.0
 [0.1.0]: https://github.com/acornelissen/twobells/releases/tag/v0.1.0

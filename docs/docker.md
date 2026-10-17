@@ -22,10 +22,10 @@ Contents:
 
 ### Pick a release and check it
 
-Run the image by its version and its digest, so it can't change under you. On any computer with Docker and [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) 3.0 or later, for version 0.2.1 say:
+Run the image by its version and its digest, so it can't change under you. On any computer with Docker and [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) 3.0 or later, for version 0.2.2 say:
 
 ```bash
-VERSION=0.2.1
+VERSION=0.2.2
 docker pull "ghcr.io/acornelissen/twobells:$VERSION"    # prints "Digest: sha256:..."
 DIGEST=sha256:...    # the digest it printed
 cosign verify "ghcr.io/acornelissen/twobells@$DIGEST" \
@@ -33,7 +33,7 @@ cosign verify "ghcr.io/acornelissen/twobells@$DIGEST" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-`cosign verify` must end without an error: then that digest was built and signed by this project's release workflow for that version. Use the image as `ghcr.io/acornelissen/twobells:0.2.1@sha256:...`, with the digest in full. An older cosign says `no signatures found`: the release signs with cosign 3, which older versions can't find.
+`cosign verify` must end without an error: then that digest was built and signed by this project's release workflow for that version. Use the image as `ghcr.io/acornelissen/twobells:0.2.2@sha256:...`, with the digest in full. An older cosign says `no signatures found`: the release signs with cosign 3, which older versions can't find.
 
 `deploy/docker/docker-compose.ghcr.yml` in the project is a compose file for the published image, with the same settings as `docker-compose.yml`. Replace `X.Y.Z` and `DIGEST` in its `image:` line; until you do, compose refuses to run it.
 
@@ -77,7 +77,7 @@ Open `http://<NAS IP address>:8090/` and [set it up](setup-wizard.md). The code 
 
 ### Updating
 
-Check the new version as above, then replace the version and digest in the image line and start the container again from the new image. Your settings, keys, password, history and timetable stay in `/data`; the bus timetable is built again once if the new release keeps it differently, as 0.2.0 does (see [Bus times](buses.md#how-bus-times-are-worked-out)). Building from source, see [Built from source](#built-from-source).
+Check the new version as above, then replace the version and digest in the image line and start the container again from the new image. Your settings, keys, password, history and timetable stay in `/data`; the bus timetable is built again once if the new release keeps it differently, as 0.2.0 and 0.2.2 do (see [Bus times](buses.md#how-bus-times-are-worked-out)). Building from source, see [Built from source](#built-from-source).
 
 Going back to an older version, the older one may not read what a newer one keeps. The punctuality history is one: 0.1.0 reads only its version 1, and stops at the start, saying so in its log, if the history is newer. Before moving the history on, the newer version kept a copy of it as it was, `history.sqlite3.v1` in `/data`. To put it back (what was recorded since is lost), with the older image in place of `IMAGE` and your data volume or folder in place of `twobells-data`:
 
@@ -137,10 +137,10 @@ Container Station can't change an application's settings in place: to update, us
 
 ## Unraid
 
-`deploy/unraid/twobells.xml` is a template for Unraid's **Add Container** page. It is in each release's tarball. In Unraid's terminal (or over SSH, as root), for version 0.2.1 say:
+`deploy/unraid/twobells.xml` is a template for Unraid's **Add Container** page. It is in each release's tarball. In Unraid's terminal (or over SSH, as root), for version 0.2.2 say:
 
 ```bash
-VERSION=0.2.1
+VERSION=0.2.2
 cd /tmp
 base="https://github.com/acornelissen/twobells/releases/download/v$VERSION"
 curl -fLO "$base/twobells-$VERSION.tar.gz"

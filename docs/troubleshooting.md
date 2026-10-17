@@ -18,7 +18,7 @@ Start with the settings' [Overview](settings.md#overview): it says what is worki
 | The Overview says `From TransportAPI: there is no bus timetable yet` | The timetable hasn't been built, or the build failed | `journalctl -u twobells-timetable -n 20`; start it as in [Bus times](buses.md) |
 | The Overview says `From TransportAPI: the bus timetable is for other stops` | You changed the stops; it rebuilds within the hour | Wait, or start the timetable service |
 | The Overview says `From TransportAPI: the bus timetable is over four weeks old` | Its builds have been failing | `journalctl -u twobells-timetable -n 20` says why |
-| The Overview's bus timetable says **Out of date**: *it was built by an older version* | You updated, and the new release keeps the timetable differently (0.2.0 does) | Nothing: it is built again by itself within the hour, and the old one is used until then |
+| The Overview's bus timetable says **Out of date**: *it was built by an older version* | You updated, and the new release keeps the timetable differently (0.2.0 and 0.2.2 do) | Nothing: it is built again by itself within the hour, and the old one is used until then |
 | Buses not updating while the Overview says `From TransportAPI` | Outside `fallback_windows`, or the daily budget is spent | Fix the timetable (see the row above); TransportAPI is only a stand-in |
 | E-paper errors about chip select | SPI chip selects in use | Add `dtoverlay=spi0-0cs` to `/boot/firmware/config.txt` and reboot |
 | Screen black | Screen service not running | `systemctl status twobells-screen.service` |

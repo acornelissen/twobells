@@ -18,7 +18,7 @@ A Pi runs the board, the dashboard, or both. For the dashboard alone, [Docker](d
 Download a release's tarball and `SHA256SUMS` from the [releases page](https://github.com/acornelissen/twobells/releases), check the tarball against it, then run the installer from inside. On the Pi, with the version you want in the first line:
 
 ```bash
-VERSION=0.2.1
+VERSION=0.2.2
 base="https://github.com/acornelissen/twobells/releases/download/v$VERSION"
 curl -fLO "$base/twobells-$VERSION.tar.gz"
 curl -fLO "$base/SHA256SUMS"
@@ -87,4 +87,4 @@ What `update.sh` does:
 - Then it installs the new code, checks that imports too, refreshes the systemd units, loads the network guard afresh, restarts the fetch service and the web server (if it is running), starts a bus timetable build if buses come from BODS (`journalctl -u twobells-timetable -f` follows it), restarts the screen's service if it is running, and runs the e-paper board once if its timer is on.
 - `--config FILE` and `--secrets FILE` replace `/etc/twobells/config.toml` and `secrets.env` too (the secrets copy is shredded).
 
-After updating, the bus timetable is built again once if the new release keeps it differently, as 0.2.0 does (see [Bus times](buses.md#how-bus-times-are-worked-out)).
+After updating, the bus timetable is built again once if the new release keeps it differently, as 0.2.0 and 0.2.2 do (see [Bus times](buses.md#how-bus-times-are-worked-out)).
