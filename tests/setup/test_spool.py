@@ -526,6 +526,42 @@ def test_the_page_refuses_replies_that_dont_fit(board):
     assert os.listdir(replies) == []
 
 
+def replaced_once_opened(monkeypatch, path, then):
+    """Calls `then` once `path` is open, before Spool.read looks at it: as the
+    service writing a new status, renamed over the one the page opened."""
+    real_open = os.open
+
+    def opening(name, *args, **kwargs):
+        fd = real_open(name, *args, **kwargs)
+        if os.fspath(name) == os.fspath(path) and not done:
+            done.append(True)
+            then()
+        return fd
+
+    done = []
+    monkeypatch.setattr(os, "open", opening)
+
+
+def test_a_status_written_again_as_the_page_reads_it_is_read_new(board, monkeypatch):
+    # The service rewrites a search's status while the page may have it open;
+    # the old one has no name left then, and isn't a stranger's file.
+    spool = board.runner.spool
+    rid = "c" * 32
+    spool.write(spool.status, rid, {"v": 1, "id": rid, "ok": True, "beat": 1, "value": {}}, MAX_REPLY_BYTES)
+    path = spool.status / f"{rid}.json"
+    replaced_once_opened(monkeypatch, path, lambda: spool.write(
+        spool.status, rid, {"v": 1, "id": rid, "ok": True, "beat": 2, "value": {}}, MAX_REPLY_BYTES))
+    assert board.runner.reply(rid, delete=False, where=spool.status)["beat"] == 2
+
+
+def test_a_request_withdrawn_as_the_service_reads_it_is_gone_not_refused(board, monkeypatch, caplog):
+    path = put(board, request(board), name="a" * 32 + ".json")
+    replaced_once_opened(monkeypatch, path, path.unlink)
+    board.worker.step()
+    assert board.calls == [] and os.listdir(board.state / "spool" / "replies") == []
+    assert "Refused" not in caplog.text
+
+
 @pytest.mark.parametrize("kind, value", [
     ("postcode", {"lat": 48.85, "lon": 2.35, "label": "Paris", "country": "", "district": ""}),
     ("postcode", {"lat": 53.4, "lon": -1.9, "label": "a\nb", "country": "", "district": ""}),

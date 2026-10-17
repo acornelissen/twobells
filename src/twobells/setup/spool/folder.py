@@ -17,6 +17,7 @@ RUNTIME = Path("/run/twobells-fetch")  # the units' RuntimeDirectory
 MAX_REQUEST_BYTES = 16 * 1024  # the biggest, a walk to 25 places, is about 2 kB
 MAX_REPLY_BYTES = 512 * 1024  # the biggest, a search with route strips, is tens of kB
 TMP_MAX_AGE_S = 60.0
+READ_TRIES = 3  # a file renamed over as it is read is read again, this many times in all
 # How long the page waits for each answer: the service may first need to
 # start (several seconds on a Pi Zero), and NaPTAN's area files are big.
 WAITS = {"postcode": 30.0, "address": 30.0, "stops": 120.0, "walk": 30.0, "testkey": 45.0}
@@ -90,26 +91,33 @@ class Spool:
     def read(path: Path, cap: int, delete: bool) -> bytes | None:
         """A file's bytes; None if there is none. Refused if it isn't a plain
         file of ours, with one link, within `cap`. With `delete`, it is gone
-        afterwards whatever it held."""
-        try:
-            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | files.NOFOLLOW | files.CLOEXEC)
-        except FileNotFoundError:
-            return None
-        except OSError:  # a link, or something else that won't open as a file
-            if delete:
-                _remove(path)
-            raise Refused("not a plain file") from None
-        try:
-            info = os.fstat(fd)
-            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_nlink != 1
-                    or info.st_size > cap):
-                body = None
-            else:
-                body = os.read(fd, cap + 1)
-        finally:
-            os.close(fd)
-            if delete:
-                path.unlink(missing_ok=True)
+        afterwards whatever it held. One with no link left once open was
+        renamed over or deleted meanwhile (the service writes a search's
+        status again while the page reads it): the name is opened again."""
+        body = None
+        for _ in range(READ_TRIES):
+            try:
+                fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | files.NOFOLLOW | files.CLOEXEC)
+            except FileNotFoundError:
+                return None
+            except OSError:  # a link, or something else that won't open as a file
+                if delete:
+                    _remove(path)
+                raise Refused("not a plain file") from None
+            try:
+                info = os.fstat(fd)
+                gone = info.st_nlink == 0
+                if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_nlink != 1
+                        or info.st_size > cap):
+                    body = None
+                else:
+                    body = os.read(fd, cap + 1)
+            finally:
+                os.close(fd)
+                if delete:
+                    path.unlink(missing_ok=True)
+            if not gone:
+                break
         if body is None or len(body) > cap:
             raise Refused("not a plain file of ours within its size")
         return body
