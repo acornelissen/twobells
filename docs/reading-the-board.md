@@ -19,6 +19,8 @@ The board can run on three kinds of display. They all show the same information:
 | Waveshare e-paper | wide, 10.85" | Same as the pHAT, just bigger. |
 | HDMI screen | wide, 7.9" or 11.3" | Updates every second, with a running clock, countdowns, where each train and bus is, a second page showing where your bus is, and a platform clock page if you want one. |
 
+Each mode of transport the board shows has a section of its own: trains, then buses. A board set to show only one of them (**Modes of transport** on the settings' [Board](settings.md#board) page) has that section alone, with the room of both; one with both shares the rows between them, as in the pictures here.
+
 The words always carry the meaning. Colour and highlighting only back them up, so the board reads the same in black and white or to someone who is colour-blind.
 
 ## The station board look

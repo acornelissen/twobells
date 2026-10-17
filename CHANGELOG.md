@@ -4,6 +4,14 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Added
+
+- Choose which modes of transport each view shows: **Modes of transport** on the Board and Dashboard settings pages, and in the setup wizard's What to show step when you pick a station and stops, saved as `[board] modes` and `[dashboard] modes`. The board can show buses alone while the dashboard lists trains too, and a view checks only for the modes it shows. The board's display limits how many: each mode takes a section with its heading and at least a row, so the 10.85" e-paper has room for 3 and every other display for 2; the settings say so, and a `config.toml` naming more says how many fit and stops loading. This makes room for trams and metro, a third mode whose sources come next. An install with trains and buses keeps both, in the same order and with the same rows.
+
+### Changed
+
+- A board with only trains, or only buses, set up no longer draws an empty "No buses" or "No trains" section: the mode it shows takes the room. E-paper redraws once after updating.
+
 ## [0.2.3] - 2026-10-17
 
 Quieter bus rows on the dashboard.

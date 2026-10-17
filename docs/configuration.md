@@ -64,6 +64,7 @@ The Dashboard page's settings can also go under `[dashboard]` in `config.toml`. 
 | `history_days` | 90 | How many days of history to keep and show (1 to 3650) |
 | `row_strips` | `true` | Each row's small drawing of its stops, with the train or bus on it (never on a wall tablet) |
 | `show` | everything | What the dashboard shows beside the departures: see [What each view shows](#what-each-view-shows) |
+| `modes` | every mode set up | Which modes of transport the dashboard lists: see [Modes of transport](#modes-of-transport) |
 | `kb_incidents_url` | a placeholder | The engineering works address from the RDM Knowledgebase Incidents product page |
 | `allowed_hosts` | `[]` | Extra names the dashboard and settings answer to (`config.toml` only) |
 | `state_dir` | see [Where things are kept](#where-things-are-kept) | Where the app keeps its files (`config.toml` only) |
@@ -99,6 +100,31 @@ What no view shows isn't fetched either, so leaving things out saves calls to th
 | The bus positions between departure checks | The board's `where`, and its `bus_page` for the bus position page. The dashboard's come with its bus times |
 
 The rest, such as the calling points, coaches and the last buses, comes with the departures or from the bus timetable, so leaving it out saves no calls. `enabled = false` in `[weather]` still switches the forecast off altogether, whatever the lists say.
+
+## Modes of transport
+
+**Modes of transport** on the [Board](settings.md#board) and [Dashboard](settings.md#dashboard) pages saves which of trains and buses each view shows, `[board] modes` and `[dashboard] modes`, which can go in `config.toml` too:
+
+```toml
+[board]
+modes = ["bus"]           # the board shows buses alone
+
+[dashboard]
+modes = ["train", "bus"]  # the dashboard lists both
+```
+
+The modes are `train`, `bus` and `metro` (trams, metro and underground, which has no source yet, so it is never set up). Each view shows them in that order, a section each, and checks only for those it shows. Without a list, a view shows every mode set up: one whose table is there and not switched off with `enabled = false`. A mode a list names that isn't set up is left out, and a list that names none of those set up is as if there were none, so switching buses off never leaves a board showing buses alone with nothing. A list that isn't one (`modes = "bus"`, a mode named twice, `modes = []`) stops the view loading, and says why.
+
+The dashboard lists every mode it shows. The board has the room its display gives it, and a `[board] modes` naming more modes than that stops it loading, saying how many fit: `[board] modes: The Inky pHAT has room for 2 modes at most, each with its own section, not 3`. Without a list it shows the first of those set up that fit. Each mode needs a section with its heading (in the station board look, a dotted rule) and at least one whole row, in every look the display has and at every text size; the board's text is sized to the display's height, so it is height that counts, not inches:
+
+| Display | Room for | Why |
+|---|---|---|
+| Inky pHAT, original Inky pHAT | 2 | With 3, the plain look has room for a row each at the standard text size and none for the third from size 13; the original pHAT has none for it even then |
+| Waveshare 10.85" e-paper | 3 | The plain look has 3 trains, 2 buses and a tram at the standard size, a row each at the biggest |
+| 7.9" HDMI screen | 2 | 133 dots tall, little more than the pHAT, and a screen's "Calling at" line takes a row: a row each at the standard size, none for the third from size 13 |
+| 11.3" HDMI bar screen | 2 | A row each beside the "Calling at" line at the standard size, none for the third from size 14 |
+
+Trains and buses have always shared every display, so each has room for at least those two. Sharing the board, each mode has a row, then the first modes take theirs first, up to 3 trains and 2 buses on e-paper (3 on a screen), as before; a mode alone takes all the rows there are.
 
 ## Rain warning set-up
 

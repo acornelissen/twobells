@@ -71,6 +71,11 @@ rotate = 0
 # but the clock page (unless the older clock_page = true) and announcements.
 # [board]
 # show = ["platforms", "where", "disruption", "rain", "last_bus", "bus_page"]
+# Which modes of transport the board shows, a section each: "train" and "bus"
+# ("metro" has no source yet). Also Modes of transport on the Board tab.
+# Without it, every mode set up. The 10.85" e-paper has room for 3, every
+# other display for 2; naming more stops the board loading.
+# modes = ["train", "bus"]
 
 # Which views are on: "board" (a Pi only), "dashboard", or both. The setup
 # wizard and the General tab set it. Default: the board on a Pi, the
@@ -181,6 +186,7 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # "performance" also has the dashboard follow trains to the filter station for
 # Delay Repay, with RDM_DETAILS_API_KEY.
 # show = ["next_to_catch", "where", "disruptions", "weather", "last_buses", "area_map", "remind"]
+# modes = ["train", "bus"]        # which modes of transport it lists (default: every mode set up)
 # allowed_hosts = []              # extra host names the dashboard and settings answer to, like ["ds.home"]
 # Rail engineering works: the Knowledgebase Incidents address from the RDM
 # product page. Until it is set, they stay off, even with RDM_KB_API_KEY. The

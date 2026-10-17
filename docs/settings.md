@@ -57,6 +57,7 @@ How the board is doing is on the [Overview](#overview), under **On the board**: 
   - **Rotation:** if the display is mounted upside down (or, for the screen, on its side).
   - **Display:** which display `config.toml` sets. Changing it means switching services, so it's set there only.
   - Advanced: **Accent colour**, the look's own (amber for the station board, yellow for TFT and split-flap, red for plain) or another that stays readable on the look's background (a colour too faint on the background isn't offered); **Redraw at most every** so many minutes, e-paper only (lower means fresher but more wear and flicker; 2 is a good balance); **Text size**, the plain look only, 9 to 16 (11 is standard; bigger shows fewer departures on a small display).
+- **Modes of transport** (while trains and buses are both switched on): a tickbox for each, **Trains** and **Buses**, for which the board shows, each in a section of its own. A mode unticked isn't shown or checked for on the board, and the sections left take its room; the dashboard keeps its own choice. Each display has room for so many, and says so: the 10.85" e-paper for 3, every other display for 2, as the board's text is sized to the display's height and each mode needs a section with its heading and at least a row (see [Modes of transport](configuration.md#modes-of-transport)). Until you save, the board shows every mode switched on. Trams and metro join them once their source arrives.
 - **What to show:** a tickbox for each thing the board can show beside the departures' times, which always show. Anything unticked isn't drawn, and leaves no gap. Those marked **Screens only** show only on an HDMI screen; e-paper ignores them.
   - **Platforms:** each train's platform, a changed one marked, and its via words, on a display wide enough for a platform column.
   - **Where it is:** where each train and bus is, in words and a small strip (screens only).
@@ -78,6 +79,7 @@ How the board is doing is on the [Overview](#overview), under **On the board**: 
 ## Dashboard
 
 - **Departures**
+  - **Modes of transport** (while trains and buses are both switched on): which the dashboard lists, one after another; it has room for them all. A mode unticked isn't shown or checked for on the dashboard. Until you save, it lists every mode switched on.
   - **Most trains listed** and **Most buses listed:** 10 trains and 15 buses at first, 1 to 20 of each. The first 5 show; the rest are behind **Show later departures**. A wall tablet shows 4.
   - **Position strips in each row:** on or off. On, each departure row has a small drawing of its stops with the train or bus where it is; off, the rows keep their words without it. Neither shows while **What to show** leaves out **Where it is**. A wall tablet never shows them.
   - Advanced: **Check for trains every** and **Check for buses every** so many seconds; **Check the forecast every** so many minutes; **Count trains as late from** and **Count buses as late from** so many minutes, for the punctuality history; **Keep punctuality history for** so many days (1 to 3650).
