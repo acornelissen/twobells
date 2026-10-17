@@ -231,3 +231,60 @@ def test_a_part_that_unzips_to_more_than_it_may_is_refused(monkeypatch):
     monkeypatch.setattr(trams, "_MAX_OTHER_PART_BYTES", 100)
     with pytest.raises(TimetableTooBig):
         read()
+
+
+def _peak_bytes(work) -> int:
+    """The most memory `work()` held at once, by tracemalloc."""
+    import tracemalloc
+
+    tracemalloc.start()
+    try:
+        work()
+        return tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+
+@pytest.mark.parametrize("name", ["stop_times.txt", "agency.txt"])
+def test_an_over_long_line_is_read_past_a_piece_at_a_time(name):
+    # A hostile file's line can unzip to hundreds of MB from a small zip: it is never held whole.
+    parts = dict(PARTS)
+    header, rest = parts[name].split("\n", 1)
+    parts[name] = header + "\n" + "x" * 20_000_000 + "\n" + rest
+    archive = zipfile.ZipFile(io.BytesIO(gtfs(parts)))
+    found = []
+    assert _peak_bytes(lambda: found.append(trams.read_gtfs(archive, STOPS, NOW))) < 2_000_000
+    assert len(found[0].calls) == 4  # the lines after it are read as before
+
+
+def test_an_over_long_header_leaves_its_part_with_no_columns():
+    parts = dict(PARTS)
+    parts["agency.txt"] = "x" * 10_000 + "\n" + parts["agency.txt"]
+    with pytest.raises(trams.NotMetrolink):
+        read(parts)
+
+
+def test_a_file_of_too_many_parts_is_refused_before_they_are_read(tmp_path):
+    # zipfile holds every part it lists before any is read: 20,000 empty ones would take megabytes.
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive:
+        for name, text in PARTS.items():
+            archive.writestr(name, text)
+        for i in range(20_000):
+            archive.writestr(f"{i}", b"")
+    body = out.getvalue()
+    failed = []
+
+    def build():
+        try:
+            trams.refresh(tmp_path, STOPS, NOW, fetch=_fetch(body, []))
+        except TimetableError as error:
+            failed.append(str(error))
+
+    assert _peak_bytes(build) < 2_000_000
+    assert failed == [f"The tram timetable has more than {trams.MAX_PARTS} parts"]
+
+
+def test_a_file_with_parts_beside_gtfs_s_own_is_read(tmp_path):
+    parts = {**PARTS, **{f"extra{i}.txt": "a\n" for i in range(trams.MAX_PARTS - len(PARTS))}}
+    assert trams.refresh(tmp_path, STOPS, NOW, fetch=_fetch(gtfs(parts), [])) is not None

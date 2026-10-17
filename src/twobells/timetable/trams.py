@@ -67,6 +67,10 @@ MAX_DOWNLOAD_BYTES = 250_000_000
 _MAX_PART_BYTES = {"stop_times.txt": 2_000_000_000}
 _MAX_OTHER_PART_BYTES = 300_000_000
 _MAX_LINE = 4096  # characters in one CSV row; real ones are under 200
+# Parts in the zip: GTFS has about a dozen. zipfile holds each one listed
+# before any is read, so the list is checked first, and its bytes with it.
+MAX_PARTS = 100
+_MAX_LIST_BYTES = 100_000
 DOWNLOAD_TIMEOUT = 60.0
 # The most kept: departures at your stops over the file's weeks, and trips
 # and services Metrolink's. Real figures are a tenth of these or less.
@@ -209,14 +213,28 @@ def _rows(archive: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
     with archive.open(info) as raw:
         capped = io.BufferedReader(_Capped(raw, limit))
         text = io.TextIOWrapper(capped, encoding="utf-8-sig", errors="replace", newline="")
-        header = next(csv.reader([text.readline()]), [])
+        lines = _lines(text)
+        header = next(csv.reader([next(lines, "")]), [])
         columns = [column.strip() for column in header]
-        for line in text:
-            if len(line) > _MAX_LINE:
-                continue
+        for line in lines:
+            if not line:
+                continue  # longer than _MAX_LINE: left out
             # Most rows have no quotes, and splitting them is far quicker than csv on a Pi.
             values = line.rstrip("\r\n").split(",") if '"' not in line else next(csv.reader([line]), [])
             yield dict(zip(columns, values, strict=False))
+
+
+def _lines(text: IO[str]) -> Iterator[str]:
+    """Each line of `text`, never reading more than _MAX_LINE + 1 characters
+    at once: a hostile file's one line can unzip to hundreds of MB. A longer
+    line is read past a piece at a time, and comes out as ""."""
+    while line := text.readline(_MAX_LINE + 1):
+        if len(line) <= _MAX_LINE:
+            yield line
+            continue
+        while line and not line.endswith(("\n", "\r")):
+            line = text.readline(_MAX_LINE + 1)
+        yield ""
 
 
 class _Capped(io.RawIOBase):
@@ -490,6 +508,25 @@ def _failed_recently(folder: Path, stops: Mapping[str, str], now: datetime) -> b
         return False
 
 
+def _open(file: BinaryIO) -> zipfile.ZipFile:
+    """The zip in `file`. TimetableTooBig if it lists more than MAX_PARTS
+    parts, or more than _MAX_LIST_BYTES of them, checked in its end record
+    before zipfile reads the whole list into memory: a small hostile file can
+    list hundreds of thousands. The record is found by zipfile's own reader
+    (private, but there since Python 2), so the check reads what zipfile will;
+    were it gone, every build would fail, not go unchecked."""
+    end = zipfile._EndRecData(file)  # pyright: ignore[reportAttributeAccessIssue]
+    if end and (end[zipfile._ECD_ENTRIES_TOTAL] > MAX_PARTS  # pyright: ignore[reportAttributeAccessIssue]
+                or end[zipfile._ECD_SIZE] > _MAX_LIST_BYTES):  # pyright: ignore[reportAttributeAccessIssue]
+        raise TimetableTooBig(f"The tram timetable has more than {MAX_PARTS} parts")
+    file.seek(0)
+    archive = zipfile.ZipFile(file)
+    if len(archive.infolist()) > MAX_PARTS:  # its end record said fewer
+        archive.close()
+        raise TimetableTooBig(f"The tram timetable has more than {MAX_PARTS} parts")
+    return archive
+
+
 def refresh(folder: Path | str, stops: Mapping[str, str], now: datetime, *, force: bool = False,
             fetch: Download = download, url: str = GTFS_URL) -> TramTimetable | None:
     """The timetable to use, built again first if it is due or `force`d. A
@@ -508,7 +545,7 @@ def refresh(folder: Path | str, stops: Mapping[str, str], now: datetime, *, forc
                 fetch(url, file)
                 file.seek(0)
                 try:
-                    with zipfile.ZipFile(file) as archive:
+                    with _open(file) as archive:
                         timetable = read_gtfs(archive, stops, now)
                 except (zipfile.BadZipFile, EOFError, UnicodeError) as error:
                     raise TimetableError(f"The tram timetable isn't a GTFS file: {safe_message(error)}") from None
