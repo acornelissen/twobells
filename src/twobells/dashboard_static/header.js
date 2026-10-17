@@ -52,12 +52,14 @@ const CONNECTION = {
 // The pill as [state, icon, words]. While the page hears from the server,
 // trains or buses that have fallen behind say so instead; when it can't, that comes
 // first, with how long since it last did (`lastOk`, local ms, 0 for never).
+// Polling says no age: it is never more than 30 s, as a poll that fails
+// goes to offline, so the seconds would only tick.
 export function pill(state, snapshot, lastOk, nowMs) {
   const reaching = state === STATE.live || state === STATE.polling;
   const stale = reaching ? staleText(snapshot) : "";
   if (stale) return ["stale", "triangle-alert", stale];
   const [name, words] = CONNECTION[state] || CONNECTION[STATE.offline];
-  const since = state !== STATE.live && lastOk ? `, last update ${age((nowMs - lastOk) / 1000)}` : "";
+  const since = !reaching && lastOk ? `, last update ${age((nowMs - lastOk) / 1000)}` : "";
   return [CONNECTION[state] ? state : STATE.offline, name, words + since];
 }
 

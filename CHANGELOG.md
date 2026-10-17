@@ -36,6 +36,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 - Live buses are placed along the road the timetable saved between two stops (the bus maps' roads), up to 300 m from it, so a bus on a road that bends away from the straight line between its stops is tracked. Between stops with no saved road the straight line and its 150 m stay. Where a bus is near more than one part of its journey, the nearest wins, and only parts about as near are settled by which fits the timetable best, so a bus on a parallel road further on isn't placed there.
 - The dashboard's **Board look** button is now a **Look** list, on the Performance page too: Standard, Dot matrix (the old Board look), TFT and Split-flap. A browser that had the Board look keeps it.
 - The dashboard's header keeps the place, a larger clock and the status; **Look**, **Performance** and **Settings** move to a footer, on the Performance page too. Next to catch's **Remind me** is a small bell saying **Remind** at the top right, beside its label, and the departure sheet's is smaller.
+- The dashboard's status is quiet words while all is well (**Live**, or **Updating every 30 s** without a ticking age), and fills in amber or red only when something is wrong.
 - The user guide is a page per topic, indexed by `docs/user-guide.md`; the Docker pages are one, and the code layout is in `docs/architecture.md`.
 
 ### Fixed

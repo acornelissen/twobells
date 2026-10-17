@@ -446,25 +446,26 @@ button.link:hover:not(:disabled) { background: none; text-decoration-thickness: 
 .clock { margin: 0; font-size: var(--t-clock); font-weight: 600; }
 /* Set tight, so the bigger clock doesn't make the header taller than it needs. */
 :root:not([data-kiosk]) .top .clock { line-height: 1.1; }
+/* The status: quiet words while all is well (live, or polling every 30 s);
+   filled, in the late or bad colours, only when something is wrong, so a
+   glance at the header finds a problem and passes over the rest. */
 .connection {
   display: inline-flex;
   align-items: center;
   gap: var(--s-2);
   margin: 0;
-  padding: var(--s-1) var(--s-3);
+  padding: var(--s-1) 0;
   border-radius: 999px;
   font-size: var(--t-sm);
   font-weight: 500;
-  color: var(--unk-fg);
-  background: var(--unk-bg);
+  color: var(--muted);
 }
 .connection .icon { width: 0.75em; height: 0.75em; }
-.connection[data-state="live"] { color: var(--ok-fg); background: var(--ok-bg); }
-.connection[data-state="live"] .icon { fill: currentColor; }
+.connection[data-state="live"] .glyph { color: var(--ok-fg); }
+.connection[data-state="live"] .icon { width: 0.5rem; height: 0.5rem; fill: currentColor; }
 .connection[data-state="reconnecting"],
-.connection[data-state="polling"],
-.connection[data-state="stale"] { color: var(--late-fg); background: var(--late-bg); }
-.connection[data-state="offline"] { color: var(--bad-fg); background: var(--bad-bg); }
+.connection[data-state="stale"] { padding-inline: var(--s-3); color: var(--late-fg); background: var(--late-bg); }
+.connection[data-state="offline"] { padding-inline: var(--s-3); color: var(--bad-fg); background: var(--bad-bg); }
 /* The Look picker, in the footer: the browser's own list, with its label,
    at the size of the quiet buttons. */
 .look { display: inline-flex; align-items: center; gap: var(--s-2); font-weight: 500; }

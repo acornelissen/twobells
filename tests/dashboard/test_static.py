@@ -1617,6 +1617,8 @@ def test_the_status_pill_follows_the_trains_and_buses_only():
                                  disruptions: { status: { bus: { ...ok(at("06:30")), stale: true },
                                                           train: { ...ok(null), error: "no key" } } } }), t, t),
           pill("polling", snapshot({ weather: { status: { ...ok(at("06:00")), stale: true } } }), 0, t),
+          // Polling says no age: a failed poll goes offline, so it is never more than 30 s.
+          pill("polling", snapshot({}), t - 12000, t),
           // Losing the server comes first, with how long ago it last answered.
           pill("reconnecting", snapshot({ buses: { status: { ...ok(at("06:40")), stale: true } } }), t - 120000, t),
           pill("connecting", null, 0, t),
@@ -1627,6 +1629,7 @@ def test_the_status_pill_follows_the_trains_and_buses_only():
         ["stale", "triangle-alert", "Not updated since 06:40"],
         ["stale", "triangle-alert", "Not updated yet"],
         ["live", "circle", "Live"],
+        ["polling", "refresh-cw", "Updating every 30 s"],
         ["polling", "refresh-cw", "Updating every 30 s"],
         ["reconnecting", "circle-dashed", "Reconnecting…, last update 2 min ago"],
         ["connecting", "circle-dashed", "Connecting…"],
