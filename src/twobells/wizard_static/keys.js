@@ -31,7 +31,7 @@ const SIGN_UP = {
   ],
   TFL_APP_KEY: [
     "Optional: London's times work without it. Sign up at api-portal.tfl.gov.uk and confirm your email address.",
-    "Sign in, open Products and subscribe (free) to 500 Requests per min.",
+    "Sign in, open Products and subscribe (free) to the 500 requests data plan.",
     "Open your Profile and copy the Primary key.",
   ],
 };

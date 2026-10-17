@@ -315,11 +315,11 @@ With `source = "transportapi"` under `[bus]`, `twobells probe bus` checks it dir
 
 ### Subscribe
 
-Sign in, open **Products**, and subscribe to **500 Requests per min**. It is free, and approved straight away.
+Sign in, open **Products**, and subscribe to the **500 requests data plan**. It is free, and approved straight away.
 
 ### Find the key
 
-Open your **Profile**. Under your subscription are a **Primary key** and a **Secondary key**; copy the **Primary key**.
+After subscribing, TfL takes you to your **Profile**, where your keys are shown under the subscription; copy one of them (the **Primary key** if there are two).
 
 ### Put it in
 
