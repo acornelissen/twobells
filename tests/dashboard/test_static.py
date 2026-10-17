@@ -2291,13 +2291,13 @@ def test_a_row_with_a_position_draws_its_strip_small_beside_its_words():
     # drawn), the 08:12 on its way. One drawing each, hidden: the words say it.
     assert found["trains"] == [[1, "true", 0, "Not started yet: leaves Hadfield at 07:11"], None,
                                [1, "true", 1, "Left Hadfield 08:04, on time"]] + [None] * 7
-    # Every bus with stops to draw, live or not, as before the rows were
-    # redesigned: a timetable-only bus (the 07:50) shows its stops and yours
-    # with no bus on them, and says so, as does one whose bus is coming in to
-    # work it (the 07:20) until it turns round. The 07:05 has gone (just missed).
+    # A live bus shows its stops, as does one whose bus is coming in to work
+    # it (the 07:20), with no bus on them until it turns round. A bus known
+    # only from the timetable (the 07:50) has no strip, though it has stops to
+    # draw: an empty strip says nothing. The 07:05 has gone (just missed).
     assert found["buses"] == [[1, "true", 1, "2 stops away"], [1, "true", 0, "Bus on its way, due in 14 min"],
                               [1, "true", 1, "4 stops away"], None,
-                              [1, "true", 0, "Not on the route yet"], [1, "true", 0, "No live position"],
+                              [1, "true", 0, "Not on the route yet"], None,
                               None, None, None]
 
 
@@ -2305,6 +2305,90 @@ def test_a_row_with_a_position_draws_its_strip_small_beside_its_words():
 def test_a_wall_tablet_row_has_no_position_strip():
     found = run_js(KIOSK + _boards() + ROW_STRIPS)
     assert found == {"trains": [None] * 4, "buses": [None] * 4}
+
+
+# The bus board on the sample morning (07:01:30), with `change` run on the
+# snapshot's rows first: `bus("07:35")` is that row. Each row by its time, as
+# [where-words, strips drawn, ghost warnings, the Due cell said].
+def _untracked(change, kiosk=False):
+    script = _boards().replace("observeSnapshot(snapshot.generated_at);", f"""
+const bus = (time) => snapshot.buses.rows.find((row) => row.scheduled === time);
+const at = (hms) => `2026-10-10T${{hms}}+01:00`;
+{change}
+observeSnapshot(snapshot.generated_at);""", 1)
+    return run_js((KIOSK if kiosk else "") + script + """
+        const byId = new Map(snapshot.buses.rows.map((row) => [row.id, row.scheduled]));
+        console.log(JSON.stringify(Object.fromEntries(bodyRows("buses-board").map((tr) => [byId.get(tr.dataset.id), [
+          byClass(tr, "where").map(said).join(""), byClass(tr, "row-strip").length, byClass(tr, "ghost").length,
+          said(cell(tr, "c-due"))]]))));
+    """)
+
+
+@needs_node
+def test_a_timetable_only_bus_far_off_says_nothing_but_its_time():
+    found = _untracked("")
+    # The 07:50, leave at 07:42: 40 minutes off. Its stops are known, but it
+    # has no strip and no words; the Due cell says it is the timetable's.
+    assert found["07:50"] == ["", 0, 0, "07:50, timetable only"]
+    assert found["08:24"] == ["", 0, 0, "08:24, timetable only"]
+    # A live bus keeps its strip and words, as does one whose bus is coming in.
+    assert found["07:09"][:2] == ["2 stops away", 1]
+    assert found["07:20"][:2] == ["Bus on its way, due in 14 min", 1]
+
+
+@needs_node
+def test_a_timetable_only_bus_says_not_tracked_yet_within_10_minutes_of_leaving():
+    found = _untracked("""
+bus("07:35").leave_at = at("07:11:00");  // 9.5 min to leave: near
+bus("07:50").leave_at = at("07:12:00");  // 10.5 min: still far
+bus("08:05").leave_at = null; bus("08:05").scheduled_at = at("07:11:00");  // no walk: counts to its time
+bus("08:09").leave_at = at("07:05:00"); bus("08:09").live = true;  // live: never
+bus("08:24").leave_at = at("07:05:00"); bus("08:24").status = "cancelled";  // cancelled: never
+""")
+    assert found["07:35"] == ["Not tracked yet", 0, 0, "07:35, timetable only"]
+    assert found["07:50"][:3] == ["", 0, 0]
+    assert found["08:05"][:3] == ["Not tracked yet", 0, 0]
+    assert "Not tracked yet" not in found["08:09"][0]
+    assert found["08:24"][0] == ""
+
+
+@needs_node
+def test_a_timetable_only_bus_at_its_time_gives_the_warning_instead():
+    found = _untracked("""
+bus("07:35").leave_at = at("07:03:00"); bus("07:35").ghost = true;
+""")
+    # The server's "May not be running" warning says more; no second line.
+    assert found["07:35"] == ["", 0, 1, "07:35, timetable only"]
+
+
+@needs_node
+def test_a_wall_tablet_says_not_tracked_yet_too():
+    found = _untracked('bus("07:35").leave_at = at("07:11:00");', kiosk=True)
+    assert found["07:35"][:2] == ["Not tracked yet", 0]
+
+
+@needs_node
+def test_the_board_is_drawn_again_when_a_bus_comes_near():
+    found = run_js(_boards() + """
+        import { tickBoards, NOT_TRACKED_WITHIN_MS } from "./board.js";
+        import { observe } from "./time.js";
+        // The 07:50 leaves at 07:42: near from 07:32.
+        const leave = Date.parse("2026-10-10T07:42:00+01:00");
+        const words = () => byClass(bodyRows("buses-board").find((tr) => tr.dataset.id === "d0aaaac897c1382c"), "where")
+          .map(said).join("");
+        // Just before: earlier rows have gone, so draw the boards as they are then.
+        observe(leave - NOT_TRACKED_WITHIN_MS - 30_000);
+        renderTrains(snapshot, alerts);
+        renderBuses(snapshot, alerts);
+        const before = [tickBoards(), words()];
+        observe(leave - NOT_TRACKED_WITHIN_MS + 30_000);
+        const after = tickBoards();
+        renderBuses(snapshot, alerts);
+        console.log(JSON.stringify({ before, after: [after, words()], within: NOT_TRACKED_WITHIN_MS }));
+    """)
+    assert found["within"] == 10 * 60_000
+    assert found["before"] == [False, ""]
+    assert found["after"] == [True, "Not tracked yet"]
 
 
 # The page as a snapshot saying row_strips marks it, before the boards are drawn.
@@ -2327,7 +2411,7 @@ def test_rows_draw_their_strips_when_the_setting_is_on_or_unsaid(setting):
     # A snapshot from an older server has no row_strips: they are on.
     found = run_js(_row_strips(setting) + _boards() + ROW_WHERE)
     assert [n for n, _ in found["trains"]] == [1, 0, 1] + [0] * 7
-    assert [n for n, _ in found["buses"]] == [1, 1, 1, 0, 1, 1, 0, 0, 0]
+    assert [n for n, _ in found["buses"]] == [1, 1, 1, 0, 1, 0, 0, 0, 0]
 
 
 @needs_node
@@ -2337,7 +2421,7 @@ def test_with_the_setting_off_rows_draw_no_strips_and_row_1_still_says_where():
     # words, a later train row says nothing, and a bus row keeps its words.
     assert found["trains"] == [[0, "Not started yet: leaves Hadfield at 07:11"]] + [[0, ""]] * 9
     assert found["buses"] == [[0, "2 stops away"], [0, "Bus on its way, due in 14 min"], [0, "4 stops away"],
-                              [0, ""], [0, "Not on the route yet"], [0, "No live position"], [0, ""], [0, ""], [0, ""]]
+                              [0, ""], [0, "Not on the route yet"], [0, ""], [0, ""], [0, ""], [0, ""]]
 
 
 @needs_node

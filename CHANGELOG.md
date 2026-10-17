@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Changed
+
+- A bus known only from the timetable is quieter in the dashboard's rows. It used to say "No live position" under every one, with an empty strip, beside the "sched." that already said it. Now it shows only its time and "sched." until 10 minutes before you'd need to leave for it (before its time, with no walk set), then "Not tracked yet" on one quiet line, and once it is due the "May not be running: no tracker yet" warning, as before. Live buses, and buses whose bus is coming in, keep their strips and words; the bus's sheet still draws its stops, and screen readers still hear "timetable only" with its time. The snapshot's fields are unchanged.
+
 ## [0.2.2] - 2026-10-17
 
 More buses shown live, and the Saturday 393 on the board. The bus timetable is built again once after updating.

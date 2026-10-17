@@ -12,6 +12,8 @@
 // tablet (kiosk.js) there are no controls: 4 rows, the destination as text.
 // Rows draw their position strips unless the settings turned them off
 // (applyRowStrips marks <html data-row-strips="off">) or the page is on a wall tablet.
+// A bus known only from the timetable has no strip, and no words until it is
+// near (notTrackedYet).
 // What the settings leave out (show.js) isn't drawn: where each train and bus
 // is, the calling-at line, the punctuality note, a reminder's bell, the last buses.
 // A row's time, destination and status carry a data-flap key, its board,
@@ -30,6 +32,9 @@ export const SHOWN = 5; // rows before "Show later departures"
 export const KIOSK_ROWS = 4; // rows on a wall tablet, which has no "Show later departures"
 const MAX_ROWS = 20; // the most the settings allow
 export const GO_MS = 2 * 60_000; // "Go now" lasts this long past the leaving time (the hero's too)
+// A bus known only from the timetable says "Not tracked yet" from this long
+// before you need to leave for it (notTrackedYet).
+export const NOT_TRACKED_WITHIN_MS = 10 * 60_000;
 
 // On time is plain words; only the exceptions get an icon.
 const ICON = { late: "triangle-alert", cancelled: "x", unknown: "clock" };
@@ -91,10 +96,12 @@ export function arrange(rows, t) {
 }
 
 // What a board looks like at `t`, as a string: when it changes, the board is
-// drawn again.
-function arrangement(rows, t) {
+// drawn again. A bus row that has come near enough to say "Not tracked yet"
+// changes it too.
+function arrangement(mode, rows, t) {
   const { shown, missed } = arrange(rows, t);
-  return `${shown.map((row) => str(row.id)).join(" ")}|${missed ? str(missed.id) : ""}`;
+  const key = (row) => `${str(row.id)}${mode === "bus" && notTrackedYet(row, t) ? "?" : ""}`;
+  return `${shown.map(key).join(" ")}|${missed ? str(missed.id) : ""}`;
 }
 
 // Per board: the rows last drawn, how they were arranged, and whether the
@@ -173,7 +180,7 @@ function rowAttrs(row, id, later) {
 // Notes the rows a board is drawn with, so tickBoards() knows when they change.
 function remember(mode, rows, t) {
   boards[mode].rows = rows;
-  boards[mode].drawn = arrangement(rows, t);
+  boards[mode].drawn = arrangement(mode, rows, t);
 }
 
 // The board itself: the "Just missed" line, the table, and the button for the
@@ -476,15 +483,35 @@ function dueCell(row, flap) {
     h("span", { class: "sched", "aria-hidden": "true" }, "sched."), vh(", timetable only"));
 }
 
+// Whether a bus known only from the timetable says "Not tracked yet" at `t`
+// (ms): from NOT_TRACKED_WITHIN_MS before you need to leave for it, or before
+// its time when no walk is set, so the line is there while you decide whether
+// to go. Not once it may not be running: that warning says more. Further off
+// it says nothing, as its time and "sched." already say it is the timetable's.
+export function notTrackedYet(row, t) {
+  if (row.live === true || row.ghost === true || row.status === "cancelled") return false;
+  const at = parseAt(row.leave_at) ?? parseAt(row.scheduled_at);
+  return at !== null && at - t <= NOT_TRACKED_WITHIN_MS;
+}
+
+// Where the bus is: a live one, or one whose bus is coming in to work it,
+// shows its stops and says where it is; a timetable-only one has no strip
+// and says "Not tracked yet" only when it is near (notTrackedYet).
+function busWhere(row) {
+  if (!shows("where")) return null;
+  if (row.live !== true) {
+    return notTrackedYet(row, now()) ? h("span", { class: ["sub", "where", "untracked"] }, "Not tracked yet") : null;
+  }
+  const strip = obj(row.strip);
+  const where = str(strip?.where);
+  return where ? whereLine(where, "bus", strip, num(strip?.bus_at)) : null;
+}
+
 function busRow(row, later, names, alerts, flap) {
   const id = validId(row.id) ? row.id : null;
   const scheduled = str(row.scheduled);
   const line = str(row.line);
   const destination = str(row.destination);
-  const strip = obj(row.strip);
-  // Every bus with stops to draw shows them, live or not: a timetable-only
-  // one has no bus on its strip and says "No live position".
-  const where = str(strip?.where);
   const walk = num(row.walk_min);
   // The row header is said with every cell, so it is the line and where it
   // goes, nothing more: "237 to Ashton-under-Lyne Interchange". The rest is
@@ -494,7 +521,7 @@ function busRow(row, later, names, alerts, flap) {
       h("span", { class: "line", dataset: { flap: flap("line") } }, line), vh(` to ${destination}`)),
     td("c-dest", null,
       openButton(id, `the ${scheduled} ${line} to `, destination, flap("destination")),
-      where && shows("where") ? whereLine(where, "bus", strip, num(strip?.bus_at)) : null,
+      busWhere(row),
       busStatusExtras(row),
       recordChip(row)),
     stopCell(stopText(row, names), walk),
@@ -592,5 +619,5 @@ export function tickBoards() {
     const at = parseAt(el.dataset.dueAt);
     if (at !== null) flapText(el, dueText(at - t));
   }
-  return Object.values(boards).some((board) => board.drawn !== arrangement(board.rows, t));
+  return Object.entries(boards).some(([mode, board]) => board.drawn !== arrangement(mode, board.rows, t));
 }
