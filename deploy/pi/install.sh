@@ -191,7 +191,7 @@ if [[ "$renderer" == twobells.timer ]]; then
   cat <<EOF
 
 For an HDMI screen, set display = "hdmi-1280x400" or "hdmi-1920x440" in
-$CONF/config.toml and run this again: it installs pygame and names the
+$CONF/config.toml and run this again: it installs pygame and a speech engine and names the
 screen's service instead.
 EOF
 fi
