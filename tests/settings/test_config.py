@@ -1082,6 +1082,13 @@ def test_a_board_showing_more_modes_than_its_display_has_room_for_is_refused(tmp
     assert settings.board.modes == ("train", "bus")
 
 
+def test_only_the_board_refuses_more_modes_than_its_display_has_room_for(tmp_path):
+    # A probe or a timetable build loads its own source alone; the board's room is the board's to check.
+    path = write(tmp_path, BOTH + '[board]\nmodes = ["train", "bus", "metro"]\n')
+    settings = load_config(path, ENV, only={"train"})
+    assert [config.source.name for config in settings.board.sources] == ["train"]
+
+
 def test_the_display_override_sets_the_room_too(tmp_path):
     path = write(tmp_path, 'display = "waveshare-10in85g"\ntheme = "plain"\ntext_size = 13\n' + BOTH
                  + '[board]\nmodes = ["train", "bus", "metro"]\n')

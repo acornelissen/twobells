@@ -717,10 +717,15 @@ def settings_from(
     # On by default: services run a Sunday timetable on bank holidays.
     holidays = frozenset(holidays) if _flag(data, "bank_holidays", BOARD_DEFAULTS["bank_holidays"]) else frozenset()
     division = holiday_division(data)
-    shown_modes = board_modes(data)
+    # Only the board refuses modes its display has no room for: the dashboard's
+    # modes, and a probe's or timetable build's own, are loaded without it.
+    if only is None and modes is None:
+        shown_modes = board_modes(data)
+    else:
+        shown_modes = mode_list.ordered(list(only or modes or ()))
     sources = []
     tracker = None
-    wanted = set(only or (shown_modes if modes is None else modes))
+    wanted = set(shown_modes)
     if "train" in data and "train" in wanted:
         sources.append(_train(_table(data, "train", "[train]"), env, holidays))
     if "metro" in data and "metro" in wanted:

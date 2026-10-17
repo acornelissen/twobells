@@ -228,6 +228,16 @@ def test_the_dashboard_s_modes_are_its_own_not_the_board_s(config, tmp_path, ope
     assert isinstance(dash.train, DarwinSource) and isinstance(dash.bus, BodsBusSource)
 
 
+def test_the_dashboard_loads_whatever_room_the_board_has(config, tmp_path, opened):
+    # Three modes on the board, then the store moved to a display with room for two (a 10.85" Pi's
+    # copied to Docker, say): only the board refuses them; the dashboard has no display.
+    text = config.read_text() + '[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n'
+    config.write_text('display = "inky"\n' + text + '[board]\nmodes = ["train", "bus", "metro"]\n')
+    dash = load(config, tmp_path / "dash", opened=opened)
+    assert isinstance(dash.train, DarwinSource) and isinstance(dash.bus, BodsBusSource)
+    assert dash.metro is not None
+
+
 def test_buses_left_off_the_dashboard_need_no_note_about_their_source(tmp_path, opened):
     path = tmp_path / "config.toml"
     text = CONFIG.format(board=tmp_path / "board").replace('source = "bods"', 'source = "transportapi"')
