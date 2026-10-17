@@ -30,6 +30,8 @@ page's Delay Repay watch (dashboard/repay.py): one row per train per day in
      "Delayed": nobody saw it arrive, so it is deleted (settle()).
 
 Version 1 had only `outcome`; opening one adds `arrival` and keeps every row.
+An older release refuses a newer version, so before moving a file on, a copy
+of it as it was is kept beside it, once (history.sqlite3.v1), to put back.
 """
 
 from __future__ import annotations
@@ -361,6 +363,31 @@ def _create(path: Path) -> None:
         os.close(fd)
 
 
+def _keep_copy(db: sqlite3.Connection, path: Path) -> None:
+    """Copy the history as it is to `path`, before it is moved on to a newer
+    version, so an older release that reads only this one can have it back
+    (deploy/pi/upgrade.sh says how). Kept once: a copy already there, or
+    anything else at `path`, is left alone. A copy that fails part way is
+    removed, and the history isn't moved on."""
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL | files.NOFOLLOW, 0o640)
+    except FileExistsError:
+        return
+    try:
+        os.fchmod(fd, 0o640)  # whatever the umask
+    finally:
+        os.close(fd)
+    try:
+        copy = sqlite3.connect(path)
+        try:
+            db.backup(copy)  # the WAL's pages too, which a copy of the file alone would miss
+        finally:
+            copy.close()
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+
+
 class History:
     """Punctuality history in `folder`/history.sqlite3. Safe to share between threads."""
 
@@ -379,6 +406,8 @@ class History:
                 self._db.executescript(f"BEGIN; {schema} PRAGMA user_version={SCHEMA_VERSION}; COMMIT;")
             elif version > SCHEMA_VERSION:
                 raise sqlite3.DatabaseError(f"{path} has history version {version}, not {SCHEMA_VERSION}")
+            elif version < SCHEMA_VERSION:
+                _keep_copy(self._db, path.with_name(f"{FILE_NAME}.v{version}"))
             for step in range(version or SCHEMA_VERSION, SCHEMA_VERSION):
                 # A version at a time, each in a transaction of its own: the rows already there are kept.
                 self._db.executescript(f"BEGIN; {_MIGRATIONS[step]} PRAGMA user_version={step + 1}; COMMIT;")

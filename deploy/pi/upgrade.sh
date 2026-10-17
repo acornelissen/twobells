@@ -5,9 +5,13 @@
 # temporary folder, stops unless the tarball's SHA-256 matches, unpacks it,
 # and runs that release's deploy/pi/update.sh with the options after the
 # version. With cosign installed, it checks SHA256SUMS's signature first.
-# The temporary folder is removed when it ends, whatever happens.
+# The temporary folder is removed when it ends, whatever happens. Going back
+# to an older release, it says how to put back the punctuality history as it
+# was before a newer release moved it on, which the older one may not read.
 set -euo pipefail
 
+PREFIX=/opt/twobells
+STORE=/var/lib/twobells
 RELEASES=https://github.com/acornelissen/twobells/releases/download
 IDENTITY=https://github.com/acornelissen/twobells/.github/workflows/release.yml
 ISSUER=https://token.actions.githubusercontent.com
@@ -20,6 +24,51 @@ usage() {
 # A release's version, as release.yml tags it (without the v).
 valid_version() {
   [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
+# Whether version $1 is older than version $2, both valid_version's.
+older() {
+  local -a a b
+  IFS=. read -r -a a <<< "$1"
+  IFS=. read -r -a b <<< "$2"
+  local i
+  for i in 0 1 2; do
+    if (( 10#${a[i]} != 10#${b[i]} )); then
+      (( 10#${a[i]} < 10#${b[i]} ))
+      return
+    fi
+  done
+  return 1
+}
+
+# The version of the app installed under the prefix $1, from the name of its
+# package's metadata folder (nothing of it is run); nothing if there is none,
+# or it isn't a release's.
+installed_version() {
+  local dir version
+  for dir in "$1"/venv/lib/python3*/site-packages/twobells-*.dist-info; do
+    version="${dir##*/twobells-}"
+    version="${version%.dist-info}"
+    if valid_version "$version"; then
+      echo "$version"
+      return 0
+    fi
+  done
+}
+
+# Going back from version $1 to $2: how to put back the punctuality history
+# kept from before a newer release moved it on (dashboard/history.py).
+going_back() {
+  cat <<EOF
+Went back from $1 to $2. A newer release may have moved the punctuality
+history on to a version $2 can't read; then the dashboard has no history
+and no Performance page. To put back the copy kept from before it was moved
+on (what was recorded since then is lost):
+  sudo systemctl stop twobells-web twobells-fetch
+  sudo -u twobells cp $STORE/history.sqlite3.v1 $STORE/history.sqlite3
+  sudo -u twobells rm -f $STORE/history.sqlite3-wal $STORE/history.sqlite3-shm
+  sudo systemctl start twobells-fetch twobells-web
+EOF
 }
 
 # Checks the tarball for version $2 in folder $1 against SHA256SUMS there:
@@ -94,8 +143,13 @@ main() {
     echo "$name has no deploy/pi/update.sh. Nothing was installed." >&2
     exit 1
   fi
+  local installed
+  installed="$(installed_version "$PREFIX")"
   # Run with bash, as /tmp may not allow running files from it.
   bash "$unpacked/deploy/pi/update.sh" "$@"
+  if [[ -n "$installed" ]] && older "$version" "$installed"; then
+    going_back "$installed" "$version"
+  fi
 }
 
 # Run, unless sourced (the tests call the functions above on their own).

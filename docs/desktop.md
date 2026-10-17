@@ -7,7 +7,7 @@ uv tool install twobells      # or: pipx install twobells
 twobells serve
 ```
 
-To update: `uv tool upgrade twobells` or `pipx upgrade twobells`. From a copy of the repo, `uv tool install .` or `pipx install .` instead.
+To update: `uv tool upgrade twobells` or `pipx upgrade twobells`. From a copy of the repo, `uv tool install .` or `pipx install .` instead. Going back to 0.1.0, it stops at the start if a newer version moved the punctuality history on: with it stopped, copy `history.sqlite3.v1` in its store (below) over `history.sqlite3`, the copy kept from before, and delete `history.sqlite3-wal` and `history.sqlite3-shm` if they are there. What was recorded since is lost.
 
 `twobells serve` runs as a desktop install unless told otherwise. It opens in your browser, at `http://localhost:8090/` (or the next free port), and the settings on the first run. The first build of the bus timetable takes a minute or so. Ctrl-C stops it.
 

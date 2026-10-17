@@ -64,6 +64,15 @@ sudo ./deploy/pi/upgrade.sh 0.2.0
 
 It downloads that release's tarball and `SHA256SUMS` over https into a temporary folder, and stops unless the tarball's SHA-256 matches. With `cosign` installed (2.5 or later) it checks the signature of `SHA256SUMS` first. Then it unpacks the release and runs its `deploy/pi/update.sh`, and removes the temporary folder. Options after the version go to `update.sh`.
 
+Going back to an older release works the same way, but a newer release may have moved what it keeps on to a version the older one can't read. The punctuality history is one: 0.1.0 reads only its version 1, so after going back to it the dashboard has no history and no Performance page. Before moving the history on, the newer release kept a copy of it as it was, `history.sqlite3.v1` in `/var/lib/twobells`, and `upgrade.sh` says how to put it back when it goes to an older version. What was recorded since is lost:
+
+```bash
+sudo systemctl stop twobells-web twobells-fetch
+sudo -u twobells cp /var/lib/twobells/history.sqlite3.v1 /var/lib/twobells/history.sqlite3
+sudo -u twobells rm -f /var/lib/twobells/history.sqlite3-wal /var/lib/twobells/history.sqlite3-shm
+sudo systemctl start twobells-fetch twobells-web
+```
+
 Or get the new release onto the Pi as for installing, check it, then from its folder:
 
 ```bash

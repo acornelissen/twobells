@@ -41,9 +41,9 @@ def _bus(scheduled="07:20", day=FRIDAY, status="on_time", delay=0, expected=None
     return Observed(BUS, scheduled, day, departs_at, status, delay, live, "341", "Hyde", None, None, "vj-1")
 
 
-def _rows(folder):
+def _rows(folder, name=FILE_NAME):
     """Every row as stored, final or not, read beside the History's own connection."""
-    with sqlite3.connect(folder / FILE_NAME) as db:
+    with sqlite3.connect(folder / name) as db:
         db.row_factory = sqlite3.Row
         return [dict(row) for row in db.execute("SELECT * FROM outcome ORDER BY day, scheduled")]
 
@@ -608,6 +608,33 @@ def test_a_version_1_history_gains_arrivals_and_keeps_its_rows(tmp_path):
     reader.close()
     History(tmp_path).close()  # and opening it again changes nothing
     assert len(_rows(tmp_path)) == 2 and len(_arrival_rows(tmp_path)) == 1
+
+
+def test_a_version_1_history_is_copied_as_it_was_before_it_is_moved_on(tmp_path):
+    # So going back to a release that reads version 1 only can have it back.
+    _version_1(tmp_path)
+    before = _rows(tmp_path)
+    History(tmp_path).close()
+    copy = tmp_path / f"{FILE_NAME}.v1"
+    assert stat.S_IMODE(copy.stat().st_mode) == 0o640
+    with sqlite3.connect(copy) as db:
+        assert db.execute("PRAGMA user_version").fetchone() == (1,)
+        assert db.execute("SELECT name FROM sqlite_master WHERE name = 'arrival'").fetchall() == []
+    assert _rows(tmp_path, copy.name) == before
+
+
+def test_the_version_1_copy_is_kept_once_and_never_replaced(tmp_path):
+    copy = tmp_path / f"{FILE_NAME}.v1"
+    copy.write_bytes(b"the first copy")
+    _version_1(tmp_path)
+    History(tmp_path).close()
+    assert copy.read_bytes() == b"the first copy"
+
+
+def test_a_new_history_and_one_already_moved_on_are_not_copied(tmp_path):
+    History(tmp_path).close()
+    History(tmp_path).close()
+    assert sorted(path.name for path in tmp_path.iterdir()) == [FILE_NAME]
 
 
 # Arrivals at the filter station, for the Delay Repay watch.

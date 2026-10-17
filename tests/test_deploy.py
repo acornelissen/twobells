@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from tests.paths import ROOT
+from twobells.dashboard.history import FILE_NAME
 
 DOCKERFILE = (ROOT / "Dockerfile").read_text()
 COMPOSE = (ROOT / "docker-compose.yml").read_text()
@@ -1019,6 +1020,55 @@ def _sourced(call: str, *args: str):
 ])
 def test_upgrade_takes_only_a_plain_release_version(version, valid):
     assert (_sourced('valid_version "$1"', version).returncode == 0) == valid
+
+
+@pytest.mark.parametrize("a, b, older", [
+    ("0.1.0", "0.2.0", True), ("0.2.0", "0.10.0", True), ("0.9.9", "1.0.0", True), ("1.2.3", "1.2.4", True),
+    ("0.2.0", "0.2.0", False), ("0.2.0", "0.1.0", False), ("0.10.0", "0.9.0", False), ("0.08.0", "0.7.0", False),
+])
+def test_upgrade_tells_an_older_version_by_its_numbers(a, b, older):
+    assert (_sourced('older "$1" "$2"', a, b).returncode == 0) == older
+
+
+def test_upgrade_reads_the_installed_version_from_its_package_metadata(tmp_path):
+    site = tmp_path / "venv/lib/python3.11/site-packages"
+    (site / "twobells-0.2.0.dist-info").mkdir(parents=True)
+    (site / "inky-2.1.0.dist-info").mkdir()
+    assert _sourced('installed_version "$1"', str(tmp_path)).stdout == "0.2.0\n"
+
+
+@pytest.mark.parametrize("folders", [[], ["twobells-0.2.0.dev3+g1234.dist-info"], ["twobells-0.2.0;id.dist-info"]])
+def test_upgrade_reads_no_version_without_a_release_installed(tmp_path, folders):
+    site = tmp_path / "venv/lib/python3.11/site-packages"
+    site.mkdir(parents=True)
+    for name in folders:
+        (site / name).mkdir()
+    done = _sourced('installed_version "$1"', str(tmp_path))
+    assert (done.returncode, done.stdout) == (0, "")
+
+
+def test_upgrade_going_back_says_how_to_put_the_history_back():
+    # An older release refuses a history a newer one moved on (dashboard/history.py), so its
+    # dashboard has none until the copy kept from before is put back, as the guide says too.
+    script = _script("upgrade.sh")
+    assert script.index('installed="$(installed_version "$PREFIX")"') < script.index('bash "$unpacked/')
+    assert script.index('bash "$unpacked/') < script.index('going_back "$installed" "$version"')
+    told = _sourced('going_back 0.2.0 0.1.0').stdout
+    assert "Went back from 0.2.0 to 0.1.0." in told
+    steps = [line.strip() for line in told.splitlines() if line.startswith("  sudo ")]
+    assert steps == [
+        "sudo systemctl stop twobells-web twobells-fetch",
+        f"sudo -u twobells cp /var/lib/twobells/{FILE_NAME}.v1 /var/lib/twobells/{FILE_NAME}",
+        f"sudo -u twobells rm -f /var/lib/twobells/{FILE_NAME}-wal /var/lib/twobells/{FILE_NAME}-shm",
+        "sudo systemctl start twobells-fetch twobells-web",
+    ]
+    assert "\n".join(steps) in PI_GUIDE
+    assert "PREFIX=/opt/twobells\n" in script and "PREFIX=/opt/twobells\n" in _script("update.sh")
+
+
+def test_the_docker_guide_says_how_to_put_the_history_back():
+    assert f"cp /data/{FILE_NAME}.v1 /data/{FILE_NAME}" in DOCKER_DOCS
+    assert f"rm -f /data/{FILE_NAME}-wal /data/{FILE_NAME}-shm" in DOCKER_DOCS
 
 
 @pytest.mark.parametrize("args", [[], ["0.2"], ["v0.2.0"], ["0.2.0; reboot"], ["--config", "x"]])

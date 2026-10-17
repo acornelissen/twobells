@@ -79,6 +79,16 @@ Open `http://<NAS IP address>:8090/` and [set it up](setup-wizard.md). The code 
 
 Check the new version as above, then replace the version and digest in the image line and start the container again from the new image. Your settings, keys, password, history and timetable stay in `/data`. Building from source, see [Built from source](#built-from-source).
 
+Going back to an older version, the older one may not read what a newer one keeps. The punctuality history is one: 0.1.0 reads only its version 1, and stops at the start, saying so in its log, if the history is newer. Before moving the history on, the newer version kept a copy of it as it was, `history.sqlite3.v1` in `/data`. To put it back (what was recorded since is lost), with the older image in place of `IMAGE` and your data volume or folder in place of `twobells-data`:
+
+```bash
+docker stop twobells
+docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+  --user 10001:10001 -v twobells-data:/data --entrypoint sh IMAGE \
+  -c 'cp /data/history.sqlite3.v1 /data/history.sqlite3 && rm -f /data/history.sqlite3-wal /data/history.sqlite3-shm'
+docker start twobells
+```
+
 ---
 
 ## Synology (Container Manager)
