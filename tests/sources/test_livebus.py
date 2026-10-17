@@ -839,6 +839,23 @@ def test_a_bus_in_at_the_end_of_the_journey_before_leaves_on_time_or_any_minute(
     assert (found.departure.status, found.departure.expected) == (Status.LATE, "10:18")
 
 
+@pytest.mark.parametrize("plan", [
+    schedule(EAST, WEST_T122, IN_T122),  # followed by its block
+    schedule(EAST, WEST, INTO_A),  # guessed by line
+])
+def test_a_bus_left_waiting_at_the_stand_lets_its_departure_go(plan):
+    # Still in at stop A, still on the journey before, long after WEST's 10:15:
+    # laid over or out of service, not about to leave. Up to 30 minutes after
+    # its time the departure goes any minute; after that it goes, as one with no
+    # bus seen would, rather than staying "due now" for good.
+    henry = (POSITIONS[HENRY_A].lat, POSITIONS[HENRY_A].lon)
+    waiting = row(live(at(10, 45), [coming_in(at(10, 45), where=henry)], plan=plan), "A", "237")
+    assert waiting.departure.scheduled == "10:15" and waiting.inbound.is_in
+    for now in (at(10, 46), at(11, 30), at(13, 0)):
+        rows = live(now, [coming_in(now, where=henry)], plan=plan)
+        assert not [l for l in rows if (l.departure.stop, l.departure.scheduled) == ("A", "10:15")]
+
+
 def test_where_words_count_down_to_the_bus_getting_in():
     found = west_a(at(10, 5), [coming_in(at(10, 5))])
     for now, full, short in (

@@ -895,6 +895,25 @@ def test_bus_observations_for_the_history():
     assert (timetabled.status, timetabled.delay_min, timetabled.live) == ("unknown", None, False)
 
 
+def test_no_delay_is_recorded_for_a_bus_only_waiting_in():
+    from tests.sources.test_livebus import INTO_A, LEFT_JUNCTION
+
+    # WEST's bus came in on INTO_A and is still at stop A at 10:30, after
+    # WEST's 10:15: the row says any minute, but that is no observed delay.
+    plan = schedule(EAST, WEST, INTO_A)
+    waiting = bus(POSITIONS[HENRY_A].lat, POSITIONS[HENRY_A].lon, at(10, 30), line="237",
+                  origin=INTO_A.origin.atco, aimed=LEFT_JUNCTION)
+    found = live(at(10, 30), [waiting], plan=plan)
+    seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, plan, True, None))}
+    west = seen["A|237|Ashton", "10:15"]
+    assert (west.status, west.delay_min, west.live) == ("late", None, True)
+    # On its way in, late, its delay is observed: in at 10:19, out at 10:21.
+    coming = bus(*HALFWAY, at(10, 14), line="237", origin=INTO_A.origin.atco, aimed=LEFT_JUNCTION)
+    found = live(at(10, 14), [coming], plan=plan)
+    seen = {(o.route, o.scheduled): o for o in bus_observations(BusBoard(found, plan, True, None))}
+    assert seen["A|237|Ashton", "10:15"].delay_min == 6
+
+
 # Weather
 
 

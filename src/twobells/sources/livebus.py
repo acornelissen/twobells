@@ -15,7 +15,9 @@ block as its BlockRef), the departure is live too, marked inbound ("Bus on
 its way, due in 6 min"): expected when that bus gets in plus TURNAROUND,
 never before its time; once in, on time, or, that gone, any minute. Only
 a departure from the journey's first stop is followed in: the bus's words
-count down to there. The block is a hint, never trusted blindly: the
+count down to there. A bus still in INBOUND_WINDOW after the departure's
+time, still on the journey before, has laid over or gone out of service:
+it is let go, and the departure goes as one with no bus seen would. The block is a hint, never trusted blindly: the
 journey before must be the same operator's, on the same service day, the
 one just before it in the block, and end at the departure's first stop, or
 within NEAR_M of it, up to INBOUND_WINDOW before it leaves. If that bus
@@ -351,6 +353,15 @@ class LiveDeparture:
         return self.progress is not None or self.inbound is not None
 
     @property
+    def observed(self) -> bool:
+        """Whether its lateness was seen: its bus placed on its journey, or on
+        the way in on the one before. Not for a bus only waiting in, whose
+        lateness is just the time going by."""
+        if self.progress is not None:
+            return True
+        return self.inbound is not None and not self.inbound.is_in
+
+    @property
     def tracked(self) -> Vehicle | None:
         """The bus tracked for it, if it is live: its own, or the one followed in."""
         if self.progress is not None or self.inbound is None:
@@ -424,8 +435,8 @@ def live_board(
     with its delay and stays on the board however late; one that has passed
     your stop is dropped. A departure whose bus is followed in (see the
     module's notes) is shown as late as that bus makes it, until a minute
-    after then. Without either, the timetabled time is shown as UNKNOWN
-    until a minute after it.
+    after then, or, once in, until INBOUND_WINDOW after its time. Without
+    either, the timetabled time is shown as UNKNOWN until a minute after it.
     """
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
@@ -461,6 +472,8 @@ def live_board(
                 if progress is not None and progress.at > k + PASSED_MARGIN:
                     continue  # the bus has been past this stop
                 inbound = follow.bus_in(journey, day) if k == 0 and progress is None else None
+                if inbound is not None and inbound.is_in and local_now > leaves + INBOUND_WINDOW:
+                    inbound = None  # still in long after its time: laid over or out of service
                 if progress is None and _expected(leaves, None, inbound, local_now) < local_now - GRACE:
                     continue
                 if leaves > local_now + HORIZON:

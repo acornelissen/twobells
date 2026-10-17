@@ -689,7 +689,8 @@ def bus_observations(board: BusBoard) -> list[Observed]:
             day=live.leaves.date(),
             departs_at=live.expected,
             status=dep.status.value,
-            delay_min=round((live.expected - live.leaves).total_seconds() / 60) if placed else None,
+            # A bus only waiting in says nothing of when it goes: no delay is seen.
+            delay_min=round((live.expected - live.leaves).total_seconds() / 60) if live.observed else None,
             live=placed,
             service=dep.service,
             destination=dep.destination,
