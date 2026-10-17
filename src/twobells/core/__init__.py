@@ -1,1 +1,1 @@
-"""Shared building blocks: the departure model, time, files, HTTPS and safe errors."""
+"""Shared building blocks: the departure model, time, files, HTTPS, bounded reading and safe errors."""

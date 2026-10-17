@@ -46,7 +46,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import IO, BinaryIO
 
-from ..core import files, net
+from ..core import bounded, files, net
 from ..core.errors import safe_message
 from .build import TimetableBusy, TimetableError, TimetableTooBig
 
@@ -213,7 +213,7 @@ def _rows(archive: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
     with archive.open(info) as raw:
         capped = io.BufferedReader(_Capped(raw, limit))
         text = io.TextIOWrapper(capped, encoding="utf-8-sig", errors="replace", newline="")
-        lines = _lines(text)
+        lines = bounded.lines(text, _MAX_LINE)
         header = next(csv.reader([next(lines, "")]), [])
         columns = [column.strip() for column in header]
         for line in lines:
@@ -222,19 +222,6 @@ def _rows(archive: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
             # Most rows have no quotes, and splitting them is far quicker than csv on a Pi.
             values = line.rstrip("\r\n").split(",") if '"' not in line else next(csv.reader([line]), [])
             yield dict(zip(columns, values, strict=False))
-
-
-def _lines(text: IO[str]) -> Iterator[str]:
-    """Each line of `text`, never reading more than _MAX_LINE + 1 characters
-    at once: a hostile file's one line can unzip to hundreds of MB. A longer
-    line is read past a piece at a time, and comes out as ""."""
-    while line := text.readline(_MAX_LINE + 1):
-        if len(line) <= _MAX_LINE:
-            yield line
-            continue
-        while line and not line.endswith(("\n", "\r")):
-            line = text.readline(_MAX_LINE + 1)
-        yield ""
 
 
 class _Capped(io.RawIOBase):
@@ -510,21 +497,11 @@ def _failed_recently(folder: Path, stops: Mapping[str, str], now: datetime) -> b
 
 def _open(file: BinaryIO) -> zipfile.ZipFile:
     """The zip in `file`. TimetableTooBig if it lists more than MAX_PARTS
-    parts, or more than _MAX_LIST_BYTES of them, checked in its end record
-    before zipfile reads the whole list into memory: a small hostile file can
-    list hundreds of thousands. The record is found by zipfile's own reader
-    (private, but there since Python 2), so the check reads what zipfile will;
-    were it gone, every build would fail, not go unchecked."""
-    end = zipfile._EndRecData(file)  # pyright: ignore[reportAttributeAccessIssue]
-    if end and (end[zipfile._ECD_ENTRIES_TOTAL] > MAX_PARTS  # pyright: ignore[reportAttributeAccessIssue]
-                or end[zipfile._ECD_SIZE] > _MAX_LIST_BYTES):  # pyright: ignore[reportAttributeAccessIssue]
-        raise TimetableTooBig(f"The tram timetable has more than {MAX_PARTS} parts")
-    file.seek(0)
-    archive = zipfile.ZipFile(file)
-    if len(archive.infolist()) > MAX_PARTS:  # its end record said fewer
-        archive.close()
-        raise TimetableTooBig(f"The tram timetable has more than {MAX_PARTS} parts")
-    return archive
+    parts, or more than _MAX_LIST_BYTES of them (bounded.open_zip)."""
+    try:
+        return bounded.open_zip(file, MAX_PARTS, _MAX_LIST_BYTES)
+    except bounded.ZipTooBig:
+        raise TimetableTooBig(f"The tram timetable has more than {MAX_PARTS} parts") from None
 
 
 def refresh(folder: Path | str, stops: Mapping[str, str], now: datetime, *, force: bool = False,
