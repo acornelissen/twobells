@@ -6,6 +6,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ### Fixed
 
+- Engineering works and other rail incidents show again: the Rail Data Marketplace sends its Knowledgebase Incidents feed gzipped (`Content-Encoding: gzip`) even when asked not to, and the app read the compressed bytes as they came, so the feed never parsed and the Keys page's test said it "answered, but not with incidents". Every answer the app fetches is now read decoded from gzip or deflate as it arrives, with each size limit on the decoded size, so a small answer that would inflate to far more is refused without being inflated; an answer in any other encoding is refused with a plain message, and the key test says it couldn't read the answer. What the app asks for is unchanged.
 - The user guide matches 0.2.0 throughout: where the plain, TFT and split-flap looks put the clock, notices and the bus page on a screen; that the bus timetable is built again once after updating; what the show lists stop fetching; Around here, the no-tracker warning and what a wall tablet leaves out; the Overview's timetable, keys and TransportAPI lines; and 0.2.0's failure modes in Troubleshooting. The phone-width and wall tablet night pictures are retaken.
 
 ## [0.2.0] - 2026-10-17

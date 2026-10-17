@@ -1,5 +1,6 @@
 """Testing a key with one harmless call, against fake services: no network."""
 
+import gzip
 import io
 import logging
 import time
@@ -241,6 +242,28 @@ def test_kb_fetches_the_configured_address():
 ])
 def test_kb_refusals(answer, state):
     assert check("RDM_KB_API_KEY", Fake((KB_URL, answer))).state == state
+
+
+def test_kb_reads_the_gzipped_answer_the_marketplace_sends(encoded_to):
+    # The Rail Data Marketplace gzips the incidents whatever it is asked for;
+    # this one is larger decoded than the test reads.
+    padded = INCIDENTS + b"\n" * keytest.MAX_BYTES
+    encoded_to(gzip.compress(padded), "gzip")
+    result = keytest.test_key("RDM_KB_API_KEY", None, CONFIG, SAVED)
+    assert result == KeyResult("works", "It works: Knowledgebase Incidents answered.")
+
+
+def test_kb_refusal_in_a_gzipped_answer_is_read_for_clues(encoded_to):
+    encoded_to(gzip.compress(RDM_OTHER_PRODUCT), "gzip", status=401)
+    assert keytest.test_key("RDM_KB_API_KEY", None, CONFIG, SAVED).state == "not_subscribed"
+
+
+@pytest.mark.parametrize("body, encoding", [(b"\x00\x01", "br"), (b"not gzip", "gzip")])
+def test_kb_answer_in_an_unreadable_encoding_says_so(encoded_to, body, encoding):
+    encoded_to(body, encoding)
+    result = keytest.test_key("RDM_KB_API_KEY", None, CONFIG, SAVED)
+    assert result == KeyResult("unknown", "The Rail Data Marketplace sent an answer this can't read, "
+                                          "so it can't tell if the key works.")
 
 
 @pytest.mark.parametrize("url, words", [

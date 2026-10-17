@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import time
+import zlib
 from collections.abc import Iterator, Mapping
 from functools import partial
 from http.client import HTTPConnection, HTTPSConnection
@@ -12,6 +13,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import (
     AbstractHTTPHandler,
+    BaseHandler,
     HTTPDefaultErrorHandler,
     HTTPErrorProcessor,
     HTTPHandler,
@@ -164,13 +166,118 @@ class _HTTPSHandler(_Deadlines, HTTPSHandler):
     pass
 
 
+# Content-Encoding. Nothing here asks for a compressed answer (http.client
+# sends "Accept-Encoding: identity"), but a service may send one anyway: the
+# Rail Data Marketplace gzips its Knowledgebase incidents. Every answer is
+# read decoded, as it arrives, so a caller's cap on what it reads is a cap on
+# the decoded size: a small answer that would inflate to gigabytes (a gzip
+# bomb) is never inflated past what the caller asked for.
+
+_GZIP = 16 + zlib.MAX_WBITS  # zlib's wbits for gzip's header and trailer
+_DECODERS = {"gzip": _GZIP, "x-gzip": _GZIP, "deflate": zlib.MAX_WBITS}  # deflate is zlib's format
+_RAW_CHUNK = 1 << 16  # compressed bytes read at a time
+_BROKEN = "The service sent a compressed answer that is broken or cut short"
+
+
+class BadEncoding(ValueError):
+    """The answer was in a Content-Encoding this app doesn't read, or its
+    compressed body was broken."""
+
+
+def _wbits(content_encoding: str) -> int | None:
+    """zlib's wbits for a Content-Encoding header's value; None for an
+    answer sent as it is. BadEncoding for anything else, a chain of
+    encodings included."""
+    codings = [part.strip().lower() for part in content_encoding.split(",")]
+    codings = [coding for coding in codings if coding and coding != "identity"]
+    if not codings:
+        return None
+    if len(codings) == 1 and codings[0] in _DECODERS:
+        return _DECODERS[codings[0]]
+    raise BadEncoding("The service sent its answer in a form this app can't read "
+                      "(a Content-Encoding other than gzip or deflate)")
+
+
+class _Decoded:
+    """A response whose body is read decoded. read(size) inflates no more
+    than `size` bytes however small the compressed answer, and reads the
+    response a chunk at a time, so its deadline still holds. Everything else
+    (status, headers, closing) is the response's own."""
+
+    def __init__(self, response, wbits: int):
+        self._response = response
+        self._wbits = wbits
+        self._inflate = zlib.decompressobj(wbits)
+        self._pending = b""  # read from the response, not yet inflated
+
+    def __getattr__(self, name: str):
+        return getattr(self._response, name)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self._response.close()
+
+    def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0:
+            raise ValueError("A compressed answer is read a size at a time")
+        decoded = bytearray()
+        while len(decoded) < size:
+            ended = False
+            if not self._pending:
+                self._pending = self._response.read(_RAW_CHUNK)
+                ended = not self._pending
+            if self._inflate.eof:
+                if ended:
+                    break
+                if self._wbits != _GZIP:  # deflate is one stream; gzip may be several, one after another
+                    raise BadEncoding(_BROKEN)
+                self._inflate = zlib.decompressobj(self._wbits)
+            try:
+                data = self._inflate.decompress(self._pending, size - len(decoded))
+            except zlib.error:
+                raise BadEncoding(_BROKEN) from None
+            self._pending = self._inflate.unused_data if self._inflate.eof else self._inflate.unconsumed_tail
+            decoded += data
+            if ended and not data and not self._inflate.eof:
+                raise BadEncoding(_BROKEN)  # the answer stopped part way through
+        return bytes(decoded)
+
+
+class _ContentDecoding(BaseHandler):
+    """Gives every answer as its decoded body, but for a redirect, whose body
+    urllib reads whole and throws away. It comes before HTTPErrorProcessor,
+    so an error's body, which the key test reads for clues, is decoded too;
+    an error in an encoding this app can't read keeps its status, its body
+    as sent."""
+
+    handler_order = 900  # HTTPErrorProcessor's is 1000
+
+    def http_response(self, request, response):
+        code = response.code
+        if 300 <= code < 400:
+            return response
+        try:
+            wbits = _wbits(", ".join(response.headers.get_all("Content-Encoding") or []))
+        except BadEncoding:
+            if code >= 400:
+                return response
+            response.close()
+            raise
+        return response if wbits is None else _Decoded(response, wbits)
+
+    https_response = http_response
+
+
 def _build_opener() -> OpenerDirector:
     """urllib's build_opener always adds file:, ftp: and data: handlers; this
     opener has only http and https, so any other address fails as an
-    unknown url type, wherever it came from (a redirect included)."""
+    unknown url type, wherever it came from (a redirect included). Every
+    answer comes decoded from its Content-Encoding."""
     opener = OpenerDirector()
     for handler in (UnknownHandler, HTTPDefaultErrorHandler, SafeRedirects, _HTTPHandler, _HTTPSHandler,
-                    HTTPErrorProcessor):
+                    _ContentDecoding, HTTPErrorProcessor):
         opener.add_handler(handler())
     return opener
 
@@ -242,7 +349,7 @@ def get_bytes(url: str, max_bytes: int, timeout: float = 15.0, headers: dict | N
     with urlopen(request, timeout=timeout) as response:
         body = response.read(max_bytes + 1)
     if len(body) > max_bytes:
-        raise ValueError(f"Response larger than {max_bytes} bytes")
+        raise TooLarge(f"Response larger than {max_bytes} bytes")
     return body
 
 

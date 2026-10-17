@@ -1,3 +1,4 @@
+import gzip
 import time
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
@@ -524,6 +525,25 @@ def test_the_train_source_sends_its_key_in_a_header_and_never_repeats_it():
     with pytest.raises(RuntimeError) as caught:
         TrainIncidentSource("kbkey", "https://api.example.test/incidents", open_stream=failing).fetch()
     assert "kbkey" not in str(caught.value)
+
+
+def test_the_train_source_reads_the_gzipped_incidents_the_marketplace_sends(encoded_to):
+    # The Rail Data Marketplace gzips the incidents whatever it is asked for.
+    encoded_to(gzip.compress(KB.read_bytes()), "gzip")
+    assert len(TrainIncidentSource("kbkey", "https://api.example.test/incidents").fetch()) == 5
+
+
+def test_the_bus_source_reads_siri_sx_sent_as_it_is_or_gzipped(encoded_to):
+    for body, encoding in ((SX.read_bytes(), None), (gzip.compress(SX.read_bytes()), "gzip")):
+        encoded_to(body, encoding)
+        assert len(BusDisruptionSource("k").fetch()) == 9
+
+
+def test_a_gzipped_feed_is_capped_on_its_decoded_size(encoded_to, monkeypatch):
+    monkeypatch.setattr(disruptions, "MAX_KB_BYTES", 1000)
+    encoded_to(gzip.compress(KB.read_bytes()), "gzip")
+    with pytest.raises(RuntimeError, match="larger than 1000 bytes"):
+        TrainIncidentSource("kbkey", "https://api.example.test/incidents").fetch()
 
 
 def test_the_placeholder_address_is_known():

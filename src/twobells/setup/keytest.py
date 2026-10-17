@@ -134,6 +134,8 @@ def _call(fetch: Callable[[str, Mapping[str, str]], _Body], url: str, headers: M
         return fetch(url, headers)
     except HTTPError as error:
         raise _Outcome(_refused(error, service)) from None
+    except net.BadEncoding:  # compressed in a way this can't read, or broken
+        raise _Outcome(_unreadable(service)) from None
     except TimeoutError:  # socket.timeout too
         raise _Outcome(_down(service, _SLOW)) from None
     except URLError as error:

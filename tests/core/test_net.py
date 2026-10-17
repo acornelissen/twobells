@@ -1,7 +1,11 @@
+import gzip
 import io
 import json
 import threading
 import time
+import tracemalloc
+import zipfile
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 from urllib.error import HTTPError, URLError
@@ -9,6 +13,7 @@ from urllib.request import Request
 
 import pytest
 
+from tests.paths import FIXTURES
 from twobells.core import net
 
 
@@ -290,3 +295,143 @@ def test_only_http_and_https_are_opened(url):
     # Through the opener itself: conftest stands in for urlopen to keep tests offline.
     with pytest.raises(URLError, match="unknown url type"):
         net._opener.open(Request(url), timeout=1)
+
+
+# Compressed answers. The Rail Data Marketplace sends its Knowledgebase
+# incidents gzipped (Content-Encoding: gzip) though nothing asks it to.
+
+INCIDENTS = (FIXTURES / "kb_incidents_synthetic.xml").read_bytes()
+# 64 MB of nothing in about 64 kB: inflated in full, it would show.
+BOMB = gzip.compress(bytes(64 * 1024 * 1024), compresslevel=9)
+
+
+@pytest.mark.parametrize("encoding, compress", [
+    ("gzip", gzip.compress), ("x-gzip", gzip.compress), ("GZIP", gzip.compress), ("deflate", zlib.compress),
+])
+def test_get_bytes_reads_a_compressed_answer(encoded, encoding, compress):
+    url = encoded(compress(INCIDENTS), encoding)
+    assert net.get_bytes(url, len(INCIDENTS)) == INCIDENTS
+
+
+@pytest.mark.parametrize("encoding", [None, "identity", " Identity "])
+def test_an_answer_sent_as_it_is_is_read_as_it_is(encoded, encoding):
+    assert net.get_bytes(encoded(INCIDENTS, encoding), len(INCIDENTS)) == INCIDENTS
+
+
+def test_a_gzipped_answer_in_several_members_is_read_whole(encoded):
+    body = gzip.compress(INCIDENTS[:1000]) + gzip.compress(INCIDENTS[1000:])
+    assert net.get_bytes(encoded(body, "gzip"), len(INCIDENTS)) == INCIDENTS
+
+
+def test_capped_json_reads_a_gzipped_answer(encoded):
+    answer = {"trainServices": [{"std": "10:15", "destination": "Manchester Piccadilly"}]}
+    assert net.get_json_capped(encoded(gzip.compress(json.dumps(answer).encode()), "gzip"), None, 1000) == answer
+
+
+def test_stream_reads_a_gzipped_answer(encoded_to):
+    big = INCIDENTS * 40  # more than one chunk, decoded
+    encoded_to(gzip.compress(big), "gzip")
+    assert b"".join(net.stream("https://example.test/incidents.xml", {}, len(big))) == big
+
+
+def test_the_cap_is_on_the_decoded_size(encoded, encoded_to):
+    small = gzip.compress(INCIDENTS)
+    assert len(small) < len(INCIDENTS) // 2
+    with pytest.raises(net.TooLarge):
+        net.get_bytes(encoded(small, "gzip"), len(INCIDENTS) - 1)
+    with pytest.raises(net.TooLarge):
+        net.get_json_capped(encoded(gzip.compress(b'{"a": "' + b"x" * 500 + b'"}'), "gzip"), None, 100)
+    encoded_to(small, "gzip")
+    with pytest.raises(net.TooLarge):
+        list(net.stream("https://example.test/incidents.xml", {}, len(INCIDENTS) - 1))
+
+
+def peak_while(call) -> int:
+    """The most memory allocated at once while `call` runs, in bytes."""
+    tracemalloc.start()
+    try:
+        call()
+        return tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+
+@pytest.mark.parametrize("reader", ["get_bytes", "get_json_capped", "stream"])
+def test_a_gzip_bomb_is_refused_without_being_inflated(encoded, encoded_to, reader):
+    cap = 1_000_000
+    url = encoded(BOMB, "gzip")
+    encoded_to(BOMB, "gzip")  # stream opens only https, so it is sent there
+    calls = {
+        "get_bytes": lambda: net.get_bytes(url, cap),
+        "get_json_capped": lambda: net.get_json_capped(url, None, cap),
+        "stream": lambda: list(net.stream("https://example.test/bomb", {}, cap)),
+    }
+
+    def read():
+        with pytest.raises(net.TooLarge):
+            calls[reader]()
+
+    assert peak_while(read) < 8 * cap  # a small part of the 64 MB it would make
+
+
+@pytest.mark.parametrize("encoding", ["br", "compress", "gzip, br", "zstd"])
+def test_an_unknown_encoding_is_refused_plainly(encoded, encoded_to, encoding):
+    url = encoded(b"\x00\x01", encoding)
+    with pytest.raises(net.BadEncoding, match="sent its answer in a form this app can't read"):
+        net.get_bytes(url, 100)
+    with pytest.raises(net.BadEncoding):
+        net.get_json_capped(url, None, 100)
+    encoded_to(b"\x00\x01", encoding)
+    with pytest.raises(net.BadEncoding):
+        list(net.stream("https://example.test/incidents.xml", {}, 100))
+
+
+@pytest.mark.parametrize("body", [
+    b"not gzip at all",
+    gzip.compress(INCIDENTS)[:200],  # cut short
+    gzip.compress(INCIDENTS) + b"trailing rubbish",
+], ids=["not gzip", "cut short", "trailing rubbish"])
+def test_a_broken_compressed_answer_is_refused_plainly(encoded, body):
+    with pytest.raises(net.BadEncoding, match="broken or cut short") as caught:
+        net.get_bytes(encoded(body, "gzip"), 1_000_000)
+    # No zlib error chained either: one plain message.
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None or caught.value.__suppress_context__
+
+
+def test_an_errors_body_is_decoded_and_it_keeps_its_status(encoded):
+    # The key test reads a refusal's body for clues.
+    url = encoded(gzip.compress(b"Invalid ApiKey for given resource"), "gzip", status=401)
+    with pytest.raises(HTTPError) as caught:
+        net.get_bytes(url, 100)
+    assert caught.value.code == 401
+    assert caught.value.read(4096) == b"Invalid ApiKey for given resource"
+
+
+def test_an_error_in_an_unknown_encoding_keeps_its_status(encoded):
+    with pytest.raises(HTTPError) as caught:
+        net.get_bytes(encoded(b"\x00\x01", "br", status=503), 100)
+    assert caught.value.code == 503
+
+
+def test_compression_is_not_asked_for(encoded):
+    # What the app asks for is unchanged; it reads what it is sent anyway.
+    net.get_bytes(encoded(gzip.compress(INCIDENTS), "gzip"), len(INCIDENTS))
+    assert encoded.seen[0]["accept-encoding"] == "identity"
+
+
+def test_a_deadline_stops_a_gzipped_answer_sent_slowly(encoded):
+    url = encoded(gzip.compress(INCIDENTS), "gzip", drip=True)
+    start = time.monotonic()
+    with pytest.raises(OSError):
+        net.get_bytes(url, 1_000_000, timeout=1.0, deadline=0.3)
+    assert time.monotonic() - start < 1.0
+
+
+def test_a_zip_download_arrives_as_it_was_sent(encoded_to):
+    # A timetable zip is a file, not a Content-Encoding: it is never unpacked on the way.
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as folder:
+        folder.writestr("timetable.xml", INCIDENTS)
+    encoded_to(archive.getvalue(), None)
+    assert b"".join(net.stream("https://example.test/timetable.zip", {}, 1_000_000)) == archive.getvalue()

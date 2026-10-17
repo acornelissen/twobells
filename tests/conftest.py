@@ -102,3 +102,72 @@ def drip_to(dripping, monkeypatch):
         monkeypatch.setattr(net, "urlopen", opener)
 
     return to
+
+
+# A server whose answers are compressed, for Content-Encoding.
+
+
+@pytest.fixture
+def encoded():
+    """A local server sending compressed answers: `encoded(body, encoding)`
+    gives the address of an answer with `body` as sent (already compressed)
+    and a Content-Encoding of `encoding` (None: no header). `status` sets the
+    answer's status; `drip=True` sends the body a byte every 50 ms.
+    `encoded.seen` has the headers of each request it was sent."""
+    answers = {}
+    seen = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen.append({name.lower(): value for name, value in self.headers.items()})
+            status, body, encoding, drip = answers[self.path]
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", "text/xml")
+                if encoding is not None:
+                    self.send_header("Content-Encoding", encoding)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                if not drip:
+                    self.wfile.write(body)
+                    return
+                for byte in body:
+                    self.wfile.write(bytes([byte]))
+                    self.wfile.flush()
+                    threading.Event().wait(0.05)
+            except OSError:
+                pass  # the client gave up
+
+        def log_message(self, format, *args):  # noqa: A002
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+
+    def answer(body: bytes, encoding: str | None, status: int = 200, drip: bool = False) -> str:
+        path = f"/{len(answers)}"
+        answers[path] = (status, body, encoding, drip)
+        return base + path
+
+    answer.seen = seen  # pyright: ignore[reportFunctionMemberAccess]
+    yield answer
+    server.shutdown()
+    server.server_close()
+
+
+@pytest.fixture
+def encoded_to(encoded, monkeypatch):
+    """`encoded_to(body, encoding)` sends every request from then on to that
+    answer of the `encoded` server, so code that opens only https can meet it."""
+
+    def to(body: bytes, encoding: str | None, status: int = 200, drip: bool = False) -> None:
+        url = encoded(body, encoding, status, drip)
+
+        def opener(request, timeout):
+            request.full_url = url
+            return net._opener.open(request, timeout=timeout)
+
+        monkeypatch.setattr(net, "urlopen", opener)
+
+    return to
