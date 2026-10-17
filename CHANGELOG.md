@@ -6,6 +6,8 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ### Fixed
 
+- The setup wizard's **Find a stop by name** box is as big as its other boxes. The browser drew it at its own size, about half the height a target needs.
+
 - A bus timetable download that isn't a zip is read a chunk at a time. It was read in one go with room for the most an install reads, 200 MB on a desktop, however small the file; a file of a few KB now takes under 1 MB.
 - The setup wizard's stop search reads NaPTAN's stop list a line at a time, never more than 4,096 characters of a line at once, as the timetable build does, and decodes it as it reads. Before, one very long line was held whole, or refused the whole list; now that line is left out and the rest are read.
 - An install set up with tram stops alone, its trains and buses switched off, can save the Trains and buses settings page again. It was refused with "Trains and buses can't both be off", whatever was changed; now the page is refused only when the trams are off too, and says so: "Trains, buses and trams can't all be off".

@@ -205,7 +205,7 @@ h2 + .hint { margin-bottom: var(--s-4); }
 .field { margin: 0 0 var(--s-5); }
 .field.nested { margin: var(--s-1) 0 var(--s-4) 2.25rem; }
 label { display: block; font-weight: 500; margin-bottom: var(--s-1); }
-input[type="text"], input[type="number"] {
+input[type="text"], input[type="number"], input[type="search"] {
   display: block;
   width: 100%;
   min-height: 2.75rem;

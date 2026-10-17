@@ -184,6 +184,19 @@ def test_a_done_step_shows_a_tick_and_says_so():
     assert ".progress li:not(.done) .icon, .progress li:not(.done) .vh { display: none; }" in css
 
 
+def test_every_box_to_type_in_is_styled_full_size():
+    # A box the stylesheet doesn't name is drawn by the browser, a sliver
+    # below the 24 px a target needs, as the tram search's was.
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
+    types = set(re.findall(r'<input[^>]*\btype="(\w+)"', page)) | set(re.findall(r'\btype: "(\w+)"', _all_js()))
+    typed = types - {"checkbox", "radio", "hidden", "submit", "button", "module"}
+    assert typed >= {"text", "number", "search"}
+    css = (STATIC / "wizard.css").read_text(encoding="utf-8")
+    rule = re.search(r"^(input\[type=[^{]+)\{[^}]*min-height: 2\.75rem;", css, re.M)
+    assert rule
+    assert {t for t in typed if f'input[type="{t}"]' not in rule[1]} == set()
+
+
 STATIC_IMPORT = re.compile(r"""^\s*import\s+(?:[^"'();]*?\s+from\s+)?["']([^"']+)["']""", re.M)
 
 
