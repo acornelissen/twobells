@@ -477,6 +477,7 @@ class Key:
     label: str
     hint: str
     screen: bool = False  # the board uses it too while its display is a screen
+    london: bool = False  # only offered while [metro] has London's stops (london_metro)
 
 
 # The settings pages, by task. The overview only shows; every other page
@@ -771,6 +772,9 @@ KEYS = (
     Key("RDM_KB_API_KEY", "dashboard", "Rail Data Marketplace key for engineering works",
         "Optional: engineering works, with the address below. Rail Data Marketplace calls it Knowledgebase "
         "Incidents."),
+    Key("TFL_APP_KEY", "general", "TfL app key",
+        "Optional: London's live times work without one, at up to 50 calls a minute; a free key from TfL's API "
+        "portal allows more.", london=True),
 )
 
 
@@ -779,13 +783,23 @@ def keys(*groups: str) -> tuple[tuple[str, str, str], ...]:
     return tuple((k.name, k.label, k.hint) for k in KEYS if k.group in groups)
 
 
-def keys_used(views: tuple[str, ...] | list[str], display: str) -> tuple[tuple[str, str, str], ...]:
+def keys_used(views: tuple[str, ...] | list[str], display: str,
+              data: Mapping | None = None) -> tuple[tuple[str, str, str], ...]:
     """(name, label, hint) of each key the views on use: the general keys,
     each view's own, and while the board is on a screen, the keys its rows
-    use too (where each train is). E-paper never asks for those."""
+    use too (where each train is). E-paper never asks for those. TfL's key
+    is offered only while the settings `data` have London's stops."""
     screen = "board" in views and not DISPLAY_PANELS.get(display, DISPLAY_PANELS["inky"]).epaper
+    london = data is not None and london_metro(data)
     return tuple((k.name, k.label, k.hint) for k in KEYS
-                 if k.group == "general" or k.group in views or (screen and k.screen))
+                 if (k.group == "general" or k.group in views or (screen and k.screen)) and (london or not k.london))
+
+
+def london_metro(data: Mapping) -> bool:
+    """Whether [metro] has London's stops, whose times come live from TfL."""
+    metro = data.get("metro")
+    stops = metro.get("stops") if isinstance(metro, Mapping) else None
+    return isinstance(stops, Mapping) and any(isinstance(code, str) and is_london(code) for code in stops.values())
 
 
 # What setup saves that no field shows: the bus companies and route strips

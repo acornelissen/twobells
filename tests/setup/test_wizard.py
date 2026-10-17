@@ -1308,7 +1308,8 @@ def test_near_tram_stops_the_wizard_asks_which_with_their_walks():
     assert step["number"] == "Step 4 of 8:"
     assert "Piccadilly tram stop" in step["listed"] and "300 m away" in step["listed"]
     assert found["after"] == ["step-walk"] and found["back"] == "trams"
-    assert found["chosen"] == [{"label": "T", "code": "9400ZZMAPGD", "name": "Piccadilly Gardens"}]
+    assert found["chosen"] == [{"label": "T", "code": "9400ZZMAPGD", "name": "Piccadilly Gardens", "kind": "metrolink",
+                                "place": "Piccadilly Gardens tram stop"}]
     assert found["walked"]["tram_codes"] == ["9400ZZMAPGD"]
     assert "Minutes to walk to Piccadilly Gardens tram stop" in found["walks"]
 
@@ -1357,3 +1358,52 @@ def test_at_most_four_tram_stops_can_be_ticked():
         console.log(JSON.stringify({ ticked: boxes.filter((b) => b.checked).length, error: $("trams-error").textContent }));
     """, trams={"trams": many}, station=FILTER_MAN)
     assert found["ticked"] == 4 and "Pick at most 4 tram stops." in found["error"]
+
+
+NEAR_LONDON = [{"code": "940GZZLUBNK", "name": "Bank", "kind": "tube", "lat": 51.513, "lon": -0.089, "distance_m": 120},
+               {"code": "940GZZDLBNK", "name": "Bank", "kind": "dlr", "lat": 51.513, "lon": -0.088, "distance_m": 150},
+               {"code": "930GSWK", "name": "Bankside Pier", "kind": "river-bus", "lat": 51.508, "lon": -0.096,
+                "distance_m": 900}]
+
+
+# begin as a host offers it: TfL's key too, not set.
+BEGIN_TFL = {**BEGIN, "keys": [*KEYS_SET, {"name": "TFL_APP_KEY", "label": "TfL app key", "hint": "", "set": False,
+                                         "doc": ""}]}
+
+
+@needs_node
+def test_near_london_s_stops_the_wizard_names_each_by_its_kind_and_offers_tfl_s_key():
+    found = run_wizard(TO_TRAMS + """
+        const step = { listed: $("trams-list").textContent, legend: $("trams-legend").textContent,
+                       hint: $("trams-hint").textContent };
+        const boxes = [...$("trams-list").querySelectorAll('input[type="checkbox"]')];
+        boxes[1].checked = true;
+        for (const [type, fn] of boxes[1].listeners) if (type === "change") fn({ currentTarget: boxes[1] });
+        click("trams-next");
+        await settle();
+        const walks = $("walk-list").textContent;
+        click("walk-next");
+        await settle();
+        console.log(JSON.stringify({ step, walks, chosen: state.chosenTrams,
+                                     tflKey: !$("key-TFL_APP_KEY-field").hidden }));
+    """, trams={"trams": NEAR_LONDON}, station=FILTER_MAN, begin=BEGIN_TFL)
+    step = found["step"]
+    assert "Bank Underground station" in step["listed"] and "Bank DLR station" in step["listed"]
+    assert "Bankside Pier" in step["listed"] and "Pier tram stop" not in step["listed"]
+    assert step["legend"] == "London stops near home" and "live from TfL" in step["hint"]
+    assert found["chosen"] == [{"label": "T", "code": "940GZZDLBNK", "name": "Bank", "kind": "dlr",
+                                "place": "Bank DLR station"}]
+    assert "Minutes to walk to Bank DLR station" in found["walks"]
+    assert found["tflKey"] is True
+
+
+@needs_node
+def test_without_london_s_stops_the_wizard_leaves_tfl_s_key_out():
+    found = run_wizard(TO_TRAMS + """
+        click("trams-next");
+        await settle();
+        click("walk-next");
+        await settle();
+        console.log(JSON.stringify({ shown: shown(), tflKey: !$("key-TFL_APP_KEY-field").hidden }));
+    """, trams={"trams": NEAR_TRAMS}, station=FILTER_MAN, begin=BEGIN_TFL)
+    assert found == {"shown": ["step-keys"], "tflKey": False}

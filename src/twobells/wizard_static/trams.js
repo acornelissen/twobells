@@ -1,8 +1,9 @@
-// The tram stops step, only where home is near Manchester's Metrolink.
-// They come from a list bundled with the app, so finding them sends home
-// nowhere. Each ticked stop gets a label on the board, T then U, V and W, in
-// the order listed. With none near home (and none saved), the step isn't
-// there at all, and the walk times come next.
+// The tram stops step, only where home is near Manchester's Metrolink, or
+// near London's Underground, DLR, trams, cable car or river buses (whose
+// times come live from TfL). They come from lists bundled with the app, so
+// finding them sends home nowhere. Each ticked stop gets a label on the
+// board, T then U, V and W, in the order listed. With none near home (and
+// none saved), the step isn't there at all, and the walk times come next.
 
 import { $, h, fill, str, num, list, obj } from "../dashboard_static/dom.js";
 import { call } from "./api.js";
@@ -11,7 +12,16 @@ import { distance, homeKey, state } from "./state.js";
 import { go, numberSteps } from "./steps.js";
 import { enterWalk } from "./walk.js";
 
-const CODE = /^9400ZZMA[A-Z]{3}$/;
+// A Metrolink stop's code, or TfL's for a London one.
+const METROLINK = /^9400ZZMA[A-Z]{3}$/;
+const LONDON = /^(?:940GZZ(?:LU|DL|CR|AL)[A-Z]{3}|930G[A-Z]{3,4})$/;
+export const TRAM_CODE = { test: (code) => METROLINK.test(code) || LONDON.test(code) };
+// What each kind of stop is called after its name; a pier's name says so.
+const NOUNS = {
+  metrolink: " tram stop", tube: " Underground station", dlr: " DLR station", tram: " tram stop",
+  "cable-car": " cable car station", "river-bus": "",
+};
+export const tramKind = (kind) => (Object.hasOwn(NOUNS, str(kind)) ? kind : "metrolink");
 const LABELS = ["T", "U", "V", "W"];
 export const MAX_TRAMS = LABELS.length;
 
@@ -25,21 +35,36 @@ async function findTrams() {
   if (state.home) {
     const data = await call("trams", { lat: state.home.lat, lon: state.home.lon });
     state.trams = list(data.trams).map(obj)
-      .filter((s) => s && CODE.test(str(s.code)))
-      .map((s) => ({ code: s.code, name: str(s.name) || s.code, distance_m: num(s.distance_m) }));
+      .filter((s) => s && TRAM_CODE.test(str(s.code)))
+      .map((s) => ({ code: s.code, name: str(s.name) || s.code, kind: tramKind(s.kind), distance_m: num(s.distance_m) }));
   }
   for (const saved of state.saved.trams) {
     if (!state.trams.some((stop) => stop.code === saved.code)) {
-      state.trams.push({ code: saved.code, name: saved.name || saved.code, distance_m: null });
+      state.trams.push({ code: saved.code, name: saved.name || saved.code, kind: tramKind(saved.kind), distance_m: null });
     }
   }
   state.tramsFor = homeKey();
 }
 
+// The step's words for the stops it lists: Manchester's, London's, or both.
+function sayWhere() {
+  const london = state.trams.some((stop) => LONDON.test(stop.code));
+  const metrolink = state.trams.some((stop) => METROLINK.test(stop.code));
+  const [legend, hint] = london && !metrolink
+    ? ["London stops near home", "Home is near London's Underground, DLR, trams or river buses. Tick the stations "
+      + "and piers you use, up to 4, or none. Their times come live from TfL."]
+    : london
+      ? ["Stops near home", "Tick the stops you use, up to 4, all Metrolink or all London, or none."]
+      : ["Metrolink stops near home", "Home is near Manchester's Metrolink. Tick the tram stops you use, up to 4, "
+        + "or none for no trams. Tram times come from TfGM's timetable, as live tram times aren't open to new users."];
+  $("trams-legend").textContent = legend;
+  $("trams-hint").textContent = hint;
+}
+
 function drawTrams() {
   fill($("trams-list"), state.trams.map((stop, i) => {
     const id = `tram-${i}`;
-    const about = stop.distance_m === null ? "One of your tram stops now" : `${distance(stop.distance_m)} away`;
+    const about = stop.distance_m === null ? "One of your stops now" : `${distance(stop.distance_m)} away`;
     const box = h("input", {
       type: "checkbox", id, value: stop.code, checked: state.tramsTicked.has(stop.code), "aria-describedby": `${id}-about`,
     });
@@ -55,13 +80,14 @@ function drawTrams() {
       else state.tramsTicked.delete(stop.code);
     });
     return h("li", { class: "stop" },
-      h("div", { class: "option" }, box, h("label", { for: id }, `${stop.name} tram stop`)),
+      h("div", { class: "option" }, box, h("label", { for: id }, `${stop.name}${NOUNS[stop.kind]}`)),
       h("p", { class: "hint about", id: `${id}-about` }, `${about}.`));
   }));
 }
 
 function enterTrams() {
   go("trams");
+  sayWhere();
   drawTrams();
 }
 
@@ -90,7 +116,13 @@ export async function afterStops(nothingYet) {
 
 function leaveTrams() {
   setError("trams", "");
-  const chosen = ticked().map((stop, i) => ({ label: LABELS[i], code: stop.code, name: stop.name }));
+  const chosen = ticked().map((stop, i) => ({
+    label: LABELS[i], code: stop.code, name: stop.name, kind: stop.kind, place: `${stop.name}${NOUNS[stop.kind]}`,
+  }));
+  if (new Set(chosen.map((stop) => LONDON.test(stop.code))).size > 1) {
+    const first = $("trams-list").querySelector("input");
+    return refuse("trams", "Pick Metrolink stops or London ones, not both.", first || $("trams-heading"));
+  }
   if (!chosen.length && !state.station && !state.chosen.length) {
     const first = $("trams-list").querySelector("input");
     return refuse("trams", `Pick at least one: with no station, bus stops or tram stops, the ${state.noun} has nothing to show.`,

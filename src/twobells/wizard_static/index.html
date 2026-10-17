@@ -153,12 +153,12 @@
     </div>
   </section>
 
-  <!-- Tram stops: only where home is near Manchester's Metrolink -->
+  <!-- Tram stops: only where home is near Manchester's Metrolink or London's metro -->
   <section id="step-trams" class="step" aria-labelledby="trams-heading" hidden>
     <h2 id="trams-heading" tabindex="-1"><span id="trams-number">Step 4 of 9:</span> Your tram stops</h2>
-    <p class="hint">Home is near Manchester's Metrolink. Tick the tram stops you use, up to 4, or none for no trams. Tram times come from TfGM's timetable, as live tram times aren't open to new users.</p>
+    <p class="hint" id="trams-hint">Home is near Manchester's Metrolink. Tick the tram stops you use, up to 4, or none for no trams. Tram times come from TfGM's timetable, as live tram times aren't open to new users.</p>
     <fieldset id="trams-set" aria-describedby="trams-error">
-      <legend>Metrolink stops near home</legend>
+      <legend id="trams-legend">Metrolink stops near home</legend>
       <p class="error" id="trams-error" hidden></p>
       <ol id="trams-list" class="stop-list"></ol>
     </fieldset>

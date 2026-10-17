@@ -44,9 +44,9 @@ export const state = {
   stopsFor: "",
   labels: new Map(), // atco -> label typed, for stops ticked
   chosen: [], // [{label, atco, name, indicator}], when leaving the stops step
-  // Tram stops: those near home (and today's), [{code, name, distance_m}];
+  // Tram stops: those near home (and today's), [{code, name, kind, distance_m}];
   // whether there are any, so a step for them; the codes ticked; and
-  // [{label, code, name}] when leaving the step.
+  // [{label, code, name, kind, place}] when leaving the step.
   trams: [],
   tramsFor: "",
   askTrams: false,

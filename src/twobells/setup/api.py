@@ -116,6 +116,8 @@ STATIONS_WITHIN_KM = 40
 STOPS_SHOWN = 15
 STOPS_WITHIN_M = 1000
 TRAM_STOPS_SHOWN = 5
+# London's stations are close together, on many lines: a few more of them.
+LONDON_STOPS_SHOWN = 8
 MAX_TRAM_STOPS = schema.MAX_TRAM_STOPS
 # Labels for the tram stops picked, in order: T is for tram.
 TRAM_LABELS = ("T", "U", "V", "W")
@@ -155,6 +157,7 @@ _KEY_ANCHORS = {
     "BODS_API_KEY": "#bus-open-data-service",
     "TAPI_APP_ID": "#transportapi",
     "TAPI_APP_KEY": "#transportapi",
+    "TFL_APP_KEY": "#transport-for-london",
 }
 _COUNTRIES = ("England", "Wales", "Scotland", "Northern Ireland")
 _NAME_LENGTH = 100  # a stop's name from the timetable, as the page shows it
@@ -388,9 +391,12 @@ def _trams(value, field: str = "trams") -> dict[str, str]:
     for label, code in value.items():
         if not _LABEL.match(label):
             raise Invalid("A tram stop label is 1 to 3 letters or digits", field)
-        if not isinstance(code, str) or not setup.TRAM_STOP.match(code) or code not in setup.tram_stop_names():
-            raise Invalid(f"Tram stop {label} needs a Metrolink stop code", field)
+        if (not isinstance(code, str) or not (setup.TRAM_STOP.match(code) or setup.LONDON_STOP.match(code))
+                or code not in setup.tram_stop_names()):
+            raise Invalid(f"Tram stop {label} needs a Metrolink stop code, or TfL's for a London stop", field)
         trams[label] = code
+    if len({bool(setup.LONDON_STOP.match(code)) for code in trams.values()}) > 1:
+        raise Invalid("Pick Metrolink stops or London ones, not both", field)
     if len({label.upper() for label in trams}) != len(trams) or len(set(trams.values())) != len(trams):
         raise Invalid("Pick each tram stop once, with a label of its own", field)
     return trams
@@ -784,11 +790,12 @@ class SetupApi:
             if isinstance(towards, str) and towards.upper() in names:
                 out["filter"] = {"crs": towards.upper(), "name": names[towards.upper()]}
         metro = _table(data, "metro")
-        names = setup.tram_stop_names()
+        names, london = setup.tram_stop_names(), setup.london_stops_by_code()
         walks = _table(metro, "walk_minutes")
         for label, code in _saved_trams(metro).items():
-            out["trams"].append({"label": label, "code": code, "name": names.get(code, ""),
-                                 "walk": _saved_minutes(walks.get(label))})
+            kind = london[code].kind if code in london else "metrolink"
+            out["trams"].append({"label": label, "code": code, "name": london[code].name if code in london
+                                 else names.get(code, ""), "kind": kind, "walk": _saved_minutes(walks.get(label))})
         stops = _saved_stops(bus)
         if stops:
             walks = _table(bus, "walk_minutes")
@@ -877,13 +884,17 @@ class SetupApi:
         ]}
 
     def trams(self, payload) -> dict:
-        """The Metrolink tram stops nearest home, from the bundled list (no
-        network): none for a home far from Manchester, and then the page
-        skips the step. Each with the label it would have."""
+        """The Metrolink tram stops nearest home, or London's Underground,
+        DLR, tram, cable car and river bus stops, from the bundled lists (no
+        network): none for a home far from both, and then the page skips
+        the step. Each with its kind: "metrolink", or a London one's
+        (setup.LONDON_KINDS)."""
         home = _point(_fields(payload, ("lat", "lon")))
-        found = setup.nearby_tram_stops(home.lat, home.lon, limit=TRAM_STOPS_SHOWN)
-        return {"trams": [{"code": s.code, "name": s.name, "lat": s.lat, "lon": s.lon, "distance_m": s.distance_m}
-                          for s in found]}
+        found = [*setup.nearby_tram_stops(home.lat, home.lon, limit=TRAM_STOPS_SHOWN),
+                 *setup.nearby_london_stops(home.lat, home.lon, limit=LONDON_STOPS_SHOWN)]
+        found.sort(key=lambda s: (s.distance_m, s.code))
+        return {"trams": [{"code": s.code, "name": s.name, "kind": s.kind, "lat": s.lat, "lon": s.lon,
+                           "distance_m": s.distance_m} for s in found]}
 
     def walk(self, payload) -> dict:
         """Minutes from home to the station, each stop and each tram stop:
@@ -910,9 +921,10 @@ class SetupApi:
         if not isinstance(codes, list) or len(codes) > MAX_TRAM_STOPS:
             raise Invalid(f"Ask about at most {MAX_TRAM_STOPS} tram stops", "tram_codes")
         trams = {code: (name, lat, lon) for name, code, lat, lon in setup.bundled_tram_stops()}
+        trams.update((s.code, (s.name, s.lat, s.lon)) for s in setup.bundled_london_stops())
         for code in codes:
             if not isinstance(code, str) or code not in trams:
-                raise Invalid("A tram stop is its Metrolink stop code", "tram_codes")
+                raise Invalid("A tram stop is its Metrolink stop code, or TfL's for a London stop", "tram_codes")
             name, lat, lon = trams[code]
             places[code] = setup.TramStop(code, name, lat, lon, 0)
         found = self._walk_minutes(home, places)
@@ -1219,7 +1231,7 @@ def _saved_trams(metro: Mapping) -> dict[str, str]:
     if metro.get("enabled") is False or not isinstance(stops, dict):
         return {}
     found = [(label, code) for label, code in stops.items() if isinstance(label, str) and _LABEL.match(label)
-             and isinstance(code, str) and setup.TRAM_STOP.match(code)]
+             and isinstance(code, str) and (setup.TRAM_STOP.match(code) or setup.LONDON_STOP.match(code))]
     return dict(found[:MAX_TRAM_STOPS])
 
 

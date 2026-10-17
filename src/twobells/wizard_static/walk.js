@@ -66,7 +66,7 @@ export async function enterWalk() {
   state.walk = [];
   if (station) state.walk.push({ key: station.crs, what: `${station.name} station` });
   for (const stop of stops) state.walk.push({ key: stop.atco, what: `stop ${stop.label}, ${stopName(stop)}` });
-  for (const tram of trams) state.walk.push({ key: tram.code, what: `${tram.name} tram stop` });
+  for (const tram of trams) state.walk.push({ key: tram.code, what: tram.place || `${tram.name} tram stop` });
   for (const walk of state.walk) Object.assign(walk, { minutes: null, source: "none" });
   if (state.only) keepSavedWalks();
   const asking = state.walk.filter((walk) => walk.source === "none").map((walk) => walk.key);

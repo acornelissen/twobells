@@ -441,3 +441,30 @@ def test_a_key_test_ends_before_the_wizard_stops_waiting(monkeypatch):
     # Every call at its deadline, with room for the fetch service to start
     # first (several seconds on a Pi Zero), within the wizard's wait.
     assert len(seen) * keytest.CALL_DEADLINE + 10 <= WAITS["testkey"]
+
+
+# TfL: the Underground's line status, with the key in TfL's app_key header.
+
+TFL_KEY = "0123456789abcdef0123456789abcdef"
+TFL_STATUS = (FIXTURES / "tfl_line_status_synthetic.json").read_bytes()
+
+
+def test_tfl_asks_for_the_underground_s_status_with_the_key_in_a_header():
+    fake = Fake(("api.tfl.gov.uk/Line/Mode/tube/Status", TFL_STATUS))
+    result = check("TFL_APP_KEY", fake, env={**SAVED, "TFL_APP_KEY": TFL_KEY})
+    assert result == KeyResult("works", "It works: TfL answered with the Underground's line status.")
+    [(url, headers)] = fake.calls
+    assert TFL_KEY not in url and headers["app_key"] == TFL_KEY
+
+
+@pytest.mark.parametrize("answer, state", [
+    ((429, b'"Invalid app_key is provided."'), "wrong_key"),  # how TfL says no to a key it doesn't know
+    ((429, b'{"message": "Rate limit is exceeded. Try again in 30 seconds."}'), "unknown"),
+    ((403, b""), "wrong_key"),
+    ((503, b""), "service_down"),
+    (b'{"not": "a list"}', "unknown"),
+    (TimeoutError(), "service_down"),
+])
+def test_tfl_refusals(answer, state):
+    result = check("TFL_APP_KEY", Fake(("Line/Mode/tube/Status", answer)), value=TFL_KEY)
+    assert result.state == state and TFL_KEY not in result.message

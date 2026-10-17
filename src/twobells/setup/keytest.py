@@ -19,7 +19,9 @@ further than its first part; BODS bus positions in a box a few hundred
 metres across around the route strips' own stops (positions the board
 already sends BODS) or a fixed point in Glossop; and one stop's timetable
 from TransportAPI, which costs one of its 30 free lookups a day, so a page
-asks before testing that.
+asks before testing that; and TfL's line status for the Underground, with
+the key in TfL's app_key header (TfL answers a key it doesn't know with a
+429 saying so, which is told apart from its allowance being used up).
 
 A key never appears in a message: messages are built from fixed words and
 checked values only (a station code, an HTTP status), never the service's
@@ -41,13 +43,14 @@ from urllib.parse import quote, urlencode, urlsplit
 
 from ..core import net
 from ..core.errors import safe_message
-from ..sources import bods, darwin, transportapi
+from ..sources import bods, darwin, tfl, transportapi
 from ..sources.disruptions import kb_url_is_placeholder
 
 log = logging.getLogger(__name__)
 
 STATES = ("works", "wrong_key", "not_subscribed", "service_down", "missing", "unknown")
-KEY_NAMES = ("RDM_API_KEY", "RDM_DETAILS_API_KEY", "RDM_KB_API_KEY", "BODS_API_KEY", "TAPI_APP_ID", "TAPI_APP_KEY")
+KEY_NAMES = ("RDM_API_KEY", "RDM_DETAILS_API_KEY", "RDM_KB_API_KEY", "BODS_API_KEY", "TAPI_APP_ID", "TAPI_APP_KEY",
+             "TFL_APP_KEY")
 # Testing these spends one of TransportAPI's 30 free lookups for the day.
 COSTS_A_LOOKUP = frozenset({"TAPI_APP_ID", "TAPI_APP_KEY"})
 
@@ -106,6 +109,10 @@ _SERVICES = {
                             this="these keys"),
 }
 _SERVICES["TAPI_APP_KEY"] = _SERVICES["TAPI_APP_ID"]
+_SERVICES["TFL_APP_KEY"] = _Service("Transport for London", "Copy the Primary key again from your profile on "
+                                                            "TfL's API portal.")
+# What TfL says, with a 429, of a key it doesn't know.
+_TFL_UNKNOWN_KEY = "invalid app_key"
 
 
 def _fetch(url: str, headers: Mapping[str, str]) -> bytes:
@@ -378,8 +385,26 @@ def _tapi(keys: Mapping[str, str], config_data: Mapping, fetch: Fetch) -> KeyRes
     return KeyResult("works", "It works: TransportAPI sent a stop's bus times. That used 1 of today's lookups.")
 
 
+def _tfl(keys: Mapping[str, str], config_data: Mapping, fetch: Fetch) -> KeyResult:
+    service = _SERVICES["TFL_APP_KEY"]
+
+    def ask(url: str, headers: Mapping[str, str]) -> bytes:
+        try:
+            return fetch(url, headers)
+        except HTTPError as error:
+            if error.code == 429 and _TFL_UNKNOWN_KEY in _error_body(error):
+                raise _Outcome(_wrong(service)) from None
+            raise
+
+    answer = _json(_call(ask, f"{tfl.BASE_URL}/Line/Mode/tube/Status", {"app_key": keys["TFL_APP_KEY"]}, service),
+                   service)
+    if not isinstance(answer, list):
+        return _unreadable(service)
+    return KeyResult("works", "It works: TfL answered with the Underground's line status.")
+
+
 _TESTS = {"RDM_API_KEY": _darwin, "RDM_DETAILS_API_KEY": _details, "RDM_KB_API_KEY": _kb,
-          "BODS_API_KEY": _bods, "TAPI_APP_ID": _tapi, "TAPI_APP_KEY": _tapi}
+          "BODS_API_KEY": _bods, "TAPI_APP_ID": _tapi, "TAPI_APP_KEY": _tapi, "TFL_APP_KEY": _tfl}
 
 
 def _missing(name: str, keys: Mapping[str, str]) -> KeyResult | None:

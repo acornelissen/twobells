@@ -153,7 +153,7 @@ def test_each_key_is_in_exactly_one_group():
     names = Counter(k.name for k in schema.KEYS)
     assert set(names.values()) == {1}
     assert {k.group for k in schema.KEYS} <= set(schema.GROUPS)
-    assert [name for name, _, _ in schema.keys("general")] == ["RDM_API_KEY", "BODS_API_KEY"]
+    assert [name for name, _, _ in schema.keys("general")] == ["RDM_API_KEY", "BODS_API_KEY", "TFL_APP_KEY"]
     assert [name for name, _, _ in schema.keys("board")] == ["TAPI_APP_ID", "TAPI_APP_KEY"]
     assert [name for name, _, _ in schema.keys("dashboard")] == ["RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"]
 

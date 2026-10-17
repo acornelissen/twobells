@@ -512,7 +512,7 @@ def test_begin_names_the_page_and_offers_only_the_general_keys_by_default(board)
     api = SetupApi(board_target(board.config), lambda: dict(board.secrets), board.state)
     body = ok(api, "begin")
     assert body["title"] == "Set up your departures" and body["noun"] == "board"
-    assert [k["name"] for k in body["keys"]] == ["RDM_API_KEY", "BODS_API_KEY"]
+    assert [k["name"] for k in body["keys"]] == ["RDM_API_KEY", "BODS_API_KEY", "TFL_APP_KEY"]  # TfL's: for London
     assert [name for name, _, _ in setupapi.GENERAL_KEYS] == [name for name, _, _ in schema_keys("general")]
 
 
@@ -537,7 +537,7 @@ def test_begin_names_the_dashboards_page_and_offers_only_its_keys(dashboard):
     body = ok(dashboard, "begin")
     assert body["title"] == "Set up your dashboard" and body["noun"] == "dashboard"
     keys = {k["name"]: k for k in body["keys"]}
-    assert list(keys) == ["RDM_API_KEY", "BODS_API_KEY", "RDM_DETAILS_API_KEY", "RDM_KB_API_KEY"]
+    assert list(keys) == ["RDM_API_KEY", "BODS_API_KEY", "RDM_DETAILS_API_KEY", "RDM_KB_API_KEY", "TFL_APP_KEY"]
     assert keys["RDM_DETAILS_API_KEY"]["set"] and not keys["RDM_KB_API_KEY"]["set"]
     assert keys["RDM_DETAILS_API_KEY"]["doc"].endswith("docs/keys.md#rail-data-marketplace-service-details")
     assert keys["RDM_KB_API_KEY"]["doc"].endswith("docs/keys.md#rail-data-marketplace-knowledgebase-incidents")
@@ -680,7 +680,7 @@ def test_each_install_names_the_page_the_same_and_what_shows_the_departures_its_
     api = SetupApi(board_target(board.config), lambda: dict(board.secrets), board.state, install=INSTALLS[name])
     body = ok(api, "begin")
     assert body["title"] == "Set up your departures" and body["noun"] == noun
-    assert [k["name"] for k in body["keys"]] == ["RDM_API_KEY", "BODS_API_KEY"]  # the same on every install
+    assert [k["name"] for k in body["keys"]] == ["RDM_API_KEY", "BODS_API_KEY", "TFL_APP_KEY"]  # the same on every install
     assert [view["name"] for view in body["views"]["offered"]] == list(INSTALLS[name].offered)
 
 
@@ -1322,7 +1322,8 @@ def test_finishing_with_tram_stops_saves_them_with_their_walks(board):
     payload = {**TRAINS_ONLY, "trams": {"T": "9400ZZMAPIC"}, "walk": {"9400ZZMAPIC": 4}}
     ok(board, "finish", payload)
     assert _saved(board)["metro"] == {"stops": {"T": "9400ZZMAPIC"}, "enabled": True, "walk_minutes": {"T": 4}}
-    assert ok(board, "saved")["trams"] == [{"label": "T", "code": "9400ZZMAPIC", "name": "Piccadilly", "walk": 4}]
+    assert ok(board, "saved")["trams"] == [{"label": "T", "code": "9400ZZMAPIC", "name": "Piccadilly", "kind": "metrolink",
+                                           "walk": 4}]
     # Run again without them, trams are switched off, kept for switching back on.
     ok(board, "finish", TRAINS_ONLY)
     assert _saved(board)["metro"]["enabled"] is False
@@ -1360,3 +1361,37 @@ def test_a_shortcut_cannot_change_the_trams(board):
     status, body = board.handle("finish", {"only": "station", "station_crs": "GLO", "walk": {},
                                            "trams": {"T": "9400ZZMAPIC"}})
     assert status == 400 and body["field"] == "trams"
+
+
+# London: its Underground, DLR, tram, cable car and river bus stops, from the bundled list.
+
+CITY = {"lat": 51.5142, "lon": -0.0885}  # the Bank of England, standing in for a home in the City
+
+
+def test_london_s_stops_near_home_are_found_offline_with_their_kinds(board):
+    found = ok(board, "trams", CITY)["trams"]
+    assert len(found) == 8 and found[0]["code"] == "940GZZLUBNK"
+    assert found[0]["name"] == "Bank" and found[0]["kind"] == "tube"
+    assert {"tube", "dlr"} <= {stop["kind"] for stop in found}
+    assert all(stop["distance_m"] <= 5000 for stop in found)
+    assert board.calls == []
+
+
+def test_finishing_with_london_stops_saves_them_and_their_walks(board):
+    walk = ok(board, "walk", {"home": CITY, "tram_codes": ["940GZZLUBNK", "940GZZDLBNK"]})["walk"]
+    assert set(walk) == {"940GZZLUBNK", "940GZZDLBNK"}
+    payload = {**TRAINS_ONLY, "trams": {"T": "940GZZLUBNK", "U": "940GZZDLBNK"}, "walk": {"940GZZLUBNK": 3}}
+    ok(board, "finish", payload)
+    assert _saved(board)["metro"]["stops"] == {"T": "940GZZLUBNK", "U": "940GZZDLBNK"}
+    assert [(t["code"], t["name"], t["kind"]) for t in ok(board, "saved")["trams"]] == [
+        ("940GZZLUBNK", "Bank", "tube"), ("940GZZDLBNK", "Bank", "dlr")]
+
+
+@pytest.mark.parametrize("trams", [
+    {"T": "940GZZLUBNK", "U": "9400ZZMAPIC"},  # Manchester and London
+    {"T": "940GZZLUXXX"},  # no such station
+    {"T": "940GZZOVBNK"},  # the Overground is Darwin's
+])
+def test_finishing_refuses_london_stops_that_aren_t_right(board, trams):
+    status, body = board.handle("finish", {**TRAINS_ONLY, "trams": trams})
+    assert status == 400 and body["field"] == "trams", body

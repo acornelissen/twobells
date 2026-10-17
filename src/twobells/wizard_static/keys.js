@@ -29,12 +29,21 @@ const SIGN_UP = {
     "If BODS emails you to confirm your address, follow its link.",
     "Sign in, open Account settings and copy the API key.",
   ],
+  TFL_APP_KEY: [
+    "Optional: London's times work without it. Sign up at api-portal.tfl.gov.uk and confirm your email address.",
+    "Sign in, open Products and subscribe (free) to 500 Requests per min.",
+    "Open your Profile and copy the Primary key.",
+  ],
 };
 
 // "Test this key": the host makes one harmless call to the key's service.
 // The wizard offers only the keys every view uses; each view's own are
 // signed up for and tested on its settings tab.
-const TESTED = ["RDM_API_KEY", "BODS_API_KEY"];
+const TESTED = ["RDM_API_KEY", "BODS_API_KEY", "TFL_APP_KEY"];
+// TfL's key is for London's stops alone: it is offered only once some are
+// ticked, or when one is set already.
+const LONDON = /^(?:940GZZ|930G)/;
+const offered = (key) => key.name !== "TFL_APP_KEY" || key.set || state.chosenTrams.some((t) => LONDON.test(t.code));
 const RESULTS = { // state: [icon, words]; the colour and icon only repeat the words
   testing: ["clock", "Testing"],
   works: ["check", "Works"],
@@ -111,7 +120,7 @@ function drawKeys() {
       id, type: "text", autocomplete: "off", spellcheck: "false", class: "key-input",
       "aria-describedby": `${id}-hint ${id}-needed ${id}-error`,
     });
-    return h("div", { class: "field key" },
+    return h("div", { class: "field key", id: `${id}-field` },
       h("label", { for: id }, key.label),
       h("p", { class: "hint", id: `${id}-hint` }, `${key.hint} `,
         h("strong", { class: key.set ? "is-set" : "not-set" }, key.set ? "Set." : "Not set.")),
@@ -130,6 +139,7 @@ export function enterKeys() {
   for (const key of state.keys) {
     const needed = NEEDED[key.name] ? NEEDED[key.name]() : "";
     note(`key-${key.name}-needed`, needed && !key.set ? needed : "");
+    $(`key-${key.name}-field`).hidden = !offered(key);
   }
 }
 
