@@ -29,7 +29,8 @@ departures starting there, has every stop it calls at placed (_turning).
 The BODS request's box is drawn round them all (bodsbus), so it grows to
 match. Those placed only for that (Schedule.turning_only) are marked apart:
 they are not near your stops, so a disruption there isn't counted as
-nearby (sources/disruptions.py). While reading, before NaPTAN has placed them, every stop of a
+nearby (sources/disruptions.py), and a box too big is drawn without them.
+While reading, before NaPTAN has placed them, every stop of a
 journey that may end near one of yours (_may_be_near) is held, and those
 of journeys that don't are let go once it has.
 

@@ -12,7 +12,8 @@ only costs the delays: the timetabled times are still shown.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping
+import math
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
@@ -22,7 +23,7 @@ from ..core.errors import safe_message
 from ..core.model import Departure, Strip, strip_key
 from ..core.net import get_bytes
 from ..timetable import build as timetable
-from ..timetable.model import Journey, Schedule
+from ..timetable.model import Journey, Schedule, StopPosition
 from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
 from . import holidays, lastbus, livebus
 from .bods import DEFAULT_BASE_URL, BodsVehicleSource, HttpGetBytes, Vehicle
@@ -39,6 +40,15 @@ MAX_AGE = timedelta(days=28)
 # whose bus turns round at your stop (timetable/build.py), so inbound buses are
 # seen all the way in.
 _MARGIN = 0.01
+# A box bigger than this, in square kilometres, is drawn round the stops of
+# the 20 calls before yours only (all but Schedule.turning_only), as before
+# those turning journeys were placed whole: BODS sends every bus in the box,
+# its trackers' last positions too, and over a city that comes to more than
+# an answer may be (bods.MAX_RESPONSE_BYTES), losing every check's live
+# positions. In October 2026 a box of Glossop's (16 by 28 km, 450 km²) over
+# Manchester answered with 1.1 MB, and its own with 0.2 MB.
+_MAX_BOX_KM2 = 500
+_KM_PER_DEGREE = 111.32
 
 
 def unusable(schedule: Schedule | None, stops: Mapping[str, str], now: datetime) -> str | None:
@@ -54,13 +64,26 @@ def unusable(schedule: Schedule | None, stops: Mapping[str, str], now: datetime)
 
 
 def _box(schedule: Schedule) -> tuple[float, float, float, float] | None:
-    """(west, south, east, north) around the positioned stops, or None if there are none."""
-    positions = schedule.positions.values()
+    """(west, south, east, north) around the positioned stops, or round those
+    of the 20 calls before yours if that is too big; None if there are none."""
+    box = _around(schedule.positions.values())
+    if box is None or _km2(box) <= _MAX_BOX_KM2:
+        return box
+    return _around([position for atco, position in schedule.positions.items() if atco not in schedule.turning_only])
+
+
+def _around(positions: Collection[StopPosition]) -> tuple[float, float, float, float] | None:
     if not positions:
         return None
     lats = [p.lat for p in positions]
     lons = [p.lon for p in positions]
     return (min(lons) - _MARGIN, min(lats) - _MARGIN, max(lons) + _MARGIN, max(lats) + _MARGIN)
+
+
+def _km2(box: tuple[float, float, float, float]) -> float:
+    west, south, east, north = box
+    across = (east - west) * _KM_PER_DEGREE * math.cos(math.radians((south + north) / 2))
+    return across * (north - south) * _KM_PER_DEGREE
 
 
 @dataclass(frozen=True)

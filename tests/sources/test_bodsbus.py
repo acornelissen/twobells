@@ -103,6 +103,44 @@ def test_live_positions_are_asked_for_around_the_timetable_s_stops(tmp_path):
     assert east - west < 0.05 and north - south < 0.05
 
 
+def turning_in_from(lat: float, lon: float) -> Schedule:
+    """The schedule with a 341 that turns round at Henry Street, coming in from
+    (lat, lon) 21 calls away: its first stop is placed, as the timetable places
+    every stop of a journey whose bus turns round at your stop, but is beyond
+    the 20 calls before yours, so marked as placed only for that."""
+    way = {f"WAY{n}": StopPosition(f"Way {n}", 53.4436, -1.95326 - n * 0.001) for n in range(1, 21)}
+    first = {"FAR": StopPosition("Far away", lat, lon)}
+    calls = (Call("FAR", 500), *(Call(atco, 500 + n) for n, atco in enumerate(reversed(way), 1)), Call(HENRY_A, 530))
+    inbound = Journey("341", "BNGN", "Glossop", "4173", calls, Calendar(days=frozenset(range(7))))
+    return schedule(journeys=(EAST, inbound), positions={**POSITIONS, **way, **first}, turning_only=frozenset(first))
+
+
+def asked_box(bus) -> tuple[float, ...]:
+    return tuple(map(float, bus.asked[0].split("boundingBox=")[1].split("&")[0].split("%2C")))
+
+
+def test_the_box_takes_in_the_whole_way_of_a_bus_turning_round_at_your_stop(tmp_path):
+    # From about 25 km south-west: the box grows to take it in, to 18 by 24 km
+    # (Glossop's own is 16 by 28).
+    timetable.save(tmp_path, turning_in_from(53.25, -2.2))
+    bus = source(tmp_path, at(10, 0))
+    bus.fetch()
+    west, south, east, north = asked_box(bus)
+    assert south < 53.25 and west < -2.2
+
+
+def test_a_box_too_big_is_drawn_round_the_20_stops_before_yours_only(tmp_path):
+    # From about 30 km south-west: a box taking it in, 25 by 29 km, would
+    # answer with more than BODS's answers may be over a city, so every check
+    # would lose its live positions.
+    timetable.save(tmp_path, turning_in_from(53.2, -2.3))
+    bus = source(tmp_path, at(10, 0))
+    bus.fetch()
+    west, south, east, north = asked_box(bus)
+    assert west > -2.0 and south > 53.4
+    assert west < -1.95326 - 20 * 0.001 and east > -1.948157  # the 20 calls before, and your stop
+
+
 def test_without_live_positions_the_timetabled_times_still_show(tmp_path, caplog):
     timetable.save(tmp_path, schedule())
     bus = source(tmp_path, at(10, 0), body=OSError("network down"))
