@@ -1,6 +1,6 @@
 # Tram times
 
-Where home is near Manchester's Metrolink, the board and the dashboard can show trams too, in a section of their own called **Trams**.
+Where home is near Manchester's Metrolink, the board and the dashboard can show trams too, in a section of their own called **Trams**. London's Underground, DLR, trams, cable car and river buses come live from TfL in the same section instead: see [London](london.md).
 
 - [Where tram times come from](#where-tram-times-come-from)
 - [Setting it up](#setting-it-up)

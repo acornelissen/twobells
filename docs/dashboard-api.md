@@ -246,7 +246,36 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `stops` are your tram stops by label: `name` from the bundled list of Metrolink stops (null if it hasn't the code), `code` the NaPTAN code, `walk_min` as on its rows.
   - Every row is a booked time: `status` is always `unknown`, `expected` and `expected_at` null and `live` false, as TfGM's live tram times aren't open to new users. `line` is TfGM's ("Blue Line"), or "Replacement Bus" for a bus standing in, which has `replacement_bus` true. Trams have no history: `GET /api/history/<id>` doesn't know them, and the page doesn't ask.
   - **On the page:** the Trams section lists each with its time and "sched.", its line under the destination, its stop where there are several, and when to leave; Next to catch takes them as **Timetable only**. An older fetch service, mid-upgrade, sends no `metro`, and the page shows no trams.
-- **`walk`:** the walk times as set, by mode and stop label (`*` for any stop): `train`, `bus` and `metro` (the tram stops). The page reads `walk.train` for the trains' walk line; `walk_min` on rows and stops supersedes the rest.
+- **`metro`, London's** (live from TfL's Unified API, for `[metro]` with London's stops; see [London](london.md)):
+
+  ```json
+  "metro": {
+    "label": "Underground",
+    "live": true,
+    "status": {"last_success": "…", "stale": false, "error": null, "note": null},
+    "timetable": null,
+    "stops": {"T": {"name": "Bank", "code": "940GZZLUBNK", "walk_min": 4}},
+    "messages": [
+      {"text": "Central Line: Minor delays between White City and Liverpool Street.", "category": null, "severity": "minor", "kind": "service"},
+      {"text": "Bank: The lift to the Northern line is not working today.", "category": null, "severity": "normal", "kind": "station"}
+    ],
+    "rows": [{
+      "id": "0000000000000002", "line": "Northern line", "line_id": "northern", "kind": "tube",
+      "destination": "Edgware", "via": "via Bank", "stop": "T", "stop_name": "Bank",
+      "platform": "4", "bound": "Northbound", "where": "Between Borough and London Bridge",
+      "scheduled": "07:06", "scheduled_at": "…", "expected": "07:06", "expected_at": "…",
+      "status": "on_time", "status_text": "Live", "status_spoken": "Live",
+      "live": true, "replacement_bus": false, "walk_min": 4, "leave_at": "…"
+    }]
+  }
+  ```
+
+  - `label` is `Underground`, `DLR`, `Trams`, `Cable car` or `River buses` for stops all of one kind, else `Metro`. `live` is true and `timetable` null: there is nothing to build.
+  - `stops` as for Metrolink's, `name` from the bundled list of London's stops ("Bank DLR" for a DLR station).
+  - Every row is live: TfL gives when it is expected and no booked time, so `scheduled` and `scheduled_at` are the expected time too, `status` is always `on_time`, and there is no history (`GET /api/history/<id>` doesn't know them). `line` is the line as said ("Central line", "DLR", "RB1"), `line_id` TfL's id for it, `kind` one of `tube`, `dlr`, `tram`, `cable-car` or `river-bus`. `via`, `platform`, `bound` ("Eastbound") and `where` (TfL's words for where it is now) can each be null.
+  - `messages` are as the trains' are: `service` for a line at your stops not running well, from TfL's line status every 5 minutes (each line's status older than 30 minutes is dropped); `station` for a lift, escalator or step-free access at one of your stations. `category` is always null.
+  - **On the page:** the section takes `label` as its heading; each row counts down with the live mark, says its line (with the line's colour beside it), which way and its platform, and where it is; Next to catch takes them as live. `service` messages join the disruption line under the hero, headed by `label`; `station` ones are a quiet "Station information" line in the section.
+- **`walk`:** the walk times as set, by mode and stop label (`*` for any stop): `train`, `bus` and `metro` (the tram stops, or London's). The page reads `walk.train` for the trains' walk line; `walk_min` on rows and stops supersedes the rest.
 - **`quiet`:** true while one of the dashboard's quiet windows (`quiet_windows`, bank holidays counted as Sundays) is on, else false. It is worked out once a minute, so it can be up to a minute behind the window. The wall-tablet page (`/?kiosk`) dims while it is true.
 - **`row_strips`:** whether the page draws each row's position strip (`[dashboard] row_strips`, **Position strips in each row** in the settings). When false, rows keep their words without the drawing, and only the first train row says where its train is. A snapshot without it, from an older server, counts as true. The wall-tablet page never draws them.
 - **`scrolling`:** whether the first train's calling-at line may scroll (`scrolling`, **Scrolling text** on the General page of the settings, which the board's screen follows too). When false, every look shows two lines of it, cut short. A snapshot without it, from an older server, counts as true.
@@ -331,7 +360,7 @@ A top-level key of `/api/snapshot`, after `weather`. It is `null` when neither s
   - `severity` is `slight`, `normal`, `severe` or `unknown`; always shown in words.
   - `relevance` is `your_stop`, `nearby` or `line`, most relevant first (see above).
   - `link` is `null` unless the feed gave an https link on a known operator's site (`disruptions.LINK_HOSTS`).
-- **On the page:** one line under the hero names the first item in force at or near our stops (`your_stop` or `nearby`), or a rail service message, and how many more there are; opening it lists them all, in force first, then coming up (folded), each most relevant first, in words. Rail service `messages` join it. A bus row whose line or stop an item names, during one of its periods, gets a "Disruption" link that opens the line at it.
+- **On the page:** one line under the hero names the first item in force at or near our stops (`your_stop` or `nearby`), or a rail service message, and how many more there are; opening it lists them all, in force first, then coming up (folded), each most relevant first, in words. Rail service `messages` join it, and so do London's lines' (`metro.messages` of kind `service`). A bus row whose line or stop an item names, during one of its periods, gets a "Disruption" link that opens the line at it.
 
 ## Snapshot: `timetable_changes`
 

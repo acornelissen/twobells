@@ -41,11 +41,11 @@ The version running is at the foot of every page.
   - **Walk to each stop:** a box for each stop, named by the stop and its label, like *Henry Street (A)*, in minutes. An empty box means no leave time for that stop.
   - **Only buses heading to:** optional, separated by commas, for example `Ashton, Hyde`. Empty shows every bus.
   - Advanced: **Stop codes**, one per line, written `LABEL = stop code`, for example `A = 1000DGHS0900`. Find stop codes on [bustimes.org](https://bustimes.org): the code is the last part of a stop page's address.
-- **Trams** (only while trams are set up; see [Tram times](trams.md))
+- **Trams** (only while trams are set up, Metrolink's or London's; see [Tram times](trams.md) and [London](london.md))
   - **Show trams:** on or off, as for trains.
   - **Walk to each tram stop:** a box for each, named by the stop and its label, like *Piccadilly (T)*, in minutes.
   - **Only trams heading to:** optional, separated by commas, for example `Bury, Altrincham`. Empty shows every tram.
-  - Advanced: **Tram stop codes**, one per line, written `LABEL = stop code`, for example `T = 9400ZZMAPIC`; up to 4.
+  - Advanced: **Tram stop codes**, one per line, written `LABEL = stop code`, for example `T = 9400ZZMAPIC`, or TfL's code for a London stop, like `T = 940GZZLUBNK`; up to 4, all Metrolink or all London.
 - **Weather** (once setup or `config.toml` gives a location; see [Rain warning set-up](configuration.md#rain-warning-set-up))
   - **Show the weather:** on or off. The rain warning on the board and the dashboard's forecast.
   - **Warn of rain when the chance is at least:** 50 % means warn when rain is more likely than not.

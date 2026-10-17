@@ -11,6 +11,7 @@ Checked: October 2026. The services change their websites from time to time, so 
 - [Rail Data Marketplace: Knowledgebase Incidents](#rail-data-marketplace-knowledgebase-incidents) (engineering works)
 - [Bus Open Data Service](#bus-open-data-service) (buses)
 - [TransportAPI](#transportapi) (a stand-in for bus times)
+- [Transport for London](#transport-for-london) (London's Underground, DLR, trams and river buses; optional)
 - [Services that need no key](#services-that-need-no-key)
 - [Keeping keys safe](#keeping-keys-safe)
 - [Replacing a key](#replacing-a-key)
@@ -28,10 +29,12 @@ All of them are free.
 | `RDM_DETAILS_API_KEY` (Service Details) | optional on a screen | optional on a screen | optional | needed |
 | `RDM_KB_API_KEY` (Knowledgebase Incidents) | – | – | optional | needed |
 | `TAPI_APP_ID`, `TAPI_APP_KEY` (TransportAPI) | – | optional | not used | optional |
+| `TFL_APP_KEY` (Transport for London) | – | – | optional, for London | optional, for London |
 
 - **Trains only:** one key. Start here; you can add the rest later.
 - **Buses on the board:** BODS gives bus times all day at no cost. TransportAPI is only a stand-in while there's no bus timetable; see [TransportAPI](#transportapi).
 - **The dashboard** never uses TransportAPI, even if its keys are set.
+- **London's Underground, DLR, trams and river buses** work without a key; TfL's only raises how often they may be asked for. See [London](london.md).
 - **Everything** means every feature on both: where each train is and engineering works on the dashboard, and the TransportAPI stand-in on the board.
 
 ## Where keys go
@@ -44,6 +47,7 @@ The easiest way is to paste them in the settings, at `/settings` on your install
 | `TAPI_APP_ID`, `TAPI_APP_KEY` | the **Keys** page (only while the board view is on) |
 | `RDM_DETAILS_API_KEY` | the **Keys** page (only while the dashboard view, or the board view on an HDMI screen, is on) |
 | `RDM_KB_API_KEY` | the **Keys** page (only while the dashboard view is on) |
+| `TFL_APP_KEY` | the setup wizard's **Keys** step once you have ticked London stops, or the **Keys** page while they are set up |
 
 Keys pasted there are saved in `secrets.env` in the install's store (`/var/lib/twobells` on a Pi, the `/data` volume in Docker; see [Where things are kept](configuration.md#where-things-are-kept)), readable only by the app. They win over keys in a file of your own, and need no restart.
 
@@ -296,6 +300,37 @@ With `source = "transportapi"` under `[bus]`, `twobells probe bus` checks it dir
 
 ---
 
+## Transport for London
+
+**What it unlocks:** more calls a minute to TfL, for London's Underground, DLR, trams, cable car and river buses (see [London](london.md)).
+
+**Needed?** No. London's times work without it: TfL allows 50 calls a minute from one internet address without a key, and a board and a dashboard on four stops make about 13. A key allows 500.
+
+**Cost:** free.
+
+### Make an account
+
+1. Go to <https://api-portal.tfl.gov.uk> and choose **Sign up**.
+2. Confirm your email address from the email TfL sends.
+
+### Subscribe
+
+Sign in, open **Products**, and subscribe to **500 Requests per min**. It is free, and approved straight away.
+
+### Find the key
+
+Open your **Profile**. Under your subscription are a **Primary key** and a **Secondary key**; copy the **Primary key**.
+
+### Put it in
+
+The **TfL app key** box on the setup wizard's **Keys** step, once you have ticked London stops, or on the settings' **Keys** page while they are set up. Or `TFL_APP_KEY` in `/etc/twobells/secrets.env`. The app sends it in TfL's `app_key` header, never in an address.
+
+### Check it works
+
+**Test this key** in the wizard, or **Save and test** on the **Keys** page, asks TfL for the Underground's line status once, with the key. TfL answers a key it doesn't know by refusing it, which the test reports as the wrong key, not as its allowance being used up.
+
+---
+
 ## Services that need no key
 
 These are free and need no sign-up, so there's nothing to look for. Each one is sent only what it needs, from your home internet address:
@@ -308,6 +343,7 @@ These are free and need no sign-up, so there's nothing to look for. Each one is 
 - **OpenStreetMap map tiles** (the dashboard's bus maps): your browser fetches the squares of map for the area on screen, so OpenStreetMap sees roughly where you're looking.
 - **NaPTAN** (bus stop names and positions, for the bus position page): the codes of the stops on your route.
 - **TfGM's timetable** (Manchester's Metrolink trams, where set up; see [Tram times](trams.md)): nothing about you; the board downloads the whole timetable, about once a week, and keeps your tram stops' part.
+- **TfL's Unified API** (London's Underground, DLR, trams, cable car and river buses, where set up; see [London](london.md)): the codes of your London stops and the lines calling there. Its key is optional: see [Transport for London](#transport-for-london).
 
 ---
 

@@ -41,6 +41,7 @@ Then:
 - [Password and reset codes](password.md): claiming the settings, a forgotten password, and why sign-in can refuse.
 - [Bus times](buses.md): the BODS timetable, live positions, and TransportAPI as a stand-in.
 - [Tram times](trams.md): Manchester's Metrolink, from TfGM's timetable.
+- [London](london.md): the Underground, DLR, trams, cable car and river buses, live from TfL.
 - [Displays](displays.md): choosing and setting up a display, the screen's bus position page, and its station announcements.
 - [Settings by hand](configuration.md): `config.toml`, where things are kept, what each view shows, the rain warning, bank holidays and scrolling text.
 
