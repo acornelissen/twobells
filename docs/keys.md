@@ -11,7 +11,7 @@ Checked: October 2026. The services change their websites from time to time, so 
 - [Rail Data Marketplace: Knowledgebase Incidents](#rail-data-marketplace-knowledgebase-incidents) (engineering works)
 - [Bus Open Data Service](#bus-open-data-service) (buses)
 - [TransportAPI](#transportapi) (a stand-in for bus times)
-- [Transport for London](#transport-for-london) (London's Underground, DLR, trams and river buses; optional)
+- [Transport for London](#transport-for-london) (London's Underground, DLR, trams, cable car and river buses; optional)
 - [Services that need no key](#services-that-need-no-key)
 - [Keeping keys safe](#keeping-keys-safe)
 - [Replacing a key](#replacing-a-key)
@@ -34,7 +34,7 @@ All of them are free.
 - **Trains only:** one key. Start here; you can add the rest later.
 - **Buses on the board:** BODS gives bus times all day at no cost. TransportAPI is only a stand-in while there's no bus timetable; see [TransportAPI](#transportapi).
 - **The dashboard** never uses TransportAPI, even if its keys are set.
-- **London's Underground, DLR, trams and river buses** work without a key; TfL's only raises how often they may be asked for. See [London](london.md).
+- **London's Underground, DLR, trams, cable car and river buses** work without a key; TfL's only raises how often they may be asked for. See [London](london.md).
 - **Everything** means every feature on both: where each train is and engineering works on the dashboard, and the TransportAPI stand-in on the board.
 
 ## Where keys go
@@ -65,7 +65,7 @@ Keys pasted there are saved in `secrets.env` in the install's store (`/var/lib/t
 RDM_API_KEY=0a1b2c3d4e5f...
 ```
 
-`deploy/secrets.env.example` has every key, grouped General, Board and Dashboard. Where the file goes:
+`deploy/secrets.env.example` has every key, grouped General, TfL's optional one, Board and Dashboard. Where the file goes:
 
 | Install | File | Notes |
 |---|---|---|
