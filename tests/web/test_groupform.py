@@ -389,5 +389,6 @@ def test_a_refused_save_marks_each_field_drawn_as_typed_but_not_saved(store):
 def test_a_section_switched_off_says_so_on_every_page_that_has_it(store):
     store.config_path.write_text(CONFIG.replace('operators = ["BNML"]', 'operators = ["BNML"]\nenabled = false'))
     page = board_form(store, lambda: dict(ENV)).render("tok")
-    off = re.findall(r'<h2 id="(section-[\w-]+)">[^<]+</h2> <span class="pill pill-neutral">', page)
+    off = re.findall(r'<h2 id="(section-[\w-]+)">[^<]+</h2> <span class="pill pill-neutral"><svg[^>]*><path[^>]*/></svg> Off<',
+                     page)
     assert off == ["section-buses", "section-buses"]  # on Trains and buses, and the board's own section

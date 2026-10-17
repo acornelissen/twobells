@@ -973,9 +973,38 @@ def _tram_form(tmp_path):
     return board_form(config, lambda: dict(ENV)), config
 
 
-def test_trams_have_sections_only_while_set_up(setup, tmp_path):
+def test_trams_not_set_up_say_so_and_take_stop_codes_on_trains_and_buses(setup):
     form, *_ = setup
-    assert 'id="section-trams"' not in form.render("tok")
+    page = form.render("tok")
+    assert page.count('id="section-trams"') == 2  # Trains and buses, and the board's
+    trams = [part[:part.index("</fieldset>")] for part in page.split('<h2 id="section-trams">')[1:]]
+    assert all("Not set up" in part and "Trams aren&#x27;t set up." in part for part in trams)
+    # For trams nowhere near home: their codes can be typed on Trains and buses.
+    assert 'id="metro_stops"' in trams[0] and "or type their codes below." in trams[0]
+    assert 'id="metro_stops"' not in trams[1] and "add a [metro] section to config.toml" in trams[1]
+    assert 'id="metro_enabled"' not in page and 'id="board_metro_rows"' not in page
+
+
+def test_typing_tram_stop_codes_sets_trams_up(setup):
+    form, config, state, _ = setup
+    assert form.save(fields_of(form)) == {}  # left empty: still not set up
+    assert "metro" not in read_overlay_in(state)
+    assert form.save(fields_of(form) | {"metro_stops": "T = 940GZZLUVIC\nU = 940GZZDLBNK"}) == {}
+    assert read_overlay_in(state)["metro"] == {"stops": {"T": "940GZZLUVIC", "U": "940GZZDLBNK"}}
+    load_config(config, ENV)  # loads, London's stops and all
+    page = form.render("tok")
+    assert 'id="metro_enabled"' in page and "Trams aren&#x27;t set up." not in page
+
+
+def test_tram_stop_codes_typed_while_not_set_up_are_checked(setup):
+    form, *_ = setup
+    errors = form.save(fields_of(form) | {"metro_stops": "T = 1800SB12341"})
+    assert "9400ZZMA" in errors["metro_stops"]
+    page = form.render("tok", "", errors, fields_of(form) | {"metro_stops": "T = 1800SB12341"})
+    assert re.search(r'<textarea[^>]*id="metro_stops"[^>]*aria-invalid="true"', page)
+
+
+def test_trams_have_their_settings_once_set_up(tmp_path):
     form, _ = _tram_form(tmp_path)
     page = form.render("tok")
     assert page.count('id="section-trams"') == 2  # Trains and buses, and the board's

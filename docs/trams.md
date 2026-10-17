@@ -1,6 +1,6 @@
 # Tram times
 
-Where home is near Manchester's Metrolink, the board and the dashboard can show trams too, in a section of their own called **Trams**. London's Underground, DLR, trams, cable car and river buses come live from TfL in the same section instead: see [London](london.md).
+The board and the dashboard can show Manchester's Metrolink trams too, wherever home is, in a section of their own called **Trams**. London's Underground, DLR, trams, cable car and river buses come live from TfL in the same section instead: see [London](london.md).
 
 - [Where tram times come from](#where-tram-times-come-from)
 - [Setting it up](#setting-it-up)
@@ -17,7 +17,7 @@ Only Metrolink is read. TfGM lists the replacement buses it runs when part of th
 
 ## Setting it up
 
-The [setup wizard](setup-wizard.md#the-steps) asks for your tram stops after the bus stops, but only where home is near some: it finds the Metrolink stops within 5 km of home, from a list that comes with the app (from NaPTAN), so nothing is sent anywhere to find them. Tick up to 4. Each gets a label, T, U, V and W, and a walk time, as the bus stops do.
+The [setup wizard](setup-wizard.md#the-steps) asks for your tram stops after the bus stops. It lists the Metrolink stops within 5 km of home, and **Find a stop by name** finds any other, however far away, from a list that comes with the app (from NaPTAN), so nothing is sent anywhere to find them. Tick up to 4. Each gets a label, T, U, V and W, and a walk time, as the bus stops do; a stop over an hour's walk away gets none, so the board gives no time to leave for it.
 
 In `config.toml` it looks like this:
 
@@ -30,7 +30,7 @@ T = "9400ZZMAPIC"              # Piccadilly: 9400ZZMA and the three letters TfGM
 T = 6
 ```
 
-A stop's code is `9400ZZMA` and its three letters, as NaPTAN has it; `src/twobells/data/metrolink_stops.csv` lists every stop's. Up to 4 stops; anything else stops the board loading, saying why. The [settings](settings.md#trains-and-buses) have a **Trams** section on the Trains and buses page (switch them off and on, the walks, which way, the stop codes under Advanced) and on the Board page (how many show, and when the board checks), and **Most trams listed** on the Dashboard page, all shown only while trams are set up. Trams are the third [mode of transport](configuration.md#modes-of-transport): a small display has room for two of trains, buses and trams.
+A stop's code is `9400ZZMA` and its three letters, as NaPTAN has it; `src/twobells/data/metrolink_stops.csv` lists every stop's. Up to 4 stops; anything else stops the board loading, saying why. The [settings](settings.md#trains-and-buses) have a **Trams** section on the Trains and buses page (switch them off and on, the walks, which way, the stop codes under Advanced) and on the Board page (how many show, and when the board checks), and **Most trams listed** on the Dashboard page, all shown once trams are set up. Before then, the Trains and buses page's **Trams** section has only **Tram stop codes**: typing some there sets trams up. Trams are the third [mode of transport](configuration.md#modes-of-transport): a small display has room for two of trains, buses and trams.
 
 ## How the timetable is kept
 

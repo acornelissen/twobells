@@ -77,6 +77,10 @@ _MISSING = {
     "weather": ("No location is set for the rain warning and forecast.", "Set home with setup",
                 ", or add a [weather] section with lat and lon to config.toml."),
 }
+# The fields a section not set up still shows, so it can be set up here: tram
+# stops by their codes, for those who want trams nowhere near home. With the
+# words that then end the section's "not set up" line.
+_SETS_UP = {"metro_stops": ", or type their codes below."}
 # How a unit is said by a screen reader, where its sign isn't a word.
 _SPOKEN = {"%": "per cent"}
 _KEYBOARDS = {
@@ -252,9 +256,6 @@ class GroupForm:
                 continue
             if f.kind == "modes" and len(modes.set_up(data)) < 2:
                 continue  # nothing to choose between
-            if f.needs == "metro" and "metro" not in data:
-                continue  # trams are only for those near a tram stop: setup offers them there
-
             found.append(f)
         return found
 
@@ -335,8 +336,9 @@ class GroupForm:
         for f in form:
             if f.kind == "check":
                 continue  # the views, below
-            if f.needs is not None and f.needs not in data:
-                continue  # not set up: setup or config.toml adds it
+            if f.needs is not None and f.needs not in data and (f.name not in _SETS_UP
+                                                                 or not fields.get(f.name, "").strip()):
+                continue  # not set up: setup or config.toml adds it, or typing in a field that does
             if f.kind == "per_stop":
                 errors |= self._save_walks(f, data, fields, shown, f.needs in off, changes)
                 continue
@@ -596,8 +598,13 @@ class GroupForm:
             out.append(f'<p class="hint lead">{e(note)}</p>')
         if missing:
             before, link, after = _MISSING[str(single)]
+            typed = [f for f in fields if f.name in _SETS_UP]
+            if typed:
+                after = _SETS_UP[typed[0].name]
             where = f'<a href="{e(self._setup)}">{e(link)}</a>' if self._setup else e(link)
-            out.append(f'<p class="empty">{e(before)} {where}{e(after)}</p></fieldset>')
+            out.append(f'<p class="empty">{e(before)} {where}{e(after)}</p>')
+            out.extend(self._draw(f, data, shown, errors, unsaved) for f in typed)
+            out.append("</fieldset>")
             return "".join(out)
         common = [f for f in here if f.tier == "common"]
         advanced = [f for f in here if f.tier == "advanced"]

@@ -782,7 +782,7 @@ def test_sections_are_fieldsets_headed_in_their_legends_with_an_index_when_there
     page = signed("GET", "/settings/trains-and-buses", cookie=signed.session())[1]
     headings = re.findall(r'<fieldset class="card"><legend><h2 id="([\w-]+)">([^<]+)</h2>', page)
     assert headings == [("section-title", "Title"), ("section-trains", "Trains"), ("section-buses", "Buses"),
-                        ("section-weather", "Weather")]
+                        ("section-trams", "Trams"), ("section-weather", "Weather")]
     index = re.search(r'<nav class="index" aria-label="On this page"><ul>(.*?)</ul></nav>', page).group(1)
     assert re.findall(r'<a href="#([\w-]+)">', index) == [name for name, _ in headings]
     assert page.index("<h1>") < page.index('class="index"') < page.index('<form method="post" action="/settings/t')

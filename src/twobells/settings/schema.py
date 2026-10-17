@@ -600,7 +600,7 @@ def fields(display: str = "inky", theme: str = "sign", text_size: int | None = N
               needs="metro", page="trains_buses", heading="Trams"),
         Field("metro_stops", "general", "metro", "stops", "Tram stop codes", tram_stops, "area",
               hint="One per line, LABEL = stop code, like T = 9400ZZMAPIC for Metrolink or T = 940GZZLUBNK for "
-                   "London; up to 4. Setup finds the stops near home.", needs="metro", page="trains_buses",
+                   "London; up to 4. Setup finds them, near home or by name.", needs="metro", page="trains_buses",
               heading="Trams", tier="advanced"),
         Field("weather_enabled", "general", "weather", "enabled", "Show the weather", on_off, "radios",
               hint="A warning when rain is likely before you'd reach your next train or bus, and the "
