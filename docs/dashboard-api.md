@@ -26,7 +26,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   "version": 42,
   "generated_at": "2026-10-10T07:01:30+01:00",
   "title": "Glossop > Man Picc",
-  "walk": {"train": 10, "bus": {"A": 10, "B": 10}},
+  "walk": {"train": 10, "bus": {"A": 10, "B": 10}, "metro": {}},
   "quiet": false,
   "row_strips": true,
   "scrolling": true,
@@ -172,7 +172,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
 - **`walk_min`:** the walk to the station or to the row's stop, in whole minutes, as set for the board (`walk.train`, or `walk.bus` for the stop, else its `*`). It is null when no walk time is set. A cancelled row still has it.
 - **`leave_at`:** when to set off on foot (`expected_at` or else `scheduled_at`, minus `walk_min`). It is null when cancelled or no walk time is set.
 - **Missing data:**
-  - A section can be `null` when it isn't configured (`trains`, `buses`, `weather`).
+  - A section can be `null` when it isn't configured (`trains`, `buses`, `metro`, `weather`).
   - `now`, `sun`, `rain`, `strip`, `vehicle`, `position` and `formation` can each be null.
   - `calling_points` and `previous_points` can be `[]`, and `calling_at` null.
 - **Train `messages`** (National Rail's own messages for the station, at most 3, plain text):
@@ -225,7 +225,28 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `remaining` counts that line and destination's buses still to come that service day, the last included (a bus counts until a minute after its time, as rows do); 0 once the last has gone.
   - `show` is true from 19:00, or once `remaining` is 3 or fewer.
   - **On the page:** those with `show` true are listed under the bus table, "Last 341 to Hyde Bus Station 23:05", with ", gone" when `remaining` is 0. A bus's sheet always says when its line and destination's last bus goes, under **Last bus**: its time, the stop when it leaves from another of yours, or "This is the last today".
-- **`walk`:** the walk times as set, by mode and stop label (`*` for any stop). The page reads `walk.train` for the trains' walk line; `walk_min` on rows and stops supersedes the rest.
+- **`metro`** (Manchester's Metrolink trams, from TfGM's timetable alone; null without `[metro]`; see [Tram times](trams.md)):
+
+  ```json
+  "metro": {
+    "label": "Trams",
+    "status": {"last_success": "…", "stale": false, "error": null, "note": null},
+    "timetable": {"state": "ready", "built": "2026-10-10T03:00:00+01:00"},
+    "stops": {"T": {"name": "Piccadilly", "code": "9400ZZMAPIC", "walk_min": 3}},
+    "rows": [{
+      "id": "0000000000000001", "line": "Blue Line", "destination": "Bury", "stop": "T", "stop_name": "Piccadilly",
+      "scheduled": "07:08", "scheduled_at": "…", "expected": null, "expected_at": null,
+      "status": "unknown", "status_text": "Timetable only", "status_spoken": "Timetable only",
+      "live": false, "replacement_bus": false, "walk_min": 3, "leave_at": "…"
+    }]
+  }
+  ```
+
+  - `label` is the section's heading. `timetable.state` is `ready`, `building` (upkeep has yet to try, in Docker or on a desktop) or `missing` (with `status.note` saying why, like "There is no tram timetable yet"); `built` is when the timetable in use was built.
+  - `stops` are your tram stops by label: `name` from the bundled list of Metrolink stops (null if it hasn't the code), `code` the NaPTAN code, `walk_min` as on its rows.
+  - Every row is a booked time: `status` is always `unknown`, `expected` and `expected_at` null and `live` false, as TfGM's live tram times aren't open to new users. `line` is TfGM's ("Blue Line"), or "Replacement Bus" for a bus standing in, which has `replacement_bus` true. Trams have no history: `GET /api/history/<id>` doesn't know them, and the page doesn't ask.
+  - **On the page:** the Trams section lists each with its time and "sched.", its line under the destination, its stop where there are several, and when to leave; Next to catch takes them as **Timetable only**. An older fetch service, mid-upgrade, sends no `metro`, and the page shows no trams.
+- **`walk`:** the walk times as set, by mode and stop label (`*` for any stop): `train`, `bus` and `metro` (the tram stops). The page reads `walk.train` for the trains' walk line; `walk_min` on rows and stops supersedes the rest.
 - **`quiet`:** true while one of the dashboard's quiet windows (`quiet_windows`, bank holidays counted as Sundays) is on, else false. It is worked out once a minute, so it can be up to a minute behind the window. The wall-tablet page (`/?kiosk`) dims while it is true.
 - **`row_strips`:** whether the page draws each row's position strip (`[dashboard] row_strips`, **Position strips in each row** in the settings). When false, rows keep their words without the drawing, and only the first train row says where its train is. A snapshot without it, from an older server, counts as true. The wall-tablet page never draws them.
 - **`scrolling`:** whether the first train's calling-at line may scroll (`scrolling`, **Scrolling text** on the General page of the settings, which the board's screen follows too). When false, every look shows two lines of it, cut short. A snapshot without it, from an older server, counts as true.

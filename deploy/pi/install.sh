@@ -135,7 +135,7 @@ say_if_unguarded() {
   fi
 }
 say_if_unguarded
-# Bus times from the BODS timetable need it built and kept fresh.
+# Bus times from the BODS timetable, and trams from TfGM's, need it built and kept fresh.
 timetable=false
 if query needs-timetable >/dev/null; then
   systemctl enable --now twobells-timetable.timer

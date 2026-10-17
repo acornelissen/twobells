@@ -13,6 +13,7 @@ A Pi can run either view or both. Docker (on a NAS, say) and a desktop computer 
 
 - **Trains:** anywhere in Great Britain. Times come from National Rail (Darwin).
 - **Buses:** England only. The timetable and live positions come from the Bus Open Data Service (BODS), which covers England's buses.
+- **Trams:** Manchester's Metrolink, from TfGM's timetable: booked times only.
 - **Rain warning:** anywhere. The forecast comes from Open-Meteo.
 - **Bank holidays:** England and Wales, Scotland, or Northern Ireland, from GOV.UK.
 
@@ -39,6 +40,7 @@ Then:
 - [The settings](settings.md): the Overview, Trains and buses, Board, Dashboard, Keys and General pages, with What to show and Scrolling text.
 - [Password and reset codes](password.md): claiming the settings, a forgotten password, and why sign-in can refuse.
 - [Bus times](buses.md): the BODS timetable, live positions, and TransportAPI as a stand-in.
+- [Tram times](trams.md): Manchester's Metrolink, from TfGM's timetable.
 - [Displays](displays.md): choosing and setting up a display, the screen's bus position page, and its station announcements.
 - [Settings by hand](configuration.md): `config.toml`, where things are kept, what each view shows, the rain warning, bank holidays and scrolling text.
 

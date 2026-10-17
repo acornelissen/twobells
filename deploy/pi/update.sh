@@ -149,12 +149,12 @@ say_if_unguarded() {
 }
 say_if_unguarded
 
-# Bus times from the BODS timetable need it built and kept fresh. The first
-# build takes minutes, so it carries on in the background.
+# Bus times from the BODS timetable, and trams from TfGM's, need it built and
+# kept fresh. The first build takes minutes, so it carries on in the background.
 if query needs-timetable >/dev/null; then
   systemctl enable --now twobells-timetable.timer
   systemctl start --no-block twobells-timetable.service
-  echo "Building the bus timetable; follow it with: journalctl -u twobells-timetable -f"
+  echo "Building the timetables; follow it with: journalctl -u twobells-timetable -f"
 fi
 
 # A screen's service runs for good, so it needs restarting onto the new code;

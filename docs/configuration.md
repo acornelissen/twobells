@@ -45,7 +45,7 @@ Each install keeps everything it saves in one folder, its store:
 - `keytests.json`: whether each key's last test on the Keys page worked or was refused, and when; never the key. Readable by the app's user only.
 - `sessions.json`: who is signed in to the settings, kept as a hash of each browser's session so a restart doesn't sign anyone out, and `form.key`, which the sign-in forms are signed with. Like `web.json` and `secrets.env`, readable by the app's user only. A new password ends every session.
 - `history.sqlite3`: the punctuality history. Moving it to a newer version keeps a copy of the old one beside it, once, as `history.sqlite3.v1` (or `.v2`), to put back if you go back to an older release (see [Updating](install-pi.md#updating) for a Pi, [Docker](docker.md) and [On a desktop](desktop.md)).
-- The bus timetable, bank holidays, the board's state, and lock files.
+- The bus timetable, the tram timetable (`tram-timetable.json`, where trams are set up), bank holidays, the board's state, and lock files.
 
 `config.toml` is optional. Without one, the app uses its defaults and what you save. To undo everything saved in the settings, delete `settings.toml` and `secrets.env` from the store.
 
@@ -113,7 +113,7 @@ modes = ["bus"]           # the board shows buses alone
 modes = ["train", "bus"]  # the dashboard lists both
 ```
 
-The modes are `train`, `bus` and `metro` (trams, metro and underground, which has no source yet, so it is never set up). Each view shows them in that order, a section each, and checks only for those it shows. Without a list, a view shows every mode set up: one whose table is there and not switched off with `enabled = false`. A mode a list names that isn't set up is left out, and a list that names none of those set up is as if there were none, so switching buses off never leaves a board showing buses alone with nothing. A list that isn't one (`modes = "bus"`, a mode named twice, `modes = []`) stops the view loading, and says why.
+The modes are `train`, `bus` and `metro` (trams, metro and underground: Manchester's Metrolink trams so far, set up by `[metro]`, and called Trams; see [Tram times](trams.md)). Each view shows them in that order, a section each, and checks only for those it shows. Without a list, a view shows every mode set up: one whose table is there and not switched off with `enabled = false`. A mode a list names that isn't set up is left out, and a list that names none of those set up is as if there were none, so switching buses off never leaves a board showing buses alone with nothing. A list that isn't one (`modes = "bus"`, a mode named twice, `modes = []`) stops the view loading, and says why.
 
 The dashboard lists every mode it shows. The board has the room its display gives it, in its look and text size, and a `[board] modes` naming more modes than that stops it loading, saying how many fit: `[board] modes: The Inky pHAT has room for 2 modes at most, each with its own section, not 3`. Without a list it shows the first of those set up that fit. Each mode needs a section with its heading (in the station board look, a dotted rule) and at least one whole row; the board's text is sized to the display's height, so it is height that counts, not inches. E-paper has the same room in every look and at every text size:
 

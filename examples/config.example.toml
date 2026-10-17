@@ -71,8 +71,8 @@ rotate = 0
 # but the clock page (unless the older clock_page = true) and announcements.
 # [board]
 # show = ["platforms", "where", "disruption", "rain", "last_bus", "bus_page"]
-# Which modes of transport the board shows, a section each: "train" and "bus"
-# ("metro" has no source yet). Also Modes of transport on the Board tab.
+# Which modes of transport the board shows, a section each: "train", "bus"
+# and "metro" (Manchester's trams, from [metro]). Also Modes of transport on the Board tab.
 # Without it, every mode set up. The 10.85" e-paper has room for 3, the Inky
 # pHATs for 2, and an HDMI screen for 3 in the station board, TFT and
 # split-flap looks and in the plain look up to text_size 12 (the 7.9") or 13
@@ -164,6 +164,21 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 #   { name = "Your stop",     lat = 0.0, lon = 0.0 },
 # ]
 
+# Optional: Manchester's Metrolink trams, from TfGM's timetable (free, no key;
+# booked times only, as live tram times aren't open to new users). Setup finds
+# the stops near home. Built hourly if due, weekly, by twobells timetable.
+# [metro]
+# enabled = true          # false switches trams off; the stops are kept
+# rows = 3                # trams the board shows
+# directions = []         # only trams heading to these, like ["Bury"]
+# interval_minutes = 1    # reading the timetable costs nothing
+# stale_after_minutes = 10
+# windows = ["Mon-Sun 05:00-23:59"]
+# [metro.stops]           # up to 4: label = 9400ZZMA and the stop's three letters
+# T = "9400ZZMAPIC"       # Piccadilly
+# [metro.walk_minutes]
+# T = 6
+
 # The dashboard view only; the board ignores this.
 # All optional; the values shown are the defaults. All but state_dir, allowed_hosts
 # and kb_incidents_url can be changed on the Dashboard tab too.
@@ -174,6 +189,7 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # state_dir = "/path/to/folder"
 # train_rows = 10                 # 1-20
 # bus_rows = 15                   # 1-20
+# metro_rows = 10                 # 1-20, with [metro]
 # train_interval_seconds = 60     # at least 30
 # bus_interval_seconds = 30       # at least 15
 # weather_interval_minutes = 30   # at least 10

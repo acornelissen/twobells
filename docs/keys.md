@@ -307,6 +307,7 @@ These are free and need no sign-up, so there's nothing to look for. Each one is 
 - **The OpenStreetMap car router** (the roads on the dashboard's bus maps, also used to place live buses on them): the positions of the bus stops on your routes, two at a time, each pair once when the bus timetable is built: about once a week, and on every bus search in the setup wizard. A pair whose road it already found last time isn't sent again. The dashboard in Docker (on a NAS, say) or on a desktop builds its own timetable, so it asks from that machine's internet address. Never your home.
 - **OpenStreetMap map tiles** (the dashboard's bus maps): your browser fetches the squares of map for the area on screen, so OpenStreetMap sees roughly where you're looking.
 - **NaPTAN** (bus stop names and positions, for the bus position page): the codes of the stops on your route.
+- **TfGM's timetable** (Manchester's Metrolink trams, where set up; see [Tram times](trams.md)): nothing about you; the board downloads the whole timetable, about once a week, and keeps your tram stops' part.
 
 ---
 
