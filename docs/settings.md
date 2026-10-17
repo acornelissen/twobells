@@ -41,7 +41,7 @@ The version running is at the foot of every page.
   - **Walk to each stop:** a box for each stop, named by the stop and its label, like *Henry Street (A)*, in minutes. An empty box means no leave time for that stop.
   - **Only buses heading to:** optional, separated by commas, for example `Ashton, Hyde`. Empty shows every bus.
   - Advanced: **Stop codes**, one per line, written `LABEL = stop code`, for example `A = 1000DGHS0900`. Find stop codes on [bustimes.org](https://bustimes.org): the code is the last part of a stop page's address.
-- **Trams** (Metrolink's or London's; see [Tram times](trams.md) and [London](london.md)). Until trams are set up, it has only **Tram stop codes**, written as below: typing some sets trams up, wherever home is. Then:
+- **Trams** (Metrolink's or London's; see [Tram times](trams.md) and [London](london.md)). Until trams are set up, it says "Trams aren't set up. Pick tram stops with setup, or type their codes below." and has only **Tram stop codes**, written as below: typing some sets trams up, wherever home is. Then:
   - **Show trams:** on or off, as for trains.
   - **Walk to each tram stop:** a box for each, named by the stop and its label, like *Piccadilly (T)*, in minutes.
   - **Only trams heading to:** optional, separated by commas, for example `Bury, Altrincham`. Empty shows every tram.
@@ -64,7 +64,7 @@ How the board is doing is on the [Overview](#overview), under **On the board**: 
   - Advanced: **Accent colour**, the look's own (amber for the station board, yellow for TFT and split-flap, red for plain) or another that stays readable on the look's background (a colour too faint on the background isn't offered); **Redraw at most every** so many minutes, e-paper only (lower means fresher but more wear and flicker; 2 is a good balance); **Text size**, the plain look only, 9 to 16 (11 is standard; bigger shows fewer departures on a small display).
 - **Modes of transport** (while two or more of trains, buses and trams are set up and switched on): a tickbox for each of those, **Trains**, **Buses** and **Trams**, for which the board shows, each in a section of its own. A mode unticked isn't shown or checked for on the board, and the sections left take its room; the dashboard keeps its own choice. Each display has room for so many, and says so: the 10.85" e-paper for 3 and the Inky pHATs for 2, as the board's text is sized to the display's height and each mode needs a section with its heading and at least a row. An HDMI screen has room for 3 in the station board, TFT and split-flap looks and in the plain look up to a text size (12 on the 7.9" screen, 13 on the bar screen), and 2 above it; once three are saved here, **Text size** offers only the sizes with room for them, and **Look** the plain look only at one of those, each saying why ("With 3 modes, the 7.9-inch screen has room for text up to size 12."); see [Modes of transport](configuration.md#modes-of-transport). Until you save, the board shows every mode switched on, as many as fit.
 - **What to show:** a tickbox for each thing the board can show beside the departures' times, which always show. Anything unticked isn't drawn, and leaves no gap. Those marked **Screens only** show only on an HDMI screen; e-paper ignores them.
-  - **When to leave:** a tickbox for each mode set up, **Trains**, **Buses** and **Trams**: "Leave by 07:05" (or "Leave in 4 min" on a screen) for those ticked. Untick them all for none. Every preset ticks them all.
+  - **When to leave:** a tickbox for each mode set up, **Trains**, **Buses** and **Trams**: "Leave by 07:05" (or "Leave in 4 min" on a screen) for those ticked, and on the bus page for buses. Untick them all for none. Every preset ticks them all.
   - **Platforms:** each train's platform, a changed one marked, and its via words, on a display wide enough for a platform column.
   - **Where it is:** where each train and bus is, in words and a small strip (screens only).
   - **Disruption:** the station's disruption notices.
@@ -93,7 +93,7 @@ How the board is doing is on the [Overview](#overview), under **On the board**: 
   - **Next to catch:** the departure to leave for next, with its countdown: a tickbox for each mode set up, **Trains**, **Buses** and **Trams**, for those it picks from. The lists keep their **Leave** column either way. Untick them all to leave it out; then, and whenever it has nothing to point at, the time and the weather now stand in its place, large (see [What's on it](dashboard.md#whats-on-it)).
   - **Where it is:** where each train and bus is, in its row (with its strip while **Position strips in each row** is on).
   - **Disruption:** disruption on your journeys, under Next to catch, its links on bus rows, and its announcements to screen readers.
-  - **Weather:** the forecast, and the rain sentence under Next to catch.
+  - **Weather:** the forecast, and the rain sentence under Next to catch, or the weather now beside the time in its place.
   - **Last buses:** when each line's last bus goes, under the buses and in a bus's details.
   - **Around here:** trains on the line, and the map of buses nearby.
   - **Remind me:** reminders to leave, from Next to catch and a departure's details.
@@ -103,7 +103,7 @@ How the board is doing is on the [Overview](#overview), under **On the board**: 
   - **Performance:** the link to the [Performance page](dashboard.md#performance), with Delay Repay. Its address still works, and says it is left out.
   - **Fleet numbers:** which bus it is, in a live bus's details.
   - **Announcements:** **Announce** in a train's details, and a wall tablet's own station announcements.
-  - **Fill in from a preset** ticks the boxes at once: **Just the times** (Next to catch alone), **The usual** (also Where it is, Disruption, Weather, Last buses, Around here and Remind me) or **Everything**. Nothing changes until you save. Without JavaScript the presets are a choice, which saving applies in place of the ticks.
+  - **Fill in from a preset** ticks the boxes at once: **Just the times** (Next to catch alone), **The usual** (also Where it is, Disruption, Weather, Last buses, Around here and Remind me) or **Everything**; each ticks every mode for Next to catch. Nothing changes until you save. Without JavaScript the presets are a choice, which saving applies in place of the ticks.
 
   Until you save this list, the dashboard shows everything.
 - **Quiet hours**

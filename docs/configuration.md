@@ -89,6 +89,18 @@ show = ["next_to_catch", "where", "disruptions", "weather", "last_buses", "area_
 
 The example above is The usual preset; `show = []` is Just the times (the dashboard's adds `next_to_catch`), and every item but `announce_speaker` is Everything. The [setup wizard](setup-wizard.md) saves one of the presets for each view, The usual unless you pick another. `announce_speaker` is the HDMI screen's [station announcements](displays.md#station-announcements-on-a-screen) through a speaker: no preset has it, so it is on only when a list names it. Without a list, a view shows everything, except the board's clock page, which shows only with the older `clock_page = true`, and its announcements. Once the board has a list, `clock_page` is ignored: the list says.
 
+Beside each list, `leave_modes` names the modes that view gives leave times for: the board's "Leave by" and "Leave in" (**When to leave** on the Board page), and the modes the dashboard's Next to catch picks from (its tickboxes on the Dashboard page). The dashboard's rows keep their leave times whatever it says.
+
+```toml
+[board]
+leave_modes = ["train", "bus"]  # no leave time for the trams
+
+[dashboard]
+leave_modes = ["bus"]           # Next to catch picks from the buses alone
+```
+
+The modes are `train`, `bus` and `metro`, as for [Modes of transport](#modes-of-transport). Without it, every mode set up; `[]` for none, which on the dashboard leaves Next to catch out, as a `show` without `next_to_catch` does, and the time and the weather take its place. A mode named that isn't set up is left out; a mode named twice, or a word that isn't a mode, stops the view loading and says why. The settings pages' presets tick every mode; the setup wizard's leave the lists as they are.
+
 What no view shows isn't fetched either, so leaving things out saves calls to the feeds and their daily limits. Each view fetches for itself, and a change takes effect on its next check, without a restart:
 
 | Fetched | For |
