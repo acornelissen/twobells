@@ -4,7 +4,8 @@ The dashboard reads the board's config.toml, plus an optional [dashboard]
 table, and keeps everything it writes (the bus timetable, bank holidays,
 punctuality history) in the install's store (settings/store.py), which it shares
 with the board. It uses only the free feeds: Darwin, the BODS timetable
-with live positions, TfGM's tram timetable (no key), and Open-Meteo. TransportAPI keys are dropped so no
+with live positions, TfGM's tram timetable (no key), TfL's live times for
+London (TFL_APP_KEY optional), and Open-Meteo. TransportAPI keys are dropped so no
 fallback is ever built, and buses from TransportAPI aren't shown: the
 dashboard says so (BUS_NOTE) rather than refusing to start.
 Darwin's Service Details, which places each train on its route, is used
@@ -50,6 +51,8 @@ from ..sources.darwin import DarwinSource, ServiceDetails, ServiceDetailsClient,
 from ..sources.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource, kb_url_is_placeholder
 from ..sources.holidays import ENGLAND_AND_WALES
 from ..sources.lastbus import LastBus
+from ..sources.tfl import Arrival, TflSource
+from ..sources.tfl import Message as TflMessage
 from ..sources.trams import TramTimetableSource
 from ..sources.weather import Conditions, OpenMeteoSource
 from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
@@ -228,6 +231,17 @@ class TramSource(Protocol):
     def refresh_timetable(self, force: bool = False) -> object: ...
 
 
+class LiveMetroSource(Protocol):
+    @property
+    def label(self) -> str: ...
+
+    def arrivals(self, rows: int | None = None) -> list[Arrival]: ...
+
+    def line_statuses(self) -> list[TflMessage]: ...
+
+    def station_notes(self) -> list[TflMessage]: ...
+
+
 class ConditionsSource(Protocol):
     def fetch_conditions(self) -> Conditions: ...
 
@@ -262,6 +276,8 @@ class DashboardSettings:
     metro: TramSource | None = None
     metro_upkeep: TramSource | None = None
     metro_stops: dict[str, str] = field(default_factory=dict)
+    # Or London's, live from TfL, in place of Metrolink's: never both.
+    metro_live: LiveMetroSource | None = None
     weather: ConditionsSource | None = None
     # BODS SIRI-SX, with the buses; None without buses.
     bus_disruptions: DisruptionFeed | None = None
@@ -385,7 +401,7 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
     free_env = {key: value for key, value in env.items() if not key.startswith("TAPI_")}
     settings = settings_from(data, free_env, modes=modes)
 
-    train = bus = metro = None
+    train = bus = metro = metro_live = None
     for config in settings.board.sources:
         if isinstance(config.source, DarwinSource):
             train = config.source
@@ -394,6 +410,8 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
             bus = config.source
         elif isinstance(config.source, TramTimetableSource):
             metro = config.source
+        elif isinstance(config.source, TflSource):
+            metro_live = config.source
     train_section = data.get("train", {})
     details_key = _header_key(env, "RDM_DETAILS_API_KEY")
     weather = settings.board.weather
@@ -424,7 +442,8 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
         bus_stops=dict(data["bus"]["stops"]) if bus is not None else {},
         metro=metro,
         metro_upkeep=copy.copy(metro) if metro is not None else None,
-        metro_stops=metro.stops if metro is not None else {},
+        metro_stops=metro.stops if metro is not None else metro_live.stops if metro_live is not None else {},
+        metro_live=metro_live,
         # The board's forecast is Open-Meteo's, which gives the conditions now too.
         weather=weather.source if weather is not None and isinstance(weather.source, OpenMeteoSource) else None,
         bus_disruptions=BusDisruptionSource(bus_key) if bus is not None and bus_key else None,

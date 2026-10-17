@@ -151,6 +151,7 @@ function busSummary(row) {
 function tramSummary(row) {
   const walk = num(row.walk_min);
   const stop = tramStopText(row, context.tramStops);
+  if (row.live === true) return liveSummary(row, stop, walk);
   return [
     h("p", { class: "dialog-status" }, statusBadge(row.status, row.status_text, row.status_spoken)),
     h("dl", { class: "facts" },
@@ -161,6 +162,27 @@ function tramSummary(row) {
     ),
     h("p", { class: "note" }, "From TfGM's timetable: Metrolink's live tram times aren't open to new users, "
       + "so trams have no expected times, and no punctuality to show."),
+  ];
+}
+
+// A London train's, tram's or river bus's facts, live from TfL: when it is
+// expected and where it is now. TfL gives predictions only, so there is no
+// booked time to be late against, and no punctuality to show.
+function liveSummary(row, stop, walk) {
+  const platform = str(row.platform);
+  const where = [str(row.bound), platform ? `platform ${platform}` : ""].filter(Boolean).join(", ");
+  return [
+    h("p", { class: "dialog-status" }, statusBadge(row.status, row.status_text, row.status_spoken)),
+    h("dl", { class: "facts" },
+      fact("Line", str(row.line)),
+      fact("Platform", where ? where.charAt(0).toUpperCase() + where.slice(1) : ""),
+      fact("Stop", stop && walk !== null ? `${stop}, ${walk} min walk` : stop),
+      fact("Expected", hhmm(row.expected_at)),
+      fact("Where it is", shows("where") ? str(row.where) : ""),
+      fact("Leave by", hhmm(row.leave_at)),
+    ),
+    h("p", { class: "note" }, "Live from TfL. TfL gives predictions only, with no timetable to compare them "
+      + "with, so there is no punctuality to show."),
   ];
 }
 
@@ -182,9 +204,10 @@ function drawRemind(row) {
 }
 
 function draw(row) {
+  const before = openRow;
   openRow = row;
   if (!row) {
-    const noun = { bus: "bus", metro: "tram" }[openMode] || "train";
+    const noun = { bus: "bus", metro: tramNoun(before) }[openMode] || "train";
     patch($("sheet-summary"), h("p", {}, `This ${noun} has left the board.`));
     patch($("sheet-train"));
     drawRemind(null);

@@ -1,7 +1,7 @@
 // The disruption summary under the hero: one line for what affects your
 // journeys now, with every item behind it in a <details>. Items are bus
 // roadworks, diversions and stop closures, rail engineering works, and the
-// train board's disruption messages, in words, those in force first, each
+// train board's and the London lines' disruption messages, in words, those in force first, each
 // part most relevant first; "Coming up this week" stays folded inside. Bus
 // rows that one touches get a "Disruption" link to it.
 
@@ -156,17 +156,21 @@ function entry(arranged, today) {
     }, `More from ${host}`, vh(` about ${title}`))) : null);
 }
 
-// One of the train board's disruption messages, as a row like the items'.
+// One of the train board's (or the London lines') disruption messages, as a row like the items'.
 function messageEntry(message) {
   return h("li", { class: "dis-item" },
-    h("h4", { class: "dis-title" }, h("span", { class: "dis-mode" }, "Train:"), " ", message.text),
+    h("h4", { class: "dis-title" }, h("span", { class: "dis-mode" }, `${message.mode}:`), " ", message.text),
     h("p", { class: "dis-when" }, severityBadge(message.severity), " In force now."));
 }
 
-// The train board's disruption messages, with the items' severities.
+// The train board's disruption messages, then the London lines' status
+// from TfL (the metro part's, under its heading: "Underground"), with the
+// items' severities.
 function serviceMessages(snapshot) {
-  return trainMessages(snapshot.trains).filter((m) => m.kind === "service")
-    .map((m) => ({ text: m.text, severity: own(RAIL_SEVERITY, m.severity) || "unknown" }));
+  const metro = obj(snapshot.metro);
+  const found = [["Train", trainMessages(snapshot.trains)], [str(metro?.label) || "Metro", trainMessages(metro)]];
+  return found.flatMap(([mode, messages]) => messages.filter((m) => m.kind === "service")
+    .map((m) => ({ text: m.text, mode, severity: own(RAIL_SEVERITY, m.severity) || "unknown" })));
 }
 
 // "Roadworks at Henry Street A (your stop) until 18:00 today": a bus item by

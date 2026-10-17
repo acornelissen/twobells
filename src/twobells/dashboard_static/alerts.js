@@ -3,7 +3,7 @@
 
 import { $, h, setText, store, str, num, obj } from "./dom.js";
 import { now, parseAt } from "./time.js";
-import { trainNoun } from "./extras.js";
+import { trainNoun, tramNoun } from "./extras.js";
 
 const KEY = "dashboard.alerts";
 const LEAD_MS = 60_000; // an alert fires when it is a minute to leaving time
@@ -62,8 +62,8 @@ export function describe(row, mode, where = true) {
   }
   if (mode === "metro") {
     const stop = str(row.stop_name);
-    const noun = row.replacement_bus === true ? "replacement bus" : "tram";
-    return `the ${scheduled} ${noun} to ${dest}${where && stop ? ` from ${stop}` : ""}`;
+    const line = row.live === true && str(row.line) ? ` ${str(row.line)}` : "";
+    return `the ${scheduled}${line} ${tramNoun(row)} to ${dest}${where && stop ? ` from ${stop}` : ""}`;
   }
   const platform = str(row.platform);
   return `the ${scheduled} ${trainNoun(row)} to ${dest}${where && platform ? `, platform ${platform}` : ""}`;

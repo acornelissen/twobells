@@ -762,7 +762,12 @@ tr.row-cancelled .time { text-decoration: line-through; text-decoration-thicknes
 .sched { margin-left: var(--s-1); font-size: var(--t-xs); color: var(--muted); }
 .live-mark { display: inline-flex; margin-left: var(--s-1); vertical-align: middle; color: var(--ok-fg); }
 .live-mark .icon { width: 0.5rem; height: 0.5rem; fill: currentColor; }
-.just-missed { margin: 0 0 var(--s-2); color: var(--muted); font-size: var(--t-sm); }
+/* A London line's own colour beside its name, which says it: a short bar,
+   outlined so black (the Northern line) shows on the dark looks too. */
+.line-swatch {
+  display: inline-block; width: 0.75em; height: 0.375em; margin-right: var(--s-1); vertical-align: middle;
+  border-radius: 1px; background: var(--line, transparent); box-shadow: 0 0 0 1px var(--muted);
+}.just-missed { margin: 0 0 var(--s-2); color: var(--muted); font-size: var(--t-sm); }
 button.more { margin-top: var(--s-2); min-height: 2.25rem; padding: var(--s-1) var(--s-3); }
 button.more[aria-expanded="true"] .icon { transform: rotate(180deg); }
 
@@ -1370,6 +1375,8 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
   .journey li.cp-passed::before, .journey li.cp-here::before { border-color: CanvasText; background: CanvasText; }
   .journey li.yours::before { border-color: CanvasText; background: Highlight; }
   .cp-rail { border-left-color: CanvasText; }
+  /* A London line's colour only repeats its name, and would be a blank box here. */
+  .line-swatch { display: none; }
   .cp-rail::before { background: CanvasText; }
   .cp-train { border-color: Canvas; background: CanvasText; }
   .cp-train-glyph { fill: Canvas; }

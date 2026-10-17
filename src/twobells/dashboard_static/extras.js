@@ -89,6 +89,15 @@ export function trainNoun(row) {
   return row?.ferry === true ? "ferry" : "train";
 }
 
+// What a row in the trams is: "tram", or "replacement bus" for one standing
+// in; a London one from TfL by its kind: "train" on the Underground and the DLR.
+const KIND_NOUNS = { tube: "train", dlr: "train", tram: "tram", "cable-car": "cable car", "river-bus": "river bus" };
+export function tramNoun(row) {
+  if (row?.replacement_bus === true) return "replacement bus";
+  const kind = typeof row?.kind === "string" ? row.kind : "";
+  return Object.hasOwn(KIND_NOUNS, kind) ? KIND_NOUNS[kind] : "tram";
+}
+
 // What a replacement bus or a ferry, which has no platform, says in the
 // Platform column: "Bus" or "Ferry"; "" for a train.
 export const platformWord = (row) => ({ "replacement bus": "Bus", ferry: "Ferry" })[trainNoun(row)] || "";

@@ -41,6 +41,9 @@ from ..sources.darwin import (
 )
 from ..sources.lastbus import LastBus
 from ..sources.livebus import LiveDeparture, approach, where_words
+from ..sources.tfl import Arrival
+from ..sources.tfl import Message as TflMessage
+from ..sources.tfl import departure as tfl_departure
 from ..sources.trams import departure as tram_departure
 from ..sources.weather import Conditions, Hour, rain_line
 from ..timetable.model import Schedule, StopPosition, sign_letter
@@ -704,6 +707,62 @@ def metro_part(leaving: Iterable[tuple[datetime, TramCall]], status: dict, timet
         "stops": {label: {"name": by_label[label], "code": code, "walk_min": walk.tram_stop(label)}
                   for label, code in stops.items()},
         "rows": [tram_row(leaves, call, walk, by_label) for leaves, call in leaving],
+    }
+
+
+# London's metro, live from TfL (sources/tfl.py): predictions only, with no
+# booked time, so each row is live, its "scheduled" the time it is expected,
+# and it has no punctuality history.
+
+
+def tfl_row(arrival: Arrival, zone: tzinfo, walk: WalkTimes, names: Mapping[str, str | None]) -> dict:
+    """A London train's, tram's, cable car's or river bus's row."""
+    dep = tfl_departure(arrival, zone)
+    expected = arrival.expected.astimezone(zone).replace(microsecond=0)
+    # The same train keeps its id as its prediction moves, where TfL names the train.
+    when = arrival.vehicle or expected.strftime("%Y-%m-%dT%H:%M")
+    return {
+        "id": row_id("tfl", f"{arrival.stop}|{arrival.line_id}|{arrival.destination}|{when}"),
+        "line": arrival.line_words,
+        "line_id": arrival.line_id,
+        "kind": arrival.mode,
+        "destination": arrival.destination,
+        "via": arrival.via,
+        "stop": arrival.stop,
+        "stop_name": names.get(arrival.stop),
+        "platform": arrival.platform,
+        "bound": arrival.bound,
+        "where": arrival.where,
+        "scheduled": dep.scheduled,
+        "scheduled_at": iso(expected),
+        "expected": dep.scheduled,
+        "expected_at": iso(expected),
+        "status": dep.status.value,
+        "status_text": words.LIVE,
+        "status_spoken": words.LIVE,
+        "live": True,
+        "replacement_bus": False,
+        "walk_min": walk.minutes(dep),
+        "leave_at": iso(leave_at(dep, expected, None, walk)),
+    }
+
+
+def tfl_part(arrivals: Iterable[Arrival], status: dict, messages: Iterable[TflMessage], label: str,
+             stops: Mapping[str, str], names: Mapping[str, str], walk: WalkTimes, zone: tzinfo) -> dict:
+    """The metro section from TfL: its heading (`label`: "Underground",
+    "DLR", "Metro"), each stop with its name and walk by label, the lines'
+    and stations' messages, and the rows. `stops` are labels to stop codes,
+    `names` stop codes to names. No timetable: it is live, `live` true."""
+    by_label = {stop: names.get(code) for stop, code in stops.items()}
+    return {
+        "label": label,
+        "live": True,
+        "status": status,
+        "timetable": None,
+        "stops": {stop: {"name": by_label[stop], "code": code, "walk_min": walk.tram_stop(stop)}
+                  for stop, code in stops.items()},
+        "messages": [{"text": m.text, "category": None, "severity": m.severity, "kind": m.kind} for m in messages],
+        "rows": [tfl_row(arrival, zone, walk, by_label) for arrival in arrivals],
     }
 
 

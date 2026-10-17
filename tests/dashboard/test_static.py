@@ -761,6 +761,15 @@ def check(value, spec, path="$"):
         assert spec(value), f"{path} = {value!r} is not valid"
 
 
+def conforms(value, spec):
+    """Whether value matches spec, as check asserts."""
+    try:
+        check(value, spec)
+    except AssertionError:
+        return False
+    return True
+
+
 STATUS = {"last_success": Opt(at), "stale": bool, "error": Opt(str), "note": Opt(str)}
 ROW_STATUS = one_of("on_time", "late", "cancelled", "unknown")
 HISTORY = {"phrase": Opt(str)}
@@ -818,6 +827,15 @@ TRAM_ROW = {
     "status": ROW_STATUS, "status_text": str, "status_spoken": str, "live": bool, "replacement_bus": bool,
     "walk_min": Opt(integer), "leave_at": Opt(at),
 }
+# London's metro, live from TfL (snapshot.tfl_part): every row live, with no booked time.
+LONDON_ROW = {
+    "id": row_id, "line": str, "line_id": str,
+    "kind": one_of("tube", "dlr", "tram", "cable-car", "river-bus"), "destination": str, "via": Opt(str),
+    "stop": str, "stop_name": Opt(str), "platform": Opt(str), "bound": Opt(str), "where": Opt(str),
+    "scheduled": hhmm, "scheduled_at": at, "expected": hhmm, "expected_at": at, "status": one_of("on_time"),
+    "status_text": str, "status_spoken": str, "live": one_of(True), "replacement_bus": one_of(False),
+    "walk_min": Opt(integer), "leave_at": Opt(at),
+}
 # A line and destination's last bus today (sources/lastbus.py).
 LAST_BUS = {
     "line": str, "destination": str, "stop": str, "scheduled": hhmm, "scheduled_at": at, "remaining": integer,
@@ -855,6 +873,23 @@ DISRUPTIONS = {"status": {"bus": Opt(STATUS), "train": Opt(STATUS)}, "items": [D
 # What the page can leave out ([dashboard] show), as docs/dashboard-api.md lists them.
 SHOWABLE = ("next_to_catch", "where", "disruptions", "weather", "last_buses", "area_map", "remind", "calling_at",
             "coaches", "punctuality", "performance", "fleet_numbers", "announce")
+# The metro: Metrolink's trams from TfGM's timetable, or London's live from TfL.
+TRAMS_PART = {
+    "label": str,
+    "status": STATUS,
+    "timetable": {"state": one_of("ready", "building", "missing"), "built": Opt(at)},
+    "stops": MapOf(TRAM_STOP),
+    "rows": [TRAM_ROW],
+}
+LONDON_METRO = {
+    "label": one_of("Underground", "DLR", "Trams", "Cable car", "River buses", "Metro"),
+    "live": one_of(True),
+    "status": STATUS,
+    "timetable": lambda value: value is None,
+    "stops": MapOf(TRAM_STOP),
+    "messages": [MESSAGE],
+    "rows": [LONDON_ROW],
+}
 SNAPSHOT = {
     "version": integer,
     "generated_at": at,
@@ -879,13 +914,7 @@ SNAPSHOT = {
         "rows": [BUS_ROW],
         "last_buses": [LAST_BUS],
     }),
-    "metro": Opt({
-        "label": str,
-        "status": STATUS,
-        "timetable": {"state": one_of("ready", "building", "missing"), "built": Opt(at)},
-        "stops": MapOf(TRAM_STOP),
-        "rows": [TRAM_ROW],
-    }),
+    "metro": Opt(lambda value: conforms(value, TRAMS_PART) or conforms(value, LONDON_METRO)),
     "weather": Opt(WEATHER),
     "disruptions": Opt(DISRUPTIONS),
     "timetable_changes": Opt([{"line": str, "operator": str, "from": lambda v: isinstance(v, str) and bool(DAY.match(v))}]),
@@ -948,6 +977,18 @@ PERFORMANCE = {"generated_at": at, "trains": PERFORMANCE_PART, "buses": PERFORMA
 
 def _fixture(name):
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
+def test_london_s_metro_part_follows_the_contract(tmp_path):
+    from tests.dashboard.test_collector import _london_collector
+
+    collector, hub, _ = _london_collector(tmp_path)
+    collector.poll_live_trams()
+    collector.poll_tfl_status()
+    snapshot = json.loads(hub.current()[1])
+    check(snapshot, SNAPSHOT)
+    check(snapshot["metro"], LONDON_METRO)
+    assert snapshot["metro"]["rows"] and snapshot["metro"]["messages"]
 
 
 def test_snapshot_fixture_follows_the_contract():
@@ -5063,8 +5104,9 @@ import { renderTrams } from "./board.js";
 import { describe } from "./alerts.js";
 import { nextCatchable, confidence } from "./hero.js";
 document.body.append(h("section", { id: "metro" }, h("h2", { id: "metro-heading" }, "Trams"),
-  h("p", { id: "metro-walk" }), h("p", { id: "metro-status" }), h("div", { id: "metro-board" })),
-  h("p", { id: "tfgm-credit", hidden: true }));
+  h("p", { id: "metro-walk" }), h("p", { id: "metro-status" }), h("div", { id: "metro-board" }),
+  h("div", { id: "metro-info", hidden: true })),
+  h("p", { id: "tfgm-credit", hidden: true }), h("p", { id: "tfl-credit", hidden: true }));
 const at = (hm) => `2026-10-10T${hm}:00+01:00`;
 const row = (id, time, dest, extra = {}) => ({
   id, line: "Blue Line", destination: dest, stop: "T", stop_name: "Piccadilly", scheduled: time,
@@ -5117,3 +5159,76 @@ def test_with_several_tram_stops_each_row_says_its_stop():
     assert "Blue LinePiccadilly, 5 min walk" in found["rows"][0]
     assert "Deansgate-Castlefield" in found["rows"][1]
     assert found["walkHidden"] is True
+
+
+# London's metro, live from TfL (snapshot.tfl_part).
+
+LONDON = """
+import { h } from "./dom.js";
+import { observe } from "./time.js";
+import { renderTrams } from "./board.js";
+import { describe } from "./alerts.js";
+import { nextCatchable, confidence } from "./hero.js";
+import { inForceNow } from "./disruptions.js";
+document.body.append(h("section", { id: "metro" }, h("h2", { id: "metro-heading" }, "Trams"),
+  h("p", { id: "metro-walk" }), h("p", { id: "metro-status" }), h("div", { id: "metro-board" }),
+  h("div", { id: "metro-info", hidden: true })),
+  h("p", { id: "tfgm-credit", hidden: true }), h("p", { id: "tfl-credit", hidden: true }));
+const at = (hm) => `2026-10-10T${hm}:00+01:00`;
+const row = (id, time, dest, extra = {}) => ({
+  id, line: "Central line", line_id: "central", kind: "tube", destination: dest, via: null, stop: "T",
+  stop_name: "Bank", platform: "6", bound: "Eastbound", where: "Between Chancery Lane and St. Paul's",
+  scheduled: time, scheduled_at: at(time), expected: time, expected_at: at(time), status: "on_time",
+  status_text: "Live", status_spoken: "Live", live: true, replacement_bus: false, walk_min: 4,
+  leave_at: at("07:0" + (Number(time[4]) - 4)), ...extra });
+const snapshot = { metro: { label: "Underground", live: true, timetable: null,
+  status: { last_success: at("07:00"), stale: false, error: null, note: null },
+  stops: { T: { name: "Bank", code: "940GZZLUBNK", walk_min: 4 } },
+  messages: [{ text: "Central line: Minor delays.", category: null, severity: "minor", kind: "service" },
+             { text: "Bank: a lift is out of service.", category: null, severity: "normal", kind: "station" }],
+  rows: [row("bbbbbbbbbbbbbbb1", "07:06", "Epping"),
+         row("bbbbbbbbbbbbbbb2", "07:08", "Edgware", { line: "Northern line", line_id: "northern", platform: "4",
+           bound: "Northbound", via: "via Bank", where: "" })] } };
+observe(Date.parse(at("07:00")) + 30_000);  // 07:00:30, and a moment more as it runs
+const rows = renderTrams(snapshot, { isOn: () => false });
+const board = document.getElementById("metro-board");
+const said = (el) => spoken(el).replace(/\\s+/g, " ").trim();
+const body = elements(board).filter((el) => el.nodeName === "TR" && el.parentNode.nodeName === "TBODY");
+const head = elements(board).filter((el) => el.nodeName === "TH" && el.getAttribute("scope") === "col");
+const map = new Map(rows.map((r) => [r.id, { row: r, mode: "metro" }]));
+const next = nextCatchable(map, Date.parse(at("07:01")));
+const swatches = byClass(board, "line-swatch");
+console.log(JSON.stringify({
+  heading: document.getElementById("metro-heading").textContent,
+  head: head.map(said), rows: body.map(said), walk: said(document.getElementById("metro-walk")),
+  info: said(document.getElementById("metro-info")), infoHidden: document.getElementById("metro-info").hidden,
+  credits: [document.getElementById("tfgm-credit").hidden, document.getElementById("tfl-credit").hidden],
+  next: next.row.id, sure: confidence(next.row, next.mode),
+  describe: describe(rows[1], "metro"),
+  swatches: swatches.map((el) => el.style.getPropertyValue("--line")),
+  inForce: inForceNow(snapshot, Date.parse(at("07:01"))).map((f) => f.text),
+}));
+"""
+
+
+@needs_node
+def test_london_s_rows_count_down_live_with_their_line_and_platform():
+    found = run_js(LONDON)
+    assert found["heading"] == "Underground"
+    assert found["head"] == ["Due", "Destination", "Leave"]
+    # Said: due in 5 minutes, live; the line and where to stand; where the train is.
+    assert found["rows"][0].startswith("5 min, liveMore about the train due 07:06 to Epping")
+    assert found["rows"][0].endswith("in 1 min at 07:02")
+    assert "Central line, Eastbound, platform 6" in found["rows"][0]
+    assert "Between Chancery Lane and St. Paul's" in found["rows"][0]
+    assert "via Bank" in found["rows"][1] and "Northern line, Northbound, platform 4" in found["rows"][1]
+    assert "sched." not in "".join(found["rows"])
+    assert found["walk"] == "4 min walk to Bank."
+    assert (found["info"], found["infoHidden"]) == ("Station information: Bank: a lift is out of service.", False)
+    assert found["credits"] == [True, False]  # TfL's attribution, not TfGM's
+    assert (found["next"], found["sure"]) == ("bbbbbbbbbbbbbbb1", "live")
+    assert found["describe"] == "the 07:08 Northern line train to Edgware from Bank"
+    assert found["swatches"] == ["#e32017", "#000000"]
+    # The lines' status joins the disruption line; the station's lifts don't.
+    assert found["inForce"] == ["Central line: Minor delays."]
+

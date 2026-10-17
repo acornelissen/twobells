@@ -44,7 +44,10 @@ it) upkeep never downloads one, and the poller reads what they save. The
 tram timetable (timetable/trams.py) likewise: upkeep builds it with
 build_timetable, and on a Pi the timetable timer does. The trams come from
 it alone, booked times, so they are never recorded in the punctuality
-history. Either
+history. London's metro comes live from TfL instead: its predictions every
+TFL_SECONDS, and its lines' status and its stations' lifts and escalators
+every TFL_STATUS_SECONDS, on a thread of their own. TfL gives no booked
+times, so they aren't recorded either. Either
 way a build that finds another running in the store is skipped
 (timetable.build) and tried again next hour.
 """
@@ -57,7 +60,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -80,6 +83,7 @@ from .snapshot import (
     buses_part,
     metro_part,
     status_block,
+    tfl_part,
     timetable_block,
     train_observations,
     trains_part,
@@ -98,6 +102,10 @@ HEALTHY_AGE = 180.0  # /healthz wants a snapshot rebuilt this recently
 BUS_DISRUPTIONS_SECONDS = 600.0
 TRAIN_INCIDENTS_SECONDS = 1800.0
 TRAMS_SECONDS = 60.0  # the tram timetable costs nothing to read
+TFL_SECONDS = 30.0  # a call a stop: well within TfL's 50 a minute without a key
+TFL_STATUS_SECONDS = 300.0
+# A line's status older than this may no longer be true: it goes.
+TFL_STATUS_KEPT = timedelta(minutes=30)
 _JITTER = 0.1  # intervals vary by this fraction either way, so jobs drift apart
 # Doublings of the interval a failing job's wait counts at most: far past any
 # backoff cap, and short of a float's range, which days of failures would pass.
@@ -270,6 +278,8 @@ class Collector:
         self._trams = _Feed()  # data: the trams leaving, with when; fetched: when the timetable was built
         self._tram_names = tram_stop_names()
         self._trams_tried = not build_timetable  # has upkeep tried to build the tram timetable
+        # London's, live from TfL: the predictions, and the lines' and stations' messages.
+        self._live_trams, self._tfl_messages = _Feed(), _Feed()
         # How asking where the trains and the buses are is going, for the settings' Overview.
         self._train_positions, self._bus_positions = _Feed(), _Feed()
         # Where the first few trains are: their service details, asked for at
@@ -388,6 +398,16 @@ class Collector:
                           self._tram_names, settings.walk)
         self._hub.publish("metro", part)
 
+    def _publish_live_trams(self) -> None:
+        source = self._settings.metro_live
+        if source is None:
+            return
+        messages = self._tfl_messages
+        fresh = messages.last_success is not None and self._clock() - messages.last_success <= TFL_STATUS_KEPT
+        part = tfl_part(self._live_trams.data or [], self._live_trams.status(), messages.data or [] if fresh else [],
+                        source.label, self._settings.metro_stops, self._tram_names, self._settings.walk, self._tz)
+        self._hub.publish("metro", part)
+
     def _publish_weather(self) -> None:
         part = weather_part(self._weather.data, self._clock(), self._weather.status(), self._settings.rain_threshold)
         self._hub.publish("weather", part)
@@ -425,6 +445,7 @@ class Collector:
             self._publish_bus_note()
         if self._settings.metro is not None:
             self._publish_trams()
+        self._publish_live_trams()
         if self._settings.weather is not None:
             self._publish_weather()
         with self._disruptions_lock:
@@ -639,6 +660,34 @@ class Collector:
         self._trams.fetched = source.built()
         self._publish_trams("ready")
 
+    def poll_live_trams(self) -> None:
+        """London's next trains, trams and river buses, live from TfL."""
+        source = self._settings.metro_live
+        if source is None:  # pollers() only polls the feeds there are
+            return
+        try:
+            arrivals = source.arrivals()
+        except Exception as error:
+            self._live_trams.failed(error)
+            self._publish_live_trams()
+            raise
+        self._live_trams.worked(arrivals, self._clock())
+        self._publish_live_trams()
+
+    def poll_tfl_status(self) -> None:
+        """The status of the lines at your London stops, and their lifts and escalators."""
+        source = self._settings.metro_live
+        if source is None:
+            return
+        try:
+            found = [*source.line_statuses(), *source.station_notes()]
+        except Exception as error:
+            self._tfl_messages.failed(error)  # the last messages stay until TFL_STATUS_KEPT
+            self._publish_live_trams()
+            raise
+        self._tfl_messages.worked(found, self._clock())
+        self._publish_live_trams()
+
     def poll_weather(self) -> None:
         source = self._settings.weather
         if source is None:  # pollers() only polls the feeds there are
@@ -752,6 +801,9 @@ class Collector:
             add("buses", self.poll_buses, options.bus_interval_seconds)
         if self._settings.metro is not None:
             add("trams", self.poll_trams, TRAMS_SECONDS)
+        if self._settings.metro_live is not None:
+            add("trams", self.poll_live_trams, TFL_SECONDS)
+            add("tfl-status", self.poll_tfl_status, TFL_STATUS_SECONDS)
         if self._settings.weather is not None:
             add("weather", self.poll_weather, options.weather_interval_minutes * 60)
         if self._settings.bus_disruptions is not None:

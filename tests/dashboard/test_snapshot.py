@@ -1407,3 +1407,38 @@ def test_trams_are_rows_from_the_timetable_alone_with_their_stops_and_walks():
     last = part["rows"][-1]
     assert (last["stop"], last["stop_name"], last["walk_min"], last["leave_at"]) == ("U", None, None, None)
     assert len({r["id"] for r in part["rows"]}) == len(part["rows"])
+
+
+# London's metro, live from TfL (sources/tfl.py).
+
+
+def test_london_s_rows_are_live_at_their_expected_time_with_no_history():
+    from tests.sources.test_tfl import NOW, answer
+    from twobells.dashboard.snapshot import tfl_part
+    from twobells.sources import tfl
+
+    arrivals = tfl.parse_arrivals(answer("tfl_arrivals_bank_synthetic.json"), "T", "940GZZLUBNK", NOW)[1:3]
+    messages = [tfl.Message("Central line: Minor delays.", "minor", "service"),
+                tfl.Message("Bank: a lift is out of service.", "normal", "station")]
+    part = tfl_part(arrivals, {"stale": False}, messages, "Underground", {"T": "940GZZLUBNK"},
+                    {"940GZZLUBNK": "Bank"}, WalkTimes(metro={"T": 4}), LONDON)
+    assert (part["label"], part["live"], part["timetable"]) == ("Underground", True, None)
+    assert part["stops"] == {"T": {"name": "Bank", "code": "940GZZLUBNK", "walk_min": 4}}
+    assert part["messages"] == [
+        {"text": "Central line: Minor delays.", "category": None, "severity": "minor", "kind": "service"},
+        {"text": "Bank: a lift is out of service.", "category": None, "severity": "normal", "kind": "station"}]
+    northern, central = part["rows"]
+    assert {key: northern[key] for key in ("line", "line_id", "kind", "destination", "via", "platform", "bound",
+                                           "where", "scheduled", "expected", "status", "status_text", "live")} == {
+        "line": "Northern line", "line_id": "northern", "kind": "tube", "destination": "Edgware",
+        "via": "via Bank", "platform": "4", "bound": "Northbound", "where": "At London Bridge Platform 1",
+        "scheduled": "08:01", "expected": "08:01", "status": "on_time", "status_text": "Live", "live": True}
+    assert northern["expected_at"] == northern["scheduled_at"] == "2026-10-19T08:01:10+01:00"
+    assert northern["leave_at"] == "2026-10-19T07:57:10+01:00" and northern["walk_min"] == 4
+    assert northern["stop_name"] == "Bank" and not northern["replacement_bus"]
+    assert "history" not in northern
+    assert re.fullmatch("[0-9a-f]{16}", central["id"]) and central["id"] != northern["id"]
+    # The same train keeps its id as its prediction moves.
+    later = tfl.Arrival(**{**arrivals[0].__dict__, "expected": arrivals[0].expected + timedelta(minutes=2)})
+    moved = tfl_part([later], {}, [], "Underground", {"T": "940GZZLUBNK"}, {}, WalkTimes(), LONDON)
+    assert moved["rows"][0]["id"] == northern["id"]

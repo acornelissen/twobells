@@ -1256,3 +1256,52 @@ def test_upkeep_builds_the_tram_timetable_and_only_with_build_timetable(tmp_path
     collector, _ = _tram_collector(tmp_path)
     collector.upkeep()
     assert built == [{"A": "9400ZZMAPIC"}]
+
+
+# London's metro, live from TfL (sources/tfl.py).
+
+
+def _london_collector(tmp_path, http=None):
+    from dataclasses import replace
+
+    from tests.sources.test_tfl import LINES, NOW, STOPS, Http
+    from twobells.sources.tfl import TflSource
+
+    clock = Clock(NOW.astimezone(LONDON))
+    source = TflSource(STOPS, LONDON, rows=10, lines=LINES, http_get=http or Http(), clock=clock)
+    setup = Setup(tmp_path, train=False, buses=False, weather=False)
+    settings = replace(setup.settings, metro_live=source, metro_stops=STOPS, walk=WalkTimes(metro={"T": 4}))
+    hub = Hub("Bank", settings.walk, clock=clock, monotonic=setup.monotonic)
+    collector = Collector(settings, hub, None, clock=clock, fetch_holidays=setup._holidays, random=lambda: 0.5,
+                          monotonic=setup.monotonic)
+    return collector, hub, clock
+
+
+def test_london_s_times_are_polled_every_half_minute_and_the_status_every_five(tmp_path):
+    collector, hub, _ = _london_collector(tmp_path)
+    pollers = collector.pollers()
+    assert (pollers["trams"].step(), pollers["tfl-status"].step()) == (30, 300)
+    part = json.loads(hub.current()[1])["metro"]
+    assert part["label"] == "Metro" and part["live"] is True
+    assert [(r["scheduled"], r["line"], r["destination"]) for r in part["rows"]][:3] == [
+        ("08:00", "Waterloo & City line", "Check Front of Train"), ("08:01", "Northern line", "Edgware"),
+        ("08:01", "DLR", "Bank")]
+    assert [m["kind"] for m in part["messages"]] == ["service", "service", "station"]
+    assert part["stops"]["U"] == {"name": "Canary Wharf DLR", "code": "940GZZDLCAN", "walk_min": None}
+
+
+def test_a_failing_tfl_status_keeps_the_times_and_its_messages_go_after_half_an_hour(tmp_path):
+    from tests.sources.test_tfl import Http
+
+    collector, hub, clock = _london_collector(tmp_path)
+    collector.poll_live_trams()
+    collector.poll_tfl_status()
+    assert len(json.loads(hub.current()[1])["metro"]["messages"]) == 3
+    collector._settings.metro_live._http_get = Http(fail="Status")
+    with pytest.raises(RuntimeError):
+        collector.poll_tfl_status()
+    part = json.loads(hub.current()[1])["metro"]
+    assert len(part["messages"]) == 3 and part["status"]["error"] is None  # the times are fine
+    clock.now += timedelta(minutes=31)
+    collector.poll_live_trams()
+    assert json.loads(hub.current()[1])["metro"]["messages"] == []

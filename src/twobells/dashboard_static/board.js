@@ -3,7 +3,9 @@
 // stop's countdown sign (Bus, Destination, Stop, Due, Leave), trams by their
 // booked times (Time, Destination, Stop where there are several, Leave), as
 // TfGM's timetable gives them: each marked "sched.", as a bus known only
-// from the timetable is. Each is a real
+// from the timetable is. London's metro, live from TfL, takes the trams'
+// place, counting down as a live bus does (Due, Destination with its line
+// and platform, Stop where there are several, Leave). Each is a real
 // <table> with a caption and scoped headers; on narrow screens CSS folds each
 // row into two lines, and the explicit ARIA roles keep the table semantics
 // that some browsers drop when a table's display changes.
@@ -24,7 +26,7 @@
 
 import { h, vh, setText, str, num, list, obj, own, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
-import { arrivesLine, busStatusExtras, platformWord, trainNoun } from "./extras.js";
+import { arrivesLine, busStatusExtras, platformWord, trainNoun, tramNoun } from "./extras.js";
 import { applyFlaps, flapText } from "./flap.js";
 import { icon } from "./icons.js";
 import { isKiosk } from "./kiosk.js";
@@ -560,11 +562,29 @@ export function renderBuses(snapshot, alerts) {
 
 // --- Trams ---
 
-// What a tram row is: "tram", or "replacement bus" for one standing in.
-export const tramNoun = (row) => (row?.replacement_bus === true ? "replacement bus" : "tram");
+// What a tram row is (extras.js), for the hero and the sheet too.
+export { tramNoun };
 
-// The tram's booked time, marked as the timetable's: trams come from it alone.
+// Each London line's own colour, beside its name: it only repeats the name.
+// Only these ids are drawn; anything else has no swatch.
+const LINE_COLOURS = {
+  bakerloo: "#b36305", central: "#e32017", circle: "#ffd300", district: "#00782a", "hammersmith-city": "#f3a9bb",
+  jubilee: "#a0a5a9", metropolitan: "#9b0056", northern: "#000000", piccadilly: "#003688", victoria: "#0098d4",
+  "waterloo-city": "#95cdba", dlr: "#00a4a7", tram: "#84b817", "london-cable-car": "#e21836",
+  rb1: "#00a0e2", rb4: "#00a0e2", rb6: "#00a0e2", "woolwich-ferry": "#00a0e2",
+};
+
+// The time: a Metrolink tram's booked one, marked as the timetable's (trams
+// come from it alone); a London one's, live from TfL, counts down with the
+// quiet live mark, as a live bus does.
 function tramTime(row, flap) {
+  const iso = str(row.expected_at);
+  const at = parseAt(iso);
+  if (row.live === true && at !== null) {
+    return h("th", { scope: "row", role: "rowheader", class: "c-time" },
+      h("span", { class: "due", dataset: { dueAt: iso, flap: flap("time") } }, dueText(at - now())),
+      h("span", { class: "live-mark", "aria-hidden": "true" }, icon("circle")), vh(", live"));
+  }
   return h("th", { scope: "row", role: "rowheader", class: "c-time" },
     h("span", { class: "time", dataset: { flap: flap("time") } }, str(row.scheduled)),
     h("span", { class: "sched", "aria-hidden": "true" }, "sched."), vh(", timetable only"));
@@ -576,34 +596,69 @@ export function tramStopText(row, stops) {
   return str(stop?.name) || str(row.stop_name) || (str(row.stop) ? `Stop ${str(row.stop)}` : "");
 }
 
+// "Central line · Eastbound, platform 6": a London row's line, its colour
+// beside it, and where to stand. Said with commas.
+function lineLine(row) {
+  const colour = own(LINE_COLOURS, str(row.line_id));
+  const platform = str(row.platform);
+  const bound = str(row.bound);
+  const where = [bound, platform ? `${bound ? "platform" : "Platform"} ${platform}` : ""].filter(Boolean).join(", ");
+  let swatch = null;
+  if (colour) {
+    swatch = h("span", { class: "line-swatch", "aria-hidden": "true" });
+    swatch.style.setProperty("--line", colour); // through the CSSOM, which the page's CSP allows
+  }
+  return h("span", { class: ["sub", "tram-line"] }, swatch, str(row.line),
+    where ? [h("span", { "aria-hidden": "true" }, " · "), vh(", "), where] : null);
+}
+
 function tramRow(row, later, several, stops, alerts, flap) {
   const id = validId(row.id) ? row.id : null;
-  const scheduled = str(row.scheduled);
   const noun = tramNoun(row);
-  const line = noun === "tram" ? str(row.line) : "Replacement bus";
+  const live = row.live === true;
+  const line = noun === "replacement bus" ? "Replacement bus" : str(row.line);
   const walk = num(row.walk_min);
+  const where = live && shows("where") ? str(row.where) : "";
+  const lead = live ? `the ${noun} due ${hhmm(row.expected_at)} to ` : `the ${str(row.scheduled)} ${noun} to `;
   return h("tr", rowAttrs(row, id, later),
     tramTime(row, flap),
     td("c-dest", null,
-      openButton(id, `the ${scheduled} ${noun} to `, str(row.destination), flap("destination")),
-      line ? h("span", { class: ["sub", noun === "tram" ? "tram-line" : "replacement"] }, line) : null),
+      openButton(id, lead, str(row.destination), flap("destination")),
+      live && str(row.via) ? h("span", { class: "sub via" }, str(row.via)) : null,
+      live ? lineLine(row) : line ? h("span", { class: ["sub", noun === "tram" ? "tram-line" : "replacement"] }, line)
+        : null,
+      where ? h("span", { class: ["sub", "where"] }, where) : null),
     several ? stopCell(tramStopText(row, stops), walk) : null,
     leaveCell(row, id, alerts),
   );
 }
 
-// Draws the trams; returns every row, shown or not, for the rest of the page.
+// The metro's station notices (lifts, escalators), as the trains' are: a
+// quiet "Station information" line in its section, never called disruption.
+function renderTramInfo(trams) {
+  const info = document.getElementById("metro-info");
+  const station = trainMessages(trams).filter((m) => m.kind === "station");
+  info.hidden = station.length === 0;
+  info.replaceChildren(...station.map((m) => h("p", {},
+    h("span", { class: "glyph", "aria-hidden": "true" }, icon("info")), "Station information: ", m.text)));
+}
+
+// Draws the trams (or London's metro); returns every row, shown or not, for the rest of the page.
 export function renderTrams(snapshot, alerts) {
   const section = document.getElementById("metro");
   const trams = obj(snapshot.metro);
+  const live = trams?.live === true;
   section.hidden = !trams;
-  const credit = document.getElementById("tfgm-credit");
-  if (credit) credit.hidden = !trams;
+  for (const [credit, shown] of [["tfgm-credit", trams && !live], ["tfl-credit", live]]) {
+    const el = document.getElementById(credit);
+    if (el) el.hidden = !shown;
+  }
   if (!trams) {
     remember("metro", [], now());
     return [];
   }
-  setText(document.getElementById("metro-heading"), str(trams.label) || "Trams");
+  const label = str(trams.label) || "Trams";
+  setText(document.getElementById("metro-heading"), label);
   const rows = list(trams.rows).filter(obj).slice(0, MAX_ROWS);
   const stops = obj(trams.stops) || {};
   const labels = Object.keys(stops);
@@ -612,21 +667,24 @@ export function renderTrams(snapshot, alerts) {
   const extra = tt.state === "building" ? ["Building the tram timetable…"]
     : tt.state === "missing" && !str(obj(trams.status)?.note) ? ["There is no tram timetable yet."] : [];
   statusLine(document.getElementById("metro-status"), trams.status, extra);
-  // With one tram stop, its name and walk go under the heading, as the trains' walk does.
+  // With one stop, its name and walk go under the heading, as the trains' walk does.
   const one = several ? null : obj(stops[labels[0]]);
   const walk = one ? num(one.walk_min) : null;
   const walkEl = document.getElementById("metro-walk");
-  const name = one ? str(one.name) || "the tram stop" : "";
+  const name = one ? str(one.name) || (live ? "the station" : "the tram stop") : "";
   setText(walkEl, one ? `${walk !== null ? `${walk} min walk to ` : "From "}${name}.` : "");
   walkEl.hidden = !one;
-  const columns = [["Time", "c-time"], ["Destination", "c-dest"], ...(several ? [["Stop", "c-stop"]] : []),
-    ["Leave", "c-leave"]];
+  const columns = [live ? ["Due", "c-time"] : ["Time", "c-time"], ["Destination", "c-dest"],
+    ...(several ? [["Stop", "c-stop"]] : []), ["Leave", "c-leave"]];
+  const what = live ? `Next departures${one ? ` from ${name}` : ""}, live from TfL`
+    : `Next trams${one ? ` from ${name}` : ""}, from the timetable`;
   drawBoard("metro", document.getElementById("metro-board"), {
-    caption: `Next trams${one ? ` from ${name}` : ""}, from the timetable`, quiet: true, cls: "trams",
+    caption: what, quiet: true, cls: "trams",
     empty: tt.state === "building" ? "Tram times will show once the timetable is built."
-      : "No trams are listed right now.",
+      : live ? "Nothing is due right now." : "No trams are listed right now.",
     columns,
   }, rows, (row, i, later, flap) => tramRow(row, later, several, stops, alerts, flap));
+  renderTramInfo(trams);
   return rows;
 }
 

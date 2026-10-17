@@ -93,7 +93,8 @@ const sep = () => [h("span", { "aria-hidden": "true" }, " · "), vh(", ")];
 
 // "17:55 [237] Ashton-under-Lyne Interchange · Henry Street A · 5 min walk",
 // "18:22 train to Manchester Piccadilly · Platform 1 · 12 min walk", or
-// "18:25 tram to Bury · Piccadilly · 6 min walk".
+// "18:25 tram to Bury · Piccadilly · 6 min walk", or, live from TfL,
+// "18:25 Central line train to Epping · Bank · Platform 6 · 4 min walk".
 function whatLine(row, mode, stops, tramStops) {
   const walk = num(row.walk_min);
   const parts = [];
@@ -102,9 +103,11 @@ function whatLine(row, mode, stops, tramStops) {
     const stop = stopText(row, stops);
     if (stop) parts.push(stop);
   } else if (mode === "metro") {
-    parts.push([time(str(row.scheduled)), ` ${tramNoun(row)} to ${str(row.destination)}`]);
+    const line = row.live === true && str(row.line) ? ` ${str(row.line)}` : "";
+    parts.push([time(str(row.scheduled)), `${line} ${tramNoun(row)} to ${str(row.destination)}`]);
     const stop = tramStopText(row, tramStops);
     if (stop) parts.push(stop);
+    if (row.live === true && str(row.platform)) parts.push(`Platform ${str(row.platform)}`);
   } else {
     parts.push([time(str(row.scheduled)), ` ${trainNoun(row)} to ${str(row.destination)}`]);
     if (str(row.platform)) parts.push(`Platform ${str(row.platform)}`);
