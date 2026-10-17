@@ -22,10 +22,10 @@ Contents:
 
 ### Pick a release and check it
 
-Run the image by its version and its digest, so it can't change under you. On any computer with Docker and [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) 3.0 or later, for version 0.2.3 say:
+Run the image by its version and its digest, so it can't change under you. On any computer with Docker and [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) 3.0 or later, for version 0.3.0 say:
 
 ```bash
-VERSION=0.2.3
+VERSION=0.3.0
 docker pull "ghcr.io/acornelissen/twobells:$VERSION"    # prints "Digest: sha256:..."
 DIGEST=sha256:...    # the digest it printed
 cosign verify "ghcr.io/acornelissen/twobells@$DIGEST" \
@@ -33,7 +33,7 @@ cosign verify "ghcr.io/acornelissen/twobells@$DIGEST" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-`cosign verify` must end without an error: then that digest was built and signed by this project's release workflow for that version. Use the image as `ghcr.io/acornelissen/twobells:0.2.3@sha256:...`, with the digest in full. An older cosign says `no signatures found`: the release signs with cosign 3, which older versions can't find.
+`cosign verify` must end without an error: then that digest was built and signed by this project's release workflow for that version. Use the image as `ghcr.io/acornelissen/twobells:0.3.0@sha256:...`, with the digest in full. An older cosign says `no signatures found`: the release signs with cosign 3, which older versions can't find.
 
 `deploy/docker/docker-compose.ghcr.yml` in the project is a compose file for the published image, with the same settings as `docker-compose.yml`. Replace `X.Y.Z` and `DIGEST` in its `image:` line; until you do, compose refuses to run it.
 
@@ -137,10 +137,10 @@ Container Station can't change an application's settings in place: to update, us
 
 ## Unraid
 
-`deploy/unraid/twobells.xml` is a template for Unraid's **Add Container** page. It is in each release's tarball. In Unraid's terminal (or over SSH, as root), for version 0.2.3 say:
+`deploy/unraid/twobells.xml` is a template for Unraid's **Add Container** page. It is in each release's tarball. In Unraid's terminal (or over SSH, as root), for version 0.3.0 say:
 
 ```bash
-VERSION=0.2.3
+VERSION=0.3.0
 cd /tmp
 base="https://github.com/acornelissen/twobells/releases/download/v$VERSION"
 curl -fLO "$base/twobells-$VERSION.tar.gz"
