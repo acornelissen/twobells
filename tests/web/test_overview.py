@@ -507,3 +507,35 @@ def test_without_the_dashboard_there_is_no_link_to_it_or_wall_tablet(tmp_path):
 def test_on_this_computer_itself_the_tablets_address_is_explained_not_made_up():
     page = overview.render_actions({}, "/settings/setup/", True, "localhost:8090")
     assert "localhost" not in page and "<code>/?kiosk</code>" in page
+
+
+# Trams
+
+
+TRAMS = {"metro": {"stops": {"T": "9400ZZMAPIC"}, "walk_minutes": {"T": 4}}}
+
+
+def test_the_tram_stops_with_their_names_walks_and_timetable(tmp_path):
+    from tests.timetable.test_trams import read
+    from twobells.timetable import trams
+
+    rows = text_of(place(tmp_path, TRAMS))
+    assert "Tram stops T: Piccadilly, 4 min walk" in rows
+    assert "Tram timetable Not built yet. It is built within the hour." in rows
+    built = read(stops={"T": "9400ZZMAPIC"})
+    trams.save(tmp_path, built)
+    rows = text_of(place(tmp_path, TRAMS, now=built.built + timedelta(hours=2)))
+    assert "Tram timetable Saved" in rows and "Out of date" not in rows
+    rows = text_of(place(tmp_path, TRAMS, now=built.built + timedelta(days=8)))
+    assert "Out of date" in rows and "it is a week old" in rows
+
+
+def test_trams_switched_off_say_so_without_their_timetable(tmp_path):
+    rows = text_of(place(tmp_path, {"metro": {**TRAMS["metro"], "enabled": False}}))
+    assert "Switched off." in rows and "Tram timetable" not in rows
+    assert "Tram stops" not in text_of(place(tmp_path, {}))
+
+
+def test_the_dashboard_s_trams_are_a_feed():
+    page = health(overview.dashboard_feeds(snapshot(metro={"status": block()}), NOW, LONDON))
+    assert "Trams" in feed(page, "Trams")

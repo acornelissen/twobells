@@ -26,6 +26,7 @@ from ..core.errors import safe_message
 from ..core.polling import PollPolicy
 from ..settings import schema
 from ..timetable import build as timetable
+from ..timetable import trams
 from . import places
 from .icons import icon
 from .status import _SOURCES, _dict, _policy, _positive, _switched_off, _when
@@ -44,6 +45,8 @@ _TEXT_LENGTH = 160
 MEANINGS = {
     "board_train": "The board's train times may be out of date.",
     "board_bus": "The board's bus times may be out of date.",
+    "board_metro": "The board's tram times may be missing: they come from the tram timetable.",
+    "trams": "The dashboard shows no trams until there is a tram timetable.",
     "board_vehicles": "The board's bus times are from the timetable only, without live positions.",
     "trains": "The dashboard's train times may be out of date.",
     "train_positions": "The dashboard lists trains without saying where each one is.",
@@ -170,6 +173,9 @@ def dashboard_feeds(snapshot: Mapping | None, now: datetime, zone: tzinfo | None
     buses = snapshot.get("buses")
     if isinstance(buses, Mapping):
         found.extend(_bus_feeds(buses, now, zone, checking, quiet))
+    trams = snapshot.get("metro")
+    if isinstance(trams, Mapping):
+        add("Trams", trams.get("status"), MEANINGS["trams"])
     weather = snapshot.get("weather")
     if isinstance(weather, Mapping):
         add("Weather", weather.get("status"), MEANINGS["weather"])
@@ -434,6 +440,33 @@ def _timetable_rows(folder: Path, bus: dict, stops: dict[str, str], now: datetim
     return rows
 
 
+def _tram_rows(metro: dict, folder: Path, now: datetime, zone: tzinfo) -> list[str]:
+    """The tram stops with their names and walks, and when the tram timetable
+    was saved, with a warning when it is due to be built again."""
+    e = html.escape
+    stops = {label: code for label, code in _dict(metro.get("stops")).items()
+             if isinstance(label, str) and isinstance(code, str)}
+    names = places.tram_stop_names()
+    walks = stop_walks(metro, list(stops))
+    items = "".join(f"<li>{e(label)}: {e(names.get(code, code))}{_walk(walks[label])}</li>"
+                    for label, code in stops.items())
+    off = '<p class="hint">Switched off.</p>' if _off(metro) else ""
+    rows = [_row("Tram stops", f'<ul class="stops">{items}</ul>{off}')]
+    if _off(metro):
+        return rows
+    try:
+        saved = datetime.fromtimestamp((folder / trams.FILE_NAME).stat().st_mtime, zone).replace(tzinfo=None)
+    except OSError:
+        return [*rows, _row("Tram timetable", "Not built yet. It is built within the hour.")]
+    found = trams.load(folder)
+    reason = "it can't be read" if found is None else trams.due(found, stops, now)
+    words = e(f"Saved {_when(saved, now)}")
+    if reason:
+        due = f"Due to be built again: {reason}. It is built again by itself; if this stays, the log says why."
+        words = f'{_pill("pill-warn", "triangle-alert", "Out of date")} {words}. {e(due)}'
+    return [*rows, _row("Tram timetable", words)]
+
+
 def render_place(data: dict, folder: Path, now: datetime, zone: tzinfo) -> str:
     """Your place in names, from local data only: the station and the one
     trains must call at, the stops with their names, the bus timetable's
@@ -455,6 +488,8 @@ def render_place(data: dict, folder: Path, now: datetime, zone: tzinfo) -> str:
             rows.extend(_timetable_rows(folder, bus, stops, now, zone))
     else:
         rows.append(_row("Bus stops", "Not set up"))
+    if "metro" in data:
+        rows.extend(_tram_rows(_dict(data.get("metro")), folder, now, zone))
     home = "lat" in weather and "lon" in weather
     rows.append(_row("Home", "Set (to about 1 km)" if home else "Not set"))
     if "weather" in data:

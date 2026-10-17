@@ -16,6 +16,7 @@ _SOURCES = (
     # (state entry, config section, heading, minutes before "not updating")
     ("train", "train", "Trains", 6),
     ("bus", "bus", "Buses", 30),
+    ("metro", "metro", "Trams", 10),
 )
 
 
