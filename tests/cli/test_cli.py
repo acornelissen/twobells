@@ -1377,6 +1377,23 @@ def test_a_pi_s_performance_page_follows_a_save_without_starting_again(tmp_path,
     assert report["trains"]["late_minutes"] == 5
 
 
+def test_a_pi_s_performance_page_keeps_the_board_s_time_zone_when_the_dashboard_comes_on_later(
+        tmp_path, served, pi_with_the_dashboard, dashboard_config, process_in_utc):
+    from twobells.dashboard.history import History
+
+    args, folder, _ = pi_with_the_dashboard
+    dashboard_config.write_text('title = "Glossop"\ntimezone = "Asia/Tokyo"\n[train]\ncrs = "GLO"\n')
+    settings = folder / "settings.toml"
+    settings.write_text('[app]\nviews = ["board"]\n')  # the dashboard is off when serve starts
+    History(folder).close()
+    assert main(args) == 0
+    settings.write_text('[app]\nviews = ["board", "dashboard"]\n')
+    # The board's zone, never the process's (UTC here) frozen at a fixed offset.
+    assert json.loads(ask(served["app"], "/api/performance")[2])["generated_at"].endswith("+09:00")
+    settings.write_text('timezone = "Asia/Kolkata"\n[app]\nviews = ["board", "dashboard"]\n')
+    assert json.loads(ask(served["app"], "/api/performance")[2])["generated_at"].endswith("+05:30")
+
+
 def test_a_pi_turns_its_dashboard_on_and_off_without_starting_again(tmp_path, served, pi_with_the_dashboard):
     args, folder, _ = pi_with_the_dashboard
     (folder / "settings.toml").write_text('[app]\nviews = ["board"]\n')

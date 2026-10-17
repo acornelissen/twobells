@@ -350,9 +350,6 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
 
     performance = None
     if history is not None:
-        # The Performance page's days are the board's local days, as the history's are.
-        zone = ZoneInfo(dash.timezone) if dash is not None else None
-
         def performance_setup() -> Setup:
             # Read again on each request: a save on a Pi doesn't start serve again.
             try:
@@ -369,11 +366,10 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
                 details=now is not None and now.train_details is not None,
             )
 
-        performance = Performance(
-            history,
-            lambda: datetime.now(zone) if zone is not None else datetime.now().astimezone(),
-            performance_setup,
-        )
+        # The Performance page's days and times are the board's, as the history's
+        # are: its zone read on each request too, never the process's (UTC in
+        # Docker) nor a fixed offset that would be an hour out after the clocks change.
+        performance = Performance(history, lambda: datetime.now(store.zone()), performance_setup)
 
     watch = None
     try:
