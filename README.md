@@ -30,7 +30,7 @@ A Pi can run either view or both; Docker and a desktop run the dashboard. Each i
 
 The next trains and buses side by side, each with its walk, its countdown and where it is now:
 
-![The train and bus boards: the 07:12 waiting at Hadfield and often late, the 07:42 cancelled, and buses with strips showing them two and four stops away](docs/images/dashboard-boards.png)
+![The train and bus boards: the 07:12 waiting at Hadfield and often late, the 07:42 cancelled, and buses with strips, the 341 two stops away and the 61's bus on its way](docs/images/dashboard-boards.png)
 
 Open a train for its whole journey, or the area map for every bus on your lines:
 
