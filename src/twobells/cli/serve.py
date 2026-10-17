@@ -314,9 +314,9 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
     import sqlite3
 
     from ..dashboard.collector import Collector
-    from ..dashboard.config import DashboardOptions
+    from ..dashboard.config import DashboardOptions, load_dashboard
     from ..dashboard.history import History, HistoryReader
-    from ..dashboard.performance import Performance
+    from ..dashboard.performance import Performance, Setup
     from ..dashboard.snapshot import Hub
     from ..timetable.routesetup import document_limits
     from ..web import netguard
@@ -351,16 +351,28 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
     performance = None
     if history is not None:
         # The Performance page's days are the board's local days, as the history's are.
-        options = dash.options if dash is not None else DashboardOptions()
         zone = ZoneInfo(dash.timezone) if dash is not None else None
+
+        def performance_setup() -> Setup:
+            # Read again on each request: a save on a Pi doesn't start serve again.
+            try:
+                now = load_dashboard(store, store.env(), lock=False)
+            except ConfigError:
+                now = dash
+            options = now.options if now is not None else DashboardOptions()
+            trains = now is not None and now.train is not None
+            return Setup(
+                {"train": options.late_minutes_train, "bus": options.late_minutes_bus},
+                # The Delay Repay list: the filter station, followed there with Service Details.
+                station=now.train_filter if trains and now is not None else None,
+                trains=trains,
+                details=now is not None and now.train_details is not None,
+            )
+
         performance = Performance(
             history,
             lambda: datetime.now(zone) if zone is not None else datetime.now().astimezone(),
-            {"train": options.late_minutes_train, "bus": options.late_minutes_bus},
-            # The Delay Repay list: the filter station, followed there with Service Details.
-            station=dash.train_filter if dash is not None and dash.train is not None else None,
-            trains=dash is not None and dash.train is not None,
-            details=dash is not None and dash.train_details is not None,
+            performance_setup,
         )
 
     watch = None

@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 import pytest
 
 from twobells.core.walk import WalkTimes
-from twobells.dashboard.performance import Performance
+from twobells.dashboard.performance import Performance, Setup
 from twobells.dashboard.snapshot import Hub
 from twobells.settings.installs import install_named
 from twobells.settings.store import Store
@@ -181,7 +181,7 @@ def make_app(static_dir, **overrides):
         "healthy": lambda: True,
         "recent": Recent(),
         "performance": Performance(Outcomes(), lambda: datetime(2026, 10, 9, 18, 0, tzinfo=UTC),
-                                   {"train": 3, "bus": 2}, station="MAN", trains=True, details=True),
+                                   lambda: Setup({"train": 3, "bus": 2}, station="MAN", trains=True, details=True)),
         "history_days": 90,
         "allowed_hosts": frozenset({"departures.example.com"}),
         "heartbeat": 0.2,

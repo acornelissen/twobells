@@ -1355,6 +1355,25 @@ def test_serve_gives_the_performance_page_the_filter_station_for_delay_repay(tmp
     assert (repay["station"], repay["off"], repay["trains"]) == ("MAN", off, [])
 
 
+def test_a_pi_s_performance_page_follows_a_save_without_starting_again(tmp_path, served, pi_with_the_dashboard,
+                                                                       dashboard_config, monkeypatch):
+    from twobells.dashboard.history import History
+
+    monkeypatch.setenv("RDM_DETAILS_API_KEY", "details-key")
+    args, folder, _ = pi_with_the_dashboard
+    dashboard_config.write_text('title = "Glossop"\n[train]\ncrs = "GLO"\n')
+    History(folder).close()
+    assert main(args) == 0
+    report = json.loads(ask(served["app"], "/api/performance")[2])
+    assert (report["delay_repay"]["off"], report["trains"]["late_minutes"]) == ("no_filter", 3)
+    # Saved on the settings site: a Pi's serve isn't started again for it.
+    saved = folder / "settings.toml"
+    saved.write_text(saved.read_text() + '[train]\nfilter_crs = "MAN"\n[dashboard]\nlate_minutes_train = 5\n')
+    report = json.loads(ask(served["app"], "/api/performance")[2])
+    assert (report["delay_repay"]["station"], report["delay_repay"]["off"]) == ("MAN", None)
+    assert report["trains"]["late_minutes"] == 5
+
+
 def test_a_pi_turns_its_dashboard_on_and_off_without_starting_again(tmp_path, served, pi_with_the_dashboard):
     args, folder, _ = pi_with_the_dashboard
     (folder / "settings.toml").write_text('[app]\nviews = ["board"]\n')

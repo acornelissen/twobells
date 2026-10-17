@@ -5,7 +5,7 @@ import pytest
 
 from twobells.dashboard import performance
 from twobells.dashboard.history import History, Observed, Watched
-from twobells.dashboard.performance import Performance, route_parts
+from twobells.dashboard.performance import Performance, Setup, route_parts
 
 LONDON = ZoneInfo("Europe/London")
 FRIDAY = date(2026, 10, 9)
@@ -32,7 +32,7 @@ def _record(history, mode, route, day, status="on_time", delay=0, scheduled="07:
 
 
 def _figures(history, late=None):
-    return Performance(history, lambda: NOW, late or {"train": 3, "bus": 2})
+    return Performance(history, lambda: NOW, lambda: Setup(late or {"train": 3, "bus": 2}))
 
 
 @pytest.mark.parametrize("mode, route, parts", [
@@ -145,7 +145,7 @@ def _arrived(history, day, scheduled, booked, arrived, reported=True, operator="
 
 
 def _repay(history, **options):
-    return Performance(history, lambda: NOW, {"train": 3, "bus": 2}, **options).report()["delay_repay"]
+    return Performance(history, lambda: NOW, lambda: Setup({"train": 3, "bus": 2}, **options)).report()["delay_repay"]
 
 
 def test_delay_repay_lists_trains_15_or_more_minutes_late_there(history):

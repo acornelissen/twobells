@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from datetime import date, datetime, timedelta
-from typing import Protocol
+from typing import NamedTuple, Protocol
 
 from ..core.model import iso
 from .history import measure
@@ -96,20 +96,28 @@ def delay_repay(arrivals: list[dict]) -> list[dict]:
     return found
 
 
+class Setup(NamedTuple):
+    """What the figures depend on in the settings: late from `late_minutes`
+    by mode ("train", "bus"); for the Delay Repay list, `trains`, whether
+    there are any; `station`, the filter station; `details`, whether there is
+    a Service Details key, which it needs."""
+
+    late_minutes: Mapping[str, int]
+    station: str | None = None
+    trains: bool = False
+    details: bool = False
+
+
 class Performance:
     """The figures from `source`, as of `now()` (an aware local datetime),
-    late from `late_minutes` by mode ("train", "bus"). For the Delay Repay
-    list: `trains`, whether there are any; `station`, the filter station;
-    `details`, whether there is a Service Details key, which it needs."""
+    with the settings `setup()` gives. It is asked on every request, so a
+    save on a Pi, which doesn't start the web server again, takes effect at
+    once."""
 
-    def __init__(self, source: Outcomes, now: Callable[[], datetime], late_minutes: Mapping[str, int],
-                 station: str | None = None, trains: bool = False, details: bool = False) -> None:
+    def __init__(self, source: Outcomes, now: Callable[[], datetime], setup: Callable[[], Setup]) -> None:
         self._source = source
         self._now = now
-        self._late = dict(late_minutes)
-        self._station = station
-        self._trains = trains
-        self._details = details
+        self._setup = setup
 
     def _since(self, today: date) -> date:
         return today - timedelta(days=max(SPANS) - 1)
@@ -118,9 +126,10 @@ class Performance:
         """The body of GET /api/performance."""
         now = self._now()
         today = now.date()
+        setup = self._setup()
         body: dict = {"generated_at": iso(now)}
         for mode, part in _PARTS.items():
-            late = self._late[mode]
+            late = setup.late_minutes[mode]
             outcomes = self._source.outcomes(mode, self._since(today))
             by_route: dict[str, list[Outcome]] = {}
             for outcome in outcomes:
@@ -132,19 +141,19 @@ class Performance:
                 routes.append({"label": label, "stop": stop, "periods": periods(found, today, late)})
             routes.sort(key=lambda row: (row["label"].casefold(), row["stop"] or ""))
             body[part] = {"late_minutes": late, "all": {"periods": periods(outcomes, today, late)}, "routes": routes}
-        body["delay_repay"] = self._delay_repay(today)
+        body["delay_repay"] = self._delay_repay(today, setup)
         return body
 
-    def _delay_repay(self, today: date) -> dict:
+    def _delay_repay(self, today: date, setup: Setup) -> dict:
         since = self._since(today)
-        found: dict = {"station": self._station, "station_name": None, "since": since.isoformat(),
+        found: dict = {"station": setup.station, "station_name": None, "since": since.isoformat(),
                        "least_minutes": LEAST, "off": None, "trains": []}
-        station = self._station
-        if not self._trains:
+        station = setup.station
+        if not setup.trains:
             found["off"] = "no_trains"
         elif station is None:
             found["off"] = "no_filter"
-        elif not self._details:
+        elif not setup.details:
             found["off"] = "no_details_key"
         if found["off"] is not None or station is None:
             return found
@@ -157,7 +166,7 @@ class Performance:
     def route(self, mode: str, route: str) -> dict:
         """One route's figures, for its departures' sheets."""
         today = self._now().date()
-        late = self._late[mode]
+        late = self._setup().late_minutes[mode]
         label, stop = route_parts(mode, route)
         outcomes = self._source.outcomes(mode, self._since(today), route)
         return {"label": label, "stop": stop, "late_minutes": late, "periods": periods(outcomes, today, late)}
