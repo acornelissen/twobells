@@ -1022,6 +1022,19 @@ def test_a_tram_stop_s_walk_and_rows_are_saved(tmp_path):
     assert settings.board.modes == ("train", "bus")  # the pHAT has room for two: trams are third
 
 
+def test_trams_alone_with_trains_and_buses_switched_off_save(tmp_path):
+    # As setup leaves an install that picked tram stops alone: trains and buses off, not removed.
+    form, config = _tram_form(tmp_path)
+    text = config.read_text().replace("[train]\n", "[train]\nenabled = false\n").replace(
+        '[bus]\nsource = "transportapi"\n', '[bus]\nsource = "transportapi"\nenabled = false\n')
+    config.write_text(text)
+    form = board_form(config, lambda: dict(ENV))
+    assert form.save(fields_of(form) | {"metro_walk_minutes_T": "5"}) == {}
+    assert load_config(config, ENV).board.walk.metro == {"T": 5}
+    # Trams off too would leave nothing, so that is still refused.
+    assert set(form.save(fields_of(form) | {"metro_enabled": "false"})) == {"train_enabled"}
+
+
 def test_a_tram_stop_that_isn_t_one_is_refused(tmp_path):
     form, _ = _tram_form(tmp_path)
     errors = form.save(fields_of(form) | {"metro_stops": "T = 1800SB12341"})

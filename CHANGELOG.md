@@ -8,6 +8,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 - A bus timetable download that isn't a zip is read a chunk at a time. It was read in one go with room for the most an install reads, 200 MB on a desktop, however small the file; a file of a few KB now takes under 1 MB.
 - The setup wizard's stop search reads NaPTAN's stop list a line at a time, never more than 4,096 characters of a line at once, as the timetable build does, and decodes it as it reads. Before, one very long line was held whole, or refused the whole list; now that line is left out and the rest are read.
+- An install set up with tram stops alone, its trains and buses switched off, can save the Trains and buses settings page again. It was refused with "Trains and buses can't both be off", whatever was changed; now that is said only when the trams are off too.
 
 ## [0.3.0] - 2026-10-17
 
