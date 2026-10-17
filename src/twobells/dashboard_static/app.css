@@ -555,10 +555,13 @@ main:focus { outline: none; }
 .alert-item p { margin: 0; }
 .alert-item button { color: var(--bad-fg); border-color: var(--bad-fg); }
 
-/* Station notices (ticket office, lifts): information, not disruption. */
-.station-info { margin: 0 0 var(--s-2); color: var(--muted); font-size: var(--t-sm); }
-.station-info p { margin: 0; }
-.station-info .glyph { margin-right: var(--s-1); }
+/* Notes under a board: station notices (ticket office, lifts), which are
+   information, not disruption, and the bus timetable changes coming up.
+   Plain quiet lines with an info icon, after the departures: nothing in
+   them is to press, and the departures come first. */
+.notes { margin: var(--s-3) 0 0; padding: 0; color: var(--muted); font-size: var(--t-sm); list-style: none; }
+.notes > * { display: flex; gap: var(--s-2); margin: var(--s-1) 0; }
+.notes .glyph { flex: none; height: 1.45em; }
 
 /* --- Disruption: one line under the hero, the items behind it --- */
 
@@ -631,6 +634,10 @@ main:focus { outline: none; }
 .sections { display: grid; gap: var(--s-7); }
 .boards, .extras { display: grid; gap: var(--s-7); }
 .panel { min-width: 0; }
+/* A board's heading, with its one standing fact (the walk to the station)
+   on the same line, so the departures start a line sooner. */
+.panel-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s-4); margin: 0 0 var(--s-2); }
+.panel-head h2, .panel-head .section-meta { margin: 0; }
 .section-meta { margin: 0 0 var(--s-2); color: var(--muted); font-size: var(--t-sm); }
 .section-status.problem { color: var(--bad-fg); font-weight: 500; }
 .empty { margin: var(--s-2) 0; color: var(--muted); }
@@ -660,7 +667,7 @@ main:focus { outline: none; }
    like a stop's countdown sign. Hairlines between rows, no boxes. --- */
 
 table.board { width: 100%; border-collapse: collapse; }
-table.board caption { text-align: left; font-weight: 500; padding: 0 0 var(--s-2); color: var(--muted); }
+table.board caption { text-align: left; font-size: var(--t-sm); padding: 0 0 var(--s-1); color: var(--muted); }
 table.board th, table.board td { padding: var(--s-3) var(--s-2); text-align: left; vertical-align: top; border-top: 1px solid var(--line); }
 table.board thead th { padding-block: var(--s-2); font-size: var(--t-xs); font-weight: 500; color: var(--muted); border-top: 0; }
 table.board tbody th { font-weight: 400; }
@@ -1178,18 +1185,6 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
   font: 700 0.75rem/1.25 system-ui, sans-serif;
   white-space: nowrap;
   transform: translateX(-50%);
-}
-
-/* --- Timetable change notices, above the bus table --- */
-
-.tt-changes { margin: 0 0 0.75rem; padding: 0; list-style: none; }
-.tt-changes li {
-  width: fit-content;
-  margin: 0.25rem 0;
-  padding: 0.25rem 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  font-weight: 500;
 }
 
 /* The last buses, under the bus board in the evening. One that has gone

@@ -66,19 +66,23 @@
   <div class="sections">
     <div class="boards">
       <section id="trains" class="panel" aria-labelledby="trains-heading">
-        <h2 id="trains-heading">Trains</h2>
-        <p id="trains-walk" class="section-meta" hidden></p>
+        <div class="panel-head">
+          <h2 id="trains-heading">Trains</h2>
+          <p id="trains-walk" class="section-meta" hidden></p>
+        </div>
         <p id="trains-status" class="section-meta section-status" hidden></p>
-        <div id="station-info" class="station-info" hidden></div>
         <div id="trains-board"><p class="empty">Loading…</p></div>
+        <div id="station-info" class="station-info notes" hidden></div>
       </section>
 
       <section id="buses" class="panel" aria-labelledby="buses-heading">
-        <h2 id="buses-heading">Buses</h2>
+        <div class="panel-head">
+          <h2 id="buses-heading">Buses</h2>
+        </div>
         <p id="buses-status" class="section-meta section-status" hidden></p>
-        <ul id="timetable-changes" class="tt-changes" aria-label="Timetable changes" hidden></ul>
         <div id="buses-board"><p class="empty">Loading…</p></div>
         <ul id="last-buses" class="last-buses" aria-label="Last buses today" hidden></ul>
+        <ul id="timetable-changes" class="tt-changes notes" aria-label="Timetable changes" hidden></ul>
       </section>
     </div>
 

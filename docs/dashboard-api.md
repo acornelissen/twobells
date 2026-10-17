@@ -322,7 +322,7 @@ A top-level key of `/api/snapshot`, after `disruptions`: the bus lines whose tim
 - **The rule** (`area.timetable_changes`): the bus timetable keeps journeys whose calendar starts in the future (they never run before their start). A day D in the next 28 days is looked at if a journey starts on D or ended the day before. A line (with its operator) changes on D when the set of its journeys running on D, by their stops and times, differs from the set that ran on the same weekday a week before: new journeys, ended ones, or new times. Each line is listed once, at its first change, soonest first; at most 20. Bank holidays aren't counted. Journeys kept only to find an inbound bus give no departures, so they don't count either.
 - It is worked out again only when the timetable is read again or the day changes.
 - `from` is `YYYY-MM-DD`, the first day of the new timetable.
-- **On the page:** a notice above the bus table, such as "New 341 timetable from Sun 25 Oct."
+- **On the page:** a quiet note under the bus table, such as "New 341 timetable from Sun 25 Oct."
 
 ## `GET /api/events`
 
