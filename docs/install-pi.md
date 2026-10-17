@@ -64,7 +64,7 @@ sudo ./deploy/pi/upgrade.sh 0.2.0
 
 It downloads that release's tarball and `SHA256SUMS` over https into a temporary folder, and stops unless the tarball's SHA-256 matches. With `cosign` installed (2.5 or later) it checks the signature of `SHA256SUMS` first. Then it unpacks the release and runs its `deploy/pi/update.sh`, and removes the temporary folder. Options after the version go to `update.sh`.
 
-Going back to an older release works the same way, but a newer release may have moved what it keeps on to a version the older one can't read. The punctuality history is one: 0.1.0 reads only its version 1, so after going back to it the dashboard has no history and no Performance page. Before moving the history on, the newer release kept a copy of it as it was, `history.sqlite3.v1` in `/var/lib/twobells`, and `upgrade.sh` says how to put it back when it goes to an older version. What was recorded since is lost:
+Going back to an older release works the same way, but a newer release may have moved what it keeps on to a version the older one can't read. The punctuality history is one: 0.1.0 reads only its version 1, so after going back to it the dashboard has no punctuality history. Before moving the history on, the newer release kept a copy of it as it was, `history.sqlite3.v1` in `/var/lib/twobells`, and `upgrade.sh` says how to put it back when it goes to an older version. What was recorded since is lost:
 
 ```bash
 sudo systemctl stop twobells-web twobells-fetch
@@ -81,7 +81,10 @@ sudo ./deploy/pi/update.sh
 
 What `update.sh` does:
 
+- It stops before changing anything if the app isn't installed in `/opt/twobells`, and says to run `install.sh`.
 - It holds the board's timer while it works, so no tick runs half-installed code, and starts it again at the end (also if the update stops part way).
-- It first installs what the new release needs: `nftables` if it's missing, pygame and espeak-ng if `display` says `hdmi-…` and they're missing, and the Inky driver from PyPI at the versions and hashes the release pins (`deploy/pi/requirements-pi.txt`). It checks they all import, as `install.sh` does, and stops before touching the code if one doesn't, so the old code still runs.
-- Then it installs the new code, checks that imports too, refreshes the systemd units, loads the network guard afresh, restarts the fetch service and the web server (if it is running), starts a bus timetable build if buses come from BODS, restarts the screen's service if it is running, and runs the e-paper board once if its timer is on.
+- It first installs what the new release needs: `nftables` if it's missing, pygame and espeak-ng if `display` says `hdmi-…` and they're missing, and the Inky driver from PyPI at the versions and hashes the release pins (`deploy/pi/requirements-pi.txt`). It checks that the Inky driver and its libraries import, as `install.sh` does, and stops before touching the code if one doesn't, so the old code still runs.
+- Then it installs the new code, checks that imports too, refreshes the systemd units, loads the network guard afresh, restarts the fetch service and the web server (if it is running), starts a bus timetable build if buses come from BODS (`journalctl -u twobells-timetable -f` follows it), restarts the screen's service if it is running, and runs the e-paper board once if its timer is on.
 - `--config FILE` and `--secrets FILE` replace `/etc/twobells/config.toml` and `secrets.env` too (the secrets copy is shredded).
+
+After updating, the bus timetable is built again once if the new release keeps it differently, as 0.2.0 does (see [Bus times](buses.md#how-bus-times-are-worked-out)).

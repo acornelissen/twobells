@@ -77,7 +77,7 @@ Open `http://<NAS IP address>:8090/` and [set it up](setup-wizard.md). The code 
 
 ### Updating
 
-Check the new version as above, then replace the version and digest in the image line and start the container again from the new image. Your settings, keys, password, history and timetable stay in `/data`. Building from source, see [Built from source](#built-from-source).
+Check the new version as above, then replace the version and digest in the image line and start the container again from the new image. Your settings, keys, password, history and timetable stay in `/data`; the bus timetable is built again once if the new release keeps it differently, as 0.2.0 does (see [Bus times](buses.md#how-bus-times-are-worked-out)). Building from source, see [Built from source](#built-from-source).
 
 Going back to an older version, the older one may not read what a newer one keeps. The punctuality history is one: 0.1.0 reads only its version 1, and stops at the start, saying so in its log, if the history is newer. Before moving the history on, the newer version kept a copy of it as it was, `history.sqlite3.v1` in `/data`. To put it back (what was recorded since is lost), with the older image in place of `IMAGE` and your data volume or folder in place of `twobells-data`:
 
