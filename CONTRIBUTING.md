@@ -89,7 +89,13 @@ Conventional commits: `<type>(<scope>): <subject>`, in the imperative, like `fix
 
 ## Pictures
 
-The pictures in `docs/images/` are drawn from the sample data. After a change to how the board looks, run `.venv/bin/python tools/build_doc_images.py`. For the dashboard's, `.venv/bin/python tools/serve_doc_dashboard.py` serves the page on the sample morning at <http://127.0.0.1:8931/>; take them by hand at 2x, 1280 CSS pixels wide for the page, and save them at 0.75 scale in 256 colours. Look at each picture before you commit it.
+The pictures in `docs/images/` are drawn from the sample data. After a change to how the board looks, run `.venv/bin/python tools/build_doc_images.py`. The rest are taken by hand in a browser from two servers on this checkout, which listen on 127.0.0.1 only:
+
+- **The dashboard:** `.venv/bin/python tools/serve_doc_dashboard.py` serves the page on the sample morning at <http://127.0.0.1:8931/>, its clock starting at 07:01:30.
+- **The settings and the setup wizard:** `.venv/bin/python tools/serve_doc_settings.py` serves the real settings site at <http://127.0.0.1:8932/settings>, over a throwaway store with Glossop's settings and made-up keys, already signed in. The wizard's lookups answer with sample answers and never reach the internet; type any postcode. `--install desktop` (or `docker`) gives that install's tabs and words; the default, `pi`, has them all.
+- **Light or dark:** both take `--scheme light` or `--scheme dark`, which serve that scheme's colours whatever the browser prefers.
+
+Take them at 2x and save them at 0.75 scale in 256 colours: the dashboard 1376 CSS pixels wide, as `dashboard-dark.png` is, and the settings and wizard cropped to their column. Look at each picture before you commit it.
 
 ## Releases
 
