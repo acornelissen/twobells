@@ -71,8 +71,8 @@ def test_the_rows_fields_have_names_of_their_own():
 
 def test_a_field_s_needs_is_a_section_that_can_be_set_up():
     for f in schema.FIELDS:
-        assert f.needs in (None, "train", "bus", "weather"), f.name
-        if f.section in ("train", "bus", "weather"):
+        assert f.needs in (None, "train", "bus", "metro", "weather"), f.name
+        if f.section in ("train", "bus", "metro", "weather"):
             assert f.needs == f.section, f.name
 
 
@@ -103,7 +103,8 @@ def test_short_choices_are_radios_and_long_ones_selects():
 
 
 def test_time_windows_are_rows_each_with_a_name():
-    assert {f.name for f in schema.FIELDS if f.kind == "windows"} == {"train_windows", "bus_windows", "quiet_windows"}
+    assert {f.name for f in schema.FIELDS if f.kind == "windows"} == {"train_windows", "bus_windows", "metro_windows",
+                                                                      "quiet_windows"}
     for f in schema.FIELDS:
         assert bool(f.item) == (f.kind == "windows"), f.name
 

@@ -35,7 +35,7 @@ class Wording:
 
 def _target(dep: Departure) -> str:
     # The time it actually leaves, so a late train never reads as leaving before you do.
-    return dep.departs_at if dep.mode == "train" else dep.service
+    return dep.service if dep.mode == "bus" else dep.departs_at
 
 
 # Drawn beside the section's label, so it names the train it is for.
@@ -244,6 +244,17 @@ def _bus_row(dep: Departure, walk: WalkTimes | None, clock: str | None) -> Row:
     return Row(dep.service, dep.destination, right, _style(dep), leave_text, dep.stop, leave_at=leave_at)
 
 
+def _tram_row(dep: Departure, walk: WalkTimes | None, clock: str | None, several: bool = False) -> Row:
+    """A tram's row, drawn as a train's: its time, where it goes and, where
+    a train's status goes, words.SCHEDULED, as a bus known only from the
+    timetable says (trams come from the timetable alone). A replacement bus
+    says so where a train's would. With `several` tram stops, each row
+    names its stop by label first ("T: Bury")."""
+    destination = f"{dep.stop}: {dep.destination}" if several and dep.stop else dep.destination
+    return Row(dep.scheduled, destination, words.SCHEDULED, Style.NORMAL,
+               platform=words.BUS if dep.replacement_bus else None, replacement_bus=dep.replacement_bus)
+
+
 # A stop's name from the bus timetable is feed data: kept to one line of
 # printable text, and this long at most (a screen scrolls a long one).
 STOP_NAME_LIMIT = 60
@@ -334,8 +345,10 @@ def build_view(
     for mode, found in departures.items():
         kind = mode_list.mode(mode).rows
         names = (stop_names or {}) if kind == "bus" else {}
-        sections.append(_section(mode, list(found), to_rows[kind], now, mode in stale, walk, wording, clock, strips,
-                                 names))
+        to_row = to_rows[kind]
+        if mode == "metro":
+            to_row = partial(_tram_row, several=len({d.stop for d in found}) > 1)
+        sections.append(_section(mode, list(found), to_row, now, mode in stale, walk, wording, clock, strips, names))
     return BoardView(
         title=title,
         sections=tuple(sections),

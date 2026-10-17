@@ -1,7 +1,8 @@
 """The modes of transport, and which of them each view shows.
 
 A mode is a kind of departure with a section of its own on the board and
-the dashboard: trains, buses, and trams and metro. Each is one entry in
+the dashboard: trains, buses, and trams (the metro mode, for trams, metro
+and underground; Manchester's Metrolink trams so far). Each is one entry in
 MODES: the table its settings are in ([train]), which is also its
 source's name and its entry in the board's state; the words the views
 say it in; how the board draws its rows (like a train's, or like a bus's,
@@ -54,9 +55,9 @@ class Mode:
 MODES = (
     Mode("train", "Trains", "trains", "No trains", "train", (3, 3)),
     Mode("bus", "Buses", "buses", "No buses", "bus", (2, 3)),
-    # Trams, metro and underground. Its sources (TfGM's Metrolink, then TfL)
-    # come later; until then it is never set up.
-    Mode("metro", "Trams and metro", "trams and metro", "No trams or metro", "train", (3, 3), ready=False),
+    # Trams, metro and underground: Manchester's Metrolink trams so far, from
+    # TfGM's timetable (sources/trams.py), so it is called trams.
+    Mode("metro", "Trams", "trams", "No trams", "train", (3, 3)),
 )
 KEYS = tuple(mode.key for mode in MODES)
 _BY_KEY = {mode.key: mode for mode in MODES}

@@ -4,7 +4,7 @@ The dashboard reads the board's config.toml, plus an optional [dashboard]
 table, and keeps everything it writes (the bus timetable, bank holidays,
 punctuality history) in the install's store (settings/store.py), which it shares
 with the board. It uses only the free feeds: Darwin, the BODS timetable
-with live positions, and Open-Meteo. TransportAPI keys are dropped so no
+with live positions, TfGM's tram timetable (no key), and Open-Meteo. TransportAPI keys are dropped so no
 fallback is ever built, and buses from TransportAPI aren't shown: the
 dashboard says so (BUS_NOTE) rather than refusing to start.
 Darwin's Service Details, which places each train on its route, is used
@@ -50,8 +50,10 @@ from ..sources.darwin import DarwinSource, ServiceDetails, ServiceDetailsClient,
 from ..sources.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource, kb_url_is_placeholder
 from ..sources.holidays import ENGLAND_AND_WALES
 from ..sources.lastbus import LastBus
+from ..sources.trams import TramTimetableSource
 from ..sources.weather import Conditions, OpenMeteoSource
 from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
+from ..timetable.trams import TramCall
 
 if TYPE_CHECKING:
     from ..settings.overlay import Target
@@ -66,6 +68,7 @@ _KEYS = {
     "state_dir",
     "train_rows",
     "bus_rows",
+    "metro_rows",
     "train_interval_seconds",
     "bus_interval_seconds",
     "weather_interval_minutes",
@@ -96,6 +99,7 @@ class DashboardOptions:
     state_dir: str | None = None
     train_rows: int = 10
     bus_rows: int = 15  # about half an hour across five stops
+    metro_rows: int = 10
     train_interval_seconds: int = 60
     bus_interval_seconds: int = 30
     weather_interval_minutes: int = 30
@@ -177,6 +181,7 @@ def dashboard_options(data: dict) -> DashboardOptions:
         state_dir=state_dir,
         train_rows=_ranged(section, "train_rows", 10, 1, _MAX_ROWS),
         bus_rows=_ranged(section, "bus_rows", 15, 1, _MAX_ROWS),
+        metro_rows=_ranged(section, "metro_rows", 10, 1, _MAX_ROWS),
         train_interval_seconds=_whole(section, "train_interval_seconds", 60, _WHERE, least=30),
         bus_interval_seconds=_whole(section, "bus_interval_seconds", 30, _WHERE, least=15),
         weather_interval_minutes=_whole(section, "weather_interval_minutes", 30, _WHERE, least=10),
@@ -212,6 +217,15 @@ class BusSource(Protocol):
     def refresh_timetable(self, force: bool = False, limits: DocumentLimits = DEFAULT_LIMITS) -> object: ...
 
 
+class TramSource(Protocol):
+    def unusable(self) -> str | None: ...
+
+    def leaving(self, rows: int | None = None) -> list[tuple[datetime, TramCall]]: ...
+
+    # What it returns isn't used.
+    def refresh_timetable(self, force: bool = False) -> object: ...
+
+
 class ConditionsSource(Protocol):
     def fetch_conditions(self) -> Conditions: ...
 
@@ -242,6 +256,10 @@ class DashboardSettings:
     # its own and they only share the file, which is replaced whole.
     bus_upkeep: BusSource | None = None
     bus_stops: dict[str, str] = field(default_factory=dict)
+    # Metrolink's trams, from TfGM's timetable; and its own for the upkeep thread, as the buses'.
+    metro: TramSource | None = None
+    metro_upkeep: TramSource | None = None
+    metro_stops: dict[str, str] = field(default_factory=dict)
     weather: ConditionsSource | None = None
     # BODS SIRI-SX, with the buses; None without buses.
     bus_disruptions: DisruptionFeed | None = None
@@ -350,6 +368,8 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
 
     if "train" in data:
         _table(data, "train", "[train]")["rows"] = options.train_rows
+    if "metro" in data:
+        _table(data, "metro", "[metro]")["rows"] = options.metro_rows
     bus_note = None
     if "bus" in data and "bus" in modes:
         bus = _table(data, "bus", "[bus]")
@@ -363,13 +383,15 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
     free_env = {key: value for key, value in env.items() if not key.startswith("TAPI_")}
     settings = settings_from(data, free_env, modes=modes)
 
-    train = bus = None
+    train = bus = metro = None
     for config in settings.board.sources:
         if isinstance(config.source, DarwinSource):
             train = config.source
             train.with_details = True  # GetDepBoardWithDetails: calling points and reasons
         elif isinstance(config.source, BodsBusSource):  # TransportAPI buses were dropped above
             bus = config.source
+        elif isinstance(config.source, TramTimetableSource):
+            metro = config.source
     train_section = data.get("train", {})
     details_key = _header_key(env, "RDM_DETAILS_API_KEY")
     weather = settings.board.weather
@@ -398,6 +420,9 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
         bus_note=bus_note,
         bus_upkeep=copy.copy(bus) if bus is not None else None,
         bus_stops=dict(data["bus"]["stops"]) if bus is not None else {},
+        metro=metro,
+        metro_upkeep=copy.copy(metro) if metro is not None else None,
+        metro_stops=metro.stops if metro is not None else {},
         # The board's forecast is Open-Meteo's, which gives the conditions now too.
         weather=weather.source if weather is not None and isinstance(weather.source, OpenMeteoSource) else None,
         bus_disruptions=BusDisruptionSource(bus_key) if bus is not None and bus_key else None,

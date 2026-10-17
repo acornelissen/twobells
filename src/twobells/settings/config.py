@@ -32,6 +32,7 @@ from ..sources.bodsbus import BodsBusSource
 from ..sources.darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL
 from ..sources.darwin import DarwinSource, ServiceDetailsClient, TrainDetails
 from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES
+from ..sources.trams import TramTimetableSource
 from ..sources.transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
 from ..sources.transportapi import TransportApiBusSource
 from ..sources.weather import OpenMeteoSource
@@ -41,7 +42,10 @@ from .schema import (
     BOARD_DEFAULTS,
     CRS,
     DEFAULT_BUS_SOURCE,
+    LABEL,
+    MAX_TRAM_STOPS,
     NOC,
+    TRAM_STOP,
     board_room,
     bus_defaults,
     refused,
@@ -442,6 +446,37 @@ def _bus(
     )
 
 
+def _tram_stops(section: dict) -> dict[str, str]:
+    stops = _table(section, "stops", "[metro.stops]")
+    if not stops:
+        raise ConfigError("Add a [metro.stops] table of label = tram stop code, like T = \"9400ZZMAPIC\", "
+                          "or remove [metro]")
+    if len(stops) > MAX_TRAM_STOPS:
+        raise ConfigError(f"[metro.stops] has {len(stops)} stops; a board has at most {MAX_TRAM_STOPS}")
+    for label, code in stops.items():
+        if not isinstance(label, str) or not LABEL.match(label):
+            raise ConfigError(f"[metro.stops] label {str(label)[:20]!r} must be 1 to 3 letters or digits")
+        if not isinstance(code, str) or not TRAM_STOP.match(code):
+            raise ConfigError(f"[metro.stops] {label} is {str(code)[:40]!r}; set a Metrolink stop code in quotes, "
+                              'like "9400ZZMAPIC"')
+    return stops
+
+
+def _metro(section: dict, holidays: frozenset[date], folder: Path, timezone: str) -> SourceConfig:
+    """Manchester Metrolink's trams, from TfGM's timetable kept in the store."""
+    where = "[metro] "
+    defaults = BOARD_DEFAULTS["metro"]
+    source = TramTimetableSource(
+        folder,
+        _tram_stops(section),
+        ZoneInfo(timezone),
+        rows=_whole(section, "rows", defaults["rows"], where),
+        directions=_texts(section, "directions", where) or None,
+    )
+    stale_after = timedelta(minutes=_whole(section, "stale_after_minutes", defaults["stale_after_minutes"], where))
+    return SourceConfig(source, _policy(section, defaults, where, holidays), stale_after)
+
+
 def _route_stop(line: str, entry) -> RouteStop:
     try:
         name, lat, lon = str(entry["name"]).strip(), float(entry["lat"]), float(entry["lon"])
@@ -524,7 +559,10 @@ def _walk(data: dict) -> WalkTimes:
             _whole(bus, label, 0, "[bus.walk_minutes] ", least=0)
     else:
         raise ConfigError(f"[bus] walk_minutes must be a number or a table of label = minutes, not {bus!r}")
-    return WalkTimes(train=train, bus=dict(bus))
+    metro = _table(_table(data, "metro", "[metro]"), "walk_minutes", "[metro.walk_minutes]")
+    for label in metro:
+        _whole(metro, label, 0, "[metro.walk_minutes] ", least=0)
+    return WalkTimes(train=train, bus=dict(bus), metro=dict(metro))
 
 
 def holiday_division(data: dict) -> str:
@@ -651,6 +689,8 @@ def settings_from(
     wanted = set(only or (shown_modes if modes is None else modes))
     if "train" in data and "train" in wanted:
         sources.append(_train(_table(data, "train", "[train]"), env, holidays))
+    if "metro" in data and "metro" in wanted:
+        sources.append(_metro(_table(data, "metro", "[metro]"), holidays, Path(state_file).parent, timezone))
     if "bus" in data and "bus" in wanted:
         bus = _bus(_table(data, "bus", "[bus]"), env, holidays, Path(state_file).parent, timezone)
         sources.append(bus)

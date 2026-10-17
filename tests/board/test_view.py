@@ -595,3 +595,39 @@ def test_every_look_draws_the_board_without_each_item(look, theme, palette, pane
         left_out = theme.frame(_full(show=set(SHOWN) - {item}, clock=clock), palette, panel).image
         never = theme.frame(_full(clock=clock, **given), palette, panel).image
         assert left_out.tobytes() == never.tobytes(), item
+
+
+# Trams, from the timetable alone (sources/trams.py).
+
+
+def tram(scheduled="07:14", dest="Bury", stop="T", bus=False):
+    return Departure("metro", "Blue Line", dest, scheduled, None, Status.UNKNOWN, stop=stop, replacement_bus=bus)
+
+
+def tram_view(trams, now="07:00", walk=None, **kwargs):
+    return build_view(title="Home", departures={"metro": list(trams)}, now=now, stale=set(), walk=walk, **kwargs)
+
+
+def test_a_tram_row_is_drawn_as_a_train_s_with_the_timetable_s_mark():
+    section = tram_view([tram()]).section("metro")
+    [row] = section.rows
+    assert (section.label, section.empty_text) == ("Trams", "No trams")
+    assert (row.left, row.middle, row.right, row.style, row.platform) == ("07:14", "Bury", "sch", Style.NORMAL, None)
+
+
+def test_a_replacement_bus_in_the_trams_says_so():
+    [row] = tram_view([tram(bus=True, dest="Altrincham")]).section("metro").rows
+    assert row.platform == "Bus" and row.replacement_bus
+    assert destination_text(row, platform_column=False) == "Bus: Altrincham"
+
+
+def test_with_several_tram_stops_each_row_names_its_stop():
+    rows = tram_view([tram(), tram("07:16", "Altrincham", stop="U")]).section("metro").rows
+    assert [row.middle for row in rows] == ["T: Bury", "U: Altrincham"]
+
+
+def test_trams_say_when_to_leave_for_the_next_in_reach_by_their_own_walks():
+    walk = WalkTimes(train=30, bus={"T": 1}, metro={"T": 6})
+    section = tram_view([tram("07:04"), tram("07:14")], walk=walk, wording=SIGN).section("metro")
+    assert (section.leave, section.leave_for) == ("Leave by 07:08", 1)
+    assert tram_view([tram("07:04")], walk=walk, wording=SIGN).section("metro").leave is None

@@ -74,3 +74,10 @@ def stop_names(folder: Path | str) -> dict[str, str]:
     if found is None:
         return {}
     return {atco: str(place.name)[:NAME_LENGTH] for atco, place in found.positions.items() if place.name}
+
+
+def tram_stop_names() -> dict[str, str]:
+    """{stop code: name} of every Metrolink tram stop, from the bundled list."""
+    from ..setup.lookups import tram_stop_names as names  # imported here, as _stations is
+
+    return names()

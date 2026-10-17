@@ -9,14 +9,15 @@ BOTH = {"train": {"crs": "GLO"}, "bus": {"stops": {"A": "1000DGHS0900"}}}
 
 def test_the_modes_are_trains_buses_and_trams_in_that_order():
     assert modes.KEYS == ("train", "bus", "metro")
-    assert [m.label for m in modes.MODES] == ["Trains", "Buses", "Trams and metro"]
+    assert [m.label for m in modes.MODES] == ["Trains", "Buses", "Trams"]  # Metrolink's trams so far
     assert modes.mode("bus").rows == "bus"
     assert modes.mode("metro").rows == "train"  # drawn like a train's: time, destination, platform, status
 
 
-def test_trams_and_metro_have_no_source_yet_so_are_never_set_up():
-    assert not modes.mode("metro").ready
-    assert modes.set_up({**BOTH, "metro": {"stops": {}}}) == ("train", "bus")
+def test_trams_are_set_up_from_their_timetable():
+    assert modes.mode("metro").ready
+    assert modes.set_up({**BOTH, "metro": {"stops": {"T": "9400ZZMAPIC"}}}) == ("train", "bus", "metro")
+    assert modes.set_up({**BOTH, "metro": {"enabled": False}}) == ("train", "bus")
 
 
 def test_a_mode_is_set_up_while_its_table_is_there_and_not_switched_off():

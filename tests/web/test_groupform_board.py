@@ -960,3 +960,40 @@ def test_a_screen_naming_three_modes_at_a_big_text_size_offers_no_plain_look(tmp
     assert 'value="plain"' not in page
     assert "The plain look isn&#x27;t offered: at text size 14, the 7.9-inch screen has room for 2 modes" in page
     assert form.save(fields_of(form)) == {}  # as it is, in the station board look, it saves
+
+
+# Trams ([metro]): their sections show only while they are set up.
+
+
+def _tram_form(tmp_path):
+    state = tmp_path / "state"
+    config = tmp_path / "config.toml"
+    config.write_text(CONFIG.format(state=state / "state.json")
+                      + '\n[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n[metro.walk_minutes]\nT = 4\n')
+    return board_form(config, lambda: dict(ENV)), config
+
+
+def test_trams_have_sections_only_while_set_up(setup, tmp_path):
+    form, *_ = setup
+    assert 'id="section-trams"' not in form.render("tok")
+    form, _ = _tram_form(tmp_path)
+    page = form.render("tok")
+    assert page.count('id="section-trams"') == 2  # Trains and buses, and the board's
+    assert "Metrolink departures from your tram stops, from TfGM&#x27;s timetable." in page
+    assert fields_of(form)["metro_walk_minutes_T"] == "4"
+    assert '<label for="metro_walk_minutes_T">Piccadilly (T)' in page  # named from the bundled stop list
+
+
+def test_a_tram_stop_s_walk_and_rows_are_saved(tmp_path):
+    form, config = _tram_form(tmp_path)
+    assert form.save(fields_of(form) | {"metro_walk_minutes_T": "7", "board_metro_rows": "2"}) == {}
+    settings = load_config(config, ENV)
+    assert settings.board.walk.metro == {"T": 7}
+    assert read_overlay_in(config.parent / "state")["metro"]["rows"] == 2
+    assert settings.board.modes == ("train", "bus")  # the pHAT has room for two: trams are third
+
+
+def test_a_tram_stop_that_isn_t_one_is_refused(tmp_path):
+    form, _ = _tram_form(tmp_path)
+    errors = form.save(fields_of(form) | {"metro_stops": "T = 1800SB12341"})
+    assert "9400ZZMA" in errors["metro_stops"]

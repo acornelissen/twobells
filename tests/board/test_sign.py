@@ -1426,4 +1426,4 @@ def test_the_not_updating_badge_names_each_mode_stalled():
     stale = dataclasses.replace(TRAMS, stale=True)
     view = dataclasses.replace(board(TRAINS, BUSES, stale_trains=True), sections=(
         *board(TRAINS, BUSES, stale_trains=True).sections, stale))
-    assert "Not updating: trains, trams and metro" in texts(sign_layout(view, *dots(WAVESHARE_10IN85G)).items)
+    assert "Not updating: trains, trams" in texts(sign_layout(view, *dots(WAVESHARE_10IN85G)).items)

@@ -51,6 +51,7 @@ NOTES: dict[tuple[str, str], str] = {
     ("trains_buses", "Title"): "What the board and the dashboard are called.",
     ("trains_buses", "Trains"): "Departures from your station.",
     ("trains_buses", "Buses"): "Departures from your stops.",
+    ("trains_buses", "Trams"): "Metrolink departures from your tram stops, from TfGM's timetable.",
     ("trains_buses", "Weather"): "A rain warning beside the departures, and the dashboard's forecast.",
     ("board", "Display"): "How the board looks.",
     ("board", "Modes of transport"): "Which departures the board shows, each in a section of its own.",
@@ -58,6 +59,7 @@ NOTES: dict[tuple[str, str], str] = {
     ("dashboard", "What to show"): "What the dashboard shows beside the departures.",
     ("board", "Trains"): "How many trains the board shows, and when it checks for them.",
     ("board", "Buses"): "How many buses the board shows, and when it checks for them.",
+    ("board", "Trams"): "How many trams the board shows, and when it checks the timetable for them.",
     ("dashboard", "Departures"): "Which departures the dashboard lists, how many, and how often it checks.",
     ("dashboard", "Quiet hours"): "When the dashboard rests, overnight say.",
     ("general", "Views"): "Where your departures show. At least one is on.",
@@ -70,6 +72,7 @@ _MISSING = {
     "train": ("Trains aren't set up.", "Pick a station with setup", ", or add a [train] section to config.toml."),
     "bus": ("Buses aren't set up.", "Pick stops with setup",
             ", which finds their bus companies too, or add a [bus] section to config.toml."),
+    "metro": ("Trams aren't set up.", "Pick tram stops with setup", ", or add a [metro] section to config.toml."),
     "weather": ("No location is set for the rain warning and forecast.", "Set home with setup",
                 ", or add a [weather] section with lat and lon to config.toml."),
 }
@@ -248,6 +251,9 @@ class GroupForm:
                 continue
             if f.kind == "modes" and len(modes.set_up(data)) < 2:
                 continue  # nothing to choose between
+            if f.needs == "metro" and "metro" not in data:
+                continue  # trams are only for those near a tram stop: setup offers them there
+
             found.append(f)
         return found
 
@@ -412,29 +418,37 @@ class GroupForm:
 
     # Walks to each stop
 
-    def _stop_labels(self, data: dict, fields: Mapping[str, str] | None = None) -> list[str]:
-        """The bus stops' labels: as typed in Stop codes when that is right, else as saved."""
-        typed = (fields or {}).get("bus_stops")
+    def _stop_labels(self, data: dict, fields: Mapping[str, str] | None = None, section: str = "bus") -> list[str]:
+        """The stops' labels, the bus stops' or the tram stops' (`section`): as
+        typed in their stop codes when that is right, else as saved."""
+        typed = (fields or {}).get(f"{section}_stops")
         if typed is not None:
             try:
-                return list(schema.stops(typed))
+                return list((schema.tram_stops if section == "metro" else schema.stops)(typed))
             except Invalid:
                 pass  # its own error says so; the walks go by the saved stops
-        bus = data.get("bus")
-        stops = bus.get("stops") if isinstance(bus, dict) else None
+        table = data.get(section)
+        stops = table.get("stops") if isinstance(table, dict) else None
         if not isinstance(stops, dict):
             return []
         return [label for label in stops if isinstance(label, str) and schema.LABEL.match(label)]
 
     def _walk_boxes(self, f: Field, data: dict) -> list[tuple[str, str]]:
         """Each stop's walk box: its name (the field's, then the label) and its
-        label in words, like "Henry Street (A)", from the bus timetable when it has the stop."""
-        bus = data.get("bus")
-        stops = bus.get("stops") if isinstance(bus, dict) else None
+        label in words, like "Henry Street (A)", from the bus timetable when it
+        has the stop, or a tram stop's from the bundled list."""
+        section = str(f.section)
+        table = data.get(section)
+        stops = table.get("stops") if isinstance(table, dict) else None
         stops = stops if isinstance(stops, dict) else {}
-        names = places.stop_names(self._store.folder) if stops else {}
+        if not stops:
+            names = {}
+        elif section == "metro":
+            names = places.tram_stop_names()
+        else:
+            names = places.stop_names(self._store.folder)
         boxes = []
-        for label in self._stop_labels(data):
+        for label in self._stop_labels(data, section=section):
             name = names.get(str(stops.get(label)))
             boxes.append((f"{f.name}_{label}", f"{name} ({label})" if name else f"Stop {label}"))
         return boxes
@@ -442,10 +456,10 @@ class GroupForm:
     def _walks_shown(self, f: Field, data: dict) -> dict[str, str]:
         """What each stop's walk box shows: its own walk, else the one for
         every stop ("*", or a single number)."""
-        bus = data.get("bus")
-        walks = bus.get(f.key) if isinstance(bus, dict) else None
+        table = data.get(str(f.section))
+        walks = table.get(f.key) if isinstance(table, dict) else None
         shown = {}
-        for label in self._stop_labels(data):
+        for label in self._stop_labels(data, section=str(f.section)):
             value = walks.get(label, walks.get("*")) if isinstance(walks, dict) else walks
             shown[f"{f.name}_{label}"] = _shown(value, "text")
         return shown
@@ -455,14 +469,14 @@ class GroupForm:
         """The walk boxes into `changes` as a table by stop label (with any "*"
         kept), as setup saves them; or each box's error. A section switched off
         keeps its walks unless one was changed. Nothing for no stops."""
-        labels = self._stop_labels(data, fields)
+        labels = self._stop_labels(data, fields, str(f.section))
         if not labels:
             return {}
         typed = {label: fields.get(f"{f.name}_{label}", "") for label in labels}
         if off and not edited(_walk_text(typed), shown.get(f.name, "")):
             return {}
-        bus = data.get("bus")
-        saved = bus.get(f.key) if isinstance(bus, dict) else None
+        section = data.get(str(f.section))
+        saved = section.get(f.key) if isinstance(section, dict) else None
         table = {"*": saved["*"]} if isinstance(saved, dict) and "*" in saved else {}
         errors = {}
         check = schema.number(0, 60, optional=True)

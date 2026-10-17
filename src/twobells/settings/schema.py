@@ -50,6 +50,10 @@ CRS = re.compile(r"^[A-Za-z]{3}$")
 LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")
 # A stop's ATCO code: its area's 3 digits, then up to 9 letters and digits.
 ATCO = re.compile(r"^[0-9]{3}[0-9A-Za-z]{1,9}$")
+# A Metrolink tram stop's NaPTAN code: 9400ZZMA and the three letters TfGM calls it by.
+TRAM_STOP = re.compile(r"^9400ZZMA[A-Z]{3}$")
+# The most tram stops a board has (timetable/trams.py reads no more).
+MAX_TRAM_STOPS = 4
 # National operator codes: a few letters or digits, like BNML.
 NOC = re.compile(r"^[A-Za-z0-9]{2,8}$")
 CONTROL = re.compile(r"[\x00-\x1f\x7f]")
@@ -176,6 +180,21 @@ def stops(raw: str) -> dict[str, object]:
     found = pairs(raw, _atco, "ATCO code")
     if not found:
         raise Invalid("Add at least one stop, like A = 1000DGHS0900")
+    return found
+
+
+def _tram_stop(raw: str) -> str:
+    if not TRAM_STOP.fullmatch(raw):
+        raise Invalid("A tram stop code is 9400ZZMA and the stop's three letters, like 9400ZZMAPIC")
+    return raw
+
+
+def tram_stops(raw: str) -> dict[str, object]:
+    found = pairs(raw, _tram_stop, "tram stop code")
+    if not found:
+        raise Invalid("Add at least one tram stop, like T = 9400ZZMAPIC")
+    if len(found) > MAX_TRAM_STOPS:
+        raise Invalid(f"Add at most {MAX_TRAM_STOPS} tram stops")
     return found
 
 
@@ -376,6 +395,14 @@ BOARD_DEFAULTS: dict = {
         "daily_budget": 28,
         "windows": ("Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"),
     },
+    # Trams from the timetable, which costs nothing to read: every minute,
+    # through the trams' day.
+    "metro": {
+        "rows": 3,
+        "interval_minutes": 1,
+        "stale_after_minutes": 10,
+        "windows": ("Mon-Sun 05:00-23:59",),
+    },
 }
 # Buses come from the BODS timetable unless [bus] says source = "transportapi"
 # (BODS covers England only); TransportAPI otherwise only stands in for it.
@@ -417,7 +444,7 @@ class Field:
     hint: str = ""
     options: tuple[tuple[str, str], ...] = ()  # a choice's (value, words); a text box's suggestions
     default: object = None  # shown when the settings don't say
-    needs: str | None = None  # the table that must be set up for the field to show: "train", "bus" or "weather"
+    needs: str | None = None  # the table it needs set up to show: "train", "bus", "metro" or "weather"
     # Where the settings pages show it: its page (PAGES), the heading of its
     # section there, and whether it waits under the section's Advanced.
     page: str = ""
@@ -516,6 +543,7 @@ def fields(display: str = "inky", theme: str = "sign", text_size: int | None = N
     rotations = ("0", "180") if epaper else ("0", "90", "180", "270")
     accents = _accents(display, theme)
     board, train, bus = BOARD_DEFAULTS, BOARD_DEFAULTS["train"], BOARD_DEFAULTS["bus"]
+    metro = BOARD_DEFAULTS["metro"]
     return (
         # Trains and buses: what both views show.
         Field("title", "general", None, "title", "Title", text(60), default=board["title"],
@@ -546,6 +574,18 @@ def fields(display: str = "inky", theme: str = "sign", text_size: int | None = N
         Field("bus_stops", "general", "bus", "stops", "Stop codes", stops, "area",
               hint="One per line, LABEL = stop code, like A = 1000DGHS0900. Setup finds stops and their bus "
                    "companies on a map.", needs="bus", page="trains_buses", heading="Buses", tier="advanced"),
+        Field("metro_enabled", "general", "metro", "enabled", "Show trams", on_off, "radios",
+              hint=f"Off: no trams are shown. {_KEPT}", options=_ON_OFF, default=True, needs="metro",
+              page="trains_buses", heading="Trams"),
+        Field("metro_walk_minutes", "general", "metro", "walk_minutes", "Walk to each tram stop", walk_per_stop,
+              "per_stop", hint="Shows when to leave. Leave a box empty for none.", needs="metro",
+              page="trains_buses", heading="Trams", width="3", unit="minutes"),
+        Field("metro_directions", "general", "metro", "directions", "Only trams heading to", directions,
+              hint="Optional, separated by commas, like Bury, Altrincham. Leave it empty to show every tram.",
+              needs="metro", page="trains_buses", heading="Trams"),
+        Field("metro_stops", "general", "metro", "stops", "Tram stop codes", tram_stops, "area",
+              hint="One per line, LABEL = stop code, like T = 9400ZZMAPIC; up to 4. Setup finds the Metrolink "
+                   "stops near home.", needs="metro", page="trains_buses", heading="Trams", tier="advanced"),
         Field("weather_enabled", "general", "weather", "enabled", "Show the weather", on_off, "radios",
               hint="A warning when rain is likely before you'd reach your next train or bus, and the "
                    "dashboard's forecast, from Open-Meteo.",
@@ -613,6 +653,18 @@ def fields(display: str = "inky", theme: str = "sign", text_size: int | None = N
               number(1, 1000), "number", hint="The free TransportAPI plan allows 30.",
               default=bus["daily_budget"], needs="bus", page="board", heading="Buses", tier="advanced",
               width="4", unit="lookups"),
+        Field("board_metro_rows", "board", "metro", "rows", "Trams shown", number(1, 6), "number",
+              default=metro["rows"], needs="metro", page="board", heading="Trams", width="2"),
+        Field("metro_windows", "board", "metro", "windows", "When to check for trams", windows, "windows",
+              hint="Tram times come from the timetable, which costs nothing to read. Outside these times the "
+                   "board shows what it last knew.", default=metro["windows"], needs="metro", page="board",
+              heading="Trams", item="Checking time"),
+        Field("metro_interval_minutes", "board", "metro", "interval_minutes", "Check every", number(1, 60),
+              "number", default=metro["interval_minutes"], needs="metro", page="board", heading="Trams",
+              tier="advanced", width="3", unit="minutes"),
+        Field("metro_stale_after_minutes", "board", "metro", "stale_after_minutes",
+              "Say “not updating” after", number(1, 240), "number", default=metro["stale_after_minutes"],
+              needs="metro", page="board", heading="Trams", tier="advanced", width="3", unit="minutes"),
         # The dashboard's own, in its [dashboard] table; the defaults are
         # dashconfig.DashboardOptions' (test_schema checks they agree).
         Field("dashboard_modes", "dashboard", "dashboard", "modes", "Modes of transport", modes.check(), "modes",
@@ -623,6 +675,9 @@ def fields(display: str = "inky", theme: str = "sign", text_size: int | None = N
               width="2"),
         Field("dashboard_bus_rows", "dashboard", "dashboard", "bus_rows", "Most buses listed", number(1, 20),
               "number", hint=_LISTED, default=15, needs="bus", page="dashboard", heading="Departures",
+              width="2"),
+        Field("dashboard_metro_rows", "dashboard", "dashboard", "metro_rows", "Most trams listed", number(1, 20),
+              "number", hint=_LISTED, default=10, needs="metro", page="dashboard", heading="Departures",
               width="2"),
         Field("row_strips", "dashboard", "dashboard", "row_strips", "Position strips in each row", on_off, "radios",
               hint="A small drawing of the stops in each departure row, with the train or bus where it is, while "
@@ -727,6 +782,7 @@ MANAGED: dict[str | None, frozenset[str]] = {
     "app": frozenset({"views"}),
     "train": frozenset({"enabled"}),
     "bus": frozenset({"enabled", "source", "operators", "routes"}),
+    "metro": frozenset({"enabled"}),
     "weather": frozenset({"lat", "lon"}),
 }
 

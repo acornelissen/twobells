@@ -15,15 +15,23 @@ class WalkTimes:
     train: int | None = None
     # Minutes by stop label; "*" applies to any stop not listed.
     bus: Mapping[str, int] = field(default_factory=dict)
+    # The same for the tram stops, by their own labels.
+    metro: Mapping[str, int] = field(default_factory=dict)
 
     def minutes(self, dep: Departure) -> int | None:
         if dep.mode == "train":
             return self.train
+        if dep.mode == "metro":
+            return self.tram_stop(dep.stop)
         return self.stop(dep.stop)
 
     def stop(self, label: str | None) -> int | None:
         """Minutes to the bus stop with this label, or None if no walk is set."""
         return self.bus.get(label or DEFAULT_STOP, self.bus.get(DEFAULT_STOP))
+
+    def tram_stop(self, label: str | None) -> int | None:
+        """Minutes to the tram stop with this label, or None if no walk is set."""
+        return self.metro.get(label or DEFAULT_STOP, self.metro.get(DEFAULT_STOP))
 
 
 def leave_time(dep: Departure, walk: WalkTimes) -> str | None:

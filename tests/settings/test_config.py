@@ -1115,3 +1115,38 @@ def test_first_run_settings_fall_back_to_the_defaults(tmp_path):
     text = text.replace("/var/lib/twobells/state.json", str(tmp_path / "state" / "state.json"))
     broken = first_run_settings(write(tmp_path, text))
     assert broken.display == "inky" and broken.state_file == tmp_path / "state" / "state.json"
+
+
+# Trams: [metro], from TfGM's timetable kept in the store (sources/trams.py).
+
+TRAMS = '''
+[metro]
+directions = ["Bury"]
+[metro.stops]
+T = "9400ZZMAPIC"
+[metro.walk_minutes]
+T = 6
+'''
+
+
+def test_trams_load_from_their_stops_with_their_own_walks(tmp_path):
+    from twobells.sources.trams import TramTimetableSource
+
+    settings = load_config(write(tmp_path, TRAMS), ENV)
+    [config] = settings.board.sources
+    assert isinstance(config.source, TramTimetableSource) and config.source.stops == {"T": "9400ZZMAPIC"}
+    assert settings.board.modes == ("metro",)
+    assert settings.board.walk.metro == {"T": 6}
+    assert config.policy.interval == timedelta(minutes=1)
+
+
+@pytest.mark.parametrize(("stops", "says"), [
+    ("", r"Add a \[metro.stops\] table"),
+    ('T = "1800SB12341"', "set a Metrolink stop code"),
+    ('T = 5', "set a Metrolink stop code"),
+    ('"Stop T" = "9400ZZMAPIC"', "1 to 3 letters or digits"),
+    ("\n".join(f'{c} = "9400ZZMAPIC"' for c in "ABCDE"), "at most 4"),
+])
+def test_tram_stops_that_aren_t_metrolink_stops_are_refused(tmp_path, stops, says):
+    with pytest.raises(ConfigError, match=says):
+        load_config(write(tmp_path, f"[metro]\n[metro.stops]\n{stops}\n"), ENV)
