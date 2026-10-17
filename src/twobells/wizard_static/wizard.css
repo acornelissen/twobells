@@ -232,7 +232,9 @@ legend { font-weight: 600; font-size: var(--t-md); padding: 0; margin-bottom: va
 .stop-list { list-style: none; margin: 0; padding: 0; }
 .stop { border-top: 1px solid var(--line); padding: var(--s-1) 0; }
 .stop:first-child { border-top: 0; }
-.stop .about { margin: 0 0 var(--s-1) 2.25rem; }
+/* The stop's distance right under its name: the row only as tall as its tickbox needs. */
+.stop .option { min-height: 2rem; padding-bottom: 0; }
+.stop .about { margin: 0 0 var(--s-2) 2.25rem; }
 
 /* A button is quiet unless it is the one thing to do: .primary fills it. */
 button {
