@@ -90,13 +90,19 @@ _KEYBOARDS = {
 
 
 def neither_on(data: dict, fields: dict[str, str], noun: str) -> dict[str, str]:
-    """An error on the first switch if the save would leave neither trains nor
-    buses on, as the {noun} would then show nothing (setup refuses it too);
-    else none. `data` is the settings in force: a section not in it isn't set up."""
-    present = [section for section in ("train", "bus", "metro") if section in data]
+    """An error on the first switch if the save would leave none of the
+    trains, buses and trams set up on, as the {noun} would then show
+    nothing (setup refuses it too); else none. `data` is the settings in
+    force: a section not in it isn't set up."""
+    present = [section for section in modes.KEYS if section in data]
     if present and all(fields.get(f"{section}_enabled") == "false" for section in present):
-        return {f"{present[0]}_enabled": f"Trains and buses can't both be off, or the {noun} would show nothing. "
-                                         "Turn one on."}
+        nouns = [modes.mode(section).noun for section in present]
+        if len(nouns) == 1:
+            said, fix = f"{nouns[0]} can't be off", "Turn them on."
+        else:
+            both = "both" if len(nouns) == 2 else "all"
+            said, fix = f"{', '.join(nouns[:-1])} and {nouns[-1]} can't {both} be off", "Turn one on."
+        return {f"{present[0]}_enabled": f"{said[:1].upper()}{said[1:]}, or the {noun} would show nothing. {fix}"}
     return {}
 
 

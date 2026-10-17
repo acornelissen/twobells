@@ -778,7 +778,9 @@ def test_the_only_section_set_up_cannot_be_switched_off(tmp_path):
     config = tmp_path / "config.toml"
     config.write_text(CONFIG.format(state=state / "state.json").split("[bus]")[0])
     form = board_form(config, lambda: dict(ENV))
-    assert set(form.save(fields_of(form) | {"train_enabled": "false"})) == {"train_enabled"}
+    errors = form.save(fields_of(form) | {"train_enabled": "false"})
+    assert set(errors) == {"train_enabled"}
+    assert errors["train_enabled"].startswith("Trains can't be off, or the board would show nothing")
 
 
 def test_a_section_off_with_the_templates_placeholders_saves(tmp_path):
@@ -1043,8 +1045,10 @@ def test_trams_alone_with_trains_and_buses_switched_off_save(tmp_path):
     form = board_form(config, lambda: dict(ENV))
     assert form.save(fields_of(form) | {"metro_walk_minutes_T": "5"}) == {}
     assert load_config(config, ENV).board.walk.metro == {"T": 5}
-    # Trams off too would leave nothing, so that is still refused.
-    assert set(form.save(fields_of(form) | {"metro_enabled": "false"})) == {"train_enabled"}
+    # Trams off too would leave nothing, so that is still refused, naming all three.
+    errors = form.save(fields_of(form) | {"metro_enabled": "false"})
+    assert set(errors) == {"train_enabled"}
+    assert errors["train_enabled"].startswith("Trains, buses and trams can't all be off, or the board would show")
 
 
 def test_a_tram_stop_that_isn_t_one_is_refused(tmp_path):
