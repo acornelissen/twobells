@@ -1124,6 +1124,15 @@ table.measures thead .sub { font-size: var(--t-xs); font-weight: 400; }
 table.measures tbody th { font-weight: 500; }
 table.measures tbody .sub { font-weight: 400; }
 table.measures .of { color: var(--muted); white-space: nowrap; }
+/* The Performance page has the room a sheet hasn't: the figures at the
+   body size with room round them, each share a touch heavier than the
+   counts after it, so a column reads down its percentages. */
+.performance table.measures { font-size: var(--t-md); }
+.performance table.measures th, .performance table.measures td { padding: var(--s-2) var(--s-3) var(--s-2) 0; }
+.performance table.measures td { font-weight: 500; }
+.performance table.measures .of, .performance table.measures td .sub { font-weight: 400; }
+/* "Not enough days yet", across a row: a note, not a figure. */
+.performance table.measures td[colspan] { font-weight: 400; color: var(--muted); }
 table.measures tr.total th, table.measures tr.total td { font-weight: 600; }
 /* The Performance page reads top to bottom at every width, not in the
    dashboard's wide grid. */
