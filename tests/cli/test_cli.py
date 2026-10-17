@@ -925,10 +925,13 @@ def test_timetable_fails_when_no_timetable_could_be_built(bods_env, monkeypatch,
     assert "No usable bus timetable: there is no bus timetable yet" in capsys.readouterr().err
 
 
-def test_timetable_needs_the_bods_bus_source(probe_env, capsys):
+def test_timetable_with_buses_from_transportapi_has_nothing_to_do(probe_env, capsys):
+    # A Pi's hourly timer runs whatever the settings; with no timetable to build it must still succeed.
     args, _ = probe_env
-    assert main(["timetable", *args]) == 2
-    assert 'source = "transportapi"' in capsys.readouterr().err
+    assert main(["timetable", *args]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "Bus times come from TransportAPI, so there's no bus timetable to build\n"
+    assert captured.err == ""
 
 
 def test_timetable_with_buses_switched_off_has_nothing_to_do(bods_env, monkeypatch, capsys):
@@ -2495,6 +2498,25 @@ def test_timetable_builds_the_tram_timetable_too(bods_env, monkeypatch, capsys):
     assert seen == [({"T": "9400ZZMAPIC"}, True)]
     assert "Tram timetable: 4 departures at your tram stops, built" in out.out
     assert "No usable bus timetable" in out.err
+
+
+def test_timetable_builds_trams_set_up_beside_buses_from_transportapi(probe_env, monkeypatch, capsys):
+    # A Pi whose buses come from TransportAPI, with Metrolink stops added later: the timer builds the trams.
+    from tests.timetable.test_trams import read
+    from twobells.timetable import trams
+
+    args, _ = probe_env
+    config = Path(args[1])
+    config.write_text(config.read_text() + '[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n')
+
+    def fake_trams(folder, stops, now, force=False):
+        made = read(stops=stops)
+        trams.save(folder, made)
+        return made
+
+    monkeypatch.setattr(trams, "refresh", fake_trams)
+    assert main(["timetable", *args]) == 0
+    assert "Tram timetable: 4 departures at your tram stops" in capsys.readouterr().out
 
 
 def test_timetable_with_trams_alone_says_nothing_of_buses(tmp_path, monkeypatch, capsys):

@@ -150,9 +150,12 @@ say_if_unguarded() {
 say_if_unguarded
 
 # Bus times from the BODS timetable, and trams from TfGM's, need it built and
-# kept fresh. The first build takes minutes, so it carries on in the background.
+# kept fresh. The timer is on whatever the settings, so stops set up later are
+# built within the hour (an older install turned it on only for those set up
+# then). When they want one, a build starts now; the first takes minutes, so
+# it carries on in the background.
+systemctl enable --now twobells-timetable.timer
 if query needs-timetable >/dev/null; then
-  systemctl enable --now twobells-timetable.timer
   systemctl start --no-block twobells-timetable.service
   echo "Building the timetables; follow it with: journalctl -u twobells-timetable -f"
 fi

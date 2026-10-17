@@ -135,12 +135,10 @@ say_if_unguarded() {
   fi
 }
 say_if_unguarded
-# Bus times from the BODS timetable, and trams from TfGM's, need it built and kept fresh.
-timetable=false
-if query needs-timetable >/dev/null; then
-  systemctl enable --now twobells-timetable.timer
-  timetable=true
-fi
+# Bus times from the BODS timetable, and trams from TfGM's, need it built and
+# kept fresh. On whatever the settings, so stops set up later are built within
+# the hour: it builds only when one is due, and does nothing without them.
+systemctl enable --now twobells-timetable.timer
 
 # The board itself is yours to start, so it is only named here: the e-paper
 # timer, or the screen's service, by the display config.toml sets.
@@ -173,16 +171,9 @@ cat <<EOF
      and it opens the setup wizard: home, station, bus stops, walk times and
      keys, saved for you. No need to edit config.toml by hand.
 EOF
-if $timetable; then
-  echo "  3. The bus timetable is kept fresh by twobells-timetable.timer."
-else
-  cat <<EOF
-  3. If your buses come from the BODS timetable, keep it fresh (the wizard
-     builds the first one):
-       sudo systemctl enable --now twobells-timetable.timer
-EOF
-fi
 cat <<EOF
+  3. The bus and tram timetables are built and kept fresh by
+     twobells-timetable.timer, within the hour of setting up your stops.
   4. Watch it:         journalctl -u ${renderer%.timer} -f
      Check the keys:   sudo $PREFIX/venv/bin/twobells probe train
                        sudo $PREFIX/venv/bin/twobells probe bus

@@ -802,12 +802,21 @@ def test_install_and_update_ask_the_app_not_config_toml(name):
     script = _script(name)
     for grepped in ("grep -E", "[[:space:]]", "timetable --needed"):
         assert grepped not in script, grepped
-    timer = "if query needs-timetable >/dev/null; then\n  systemctl enable --now twobells-timetable.timer\n"
-    assert timer in script
     assert '"$(query display)"' in script
 
 
 @pytest.mark.parametrize("name", SCRIPTS)
+def test_install_and_update_always_turn_the_timetable_timer_on(name):
+    # Trams or BODS buses set up after installing need it, and nothing else turns it on (the
+    # Pi's fetch service never builds a timetable). It builds nothing until a build is due.
+    assert "\nsystemctl enable --now twobells-timetable.timer\n" in _script(name)
+
+
+def test_update_starts_a_timetable_build_only_when_the_settings_want_one():
+    build = "if query needs-timetable >/dev/null; then\n  systemctl start --no-block twobells-timetable.service\n"
+    assert build in _script("update.sh")
+
+
 @pytest.mark.parametrize("config, saved, wanted", [
     ('[bus]\nsource = "bods"\n', "", True),
     ("[bus]\nsource = \"transportapi\"\n", '[bus]\nsource = "bods"\n', True),  # chosen on the settings site or in the wizard
@@ -817,12 +826,11 @@ def test_install_and_update_ask_the_app_not_config_toml(name):
     ('[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n', "", True),  # trams, from TfGM's timetable
     ('[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n', "[metro]\nenabled = false\n", False),  # switched off
 ])
-def test_install_and_update_keep_the_bus_timetable_only_when_the_settings_want_it(tmp_path, name, config, saved,
-                                                                                    wanted):
+def test_update_asks_whether_the_settings_want_a_timetable(tmp_path, config, saved, wanted):
     from twobells.cli.main import main
 
     _settings(tmp_path, config, saved)
-    assert (main(_query(name, "needs-timetable", tmp_path)) == 0) == wanted
+    assert (main(_query("update.sh", "needs-timetable", tmp_path)) == 0) == wanted
 
 
 def test_install_starts_the_settings_and_the_fetch_service_and_installs_every_unit():
