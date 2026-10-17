@@ -9,7 +9,7 @@ Where home is in London, the board and the dashboard can show the Underground, t
 
 ## Where the times come from
 
-TfL's [Unified API](https://api.tfl.gov.uk) gives the predictions its own station screens show. It is free, and works without a key; an optional key, `TFL_APP_KEY`, lets it ask more often (see [Getting your keys](keys.md#transport-for-london)). The dashboard says "London times powered by TfL Open Data" at its foot while it shows them, as TfL's terms ask.
+TfL's [Unified API](https://api.tfl.gov.uk) gives the predictions its own station screens show. It is free, and works without a key; an optional key, `TFL_APP_KEY`, raises how much TfL allows (see [Getting your keys](keys.md#transport-for-london) and [How often it asks](#how-often-it-asks)). The dashboard says "London times powered by TfL Open Data" at its foot while it shows them, as TfL's terms ask.
 
 - **Live, with no timetable.** TfL gives when each train is expected, never a booked time, so a row is live or it isn't there. There is nothing to be late against, so London's rows have no "Exp", no "late" and no punctuality record, and nothing has to be built or downloaded first.
 - **Only these modes.** London Overground and the Elizabeth line are trains, from National Rail's Darwin, so set them up as your station; London's buses come from the Bus Open Data Service, as your bus stops. Their predictions are left out of this section.
@@ -19,6 +19,7 @@ TfL's [Unified API](https://api.tfl.gov.uk) gives the predictions its own statio
 ## Setting it up
 
 The [setup wizard](setup-wizard.md#the-steps) asks for your stops after the bus stops: where home is within 5 km of one, it lists the 8 nearest Underground and DLR stations, tram stops, cable car stations and piers, and **Find a stop by name** finds any of them from anywhere, from a list that comes with the app, so nothing is sent anywhere to find them. Tick up to 4. Each gets a label, T, U, V and W, and a walk time. Once you have ticked some, the **Keys** step offers TfL's key, which you can leave empty.
+The [setup wizard](setup-wizard.md#the-steps) asks for your stops after the bus stops, where home is within 5 km of one: it lists the 8 nearest Underground and DLR stations, tram stops, cable car stations and piers, from a list that comes with the app, so nothing is sent anywhere to find them. Tick up to 4. Each gets a label, T, U, V and W, and a walk time. Once you have ticked some, or if a key is already saved, the **Keys** step offers TfL's key, which you can leave empty.
 
 In `config.toml` it looks like this:
 
@@ -38,7 +39,9 @@ A stop's code is TfL's: `940GZZ`, then `LU` (Underground), `DL` (DLR), `CR` (Lon
 ## What it shows
 
 - **On the board:** each train's expected time, where it goes, and its platform on a board with room for one. On e-paper the status column says `Live`, as the panel never redraws just to count down; an HDMI screen counts down instead (`3 min`, `Due`). With more than one line among the rows, each names its line first ("Central: Epping"); with one line at two stops, its stop's label ("T: Epping"). The section says when to leave for the next you can reach, by its stop's walk. A line at your stops not running well (TfL's status, like "Minor Delays") is the board's notice, as National Rail's messages are for trains.
-- **On the dashboard:** a countdown with the live mark, as a live bus has; where it goes, with "via Bank" where TfL says so; its line with the line's colour beside the name, which way and the platform ("Central line · Eastbound, platform 6"); and where it is now ("Between Chancery Lane and St. Paul's", while **Where it is** is shown). Next to catch takes them as live. A line not running well joins the disruption line under it, under the section's heading ("Underground: Minor delays…"); a lift or escalator out of order at one of your stations is a quiet **Station information** line in the section. A row's sheet has its line, platform, stop, expected time, where it is and when to leave, and says why there is no punctuality.
+- **On the dashboard:** a countdown with the live mark, as a live bus has; where it goes, with "via Bank" where TfL says so; its line with the line's colour beside the name, which way and the platform ("Central line · Eastbound, platform 6"); and where it is now ("Between Chancery Lane and St. Paul's", while **Where it is** is shown). Next to catch takes them as live. A line not running well joins the disruption line under Next to catch, in TfL's words (or "Central: Minor Delays." where TfL gives none), and is listed under the section's heading when you open it ("Underground: …"); a lift, escalator or step-free route out of order at one of your stations is a quiet **Station information** line in the section, on the dashboard only. A row's sheet has its line, platform, stop, expected time, where it is and when to leave, and says why there is no punctuality.
+
+![The dashboard's Metro section for Bank: the Northern line to Edgware in 2 min, Northbound, platform 4, between Borough and London Bridge; the Central line to Epping in 4 min; the DLR to Lewisham in 5 min from Bank DLR; then West Ruislip and Morden, each with its line's colour, its stop, its walk and when to leave, and a Station information line saying the lift to the Northern line is out of service](images/dashboard-london.png)
 
 ## How often it asks
 
