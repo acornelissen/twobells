@@ -991,6 +991,19 @@ def test_london_s_metro_part_follows_the_contract(tmp_path):
     assert snapshot["metro"]["rows"] and snapshot["metro"]["messages"]
 
 
+def test_the_picture_tool_s_made_up_metro_follows_the_contract():
+    import importlib.util
+
+    from tests.paths import ROOT
+
+    spec = importlib.util.spec_from_file_location("serve_doc_dashboard", ROOT / "tools" / "serve_doc_dashboard.py")
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    generated_at = _fixture("dashboard_snapshot.json")["generated_at"]
+    check(tool.sample_london(generated_at), LONDON_METRO)
+    check(tool.sample_trams(generated_at), TRAMS_PART)
+
+
 def test_snapshot_fixture_follows_the_contract():
     snapshot = _fixture("dashboard_snapshot.json")
     check(snapshot, SNAPSHOT)

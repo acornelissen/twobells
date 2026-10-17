@@ -17,7 +17,9 @@ the wall tablet's page dims to its night clock. --scheme light (or dark)
 serves the pages with that scheme's colours whatever the browser prefers,
 so the light pictures can be taken from a browser set to dark. --trams adds
 a Trams section, made up (Glossop has none): the timetable's trams from
-Piccadilly that morning, for the pictures of trams.
+Piccadilly that morning, for the pictures of trams. --london adds London's
+instead, live from TfL, made up too: Bank's Underground and DLR that
+morning, with a line's status and a lift out of order.
 
 --phone also serves /frame: a page holding the dashboard in a frame 390
 CSS pixels wide and 844 high, a phone's, for the phone-width pictures from
@@ -99,6 +101,50 @@ def sample_trams(generated_at: str) -> dict:
     return {"label": "Trams", "status": {"last_success": generated_at, "stale": False, "error": None, "note": None},
             "timetable": {"state": "ready", "built": f"{day}T03:00:00{zone}"},
             "stops": {"T": {"name": "Piccadilly", "code": "9400ZZMAPIC", "walk_min": _TRAM_WALK}}, "rows": rows}
+
+
+# A made-up morning at Bank, as TfL's predictions would give it: (seconds after
+# generated_at, line, line id, kind, destination, via, label, platform, bound, where).
+_LONDON = (
+    (150, "Northern line", "northern", "tube", "Edgware", "via Bank", "T", "4", "Northbound",
+     "Between Borough and London Bridge"),
+    (270, "Central line", "central", "tube", "Epping", None, "T", "6", "Eastbound", "At St. Paul's"),
+    (330, "DLR", "dlr", "dlr", "Lewisham", None, "U", "10", None, "Approaching Bank"),
+    (450, "Central line", "central", "tube", "West Ruislip", None, "T", "5", "Westbound", "Left Liverpool Street"),
+    (510, "Northern line", "northern", "tube", "Morden", "via Bank", "T", "3", "Southbound", "At Moorgate"),
+    (690, "DLR", "dlr", "dlr", "Stratford", None, "U", "9", None, "At Tower Gateway"),
+)
+_LONDON_WALK = {"T": 3, "U": 5}
+
+
+def sample_london(generated_at: str) -> dict:
+    now = datetime.fromisoformat(generated_at)
+    rows = []
+    for i, (seconds, line, line_id, kind, destination, via, stop, platform, bound, where) in enumerate(_LONDON):
+        due = now + timedelta(seconds=seconds)
+        walk = _LONDON_WALK[stop]
+        rows.append({
+            "id": f"{0x100 + i:016x}", "line": line, "line_id": line_id, "kind": kind, "destination": destination,
+            "via": via, "stop": stop, "stop_name": {"T": "Bank", "U": "Bank DLR"}[stop], "platform": platform,
+            "bound": bound, "where": where, "scheduled": due.strftime("%H:%M"), "scheduled_at": due.isoformat(),
+            "expected": due.strftime("%H:%M"), "expected_at": due.isoformat(), "status": "on_time",
+            "status_text": "Live", "status_spoken": "Live", "live": True, "replacement_bus": False,
+            "walk_min": walk, "leave_at": (due - timedelta(minutes=walk)).isoformat(),
+        })
+    return {
+        "label": "Metro", "live": True, "timetable": None,
+        "status": {"last_success": generated_at, "stale": False, "error": None, "note": None},
+        "stops": {"T": {"name": "Bank", "code": "940GZZLUBNK", "walk_min": 3},
+                  "U": {"name": "Bank DLR", "code": "940GZZDLBNK", "walk_min": 5}},
+        "messages": [
+            {"text": "Central line: Minor delays between White City and Liverpool Street while we fix a signal "
+                     "failure. Tickets are valid on local buses.", "category": None, "severity": "minor",
+             "kind": "service"},
+            {"text": "Bank: The lift between the street and the Northern line is out of service today. Use Monument "
+                     "for step-free access.", "category": None, "severity": "normal", "kind": "station"},
+        ],
+        "rows": rows,
+    }
 
 
 # A phone's viewport, in CSS pixels.
@@ -187,12 +233,16 @@ def main() -> None:
     parser.add_argument("--frame", type=frame_size, metavar="WIDTHxHEIGHT",
                         help="also serve /frame, the page in a frame this size")
     parser.add_argument("--trams", action="store_true", help="a made-up Trams section too")
+    parser.add_argument("--london", action="store_true", help="a made-up section of London's metro instead")
     args = parser.parse_args()
     snapshot = sample_snapshot()
     snapshot["quiet"] = args.quiet
     if args.trams:
         snapshot["metro"] = sample_trams(snapshot["generated_at"])
         snapshot["walk"]["metro"] = {"T": _TRAM_WALK}
+    if args.london:
+        snapshot["metro"] = sample_london(snapshot["generated_at"])
+        snapshot["walk"]["metro"] = dict(_LONDON_WALK)
     Handler.snapshot = json.dumps(snapshot).encode()
     Handler.area = json.dumps(sample_area(snapshot["generated_at"])).encode()
     Handler.started_at = datetime.fromisoformat(snapshot["generated_at"]).timestamp()
