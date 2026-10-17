@@ -434,7 +434,7 @@ _TEXT_SIZES = tuple(str(size) for size in range(9, 17))
 _TEXT_SIZE_NAMES = {"9": "smallest", "11": "standard", "16": "biggest"}
 _KEPT = "The settings below are kept for turning them back on."
 _LISTED = "The first 5 show; the rest are behind Show later departures. A wall tablet shows 4."
-_MODES = "Each has a section of its own. Only modes switched on, on the Trains and buses page, are listed."
+_MODES = "Only the modes switched on in Trains and buses are listed."
 _CHECKING = ("Outside these times the board shows what it last knew, without saying “not updating”. Bank holidays "
              "count as Sundays, unless the General page says to ignore them.")
 

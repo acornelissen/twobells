@@ -58,7 +58,7 @@ function modesGroup(view) {
     h("legend", {}, `Modes of transport on ${lower(view.label)}`),
     says ? h("p", { class: "hint", id: `${name}-hint` }, says) : null,
     h("p", { class: "error", id: `${name}-error`, hidden: true }),
-    h("div", { class: "options inline" }, boxes));
+    h("div", { class: "options" }, boxes));
 }
 
 const firstBox = (view) => $(`modes-${view.name}-${pickedModes()[0].name}`);

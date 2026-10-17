@@ -72,7 +72,7 @@ No config files to write. Give the setup wizard your postcode or address: it fin
 
 Everything else is on the settings site, in plain words, behind one password:
 
-<img width="49%" alt="The settings site's Dashboard page: how many trains and buses it lists, and position strips on or off" src="docs/images/settings-dashboard.png">
+<img width="49%" alt="The settings site's Dashboard page: which modes of transport it lists, how many trains and buses, and position strips on or off" src="docs/images/settings-dashboard.png">
 
 ## What it covers
 
