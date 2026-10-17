@@ -6,7 +6,8 @@ Run it after a change to how the board looks, then look at each picture and
 commit them. The departures pictures are `twobells demo`; the pHAT ones
 are scaled up three times, dot for dot, so they read on a web page. The bus
 position page is drawn here, as the board draws it, for the demo's 341 with
-the emulator's stops and the bus three stops away, and so is the clock page.
+the emulator's stops and the bus three stops away, and so is the clock page,
+and a screen with trams too, for three modes of transport.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from twobells.board.view import build_view  # noqa: E402
 from twobells.cli.main import main  # noqa: E402
 from twobells.core.model import Departure, Status  # noqa: E402
 from twobells.core.walk import WalkTimes  # noqa: E402
-from twobells.emulator.fake import DEMO_STRIP, DEMO_TITLE  # noqa: E402
+from twobells.emulator.fake import DEMO_CALLING, DEMO_STRIP, DEMO_TITLE  # noqa: E402
 
 IMAGES = ROOT / "docs" / "images"
 
@@ -86,6 +87,31 @@ def draw_clock_page(drawn: Path) -> None:
     display.show(render_clock(clock_view(datetime(2026, 10, 16, 7, 12, 40)), display.palette, display.panel))
 
 
+def draw_three_modes(drawn: Path) -> None:
+    """The 7.9" screen with trains, buses and trams, as the TFT look shares
+    it between three modes: made-up trams from Piccadilly, from the
+    timetable alone."""
+    clock = "07:03:15"
+    trains = [
+        Departure("train", "Northern", "Manchester Piccadilly", "07:12", None, Status.ON_TIME, "1",
+                  calling_at=DEMO_CALLING),
+        Departure("train", "Northern", "Manchester Piccadilly", "07:42", "07:49", Status.LATE, "1"),
+    ]
+    buses = [
+        Departure("bus", "341", "Hyde", "07:20", "07:24", Status.LATE, stop="A"),
+        Departure("bus", "61", "Buxton", "07:35", None, Status.UNKNOWN, stop="B"),
+    ]
+    trams = [
+        Departure("metro", "Purple Line", "Altrincham", "07:14", None, Status.UNKNOWN, stop="T"),
+        Departure("metro", "Blue Line", "Bury", "07:17", None, Status.UNKNOWN, stop="T"),
+    ]
+    theme = theme_named("tft")
+    view = build_view(DEMO_TITLE, {"train": trains, "bus": buses, "metro": trams}, clock[:5], set(),
+                      WalkTimes(train=5, bus={"*": 8}, metro={"T": 6}), theme.wording, clock)
+    display = PngDisplay(drawn, theme.accent, DISPLAY_PANELS["hdmi-1280x400"])
+    display.show(theme.render(view, display.palette, display.panel))
+
+
 def run() -> None:
     with tempfile.TemporaryDirectory() as scratch:
         for name, (options, scale) in DEMOS.items():
@@ -97,6 +123,9 @@ def run() -> None:
         keep(drawn)
         drawn = Path(scratch) / "screen-clock.png"
         draw_clock_page(drawn)
+        keep(drawn)
+        drawn = Path(scratch) / "screen-trams.png"
+        draw_three_modes(drawn)
         keep(drawn)
 
 

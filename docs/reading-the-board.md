@@ -19,7 +19,7 @@ The board can run on three kinds of display. They all show the same information:
 | Waveshare e-paper | wide, 10.85" | Same as the pHAT, just bigger. |
 | HDMI screen | wide, 7.9" or 11.3" | Updates every second, with a running clock, countdowns, where each train and bus is, a second page showing where your bus is, and a platform clock page if you want one. |
 
-Each mode of transport the board shows has a section of its own: trains, then buses, then trams where they are set up. A tram's row reads like a train's: its time, where it goes, and `sch`, as it comes from the timetable alone (see [Tram times](trams.md)). London's are live from TfL: the time it is expected, where it goes, its platform, and `Live` on e-paper or a countdown (`3 min`, `Due`) on a screen, with its line first ("Central: Epping") when the section has several (see [London](london.md)). A board set to show only one of them (**Modes of transport** on the settings' [Board](settings.md#board) page) has that section alone, with the room of both; one with both shares the rows between them, as in the pictures here.
+Each mode of transport the board shows has a section of its own: trains, then buses, then trams where they are set up. A tram's row reads like a train's: its time, where it goes, and `sch`, as it comes from the timetable alone (see [Tram times](trams.md)). London's are live from TfL: the time it is expected, where it goes, its platform, and `Live` on e-paper or a countdown (`3 min`, `Due`) on a screen, with its line first ("Central: Epping") when the section has several (see [London](london.md)). A board showing one mode alone, because it is set to (**Modes of transport** on the settings' [Board](settings.md#board) page) or because only that one is set up, gives it all the room, with no empty section for the others. With two or three, they share the rows, each keeping at least one, as trains and buses do in the pictures here. How many a display has room for is in [Modes of transport](configuration.md#modes-of-transport).
 
 The words always carry the meaning. Colour and highlighting only back them up, so the board reads the same in black and white or to someone who is colour-blind.
 
@@ -29,7 +29,7 @@ This is the usual look: amber dots on black, like a railway station sign.
 
 ![The station board look on the Inky pHAT](images/phat-sign.png)
 
-**Trains (top half)**
+**Trains**
 
 Each line reads: *which train*, *scheduled time*, *destination*, *status*.
 
@@ -44,7 +44,7 @@ Each line reads: *which train*, *scheduled time*, *destination*, *status*.
 | `Ferry: Ryde Pier Head` | A ferry from the station's pier, which National Rail lists with the trains where one connects. Like a replacement bus, it says `Ferry` in the platform column where the board has one. |
 | `Leave by 07:07` | Set off at 07:07 to walk to the station and catch the train above it. It sits under the first train you can still reach, so if the 1st is too soon, it moves down to the 2nd. |
 
-**Buses (bottom half)**
+**Buses**
 
 Each line reads: *route*, *stop*, *destination*, *when to leave*, *when it goes*.
 
@@ -62,9 +62,9 @@ Each line reads: *route*, *stop*, *destination*, *when to leave*, *when it goes*
 | You see | It means |
 |---|---|
 | `UPDATED 07:03` | When the board last changed. The e-paper only redraws when something changes, so this can be a few minutes ago. |
-| `NOT UPDATING: BUSES`, highlighted | No new bus information has arrived for a while. What's shown is the last known, and may be out of date. The same applies to trains. |
+| `NOT UPDATING: BUSES`, highlighted | No new bus information has arrived for a while. What's shown is the last known, and may be out of date. The same applies to trains, and to trams (`TRAMS`, London's too). |
 | `RAIN FROM 07:00 (70%)` | Rain is likely (here a 70% chance) before you'd reach your next train or bus. Only shown when rain is likely; nothing on dry days. |
-| `! DISRUPTION …` | A National Rail incident notice for the station. It sits on the left while it lasts, with `UPDATED` kept on the right, and goes when the notice is withdrawn. Where it doesn't fit, it's cut short with `…`. A rain warning sits there the same way; while there's a notice, the notice takes its place. |
+| `! DISRUPTION …` | A National Rail incident notice for the station, or, with London stops, a TfL line at them not running well. It sits on the left while it lasts, with `UPDATED` kept on the right, and goes when the notice is withdrawn. Where it doesn't fit, it's cut short with `…`. A rain warning sits there the same way; while there's a notice, the notice takes its place. |
 
 ![A rain warning at the bottom](images/phat-rain.png)
 
@@ -87,7 +87,7 @@ The differences:
 | `! NOT UPDATING` in the accent colour, next to TRAINS or BUSES | `NOT UPDATING: …` at the bottom |
 | A rain warning or disruption notice in the top bar, in place of the title (on a screen, both, the rain warning beside the clock) | At the bottom |
 
-The plain look shows 3 trains and 2 buses (3 buses on the 11.3" bar screen, which has the room), and fewer on the original, smaller pHAT or with a bigger **Text size**.
+The plain look shows 3 trains and 2 buses (3 buses on the 11.3" bar screen, which has the room), and fewer on the original, smaller pHAT, with a bigger **Text size**, or with trams too.
 
 ## The TFT look
 
@@ -132,6 +132,10 @@ The screen can redraw every second, so it shows a bit more. **What to show** on 
 
 ![Departures on the 7.9 inch HDMI screen](images/screen-departures.png)
 
+**Three modes:** a screen has room for trains, buses and trams together where its look and text size keep a whole row for each: the station board, TFT and split-flap looks, and the plain look up to text size 12 on the 7.9" screen and 13 on the bar screen. Each has its section, with at least a row, and its own leave time. The Board page of the settings offers only the looks and text sizes with room for the modes the board shows, and says why (see [Modes of transport](configuration.md#modes-of-transport)).
+
+![The TFT look on the 7.9 inch HDMI screen with three modes: the 07:12 train with its calling-at line, the 341 bus, and the 07:14 tram to Altrincham marked sch, each section with when to leave](images/screen-trams.png)
+
 - **A running clock** in place of "Updated": at the bottom in the station board look, at the top right in the others.
 - **Countdowns** in place of clock times: `Leave in 3 min` instead of `Leave by 07:07`, then `Leave now` in the last minute. They round down, so `Leave in 3 min` means you have at least 3 minutes, never less. In the plain look each bus line says its own countdown, with no `Leave by` next to BUSES.
 - On the screen, a bus you can no longer reach on foot loses its leave time, rather than saying "Leave now".
@@ -145,7 +149,7 @@ The screen can redraw every second, so it shows a bit more. **What to show** on 
 
 ### The 11.3" bar screen
 
-The bar screen shows the same as the 7.9" screen, with one line for each train or bus. In the station board look its text is a third bigger, and `Leave in 3 min` sits on its train's line, between the platform and the status, rather than on a line of its own under it; the plain, TFT and split-flap looks keep their text size and use the extra width. Either way there is room for 3 trains, 3 buses and the clock.
+The bar screen shows the same as the 7.9" screen, with one line for each train or bus. In the station board look its text is a third bigger, and `Leave in 3 min` sits on its train's line, between the platform and the status, rather than on a line of its own under it; the plain, TFT and split-flap looks keep their text size and use the extra width. Either way there is room for 3 trains, 3 buses and the clock, or fewer of each with trams too.
 
 Each bus line also names its stop where other boards show its label: `341 Henry Street A Hyde` rather than `341 A Hyde` (in the plain look, rather than `A: Hyde`). The name comes from the bus timetable. It shows alone when none of your other stops has the same name, and with the label when two or more do, as Glossop's two Henry Street stops do. The names line up in a column as wide as the longest of your stops' names, up to about 16 letters; a longer name scrolls. While the board doesn't know a stop's name (buses from TransportAPI, or before the timetable is built), that line shows the label, as before. The 7.9" screen keeps the label: a name there would leave too little room for the destination.
 
@@ -183,6 +187,8 @@ It is drawn after the classic British platform clock, the same in every look: a 
 ## When it checks
 
 The board only fetches new times during set windows. Train times and the bus timetable cost nothing, so their windows can cover the whole day; if bus times come from TransportAPI instead (see [Bus times](buses.md)), its free limit means short windows, such as weekday mornings and early evenings. Outside the windows it keeps showing what it last knew, and doesn't say "not updating", because it isn't trying to. Departures drop off once their time has passed, so the evening never shows the morning's buses. The windows are on the [Board page](settings.md#board) of the settings.
+
+Trams from the Metrolink timetable cost nothing too, so the board reads it every minute, 05:00 to midnight by default; London's are live from TfL, a call for each stop each minute (see [London](london.md#how-often-it-asks)).
 
 On bank holidays trains and buses run a Sunday service, so the board treats them like Sundays: weekday-only windows are off, and windows that include Sundays apply.
 
