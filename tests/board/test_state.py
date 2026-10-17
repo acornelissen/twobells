@@ -63,6 +63,47 @@ def test_the_calling_at_line_round_trips_and_older_saved_trains_have_none():
         departure_from_dict({**older, "calling_at": ["Manchester"]})
 
 
+# What a departure was saved with before a screen's speaker had its own fields.
+OLDER_KEYS = {"mode", "service", "destination", "scheduled", "expected", "status", "platform", "stop",
+              "replacement_bus", "ferry", "via", "platform_changed", "calling_at"}
+
+
+def test_what_a_speaker_says_round_trips_through_the_state_file(tmp_path):
+    dep = Departure("train", "Northern", "Manchester", "07:12", "07:20", Status.LATE, "1",
+                    calling_stops=("Dinting", "Manchester Piccadilly"), skipped_stops=("Hattersley",), coaches=3,
+                    reason="This train has been delayed by a broken down train")
+    store = StateStore(tmp_path / "state.json")
+    store.save({"sources": {"train": {"departures": [departure_to_dict(dep)]}}})
+    [saved] = store.load()["sources"]["train"]["departures"]
+    assert departure_from_dict(saved) == dep
+
+
+def test_an_older_saved_train_loads_with_nothing_more_to_say():
+    older = {"mode": "train", "service": "Northern", "destination": "Manchester", "scheduled": "07:12",
+             "expected": None, "status": "on_time", "platform": "1", "stop": None, "replacement_bus": False,
+             "ferry": False, "via": None, "platform_changed": False, "calling_at": None}
+    assert set(older) == OLDER_KEYS
+    dep = departure_from_dict(older)
+    assert (dep.calling_stops, dep.skipped_stops, dep.coaches, dep.reason) == ((), (), None, None)
+
+
+def test_a_train_with_nothing_more_to_say_is_saved_as_before_for_an_older_version_to_read():
+    # E-paper's trains never carry what a speaker says, so its state file is unchanged.
+    dep = Departure("train", "Northern", "Manchester", "07:12", None, Status.ON_TIME, "1",
+                    calling_at="Calling at: Manchester only.")
+    assert set(departure_to_dict(dep)) == OLDER_KEYS
+
+
+@pytest.mark.parametrize("field, value", [
+    ("calling_stops", "Dinting"), ("calling_stops", [1]), ("calling_stops", {"a": 1}), ("skipped_stops", [None]),
+    ("coaches", True), ("coaches", "3"), ("coaches", 0), ("coaches", 2.5), ("reason", ["late"]),
+])
+def test_a_saved_train_with_a_speaker_field_of_the_wrong_type_is_rejected(field, value):
+    good = departure_to_dict(Departure("train", "Northern", "Manchester", "07:12", None, Status.ON_TIME))
+    with pytest.raises((TypeError, ValueError)):
+        departure_from_dict({**good, field: value})
+
+
 def test_undecodable_state_file_loads_empty(tmp_path, caplog):
     path = tmp_path / "state.json"
     path.write_bytes(b'{"sources": "\xff\xfe"}')

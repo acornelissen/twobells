@@ -384,3 +384,42 @@ def test_a_replacement_bus_keeps_its_via():
     [dep] = parse_board(board(service(destination=dests, serviceType="bus", platform="BUS")))
     assert dep.replacement_bus and dep.platform is None
     assert dep.via == "via Hyde"
+
+
+# What a screen's speaker says of a train beyond its row (Departure).
+
+def _stop(name, st, **extra):
+    return {"locationName": name, "st": st, "et": "On time", **extra}
+
+
+DELAYED_BY = "This train has been delayed by a broken down train"
+SPOKEN_BOARD = board(
+    service(std="07:02", etd="Cancelled", isCancelled=True, length=3, delayReason=DELAYED_BY,
+            cancelReason="This train has been cancelled because of a shortage of train crew"),
+    service(std="07:12", etd="07:20", length=4, delayReason=DELAYED_BY,
+            cancelReason="This train has been partially cancelled because of a fault",
+            subsequentCallingPoints=[{"callingPoint": [
+                _stop("Dinting", "07:17"), _stop("Hattersley", "07:25", isCancelled=True),
+                _stop("Manchester Piccadilly", "07:45")]}]),
+    service(std="07:30", delayReason=DELAYED_BY, formation={"coaches": [{"number": "A"}, {"number": "B"}]}),
+)
+
+
+def test_a_screen_s_board_carries_the_stops_coaches_and_reason_its_speaker_says():
+    source = DarwinSource(api_key="k", crs="GLO", http_get=lambda url, headers: SPOKEN_BOARD, with_details=True)
+    cancelled, late, on_time = source.fetch()
+    # The reason is the one that goes with its status, as the dashboard says it.
+    assert cancelled.reason == "This train has been cancelled because of a shortage of train crew"
+    assert late.reason == DELAYED_BY
+    assert on_time.reason is None
+    assert (late.calling_stops, late.skipped_stops, late.coaches) == (
+        ("Dinting", "Manchester Piccadilly"), ("Hattersley",), 4)
+    assert cancelled.coaches == 3
+    # Without Darwin's length, its formation's coaches are counted.
+    assert (on_time.calling_stops, on_time.coaches) == ((), 2)
+
+
+def test_an_e_paper_board_carries_none_of_what_a_speaker_says():
+    source = DarwinSource(api_key="k", crs="GLO", http_get=lambda url, headers: SPOKEN_BOARD)
+    for dep in source.fetch():
+        assert (dep.calling_stops, dep.skipped_stops, dep.coaches, dep.reason) == ((), (), None, None)

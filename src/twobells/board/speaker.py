@@ -6,9 +6,11 @@ its wall tablet's (dashboard_static/pa.js, due()): the next train to depart
 the delay of a train late with no time to go by, NEXT_AHEAD before it was
 due, and a cancellation or a platform alteration of a train due within
 CHANGE_AHEAD, each said once, and nothing in a quiet window.
-The board's departures carry no stops, coaches or reasons, so it says less
-than the tablet: "The next train to depart from platform 1 will be the 08:12
-Northern service to Manchester Piccadilly."
+A screen's departures carry the stops, coaches and reasons the dashboard's
+announcements say (sources/darwin.py, DarwinSource.fetch_board), so it
+says the same words: "The next train to depart from platform 1 will be the
+08:12 Northern service to Manchester Piccadilly. Calling at Dinting and
+Manchester Piccadilly. This train is formed of 3 coaches."
 
 espeak-ng runs from an argument list, never a shell, with the words on its
 standard input (printable only, and capped), and a time limit. It runs on a
@@ -62,10 +64,10 @@ def _train_id(dep: Departure) -> TrainId:
 
 
 def _train(dep: Departure) -> announce.Train:
-    """What an announcement says of a departure: no stops, coaches or reasons,
-    which the board's departures don't carry."""
+    """What an announcement says of a departure, as the dashboard's say it."""
     return announce.Train(time=dep.scheduled, destination=dep.destination, operator=dep.service, via=dep.via,
-                          platform=dep.platform, replacement_bus=dep.replacement_bus, ferry=dep.ferry)
+                          platform=dep.platform, replacement_bus=dep.replacement_bus, ferry=dep.ferry,
+                          calling=dep.calling_stops, skipped=dep.skipped_stops, coaches=dep.coaches)
 
 
 def _ahead(now: datetime, clock: str) -> timedelta:
@@ -106,7 +108,9 @@ def due(trains: Sequence[Departure], now: datetime, said: set[Said], quiet: bool
         items = announce.announcements(
             _train(dep), is_cancelled=cancelled, late=dep.status is Status.LATE,
             minutes_late=dep.minutes_late_at(now) if dep.status is Status.LATE else None,
-            platform_changed=dep.platform_changed, is_next=is_next)
+            platform_changed=dep.platform_changed, is_next=is_next,
+            # The departure's reason is its status's: the cancellation's or the delay's.
+            cancel_reason=dep.reason, delay_reason=dep.reason)
         # Late with no time to go by: it could go any moment, so it stays.
         untimed = not cancelled and dep.status is Status.LATE and dep.expected is None
         ahead = _ahead(now, dep.scheduled if cancelled else dep.departs_at)

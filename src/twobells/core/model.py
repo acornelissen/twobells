@@ -107,6 +107,15 @@ class Departure:
     # A train's "Calling at" line (core/calling.py), from Darwin's calling
     # points; None without them, and for a bus.
     calling_at: str | None = None
+    # What a screen's speaker says of a train beyond its row (core/announce.py),
+    # as the dashboard says it: the stops it calls at after this station, those
+    # it no longer calls at, its coaches, and why it is cancelled (when it is)
+    # or late (when it is). Only a screen's board carries them (DarwinSource
+    # with_details); e-paper never speaks, so it leaves them empty.
+    calling_stops: tuple[str, ...] = ()
+    skipped_stops: tuple[str, ...] = ()
+    coaches: int | None = None
+    reason: str | None = None
 
     def __post_init__(self) -> None:
         # Every time is worked out from these, so one that isn't HH:MM would
@@ -120,9 +129,17 @@ class Departure:
         for name in ("mode", "service", "destination"):
             if not isinstance(getattr(self, name), str):
                 raise TypeError(f"{name} is not text")
-        for name in ("platform", "stop", "via", "calling_at"):
+        for name in ("platform", "stop", "via", "calling_at", "reason"):
             if getattr(self, name) is not None and not isinstance(getattr(self, name), str):
                 raise TypeError(f"{name} is not text")
+        for name in ("calling_stops", "skipped_stops"):
+            stops = getattr(self, name)
+            if not isinstance(stops, tuple) or not all(isinstance(stop, str) for stop in stops):
+                raise TypeError(f"{name} is not a list of names")
+        # bool is an int in Python, and True coaches is not a train.
+        if self.coaches is not None and (not isinstance(self.coaches, int) or isinstance(self.coaches, bool)
+                                         or self.coaches < 1):
+            raise ValueError(f"coaches is not a number of coaches: {self.coaches!r}")
         for name in ("replacement_bus", "ferry", "platform_changed"):
             if not isinstance(getattr(self, name), bool):
                 raise TypeError(f"{name} is not true or false")

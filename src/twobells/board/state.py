@@ -20,16 +20,31 @@ log = logging.getLogger(__name__)
 MEMORY_ONLY = "strips"
 
 
+# What a screen's speaker says of a train beyond its row (Departure). Saved
+# only when there is something to say, so an e-paper board's state, which
+# never has it, is as it always was, and a version from before reads it.
+SPOKEN = ("calling_stops", "skipped_stops", "coaches", "reason")
+# Those saved as JSON lists, which read back as tuples.
+_STOP_LISTS = ("calling_stops", "skipped_stops")
+
+
 def departure_to_dict(dep: Departure) -> dict:
     data = asdict(dep)
     data["status"] = dep.status.value
+    for name in SPOKEN:
+        if not data[name]:
+            del data[name]
     return data
 
 
 def departure_from_dict(data: dict) -> Departure:
     """A saved departure. Raises TypeError or ValueError if it isn't one,
-    such as a time that isn't HH:MM (Departure checks its own fields)."""
-    return Departure(**{**data, "status": Status(data["status"])})
+    such as a time that isn't HH:MM (Departure checks its own fields).
+    One saved before the speaker's fields were has none."""
+    if not isinstance(data, dict):
+        raise TypeError("a saved departure is not an object")
+    lists = {name: tuple(data[name]) for name in _STOP_LISTS if isinstance(data.get(name), list)}
+    return Departure(**{**data, **lists, "status": Status(data["status"])})
 
 
 def departures_from_dicts(items: list) -> list[Departure]:

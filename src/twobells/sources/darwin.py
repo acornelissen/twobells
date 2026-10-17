@@ -73,7 +73,8 @@ def _parse_service(service: dict) -> Departure:
 
 def parse_board(board: dict) -> list[Departure]:
     """The departures alone, read with the rich board's checks (below): a
-    train, replacement bus or ferry without a clock time to leave at is skipped."""
+    train, replacement bus or ferry without a clock time to leave at is skipped.
+    The plain board's, as e-paper has them: nothing for a speaker to say."""
     return [s.departure for s in parse_board_rich(board).services]
 
 
@@ -288,6 +289,11 @@ class TrainService:
     detach_front: bool = False
     reverse_formation: bool = False
 
+    @property
+    def coaches(self) -> int | None:
+        """How many coaches: Darwin's length, or else its formation's coaches counted."""
+        return _coach_count(self.length, self.formation)
+
 
 @dataclass(frozen=True)
 class TrainBoard:
@@ -485,15 +491,33 @@ def _calling_points(service: dict) -> tuple[CallingPoint, ...]:
     return tuple(merged[:_MAX_CALLING_POINTS])
 
 
+def _coach_count(length: int | None, formation: Formation | None) -> int | None:
+    """A train's coaches: Darwin's length, or else its formation's coaches counted."""
+    return length if length is not None else (len(formation.coaches) if formation and formation.coaches else None)
+
+
 def _calling_line(departure: Departure, points: tuple[CallingPoint, ...], length: int | None,
                   formation: Formation | None) -> str | None:
     """The train's "Calling at" line (core/calling.py): none for a train
-    cancelled here. Its length is Darwin's, or else its coaches counted."""
+    cancelled here."""
     if departure.status is Status.CANCELLED:
         return None
-    coaches = length if length is not None else (len(formation.coaches) if formation and formation.coaches else None)
     return calling.line([p.name for p in points if not p.skipped], [p.name for p in points if p.skipped],
-                        coaches, departure.replacement_bus, departure.ferry)
+                        _coach_count(length, formation), departure.replacement_bus, departure.ferry)
+
+
+def _spoken(service: TrainService) -> TrainService:
+    """The service, its departure carrying what a screen's speaker says of
+    it beyond its row, as the dashboard's announcements say it
+    (dashboard/snapshot.py, announcement_block): the stops it calls at and
+    those it no longer calls at, its coaches, and the reason that goes with
+    its status, the cancellation's or the delay's; none when it is neither."""
+    dep = service.departure
+    reason = {Status.CANCELLED: service.cancel_reason, Status.LATE: service.delay_reason}.get(dep.status)
+    return replace(service, departure=replace(
+        dep, calling_stops=tuple(p.name for p in service.calling_points if not p.skipped),
+        skipped_stops=tuple(p.name for p in service.calling_points if p.skipped),
+        coaches=service.coaches, reason=reason))
 
 
 # The kinds of service Darwin lists, each in its own part of the board.
@@ -555,11 +579,12 @@ def _by_time(services: list[TrainService]) -> list[TrainService]:
     return sorted(services, key=lambda s: minutes_between(first, s.departure.scheduled))
 
 
-def parse_board_rich(board) -> TrainBoard:
+def parse_board_rich(board, speaks: bool = False) -> TrainBoard:
     """The board from GetDepBoardWithDetails (or GetDepartureBoard, which
     just has no calling points). Rail replacement buses, in busServices, and
-    ferries, in ferryServices, are merged in with the trains by time. Raises
-    ValueError only if it isn't a board."""
+    ferries, in ferryServices, are merged in with the trains by time. With
+    `speaks`, for a screen, each departure carries what its speaker says of
+    it too; e-paper never speaks. Raises ValueError only if it isn't a board."""
     if not isinstance(board, dict):
         raise ValueError("Darwin sent something other than a departure board")
     services = []
@@ -567,7 +592,7 @@ def parse_board_rich(board) -> TrainBoard:
         for raw in _as_list(board.get(key)):
             service = _rich_service(raw, kind)
             if service is not None:
-                services.append(service)
+                services.append(_spoken(service) if speaks else service)
     return TrainBoard(
         services=_by_time(services),
         messages=parse_messages(board),
@@ -627,8 +652,11 @@ class DarwinSource:
         return http_get(self._url(), {"x-apikey": self._api_key})
 
     def fetch_board(self) -> TrainBoard:
-        """The rich board: calling points too when with_details is set."""
-        board = parse_board_rich(self._get())
+        """The rich board: calling points too when with_details is set, and
+        each departure with what a screen's speaker says of it. Only a screen
+        (or the dashboard) sets with_details; e-paper never speaks, so its
+        departures, and the state file they are saved in, stay as small."""
+        board = parse_board_rich(self._get(), speaks=self.with_details)
         self.messages = [m.text for m in board.messages]
         self.services = board.services
         return board

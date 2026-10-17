@@ -563,10 +563,11 @@ def test_detailed_source_asks_for_the_board_with_details():
 
 
 def test_detailed_fetch_gives_the_departures_of_the_rich_board():
+    # A screen's, with what its speaker says of each train.
     payload = load_fixture("ldbws_glossop_details.json")
     _, fake_get = recording(payload)
     source = DarwinSource(api_key="k", crs="GLO", http_get=fake_get, with_details=True)
-    assert source.fetch() == [s.departure for s in parse_board_rich(payload).services]
+    assert source.fetch() == [s.departure for s in parse_board_rich(payload, speaks=True).services]
     assert source.messages == ["Help points at this station are out of use."]
 
 

@@ -1,5 +1,6 @@
 """Station announcements through a screen's speaker: when, what, and how espeak-ng is run."""
 
+import json
 import logging
 import subprocess
 import threading
@@ -15,7 +16,11 @@ from twobells.board.speaker import (
     forget,
     spoken,
 )
+from twobells.board.state import departure_to_dict, departures_from_dicts
 from twobells.core.model import Departure, Status
+from twobells.core.walk import WalkTimes
+from twobells.dashboard.snapshot import status_block, trains_part
+from twobells.sources.darwin import DarwinSource, parse_board_rich
 
 NOW = datetime(2026, 10, 8, 7, 0, 30)
 
@@ -141,6 +146,58 @@ def test_the_words_are_printable_on_one_line_and_capped():
     long = spoken("word " * 1000)
     assert len(long) <= MOST_CHARS and long.endswith("word")
     assert spoken("\n\t") == ""
+
+
+LONDON = ZoneInfo("Europe/London")
+FETCHED = datetime(2026, 10, 10, 7, 0, tzinfo=LONDON)
+
+
+def darwin_train(std, etd="On time", **extra):
+    return {"std": std, "etd": etd, "platform": "1", "operator": "Northern", "serviceID": f"{std[:2]}{std[3:]}GLSP",
+            "destination": [{"locationName": "Manchester Piccadilly", "crs": "MAN"}], **extra}
+
+
+def calling_points(*names):
+    return [{"callingPoint": [{"locationName": name, "st": f"07:{10 + i:02}", "et": "On time",
+                               "isCancelled": name == "Hattersley"} for i, name in enumerate(names)]}]
+
+
+def screen_departures(answer):
+    """The board's trains as a screen fetches them and reads them back from its state file."""
+    source = DarwinSource(api_key="k", crs="GLO", http_get=lambda url, headers: answer, with_details=True)
+    saved = json.loads(json.dumps([departure_to_dict(dep) for dep in source.fetch()]))
+    return departures_from_dicts(saved)
+
+
+def test_a_screen_says_the_dashboard_s_words_for_the_same_trains():
+    answer = {"locationName": "Glossop", "trainServices": [
+        darwin_train("07:02", "Cancelled", isCancelled=True, length=3,
+                     cancelReason="This train has been cancelled because of a shortage of train crew"),
+        darwin_train("07:03", "07:04", length=4, delayReason="This train has been delayed by a broken down train",
+                     subsequentCallingPoints=calling_points("Dinting", "Hattersley", "Manchester Piccadilly")),
+    ]}
+    rows, _ = trains_part(parse_board_rich(answer), FETCHED, status_block(), "GLO", None, WalkTimes(train=10),
+                          "GLO", now=FETCHED)
+    dashboard = [" ".join(item["text"] for item in row["announce"]) for row in rows["rows"]]
+    assert due(screen_departures(answer), FETCHED, set()) == dashboard
+    cancelled, leaving = dashboard
+    assert cancelled.endswith("has been cancelled. This is due to a shortage of train crew.")
+    assert leaving.startswith("We are sorry to announce that the 07:03 Northern service to Manchester Piccadilly is "
+                              "delayed by approximately 1 minute. This is due to a broken down train. The next train ")
+    assert leaving.endswith("Calling at Dinting and Manchester Piccadilly. Does not call at Hattersley. "
+                            "This train is formed of 4 coaches.")
+
+
+def test_a_train_calling_at_many_stops_is_still_cut_to_the_cap():
+    names = [f"Station {i}" for i in range(80)]
+    answer = {"trainServices": [darwin_train("07:03", subsequentCallingPoints=[{"callingPoint": [
+        {"locationName": name, "st": "07:30", "et": "On time"} for name in names]}])]}
+    run = FakeRun()
+    speaker = Speaker(run)
+    [text] = speaker.tick(screen_departures(answer), FETCHED, quiet=False)
+    speaker.wait()
+    [(_, options)] = run.calls
+    assert len(text) > MOST_CHARS >= len(options["input"])
 
 
 # --- How: espeak-ng from an argument list, never a shell.
