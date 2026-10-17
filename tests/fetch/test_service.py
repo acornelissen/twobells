@@ -13,6 +13,7 @@ from typing import ClassVar
 import pytest
 
 from tests.setup.test_spool import read_on_the_way_out
+from twobells.core import files
 from twobells.core.walk import WalkTimes
 from twobells.fetch import handoff
 from twobells.fetch import service as fetch
@@ -79,8 +80,9 @@ def service(pi, idle=60.0, **options) -> FetchService:
 
 
 def save(pi, text: str) -> None:
+    """Save settings as the settings pages do: whole, never half a file for the service to read."""
     store, _ = pi
-    store.settings_file.write_text(text)
+    files.write_atomic(store.settings_file, text, 0o600)
 
 
 def wait_for(check, seconds=5.0):
@@ -193,7 +195,7 @@ def test_new_settings_start_the_pollers_again_with_them(pi):
         wait_for(lambda: FakeCollector.made)
         first = FakeCollector.made[0]
         save(pi, 'title = "Our house"\n' + ON)
-        wait_for(lambda: len(FakeCollector.made) == 2)
+        wait_for(lambda: len(FakeCollector.made) == 2 and FakeCollector.made[1].started)
         second = FakeCollector.made[1]
         assert first.stopped and second.started and not second.stopped
         assert second.dash.title == "Our house" and running.service.hub is second.hub
