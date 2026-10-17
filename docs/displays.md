@@ -5,6 +5,7 @@ What each display can do, and how to set it up on a Pi. What the board shows on 
 - [Choosing a display](#choosing-a-display)
 - [Setting one up](#setting-one-up)
 - [The bus position page](#the-bus-position-page)
+- [Station announcements on a screen](#station-announcements-on-a-screen)
 
 ## Choosing a display
 
@@ -26,7 +27,7 @@ The display is set in `/etc/twobells/config.toml` only. It starts as `"inky"`.
 
 - **The Waveshare panel** needs `dtoverlay=spi0-0cs` in `/boot/firmware/config.txt`: it is two controllers side by side, and the board drives both chip selects itself. The driver follows Waveshare's `epd10in85g.py` command sequence over `spidev` and `gpiozero`. Each sign dot is 4×4 panel pixels.
 - **An original Inky pHAT** (before 2019) is smaller, 212×104, and has no chip the board can detect it by: set `display = "inky-phat-v1"` and `panel_colour = "red"`, `"yellow"` or `"black"`. It also needs `dtoverlay=spi0-0cs`. On a display that small the plain look, black on white, is the easiest to read; text size 12 makes it a little bigger and still shows 2 trains and 1 bus.
-- **The HDMI screen** is 400×1280 portrait out of the box; the board runs it on its side. It draws full screen with pygame, no desktop needed. pygame is installed only for the screen: `install.sh --screen`, or `install.sh` and `update.sh` when `config.toml` already says `hdmi-…`. To switch from e-paper:
+- **The HDMI screen** is 400×1280 portrait out of the box; the board runs it on its side. It draws full screen with pygame, no desktop needed. pygame, and espeak-ng for [announcements](#station-announcements-on-a-screen), are installed only for the screen: `install.sh --screen`, or `install.sh` and `update.sh` when `config.toml` already says `hdmi-…`. To switch from e-paper:
 
   ```bash
   sudo systemctl disable --now twobells.timer
@@ -49,3 +50,14 @@ twobells route 341 --stop A --noc BNML --config config.toml --secrets secrets.en
 Paste the printed `[bus.routes]` block into `config.toml`. It picks enough stops before yours to cover your walk plus 5 minutes of bus travel, at most 8. `BNML` is the operator code for Bee Network. The setup wizard and `twobells setup discover` find your stops' operator codes, and save or print them as `[bus] operators`. Timetable downloads for a large operator can be hundreds of MB; `--txc FILE` uses one you've already downloaded instead.
 
 A bus that starts its journey at your stop is followed on its way in. If, say, most 341s to Hyde start at your stop, the page follows the 341 arriving from the other direction, which then turns round as your bus.
+
+## Station announcements on a screen
+
+Screen only, and off unless you choose it: tick **Announcements** under **What to show** on the Board tab, or add `"announce_speaker"` to `[board] show`. No preset ticks it, Everything included. The screen then says station announcements through the Pi's sound output (HDMI sound, or a speaker on the headphone socket or a USB sound card), in the dashboard's words, with the wall tablet's rules: the next train to depart, 4 minutes before it goes, with its delay if it is late; a cancellation; and a platform alteration (again if the platform changes again), each once, for trains due within the hour. See [Station announcements](dashboard.md#station-announcements).
+
+- **When:** only while the board checks for trains (its train checking times), and never in the quiet hours (**Quiet hours** on the Dashboard tab, 01:00 to 05:00 unless you change them).
+- **What it says:** the train's time, operator, destination, route words and platform: "The next train to depart from platform 1 will be the 08:12 Northern service to Manchester Piccadilly." The board's departures don't carry the stops, the coaches or a reason, so it says less than the dashboard, and there is no chime.
+- **How:** [espeak-ng](https://github.com/espeak-ng/espeak-ng), in a British English voice. `install.sh` and `update.sh` install it with pygame for a screen. The board runs it without a shell, gives it the words (printable characters only, at most 1000) on its input, and stops it after 60 seconds; it runs beside the screen, which never waits for it. If it can't run (no espeak-ng, no sound device) the log (`journalctl -u twobells-screen`) says so once, and the board carries on.
+- **Sound:** the screen's service is in the `audio` group, for `/dev/snd`, and nothing more. Set which output the Pi uses with `sudo raspi-config` (System Options, Audio), and the volume with `alsamixer`.
+
+Not yet tried on a real Pi with a speaker.

@@ -18,7 +18,7 @@ from PIL.Image import Image
 from ..core.budget import DailyBudget
 from ..core.errors import safe_message
 from ..core.model import Departure, mark_platform_changes, minutes_between
-from ..core.polling import PollPolicy
+from ..core.polling import PollPolicy, Window
 from ..core.walk import WalkTimes, leave_time
 from ..settings import show as show_items
 from ..sources.bods import Vehicle
@@ -32,6 +32,7 @@ from .positions import Positions
 from .render import Palette
 from .route import RouteStrip, RouteView, locate, target, where
 from .scroll import Frame
+from .speaker import Speaker
 from .state import (
     MEMORY_ONLY,
     departure_to_dict,
@@ -152,6 +153,9 @@ class Board:
     # screen draws, whatever this says. The positions and the forecast are
     # asked for only while it shows what they are for (run_once).
     show: frozenset[str] = field(default_factory=lambda: show_items.default("board"))
+    # The quiet hours ([dashboard] quiet_windows), when a screen's speaker
+    # says nothing; read only while it is on.
+    quiet: tuple[Window, ...] = ()
 
 
 def reset_code_page(folder: Path, timezone: str) -> Callable[[], CodeView | None]:
@@ -570,6 +574,7 @@ def run_loop(
     reload: Callable[[], Board | None] | None = None,
     frame_seconds: float | None = None,
     wall: Callable[[], float] = time.time,
+    speaker: Speaker | None = None,
 ) -> None:
     """Tick forever (or `ticks` times). A clock with `advance()` is simulated.
     With `prime`, the first tick fetches every source so the board starts filled.
@@ -581,7 +586,10 @@ def run_loop(
     over, in the split-flap look) gets a frame that often between ticks
     (see _frames); with nothing moving it waits for
     the next tick, as without. Fetching, stale checks and saving keep to
-    the tick either way."""
+    the tick either way.
+
+    With a `speaker`, a screen says station announcements each tick, while
+    the board shows them (_announce)."""
     sleep = sleep or time.sleep
     count = 0
     saved, saved_at = None, None
@@ -596,6 +604,8 @@ def run_loop(
             if store is not None:
                 store.save(state)
             raise
+        if speaker is not None:
+            _announce(board, state, display, speaker, now)
         if store is not None:
             fetched = _fetched(state)
             # Also every few minutes, so the settings site's status (last redraw,
@@ -613,6 +623,25 @@ def run_loop(
         if hasattr(clock, "advance"):
             clock.advance()
         count += 1
+
+
+def _quiet(board: Board, now: datetime) -> bool:
+    """Whether a screen's speaker keeps quiet: outside the train windows,
+    when the board doesn't check for trains, or in the quiet hours."""
+    trains = [config for config in board.sources if config.source.name == "train"]
+    if not any(config.current_policy().is_active(now) for config in trains):
+        return True
+    holidays = trains[0].policy.holidays
+    return any(window.contains(now, holidays) for window in board.quiet)
+
+
+def _announce(board: Board, state: dict, display: Display, speaker: Speaker, now: datetime) -> None:
+    """Station announcements through a screen's speaker (board/speaker.py),
+    while [board] show has them and the departures are up. Queued, never
+    waited for, so the frame loop keeps its time."""
+    if display.panel.epaper or board.setup is not None or "announce_speaker" not in board.show:
+        return
+    speaker.tick(_departures(state, "train", now), now, _quiet(board, now))
 
 
 def _frames(display: ScrollingDisplay, base: int, tick_seconds: float, frame_seconds: float, sleep,

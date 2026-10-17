@@ -5,10 +5,12 @@ Board and Dashboard settings pages (and setup) like any other setting. It
 names the items that view shows, from ITEMS: anything not named is left
 out, and the departures' times always show. Without one, a view shows
 everything, as it did before the lists, except the board's clock page,
-which shows only while the older setting clock_page = true says so.
+which shows only while the older setting clock_page = true says so, and
+an item in no preset (the board's speaker), which is on only when chosen.
 
 Three presets fill a list (PRESETS): Just the times, The usual (what setup
-gives a new install) and Everything.
+gives a new install) and Everything, which is every item but those in no
+preset.
 
 shown() reads a view's list from settings, shows() asks about one item, and
 shown_anywhere() whether any view that is on shows any of some items: what
@@ -68,6 +70,9 @@ ITEMS = (
          screen=True),
     Item("clock_page", "board", "Clock page", "10 seconds of a platform clock after the departures.",
          _EVERYTHING, screen=True),
+    # Sound in the room, so never ticked by a preset: on only when chosen.
+    Item("announce_speaker", "board", "Announcements",
+         "Station announcements through the screen's speaker. Needs a speaker and espeak-ng.", (), screen=True),
     # The dashboard.
     Item("next_to_catch", "dashboard", "Next to catch",
          "The departure to leave for next, with a countdown.", _ALL),
@@ -117,9 +122,9 @@ def preset_of(view: str, shown_keys: Iterable[str]) -> str | None:
 
 
 def default(view: str, data: Mapping | None = None) -> frozenset[str]:
-    """What `view` shows without a list: everything, except the board's
-    clock page unless settings `data` say clock_page = true."""
-    found = set(keys(view))
+    """What `view` shows without a list: everything in a preset, except the
+    board's clock page unless settings `data` say clock_page = true."""
+    found = {item.key for item in items(view) if item.presets}
     if view == "board" and (data or {}).get(OLDER_CLOCK_PAGE) is not True:
         found.discard("clock_page")
     return frozenset(found)

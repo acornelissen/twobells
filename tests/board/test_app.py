@@ -1602,3 +1602,49 @@ def test_without_disruption_the_station_s_messages_are_kept_but_not_shown():
     result = run_once(board, state, display, THU_0700)
     assert state["sources"]["train"]["messages"] == ["Lifts out of use."]
     assert result.view.notice is None
+
+
+# Station announcements through a screen's speaker (board/speaker.py)
+
+
+class FakeSpeaker:
+    def __init__(self):
+        self.ticks = []
+
+    def tick(self, trains, now, quiet):
+        self.ticks.append(([dep.scheduled for dep in trains], now, quiet))
+        return []
+
+
+def speaker_run(board, display, times):
+    from twobells.board.app import run_loop
+
+    speaker = FakeSpeaker()
+    moments = iter(times)
+    run_loop(board, {}, display, lambda: next(moments), 0, ticks=len(times), sleep=lambda s: None,
+             speaker=speaker, prime=True)
+    return speaker.ticks
+
+
+def speaking_board(**changes):
+    trains, buses, board, _, _ = setup()
+    trains.departures = [train("07:04")]
+    return dataclasses.replace(board, show=board.show | {"announce_speaker"}, **changes)
+
+
+def test_a_screen_s_speaker_is_given_the_trains_each_tick_while_the_board_shows_it():
+    ticks = speaker_run(speaking_board(), FakeScreen(), [THU_0700, THU_0700 + timedelta(seconds=1)])
+    assert ticks == [(["07:04"], THU_0700, False), (["07:04"], THU_0700 + timedelta(seconds=1), False)]
+
+
+def test_the_speaker_is_quiet_outside_the_train_windows_and_in_the_quiet_hours():
+    assert speaker_run(speaking_board(), FakeScreen(), [THU_0700.replace(hour=6)])[0][2] is True
+    quiet = speaking_board(quiet=(parse_window("Mon-Sun 06:00-07:30"),))
+    assert speaker_run(quiet, FakeScreen(), [THU_0700])[0][2] is True
+
+
+def test_the_speaker_says_nothing_unless_chosen_on_e_paper_or_before_setup():
+    assert speaker_run(dataclasses.replace(speaking_board(), show=frozenset()), FakeScreen(), [THU_0700]) == []
+    assert speaker_run(speaking_board(), FakeDisplay(), [THU_0700]) == []
+    setup_page = SetupView("http://twobells.local:8090/settings/setup/")
+    assert speaker_run(speaking_board(setup=setup_page), FakeScreen(), [THU_0700]) == []

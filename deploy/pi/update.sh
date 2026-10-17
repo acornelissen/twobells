@@ -64,6 +64,12 @@ if [[ "$display" == hdmi-* && ! -f /usr/lib/python3/dist-packages/pygame/__init_
   apt-get update
   apt-get install -y python3-pygame
 fi
+# And espeak-ng, for the screen's station announcements: a screen installed
+# before them hasn't got it.
+if [[ "$display" == hdmi-* && ! -x /usr/bin/espeak-ng ]]; then
+  apt-get update
+  apt-get install -y espeak-ng
+fi
 
 # pip takes the twobells command away for a moment while it puts new
 # code in, so a tick the timer starts then fails: the board's timer is held

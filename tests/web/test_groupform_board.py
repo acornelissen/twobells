@@ -394,15 +394,18 @@ def test_the_board_s_show_list_is_a_labelled_group_of_tickboxes_with_presets(tmp
     assert presets == [("", " checked"), ("times", ""), ("usual", ""), ("everything", "")]
     assert "<legend>Fill in from a preset</legend>" in group
     # Then a tickbox each, its label beside it, saying which presets include it.
-    boxes = re.findall(r'<div class="field check" data-presets="([\w ]+)"><input id="board_show-(\w+)" '
+    boxes = re.findall(r'<div class="field check" data-presets="([\w ]*)"><input id="board_show-(\w+)" '
                        r'name="board_show-\w+" type="checkbox" value="on"( checked)? '
                        r'aria-describedby="board_show-\w+-hint"><label for="board_show-(\w+)">', group)
-    assert [(key, label_for) for _, key, _, label_for in boxes] == [(k, k) for k in BOARD_ITEMS]
-    assert [presets for presets, *_ in boxes] == ["usual everything"] * 6 + ["everything"] * 2
-    assert [bool(on) for _, _, on, _ in boxes] == [True] * 7 + [False]  # all but the clock page
+    assert [(key, label_for) for _, key, _, label_for in boxes] == [(k, k) for k in [*BOARD_ITEMS, SPEAKER]]
+    # The speaker is in no preset: sound in the room only when chosen.
+    assert [presets for presets, *_ in boxes] == ["usual everything"] * 6 + ["everything"] * 2 + [""]
+    assert [bool(on) for _, _, on, _ in boxes] == [True] * 7 + [False] * 2  # all but the clock page and speaker
+    assert "Needs a speaker and espeak-ng. Screens only." in group
 
 
 BOARD_ITEMS = ["platforms", "where", "disruption", "rain", "last_bus", "bus_page", "calling_at", "clock_page"]
+SPEAKER = "announce_speaker"
 
 
 def test_unticking_items_saves_the_board_s_show_list(tmp_path):

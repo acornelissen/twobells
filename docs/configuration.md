@@ -79,7 +79,7 @@ show = ["next_to_catch", "where", "disruptions", "weather", "last_buses", "area_
 
 | View | Items, in the order the settings list them |
 |---|---|
-| Board | `platforms`, `where`, `disruption`, `rain`, `last_bus`, `bus_page`, `calling_at`, `clock_page` |
+| Board | `platforms`, `where`, `disruption`, `rain`, `last_bus`, `bus_page`, `calling_at`, `clock_page`, `announce_speaker` |
 | Dashboard | `next_to_catch`, `where`, `disruptions`, `weather`, `last_buses`, `area_map`, `remind`, `calling_at`, `coaches`, `punctuality`, `performance`, `fleet_numbers`, `announce` |
 
 The example above is The usual preset; `show = []` is Just the times (the dashboard's adds `next_to_catch`), and every item is Everything. The [setup wizard](setup-wizard.md) saves one of the presets for each view, The usual unless you pick another. Without a list, a view shows everything, except the board's clock page, which shows only with the older `clock_page = true`. Once the board has a list, `clock_page` is ignored: the list says.
@@ -96,6 +96,7 @@ What no view shows isn't fetched either, so leaving things out saves calls to th
 | The bus positions between departure checks | The board's `where`, and its `bus_page` for the bus position page. The dashboard's come with its bus times |
 
 The rest, such as the calling points, coaches and the last buses, comes with the departures or from the bus timetable, so leaving it out saves no calls. `enabled = false` in `[weather]` still switches the forecast off altogether, whatever the lists say.
+The example above is The usual preset; `show = []` is Just the times (the dashboard's adds `next_to_catch`), and every item but `announce_speaker` is Everything. `announce_speaker` is the HDMI screen's [station announcements](displays.md#station-announcements-on-a-screen) through a speaker: no preset has it, so it is on only when a list names it. Without a list, a view shows everything, except the board's clock page, which shows only with the older `clock_page = true`, and its announcements. Once the board has a list, `clock_page` is ignored: the list says.
 
 ## Rain warning set-up
 

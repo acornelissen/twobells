@@ -355,6 +355,7 @@ def test_run_loop_on_a_screen_draws_a_running_clock(tmp_path, monkeypatch, caplo
 @pytest.mark.parametrize("display, frames", [("hdmi-1920x440", True), ("waveshare-10in85g", False)])
 def test_a_running_screen_draws_frames_for_scrolling_text_and_e_paper_does_not(tmp_path, monkeypatch, display, frames):
     from twobells.board.scroll import SCROLL_FRAME_S
+    from twobells.board.speaker import Speaker
     from twobells.cli import run
 
     seen = {}
@@ -367,6 +368,8 @@ def test_a_running_screen_draws_frames_for_scrolling_text_and_e_paper_does_not(t
     args = ["run", "--loop", "--png", str(tmp_path / "board.png"), "--config", str(config)]
     assert main([*args, "--secrets", str(secrets)]) == 0
     assert seen["frame_seconds"] == (SCROLL_FRAME_S if frames else None)
+    # A screen has a speaker for station announcements (said only while [board] show has them); e-paper none.
+    assert isinstance(seen["speaker"], Speaker) if frames else seen["speaker"] is None
 
 
 @pytest.mark.parametrize("command, tick", [

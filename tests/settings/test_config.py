@@ -729,6 +729,27 @@ def test_the_board_shows_just_what_its_list_names(tmp_path):
     assert load_config(write(tmp_path, BOARD_BASE + "[board]\nshow = []\n"), ENV).board.show == set()
 
 
+def test_a_speaking_screen_keeps_the_quiet_hours(tmp_path):
+    from twobells.core.polling import parse_window
+
+    speaker = '[board]\nshow = ["announce_speaker"]\n'
+    # Off unless chosen, and without the speaker the quiet hours aren't read at all.
+    assert load_config(write(tmp_path, BOARD_BASE), ENV).board.quiet == ()
+    bad = '[dashboard]\nquiet_windows = ["Someday"]\n'
+    assert load_config(write(tmp_path, BOARD_BASE + bad), ENV).board.quiet == ()
+    # With it: the dashboard's quiet hours, its default without any.
+    board = load_config(write(tmp_path, BOARD_BASE + speaker), ENV).board
+    assert board.show == {"announce_speaker"}
+    assert board.quiet == (parse_window("Mon-Sun 01:00-05:00"),)
+    text = BOARD_BASE + speaker + '[dashboard]\nquiet_windows = ["Mon-Sun 22:00-07:00"]\n'
+    assert load_config(write(tmp_path, text), ENV).board.quiet == (parse_window("Mon-Sun 22:00-07:00"),)
+    with pytest.raises(ConfigError, match="Unrecognised window"):
+        load_config(write(tmp_path, BOARD_BASE + speaker + bad), ENV)
+    # E-paper never speaks, whatever the list says.
+    epaper = BOARD_BASE.replace("hdmi-1280x400", "inky") + speaker
+    assert load_config(write(tmp_path, epaper), ENV).board.quiet == ()
+
+
 def test_a_show_list_wins_over_the_older_clock_page(tmp_path):
     text = "clock_page = true\n" + BOARD_BASE + '[board]\nshow = ["rain"]\n'
     assert load_config(write(tmp_path, text), ENV).board.show == {"rain"}

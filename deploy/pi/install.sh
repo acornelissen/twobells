@@ -3,7 +3,7 @@
 # Zero or Pi 1, whose web server's network guard needs its newer systemd).
 # Run it from the unpacked release tarball (or a copy of the repo):
 #   sudo ./deploy/pi/install.sh [--screen]
-# --screen also installs pygame for the HDMI screen; that happens anyway when
+# --screen also installs pygame and espeak-ng for the HDMI screen; that happens anyway when
 # /etc/twobells/config.toml already says display = "hdmi-...".
 # It starts the web server (the settings site, and the dashboard when that
 # view is on) and the fetch service, and says how to start the board itself.
@@ -71,9 +71,10 @@ if ! display="$(query display)" || ! views="$(query views)"; then
 fi
 [[ "$display" == hdmi-* ]] && screen=true
 # pygame, only for the HDMI screen: it pulls in graphics libraries (LLVM, Mesa) and a
-# MIDI soundfont, slow to install on a Pi Zero and unused by e-paper.
+# MIDI soundfont, slow to install on a Pi Zero and unused by e-paper. espeak-ng (small)
+# says the screen's station announcements, when [board] show has them; e-paper never speaks.
 if $screen; then
-  apt-get install -y python3-pygame
+  apt-get install -y python3-pygame espeak-ng
 fi
 
 # Run again, the web server may be running already on the old unit, and

@@ -7,10 +7,11 @@ After=network-online.target
 Type=simple
 User=twobells
 Group=twobells
-# video and render for the screen (KMS/DRM). Not input: that group can read
-# every attached keyboard, and the board only drains SDL's event queue. Touch
-# support would need it back.
-SupplementaryGroups=video render
+# video and render for the screen (KMS/DRM); audio for /dev/snd, where espeak-ng
+# says the station announcements when [board] show has them. Not input: that
+# group can read every attached keyboard, and the board only drains SDL's event
+# queue. Touch support would need it back.
+SupplementaryGroups=video render audio
 StateDirectory=twobells
 StateDirectoryMode=0750
 EnvironmentFile=/etc/twobells/secrets.env

@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from ..board.app import run_loop, run_once
 from ..board.displays.display import DISPLAY_PANELS, PngDisplay, open_display
 from ..board.scroll import SCROLL_FRAME_S
+from ..board.speaker import Speaker
 from ..board.state import StateStore
 from ..board.view import SetupView
 from ..settings.config import ConfigError, first_run_settings, needs_setup
@@ -170,6 +171,8 @@ def _run_loop(settings, display, store, state, args) -> int:
             reload=_Watcher(args, settings),
             # A screen draws frames between ticks while text scrolls; e-paper never animates.
             frame_seconds=None if display.panel.epaper else SCROLL_FRAME_S,
+            # A screen can speak, while [board] show says so; it outlives a settings reload.
+            speaker=None if display.panel.epaper else Speaker(),
         )
     except KeyboardInterrupt:
         pass

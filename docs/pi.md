@@ -15,7 +15,7 @@ What runs on a Pi, where its logs are, and how to check its keys. To install or 
 | `twobells-fetch.service`, `twobells-fetch.path` | `twobells fetch`: the web server's internet work. The wizard's lookups, key tests and bus company search, and, while the dashboard view is on, the dashboard's feeds. It goes out to the internet and listens on nothing, and hands what it finds to the web server through files in `/run/twobells-fetch`, in memory (see [The fetch service](security.md#the-fetch-service)). It starts at boot, and the `.path` unit starts it whenever the web server leaves a request. With the dashboard view off, it stops a minute after the last one. |
 | `twobells-timetable.timer` | Builds the BODS bus timetable when one is due (see [Bus times](buses.md)). |
 | `twobells.timer` | The e-paper board: one `twobells run` a minute. |
-| `twobells-screen.service` | The HDMI screen: `twobells run --loop`. |
+| `twobells-screen.service` | The HDMI screen: `twobells run --loop`. It is in the `video` and `render` groups for the screen, and `audio` for the sound devices, where espeak-ng says [station announcements](displays.md#station-announcements-on-a-screen) when they are chosen. |
 
 `install.sh` enables the web server, its network guard and the fetch service, and the timetable timer when buses come from BODS. It loads the guard afresh, and run again it restarts the web server if it was running, so its new unit loads and the guard holds it again, and the fetch service if it was running and its unit changed. The board's timer or screen service is yours to enable: `install.sh` prints the command and never enables it, and `update.sh` never enables or disables it either.
 
@@ -25,7 +25,7 @@ All of them run as the `twobells` user, with the store in `/var/lib/twobells`. C
 
 ```bash
 journalctl -u twobells -f                 # e-paper board log
-journalctl -u twobells-screen -f          # screen board log
+journalctl -u twobells-screen -f          # screen board log, its announcements' failures too
 journalctl -u twobells-web -f             # web server log: settings, dashboard, reset codes
 journalctl -u twobells-fetch -f           # the wizard's lookups and the dashboard's feeds
 journalctl -u twobells-timetable -n 20    # bus timetable builds

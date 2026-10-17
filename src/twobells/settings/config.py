@@ -548,6 +548,17 @@ def _board_show(data: dict) -> frozenset[str]:
     return show.shown(data, "board")
 
 
+def _quiet_hours(data: dict) -> tuple:
+    """The quiet hours ([dashboard] quiet_windows, or the dashboard's own
+    default), when a screen's speaker says nothing either."""
+    section = _table(data, "dashboard", "[dashboard]")
+    if "quiet_windows" not in section:
+        from ..dashboard.config import DashboardOptions  # here: it imports this module
+
+        return DashboardOptions.quiet_windows
+    return _windows(section, "quiet_windows", (), "[dashboard] ")
+
+
 def load_config(
     store: Store | Path | str,
     env: Mapping[str, str],
@@ -628,6 +639,9 @@ def settings_from(
                 config.source.with_details = True
     # Where the settings site leaves a reset code: beside the state file, in the store.
     folder = state_dir(data)
+    shown = _board_show(data)
+    # Only a screen speaks; the quiet hours are read only for its speaker.
+    speaks = "announce_speaker" in shown and not DISPLAY_PANELS[display].epaper
     board = Board(
         title=_text(data, "title", BOARD_DEFAULTS["title"]),
         sources=sources,
@@ -639,7 +653,8 @@ def settings_from(
         weather=_weather(data, sources, timezone) if only is None else None,
         reset_code=reset_code_page(folder, timezone) if folder and only is None else None,
         positions=positions,
-        show=_board_show(data),
+        show=shown,
+        quiet=_quiet_hours(data) if speaks else (),
     )
     return Settings(
         board=board,
