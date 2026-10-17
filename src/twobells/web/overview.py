@@ -225,7 +225,9 @@ def board_feeds(data: dict, state: dict | None, now: datetime,
         if (section_name not in data and name not in entries) or _switched_off(data, section_name):
             continue
         section = _dict(data.get(section_name))
-        policy = _policy(section, holidays)
+        # No windows saved: the board checks at its defaults (BODS buses all day).
+        defaults = schema.bus_defaults(schema.bus_source(section)) if name == "bus" else schema.BOARD_DEFAULTS[name]
+        policy = _policy({"windows": list(defaults["windows"]), **section}, holidays)
         stale_after = _positive(section, "stale_after_minutes", stale_default)
         extra, over = (), False
         if name == "bus" and schema.bus_source(data.get("bus")) == "transportapi":

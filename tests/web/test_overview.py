@@ -297,6 +297,15 @@ def test_the_boards_unreadable_checking_times_are_said_plainly():
     assert "Can’t tell" in feed(board(data=data), "Trains")
 
 
+def test_a_board_source_without_checking_times_keeps_its_defaults():
+    """No windows saved means the board's defaults: BODS buses all day, the
+    trains at the commute; not checking times that "don't read"."""
+    page = board(data={"train": {"crs": "GLO"}, "bus": {"source": "bods"}})
+    assert "Can’t tell" not in page
+    assert "Checking now Yes" in feed(page, "Trains")  # 08:01 on a Thursday
+    assert "Checking now Yes" in feed(page, "Buses")
+
+
 def test_a_board_sources_note_is_shown_as_words():
     state = {"sources": {"bus": {"note": "From TransportAPI: <the> bus timetable has run out"}}}
     page = board(state=state)
