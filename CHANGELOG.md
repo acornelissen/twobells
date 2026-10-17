@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Fixed
+
+- The user guide matches 0.2.0 throughout: where the plain, TFT and split-flap looks put the clock, notices and the bus page on a screen; that the bus timetable is built again once after updating; what the show lists stop fetching; Around here, the no-tracker warning and what a wall tablet leaves out; the Overview's timetable, keys and TransportAPI lines; and 0.2.0's failure modes in Troubleshooting. The phone-width and wall tablet night pictures are retaken.
+
 ## [0.2.0] - 2026-10-17
 
 More of what a station board says, how the trains have run, more buses tracked live, new looks, station announcements, and a choice of what each view shows.

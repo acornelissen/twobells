@@ -18,8 +18,8 @@ A Pi can run either view or both. Docker (on a NAS, say) and a desktop computer 
 
 ## Use it
 
-- [Reading the board](reading-the-board.md): what each line means, for everyone in the house.
-- [The dashboard](dashboard.md): what's on the web page, disruptions, and a wall tablet.
+- [Reading the board](reading-the-board.md): what each line means in every look, the screen's bus and clock pages, for everyone in the house.
+- [The dashboard](dashboard.md): what's on the web page, the Performance page and Delay Repay, disruptions, a wall tablet, and station announcements.
 
 ## Install it
 
@@ -36,11 +36,11 @@ Then:
 
 ## Set it up
 
-- [The settings](settings.md): the Overview, Trains and buses, Board, Dashboard, Keys and General pages.
+- [The settings](settings.md): the Overview, Trains and buses, Board, Dashboard, Keys and General pages, with What to show and Scrolling text.
 - [Password and reset codes](password.md): claiming the settings, a forgotten password, and why sign-in can refuse.
 - [Bus times](buses.md): the BODS timetable, live positions, and TransportAPI as a stand-in.
-- [Displays](displays.md): choosing and setting up a display, and the screen's bus position page.
-- [Settings by hand](configuration.md): `config.toml`, where things are kept, the rain warning and bank holidays.
+- [Displays](displays.md): choosing and setting up a display, the screen's bus position page, and its station announcements.
+- [Settings by hand](configuration.md): `config.toml`, where things are kept, what each view shows, the rain warning, bank holidays and scrolling text.
 
 ## Look after it
 

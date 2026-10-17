@@ -13,7 +13,7 @@
 One install is one app with two views of the same departures:
 
 - **The board:** a Raspberry Pi with a four-colour Inky pHAT (250x122). The app also draws for a Waveshare 10.85" e-Paper (G) (1360x480), a Waveshare 7.9" HDMI screen (1280x400, on its side) and an 11.3" HDMI bar screen (1920x440); those are tested in software but not yet on the hardware.
-- **The dashboard:** a web page for a phone or computer at home, with the next 10 trains and buses, calling points, bus strips and maps, the weather, disruptions and punctuality history.
+- **The dashboard:** a web page for a phone or computer at home, with the next 10 trains and buses, calling points and coaches, bus strips and maps, the weather, disruptions, punctuality history, a Performance page with Delay Repay, and station announcements.
 
 A Pi can run either view or both; Docker and a desktop run the dashboard. Each install has one settings site, at `/settings` on port 8090, with one password and a setup wizard that finds your station, stops, walk times and bus companies from your postcode. The examples use Glossop, with trains to Manchester and buses from two nearby stops (`examples/glossop.toml`).
 
@@ -57,7 +57,7 @@ On the 10.85" e-paper there is room for platforms (as the app draws it; not yet 
 
 ![The station board look on the 10.85 inch e-paper](docs/images/epaper-10in85.png)
 
-An HDMI screen redraws every second, with a running clock and countdowns, and a page showing where your next bus is (again as the app draws it, not yet tried on a real screen):
+An HDMI screen redraws every second, with a running clock and countdowns, two more looks (`tft`, white and yellow on black, and `flap`, a split-flap board whose tiles turn), and if you want them the first train's calling points, a platform clock page and station announcements through a speaker. It also has a page showing where your next bus is (again as the app draws it, not yet tried on a real screen):
 
 ![The bus position page: the 341 to Hyde three stops from Henry Street, leave in 3 min](docs/images/screen-bus.png)
 
