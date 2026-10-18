@@ -14,6 +14,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from ..board.app import run_loop, run_once
+from ..board.config import first_run_settings
 from ..board.displays.display import PngDisplay, open_display
 from ..board.names import DISPLAY_PANELS
 from ..board.scroll import SCROLL_FRAME_S
@@ -21,7 +22,7 @@ from ..board.speaker import Speaker
 from ..board.state import StateStore
 from ..board.view import SetupView
 from ..core.errors import ConfigError
-from ..settings.config import first_run_settings, needs_setup
+from ..settings.config import needs_setup
 from ..settings.schema import views
 from ..settings.store import Store
 from .common import as_owner, load_settings, local_now, open_store, setup_url, sleep_to_the_tick

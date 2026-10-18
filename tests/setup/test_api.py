@@ -9,8 +9,9 @@ from typing import ClassVar
 import pytest
 
 from tests.paths import ROOT
+from twobells.board.config import load_config
 from twobells.settings import keyresults, show
-from twobells.settings.config import load_config, needs_setup, read_base
+from twobells.settings.config import needs_setup, read_base
 from twobells.settings.installs import INSTALLS, Install
 from twobells.settings.overlay import Target, board_target
 from twobells.settings.schema import keys as schema_keys

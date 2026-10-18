@@ -39,13 +39,14 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Protocol
 from urllib.parse import urlsplit
 
+from ..board.config import settings_from
 from ..core import files
 from ..core.errors import ConfigError
 from ..core.polling import Window, parse_window
 from ..core.walk import WalkTimes
 from ..settings import modes as mode_list
 from ..settings import show as show_items
-from ..settings.config import _flag, _table, _texts, _whole, settings_from, switched_on
+from ..settings.config import _flag, _table, _texts, _whole, switched_on
 from ..settings.schema import bus_source
 from ..sources.bodsbus import BodsBusSource, BusBoard
 from ..sources.darwin import DarwinSource, ServiceDetails, ServiceDetailsClient, TrainBoard

@@ -18,7 +18,7 @@ QUERIES = ("views", "display", "needs-timetable")
 
 
 def discover_command(args) -> int:
-    from ..settings.config import _walk
+    from ..board.config import _walk
     from ..setup import discover
 
     # argparse requires at least one --stop here, so there are always stops.

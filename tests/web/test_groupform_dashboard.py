@@ -167,7 +167,7 @@ def test_position_strips_are_on_until_switched_off(form):
 
 
 def test_scrolling_text_is_on_until_switched_off_and_saved_for_every_view(form):
-    from twobells.settings.config import load_config
+    from twobells.board.config import load_config
 
     assert fields_of(form)["scrolling"] == "true"
     assert form.save(fields_of(form) | {"scrolling": "false"}) == {}

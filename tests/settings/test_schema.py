@@ -325,7 +325,7 @@ def test_views_that_are_not_a_list_of_views_are_a_config_error(data, words):
 
 
 def test_the_board_s_loader_refuses_malformed_views_too(tmp_path):
-    from twobells.settings.config import settings_from
+    from twobells.board.config import settings_from
 
     with pytest.raises(ConfigError, match="views"):
         settings_from({"state_file": str(tmp_path / "state.json"), "app": {"views": ["tv"]}}, {})
@@ -347,7 +347,7 @@ def parsed(windows):
 def test_the_board_loads_with_the_schema_s_defaults(tmp_path):
     from datetime import timedelta
 
-    from twobells.settings.config import settings_from
+    from twobells.board.config import settings_from
 
     data = {"state_file": str(tmp_path / "state.json"), "train": {"crs": "GLO"}, "bus": {"source": "transportapi", "stops": STOPS}}
     settings = settings_from(data, ENV)
@@ -369,7 +369,7 @@ def test_the_board_loads_with_the_schema_s_defaults(tmp_path):
 def test_buses_from_bods_load_with_the_schema_s_defaults(tmp_path):
     from datetime import timedelta
 
-    from twobells.settings.config import settings_from
+    from twobells.board.config import settings_from
 
     data = {"state_file": str(tmp_path / "state.json"),
             "bus": {"stops": STOPS, "source": "bods", "operators": ["BNML"]}}
@@ -418,8 +418,8 @@ def test_the_dashboard_s_fields_show_dashboard_options_defaults():
 
 def test_with_only_general_settings_saved_each_view_loads_with_its_defaults(tmp_path):
     # What setup saves: the station and stops, walk times and where home is; nothing of either view's own.
+    from twobells.board.config import load_config
     from twobells.dashboard.config import DashboardOptions, load_dashboard
-    from twobells.settings.config import load_config
     from twobells.settings.store import Store
 
     folder = tmp_path / "store"

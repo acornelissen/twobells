@@ -131,8 +131,8 @@ def _download(url: str, max_bytes: int) -> bytes:
 
 
 def route_command(args) -> int:
+    from ..board.config import _walk
     from ..core.walk import DEFAULT_STOP
-    from ..settings.config import _walk
     from ..timetable import routesetup
 
     store = open_store(args)

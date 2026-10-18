@@ -40,9 +40,10 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..board.config import settings_from
 from ..core import files
 from ..core.errors import ConfigError, scrub_secrets
-from .config import OVERLAY_NAME, SECRETS_OVERLAY_NAME, merge, read_overlay_in, settings_from
+from .config import OVERLAY_NAME, SECRETS_OVERLAY_NAME, merge, read_overlay_in
 from .schema import KEY_VALUE, saved_keys
 
 # A saved settings file that couldn't be read, kept beside it when the page replaces it.

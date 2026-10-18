@@ -32,11 +32,12 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..board.config import settings_from
 from ..board.names import DISPLAY_PANELS
 from ..board.themes import THEMES
 from ..core.errors import ConfigError
 from ..settings import modes, schema, show
-from ..settings.config import board_modes, merge, settings_from
+from ..settings.config import board_modes, merge
 from ..settings.overlay import BROKEN_NAME, OverlayError, save_to
 from ..settings.schema import Field, Invalid
 from . import places, windowrows

@@ -8,8 +8,8 @@ import tomllib
 
 import pytest
 
+from twobells.board.config import load_config
 from twobells.dashboard.config import load_dashboard
-from twobells.settings.config import load_config
 from twobells.settings.installs import Install, install_named
 from twobells.settings.store import Store
 from twobells.web.groupform import GroupForm

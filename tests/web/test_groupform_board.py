@@ -8,7 +8,8 @@ from datetime import datetime
 
 import pytest
 
-from twobells.settings.config import load_config, read_overlay_in
+from twobells.board.config import load_config
+from twobells.settings.config import read_overlay_in
 from twobells.settings.installs import install_named
 from twobells.settings.schema import saved_keys
 from twobells.settings.store import Store

@@ -11,7 +11,7 @@ Anything else is set in config.toml alone: addresses keys are sent to
 which decides which service runs.
 
 The board's defaults (BOARD_DEFAULTS) are here too, for its loader
-(settings/config.py) and the board's fields; the dashboard's stay in
+(board/config.py) and the board's fields; the dashboard's stay in
 dashconfig.DashboardOptions, and its fields show the same values.
 
 [app] views says which views are on (views()), and each view's modes list

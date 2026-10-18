@@ -11,13 +11,13 @@ from typing import cast
 from zoneinfo import ZoneInfo
 
 from ..board.app import Board, SourceConfig, Tracker, Weather
+from ..board.config import load_config
 from ..board.names import DISPLAY_PANELS
 from ..board.positions import Positions
 from ..board.state import StateStore
 from ..board.themes import THEMES
 from ..core.polling import PollPolicy, parse_window
 from ..core.walk import WalkTimes
-from ..settings.config import load_config
 from ..sources.darwin import TrainDetails
 from .fake import (
     DEMO_STRIP,
