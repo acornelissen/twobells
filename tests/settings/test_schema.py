@@ -234,6 +234,22 @@ def test_the_knowledgebase_field_refuses_anywhere_else(raw):
         schema.https_feed(raw)
 
 
+@pytest.mark.parametrize(("raw", "value"), [("7", 7), (" 60 ", 60), ("007", 7), ("0", 0)])
+def test_a_number_is_whole_and_in_range(raw, value):
+    assert schema.number(0, 60)(raw) == value
+
+
+@pytest.mark.parametrize("raw", [
+    "61", "-1", "1.5", "", "x",
+    "²", "1²",  # digits to str.isdigit, but not to int()
+    "٣", "３",  # Arabic-Indic and full-width 3, which int() reads
+    pytest.param("0" * 5000, id="more digits than int() reads"),
+])
+def test_a_number_that_is_not_ascii_digits_in_range_is_refused(raw):
+    with pytest.raises(schema.Invalid):
+        schema.number(0, 60)(raw)
+
+
 @pytest.mark.parametrize("raw", ["Europe/London", "UTC", "America/New_York", "Etc/GMT+5"])
 def test_a_time_zone_is_checked_against_the_zone_database(raw):
     assert schema.timezone(f" {raw} ") == raw

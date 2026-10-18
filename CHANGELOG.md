@@ -33,6 +33,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 - A redirect's body is no longer read. Python's URL library read it whole before following the redirect, whatever cap the request had, so a 200 MB body on a redirect took 265 MB of memory; now the connection is closed and the redirect followed at once.
 - A whole number too big for a float, such as one of 401 digits, is refused as a position or time in the setup wizard's requests and the fetch service's files, rather than crashing the check. On a Pi, one such request stopped the fetch service answering the wizard, and one such snapshot froze the dashboard, until a restart. The fetch service and the dashboard's reader of its snapshot now also log any other failure they didn't foresee by its kind alone and carry on.
 
+### Fixed
+
+- A number on the settings pages takes the digits 0 to 9 alone, up to 9 of them. "²" failed the page with an error rather than saying what to enter, and other scripts' digits, such as Arabic-Indic ones, were saved as numbers.
+
 ## [0.4.3] - 2026-10-18
 
 Subtitles under a train on a screen, and the tram timetable built as soon as it is set up on a Pi.

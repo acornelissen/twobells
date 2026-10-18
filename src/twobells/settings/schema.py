@@ -66,6 +66,7 @@ CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 KEY_VALUE = re.compile(r"^[A-Za-z0-9._~+/=-]{1,200}$")
 _ZONE = re.compile(r"^[A-Za-z][A-Za-z0-9_+/-]{0,63}$")
 _MAX_URL = 300
+_MAX_DIGITS = 9  # in a number setting; the largest any takes is 3650
 # Where the Rail Data Marketplace's feeds are. A Knowledgebase address saved
 # from the page must be there, as RDM_KB_API_KEY is sent to it.
 RAILDATA = "raildata.org.uk"
@@ -104,7 +105,8 @@ def number(low: int, high: int, optional: bool = False) -> Callable[[str], int |
         value = raw.strip()
         if not value and optional:
             return None
-        if not value.isdigit() or not low <= int(value) <= high:
+        # isdigit alone takes "²", which int() refuses, and other scripts' digits, which it reads.
+        if not (value.isascii() and value.isdigit()) or len(value) > _MAX_DIGITS or not low <= int(value) <= high:
             raise Invalid(f"Enter a whole number from {low} to {high}")
         return int(value)
     return check
