@@ -6,7 +6,7 @@ from collections import Counter
 import pytest
 
 from twobells.board.app import Board
-from twobells.board.displays.display import DISPLAY_PANELS
+from twobells.board.names import DISPLAY_PANELS
 from twobells.board.themes import THEMES
 from twobells.core.errors import ConfigError
 from twobells.settings import schema, show

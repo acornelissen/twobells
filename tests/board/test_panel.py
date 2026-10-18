@@ -3,6 +3,7 @@ import pytest
 from twobells.board import sign
 from twobells.board.dotfont import HEIGHT as GLYPH_H
 from twobells.board.dotfont import TINY_HEIGHT
+from twobells.board.names import themes_for
 from twobells.board.panel import (
     HDMI_1280X400,
     HDMI_1920X440,
@@ -17,7 +18,6 @@ from twobells.board.panel import (
     panel_name,
 )
 from twobells.board.render import rows_room
-from twobells.board.themes import themes_for
 from twobells.board.view import BoardView, Row, Section
 from twobells.settings.modes import KEYS
 

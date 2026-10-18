@@ -32,7 +32,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..board.displays.display import DISPLAY_PANELS
+from ..board.names import DISPLAY_PANELS
 from ..board.themes import THEMES
 from ..core.errors import ConfigError
 from ..settings import modes, schema, show

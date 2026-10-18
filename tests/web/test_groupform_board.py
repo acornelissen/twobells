@@ -865,7 +865,7 @@ def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
 
 
 def test_every_field_the_page_saves_is_read_back():
-    from twobells.board.displays.display import DISPLAY_PANELS
+    from twobells.board.names import DISPLAY_PANELS
     from twobells.board.themes import THEMES
     from twobells.settings.schema import fields
 

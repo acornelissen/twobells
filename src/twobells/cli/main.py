@@ -27,7 +27,7 @@ import logging
 import math
 import sys
 
-from ..board.displays.display import DISPLAY_PANELS
+from ..board.names import DISPLAY_PANELS
 from ..board.themes import THEMES
 from ..core.errors import ConfigError
 from ..emulator.server import DEFAULT_PORT

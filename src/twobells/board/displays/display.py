@@ -6,17 +6,9 @@ from pathlib import Path
 
 from PIL.Image import Image
 
-from ..panel import HDMI_1280X400, HDMI_1920X440, PHAT, PHAT_V1, WAVESHARE_10IN85G, Panel
+from ..names import DISPLAY_PANELS
+from ..panel import PHAT, PHAT_V1, Panel
 from ..render import SCREEN_PALETTE, Palette
-
-# What each `display` setting draws on. An Inky reports its own size once opened.
-DISPLAY_PANELS = {
-    "inky": PHAT,
-    "inky-phat-v1": PHAT_V1,
-    "waveshare-10in85g": WAVESHARE_10IN85G,
-    "hdmi-1280x400": HDMI_1280X400,
-    "hdmi-1920x440": HDMI_1920X440,
-}
 
 
 def _detect():

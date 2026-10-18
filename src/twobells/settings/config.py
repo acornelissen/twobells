@@ -21,10 +21,10 @@ from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from ..board.app import Board, SourceConfig, Tracker, Weather, reset_code_page
-from ..board.displays.display import DISPLAY_PANELS
+from ..board.names import DISPLAY_PANELS, themes_for
 from ..board.positions import Positions
 from ..board.route import RouteStop, RouteStrip
-from ..board.themes import theme_named, themes_for, with_text_size
+from ..board.themes import theme_named, with_text_size
 from ..core.errors import ConfigError
 from ..core.places import london_stops_by_code
 from ..core.polling import PollPolicy, parse_window

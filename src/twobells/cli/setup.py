@@ -6,7 +6,7 @@ from __future__ import annotations
 import sys
 from typing import cast
 
-from ..board.displays.display import DISPLAY_PANELS
+from ..board.names import DISPLAY_PANELS
 from ..core.errors import ConfigError
 from ..settings.config import needs_timetable
 from ..settings.installs import Install, install_named

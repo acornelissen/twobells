@@ -32,9 +32,8 @@ from typing import TYPE_CHECKING, Literal, overload
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, available_timezones
 
-from ..board.displays.display import DISPLAY_PANELS
+from ..board.names import DISPLAY_PANELS, LOOKS, themes_for
 from ..board.panel import biggest_text_for, most_modes, panel_name
-from ..board.themes import THEMES, themes_for
 from ..core.errors import ConfigError
 from ..core.polling import parse_window
 from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES
@@ -368,7 +367,7 @@ def _look(allowed: tuple[str, ...]) -> Callable[[str], str]:
     def check(raw: str) -> str:
         if raw in allowed:
             return raw
-        if raw in THEMES:
+        if raw in LOOKS:
             raise Invalid("That look is for a screen; pick one for e-paper")
         raise Invalid("Pick one of the options")
     return check
@@ -615,7 +614,7 @@ def fields(display: str = "inky", theme: str = "sign", text_size: int | None = N
               page="trains_buses", heading="Weather", width="3", unit="%"),
         # The board's own.
         Field("theme", "board", None, "theme", "Look", _look(looks), "radios", default=board["theme"],
-              options=tuple((name, THEMES[name].label) for name in offered_looks), hint=look_hint,
+              options=tuple((name, LOOKS[name].label) for name in offered_looks), hint=look_hint,
               page="board", heading="Display"),
         Field("rotate", "board", None, "rotate", "Rotation", whole_choice(rotations), "radios",
               hint="Degrees clockwise, to suit how the display is mounted.",

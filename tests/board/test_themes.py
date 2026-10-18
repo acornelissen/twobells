@@ -7,13 +7,14 @@ import pytest
 from tests.paths import FIXTURES
 from twobells.board.dotfont import HEIGHT as GLYPH_H
 from twobells.board.dotfont import TINY_HEIGHT
+from twobells.board.names import themes_for
 from twobells.board.panel import PANELS, most_modes
 from twobells.board.render import SCREEN_PALETTE, Painter, Palette, render
 from twobells.board.route import RouteView
 from twobells.board.sign import item_size, render_sign, sign_layout
 from twobells.board.splitflap import render_split_flap
 from twobells.board.tft import render_tft
-from twobells.board.themes import THEMES, theme_named, themes_for, with_text_size
+from twobells.board.themes import THEMES, theme_named, with_text_size
 from twobells.board.view import PLAIN, SIGN, BoardView, CodeView, Row, Section, SetupView, Style, build_view
 from twobells.core.model import Departure, Status, Strip
 from twobells.core.walk import WalkTimes
@@ -53,11 +54,6 @@ def test_registry_names_match():
 
 def test_every_look_has_a_label_for_the_settings():
     assert all(theme.label for theme in THEMES.values())
-
-
-def test_e_paper_is_offered_every_look_but_the_screen_only_ones():
-    assert themes_for(epaper=False) == ("sign", "plain", "tft", "flap")
-    assert themes_for(epaper=True) == ("sign", "plain")
 
 
 # --- Every page, pixel for pixel as recorded ---

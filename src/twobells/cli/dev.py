@@ -12,7 +12,8 @@ from datetime import datetime
 from pathlib import Path
 
 from ..board.app import run_loop
-from ..board.displays.display import DISPLAY_PANELS, PngDisplay
+from ..board.displays.display import PngDisplay
+from ..board.names import DISPLAY_PANELS
 from ..board.themes import theme_named
 from ..board.view import build_view, stop_names_shown
 from ..core.errors import ConfigError, redact_keys

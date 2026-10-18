@@ -14,7 +14,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from ..board.app import run_loop, run_once
-from ..board.displays.display import DISPLAY_PANELS, PngDisplay, open_display
+from ..board.displays.display import PngDisplay, open_display
+from ..board.names import DISPLAY_PANELS
 from ..board.scroll import SCROLL_FRAME_S
 from ..board.speaker import Speaker
 from ..board.state import StateStore

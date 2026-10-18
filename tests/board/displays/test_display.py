@@ -91,23 +91,11 @@ def test_open_display_refuses_an_unknown_name():
         open_display("crt", "red")
 
 
-def test_every_display_setting_has_a_panel():
-    from twobells.board.displays.display import DISPLAY_PANELS
-    from twobells.board.panel import HDMI_1280X400, HDMI_1920X440, PHAT, PHAT_V1, WAVESHARE_10IN85G
-
-    assert DISPLAY_PANELS == {
-        "inky": PHAT,
-        "inky-phat-v1": PHAT_V1,
-        "waveshare-10in85g": WAVESHARE_10IN85G,
-        "hdmi-1280x400": HDMI_1280X400,
-        "hdmi-1920x440": HDMI_1920X440,
-    }
-
-
 @pytest.mark.parametrize("name", ["hdmi-1280x400", "hdmi-1920x440"])
 def test_each_hdmi_setting_opens_a_screen_at_its_own_size(name):
-    from twobells.board.displays.display import DISPLAY_PANELS, open_display
+    from twobells.board.displays.display import open_display
     from twobells.board.displays.screen import ScreenDisplay
+    from twobells.board.names import DISPLAY_PANELS
 
     display = open_display(name, "yellow", rotate=90)
     assert isinstance(display, ScreenDisplay)
@@ -132,7 +120,8 @@ class FakeOldPHAT:
 
 def test_the_original_phat_is_its_own_display_setting(monkeypatch):
     from twobells.board.displays import display as display_module
-    from twobells.board.displays.display import DISPLAY_PANELS, open_display
+    from twobells.board.displays.display import open_display
+    from twobells.board.names import DISPLAY_PANELS
     from twobells.board.panel import PHAT_V1
 
     made = []

@@ -34,7 +34,8 @@ from doc_scenes import (  # noqa: E402
     board_strips,
 )
 
-from twobells.board.displays.display import DISPLAY_PANELS, PngDisplay  # noqa: E402
+from twobells.board.displays.display import PngDisplay  # noqa: E402
+from twobells.board.names import DISPLAY_PANELS  # noqa: E402
 from twobells.board.platformclock import clock_view, render_clock  # noqa: E402
 from twobells.board.route import RouteView, where  # noqa: E402
 from twobells.board.themes import theme_named  # noqa: E402

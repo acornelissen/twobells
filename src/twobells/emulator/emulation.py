@@ -11,7 +11,7 @@ from typing import cast
 from zoneinfo import ZoneInfo
 
 from ..board.app import Board, SourceConfig, Tracker, Weather
-from ..board.displays.display import DISPLAY_PANELS
+from ..board.names import DISPLAY_PANELS
 from ..board.positions import Positions
 from ..board.state import StateStore
 from ..board.themes import THEMES
