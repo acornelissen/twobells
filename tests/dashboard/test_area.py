@@ -32,6 +32,15 @@ def test_live_buses_on_our_lines_around_our_stops():
     assert view["fetched_at"] == "2026-10-09T10:14:30+01:00"
 
 
+def test_a_bus_with_a_position_too_big_for_a_float_is_left_off():
+    # JSON reads 10**400 as a whole number; the map checks each vehicle it is given itself.
+    good = bus(*HALFWAY, at(10, 14))
+    found, placed = live_board(schedule(), NOW, [good], lambda journey, day: True, 10)
+    vehicles = [good, replace(good, lat=10**400), replace(good, bearing=10**400)]
+    view = area_view(BusBoard(found, schedule(), True, None, placed, vehicles), NOW)
+    assert len(view["vehicles"]) == 2 and [v["bearing"] for v in view["vehicles"]] == [90.0, None]
+
+
 def test_a_bus_sending_a_bare_time_is_read_as_utc():
     vehicle = replace(bus(*HALFWAY, at(10, 14)), recorded_at="2026-10-09T09:14:00")
     found = area_view(board([vehicle]), NOW)["vehicles"][0]

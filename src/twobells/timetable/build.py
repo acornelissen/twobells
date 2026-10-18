@@ -123,6 +123,7 @@ from urllib.parse import urlsplit
 from xml.etree import ElementTree
 
 from ..core import files, net, safexml
+from ..core.bounded import finite
 from ..core.errors import redact_keys, safe_message
 from . import roads as roadshape
 from . import routesetup
@@ -1356,9 +1357,8 @@ def roads_progress(folder: Path | str, now: Callable[[], float] = time.time) -> 
     if (not isinstance(done, int) or isinstance(done, bool) or not isinstance(total, int) or isinstance(total, bool)
             or not 0 <= done <= total):
         return None
-    if isinstance(at, bool) or not isinstance(at, (int, float)) or not math.isfinite(at):
-        return None
-    if abs(now() - at) > ROADS_STALE_S:
+    written = finite(at)
+    if written is None or abs(now() - written) > ROADS_STALE_S:
         return None
     return done, total
 

@@ -1,8 +1,10 @@
 """Reading what came from outside within bounds: a zip's list of files,
-checked before zipfile reads it, and text a line at a time."""
+checked before zipfile reads it, text a line at a time, and a number as a
+float."""
 
 from __future__ import annotations
 
+import math
 import struct
 import zipfile
 from collections.abc import Iterator
@@ -118,3 +120,17 @@ def lines(text: IO[str], max_line: int) -> Iterator[str]:
         while line and not line.endswith(("\n", "\r")):
             line = text.readline(max_line + 1)
         yield ""
+
+
+def finite(value: object) -> float | None:
+    """A number read from JSON or TOML as a float, or None if it isn't a
+    finite one: anything but an int or float (a bool among them), NaN, an
+    infinity, or a whole number too big for a float. Both read 10**400 as an
+    int, and float() and math.isfinite raise OverflowError on it."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
+    return number if math.isfinite(number) else None

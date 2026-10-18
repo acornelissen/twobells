@@ -577,7 +577,7 @@ def test_route_strips_are_skipped_if_naptan_fails(bods):
 
 
 @pytest.mark.parametrize("place", [None, ("", 53.4, -1.9), ("X", float("nan"), -1.9), ("X", 40.0, -1.9),
-                                   ("X", "north", -1.9), ("X", 53.4)])
+                                   ("X", "north", -1.9), ("X", 53.4), ("X", 10**400, -1.9)])
 def test_a_route_strip_stop_needs_a_name_and_a_uk_position(place):
     assert discover._strip_stop(place) is None
 

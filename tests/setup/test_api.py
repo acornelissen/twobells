@@ -1143,6 +1143,12 @@ def test_saved_leaves_out_what_is_off_or_not_set_up(board):
     }
 
 
+def test_saved_reads_a_home_too_big_for_a_float_as_none(board):
+    # TOML reads a whole number of any size; a hand-edited settings.toml can hold one.
+    (board.state / "settings.toml").write_text(f"[weather]\nlat = 1{'0' * 400}\nlon = -1.97\n")
+    assert ok(board, "saved")["home"] is None
+
+
 def test_saved_reads_the_template_as_nothing_chosen(template):
     assert ok(template, "saved") == {"home": None, "station": None, "filter": None, "stops": [], "trams": []}
 

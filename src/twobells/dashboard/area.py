@@ -24,6 +24,7 @@ import math
 from collections.abc import Iterable
 from datetime import date, datetime, timedelta
 
+from ..core.bounded import finite
 from ..core.model import iso, line_order
 from ..sources.bods import Vehicle, recorded_time
 from ..sources.bodsbus import BusBoard
@@ -42,7 +43,7 @@ _NAME_LIMIT = 80
 
 
 def _finite(*values: float | None) -> bool:
-    return all(isinstance(v, (int, float)) and math.isfinite(v) for v in values)
+    return all(finite(v) is not None for v in values)
 
 
 def _next_stop(placed: LiveJourney, schedule: Schedule) -> str | None:

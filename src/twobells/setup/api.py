@@ -93,6 +93,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Protocol
 
+from ..core.bounded import finite
 from ..core.errors import safe_message, scrub_secrets
 from ..settings import keyresults, modes, schema, show
 from ..settings.config import ConfigError, still_to_set_up
@@ -337,13 +338,8 @@ def _text(value, field: str, low: int, high: int) -> str:
 
 
 def _number(value, field: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise Invalid("A position must be two numbers", field)
-    try:
-        number = float(value)
-    except OverflowError:  # a whole number too big for a float, like 10**400
-        raise Invalid("A position must be two numbers", field) from None
-    if not math.isfinite(number):
+    number = finite(value)
+    if number is None:
         raise Invalid("A position must be two numbers", field)
     return number
 
@@ -1222,9 +1218,7 @@ def _table(data: Mapping, name: str) -> dict:
 
 def _saved_number(value) -> float | None:
     """A saved number as a float, or None if it isn't a finite one."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        return None
-    return float(value)
+    return finite(value)
 
 
 def _saved_station(train: Mapping) -> str:

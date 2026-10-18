@@ -79,6 +79,8 @@ def test_a_straight_road_needs_no_points():
     answer([[-1.959028, 53.443488], {"lat": 53.44352}, [-1.955761, 53.443509]]),
     b'{"code": "Ok", "routes": [{"geometry": {"type": "LineString", "coordinates": [[-1.959028, 53.443488], '
     b'[NaN, 53.44352], [-1.955761, 53.443509]]}}]}',
+    pytest.param(answer([[-1.959028, 53.443488], [10**400, 53.44352], [-1.955761, 53.443509]]),
+                 id="too big for a float"),
     b"[" * 100_000 + b"]" * 100_000,
 ])
 def test_answers_of_the_wrong_shape_are_refused(body):

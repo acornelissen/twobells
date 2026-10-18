@@ -84,6 +84,10 @@ def test_saved_hours_read_back_and_bad_ones_are_skipped():
     assert hours_from_dicts(saved) == hours
     assert hours_from_dicts([saved[0], {"start": "x"}, {"start": "2026-10-09T01:00", "probability": 500, "precipitation": 0}]) == hours[:1]
     assert hours_from_dicts("not a list") == []
+    # A saved state is read each time the board is drawn: a number too big for a float is skipped too.
+    too_big = [{"start": "2026-10-09T01:00", "probability": 10**400, "precipitation": 0},
+               {"start": "2026-10-09T01:00", "probability": 5, "precipitation": 10**400}]
+    assert hours_from_dicts([saved[0], *too_big]) == hours[:1]
 
 
 def test_source_asks_for_the_hourly_rain_forecast_in_the_boards_timezone():
@@ -161,7 +165,8 @@ def test_gaps_in_the_forecast_are_not_rain():
     assert rain_line(gappy, at("07:40"), at("08:30"), 50) is None
 
 
-@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf"),
+                                 pytest.param(10**400, id="too big for a float")])
 def test_a_reading_that_is_not_a_real_number_is_refused(bad):
     # json.loads accepts NaN and Infinity, and NaN slips past range checks.
     data = payload()

@@ -94,3 +94,17 @@ def test_zipfile_reads_no_more_of_a_list_than_allowed_whatever_end_record_it_fin
 def test_lines_longer_than_the_most_come_out_empty_and_the_rest_as_they_are():
     text = io.StringIO("head\r\n" + "x" * 100 + "\n" + "y" * 9 + "\r" + "last", newline="")
     assert list(lines(text, 10)) == ["head\r\n", "", "y" * 9 + "\r", "last"]
+
+
+# A number from JSON or TOML.
+
+
+@pytest.mark.parametrize("value, number", [(3, 3.0), (-1.5, -1.5), (0, 0.0), (10**300, 1e300)])
+def test_a_finite_number_is_read_as_a_float(value, number):
+    assert bounded.finite(value) == number and isinstance(bounded.finite(value), float)
+
+
+@pytest.mark.parametrize("value", [10**400, -(10**400), float("nan"), float("inf"), float("-inf"), True, False,
+                                   "1.5", None, [1], {"x": 1}])
+def test_anything_else_is_not_a_finite_number(value):
+    assert bounded.finite(value) is None

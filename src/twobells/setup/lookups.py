@@ -33,6 +33,7 @@ from typing import IO, Protocol
 from urllib.parse import quote, urlencode
 
 from ..core import bounded
+from ..core.bounded import finite
 from ..core.errors import safe_message
 from ..core.net import get_bytes
 from ..core.osgb import distance_m, grid_to_latlon
@@ -173,7 +174,7 @@ def in_uk(lat: float, lon: float) -> bool:
 
 def _check_point(lat, lon) -> None:
     for value in (lat, lon):
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value):
+        if finite(value) is None:
             raise SetupError("A position must be two numbers")
     if not in_uk(lat, lon):
         raise SetupError("That position is outside the UK")
@@ -189,9 +190,7 @@ def _number(value, strings: bool = False) -> float | None:
             value = float(value)
         except ValueError:
             return None
-    if isinstance(value, (int, float)) and math.isfinite(value):
-        return float(value)
-    return None
+    return finite(value)
 
 
 def _position(lat, lon, strings: bool = False) -> tuple[float, float] | None:
@@ -719,9 +718,10 @@ def parse_osrm_table(body: bytes, count: int) -> list[float | None]:
         if value is None:
             seconds.append(None)
             continue
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        number = finite(value)
+        if number is None or number < 0:
             raise ValueError("Router's table holds something that isn't a duration")
-        seconds.append(float(value) if value <= LONGEST_WALK_S else None)
+        seconds.append(number if number <= LONGEST_WALK_S else None)
     return seconds
 
 

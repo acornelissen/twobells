@@ -445,7 +445,10 @@ def _roads(saved) -> dict[str, tuple[tuple[float, float], ...]]:
 
 
 def _point(pair) -> tuple[float, float]:
-    lat, lon = (float(v) for v in pair)
+    try:
+        lat, lon = (float(v) for v in pair)
+    except OverflowError:  # a whole number too big for a float
+        raise ValueError("A road point must be two finite numbers") from None
     if not (math.isfinite(lat) and math.isfinite(lon)):
         raise ValueError("A road point must be two finite numbers")
     return lat, lon

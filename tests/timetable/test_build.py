@@ -1,5 +1,6 @@
 import fcntl
 import io
+import json
 import os
 import re
 import stat
@@ -1950,6 +1951,14 @@ def test_how_far_the_roads_have_got_is_kept_while_they_are_found(tmp_path, monke
     assert seen == [(0, 3), (1, 3), (2, 3), (3, 3)]
     assert timetable.roads_progress(tmp_path) is None  # gone once they're found
     assert not (tmp_path / timetable.ROADS_FILE).exists()
+
+
+@pytest.mark.parametrize("at", [pytest.param(10**400, id="too big for a float"), float("nan"), "1000", True])
+def test_how_far_the_roads_have_got_is_unknown_from_a_file_without_a_time(tmp_path, monkeypatch, at):
+    # 10**400 is longer than the file may be; let it in so the time's own check is what refuses it.
+    monkeypatch.setattr(timetable, "_ROADS_FILE_BYTES", 1000)
+    (tmp_path / timetable.ROADS_FILE).write_text(json.dumps({"done": 1, "total": 3, "at": at}))
+    assert timetable.roads_progress(tmp_path, now=lambda: 1000.0) is None
 
 
 def test_how_far_the_roads_have_got_is_written_now_and_then_and_the_last(tmp_path):

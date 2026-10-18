@@ -146,6 +146,11 @@ def test_a_road_shape_that_isnt_finite_leaves_every_road_straight(caplog):
     assert "finite" in caplog.text
 
 
+def test_a_road_shape_too_big_for_a_float_leaves_every_road_straight():
+    schedule = Schedule.from_json(_with_roads('{"A>B": [[53.4436, -1.9563]], "B>C": [[1' + "0" * 400 + ", -1.9]]}"))
+    assert schedule.shapes == {}
+
+
 def test_roads_that_arent_a_mapping_are_none():
     assert Schedule.from_json(_with_roads("[[53.4, -1.9]]")).shapes == {}
 

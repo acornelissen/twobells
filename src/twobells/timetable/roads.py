@@ -48,6 +48,7 @@ from itertools import pairwise
 from urllib.error import HTTPError
 
 from ..core import net
+from ..core.bounded import finite
 from ..core.errors import safe_message
 from ..core.osgb import distance_m
 from ..setup.lookups import ROUTER_LIMIT, ROUTER_USER_AGENT, RateLimiter, in_uk
@@ -130,7 +131,7 @@ def _point(item) -> Point:
         raise ValueError("Router's line holds something that isn't a position")
     lon, lat = item
     for value in (lat, lon):
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        if finite(value) is None:
             raise ValueError("Router's line holds something that isn't a position")
     if not in_uk(lat, lon):
         raise ValueError("Router's line leaves the UK")

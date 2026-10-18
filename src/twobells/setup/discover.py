@@ -684,7 +684,7 @@ def _strip_stop(place) -> dict | None:
     try:
         name, lat, lon, *_ = place
         lat, lon = float(lat), float(lon)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # OverflowError: a whole number too big for a float
         return None
     name = " ".join(_CONTROL.sub(" ", str(name)).split())[:_NAME_LIMIT]
     if not name or not (math.isfinite(lat) and math.isfinite(lon)) or not in_uk(lat, lon):

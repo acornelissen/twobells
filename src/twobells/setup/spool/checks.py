@@ -11,6 +11,7 @@ import math
 import re
 from collections.abc import Callable
 
+from ...core.bounded import finite
 from ...core.errors import safe_message
 from ...settings.schema import ATCO as _ATCO
 from ...settings.schema import CONTROL as _CONTROL
@@ -65,13 +66,8 @@ def check_int(value, what: str, low: int, high: int) -> int:
 
 
 def check_num(value, what: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise Refused(f"{what} isn't a number")
-    try:
-        number = float(value)
-    except OverflowError:  # a whole number too big for a float, like 10**400
-        raise Refused(f"{what} isn't a number") from None
-    if not math.isfinite(number):
+    number = finite(value)
+    if number is None:
         raise Refused(f"{what} isn't a number")
     return number
 

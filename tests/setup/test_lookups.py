@@ -196,6 +196,7 @@ def test_postcode_lookup_asks_postcodes_io_with_the_postcode_quoted():
         {"latitude": "53.4620"},  # a string where a number belongs
         {"longitude": True},
         {"latitude": float("nan")},
+        {"latitude": 10**400},  # too big for a float
     ],
 )
 def test_postcode_answer_without_a_uk_position_is_refused(change):
@@ -548,7 +549,7 @@ def test_bundled_station_list_is_whole_and_unique():
 
 @pytest.mark.parametrize(
     "args",
-    [(48.85, 2.35), (53.44, "x"), (math.nan, -1.95), (True, -1.95)],
+    [(48.85, 2.35), (53.44, "x"), (math.nan, -1.95), (True, -1.95), (10**400, -1.95)],
 )
 def test_station_search_refuses_a_point_outside_the_uk(args):
     with pytest.raises(SetupError):
@@ -749,6 +750,12 @@ def test_estimate_is_the_straight_line_plus_30_percent_at_4_8_kmh():
 def test_router_answers_of_the_wrong_shape_fall_back_to_estimates(answer):
     walk = walk_times(HOME, PLACES, Getter(answer))
     assert walk == {key: (estimate_minutes(HOME, place), "estimate") for key, place in PLACES.items()}
+
+
+def test_a_router_duration_too_big_for_a_float_is_refused_as_the_wrong_shape():
+    body = json.dumps({"code": "Ok", "durations": [[0, 10**400, 600, 30]]}).encode()
+    with pytest.raises(ValueError, match="isn't a duration"):
+        lookups.parse_osrm_table(body, 3)
 
 
 @pytest.mark.parametrize(
