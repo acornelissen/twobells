@@ -134,17 +134,19 @@ def test_js_imports_resolve_to_served_files(name):
         found = _served(urljoin(js_url, spec))  # and where a host serves it
         assert found is not None and found.resolve() == (STATIC / spec).resolve(), spec
     # The dashboard's modules the wizard imports may import nothing the host doesn't serve.
-    for borrowed in ("dom.js", "icons.js"):
+    for borrowed in ("dom.js", "icons.js", "basemap.js"):
         url = urljoin(PREFIX, f"dashboard_static/{borrowed}")
         for spec in IMPORT.findall((DASHBOARD / borrowed).read_text(encoding="utf-8")):
             found = _served(urljoin(url, spec))
             assert found is not None and found.resolve() == (DASHBOARD / spec).resolve(), (borrowed, spec)
 
 
-def test_leaflet_css_resolves_to_a_served_file():
-    base = re.search(r'const LEAFLET = "([^"]+)"', _js("maps.js")).group(1)
-    url = urljoin(urljoin(PREFIX, "wizard_static/maps.js"), f"{base}leaflet.css")
-    assert _served(url) is not None
+def test_leaflet_resolves_to_served_files():
+    basemap = (DASHBOARD / "basemap.js").read_text(encoding="utf-8")
+    base = re.search(r'const LEAFLET = "([^"]+)"', basemap).group(1)
+    module = re.search(r'import\("([^"]+)"\)', basemap).group(1)
+    for spec in (f"{base}leaflet.css", module):
+        assert _served(urljoin(urljoin(PREFIX, "dashboard_static/basemap.js"), spec)) is not None, spec
 
 
 def test_inter_resolves_to_the_dashboards_served_copy():
@@ -205,11 +207,13 @@ def test_leaflet_loads_only_when_a_map_opens():
         "../dashboard_static/dom.js", "./api.js", "./finish.js", "./home.js", "./keys.js", "./presets.js", "./say.js",
         "./state.js", "./station.js", "./steps.js", "./stops.js", "./trams.js", "./views.js", "./walk.js",
     ]
-    # No module loads Leaflet up front: maps.js imports it when the first map opens.
+    # No module loads Leaflet up front: maps.js has the dashboard's basemap.js import it
+    # when the first map opens.
     for name in SCRIPTS:
         assert not [spec for spec in STATIC_IMPORT.findall(_js(name)) if "leaflet" in spec], name
-    assert [name for name in SCRIPTS if "leaflet-src" in _js(name)] == ["maps.js"]
-    assert 'import("../dashboard_static/vendor/leaflet-1.9.4/leaflet-src.esm.js")' in _js("maps.js")
+    assert not [name for name in SCRIPTS if "leaflet-src" in _js(name)]
+    assert '"../dashboard_static/basemap.js"' in _js("maps.js")
+    assert "L = await loadLeaflet();" in _js("maps.js")
 
 
 BANNED = [
@@ -242,7 +246,8 @@ def test_leaflet_gets_nodes_never_strings():
         assert call.strip().startswith("h("), call
     icons = re.findall(r"divIcon\(\{\s*html:\s*([^,]+)", text)
     assert icons and all(icon.strip().startswith("h(") for icon in icons), icons
-    assert "attributionControl: false" in text  # the credit is our own text under each map
+    assert "const map = makeMap(" in text  # basemap.js leaves the credit to our own text under each map
+    assert "matchMedia" not in text  # dom.js's reduceMotion, through makeMap
     assert "keyboard: false" in text  # markers repeat the list, so they aren't extra tab stops
 
 

@@ -73,8 +73,8 @@ Back on a shortcut's first step goes.
 Serving the page. The host serves, under one prefix ending in a slash (say
 /setup/), the files `static_files()` lists by their path under that prefix:
 the page itself at the prefix, wizard_static/* beside it and the dashboard's
-dom.js, icons.js, Leaflet and Inter under dashboard_static/, so the page's
-relative imports resolve. The API is at <prefix>api/<name>, POST with a JSON
+dom.js, icons.js, basemap.js, Leaflet and Inter under dashboard_static/, so
+the page's relative imports resolve. The API is at <prefix>api/<name>, POST with a JSON
 body, CSRF token in the X-CSRF-Token header; and the host's own GET
 <prefix>api/session answers {"csrf": token} for a signed-in session. Send the
 page and its files with PAGE_HEADERS.
@@ -307,6 +307,7 @@ def static_files() -> dict[str, Path]:
         "wizard_static/wizard.css": wizard / "wizard.css",
         "dashboard_static/dom.js": dashboard / "dom.js",
         "dashboard_static/icons.js": dashboard / "icons.js",
+        "dashboard_static/basemap.js": dashboard / "basemap.js",
         f"dashboard_static/{inter}": dashboard / inter,
         f"dashboard_static/{leaflet}/leaflet-src.esm.js": dashboard / leaflet / "leaflet-src.esm.js",
         f"dashboard_static/{leaflet}/leaflet.css": dashboard / leaflet / "leaflet.css",

@@ -1,46 +1,20 @@
-// Maps: Leaflet, loaded once, the first time any map opens. Leaflet gets
-// DOM nodes, never strings.
+// Maps: Leaflet, loaded once, the first time any map opens
+// (dashboard_static/basemap.js). Leaflet gets DOM nodes, never strings.
 
 import { $, h } from "../dashboard_static/dom.js";
+import { loadLeaflet, makeMap } from "../dashboard_static/basemap.js";
 import { icon } from "../dashboard_static/icons.js";
 import { note } from "./say.js";
 import { state } from "./state.js";
 
-const LEAFLET = "../dashboard_static/vendor/leaflet-1.9.4/";
-const TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const UK_CENTRE = [54.5, -3.0];
 
 export let L = null;
-let leafletLoading = null;
 export const maps = {};
-const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-function loadLeaflet() {
-  if (!leafletLoading) {
-    const css = new Promise((resolve, reject) => {
-      const link = h("link", { rel: "stylesheet", href: new URL(`${LEAFLET}leaflet.css`, import.meta.url).href });
-      link.addEventListener("load", resolve);
-      link.addEventListener("error", reject);
-      document.head.append(link);
-    });
-    leafletLoading = Promise.all([import("../dashboard_static/vendor/leaflet-1.9.4/leaflet-src.esm.js"), css])
-      .then(([module]) => { L = module; return module; })
-      .catch((error) => { leafletLoading = null; throw error; });
-  }
-  return leafletLoading;
-}
 
 export function mapFor(name) {
   if (!maps[name]) {
-    const animate = !reduceMotion();
-    const map = L.map($(`${name}-map`), {
-      attributionControl: false, // the credit is our own text under the map
-      zoomAnimation: animate, fadeAnimation: animate, markerZoomAnimation: animate,
-    });
-    L.tileLayer(TILES, {
-      maxZoom: 19,
-      referrerPolicy: "strict-origin-when-cross-origin", // OSM's tile policy wants a referrer
-    }).addTo(map);
+    const map = makeMap($(`${name}-map`));
     maps[name] = { map, layer: L.layerGroup().addTo(map) };
   }
   return maps[name];
@@ -86,7 +60,7 @@ export function setUpMapToggle(name, draw) {
     if (!opening) return;
     note(status, "Loading the map…");
     try {
-      await loadLeaflet();
+      L = await loadLeaflet();
     } catch {
       note(status, "The map couldn't load. The list has everything the map shows.");
       return;

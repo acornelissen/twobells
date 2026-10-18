@@ -35,7 +35,7 @@ One package, `src/twobells`, a folder per part of the app. Each folder's `__init
 | `fetch/` | The Pi's outbound-only fetch service (`service.py`), and the dashboard's snapshot handed to the web server as a file (`handoff.py`) |
 | `emulator/` | The browser panel emulator (`server.py`, `emulator.html`), its demo and live wiring (`emulation.py`), and the fake sources and clock (`fake.py`) |
 | `dashboard_static/` | The dashboard's pages (`index.html`, `performance.html`): HTML, CSS, JS modules with no build step, vendored Leaflet 1.9.4 |
-| `wizard_static/` | The setup wizard's page: HTML, CSS, a JS module per step. It sits beside `dashboard_static/` because it uses the dashboard's `dom.js`, `icons.js`, Leaflet and Inter by relative path, which must resolve the same on disk as when served |
+| `wizard_static/` | The setup wizard's page: HTML, CSS, a JS module per step. It sits beside `dashboard_static/` because it uses the dashboard's `dom.js`, `icons.js`, `basemap.js`, Leaflet and Inter by relative path, which must resolve the same on disk as when served |
 | `data/` | Stations, NaPTAN areas and Metrolink stops for setup, and London's stops with the TfL lines at each, which the settings read too, built by `tools/build_setup_data.py` |
 | `version.py` | The installed version, for `--version` |
 

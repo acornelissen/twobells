@@ -14,7 +14,7 @@
 // a field whose key comes back with other words flips. A field changed
 // between drawings (a bus's countdown) goes through flapText.
 
-import { h, vh, setText } from "./dom.js";
+import { h, vh, setText, reduceMotion } from "./dom.js";
 
 export const FLAP_LOOK = "flap";
 // The same drum as the HDMI board's (board/flaps.py): a blank, the
@@ -65,7 +65,6 @@ export function flapFrames(from, to, steps = FLAP_STEPS) {
 const shown = new Map();
 
 const isFlapLook = () => document.documentElement?.dataset.theme === FLAP_LOOK;
-const reduceMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 
 // `words` for screen readers and `letters` on tiles: a word's tiles kept
 // together on a line, a space a tile of its own where a line may break.

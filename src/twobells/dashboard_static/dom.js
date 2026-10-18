@@ -133,6 +133,9 @@ export const own = (table, key) => (Object.hasOwn(table, key) ? table[key] : und
 // Row ids are 16 lowercase hex characters; anything else never reaches a URL.
 export const validId = (id) => typeof id === "string" && /^[0-9a-f]{16}$/.test(id);
 
+// Whether the reader asks for less motion: maps jump rather than glide, split-flap tiles don't turn.
+export const reduceMotion = () => globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+
 // Elements that should keep focus across a re-render carry data-focus-key.
 export function focusKey() {
   const el = document.activeElement;

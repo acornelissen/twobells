@@ -6,10 +6,11 @@
 // when opened; its markers and popups are DOM nodes, never strings (Leaflet
 // would parse a string as HTML), and a list beside it says the same in words.
 
-import { $, h, fill, setText, str, num, list, obj, openDialog, setUpDialog, focusKey, refocus } from "./dom.js";
+import { $, h, fill, setText, str, num, list, obj, openDialog, setUpDialog, focusKey, refocus, reduceMotion } from "./dom.js";
 import { getJSON } from "./api.js";
 import { age, now, parseAt } from "./time.js";
-import { busPin, loadLeaflet, roadLine, TILES } from "./map.js";
+import { loadLeaflet, makeMap } from "./basemap.js";
+import { busPin, roadLine } from "./map.js";
 import { icon } from "./icons.js";
 import { shows } from "./show.js";
 
@@ -26,7 +27,6 @@ let request = 0;
 let fitted = false;
 
 const dialog = () => $("area-dialog");
-const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 // --- The line: stations in order, trains placed between them.
 
@@ -206,12 +206,7 @@ function busIcon(vehicle) {
 
 function ensureMap() {
   if (map) return;
-  const animate = !reduceMotion();
-  map = L.map($("area-map"), {
-    zoomControl: false, attributionControl: false,
-    zoomAnimation: animate, fadeAnimation: animate, markerZoomAnimation: animate,
-  });
-  L.tileLayer(TILES, { maxZoom: 19, referrerPolicy: "strict-origin-when-cross-origin" }).addTo(map);
+  map = makeMap($("area-map"), { zoomControl: false });
   layers = L.layerGroup().addTo(map);
 }
 

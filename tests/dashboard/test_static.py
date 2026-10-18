@@ -273,7 +273,20 @@ def test_leaflet_loads_only_by_dynamic_import():
         if path.name == "map.js":
             assert "./dom.js" in static  # the pattern really is finding imports
         assert not [spec for spec in static if "leaflet" in spec], f"{path.name} imports Leaflet up front"
-    assert 'import("./vendor/leaflet-1.9.4/leaflet-src.esm.js")' in (STATIC / "map.js").read_text()
+    assert 'import("./vendor/leaflet-1.9.4/leaflet-src.esm.js")' in (STATIC / "basemap.js").read_text()
+    assert [p.name for p in OWN_JS if "leaflet-src" in p.read_text(encoding="utf-8")] == ["basemap.js"]
+
+
+def test_every_map_is_made_in_one_place():
+    # The dashboard's maps and the wizard's: OSM's tiles, our own credit, no motion when asked for less.
+    makers = [p.name for p in OWN_JS if re.search(r"\bL\.(?:map|tileLayer)\(", p.read_text(encoding="utf-8"))]
+    assert makers == ["basemap.js"]
+    basemap = (STATIC / "basemap.js").read_text(encoding="utf-8")
+    assert "attributionControl: false" in basemap and "zoomAnimation: animate" in basemap
+    assert 'referrerPolicy: "strict-origin-when-cross-origin"' in basemap
+    assert re.findall(r'^import .* from "([^"]+)";$', basemap, re.M) == ["./dom.js"]  # all the wizard is served
+    asks = [p.name for p in OWN_JS if "matchMedia" in p.read_text(encoding="utf-8")]
+    assert asks == ["dom.js"]
 
 
 # --- No HTML injection sinks in our code ---
@@ -4041,7 +4054,7 @@ def test_the_area_map_gives_leaflet_nodes_never_strings():
         assert call.strip().startswith("h("), call
     # The icon is map.js's bus marker, a DOM node built with h() (checked below).
     assert re.search(r"divIcon\(\{\s*html: busPin\(", text)
-    assert "attributionControl: false" in text  # the credit is our own text under the map
+    assert 'makeMap($("area-map"), { zoomControl: false })' in text  # basemap.js leaves the credit to us
 
 
 def test_both_maps_draw_a_bus_built_as_svg_nodes():

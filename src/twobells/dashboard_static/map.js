@@ -3,39 +3,18 @@
 // DOM nodes, never strings (Leaflet would parse a string as HTML). The
 // ordered list under the map says the same things in words.
 
-import { $, h, s as svg, setText, str, num, list, obj, validId } from "./dom.js";
+import { $, h, s as svg, setText, str, num, list, obj, validId, reduceMotion } from "./dom.js";
 import { getJSON } from "./api.js";
+import { loadLeaflet, makeMap } from "./basemap.js";
 import { age, now, parseAt } from "./time.js";
 
-const LEAFLET = "./vendor/leaflet-1.9.4/";
-export const TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-
 let L = null;
-let leafletLoading = null;
 let map = null;
 let layers = null;
 let busMarker = null;
 let busPosition = null;
 let openId = null;
 let request = 0;
-
-const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-// Loads Leaflet once, for this map and the area map; resolves to the module.
-export function loadLeaflet() {
-  if (!leafletLoading) {
-    const css = new Promise((resolve, reject) => {
-      const link = h("link", { rel: "stylesheet", href: new URL(`${LEAFLET}leaflet.css`, import.meta.url).href });
-      link.addEventListener("load", resolve);
-      link.addEventListener("error", reject);
-      document.head.append(link);
-    });
-    leafletLoading = Promise.all([import("./vendor/leaflet-1.9.4/leaflet-src.esm.js"), css])
-      .then(([module]) => { L = module; return module; })
-      .catch((error) => { leafletLoading = null; throw error; });
-  }
-  return leafletLoading;
-}
 
 export function setUpMap() {
   $("map-zoom-in").addEventListener("click", () => map && map.zoomIn(1, { animate: !reduceMotion() }));
@@ -47,16 +26,7 @@ export function setUpMap() {
 
 function ensureMap() {
   if (map) return;
-  const animate = !reduceMotion();
-  map = L.map($("map"), {
-    zoomControl: false, // our own buttons, outside the map, are real <button>s
-    attributionControl: false, // the credit is our own DOM text under the map
-    zoomAnimation: animate, fadeAnimation: animate, markerZoomAnimation: animate,
-  });
-  L.tileLayer(TILES, {
-    maxZoom: 19,
-    referrerPolicy: "strict-origin-when-cross-origin", // OSM's tile policy wants a referrer
-  }).addTo(map);
+  map = makeMap($("map"), { zoomControl: false }); // our own buttons, outside the map, are real <button>s
   layers = L.layerGroup().addTo(map);
 }
 
@@ -176,7 +146,8 @@ export async function showBus(id) {
   $("map-centre").disabled = true;
   $("osm-credit").hidden = false;
   try {
-    const [data] = await Promise.all([getJSON(`/api/bus/${encodeURIComponent(id)}`), loadLeaflet()]);
+    const [data, module] = await Promise.all([getJSON(`/api/bus/${encodeURIComponent(id)}`), loadLeaflet()]);
+    L = module;
     if (mine === request) show(obj(data), true);
   } catch {
     if (mine === request) setText($("map-status"), "The map couldn't be loaded. The bus may have left the board, or the server is busy.");
