@@ -81,14 +81,6 @@ def state_dir(data: dict) -> Path | None:
     return Path(state_file).parent if state_file else None
 
 
-def overlay_paths(config_path: Path | str) -> tuple[Path, Path]:
-    """(settings overlay, secrets overlay) in the store for a config file."""
-    from .store import Store
-
-    store = Store.open(config_path)
-    return store.settings_file, store.secrets_file
-
-
 def merge(base: dict, over: dict) -> dict:
     """Top-level tables like [bus] merge key by key, so keys the page doesn't
     manage (like bus.routes) survive; anything else in `over`, tables below the
@@ -182,13 +174,6 @@ def parse_env(text: str) -> dict[str, str]:
         key, value = line.split("=", 1)
         values[key.strip()] = value.strip().strip("'\"")
     return values
-
-
-def read_config(path: Path | str) -> dict:
-    """config.toml with the settings saved in its store layered over it."""
-    from .store import Store
-
-    return Store.open(path).data()
 
 
 # What examples/config.example.toml has where your station and stops go.

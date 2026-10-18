@@ -34,6 +34,10 @@ from twobells.core import words
 
 PALETTE = Palette(white=0, black=1, accent=2)
 
+def with_section(view, section):
+    """The view with `section` in place of its mode's."""
+    return dataclasses.replace(view, sections=tuple(section if s.mode == section.mode else s for s in view.sections))
+
 
 def board(train_rows=(), bus_rows=(), stale_trains=False, train_leave=None):
     return BoardView(
@@ -406,8 +410,8 @@ def test_no_leave_text_for_a_train_that_is_not_drawn():
     # Only three trains fit; a leave time for the fourth would point at nothing.
     rows = [Row(f"07:{m}", "Manchester", "On time") for m in (12, 20, 31, 42)]
     view = board(rows)
-    for_fourth = view.with_section(dataclasses.replace(view.section("train"), leave="Leave by 07:35 (07:42)", leave_for=3))
-    for_third = for_fourth.with_section(dataclasses.replace(for_fourth.section("train"), leave_for=2))
+    for_fourth = with_section(view, dataclasses.replace(view.section("train"), leave="Leave by 07:35 (07:42)", leave_for=3))
+    for_third = with_section(for_fourth, dataclasses.replace(for_fourth.section("train"), leave_for=2))
     assert ink_in_right_half_of_train_label_row(render(for_fourth, PALETTE)) == 0
     assert ink_in_right_half_of_train_label_row(render(for_third, PALETTE)) > 30
 
@@ -1220,7 +1224,7 @@ NAMED_BUSES = (
 
 def named_on_screen(buses=NAMED_BUSES, stop_names=GLOSSOP_STOPS, clock=CLOCK):
     view = on_screen(buses=buses, clock=clock)
-    return view.with_section(dataclasses.replace(view.section("bus"), stop_names=stop_names))
+    return with_section(view, dataclasses.replace(view.section("bus"), stop_names=stop_names))
 
 
 def named_layouts(panel, buses=NAMED_BUSES, stop_names=GLOSSOP_STOPS):
@@ -1434,7 +1438,7 @@ def test_with_scrolling_off_a_screen_cuts_long_text_short_and_nothing_moves(pane
     drawn = drawn_texts(monkeypatch)
     trains = calling_on_screen().section("train")
     rows = tuple(dataclasses.replace(r, middle=LONG) for r in trains.rows)
-    view = dataclasses.replace(long_on_screen().with_section(dataclasses.replace(trains, rows=rows)), scroll=False)
+    view = dataclasses.replace(with_section(long_on_screen(), dataclasses.replace(trains, rows=rows)), scroll=False)
     frame = board_frame(view, PALETTE, panel)
     assert frame.scrolls == ()
     assert frame.at(SCROLL_PAUSE_S + 5).tobytes() == frame.image.tobytes()

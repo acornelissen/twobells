@@ -178,13 +178,6 @@ def _scrub(text: str, secrets: Mapping[str, str]) -> str:
     return text
 
 
-def save_changes(config_path: Path | str, changes: dict, keys: Mapping[str, str],
-                 env: Mapping[str, str], replace: bool = False) -> dict:
-    """Merge `changes` into the saved settings overlay in the store of a
-    config.toml path and `keys` into its secrets overlay; see save_to."""
-    return save_to(board_target(config_path), changes, keys, env, replace=replace)
-
-
 def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping[str, str],
             replace: bool = False) -> dict:
     """Merge `changes` into the target's saved settings overlay and `keys` into

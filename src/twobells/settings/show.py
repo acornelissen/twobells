@@ -12,10 +12,9 @@ Three presets fill a list (PRESETS): Just the times, The usual (what setup
 gives a new install) and Everything, which is every item but those in no
 preset.
 
-shown() reads a view's list from settings, shows() asks about one item, and
-shown_anywhere() whether any view that is on shows any of some items: what
-a feed is fetched for. This module imports nothing of the app's, so the
-board, the dashboard and the settings can all use it.
+shown() reads a view's list from settings, and shows() asks about one item.
+This module imports nothing of the app's, so the board, the dashboard and
+the settings can all use it.
 """
 
 from __future__ import annotations
@@ -173,16 +172,6 @@ def shows(data: Mapping, view: str, key: str) -> bool:
     if key not in keys(view):
         raise ValueError(f"The {view} has no item {key!r}")
     return key in shown(data, view)
-
-
-def shown_anywhere(data: Mapping, wanted: Iterable[str], views: Iterable[str]) -> bool:
-    """Whether any of `views` (those that are on: schema.views) shows any
-    of the items `wanted`, by settings `data`; a key a view has no item
-    for counts as not shown there. For whether a feed is worth fetching:
-    the weather, say, is wanted by the board's "rain" and the dashboard's
-    "weather"."""
-    wanted = set(wanted)
-    return any(wanted & shown(data, view) for view in views)
 
 
 def check(view: str) -> Callable[[str], list[str]]:

@@ -49,7 +49,6 @@ if TYPE_CHECKING:
 
 # (name, typed value or None, typed app ID or None) -> its result; see SettingsSite.
 KeyTest = Callable[[str, "str | None", "str | None"], keytest.KeyResult]
-ACTIONS = ("save", "save_test", "test")
 # Each key test's result: an icon, hidden from screen readers, and the words that carry it.
 RESULTS = {
     "works": ("check", "Works"),

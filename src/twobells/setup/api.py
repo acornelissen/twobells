@@ -121,8 +121,6 @@ LONDON_STOPS_SHOWN = 8
 # The most stops a search by name lists.
 TRAM_STOPS_FOUND = 10
 MAX_TRAM_STOPS = schema.MAX_TRAM_STOPS
-# Labels for the tram stops picked, in order: T is for tram.
-TRAM_LABELS = ("T", "U", "V", "W")
 MAX_BOARD_STOPS = setup.MAX_BOARD_STOPS
 MAX_WALK_MINUTES = 60
 _CACHED_STOPS = 200

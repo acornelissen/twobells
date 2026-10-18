@@ -138,10 +138,6 @@ class BoardView:
                 return section
         raise KeyError(mode)
 
-    def with_section(self, section: Section) -> BoardView:
-        """The view with `section` in place of its mode's."""
-        return replace(self, sections=tuple(section if s.mode == section.mode else s for s in self.sections))
-
     def signature(self) -> str:
         content = asdict(self)
         content.pop("updated")

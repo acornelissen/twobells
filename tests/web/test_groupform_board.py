@@ -8,7 +8,7 @@ from datetime import datetime
 
 import pytest
 
-from twobells.settings.config import load_config, read_config, read_overlay_in
+from twobells.settings.config import load_config, read_overlay_in
 from twobells.settings.installs import install_named
 from twobells.settings.schema import saved_keys
 from twobells.settings.store import Store
@@ -494,7 +494,7 @@ def test_removing_a_stop_takes_effect(setup):
 def test_clearing_the_station_filter_takes_effect(setup):
     form, config, *_ = setup
     assert form.save(fields_of(form) | {"train_filter_crs": ""}) == {}
-    assert not read_config(config)["train"].get("filter_crs")
+    assert not Store.open(config).data()["train"].get("filter_crs")
     assert fields_of(form)["train_filter_crs"] == ""
 
 
@@ -505,7 +505,7 @@ def test_clearing_directions_takes_effect(tmp_path):
     form = board_form(config, lambda: dict(ENV))
     assert fields_of(form)["bus_directions"] == "Ashton"
     assert form.save(fields_of(form) | {"bus_directions": ""}) == {}
-    assert read_config(config)["bus"]["directions"] == []
+    assert Store.open(config).data()["bus"]["directions"] == []
     assert fields_of(form)["bus_directions"] == ""
 
 
@@ -581,18 +581,18 @@ def test_bank_holidays_are_treated_like_england_and_wales_sundays_unless_turned_
     assert fields_of(form)["bank_holidays"] == "england-and-wales"
     assert form.save({**fields_of(form), "bank_holidays": "ignore"}) == {}
     assert tomllib.loads((state / "settings.toml").read_text())["bank_holidays"] is False
-    assert read_config(config)["bank_holidays"] is False
+    assert Store.open(config).data()["bank_holidays"] is False
     assert fields_of(form)["bank_holidays"] == "ignore"
     assert form.save({**fields_of(form), "bank_holidays": "england-and-wales"}) == {}
-    assert read_config(config)["bank_holidays"] is True
-    assert read_config(config)["bank_holiday_division"] == "england-and-wales"
+    assert Store.open(config).data()["bank_holidays"] is True
+    assert Store.open(config).data()["bank_holiday_division"] == "england-and-wales"
 
 
 def test_the_part_of_the_uk_is_part_of_the_bank_holidays_choice(setup):
     form, config, state, _ = setup
     assert form.save({**fields_of(form), "bank_holidays": "scotland"}) == {}
-    assert read_config(config)["bank_holidays"] is True
-    assert read_config(config)["bank_holiday_division"] == "scotland"
+    assert Store.open(config).data()["bank_holidays"] is True
+    assert Store.open(config).data()["bank_holiday_division"] == "scotland"
     assert fields_of(form)["bank_holidays"] == "scotland"
     # Turned off, the part of the UK is kept for turning them back on: the settings file's shape is unchanged.
     assert form.save({**fields_of(form), "bank_holidays": "ignore"}) == {}
@@ -685,7 +685,7 @@ def test_trains_or_buses_can_be_switched_off_and_back_on(setup):
     assert fields_of(form)["bus_enabled"] == "false" and 'id="bus_stops"' in page  # shown off, to turn back on
     assert form.save(fields_of(form) | {"bus_enabled": "true"}) == {}
     assert [c.source.name for c in load_config(config, ENV).board.sources] == ["train", "bus"]
-    assert read_config(config)["bus"]["stops"] == {"A": "1000DGHS0900", "B": "100000008350"}
+    assert Store.open(config).data()["bus"]["stops"] == {"A": "1000DGHS0900", "B": "100000008350"}
 
 
 def test_switching_a_section_back_on_checks_its_fields(setup):
@@ -854,7 +854,7 @@ def test_a_save_keeps_what_the_setup_wizard_wrote(tmp_path):
     written = tomllib.loads((state / "settings.toml").read_text())
     assert read_overlay_in(state) == written and "dashboard" not in written
 
-    data = read_config(config)
+    data = Store.open(config).data()
     assert (data["title"], data["train"]["rows"]) == ("Home", 2)
     assert data["bus"]["source"] == "bods" and data["bus"]["operators"] == ["BNML"]
     assert set(data["bus"]["routes"]) == {"341"}
@@ -884,7 +884,7 @@ def test_the_page_can_still_clear_a_field_setup_filled(tmp_path):
     (state / "settings.toml").write_text('[train]\nwalk_minutes = 6\nfilter_crs = "MAN"\n')
     form = board_form(config, lambda: dict(ENV))
     assert form.save(fields_of(form) | {"train_walk_minutes": "", "train_filter_crs": ""}) == {}
-    data = read_config(config)
+    data = Store.open(config).data()
     assert data["train"]["walk_minutes"] == "" and data["train"]["filter_crs"] == ""
     assert load_config(config, ENV).board.walk.train is None
 

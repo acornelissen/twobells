@@ -53,7 +53,6 @@ from .build import TimetableBusy, TimetableError, TimetableTooBig
 log = logging.getLogger(__name__)
 
 GTFS_URL = "https://odata.tfgm.com/opendata/downloads/TfGMgtfsnew.zip"
-ATTRIBUTION = "Contains Transport for Greater Manchester data."
 FILE_NAME = "tram-timetable.json"  # beside state.json and the bus timetable
 LOCK_NAME = "tram-timetable.lock"  # beside it; held while a build runs
 FAILED_FILE = "tram-timetable-failed.json"  # beside it after a build fails

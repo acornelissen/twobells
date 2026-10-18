@@ -111,15 +111,6 @@ def test_a_list_that_isn_t_one_is_refused(value, words):
     assert words in str(error.value)
 
 
-def test_whether_anything_on_shows_an_item():
-    data = {"board": {"show": ["rain"]}, "dashboard": {"show": ["next_to_catch"]}}
-    assert show.shown_anywhere(data, ["rain", "weather"], ["board", "dashboard"])
-    assert not show.shown_anywhere(data, ["rain", "weather"], ["dashboard"])  # the board is off
-    assert not show.shown_anywhere(data, ["calling_at"], ["board", "dashboard"])
-    assert show.shown_anywhere({}, ["calling_at"], ["dashboard"])  # no list: everything
-    assert not show.shown_anywhere(data, ["rain"], [])
-
-
 def test_a_form_s_ticks_become_the_list_in_order():
     check = show.check("dashboard")
     assert check("weather next_to_catch") == ["next_to_catch", "weather"]

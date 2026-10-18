@@ -10,7 +10,7 @@ import pytest
 
 from tests.paths import ROOT
 from twobells.settings import keyresults, show
-from twobells.settings.config import load_config, needs_setup, read_base, read_config
+from twobells.settings.config import load_config, needs_setup, read_base
 from twobells.settings.installs import INSTALLS, Install
 from twobells.settings.overlay import Target, board_target
 from twobells.settings.schema import keys as schema_keys
@@ -360,7 +360,7 @@ def test_finishing_writes_what_setup_found_into_the_overlay(board):
     assert saved["bus"]["routes"]["341"]["stop"] == "A"
     assert saved["weather"] == {"lat": 53.46, "lon": -1.97}
     assert saved["bank_holiday_division"] == "scotland"
-    assert read_config(board.config)["bus"]["routes"]["341"]["stops"][0]["name"] == "Hadfield"
+    assert Store.open(board.config).data()["bus"]["routes"]["341"]["stops"][0]["name"] == "Hadfield"
 
 
 def test_finishing_keeps_the_settings_setup_does_not_manage(board):

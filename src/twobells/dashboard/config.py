@@ -59,7 +59,6 @@ from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
 from ..timetable.trams import TramCall
 
 if TYPE_CHECKING:
-    from ..settings.overlay import Target
     from ..settings.store import Store
 
 log = logging.getLogger(__name__)
@@ -325,12 +324,6 @@ def _header_key(env: Mapping[str, str], name: str) -> str:
     if key and (not key.isprintable() or any(c.isspace() for c in key)):
         raise ConfigError(f"{name} has spaces or control characters in it")
     return key
-
-
-def dashboard_target(store: Store) -> Target:
-    """Where the dashboard's settings site and setup wizard save: the store,
-    over config.toml, and only what the dashboard would load."""
-    return store.target(lambda data, env: _build(data, env, store.folder))
 
 
 class FileWatch:

@@ -12,6 +12,10 @@ from twobells.board.view import BoardView, Row, Section, Style
 PALETTE = Palette(white=0, black=1, accent=2)
 FONT = DotFont()
 
+def with_section(view, section):
+    """The view with `section` in place of its mode's."""
+    return dataclasses.replace(view, sections=tuple(section if s.mode == section.mode else s for s in view.sections))
+
 
 def board(trains=(), buses=(), leave=None, leave_for=0, stale_trains=False, stale_buses=False):
     return BoardView(
@@ -1189,7 +1193,7 @@ NAMED_BUSES = [
 
 def named(buses=NAMED_BUSES, stop_names=GLOSSOP_STOPS, clock=CLOCK, **changes):
     view = screen(buses=buses, **changes)
-    return dataclasses.replace(view.with_section(dataclasses.replace(view.section("bus"), stop_names=stop_names)), clock=clock)
+    return dataclasses.replace(with_section(view, dataclasses.replace(view.section("bus"), stop_names=stop_names)), clock=clock)
 
 
 def test_only_the_bar_screen_is_wide_enough_for_stop_names():
@@ -1312,7 +1316,7 @@ CALLING = ("Calling at: Dinting, Broadbottom, Hattersley, Godley and Manchester 
 def calling(view=None, text=CALLING):
     view = view or screen()
     first = dataclasses.replace(view.section("train").rows[0], calling=text)
-    return view.with_section(dataclasses.replace(view.section("train"), rows=(first, *view.section("train").rows[1:])))
+    return with_section(view, dataclasses.replace(view.section("train"), rows=(first, *view.section("train").rows[1:])))
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
@@ -1338,7 +1342,7 @@ def test_only_the_first_train_has_a_calling_at_line():
     view = screen()
     second = dataclasses.replace(view.section("train").rows[1], calling=CALLING)
     trains = view.section("train")
-    view = view.with_section(dataclasses.replace(trains, rows=(trains.rows[0], second, *trains.rows[2:])))
+    view = with_section(view, dataclasses.replace(trains, rows=(trains.rows[0], second, *trains.rows[2:])))
     assert CALLING not in texts(sign_layout(view, *dots(HDMI_1280X400)).items)
 
 

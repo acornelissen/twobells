@@ -6,8 +6,9 @@ import tomllib
 
 import pytest
 
-from twobells.settings.config import ConfigError, read_base, read_config
-from twobells.settings.overlay import OverlayError, Target, save_changes, save_to, to_toml
+from twobells.settings.config import ConfigError, read_base
+from twobells.settings.overlay import OverlayError, Target, board_target, save_to, to_toml
+from twobells.settings.store import Store
 
 ENV = {"RDM_API_KEY": "rdm-secret-123", "BODS_API_KEY": "bods-secret-456"}
 
@@ -72,7 +73,7 @@ def board(tmp_path):
 
 def test_changes_merge_into_the_overlay_keeping_everything_else(board):
     config, state = board
-    save_changes(config, CHANGES, {}, ENV)
+    save_to(board_target(config), CHANGES, {}, ENV)
     saved = tomllib.loads((state / "settings.toml").read_text())
     for key in ("theme", "rotate", "text_size", "accent"):
         assert saved[key] == tomllib.loads(SAVED)[key]
@@ -80,7 +81,7 @@ def test_changes_merge_into_the_overlay_keeping_everything_else(board):
     assert saved["bus"]["rows"] == 5 and saved["bus"]["directions"] == ["Ashton"]
     assert saved["bus"]["stops"] == {"B": "1800SB12341"}
     assert saved["weather"] == {"enabled": False, "threshold_percent": 70, "lat": 53.44, "lon": -1.95}
-    merged = read_config(config)
+    merged = Store.open(config).data()
     assert merged["bus"]["stops"] == {"B": "1800SB12341"}  # replaced, not added to config.toml's A
     assert merged["bus"]["routes"]["341"]["stops"][1]["name"] == 'Glossop "Square"'
 
@@ -89,7 +90,7 @@ def test_a_save_drops_what_the_overlay_may_not_hold(board, caplog):
     config, state = board
     (state / "settings.toml").write_text(SAVED.replace("[train]\n", '[train]\nbase_url = "https://example.invalid"\n')
                                          + '\n[dashboard]\nstate_dir = "/example.invalid"\n')
-    save_changes(config, CHANGES, {}, ENV)
+    save_to(board_target(config), CHANGES, {}, ENV)
     saved = tomllib.loads((state / "settings.toml").read_text())
     assert "base_url" not in saved["train"] and "dashboard" not in saved
     assert saved["theme"] == "plain"
@@ -99,7 +100,7 @@ def test_a_save_drops_what_the_overlay_may_not_hold(board, caplog):
 def test_without_a_saved_overlay_the_changes_are_the_overlay(board):
     config, state = board
     (state / "settings.toml").unlink()
-    written = save_changes(config, CHANGES, {}, ENV)
+    written = save_to(board_target(config), CHANGES, {}, ENV)
     assert tomllib.loads((state / "settings.toml").read_text()) == written == CHANGES
 
 
@@ -107,9 +108,9 @@ def test_nothing_is_written_if_the_settings_would_not_load(board):
     config, state = board
     before = (state / "settings.toml").read_text()
     with pytest.raises(OverlayError, match="RDM_API_KEY"):
-        save_changes(config, CHANGES, {}, {"BODS_API_KEY": "x"})
+        save_to(board_target(config), CHANGES, {}, {"BODS_API_KEY": "x"})
     with pytest.raises(OverlayError, match="crs"):
-        save_changes(config, {"train": {"crs": "TOOLONG"}}, {}, ENV)
+        save_to(board_target(config), {"train": {"crs": "TOOLONG"}}, {}, ENV)
     assert (state / "settings.toml").read_text() == before
     assert not (state / "secrets.env").exists()
 
@@ -118,7 +119,7 @@ def test_a_broken_overlay_is_left_alone(board):
     config, state = board
     (state / "settings.toml").write_text("this is [not toml")
     with pytest.raises(OverlayError, match="can't be read"):
-        save_changes(config, CHANGES, {}, ENV)
+        save_to(board_target(config), CHANGES, {}, ENV)
     assert (state / "settings.toml").read_text() == "this is [not toml"
 
 
@@ -127,7 +128,7 @@ def test_without_a_state_file_the_changes_go_in_the_store(tmp_path):
 
     config = tmp_path / "config.toml"
     config.write_text('[train]\ncrs = "GLO"\n')
-    save_changes(config, {"train": {"rows": 2}}, {}, ENV)
+    save_to(board_target(config), {"train": {"rows": 2}}, {}, ENV)
     assert tomllib.loads(Store.open(config).settings_file.read_text()) == {"train": {"rows": 2}}
     assert not (tmp_path / "settings.toml").exists()
 
@@ -135,7 +136,7 @@ def test_without_a_state_file_the_changes_go_in_the_store(tmp_path):
 def test_keys_go_only_to_the_private_secrets_overlay(board):
     config, state = board
     (state / "secrets.env").write_text("RDM_DETAILS_API_KEY=details\nBODS_API_KEY=old\n")
-    save_changes(config, CHANGES, {"BODS_API_KEY": "new-bods-key"}, {"RDM_API_KEY": "r"})
+    save_to(board_target(config), CHANGES, {"BODS_API_KEY": "new-bods-key"}, {"RDM_API_KEY": "r"})
     assert (state / "secrets.env").read_text() == "RDM_DETAILS_API_KEY=details\nBODS_API_KEY=new-bods-key\n"
     assert stat.S_IMODE((state / "secrets.env").stat().st_mode) == 0o600
     assert "new-bods-key" not in (state / "settings.toml").read_text()
@@ -144,11 +145,11 @@ def test_keys_go_only_to_the_private_secrets_overlay(board):
 def test_a_key_is_checked_and_never_repeated(board):
     config, state = board
     with pytest.raises(OverlayError) as caught:
-        save_changes(config, CHANGES, {"BODS_API_KEY": "has spaces in-it"}, ENV)
+        save_to(board_target(config), CHANGES, {"BODS_API_KEY": "has spaces in-it"}, ENV)
     assert "has spaces" not in str(caught.value) and "BODS_API_KEY" in str(caught.value)
     # The key is right but the settings fail: the message names no key value.
     with pytest.raises(OverlayError) as caught:
-        save_changes(config, {"train": {"crs": "TOOLONG"}}, {"RDM_API_KEY": "TOOLONG"}, {})
+        save_to(board_target(config), {"train": {"crs": "TOOLONG"}}, {"RDM_API_KEY": "TOOLONG"}, {})
     assert "TOOLONG" not in str(caught.value)
     assert not (state / "secrets.env").exists()
 
@@ -228,7 +229,7 @@ def test_a_save_that_cannot_write_says_so_without_the_key(board):
     state.chmod(0o500)
     try:
         with pytest.raises(OverlayError, match="Not saved") as caught:
-            save_changes(config, CHANGES, {"BODS_API_KEY": "pasted-secret-789"}, ENV)
+            save_to(board_target(config), CHANGES, {"BODS_API_KEY": "pasted-secret-789"}, ENV)
     finally:
         state.chmod(0o700)
     assert "pasted-secret-789" not in str(caught.value)
@@ -239,7 +240,7 @@ def test_a_secrets_overlay_that_is_not_text_stops_a_key_save_cleanly(board):
     config, state = board
     (state / "secrets.env").write_bytes(b"BODS_API_KEY=old-secret-\xff\n")
     with pytest.raises(OverlayError, match="Not saved") as caught:
-        save_changes(config, CHANGES, {"RDM_API_KEY": "pasted-secret-789"}, ENV)
+        save_to(board_target(config), CHANGES, {"RDM_API_KEY": "pasted-secret-789"}, ENV)
     assert "secret" not in str(caught.value).replace("secrets.env", "")
     assert (state / "secrets.env").read_bytes() == b"BODS_API_KEY=old-secret-\xff\n"
     assert (state / "settings.toml").read_text() == SAVED

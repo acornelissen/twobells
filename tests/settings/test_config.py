@@ -414,12 +414,12 @@ def test_saved_settings_are_layered_over_config(tmp_path):
 
 
 def test_overlay_cannot_move_the_state_file(tmp_path):
-    from twobells.settings.config import read_config
+    from twobells.settings.store import Store
 
     path = _with_state(tmp_path, "")
     (tmp_path / "state").mkdir()
     (tmp_path / "state" / "settings.toml").write_text('state_file = "/etc/evil.json"\n')
-    assert read_config(path)["state_file"] == str(tmp_path / "state" / "state.json")
+    assert Store.open(path).data()["state_file"] == str(tmp_path / "state" / "state.json")
 
 
 def test_saved_settings_cannot_send_the_keys_to_another_address(tmp_path, caplog):
@@ -530,21 +530,20 @@ def test_wrong_types_and_ranges_are_config_errors(tmp_path, text, message):
 
 
 def test_broken_config_toml_is_a_config_error_when_finding_the_overlay(tmp_path):
-    from twobells.settings.config import overlay_paths
+    from twobells.settings.store import Store
 
     with pytest.raises(ConfigError, match=r"config\.toml"):
-        overlay_paths(write(tmp_path, "title = \n"))
+        Store.open(write(tmp_path, "title = \n"))
 
 
 def test_no_state_file_means_the_store_s_overlay_not_the_working_directory_s(tmp_path, monkeypatch):
-    from twobells.settings.config import overlay_paths
-    from twobells.settings.store import platform_folder
+    from twobells.settings.store import Store, platform_folder
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / "settings.toml").write_text('title = "From cwd"\n')
     path = write(tmp_path, 'title = "Base"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
     assert load_config(path, ENV).board.title == "Base"
-    assert overlay_paths(path)[0] == platform_folder() / "settings.toml"
+    assert Store.open(path).settings_file == platform_folder() / "settings.toml"
 
 
 HOLIDAY = date(2026, 8, 31)

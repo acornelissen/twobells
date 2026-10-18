@@ -6,11 +6,11 @@ from twobells.dashboard.config import (
     DashboardOptions,
     FileWatch,
     dashboard_options,
-    dashboard_target,
     load_dashboard,
 )
 from twobells.settings import show
 from twobells.settings.config import ConfigError
+from twobells.settings.installs import install_named
 from twobells.settings.overlay import OverlayError, save_to
 from twobells.settings.store import Store
 from twobells.sources.bodsbus import BodsBusSource
@@ -489,10 +489,13 @@ def test_checking_settings_takes_no_lock_and_makes_no_folder(config, tmp_path, o
     assert running.lock is not None
 
 
-def test_the_dashboard_target_saves_only_what_the_dashboard_loads(config, tmp_path):
+def test_a_dashboard_stores_target_saves_only_what_the_dashboard_loads(config, tmp_path):
+    from twobells.web.groupform import check_views
+
     folder = tmp_path / "dash"
     folder.mkdir()
-    target = dashboard_target(Store.open(config, state_dir=folder))
+    store = Store.open(config, state_dir=folder)
+    target = store.target(lambda data, env: check_views(data, env, folder, install_named("docker")))  # as serve's
     save_to(target, {"dashboard": {"bus_rows": 3}, "train": {"crs": "MAN"}}, {"BODS_API_KEY": "new-key"}, ENV)
     assert (folder / "settings.toml").exists() and "new-key" in (folder / "secrets.env").read_text()
     assert not (tmp_path / "board").exists()

@@ -7,10 +7,10 @@ import tomllib
 
 import pytest
 
-from twobells.dashboard.config import dashboard_target, load_dashboard
+from twobells.dashboard.config import load_dashboard
 from twobells.settings.installs import install_named
 from twobells.settings.store import Store
-from twobells.web.groupform import GroupForm
+from twobells.web.groupform import GroupForm, check_views
 
 CONFIG = """
 title = "Glossop"
@@ -265,7 +265,8 @@ def test_everything_setup_and_the_page_save_is_read_back(form):
 
     stations = (("Glossop", "GLO", 53.4445, -1.9491), ("Manchester Piccadilly", "MAN", 53.4774, -2.2309))
     store = Store.open(form.config, state_dir=form.folder)
-    wizard = SetupApi(dashboard_target(store), lambda: store.env(ENV), form.folder, stations=lambda: stations,
+    target = store.target(lambda data, env: check_views(data, env, store.folder, install_named("docker")))  # as serve's
+    wizard = SetupApi(target, lambda: store.env(ENV), form.folder, stations=lambda: stations,
                       make_job=FoundJob, keys=keys("general", "dashboard"))
     assert wizard.handle("start", {"stops": {"A": "1800SB12341"}, "routes": True})[0] == 200
     status, body = wizard.handle("finish", {
