@@ -4,7 +4,11 @@
 # owner of the data volume since the first image, whatever its name.
 FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 
+# PYTHONSAFEPATH: `python -m` and `-c` (the entrypoint, the health check,
+# docker exec) would put the working folder, /data, first on sys.path, so a
+# urllib.py or twobells/ written into the volume would run in their place.
 ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONSAFEPATH=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \

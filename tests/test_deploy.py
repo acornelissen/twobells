@@ -112,6 +112,16 @@ def test_the_container_serves_as_a_docker_install_in_its_one_writable_folder():
     assert "EXPOSE 8090" in DOCKERFILE and "127.0.0.1:8090/healthz" in DOCKERFILE
 
 
+def test_python_in_the_container_never_imports_from_the_data_volume():
+    # The entrypoint, the health check and docker exec run `python -m` or `-c` in
+    # WORKDIR /data, which the app's user can write: without PYTHONSAFEPATH a
+    # urllib.py or twobells/ there would run in place of the real one.
+    env = DOCKERFILE[DOCKERFILE.index("\nENV "):DOCKERFILE.index("\n\n", DOCKERFILE.index("\nENV "))]
+    assert re.search(r"^\s+PYTHONSAFEPATH=1 \\$", env, re.M)
+    assert DOCKERFILE.index("PYTHONSAFEPATH=1") < DOCKERFILE.index("ENTRYPOINT")
+    assert _entrypoint()[:2] == ["python", "-m"] and 'CMD ["python", "-c",' in DOCKERFILE
+
+
 def test_the_documented_password_commands_fit_the_container():
     # Run with docker exec as the image's user, in the one writable place: /data.
     from twobells.cli.main import _parser
