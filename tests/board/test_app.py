@@ -1287,7 +1287,7 @@ def test_the_board_reads_the_code_the_settings_page_left(tmp_path):
     import time
 
     from twobells.board.app import reset_code_page
-    from twobells.web.auth import ResetCodes
+    from twobells.settings.resetcodes import ResetCodes
 
     page = reset_code_page(tmp_path, "Europe/London")
     assert page() is None

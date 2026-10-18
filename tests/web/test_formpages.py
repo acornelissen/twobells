@@ -11,17 +11,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from twobells.web.auth import (
-    MAX_FAILURES,
-    RESET_MAX_TRIES,
-    TOO_COMMON,
-    TOTAL_FAILURES,
-    FormTokens,
-    Lockout,
-    PasswordStore,
-    ResetCodes,
-    Sessions,
-)
+from twobells.settings.resetcodes import RESET_MAX_TRIES, ResetCodes
+from twobells.web.auth import MAX_FAILURES, TOO_COMMON, TOTAL_FAILURES, FormTokens, Lockout, PasswordStore, Sessions
 from twobells.web.formpages import (
     HTML,
     TEXT,

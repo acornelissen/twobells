@@ -922,8 +922,8 @@ def test_bods_bus_fallback_windows_are_checked(tmp_path):
 def test_the_board_looks_for_a_reset_code_in_the_store(tmp_path):
     import time
 
+    from twobells.settings.resetcodes import ResetCodes
     from twobells.settings.store import platform_folder
-    from twobells.web.auth import ResetCodes
 
     elsewhere = load_config(write(tmp_path, TRAIN), ENV).board
     code = ResetCodes(platform_folder()).issue(time.time())  # no state_file: the platform's folder
@@ -1031,7 +1031,7 @@ def test_first_run_settings_use_the_templates_display_and_state_folder(tmp_path)
     import time
 
     from twobells.settings.config import first_run_settings
-    from twobells.web.auth import ResetCodes
+    from twobells.settings.resetcodes import ResetCodes
 
     settings = first_run_settings(installed_template(tmp_path))
     assert settings.board.sources == [] and settings.board.weather is None

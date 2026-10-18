@@ -91,7 +91,7 @@ def _reset_code(folder: Path, where: str, zone: ZoneInfo) -> int:
     goes, with when it runs out in `zone` (the process's own may be UTC, as
     in Docker). Running this proves access, so no rate limit, and the code
     comes here rather than to the board or the log."""
-    from ..web.auth import ResetCodes, spaced
+    from ..settings.resetcodes import ResetCodes, spaced
 
     def show(code: str, expires: float) -> None:
         until = datetime.fromtimestamp(expires, zone).strftime("%H:%M")

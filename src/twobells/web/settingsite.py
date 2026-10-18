@@ -4,8 +4,8 @@ The one server (web/server.py) hands it every request under /settings,
 once it has let the request in
 (from the home network, naming a local host). The rest of the server is
 the read-only dashboard; this part changes what the board and the
-dashboard run on, so it needs signing in. The machinery is web/auth.py's, and
-the pages and forms web/formpages.py's:
+dashboard run on, so it needs signing in. The machinery is web/auth.py's (the
+reset codes settings/resetcodes.py's), and the pages and forms web/formpages.py's:
 
 - The password is web.json in the store, one per install. The first
   claim, when none is set, and a forgotten one both need a one-time code:
@@ -65,6 +65,7 @@ from ..board.state import StateStore
 from ..core.errors import ConfigError
 from ..settings import schema
 from ..settings.config import needs_setup
+from ..settings.resetcodes import ResetCodes
 from ..settings.schema import BOARD_DEFAULTS
 from ..setup import api as setupapi
 from ..setup.keytest import KeyResult
@@ -73,15 +74,7 @@ from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
 from ..version import about, package_version
 from . import keystate
 from . import overview as view
-from .auth import (
-    FORM_PAGE_HEADERS,
-    FormTokens,
-    Lockout,
-    PasswordStore,
-    ResetCodes,
-    Sessions,
-    same_origin,
-)
+from .auth import FORM_PAGE_HEADERS, FormTokens, Lockout, PasswordStore, Sessions, same_origin
 from .formpages import (
     MAX_FORM_BODY,
     FormPages,

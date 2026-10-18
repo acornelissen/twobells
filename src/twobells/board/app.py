@@ -21,10 +21,10 @@ from ..core.model import Departure, mark_platform_changes, minutes_between
 from ..core.polling import PollPolicy, Window
 from ..core.walk import WalkTimes, leave_time
 from ..settings import show as show_items
+from ..settings.resetcodes import ResetCodes, spaced
 from ..sources.bods import Vehicle
 from ..sources.lastbus import screen_line
 from ..sources.weather import Hour, hours_from_dicts, hours_to_dicts, rain_line
-from ..web.auth import ResetCodes, spaced
 from . import positions as row_positions
 from .panel import Panel
 from .platformclock import ClockView, clock_view, render_clock

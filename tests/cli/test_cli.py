@@ -662,7 +662,7 @@ def _web_config(tmp_path):
 def test_reset_code_prints_a_code_the_page_will_take(tmp_path, capsys):
     import time
 
-    from twobells.web.auth import ResetCodes
+    from twobells.settings.resetcodes import ResetCodes
 
     config, state = _web_config(tmp_path)
     assert main(["serve", "--install", "pi", "--config", str(config), "--reset-code"]) == 0
@@ -707,7 +707,7 @@ def test_reset_code_still_comes_when_the_time_zone_setting_is_broken(tmp_path, c
 def test_reset_code_is_not_held_back_by_the_pages_limits(tmp_path, capsys):
     import time
 
-    from twobells.web.auth import ResetCodes
+    from twobells.settings.resetcodes import ResetCodes
 
     config, state = _web_config(tmp_path)
     ResetCodes(state).issue(time.time())  # someone just pressed the page's button
@@ -1624,7 +1624,8 @@ def test_serve_with_the_dashboard_view_off_runs_only_the_settings(tmp_path, serv
 
 @pytest.mark.parametrize("install", ["docker"])  # a desktop's is the dashboard command's, tested below
 def test_serve_sets_the_password_and_prints_a_code_in_the_store(tmp_path, typed, no_dashboard, capsys, install):
-    from twobells.web.auth import PasswordStore, ResetCodes
+    from twobells.settings.resetcodes import ResetCodes
+    from twobells.web.auth import PasswordStore
 
     typed[0].extend([DASH_PASSWORD] * 2)
     folder = tmp_path / "data"
@@ -1930,7 +1931,8 @@ def test_dashboard_set_password_without_a_folder_or_config_uses_this_computer_s_
 
 
 def test_dashboard_set_password_uses_the_same_password_as_the_boards_page(tmp_path, typed, no_dashboard, capsys):
-    from twobells.web.auth import PasswordStore, ResetCodes, show_in_log
+    from twobells.settings.resetcodes import ResetCodes, show_in_log
+    from twobells.web.auth import PasswordStore
 
     config, state = _web_config(tmp_path)
     typed[0].extend([DASH_PASSWORD] * 2)
@@ -2000,7 +2002,7 @@ def test_the_password_flags_are_one_or_the_other(tmp_path, command):
 
 
 def test_dashboard_reset_code_prints_one_code_the_settings_will_take(tmp_path, no_dashboard, capsys, caplog):
-    from twobells.web.auth import ResetCodes, show_in_log
+    from twobells.settings.resetcodes import ResetCodes, show_in_log
 
     caplog.set_level("DEBUG")
     folder = tmp_path / "data"
@@ -2109,7 +2111,7 @@ def test_the_setup_page_is_drawn_for_the_configured_display(tmp_path, display, s
 def test_a_code_asked_for_shows_on_a_board_not_yet_set_up(tmp_path):
     import time
 
-    from twobells.web.auth import ResetCodes
+    from twobells.settings.resetcodes import ResetCodes
 
     config = installed_template(tmp_path)
     assert main(first_run_args(tmp_path, config)) == 0
@@ -2218,7 +2220,7 @@ def test_with_the_board_view_on_the_board_fetches_as_ever(tmp_path, fetched):
 
 
 def test_a_code_asked_for_still_shows_with_the_board_view_off(tmp_path, fetched):
-    from twobells.web.auth import ResetCodes
+    from twobells.settings.resetcodes import ResetCodes
 
     args = board_with_views(tmp_path, ["dashboard"])
     assert main(args) == 0
