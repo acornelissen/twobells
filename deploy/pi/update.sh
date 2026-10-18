@@ -115,7 +115,7 @@ rm -rf "$build/build" "$build"/src/*.egg-info
   || { echo "A dependency is missing; see the error above" >&2; exit 1; }
 
 for unit in twobells.service twobells.timer twobells-screen.service twobells-web.service \
-    twobells-guard.service twobells-timetable.service twobells-timetable.timer \
+    twobells-guard.service twobells-timetable.service twobells-timetable.timer twobells-timetable.path \
     twobells-fetch.service twobells-fetch.path; do
   install -m 644 "$REPO/deploy/pi/$unit" /etc/systemd/system/
 done
@@ -160,10 +160,12 @@ say_if_unguarded
 
 # Bus times from the BODS timetable, and trams from TfGM's, need it built and
 # kept fresh. The timer is on whatever the settings, so stops set up later are
-# built within the hour (an older install turned it on only for those set up
-# then). When they want one, a build starts now; the first takes minutes, so
-# it carries on in the background.
+# built (an older install turned it on only for those set up then): it checks
+# hourly, and the .path unit as soon as the settings are saved. When they want
+# one, a build starts now; the first takes minutes, so it carries on in the
+# background.
 systemctl enable --now twobells-timetable.timer
+systemctl enable --now twobells-timetable.path
 if query needs-timetable >/dev/null; then
   systemctl start --no-block twobells-timetable.service
   echo "Building the timetables; follow it with: journalctl -u twobells-timetable -f"

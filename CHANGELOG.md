@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Fixed
+
+- On a Pi, tram and bus stops saved in the setup wizard or on the settings pages have their timetable built straight away, not at the timetable timer's next hourly check. Until then the board said "there is no tram timetable yet" for up to an hour after setting up Metrolink stops. A new `twobells-timetable.path` starts the timetable check whenever the settings are saved; it builds only what is due. `install.sh` and `update.sh` turn it on.
+
 ## [0.4.2] - 2026-10-18
 
 The HDMI screen shows the board on a Pi 4 with Raspberry Pi OS Trixie, and its scrolling text moves evenly.

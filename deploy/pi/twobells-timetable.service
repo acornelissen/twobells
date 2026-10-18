@@ -2,6 +2,10 @@
 Description=Two Bells: build the BODS bus timetable and the Metrolink tram timetable if due
 Wants=network-online.target
 After=network-online.target
+# Started by the timer and by twobells-timetable.path on each settings save,
+# which come in runs; a build that fails exits 1. A start limit would fail
+# the .path unit, and the timer with it.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot

@@ -839,6 +839,25 @@ def test_install_and_update_always_turn_the_timetable_timer_on(name):
     assert "\nsystemctl enable --now twobells-timetable.timer\n" in _script(name)
 
 
+def test_saving_the_settings_starts_a_timetable_check():
+    # Trams or BODS buses set up in the wizard are built straight away, not at the
+    # timer's next hour: systemd watches the saved settings (replaced whole, which
+    # PathChanged sees too) and starts the check, which builds only what is due.
+    from twobells.settings.store import OVERLAY_NAME
+
+    path = _unit("twobells-timetable.path")
+    assert path["PathChanged"] == [f"/var/lib/twobells/{OVERLAY_NAME}"]
+    assert path["Unit"] == ["twobells-timetable.service"]
+    # Saves come in runs (the settings pages save each change), and a build that fails
+    # exits 1: no start limit, which would fail the .path unit and the timer with it.
+    assert _unit("twobells-timetable.service")["StartLimitIntervalSec"] == ["0"]
+
+
+@pytest.mark.parametrize("name", SCRIPTS)
+def test_install_and_update_watch_the_settings_for_a_timetable_check(name):
+    assert "\nsystemctl enable --now twobells-timetable.path\n" in _script(name)
+
+
 def test_update_starts_a_timetable_build_only_when_the_settings_want_one():
     build = "if query needs-timetable >/dev/null; then\n  systemctl start --no-block twobells-timetable.service\n"
     assert build in _script("update.sh")

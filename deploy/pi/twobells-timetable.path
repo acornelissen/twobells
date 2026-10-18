@@ -1,0 +1,14 @@
+[Unit]
+Description=Two Bells: check the timetables when the settings are saved
+
+[Path]
+# The setup wizard and the settings pages save to settings.toml (replaced
+# whole, which PathChanged sees too). systemd starts the timetable check,
+# which builds only what is due: trams or BODS buses just set up, or stops
+# that changed. So they are built now, not at the timer's next hour, and
+# the web server needs no access to systemd, as with twobells-fetch.path.
+PathChanged=/var/lib/twobells/settings.toml
+Unit=twobells-timetable.service
+
+[Install]
+WantedBy=paths.target

@@ -89,7 +89,7 @@ systemctl is-active --quiet twobells-web.service && restart_web=true
 restart_fetch=false
 systemctl is-active --quiet twobells-fetch.service && restart_fetch=true
 for unit in twobells.service twobells.timer twobells-screen.service twobells-web.service \
-    twobells-guard.service twobells-timetable.service twobells-timetable.timer \
+    twobells-guard.service twobells-timetable.service twobells-timetable.timer twobells-timetable.path \
     twobells-fetch.service twobells-fetch.path; do
   install -m 644 "$REPO/deploy/pi/$unit" /etc/systemd/system/
 done
@@ -138,9 +138,11 @@ say_if_unguarded() {
 }
 say_if_unguarded
 # Bus times from the BODS timetable, and trams from TfGM's, need it built and
-# kept fresh. On whatever the settings, so stops set up later are built within
-# the hour: it builds only when one is due, and does nothing without them.
+# kept fresh. On whatever the settings, so stops set up later are built: it
+# builds only when one is due, and does nothing without them. The timer checks
+# hourly; the .path unit as soon as the settings are saved.
 systemctl enable --now twobells-timetable.timer
+systemctl enable --now twobells-timetable.path
 
 # The board itself is yours to start, so it is only named here: the e-paper
 # timer, or the screen's service, by the display config.toml sets.
@@ -174,8 +176,8 @@ cat <<EOF
      keys, saved for you. No need to edit config.toml by hand.
 EOF
 cat <<EOF
-  3. The bus and tram timetables are built and kept fresh by
-     twobells-timetable.timer, within the hour of setting up your stops.
+  3. The bus and tram timetables are built as soon as you save your stops,
+     and kept fresh by twobells-timetable.timer.
   4. Watch it:         journalctl -u ${renderer%.timer} -f
      Check the keys:   sudo $PREFIX/venv/bin/twobells probe train
                        sudo $PREFIX/venv/bin/twobells probe bus
