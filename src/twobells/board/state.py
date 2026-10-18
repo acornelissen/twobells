@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from datetime import datetime
 from pathlib import Path
 
 from ..core import files
+from ..core.bounded import finite
 from ..core.model import Departure, Status
 from ..sources.bods import Vehicle
 
@@ -75,13 +76,36 @@ def vehicle_to_dict(vehicle: Vehicle) -> dict:
     return data
 
 
+def vehicle_from_dict(data: dict) -> Vehicle:
+    """A saved bus position. Raises TypeError or ValueError if it isn't one,
+    such as a position off the map or not a finite number (JSON reads 10**400
+    as an int too big for a float). Vehicle doesn't check its own fields, as
+    parse_siri_vm checks what it reads, so they are checked here."""
+    if not isinstance(data, dict):
+        raise TypeError("a saved bus position is not an object")
+    lat, lon, bearing = finite(data.get("lat")), finite(data.get("lon")), finite(data.get("bearing"))
+    if lat is None or lon is None or not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise ValueError("position is not on the map")
+    if bearing is None and data.get("bearing") is not None:
+        raise ValueError("bearing is not a number")
+    numbers = {"lat": lat, "lon": lon, "bearing": bearing}
+    vehicle = Vehicle(**{**data, **numbers, "origin_aimed": from_iso(data.get("origin_aimed"))})
+    for field in fields(vehicle):
+        if field.name not in (*numbers, "origin_aimed") and not isinstance(getattr(vehicle, field.name), str):
+            raise TypeError(f"{field.name} is not text")
+    return vehicle
+
+
 def vehicles_from_dicts(items: list) -> list[Vehicle]:
     """Saved bus positions, skipping any that don't read back (hand-edited, or from another version)."""
+    if not isinstance(items, list):
+        log.warning("Ignoring saved bus positions that aren't a list: %r", type(items).__name__)
+        return []
     vehicles = []
     for item in items:
         try:
-            vehicles.append(Vehicle(**{**item, "origin_aimed": from_iso(item.get("origin_aimed"))}))
-        except (TypeError, ValueError, AttributeError) as error:
+            vehicles.append(vehicle_from_dict(item))
+        except (TypeError, ValueError) as error:
             log.warning("Skipping a saved bus position that doesn't read back: %r (%s)", item, error)
     return vehicles
 

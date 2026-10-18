@@ -1,9 +1,19 @@
+import dataclasses
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from twobells.board.state import MEMORY_ONLY, StateStore, departure_from_dict, departure_to_dict
+from twobells.board.state import (
+    MEMORY_ONLY,
+    StateStore,
+    departure_from_dict,
+    departure_to_dict,
+    vehicle_to_dict,
+    vehicles_from_dicts,
+)
 from twobells.core.model import Departure, Status
+from twobells.sources.bods import Vehicle
 
 
 def test_missing_state_file_loads_empty(tmp_path):
@@ -213,3 +223,52 @@ def test_row_strips_are_never_saved_nor_read_back(tmp_path):
     assert MEMORY_ONLY in state  # still in memory
     (tmp_path / "state.json").write_text(json.dumps({"sources": {}, MEMORY_ONLY: {"bus": {}}}))
     assert store.load() == {"sources": {}}
+
+
+def _vehicle(**changes):
+    aimed = datetime(2026, 10, 8, 6, 40, tzinfo=timezone(timedelta(hours=1)))
+    vehicle = Vehicle("341", "Hyde", "inbound", 53.44, -2.0, "2026-10-08T07:00:00+01:00", 90.0,
+                      operator="BNML", origin_ref="1800SB12345", origin_aimed=aimed)
+    return dataclasses.replace(vehicle, **changes)
+
+
+def test_a_saved_bus_position_round_trips():
+    vehicle = _vehicle()
+    assert vehicles_from_dicts([vehicle_to_dict(vehicle)]) == [vehicle]
+    unknown = _vehicle(bearing=None, origin_aimed=None)
+    assert vehicles_from_dicts([vehicle_to_dict(unknown)]) == [unknown]
+    whole = {**vehicle_to_dict(vehicle), "lat": 53, "lon": -2}  # as a hand-edited file may have them
+    assert vehicles_from_dicts([whole]) == [_vehicle(lat=53.0, lon=-2.0)]
+
+
+def _bad_vehicle_rows():
+    good = vehicle_to_dict(_vehicle())
+    without_lat = {key: value for key, value in good.items() if key != "lat"}
+    without_line = {key: value for key, value in good.items() if key != "line"}
+    return [
+        {**good, "lat": 10**400}, {**good, "lon": -(10**400)}, {**good, "bearing": 10**400},
+        {**good, "lat": "53.44"}, {**good, "lon": None}, {**good, "lat": True}, {**good, "bearing": "east"},
+        {**good, "lat": 91.0}, {**good, "lon": -180.5},
+        {**good, "line": 341}, {**good, "operator": None}, {**good, "recorded_at": ["07:00"]},
+        {**good, "origin_aimed": 5}, {**good, "origin_aimed": "not a time"}, {**good, "colour": "red"},
+        without_lat, without_line, "341", None, [1, 2], 53.44,
+    ]
+
+
+def test_saved_bus_positions_that_dont_read_back_are_skipped_with_a_warning(caplog):
+    bad = _bad_vehicle_rows()
+    with caplog.at_level("WARNING"):
+        assert vehicles_from_dicts([bad[0], vehicle_to_dict(_vehicle()), *bad[1:]]) == [_vehicle()]
+    assert len(caplog.records) == len(bad)
+
+
+def test_a_state_file_with_bad_bus_positions_still_reads_the_good_ones(tmp_path):
+    path = tmp_path / "state.json"
+    rows = [*_bad_vehicle_rows(), vehicle_to_dict(_vehicle())]
+    path.write_text(json.dumps({"vehicles": {"items": rows}}))  # 10**400 is written as its 401 digits
+    assert vehicles_from_dicts(StateStore(path).load()["vehicles"]["items"]) == [_vehicle()]
+
+
+@pytest.mark.parametrize("items", [5, None, "341", {"line": "341"}])
+def test_saved_bus_positions_that_are_not_a_list_read_as_none(items):
+    assert vehicles_from_dicts(items) == []
