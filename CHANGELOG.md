@@ -15,7 +15,11 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 - The web server logs a fault answering a request, such as a file it can't read, by the fault's type. It took every such fault for a browser going away and logged nothing, on the dashboard's event stream too.
 - On the dashboard's area map, a bus whose position time comes without a UTC offset shows how old the position is, read as UTC as the rest of the dashboard reads it, rather than no age at all.
 - On the dashboard, a bus row's **Disruption** link keeps the keyboard focus when the boards are drawn again with each update. The focus went back to the top of the page, so a keyboard user lost their place (WCAG 2.4.3).
-- A reminder for a cancelled tram, Underground train, river bus or ferry is headed by what was cancelled (**Tram cancelled**, **Ferry cancelled**), not **Train cancelled** for all of them.
+- A reminder for a cancelled tram, river bus, cable car, ferry or replacement bus is headed by what was cancelled (**Tram cancelled**, **Ferry cancelled**), not **Train cancelled** for all of them.
+
+### Security
+
+- The setup wizard's last step shows a link the server sends only when it is a plain path on this site or a plain web address, as the server itself checks. It took anything starting with `/` or `http`, `/\evil.example.com` among them, which some browsers open as another site; the server never sends one, so this only backs its check up.
 
 ### Security
 

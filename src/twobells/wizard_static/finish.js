@@ -8,7 +8,9 @@ import { say, setError, shout } from "./say.js";
 import { state, stopName } from "./state.js";
 import { go } from "./steps.js";
 
-const LINK = /^(\/(?!\/)|https?:\/\/)/;
+// A link the server may send for the done step, as setup/api.py's _LINK: a
+// plain path on this site, or http(s) to a plain host, with nothing more.
+const LINK = /^(\/(?!\/)[A-Za-z0-9._~/-]*|https?:\/\/[A-Za-z0-9.-]+(:[0-9]{1,5})?(\/[A-Za-z0-9._~/-]*)?)$/;
 
 // The keys pasted on the keys step, by name: sent with the search (the
 // bus key) and when saving.

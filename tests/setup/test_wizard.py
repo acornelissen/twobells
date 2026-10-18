@@ -894,6 +894,24 @@ def test_the_stops_shortcut_ticks_todays_stops_and_saves_only_them():
 
 
 @needs_node
+def test_the_done_step_links_only_where_the_server_would():
+    # As setup/api.py's _LINK: a plain path on this site, or http(s) to a plain host.
+    given = ["/settings", "/\\evil.example.com/", "//evil.example.com/", "/settings?x=<b>", "javascript:alert(1)",
+             "https://board.local:8090/", "https://evil.example.com@board/", "/settings\n", "/"]
+    links = [{"label": f"Link {i}", "href": href} for i, href in enumerate(given)]
+    found = run_wizard("""
+        click("stops-next");
+        await settle();
+        click("walk-next");
+        await settle();
+        click("save");
+        await settle();
+        console.log(JSON.stringify([...$("done-links").querySelectorAll("a")].map((a) => a.getAttribute("href"))));
+    """, "?step=stops", walk={"walk": {}}, finish={"saved": True, "message": "Saved.", "links": links})
+    assert found == ["/settings", "https://board.local:8090/", "/"]
+
+
+@needs_node
 def test_the_station_shortcut_picks_todays_station_and_saves_only_it():
     found = run_wizard("""
         const start = { glo: $("station-GLO").checked, hdf: $("station-HDF").checked, filter: $("filter").value };
