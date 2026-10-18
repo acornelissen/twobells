@@ -733,7 +733,7 @@ def test_the_overview_gives_the_wall_tablets_address_on_the_host_used(dash):
 def test_the_overview_says_which_keys_are_set_never_what_they_are(signed):
     page = signed("GET", "/settings", cookie=signed.session())[1]
     keys = re.search(r'<section class="keys card"[^>]*>(.*?)</section>', page).group(1)
-    assert "<dt>Rail Data Marketplace key</dt>" in keys and "Set" in keys
+    assert "<dt>Trains</dt>" in keys and "Saved, not tested" in keys
     assert "rail-key" not in page and "bods-key" not in page
     assert '<a href="/settings/keys">Change or test keys</a>' in keys
 
@@ -1055,7 +1055,7 @@ def test_a_board_only_pi_with_a_screen_saves_the_where_each_train_is_key(make):
     after(screen, response, cookie)
     assert "RDM_DETAILS_API_KEY=details-key-0042" in screen.store.secrets_file.read_text()
     overview = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", screen("GET", "/settings", cookie=cookie)[1]))
-    assert "Rail Data Marketplace key for where each train is Set" in overview
+    assert "Where each train is Saved, not tested" in overview
 
 
 def test_a_keys_hint_does_not_repeat_its_forms_heading(signed):
@@ -1201,11 +1201,10 @@ def test_the_overview_says_how_each_keys_last_test_went(pi_signed):
     keys = page[page.index('<h2 id="keys-title">'):]
     rows = dict(re.findall(r"<dt>([^<]+)</dt><dd>(.*?)</dd>", keys[:keys.index("</section>")]))
     when = pill_time(pi_signed)
-    assert rows["Rail Data Marketplace key"].endswith(f"Works</span> Tested {when}")
-    assert rows["Bus data key"].endswith(f"Refused</span> Tested {when}")
-    # TransportAPI's pair is tested as one: both say so.
-    assert rows["TransportAPI app ID"].endswith(f"Refused</span> Tested {when}")
-    assert rows["TransportAPI app key"].endswith(f"Refused</span> Tested {when}")
+    assert rows["Trains"].endswith(f"Works, tested {when}</span>")
+    assert rows["Buses"].endswith(f"Refused, tested {when}</span>")
+    # TransportAPI's pair is tested as one, and is one line, as on the Keys page.
+    assert rows["Buses from TransportAPI"].endswith(f"Refused, tested {when}</span>")
 
 
 def test_test_saved_key_never_saves_what_is_typed(signed):

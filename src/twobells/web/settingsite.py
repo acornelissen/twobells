@@ -60,10 +60,9 @@ from io import BufferedIOBase
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qs
-from zoneinfo import ZoneInfo
 
 from ..board.state import StateStore
-from ..settings import keyresults, schema
+from ..settings import schema
 from ..settings.config import ConfigError, needs_setup
 from ..settings.schema import BOARD_DEFAULTS
 from ..setup import api as setupapi
@@ -531,7 +530,7 @@ class SettingsSite:
             groups.append(("On this device", [view.guard_feed(found, checked, now)]))
         out.append(view.render_health(groups, now, PREFIX, problems=1 if self.problem else 0, note=note))
         out.append(view.render_place(data, self.store.folder, now, zone))
-        out.append(view.render_keys(data, views, self._secrets(), TAB_PATHS["keys"], self._key_tests(zone)))
+        out.append(view.render_keys(keystate.key_states(self.store, self.install), TAB_PATHS["keys"]))
         out.append(view.render_actions(data, SETUP, running, host))
         out.append(self._footer())
         return "".join(out)
@@ -568,22 +567,6 @@ class SettingsSite:
             log.warning("Can't tell whether the dashboard is updating: %s", type(error).__name__)
             return False
 
-    def _secrets(self) -> dict[str, str]:
-        """The keys saved, only to say which are set; never shown."""
-        try:
-            return dict(self.store.env())
-        except (OSError, ConfigError):
-            return {}
-
-    def _key_tests(self, zone: ZoneInfo) -> dict[str, view.KeyTest]:
-        """Each key's last test the Keys page kept, by key, when in `zone`:
-        TransportAPI's app ID and key share theirs."""
-        boxes = {form.name: form.boxes for form in keystate.FORMS}
-        found = {}
-        for name, last in keyresults.load(self.store.folder).items():
-            test = view.KeyTest(last.state, datetime.fromtimestamp(last.time, zone).replace(tzinfo=None))
-            found |= dict.fromkeys(boxes.get(name, (name,)), test)
-        return found
 
 
 def _query(query: str) -> dict[str, str]:

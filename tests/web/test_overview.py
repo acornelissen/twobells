@@ -7,11 +7,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from twobells.settings import keyresults
 from twobells.timetable import build as timetable
 from twobells.timetable.build import FORMAT
 from twobells.timetable.model import Schedule, StopPosition
-from twobells.web import overview
-from twobells.web.overview import KeyTest
+from twobells.web import keystate, overview
 
 LONDON = ZoneInfo("Europe/London")
 NOW = datetime(2026, 10, 8, 8, 1)  # a Thursday, local time
@@ -428,44 +428,58 @@ ALL_SET = {"RDM_API_KEY": "rail-key-1234567", "BODS_API_KEY": "bods-key-7654321"
 
 
 def keys(data, env, views=("board",), tested=None):
-    return overview.render_keys(data, views, env, "/settings/keys", tested)
+    """The Overview's keys, with `tested` {form name: (works or refused, when in London)}."""
+    results = {name: keyresults.LastTest(state, int(at.replace(tzinfo=LONDON).timestamp()))
+               for name, (state, at) in (tested or {}).items()}
+    states = keystate.states(keystate.forms_for(views, data), data, env, views, results)
+    return overview.render_keys(states, "/settings/keys")
 
 
 def test_each_keys_state_in_one_line_never_its_value():
     data = {"train": {"crs": "GLO"}, "bus": {"source": "bods"}}
     page = keys(data, ALL_SET, views=("dashboard",))
     rows = text_of(page)
-    assert "Rail Data Marketplace key Set" in rows and "Bus data key Set" in rows
-    assert "Rail Data Marketplace key for where each train is Not set Optional: where each train is." in rows
+    assert "Trains Saved, not tested" in rows and "Buses Saved, not tested" in rows
+    assert "Where each train is Not set Optional." in rows
     assert "rail-key" not in page and "bods-key" not in page
     assert '<a href="/settings/keys">Change or test keys</a>' in page
 
 
 def test_a_screen_boards_keys_include_where_each_train_is_and_e_papers_dont():
-    optional = "Rail Data Marketplace key for where each train is Not set Optional: where each train is."
+    optional = "Where each train is Not set Optional."
     train = {"crs": "GLO"}
     assert optional in text_of(keys({"display": "hdmi-1920x440", "train": train}, ALL_SET))
-    assert "where each train is" not in text_of(keys({"display": "waveshare-10in85g", "train": train}, ALL_SET))
-    assert "where each train is" not in text_of(keys({"train": train}, ALL_SET))  # inky, the default
-    assert "engineering works" not in text_of(keys({"display": "hdmi-1920x440", "train": train}, ALL_SET))
+    epaper = text_of(keys({"display": "waveshare-10in85g", "train": train}, ALL_SET)).lower()
+    assert "where each train is" not in epaper
+    assert "where each train is" not in text_of(keys({"train": train}, ALL_SET)).lower()  # inky, the default
+    assert "engineering works" not in text_of(keys({"display": "hdmi-1920x440", "train": train}, ALL_SET)).lower()
 
 
 def test_a_key_not_set_says_what_needs_it():
     data = {"train": {"crs": "GLO"}, "bus": {"source": "transportapi"}}
     rows = text_of(keys(data, {}))
-    assert "Rail Data Marketplace key Needed for trains" in rows
-    assert "TransportAPI app key Needed for the board's buses" in rows
-    assert "Bus data key Not set" in rows  # the board's buses come from TransportAPI
+    assert "Trains Needed for trains" in rows
+    assert "Buses from TransportAPI Needed for the board's buses" in rows
+    assert "Buses Not set" in rows  # the board's buses come from TransportAPI
     off = {"train": {"crs": "GLO", "enabled": False}}
-    assert "Rail Data Marketplace key Not set" in text_of(keys(off, {}))
+    assert "Trains Not set" in text_of(keys(off, {}))
 
 
 def test_a_saved_test_says_whether_the_key_works():
-    tested = {"RDM_API_KEY": KeyTest("works", datetime(2026, 10, 8, 7, 5)),
-              "BODS_API_KEY": KeyTest("wrong_key", datetime(2026, 10, 7, 21, 0))}
+    tested = {"RDM_API_KEY": ("works", datetime(2026, 10, 8, 7, 5)),
+              "BODS_API_KEY": ("refused", datetime(2026, 10, 7, 21, 0))}
     rows = text_of(keys({}, ALL_SET, tested=tested))
-    assert "Rail Data Marketplace key Works Tested 8 Oct 07:05" in rows
-    assert "Bus data key Refused Tested 7 Oct 21:00" in rows
+    assert "Trains Works, tested 8 Oct 07:05" in rows
+    assert "Buses Refused, tested 7 Oct 21:00" in rows
+
+
+def test_the_overview_says_each_keys_state_as_the_keys_page_does():
+    data = {"train": {"crs": "GLO"}, "bus": {"source": "transportapi"}}
+    env = {"RDM_API_KEY": "rail-key-1234567", "TAPI_APP_ID": "app-id-0001"}  # half TransportAPI's pair
+    states = keystate.states(keystate.forms_for(("board",), data), data, env, ("board",), {})
+    rows = dict(re.findall(r"<dt>([^<]+)</dt><dd>(.*?)</dd>", overview.render_keys(states, "/settings/keys")))
+    assert rows == {html.escape(s.form.feature): keystate.pill(s) for s in states}
+    assert [s.state for s in states] == ["not_tested", "not_set", "needed"]
 
 
 # Shortcuts and the wall tablet

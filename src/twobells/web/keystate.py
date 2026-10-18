@@ -18,7 +18,7 @@ from local files only: it never connects, and never holds a key.
 from __future__ import annotations
 
 import html
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 from ..settings import keyresults, schema
 from ..settings.config import ConfigError
 from .icons import icon
-from .overview import needed_for
+from .status import _dict
 
 if TYPE_CHECKING:
     from ..settings.installs import Install
@@ -41,6 +41,7 @@ class KeyForm:
     feature: str  # what the key unlocks, as the form's heading
     unlocks: str  # a line on what that is
     boxes: tuple[str, ...]  # the keys it saves, each a box
+    optional: bool = False  # never needed: it adds to what works without it
 
 
 FORMS = (
@@ -52,12 +53,13 @@ FORMS = (
             ("TAPI_APP_ID", "TAPI_APP_KEY")),
     KeyForm("RDM_DETAILS_API_KEY", "Where each train is",
             "Optional: where each of the next few trains is, on the dashboard and a screen board.",
-            ("RDM_DETAILS_API_KEY",)),
+            ("RDM_DETAILS_API_KEY",), optional=True),
     KeyForm("RDM_KB_API_KEY", "Engineering works",
-            "Optional: planned engineering works on your trains' lines, on the dashboard.", ("RDM_KB_API_KEY",)),
+            "Optional: planned engineering works on your trains' lines, on the dashboard.", ("RDM_KB_API_KEY",),
+            optional=True),
     KeyForm("TFL_APP_KEY", "London's live times",
             "Optional: more calls a minute to TfL, for the Underground, DLR, trams and river buses. "
-            "They work without one.", ("TFL_APP_KEY",)),
+            "They work without one.", ("TFL_APP_KEY",), optional=True),
 )
 STATES = ("not_set", "needed", "not_tested", "works", "refused")
 # Each state's pill: its colour and icon, which only repeat its words.
@@ -103,6 +105,21 @@ def pill(state: KeyState) -> str:
     return f'<span class="pill pill-{tone}">{icon(shape)} {html.escape(state.words)}</span>'
 
 
+def needed_for(name: str, data: Mapping, views: Sequence[str]) -> str:
+    """What a key is needed for with these settings, in words; "" when nothing needs it now."""
+    train, bus = _dict(data.get("train")), _dict(data.get("bus"))
+    trains = "train" in data and train.get("enabled") is not False
+    buses = "bus" in data and bus.get("enabled") is not False
+    source = schema.bus_source(bus)
+    if name == "RDM_API_KEY" and trains:
+        return "trains"
+    if name == "BODS_API_KEY" and buses and source == "bods":
+        return "buses"
+    if name in ("TAPI_APP_ID", "TAPI_APP_KEY") and buses and source == "transportapi" and "board" in views:
+        return "the board's buses"
+    return ""
+
+
 def forms_for(views: tuple[str, ...], data: Mapping) -> tuple[KeyForm, ...]:
     """The forms of the keys the views on use, with the display the settings `data` give."""
     display = str(data.get("display", schema.BOARD_DEFAULTS["display"]))
@@ -116,7 +133,7 @@ def states(forms: tuple[KeyForm, ...], data: Mapping, env: Mapping[str, str], vi
     out = []
     for form in forms:
         if not all(str(env.get(box, "")).strip() for box in form.boxes):
-            needed = needed_for(form.name, dict(data), views)
+            needed = needed_for(form.name, data, views)
             out.append(KeyState(form, "needed" if needed else "not_set", needed))
             continue
         last = results.get(form.name)

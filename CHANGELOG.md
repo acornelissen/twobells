@@ -6,6 +6,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ### Changed
 
+- The settings' Overview says each key's state from the same place as the Keys page, in its words, so the two pages can't disagree. Each line is headed by what the key unlocks, as its form on the Keys page is (TransportAPI's app ID and key are one line), and a key saved but not tested since says **Saved, not tested** rather than **Set**.
 - The setup wizard lists bus lines in the order the board and dashboard do, by their number: X57 comes next to 57, not after every numbered line.
 
 ### Fixed

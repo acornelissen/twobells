@@ -30,6 +30,7 @@ from ..timetable import build as timetable
 from ..timetable import trams
 from . import places
 from .icons import icon
+from .keystate import KeyState, pill
 from .status import _SOURCES, _dict, _policy, _positive, _switched_off, _when
 
 # A feed's state: its pill's look, icon and words.
@@ -78,13 +79,6 @@ _GUARD_FIX = ("What to do", "On the Pi, load the guard again and restart the ser
               "-u twobells-guard -u twobells-web says why.")
 # A Host header as the server let it in: a name or an address, and a port.
 _HOST = re.compile(r"(?:\[[0-9A-Fa-f:.]{2,45}\]|[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)(?::[0-9]{1,5})?")
-# Optional keys, by what they add.
-_OPTIONAL = {"RDM_DETAILS_API_KEY": "where each train is", "RDM_KB_API_KEY": "engineering works",
-             "TFL_APP_KEY": "more calls a minute to TfL"}
-# A saved key test's result, in words: the Keys page keeps works or refused
-# (settings/keyresults.py); a keytest state says the same.
-_TESTED = {"works": ("pill-ok", "check", "Works"), "refused": ("pill-bad", "x", "Refused"),
-           "wrong_key": ("pill-bad", "x", "Refused"), "not_subscribed": ("pill-bad", "x", "Refused")}
 
 
 @dataclass(frozen=True)
@@ -103,14 +97,6 @@ class Feed:
     meaning: str = ""
     extra: tuple[tuple[str, str], ...] = ()
     pill: tuple[str, str, str] | None = None
-
-
-@dataclass(frozen=True)
-class KeyTest:
-    """A key's last test, as the Keys page saved it: works or refused (or a keytest state) and when."""
-
-    state: str
-    at: datetime
 
 
 # Reading what others wrote
@@ -510,44 +496,15 @@ def render_place(data: dict, folder: Path, now: datetime, zone: tzinfo) -> str:
             f'<dl class="readonly">{"".join(rows)}</dl></section>')
 
 
-def needed_for(name: str, data: dict, views: Sequence[str]) -> str:
-    """What a key is needed for with these settings, in words; "" when nothing needs it now."""
-    train, bus = _dict(data.get("train")), _dict(data.get("bus"))
-    trains = "train" in data and not _off(train)
-    buses = "bus" in data and not _off(bus)
-    source = schema.bus_source(bus)
-    if name == "RDM_API_KEY" and trains:
-        return "trains"
-    if name == "BODS_API_KEY" and buses and source == "bods":
-        return "buses"
-    if name in ("TAPI_APP_ID", "TAPI_APP_KEY") and buses and source == "transportapi" and "board" in views:
-        return "the board's buses"
-    return ""
-
-
-def render_keys(data: dict, views: Sequence[str], env: Mapping[str, str], keys_page: str,
-                tested: Mapping[str, KeyTest] | None = None) -> str:
-    """One line for each key the views on use: whether it is set, and when a
-    saved test says so, whether it works; never any part of a key."""
+def render_keys(states: Sequence[KeyState], keys_page: str) -> str:
+    """One line for each key the views on use, headed and said as on the Keys
+    page (web/keystate.py's key_states), so the two pages agree; never any
+    part of a key."""
     e = html.escape
-    tested = tested or {}
     rows = []
-    display = str(data.get("display", schema.BOARD_DEFAULTS["display"]))
-    for name, label, _ in schema.keys_used(tuple(views), display, data):
-        if str(env.get(name, "")).strip():
-            test = tested.get(name)
-            if test is not None and test.state in _TESTED:
-                look, shape, words = _TESTED[test.state]
-                state = f"{_pill(look, shape, words)} Tested {test.at.day} {test.at:%b %H:%M}"
-            else:
-                state = _pill("pill-ok", "check", "Set")
-        elif needed_for(name, data, views):
-            state = _pill("pill-bad", "x", f"Needed for {needed_for(name, data, views)}")
-        else:
-            state = _pill("pill-neutral", "minus", "Not set")
-            if name in _OPTIONAL:
-                state += f" Optional: {e(_OPTIONAL[name])}."
-        rows.append(_row(label, state))
+    for state in states:
+        optional = state.state == "not_set" and state.form.optional
+        rows.append(_row(state.form.feature, pill(state) + (" Optional." if optional else "")))
     return ('<section class="keys card" aria-labelledby="keys-title"><h2 id="keys-title">Keys</h2>'
             '<p class="hint lead">Keys are never shown here.</p>'
             f'<dl class="readonly">{"".join(rows)}</dl>'
