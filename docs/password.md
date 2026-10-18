@@ -6,7 +6,7 @@
 
 ## Codes
 
-The settings have one password per install, at least 10 characters. Claiming them the first time, and setting a new password when you've forgotten it, both need a one-time code. The code shows:
+The settings have one password per install, at least 10 characters. They refuse one of the 5,000 most common passwords of that length, whatever its case (`password123`, `Manchester1`), wherever it is set: claiming them, a reset, or the command line. Claiming them the first time, and setting a new password when you've forgotten it, both need a one-time code. The code shows:
 
 - **on the board**, while the board view is on (e-paper can take a minute to change);
 - **in the log** otherwise: on a Pi `sudo journalctl -u twobells-web`; in Docker `docker logs twobells`, or in Container Manager, **Container**, `twobells`, **Log**; on a desktop, the Terminal window running it, or, started at login, `~/Library/Logs/twobells.log` on a Mac and `journalctl --user -u twobells` on Linux. The line reads `Settings reset code: 123 456, valid until 14:05`, in the board's time zone (**General**, **Time zone**).

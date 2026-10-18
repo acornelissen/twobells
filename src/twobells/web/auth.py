@@ -29,7 +29,9 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, tzinfo
+from functools import lru_cache
 from http.cookies import SimpleCookie
+from importlib.resources import files as package_files
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -38,6 +40,8 @@ from ..core import files
 log = logging.getLogger(__name__)
 
 MIN_PASSWORD = 10
+# What every way of setting the password says of one on the bundled list (see common_password).
+TOO_COMMON = "That's one of the most common passwords. Choose another."
 SESSION_SECONDS = 12 * 3600
 MAX_SESSIONS = 20
 # Sign-in: this many failures from one client (see client_key) in the window locks it out for the window.
@@ -73,6 +77,19 @@ _COOKIE_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _COOKIE_PATH = re.compile(r"^/[A-Za-z0-9_/-]{0,200}$")
 
 
+@lru_cache(maxsize=1)
+def _common_passwords() -> frozenset[str]:
+    """The bundled list of common passwords, lower-cased, read once."""
+    text = package_files("twobells").joinpath("data/common_passwords.txt").read_text("utf-8")
+    return frozenset(line for line in text.splitlines() if line and not line.startswith("#"))
+
+
+def common_password(password: str) -> bool:
+    """Whether `password` is on the bundled list of the most common passwords
+    of MIN_PASSWORD characters or more, whatever its case. Guessers try those first."""
+    return password.lower() in _common_passwords()
+
+
 class PasswordStore:
     """The password, as a scrypt hash in a file only the service user can read.
 
@@ -94,6 +111,8 @@ class PasswordStore:
         """Hash and save a new password, replacing the old one in one step."""
         if len(password) < MIN_PASSWORD:
             raise ValueError(f"Use at least {MIN_PASSWORD} characters")
+        if common_password(password):
+            raise ValueError(TOO_COMMON)
         salt = secrets.token_bytes(16)
         digest = hashlib.scrypt(password.encode(), salt=salt, dklen=32, **SCRYPT)
         record = {"salt": salt.hex(), "hash": digest.hex(), **SCRYPT}

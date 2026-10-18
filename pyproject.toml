@@ -59,7 +59,7 @@ twobells = "twobells.cli.main:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"twobells" = ["data/*.csv", "dashboard_static/**/*", "wizard_static/*"]
+"twobells" = ["data/*.csv", "data/*.txt", "dashboard_static/**/*", "wizard_static/*"]
 "twobells.board" = ["fonts/*"]
 "twobells.emulator" = ["*.html"]
 "twobells.web" = ["*.css", "*.js"]

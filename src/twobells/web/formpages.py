@@ -34,6 +34,7 @@ from ..setup import api
 from ..setup.keytest import KeyResult
 from .auth import (
     MIN_PASSWORD,
+    TOO_COMMON,
     FormTokens,
     Lockout,
     PasswordCheck,
@@ -43,6 +44,7 @@ from .auth import (
     ResetShutOut,
     Sessions,
     SignInResult,
+    common_password,
     csrf_matches,
 )
 
@@ -376,7 +378,7 @@ class FormPages:
             '<input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" '
             f'required{" autofocus" if asked or invalid == "code" else ""}{flagged("code")}>'
             '<label for="new-password">New password</label>'
-            f'<p class="hint" id="new-password-hint">At least {MIN_PASSWORD} characters.</p>'
+            f'<p class="hint" id="new-password-hint">At least {MIN_PASSWORD} characters, and not a common one.</p>'
             '<input id="new-password" name="password" type="password" autocomplete="new-password" '
             f'minlength="{MIN_PASSWORD}" required{focus("password")}{flagged("password", "new-password-hint")}>'
             '<label for="again">New password again</label>'
@@ -437,10 +439,12 @@ class FormPages:
         if not self._form_token_ok(fields, headers):
             return self.reset_page(403, headers, "That form had run out, so nothing was changed. Try again.")
         new = fields.get("password", "")
-        # Checked before the code, so a typo here doesn't use the code up.
+        # Checked before the code, so a typo or a common password here doesn't use the code up.
         if len(new) < MIN_PASSWORD:
             return self.reset_page(422, headers, f"Use at least {MIN_PASSWORD} characters for the new password.",
                                    "password")
+        if common_password(new):
+            return self.reset_page(422, headers, TOO_COMMON, "password")
         if new != fields.get("again", ""):
             return self.reset_page(422, headers, "The two new passwords don't match.", "again")
         try:

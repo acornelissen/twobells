@@ -14,6 +14,7 @@ import pytest
 from twobells.web.auth import (
     MAX_FAILURES,
     RESET_MAX_TRIES,
+    TOO_COMMON,
     TOTAL_FAILURES,
     FormTokens,
     Lockout,
@@ -447,6 +448,29 @@ def test_a_reset_checks_the_new_password_before_spending_the_code(host):
     assert reply.status == 422 and 'aria-describedby="new-password-hint reset-error"' in reply.body.decode()
     assert host.reset(code, NEW_PASSWORD, NEW_PASSWORD + "!").status == 422
     assert host.reset(code).status == 303
+
+
+@pytest.mark.parametrize("common", ["password123", "Manchester1", "QWERTYUIOP"])
+def test_a_reset_refuses_a_common_password_before_spending_the_code(host, common):
+    host.codes.issue(host.clock())
+    code = host.shown[-1]
+    reply = host.reset(code, common)
+    assert reply.status == 422 and TOO_COMMON in html.unescape(reply.body.decode())
+    assert 'aria-describedby="new-password-hint reset-error" aria-invalid="true"' in reply.body.decode()
+    assert host.password.check(PASSWORD) and not host.password.check(common)
+    assert host.reset(code).status == 303  # the code still works
+    assert host.password.check(NEW_PASSWORD)
+
+
+def test_the_first_claim_refuses_a_common_password_before_spending_the_code(tmp_path):
+    host = Host(tmp_path)
+    host.codes.issue(host.clock())
+    code = host.shown[-1]
+    reply = host.reset(code, "liverpool1")
+    assert reply.status == 422 and TOO_COMMON in html.unescape(reply.body.decode())
+    assert not host.password.is_set()
+    assert host.reset(code).status == 303
+    assert host.password.check(NEW_PASSWORD)
 
 
 def test_a_wrong_code_changes_nothing(host):

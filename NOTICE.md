@@ -30,6 +30,8 @@ Train times come from National Rail's Darwin via the [Rail Data Marketplace](htt
 - Addresses come from OpenStreetMap's [Nominatim](https://nominatim.openstreetmap.org) and walk times from the OpenStreetMap [foot router](https://routing.openstreetmap.de). OpenStreetMap data © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/copyright).
 - The roads drawn on the dashboard's bus maps come from the OpenStreetMap [car router](https://routing.openstreetmap.de) when the bus timetable is built, and are kept in `bus-timetable.json`. OpenStreetMap data © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/copyright).
 
+- `src/twobells/data/common_passwords.txt`, the common passwords the settings refuse, is the first 5,000 of 10 characters or more from [SecLists](https://github.com/danielmiessler/SecLists)' `100k-most-used-passwords-NCSC.txt`, under the MIT License, Copyright (c) 2018 Daniel Miessler; the file's header holds the licence.
+
 ## Code
 
 - [Leaflet](https://leafletjs.com) 1.9.4, BSD 2-Clause: `src/twobells/dashboard_static/vendor/leaflet-1.9.4/LICENSE`.

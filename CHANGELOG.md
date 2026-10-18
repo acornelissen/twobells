@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Security
+
+- The settings refuse a common password: one of the 5,000 most common of 10 characters or more, such as `password123` or `Manchester1`, whatever its case, saying "That's one of the most common passwords. Choose another." This holds when claiming the settings, setting a new password with a reset code (checked before the code is used up) and `--set-password`. A password already set keeps working. The list, `src/twobells/data/common_passwords.txt`, comes from SecLists under the MIT License.
+
 ## [0.4.3] - 2026-10-18
 
 Subtitles under a train on a screen, and the tram timetable built as soon as it is set up on a Pi.

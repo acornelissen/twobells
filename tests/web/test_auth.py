@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from tests.paths import ROOT
 from twobells.web.auth import (
     FAILURE_WINDOW_S,
     FORM_PAGE_HEADERS,
@@ -23,6 +24,7 @@ from twobells.web.auth import (
     RESET_MAX_TRIES_ALL,
     SCRYPT,
     SESSION_SECONDS,
+    TOO_COMMON,
     TOTAL_FAILURES,
     WAITING_KEEP_S,
     FormTokens,
@@ -36,7 +38,9 @@ from twobells.web.auth import (
     Session,
     Sessions,
     SignInResult,
+    _common_passwords,
     client_key,
+    common_password,
     csrf_matches,
     local_host,
     outsider,
@@ -110,10 +114,39 @@ def test_a_password_file_from_an_existing_install_still_checks(tmp_path):
 def test_passwords_shorter_than_the_minimum_are_refused(tmp_path):
     store = PasswordStore(tmp_path / "web.json")
     with pytest.raises(ValueError):
-        store.set("x" * (MIN_PASSWORD - 1))
+        store.set("k9" * (MIN_PASSWORD // 2 - 1) + "k")
     assert not store.is_set()
-    store.set("x" * MIN_PASSWORD)
+    store.set("k9" * (MIN_PASSWORD // 2))
     assert store.is_set()
+
+
+@pytest.mark.parametrize("common", ["password123", "PASSWORD123", "Manchester1", "1q2w3e4r5t"])
+def test_common_passwords_are_refused_whatever_their_case(tmp_path, common):
+    store = PasswordStore(tmp_path / "web.json")
+    with pytest.raises(ValueError, match=TOO_COMMON):
+        store.set(common)
+    assert not store.is_set()
+    store.set(PASSWORD)
+    with pytest.raises(ValueError, match=TOO_COMMON):
+        store.set(common)
+    assert store.check(PASSWORD) and not store.check(common)
+
+
+def test_the_common_password_list_is_long_lower_case_passwords_only():
+    words = _common_passwords()
+    assert 3000 <= len(words) <= 10_000
+    assert all(len(word) >= MIN_PASSWORD and word == word.lower() and word.isprintable() for word in words)
+    assert not any(word.startswith("#") for word in words)  # the header's comments stay out
+    assert common_password("password123") and not common_password(PASSWORD)
+
+
+def test_the_common_password_list_goes_into_the_package_and_the_ci_check():
+    import tomllib
+    from fnmatch import fnmatch
+
+    patterns = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["setuptools"]["package-data"]["twobells"]
+    assert any(fnmatch("data/common_passwords.txt", pattern) for pattern in patterns)
+    assert '"data/common_passwords.txt"' in (ROOT / ".github" / "workflows" / "ci.yml").read_text()
 
 
 @pytest.mark.parametrize("content", ["{nope", "{}", '{"salt": "zz", "hash": "", "n": 16384, "r": 8, "p": 1}'])

@@ -17,6 +17,7 @@ from tests.paths import FIXTURES, ROOT
 from twobells.cli.main import main
 from twobells.settings.config import ConfigError, load_env_file
 from twobells.sources import holidays
+from twobells.web.auth import TOO_COMMON
 
 
 @pytest.fixture(autouse=True)
@@ -1941,6 +1942,7 @@ def test_dashboard_set_password_uses_the_same_password_as_the_boards_page(tmp_pa
 
 @pytest.mark.parametrize("first, again, says", [
     ("too short", "too short", "Use at least 10 characters"),
+    ("Password123", "Password123", TOO_COMMON),
     (DASH_PASSWORD, "something else entirely", "Those didn't match"),
 ])
 def test_dashboard_set_password_refuses_a_bad_one(tmp_path, typed, capsys, first, again, says):
