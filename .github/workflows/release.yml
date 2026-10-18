@@ -3,12 +3,15 @@
 #   verify   the tag is vX.Y.Z, equals pyproject.toml's version and is on main;
 #            lint, the type check and tests pass
 #   dist     sdist and wheel, built with hashed build tools, smoke-tested
-#   image    multi-arch container (amd64, arm64) to GHCR with SBOM and
-#            provenance, signed with cosign (keyless) by digest
+#   image    multi-arch container (amd64, arm64) with SBOM and provenance,
+#            pushed to GHCR by digest only: no tag, no signature
 #   tarball  source tarball for the Pi (git archive of the tag), SHA256SUMS
 #            over every release file, signed with cosign sign-blob (keyless)
 #   pypi     sdist and wheel to PyPI by trusted publishing (no stored token);
-#            runs after everything else built, as a PyPI version is permanent
+#            runs after everything else built, as a PyPI version is permanent.
+#            Its environment, pypi, is the release's one approval gate
+#   image-tags  after pypi: signs the image by digest with cosign (keyless),
+#            then tags that digest X.Y.Z and latest and checks they verify
 #   release  the GitHub release with the tarball, SHA256SUMS, its signature
 #            bundle, and the wheel (the sdist is on PyPI only: it would share
 #            the Pi tarball's name, twobells-X.Y.Z.tar.gz, which upgrade.sh fetches)
@@ -23,8 +26,9 @@
 #      workflow release.yml, environment pypi.
 #   2. GitHub environment "pypi" (Settings > Environments > New environment).
 #      Under deployment branches and tags, allow tags matching v* only.
-#      Optionally add yourself as a required reviewer, so every PyPI upload
-#      waits for a click.
+#      Add yourself as a required reviewer: then nothing reaches PyPI, the
+#      image's tags or the releases page until you approve the pypi job.
+#      Before that the image is in GHCR by its digest alone, unsigned.
 #   3. Tag ruleset (Settings > Rules > Rulesets > New tag ruleset): target
 #      v*, restrict creation, update and deletion to admins, so only you can
 #      start a release.
@@ -147,16 +151,15 @@ jobs:
           retention-days: 7
 
   image:
-    name: Container image (amd64, arm64)
+    name: Container image (amd64, arm64), by digest
     needs: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
-      packages: write # push to GHCR
-      id-token: write # cosign keyless signing
-    env:
-      VERSION: ${{ needs.verify.outputs.version }}
+      packages: write # push to GHCR, by digest only: no tag, no signature
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -173,31 +176,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
+        # For the labels and annotations (the version among them); the tags
+        # are added by image-tags, once the pypi environment's review passes.
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=latest
       - id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
           sbom: true
           provenance: mode=max
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        with:
-          cosign-release: v3.1.3
-      - name: Sign the image by digest
-        env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: cosign sign --yes "$IMAGE@$DIGEST"
 
   tarball:
     name: Source tarball, SHA256SUMS and signature
@@ -269,9 +265,51 @@ jobs:
           path: dist/
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
 
+  image-tags:
+    # After pypi, so behind its environment's review, without that environment
+    # (and so a token PyPI would take) of its own.
+    name: Sign the image and tag it
+    needs: [verify, image, pypi]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      packages: write # tag the image in GHCR
+      id-token: write # cosign keyless signing
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      DIGEST: ${{ needs.image.outputs.digest }}
+    steps:
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Sign the image by digest
+        run: |
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::The image job gave no digest ('$DIGEST')"
+            exit 1
+          fi
+          cosign sign --yes "$IMAGE@$DIGEST"
+      - name: Tag the signed digest as the version and latest
+        # From one image index, imagetools create pushes that index unchanged
+        # under the new tags: the same digest, with its SBOM and provenance.
+        run: docker buildx imagetools create --tag "$IMAGE:$VERSION" --tag "$IMAGE:latest" "$IMAGE@$DIGEST"
+      - name: Check the tags verify as a user checks them
+        # Fails if a tag named any other digest than the one signed.
+        run: |
+          signer="https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF"
+          for tag in "$VERSION" latest; do
+            cosign verify "$IMAGE:$tag" --certificate-identity "$signer" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+          done
+
   release:
     name: GitHub release
-    needs: [verify, pypi]
+    needs: [verify, pypi, image-tags]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

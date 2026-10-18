@@ -1036,6 +1036,43 @@ def _needed_on_the_pi() -> set[str]:
     return needed
 
 
+def _jobs() -> dict[str, str]:
+    """release.yml's jobs, by name, each as its text."""
+    body = RELEASE[RELEASE.index("\njobs:\n") + len("\njobs:\n"):]
+    parts = re.split(r"\n(?=  [a-z][\w-]*:\n)", body)
+    return {part.split(":", 1)[0].strip(): part for part in parts}
+
+
+def _needs(job: str) -> set[str]:
+    found = re.search(r"^    needs: (\[[^\]]*\]|\S+)$", job, re.M).group(1)
+    return {name.strip() for name in found.strip("[]").split(",")}
+
+
+def test_the_image_is_tagged_and_signed_only_after_the_release_is_approved():
+    jobs = _jobs()
+    assert list(jobs) == ["verify", "dist", "image", "tarball", "pypi", "image-tags", "release"]
+    # pypi's environment is the one review: nothing before it tags, signs or publishes the image.
+    assert [name for name, job in jobs.items() if "environment:" in job] == ["pypi"]
+    image = jobs["image"]
+    assert "push-by-digest=true" in image and "push: true" not in image
+    assert "tags: ${{ steps.meta.outputs.tags }}" not in image and "type=raw,value=latest" not in image
+    assert "id-token" not in image and "cosign" not in image
+    assert "sbom: true" in image and "provenance: mode=max" in image
+    assert "digest: ${{ steps.build.outputs.digest }}" in image
+    # After the review: signed by that digest, then tagged, then checked as a user would.
+    tags = jobs["image-tags"]
+    assert {"image", "pypi"} <= _needs(tags) and "id-token: write" in tags
+    assert "DIGEST: ${{ needs.image.outputs.digest }}" in tags
+    signed = tags.index('cosign sign --yes "$IMAGE@$DIGEST"')
+    tagged = tags.index('imagetools create --tag "$IMAGE:$VERSION" --tag "$IMAGE:latest" "$IMAGE@$DIGEST"')
+    assert tags.index("^sha256:[0-9a-f]{64}$") < signed < tagged < tags.index('cosign verify "$IMAGE:$tag"')
+    signer = re.search(r'signer="(\S+)"', tags).group(1)
+    assert signer.replace("$GITHUB_REPOSITORY", REPO).replace("$GITHUB_REF", "refs/tags/v0.2.0") == _identity("v0.2.0")
+    # PyPI's upload stays last of what is permanent, after the image is pushed; the notes name its tag.
+    assert {"dist", "image", "tarball"} <= _needs(jobs["pypi"])
+    assert "image-tags" in _needs(jobs["release"])
+
+
 def test_the_release_holds_the_pi_tarball_under_the_name_upgrade_fetches_not_the_sdist():
     # The sdist and the Pi's tarball share a name, twobells-X.Y.Z.tar.gz. The
     # release keeps the tarball, the one upgrade.sh fetches and unpacks, and
