@@ -4,6 +4,14 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-18
+
+The HDMI screen opens on Raspberry Pi OS Trixie.
+
+### Fixed
+
+- On Raspberry Pi OS Trixie, the HDMI screen's service crashed every few seconds and the screen stayed on the boot console. `twobells-screen.service` now allows netlink sockets, which SDL 2.32 needs to open the screen, and `install.sh` and `update.sh` install the EGL and GLES libraries pygame draws through (`libegl1`, `libegl-mesa0`, `libgles2`), which Raspberry Pi OS Lite comes without. Upgrading a screen Pi with `upgrade.sh` installs them and refreshes the unit.
+
 ## [0.4.0] - 2026-10-17
 
 Trams and leave times your way: tram stops found by name wherever home is, a choice of which modes get leave times, and the time and weather in Next to catch's place when it has nothing to show.
@@ -155,7 +163,8 @@ The first release.
 - A network guard for the Pi's web server: nftables rules for it alone (`deploy/pi/twobells-web.nft`), loaded at boot by `twobells-guard.service` and matching the server by the cgroup systemd puts in their set (`NFTSet=`, systemd 254 or later, so Raspberry Pi OS Trixie on a Pi Zero or Pi 1), that keep it from connecting out to the internet and keep port 8090 to the home network. They back up the unit's systemd IP firewall, which a Pi Zero's kernel can't apply ("Preparation of BPF allow maps failed"). `install.sh` and `update.sh` install `nftables`. The server checks at start whether it can connect out, warns in its log if it can, and the settings' Overview shows **Network guard**: On, Off (a problem) or Can't tell.
 - A wall-tablet mode for the dashboard at `/?kiosk`: one screen with no controls, the station-board look by default, a shift of a pixel or two every few minutes against burn-in, dimmed in quiet hours, a large banner when the times stop updating, and a reload at 03:30.
 
-[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.4.0...main
+[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.4.1...main
+[0.4.1]: https://github.com/acornelissen/twobells/releases/tag/v0.4.1
 [0.4.0]: https://github.com/acornelissen/twobells/releases/tag/v0.4.0
 [0.3.0]: https://github.com/acornelissen/twobells/releases/tag/v0.3.0
 [0.2.3]: https://github.com/acornelissen/twobells/releases/tag/v0.2.3
