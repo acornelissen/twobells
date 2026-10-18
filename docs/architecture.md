@@ -46,6 +46,6 @@ To add a provider, implement `fetch() -> list[Departure]` with a `name` and add 
 - **Tests** mirror the package: `tests/<folder>/test_<module>.py`. `tests/test_deploy.py` keeps the deploy files and the docs that describe them in step, and `tests/test_docs.py` checks every link in the docs.
 - **`deploy/`:** the Pi's units and scripts (`pi/`), the published image's compose file and the image's pinned requirements (`docker/`), the desktop's login files (`desktop/`), the Unraid template (`unraid/`) and `secrets.env.example`. `Dockerfile` and `docker-compose.yml` stay at the top, where `docker compose` looks.
 - **`examples/`:** `config.example.toml`, every setting with notes, and `glossop.toml`, a filled-in one.
-- **`tools/`:** building the setup data, fonts, the dot font and the pictures in `docs/images/`.
+- **`tools/`:** building the setup data, fonts, the dot font and the board pictures in `docs/images/` (`build_doc_images.py`, from the made-up mornings in `doc_scenes.py`), and serving the dashboard and the settings site on sample data for the screenshots there (`serve_doc_dashboard.py`, `serve_doc_settings.py`).
 - **`.github/workflows/`:** CI, and the tagged release (PyPI, the signed GHCR image, the signed Pi tarball).
 - **The dashboard's API** between the server and its page is read-only JSON and SSE, specified in [Dashboard API](dashboard-api.md); the page runs under a strict CSP.

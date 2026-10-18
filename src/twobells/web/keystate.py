@@ -11,8 +11,9 @@ kept in the store (settings/keyresults.py), is one of:
 - works: the last test worked;
 - refused: the last test was refused.
 
-key_states(store, install) gives every form's state for the views on, read
-from local files only: it never connects, and never holds a key.
+key_states(store, install) gives every form's state for the views on, for
+the Overview; the Keys page calls states() with the settings it has read.
+Both read local files only: never connecting, and never holding a key.
 """
 
 from __future__ import annotations
