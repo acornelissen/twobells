@@ -4000,6 +4000,33 @@ def test_a_reminder_due_while_a_dialog_is_open_is_shown_and_said_in_it():
     assert found["liveBack"] is True
 
 
+@needs_node
+def test_a_cancelled_reminder_is_titled_by_what_was_cancelled():
+    found = run_js("""
+        import { h } from "./dom.js";
+        import { observe } from "./time.js";
+        import { tickAlerts, toggle } from "./alerts.js";
+        observe(Date.parse("2026-10-10T07:00:00+01:00"));
+        const banner = h("div", { id: "alert-banner", role: "alert" });
+        document.body.append(h("main", { id: "main" }, h("h2", { id: "leave-heading" }), banner), h("div", { id: "live" }));
+        const row = (n, extra) => ({ id: `000000000000000${n}`, scheduled: "07:20", destination: "Altrincham",
+                                     status: "cancelled", scheduled_at: "2026-10-10T07:20:00+01:00", ...extra });
+        const rows = [
+          [row(1, {}), "metro"], [row(2, { kind: "tube" }), "metro"], [row(3, { kind: "river-bus" }), "metro"],
+          [row(4, { line: "341" }), "bus"], [row(5, {}), "train"], [row(6, { ferry: true }), "train"],
+        ];
+        const titles = [];
+        for (const [r, mode] of rows) {
+          toggle(r.id, r, () => {});
+          tickAlerts(new Map([[r.id, { row: r, mode }]]));
+          titles.push(elements(banner).filter((el) => el.nodeName === "STRONG").at(-1).textContent);
+        }
+        console.log(JSON.stringify(titles));
+    """)
+    assert found == ["Tram cancelled.", "Train cancelled.", "River bus cancelled.", "Bus cancelled.",
+                     "Train cancelled.", "Ferry cancelled."]
+
+
 def test_every_dialog_has_a_place_for_alerts():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     dialogs = re.findall(r"<dialog.*?</dialog>", html, re.S)

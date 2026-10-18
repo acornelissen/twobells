@@ -128,7 +128,8 @@ export function tickAlerts(rowsById) {
       if (!a.cancelled) {
         a.cancelled = true; changed = true;
         const what = describe(row, mode, false);
-        fire(id, mode === "bus" ? "Bus cancelled" : "Train cancelled", `${what[0].toUpperCase()}${what.slice(1)} is cancelled.`);
+        const noun = mode === "bus" ? "bus" : mode === "metro" ? tramNoun(row) : trainNoun(row);
+        fire(id, `${noun[0].toUpperCase()}${noun.slice(1)} cancelled`, `${what[0].toUpperCase()}${what.slice(1)} is cancelled.`);
       }
       continue;
     }
