@@ -337,9 +337,15 @@ def _text(value, field: str, low: int, high: int) -> str:
 
 
 def _number(value, field: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise Invalid("A position must be two numbers", field)
-    return float(value)
+    try:
+        number = float(value)
+    except OverflowError:  # a whole number too big for a float, like 10**400
+        raise Invalid("A position must be two numbers", field) from None
+    if not math.isfinite(number):
+        raise Invalid("A position must be two numbers", field)
+    return number
 
 
 def _point(value, field: str = "home") -> Place:

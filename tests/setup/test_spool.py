@@ -15,6 +15,7 @@ from twobells.setup import discover
 from twobells.setup.api import RateLimit, SetupApi
 from twobells.setup.keytest import KeyResult
 from twobells.setup.lookups import Place, SetupError, Stop
+from twobells.setup.spool import worker as worker_module
 from twobells.setup.spool.checks import REQUEST_MAX_AGE_S, Refused, check_status
 from twobells.setup.spool.folder import (
     MAX_REPLY_BYTES,
@@ -458,6 +459,7 @@ def put(board, data, name=None, raw=None):
     {"made_offset": -REQUEST_MAX_AGE_S - 10},  # stale
     {"made_offset": 60},  # from the future
     {"made": "now"},
+    {"made": 10**400},  # too big for a float
     {"v": 2},
     {"id": "b" * 32},  # not its file's
     {"kind": "shell"},
@@ -465,6 +467,8 @@ def put(board, data, name=None, raw=None):
     {"args": {"postcode": "x" * 17}},
     {"kind": "stops", "args": {"home": {"lat": 48.85, "lon": 2.35}, "within_m": 1000, "limit": 15}},  # Paris
     {"kind": "stops", "args": {"home": HOME, "within_m": 10**9, "limit": 15}},
+    {"kind": "stops", "args": {"home": {"lat": 10**400, "lon": -1.9}, "within_m": 1000, "limit": 15}},
+    {"kind": "stops", "args": {"home": HOME, "within_m": 10**400, "limit": 15}},
     {"kind": "walk", "args": {"home": HOME, "places": {"../x": HOME}}},
     {"kind": "testkey", "args": {"name": "PATH", "value": "", "app_id": ""}},
     {"kind": "testkey", "args": {"name": "RDM_API_KEY", "value": "has spaces", "app_id": ""}},
@@ -552,6 +556,27 @@ def test_a_status_written_again_as_the_page_reads_it_is_read_new(board, monkeypa
     replaced_once_opened(monkeypatch, path, lambda: spool.write(
         spool.status, rid, {"v": 1, "id": rid, "ok": True, "beat": 2, "value": {}}, MAX_REPLY_BYTES))
     assert board.runner.reply(rid, delete=False, where=spool.status)["beat"] == 2
+
+
+def test_a_request_that_fails_unforeseen_is_deleted_and_the_rest_answered(board, monkeypatch, caplog):
+    # A failure it didn't foresee used to end the fetch service's loop for good.
+    first = put(board, request(board, name="a" * 32))
+    put(board, request(board, name="b" * 32))
+    real = worker_module.check_request
+    seen = []
+
+    def check_request(value, request_id, now):
+        seen.append(request_id)
+        if len(seen) == 1:
+            raise RuntimeError("SECRET")
+        return real(value, request_id, now)
+
+    monkeypatch.setattr(worker_module, "check_request", check_request)
+    board.worker.step()
+    assert len(seen) == 2 and not first.exists()
+    assert board.calls == [("postcode", "SK13 1AH")]
+    assert os.listdir(board.state / "spool" / "replies") == [seen[1] + ".json"]
+    assert "RuntimeError" in caplog.text and "SECRET" not in caplog.text
 
 
 def test_a_request_withdrawn_as_the_service_reads_it_is_gone_not_refused(board, monkeypatch, caplog):

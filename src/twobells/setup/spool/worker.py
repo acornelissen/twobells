@@ -186,7 +186,11 @@ class Worker:
         handled = False
         for path in self._waiting():
             handled = True
-            self._take(path)
+            try:
+                self._take(path)
+            except Exception as error:  # noqa: BLE001 - one request mustn't stop the service; never its text
+                _remove(path)
+                log.warning("A setup request failed: %s", type(error).__name__)
         self._report()
         return handled
 

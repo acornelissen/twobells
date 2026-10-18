@@ -167,6 +167,7 @@ def saved_with_a_search(api, routes=True, **finish):
     ("stations", {"lat": 48.85, "lon": 2.35}, "home"),  # Paris
     ("stations", {"lat": True, "lon": -1.9}, "home"),
     ("stations", {"lat": "53.4", "lon": -1.9}, "home"),
+    ("stations", {"lat": 10**400, "lon": -1.9}, "home"),  # too big for a float
     ("stops", {"lat": 53.4}, "lon"),
     ("station", {"crs": "GL0"}, "crs"),
     ("station", {"crs": "XYZ"}, "crs"),

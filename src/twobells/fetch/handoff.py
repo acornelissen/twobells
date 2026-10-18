@@ -303,8 +303,11 @@ class SnapshotMirror:
 
     def _run(self) -> None:
         while not self._stopping.wait(self._every):
-            self.check()
-            self.wake_if_stale()
+            try:
+                self.check()
+                self.wake_if_stale()
+            except Exception as error:  # noqa: BLE001 - looked at again next time; never its text
+                log.warning("Can't read the fetch service's snapshot: %s", type(error).__name__)
 
     def start(self) -> None:
         """Read the file now, then keep looking on a thread of its own until closed."""

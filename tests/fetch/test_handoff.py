@@ -328,6 +328,29 @@ def test_wait_wakes_on_a_new_file(spool):
     assert mirror.closed and mirror.wait(version + 1, 5) == version + 1  # closed: no waiting
 
 
+def test_the_mirror_keeps_looking_after_a_look_that_failed(spool, monkeypatch, caplog):
+    # A failure it didn't foresee used to end its thread for good, the dashboard frozen until a restart.
+    mirror = mirror_of(spool, every=0.01)
+    looks = []
+
+    def check():
+        looks.append(1)
+        if len(looks) == 2:  # the first look on its thread
+            raise RuntimeError("SECRET")
+        return False
+
+    monkeypatch.setattr(mirror, "check", check)
+    mirror.start()
+    try:
+        deadline = time.monotonic() + 5
+        while len(looks) < 4 and time.monotonic() < deadline:
+            time.sleep(0.01)
+    finally:
+        mirror.close()
+    assert len(looks) >= 4
+    assert "RuntimeError" in caplog.text and "SECRET" not in caplog.text
+
+
 # Refused files
 
 
@@ -351,6 +374,7 @@ REFUSED = {
     "run too long": lambda d: _with(d, run="a" * 17),
     "made in the future": lambda d: _with(d, made=d["made"] + 60),
     "made not a number": lambda d: _with(d, made="now"),
+    "made too big for a float": lambda d: _with(d, made=10**400),
     "version not whole": lambda d: _with(d, version=1.5),
     "snapshot not an object": lambda d: _with(d, snapshot=[]),
     "snapshot with more": lambda d: _with(d, snapshot={**d["snapshot"], "script": "x"}),
