@@ -1,3 +1,4 @@
+import dataclasses
 from datetime import UTC
 from urllib.parse import parse_qs, urlparse
 
@@ -9,6 +10,7 @@ from twobells.sources.bods import (
     BodsVehicleSource,
     fleet_and_registration,
     parse_siri_vm,
+    recorded_time,
     redact_key,
 )
 
@@ -252,3 +254,15 @@ def test_an_unreadable_or_zoneless_origin_time_is_dropped():
     assert parse_siri_vm(garbled)[0].origin_aimed is None
     zoneless = LIVE.replace(b"2026-10-09T16:35:00+00:00", b"2026-10-09T16:35:00")
     assert parse_siri_vm(zoneless)[0].origin_aimed is None  # local or UTC? Can't tell, so not used
+
+
+@pytest.mark.parametrize(("sent", "read"), [
+    ("2026-10-08T07:12:31+01:00", "2026-10-08T06:12:31+00:00"),
+    ("2026-10-08T06:12:31", "2026-10-08T06:12:31+00:00"),  # a bare time is UTC
+    ("yesterday-ish", None),
+    ("", None),
+])
+def test_reads_when_a_position_was_recorded(sent, read):
+    vehicle = parse_siri_vm(FIXTURE)[0]
+    found = recorded_time(dataclasses.replace(vehicle, recorded_at=sent))
+    assert (found.astimezone(UTC).isoformat() if found else None) == read

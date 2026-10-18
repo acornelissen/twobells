@@ -20,6 +20,13 @@ _CLOCK = re.compile(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]")
 HOLD_UNTIMED = timedelta(hours=1)
 
 
+def line_order(line: str) -> tuple:
+    """A bus line's place in a list: by its number, the rest breaking ties, so
+    X57 sorts as 57: 6, 57, X57, 61, 341. A line with no digits goes last."""
+    digits = "".join(c for c in line if c.isdigit())
+    return (int(digits) if digits else 10**6, line)
+
+
 class Status(str, Enum):
     ON_TIME = "on_time"
     LATE = "late"

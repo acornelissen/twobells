@@ -205,11 +205,16 @@ def _line_key(line: str) -> str:
     return line.strip().casefold()
 
 
-def _fresh(vehicle: Vehicle, now: datetime) -> bool:
+def recorded_time(vehicle: Vehicle) -> datetime | None:
+    """When the bus sent its position; None if unreadable. SIRI-VM times carry
+    an offset; a bare one is read as UTC."""
     try:
-        recorded = datetime.fromisoformat(vehicle.recorded_at)
-    except ValueError:
-        return False
-    if recorded.tzinfo is None:
-        recorded = recorded.replace(tzinfo=UTC)
-    return now - recorded <= MAX_AGE
+        when = datetime.fromisoformat(vehicle.recorded_at)
+    except (TypeError, ValueError):
+        return None
+    return when if when.tzinfo is not None else when.replace(tzinfo=UTC)
+
+
+def _fresh(vehicle: Vehicle, now: datetime) -> bool:
+    when = recorded_time(vehicle)
+    return when is not None and now - when <= MAX_AGE

@@ -23,6 +23,7 @@ from collections.abc import Iterable, Mapping, Set
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
+from ..core.model import line_order
 from ..timetable.build import runs_on
 from ..timetable.model import Schedule
 from .livebus import GRACE, heading_to
@@ -115,11 +116,6 @@ def _last(key: tuple[str, str], group: DayGroup, day: date, now: datetime) -> La
     return LastBus(key[0], key[1], group.stop, day, leaves, remaining)
 
 
-def _line_order(line: str) -> tuple:
-    digits = "".join(c for c in line if c.isdigit())
-    return (int(digits) if digits else 10**6, line)
-
-
 def last_buses(days: Mapping[date, DayGroups], now: datetime) -> list[LastBus]:
     """Each line and destination's last bus at `now` (board-local, without a
     zone), soonest first: yesterday's service day's while it is still to
@@ -136,7 +132,7 @@ def last_buses(days: Mapping[date, DayGroups], now: datetime) -> list[LastBus]:
                 continue  # its last bus last night has gone, and none runs today
             last = _last(key, later[key], today, now)
         found.append(last)
-    found.sort(key=lambda b: (b.leaves, _line_order(b.line), b.destination))
+    found.sort(key=lambda b: (b.leaves, line_order(b.line), b.destination))
     return found
 
 

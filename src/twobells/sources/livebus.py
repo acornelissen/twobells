@@ -52,14 +52,14 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Iterable, Mapping, Sequence, Set
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta, tzinfo
+from datetime import date, datetime, time, timedelta, tzinfo
 from itertools import pairwise
 
 from ..board.route import MAX_HEADING_OFF, MAX_OFF_ROUTE_M, MAX_OVERSHOOT_M, where
 from ..core.model import Departure, Status, Strip
 from ..timetable.model import NEAR_M, Call, Journey, Schedule, StopPosition, metres
 from ..timetable.roads import shape_key
-from .bods import Vehicle
+from .bods import Vehicle, recorded_time
 
 RunsOn = Callable[[Journey, date], bool]
 
@@ -116,15 +116,6 @@ class Progress:
 
     at: float  # along the journey's calls: 2.5 is halfway from the third call to the fourth
     delay: float  # seconds behind the timetable at that point; negative is early
-
-
-def _recorded(vehicle: Vehicle) -> datetime | None:
-    try:
-        recorded = datetime.fromisoformat(vehicle.recorded_at)
-    except ValueError:
-        return None
-    # SIRI-VM times carry an offset; a bare one is read as UTC, as sources/bods.py does.
-    return recorded if recorded.tzinfo is not None else recorded.replace(tzinfo=UTC)
 
 
 def _minute_at(calls: tuple[Call, ...], at: float) -> float:
@@ -228,7 +219,7 @@ def progress(
     along `shapes`, the timetable's saved roads (see above). None if it is on
     none of them, or its report time can't be read.
     """
-    recorded = _recorded(vehicle)
+    recorded = recorded_time(vehicle)
     if recorded is None:
         return None
     fits = _fits(vehicle, journey.calls, positions, shapes)
@@ -280,7 +271,7 @@ def _live(
             continue  # unmatched, or could be yesterday's journey or today's
         day, journey = hits[0]
         placed = progress(vehicle, journey, positions, day, tz, shapes)
-        recorded = _recorded(vehicle)  # readable whenever progress places the bus
+        recorded = recorded_time(vehicle)  # readable whenever progress places the bus
         if placed is None or recorded is None:
             continue
         key = (day, id(journey))

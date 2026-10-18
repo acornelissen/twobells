@@ -37,6 +37,7 @@ from urllib.parse import urlencode, urlsplit
 
 from ..core import files
 from ..core.errors import safe_message
+from ..core.model import line_order
 from ..core.net import get_bytes
 from ..core.walk import DEFAULT_STOP
 from ..settings.overlay import _toml_key, _toml_string
@@ -96,11 +97,6 @@ class Discovery:
     stop_lines: dict[str, list[str]] = field(default_factory=dict)  # stop label -> lines calling there
     notes: list[str] = field(default_factory=list)  # what was skipped or left unsearched, safe to show
     patterns: dict[str, list[Pattern]] = field(default_factory=dict)  # line -> its patterns, if asked for
-
-
-def line_order(line: str) -> tuple:
-    """Numbers in numeric order, then the rest: 6, 61, 237, 341, X57."""
-    return (0, int(line), "") if line.isdigit() else (1, 0, line)
 
 
 # The data set list.

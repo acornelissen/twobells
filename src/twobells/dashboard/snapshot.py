@@ -20,7 +20,7 @@ import threading
 import time
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
-from datetime import UTC, date, datetime, timedelta, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
 from typing import Protocol
 
 from ..core import announce, words
@@ -28,6 +28,7 @@ from ..core.model import Departure, Status, iso, minutes_apart, real, zoned
 from ..core.walk import WalkTimes
 from ..settings import modes as mode_list
 from ..settings import show as show_items
+from ..sources.bods import recorded_time
 from ..sources.bodsbus import BusBoard
 from ..sources.darwin import (
     CallingPoint,
@@ -441,16 +442,6 @@ def bus_route(live: LiveDeparture) -> str:
     return f"{dep.stop or ''}|{dep.service}|{dep.destination}"
 
 
-def _recorded(value: str, tz: tzinfo | None) -> datetime | None:
-    try:
-        recorded = datetime.fromisoformat(value)
-    except (TypeError, ValueError):
-        return None
-    if recorded.tzinfo is None:
-        recorded = recorded.replace(tzinfo=UTC)  # as sources/bods.py reads a bare time
-    return recorded.astimezone(tz)
-
-
 def _bearing(value: float | None) -> float | None:
     if value is None or not math.isfinite(value):
         return None
@@ -462,7 +453,8 @@ def _vehicle(live: LiveDeparture, now: datetime, with_position: bool) -> dict | 
     vehicle = live.tracked
     if vehicle is None or not live.live:
         return None
-    recorded = _recorded(vehicle.recorded_at, now.tzinfo)
+    recorded = recorded_time(vehicle)
+    recorded = recorded.astimezone(now.tzinfo) if recorded else None
     found = {
         "age_s": max(0, int((now - recorded).total_seconds())) if recorded else None,
         "recorded_at": iso(recorded),

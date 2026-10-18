@@ -32,6 +32,12 @@ def test_live_buses_on_our_lines_around_our_stops():
     assert view["fetched_at"] == "2026-10-09T10:14:30+01:00"
 
 
+def test_a_bus_sending_a_bare_time_is_read_as_utc():
+    vehicle = replace(bus(*HALFWAY, at(10, 14)), recorded_at="2026-10-09T09:14:00")
+    found = area_view(board([vehicle]), NOW)["vehicles"][0]
+    assert found["recorded_at"] == "2026-10-09T10:14:00+01:00" and found["age_s"] == 30
+
+
 def test_our_stops_and_the_routes_are_drawn_from_the_timetable():
     view = area_view(board([]), NOW)
     assert view["vehicles"] == []

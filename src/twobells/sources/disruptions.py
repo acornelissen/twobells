@@ -49,7 +49,7 @@ from xml.etree import ElementTree
 
 from ..core import net, safexml
 from ..core.errors import safe_message
-from ..core.model import iso
+from ..core.model import iso, line_order
 from ..dashboard.snapshot import row_id
 from ..timetable.model import Schedule, StopPosition
 
@@ -496,16 +496,11 @@ def bus_disruptions(situations: Iterable[Situation], area: BusArea | None, now: 
         found.append(Disruption(
             key=situation.number, mode="bus", title=situation.summary or "Bus disruption",
             summary=situation.description, reason=situation.reason, planned=situation.planned,
-            periods=periods, lines=tuple(sorted(lines, key=_line_order)), stops=tuple(sorted(labels)),
+            periods=periods, lines=tuple(sorted(lines, key=line_order)), stops=tuple(sorted(labels)),
             places=tuple(places), severity=_worst(c.severity for c in situation.consequences),
             link=situation.link, relevance=relevance,
         ))
     return _ordered(found, now)
-
-
-def _line_order(line: str) -> tuple:
-    digits = "".join(c for c in line if c.isdigit())
-    return (int(digits) if digits else 10**6, line)
 
 
 def _ordered(found: list[Disruption], now: datetime) -> list[Disruption]:

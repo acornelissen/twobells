@@ -24,8 +24,8 @@ import math
 from collections.abc import Iterable
 from datetime import date, datetime, timedelta
 
-from ..core.model import iso
-from ..sources.bods import Vehicle
+from ..core.model import iso, line_order
+from ..sources.bods import Vehicle, recorded_time
 from ..sources.bodsbus import BusBoard
 from ..sources.disruptions import BusArea, plain_text
 from ..sources.livebus import LiveJourney
@@ -41,23 +41,8 @@ MAX_ROUTES = 40
 _NAME_LIMIT = 80
 
 
-def _line_order(line: str) -> tuple:
-    digits = "".join(c for c in line if c.isdigit())
-    return (int(digits) if digits else 10**6, line)
-
-
 def _finite(*values: float | None) -> bool:
     return all(isinstance(v, (int, float)) and math.isfinite(v) for v in values)
-
-
-def _recorded(vehicle: Vehicle, now: datetime) -> datetime | None:
-    try:
-        recorded = datetime.fromisoformat(vehicle.recorded_at)
-    except (TypeError, ValueError):
-        return None
-    if recorded.tzinfo is None:
-        return None
-    return recorded.astimezone(now.tzinfo)
 
 
 def _next_stop(placed: LiveJourney, schedule: Schedule) -> str | None:
@@ -71,7 +56,8 @@ def _next_stop(placed: LiveJourney, schedule: Schedule) -> str | None:
 
 
 def _vehicle(vehicle: Vehicle, placed: LiveJourney | None, schedule: Schedule, now: datetime) -> dict:
-    recorded = _recorded(vehicle, now)
+    recorded = recorded_time(vehicle)
+    recorded = recorded.astimezone(now.tzinfo) if recorded else None
     bearing = vehicle.bearing if _finite(vehicle.bearing) else None
     return {
         "line": plain_text(vehicle.line, 20),
@@ -96,7 +82,7 @@ def _routes(journeys: Iterable[Journey], schedule: Schedule) -> list[dict]:
         key = (journey.line, journey.destination)
         if len(atcos) >= 2 and len(atcos) > len(best.get(key, ())):
             best[key] = atcos
-    keys = sorted(best, key=lambda k: (_line_order(k[0]), k[1]))[:MAX_ROUTES]
+    keys = sorted(best, key=lambda k: (line_order(k[0]), k[1]))[:MAX_ROUTES]
     return [{"line": line, "destination": destination,
              "path": path(best[(line, destination)], schedule.positions, schedule.shapes)}
             for line, destination in keys]
@@ -118,7 +104,7 @@ def area_view(board: BusBoard, now: datetime) -> dict:
         if box is not None and not (box[0] <= vehicle.lon <= box[2] and box[1] <= vehicle.lat <= box[3]):
             continue
         vehicles.append(_vehicle(vehicle, placed.get(vehicle), schedule, now))
-    vehicles.sort(key=lambda v: (_line_order(v["line"]), v["destination"], v["lat"], v["lon"]))
+    vehicles.sort(key=lambda v: (line_order(v["line"]), v["destination"], v["lat"], v["lon"]))
     stops = [{"label": label, "name": stop_name(schedule.positions[atco], label), "lat": schedule.positions[atco].lat,
               "lon": schedule.positions[atco].lon}
              for label, atco in sorted(schedule.stops.items()) if atco in schedule.positions]
@@ -159,6 +145,6 @@ def timetable_changes(schedule: Schedule, today: date, days: int = CHANGE_DAYS) 
         for key, journeys in by_line.items():
             if key not in found and _running(journeys, day) != _running(journeys, week_before):
                 found[key] = day
-    ordered = sorted(found.items(), key=lambda item: (item[1], _line_order(item[0][0]), item[0][1]))
+    ordered = sorted(found.items(), key=lambda item: (item[1], line_order(item[0][0]), item[0][1]))
     return [{"line": line, "operator": operator, "from": day.isoformat()}
             for (line, operator), day in ordered[:MAX_CHANGES]]

@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from twobells.core.model import Departure, Status, minutes_between
+from twobells.core.model import Departure, Status, line_order, minutes_between
 
 
 def make(scheduled="07:12", expected=None, status=Status.ON_TIME):
@@ -245,3 +245,8 @@ def test_via_and_platform_changed_must_be_the_right_types():
     with pytest.raises(TypeError):
         at("1", platform_changed="yes")
     assert at("1", via="via Guide Bridge").via == "via Guide Bridge"
+
+
+def test_lines_sort_by_their_number_with_the_prefix_breaking_ties():
+    lines = ["X57", "341", "Free", "61", "57", "6", "X1"]
+    assert sorted(lines, key=line_order) == ["X1", "6", "57", "X57", "61", "341", "Free"]
