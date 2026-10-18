@@ -721,14 +721,44 @@ def test_other_host_names_fail(host):
     assert not local_host(host)
 
 
-@pytest.mark.parametrize("address, host, refused", [
-    ("192.168.1.5", "pi.local:8080", False),
-    ("8.8.8.8", "pi.local:8080", True),
-    ("192.168.1.5", "evil.example.com", True),
-    ("192.168.1.5", None, True),
+# The web server's own check: every request it serves passes it.
+@pytest.mark.parametrize("address, hosts, refused", [
+    ("192.168.1.5", ["pi.local:8080"], False),
+    ("8.8.8.8", ["pi.local:8080"], True),
+    ("192.168.1.5", ["evil.example.com"], True),
+    ("192.168.1.5", [], True),
+    ("192.168.1.5", ["pi.local", "pi.local"], True),
+    ("192.168.1.5", ["pi.local", "evil.example.com"], True),
+    ("192.168.1.5", [""], True),
+    ("::1", ["[::1]:8090"], False),
+    ("::ffff:8.8.8.8", ["pi.local"], True),
+    ("192.168.1.5", ["departures.example.com"], True),  # not allowed unless named
 ])
-def test_outsiders_are_requests_from_the_internet_or_to_another_host(address, host, refused):
-    assert outsider(address, host) is refused
+def test_outsiders_are_requests_from_the_internet_or_to_another_host(address, hosts, refused):
+    assert outsider(address, hosts) is refused
+
+
+ALLOWED = frozenset({"departures.example.com"})
+
+
+@pytest.mark.parametrize("hosts, refused", [
+    (["departures.example.com"], False),
+    (["Departures.Example.com:8090"], False),
+    (["pi.local"], False),  # a local host still passes
+    (["evil.departures.example.com"], True),
+    (["departures.example.com.evil.com"], True),
+    (["departures.example.com:8090:1"], True),
+    (["[departures.example.com]"], True),  # an IPv6 literal is never an allowed name
+    (["departures.example.com", "departures.example.com"], True),
+])
+def test_an_allowed_host_passes_by_its_exact_name(hosts, refused):
+    assert outsider("192.168.1.5", hosts, ALLOWED) is refused
+
+
+def test_an_allowed_host_still_needs_an_allowed_client():
+    assert outsider("8.8.8.8", ["departures.example.com"], ALLOWED)
+    assert outsider("10.0.0.2", ["pi.local"], client_allowed=lambda address: False)
+    assert not outsider("8.8.8.8", ["pi.local"], client_allowed=lambda address: True)
 
 
 def test_form_pages_carry_strict_headers():

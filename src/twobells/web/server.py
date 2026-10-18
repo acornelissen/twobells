@@ -49,7 +49,7 @@ from typing import TYPE_CHECKING
 from ..dashboard.snapshot import SnapshotSource
 from ..version import about
 from . import settingsite
-from .auth import local_host, private_address
+from .auth import outsider, private_address
 
 if TYPE_CHECKING:
     from ..dashboard.performance import Performance
@@ -190,15 +190,6 @@ class DashboardApp:
     client_allowed: Callable[[str], bool] = private_address
     heartbeat: float = HEARTBEAT_S
     stream_seconds: float = STREAM_SECONDS
-
-
-def _host_name(host: str) -> str:
-    """The name in a Host header, without its port; "" for an IPv6 literal,
-    which allowed_hosts never holds."""
-    name = host.strip().lower()
-    if name.startswith("["):
-        return ""
-    return name.rsplit(":", 1)[0] if name.count(":") == 1 else name
 
 
 def _matches(header: str | None, etag: str) -> bool:
@@ -349,10 +340,8 @@ class _Handler(BaseHTTPRequestHandler):
         self._handle()
 
     def _outsider(self) -> bool:
-        hosts = self.headers.get_all("Host") or []
-        if len(hosts) != 1 or not self.app.client_allowed(self.client_address[0]):
-            return True
-        return not (local_host(hosts[0]) or _host_name(hosts[0]) in self.app.allowed_hosts)
+        return outsider(self.client_address[0], self.headers.get_all("Host") or [], self.app.allowed_hosts,
+                        self.app.client_allowed)
 
     def _handle(self) -> None:
         path = self.path.split("?", 1)[0].split("#", 1)[0]

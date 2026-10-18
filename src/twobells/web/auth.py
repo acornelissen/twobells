@@ -26,7 +26,7 @@ import re
 import secrets
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence, Set
 from dataclasses import dataclass, field
 from datetime import datetime, tzinfo
 from functools import lru_cache
@@ -653,10 +653,24 @@ def local_host(host: str | None) -> bool:
     )
 
 
-def outsider(address: str, host: str | None) -> bool:
-    """Whether to refuse a request: it comes from outside the home network, or
-    its Host header names somewhere other than this machine."""
-    return not private_address(address) or not local_host(host)
+def outsider(address: str, hosts: Sequence[str], allowed_hosts: Set[str] = frozenset(),
+             client_allowed: Callable[[str], bool] = private_address) -> bool:
+    """Whether the web server refuses a request: it comes from an address
+    `client_allowed` refuses (by default, one outside the home network), it
+    has other than one Host header (`hosts`, all it sent), or that names
+    somewhere other than this machine or a name in `allowed_hosts`."""
+    if len(hosts) != 1 or not client_allowed(address):
+        return True
+    return not (local_host(hosts[0]) or _host_name(hosts[0]) in allowed_hosts)
+
+
+def _host_name(host: str) -> str:
+    """The name in a Host header, without its port; "" for an IPv6 literal,
+    which allowed_hosts never holds."""
+    name = host.strip().lower()
+    if name.startswith("["):
+        return ""
+    return name.rsplit(":", 1)[0] if name.count(":") == 1 else name
 
 
 # --- Reset codes ---
