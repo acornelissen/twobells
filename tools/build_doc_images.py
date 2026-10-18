@@ -37,13 +37,14 @@ from doc_scenes import (  # noqa: E402
 from twobells.board.displays.display import PngDisplay  # noqa: E402
 from twobells.board.names import DISPLAY_PANELS  # noqa: E402
 from twobells.board.platformclock import clock_view, render_clock  # noqa: E402
-from twobells.board.route import RouteView, where  # noqa: E402
+from twobells.board.route import RouteView  # noqa: E402
 from twobells.board.themes import theme_named  # noqa: E402
 from twobells.board.view import build_view  # noqa: E402
 from twobells.cli.main import main  # noqa: E402
 from twobells.core.model import Departure, Status  # noqa: E402
 from twobells.core.walk import WalkTimes  # noqa: E402
 from twobells.emulator.fake import DEMO_CALLING, DEMO_STRIP, DEMO_TITLE  # noqa: E402
+from twobells.timetable.route import where  # noqa: E402
 
 IMAGES = ROOT / "docs" / "images"
 

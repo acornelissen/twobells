@@ -57,10 +57,10 @@ from ..sources.trams import TramTimetableSource
 from ..sources.transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
 from ..sources.transportapi import TransportApiBusSource
 from ..sources.weather import OpenMeteoSource
+from ..timetable.route import RouteStop, RouteStrip
 from .app import Board, SourceConfig, Tracker, Weather, reset_code_page
 from .names import DISPLAY_PANELS, themes_for
 from .positions import Positions
-from .route import RouteStop, RouteStrip
 from .themes import theme_named, with_text_size
 
 # What the set-me-up page is drawn with, from config.toml where they load.

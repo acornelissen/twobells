@@ -97,8 +97,8 @@ def test_fake_bus_reaches_your_stop_when_it_is_due():
 
     import pytest
 
-    from twobells.board.route import position_on
     from twobells.emulator.fake import DEMO_STRIP, FakeVehicleSource, SimClock
+    from twobells.timetable.route import position_on
 
     # 341s are due at :05, :25, :45; at 07:21 the 07:25 is 4 min (2 stops) out.
     [bus] = FakeVehicleSource(SimClock(datetime(2026, 10, 8, 7, 21))).fetch()

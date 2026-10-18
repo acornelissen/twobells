@@ -400,8 +400,8 @@ def test_loop_writes_state_only_when_fetched_data_changes():
 # --- Route strip page (screens only) ---
 
 from twobells.board.app import Tracker  # noqa: E402
-from twobells.board.route import RouteStop, RouteStrip  # noqa: E402
 from twobells.sources.bods import Vehicle  # noqa: E402
+from twobells.timetable.route import RouteStop, RouteStrip  # noqa: E402
 
 STRIP = RouteStrip(
     "341",

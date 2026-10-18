@@ -31,7 +31,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from twobells.board.route import where
 from twobells.core import calling
 from twobells.core.model import Departure, Status, Strip, iso, shift, strip_key
 from twobells.core.walk import WalkTimes
@@ -41,6 +40,7 @@ from twobells.sources.tfl import Arrival, label_for
 from twobells.sources.tfl import Message as TflMessage
 from twobells.sources.tfl import departure as tfl_departure
 from twobells.sources.trams import departure as tram_departure
+from twobells.timetable.route import where
 from twobells.timetable.trams import TramCall
 
 FIXTURES = Path(__file__).resolve().parents[1] / "tests" / "fixtures"

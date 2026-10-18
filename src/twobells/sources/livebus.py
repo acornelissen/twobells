@@ -55,10 +55,10 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, tzinfo
 from itertools import pairwise
 
-from ..board.route import MAX_HEADING_OFF, MAX_OFF_ROUTE_M, MAX_OVERSHOOT_M, where
 from ..core.model import Departure, Status, Strip
 from ..timetable.model import NEAR_M, Call, Journey, Schedule, StopPosition, metres
 from ..timetable.roads import shape_key
+from ..timetable.route import MAX_HEADING_OFF, MAX_OFF_ROUTE_M, MAX_OVERSHOOT_M, where
 from .bods import Vehicle, recorded_time
 
 RunsOn = Callable[[Journey, date], bool]

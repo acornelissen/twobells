@@ -25,12 +25,13 @@ from ..settings.resetcodes import ResetCodes, spaced
 from ..sources.bods import Vehicle
 from ..sources.lastbus import screen_line
 from ..sources.weather import Hour, hours_from_dicts, hours_to_dicts, rain_line
+from ..timetable.route import RouteStrip, locate, where
 from . import positions as row_positions
 from .panel import Panel
 from .platformclock import ClockView, clock_view, render_clock
 from .positions import Positions
 from .render import Palette
-from .route import RouteStrip, RouteView, locate, target, where
+from .route import RouteView, target
 from .scroll import Frame
 from .speaker import Speaker
 from .state import (

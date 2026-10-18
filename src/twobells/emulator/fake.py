@@ -15,12 +15,12 @@ import math
 import random
 from datetime import datetime, timedelta
 
-from ..board.route import RouteStop, RouteStrip, where
 from ..core import calling
 from ..core.model import Departure, Status, Strip, minutes_between, shift, strip_key
 from ..sources.bods import Vehicle
 from ..sources.darwin import CallingPoint, ServiceDetails, ServiceGone, StationCall, TrainService
 from ..sources.weather import Hour
+from ..timetable.route import RouteStop, RouteStrip, where
 
 _BUCKET_MINUTES = 6
 
