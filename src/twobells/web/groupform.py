@@ -422,7 +422,7 @@ class GroupForm:
         stops = table.get("stops") if isinstance(table, dict) else None
         if not isinstance(stops, dict):
             return []
-        return [label for label in stops if isinstance(label, str) and schema.LABEL.match(label)]
+        return [label for label in stops if isinstance(label, str) and schema.LABEL.fullmatch(label)]
 
     def _walk_boxes(self, f: Field, data: dict) -> list[tuple[str, str]]:
         """Each stop's walk box: its name (the field's, then the label) and its
@@ -671,7 +671,7 @@ class GroupForm:
             return _radios(f, value, error)
         hint = f.hint
         crs = data.get("train", {}).get("crs") if isinstance(data.get("train"), dict) else None
-        if f.name == "train_crs" and isinstance(crs, str) and schema.CRS.match(crs):
+        if f.name == "train_crs" and isinstance(crs, str) and schema.CRS.fullmatch(crs):
             hint = f"{hint} Currently {places.station(crs.upper())}."
         return _field(f, value, error, hint)
 

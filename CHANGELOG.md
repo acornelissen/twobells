@@ -36,6 +36,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 ### Fixed
 
 - A number on the settings pages takes the digits 0 to 9 alone, up to 9 of them. "²" failed the page with an error rather than saying what to enter, and other scripts' digits, such as Arabic-Indic ones, were saved as numbers.
+- A stop label, stop code, station code or key with a newline at its end is refused, as any other character out of place is. The checks let one last newline through, so a tram stop labelled "T" and a newline in the setup wizard saved a `settings.toml` that couldn't be read again.
 
 ## [0.4.3] - 2026-10-18
 

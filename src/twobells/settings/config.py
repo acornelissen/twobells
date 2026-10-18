@@ -320,7 +320,7 @@ def metrolink_on(data: dict) -> bool:
         return False
     stops = metro.get("stops")
     codes = stops.values() if isinstance(stops, dict) else ()
-    return not any(isinstance(code, str) and LONDON_STOP.match(code) for code in codes)
+    return not any(isinstance(code, str) and LONDON_STOP.fullmatch(code) for code in codes)
 
 
 def needs_timetable(data: dict, mode: str, install: Install | None = None) -> bool:
@@ -483,12 +483,12 @@ def _tram_stops(section: dict) -> dict[str, str]:
     if len(stops) > MAX_TRAM_STOPS:
         raise ConfigError(f"[metro.stops] has {len(stops)} stops; a board has at most {MAX_TRAM_STOPS}")
     for label, code in stops.items():
-        if not isinstance(label, str) or not LABEL.match(label):
+        if not isinstance(label, str) or not LABEL.fullmatch(label):
             raise ConfigError(f"[metro.stops] label {str(label)[:20]!r} must be 1 to 3 letters or digits")
-        if not isinstance(code, str) or not (TRAM_STOP.match(code) or LONDON_STOP.match(code)):
+        if not isinstance(code, str) or not (TRAM_STOP.fullmatch(code) or LONDON_STOP.fullmatch(code)):
             raise ConfigError(f"[metro.stops] {label} is {str(code)[:40]!r}; set a Metrolink stop code in quotes, "
                               'like "9400ZZMAPIC", or TfL\'s for a London station or pier, like "940GZZLUBNK"')
-    if len({bool(LONDON_STOP.match(code)) for code in stops.values()}) > 1:
+    if len({bool(LONDON_STOP.fullmatch(code)) for code in stops.values()}) > 1:
         raise ConfigError("[metro.stops] has Metrolink stops and London ones; a board has one or the other")
     return stops
 
@@ -500,7 +500,7 @@ _TFL_KEY = re.compile(r"^[A-Za-z0-9._~+/=-]{1,200}$")
 def _tfl_key(env: Mapping[str, str]) -> str:
     """TFL_APP_KEY, optional: without one TfL allows fewer calls a minute."""
     key = env.get("TFL_APP_KEY", "").strip()
-    if key and not _TFL_KEY.match(key):
+    if key and not _TFL_KEY.fullmatch(key):
         raise ConfigError("TFL_APP_KEY in secrets.env isn't a key: paste it again from TfL's API portal")
     return key
 
@@ -515,7 +515,7 @@ def _metro(section: dict, env: Mapping[str, str], holidays: frozenset[date], fol
     rows = _whole(section, "rows", defaults["rows"], where)
     directions = _texts(section, "directions", where) or None
     source: TramTimetableSource | TflSource
-    if any(LONDON_STOP.match(code) for code in stops.values()):
+    if any(LONDON_STOP.fullmatch(code) for code in stops.values()):
         known = london_stops_by_code()
         source = TflSource(stops, ZoneInfo(timezone), app_key=_tfl_key(env), rows=rows, directions=directions,
                            lines={code: known[code].lines for code in stops.values() if code in known})

@@ -238,7 +238,7 @@ def normalise_postcode(postcode: str) -> str:
     if not isinstance(postcode, str) or len(postcode) > 16:
         raise SetupError("That isn't a UK postcode")
     packed = "".join(postcode.split()).upper()
-    if not _POSTCODE.match(packed):
+    if not _POSTCODE.fullmatch(packed):
         raise SetupError("That isn't a UK postcode")
     return f"{packed[:-3]} {packed[-3:]}"
 
@@ -411,7 +411,7 @@ def parse_stations(text: str) -> tuple[tuple[str, str, float, float], ...]:
     for row in _data_rows(text):
         name, crs = _text(row.get("name"), 80), row.get("crs") or ""
         position = _position(row.get("lat"), row.get("lon"), strings=True)
-        if name and _CRS.match(crs) and position:
+        if name and _CRS.fullmatch(crs) and position:
             rows.append((name, crs, *position))
     return tuple(rows)
 
@@ -448,7 +448,7 @@ def parse_tram_stops(text: str) -> tuple[tuple[str, str, float, float], ...]:
     for row in _data_rows(text):
         name, code = _text(row.get("name"), 80), row.get("code") or ""
         position = _position(row.get("lat"), row.get("lon"), strings=True)
-        if name and TRAM_STOP.match(code) and position:
+        if name and TRAM_STOP.fullmatch(code) and position:
             rows.append((name, code, *position))
     return tuple(rows)
 
@@ -510,8 +510,8 @@ def parse_london_stops(text: str) -> tuple[LondonStop, ...]:
         name, code, kind = _text(row.get("name"), 80), row.get("code") or "", row.get("kind") or ""
         lines = tuple(str(row.get("lines") or "").split())
         position = _position(row.get("lat"), row.get("lon"), strings=True)
-        if (name and LONDON_STOP.match(code) and kind in LONDON_KINDS and position and len(lines) <= 20
-                and all(_LINE_ID.match(line) for line in lines)):
+        if (name and LONDON_STOP.fullmatch(code) and kind in LONDON_KINDS and position and len(lines) <= 20
+                and all(_LINE_ID.fullmatch(line) for line in lines)):
             rows.append(LondonStop(name, code, kind, lines, *position))
     return tuple(rows)
 
@@ -585,7 +585,7 @@ def parse_area_grid(text: str) -> dict[tuple[int, int], tuple[str, ...]]:
             cell = int(row.get("lat10") or ""), int(row.get("lon10") or "")
         except ValueError:
             continue
-        areas = tuple(a for a in (row.get("areas") or "").split() if _AREA.match(a))
+        areas = tuple(a for a in (row.get("areas") or "").split() if _AREA.fullmatch(a))
         if areas:
             grid[cell] = areas
     return grid
@@ -634,7 +634,7 @@ def _stops_in(lines: IO[str], lat: float, lon: float, within_m: float, limit: in
     try:
         for row in csv.DictReader(bounded.lines(lines, MAX_NAPTAN_LINE)):
             atco = row.get("ATCOCode") or ""
-            if row.get("Status") != "active" or row.get("StopType") not in BUS_STOP_TYPES or not _ATCO.match(atco):
+            if row.get("Status") != "active" or row.get("StopType") not in BUS_STOP_TYPES or not _ATCO.fullmatch(atco):
                 continue
             position = naptan_position(row)
             if position is None:
@@ -788,7 +788,7 @@ def stop_labels(stops: Sequence[tuple[str | None, Stop]]) -> list[str]:
         raise SetupError(f"Pick at most {MAX_BOARD_STOPS} stops")
     given = [label for label, _ in stops if label]
     for label in given:
-        if not isinstance(label, str) or not _LABEL.match(label):
+        if not isinstance(label, str) or not _LABEL.fullmatch(label):
             raise SetupError("A stop label is 1 to 3 letters or digits")
     if len(set(given)) != len(given):
         raise SetupError("Two stops have the same label")
@@ -808,7 +808,7 @@ def config_fragment(home: Located | None, station: Station | None, stops: Sequen
         _check_point(home.lat, home.lon)
     fragment: dict = {}
     if station is not None:
-        if not _CRS.match(station.crs):
+        if not _CRS.fullmatch(station.crs):
             raise SetupError("A station code is three capital letters")
         train: dict = {"crs": station.crs}
         if station.crs in walk:
@@ -816,7 +816,7 @@ def config_fragment(home: Located | None, station: Station | None, stops: Sequen
         fragment["train"] = train
     if stops:
         atcos = [stop.atco for _, stop in stops]
-        if any(not _ATCO.match(a) for a in atcos) or len(set(atcos)) != len(atcos):
+        if any(not _ATCO.fullmatch(a) for a in atcos) or len(set(atcos)) != len(atcos):
             raise SetupError("Each stop must be a different NaPTAN stop")
         labels = stop_labels(stops)
         bus: dict = {"stops": {label: stop.atco for label, (_, stop) in zip(labels, stops, strict=True)}}

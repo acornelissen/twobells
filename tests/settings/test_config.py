@@ -1160,6 +1160,8 @@ def test_trams_load_from_their_stops_with_their_own_walks(tmp_path):
     ('T = "1800SB12341"', "set a Metrolink stop code"),
     ('T = 5', "set a Metrolink stop code"),
     ('"Stop T" = "9400ZZMAPIC"', "1 to 3 letters or digits"),
+    ('"T\\n" = "9400ZZMAPIC"', "1 to 3 letters or digits"),  # a pattern's $ matches before a last newline
+    ('T = "9400ZZMAPIC\\n"', "set a Metrolink stop code"),
     ("\n".join(f'{c} = "9400ZZMAPIC"' for c in "ABCDE"), "at most 4"),
 ])
 def test_tram_stops_that_aren_t_metrolink_stops_are_refused(tmp_path, stops, says):

@@ -131,7 +131,7 @@ def crs(optional: bool = False) -> Callable[[str], str | None]:
         value = raw.strip().upper()
         if not value and optional:
             return None
-        if not CRS.match(value):
+        if not CRS.fullmatch(value):
             raise Invalid("Enter a 3-letter station code, like GLO")
         return value
     return check
@@ -167,7 +167,7 @@ def pairs(raw: str, value_check: Callable[[str], object], what: str) -> dict[str
         if not line:
             continue
         label, sep, value = (part.strip() for part in line.partition("="))
-        if not sep or not LABEL.match(label):
+        if not sep or not LABEL.fullmatch(label):
             raise Invalid(f"“{line[:40]}” isn't LABEL = {what}; use a label of 1 to 3 letters or digits")
         try:
             found[label] = value_check(value)

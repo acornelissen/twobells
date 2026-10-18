@@ -147,6 +147,10 @@ def test_a_key_is_checked_and_never_repeated(board):
     with pytest.raises(OverlayError) as caught:
         save_to(board_target(config), CHANGES, {"BODS_API_KEY": "has spaces in-it"}, ENV)
     assert "has spaces" not in str(caught.value) and "BODS_API_KEY" in str(caught.value)
+    with pytest.raises(OverlayError):
+        save_to(board_target(config), CHANGES, {"BODS_API_KEY": "new-bods-key\n"}, ENV)
+    with pytest.raises(OverlayError):
+        save_to(board_target(config), CHANGES, {"BODS_API_KEY\n": "new-bods-key"}, ENV)
     # The key is right but the settings fail: the message names no key value.
     with pytest.raises(OverlayError) as caught:
         save_to(board_target(config), {"train": {"crs": "TOOLONG"}}, {"RDM_API_KEY": "TOOLONG"}, {})
@@ -253,6 +257,6 @@ def test_to_toml_round_trips_every_kind_of_value():
 
 
 def test_to_toml_round_trips_characters_toml_is_fussy_about():
-    data = {"title": 'Say "hi" \\ there', "odd key": 1,
+    data = {"title": 'Say "hi" \\ there', "odd key": 1, "T\n": 2,
             "bus": {"directions": ["Hyde ➜ 🚏", "Bus 🚌 café\x7f\x01\ttab"], "stops": {"A": "1000DGHS0900"}}}
     assert tomllib.loads(to_toml(data)) == data

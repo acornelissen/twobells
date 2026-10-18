@@ -378,9 +378,9 @@ def _stops(value, field: str = "stops", least: int = 0) -> dict[str, str]:
         raise Invalid(f"Pick {least} to {MAX_BOARD_STOPS} stops", field)
     stops = {}
     for label, atco in value.items():
-        if not _LABEL.match(label):
+        if not _LABEL.fullmatch(label):
             raise Invalid("A stop label is 1 to 3 letters or digits", field)
-        if not isinstance(atco, str) or not _ATCO.match(atco):
+        if not isinstance(atco, str) or not _ATCO.fullmatch(atco):
             raise Invalid(f"Stop {label} needs a NaPTAN stop code", field)
         stops[label] = atco
     if len({label.upper() for label in stops}) != len(stops):
@@ -396,13 +396,13 @@ def _trams(value, field: str = "trams") -> dict[str, str]:
         raise Invalid(f"Pick at most {MAX_TRAM_STOPS} tram stops", field)
     trams = {}
     for label, code in value.items():
-        if not _LABEL.match(label):
+        if not _LABEL.fullmatch(label):
             raise Invalid("A tram stop label is 1 to 3 letters or digits", field)
-        if (not isinstance(code, str) or not (setup.TRAM_STOP.match(code) or setup.LONDON_STOP.match(code))
+        if (not isinstance(code, str) or not (setup.TRAM_STOP.fullmatch(code) or setup.LONDON_STOP.fullmatch(code))
                 or code not in setup.tram_stop_names()):
             raise Invalid(f"Tram stop {label} needs a Metrolink stop code, or TfL's for a London stop", field)
         trams[label] = code
-    if len({bool(setup.LONDON_STOP.match(code)) for code in trams.values()}) > 1:
+    if len({bool(setup.LONDON_STOP.fullmatch(code)) for code in trams.values()}) > 1:
         raise Invalid("Pick Metrolink stops or London ones, not both", field)
     if len({label.upper() for label in trams}) != len(trams) or len(set(trams.values())) != len(trams):
         raise Invalid("Pick each tram stop once, with a label of its own", field)
@@ -414,7 +414,7 @@ def _key(value, field: str) -> str:
     if not isinstance(value, str):
         raise Invalid("Paste the key as text", field)
     key = value.strip()
-    if key and not _KEY_VALUE.match(key):
+    if key and not _KEY_VALUE.fullmatch(key):
         raise Invalid("Paste the key exactly; it has only letters, digits and . _ ~ + / = -", field)
     return key
 
@@ -644,7 +644,7 @@ class SetupApi:
         noun = install.noun if noun is None else noun
         view_links = dict(view_links or {})
         for label, href in [*links, *view_links.values()]:
-            if not label or len(label) > 40 or not _LINK.match(href):
+            if not label or len(label) > 40 or not _LINK.fullmatch(href):
                 raise ValueError("A link is a short label and a plain path or http(s) address")
         if set(view_links) - set(schema.VIEWS):
             raise ValueError("A view's link is for a view")
@@ -652,11 +652,11 @@ class SetupApi:
             raise ValueError(f"A title is 1 to {_TITLE_LENGTH} ordinary characters")
         if not _NOUN.fullmatch(noun):
             raise ValueError("A noun is one lower-case word, like board")
-        if not keys or any(not _ENV_NAME.match(name) for name, _, _ in keys):
+        if not keys or any(not _ENV_NAME.fullmatch(name) for name, _, _ in keys):
             raise ValueError("Keys are named like environment variables")
         if not install.offered or set(install.offered) - set(schema.VIEWS):
             raise ValueError("An install offers at least one view, and only views")
-        if back is not None and not (back.startswith("/") and _LINK.match(back)):
+        if back is not None and not (back.startswith("/") and _LINK.fullmatch(back)):
             raise ValueError("Back is a plain path on this site")
         self._back = back or ""
         self._title = title
@@ -861,7 +861,7 @@ class SetupApi:
         return {"stations": [_station(s) for s in found]}
 
     def _known_station(self, value, field: str) -> Station:
-        if not isinstance(value, str) or not _CRS.match(value.strip()):
+        if not isinstance(value, str) or not _CRS.fullmatch(value.strip()):
             raise Invalid("A station code is 3 letters, like GLO", field)
         crs = value.strip().upper()
         for name, code, lat, lon in self._stations():
@@ -927,7 +927,7 @@ class SetupApi:
         if not isinstance(atcos, list) or len(atcos) > MAX_BOARD_STOPS:
             raise Invalid(f"Ask about at most {MAX_BOARD_STOPS} stops", "stop_atcos")
         for atco in atcos:
-            if not isinstance(atco, str) or not _ATCO.match(atco):
+            if not isinstance(atco, str) or not _ATCO.fullmatch(atco):
                 raise Invalid("A stop is its NaPTAN code", "stop_atcos")
             with self._lock:
                 stop = self._found_stops.get(atco)
@@ -1231,7 +1231,7 @@ def _saved_station(train: Mapping) -> str:
     """[train] crs, upper case, if trains are on and it is a station code;
     else "" (the template's CHANGE_ME, say)."""
     crs = train.get("crs")
-    if train.get("enabled") is False or not isinstance(crs, str) or not _CRS.match(crs):
+    if train.get("enabled") is False or not isinstance(crs, str) or not _CRS.fullmatch(crs):
         return ""
     return crs.upper()
 
@@ -1243,7 +1243,7 @@ def _saved_stops(bus: Mapping) -> dict[str, str]:
     if bus.get("enabled") is False or not isinstance(stops, dict):
         return {}
     found = [(label, atco) for label, atco in stops.items()
-             if isinstance(label, str) and _LABEL.match(label) and isinstance(atco, str) and _ATCO.match(atco)]
+             if isinstance(label, str) and _LABEL.fullmatch(label) and isinstance(atco, str) and _ATCO.fullmatch(atco)]
     return dict(found[:MAX_BOARD_STOPS])
 
 
@@ -1253,8 +1253,8 @@ def _saved_trams(metro: Mapping) -> dict[str, str]:
     stops = metro.get("stops")
     if metro.get("enabled") is False or not isinstance(stops, dict):
         return {}
-    found = [(label, code) for label, code in stops.items() if isinstance(label, str) and _LABEL.match(label)
-             and isinstance(code, str) and (setup.TRAM_STOP.match(code) or setup.LONDON_STOP.match(code))]
+    found = [(label, code) for label, code in stops.items() if isinstance(label, str) and _LABEL.fullmatch(label)
+             and isinstance(code, str) and (setup.TRAM_STOP.fullmatch(code) or setup.LONDON_STOP.fullmatch(code))]
     return dict(found[:MAX_TRAM_STOPS])
 
 

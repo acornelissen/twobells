@@ -380,11 +380,11 @@ def _off(section: dict) -> bool:
 def _station_line(train: dict) -> str:
     """"Glossop (GLO), 12 min walk; only trains calling at Manchester Piccadilly (MAN)"."""
     crs = train.get("crs")
-    if not isinstance(crs, str) or not schema.CRS.match(crs):
+    if not isinstance(crs, str) or not schema.CRS.fullmatch(crs):
         return ""
     line = places.station(crs.upper()) + _walk(_minutes(train.get("walk_minutes")))
     towards = train.get("filter_crs")
-    if isinstance(towards, str) and schema.CRS.match(towards):
+    if isinstance(towards, str) and schema.CRS.fullmatch(towards):
         line += f"; only trains calling at {places.station(towards.upper())}"
     return line + ("; switched off" if _off(train) else "")
 
@@ -395,7 +395,7 @@ def stops_of(bus: dict) -> dict[str, str]:
     if not isinstance(stops, dict):
         return {}
     return {label: code for label, code in stops.items()
-            if isinstance(label, str) and schema.LABEL.match(label) and isinstance(code, str)
+            if isinstance(label, str) and schema.LABEL.fullmatch(label) and isinstance(code, str)
             and schema.ATCO.fullmatch(code)}
 
 

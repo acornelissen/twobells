@@ -74,7 +74,7 @@ def _toml_string(value: str) -> str:
 
 
 def _toml_key(key: str) -> str:
-    return key if re.match(r"^[A-Za-z0-9_-]+$", key) else _toml_string(key)
+    return key if re.fullmatch(r"[A-Za-z0-9_-]+", key) else _toml_string(key)
 
 
 def _write(path: Path, text: str | bytes, mode: int) -> None:
@@ -188,8 +188,8 @@ def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping
     the settings site replacing one it can't read, which is kept as
     settings.toml.broken."""
     for name, value in keys.items():
-        if not _ENV_NAME.match(name) or not isinstance(value, str) or not KEY_VALUE.match(value):
-            raise OverlayError(f"{name if _ENV_NAME.match(name) else 'A key'} isn't a key the board can store")
+        if not _ENV_NAME.fullmatch(name) or not isinstance(value, str) or not KEY_VALUE.fullmatch(value):
+            raise OverlayError(f"{name if _ENV_NAME.fullmatch(name) else 'A key'} isn't a key the board can store")
     try:
         base = target.base()
         folder = target.folder(base)
@@ -270,7 +270,7 @@ def _secrets_text(path: Path, keys: Mapping[str, str]) -> str:
         lines = []
     for line in lines:
         name, sep, value = line.partition("=")
-        if sep and _ENV_NAME.match(name.strip()):
+        if sep and _ENV_NAME.fullmatch(name.strip()):
             saved[name.strip()] = value.strip()
     saved.update(keys)
     return "".join(f"{k}={v}\n" for k, v in saved.items())

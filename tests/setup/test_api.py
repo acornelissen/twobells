@@ -176,6 +176,8 @@ def saved_with_a_search(api, routes=True, **finish):
     ("start", {"stops": {}, "routes": False}, "stops"),
     ("start", {"stops": {"A": "1800SB12341"}, "routes": "yes"}, "routes"),
     ("start", {"stops": {"ABCD": "1800SB12341"}, "routes": False}, "stops"),
+    ("start", {"stops": {"A\n": "1800SB12341"}, "routes": False}, "stops"),  # $ matches before a last newline
+    ("start", {"stops": {"A": "1800SB12341\n"}, "routes": False}, "stops"),
     ("start", {"stops": {"A": "1800SB12341", "a": "1800SB12342"}, "routes": False}, "stops"),
     ("start", {"stops": {"A": "1800SB12341", "B": "1800SB12341"}, "routes": False}, "stops"),
     ("start", {"stops": {"A": "1800SB12341"}, "routes": False, "walk": {"Z": 3}}, "walk"),
@@ -975,9 +977,11 @@ def test_an_install_offers_views_and_links_to_them_plainly(board, options):
 
 
 def test_links_must_be_plain(board):
-    for href in ("javascript:alert(1)", "//evil.example/", "/a b"):
+    for href in ("javascript:alert(1)", "//evil.example/", "/a b", "/settings\n", "http://pi.local/\n"):
         with pytest.raises(ValueError):
             SetupApi(board_target(board.config), dict, board.state, links=[("Board", href)])
+    with pytest.raises(ValueError):
+        SetupApi(board_target(board.config), dict, board.state, back="/settings\n")
 
 
 # A runner: the internet work done elsewhere (the Pi's fetch service).

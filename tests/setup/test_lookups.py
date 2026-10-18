@@ -878,7 +878,7 @@ def test_given_labels_are_kept_and_defaults_avoid_them():
 
 
 
-@pytest.mark.parametrize("label", ["ABCD", "a b", "A=", "../", "\n"])
+@pytest.mark.parametrize("label", ["ABCD", "a b", "A=", "../", "\n", "A\n"])
 def test_bad_labels_are_refused(label):
     with pytest.raises(SetupError):
         stop_labels([(label, STOP_A)])

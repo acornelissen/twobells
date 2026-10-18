@@ -53,7 +53,7 @@ def check_obj(value, required, optional=()) -> dict:
 def check_str(value, what: str, high: int, low: int = 0, pattern: re.Pattern | None = None) -> str:
     if not isinstance(value, str) or not low <= len(value) <= high or _CONTROL.search(value):
         raise Refused(f"{what} isn't plain text of the right length")
-    if pattern is not None and not pattern.match(value):
+    if pattern is not None and not pattern.fullmatch(value):
         raise Refused(f"{what} isn't in the right form")
     return value
 
@@ -144,7 +144,7 @@ def _walk_args(args) -> dict:
     fields = check_obj(args, ("home", "places"))
     places = {}
     for key, place in check_dict(fields["places"], "places", setup.MAX_WALK_DESTINATIONS).items():
-        if not (_CRS.match(key) or _ATCO.match(key)):
+        if not (_CRS.fullmatch(key) or _ATCO.fullmatch(key)):
             raise Refused("a place isn't named by a station or stop code")
         places[key] = _point(place, "place")
     return {"home": _point(fields["home"], "home"), "places": places}

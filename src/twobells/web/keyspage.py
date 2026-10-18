@@ -163,7 +163,7 @@ class KeysPage:
         keys = {}
         for box in form.boxes:
             raw = fields.get(box, "").strip()
-            if raw and not KEY_VALUE.match(raw):
+            if raw and not KEY_VALUE.fullmatch(raw):
                 errors[box] = _KEY_SHAPE
             elif raw:
                 keys[box] = raw
