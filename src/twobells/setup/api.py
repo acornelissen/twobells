@@ -91,9 +91,9 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from importlib.resources import files
 from pathlib import Path
-from typing import Protocol, overload
+from typing import Protocol
 
-from ..core.errors import safe_message
+from ..core.errors import safe_message, scrub_secrets
 from ..settings import keyresults, modes, schema, show
 from ..settings.config import ConfigError, still_to_set_up
 from ..settings.installs import INSTALLS, Install
@@ -734,7 +734,7 @@ class SetupApi:
             log.warning("Setup step %s failed: %s", name, type(error).__name__)
             status, reply = 500, {"error": "Something went wrong; try again"}
         # Belt and braces: no key, saved or just pasted, leaves in any answer.
-        return status, _scrub(reply, secrets)
+        return status, scrub_secrets(reply, secrets)
 
     def _secret_values(self, payload: object) -> list[str]:
         try:
@@ -1276,30 +1276,7 @@ def _roads(roads: Mapping) -> dict:
 
 def _error(error: BaseException, secrets: Sequence[str], field: str | None = None) -> dict:
     # Scrubbed before safe_message shortens it, so a cut can't leave part of a key.
-    out = {"error": safe_message(_scrub(str(error) or type(error).__name__, secrets))}
+    out = {"error": safe_message(scrub_secrets(str(error) or type(error).__name__, secrets))}
     if field:
         out["field"] = field
     return out
-
-
-@overload
-def _scrub(value: str, secrets: Sequence[str]) -> str: ...
-@overload
-def _scrub(value: dict, secrets: Sequence[str]) -> dict: ...
-@overload
-def _scrub(value: object, secrets: Sequence[str]) -> object: ...
-
-
-def _scrub(value, secrets: Sequence[str]):
-    """`value` with every secret replaced in every string, keys included."""
-    if not secrets:
-        return value
-    if isinstance(value, str):
-        for secret in secrets:
-            value = value.replace(secret, "…")
-        return value
-    if isinstance(value, dict):
-        return {_scrub(k, secrets): _scrub(v, secrets) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_scrub(v, secrets) for v in value]
-    return value

@@ -13,10 +13,10 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from ...core import files
-from ...core.errors import safe_message
+from ...core.errors import safe_message, scrub_secrets
 from .. import discover, keytest
 from .. import lookups as setup
-from ..api import KEY_TEST_EVERY, MIN_SCRUBBED, Job, MakeJob, RateLimit, _scrub
+from ..api import KEY_TEST_EVERY, MIN_SCRUBBED, Job, MakeJob, RateLimit
 from ..lookups import Place, SetupError, Stop
 from .checks import _FINISHED, MAX_NOTES, VERSION, Refused, check_request, parse
 from .folder import MAX_REPLY_BYTES, MAX_REQUEST_BYTES, Spool, _remove
@@ -281,11 +281,12 @@ class Worker:
         try:
             reply = {"ok": True, "value": self._do(kind, args)}
         except SetupError as error:
-            reply = {"ok": False, "why": "setup", "error": safe_message(_scrub(str(error), self._secrets(pasted)))}
+            message = safe_message(scrub_secrets(str(error), self._secrets(pasted)))
+            reply = {"ok": False, "why": "setup", "error": message}
         except Exception as error:  # noqa: BLE001 - said plainly; never its text, which may hold a value
             log.warning("Setup %s failed: %s", kind, type(error).__name__)
             reply = {"ok": False, "why": "fault", "error": "Something went wrong"}
-        self._reply(request_id, _scrub(reply, self._secrets(pasted)))
+        self._reply(request_id, scrub_secrets(reply, self._secrets(pasted)))
 
     def _reply(self, request_id: str, reply: dict, where: Path | None = None) -> None:
         """Write a reply in replies/, or `where`."""
@@ -393,5 +394,5 @@ class Worker:
             return
         self._beat += 1
         self._shown, self._written = shown, now
-        self._reply(self._job_id, {"ok": True, "beat": self._beat, "value": _scrub(shown, self._job_secrets)},
+        self._reply(self._job_id, {"ok": True, "beat": self._beat, "value": scrub_secrets(shown, self._job_secrets)},
                     self.spool.status)

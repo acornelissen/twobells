@@ -13,7 +13,6 @@ from twobells.sources.bods import (
     fleet_and_registration,
     parse_siri_vm,
     recorded_time,
-    redact_key,
 )
 
 FIXTURE = (FIXTURES / "bods_glossop_synthetic.xml").read_bytes()
@@ -181,10 +180,6 @@ def test_errors_never_carry_the_api_key():
     assert "secret" not in str(error.value)
     assert "api_key=REDACTED" in str(error.value)
     assert error.value.__cause__ is None
-
-
-def test_redact_key():
-    assert redact_key("https://x/?boundingBox=1&api_key=abc123&y=2") == "https://x/?boundingBox=1&api_key=REDACTED&y=2"
 
 
 def test_get_bytes_refuses_an_oversized_body(monkeypatch):

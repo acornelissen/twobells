@@ -41,7 +41,7 @@ from ..core.model import line_order
 from ..core.net import get_bytes
 from ..core.walk import DEFAULT_STOP
 from ..settings.overlay import _toml_key, _toml_string
-from ..sources.bods import DEFAULT_BASE_URL, redact_key
+from ..sources.bods import DEFAULT_BASE_URL
 from ..timetable import build as timetable
 from ..timetable import roads as roadshape
 from ..timetable import routesetup
@@ -140,7 +140,7 @@ def list_datasets(api_key: str, area: str, at_most: int = MAX_DATASETS,
         try:
             body = http_get(f"{DEFAULT_BASE_URL}/dataset/?{query}", MAX_LIST_BYTES)
         except Exception as error:  # noqa: BLE001 - re-raised without the key
-            raise DiscoveryError(f"BODS data set list failed: {safe_message(redact_key(str(error)))}") from None
+            raise DiscoveryError(f"BODS data set list failed: {safe_message(error)}") from None
         try:
             payload = json.loads(body.decode("utf-8"))
         except (ValueError, RecursionError):

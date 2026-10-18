@@ -21,8 +21,9 @@ from urllib.parse import urlencode
 from xml.etree.ElementTree import Element
 
 from ..core import bounded, safexml
+from ..core.errors import redact_keys
 from ..core.net import get_bytes
-from ..sources.bods import DEFAULT_BASE_URL, redact_key
+from ..sources.bods import DEFAULT_BASE_URL
 
 if TYPE_CHECKING:
     from ..settings.installs import Install
@@ -390,7 +391,7 @@ def dataset_urls(api_key: str, noc: str, line: str | None = None, http_get: Http
         try:
             body = http_get(f"{DEFAULT_BASE_URL}/dataset/?{query}", 5_000_000)
         except Exception as error:  # noqa: BLE001 - re-raised without the key
-            raise RouteSetupError(redact_key(str(error))) from None
+            raise RouteSetupError(redact_keys(str(error))) from None
         payload = json.loads(body)
         found = payload.get("results", [payload]) if isinstance(payload, dict) else payload
         results.extend(found)

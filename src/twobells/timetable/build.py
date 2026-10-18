@@ -123,8 +123,7 @@ from urllib.parse import urlsplit
 from xml.etree import ElementTree
 
 from ..core import files, net, safexml
-from ..core.errors import safe_message
-from ..sources.bods import redact_key
+from ..core.errors import redact_keys, safe_message
 from . import roads as roadshape
 from . import routesetup
 from .model import NEAR_M, Calendar, Call, DateRange, Journey, Schedule, StopPosition, metres
@@ -962,7 +961,7 @@ def _documents(
         with tempfile.TemporaryFile(dir=scratch) as file:
             fetch(url, file)
             file.seek(0)
-            for name, document in routesetup.named_documents(file, max_bytes, name=redact_key(url), skipped=skipped):
+            for name, document in routesetup.named_documents(file, max_bytes, name=redact_keys(url), skipped=skipped):
                 yield noc, name, document
 
 

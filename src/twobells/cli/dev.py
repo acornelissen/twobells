@@ -15,6 +15,7 @@ from ..board.app import run_loop
 from ..board.displays.display import DISPLAY_PANELS, PngDisplay
 from ..board.themes import theme_named
 from ..board.view import build_view, stop_names_shown
+from ..core.errors import redact_keys
 from ..core.model import Departure, Status, Strip, strip_key
 from ..core.net import DOWNLOAD_DEADLINE, get_bytes
 from ..core.walk import WalkTimes
@@ -25,7 +26,7 @@ from ..settings.config import ConfigError, load_env_file
 from ..settings.store import Store
 from ..sources.bodsbus import BodsBusSource
 from ..sources.darwin import DarwinSource, TrainBoard
-from ..sources.transportapi import TransportApiBusSource, redact_credentials
+from ..sources.transportapi import TransportApiBusSource
 from ..sources.weather import rain_line
 from .common import as_owner, load_settings, open_store, parse_stops, sleep_to_the_tick
 
@@ -84,7 +85,7 @@ def _probe_bus(source, save_dir: str | None) -> int:
             if save_dir:
                 Path(save_dir).mkdir(parents=True, exist_ok=True)
                 (Path(save_dir) / f"{atco}.json").write_text(
-                    json.dumps(redact_credentials(payload), indent=2)
+                    json.dumps(redact_keys(payload), indent=2)
                 )
             departures = source.parse(payload, label)
         except Exception as error:  # noqa: BLE001 - report and try the next stop

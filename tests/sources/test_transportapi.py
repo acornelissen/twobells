@@ -159,23 +159,6 @@ def test_fetch_raw_returns_payload_for_one_stop():
     assert source({"A": "a"}, {"a": payload}).fetch_raw("a") is payload
 
 
-def test_redact_strips_credentials_from_nested_urls():
-    from twobells.sources.transportapi import redact_credentials
-
-    payload = {
-        "departures": {
-            "all": [{"id": "https://x.test/route.json?app_id=abc&app_key=s3cret&live=true", "line": "237"}]
-        },
-        "request_time": "2026-10-08T23:08:00+01:00",
-    }
-    redacted = redact_credentials(payload)
-    url = redacted["departures"]["all"][0]["id"]
-    assert "abc" not in url and "s3cret" not in url
-    assert "app_id=REDACTED" in url and "app_key=REDACTED" in url and "live=true" in url
-    assert redacted["departures"]["all"][0]["line"] == "237"
-    assert payload["departures"]["all"][0]["id"].endswith("app_key=s3cret&live=true")
-
-
 def test_parses_a_late_evening_response():
     import json
 

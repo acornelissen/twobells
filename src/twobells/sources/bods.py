@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 from ..core import safexml
+from ..core.errors import redact_keys
 from ..core.net import get_bytes
 
 DEFAULT_BASE_URL = "https://data.bus-data.dft.gov.uk/api/v1"
@@ -28,7 +29,6 @@ MAX_RESPONSE_ELEMENTS = 80_000
 MAX_AGE = timedelta(minutes=10)
 
 _NS = {"siri": "http://www.siri.org.uk/siri"}
-_API_KEY = re.compile(r"\bapi_key=[^&\s\"']*")
 # VehicleRef is the operator's own name for a bus. Around Glossop it comes as a
 # fleet number ("3017"), a registration ("CD25EFG", "CD25_EFG"), or both
 # ("3017_-_AB25_CDE"). An older plate is read only with its space ("R123 ABC",
@@ -40,10 +40,6 @@ _CURRENT_REG = re.compile(r"([A-Z]{2}[0-9]{2})[ _]?([A-Z]{3})")  # since 2001: "
 _OTHER_REG = re.compile(r"[A-Z0-9]{1,4}[ _][A-Z0-9]{1,4}")  # older ones, spaced: "R123 ABC", "ABC 123D"
 
 HttpGetBytes = Callable[[str, int], bytes]
-
-
-def redact_key(text: str) -> str:
-    return _API_KEY.sub("api_key=REDACTED", text)
 
 
 @dataclass(frozen=True)
@@ -200,7 +196,7 @@ class BodsVehicleSource:
         try:
             body = self._http_get(self._url(), MAX_RESPONSE_BYTES)
         except Exception as error:  # noqa: BLE001 - re-raised without the key
-            raise RuntimeError(redact_key(str(error))) from None
+            raise RuntimeError(redact_keys(str(error))) from None
         now = self._now()
         return [v for v in parse_siri_vm(body) if _line_key(v.line) in self._lines and _fresh(v, now)]
 

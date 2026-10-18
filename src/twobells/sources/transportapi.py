@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Iterable
-from typing import Any
 from urllib.parse import urlencode
 
 from ..core.model import Departure, Status, is_clock, minutes_between
@@ -21,19 +19,6 @@ HttpGet = Callable[[str, dict], dict]
 def _get_capped(url: str, headers: dict) -> dict:
     # get_json_capped also gives up on the whole request after its deadline.
     return get_json_capped(url, headers, MAX_BYTES)
-
-_CREDENTIAL = re.compile(r"\b(app_id|app_key)=[^&\s\"']*")
-
-
-def redact_credentials(value: Any) -> Any:
-    """Copy of a response with app_id/app_key values masked in every string."""
-    if isinstance(value, dict):
-        return {k: redact_credentials(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [redact_credentials(v) for v in value]
-    if isinstance(value, str):
-        return _CREDENTIAL.sub(r"\1=REDACTED", value)
-    return value
 
 
 # Each entry comes from outside, so every field is checked as it is read: an

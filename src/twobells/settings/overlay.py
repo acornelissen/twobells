@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..core import files
+from ..core.errors import scrub_secrets
 from .config import (
     OVERLAY_NAME,
     SECRETS_OVERLAY_NAME,
@@ -171,13 +172,6 @@ def board_target(config_path: Path | str) -> Target:
     return Store.open(config_path).target()
 
 
-def _scrub(text: str, secrets: Mapping[str, str]) -> str:
-    for value in secrets.values():
-        if value:
-            text = text.replace(value, "…")
-    return text
-
-
 def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping[str, str],
             replace: bool = False) -> dict:
     """Merge `changes` into the target's saved settings overlay and `keys` into
@@ -194,7 +188,8 @@ def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping
         base = target.base()
         folder = target.folder(base)
     except (OSError, ConfigError) as error:
-        raise OverlayError(f"Not saved: the settings can't be read ({_scrub(str(error), keys)})") from None
+        reason = scrub_secrets(str(error), keys.values())
+        raise OverlayError(f"Not saved: the settings can't be read ({reason})") from None
     if folder is None:
         raise OverlayError("config.toml needs a state_file before settings can be saved")
     try:
@@ -226,12 +221,13 @@ def _save_locked(target: Target, base: dict, folder: Path, changes: dict, keys: 
     try:
         saved = {} if replace else read_overlay_in(folder, target.allowed)
     except (OSError, ConfigError) as error:
-        raise OverlayError(f"Not saved: the settings can't be read ({_scrub(str(error), keys)})") from None
+        reason = scrub_secrets(str(error), keys.values())
+        raise OverlayError(f"Not saved: the settings can't be read ({reason})") from None
     overlay = merge(saved, changes)
     try:
         target.check(merge(base, overlay), {**env, **keys})
     except (ConfigError, KeyError, TypeError, ValueError) as error:
-        raise OverlayError(f"Not saved: {_scrub(str(error), keys)}") from None
+        raise OverlayError(f"Not saved: {scrub_secrets(str(error), keys.values())}") from None
     try:
         text = to_toml(overlay)
         readable = tomllib.loads(text) == overlay
