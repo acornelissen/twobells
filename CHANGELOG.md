@@ -16,6 +16,8 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 - On the dashboard's area map, a bus whose position time comes without a UTC offset shows how old the position is, read as UTC as the rest of the dashboard reads it, rather than no age at all.
 - On the dashboard, a bus row's **Disruption** link keeps the keyboard focus when the boards are drawn again with each update. The focus went back to the top of the page, so a keyboard user lost their place (WCAG 2.4.3).
 - A reminder for a cancelled tram, river bus, cable car, ferry or replacement bus is headed by what was cancelled (**Tram cancelled**, **Ferry cancelled**), not **Train cancelled** for all of them.
+- A number on the settings pages takes the digits 0 to 9 alone, up to 9 of them. "²" failed the page with an error rather than saying what to enter, and other scripts' digits, such as Arabic-Indic ones, were saved as numbers.
+- A stop label, stop code, station code or key with a newline at its end is refused, as any other character out of place is. The checks let one last newline through, so a tram stop labelled "T" and a newline in the setup wizard saved a `settings.toml` that couldn't be read again.
 
 ### Security
 
@@ -32,11 +34,6 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 - The tram timetable is refused if a part of it is packed other than stored or deflated, as the bus timetables already were. Python before 3.12.15 unpacks bzip2 and LZMA a whole read at a time, so a 384-byte file could take 290 MB at once, whatever the part's size cap. TfGM's file is deflated.
 - A redirect's body is no longer read. Python's URL library read it whole before following the redirect, whatever cap the request had, so a 200 MB body on a redirect took 265 MB of memory; now the connection is closed and the redirect followed at once.
 - A whole number too big for a float, such as one of 401 digits, is refused as a position or time in the setup wizard's requests and the fetch service's files, rather than crashing the check. On a Pi, one such request stopped the fetch service answering the wizard, and one such snapshot froze the dashboard, until a restart. The fetch service and the dashboard's reader of its snapshot now also log any other failure they didn't foresee by its kind alone and carry on.
-
-### Fixed
-
-- A number on the settings pages takes the digits 0 to 9 alone, up to 9 of them. "²" failed the page with an error rather than saying what to enter, and other scripts' digits, such as Arabic-Indic ones, were saved as numbers.
-- A stop label, stop code, station code or key with a newline at its end is refused, as any other character out of place is. The checks let one last newline through, so a tram stop labelled "T" and a newline in the setup wizard saved a `settings.toml` that couldn't be read again.
 
 ## [0.4.3] - 2026-10-18
 
