@@ -211,9 +211,9 @@ class Sessions:
 
     def __post_init__(self) -> None:
         # Both go into a Set-Cookie header as they are, so only plain characters.
-        if not _COOKIE_NAME.match(self.cookie_name):
+        if not _COOKIE_NAME.fullmatch(self.cookie_name):
             raise ValueError("A cookie name is 1 to 64 letters, digits, _ or -")
-        if not _COOKIE_PATH.match(self.cookie_path):
+        if not _COOKIE_PATH.fullmatch(self.cookie_path):
             raise ValueError("A cookie path starts with / and has only letters, digits, _, - and /")
         if self.file is not None:
             self._live = self._load()
@@ -395,16 +395,16 @@ class FormTokens:
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def __post_init__(self) -> None:
-        if not _COOKIE_NAME.match(self.cookie_name):
+        if not _COOKIE_NAME.fullmatch(self.cookie_name):
             raise ValueError("A cookie name is 1 to 64 letters, digits, _ or -")
-        if not _COOKIE_PATH.match(self.cookie_path):
+        if not _COOKIE_PATH.fullmatch(self.cookie_path):
             raise ValueError("A cookie path starts with / and has only letters, digits, _, - and /")
 
     def nonce(self, cookie_header: str | None) -> str:
         """The browser's value from its cookie, or a new one if it has none, so
         two open tabs don't spoil each other's forms."""
         value = _cookie_value(cookie_header, self.cookie_name)
-        return value if value and _NONCE.match(value) else secrets.token_urlsafe(32)
+        return value if value and _NONCE.fullmatch(value) else secrets.token_urlsafe(32)
 
     def cookie(self, nonce: str) -> str:
         return (f"{self.cookie_name}={nonce}; HttpOnly; SameSite=Strict; "
@@ -420,7 +420,7 @@ class FormTokens:
         this process, and hasn't run out."""
         nonce = _cookie_value(cookie_header, self.cookie_name)
         expires, _, mac = submitted.partition(".")
-        if not nonce or not _NONCE.match(nonce) or not _EXPIRES.match(expires):
+        if not nonce or not _NONCE.fullmatch(nonce) or not _EXPIRES.fullmatch(expires):
             return False
         right = hmac.compare_digest(mac.encode(), self._mac(nonce, int(expires)).encode())
         return right and self.clock() < int(expires)
@@ -892,7 +892,7 @@ class ResetCodes:
             with self._locked():
                 data = self._read(self._display)
                 code, expires = data.get("code"), data.get("expires")
-                if (isinstance(code, str) and _CODE.match(code) and isinstance(expires, (int, float))
+                if (isinstance(code, str) and _CODE.fullmatch(code) and isinstance(expires, (int, float))
                         and now < expires):
                     return PendingCode(code, float(expires))
                 self._display.unlink(missing_ok=True)

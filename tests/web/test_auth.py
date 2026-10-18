@@ -205,10 +205,13 @@ def test_the_cookie_is_http_only_strict_and_scoped():
     assert scoped.expired_cookie() == "dash_session=; HttpOnly; SameSite=Strict; Path=/settings; Max-Age=0"
 
 
-@pytest.mark.parametrize("name, path", [("a;b", "/"), ("", "/"), ("s", "settings"), ("s", "/x; Domain=evil"), ("s", "/a b")])
+@pytest.mark.parametrize("name, path", [("a;b", "/"), ("", "/"), ("s", "settings"), ("s", "/x; Domain=evil"), ("s", "/a b"),
+                                        ("s\n", "/"), ("s", "/settings\n")])
 def test_cookie_names_and_paths_that_could_bend_the_header_are_refused(name, path):
     with pytest.raises(ValueError):
         Sessions(cookie_name=name, cookie_path=path)
+    with pytest.raises(ValueError):
+        FormTokens(cookie_name=name, cookie_path=path)
 
 
 def test_the_token_is_read_from_this_stores_own_cookie():
@@ -1080,7 +1083,8 @@ def test_the_board_removes_an_expired_code(tmp_path):
 
 
 @pytest.mark.parametrize("content", ["{nope", "[]", '{"code": "12345", "expires": 9e12}',
-                                     '{"code": "<b>12</b>", "expires": 9e12}', '{"code": "123456"}'])
+                                     '{"code": "<b>12</b>", "expires": 9e12}', '{"code": "123456"}',
+                                     '{"code": "123456\\n", "expires": 9e12}'])
 def test_the_board_removes_a_handover_it_cannot_show(tmp_path, content):
     (tmp_path / "reset-display.json").write_text(content)
     assert ResetCodes(tmp_path).pending(T0) is None
@@ -1224,6 +1228,25 @@ def test_odd_form_values_are_refused_not_crashed_on(value):
     tokens = FormTokens(Clock())
     cookie, _ = browser(tokens)
     assert not tokens.check(cookie, value)
+
+
+def test_a_form_value_with_a_newline_after_its_expiry_is_refused():
+    tokens = FormTokens(Clock())
+    cookie, value = browser(tokens)
+    expires, mac = value.split(".")
+    assert not tokens.check(cookie, f"{expires}\n.{mac}")
+
+
+def test_a_nonce_with_a_newline_after_it_is_refused(monkeypatch):
+    # The cookie parser refuses control characters today; the nonce's own
+    # check must not lean on it, as the nonce goes back into a header.
+    from twobells.web import auth
+
+    planted = "a" * 43 + "\n"
+    monkeypatch.setattr(auth, "_cookie_value", lambda header, name: planted)
+    tokens = FormTokens(Clock())
+    assert tokens.nonce("form=anything") != planted
+    assert not tokens.check("form=anything", tokens.form_value(planted))
 
 
 @pytest.mark.parametrize("cookie", ["form=short", "form=" + "a" * 42 + "!", 'form="unterminated', "form="])

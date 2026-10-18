@@ -34,6 +34,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 - The tram timetable is refused if a part of it is packed other than stored or deflated, as the bus timetables already were. Python before 3.12.15 unpacks bzip2 and LZMA a whole read at a time, so a 384-byte file could take 290 MB at once, whatever the part's size cap. TfGM's file is deflated.
 - A redirect's body is no longer read. Python's URL library read it whole before following the redirect, whatever cap the request had, so a 200 MB body on a redirect took 265 MB of memory; now the connection is closed and the redirect followed at once.
 - A whole number too big for a float, such as one of 401 digits, is refused as a position or time in the setup wizard's requests and the fetch service's files, rather than crashing the check. On a Pi, one such request stopped the fetch service answering the wizard, and one such snapshot froze the dashboard, until a restart. The fetch service and the dashboard's reader of its snapshot now also log any other failure they didn't foresee by its kind alone and carry on.
+- The settings site refuses a form token or its cookie with a newline at its end, and the board won't show a reset code with one. The checks let one last newline through, so a form value with a newline after its expiry time was taken; a cookie holding one is refused by Python's own cookie reader today, but the check no longer leans on that, as the value goes back into a header.
 
 ## [0.4.3] - 2026-10-18
 
