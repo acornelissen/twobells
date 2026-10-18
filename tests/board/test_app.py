@@ -1416,7 +1416,10 @@ class WallClock:
 
     def sleep(self, seconds):
         self.sleeps.append(seconds)
-        self.at = (self.at // seconds + 1) * seconds + self.late.pop(len(self.sleeps), 0)
+        wait = seconds - self.at % seconds
+        if wait < seconds / 1000:  # as sleep_to_the_tick: a whisker short of a boundary is on it
+            wait += seconds
+        self.at += wait + self.late.pop(len(self.sleeps), 0)
 
 
 def test_a_screen_gets_a_frame_with_the_text_that_scrolls():
@@ -1496,7 +1499,8 @@ def test_a_late_frame_is_skipped_and_the_next_tick_is_not_put_off():
              frame_seconds=SCROLL_FRAME_S, wall=wall)
     base = board_seconds(THU_0700)
     due = [round((s - base) / SCROLL_FRAME_S) for s in screen.scrolled]
-    assert due == [0, 1, 2, 6, *range(7, 16)]  # 3, 4 and 5 skipped; each placed by its own time
+    per_second = round(1 / SCROLL_FRAME_S)
+    assert due == [0, 1, 2, 6, *range(7, per_second)]  # 3, 4 and 5 skipped; each placed by its own time
     assert wall.at == 1001.0
 
 

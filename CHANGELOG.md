@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Fixed
+
+- Scrolling text on an HDMI screen moves evenly. It moved 16 steps a second, which a 60 Hz screen shows for 3 and 4 refreshes in turn, so it juddered; it now moves 15 steps a second, each shown for 4. Still about 3 letters a second, and the split-flap look's tiles still turn over in about half a second. A frame woken on its boundary no longer reads as a whisker before it and ends the second's frames early.
+
 ## [0.4.2] - 2026-10-18
 
 The HDMI screen shows the board on a Pi 4 with Raspberry Pi OS Trixie.

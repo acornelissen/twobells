@@ -83,7 +83,13 @@ def load_settings(args, bus_stops: dict[str, str] | None = None, only: set[str] 
 def sleep_to_the_tick(seconds: float) -> None:
     """Sleep to the next whole multiple of `seconds`, so a running clock never skips."""
     if seconds > 0:
-        time.sleep(seconds - time.time() % seconds)
+        wait = seconds - time.time() % seconds
+        # Woken on a boundary, a fraction such as 1/15 (a screen's frame) can read as a
+        # whisker short of it; sleep never wakes early, so that is the boundary: the next
+        # is a whole step away.
+        if wait < seconds / 1000:
+            wait += seconds
+        time.sleep(wait)
 
 
 def setup_url(hostname: str | None = None, port: int = WEB_PORT) -> str:

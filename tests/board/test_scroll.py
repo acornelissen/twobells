@@ -22,7 +22,7 @@ def test_scroll_holds_at_its_start_then_moves_a_step_at_a_time():
     assert scroll_steps(40, SCROLL_PAUSE_S - 0.01) == 0
     assert scroll_steps(40, SCROLL_PAUSE_S) == 0
     assert scroll_steps(40, SCROLL_PAUSE_S + 1) == SCROLL_STEPS_PER_S
-    assert scroll_steps(40, SCROLL_PAUSE_S + 1.5) == 1.5 * SCROLL_STEPS_PER_S
+    assert scroll_steps(40, SCROLL_PAUSE_S + 2) == 2 * SCROLL_STEPS_PER_S
 
 
 def test_scroll_moves_steadily_one_step_a_frame():
@@ -47,6 +47,11 @@ def test_about_three_characters_a_second():
     assert (1 / SCROLL_FRAME_S).is_integer()  # frames divide a second evenly
 
 
+def test_every_step_shows_for_the_same_number_of_refreshes_on_a_60_hz_screen():
+    # 16 steps a second on a 60 Hz screen last 3 or 4 refreshes in turn, which judders.
+    assert 60 % SCROLL_STEPS_PER_S == 0
+
+
 def strip(width, height=4):
     """A strip whose pixel at x is x, so where it has got to can be read off."""
     image = Image.new("P", (width, height))
@@ -56,6 +61,9 @@ def strip(width, height=4):
 
 def field(box=(10, 2, 30, 6), width=60, step=2, text="Long words"):
     return Scroll(box, strip(width), step, text)
+
+
+MOVED = 2 * SCROLL_STEPS_PER_S  # how far field() has moved a second into its scroll, and the pixel shown first
 
 
 def test_a_field_moves_in_whole_steps_and_stops_with_its_end_in_view():
@@ -76,14 +84,14 @@ def test_a_field_is_clipped_to_its_box():
     scroll = field()
     patch = scroll.patch(scroll.offset(SCROLL_PAUSE_S + 1))
     assert patch.size == (20, 4)
-    assert patch.getpixel((0, 0)) == 32 and patch.getpixel((19, 0)) == 51
+    assert patch.getpixel((0, 0)) == MOVED and patch.getpixel((19, 0)) == MOVED + 19
 
 
 def test_a_frame_draws_each_field_only_inside_its_box():
     board = Image.new("P", (40, 8), 255)
     frame = frame_of(board, [field()])
     at = frame.at(SCROLL_PAUSE_S + 1)
-    assert at.getpixel((10, 2)) == 32 and at.getpixel((29, 5)) == 51
+    assert at.getpixel((10, 2)) == MOVED and at.getpixel((29, 5)) == MOVED + 19
     outside = [(9, 2), (30, 2), (10, 1), (10, 6), (0, 0), (39, 7)]
     assert all(at.getpixel(xy) == 255 for xy in outside)
     # The still image has each field at its start.
@@ -100,7 +108,7 @@ def test_the_scroller_keeps_a_field_going_across_redraws_and_starts_new_text_afr
     board = Image.new("P", (40, 8), 255)
     scroller.show(Frame(board, (field(),)), 100)
     later = scroller.show(Frame(board, (field(),)), 100 + SCROLL_PAUSE_S + 1)
-    assert later.getpixel((10, 2)) == 32  # carried on, not back to the start
+    assert later.getpixel((10, 2)) == MOVED  # carried on, not back to the start
     changed = scroller.show(Frame(board, (field(text="Other words"),)), 104)
     assert changed.getpixel((10, 2)) == 0  # new words from their beginning
 
@@ -122,7 +130,7 @@ def test_the_scroller_starts_again_if_the_clock_goes_back():
     image = scroller.show(Frame(board, (field(),)), 3)  # past midnight
     assert image.getpixel((10, 2)) == 0
     [(_, patch)] = scroller.moved(3 + SCROLL_PAUSE_S + 1)
-    assert patch.getpixel((0, 0)) == 32
+    assert patch.getpixel((0, 0)) == MOVED
 
 
 @pytest.mark.parametrize("scrolls, scrolling", [((), False), ((field(),), True)])

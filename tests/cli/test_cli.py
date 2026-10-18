@@ -404,6 +404,20 @@ def test_sleeping_to_the_tick_lands_on_a_whole_second(monkeypatch):
     assert slept == [0.75, 19.75]  # 1000.25 s is 40.25 s past a minute
 
 
+def test_sleeping_to_a_frame_woken_on_its_boundary_sleeps_a_whole_frame(monkeypatch):
+    from twobells.cli import common
+
+    # 1/15 isn't exact in binary: woken at a frame's boundary, the clock can read as a
+    # whisker before it. The next frame is still a whole frame away, never a whisker.
+    frame = 1 / 15
+    woke = 1000 + 4 * frame  # 1000.2666666666667, which % reads as all but a whole frame past one
+    slept = []
+    monkeypatch.setattr(common.time, "time", lambda: woke)
+    monkeypatch.setattr(common.time, "sleep", slept.append)
+    common.sleep_to_the_tick(frame)
+    assert slept == [pytest.approx(frame)]
+
+
 def _route_config(tmp_path):
     config = tmp_path / "config.toml"
     config.write_text('[bus]\nsource = "transportapi"\nwindows = ["Mon-Fri 07:00-08:30"]\nwalk_minutes = 2\n[bus.stops]\nA = "1000DGHS0900"\n')

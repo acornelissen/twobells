@@ -25,12 +25,14 @@ if TYPE_CHECKING:
 SCROLL_PAUSE_S = 2.0
 # Steps a second: a step is one LED dot in the sign look, one pHAT pixel
 # (the design's unit) in the plain look. A character is about 5 of either
-# with its gap, so 16 a second is about 3 characters a second: slow enough to
+# with its gap, so 15 a second is 3 characters a second: slow enough to
 # read walking past, quick enough that a long notice doesn't take all day.
-SCROLL_STEPS_PER_S = 16
+SCROLL_STEPS_PER_S = 15
 # A screen draws a frame this often while something scrolls: one step a
-# frame, so the text moves steadily rather than in uneven jumps. 16 frames
-# divide a second evenly, so they line up with the running clock's ticks.
+# frame, so the text moves steadily rather than in uneven jumps. 15 frames
+# divide a second evenly, so they line up with the running clock's ticks,
+# and a 60 Hz screen's refreshes too: every step shows for 4 of them (16 a
+# second showed for 3 and 4 in turn, which judders).
 # Only the moving boxes are drawn between ticks: well under a millisecond a
 # frame on a laptop, a few on a Pi Zero 2 W.
 SCROLL_FRAME_S = 1 / SCROLL_STEPS_PER_S
@@ -47,7 +49,8 @@ def scroll_steps(overflow_steps: int, seconds: float) -> int:
         return 0
     cycle = 2 * SCROLL_PAUSE_S + overflow_steps / SCROLL_STEPS_PER_S
     into = seconds % cycle
-    return min(overflow_steps, max(0, math.floor((into - SCROLL_PAUSE_S) * SCROLL_STEPS_PER_S)))
+    # A whisker over, as a frame's time (k / 15) multiplied back can fall just short of k.
+    return min(overflow_steps, max(0, math.floor((into - SCROLL_PAUSE_S) * SCROLL_STEPS_PER_S + 1e-6)))
 
 
 @dataclass(frozen=True)

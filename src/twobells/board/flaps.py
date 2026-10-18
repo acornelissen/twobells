@@ -3,7 +3,7 @@
 When a row's time, destination or status changes, each tile whose letter
 changes turns through the letters between, in the order a Solari drum holds
 them, and settles on the new one: FLAP_STEPS frames at most, one a frame of
-the screen loop (SCROLL_FRAME_S), so a change is over in half a second. Only
+the screen loop (SCROLL_FRAME_S), so a change is over in about half a second. Only
 the fields that changed are drawn again, a frame at a time, so a screen's
 CPU stays free between changes. E-paper and the PNG preview show the new
 letters at once.
@@ -26,7 +26,7 @@ from .scroll import SCROLL_FRAME_S, Box
 # the alphabet, the digits and the marks a board shows. A lower-case letter
 # turns with its capital; anything else counts from the blank.
 DRUM = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.-'&()/!?,>…"
-# The most frames a change takes: 8 at 16 a second is half a second.
+# The most frames a change takes: 8 at 15 a second is about half a second.
 FLAP_STEPS = 8
 FLAP_FRAME_S = SCROLL_FRAME_S
 
