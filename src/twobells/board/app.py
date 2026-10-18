@@ -194,7 +194,7 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False)
     """Fetch if due. `prime` fetches regardless of windows; the budget still applies."""
     name = config.source.name
     entry = state.setdefault("sources", {}).setdefault(name, {})
-    if not prime and not config.current_policy().is_due(now, from_iso(entry.get("last_attempt"))):
+    if not prime and not config.current_policy().is_due(now, _saved_time(entry, "last_attempt")):
         # Not checked because the fallback is waiting for its own windows: say why.
         if config.fallback_policy is not None and getattr(config.source, "falling_back", False):
             idle = getattr(config.source, "idle_note", None)
@@ -234,6 +234,24 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False)
         entry.pop("note", None)
 
 
+def _saved_time(entry: dict, key: str) -> datetime | None:
+    """A time saved in the state, or None if there is none. One that isn't a
+    time by the board's clock (local, with no offset), from a hand-edited or
+    corrupt state.json, would stop the board when compared with it: it reads
+    as missing, and is dropped with a warning, so it is warned of only once."""
+    value = entry.get(key)
+    try:
+        moment = from_iso(value)
+    except (TypeError, ValueError):
+        moment = None
+    else:
+        if moment is None or moment.tzinfo is None:
+            return moment
+    log.warning("Ignoring a saved %s that isn't a time by the board's clock: %r", key, value)
+    del entry[key]
+    return None
+
+
 def _fresh(config: SourceConfig, fetched: datetime | None, now: datetime) -> bool:
     """Whether data from `fetched` is recent enough to trust. Data from after
     now (the clock went back, as when summer time ends) can't say how old it
@@ -244,14 +262,14 @@ def _fresh(config: SourceConfig, fetched: datetime | None, now: datetime) -> boo
 def _is_stale(config: SourceConfig, entry: dict, now: datetime) -> bool:
     if not config.policy.is_active(now):
         return False
-    return not _fresh(config, from_iso(entry.get("last_success")), now)
+    return not _fresh(config, _saved_time(entry, "last_success"), now)
 
 
 def _departures(state: dict, name: str, now: datetime) -> list[Departure]:
     """What was last fetched, less anything that has left since. Clock times
     alone can't tell this morning from tonight, so each is dated by its fetch."""
     entry = state.get("sources", {}).get(name, {})
-    fetched = from_iso(entry.get("last_success"))
+    fetched = _saved_time(entry, "last_success")
     if fetched is None:
         return []
     departures = departures_from_dicts(entry.get("departures", []))
@@ -275,7 +293,7 @@ def _notices(board: Board, state: dict, now: datetime) -> list[str]:
     notices = []
     for config in board.sources:
         entry = state.get("sources", {}).get(config.source.name, {})
-        if not _fresh(config, from_iso(entry.get("last_success")), now):
+        if not _fresh(config, _saved_time(entry, "last_success"), now):
             continue
         messages = entry.get("messages")
         if isinstance(messages, list):
@@ -287,7 +305,7 @@ def _poll_weather(weather: Weather, state: dict, now: datetime) -> None:
     entry = state.get("weather")
     if not isinstance(entry, dict):
         entry = state["weather"] = {}
-    if not weather.policy.is_due(now, from_iso(entry.get("last_attempt"))):
+    if not weather.policy.is_due(now, _saved_time(entry, "last_attempt")):
         return
     entry["last_attempt"] = to_iso(now)
     try:
@@ -320,7 +338,7 @@ def _rain(board: Board, state: dict, departures: list[Departure], now: datetime,
     entry = state.get("weather")
     if weather is None or not isinstance(entry, dict):
         return None
-    fetched = from_iso(entry.get("last_success"))
+    fetched = _saved_time(entry, "last_success")
     if fetched is None or now - fetched > weather.max_age:
         return None
     upcoming = [d for d in departures if not d.is_gone(now.strftime("%H:%M"))]
@@ -330,7 +348,7 @@ def _rain(board: Board, state: dict, departures: list[Departure], now: datetime,
 
 def _poll_vehicles(tracker: Tracker, state: dict, now: datetime) -> None:
     entry = state.setdefault("vehicles", {})
-    if not tracker.policy.is_due(now, from_iso(entry.get("last_attempt"))):
+    if not tracker.policy.is_due(now, _saved_time(entry, "last_attempt")):
         return
     entry["last_attempt"] = to_iso(now)
     try:
@@ -366,7 +384,7 @@ def _route_view(board: Board, state: dict, view: BoardView, now: datetime, clock
     row = view.section("bus").rows[upcoming.index(chosen)]
     strip = tracker.routes[chosen.service]
     entry = state.get("vehicles", {})
-    last_success = from_iso(entry.get("last_success"))
+    last_success = _saved_time(entry, "last_success")
     stale = last_success is None or now - last_success > tracker.stale_after
     vehicles = [] if stale else vehicles_from_dicts(entry.get("items", []))
     bus_at = None if stale else locate(strip, vehicles, target(upcoming, chosen))
@@ -518,7 +536,7 @@ def run_once(
         page, shown = "departures", view
 
     last = state.get("last_render", {})
-    last_at = from_iso(last.get("at"))
+    last_at = _saved_time(last, "at")
     key = _render_key(shown, board.theme, display)
     changed = key != last.get("signature")
     # Someone is waiting at the settings site for the code, or has just used

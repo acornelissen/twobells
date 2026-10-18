@@ -601,6 +601,33 @@ def test_a_saved_position_that_doesnt_read_back_is_skipped():
     assert route.bus_at == pytest.approx(2, abs=0.01)
 
 
+@pytest.mark.parametrize("change", [{"lat": 10**400}, {"lat": "53.4"}, {"operator": 5}, {"bearing": "east"}])
+def test_the_bus_page_skips_a_bad_saved_position_and_places_the_good_one(change):
+    board, positions, state = tracked_setup([bus_on("341", "07:20")], [vehicle_at(2)])
+    run_once(board, state, FakeScreen(), THU_0700)
+    good = state["vehicles"]["items"][0]
+    state["vehicles"]["items"].insert(0, {**good, **change})
+    positions.error = OSError("down")
+    route = run_once(board, state, FakeScreen(), ROUTE_TIME).route
+    assert route.bus_at == pytest.approx(2, abs=0.01)
+
+
+# A hand-edited or corrupt state.json: a number, not a time, or a time with an
+# offset, which can't be compared with the board's clock (local, with none).
+BAD_SAVED_TIMES = [5, "garbage", "2026-10-08T06:58:00+01:00", ["07:00"]]
+
+
+@pytest.mark.parametrize("saved", BAD_SAVED_TIMES)
+def test_a_bad_saved_position_time_reads_as_never_rather_than_stopping_the_board(saved):
+    board, positions, state = tracked_setup([bus_on("341", "07:20")], [vehicle_at(2)])
+    run_once(board, state, FakeScreen(), THU_0700)
+    state["vehicles"].update(last_success=saved, last_attempt=saved)
+    positions.error = OSError("down")
+    route = run_once(board, state, FakeScreen(), ROUTE_TIME).route
+    assert route.bus_at is None  # no time it was fetched: too old to show
+    assert positions.calls == 2  # never asked counts as due
+
+
 def test_run_loop_switches_to_reloaded_settings():
     from twobells.board.app import run_loop
 
@@ -1380,6 +1407,30 @@ def test_malformed_saved_departures_show_none_rather_than_stopping(saved):
     state["sources"] = {"train": dict(entry), "bus": dict(entry)}
     result = run_once(board, state, display, THU_0700)
     assert result.view.section("train").rows == () and result.view.section("bus").rows == ()
+
+
+@pytest.mark.parametrize("saved", BAD_SAVED_TIMES)
+def test_a_bad_saved_time_reads_as_missing_with_one_warning_rather_than_stopping(saved, caplog):
+    from twobells.board.state import departure_to_dict
+
+    trains, buses, board, display, state = setup()
+    trains.error = buses.error = OSError("network down")
+    entry = {"last_success": saved, "last_attempt": saved, "departures": [departure_to_dict(train("07:30"))]}
+    state["sources"] = {"train": dict(entry), "bus": dict(entry)}
+    state["last_render"] = {"signature": "old", "at": saved, "page": "departures"}
+    with caplog.at_level("WARNING"):
+        result = run_once(board, state, display, THU_0700)
+    assert result.rendered
+    assert (trains.calls, buses.calls) == (1, 1)  # never tried counts as due
+    assert result.view.section("train").rows == ()  # undated, so not shown
+    # One warning for each bad time, which is dropped, so it isn't warned of again.
+    warned = [r for r in caplog.records if saved in (r.args or ())]
+    assert len(warned) == 5
+    assert "last_success" not in state["sources"]["train"] and "last_success" not in state["sources"]["bus"]
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        run_once(board, state, display, THU_0700 + timedelta(minutes=2))
+    assert not [r for r in caplog.records if saved in (r.args or ())]
 
 
 # --- Scrolling text on a screen: frames between ticks only while something scrolls ---
