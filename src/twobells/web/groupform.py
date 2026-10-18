@@ -29,7 +29,6 @@ from __future__ import annotations
 import html
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
-from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -130,23 +129,6 @@ def edited(raw: str, shown: str) -> bool:
 def section_id(heading: str) -> str:
     """A section's heading's id: never a field's name, which are ids too."""
     return "section-" + "-".join(heading.lower().split())
-
-
-@cache
-def _stations() -> dict[str, str]:
-    """Each station's name by its code, from the bundled list: no network."""
-    from ..setup.lookups import bundled_stations
-
-    return {code: name for name, code, _, _ in bundled_stations()}
-
-
-def _station(code: str) -> str:
-    """A station code with its name, like "Glossop (GLO)", or the code alone."""
-    try:
-        name = _stations().get(code)
-    except (OSError, ValueError):  # the bundled list is part of the package; the hint can do without
-        name = None
-    return f"{name} ({code})" if name else code
 
 
 def _shown(value, kind: str) -> str:
@@ -690,7 +672,7 @@ class GroupForm:
         hint = f.hint
         crs = data.get("train", {}).get("crs") if isinstance(data.get("train"), dict) else None
         if f.name == "train_crs" and isinstance(crs, str) and schema.CRS.match(crs):
-            hint = f"{hint} Currently {_station(crs.upper())}."
+            hint = f"{hint} Currently {places.station(crs.upper())}."
         return _field(f, value, error, hint)
 
     def _stops(self, data: dict) -> str:
