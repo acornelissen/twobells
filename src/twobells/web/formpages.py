@@ -454,7 +454,11 @@ class FormPages:
             return self.reset_page(503, headers, self._wording().cant_check)
         if not right:
             return self.reset_page(401, headers, WRONG_CODE, "code")
-        self._password.set(new)
+        try:
+            self._password.set(new)
+        except OSError as error:  # the code is spent, but the old password and sessions stand
+            self._log.warning("Can't save the settings password: %s", type(error).__name__)
+            return self.reset_page(503, headers, self._wording().cant_check)
         self._log.info(self._wording().reset_logged)
         self._sessions.end_all()
         self._lockout.succeeded(client)

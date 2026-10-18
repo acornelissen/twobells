@@ -514,6 +514,22 @@ def test_a_code_that_cannot_be_checked_says_so_in_the_hosts_words(host, caplog, 
     assert host.password.check(PASSWORD)
 
 
+def test_a_new_password_that_cannot_be_saved_says_so_and_changes_nothing_else(host, caplog, monkeypatch):
+    def broken(password):
+        raise PermissionError("web.json")
+
+    old, _ = host.signed_in()
+    host.codes.issue(host.clock())
+    monkeypatch.setattr(host.password, "set", broken)
+    reply = host.reset(host.shown[-1])
+    assert reply.status == 503 and WIDGET.cant_check in reply.body.decode()
+    assert [(r.name, r.getMessage()) for r in caplog.records if r.levelname == "WARNING"] == [
+        ("tests.widget", "Can't save the settings password: PermissionError")]
+    assert "widget_session=" not in reply.headers.get("Set-Cookie", "")  # this browser isn't signed in
+    assert host.password.check(PASSWORD)
+    assert host.pages.settings_page(headers(old)).status == 200  # no session ended
+
+
 def test_signing_out_needs_the_sessions_token(host):
     cookie, csrf = host.signed_in()
     reply = host.pages.sign_out({"csrf": "forged"}, headers(cookie))

@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Fixed
+
+- Setting a new settings password with a reset code when the password can't be saved (a full or read-only disk, say) now answers that the code can't be checked, and the log says why. It sent nothing back, and logged nothing. The old password and every session still stand; ask for a new code.
+
 ### Security
 
 - The settings refuse a common password: one of the 5,000 most common of 10 characters or more, such as `password123` or `Manchester1`, whatever its case, saying "That's one of the most common passwords. Choose another." This holds when claiming the settings, setting a new password with a reset code (checked before the code is used up) and `--set-password`. A password already set keeps working. The list, `src/twobells/data/common_passwords.txt`, comes from SecLists under the MIT License.
