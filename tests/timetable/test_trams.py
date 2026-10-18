@@ -257,6 +257,29 @@ def test_an_over_long_line_is_read_past_a_piece_at_a_time(name):
     assert len(found[0].calls) == 4  # the lines after it are read as before
 
 
+@pytest.mark.parametrize("packing", [zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA])
+def test_a_part_packed_other_than_stored_or_deflated_is_refused_unread(packing):
+    # zipfile unpacks bzip2 and LZMA a whole read at a time, with no cap on
+    # what comes out: a few hundred bytes of bzip2 can make 290 MB in one read.
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, text in PARTS.items():
+            if name != "agency.txt":
+                archive.writestr(name, text)
+        archive.writestr("agency.txt", PARTS["agency.txt"] + "0" * 20_000_000, compress_type=packing)
+    archive = zipfile.ZipFile(io.BytesIO(out.getvalue()))
+    failed = []
+
+    def work():
+        try:
+            trams.read_gtfs(archive, STOPS, NOW)
+        except TimetableError as error:
+            failed.append(error)
+
+    assert _peak_bytes(work) < 2_000_000
+    assert len(failed) == 1
+
+
 def test_an_over_long_header_leaves_its_part_with_no_columns():
     parts = dict(PARTS)
     parts["agency.txt"] = "x" * 10_000 + "\n" + parts["agency.txt"]

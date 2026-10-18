@@ -66,6 +66,10 @@ MAX_DOWNLOAD_BYTES = 250_000_000
 _MAX_PART_BYTES = {"stop_times.txt": 2_000_000_000}
 _MAX_OTHER_PART_BYTES = 300_000_000
 _MAX_LINE = 4096  # characters in one CSV row; real ones are under 200
+# How a part may be packed. zipfile unpacks bzip2 and LZMA a whole read at a
+# time, with no cap on what comes out (a few hundred bytes of bzip2 can make
+# 290 MB in one read), so _Capped would stop it too late; TfGM's are deflated.
+_PACKINGS = (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
 # Parts in the zip: GTFS has about a dozen. zipfile holds each one listed
 # before any is read, so the list is checked first, and its bytes with it.
 MAX_PARTS = 100
@@ -201,11 +205,14 @@ def destination_name(value: object) -> str:
 
 def _rows(archive: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
     """The rows of one part of the file, a line at a time, as {column: value}.
-    TimetableError if the part is missing or bigger than it may be."""
+    TimetableError if the part is missing, bigger than it may be, or packed
+    other than stored or deflated."""
     try:
         info = archive.getinfo(name)
     except KeyError:
         raise TimetableError(f"The tram timetable has no {name}") from None
+    if info.compress_type not in _PACKINGS:
+        raise TimetableError(f"The tram timetable's {name} is packed in a way GTFS files never are")
     limit = _MAX_PART_BYTES.get(name, _MAX_OTHER_PART_BYTES)
     if info.file_size > limit:
         raise TimetableTooBig(f"The tram timetable's {name} is larger than {limit} bytes")
