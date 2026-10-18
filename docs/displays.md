@@ -28,7 +28,7 @@ The display is set in `/etc/twobells/config.toml` only. It starts as `"inky"`.
 
 - **The Waveshare panel** needs `dtoverlay=spi0-0cs` in `/boot/firmware/config.txt`: it is two controllers side by side, and the board drives both chip selects itself. The driver follows Waveshare's `epd10in85g.py` command sequence over `spidev` and `gpiozero`. Each sign dot is 4×4 panel pixels.
 - **An original Inky pHAT** (before 2019) is smaller, 212×104, and has no chip the board can detect it by: set `display = "inky-phat-v1"` and `panel_colour = "red"`, `"yellow"` or `"black"`. It also needs `dtoverlay=spi0-0cs`. On a display that small the plain look, black on white, is the easiest to read; text size 12 makes it a little bigger and still shows 2 trains and 1 bus.
-- **The HDMI screen** is 400×1280 portrait out of the box; the board runs it on its side. It draws full screen with pygame, no desktop needed. pygame, and espeak-ng for [announcements](#station-announcements-on-a-screen), are installed only for the screen: `install.sh --screen`, or `install.sh` and `update.sh` when `config.toml` already says `hdmi-…`. To switch from e-paper:
+- **The HDMI screen** is 400×1280 portrait out of the box; the board runs it on its side. It draws full screen with pygame, no desktop needed. pygame with the EGL and GLES libraries it draws through, and espeak-ng for [announcements](#station-announcements-on-a-screen), are installed only for the screen: `install.sh --screen`, or `install.sh` and `update.sh` when `config.toml` already says `hdmi-…`. To switch from e-paper:
 
   ```bash
   sudo systemctl disable --now twobells.timer

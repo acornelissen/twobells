@@ -29,9 +29,10 @@ PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
-# No AF_NETLINK: SDL would use it only to watch for input devices being
-# plugged in, which it can't open without the input group; video doesn't need it.
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# AF_NETLINK for SDL's udev, which watches for input devices being plugged in:
+# without it SDL 2.32 (Trixie) crashes in display.init(), before the screen opens.
+# It can't open those devices without the input group.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 RestrictNamespaces=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes

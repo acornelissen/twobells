@@ -547,12 +547,31 @@ def test_a_screen_gets_espeak_ng_for_its_announcements_and_e_paper_does_not():
     # install.sh: with pygame, only for a screen.
     install = _script("install.sh")
     [block] = re.findall(r"^if \$screen; then\n(.*?)^fi$", install, re.M | re.S)
-    assert block == "  apt-get install -y python3-pygame espeak-ng\n"
+    assert block == "  apt-get install -y python3-pygame espeak-ng libegl1 libegl-mesa0 libgles2\n"
     assert len(re.findall(r"^[^#\n]*espeak-ng", install, re.M)) == 1  # nowhere else
     # update.sh: a screen installed before announcements gets it, before the new code goes in.
     update = _script("update.sh")
     needed = ('if [[ "$display" == hdmi-* && ! -x /usr/bin/espeak-ng ]]; then\n'
               "  apt-get update\n  apt-get install -y espeak-ng\nfi\n")
+    assert update.index('display="$(query display)" || display=""') < update.index(needed)
+    assert update.index(needed) < update.index('"$PREFIX/venv/bin/pip" install')
+
+
+def test_a_screen_gets_egl_and_gles_and_e_paper_does_not():
+    # SDL opens the screen through EGL and GLES, which python3-pygame doesn't pull in:
+    # without them set_mode fails with "EGL not initialized" on Pi OS Lite (Trixie).
+    packages = "libegl1 libegl-mesa0 libgles2"
+    install = _script("install.sh")
+    [block] = re.findall(r"^if \$screen; then\n(.*?)^fi$", install, re.M | re.S)
+    assert block.rstrip().endswith(packages)
+    assert len(re.findall(rf"^[^#\n]*{packages}", install, re.M)) == 1  # only for a screen
+    # update.sh: a screen installed before this gets them, before the new code goes in,
+    # looked for in the linker's cache rather than asked of dpkg.
+    update = _script("update.sh")
+    needed = ('libraries="$(ldconfig -p)"\n'
+              'if [[ "$display" == hdmi-* && ( "$libraries" != *libEGL.so.1* || "$libraries" != *libEGL_mesa.so.0* \\\n'
+              '    || "$libraries" != *libGLESv2.so.2* ) ]]; then\n'
+              f"  apt-get update\n  apt-get install -y {packages}\nfi\n")
     assert update.index('display="$(query display)" || display=""') < update.index(needed)
     assert update.index(needed) < update.index('"$PREFIX/venv/bin/pip" install')
 
@@ -564,7 +583,8 @@ def test_the_screen_s_service_may_use_the_sound_devices_and_nothing_more():
     # Nothing else is opened up for sound: no device list, capabilities or realtime.
     assert "DeviceAllow" not in screen and screen["CapabilityBoundingSet"] == [""]
     assert screen["RestrictRealtime"] == ["yes"]
-    assert screen["RestrictAddressFamilies"] == ["AF_INET AF_INET6 AF_UNIX"]
+    # AF_NETLINK for SDL's udev: SDL 2.32 crashes in display.init() without it.
+    assert screen["RestrictAddressFamilies"] == ["AF_INET AF_INET6 AF_UNIX AF_NETLINK"]
     # E-paper never speaks, so its service has no sound.
     assert "audio" not in " ".join(_unit("twobells.service").get("SupplementaryGroups", []))
 

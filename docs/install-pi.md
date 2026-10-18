@@ -52,7 +52,7 @@ sudo systemctl enable --now twobells.timer             # e-paper
 sudo systemctl enable --now twobells-screen.service    # the HDMI screen
 ```
 
-For an HDMI screen, first set `display = "hdmi-1280x400"` (or `"hdmi-1920x440"` for the 11.3" bar screen) in `/etc/twobells/config.toml` (`install.sh` puts one there) and run `install.sh` again: it installs pygame and espeak-ng (for [station announcements](displays.md#station-announcements-on-a-screen)) and names the screen's service. `install.sh --screen` only installs them up front; which service it names still follows `display`. See [Displays](displays.md).
+For an HDMI screen, first set `display = "hdmi-1280x400"` (or `"hdmi-1920x440"` for the 11.3" bar screen) in `/etc/twobells/config.toml` (`install.sh` puts one there) and run `install.sh` again: it installs pygame, the EGL and GLES libraries it draws through (Raspberry Pi OS Lite comes without them), and espeak-ng (for [station announcements](displays.md#station-announcements-on-a-screen)) and names the screen's service. `install.sh --screen` only installs them up front; which service it names still follows `display`. See [Displays](displays.md).
 
 ## Updating
 
@@ -83,7 +83,7 @@ What `update.sh` does:
 
 - It stops before changing anything if the app isn't installed in `/opt/twobells`, and says to run `install.sh`.
 - It holds the board's timer while it works, so no tick runs half-installed code, and starts it again at the end (also if the update stops part way).
-- It first installs what the new release needs: `nftables` if it's missing, pygame and espeak-ng if `display` says `hdmi-…` and they're missing, and the Inky driver from PyPI at the versions and hashes the release pins (`deploy/pi/requirements-pi.txt`). It checks that the Inky driver and its libraries import, as `install.sh` does, and stops before touching the code if one doesn't, so the old code still runs.
+- It first installs what the new release needs: `nftables` if it's missing, pygame, the EGL and GLES libraries and espeak-ng if `display` says `hdmi-…` and they're missing, and the Inky driver from PyPI at the versions and hashes the release pins (`deploy/pi/requirements-pi.txt`). It checks that the Inky driver and its libraries import, as `install.sh` does, and stops before touching the code if one doesn't, so the old code still runs.
 - Then it installs the new code, checks that imports too, refreshes the systemd units, loads the network guard afresh, restarts the fetch service and the web server (if it is running), turns the timetable timer on (an older install turned it on only if buses came from BODS when it was installed), starts a timetable build if a view that is on shows buses from BODS or Metrolink trams (`journalctl -u twobells-timetable -f` follows it), restarts the screen's service if it is running, and runs the e-paper board once if its timer is on.
 - `--config FILE` and `--secrets FILE` replace `/etc/twobells/config.toml` and `secrets.env` too (the secrets copy is shredded).
 

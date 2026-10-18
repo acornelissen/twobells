@@ -73,8 +73,10 @@ fi
 # pygame, only for the HDMI screen: it pulls in graphics libraries (LLVM, Mesa) and a
 # MIDI soundfont, slow to install on a Pi Zero and unused by e-paper. espeak-ng (small)
 # says the screen's station announcements, when [board] show has them; e-paper never speaks.
+# EGL and GLES, which SDL opens the screen through on KMS/DRM: python3-pygame doesn't pull
+# them in, and Raspberry Pi OS Lite on Trixie comes without them.
 if $screen; then
-  apt-get install -y python3-pygame espeak-ng
+  apt-get install -y python3-pygame espeak-ng libegl1 libegl-mesa0 libgles2
 fi
 
 # Run again, the web server may be running already on the old unit, and

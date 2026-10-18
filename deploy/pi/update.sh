@@ -70,6 +70,15 @@ if [[ "$display" == hdmi-* && ! -x /usr/bin/espeak-ng ]]; then
   apt-get update
   apt-get install -y espeak-ng
 fi
+# And EGL and GLES, which SDL opens the screen through: python3-pygame doesn't
+# pull them in, and Raspberry Pi OS Lite on Trixie comes without them. Looked
+# for in the linker's cache, not asked of dpkg.
+libraries="$(ldconfig -p)"
+if [[ "$display" == hdmi-* && ( "$libraries" != *libEGL.so.1* || "$libraries" != *libEGL_mesa.so.0* \
+    || "$libraries" != *libGLESv2.so.2* ) ]]; then
+  apt-get update
+  apt-get install -y libegl1 libegl-mesa0 libgles2
+fi
 
 # pip takes the twobells command away for a moment while it puts new
 # code in, so a tick the timer starts then fails: the board's timer is held
