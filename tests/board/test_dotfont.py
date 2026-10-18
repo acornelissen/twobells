@@ -72,6 +72,37 @@ def test_tiny_font_draws_lowercase_as_small_capitals():
     assert tiny.getlength("updated") == tiny.getlength("UPDATED")
 
 
+def test_the_subtitle_font_has_every_glyph_the_board_font_has():
+    from twobells.board.dotfont import SUB
+
+    # A calling-at line says what the rows do, so it needs every character they can.
+    assert set(SUB) == set(GLYPHS)
+
+
+@pytest.mark.parametrize("char", sorted(GLYPHS))
+def test_subtitle_glyphs_are_rectangular_and_two_dots_shorter(char):
+    from twobells.board.dotfont import SUB, SUB_HEIGHT
+
+    rows = SUB[char]
+    assert SUB_HEIGHT == HEIGHT - 2
+    assert len(rows) in (5, SUB_HEIGHT)  # capitals and lowercase, or with a descender
+    assert len({len(r) for r in rows}) == 1
+    assert set("".join(rows)) <= {"#", "."}
+
+
+def test_the_subtitle_font_is_narrower_with_digits_of_one_width_and_real_lowercase():
+    from twobells.board.dotfont import SUB, SUB_HEIGHT
+
+    sub = DotFont(SUB)
+    assert len({sub.getlength(d) for d in string.digits}) == 1
+    text = "Calling at: Dinting, Broadbottom and Manchester Piccadilly."
+    assert sub.getlength(text) < FONT.getlength(text)
+    assert sub.getlength("dinting") != sub.getlength("DINTING")
+    image = Image.new("P", (10, SUB_HEIGHT), 0)
+    sub.draw(ImageDraw.Draw(image), (0, 0), "g", fill=1)
+    assert any(image.getpixel((x, SUB_HEIGHT - 1)) == 1 for x in range(10))  # its descender
+
+
 def test_tiny_glyphs_are_rectangular():
     from twobells.board.dotfont import TINY
 

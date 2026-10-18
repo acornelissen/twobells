@@ -19,7 +19,7 @@ from PIL import Image, ImageDraw
 from ..core.model import Strip
 from ..settings import modes as mode_list
 from .dotfont import HEIGHT as GLYPH_H
-from .dotfont import TINY, TINY_HEIGHT, DotFont
+from .dotfont import SUB, SUB_HEIGHT, TINY, TINY_HEIGHT, DotFont
 from .panel import (
     LEAVE_COLUMN_MIN_WIDTH,
     NOTES_SIDE_BY_SIDE_MIN_WIDTH,
@@ -51,6 +51,11 @@ _ORDINAL_W = "4th"
 _MAX_TRAINS = 3
 _FONT = DotFont()
 _SMALL = DotFont(TINY)
+# A screen's lines under a train's row ("Calling at", the leave line), as its
+# subtitles: the smaller font on a shorter line, with the same 2 dots of leading.
+_SUB = DotFont(SUB)
+_LEADING = _LINE - GLYPH_H
+_SUB_LINE = SUB_HEIGHT + _LEADING
 
 
 @dataclass(frozen=True)
@@ -63,11 +68,19 @@ class Item:
     # On a screen, text too long for its space: the space's width, in which
     # the whole text scrolls. None for text drawn as it is.
     box: int | None = None
+    sub: bool = False  # a screen's line under a row, in the subtitle font
+
+
+def _font(small: bool = False, sub: bool = False) -> tuple[DotFont, int]:
+    """The font an item is drawn in, and its height in dots."""
+    if small:
+        return _SMALL, TINY_HEIGHT
+    return (_SUB, SUB_HEIGHT) if sub else (_FONT, GLYPH_H)
 
 
 def item_size(item: Item) -> tuple[int, int]:
     """How much room an item takes: its text's, or a scrolling item's box."""
-    font, height = (_SMALL, TINY_HEIGHT) if item.small else (_FONT, GLYPH_H)
+    font, height = _font(item.small, item.sub)
     return (font.getlength(item.text) if item.box is None else item.box), height
 
 
@@ -138,17 +151,19 @@ class SignLayout:
     def scrolls(self) -> bool:
         return self.live and self.scroll
 
-    def add(self, x: float, y: int, text: str, inverted: bool = False, small: bool = False) -> None:
-        self.items.append(Item(x, y, text, inverted, small))
+    def add(self, x: float, y: int, text: str, inverted: bool = False, small: bool = False,
+            sub: bool = False) -> None:
+        self.items.append(Item(x, y, text, inverted, small, sub=sub))
 
-    def fit(self, x: float, y: int, text: str, room: float, inverted: bool = False, small: bool = False) -> None:
+    def fit(self, x: float, y: int, text: str, room: float, inverted: bool = False, small: bool = False,
+            sub: bool = False) -> None:
         """`text` in a space `room` dots wide from x: whole if it fits; if
         not, scrolling in that space on a screen that scrolls, cut short otherwise."""
-        fitted = fit_text(text, _SMALL if small else _FONT, room)
+        fitted = fit_text(text, _font(small, sub)[0], room)
         if self.scrolls and fitted != text and room >= 1:
-            self.items.append(Item(x, y, text, inverted, small, box=int(room)))
+            self.items.append(Item(x, y, text, inverted, small, box=int(room), sub=sub))
         else:
-            self.add(x, y, fitted, inverted, small)
+            self.add(x, y, fitted, inverted, small, sub)
 
 
 def _w(text: str) -> int:
@@ -261,6 +276,10 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
     if not any(r.strip for r in rows):
         where_x = None  # no room kept for strips that none of them has
     leave_for = section.leave_for or 0
+    # The lines under a row: a screen's subtitles, e-paper's full size.
+    sub = layout.live
+    under = _SUB_LINE if sub else _LINE
+    under_h = SUB_HEIGHT if sub else GLYPH_H
     for index, row in enumerate(rows):
         if bottom is not None and index and y + GLYPH_H > bottom:
             break
@@ -284,16 +303,16 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
             layout.add(columns.leave_x, y, section.leave, inverted)
         layout.add(status_x, y, row.right, inverted)
         y += _LINE
-        fits = bottom is None or y + GLYPH_H <= bottom
+        fits = bottom is None or y + under_h <= bottom
         if index == 0 and calling and calling_line(section, layout.live) and fits:
             # As on the real board: under the first train, where it calls, scrolling.
-            layout.fit(time_x, y, row.calling or "", width - MARGIN - time_x)
-            y += _LINE
-            fits = bottom is None or y + GLYPH_H <= bottom
+            layout.fit(time_x, y, row.calling or "", width - MARGIN - time_x, sub=sub)
+            y += under
+            fits = bottom is None or y + under_h <= bottom
         if section.leave and columns.leave_x is None and index == leave_for and fits:
             # Under its train, as the "Calling at" line is, say when to set off.
-            layout.fit(time_x, y, section.leave, width - MARGIN - time_x)
-            y += _LINE
+            layout.fit(time_x, y, section.leave, width - MARGIN - time_x, sub=sub)
+            y += under
     return y
 
 
@@ -398,36 +417,37 @@ def _most_rows(section: Section, alone: bool, epaper: bool) -> int:
     return mode_list.mode(section.mode).most_rows[0 if epaper else 1]
 
 
-def _lines(section: Section, rows: int, calling: bool, leave_column: bool) -> int:
-    """How many lines a section takes with its first `rows` rows: the rows
-    ("No buses" is a line too), and a train's "Calling at" line, with
-    `calling`, and its leave line, unless the leave words have a column on
-    their train's row (`leave_column`)."""
+def _height(section: Section, rows: int, calling: bool, leave_column: bool, live: bool) -> int:
+    """How many dots tall a section is with its first `rows` rows, each line
+    with its leading: the rows ("No buses" is a line too), and a train's
+    "Calling at" line, with `calling`, and its leave line, unless the leave
+    words have a column on their train's row (`leave_column`). Those two are
+    a screen's (`live`) subtitles, on shorter lines."""
     shown = max(1, min(rows, len(section.rows)))
     if section.kind != "train" or not section.rows:
-        return shown
+        return shown * _LINE
     leave = section.leave is not None and not leave_column and (section.leave_for or 0) < shown
-    return shown + calling + leave
+    return shown * _LINE + (calling + leave) * (_SUB_LINE if live else _LINE)
 
 
-def _fits(lines: list[int], bottom: int) -> bool:
-    """Whether sections of these many lines each, one under another from the
-    top with a rule between each two, end above `bottom`."""
-    last_top = _TOP + (sum(lines) - 1) * _LINE + (len(lines) - 1) * _BETWEEN
-    return last_top + GLYPH_H <= bottom
+def _fits(heights: list[int], bottom: int) -> bool:
+    """Whether sections this many dots tall each, one under another from the
+    top with a rule between each two, end above `bottom` (the last line's
+    leading is below its text, so it doesn't count)."""
+    return _TOP + sum(heights) + (len(heights) - 1) * _BETWEEN - _LEADING <= bottom
 
 
-def _row_counts(wants: list[int], lines: Callable[[int, int], int], bottom: int) -> list[int]:
+def _row_counts(wants: list[int], height: Callable[[int, int], int], bottom: int) -> list[int]:
     """How many rows each section draws so that they all fit above `bottom`,
-    `lines(index, rows)` saying how many lines section `index` takes with
-    that many: each its most (`wants`) where they fit; where not, the last
+    `height(index, rows)` saying how tall section `index` is with that
+    many: each its most (`wants`) where they fit; where not, the last
     gives rows up first, as it has the rest of the room, then the section
     with the most (of two with as many, the lower). So a train's leave line
     always has room under its row: its section shows a train fewer for it,
     or, down to one, another section does. Each keeps a row, even on a board
     too small for that."""
     counts = list(wants)
-    while counts and not _fits([lines(index, count) for index, count in enumerate(counts)], bottom):
+    while counts and not _fits([height(index, count) for index, count in enumerate(counts)], bottom):
         if counts[-1] > 1:
             counts[-1] -= 1
             continue
@@ -453,24 +473,24 @@ def sign_layout(view: BoardView, width: int = WIDTH, height: int = HEIGHT) -> Si
     where_x = _where_column(view, columns, width)
     footer_y = height - (GLYPH_H if view.clock else TINY_HEIGHT) - 1  # the bottom line's top
 
-    def lines(index: int, rows: int) -> int:
+    def section_height(index: int, rows: int) -> int:
         section = sections[index]
-        return _lines(section, rows, section.mode == calling_for, columns[index].leave_x is not None)
+        return _height(section, rows, section.mode == calling_for, columns[index].leave_x is not None, layout.live)
 
     wants = [_most_rows(s, alone, epaper) for s in sections]
     if sections and sections[-1].kind != "train":
         wants[-1] = len(sections[-1].rows)  # the last has the rest of the room
     wants = [max(1, min(want, len(s.rows))) for want, s in zip(wants, sections, strict=True)]
-    counts = _row_counts(wants, lines, footer_y - 2)
+    counts = _row_counts(wants, section_height, footer_y - 2)
     # The rule over the bottom line, as between sections. A screen always has
     # one, the last section giving rows up for it, unless the "Calling at"
     # line has left it room for the rule or a bus, not both (the bar screen's
     # third); e-paper only when it costs no row, as it can on a full board.
     ruled = footer_y - 2 * _FOOTER_GAP - 1
     if view.clock is not None and calling_for is None:
-        while counts and counts[-1] > 1 and not _fits([lines(i, c) for i, c in enumerate(counts)], ruled):
+        while counts and counts[-1] > 1 and not _fits([section_height(i, c) for i, c in enumerate(counts)], ruled):
             counts[-1] -= 1
-    footer_rule = bool(counts) and _fits([lines(i, c) for i, c in enumerate(counts)], ruled)
+    footer_rule = bool(counts) and _fits([section_height(i, c) for i, c in enumerate(counts)], ruled)
     bottom = ruled if footer_rule else footer_y - 2
     y = _TOP
     for index, (section, cols, count) in enumerate(zip(sections, columns, counts, strict=True)):
@@ -484,7 +504,7 @@ def sign_layout(view: BoardView, width: int = WIDTH, height: int = HEIGHT) -> Si
             y = _buses(layout, section, y, bottom, width, cols, where_x, count)
     if footer_rule:
         # Halfway between the last line and the bottom line, so the gaps match.
-        last_bottom = y - _LINE + GLYPH_H - 1
+        last_bottom = y - _LEADING - 1
         layout.rules.append(last_bottom + (footer_y - last_bottom) // 2)
     _footer(layout, view, width, height)
     return layout
@@ -518,7 +538,7 @@ def sign_frame(view: BoardView, palette: Palette, panel: Panel = PHAT) -> Frame:
         draw.point([(x, y) for x in range(MARGIN, width - MARGIN, 2)], fill=ink)
     for item in layout.items:
         if item.box is None:
-            font = _SMALL if item.small else _FONT
+            font = _font(item.small, item.sub)[0]
             font.draw(draw, (item.x, item.y), item.text, fill=palette.black if item.inverted else ink)
     for mark in layout.strips:
         draw.point(sorted(strip_dots(mark)), fill=palette.black if mark.inverted else ink)
@@ -537,7 +557,7 @@ def _scrolls(layout: SignLayout, palette: Palette, panel: Panel, width: int, hei
     for item in layout.items:
         if item.box is None:
             continue
-        font, text_h = (_SMALL, TINY_HEIGHT) if item.small else (_FONT, GLYPH_H)
+        font, text_h = _font(item.small, item.sub)
         dots = Image.new("P", (font.getlength(item.text), text_h), ink if item.inverted else palette.black)
         font.draw(ImageDraw.Draw(dots), (0, 0), item.text, fill=palette.black if item.inverted else ink)
         strip = _blocks(dots, scale, palette.black, gaps=not item.inverted)

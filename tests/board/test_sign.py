@@ -1357,6 +1357,47 @@ def test_with_the_calling_at_line_a_screen_keeps_its_three_buses(panel):
         assert item.x >= 0 and item.x + w <= width and item.y >= 0 and item.y + h <= height
 
 
+# On a screen the lines under a train's row read as its subtitles: the smaller
+# font (capitals 5 dots tall, not 7), on a line 9 dots tall rather than 11.
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_a_screen_draws_the_calling_at_line_smaller_than_the_rows(panel):
+    items = sign_layout(calling(), *dots(panel)).items
+    line, first = find(items, CALLING), find(items, "1st")
+    assert line.sub and item_size(line)[1] == 7
+    assert not first.sub and item_size(first)[1] == 9
+    assert line.y == first.y + 11
+    assert min(i.y for i in items if i.y > line.y) == line.y + 9  # the next line, a subtitle's height on
+    # It scrolls in its own smaller dots' height.
+    [scroll] = [s for s in sign_frame(calling(), PALETTE, panel).scrolls if s.text == CALLING]
+    assert scroll.box[3] - scroll.box[1] == 7 * panel.scale
+
+
+def test_the_7_9_inch_screen_draws_the_leave_line_under_its_train_smaller_too():
+    items = sign_layout(calling(), *dots(HDMI_1280X400)).items
+    leave = find(items, "Leave in 3 min")
+    assert leave.sub and leave.y == find(items, CALLING).y + 9
+    assert find(items, "2nd").y == leave.y + 9
+
+
+def test_a_subtitle_is_drawn_in_the_smaller_font():
+    image = render_sign(calling(text="Calling at: Dinting only."), PALETTE, HDMI_1280X400)
+    scale = HDMI_1280X400.scale
+    width, height = dots(HDMI_1280X400)
+    left, top = (HDMI_1280X400.width - width * scale) // 2, (HDMI_1280X400.height - height * scale) // 2
+    line = find(sign_layout(calling(text="Calling at: Dinting only."), width, height).items, "Calling at: Dinting only.")
+    lit = [y for y in range(line.y, line.y + 9) for x in range(int(line.x), int(line.x) + 120)
+           if image.getpixel((left + x * scale, top + y * scale)) != PALETTE.black]
+    assert lit and max(lit) - line.y < 7  # nothing below its 7 rows (the 9-dot font's "g" reaches row 8)
+
+
+def test_e_paper_s_leave_line_stays_full_size():
+    items = sign_layout(dataclasses.replace(screen(), clock=None)).items
+    leave = find(items, "Leave in 3 min")
+    assert not leave.sub and item_size(leave)[1] == 9
+
+
 def test_the_bar_screen_gives_up_its_footer_rule_for_the_calling_at_line_not_a_bus():
     width, height = dots(HDMI_1920X440)
     assert footer_rule(sign_layout(screen(), width, height)) is not None
