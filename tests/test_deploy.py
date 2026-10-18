@@ -576,6 +576,13 @@ def test_a_screen_gets_egl_and_gles_and_e_paper_does_not():
     assert update.index(needed) < update.index('"$PREFIX/venv/bin/pip" install')
 
 
+def test_the_screen_draws_through_gles():
+    # pygame's window surface reaches the screen through an SDL renderer. Left to
+    # choose, SDL 2.32 on a Pi 4 (Trixie) draws a black screen; with GLES it shows.
+    screen = _unit("twobells-screen.service")
+    assert screen["Environment"] == ["SDL_VIDEODRIVER=kmsdrm", "SDL_FRAMEBUFFER_ACCELERATION=opengles2"]
+
+
 def test_the_screen_s_service_may_use_the_sound_devices_and_nothing_more():
     screen = _unit("twobells-screen.service")
     # audio for /dev/snd (espeak-ng), beside video and render for the screen; not input.

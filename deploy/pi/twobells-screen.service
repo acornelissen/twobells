@@ -16,6 +16,9 @@ StateDirectory=twobells
 StateDirectoryMode=0750
 EnvironmentFile=/etc/twobells/secrets.env
 Environment=SDL_VIDEODRIVER=kmsdrm
+# pygame's surface reaches the screen through an SDL renderer: left to choose,
+# SDL 2.32 on a Pi 4 (Trixie) shows a black screen. GLES shows it.
+Environment=SDL_FRAMEBUFFER_ACCELERATION=opengles2
 ExecStart=/opt/twobells/venv/bin/twobells run --loop --config /etc/twobells/config.toml
 Restart=on-failure
 RestartSec=10
