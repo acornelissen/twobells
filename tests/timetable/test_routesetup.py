@@ -52,7 +52,7 @@ def _patterns_whole_tree(xml, line):
     """patterns as it was, parsing the whole document as one tree (about 8
     times its size): kept only to check that reading it an element at a
     time gives the same."""
-    root = safexml.fromstring(xml)
+    root = safexml.fromstring(xml, max_elements=10_000_000)
     line_ids = {
         node.get("id")
         for node in root.iterfind(".//t:Services/t:Service/t:Lines/t:Line", NS)
@@ -405,6 +405,12 @@ def test_a_file_unpacking_to_what_it_took_is_read_whatever_its_header_says():
 def test_doctype_is_refused():
     with pytest.raises(RouteSetupError, match="DOCTYPE"):
         patterns(b'<!DOCTYPE x [<!ENTITY a "b">]><TransXChange/>', "341")
+
+
+def test_a_journey_of_too_many_elements_is_refused():
+    bloated = TXC.replace(b"<VehicleJourney>", b"<VehicleJourney>" + b"<a/>" * routesetup.MAX_PART_ELEMENTS, 1)
+    with pytest.raises(RouteSetupError):
+        patterns(bloated, "341")
 
 
 def test_doctype_after_a_long_comment_is_refused():

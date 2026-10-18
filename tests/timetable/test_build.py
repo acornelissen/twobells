@@ -291,6 +291,15 @@ def test_a_doctype_is_refused():
         parse_journeys(b'<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "b">]><x>&a;</x>', OURS)
 
 
+def test_a_journey_of_too_many_elements_is_refused():
+    # Each of a document's journeys, services and sections is built whole: a
+    # bloated one is refused as it is read, whatever its bytes.
+    bloated = "<Notes>" + "<a/>" * routesetup.MAX_PART_ELEMENTS + "</Notes>"
+    assert len(parse_journeys(_txc(LINKS), OURS)) == 1
+    with pytest.raises(TimetableError):
+        parse_journeys(_txc(LINKS, journey=bloated), OURS)
+
+
 def test_not_xml_is_an_error():
     with pytest.raises(TimetableError):
         parse_journeys(b"<TransXChange", OURS)
@@ -2097,7 +2106,7 @@ def _whole_tree(xml, atcos, noc="", yours=None):
     """The document read as the timetable used to read it, parsed whole: the
     oracle the two passes must agree with."""
     ns = timetable._NS
-    root = safexml.fromstring(xml)
+    root = safexml.fromstring(xml, max_elements=10_000_000)
     revision = root.get("RevisionNumber", "").strip()
     doc = timetable._Document(revision=int(revision) if revision.isdigit() and len(revision) < 10 else 0)
     for node in root.iterfind("t:StopPoints/t:AnnotatedStopPointRef", ns):

@@ -5,8 +5,10 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from tests.paths import FIXTURES
+from twobells.core.safexml import TooManyElements
 from twobells.sources.bods import (
     MAX_RESPONSE_BYTES,
+    MAX_RESPONSE_ELEMENTS,
     BodsVehicleSource,
     fleet_and_registration,
     parse_siri_vm,
@@ -114,6 +116,15 @@ def test_falls_back_to_line_ref_without_a_published_name():
 def test_refuses_a_document_type_declaration():
     evil = b'<?xml version="1.0"?><!DOCTYPE lol [<!ENTITY a "aaaa">]><Siri/>'
     with pytest.raises(ValueError, match="DOCTYPE"):
+        parse_siri_vm(evil)
+
+
+def test_refuses_a_document_of_too_many_elements():
+    # Empty elements take 4 bytes each to send and about 100 to hold.
+    assert parse_siri_vm(FIXTURE)
+    evil = b'<Siri xmlns="http://www.siri.org.uk/siri">' + b"<a/>" * MAX_RESPONSE_ELEMENTS + b"</Siri>"
+    assert len(evil) < MAX_RESPONSE_BYTES
+    with pytest.raises(TooManyElements):
         parse_siri_vm(evil)
 
 

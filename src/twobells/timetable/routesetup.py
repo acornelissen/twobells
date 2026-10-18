@@ -38,6 +38,12 @@ MAX_DOWNLOAD_BYTES = 300_000_000
 # One TransXChange file, uncompressed, unless an install reads less (see
 # DocumentLimits).
 MAX_XML_BYTES = 200_000_000
+# The most elements in one part of a document, which is built whole: a
+# journey, a service, a section of its journey patterns, a stop and so on
+# (safexml.iter_grandchildren). The largest in the fixtures, a section of
+# BNML's 237, has 395; a part of empty elements, 4 bytes each, would hold
+# about 100 bytes each in memory, so this is 10 MB at most.
+MAX_PART_ELEMENTS = 100_000
 # Journeys calling at your stops a build holds, unless an install holds fewer.
 MAX_JOURNEYS = 20_000
 # Zip-bomb guards; a zip's files are read one at a time, so these bound the
@@ -144,9 +150,12 @@ def _elements(xml: bytes, sections: frozenset[str]) -> Iterator[tuple[str, Eleme
     """safexml.iter_grandchildren over a document held in memory."""
     chunks = (xml[start : start + _CHUNK] for start in range(0, len(xml), _CHUNK))
     try:
-        yield from safexml.iter_grandchildren(chunks, sections)
+        yield from safexml.iter_grandchildren(chunks, sections, max_elements=MAX_PART_ELEMENTS)
     except safexml.DoctypeError:
         raise RouteSetupError("Timetable file has a DOCTYPE; refusing to parse it") from None
+    except safexml.TooManyElements:
+        raise RouteSetupError(f"Timetable file has a part of more than {MAX_PART_ELEMENTS:,} elements; "
+                              "refusing to parse it") from None
 
 
 def patterns(xml: bytes, line: str) -> list[Pattern]:

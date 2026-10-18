@@ -2,7 +2,7 @@ from xml.etree import ElementTree
 
 import pytest
 
-from twobells.core.safexml import DoctypeError, iter_grandchildren
+from twobells.core.safexml import DoctypeError, TooManyElements, fromstring, iter_elements, iter_grandchildren
 
 NS = "{urn:x}"
 DOC = (b'<?xml version="1.0"?><Root xmlns="urn:x" Rev="3"><A><Item id="1"><Inner>one</Inner></Item>'
@@ -10,9 +10,9 @@ DOC = (b'<?xml version="1.0"?><Root xmlns="urn:x" Rev="3"><A><Item id="1"><Inner
        b'<A><Deep><Item id="5"/></Deep></A></Root>')
 
 
-def _read(data, parents, size=7):
+def _read(data, parents, size=7, max_elements=1_000):
     chunks = (data[start : start + size] for start in range(0, len(data), size))
-    return list(iter_grandchildren(chunks, parents))
+    return list(iter_grandchildren(chunks, parents, max_elements=max_elements))
 
 
 def test_the_root_comes_first_with_its_attributes_and_no_children():
@@ -60,3 +60,57 @@ def test_a_doctype_is_refused(evil):
 def test_a_document_that_is_not_well_formed_is_an_error():
     with pytest.raises(ElementTree.ParseError):
         _read(b'<Root xmlns="urn:x"><A><Item></A></Root>', {NS + "A"})
+
+
+# How many elements a document may build. An empty element is 4 bytes sent
+# and about 100 held, so a byte cap alone lets a document fill a Pi's memory.
+
+
+def _counted(chunks, read):
+    for chunk in chunks:
+        read.append(chunk)
+        yield chunk
+
+
+def _chunks(data, size=64):
+    return (data[start : start + size] for start in range(0, len(data), size))
+
+
+def test_a_document_of_more_elements_than_allowed_is_refused():
+    doc = b"<Root><x>" + b"<a/>" * 97 + b"</x></Root>"  # with Root and x, 99 elements
+    assert fromstring(doc, max_elements=99).tag == "Root"
+    with pytest.raises(TooManyElements):
+        fromstring(doc, max_elements=98)
+    assert len(list(iter_elements([doc], "x", max_elements=99))) == 1
+    with pytest.raises(TooManyElements):
+        list(iter_elements([doc], "x", max_elements=98))
+
+
+def test_elements_are_counted_as_they_are_read():
+    doc = b"<Root><x>" + b"<a/>" * 10_000 + b"</x></Root>"
+    read = []
+    with pytest.raises(TooManyElements):
+        list(iter_elements(_counted(_chunks(doc), read), "a", max_elements=100))
+    assert len(read) < 20  # of over 600 chunks
+
+
+def test_an_element_built_holding_more_elements_than_allowed_is_refused():
+    doc = b'<Root xmlns="urn:x"><A><Item>' + b"<a/>" * 97 + b"</Item><Item/></A></Root>"
+    found = _read(doc, {NS + "A"}, size=64, max_elements=98)  # the first Item, with its 97
+    assert [len(node) for _, node in found[1:]] == [97, 0]
+    with pytest.raises(TooManyElements):
+        _read(doc, {NS + "A"}, size=64, max_elements=97)
+
+
+def test_only_the_elements_built_are_counted():
+    # The root's other children are read past, so they can hold any number.
+    doc = b'<Root xmlns="urn:x"><B>' + b"<a/>" * 10_000 + b"</B><A><Item/></A></Root>"
+    assert [node.tag for _, node in _read(doc, {NS + "A"}, size=64, max_elements=1)] == [NS + "Root", NS + "Item"]
+
+
+def test_an_element_too_big_is_refused_as_it_is_read():
+    doc = b'<Root xmlns="urn:x"><A><Item>' + b"<a/>" * 10_000 + b"</Item></A></Root>"
+    read = []
+    with pytest.raises(TooManyElements):
+        list(iter_grandchildren(_counted(_chunks(doc), read), {NS + "A"}, max_elements=100))
+    assert len(read) < 20

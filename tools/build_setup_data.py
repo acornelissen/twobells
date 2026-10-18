@@ -85,6 +85,9 @@ MAX_SPREAD_M = 2_000
 # Entries NaPTAN tags with another station's CRS. Checked by hand:
 # Newbury Park is a London Underground station; NRC is Newbury Racecourse.
 WRONG_CRS = {"9100ILFENBP"}
+# The most elements of the rail XML read: one for every 24 bytes of the 200 MB
+# read (safexml.fromstring); real XML takes 35 bytes or more an element.
+MAX_RAIL_ELEMENTS = 8_000_000
 
 LICENCE = [
     "Source: National Public Transport Access Nodes (NaPTAN), Department for Transport,",
@@ -101,7 +104,7 @@ def _clean(text: str) -> str:
 
 def station_rows(xml: bytes) -> list[tuple[str, str, float, float]]:
     """(name, crs, lat, lon) for each active station, one row per CRS code."""
-    root = safexml.fromstring(xml)
+    root = safexml.fromstring(xml, max_elements=MAX_RAIL_ELEMENTS)
     by_crs = defaultdict(list)
     for point in root.iterfind(".//n:StopPoints/n:StopPoint", _NS):
         atco = point.findtext("n:AtcoCode", "", _NS).strip()

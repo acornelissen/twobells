@@ -9,7 +9,7 @@ import pytest
 from tests.paths import FIXTURES
 from tests.sources.test_livebus import EAST, WEST, schedule
 from twobells.core import net
-from twobells.core.safexml import DoctypeError
+from twobells.core.safexml import DoctypeError, TooManyElements
 from twobells.dashboard.collector import BUS_DISRUPTIONS_SECONDS
 from twobells.dashboard.snapshot import row_id
 from twobells.sources import disruptions
@@ -360,6 +360,22 @@ def test_a_doctype_is_refused():
         parse_siri_sx(evil)
     with pytest.raises(DoctypeError):
         parse_kb_incidents(evil)
+
+
+def _bloated(elements):
+    """A document of many empty elements: 4 bytes each to send, about 100 to hold."""
+    return b'<Siri xmlns="' + SIRI.encode() + b'"><x>' + b"<a/>" * elements + b"</x></Siri>"
+
+
+def test_a_document_of_too_many_elements_is_refused():
+    sx, kb = _bloated(disruptions.MAX_SX_ELEMENTS), _bloated(disruptions.MAX_KB_ELEMENTS)
+    assert len(sx) < disruptions.MAX_SX_BYTES and len(kb) < disruptions.MAX_KB_BYTES
+    with pytest.raises(TooManyElements):
+        parse_siri_sx(sx)
+    with pytest.raises(TooManyElements):
+        parse_kb_incidents(kb)
+    with pytest.raises(RuntimeError, match="too many"):
+        BusDisruptionSource("k", open_stream=lambda *a: [sx]).fetch()
 
 
 def test_a_document_is_read_in_chunks():

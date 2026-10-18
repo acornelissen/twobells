@@ -19,6 +19,10 @@ from ..core.net import get_bytes
 DEFAULT_BASE_URL = "https://data.bus-data.dft.gov.uk/api/v1"
 # A busy town's worth of vehicles is well under this; anything bigger is refused.
 MAX_RESPONSE_BYTES = 2_000_000
+# And elements: one for every 24 bytes. A real answer takes about 60 bytes an
+# element (Manchester's 1.1 MB, 18,000); one of empty elements, 4 bytes each,
+# would hold about 100 bytes each in memory.
+MAX_RESPONSE_ELEMENTS = 80_000
 # BODS keeps sending a vehicle's last position long after it stops reporting
 # (parked overnight, tracker off), so anything older than this is ignored.
 MAX_AGE = timedelta(minutes=10)
@@ -128,7 +132,8 @@ def fleet_and_registration(vehicle_ref: str) -> tuple[str, str]:
 def parse_siri_vm(body: bytes) -> list[Vehicle]:
     """Vehicles from a SIRI-VM document. Activities missing a position, or
     with one that isn't on the map, are skipped."""
-    root = safexml.fromstring(body)  # refuses a DOCTYPE, so no entity tricks
+    # Refuses a DOCTYPE, so no entity tricks, and too many elements.
+    root = safexml.fromstring(body, max_elements=MAX_RESPONSE_ELEMENTS)
     vehicles = []
     for activity in root.iterfind(".//siri:VehicleActivity", _NS):
         journey = activity.find("siri:MonitoredVehicleJourney", _NS)

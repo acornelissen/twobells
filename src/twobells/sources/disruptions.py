@@ -61,6 +61,11 @@ KB_URL_PLACEHOLDER = "https://set-kb-incidents-url-from-the-rdm-product-page.inv
 
 MAX_SX_BYTES = 12_000_000  # all of England is about 5.5 MB
 MAX_KB_BYTES = 8_000_000
+# And the most elements of each: one for every 24 bytes. Real ones take 35 to
+# 60 bytes an element, so one under its byte cap is well under this too; one
+# of empty elements, 4 bytes each, would hold about 100 bytes each in memory.
+MAX_SX_ELEMENTS = 500_000
+MAX_KB_ELEMENTS = 330_000
 READ_TIMEOUT = 60.0
 # For a whole feed, read and parsed as it arrives: all of England's
 # situations on a slow line, but over before the next poll is due.
@@ -333,11 +338,12 @@ def _situation(element: ElementTree.Element) -> Situation | None:
 
 def parse_siri_sx(chunks: Iterable[bytes]) -> list[Situation]:
     """Every open situation in a SIRI-SX document arriving in chunks (a
-    single bytes object is one chunk). Refuses a DOCTYPE."""
+    single bytes object is one chunk). Refuses a DOCTYPE, and more than
+    MAX_SX_ELEMENTS elements."""
     if isinstance(chunks, (bytes, bytearray)):
         chunks = [bytes(chunks)]
     found = []
-    for element in safexml.iter_elements(chunks, "PtSituationElement"):
+    for element in safexml.iter_elements(chunks, "PtSituationElement", max_elements=MAX_SX_ELEMENTS):
         situation = _situation(element)
         if situation is not None:
             found.append(situation)
@@ -563,11 +569,12 @@ def _incident(element: ElementTree.Element) -> Incident | None:
 
 def parse_kb_incidents(chunks: Iterable[bytes]) -> list[Incident]:
     """Every incident not yet cleared in a Knowledgebase Incidents document
-    arriving in chunks (a single bytes object is one chunk). Refuses a DOCTYPE."""
+    arriving in chunks (a single bytes object is one chunk). Refuses a DOCTYPE,
+    and more than MAX_KB_ELEMENTS elements."""
     if isinstance(chunks, (bytes, bytearray)):
         chunks = [bytes(chunks)]
     found = []
-    for element in safexml.iter_elements(chunks, "PtIncident"):
+    for element in safexml.iter_elements(chunks, "PtIncident", max_elements=MAX_KB_ELEMENTS):
         incident = _incident(element)
         if incident is not None:
             found.append(incident)
@@ -654,6 +661,8 @@ def _failure(error: BaseException, key: str) -> RuntimeError:
     """The error as one safe line, with the key taken out whatever its form."""
     if isinstance(error, safexml.DoctypeError):
         text = "The feed sent a DOCTYPE; refused"
+    elif isinstance(error, safexml.TooManyElements):
+        text = "The feed sent too many XML elements; refused"
     elif isinstance(error, ElementTree.ParseError):
         text = "The feed sent something that isn't XML"
     else:

@@ -678,9 +678,12 @@ def _elements(xml: bytes, sections: Collection[str]) -> Iterator[tuple[str, Elem
     """safexml.iter_grandchildren over a document held in memory."""
     chunks = (xml[start : start + _CHUNK] for start in range(0, len(xml), _CHUNK))
     try:
-        yield from safexml.iter_grandchildren(chunks, sections)
+        yield from safexml.iter_grandchildren(chunks, sections, max_elements=routesetup.MAX_PART_ELEMENTS)
     except safexml.DoctypeError:
         raise TimetableError("Timetable file has a DOCTYPE; refusing to parse it") from None
+    except safexml.TooManyElements:
+        raise TimetableError(f"Timetable file has a part of more than {routesetup.MAX_PART_ELEMENTS:,} elements; "
+                             "refusing to parse it") from None
     except SyntaxError as error:  # ElementTree.ParseError
         raise TimetableError(f"Timetable file is not XML: {error}") from None
 
