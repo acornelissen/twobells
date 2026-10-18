@@ -568,6 +568,52 @@ def test_healthz(static_dir):
         running.close()
 
 
+def failures(caplog):
+    return [r.getMessage() for r in caplog.records if r.name == "twobells.web.server"]
+
+
+@pytest.mark.parametrize("error", [PermissionError("web.json"), FileNotFoundError("x"), OSError(28, "No space")])
+def test_a_fault_in_a_handler_is_logged_by_its_type(static_dir, caplog, error):
+    def broken():
+        raise error
+
+    running = start(static_dir, healthy=broken)
+    try:
+        with pytest.raises(http.client.RemoteDisconnected):
+            running.request("/healthz")
+    finally:
+        running.close()
+    assert failures(caplog) == [f"Dashboard request failed: {type(error).__name__}"]
+
+
+@pytest.mark.parametrize("error", [ConnectionResetError(), BrokenPipeError(), TimeoutError()])
+def test_a_client_going_away_is_not_logged(static_dir, caplog, error):
+    def gone():
+        raise error
+
+    running = start(static_dir, healthy=gone)
+    try:
+        with pytest.raises(http.client.RemoteDisconnected):
+            running.request("/healthz")
+    finally:
+        running.close()
+    assert failures(caplog) == []
+
+
+def test_a_fault_in_a_stream_is_logged_too(server, caplog, monkeypatch):
+    def broken():
+        raise PermissionError("snapshot.json")
+
+    monkeypatch.setattr(server.app.hub, "current", broken)
+    conn, response = server.stream()
+    try:
+        assert response.status == 200
+        assert response.read() == b"retry: 5000\n\n"  # then the server lets go
+    finally:
+        conn.close()
+    assert failures(caplog) == ["Dashboard request failed: PermissionError"]  # logged before it let go
+
+
 # The dashboard off: its view off, not set up, or its settings don't load
 
 

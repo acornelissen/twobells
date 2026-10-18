@@ -96,6 +96,8 @@ _BAD_PATH = ("..", "%2e", "%2f", "%5c", "%00", "\\")
 _ID = re.compile(r"[0-9a-f]{16}")
 _STATIC_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*")
 _EVENT_ID = re.compile(r"[0-9]{1,15}")
+# A browser that went away or stalled: nothing to report. Other OSErrors are faults.
+_GONE = (ConnectionError, TimeoutError)
 
 # Where each page's footer says which version is running, filled in at start.
 VERSION_SLOT = b"<!-- version -->"
@@ -480,7 +482,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             self.close_connection = True
             self._stream()
-        except OSError:
+        except _GONE:
             pass  # the browser went away, or stalled past the socket timeout
         finally:
             self.server.streams.release()
@@ -538,8 +540,8 @@ class DashboardServer(ThreadingHTTPServer):
 
     def handle_error(self, request, client_address) -> None:
         error = sys.exc_info()[1]
-        if isinstance(error, OSError):
-            return  # the browser went away or stalled; nothing to report
+        if isinstance(error, _GONE):
+            return
         log.warning("Dashboard request failed: %s", type(error).__name__)
 
 
