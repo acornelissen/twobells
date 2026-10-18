@@ -66,7 +66,7 @@ from zoneinfo import ZoneInfo
 
 from ..core.errors import safe_message
 from ..core.model import mark_platform_changes
-from ..setup.lookups import tram_stop_names
+from ..core.places import tram_stop_names
 from ..sources import holidays as _holidays
 from ..sources.darwin import DetailsUnavailable, ServiceGone, TrainBoard, TrainDetails
 from ..sources.disruptions import BusArea, RailArea, bus_disruptions, disruptions_part, train_disruptions

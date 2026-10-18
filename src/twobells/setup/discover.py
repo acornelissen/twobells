@@ -39,6 +39,7 @@ from ..core import files
 from ..core.errors import safe_message
 from ..core.model import line_order
 from ..core.net import get_bytes
+from ..core.places import in_uk
 from ..core.walk import DEFAULT_STOP
 from ..settings.overlay import _toml_key, _toml_string
 from ..sources.bods import DEFAULT_BASE_URL
@@ -46,7 +47,6 @@ from ..timetable import build as timetable
 from ..timetable import roads as roadshape
 from ..timetable import routesetup
 from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits, Pattern
-from .lookups import in_uk
 
 log = logging.getLogger(__name__)
 

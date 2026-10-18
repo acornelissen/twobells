@@ -2,7 +2,7 @@
 TfL's Unified API (api.tfl.gov.uk).
 
 Your stops are TfL's codes for them (940GZZLUBNK, 930GWMR), from the
-bundled list of London stops (setup/lookups.py), which also says which TfL
+bundled list of London stops (core/places.py), which also says which TfL
 lines call at each. A fetch makes:
 
 - one call to StopPoint/{code}/Arrivals per stop: TfL's predictions, each
@@ -45,7 +45,7 @@ from .darwin import plain_text
 BASE_URL = "https://api.tfl.gov.uk"
 # The modes shown: not overground or elizabeth-line (Darwin's), nor bus (the bus data's).
 MODES = frozenset({"tube", "dlr", "tram", "cable-car", "river-bus"})
-# A stop TfL's live times are for (setup/lookups.py LONDON_STOP).
+# A stop TfL's live times are for (core/places.py LONDON_STOP).
 STOP = re.compile(r"^(?:940GZZ(?:LU|DL|CR|AL)[A-Z]{3}|930G[A-Z]{3,4})$")
 LINE_ID = re.compile(r"^[a-z0-9-]{1,40}$")
 _KINDS = {"LU": "tube", "DL": "dlr", "CR": "tram", "AL": "cable-car"}

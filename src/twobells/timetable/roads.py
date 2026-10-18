@@ -51,7 +51,7 @@ from ..core import net
 from ..core.bounded import finite
 from ..core.errors import safe_message
 from ..core.osgb import distance_m
-from ..setup.lookups import ROUTER_LIMIT, ROUTER_USER_AGENT, RateLimiter, in_uk
+from ..core.places import ROUTER_LIMIT, ROUTER_USER_AGENT, RateLimiter, in_uk
 from .model import Journey, StopPosition
 
 log = logging.getLogger(__name__)

@@ -95,6 +95,17 @@ from typing import Protocol
 
 from ..core.bounded import finite
 from ..core.errors import ConfigError, safe_message, scrub_secrets
+from ..core.places import (
+    _CONTROL,
+    LONDON_STOP,
+    TRAM_STOP,
+    bundled_london_stops,
+    bundled_stations,
+    bundled_tram_stops,
+    in_uk,
+    london_stops_by_code,
+    tram_stop_names,
+)
 from ..settings import keyresults, modes, schema, show
 from ..settings.config import still_to_set_up
 from ..settings.installs import INSTALLS, Install
@@ -332,7 +343,7 @@ def _text(value, field: str, low: int, high: int) -> str:
     if not isinstance(value, str):
         raise Invalid("Send text", field)
     value = value.strip()
-    if not low <= len(value) <= high or setup._CONTROL.search(value):
+    if not low <= len(value) <= high or _CONTROL.search(value):
         raise Invalid(f"Use {low} to {high} ordinary characters", field)
     return value
 
@@ -348,7 +359,7 @@ def _point(value, field: str = "home") -> Place:
     """A position in the UK, with an optional country for the bank holidays."""
     fields = _fields(value, ("lat", "lon"), ("country",))
     lat, lon = _number(fields["lat"], field), _number(fields["lon"], field)
-    if not setup.in_uk(lat, lon):
+    if not in_uk(lat, lon):
         raise Invalid("That position is outside the UK", field)
     country = fields.get("country", "")
     if country not in ("", *_COUNTRIES):
@@ -394,11 +405,11 @@ def _trams(value, field: str = "trams") -> dict[str, str]:
     for label, code in value.items():
         if not _LABEL.fullmatch(label):
             raise Invalid("A tram stop label is 1 to 3 letters or digits", field)
-        if (not isinstance(code, str) or not (setup.TRAM_STOP.fullmatch(code) or setup.LONDON_STOP.fullmatch(code))
-                or code not in setup.tram_stop_names()):
+        if (not isinstance(code, str) or not (TRAM_STOP.fullmatch(code) or LONDON_STOP.fullmatch(code))
+                or code not in tram_stop_names()):
             raise Invalid(f"Tram stop {label} needs a Metrolink stop code, or TfL's for a London stop", field)
         trams[label] = code
-    if len({bool(setup.LONDON_STOP.fullmatch(code)) for code in trams.values()}) > 1:
+    if len({bool(LONDON_STOP.fullmatch(code)) for code in trams.values()}) > 1:
         raise Invalid("Pick Metrolink stops or London ones, not both", field)
     if len({label.upper() for label in trams}) != len(trams) or len(set(trams.values())) != len(trams):
         raise Invalid("Pick each tram stop once, with a label of its own", field)
@@ -605,7 +616,7 @@ class SetupApi:
         nearby_stations: Callable[..., list[Station]] = setup.nearby_stations,
         nearby_stops: Callable[..., list[Stop]] = setup.nearby_stops,
         walk_minutes: Callable[..., dict[str, tuple[int, str]]] = setup.walk_minutes,
-        stations: Callable[[], Sequence[tuple[str, str, float, float]]] = setup.bundled_stations,
+        stations: Callable[[], Sequence[tuple[str, str, float, float]]] = bundled_stations,
         make_job: MakeJob = discover.SetupJob,
         test_key: Callable[..., keytest.KeyResult] = keytest.test_key,
         key_tests: RateLimit = KEY_TESTS,
@@ -784,7 +795,7 @@ class SetupApi:
         names = {code: name for name, code, _, _ in self._stations()}
         out: dict = {"home": None, "station": None, "filter": None, "stops": [], "trams": []}
         lat, lon = _saved_number(weather.get("lat")), _saved_number(weather.get("lon"))
-        if lat is not None and lon is not None and setup.in_uk(lat, lon):
+        if lat is not None and lon is not None and in_uk(lat, lon):
             out["home"] = {"lat": round(lat, 2), "lon": round(lon, 2)}
         station = _saved_station(train)
         if station in names:
@@ -793,7 +804,7 @@ class SetupApi:
             if isinstance(towards, str) and towards.upper() in names:
                 out["filter"] = {"crs": towards.upper(), "name": names[towards.upper()]}
         metro = _table(data, "metro")
-        names, london = setup.tram_stop_names(), setup.london_stops_by_code()
+        names, london = tram_stop_names(), london_stops_by_code()
         walks = _table(metro, "walk_minutes")
         for label, code in _saved_trams(metro).items():
             kind = london[code].kind if code in london else "metrolink"
@@ -891,7 +902,7 @@ class SetupApi:
         DLR, tram, cable car and river bus stops, from the bundled lists (no
         network): none for a home far from both. With `query`, those with it
         in their names instead, wherever they are. Each with its kind:
-        "metrolink", or a London one's (setup.LONDON_KINDS)."""
+        "metrolink", or a London one's (core/places.py, LONDON_KINDS)."""
         fields = _fields(payload, ("lat", "lon"), ("query",))
         home = _point({"lat": fields["lat"], "lon": fields["lon"]})
         if "query" in fields:
@@ -932,8 +943,8 @@ class SetupApi:
         codes = fields.get("tram_codes", [])
         if not isinstance(codes, list) or len(codes) > MAX_TRAM_STOPS:
             raise Invalid(f"Ask about at most {MAX_TRAM_STOPS} tram stops", "tram_codes")
-        trams = {code: (name, lat, lon) for name, code, lat, lon in setup.bundled_tram_stops()}
-        trams.update((s.code, (s.name, s.lat, s.lon)) for s in setup.bundled_london_stops())
+        trams = {code: (name, lat, lon) for name, code, lat, lon in bundled_tram_stops()}
+        trams.update((s.code, (s.name, s.lat, s.lon)) for s in bundled_london_stops())
         for code in codes:
             if not isinstance(code, str) or code not in trams:
                 raise Invalid("A tram stop is its Metrolink stop code, or TfL's for a London stop", "tram_codes")
@@ -1248,7 +1259,7 @@ def _saved_trams(metro: Mapping) -> dict[str, str]:
     if metro.get("enabled") is False or not isinstance(stops, dict):
         return {}
     found = [(label, code) for label, code in stops.items() if isinstance(label, str) and _LABEL.fullmatch(label)
-             and isinstance(code, str) and (setup.TRAM_STOP.fullmatch(code) or setup.LONDON_STOP.fullmatch(code))]
+             and isinstance(code, str) and (TRAM_STOP.fullmatch(code) or LONDON_STOP.fullmatch(code))]
     return dict(found[:MAX_TRAM_STOPS])
 
 

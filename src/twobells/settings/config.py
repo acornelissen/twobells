@@ -26,9 +26,9 @@ from ..board.positions import Positions
 from ..board.route import RouteStop, RouteStrip
 from ..board.themes import theme_named, themes_for, with_text_size
 from ..core.errors import ConfigError
+from ..core.places import london_stops_by_code
 from ..core.polling import PollPolicy, parse_window
 from ..core.walk import DEFAULT_STOP, WalkTimes
-from ..setup.lookups import london_stops_by_code
 from ..sources.bods import BodsVehicleSource
 from ..sources.bodsbus import BodsBusSource
 from ..sources.darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL

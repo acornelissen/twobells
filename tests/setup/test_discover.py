@@ -689,9 +689,9 @@ class Router:
 
 
 def test_the_search_is_done_once_the_timetable_is_saved_and_the_roads_follow(bods, monkeypatch):
-    from twobells.setup import lookups
+    from twobells.core import places
 
-    monkeypatch.setattr(lookups.ROUTER_LIMIT, "wait", lambda: None)  # a road a second would take minutes
+    monkeypatch.setattr(places.ROUTER_LIMIT, "wait", lambda: None)  # a road a second would take minutes
     router = Router()
     job = _job(bods, naptan=_spaced, router=router)
     job.start()
@@ -716,9 +716,9 @@ def test_the_search_is_done_once_the_timetable_is_saved_and_the_roads_follow(bod
 
 
 def test_another_search_may_start_while_the_roads_are_found_and_waits_for_them(bods, monkeypatch):
-    from twobells.setup import lookups
+    from twobells.core import places
 
-    monkeypatch.setattr(lookups.ROUTER_LIMIT, "wait", lambda: None)
+    monkeypatch.setattr(places.ROUTER_LIMIT, "wait", lambda: None)
     monkeypatch.setattr(timetable, "LOCK_WAIT_S", 0.01)
     router = Router()
     first = _job(bods, naptan=_spaced, router=router)
@@ -847,8 +847,7 @@ def test_the_wizard_and_the_weekly_build_save_the_same_timetable(bods, tmp_path,
     # Both as they run for real, through the same network: BODS, NaPTAN and the road router.
     from zoneinfo import ZoneInfo
 
-    from twobells.core import net
-    from twobells.setup import lookups
+    from twobells.core import net, places
     from twobells.sources.bodsbus import BodsBusSource
 
     every = sorted(set(re.findall(rb"<StopPointRef>(\w+)</StopPointRef>", TXC_341 + TXC_237 + TXC_61)))
@@ -874,7 +873,7 @@ def test_the_wizard_and_the_weekly_build_save_the_same_timetable(bods, tmp_path,
         raise OSError(f"Not faked: {request.full_url}")
 
     monkeypatch.setattr(net, "urlopen", network)
-    monkeypatch.setattr(lookups.ROUTER_LIMIT, "wait", lambda: None)  # a road a second would take minutes
+    monkeypatch.setattr(places.ROUTER_LIMIT, "wait", lambda: None)  # a road a second would take minutes
     wizard, weekly = tmp_path / "wizard", tmp_path / "weekly"
     job = SetupJob(wizard, STOPS, KEY, now=lambda: SUMMER_NOW)
     job.start()
@@ -895,11 +894,10 @@ def test_roads_stopped_with_the_process_are_found_by_the_next_upkeep(bods, monke
     # thing on starting, finds the roads it hadn't (as a Pi's hourly timer does).
     from zoneinfo import ZoneInfo
 
-    from twobells.core import net
-    from twobells.setup import lookups
+    from twobells.core import net, places
     from twobells.sources.bodsbus import BodsBusSource
 
-    monkeypatch.setattr(lookups.ROUTER_LIMIT, "wait", lambda: None)
+    monkeypatch.setattr(places.ROUTER_LIMIT, "wait", lambda: None)
 
     def stopping(url, max_bytes):  # one road, then the process "stops"
         job.cancel()

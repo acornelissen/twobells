@@ -21,8 +21,9 @@ from tests.sources.test_livebus import (
     WEST,
     journey,
 )
+from twobells.core import places
+from twobells.core.places import RateLimiter
 from twobells.setup import lookups
-from twobells.setup.lookups import RateLimiter
 from twobells.timetable import roads as roadshape
 from twobells.timetable.roads import parse_route, path, segment_pairs, segment_shapes, shape_key, simplify
 
@@ -327,8 +328,8 @@ def test_the_default_asks_the_router_politely_through_the_capped_getter(monkeypa
 def test_roads_and_walk_times_share_one_limit_on_the_router():
     # Both ask FOSSGIS's server; the fetch service can look up walk times while
     # a search asks for roads, and the policy is one request a second in all.
-    assert segment_shapes.__kwdefaults__["limiter"] is lookups.ROUTER_LIMIT
-    assert lookups.walk_minutes.__defaults__[1] is lookups.ROUTER_LIMIT
+    assert segment_shapes.__kwdefaults__["limiter"] is places.ROUTER_LIMIT
+    assert lookups.walk_minutes.__defaults__[1] is places.ROUTER_LIMIT
 
 
 def test_shapes_are_far_smaller_than_the_answer():

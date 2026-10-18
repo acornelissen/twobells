@@ -9,13 +9,13 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from tests.paths import FIXTURES
-from twobells.core import net
+from twobells.core import net, places
 from twobells.core.osgb import distance_m
+from twobells.core.places import RateLimiter, parse_stations
 from twobells.setup import lookups
 from twobells.setup.lookups import (
     AnswerCache,
     Place,
-    RateLimiter,
     SetupError,
     Station,
     Stop,
@@ -28,7 +28,6 @@ from twobells.setup.lookups import (
     nearby_stops,
     normalise_postcode,
     parse_nominatim,
-    parse_stations,
     search_address,
     stop_labels,
     walk_minutes,
@@ -458,12 +457,12 @@ TOWN_CENTRE = Place(53.4774, -2.2309, "Manchester Piccadilly")
 
 
 def test_tram_stop_list_skips_bad_rows():
-    assert [row[1] for row in lookups.parse_tram_stops(TRAM_STOPS_CSV)] == ["9400ZZMAPIC", "9400ZZMAGMX",
+    assert [row[1] for row in places.parse_tram_stops(TRAM_STOPS_CSV)] == ["9400ZZMAPIC", "9400ZZMAGMX",
                                                                              "9400ZZMAALT"]
 
 
 def test_nearby_tram_stops_are_the_nearest_within_reach():
-    stops = lookups.parse_tram_stops(TRAM_STOPS_CSV)
+    stops = places.parse_tram_stops(TRAM_STOPS_CSV)
     found = lookups.nearby_tram_stops(TOWN_CENTRE.lat, TOWN_CENTRE.lon, stops=stops)
     assert [s.code for s in found] == ["9400ZZMAPIC", "9400ZZMAGMX"]  # Altrincham is over 5 km away
     assert found[0].name == "Piccadilly" and found[0].distance_m < 100
@@ -473,10 +472,10 @@ def test_nearby_tram_stops_are_the_nearest_within_reach():
 
 
 def test_bundled_tram_stop_list_is_every_metrolink_stop_once():
-    rows = lookups.bundled_tram_stops()
+    rows = places.bundled_tram_stops()
     assert 95 <= len(rows) <= 120
     assert len({row[1] for row in rows}) == len(rows)
-    names = lookups.tram_stop_names()
+    names = places.tram_stop_names()
     assert names["9400ZZMAPIC"] == "Piccadilly" and names["9400ZZMAGMX"] == "Deansgate-Castlefield"
     found = lookups.nearby_tram_stops(TOWN_CENTRE.lat, TOWN_CENTRE.lon, limit=2)
     assert found[0].code == "9400ZZMAPIC"
@@ -496,7 +495,7 @@ Bad code,940GZZOVBNK,tube,central,51.5,-0.1
 
 
 def test_london_stop_list_skips_bad_rows_and_finds_the_nearest():
-    stops = lookups.parse_london_stops(LONDON_CSV)
+    stops = places.parse_london_stops(LONDON_CSV)
     assert [(s.code, s.kind, s.lines) for s in stops] == [
         ("940GZZLUBNK", "tube", ("central", "northern", "waterloo-city")), ("940GZZDLBNK", "dlr", ("dlr",)),
         ("930GWMR", "river-bus", ("rb1", "rb6"))]
@@ -509,7 +508,7 @@ def test_london_stop_list_skips_bad_rows_and_finds_the_nearest():
 
 
 def test_tram_stops_are_found_by_name_wherever_home_is():
-    trams, london = lookups.parse_tram_stops(TRAM_STOPS_CSV), lookups.parse_london_stops(LONDON_CSV)
+    trams, london = places.parse_tram_stops(TRAM_STOPS_CSV), places.parse_london_stops(LONDON_CSV)
     found = lookups.find_tram_stops("bank", HOME.lat, HOME.lon, trams=trams, london=london)
     assert [(s.code, s.kind) for s in found] == [("940GZZDLBNK", "dlr"), ("940GZZLUBNK", "tube")]
     assert found[0].distance_m > 200_000  # Hadfield to the City
@@ -531,17 +530,17 @@ def test_a_search_puts_names_starting_with_it_first_and_stops_at_the_limit():
     assert len(found) == 3 and all(s.name.casefold().startswith("st") for s in found)
 
 def test_bundled_london_list_has_every_kind_and_names_dlr_stations_apart():
-    stops = lookups.bundled_london_stops()
+    stops = places.bundled_london_stops()
     assert 300 <= len(stops) <= 500 and len({s.code for s in stops}) == len(stops)
-    assert {s.kind for s in stops} == set(lookups.LONDON_KINDS)
-    names = lookups.tram_stop_names()
+    assert {s.kind for s in stops} == set(places.LONDON_KINDS)
+    names = places.tram_stop_names()
     assert names["940GZZLUBNK"] == "Bank" and names["940GZZDLBNK"] == "Bank DLR"
     assert names["930GWMR"] == "Westminster Pier" and names["9400ZZMAPIC"] == "Piccadilly"
-    assert lookups.london_stops_by_code()["940GZZLUBNK"].lines == ("central", "northern", "waterloo-city")
+    assert places.london_stops_by_code()["940GZZLUBNK"].lines == ("central", "northern", "waterloo-city")
 
 
 def test_bundled_station_list_is_whole_and_unique():
-    rows = lookups.bundled_stations()
+    rows = places.bundled_stations()
     assert len(rows) > 2500
     assert len({row[1] for row in rows}) == len(rows)
     assert {"GLO", "HDF", "MAN", "EUS", "EDB", "CDF"} <= {row[1] for row in rows}
@@ -726,7 +725,7 @@ def test_the_foot_router_is_asked_at_most_once_a_second_without_real_sleeping():
 
 
 def test_the_foot_routers_rate_limit_is_shared_by_default():
-    assert walk_minutes.__defaults__ == (lookups.foot_get, lookups.ROUTER_LIMIT)
+    assert walk_minutes.__defaults__ == (lookups.foot_get, places.ROUTER_LIMIT)
 
 
 def test_estimate_is_the_straight_line_plus_30_percent_at_4_8_kmh():

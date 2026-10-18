@@ -27,8 +27,6 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
-from functools import lru_cache
-from importlib.resources import files
 from typing import IO, Protocol
 from urllib.parse import quote, urlencode
 
@@ -37,6 +35,21 @@ from ..core.bounded import finite
 from ..core.errors import safe_message
 from ..core.net import get_bytes
 from ..core.osgb import distance_m, grid_to_latlon
+from ..core.places import (
+    _CRS,
+    ROUTER_LIMIT,
+    ROUTER_USER_AGENT,
+    LondonStop,
+    RateLimiter,
+    _number,
+    _position,
+    _text,
+    bundled_area_grid,
+    bundled_london_stops,
+    bundled_stations,
+    bundled_tram_stops,
+    in_uk,
+)
 from ..sources.holidays import ENGLAND_AND_WALES
 from ..timetable.model import sign_letter
 from ..timetable.routesetup import MAX_NAPTAN_LINE, NAPTAN_URL
@@ -60,10 +73,6 @@ MAX_NAPTAN_BYTES = 100_000_000
 # usual deadline, ending before the wizard stops waiting (spool WAITS "stops").
 NAPTAN_DEADLINE = 100.0
 
-# The United Kingdom with a margin, Scilly to Shetland and Northern Ireland to Kent.
-LAT_RANGE = (49.0, 61.0)
-LON_RANGE = (-8.7, 2.0)
-
 ADDRESS_LENGTH = (3, 120)
 MAX_ADDRESS_RESULTS = 5
 MAX_STATIONS = 50
@@ -83,19 +92,8 @@ BUS_STOP_TYPES = frozenset({"BCT", "BCS", "BCQ"})  # on-street stop, bus station
 BEARINGS = frozenset({"N", "NE", "E", "SE", "S", "SW", "W", "NW"})
 
 _POSTCODE = re.compile(r"^[A-Z]{1,2}[0-9][A-Z0-9]?[0-9][A-Z]{2}$")
-_CRS = re.compile(r"^[A-Z]{3}$")
-# A Metrolink stop's NaPTAN code: 9400ZZMA and the three letters TfGM calls it by.
-TRAM_STOP = re.compile(r"^9400ZZMA[A-Z]{3}$")
-# A London stop TfL's live times are for, by TfL's code for it: an
-# Underground (LU), DLR (DL), London Trams (CR) or cable car (AL) station,
-# or a river bus pier (930G and its three or four letters).
-LONDON_STOP = re.compile(r"^(?:940GZZ(?:LU|DL|CR|AL)[A-Z]{3}|930G[A-Z]{3,4})$")
-LONDON_KINDS = ("tube", "dlr", "tram", "cable-car", "river-bus")
-_LINE_ID = re.compile(r"^[a-z0-9-]{1,40}$")
 _ATCO = re.compile(r"^[0-9]{3}[0-9A-Za-z]{1,9}$")
-_AREA = re.compile(r"^[0-8][0-9]{2}$")
 _LABEL = re.compile(r"^[A-Za-z0-9]{1,3}$")  # as the settings site allows
-_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _DECIMAL = re.compile(r"-?\d+\.\d+")
 
 _DIVISIONS = {
@@ -168,41 +166,12 @@ class Stop:
 # Checking what came back.
 
 
-def in_uk(lat: float, lon: float) -> bool:
-    return LAT_RANGE[0] <= lat <= LAT_RANGE[1] and LON_RANGE[0] <= lon <= LON_RANGE[1]
-
-
 def _check_point(lat, lon) -> None:
     for value in (lat, lon):
         if finite(value) is None:
             raise SetupError("A position must be two numbers")
     if not in_uk(lat, lon):
         raise SetupError("That position is outside the UK")
-
-
-def _number(value, strings: bool = False) -> float | None:
-    """A finite number; with `strings`, a short numeric string counts too
-    (Nominatim and CSV files give numbers as text). Else None."""
-    if isinstance(value, bool):
-        return None
-    if strings and isinstance(value, str) and len(value) <= 32:
-        try:
-            value = float(value)
-        except ValueError:
-            return None
-    return finite(value)
-
-
-def _position(lat, lon, strings: bool = False) -> tuple[float, float] | None:
-    lat, lon = _number(lat, strings), _number(lon, strings)
-    return (lat, lon) if lat is not None and lon is not None and in_uk(lat, lon) else None
-
-
-def _text(value, limit: int) -> str:
-    """A string with control characters and runs of spaces removed, cut to `limit`; "" if not a string."""
-    if not isinstance(value, str):
-        return ""
-    return " ".join(_CONTROL.sub(" ", value[: limit * 4]).split())[:limit].strip()
 
 
 def _json(body: bytes, what: str):
@@ -287,26 +256,6 @@ def bank_holiday_division(country: str) -> str | None:
 
 # Address search, through Nominatim. Its policy allows one request a second
 # from the whole application and asks that answers be cached.
-
-
-class RateLimiter:
-    """At most one call to `wait` returns per `interval` seconds, across threads."""
-
-    def __init__(self, interval: float, clock: Callable[[], float] = time.monotonic,
-                 sleep: Callable[[float], None] = time.sleep):
-        self._interval = interval
-        self._clock = clock
-        self._sleep = sleep
-        self._lock = threading.Lock()
-        self._next: float | None = None
-
-    def wait(self) -> None:
-        with self._lock:  # held while sleeping, so callers queue up in turn
-            now = self._clock()
-            if self._next is not None and now < self._next:
-                self._sleep(self._next - now)
-                now = self._next
-            self._next = now + self._interval
 
 
 class AnswerCache:
@@ -400,26 +349,6 @@ def search_address(text: str, http_get: HttpGetBytes = nominatim_get, limiter: R
 # Rail stations, from the bundled list (tools/build_setup_data.py).
 
 
-def _data_rows(text: str) -> csv.DictReader:
-    return csv.DictReader(line for line in io.StringIO(text) if not line.startswith("#"))
-
-
-def parse_stations(text: str) -> tuple[tuple[str, str, float, float], ...]:
-    """(name, crs, lat, lon) rows of a station list, bad rows skipped."""
-    rows = []
-    for row in _data_rows(text):
-        name, crs = _text(row.get("name"), 80), row.get("crs") or ""
-        position = _position(row.get("lat"), row.get("lon"), strings=True)
-        if name and _CRS.fullmatch(crs) and position:
-            rows.append((name, crs, *position))
-    return tuple(rows)
-
-
-@lru_cache(maxsize=1)
-def bundled_stations() -> tuple[tuple[str, str, float, float], ...]:
-    return parse_stations(files("twobells").joinpath("data/gb_stations.csv").read_text("utf-8"))
-
-
 def nearby_stations(lat: float, lon: float, limit: int = 5, within_km: float = 10,
                     stations: Sequence[tuple[str, str, float, float]] | None = None) -> list[Station]:
     """The nearest National Rail stations, closest first, by straight line.
@@ -441,30 +370,6 @@ MAX_TRAM_STOPS = 20
 TRAM_STOPS_WITHIN_KM = 5
 
 
-def parse_tram_stops(text: str) -> tuple[tuple[str, str, float, float], ...]:
-    """(name, code, lat, lon) rows of a tram stop list, bad rows skipped."""
-    rows = []
-    for row in _data_rows(text):
-        name, code = _text(row.get("name"), 80), row.get("code") or ""
-        position = _position(row.get("lat"), row.get("lon"), strings=True)
-        if name and TRAM_STOP.fullmatch(code) and position:
-            rows.append((name, code, *position))
-    return tuple(rows)
-
-
-@lru_cache(maxsize=1)
-def bundled_tram_stops() -> tuple[tuple[str, str, float, float], ...]:
-    return parse_tram_stops(files("twobells").joinpath("data/metrolink_stops.csv").read_text("utf-8"))
-
-
-def tram_stop_names() -> dict[str, str]:
-    """{code: name} of every Metrolink stop and every London stop, from the
-    bundled lists: a London stop's name as the views say it (stop_title)."""
-    names = {code: name for name, code, _, _ in bundled_tram_stops()}
-    names.update((stop.code, stop_title(stop.name, stop.kind)) for stop in bundled_london_stops())
-    return names
-
-
 def nearby_tram_stops(lat: float, lon: float, limit: int = 5, within_km: float = TRAM_STOPS_WITHIN_KM,
                       stops: Sequence[tuple[str, str, float, float]] | None = None) -> list[TramStop]:
     """The nearest Metrolink stops, closest first, by straight line. Works
@@ -484,44 +389,6 @@ def nearby_tram_stops(lat: float, lon: float, limit: int = 5, within_km: float =
 # London's stops for TfL's live times, from the bundled list
 # (tools/build_setup_data.py): each with its kind and the TfL lines calling there.
 LONDON_STOPS_WITHIN_KM = 5
-
-
-@dataclass(frozen=True)
-class LondonStop:
-    name: str  # NaPTAN's, without what it is: "Bank", "Westminster Pier"
-    code: str  # TfL's, like 940GZZLUBNK
-    kind: str  # one of LONDON_KINDS
-    lines: tuple[str, ...]  # TfL's line ids, like ("central", "northern")
-    lat: float
-    lon: float
-
-
-def stop_title(name: str, kind: str) -> str:
-    """A stop's name as the views say it: a DLR station's says so ("Bank
-    DLR"), as most share a name with the Underground station beside them."""
-    return f"{name} DLR" if kind == "dlr" else name
-
-
-def parse_london_stops(text: str) -> tuple[LondonStop, ...]:
-    """The rows of a London stop list, bad rows skipped."""
-    rows = []
-    for row in _data_rows(text):
-        name, code, kind = _text(row.get("name"), 80), row.get("code") or "", row.get("kind") or ""
-        lines = tuple(str(row.get("lines") or "").split())
-        position = _position(row.get("lat"), row.get("lon"), strings=True)
-        if (name and LONDON_STOP.fullmatch(code) and kind in LONDON_KINDS and position and len(lines) <= 20
-                and all(_LINE_ID.fullmatch(line) for line in lines)):
-            rows.append(LondonStop(name, code, kind, lines, *position))
-    return tuple(rows)
-
-
-@lru_cache(maxsize=1)
-def bundled_london_stops() -> tuple[LondonStop, ...]:
-    return parse_london_stops(files("twobells").joinpath("data/london_stops.csv").read_text("utf-8"))
-
-
-def london_stops_by_code() -> dict[str, LondonStop]:
-    return {stop.code: stop for stop in bundled_london_stops()}
 
 
 def nearby_london_stops(lat: float, lon: float, limit: int = 8, within_km: float = LONDON_STOPS_WITHIN_KM,
@@ -575,24 +442,6 @@ def find_tram_stops(query: str, lat: float, lon: float, limit: int = 10,
 # of an ATCO code) and has no "near here" search, so a bundled grid says which
 # areas have stops near home, and only those are downloaded. That also keeps
 # home's position from NaPTAN, and finds stops over a council boundary.
-
-
-def parse_area_grid(text: str) -> dict[tuple[int, int], tuple[str, ...]]:
-    grid = {}
-    for row in _data_rows(text):
-        try:
-            cell = int(row.get("lat10") or ""), int(row.get("lon10") or "")
-        except ValueError:
-            continue
-        areas = tuple(a for a in (row.get("areas") or "").split() if _AREA.fullmatch(a))
-        if areas:
-            grid[cell] = areas
-    return grid
-
-
-@lru_cache(maxsize=1)
-def bundled_area_grid() -> dict[tuple[int, int], tuple[str, ...]]:
-    return parse_area_grid(files("twobells").joinpath("data/naptan_area_grid.csv").read_text("utf-8"))
 
 
 def areas_near(lat: float, lon: float, within_m: float,
@@ -684,11 +533,9 @@ def nearby_stops(lat: float, lon: float, within_m: float = 800, limit: int = 15,
 # Walk times, from the OpenStreetMap foot router (OSRM). It is FOSSGIS's
 # server, as for roadshape's bus map roads, under the same policy
 # (https://routing.openstreetmap.de/about.html): at most one request a second,
-# from a valid user agent. One limit covers both, as the fetch service can
-# look up walk times while a search asks for roads.
-
-ROUTER_USER_AGENT = "twobells/0.1 (departure board; https://github.com/acornelissen/twobells)"
-ROUTER_LIMIT = RateLimiter(1.0)
+# from a valid user agent. One limit covers both (core/places.py,
+# ROUTER_LIMIT), as the fetch service can look up walk times while a search
+# asks for roads.
 
 
 def foot_get(url: str, max_bytes: int) -> bytes:

@@ -15,6 +15,8 @@ import threading
 from functools import cache
 from pathlib import Path
 
+from ..core.places import bundled_stations
+from ..core.places import tram_stop_names as bundled_tram_stop_names
 from ..timetable import build as timetable
 from ..timetable.model import Schedule
 
@@ -28,8 +30,6 @@ _kept: tuple[tuple[str, int, int], Schedule | None] | None = None
 @cache
 def _stations() -> dict[str, str]:
     """Each station's name by its code, from the bundled list."""
-    from ..setup.lookups import bundled_stations
-
     return {code: name for name, code, _, _ in bundled_stations()}
 
 
@@ -78,6 +78,4 @@ def stop_names(folder: Path | str) -> dict[str, str]:
 
 def tram_stop_names() -> dict[str, str]:
     """{stop code: name} of every Metrolink tram stop, from the bundled list."""
-    from ..setup.lookups import tram_stop_names as names  # imported here, as _stations is
-
-    return names()
+    return bundled_tram_stop_names()

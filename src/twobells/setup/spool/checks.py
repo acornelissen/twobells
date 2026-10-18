@@ -13,6 +13,7 @@ from collections.abc import Callable
 
 from ...core.bounded import finite
 from ...core.errors import safe_message
+from ...core.places import in_uk
 from ...settings.schema import ATCO as _ATCO
 from ...settings.schema import CONTROL as _CONTROL
 from ...settings.schema import KEY_VALUE as _KEY_VALUE
@@ -87,7 +88,7 @@ def check_dict(value, what: str, high: int) -> dict:
 def _point(value, what: str) -> tuple[float, float]:
     fields = check_obj(value, ("lat", "lon"))
     lat, lon = check_num(fields["lat"], what), check_num(fields["lon"], what)
-    if not setup.in_uk(lat, lon):
+    if not in_uk(lat, lon):
         raise Refused(f"{what} isn't in the UK")
     return lat, lon
 

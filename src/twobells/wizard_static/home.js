@@ -9,7 +9,7 @@ import { enterStation } from "./station.js";
 import { once } from "./steps.js";
 
 const POSTCODE = /^[A-Za-z]{1,2}[0-9][A-Za-z0-9]?\s*[0-9][A-Za-z]{2}$/;
-const UK = { lat: [49.0, 61.0], lon: [-8.7, 2.0] }; // as setup/lookups.py's LAT_RANGE and LON_RANGE
+const UK = { lat: [49.0, 61.0], lon: [-8.7, 2.0] }; // as core/places.py's LAT_RANGE and LON_RANGE
 
 const inUK = (lat, lon) => lat >= UK.lat[0] && lat <= UK.lat[1] && lon >= UK.lon[0] && lon <= UK.lon[1];
 
