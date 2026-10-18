@@ -27,6 +27,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 - The Pi install guide and the release notes check `SHA256SUMS`'s signature with cosign first, in the same commands as the SHA-256, and the guide says how to install cosign on a Pi.
 - A release signs the container image and tags it with its version and `latest` only once the release is approved, the same step that lets it reach PyPI. Before, the image was tagged and signed while the release still waited for approval.
 - The container image sets `PYTHONSAFEPATH`, so Python no longer looks for code in its working folder, the `/data` volume. A `urllib.py` or `twobells/` written there would have run in place of the real one at every start, health check and `docker exec`.
+- An error message is read no further than 640 characters before keys are taken out of it and it is cut to one short line. A server chooses what its errors say, and the patterns that find keys took time with the square of the message: a 64 KB reason phrase in an HTTP answer held the board or the fetch service for about 30 seconds on a Mac, and far longer on a Pi Zero. It now takes under a millisecond.
 
 ## [0.4.3] - 2026-10-18
 
