@@ -228,6 +228,9 @@ BANNED = [
     (re.compile(r"""setInterval\(\s*["'`]"""), "string setInterval"),
     (re.compile(r"\blocalStorage\b|\bsessionStorage\b|\bindexedDB\b"), "browser storage"),
     (re.compile(r"\bconsole\.\w+\("), "console logging"),
+    # Leaflet parses a string it is given as content as HTML: popups, tooltips and icons get nodes.
+    (re.compile(r"""\.(?:bindPopup|bindTooltip|setContent)\(\s*["'`]"""), "Leaflet content given a string"),
+    (re.compile(r"""\bhtml:\s*["'`]"""), "divIcon html given a string"),
 ]
 
 
@@ -630,11 +633,12 @@ def test_waiting_for_the_roads_follows_them_to_the_end_saying_so_now_and_then():
 @needs_node
 def test_carrying_on_leaves_the_roads_to_finish_on_their_own_at_once():
     found = run_roads([_roads("running", 10)], """
+        // Done before the first poll is due; node waits out that timer before it exits, so it is short.
         const start = Date.now();
-        const pending = followRoads({ ...statuses[0] }, 5000);
+        const pending = followRoads({ ...statuses[0] }, 500);
         click("roads-on");
         const outcome = await pending;
-        console.log(JSON.stringify({ outcome, asked, quick: Date.now() - start < 1000, box: $("roads-box").hidden }));
+        console.log(JSON.stringify({ outcome, asked, quick: Date.now() - start < 500, box: $("roads-box").hidden }));
     """)
     assert found == {"outcome": "carried", "asked": 0, "quick": True, "box": True}
 

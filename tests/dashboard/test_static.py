@@ -301,7 +301,19 @@ BANNED = [
     (re.compile(r"""setAttribute\(\s*["'`]style"""), "setAttribute('style'"),
     (re.compile(r"""setTimeout\(\s*["'`]"""), "string setTimeout"),
     (re.compile(r"""setInterval\(\s*["'`]"""), "string setInterval"),
+    # Leaflet parses a string it is given as content as HTML: popups, tooltips and icons get nodes.
+    (re.compile(r"""\.(?:bindPopup|bindTooltip|setContent)\(\s*["'`]"""), "Leaflet content given a string"),
+    (re.compile(r"""\bhtml:\s*["'`]"""), "divIcon html given a string"),
 ]
+
+
+@pytest.mark.parametrize("sink", [
+    '.bindPopup("<b>bus</b>")', ".bindTooltip(`${name}`)", ".setContent('x')", 'L.divIcon({ html: "<span>" })',
+    "L.divIcon({ html: `<span>${line}</span>` })",
+])
+def test_the_sink_ban_catches_leaflet_content_given_as_a_string(sink):
+    assert [name for pattern, name in BANNED if pattern.search(sink)]
+    assert not [name for pattern, name in BANNED if pattern.search('.bindPopup(h("span", {}, name))')]
 
 
 @pytest.mark.parametrize("path", [p for p in OWN_FILES if p.suffix in {".js", ".html", ".css"}], ids=lambda p: p.name)
