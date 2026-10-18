@@ -7,7 +7,8 @@ import sys
 from typing import cast
 
 from ..board.displays.display import DISPLAY_PANELS
-from ..settings.config import ConfigError, needs_timetable
+from ..core.errors import ConfigError
+from ..settings.config import needs_timetable
 from ..settings.installs import Install, install_named
 from ..settings.schema import BOARD_DEFAULTS, views
 from ..settings.store import Store

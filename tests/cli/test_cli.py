@@ -15,7 +15,8 @@ from PIL import Image
 
 from tests.paths import FIXTURES, ROOT
 from twobells.cli.main import main
-from twobells.settings.config import ConfigError, load_env_file
+from twobells.core.errors import ConfigError
+from twobells.settings.config import load_env_file
 from twobells.sources import holidays
 from twobells.web.auth import TOO_COMMON
 

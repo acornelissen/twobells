@@ -15,14 +15,14 @@ from ..board.app import run_loop
 from ..board.displays.display import DISPLAY_PANELS, PngDisplay
 from ..board.themes import theme_named
 from ..board.view import build_view, stop_names_shown
-from ..core.errors import redact_keys
+from ..core.errors import ConfigError, redact_keys
 from ..core.model import Departure, Status, Strip, strip_key
 from ..core.net import DOWNLOAD_DEADLINE, get_bytes
 from ..core.walk import WalkTimes
 from ..emulator.emulation import build_emulation
 from ..emulator.fake import DEMO_CALLING, DEMO_NOTICE, DEMO_STOP_NAMES, DEMO_TITLE, FakeWeatherSource
 from ..emulator.server import make_server
-from ..settings.config import ConfigError, load_env_file
+from ..settings.config import load_env_file
 from ..settings.store import Store
 from ..sources.bodsbus import BodsBusSource
 from ..sources.darwin import DarwinSource, TrainBoard

@@ -6,7 +6,8 @@ import tomllib
 
 import pytest
 
-from twobells.settings.config import ConfigError, read_base
+from twobells.core.errors import ConfigError
+from twobells.settings.config import read_base
 from twobells.settings.overlay import OverlayError, Target, board_target, save_to, to_toml
 from twobells.settings.store import Store
 

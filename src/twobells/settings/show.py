@@ -13,14 +13,16 @@ gives a new install) and Everything, which is every item but those in no
 preset.
 
 shown() reads a view's list from settings, and shows() asks about one item.
-This module imports nothing of the app's, so the board, the dashboard and
-the settings can all use it.
+This module imports nothing of the app's but core's ConfigError, so the
+board, the dashboard and the settings can all use it.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+
+from ..core.errors import ConfigError
 
 VIEWS = ("board", "dashboard")
 
@@ -155,8 +157,6 @@ def shown(data: Mapping, view: str) -> frozenset[str]:
     """What `view` shows by settings `data`: its [view] show list, or
     without one, default(). ConfigError for a list that isn't one, or names
     anything the view can't show."""
-    from .config import ConfigError
-
     section = data.get(view)
     if not isinstance(section, dict) or "show" not in section:
         return default(view, data)

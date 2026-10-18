@@ -30,8 +30,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
+from ..core.errors import ConfigError
 from . import schema
-from .config import OVERLAY_NAME, SECRETS_OVERLAY_NAME, ConfigError, load_env_file, merge, read_overlay_in
+from .config import OVERLAY_NAME, SECRETS_OVERLAY_NAME, load_env_file, merge, read_overlay_in
 from .installs import DEFAULT, install_named
 from .schema import saved_keys
 

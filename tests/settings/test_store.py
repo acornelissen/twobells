@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from twobells.core.errors import ConfigError
 from twobells.settings import store as store_module
-from twobells.settings.config import ConfigError
 from twobells.settings.installs import install_named
 from twobells.settings.overlay import save_to
 from twobells.settings.schema import saved_keys

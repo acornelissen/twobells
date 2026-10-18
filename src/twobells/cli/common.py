@@ -14,7 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from ..settings.config import ConfigError, holiday_division, load_config
+from ..core.errors import ConfigError
+from ..settings.config import holiday_division, load_config
 from ..settings.store import Store, check_owner
 from ..sources.holidays import bank_holidays
 

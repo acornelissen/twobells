@@ -94,9 +94,9 @@ from pathlib import Path
 from typing import Protocol
 
 from ..core.bounded import finite
-from ..core.errors import safe_message, scrub_secrets
+from ..core.errors import ConfigError, safe_message, scrub_secrets
 from ..settings import keyresults, modes, schema, show
-from ..settings.config import ConfigError, still_to_set_up
+from ..settings.config import still_to_set_up
 from ..settings.installs import INSTALLS, Install
 from ..settings.overlay import OverlayError, Target, save_to
 from ..settings.schema import ATCO as _ATCO

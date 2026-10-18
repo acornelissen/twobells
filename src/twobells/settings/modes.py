@@ -23,14 +23,16 @@ the room its display gives it in its look and text size (board/panel.py:
 most_modes): a list naming more than that is refused, and without a list
 it shows the first of those set up that fit.
 
-This module imports nothing of the app's, so the board, the dashboard and
-the settings can all use it.
+This module imports nothing of the app's but core's ConfigError, so the
+board, the dashboard and the settings can all use it.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+
+from ..core.errors import ConfigError
 
 VIEWS = ("board", "dashboard")
 
@@ -107,8 +109,6 @@ def checked(view: str, value: object, where: str) -> tuple[str, ...]:
 def listed(data: Mapping, view: str) -> tuple[str, ...] | None:
     """[view] modes as written, checked, or None without one. ConfigError
     for a list that isn't one."""
-    from .config import ConfigError
-
     if view not in VIEWS:
         raise ValueError(f"Unknown view {view!r}")
     section = data.get(view)
@@ -135,8 +135,6 @@ def shown(data: Mapping, view: str, most: int | None = None, room: str = "this d
     many fit. ConfigError for a list that isn't one, or names more than
     `most` (`room` says where, for the words, and `other` what else would
     give room for more: "text size 12 or smaller, or another look")."""
-    from .config import ConfigError
-
     named = listed(data, view)
     if named is not None and most is not None and len(named) > most:
         fix = f"; name fewer, or choose {other}" if other else ""
@@ -191,8 +189,6 @@ def leave(data: Mapping, view: str) -> tuple[str, ...]:
     """The modes `view` gives leave times for by settings `data`, in MODES'
     order: those its leave list names that are set up, or without a list,
     every mode set up. ConfigError for a list that isn't one."""
-    from .config import ConfigError
-
     if view not in VIEWS:
         raise ValueError(f"Unknown view {view!r}")
     section = data.get(view)

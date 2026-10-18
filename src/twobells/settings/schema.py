@@ -35,6 +35,7 @@ from zoneinfo import ZoneInfo, available_timezones
 from ..board.displays.display import DISPLAY_PANELS
 from ..board.panel import biggest_text_for, most_modes, panel_name
 from ..board.themes import THEMES, themes_for
+from ..core.errors import ConfigError
 from ..core.polling import parse_window
 from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES
 from . import modes, show
@@ -850,8 +851,6 @@ def views(data: dict, install: Install | None = None, default: tuple[str, ...] =
     Without [app] views: the install's default views, or `default`.
     ConfigError if [app] views isn't a list of views, each named once. An
     empty list is allowed: then only the settings pages run."""
-    from .config import ConfigError
-
     section = data.get("app")
     if section is None or (isinstance(section, dict) and "views" not in section):
         return tuple(install.default_views if install is not None else default)

@@ -31,9 +31,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ..core.errors import safe_message
+from ..core.errors import ConfigError, safe_message
 from ..settings import keyresults, schema
-from ..settings.config import ConfigError, merge
+from ..settings.config import merge
 from ..settings.overlay import OverlayError, save_to
 from ..settings.schema import KEY_VALUE, Invalid
 from ..setup import keytest

@@ -1,7 +1,8 @@
 """Errors as one safe line: no keys, no query strings, no control characters.
 
 Also the two ways a key is kept out of text: redact_keys, for anything that
-looks like one by its name, and scrub_secrets, for the values known."""
+looks like one by its name, and scrub_secrets, for the values known; and
+ConfigError, what settings that don't load raise, wherever they are read."""
 
 from __future__ import annotations
 
@@ -26,6 +27,10 @@ _SECRET = re.compile(
     r"([\"']?\s*[=:]\s*[\"']?)([^\s&\"',;}<>)\]]+)"
 )
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+class ConfigError(Exception):
+    pass
 
 
 def safe_message(error: BaseException | str) -> str:

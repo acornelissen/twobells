@@ -2,6 +2,7 @@ import stat
 
 import pytest
 
+from twobells.core.errors import ConfigError
 from twobells.dashboard.config import (
     DashboardOptions,
     FileWatch,
@@ -9,7 +10,6 @@ from twobells.dashboard.config import (
     load_dashboard,
 )
 from twobells.settings import show
-from twobells.settings.config import ConfigError
 from twobells.settings.installs import install_named
 from twobells.settings.overlay import OverlayError, save_to
 from twobells.settings.store import Store

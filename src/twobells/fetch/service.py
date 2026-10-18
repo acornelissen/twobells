@@ -39,11 +39,12 @@ from functools import partial
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from ..core.errors import ConfigError
 from ..dashboard.collector import Collector
 from ..dashboard.config import DashboardSettings, FileWatch, load_dashboard
 from ..dashboard.history import History
 from ..dashboard.snapshot import Hub
-from ..settings.config import ConfigError, needs_setup
+from ..settings.config import needs_setup
 from ..settings.installs import Install
 from ..settings.schema import views
 from ..settings.store import Store

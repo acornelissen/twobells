@@ -17,7 +17,8 @@ from functools import partial
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from ..settings.config import ConfigError, needs_setup
+from ..core.errors import ConfigError
+from ..settings.config import needs_setup
 from ..settings.installs import Install, install_named
 from ..settings.schema import views
 from ..settings.store import Store

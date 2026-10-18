@@ -62,8 +62,9 @@ from typing import TYPE_CHECKING
 from urllib.parse import parse_qs
 
 from ..board.state import StateStore
+from ..core.errors import ConfigError
 from ..settings import schema
-from ..settings.config import ConfigError, needs_setup
+from ..settings.config import needs_setup
 from ..settings.schema import BOARD_DEFAULTS
 from ..setup import api as setupapi
 from ..setup.keytest import KeyResult

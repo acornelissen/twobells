@@ -24,8 +24,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from ..core.errors import ConfigError
 from ..settings import keyresults, schema
-from ..settings.config import ConfigError
 from .icons import icon
 from .status import _dict
 

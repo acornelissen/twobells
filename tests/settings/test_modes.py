@@ -1,7 +1,7 @@
 import pytest
 
+from twobells.core.errors import ConfigError
 from twobells.settings import modes, schema
-from twobells.settings.config import ConfigError
 from twobells.settings.schema import Invalid
 
 BOTH = {"train": {"crs": "GLO"}, "bus": {"stops": {"A": "1000DGHS0900"}}}

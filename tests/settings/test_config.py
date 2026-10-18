@@ -3,7 +3,8 @@ from datetime import date, timedelta
 import pytest
 
 from tests.paths import ROOT
-from twobells.settings.config import ConfigError, load_config
+from twobells.core.errors import ConfigError
+from twobells.settings.config import load_config
 from twobells.sources.bodsbus import BodsBusSource
 from twobells.sources.darwin import DarwinSource
 from twobells.sources.transportapi import TransportApiBusSource

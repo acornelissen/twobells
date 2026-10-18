@@ -29,8 +29,8 @@ import sys
 
 from ..board.displays.display import DISPLAY_PANELS
 from ..board.themes import THEMES
+from ..core.errors import ConfigError
 from ..emulator.server import DEFAULT_PORT
-from ..settings.config import ConfigError
 from ..settings.installs import DEFAULT as DEFAULT_INSTALL
 from ..settings.installs import INSTALLS
 from ..settings.store import WrongUser

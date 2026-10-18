@@ -25,6 +25,7 @@ from ..board.displays.display import DISPLAY_PANELS
 from ..board.positions import Positions
 from ..board.route import RouteStop, RouteStrip
 from ..board.themes import theme_named, themes_for, with_text_size
+from ..core.errors import ConfigError
 from ..core.polling import PollPolicy, parse_window
 from ..core.walk import DEFAULT_STOP, WalkTimes
 from ..setup.lookups import london_stops_by_code
@@ -63,10 +64,6 @@ if TYPE_CHECKING:
     from .store import Store
 
 log = logging.getLogger(__name__)
-
-
-class ConfigError(Exception):
-    pass
 
 
 OVERLAY_NAME = "settings.toml"

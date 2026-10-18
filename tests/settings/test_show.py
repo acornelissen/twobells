@@ -4,8 +4,8 @@ from collections import Counter
 
 import pytest
 
+from twobells.core.errors import ConfigError
 from twobells.settings import schema, show
-from twobells.settings.config import ConfigError
 
 BOARD = ("platforms", "where", "disruption", "rain", "last_bus", "bus_page", "calling_at", "clock_page",
          "announce_speaker")
