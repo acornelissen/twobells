@@ -1581,6 +1581,29 @@ def test_a_row_link_opens_the_summary_at_its_item():
 
 
 @needs_node
+def test_a_row_link_keeps_the_focus_across_a_redraw():
+    # WCAG 2.4.3: the boards are drawn again with each snapshot (main.js redrawBoards);
+    # a focused "Disruption" link on a bus row must still have the focus after.
+    found = run_js(_boards() + DISRUPTION_PAGE.replace('import { h } from "./dom.js";\n', "") + """
+        import { focusKey, refocus } from "./dom.js";
+        globalThis.CSS = { escape: (text) => text };
+        renderDisruptions(snapshot);
+        const rowsById = new Map(snapshot.buses.rows.map((row) => [row.id, { row, mode: "bus" }]));
+        const link = () => byClass(board("buses-board"), "dis-mark")[0];
+        markBusRows(snapshot, rowsById);
+        link().focus();
+        const key = focusKey();
+        renderBuses(snapshot, alerts);
+        markBusRows(snapshot, rowsById);
+        const fresh = link();
+        refocus(key);
+        const row = fresh.parentNode.parentNode.dataset.id;
+        console.log(JSON.stringify([key === `dis-mark:${row}`, document.activeElement === fresh]));
+    """)
+    assert found == [True, True]
+
+
+@needs_node
 def test_new_disruption_on_your_journeys_is_announced_once():
     found = run_js("""
         import { noteSnapshot } from "./live.js";

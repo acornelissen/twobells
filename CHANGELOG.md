@@ -14,6 +14,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 - Setting a new settings password with a reset code when the password can't be saved (a full or read-only disk, say) now says the new password couldn't be saved, that the old one still works and to ask for a new code, as that one is used up; the log says why. It sent nothing back, and logged nothing. Every session still stands.
 - The web server logs a fault answering a request, such as a file it can't read, by the fault's type. It took every such fault for a browser going away and logged nothing, on the dashboard's event stream too.
 - On the dashboard's area map, a bus whose position time comes without a UTC offset shows how old the position is, read as UTC as the rest of the dashboard reads it, rather than no age at all.
+- On the dashboard, a bus row's **Disruption** link keeps the keyboard focus when the boards are drawn again with each update. The focus went back to the top of the page, so a keyboard user lost their place (WCAG 2.4.3).
 
 ### Security
 

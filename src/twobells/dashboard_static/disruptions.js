@@ -311,7 +311,10 @@ export function markBusRows(snapshot, rowsById) {
       && inForce(i, at));
     const cell = tr.querySelector(".c-dest");
     if (!hit || !cell) continue;
-    cell.append(h("a", { class: "dis-mark", href: `#disruption-${hit.id}`, on: { click: follow } },
+    cell.append(h("a", {
+      class: "dis-mark", href: `#disruption-${hit.id}`, dataset: { focusKey: `dis-mark:${tr.dataset.id}` },
+      on: { click: follow },
+    },
       h("span", { class: "glyph", "aria-hidden": "true" }, icon("triangle-alert")), "Disruption",
       vh(` for the ${str(row.scheduled)} ${str(row.line)}: ${str(hit.title)}`)));
   }
