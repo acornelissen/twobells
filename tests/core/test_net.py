@@ -56,12 +56,24 @@ def test_keeps_caller_headers_and_asks_for_json(monkeypatch):
 @pytest.fixture
 def redirecting():
     """A local server: /elsewhere redirects to another host name for the same
-    server, /same to the same host; /end records the headers it was sent."""
+    server, /same to the same host; /end records the headers it was sent.
+    /heavy redirects to /end with a body of 50 MB, of which it sends 1 KB
+    and then waits."""
     seen = []
+    done = threading.Event()
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             port = self.server.server_address[1]
+            if self.path == "/heavy":
+                self.send_response(302)
+                self.send_header("Location", "/end")
+                self.send_header("Content-Length", "50000000")
+                self.end_headers()
+                self.wfile.write(b"x" * 1024)
+                self.wfile.flush()
+                done.wait(5)
+                return
             if self.path in ("/elsewhere", "/same"):
                 host = "localhost" if self.path == "/elsewhere" else "127.0.0.1"
                 self.send_response(302)
@@ -83,8 +95,17 @@ def redirecting():
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{server.server_address[1]}", seen
+    done.set()
     server.shutdown()
     server.server_close()
+
+
+def test_a_redirects_body_is_never_read(redirecting):
+    # urllib read a redirect's body whole, whatever the cap: 200 MB of it took 265 MB.
+    base, seen = redirecting
+    start = time.monotonic()
+    assert net.get_json_capped(base + "/heavy", None, 100, timeout=2.0, deadline=4.0) == {"ok": True}
+    assert time.monotonic() - start < 2.0  # the rest of the body never came
 
 
 def test_redirect_to_another_host_drops_the_api_key(redirecting):

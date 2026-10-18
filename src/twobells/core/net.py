@@ -42,13 +42,17 @@ def _origin(url: str) -> tuple[str, str, int | None]:
 class SafeRedirects(HTTPRedirectHandler):
     """urllib copies every request header to wherever a redirect points. This
     refuses https to http, and drops all but harmless headers on a change of
-    host or port, so a key header never reaches a host it wasn't sent to."""
+    host or port, so a key header never reaches a host it wasn't sent to.
+    A redirect's body is never read: urllib reads it whole before following,
+    whatever the caller's cap."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         old, new = _origin(req.full_url), _origin(newurl)
         if old[0] == "https" and new[0] != "https":
             raise HTTPError(req.full_url, code, f"Refusing a redirect from https to {new[0]}", headers, fp)
         followed = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if followed is not None:
+            fp.close()  # then urllib's read of it gives nothing
         if followed is not None and new != old:
             for name in list(followed.headers):
                 if name.lower() not in _PORTABLE_HEADERS:
