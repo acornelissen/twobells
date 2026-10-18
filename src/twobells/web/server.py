@@ -69,6 +69,7 @@ SECURITY_HEADERS = {
         "img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self'; manifest-src 'self'; "
         "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     ),
+    "X-Frame-Options": "DENY",  # frame-ancestors for browsers that don't read the CSP's
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "same-origin",
     "Cross-Origin-Opener-Policy": "same-origin",

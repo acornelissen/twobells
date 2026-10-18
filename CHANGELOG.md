@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Security
+
+- The dashboard's responses carry `X-Frame-Options: DENY`, as the settings site's do, so no other page can frame it in a browser that ignores the policy's `frame-ancestors`.
+
 ### Fixed
 
 - Setting a new settings password with a reset code when the password can't be saved (a full or read-only disk, say) now answers that the code can't be checked, and the log says why. It sent nothing back, and logged nothing. The old password and every session still stand; ask for a new code.
