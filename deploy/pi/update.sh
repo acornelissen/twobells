@@ -3,7 +3,8 @@
 # the repo), then runs it once. Put the new release (and optionally a new
 # config.toml / secrets.env) on the Pi, then from its folder:
 #   sudo ./deploy/pi/update.sh [--config FILE] [--secrets FILE]
-# A --secrets file is moved into place and the copy shredded.
+# A --secrets file is copied into place and the given file deleted with shred
+# -u (on an SD card that may not reach its old contents: see install-pi.md).
 # deploy/pi/upgrade.sh VERSION downloads and checks a release, then runs this.
 set -euo pipefail
 
