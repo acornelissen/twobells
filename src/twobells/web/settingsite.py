@@ -257,6 +257,8 @@ def wording(install: Install, to_board: bool, dashboard_on: bool) -> Wording:
         back='<p class="after"><a href="/">Back to the dashboard</a></p>' if dashboard_on else "",
         no_code_made="That form had run out, so no code was made. Try again.",
         cant_check="The code can't be checked right now. Try again in a moment.",
+        cant_save="The new password couldn't be saved, so the old one still works. "
+                  "That code is used up: ask for a new one.",
         saved=saved,
         reset_logged="Settings password set with a reset code; every session ended",
         wrong_step_token="This page has run out. Reload it and try again.",  # noqa: S106 - a message

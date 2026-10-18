@@ -172,6 +172,7 @@ class Wording:
     back: str  # HTML paragraph closing every pre-session page, or ""
     no_code_made: str  # the error when the form asking for a code had run out
     cant_check: str  # the error when the code can't be checked
+    cant_save: str  # the error when the code was right but the new password can't be saved
     saved: str  # when what was saved takes effect, said after a save
     reset_logged: str  # the log line after a reset
     wrong_step_token: str  # the error when a wizard step's X-CSRF-Token is wrong
@@ -458,7 +459,7 @@ class FormPages:
             self._password.set(new)
         except OSError as error:  # the code is spent, but the old password and sessions stand
             self._log.warning("Can't save the settings password: %s", type(error).__name__)
-            return self.reset_page(503, headers, self._wording().cant_check)
+            return self.reset_page(503, headers, self._wording().cant_save)
         self._log.info(self._wording().reset_logged)
         self._sessions.end_all()
         self._lockout.succeeded(client)

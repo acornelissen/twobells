@@ -11,7 +11,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ### Fixed
 
-- Setting a new settings password with a reset code when the password can't be saved (a full or read-only disk, say) now answers that the code can't be checked, and the log says why. It sent nothing back, and logged nothing. The old password and every session still stand; ask for a new code.
+- Setting a new settings password with a reset code when the password can't be saved (a full or read-only disk, say) now says the new password couldn't be saved, that the old one still works and to ask for a new code, as that one is used up; the log says why. It sent nothing back, and logged nothing. Every session still stands.
 - The web server logs a fault answering a request, such as a file it can't read, by the fault's type. It took every such fault for a browser going away and logged nothing, on the dashboard's event stream too.
 
 ### Security

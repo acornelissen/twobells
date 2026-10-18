@@ -158,6 +158,7 @@ WIDGET = Wording(
     back='<p class="after"><a href="/">Back to the widget</a></p>',
     no_code_made="That form had run out, so no code was shown.",
     cant_check="The code can't be checked: use the tool.",
+    cant_save="The new password wasn't saved: ask for another code.",
     saved="The widget shows them soon.",
     reset_logged="Widget password reset",
     wrong_step_token="Reload the widget.",
@@ -522,7 +523,9 @@ def test_a_new_password_that_cannot_be_saved_says_so_and_changes_nothing_else(ho
     host.codes.issue(host.clock())
     monkeypatch.setattr(host.password, "set", broken)
     reply = host.reset(host.shown[-1])
-    assert reply.status == 503 and WIDGET.cant_check in reply.body.decode()
+    body = reply.body.decode()
+    assert reply.status == 503 and WIDGET.cant_save in body
+    assert WIDGET.cant_check not in body  # the code is spent: trying again with it can't work
     assert [(r.name, r.getMessage()) for r in caplog.records if r.levelname == "WARNING"] == [
         ("tests.widget", "Can't save the settings password: PermissionError")]
     assert "widget_session=" not in reply.headers.get("Set-Cookie", "")  # this browser isn't signed in
