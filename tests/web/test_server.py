@@ -15,7 +15,7 @@ from twobells.dashboard.performance import Performance, Setup
 from twobells.dashboard.snapshot import Hub
 from twobells.settings.installs import install_named
 from twobells.settings.store import Store
-from twobells.web.server import DashboardApp, StaticFiles, make_server
+from twobells.web.server import MAX_CONNECTIONS, MAX_PER_CLIENT, DashboardApp, StaticFiles, make_server
 from twobells.web.settingsite import SettingsSite
 
 # The contract's headers, copied from docs/dashboard-api.md rather than imported.
@@ -793,6 +793,149 @@ def test_a_stream_keeps_the_dashboard_awake(server):
 
 
 # Connections
+
+
+def drip(raw, start, line, within=5.0):
+    """Send `start`, then `line` every 0.1 s until the server closes the
+    connection; what it sent back and how long that took."""
+    raw.settimeout(0.1)
+    raw.sendall(start)
+    began = time.monotonic()
+    reply = b""
+    while time.monotonic() - began < within:
+        try:
+            chunk = raw.recv(4096)
+        except TimeoutError:
+            with contextlib.suppress(OSError):  # a closed connection shows at the next recv
+                raw.sendall(line)
+            continue
+        except ConnectionResetError:
+            break
+        if not chunk:
+            break
+        reply += chunk
+    else:
+        raise AssertionError("the server never let go")
+    return reply, time.monotonic() - began
+
+
+def test_a_request_sent_a_line_at_a_time_is_dropped_at_its_deadline(static_dir):
+    running = start(static_dir, limits={"request_seconds": 0.5})
+    try:
+        with socket.create_connection(("127.0.0.1", running.port), timeout=5) as raw:
+            reply, took = drip(raw, b"GET /healthz HTTP/1.1\r\nHost: localhost\r\n", b"X-A: b\r\n")
+        assert reply == b"" and took < 3  # each line well inside the 10 s read timeout, but too slow all told
+    finally:
+        running.close()
+
+
+def test_a_body_sent_a_byte_at_a_time_is_dropped_at_its_deadline(static_dir):
+    running = start(static_dir, limits={"request_seconds": 0.5})
+    head = (b"POST /settings/login HTTP/1.1\r\nHost: localhost\r\nOrigin: http://localhost\r\n"
+            b"Content-Type: application/x-www-form-urlencoded\r\nContent-Length: 1000\r\n\r\n")
+    try:
+        with socket.create_connection(("127.0.0.1", running.port), timeout=5) as raw:
+            reply, took = drip(raw, head, b"a")
+        assert reply == b"" and took < 3
+    finally:
+        running.close()
+
+
+def test_the_deadline_is_for_each_request_not_the_connection(static_dir):
+    running = start(static_dir, limits={"request_seconds": 0.5})
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", running.port, timeout=5)
+        for _ in range(3):  # one kept-alive connection, longer than the deadline in all
+            conn.request("GET", "/healthz", headers={"Host": "localhost"})
+            assert conn.getresponse().read() == b"ok"
+            time.sleep(0.3)
+        conn.close()
+    finally:
+        running.close()
+
+
+def test_a_stream_outlasts_the_request_deadline(static_dir):
+    running = start(static_dir, limits={"request_seconds": 0.3})
+    try:
+        conn, response = running.stream()
+        started = time.monotonic()
+        read_block(response)
+        read_block(response)
+        while time.monotonic() - started < 1:
+            assert read_block(response) == [": ping"]  # still open, past the deadline
+        conn.close()
+    finally:
+        running.close()
+
+
+def test_slow_clients_holding_every_connection_let_go_at_their_deadline(static_dir):
+    """The audit's case: clients sending a header line now and then held every
+    connection, so the health check went unanswered for as long as they kept at it."""
+    running = start(static_dir, limits={"max_connections": 4, "max_per_client": 4, "request_seconds": 0.5})
+    hogs = []
+    try:
+        for _ in range(4):
+            hog = socket.create_connection(("127.0.0.1", running.port), timeout=5)
+            hog.sendall(b"GET /healthz HTTP/1.1\r\n")
+            hogs.append(hog)
+        time.sleep(0.1)
+        began = time.monotonic()
+        while True:
+            for hog in hogs:
+                with contextlib.suppress(OSError):
+                    hog.sendall(b"X-A: b\r\n")
+            try:
+                if running.request("/healthz")[1] == b"ok":
+                    break
+            except (http.client.HTTPException, OSError):
+                pass  # every connection still held
+            assert time.monotonic() - began < 5, "the slow clients never let go"
+            time.sleep(0.1)
+    finally:
+        for hog in hogs:
+            hog.close()
+        running.close()
+
+
+def connect_from(running, address):
+    """A connection to the server as if from `address`: the server's end of
+    a socket pair, handed over as the listener would hand it a client."""
+    ours, theirs = socket.socketpair()
+    ours.settimeout(5)
+    running.server.process_request(theirs, (address, 50000))
+    return ours
+
+
+def test_one_address_can_hold_only_its_share_of_the_connections(static_dir):
+    running = start(static_dir, limits={"max_connections": 4, "max_per_client": 2})
+    try:
+        hogs = [connect_from(running, "192.168.1.66") for _ in range(2)]
+        with connect_from(running, "192.168.1.66") as extra:  # past its cap: closed unanswered, unread
+            assert extra.recv(100) == b""
+        with connect_from(running, "192.168.1.20") as other:  # another device is still served
+            other.sendall(b"GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n")
+            assert other.recv(4096).startswith(b"HTTP/1.0 200 ")
+        assert running.request("/healthz")[1] == b"ok"
+        hogs.pop().close()
+        deadline = time.monotonic() + 5
+        while True:  # the slot comes back once the server lets go of the closed one
+            with connect_from(running, "192.168.1.66") as again, contextlib.suppress(OSError):  # still refused
+                again.sendall(b"GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n")
+                if again.recv(4096).startswith(b"HTTP/1.0 200 "):
+                    break
+            assert time.monotonic() < deadline, "the closed connection's slot was never freed"
+            time.sleep(0.05)
+        for hog in hogs:
+            hog.close()
+    finally:
+        running.close()
+
+
+def test_a_household_behind_one_address_fits_under_its_cap():
+    """Docker Desktop and rootless Podman show every device as one address:
+    two browsers, each with its six connections (an event stream among
+    them), stay under the cap, and one address can't hold every connection."""
+    assert 2 * 6 < MAX_PER_CLIENT < MAX_CONNECTIONS
 
 
 def test_connections_beyond_the_cap_are_closed_unanswered(static_dir):

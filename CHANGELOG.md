@@ -7,6 +7,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 ### Security
 
 - The dashboard's responses carry `X-Frame-Options: DENY`, as the settings site's do, so no other page can frame it in a browser that ignores the policy's `frame-ancestors`.
+- A client sending its request slowly, a line every few seconds, can't hold the web server's connections for long: a request's line, headers and body must all arrive within 15 seconds, and one address may have at most 16 connections open of the 48. Four such clients kept the health check and every other page from answering for as long as they kept at it. The dashboard's event stream is not cut short. In Docker Desktop and rootless Podman, where every device shows as one address, the 16 are shared ([Docker](docs/docker.md#keep-it-on-the-home-network)).
 
 ### Fixed
 

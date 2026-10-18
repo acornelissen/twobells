@@ -4,8 +4,10 @@ page, its static files and the read-only API in docs/dashboard-api.md.
 Home network only. Every request must come from a private address and name
 a local host (or one in allowed_hosts), in one Host header, which blocks
 DNS rebinding from outside websites; API calls from another site's page
-are refused too. Connections and event streams are capped so a
-misbehaving client can't use up the threads.
+are refused too. Connections are capped, in all and from any one
+address, and so are event streams; a request's line, headers and body
+must all arrive within REQUEST_DEADLINE_S. So a misbehaving client, or
+one sending its request a byte at a time, can't use up the threads.
 
 Everything under /settings goes
 to the settings site (web/settingsite.py): it signs the owner in, takes POSTs
@@ -27,10 +29,12 @@ from __future__ import annotations
 import errno
 import hashlib
 import html
+import io
 import json
 import logging
 import os
 import re
+import socket
 import sys
 import threading
 import time
@@ -55,8 +59,12 @@ log = logging.getLogger(__name__)
 
 DEFAULT_PORT = 8090
 MAX_CONNECTIONS = 48
+# Open connections from one address. Above two browsers' six each (an event stream
+# among them), as Docker Desktop and rootless Podman show a household as one address.
+MAX_PER_CLIENT = 16
 MAX_STREAMS = 12
-REQUEST_TIMEOUT_S = 10
+REQUEST_TIMEOUT_S = 10  # the longest one read waits
+REQUEST_DEADLINE_S = 15  # the longest a request's line, headers and body take all told
 MAX_PATH = 512
 HEARTBEAT_S = 15.0
 STREAM_SECONDS = 30 * 60
@@ -201,10 +209,48 @@ def _matches(header: str | None, etag: str) -> bool:
     return "*" in tags or etag in tags or f"W/{etag}" in tags
 
 
+class _Reads(io.RawIOBase):
+    """A connection's reads, none waiting past its request's deadline, so a
+    client sending its request a byte at a time lets go of its thread then.
+    Only reads: an event stream, which only writes, runs on."""
+
+    def __init__(self, connection: socket.socket, handler: _Handler, timeout: float) -> None:
+        super().__init__()
+        self._connection = connection
+        self._handler = handler
+        self._timeout = timeout
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer) -> int:
+        left = self._handler.deadline - time.monotonic()
+        if left <= 0:
+            raise TimeoutError("request not in by its deadline")
+        self._connection.settimeout(min(self._timeout, left))
+        try:
+            return self._connection.recv_into(buffer)
+        finally:
+            self._connection.settimeout(self._timeout)  # writes keep the usual timeout
+
+
 class _Handler(BaseHTTPRequestHandler):
     timeout = REQUEST_TIMEOUT_S  # a client that stalls lets go of its thread
     server: DashboardServer
+    deadline = 0.0  # when this request must be in by, on time.monotonic()
     _security: dict[str, str] | None = None  # this request's security headers, once its path is known
+
+    def setup(self) -> None:
+        super().setup()
+        self.rfile.close()  # http.server's own reader, in place of ours
+        self.rfile = io.BufferedReader(_Reads(self.connection, self, REQUEST_TIMEOUT_S))
+
+    def handle_one_request(self) -> None:
+        # http.server reads the request line and headers here, and the
+        # handler any body; past the deadline a read raises TimeoutError,
+        # on which http.server closes the connection unanswered.
+        self.deadline = time.monotonic() + self.server.request_seconds
+        super().handle_one_request()
 
     def version_string(self) -> str:
         return "twobells"  # no Python or OS version for anyone probing
@@ -511,33 +557,59 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 class DashboardServer(ThreadingHTTPServer):
-    """A thread per connection, at most `max_connections` at once (more are
-    closed at once, unanswered) and `max_streams` event streams."""
+    """A thread per connection, at most `max_connections` at once and
+    `max_per_client` from one address (more are closed at once, unread and
+    unanswered), and `max_streams` event streams. Each request must be in
+    within `request_seconds`."""
 
     daemon_threads = True
 
     def __init__(self, address: tuple[str, int], app: DashboardApp, max_connections: int = MAX_CONNECTIONS,
-                 max_streams: int = MAX_STREAMS) -> None:
+                 max_per_client: int = MAX_PER_CLIENT, max_streams: int = MAX_STREAMS,
+                 request_seconds: float = REQUEST_DEADLINE_S) -> None:
         self.app = app
-        self.connections = threading.BoundedSemaphore(max_connections)
+        self.max_connections = max_connections
+        self.max_per_client = max_per_client
+        self.request_seconds = request_seconds
         self.streams = threading.BoundedSemaphore(max_streams)
+        self._lock = threading.Lock()
+        self._open = 0
+        self._open_from: dict[str, int] = {}  # each address's open connections; none for one with none
         super().__init__(address, _Handler)
 
+    def _take(self, client: str) -> bool:
+        """A connection slot for `client`, if it and the server are under their caps."""
+        with self._lock:
+            held = self._open_from.get(client, 0)
+            if self._open >= self.max_connections or held >= self.max_per_client:
+                return False
+            self._open += 1
+            self._open_from[client] = held + 1
+            return True
+
+    def _let_go(self, client: str) -> None:
+        with self._lock:
+            self._open -= 1
+            held = self._open_from.pop(client) - 1
+            if held:
+                self._open_from[client] = held
+
     def process_request(self, request, client_address) -> None:
-        if not self.connections.acquire(blocking=False):
+        client = client_address[0]
+        if not self._take(client):
             self.shutdown_request(request)
             return
         try:
             super().process_request(request, client_address)
         except Exception:
-            self.connections.release()
+            self._let_go(client)
             raise
 
     def process_request_thread(self, request, client_address) -> None:
         try:
             super().process_request_thread(request, client_address)
         finally:
-            self.connections.release()
+            self._let_go(client_address[0])
 
     def handle_error(self, request, client_address) -> None:
         error = sys.exc_info()[1]
