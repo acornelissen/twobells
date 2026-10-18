@@ -182,7 +182,7 @@ def _text(value: object, limit: int = _TEXT_LIMIT) -> str:
 
 
 def _minute(value: object) -> int | None:
-    match = _TIME.match(value) if isinstance(value, str) else None
+    match = _TIME.fullmatch(value) if isinstance(value, str) else None
     if match is None:
         return None
     minute = int(match.group(1)) * 60 + int(match.group(2))
@@ -190,7 +190,7 @@ def _minute(value: object) -> int | None:
 
 
 def _day(value: object) -> date | None:
-    if not isinstance(value, str) or not _DATE.match(value):
+    if not isinstance(value, str) or not _DATE.fullmatch(value):
         return None
     try:
         return date(int(value[:4]), int(value[4:6]), int(value[6:]))
@@ -266,18 +266,18 @@ def read_gtfs(archive: zipfile.ZipFile, stops: Mapping[str, str], now: datetime)
     platforms: dict[str, str] = {}
     names: dict[str, str] = {}
     for row in _rows(archive, "stops.txt"):
-        match = _PLATFORM.match(row.get("stop_code", "").strip())
+        match = _PLATFORM.fullmatch(row.get("stop_code", "").strip())
         if match is None:
             continue
         stop_id = row.get("stop_id", "")
         names[stop_id] = destination_name(row.get("stop_name"))
-        if match.group(1) in wanted and _ID.match(stop_id):
+        if match.group(1) in wanted and _ID.fullmatch(stop_id):
             platforms[stop_id] = wanted[match.group(1)]
     trips: dict[str, tuple[str, str, str, bool]] = {}
     for row in _rows(archive, "trips.txt"):
         route = routes.get(row.get("route_id", ""))
         trip, service = row.get("trip_id", ""), row.get("service_id", "")
-        if route is None or not _ID.match(trip) or not _ID.match(service):
+        if route is None or not _ID.fullmatch(trip) or not _ID.fullmatch(service):
             continue
         if len(trips) >= MAX_TRIPS:
             raise TimetableTooBig(f"The tram timetable has more than {MAX_TRIPS} Metrolink trips")
@@ -393,7 +393,7 @@ def from_json(text: str) -> TramTimetable:
     lines = [_text(line) for line in data["lines"]]
     destinations = [_text(d) for d in data["destinations"]]
     stops = {str(label): str(code) for label, code in dict(data["stops"]).items()}
-    if not stops or len(stops) > MAX_STOPS or not all(CODE.match(code) for code in stops.values()):
+    if not stops or len(stops) > MAX_STOPS or not all(CODE.fullmatch(code) for code in stops.values()):
         raise ValueError("the saved tram stops aren't Metrolink stops")
     services = {}
     for name, raw in dict(data["services"]).items():
@@ -517,7 +517,7 @@ def refresh(folder: Path | str, stops: Mapping[str, str], now: datetime, *, forc
     unless forced or the stops change; TimetableError says why it failed.
     TimetableBusy if another build is running."""
     folder = Path(folder)
-    if not stops or len(stops) > MAX_STOPS or not all(CODE.match(code) for code in stops.values()):
+    if not stops or len(stops) > MAX_STOPS or not all(CODE.fullmatch(code) for code in stops.values()):
         raise TimetableError(f"Tram stops are 1 to {MAX_STOPS} Metrolink stop codes, like 9400ZZMAPIC")
     saved = load(folder)
     if not force and (due(saved, stops, now) is None or _failed_recently(folder, stops, now)):

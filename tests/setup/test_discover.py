@@ -183,6 +183,8 @@ def test_nothing_at_your_stops_is_an_error(bods):
 def test_a_stop_must_be_an_atco_code(bods):
     with pytest.raises(DiscoveryError, match="not an ATCO code"):
         bods.discover({"A": "../etc"})
+    with pytest.raises(DiscoveryError, match="not an ATCO code"):
+        bods.discover({"A": "1800SB12345\n"})
     with pytest.raises(DiscoveryError, match="at least one stop"):
         bods.discover({})
 
@@ -199,6 +201,7 @@ def test_a_stop_must_be_an_atco_code(bods):
         ((), {"BNGN"}, "BNGN"),  # BODS gives none: the documents' own is the best guess
         ((), set(), None),
         ((), {"bad code!"}, None),
+        ((), {"BNGN\n"}, None),
     ],
 )
 def test_filed_under(filed, inside, expected):
@@ -353,6 +356,7 @@ def test_list_keeps_only_bods_links_and_operator_codes():
     page = {"results": [
         {"url": _link(1), "noc": ["BNML", "BNML", "bad code", 7, "BNGN"]},
         {"url": _link(2), "noc": "HIPK"},
+        {"url": _link(6), "noc": ["X4\n"]},
         {"url": "http://data.bus-data.dft.gov.uk/timetable/dataset/3/download/", "noc": ["X1"]},
         {"url": "https://evil.example/4.zip", "noc": ["X2"]},
         {"url": "https://data.bus-data.dft.gov.uk.evil.example/5.zip"},
@@ -360,7 +364,7 @@ def test_list_keeps_only_bods_links_and_operator_codes():
         "not a data set",
     ]}
     found = list_datasets(KEY, "100", http_get=lambda url, limit: json.dumps(page).encode())
-    assert found == [Dataset(_link(1), ("BNML", "BNGN")), Dataset(_link(2), ("HIPK",))]
+    assert found == [Dataset(_link(1), ("BNML", "BNGN")), Dataset(_link(2), ("HIPK",)), Dataset(_link(6), ())]
 
 
 def test_list_errors_never_show_the_key():
@@ -382,6 +386,8 @@ def test_list_refuses_answers_that_are_not_a_list_of_data_sets(body):
 def test_list_refuses_an_area_that_is_not_a_code():
     with pytest.raises(DiscoveryError, match="admin area"):
         list_datasets(KEY, "10&x=1", http_get=lambda url, limit: b"{}")
+    with pytest.raises(DiscoveryError, match="admin area"):
+        list_datasets(KEY, "100\n", http_get=lambda url, limit: b"{}")
 
 
 # The setup job.

@@ -54,7 +54,7 @@ Fetch = Callable[[str, int], bytes]
 
 
 def _date(value) -> date | None:
-    if not isinstance(value, str) or not _DATE.match(value):
+    if not isinstance(value, str) or not _DATE.fullmatch(value):
         return None
     try:
         return date.fromisoformat(value)

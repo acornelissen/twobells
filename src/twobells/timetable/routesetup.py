@@ -135,7 +135,7 @@ class Pattern:
 
 
 def _seconds(duration: str | None) -> int:
-    match = _DURATION.match((duration or "").strip())
+    match = _DURATION.fullmatch((duration or "").strip())
     if not match:
         return _DEFAULT_RUN_S
     hours, minutes, seconds = (int(g or 0) for g in match.groups())

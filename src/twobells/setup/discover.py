@@ -106,7 +106,7 @@ def _nocs(value) -> tuple[str, ...]:
     values = [value] if isinstance(value, str) else value if isinstance(value, list) else []
     found = []
     for noc in values[:MAX_NOCS]:
-        if isinstance(noc, str) and _NOC.match(noc) and noc not in found:
+        if isinstance(noc, str) and _NOC.fullmatch(noc) and noc not in found:
             found.append(noc)
     return tuple(found)
 
@@ -129,7 +129,7 @@ def list_datasets(api_key: str, area: str, at_most: int = MAX_DATASETS,
     """BODS's published timetable data sets with services stopping in an
     admin area: at most `at_most` of them, from at most MAX_PAGES pages.
     Pages are asked for by offset, never by the `next` link BODS sends back."""
-    if not _AREA.match(area):
+    if not _AREA.fullmatch(area):
         raise DiscoveryError(f"{area!r} is not an admin area code")
     found: list[Dataset] = []
     for page in range(MAX_PAGES):
@@ -208,7 +208,7 @@ def _filed_under(dataset: Dataset, document_nocs: Iterable[str]) -> str | None:
     """The code to find this data set by: the documents' own if BODS files it
     under that too, else the first BODS gives; the documents' own only if
     BODS gives none."""
-    inside = sorted(n for n in set(document_nocs) if _NOC.match(n))
+    inside = sorted(n for n in set(document_nocs) if _NOC.fullmatch(n))
     for noc in inside:
         if noc in dataset.nocs:
             return noc
@@ -245,7 +245,7 @@ def discover_operators(
     being cancelled, or finding nothing raises DiscoveryError."""
     labels: dict[str, list[str]] = defaultdict(list)
     for label, atco in stops.items():
-        if not isinstance(atco, str) or not _ATCO.match(atco):
+        if not isinstance(atco, str) or not _ATCO.fullmatch(atco):
             raise DiscoveryError(f"Stop {label}: {atco!r} is not an ATCO code")
         labels[atco].append(label)
     if not labels:
@@ -304,13 +304,13 @@ def discover_operators(
                     except (timetable.TimetableError, routesetup.RouteSetupError) as error:
                         notes.append(f"Skipped a timetable: {safe_message(error)}")
                         continue
-                    current = [j for j in journeys if _LINE.match(j.line)]
+                    current = [j for j in journeys if _LINE.fullmatch(j.line)]
                     noc = _filed_under(dataset, (j.operator for j in current))
                     if noc is None:
                         continue
                     for journey in current:
                         lines[noc].add(journey.line)
-                        if journey.operator != noc and _NOC.match(journey.operator):
+                        if journey.operator != noc and _NOC.fullmatch(journey.operator):
                             inside[noc].add(journey.operator)
                         for call in journey.calls:
                             for label in labels.get(call.atco, ()):

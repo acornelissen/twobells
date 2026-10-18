@@ -50,7 +50,7 @@ class Window:
 
 def parse_window(spec: str) -> Window:
     """Parse e.g. 'Mon-Fri 06:45-09:00', 'Sat,Sun 10:00-12:00' or 'Fri-Sat 22:00-01:00'."""
-    match = _WINDOW.match(spec)
+    match = _WINDOW.fullmatch(spec)
     if not match:
         raise ValueError(f"Unrecognised window: {spec!r}")
     days, start, end = match.groups()

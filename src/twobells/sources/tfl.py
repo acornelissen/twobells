@@ -90,13 +90,13 @@ def stop_kind(code: str) -> str:
 def label_for(codes: Sequence[str]) -> str:
     """The section's heading for these stops: "Underground", "DLR" and the
     like when they are all of one kind, else "Metro"."""
-    kinds = {stop_kind(code) for code in codes if STOP.match(code)}
+    kinds = {stop_kind(code) for code in codes if STOP.fullmatch(code)}
     return LABELS[kinds.pop()] if len(kinds) == 1 else MIXED
 
 
 def empty_for(codes: Sequence[str]) -> str:
     """What the section says with nothing to show."""
-    kinds = {stop_kind(code) for code in codes if STOP.match(code)}
+    kinds = {stop_kind(code) for code in codes if STOP.fullmatch(code)}
     return EMPTY[kinds.pop()] if len(kinds) == 1 else "Nothing due"
 
 
@@ -150,7 +150,7 @@ def _arrival(item, label: str, code: str, now: datetime) -> Arrival | None:
     if not isinstance(item, dict):
         return None
     mode, line_id = item.get("modeName"), item.get("lineId")
-    if mode not in MODES or not isinstance(line_id, str) or not LINE_ID.match(line_id):
+    if mode not in MODES or not isinstance(line_id, str) or not LINE_ID.fullmatch(line_id):
         return None
     if item.get("naptanId") not in (None, code) or item.get("destinationNaptanId") == code:
         return None  # another stop's, or it terminates here

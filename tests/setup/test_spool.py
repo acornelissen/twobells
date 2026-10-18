@@ -501,6 +501,13 @@ def test_the_service_deletes_oversized_or_odd_files_unread(board, raw):
     assert not path.exists() and os.listdir(board.state / "spool" / "replies") == []
 
 
+def test_the_service_deletes_a_request_whose_name_ends_in_a_newline_unanswered(board):
+    path = put(board, request(board), name="a" * 32 + ".json\n")
+    board.worker.step()
+    assert not path.exists() and os.listdir(board.state / "spool" / "replies") == []
+    assert board.calls == []
+
+
 def test_the_service_never_follows_a_link_or_keeps_a_stray(board, tmp_path):
     target = tmp_path / "elsewhere.json"
     target.write_text(json.dumps(request(board)))

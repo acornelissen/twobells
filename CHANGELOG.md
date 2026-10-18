@@ -18,6 +18,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 - A reminder for a cancelled tram, river bus, cable car, ferry or replacement bus is headed by what was cancelled (**Tram cancelled**, **Ferry cancelled**), not **Train cancelled** for all of them.
 - A number on the settings pages takes the digits 0 to 9 alone, up to 9 of them. "²" failed the page with an error rather than saying what to enter, and other scripts' digits, such as Arabic-Indic ones, were saved as numbers.
 - A stop label, stop code, station code or key with a newline at its end is refused, as any other character out of place is. The checks let one last newline through, so a tram stop labelled "T" and a newline in the setup wizard saved a `settings.toml` that couldn't be read again.
+- The same goes for the codes, times and dates read from elsewhere: a stop, area or operator code in the bus search, a TfL line or stop code, a Metrolink stop code saved for the tram timetable, a tram time or date, and a request's name in the fetch service's folder are each refused with a newline at its end.
 
 ### Security
 

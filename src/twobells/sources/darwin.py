@@ -36,14 +36,14 @@ def _status_and_expected(service: dict) -> tuple[Status, str | None]:
         return Status.ON_TIME, None
     if etd == "Delayed":
         return Status.LATE, None
-    if _HHMM.match(etd):
+    if _HHMM.fullmatch(etd):
         return Status.LATE, etd
     return Status.UNKNOWN, None
 
 
 def _platform(value) -> str | None:
     """The platform if it looks like one; anything else is left off the board."""
-    if isinstance(value, str) and _PLATFORM.match(value.strip()):
+    if isinstance(value, str) and _PLATFORM.fullmatch(value.strip()):
         return value.strip()
     return None
 

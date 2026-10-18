@@ -141,6 +141,11 @@ def test_bad_rows_are_left_out_not_raised():
     assert len(read(parts).calls) == 4
 
 
+def test_a_time_or_day_with_a_newline_at_its_end_is_not_one():
+    assert trams._minute("08:09:30") == 489 and trams._minute("08:09:30\n") is None
+    assert trams._day("20261001") == date(2026, 10, 1) and trams._day("20261001\n") is None
+
+
 def test_too_many_departures_is_refused(monkeypatch):
     monkeypatch.setattr(trams, "MAX_CALLS", 2)
     with pytest.raises(TimetableTooBig):
@@ -156,6 +161,7 @@ def test_saved_and_read_back_whole(tmp_path):
 
 @pytest.mark.parametrize("edit", [
     lambda d: d.update(stops={"A": "not a code"}),
+    lambda d: d.update(stops={"A": "9400ZZMAPIC\n"}),
     lambda d: d["calls"].append(["Z", 1, 0, 0, "WK", 0]),
     lambda d: d["calls"].append(["A", 99999, 0, 0, "WK", 0]),
     lambda d: d["services"]["WK"].update(days=[9]),
@@ -221,7 +227,8 @@ def test_one_build_at_a_time(tmp_path):
         trams.refresh(tmp_path, STOPS, NOW, fetch=_fetch(gtfs(), []))
 
 
-@pytest.mark.parametrize("stops", [{}, {"A": "1800SB12341"}, {str(i): "9400ZZMAPIC" for i in range(5)}])
+@pytest.mark.parametrize("stops", [{}, {"A": "1800SB12341"}, {str(i): "9400ZZMAPIC" for i in range(5)},
+                                   {"A": "9400ZZMAPIC\n"}])
 def test_refresh_takes_only_metrolink_stops(tmp_path, stops):
     with pytest.raises(TimetableError, match="Metrolink stop codes"):
         trams.refresh(tmp_path, stops, NOW, fetch=_fetch(gtfs(), []))

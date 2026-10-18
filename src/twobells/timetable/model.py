@@ -99,7 +99,7 @@ class StopPosition:
 def sign_letter(indicator: str | None) -> str | None:
     """The letter or number on a stop's sign from NaPTAN's indicator ("Stop A"
     is A, "Stand 12" is 12), or None for a word like "opp" or none at all."""
-    match = _SIGN_LETTER.match((indicator or "").strip())
+    match = _SIGN_LETTER.fullmatch((indicator or "").strip())
     if match is None or match.group(1) in _NOT_LETTERS:
         return None
     return match.group(1)

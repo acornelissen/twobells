@@ -237,7 +237,7 @@ class Worker:
     def _take(self, path: Path) -> None:
         """Read one request, deleting it, then do it. Anything that isn't a
         fresh, well-formed request is deleted with no reply."""
-        match = _FILE.match(path.name)
+        match = _FILE.fullmatch(path.name)
         if match is None:
             _remove(path)
             log.warning("Deleted a file in the setup spool that isn't a request")

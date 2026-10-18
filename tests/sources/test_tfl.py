@@ -81,6 +81,7 @@ def good(**changes):
 
 @pytest.mark.parametrize("changes", [
     {"lineId": "Central Line"},  # not an id
+    {"lineId": "central\n"},
     {"lineId": None},
     {"modeName": "bus"},  # the bus data's
     {"modeName": "overground"},  # Darwin's
@@ -178,6 +179,7 @@ def test_station_notes_are_lifts_escalators_and_step_free_access_in_force_now():
     (["940GZZALGWP"], "Cable car", "No times for the cable car"),
     (["930GWMR"], "River buses", "No river buses"),
     (["940GZZLUBNK", "940GZZDLBNK"], "Metro", "Nothing due"),
+    (["940GZZLUBNK\n"], "Metro", "Nothing due"),  # not a stop code, so no kind known
 ])
 def test_the_section_is_named_for_the_stops_chosen(codes, label, empty):
     assert tfl.label_for(codes) == label and tfl.empty_for(codes) == empty

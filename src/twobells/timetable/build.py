@@ -284,7 +284,7 @@ def _text(node, path: str) -> str:
 
 def _seconds(text: str | None) -> int | None:
     """Seconds in an ISO 8601 duration such as PT1M30S; None if it isn't one."""
-    match = _DURATION.match((text or "").strip())
+    match = _DURATION.fullmatch((text or "").strip())
     if not match or not any(match.groups()):
         return None
     days, hours, minutes, seconds = (int(g or 0) for g in match.groups())
@@ -293,7 +293,7 @@ def _seconds(text: str | None) -> int | None:
 
 def _time(text: str) -> int | None:
     """Seconds after midnight in a time such as 06:20:00."""
-    match = _TIME.match(text)
+    match = _TIME.fullmatch(text)
     if not match:
         return None
     hours, minutes, seconds = (int(g or 0) for g in match.groups())
@@ -303,7 +303,7 @@ def _time(text: str) -> int | None:
 
 
 def _date(text: str) -> date | None:
-    if not _DATE.match(text):
+    if not _DATE.fullmatch(text):
         return None
     try:
         return date.fromisoformat(text)

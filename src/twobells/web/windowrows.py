@@ -58,7 +58,7 @@ def days_spec(days: frozenset[int]) -> str:
 
 def _time(raw: str) -> str | None:
     """A time typed in a box as HH:MM, or None if it isn't one."""
-    match = _TIME.match(raw.strip())
+    match = _TIME.fullmatch(raw.strip())
     if not match:
         return None
     hours, minutes = int(match.group(1)), int(match.group(2))
