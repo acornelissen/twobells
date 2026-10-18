@@ -736,7 +736,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/67/87/039b6eeea78159801
 
 [[package]]
 name = "twobells"
-version = "0.4.2"
+version = "0.4.3"
 source = { editable = "." }
 dependencies = [
     { name = "pillow" },

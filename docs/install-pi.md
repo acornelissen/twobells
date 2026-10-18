@@ -18,7 +18,7 @@ A Pi runs the board, the dashboard, or both. For the dashboard alone, [Docker](d
 Download a release's tarball and `SHA256SUMS` from the [releases page](https://github.com/acornelissen/twobells/releases), check the tarball against it, then run the installer from inside. On the Pi, with the version you want in the first line:
 
 ```bash
-VERSION=0.4.2
+VERSION=0.4.3
 base="https://github.com/acornelissen/twobells/releases/download/v$VERSION"
 curl -fLO "$base/twobells-$VERSION.tar.gz"
 curl -fLO "$base/SHA256SUMS"

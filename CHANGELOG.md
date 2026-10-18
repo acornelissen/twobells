@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-10-18
+
+Subtitles under a train on a screen, and the tram timetable built as soon as it is set up on a Pi.
+
 ### Changed
 
 - In the station board look on an HDMI screen, the lines under a train's row read as its subtitles: the "Calling at" line, and on the 7.9" screen the leave line, are drawn in a new, smaller dot font (capitals 5 dots tall rather than 7, with lowercase and descenders) on a line 9 dots tall rather than 11. E-paper is unchanged.
@@ -180,7 +184,8 @@ The first release.
 - A network guard for the Pi's web server: nftables rules for it alone (`deploy/pi/twobells-web.nft`), loaded at boot by `twobells-guard.service` and matching the server by the cgroup systemd puts in their set (`NFTSet=`, systemd 254 or later, so Raspberry Pi OS Trixie on a Pi Zero or Pi 1), that keep it from connecting out to the internet and keep port 8090 to the home network. They back up the unit's systemd IP firewall, which a Pi Zero's kernel can't apply ("Preparation of BPF allow maps failed"). `install.sh` and `update.sh` install `nftables`. The server checks at start whether it can connect out, warns in its log if it can, and the settings' Overview shows **Network guard**: On, Off (a problem) or Can't tell.
 - A wall-tablet mode for the dashboard at `/?kiosk`: one screen with no controls, the station-board look by default, a shift of a pixel or two every few minutes against burn-in, dimmed in quiet hours, a large banner when the times stop updating, and a reload at 03:30.
 
-[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.4.2...main
+[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.4.3...main
+[0.4.3]: https://github.com/acornelissen/twobells/releases/tag/v0.4.3
 [0.4.2]: https://github.com/acornelissen/twobells/releases/tag/v0.4.2
 [0.4.1]: https://github.com/acornelissen/twobells/releases/tag/v0.4.1
 [0.4.0]: https://github.com/acornelissen/twobells/releases/tag/v0.4.0
