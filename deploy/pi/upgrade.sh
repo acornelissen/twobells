@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Moves an installed board to another release, checked as when installing:
-#   sudo ./deploy/pi/upgrade.sh 0.2.0 [--config FILE] [--secrets FILE]
-# It downloads that release's tarball and SHA256SUMS over https into a
-# temporary folder, stops unless the tarball's SHA-256 matches, unpacks it,
-# and runs that release's deploy/pi/update.sh with the options after the
-# version. With cosign installed, it checks SHA256SUMS's signature first.
+#   sudo ./deploy/pi/upgrade.sh 0.2.0 [--no-signature-check] [--config FILE] [--secrets FILE]
+# It downloads that release's tarball, SHA256SUMS and its signature over
+# https into a temporary folder, stops unless cosign says the release workflow
+# signed SHA256SUMS for that version and the tarball's SHA-256 matches it,
+# unpacks it, and runs that release's deploy/pi/update.sh with the options
+# after the version. Without cosign it stops before downloading anything,
+# unless --no-signature-check says to check the SHA-256 only.
 # The temporary folder is removed when it ends, whatever happens. Going back
 # to an older release, it says how to put back the punctuality history as it
 # was before a newer release moved it on, which the older one may not read.
@@ -15,10 +17,38 @@ STORE=/var/lib/twobells
 RELEASES=https://github.com/acornelissen/twobells/releases/download
 IDENTITY=https://github.com/acornelissen/twobells/.github/workflows/release.yml
 ISSUER=https://token.actions.githubusercontent.com
+DOCS=https://github.com/acornelissen/twobells/blob/main/docs
 
 usage() {
-  echo "Usage: sudo $0 VERSION [--config FILE] [--secrets FILE]" >&2
+  echo "Usage: sudo $0 VERSION [--no-signature-check] [--config FILE] [--secrets FILE]" >&2
   echo "VERSION is a release's number, like 0.2.0 (no v)." >&2
+}
+
+# Whether SHA256SUMS's signature can be checked as $1 asks: "check" needs
+# cosign, and without it says how to get it and fails; "skip" says that only
+# the tarball's SHA-256 will be checked.
+signature_check_ready() {
+  if [[ "$1" == skip ]]; then
+    echo "--no-signature-check: SHA256SUMS's signature is not checked, only the tarball's SHA-256."
+    return 0
+  fi
+  if ! command -v cosign >/dev/null; then
+    echo "cosign isn't installed, so SHA256SUMS's signature can't be checked. Nothing was installed." >&2
+    echo "Install cosign 2.5 or later, as $DOCS/install-pi.md#install-cosign says," >&2
+    echo "or run again with --no-signature-check to check the tarball's SHA-256 only." >&2
+    return 1
+  fi
+}
+
+# Checks with cosign that SHA256SUMS in folder $1 was signed by the release
+# workflow for version $2's tag, with the bundle beside it.
+check_signature() {
+  local dir="$1" version="$2"
+  if ! cosign verify-blob "$dir/SHA256SUMS" --bundle "$dir/SHA256SUMS.sigstore.json" \
+      --certificate-identity "$IDENTITY@refs/tags/v$version" --certificate-oidc-issuer "$ISSUER"; then
+    echo "SHA256SUMS's signature doesn't check out (it needs cosign 2.5 or later)" >&2
+    return 1
+  fi
 }
 
 # A release's version, as release.yml tags it (without the v).
@@ -105,6 +135,19 @@ main() {
   fi
   local version="$1"
   shift
+  # --no-signature-check is this script's; the other options go to update.sh.
+  local signature=check option
+  local -a options=()
+  for option in "$@"; do
+    if [[ "$option" == --no-signature-check ]]; then
+      signature=skip
+    else
+      options+=("$option")
+    fi
+  done
+  if ! signature_check_ready "$signature"; then
+    exit 1
+  fi
   if [[ $EUID -ne 0 ]]; then
     echo "Run with sudo" >&2
     exit 1
@@ -122,15 +165,12 @@ main() {
   fetch "$base/$name" "$work/$name"
   fetch "$base/SHA256SUMS" "$work/SHA256SUMS"
 
-  if command -v cosign >/dev/null; then
+  if [[ "$signature" == check ]]; then
     fetch "$base/SHA256SUMS.sigstore.json" "$work/SHA256SUMS.sigstore.json"
-    if ! cosign verify-blob "$work/SHA256SUMS" --bundle "$work/SHA256SUMS.sigstore.json" \
-        --certificate-identity "$IDENTITY@refs/tags/v$version" --certificate-oidc-issuer "$ISSUER"; then
-      echo "SHA256SUMS's signature doesn't check out (it needs cosign 2.5 or later). Nothing was installed." >&2
+    if ! check_signature "$work" "$version"; then
+      echo "Nothing was installed." >&2
       exit 1
     fi
-  else
-    echo "cosign isn't installed, so SHA256SUMS's signature is not checked; the tarball's SHA-256 is."
   fi
   if ! check_tarball "$work" "$version"; then
     echo "Nothing was installed." >&2
@@ -146,7 +186,7 @@ main() {
   local installed
   installed="$(installed_version "$PREFIX")"
   # Run with bash, as /tmp may not allow running files from it.
-  bash "$unpacked/deploy/pi/update.sh" "$@"
+  bash "$unpacked/deploy/pi/update.sh" "${options[@]}"
   if [[ -n "$installed" ]] && older "$version" "$installed"; then
     going_back "$installed" "$version"
   fi

@@ -292,10 +292,18 @@ jobs:
           cat > "$RUNNER_TEMP/notes.md" <<EOF
           ## Install on a Raspberry Pi
 
+          SHA256SUMS covers every file here and is signed with Sigstore (keyless). Check it with
+          cosign 2.5 or later ([installing cosign](https://github.com/$GITHUB_REPOSITORY/blob/main/docs/install-pi.md#install-cosign)),
+          then the tarball against it:
+
           \`\`\`bash
           curl -fLO $base/twobells-$VERSION.tar.gz
           curl -fLO $base/SHA256SUMS
-          sha256sum --check --ignore-missing SHA256SUMS &&
+          curl -fLO $base/SHA256SUMS.sigstore.json
+          cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \\
+            --certificate-identity $identity \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com &&
+            sha256sum --check --ignore-missing SHA256SUMS &&
             tar -xzf twobells-$VERSION.tar.gz &&
             cd twobells-$VERSION && sudo ./deploy/pi/install.sh
           \`\`\`
@@ -303,18 +311,9 @@ jobs:
           A Pi installed from an earlier release moves to this one, checked the same way,
           from the earlier release's folder: \`sudo ./deploy/pi/upgrade.sh $VERSION\`
 
-          ## Verify
+          ## Container
 
-          SHA256SUMS covers every file here and is signed with Sigstore (keyless). Check it with
-          cosign 2.5 or later, and the image with cosign 3.0 or later:
-
-          \`\`\`bash
-          cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \\
-            --certificate-identity $identity \\
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com
-          \`\`\`
-
-          Container (linux/amd64, linux/arm64): \`$IMAGE:$VERSION\`
+          Check the image with cosign 3.0 or later. Container (linux/amd64, linux/arm64): \`$IMAGE:$VERSION\`
 
           \`\`\`bash
           cosign verify $IMAGE:$VERSION \\

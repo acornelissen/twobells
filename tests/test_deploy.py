@@ -1065,18 +1065,36 @@ def test_the_release_tarball_holds_everything_the_pi_scripts_use():
     assert "for script in install.sh update.sh upgrade.sh; do" in RELEASE
 
 
-def _upgrade(*args: str):
+def _upgrade(*args: str, path: Path | None = None):
+    """Runs upgrade.sh, with only the folder `path` on PATH if given."""
+    import os
+    import shutil
     import subprocess
 
-    return subprocess.run(["bash", str(PI / "upgrade.sh"), *args], capture_output=True, text=True)
+    env = None if path is None else {**os.environ, "PATH": str(path)}
+    return subprocess.run([shutil.which("bash") or "bash", str(PI / "upgrade.sh"), *args],
+                          capture_output=True, text=True, env=env)
 
 
-def _sourced(call: str, *args: str):
-    """Runs `call` in bash with upgrade.sh sourced (so its main doesn't run)."""
+def _sourced(call: str, *args: str, path: Path | None = None):
+    """Runs `call` in bash with upgrade.sh sourced (so its main doesn't run), with only `path` on PATH if given."""
+    import os
+    import shutil
     import subprocess
 
-    return subprocess.run(["bash", "-c", f'source "$1"; shift; {call}', "bash", str(PI / "upgrade.sh"),
-                           *args], capture_output=True, text=True)
+    env = None if path is None else {**os.environ, "PATH": str(path)}
+    return subprocess.run([shutil.which("bash") or "bash", "-c", f'source "$1"; shift; {call}', "bash",
+                           str(PI / "upgrade.sh"), *args], capture_output=True, text=True, env=env)
+
+
+def _fake_cosign(tmp_path: Path, status: int = 0) -> Path:
+    """A folder holding a cosign that writes its arguments, one a line, to `args` beside it and exits `status`."""
+    folder = tmp_path / "bin"
+    folder.mkdir()
+    cosign = folder / "cosign"
+    cosign.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "${{0%/*}}/args"\nexit {status}\n')
+    cosign.chmod(0o755)
+    return folder
 
 
 @pytest.mark.parametrize("version, valid", [
@@ -1144,13 +1162,65 @@ def test_upgrade_refuses_a_bad_version_before_doing_anything(args):
     assert "Usage: sudo" in done.stderr and "like 0.2.0" in done.stderr
 
 
-def test_upgrade_needs_root_after_the_version():
+def test_upgrade_needs_root_after_the_version(tmp_path):
     import os
 
     if os.geteuid() == 0:
         pytest.skip("run as root, it would go on to download")
-    done = _upgrade("0.2.0")
+    done = _upgrade("0.2.0", path=_fake_cosign(tmp_path))
     assert (done.returncode, done.stderr) == (1, "Run with sudo\n")
+
+
+def test_upgrade_refuses_without_cosign_before_doing_anything(tmp_path):
+    from tests.test_docs import anchors
+
+    (tmp_path / "bin").mkdir()
+    done = _upgrade("0.2.0", path=tmp_path / "bin")
+    assert done.returncode == 1 and done.stdout == ""
+    assert "Run with sudo" not in done.stderr  # stopped before going on
+    assert "--no-signature-check" in done.stderr and "install-pi.md#install-cosign" in done.stderr
+    # The link is to this project's guide, at a heading it has.
+    assert f"DOCS=https://github.com/{REPO}/blob/main/docs\n" in _script("upgrade.sh")
+    assert "install-cosign" in anchors(ROOT / "docs" / "install-pi.md")
+
+
+@pytest.mark.parametrize("args", [["--no-signature-check"], ["--config", "x", "--no-signature-check"],
+                                  ["--no-signature-check", "--secrets", "y"]])
+def test_upgrade_without_cosign_goes_on_when_told_and_says_so(tmp_path, args):
+    import os
+
+    if os.geteuid() == 0:
+        pytest.skip("run as root, it would go on to download")
+    (tmp_path / "bin").mkdir()
+    done = _upgrade("0.2.0", *args, path=tmp_path / "bin")
+    assert (done.returncode, done.stderr) == (1, "Run with sudo\n")  # past the cosign check
+    assert "--no-signature-check" in done.stdout and "SHA-256" in done.stdout
+
+
+def test_upgrade_checks_the_signature_as_the_release_workflow_made_it(tmp_path):
+    done = _sourced('check_signature "$1" 0.2.0', "/work", path=_fake_cosign(tmp_path))
+    assert done.returncode == 0
+    args = (tmp_path / "bin" / "args").read_text().splitlines()
+    assert args == ["verify-blob", "/work/SHA256SUMS", "--bundle", "/work/SHA256SUMS.sigstore.json",
+                    "--certificate-identity", _identity("v0.2.0"),
+                    "--certificate-oidc-issuer", "https://token.actions.githubusercontent.com"]
+
+
+def test_upgrade_refuses_a_signature_cosign_doesnt_accept(tmp_path):
+    done = _sourced('check_signature "$1" 0.2.0', "/work", path=_fake_cosign(tmp_path, status=1))
+    assert done.returncode == 1 and "signature doesn't check out" in done.stderr
+
+
+def test_upgrade_checks_the_signature_before_unpacking_and_keeps_its_own_option_from_update():
+    script = _script("upgrade.sh")
+    main = script[script.index("main() {"):script.index("\n}\n", script.index("main() {"))]
+    # Without cosign, it stops before downloading; with it, the signature is checked before the sum.
+    assert main.index('signature_check_ready "$signature"') < main.index('fetch "$base/$name"')
+    assert main.index('fetch "$base/SHA256SUMS.sigstore.json"') < main.index('check_signature "$work"')
+    assert main.index('check_signature "$work"') < main.index('check_tarball "$work"') < main.index("tar -xzf")
+    # update.sh gets the other options, not --no-signature-check, which it would refuse.
+    assert 'bash "$unpacked/deploy/pi/update.sh" "${options[@]}"' in main
+    assert main.count('"$@"') == 1 and 'for option in "$@"; do' in main
 
 
 def _release_folder(tmp_path: Path, sums: str | None = None) -> Path:
@@ -1211,7 +1281,7 @@ def test_upgrade_downloads_the_releases_files_over_https_only_and_cleans_up():
     assert "trap 'rm -rf \"$work\"' EXIT" in script
     # The tarball is checked before it is unpacked, and update.sh comes from the release it holds.
     assert script.index('check_tarball "$work" "$version"') < script.index("tar -xzf")
-    assert 'bash "$unpacked/deploy/pi/update.sh" "$@"' in script
+    assert 'bash "$unpacked/deploy/pi/update.sh" "${options[@]}"' in script
     # The release's own names for the tarball, its folder and the signature, and its signing identity.
     assert '-o "out/twobells-$VERSION.tar.gz"' in RELEASE and '--prefix="twobells-$VERSION/"' in RELEASE
     assert "--bundle SHA256SUMS.sigstore.json SHA256SUMS" in RELEASE
@@ -1234,10 +1304,41 @@ def test_the_guide_installs_a_pi_from_a_checked_release():
     steps = [step.strip() for step in last.split("&&")]
     assert steps == ["sha256sum --check --ignore-missing SHA256SUMS", 'tar -xzf "twobells-$VERSION.tar.gz"',
                      'cd "twobells-$VERSION"', "sudo ./deploy/pi/install.sh"]
-    assert f'--certificate-identity "{_identity("v$VERSION")}"' in PI_GUIDE
+    # And not unless cosign says the release workflow signed SHA256SUMS first, in the same block.
+    signature = block[block.index("cosign verify-blob "):block.rindex("sha256sum ")]
+    assert signature.startswith("cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \\\n")
+    assert signature.rstrip().endswith(" &&") and signature.count("&&") == 1
+    assert block.index('curl -fLO "$base/SHA256SUMS.sigstore.json"') < block.index("cosign verify-blob ")
+    assert f'--certificate-identity "{_identity("v$VERSION")}"' in signature
+    assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in signature
     assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in PI_GUIDE
     assert "sudo ./deploy/pi/upgrade.sh 0.2.0" in PI_GUIDE
+    assert "sudo ./deploy/pi/upgrade.sh 0.2.0 --no-signature-check" in PI_GUIDE
     assert "| sudo bash" not in PI_GUIDE
+
+
+def test_the_release_notes_check_the_signature_before_the_sum():
+    notes = RELEASE[RELEASE.index('cat > "$RUNNER_TEMP/notes.md" <<EOF'):RELEASE.index("\n          EOF\n")]
+    pi = notes[notes.index("## Install on a Raspberry Pi"):notes.index("## Container")]
+    for name in ("twobells-$VERSION.tar.gz", "SHA256SUMS", "SHA256SUMS.sigstore.json"):
+        assert f"curl -fLO $base/{name}\n" in pi
+    chain = pi[pi.index("cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json"):]
+    steps = [step.strip() for step in chain[:chain.index("\\`\\`\\`")].split("&&")]
+    assert steps[0].startswith("cosign verify-blob") and "--certificate-identity $identity" in steps[0]
+    assert steps[1:] == ["sha256sum --check --ignore-missing SHA256SUMS", "tar -xzf twobells-$VERSION.tar.gz",
+                         "cd twobells-$VERSION", "sudo ./deploy/pi/install.sh"]
+    assert "docs/install-pi.md#install-cosign" in pi
+
+
+def test_the_guide_installs_the_cosign_the_release_signs_with_checked_against_its_sums():
+    signing = set(re.findall(r"cosign-release: (v\S+)", RELEASE))
+    block = re.search(r"```bash\nCOSIGN=(\S+)\n(.*?)```", PI_GUIDE, re.S)
+    assert signing == {f"v{block.group(1)}"}
+    steps = [step.strip() for step in block.group(2)[block.group(2).index("sha256sum "):].split("&&")]
+    assert steps[0] == "sha256sum --check --ignore-missing cosign_checksums.txt"
+    assert steps[1].startswith('sudo apt-get install -y "./$deb"')
+    for url in re.findall(r'curl -fLO "(\S+)"', block.group(2)):
+        assert url.startswith("https://github.com/sigstore/cosign/releases/download/v$COSIGN/"), url
 
 
 # The published image: the same lock-down as docker-compose.yml, wherever it runs.
