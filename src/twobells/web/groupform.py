@@ -36,6 +36,7 @@ from ..board.config import settings_from
 from ..board.names import DISPLAY_PANELS
 from ..board.themes import THEMES
 from ..core.errors import ConfigError
+from ..dashboard.config import BUS_NOTE, _build
 from ..settings import modes, schema, show
 from ..settings.config import board_modes, merge
 from ..settings.overlay import BROKEN_NAME, OverlayError, save_to
@@ -111,8 +112,6 @@ def check_views(data: dict, env: Mapping[str, str], folder: Path, install: Insta
     """Raise (ConfigError) unless merged settings `data` load in every view
     that would be on (or, with none on, every view `install` offers), with
     the store in `folder`. What the forms and setup check before saving."""
-    from ..dashboard.config import _build
-
     on = schema.views(data, install) or install.offered
     if "board" in on:
         settings_from(data, env)
@@ -709,8 +708,6 @@ class GroupForm:
                     "home, or set it in config.toml.</p>")
         if (page, heading) == ("dashboard", "Departures") and isinstance(data.get("bus"), dict) \
                 and schema.bus_source(data["bus"]) != "bods":
-            from ..dashboard.config import BUS_NOTE
-
             return f'<p class="hint">{e(BUS_NOTE)}</p>'
         return ""
 

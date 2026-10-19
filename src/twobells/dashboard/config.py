@@ -36,7 +36,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Protocol
+from typing import IO, Protocol
 from urllib.parse import urlsplit
 
 from ..board.config import settings_from
@@ -48,6 +48,7 @@ from ..settings import modes as mode_list
 from ..settings import show as show_items
 from ..settings.config import _flag, _table, _texts, _whole, switched_on
 from ..settings.schema import bus_source
+from ..settings.store import Store
 from ..sources.bodsbus import BodsBusSource, BusBoard
 from ..sources.darwin import DarwinSource, ServiceDetails, ServiceDetailsClient, TrainBoard
 from ..sources.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource, kb_url_is_placeholder
@@ -59,9 +60,6 @@ from ..sources.trams import TramTimetableSource
 from ..sources.weather import Conditions, OpenMeteoSource
 from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
 from ..timetable.trams import TramCall
-
-if TYPE_CHECKING:
-    from ..settings.store import Store
 
 log = logging.getLogger(__name__)
 
@@ -365,8 +363,6 @@ def load_dashboard(store: Store | Path | str, env: Mapping[str, str],
     Given a config.toml path rather than a store (as tests still do), it opens
     that path's store, in `state_dir_override` if given, and layers the keys
     saved there over `env`."""
-    from ..settings.store import Store
-
     if not isinstance(store, Store):
         store = Store.open(store, state_dir=state_dir_override)
         env = store.env(env)
