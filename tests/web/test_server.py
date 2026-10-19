@@ -15,7 +15,15 @@ from twobells.dashboard.performance import Performance, Setup
 from twobells.dashboard.snapshot import Hub
 from twobells.settings.installs import install_named
 from twobells.settings.store import Store
-from twobells.web.server import MAX_CONNECTIONS, MAX_PER_CLIENT, DashboardApp, StaticFiles, make_server
+from twobells.web.server import (
+    MAX_CONNECTIONS,
+    MAX_PER_CLIENT,
+    MAX_STREAMS,
+    MAX_STREAMS_PER_CLIENT,
+    DashboardApp,
+    StaticFiles,
+    make_server,
+)
 from twobells.web.settingsite import SettingsSite
 
 # The contract's headers, copied from docs/dashboard-api.md rather than imported.
@@ -936,6 +944,48 @@ def test_a_household_behind_one_address_fits_under_its_cap():
     two browsers, each with its six connections (an event stream among
     them), stay under the cap, and one address can't hold every connection."""
     assert 2 * 6 < MAX_PER_CLIENT < MAX_CONNECTIONS
+
+
+def _stream_from(running, address):
+    """An event stream asked for as if from `address`, and the status line it gets."""
+    sock = connect_from(running, address)
+    sock.sendall(b"GET /api/events HTTP/1.1\r\nHost: localhost\r\n\r\n")
+    status = b""
+    while not status.endswith(b"\r\n"):
+        status += sock.recv(1)
+    return sock, status.decode().split(" ")[1]
+
+
+def test_one_address_can_hold_only_its_share_of_the_event_streams(static_dir):
+    running = start(static_dir, limits={"max_streams": 3, "max_streams_per_client": 2})
+    held = []
+    try:
+        for want in ("200", "200", "503"):  # the third from one address is refused: it polls instead
+            sock, status = _stream_from(running, "192.168.1.66")
+            held.append(sock)
+            assert status == want
+        sock, status = _stream_from(running, "192.168.1.20")  # another device still gets one
+        held.append(sock)
+        assert status == "200"
+        held.pop(0).close()
+        deadline = time.monotonic() + 5
+        while True:  # the address's slot comes back once the server notices, at its next ping
+            sock, status = _stream_from(running, "192.168.1.66")
+            held.append(sock)
+            if status == "200":
+                break
+            assert time.monotonic() < deadline, "the closed stream's slot was never freed"
+            time.sleep(0.1)
+    finally:
+        for sock in held:
+            sock.close()
+        running.close()
+
+
+def test_a_household_behind_one_address_keeps_a_couple_of_streams_a_device():
+    # Two devices' two tabs each from one address (Docker Desktop, rootless Podman), with
+    # connections to spare, and no one address holding every stream.
+    assert 2 * 2 <= MAX_STREAMS_PER_CLIENT < MAX_STREAMS and MAX_STREAMS_PER_CLIENT < MAX_PER_CLIENT
 
 
 def test_connections_beyond_the_cap_are_closed_unanswered(static_dir):

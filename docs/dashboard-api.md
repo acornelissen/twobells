@@ -385,7 +385,7 @@ Server-sent events (`text/event-stream`):
 - Every 15 s: a comment line `: ping`.
 - Resuming: if `Last-Event-ID` equals the current version, it sends no snapshot until the next change.
 - The server closes a stream after 30 min, and the browser reconnects.
-- With too many streams open (12) the server answers 503 with `Retry-After: 30`; the browser falls back to polling `/api/snapshot` every 30 s.
+- With too many streams open (12 in all, or 4 from the address asking) the server answers 503 with `Retry-After: 30`; the browser falls back to polling `/api/snapshot` every 30 s.
 
 ## `GET /api/bus/<id>`
 

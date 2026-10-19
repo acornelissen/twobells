@@ -63,6 +63,9 @@ MAX_CONNECTIONS = 48
 # among them), as Docker Desktop and rootless Podman show a household as one address.
 MAX_PER_CLIENT = 16
 MAX_STREAMS = 12
+# Event streams from one address: two devices' two tabs each, behind one address
+# as above, so no one address holds them all. A tab refused one polls instead.
+MAX_STREAMS_PER_CLIENT = 4
 REQUEST_TIMEOUT_S = 10  # the longest one read waits
 REQUEST_DEADLINE_S = 15  # the longest a request's line, headers and body take all told
 MAX_PATH = 512
@@ -509,7 +512,8 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(b"id: %d\nevent: snapshot\ndata: " % version + body + b"\n\n")
 
     def _events(self) -> None:
-        if not self.server.streams.acquire(blocking=False):
+        client = self.client_address[0]
+        if not self.server.take_stream(client):
             self._error(503, {"Retry-After": "30"})
             return
         try:
@@ -521,7 +525,7 @@ class _Handler(BaseHTTPRequestHandler):
         except _GONE:
             pass  # the browser went away, or stalled past the socket timeout
         finally:
-            self.server.streams.release()
+            self.server.let_go_stream(client)
 
     def _stream(self) -> None:
         hub, app = self.hub, self.app
@@ -548,23 +552,44 @@ class _Handler(BaseHTTPRequestHandler):
 class DashboardServer(ThreadingHTTPServer):
     """A thread per connection, at most `max_connections` at once and
     `max_per_client` from one address (more are closed at once, unread and
-    unanswered), and `max_streams` event streams. Each request must be in
-    within `request_seconds`."""
+    unanswered), and `max_streams` event streams, `max_streams_per_client`
+    from one address. Each request must be in within `request_seconds`."""
 
     daemon_threads = True
 
     def __init__(self, address: tuple[str, int], app: DashboardApp, max_connections: int = MAX_CONNECTIONS,
                  max_per_client: int = MAX_PER_CLIENT, max_streams: int = MAX_STREAMS,
+                 max_streams_per_client: int = MAX_STREAMS_PER_CLIENT,
                  request_seconds: float = REQUEST_DEADLINE_S) -> None:
         self.app = app
         self.max_connections = max_connections
         self.max_per_client = max_per_client
+        self.max_streams = max_streams
+        self.max_streams_per_client = max_streams_per_client
         self.request_seconds = request_seconds
-        self.streams = threading.BoundedSemaphore(max_streams)
         self._lock = threading.Lock()
         self._open = 0
         self._open_from: dict[str, int] = {}  # each address's open connections; none for one with none
+        self._streams = 0
+        self._streams_from: dict[str, int] = {}  # each address's event streams; none for one with none
         super().__init__(address, _Handler)
+
+    def take_stream(self, client: str) -> bool:
+        """An event stream's slot for `client`, if it and the server are under their caps."""
+        with self._lock:
+            held = self._streams_from.get(client, 0)
+            if self._streams >= self.max_streams or held >= self.max_streams_per_client:
+                return False
+            self._streams += 1
+            self._streams_from[client] = held + 1
+            return True
+
+    def let_go_stream(self, client: str) -> None:
+        with self._lock:
+            self._streams -= 1
+            held = self._streams_from.pop(client) - 1
+            if held:
+                self._streams_from[client] = held
 
     def _take(self, client: str) -> bool:
         """A connection slot for `client`, if it and the server are under their caps."""
