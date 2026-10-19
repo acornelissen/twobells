@@ -19,7 +19,7 @@ One install is one app with two views of the same departures: the **board** (e-p
 
 One package, `src/twobells`, a folder per part of the app. Each folder's `__init__.py` says what it holds.
 
-The folders import downwards only, lowest first: `core`; `settings`; `sources` and `timetable`; `board`, `dashboard`, `setup` and `fetch`; `web`; `cli` and `emulator`. Folders in one layer may import each other, but never round in a circle. `tests/test_layers.py` checks every module's imports against this order, and lists the few that go against it on purpose, each with why. An import inside a function, or for type checking only, isn't counted.
+The folders import downwards only, lowest first: `core`; `settings`; `sources` and `timetable`; `board`, `dashboard`, `setup` and `fetch`; `web`; `cli` and `emulator`. Folders in one layer may import each other, but never round in a circle. `tests/test_layers.py` checks every module's imports against this order, and lists the few that go against it on purpose, each with why. An import inside a function, or for type checking only, isn't counted. A name with a leading underscore is private to its module: no other module imports it or reaches for it, which `tests/test_private_names.py` checks.
 
 | Folder | Role |
 |---|---|
