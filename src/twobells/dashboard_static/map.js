@@ -14,6 +14,7 @@ let layers = null;
 let busMarker = null;
 let busPosition = null;
 let openId = null;
+let fitted = false; // whether the map has been fitted to the open bus
 let request = 0;
 
 export function setUpMap() {
@@ -102,7 +103,10 @@ function drawMap(data, fit) {
   $("map-centre").disabled = !busPosition;
   if (fit) {
     const all = busPosition ? [...points, busPosition] : points;
-    if (all.length) map.fitBounds(all, { padding: [24, 24], maxZoom: 16, animate: false });
+    if (all.length) {
+      map.fitBounds(all, { padding: [24, 24], maxZoom: 16, animate: false });
+      fitted = true;
+    }
   }
 }
 
@@ -131,7 +135,7 @@ function show(data, fit) {
   if (L) {
     ensureMap();
     map.invalidateSize();
-    drawMap(data, fit);
+    drawMap(data, fit || !fitted); // a map never fitted has no view: Leaflet leaves it grey
   }
 }
 
@@ -139,6 +143,7 @@ function show(data, fit) {
 export async function showBus(id) {
   if (!validId(id)) return;
   openId = id;
+  fitted = false;
   const mine = ++request;
   setText($("map-status"), "Loading the map…");
   setText($("map-where"), "");
@@ -164,7 +169,8 @@ export function closeMap() {
 }
 
 // Called with each new snapshot while a bus's sheet is open: moves the bus
-// without refitting, so a map you have panned stays put.
+// without refitting, so a map you have panned stays put. A map not yet fitted
+// to this bus (its first load failed) is fitted.
 export async function refreshMap() {
   if (!openId) return;
   if (!L) return;

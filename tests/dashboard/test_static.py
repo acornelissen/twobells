@@ -1535,12 +1535,12 @@ def test_the_area_map_keeps_the_focus_and_the_open_popup_across_snapshots():
     assert found["popups"] == [i == 1 for i in range(found["count"])]
 
 
-@needs_node
-def test_a_bus_map_that_failed_to_load_is_drawn_with_a_later_snapshot():
-    # The bus's details failed on opening (the server busy), but Leaflet loaded:
-    # the next snapshot draws the map, as it did before basemap.js.
+# A bus's sheet on the fake page, with a stand-in for Leaflet that counts the
+# maps made and fitted, and a server that is busy while `busy` is true. `steps`
+# opens buses and sends snapshots; returns what it prints.
+def _bus_map(steps):
     bus = json.dumps(_fixture("dashboard_bus.json"))
-    found = run_js("""
+    return run_js("""
         import { register } from "node:module";
         register("data:text/javascript," + encodeURIComponent(`
           export async function resolve(spec, context, next) {
@@ -1551,14 +1551,15 @@ def test_a_bus_map_that_failed_to_load_is_drawn_with_a_later_snapshot():
           }`));
         const { h } = await import("./dom.js");
         let maps = 0;
+        let fits = 0;
         const chain = (extra = {}) => { const o = { addTo: () => o, bindTooltip: () => o, bindPopup: () => o, ...extra }; return o; };
         globalThis.FAKE_L = {
-          map: () => { maps++; return { invalidateSize() {}, fitBounds() {}, setView() {}, getZoom: () => 14 }; },
+          map: () => { maps++; return { invalidateSize() {}, fitBounds() { fits++; }, setView() {}, getZoom: () => 14 }; },
           tileLayer: () => chain(), layerGroup: () => chain({ clearLayers() {} }), polyline: () => chain(),
           circleMarker: () => chain(), marker: () => chain(), divIcon: () => ({}),
         };
         globalThis.matchMedia = () => ({ matches: true });
-        let busy = true;
+        let busy = false;
         globalThis.fetch = async () => (busy
           ? { ok: false, status: 503, json: async () => ({}), headers: { get: () => null } }
           : { ok: true, status: 200, json: async () => (BUS),
@@ -1567,17 +1568,56 @@ def test_a_bus_map_that_failed_to_load_is_drawn_with_a_later_snapshot():
         document.head.append = (link) => { for (const [type, fn] of link.listeners) if (type === "load") fn(); };
         document.body.append(h("p", { id: "map-status" }), h("p", { id: "map-where" }), h("ol", { id: "map-stops" }),
           h("button", { id: "map-centre" }), h("p", { id: "osm-credit" }), h("div", { id: "map" }));
-        const { showBus, refreshMap } = await import("./map.js");
-        await showBus((BUS).id);
-        await new Promise((resolve) => setTimeout(resolve, 20));  // Leaflet goes on loading after the bus fails
-        const failed = { maps, status: document.getElementById("map-status").textContent };
+        const { showBus, refreshMap, closeMap } = await import("./map.js");
+        const settle = () => new Promise((resolve) => setTimeout(resolve, 20));  // Leaflet goes on loading after a bus fails
+        const seen = () => ({ maps, fits, status: document.getElementById("map-status").textContent,
+                              stops: document.getElementById("map-stops").childNodes.length });
+    """.replace("(BUS)", f"({bus})") + steps)
+
+
+@needs_node
+def test_a_bus_map_that_failed_to_load_is_drawn_and_fitted_with_a_later_snapshot():
+    # The bus's details failed on opening (the server busy), but Leaflet loaded:
+    # the next snapshot draws the map, as it did before basemap.js, and fits it
+    # to the bus and its stops (a Leaflet map never fitted has no view and stays
+    # grey). The snapshot after that leaves the view alone.
+    found = _bus_map("""
+        busy = true;
+        await showBus("aff4f89451678d07");
+        await settle();
+        const failed = seen();
         busy = false;
         await refreshMap();
-        console.log(JSON.stringify({ failed, maps, status: document.getElementById("map-status").textContent,
-                                     stops: document.getElementById("map-stops").childNodes.length }));
-    """.replace("(BUS)", f"({bus})"))
+        const drawn = seen();
+        await refreshMap();
+        console.log(JSON.stringify({ failed, drawn, again: seen() }));
+    """)
     assert found["failed"]["maps"] == 0 and "couldn't be loaded" in found["failed"]["status"]
-    assert found["maps"] == 1 and found["status"] == "" and found["stops"] > 0
+    drawn = found["drawn"]
+    assert drawn["maps"] == 1 and drawn["fits"] == 1 and drawn["status"] == "" and drawn["stops"] > 0
+    assert found["again"]["fits"] == 1
+
+
+@needs_node
+def test_a_second_bus_map_that_failed_to_load_is_fitted_to_that_bus():
+    # Bus A's map opens and is fitted; its sheet closes; bus B's fails to load.
+    # The snapshot that draws B fits the map to B, not leaving A's view.
+    found = _bus_map("""
+        await showBus("aaaaaaaaaaaaaaaa");
+        const first = seen();
+        closeMap();
+        busy = true;
+        await showBus("bbbbbbbbbbbbbbbb");
+        await settle();
+        busy = false;
+        await refreshMap();
+        const drawn = seen();
+        await refreshMap();
+        console.log(JSON.stringify({ first, drawn, again: seen() }));
+    """)
+    assert found["first"]["maps"] == 1 and found["first"]["fits"] == 1
+    assert found["drawn"]["maps"] == 1 and found["drawn"]["fits"] == 2 and found["drawn"]["status"] == ""
+    assert found["again"]["fits"] == 2
 
 
 @needs_node
