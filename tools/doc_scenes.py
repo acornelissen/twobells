@@ -32,7 +32,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from twobells.core import calling
-from twobells.core.model import Departure, Status, Strip, iso, shift, strip_key
+from twobells.core.model import Departure, Status, Strip, iso, row_id, shift, strip_key
 from twobells.core.walk import WalkTimes
 from twobells.dashboard import snapshot as snap
 from twobells.sources.darwin import CallingPoint, Message, TrainBoard, TrainService
@@ -439,7 +439,7 @@ def _bus_row(scene: Scene, bus: Bus, walk: WalkTimes) -> dict:
     seen = scene.now - timedelta(seconds=20)
     soon = scheduled_at - scene.now <= timedelta(minutes=5)
     return {
-        "id": snap.row_id("bus", f"{scene.name}|{bus.stop}|{bus.line}|{bus.time}"),
+        "id": row_id("bus", f"{scene.name}|{bus.stop}|{bus.line}|{bus.time}"),
         "line": bus.line,
         "destination": bus.destination,
         "stop": bus.stop,

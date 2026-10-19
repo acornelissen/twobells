@@ -11,7 +11,6 @@ from tests.sources.test_livebus import EAST, WEST, schedule
 from twobells.core import net
 from twobells.core.safexml import DoctypeError, TooManyElements
 from twobells.dashboard.collector import BUS_DISRUPTIONS_SECONDS
-from twobells.dashboard.snapshot import row_id
 from twobells.sources import disruptions
 from twobells.sources.disruptions import (
     BusArea,
@@ -19,7 +18,6 @@ from twobells.sources.disruptions import (
     RailArea,
     TrainIncidentSource,
     bus_disruptions,
-    disruptions_part,
     kb_url_is_placeholder,
     parse_kb_incidents,
     parse_siri_sx,
@@ -565,25 +563,3 @@ def test_a_gzipped_feed_is_capped_on_its_decoded_size(encoded_to, monkeypatch):
 def test_the_placeholder_address_is_known():
     assert kb_url_is_placeholder(disruptions.KB_URL_PLACEHOLDER)
     assert not kb_url_is_placeholder("https://api1.raildata.org.uk/incidents")
-
-
-# The snapshot's section
-
-
-def test_the_section_has_both_sources_and_their_items():
-    bus = bus_disruptions(situations(), area(**DINTING_LANE), CAPTURED)
-    train = train_disruptions(parse_kb_incidents(KB.read_bytes()), RAIL, TONIGHT)
-    part = disruptions_part(bus, {"last_success": None, "stale": False, "error": None, "note": None}, train, None,
-                            LONDON)
-    assert part["status"]["train"] is None
-    items = part["items"]
-    assert [i["mode"] for i in items] == ["bus", "train", "train"]
-    hadfield = items[0]
-    assert hadfield["id"] == row_id("disruption", f"bus|{HADFIELD_ROADWORKS}")
-    assert hadfield["from_at"] == "2026-10-12T08:00:00+01:00" and hadfield["to_at"] == "2026-10-30T16:00:00+00:00"
-    assert hadfield["periods"] == [{"from_at": hadfield["from_at"], "to_at": hadfield["to_at"]}]
-    assert hadfield["lines"] == ["237"] and hadfield["severity"] == "normal" and hadfield["link"] is None
-    assert hadfield["relevance"] == "line"
-    assert [i["relevance"] for i in items[1:]] == ["your_stop", "line"]
-    assert items[2]["to_at"] is None and items[2]["severity"] == "severe"
-    assert HADFIELD_ROADWORKS not in str(part)  # feed numbers stay on the server

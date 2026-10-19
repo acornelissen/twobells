@@ -69,7 +69,7 @@ from ..core.model import mark_platform_changes
 from ..core.places import tram_stop_names
 from ..sources import holidays as _holidays
 from ..sources.darwin import DetailsUnavailable, ServiceGone, TrainBoard, TrainDetails
-from ..sources.disruptions import BusArea, RailArea, bus_disruptions, disruptions_part, train_disruptions
+from ..sources.disruptions import BusArea, RailArea, bus_disruptions, train_disruptions
 from ..sources.lastbus import LastBus
 from ..timetable.build import TimetableBusy
 from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
@@ -81,6 +81,7 @@ from .snapshot import (
     Hub,
     bus_observations,
     buses_part,
+    disruptions_part,
     metro_part,
     status_block,
     tfl_part,

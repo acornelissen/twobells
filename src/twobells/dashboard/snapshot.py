@@ -12,7 +12,6 @@ version goes up only when the content changes.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import re
@@ -24,7 +23,7 @@ from datetime import date, datetime, timedelta, tzinfo
 from typing import Protocol
 
 from ..core import announce, words
-from ..core.model import Departure, Status, iso, minutes_apart, real, zoned
+from ..core.model import Departure, Status, iso, minutes_apart, real, row_id, zoned
 from ..core.walk import WalkTimes
 from ..settings import modes as mode_list
 from ..settings import show as show_items
@@ -40,6 +39,7 @@ from ..sources.darwin import (
     TrainService,
     train_position,
 )
+from ..sources.disruptions import RELEVANCE, SEVERITIES, Disruption
 from ..sources.lastbus import LastBus
 from ..sources.livebus import LiveDeparture, approach, where_words
 from ..sources.tfl import Arrival
@@ -88,11 +88,6 @@ UsualPlatforms = Callable[[str, str], "str | None"]
 def no_usual_platform(route: str, scheduled: str) -> str | None:
     """Usual platforms when there is no history to ask."""
     return None
-
-
-def row_id(kind: str, identity: str) -> str:
-    """The opaque id of a row: 16 hex characters, the same every time for the same departure."""
-    return hashlib.sha256(f"{kind}|{identity}".encode()).hexdigest()[:16]
 
 
 def status_block(last_success: datetime | None = None, stale: bool = False,
@@ -846,6 +841,41 @@ def weather_part(conditions: Conditions | None, now: datetime, status: dict, thr
             for h in ahead
         ],
         "sun": _sun(conditions, local.date(), tz),
+    }
+
+
+# Disruptions: the snapshot's section (docs/dashboard-api.md), from sources/disruptions.py.
+
+
+def _item(disruption: Disruption, tz: tzinfo) -> dict:
+    periods = [{"from_at": iso(start.astimezone(tz)), "to_at": iso(end.astimezone(tz)) if end else None}
+               for start, end in disruption.periods]
+    return {
+        "id": row_id("disruption", f"{disruption.mode}|{disruption.key}"),
+        "mode": disruption.mode,
+        "title": disruption.title,
+        "summary": disruption.summary,
+        "reason": disruption.reason,
+        "from_at": periods[0]["from_at"],
+        "to_at": periods[0]["to_at"],
+        "periods": periods,
+        "planned": disruption.planned,
+        "lines": list(disruption.lines),
+        "stops": list(disruption.stops),
+        "places": list(disruption.places),
+        "severity": disruption.severity if disruption.severity in SEVERITIES else "unknown",
+        "relevance": disruption.relevance if disruption.relevance in RELEVANCE else "line",
+        "link": disruption.link,
+    }
+
+
+def disruptions_part(bus: list[Disruption], bus_status: dict | None, train: list[Disruption],
+                     train_status: dict | None, tz: tzinfo) -> dict:
+    """The disruptions section: each source's status (None when it isn't set
+    up) and the items, buses then trains, each most relevant first."""
+    return {
+        "status": {"bus": bus_status, "train": train_status},
+        "items": [_item(d, tz) for d in [*bus, *train]],
     }
 
 

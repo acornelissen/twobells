@@ -42,15 +42,14 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta, tzinfo
+from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from urllib.parse import urlencode, urlsplit
 from xml.etree import ElementTree
 
 from ..core import net, safexml
 from ..core.errors import safe_message
-from ..core.model import iso, line_order
-from ..dashboard.snapshot import row_id
+from ..core.model import line_order
 from ..timetable.model import Schedule, StopPosition
 
 SIRI_SX_URL = "https://data.bus-data.dft.gov.uk/api/v1/siri-sx/"
@@ -613,41 +612,6 @@ def train_disruptions(incidents: Iterable[Incident], area: RailArea | None, now:
             link=incident.link, relevance="your_stop" if home else "line",
         ))
     return _ordered(found, now)
-
-
-# The snapshot's disruptions section (docs/dashboard-api.md).
-
-
-def _item(disruption: Disruption, tz: tzinfo) -> dict:
-    periods = [{"from_at": iso(start.astimezone(tz)), "to_at": iso(end.astimezone(tz)) if end else None}
-               for start, end in disruption.periods]
-    return {
-        "id": row_id("disruption", f"{disruption.mode}|{disruption.key}"),
-        "mode": disruption.mode,
-        "title": disruption.title,
-        "summary": disruption.summary,
-        "reason": disruption.reason,
-        "from_at": periods[0]["from_at"],
-        "to_at": periods[0]["to_at"],
-        "periods": periods,
-        "planned": disruption.planned,
-        "lines": list(disruption.lines),
-        "stops": list(disruption.stops),
-        "places": list(disruption.places),
-        "severity": disruption.severity if disruption.severity in SEVERITIES else "unknown",
-        "relevance": disruption.relevance if disruption.relevance in RELEVANCE else "line",
-        "link": disruption.link,
-    }
-
-
-def disruptions_part(bus: list[Disruption], bus_status: dict | None, train: list[Disruption],
-                     train_status: dict | None, tz: tzinfo) -> dict:
-    """The disruptions section: each source's status (None when it isn't set
-    up) and the items, buses then trains, each most relevant first."""
-    return {
-        "status": {"bus": bus_status, "train": train_status},
-        "items": [_item(d, tz) for d in [*bus, *train]],
-    }
 
 
 # Fetching.

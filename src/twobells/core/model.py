@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta, tzinfo
@@ -25,6 +26,11 @@ def line_order(line: str) -> tuple:
     X57 sorts as 57: 6, 57, X57, 61, 341. A line with no digits goes last."""
     digits = "".join(c for c in line if c.isdigit())
     return (int(digits) if digits else 10**6, line)
+
+
+def row_id(kind: str, identity: str) -> str:
+    """The opaque id of a row: 16 hex characters, the same every time for the same departure."""
+    return hashlib.sha256(f"{kind}|{identity}".encode()).hexdigest()[:16]
 
 
 class Status(str, Enum):

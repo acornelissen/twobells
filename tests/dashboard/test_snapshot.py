@@ -23,14 +23,13 @@ from tests.sources.test_livebus import (
     live,
     schedule,
 )
-from twobells.core.model import Departure, Status, clock_at
+from twobells.core.model import Departure, Status, clock_at, row_id
 from twobells.core.walk import WalkTimes
 from twobells.dashboard.snapshot import (
     Hub,
     bus_observations,
     bus_row,
     buses_part,
-    row_id,
     status_block,
     status_spoken,
     status_text,
@@ -1226,16 +1225,44 @@ def test_calling_point_words_become_times_or_flags():
     assert passed["actual"] == "07:05"
 
 
+def test_the_disruptions_section_has_both_sources_and_their_items():
+    from tests.sources.test_disruptions import (
+        CAPTURED,
+        DINTING_LANE,
+        HADFIELD_ROADWORKS,
+        KB,
+        RAIL,
+        TONIGHT,
+        area,
+        situations,
+    )
+    from twobells.dashboard.snapshot import disruptions_part
+    from twobells.sources.disruptions import bus_disruptions, parse_kb_incidents, train_disruptions
+
+    bus = bus_disruptions(situations(), area(**DINTING_LANE), CAPTURED)
+    train = train_disruptions(parse_kb_incidents(KB.read_bytes()), RAIL, TONIGHT)
+    part = disruptions_part(bus, {"last_success": None, "stale": False, "error": None, "note": None}, train, None,
+                            LONDON)
+    assert part["status"]["train"] is None
+    items = part["items"]
+    assert [i["mode"] for i in items] == ["bus", "train", "train"]
+    hadfield = items[0]
+    assert hadfield["id"] == row_id("disruption", f"bus|{HADFIELD_ROADWORKS}")
+    assert hadfield["from_at"] == "2026-10-12T08:00:00+01:00" and hadfield["to_at"] == "2026-10-30T16:00:00+00:00"
+    assert hadfield["periods"] == [{"from_at": hadfield["from_at"], "to_at": hadfield["to_at"]}]
+    assert hadfield["lines"] == ["237"] and hadfield["severity"] == "normal" and hadfield["link"] is None
+    assert hadfield["relevance"] == "line"
+    assert [i["relevance"] for i in items[1:]] == ["your_stop", "line"]
+    assert items[2]["to_at"] is None and items[2]["severity"] == "severe"
+    assert HADFIELD_ROADWORKS not in str(part)  # feed numbers stay on the server
+
+
 def real_disruptions():
     """The disruptions section from the trimmed SIRI-SX capture and the
     synthetic Knowledgebase fixture, as the collector makes it."""
     from tests.sources.test_disruptions import DINTING_LANE, KB, RAIL, area, situations
-    from twobells.sources.disruptions import (
-        bus_disruptions,
-        disruptions_part,
-        parse_kb_incidents,
-        train_disruptions,
-    )
+    from twobells.dashboard.snapshot import disruptions_part
+    from twobells.sources.disruptions import bus_disruptions, parse_kb_incidents, train_disruptions
 
     captured = datetime(2026, 10, 9, 23, 14, tzinfo=LONDON)
     bus = bus_disruptions(situations(), area(**DINTING_LANE), captured)
