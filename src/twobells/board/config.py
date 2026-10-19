@@ -15,6 +15,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from ..core.bounded import finite
 from ..core.errors import ConfigError
 from ..core.places import london_stops_by_code
 from ..core.polling import PollPolicy
@@ -262,9 +263,11 @@ def _metro(section: dict, env: Mapping[str, str], holidays: frozenset[date], fol
 
 def _route_stop(line: str, entry) -> RouteStop:
     try:
-        name, lat, lon = str(entry["name"]).strip(), float(entry["lat"]), float(entry["lon"])
-    except (KeyError, TypeError, ValueError):
+        name, lat, lon = str(entry["name"]).strip(), finite(entry["lat"]), finite(entry["lon"])
+    except (KeyError, TypeError):
         raise ConfigError(f"[bus.routes.{line}] each stop needs name, lat and lon") from None
+    if lat is None or lon is None:
+        raise ConfigError(f"[bus.routes.{line}] each stop needs name, lat and lon, as numbers")
     if not name or not -90 <= lat <= 90 or not -180 <= lon <= 180:
         raise ConfigError(f"[bus.routes.{line}] stop {entry!r} has no name or an impossible position")
     return RouteStop(name, lat, lon)

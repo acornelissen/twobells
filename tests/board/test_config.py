@@ -505,6 +505,9 @@ BUS = '[bus]\nsource = "transportapi"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.s
         ('display = "hdmi-1280x400"\n' + BUS + '[bus.routes]\n341 = "Glossop"\n', "341"),
         ('display = "hdmi-1280x400"\n[bus]\nsource = "transportapi"\nroutes = "341"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "1000DGHS0900"\n', "routes"),
         ('display = "hdmi-1280x400"\n' + BUS + '[bus.routes.341]\nstop = "A"\nstops = "Arundel Street"\n', "341"),
+        (ROUTE.replace("lat = 53.443519", f"lat = {'9' * 400}"), "each stop needs"),  # too big for a float
+        (ROUTE.replace("lat = 53.443519", "lat = true"), "each stop needs"),
+        (ROUTE.replace("lat = 53.443519", 'lat = "53.443519"'), "each stop needs"),
         ("title = \n", "config.toml"),
         ('bank_holidays = "yes"\n' + TRAIN, "bank_holidays"),
         ('scrolling = "off"\n' + TRAIN, "scrolling"),

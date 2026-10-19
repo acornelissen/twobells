@@ -161,9 +161,10 @@ def test_london_stops_are_tfl_s_stops_named_and_placed_from_naptan(build):
 def test_tfl_lines_are_each_line_s_stops_of_the_kinds_shown(build):
     answers = {
         "https://api.tfl.gov.uk/Line/Mode/tube,dlr,tram,cable-car,river-bus": [
-            {"id": "central"}, {"id": "rb1"}, {"id": "../etc"}],
+            {"id": "central"}, {"id": "rb1"}, {"id": "../etc"}, {"id": "rb1\n"}],
         "https://api.tfl.gov.uk/Line/central/StopPoints": [
-            {"naptanId": "940GZZLUBNK"}, {"naptanId": "910GLIVST"}, {"naptanId": "HUBBAN"}],
+            {"naptanId": "940GZZLUBNK"}, {"naptanId": "910GLIVST"}, {"naptanId": "HUBBAN"},
+            {"naptanId": "940GZZLUBNK\n"}],
         "https://api.tfl.gov.uk/Line/rb1/StopPoints": [{"naptanId": "930GWMR"}, {"naptanId": "9300WMR1"}],
     }
     assert build.tfl_lines(answers.__getitem__) == {"940GZZLUBNK": {"central"}, "930GWMR": {"rb1"}}

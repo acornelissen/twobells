@@ -904,7 +904,7 @@ def _show_list(f: Field, data: dict, shown: Mapping[str, str], error: str | None
 
 def _text_size(value: object) -> int | None:
     """A text size as saved or sent, if it is one of the choices; else None."""
-    if isinstance(value, str) and value.isdigit():
+    if isinstance(value, str) and value.isascii() and value.isdigit() and len(value) <= 2:
         value = int(value)
     if isinstance(value, bool) or not isinstance(value, int) or not 9 <= value <= 16:
         return None

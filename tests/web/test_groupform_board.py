@@ -969,6 +969,14 @@ def test_a_screen_refuses_a_look_and_text_size_without_room_for_the_modes_named(
     assert load_config(config, ENV).board.theme.text_size == 12
 
 
+@pytest.mark.parametrize("size", ["\u00b2", "\u0661\u0663", "9" * 5000], ids=["superscript", "arabic-indic", "5000 digits"])
+def test_a_text_size_not_written_in_the_digits_0_to_9_is_refused_alone(tmp_path, size):
+    # Not read as a size for the room check either: "١٣" isn't 13, "²" and 5,000 digits don't fail the page.
+    form, _ = _screen_form(tmp_path)
+    errors = form.save(fields_of(form) | {"theme": "plain", "accent": "", "text_size": size})
+    assert list(errors) == ["text_size"]
+
+
 def test_a_screen_naming_three_modes_at_a_big_text_size_offers_no_plain_look(tmp_path):
     form, _ = _screen_form(tmp_path, "text_size = 14\n")
     page = form.render("tok")

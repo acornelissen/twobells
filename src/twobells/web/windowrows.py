@@ -76,8 +76,8 @@ def _window(text: str) -> Window | None:
 
 def _rows_sent(name: str, fields: Mapping[str, str]) -> list[int]:
     """The rows of field `name` a form sent, by number, in order."""
-    pattern = re.compile(rf"^{re.escape(name)}-(\d{{1,3}})-({'|'.join(_PARTS)})$")
-    found = {int(match.group(1)) for key in fields if (match := pattern.match(key))}
+    pattern = re.compile(rf"{re.escape(name)}-(\d{{1,3}})-({'|'.join(_PARTS)})")
+    found = {int(match.group(1)) for key in fields if (match := pattern.fullmatch(key))}
     return sorted(found)
 
 
@@ -143,7 +143,7 @@ def anchor(name: str, key: str) -> str:
 
 def said(f: Field, key: str) -> str:
     """What the error summary calls the part of field `f` an error is keyed by."""
-    match = re.match(rf"^{re.escape(f.name)}-(\d+)-(\w+)$", key)
+    match = re.fullmatch(rf"{re.escape(f.name)}-(\d+)-(\w+)", key)
     if not match:
         return f"{f.heading} – {f.label}"
     row, part = match.groups()

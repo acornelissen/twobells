@@ -112,7 +112,7 @@ def station_rows(xml: bytes) -> list[tuple[str, str, float, float]]:
         if (
             point.get("Status") != "active"
             or point.findtext("n:StopClassification/n:StopType", "", _NS) != "RLY"
-            or not _CRS.match(crs)
+            or not _CRS.fullmatch(crs)
             or crs.startswith("ZZ")  # placeholder codes for heritage lines
             or atco in WRONG_CRS
         ):
@@ -149,7 +149,7 @@ def area_grid(text: str) -> dict[tuple[int, int], set[str]]:
     cells = defaultdict(set)
     for row in csv.DictReader(io.StringIO(text)):
         area = (row.get("ATCOCode") or "")[:3]
-        if row.get("Status") != "active" or row.get("StopType") not in BUS_STOP_TYPES or not _AREA.match(area):
+        if row.get("Status") != "active" or row.get("StopType") not in BUS_STOP_TYPES or not _AREA.fullmatch(area):
             continue
         position = naptan_position(row)
         if position:
@@ -164,7 +164,7 @@ def tram_stops(text: str) -> list[tuple[str, str, float, float]]:
     rows = {}
     for row in csv.DictReader(io.StringIO(text)):
         code = (row.get("ATCOCode") or "").strip()
-        if row.get("Status") != "active" or row.get("StopType") != "MET" or not _METROLINK.match(code):
+        if row.get("Status") != "active" or row.get("StopType") != "MET" or not _METROLINK.fullmatch(code):
             continue
         position = naptan_position(row)
         name = re.sub(r"\s*\(Manchester Metrolink\)$", "", _clean(row.get("CommonName") or ""))
@@ -186,11 +186,11 @@ def tfl_lines(get_json=None) -> dict[str, set[str]]:
     found: dict[str, set[str]] = defaultdict(set)
     for line in lines:
         line_id = str(line.get("id", ""))
-        if not _LINE_ID.match(line_id):
+        if not _LINE_ID.fullmatch(line_id):
             continue
         for stop in get(f"{TFL_URL}/Line/{line_id}/StopPoints"):
             code = str(stop.get("naptanId", ""))
-            if _LONDON.match(code):
+            if _LONDON.fullmatch(code):
                 found[code].add(line_id)
     return dict(found)
 

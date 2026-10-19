@@ -7,7 +7,7 @@ import pytest
 
 from twobells.core.polling import parse_window
 from twobells.settings import schema
-from twobells.web.windowrows import anchor, days_spec, read, render
+from twobells.web.windowrows import anchor, days_spec, read, render, said
 
 FIELDS = {f.name: f for f in schema.FIELDS}
 TRAINS = FIELDS["train_windows"]
@@ -123,6 +123,14 @@ def test_a_form_sent_without_the_rows_leaves_the_windows_as_they_are():
     # An older page, or a form whose section wasn't drawn: no rows at all is no change.
     saved = "Mon-Fri 06:30-09:30\nSat 10:00-12:00"
     assert read(TRAINS.name, {"title": "Home"}, saved) == (saved, {})
+
+
+def test_a_name_with_a_line_break_after_it_is_not_a_row():
+    # $ matches before a final newline: the name must be the whole key.
+    saved = "Mon-Fri 22:00-07:00"
+    assert read(QUIET.name, {"quiet_windows-7-from\n": ""}, saved) == (saved, {})
+    assert said(QUIET, "quiet_windows-1-from\n") == said(QUIET, "quiet_windows-1-nonsense-")
+    assert said(QUIET, "quiet_windows-1-from") != said(QUIET, "quiet_windows-1-from\n")
 
 
 # Mistakes, by the part of the row that is wrong
