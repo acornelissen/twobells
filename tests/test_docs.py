@@ -111,3 +111,32 @@ def test_every_doc_named_in_the_code_and_deploy_files_exists():
             named.setdefault(doc, name)
     missing = {doc: str(where) for doc, where in named.items() if not (ROOT / doc).exists()}
     assert not missing, missing
+
+
+def test_every_file_the_architecture_table_names_is_in_its_folder():
+    # A name with a slash is from the package (or the repo's) top; the wizard's
+    # row names the dashboard's files it uses by relative path.
+    package = ROOT / "src" / "twobells"
+    text = (DOCS / "architecture.md").read_text(encoding="utf-8")
+    rows = re.findall(r"^\| `([\w/.]+)` \| (.+) \|$", text, re.M)
+    assert len(rows) > 10
+    missing = []
+    for folder, role in rows:
+        for name in re.findall(r"`([\w./-]+\.(?:py|js|html|css|txt))`", role):
+            places = [package / name, ROOT / name] if "/" in name else [package / folder / name]
+            if folder == "wizard_static/":
+                places.append(package / "dashboard_static" / name)
+            if not any(place.is_file() for place in places):
+                missing.append(f"{folder} {name}")
+    assert missing == []
+
+
+def test_every_test_named_in_the_code_and_docs_exists():
+    named = {}
+    files = [path for folder in ("src", "tools", "docs", "deploy") for path in (ROOT / folder).rglob("*")]
+    for path in [*files, *PAGES]:
+        if path.is_file() and path.suffix in {".py", ".js", ".html", ".css", ".md", ".sh", ".toml"}:
+            for test in re.findall(r"\btests/[\w/]+\.py\b", path.read_text(encoding="utf-8")):
+                named.setdefault(test, str(path.relative_to(ROOT)))
+    assert len(named) > 3
+    assert {test: where for test, where in named.items() if not (ROOT / test).is_file()} == {}

@@ -1,5 +1,5 @@
 // DOM helpers. Every piece of feed text goes in through textContent (via text
-// nodes here), never parsed as HTML; tests/test_dashboard_static.py bans the HTML sinks.
+// nodes here), never parsed as HTML; tests/dashboard/test_static.py bans the HTML sinks.
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
