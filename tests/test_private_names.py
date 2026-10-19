@@ -4,6 +4,7 @@ private to its module: changing one breaks nothing elsewhere.
 Each module is read with ast, anywhere in it (inside functions too): a
 `from module import _name`, and a `module._name` where `module` is one of
 the package's modules it imported. Dunder names (__version__) don't count.
+The scripts in tools/ are held to the same, for the package's names.
 """
 
 import ast
@@ -84,3 +85,11 @@ def test_both_ways_of_reaching_in_are_found():
 
 def test_a_module_may_use_its_own_private_names():
     assert reach_ins("twobells.setup.lookups", "from . import lookups\nlookups._DIVISIONS\n") == []
+
+
+def test_no_tool_uses_the_package_s_private_names():
+    found = {}
+    for path in sorted((ROOT / "tools").glob("*.py")):
+        if hits := reach_ins(f"tools.{path.stem}", path.read_text(encoding="utf-8")):
+            found[path.name] = hits
+    assert found == {}

@@ -7,7 +7,7 @@ descenders. Digits share one width so clock times line up in columns.
 from __future__ import annotations
 
 HEIGHT = 9
-_GAP = 1
+GAP = 1
 
 
 def _g(text: str) -> list[str]:
@@ -262,7 +262,7 @@ class DotFont:
     def getlength(self, text: str) -> int:
         if not text:
             return 0
-        return sum(len(self._glyph(c)[0]) for c in text) + _GAP * (len(text) - 1)
+        return sum(len(self._glyph(c)[0]) for c in text) + GAP * (len(text) - 1)
 
     def draw(self, draw, xy: tuple[float, float], text: str, fill: int) -> None:
         x0, y0 = int(xy[0]), int(xy[1])
@@ -271,6 +271,6 @@ class DotFont:
             rows = self._glyph(char)
             for dy, row in enumerate(rows):
                 points.extend((x0 + dx, y0 + dy) for dx, dot in enumerate(row) if dot == "#")
-            x0 += len(rows[0]) + _GAP
+            x0 += len(rows[0]) + GAP
         if points:
             draw.point(points, fill=fill)

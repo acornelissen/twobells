@@ -14,6 +14,7 @@ is named for its scene, like screen-bar-piccadilly.png.
 
 from __future__ import annotations
 
+import argparse
 import sys
 import tempfile
 from datetime import datetime
@@ -40,7 +41,7 @@ from twobells.board.platformclock import clock_view, render_clock  # noqa: E402
 from twobells.board.route import RouteView  # noqa: E402
 from twobells.board.themes import theme_named  # noqa: E402
 from twobells.board.view import build_view  # noqa: E402
-from twobells.cli.main import main  # noqa: E402
+from twobells.cli.main import main as twobells  # noqa: E402
 from twobells.core.model import Departure, Status  # noqa: E402
 from twobells.core.walk import WalkTimes  # noqa: E402
 from twobells.emulator.fake import DEMO_CALLING, DEMO_STRIP, DEMO_TITLE  # noqa: E402
@@ -82,7 +83,7 @@ def keep(drawn: Path, scale: int = 1) -> None:
 
 
 def draw_demo(drawn: Path, options: list[str]) -> None:
-    if main(["demo", "--png", str(drawn), *options]) != 0:
+    if twobells(["demo", "--png", str(drawn), *options]) != 0:
         raise SystemExit(f"demo failed for {drawn.name}")
 
 
@@ -169,5 +170,11 @@ def run() -> None:
             keep(drawn)
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> None:
+    # It takes no arguments: one, --help among them, stops it before it draws over docs/images/.
+    argparse.ArgumentParser(description=__doc__.split("\n")[0]).parse_args(argv)
     run()
+
+
+if __name__ == "__main__":
+    main()

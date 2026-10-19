@@ -59,6 +59,24 @@ def test_the_build_is_the_same_every_time(build):
     assert build.files() == build.files()
 
 
+@pytest.mark.parametrize("args, code", [(["--help"], 0), (["--out", "elsewhere"], 2), (["fonts"], 2)])
+def test_it_writes_nothing_when_asked_for_help_or_given_an_argument(build, monkeypatch, tmp_path, args, code):
+    monkeypatch.setattr(build, "OUT", tmp_path / "fonts")
+    with pytest.raises(SystemExit) as stopped:
+        build.main(args)
+    assert stopped.value.code == code
+    assert not (tmp_path / "fonts").exists()
+
+
+def test_with_no_arguments_it_writes_the_face_and_its_sums(build, monkeypatch, tmp_path):
+    monkeypatch.setattr(build, "ROOT", tmp_path)  # for the message, which names the folder from the top
+    (tmp_path / "LICENSE").write_text((ROOT / "LICENSE").read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(build, "OUT", tmp_path / "fonts")
+    build.main([])
+    assert sorted(path.name for path in (tmp_path / "fonts").iterdir()) == ["DepartureboardDots.woff2", "LICENSE",
+                                                                             "SHA256SUMS"]
+
+
 def test_the_folder_is_pinned_and_licensed(build):
     listed = {}
     for line in (FONTS / "SHA256SUMS").read_text().splitlines():

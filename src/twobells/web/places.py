@@ -16,7 +16,6 @@ from functools import cache
 from pathlib import Path
 
 from ..core.places import bundled_stations
-from ..core.places import tram_stop_names as bundled_tram_stop_names
 from ..timetable import build as timetable
 from ..timetable.model import Schedule
 
@@ -74,8 +73,3 @@ def stop_names(folder: Path | str) -> dict[str, str]:
     if found is None:
         return {}
     return {atco: str(place.name)[:NAME_LENGTH] for atco, place in found.positions.items() if place.name}
-
-
-def tram_stop_names() -> dict[str, str]:
-    """{stop code: name} of every Metrolink tram stop, from the bundled list."""
-    return bundled_tram_stop_names()

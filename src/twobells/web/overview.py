@@ -23,6 +23,7 @@ from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 
 from ..core.errors import safe_message
+from ..core.places import tram_stop_names
 from ..core.polling import PollPolicy
 from ..settings import schema
 from ..sources import tfl
@@ -442,7 +443,7 @@ def _tram_rows(metro: dict, folder: Path, now: datetime, zone: tzinfo) -> list[s
     e = html.escape
     stops = {label: code for label, code in as_dict(metro.get("stops")).items()
              if isinstance(label, str) and isinstance(code, str)}
-    names = places.tram_stop_names()
+    names = tram_stop_names()
     walks = stop_walks(metro, list(stops))
     items = "".join(f"<li>{e(label)}: {e(names.get(code, code))}{_walk(walks[label])}</li>"
                     for label, code in stops.items())

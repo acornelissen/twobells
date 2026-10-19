@@ -20,6 +20,7 @@ dependency group.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import io
 import sys
@@ -33,7 +34,7 @@ from fontTools.ttLib import TTFont
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from twobells.board.dotfont import _GAP, GLYPHS, HEIGHT  # noqa: E402
+from twobells.board.dotfont import GAP, GLYPHS, HEIGHT  # noqa: E402
 
 OUT = ROOT / "src" / "twobells" / "dashboard_static" / "fonts"
 FONT_FILE = "DepartureboardDots.woff2"
@@ -86,10 +87,10 @@ def font() -> TTFont:
     builder.setupGlyphOrder(order)
     builder.setupCharacterMap({ord(char): name for char, name in names.items()})
     glyphs = {".notdef": TTGlyphPen(None).glyph()}
-    metrics = {".notdef": ((5 + _GAP) * CELL, 0)}
+    metrics = {".notdef": ((5 + GAP) * CELL, 0)}
     for char, rows in GLYPHS.items():
         glyphs[names[char]] = _outline(rows)
-        metrics[names[char]] = ((len(rows[0]) + _GAP) * CELL, _left_bearing(rows))
+        metrics[names[char]] = ((len(rows[0]) + GAP) * CELL, _left_bearing(rows))
     builder.setupGlyf(glyphs)
     builder.setupHorizontalMetrics(metrics)
     builder.setupHorizontalHeader(ascent=ASCENT, descent=-DESCENT)
@@ -139,7 +140,9 @@ def files() -> dict[str, bytes]:
     return {FONT_FILE: out.getvalue(), "LICENSE": (note + _licence()).encode("utf-8")}
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    # It takes no arguments: one, --help among them, stops it before it writes over the fonts.
+    argparse.ArgumentParser(description=__doc__.split("\n")[0]).parse_args(argv)
     built = files()
     OUT.mkdir(parents=True, exist_ok=True)
     for name, body in built.items():

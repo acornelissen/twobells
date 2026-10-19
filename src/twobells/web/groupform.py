@@ -36,6 +36,7 @@ from ..board.config import settings_from
 from ..board.names import DISPLAY_PANELS
 from ..board.themes import THEMES
 from ..core.errors import ConfigError
+from ..core.places import tram_stop_names
 from ..dashboard.config import BUS_NOTE, dashboard_settings
 from ..settings import modes, schema, show
 from ..settings.config import board_modes, merge
@@ -436,7 +437,7 @@ class GroupForm:
         if not stops:
             names = {}
         elif section == "metro":
-            names = places.tram_stop_names()
+            names = tram_stop_names()
         else:
             names = places.stop_names(self._store.folder)
         boxes = []
