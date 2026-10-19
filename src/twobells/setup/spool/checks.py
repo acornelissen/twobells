@@ -36,7 +36,7 @@ _ID = re.compile(r"^[0-9a-f]{32}$")
 _CRS = re.compile(r"^[A-Z]{3}$")  # upper case, as setup sends it
 _LINE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ./+-]{0,15}$")
 _STATES = ("queued", "running", "done", "failed")
-_FINISHED = ("done", "failed")
+FINISHED = ("done", "failed")
 
 
 class Refused(Exception):
@@ -74,7 +74,7 @@ def check_num(value, what: str) -> float:
     return number
 
 
-def _list(value, what: str, high: int) -> list:
+def check_list(value, what: str, high: int) -> list:
     if not isinstance(value, list) or len(value) > high:
         raise Refused(f"{what} isn't a short enough list")
     return value
@@ -213,14 +213,14 @@ def check_request(data, file_id: str, now: float) -> tuple[str, dict]:
 # Replies, as the page checks them.
 
 
-def _place(value) -> Place:
+def check_place(value) -> Place:
     fields = check_obj(value, ("lat", "lon", "label", "country", "district"))
     lat, lon = _point({"lat": fields["lat"], "lon": fields["lon"]}, "place")
     return Place(lat, lon, check_str(fields["label"], "label", 200), check_str(fields["country"], "country", 40),
                  check_str(fields["district"], "district", 100))
 
 
-def _stop(value, within_m: float) -> Stop:
+def check_stop(value, within_m: float) -> Stop:
     fields = check_obj(value, ("atco", "name", "indicator", "bearing", "lat", "lon", "distance_m"))
     lat, lon = _point({"lat": fields["lat"], "lon": fields["lon"]}, "stop")
     bearing = fields["bearing"]
@@ -231,7 +231,7 @@ def _stop(value, within_m: float) -> Stop:
                 check_int(fields["distance_m"], "distance_m", 0, math.ceil(within_m)))
 
 
-def _walked(value, asked) -> dict[str, tuple[int, str]]:
+def check_walked(value, asked) -> dict[str, tuple[int, str]]:
     found = {}
     for key, pair in check_dict(value, "walk", len(asked)).items():
         if key not in asked:
@@ -245,7 +245,7 @@ def _walked(value, asked) -> dict[str, tuple[int, str]]:
     return found
 
 
-def _key_result(value) -> keytest.KeyResult:
+def check_key_result(value) -> keytest.KeyResult:
     fields = check_obj(value, ("state", "message"))
     if fields["state"] not in keytest.STATES:
         raise Refused("state isn't a key test's")
@@ -253,12 +253,12 @@ def _key_result(value) -> keytest.KeyResult:
 
 
 def _lines(value, what: str) -> list[str]:
-    return [check_str(line, what, 16, 1, _LINE) for line in _list(value, what, 200)]
+    return [check_str(line, what, 16, 1, _LINE) for line in check_list(value, what, 200)]
 
 
 def _route(value) -> dict:
     fields = check_obj(value, ("stop", "stops"))
-    stops = _list(fields["stops"], "route stops", routesetup.MAX_STOPS)
+    stops = check_list(fields["stops"], "route stops", routesetup.MAX_STOPS)
     if len(stops) < 2:
         raise Refused("a route strip has fewer than two stops")
     out = []
@@ -278,7 +278,7 @@ def _result(value) -> dict:
         raise Refused("source isn't bods")
     out_bus: dict = {"source": "bods",
                      "operators": [check_str(n, "operator", 8, 2, _NOC)
-                                   for n in _list(bus["operators"], "operators", 50)]}
+                                   for n in check_list(bus["operators"], "operators", 50)]}
     if "routes" in bus:
         out_bus["routes"] = {check_str(line, "line", 16, 1, _LINE): _route(route)
                              for line, route in check_dict(bus["routes"], "routes", 100).items()}
@@ -288,7 +288,7 @@ def _result(value) -> dict:
                   for n, lines in check_dict(fields["lines"], "lines", 50).items()},
         "document_operators": {
             check_str(n, "operator", 8, 2, _NOC): [check_str(c, "operator", 8, 2, _NOC)
-                                                   for c in _list(codes, "codes", 20)]
+                                                   for c in check_list(codes, "codes", 20)]
             for n, codes in check_dict(fields["document_operators"], "document_operators", 50).items()},
         "stop_lines": {check_str(label, "label", 3, 1, _LABEL): _lines(lines, "line")
                        for label, lines
@@ -296,7 +296,7 @@ def _result(value) -> dict:
         "datasets_scanned": check_int(fields["datasets_scanned"], "datasets_scanned", 0, 10_000),
         "journeys_found": check_int(fields["journeys_found"], "journeys_found", 0, 100_000_000),
         "timetable_journeys": check_int(fields["timetable_journeys"], "timetable_journeys", 0, 100_000_000),
-        "notes": [safe_message(check_str(n, "note", 400)) for n in _list(fields["notes"], "notes", MAX_NOTES)],
+        "notes": [safe_message(check_str(n, "note", 400)) for n in check_list(fields["notes"], "notes", MAX_NOTES)],
     }
 
 

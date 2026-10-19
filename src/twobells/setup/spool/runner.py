@@ -15,16 +15,16 @@ from .. import discover, keytest
 from .. import lookups as setup
 from ..lookups import Place, SetupError, Station, Stop
 from .checks import (
-    _FINISHED,
+    FINISHED,
     VERSION,
     Refused,
-    _key_result,
-    _list,
-    _place,
-    _stop,
-    _walked,
+    check_key_result,
+    check_list,
+    check_place,
     check_reply,
     check_status,
+    check_stop,
+    check_walked,
     parse,
 )
 from .folder import MAX_REPLY_BYTES, MAX_REQUEST_BYTES, WAITS, Spool
@@ -116,25 +116,26 @@ class SpoolRunner:
     # api.Runner.
 
     def lookup_postcode(self, postcode: str) -> Place:
-        return self._check(self._ask("postcode", {"postcode": postcode}), _place)
+        return self._check(self._ask("postcode", {"postcode": postcode}), check_place)
 
     def search_address(self, query: str) -> list[Place]:
         value = self._ask("address", {"q": query})
-        return self._check(value, lambda v: [_place(p) for p in _list(v, "places", setup.MAX_ADDRESS_RESULTS)])
+        most = setup.MAX_ADDRESS_RESULTS
+        return self._check(value, lambda v: [check_place(p) for p in check_list(v, "places", most)])
 
     def nearby_stops(self, lat: float, lon: float, *, within_m: float, limit: int) -> list[Stop]:
         value = self._ask("stops", {"home": {"lat": lat, "lon": lon}, "within_m": within_m, "limit": limit})
-        return self._check(value, lambda v: [_stop(s, within_m) for s in _list(v, "stops", limit)])
+        return self._check(value, lambda v: [check_stop(s, within_m) for s in check_list(v, "stops", limit)])
 
     def walk_minutes(self, home: Place, places: Mapping[str, Station | Stop]) -> dict[str, tuple[int, str]]:
         if not places:
             return {}
         value = self._ask("walk", {"home": _place_args(home), "places": {k: _place_args(p) for k, p in places.items()}})
-        return self._check(value, lambda v: _walked(v, set(places)))
+        return self._check(value, lambda v: check_walked(v, set(places)))
 
     def test_key(self, name: str, value: str | None, app_id: str | None) -> keytest.KeyResult:
         reply = self._ask("testkey", {"name": name, "value": value or "", "app_id": app_id or ""})
-        return self._check(reply, _key_result)
+        return self._check(reply, check_key_result)
 
     def make_job(self, stops: Mapping[str, str], pasted_key: str, *, routes: bool,
                  walk_minutes: Mapping[str, int]) -> SpoolJob:
@@ -211,7 +212,7 @@ class SpoolJob:
         if self._beat is None or self._beat[0] != beat:
             self._beat = (beat, now)
         self._status = status
-        if status["state"] in _FINISHED and not discover.roads_running(status):
+        if status["state"] in FINISHED and not discover.roads_running(status):
             self._finished = True  # kept here from now on; the file has done its job
             (self._runner.spool.status / f"{self.id}.json").unlink(missing_ok=True)
         elif now - self._beat[1] > self._silent:

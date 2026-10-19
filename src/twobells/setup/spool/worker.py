@@ -18,8 +18,8 @@ from .. import discover, keytest
 from .. import lookups as setup
 from ..api import KEY_TEST_EVERY, MIN_SCRUBBED, Job, MakeJob, RateLimit
 from ..lookups import Place, SetupError, Stop
-from .checks import _FINISHED, MAX_NOTES, VERSION, Refused, check_request, parse
-from .folder import MAX_REPLY_BYTES, MAX_REQUEST_BYTES, Spool, _remove
+from .checks import FINISHED, MAX_NOTES, VERSION, Refused, check_request, parse
+from .folder import MAX_REPLY_BYTES, MAX_REQUEST_BYTES, Spool, remove
 
 log = logging.getLogger(__name__)
 
@@ -178,7 +178,7 @@ class Worker:
         except OSError:
             return
         for name in names:
-            _remove(self.spool.replies / name)
+            remove(self.spool.replies / name)
 
     def step(self) -> bool:
         """Answer every waiting request and report the search. Whether any request came."""
@@ -189,7 +189,7 @@ class Worker:
             try:
                 self._take(path)
             except Exception as error:  # noqa: BLE001 - one request mustn't stop the service; never its text
-                _remove(path)
+                remove(path)
                 log.warning("A setup request failed: %s", type(error).__name__)
         self._report()
         return handled
@@ -239,7 +239,7 @@ class Worker:
         fresh, well-formed request is deleted with no reply."""
         match = _FILE.fullmatch(path.name)
         if match is None:
-            _remove(path)
+            remove(path)
             log.warning("Deleted a file in the setup spool that isn't a request")
             return
         request_id = match.group(1)
@@ -385,7 +385,7 @@ class Worker:
                 return
             status = self._job.status()
             self._write_status(_status_out(status))
-            if status.get("state") in _FINISHED and not discover.roads_running(status):
+            if status.get("state") in FINISHED and not discover.roads_running(status):
                 self._job, self._job_secrets = None, []  # kept, and the service up, while its roads are found
 
     def _write_status(self, shown: dict, force: bool = False) -> None:

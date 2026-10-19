@@ -102,7 +102,7 @@ class Spool:
                 return None
             except OSError:  # a link, or something else that won't open as a file
                 if delete:
-                    _remove(path)
+                    remove(path)
                 raise Refused("not a plain file") from None
             try:
                 info = os.fstat(fd)
@@ -138,10 +138,10 @@ class Spool:
                 except OSError:
                     continue
                 if old:
-                    _remove(path)
+                    remove(path)
 
 
-def _remove(path: Path) -> None:
+def remove(path: Path) -> None:
     try:
         if stat.S_ISDIR(os.lstat(path).st_mode):
             shutil.rmtree(path, ignore_errors=True)
