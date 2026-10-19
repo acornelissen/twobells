@@ -791,12 +791,45 @@ class SetupApi:
         "station" or "stops", save that part alone (a shortcut's): the
         station, where trains must call and its walk, or the stops and their
         walks; home, the views, what they show and the other part stay as
-        saved."""
+        saved. Everything is checked before any part is built."""
         only = payload.get("only") if isinstance(payload, dict) else None
         if only is not None and only not in PARTS:
             raise Invalid("Save the station or the stops", "only")
         fields = inputs.fields(payload, *_FINISH_FIELDS[only])
         home = inputs.point(fields["home"]) if only is None else None
+        station, filter_crs = self._chosen_station(fields)
+        stops = inputs.stops(fields["stops"]) if only != "station" else {}
+        trams = inputs.trams(fields["trams"]) if fields.get("trams") is not None else {}
+        current = self._settings() if only is not None else {}
+        _check_something_shows(only, station, stops, trams, current)
+        walk = _walk_times(fields["walk"], station, stops, trams)
+        keys = inputs.keys(fields.get("keys", {}), self._key_names)
+        picked = [key for key, chosen in (("train", station), ("bus", stops), ("metro", trams)) if chosen]
+        views, on, presets, shown_modes = self._chosen_views(fields, picked)
+
+        changes = setup.config_fragment(home, station, [(label, self._stop(atco)) for label, atco in stops.items()],
+                                        walk)
+        # What isn't chosen is switched off rather than removed, which an overlay
+        # can't do: config.toml's [train] or [bus] (the template's placeholders,
+        # say) would otherwise stay in force. Choosing it again switches it on.
+        if only != "stops":
+            self._station_changes(changes, station, filter_crs)
+        if only != "station":
+            self._stops_changes(changes, stops, only, current)
+        if only is None:
+            self._trams_changes(changes, trams, walk)
+        self._home_changes(changes, home)
+        self._views_changes(changes, only, views, on, presets, shown_modes)
+        env = dict(self._load_secrets())
+        save_to(self._target, changes, keys, env)
+        keyresults.forget(self._job_folder, keys)  # a test of the old key says nothing of the new
+        with self._lock:
+            self._found_stops.clear()
+        message = self._saved_message or inputs.saved_message(self._install, on)
+        return {"saved": True, "message": message, "links": self._links_for(on)}
+
+    def _chosen_station(self, fields: Mapping) -> tuple[Station | None, str]:
+        """The station finish saves, if any, and the one trains must call at ("" for any)."""
         station = None
         if fields.get("station_crs") is not None:
             station = self._known_station(fields["station_crs"], "station_crs")
@@ -805,65 +838,65 @@ class SetupApi:
             filter_crs = self._known_station(fields["filter_crs"], "filter_crs").crs
             if station is None:
                 raise Invalid("Pick a station before saying where you go from it", "filter_crs")
-        stops = inputs.stops(fields["stops"]) if only != "station" else {}
-        trams = inputs.trams(fields["trams"]) if fields.get("trams") is not None else {}
-        current = self._settings() if only is not None else {}
-        if only == "station" and station is None and not inputs.saved_stops(inputs.table(current, "bus")):
-            raise Invalid("Pick a station: with no bus stops either, there is nothing to show", "station_crs")
-        if only == "stops" and not stops and not inputs.saved_station(inputs.table(current, "train")):
-            raise Invalid("Pick at least one stop: with no station either, there is nothing to show", "stops")
-        if only is None and station is None and not stops and not trams:
-            raise Invalid("Pick a station, a bus stop or a tram stop", "stops")
-        walk = fields["walk"]
-        if not isinstance(walk, dict):
-            raise Invalid("Walk times are by station code and stop code", "walk")
-        allowed = set(stops.values()) | set(trams.values()) | ({station.crs} if station else set())
-        if set(walk) - allowed:
-            raise Invalid("Walk times are only for your station and stops", "walk")
-        walk = {key: (inputs.minutes(m, "walk"), "given") for key, m in walk.items()}
-        keys = inputs.keys(fields.get("keys", {}), self._key_names)
+        return station, filter_crs
+
+    def _chosen_views(self, fields: Mapping, picked: Sequence[str]
+                      ) -> tuple[list[str] | None, tuple[str, ...], dict[str, str], dict[str, list[str]]]:
+        """The views finish turns on (None to keep them as saved), the views
+        on after it, a preset for any of those and the modes they show, each
+        of those `picked` (this finish sets up)."""
         views = inputs.views(fields["views"], self._install.offered) if "views" in fields else None
         on = tuple(views) if views is not None else self._views_now()
         presets = inputs.presets(fields["show"], on) if "show" in fields else {}
-        picked = [key for key, chosen in (("train", station), ("bus", stops), ("metro", trams)) if chosen]
         shown_modes = {}
         if "modes" in fields:
             shown_modes = inputs.view_modes(fields["modes"], on, picked, self._settings())
+        return views, on, presets, shown_modes
 
-        changes = setup.config_fragment(home, station, [(label, self._stop(atco)) for label, atco in stops.items()],
-                                        walk)
-        # What isn't chosen is switched off rather than removed, which an overlay
-        # can't do: config.toml's [train] or [bus] (the template's placeholders,
-        # say) would otherwise stay in force. Choosing it again switches it on.
-        if only != "stops":
-            if station is not None:
-                changes["train"].setdefault("walk_minutes", "")  # "" clears an old one, as the settings site does
-                changes["train"]["filter_crs"] = filter_crs
-                changes["train"]["enabled"] = True
-            else:
-                changes["train"] = {"enabled": False}
-        if only != "station":
-            if stops:
-                changes["bus"].setdefault("walk_minutes", {})
-                # A shortcut keeping the stops as saved, by the same labels, needs no
-                # new search: their bus companies and route strips stay as they are.
-                if only is None or stops != inputs.saved_stops(inputs.table(current, "bus")):
-                    changes["bus"].update(self._found_bus(stops))
-                changes["bus"]["enabled"] = True
-            else:
-                changes["bus"] = {"enabled": False}
-        if only is None:
-            # Trams: switched off rather than removed, as trains and buses are, when there were some.
-            if trams:
-                metro: dict = {"stops": trams, "enabled": True,
-                               "walk_minutes": {label: walk[code][0] for label, code in trams.items() if code in walk}}
-                changes["metro"] = metro
-            elif "metro" in self._settings():
-                changes["metro"] = {"enabled": False}
+    # The parts finish builds, each into `changes`, the overlay's changes.
+
+    def _station_changes(self, changes: dict, station: Station | None, filter_crs: str) -> None:
+        """[train]: the station, where trains must call and its walk; off without a station."""
+        if station is not None:
+            changes["train"].setdefault("walk_minutes", "")  # "" clears an old one, as the settings site does
+            changes["train"]["filter_crs"] = filter_crs
+            changes["train"]["enabled"] = True
+        else:
+            changes["train"] = {"enabled": False}
+
+    def _stops_changes(self, changes: dict, stops: dict[str, str], only: str | None, current: Mapping) -> None:
+        """[bus]: the stops, their walks and what the search found for them; off without stops."""
+        if stops:
+            changes["bus"].setdefault("walk_minutes", {})
+            # A shortcut keeping the stops as saved, by the same labels, needs no
+            # new search: their bus companies and route strips stay as they are.
+            if only is None or stops != inputs.saved_stops(inputs.table(current, "bus")):
+                changes["bus"].update(self._found_bus(stops))
+            changes["bus"]["enabled"] = True
+        else:
+            changes["bus"] = {"enabled": False}
+
+    def _trams_changes(self, changes: dict, trams: dict[str, str], walk: Mapping[str, tuple[int, str]]) -> None:
+        """[metro]: the tram stops and their walks."""
+        # Trams: switched off rather than removed, as trains and buses are, when there were some.
+        if trams:
+            metro: dict = {"stops": trams, "enabled": True,
+                           "walk_minutes": {label: walk[code][0] for label, code in trams.items() if code in walk}}
+            changes["metro"] = metro
+        elif "metro" in self._settings():
+            changes["metro"] = {"enabled": False}
+
+    def _home_changes(self, changes: dict, home: Place | None) -> None:
+        """The bank holiday list for home's country. ([weather], home's rough
+        position, is config_fragment's.)"""
         if home is not None:
             division = setup.bank_holiday_division(home.country)
             if division:
                 changes["bank_holiday_division"] = division
+
+    def _views_changes(self, changes: dict, only: str | None, views: list[str] | None, on: Sequence[str],
+                       presets: dict[str, str], shown_modes: Mapping[str, list[str]]) -> None:
+        """[app] views, and for the views `on` what they show and the modes they show."""
         if views is not None:
             # The target checks the settings as each of these views loads them.
             changes["app"] = {"views": views}
@@ -884,13 +917,6 @@ class SetupApi:
                 changes[view]["leave_modes"] = list(modes.KEYS) if keep else []
         for view, chosen in shown_modes.items():
             changes.setdefault(view, {})["modes"] = chosen
-        env = dict(self._load_secrets())
-        save_to(self._target, changes, keys, env)
-        keyresults.forget(self._job_folder, keys)  # a test of the old key says nothing of the new
-        with self._lock:
-            self._found_stops.clear()
-        message = self._saved_message or inputs.saved_message(self._install, on)
-        return {"saved": True, "message": message, "links": self._links_for(on)}
 
     def _stop(self, atco: str) -> Stop:
         with self._lock:
@@ -922,3 +948,26 @@ class SetupApi:
         except (OSError, ConfigError, AttributeError):
             return {}
         return routes if isinstance(routes, dict) else {}
+
+
+def _check_something_shows(only: str | None, station: Station | None, stops: Mapping, trams: Mapping,
+                           current: Mapping) -> None:
+    """Invalid unless finish leaves something to show; with `only`, the part
+    kept as saved (in `current`) counts."""
+    if only == "station" and station is None and not inputs.saved_stops(inputs.table(current, "bus")):
+        raise Invalid("Pick a station: with no bus stops either, there is nothing to show", "station_crs")
+    if only == "stops" and not stops and not inputs.saved_station(inputs.table(current, "train")):
+        raise Invalid("Pick at least one stop: with no station either, there is nothing to show", "stops")
+    if only is None and station is None and not stops and not trams:
+        raise Invalid("Pick a station, a bus stop or a tram stop", "stops")
+
+
+def _walk_times(walk, station: Station | None, stops: Mapping[str, str],
+                trams: Mapping[str, str]) -> dict[str, tuple[int, str]]:
+    """The walk times typed, {CRS or stop code: (minutes, "given")}: only for the station and stops chosen."""
+    if not isinstance(walk, dict):
+        raise Invalid("Walk times are by station code and stop code", "walk")
+    allowed = set(stops.values()) | set(trams.values()) | ({station.crs} if station else set())
+    if set(walk) - allowed:
+        raise Invalid("Walk times are only for your station and stops", "walk")
+    return {key: (inputs.minutes(m, "walk"), "given") for key, m in walk.items()}
