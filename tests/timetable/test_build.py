@@ -32,13 +32,12 @@ from tests.sources.test_livebus import (
 from twobells.core import safexml
 from twobells.sources.holidays import Event, holiday_names
 from twobells.timetable import build as timetable
-from twobells.timetable import routesetup
+from twobells.timetable import routesetup, txc
 from twobells.timetable.build import (
     FILE_NAME,
     FORMAT,
     LOCK_NAME,
     TimetableBusy,
-    TimetableError,
     add_roads,
     build,
     build_schedule,
@@ -46,13 +45,13 @@ from twobells.timetable.build import (
     due,
     journeys_on,
     load,
-    parse_journeys,
     refresh,
     runs_on,
     save,
 )
 from twobells.timetable.model import Calendar, Call, Journey, Schedule, StopPosition, metres
 from twobells.timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
+from twobells.timetable.txc import TimetableError, parse_journeys
 
 TXC_341 = (FIXTURES / "txc_bnml_341.xml").read_bytes()
 TXC_237 = (FIXTURES / "txc_bnml_237.xml").read_bytes()
@@ -270,7 +269,7 @@ def test_a_journey_keeps_its_block_number():
 def test_journeys_of_one_block_share_its_number_and_keep_it_through_a_save(tmp_path):
     first = _txc(LINKS, journey="<Operational><Block><BlockNumber>T122</BlockNumber></Block></Operational>")
     xml = _with_journey(first, "vj2", "11:00:00")
-    one, two = timetable._parse_document(xml, OURS, "NOC")[0]
+    one, two = txc.parse_document(xml, OURS, "NOC")[0]
     assert one.block == two.block == "T122" and one.block is two.block
     schedule = replace(_schedule(), journeys=(one, two))
     save(tmp_path, schedule)
@@ -859,10 +858,8 @@ def test_one_download_at_a_time():
 
 
 def test_documents_are_unpacked_one_at_a_time(tmp_path):
-    from twobells.timetable.build import _documents
-
     blob = _zip({"a.xml": b"<a/>", "b.xml": b"<b/>"})
-    documents = _documents([("X", "https://x/1")], lambda url, file: file.write(blob), tmp_path)
+    documents = timetable.documents([("X", "https://x/1")], lambda url, file: file.write(blob), tmp_path)
     assert next(documents) == ("X", "a.xml", b"<a/>")
     assert next(documents) == ("X", "b.xml", b"<b/>")
 
@@ -896,8 +893,8 @@ def test_a_document_with_more_journeys_at_your_stops_than_the_limit_fails_as_the
     # Checked as each is kept, not once the document is read: a document can
     # hold more of them than the memory there is.
     read = []
-    journey = timetable._journey
-    monkeypatch.setattr(timetable, "_journey", lambda *args, **options: read.append(1) or journey(*args, **options))
+    journey = txc._journey
+    monkeypatch.setattr(txc, "_journey", lambda *args, **options: read.append(1) or journey(*args, **options))
     with pytest.raises(TimetableError, match="More than 2 journeys call at your stops; refusing"):
         FakeBods().build(limits=DocumentLimits(journeys=2))
     assert len(read) == 3  # of the 341's 5
@@ -1614,9 +1611,7 @@ def test_a_journey_ending_far_from_your_stop_is_not_placed_all_the_way():
 
 
 def test_inbound_only_journeys_are_capped(monkeypatch, caplog):
-    from twobells.timetable import build as timetable
-
-    monkeypatch.setattr(timetable, "MAX_INBOUND_JOURNEYS", 1)
+    monkeypatch.setattr(txc, "MAX_INBOUND_JOURNEYS", 1)
     document = _doc([("out", "237", "10:15:00", [STOP_A, HOWARD]),
                      ("in", "237", "10:00:00", [*COMING_IN, MARKET_HALL]),
                      ("earlier", "237", "09:30:00", [*COMING_IN, MARKET_HALL])])
@@ -2114,28 +2109,28 @@ def test_a_store_that_is_not_a_folder_is_a_timetable_error(tmp_path):
 def _whole_tree(xml, atcos, noc="", yours=None):
     """The document read as the timetable used to read it, parsed whole: the
     oracle the two passes must agree with."""
-    ns = timetable._NS
+    ns = txc._NS
     root = safexml.fromstring(xml, max_elements=10_000_000)
     revision = root.get("RevisionNumber", "").strip()
-    doc = timetable._Document(revision=int(revision) if revision.isdigit() and len(revision) < 10 else 0)
+    doc = txc._Document(revision=int(revision) if revision.isdigit() and len(revision) < 10 else 0)
     for node in root.iterfind("t:StopPoints/t:AnnotatedStopPointRef", ns):
-        timetable._read_stop_ref(node, doc)
+        txc._read_stop_ref(node, doc)
     for node in root.iterfind("t:StopPoints/t:StopPoint", ns):
-        atco, name = timetable._stop_point_name(node)
+        atco, name = txc._stop_point_name(node)
         doc.names[atco] = name
     for node in root.iterfind("t:Operators/*", ns):
-        timetable._read_operator(node, doc)
+        txc._read_operator(node, doc)
     for node in root.iterfind("t:ServicedOrganisations/t:ServicedOrganisation", ns):
-        timetable._read_school(node, doc)
+        txc._read_school(node, doc)
     for node in root.iterfind("t:JourneyPatternSections/t:JourneyPatternSection", ns):
-        timetable._read_section(node, doc)
+        txc._read_section(node, doc)
     for node in root.iterfind("t:Services/t:Service", ns):
-        timetable._read_service(node, doc)
+        txc._read_service(node, doc)
     vehicle_journeys = root.findall("t:VehicleJourneys/t:VehicleJourney", ns)
-    pattern_refs = {timetable._text(node, "t:VehicleJourneyCode"): timetable._text(node, "t:JourneyPatternRef")
+    pattern_refs = {txc._text(node, "t:VehicleJourneyCode"): txc._text(node, "t:JourneyPatternRef")
                     for node in vehicle_journeys}
-    stands = timetable._stands(doc, atcos, yours) if yours is not None else set()
-    return timetable._journeys_kept(vehicle_journeys, doc, atcos, noc, pattern_refs, stands), doc.positions
+    stands = txc._stands(doc, atcos, yours) if yours is not None else set()
+    return txc._journeys_kept(vehicle_journeys, doc, atcos, noc, pattern_refs, stands), doc.positions
 
 
 def _every_stop(xml):
@@ -2167,12 +2162,12 @@ def test_two_passes_read_a_document_as_parsing_it_whole_did(name):
     xml = _SAMPLES[name]
     for atcos in (OURS, {STOP_A}, _every_stop(xml), set()):
         for yours in (None, {}, {STOP_A: POSITIONS[STOP_A]}):
-            read = timetable._read_document(xml, atcos, "NOC", yours)
+            read = txc.read_document(xml, atcos, "NOC", yours)
             expected = _whole_tree(xml, atcos, "NOC", yours)
             assert read == expected
             assert list(read[1].items()) == list(expected[1].items())  # in the same order too
     # Each sample has journeys to compare, but the route setup's, whose journeys have no times.
-    assert timetable._read_document(xml, _every_stop(xml), "NOC", {})[0] or name == "txc_glossop_synthetic.xml"
+    assert txc.read_document(xml, _every_stop(xml), "NOC", {})[0] or name == "txc_glossop_synthetic.xml"
 
 
 def test_journeys_before_the_services_they_run_are_read_all_the_same():
@@ -2215,7 +2210,7 @@ def test_a_large_document_is_never_held_as_a_whole_tree():
     xml = _large_237(4_000_000)
     tracemalloc.start()
     try:
-        found, _ = timetable._read_document(xml, {"1000NOWHERE1"}, "NOC")
+        found, _ = txc.read_document(xml, {"1000NOWHERE1"}, "NOC")
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
@@ -2241,7 +2236,7 @@ def test_a_document_takes_at_most_itself_again_and_its_journeys_found_to_parse()
     # that match: one, and every stop it has.
     xml = _large_237(1_000_000)
     for atcos in ({STOP_A}, _every_stop(TXC_237)):
-        (found, _), peak = _peak(lambda atcos=atcos: timetable._read_document(xml, atcos, "NOC", {}))
+        (found, _), peak = _peak(lambda atcos=atcos: txc.read_document(xml, atcos, "NOC", {}))
         assert len(found) > 1000
         assert peak <= len(xml) + len(found) * timetable.JOURNEY_BYTES
 
@@ -2289,7 +2284,7 @@ def test_each_journey_kept_takes_no_more_than_the_installs_are_sized_for(calenda
         xml = _a_calendar_each(xml)
 
     def kept():
-        found, _ = timetable._read_document(xml, {stop}, "NOC", {})
+        found, _ = txc.read_document(xml, {stop}, "NOC", {})
         return found, {(v, j.line, j.operator, j.calls, j.calendar): (v, j) for v, j in found}
 
     tracemalloc.start()
@@ -2322,7 +2317,7 @@ def test_journeys_kept_from_a_document_share_what_they_have_in_common():
     xml, stop = _long_route(80, 2)  # leaving at 05:00 and 05:01, Monday to Friday
     saturday = PROFILE.replace("<MondayToFriday/>", "<Saturday/>")
     xml = _with_journey(xml, "sat", "05:00:00", saturday)
-    weekday, next_one, sat = timetable._parse_document(xml, {stop}, "NOC")[0]
+    weekday, next_one, sat = txc.parse_document(xml, {stop}, "NOC")[0]
     assert weekday.calendar == next_one.calendar and weekday.calendar is next_one.calendar
     assert sat.calendar != weekday.calendar
     assert sat.calls == weekday.calls and sat.calls is weekday.calls

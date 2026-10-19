@@ -48,7 +48,8 @@ from typing import IO, BinaryIO
 
 from ..core import bounded, files, net
 from ..core.errors import safe_message
-from .build import TimetableBusy, TimetableError, TimetableTooBig
+from .build import TimetableBusy, TimetableTooBig
+from .txc import TimetableError
 
 log = logging.getLogger(__name__)
 

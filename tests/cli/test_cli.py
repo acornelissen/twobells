@@ -2587,7 +2587,7 @@ def test_timetable_builds_nothing_no_view_that_is_on_shows(bods_env, monkeypatch
 
 def test_timetable_with_trams_alone_says_nothing_of_buses(tmp_path, monkeypatch, capsys):
     from twobells.timetable import trams
-    from twobells.timetable.build import TimetableError
+    from twobells.timetable.txc import TimetableError
 
     config = tmp_path / "config.toml"
     config.write_text(f'state_file = "{tmp_path / "state" / "state.json"}"\n[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n')

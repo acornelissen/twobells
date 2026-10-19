@@ -24,6 +24,7 @@ from twobells.setup.discover import (
     list_datasets,
 )
 from twobells.timetable import build as timetable
+from twobells.timetable import txc
 from twobells.timetable.routesetup import DocumentLimits
 
 TXC_341 = (FIXTURES / "txc_bnml_341.xml").read_bytes()  # filed under BNML, says BNGN inside
@@ -133,19 +134,19 @@ def test_the_operators_found_build_the_timetable(bods, tmp_path):
     schedule = build(found.operators)
     assert {(j.line, j.operator) for j in schedule.journeys} == {("341", "BNGN"), ("237", "BNML"), ("61", "HIPK")}
     # The documents' own code finds nothing: nothing is filed under BNGN.
-    with pytest.raises(timetable.TimetableError, match="No timetabled journeys"):
+    with pytest.raises(txc.TimetableError, match="No timetabled journeys"):
         build(found.document_operators["BNML"])
 
 
 def test_documents_without_your_stops_are_never_parsed(bods, monkeypatch):
     parsed = []
-    original = timetable._parse_document
+    original = txc.parse_document
 
     def spy(xml, atcos, noc, **options):
         parsed.append(xml)
         return original(xml, atcos, noc, **options)
 
-    monkeypatch.setattr(timetable, "_parse_document", spy)
+    monkeypatch.setattr(txc, "parse_document", spy)
     bods.discover()
     assert sorted(parsed) == sorted([TXC_341, TXC_237, TXC_61])  # not ELSEWHERE, which would fail
 

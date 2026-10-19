@@ -1,5 +1,5 @@
 from twobells.settings.installs import INSTALLS, install_named
-from twobells.timetable import build, routesetup
+from twobells.timetable import build, routesetup, txc
 
 # The largest timetable file seen: First Bus's 75/76 in South Yorkshire, BODS data set 2100 (October 2026).
 LARGEST_FILE = 48_094_105
@@ -41,7 +41,7 @@ def _largest_saved_timetable(name: str) -> int:
     journeys, inbound-only ones too, at build.SAVED_JOURNEY_BYTES each
     (tests/timetable/test_build.py measures it), and their stops and roads."""
     limits = routesetup.document_limits(install_named(name))
-    return (limits.journeys + build.inbound_limit(limits)) * build.SAVED_JOURNEY_BYTES + build.STOPS_AND_ROADS_BYTES
+    return (limits.journeys + txc.inbound_limit(limits)) * build.SAVED_JOURNEY_BYTES + build.STOPS_AND_ROADS_BYTES
 
 
 def test_every_install_saves_the_largest_timetable_its_limits_allow():

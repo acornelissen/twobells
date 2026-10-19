@@ -388,7 +388,7 @@ def _journeys(reader: _Reader, keep: bool) -> tuple[Journey, ...]:
     shared: dict = {}
 
     def one(value):
-        """One of each equal value, as a build shares them (build._Shared)."""
+        """One of each equal value, as a build shares them (txc.Shared)."""
         return shared.setdefault(value, value)
 
     found = []

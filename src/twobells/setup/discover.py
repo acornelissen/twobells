@@ -44,7 +44,7 @@ from ..core.walk import DEFAULT_STOP
 from ..settings.overlay import _toml_key, _toml_string
 from ..timetable import build as timetable
 from ..timetable import roads as roadshape
-from ..timetable import routesetup
+from ..timetable import routesetup, txc
 from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits, Pattern
 
 log = logging.getLogger(__name__)
@@ -193,7 +193,7 @@ class _MeteredFile:
     def write(self, data: bytes) -> int:
         self._written += len(data)
         if self._written > self._limits.max_download:
-            raise timetable.TimetableError(
+            raise txc.TimetableError(
                 f"Timetable download larger than {self._limits.max_download} bytes; skipped")
         self._limits.spend(len(data))
         return self._file.write(data)
@@ -286,8 +286,8 @@ def discover_operators(
         fallback = dataset.nocs[0] if dataset.nocs else ""
         try:
             # Closed whatever happens, so its temporary file goes at once.
-            with closing(timetable._documents([(fallback, dataset.url)], fetch, scratch_dir, limits.read,
-                                              skip)) as documents:
+            with closing(timetable.documents([(fallback, dataset.url)], fetch, scratch_dir, limits.read,
+                                             skip)) as documents:
                 for _, name, document in documents:
                     budget.check()
                     # Skip, unparsed, the many documents that never mention your stops.
@@ -298,9 +298,9 @@ def discover_operators(
                         continue
                     try:
                         # Those that ended before today are let go uncounted, as a build does.
-                        journeys, _ = timetable._parse_document(document, atcos, fallback,
-                                                                room=timetable._Room(limits.journeys), today=today)
-                    except (timetable.TimetableError, routesetup.RouteSetupError) as error:
+                        journeys, _ = txc.parse_document(document, atcos, fallback,
+                                                         room=txc.Room(limits.journeys), today=today)
+                    except (txc.TimetableError, routesetup.RouteSetupError) as error:
                         notes.append(f"Skipped a timetable: {safe_message(error)}")
                         continue
                     current = [j for j in journeys if _LINE.fullmatch(j.line)]
@@ -604,7 +604,7 @@ class SetupJob:
                             build=build, route=roads, saved=ready, limits=self._limits)
         except timetable.TimetableBusy:
             raise Cancelled("Cancelled") from None  # while waiting: it only gives up when cancelled
-        except timetable.TimetableError as error:  # the lock file can't be opened
+        except txc.TimetableError as error:  # the lock file can't be opened
             raise DiscoveryError(f"The bus timetable couldn't be built: {safe_message(error)}") from None
         if told:
             return  # saved, and its roads found or stopped since

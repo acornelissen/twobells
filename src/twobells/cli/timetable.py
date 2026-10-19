@@ -12,8 +12,9 @@ from ..settings.schema import bus_source
 from ..sources.bodsbus import BodsBusSource
 from ..sources.holidays import bank_holidays
 from ..sources.trams import TramTimetableSource
-from ..timetable.build import TimetableBusy, TimetableError
+from ..timetable.build import TimetableBusy
 from ..timetable.routesetup import document_limits
+from ..timetable.txc import TimetableError
 from .common import as_owner, load_settings, open_store
 
 

@@ -90,7 +90,7 @@ class DocumentLimits:
     (build reads it an element at a time, never as a whole tree), beside
     the journeys found: at most `journeys` calling at your stops, from it and
     the documents before, or the build fails as it finds one more, and half
-    as many inbound-only ones, the rest left out (build.inbound_limit). Each
+    as many inbound-only ones, the rest left out (txc.inbound_limit). Each
     install's are in its table (settings/installs.py): a Pi's fit its units'
     MemoryMax=256M."""
 

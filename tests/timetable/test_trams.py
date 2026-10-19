@@ -11,7 +11,8 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from twobells.timetable import trams
-from twobells.timetable.build import TimetableBusy, TimetableError, TimetableTooBig
+from twobells.timetable.build import TimetableBusy, TimetableTooBig
+from twobells.timetable.txc import TimetableError
 
 STOPS = {"A": "9400ZZMAPIC"}
 NOW = datetime(2026, 10, 19, 7, 55)  # a Monday

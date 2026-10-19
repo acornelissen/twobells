@@ -641,7 +641,7 @@ def _timetable_memory(install) -> int:
     (tests/timetable/test_build.py and test_routesetup.py check both).
     Beside either are the journeys found, from it and the documents before:
     those calling at your stops, up to the install's limit, and inbound-only
-    ones, up to half that (build.inbound_limit), each taking up to
+    ones, up to half that (txc.inbound_limit), each taking up to
     build.JOURNEY_BYTES. The timetable is saved a journey at a time, and
     loaded so (before each build, and by the board every minute), holding
     no more than its journeys again (tests/timetable/test_build.py checks
@@ -652,10 +652,10 @@ def _timetable_memory(install) -> int:
     runs there (tests/fetch/test_service.py and
     tests/dashboard/test_collector.py check both), so it is never held
     beside the search's build: alone, it is no more than loading takes."""
-    from twobells.timetable import build, routesetup
+    from twobells.timetable import build, routesetup, txc
 
     limits = routesetup.document_limits(install)
-    journeys = (limits.journeys + build.inbound_limit(limits)) * build.JOURNEY_BYTES
+    journeys = (limits.journeys + txc.inbound_limit(limits)) * build.JOURNEY_BYTES
     read = max(2 * max(limits.read, limits.parse), routesetup.MAX_NAPTAN_BYTES)
     building = read + journeys
     saving_or_loading = journeys
@@ -724,10 +724,10 @@ def _cached_timetable(install) -> int:
     """The dashboard's own copy of the timetable, held beside a build where
     serve runs both (Docker): its poller keeps it through upkeep's weekly
     rebuild, so the buses don't blank."""
-    from twobells.timetable import build, routesetup
+    from twobells.timetable import routesetup, txc
 
     limits = routesetup.document_limits(install)
-    return (limits.journeys + build.inbound_limit(limits)) * LOADED_JOURNEY_BYTES
+    return (limits.journeys + txc.inbound_limit(limits)) * LOADED_JOURNEY_BYTES
 
 
 def test_the_fetch_service_goes_out_and_listens_on_nothing():
