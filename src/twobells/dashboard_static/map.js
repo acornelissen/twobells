@@ -146,8 +146,10 @@ export async function showBus(id) {
   $("map-centre").disabled = true;
   $("osm-credit").hidden = false;
   try {
-    const [data, module] = await Promise.all([getJSON(`/api/bus/${encodeURIComponent(id)}`), loadLeaflet()]);
-    L = module;
+    // L is kept once Leaflet loads, even if the bus doesn't: then the next
+    // snapshot (refreshMap) draws the map.
+    const leaflet = loadLeaflet().then((module) => { L = module; });
+    const [data] = await Promise.all([getJSON(`/api/bus/${encodeURIComponent(id)}`), leaflet]);
     if (mine === request) show(obj(data), true);
   } catch {
     if (mine === request) setText($("map-status"), "The map couldn't be loaded. The bus may have left the board, or the server is busy.");

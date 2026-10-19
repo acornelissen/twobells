@@ -1536,6 +1536,51 @@ def test_the_area_map_keeps_the_focus_and_the_open_popup_across_snapshots():
 
 
 @needs_node
+def test_a_bus_map_that_failed_to_load_is_drawn_with_a_later_snapshot():
+    # The bus's details failed on opening (the server busy), but Leaflet loaded:
+    # the next snapshot draws the map, as it did before basemap.js.
+    bus = json.dumps(_fixture("dashboard_bus.json"))
+    found = run_js("""
+        import { register } from "node:module";
+        register("data:text/javascript," + encodeURIComponent(`
+          export async function resolve(spec, context, next) {
+            if (!spec.includes("leaflet-src.esm.js")) return next(spec, context);
+            const names = ["map", "tileLayer", "layerGroup", "polyline", "circleMarker", "marker", "divIcon"];
+            const body = names.map((n) => "export const " + n + " = (...a) => globalThis.FAKE_L." + n + "(...a);").join("");
+            return { url: "data:text/javascript," + encodeURIComponent(body), shortCircuit: true };
+          }`));
+        const { h } = await import("./dom.js");
+        let maps = 0;
+        const chain = (extra = {}) => { const o = { addTo: () => o, bindTooltip: () => o, bindPopup: () => o, ...extra }; return o; };
+        globalThis.FAKE_L = {
+          map: () => { maps++; return { invalidateSize() {}, fitBounds() {}, setView() {}, getZoom: () => 14 }; },
+          tileLayer: () => chain(), layerGroup: () => chain({ clearLayers() {} }), polyline: () => chain(),
+          circleMarker: () => chain(), marker: () => chain(), divIcon: () => ({}),
+        };
+        globalThis.matchMedia = () => ({ matches: true });
+        let busy = true;
+        globalThis.fetch = async () => (busy
+          ? { ok: false, status: 503, json: async () => ({}), headers: { get: () => null } }
+          : { ok: true, status: 200, json: async () => (BUS),
+              headers: { get: (name) => (name === "Content-Type" ? "application/json" : null) } });
+        document.head = document.createElement("head");
+        document.head.append = (link) => { for (const [type, fn] of link.listeners) if (type === "load") fn(); };
+        document.body.append(h("p", { id: "map-status" }), h("p", { id: "map-where" }), h("ol", { id: "map-stops" }),
+          h("button", { id: "map-centre" }), h("p", { id: "osm-credit" }), h("div", { id: "map" }));
+        const { showBus, refreshMap } = await import("./map.js");
+        await showBus((BUS).id);
+        await new Promise((resolve) => setTimeout(resolve, 20));  // Leaflet goes on loading after the bus fails
+        const failed = { maps, status: document.getElementById("map-status").textContent };
+        busy = false;
+        await refreshMap();
+        console.log(JSON.stringify({ failed, maps, status: document.getElementById("map-status").textContent,
+                                     stops: document.getElementById("map-stops").childNodes.length }));
+    """.replace("(BUS)", f"({bus})"))
+    assert found["failed"]["maps"] == 0 and "couldn't be loaded" in found["failed"]["status"]
+    assert found["maps"] == 1 and found["status"] == "" and found["stops"] > 0
+
+
+@needs_node
 def test_the_line_across_the_page_marks_each_train_and_lists_it_in_words():
     # Across a wide section the stations' own train lists are hidden: each placed
     # train is a marker on the rail (drawing only) and a line in the list under
