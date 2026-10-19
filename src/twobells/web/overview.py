@@ -31,7 +31,7 @@ from ..timetable import trams
 from . import places
 from .icons import icon
 from .keystate import KeyState, pill
-from .status import _SOURCES, _dict, _policy, _positive, _switched_off, _when
+from .status import SOURCES, as_dict, poll_policy, positive, switched_off, time_ago
 
 # A feed's state: its pill's look, icon and words.
 STATES = {
@@ -124,13 +124,13 @@ def _moment(value, zone: tzinfo | None) -> datetime | None:
 
 
 def _updated(moment: datetime | None, now: datetime) -> str:
-    return _when(moment, now) if moment is not None else "Never"
+    return time_ago(moment, now) if moment is not None else "Never"
 
 
 def _from_status(name: str, block, now: datetime, zone: tzinfo | None, checking: str, meaning: str,
                  resting: bool = False) -> Feed:
     """A feed from one of the snapshot's status blocks (snapshot.status_block)."""
-    block = _dict(block)
+    block = as_dict(block)
     success = _moment(block.get("last_success"), zone)
     error, note = _text(block.get("error")), _text(block.get("note"))
     if error or block.get("stale") is True:
@@ -175,7 +175,7 @@ def dashboard_feeds(snapshot: Mapping | None, now: datetime, zone: tzinfo | None
     weather = snapshot.get("weather")
     if isinstance(weather, Mapping):
         add("Weather", weather.get("status"), MEANINGS["weather"])
-    disruptions = _dict(_dict(snapshot.get("disruptions")).get("status"))
+    disruptions = as_dict(as_dict(snapshot.get("disruptions")).get("status"))
     if isinstance(disruptions.get("train"), Mapping):
         add("Engineering works", disruptions["train"], MEANINGS["engineering"])
     if isinstance(disruptions.get("bus"), Mapping):
@@ -186,9 +186,9 @@ def dashboard_feeds(snapshot: Mapping | None, now: datetime, zone: tzinfo | None
 def _bus_feeds(buses: Mapping, now: datetime, zone: tzinfo | None, checking: str, quiet: bool) -> list[Feed]:
     """The bus timetable and the live positions; or, where the buses come
     from TransportAPI (which the dashboard doesn't show), why there are none."""
-    status = _dict(buses.get("status"))
+    status = as_dict(buses.get("status"))
     positions = buses.get("positions")
-    table = _dict(buses.get("timetable"))
+    table = as_dict(buses.get("timetable"))
     if not isinstance(positions, Mapping) and table.get("state") == "missing" and not status.get("error"):
         return [Feed("Buses", "off", "Never", "No", note=_text(status.get("note")))]
     times = _from_status("Bus times", status, now, zone, checking, MEANINGS["bus_times"], resting=quiet)
@@ -201,7 +201,7 @@ def _bus_feeds(buses: Mapping, now: datetime, zone: tzinfo | None, checking: str
         state, meaning = "problem", MEANINGS["bus_timetable"]
         error, note = error or note or "There is no bus timetable yet", ""
     built = _moment(table.get("built"), zone)
-    extra = (("Timetable built", _when(built, now)),) if built is not None else ()
+    extra = (("Timetable built", time_ago(built, now)),) if built is not None else ()
     found = [Feed("Bus times", state, times.updated, checking, error, note, meaning, extra)]
     if isinstance(positions, Mapping):
         found.append(_from_status("Live bus positions", positions, now, zone, checking, MEANINGS["bus_positions"],
@@ -221,27 +221,27 @@ def board_feeds(data: dict, state: dict | None, now: datetime,
                      note="The board saves its state on its first run, within a minute or two of starting.")]
     if data.get("bank_holidays", True) is not True:
         holidays = frozenset()
-    entries = _dict(state.get("sources"))
+    entries = as_dict(state.get("sources"))
     found = []
-    for name, section_name, heading, stale_default in _SOURCES:
-        if (section_name not in data and name not in entries) or _switched_off(data, section_name):
+    for name, section_name, heading, stale_default in SOURCES:
+        if (section_name not in data and name not in entries) or switched_off(data, section_name):
             continue
-        section = _dict(data.get(section_name))
+        section = as_dict(data.get(section_name))
         # No windows saved: the board checks at its defaults (BODS buses all day).
         defaults = schema.bus_defaults(schema.bus_source(section)) if name == "bus" else schema.BOARD_DEFAULTS[name]
-        policy = _policy({"windows": list(defaults["windows"]), **section}, holidays)
-        stale_after = _positive(section, "stale_after_minutes", stale_default)
+        policy = poll_policy({"windows": list(defaults["windows"]), **section}, holidays)
+        stale_after = positive(section, "stale_after_minutes", stale_default)
         extra, over = (), False
         if name == "bus" and schema.bus_source(data.get("bus")) == "transportapi":
             extra, over = _budget(data, state, now)
         meaning = MEANINGS["board_metro_live" if name == "metro" and schema.london_metro(data) else f"board_{name}"]
-        found.append(_board_feed(heading, _dict(entries.get(name)), policy, stale_after, now, meaning, extra, over))
-    vehicles = _dict(state.get("vehicles"))
-    if vehicles and not _switched_off(data, "bus"):
+        found.append(_board_feed(heading, as_dict(entries.get(name)), policy, stale_after, now, meaning, extra, over))
+    vehicles = as_dict(state.get("vehicles"))
+    if vehicles and not switched_off(data, "bus"):
         # Saved only alongside fetched departures, so too old to judge "not updating" by.
-        found.append(_board_feed("Live bus positions", vehicles, _policy(_dict(data.get("bus")), holidays), None, now,
-                                 MEANINGS["board_vehicles"]))
-    drawn = _moment(_dict(state.get("last_render")).get("at"), None)
+        bus_policy = poll_policy(as_dict(data.get("bus")), holidays)
+        found.append(_board_feed("Live bus positions", vehicles, bus_policy, None, now, MEANINGS["board_vehicles"]))
+    drawn = _moment(as_dict(state.get("last_render")).get("at"), None)
     found.append(Feed("Display", "ok" if drawn else "waiting", _updated(drawn, now), ""))
     return found
 
@@ -257,10 +257,10 @@ def _board_feed(heading: str, entry: dict, policy: PollPolicy | None, stale_afte
     else:
         checking = "No, outside its checking times"
     error = ""
-    last_error = _dict(entry.get("last_error"))
+    last_error = as_dict(entry.get("last_error"))
     failed = _moment(last_error.get("at"), None)
     if failed and (success is None or failed > success):
-        error = f"{_when(failed, now)}: {_text(last_error.get('message')) or 'no details'}"
+        error = f"{time_ago(failed, now)}: {_text(last_error.get('message')) or 'no details'}"
     if active and stale_after is not None and (success is None or now - success > timedelta(minutes=stale_after)):
         error = error or f"Not updating: nothing new for over {stale_after} min"
     if over:
@@ -278,8 +278,8 @@ def _board_feed(heading: str, entry: dict, policy: PollPolicy | None, stale_afte
 
 def _budget(data: dict, state: dict, now: datetime) -> tuple[tuple[tuple[str, str], ...], bool]:
     """The TransportAPI lookups used today, and whether they are all used."""
-    limit = _positive(_dict(data.get("bus")), "daily_budget", 28)
-    spent = _dict(_dict(state.get("budgets")).get("bus"))
+    limit = positive(as_dict(data.get("bus")), "daily_budget", 28)
+    spent = as_dict(as_dict(state.get("budgets")).get("bus"))
     used = spent.get("used", 0) if spent.get("day") == now.date().isoformat() else 0
     if not isinstance(used, int) or isinstance(used, bool) or used < 0:
         return (), False
@@ -291,7 +291,7 @@ def guard_feed(found: str, checked: datetime, now: datetime) -> Feed:
     was `checked` (local, as `now`): On is working, Off a problem, and Can't
     tell neither."""
     state, pill, meaning = GUARD.get(found, GUARD["unknown"])
-    when = ("Checked", _when(checked, now))
+    when = ("Checked", time_ago(checked, now))
     extra = (when, _GUARD_FIX) if state == "problem" else (when,)
     return Feed("Network guard", state, "", "", meaning=meaning, extra=extra, pill=pill)
 
@@ -425,7 +425,7 @@ def _timetable_rows(folder: Path, bus: dict, stops: dict[str, str], now: datetim
         if not (isinstance(operators, list) and all(isinstance(o, str) for o in operators)):
             operators = None
         reason = "it can't be read" if found is None else timetable.due(found, stops, now, operators)
-        words = e(f"Saved {_when(saved, now)}")
+        words = e(f"Saved {time_ago(saved, now)}")
         if reason:
             due = f"Due to be built again: {reason}. It is built again by itself; if this stays, the log says why."
             words = f'{_pill("pill-warn", "triangle-alert", "Out of date")} {words}. {e(due)}'
@@ -440,7 +440,7 @@ def _tram_rows(metro: dict, folder: Path, now: datetime, zone: tzinfo) -> list[s
     """The tram stops with their names and walks, and when the tram timetable
     was saved, with a warning when it is due to be built again."""
     e = html.escape
-    stops = {label: code for label, code in _dict(metro.get("stops")).items()
+    stops = {label: code for label, code in as_dict(metro.get("stops")).items()
              if isinstance(label, str) and isinstance(code, str)}
     names = places.tram_stop_names()
     walks = stop_walks(metro, list(stops))
@@ -458,7 +458,7 @@ def _tram_rows(metro: dict, folder: Path, now: datetime, zone: tzinfo) -> list[s
         return [*rows, _row("Tram timetable", "Not built yet. It is built within the hour.")]
     found = trams.load(folder)
     reason = "it can't be read" if found is None else trams.due(found, stops, now)
-    words = e(f"Saved {_when(saved, now)}")
+    words = e(f"Saved {time_ago(saved, now)}")
     if reason:
         due = f"Due to be built again: {reason}. It is built again by itself; if this stays, the log says why."
         words = f'{_pill("pill-warn", "triangle-alert", "Out of date")} {words}. {e(due)}'
@@ -470,7 +470,7 @@ def render_place(data: dict, folder: Path, now: datetime, zone: tzinfo) -> str:
     trains must call at, the stops with their names, the bus timetable's
     freshness, home and the weather."""
     e = html.escape
-    train, bus, weather = (_dict(data.get(name)) for name in ("train", "bus", "weather"))
+    train, bus, weather = (as_dict(data.get(name)) for name in ("train", "bus", "weather"))
     rows = []
     station = _station_line(train) if "train" in data else ""
     rows.append(_row("Station", e(station) if station else "Not set up"))
@@ -487,7 +487,7 @@ def render_place(data: dict, folder: Path, now: datetime, zone: tzinfo) -> str:
     else:
         rows.append(_row("Bus stops", "Not set up"))
     if "metro" in data:
-        rows.extend(_tram_rows(_dict(data.get("metro")), folder, now, zone))
+        rows.extend(_tram_rows(as_dict(data.get("metro")), folder, now, zone))
     home = "lat" in weather and "lon" in weather
     rows.append(_row("Home", "Set (to about 1 km)" if home else "Not set"))
     if "weather" in data:

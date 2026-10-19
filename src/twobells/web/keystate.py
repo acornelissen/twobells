@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 from ..core.errors import ConfigError
 from ..settings import keyresults, schema
 from .icons import icon
-from .status import _dict
+from .status import as_dict
 
 if TYPE_CHECKING:
     from ..settings.installs import Install
@@ -108,7 +108,7 @@ def pill(state: KeyState) -> str:
 
 def needed_for(name: str, data: Mapping, views: Sequence[str]) -> str:
     """What a key is needed for with these settings, in words; "" when nothing needs it now."""
-    train, bus = _dict(data.get("train")), _dict(data.get("bus"))
+    train, bus = as_dict(data.get("train")), as_dict(data.get("bus"))
     trains = "train" in data and train.get("enabled") is not False
     buses = "bus" in data and bus.get("enabled") is not False
     source = schema.bus_source(bus)

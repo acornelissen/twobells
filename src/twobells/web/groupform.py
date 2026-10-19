@@ -489,8 +489,8 @@ class GroupForm:
         boxes = self._walk_boxes(f, data)
         if not boxes:
             return ""
-        attrs, notes = _described(f.name, f.hint, None)
-        inside = "".join(_field(replace(f, name=box, label=words, kind="number"), shown.get(box, ""),
+        attrs, notes = describe_field(f.name, f.hint, None)
+        inside = "".join(field_html(replace(f, name=box, label=words, kind="number"), shown.get(box, ""),
                                 errors.get(box), "") for box, words in boxes)
         return (f'<fieldset class="field walks"{attrs}><legend>{html.escape(f.label)}</legend>{notes}{inside}'
                 "</fieldset>")
@@ -674,7 +674,7 @@ class GroupForm:
         crs = data.get("train", {}).get("crs") if isinstance(data.get("train"), dict) else None
         if f.name == "train_crs" and isinstance(crs, str) and schema.CRS.fullmatch(crs):
             hint = f"{hint} Currently {places.station(crs.upper())}."
-        return _field(f, value, error, hint)
+        return field_html(f, value, error, hint)
 
     def _stops(self, data: dict) -> str:
         """The bus stops, read only: setup changes them, or Advanced by hand."""
@@ -739,7 +739,7 @@ class GroupForm:
         )
 
 
-def _described(name: str, hint: str, error: str | None, also: str = "") -> tuple[str, str]:
+def describe_field(name: str, hint: str, error: str | None, also: str = "") -> tuple[str, str]:
     """A field's aria attributes, and its hint and error paragraphs; `also`
     is the id of another paragraph about it, like a key test's result
     (web/keyspage.py)."""
@@ -876,7 +876,7 @@ def _show_list(f: Field, data: dict, shown: Mapping[str, str], error: str | None
     leave tickboxes (_LEAVE_ITEM). Each box says which presets include it
     (data-presets), for settings.js."""
     e = html.escape
-    attrs, notes = _described(f.name, f.hint, error)
+    attrs, notes = describe_field(f.name, f.hint, error)
     attrs = attrs.replace(' aria-invalid="true"', "")  # a fieldset takes none: the error says it of the group
     hidden = ' class="vh"' if f.label == f.heading else ""
     presets = replace(f, name=_preset_name(f), label="Fill in from a preset", kind="radios", hint=_PRESET_HINT,
@@ -956,7 +956,7 @@ def _modes_list(f: Field, data: dict, shown: Mapping[str, str], error: str | Non
     """A modes list: a group of its own, under the field's label, with a
     tickbox for each mode set up."""
     e = html.escape
-    attrs, notes = _described(f.name, f.hint, error)
+    attrs, notes = describe_field(f.name, f.hint, error)
     attrs = attrs.replace(' aria-invalid="true"', "")  # a fieldset takes none: the error says it of the group
     hidden = ' class="vh"' if f.label == f.heading else ""
     boxes = []
@@ -976,9 +976,9 @@ def _label(f: Field) -> str:
     return f'<label for="{f.name}"{hidden}>{html.escape(f.label)}{unit}</label>'
 
 
-def _field(f: Field, value: str, error: str | None, hint: str | None = None) -> str:
+def field_html(f: Field, value: str, error: str | None, hint: str | None = None) -> str:
     e = html.escape
-    attrs, notes = _described(f.name, f.hint if hint is None else hint, error)
+    attrs, notes = describe_field(f.name, f.hint if hint is None else hint, error)
     if f.kind == "select":
         options = "".join(
             f'<option value="{e(v)}"{" selected" if v == value else ""}>{e(text)}</option>' for v, text in f.options
@@ -1009,7 +1009,7 @@ def _radios(f: Field, value: str, error: str | None) -> str:
     for the links to it; the hint and error describe the group. Two choices,
     or a few short ones, sit side by side."""
     e = html.escape
-    attrs, notes = _described(f.name, f.hint, error)
+    attrs, notes = describe_field(f.name, f.hint, error)
     # The error says it of the group: a fieldset takes no aria-invalid.
     attrs = attrs.replace(' aria-invalid="true"', "")
     options = []
@@ -1027,7 +1027,7 @@ def _checkbox(f: Field, value: str, error: str | None, extra: str = "") -> str:
     """A checkbox, its label beside it and its hint and error below.
     `extra` is more attributes for the box's field."""
     e = html.escape
-    attrs, notes = _described(f.name, f.hint, error)
+    attrs, notes = describe_field(f.name, f.hint, error)
     checked = " checked" if value == "on" else ""
     return (
         f'<div class="field check{" has-error" if error else ""}"{extra}>'

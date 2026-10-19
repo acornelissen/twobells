@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 
 from ..core.polling import PollPolicy, parse_window
 
-_SOURCES = (
+SOURCES = (
     # (state entry, config section, heading, minutes before "not updating")
     ("train", "train", "Trains", 6),
     ("bus", "bus", "Buses", 30),
@@ -20,7 +20,7 @@ _SOURCES = (
 )
 
 
-def _dict(value) -> dict:
+def as_dict(value) -> dict:
     return value if isinstance(value, dict) else {}
 
 
@@ -37,7 +37,7 @@ def _ago(gap: timedelta) -> str:
     return f"{days} day ago" if days == 1 else f"{days} days ago"
 
 
-def _when(moment: datetime, now: datetime) -> str:
+def time_ago(moment: datetime, now: datetime) -> str:
     """Like '07:58, 3 min ago', with the day too if it wasn't today, and the year if not this one."""
     if moment.date() == now.date():
         clock = f"{moment:%H:%M}"
@@ -50,7 +50,7 @@ def _when(moment: datetime, now: datetime) -> str:
     return f"{clock}, {_ago(now - moment)}"
 
 
-def _policy(section: dict, holidays: frozenset[date]) -> PollPolicy | None:
+def poll_policy(section: dict, holidays: frozenset[date]) -> PollPolicy | None:
     windows = section.get("windows")
     if not isinstance(windows, list):
         return None
@@ -60,11 +60,11 @@ def _policy(section: dict, holidays: frozenset[date]) -> PollPolicy | None:
         return None
 
 
-def _switched_off(data: dict, name: str) -> bool:
+def switched_off(data: dict, name: str) -> bool:
     """Whether the section says enabled = false; anything else, saving reports."""
-    return _dict(data.get(name)).get("enabled") is False
+    return as_dict(data.get(name)).get("enabled") is False
 
 
-def _positive(section: dict, key: str, default: int) -> int:
+def positive(section: dict, key: str, default: int) -> int:
     value = section.get(key, default)
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else default

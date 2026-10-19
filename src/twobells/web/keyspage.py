@@ -39,7 +39,7 @@ from ..settings.schema import KEY_VALUE, Invalid
 from ..setup import keytest
 from ..sources.disruptions import kb_url_is_placeholder
 from . import keystate
-from .groupform import _described, _field, check_views, edited, section_id
+from .groupform import check_views, describe_field, edited, field_html, section_id
 from .icons import icon
 from .keystate import KeyForm, KeyState
 
@@ -296,7 +296,7 @@ class KeysPage:
         address = self._address(form, data)
         if address:
             shown = values[ADDRESS] if ADDRESS in values else _address_shown(data)
-            out.append(_field(_ADDRESS_FIELD, shown, errors.get(ADDRESS)))
+            out.append(field_html(_ADDRESS_FIELD, shown, errors.get(ADDRESS)))
         described = ""
         if self._test_key is not None and form.name == "TAPI_APP_KEY":
             described = f' aria-describedby="{form.name}-cost"'
@@ -348,7 +348,7 @@ def _key_box(name: str, label: str, hint: str, error: str | None, there: bool, r
              result: str = "") -> str:
     """A key's box, never with its value; `result` (HTML, with id `result_id`) goes right after it."""
     e = html.escape
-    attrs, notes = _described(name, hint, error, result_id)
+    attrs, notes = describe_field(name, hint, error, result_id)
     placeholder = "Paste a new key to replace the saved one" if there else "Paste the key"
     return (
         f'<div class="field{" has-error" if error else ""}"><label for="{name}">{e(label)}</label>{notes}'

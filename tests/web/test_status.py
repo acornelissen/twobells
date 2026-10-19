@@ -3,7 +3,7 @@ from datetime import datetime
 import pytest
 
 from twobells.core.errors import safe_message
-from twobells.web.status import _when
+from twobells.web.status import time_ago
 
 
 @pytest.mark.parametrize("text, secret", [
@@ -51,8 +51,8 @@ def test_ordinary_messages_pass_through():
 
 def test_times_say_how_long_ago_naming_the_day_and_year_when_not_today():
     now = datetime(2026, 10, 8, 8, 1)
-    assert _when(datetime(2026, 10, 8, 7, 58), now) == "07:58, 3 min ago"
-    assert _when(datetime(2026, 10, 8, 8, 0, 30), now) == "08:00, just now"
-    assert _when(datetime(2026, 10, 8, 7, 58), datetime(2026, 10, 10, 9, 0)) == "Thu 8 Oct 07:58, 2 days ago"
-    assert _when(datetime(2026, 10, 8, 7, 58), datetime(2027, 1, 2, 9, 0)) == "Thu 8 Oct 2026 07:58, 86 days ago"
-    assert _when(datetime(2026, 10, 8, 9, 0), now) == "09:00"  # the clock went back since
+    assert time_ago(datetime(2026, 10, 8, 7, 58), now) == "07:58, 3 min ago"
+    assert time_ago(datetime(2026, 10, 8, 8, 0, 30), now) == "08:00, just now"
+    assert time_ago(datetime(2026, 10, 8, 7, 58), datetime(2026, 10, 10, 9, 0)) == "Thu 8 Oct 07:58, 2 days ago"
+    assert time_ago(datetime(2026, 10, 8, 7, 58), datetime(2027, 1, 2, 9, 0)) == "Thu 8 Oct 2026 07:58, 86 days ago"
+    assert time_ago(datetime(2026, 10, 8, 9, 0), now) == "09:00"  # the clock went back since
