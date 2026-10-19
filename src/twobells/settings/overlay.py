@@ -40,7 +40,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..board.config import settings_from
 from ..core import files
 from ..core.errors import ConfigError, scrub_secrets
 from .config import OVERLAY_NAME, SECRETS_OVERLAY_NAME, merge, read_overlay_in
@@ -135,10 +134,6 @@ def to_toml(data: dict, header: str = HEADER) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _board_loads(data: dict, env: Mapping[str, str]) -> None:
-    settings_from(data, env)
-
-
 @dataclass(frozen=True)
 class Target:
     """An overlay to save into. `base` reads the settings it is layered over;
@@ -149,7 +144,7 @@ class Target:
 
     base: Callable[[], dict]
     folder: Callable[[dict], Path | None]
-    check: Callable[[dict, Mapping[str, str]], object] = _board_loads
+    check: Callable[[dict, Mapping[str, str]], object]
     allowed: Mapping[str | None, frozenset[str]] = field(default_factory=saved_keys)
 
     def current(self) -> dict:
@@ -161,9 +156,10 @@ class Target:
 def board_target(config_path: Path | str) -> Target:
     """The overlay in the store of a config.toml path, checked as the board
     loads it: for callers and tests that still name config.toml alone."""
+    from ..board.config import settings_from
     from .store import Store
 
-    return Store.open(config_path).target()
+    return Store.open(config_path).target(settings_from)
 
 
 def save_to(target: Target, changes: dict, keys: Mapping[str, str], env: Mapping[str, str],

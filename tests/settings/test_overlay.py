@@ -6,6 +6,7 @@ import tomllib
 
 import pytest
 
+from twobells.board.config import settings_from
 from twobells.core.errors import ConfigError
 from twobells.settings.config import read_base
 from twobells.settings.overlay import OverlayError, Target, board_target, save_to, to_toml
@@ -186,7 +187,7 @@ def test_a_target_saves_into_its_own_folder_checked_its_own_way(board, tmp_path)
 def test_a_target_with_no_folder_saves_nothing(board):
     config, _ = board
     with pytest.raises(OverlayError, match="state_file"):
-        save_to(Target(lambda: read_base(config), lambda base: None), CHANGES, {}, ENV)
+        save_to(Target(lambda: read_base(config), lambda base: None, settings_from), CHANGES, {}, ENV)
 
 
 def test_saves_at_once_each_keep_the_others_changes(board):

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from twobells.board.config import settings_from
 from twobells.core.errors import ConfigError
 from twobells.settings import store as store_module
 from twobells.settings.installs import install_named
@@ -182,7 +183,7 @@ def test_the_saved_keys_are_the_schema_s_whichever_view_saved_them(board):
     store = Store.open(path, environ={})
     assert store.saved() == {"theme": "plain", "app": {"views": ["board"]}, "train": {"rows": 2},
                              "dashboard": {"train_rows": 4}}
-    assert store.target().allowed == saved_keys()
+    assert store.target(settings_from).allowed == saved_keys()
 
 
 def test_keys_are_the_environment_then_secrets_then_the_store_s(board, tmp_path):
@@ -274,9 +275,9 @@ def test_making_the_folder_is_for_its_owner_only(tmp_path):
 def test_a_board_save_keeps_the_dashboard_s_settings_and_a_dashboard_save_the_board_s(board):
     path, folder = board
     store = Store.open(path, environ={})
-    save_to(store.target(), {"theme": "plain", "train": {"rows": 2}}, {}, ENV)
+    save_to(store.target(settings_from), {"theme": "plain", "train": {"rows": 2}}, {}, ENV)
     save_to(store.target(lambda data, env: None), {"dashboard": {"train_rows": 4}}, {}, ENV)
-    save_to(store.target(), {"title": "Ours"}, {}, ENV)
+    save_to(store.target(settings_from), {"title": "Ours"}, {}, ENV)
     saved = store.saved()
     assert saved == {"theme": "plain", "train": {"rows": 2}, "dashboard": {"train_rows": 4}, "title": "Ours"}
 
@@ -287,8 +288,8 @@ def test_the_target_checks_as_its_view_loads(board):
     path, _ = board
     store = Store.open(path, environ={})
     with pytest.raises(OverlayError, match="crs"):
-        save_to(store.target(), {"train": {"crs": "TOOLONG"}}, {}, ENV)
-    assert store.target().base()["state_file"] == str(store.state_file)
+        save_to(store.target(settings_from), {"train": {"crs": "TOOLONG"}}, {}, ENV)
+    assert store.target(settings_from).base()["state_file"] == str(store.state_file)
 
 
 # Run as root on a store that is the service user's, a command would leave

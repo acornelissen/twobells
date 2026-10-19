@@ -39,6 +39,7 @@ from functools import partial
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from ..board.config import settings_from
 from ..core.errors import ConfigError
 from ..dashboard.collector import Collector
 from ..dashboard.config import DashboardSettings, FileWatch, load_dashboard
@@ -82,7 +83,7 @@ class FetchService:
         self._make_collector = collector
         self._spool = Spool(folder)
         self.stop = stop or threading.Event()
-        target = store.target()
+        target = store.target(settings_from)
 
         def settings() -> dict:
             try:

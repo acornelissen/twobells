@@ -17,6 +17,7 @@ import pytest
 
 from tests.contrast import assert_contrast
 from tests.paths import ROOT
+from twobells.board.config import settings_from
 from twobells.core.walk import WalkTimes
 from twobells.dashboard.snapshot import Hub
 from twobells.settings import schema
@@ -1449,7 +1450,7 @@ def on_a_pi(make):
     runner, here, now = KeyRunner(), [], [100.0]
 
     def wizard(store):
-        return SetupApi(store.target(), store.env, store.folder, install=install_named("pi"), runner=runner,
+        return SetupApi(store.target(settings_from), store.env, store.folder, install=install_named("pi"), runner=runner,
                         test_key=lambda *args: here.append(args), key_tests=RateLimit(10.0, clock=lambda: now[0]))
 
     running = make(install="pi", setup=wizard)

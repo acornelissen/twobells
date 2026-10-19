@@ -9,7 +9,7 @@ from typing import ClassVar
 import pytest
 
 from tests.paths import ROOT
-from twobells.board.config import load_config
+from twobells.board.config import load_config, settings_from
 from twobells.settings import keyresults, show
 from twobells.settings.config import needs_setup, read_base
 from twobells.settings.installs import INSTALLS, Install
@@ -393,7 +393,7 @@ def test_no_exact_home_position_is_written_anywhere(board):
 def test_a_host_can_save_into_its_own_overlay(board, tmp_path):
     own = tmp_path / "own"
     own.mkdir()
-    api = SetupApi(Target(lambda: read_base(board.config), lambda base: own), lambda: dict(board.secrets), own,
+    api = SetupApi(Target(lambda: read_base(board.config), lambda base: own, settings_from), lambda: dict(board.secrets), own,
                    stations=lambda: STATIONS, make_job=FakeJob,
                    saved_message="Saved. The dashboard restarts to use them.")
     status, body = api.handle("finish", {"home": HOME, "station_crs": "GLO", "stops": {}, "walk": {}})

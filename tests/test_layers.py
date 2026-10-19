@@ -30,8 +30,6 @@ ALLOWED = {
     ("twobells.settings.schema", "twobells.board.names"),
     ("twobells.settings.schema", "twobells.board.panel"),
     # Not yet moved: each waits on a decision about where it goes.
-    # A save is checked with the board's loader by default (overlay.Target).
-    ("twobells.settings.overlay", "twobells.board.config"),
     # The names of gov.uk's bank holiday lists.
     ("twobells.settings.config", "twobells.sources.holidays"),
     ("twobells.settings.schema", "twobells.sources.holidays"),

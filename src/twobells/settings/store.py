@@ -293,13 +293,12 @@ class Store:
         env.update(load_env_file(self.secrets_file))
         return env
 
-    def target(self, check: Callable[[dict, Mapping[str, str]], object] | None = None) -> Target:
+    def target(self, check: Callable[[dict, Mapping[str, str]], object]) -> Target:
         """Where the settings pages and setup save: the store, over config.toml.
-        `check` raises unless merged settings load; by default the board's."""
+        `check` raises unless merged settings load (overlay.Target)."""
         from .overlay import Target
 
-        checked = {} if check is None else {"check": check}
-        return Target(lambda: self.placed(self.base()), lambda base: self.folder, allowed=saved_keys(), **checked)
+        return Target(lambda: self.placed(self.base()), lambda base: self.folder, check, allowed=saved_keys())
 
     def watched(self) -> list[Path]:
         """Every file settings and keys come from, to notice a change."""
