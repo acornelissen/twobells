@@ -31,14 +31,11 @@ from typing import NamedTuple
 from ..core import files
 from ..core.errors import safe_message
 from ..core.net import get_bytes
+from ..settings.schema import DIVISIONS, ENGLAND_AND_WALES
 
 log = logging.getLogger(__name__)
 
 URL = "https://www.gov.uk/bank-holidays.json"
-# gov.uk's divisions, as its JSON names them. England and Wales is the
-# default, and the one bus timetables' holiday names come from.
-ENGLAND_AND_WALES = "england-and-wales"
-DIVISIONS = (ENGLAND_AND_WALES, "scotland", "northern-ireland")
 CACHE_NAME = "bank-holidays.json"
 # The real list is about 20 kB; anything far bigger isn't it.
 MAX_BYTES = 1_000_000

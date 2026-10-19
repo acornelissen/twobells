@@ -20,10 +20,11 @@ from typing import TYPE_CHECKING
 
 from ..core.errors import ConfigError
 from ..core.polling import parse_window
-from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES
 from . import modes as mode_list
 from .schema import (
     BOARD_DEFAULTS,
+    DIVISIONS,
+    ENGLAND_AND_WALES,
     LONDON_STOP,
     board_room,
     bus_source,

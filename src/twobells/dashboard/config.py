@@ -47,12 +47,11 @@ from ..core.walk import WalkTimes
 from ..settings import modes as mode_list
 from ..settings import show as show_items
 from ..settings.config import _flag, _table, _texts, _whole, switched_on
-from ..settings.schema import bus_source
+from ..settings.schema import ENGLAND_AND_WALES, bus_source
 from ..settings.store import Store
 from ..sources.bodsbus import BodsBusSource, BusBoard
 from ..sources.darwin import DarwinSource, ServiceDetails, ServiceDetailsClient, TrainBoard
 from ..sources.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource, kb_url_is_placeholder
-from ..sources.holidays import ENGLAND_AND_WALES
 from ..sources.lastbus import LastBus
 from ..sources.tfl import Arrival, TflSource
 from ..sources.tfl import Message as TflMessage

@@ -36,7 +36,6 @@ from ..board.names import DISPLAY_PANELS, LOOKS, themes_for
 from ..board.panel import biggest_text_for, most_modes, panel_name
 from ..core.errors import ConfigError
 from ..core.polling import parse_window
-from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES
 from . import modes, show
 
 if TYPE_CHECKING:
@@ -70,6 +69,11 @@ _MAX_DIGITS = 9  # in a number setting; the largest any takes is 3650
 # Where the Rail Data Marketplace's feeds are. A Knowledgebase address saved
 # from the page must be there, as RDM_KB_API_KEY is sent to it.
 RAILDATA = "raildata.org.uk"
+# gov.uk's bank holiday divisions, as its JSON names them (sources/holidays.py).
+# England and Wales is the default, and the one bus timetables' holiday names
+# come from.
+ENGLAND_AND_WALES = "england-and-wales"
+DIVISIONS = (ENGLAND_AND_WALES, "scotland", "northern-ireland")
 
 VIEWS = ("board", "dashboard")
 GROUPS = ("general", "board", "dashboard")

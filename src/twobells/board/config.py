@@ -38,6 +38,7 @@ from ..settings.schema import (
     BOARD_DEFAULTS,
     CRS,
     DEFAULT_BUS_SOURCE,
+    ENGLAND_AND_WALES,
     LABEL,
     LONDON_STOP,
     MAX_TRAM_STOPS,
@@ -51,7 +52,6 @@ from ..sources.bods import BodsVehicleSource
 from ..sources.bodsbus import BodsBusSource
 from ..sources.darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL
 from ..sources.darwin import DarwinSource, ServiceDetailsClient, TrainDetails
-from ..sources.holidays import ENGLAND_AND_WALES
 from ..sources.tfl import TflSource
 from ..sources.trams import TramTimetableSource
 from ..sources.transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL

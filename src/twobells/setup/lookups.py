@@ -50,7 +50,7 @@ from ..core.places import (
     bundled_tram_stops,
     in_uk,
 )
-from ..sources.holidays import ENGLAND_AND_WALES
+from ..settings.schema import ENGLAND_AND_WALES
 from ..timetable.model import sign_letter
 from ..timetable.routesetup import MAX_NAPTAN_LINE, NAPTAN_URL
 

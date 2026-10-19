@@ -66,11 +66,11 @@ from ..core.errors import ConfigError
 from ..settings import schema
 from ..settings.config import needs_setup
 from ..settings.resetcodes import ResetCodes
-from ..settings.schema import BOARD_DEFAULTS
+from ..settings.schema import BOARD_DEFAULTS, DIVISIONS, ENGLAND_AND_WALES
 from ..setup import api as setupapi
 from ..setup.keytest import KeyResult
 from ..setup.lookups import SetupError
-from ..sources.holidays import DIVISIONS, ENGLAND_AND_WALES, read_cache
+from ..sources.holidays import read_cache
 from ..version import about, package_version
 from . import keystate
 from . import overview as view

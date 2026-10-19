@@ -30,9 +30,6 @@ ALLOWED = {
     ("twobells.settings.schema", "twobells.board.names"),
     ("twobells.settings.schema", "twobells.board.panel"),
     # Not yet moved: each waits on a decision about where it goes.
-    # The names of gov.uk's bank holiday lists.
-    ("twobells.settings.config", "twobells.sources.holidays"),
-    ("twobells.settings.schema", "twobells.sources.holidays"),
     # BODS's address, for the route command's timetable search.
     ("twobells.timetable.routesetup", "twobells.sources.bods"),
 }
