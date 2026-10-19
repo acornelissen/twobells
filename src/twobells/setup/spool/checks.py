@@ -20,9 +20,10 @@ from ...settings.schema import KEY_VALUE as _KEY_VALUE
 from ...settings.schema import LABEL as _LABEL
 from ...settings.schema import NOC as _NOC
 from ...timetable import routesetup
-from .. import discover, keytest
+from .. import discover, inputs, keytest
 from .. import lookups as setup
-from ..api import MAX_WALK_MINUTES, Invalid, _stops, too_deep
+from ..api import too_deep
+from ..inputs import MAX_WALK_MINUTES, Invalid
 from ..lookups import Place, Stop
 
 VERSION = 1
@@ -161,7 +162,7 @@ def _testkey_args(args) -> dict:
 def _search_args(args) -> dict:
     fields = check_obj(args, ("stops", "routes", "walk", "key"))
     try:
-        stops = _stops(fields["stops"], least=1)
+        stops = inputs.stops(fields["stops"], least=1)
     except Invalid:
         raise Refused("stops aren't labelled stop codes") from None
     if not isinstance(fields["routes"], bool):

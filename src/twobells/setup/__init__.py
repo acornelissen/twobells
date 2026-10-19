@@ -1,1 +1,1 @@
-"""First-run setup: the wizard's API and lookups, and the fetch service's spool."""
+"""First-run setup: the wizard's API, its input checks and lookups, and the fetch service's spool."""
