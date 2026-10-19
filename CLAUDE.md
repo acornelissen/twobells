@@ -90,10 +90,13 @@ install is one app with two views of the same departures: the **board** (e-paper
 **dashboard** (a web page). `[app] views` says which are on. `settings/installs.py` says what each install (`pi`,
 `docker`, `desktop`) offers; every difference between installs belongs in its table.
 
-- Folders by app area, each `__init__.py` saying what it holds: `core` (model, polling, net, files, errors),
+- Folders by app area, each `__init__.py` saying what it holds: `core` (model, polling, net, files, errors, places),
   `settings`, `sources`, `timetable`, `board` (`board/displays`), `dashboard`, `web`, `setup` (`setup/spool`),
   `fetch`, `emulator`, `cli`. `dashboard_static/` and `wizard_static/` sit side by side at the package root on
   purpose: the wizard imports the dashboard's `dom.js`, `icons.js`, `basemap.js`, Leaflet and Inter by relative path, the same on disk as served.
+- Areas import downwards only, lowest first: `core`; `settings`; `sources` and `timetable`; `board`,
+  `dashboard`, `setup` and `fetch`; `web`; `cli` and `emulator`. Within a layer, no circle. `tests/test_layers.py`
+  enforces it at module level and lists the few exceptions, each with why.
 - **Store** (`settings/store.py`): one folder per install holding `settings.toml` (only `schema.saved_keys`),
   `secrets.env`, `web.json` (the one password), the timetable, history and locks. `config.toml` is optional,
   layered under it. `settings/schema.py` is the registry of every saved setting, by group (general, board, dashboard).

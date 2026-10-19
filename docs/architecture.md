@@ -19,6 +19,8 @@ One install is one app with two views of the same departures: the **board** (e-p
 
 One package, `src/twobells`, a folder per part of the app. Each folder's `__init__.py` says what it holds.
 
+The folders import downwards only, lowest first: `core`; `settings`; `sources` and `timetable`; `board`, `dashboard`, `setup` and `fetch`; `web`; `cli` and `emulator`. Folders in one layer may import each other, but never round in a circle. `tests/test_layers.py` checks every module's imports against this order, and lists the few that go against it on purpose, each with why. An import inside a function, or for type checking only, isn't counted.
+
 | Folder | Role |
 |---|---|
 | `cli/` | The commands, a module each (`run`, `serve`, `timetable`, `setup`, and `dev` for `demo`, `emulate`, `probe` and `route`), with `fetch` in `serve.py`, the unlisted `query` that `install.sh` and `update.sh` ask in `setup.py`, shared helpers in `common.py`, and the parser and its shared options in `cli/main.py` (see [Commands](commands.md)). `__main__.py` makes it `python -m twobells` |
