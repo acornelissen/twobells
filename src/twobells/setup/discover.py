@@ -39,10 +39,9 @@ from ..core import files
 from ..core.errors import safe_message
 from ..core.model import line_order
 from ..core.net import get_bytes
-from ..core.places import in_uk
+from ..core.places import BODS_BASE_URL, in_uk
 from ..core.walk import DEFAULT_STOP
 from ..settings.overlay import _toml_key, _toml_string
-from ..sources.bods import DEFAULT_BASE_URL
 from ..timetable import build as timetable
 from ..timetable import roads as roadshape
 from ..timetable import routesetup
@@ -58,7 +57,7 @@ MAX_TOTAL_BYTES = 5_000_000_000  # every download, added up
 TIME_BUDGET_S = 60 * 60
 MAX_NOCS = 20  # per data set
 
-_BODS_HOST = urlsplit(DEFAULT_BASE_URL).hostname
+_BODS_HOST = urlsplit(BODS_BASE_URL).hostname
 _AREA = re.compile(r"^[0-9]{3}$")
 _ATCO = re.compile(r"^[0-9]{3}[0-9A-Za-z]{1,9}$")
 _NOC = re.compile(r"^[A-Za-z0-9]{2,8}$")  # as config accepts in [bus] operators
@@ -138,7 +137,7 @@ def list_datasets(api_key: str, area: str, at_most: int = MAX_DATASETS,
         query = urlencode({"adminArea": area, "status": "published", "limit": PAGE_SIZE,
                            "offset": page * PAGE_SIZE, "api_key": api_key})
         try:
-            body = http_get(f"{DEFAULT_BASE_URL}/dataset/?{query}", MAX_LIST_BYTES)
+            body = http_get(f"{BODS_BASE_URL}/dataset/?{query}", MAX_LIST_BYTES)
         except Exception as error:  # noqa: BLE001 - re-raised without the key
             raise DiscoveryError(f"BODS data set list failed: {safe_message(error)}") from None
         try:

@@ -43,7 +43,8 @@ from urllib.parse import quote, urlencode, urlsplit
 
 from ..core import net
 from ..core.errors import safe_message
-from ..sources import bods, darwin, tfl, transportapi
+from ..core.places import BODS_BASE_URL
+from ..sources import darwin, tfl, transportapi
 from ..sources.disruptions import kb_url_is_placeholder
 
 log = logging.getLogger(__name__)
@@ -361,7 +362,7 @@ def _kb(keys: Mapping[str, str], config_data: Mapping, fetch: Fetch) -> KeyResul
 def _bods(keys: Mapping[str, str], config_data: Mapping, fetch: Fetch) -> KeyResult:
     service = _SERVICES["BODS_API_KEY"]
     params = {"boundingBox": ",".join(f"{v:.5f}" for v in _box(config_data)), "api_key": keys["BODS_API_KEY"]}
-    url = f"{bods.DEFAULT_BASE_URL}/datafeed/?{urlencode(params)}"
+    url = f"{BODS_BASE_URL}/datafeed/?{urlencode(params)}"
     # BODS answers text/xml and refuses a request for application/xml (406).
     body = _call(fetch, url, {"Accept": "text/xml, application/xml;q=0.9, */*;q=0.1"}, service)
     if not body.lstrip().startswith(b"<"):

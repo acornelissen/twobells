@@ -23,7 +23,7 @@ from xml.etree.ElementTree import Element
 from ..core import bounded, safexml
 from ..core.errors import redact_keys
 from ..core.net import get_bytes
-from ..sources.bods import DEFAULT_BASE_URL
+from ..core.places import BODS_BASE_URL
 
 if TYPE_CHECKING:
     from ..settings.installs import Install
@@ -389,7 +389,7 @@ def dataset_urls(api_key: str, noc: str, line: str | None = None, http_get: Http
         query = urlencode({"noc": noc, "status": "published", "limit": _DATASET_PAGE,
                            "offset": page * _DATASET_PAGE, "api_key": api_key})
         try:
-            body = http_get(f"{DEFAULT_BASE_URL}/dataset/?{query}", 5_000_000)
+            body = http_get(f"{BODS_BASE_URL}/dataset/?{query}", 5_000_000)
         except Exception as error:  # noqa: BLE001 - re-raised without the key
             raise RouteSetupError(redact_keys(str(error))) from None
         payload = json.loads(body)

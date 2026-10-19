@@ -29,9 +29,6 @@ ALLOWED = {
     # import nothing of the app's but each other (DATA_ONLY, below).
     ("twobells.settings.schema", "twobells.board.names"),
     ("twobells.settings.schema", "twobells.board.panel"),
-    # Not yet moved: each waits on a decision about where it goes.
-    # BODS's address, for the route command's timetable search.
-    ("twobells.timetable.routesetup", "twobells.sources.bods"),
 }
 
 # The board's modules the settings may import, which must stay data alone.

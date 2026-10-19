@@ -2,8 +2,9 @@
 
 Rail stations, Metrolink tram stops, London's stops for TfL's live times and
 the grid of NaPTAN areas, each from its file in data/
-(tools/build_setup_data.py); whether a position is in the UK; and the rate
-limit shared by everything that asks FOSSGIS's foot router. Setup's lookups
+(tools/build_setup_data.py); whether a position is in the UK; the rate
+limit shared by everything that asks FOSSGIS's foot router; and BODS's
+address, which both the bus sources and the timetable ask. Setup's lookups
 (setup/lookups.py), the settings, the timetable's roads and the dashboard
 all use them.
 """
@@ -96,6 +97,10 @@ class RateLimiter:
 
 ROUTER_USER_AGENT = "twobells/0.1 (departure board; https://github.com/acornelissen/twobells)"
 ROUTER_LIMIT = RateLimiter(1.0)
+
+# The Bus Open Data Service's API, for its live positions (sources/bods.py)
+# and the timetables setup and the route command search.
+BODS_BASE_URL = "https://data.bus-data.dft.gov.uk/api/v1"
 
 
 # Rail stations, from the bundled list.

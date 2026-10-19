@@ -22,11 +22,12 @@ from typing import cast
 from ..core.errors import safe_message
 from ..core.model import Departure, Strip, strip_key
 from ..core.net import get_bytes
+from ..core.places import BODS_BASE_URL
 from ..timetable import build as timetable
 from ..timetable.model import Journey, Schedule, StopPosition
 from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
 from . import holidays, lastbus, livebus
-from .bods import DEFAULT_BASE_URL, BodsVehicleSource, HttpGetBytes, Vehicle
+from .bods import BodsVehicleSource, HttpGetBytes, Vehicle
 from .livebus import LiveDeparture, LiveJourney
 
 log = logging.getLogger(__name__)
@@ -116,7 +117,7 @@ class BodsBusSource:
         rows: int = 2,
         directions: list[str] | None = None,
         fallback=None,
-        base_url: str = DEFAULT_BASE_URL,
+        base_url: str = BODS_BASE_URL,
         http_get: HttpGetBytes = get_bytes,
         clock: Callable[[], datetime] | None = None,
     ) -> None:

@@ -16,8 +16,8 @@ from urllib.parse import urlencode
 from ..core import safexml
 from ..core.errors import redact_keys
 from ..core.net import get_bytes
+from ..core.places import BODS_BASE_URL
 
-DEFAULT_BASE_URL = "https://data.bus-data.dft.gov.uk/api/v1"
 # A busy town's worth of vehicles is well under this; anything bigger is refused.
 MAX_RESPONSE_BYTES = 2_000_000
 # And elements: one for every 24 bytes. A real answer takes about 60 bytes an
@@ -174,7 +174,7 @@ class BodsVehicleSource:
         api_key: str,
         box: tuple[float, float, float, float],
         lines: set[str],
-        base_url: str = DEFAULT_BASE_URL,
+        base_url: str = BODS_BASE_URL,
         http_get: HttpGetBytes = get_bytes,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
