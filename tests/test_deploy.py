@@ -1050,9 +1050,12 @@ def _needs(job: str) -> set[str]:
 
 def test_the_image_is_tagged_and_signed_only_after_the_release_is_approved():
     jobs = _jobs()
-    assert list(jobs) == ["verify", "dist", "image", "tarball", "pypi", "image-tags", "release"]
+    assert list(jobs) == ["verify", "dist", "image", "tarball", "pypi", "image-tags", "sign-sums", "release"]
     # pypi's environment is the one review: nothing before it tags, signs or publishes the image.
     assert [name for name, job in jobs.items() if "environment:" in job] == ["pypi"]
+    # Only pypi and the two jobs after it that sign may ask for an OIDC token.
+    assert [name for name, job in jobs.items() if "id-token" in job] == ["pypi", "image-tags", "sign-sums"]
+    assert [name for name, job in jobs.items() if "cosign sign" in job] == ["image-tags", "sign-sums"]
     image = jobs["image"]
     assert "push-by-digest=true" in image and "push: true" not in image
     assert "tags: ${{ steps.meta.outputs.tags }}" not in image and "type=raw,value=latest" not in image
@@ -1064,13 +1067,33 @@ def test_the_image_is_tagged_and_signed_only_after_the_release_is_approved():
     assert {"image", "pypi"} <= _needs(tags) and "id-token: write" in tags
     assert "DIGEST: ${{ needs.image.outputs.digest }}" in tags
     signed = tags.index('cosign sign --yes "$IMAGE@$DIGEST"')
-    tagged = tags.index('imagetools create --tag "$IMAGE:$VERSION" --tag "$IMAGE:latest" "$IMAGE@$DIGEST"')
-    assert tags.index("^sha256:[0-9a-f]{64}$") < signed < tagged < tags.index('cosign verify "$IMAGE:$tag"')
+    tagged = tags.index('imagetools create --tag "$IMAGE:$VERSION" "$IMAGE@$DIGEST"')
+    # latest only for the highest vX.Y.Z tag: an older release approved last mustn't take it back.
+    highest = tags.index("sort -V")
+    latest = tags.index('imagetools create --tag "$IMAGE:latest" "$IMAGE@$DIGEST"')
+    assert 'if [[ "$highest" == "$VERSION" ]]' in tags[highest:latest]
+    # Each tag is checked to name the digest signed, then verified as a user verifies it.
+    inspected = tags.index('imagetools inspect "$IMAGE:$tag"')
+    compared = tags.index('if [[ "$got" != "$DIGEST" ]]')
+    verified = tags.index('cosign verify "$IMAGE:$tag"')
+    assert tags.index("^sha256:[0-9a-f]{64}$") < signed < tagged < highest < latest < inspected < compared < verified
     signer = re.search(r'signer="(\S+)"', tags).group(1)
     assert signer.replace("$GITHUB_REPOSITORY", REPO).replace("$GITHUB_REF", "refs/tags/v0.2.0") == _identity("v0.2.0")
     # PyPI's upload stays last of what is permanent, after the image is pushed; the notes name its tag.
     assert {"dist", "image", "tarball"} <= _needs(jobs["pypi"])
-    assert "image-tags" in _needs(jobs["release"])
+    assert {"image-tags", "sign-sums"} <= _needs(jobs["release"])
+
+
+def test_the_pi_tarball_s_sums_are_signed_only_after_the_release_is_approved():
+    jobs = _jobs()
+    assert "cosign" not in jobs["tarball"] and "sha256sum -- * > SHA256SUMS" in jobs["tarball"]
+    sign = jobs["sign-sums"]
+    assert {"tarball", "pypi"} <= _needs(sign)
+    assert re.search(r"^    permissions:\n      id-token: write #[^\n]*\n    [a-z]", sign, re.M)  # nothing else
+    # It signs only sums that still match the files they name, then hands the release the bundle.
+    checked = sign.index("sha256sum --check SHA256SUMS")
+    assert checked < sign.index("cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS")
+    assert "path: out/SHA256SUMS.sigstore.json" in sign and "name: sums-signature" in jobs["release"]
 
 
 def test_the_release_holds_the_pi_tarball_under_the_name_upgrade_fetches_not_the_sdist():
