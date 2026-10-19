@@ -3,7 +3,9 @@ private to its module: changing one breaks nothing elsewhere.
 
 Each module is read with ast, anywhere in it (inside functions too): a
 `from module import _name`, and a `module._name` where `module` is one of
-the package's modules it imported. Dunder names (__version__) don't count.
+the package's modules it imported, by its own name or a dotted one
+(twobells.board.dotfont._GAP, board.dotfont._GAP). Dunder names
+(__version__) don't count.
 The scripts in tools/ are held to the same, for the package's names.
 """
 
@@ -52,11 +54,28 @@ def reach_ins(module: str, source: str, package: str | None = None) -> list[str]
             for alias in node.names:
                 if alias.name in PATHS and alias.asname:
                     imported[alias.asname] = alias.name
+                elif alias.name in PATHS:  # `import twobells.board.dotfont` binds twobells
+                    top = alias.name.partition(".")[0]
+                    imported[top] = top
     for node in ast.walk(tree):
-        if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and _private(node.attr)
-                and imported.get(node.value.id, module) != module):
-            found.append(f"{node.lineno}: {imported[node.value.id]}.{node.attr}")
+        if isinstance(node, ast.Attribute) and _private(node.attr):
+            # The module the name is read from, by its full dotted name:
+            # board.dotfont._GAP after `from twobells import board`.
+            first, _, rest = _dotted(node.value).partition(".")
+            owner = imported.get(first, "")
+            owner = f"{owner}.{rest}" if owner and rest else owner
+            if owner in PATHS and owner != module:
+                found.append(f"{node.lineno}: {owner}.{node.attr}")
     return sorted(found)
+
+
+def _dotted(node: ast.expr) -> str:
+    """A name or a dotted name's text (a.b.c), else ""."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute) and (value := _dotted(node.value)):
+        return f"{value}.{node.attr}"
+    return ""
 
 
 def test_no_module_uses_another_modules_private_names():
@@ -81,6 +100,22 @@ def test_both_ways_of_reaching_in_are_found():
         "5: twobells.setup.lookups._DIVISIONS",
         "5: twobells.timetable.build._group",
     ]
+
+
+def test_a_reach_in_by_the_full_dotted_name_is_found():
+    source = (
+        "import twobells.board.dotfont\n"
+        "from twobells import board\n"
+        "from .. import setup\n"
+        "twobells.board.dotfont._GAP, board.dotfont._GLYPHS, setup.lookups._DIVISIONS\n"
+        "twobells.board.dotfont.GAP, board.dotfont.__doc__\n"
+    )
+    assert reach_ins("twobells.cli.main", source) == [
+        "4: twobells.board.dotfont._GAP",
+        "4: twobells.board.dotfont._GLYPHS",
+        "4: twobells.setup.lookups._DIVISIONS",
+    ]
+    assert reach_ins("twobells.board.dotfont", "import twobells.board.dotfont\ntwobells.board.dotfont._GAP\n") == []
 
 
 def test_a_module_may_use_its_own_private_names():
