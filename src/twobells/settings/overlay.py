@@ -58,7 +58,7 @@ class OverlayError(Exception):
     """The changes weren't saved; the text says why and is safe to show."""
 
 
-def _toml_string(value: str) -> str:
+def toml_string(value: str) -> str:
     """A TOML basic string. JSON's escapes are TOML's too, except that JSON
     writes characters beyond the BMP as surrogate pairs, which TOML rejects,
     and leaves DEL raw, which TOML forbids."""
@@ -67,8 +67,8 @@ def _toml_string(value: str) -> str:
     return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
 
 
-def _toml_key(key: str) -> str:
-    return key if re.fullmatch(r"[A-Za-z0-9_-]+", key) else _toml_string(key)
+def toml_key(key: str) -> str:
+    return key if re.fullmatch(r"[A-Za-z0-9_-]+", key) else toml_string(key)
 
 
 def _write(path: Path, text: str | bytes, mode: int) -> None:
@@ -101,13 +101,13 @@ def _value(value) -> str:
             return "inf" if value > 0 else "-inf"
         return repr(value)
     if isinstance(value, str):
-        return _toml_string(value)
+        return toml_string(value)
     if isinstance(value, (dt.datetime, dt.date, dt.time)):
         return value.isoformat()
     if isinstance(value, list):
         return "[" + ", ".join(_value(v) for v in value) + "]"
     if isinstance(value, dict):
-        return "{ " + ", ".join(f"{_toml_key(k)} = {_value(v)}" for k, v in value.items()) + " }"
+        return "{ " + ", ".join(f"{toml_key(k)} = {_value(v)}" for k, v in value.items()) + " }"
     raise TypeError(f"Can't write {type(value).__name__} to TOML")
 
 
@@ -117,11 +117,11 @@ def to_toml(data: dict, header: str = HEADER) -> str:
     lines = [header]
 
     def body(values: dict) -> None:
-        lines.extend(f"{_toml_key(k)} = {_value(v)}" for k, v in values.items() if not isinstance(v, dict))
+        lines.extend(f"{toml_key(k)} = {_value(v)}" for k, v in values.items() if not isinstance(v, dict))
 
     def table(path: list[str], values: dict) -> None:
         lines.append("")
-        lines.append("[" + ".".join(_toml_key(p) for p in path) + "]")
+        lines.append("[" + ".".join(toml_key(p) for p in path) + "]")
         body(values)
         for k, v in values.items():
             if isinstance(v, dict):

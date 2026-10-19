@@ -22,17 +22,17 @@ from ..core.walk import DEFAULT_STOP, WalkTimes
 from ..settings import modes as mode_list
 from ..settings import show
 from ..settings.config import (
-    _flag,
-    _table,
-    _text,
-    _text_size,
-    _texts,
-    _whole,
-    _windows,
     board_modes,
+    flag,
     holiday_division,
     state_dir,
     switched_on,
+    table,
+    text,
+    text_size,
+    texts,
+    whole,
+    windows,
 )
 from ..settings.schema import (
     BOARD_DEFAULTS,
@@ -108,9 +108,9 @@ def _secret(env: Mapping[str, str], name: str) -> str:
 def _policy(section: dict, defaults: dict, where: str, holidays: frozenset[date]) -> PollPolicy:
     """When and how often to check, from the section or else `defaults`. A
     section without windows has the defaults' (none would mean never)."""
-    windows = _windows(section, "windows", defaults["windows"], where)
-    interval = timedelta(minutes=_whole(section, "interval_minutes", defaults["interval_minutes"], where))
-    return PollPolicy(windows, interval, holidays)
+    times = windows(section, "windows", defaults["windows"], where)
+    interval = timedelta(minutes=whole(section, "interval_minutes", defaults["interval_minutes"], where))
+    return PollPolicy(times, interval, holidays)
 
 
 def _train(section: dict, env: Mapping[str, str], holidays: frozenset[date]) -> SourceConfig:
@@ -125,16 +125,16 @@ def _train(section: dict, env: Mapping[str, str], holidays: frozenset[date]) -> 
     source = DarwinSource(
         api_key=_secret(env, "RDM_API_KEY"),
         crs=crs,
-        filter_crs=_text(section, "filter_crs", "", where) or None,  # "" is the page's "no filter"
-        rows=_whole(section, "rows", defaults["rows"], where),
-        base_url=_text(section, "base_url", DARWIN_BASE_URL, where),
+        filter_crs=text(section, "filter_crs", "", where) or None,  # "" is the page's "no filter"
+        rows=whole(section, "rows", defaults["rows"], where),
+        base_url=text(section, "base_url", DARWIN_BASE_URL, where),
     )
-    stale_after = timedelta(minutes=_whole(section, "stale_after_minutes", defaults["stale_after_minutes"], where))
+    stale_after = timedelta(minutes=whole(section, "stale_after_minutes", defaults["stale_after_minutes"], where))
     return SourceConfig(source, policy, stale_after)
 
 
 def _stops(section: dict) -> dict[str, str]:
-    stops = _table(section, "stops", "[bus.stops]")
+    stops = table(section, "stops", "[bus.stops]")
     if not stops:
         raise ConfigError("Add a [bus.stops] table of label = ATCO code, or remove [bus]")
     for label, atco in stops.items():
@@ -148,14 +148,14 @@ def _transportapi(section: dict, env: Mapping[str, str], stops: dict[str, str]) 
         app_id=_secret(env, "TAPI_APP_ID"),
         app_key=_secret(env, "TAPI_APP_KEY"),
         stops=stops,
-        rows=_whole(section, "rows", BOARD_DEFAULTS["bus"]["rows"], "[bus] "),
-        directions=_texts(section, "directions", "[bus] ") or None,
-        base_url=_text(section, "base_url", TAPI_BASE_URL, "[bus] "),
+        rows=whole(section, "rows", BOARD_DEFAULTS["bus"]["rows"], "[bus] "),
+        directions=texts(section, "directions", "[bus] ") or None,
+        base_url=text(section, "base_url", TAPI_BASE_URL, "[bus] "),
     )
 
 
 def _operators(section: dict) -> list[str]:
-    operators = _texts(section, "operators", "[bus] ")
+    operators = texts(section, "operators", "[bus] ")
     if not operators:
         raise ConfigError(
             '[bus] needs operators, the codes of the bus companies whose timetables to read, '
@@ -174,12 +174,12 @@ def _bus(
     its keys are set; or with source = "transportapi" TransportAPI alone."""
     where = "[bus] "
     stops = _stops(section)
-    kind = _text(section, "source", DEFAULT_BUS_SOURCE, where)
+    kind = text(section, "source", DEFAULT_BUS_SOURCE, where)
     if kind not in ("transportapi", "bods"):
         raise ConfigError(f'[bus] source must be "transportapi" or "bods", not {kind!r}')
     defaults = bus_defaults(kind)
-    stale_after = timedelta(minutes=_whole(section, "stale_after_minutes", defaults["stale_after_minutes"], where))
-    daily_budget = _whole(section, "daily_budget", defaults["daily_budget"], where)
+    stale_after = timedelta(minutes=whole(section, "stale_after_minutes", defaults["stale_after_minutes"], where))
+    daily_budget = whole(section, "daily_budget", defaults["daily_budget"], where)
     if kind == "transportapi":
         return SourceConfig(_transportapi(section, env, stops), _policy(section, defaults, where, holidays),
                             stale_after, daily_budget=daily_budget)
@@ -190,16 +190,16 @@ def _bus(
         _secret(env, "BODS_API_KEY"),
         ZoneInfo(timezone),
         operators=_operators(section),
-        rows=_whole(section, "rows", defaults["rows"], where),
-        directions=_texts(section, "directions", where) or None,
+        rows=whole(section, "rows", defaults["rows"], where),
+        directions=texts(section, "directions", where) or None,
         fallback=_transportapi(section, env, stops) if has_tapi else None,
     )
     # The timetable costs nothing to read, so it is checked often and all day;
     # TransportAPI, only a backup, at its own slower pace and in its own windows
     # (the commute), never the bus windows, so the daily allowance lasts.
     policy = _policy(section, defaults, where, holidays)
-    fallback_windows = _windows(section, "fallback_windows", BOARD_DEFAULTS["bus"]["windows"], where)
-    fallback_every = timedelta(minutes=_whole(section, "fallback_interval_minutes",
+    fallback_windows = windows(section, "fallback_windows", BOARD_DEFAULTS["bus"]["windows"], where)
+    fallback_every = timedelta(minutes=whole(section, "fallback_interval_minutes",
                                               defaults["fallback_interval_minutes"], where))
     return SourceConfig(
         source,
@@ -211,7 +211,7 @@ def _bus(
 
 
 def _tram_stops(section: dict) -> dict[str, str]:
-    stops = _table(section, "stops", "[metro.stops]")
+    stops = table(section, "stops", "[metro.stops]")
     if not stops:
         raise ConfigError("Add a [metro.stops] table of label = tram stop code, like T = \"9400ZZMAPIC\", "
                           "or remove [metro]")
@@ -247,8 +247,8 @@ def _metro(section: dict, env: Mapping[str, str], holidays: frozenset[date], fol
     where = "[metro] "
     defaults = BOARD_DEFAULTS["metro"]
     stops = _tram_stops(section)
-    rows = _whole(section, "rows", defaults["rows"], where)
-    directions = _texts(section, "directions", where) or None
+    rows = whole(section, "rows", defaults["rows"], where)
+    directions = texts(section, "directions", where) or None
     source: TramTimetableSource | TflSource
     if any(LONDON_STOP.fullmatch(code) for code in stops.values()):
         known = london_stops_by_code()
@@ -256,7 +256,7 @@ def _metro(section: dict, env: Mapping[str, str], holidays: frozenset[date], fol
                            lines={code: known[code].lines for code in stops.values() if code in known})
     else:
         source = TramTimetableSource(folder, stops, ZoneInfo(timezone), rows=rows, directions=directions)
-    stale_after = timedelta(minutes=_whole(section, "stale_after_minutes", defaults["stale_after_minutes"], where))
+    stale_after = timedelta(minutes=whole(section, "stale_after_minutes", defaults["stale_after_minutes"], where))
     return SourceConfig(source, _policy(section, defaults, where, holidays), stale_after)
 
 
@@ -272,7 +272,7 @@ def _route_stop(line: str, entry) -> RouteStop:
 
 def _tracker(section: dict, env: Mapping[str, str], bus: PollPolicy) -> Tracker | None:
     """The route strip page's bus positions, if any routes are set up."""
-    routes = _table(section, "routes", "[bus.routes]")
+    routes = table(section, "routes", "[bus.routes]")
     if not routes:
         return None
     strips = {}
@@ -289,7 +289,7 @@ def _tracker(section: dict, env: Mapping[str, str], bus: PollPolicy) -> Tracker 
     boxes = [strip.box() for strip in strips.values()]
     box = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
     source = BodsVehicleSource(_secret(env, "BODS_API_KEY"), box, set(strips))
-    interval = timedelta(seconds=_whole(section, "position_interval_seconds", 30, "[bus] "))
+    interval = timedelta(seconds=whole(section, "position_interval_seconds", 30, "[bus] "))
     if interval < timedelta(seconds=10):
         raise ConfigError("position_interval_seconds must be at least 10; BODS refreshes every 10 s")
     # The buses' own windows and holidays: positions are only wanted while buses are.
@@ -317,7 +317,7 @@ def _coordinate(section: dict, key: str, limit: int) -> float:
 def _weather(data: dict, sources: list[SourceConfig], timezone: str) -> Weather | None:
     """The rain warning, if [weather] gives a position. It is polled every 30
     minutes, only while a train or bus window is open."""
-    section = _table(data, "weather", "[weather]")  # absent if switched off; see switched_on
+    section = table(data, "weather", "[weather]")  # absent if switched off; see switched_on
     if section.get("lat", "") == "" and section.get("lon", "") == "":  # "" is a cleared field
         return None
     lat, lon = _coordinate(section, "lat", 90), _coordinate(section, "lon", 180)
@@ -328,23 +328,23 @@ def _weather(data: dict, sources: list[SourceConfig], timezone: str) -> Weather 
     return Weather(OpenMeteoSource(lat, lon, timezone), PollPolicy(windows, timedelta(minutes=30)), threshold)
 
 
-def _walk(data: dict) -> WalkTimes:
-    train_section = _table(data, "train", "[train]")
+def walk_times(data: dict) -> WalkTimes:
+    train_section = table(data, "train", "[train]")
     train = None
     if train_section.get("walk_minutes", "") != "":  # "" is the page's "no walk time"
-        train = _whole(train_section, "walk_minutes", 0, "[train] ", least=0)
-    bus_section = _table(data, "bus", "[bus]")
+        train = whole(train_section, "walk_minutes", 0, "[train] ", least=0)
+    bus_section = table(data, "bus", "[bus]")
     bus = bus_section.get("walk_minutes", {})
     if isinstance(bus, int) and not isinstance(bus, bool):
-        bus = {DEFAULT_STOP: _whole(bus_section, "walk_minutes", 0, "[bus] ", least=0)}
+        bus = {DEFAULT_STOP: whole(bus_section, "walk_minutes", 0, "[bus] ", least=0)}
     elif isinstance(bus, dict):
         for label in bus:
-            _whole(bus, label, 0, "[bus.walk_minutes] ", least=0)
+            whole(bus, label, 0, "[bus.walk_minutes] ", least=0)
     else:
         raise ConfigError(f"[bus] walk_minutes must be a number or a table of label = minutes, not {bus!r}")
-    metro = _table(_table(data, "metro", "[metro]"), "walk_minutes", "[metro.walk_minutes]")
+    metro = table(table(data, "metro", "[metro]"), "walk_minutes", "[metro.walk_minutes]")
     for label in metro:
-        _whole(metro, label, 0, "[metro.walk_minutes] ", least=0)
+        whole(metro, label, 0, "[metro.walk_minutes] ", least=0)
     return WalkTimes(train=train, bus=dict(bus), metro=dict(metro))
 
 
@@ -365,23 +365,23 @@ _BOARD_KEYS = {"show", "modes", "leave_modes"}
 def _board_show(data: dict) -> frozenset[str]:
     """What the board shows: [board] show, or without it everything, the
     clock page only if the older clock_page = true says so."""
-    board = _table(data, "board", "[board]")
+    board = table(data, "board", "[board]")
     unknown = sorted(set(board) - _BOARD_KEYS)
     if unknown:
         raise ConfigError(f"[board] has unknown settings: {', '.join(map(str, unknown))}")
-    _flag(data, show.OLDER_CLOCK_PAGE, False)
+    flag(data, show.OLDER_CLOCK_PAGE, False)
     return show.shown(data, "board")
 
 
 def _quiet_hours(data: dict) -> tuple:
     """The quiet hours ([dashboard] quiet_windows, or the dashboard's own
     default), when a screen's speaker says nothing either."""
-    section = _table(data, "dashboard", "[dashboard]")
+    section = table(data, "dashboard", "[dashboard]")
     if "quiet_windows" not in section:
         from ..dashboard.config import DashboardOptions  # here: it imports this module
 
         return DashboardOptions.quiet_windows
-    return _windows(section, "quiet_windows", (), "[dashboard] ")
+    return windows(section, "quiet_windows", (), "[dashboard] ")
 
 
 def load_config(
@@ -414,11 +414,11 @@ def settings_from(
     data = switched_on(data)
     views(data)  # checked here too, so a malformed [app] views is never saved
     try:
-        theme = theme_named(_text(data, "theme", BOARD_DEFAULTS["theme"]))
+        theme = theme_named(text(data, "theme", BOARD_DEFAULTS["theme"]))
     except ValueError as error:
         raise ConfigError(str(error)) from error
-    theme = with_text_size(theme, _text_size(data))
-    display = _text(data, "display", BOARD_DEFAULTS["display"])
+    theme = with_text_size(theme, text_size(data))
+    display = text(data, "display", BOARD_DEFAULTS["display"])
     if display not in DISPLAY_PANELS:
         raise ConfigError(f"Unknown display {display!r}; choose from {', '.join(sorted(DISPLAY_PANELS))}")
     if theme.screen_only and DISPLAY_PANELS[display].epaper:
@@ -431,14 +431,14 @@ def settings_from(
     panel_colour = data.get("panel_colour", accent)
     if panel_colour not in ("red", "yellow", "black"):
         raise ConfigError(f"panel_colour must be red, yellow or black, not {panel_colour!r}")
-    timezone = _text(data, "timezone", BOARD_DEFAULTS["timezone"])
+    timezone = text(data, "timezone", BOARD_DEFAULTS["timezone"])
     try:
         ZoneInfo(timezone)
     except (KeyError, ValueError):  # ZoneInfoNotFoundError is a KeyError
         raise ConfigError(f"Unknown timezone {timezone!r}; use one like Europe/London") from None
-    state_file = _text(data, "state_file", "state.json")
+    state_file = text(data, "state_file", "state.json")
     # On by default: services run a Sunday timetable on bank holidays.
-    holidays = frozenset(holidays) if _flag(data, "bank_holidays", BOARD_DEFAULTS["bank_holidays"]) else frozenset()
+    holidays = frozenset(holidays) if flag(data, "bank_holidays", BOARD_DEFAULTS["bank_holidays"]) else frozenset()
     division = holiday_division(data)
     # Only the board refuses modes its display has no room for: the dashboard's
     # modes, and a probe's or timetable build's own, are loaded without it.
@@ -450,11 +450,11 @@ def settings_from(
     tracker = None
     wanted = set(shown_modes)
     if "train" in data and "train" in wanted:
-        sources.append(_train(_table(data, "train", "[train]"), env, holidays))
+        sources.append(_train(table(data, "train", "[train]"), env, holidays))
     if "metro" in data and "metro" in wanted:
-        sources.append(_metro(_table(data, "metro", "[metro]"), env, holidays, Path(state_file).parent, timezone))
+        sources.append(_metro(table(data, "metro", "[metro]"), env, holidays, Path(state_file).parent, timezone))
     if "bus" in data and "bus" in wanted:
-        bus = _bus(_table(data, "bus", "[bus]"), env, holidays, Path(state_file).parent, timezone)
+        bus = _bus(table(data, "bus", "[bus]"), env, holidays, Path(state_file).parent, timezone)
         sources.append(bus)
         # Bus positions are only drawn on a screen; e-paper never asks for them.
         if not DISPLAY_PANELS[display].epaper:
@@ -474,10 +474,10 @@ def settings_from(
     # Only a screen speaks; the quiet hours are read only for its speaker.
     speaks = "announce_speaker" in shown and not DISPLAY_PANELS[display].epaper
     board = Board(
-        title=_text(data, "title", BOARD_DEFAULTS["title"]),
+        title=text(data, "title", BOARD_DEFAULTS["title"]),
         sources=sources,
-        min_redraw=timedelta(minutes=_whole(data, "min_redraw_minutes", BOARD_DEFAULTS["min_redraw_minutes"])),
-        walk=_walk(data),
+        min_redraw=timedelta(minutes=whole(data, "min_redraw_minutes", BOARD_DEFAULTS["min_redraw_minutes"])),
+        walk=walk_times(data),
         theme=theme,
         tracker=tracker,
         # A probe of one source needs no forecast.
@@ -486,7 +486,7 @@ def settings_from(
         positions=positions,
         show=shown,
         quiet=_quiet_hours(data) if speaks else (),
-        scrolling=_flag(data, "scrolling", BOARD_DEFAULTS["scrolling"]),
+        scrolling=flag(data, "scrolling", BOARD_DEFAULTS["scrolling"]),
         modes=shown_modes,
         leave=mode_list.leave(data, "board"),
     )

@@ -196,28 +196,28 @@ def still_to_set_up(data: dict) -> bool:
 _MOST = 100_000  # far above any sensible value, far below what timedelta overflows on
 
 
-def _table(parent: dict, key: str, where: str) -> dict:
+def table(parent: dict, key: str, where: str) -> dict:
     value = parent.get(key, {})
     if not isinstance(value, dict):
         raise ConfigError(f"{where} must be a table, not {value!r}")
     return value
 
 
-def _whole(section: dict, key: str, default: int, where: str = "", least: int = 1) -> int:
+def whole(section: dict, key: str, default: int, where: str = "", least: int = 1) -> int:
     value = section.get(key, default)
     if isinstance(value, bool) or not isinstance(value, int) or not least <= value <= _MOST:
         raise ConfigError(f"{where}{key} must be a whole number from {least} to {_MOST}, not {value!r}")
     return value
 
 
-def _text(section: dict, key: str, default: str, where: str = "") -> str:
+def text(section: dict, key: str, default: str, where: str = "") -> str:
     value = section.get(key, default)
     if not isinstance(value, str):
         raise ConfigError(f"{where}{key} must be text in quotes, not {value!r}")
     return value
 
 
-def _flag(section: dict, key: str, default: bool, where: str = "") -> bool:
+def flag(section: dict, key: str, default: bool, where: str = "") -> bool:
     value = section.get(key, default)
     if not isinstance(value, bool):
         raise ConfigError(f"{where}{key} must be true or false, not {value!r}")
@@ -236,7 +236,7 @@ def is_enabled(data: dict, name: str) -> bool:
     section = data.get(name)
     if not isinstance(section, dict):
         return True  # absent, or not a table, which its loader reports
-    return _flag(section, "enabled", True, f"[{name}] ")
+    return flag(section, "enabled", True, f"[{name}] ")
 
 
 def metrolink_on(data: dict) -> bool:
@@ -284,16 +284,16 @@ def switched_on(data: dict) -> dict:
     return {key: value for key, value in data.items() if key not in SWITCHABLE or is_enabled(data, key)}
 
 
-def _texts(section: dict, key: str, where: str, default: tuple[str, ...] = ()) -> list[str]:
+def texts(section: dict, key: str, where: str, default: tuple[str, ...] = ()) -> list[str]:
     value = section.get(key, list(default))
     if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
         raise ConfigError(f'{where}{key} must be a list of text, like ["a", "b"], not {value!r}')
     return value
 
 
-def _windows(section: dict, key: str, default: tuple[str, ...], where: str) -> tuple:
+def windows(section: dict, key: str, default: tuple[str, ...], where: str) -> tuple:
     try:
-        return tuple(parse_window(w) for w in _texts(section, key, where, default))
+        return tuple(parse_window(w) for w in texts(section, key, where, default))
     except ValueError as error:
         raise ConfigError(str(error)) from error
 
@@ -313,14 +313,14 @@ def board_modes(data: dict) -> tuple[str, ...]:
     for a [board] modes that isn't a list of modes, or names more than that,
     or a text size that isn't one; the board's loader checks the look and
     the display."""
-    display = _text(data, "display", BOARD_DEFAULTS["display"])
-    look = _text(data, "theme", BOARD_DEFAULTS["theme"])
-    text_size = _text_size(data)
-    return mode_list.shown(data, "board", *board_room(display, look, text_size),
-                           other=room_other(display, look, text_size))
+    display = text(data, "display", BOARD_DEFAULTS["display"])
+    look = text(data, "theme", BOARD_DEFAULTS["theme"])
+    size = text_size(data)
+    return mode_list.shown(data, "board", *board_room(display, look, size),
+                           other=room_other(display, look, size))
 
 
-def _text_size(data: dict) -> int:
+def text_size(data: dict) -> int:
     """The plain look's text size, checked: a whole number from 9 to 16."""
     text_size = data.get("text_size", BOARD_DEFAULTS["text_size"])
     if isinstance(text_size, bool) or not isinstance(text_size, int) or not 9 <= text_size <= 16:

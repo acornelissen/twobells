@@ -222,7 +222,7 @@ _MAX_CALLING_LISTS = 10  # one per part of a train that divides
 _MAX_ENDS = 4  # origins or destinations of one train; two when it divides
 _MAX_COACHES = 30
 
-_CLOCK = re.compile(r"[01][0-9]:[0-5][0-9]|2[0-3]:[0-5][0-9]")
+CLOCK = re.compile(r"[01][0-9]:[0-5][0-9]|2[0-3]:[0-5][0-9]")
 _TIME_WORDS = {"On time", "Delayed", "Cancelled", "No report"}
 _CRS = re.compile(r"[A-Z]{3}")
 _SERVICE_ID = re.compile(r"[A-Za-z0-9_+/=-]{6,64}")
@@ -325,7 +325,7 @@ def _time(value) -> str | None:
     value = value.strip()
     if value in _TIME_WORDS:
         return value
-    return _matching(_CLOCK, value)
+    return _matching(CLOCK, value)
 
 
 def _coaches(value) -> int | None:
@@ -444,7 +444,7 @@ def _calling_point(point) -> CallingPoint | None:
     if not isinstance(point, dict):
         return None
     name = _name(point.get("locationName"))
-    scheduled = _matching(_CLOCK, point.get("st"))
+    scheduled = _matching(CLOCK, point.get("st"))
     if name is None or scheduled is None:
         return None
     return CallingPoint(
@@ -532,7 +532,7 @@ def _rich_service(service, kind: str = "train") -> TrainService | None:
     ferry (its serviceType) is one, whichever list it is in."""
     if not isinstance(service, dict):
         return None
-    std = _matching(_CLOCK, service.get("std"))
+    std = _matching(CLOCK, service.get("std"))
     if std is None:
         return None
     destinations = _locations(service.get("destination"))
@@ -711,7 +711,7 @@ class ServiceDetails:
 
 def _station_call(raw: dict) -> StationCall | None:
     name = _name(raw.get("locationName"))
-    sta, std = _matching(_CLOCK, raw.get("sta")), _matching(_CLOCK, raw.get("std"))
+    sta, std = _matching(CLOCK, raw.get("sta")), _matching(CLOCK, raw.get("std"))
     scheduled = std or sta
     if name is None or scheduled is None:
         return None
@@ -867,7 +867,7 @@ class TrainPosition:
 def _clock(value: str | None, scheduled: str) -> str:
     """A time as HH:MM: Darwin's clock time if it gave one, else the booked
     time ("On time", "No report", "Delayed" and nothing all fall back to it)."""
-    return value if value and _CLOCK.fullmatch(value) else scheduled
+    return value if value and CLOCK.fullmatch(value) else scheduled
 
 
 def _minutes_to(hhmm: str, now: datetime) -> float:
@@ -894,7 +894,7 @@ def _left(point: CallingPoint) -> str:
     actual = point.actual
     if actual == "On time":
         return f"Left {point.name} {point.scheduled}, on time"
-    if actual and _CLOCK.fullmatch(actual):
+    if actual and CLOCK.fullmatch(actual):
         late = minutes_between(point.scheduled, actual)
         if late > 0:
             return f"Left {point.name}, {late} min late"

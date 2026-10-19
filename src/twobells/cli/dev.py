@@ -131,7 +131,7 @@ def _download(url: str, max_bytes: int) -> bytes:
 
 
 def route_command(args) -> int:
-    from ..board.config import _walk
+    from ..board.config import walk_times
     from ..core.walk import DEFAULT_STOP
     from ..timetable import routesetup
 
@@ -142,7 +142,7 @@ def route_command(args) -> int:
     if not atco:
         print(f"No stop {args.stop!r} in [bus.stops]", file=sys.stderr)
         return 2
-    walk = _walk(data).bus
+    walk = walk_times(data).bus
     walk_minutes = walk.get(args.stop, walk.get(DEFAULT_STOP, 0))
     try:
         if args.txc:

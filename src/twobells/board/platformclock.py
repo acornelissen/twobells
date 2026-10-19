@@ -17,7 +17,7 @@ from datetime import datetime
 from PIL import Image, ImageDraw
 
 from .panel import Panel
-from .render import _BOLD, _REGULAR, PAD, Palette, _font, apply_preview, drawn_length, plain_scale
+from .render import BOLD, PAD, REGULAR, Palette, apply_preview, drawn_length, load_font, plain_scale
 
 
 @dataclass(frozen=True)
@@ -109,8 +109,8 @@ def render_clock(view: ClockView, palette: Palette, panel: Panel) -> Image.Image
     image = Image.new("P", panel.size, palette.black)
     draw = ImageDraw.Draw(image)
     radius = (height - 2 * pad) / 2
-    big = _font(_BOLD, round(height * 0.3))
-    small = _font(_REGULAR, round(height * 0.09))
+    big = load_font(BOLD, round(height * 0.3))
+    small = load_font(REGULAR, round(height * 0.09))
     gap = radius * 0.5
     words_width = max(drawn_length(big, view.time), drawn_length(small, view.date))
     # The face and the words together, in the middle of the panel; on a panel

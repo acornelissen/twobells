@@ -50,7 +50,7 @@ from zoneinfo import ZoneInfo
 
 from ..core.walk import WalkTimes
 from ..dashboard.collector import HEALTHY_AGE
-from ..dashboard.snapshot import PARTS, Hub, _encode
+from ..dashboard.snapshot import PARTS, Hub, encode
 from ..settings import modes as mode_list
 from ..settings import show as show_items
 from ..setup.spool.checks import CLOCK_SKEW_S, Refused, check_dict, check_int, check_num, check_obj, check_str, parse
@@ -275,7 +275,7 @@ class SnapshotMirror:
             if new:
                 self._version += 1
             snapshot["version"] = self._version
-            self._body = _encode(snapshot).encode("ascii")
+            self._body = encode(snapshot).encode("ascii")
             self._lookups, self._previous, self._area = found["lookups"], found["previous"], found["area"]
             self._shown, self._made, self._healthy = shown, float(found["made"]), found["healthy"]
             if new:

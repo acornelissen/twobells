@@ -36,19 +36,19 @@ from ..core.errors import safe_message
 from ..core.net import get_bytes
 from ..core.osgb import distance_m, grid_to_latlon
 from ..core.places import (
-    _CRS,
+    CRS,
     ROUTER_LIMIT,
     ROUTER_USER_AGENT,
     LondonStop,
     RateLimiter,
-    _number,
-    _position,
-    _text,
     bundled_area_grid,
     bundled_london_stops,
     bundled_stations,
     bundled_tram_stops,
+    clean_text,
+    finite_number,
     in_uk,
+    uk_position,
 )
 from ..settings.schema import ENGLAND_AND_WALES
 from ..timetable.model import sign_letter
@@ -217,10 +217,10 @@ def parse_postcode(body: bytes, asked: str) -> Place:
     result = data.get("result") if isinstance(data, dict) else None
     if not isinstance(result, dict):
         raise SetupError("postcodes.io sent an answer without a result")
-    position = _position(result.get("latitude"), result.get("longitude"))
+    position = uk_position(result.get("latitude"), result.get("longitude"))
     if position is None:
         raise SetupError("postcodes.io has no UK position for that postcode")
-    label = _text(result.get("postcode"), 10)
+    label = clean_text(result.get("postcode"), 10)
     try:
         label = normalise_postcode(label)
     except SetupError:
@@ -229,8 +229,8 @@ def parse_postcode(body: bytes, asked: str) -> Place:
         position[0],
         position[1],
         label,
-        _text(result.get("country"), 40),
-        _text(result.get("admin_district"), 80),
+        clean_text(result.get("country"), 40),
+        clean_text(result.get("admin_district"), 80),
     )
 
 
@@ -298,16 +298,16 @@ def nominatim_get(url: str, max_bytes: int) -> bytes:
 def _nominatim_place(item) -> Place | None:
     if not isinstance(item, dict):
         return None
-    position = _position(item.get("lat"), item.get("lon"), strings=True)
-    label = _text(item.get("display_name"), 200)
+    position = uk_position(item.get("lat"), item.get("lon"), strings=True)
+    label = clean_text(item.get("display_name"), 200)
     if position is None or not label:
         return None
     address = item.get("address")
     address = address if isinstance(address, dict) else {}
-    state = _text(address.get("state"), 40)  # England, Scotland... in Great Britain
+    state = clean_text(address.get("state"), 40)  # England, Scotland... in Great Britain
     district = ""
     for key in ("city", "town", "county"):
-        district = _text(address.get(key), 80)
+        district = clean_text(address.get(key), 80)
         if district:
             break
     return Place(position[0], position[1], label, state if state in _DIVISIONS else "", district)
@@ -331,7 +331,7 @@ def parse_nominatim(body: bytes) -> list[Place]:
 def search_address(text: str, http_get: HttpGetBytes = nominatim_get, limiter: RateLimiter = NOMINATIM_LIMIT,
                    cache: AnswerCache = NOMINATIM_CACHE) -> list[Place]:
     """Up to five places in Great Britain matching an address, best first."""
-    query = _text(text, ADDRESS_LENGTH[1] + 1)
+    query = clean_text(text, ADDRESS_LENGTH[1] + 1)
     if not ADDRESS_LENGTH[0] <= len(query) <= ADDRESS_LENGTH[1]:
         raise SetupError(f"Type an address of {ADDRESS_LENGTH[0]} to {ADDRESS_LENGTH[1]} characters")
     key = query.casefold()
@@ -461,13 +461,14 @@ def naptan_position(row: Mapping[str, str | None]) -> tuple[float, float] | None
     """A NaPTAN CSV row's GPS position: its latitude and longitude, or, as
     some areas give only that, its grid reference converted. None if neither
     is usable or it's outside the UK."""
-    position = _position(row.get("Latitude"), row.get("Longitude"), strings=True)
+    position = uk_position(row.get("Latitude"), row.get("Longitude"), strings=True)
     if position is not None:
         return position
-    easting, northing = _number(row.get("Easting"), strings=True), _number(row.get("Northing"), strings=True)
+    easting = finite_number(row.get("Easting"), strings=True)
+    northing = finite_number(row.get("Northing"), strings=True)
     if easting is None or northing is None or not (0 <= easting <= 800_000 and 0 <= northing <= 1_300_000):
         return None
-    return _position(*grid_to_latlon(easting, northing))
+    return uk_position(*grid_to_latlon(easting, northing))
 
 
 def stops_near(text: str, lat: float, lon: float, within_m: float, limit: int) -> list[Stop]:
@@ -493,8 +494,8 @@ def _stops_in(lines: IO[str], lat: float, lon: float, within_m: float, limit: in
             bearing = (row.get("Bearing") or "").strip().upper()
             stop = Stop(
                 atco,
-                _text(row.get("CommonName"), 80) or atco,
-                _text(row.get("Indicator"), 40),
+                clean_text(row.get("CommonName"), 80) or atco,
+                clean_text(row.get("Indicator"), 40),
                 bearing if bearing in BEARINGS else "",
                 *position,
                 round(metres),
@@ -655,7 +656,7 @@ def config_fragment(home: Located | None, station: Station | None, stops: Sequen
         _check_point(home.lat, home.lon)
     fragment: dict = {}
     if station is not None:
-        if not _CRS.fullmatch(station.crs):
+        if not CRS.fullmatch(station.crs):
             raise SetupError("A station code is three capital letters")
         train: dict = {"crs": station.crs}
         if station.crs in walk:

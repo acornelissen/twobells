@@ -46,7 +46,7 @@ from ..core.polling import Window, parse_window
 from ..core.walk import WalkTimes
 from ..settings import modes as mode_list
 from ..settings import show as show_items
-from ..settings.config import _flag, _table, _texts, _whole, switched_on
+from ..settings.config import flag, switched_on, table, texts, whole
 from ..settings.schema import ENGLAND_AND_WALES, bus_source
 from ..settings.store import Store
 from ..sources.bodsbus import BodsBusSource, BusBoard
@@ -163,13 +163,13 @@ def _feed_url(section: dict, key: str, default: str) -> str:
 def allowed_hosts(data: dict) -> frozenset[str]:
     """[dashboard] allowed_hosts alone, checked: for the settings, which
     answer to them even when the rest of [dashboard] doesn't load."""
-    section = _table(data, "dashboard", "[dashboard]")
-    return frozenset(_host(h) for h in _texts(section, "allowed_hosts", _WHERE))
+    section = table(data, "dashboard", "[dashboard]")
+    return frozenset(_host(h) for h in texts(section, "allowed_hosts", _WHERE))
 
 
 def dashboard_options(data: dict) -> DashboardOptions:
     """The [dashboard] table of already-read config data, checked."""
-    section = _table(data, "dashboard", "[dashboard]")
+    section = table(data, "dashboard", "[dashboard]")
     unknown = sorted(set(section) - _KEYS)
     if unknown:
         raise ConfigError(f"{_WHERE}has unknown settings: {', '.join(unknown)}")
@@ -179,7 +179,7 @@ def dashboard_options(data: dict) -> DashboardOptions:
     windows = DashboardOptions.quiet_windows
     if "quiet_windows" in section:
         try:
-            windows = tuple(parse_window(w) for w in _texts(section, "quiet_windows", _WHERE))
+            windows = tuple(parse_window(w) for w in texts(section, "quiet_windows", _WHERE))
         except ValueError as error:
             raise ConfigError(f"{_WHERE}quiet_windows: {error}") from None
     return DashboardOptions(
@@ -187,16 +187,16 @@ def dashboard_options(data: dict) -> DashboardOptions:
         train_rows=_ranged(section, "train_rows", 10, 1, _MAX_ROWS),
         bus_rows=_ranged(section, "bus_rows", 15, 1, _MAX_ROWS),
         metro_rows=_ranged(section, "metro_rows", 10, 1, _MAX_ROWS),
-        train_interval_seconds=_whole(section, "train_interval_seconds", 60, _WHERE, least=30),
-        bus_interval_seconds=_whole(section, "bus_interval_seconds", 30, _WHERE, least=15),
-        weather_interval_minutes=_whole(section, "weather_interval_minutes", 30, _WHERE, least=10),
+        train_interval_seconds=whole(section, "train_interval_seconds", 60, _WHERE, least=30),
+        bus_interval_seconds=whole(section, "bus_interval_seconds", 30, _WHERE, least=15),
+        weather_interval_minutes=whole(section, "weather_interval_minutes", 30, _WHERE, least=10),
         quiet_windows=windows,
         late_minutes_train=_ranged(section, "late_minutes_train", 3, 1, _MAX_LATE),
         late_minutes_bus=_ranged(section, "late_minutes_bus", 2, 1, _MAX_LATE),
         history_days=_ranged(section, "history_days", 90, 1, _MAX_HISTORY_DAYS),
-        allowed_hosts=frozenset(_host(h) for h in _texts(section, "allowed_hosts", _WHERE)),
+        allowed_hosts=frozenset(_host(h) for h in texts(section, "allowed_hosts", _WHERE)),
         kb_incidents_url=_feed_url(section, "kb_incidents_url", KB_URL_PLACEHOLDER),
-        row_strips=_flag(section, "row_strips", True, _WHERE),
+        row_strips=flag(section, "row_strips", True, _WHERE),
         show=show_items.shown(data, "dashboard"),
         leave_modes=mode_list.leave(data, "dashboard") if "leave_modes" in section else None,
     )
@@ -365,14 +365,14 @@ def load_dashboard(store: Store | Path | str, env: Mapping[str, str],
     if not isinstance(store, Store):
         store = Store.open(store, state_dir=state_dir_override)
         env = store.env(env)
-    settings = _build(store.data(), env, store.folder)
+    settings = dashboard_settings(store.data(), env, store.folder)
     if lock:
         store.make()
         settings.lock = _lock(store.folder)
     return settings
 
 
-def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSettings:
+def dashboard_settings(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSettings:
     """The settings from already-read, already-layered data, without the lock."""
     data = switched_on(copy.deepcopy(data))  # [train] or [bus] with enabled = false is ignored, as the board does
     options = dashboard_options(data)
@@ -380,12 +380,12 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
     modes = mode_list.shown(data, "dashboard")
 
     if "train" in data:
-        _table(data, "train", "[train]")["rows"] = options.train_rows
+        table(data, "train", "[train]")["rows"] = options.train_rows
     if "metro" in data:
-        _table(data, "metro", "[metro]")["rows"] = options.metro_rows
+        table(data, "metro", "[metro]")["rows"] = options.metro_rows
     bus_note = None
     if "bus" in data and "bus" in modes:
-        bus = _table(data, "bus", "[bus]")
+        bus = table(data, "bus", "[bus]")
         if bus_source(bus) == "bods":
             bus["rows"] = options.bus_rows
         else:
@@ -444,7 +444,7 @@ def _build(data: dict, env: Mapping[str, str], folder: Path) -> DashboardSetting
         bus_disruptions=BusDisruptionSource(bus_key) if bus is not None and bus_key else None,
         train_incidents=incidents,
         rain_threshold=weather.threshold if weather is not None else 50,
-        bank_holidays=_flag(data, "bank_holidays", True),
+        bank_holidays=flag(data, "bank_holidays", True),
         bank_holiday_division=settings.bank_holiday_division,
         scrolling=settings.board.scrolling,
     )

@@ -882,7 +882,7 @@ def disruptions_part(bus: list[Disruption], bus_status: dict | None, train: list
 # The hub
 
 
-def _encode(value) -> str:
+def encode(value) -> str:
     # ASCII only and no NaN: valid JSON on one line, safe in an event stream.
     return json.dumps(value, separators=(",", ":"), allow_nan=False)
 
@@ -962,7 +962,7 @@ class Hub:
             self._changed.notify_all()
         self._lookups = lookups
         snapshot = {"version": self._version, "generated_at": iso(self._clock()), **content}
-        self._body = _encode(snapshot).encode("ascii")
+        self._body = encode(snapshot).encode("ascii")
         self._rebuilt = self._monotonic()
 
     def publish(self, part: str, data: dict | list | None, lookups: dict[str, dict] | None = None) -> int:

@@ -44,9 +44,9 @@ _NOT_UPDATING = "! NOT UPDATING"
 # Inter, as on the dashboard: hinted static fonts built by tools/build_fonts.py.
 # Bold is ExtraBold: at the pHAT's 9 and 11 px on a one-bit panel, Inter Bold
 # hints to one-pixel stems and reads as regular.
-_FONT_DIR = Path(__file__).with_name("fonts")
-_REGULAR = "Inter-Regular.ttf"
-_BOLD = "Inter-ExtraBold.ttf"
+FONT_DIR = Path(__file__).with_name("fonts")
+REGULAR = "Inter-Regular.ttf"
+BOLD = "Inter-ExtraBold.ttf"
 _PREVIEW_ACCENTS = {"red": (200, 30, 30), "yellow": (230, 180, 0)}
 # The colours a screen has that e-paper lacks, for the TFT look's status
 # pills: black words on the green (7.8:1), white on the red (5.7:1).
@@ -102,8 +102,8 @@ class Fonts:
 
 
 @functools.lru_cache(maxsize=32)
-def _font(name: str, size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(str(_FONT_DIR / name), size, layout_engine=ImageFont.Layout.BASIC)
+def load_font(name: str, size: int) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(str(FONT_DIR / name), size, layout_engine=ImageFont.Layout.BASIC)
 
 
 # Body text in pHAT pixels; a text_size setting can make the plain look bigger.
@@ -112,9 +112,9 @@ TEXT_SIZE = 11
 
 def load_fonts(scale: int = 1, text_size: int = TEXT_SIZE) -> Fonts:
     return Fonts(
-        regular=_font(_REGULAR, text_size * scale),
-        bold=_font(_BOLD, text_size * scale),
-        small=_font(_BOLD, (text_size - 2) * scale),
+        regular=load_font(REGULAR, text_size * scale),
+        bold=load_font(BOLD, text_size * scale),
+        small=load_font(BOLD, (text_size - 2) * scale),
     )
 
 
@@ -926,12 +926,12 @@ def _biggest_bold(text: str, width: float, height: float) -> ImageFont.FreeTypeF
     low, high = 6, max(6, int(height) * 2)
     while low < high:
         size = (low + high + 1) // 2
-        left, top, right, bottom = _font(_BOLD, size).getbbox(text, mode="1")
+        left, top, right, bottom = load_font(BOLD, size).getbbox(text, mode="1")
         if right - left <= width and bottom - top <= height:
             low = size
         else:
             high = size - 1
-    return _font(_BOLD, low)
+    return load_font(BOLD, low)
 
 
 def render_code(view: CodeView, palette: Palette, panel: Panel = PHAT, dark: bool = False) -> Image.Image:
@@ -948,7 +948,7 @@ def render_code(view: CodeView, palette: Palette, panel: Panel = PHAT, dark: boo
         background, ink = palette.white, palette.black
     image = Image.new("P", panel.size, background)
     draw = ImageDraw.Draw(image)
-    small = _font(_BOLD, TEXT_SIZE * s)
+    small = load_font(BOLD, TEXT_SIZE * s)
     label = fit_text("Settings reset code", small, width - 2 * pad, partial(drawn_length, small))
     until = fit_text(f"Valid until {view.until}", small, width - 2 * pad, partial(drawn_length, small))
     line_h = heights()[2] * s
@@ -982,7 +982,7 @@ def render_setup(view: SetupView, palette: Palette, panel: Panel = PHAT, dark: b
         background, ink = palette.white, palette.black
     image = Image.new("P", panel.size, background)
     draw = ImageDraw.Draw(image)
-    small = _font(_BOLD, TEXT_SIZE * s)
+    small = load_font(BOLD, TEXT_SIZE * s)
     note = fit_text(view.note, small, width - 2 * pad, partial(drawn_length, small))
     line_h = heights()[2] * s
     # The heading over the top half of what the note leaves; the address below.

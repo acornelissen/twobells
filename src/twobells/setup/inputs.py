@@ -18,7 +18,7 @@ from collections.abc import Mapping, Sequence
 
 from ..core.bounded import finite
 from ..core.errors import ConfigError, safe_message, scrub_secrets
-from ..core.places import _CONTROL, LONDON_STOP, TRAM_STOP, in_uk, tram_stop_names
+from ..core.places import CONTROL, LONDON_STOP, TRAM_STOP, in_uk, tram_stop_names
 from ..settings import modes, schema, show
 from ..settings.installs import Install
 from ..settings.schema import ATCO as _ATCO
@@ -68,7 +68,7 @@ def text(value, field: str, low: int, high: int) -> str:
     if not isinstance(value, str):
         raise Invalid("Send text", field)
     value = value.strip()
-    if not low <= len(value) <= high or _CONTROL.search(value):
+    if not low <= len(value) <= high or CONTROL.search(value):
         raise Invalid(f"Use {low} to {high} ordinary characters", field)
     return value
 

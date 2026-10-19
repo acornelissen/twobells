@@ -27,7 +27,7 @@ from .bounded import finite
 LAT_RANGE = (49.0, 61.0)
 LON_RANGE = (-8.7, 2.0)
 
-_CRS = re.compile(r"^[A-Z]{3}$")
+CRS = re.compile(r"^[A-Z]{3}$")
 # A Metrolink stop's NaPTAN code: 9400ZZMA and the three letters TfGM calls it by.
 TRAM_STOP = re.compile(r"^9400ZZMA[A-Z]{3}$")
 # A London stop TfL's live times are for, by TfL's code for it: an
@@ -37,14 +37,14 @@ LONDON_STOP = re.compile(r"^(?:940GZZ(?:LU|DL|CR|AL)[A-Z]{3}|930G[A-Z]{3,4})$")
 LONDON_KINDS = ("tube", "dlr", "tram", "cable-car", "river-bus")
 _LINE_ID = re.compile(r"^[a-z0-9-]{1,40}$")
 _AREA = re.compile(r"^[0-8][0-9]{2}$")
-_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def in_uk(lat: float, lon: float) -> bool:
     return LAT_RANGE[0] <= lat <= LAT_RANGE[1] and LON_RANGE[0] <= lon <= LON_RANGE[1]
 
 
-def _number(value, strings: bool = False) -> float | None:
+def finite_number(value, strings: bool = False) -> float | None:
     """A finite number; with `strings`, a short numeric string counts too
     (Nominatim and CSV files give numbers as text). Else None."""
     if isinstance(value, bool):
@@ -57,16 +57,16 @@ def _number(value, strings: bool = False) -> float | None:
     return finite(value)
 
 
-def _position(lat, lon, strings: bool = False) -> tuple[float, float] | None:
-    lat, lon = _number(lat, strings), _number(lon, strings)
+def uk_position(lat, lon, strings: bool = False) -> tuple[float, float] | None:
+    lat, lon = finite_number(lat, strings), finite_number(lon, strings)
     return (lat, lon) if lat is not None and lon is not None and in_uk(lat, lon) else None
 
 
-def _text(value, limit: int) -> str:
+def clean_text(value, limit: int) -> str:
     """A string with control characters and runs of spaces removed, cut to `limit`; "" if not a string."""
     if not isinstance(value, str):
         return ""
-    return " ".join(_CONTROL.sub(" ", value[: limit * 4]).split())[:limit].strip()
+    return " ".join(CONTROL.sub(" ", value[: limit * 4]).split())[:limit].strip()
 
 
 # FOSSGIS's foot router (OSRM), for setup's walk times and the timetable's
@@ -114,9 +114,9 @@ def parse_stations(text: str) -> tuple[tuple[str, str, float, float], ...]:
     """(name, crs, lat, lon) rows of a station list, bad rows skipped."""
     rows = []
     for row in _data_rows(text):
-        name, crs = _text(row.get("name"), 80), row.get("crs") or ""
-        position = _position(row.get("lat"), row.get("lon"), strings=True)
-        if name and _CRS.fullmatch(crs) and position:
+        name, crs = clean_text(row.get("name"), 80), row.get("crs") or ""
+        position = uk_position(row.get("lat"), row.get("lon"), strings=True)
+        if name and CRS.fullmatch(crs) and position:
             rows.append((name, crs, *position))
     return tuple(rows)
 
@@ -133,8 +133,8 @@ def parse_tram_stops(text: str) -> tuple[tuple[str, str, float, float], ...]:
     """(name, code, lat, lon) rows of a tram stop list, bad rows skipped."""
     rows = []
     for row in _data_rows(text):
-        name, code = _text(row.get("name"), 80), row.get("code") or ""
-        position = _position(row.get("lat"), row.get("lon"), strings=True)
+        name, code = clean_text(row.get("name"), 80), row.get("code") or ""
+        position = uk_position(row.get("lat"), row.get("lon"), strings=True)
         if name and TRAM_STOP.fullmatch(code) and position:
             rows.append((name, code, *position))
     return tuple(rows)
@@ -177,9 +177,9 @@ def parse_london_stops(text: str) -> tuple[LondonStop, ...]:
     """The rows of a London stop list, bad rows skipped."""
     rows = []
     for row in _data_rows(text):
-        name, code, kind = _text(row.get("name"), 80), row.get("code") or "", row.get("kind") or ""
+        name, code, kind = clean_text(row.get("name"), 80), row.get("code") or "", row.get("kind") or ""
         lines = tuple(str(row.get("lines") or "").split())
-        position = _position(row.get("lat"), row.get("lon"), strings=True)
+        position = uk_position(row.get("lat"), row.get("lon"), strings=True)
         if (name and LONDON_STOP.fullmatch(code) and kind in LONDON_KINDS and position and len(lines) <= 20
                 and all(_LINE_ID.fullmatch(line) for line in lines)):
             rows.append(LondonStop(name, code, kind, lines, *position))

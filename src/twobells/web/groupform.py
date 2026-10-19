@@ -36,7 +36,7 @@ from ..board.config import settings_from
 from ..board.names import DISPLAY_PANELS
 from ..board.themes import THEMES
 from ..core.errors import ConfigError
-from ..dashboard.config import BUS_NOTE, _build
+from ..dashboard.config import BUS_NOTE, dashboard_settings
 from ..settings import modes, schema, show
 from ..settings.config import board_modes, merge
 from ..settings.overlay import BROKEN_NAME, OverlayError, save_to
@@ -116,7 +116,7 @@ def check_views(data: dict, env: Mapping[str, str], folder: Path, install: Insta
     if "board" in on:
         settings_from(data, env)
     if "dashboard" in on:
-        _build(data, env, folder)
+        dashboard_settings(data, env, folder)
 
 
 def edited(raw: str, shown: str) -> bool:

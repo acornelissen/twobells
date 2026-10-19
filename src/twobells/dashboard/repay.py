@@ -38,7 +38,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from ..core.model import Status, clock_at
-from ..sources.darwin import _CLOCK, CallingPoint, DetailsSource, DetailsUnavailable, ServiceGone, TrainBoard
+from ..sources.darwin import CLOCK, CallingPoint, DetailsSource, DetailsUnavailable, ServiceGone, TrainBoard
 from .history import Following, History, Report, Watched
 from .snapshot import train_route
 
@@ -62,7 +62,7 @@ def _clock_or_word(value: str | None, booked: datetime, now: datetime) -> dateti
     which comes twice, an arrival an hour late is told from one on time."""
     if value == "On time":
         return booked
-    if value is not None and _CLOCK.fullmatch(value):
+    if value is not None and CLOCK.fullmatch(value):
         return clock_at(value, now)
     return None
 

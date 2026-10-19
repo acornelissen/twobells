@@ -41,7 +41,7 @@ from ..core.model import line_order
 from ..core.net import get_bytes
 from ..core.places import BODS_BASE_URL, in_uk
 from ..core.walk import DEFAULT_STOP
-from ..settings.overlay import _toml_key, _toml_string
+from ..settings.overlay import toml_key, toml_string
 from ..timetable import build as timetable
 from ..timetable import roads as roadshape
 from ..timetable import routesetup, txc
@@ -666,12 +666,12 @@ def fragment_toml(result: dict) -> str:
         out.append(f"# {noc}: {'line' if len(lines) == 1 else 'lines'} {', '.join(lines)}{said}")
     out += [
         "[bus]",
-        f"source = {_toml_string(bus['source'])}",
-        f"operators = [{', '.join(_toml_string(noc) for noc in bus['operators'])}]",
+        f"source = {toml_string(bus['source'])}",
+        f"operators = [{', '.join(toml_string(noc) for noc in bus['operators'])}]",
     ]
     for line, route in bus.get("routes", {}).items():
-        out += ["", f"[bus.routes.{_toml_key(line)}]", f"stop = {_toml_string(route['stop'])}", "stops = ["]
-        out += [f"  {{ name = {_toml_string(s['name'])}, lat = {s['lat']:.6f}, lon = {s['lon']:.6f} }},"
+        out += ["", f"[bus.routes.{toml_key(line)}]", f"stop = {toml_string(route['stop'])}", "stops = ["]
+        out += [f"  {{ name = {toml_string(s['name'])}, lat = {s['lat']:.6f}, lon = {s['lon']:.6f} }},"
                 for s in route["stops"]]
         out.append("]")
     return "\n".join(out) + "\n"

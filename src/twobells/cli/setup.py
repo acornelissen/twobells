@@ -18,7 +18,7 @@ QUERIES = ("views", "display", "needs-timetable")
 
 
 def discover_command(args) -> int:
-    from ..board.config import _walk
+    from ..board.config import walk_times
     from ..setup import discover
 
     # argparse requires at least one --stop here, so there are always stops.
@@ -31,7 +31,7 @@ def discover_command(args) -> int:
         print("Missing BODS_API_KEY; set it in secrets.env", file=sys.stderr)
         return 2
     try:
-        walk = _walk(data).bus
+        walk = walk_times(data).bus
     except ConfigError:
         walk = {}  # route strips go back a few minutes without it
     timezone = data.get("timezone")

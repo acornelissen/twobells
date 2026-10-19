@@ -152,11 +152,11 @@ def test_the_plain_look_lays_text_out_the_same_on_every_computer(monkeypatch):
         return truetype(*args, **kwargs)
 
     monkeypatch.setattr(ImageFont, "truetype", recording)
-    board_render._font.cache_clear()
+    board_render.load_font.cache_clear()
     try:
         fonts = load_fonts(3, 13)
     finally:
-        board_render._font.cache_clear()  # no font loaded under the stand-in stays behind
+        board_render.load_font.cache_clear()  # no font loaded under the stand-in stays behind
     assert asked and set(asked) == {ImageFont.Layout.BASIC}
     assert {f.layout_engine for f in (fonts.regular, fonts.bold, fonts.small)} == {ImageFont.Layout.BASIC}
 
@@ -1350,7 +1350,7 @@ def test_a_screen_redrawing_every_second_keeps_its_text_within_bounds():
         view = dataclasses.replace(view, clock=f"07:{second // 60:02}:{second % 60:02}")
         plain.board_frame(view, PALETTE, HDMI_1920X440)
     assert plain._GLYPHS.taken <= plain._GLYPHS.most <= 8 * 1024 * 1024
-    for cache in (plain._drawn_box, plain.text_length, plain._font):
+    for cache in (plain._drawn_box, plain.text_length, plain.load_font):
         assert cache.cache_info().currsize <= cache.cache_info().maxsize <= 2048
 
 

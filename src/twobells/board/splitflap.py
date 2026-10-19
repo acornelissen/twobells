@@ -23,8 +23,8 @@ from PIL import Image, ImageDraw, ImageFont
 from .flaps import Flap
 from .panel import PHAT, Panel
 from .render import (
-    _BOLD,
-    _FONT_DIR,
+    BOLD,
+    FONT_DIR,
     PAD,
     TEXT_SIZE,
     Fonts,
@@ -57,7 +57,7 @@ class TileFont(ImageFont.FreeTypeFont):
     Drawn only by SplitFlapPainter, letter by letter onto tiles."""
 
     def __init__(self, scale: int) -> None:
-        super().__init__(str(_FONT_DIR / _BOLD), GLYPH_SIZE * scale, layout_engine=ImageFont.Layout.BASIC)
+        super().__init__(str(FONT_DIR / BOLD), GLYPH_SIZE * scale, layout_engine=ImageFont.Layout.BASIC)
         self.scale = scale
         self.pitch = TILE_PITCH * scale
         self.gap = TILE_GAP * scale
