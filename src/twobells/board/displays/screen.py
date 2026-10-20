@@ -3,8 +3,11 @@
 Made for Waveshare's 7.9" 400x1280 screen run on its side as 1280x400, and
 an 11.3" 1920x440 bar screen. A screen redraws in a frame, so the board can
 show a running clock, scroll text too long for its space, and turn the
-split-flap look's tiles over: the whole board is drawn once a second, and
-between times only the boxes that move, to keep a Pi Zero 2 W's CPU free.
+split-flap look's tiles over. Each second only the parts of the board that
+changed (the clock, the countdowns) are put on the screen again, and between
+times only the boxes that move, to keep a Pi Zero 2 W's CPU free and each
+second's frame quick: the whole of a 1920x440 board takes 10 ms or more to
+put on a Pi 4's screen.
 """
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Protocol
 
+from PIL import ImageChops
 from PIL.Image import Image
 
 from ..flaps import Flapper
@@ -62,10 +66,33 @@ def fit_note(frame: tuple[int, int], screen: tuple[int, int]) -> str | None:
             f"video=HDMI-A-1:{frame_w}x{frame_h}@60 to /boot/firmware/cmdline.txt and restart.")
 
 
+# A new board is compared with the one on the screen in bands of rows this
+# tall, and each band's changes go to the screen as the box round them.
+BAND = 40
+# Changes covering less of the board than this go to the screen as boxes;
+# more (a new page, look or layout), and the whole board is drawn again.
+MOST_PUSHED = 0.5
+
+
+def changed_boxes(old: Image, new: Image, band: int = BAND) -> list[Box]:
+    """Where `new` differs from `old`, two boards the same size in palette
+    indices: in each band of rows, the box round its changes."""
+    diff = ImageChops.difference(old, new)
+    boxes = []
+    for top in range(0, new.height, band):
+        found = diff.crop((0, top, new.width, min(new.height, top + band))).getbbox()
+        if found is not None:
+            left, y0, right, y1 = found
+            boxes.append((left, top + y0, right, top + y1))
+    return boxes
+
+
 class Screen(Protocol):
     def blit(self, image: Image) -> None: ...
 
     def patch(self, image: Image, at: tuple[int, int]) -> None: ...
+
+    def update(self, parts: list[tuple[Image, tuple[int, int]]]) -> None: ...
 
 
 class PygameScreen:
@@ -104,12 +131,19 @@ class PygameScreen:
     def patch(self, image: Image, at: tuple[int, int]) -> None:
         """Part of the last frame, `image` with its top left at `at` in the
         frame: only that part of the screen is updated."""
+        self.update([(image, at)])
+
+    def update(self, parts: list[tuple[Image, tuple[int, int]]]) -> None:
+        """Parts of the last frame, each an image and where its top left is
+        in the frame, put on the screen together: only those parts are updated."""
         pygame = self._pygame
         pygame.event.pump()
-        part = pygame.image.frombytes(image.tobytes(), image.size, "RGB")
-        x, y = self._origin[0] + at[0], self._origin[1] + at[1]
-        self._surface.blit(part, (x, y))
-        pygame.display.update(pygame.Rect(x, y, image.width, image.height))
+        rects = []
+        for image, at in parts:
+            x, y = self._origin[0] + at[0], self._origin[1] + at[1]
+            self._surface.blit(pygame.image.frombytes(image.tobytes(), image.size, "RGB"), (x, y))
+            rects.append(pygame.Rect(x, y, image.width, image.height))
+        pygame.display.update(rects)
 
 
 class ScreenDisplay:
@@ -126,6 +160,7 @@ class ScreenDisplay:
         self._screen = screen
         self._scroller = Scroller()
         self._flapper = Flapper()
+        self._shown: Image | None = None  # the board on the screen, in palette indices, unturned
 
     @property
     def scrolling(self) -> bool:
@@ -141,12 +176,26 @@ class ScreenDisplay:
         image = self._scroller.show(frame, seconds)
         for box, patch in self._flapper.show(frame.flaps, seconds):
             image.paste(patch, box[:2])
-        self._screen_now().blit(self._turned(image))
+        self._push(image)
 
     def scroll(self, seconds: float) -> None:
         """Moves the scrolling text and turning tiles to `seconds`, updating only the boxes that moved."""
         for box, patch in [*self._scroller.moved(seconds), *self._flapper.moved(seconds)]:
             self._screen_now().patch(self._turned(patch), self._turned_at(box))
+            if self._shown is not None:
+                self._shown.paste(patch, box[:2])
+
+    def _push(self, image: Image) -> None:
+        """Put the board `image` on the screen: only the boxes that changed
+        since the last, or the whole board when most of it did."""
+        screen, last = self._screen_now(), self._shown
+        boxes = changed_boxes(last, image) if last is not None and last.size == image.size else None
+        changed = sum((right - left) * (bottom - top) for left, top, right, bottom in boxes or ())
+        if boxes is None or changed >= MOST_PUSHED * image.width * image.height:
+            screen.blit(self._turned(image))
+        elif boxes:
+            screen.update([(self._turned(image.crop(box)), self._turned_at(box)) for box in boxes])
+        self._shown = image
 
     def _screen_now(self) -> Screen:
         if self._screen is None:

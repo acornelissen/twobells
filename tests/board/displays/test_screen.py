@@ -152,9 +152,13 @@ class PatchingScreen(FakeScreen):
     def __init__(self):
         super().__init__()
         self.patches = []
+        self.updates = []  # each second's changes, put on the screen together
 
     def patch(self, image, at):
         self.patches.append((image, at))
+
+    def update(self, parts):
+        self.updates.append(parts)
 
 
 def scrolling_frame(display, box=(100, 20, 140, 30)):
@@ -285,3 +289,112 @@ def test_a_screen_shows_the_split_flap_looks_tiles():
     image.putpixel((1, 0), display.palette.tile)
     display.show(image)
     assert screen.frames[0].getpixel((1, 0)) == SCREEN_ONLY_RGB["tile"]
+
+
+# Each second, only the parts of the board that changed go to the screen.
+
+from twobells.board.displays.screen import MOST_PUSHED, changed_boxes  # noqa: E402
+from twobells.board.themes import THEMES  # noqa: E402
+
+
+class CanvasScreen(PatchingScreen):
+    """A screen keeping what it shows, as a real one does."""
+
+    def blit(self, image):
+        super().blit(image)
+        self.canvas = image.copy()
+
+    def patch(self, image, at):
+        super().patch(image, at)
+        self.canvas.paste(image, at)
+
+    def update(self, parts):
+        super().update(parts)
+        for image, at in parts:
+            self.canvas.paste(image, at)
+
+
+def whole(frame, seconds, **display):
+    """`frame` at `seconds` as the screen shows it drawn whole."""
+    screen = FakeScreen()
+    ScreenDisplay(screen=screen, **display).show_frame(frame, seconds)
+    return screen.frames[0]
+
+
+@pytest.mark.parametrize("rotate", [0, 90, 180, 270])
+@pytest.mark.parametrize("look", ["sign", "flap"])
+def test_a_new_second_puts_only_what_changed_on_the_screen(rotate, look):
+    screen = CanvasScreen()
+    display = ScreenDisplay(rotate=rotate, panel=HDMI_1920X440, screen=screen)
+    draw = THEMES[look].frame
+    display.show_frame(draw(flap_board("07:12"), SCREEN_PALETTE, HDMI_1920X440), 100)
+    later = draw(flap_board("07:12", "07:03:16"), SCREEN_PALETTE, HDMI_1920X440)
+    display.show_frame(later, 101)
+    assert len(screen.frames) == 1  # the whole board only the once
+    [parts] = screen.updates
+    area = sum(image.width * image.height for image, _ in parts)
+    assert 0 < area < 0.05 * 1920 * 440  # the clock's seconds, not the board
+    # The screen shows just what drawing the whole board would.
+    assert screen.canvas.tobytes() == whole(later, 101, rotate=rotate, panel=HDMI_1920X440).tobytes()
+
+
+def test_a_board_mostly_changed_is_drawn_whole():
+    screen = PatchingScreen()
+    display = ScreenDisplay(screen=screen)
+    display.show(board_image(display))
+    changed = Image.new("P", display.panel.size, display.palette.accent)
+    display.show(changed)
+    assert len(screen.frames) == 2 and screen.updates == []
+    assert screen.frames[1].getpixel((640, 200)) == SCREEN_RGB["yellow"]
+
+
+def test_a_board_unchanged_puts_nothing_on_the_screen():
+    screen = PatchingScreen()
+    display = ScreenDisplay(screen=screen)
+    display.show(board_image(display))
+    display.show(board_image(display))
+    assert len(screen.frames) == 1 and screen.updates == []
+
+
+def test_text_scrolled_between_seconds_counts_as_on_the_screen():
+    screen = CanvasScreen()
+    display = ScreenDisplay(screen=screen)
+    frame = scrolling_frame(display)
+    display.show_frame(frame, 0)
+    display.scroll(SCROLL_PAUSE_S + 1)
+    assert screen.patches  # the text moved
+    display.show_frame(frame, SCROLL_PAUSE_S + 1)  # the next second, where it has got to
+    assert screen.updates == [] and len(screen.frames) == 1
+    display.show_frame(frame, SCROLL_PAUSE_S + 2)
+    assert screen.canvas.tobytes() == whole(Frame(frame.at(SCROLL_PAUSE_S + 2)), 0).tobytes()
+
+
+def test_changes_are_found_band_by_band():
+    old = Image.new("P", (200, 100), 0)
+    new = old.copy()
+    new.putpixel((10, 5), 1)
+    new.putpixel((150, 30), 1)  # in the same band of rows: one box round both
+    new.putpixel((60, 45), 1)  # in the next band: a box of its own
+    assert changed_boxes(old, new, band=40) == [(10, 5, 151, 31), (60, 45, 61, 46)]
+    assert changed_boxes(old, old.copy()) == []
+    assert 0 < MOST_PUSHED <= 1
+
+
+def test_pygame_screen_updates_several_parts_at_once_headless(monkeypatch):
+    pygame = pytest.importorskip("pygame")
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    from twobells.board.displays.screen import PygameScreen
+
+    screen = PygameScreen()
+    try:
+        screen.blit(Image.new("RGB", (200, 100), SCREEN_RGB["black"]))
+        screen.update([(Image.new("RGB", (10, 5), SCREEN_RGB["yellow"]), (50, 20)),
+                       (Image.new("RGB", (4, 4), SCREEN_RGB["red"]), (150, 80))])
+        surface = pygame.display.get_surface()
+        width, height = surface.get_size()
+        left, top = (width - 200) // 2, (height - 100) // 2
+        assert tuple(surface.get_at((left + 50, top + 20)))[:3] == SCREEN_RGB["yellow"]
+        assert tuple(surface.get_at((left + 153, top + 83)))[:3] == SCREEN_RGB["red"]
+        assert tuple(surface.get_at((left + 100, top + 50)))[:3] == SCREEN_RGB["black"]
+    finally:
+        pygame.display.quit()
