@@ -30,8 +30,10 @@ board's clock then, so the board is never more than one tick behind.
 
 from __future__ import annotations
 
+import logging
 import queue
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -41,6 +43,10 @@ from .scroll import Frame, board_seconds
 
 if TYPE_CHECKING:
     from .app import RunResult, ScrollingDisplay
+
+# How long each board took to make and show, and any frames skipped, at
+# DEBUG: `twobells run --loop --timings` logs them.
+timings = logging.getLogger("twobells.timings")
 
 
 @dataclass(frozen=True)
@@ -131,10 +137,12 @@ def show_ahead(display: ScrollingDisplay, ahead: Ahead, clock: Callable[[], date
             if frame % per_tick <= last:
                 break  # the next tick is due
             frame %= per_tick
+            if last >= 0 and frame > last + 1:
+                timings.debug("%d frames skipped", frame - last - 1)
             seconds = base + frame * frame_seconds
             tick = ahead.take(wall() + frame_seconds / 2, wall) if waiting else None
             if tick is not None:
-                _show(display, tick, seconds)
+                _show(display, tick, seconds, wall() % tick_seconds)
             if display.scrolling:
                 display.scroll(seconds)
             last = frame
@@ -143,7 +151,7 @@ def show_ahead(display: ScrollingDisplay, ahead: Ahead, clock: Callable[[], date
                 tick = ahead.take(next_at, wall)
                 if tick is None:
                     continue  # the next frame is due
-                _show(display, tick, seconds)
+                _show(display, tick, seconds, wall() % tick_seconds)
             if tick is not None:
                 waiting, shown = False, shown + 1
                 if on_tick is not None:
@@ -159,6 +167,11 @@ def show_ahead(display: ScrollingDisplay, ahead: Ahead, clock: Callable[[], date
         now = clock()
 
 
-def _show(display: ScrollingDisplay, tick: Tick, seconds: float) -> None:
+def _show(display: ScrollingDisplay, tick: Tick, seconds: float, into: float) -> None:
+    """Show `tick`'s board, `into` seconds after the wall clock's tick."""
+    started = time.perf_counter()
     if tick.frame is not None:
         display.show_frame(tick.frame, seconds)
+    if timings.isEnabledFor(logging.DEBUG):
+        timings.debug("%s made in %.1f ms, shown %.1f ms into its second in %.1f ms", tick.now.strftime("%H:%M:%S"),
+                      tick.made_s * 1000, into * 1000, (time.perf_counter() - started) * 1000)

@@ -398,3 +398,14 @@ def test_pygame_screen_updates_several_parts_at_once_headless(monkeypatch):
         assert tuple(surface.get_at((left + 100, top + 50)))[:3] == SCREEN_RGB["black"]
     finally:
         pygame.display.quit()
+
+
+def test_timings_say_how_much_of_the_board_went_to_the_screen(caplog):
+    caplog.set_level("DEBUG", logger="twobells.timings")
+    display = ScreenDisplay(screen=PatchingScreen())
+    display.show(board_image(display))
+    changed = board_image(display, accent_at=(5, 5))
+    display.show(changed)
+    [whole_board, bands] = caplog.records
+    assert whole_board.args == () and "whole" in whole_board.msg
+    assert bands.args[:2] == (1, 10)  # type: ignore[index] - one band of the 400 rows' 10 changed

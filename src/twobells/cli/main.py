@@ -86,6 +86,8 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--loop", action="store_true", help="keep running; needed for a screen")
     run.add_argument("--tick", type=_tick, help="seconds per tick with --loop (screen 1, e-paper 60)")
     run.add_argument("--ticks", type=int, help=argparse.SUPPRESS)
+    run.add_argument("--timings", action="store_true",
+                     help="with --loop on a screen, log how long each second's board took to make and show")
     run.set_defaults(handler=run_command)
 
     probe = with_config(sub.add_parser("probe", help="one live call to check keys and codes"))

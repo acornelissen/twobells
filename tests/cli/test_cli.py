@@ -1,6 +1,7 @@
 import errno
 import http.client
 import json
+import logging
 import os
 import re
 import sys
@@ -372,6 +373,25 @@ def test_a_running_screen_draws_frames_for_scrolling_text_and_e_paper_does_not(t
     assert seen["frame_seconds"] == (SCROLL_FRAME_S if frames else None)
     # A screen has a speaker for station announcements (said only while [board] show has them); e-paper none.
     assert isinstance(seen["speaker"], Speaker) if frames else seen["speaker"] is None
+
+
+@pytest.mark.parametrize("flag, level", [([], logging.NOTSET), (["--timings"], logging.DEBUG)])
+def test_timings_turns_on_the_screen_s_timing_log_lines(tmp_path, monkeypatch, flag, level):
+    from twobells.cli import run
+
+    monkeypatch.setattr(run, "run_loop", lambda *a, **kw: None)
+    config = tmp_path / "config.toml"
+    config.write_text(f'display = "hdmi-1920x440"\nstate_file = "{tmp_path / "state.json"}"\n'
+                      '[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    secrets = tmp_path / "secrets.env"
+    secrets.write_text("RDM_API_KEY=k\n")
+    timings = logging.getLogger("twobells.timings")
+    try:
+        args = ["run", "--loop", *flag, "--png", str(tmp_path / "board.png"), "--config", str(config)]
+        assert main([*args, "--secrets", str(secrets)]) == 0
+        assert timings.level == level
+    finally:
+        timings.setLevel(logging.NOTSET)
 
 
 @pytest.mark.parametrize("command, tick", [

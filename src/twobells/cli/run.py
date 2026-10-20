@@ -83,6 +83,8 @@ def run_command(args) -> int:
 
 
 def _run(args) -> int:
+    if args.timings:
+        logging.getLogger("twobells.timings").setLevel(logging.DEBUG)  # board/ahead.py's and the screen's
     found = as_owner(args, open_store(args))
     if needs_setup(found):
         return _run_first(args)

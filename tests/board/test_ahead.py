@@ -211,3 +211,20 @@ def test_each_tick_shown_is_handed_to_on_tick():
     show_ahead(Recording(wall), TimedAhead(wall), wall_clock_board(wall), 1, SCROLL_FRAME_S, wall.sleep, wall,
                ticks=2, on_tick=lambda now, result: seen.append(now))
     assert seen == [T0, T0 + timedelta(seconds=1)]
+
+
+def test_timings_log_each_board_shown_and_any_frames_skipped(caplog):
+    wall = WallClock(1000.0)
+    sleeps = []
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        wall.sleep(seconds)
+        if len(sleeps) == 3:
+            wall.at += 3 * SCROLL_FRAME_S  # the third frame wakes three frames late
+
+    caplog.set_level("DEBUG", logger="twobells.timings")
+    show_ahead(Recording(wall), TimedAhead(wall), wall_clock_board(wall), 1, SCROLL_FRAME_S, sleep, wall, ticks=2)
+    made = [r.args for r in caplog.records if "made in" in r.msg]
+    assert [args[0] for args in made] == ["07:00:00", "07:00:01"]  # type: ignore[index]
+    assert [r.args for r in caplog.records if "skipped" in r.msg] == [(3,)]

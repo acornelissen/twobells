@@ -13,6 +13,7 @@ put on a Pi 4's screen.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Protocol
 
 from PIL import ImageChops
@@ -24,6 +25,7 @@ from ..render import SCREEN_ONLY_RGB, SCREEN_PALETTE, Palette
 from ..scroll import Box, Frame, Scroller
 
 log = logging.getLogger(__name__)
+timings = logging.getLogger("twobells.timings")  # board/ahead.py's: `twobells run --loop --timings`
 
 # Amber on black is 11:1 and red on white 5.7:1, both past WCAG AA. Amber on
 # white is only 1.9:1, so the plain look should keep its default red.
@@ -190,11 +192,15 @@ class ScreenDisplay:
         since the last, or the whole board when most of it did."""
         screen, last = self._screen_now(), self._shown
         boxes = changed_boxes(last, image) if last is not None and last.size == image.size else None
+        area = image.width * image.height
         changed = sum((right - left) * (bottom - top) for left, top, right, bottom in boxes or ())
-        if boxes is None or changed >= MOST_PUSHED * image.width * image.height:
+        if boxes is None or changed >= MOST_PUSHED * area:
             screen.blit(self._turned(image))
+            timings.debug("screen: the whole board")
         elif boxes:
             screen.update([(self._turned(image.crop(box)), self._turned_at(box)) for box in boxes])
+            timings.debug("screen: %d of %d bands changed, %.1f%% of the board", len(boxes),
+                          math.ceil(image.height / BAND), 100 * changed / area)
         self._shown = image
 
     def _screen_now(self) -> Screen:
