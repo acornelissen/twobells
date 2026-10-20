@@ -19,6 +19,12 @@ Environment=SDL_VIDEODRIVER=kmsdrm
 # pygame's surface reaches the screen through an SDL renderer: left to choose,
 # SDL 2.32 on a Pi 4 (Trixie) shows a black screen. GLES shows it.
 Environment=SDL_FRAMEBUFFER_ACCELERATION=opengles2
+# Mesa keeps the GLES shaders it compiles in a cache under the user's home,
+# which twobells hasn't got (and ProtectHome hides): it gets a folder of the
+# unit's own, /var/cache/twobells-screen, writable under ProtectSystem=strict.
+CacheDirectory=twobells-screen
+CacheDirectoryMode=0700
+Environment=MESA_SHADER_CACHE_DIR=%C/twobells-screen
 ExecStart=/opt/twobells/venv/bin/twobells run --loop --config /etc/twobells/config.toml
 Restart=on-failure
 RestartSec=10

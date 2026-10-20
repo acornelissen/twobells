@@ -590,7 +590,18 @@ def test_the_screen_draws_through_gles():
     # pygame's window surface reaches the screen through an SDL renderer. Left to
     # choose, SDL 2.32 on a Pi 4 (Trixie) draws a black screen; with GLES it shows.
     screen = _unit("twobells-screen.service")
-    assert screen["Environment"] == ["SDL_VIDEODRIVER=kmsdrm", "SDL_FRAMEBUFFER_ACCELERATION=opengles2"]
+    assert {"SDL_VIDEODRIVER=kmsdrm", "SDL_FRAMEBUFFER_ACCELERATION=opengles2"} <= set(screen["Environment"])
+
+
+def test_the_screen_keeps_mesa_s_shader_cache_in_a_folder_of_its_own():
+    # Mesa looked for one under /home/twobells, which there isn't, and said so at every start.
+    screen = _unit("twobells-screen.service")
+    assert screen["CacheDirectory"] == ["twobells-screen"] and screen["CacheDirectoryMode"] == ["0700"]
+    assert screen["Environment"] == ["SDL_VIDEODRIVER=kmsdrm", "SDL_FRAMEBUFFER_ACCELERATION=opengles2",
+                                     "MESA_SHADER_CACHE_DIR=%C/twobells-screen"]
+    # systemd makes the folder, the unit's user's, and writable however strict the rest of the system is.
+    assert screen["ProtectSystem"] == ["strict"] and screen["User"] == ["twobells"]
+    assert "ReadWritePaths" not in screen
 
 
 def test_the_screen_s_service_may_use_the_sound_devices_and_nothing_more():

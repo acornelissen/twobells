@@ -7,6 +7,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 ### Fixed
 
 - On an HDMI screen, scrolling text no longer hitches once a second. Each second's board was fetched for and drawn between two frames, which took up to 130 ms on a Pi 4 with the 11.3" bar screen, twice a frame's time, so the step due as the second began was shown late or skipped. Each second's board is now made a second ahead, beside the frames, and shown on time; one made late, by a slow fetch say, is shown the moment it is ready, the text moving on meanwhile. The screen is also given only the parts of the board that changed, such as the clock and the countdowns, rather than the whole board each second, which took 10 ms or more to put on it.
+- The HDMI screen's service gives Mesa a folder for the shaders it compiles, `/var/cache/twobells-screen`. Its log said "Failed to create /home/twobells for shader cache (Permission denied)" at every start.
 
 ## [0.5.0] - 2026-10-19
 
