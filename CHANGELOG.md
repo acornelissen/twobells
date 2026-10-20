@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Fixed
+
+- On an HDMI screen, scrolling text no longer hitches once a second. Each second's board was fetched for and drawn between two frames, which took up to 130 ms on a Pi 4 with the 11.3" bar screen, twice a frame's time, so the step due as the second began was shown late or skipped. Each second's board is now made a second ahead, beside the frames, and shown on time; one made late, by a slow fetch say, is shown the moment it is ready, the text moving on meanwhile.
+
 ## [0.5.0] - 2026-10-19
 
 A security and layout audit: firmer limits on what the app reads from the internet and from its own files, a web server one slow client can't hold up, common passwords refused, and releases signed only once approved, with `upgrade.sh` needing cosign.

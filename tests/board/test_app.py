@@ -1,4 +1,5 @@
 import dataclasses
+import threading
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -1561,6 +1562,109 @@ def test_a_tick_that_ran_long_still_ends_on_its_second():
     run_loop(board, state, screen, lambda: THU_0700, 1, ticks=1, sleep=wall.sleep,
              frame_seconds=SCROLL_FRAME_S, wall=wall)
     assert wall.at == 1001.0
+
+
+class TimedScreen(ScrollingScreen):
+    """A scrolling screen noting when, on the wall clock, it was moved to each moment of the board's clock."""
+
+    def __init__(self, wall):
+        super().__init__()
+        self.wall, self.shown = wall, []
+
+    def show_frame(self, frame, seconds):
+        super().show_frame(frame, seconds)
+        self.shown.append((self.wall(), seconds))
+
+    def scroll(self, seconds):
+        super().scroll(seconds)
+        self.shown.append((self.wall(), seconds))
+
+
+def slow_board(board, wall, cost=0.1):
+    """`board` drawn in `cost` seconds, as the bar screen's takes up to 131 ms on a Pi 4.
+    The simulated wall clock is the frame loop's: drawing on its thread moves it on;
+    drawing on another thread, which the Pi's other cores run, doesn't."""
+    plain = board.theme
+
+    def frame(view, palette, panel):
+        if threading.current_thread() is threading.main_thread():
+            wall.at += cost
+        return plain.frame(view, palette, panel)
+
+    return dataclasses.replace(board, theme=dataclasses.replace(plain, frame=frame))
+
+
+def test_a_slow_render_holds_no_scroll_step_back_at_a_tick():
+    trains, buses, board, display, state = setup()
+    wall = WallClock(1000.0)
+    screen = TimedScreen(wall)
+    times = iter([THU_0700 + timedelta(seconds=s) for s in range(3)])
+    run_loop(slow_board(board, wall), state, screen, lambda: next(times), 1, ticks=3, sleep=wall.sleep,
+             frame_seconds=SCROLL_FRAME_S, wall=wall)
+    base = board_seconds(THU_0700)
+    shown = {(round((at - 1000.0) / SCROLL_FRAME_S), round((seconds - base) / SCROLL_FRAME_S))
+             for at, seconds in screen.shown}
+    per_second = round(1 / SCROLL_FRAME_S)
+    assert sorted(step for _, step in shown) == list(range(3 * per_second))  # every step, none skipped
+    assert all(at == step for at, step in shown)  # each on its own frame time, the ticks' too
+    assert len(screen.frames) == 3  # each tick's board drawn: the clock runs
+
+
+def scrolling_run(board, state, screen=None, ticks=3, **kwargs):
+    """`ticks` of a scrolling screen's loop, each board made ahead on the worker."""
+    wall = WallClock(1000.0)
+    times = iter([THU_0700 + timedelta(seconds=s) for s in range(ticks)])
+    run_loop(board, state, screen or ScrollingScreen(), lambda: next(times), 1, ticks=ticks, sleep=wall.sleep,
+             frame_seconds=SCROLL_FRAME_S, wall=wall, **kwargs)
+
+
+def test_a_screen_s_boards_are_made_off_its_thread_with_the_speaker_saving_and_reloading_kept():
+    trains, buses, board, display, state = setup()
+    trains.departures = [train("07:04")]
+    board = dataclasses.replace(board, show=board.show | {"announce_speaker"})
+    renamed = dataclasses.replace(board, title="Renamed")
+    answers = iter([None, renamed, None])
+    threads, titles, speaker, store = set(), [], FakeSpeaker(), CountingStore()
+
+    def reload():
+        threads.add(threading.current_thread())
+        return next(answers)
+
+    scrolling_run(board, state, reload=reload, speaker=speaker, store=store,
+                  on_tick=lambda now, result: titles.append(result.view.title))
+    assert threading.main_thread() not in threads and len(threads) == 1
+    assert titles == ["GLO > MAN", "Renamed", "Renamed"]
+    assert [now for _, now, _ in speaker.ticks] == [THU_0700 + timedelta(seconds=s) for s in range(3)]
+    assert store.saves == 1 and (trains.calls, buses.calls) == (1, 1)  # fetched once, saved once
+    assert state["last_render"]["at"] == "2026-10-08T07:00:02"
+    assert not [t for t in threading.enumerate() if t.name == "twobells-ahead"]  # the worker has stopped
+
+
+class BrokenScreen(ScrollingScreen):
+    def show_frame(self, frame, seconds):
+        raise OSError("screen gone")
+
+
+def test_a_screen_fault_stops_the_worker_and_saves_what_was_fetched_but_not_the_redraw():
+    trains, buses, board, display, state = setup()
+    store = CountingStore()
+    with pytest.raises(OSError, match="screen gone"):
+        scrolling_run(board, state, BrokenScreen(), store=store)
+    assert store.saves == 2  # once fetched, by the worker; once more as the fault escapes
+    assert "last_render" not in state  # never shown, so the next start draws it
+    assert state["sources"]["train"]["last_success"]
+    assert not [t for t in threading.enumerate() if t.name == "twobells-ahead"]
+
+
+def test_a_fault_making_a_screen_s_board_reaches_the_loop_s_caller():
+    trains, buses, board, display, state = setup()
+
+    def reload():
+        raise RuntimeError("restart")
+
+    with pytest.raises(RuntimeError, match="restart"):
+        scrolling_run(board, state, reload=reload)
+    assert not [t for t in threading.enumerate() if t.name == "twobells-ahead"]
 
 
 # A wide screen names each bus row's stop, from the bus source's timetable.

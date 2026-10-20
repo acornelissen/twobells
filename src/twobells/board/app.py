@@ -27,12 +27,13 @@ from ..sources.lastbus import screen_line
 from ..sources.weather import Hour, hours_from_dicts, hours_to_dicts, rain_line
 from ..timetable.route import RouteStrip, locate, where
 from . import positions as row_positions
+from .ahead import Ahead, Tick, show_ahead
 from .panel import Panel
 from .platformclock import ClockView, clock_view, render_clock
 from .positions import Positions
 from .render import Palette
 from .route import RouteView, target
-from .scroll import Frame
+from .scroll import Frame, board_seconds
 from .speaker import Speaker
 from .state import (
     MEMORY_ONLY,
@@ -472,6 +473,20 @@ def _render_key(shown: BoardView | RouteView | CodeView | SetupView | ClockView,
 def run_once(
     board: Board, state: dict, display: Display, now: datetime, prime: bool = False
 ) -> RunResult:
+    result, frame, drawn = _make(board, state, display, now, prime)
+    if frame is not None:
+        _present(display, frame, now)
+        state["last_render"] = drawn
+    return result
+
+
+def _make(board: Board, state: dict, display: Display, now: datetime,
+          prime: bool) -> tuple[RunResult, Frame | None, dict | None]:
+    """run_once's work but for showing it: fetch whatever is due, and draw the
+    board if it has changed. Gives what it found, the Frame to show (None
+    if nothing changed) and what to save as the last redraw once it is
+    shown. It reads the display's panel, palette and rotation, and never
+    draws on it, so it can run off the screen's thread (board/ahead.py)."""
     # A screen can redraw every second, so it gets a running clock and countdowns.
     live = not display.panel.epaper
     fetched = set()
@@ -549,29 +564,28 @@ def run_once(
                 and timedelta(0) <= now - last_at < board.min_redraw)
 
     if changed and not too_soon:
-        _show(board.theme, page, shown, display, now, live)
-        state["last_render"] = {"signature": key, "at": to_iso(now), "page": page}
-        return RunResult(view, rendered=True, route=route, page=page)
-    return RunResult(view, rendered=False, route=route, page=page)
+        frame = _draw(board.theme, page, shown, display, live)
+        drawn = {"signature": key, "at": to_iso(now), "page": page}
+        return RunResult(view, rendered=True, route=route, page=page), frame, drawn
+    return RunResult(view, rendered=False, route=route, page=page), None, None
 
 
-def board_seconds(now: datetime) -> int:
-    """The board's clock as seconds into the day: what scrolling text is timed by."""
-    return now.hour * 3600 + now.minute * 60 + now.second
-
-
-def _show(theme: Theme, page: str, shown, display: Display, now: datetime, live: bool) -> None:
-    """Draw `shown` on the display. A screen's departures and route pages
-    come as a Frame, with any text too long for its space scrolling, for a
-    display that can scroll it; any other display gets the still image. The
-    clock page is the same in every look."""
+def _draw(theme: Theme, page: str, shown, display: Display, live: bool) -> Frame:
+    """`shown` drawn for the display. A screen's departures and route pages
+    come as a Frame, with any text too long for its space scrolling; any
+    other page is a still image. The clock page is the same in every look."""
     if live and page in ("departures", "route"):
         draw_frame = theme.frame if page == "departures" else theme.route_frame
-        frame = draw_frame(shown, display.palette, display.panel)
-    else:
-        draw = {"code": theme.render_code, "route": theme.render_route,
-                "setup": theme.render_setup, "clock": render_clock}.get(page, theme.render)
-        frame = Frame(draw(shown, display.palette, display.panel))
+        return draw_frame(shown, display.palette, display.panel)
+    draw = {"code": theme.render_code, "route": theme.render_route,
+            "setup": theme.render_setup, "clock": render_clock}.get(page, theme.render)
+    return Frame(draw(shown, display.palette, display.panel))
+
+
+def _present(display: Display, frame: Frame, now: datetime) -> None:
+    """Put `frame` on the display: as a Frame, its text scrolling from the
+    board's clock, for a display that can scroll it; any other display
+    gets the still image."""
     show_frame = getattr(display, "show_frame", None)
     if show_frame is not None:
         show_frame(frame, board_seconds(now))
@@ -602,6 +616,27 @@ def _fetched(state: dict) -> str:
     return json.dumps(kept, sort_keys=True)
 
 
+class _Saves:
+    """Writes the state when what was fetched changes: a screen redraws every
+    second, and writing the SD card that often would wear it out. Also every
+    few minutes, so the settings site's status (last redraw, bus positions)
+    doesn't go stale while nothing new is fetched."""
+
+    def __init__(self, store) -> None:
+        self._store = store
+        self._saved: str | None = None
+        self._at: datetime | None = None
+
+    def tick(self, state: dict, now: datetime) -> None:
+        if self._store is None:
+            return
+        fetched = _fetched(state)
+        overdue = self._at is None or not timedelta(0) <= now - self._at < _SAVE_EVERY
+        if fetched != self._saved or overdue:
+            self._store.save(state)
+            self._saved, self._at = fetched, now
+
+
 def run_loop(
     board: Board,
     state: dict,
@@ -620,21 +655,52 @@ def run_loop(
 ) -> None:
     """Tick forever (or `ticks` times). A clock with `advance()` is simulated.
     With `prime`, the first tick fetches every source so the board starts filled.
-    State is written only when what was fetched changes: a screen redraws every
-    second, and writing the SD card that often would wear it out. `reload`, if
+    State is written only when what was fetched changes (_Saves). `reload`, if
     given, is asked each tick for a new Board when the settings have changed.
 
-    With `frame_seconds`, a display with text scrolling (or tiles turning
+    With `frame_seconds`, a display that can scroll text (or turn tiles
     over, in the split-flap look) gets a frame that often between ticks
-    (see _frames); with nothing moving it waits for
-    the next tick, as without. Fetching, stale checks and saving keep to
-    the tick either way.
+    while anything moves, and each tick's board is made a tick ahead on a
+    thread of its own, so the frames never wait for it (board/ahead.py).
+    Fetching, stale checks and saving keep to the tick either way.
 
     With a `speaker`, a screen says station announcements each tick, while
     the board shows them (_announce)."""
     sleep = sleep or time.sleep
+    saves = _Saves(store)
+    if frame_seconds and hasattr(display, "scroll") and round(tick_seconds / frame_seconds) >= 2:
+
+        def make(now: datetime, first: bool) -> Tick:
+            # On the worker's thread, which owns the board, the state, the store and the speaker until it stops.
+            nonlocal board
+            started = time.perf_counter()
+            if reload is not None:
+                board = reload() or board
+            result, frame, drawn = _make(board, state, display, now, first)
+            if drawn is not None:
+                state["last_render"] = drawn  # before it is shown: see below for a fault showing it
+            if speaker is not None:
+                _announce(board, state, display, speaker, now)
+            saves.tick(state, now)
+            return Tick(now, result, frame, time.perf_counter() - started)
+
+        ahead = Ahead(make)
+        try:
+            show_ahead(cast(ScrollingDisplay, display), ahead, clock, tick_seconds, frame_seconds, sleep, wall,
+                       ticks, on_tick, prime)
+        except Exception:
+            ahead.stop()  # the state is this thread's again
+            # The board last made may never have reached the screen: the next start draws afresh.
+            # Keep what was fetched, so a fault doesn't cost a refetch on restart.
+            state.pop("last_render", None)
+            if store is not None:
+                store.save(state)
+            raise
+        finally:
+            ahead.stop()
+        return
+
     count = 0
-    saved, saved_at = None, None
     while ticks is None or count < ticks:
         if reload is not None:
             board = reload() or board
@@ -648,20 +714,10 @@ def run_loop(
             raise
         if speaker is not None:
             _announce(board, state, display, speaker, now)
-        if store is not None:
-            fetched = _fetched(state)
-            # Also every few minutes, so the settings site's status (last redraw,
-            # bus positions) doesn't go stale while nothing new is fetched.
-            overdue = saved_at is None or not timedelta(0) <= now - saved_at < _SAVE_EVERY
-            if fetched != saved or overdue:
-                store.save(state)
-                saved, saved_at = fetched, now
+        saves.tick(state, now)
         if on_tick is not None:
             on_tick(now, result)
-        if frame_seconds and getattr(display, "scrolling", False):
-            _frames(cast(ScrollingDisplay, display), board_seconds(now), tick_seconds, frame_seconds, sleep, wall)
-        else:
-            sleep(tick_seconds)
+        sleep(tick_seconds)
         if hasattr(clock, "advance"):
             clock.advance()
         count += 1
@@ -684,26 +740,3 @@ def _announce(board: Board, state: dict, display: Display, speaker: Speaker, now
     if display.panel.epaper or board.setup is not None or "announce_speaker" not in board.show:
         return
     speaker.tick(_departures(state, "train", now), now, _quiet(board, now))
-
-
-def _frames(display: ScrollingDisplay, base: int, tick_seconds: float, frame_seconds: float, sleep,
-            wall: Callable[[], float]) -> None:
-    """Until the next tick, a frame every `frame_seconds`, each moving the
-    scrolling text to the board's clock: the tick's time (`base`) plus which
-    frame of the tick it is. The wall clock only says which frame is due, so
-    a slow frame is skipped rather than drawn late, and the next tick (the
-    running clock) is never put off. `sleep` lines up with whole multiples
-    of what it is given, as the screen loop's does."""
-    per_tick = round(tick_seconds / frame_seconds)
-    if per_tick < 2:
-        sleep(tick_seconds)
-        return
-    display.scroll(base)  # the tick's own frame, if the board wasn't redrawn
-    last = 0
-    while True:
-        sleep(frame_seconds)
-        due = round(wall() % tick_seconds / frame_seconds) % per_tick
-        if due <= last:
-            return  # the next tick is due
-        display.scroll(base + due * frame_seconds)
-        last = due

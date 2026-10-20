@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from PIL import Image
@@ -38,6 +39,11 @@ SCROLL_STEPS_PER_S = 15
 SCROLL_FRAME_S = 1 / SCROLL_STEPS_PER_S
 
 Box = tuple[int, int, int, int]  # left, top, right, bottom in panel pixels; right and bottom exclusive
+
+
+def board_seconds(now: datetime) -> int:
+    """The board's clock as seconds into the day: what scrolling text is timed by."""
+    return now.hour * 3600 + now.minute * 60 + now.second
 
 
 def scroll_steps(overflow_steps: int, seconds: float) -> int:
