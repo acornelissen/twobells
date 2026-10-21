@@ -1,6 +1,8 @@
 """The docs' links: every relative link, picture and #anchor resolves, as GitHub renders them."""
 
 import re
+import shutil
+import subprocess
 import tomllib
 from collections import Counter
 from functools import cache
@@ -18,6 +20,8 @@ _CODE = re.compile(r"`[^`\n]*`")
 _LINK = re.compile(r"\]\(([^)\s]+)\)")
 _HTML = re.compile(r"\b(?:src|srcset)=\"([^\"]+)\"")
 _HEADING = re.compile(r"^#{1,6} +(.+?) *#*$", re.M)
+# A row of docs/architecture.md's table: a folder (or a top-level file) and what it holds.
+_ARCHITECTURE_ROW = re.compile(r"^\| `([\w/.]+)` \| (.+) \|$", re.M)
 
 
 def _prose(text: str) -> str:
@@ -118,7 +122,7 @@ def test_every_file_the_architecture_table_names_is_in_its_folder():
     # row names the dashboard's files it uses by relative path.
     package = ROOT / "src" / "twobells"
     text = (DOCS / "architecture.md").read_text(encoding="utf-8")
-    rows = re.findall(r"^\| `([\w/.]+)` \| (.+) \|$", text, re.M)
+    rows = _ARCHITECTURE_ROW.findall(text)
     assert len(rows) > 10
     missing = []
     for folder, role in rows:
@@ -129,6 +133,61 @@ def test_every_file_the_architecture_table_names_is_in_its_folder():
             if not any(place.is_file() for place in places):
                 missing.append(f"{folder} {name}")
     assert missing == []
+
+
+def unnamed_modules(table: str, modules: list[str]) -> list[str]:
+    """Those of `modules` (paths inside the package, like "core/net.py") that
+    the architecture table doesn't name. A module is named in its folder's
+    row, by file name or by module name (the cli row says `run`), or by its
+    path in any row; a top-level one has a row of its own. A folder's
+    __init__.py needs only the folder's row."""
+    rows = dict(_ARCHITECTURE_ROW.findall(table))
+    paths = {name for role in rows.values() for name in re.findall(r"`([\w/]+/\w+\.py)`", role)}
+    missing = []
+    for module in modules:
+        folder, _, name = module.rpartition("/")
+        if not folder:
+            named = module == "__init__.py" or module in rows
+        elif name == "__init__.py":
+            named = f"{folder}/" in rows
+        else:
+            said = re.findall(r"`([^`]+)`", rows.get(f"{folder}/", ""))
+            named = name in said or name.removesuffix(".py") in said or module in paths
+        if not named:
+            missing.append(module)
+    return missing
+
+
+def _tracked_modules() -> list[str]:
+    """Every Python module in the package that git tracks, as a path inside it."""
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("needs git to list the package's files")
+    listed = subprocess.run([git, "ls-files", "-z", "--", "src/twobells"], cwd=ROOT, capture_output=True, check=False)
+    if listed.returncode != 0:
+        pytest.skip("needs a git checkout")
+    paths = listed.stdout.decode("utf-8").split("\0")
+    return sorted(path.removeprefix("src/twobells/") for path in paths if path.endswith(".py"))
+
+
+def test_the_architecture_table_names_every_module():
+    modules = _tracked_modules()
+    assert len(modules) > 50
+    assert unnamed_modules((DOCS / "architecture.md").read_text(encoding="utf-8"), modules) == []
+
+
+def test_a_module_left_out_of_the_architecture_table_is_found():
+    table = """| Folder | Role |
+|---|---|
+| `cli/` | The commands, a module each (`run`, `serve`), helpers in `common.py` and the parser in `cli/main.py` |
+| `core/` | The model (`model.py`) |
+| `version.py` | The installed version |
+"""
+    modules = ["__init__.py", "__main__.py", "version.py", "cli/__init__.py", "cli/common.py", "cli/dev.py",
+               "cli/main.py", "cli/run.py", "cli/serve.py", "core/__init__.py", "core/model.py", "core/net.py",
+               "web/__init__.py", "web/server.py"]
+    assert unnamed_modules(table, modules) == ["__main__.py", "cli/dev.py", "core/net.py", "web/__init__.py",
+                                               "web/server.py"]
 
 
 def test_every_test_named_in_the_code_and_docs_exists():
