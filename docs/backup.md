@@ -27,7 +27,7 @@ The rest (lock files, reset codes, a build's progress) needn't be kept. Only `se
 
 A backup holds your keys and the password's hash, so keep it where only you can read it. The commands below make it readable by you alone (0600).
 
-Stop Two Bells before you back up or put back, so nothing writes to the store part way through. Put a backup back on the same release or a newer one: an older release may not read the history a newer one kept (see [Updating](install-pi.md#updating)).
+Stop Two Bells before you back up or put back, so nothing writes to the store part way through. Put a backup back on the same release or a newer one: an older release may not read the history a newer one kept (see [Going back to an older release](configuration.md#going-back-to-an-older-release)).
 
 ## On a Pi
 
