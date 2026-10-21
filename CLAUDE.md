@@ -67,7 +67,7 @@ Dockerfile does), ruff, node and uv. Dev tools are a PEP 735 dependency group, p
 mise install          # pinned tools
 mise run setup        # .venv with the package and dev tools (uv sync --locked)
 mise run test         # pytest -q, in parallel (xdist); plain pytest runs serially
-mise run lint         # ruff check src tests tools (rules in pyproject.toml; S on src only)
+mise run lint         # ruff check src tests tools (rules in pyproject.toml; S on src and tools, not tests)
 mise run typecheck    # pyright, basic mode
 mise run demo         # twobells demo --png preview.png, no keys needed
 mise run emulate      # browser panel emulator on sample data
@@ -97,8 +97,11 @@ install is one app with two views of the same departures: the **board** (e-paper
 - Areas import downwards only, lowest first: `core`; `settings`; `sources` and `timetable`; `board`,
   `dashboard`, `setup` and `fetch`; `web`; `cli` and `emulator`. Within a layer, no circle. `tests/test_layers.py`
   enforces it at module level and lists the few exceptions, each with why.
+- Leading-underscore names are private to their module, `tools/` included (`tests/test_private_names.py`). Checks
+  use `fullmatch`, never `match` or `search` (`$` lets a last newline through); `tests/test_patterns.py` flags every
+  other use unless it lists why.
 - **Store** (`settings/store.py`): one folder per install holding `settings.toml` (only `schema.saved_keys`),
-  `secrets.env`, `web.json` (the one password), the timetable, history and locks. `config.toml` is optional,
+  `secrets.env`, `web.json` (the one password), sign-in sessions, the bus and tram timetables, history and locks. `config.toml` is optional,
   layered under it. `settings/schema.py` is the registry of every saved setting, by group (general, board, dashboard).
 - **`serve`**: the one web server on port 8090 (`web/server.py`): the dashboard at `/` while its view is on, the
   settings site at `/settings` (`web/settingsite.py`, a `web/groupform.py` tab per group, the wizard at
@@ -106,13 +109,18 @@ install is one app with two views of the same departures: the **board** (e-paper
 - **`fetch`** (Pi only, `fetch/service.py`): outbound-only service doing the web server's internet work (the
   wizard's lookups, the dashboard's pollers), handed over through files in `/run/twobells-fetch`
   (`setup/spool/`, `fetch/handoff.py`). The Pi's web server is LAN-only and never connects out.
-- **`run`**: the board renderer (systemd timer, or `--loop` for a screen). **`timetable`**: the BODS bus timetable.
+- **`run`**: the board renderer (systemd timer, or `--loop` for a screen, each second's board made a second ahead
+  in `board/ahead.py`; `--timings` logs how long). **`timetable`**: the BODS bus timetable and the Metrolink tram
+  timetable, each when due.
 - `demo`, `emulate`, `probe`, `route`, `setup discover`: development and setup helpers. `query` is hidden, for the
   deploy scripts.
 - `deploy/pi/`: systemd units and install/update/upgrade scripts; `deploy/docker/`: the published image's compose
   file and pinned requirements; `deploy/desktop/`, `deploy/unraid/`, `deploy/secrets.env.example`. `Dockerfile` and
   `docker-compose.yml` are at the root. `examples/`: `config.example.toml` (the template) and `glossop.toml`.
-  `.github/workflows/`: CI and the tagged release (PyPI, signed GHCR image, signed Pi tarball).
+  `.github/workflows/`: CI, the tagged release (PyPI, signed GHCR image, signed Pi tarball; steps in CONTRIBUTING.md)
+  and the monthly NaPTAN data refresh (`data.yml`, as a pull request).
+  `tools/`: the setup data, fonts and dot font builders, `build_doc_images.py` (no arguments; it overwrites
+  `docs/images/`) and the sample servers for the screenshots.
   `docs/`: one page per topic, indexed by `docs/user-guide.md` (also PyPI's Documentation link);
   `docs/architecture.md` is the code layout. `tests/test_docs.py` checks every link and anchor, and the wizard's
   links to `docs/keys.md` headings, so keep those headings.
