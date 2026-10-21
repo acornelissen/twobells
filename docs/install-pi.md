@@ -17,7 +17,7 @@ A Pi runs the board, the dashboard, or both. For the dashboard alone, [Docker](d
 
 ## Install cosign
 
-Each release's `SHA256SUMS` is signed by the project's release workflow, and cosign checks that signature: it tells you the files came from this project's release, not only that they arrived whole. Installing and `upgrade.sh` both use it. It must be cosign 2.5 or later; older ones can't read the signature.
+Each release's `SHA256SUMS` is signed by the project's release workflow, and cosign checks that signature: it tells you the files came from this project's release, not only that they arrived whole. Installing and `upgrade.sh` both use it. It must be cosign 2.5 or later: the signature comes as a Sigstore bundle, `SHA256SUMS.sigstore.json`, which older ones can't read. (Checking the Docker image's signature needs 3.0 or later, as [Docker](docker.md#pick-a-release-and-check-it) says; a Pi checks only `SHA256SUMS`.)
 
 On a Pi 2 or later, or a Zero 2 W, install sigstore's package for the Pi, checked against sigstore's list of sums:
 

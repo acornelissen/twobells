@@ -33,7 +33,7 @@ cosign verify "ghcr.io/acornelissen/twobells@$DIGEST" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-`cosign verify` must end without an error: then that digest was built and signed by this project's release workflow for that version. Use the image as `ghcr.io/acornelissen/twobells:0.5.2@sha256:...`, with the digest in full. An older cosign says `no signatures found`: the release signs with cosign 3, which older versions can't find.
+`cosign verify` must end without an error: then that digest was built and signed by this project's release workflow for that version. Use the image as `ghcr.io/acornelissen/twobells:0.5.2@sha256:...`, with the digest in full. An older cosign says `no signatures found`: the release signs with cosign 3, which attaches an image's signature in a newer way that older versions don't look for. The release's `SHA256SUMS`, checked on a Pi or on [Unraid](#unraid), needs only cosign 2.5, as its signature is a file of its own.
 
 `deploy/docker/docker-compose.ghcr.yml` in the project is a compose file for the published image, with the same settings as `docker-compose.yml`. Replace `X.Y.Z` and `DIGEST` in its `image:` line; until you do, compose refuses to run it.
 
@@ -137,6 +137,20 @@ cd /tmp
 base="https://github.com/acornelissen/twobells/releases/download/v$VERSION"
 curl -fLO "$base/twobells-$VERSION.tar.gz"
 curl -fLO "$base/SHA256SUMS"
+curl -fLO "$base/SHA256SUMS.sigstore.json"
+```
+
+Unraid comes without cosign. Where cosign 2.5 or later is installed (on Unraid, or on another computer you copy `SHA256SUMS` and `SHA256SUMS.sigstore.json` to), check that this project's release workflow signed that `SHA256SUMS` for that version; it must say `Verified OK`:
+
+```bash
+cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity "https://github.com/acornelissen/twobells/.github/workflows/release.yml@refs/tags/v$VERSION" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+Without cosign, only the SHA-256 below is checked. That catches a damaged download but not a forged one, as `SHA256SUMS` comes from the same place as the tarball. Then check the tarball against `SHA256SUMS` and take the template out of it; nothing after `sha256sum` runs unless it says `OK`:
+
+```bash
 sha256sum --check --ignore-missing SHA256SUMS &&
   tar -xzf "twobells-$VERSION.tar.gz" "twobells-$VERSION/deploy/unraid/twobells.xml" &&
   sed "s/X\.Y\.Z/$VERSION/" "twobells-$VERSION/deploy/unraid/twobells.xml" \
