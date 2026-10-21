@@ -801,17 +801,24 @@ class History:
         platform, used = counts.most_common(1)[0]
         return platform if used >= _ENOUGH and used * 2 > len(rows) else None
 
-    def recent(self, mode: str, route: str, scheduled: str, days: int = 90) -> list[dict]:
+    def recent(self, mode: str, route: str, scheduled: str, days: int = 90, *,
+               day_type: str | None = None, holidays: frozenset[date] = frozenset()) -> list[dict]:
         """The outcomes of `route` at `scheduled` on its last `days` final days,
-        newest first. day is ISO text ("2026-10-09"), ready for JSON."""
+        of `day_type` only if given (a bank holiday in `holidays` counting as
+        a Sunday), newest first. day is ISO text ("2026-10-09"), ready for JSON."""
         _mode(mode)
+        if day_type is not None and day_type not in DAY_TYPES:
+            raise ValueError(f"Unknown day type {day_type!r}")
         with self._lock:
             cursor = self._db.execute(
                 "SELECT day, status, delay_min, live, reason FROM outcome"
                 " WHERE mode = ? AND route = ? AND scheduled = ? AND final = 1 ORDER BY day DESC, leaves DESC",
                 (mode, route, scheduled),
             )
-            rows = list(islice(_one_a_day(cursor), days))
+            found = _one_a_day(cursor)
+            if day_type is not None:
+                found = (row for row in found if _day_type(date.fromisoformat(row[0]), holidays) == day_type)
+            rows = list(islice(found, days))
         return [
             {"day": day, "status": status, "delay_min": delay_min, "live": bool(live), "reason": reason}
             for day, status, delay_min, live, reason in rows
@@ -866,10 +873,13 @@ class HistoryReader:
                 self._history = History.reader(self._folder)
             return self._history
 
-    def recent(self, mode: str, route: str, scheduled: str, days: int = 90) -> list[dict]:
+    def recent(self, mode: str, route: str, scheduled: str, days: int = 90, *,
+               day_type: str | None = None, holidays: frozenset[date] = frozenset()) -> list[dict]:
         """As History.recent; nothing while there is no history yet."""
         history = self._opened()
-        return [] if history is None else history.recent(mode, route, scheduled, days)
+        if history is None:
+            return []
+        return history.recent(mode, route, scheduled, days, day_type=day_type, holidays=holidays)
 
     def outcomes(self, mode: str, since: date, route: str | None = None) -> list[tuple[str, str, str, int | None]]:
         """As History.outcomes; nothing while there is no history yet."""

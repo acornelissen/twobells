@@ -321,6 +321,7 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
     from ..dashboard.history import History, HistoryReader
     from ..dashboard.performance import Performance, Setup
     from ..dashboard.snapshot import Hub
+    from ..sources.holidays import read_cache
     from ..timetable.routesetup import document_limits
     from ..web import netguard
     from ..web import server as dashserver
@@ -352,6 +353,7 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
         return "dashboard" in site.views() and (mirror is None or not needs_setup(store))
 
     performance = None
+    recent: dashserver.Recent | None = None
     if history is not None:
         def performance_setup() -> Setup:
             # Read again on each request: a save on a Pi doesn't start serve again.
@@ -374,6 +376,21 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
         # Docker) nor a fixed offset that would be an hour out after the clocks change.
         performance = Performance(history, lambda: datetime.now(store.zone()), performance_setup)
 
+        def days_of_its_kind(mode: str, route: str, scheduled: str, kind: str, days: int) -> list:
+            # A row's days of its own kind, bank holidays counted as the dashboard
+            # counts them: from the cache it keeps (never fetched here), with the
+            # settings read again on each request, as above.
+            try:
+                now = load_dashboard(store, store.env(), lock=False)
+            except ConfigError:
+                now = dash
+            holidays = frozenset()
+            if now is not None and now.bank_holidays:
+                holidays = read_cache(now.state_dir, now.bank_holiday_division)
+            return history.recent(mode, route, scheduled, days, day_type=kind, holidays=holidays)
+
+        recent = days_of_its_kind
+
     watch = None
     try:
         site = _settings_site(store, install, hub is not None, runner)
@@ -386,7 +403,7 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
             healthy,
             site,
             dashboard_on=dashboard_on,
-            recent=history.recent if history is not None else None,
+            recent=recent,
             performance=performance,
             history_days=dash.options.history_days if dash is not None else 90,
             allowed_hosts=dash.options.allowed_hosts if dash is not None else _allowed_hosts(store),

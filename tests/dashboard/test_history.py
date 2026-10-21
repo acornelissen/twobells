@@ -428,6 +428,26 @@ def test_recent_is_newest_first_and_limited(history):
     ]
 
 
+def test_recent_of_a_day_type_keeps_to_that_kind_of_day(history):
+    for back in range(10):  # Friday 9 October back to Wednesday 30 September
+        _record(history, FRIDAY - timedelta(days=back))
+    _record(history, date(2026, 8, 31))  # Summer bank holiday, a Monday
+    holidays = frozenset({date(2026, 8, 31)})
+
+    def days(kind, n=90):
+        return [o["day"] for o in history.recent("train", TRAIN, "07:42", n, day_type=kind, holidays=holidays)]
+
+    assert days("weekday") == ["2026-10-09", "2026-10-08", "2026-10-07", "2026-10-06", "2026-10-05",
+                               "2026-10-02", "2026-10-01", "2026-09-30"]
+    assert days("weekday", 3) == ["2026-10-09", "2026-10-08", "2026-10-07"]  # the last 3 weekdays
+    assert days("saturday") == ["2026-10-03"]
+    assert days("sunday") == ["2026-10-04", "2026-08-31"]  # a bank holiday runs a Sunday service
+    assert days("sunday", 1) == ["2026-10-04"]
+    assert len(history.recent("train", TRAIN, "07:42")) == 11  # no day type: every kind of day
+    with pytest.raises(ValueError):
+        history.recent("train", TRAIN, "07:42", day_type="holiday")
+
+
 # Days without a live tracker, for the ghost bus warning.
 
 

@@ -1347,9 +1347,11 @@ def pi_with_the_dashboard(tmp_path, monkeypatch, dashboard_config):
 def test_serve_on_a_pi_shows_the_dashboard_the_fetch_service_hands_over(tmp_path, served, pi_with_the_dashboard,
                                                                          capsys):
     import fcntl
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
 
     from twobells.core.walk import WalkTimes
-    from twobells.dashboard.history import History
+    from twobells.dashboard.history import History, Observed
     from twobells.dashboard.snapshot import Hub
     from twobells.fetch import handoff
     from twobells.setup.spool.folder import Spool
@@ -1372,8 +1374,18 @@ def test_serve_on_a_pi_shows_the_dashboard_the_fetch_service_hands_over(tmp_path
     assert ask(app, "/healthz") == (200, None, b"ok")
     assert json.loads(ask(app, "/api/snapshot")[2])["trains"]["rows"] == [{"id": "9f1c000000000002"}]
     assert json.loads(ask(app, "/api/history/9f1c000000000002")[2])["days"] == []  # no history yet
-    History(folder).close()  # the fetch service starts one
+    history = History(folder)  # the fetch service starts one
     assert ask(app, "/api/history/9f1c000000000002")[0] == 200
+    # A weekday row's days are weekdays: the bank holiday the fetch service cached counts as a Sunday.
+    london = ZoneInfo("Europe/London")
+    for day in (date(2026, 8, 28), date(2026, 8, 30), date(2026, 8, 31)):  # Friday, Sunday, bank holiday Monday
+        leaves = datetime(day.year, day.month, day.day, 7, 12, tzinfo=london)
+        history.observe("train", [Observed("GLO|Manchester", leaves, leaves, "on_time", 0, True, "Northern",
+                                           "Manchester", "1", None, "C1")], leaves - timedelta(minutes=1))
+        history.observe("train", [], leaves + timedelta(minutes=1))
+    history.close()
+    (folder / "bank-holidays.json").write_text(json.dumps({"dates": ["2026-08-31"]}))
+    assert [day["day"] for day in json.loads(ask(app, "/api/history/9f1c000000000002")[2])["days"]] == ["2026-08-28"]
     # No filter station: the Delay Repay list says why it is off.
     assert json.loads(ask(app, "/api/performance")[2])["delay_repay"]["off"] == "no_filter"
     assert os.listdir(run / "requests")  # the browser was said to the fetch service

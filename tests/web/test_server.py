@@ -64,8 +64,8 @@ class Recent:
         self.asked = []
         self.error = None
 
-    def __call__(self, mode, route, scheduled, days):
-        self.asked.append((mode, route, scheduled, days))
+    def __call__(self, mode, route, scheduled, day_type, days):
+        self.asked.append((mode, route, scheduled, day_type, days))
         if self.error:
             raise self.error
         return [{"day": "2026-10-09", "status": "late", "delay_min": 7, "live": True, "reason": None}]
@@ -474,7 +474,8 @@ def test_a_row_s_history(server):
             {"span": 28, "since": "2026-09-12", **figures()},
         ]},
     }
-    assert server.app.recent.asked == [("train", "GLO>MAN|Manchester Piccadilly", "07:12", 90)]
+    # Its own kind of day only, as the phrase counts them.
+    assert server.app.recent.asked == [("train", "GLO>MAN|Manchester Piccadilly", "07:12", "weekday", 90)]
     response, body = server.request(f"/api/history/{BUS_ID}")
     assert response.status == 200
     route = json.loads(body)["route"]

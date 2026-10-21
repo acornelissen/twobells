@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Fixed
+
+- A dashboard row's punctuality sheet lists its days of the same kind only, as its phrase counts them: a weekday train's are weekdays, a bank holiday counting as a Sunday. It used to list every day it ran, so a weekday train's included its Saturdays and Sundays under "The last N weekdays".
+
 ## [0.5.2] - 2026-10-21
 
 A new row layout on HDMI screens: the little line straight after the destination, where it is in words after it, and the room shared out so destinations and stop names show whole more often.

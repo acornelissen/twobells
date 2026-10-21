@@ -171,7 +171,9 @@ def default_static_dir() -> Path:
     return Path(str(files("twobells") / "dashboard_static"))
 
 
-Recent = Callable[[str, str, str, int], list]  # (mode, route, scheduled, days) -> History.recent
+# (mode, route, scheduled, day_type, days) -> History.recent of that day type,
+# bank holidays counted as the dashboard counts them.
+Recent = Callable[[str, str, str, str, int], list]
 
 
 @dataclass
@@ -461,7 +463,8 @@ class _Handler(BaseHTTPRequestHandler):
         days, figures = [], None
         try:
             if self.app.recent is not None:
-                days = self.app.recent(found["mode"], found["route"], found["scheduled"], self.app.history_days)
+                days = self.app.recent(found["mode"], found["route"], found["scheduled"], found["day_type"],
+                                       self.app.history_days)
             if self.app.performance is not None:
                 figures = self.app.performance.route(found["mode"], found["route"])
         except Exception as error:  # noqa: BLE001 - one unreadable history isn't the server's end
