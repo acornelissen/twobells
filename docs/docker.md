@@ -48,18 +48,7 @@ cosign verify "ghcr.io/acornelissen/twobells@$DIGEST" \
 
 ### Addresses it answers to
 
-The dashboard and the settings only answer when the address in the browser is one of these:
-
-- an IP address on the home network (such as `192.168.1.20`),
-- a name with no dots (such as `nas` or `tower`),
-- a name ending `.local`, `.lan` or `.home.arpa` (such as `tower.local`).
-
-For any other name, such as `nas.example.com`, add it to a [`config.toml` of your own](#a-configtoml-of-your-own):
-
-```toml
-[dashboard]
-allowed_hosts = ["nas.example.com"]
-```
+The dashboard and the settings only answer to an IP address on the home network or a local name, such as `nas` or `tower.local` (see [Addresses it answers to](security.md#addresses-it-answers-to)). For any other name, such as `nas.example.com`, add it to `allowed_hosts` in a [`config.toml` of your own](#a-configtoml-of-your-own).
 
 ### A config.toml of your own
 
@@ -67,10 +56,10 @@ No `config.toml` is needed. To keep one by hand (for `allowed_hosts`, say), moun
 
 ### Keep it on the home network
 
-- Never forward port 8090 on your router. Don't put it behind the NAS's reverse proxy or remote-access service either. The dashboard has no password, by design, and the settings sign-in is not meant to face the internet.
+- Never forward port 8090 on your router, or put it behind the NAS's reverse proxy or remote-access service (see [How the web server is kept safe](security.md#on-every-install)).
 - If the NAS or computer has a firewall, allow port 8090 only from your home network's addresses.
 - The app turns away addresses outside the home network itself, but in Docker it may see every request as coming from Docker's own private network. The firewall is what keeps the rest out.
-- Docker Desktop (on a Mac or Windows) and rootless Podman pass every device's requests on from one gateway address, so the app takes the household for one device: a sign-in lockout locks every device out, and every device shares the 16 connections one device may have open (two browsers with the dashboard open fit) and its 4 event streams: a fifth dashboard tab updates every 30 s instead of at once.
+- Docker Desktop (on a Mac or Windows) and rootless Podman pass every device's requests on from one gateway address, so the app takes the household for one device: a sign-in lockout locks every device out, and every device shares one device's limit on connections and event streams (see [How the web server is kept safe](security.md#on-every-install)).
 - The files and commands here publish the port on IPv4 only: `0.0.0.0:8090:8090`, not `8090:8090`. Docker passes on a visitor's IPv6 connection from its own network's gateway, a private address, so the app would take anyone reaching it over IPv6 for the home network. Keep the `0.0.0.0:` if you change the port.
 - On Linux, ports Docker publishes skip `ufw`'s rules ([Docker's documentation](https://docs.docker.com/engine/network/packet-filtering-firewalls/) explains why). To limit it to one network, publish the port on the computer's home-network IPv4 address only: `-p 192.168.1.20:8090:8090`, or `"192.168.1.20:8090:8090"` under `ports:`.
 

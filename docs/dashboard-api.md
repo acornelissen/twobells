@@ -503,7 +503,7 @@ Checked in this order, before anything else. Each refusal has a plain-text body 
 - While the dashboard is off, the rest is answered as at the top of this page.
 - **403** for `/api/` when `Sec-Fetch-Site` is `cross-site`: another site's page can't read the API through the browser.
 
-Before any of these, a connection is closed unread and unanswered while 16 are open from its address or 48 in all, and dropped unanswered when a request's line, headers and body take more than 15 s all told (or any one read more than 10 s). An event stream counts as one connection while it is open, and the deadline doesn't cut it short: it only writes. Behind Docker Desktop or rootless Podman, where every device shows as one address, the 16 are shared.
+Before any of these, a connection is closed unread and unanswered while 16 are open from its address or 48 in all, and dropped unanswered when a request's line, headers and body take more than 15 s all told (or any one read more than 10 s). An event stream counts as one connection while it is open, and the deadline doesn't cut it short: it only writes. Behind Docker Desktop or rootless Podman, where every device shows as one address, the 16 are shared. Why each rule is there is in [How the web server is kept safe](security.md).
 
 ## Security headers (every response while the dashboard is on)
 

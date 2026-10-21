@@ -3,6 +3,7 @@
 What protects the settings site and the dashboard, and, on a Pi, what keeps the web server off the internet. To report a vulnerability, see [SECURITY.md](../SECURITY.md).
 
 - [On every install](#on-every-install)
+- [Addresses it answers to](#addresses-it-answers-to)
 - [On a Pi: the web server can't connect out](#on-a-pi-the-web-server-cant-connect-out)
 - [The network guard](#the-network-guard)
 - [Checking the guard](#checking-the-guard)
@@ -10,13 +11,30 @@ What protects the settings site and the dashboard, and, on a Pi, what keeps the 
 
 ## On every install
 
-- **Home network only.** Only private and link-local addresses get in, and requests must name a local host, which stops DNS-rebinding pages. In Docker, the firewall matters too: see [Keep it on the home network](docker.md#keep-it-on-the-home-network).
-- **Keep it behind your router,** with no port forwarded to 8090. The settings use plain HTTP on your home network, so use a password you don't use anywhere else.
+- **Home network only.** Only private, loopback and link-local addresses get in, and each request must name a local address or name (see [Addresses it answers to](#addresses-it-answers-to)), which stops DNS-rebinding pages. In Docker, the firewall matters too: see [Keep it on the home network](docker.md#keep-it-on-the-home-network).
+- **Keep it behind your router,** with no port forwarded to 8090, and don't put it behind a reverse proxy or a NAS's remote-access service either. The dashboard has no password, by design, and the settings sign-in is not meant to face the internet. The settings use plain HTTP on your home network, so use a password you don't use anywhere else.
 - **Changing anything** needs a signed-in session, a form token and a same-origin check. The dashboard itself only shows, and needs no password; its rules are in [the dashboard API](dashboard-api.md#access-rules-every-request).
 - **Scripts.** The wizard under `/settings/setup/` is the only part of the settings that needs JavaScript. It serves a fixed list of files with set content types, and its JSON API needs the session, its form token in an `X-CSRF-Token` header, a same-origin request and a body under 16 kB. Its pages, and a signed-in visitor's settings pages, are the only settings pages whose Content-Security-Policy allows a script (`script-src 'self'`), as the dashboard's does for its own files: on the settings pages that is `/settings/settings.js` alone, which marks unsaved changes and connects to nothing. The sign-in, reset and first-claim pages allow none.
 - **Guessing the password.** Wrong passwords lock a device out (over IPv6, by its /64, as a device can take any address in it), and many from all devices together slow every sign-in, so changing address gains a guesser nothing: the numbers are in [If you can't sign in](password.md#if-you-cant-sign-in). Being on the network is not enough to set a password: that needs a [one-time code](password.md#codes).
-- **Slow or greedy clients.** A request's line, headers and body must all arrive within 15 seconds, or the connection is closed. The server holds at most 48 connections at once, 16 of them from any one address, and at most 12 of the dashboard's event streams, 4 from any one address; a dashboard refused a stream updates every 30 seconds instead. So one device can't hold up the health check and every other page. Behind Docker Desktop or rootless Podman every device shows as one address and shares those (see [Keep it on the home network](docker.md#keep-it-on-the-home-network)).
+- **Slow or greedy clients.** A request's line, headers and body must all arrive within 15 seconds, or the connection is closed. The server holds at most 48 connections at once, 16 of them from any one address, and at most 12 of the dashboard's event streams, 4 from any one address; a dashboard refused a stream updates every 30 seconds instead. So one device can't hold up the health check and every other page. Behind Docker Desktop or rootless Podman every device shows as one address and shares those: two browsers with the dashboard open fit, and a fifth dashboard tab updates every 30 seconds instead (see [Keep it on the home network](docker.md#keep-it-on-the-home-network)).
 - **Keys** are never shown, not even in the settings. See [Keeping keys safe](keys.md#keeping-keys-safe).
+
+## Addresses it answers to
+
+The dashboard and the settings answer only when the address in the browser is one of these:
+
+- an IP address on the home network (such as `192.168.1.20`),
+- a name with no dots (such as `glossop` or `nas`),
+- a name ending `.local`, `.lan` or `.home.arpa` (such as `glossop.local`).
+
+Any other name, such as `nas.example.com`, gets **Forbidden**, unless it is added to `allowed_hosts` in `config.toml` (the settings pages can't set it):
+
+```toml
+[dashboard]
+allowed_hosts = ["nas.example.com"]
+```
+
+A name added there still only works from the home network: the visitor's own address is checked as well.
 
 ## On a Pi: the web server can't connect out
 
