@@ -28,7 +28,7 @@ Saving keeps your other settings: the look, rotation, text size and so on. **Wha
 
 ## What leaves your home
 
-Where home goes: your postcode to postcodes.io (or the address you type to OpenStreetMap's Nominatim), then its position once to the OpenStreetMap foot router for walk times. The maps, only if you open them, load pictures from OpenStreetMap, which then sees roughly where home is. The app keeps only a rough position, to about 1 km, for the weather.
+[What leaves your home](privacy.md#setting-up) says what each step sends, and to whom.
 
 The wizard is the one part of the settings that needs JavaScript. The rest works without it; with it, the settings pages also mark what you have changed and ask before you leave with changes not saved.
 
