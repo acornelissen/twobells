@@ -48,6 +48,8 @@ Each install keeps everything it saves in one folder, its store:
 - `history.sqlite3`: the punctuality history. A release that moves it on to a newer version first keeps a copy of it as it was, once, beside it: `history.sqlite3.v1` (or `.v2`, from a development build). See [Going back to an older release](#going-back-to-an-older-release) below.
 - The bus timetable, the tram timetable (`tram-timetable.json`, where trams are set up), bank holidays, the board's state, and lock files.
 
+Outside the store, a Pi keeps `config.toml` and a `secrets.env` of your own in `/etc/twobells`, and Mesa's cache of the shaders it compiles for the HDMI screen in `/var/cache/twobells-screen`. That is only a cache: deleted, it is made again when the screen next starts.
+
 `config.toml` is optional. Without one, the app uses its defaults and what you save. To undo everything saved in the settings, delete `settings.toml` and `secrets.env` from the store.
 
 ### Going back to an older release
@@ -149,7 +151,7 @@ An HDMI screen has room for 3 in the looks that keep a whole row for each, and 2
 
 So a screen showing three modes refuses a look and text size without room for them: `[board] modes: The 7.9-inch screen in the plain look at text size 14 has room for 2 modes at most, each with its own section, not 3; name fewer, or choose text size 12 or smaller, or another look`. While `[board] modes` names three, the [Board](settings.md#board) page offers only the text sizes with room for them, and the plain look only at one of those; changing the look or text size later is checked again before it is saved.
 
-Trains and buses have always shared every display, so each has room for at least those two. Sharing the board, each mode has a row, then the first modes take theirs first, up to 3 trains and 2 buses on e-paper (3 on a screen), as before, and up to 3 trams; a mode alone takes all the rows there are. In the station board look, where a train's or tram's leave line wouldn't fit under it, its section shows one departure fewer, or, down to one, the section with the most does, so the leave time always shows.
+Trains and buses have always shared every display, so each has room for at least those two. Sharing the board, each mode has a row, then the first modes take theirs first, never more than **Trains shown**, **Buses shown** and **Trams shown** on the Board page (`rows`, 3 each unless you change them). In the plain, TFT and split-flap looks that is up to 3 trains and 2 buses (3 buses on the 11.3" bar screen, which has the room), and up to 3 trams. In the station board look it is up to 3 trains, and the buses under them take the rest of the room: 3 on every display but the original Inky pHAT, which has room for 2. A mode alone takes all the rows there are. In the station board look, where a train's or tram's leave line wouldn't fit under it, its section shows one departure fewer, or, down to one, the section with the most does, so the leave time always shows.
 
 ## Rain warning set-up
 
