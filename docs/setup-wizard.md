@@ -26,7 +26,7 @@ Saving keeps your other settings: the look, rotation, text size and so on. **Wha
 
 **Changing only the stops, or only the station:** **Change stops only** and **Change station only** on the Overview (`/settings/setup/?step=stops` and `/settings/setup/?step=station`) open the wizard at that step, with today's choices ticked. The stops are the bus stops: the tram stops stay as they are, and are changed by running the whole wizard or under **Tram stop codes** on the Trains and buses page. Then come the walk times, starting from the ones you have, the keys only if the one it needs isn't set, and **Check and save**, which saves only that part: home, the views, what they show and everything else stay as they are. Stops are found near roughly where home is, the position kept for the weather (to about 1 km), and your stops are listed even if they aren't near it; for a search from home exactly, run the whole wizard. Keeping the same stops with the same labels needs no new bus company search. **Back to settings**, on the first step, returns to the settings.
 
-## What leaves your home
+## Where setup runs
 
 [What leaves your home](privacy.md#setting-up) says what each step sends, and to whom.
 
