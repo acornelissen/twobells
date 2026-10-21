@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-21
+
+Smooth scrolling on an HDMI screen: no more hitch once a second.
+
 ### Fixed
 
 - On an HDMI screen, scrolling text no longer hitches once a second. Each second's board was fetched for and drawn between two frames, which took up to 130 ms on a Pi 4 with the 11.3" bar screen, twice a frame's time, so the step due as the second began was shown late or skipped. Each second's board is now made a second ahead, beside the frames, and shown on time; one made late, by a slow fetch say, is shown the moment it is ready, the text moving on meanwhile; `twobells run --loop --timings` logs how long each took to make and show. The screen is also given only the parts of the board that changed, such as the clock and the countdowns, rather than the whole board each second, which took 10 ms or more to put on it.
@@ -233,7 +237,8 @@ The first release.
 - A network guard for the Pi's web server: nftables rules for it alone (`deploy/pi/twobells-web.nft`), loaded at boot by `twobells-guard.service` and matching the server by the cgroup systemd puts in their set (`NFTSet=`, systemd 254 or later, so Raspberry Pi OS Trixie on a Pi Zero or Pi 1), that keep it from connecting out to the internet and keep port 8090 to the home network. They back up the unit's systemd IP firewall, which a Pi Zero's kernel can't apply ("Preparation of BPF allow maps failed"). `install.sh` and `update.sh` install `nftables`. The server checks at start whether it can connect out, warns in its log if it can, and the settings' Overview shows **Network guard**: On, Off (a problem) or Can't tell.
 - A wall-tablet mode for the dashboard at `/?kiosk`: one screen with no controls, the station-board look by default, a shift of a pixel or two every few minutes against burn-in, dimmed in quiet hours, a large banner when the times stop updating, and a reload at 03:30.
 
-[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.5.0...main
+[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.5.1...main
+[0.5.1]: https://github.com/acornelissen/twobells/releases/tag/v0.5.1
 [0.5.0]: https://github.com/acornelissen/twobells/releases/tag/v0.5.0
 [0.4.3]: https://github.com/acornelissen/twobells/releases/tag/v0.4.3
 [0.4.2]: https://github.com/acornelissen/twobells/releases/tag/v0.4.2

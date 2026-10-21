@@ -40,7 +40,7 @@ A Pi Zero, Zero W or Pi 1 can't run cosign: sigstore builds it for ARMv7 and lat
 Download a release's tarball, `SHA256SUMS` and its signature from the [releases page](https://github.com/acornelissen/twobells/releases), check them, then run the installer from inside. On the Pi, with [cosign](#install-cosign) installed and the version you want in the first line:
 
 ```bash
-VERSION=0.5.0
+VERSION=0.5.1
 base="https://github.com/acornelissen/twobells/releases/download/v$VERSION"
 curl -fLO "$base/twobells-$VERSION.tar.gz"
 curl -fLO "$base/SHA256SUMS"
