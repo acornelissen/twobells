@@ -8,6 +8,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 - A dashboard row's punctuality sheet lists its days of the same kind only, as its phrase counts them: a weekday train's are weekdays, a bank holiday counting as a Sunday. It used to list every day it ran, so a weekday train's included its Saturdays and Sundays under "The last N weekdays".
 - The punctuality sheet shows every day **Keep punctuality history for** keeps. It showed 90 at most, however many more days were kept.
+- On a Pi, a saved change to **Keep punctuality history for** reaches the punctuality sheet at once. The sheet kept to the number of days set when the web server started, until it started again.
 - The settings' hint for **Scrolling text** says that, off, the dashboard shows two lines of the calling-at line, cut short with `…`. It said the dashboard wraps it.
 - The settings' hint for **Show trams** says that, off, no trams are shown or checked for, as the hints for trains and buses do. It said only that none are shown; switched-off trams were never checked for.
 

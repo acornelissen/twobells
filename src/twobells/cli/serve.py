@@ -376,18 +376,19 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
         # Docker) nor a fixed offset that would be an hour out after the clocks change.
         performance = Performance(history, lambda: datetime.now(store.zone()), performance_setup)
 
-        def days_of_its_kind(mode: str, route: str, scheduled: str, kind: str, days: int) -> list:
-            # A row's days of its own kind, bank holidays counted as the dashboard
-            # counts them: from the cache it keeps (never fetched here), with the
-            # settings read again on each request, as above.
+        def days_of_its_kind(mode: str, route: str, scheduled: str, kind: str) -> list:
+            # A row's days of its own kind, as many as history_days keeps, bank
+            # holidays counted as the dashboard counts them: from the cache it keeps
+            # (never fetched here), with the settings read again on each request, as above.
             try:
                 now = load_dashboard(store, store.env(), lock=False)
             except ConfigError:
                 now = dash
+            options = now.options if now is not None else DashboardOptions()
             holidays = frozenset()
             if now is not None and now.bank_holidays:
                 holidays = read_cache(now.state_dir, now.bank_holiday_division)
-            return history.recent(mode, route, scheduled, days, day_type=kind, holidays=holidays)
+            return history.recent(mode, route, scheduled, options.history_days, day_type=kind, holidays=holidays)
 
         recent = days_of_its_kind
 
@@ -405,7 +406,6 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
             dashboard_on=dashboard_on,
             recent=recent,
             performance=performance,
-            history_days=dash.options.history_days if dash is not None else 90,
             allowed_hosts=dash.options.allowed_hosts if dash is not None else _allowed_hosts(store),
         )
         host = "0.0.0.0" if args.lan else (args.host or install.host)  # noqa: S104 - --lan asks for every interface

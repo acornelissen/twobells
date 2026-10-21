@@ -64,8 +64,8 @@ class Recent:
         self.asked = []
         self.error = None
 
-    def __call__(self, mode, route, scheduled, day_type, days):
-        self.asked.append((mode, route, scheduled, day_type, days))
+    def __call__(self, mode, route, scheduled, day_type):
+        self.asked.append((mode, route, scheduled, day_type))
         if self.error:
             raise self.error
         return [{"day": "2026-10-09", "status": "late", "delay_min": 7, "live": True, "reason": None}]
@@ -191,7 +191,6 @@ def make_app(static_dir, **overrides):
         "recent": Recent(),
         "performance": Performance(Outcomes(), lambda: datetime(2026, 10, 9, 18, 0, tzinfo=UTC),
                                    lambda: Setup({"train": 3, "bus": 2}, station="MAN", trains=True, details=True)),
-        "history_days": 90,
         "allowed_hosts": frozenset({"departures.example.com"}),
         "heartbeat": 0.2,
         "stream_seconds": 30.0,
@@ -475,7 +474,7 @@ def test_a_row_s_history(server):
         ]},
     }
     # Its own kind of day only, as the phrase counts them.
-    assert server.app.recent.asked == [("train", "GLO>MAN|Manchester Piccadilly", "07:12", "weekday", 90)]
+    assert server.app.recent.asked == [("train", "GLO>MAN|Manchester Piccadilly", "07:12", "weekday")]
     response, body = server.request(f"/api/history/{BUS_ID}")
     assert response.status == 200
     route = json.loads(body)["route"]

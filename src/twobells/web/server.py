@@ -171,9 +171,9 @@ def default_static_dir() -> Path:
     return Path(str(files("twobells") / "dashboard_static"))
 
 
-# (mode, route, scheduled, day_type, days) -> History.recent of that day type,
-# bank holidays counted as the dashboard counts them.
-Recent = Callable[[str, str, str, str, int], list]
+# (mode, route, scheduled, day_type) -> History.recent of that day type, over the
+# days [dashboard] history_days keeps, bank holidays counted as the dashboard counts them.
+Recent = Callable[[str, str, str, str], list]
 
 
 @dataclass
@@ -190,7 +190,6 @@ class DashboardApp:
     dashboard_on: Callable[[], bool] = lambda: True
     recent: Recent | None = None  # History.recent, or None without a history
     performance: Performance | None = None  # the Performance page's figures, or None without a history
-    history_days: int = 90
     allowed_hosts: frozenset[str] = frozenset()
     client_allowed: Callable[[str], bool] = private_address
     heartbeat: float = HEARTBEAT_S
@@ -463,8 +462,7 @@ class _Handler(BaseHTTPRequestHandler):
         days, figures = [], None
         try:
             if self.app.recent is not None:
-                days = self.app.recent(found["mode"], found["route"], found["scheduled"], found["day_type"],
-                                       self.app.history_days)
+                days = self.app.recent(found["mode"], found["route"], found["scheduled"], found["day_type"])
             if self.app.performance is not None:
                 figures = self.app.performance.route(found["mode"], found["route"])
         except Exception as error:  # noqa: BLE001 - one unreadable history isn't the server's end

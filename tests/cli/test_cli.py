@@ -1391,6 +1391,43 @@ def test_serve_on_a_pi_shows_the_dashboard_the_fetch_service_hands_over(tmp_path
     assert os.listdir(run / "requests")  # the browser was said to the fetch service
 
 
+def test_serve_on_a_pi_gives_a_row_s_history_the_days_saved_since_it_started(served, pi_with_the_dashboard):
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from twobells.core.walk import WalkTimes
+    from twobells.dashboard.history import History, Observed
+    from twobells.dashboard.snapshot import Hub
+    from twobells.fetch import handoff
+    from twobells.setup.spool.folder import Spool
+
+    args, folder, run = pi_with_the_dashboard
+    assert main(args) == 0
+    app = served["app"]
+    hub = Hub("Glossop", WalkTimes())
+    hub.publish("trains", {"rows": [{"id": "9f1c000000000002"}]}, {"9f1c000000000002": {"history": {
+        "mode": "train", "route": "GLO|Manchester", "scheduled": "07:12", "label": "07:12 to Manchester",
+        "day_type": "weekday", "phrase": None}}})
+    handoff.SnapshotWriter(hub, Spool(run), lambda: True).write()
+    app.hub.check()
+    history = History(folder)
+    london = ZoneInfo("Europe/London")
+    for day in (date(2026, 8, 27), date(2026, 8, 28)):  # Thursday, Friday
+        leaves = datetime(day.year, day.month, day.day, 7, 12, tzinfo=london)
+        history.observe("train", [Observed("GLO|Manchester", leaves, leaves, "on_time", 0, True, "Northern",
+                                           "Manchester", "1", None, "C1")], leaves - timedelta(minutes=1))
+        history.observe("train", [], leaves + timedelta(minutes=1))
+    history.close()
+
+    def days():
+        return [day["day"] for day in json.loads(ask(app, "/api/history/9f1c000000000002")[2])["days"]]
+
+    assert days() == ["2026-08-28", "2026-08-27"]
+    # A save on a Pi doesn't start serve again: the next request keeps to the new number of days.
+    (folder / "settings.toml").write_text('[app]\nviews = ["board", "dashboard"]\n[dashboard]\nhistory_days = 1\n')
+    assert days() == ["2026-08-28"]
+
+
 @pytest.mark.parametrize("details_key, off", [("details-key", None), (None, "no_details_key")])
 def test_serve_gives_the_performance_page_the_filter_station_for_delay_repay(tmp_path, served, pi_with_the_dashboard,
                                                                              dashboard_config, monkeypatch,
