@@ -4,6 +4,14 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-10-21
+
+The punctuality sheet keeps to a departure's own kind of day and every day kept, and the documentation is checked through against the code.
+
+### Added
+
+- New pages in the documentation: [What leaves your home](docs/privacy.md), every outside service each install talks to and what it is sent; [Backing up and moving](docs/backup.md); and [Removing Two Bells](docs/uninstall.md). The rest of the pages were checked against the code and corrected, and each topic told on several pages now has one page the others link to.
+
 ### Fixed
 
 - A dashboard row's punctuality sheet lists its days of the same kind only, as its phrase counts them: a weekday train's are weekdays, a bank holiday counting as a Sunday. It used to list every day it ran, so a weekday train's included its Saturdays and Sundays under "The last N weekdays".
@@ -255,7 +263,8 @@ The first release.
 - A network guard for the Pi's web server: nftables rules for it alone (`deploy/pi/twobells-web.nft`), loaded at boot by `twobells-guard.service` and matching the server by the cgroup systemd puts in their set (`NFTSet=`, systemd 254 or later, so Raspberry Pi OS Trixie on a Pi Zero or Pi 1), that keep it from connecting out to the internet and keep port 8090 to the home network. They back up the unit's systemd IP firewall, which a Pi Zero's kernel can't apply ("Preparation of BPF allow maps failed"). `install.sh` and `update.sh` install `nftables`. The server checks at start whether it can connect out, warns in its log if it can, and the settings' Overview shows **Network guard**: On, Off (a problem) or Can't tell.
 - A wall-tablet mode for the dashboard at `/?kiosk`: one screen with no controls, the station-board look by default, a shift of a pixel or two every few minutes against burn-in, dimmed in quiet hours, a large banner when the times stop updating, and a reload at 03:30.
 
-[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.5.2...main
+[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.5.3...main
+[0.5.3]: https://github.com/acornelissen/twobells/releases/tag/v0.5.3
 [0.5.2]: https://github.com/acornelissen/twobells/releases/tag/v0.5.2
 [0.5.1]: https://github.com/acornelissen/twobells/releases/tag/v0.5.1
 [0.5.0]: https://github.com/acornelissen/twobells/releases/tag/v0.5.0
