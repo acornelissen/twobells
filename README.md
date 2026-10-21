@@ -104,7 +104,7 @@ Everything else is on the settings site, in plain words, behind one password:
 
 ## Install
 
-- **Raspberry Pi** (the board, and the dashboard if you like): download a release tarball and its `SHA256SUMS`, check it, unpack it and run `sudo ./deploy/pi/install.sh`. Nothing is piped from the internet into `sudo bash`. See [Install on a Raspberry Pi](docs/install-pi.md).
+- **Raspberry Pi** (the board, and the dashboard if you like): download a release tarball, its `SHA256SUMS` and that file's signature, check them with cosign and `sha256sum`, unpack the tarball and run `sudo ./deploy/pi/install.sh`. To move to a later release, `sudo ./deploy/pi/upgrade.sh <version>` checks and installs it the same way. Nothing is piped from the internet into `sudo bash`. See [Install on a Raspberry Pi](docs/install-pi.md).
 - **Docker** (a NAS, say; the dashboard): the signed image `ghcr.io/acornelissen/twobells`, or build it from source with `docker compose up -d --build`. See [Docker](docs/docker.md), with steps for Synology, QNAP, Unraid, TrueNAS SCALE, and Docker or Podman on Linux.
 - **Desktop** (a Mac or Linux laptop; the dashboard): `uv tool install twobells` or `pipx install twobells`, then `twobells serve`. See [Desktop](docs/desktop.md).
 
