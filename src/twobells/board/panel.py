@@ -30,15 +30,17 @@ STRIP_COLUMN_MIN_WIDTH = 420
 # the bar screen does it.
 LEAVE_COLUMN_MIN_WIDTH = 460
 
-# A sign board at least this wide places each section's little lines against
-# its own columns; a narrower one lines them up down the board, where the
-# tightest section puts them. Fixed for the board, never from the rows shown,
-# so they stay put. The bar screen's 480 gives a train's leave words a column
-# on its row (LEAVE_COLUMN_MIN_WIDTH), which pushes the trains' lines left:
-# lined up, the buses' would follow, and their stop names and destinations
-# give up the room. The 7.9" screen's 426 puts the leave words under the
-# train, so it lines them up. The plain looks line them up on every screen.
-OWN_STRIPS_MIN_WIDTH = 460
+# A screen at least this wide, in the plain look's pHAT pixels, lines its
+# sections' little lines up in one column down the board in the plain, TFT
+# and split-flap looks, where the tightest section puts them; a narrower
+# screen, and the station board look on any screen, puts each section's
+# against its own columns. Fixed per screen and look, never from the rows
+# shown, so they stay put. Lined up, the trains' lines follow the buses',
+# which sit left of their leave times: on the bar screen's 640 the trains
+# still keep "Manchester Piccadilly" whole, but on the 7.9" screen's 426 it
+# would scroll, as it would in the station board look on either screen (the
+# bar screen's trains have their leave words on their row).
+LINED_UP_STRIPS_MIN_WIDTH = 460
 
 # A screen at least this wide shows a disruption notice and the rain warning
 # side by side on its bottom line (the plain look: in its header), rather than

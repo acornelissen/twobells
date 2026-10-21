@@ -119,9 +119,10 @@ def test_a_rows_columns_run_in_order_and_never_into_each_other(panel):
 
 
 @pytest.mark.parametrize("panel", SCREENS, ids=lambda p: p.name)
-def test_the_split_flap_look_lines_its_strips_up_down_the_board(panel):
+def test_the_split_flap_look_lines_its_strips_up_on_the_bar_screen_only(panel):
     layouts = painted_rows(split_flap_frame, board(), panel)
-    assert len({layout.strip_x for _, layout in layouts if layout.strip_x is not None}) == 1
+    xs = {layout.strip_x for _, layout in layouts if layout.strip_x is not None}
+    assert len(xs) == (1 if panel is HDMI_1920X440 else 2)
 
 
 @pytest.mark.parametrize("panel", SCREENS, ids=lambda p: p.name)

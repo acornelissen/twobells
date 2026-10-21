@@ -21,6 +21,7 @@ from ..core import words
 from ..core.model import Strip
 from ..settings import modes as mode_list
 from .panel import (
+    LINED_UP_STRIPS_MIN_WIDTH,
     NOTES_SIDE_BY_SIDE_MIN_WIDTH,
     PHAT,
     PLATFORM_COLUMN_MIN_WIDTH,
@@ -472,18 +473,28 @@ def _own_strip_x(section: Section, rows, fonts: Fonts, width: int, scale: int) -
     return lead + got["names"] + got["destination"] + 2 * gap
 
 
+def strips_lined_up(width: int, scale: int) -> bool:
+    """Whether the plain, TFT and split-flap looks line a board's little lines
+    up in one column down a board `width` panel pixels across, rather than
+    each section's against its own columns (LINED_UP_STRIPS_MIN_WIDTH): the
+    bar screen, not the 7.9" screen. Fixed for the board, never from the rows
+    shown, so they stay put."""
+    return width / scale >= LINED_UP_STRIPS_MIN_WIDTH
+
+
 def strip_column(sections, drawn, fonts: Fonts, width: int, scale: int, live: bool) -> list[float | None]:
     """Where each section's little lines start, the where words after them,
     given each section's rows as drawn (`drawn`); None for a section without
     one among them. Only on a screen (`live`) wide enough: a strip changes
-    every few seconds, and e-paper redraws slowly, only on change. The
-    plain, TFT and split-flap looks line them up down the board on every
-    screen, where the tightest section's ladder puts them."""
+    every few seconds, and e-paper redraws slowly, only on change. Lined up
+    (strips_lined_up), they are where the tightest section's ladder puts them."""
     if not live or width / scale < STRIP_COLUMN_MIN_WIDTH:
         return [None] * len(sections)
     own = [_own_strip_x(section, rows, fonts, width, scale) if any(r.strip for r in rows) else None
            for section, rows in zip(sections, drawn, strict=True)]
     placed = [x for x in own if x is not None]
+    if not placed or not strips_lined_up(width, scale):
+        return own
     return [min(placed) if x is not None else None for x in own]
 
 

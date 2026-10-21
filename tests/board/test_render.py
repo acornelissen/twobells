@@ -943,7 +943,14 @@ def test_the_setup_page_signature_follows_its_words():
 
 from tests.board.painted import assert_in_order, painted_rows, row_boxes  # noqa: E402
 from twobells.board.panel import STOP_NAME_MIN_WIDTH, STRIP_COLUMN_MIN_WIDTH, Panel  # noqa: E402
-from twobells.board.render import STRIP_WIDTH, board_frame, row_limits, share_out, strip_column  # noqa: E402
+from twobells.board.render import (  # noqa: E402
+    STRIP_WIDTH,
+    board_frame,
+    row_limits,
+    share_out,
+    strip_column,
+    strips_lined_up,
+)
 from twobells.core.model import Strip  # noqa: E402
 
 CLOCK = "07:03:15"
@@ -1016,13 +1023,21 @@ def test_destinations_keep_their_room_beside_the_strip(panel):
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
-def test_the_plain_look_lines_its_strips_up_down_the_board_on_either_screen(panel):
-    # On every screen, whatever the rows: the bus section is the tightest, and puts them.
+def test_the_plain_look_lines_its_strips_up_on_the_bar_screen_and_not_on_the_7_9_inch(panel):
+    # Lined up, the bus section is the tightest, and puts them; on the 7.9"
+    # screen each section's sit against its own columns.
     layouts, _ = strip_layouts(panel)
-    strips = [layout for row, layout in layouts if row.strip]
-    assert {row.left for row, layout in layouts if row.strip} >= {"07:12", "07:42", "341"}
-    assert len({layout.strip_x for layout in strips}) == 1
-    assert len({layout.where_x for layout in strips}) == 1
+    trains = {layout.strip_x for row, layout in layouts if row.strip and row in STRIP_TRAINS}
+    buses = {layout.strip_x for row, layout in layouts if row.strip and row not in STRIP_TRAINS}
+    assert len(trains) == len(buses) == 1
+    assert (trains == buses) == (panel is HDMI_1920X440)
+    assert len({layout.where_x for row, layout in layouts if row.strip and row in STRIP_TRAINS}) == 1
+
+
+def test_the_plain_looks_line_strips_up_on_the_bar_screen_only():
+    # Fixed per screen, never from the rows shown.
+    assert strips_lined_up(HDMI_1920X440.width, plain_scale(HDMI_1920X440))
+    assert not strips_lined_up(HDMI_1280X400.width, plain_scale(HDMI_1280X400))
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
