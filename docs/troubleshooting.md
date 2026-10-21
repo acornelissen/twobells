@@ -29,7 +29,7 @@ Start with the settings' [Overview](settings.md#overview): it says what is worki
 | E-paper errors about chip select | SPI chip selects in use | Add `dtoverlay=spi0-0cs` to `/boot/firmware/config.txt` and reboot |
 | Screen black | Screen service not running | `systemctl status twobells-screen.service` |
 | Screen upside down or sideways | Rotation | Change **Rotation** on the Board page of the settings |
-| Scrolling text on the screen jerks | Each second's board takes too long to make or show | Log the timings ([`run --timings`](commands.md)): `sudo systemctl edit twobells-screen.service`, and under `[Service]` add `ExecStart=` and then `ExecStart=/opt/twobells/venv/bin/twobells run --loop --timings --config /etc/twobells/config.toml`. `journalctl -u twobells-screen -f` then gives a line a second, how long the board took to make and to show, and says when frames are skipped. `sudo systemctl revert twobells-screen.service` and a restart undo it |
+| Scrolling text on the screen jerks | Each second's board takes too long to make or show | Log the screen's timings, as in [Logging the screen's timings](#logging-the-screens-timings) below |
 | No bus position page | Not a screen, **Bus page** unticked under **What to show** on the Board page, outside the bus windows, no `BODS_API_KEY`, or no route set up for the next bus | Check those in that order |
 | Bus page always says `Not yet past …` | The strip is short (in town 8 stops is about 7 minutes) | Normal; the bus appears when it's close |
 | No rain line on a rainy day | **Rain warning** unticked under **What to show** on the Board page, the chance is below the threshold, it's outside the checking windows, no location, or the forecast couldn't be fetched for over 3 hours | Check the Overview of the settings, and **Weather** on the Trains and buses page |
@@ -49,3 +49,31 @@ Start with the settings' [Overview](settings.md#overview): it says what is worki
 | The Overview says **Network guard: Off** (a Pi) | The guard's rules didn't load, or something flushed every nftables rule since (`sudo nft flush ruleset`, a restart of `nftables`), so nothing stops the web server connecting out | `sudo systemctl restart twobells-guard twobells-web twobells-fetch`: loading the guard again empties its sets, so the web server and the fetch service restart after it to be put back in them. If it stays off, `sudo journalctl -u twobells-guard -u twobells-web` says why (see [Checking the guard](security.md#checking-the-guard)) |
 | Settings won't open | Server stopped, or you're not on the home network | `systemctl status twobells-web.service` on a Pi; the container's state in Docker |
 | Settings say **Forbidden** | Opened from outside the home network, or through an unusual address | Use `http://<name>.local:8090/settings` from home Wi-Fi, or add the name to `allowed_hosts` |
+
+## Logging the screen's timings
+
+`twobells run --loop --timings` logs a line a second: how long that second's board took to make and to show, and how much of the screen changed. It also says when frames are skipped. To have the screen's service run it, give the service a drop-in file with that command. These commands write one with `tee`, so no editor is needed, and restart the screen onto it:
+
+```bash
+sudo mkdir -p /etc/systemd/system/twobells-screen.service.d
+printf '%s\n' '[Service]' 'ExecStart=' \
+  'ExecStart=/opt/twobells/venv/bin/twobells run --loop --timings --config /etc/twobells/config.toml' |
+  sudo tee /etc/systemd/system/twobells-screen.service.d/timings.conf
+sudo systemctl daemon-reload
+sudo systemctl restart twobells-screen.service
+journalctl -u twobells-screen -f
+```
+
+The empty `ExecStart=` clears the unit's own command, so the line after it replaces that command rather than adding a second one.
+
+To write the same three lines in an editor instead, run `sudo systemctl edit twobells-screen.service`. It opens the editor `SYSTEMD_EDITOR` or `EDITOR` names, or else the system's default editor; to choose one, name it: `sudo env SYSTEMD_EDITOR=nano systemctl edit twobells-screen.service`. Type the lines between the two comment lines at the top, as the file says: anything below the second is thrown away. Save and close the editor, then `sudo systemctl restart twobells-screen.service`: the change takes effect only once the screen's service restarts.
+
+Take it out when you're done, as the drop-in stays through updates and keeps the screen on this command whatever a new release's unit says:
+
+```bash
+sudo rm /etc/systemd/system/twobells-screen.service.d/timings.conf
+sudo systemctl daemon-reload
+sudo systemctl restart twobells-screen.service
+```
+
+`sudo systemctl revert twobells-screen.service` removes every drop-in for it, the one `systemctl edit` writes too; then restart it as above.

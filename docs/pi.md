@@ -32,7 +32,7 @@ journalctl -u twobells-timetable -n 20    # bus and tram timetable builds
 sudo systemctl start twobells-timetable.service   # build the bus and tram timetables now, if due
 ```
 
-Every command and its options are in [Commands](commands.md). When something looks wrong, start with the settings' [Overview](settings.md#overview), then [Troubleshooting](troubleshooting.md).
+To have the screen's log say how long each second's board takes, see [Logging the screen's timings](troubleshooting.md#logging-the-screens-timings). Every command and its options are in [Commands](commands.md). When something looks wrong, start with the settings' [Overview](settings.md#overview), then [Troubleshooting](troubleshooting.md).
 
 ## Checking the keys and codes
 

@@ -44,14 +44,14 @@ Then:
 - [Tram times](trams.md): Manchester's Metrolink, from TfGM's timetable.
 - [London](london.md): the Underground, DLR, trams, cable car and river buses, live from TfL.
 - [Displays](displays.md): choosing and setting up a display, the screen's bus position page, and its station announcements.
-- [Settings by hand](configuration.md): `config.toml`, where things are kept, what each view shows, the rain warning, bank holidays and scrolling text.
+- [Settings by hand](configuration.md): `config.toml`, where things are kept, what each view shows, modes of transport, the rain warning, bank holidays and scrolling text.
 
 ## Look after it
 
 - [Looking after a Pi](pi.md): its services, logs, and checking the keys.
 - [How the web server is kept safe](security.md): the home-network checks, the Pi's network guard and the fetch service.
 - [Commands](commands.md): every `twobells` command and its options.
-- [Troubleshooting](troubleshooting.md): what you see, the likely cause, and what to do.
+- [Troubleshooting](troubleshooting.md): what you see, the likely cause and what to do, and how to log an HDMI screen's timings.
 
 ## For developers
 
