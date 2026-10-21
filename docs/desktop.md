@@ -7,8 +7,6 @@ uv tool install twobells      # or: pipx install twobells
 twobells serve
 ```
 
-To update: `uv tool upgrade twobells` or `pipx upgrade twobells`. From a copy of the repo, `uv tool install .` or `pipx install .` instead. After updating, the bus timetable may be built again once (see [After an update](buses.md#after-an-update)). Going back to 0.1.0, it stops at the start if a newer version moved the punctuality history on: with it stopped, copy `history.sqlite3.v1` in its store (below) over `history.sqlite3`, the copy kept from before, and delete `history.sqlite3-wal` and `history.sqlite3-shm` if they are there. What was recorded since is lost.
-
 `twobells serve` runs as a desktop install unless told otherwise. It opens in your browser, at `http://localhost:8090/` (or the next free port), and the settings on the first run. The first build of the bus timetable takes a minute or so, and of Metrolink's tram timetable, where you have tram stops, about 20 seconds more. Ctrl-C stops it.
 
 - `--lan` lets phones on the home Wi-Fi open it, at the address it prints. `--host` and `--port` pick others (a port you name is that port or nothing); `--no-browser` leaves the browser alone.
@@ -43,3 +41,9 @@ systemctl --user enable --now twobells.service
 It starts now and whenever you log in. Its log, with any reset code: `journalctl --user -u twobells -f`. To stop it: `systemctl --user stop twobells.service`; to stop it starting at login: `systemctl --user disable --now twobells.service`.
 
 If `command -v twobells` doesn't print `~/.local/bin/twobells` (with your home folder), change that path in the file before copying it.
+
+## Updating
+
+`uv tool upgrade twobells` or `pipx upgrade twobells`. From a copy of the repo, `uv tool install .` or `pipx install .` instead. After updating, the bus timetable may be built again once (see [After an update](buses.md#after-an-update)).
+
+Going back to 0.1.0, which can't read the punctuality history a newer version keeps, it stops at the start. With it stopped, put back the copy kept from before, `history.sqlite3.v1` in its store, as [Going back to an older release](configuration.md#going-back-to-an-older-release) says.

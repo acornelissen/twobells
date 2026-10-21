@@ -91,7 +91,7 @@ sudo ./deploy/pi/upgrade.sh 0.2.0 --no-signature-check
 
 `upgrade.sh` runs from the release you have, and the one in 0.4.3 and earlier goes on without cosign, checking the SHA-256 only. Install cosign first and it checks the signature too.
 
-Going back to an older release works the same way, but a newer release may have moved what it keeps on to a version the older one can't read. The punctuality history is one: 0.1.0 reads only its version 1, so after going back to it the dashboard has no punctuality history. Before moving the history on, the newer release kept a copy of it as it was, `history.sqlite3.v1` in `/var/lib/twobells`, and `upgrade.sh` says how to put it back when it goes to an older version. What was recorded since is lost:
+Going back to an older release works the same way. Going back to 0.1.0, which can't read the punctuality history a newer release keeps, put back the copy kept from before (see [Going back to an older release](configuration.md#going-back-to-an-older-release)); `upgrade.sh` prints these commands when it goes to an older version:
 
 ```bash
 sudo systemctl stop twobells-web twobells-fetch

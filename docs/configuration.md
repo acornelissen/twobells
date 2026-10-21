@@ -45,10 +45,14 @@ Each install keeps everything it saves in one folder, its store:
 - `web.json`: the settings password, as a hash.
 - `keytests.json`: whether each key's last test on the Keys page worked or was refused, and when; never the key. Readable by the app's user only.
 - `sessions.json`: who is signed in to the settings, kept as a hash of each browser's session so a restart doesn't sign anyone out, and `form.key`, which the sign-in forms are signed with. Like `web.json` and `secrets.env`, readable by the app's user only. A new password ends every session.
-- `history.sqlite3`: the punctuality history. Moving it to a newer version keeps a copy of the old one beside it, once, as `history.sqlite3.v1` (or `.v2`), to put back if you go back to an older release (see [Updating](install-pi.md#updating) for a Pi, [Docker](docker.md) and [On a desktop](desktop.md)).
+- `history.sqlite3`: the punctuality history. A release that moves it on to a newer version first keeps a copy of it as it was, once, beside it: `history.sqlite3.v1` (or `.v2`, from a development build). See [Going back to an older release](#going-back-to-an-older-release) below.
 - The bus timetable, the tram timetable (`tram-timetable.json`, where trams are set up), bank holidays, the board's state, and lock files.
 
 `config.toml` is optional. Without one, the app uses its defaults and what you save. To undo everything saved in the settings, delete `settings.toml` and `secrets.env` from the store.
+
+### Going back to an older release
+
+An older release may not read what a newer one keeps. The punctuality history is one: 0.1.0 reads only its version 1, and 0.2.0 and later keep version 3. After going back to 0.1.0, a Pi's dashboard has no punctuality history, and in Docker or on a desktop the app stops at the start, saying so in its log. To put the history back as it was before it was moved on, with the app stopped, copy `history.sqlite3.v1` over `history.sqlite3`, and delete `history.sqlite3-wal` and `history.sqlite3-shm` if they are there. What was recorded since is lost. Each install's commands are under Updating: [on a Pi](install-pi.md#updating) (`upgrade.sh` prints them too when it goes back), [in Docker](docker.md#updating) and [on a desktop](desktop.md#updating).
 
 ## The dashboard's settings
 
