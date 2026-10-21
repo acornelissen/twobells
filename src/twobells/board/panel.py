@@ -30,6 +30,16 @@ STRIP_COLUMN_MIN_WIDTH = 420
 # the bar screen does it.
 LEAVE_COLUMN_MIN_WIDTH = 460
 
+# A sign board at least this wide places each section's little lines against
+# its own columns; a narrower one lines them up down the board, where the
+# tightest section puts them. Fixed for the board, never from the rows shown,
+# so they stay put. The bar screen's 480 gives a train's leave words a column
+# on its row (LEAVE_COLUMN_MIN_WIDTH), which pushes the trains' lines left:
+# lined up, the buses' would follow, and their stop names and destinations
+# give up the room. The 7.9" screen's 426 puts the leave words under the
+# train, so it lines them up. The plain looks line them up on every screen.
+OWN_STRIPS_MIN_WIDTH = 460
+
 # A screen at least this wide shows a disruption notice and the rain warning
 # side by side on its bottom line (the plain look: in its header), rather than
 # the notice hiding the rain. At 400 the notice keeps about 230 dots, some 40

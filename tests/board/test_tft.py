@@ -129,6 +129,12 @@ def test_a_rows_columns_run_in_order_and_never_into_its_pill(panel):
 
 
 @pytest.mark.parametrize("panel", SCREENS, ids=lambda p: p.name)
+def test_the_tft_look_lines_its_strips_up_down_the_board(panel):
+    layouts = painted_rows(tft_frame, board(), panel)
+    assert len({layout.strip_x for _, layout in layouts if layout.strip_x is not None}) == 1
+
+
+@pytest.mark.parametrize("panel", SCREENS, ids=lambda p: p.name)
 def test_the_header_has_no_bar_the_clock_in_the_accent_and_a_line_under_it(panel):
     image = render_tft(board(), P, panel)
     s = plain_scale(panel)

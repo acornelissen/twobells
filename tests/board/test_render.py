@@ -1016,6 +1016,16 @@ def test_destinations_keep_their_room_beside_the_strip(panel):
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_the_plain_look_lines_its_strips_up_down_the_board_on_either_screen(panel):
+    # On every screen, whatever the rows: the bus section is the tightest, and puts them.
+    layouts, _ = strip_layouts(panel)
+    strips = [layout for row, layout in layouts if row.strip]
+    assert {row.left for row, layout in layouts if row.strip} >= {"07:12", "07:42", "341"}
+    assert len({layout.strip_x for layout in strips}) == 1
+    assert len({layout.where_x for layout in strips}) == 1
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
 def test_the_little_lines_stay_put_whatever_the_words(panel):
     short = tuple(dataclasses.replace(r, strip=Strip("At Dinting", 4, 2, 1.0)) for r in STRIP_TRAINS)
     long_words, short_words = ({row.left: layout.strip_x for row, layout in strip_layouts(panel, rows)[0] if row.strip}

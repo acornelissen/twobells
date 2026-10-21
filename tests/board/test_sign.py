@@ -674,10 +674,11 @@ def test_everything_fits_on_the_original_phat():
 
 from twobells.board.panel import (  # noqa: E402
     LEAVE_COLUMN_MIN_WIDTH,
+    OWN_STRIPS_MIN_WIDTH,
     PLATFORM_COLUMN_MIN_WIDTH,
     STRIP_COLUMN_MIN_WIDTH,
 )
-from twobells.board.sign import STRIP_WIDTH, StripMark, strip_dots  # noqa: E402
+from twobells.board.sign import STRIP_WIDTH, StripMark, strip_dots, strips_lined_up  # noqa: E402
 from twobells.core.model import Strip  # noqa: E402
 
 CLOCK = "07:03:15"
@@ -813,7 +814,21 @@ def test_a_row_without_a_strip_leaves_the_space_blank(panel):
     assert texts(line_of(layout.items, "61")) == ["61", "B", "Buxton", "Leave in 23 min", "07:35 sch"]
 
 
+def test_strips_line_up_on_the_7_9_inch_screen_and_not_on_the_bar():
+    # Fixed per screen, never from the rows shown.
+    assert dots(HDMI_1920X440)[0] >= OWN_STRIPS_MIN_WIDTH > dots(HDMI_1280X400)[0]
+    assert strips_lined_up(dots(HDMI_1280X400)[0]) and not strips_lined_up(dots(HDMI_1920X440)[0])
+
+
 NO_BUS_LEAVES = [dataclasses.replace(r, leave=None) for r in SCREEN_BUSES]
+
+
+@pytest.mark.parametrize("buses", [SCREEN_BUSES, NO_BUS_LEAVES], ids=["leave-times", "none"])
+def test_the_7_9_inch_screen_lines_its_strips_and_where_words_up_down_the_board(buses):
+    layout = sign_layout(screen(buses=buses), *dots(HDMI_1280X400))
+    assert len({m.x for m in layout.strips}) == 1
+    assert len({find(layout.items, w).x for w in ("At Dinting", "3 stops away", "1 stop away")}) == 1
+    assert all(m.width == STRIP_WIDTH for m in layout.strips)
 
 
 @pytest.mark.parametrize("buses", [SCREEN_BUSES, NO_BUS_LEAVES], ids=["leave-times", "none"])
@@ -992,6 +1007,17 @@ def test_manchester_piccadilly_stays_whole_on_the_bar_screen_with_strips():
     shown = [i for i in items if i.text.startswith("Manchester")]
     assert [i.text for i in shown] == ["Manchester Piccadilly"] * 3
     assert all(i.box is None for i in shown)  # drawn whole, never scrolling
+
+
+def test_lined_up_on_the_7_9_inch_screen_the_buses_where_words_come_before_the_trains_destinations():
+    # Lined up where the buses, beside their leave times, put the strips: the
+    # ladder gives "3 stops away" its room before "Manchester Piccadilly",
+    # which scrolls in what is left, a few dots short.
+    layout = sign_layout(screen(), *dots(HDMI_1280X400))
+    assert find(layout.items, "3 stops away").box is None
+    shown = [i for i in layout.items if i.text == "Manchester Piccadilly"]
+    assert len(shown) == 3
+    assert all(item_size(i)[0] >= FONT.getlength("Manchester Piccadilly") - 5 for i in shown)
 
 
 # The ladder: a row's room shared out, in turn, between its where words, a

@@ -23,6 +23,7 @@ from .dotfont import SUB, SUB_HEIGHT, TINY, TINY_HEIGHT, DotFont
 from .panel import (
     LEAVE_COLUMN_MIN_WIDTH,
     NOTES_SIDE_BY_SIDE_MIN_WIDTH,
+    OWN_STRIPS_MIN_WIDTH,
     PHAT,
     PLATFORM_COLUMN_MIN_WIDTH,
     STOP_NAME_MIN_WIDTH,
@@ -259,17 +260,28 @@ def _own_strip_x(section: Section, columns: _Columns, width: int) -> float:
     return lead + got["names"] + got["destination"] + _WHERE_GAP
 
 
+def strips_lined_up(width: int) -> bool:
+    """Whether a board `width` dots across lines its sections' little lines up
+    in one column (OWN_STRIPS_MIN_WIDTH), rather than each against its own
+    columns. Fixed for the board, never from the rows shown, so they stay put."""
+    return width < OWN_STRIPS_MIN_WIDTH
+
+
 def _strip_columns(view: BoardView, columns: list[_Columns], width: int, counts: list[int]) -> list[float | None]:
     """Where each section's little lines start, its first `counts` rows as
     drawn, None for a section without one among them. Only on a screen wide
     enough: a strip changes every few seconds, so e-paper, which redraws
-    slowly and only on change, never shows one. Each against its own
-    section's columns."""
+    slowly and only on change, never shows one. Lined up, they are where the
+    tightest section's ladder puts them."""
     sections = view.sections
     if view.clock is None or width < STRIP_COLUMN_MIN_WIDTH:
         return [None] * len(sections)
-    return [_own_strip_x(s, c, width) if any(r.strip for r in s.rows[:count]) else None
-            for s, c, count in zip(sections, columns, counts, strict=True)]
+    own = [_own_strip_x(s, c, width) if any(r.strip for r in s.rows[:count]) else None
+           for s, c, count in zip(sections, columns, counts, strict=True)]
+    placed = [x for x in own if x is not None]
+    if not placed or not strips_lined_up(width):
+        return own
+    return [min(placed) if x is not None else None for x in own]
 
 
 def _add_strip(layout: SignLayout, row: Row, strip_x: float, y: int, end: float, train: bool,

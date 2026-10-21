@@ -119,6 +119,12 @@ def test_a_rows_columns_run_in_order_and_never_into_each_other(panel):
 
 
 @pytest.mark.parametrize("panel", SCREENS, ids=lambda p: p.name)
+def test_the_split_flap_look_lines_its_strips_up_down_the_board(panel):
+    layouts = painted_rows(split_flap_frame, board(), panel)
+    assert len({layout.strip_x for _, layout in layouts if layout.strip_x is not None}) == 1
+
+
+@pytest.mark.parametrize("panel", SCREENS, ids=lambda p: p.name)
 def test_each_rows_time_destination_and_status_turn_over_and_nothing_else(panel):
     frame = split_flap_frame(board(), P, panel)
     texts = [flap.text for flap in frame.flaps]

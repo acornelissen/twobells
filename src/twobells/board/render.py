@@ -476,12 +476,15 @@ def strip_column(sections, drawn, fonts: Fonts, width: int, scale: int, live: bo
     """Where each section's little lines start, the where words after them,
     given each section's rows as drawn (`drawn`); None for a section without
     one among them. Only on a screen (`live`) wide enough: a strip changes
-    every few seconds, and e-paper redraws slowly, only on change. Each
-    against its own section's columns."""
+    every few seconds, and e-paper redraws slowly, only on change. The
+    plain, TFT and split-flap looks line them up down the board on every
+    screen, where the tightest section's ladder puts them."""
     if not live or width / scale < STRIP_COLUMN_MIN_WIDTH:
         return [None] * len(sections)
-    return [_own_strip_x(section, rows, fonts, width, scale) if any(r.strip for r in rows) else None
-            for section, rows in zip(sections, drawn, strict=True)]
+    own = [_own_strip_x(section, rows, fonts, width, scale) if any(r.strip for r in rows) else None
+           for section, rows in zip(sections, drawn, strict=True)]
+    placed = [x for x in own if x is not None]
+    return [min(placed) if x is not None else None for x in own]
 
 
 def draw_strip(draw: ImageDraw.ImageDraw, strip: Strip, train: bool, x: float, y: int, scale: int, row_h: int,
