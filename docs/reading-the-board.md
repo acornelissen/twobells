@@ -15,7 +15,7 @@ The board can run on three kinds of display. They all show the same information:
 
 | Display | Size | How it updates |
 |---|---|---|
-| Inky pHAT e-paper | small, 2.13" | Redraws only when something changes, at most every 2 minutes. Each redraw takes about 20 seconds and flickers. That's normal. |
+| Inky pHAT e-paper | small, 2.13" | Redraws only when something changes, by default at most every 2 minutes. Each redraw takes about 20 seconds and flickers. That's normal. |
 | Waveshare e-paper | wide, 10.85" | Same as the pHAT, just bigger. |
 | HDMI screen | wide, 7.9" or 11.3" | Updates every second, with a running clock, countdowns, where each train and bus is, a second page showing where your bus is, and a platform clock page if you want one. |
 
