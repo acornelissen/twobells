@@ -2409,8 +2409,8 @@ def test_the_calling_at_line_scrolls_in_every_look_but_standard_while_scrolling_
     motion = motion[:motion.index("\n}\n")]
     # The animation is only inside the motion query: never with reduced motion.
     assert "animation: calling-scroll" in motion and css.count("animation: calling-scroll") == 1
-    # Dot matrix, TFT and Split-flap scroll it, as the HDMI screen does in every look; Standard wraps it,
-    # and so does every look with scrolling text off in the settings.
+    # Dot matrix, TFT and Split-flap scroll it, as the HDMI screen does in every look; Standard keeps it to
+    # two lines cut short with "…", and so does every look with scrolling text off in the settings.
     selectors = re.findall(r"(?m)^\s*(:root[^{]*calling[^{]*)\{", motion)
     assert len(selectors) == 2
     for selector in selectors:
