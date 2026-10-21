@@ -71,7 +71,7 @@ INSTALLS = {
                 # busiest stops while their replaced versions are read, and a real build held
                 # 15,000 under the units' 256M (tests/test_deploy.py).
                 timetable_journeys=8_500,
-                log_help="On the Pi: <code>sudo journalctl -u twobells-web</code>.",
+                log_help="On the Pi: <code>journalctl -u twobells-web</code>.",
                 password_command=f"{_PI_COMMAND} --set-password", reset_command=f"{_PI_COMMAND} --reset-code"),
         Install("docker", ("dashboard",), ("dashboard",), Path("/data"), host="0.0.0.0",  # noqa: S104 - inside the container
                 # Its dashboard keeps its own copy of the timetable through a rebuild, so the
