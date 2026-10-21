@@ -2,7 +2,7 @@
 
 The dashboard is the board's big sibling: a web page with the next trains and buses laid out like a station screen and a stop's countdown sign, delays and reasons, cancellations and disruption notices, where each bus and train is, a map for each bus, the weather, and how often each regular departure has run late. It works on a phone too.
 
-It is at the install's address, port 8090: `http://<pi name>.local:8090/` on a Pi, `http://<NAS name>:8090/` in Docker, `http://localhost:8090/` on a desktop. While the dashboard view is off, or before the app is set up, that address opens the settings instead.
+It is at the install's address, port 8090: `http://<pi name>.local:8090/` on a Pi, `http://<NAS name>:8090/` in Docker, `http://localhost:8090/` on a desktop (or the next free port, if 8090 is taken). While the dashboard view is off, or before the app is set up, that address opens the settings instead.
 
 - [What's on it](#whats-on-it)
 - [Performance](#performance)
@@ -40,7 +40,7 @@ All of this shows until **What to show** on the [Dashboard page](settings.md#das
 - **Weather:** now (temperature, feels like, wind, and the next sunrise or sunset), the rain warning, and the next 4 hours in a row (the hour it is now as **Now**), each with a bar for the chance of rain (written out from 30%). **More hours** shows the rest of the next 12.
 - **Disruption:** one line under Next to catch. When something affects your journeys now (at or near your stops, or a National Rail message about your trains), it leads, in amber, or red when severe: "Roadworks at Henry Street A (your stop) until 20:00 today · 2 more this week". Otherwise it says "No disruption on your journeys", with how many other notices there are this week, if any. Select it to see every notice, in force now first; **Coming up this week** opens the rest. Screen readers hear a new one once, never the line itself. Without disruption checks it shows only for National Rail's own messages. See [Disruptions and engineering works](#disruptions-and-engineering-works).
 
-Nothing on the page can change anything: it only shows, and needs no password. Changes go through the [settings](settings.md), which do. It checks for new times every minute (trains, and trams from their timetable) and 30 seconds (buses, and London's from TfL, whose lines' status and lifts it checks every 5 minutes), and stops from 01:00 to 05:00 unless someone has it open. With a filter station and a Service Details key, the train check also follows trains that have left until they reach it, for [Delay Repay](#delay-repay).
+Nothing on the page can change anything: it only shows, and needs no password. Changes go through the [settings](settings.md), which do. It checks for new times every minute (trains, and trams from their timetable) and 30 seconds (buses, and London's from TfL, whose lines' status and lifts it checks every 5 minutes), and stops in the quiet hours, 01:00 to 05:00 by default, unless someone has it open. With a filter station and a Service Details key, the train check also follows trains that have left until they reach it, for [Delay Repay](#delay-repay).
 
 The dashboard shows buses only from the BODS timetable (see [Bus times](buses.md)). If your bus times come from TransportAPI, it shows trains and the weather, with a note saying why there are no buses.
 
