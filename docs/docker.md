@@ -43,6 +43,8 @@ cosign verify "ghcr.io/acornelissen/twobells@$DIGEST" \
 - **A data folder at `/data`** that its user, uid 10001, can write to. A new named volume takes that owner from the image by itself. A folder on the NAS doesn't: give it to 10001 first (each platform below says how).
 - **Nothing else.** It runs as uid 10001 with a read-only system, no Linux capabilities, no new privileges, 512 MB of memory and 128 processes at most, and a 64 MB `/tmp` in memory. Keep those settings wherever the platform allows them. The bus timetable's build fits in that memory beside the dashboard: a timetable file over 100 MB is skipped with a warning in the log, and a build with more than 8,000 journeys calling at your stops fails, saying so in the log. Metrolink's tram timetable, about 45 MB, is read a line at a time, so it fits too.
 - **Keys:** paste them in the settings, which keep them in `/data`, readable by the app only. No environment variables are needed.
+- **Its health check** is the image's own: every minute, from two minutes after it starts, it asks `http://127.0.0.1:8090/healthz` inside the container, and three failures in a row mark it unhealthy. Container Manager and `docker ps` show the result.
+- **No code from `/data`.** The image sets `PYTHONSAFEPATH`, so Python never looks for code in its working folder, the `/data` volume: a file written there can't run in place of the app's own at a start, a health check or a `docker exec`. Keep it set if you change the container's environment.
 
 ### Addresses it answers to
 
