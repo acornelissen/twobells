@@ -46,4 +46,6 @@ If `command -v twobells` doesn't print `~/.local/bin/twobells` (with your home f
 
 `uv tool upgrade twobells` or `pipx upgrade twobells`. From a copy of the repo, `uv tool install .` or `pipx install .` instead. After updating, the bus timetable may be built again once (see [After an update](buses.md#after-an-update)).
 
+To keep a copy of the settings, keys and history, see [Backing up and moving](backup.md); to take it off again, [Removing Two Bells](uninstall.md#on-a-desktop).
+
 Going back to 0.1.0, which can't read the punctuality history a newer version keeps, it stops at the start. With it stopped, put back the copy kept from before, `history.sqlite3.v1` in its store, as [Going back to an older release](configuration.md#going-back-to-an-older-release) says.

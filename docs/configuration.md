@@ -38,7 +38,7 @@ Each install keeps everything it saves in one folder, its store:
 | Docker | `/data`, in the `twobells-data` volume |
 | Desktop | `~/Library/Application Support/twobells` on a Mac; on Linux, `twobells` in `$XDG_STATE_HOME`, else in `~/.local/state` |
 
-`--state-dir` names another. Without it, `state_file` or `[dashboard] state_dir` in `config.toml` can, except on a Pi, where systemd gives every service `/var/lib/twobells` (as `$STATE_DIRECTORY`) and that wins. In Docker the container passes `--state-dir /data`. In it:
+[Backing up and moving](backup.md) says how to keep a copy of it, and what in it is secret. `--state-dir` names another. Without it, `state_file` or `[dashboard] state_dir` in `config.toml` can, except on a Pi, where systemd gives every service `/var/lib/twobells` (as `$STATE_DIRECTORY`) and that wins. In Docker the container passes `--state-dir /data`. In it:
 
 - `settings.toml`: what the settings pages and the wizard save, layered over `config.toml`, which is never rewritten. It holds only the settings they manage; anything else put in it is ignored, and the log names it. Addresses (`[train]` and `[bus]` `base_url`), `state_file`, `display` and the other hand-edited settings belong in `config.toml`. A `settings.toml` that can't be read is replaced on the next save, with a copy kept as `settings.toml.broken`.
 - `secrets.env`: keys pasted in the settings or the wizard, readable by the app's user only. They win over the keys you give it in a `secrets.env` of your own.

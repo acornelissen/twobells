@@ -1,6 +1,6 @@
 # How the web server is kept safe
 
-What protects the settings site and the dashboard, and, on a Pi, what keeps the web server off the internet. To report a vulnerability, see [SECURITY.md](../SECURITY.md).
+What protects the settings site and the dashboard, and, on a Pi, what keeps the web server off the internet. To report a vulnerability, see [SECURITY.md](../SECURITY.md). [What leaves your home](privacy.md) says what each install sends out, and to where.
 
 - [On every install](#on-every-install)
 - [Addresses it answers to](#addresses-it-answers-to)

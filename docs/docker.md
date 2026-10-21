@@ -7,6 +7,8 @@ There are two ways to run it:
 - **The published image**, `ghcr.io/acornelissen/twobells`: signed, for 64-bit computers (`linux/amd64` and `linux/arm64`), with nothing to build. `deploy/docker/docker-compose.ghcr.yml` runs it. Every platform below can use it. There is no image for 32-bit ARM.
 - **Built from source** with `docker-compose.yml` at the top of the project, as on [Synology](#built-from-source).
 
+To keep a copy of the settings, keys and history in the volume, see [Backing up and moving](backup.md); to take it all off again, [Removing Two Bells](uninstall.md#in-docker).
+
 Contents:
 
 - [Every platform](#every-platform): pick a release, check it, and keep it on the home network.
