@@ -47,7 +47,7 @@ The easiest way is to paste them in the settings, at `/settings` on your install
 | `TAPI_APP_ID`, `TAPI_APP_KEY` | the **Keys** page (only while the board view is on) |
 | `RDM_DETAILS_API_KEY` | the **Keys** page (only while the dashboard view, or the board view on an HDMI screen, is on) |
 | `RDM_KB_API_KEY` | the **Keys** page (only while the dashboard view is on) |
-| `TFL_APP_KEY` | the setup wizard's **Keys** step once you have ticked London stops, or the **Keys** page while they are set up |
+| `TFL_APP_KEY` | the setup wizard's **Keys** step once you have ticked London stops (or one is saved already), or the **Keys** page while they are set up |
 
 Keys pasted there are saved in `secrets.env` in the install's store (`/var/lib/twobells` on a Pi, the `/data` volume in Docker; see [Where things are kept](configuration.md#where-things-are-kept)), readable only by the app. They win over keys in a file of your own, and need no restart.
 
@@ -55,7 +55,7 @@ Keys pasted there are saved in `secrets.env` in the install's store (`/var/lib/t
 
 - **Save key** saves the key you pasted. Pressing Enter in the box does the same. The page then names the key it saved, never the key itself. If the key isn't pasted right, nothing is saved and a box at the top says so: paste it again.
 - **Save and test** saves it, then tests it straight away, so you don't paste it twice.
-- **Test saved key**, while the box is empty, tests the key already saved.
+- **Test saved key**, there once a key is saved and while the box is empty, tests the key already saved.
 
 **Testing a key** makes one small request to the key's service and says what it found, by the key's box: it works, it's the wrong key, it's for another Rail Data Marketplace product, the service isn't answering, or it can't tell. The wizard has **How to get this key** (the short version of this guide) and a **Test this key** button by each key, which tests the key in the box without saving it. Each key can be tested once every 10 seconds. The settings remember whether a key's last test worked or was refused, and when, but never the key itself; pasting a new key forgets it.
 
@@ -70,7 +70,7 @@ RDM_API_KEY=0a1b2c3d4e5f...
 | Install | File | Notes |
 |---|---|---|
 | A Pi | `/etc/twobells/secrets.env` | Edit with `sudo nano /etc/twobells/secrets.env`, then restart the services (see [Replacing a key](#replacing-a-key)). |
-| Docker (a Synology NAS, say) | `secrets.env`, next to `docker-compose.yml` | Copied from `deploy/secrets.env.example`. |
+| Docker (a Synology NAS, say) | `secrets.env`, next to `docker-compose.yml` | Copied from `deploy/secrets.env.example`. With the published image, uncomment the `env_file:` lines in its compose file too. |
 | A desktop | any file, given with `--secrets` | For example `twobells serve --secrets secrets.env`. |
 
 Never put a key in `config.toml`. That file holds settings, gets copied about, and anyone on the Pi can read it.
@@ -209,7 +209,7 @@ You need the [RDM account](#make-an-rdm-account) from above.
 
 ### Check it works
 
-The key and the address share the **Engineering works** form on the **Keys** page: press **Save and test** there, which saves both, then tests the key against the saved address. Changing the address forgets the key's last test. If the address is missing, the dashboard says engineering works are off and asks you to set `kb_incidents_url`. Otherwise, any works affecting your trains appear with the other disruption notices. There often aren't any, so an empty list doesn't mean the key failed; look in the dashboard's log for an error about incidents if you're unsure.
+The key and the address share the **Engineering works** form on the **Keys** page: press **Save and test** there, which saves both, then tests the key against the saved address. Changing the address forgets the key's last test. If the address is missing, the test says to set it first, and the dashboard's log says engineering works are off until `kb_incidents_url` is set. Otherwise, any works affecting your trains appear with the other disruption notices. There often aren't any, so an empty list doesn't mean the key failed; look in the dashboard's log for an error about incidents if you're unsure.
 
 ---
 
@@ -323,7 +323,7 @@ After subscribing, TfL takes you to your **Profile**, where your keys are shown 
 
 ### Put it in
 
-The **TfL app key** box on the setup wizard's **Keys** step, once you have ticked London stops, or on the settings' **Keys** page while they are set up. Or `TFL_APP_KEY` in `/etc/twobells/secrets.env`. The app sends it in TfL's `app_key` header, never in an address.
+The **TfL app key** box on the setup wizard's **Keys** step, once you have ticked London stops, or on the settings' **Keys** page while they are set up. Or `TFL_APP_KEY` in a `secrets.env` of your own. The app sends it in TfL's `app_key` header, never in an address.
 
 ### Check it works
 
@@ -374,5 +374,5 @@ Replace a key when it stops working, when you've made a new one, or if it might 
 3. **Restart what uses it**, only after changing a file of your own:
    - On a Pi: the e-paper board and the timetable timer pick it up on their next run. Restart the rest: `sudo systemctl restart twobells-web.service twobells-fetch.service twobells-screen.service` (leave out the screen if you don't use it).
    - On a desktop: it notices the changed file and starts again by itself within a few seconds.
-   - In Docker, built from source: in **Container Manager**, choose the project, then **Action**, then **Build** (or `docker compose up -d --build`). Just restarting the container doesn't read `secrets.env` again.
+   - In Docker, built from source: in **Container Manager**, choose the project, then **Action**, then **Build** (or `docker compose up -d --build`). From the published image: `docker compose up -d` in its folder. Just restarting the container doesn't read `secrets.env` again.
 4. **Check it works**, with the check from that key's section above.
