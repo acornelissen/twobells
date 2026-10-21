@@ -7,6 +7,7 @@ The [setup wizard](setup-wizard.md) and the [settings](settings.md) cover nearly
 - [Where things are kept](#where-things-are-kept)
 - [The dashboard's settings](#the-dashboards-settings)
 - [What each view shows](#what-each-view-shows)
+- [Modes of transport](#modes-of-transport)
 - [Rain warning set-up](#rain-warning-set-up)
 - [Bank holidays](#bank-holidays)
 - [Scrolling text](#scrolling-text)
@@ -16,7 +17,7 @@ The [setup wizard](setup-wizard.md) and the [settings](settings.md) cover nearly
 - **The type of display** (`display`), and the original Inky pHAT's colour (`panel_colour`): see [Displays](displays.md).
 - **Addresses:** `[train] base_url` and `[bus] base_url`, and `[dashboard] allowed_hosts`, the extra names the dashboard and settings answer to.
 - **Where the store is:** `state_file`, or `[dashboard] state_dir` (see [below](#where-things-are-kept)).
-- **Where bus times come from:** `[bus] source` and `operators`, and the stop list for the bus position page. The setup wizard sets these for you; see [Bus times](buses.md) and [The bus position page](displays.md#the-bus-position-page).
+- **Where bus times come from:** `[bus] source` and `operators`, and the stop list for the bus position page (`[bus.routes]`). No settings page shows them: the setup wizard saves them for you, or set them here. See [Bus times](buses.md) and [The bus position page](displays.md#the-bus-position-page).
 - **How TransportAPI stands in, and the bus page's checks:** `[bus] fallback_windows`, `fallback_interval_minutes` and `position_interval_seconds` (see [Bus times](buses.md#transportapi-as-a-stand-in)).
 
 The settings pages can't change where keys are sent: the one address they take, for engineering works, must be at `raildata.org.uk`.
