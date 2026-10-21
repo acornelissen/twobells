@@ -20,4 +20,6 @@ Fixes go into the latest release only. Upgrade to it before reporting, if you ca
 - The Pi's install, update and upgrade scripts, the systemd units and the network guard; the Docker image and compose files.
 - The release pipeline: signatures, checksums and the published packages.
 
+How the web server is kept safe, and how to check a Pi's network guard, is in [How the web server is kept safe](docs/security.md); how to check a release's signatures is in [Install on a Raspberry Pi](docs/install-pi.md#install-from-a-release) and [Docker](docs/docker.md#pick-a-release-and-check-it).
+
 The settings site is made for a home network only and refuses visitors from elsewhere. Exposing port 8090 to the internet, for example by forwarding it on your router, is outside what it is built for; a way around the home-network check is in scope.
