@@ -12,7 +12,7 @@ What each display can do, and how to set it up on a Pi. What the board shows on 
 | | Inky pHAT | Waveshare 10.85" e-Paper (G) | 7.9" HDMI screen | 11.3" HDMI bar screen |
 |---|---|---|---|---|
 | Size | 250×122 | 1360×480 | 1280×400 (on its side) | 1920×440 |
-| Colours | black, white, red or yellow | black, white, red, yellow | full colour | full colour |
+| Colours | black, white, red, yellow (the original pHAT: black and white, with red or yellow) | black, white, red, yellow | full colour | full colour |
 | Redraw | about 20 s, on change only | about 21 s, on change only | instant, every second | instant, every second |
 | Clock, countdowns, bus page, clock page | no | no | yes | yes |
 | Where each train or bus is, on its row | no | no | yes | yes |
@@ -56,7 +56,7 @@ A bus that starts its journey at your stop is followed on its way in. If, say, m
 
 ## Station announcements on a screen
 
-Screen only, and off unless you choose it: tick **Announcements** under **What to show** on the Board tab, or add `"announce_speaker"` to `[board] show`. No preset ticks it, Everything included. The screen then says station announcements through the Pi's sound output (HDMI sound, or a speaker on the headphone socket or a USB sound card), in the dashboard's words, with the wall tablet's rules: the next train to depart, 4 minutes before it goes, with its delay if it is late (never a train already gone, or one delayed with no expected time); a train delayed with no expected time, a few minutes before it was due; a cancellation; and a platform alteration (again if the platform changes again), each once, for trains due within the hour. See [Station announcements](dashboard.md#station-announcements).
+Screen only, and off unless you choose it: tick **Announcements** under **What to show** on the Board tab, or add `"announce_speaker"` to `[board] show`. No preset ticks it, Everything included. The screen then says station announcements through the Pi's sound output (HDMI sound, or a speaker on the headphone socket or a USB sound card), in the dashboard's words, with the wall tablet's rules: the next train to depart, 4 minutes before it goes, with its delay if it is late (never a train already gone, or one delayed with no expected time); a train delayed with no expected time, 4 minutes before it was due; a cancellation; and a platform alteration (again if the platform changes again), each once, for trains due within the hour. See [Station announcements](dashboard.md#station-announcements).
 
 - **When:** only while the board checks for trains (its train checking times), and never in the quiet hours (**Quiet hours** on the Dashboard tab, 01:00 to 05:00 unless you change them).
 - **What it says:** the dashboard's words for the same train: its time, operator, destination, route words and platform, the stops it calls at and those it no longer calls at, its coaches, and National Rail's reason for a cancellation or delay: "The next train to depart from platform 1 will be the 08:12 Northern service to Manchester Piccadilly. Calling at Dinting and Manchester Piccadilly. This train is formed of 3 coaches." The stops, coaches and reasons come with the board with details that a screen already asks for, and are kept with the departures between checks. There is no chime.
